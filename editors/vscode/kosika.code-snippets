@@ -1,0 +1,5 @@
+{
+  "Record": {"prefix": "record", "body": ["record ${1:Name} {", "  ${2:text}: ${3:Text}", "}"], "description": "Typed Kosika record"},
+  "Model": {"prefix": "model", "body": ["model ${1:reader} { input: ${2:Question} output: ${3:Answer} }"], "description": "Model interface; host binding required"},
+  "Workflow": {"prefix": "workflow", "body": ["workflow ${1:main}(${2:question}: ${3:Question}) -> ${4:Answer} {", "  step ${5:respond} {", "    let ${6:result}: ${4:Answer} = use_model ${7:reader}(text: ${2:question}.text)", "    return ${6:result}", "  }", "}"], "description": "Typed model workflow"}
+}

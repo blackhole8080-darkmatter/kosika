@@ -1,0 +1,8 @@
+import "types.syn"
+import "research.syn"
+workflow main(question: Question) -> Answer {
+  step research {
+    let answer: Answer = call research(question: question)
+    return answer
+  }
+}

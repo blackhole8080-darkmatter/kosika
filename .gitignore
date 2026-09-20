@@ -1,0 +1,11 @@
+.coverage
+coverage.xml
+htmlcov/
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.ruff_cache/
+/kosika_demo_trace.jsonl
+/live_cli_trace.jsonl
+/live_manifest_trace.jsonl

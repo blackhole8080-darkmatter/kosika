@@ -1,0 +1,29 @@
+record Question { text: Text }
+record SearchRequest { query: Text }
+record SearchHit { source: Text excerpt: Text }
+record SearchResults { hits: SearchHit[] }
+record Answer { text: Text sources: Text[] }
+
+model reader { input: Question output: Answer }
+
+tool search_docs {
+  source mcp "documents"
+  operation: "search"
+  access: observe
+  input: SearchRequest
+  output: SearchResults
+}
+
+agent researcher {
+  model: reader
+  can: [search_docs]
+  cannot: [write_files, arbitrary_shell]
+  max_steps: 4
+}
+
+workflow answer(question: Question) -> Answer {
+  step research {
+    let result: Answer = ask researcher(text: question.text)
+    return result
+  }
+}

@@ -1,0 +1,32 @@
+record DiskRequest {
+  mount: Text
+}
+
+record DiskStatus {
+  mount: Text
+  used_percent: Number
+}
+
+tool check_disk {
+  source mcp "local_mock"
+  input: DiskRequest
+  operation: "get_disk_info"
+  access: observe
+  output: DiskStatus
+}
+
+agent monitor {
+  can: [check_disk]
+  cannot: []
+}
+
+workflow main() -> DiskStatus {
+  step inspect {
+    let status: DiskStatus = execute monitor.check_disk(mount: "/")
+    return status
+  }
+  step recheck {
+    let final: DiskStatus = execute monitor.check_disk(mount: status.mount)
+    return final
+  }
+}

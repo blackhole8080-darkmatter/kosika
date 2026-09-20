@@ -1,0 +1,9 @@
+import "types.syn"
+model reader { input: Question output: Answer }
+workflow research(question: Question) -> Answer {
+  step answer {
+    let result: Answer = use_model reader(text: question.text)
+    return result
+  }
+}
+export [research]

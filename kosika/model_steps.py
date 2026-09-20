@@ -1,0 +1,67 @@
+"""Typed, single-response model calls. No agent loop or tool execution."""
+
+from __future__ import annotations
+
+import json
+from dataclasses import asdict
+from typing import Any
+
+from .model import ChatMessage, ModelProvider, ModelProviderError, ModelRequest
+from .schema import validate
+
+
+def strict_json(text: str) -> Any:
+    def pairs(items: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for name, value in items:
+            if name in result:
+                raise ValueError(f"Duplicate JSON key {name!r}")
+            result[name] = value
+        return result
+
+    def constant(value: str) -> Any:
+        raise ValueError(f"Non-finite JSON number {value!r}")
+
+    result = json.loads(text, object_pairs_hook=pairs, parse_constant=constant)
+    # Also catches overflowing exponents such as 1e999.
+    json.dumps(result, allow_nan=False)
+    return result
+
+
+def call_model(
+    provider: ModelProvider, arguments: dict[str, Any], output_schema: dict[str, Any]
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    response = provider.complete(
+        ModelRequest(
+            messages=(
+                ChatMessage(
+                    role="system",
+                    content="Return only one JSON object matching this JSON Schema. "
+                    "Do not invoke tools or include Markdown. Schema: "
+                    + json.dumps(output_schema, sort_keys=True, allow_nan=False),
+                ),
+                ChatMessage(
+                    role="user",
+                    content=json.dumps(arguments, sort_keys=True, allow_nan=False),
+                ),
+            ),
+        )
+    )
+    if response.tool_calls or response.finish_reason != "stop":
+        raise ModelProviderError(
+            "Model step requires a completed response without tool calls"
+        )
+    if not isinstance(response.content, str):
+        raise ModelProviderError("Model step requires JSON text")
+    try:
+        result = strict_json(response.content)
+        validate(result, output_schema)
+    except (ValueError, TypeError) as exc:
+        raise ModelProviderError(f"Invalid structured model output: {exc}") from exc
+    if not isinstance(result, dict):
+        raise ModelProviderError("Model step output must be a record")
+    return result, {
+        "content": response.content,
+        "finish_reason": response.finish_reason,
+        "usage": asdict(response.usage) if response.usage is not None else None,
+    }

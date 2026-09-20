@@ -1,0 +1,12 @@
+{
+  "name": "kosika-language",
+  "displayName": "Kosika Language",
+  "version": "0.1.0",
+  "publisher": "kosika-local",
+  "engines": {"vscode": "^1.85.0"},
+  "contributes": {
+    "languages": [{"id": "kosika", "aliases": ["Kosika"], "extensions": [".syn"]}],
+    "grammars": [{"language": "kosika", "scopeName": "source.kosika", "path": "./kosika.tmLanguage.json"}],
+    "snippets": [{"language": "kosika", "path": "./kosika.code-snippets"}]
+  }
+}

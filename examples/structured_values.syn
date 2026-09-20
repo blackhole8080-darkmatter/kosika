@@ -1,0 +1,47 @@
+record Metadata {
+  name: Text
+}
+
+record StructuredRequest {
+  mount: Text
+  tags: Text[]
+  metadata: Metadata
+}
+
+record StructuredStatus {
+  mount: Text
+  tags: Text[]
+  metadata: Metadata
+}
+
+tool inspect_structured {
+  source mcp "local_mock"
+  input: StructuredRequest
+  operation: "get_structured_info"
+  access: observe
+  output: StructuredStatus
+}
+
+agent monitor {
+  can: [inspect_structured]
+  cannot: []
+}
+
+workflow main() -> StructuredStatus {
+  step inspect {
+    let status: StructuredStatus = execute monitor.inspect_structured(
+      mount: "/",
+      tags: ["disk", "local"],
+      metadata: {name: "root-disk"}
+    )
+    return status
+  }
+  step recheck {
+    let final: StructuredStatus = execute monitor.inspect_structured(
+      mount: status.mount,
+      tags: status.tags,
+      metadata: status.metadata
+    )
+    return final
+  }
+}

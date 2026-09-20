@@ -1,0 +1,28 @@
+[project]
+name = "kosika-language-v0-1"
+version = "0.1.0"
+description = "Local-first, capability-secure AI systems language prototype"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.mypy]
+python_version = "3.10"
+show_error_codes = true
+
+[tool.coverage.run]
+branch = true
+source = ["kosika"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+fail_under = 80.0

@@ -1,0 +1,35 @@
+{
+  "manifestVersion": 1,
+  "server": {
+    "source": "local_stdio",
+    "protocolVersion": "2025-11-25",
+    "name": "kosika-test-mcp",
+    "version": "0.1.0"
+  },
+  "tools": {
+    "get_disk_info": {
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "mount": {
+            "type": "string"
+          },
+          "used_percent": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "mount",
+          "used_percent"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "5e4d715394579f901b835027da7eea9dc98c2ad424855c02df91303c082bea53"
+    }
+  }
+}

@@ -1,0 +1,3 @@
+record Question { text: Text }
+record Answer { text: Text }
+export [Question, Answer]

@@ -1,0 +1,8 @@
+[
+  {
+    "name": "typed_answer",
+    "inputs": {"question": {"text": "What does Kosika provide?"}},
+    "contains": {"text": "typed"},
+    "responses": {"reader": [{"text": "Kosika provides typed AI workflows."}]}
+  }
+]

@@ -1,0 +1,20 @@
+record Question {
+  text: Text
+}
+
+record Answer {
+  text: Text
+  confidence: Number
+}
+
+model writer {
+  input: Question
+  output: Answer
+}
+
+workflow answer(question: Question) -> Answer {
+  step respond {
+    let result: Answer = use_model writer(text: question.text)
+    return result
+  }
+}
