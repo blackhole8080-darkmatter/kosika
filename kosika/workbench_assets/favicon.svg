@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">
+  <defs>
+    <linearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#d4a574;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#c99b6c;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <!-- Simple dharma wheel (chakra) - minimal like Claude's logo -->
+  <circle cx="20" cy="20" r="14" fill="none" stroke="url(#logoGradient)" stroke-width="2"/>
+  <circle cx="20" cy="20" r="3" fill="url(#logoGradient)"/>
+  <!-- 4 spokes - much thicker and more visible -->
+  <g stroke="url(#logoGradient)" stroke-width="3" stroke-linecap="round">
+    <line x1="20" y1="6" x2="20" y2="17"/>
+    <line x1="20" y1="23" x2="20" y2="34"/>
+    <line x1="6" y1="20" x2="17" y2="20"/>
+    <line x1="23" y1="20" x2="34" y2="20"/>
+  </g>
+</svg>

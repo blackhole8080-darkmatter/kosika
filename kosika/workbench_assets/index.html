@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#070A0F">
+  <title>Kosika — Workbench</title>
+  <link rel="icon" href="/favicon.svg"><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/theme-lab.css"><link rel="stylesheet" href="/theme-glass.css">
+  <script src="/app.js" defer></script><script src="/workbench-v2.js" defer></script><script src="/integrations.js" defer></script><script src="/mindmap.js" defer></script><script src="/events.js" defer></script>
+</head>
+<body class="glass">
+<svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
+  <symbol id="i-code" viewBox="0 0 24 24"><path d="m8 7-5 5 5 5m8-10 5 5-5 5m-3-13-2 16"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7Z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+  <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 10a9 9 0 1 1 2 8M3 4v6h6m3-3v6l4 2"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M3 4h6l3 2 3-2h6v15h-6l-3 2-3-2H3Zm9 2v15"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H5v18h14V8Zm0 0v5h5M8 12h8m-8 4h6"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 15v6h16v-6"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4m-5 5 5-5 5 5M4 15v6h16v-6"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="m12 3 8 3v6c0 4-5 8-8 9-3-1-8-5-8-9V6Zm-4 9 3 3 5-6"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><path d="M3 3h7v7H3Zm11 0h7v7h-7ZM3 14h7v7H3Zm11 0h7v7h-7Z"/></symbol>
+  <symbol id="i-format" viewBox="0 0 24 24"><path d="M9 5h11M9 12h8M9 19h11M5 8l-3 4 3 4"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><path d="M8 8h12v13H8Zm-4 8H3V3h13v1"/></symbol>
+</defs></svg>
+<div class="app-shell">
+  <aside class="sidebar">
+    <a class="brand" href="/" aria-label="Kosika home"><img src="/favicon.svg" alt="" width="34" height="34"><span>kosika<span class="brand-dot">.</span></span><span class="version">WORKSPACE</span></a>
+    <div class="workspace-label"><span class="workspace-avatar">K</span><div><strong>This workspace</strong><small>Your declarations, on your machine</small></div><span class="local-dot" title="Local workspace"></span></div>
+    <nav class="main-nav" aria-label="Main navigation">
+      <button class="nav-button active" data-view="editor"><svg><use href="#i-code"/></svg>Editor<span class="nav-key">01</span></button>
+      <button class="nav-button" data-view="runs"><svg><use href="#i-history"/></svg>Run history<span class="nav-count" id="run-count">0</span></button>
+      <button class="nav-button" data-view="guide"><svg><use href="#i-book"/></svg>Language guide<svg class="small-arrow"><use href="#i-arrow"/></svg></button>
+      <button class="nav-button" data-view="integrations"><svg><use href="#i-grid"/></svg>Integrations<span class="nav-key">AI + MCP</span></button>
+    </nav>
+    <div class="sidebar-section-heading">EXPLORER<button class="icon-button" id="add-file" title="New source file" aria-label="New source file"><svg><use href="#i-plus"/></svg></button></div>
+    <div class="project-root"><span>⌄</span><svg><use href="#i-grid"/></svg><span id="project-tree-name">research-pipeline</span></div>
+    <div class="file-tree" id="file-tree" aria-label="Source files"></div>
+    <div class="event-feed" id="event-feed"><div class="event-feed-heading">LIVE EVENTS<span class="event-feed-dot" aria-hidden="true"></span></div><div class="event-feed-rows" id="event-feed-rows"><p class="event-feed-empty">Waiting for the first event…</p></div></div>
+    <div class="sidebar-section-heading examples-heading">START WITH AN EXAMPLE</div>
+    <div id="sample-list" class="sample-list"></div>
+    <div class="sidebar-bottom"><div class="boundary-note"><svg><use href="#i-shield"/></svg><div><strong>A safe place to experiment</strong><p>Local fixtures. Explicit capabilities.<br>No surprise side effects.</p></div></div><button class="import-project" id="import-project"><svg><use href="#i-upload"/></svg>Import a workspace</button><input type="file" id="project-picker" accept=".json" hidden></div>
+  </aside>
+  <main>
+    <header class="topbar"><div class="breadcrumb">Workspace <span>/</span> <strong id="view-label">Playground</strong></div><div class="topbar-right"><span class="connection" id="connection"><span class="status-dot"></span>Connecting</span><span class="topbar-divider"></span><button class="text-button" id="theme-toggle" title="Switch theme">Theme</button><span class="topbar-divider"></span><button class="text-button" id="keyboard-help">Keyboard shortcuts <kbd>?</kbd></button><div class="profile" aria-label="Local user">A</div></div></header>
+    <section class="view" id="editor-view">
+      <div class="page-heading"><div><div class="eyebrow">THE KOSIKA WORKBENCH</div><h1>Build intelligence.<br>Keep control.</h1><p>A local studio for typed AI workflows, inspectable tools, and repeatable results.</p></div><button class="button secondary export-button" id="export-project"><svg><use href="#i-download"/></svg>Export workspace</button></div>
+      <div class="project-toolbar"><div class="project-title"><span class="project-symbol"><svg><use href="#i-grid"/></svg></span><div><h2 id="project-name">Research pipeline</h2><span id="project-description">Compose typed workflows across three modules.</span></div></div><div class="run-actions">      <button class="button secondary" id="show-mindmap">Open Kosika's read</button><span id="draft-status" class="draft-status">Local draft</span><button class="button secondary" id="check-button"><svg><use href="#i-check"/></svg>Check</button><button class="button primary" id="run-button"><svg><use href="#i-play"/></svg><span>Run workflow</span><kbd>Ctrl ↵</kbd></button></div></div>
+      <div class="workbench-grid">
+        <section class="editor-panel" aria-label="Source editor">
+          <div class="editor-tabs"><div id="file-tabs" class="file-tabs" role="tablist" aria-label="Open files"></div><button id="format-button" class="editor-icon" aria-label="Format source" title="Format source"><svg><use href="#i-format"/></svg></button><button id="download-source" class="editor-icon" aria-label="Download source file" title="Download source file"><svg><use href="#i-download"/></svg></button></div>
+          <div class="editor-breadcrumb"><span id="editor-path">research-pipeline / main.syn</span><span><span class="tiny-dot"></span>Kosika</span></div>
+          <div class="code-surface"><div class="line-numbers" id="line-numbers" aria-hidden="true"></div><div class="code-stack"><pre id="code-highlight" aria-hidden="true"></pre><textarea id="source-editor" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Kosika source editor" wrap="off"></textarea></div></div>
+          <div class="editor-status"><span><svg><use href="#i-code"/></svg><span id="cursor-position">Ln 1, Col 1</span></span><span>UTF-8 <span class="status-divider">/</span> 2 spaces <span class="status-divider">/</span> .syn</span></div>
+        </section>
+        <aside class="configuration" aria-label="Run configuration"><div class="config-heading"><h3>Run configuration</h3><span class="subtle-badge">LOCAL</span></div>
+          <div class="config-body"><div class="config-row"><label for="entry-file">Entry file</label><select id="entry-file"></select></div><div class="config-row"><label for="workflow-name">Workflow</label><input id="workflow-name" value="main" autocomplete="off" spellcheck="false"></div>
+          <label for="execution-mode">Execution</label><select id="execution-mode"><option value="fixture">Fixtures · predictable responses</option><option value="live" disabled>Live model · host not configured</option></select><p id="provider-detail" class="field-hint">Fixture runs require no model server.</p>
+          <button id="build-inputs" class="button secondary" type="button">Build input form</button><p class="field-hint">Generate fields from this workflow's declared records.</p><div id="generated-inputs"></div>
+          <details id="raw-inputs" open><summary>Input JSON</summary><div class="config-section-label"><label for="inputs-editor">Inputs</label><span>JSON</span></div><p class="field-hint">Records passed into your workflow.</p><textarea id="inputs-editor" class="json-editor" spellcheck="false" aria-label="Workflow inputs" wrap="off"></textarea></details>
+          <div class="config-section-label fixture-label"><label for="fixtures-editor">Model responses</label><span>FIXTURE</span></div><p class="field-hint">Edit the response your model will return.</p><textarea id="fixtures-editor" class="json-editor fixture-editor" spellcheck="false" aria-label="Model response fixtures" wrap="off"></textarea>
+          <div class="fixture-note"><span class="fixture-mark">ƒ</span><p><strong>Predictable by design.</strong> These are scripted responses, not live AI inference.</p></div></div>
+        </aside>
+      </div>
+      <section id="mindmap-panel" class="mindmap-panel" aria-label="What Kosika sees in your program" aria-busy="false">
+        <header class="mindmap-heading"><div><div class="eyebrow">WHAT KOSIKA SEES</div><h2>Your program, read by Kosika.</h2><p id="mindmap-status" role="status" aria-live="polite">Waiting for source…</p></div><div class="map-actions"><button id="mindmap-expand" class="button secondary">Expand all</button><button id="mindmap-collapse" class="button secondary">Collapse all</button><button id="mindmap-refresh" class="button secondary">Refresh</button></div></header>
+        <p id="mindmap-detail" class="mindmap-notice"></p>
+        <div id="mindmap-help" class="mindmap-help" aria-live="polite" hidden></div>
+        <div id="mindmap-tree" class="mindmap-tree"></div>
+      </section>
+      <div id="run-metrics" class="metrics-grid" aria-label="Execution telemetry" hidden></div>
+      <section class="output-panel" aria-label="Execution results"><div class="output-header"><div class="output-tabs" role="tablist" aria-label="Result view"><button class="output-tab active" data-output="result" role="tab" aria-selected="true">Result<span id="result-indicator"></span></button><button class="output-tab" data-output="timeline" role="tab" aria-selected="false">Timeline<span id="event-count" class="tab-count">0</span></button><button class="output-tab" data-output="trace" role="tab" aria-selected="false">Trace</button></div><div class="output-actions"><span id="execution-meta">Ready when you are</span><button class="icon-button" id="copy-output" aria-label="Copy result" title="Copy result" disabled><svg><use href="#i-copy"/></svg></button><button class="text-button replay-button" id="replay-button" disabled><svg><use href="#i-history"/></svg>Replay</button><button class="icon-button" id="download-trace" title="Download trace" aria-label="Download trace" disabled><svg><use href="#i-download"/></svg></button></div></div>
+        <div id="diagnostics" class="diagnostics" role="status" aria-live="polite" hidden></div>
+        <div id="result-content" class="output-content"><div class="ready-state"><div class="ready-icon"><svg><use href="#i-play"/></svg></div><div><h3>Your next idea starts here.</h3><p>Run the example to see a typed result and explore every step.</p></div><span class="ready-key"><kbd>Ctrl</kbd> + <kbd>Enter</kbd></span></div></div>
+        <div id="timeline-content" class="output-content" hidden></div><div id="trace-content" class="output-content" hidden></div>
+      </section>
+      <footer class="workspace-footer"><span><span class="local-dot"></span>Runs stay on this machine</span>    <span>Typed inputs <span>·</span> Capability checks <span>·</span> Exact replay</span><span>Kosika <strong>v0.3</strong></span></footer>
+    </section>
+    <section class="view alternate-view" id="runs-view" hidden><div class="page-heading"><div><div class="eyebrow">EVERY RUN TELLS A STORY</div><h1>Run history</h1><p>Your recent executions, captured in this browser session.</p></div></div><div id="history-list"></div></section>
+    <section class="view alternate-view" id="guide-view" hidden><div class="page-heading"><div><div class="eyebrow">BUILD WITH UNDERSTANDING</div><h1>A little language. Clear boundaries.</h1><p>A practical guide to your first Kosika workflow.</p></div></div><div class="guide-layout"><article class="guide-main"><span class="guide-number">01 / DECLARE</span><h2>Start with a contract.</h2><p>Records describe the shape of data. A model declares what it accepts and returns. Kosika checks these boundaries before passing results to the next step.</p><pre>record Question { text: Text }
+record Answer { text: Text }
+model writer { input: Question output: Answer }</pre><span class="guide-number">02 / COMPOSE</span><h2>Make every step visible.</h2><p>Use <code>use_model</code> for a typed model response, <code>ask</code> for a bounded agent, or <code>call</code> to compose another workflow. Import local modules and explicitly export the declarations others may use.</p><pre>workflow main(question: Question) -> Answer {
+  step respond {
+    let result: Answer = use_model writer(
+      text: question.text
+    )
+    return result
+  }
+}</pre><span class="guide-number">03 / VERIFY</span><h2>Test the behavior. Keep the evidence.</h2><p><strong>Check</strong> validates syntax, records, workflow calls, and capabilities. <strong>Run workflow</strong> executes with your input records and scripted model responses. <strong>Replay</strong> validates the captured trace and returns the recorded result without calling a model or tool.</p><button class="button primary" id="guide-start"><svg><use href="#i-code"/></svg>Try the first-model example</button></article><aside class="guide-aside"><h3>The workbench boundary</h3><p>This interface runs fixture models and built-in read-only mock tools. An explicitly host-configured local model is optional. The browser cannot choose endpoints, shell commands, arbitrary files, or external MCP servers.</p><h3>Model fixture shape</h3><pre>{
+  "writer": [
+    { "text": "Hello." }
+  ]
+}</pre><p>Each array entry is the next response. Use one per model request. A missing response fails instead of inventing an answer.</p><h3>Keep your work</h3><p>Drafts are saved in this browser when local storage is available. Export a workspace to keep your files, inputs, and fixtures together. Download a trace to retain run evidence.</p><h3>Keyboard shortcuts</h3><dl><dt>Run workflow</dt><dd>Ctrl / ⌘ + Enter</dd><dt>Check program</dt><dd>Ctrl / ⌘ + Shift + Enter</dd><dt>Indent in editor</dt><dd>Tab</dd></dl></aside></div></section>
+    <section class="view alternate-view" id="integrations-view" hidden>
+      <div class="page-heading"><div><div class="eyebrow">CONNECTIONS WITH CLEAR BOUNDARIES</div><h1>Your tools. Your control.</h1><p>Host-granted connections, visible contracts, and no hidden permissions.</p></div><span class="integration-badge">LOCAL FIRST</span></div>
+      <div class="integration-grid">
+        <article class="integration-card"><div class="integration-icon">AI</div><span class="eyebrow">MODEL PROVIDER</span><h2>Intelligence, on your terms.</h2><p id="ai-status" class="connection-status">Loading configuration…</p><p id="ai-description"></p><div class="integration-facts" id="ai-limits"></div><button id="ai-playground" class="button primary">Open playground</button><details><summary>Host configuration</summary><pre>python -m kosika.workbench --live-model YOUR_MODEL</pre><p>Configuration is not proof of readiness. Run a small example to test inference; failures remain visible. No credentials are stored in this page.</p></details></article>
+        <article class="integration-card"><div class="integration-icon">MCP</div><span class="eyebrow">PINNED STDIO SERVER</span><h2>A small tool. A clear contract.</h2><p id="mcp-status" class="connection-status">Loading configuration…</p><p id="mcp-description"></p><div class="integration-facts">inspect_text · read-only · supplied text only</div><div class="integration-actions"><button id="verify-mcp" class="button secondary" disabled>Verify connection</button><button id="try-mcp" class="button primary" disabled>Try MCP example</button></div><details><summary>Inspect pinned manifest</summary><pre id="mcp-manifest">Enable with python -m kosika.workbench --mcp-demo</pre></details></article>
+      </div><aside class="integration-boundary"><svg><use href="#i-shield"/></svg><div><h3>Discovery is not permission.</h3><p>Tool schemas and server identity must match their pins. The demo has no file, shell, or network operations. Other servers require a reviewed host integration; this page cannot launch arbitrary commands.</p></div></aside>
+    </section>
+  </main>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<dialog id="file-dialog"><form id="file-form"><div class="dialog-heading"><h2>Add a source file</h2><button type="button" class="icon-button" id="close-dialog" aria-label="Close dialog"><svg><use href="#i-close"/></svg></button></div><p>Keep reusable types and workflows in their own module.</p><label for="new-file-name">Filename</label><input id="new-file-name" placeholder="helpers.syn" autocomplete="off" required><div id="file-error" class="form-error" role="alert"></div><div class="dialog-actions"><button type="button" class="button secondary" id="cancel-dialog">Cancel</button><button class="button primary" type="submit">Create file</button></div></form></dialog>
+</body></html>
