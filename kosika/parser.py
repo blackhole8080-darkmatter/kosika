@@ -4,19 +4,39 @@ from .ast import (
     AgentCall,
     AgentDecl,
     ArrayExpr,
+    BinaryExpr,
+    BreakExpr,
+    ConditionalExpr,
+    ContinueExpr,
     Expression,
     Field,
     FieldExpr,
+    ForExpr,
+    FunctionCall,
+    FunctionCallExpr,
+    FunctionDecl,
+    FunctionExpr,
+    FunctionRefExpr,
     IndexExpr,
     LiteralExpr,
+    LocalBinding,
+    MatchArm,
+    MatchExpr,
+    MethodCallExpr,
     ModelCall,
     ModelDecl,
+    ModelVarExpr,
     Program,
     RecordDecl,
     RecordExpr,
+    RepeatExpr,
     Step,
+    SwarmDecl,
     ToolCall,
     ToolDecl,
+    ToolVarExpr,
+    TryExpr,
+    UnaryExpr,
     VariableExpr,
     WorkflowCall,
     WorkflowDecl,
@@ -43,7 +63,7 @@ class Parser:
         return token
 
     def check(self, value: str) -> bool:
-        return self.current.value == value
+        return self.current.kind in {"IDENT", "SYMBOL", "OP", "ARROW"} and self.current.value == value
 
     def accept(self, value: str) -> bool:
         if self.check(value):
@@ -76,10 +96,158 @@ class Parser:
         return token.value
 
     def expression(self) -> Expression:
+        if self.accept("break"):
+            if self.current.kind == "NUMBER":
+                token = self.advance()
+                label = int(token.value)
+                self.expect(":")
+            else:
+                label = None
+            return BreakExpr()
+        if self.accept("continue"):
+            return ContinueExpr()
+        if self.accept("repeat"):
+            return self.parse_repeat_expression()
+        if self.accept("try"):
+            return self.parse_try_expression()
+        if self.accept("match"):
+            subject = self.expression()
+            self.expect("{")
+            arms: list[MatchArm] = []
+            while not self.accept("}"):
+                self.expect("case")
+                pattern = None
+                if not self.accept("_"):
+                    negative = self.accept("-")
+                    token = self.current
+                    if token.kind == "STRING" and not negative:
+                        pattern = LiteralExpr(self.advance().value)
+                    elif token.kind == "NUMBER":
+                        self.advance()
+                        number = float(token.value) if "." in token.value else int(token.value)
+                        pattern = LiteralExpr(-number if negative else number)
+                    elif token.kind == "IDENT" and token.value in {"true", "false", "null"} and not negative:
+                        self.advance()
+                        pattern = LiteralExpr({"true": True, "false": False, "null": None}[token.value])
+                    else:
+                        raise ParseError("Match patterns must be scalar literals or _")
+                self.expect("{")
+                value = self.expression()
+                self.expect("}")
+                arms.append(MatchArm(pattern, value))
+            return MatchExpr(subject, tuple(arms))
+        if self.accept("if"):
+            condition = self.expression()
+            self.expect("{")
+            when_true = self.expression()
+            self.expect("}")
+            self.expect("else")
+            self.expect("{")
+            when_false = self.expression()
+            self.expect("}")
+            return ConditionalExpr(condition, when_true, when_false)
+        if self.accept("for"):
+            item_name = self.identifier()
+            self.expect("in")
+            sequence = self.expression()
+            limit = 128
+            if self.accept("limit"):
+                token = self.advance()
+                if token.kind != "NUMBER" or not token.value.isdigit() or not 1 <= int(token.value) <= 512:
+                    raise ParseError("for loop limit must be an integer from 1 to 512")
+                limit = int(token.value)
+            self.expect("{")
+            body = self.expression()
+            self.expect("}")
+            return ForExpr(item_name, sequence, body, limit)
+        return self.parse_or_expression()
+
+    def parse_or_expression(self) -> Expression:
+        value = self.parse_and_expression()
+        while self.accept("or"):
+            value = BinaryExpr(value, "or", self.parse_and_expression())
+        return value
+
+    def parse_and_expression(self) -> Expression:
+        value = self.parse_equality_expression()
+        while self.accept("and"):
+            value = BinaryExpr(value, "and", self.parse_equality_expression())
+        return value
+
+    def parse_equality_expression(self) -> Expression:
+        value = self.parse_comparison_expression()
+        while any(self.check(operator) for operator in ("==", "!=")):
+            operator = self.advance().value
+            value = BinaryExpr(value, operator, self.parse_comparison_expression())
+        return value
+
+    def parse_comparison_expression(self) -> Expression:
+        value = self.parse_term_expression()
+        while any(self.check(operator) for operator in ("<", "<=", ">", ">=")):
+            operator = self.advance().value
+            value = BinaryExpr(value, operator, self.parse_term_expression())
+        return value
+
+    def parse_term_expression(self) -> Expression:
+        value = self.parse_factor_expression()
+        while any(self.check(operator) for operator in ("+", "-")):
+            operator = self.advance().value
+            value = BinaryExpr(value, operator, self.parse_factor_expression())
+        return value
+
+    def parse_factor_expression(self) -> Expression:
+        value = self.parse_unary_expression()
+        while any(self.check(operator) for operator in ("*", "/")):
+            operator = self.advance().value
+            value = BinaryExpr(value, operator, self.parse_unary_expression())
+        return value
+
+    def parse_unary_expression(self) -> Expression:
+        if self.check("-") or self.check("not"):
+            operator = self.advance().value
+            return UnaryExpr(operator, self.parse_unary_expression())
+        return self.parse_postfix_expression()
+
+    def peek(self) -> Token:
+        if self.index + 1 < len(self.tokens):
+            return self.tokens[self.index + 1]
+        return self.tokens[-1]
+
+    def parse_postfix_expression(self) -> Expression:
+        value = self.parse_primary_expression()
+        while True:
+            if self.accept("."):
+                if self.current.kind == "IDENT" and (
+                    self.peek().kind == "SYMBOL" and self.peek().value == "("
+                ):
+                    method = self.advance().value
+                    self.expect("(")
+                    args = self.parse_arguments()
+                    self.expect(")")
+                    value = MethodCallExpr(value, method, args)
+                else:
+                    value = FieldExpr(value, self.identifier())
+            elif self.accept("["):
+                index = self.expression()
+                self.expect("]")
+                value = IndexExpr(value, index)
+            else:
+                return value
+
+    def parse_primary_expression(self) -> Expression:
+        if self.accept("ref"):
+            return FunctionRefExpr(self.identifier())
+
+        if self.accept("fn"):
+            return self.parse_function_expression()
+
         if self.check("["):
             value: Expression = self.parse_array_expression()
         elif self.check("{"):
             value = self.parse_record_expression()
+        elif self.accept("("):
+            value = self.expression()
+            self.expect(")")
         else:
             token = self.current
             if token.kind == "STRING":
@@ -94,6 +262,8 @@ class Parser:
                 if token.value in {"true", "false", "null"}:
                     literal = {"true": True, "false": False, "null": None}
                     value = LiteralExpr(literal[token.value])
+                elif self.accept("("):
+                    value = FunctionCallExpr(token.value, self.parse_arguments())
                 else:
                     value = VariableExpr(token.value)
             else:
@@ -101,15 +271,50 @@ class Parser:
                     f"Expected expression at {token.line}:{token.column}, "
                     f"got {token.value!r}"
                 )
+        return value
+
+    def parse_function_expression(self) -> FunctionExpr:
+        parameters: list[Field] = []
+        self.expect("(")
         while True:
-            if self.accept("."):
-                value = FieldExpr(value, self.identifier())
-            elif self.accept("["):
-                index = self.expression()
-                self.expect("]")
-                value = IndexExpr(value, index)
-            else:
-                return value
+            if self.accept(")"):
+                break
+            parameter_name = self.identifier()
+            self.expect(":")
+            type_name = self.parse_type_name()
+            parameters.append(Field(parameter_name, type_name))
+            if self.accept(")"):
+                break
+            self.expect(",")
+        output_type: str | None = None
+        if self.accept("->"):
+            output_type = self.parse_type_name()
+        self.expect("{")
+        body = self.expression()
+        self.expect("}")
+        return FunctionExpr(tuple(parameters), output_type, body)
+
+    def parse_repeat_expression(self) -> RepeatExpr:
+        token = self.advance()
+        if token.kind != "NUMBER" or not token.value.isdigit() or not 1 <= int(token.value) <= 512:
+            raise ParseError("repeat count must be an integer from 1 to 512")
+        self.expect("times")
+        self.expect("{")
+        body = self.expression()
+        self.expect("}")
+        return RepeatExpr(LiteralExpr(int(token.value)), body)
+
+    def parse_try_expression(self) -> TryExpr:
+        self.expect("{")
+        body = self.expression()
+        self.expect("}")
+        retry = 0
+        if self.accept("retry"):
+            token = self.advance()
+            if token.kind != "NUMBER" or not token.value.isdigit() or not 1 <= int(token.value) <= 32:
+                raise ParseError("try retry count must be an integer from 1 to 32")
+            retry = int(token.value)
+        return TryExpr(body, retry)
 
     def parse_array_expression(self) -> ArrayExpr:
         self.expect("[")
@@ -138,7 +343,7 @@ class Parser:
     def parse(self) -> Program:
         program = Program()
         while self.current.kind != "EOF":
-            keyword = self.current.value
+            keyword = self.current.value if self.current.kind == "IDENT" else None
             if keyword == "import":
                 self.advance()
                 if self.current.kind != "STRING":
@@ -153,8 +358,12 @@ class Parser:
                 program.tools.append(self.parse_tool())
             elif keyword == "agent":
                 program.agents.append(self.parse_agent())
+            elif keyword == "swarm":
+                program.swarms.append(self.parse_swarm())
             elif keyword == "workflow":
                 program.workflows.append(self.parse_workflow())
+            elif keyword == "fn":
+                program.functions.append(self.parse_function())
             elif keyword == "model":
                 program.models.append(self.parse_model())
             else:
@@ -179,7 +388,22 @@ class Parser:
             raise ParseError(f"Model {name!r} requires input and output records")
         return ModelDecl(name, values["input"], values["output"])
 
-    def parse_type_name(self) -> str:
+    def parse_type_name(self, depth: int = 0) -> str:
+        if depth >= 32:
+            raise ParseError("Function type nesting exceeds 32")
+        if self.accept("fn"):
+            from .function_types import function_type
+
+            self.expect("(")
+            parameters: list[Field] = []
+            while not self.accept(")"):
+                name = self.identifier()
+                self.expect(":")
+                parameters.append(Field(name, self.parse_type_name(depth + 1)))
+                if not self.check(")"):
+                    self.expect(",")
+            self.expect("->")
+            return function_type(tuple(parameters), self.parse_type_name(depth + 1))
         name = self.identifier()
         if self.accept("["):
             self.expect("]")
@@ -263,6 +487,58 @@ class Parser:
                 raise ParseError(f"Unknown agent field {key!r}")
         return AgentDecl(name, can, cannot, model, max_steps)
 
+    def parse_swarm(self) -> SwarmDecl:
+        """Parse ``swarm Name { agents: [..] workflow: w max_rounds: n require approval }``.
+
+        ``require approval`` is mandatory: a swarm without a human approval
+        gate is refused here rather than silently downgraded at run time.
+        """
+
+        self.expect("swarm")
+        name = self.identifier()
+        self.expect("{")
+        agents: tuple[str, ...] | None = None
+        workflow: str | None = None
+        max_rounds = 1
+        approval_required = False
+        seen: set[str] = set()
+        while not self.accept("}"):
+            if self.accept("require"):
+                self.expect("approval")
+                if "require" in seen:
+                    raise ParseError("Duplicate swarm require approval clause")
+                seen.add("require")
+                approval_required = True
+                continue
+            key = self.identifier()
+            if key in seen:
+                raise ParseError(f"Duplicate swarm field {key!r}")
+            seen.add(key)
+            self.expect(":")
+            if key == "agents":
+                agents = self.parse_name_list()
+                if not agents:
+                    raise ParseError(f"Swarm {name!r} needs at least one agent")
+            elif key == "workflow":
+                workflow = self.identifier()
+            elif key == "max_rounds":
+                token = self.advance()
+                if token.kind != "NUMBER" or not token.value.isdigit():
+                    raise ParseError("Swarm max_rounds must be a positive integer")
+                max_rounds = int(token.value)
+            else:
+                raise ParseError(f"Unknown swarm field {key!r}")
+        if agents is None:
+            raise ParseError(f"Swarm {name!r} requires an agents list")
+        if workflow is None:
+            raise ParseError(f"Swarm {name!r} requires a workflow")
+        if not approval_required:
+            raise ParseError(
+                f"Swarm {name!r} must declare `require approval`; "
+                "Kosika does not run an unreviewed swarm"
+            )
+        return SwarmDecl(name, agents, workflow, max_rounds, approval_required)
+
     def parse_workflow(self) -> WorkflowDecl:
         self.expect("workflow")
         name = self.identifier()
@@ -294,6 +570,45 @@ class Parser:
             name, output_type, tuple(steps), approval_required, tuple(parameters)
         )
 
+    def parse_function(self, depth: int = 0) -> FunctionDecl:
+        if depth >= 32:
+            raise ParseError("Function declaration nesting exceeds 32")
+        self.expect("fn")
+        name = self.identifier()
+        self.expect("(")
+        parameters: list[Field] = []
+        while not self.accept(")"):
+            parameter_name = self.identifier()
+            self.expect(":")
+            parameters.append(Field(parameter_name, self.parse_type_name()))
+            if not self.check(")"):
+                self.expect(",")
+        self.expect("->")
+        output_type = self.parse_type_name()
+        recursion_limit = None
+        if self.accept("recurse"):
+            token = self.advance()
+            if token.kind != "NUMBER" or not token.value.isdigit() or not 1 <= int(token.value) <= 32:
+                raise ParseError("Recursion limit must be an integer from 1 to 32")
+            recursion_limit = int(token.value)
+        self.expect("{")
+        bindings: list[LocalBinding] = []
+        while self.accept("let"):
+            binding_name = self.identifier()
+            self.expect(":")
+            binding_type = self.parse_type_name()
+            self.expect("=")
+            bindings.append(LocalBinding(binding_name, binding_type, self.expression()))
+        nested: list[FunctionDecl] = []
+        while self.check("fn"):
+            nested.append(self.parse_function(depth + 1))
+        self.expect("return")
+        return_value = self.expression()
+        self.expect("}")
+        return FunctionDecl(
+            name, tuple(parameters), output_type, return_value, tuple(bindings), tuple(nested), recursion_limit
+        )
+
     def parse_arguments(
         self,
     ) -> tuple[tuple[str, Expression], ...]:
@@ -316,9 +631,9 @@ class Parser:
         binding_name = self.identifier()
         binding_type = None
         if self.accept(":"):
-            binding_type = self.identifier()
+            binding_type = self.parse_type_name()
         self.expect("=")
-        call: ToolCall | ModelCall | AgentCall | WorkflowCall
+        call: ToolCall | ModelCall | AgentCall | WorkflowCall | FunctionCall
         if self.accept("call"):
             workflow_name = self.identifier()
             self.expect("(")
@@ -331,6 +646,10 @@ class Parser:
             model_name = self.identifier()
             self.expect("(")
             call = ModelCall(model_name, self.parse_arguments())
+        elif self.current.kind == "IDENT" and self.current.value != "execute":
+            function_name = self.identifier()
+            self.expect("(")
+            call = FunctionCall(function_name, self.parse_arguments())
         else:
             self.expect("execute")
             agent_name = self.identifier()
@@ -351,4 +670,9 @@ class Parser:
 
 
 def parse(source: str) -> Program:
-    return Parser(lex(source)).parse()
+    from .lexical import lower_nested_functions
+
+    try:
+        return lower_nested_functions(Parser(lex(source)).parse())
+    except ValueError as exc:
+        raise ParseError(str(exc)) from exc

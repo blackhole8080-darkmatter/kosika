@@ -50,6 +50,11 @@ def completions(path: str | Path, prefix: str = "") -> list[str]:
         "agent",
         "model",
         "workflow",
+        "fn",
+        "ref",
+        "recurse",
+        "match",
+        "case",
         "step",
         "import",
         "export",
@@ -62,6 +67,7 @@ def completions(path: str | Path, prefix: str = "") -> list[str]:
     }
     names.update(
         item.name for category in CATEGORIES for item in getattr(program, category)
+        if "/" not in item.name
     )
     return sorted(name for name in names if name.startswith(prefix))
 
@@ -72,7 +78,22 @@ def inspect_trace(path: str | Path) -> dict[str, Any]:
         strict_json(line)
         for line in Path(path).read_text(encoding="utf-8").splitlines()
     ]
-    steps = []
+    steps: list[dict[str, Any]] = []
+
+    def walk_functions(items: list[dict[str, Any]], prefix: str) -> None:
+        for offset in range(0, len(items), 2):
+            call, returned = items[offset : offset + 2]
+            function = str(call["function"])
+            name = prefix + function
+            steps.append(
+                {
+                    "step": name,
+                    "kind": "function_call",
+                    "target": function,
+                }
+            )
+            walk_functions(call.get("expression_events", []), name + "/argument/")
+            walk_functions(returned.get("events", []), name + "/")
 
     def walk(items: list[dict[str, Any]], prefix: str = "") -> None:
         for offset in range(1, len(items) - 1, 4):
@@ -84,12 +105,18 @@ def inspect_trace(path: str | Path) -> dict[str, Any]:
                     "kind": call["event"],
                     "target": call.get(
                         "workflow",
-                        call.get("agent", call.get("model", call.get("tool"))),
+                        call.get(
+                            "function",
+                            call.get("agent", call.get("model", call.get("tool"))),
+                        ),
                     ),
                 }
             )
             if call["event"] == "workflow_call":
                 walk(returned["events"], name + "/")
+            walk_functions(call.get("expression_events", []), name + "/argument/")
+            if call["event"] == "function_call":
+                walk_functions(returned.get("events", []), name + "/")
 
     walk(events)
     return {

@@ -5,11 +5,30 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from .ast import AgentCall, ModelCall, Program, ToolCall, WorkflowCall
+from .ast import (
+    AgentCall,
+    FunctionCall,
+    FunctionRefExpr,
+    ModelCall,
+    Program,
+    ToolCall,
+    WorkflowCall,
+    expression_function_calls,
+    static_function_references,
+)
 from .checker import CheckError, check
+from .function_types import referenced_types
 from .parser import parse
 
-CATEGORIES = ("records", "tools", "agents", "models", "workflows")
+CATEGORIES = (
+    "records",
+    "tools",
+    "agents",
+    "swarms",
+    "models",
+    "functions",
+    "workflows",
+)
 
 
 def _references(program: Program) -> set[str]:
@@ -26,21 +45,48 @@ def _references(program: Program) -> set[str]:
         names.update(agent.can)
         if agent.model:
             names.add(agent.model)
+    for swarm in program.swarms:
+        names.update(swarm.agents)
+        names.add(swarm.workflow)
+    for function in program.functions:
+        names.update(referenced_types(function.output_type))
+        names.update(
+            type_name
+            for parameter in function.parameters
+            for type_name in referenced_types(parameter.type_name)
+        )
+        names.update(
+            call.function_name
+            for call in static_function_references(function)
+        )
+        for binding in function.bindings:
+            names.update(referenced_types(binding.type_name))
     for workflow in program.workflows:
         names.add(workflow.output_type)
         names.update(field.type_name for field in workflow.parameters)
+        bound = {p.name for p in workflow.parameters}
         for step in workflow.steps:
             if step.binding_type:
-                names.add(step.binding_type)
+                names.update(referenced_types(step.binding_type))
             call = step.call
+            for _, argument in call.arguments:
+                names.update(
+                    nested.function_name
+                    for nested in expression_function_calls(argument)
+                    if isinstance(nested, FunctionRefExpr) or nested.function_name not in bound
+                )
             if isinstance(call, WorkflowCall):
                 names.add(call.workflow_name)
+            elif isinstance(call, FunctionCall):
+                if call.function_name not in bound:
+                    names.add(call.function_name)
             elif isinstance(call, ModelCall):
                 names.add(call.model_name)
             elif isinstance(call, (AgentCall, ToolCall)):
                 names.add(call.agent_name)
                 if isinstance(call, ToolCall):
                     names.add(call.tool_name)
+            bound.add(step.binding_name)
     return names - {"Text", "Number", "Bool", "Null"}
 
 
@@ -80,12 +126,17 @@ def load_program(path: str | Path, *, root: str | Path | None = None) -> Program
             raise CheckError(f"{resolved}: {exc}") from exc
         active.add(resolved)
         visible = set()
+        direct_imports: list[str] = []
         for name in module.imports:
             relative = Path(name)
             if relative.is_absolute() or relative.drive:
                 raise CheckError("Import paths must be relative")
-            dependency = load(resolved.parent / relative)
+            dependency_path = resolved.parent / relative
+            dependency = load(dependency_path)
             visible.update(dependency.exports)
+            direct_imports.append(
+                dependency_path.resolve(strict=True).relative_to(boundary).as_posix()
+            )
         local = {
             item.name for category in CATEGORIES for item in getattr(module, category)
         }
@@ -103,11 +154,12 @@ def load_program(path: str | Path, *, root: str | Path | None = None) -> Program
             if name in owners and owners[name] != resolved:
                 raise CheckError(f"Conflicting module declaration {name!r}")
             owners[name] = resolved
+        module_key = resolved.relative_to(boundary).as_posix()
+        merged.module_declarations[module_key] = tuple(sorted(local))
+        merged.module_imports[module_key] = tuple(sorted(direct_imports))
         for category in CATEGORIES:
             getattr(merged, category).extend(getattr(module, category))
-        merged.module_hashes[resolved.relative_to(boundary).as_posix()] = (
-            hashlib.sha256(data).hexdigest()
-        )
+        merged.module_hashes[module_key] = hashlib.sha256(data).hexdigest()
         active.remove(resolved)
         loaded[resolved] = module
         return module

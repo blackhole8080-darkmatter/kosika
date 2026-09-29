@@ -1,6 +1,9 @@
 import hashlib
 import json
+import os
+import tempfile
 import threading
+from copy import deepcopy
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -11,26 +14,58 @@ from .agent_steps import call_agent, validate_agent_transcript
 from .ast import (
     AgentCall,
     ArrayExpr,
+    BinaryExpr,
+    ConditionalExpr,
     Expression,
+    Field,
     FieldExpr,
+    FunctionCall,
+    FunctionCallExpr,
+    FunctionDecl,
+    FunctionRefExpr,
     IndexExpr,
     LiteralExpr,
+    MatchExpr,
     ModelCall,
     Program,
     RecordExpr,
     ToolCall,
     ToolDecl,
+    UnaryExpr,
     VariableExpr,
     WorkflowCall,
 )
 from .checker import check
+from .controls import ExecutionError
 from .durable import ExecutionSession
+from .execution import ExecutionControl, ExecutionLimits
+from .function_types import public_type
 from .manifest import ManifestError, MCPManifest, verify_server
 from .mcp_stdio import MCPStdioClient
 from .model import ModelProvider
 from .model_steps import call_model
-from .schema import schema_for_record, schema_for_tool_input, schemas_equal, validate
+from .schema import (
+    schema_for_record,
+    schema_for_tool_input,
+    schema_for_type,
+    schemas_equal,
+    validate,
+)
 from .trace_replay import replay_trace
+from .intelligence_runtime import IntelligenceRecorder, FunctionResultCache
+
+
+class _FunctionRegistry(dict[str, FunctionDecl]):
+    """Pure execution bounds shared by steps in one workflow invocation."""
+
+    def __init__(self, declarations: Sequence[FunctionDecl], control: ExecutionControl,
+                 cache: FunctionResultCache | None = None,
+                 intel: IntelligenceRecorder | None = None):
+        super().__init__((item.name, item) for item in declarations)
+        self.active: list[str] = []
+        self.control = control
+        self.cache = cache
+        self.intel = intel
 
 
 @dataclass(frozen=True)
@@ -59,7 +94,51 @@ def _event(event: str, **data: object) -> dict:
     }
 
 
-def _evaluate_expression(expression: Expression, environment: dict[str, Any]) -> Any:
+def _value_equal(left: Any, right: Any) -> bool:
+    if isinstance(left, bool) or isinstance(right, bool):
+        return type(left) is type(right) and left == right
+    if isinstance(left, Mapping) and isinstance(right, Mapping):
+        return left.keys() == right.keys() and all(
+            _value_equal(value, right[key]) for key, value in left.items()
+        )
+    if isinstance(left, list) and isinstance(right, list):
+        return len(left) == len(right) and all(
+            _value_equal(a, b) for a, b in zip(left, right)
+        )
+    return bool(left == right)
+
+
+def _format_number(value: int | float) -> str:
+    """Render a Number for concatenation without a host-locale surprise.
+
+    A whole float keeps no trailing ``.0`` so ``"n=" + 5.0`` reads as ``n=5``,
+    matching how the value is written in source.
+    """
+
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
+
+
+def _evaluate_expression(
+    expression: Expression,
+    environment: dict[str, Any],
+    program: Program,
+    functions: Mapping[str, FunctionDecl],
+    function_events: list[dict[str, Any]],
+    *,
+    depth: int,
+) -> Any:
+    if isinstance(functions, _FunctionRegistry):
+        functions.control.checkpoint()
+    if isinstance(expression, MatchExpr):
+        subject = _evaluate_expression(expression.subject, environment, program, functions,
+                                       function_events, depth=depth)
+        for arm in expression.arms:
+            if arm.pattern is None or _value_equal(subject, arm.pattern.value):
+                return _evaluate_expression(arm.value, environment, program, functions,
+                                            function_events, depth=depth)
+        raise RuntimeError("Non-exhaustive match reached execution")
     if isinstance(expression, LiteralExpr):
         return expression.value
     if isinstance(expression, VariableExpr):
@@ -67,7 +146,14 @@ def _evaluate_expression(expression: Expression, environment: dict[str, Any]) ->
             raise RuntimeError(f"Workflow variable {expression.name!r} is unavailable")
         return environment[expression.name]
     if isinstance(expression, FieldExpr):
-        base = _evaluate_expression(expression.base, environment)
+        base = _evaluate_expression(
+            expression.base,
+            environment,
+            program,
+            functions,
+            function_events,
+            depth=depth,
+        )
         if not isinstance(base, dict):
             raise RuntimeError(
                 f"Cannot read field {expression.field_name!r} from "
@@ -79,8 +165,22 @@ def _evaluate_expression(expression: Expression, environment: dict[str, Any]) ->
             )
         return base[expression.field_name]
     if isinstance(expression, IndexExpr):
-        base = _evaluate_expression(expression.base, environment)
-        index = _evaluate_expression(expression.index, environment)
+        base = _evaluate_expression(
+            expression.base,
+            environment,
+            program,
+            functions,
+            function_events,
+            depth=depth,
+        )
+        index = _evaluate_expression(
+            expression.index,
+            environment,
+            program,
+            functions,
+            function_events,
+            depth=depth,
+        )
         if not isinstance(base, list):
             raise RuntimeError(f"Cannot index non-array value {type(base).__name__}")
         if not isinstance(index, int) or isinstance(index, bool):
@@ -90,13 +190,169 @@ def _evaluate_expression(expression: Expression, environment: dict[str, Any]) ->
         except IndexError as exc:
             raise RuntimeError(f"Array index {index} is out of range") from exc
     if isinstance(expression, ArrayExpr):
-        return [_evaluate_expression(item, environment) for item in expression.items]
+        return [
+            _evaluate_expression(
+                item,
+                environment,
+                program,
+                functions,
+                function_events,
+                depth=depth,
+            )
+            for item in expression.items
+        ]
     if isinstance(expression, RecordExpr):
         return {
-            name: _evaluate_expression(value, environment)
+            name: _evaluate_expression(
+                value,
+                environment,
+                program,
+                functions,
+                function_events,
+                depth=depth,
+            )
             for name, value in expression.fields
         }
+    if isinstance(expression, UnaryExpr):
+        operand = _evaluate_expression(
+            expression.operand,
+            environment,
+            program,
+            functions,
+            function_events,
+            depth=depth,
+        )
+        return not operand if expression.operator == "not" else -operand
+    if isinstance(expression, BinaryExpr):
+        left = _evaluate_expression(
+            expression.left,
+            environment,
+            program,
+            functions,
+            function_events,
+            depth=depth,
+        )
+        if expression.operator == "and" and not left:
+            return False
+        if expression.operator == "or" and left:
+            return True
+        right = _evaluate_expression(
+            expression.right,
+            environment,
+            program,
+            functions,
+            function_events,
+            depth=depth,
+        )
+        if expression.operator == "+":
+            # The checker admits Text+Text and Text+Number as concatenation.
+            # The runtime must honor exactly what the checker allows, so a
+            # Number operand is rendered rather than raising a host TypeError.
+            if isinstance(left, str) and isinstance(right, str):
+                return left + right
+            if isinstance(left, str) and isinstance(right, (int, float)) and not isinstance(right, bool):
+                return left + _format_number(right)
+            if isinstance(left, (int, float)) and isinstance(right, str) and not isinstance(left, bool):
+                return _format_number(left) + right
+            return left + right
+        if expression.operator == "-":
+            return left - right
+        if expression.operator == "*":
+            return left * right
+        if expression.operator == "/":
+            if right == 0:
+                raise RuntimeError("Division by zero")
+            return left / right
+        if expression.operator == "<":
+            return left < right
+        if expression.operator == "<=":
+            return left <= right
+        if expression.operator == ">":
+            return left > right
+        if expression.operator == ">=":
+            return left >= right
+        if expression.operator in {"==", "!="}:
+            equal = _value_equal(left, right)
+            return equal if expression.operator == "==" else not equal
+        if expression.operator == "and":
+            return bool(right)
+        if expression.operator == "or":
+            return bool(right)
+        raise RuntimeError(f"Unknown binary operator {expression.operator!r}")
+    if isinstance(expression, ConditionalExpr):
+        condition = _evaluate_expression(
+            expression.condition,
+            environment,
+            program,
+            functions,
+            function_events,
+            depth=depth,
+        )
+        branch = expression.when_true if condition else expression.when_false
+        return _evaluate_expression(
+            branch,
+            environment,
+            program,
+            functions,
+            function_events,
+            depth=depth,
+        )
+    if isinstance(expression, FunctionRefExpr):
+        captures = {
+            name: _evaluate_expression(value, environment, program, functions,
+                                       function_events, depth=depth)
+            for name, value in expression.captures
+        }
+        return {'$function': expression.function_name,
+                '$type': public_type(functions[expression.function_name]),
+                '$captures': deepcopy(captures)}
+    if isinstance(expression, FunctionCallExpr):
+        argument_events: list[dict[str, Any]] = []
+        arguments = {
+            name: _evaluate_expression(
+                value,
+                environment,
+                program,
+                functions,
+                argument_events,
+                depth=depth,
+            )
+            for name, value in expression.arguments
+        }
+        function, captures = _resolve_function(expression.function_name, environment, functions)
+        if set(arguments) & set(captures):
+            raise RuntimeError("Cannot override lexical captures")
+        result, call_events = _execute_function(
+            program,
+            function,
+            {**arguments, **captures},
+            functions,
+            argument_events=argument_events,
+            depth=depth + 1,
+        )
+        function_events.extend(call_events)
+        return result
     raise RuntimeError("Workflow contains an unsupported expression")
+
+
+def _resolve_function(
+    name: str, environment: Mapping[str, Any], functions: Mapping[str, FunctionDecl],
+) -> tuple[FunctionDecl, dict[str, Any]]:
+    if name not in environment:
+        return functions[name], {}
+    closure = environment[name]
+    if not isinstance(closure, dict) or set(closure) != {'$function', '$type', '$captures'}:
+        raise RuntimeError("Invalid function value")
+    target = closure['$function']
+    if not isinstance(target, str) or target not in functions:
+        raise RuntimeError("Unknown closure target")
+    function = functions[target]
+    captures = closure['$captures']
+    if closure['$type'] != public_type(function) or not isinstance(captures, dict):
+        raise RuntimeError("Closure signature mismatch")
+    if set(captures) != {p.name for p in function.parameters if p.name.startswith('$capture:')}:
+        raise RuntimeError("Closure capture mismatch")
+    return function, captures
 
 
 def _call_declared_tool(
@@ -143,7 +399,210 @@ def _call_declared_tool(
     return MockMCP().call(tool.source, tool.operation), "mock"
 
 
+def _parameter_schema(program: Program, fields: Sequence[Field]) -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": {
+            field.name: schema_for_type(program, field.type_name) for field in fields
+        },
+        "required": [field.name for field in fields],
+        "additionalProperties": False,
+    }
+
+
+def _execute_function(
+    program: Program,
+    function: FunctionDecl,
+    arguments: dict[str, Any],
+    functions: Mapping[str, FunctionDecl],
+    *,
+    argument_events: list[dict[str, Any]],
+    depth: int,
+) -> tuple[Any, list[dict[str, Any]]]:
+    if not isinstance(functions, _FunctionRegistry):
+        raise RuntimeError("Function execution requires a bounded registry")
+    # Optional pure-function result cache.
+    if functions.cache is not None:
+        cached = functions.cache.get(function.name, arguments)
+        if cached is not None:
+            functions.control.checkpoint()
+            # A cache hit is still a real invocation, so it is published as a
+            # normal call/return pair marked ``cache_hit``. Omitting the event
+            # would leave a trace that silently drops every cached execution,
+            # and would hide the operation from the intelligence recorder.
+            input_schema = _parameter_schema(program, function.parameters)
+            output_schema = schema_for_type(program, function.output_type)
+            return cached, [
+                _event(
+                    "function_call",
+                    function=function.name,
+                    arguments=arguments,
+                    input_schema=input_schema,
+                    output_schema=output_schema,
+                    expression_events=[],
+                    cache_hit=True,
+                ),
+                _event(
+                    "function_return",
+                    function=function.name,
+                    result=cached,
+                    events=[],
+                    cache_hit=True,
+                ),
+            ]
+    limit = function.recursion_limit or 1
+    if functions.active.count(function.name) >= limit:
+        raise RuntimeError(f"Recursion limit {limit} exceeded for {function.name!r}")
+    functions.control.consume('function_calls')
+    functions.active.append(function.name)
+    try:
+        return _execute_function_body(program, function, arguments, functions,
+                                      argument_events=argument_events, depth=depth)
+    except (Exception, KeyboardInterrupt):
+        if not functions.control.failure_stack:
+            functions.control.failure_stack = list(functions.active)
+        raise
+    finally:
+        functions.active.pop()
+
+
+def _execute_function_body(
+    program: Program,
+    function: FunctionDecl,
+    arguments: dict[str, Any],
+    functions: Mapping[str, FunctionDecl],
+    *,
+    argument_events: list[dict[str, Any]],
+    depth: int,
+) -> tuple[Any, list[dict[str, Any]]]:
+    if depth >= 32:
+        raise RuntimeError("Function call depth exceeds 32")
+    input_schema = _parameter_schema(program, function.parameters)
+    output_schema = schema_for_type(program, function.output_type)
+    validate(arguments, input_schema)
+    body_events: list[dict[str, Any]] = []
+    local_environment = dict(arguments)
+    for binding in function.bindings:
+        value = _evaluate_expression(
+            binding.value, local_environment, program, functions, body_events, depth=depth,
+        )
+        validate(value, schema_for_type(program, binding.type_name))
+        local_environment[binding.name] = value
+    result = _evaluate_expression(
+        function.return_value,
+        local_environment,
+        program,
+        functions,
+        body_events,
+        depth=depth,
+    )
+    validate(result, output_schema)
+    # Optional pure-function result cache — safe because these functions are
+    # deterministic and free of model/tool/host authority.
+    if isinstance(functions, _FunctionRegistry) and functions.cache is not None:
+        functions.cache.put(function.name, arguments, result)
+    return result, [
+        _event(
+            "function_call",
+            function=function.name,
+            arguments=arguments,
+            input_schema=input_schema,
+            output_schema=output_schema,
+            expression_events=argument_events,
+        ),
+        _event(
+            "function_return",
+            function=function.name,
+            result=result,
+            events=body_events,
+        ),
+    ]
+
+
+def _write_trace(trace_path: str | Path, events: list[dict[str, Any]]) -> None:
+    path = Path(trace_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = '\n'.join(json.dumps(item, sort_keys=True, allow_nan=False) for item in events) + '\n'
+    temporary: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=path.parent,
+                                         prefix='.kosika-trace-', delete=False) as stream:
+            temporary = stream.name
+            stream.write(payload)
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None and os.path.exists(temporary):
+            os.unlink(temporary)
+
+
 def run(
+    program: Program,
+    workflow_name: str,
+    trace_path: str | Path | None,
+    *,
+    mcp_commands: dict[str, Sequence[str]] | None = None,
+    manifest: MCPManifest | None = None,
+    inputs: dict[str, Any] | None = None,
+    model_bindings: Mapping[str, ModelProvider] | None = None,
+    tool_bindings: Mapping[str, ToolExecutor] | None = None,
+    session: ExecutionSession | None = None,
+    limits: ExecutionLimits | None = None,
+    cancel: threading.Event | None = None,
+    intelligence: IntelligenceRecorder | None = None,
+    function_cache: FunctionResultCache | None = None,
+    _events_out: list[dict[str, Any]] | None = None,
+    _scope: tuple[str, ...] = (),
+    _control: ExecutionControl | None = None,
+) -> dict[str, Any]:
+    control = _control or ExecutionControl(limits or ExecutionLimits(), cancel)
+    control.scope = (*_scope, workflow_name)
+    events: list[dict[str, Any]] = []
+    try:
+        control.checkpoint()
+        result = _run_workflow(program, workflow_name, None, mcp_commands=mcp_commands,
+                               manifest=manifest, inputs=inputs, model_bindings=model_bindings,
+                               tool_bindings=tool_bindings, session=session,
+                               _events_out=events, _scope=_scope, _control=control,
+                               intelligence=intelligence,
+                               function_cache=function_cache)
+    except (Exception, KeyboardInterrupt) as exc:
+        interrupted = isinstance(exc, KeyboardInterrupt)
+        code = 'cancelled' if interrupted else (
+            exc.code if isinstance(exc, ExecutionError) and exc.code in {
+                'cancelled', 'deadline', 'budget', 'approval_required', 'usage_unknown', 'transient'
+            } else 'runtime_error'
+        )
+        if not events:
+            events.append(_event('run_start', workflow=workflow_name, trace_version=5))
+        terminal = 'run_cancelled' if code == 'cancelled' else 'run_failed'
+        if code == 'approval_required':
+            terminal = 'run_paused'
+        events.append(_event(terminal, workflow=workflow_name, scope=list(control.scope),
+                             error={'code': code, 'type': type(exc).__name__},
+                             execution=control.snapshot()))
+        if _events_out is not None:
+            _events_out.extend(events)
+        if trace_path is not None:
+            try:
+                _write_trace(trace_path, events)
+            except (OSError, ValueError, TypeError):
+                add_note = getattr(exc, 'add_note', None)
+                if callable(add_note):
+                    add_note('Could not persist the execution failure trace')
+        if interrupted:
+            control.cancel.set()
+            raise ExecutionError('cancelled', 'Execution was cancelled') from exc
+        raise
+    if events and events[-1].get('event') == 'run_complete':
+        events[-1]['execution'] = control.snapshot()
+    if _events_out is not None:
+        _events_out.extend(events)
+    if trace_path is not None:
+        _write_trace(trace_path, events)
+    return result
+
+
+def _run_workflow(
     program: Program,
     workflow_name: str,
     trace_path: str | Path | None,
@@ -156,6 +615,9 @@ def run(
     _events_out: list[dict[str, Any]] | None = None,
     session: ExecutionSession | None = None,
     _scope: tuple[str, ...] = (),
+    _control: ExecutionControl,
+    intelligence: IntelligenceRecorder | None = None,
+    function_cache: FunctionResultCache | None = None,
 ) -> dict[str, Any]:
     if len(_scope) > 64:
         raise ValueError("Workflow call depth exceeds 32")
@@ -167,7 +629,7 @@ def run(
         raise RuntimeError("Execution session is already active in another thread")
     if session is not None and not session.active:
         with session.lock():
-            return run(
+            return _run_workflow(
                 program,
                 workflow_name,
                 trace_path,
@@ -178,6 +640,10 @@ def run(
                 tool_bindings=tool_bindings,
                 session=session,
                 _events_out=_events_out,
+                _scope=_scope,
+                _control=_control,
+                intelligence=intelligence,
+                function_cache=function_cache,
             )
     check(program)
     workflow = next(
@@ -189,7 +655,8 @@ def run(
     agents = {agent.name: agent for agent in program.agents}
     models = {model.name: model for model in program.models}
     workflows = {item.name: item for item in program.workflows}
-    providers = dict(model_bindings or {})
+    functions = _FunctionRegistry(program.functions, _control, cache=function_cache, intel=intelligence)
+    providers = {name: _control.provider(provider) for name, provider in (model_bindings or {}).items()}
     host_tools = dict(tool_bindings or {})
     if set(host_tools) - set(tools):
         raise ValueError("Host supplied bindings for undeclared tools")
@@ -227,6 +694,8 @@ def run(
                 visited_workflows.add(name)
                 pending.extend(workflows[name].steps)
             continue
+        if isinstance(step.call, FunctionCall):
+            continue
         if isinstance(step.call, AgentCall):
             asked_agent = agents[step.call.agent_name]
             if asked_agent.model not in providers:
@@ -259,28 +728,46 @@ def run(
             raise PermissionError(
                 f"Workflow tool {tool.name!r} requires a verified approval record"
             )
-    events = [
+    events = _events_out if _events_out is not None else []
+    events.append(
         _event(
             "run_start",
             workflow=workflow.name,
-            trace_version=2,
+            trace_version=5,
             program_hash=hashlib.sha256(
                 json.dumps(asdict(program), sort_keys=True).encode()
             ).hexdigest(),
             inputs=environment.copy(),
             output_schema=schema_for_record(program, workflow.output_type),
         )
-    ]
-    result: dict[str, Any] = {}
+    )
+    result: Any = {}
     for step in workflow.steps:
+        _control.scope = (*_scope, workflow.name, step.name)
+        _control.consume('steps')
+        expression_events: list[dict[str, Any]] = []
         arguments = {
-            name: _evaluate_expression(expression, environment)
+            name: _evaluate_expression(
+                expression,
+                environment,
+                program,
+                functions,
+                expression_events,
+                # Arguments run before entering the step's function frame.
+                depth=-1,
+            )
             for name, expression in step.call.arguments
         }
         scope = (*_scope, workflow.name, step.name)
         action = None
         if isinstance(step.call, WorkflowCall):
             step_output = workflows[step.call.workflow_name].output_type
+        elif isinstance(step.call, FunctionCall):
+            function, captures = _resolve_function(step.call.function_name, environment, functions)
+            if set(arguments) & set(captures):
+                raise RuntimeError("Cannot override lexical captures")
+            arguments = {**arguments, **captures}
+            step_output = function.output_type
         elif isinstance(step.call, ModelCall):
             step_output = models[step.call.model_name].output
         elif isinstance(step.call, AgentCall):
@@ -289,13 +776,17 @@ def run(
             step_output = tools[step.call.tool_name].output
         if session is not None and not isinstance(step.call, WorkflowCall):
             cached = session.cached(
-                scope, arguments, events[0], schema_for_record(program, step_output)
+                scope, arguments, events[0], schema_for_type(program, step_output)
             )
             if cached is not None:
                 result = cached[-1]["result"]
                 environment[step.binding_name] = result
                 events.extend(cached)
                 continue
+        if isinstance(step.call, ToolCall):
+            _control.consume('tool_calls')
+        _control.checkpoint()
+        if session is not None and not isinstance(step.call, WorkflowCall):
             mutation = (
                 tools[step.call.tool_name].name
                 if isinstance(step.call, ToolCall)
@@ -311,25 +802,51 @@ def run(
             action = session.start(scope, mutation, arguments)
         step_offset = len(events)
         events.append(_event("step_start", step=step.name))
-        if isinstance(step.call, WorkflowCall):
+        if isinstance(step.call, FunctionCall):
+            result, function_trace = _execute_function(
+                program,
+                function,
+                arguments,
+                functions,
+                argument_events=expression_events,
+                depth=0,
+            )
+            events.extend(function_trace)
+        elif isinstance(step.call, WorkflowCall):
             child = workflows[step.call.workflow_name]
             events.append(
-                _event("workflow_call", workflow=child.name, arguments=arguments)
+                _event(
+                    "workflow_call",
+                    workflow=child.name,
+                    arguments=arguments,
+                    expression_events=expression_events,
+                )
             )
             child_events: list[dict[str, Any]] = []
-            result = run(
-                program,
-                child.name,
-                None,
-                inputs=arguments,
-                model_bindings=providers,
-                tool_bindings=host_tools,
-                mcp_commands=mcp_commands,
-                manifest=manifest,
-                _events_out=child_events,
-                session=session,
-                _scope=scope,
-            )
+            try:
+                result = run(
+                    program,
+                    child.name,
+                    None,
+                    inputs=arguments,
+                    model_bindings=providers,
+                    tool_bindings=host_tools,
+                    mcp_commands=mcp_commands,
+                    manifest=manifest,
+                    _events_out=child_events,
+                    session=session,
+                    _scope=scope,
+                    _control=_control,
+                    intelligence=intelligence,
+                    function_cache=function_cache,
+                )
+            except (Exception, KeyboardInterrupt):
+                if intelligence is not None:
+                    intelligence.record_events(child_events)
+                events.append(_event('workflow_failed', workflow=child.name, events=child_events))
+                raise
+            if intelligence is not None:
+                intelligence.record_events(child_events)
             events.append(
                 _event(
                     "workflow_return",
@@ -350,6 +867,7 @@ def run(
                 agent=asked_agent.name,
                 model=model.name,
                 arguments=arguments,
+                expression_events=expression_events,
                 input_schema=input_schema,
                 output_schema=output_schema,
                 max_steps=asked_agent.max_steps,
@@ -368,6 +886,7 @@ def run(
             def execute_agent_tool(
                 declaration: ToolDecl, values: dict[str, Any]
             ) -> Any:
+                _control.consume('tool_calls')
                 if declaration.access != "observe":
                     raise PermissionError(
                         "Workflow ask currently permits observe tools only"
@@ -407,6 +926,7 @@ def run(
                     "model_call",
                     model=model.name,
                     arguments=arguments,
+                    expression_events=expression_events,
                     input_schema=input_schema,
                     output_schema=output_schema,
                 )
@@ -432,6 +952,9 @@ def run(
                     operation=tool.operation,
                     access=tool.access,
                     arguments=arguments,
+                    expression_events=expression_events,
+                    input_schema=input_schema,
+                    output_schema=output_schema,
                 )
             )
             if tool.name in host_tools:
@@ -447,6 +970,7 @@ def run(
                     "tool_return", tool=tool.name, transport=transport, result=result
                 )
             )
+        _control.scope = (*_scope, workflow.name, step.name)
         environment[step.binding_name] = result
         events.append(
             _event(
@@ -458,12 +982,16 @@ def run(
         )
         if session is not None and not isinstance(step.call, WorkflowCall):
             session.complete(scope, events[step_offset:], action)
+        _control.checkpoint()
+    _control.checkpoint()
+    validate(result, schema_for_record(program, workflow.output_type))
     events.append(_event("run_complete", workflow=workflow.name, result=result))
 
-    if _events_out is not None:
-        _events_out.extend(events)
+    if intelligence is not None:
+        intelligence.record_events(events)
+
     if trace_path is None:
-        return result
+        return cast(dict[str, Any], result)
     path = Path(trace_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -471,7 +999,7 @@ def run(
         + "\n",
         encoding="utf-8",
     )
-    return result
+    return cast(dict[str, Any], result)
 
 
 def replay(trace_path: str | Path) -> dict:

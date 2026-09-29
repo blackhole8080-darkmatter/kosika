@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from .agent import ToolExecutor
-from .ast import AgentCall, ModelCall, Program, ToolCall, WorkflowCall
+from .ast import AgentCall, FunctionCall, ModelCall, Program, ToolCall, WorkflowCall
 from .checker import check
 from .model import ModelProvider
 from .runtime import run
@@ -131,6 +131,8 @@ async def run_dag(
                 required_tools: tuple[str, ...] = ()
                 if isinstance(call, WorkflowCall):
                     pending.append(call.workflow_name)
+                elif isinstance(call, FunctionCall):
+                    continue
                 elif isinstance(call, ModelCall):
                     if call.model_name not in granted_models:
                         raise PermissionError("DAG node lacks a model binding")

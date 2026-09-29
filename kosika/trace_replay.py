@@ -23,6 +23,41 @@ def replay_trace(trace_path: str | Path) -> dict[str, Any]:
     return replay_events(events)
 
 
+def _validate_function_events(
+    events: list[Any], *, version: int, depth: int
+) -> None:
+    if events and depth >= 32:
+        raise ValueError("Nested function replay exceeds depth limit")
+    if len(events) % 2 or any(not isinstance(event, dict) for event in events):
+        raise ValueError("Function expression trace is incomplete")
+    for offset in range(0, len(events), 2):
+        call, returned = events[offset : offset + 2]
+        if (
+            call.get("event") != "function_call"
+            or returned.get("event") != "function_return"
+            or not isinstance(call.get("function"), str)
+            or call.get("function") != returned.get("function")
+            or not isinstance(call.get("arguments"), dict)
+            or not isinstance(call.get("input_schema"), dict)
+            or not isinstance(call.get("output_schema"), dict)
+        ):
+            raise ValueError("Function expression trace is mismatched")
+        result = returned.get("result")
+        validate(call["arguments"], call["input_schema"])
+        validate(result, call["output_schema"])
+        if version >= 5:
+            argument_events = call.get("expression_events")
+            body_events = returned.get("events")
+            if not isinstance(argument_events, list) or not isinstance(
+                body_events, list
+            ):
+                raise ValueError("Function trace requires nested event lists")
+            _validate_function_events(
+                argument_events, version=version, depth=depth
+            )
+            _validate_function_events(body_events, version=version, depth=depth + 1)
+
+
 def replay_events(events: list[Any], *, depth: int = 0) -> dict[str, Any]:
     if depth > 32:
         raise ValueError("Nested replay exceeds workflow depth limit")
@@ -36,7 +71,7 @@ def replay_events(events: list[Any], *, depth: int = 0) -> dict[str, Any]:
     ) != finish.get("workflow"):
         raise ValueError("Trace workflow mismatch")
     version = start.get("trace_version", 1)
-    if type(version) is not int or version not in {1, 2}:
+    if type(version) is not int or version not in {1, 2, 3, 4, 5}:
         raise ValueError("Unsupported trace version")
     middle = events[1:-1]
     if len(middle) % 4:
@@ -52,10 +87,18 @@ def replay_events(events: list[Any], *, depth: int = 0) -> dict[str, Any]:
             "model_call": "model",
             "agent_call": "agent",
             "workflow_call": "workflow",
+            "function_call": "function",
         }.get(kind, "tool")
         if (
             step.get("event") != "step_start"
-            or kind not in {"model_call", "tool_call", "agent_call", "workflow_call"}
+            or kind
+            not in {
+                "model_call",
+                "tool_call",
+                "agent_call",
+                "workflow_call",
+                "function_call",
+            }
             or returned.get("event") != f"{key}_return"
             or completed.get("event") != "step_complete"
             or step.get("step") != completed.get("step")
@@ -68,10 +111,17 @@ def replay_events(events: list[Any], *, depth: int = 0) -> dict[str, Any]:
             raise ValueError("Trace contains mismatched or reordered step events")
         seen.add(step["step"])
         result = returned.get("result")
-        if not isinstance(result, dict) or not _same_json(
+        if (key != "function" and not isinstance(result, dict)) or not _same_json(
             result, completed.get("result")
         ):
             raise ValueError("Trace step outcome mismatch")
+        if version >= 5:
+            expression_events = call.get("expression_events")
+            if not isinstance(expression_events, list):
+                raise ValueError("Trace call requires function expression events")
+            _validate_function_events(
+                expression_events, version=version, depth=0
+            )
         if key == "workflow":
             nested = returned.get("events")
             if not isinstance(nested, list):
@@ -101,9 +151,30 @@ def replay_events(events: list[Any], *, depth: int = 0) -> dict[str, Any]:
                 raise ValueError("Model response and recorded outcome differ")
             if key == "agent":
                 validate_agent_transcript(call, returned)
+        if key == "tool" and version >= 3:
+            if not isinstance(call.get("input_schema"), dict) or not isinstance(
+                call.get("output_schema"), dict
+            ):
+                raise ValueError("Tool trace requires input and output schemas")
+            validate(call["arguments"], call["input_schema"])
+            validate(result, call["output_schema"])
+        if key == "function":
+            if version < 4:
+                raise ValueError("Function traces require trace version 4")
+            if not isinstance(call.get("input_schema"), dict) or not isinstance(
+                call.get("output_schema"), dict
+            ):
+                raise ValueError("Function trace requires input and output schemas")
+            validate(call["arguments"], call["input_schema"])
+            validate(result, call["output_schema"])
+            if version >= 5:
+                body_events = returned.get("events")
+                if not isinstance(body_events, list):
+                    raise ValueError("Function trace requires body events")
+                _validate_function_events(body_events, version=version, depth=1)
     if not _same_json(result, finish.get("result")):
         raise ValueError("Trace final outcome mismatch")
-    if start.get("trace_version") == 2:
+    if version >= 2:
         if not isinstance(start.get("output_schema"), dict):
             raise ValueError("Trace requires its workflow output schema")
         validate(result, start["output_schema"])

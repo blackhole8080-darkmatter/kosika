@@ -5,6 +5,7 @@ from math import isfinite
 from typing import Any
 
 from .ast import Program
+from .function_types import signature
 
 
 class SchemaValidationError(ValueError):
@@ -135,6 +136,17 @@ def schema_for_tool_input(program: Program, input_record: str | None) -> dict[st
 def _schema_for_type(
     program: Program, type_name: str, stack: tuple[str, ...]
 ) -> dict[str, Any]:
+    if signature(type_name):
+        return {
+            'type': 'object',
+            'properties': {
+                '$function': {'type': 'string'},
+                '$type': {'const': type_name},
+                '$captures': {'type': 'object'},
+            },
+            'required': ['$function', '$type', '$captures'],
+            'additionalProperties': False,
+        }
     primitive_types = {
         "Text": "string",
         "Number": "number",
@@ -172,3 +184,8 @@ def schema_for_record(program: Program, record_name: str) -> dict[str, Any]:
     if record_name not in {record.name for record in program.records}:
         raise ValueError(f"Unknown record {record_name!r}")
     return _schema_for_type(program, record_name, ())
+
+
+def schema_for_type(program: Program, type_name: str) -> dict[str, Any]:
+    """Return the bounded JSON schema for any checked Kosika value type."""
+    return _schema_for_type(program, type_name, ())
