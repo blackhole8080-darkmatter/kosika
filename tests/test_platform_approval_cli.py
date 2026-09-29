@@ -96,4 +96,38 @@ class ApprovalCliTests(unittest.TestCase):
             metrics = json.loads(telemetry.read_text())["m"]
             self.assertEqual(len(metrics), 2)
             self.assertEqual(metrics[-1]["error"], "provider")
-            self.assertFalse((root / "run.jsonl").exists())
+            trace = [json.loads(line) for line in (root / "run.jsonl").read_text().splitlines()]
+            self.assertEqual(trace[-1]["event"], "run_failed")
+            self.assertNotIn("run_complete", [event["event"] for event in trace])
+
+    def test_telemetry_write_failure_returns_error(self):
+        source = """record R { text: Text }
+        model m { input: R output: R }
+        workflow main(q: R) -> R {
+          step answer { let result: R = use_model m(text: q.text) return result }
+        }"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "main.syn").write_text(source)
+            (root / "input.json").write_text('{"q":{"text":"hello"}}')
+            (root / "responses.json").write_text('{"m":[{"text":"done"}]}')
+            trace = root / "run.jsonl"
+            telemetry = root / "missing" / "telemetry.json"
+            args = [
+                "kosika",
+                "run",
+                str(root / "main.syn"),
+                "--input",
+                str(root / "input.json"),
+                "--model-fixture",
+                str(root / "responses.json"),
+                "--trace",
+                str(trace),
+                "--telemetry",
+                str(telemetry),
+            ]
+            error = io.StringIO()
+            with patch("sys.argv", args), contextlib.redirect_stderr(error):
+                self.assertEqual(cli.main(), 2)
+            self.assertIn("Telemetry write failed", error.getvalue())
+            self.assertTrue(trace.exists())

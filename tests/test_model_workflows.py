@@ -6,11 +6,13 @@ import json
 import sys
 import tempfile
 import unittest
+import urllib.error
 from pathlib import Path
 from unittest.mock import patch
 
 from kosika import cli
 from kosika.checker import CheckError, check
+from kosika.controls import ControlledProvider, ExecutionError, ModelLimits
 from kosika.model import (
     ModelProviderError,
     ModelResponse,
@@ -94,7 +96,9 @@ class ModelWorkflowTests(unittest.TestCase):
                 model_bindings={"other": provider},
             )
         self.assertEqual(provider.requests, [])
-        self.assertFalse(self.trace.exists())
+        self.assertEqual(json.loads(self.trace.read_text().splitlines()[-1])["event"], "run_failed")
+        with self.assertRaises(ValueError):
+            replay(self.trace)
 
     def test_model_output_fails_closed(self) -> None:
         contents = [
@@ -131,7 +135,9 @@ class ModelWorkflowTests(unittest.TestCase):
                     inputs=INPUTS,
                     model_bindings={"writer": ScriptedModelProvider([response])},
                 )
-        self.assertFalse(self.trace.exists())
+        self.assertEqual(json.loads(self.trace.read_text().splitlines()[-1])["event"], "run_failed")
+        with self.assertRaises(ValueError):
+            replay(self.trace)
 
     def test_model_declarations_and_argument_types_are_checked(self) -> None:
         invalid = [
@@ -239,6 +245,29 @@ class ModelWorkflowTests(unittest.TestCase):
         )
         self.assertEqual(captured[0]["model"], "local-model")
         self.assertNotIn("tools", captured[0])
+
+    def test_runtime_transport_failure_records_provider_telemetry(self) -> None:
+        def transport(_request, _timeout):
+            raise urllib.error.URLError("offline transport")
+
+        controlled = ControlledProvider(
+            OpenAICompatibleProvider(
+                "http://localhost:11434/v1", "local-model", transport=transport
+            ),
+            ModelLimits(),
+        )
+        with self.assertRaisesRegex(ExecutionError, "request failed"):
+            run(
+                self.program,
+                "answer",
+                self.trace,
+                inputs=INPUTS,
+                model_bindings={"writer": controlled},
+            )
+        self.assertEqual(controlled.telemetry[0]["error"], "provider")
+        self.assertEqual(json.loads(self.trace.read_text().splitlines()[-1])["event"], "run_failed")
+        with self.assertRaises(ValueError):
+            replay(self.trace)
 
     def test_missing_model_binding_blocks_earlier_tool_step(self) -> None:
         tool_source = (ROOT / "examples" / "test_host.syn").read_text(encoding="utf-8")

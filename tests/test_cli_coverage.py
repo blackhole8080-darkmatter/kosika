@@ -28,6 +28,15 @@ class CliCoverageTests(unittest.TestCase):
             result = cli.main()
         return result, output.getvalue()
 
+    def call_cli_error(self, *arguments: str) -> tuple[int, str]:
+        error = io.StringIO()
+        with (
+            patch.object(sys, "argv", ["kosika", *arguments]),
+            contextlib.redirect_stderr(error),
+        ):
+            result = cli.main()
+        return result, error.getvalue()
+
     def test_check_run_and_replay_commands(self) -> None:
         result, output = self.call_cli("check", str(MOCK_SOURCE))
         self.assertEqual(result, 0)
@@ -243,6 +252,72 @@ class CliCoverageTests(unittest.TestCase):
                 event for event in trace_events if event["event"] == "tool_return"
             )
             self.assertEqual(tool_return["transport"], "stdio")
+
+    def test_run_rejects_invalid_inputs_and_approval_configuration(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            invalid_input = root / "invalid-input.json"
+            invalid_input.write_text("[]", encoding="utf-8")
+            result, error = self.call_cli_error(
+                "run", str(MOCK_SOURCE), "--input", str(invalid_input)
+            )
+            self.assertEqual(result, 2)
+            self.assertIn("JSON object", error)
+
+            journal = root / "journal.jsonl"
+            result, error = self.call_cli_error(
+                "run", str(MOCK_SOURCE), "--journal", str(journal)
+            )
+            self.assertEqual(result, 2)
+            self.assertIn("journal with --binding-id", error)
+
+            result, error = self.call_cli_error(
+                "run", str(MOCK_SOURCE), "--binding-id", "worker"
+            )
+            self.assertEqual(result, 2)
+            self.assertIn("journal with --binding-id", error)
+
+            approval = root / "approval.json"
+            approval.write_text(json.dumps({"plan_hash": "only-one"}), encoding="utf-8")
+            result, error = self.call_cli_error(
+                "run",
+                str(MOCK_SOURCE),
+                "--journal",
+                str(journal),
+                "--binding-id",
+                "worker",
+                "--approval-record",
+                str(approval),
+            )
+            self.assertEqual(result, 2)
+            self.assertIn("Approval record needs", error)
+
+    def test_cli_rejects_invalid_model_and_assistant_fixtures(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            model_fixture = root / "model.json"
+            model_fixture.write_text(json.dumps({"writer": []}), encoding="utf-8")
+            result, error = self.call_cli_error(
+                "run",
+                str(MOCK_SOURCE),
+                "--model-fixture",
+                str(model_fixture),
+            )
+            self.assertEqual(result, 2)
+            self.assertIn("requires a nonempty list", error)
+
+            assistant_fixture = root / "assistant.json"
+            assistant_fixture.write_text(json.dumps({"responses": []}), encoding="utf-8")
+            result, error = self.call_cli_error(
+                "assistant",
+                str(MOCK_SOURCE),
+                "--task",
+                "Explain",
+                "--fixture",
+                str(assistant_fixture),
+            )
+            self.assertEqual(result, 2)
+            self.assertIn("Assistant fixture", error)
 
 
 if __name__ == "__main__":

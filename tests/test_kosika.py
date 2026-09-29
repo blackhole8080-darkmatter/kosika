@@ -304,7 +304,9 @@ class KosikaV01Tests(unittest.TestCase):
                 with self.assertRaises(PermissionError):
                     run(program, "main", trace)
                 call_tool.assert_not_called()
-            self.assertFalse(trace.exists())
+            self.assertEqual(json.loads(trace.read_text().splitlines()[-1])["event"], "run_failed")
+            with self.assertRaises(ValueError):
+                replay(trace)
 
     def test_workflow_output_must_match_final_tool(self) -> None:
         source = EXAMPLE.read_text(encoding="utf-8").replace(

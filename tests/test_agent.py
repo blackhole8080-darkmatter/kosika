@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import tempfile
 import unittest
@@ -21,6 +22,7 @@ from kosika.model import (
     ModelProviderError,
     ModelRequest,
     ModelResponse,
+    ModelTool,
     ModelToolCall,
     OpenAICompatibleProvider,
     ScriptedModelProvider,
@@ -361,6 +363,166 @@ class OpenAICompatibleProviderTests(unittest.TestCase):
             provider.complete(
                 ModelRequest(messages=(ChatMessage(role="user", content="Hi"),))
             )
+
+    def test_provider_validates_request_serialization_and_response_shapes(self) -> None:
+        captured: dict[str, Any] = {}
+
+        def transport(request, timeout):
+            captured["payload"] = json.loads(request.data.decode("utf-8"))
+            return b'{"choices":[{"message":{"content":"ok"}}]}'
+
+        provider = OpenAICompatibleProvider(
+            "http://localhost:11434/v1", "default", transport=transport
+        )
+        response = provider.complete(
+            ModelRequest(
+                messages=(
+                    ChatMessage(
+                        role="tool",
+                        content="result",
+                        tool_calls=(ModelToolCall("call", "inspect", {"x": 1}),),
+                        tool_call_id="call",
+                        name="inspect",
+                    ),
+                ),
+                tools=(ModelTool("inspect", "Inspect data", {"type": "object"}),),
+                model="override",
+                temperature=0.2,
+                max_output_tokens=12,
+            )
+        )
+        self.assertEqual(response.content, "ok")
+        self.assertEqual(captured["payload"]["model"], "override")
+        self.assertEqual(captured["payload"]["temperature"], 0.2)
+        self.assertEqual(captured["payload"]["max_tokens"], 12)
+        self.assertEqual(captured["payload"]["messages"][0]["tool_call_id"], "call")
+        self.assertEqual(captured["payload"]["messages"][0]["name"], "inspect")
+        self.assertEqual(captured["payload"]["tools"][0]["function"]["name"], "inspect")
+
+        for invalid in (0, True, -1):
+            with self.subTest(max_output_tokens=invalid), self.assertRaisesRegex(
+                ModelProviderError, "max_output_tokens"
+            ):
+                provider.complete(
+                    ModelRequest(
+                        messages=(), max_output_tokens=invalid  # type: ignore[arg-type]
+                    )
+                )
+
+        with self.assertRaisesRegex(ValueError, "base URL"):
+            OpenAICompatibleProvider("", "model")
+        with self.assertRaisesRegex(ValueError, "Model name"):
+            OpenAICompatibleProvider("http://localhost", "")
+        with self.assertRaisesRegex(ValueError, "timeout"):
+            OpenAICompatibleProvider("http://localhost", "model", timeout=0)
+
+        invalid_payloads = (
+            (None, "JSON object"),
+            ({"choices": []}, "did not contain choices"),
+            ({"choices": [{}]}, "did not contain a message"),
+            ({"choices": [{"message": {"content": 1}}]}, "content must be text"),
+            ({"choices": [{"message": {"tool_calls": {}}}]}, "tool_calls must be a list"),
+            ({"choices": [{"message": {"tool_calls": [1]}}]}, "invalid tool call"),
+            (
+                {"choices": [{"message": {"tool_calls": [{"function": {}}]}}]},
+                "lacked a function name",
+            ),
+            (
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "tool_calls": [
+                                    {
+                                        "function": {
+                                            "name": "inspect",
+                                            "arguments": "not-json",
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "invalid JSON arguments",
+            ),
+            (
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "tool_calls": [
+                                    {
+                                        "function": {
+                                            "name": "inspect",
+                                            "arguments": [],
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "arguments must be an object",
+            ),
+            (
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "tool_calls": [
+                                    {
+                                        "id": 1,
+                                        "function": {"name": "inspect"},
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "id must be text",
+            ),
+            ({"choices": [{"message": {}}], "usage": []}, "usage must be an object"),
+            (
+                {
+                    "choices": [{"message": {}}],
+                    "usage": {"total_tokens": True},
+                },
+                "must be an integer",
+            ),
+        )
+        for payload, message in invalid_payloads:
+            with self.subTest(message=message), self.assertRaisesRegex(
+                ModelProviderError, message
+            ):
+                OpenAICompatibleProvider._parse_response(payload)
+
+        fallback = OpenAICompatibleProvider._parse_response(
+            {"choices": [{"finish_reason": 4, "message": {}}]}
+        )
+        self.assertEqual(fallback.finish_reason, "stop")
+
+    def test_provider_translates_http_and_decode_failures(self) -> None:
+        def http_failure(request, timeout):
+            raise urllib.error.HTTPError(
+                request.full_url,
+                503,
+                "unavailable",
+                {},
+                io.BytesIO(b"service unavailable"),
+            )
+
+        provider = OpenAICompatibleProvider(
+            "http://localhost", "model", transport=http_failure
+        )
+        with self.assertRaisesRegex(ModelProviderError, "HTTP 503"):
+            provider.complete(ModelRequest(messages=()))
+
+        invalid_json = OpenAICompatibleProvider(
+            "http://localhost", "model", transport=lambda request, timeout: b"not-json"
+        )
+        with self.assertRaisesRegex(ModelProviderError, "invalid JSON"):
+            invalid_json.complete(ModelRequest(messages=()))
 
 
 if __name__ == "__main__":

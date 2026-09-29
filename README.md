@@ -13,6 +13,90 @@ and current limitations. These are initial implementations: live inference on th
 installed local model timed out, parallelism is host-defined, and editor support
 does not yet include a language server.
 
+## Pure typed functions
+
+Kosika functions provide deterministic computation without model, tool, network,
+or host authority. The function slice supports top-level declarations with typed
+parameters, immutable typed local bindings, and a final return expression:
+
+```kosika
+fn person_name(person: Person) -> Text {
+  return if person.name == "" {"Anonymous"} else {person.name}
+}
+
+fn make_greeting(person: Person) -> Greeting {
+  return {text: person_name(person: person)}
+}
+```
+
+Workflows invoke them with ordinary function-call syntax. Function arguments and
+results are checked statically, validated at runtime, and recorded in version 5
+traces for offline replay. Pure functions may call other pure functions in return
+expressions and workflow arguments; the checker rejects recursive or over-deep call
+graphs.
+
+Function locals use `let name: Type = expression`. Initializers run in order;
+later locals and the return expression can refer to earlier bindings. Names cannot
+be rebound or shadow parameters. See `examples/local_bindings.syn` for a runnable
+example (`python -m kosika.cli run examples/local_bindings.syn`).
+
+Pure expressions support precedence-aware numeric arithmetic, numeric comparisons,
+strict same-type equality, Boolean `and`/`or`/`not`, unary negation, parentheses,
+and typed `if condition {value} else {value}` expressions. Boolean operators and
+conditionals evaluate only the selected branch.
+
+```text
+python -m kosika.cli check examples/pure_function.syn
+python -m kosika.cli run examples/pure_function.syn --input examples/person.json
+```
+
+### Function values and escaping closures
+
+Functions are first-class values. A function type is written `fn(parameter: Type, ...) -> Output`,
+and a function can return another function, accept one as an argument, or be bound
+to a local with an explicit function type. A nested function that captures an outer
+binding is returned with `ref function_name`; the capture is lexical and immutable.
+
+```kosika
+fn make_adder(base: Number) -> fn(value: Number) -> Number {
+  fn add(value: Number) -> Number { return base + value }
+  return ref add
+}
+
+fn apply(operation: fn(value: Number) -> Number, value: Number) -> Result {
+  return {value: operation(value: value)}
+}
+
+workflow main() -> Result {
+  step create {
+    let add_ten: fn(value: Number) -> Number = make_adder(base: 10)
+    return add_ten
+  }
+  step use {
+    let result = apply(operation: add_ten, value: 5)
+    return result
+  }
+}
+```
+
+Top-level functions can be passed directly with `ref function_name`. Bound function
+values can be invoked directly as expressions or as workflow step calls. The checker
+rejects signature mismatches, records that try to hold function values, and references
+to functions that are not visible at the call site. Runtime invocation checks the
+closure signature and capture set, and replay rejects tampered closure payloads.
+
+Try the complete example offline from this repository:
+
+```text
+python -m kosika.cli check examples/closures.syn
+python -m kosika.cli run examples/closures.syn --workflow main --trace closures.jsonl
+python -m kosika.cli replay closures.jsonl
+python -m kosika.cli mindmap examples/closures.syn --format json
+```
+
+Nested declarations, recursion, mutation, and loops remain separate language-core
+slices.
+
 ## Typed model workflows
 
 `model` declares a typed interface. `use_model` makes one model request and accepts
@@ -312,3 +396,99 @@ inspect(tags: status.tags, metadata: status.metadata)
 The current structured-expression slice supports arrays, nested record literals, field access, and
 integer indexing. It intentionally does not yet include arithmetic, boolean operators, loops, or
 conditional control flow. See `examples/structured_values.syn` for a complete example.
+
+## Code mindmaps and bounded assistant
+
+Kosika can explain a checked program without asking a model to infer its structure. The `mindmap`
+command derives deterministic module, record, field, tool, model, agent, workflow, step, and call-graph
+nodes from the parser/AST. It can emit structured JSON for programs and tooling, Mermaid text for a
+diagram renderer, or a compact terminal summary:
+
+```text
+python -m kosika.cli mindmap examples/composed/main.syn --format json --output code-map.json
+python -m kosika.cli mindmap examples/composed/main.syn --format mermaid --output code-map.mmd
+python -m kosika.cli mindmap examples/composed/main.syn --format text
+```
+
+Imported modules retain their relative paths, content hashes, declarations, and direct import edges.
+The map is read-only and is generated only after static checking succeeds. It is an explanation of
+Kosika's checked structure, not an execution trace or a model-generated claim about intent.
+
+Use `explain` when you want a focused explanation rather than the whole map. Select one or more
+workflows or records, attach diagnostics, and optionally validate a completed JSONL trace offline:
+
+```text
+python -m kosika.cli run examples/composed/main.syn `
+  --input examples/composed/inputs.json `
+  --model-fixture examples/composed/responses.json `
+  --trace composed.jsonl
+python -m kosika.cli explain examples/composed/main.syn `
+  --workflow main `
+  --record Answer `
+  --diagnostic "Review the model boundary" `
+  --trace composed.jsonl `
+  --format text
+python -m kosika.cli explain examples/composed/main.syn --workflow main --format json
+```
+
+Selection follows the deterministic mindmap relationships, so the result includes the selected
+workflow or record plus its connected steps, contracts, calls, permissions, and module boundaries.
+Trace summaries use the existing strict replay validator and never execute the workflow, tool, or model.
+A trace built from a different loaded program is reported through `program_hash_match: false` in JSON
+and as a warning in text output.
+
+The `assistant` command supplies that checked mindmap and optional diagnostics to a bounded assistant.
+Offline use needs no provider and returns a deterministic static summary. Fixture responses are useful
+for repeatable tests and demos:
+
+```text
+["The workflow enters research.syn, calls reader, and returns Answer."]
+python -m kosika.cli assistant examples/composed/main.syn `
+  --task "Explain the code structure" `
+  --fixture assistant-responses.json `
+  --json
+```
+
+For optional local inference, omit `--fixture` and configure `KOSIKA_MODEL` (and optionally
+`KOSIKA_MODEL_URL`); the adapter is OpenAI-compatible and uses `KOSIKA_MODEL_API_KEY` only from the
+environment. The assistant receives no tools, cannot execute workflows or shell commands, and rejects
+tool-call or truncated responses. The checker, schema validation, replay, and approval system remain
+authoritative; assistant text is an explanation, not permission to mutate anything.
+
+## Network and vector design
+
+Kosika also includes a declarative network directory and deterministic vector design layer for agent
+workflows, model boundaries, MCP nodes, devices, memory graphs, and virtual spaces. Network manifests
+are validated before rendering and can be indexed without connecting to external systems:
+
+```text
+python -m kosika.cli network validate network/example-network.json
+python -m kosika.cli network show network/example-network.json --format mermaid
+python -m kosika.cli network index network --recursive --format text
+```
+
+Generate a design manifest from checked Kosika source, then render a modern workflow, network, or code
+mindmap view as SVG, Mermaid, JSON, or terminal text:
+
+```text
+python -m kosika.cli design generate examples/test_host_live.syn `
+  --id test-host.design `
+  --name "Test Host Agent Workflow" `
+  --network network/example-network.json `
+  --output design/test-host.json
+python -m kosika.cli design show design/test-host.json `
+  --format svg --view workflow --output design/test-host.svg
+python -m kosika.cli design show design/test-host.json `
+  --format svg --view network --output design/test-host-network.svg
+python -m kosika.cli design show design/test-host.json `
+  --format svg --view mindmap --output design/test-host-mindmap.svg
+```
+
+The design graph is derived from the checked AST, bounded module graph, and declared network manifest.
+For composed programs it includes module containers, declaration-ownership edges, and direct import edges.
+It uses curved edges, arrowheads, category colors, legends, and bounded deterministic layout; it does
+not ask a model to infer program structure.
+
+## Browser workbench
+
+Use [Kosika Workbench](WORKBENCH.md) to edit, check, run, and replay programs locally with deterministic model fixtures. Start with `python -B -m kosika.workbench --port 8765`, then open http://127.0.0.1:8765.

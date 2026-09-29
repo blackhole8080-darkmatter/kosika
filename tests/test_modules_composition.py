@@ -82,3 +82,39 @@ class ModuleCompositionTests(unittest.TestCase):
                 None,
                 inputs={"question": {"text": "x"}},
             )
+
+    def test_nested_workflow_records_child_events_and_replays(self):
+        source = """record R { text: Text }
+        model m { input: R output: R }
+        workflow child(q: R) -> R {
+          step answer { let result: R = use_model m(text: q.text) return result }
+        }
+        workflow main(q: R) -> R {
+          step nested { let result: R = call child(q: q) return result }
+        }"""
+        provider = ScriptedModelProvider([ModelResponse(content='{"text":"done"}')])
+        with tempfile.TemporaryDirectory() as directory:
+            trace = Path(directory) / "nested.jsonl"
+            result = run(
+                parse(source),
+                "main",
+                trace,
+                inputs={"q": {"text": "hello"}},
+                model_bindings={"m": provider},
+            )
+            self.assertEqual(result, {"text": "done"})
+            events = [json.loads(line) for line in trace.read_text().splitlines()]
+            returned = next(event for event in events if event["event"] == "workflow_return")
+            self.assertEqual(returned["workflow"], "child")
+            self.assertEqual(
+                [event["event"] for event in returned["events"]],
+                [
+                    "run_start",
+                    "step_start",
+                    "model_call",
+                    "model_return",
+                    "step_complete",
+                    "run_complete",
+                ],
+            )
+            self.assertEqual(replay(trace), result)

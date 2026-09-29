@@ -77,7 +77,9 @@ class DocumentAssistantTests(unittest.TestCase):
                     ]
                 ),
             )
-        self.assertFalse(self.trace.exists())
+        self.assertEqual(json.loads(self.trace.read_text().splitlines()[-1])["event"], "run_failed")
+        with self.assertRaises(ValueError):
+            replay(self.trace)
 
     def test_ask_checks_types_models_and_limits(self) -> None:
         for source in (
@@ -152,7 +154,9 @@ class DocumentAssistantTests(unittest.TestCase):
                     ]
                 ),
             )
-        self.assertFalse(self.trace.exists())
+        self.assertEqual(json.loads(self.trace.read_text().splitlines()[-1])["event"], "run_failed")
+        with self.assertRaises(ValueError):
+            replay(self.trace)
 
     def test_transcript_tampering_is_rejected(self) -> None:
         run_assistant("approval", DOCS, self.trace)
