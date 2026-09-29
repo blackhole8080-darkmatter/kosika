@@ -42,7 +42,9 @@ class ExtensionManifestTests(unittest.TestCase):
     def test_rejects_duplicate_contributions_and_self_dependency(self) -> None:
         data = json.loads(EXAMPLE.read_text(encoding="utf-8"))
         data["contributions"].append(copy.deepcopy(data["contributions"][0]))
-        with self.assertRaisesRegex(ExtensionManifestError, "duplicate extension contribution"):
+        with self.assertRaisesRegex(
+            ExtensionManifestError, "duplicate extension contribution"
+        ):
             parse_extension_manifest(data)
 
         data = json.loads(EXAMPLE.read_text(encoding="utf-8"))
@@ -55,7 +57,9 @@ class ExtensionManifestTests(unittest.TestCase):
     def test_rollback_requires_hook_for_state_restoration(self) -> None:
         data = json.loads(EXAMPLE.read_text(encoding="utf-8"))
         data["rollback"] = {"strategy": "restore"}
-        with self.assertRaisesRegex(ExtensionManifestError, "requires rollback.entrypoint"):
+        with self.assertRaisesRegex(
+            ExtensionManifestError, "requires rollback.entrypoint"
+        ):
             parse_extension_manifest(data)
 
     def test_health_check_timeout_is_bounded_positive_integer(self) -> None:

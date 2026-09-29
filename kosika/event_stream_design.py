@@ -79,9 +79,7 @@ def _safe_name(value: Any) -> str | None:
     if not isinstance(value, str):
         return None
     candidate = "".join(
-        character
-        if character.isalnum() or character in "_.:-"
-        else "_"
+        character if character.isalnum() or character in "_.:-" else "_"
         for character in value
     )
     return candidate[:96] or None

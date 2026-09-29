@@ -1,0 +1,6 @@
+{
+  "plan_hash": "f551e22c83d3941346732303f4efaf2beccfb0301f0e093b165d2be7c1568ef5",
+  "action_hash": "7ef126b884c060fb35d2f49b46bfe613dc7b0f47a1c629e2e9d19339e30e59a7",
+  "approved_by": "release-reviewer",
+  "reason": "Reviewed the exact deployment-flag mutation and approved this single action."
+}

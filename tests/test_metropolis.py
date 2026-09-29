@@ -16,6 +16,7 @@ import pytest
 from kosika.city import CityError, build_city
 from kosika.metropolis import (
     DOMAINS,
+    ENVIRONMENT_NAMES,
     ROSTER,
     MetroError,
     _domain_for,
@@ -26,7 +27,8 @@ from kosika.metropolis import (
 )
 
 BUILDING = re.compile(
-    r'<g (data-agent="[^"]*"(?:\s+(?:class|data-[a-z-]+)="[^"]*")*)>(.*?)</g>', re.S)
+    r'<g (data-agent="[^"]*"(?:\s+(?:class|data-[a-z-]+)="[^"]*")*)>(.*?)</g>', re.S
+)
 ATTRIBUTE = re.compile(r'(data-[a-z-]+)="([^"]*)"')
 FACE = re.compile(r'<polygon points="([^"]+)"')
 
@@ -94,7 +96,8 @@ def test_plaques_stay_unique_past_the_roster() -> None:
 
 def test_every_agent_becomes_a_person_with_a_subsector(tmp_path: Path) -> None:
     (tmp_path / "a.kos").write_text(
-        _program("alpha", 2, ["arbitrary_shell"], 3) + _swarm("Team", ["alpha"], "drive"),
+        _program("alpha", 2, ["arbitrary_shell"], 3)
+        + _swarm("Team", ["alpha"], "drive"),
         encoding="utf-8",
     )
     svg = render_city_isometric(build_city(tmp_path))
@@ -113,6 +116,77 @@ def test_every_agent_becomes_a_person_with_a_subsector(tmp_path: Path) -> None:
     assert "data-domain" in resident
 
 
+def test_environment_presets_are_deterministic_and_valid(tmp_path: Path) -> None:
+    (tmp_path / "a.kos").write_text(_program("walker", 1, [], 1), encoding="utf-8")
+    city = build_city(tmp_path)
+    renders = {
+        environment: render_city_isometric(city, environment=environment)
+        for environment in ENVIRONMENT_NAMES
+    }
+    assert set(
+        re.findall(r'data-environment="([^"]+)"', "\n".join(renders.values()))
+    ) == set(ENVIRONMENT_NAMES)
+    for environment, svg in renders.items():
+        assert svg == render_city_isometric(city, environment=environment)
+        ET.fromstring(svg)
+    assert renders["forest"] != renders["water"]
+
+
+def test_isometric_world_has_deterministic_terrain_tiles(tmp_path: Path) -> None:
+    (tmp_path / "a.kos").write_text(_program("walker", 1, [], 1), encoding="utf-8")
+    city = build_city(tmp_path)
+    first = render_city_isometric(city, environment="forest")
+    second = render_city_isometric(city, environment="forest")
+    assert first == second
+    assert 'data-terrain-tiles="1"' in first
+    assert first.count("data-tile=") >= 64
+
+
+def test_voxel_world_has_layered_blocks_paths_water_and_agents(tmp_path: Path) -> None:
+    (tmp_path / "a.kos").write_text(_program("walker", 1, [], 1), encoding="utf-8")
+    svg = render_city_isometric(
+        build_city(tmp_path),
+        environment="forest",
+        world_name="Block World",
+        world_labels={"Civic Operations": "Starter Block"},
+        world_kinds={"Civic Operations": "workshop"},
+        world_buildings={"walker": "starter-block"},
+        render_style="voxel",
+    )
+    assert 'data-render-style="voxel"' in svg
+    assert 'data-building-id="starter-block"' in svg
+    assert 'data-agent="walker"' in svg
+    assert "data-path-tile=" in svg
+    assert "data-water-tile=" in svg
+    assert svg.count('fill="#3E5D82"') >= 1
+    assert 'data-terrain-tiles="1"' in svg
+
+
+def test_lowpoly_world_has_landmarks_and_game_geometry(tmp_path: Path) -> None:
+    (tmp_path / "a.kos").write_text(_program("walker", 1, [], 1), encoding="utf-8")
+    svg = render_city_isometric(
+        build_city(tmp_path),
+        environment="forest",
+        world_name="Forest World",
+        world_labels={"Civic Operations": "Archive Lodge"},
+        world_kinds={"Civic Operations": "lodge"},
+        world_buildings={"walker": "archive-lodge"},
+        render_style="isometric_lowpoly",
+    )
+    assert 'data-render-style="isometric_lowpoly"' in svg
+    assert svg.count('data-lowpoly-prop="fountain"') == 1
+    assert svg.count('data-lowpoly-prop="rock"') == 3
+    assert svg.count('class="block-building"') == 1
+    assert svg.count("#E7C873") >= 1
+    assert 'data-agent="walker"' in svg
+
+
+def test_unknown_environment_fails_closed(tmp_path: Path) -> None:
+    (tmp_path / "a.kos").write_text(_program("walker", 1, [], 1), encoding="utf-8")
+    with pytest.raises(MetroError, match="Unknown environment"):
+        render_city_isometric(build_city(tmp_path), environment="volcano")
+
+
 def test_agents_are_people_not_towers(tmp_path: Path) -> None:
     """A person is drawn as a figure with a head, not an extruded block."""
     (tmp_path / "a.kos").write_text(_program("walker", 1, [], 1), encoding="utf-8")
@@ -122,9 +196,7 @@ def test_agents_are_people_not_towers(tmp_path: Path) -> None:
 
 
 def test_sub_sectors_carry_lit_windows(tmp_path: Path) -> None:
-    (tmp_path / "a.kos").write_text(
-        _program("lit", 3, [], 4), encoding="utf-8"
-    )
+    (tmp_path / "a.kos").write_text(_program("lit", 3, [], 4), encoding="utf-8")
     svg = render_city_isometric(build_city(tmp_path))
     body = _buildings(svg)[0]["body"]
     panes = re.findall(r'<polygon points="[^"]+" fill="#FF[0-9A-F]{4}"', body)
@@ -136,13 +208,13 @@ def test_a_kerb_is_drawn_only_where_there_are_prohibitions(tmp_path: Path) -> No
     (tmp_path / "a.kos").write_text(
         _program("walled", 1, ["arbitrary_shell"], 1), encoding="utf-8"
     )
-    (tmp_path / "b.kos").write_text(
-        _program("open_agent", 1, [], 1), encoding="utf-8"
-    )
+    (tmp_path / "b.kos").write_text(_program("open_agent", 1, [], 1), encoding="utf-8")
     svg = render_city_isometric(build_city(tmp_path))
     for resident in _buildings(svg):
         cannot = resident["data-cannot"].strip()
-        assert ("url(#kerb)" in resident["body"]) == bool(cannot), resident["data-agent"]
+        assert ("url(#kerb)" in resident["body"]) == bool(cannot), resident[
+            "data-agent"
+        ]
 
 
 def test_domain_tools_are_disjoint() -> None:
@@ -161,15 +233,15 @@ def test_a_person_lands_in_the_domain_their_tools_imply() -> None:
     placed = {name: domain for domain, _, people in groups for name in people}
     assert len(placed) == len(city.residents)
     for person in city.residents:
-        department = next(
-            d.name for d in city.districts if person.name in d.members)
+        department = next(d.name for d in city.districts if person.name in d.members)
         assert placed[person.name] == _domain_for(person, department)
 
 
 def test_every_person_is_placed_exactly_once(tmp_path: Path) -> None:
     (tmp_path / "a.kos").write_text(
         _program("alpha", 1, ["arbitrary_shell"], 1)
-        + _swarm("Team", ["alpha"], "drive"), encoding="utf-8"
+        + _swarm("Team", ["alpha"], "drive"),
+        encoding="utf-8",
     )
     city = build_city(tmp_path)
     groups = _group_domains(city)
@@ -203,16 +275,19 @@ def test_grand_sectors_do_not_overlap(tmp_path: Path) -> None:
             if west.name == east.name:
                 continue
             apart_x = max(west.gx, east.gx) - min(
-                west.gx + west.width, east.gx + east.width)
+                west.gx + west.width, east.gx + east.width
+            )
             apart_y = max(west.gy, east.gy) - min(
-                west.gy + west.depth, east.gy + east.depth)
+                west.gy + west.depth, east.gy + east.depth
+            )
             assert apart_x > 0 or apart_y > 0, (west.name, east.name)
 
 
 def test_every_domain_gets_a_landmark(tmp_path: Path) -> None:
     (tmp_path / "a.kos").write_text(
         _program("alpha", 1, ["arbitrary_shell"], 1)
-        + _swarm("Team", ["alpha"], "drive"), encoding="utf-8"
+        + _swarm("Team", ["alpha"], "drive"),
+        encoding="utf-8",
     )
     svg = render_city_isometric(build_city(tmp_path))
     assert 'data-kind="' in svg
@@ -247,7 +322,8 @@ def test_people_stand_inside_their_domain(tmp_path: Path) -> None:
     """A person must belong to the megastructure that houses their field."""
     (tmp_path / "a.kos").write_text(
         _program("alpha", 1, ["arbitrary_shell"], 1)
-        + _swarm("Team", ["alpha"], "drive"), encoding="utf-8"
+        + _swarm("Team", ["alpha"], "drive"),
+        encoding="utf-8",
     )
     resident = _buildings(render_city_isometric(build_city(tmp_path)))[0]
     assert resident["data-domain"], "a person must belong to a knowledge domain"

@@ -1,0 +1,8 @@
+{
+  "reader": [
+    {
+      "text": "Kosika keeps AI workflows auditable through explicit capabilities, bounded execution, and replayable traces.",
+      "sources": ["capabilities.md", "traces.md"]
+    }
+  ]
+}

@@ -155,7 +155,9 @@ class FunctionValueTests(unittest.TestCase):
     def test_expanded_closures_example_runs_and_replays(self) -> None:
         from kosika.modules import load_program
 
-        source_path = Path(__file__).resolve().parent.parent / "examples" / "closures.kos"
+        source_path = (
+            Path(__file__).resolve().parent.parent / "examples" / "closures.kos"
+        )
         program = load_program(source_path)
         with tempfile.TemporaryDirectory() as directory:
             trace = Path(directory) / "closures.jsonl"

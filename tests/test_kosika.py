@@ -304,7 +304,9 @@ class KosikaV01Tests(unittest.TestCase):
                 with self.assertRaises(PermissionError):
                     run(program, "main", trace)
                 call_tool.assert_not_called()
-            self.assertEqual(json.loads(trace.read_text().splitlines()[-1])["event"], "run_failed")
+            self.assertEqual(
+                json.loads(trace.read_text().splitlines()[-1])["event"], "run_failed"
+            )
             with self.assertRaises(ValueError):
                 replay(trace)
 

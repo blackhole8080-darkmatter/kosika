@@ -69,9 +69,7 @@ def reference(value: Any) -> str:
     if isinstance(value, UnaryExpr):
         return f"{value.operator} {reference(value.operand)}"
     if isinstance(value, BinaryExpr):
-        return (
-            f"{reference(value.left)} {value.operator} {reference(value.right)}"
-        )
+        return f"{reference(value.left)} {value.operator} {reference(value.right)}"
     if isinstance(value, ConditionalExpr):
         return f"if {reference(value.condition)} {{...}} else {{...}}"
     return "an expression or literal"
@@ -184,12 +182,15 @@ def build_mindmap(
             "function",
             item.name,
             "Pure computation. "
-            + ", ".join(
-                f"{field.name}: {field.type_name}" for field in item.parameters
-            )
+            + ", ".join(f"{field.name}: {field.type_name}" for field in item.parameters)
             + f" -> {item.output_type}."
             + " Locals: "
-            + (", ".join(f"{binding.name}: {binding.type_name}" for binding in item.bindings) or "none"),
+            + (
+                ", ".join(
+                    f"{binding.name}: {binding.type_name}" for binding in item.bindings
+                )
+                or "none"
+            ),
             key=f"fn:{item.name}",
         )
         for item in program.functions

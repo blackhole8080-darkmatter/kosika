@@ -1,0 +1,23 @@
+record EvaluationInput {
+  quality: Number
+  reliability: Number
+}
+
+record EvaluationResult {
+  score: Number
+  accepted: Bool
+}
+
+fn evaluate(request: EvaluationInput) -> EvaluationResult {
+  let weighted_quality: Number = request.quality * 0.7
+  let weighted_reliability: Number = request.reliability * 0.3
+  let score: Number = weighted_quality + weighted_reliability
+  return {score: score, accepted: score >= 0.8}
+}
+
+workflow main(request: EvaluationInput) -> EvaluationResult {
+  step calculate {
+    let result: EvaluationResult = evaluate(request: request)
+    return result
+  }
+}

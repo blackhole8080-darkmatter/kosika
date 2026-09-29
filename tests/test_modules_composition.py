@@ -104,7 +104,9 @@ class ModuleCompositionTests(unittest.TestCase):
             )
             self.assertEqual(result, {"text": "done"})
             events = [json.loads(line) for line in trace.read_text().splitlines()]
-            returned = next(event for event in events if event["event"] == "workflow_return")
+            returned = next(
+                event for event in events if event["event"] == "workflow_return"
+            )
             self.assertEqual(returned["workflow"], "child")
             self.assertEqual(
                 [event["event"] for event in returned["events"]],

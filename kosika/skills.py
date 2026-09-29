@@ -129,7 +129,9 @@ class SkillCatalog:
     def __init__(self, skills: Iterable[SkillDefinition] = ()) -> None:
         ordered = sorted(skills, key=lambda skill: skill.skill_id)
         if len(ordered) > MAX_SKILLS:
-            raise SkillCatalogError(f"Skill catalog exceeds the {MAX_SKILLS}-skill limit")
+            raise SkillCatalogError(
+                f"Skill catalog exceeds the {MAX_SKILLS}-skill limit"
+            )
         by_id: dict[str, SkillDefinition] = {}
         for skill in ordered:
             if not _valid_skill_id(skill.skill_id):
@@ -155,7 +157,9 @@ class SkillCatalog:
             manifests = sorted(root.rglob(SKILL_MANIFEST))
             root_resolved = root.resolve()
             for manifest in manifests:
-                if any(part.startswith(".") for part in manifest.relative_to(root).parts):
+                if any(
+                    part.startswith(".") for part in manifest.relative_to(root).parts
+                ):
                     continue
                 try:
                     manifest.resolve().relative_to(root_resolved)
@@ -211,7 +215,9 @@ class SkillRouter:
         explicit_ids = tuple(dict.fromkeys(explicit))
         if policy == "disabled":
             if explicit_ids:
-                raise SkillRoutingError("Disabled skill policy cannot use explicit skills")
+                raise SkillRoutingError(
+                    "Disabled skill policy cannot use explicit skills"
+                )
             return SkillSelection(policy=policy)
 
         selected: list[SkillDefinition] = []
@@ -307,8 +313,10 @@ def _tokens(value: str) -> tuple[str, ...]:
 
 
 def _valid_skill_id(value: object) -> bool:
-    return isinstance(value, str) and len(value) <= MAX_SKILL_ID_LENGTH and bool(
-        _ID_RE.fullmatch(value)
+    return (
+        isinstance(value, str)
+        and len(value) <= MAX_SKILL_ID_LENGTH
+        and bool(_ID_RE.fullmatch(value))
     )
 
 
@@ -316,7 +324,9 @@ def _string(data: Mapping[str, object], key: str, *, required: bool = False) -> 
     value = data.get(key)
     if not isinstance(value, str) or not value.strip():
         if required:
-            raise SkillCatalogError(f"Skill manifest field {key!r} must be non-empty text")
+            raise SkillCatalogError(
+                f"Skill manifest field {key!r} must be non-empty text"
+            )
         return ""
     return value.strip()
 
@@ -336,7 +346,9 @@ def _load_manifest(path: Path) -> SkillDefinition:
     except OSError as exc:
         raise SkillCatalogError(f"Cannot read skill manifest {path}: {exc}") from exc
     if len(raw) > MAX_SKILL_BYTES:
-        raise SkillCatalogError(f"Skill manifest exceeds the {MAX_SKILL_BYTES}-byte limit")
+        raise SkillCatalogError(
+            f"Skill manifest exceeds the {MAX_SKILL_BYTES}-byte limit"
+        )
     try:
         data = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -355,13 +367,19 @@ def _load_manifest(path: Path) -> SkillDefinition:
         try:
             candidate.relative_to(path.parent.resolve())
         except ValueError as exc:
-            raise SkillCatalogError("Skill instructions_file must stay inside its skill directory") from exc
+            raise SkillCatalogError(
+                "Skill instructions_file must stay inside its skill directory"
+            ) from exc
         try:
             instructions = candidate.read_text(encoding="utf-8")
         except OSError as exc:
-            raise SkillCatalogError(f"Cannot read skill instructions {candidate}: {exc}") from exc
+            raise SkillCatalogError(
+                f"Cannot read skill instructions {candidate}: {exc}"
+            ) from exc
     if len(instructions.encode("utf-8")) > MAX_SKILL_BYTES:
-        raise SkillCatalogError(f"Skill instructions exceed the {MAX_SKILL_BYTES}-byte limit")
+        raise SkillCatalogError(
+            f"Skill instructions exceed the {MAX_SKILL_BYTES}-byte limit"
+        )
     return SkillDefinition(
         skill_id=skill_id,
         version=_string(data, "version", required=True),

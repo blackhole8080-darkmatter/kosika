@@ -191,7 +191,7 @@ class ExpressionTests(unittest.TestCase):
 
     def test_text_concatenation_rejects_number_left_operand(self) -> None:
         program = parse(
-            'record Out { value: Text }\n'
+            "record Out { value: Text }\n"
             'fn join() -> Out { return {value: 5 + "x"} }\n'
             "workflow main() -> Out {\n"
             "  step go { let o = join() return o }\n"

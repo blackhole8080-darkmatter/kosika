@@ -114,7 +114,10 @@ class FunctionTests(unittest.TestCase):
                 SOURCE.replace("-> Greeting", "-> Person", 1),
                 "unknown record fields",
             ),
-            (SOURCE.replace("person: Person", "person: Missing", 1), "Unknown field type"),
+            (
+                SOURCE.replace("person: Person", "person: Missing", 1),
+                "Unknown field type",
+            ),
             (
                 SOURCE.replace(
                     "make_greeting(person: person)", "missing(person: person)"
@@ -234,7 +237,9 @@ class FunctionTests(unittest.TestCase):
             )
 
             self.assertEqual(result, {"text": "Lin"})
-            self.assertEqual(outer_call["expression_events"][0]["function"], "person_name")
+            self.assertEqual(
+                outer_call["expression_events"][0]["function"], "person_name"
+            )
             self.assertEqual(replay(trace), result)
 
     def test_function_body_cannot_execute_effects(self) -> None:
@@ -337,16 +342,16 @@ class FunctionTests(unittest.TestCase):
             function_nodes = [
                 node for node in mindmap["nodes"] if node["kind"] == "function"
             ]
-            self.assertEqual([node["label"] for node in function_nodes], ["make_greeting"])
+            self.assertEqual(
+                [node["label"] for node in function_nodes], ["make_greeting"]
+            )
             self.assertTrue(
                 any(edge["relation"] == "function_call" for edge in mindmap["edges"])
             )
             design = build_design_from_program(
                 program, design_id="functions", name="Functions"
             )
-            self.assertTrue(
-                any(node["kind"] == "function" for node in design.nodes)
-            )
+            self.assertTrue(any(node["kind"] == "function" for node in design.nodes))
 
             (root / "private.kos").write_text(
                 "export [Person]\n"

@@ -5,14 +5,14 @@ This module provides intelligent agent, tool, and model selection
 for optimizing AI system execution.
 """
 
-import json
 from dataclasses import dataclass, field
-from typing import Any, Optional, Callable
 from enum import Enum
+from typing import Any, Optional
 
 
 class TaskType(Enum):
     """Types of tasks that can be handled."""
+
     DOCUMENT_ANALYSIS = "document_analysis"
     CODE_GENERATION = "code_generation"
     DATA_PROCESSING = "data_processing"
@@ -27,6 +27,7 @@ class TaskType(Enum):
 @dataclass
 class AgentCapability:
     """Represents an agent's capabilities."""
+
     name: str
     task_types: list[TaskType]
     required_tools: list[str]
@@ -41,6 +42,7 @@ class AgentCapability:
 @dataclass
 class ModelCapability:
     """Represents a model's capabilities."""
+
     name: str
     provider: str
     task_types: list[TaskType]
@@ -55,6 +57,7 @@ class ModelCapability:
 @dataclass
 class ToolCapability:
     """Represents a tool's capabilities."""
+
     name: str
     operation: str
     required_inputs: list[str]
@@ -67,6 +70,7 @@ class ToolCapability:
 @dataclass
 class TaskContext:
     """Context for a task to be executed."""
+
     task_description: str
     task_type: TaskType
     input_size: int
@@ -80,6 +84,7 @@ class TaskContext:
 @dataclass
 class SelectionResult:
     """Result of agent/model/tool selection."""
+
     selected_agent: str
     selected_model: str
     selected_tools: list[str]
@@ -106,14 +111,20 @@ class MetaAgent:
         self.available_models["gpt-4"] = ModelCapability(
             name="gpt-4",
             provider="openai",
-            task_types=[TaskType.TEXT_GENERATION, TaskType.QUESTION_ANSWERING,
-                       TaskType.REASONING, TaskType.CODE_GENERATION, TaskType.DOCUMENT_ANALYSIS, TaskType.WEB_SCRAPING],
+            task_types=[
+                TaskType.TEXT_GENERATION,
+                TaskType.QUESTION_ANSWERING,
+                TaskType.REASONING,
+                TaskType.CODE_GENERATION,
+                TaskType.DOCUMENT_ANALYSIS,
+                TaskType.WEB_SCRAPING,
+            ],
             cost_per_1k_tokens=0.03,
             max_tokens=8192,
             avg_latency=2.0,
             quality_score=0.95,
             supports_vision=False,
-            supports_function_calling=True
+            supports_function_calling=True,
         )
 
         self.available_models["gpt-3.5-turbo"] = ModelCapability(
@@ -125,20 +136,25 @@ class MetaAgent:
             avg_latency=0.5,
             quality_score=0.85,
             supports_vision=False,
-            supports_function_calling=True
+            supports_function_calling=True,
         )
 
         self.available_models["claude-3-opus"] = ModelCapability(
             name="claude-3-opus",
             provider="anthropic",
-            task_types=[TaskType.TEXT_GENERATION, TaskType.QUESTION_ANSWERING,
-                       TaskType.REASONING, TaskType.CODE_GENERATION, TaskType.DOCUMENT_ANALYSIS],
+            task_types=[
+                TaskType.TEXT_GENERATION,
+                TaskType.QUESTION_ANSWERING,
+                TaskType.REASONING,
+                TaskType.CODE_GENERATION,
+                TaskType.DOCUMENT_ANALYSIS,
+            ],
             cost_per_1k_tokens=0.015,
             max_tokens=200000,
             avg_latency=3.0,
             quality_score=0.92,
             supports_vision=True,
-            supports_function_calling=True
+            supports_function_calling=True,
         )
 
         # Default tools
@@ -149,7 +165,7 @@ class MetaAgent:
             output_types=["search_results"],
             cost_per_call=0.001,
             avg_latency=1.0,
-            reliability=0.95
+            reliability=0.95,
         )
 
         self.available_tools["file-reader"] = ToolCapability(
@@ -159,7 +175,7 @@ class MetaAgent:
             output_types=["file_content"],
             cost_per_call=0.0,
             avg_latency=0.1,
-            reliability=0.99
+            reliability=0.99,
         )
 
         # Default agents
@@ -172,7 +188,7 @@ class MetaAgent:
             avg_latency=5.0,
             quality_score=0.90,
             max_input_size=10000000,  # 10MB
-            reliability=0.95
+            reliability=0.95,
         )
 
         self.available_agents["code-assistant"] = AgentCapability(
@@ -184,19 +200,23 @@ class MetaAgent:
             avg_latency=8.0,
             quality_score=0.88,
             max_input_size=50000,
-            reliability=0.92
+            reliability=0.92,
         )
 
         self.available_agents["general-assistant"] = AgentCapability(
             name="general-assistant",
-            task_types=[TaskType.TEXT_GENERATION, TaskType.QUESTION_ANSWERING, TaskType.REASONING],
+            task_types=[
+                TaskType.TEXT_GENERATION,
+                TaskType.QUESTION_ANSWERING,
+                TaskType.REASONING,
+            ],
             required_tools=[],
             preferred_models=["gpt-3.5-turbo", "gpt-4"],
             cost_per_execution=0.01,
             avg_latency=2.0,
             quality_score=0.85,
             max_input_size=10000,
-            reliability=0.90
+            reliability=0.90,
         )
 
     def register_agent(self, agent: AgentCapability):
@@ -215,15 +235,21 @@ class MetaAgent:
         """Analyze a task description to determine its type."""
         task_lower = task_description.lower()
 
-        if any(keyword in task_lower for keyword in ["document", "pdf", "analyze text"]):
+        if any(
+            keyword in task_lower for keyword in ["document", "pdf", "analyze text"]
+        ):
             return TaskType.DOCUMENT_ANALYSIS
-        elif any(keyword in task_lower for keyword in ["code", "programming", "function"]):
+        elif any(
+            keyword in task_lower for keyword in ["code", "programming", "function"]
+        ):
             return TaskType.CODE_GENERATION
         elif any(keyword in task_lower for keyword in ["web", "scrape", "crawl"]):
             return TaskType.WEB_SCRAPING
         elif any(keyword in task_lower for keyword in ["image", "picture", "visual"]):
             return TaskType.IMAGE_ANALYSIS
-        elif any(keyword in task_lower for keyword in ["question", "answer", "explain"]):
+        elif any(
+            keyword in task_lower for keyword in ["question", "answer", "explain"]
+        ):
             return TaskType.QUESTION_ANSWERING
         elif any(keyword in task_lower for keyword in ["write", "generate", "create"]):
             return TaskType.TEXT_GENERATION
@@ -300,7 +326,9 @@ class MetaAgent:
         scored_candidates.sort(key=lambda x: x[0], reverse=True)
         return scored_candidates[0][1].name
 
-    def select_tools(self, context: TaskContext, required_tools: list[str]) -> list[str]:
+    def select_tools(
+        self, context: TaskContext, required_tools: list[str]
+    ) -> list[str]:
         """Select required tools for the task."""
         available_tools = []
 
@@ -310,7 +338,9 @@ class MetaAgent:
 
         return available_tools
 
-    def estimate_execution(self, agent: str, model: str, tools: list[str], context: TaskContext) -> tuple[float, float]:
+    def estimate_execution(
+        self, agent: str, model: str, tools: list[str], context: TaskContext
+    ) -> tuple[float, float]:
         """Estimate cost and latency for execution."""
         agent_cap = self.available_agents.get(agent)
         model_cap = self.available_models.get(model)
@@ -339,7 +369,9 @@ class MetaAgent:
 
         return cost, latency
 
-    def select(self, task_description: str, context: Optional[TaskContext] = None) -> SelectionResult:
+    def select(
+        self, task_description: str, context: Optional[TaskContext] = None
+    ) -> SelectionResult:
         """Main selection method for agent, model, and tools."""
         # Analyze task
         task_type = self.analyze_task(task_description)
@@ -354,7 +386,7 @@ class MetaAgent:
                 quality_requirement="medium",
                 privacy_level="public",
                 budget_limit=None,
-                user_preferences={}
+                user_preferences={},
             )
         else:
             context.task_type = task_type
@@ -389,14 +421,16 @@ class MetaAgent:
                 cost_alt, latency_alt = self.estimate_execution(
                     agent_name, model_alt, selected_tools, context
                 )
-                alternatives.append({
-                    "agent": agent_name,
-                    "model": model_alt,
-                    "tools": selected_tools,
-                    "estimated_cost": cost_alt,
-                    "estimated_latency": latency_alt,
-                    "trade_offs": f"Alternative with different cost/latency profile"
-                })
+                alternatives.append(
+                    {
+                        "agent": agent_name,
+                        "model": model_alt,
+                        "tools": selected_tools,
+                        "estimated_cost": cost_alt,
+                        "estimated_latency": latency_alt,
+                        "trade_offs": "Alternative with different cost/latency profile",
+                    }
+                )
             except ValueError:
                 continue
 
@@ -407,13 +441,15 @@ class MetaAgent:
             "tools": selected_tools,
             "task_type": task_type.value,
             "privacy_level": context.privacy_level,
-            "timeout": estimated_latency * 2  # Safety margin
+            "timeout": estimated_latency * 2,  # Safety margin
         }
 
         # Generate reasoning
         reasoning = f"Selected {selected_agent} agent with {selected_model} model based on task type '{task_type.value}'. "
         reasoning += f"Quality requirement: {context.quality_requirement}, urgency: {context.urgency}. "
-        reasoning += f"Estimated cost: ${estimated_cost:.4f}, latency: {estimated_latency:.1f}s"
+        reasoning += (
+            f"Estimated cost: ${estimated_cost:.4f}, latency: {estimated_latency:.1f}s"
+        )
 
         # Calculate confidence score
         confidence_score = min(0.95, agent_cap.quality_score * agent_cap.reliability)
@@ -427,12 +463,14 @@ class MetaAgent:
             estimated_latency=estimated_latency,
             confidence_score=confidence_score,
             alternatives=alternatives,
-            reasoning=reasoning
+            reasoning=reasoning,
         )
 
 
 # Convenience function
-def select_optimal_configuration(task_description: str, **context_kwargs) -> SelectionResult:
+def select_optimal_configuration(
+    task_description: str, **context_kwargs
+) -> SelectionResult:
     """Convenience function for selecting optimal configuration."""
     meta_agent = MetaAgent()
 
@@ -444,7 +482,7 @@ def select_optimal_configuration(task_description: str, **context_kwargs) -> Sel
         quality_requirement=context_kwargs.get("quality_requirement", "medium"),
         privacy_level=context_kwargs.get("privacy_level", "public"),
         budget_limit=context_kwargs.get("budget_limit"),
-        user_preferences=context_kwargs.get("user_preferences", {})
+        user_preferences=context_kwargs.get("user_preferences", {}),
     )
 
     return meta_agent.select(task_description, context)

@@ -98,6 +98,13 @@ def _owner_map(program: Program, modules: tuple[str, ...]) -> dict[str, str]:
     return owners
 
 
+def _digest(value: Any) -> str:
+    """Deterministic digest for mindmap structure (nodes + edges)."""
+    return hashlib.sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
 def _base_type(type_name: str) -> str:
     return type_name[:-2] if type_name.endswith("[]") else type_name
 
@@ -186,7 +193,9 @@ def build_mindmap(
             record.name,
             record.name,
             module_for(record.name),
-            fields=[{"name": field.name, "type": field.type_name} for field in record.fields],
+            fields=[
+                {"name": field.name, "type": field.type_name} for field in record.fields
+            ],
         )
         connect(
             _node_id("module", module_for(record.name)),
@@ -206,7 +215,9 @@ def build_mindmap(
             connect(record_id, field_id, "has_field", field.type_name)
             base_type = _base_type(field.type_name)
             if base_type in record_names:
-                connect(field_id, _node_id("record", base_type), "field_type", "typed as")
+                connect(
+                    field_id, _node_id("record", base_type), "field_type", "typed as"
+                )
 
     for tool in sorted(program.tools, key=lambda item: item.name):
         tool_id = add_node(
@@ -309,7 +320,9 @@ def build_mindmap(
             "declares",
         )
         for agent_name in swarm.agents:
-            connect(swarm_id, _node_id("agent", agent_name), "coordinates", "works with")
+            connect(
+                swarm_id, _node_id("agent", agent_name), "coordinates", "works with"
+            )
         connect(swarm_id, _node_id("workflow", swarm.workflow), "runs", "runs together")
 
     for function in sorted(program.functions, key=lambda item: item.name):
@@ -321,7 +334,10 @@ def build_mindmap(
             output=function.output_type,
             pure=True,
             recursion_limit=function.recursion_limit,
-            bindings=[{"name": item.name, "type": item.type_name} for item in function.bindings],
+            bindings=[
+                {"name": item.name, "type": item.type_name}
+                for item in function.bindings
+            ],
             parameters=[
                 {"name": field.name, "type": field.type_name}
                 for field in function.parameters
@@ -413,7 +429,9 @@ def build_mindmap(
                 target = _node_id("workflow", call.workflow_name)
                 connect(step_id, target, "workflow_call", "calls")
             elif isinstance(call, FunctionCall):
-                target = binding_steps.get(call.function_name, _node_id("function", call.function_name))
+                target = binding_steps.get(
+                    call.function_name, _node_id("function", call.function_name)
+                )
                 connect(step_id, target, "function_call", "computes")
             else:
                 raise MindmapError("Unsupported workflow call in mindmap")
@@ -583,6 +601,7 @@ def build_mindmap(
             "swarm_count": len(program.swarms),
             "extension_count": len(extensions),
         },
+        "digest": _digest(ordered_nodes + ordered_edges),
         "notice": (
             "Derived from the checked Kosika AST and imported module graph. "
             "This is a static explanation, not an execution trace or a model guess."
@@ -616,13 +635,12 @@ def to_mermaid(mindmap: dict[str, Any]) -> str:
         lines.append(f'    {_mermaid_id(node["id"])}["{_mermaid_text(title)}"]')
     for edge in edges:
         if not isinstance(edge, dict) or not all(
-            isinstance(edge.get(key), str)
-            for key in ("source", "target", "label")
+            isinstance(edge.get(key), str) for key in ("source", "target", "label")
         ):
             raise MindmapError("Mindmap contains an invalid edge")
         lines.append(
-            f'    {_mermaid_id(edge["source"])} -->|{_mermaid_text(edge["label"])}| '
-            f'{_mermaid_id(edge["target"])}'
+            f"    {_mermaid_id(edge['source'])} -->|{_mermaid_text(edge['label'])}| "
+            f"{_mermaid_id(edge['target'])}"
         )
     return "\n".join(lines) + "\n"
 
@@ -672,7 +690,9 @@ def to_text(mindmap: dict[str, Any]) -> str:
                     )
         permissions = extension.get("permissions", [])
         if isinstance(permissions, list):
-            lines.append(f"  permissions: {', '.join(str(item) for item in permissions) or 'none'}")
+            lines.append(
+                f"  permissions: {', '.join(str(item) for item in permissions) or 'none'}"
+            )
         dependencies = extension.get("dependencies", [])
         if isinstance(dependencies, list):
             for dependency in dependencies:

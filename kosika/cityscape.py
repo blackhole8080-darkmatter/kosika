@@ -24,18 +24,78 @@ CITYSCAPE_SCHEMA = "kosika.agent-cityscape/v1"
 # Deterministic human-name roster. Names are assigned by stable digest of
 # the agent name, so "researcher" is the same person in every render.
 _FIRST_NAMES = (
-    "Aria", "Bo", "Cleo", "Dara", "Eli", "Faye", "Gus", "Hana",
-    "Ivo", "Juno", "Kai", "Lena", "Milo", "Nia", "Otto", "Pia",
-    "Quinn", "Rhea", "Silas", "Tess", "Uma", "Vik", "Wren", "Xio",
-    "Yara", "Zed", "Ada", "Basil", "Cora", "Dev", "Esme", "Finn",
-    "Gaia", "Hugo", "Iris", "Jade", "Kira", "Lyle", "Maya", "Noor",
+    "Aria",
+    "Bo",
+    "Cleo",
+    "Dara",
+    "Eli",
+    "Faye",
+    "Gus",
+    "Hana",
+    "Ivo",
+    "Juno",
+    "Kai",
+    "Lena",
+    "Milo",
+    "Nia",
+    "Otto",
+    "Pia",
+    "Quinn",
+    "Rhea",
+    "Silas",
+    "Tess",
+    "Uma",
+    "Vik",
+    "Wren",
+    "Xio",
+    "Yara",
+    "Zed",
+    "Ada",
+    "Basil",
+    "Cora",
+    "Dev",
+    "Esme",
+    "Finn",
+    "Gaia",
+    "Hugo",
+    "Iris",
+    "Jade",
+    "Kira",
+    "Lyle",
+    "Maya",
+    "Noor",
 )
 _LAST_NAMES = (
-    "Alvarez", "Bishop", "Chen", "Duarte", "Eriksen", "Fontaine",
-    "Gallo", "Hassan", "Ibarra", "Jensen", "Kowalski", "Lindqvist",
-    "Moreau", "Nakamura", "Okafor", "Petrov", "Quintero", "Rossi",
-    "Silva", "Tanaka", "Ustinov", "Vance", "Whitfield", "Xu",
-    "Yousafzai", "Zamora", "Ashford", "Brennan", "Castellan", "Dvorak",
+    "Alvarez",
+    "Bishop",
+    "Chen",
+    "Duarte",
+    "Eriksen",
+    "Fontaine",
+    "Gallo",
+    "Hassan",
+    "Ibarra",
+    "Jensen",
+    "Kowalski",
+    "Lindqvist",
+    "Moreau",
+    "Nakamura",
+    "Okafor",
+    "Petrov",
+    "Quintero",
+    "Rossi",
+    "Silva",
+    "Tanaka",
+    "Ustinov",
+    "Vance",
+    "Whitfield",
+    "Xu",
+    "Yousafzai",
+    "Zamora",
+    "Ashford",
+    "Brennan",
+    "Castellan",
+    "Dvorak",
 )
 
 # Building height: one floor per capability, ground floor always present.
@@ -50,9 +110,7 @@ MARGIN = 120
 
 
 def _digest(text: str) -> int:
-    return int.from_bytes(
-        hashlib.sha256(text.encode("utf-8")).digest()[:8], "big"
-    )
+    return int.from_bytes(hashlib.sha256(text.encode("utf-8")).digest()[:8], "big")
 
 
 def human_name(agent_name: str) -> str:
@@ -126,16 +184,11 @@ def plan_cityscape(city: City) -> dict[str, Any]:
     buildings: list[Building] = []
     roads: list[Road] = []
 
-    ordered_districts = sorted(
-        city.districts, key=lambda d: (-len(d.members), d.name)
-    )
+    ordered_districts = sorted(city.districts, key=lambda d: (-len(d.members), d.name))
     lane_x = MARGIN
     max_lane_depth = 0
     for district in ordered_districts:
-        members = [
-            city.resident(name)
-            for name in district.members
-        ]
+        members = [city.resident(name) for name in district.members]
         members = [person for person in members if person is not None]
         if not members:
             continue
@@ -143,9 +196,7 @@ def plan_cityscape(city: City) -> dict[str, Any]:
         rows = (len(members) + columns - 1) // columns
         block_width = columns * BUILDING_WIDTH + (columns - 1) * 40 + 48
         block_height = rows * BLOCK_PITCH_Y + 64
-        blocks.append(
-            CityBlock(district, lane_x, MARGIN, block_width, block_height)
-        )
+        blocks.append(CityBlock(district, lane_x, MARGIN, block_width, block_height))
 
         # Pipeline order first, then uncalled members by name.
         ordered_names = list(district.pipeline)
@@ -219,7 +270,9 @@ def plan_cityscape(city: City) -> dict[str, Any]:
     }
 
 
-def _building_faces(x: int, y: int, width: int, depth: int, height: int) -> tuple[str, str, str]:
+def _building_faces(
+    x: int, y: int, width: int, depth: int, height: int
+) -> tuple[str, str, str]:
     """Return SVG polygon elements for top, right, and left faces of an isometric box."""
 
     # Isometric projection: 2:1 diamond top.
@@ -228,25 +281,25 @@ def _building_faces(x: int, y: int, width: int, depth: int, height: int) -> tupl
     bx, by = x + width, y
     cx, cy = x + width + top_dx, y + top_dy
     dx_, dy_ = x + top_dx, y + top_dy
-    
+
     # Top face (diamond)
     top = (
         f'<polygon points="{ax},{ay} {bx},{by} {cx},{cy} {dx_},{dy_}" '
         f'fill="{{building_top}}" stroke="{{floor_line}}" stroke-width="1"/>'
     )
-    
+
     # Right face (visible when looking from front-left)
     right = (
         f'<polygon points="{bx},{by} {cx},{cy} {cx},{cy - height} {bx},{by - height}" '
         f'fill="{{building_right}}"/>'
     )
-    
+
     # Left face (visible when looking from front-left)
     left = (
         f'<polygon points="{dx_},{dy_} {ax},{ay} {ax},{ay - height} {dx_},{dy_ - height}" '
         f'fill="{{building_left}}"/>'
     )
-    
+
     return top, right, left
 
 
@@ -302,7 +355,7 @@ def render_cityscape_svg(city: City, *, theme: str = "lab") -> str:
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" '
         f'height="{height}" viewBox="0 0 {width} {height}">'
     )
-    parts.append(f"<rect width=\"{width}\" height=\"{height}\" fill=\"{bg}\"/>")
+    parts.append(f'<rect width="{width}" height="{height}" fill="{bg}"/>')
 
     # District blocks (ground plates).
     for block in blocks:
@@ -315,7 +368,7 @@ def render_cityscape_svg(city: City, *, theme: str = "lab") -> str:
             f'<text x="{block["x"] + 16}" y="{block["y"] + 28}" '
             f'fill="{label_color}" font-family="Georgia, serif" '
             f'font-size="17" font-weight="bold">'
-            f'{_escape(_district_label_from(block))}</text>'
+            f"{_escape(_district_label_from(block))}</text>"
         )
 
     # Roads: straight avenue segments between consecutive pipeline buildings.
@@ -367,20 +420,20 @@ def render_cityscape_svg(city: City, *, theme: str = "lab") -> str:
             f'<text x="{x + BUILDING_WIDTH // 2}" y="{y - height - 34}" '
             f'text-anchor="middle" fill="{label_color}" '
             f'font-family="Georgia, serif" font-size="16" font-weight="bold">'
-            f'{_escape(b["person"])}</text>'
+            f"{_escape(b['person'])}</text>"
         )
         parts.append(
             f'<text x="{x + BUILDING_WIDTH // 2}" y="{y - height - 16}" '
             f'text-anchor="middle" fill="{sub_label}" '
             f'font-family="Georgia, serif" font-size="11">'
-            f'{_escape(b["agent"])} · {b["floors"]}F</text>'
+            f"{_escape(b['agent'])} · {b['floors']}F</text>"
         )
 
     parts.append(
         f'<text x="{MARGIN}" y="{height - 40}" fill="{sub_label}" '
         f'font-family="Georgia, serif" font-size="12">'
-        f'{_escape(city.name)} — {len(buildings)} residents, '
-        f'{len(blocks)} districts, {len(roads)} roads</text>'
+        f"{_escape(city.name)} — {len(buildings)} residents, "
+        f"{len(blocks)} districts, {len(roads)} roads</text>"
     )
     parts.append("</svg>")
     return "".join(parts)

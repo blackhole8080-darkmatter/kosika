@@ -11,20 +11,18 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping
 
 from .intelligence import (
     ExecutionProfile,
-    ExecutionStrategy,
     IntelligenceSystem,
-    PatternExtractor,
-    ResourcePredictor,
     create_intelligence_system,
 )
 
 # ---------------------------------------------------------------------------
 # Operation naming
 # ---------------------------------------------------------------------------
+
 
 def _operation_key(event: Dict[str, Any]) -> str:
     """Return a stable operation identifier for an intelligence event."""
@@ -36,7 +34,14 @@ def _operation_key(event: Dict[str, Any]) -> str:
         base = kind[:-7]  # strip "_return"
         arg = event.get(base[:-1] if base != "step" else "step")
         if arg is None:
-            arg = event.get("workflow") or event.get("model") or event.get("agent") or event.get("function") or event.get("tool") or "?"
+            arg = (
+                event.get("workflow")
+                or event.get("model")
+                or event.get("agent")
+                or event.get("function")
+                or event.get("tool")
+                or "?"
+            )
         return f"{base}/{arg}"
     if kind == "model_call":
         model = event.get("model", "?")
@@ -61,12 +66,24 @@ def _operation_key(event: Dict[str, Any]) -> str:
 def _outcome_event(event: Dict[str, Any]) -> str:
     """Return the outcome category for an event."""
     kind = event.get("event")
-    if kind in ("model_return", "tool_return", "function_return",
-                "agent_return", "workflow_return", "step_complete",
-                "run_complete", "workflow_return"):
+    if kind in (
+        "model_return",
+        "tool_return",
+        "function_return",
+        "agent_return",
+        "workflow_return",
+        "step_complete",
+        "run_complete",
+        "workflow_return",
+    ):
         return "success"
-    if kind in ("run_failed", "run_cancelled", "run_paused",
-                "workflow_failed", "function_call"):
+    if kind in (
+        "run_failed",
+        "run_cancelled",
+        "run_paused",
+        "workflow_failed",
+        "function_call",
+    ):
         # function_call events are paired with function_return; treat the
         # pair, not the call alone.
         return "pending"
@@ -76,6 +93,7 @@ def _outcome_event(event: Dict[str, Any]) -> str:
 # ---------------------------------------------------------------------------
 # Event-driven recorder
 # ---------------------------------------------------------------------------
+
 
 class IntelligenceRecorder:
     """
@@ -97,7 +115,7 @@ class IntelligenceRecorder:
 
     def __init__(self, system: IntelligenceSystem | None = None) -> None:
         self.system = system or create_intelligence_system()
-        self._active: Dict[str, float] = {}          # operation -> start_monotonic
+        self._active: Dict[str, float] = {}  # operation -> start_monotonic
         self._function_return_pending: Dict[str, Dict[str, Any]] = {}
 
     # -- public API ---------------------------------------------------------
@@ -139,19 +157,29 @@ class IntelligenceRecorder:
                     )
             return
 
-        if kind in ("model_return", "tool_return", "agent_return",
-                    "workflow_return", "step_complete", "run_complete"):
+        if kind in (
+            "model_return",
+            "tool_return",
+            "agent_return",
+            "workflow_return",
+            "step_complete",
+            "run_complete",
+        ):
             key = _operation_key(event)
             start = self._active.pop(key, None)
             if start is not None:
-                self._record_completed(key, time.monotonic() - start, "success", event, event)
+                self._record_completed(
+                    key, time.monotonic() - start, "success", event, event
+                )
             return
 
         if kind in ("run_failed", "run_cancelled", "run_paused"):
             # Flush any still-open operations as failures so the intelligence
             # layer sees the full picture of a failed run.
             for key, start in list(self._active.items()):
-                self._record_completed(key, time.monotonic() - start, "failure", {}, event)
+                self._record_completed(
+                    key, time.monotonic() - start, "failure", {}, event
+                )
             self._active.clear()
             return
 
@@ -160,18 +188,20 @@ class IntelligenceRecorder:
         for ev in events:
             self.record_event(ev)
 
-    def analyze(self, operation: str,
-                context: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    def analyze(
+        self, operation: str, context: Dict[str, Any] | None = None
+    ) -> Dict[str, Any]:
         """Analysis + recommendation for one operation."""
-        return self.system.analyze_and_optimize(
-            operation, context or {}
-        )
+        return self.system.analyze_and_optimize(operation, context or {})
 
     @property
     def patterns(self) -> Dict[str, Any]:
         """Serializable snapshot of extracted execution patterns."""
         out: Dict[str, Any] = {}
-        for pid, pat in self.system.adaptive_executor.pattern_extractor.patterns.items():
+        for (
+            pid,
+            pat,
+        ) in self.system.adaptive_executor.pattern_extractor.patterns.items():
             out[pid] = {
                 "operation_type": pat.operation_type,
                 "avg_duration": pat.avg_duration,
@@ -190,10 +220,14 @@ class IntelligenceRecorder:
 
     # -- internals ----------------------------------------------------------
 
-    def _record_completed(self, key: str, duration: float,
-                          outcome: str,
-                          call_event: Dict[str, Any],
-                          return_event: Dict[str, Any]) -> None:
+    def _record_completed(
+        self,
+        key: str,
+        duration: float,
+        outcome: str,
+        call_event: Dict[str, Any],
+        return_event: Dict[str, Any],
+    ) -> None:
         resource_usage = _resource_usage(call_event, return_event)
         success = outcome == "success"
         profile = ExecutionProfile(
@@ -221,6 +255,7 @@ def _resource_usage(call: Dict[str, Any], ret: Dict[str, Any]) -> Dict[str, floa
 # Pure-function result cache
 # ---------------------------------------------------------------------------
 
+
 def _canonical_arguments(arguments: Mapping[str, Any]) -> bytes:
     return json.dumps(arguments, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
@@ -243,8 +278,7 @@ class FunctionResultCache:
         self.hits = 0
         self.misses = 0
 
-    def get(self, function_name: str,
-            arguments: Mapping[str, Any]) -> Any | None:
+    def get(self, function_name: str, arguments: Mapping[str, Any]) -> Any | None:
         key = f"{function_name}::{_canonical_arguments(arguments)}"
         if key in self._store:
             self.hits += 1
@@ -252,9 +286,9 @@ class FunctionResultCache:
         self.misses += 1
         return None
 
-    def put(self, function_name: str,
-            arguments: Mapping[str, Any],
-            result: Any) -> None:
+    def put(
+        self, function_name: str, arguments: Mapping[str, Any], result: Any
+    ) -> None:
         key = f"{function_name}::{_canonical_arguments(arguments)}"
         if key in self._store:
             return

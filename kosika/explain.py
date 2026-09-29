@@ -49,8 +49,7 @@ def _subset_mindmap(
     by_id: dict[str, dict[str, Any]] = {
         node_id: node
         for node in nodes
-        if isinstance(node, dict)
-        and isinstance(node_id := node.get("id"), str)
+        if isinstance(node, dict) and isinstance(node_id := node.get("id"), str)
     }
     roots: list[str] = []
     for name in workflow_names:
@@ -80,7 +79,10 @@ def _subset_mindmap(
                 raise ExplainError("Mindmap edge endpoints must be text")
             source_node = by_id.get(source, {})
             target_node = by_id.get(target, {})
-            if source_node.get("kind") == "module" or target_node.get("kind") == "module":
+            if (
+                source_node.get("kind") == "module"
+                or target_node.get("kind") == "module"
+            ):
                 continue
             neighbors.setdefault(source, set()).add(target)
             neighbors.setdefault(target, set()).add(source)
@@ -101,14 +103,17 @@ def _subset_mindmap(
         selected_ids.update(
             node_id
             for node_id, node in by_id.items()
-            if node.get("kind") == "module" and node.get("label") in selected_module_names
+            if node.get("kind") == "module"
+            and node.get("label") in selected_module_names
         )
         selected_ids.update(
             endpoint
             for edge in edges
             if isinstance(edge, dict)
             and edge.get("relation") == "imports"
-            and (edge.get("source") in selected_ids or edge.get("target") in selected_ids)
+            and (
+                edge.get("source") in selected_ids or edge.get("target") in selected_ids
+            )
             for endpoint in (edge.get("source"), edge.get("target"))
             if isinstance(endpoint, str)
         )
@@ -144,8 +149,7 @@ def _subset_mindmap(
     selected_module_paths: set[str] = {
         label
         for node in selected_nodes
-        if node.get("kind") == "module"
-        and isinstance(label := node.get("label"), str)
+        if node.get("kind") == "module" and isinstance(label := node.get("label"), str)
     }
     selected_module_records: list[dict[str, Any]] = [
         module
@@ -190,7 +194,9 @@ def _read_trace(path: str | Path) -> list[dict[str, Any]]:
     return events
 
 
-def _trace_steps(events: list[dict[str, Any]], prefix: str = "") -> list[dict[str, Any]]:
+def _trace_steps(
+    events: list[dict[str, Any]], prefix: str = ""
+) -> list[dict[str, Any]]:
     def function_steps(
         items: list[dict[str, Any]], function_prefix: str
     ) -> list[dict[str, Any]]:
@@ -256,11 +262,7 @@ def _trace_steps(events: list[dict[str, Any]], prefix: str = "") -> list[dict[st
         if kind == "function_call" and isinstance(returned.get("events"), list):
             steps.extend(
                 function_steps(
-                    [
-                        item
-                        for item in returned["events"]
-                        if isinstance(item, dict)
-                    ],
+                    [item for item in returned["events"] if isinstance(item, dict)],
                     step_name + "/",
                 )
             )
@@ -324,9 +326,7 @@ def build_explanation(
         raise ExplainError("Diagnostics must be text")
     extensions = tuple(sorted(extension_manifests, key=lambda item: item.id))
     mindmap = build_mindmap(program, extension_manifests=extensions)
-    selected, selected_ids = _subset_mindmap(
-        mindmap, workflow_names, record_names
-    )
+    selected, selected_ids = _subset_mindmap(mindmap, workflow_names, record_names)
     expected_hash = _program_hash(program)
     trace = (
         summarize_trace(trace_path, expected_program_hash=expected_hash)
@@ -435,7 +435,9 @@ def to_explanation_outsider(explanation: dict[str, Any]) -> str:
     for workflow in workflows:
         name = str(workflow.get("label", "workflow"))
         lines.append(f"- {name}: {_plain_words(name)}.")
-        steps = _linked(mindmap, str(workflow.get("id")), direction="out", relation="step")
+        steps = _linked(
+            mindmap, str(workflow.get("id")), direction="out", relation="step"
+        )
         for position, step in enumerate(steps, 1):
             label = str(step.get("label", f"step {position}"))
             attributes = step.get("attributes", {})
@@ -445,13 +447,25 @@ def to_explanation_outsider(explanation: dict[str, Any]) -> str:
             actions: list[dict[str, Any]] = []
             for relation in ("agent_call", "model_call", "tool_call"):
                 actions.extend(
-                    _linked(mindmap, str(step.get("id")), direction="out", relation=relation)
+                    _linked(
+                        mindmap, str(step.get("id")), direction="out", relation=relation
+                    )
                 )
             actions.extend(
-                _linked(mindmap, str(step.get("id")), direction="out", relation="workflow_call")
+                _linked(
+                    mindmap,
+                    str(step.get("id")),
+                    direction="out",
+                    relation="workflow_call",
+                )
             )
             actions.extend(
-                _linked(mindmap, str(step.get("id")), direction="out", relation="function_call")
+                _linked(
+                    mindmap,
+                    str(step.get("id")),
+                    direction="out",
+                    relation="function_call",
+                )
             )
             if actions:
                 what = ", ".join(
@@ -459,7 +473,9 @@ def to_explanation_outsider(explanation: dict[str, Any]) -> str:
                     f"{str(item.get('label', '')).split(':')[-1]}"
                     for item in actions
                 )
-                lines.append(f"  Step {position} ({label}) uses {what} to make {binding}.")
+                lines.append(
+                    f"  Step {position} ({label}) uses {what} to make {binding}."
+                )
             else:
                 lines.append(f"  Step {position} ({label}) makes {binding}.")
         lines.append("")
@@ -491,9 +507,7 @@ def to_explanation_outsider(explanation: dict[str, Any]) -> str:
                 f"at most {rounds} review round(s)."
             )
             if approvals:
-                lines.append(
-                    "  A person must approve this group before it starts."
-                )
+                lines.append("  A person must approve this group before it starts.")
         lines.append("")
     agents = sorted(
         (
@@ -514,7 +528,9 @@ def to_explanation_outsider(explanation: dict[str, Any]) -> str:
                     allowed = sorted(str(item) for item in attributes["can"])
                 if isinstance(attributes.get("cannot"), list):
                     denied = sorted(str(item) for item in attributes["cannot"])
-            sentence = f"- {agent.get('label')} may use {', '.join(allowed) or 'nothing yet'}"
+            sentence = (
+                f"- {agent.get('label')} may use {', '.join(allowed) or 'nothing yet'}"
+            )
             if denied:
                 sentence += f"; it must never use {', '.join(denied)}"
             lines.append(sentence + ".")
@@ -532,7 +548,9 @@ def to_explanation_outsider(explanation: dict[str, Any]) -> str:
             "nothing was re-run."
         )
         if trace.get("program_hash_match") is False:
-            lines.append("Warning: that recording came from a different program version.")
+            lines.append(
+                "Warning: that recording came from a different program version."
+            )
         lines.append("")
     lines.append(
         "This story comes from the checked program structure, not a model guess. "
@@ -552,8 +570,15 @@ def to_explanation_text(explanation: dict[str, Any]) -> str:
     lines = [
         "Kosika explanation",
         "Focus: "
-        + (", ".join([*(f"workflow {name}" for name in workflows), *(f"record {name}" for name in records)])
-           or "entire program"),
+        + (
+            ", ".join(
+                [
+                    *(f"workflow {name}" for name in workflows),
+                    *(f"record {name}" for name in records),
+                ]
+            )
+            or "entire program"
+        ),
         f"Nodes: {summary.get('node_count', 0)}; edges: {summary.get('edge_count', 0)}",
     ]
     for module in mindmap.get("modules", []):
@@ -571,9 +596,7 @@ def to_explanation_text(explanation: dict[str, Any]) -> str:
                 f"approval required: {attributes.get('approval_required', False)}"
             )
         elif kind == "step":
-            lines.append(
-                f"  Step {node['label']} binds {attributes.get('binding')}"
-            )
+            lines.append(f"  Step {node['label']} binds {attributes.get('binding')}")
         elif kind == "swarm":
             lines.append(
                 f"Swarm {node['label']} runs {attributes.get('workflow')} with "
@@ -601,14 +624,18 @@ def to_explanation_text(explanation: dict[str, Any]) -> str:
                 f"{attributes.get('output')} (pure)"
             )
             for binding in attributes.get("bindings", []):
-                lines.append(f"  Local {binding['name']}: {binding['type']} (immutable)")
+                lines.append(
+                    f"  Local {binding['name']}: {binding['type']} (immutable)"
+                )
         elif kind in {"model", "agent", "tool", "capability"}:
             details = ", ".join(
                 f"{key}={value}"
                 for key, value in sorted(attributes.items())
                 if key in {"input", "output", "model", "access", "operation", "status"}
             )
-            lines.append(f"{kind.title()} {node['label']}" + (f" ({details})" if details else ""))
+            lines.append(
+                f"{kind.title()} {node['label']}" + (f" ({details})" if details else "")
+            )
     for extension in mindmap.get("extensions", []):
         if not isinstance(extension, dict):
             continue

@@ -41,7 +41,19 @@ class EventEnvelopeTests(unittest.TestCase):
         self.assertEqual(event["payload"]["arguments"]["size"], 1)
 
     def test_missing_required_fields_are_rejected(self) -> None:
-        for field in ("schema", "bridge_version", "event_id", "sequence", "timestamp", "bus", "source", "region", "type", "status", "replay"):
+        for field in (
+            "schema",
+            "bridge_version",
+            "event_id",
+            "sequence",
+            "timestamp",
+            "bus",
+            "source",
+            "region",
+            "type",
+            "status",
+            "replay",
+        ):
             event = self._event()
             del event[field]
             with self.subTest(field=field):
@@ -74,7 +86,9 @@ class EventEnvelopeTests(unittest.TestCase):
         with self.assertRaises(EventValidationError):
             validate_event(event)
 
-    def test_jsonl_rejects_duplicate_keys_non_finite_numbers_blank_and_malformed_lines(self) -> None:
+    def test_jsonl_rejects_duplicate_keys_non_finite_numbers_blank_and_malformed_lines(
+        self,
+    ) -> None:
         cases = (
             '{"schema": "x", "schema": "y"}\n',
             '{"value": NaN}\n',
@@ -104,10 +118,21 @@ class EventEnvelopeTests(unittest.TestCase):
 
     def test_normalized_replay_preserves_order_and_failure_status(self) -> None:
         raw = [
-            {"event": "run_start", "timestamp": "2026-09-23T00:00:00+00:00", "workflow": "main"},
-            {"event": "run_complete", "timestamp": "2026-09-23T00:00:01+00:00", "workflow": "main"},
+            {
+                "event": "run_start",
+                "timestamp": "2026-09-23T00:00:00+00:00",
+                "workflow": "main",
+            },
+            {
+                "event": "run_complete",
+                "timestamp": "2026-09-23T00:00:01+00:00",
+                "workflow": "main",
+            },
         ]
-        normalized = [normalize_event(item, index, replay=True) for index, item in enumerate(raw, 2)]
+        normalized = [
+            normalize_event(item, index, replay=True)
+            for index, item in enumerate(raw, 2)
+        ]
         validated = validate_events(normalized, sequence_start=2)
         self.assertEqual([event["sequence"] for event in validated], [2, 3])
         self.assertTrue(all(event["replay"] for event in validated))

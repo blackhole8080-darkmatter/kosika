@@ -1,12 +1,25 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "kosika-language-v0-1"
 version = "0.1.0"
 description = "Local-first, capability-secure AI systems language prototype"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 dependencies = [
     "tree-sitter>=0.25,<0.27",
     "tree-sitter-rust>=0.24,<0.25",
 ]
+
+# The repository root holds many sibling directories (desktop, ui, examples,
+# tests, ...), so setuptools flat-layout auto-discovery is ambiguous. Declare
+# the importable package explicitly.
+[tool.setuptools]
+packages = ["kosika"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -19,8 +32,37 @@ line-length = 88
 select = ["E4", "E7", "E9", "F", "I"]
 
 [tool.mypy]
-python_version = "3.10"
+# Matches the interpreter CI actually runs. The package still supports 3.10 at
+# runtime (see requires-python), but type-checking against 3.12 avoids parsing
+# dependency stubs that use 3.12-only syntax.
+python_version = "3.12"
 show_error_codes = true
+# tests/ has no __init__.py, so without this mypy resolves the same file as
+# both "test_execution_platform" and "tests.test_execution_platform" and aborts
+# before type-checking anything.
+explicit_package_bases = true
+
+# These are optional host dependencies that CI does not install. They ship no
+# type information, so treat them as untyped rather than failing the run.
+[[tool.mypy.overrides]]
+module = [
+    "psutil", "psutil.*",
+    "flask", "flask.*",
+    "flask_cors", "flask_cors.*",
+    "requests", "requests.*",
+    "openai", "openai.*",
+    "anthropic", "anthropic.*",
+    "pytest", "pytest.*",
+]
+ignore_missing_imports = true
+
+# Not a dependency of this project. It is present in some developer
+# environments, and its bundled stubs use 3.12-only syntax that fails to parse
+# under our 3.10 target. Skip it rather than analysing something we never ship.
+[[tool.mypy.overrides]]
+module = ["numpy", "numpy.*"]
+follow_imports = "skip"
+ignore_missing_imports = true
 
 [tool.coverage.run]
 branch = true

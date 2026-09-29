@@ -10,6 +10,7 @@ from typing import Any
 
 from .evaluation import EvaluationCase, evaluate
 from .lexer import lex
+from .manifest import load_manifest
 from .model import ModelResponse, ScriptedModelProvider
 from .model_steps import strict_json
 from .modules import CATEGORIES, load_program
@@ -66,7 +67,9 @@ def completions(path: str | Path, prefix: str = "") -> list[str]:
         "approval",
     }
     names.update(
-        item.name for category in CATEGORIES for item in getattr(program, category)
+        item.name
+        for category in CATEGORIES
+        for item in getattr(program, category)
         if "/" not in item.name
     )
     return sorted(name for name in names if name.startswith(prefix))
@@ -144,6 +147,9 @@ def main() -> int:
     evaluation.add_argument("fixture", type=Path)
     evaluation.add_argument("--workflow", default="main")
     evaluation.add_argument("--output", type=Path, required=True)
+    evaluation.add_argument("--mcp-server", type=Path)
+    evaluation.add_argument("--mcp-manifest", type=Path)
+    evaluation.add_argument("--mcp-source", default="local_stdio")
     args = parser.parse_args()
     try:
         if args.command == "format":
@@ -160,10 +166,17 @@ def main() -> int:
         elif args.command == "inspect":
             print(json.dumps(inspect_trace(args.trace), indent=2))
         else:
+            if (args.mcp_server is None) != (args.mcp_manifest is None):
+                raise ValueError(
+                    "--mcp-server and --mcp-manifest must be supplied together"
+                )
             fixture = strict_json(args.fixture.read_text(encoding="utf-8"))
             if not isinstance(fixture, list) or any(
                 not isinstance(item, dict)
                 or set(item) - {"name", "inputs", "expected", "contains", "responses"}
+                or not isinstance(item.get("name"), str)
+                or not isinstance(item.get("inputs"), dict)
+                or not isinstance(item.get("responses"), dict)
                 for item in fixture
             ):
                 raise ValueError("Invalid evaluation fixture")
@@ -186,8 +199,24 @@ def main() -> int:
                     for name, values in responses[case.name].items()
                 }
 
+            mcp_commands = (
+                {args.mcp_source: [sys.executable, str(args.mcp_server)]}
+                if args.mcp_server is not None
+                else None
+            )
+            manifest = (
+                load_manifest(args.mcp_manifest)
+                if args.mcp_manifest is not None
+                else None
+            )
             report = evaluate(
-                load_program(args.source), args.workflow, cases, args.output, providers
+                load_program(args.source),
+                args.workflow,
+                cases,
+                args.output,
+                providers,
+                mcp_commands=mcp_commands,
+                manifest=manifest,
             )
             print(json.dumps(report, indent=2))
             return 0 if report["passed"] else 1

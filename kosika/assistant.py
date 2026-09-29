@@ -71,9 +71,7 @@ def _context(
             "Do not propose shell commands, file mutations, or unapproved tools.",
         ],
     }
-    context = json.dumps(
-        payload, sort_keys=True, ensure_ascii=False, allow_nan=False
-    )
+    context = json.dumps(payload, sort_keys=True, ensure_ascii=False, allow_nan=False)
 
     if len(context.encode("utf-8")) > MAX_CONTEXT_BYTES:
         raise AssistantError("Assistant context exceeds the 256 KiB safety bound")
@@ -133,7 +131,9 @@ class KosikaAssistant:
             or any(not isinstance(key, str) for key in item)
             for item in source_analysis_values
         ):
-            raise AssistantError("Assistant source analyses must be string-keyed objects")
+            raise AssistantError(
+                "Assistant source analyses must be string-keyed objects"
+            )
         project_analysis_values = tuple(project_analyses)
         for label, values in (
             ("source", source_analysis_values),
@@ -227,9 +227,7 @@ def assistant_context(
 ) -> str:
     """Expose the bounded context builder for deterministic provider tests."""
 
-    return _context(
-        mindmap, task, diagnostics, source_analyses, project_analyses
-    )
+    return _context(mindmap, task, diagnostics, source_analyses, project_analyses)
 
 
 def static_summary(mindmap: dict[str, object]) -> str:

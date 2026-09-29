@@ -1,0 +1,34 @@
+// A typed mutation remains paused until a reviewer approves its exact action.
+record MutationRequest {
+  change: Text
+}
+
+record MutationResult {
+  status: Text
+  change: Text
+  sink: Text
+}
+
+tool apply_change {
+  source mcp "approval_mutation"
+  operation: "apply_change"
+  access: execute
+  input: MutationRequest
+  output: MutationResult
+}
+
+agent operator {
+  can: [apply_change]
+  cannot: [arbitrary_shell, network, grant_capabilities]
+  max_steps: 1
+}
+
+workflow apply_change(request: MutationRequest) -> MutationResult {
+  require approval
+  step mutate {
+    let result: MutationResult = execute operator.apply_change(
+      change: request.change
+    )
+    return result
+  }
+}

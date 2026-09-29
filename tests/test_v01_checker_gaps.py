@@ -92,7 +92,9 @@ class InlineFunctionGapTests(unittest.TestCase):
                 if isinstance(event.get("function"), str):
                     named.add(event["function"])
         self.assertTrue(named)
-        self.assertTrue(named <= declared, f"synthetic names in trace: {named - declared}")
+        self.assertTrue(
+            named <= declared, f"synthetic names in trace: {named - declared}"
+        )
 
 
 class MethodCallGapTests(unittest.TestCase):
@@ -114,7 +116,10 @@ class MethodCallGapTests(unittest.TestCase):
         for source, method in (
             ("fn size(text: Text) -> Number { return text.length() }", "length"),
             ('fn parts(text: Text) -> Text[] { return text.split(sep: ",") }', "split"),
-            ('fn joined(items: Text[]) -> Text { return items.join(sep: ",") }', "join"),
+            (
+                'fn joined(items: Text[]) -> Text { return items.join(sep: ",") }',
+                "join",
+            ),
         ):
             with self.subTest(source=source), self.assertRaises(CheckError) as caught:
                 check(parse(source))

@@ -25,6 +25,7 @@ MAX_CALL_OBSERVATIONS = 20000
 class PythonSourceError(SourceAdapterError):
     """Raised when Python source cannot be analyzed within adapter limits."""
 
+
 @dataclass(frozen=True)
 class PythonSymbol:
     kind: str
@@ -131,7 +132,10 @@ class _StructureVisitor(ast.NodeVisitor):
     ) -> None:
         qualified_name = ".".join((*self.scope, node.name))
         arguments = node.args
-        evaluated_expressions: list[ast.expr] = [*node.decorator_list, *arguments.defaults]
+        evaluated_expressions: list[ast.expr] = [
+            *node.decorator_list,
+            *arguments.defaults,
+        ]
         evaluated_expressions.extend(
             default for default in arguments.kw_defaults if default is not None
         )
@@ -225,7 +229,11 @@ def _observed_effect(node: ast.expr) -> str | None:
 
     callee = _dotted_name(node).lower()
     root = callee.split(".", 1)[0]
-    if callee in {"open", "io.open"} or ".write_text" in callee or ".write_bytes" in callee:
+    if (
+        callee in {"open", "io.open"}
+        or ".write_text" in callee
+        or ".write_bytes" in callee
+    ):
         return "filesystem"
     if root in {"subprocess", "os.system", "os.popen"} or callee.startswith(
         ("os.system", "os.popen", "os.exec", "os.spawn")
@@ -258,19 +266,25 @@ def analyze_python_source(source: str, *, path: str = "<memory>") -> dict[str, A
         line = getattr(exc, "lineno", None)
         column = getattr(exc, "offset", None)
         location = f" at line {line}, column {column}" if line else ""
-        raise PythonSourceError(f"Python syntax could not be parsed{location}: {exc}") from exc
+        raise PythonSourceError(
+            f"Python syntax could not be parsed{location}: {exc}"
+        ) from exc
 
     visitor = _StructureVisitor()
     try:
         visitor.visit(tree)
     except RecursionError as exc:
-        raise PythonSourceError("Python source nesting exceeds the analysis limit") from exc
+        raise PythonSourceError(
+            "Python source nesting exceeds the analysis limit"
+        ) from exc
     if len(visitor.imports) > MAX_IMPORTS:
         raise PythonSourceError(
             f"Python source exceeds the {MAX_IMPORTS}-import analysis limit"
         )
 
-    symbols = sorted(visitor.symbols, key=lambda item: (item.start_line, item.qualified_name))
+    symbols = sorted(
+        visitor.symbols, key=lambda item: (item.start_line, item.qualified_name)
+    )
     imports = sorted(
         visitor.imports,
         key=lambda item: (item["line"], item["module"], item.get("name") or ""),

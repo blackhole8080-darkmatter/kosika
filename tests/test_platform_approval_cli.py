@@ -96,7 +96,10 @@ class ApprovalCliTests(unittest.TestCase):
             metrics = json.loads(telemetry.read_text())["m"]
             self.assertEqual(len(metrics), 2)
             self.assertEqual(metrics[-1]["error"], "provider")
-            trace = [json.loads(line) for line in (root / "run.jsonl").read_text().splitlines()]
+            trace = [
+                json.loads(line)
+                for line in (root / "run.jsonl").read_text().splitlines()
+            ]
             self.assertEqual(trace[-1]["event"], "run_failed")
             self.assertNotIn("run_complete", [event["event"] for event in trace])
 

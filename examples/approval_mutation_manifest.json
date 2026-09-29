@@ -1,0 +1,46 @@
+{
+  "manifestVersion": 1,
+  "server": {
+    "source": "approval_mutation",
+    "protocolVersion": "2025-11-25",
+    "name": "kosika-approval-mutation",
+    "version": "0.1.0"
+  },
+  "tools": {
+    "apply_change": {
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "change": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "change"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "change": {
+            "type": "string"
+          },
+          "sink": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "change",
+          "sink"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "a69df450766512b7f87eaf424d91deb9ee9d86a4cde1e913796daab2a0877d66"
+    }
+  }
+}

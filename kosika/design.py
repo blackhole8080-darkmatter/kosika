@@ -17,7 +17,8 @@ from .network import NetworkManifest
 
 class DesignError(ValueError):
     """Raised when a Kosika design manifest is invalid."""
- 
+
+
 # node kinds that receive spatial layout positions in the design view
 _LAYOUT_KINDS = {
     "module",
@@ -40,9 +41,7 @@ _NETWORK_KINDS = {
 }
 
 
-def _node_by_id(
-    nodes: list[dict[str, Any]], node_id: str
-) -> dict[str, Any] | None:
+def _node_by_id(nodes: list[dict[str, Any]], node_id: str) -> dict[str, Any] | None:
     """Return the first mindmap node whose ``id`` matches, or None."""
     for node in nodes:
         if node.get("id") == node_id:
@@ -328,7 +327,13 @@ def _edge(identifier: str, source: str, target: str, kind: str) -> dict[str, Any
     return {"id": identifier, "source": source, "target": target, "kind": kind}
 
 
-def _layout_node_position(kind: str, label: str, sorted_groups: dict[str, list[str]], workflow_stage_positions: dict[str, tuple[float, float]], node_id: str) -> tuple[float, float, float]:
+def _layout_node_position(
+    kind: str,
+    label: str,
+    sorted_groups: dict[str, list[str]],
+    workflow_stage_positions: dict[str, tuple[float, float]],
+    node_id: str,
+) -> tuple[float, float, float]:
     """Return (x, y, width) for a design node derived from a mindmap node kind and label."""
     if kind == "module":
         index = sorted_groups["module"].index(label)
@@ -411,7 +416,9 @@ def _edge_map(mindmap_relation: str) -> str | None:
     }.get(mindmap_relation)
 
 
-def _agent_prohibitions(mindmap_nodes: list[dict[str, Any]], mindmap_edges: list[dict[str, str]]) -> dict[str, list[str]]:
+def _agent_prohibitions(
+    mindmap_nodes: list[dict[str, Any]], mindmap_edges: list[dict[str, str]]
+) -> dict[str, list[str]]:
     """Map agent labels to their sorted prohibition lists from `cannot` edges."""
     prohibited: dict[str, list[str]] = {}
     for edge in mindmap_edges:
@@ -421,7 +428,9 @@ def _agent_prohibitions(mindmap_nodes: list[dict[str, Any]], mindmap_edges: list
         if source_node is None or source_node["kind"] != "agent":
             continue
         target_node = _node_by_id(mindmap_nodes, edge["target"])
-        prohibited_name = target_node["label"] if target_node is not None else edge["target"]
+        prohibited_name = (
+            target_node["label"] if target_node is not None else edge["target"]
+        )
         prohibited.setdefault(source_node["label"], []).append(prohibited_name)
     return {agent: sorted(items) for agent, items in sorted(prohibited.items())}
 
@@ -443,7 +452,7 @@ def _design_node_id(mindmap_kind: str, mindmap_id: str) -> str:
     (``source.kind.target``) and with ``network.<id>`` roots. The kind prefix
     is rewritten too, so a mindmap ``step`` becomes a design ``stage``.
     """
-    key = mindmap_id[len(mindmap_kind):].lstrip(":").replace(":", ".")
+    key = mindmap_id[len(mindmap_kind) :].lstrip(":").replace(":", ".")
     return f"{_design_kind(mindmap_kind)}.{key}"
 
 
@@ -508,7 +517,9 @@ def mindmap_to_design_graph(
         kind = _design_kind(node["kind"])
         if kind not in _LAYOUT_KINDS:
             continue
-        x, y, width = _layout_node_position(kind, node["label"], sorted_groups, workflow_stage_positions, node["id"])
+        x, y, width = _layout_node_position(
+            kind, node["label"], sorted_groups, workflow_stage_positions, node["id"]
+        )
         design_id = _design_node_id(node["kind"], node["id"])
         design_node: dict[str, Any] = {
             "id": design_id,
@@ -547,24 +558,28 @@ def mindmap_to_design_graph(
         x, y, width = _layout_node_position(
             "approval", label, sorted_groups, workflow_stage_positions, approval_id
         )
-        nodes.append({
-            "id": approval_id,
-            "label": label,
-            "kind": "approval",
-            "position": {"x": x, "y": y},
-            "size": {"width": width, "height": 64.0},
-        })
+        nodes.append(
+            {
+                "id": approval_id,
+                "label": label,
+                "kind": "approval",
+                "position": {"x": x, "y": y},
+                "size": {"width": width, "height": 64.0},
+            }
+        )
         design_ids[approval_id] = approval_id
         approval_owners.append((owner_id, approval_id))
 
     edge_index: dict[str, int] = {}
     for owner_id, approval_id in approval_owners:
-        edges.append({
-            "id": f"{owner_id}.requires_approval.{approval_id}",
-            "source": owner_id,
-            "target": approval_id,
-            "kind": "requires_approval",
-        })
+        edges.append(
+            {
+                "id": f"{owner_id}.requires_approval.{approval_id}",
+                "source": owner_id,
+                "target": approval_id,
+                "kind": "requires_approval",
+            }
+        )
         seen_edge_ids.add(f"{owner_id}.requires_approval.{approval_id}")
 
     for edge in mm_edges:
@@ -585,12 +600,14 @@ def mindmap_to_design_graph(
         edge_index[edge_id] = count + 1
         if count > 0:
             edge_id = f"{edge_id}_{count}"
-        edges.append({
-            "id": edge_id,
-            "source": source_id,
-            "target": target_id,
-            "kind": design_kind,
-        })
+        edges.append(
+            {
+                "id": edge_id,
+                "source": source_id,
+                "target": target_id,
+                "kind": design_kind,
+            }
+        )
         seen_edge_ids.add(edge_id)
 
     network_nodes: dict[str, dict[str, Any]] = {}
@@ -604,7 +621,9 @@ def mindmap_to_design_graph(
             "position": {"x": 980.0, "y": 700.0},
             "size": {"width": 220.0, "height": 64.0},
         }
-        for index, nn in enumerate(sorted(network.nodes, key=lambda item: str(item["id"]))):
+        for index, nn in enumerate(
+            sorted(network.nodes, key=lambda item: str(item["id"]))
+        ):
             nn_id = f"network_node.{nn['id']}"
             network_nodes[nn_id] = {
                 "id": nn_id,
@@ -615,13 +634,18 @@ def mindmap_to_design_graph(
             }
             network_node_ids.add(nn["id"])
         for link in sorted(network.links, key=lambda item: str(item["id"])):
-            if link["source"] in network_node_ids and link["target"] in network_node_ids:
-                edges.append({
-                    "id": f"network.{link['id']}",
-                    "source": f"network_node.{link['source']}",
-                    "target": f"network_node.{link['target']}",
-                    "kind": "connects",
-                })
+            if (
+                link["source"] in network_node_ids
+                and link["target"] in network_node_ids
+            ):
+                edges.append(
+                    {
+                        "id": f"network.{link['id']}",
+                        "source": f"network_node.{link['source']}",
+                        "target": f"network_node.{link['target']}",
+                        "kind": "connects",
+                    }
+                )
         # The network is ambient context for everything that executes, so the
         # workflow view links it to each agent rather than to a single root.
         for node in mm_nodes:
@@ -630,12 +654,14 @@ def mindmap_to_design_graph(
             agent_id = design_ids.get(node["id"])
             if agent_id is None:
                 continue
-            edges.append({
-                "id": f"{network_root_id}.network_context.{agent_id}",
-                "source": network_root_id,
-                "target": agent_id,
-                "kind": "network_context",
-            })
+            edges.append(
+                {
+                    "id": f"{network_root_id}.network_context.{agent_id}",
+                    "source": network_root_id,
+                    "target": agent_id,
+                    "kind": "network_context",
+                }
+            )
         views = [
             {"id": "workflow-view", "name": "Agent workflows", "kind": "workflow"},
             {"id": "network-view", "name": "Network topology", "kind": "network"},
@@ -1036,7 +1062,7 @@ def render_design_svg(
         f'  <text x="32" y="34" font-family="sans-serif" font-size="23" font-weight="700" '
         f'fill="{chrome["title"]}">{html.escape(manifest.name)}</text>',
         f'  <text x="32" y="55" font-family="sans-serif" font-size="12" fill="{chrome["muted"]}">'
-        f'{html.escape(view.title())} view · deterministic design graph</text>',
+        f"{html.escape(view.title())} view · deterministic design graph</text>",
     ]
     if view == "workflow":
         lines.extend(
@@ -1067,7 +1093,7 @@ def render_design_svg(
         road = str(edge["kind"]) in ROAD_EDGE_KINDS
         lines.append(
             f'  <path d="{path}" fill="none" stroke="{chrome["road"] if road else chrome["edge"]}" '
-            f'stroke-width="{(7 if road else 2) :g}" stroke-linecap="round" '
+            f'stroke-width="{(7 if road else 2):g}" stroke-linecap="round" '
             f'stroke-dasharray="{"7 5" if edge["kind"] in {"network_context", "connects"} else "none"}" '
             f'marker-end="url(#arrow)" data-edge-kind="{html.escape(str(edge["kind"]))}" />'
         )

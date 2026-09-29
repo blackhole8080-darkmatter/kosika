@@ -88,10 +88,15 @@ class MCPStdioTests(unittest.TestCase):
         with patch.object(
             client,
             "request",
-            side_effect=[tools_response, {"result": {"structuredContent": {"value": 2}}}],
+            side_effect=[
+                tools_response,
+                {"result": {"structuredContent": {"value": 2}}},
+            ],
         ) as request:
             self.assertEqual(
-                client.call_tool("inspect", {"value": 2}, input_schema=schema, output_schema=schema),
+                client.call_tool(
+                    "inspect", {"value": 2}, input_schema=schema, output_schema=schema
+                ),
                 {"value": 2},
             )
             self.assertEqual(request.call_count, 2)
@@ -99,7 +104,10 @@ class MCPStdioTests(unittest.TestCase):
         with patch.object(
             client,
             "request",
-            side_effect=[tools_response, {"result": {"isError": True, "content": ["no"]}}],
+            side_effect=[
+                tools_response,
+                {"result": {"isError": True, "content": ["no"]}},
+            ],
         ):
             with self.assertRaisesRegex(MCPToolError, "returned an error"):
                 client.call_tool("inspect", {"value": 2})
@@ -123,10 +131,13 @@ class MCPStdioTests(unittest.TestCase):
             ([{"type": "text", "text": "plain text"}], "plain text"),
             ([{"type": "image", "data": "x"}], [{"type": "image", "data": "x"}]),
         ):
-            with self.subTest(content=content), patch.object(
-                client,
-                "request",
-                side_effect=[tools_response, {"result": {"content": content}}],
+            with (
+                self.subTest(content=content),
+                patch.object(
+                    client,
+                    "request",
+                    side_effect=[tools_response, {"result": {"content": content}}],
+                ),
             ):
                 self.assertEqual(client.call_tool("inspect", {}), expected)
 

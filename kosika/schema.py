@@ -138,14 +138,14 @@ def _schema_for_type(
 ) -> dict[str, Any]:
     if signature(type_name):
         return {
-            'type': 'object',
-            'properties': {
-                '$function': {'type': 'string'},
-                '$type': {'const': type_name},
-                '$captures': {'type': 'object'},
+            "type": "object",
+            "properties": {
+                "$function": {"type": "string"},
+                "$type": {"const": type_name},
+                "$captures": {"type": "object"},
             },
-            'required': ['$function', '$type', '$captures'],
-            'additionalProperties': False,
+            "required": ["$function", "$type", "$captures"],
+            "additionalProperties": False,
         }
     primitive_types = {
         "Text": "string",

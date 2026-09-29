@@ -21,16 +21,16 @@ def replay_trace(trace_path: str | Path) -> Any:
         strict_json(line)
         for line in Path(trace_path).read_text(encoding="utf-8").splitlines()
     ]
-    if events and isinstance(events[0], dict) and events[0].get(
-        "event"
-    ) == "agent_run_start":
+    if (
+        events
+        and isinstance(events[0], dict)
+        and events[0].get("event") == "agent_run_start"
+    ):
         return replay_agent_events(events)
     return replay_events(events)
 
 
-def _validate_function_events(
-    events: list[Any], *, version: int, depth: int
-) -> None:
+def _validate_function_events(events: list[Any], *, version: int, depth: int) -> None:
     if events and depth >= 32:
         raise ValueError("Nested function replay exceeds depth limit")
     if len(events) % 2 or any(not isinstance(event, dict) for event in events):
@@ -57,9 +57,7 @@ def _validate_function_events(
                 body_events, list
             ):
                 raise ValueError("Function trace requires nested event lists")
-            _validate_function_events(
-                argument_events, version=version, depth=depth
-            )
+            _validate_function_events(argument_events, version=version, depth=depth)
             _validate_function_events(body_events, version=version, depth=depth + 1)
 
 
@@ -124,9 +122,7 @@ def replay_events(events: list[Any], *, depth: int = 0) -> dict[str, Any]:
             expression_events = call.get("expression_events")
             if not isinstance(expression_events, list):
                 raise ValueError("Trace call requires function expression events")
-            _validate_function_events(
-                expression_events, version=version, depth=0
-            )
+            _validate_function_events(expression_events, version=version, depth=0)
         if key == "workflow":
             nested = returned.get("events")
             if not isinstance(nested, list):

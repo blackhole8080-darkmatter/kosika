@@ -1,0 +1,68 @@
+{
+  "manifestVersion": 1,
+  "server": {
+    "source": "agent_factory",
+    "protocolVersion": "2025-11-25",
+    "name": "kosika-agent-factory",
+    "version": "0.1.0"
+  },
+  "tools": {
+    "write_source": {
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "can": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cannot": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "max_steps": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "name",
+          "model",
+          "can",
+          "cannot",
+          "max_steps"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "status",
+          "action"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "0ce5b60871f249ab93233ecebfa794fe3cdfe13220becc4db14366c8d206b8d4"
+    }
+  }
+}

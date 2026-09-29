@@ -1,0 +1,38 @@
+{
+  "schema": "kosika.ai-world/v1",
+  "name": "Forest Knowledge Reserve",
+  "environment": "forest",
+  "camera": "isometric",
+  "render_style": "isometric_lowpoly",
+  "description": "A living research reserve where archives, scholarship, education, and AI evaluation share one forest campus.",
+  "buildings": [
+    {
+      "id": "archive-lodge",
+      "domain": "History & Archives",
+      "label": "Archive Lodge",
+      "kind": "museum",
+      "residents": ["archivist", "timeline_builder", "source_critic", "period_expert"]
+    },
+    {
+      "id": "research-institute",
+      "domain": "Knowledge & Scholarship",
+      "label": "Research Institute",
+      "kind": "library",
+      "residents": ["literature_reviewer", "data_collector", "source_verifier", "citation_auditor", "abstract_summarizer"]
+    },
+    {
+      "id": "evaluation-observatory",
+      "domain": "AI & Machine Learning",
+      "label": "Evaluation Observatory",
+      "kind": "observatory",
+      "residents": ["model_evaluator", "prompt_tuner", "safety_reviewer", "dataset_curator"]
+    },
+    {
+      "id": "learning-grove",
+      "domain": "Education",
+      "label": "Learning Grove",
+      "kind": "university",
+      "residents": ["tutor", "curriculum_planner", "assessor", "feedback_reader"]
+    }
+  ]
+}

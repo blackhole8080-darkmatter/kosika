@@ -1,0 +1,14 @@
+record Greeting {
+  text: Text
+}
+
+fn greeting() -> Greeting {
+  return {text: "Hello, world!"}
+}
+
+workflow main() -> Greeting {
+  step greet {
+    let result: Greeting = greeting()
+    return result
+  }
+}

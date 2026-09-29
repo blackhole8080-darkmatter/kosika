@@ -130,9 +130,7 @@ class JavaScriptImportTests(unittest.TestCase):
     def test_counts_dynamic_imports_without_resolving_them(self) -> None:
         document = scan('async function go() { return await import("./late.js"); }\n')
         self.assertEqual(len(document["dynamic_imports"]), 1)
-        self.assertNotIn(
-            "./late.js", {item["module"] for item in document["imports"]}
-        )
+        self.assertNotIn("./late.js", {item["module"] for item in document["imports"]})
 
 
 class JavaScriptMaskingTests(unittest.TestCase):
@@ -142,7 +140,7 @@ class JavaScriptMaskingTests(unittest.TestCase):
 
     def test_does_not_invent_symbols_from_template_literals(self) -> None:
         document = scan(
-            'const t = `\n  function alsoFake() {}\n  class FakeClass {}\n`;\n'
+            "const t = `\n  function alsoFake() {}\n  class FakeClass {}\n`;\n"
         )
         self.assertNotIn("alsoFake", names(document))
         self.assertNotIn("FakeClass", names(document))
@@ -152,7 +150,7 @@ class JavaScriptMaskingTests(unittest.TestCase):
         self.assertEqual(document["symbols"], [])
 
     def test_does_not_invent_imports_from_strings(self) -> None:
-        document = scan('const s = \'import x from "not-a-real-module";\';\n')
+        document = scan("const s = 'import x from \"not-a-real-module\";';\n")
         self.assertEqual(document["imports"], [])
 
     def test_distinguishes_division_from_regex(self) -> None:
@@ -170,7 +168,10 @@ class JavaScriptMaskingTests(unittest.TestCase):
     def test_reports_uncertainty_for_unterminated_regex(self) -> None:
         document = scan("const p = /unclosed\n")
         self.assertTrue(
-            any(item["reason"] == "unterminated_regex_literal" for item in document["uncertainties"])
+            any(
+                item["reason"] == "unterminated_regex_literal"
+                for item in document["uncertainties"]
+            )
         )
         self.assertEqual(
             document["support_level"],
@@ -350,7 +351,9 @@ class SourceSchemaTests(unittest.TestCase):
             source="open('x');\n",
             support_level="test",
             imports=[],
-            module_calls=[{"callee": "open", "line": 1, "observed_effect": "filesystem"}],
+            module_calls=[
+                {"callee": "open", "line": 1, "observed_effect": "filesystem"}
+            ],
             symbols=[],
         )
         self.assertEqual(document["observed_effects"][0]["kind"], "filesystem")

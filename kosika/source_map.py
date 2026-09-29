@@ -118,9 +118,7 @@ def _discover(root: Path) -> list[Path]:
     return sorted(found, key=lambda item: item.relative_to(root).as_posix())
 
 
-def _read(
-    path: Path, relative: str, total: list[int], max_source_bytes: int
-) -> str:
+def _read(path: Path, relative: str, total: list[int], max_source_bytes: int) -> str:
     try:
         with path.open("rb") as source_file:
             raw = source_file.read(max_source_bytes + 1)
@@ -308,7 +306,9 @@ def build_source_map(root: str | Path) -> dict[str, Any]:
         document = analyses[relative]
         module = nodes[document["_module_id"]]["label"]
         for symbol in document["symbols"]:
-            source_id = f"symbol:{symbol['qualified_name']}@{module}:{symbol['start_line']}"
+            source_id = (
+                f"symbol:{symbol['qualified_name']}@{module}:{symbol['start_line']}"
+            )
             if source_id not in nodes:
                 continue
             for call in symbol["calls"]:
@@ -331,9 +331,7 @@ def build_source_map(root: str | Path) -> dict[str, Any]:
                 continue
             target_id = f"module:{target}"
             if target_id in nodes:
-                connect(
-                    document["_module_id"], target_id, "imports", item["module"]
-                )
+                connect(document["_module_id"], target_id, "imports", item["module"])
 
     languages = Counter(document["language"] for document in analyses.values())
     report = {
@@ -361,7 +359,8 @@ def build_source_map(root: str | Path) -> dict[str, Any]:
             "resolved_call_edges": resolved,
             "unreadable_files": len(failures),
         },
-        "nodes": [nodes[key] for key in sorted(nodes)],        "edges": [
+        "nodes": [nodes[key] for key in sorted(nodes)],
+        "edges": [
             {"source": source, "target": target, "relation": relation, "label": label}
             for source, target, relation, label in sorted(edges)
         ],
@@ -403,7 +402,8 @@ def to_text(report: dict[str, Any]) -> str:
         ),
         "Languages: "
         + ", ".join(
-            f"{name} ({count})" for name, count in summary["language_file_counts"].items()
+            f"{name} ({count})"
+            for name, count in summary["language_file_counts"].items()
         ),
     ]
 
@@ -421,11 +421,15 @@ def to_text(report: dict[str, Any]) -> str:
 
     if effects_by_kind:
         lines.append("")
-        lines.append("External capabilities observed (declared code, not proof of use):")
+        lines.append(
+            "External capabilities observed (declared code, not proof of use):"
+        )
         for kind in sorted(effects_by_kind):
             rows = effects_by_kind[kind]
             names = sorted({row["callee"] for row in rows})
-            shown = ", ".join(names[:6]) + (f", +{len(names) - 6} more" if len(names) > 6 else "")
+            shown = ", ".join(names[:6]) + (
+                f", +{len(names) - 6} more" if len(names) > 6 else ""
+            )
             lines.append(f"  {kind:11} {shown}")
 
     by_file: dict[str, list[dict[str, Any]]] = {}
@@ -461,9 +465,7 @@ def to_text(report: dict[str, Any]) -> str:
             lines.append(f"  {item['path']}: {item['reason']}")
 
     lines.append("")
-    lines.append(
-        "Structure only: this map reports what is declared, not what runs."
-    )
+    lines.append("Structure only: this map reports what is declared, not what runs.")
     return "\n".join(lines)
 
 

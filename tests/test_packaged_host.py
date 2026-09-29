@@ -56,10 +56,12 @@ class PackagedHostTests(unittest.TestCase):
                 self.assertIn(b"Kosika", html)
                 token = json.loads(request("GET", "/api/session")[1])["token"]
                 sample = SAMPLES[1]
-                payload = json.dumps({
-                    key: sample[key]
-                    for key in ("files", "entry", "workflow", "inputs", "fixtures")
-                })
+                payload = json.dumps(
+                    {
+                        key: sample[key]
+                        for key in ("files", "entry", "workflow", "inputs", "fixtures")
+                    }
+                )
                 self.assertEqual(request("POST", "/api/run", payload)[0], 403)
                 status, body = request("POST", "/api/run", payload, token)
                 self.assertEqual(status, 200, body)

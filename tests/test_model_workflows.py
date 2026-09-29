@@ -123,7 +123,9 @@ class ModelWorkflowTests(unittest.TestCase):
                 model_bindings={"other": provider},
             )
         self.assertEqual(provider.requests, [])
-        self.assertEqual(json.loads(self.trace.read_text().splitlines()[-1])["event"], "run_failed")
+        self.assertEqual(
+            json.loads(self.trace.read_text().splitlines()[-1])["event"], "run_failed"
+        )
         with self.assertRaises(ValueError):
             replay(self.trace)
 
@@ -162,7 +164,9 @@ class ModelWorkflowTests(unittest.TestCase):
                     inputs=INPUTS,
                     model_bindings={"writer": ScriptedModelProvider([response])},
                 )
-        self.assertEqual(json.loads(self.trace.read_text().splitlines()[-1])["event"], "run_failed")
+        self.assertEqual(
+            json.loads(self.trace.read_text().splitlines()[-1])["event"], "run_failed"
+        )
         with self.assertRaises(ValueError):
             replay(self.trace)
 
@@ -215,7 +219,10 @@ class ModelWorkflowTests(unittest.TestCase):
             self.source
             + "\nagent bounded { max_steps: 1 max_tool_calls: 0 max_model_calls: 1 }",
         ):
-            with self.subTest(source=source), self.assertRaises((CheckError, ParseError)):
+            with (
+                self.subTest(source=source),
+                self.assertRaises((CheckError, ParseError)),
+            ):
                 check(parse(source))
 
     def test_replay_rejects_incomplete_reordered_or_inconsistent_trace(self) -> None:
@@ -318,7 +325,9 @@ class ModelWorkflowTests(unittest.TestCase):
                 model_bindings={"writer": controlled},
             )
         self.assertEqual(controlled.telemetry[0]["error"], "provider")
-        self.assertEqual(json.loads(self.trace.read_text().splitlines()[-1])["event"], "run_failed")
+        self.assertEqual(
+            json.loads(self.trace.read_text().splitlines()[-1])["event"], "run_failed"
+        )
         with self.assertRaises(ValueError):
             replay(self.trace)
 

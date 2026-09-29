@@ -1,0 +1,61 @@
+// Build a new Kosika agent from a typed request.
+// The model proposes only a declaration; source writing is an approved effect.
+record BuildRequest {
+  purpose: Text
+  constraints: Text
+}
+
+record AgentSpec {
+  name: Text
+  model: Text
+  can: Text[]
+  cannot: Text[]
+  max_steps: Number
+}
+
+record BuildResult {
+  source: Text
+  status: Text
+  action: Text
+}
+
+model architect {
+  input: BuildRequest
+  output: AgentSpec
+  deployment: "fixture-agent-architect"
+}
+
+tool write_source {
+  source mcp "agent_factory"
+  operation: "write_source"
+  access: execute
+  input: AgentSpec
+  output: BuildResult
+}
+
+agent source_writer {
+  can: [write_source]
+  cannot: [arbitrary_shell, network, grant_capabilities]
+  max_steps: 1
+}
+
+workflow build_agent(request: BuildRequest) -> BuildResult {
+  require approval
+  step design {
+    let spec: AgentSpec = use_model architect(
+      purpose: request.purpose,
+      constraints: request.constraints
+    )
+    return spec
+  }
+  step write {
+    let result: BuildResult = execute source_writer.write_source(
+      name: spec.name,
+      model: spec.model,
+      can: spec.can,
+      cannot: spec.cannot,
+      max_steps: spec.max_steps
+    )
+    return result
+  }
+}

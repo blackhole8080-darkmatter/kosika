@@ -5,21 +5,20 @@ This module provides expression caching, JIT compilation concepts,
 dead code elimination, and performance optimization for the Kosika engine.
 """
 
-import time
 import hashlib
-import threading
-import statistics
-from abc import ABC, abstractmethod
-from collections import defaultdict
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Callable, Set
-from enum import Enum
 import json
+import statistics
+import threading
+import time
+from collections import defaultdict
+from dataclasses import dataclass
+from enum import Enum
+from typing import Any, Callable, Dict, List, Optional, Set
 
 
 class OptimizationLevel(Enum):
     """Optimization levels."""
+
     NONE = "none"
     BASIC = "basic"
     AGGRESSIVE = "aggressive"
@@ -29,6 +28,7 @@ class OptimizationLevel(Enum):
 @dataclass
 class CompilationResult:
     """Result of JIT compilation."""
+
     compiled_function: Callable
     compilation_time: float
     optimization_applied: str
@@ -39,6 +39,7 @@ class CompilationResult:
 @dataclass
 class CacheStatistics:
     """Statistics for cache performance."""
+
     hits: int = 0
     misses: int = 0
     evictions: int = 0
@@ -66,10 +67,7 @@ class ExpressionCache:
     def _generate_key(self, expression: Any, context: Dict[str, Any]) -> str:
         """Generate a cache key from expression and context."""
         # Create a deterministic string representation
-        cache_data = {
-            "expression": str(expression),
-            "context": sorted(context.items())
-        }
+        cache_data = {"expression": str(expression), "context": sorted(context.items())}
         cache_str = json.dumps(cache_data, sort_keys=True)
         return hashlib.md5(cache_str.encode()).hexdigest()
 
@@ -156,7 +154,9 @@ class JITCompiler:
         with self.lock:
             self.execution_counts[function_name] += 1
 
-    def compile_function(self, function_name: str, function_code: str) -> CompilationResult:
+    def compile_function(
+        self, function_name: str, function_code: str
+    ) -> CompilationResult:
         """Compile a function (mock implementation)."""
         start_time = time.time()
 
@@ -167,7 +167,8 @@ class JITCompiler:
             # - Transpilation to Rust/Go for performance
 
             # Mock compilation: just return the original function
-            compiled_func = lambda *args, **kwargs: None  # Placeholder
+            def compiled_func(*args, **kwargs):
+                return None
 
             compilation_time = time.time() - start_time
 
@@ -175,7 +176,7 @@ class JITCompiler:
                 compiled_function=compiled_func,
                 compilation_time=compilation_time,
                 optimization_applied="mock_optimization",
-                success=True
+                success=True,
             )
 
             with self.lock:
@@ -189,7 +190,7 @@ class JITCompiler:
                 compilation_time=time.time() - start_time,
                 optimization_applied="none",
                 success=False,
-                error=str(e)
+                error=str(e),
             )
 
     def get_compiled(self, function_name: str) -> Optional[CompilationResult]:
@@ -206,12 +207,11 @@ class JITCompiler:
                 "compilation_threshold": self.compilation_threshold,
                 "execution_counts": dict(self.execution_counts),
                 "hot_functions": [
-                    (name, count) for name, count in sorted(
-                        self.execution_counts.items(),
-                        key=lambda x: x[1],
-                        reverse=True
+                    (name, count)
+                    for name, count in sorted(
+                        self.execution_counts.items(), key=lambda x: x[1], reverse=True
                     )[:10]
-                ]
+                ],
             }
 
 
@@ -250,7 +250,7 @@ class DeadCodeEliminator:
         return {
             "original_program": program,
             "removed_declarations": list(unused),
-            "optimization_applied": "dead_code_elimination"
+            "optimization_applied": "dead_code_elimination",
         }
 
     def get_elimination_stats(self) -> Dict[str, Any]:
@@ -258,8 +258,10 @@ class DeadCodeEliminator:
         return {
             "total_declarations": len(self.dependency_graph),
             "used_declarations": len(self.used_declarations),
-            "unused_declarations": len(self.dependency_graph) - len(self.used_declarations),
-            "elimination_rate": 1.0 - (len(self.used_declarations) / max(1, len(self.dependency_graph)))
+            "unused_declarations": len(self.dependency_graph)
+            - len(self.used_declarations),
+            "elimination_rate": 1.0
+            - (len(self.used_declarations) / max(1, len(self.dependency_graph))),
         }
 
 
@@ -305,7 +307,7 @@ class PerformanceProfiler:
                 "max_duration": max(timings),
                 "duration_std": statistics.stdev(timings) if len(timings) > 1 else 0,
                 "avg_memory": statistics.mean(memory) if memory else 0,
-                "total_duration": sum(timings)
+                "total_duration": sum(timings),
             }
 
     def get_hot_operations(self, limit: int = 10) -> List[Dict[str, Any]]:
@@ -315,13 +317,17 @@ class PerformanceProfiler:
                 op: len(timings) for op, timings in self.operation_timings.items()
             }
 
-            sorted_ops = sorted(operation_counts.items(), key=lambda x: x[1], reverse=True)
+            sorted_ops = sorted(
+                operation_counts.items(), key=lambda x: x[1], reverse=True
+            )
 
             return [
                 {
                     "operation": op,
                     "executions": count,
-                    "avg_duration": statistics.mean(self.operation_timings[op]) if self.operation_timings[op] else 0
+                    "avg_duration": statistics.mean(self.operation_timings[op])
+                    if self.operation_timings[op]
+                    else 0,
                 }
                 for op, count in sorted_ops[:limit]
             ]
@@ -342,17 +348,24 @@ class OptimizationPipeline:
         optimization_results = {
             "original": program,
             "optimizations_applied": [],
-            "performance_improvement": 0.0
+            "performance_improvement": 0.0,
         }
 
         if self.optimization_level == OptimizationLevel.NONE:
             return optimization_results
 
         # Dead code elimination
-        if self.optimization_level in [OptimizationLevel.AGGRESSIVE, OptimizationLevel.EXTREME]:
-            dead_code_result = self.dead_code_eliminator.eliminate_dead_code(program)
-            optimization_results["optimizations_applied"].append("dead_code_elimination")
-            optimization_results["dead_code_stats"] = self.dead_code_eliminator.get_elimination_stats()
+        if self.optimization_level in [
+            OptimizationLevel.AGGRESSIVE,
+            OptimizationLevel.EXTREME,
+        ]:
+            self.dead_code_eliminator.eliminate_dead_code(program)
+            optimization_results["optimizations_applied"].append(
+                "dead_code_elimination"
+            )
+            optimization_results["dead_code_stats"] = (
+                self.dead_code_eliminator.get_elimination_stats()
+            )
 
         # Expression caching is applied at runtime
         optimization_results["optimizations_applied"].append("expression_caching")
@@ -362,7 +375,9 @@ class OptimizationPipeline:
 
         return optimization_results
 
-    def execute_with_optimization(self, operation: str, func: Callable, *args, **kwargs) -> Any:
+    def execute_with_optimization(
+        self, operation: str, func: Callable, *args, **kwargs
+    ) -> Any:
         """Execute function with optimizations applied."""
         # Profile execution
         start_time = self.profiler.start_timing(operation)
@@ -402,8 +417,8 @@ class OptimizationPipeline:
             "dead_code_stats": self.dead_code_eliminator.get_elimination_stats(),
             "performance_stats": {
                 "hot_operations": self.profiler.get_hot_operations(),
-                "total_operations": len(self.profiler.operation_timings)
-            }
+                "total_operations": len(self.profiler.operation_timings),
+            },
         }
 
     def set_optimization_level(self, level: OptimizationLevel):
@@ -429,10 +444,14 @@ class AdaptiveOptimizer:
         self.performance_history: List[Dict[str, Any]] = []
         self.optimization_effectiveness: Dict[str, float] = defaultdict(float)
 
-    def optimize_and_execute(self, operation: str, func: Callable, *args, **kwargs) -> Any:
+    def optimize_and_execute(
+        self, operation: str, func: Callable, *args, **kwargs
+    ) -> Any:
         """Optimize and execute with adaptive behavior."""
         # Execute with current optimization level
-        result = self.pipeline.execute_with_optimization(operation, func, *args, **kwargs)
+        result = self.pipeline.execute_with_optimization(
+            operation, func, *args, **kwargs
+        )
 
         # Record performance
         stats = self.pipeline.profiler.get_performance_stats(operation)
@@ -467,7 +486,7 @@ class AdaptiveOptimizer:
             "current_level": self.pipeline.optimization_level.value,
             "performance_history_size": len(self.performance_history),
             "optimization_stats": self.pipeline.get_optimization_stats(),
-            "recommendations": self._generate_recommendations()
+            "recommendations": self._generate_recommendations(),
         }
 
     def _generate_recommendations(self) -> List[str]:
@@ -487,13 +506,17 @@ class AdaptiveOptimizer:
         hot_functions = jit_stats.get("hot_functions", [])
 
         if len(hot_functions) > 5:
-            recommendations.append(f"Consider JIT compilation for {len(hot_functions)} hot functions")
+            recommendations.append(
+                f"Consider JIT compilation for {len(hot_functions)} hot functions"
+            )
 
         return recommendations
 
 
 # Convenience function to create an optimization system
-def create_optimizer(level: OptimizationLevel = OptimizationLevel.BASIC) -> OptimizationPipeline:
+def create_optimizer(
+    level: OptimizationLevel = OptimizationLevel.BASIC,
+) -> OptimizationPipeline:
     """Create an optimization pipeline with specified level."""
     return OptimizationPipeline(level)
 

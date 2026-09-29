@@ -1,31 +1,65 @@
-.coverage
-coverage.xml
-htmlcov/
+# Python
 __pycache__/
 *.py[cod]
 .venv/
 .mypy_cache/
 .ruff_cache/
-/kosika_demo_trace.jsonl
-/live_cli_trace.jsonl
-/live_manifest_trace.jsonl
-/desktop/node_modules/
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+*.egg-info/
+
+# Node / desktop
+node_modules/
 /desktop/host-dist/
 /desktop/host-build/
 /desktop/release/
-*.log
-*.err
-*.jsonl
-.pytest_cache/
-.commandcode/
-.devin/
-.freebuff/
-.gitnexus/
-/kosika-preview.html
-/kosika_results_preview.html
+
+# Local runtime state
+# Durable/trace databases are machine-local execution state, not source. They
+# can contain prompt text and event payloads from real runs.
+*.sqlite
+*.sqlite3
+*.db
+*.lock.sqlite
+# NOT *.lock — uv.lock is a real lockfile and must stay committed.
+
+# Ad-hoc root-level test scripts kept out of the published suite
 /test_engine_enhancements.py
 /test_engine_simple.py
 /test_meta_agent.py
-/live_preview.jsonl
-/run_trace.jsonl
-/workbench-std.err
+
+# Traces and scratch output
+*.jsonl
+*.log
+*.err
+
+# Scratch workspace for previews, probes, and captured traces
+/build/
+.tmp-*
+
+# Editor and agent tool state
+.commandcode/
+.cursor/
+.devin/
+.freebuff/
+.gitnexus/
+.idea/
+.vscode/
+
+# Generated previews
+/kosika-preview.html
+/kosika_results_preview.html
+
+# Secrets — never commit these even if a tool writes one
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+
+# OS noise
+.DS_Store
+Thumbs.db

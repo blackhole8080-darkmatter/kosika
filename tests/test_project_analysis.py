@@ -21,7 +21,9 @@ class ProjectAnalysisTests(unittest.TestCase):
         root.mkdir(parents=True, exist_ok=True)
         (root / "pkg").mkdir()
         (root / "tests").mkdir()
-        (root / "pkg" / "__init__.py").write_text("from .helper import score\n", encoding="utf-8")
+        (root / "pkg" / "__init__.py").write_text(
+            "from .helper import score\n", encoding="utf-8"
+        )
         (root / "pkg" / "helper.py").write_text(
             '"""Shared scoring helper."""\ndef score(value):\n    return value + 1\n',
             encoding="utf-8",
@@ -60,13 +62,17 @@ class ProjectAnalysisTests(unittest.TestCase):
         )
         return root
 
-    def test_indexes_python_files_context_other_languages_and_local_imports(self) -> None:
+    def test_indexes_python_files_context_other_languages_and_local_imports(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = self.make_project(Path(directory))
             report = analyze_python_project(root)
 
         self.assertEqual(report["schema"], "kosika.project-analysis/v1")
-        self.assertEqual(report["support_level"], "polyglot_structure_and_python_import_edges")
+        self.assertEqual(
+            report["support_level"], "polyglot_structure_and_python_import_edges"
+        )
         self.assertEqual(report["summary"]["file_count"], 7)
         self.assertEqual(report["summary"]["test_file_count"], 1)
         self.assertEqual(
@@ -98,24 +104,37 @@ class ProjectAnalysisTests(unittest.TestCase):
             item["qualified_name"] for item in by_path["web/app.js"]["symbols"]
         }
         self.assertIn("run", js_symbols)
-        self.assertIn("helper", {item["name"] for item in by_path["web/helper.js"]["symbols"]})
+        self.assertIn(
+            "helper", {item["name"] for item in by_path["web/helper.js"]["symbols"]}
+        )
         edges = {
             (edge["source"], edge["target"], edge["resolution"])
             for edge in report["local_import_edges"]
         }
-        self.assertIn(("pkg/service.py", "pkg/helper.py", "candidate_from_import"), edges)
+        self.assertIn(
+            ("pkg/service.py", "pkg/helper.py", "candidate_from_import"), edges
+        )
         self.assertIn(("pkg/service.py", "pkg/helper.py", "module_import"), edges)
-        self.assertIn(("tests/test_service.py", "pkg/service.py", "candidate_from_import"), edges)
+        self.assertIn(
+            ("tests/test_service.py", "pkg/service.py", "candidate_from_import"), edges
+        )
         # JavaScript imports are reported per file but never become Python import edges.
         self.assertFalse(any(source.endswith(".js") for source, _, _ in edges))
         self.assertEqual(report["unresolved_import_candidates"], ["requests"])
-        self.assertEqual(report["other_language_files"], [{"path": "worker.go", "language": "go"}])
+        self.assertEqual(
+            report["other_language_files"], [{"path": "worker.go", "language": "go"}]
+        )
         evidence = {item["path"]: item for item in report["context_evidence"]}
         self.assertIn("Sample project", evidence["README.md"]["content"])
         self.assertEqual(evidence["README.md"]["kind"], "documentation")
         self.assertEqual(evidence["pyproject.toml"]["kind"], "project_metadata")
         self.assertEqual(evidence["uv.lock"]["kind"], "dependency_lock")
-        self.assertTrue(any("not execute" in item or "execution" in item for item in report["limitations"]))
+        self.assertTrue(
+            any(
+                "not execute" in item or "execution" in item
+                for item in report["limitations"]
+            )
+        )
 
     def test_output_is_deterministic_and_hashes_project_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -129,9 +148,13 @@ class ProjectAnalysisTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = self.make_project(Path(directory))
             (root / ".venv").mkdir()
-            (root / ".venv" / "ignored.py").write_text("def ignored(): pass\n", encoding="utf-8")
+            (root / ".venv" / "ignored.py").write_text(
+                "def ignored(): pass\n", encoding="utf-8"
+            )
             (root / "build").mkdir()
-            (root / "build" / "ignored.py").write_text("def ignored(): pass\n", encoding="utf-8")
+            (root / "build" / "ignored.py").write_text(
+                "def ignored(): pass\n", encoding="utf-8"
+            )
             external = Path(directory) / "external.py"
             external.write_text("def external(): pass\n", encoding="utf-8")
             try:
@@ -150,7 +173,9 @@ class ProjectAnalysisTests(unittest.TestCase):
             with patch("kosika.project_analysis.MAX_PROJECT_FILES", 1):
                 (root / "a.py").write_text("pass\n", encoding="utf-8")
                 (root / "b.py").write_text("pass\n", encoding="utf-8")
-                with self.assertRaisesRegex(ProjectAnalysisError, "more than 1 analyzed files"):
+                with self.assertRaisesRegex(
+                    ProjectAnalysisError, "more than 1 analyzed files"
+                ):
                     analyze_python_project(root)
 
     def test_report_size_limit_fails_safely(self) -> None:
@@ -184,7 +209,9 @@ class ProjectAnalysisTests(unittest.TestCase):
             root = self.make_project(Path(directory) / "project")
             kosika_source = Path(__file__).parents[1] / "examples" / "test_host.kos"
             fixture = Path(directory) / "assistant.json"
-            fixture.write_text(json.dumps(["Project-grounded answer."]), encoding="utf-8")
+            fixture.write_text(
+                json.dumps(["Project-grounded answer."]), encoding="utf-8"
+            )
             output = io.StringIO()
             with (
                 patch.object(

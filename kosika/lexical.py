@@ -48,8 +48,10 @@ def _expression(
     if isinstance(value, FunctionCallExpr):
         binding = variables.get(value.function_name)
         if binding:
-            return FunctionCallExpr(environment[binding[0]],
-                                    tuple((key, walk(arg)) for key, arg in value.arguments))
+            return FunctionCallExpr(
+                environment[binding[0]],
+                tuple((key, walk(arg)) for key, arg in value.arguments),
+            )
         name, captures = functions.get(value.function_name, (value.function_name, ()))
         arguments = tuple((key, walk(argument)) for key, argument in value.arguments)
         arguments += tuple(
@@ -58,9 +60,12 @@ def _expression(
         return FunctionCallExpr(name, arguments)
     if isinstance(value, FunctionRefExpr):
         name, captures = functions.get(value.function_name, (value.function_name, ()))
-        return FunctionRefExpr(name, tuple(
-            (f'$capture:{key}', VariableExpr(environment[key])) for key in captures
-        ))
+        return FunctionRefExpr(
+            name,
+            tuple(
+                (f"$capture:{key}", VariableExpr(environment[key])) for key in captures
+            ),
+        )
     if isinstance(value, FieldExpr):
         return replace(value, base=walk(value.base))
     if isinstance(value, IndexExpr):
@@ -83,8 +88,11 @@ def _expression(
             when_false=walk(value.when_false),
         )
     if isinstance(value, MatchExpr):
-        return replace(value, subject=walk(value.subject),
-                       arms=tuple(replace(arm, value=walk(arm.value)) for arm in value.arms))
+        return replace(
+            value,
+            subject=walk(value.subject),
+            arms=tuple(replace(arm, value=walk(arm.value)) for arm in value.arms),
+        )
     return value
 
 

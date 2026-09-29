@@ -77,9 +77,7 @@ class EventStreamTests(unittest.TestCase):
             stream = EventStream(jsonl_path=path, buffer_size=4)
             stream.publish([event(1), event(2)])
             restored = EventStream(jsonl_path=path, buffer_size=4)
-            self.assertEqual(
-                [item["sequence"] for item in restored.read_after(1)], [2]
-            )
+            self.assertEqual([item["sequence"] for item in restored.read_after(1)], [2])
             self.assertEqual(restored.wait_for(2, timeout=0), ())
 
     def test_subscriber_limits_and_cleanup_are_bounded(self) -> None:
@@ -117,7 +115,9 @@ class EventStreamTests(unittest.TestCase):
         self.assertEqual(result["mode"], "fixture")
         normalized = stream.read_after(limit=32)
         self.assertTrue(normalized)
-        self.assertTrue(all(item["schema"] == "synapse.kosika.event/v1" for item in normalized))
+        self.assertTrue(
+            all(item["schema"] == "synapse.kosika.event/v1" for item in normalized)
+        )
         self.assertEqual(
             [item["sequence"] for item in normalized],
             list(range(1, len(normalized) + 1)),
@@ -232,7 +232,9 @@ class WorkbenchSSETests(unittest.TestCase):
         )
         try:
             self.assertEqual(response.status, 200)
-            self.assertEqual(response.getheader("Content-Type"), "text/event-stream; charset=utf-8")
+            self.assertEqual(
+                response.getheader("Content-Type"), "text/event-stream; charset=utf-8"
+            )
             frame = "".join(response.fp.readline().decode("utf-8") for _ in range(4))
             self.assertIn("id: kosika-0002-", frame)
         finally:
@@ -357,8 +359,7 @@ class WorkbenchSSETests(unittest.TestCase):
             results[index] = subscribe()
 
         threads = [threading.Thread(target=publish_all)] + [
-            threading.Thread(target=run_subscriber, args=(index,))
-            for index in range(3)
+            threading.Thread(target=run_subscriber, args=(index,)) for index in range(3)
         ]
         for thread in threads:
             thread.start()
@@ -368,9 +369,7 @@ class WorkbenchSSETests(unittest.TestCase):
         for seen in results:
             self.assertIsNotNone(seen)
             self.assertEqual(seen, list(range(1, total + 1)))
-        ordered = sorted(
-            stream.read_after(limit=64), key=lambda item: item["sequence"]
-        )
+        ordered = sorted(stream.read_after(limit=64), key=lambda item: item["sequence"])
         self.assertEqual(
             [item["sequence"] for item in ordered],
             list(range(total - 63, total + 1)),

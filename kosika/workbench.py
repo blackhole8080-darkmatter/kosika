@@ -290,7 +290,11 @@ def dispatch(
             if event_stream is not None:
                 try:
                     event_stream.publish(
-                        [publish_check_event(event_stream.next_sequence, program, workflow)]
+                        [
+                            publish_check_event(
+                                event_stream.next_sequence, program, workflow
+                            )
+                        ]
                     )
                 except BridgePublicationError as exc:
                     raise EventStreamError(str(exc)) from exc

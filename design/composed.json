@@ -3,15 +3,34 @@
   "designVersion": 1,
   "design": {
     "id": "composed.design",
-    "name": "Composed Kosika Workflow",
+    "name": "Composed Workflow",
     "kind": "agent_workflow_network",
     "canvas": {
       "width": 1400.0,
       "height": 1000.0,
       "unit": "px"
-    }
+    },
+    "mindmapDigest": "64a83aaefccb6ec4e48e6f5cbcd21961b081d56ac4e04df46cdb50ab28963912"
   },
   "nodes": [
+    {
+      "id": "model.reader",
+      "label": "reader",
+      "kind": "model",
+      "position": {
+        "x": 860.0,
+        "y": 80.0
+      },
+      "size": {
+        "width": 160.0,
+        "height": 64.0
+      },
+      "attributes": {
+        "input": "Question",
+        "output": "Answer"
+      },
+      "style": {}
+    },
     {
       "id": "module.main.kos",
       "label": "main.kos",
@@ -23,6 +42,11 @@
       "size": {
         "width": 220.0,
         "height": 64.0
+      },
+      "width": 220.0,
+      "height": 64.0,
+      "attributes": {
+        "sha256": "3c79449adde02e9927eaa9f787cf8f65f047122a85547be0b62d720e5f5bf20b"
       },
       "style": {}
     },
@@ -38,6 +62,11 @@
         "width": 220.0,
         "height": 64.0
       },
+      "width": 220.0,
+      "height": 64.0,
+      "attributes": {
+        "sha256": "ec495942119b1bc410364cf20568406774c014a1b7b9f71b73a881c0585c3b1e"
+      },
       "style": {}
     },
     {
@@ -51,6 +80,11 @@
       "size": {
         "width": 220.0,
         "height": 64.0
+      },
+      "width": 220.0,
+      "height": 64.0,
+      "attributes": {
+        "sha256": "6358e165a1fb88027f88c98b54af4f25f4e16eae32ddf865225c31b1a5d02f52"
       },
       "style": {}
     },
@@ -66,6 +100,15 @@
         "width": 160.0,
         "height": 64.0
       },
+      "width": 160.0,
+      "attributes": {
+        "fields": [
+          {
+            "name": "text",
+            "type": "Text"
+          }
+        ]
+      },
       "style": {}
     },
     {
@@ -80,19 +123,54 @@
         "width": 160.0,
         "height": 64.0
       },
+      "width": 160.0,
+      "attributes": {
+        "fields": [
+          {
+            "name": "text",
+            "type": "Text"
+          }
+        ]
+      },
       "style": {}
     },
     {
-      "id": "model.reader",
-      "label": "reader",
-      "kind": "model",
+      "id": "stage.main.research",
+      "label": "1. research",
+      "kind": "stage",
       "position": {
-        "x": 860.0,
-        "y": 80.0
+        "x": 340.0,
+        "y": 480.0
       },
       "size": {
         "width": 160.0,
         "height": 64.0
+      },
+      "attributes": {
+        "workflow": "main",
+        "binding": "answer",
+        "binding_type": "Answer",
+        "return_name": "answer"
+      },
+      "style": {}
+    },
+    {
+      "id": "stage.research.answer",
+      "label": "1. answer",
+      "kind": "stage",
+      "position": {
+        "x": 340.0,
+        "y": 660.0
+      },
+      "size": {
+        "width": 160.0,
+        "height": 64.0
+      },
+      "attributes": {
+        "workflow": "research",
+        "binding": "result",
+        "binding_type": "Answer",
+        "return_name": "result"
       },
       "style": {}
     },
@@ -108,19 +186,15 @@
         "width": 160.0,
         "height": 64.0
       },
-      "style": {}
-    },
-    {
-      "id": "stage.main.research",
-      "label": "research",
-      "kind": "stage",
-      "position": {
-        "x": 340.0,
-        "y": 480.0
-      },
-      "size": {
-        "width": 160.0,
-        "height": 64.0
+      "attributes": {
+        "output": "Answer",
+        "approval_required": false,
+        "parameters": [
+          {
+            "name": "question",
+            "type": "Question"
+          }
+        ]
       },
       "style": {}
     },
@@ -136,41 +210,67 @@
         "width": 160.0,
         "height": 64.0
       },
-      "style": {}
-    },
-    {
-      "id": "stage.research.answer",
-      "label": "answer",
-      "kind": "stage",
-      "position": {
-        "x": 340.0,
-        "y": 660.0
-      },
-      "size": {
-        "width": 160.0,
-        "height": 64.0
+      "attributes": {
+        "output": "Answer",
+        "approval_required": false,
+        "parameters": [
+          {
+            "name": "question",
+            "type": "Question"
+          }
+        ]
       },
       "style": {}
     }
   ],
   "edges": [
     {
-      "id": "module.main.kos.imports.research.kos",
+      "id": "model.reader.outputs.record.Answer",
+      "source": "model.reader",
+      "target": "record.Answer",
+      "kind": "outputs"
+    },
+    {
+      "id": "record.Question.inputs.model.reader",
+      "source": "record.Question",
+      "target": "model.reader",
+      "kind": "inputs"
+    },
+    {
+      "id": "module.main.kos.imports.module.research.kos",
       "source": "module.main.kos",
       "target": "module.research.kos",
       "kind": "imports"
     },
     {
-      "id": "module.main.kos.imports.types.kos",
+      "id": "module.main.kos.imports.module.types.kos",
       "source": "module.main.kos",
       "target": "module.types.kos",
       "kind": "imports"
     },
     {
-      "id": "module.research.kos.imports.types.kos",
+      "id": "module.main.kos.contains.workflow.main",
+      "source": "module.main.kos",
+      "target": "workflow.main",
+      "kind": "contains"
+    },
+    {
+      "id": "module.research.kos.contains.model.reader",
+      "source": "module.research.kos",
+      "target": "model.reader",
+      "kind": "contains"
+    },
+    {
+      "id": "module.research.kos.imports.module.types.kos",
       "source": "module.research.kos",
       "target": "module.types.kos",
       "kind": "imports"
+    },
+    {
+      "id": "module.research.kos.contains.workflow.research",
+      "source": "module.research.kos",
+      "target": "workflow.research",
+      "kind": "contains"
     },
     {
       "id": "module.types.kos.contains.record.Answer",
@@ -185,58 +285,40 @@
       "kind": "contains"
     },
     {
-      "id": "module.research.kos.contains.model.reader",
-      "source": "module.research.kos",
-      "target": "model.reader",
-      "kind": "contains"
-    },
-    {
-      "id": "model.reader.input",
-      "source": "record.Question",
-      "target": "model.reader",
-      "kind": "inputs"
-    },
-    {
-      "id": "model.reader.output",
-      "source": "model.reader",
-      "target": "record.Answer",
-      "kind": "outputs"
-    },
-    {
-      "id": "module.main.kos.contains.workflow.main",
-      "source": "module.main.kos",
-      "target": "workflow.main",
-      "kind": "contains"
-    },
-    {
-      "id": "workflow.main.contains.research",
-      "source": "workflow.main",
-      "target": "stage.main.research",
-      "kind": "contains"
-    },
-    {
-      "id": "stage.main.research.workflow",
+      "id": "stage.main.research.calls.workflow.research",
       "source": "stage.main.research",
       "target": "workflow.research",
       "kind": "calls"
     },
     {
-      "id": "module.research.kos.contains.workflow.research",
-      "source": "module.research.kos",
-      "target": "workflow.research",
-      "kind": "contains"
-    },
-    {
-      "id": "workflow.research.contains.answer",
-      "source": "workflow.research",
-      "target": "stage.research.answer",
-      "kind": "contains"
-    },
-    {
-      "id": "stage.research.answer.model",
+      "id": "stage.research.answer.calls.model.reader",
       "source": "stage.research.answer",
       "target": "model.reader",
       "kind": "calls"
+    },
+    {
+      "id": "workflow.main.outputs.record.Answer",
+      "source": "workflow.main",
+      "target": "record.Answer",
+      "kind": "outputs"
+    },
+    {
+      "id": "workflow.main.contains.stage.main.research",
+      "source": "workflow.main",
+      "target": "stage.main.research",
+      "kind": "contains"
+    },
+    {
+      "id": "workflow.research.outputs.record.Answer",
+      "source": "workflow.research",
+      "target": "record.Answer",
+      "kind": "outputs"
+    },
+    {
+      "id": "workflow.research.contains.stage.research.answer",
+      "source": "workflow.research",
+      "target": "stage.research.answer",
+      "kind": "contains"
     }
   ],
   "views": [
@@ -244,11 +326,6 @@
       "id": "workflow-view",
       "name": "Agent workflows",
       "kind": "workflow"
-    },
-    {
-      "id": "network-view",
-      "name": "Network topology",
-      "kind": "network"
     },
     {
       "id": "mindmap-view",

@@ -246,9 +246,7 @@ def parse_rust_source(source: bytes) -> ParsedRustSource:
     module_calls = [
         call
         for call in all_calls
-        if not any(
-            start <= call["_start_byte"] < end for start, end in ranges
-        )
+        if not any(start <= call["_start_byte"] < end for start, end in ranges)
     ]
     for call in module_calls:
         call.pop("_start_byte", None)
@@ -264,8 +262,6 @@ def parse_rust_source(source: bytes) -> ParsedRustSource:
         _imports(source, root), key=lambda item: (item["line"], item["module"])
     )
     return ParsedRustSource(tuple(imports), tuple(symbols), tuple(module_calls))
-
-
 
 
 __all__ = [

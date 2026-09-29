@@ -149,9 +149,10 @@ def _analyze_javascript_source(source: str, path: str) -> dict[str, Any]:
 
 def _analyze_typescript_source(source: str, path: str) -> dict[str, Any]:
     return scan_javascript_source(source, path=path, language="typescript")
+
+
 def _analyze_rust_source(source: str, path: str) -> dict[str, Any]:
     return analyze_rust_source(source, path=path)
-
 
 
 REGISTRY = LanguageAdapterRegistry(

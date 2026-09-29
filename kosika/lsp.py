@@ -58,7 +58,8 @@ class WorkspaceIndex:
             directories[:] = sorted(
                 name
                 for name in directories
-                if not name.startswith(".") and name not in {"node_modules", "__pycache__"}
+                if not name.startswith(".")
+                and name not in {"node_modules", "__pycache__"}
             )
             for filename in sorted(filenames):
                 if not filename.endswith(".kos"):
@@ -91,7 +92,9 @@ class WorkspaceIndex:
             document = self._read_disk(path)
             if document is None:
                 self.documents.pop(uri, None)
-            elif uri not in self.documents and len(self.documents) >= MAX_WORKSPACE_FILES:
+            elif (
+                uri not in self.documents and len(self.documents) >= MAX_WORKSPACE_FILES
+            ):
                 return sorted(set(before))
             else:
                 self._ensure_capacity(uri, document.text)
@@ -157,7 +160,6 @@ class WorkspaceIndex:
                 return document
         raise LspError(f"Unknown document {uri!r}")
 
-
     def _ensure_capacity(self, uri: str, text: str) -> None:
         total = sum(
             len(document.text.encode("utf-8"))
@@ -172,7 +174,9 @@ class WorkspaceIndex:
             document.features = build_editor_features(document.text, path=document.uri)
         return document.features
 
-    def definitions(self, document: Document, name: str) -> list[tuple[Document, dict[str, Any]]]:
+    def definitions(
+        self, document: Document, name: str
+    ) -> list[tuple[Document, dict[str, Any]]]:
         local = _symbol_named(self.features(document)["symbols"], name)
         if local is not None:
             return [(document, local)]
@@ -446,7 +450,10 @@ class KosikaLanguageServer:
         if method == "textDocument/references":
             return self._references(params)
         if method == "textDocument/completion":
-            return {"isIncomplete": False, "items": self._features(params)["completions"]}
+            return {
+                "isIncomplete": False,
+                "items": self._features(params)["completions"],
+            }
         if method == "$/cancelRequest":
             request_id = params.get("id")
             if isinstance(request_id, (str, int)):
@@ -514,27 +521,33 @@ class KosikaLanguageServer:
                 for item in features["diagnostics"]
             ]
         except (EditorFeatureError, UnicodeError, LspError) as exc:
-            diagnostics = [{
-                "range": {
-                    "start": {"line": 0, "character": 0},
-                    "end": {"line": 0, "character": 1},
-                },
-                "severity": 1,
-                "source": "kosika",
-                "message": str(exc),
-            }]
-        self.transport.write({
-            "jsonrpc": "2.0",
-            "method": "textDocument/publishDiagnostics",
-            "params": {"uri": uri, "diagnostics": diagnostics},
-        })
+            diagnostics = [
+                {
+                    "range": {
+                        "start": {"line": 0, "character": 0},
+                        "end": {"line": 0, "character": 1},
+                    },
+                    "severity": 1,
+                    "source": "kosika",
+                    "message": str(exc),
+                }
+            ]
+        self.transport.write(
+            {
+                "jsonrpc": "2.0",
+                "method": "textDocument/publishDiagnostics",
+                "params": {"uri": uri, "diagnostics": diagnostics},
+            }
+        )
 
     def _publish_empty(self, uri: str) -> None:
-        self.transport.write({
-            "jsonrpc": "2.0",
-            "method": "textDocument/publishDiagnostics",
-            "params": {"uri": uri, "diagnostics": []},
-        })
+        self.transport.write(
+            {
+                "jsonrpc": "2.0",
+                "method": "textDocument/publishDiagnostics",
+                "params": {"uri": uri, "diagnostics": []},
+            }
+        )
 
     def _hover(self, params: dict[str, Any]) -> dict[str, Any] | None:
         features = self._features(params)
@@ -570,11 +583,13 @@ class KosikaLanguageServer:
         self.transport.write({"jsonrpc": "2.0", "id": request_id, "result": result})
 
     def _error(self, request_id: Any, code: int, message: str) -> None:
-        self.transport.write({
-            "jsonrpc": "2.0",
-            "id": request_id,
-            "error": {"code": code, "message": message},
-        })
+        self.transport.write(
+            {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "error": {"code": code, "message": message},
+            }
+        )
 
 
 class _ExitServer(Exception):
@@ -618,6 +633,7 @@ def _token_range(token: Any) -> dict[str, dict[str, int]]:
             "character": token.column - 1 + len(token.value),
         },
     }
+
 
 def _contains(value: dict[str, Any], position: dict[str, int]) -> bool:
     start = value["start"]

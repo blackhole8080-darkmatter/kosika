@@ -5,22 +5,20 @@ This module provides adaptive execution, error prediction, resource optimization
 and learning capabilities for the Kosika engine.
 """
 
-import time
-import threading
-import uuid
-from abc import ABC, abstractmethod
-from collections import defaultdict, deque
-from dataclasses import dataclass, field
-from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional, Tuple, Callable
-from enum import Enum
+import hashlib
 import json
 import statistics
-import hashlib
+import uuid
+from collections import defaultdict
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from enum import Enum
+from typing import Any, Dict, List, Optional
 
 
 class ExecutionStrategy(Enum):
     """Execution strategies."""
+
     SEQUENTIAL = "sequential"
     PARALLEL = "parallel"
     DISTRIBUTED = "distributed"
@@ -29,13 +27,16 @@ class ExecutionStrategy(Enum):
 
 class ErrorSeverity(Enum):
     """Error severity levels."""
+
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
     CRITICAL = "critical"
 
+
 class ExecutionPatternType(Enum):
     """Types of execution patterns."""
+
     MODEL_CALL = "model_call"
     TOOL_CALL = "tool_call"
     FUNCTION_CALL = "function_call"
@@ -46,6 +47,7 @@ class ExecutionPatternType(Enum):
 @dataclass
 class ExecutionPattern:
     """A pattern of execution behavior."""
+
     pattern_id: str
     operation_type: str
     avg_duration: float
@@ -59,6 +61,7 @@ class ExecutionPattern:
 @dataclass
 class ErrorPrediction:
     """Prediction of potential errors."""
+
     error_type: str
     severity: ErrorSeverity
     probability: float
@@ -70,6 +73,7 @@ class ErrorPrediction:
 @dataclass
 class ResourcePrediction:
     """Prediction of resource requirements."""
+
     cpu_estimate: float
     memory_estimate: float
     duration_estimate: float
@@ -80,6 +84,7 @@ class ResourcePrediction:
 @dataclass
 class ExecutionProfile:
     """Profile of an execution."""
+
     execution_id: str
     operation: str
     duration: float
@@ -116,7 +121,9 @@ class PatternExtractor:
                 pattern = self._extract_pattern(operation, profiles)
                 self.patterns[pattern.pattern_id] = pattern
 
-    def _extract_pattern(self, operation: str, profiles: List[ExecutionProfile]) -> ExecutionPattern:
+    def _extract_pattern(
+        self, operation: str, profiles: List[ExecutionProfile]
+    ) -> ExecutionPattern:
         """Extract a pattern from execution profiles."""
         durations = [p.duration for p in profiles]
         success_count = sum(1 for p in profiles if p.success)
@@ -125,7 +132,11 @@ class PatternExtractor:
         avg_resources = {}
         if profiles and profiles[0].resource_usage:
             for resource in profiles[0].resource_usage.keys():
-                values = [p.resource_usage.get(resource, 0) for p in profiles if p.resource_usage]
+                values = [
+                    p.resource_usage.get(resource, 0)
+                    for p in profiles
+                    if p.resource_usage
+                ]
                 if values:
                     avg_resources[resource] = statistics.mean(values)
 
@@ -140,10 +151,12 @@ class PatternExtractor:
             frequency=len(profiles),
             last_seen=max(p.timestamp for p in profiles),
             characteristics={
-                "duration_std": statistics.stdev(durations) if len(durations) > 1 else 0,
+                "duration_std": statistics.stdev(durations)
+                if len(durations) > 1
+                else 0,
                 "min_duration": min(durations),
-                "max_duration": max(durations)
-            }
+                "max_duration": max(durations),
+            },
         )
 
     def get_pattern(self, operation: str) -> Optional[ExecutionPattern]:
@@ -151,7 +164,9 @@ class PatternExtractor:
         pattern_id = hashlib.md5(operation.encode()).hexdigest()[:8]
         return self.patterns.get(pattern_id)
 
-    def get_similar_patterns(self, operation: str, threshold: float = 0.8) -> List[ExecutionPattern]:
+    def get_similar_patterns(
+        self, operation: str, threshold: float = 0.8
+    ) -> List[ExecutionPattern]:
         """Get patterns similar to the given operation."""
         target_pattern = self.get_pattern(operation)
         if not target_pattern:
@@ -167,14 +182,18 @@ class PatternExtractor:
         similar.sort(key=lambda x: x[1], reverse=True)
         return [p for p, _ in similar]
 
-    def _calculate_similarity(self, pattern1: ExecutionPattern, pattern2: ExecutionPattern) -> float:
+    def _calculate_similarity(
+        self, pattern1: ExecutionPattern, pattern2: ExecutionPattern
+    ) -> float:
         """Calculate similarity between two patterns."""
         # Simple similarity based on resource usage
         if not pattern1.avg_resource_usage or not pattern2.avg_resource_usage:
             return 0.0
 
         similarity_scores = []
-        for resource in set(pattern1.avg_resource_usage.keys()) & set(pattern2.avg_resource_usage.keys()):
+        for resource in set(pattern1.avg_resource_usage.keys()) & set(
+            pattern2.avg_resource_usage.keys()
+        ):
             val1 = pattern1.avg_resource_usage[resource]
             val2 = pattern2.avg_resource_usage[resource]
             if val1 > 0 and val2 > 0:
@@ -193,23 +212,23 @@ class ErrorPredictor:
             "memory_exhaustion": {
                 "indicators": ["high_memory_usage", "large_allocation"],
                 "severity": ErrorSeverity.HIGH,
-                "fix": "Reduce memory allocation or increase available memory"
+                "fix": "Reduce memory allocation or increase available memory",
             },
             "timeout": {
                 "indicators": ["long_duration", "slow_operation"],
                 "severity": ErrorSeverity.MEDIUM,
-                "fix": "Optimize operation or increase timeout"
+                "fix": "Optimize operation or increase timeout",
             },
             "dependency_failure": {
                 "indicators": ["external_call", "network_error"],
                 "severity": ErrorSeverity.MEDIUM,
-                "fix": "Add retry logic or fallback implementation"
+                "fix": "Add retry logic or fallback implementation",
             },
             "type_mismatch": {
                 "indicators": ["schema_validation_error", "type_error"],
                 "severity": ErrorSeverity.LOW,
-                "fix": "Fix type annotations or add conversion"
-            }
+                "fix": "Fix type annotations or add conversion",
+            },
         }
 
     def analyze_code(self, code: str, context: Dict[str, Any]) -> List[ErrorPrediction]:
@@ -218,34 +237,40 @@ class ErrorPredictor:
 
         # Simple static analysis patterns
         if "recursive" in code.lower() and "max_depth" not in code.lower():
-            predictions.append(ErrorPrediction(
-                error_type="stack_overflow",
-                severity=ErrorSeverity.HIGH,
-                probability=0.7,
-                location="recursive_function",
-                suggested_fix="Add recursion depth limit or convert to iterative approach",
-                confidence=0.6
-            ))
+            predictions.append(
+                ErrorPrediction(
+                    error_type="stack_overflow",
+                    severity=ErrorSeverity.HIGH,
+                    probability=0.7,
+                    location="recursive_function",
+                    suggested_fix="Add recursion depth limit or convert to iterative approach",
+                    confidence=0.6,
+                )
+            )
 
         if "while true" in code.lower() and "break" not in code.lower():
-            predictions.append(ErrorPrediction(
-                error_type="infinite_loop",
-                severity=ErrorSeverity.CRITICAL,
-                probability=0.8,
-                location="infinite_loop",
-                suggested_fix="Add break condition or timeout",
-                confidence=0.7
-            ))
+            predictions.append(
+                ErrorPrediction(
+                    error_type="infinite_loop",
+                    severity=ErrorSeverity.CRITICAL,
+                    probability=0.8,
+                    location="infinite_loop",
+                    suggested_fix="Add break condition or timeout",
+                    confidence=0.7,
+                )
+            )
 
         if "large_file" in code.lower() and "stream" not in code.lower():
-            predictions.append(ErrorPrediction(
-                error_type="memory_exhaustion",
-                severity=ErrorSeverity.HIGH,
-                probability=0.6,
-                location="file_processing",
-                suggested_fix="Use streaming instead of loading entire file",
-                confidence=0.5
-            ))
+            predictions.append(
+                ErrorPrediction(
+                    error_type="memory_exhaustion",
+                    severity=ErrorSeverity.HIGH,
+                    probability=0.6,
+                    location="file_processing",
+                    suggested_fix="Use streaming instead of loading entire file",
+                    confidence=0.5,
+                )
+            )
 
         return predictions
 
@@ -254,34 +279,40 @@ class ErrorPredictor:
         predictions = []
 
         if pattern.success_rate < 0.8:
-            predictions.append(ErrorPrediction(
-                error_type="unreliable_operation",
-                severity=ErrorSeverity.MEDIUM,
-                probability=1.0 - pattern.success_rate,
-                location=pattern.operation_type,
-                suggested_fix="Add retry logic or improve error handling",
-                confidence=0.8
-            ))
+            predictions.append(
+                ErrorPrediction(
+                    error_type="unreliable_operation",
+                    severity=ErrorSeverity.MEDIUM,
+                    probability=1.0 - pattern.success_rate,
+                    location=pattern.operation_type,
+                    suggested_fix="Add retry logic or improve error handling",
+                    confidence=0.8,
+                )
+            )
 
         if pattern.avg_duration > 30.0:  # More than 30 seconds
-            predictions.append(ErrorPrediction(
-                error_type="timeout",
-                severity=ErrorSeverity.MEDIUM,
-                probability=0.5,
-                location=pattern.operation_type,
-                suggested_fix="Increase timeout or optimize operation",
-                confidence=0.6
-            ))
+            predictions.append(
+                ErrorPrediction(
+                    error_type="timeout",
+                    severity=ErrorSeverity.MEDIUM,
+                    probability=0.5,
+                    location=pattern.operation_type,
+                    suggested_fix="Increase timeout or optimize operation",
+                    confidence=0.6,
+                )
+            )
 
         if pattern.avg_resource_usage.get("memory_percent", 0) > 80:
-            predictions.append(ErrorPrediction(
-                error_type="memory_exhaustion",
-                severity=ErrorSeverity.HIGH,
-                probability=0.7,
-                location=pattern.operation_type,
-                suggested_fix="Optimize memory usage or increase allocation",
-                confidence=0.7
-            ))
+            predictions.append(
+                ErrorPrediction(
+                    error_type="memory_exhaustion",
+                    severity=ErrorSeverity.HIGH,
+                    probability=0.7,
+                    location=pattern.operation_type,
+                    suggested_fix="Optimize memory usage or increase allocation",
+                    confidence=0.7,
+                )
+            )
 
         return predictions
 
@@ -291,24 +322,28 @@ class ErrorPredictor:
 
         # Check resource constraints
         if context.get("memory_limit", 100) < context.get("estimated_memory", 50):
-            predictions.append(ErrorPrediction(
-                error_type="memory_exhaustion",
-                severity=ErrorSeverity.HIGH,
-                probability=0.8,
-                location="resource_allocation",
-                suggested_fix="Increase memory limit or optimize memory usage",
-                confidence=0.7
-            ))
+            predictions.append(
+                ErrorPrediction(
+                    error_type="memory_exhaustion",
+                    severity=ErrorSeverity.HIGH,
+                    probability=0.8,
+                    location="resource_allocation",
+                    suggested_fix="Increase memory limit or optimize memory usage",
+                    confidence=0.7,
+                )
+            )
 
         if context.get("time_limit", 60) < context.get("estimated_duration", 30):
-            predictions.append(ErrorPrediction(
-                error_type="timeout",
-                severity=ErrorSeverity.MEDIUM,
-                probability=0.6,
-                location="resource_allocation",
-                suggested_fix="Increase time limit or optimize operation",
-                confidence=0.6
-            ))
+            predictions.append(
+                ErrorPrediction(
+                    error_type="timeout",
+                    severity=ErrorSeverity.MEDIUM,
+                    probability=0.6,
+                    location="resource_allocation",
+                    suggested_fix="Increase time limit or optimize operation",
+                    confidence=0.6,
+                )
+            )
 
         return predictions
 
@@ -322,14 +357,16 @@ class ResourcePredictor:
             "simple_operation": {"cpu": 0.1, "memory": 100, "duration": 1.0},
             "complex_operation": {"cpu": 0.5, "memory": 500, "duration": 10.0},
             "io_operation": {"cpu": 0.2, "memory": 200, "duration": 5.0},
-            "model_call": {"cpu": 0.8, "memory": 1000, "duration": 3.0}
+            "model_call": {"cpu": 0.8, "memory": 1000, "duration": 3.0},
         }
 
     def add_resource_data(self, operation: str, resource_data: Dict[str, float]):
         """Add resource usage data for an operation."""
         self.resource_history[operation].append(resource_data)
 
-    def predict_resources(self, operation: str, context: Dict[str, Any]) -> ResourcePrediction:
+    def predict_resources(
+        self, operation: str, context: Dict[str, Any]
+    ) -> ResourcePrediction:
         """Predict resource requirements for an operation."""
         historical_data = self.resource_history.get(operation, [])
 
@@ -353,7 +390,9 @@ class ResourcePredictor:
 
         # Adjust based on context
         input_size = context.get("input_size", 1)
-        scale_factor = min(10.0, max(0.1, input_size / 1000))  # Scale between 0.1x and 10x
+        scale_factor = min(
+            10.0, max(0.1, input_size / 1000)
+        )  # Scale between 0.1x and 10x
 
         cpu_estimate *= scale_factor
         memory_estimate *= scale_factor
@@ -362,7 +401,7 @@ class ResourcePredictor:
         suggested_allocation = {
             "cpu": cpu_estimate * 1.5,  # Add 50% buffer
             "memory": memory_estimate * 1.5,
-            "timeout": duration_estimate * 2.0
+            "timeout": duration_estimate * 2.0,
         }
 
         return ResourcePrediction(
@@ -370,7 +409,7 @@ class ResourcePredictor:
             memory_estimate=memory_estimate,
             duration_estimate=duration_estimate,
             confidence=confidence,
-            suggested_allocation=suggested_allocation
+            suggested_allocation=suggested_allocation,
         )
 
     def _get_baseline(self, operation: str) -> Dict[str, float]:
@@ -397,7 +436,9 @@ class AdaptiveExecutor:
         self.performance_history: Dict[str, List[float]] = defaultdict(list)
         self.patterns: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
 
-    def analyze_operation(self, operation: str, context: Dict[str, Any]) -> Dict[str, Any]:
+    def analyze_operation(
+        self, operation: str, context: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Analyze an operation and provide recommendations."""
         analysis = {
             "operation": operation,
@@ -405,21 +446,29 @@ class AdaptiveExecutor:
             "error_predictions": [],
             "resource_prediction": None,
             "recommended_strategy": ExecutionStrategy.SEQUENTIAL,
-            "confidence": 0.0
+            "confidence": 0.0,
         }
 
         # Get error predictions
         pattern = self.pattern_extractor.get_pattern(operation)
         if pattern:
-            analysis["error_predictions"].extend(self.error_predictor.predict_from_pattern(pattern))
+            analysis["error_predictions"].extend(
+                self.error_predictor.predict_from_pattern(pattern)
+            )
 
-        analysis["error_predictions"].extend(self.error_predictor.predict_from_context(context))
+        analysis["error_predictions"].extend(
+            self.error_predictor.predict_from_context(context)
+        )
 
         # Predict resources
-        analysis["resource_prediction"] = self.resource_predictor.predict_resources(operation, context)
+        analysis["resource_prediction"] = self.resource_predictor.predict_resources(
+            operation, context
+        )
 
         # Recommend strategy
-        analysis["recommended_strategy"] = self._recommend_strategy(operation, context, analysis)
+        analysis["recommended_strategy"] = self._recommend_strategy(
+            operation, context, analysis
+        )
 
         # Calculate overall confidence
         pattern_confidence = 0.8 if pattern else 0.3
@@ -428,28 +477,38 @@ class AdaptiveExecutor:
 
         # Store pattern analysis for later retrieval
         if pattern:
-            self.patterns[operation].append({
-                "operation": operation,
-                "avg_duration": pattern.avg_duration,
-                "success_rate": pattern.success_rate,
-                "frequency": pattern.frequency,
-                "characteristics": pattern.characteristics,
-            })
+            self.patterns[operation].append(
+                {
+                    "operation": operation,
+                    "avg_duration": pattern.avg_duration,
+                    "success_rate": pattern.success_rate,
+                    "frequency": pattern.frequency,
+                    "characteristics": pattern.characteristics,
+                }
+            )
 
         return analysis
 
-    def _recommend_strategy(self, operation: str, context: Dict[str, Any], analysis: Dict[str, Any]) -> ExecutionStrategy:
+    def _recommend_strategy(
+        self, operation: str, context: Dict[str, Any], analysis: Dict[str, Any]
+    ) -> ExecutionStrategy:
         """Recommend execution strategy based on analysis."""
         resource_pred = analysis["resource_prediction"]
 
         # Simple strategy selection logic
-        if resource_pred.duration_estimate > 10.0 and context.get("parallel_available", False):
+        if resource_pred.duration_estimate > 10.0 and context.get(
+            "parallel_available", False
+        ):
             return ExecutionStrategy.PARALLEL
 
-        if resource_pred.duration_estimate > 60.0 and context.get("distributed_available", False):
+        if resource_pred.duration_estimate > 60.0 and context.get(
+            "distributed_available", False
+        ):
             return ExecutionStrategy.DISTRIBUTED
 
-        if context.get("has_dependencies", False) and context.get("parallel_available", False):
+        if context.get("has_dependencies", False) and context.get(
+            "parallel_available", False
+        ):
             return ExecutionStrategy.HYBRID
 
         return ExecutionStrategy.SEQUENTIAL
@@ -466,7 +525,7 @@ class AdaptiveExecutor:
             resource_data = {
                 "cpu": profile.resource_usage.get("cpu", 0),
                 "memory": profile.resource_usage.get("memory", 0),
-                "duration": profile.duration
+                "duration": profile.duration,
             }
             self.resource_predictor.add_resource_data(profile.operation, resource_data)
 
@@ -484,7 +543,7 @@ class AdaptiveExecutor:
             "min_duration": min(durations),
             "max_duration": max(durations),
             "duration_std": statistics.stdev(durations) if len(durations) > 1 else 0,
-            "trend": self._calculate_trend(durations)
+            "trend": self._calculate_trend(durations),
         }
 
     def _calculate_trend(self, values: List[float]) -> str:
@@ -493,7 +552,7 @@ class AdaptiveExecutor:
             return "insufficient_data"
 
         recent = values[-5:]
-        older = values[:-5] if len(values) > 5 else values[:len(values)//2]
+        older = values[:-5] if len(values) > 5 else values[: len(values) // 2]
 
         recent_avg = statistics.mean(recent)
         older_avg = statistics.mean(older)
@@ -516,11 +575,13 @@ class LearningSystem:
 
     def add_training_data(self, features: Dict[str, Any], target: float):
         """Add training data for model learning."""
-        self.training_data.append({
-            "features": features,
-            "target": target,
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        })
+        self.training_data.append(
+            {
+                "features": features,
+                "target": target,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        )
 
     def train_simple_model(self, feature_name: str) -> Dict[str, float]:
         """Train a simple linear regression model."""
@@ -552,7 +613,9 @@ class LearningSystem:
         # Calculate R-squared
         y_mean = statistics.mean(y_values)
         ss_total = sum((y - y_mean) ** 2 for y in y_values)
-        ss_residual = sum((y - (slope * x + intercept)) ** 2 for x, y in zip(x_values, y_values))
+        ss_residual = sum(
+            (y - (slope * x + intercept)) ** 2 for x, y in zip(x_values, y_values)
+        )
         r_squared = 1 - (ss_residual / ss_total) if ss_total > 0 else 0
 
         model = {
@@ -560,10 +623,12 @@ class LearningSystem:
             "intercept": intercept,
             "r_squared": r_squared,
             "feature": feature_name,
-            "samples": n
+            "samples": n,
         }
 
-        self.feature_importance[feature_name] = abs(slope)  # Use absolute slope as importance
+        self.feature_importance[feature_name] = abs(
+            slope
+        )  # Use absolute slope as importance
 
         return model
 
@@ -593,13 +658,17 @@ class IntelligenceSystem:
         self.insights_cache: Dict[str, Dict[str, Any]] = {}
         self.cache_ttl = 300  # 5 minutes
 
-    def analyze_and_optimize(self, operation: str, context: Dict[str, Any]) -> Dict[str, Any]:
+    def analyze_and_optimize(
+        self, operation: str, context: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Analyze operation and provide optimization recommendations."""
         # Check cache first
         cache_key = f"{operation}_{hash(json.dumps(context, sort_keys=True))}"
         if cache_key in self.insights_cache:
             cached = self.insights_cache[cache_key]
-            if (datetime.now(timezone.utc) - datetime.fromisoformat(cached["cached_at"])).total_seconds() < self.cache_ttl:
+            if (
+                datetime.now(timezone.utc) - datetime.fromisoformat(cached["cached_at"])
+            ).total_seconds() < self.cache_ttl:
                 return cached
 
         # Perform analysis
@@ -607,7 +676,9 @@ class IntelligenceSystem:
 
         # Add learning system insights
         if self.learning_system.feature_importance:
-            analysis["feature_importance"] = self.learning_system.get_feature_importance()
+            analysis["feature_importance"] = (
+                self.learning_system.get_feature_importance()
+            )
 
         # Cache the result
         analysis["cached_at"] = datetime.now(timezone.utc).isoformat()
@@ -615,14 +686,20 @@ class IntelligenceSystem:
 
         return analysis
 
-    def record_execution_result(self, operation: str, duration: float, success: bool, resource_usage: Dict[str, float]):
+    def record_execution_result(
+        self,
+        operation: str,
+        duration: float,
+        success: bool,
+        resource_usage: Dict[str, float],
+    ):
         """Record execution result for learning."""
         profile = ExecutionProfile(
             execution_id=str(uuid.uuid4()),
             operation=operation,
             duration=duration,
             resource_usage=resource_usage,
-            success=success
+            success=success,
         )
 
         self.adaptive_executor.record_execution(profile)
@@ -635,11 +712,13 @@ class IntelligenceSystem:
     def get_system_insights(self) -> Dict[str, Any]:
         """Get overall system insights."""
         return {
-            "operations_analyzed": len(self.adaptive_executor.pattern_extractor.patterns),
+            "operations_analyzed": len(
+                self.adaptive_executor.pattern_extractor.patterns
+            ),
             "training_samples": len(self.learning_system.training_data),
             "cached_insights": len(self.insights_cache),
             "feature_importance": self.learning_system.get_feature_importance(),
-            "top_operations": self._get_top_operations()
+            "top_operations": self._get_top_operations(),
         }
 
     def _get_top_operations(self) -> List[Dict[str, Any]]:

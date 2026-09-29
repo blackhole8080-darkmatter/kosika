@@ -52,9 +52,7 @@ def _design(source: str):
 
 
 def test_agent_nodes_carry_capabilities_and_ceiling() -> None:
-    agent = next(
-        node for node in _design(PROGRAM).nodes if node["kind"] == "agent"
-    )
+    agent = next(node for node in _design(PROGRAM).nodes if node["kind"] == "agent")
     assert agent["can"] == ["t"]
     assert agent["cannot"] == ["arbitrary_shell", "write_files"]
     assert agent["max_steps"] == 5

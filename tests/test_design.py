@@ -117,24 +117,14 @@ class DesignManifestTests(unittest.TestCase):
             (str(edge["source"]), str(edge["target"]), str(edge["kind"]))
             for edge in design.edges
         }
-        self.assertIn(
-            ("stage.child.respond", "model.writer", "calls"), relationships
-        )
+        self.assertIn(("stage.child.respond", "model.writer", "calls"), relationships)
         self.assertIn(
             ("stage.delegate.ask", "agent.researcher", "calls"), relationships
         )
-        self.assertIn(
-            ("stage.main.nested", "workflow.child", "calls"), relationships
-        )
-        self.assertIn(
-            ("record.Question", "model.writer", "inputs"), relationships
-        )
-        self.assertIn(
-            ("model.writer", "record.Answer", "outputs"), relationships
-        )
-        self.assertIn(
-            ("agent.researcher", "model.writer", "uses"), relationships
-        )
+        self.assertIn(("stage.main.nested", "workflow.child", "calls"), relationships)
+        self.assertIn(("record.Question", "model.writer", "inputs"), relationships)
+        self.assertIn(("model.writer", "record.Answer", "outputs"), relationships)
+        self.assertIn(("agent.researcher", "model.writer", "uses"), relationships)
 
     def test_design_includes_imported_module_declarations(self) -> None:
         root = ROOT / "examples" / "composed"
@@ -164,9 +154,7 @@ class DesignManifestTests(unittest.TestCase):
             (str(edge["source"]), str(edge["target"]), str(edge["kind"]))
             for edge in design.edges
         }
-        self.assertIn(
-            ("stage.research.answer", "model.reader", "calls"), relationships
-        )
+        self.assertIn(("stage.research.answer", "model.reader", "calls"), relationships)
         self.assertIn(
             ("stage.main.research", "workflow.research", "calls"), relationships
         )
@@ -182,9 +170,7 @@ class DesignManifestTests(unittest.TestCase):
         self.assertIn(
             ("module.research.kos", "model.reader", "contains"), relationships
         )
-        self.assertIn(
-            ("module.main.kos", "workflow.main", "contains"), relationships
-        )
+        self.assertIn(("module.main.kos", "workflow.main", "contains"), relationships)
         self.assertEqual(
             design.digest,
             build_design_from_program(

@@ -4,7 +4,9 @@ from .ast import (
     AgentCall,
     AgentDecl,
     ArrayExpr,
+    Assignment,
     BinaryExpr,
+    Block,
     BreakExpr,
     ConditionalExpr,
     ContinueExpr,
@@ -62,7 +64,10 @@ class Parser:
         return token
 
     def check(self, value: str) -> bool:
-        return self.current.kind in {"IDENT", "SYMBOL", "OP", "ARROW"} and self.current.value == value
+        return (
+            self.current.kind in {"IDENT", "SYMBOL", "OP", "ARROW"}
+            and self.current.value == value
+        )
 
     def accept(self, value: str) -> bool:
         if self.check(value):
@@ -84,6 +89,59 @@ class Parser:
             raise ParseError(f"Expected identifier at {token.line}:{token.column}")
         self.advance()
         return token.value
+
+    def at_assignment(self) -> bool:
+        """True when the next two tokens are `name =`.
+
+        `==` is a single distinct token, so an identifier followed by `=` is
+        unambiguously an assignment target.
+        """
+        if self.current.kind != "IDENT" or self.index + 1 >= len(self.tokens):
+            return False
+        following = self.tokens[self.index + 1]
+        return following.value == "=" and following.kind in {"SYMBOL", "OP"}
+
+    def parse_binding(self) -> LocalBinding:
+        """`let name [: Type] = expr` or the mutable `var name [: Type] = expr`."""
+        mutable = self.accept("var")
+        if not mutable:
+            self.expect("let")
+        name = self.identifier()
+        type_name = None
+        if self.accept(":"):
+            type_name = self.parse_type_name()
+        self.expect("=")
+        return LocalBinding(name, type_name, self.expression(), mutable)
+
+    def parse_statement(self) -> LocalBinding | Assignment:
+        if self.check("let") or self.check("var"):
+            return self.parse_binding()
+        target = self.identifier()
+        self.expect("=")
+        return Assignment(target, self.expression())
+
+    def parse_block(self) -> Expression:
+        """Parse `{ statement* result? }` as an expression.
+
+        A body with no trailing expression evaluates to Null, which is what
+        makes a statement-only loop body read naturally:
+        ``for x in values { total = total + x }``.
+
+        Returns the bare result expression when there are no statements, so
+        every program written before blocks existed produces the same AST as
+        before and no existing consumer has to learn about Block.
+        """
+        self.expect("{")
+        statements: list[LocalBinding | Assignment] = []
+        while self.check("let") or self.check("var") or self.at_assignment():
+            statements.append(self.parse_statement())
+        result = None if self.check("}") else self.expression()
+        self.expect("}")
+        if not statements:
+            if result is None:
+                raise ParseError("Empty block")
+            return result
+        return Block(tuple(statements), result)
 
     def string_or_identifier(self) -> str:
         token = self.current
@@ -125,11 +183,21 @@ class Parser:
                         pattern = LiteralExpr(self.advance().value)
                     elif token.kind == "NUMBER":
                         self.advance()
-                        number = float(token.value) if "." in token.value else int(token.value)
+                        number = (
+                            float(token.value)
+                            if "." in token.value
+                            else int(token.value)
+                        )
                         pattern = LiteralExpr(-number if negative else number)
-                    elif token.kind == "IDENT" and token.value in {"true", "false", "null"} and not negative:
+                    elif (
+                        token.kind == "IDENT"
+                        and token.value in {"true", "false", "null"}
+                        and not negative
+                    ):
                         self.advance()
-                        pattern = LiteralExpr({"true": True, "false": False, "null": None}[token.value])
+                        pattern = LiteralExpr(
+                            {"true": True, "false": False, "null": None}[token.value]
+                        )
                     else:
                         raise ParseError("Match patterns must be scalar literals or _")
                 self.expect("{")
@@ -139,13 +207,9 @@ class Parser:
             return MatchExpr(subject, tuple(arms))
         if self.accept("if"):
             condition = self.expression()
-            self.expect("{")
-            when_true = self.expression()
-            self.expect("}")
+            when_true = self.parse_block()
             self.expect("else")
-            self.expect("{")
-            when_false = self.expression()
-            self.expect("}")
+            when_false = self.parse_block()
             return ConditionalExpr(condition, when_true, when_false)
         if self.accept("for"):
             item_name = self.identifier()
@@ -154,12 +218,14 @@ class Parser:
             limit = 128
             if self.accept("limit"):
                 token = self.advance()
-                if token.kind != "NUMBER" or not token.value.isdigit() or not 1 <= int(token.value) <= 512:
+                if (
+                    token.kind != "NUMBER"
+                    or not token.value.isdigit()
+                    or not 1 <= int(token.value) <= 512
+                ):
                     raise ParseError("for loop limit must be an integer from 1 to 512")
                 limit = int(token.value)
-            self.expect("{")
-            body = self.expression()
-            self.expect("}")
+            body = self.parse_block()
             return ForExpr(item_name, sequence, body, limit)
         return self.parse_or_expression()
 
@@ -296,22 +362,26 @@ class Parser:
 
     def parse_repeat_expression(self) -> RepeatExpr:
         token = self.advance()
-        if token.kind != "NUMBER" or not token.value.isdigit() or not 1 <= int(token.value) <= 512:
+        if (
+            token.kind != "NUMBER"
+            or not token.value.isdigit()
+            or not 1 <= int(token.value) <= 512
+        ):
             raise ParseError("repeat count must be an integer from 1 to 512")
         self.expect("times")
-        self.expect("{")
-        body = self.expression()
-        self.expect("}")
+        body = self.parse_block()
         return RepeatExpr(LiteralExpr(int(token.value)), body)
 
     def parse_try_expression(self) -> TryExpr:
-        self.expect("{")
-        body = self.expression()
-        self.expect("}")
+        body = self.parse_block()
         retry = 0
         if self.accept("retry"):
             token = self.advance()
-            if token.kind != "NUMBER" or not token.value.isdigit() or not 1 <= int(token.value) <= 32:
+            if (
+                token.kind != "NUMBER"
+                or not token.value.isdigit()
+                or not 1 <= int(token.value) <= 32
+            ):
                 raise ParseError("try retry count must be an integer from 1 to 32")
             retry = int(token.value)
         return TryExpr(body, retry)
@@ -399,7 +469,9 @@ class Parser:
                 values[key] = self.identifier()
         if set(values) != {"input", "output"}:
             raise ParseError(f"Model {name!r} requires input and output records")
-        return ModelDecl(name, values["input"], values["output"], deployment, parameters)
+        return ModelDecl(
+            name, values["input"], values["output"], deployment, parameters
+        )
 
     def parse_model_parameters(self) -> ModelParameters:
         self.expect("{")
@@ -422,7 +494,9 @@ class Parser:
             if key == "max_output_tokens":
                 token = self.advance()
                 if token.kind != "NUMBER" or not token.value.isdigit():
-                    raise ParseError("Model max_output_tokens must be a positive integer")
+                    raise ParseError(
+                        "Model max_output_tokens must be a positive integer"
+                    )
                 max_output_tokens = int(token.value)
                 continue
             if key not in {
@@ -689,17 +763,25 @@ class Parser:
         recursion_limit = None
         if self.accept("recurse"):
             token = self.advance()
-            if token.kind != "NUMBER" or not token.value.isdigit() or not 1 <= int(token.value) <= 32:
+            if (
+                token.kind != "NUMBER"
+                or not token.value.isdigit()
+                or not 1 <= int(token.value) <= 32
+            ):
                 raise ParseError("Recursion limit must be an integer from 1 to 32")
             recursion_limit = int(token.value)
         self.expect("{")
-        bindings: list[LocalBinding] = []
-        while self.accept("let"):
-            binding_name = self.identifier()
-            self.expect(":")
-            binding_type = self.parse_type_name()
-            self.expect("=")
-            bindings.append(LocalBinding(binding_name, binding_type, self.expression()))
+        body: list[LocalBinding | Assignment | Expression] = []
+        # Declarations, assignments, and value-discarding expressions may be
+        # interleaved, but `return` unambiguously ends the body, so the loop can
+        # stop without needing a terminator token.
+        while not (self.check("return") or self.check("}") or self.check("fn")):
+            if self.check("let") or self.check("var") or self.at_assignment():
+                body.append(self.parse_statement())
+            else:
+                body.append(self.expression())
+        bindings = tuple(item for item in body if isinstance(item, LocalBinding))
+        statements = tuple(item for item in body if not isinstance(item, LocalBinding))
         nested: list[FunctionDecl] = []
         while self.check("fn"):
             nested.append(self.parse_function(depth + 1))
@@ -707,7 +789,14 @@ class Parser:
         return_value = self.expression()
         self.expect("}")
         return FunctionDecl(
-            name, tuple(parameters), output_type, return_value, tuple(bindings), tuple(nested), recursion_limit
+            name,
+            tuple(parameters),
+            output_type,
+            return_value,
+            bindings,
+            tuple(nested),
+            recursion_limit,
+            statements,
         )
 
     def parse_arguments(

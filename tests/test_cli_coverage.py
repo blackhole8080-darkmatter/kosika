@@ -106,13 +106,41 @@ class CliCoverageTests(unittest.TestCase):
         self.assertIn('"sources": [', output)
         self.assertIn("Model steps: 2", output)
 
+    def test_city_command_renders_reference_world_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output_path = Path(directory) / "forest-world.html"
+            result, output = self.call_cli(
+                "city",
+                str(ROOT / "examples" / "city"),
+                "--format",
+                "live",
+                "--world",
+                str(ROOT / "examples" / "worlds" / "forest_knowledge_reserve.json"),
+                "--output",
+                str(output_path),
+            )
+
+            self.assertEqual(result, 0)
+            self.assertIn("City written:", output)
+            page = output_path.read_text(encoding="utf-8")
+            self.assertIn(
+                "<title>Forest Knowledge Reserve live forest world</title>", page
+            )
+            self.assertIn('data-world="Forest Knowledge Reserve"', page)
+            self.assertIn("Archive Lodge", page)
+            self.assertIn('data-camera="isometric"', page)
+            self.assertIn('data-building="archive-lodge"', page)
+            self.assertIn("Research Institute", page)
+
     def test_agent_command_resumes_completed_journal(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             journal = Path(directory) / "agent.sqlite"
             first_provider = ScriptedModelProvider(
                 [ModelResponse(content="durable result")]
             )
-            with patch.object(cli, "OpenAICompatibleProvider", return_value=first_provider):
+            with patch.object(
+                cli, "OpenAICompatibleProvider", return_value=first_provider
+            ):
                 result, output = self.call_cli(
                     "agent",
                     str(MOCK_SOURCE),
@@ -140,7 +168,6 @@ class CliCoverageTests(unittest.TestCase):
             text_result, text_output = self.call_cli("journal", str(journal))
             self.assertEqual(text_result, 0)
             self.assertIn("State: completed", text_output)
-
 
             resumed_provider = ScriptedModelProvider(
                 [ModelResponse(content="must not be called")]
@@ -440,7 +467,9 @@ class CliCoverageTests(unittest.TestCase):
             self.assertIn("requires a nonempty list", error)
 
             assistant_fixture = root / "assistant.json"
-            assistant_fixture.write_text(json.dumps({"responses": []}), encoding="utf-8")
+            assistant_fixture.write_text(
+                json.dumps({"responses": []}), encoding="utf-8"
+            )
             result, error = self.call_cli_error(
                 "assistant",
                 str(MOCK_SOURCE),

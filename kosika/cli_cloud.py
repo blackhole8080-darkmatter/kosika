@@ -12,19 +12,10 @@ from pathlib import Path
 
 from .cloud import (
     ProgramRegistry,
-    ProgramLoader,
-    ProgramPackage,
-    ExecutionRequest,
-    CloudExecutor,
     create_package,
     register_package,
-    find_program
 )
-from .meta_agent import (
-    MetaAgent,
-    TaskContext,
-    select_optimal_configuration
-)
+from .meta_agent import select_optimal_configuration
 
 
 def cmd_register(args):
@@ -76,15 +67,15 @@ def cmd_select(args):
     try:
         context_kwargs = {}
         if args.input_size:
-            context_kwargs['input_size'] = args.input_size
+            context_kwargs["input_size"] = args.input_size
         if args.urgency:
-            context_kwargs['urgency'] = args.urgency
+            context_kwargs["urgency"] = args.urgency
         if args.budget:
-            context_kwargs['budget_limit'] = args.budget
+            context_kwargs["budget_limit"] = args.budget
         if args.quality:
-            context_kwargs['quality_requirement'] = args.quality
+            context_kwargs["quality_requirement"] = args.quality
         if args.privacy:
-            context_kwargs['privacy_level'] = args.privacy
+            context_kwargs["privacy_level"] = args.privacy
 
         result = select_optimal_configuration(args.task, **context_kwargs)
 
@@ -98,24 +89,32 @@ def cmd_select(args):
         print(f"\nReasoning: {result.reasoning}")
 
         if result.alternatives:
-            print(f"\nAlternatives:")
+            print("\nAlternatives:")
             for alt in result.alternatives:
                 print(f"  • {alt['agent']} with {alt['model']}")
-                print(f"    Cost: ${alt['estimated_cost']:.4f}, Latency: {alt['estimated_latency']:.1f}s")
+                print(
+                    f"    Cost: ${alt['estimated_cost']:.4f}, Latency: {alt['estimated_latency']:.1f}s"
+                )
                 print(f"    {alt['trade_offs']}")
 
         if args.json:
-            print("\n" + json.dumps({
-                "selected_agent": result.selected_agent,
-                "selected_model": result.selected_model,
-                "selected_tools": result.selected_tools,
-                "configuration": result.configuration,
-                "estimated_cost": result.estimated_cost,
-                "estimated_latency": result.estimated_latency,
-                "confidence_score": result.confidence_score,
-                "alternatives": result.alternatives,
-                "reasoning": result.reasoning
-            }, indent=2))
+            print(
+                "\n"
+                + json.dumps(
+                    {
+                        "selected_agent": result.selected_agent,
+                        "selected_model": result.selected_model,
+                        "selected_tools": result.selected_tools,
+                        "configuration": result.configuration,
+                        "estimated_cost": result.estimated_cost,
+                        "estimated_latency": result.estimated_latency,
+                        "confidence_score": result.confidence_score,
+                        "alternatives": result.alternatives,
+                        "reasoning": result.reasoning,
+                    },
+                    indent=2,
+                )
+            )
 
     except Exception as e:
         print(f"✗ Selection failed: {e}", file=sys.stderr)
@@ -137,14 +136,18 @@ def main():
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
         description="Kosika Cloud CLI",
-        formatter_class=argparse.RawDescriptionHelpFormatter
- )
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # Register command
-    register_parser = subparsers.add_parser("register", help="Register a Kosika program")
-    register_parser.add_argument("directory", help="Directory containing Kosika source files")
+    register_parser = subparsers.add_parser(
+        "register", help="Register a Kosika program"
+    )
+    register_parser.add_argument(
+        "directory", help="Directory containing Kosika source files"
+    )
     register_parser.set_defaults(func=cmd_register)
 
     # List command
@@ -158,13 +161,21 @@ def main():
     search_parser.set_defaults(func=cmd_search)
 
     # Select command
-    select_parser = subparsers.add_parser("select", help="Select optimal agent/model/tools")
+    select_parser = subparsers.add_parser(
+        "select", help="Select optimal agent/model/tools"
+    )
     select_parser.add_argument("task", help="Task description")
     select_parser.add_argument("--input-size", type=int, help="Input size in bytes")
-    select_parser.add_argument("--urgency", choices=["low", "medium", "high"], help="Urgency level")
+    select_parser.add_argument(
+        "--urgency", choices=["low", "medium", "high"], help="Urgency level"
+    )
     select_parser.add_argument("--budget", type=float, help="Budget limit in USD")
-    select_parser.add_argument("--quality", choices=["low", "medium", "high"], help="Quality requirement")
-    select_parser.add_argument("--privacy", choices=["public", "private", "confidential"], help="Privacy level")
+    select_parser.add_argument(
+        "--quality", choices=["low", "medium", "high"], help="Quality requirement"
+    )
+    select_parser.add_argument(
+        "--privacy", choices=["public", "private", "confidential"], help="Privacy level"
+    )
     select_parser.add_argument("--json", action="store_true", help="Output as JSON")
     select_parser.set_defaults(func=cmd_select)
 

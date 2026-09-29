@@ -56,11 +56,13 @@ def _references(program: Program) -> set[str]:
             for type_name in referenced_types(parameter.type_name)
         )
         names.update(
-            call.function_name
-            for call in static_function_references(function)
+            call.function_name for call in static_function_references(function)
         )
         for binding in function.bindings:
-            names.update(referenced_types(binding.type_name))
+            # An inferred binding has no annotation in the source, so it
+            # contributes no type reference here.
+            if binding.type_name:
+                names.update(referenced_types(binding.type_name))
     for workflow in program.workflows:
         names.add(workflow.output_type)
         names.update(field.type_name for field in workflow.parameters)
@@ -73,7 +75,8 @@ def _references(program: Program) -> set[str]:
                 names.update(
                     nested.function_name
                     for nested in expression_function_calls(argument)
-                    if isinstance(nested, FunctionRefExpr) or nested.function_name not in bound
+                    if isinstance(nested, FunctionRefExpr)
+                    or nested.function_name not in bound
                 )
             if isinstance(call, WorkflowCall):
                 names.add(call.workflow_name)

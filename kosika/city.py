@@ -207,7 +207,9 @@ class City:
             if not members:
                 continue
             order = {name: index for index, name in enumerate(district.pipeline)}
-            members.sort(key=lambda person: (order.get(person.name, len(order)), person.name))
+            members.sort(
+                key=lambda person: (order.get(person.name, len(order)), person.name)
+            )
             blocks.append((district, members))
 
         if not blocks:
@@ -353,12 +355,7 @@ class City:
         height = max(
             origin_y
             + rows
-            * (
-                AVENUE_TITLE_BAND
-                + NODE_HEIGHT
-                + INFRASTRUCTURE_BAND
-                + DISTRICT_GAP_Y
-            ),
+            * (AVENUE_TITLE_BAND + NODE_HEIGHT + INFRASTRUCTURE_BAND + DISTRICT_GAP_Y),
             MIN_CANVAS_HEIGHT,
         )
         return {
@@ -519,8 +516,7 @@ def build_city(root: str | Path, *, name: str | None = None) -> City:
                 swarms[swarm_decl.name] = swarm_decl
                 swarm_program[swarm_decl.name] = key
         program_workflows[key] = {
-            workflow_decl.name: workflow_decl
-            for workflow_decl in program.workflows
+            workflow_decl.name: workflow_decl for workflow_decl in program.workflows
         }
         tools.update(tool.name for tool in program.tools)
         models.update(model.name for model in program.models)
@@ -551,11 +547,7 @@ def build_city(root: str | Path, *, name: str | None = None) -> City:
         )
 
     public = tuple(
-        sorted(
-            name
-            for name, person in residents.items()
-            if person.district == PLAZA
-        )
+        sorted(name for name, person in residents.items() if person.district == PLAZA)
     )
     if public:
         districts.append(
@@ -582,9 +574,7 @@ def build_city(root: str | Path, *, name: str | None = None) -> City:
     )
 
 
-def render_city_svg(
-    city: City, *, view: str = "network", theme: str = "lab"
-) -> str:
+def render_city_svg(city: City, *, view: str = "network", theme: str = "lab") -> str:
     """Draw the city through the design renderer.
 
     The city owns no drawing code. Building a manifest and handing it to

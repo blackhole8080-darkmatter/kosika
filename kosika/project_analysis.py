@@ -135,7 +135,10 @@ def _discover(root: Path) -> tuple[list[Path], list[dict[str, str]]]:
                 if entry.is_symlink():
                     continue
                 if entry.is_dir(follow_symlinks=False):
-                    if entry.name not in _IGNORED_DIRECTORIES and not entry.name.startswith("."):
+                    if (
+                        entry.name not in _IGNORED_DIRECTORIES
+                        and not entry.name.startswith(".")
+                    ):
                         pending.append(Path(entry.path))
                     continue
                 if not entry.is_file(follow_symlinks=False):
@@ -208,11 +211,15 @@ def _local_import_edges(
                 imported_name = item.get("name")
                 candidates = []
                 if target_module:
-                    candidates.append((target_module, "candidate_from_import", imported_name))
+                    candidates.append(
+                        (target_module, "candidate_from_import", imported_name)
+                    )
                 if imported_name and imported_name != "*":
                     candidates.append(
                         (
-                            ".".join(part for part in (target_module, imported_name) if part),
+                            ".".join(
+                                part for part in (target_module, imported_name) if part
+                            ),
                             "candidate_from_import",
                             imported_name,
                         )
@@ -269,7 +276,9 @@ def _context_evidence(root: Path) -> list[dict[str, Any]]:
             key=lambda item: (item.name not in _CONTEXT_NAMES, item.name.lower()),
         )
     except OSError as exc:
-        raise ProjectAnalysisError(f"Unable to inspect project context in {root}: {exc}") from exc
+        raise ProjectAnalysisError(
+            f"Unable to inspect project context in {root}: {exc}"
+        ) from exc
 
     for path in candidates[:MAX_CONTEXT_FILES]:
         try:
@@ -343,9 +352,7 @@ def _analyze_project_file(
     try:
         return adapter.analyze_source(source, path=relative_path)
     except SourceAdapterError as exc:
-        raise ProjectAnalysisError(
-            f"Unable to analyze {relative_path}: {exc}"
-        ) from exc
+        raise ProjectAnalysisError(f"Unable to analyze {relative_path}: {exc}") from exc
 
 
 def analyze_python_project(path: str | Path) -> dict[str, Any]:

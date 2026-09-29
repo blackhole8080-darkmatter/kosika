@@ -225,8 +225,7 @@ def _observed_effect(callee: str) -> str | None:
     ):
         return "filesystem"
     if any(
-        marker in lowered
-        for marker in ("reqwest", "hyper", "tcpstream", "httpclient")
+        marker in lowered for marker in ("reqwest", "hyper", "tcpstream", "httpclient")
     ):
         return "network"
     if any(
@@ -353,13 +352,15 @@ def _analyze_rust_source_scanner(
         start = match.start()
         end = _declaration_end(masked.text, match.end(), kind)
         owner = next(
-            (target for impl_start, impl_end, target in impl_ranges if impl_start <= start < impl_end),
+            (
+                target
+                for impl_start, impl_end, target in impl_ranges
+                if impl_start <= start < impl_end
+            ),
             None,
         )
         symbol_kind = (
-            "method"
-            if kind == "fn" and owner is not None
-            else _SYMBOL_KINDS[kind]
+            "method" if kind == "fn" and owner is not None else _SYMBOL_KINDS[kind]
         )
         qualified_name = f"{owner}.{name}" if owner is not None else name
         prefix = match.group("prefix")
@@ -389,15 +390,16 @@ def _analyze_rust_source_scanner(
                 _declaration_end(masked.text, match.end(), match.group("kind")),
             )
         )
-    declaration_ranges.extend(
-        (start, end) for start, end, _target in impl_ranges
-    )
+    declaration_ranges.extend((start, end) for start, end, _target in impl_ranges)
     module_calls: list[dict[str, Any]] = []
     for call in _calls(masked.text, 0, len(masked.text)):
         offset = call["_offset"]
         if not any(start <= offset < end for start, end in declaration_ranges):
             module_calls.append(call)
-    if len(module_calls) + sum(len(item["calls"]) for item in symbols) > MAX_CALL_OBSERVATIONS:
+    if (
+        len(module_calls) + sum(len(item["calls"]) for item in symbols)
+        > MAX_CALL_OBSERVATIONS
+    ):
         raise RustSourceError(
             f"Rust source exceeds the {MAX_CALL_OBSERVATIONS} call observation limit"
         )
@@ -435,9 +437,7 @@ def _annotate_effects(
             call["observed_effect"] = _observed_effect(call["callee"])
 
 
-def _build_parser_document(
-    source: str, path: str, parsed: Any
-) -> dict[str, Any]:
+def _build_parser_document(source: str, path: str, parsed: Any) -> dict[str, Any]:
     imports = [dict(item) for item in parsed.imports]
     module_calls = [dict(item) for item in parsed.module_calls]
     symbols = [
@@ -455,9 +455,7 @@ def _build_parser_document(
         raise RustSourceError(
             f"Rust source exceeds the {MAX_SYMBOLS}-symbol analysis limit"
         )
-    total_calls = len(module_calls) + sum(
-        len(symbol["calls"]) for symbol in symbols
-    )
+    total_calls = len(module_calls) + sum(len(symbol["calls"]) for symbol in symbols)
     if total_calls > MAX_CALL_OBSERVATIONS:
         raise RustSourceError(
             f"Rust source exceeds the {MAX_CALL_OBSERVATIONS} call observation limit"

@@ -77,7 +77,9 @@ class DocumentAssistantTests(unittest.TestCase):
                     ]
                 ),
             )
-        self.assertEqual(json.loads(self.trace.read_text().splitlines()[-1])["event"], "run_failed")
+        self.assertEqual(
+            json.loads(self.trace.read_text().splitlines()[-1])["event"], "run_failed"
+        )
         with self.assertRaises(ValueError):
             replay(self.trace)
 
@@ -108,7 +110,9 @@ class DocumentAssistantTests(unittest.TestCase):
                     inputs={"question": {"text": "approval"}},
                     model_bindings=bindings,
                 )
-        with self.assertRaisesRegex(PermissionError, "observe"):
+        with self.assertRaisesRegex(
+            PermissionError, "requires a verified approval record"
+        ):
             run(
                 parse(self.source.replace("access: observe", "access: execute")),
                 "answer",
@@ -154,7 +158,9 @@ class DocumentAssistantTests(unittest.TestCase):
                     ]
                 ),
             )
-        self.assertEqual(json.loads(self.trace.read_text().splitlines()[-1])["event"], "run_failed")
+        self.assertEqual(
+            json.loads(self.trace.read_text().splitlines()[-1])["event"], "run_failed"
+        )
         with self.assertRaises(ValueError):
             replay(self.trace)
 

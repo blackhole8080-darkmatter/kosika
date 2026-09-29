@@ -39,7 +39,9 @@ class LspProtocolTests(unittest.TestCase):
         source = "record Result { ok: Bool }\nagent reviewer { can: [] cannot: [] }\n"
         input_stream = b"".join(
             [
-                frame({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
+                frame(
+                    {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
+                ),
                 frame({"jsonrpc": "2.0", "method": "initialized", "params": {}}),
                 frame(
                     {
@@ -82,18 +84,26 @@ class LspProtocolTests(unittest.TestCase):
                         "params": {"textDocument": {"uri": uri}},
                     }
                 ),
-                frame({"jsonrpc": "2.0", "id": 5, "method": "shutdown", "params": None}),
+                frame(
+                    {"jsonrpc": "2.0", "id": 5, "method": "shutdown", "params": None}
+                ),
                 frame({"jsonrpc": "2.0", "method": "exit", "params": None}),
             ]
         )
         output = io.BytesIO()
-        server = KosikaLanguageServer(JsonRpcTransport(io.BytesIO(input_stream), output))
+        server = KosikaLanguageServer(
+            JsonRpcTransport(io.BytesIO(input_stream), output)
+        )
         self.assertEqual(server.serve(), 0)
         result = messages(output.getvalue())
-        responses = {message.get("id"): message for message in result if "id" in message}
+        responses = {
+            message.get("id"): message for message in result if "id" in message
+        }
         self.assertTrue(responses[1]["result"]["capabilities"]["referencesProvider"])
         self.assertIn(2, responses)
-        self.assertEqual([item["name"] for item in responses[2]["result"]], ["Result", "reviewer"])
+        self.assertEqual(
+            [item["name"] for item in responses[2]["result"]], ["Result", "reviewer"]
+        )
         self.assertIn("contents", responses[3]["result"])
         self.assertTrue(responses[4]["result"]["items"])
         self.assertTrue(
@@ -102,8 +112,6 @@ class LspProtocolTests(unittest.TestCase):
                 for message in result
             )
         )
-
-
 
     def test_cancelled_request_is_not_replied(self) -> None:
         output = io.BytesIO()
@@ -118,7 +126,9 @@ class LspProtocolTests(unittest.TestCase):
         uri = "file:///workspace/process.kos"
         input_stream = b"".join(
             [
-                frame({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
+                frame(
+                    {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
+                ),
                 frame(
                     {
                         "jsonrpc": "2.0",
@@ -133,7 +143,9 @@ class LspProtocolTests(unittest.TestCase):
                         },
                     }
                 ),
-                frame({"jsonrpc": "2.0", "id": 2, "method": "shutdown", "params": None}),
+                frame(
+                    {"jsonrpc": "2.0", "id": 2, "method": "shutdown", "params": None}
+                ),
                 frame({"jsonrpc": "2.0", "method": "exit", "params": None}),
             ]
         )
@@ -146,13 +158,17 @@ class LspProtocolTests(unittest.TestCase):
             check=True,
         )
         result = messages(process.stdout)
-        responses = {message.get("id"): message for message in result if "id" in message}
+        responses = {
+            message.get("id"): message for message in result if "id" in message
+        }
         self.assertEqual(responses[1]["result"]["capabilities"]["hoverProvider"], True)
         self.assertEqual(responses[2]["result"], None)
         self.assertTrue(
-            any(message.get("method") == "textDocument/publishDiagnostics" for message in result)
+            any(
+                message.get("method") == "textDocument/publishDiagnostics"
+                for message in result
+            )
         )
-
 
     def test_workspace_definitions_and_references_cross_files(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -163,10 +179,7 @@ class LspProtocolTests(unittest.TestCase):
                 "export [Shared]\nrecord Shared { ok: Bool }\n",
                 encoding="utf-8",
             )
-            source = (
-                'import "library.kos"\n'
-                "record Use { value: Shared }\n"
-            )
+            source = 'import "library.kos"\nrecord Use { value: Shared }\n'
             main.write_text(source, encoding="utf-8")
             main_uri = main.as_uri()
             library_uri = library.as_uri()
@@ -230,7 +243,14 @@ class LspProtocolTests(unittest.TestCase):
                             },
                         }
                     ),
-                    frame({"jsonrpc": "2.0", "id": 5, "method": "shutdown", "params": None}),
+                    frame(
+                        {
+                            "jsonrpc": "2.0",
+                            "id": 5,
+                            "method": "shutdown",
+                            "params": None,
+                        }
+                    ),
                     frame({"jsonrpc": "2.0", "method": "exit", "params": None}),
                 ]
             )
@@ -247,10 +267,13 @@ class LspProtocolTests(unittest.TestCase):
             self.assertEqual(responses[2]["result"][0]["uri"], library_uri)
             without_declaration = responses[3]["result"]
             with_declaration = responses[4]["result"]
-            self.assertTrue(any(item["uri"] == main_uri for item in without_declaration))
-            self.assertTrue(any(item["uri"] == library_uri for item in with_declaration))
+            self.assertTrue(
+                any(item["uri"] == main_uri for item in without_declaration)
+            )
+            self.assertTrue(
+                any(item["uri"] == library_uri for item in with_declaration)
+            )
             self.assertGreater(len(with_declaration), len(without_declaration))
-
 
     def test_watched_files_refresh_create_change_delete(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -319,7 +342,9 @@ class LspProtocolTests(unittest.TestCase):
         uri = "file:///workspace/broken.kos"
         input_stream = b"".join(
             [
-                frame({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
+                frame(
+                    {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
+                ),
                 frame(
                     {
                         "jsonrpc": "2.0",
@@ -334,12 +359,16 @@ class LspProtocolTests(unittest.TestCase):
                         },
                     }
                 ),
-                frame({"jsonrpc": "2.0", "id": 2, "method": "shutdown", "params": None}),
+                frame(
+                    {"jsonrpc": "2.0", "id": 2, "method": "shutdown", "params": None}
+                ),
                 frame({"jsonrpc": "2.0", "method": "exit", "params": None}),
             ]
         )
         output = io.BytesIO()
-        server = KosikaLanguageServer(JsonRpcTransport(io.BytesIO(input_stream), output))
+        server = KosikaLanguageServer(
+            JsonRpcTransport(io.BytesIO(input_stream), output)
+        )
         server.serve()
         diagnostics = [
             message

@@ -80,9 +80,7 @@ class ExtensionMindmapTests(unittest.TestCase):
             explanation["mindmap"]["extensions"][0]["id"],
             "kosika.example.cognitive-design",
         )
-        selected_kinds = {
-            node["kind"] for node in explanation["mindmap"]["nodes"]
-        }
+        selected_kinds = {node["kind"] for node in explanation["mindmap"]["nodes"]}
         self.assertIn("extension_contribution", selected_kinds)
         text = to_explanation_text(explanation)
         self.assertIn("Extension kosika.example.cognitive-design", text)

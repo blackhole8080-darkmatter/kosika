@@ -176,15 +176,12 @@ def to_mermaid(report: dict[str, Any]) -> str:
 
     lines = ["flowchart LR"]
     for node in report["nodes"]:
-        label = (
-            f"{node['label']}<br/>{node['kind']} "
-            f"({node['language']})"
-        )
+        label = f"{node['label']}<br/>{node['kind']} ({node['language']})"
         lines.append(f'    {node_id(node["id"])}["{text(label)}"]')
     for edge in report["edges"]:
         lines.append(
-            f'    {node_id(edge["source"])} -->|{text(edge["label"])}| '
-            f'{node_id(edge["target"])}'
+            f"    {node_id(edge['source'])} -->|{text(edge['label'])}| "
+            f"{node_id(edge['target'])}"
         )
     return "\n".join(lines) + "\n"
 
@@ -197,8 +194,7 @@ def to_text(report: dict[str, Any]) -> str:
         if node["kind"] == "project":
             continue
         lines.append(
-            f"- [{node['language']}] {node['kind']} {node['label']} "
-            f"({node['file']})"
+            f"- [{node['language']}] {node['kind']} {node['label']} ({node['file']})"
         )
     lines.extend(
         [

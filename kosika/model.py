@@ -136,9 +136,7 @@ class OpenAICompatibleProvider:
             if value is not None and (
                 type(value) not in (int, float) or not lower <= value <= upper
             ):
-                raise ModelProviderError(
-                    f"{name} must be between {lower} and {upper}"
-                )
+                raise ModelProviderError(f"{name} must be between {lower} and {upper}")
             if value is not None:
                 payload[name] = value
         if request.stop:

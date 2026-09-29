@@ -46,7 +46,7 @@ result = select_optimal_configuration(
     "Analyze this PDF document about climate change",
     input_size=500000,
     urgency="medium",
-    quality_requirement="high"
+    quality_requirement="high",
 )
 
 # Result includes:
@@ -96,7 +96,7 @@ manager = create_standard_integration(
     anthropic_key="sk-ant-...",
     local_model_url="http://localhost:11434",
     github_token="ghp_...",
-    allowed_paths=["./safe-directory"]
+    allowed_paths=["./safe-directory"],
 )
 
 # Use adapters

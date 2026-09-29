@@ -76,9 +76,7 @@ class TimelineDesignTests(unittest.TestCase):
         with self.assertRaises(TimelineDesignError):
             build_timeline_design([], "tl-5", "Empty")
         with self.assertRaises(TimelineDesignError):
-            build_timeline_design(
-                [event(1)], "tl-6", "Too long", max_nodes=0
-            )
+            build_timeline_design([event(1)], "tl-6", "Too long", max_nodes=0)
 
     def test_timestamps_pass_through_from_validated_events(self) -> None:
         # Validated events always carry a timezone-aware timestamp; the design
@@ -103,7 +101,7 @@ class BridgePublicationTests(unittest.TestCase):
         from kosika.event_stream_design import publish_check_event
         from kosika.parser import parse
 
-        program = parse('record R { text: Text }\n')
+        program = parse("record R { text: Text }\n")
         event = publish_check_event(1, program, "main")
         self.assertEqual(event["type"], "kosika_check")
         self.assertEqual(event["status"], "passed")
@@ -221,9 +219,7 @@ class CliEventPublishingTests(unittest.TestCase):
                 },
             )()
             raw = Path(directory) / "run_trace.jsonl"
-            raw.write_text(
-                json.dumps({"event": "run_start"}) + "\n", encoding="utf-8"
-            )
+            raw.write_text(json.dumps({"event": "run_start"}) + "\n", encoding="utf-8")
             first = _publish_run_events(args, raw)
             assert first is not None
             self.assertEqual(len(first), 1)
@@ -264,13 +260,12 @@ class CliEventPublishingTests(unittest.TestCase):
                 ["kosika_workflow_start", "kosika_workflow_complete"],
             )
             persisted = json.loads(
-                (Path(directory) / "events.jsonl").read_text(encoding="utf-8")
+                (Path(directory) / "events.jsonl")
+                .read_text(encoding="utf-8")
                 .strip()
                 .splitlines()[0]
             )
-            self.assertEqual(
-                persisted["schema"], "synapse.kosika.event/v1"
-            )
+            self.assertEqual(persisted["schema"], "synapse.kosika.event/v1")
 
 
 class WorkbenchTimelineRoundTripTests(unittest.TestCase):

@@ -1,5 +1,30 @@
 A dependency-free first vertical slice of the Kosika AI systems language. Synapse was the earlier working codename.
 
+## Status: prototype, not a released language
+
+Read this before evaluating anything below.
+
+Kosika is an **early prototype**. It is published so the design can be
+reviewed and argued with, not because it is ready to depend on.
+
+- **What works today.** A real parser, type checker, and runtime; typed
+  records and workflows; declared models, agents, tools, and capabilities;
+  approval-gated execution; deterministic mindmaps; and an offline
+  trace/replay loop that re-runs a program without touching the network.
+- **What does not work yet.** Live model inference, a language server,
+  packaging/distribution, parallelism, and general error messages. Several
+  features in the tree are declared, checked, and rendered but never executed.
+- **[KOSIKA_VISION.md](KOSIKA_VISION.md) is a design target, not a
+  description of this codebase.** It describes a much larger language —
+  tensors, memory bubbles, personality policies, an extension ecosystem,
+  multi-agent consensus. Almost none of that is implemented. It is included
+  to show intent and to argue about, not to claim delivery.
+- **The version is `0.1.0` and the API is unstable.** Interfaces will change.
+
+If you are evaluating Kosika for real use today, the honest answer is that it
+is not there yet. If you are evaluating the *idea* — that an AI system's
+authority, evidence, and replayability should be enforced by the language
+rather than by convention — the rest of this file is the substance.
 
 ## Language and runtime expansion
 
@@ -12,6 +37,51 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for runnable examples, APIs, security bound
 and current limitations. These are initial implementations: live inference on the
 installed local model timed out, parallelism is host-defined, and editor support
 does not yet include a language server.
+
+### Hello World
+
+The smallest complete Kosika program returns a typed greeting:
+
+```kosika
+record Greeting {
+  text: Text
+}
+
+fn greeting() -> Greeting {
+  return {text: "Hello, world!"}
+}
+
+workflow main() -> Greeting {
+  step greet {
+    let result: Greeting = greeting()
+    return result
+  }
+}
+```
+
+Run and replay it locally:
+
+```text
+python -m kosika.cli check examples/hello_world.kos
+python -m kosika.cli run examples/hello_world.kos --trace hello_world.jsonl
+python -m kosika.cli replay hello_world.jsonl
+```
+
+The run prints `{'text': 'Hello, world!'}` and records a replayable trace.
+
+### Typed input/output
+
+`examples/typed_input_output.kos` accepts a typed `EvaluationInput`, applies a
+pure scoring function, and returns a validated `EvaluationResult`:
+
+```text
+python -m kosika.cli check examples/typed_input_output.kos
+python -m kosika.cli run examples/typed_input_output.kos --input examples/typed_input.json --trace typed_input.jsonl
+python -m kosika.cli replay typed_input.jsonl
+```
+
+The example returns `{'score': 0.87, 'accepted': True}`. Invalid input is rejected
+before workflow execution.
 
 ## Pure typed functions
 
@@ -35,10 +105,35 @@ traces for offline replay. Pure functions may call other pure functions in retur
 expressions and workflow arguments; the checker rejects recursive or over-deep call
 graphs.
 
-Function locals use `let name: Type = expression`. Initializers run in order;
-later locals and the return expression can refer to earlier bindings. Names cannot
-be rebound or shadow parameters. See `examples/local_bindings.kos` for a runnable
-example (`python -m kosika.cli run examples/local_bindings.kos`).
+Function locals use `let name = expression` or `let name: Type = expression`. The
+annotation is optional: when it is omitted the checker infers the type from the
+initializer and then checks every later use exactly as it would an explicit one.
+Initializers run in order; later locals and the return expression can refer to
+earlier bindings. Names cannot be rebound or shadowed.
+
+Use `var` for a binding that is assigned later. A `let` binding is immutable, and
+the checker rejects an assignment to it, to a parameter, or to an unknown name —
+and rejects an assignment whose value type does not match the binding's type.
+Assignment is a statement, so it may not appear in `return` position. A loop body
+may assign to a `var` declared outside it, which is how an accumulator is written:
+
+```kosika
+fn total(box: Box) -> Number {
+  var sum = 0
+  for value in box.values {
+    sum = sum + value
+  }
+  return sum
+}
+```
+
+A function body may also contain loops, conditionals, and assignments as
+statements; they run after the declarations and before the returned expression.
+A braced body with no trailing expression evaluates to `Null`, so
+`repeat 3 times { sum = sum + 1 }` needs no filler value.
+
+See `examples/local_bindings.kos` for a runnable example
+(`python -m kosika.cli run examples/local_bindings.kos`).
 
 Pure expressions support precedence-aware numeric arithmetic, numeric comparisons,
 strict same-type equality, Boolean `and`/`or`/`not`, unary negation, parentheses,
@@ -165,6 +260,32 @@ does not authenticate a trace against malicious rewriting. Failed runs do not ye
 produce a complete replayable failure trace. Optional durable sessions retain
 checkpoint state and support explicit workflow mutation approval; see the development guide.
 
+## Deterministic evaluations
+
+`kosika.evaluation` runs fresh workflow cases with fixture-backed providers,
+writes one replayable JSONL trace per case, and produces a machine-readable
+`report.json`. Assertions are data: cases support exact output matching or
+required text fragments, never executable test code.
+
+The research assistant evaluation uses the existing local MCP document fixture:
+
+```powershell
+$env:KOSIKA_DOCUMENTS_DIR = "examples/research_documents"
+python -m kosika.devtools eval examples/research_assistant.kos `
+  examples/research_evaluations.json `
+  --workflow answer `
+  --mcp-server examples/documents_mcp_server.py `
+  --mcp-manifest examples/research_documents_manifest.json `
+  --mcp-source research_documents `
+  --output research-evaluation
+python -m kosika.cli replay research-evaluation/auditable_answer.jsonl
+```
+
+The command returns exit code `0` only when every case passes, `1` when an
+assertion fails, and `2` for invalid fixture or host setup. The output directory
+must be new so previous traces cannot be mistaken for a fresh evaluation.
+
+
 ## Local document assistant
 
 An `ask researcher(text: question.text)` step runs a bounded agent and returns its
@@ -198,6 +319,23 @@ Successful agent traces include the conversation and validated tool outcomes.
 Offline replay validates the transcript and returns cached results without reading
 documents or calling a model. The same trace privacy, authenticity, and failed-run
 limitations described above apply.
+
+### Research assistant example
+
+`examples/research_assistant.kos` adds a bounded, read-only document search to the
+agent workflow. The host grants only the declared `search_docs` tool, and the
+deterministic model fixture must cite files returned by that search.
+
+```text
+python -m kosika.cli check examples/research_assistant.kos
+python -m examples.research_assistant --trace research_trace.jsonl
+python -m kosika.devtools inspect research_trace.jsonl
+python -m kosika.cli replay research_trace.jsonl
+```
+
+The example uses `examples/research_input.json`,
+`examples/research_model_answers.json`, and the bounded documents in
+`examples/research_documents`.
 
 ## Included
 
@@ -299,6 +437,110 @@ itself. Hosts explicitly supply adapters and provider bindings; mutations requir
 matching approval through a durable session. The local test
 server is protocol-compatible but deterministic. This is the first language/runtime slice, not a
 production executor.
+
+## Approval-protected agent factory
+
+`examples/agent_factory.kos` demonstrates the first builder workflow. A typed request
+goes to a declared architect model, the resulting `AgentSpec` is passed to an
+`execute` source-writing tool, and the durable session pauses before the tool call.
+The local MCP server only renders reviewable Kosika text; it never writes a file.
+
+Generate and validate the pinned tool manifest:
+
+```powershell
+python -m kosika.cli manifest generate `
+  --mcp-server examples/agent_factory_mcp_server.py `
+  --source agent_factory `
+  --output examples/agent_factory_manifest.json
+python -m kosika.cli check examples/agent_factory.kos
+```
+
+Run with deterministic model and MCP fixtures. The first run prints the exact
+`plan_hash` and `action_hash` and exits with approval required:
+
+```powershell
+python -m kosika.cli run examples/agent_factory.kos `
+  --workflow build_agent `
+  --input examples/agent_factory_input.json `
+  --model-fixture examples/agent_factory_models.json `
+  --mcp-server examples/agent_factory_mcp_server.py `
+  --mcp-manifest examples/agent_factory_manifest.json `
+  --mcp-source agent_factory `
+  --journal agent_factory.sqlite `
+  --binding-id agent-factory-v1 `
+  --trace agent_factory.jsonl
+```
+
+Review those hashes and the proposed source, then rerun with
+`--approval-record examples/agent_factory_approval.json`. The approved result is
+recorded in the trace and can be replayed offline:
+
+```powershell
+python -m kosika.cli replay agent_factory.jsonl
+```
+
+The example intentionally stops at a proposed declaration. It does not silently
+write generated source, grant capabilities, or execute arbitrary shell commands.
+
+## Approval-protected mutation
+
+`examples/approval_mutation.kos` is the staged mutation workflow. It declares one
+typed `execute` tool and requires approval before the mutation. The local MCP
+fixture writes one deterministic JSON result to the sink named by
+`KOSIKA_MUTATION_SINK`; it accepts only a relative `.json` filename.
+
+Generate and validate its pinned manifest:
+
+```powershell
+python -m kosika.cli manifest generate `
+  --mcp-server examples/approval_mutation_mcp_server.py `
+  --source approval_mutation `
+  --output examples/approval_mutation_manifest.json
+python -m kosika.cli manifest check `
+  examples/approval_mutation_manifest.json `
+  --mcp-server examples/approval_mutation_mcp_server.py
+python -m kosika.cli check examples/approval_mutation.kos
+```
+
+Run once with a durable journal. The command pauses before the effect and prints
+the exact plan and action hashes:
+
+```powershell
+$env:KOSIKA_MUTATION_SINK = ".tmp-approval-mutation-sink.json"
+python -m kosika.cli run examples/approval_mutation.kos `
+  --workflow apply_change `
+  --input examples/approval_mutation_input.json `
+  --mcp-server examples/approval_mutation_mcp_server.py `
+  --mcp-manifest examples/approval_mutation_manifest.json `
+  --mcp-source approval_mutation `
+  --journal approval_mutation.sqlite `
+  --binding-id approval-mutation-v1 `
+  --trace approval_mutation.jsonl
+```
+
+Review the pending change, then resume with
+`--approval-record examples/approval_mutation_approval.json`. The sink is written
+only after the exact action is claimed. Re-running the completed journal
+replays the checkpoint without invoking the mutation again:
+
+```powershell
+python -m kosika.cli run examples/approval_mutation.kos `
+  --workflow apply_change `
+  --input examples/approval_mutation_input.json `
+  --mcp-server examples/approval_mutation_mcp_server.py `
+  --mcp-manifest examples/approval_mutation_manifest.json `
+  --mcp-source approval_mutation `
+  --journal approval_mutation.sqlite `
+  --binding-id approval-mutation-v1 `
+  --approval-record examples/approval_mutation_approval.json `
+  --trace approval_mutation.jsonl
+python -m kosika.cli replay approval_mutation.jsonl
+```
+
+The approval record is bound to this source, input, binding identity, workflow
+step, tool, and arguments. A changed action hash remains pending and cannot
+invoke the host effect.
+
 
 ## Local model provider and agent loop
 
@@ -626,6 +868,50 @@ For optional local inference, omit `--fixture` and configure `KOSIKA_MODEL` (and
 environment. The assistant receives no tools, cannot execute workflows or shell commands, and rejects
 tool-call or truncated responses. The checker, schema validation, replay, and approval system remain
 authoritative; assistant text is an explanation, not permission to mutate anything.
+
+## Live AI worlds
+
+Kosika can render the same checked agent system as a live, event-backed world.
+The world view is not a simulation: a resident only wakes, walks, or lights up
+when the runtime publishes an event for that real agent or tool call.
+
+Choose a deterministic environment preset for the live isometric view:
+
+```powershell
+python -m kosika.cli city examples `
+  --format live `
+  --environment forest `
+  --serve `
+  --port 8787
+```
+
+Available environments are `metropolitan`, `urban`, `suburban`, `rural`,
+`desert`, `forest`, and `water`. The Kosika declarations remain authoritative;
+the environment changes terrain, atmosphere, roads, and presentation without
+changing capabilities or execution behavior.
+
+World manifests customize the presentation without changing Kosika execution
+contracts. The reference Forest Knowledge Reserve maps real knowledge domains
+and residents from `examples/city` to named institutions:
+
+```powershell
+python -m kosika.cli city examples/city `
+  --format live `
+  --world examples/worlds/forest_knowledge_reserve.json `
+  --output forest-knowledge-reserve.html
+```
+
+The same manifest can be served live with `--serve`. Its buildings are labels
+over the checked domains; the event stream and replay traces remain generated
+by real Kosika executions.
+
+The reference manifest uses the `isometric_lowpoly` render style: an original
+Three.js game-world view with procedural landmark buildings, layered roofs,
+flags, windows, a plaza fountain, rocks, water tiles, terrain, trees, shadows,
+and animated resident figures. Materials use generated hand-painted-style
+textures, while the page retains the deterministic SVG fallback if WebGL or
+the optional glTF loader is unavailable. Runtime event identity remains
+authoritative and drives the 3D activity state.
 
 ## Network and vector design
 

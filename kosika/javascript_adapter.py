@@ -119,9 +119,7 @@ _DYNAMIC_IMPORT_RE = re.compile(r"\bimport\s*\(")
 _IMPORT_SPECIFIER_RE = re.compile(r"\{(?P<names>[^}]*)\}")
 
 _CLASS_RE = re.compile(r"\bclass\s+(?P<name>[A-Za-z_$][\w$]*)")
-_FUNCTION_RE = re.compile(
-    r"(?:async\s+)?\bfunction\s*\*?\s*(?P<name>[A-Za-z_$][\w$]*)"
-)
+_FUNCTION_RE = re.compile(r"(?:async\s+)?\bfunction\s*\*?\s*(?P<name>[A-Za-z_$][\w$]*)")
 _INTERFACE_RE = re.compile(r"\binterface\s+(?P<name>[A-Za-z_$][\w$]*)")
 _TYPE_RE = re.compile(r"\btype\s+(?P<name>[A-Za-z_$][\w$]*)\s*=")
 _ENUM_RE = re.compile(r"\b(?:const\s+)?enum\s+(?P<name>[A-Za-z_$][\w$]*)")
@@ -144,9 +142,7 @@ _GETTER_RE = re.compile(
 )
 #: Arrow function written as ``(args): Type => body``.
 _TYPED_ARROW_RE = re.compile(r"\(\s*(?P<params>[^()]*)\)\s*:\s*[^=]{0,120}?=>")
-_CALL_RE = re.compile(
-    r"(?P<callee>(?:[A-Za-z_$][\w$]*\s*\.\s*)*[A-Za-z_$][\w$]*)\s*\("
-)
+_CALL_RE = re.compile(r"(?P<callee>(?:[A-Za-z_$][\w$]*\s*\.\s*)*[A-Za-z_$][\w$]*)\s*\(")
 _DOTTED_RE = re.compile(r"^[A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)*$")
 
 _EFFECT_ROOTS: dict[str, tuple[str, ...]] = {
@@ -227,7 +223,9 @@ def _previous_significant(masked: str, index: int) -> tuple[str, str]:
     character = masked[position]
     if character.isalnum() or character in "_$":
         end = position + 1
-        while position >= 0 and (masked[position].isalnum() or masked[position] in "_$"):
+        while position >= 0 and (
+            masked[position].isalnum() or masked[position] in "_$"
+        ):
             position -= 1
         return character, masked[position + 1 : end]
     return character, ""
@@ -530,7 +528,9 @@ def _collect_imports(
     """
 
     text = masked.text
-    by_start: dict[int, Any] = {item["start"]: item["value"] for item in masked.literals}
+    by_start: dict[int, Any] = {
+        item["start"]: item["value"] for item in masked.literals
+    }
     imports: list[dict[str, Any]] = []
     dynamic: list[dict[str, Any]] = []
     seen: set[tuple[str, int, str, str]] = set()
@@ -543,7 +543,9 @@ def _collect_imports(
             return recovered
         return str(match.group("module"))
 
-    def add(kind: str, module: str, line: int, name: str | None, clause: str | None) -> None:
+    def add(
+        kind: str, module: str, line: int, name: str | None, clause: str | None
+    ) -> None:
         key = (kind, line, module, name or "")
         if key in seen:
             return
@@ -579,7 +581,13 @@ def _collect_imports(
                     add("named_import", module, line, identifier, None)
 
     for match in _BARE_IMPORT_RE.finditer(text):
-        add("side_effect_import", value_at(match), masked.line_of(match.start()), None, None)
+        add(
+            "side_effect_import",
+            value_at(match),
+            masked.line_of(match.start()),
+            None,
+            None,
+        )
 
     for match in _REQUIRE_RE.finditer(text):
         add("require", value_at(match), masked.line_of(match.start()), None, None)
@@ -749,7 +757,11 @@ def _collect_symbols(
         # A binding is a function when its initializer is a function expression
         # or an arrow, including a typed arrow such as ``(x: T): U => body``.
         arrow = _arrow_body_end(text, match.start("body"))
-        if "=>" in match.group("body") or "function" in match.group("body") or arrow is not None:
+        if (
+            "=>" in match.group("body")
+            or "function" in match.group("body")
+            or arrow is not None
+        ):
             if arrow is not None:
                 end = arrow
             else:
@@ -971,11 +983,15 @@ def scan_javascript_source(
     if not isinstance(source, str):
         raise JavaScriptSourceError("JavaScript source must be text")
     if language not in _JSX_LANGUAGES:
-        raise JavaScriptSourceError(f"Unsupported JavaScript-family language {language!r}")
+        raise JavaScriptSourceError(
+            f"Unsupported JavaScript-family language {language!r}"
+        )
     try:
         raw = source.encode("utf-8")
     except UnicodeEncodeError as exc:
-        raise JavaScriptSourceError("JavaScript source is not valid UTF-8 text") from exc
+        raise JavaScriptSourceError(
+            "JavaScript source is not valid UTF-8 text"
+        ) from exc
     if len(raw) > MAX_SOURCE_BYTES:
         raise JavaScriptSourceError(
             f"JavaScript source exceeds the {MAX_SOURCE_BYTES}-byte analysis limit"
@@ -1032,13 +1048,20 @@ def scan_javascript_file(path: str | Path) -> dict[str, Any]:
     except UnicodeDecodeError as exc:
         raise JavaScriptSourceError("JavaScript source must be UTF-8 encoded") from exc
 
-    language = "typescript" if source_path.suffix.lower() in {
-        ".ts",
-        ".tsx",
-        ".mts",
-        ".cts",
-    } else "javascript"
-    document = scan_javascript_source(source, path=source_path.as_posix(), language=language)
+    language = (
+        "typescript"
+        if source_path.suffix.lower()
+        in {
+            ".ts",
+            ".tsx",
+            ".mts",
+            ".cts",
+        }
+        else "javascript"
+    )
+    document = scan_javascript_source(
+        source, path=source_path.as_posix(), language=language
+    )
     document["source"]["sha256"] = hashlib.sha256(raw).hexdigest()
     return document
 

@@ -11,8 +11,7 @@ from kosika.unified_mindmap import build_unified_mindmap
 class EditorFeatureTests(unittest.TestCase):
     def test_valid_document_has_symbols_hovers_and_completions(self) -> None:
         features = build_editor_features(
-            "record Result { ok: Bool }\n"
-            "agent reviewer { can: [] cannot: [] }\n"
+            "record Result { ok: Bool }\nagent reviewer { can: [] cannot: [] }\n"
         )
         self.assertEqual(features["diagnostics"], [])
         self.assertEqual(
@@ -20,7 +19,9 @@ class EditorFeatureTests(unittest.TestCase):
             ["Result", "reviewer"],
         )
         self.assertTrue(any(item["name"] == "Result" for item in features["hovers"]))
-        self.assertTrue(any(item["label"] == "workflow" for item in features["completions"]))
+        self.assertTrue(
+            any(item["label"] == "workflow" for item in features["completions"])
+        )
 
     def test_parse_error_has_editor_location(self) -> None:
         features = build_editor_features("record Result {\n")
@@ -29,7 +30,12 @@ class EditorFeatureTests(unittest.TestCase):
 
     def test_checker_error_is_reported_without_execution(self) -> None:
         features = build_editor_features("record Result { value: Missing }\n")
-        self.assertTrue(any("Unknown field type" in item["message"] for item in features["diagnostics"]))
+        self.assertTrue(
+            any(
+                "Unknown field type" in item["message"]
+                for item in features["diagnostics"]
+            )
+        )
 
 
 class UnifiedMindmapTests(unittest.TestCase):
@@ -39,7 +45,7 @@ class UnifiedMindmapTests(unittest.TestCase):
             source = root / "main.kos"
             source.write_text(
                 "record Result { ok: Bool }\n"
-                "tool inspect { source mcp \"local\" operation: \"inspect\" access: observe output: Result }\n"
+                'tool inspect { source mcp "local" operation: "inspect" access: observe output: Result }\n'
                 "agent reviewer { can: [inspect] cannot: [] }\n"
                 "workflow main() -> Result { step inspect { let result: Result = execute reviewer.inspect() return result } }\n",
                 encoding="utf-8",
@@ -53,11 +59,12 @@ class UnifiedMindmapTests(unittest.TestCase):
             ids = {node["id"] for node in report["nodes"]}
             self.assertIn("kosika:root", ids)
             self.assertIn("source:root", ids)
-            self.assertTrue(any(node["language"] == "python" for node in report["nodes"]))
+            self.assertTrue(
+                any(node["language"] == "python" for node in report["nodes"])
+            )
             self.assertTrue(
                 all(
-                    edge["source"].split(":", 1)[0]
-                    == edge["target"].split(":", 1)[0]
+                    edge["source"].split(":", 1)[0] == edge["target"].split(":", 1)[0]
                     for edge in report["edges"]
                 )
             )

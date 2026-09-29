@@ -10,13 +10,13 @@ import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional, List, Dict
-from urllib.parse import urlparse
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
 class ProgramManifest:
     """Manifest for a Kosika program package."""
+
     name: str
     version: str
     author: str
@@ -41,7 +41,7 @@ class ProgramManifest:
             "hash": self.hash,
             "description": self.description,
             "tags": self.tags,
-            "license": self.license
+            "license": self.license,
         }
 
     @classmethod
@@ -57,13 +57,14 @@ class ProgramManifest:
             hash=data["hash"],
             description=data.get("description", ""),
             tags=data.get("tags", []),
-            license=data.get("license", "MIT")
+            license=data.get("license", "MIT"),
         )
 
 
 @dataclass
 class ProgramPackage:
     """Complete Kosika program package."""
+
     manifest: ProgramManifest
     source_files: Dict[str, str]  # filename -> source code
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -72,7 +73,7 @@ class ProgramPackage:
         return {
             "manifest": self.manifest.to_dict(),
             "source_files": self.source_files,
-            "metadata": self.metadata
+            "metadata": self.metadata,
         }
 
     @classmethod
@@ -80,15 +81,15 @@ class ProgramPackage:
         return cls(
             manifest=ProgramManifest.from_dict(data["manifest"]),
             source_files=data["source_files"],
-            metadata=data.get("metadata", {})
+            metadata=data.get("metadata", {}),
         )
 
     def compute_hash(self) -> str:
         """Compute SHA-256 hash of the package."""
-        canonical = json.dumps({
-            "manifest": self.manifest.to_dict(),
-            "source_files": self.source_files
-        }, sort_keys=True)
+        canonical = json.dumps(
+            {"manifest": self.manifest.to_dict(), "source_files": self.source_files},
+            sort_keys=True,
+        )
         return hashlib.sha256(canonical.encode()).hexdigest()
 
 
@@ -104,13 +105,13 @@ class ProgramRegistry:
     def _load_index(self) -> Dict[str, Any]:
         """Load the program index."""
         if self._index_file.exists():
-            with open(self._index_file, 'r') as f:
+            with open(self._index_file, "r") as f:
                 return json.load(f)
         return {"programs": {}, "versions": {}}
 
     def _save_index(self):
         """Save the program index."""
-        with open(self._index_file, 'w') as f:
+        with open(self._index_file, "w") as f:
             json.dump(self._index, f, indent=2)
 
     def register(self, package: ProgramPackage) -> str:
@@ -124,7 +125,7 @@ class ProgramRegistry:
 
         # Save package manifest
         manifest_file = package_dir / "package.json"
-        with open(manifest_file, 'w') as f:
+        with open(manifest_file, "w") as f:
             json.dump(package.to_dict(), f, indent=2)
 
         # Save source files
@@ -138,23 +139,30 @@ class ProgramRegistry:
                 "name": package.manifest.name,
                 "author": package.manifest.author,
                 "versions": [],
-                "latest": package.manifest.version
+                "latest": package.manifest.version,
             }
 
-        if package.manifest.version not in self._index["programs"][program_id]["versions"]:
-            self._index["programs"][program_id]["versions"].append(package.manifest.version)
+        if (
+            package.manifest.version
+            not in self._index["programs"][program_id]["versions"]
+        ):
+            self._index["programs"][program_id]["versions"].append(
+                package.manifest.version
+            )
             self._index["programs"][program_id]["latest"] = package.manifest.version
 
         self._index["versions"][version_key] = {
             "registered_at": datetime.now(timezone.utc).isoformat(),
             "hash": package.manifest.hash,
-            "capabilities": package.manifest.capabilities
+            "capabilities": package.manifest.capabilities,
         }
 
         self._save_index()
         return program_id
 
-    def get(self, program_id: str, version: Optional[str] = None) -> Optional[ProgramPackage]:
+    def get(
+        self, program_id: str, version: Optional[str] = None
+    ) -> Optional[ProgramPackage]:
         """Retrieve a program package."""
         if program_id not in self._index["programs"]:
             return None
@@ -166,7 +174,7 @@ class ProgramRegistry:
         if not manifest_file.exists():
             return None
 
-        with open(manifest_file, 'r') as f:
+        with open(manifest_file, "r") as f:
             package_data = json.load(f)
 
         return ProgramPackage.from_dict(package_data)
@@ -177,13 +185,15 @@ class ProgramRegistry:
         for program_id, info in self._index["programs"].items():
             if author and info["author"] != author:
                 continue
-            programs.append({
-                "id": program_id,
-                "name": info["name"],
-                "author": info["author"],
-                "versions": info["versions"],
-                "latest": info["latest"]
-            })
+            programs.append(
+                {
+                    "id": program_id,
+                    "name": info["name"],
+                    "author": info["author"],
+                    "versions": info["versions"],
+                    "latest": info["latest"],
+                }
+            )
         return programs
 
     def search(self, query: str) -> List[Dict[str, Any]]:
@@ -199,15 +209,16 @@ class ProgramRegistry:
                 version_info = self._index["versions"][version_key]
                 capabilities = " ".join(version_info["capabilities"]).lower()
 
-                if (query_lower in info["name"].lower() or
-                    query_lower in capabilities):
-                    results.append({
-                        "id": program_id,
-                        "name": info["name"],
-                        "author": info["author"],
-                        "version": latest_version,
-                        "capabilities": version_info["capabilities"]
-                    })
+                if query_lower in info["name"].lower() or query_lower in capabilities:
+                    results.append(
+                        {
+                            "id": program_id,
+                            "name": info["name"],
+                            "author": info["author"],
+                            "version": latest_version,
+                            "capabilities": version_info["capabilities"],
+                        }
+                    )
 
         return results
 
@@ -222,7 +233,6 @@ class ProgramLoader:
             raise FileNotFoundError(f"Directory not found: {directory}")
 
         # Look for kosika.json or kos files
-        manifest_file = directory / "kosika.json"
         syn_files = list(directory.glob("*.kos"))
 
         if not syn_files:
@@ -237,7 +247,7 @@ class ProgramLoader:
             requires=[],
             main_file=syn_files[0].name,
             modules=[f.name for f in syn_files],
-            hash=""
+            hash="",
         )
 
         # Load source files
@@ -245,10 +255,7 @@ class ProgramLoader:
         for syn_file in syn_files:
             source_files[syn_file.name] = syn_file.read_text()
 
-        package = ProgramPackage(
-            manifest=manifest,
-            source_files=source_files
-        )
+        package = ProgramPackage(manifest=manifest, source_files=source_files)
         manifest.hash = package.compute_hash()
 
         return package
@@ -274,7 +281,7 @@ class ExecutionRequest:
         program_id: str,
         version: Optional[str] = None,
         input_data: Optional[Dict[str, Any]] = None,
-        options: Optional[Dict[str, Any]] = None
+        options: Optional[Dict[str, Any]] = None,
     ):
         self.program_id = program_id
         self.version = version
@@ -286,7 +293,7 @@ class ExecutionRequest:
             "program_id": self.program_id,
             "version": self.version,
             "input": self.input_data,
-            "options": self.options
+            "options": self.options,
         }
 
 
@@ -299,7 +306,7 @@ class ExecutionResult:
         status: str,
         output: Optional[Dict[str, Any]] = None,
         error: Optional[str] = None,
-        trace: Optional[str] = None
+        trace: Optional[str] = None,
     ):
         self.execution_id = execution_id
         self.status = status  # "running", "completed", "failed"
@@ -313,7 +320,7 @@ class ExecutionResult:
             "status": self.status,
             "output": self.output,
             "error": self.error,
-            "trace": self.trace
+            "trace": self.trace,
         }
 
 
@@ -342,13 +349,17 @@ def create_package(directory: Path) -> ProgramPackage:
     return loader.from_directory(directory)
 
 
-def register_package(package: ProgramPackage, registry: Optional[ProgramRegistry] = None) -> str:
+def register_package(
+    package: ProgramPackage, registry: Optional[ProgramRegistry] = None
+) -> str:
     """Register a package in the registry."""
     registry = registry or ProgramRegistry()
     return registry.register(package)
 
 
-def find_program(query: str, registry: Optional[ProgramRegistry] = None) -> List[Dict[str, Any]]:
+def find_program(
+    query: str, registry: Optional[ProgramRegistry] = None
+) -> List[Dict[str, Any]]:
     """Find programs in the registry."""
     registry = registry or ProgramRegistry()
     return registry.search(query)

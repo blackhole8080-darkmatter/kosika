@@ -31,7 +31,7 @@ class LanguageAdapterRegistryTests(unittest.TestCase):
         self.assertEqual(analysis["language"], "typescript")
 
         rust_analysis = adapter_for_suffix(".rs").analyze_source(
-            "pub fn greet() { println!(\"hi\"); }\n",
+            'pub fn greet() { println!("hi"); }\n',
             path="lib.rs",
         )
         self.assertEqual(rust_analysis["language"], "rust")

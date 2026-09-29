@@ -6,9 +6,10 @@ import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Sequence
 
 from .ast import Program
+from .manifest import MCPManifest
 from .model import ModelProvider
 from .runtime import run
 from .schema import schemas_equal
@@ -28,6 +29,9 @@ def evaluate(
     cases: list[EvaluationCase],
     output: str | Path,
     providers: Callable[[EvaluationCase], Mapping[str, ModelProvider]],
+    *,
+    mcp_commands: Mapping[str, Sequence[str]] | None = None,
+    manifest: MCPManifest | None = None,
 ) -> dict[str, Any]:
     if not cases or len(cases) > 64 or len({case.name for case in cases}) != len(cases):
         raise ValueError("Evaluations require 1..64 unique cases")
@@ -56,6 +60,8 @@ def evaluate(
                 directory / f"{case.name}.jsonl",
                 inputs=case.inputs,
                 model_bindings=providers(case),
+                mcp_commands=mcp_commands,
+                manifest=manifest,
             )
             failures = []
             if case.expected is not None and not schemas_equal(result, case.expected):

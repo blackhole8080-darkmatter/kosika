@@ -15,9 +15,12 @@ from .schema import validate
 def write_agent_trace(path: str | Path, events: list[dict[str, Any]]) -> None:
     destination = Path(path)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    payload = "\n".join(
-        json.dumps(event, sort_keys=True, allow_nan=False) for event in events
-    ) + "\n"
+    payload = (
+        "\n".join(
+            json.dumps(event, sort_keys=True, allow_nan=False) for event in events
+        )
+        + "\n"
+    )
     temporary: str | None = None
     try:
         with tempfile.NamedTemporaryFile(
@@ -64,9 +67,10 @@ def replay_agent_events(events: list[Any]) -> Any:
     if len(events) < 3 or any(not isinstance(event, dict) for event in events):
         raise ValueError("Agent trace is incomplete")
     start, complete = events[0], events[-1]
-    if start.get("event") != "agent_run_start" or complete.get(
-        "event"
-    ) != "agent_run_complete":
+    if (
+        start.get("event") != "agent_run_start"
+        or complete.get("event") != "agent_run_complete"
+    ):
         raise ValueError("Agent trace must start and finish with one completed run")
     if start.get("trace_version") != 1:
         raise ValueError("Unsupported direct agent trace version")
@@ -80,8 +84,12 @@ def replay_agent_events(events: list[Any]) -> Any:
     input_schema = start.get("input_schema")
     output_schema = start.get("output_schema")
     if input_schema is not None:
-        if not isinstance(input_schema, dict) or not isinstance(start.get("input"), dict):
-            raise ValueError("Structured agent trace requires an input object and schema")
+        if not isinstance(input_schema, dict) or not isinstance(
+            start.get("input"), dict
+        ):
+            raise ValueError(
+                "Structured agent trace requires an input object and schema"
+            )
         validate(start["input"], input_schema)
     if output_schema is not None and not isinstance(output_schema, dict):
         raise ValueError("Agent trace output schema must be an object")

@@ -1,0 +1,41 @@
+[
+  {
+    "name": "auditable_answer",
+    "inputs": {
+      "question": {
+        "text": "How does Kosika keep AI workflows auditable?"
+      }
+    },
+    "expected": {
+      "text": "Kosika keeps AI workflows auditable through explicit capabilities, bounded execution, and replayable traces.",
+      "sources": ["capabilities.md", "traces.md"]
+    },
+    "responses": {
+      "reader": [
+        {
+          "text": "Kosika keeps AI workflows auditable through explicit capabilities, bounded execution, and replayable traces.",
+          "sources": ["capabilities.md", "traces.md"]
+        }
+      ]
+    }
+  },
+  {
+    "name": "evidence_is_explained",
+    "inputs": {
+      "question": {
+        "text": "How does Kosika keep AI workflows auditable?"
+      }
+    },
+    "contains": {
+      "text": "replayable traces"
+    },
+    "responses": {
+      "reader": [
+        {
+          "text": "Kosika keeps AI workflows auditable through explicit capabilities, bounded execution, and replayable traces.",
+          "sources": ["capabilities.md", "traces.md"]
+        }
+      ]
+    }
+  }
+]

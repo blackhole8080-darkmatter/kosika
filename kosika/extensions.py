@@ -26,15 +26,21 @@ _EXTENSION_KINDS = frozenset(
     }
 )
 _LIFECYCLE_HOOKS = frozenset(
-    {"discover", "install", "activate", "deactivate", "remove", "healthCheck", "rollback"}
+    {
+        "discover",
+        "install",
+        "activate",
+        "deactivate",
+        "remove",
+        "healthCheck",
+        "rollback",
+    }
 )
 _ROLLBACK_STRATEGIES = frozenset({"disable", "restore", "compensate"})
 _NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,127}$")
 _VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$")
 _PERMISSION_RE = re.compile(r"^[a-z][a-z0-9_.-]*:[a-z][a-z0-9_.-]*$")
-_ENTRYPOINT_RE = re.compile(
-    r"^[A-Za-z_][A-Za-z0-9_.-]*:[A-Za-z_][A-Za-z0-9_.-]*$"
-)
+_ENTRYPOINT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]*:[A-Za-z_][A-Za-z0-9_.-]*$")
 
 
 @dataclass(frozen=True)
@@ -120,25 +126,23 @@ def _version(value: Any, label: str) -> str:
 def _entrypoint(value: Any, label: str) -> str:
     result = _string(value, label)
     if not _ENTRYPOINT_RE.fullmatch(result):
-        raise ExtensionManifestError(
-            f"{label} must use a module:function entrypoint"
-        )
+        raise ExtensionManifestError(f"{label} must use a module:function entrypoint")
     return result
 
 
 def _permission(value: Any, label: str) -> str:
     result = _string(value, label)
     if not _PERMISSION_RE.fullmatch(result):
-        raise ExtensionManifestError(
-            f"{label} must use a namespace:action permission"
-        )
+        raise ExtensionManifestError(f"{label} must use a namespace:action permission")
     return result
 
 
 def _string_list(value: Any, label: str, validator: Any) -> tuple[str, ...]:
     if not isinstance(value, list):
         raise ExtensionManifestError(f"{label} must be an array")
-    result = tuple(validator(item, f"{label}[{index}]") for index, item in enumerate(value))
+    result = tuple(
+        validator(item, f"{label}[{index}]") for index, item in enumerate(value)
+    )
     if len(set(result)) != len(result):
         raise ExtensionManifestError(f"{label} must not contain duplicates")
     return result
@@ -159,7 +163,11 @@ def _parse_contributions(
     seen: set[tuple[str, str]] = set()
     for index, raw in enumerate(value):
         item = _object(raw, f"contributions[{index}]")
-        _keys(item, {"kind", "name", "entrypoint", "permissions"}, f"contributions[{index}]")
+        _keys(
+            item,
+            {"kind", "name", "entrypoint", "permissions"},
+            f"contributions[{index}]",
+        )
         kind = _string(item.get("kind"), f"contributions[{index}].kind")
         if kind not in _EXTENSION_KINDS:
             raise ExtensionManifestError(
@@ -189,7 +197,9 @@ def _parse_contributions(
                 f"contributions[{index}] requests undeclared permissions: {undeclared!r}"
             )
         result.append(
-            ExtensionContribution(kind, name, parsed_entrypoint, contribution_permissions)
+            ExtensionContribution(
+                kind, name, parsed_entrypoint, contribution_permissions
+            )
         )
     if not result:
         raise ExtensionManifestError("contributions must contain at least one item")
@@ -210,10 +220,14 @@ def _parse_dependencies(value: Any) -> tuple[ExtensionDependency, ...]:
                 f"dependencies must not repeat {dependency_id!r}"
             )
         seen.add(dependency_id)
-        constraint = _string(item.get("constraint"), f"dependencies[{index}].constraint")
+        constraint = _string(
+            item.get("constraint"), f"dependencies[{index}].constraint"
+        )
         optional = item.get("optional", False)
         if not isinstance(optional, bool):
-            raise ExtensionManifestError(f"dependencies[{index}].optional must be boolean")
+            raise ExtensionManifestError(
+                f"dependencies[{index}].optional must be boolean"
+            )
         result.append(ExtensionDependency(dependency_id, constraint, optional))
     return tuple(result)
 
@@ -222,8 +236,7 @@ def _parse_lifecycle(value: Any) -> tuple[tuple[str, str], ...]:
     item = _object(value, "lifecycle")
     _keys(item, set(_LIFECYCLE_HOOKS), "lifecycle")
     return tuple(
-        (name, _entrypoint(item[name], f"lifecycle.{name}"))
-        for name in sorted(item)
+        (name, _entrypoint(item[name], f"lifecycle.{name}")) for name in sorted(item)
     )
 
 
@@ -234,23 +247,35 @@ def _parse_health_checks(value: Any) -> tuple[ExtensionHealthCheck, ...]:
     seen: set[str] = set()
     for index, raw in enumerate(value):
         item = _object(raw, f"healthChecks[{index}]")
-        _keys(item, {"name", "entrypoint", "timeoutMs", "required"}, f"healthChecks[{index}]")
+        _keys(
+            item,
+            {"name", "entrypoint", "timeoutMs", "required"},
+            f"healthChecks[{index}]",
+        )
         name = _name(item.get("name"), f"healthChecks[{index}].name")
         if name in seen:
             raise ExtensionManifestError(f"duplicate health check: {name!r}")
         seen.add(name)
         timeout_ms = item.get("timeoutMs")
-        if isinstance(timeout_ms, bool) or not isinstance(timeout_ms, int) or timeout_ms <= 0:
+        if (
+            isinstance(timeout_ms, bool)
+            or not isinstance(timeout_ms, int)
+            or timeout_ms <= 0
+        ):
             raise ExtensionManifestError(
                 f"healthChecks[{index}].timeoutMs must be a positive integer"
             )
         required = item.get("required", True)
         if not isinstance(required, bool):
-            raise ExtensionManifestError(f"healthChecks[{index}].required must be boolean")
+            raise ExtensionManifestError(
+                f"healthChecks[{index}].required must be boolean"
+            )
         result.append(
             ExtensionHealthCheck(
                 name,
-                _entrypoint(item.get("entrypoint"), f"healthChecks[{index}].entrypoint"),
+                _entrypoint(
+                    item.get("entrypoint"), f"healthChecks[{index}].entrypoint"
+                ),
                 timeout_ms,
                 required,
             )

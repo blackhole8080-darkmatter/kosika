@@ -59,8 +59,6 @@ class SourceAnalysisError(SourceAdapterError):
     """Raised when an analysis document cannot be trusted."""
 
 
-
-
 def source_digest(source: str, *, path: str) -> dict[str, Any]:
     """Return the shared source identity block for an analysis document."""
 
@@ -167,7 +165,14 @@ def validate_source_analysis(document: dict[str, Any]) -> None:
     for symbol in symbols:
         if not isinstance(symbol, dict):
             raise SourceAnalysisError("Malformed symbol in source analysis")
-        for key in ("kind", "name", "qualified_name", "start_line", "end_line", "calls"):
+        for key in (
+            "kind",
+            "name",
+            "qualified_name",
+            "start_line",
+            "end_line",
+            "calls",
+        ):
             if key not in symbol:
                 raise SourceAnalysisError(f"Symbol is missing {key!r}")
         if symbol["kind"] not in SYMBOL_KINDS:
@@ -194,4 +199,3 @@ def validate_source_analysis(document: dict[str, Any]) -> None:
             raise SourceAnalysisError(
                 f"Unsupported observed effect kind {effect.get('kind')!r}"
             )
-

@@ -53,6 +53,7 @@
 ```python
 class ExpressionCache:
     """Cache frequently evaluated expressions."""
+
     def __init__(self, max_size: int = 1000):
         self.cache = LRUCache(max_size)
         self.hit_rate = 0.0
@@ -72,6 +73,7 @@ class ExpressionCache:
 ```python
 class JITCompiler:
     """Just-in-time compilation for hot paths."""
+
     def __init__(self):
         self.compiled_functions = {}
         self.execution_counts = {}
@@ -90,6 +92,7 @@ class JITCompiler:
 ```python
 class DeadCodeEliminator:
     """Remove unused code paths."""
+
     def eliminate(self, program: Program) -> Program:
         """Analyze and remove dead code."""
         # Build dependency graph
@@ -104,6 +107,7 @@ class DeadCodeEliminator:
 ```python
 class TaskGraphExecutor:
     """Execute task graphs in parallel."""
+
     def __init__(self, max_workers: int = 4):
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
         self.dependency_resolver = DependencyResolver()
@@ -120,6 +124,7 @@ class TaskGraphExecutor:
 ```python
 class WorkflowParallelizer:
     """Identify parallelizable workflow steps."""
+
     def analyze(self, workflow: Workflow) -> ParallelizationPlan:
         """Analyze workflow for parallelization opportunities."""
         # Build data dependency graph
@@ -134,6 +139,7 @@ class WorkflowParallelizer:
 ```python
 class AdaptiveExecutor:
     """Learn from execution patterns and optimize."""
+
     def __init__(self):
         self.execution_history = ExecutionHistory()
         self.performance_model = PerformanceModel()
@@ -151,6 +157,7 @@ class AdaptiveExecutor:
 ```python
 class ErrorPredictor:
     """Predict and prevent common errors."""
+
     def __init__(self):
         self.error_patterns = ErrorPatternDatabase()
         self.ml_model = ErrorClassificationModel()
@@ -167,6 +174,7 @@ class ErrorPredictor:
 ```python
 class ResourceOptimizer:
     """Optimize resource allocation dynamically."""
+
     def __init__(self):
         self.resource_monitor = ResourceMonitor()
         self.allocation_strategy = DynamicAllocationStrategy()
@@ -185,6 +193,7 @@ class ResourceOptimizer:
 ```python
 class DistributedExecutor:
     """Execute workflows across multiple nodes."""
+
     def __init__(self, cluster: Cluster):
         self.cluster = cluster
         self.task_scheduler = DistributedTaskScheduler()
@@ -202,6 +211,7 @@ class DistributedExecutor:
 ```python
 class MonitoringSystem:
     """Comprehensive monitoring and observability."""
+
     def __init__(self):
         self.metrics_collector = MetricsCollector()
         self.tracer = DistributedTracer()
@@ -221,6 +231,7 @@ class MonitoringSystem:
 ```python
 class DistributedCache:
     """Distributed caching system."""
+
     def __init__(self):
         self.cache_layer = MultiLevelCache()
         self.state_manager = StateManager()
@@ -240,6 +251,7 @@ class DistributedCache:
 ```python
 class PluginManager:
     """Manage Kosika plugins."""
+
     def __init__(self):
         self.plugins = {}
         self.hook_system = HookSystem()
@@ -263,6 +275,7 @@ class PluginManager:
 ```python
 class OperatorRegistry:
     """Registry for custom operators."""
+
     def __init__(self):
         self.operators = {}
 

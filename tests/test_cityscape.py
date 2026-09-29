@@ -14,7 +14,6 @@ from kosika.cityscape import (
     render_cityscape_svg,
 )
 
-
 ROOT = Path(__file__).parents[1] / "examples" / "city"
 
 PROGRAM = """

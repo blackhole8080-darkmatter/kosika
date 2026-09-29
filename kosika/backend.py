@@ -5,21 +5,18 @@ This module provides robust backend infrastructure for Kosika including
 monitoring, distributed execution, caching, and observability systems.
 """
 
-import time
 import threading
 import uuid
-from abc import ABC, abstractmethod
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
-from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional, Callable
+from datetime import datetime, timezone
 from enum import Enum
-import json
-import hashlib
+from typing import Any, Callable, Dict, List, Optional
 
 
 class MetricType(Enum):
     """Types of metrics."""
+
     COUNTER = "counter"
     GAUGE = "gauge"
     HISTOGRAM = "histogram"
@@ -29,6 +26,7 @@ class MetricType(Enum):
 @dataclass
 class Metric:
     """A single metric measurement."""
+
     name: str
     value: float
     metric_type: MetricType
@@ -39,6 +37,7 @@ class Metric:
 @dataclass
 class Span:
     """A span for distributed tracing."""
+
     span_id: str
     parent_id: Optional[str]
     operation_name: str
@@ -64,7 +63,9 @@ class MetricsCollector:
         self.histograms: Dict[str, List[float]] = defaultdict(list)
         self.lock = threading.Lock()
 
-    def increment(self, name: str, value: float = 1.0, tags: Optional[Dict[str, str]] = None):
+    def increment(
+        self, name: str, value: float = 1.0, tags: Optional[Dict[str, str]] = None
+    ):
         """Increment a counter metric."""
         with self.lock:
             self.counters[name] += value
@@ -72,7 +73,7 @@ class MetricsCollector:
                 name=name,
                 value=self.counters[name],
                 metric_type=MetricType.COUNTER,
-                tags=tags or {}
+                tags=tags or {},
             )
             self.metrics[name].append(metric)
 
@@ -81,10 +82,7 @@ class MetricsCollector:
         with self.lock:
             self.gauges[name] = value
             metric = Metric(
-                name=name,
-                value=value,
-                metric_type=MetricType.GAUGE,
-                tags=tags or {}
+                name=name, value=value, metric_type=MetricType.GAUGE, tags=tags or {}
             )
             self.metrics[name].append(metric)
 
@@ -96,7 +94,7 @@ class MetricsCollector:
                 name=name,
                 value=value,
                 metric_type=MetricType.HISTOGRAM,
-                tags=tags or {}
+                tags=tags or {},
             )
             self.metrics[name].append(metric)
 
@@ -134,7 +132,7 @@ class DistributedTracer:
             span_id=span_id,
             parent_id=parent_id,
             operation_name=operation_name,
-            start_time=datetime.now(timezone.utc)
+            start_time=datetime.now(timezone.utc),
         )
 
         with self.lock:
@@ -157,10 +155,9 @@ class DistributedTracer:
         """Add a log entry to a span."""
         with self.lock:
             if span_id in self.spans:
-                self.spans[span_id].logs.append({
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    **log_entry
-                })
+                self.spans[span_id].logs.append(
+                    {"timestamp": datetime.now(timezone.utc).isoformat(), **log_entry}
+                )
 
     def get_span(self, span_id: str) -> Optional[Span]:
         """Get a span by ID."""
@@ -195,7 +192,9 @@ class ResourceMonitor:
         """Start resource monitoring."""
         if self.monitoring_thread is None:
             self.stop_event.clear()
-            self.monitoring_thread = threading.Thread(target=self._monitor_loop, daemon=True)
+            self.monitoring_thread = threading.Thread(
+                target=self._monitor_loop, daemon=True
+            )
             self.monitoring_thread.start()
 
     def stop_monitoring(self):
@@ -208,8 +207,10 @@ class ResourceMonitor:
     def _monitor_loop(self):
         """Main monitoring loop."""
         try:
-            import psutil
             import os
+
+            import psutil
+
             psutil_available = True
         except ImportError:
             psutil_available = False
@@ -224,13 +225,21 @@ class ResourceMonitor:
 
                     # Memory usage
                     memory = psutil.virtual_memory()
-                    self.metrics_collector.set_gauge("system.memory.percent", memory.percent)
-                    self.metrics_collector.set_gauge("system.memory.available", memory.available)
+                    self.metrics_collector.set_gauge(
+                        "system.memory.percent", memory.percent
+                    )
+                    self.metrics_collector.set_gauge(
+                        "system.memory.available", memory.available
+                    )
 
                     # Process-specific metrics
                     process = psutil.Process(os.getpid())
-                    self.metrics_collector.set_gauge("process.memory.percent", process.memory_percent())
-                    self.metrics_collector.set_gauge("process.cpu.percent", process.cpu_percent())
+                    self.metrics_collector.set_gauge(
+                        "process.memory.percent", process.memory_percent()
+                    )
+                    self.metrics_collector.set_gauge(
+                        "process.cpu.percent", process.cpu_percent()
+                    )
 
                 # Thread count (always available)
                 thread_count = threading.active_count()
@@ -245,11 +254,21 @@ class ResourceMonitor:
         """Get current resource metrics."""
         return {
             "cpu_percent": self.metrics_collector.gauges.get("system.cpu.percent", 0.0),
-            "memory_percent": self.metrics_collector.gauges.get("system.memory.percent", 0.0),
-            "memory_available": self.metrics_collector.gauges.get("system.memory.available", 0.0),
-            "process_memory_percent": self.metrics_collector.gauges.get("process.memory.percent", 0.0),
-            "process_cpu_percent": self.metrics_collector.gauges.get("process.cpu.percent", 0.0),
-            "thread_count": self.metrics_collector.gauges.get("system.threads.count", 0.0)
+            "memory_percent": self.metrics_collector.gauges.get(
+                "system.memory.percent", 0.0
+            ),
+            "memory_available": self.metrics_collector.gauges.get(
+                "system.memory.available", 0.0
+            ),
+            "process_memory_percent": self.metrics_collector.gauges.get(
+                "process.memory.percent", 0.0
+            ),
+            "process_cpu_percent": self.metrics_collector.gauges.get(
+                "process.cpu.percent", 0.0
+            ),
+            "thread_count": self.metrics_collector.gauges.get(
+                "system.threads.count", 0.0
+            ),
         }
 
 
@@ -359,7 +378,7 @@ class LRUCache:
                 "max_size": self.max_size,
                 "hits": self.hits,
                 "misses": self.misses,
-                "hit_rate": self.hit_rate()
+                "hit_rate": self.hit_rate(),
             }
 
 
@@ -409,8 +428,8 @@ class MultiLevelCache:
             "l2": self.l2_cache.get_stats(),
             "overall": {
                 "l1_hit_rate": self.l1_cache.hit_rate(),
-                "l2_hit_rate": self.l2_cache.hit_rate()
-            }
+                "l2_hit_rate": self.l2_cache.hit_rate(),
+            },
         }
 
 
@@ -440,11 +459,13 @@ class AlertingSystem:
     def _record_alert(self, message: str, metrics: Dict[str, float]):
         """Record an alert in history."""
         with self.lock:
-            self.alert_history.append({
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "message": message,
-                "metrics": metrics.copy()
-            })
+            self.alert_history.append(
+                {
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "message": message,
+                    "metrics": metrics.copy(),
+                }
+            )
 
     def get_alert_history(self, limit: int = 100) -> List[Dict[str, Any]]:
         """Get recent alert history."""
@@ -468,6 +489,7 @@ class MonitoringSystem:
 
     def _setup_default_alerts(self):
         """Setup default alerting rules."""
+
         def high_cpu_alert(metrics: Dict[str, float]) -> Optional[str]:
             if metrics.get("cpu_percent", 0) > 90:
                 return f"High CPU usage: {metrics['cpu_percent']}%"
@@ -497,7 +519,7 @@ class MonitoringSystem:
         combined = {
             "resources": resource_metrics,
             "cache": cache_metrics,
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
         # Check for alerts
@@ -508,7 +530,9 @@ class MonitoringSystem:
 
         return combined
 
-    def trace_execution(self, operation_name: str, parent_id: Optional[str] = None) -> Span:
+    def trace_execution(
+        self, operation_name: str, parent_id: Optional[str] = None
+    ) -> Span:
         """Start tracing an execution."""
         return self.tracer.start_span(operation_name, parent_id)
 
@@ -527,7 +551,7 @@ class StructuredLogger:
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "level": level,
                 "message": message,
-                **kwargs
+                **kwargs,
             }
             self.logs.append(log_entry)
 
@@ -547,7 +571,9 @@ class StructuredLogger:
         """Log a debug message."""
         self.log("DEBUG", message, **kwargs)
 
-    def get_logs(self, level: Optional[str] = None, limit: int = 100) -> List[Dict[str, Any]]:
+    def get_logs(
+        self, level: Optional[str] = None, limit: int = 100
+    ) -> List[Dict[str, Any]]:
         """Get logs, optionally filtered by level."""
         with self.lock:
             if level:

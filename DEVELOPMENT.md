@@ -4,6 +4,11 @@ Kosika (formerly Synapse Language) is a Python-first experimental language/runti
 for typed AI workflows. The additions below are working first slices, not a claim
 of production readiness. Run commands from the repository root.
 
+The staged runnable-program path is tracked in
+[`examples/PROGRAM_SEQUENCE.md`](examples/PROGRAM_SEQUENCE.md). It starts with
+typed pure computation, then adds read-only AI workflows, explicit mutation
+approval, and evaluation.
+
 ## 1. Modules and workflow composition
 
 ```kosika
@@ -146,8 +151,13 @@ nodes = [
     DagNode("first", "research", inputs={"question": {"text": "Summarize"}}),
     # Dependency record types must match the receiving workflow's parameters.
 ]
-results = await run_dag(program, nodes, "new-run-directory", concurrency=4,
-                        models={"first": {"reader": provider}})
+results = await run_dag(
+    program,
+    nodes,
+    "new-run-directory",
+    concurrency=4,
+    models={"first": {"reader": provider}},
+)
 cached = replay_dag("new-run-directory")
 ```
 
@@ -219,6 +229,9 @@ case executes afresh with a new provider supplied by the host, writes its own tr
 and contributes to a JSON report. CLI fixtures use scripted responses and return
 0 on pass, 1 on assertion failure, 2 on invalid setup. Python `evaluate(...)` also
 accepts live-provider factories. Fresh evaluation and exact replay are separate.
+The development evaluation command can also pass a local stdio MCP server and
+matching manifest with `--mcp-server`, `--mcp-manifest`, and `--mcp-source`;
+the server process receives only host-selected fixture configuration.
 
 ## 7. Static code mindmaps and assistant context
 
@@ -522,9 +535,13 @@ from kosika.execution import ExecutionLimits
 from kosika.runtime import run
 
 cancel = threading.Event()  # another thread may call cancel.set()
-result = run(program, "main", "trace.jsonl", cancel=cancel,
-             limits=ExecutionLimits(max_function_calls=500,
-                                    max_steps=20, deadline_seconds=5))
+result = run(
+    program,
+    "main",
+    "trace.jsonl",
+    cancel=cancel,
+    limits=ExecutionLimits(max_function_calls=500, max_steps=20, deadline_seconds=5),
+)
 ```
 
 CLI equivalents: `--max-function-calls`, `--max-workflow-steps`,

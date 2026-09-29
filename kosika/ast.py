@@ -20,6 +20,7 @@ class RepeatExpr:
     Evaluates ``<body>`` up to ``<count>`` times and returns the last
     result. ``break`` and ``continue`` are valid inside the body.
     """
+
     count: Expression
     body: Expression
 
@@ -32,6 +33,7 @@ class TryExpr:
     Without retry, a single failure is still caught and re-raised as a
     TryError so callers can match on it.
     """
+
     body: Expression
     retry: int = 0
 
@@ -56,6 +58,7 @@ class FunctionExpr:
     that captures the current environment. The output type is optional; when
     omitted it is inferred from the body the same way as a named function.
     """
+
     parameters: tuple[Field, ...]
     output_type: str | None
     body: Expression
@@ -68,6 +71,7 @@ class MethodCallExpr:
     Methods are dispatched by the target type and the method name at both
     check and runtime. Records keep using ``FieldExpr`` for field access.
     """
+
     target: Expression
     method: str
     arguments: tuple[tuple[str, Expression], ...]
@@ -220,6 +224,19 @@ class ForExpr:
     limit: int = 128
 
 
+@dataclass(frozen=True)
+class Block:
+    """A braced scope holding statements and producing a final value.
+
+    ``result`` is None for a statement-only body, which evaluates to Null. Only
+    produced when at least one statement is present, so a body written before
+    blocks existed keeps the identical AST.
+    """
+
+    statements: tuple[LocalBinding | Assignment, ...]
+    result: Expression | None = None
+
+
 Expression = (
     LiteralExpr
     | VariableExpr
@@ -236,13 +253,21 @@ Expression = (
     | ConditionalExpr
     | MatchExpr
     | ForExpr
+    | RepeatExpr
+    | TryExpr
+    | BreakExpr
+    | ContinueExpr
+    | ModelVarExpr
+    | Block
 )
 
 
-def expression_function_calls(expression: Expression) -> tuple[FunctionCallExpr | FunctionRefExpr | FunctionExpr, ...]:
+def expression_function_calls(
+    expression: Expression | Assignment,
+) -> tuple[FunctionCallExpr | FunctionRefExpr | FunctionExpr, ...]:
     calls: list[FunctionCallExpr | FunctionRefExpr | FunctionExpr] = []
 
-    def visit(value: Expression) -> None:
+    def visit(value: Expression | Assignment) -> None:
         if isinstance(value, FunctionCallExpr):
             calls.append(value)
             for _name, argument in value.arguments:
@@ -285,6 +310,18 @@ def expression_function_calls(expression: Expression) -> tuple[FunctionCallExpr 
         elif isinstance(value, ForExpr):
             visit(value.sequence)
             visit(value.body)
+        elif isinstance(value, RepeatExpr):
+            visit(value.count)
+            visit(value.body)
+        elif isinstance(value, TryExpr):
+            visit(value.body)
+        elif isinstance(value, Assignment):
+            visit(value.value)
+        elif isinstance(value, Block):
+            for statement in value.statements:
+                visit(statement.value)
+            if value.result is not None:
+                visit(value.result)
 
     visit(expression)
     return tuple(calls)
@@ -305,6 +342,7 @@ class ModelParameters:
     frequency_penalty: float | None = None
     presence_penalty: float | None = None
     stop: tuple[str, ...] = ()
+
 
 @dataclass(frozen=True)
 class ModelDecl:
@@ -358,10 +396,28 @@ class WorkflowDecl:
 
 
 @dataclass(frozen=True)
+class Assignment:
+    """Write to an enclosing `var`. The checker guarantees the target exists and
+    is mutable; the AST does not repeat that."""
+
+    target: str
+    value: Expression
+
+
+@dataclass(frozen=True)
 class LocalBinding:
     name: str
-    type_name: str
+    # None means "infer from the initialiser". The checker resolves it; the
+    # runtime then has no declared type to validate against.
+    type_name: str | None
     value: Expression
+    mutable: bool = False
+
+
+# A function body statement is an assignment or a value-discarding expression.
+# Declarations are split out into FunctionDecl.bindings by the parser, so they
+# never appear here.
+Statement = Assignment | Expression
 
 
 @dataclass(frozen=True)
@@ -373,32 +429,59 @@ class FunctionDecl:
     bindings: tuple[LocalBinding, ...] = ()
     nested: tuple[FunctionDecl, ...] = ()
     recursion_limit: int | None = None
+    # Value-discarding statements that run after every binding and before the
+    # returned expression. Loops, conditionals, and assignments live here.
+    # Empty for every program written before statements existed.
+    statements: tuple[Statement, ...] = ()
 
 
-def function_calls(function: FunctionDecl) -> tuple[FunctionCallExpr | FunctionRefExpr, ...]:
-    expressions = (*[binding.value for binding in function.bindings], function.return_value)
-    return tuple(call for value in expressions for call in expression_function_calls(value))
+def function_calls(
+    function: FunctionDecl,
+) -> tuple[FunctionCallExpr | FunctionRefExpr | FunctionExpr, ...]:
+    expressions = (
+        *[binding.value for binding in function.bindings],
+        *function.statements,
+        function.return_value,
+    )
+    return tuple(
+        call for value in expressions for call in expression_function_calls(value)
+    )
 
 
-def static_function_references(function: FunctionDecl) -> tuple[FunctionCallExpr | FunctionRefExpr, ...]:
+def static_function_references(
+    function: FunctionDecl,
+) -> tuple[FunctionCallExpr | FunctionRefExpr, ...]:
     """Resolve local call shadowing in declaration order, never for explicit refs."""
     bound = {parameter.name for parameter in function.parameters}
     references: list[FunctionCallExpr | FunctionRefExpr] = []
     for name, expression in (
         *((binding.name, binding.value) for binding in function.bindings),
-        ('', function.return_value),
+        *(("", statement) for statement in function.statements),
+        ("", function.return_value),
     ):
         references.extend(
-            call for call in expression_function_calls(expression)
+            call
+            for call in expression_function_calls(expression)
             if isinstance(call, (FunctionRefExpr, FunctionCallExpr))
             and (isinstance(call, FunctionRefExpr) or call.function_name not in bound)
         )
         for call in expression_function_calls(expression):
             if isinstance(call, FunctionExpr):
                 for ref in static_function_references(
-                    FunctionDecl('_', call.parameters, call.output_type or 'Null', call.body, (), (), None)
+                    FunctionDecl(
+                        "_",
+                        call.parameters,
+                        call.output_type or "Null",
+                        call.body,
+                        (),
+                        (),
+                        None,
+                    )
                 ):
-                    if isinstance(ref, FunctionRefExpr) or ref.function_name not in bound:
+                    if (
+                        isinstance(ref, FunctionRefExpr)
+                        or ref.function_name not in bound
+                    ):
                         references.append(ref)
         bound.add(name)
     return tuple(references)

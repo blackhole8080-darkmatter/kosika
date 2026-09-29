@@ -13,10 +13,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from kosika.intelligence_runtime import FunctionResultCache, IntelligenceRecorder
 from kosika.parser import parse
 from kosika.runtime import replay, run
-from kosika.intelligence_runtime import FunctionResultCache, IntelligenceRecorder
-
 
 SOURCE = """
 record Person { name: Text }
@@ -90,7 +89,6 @@ class FunctionResultCacheTests(unittest.TestCase):
         from kosika.intelligence_runtime import _canonical_arguments
 
         args1 = _canonical_arguments({"person": {"name": "Ada"}})
-        args2 = _canonical_arguments({"name": "Ada", "person": {"name": "Ada"}})
         # Different key sets produce different bytes; same key sets in any
         # order produce the same bytes.
         args3 = _canonical_arguments({"person": {"name": "Ada"}})
@@ -128,19 +126,23 @@ class FunctionResultCacheTests(unittest.TestCase):
 class IntelligenceRecorderTests(unittest.TestCase):
     def test_ingest_event_applies_record_on_run_complete(self) -> None:
         recorder = IntelligenceRecorder()
-        recorder.record_event({
-            "event": "run_start",
-            "run_id": "r1",
-            "program": "demo",
-            "workflow": "main",
-        })
-        recorder.record_event({
-            "event": "run_complete",
-            "run_id": "r1",
-            "workflow": "main",
-            "result": {"ok": True},
-            "duration": 0.25,
-        })
+        recorder.record_event(
+            {
+                "event": "run_start",
+                "run_id": "r1",
+                "program": "demo",
+                "workflow": "main",
+            }
+        )
+        recorder.record_event(
+            {
+                "event": "run_complete",
+                "run_id": "r1",
+                "workflow": "main",
+                "result": {"ok": True},
+                "duration": 0.25,
+            }
+        )
 
         insights = recorder.insights
         self.assertIsInstance(insights, dict)
@@ -150,64 +152,79 @@ class IntelligenceRecorderTests(unittest.TestCase):
     def test_pattern_extractor_populates_after_repeated_operations(self) -> None:
         recorder = IntelligenceRecorder()
         for _ in range(7):
-            recorder.record_event({
-                "event": "tool_call",
-                "tool": "check_disk",
-                "start_time": 0.0,
-                "duration": 1.0,
-            })
-            recorder.record_event({
-                "event": "tool_return",
-                "tool": "check_disk",
-                "start_time": 0.0,
-                "duration": 1.0,
-                "success": True,
-            })
+            recorder.record_event(
+                {
+                    "event": "tool_call",
+                    "tool": "check_disk",
+                    "start_time": 0.0,
+                    "duration": 1.0,
+                }
+            )
+            recorder.record_event(
+                {
+                    "event": "tool_return",
+                    "tool": "check_disk",
+                    "start_time": 0.0,
+                    "duration": 1.0,
+                    "success": True,
+                }
+            )
 
         patterns = recorder.patterns
         self.assertTrue(patterns)
         # Pattern keys are md5 hex digests; check the operation_type in
         # the pattern values instead.
-        self.assertTrue(any("check_disk" in v.get("operation_type", "")
-                            for v in patterns.values()))
+        self.assertTrue(
+            any("check_disk" in v.get("operation_type", "") for v in patterns.values())
+        )
 
     def test_insights_reports_operations_analyzed(self) -> None:
         recorder = IntelligenceRecorder()
         for _ in range(6):
-            recorder.record_event({
-                "event": "model_call",
-                "model": "gpt-4",
-                "start_time": 0.0,
-                "duration": 0.5,
-            })
-            recorder.record_event({
-                "event": "model_return",
-                "model": "gpt-4",
-                "start_time": 0.0,
-                "duration": 0.5,
-                "success": True,
-            })
+            recorder.record_event(
+                {
+                    "event": "model_call",
+                    "model": "gpt-4",
+                    "start_time": 0.0,
+                    "duration": 0.5,
+                }
+            )
+            recorder.record_event(
+                {
+                    "event": "model_return",
+                    "model": "gpt-4",
+                    "start_time": 0.0,
+                    "duration": 0.5,
+                    "success": True,
+                }
+            )
 
         insights = recorder.insights
         self.assertGreaterEqual(insights["operations_analyzed"], 1)
-        self.assertTrue(any("gpt-4" in op["operation"] for op in insights["top_operations"]))
+        self.assertTrue(
+            any("gpt-4" in op["operation"] for op in insights["top_operations"])
+        )
 
     def test_analyze_returns_operation_pattern_and_confidence(self) -> None:
         recorder = IntelligenceRecorder()
         for _ in range(8):
-            recorder.record_event({
-                "event": "agent_call",
-                "agent": "monitor",
-                "start_time": 0.0,
-                "duration": 0.1,
-            })
-            recorder.record_event({
-                "event": "agent_return",
-                "agent": "monitor",
-                "start_time": 0.0,
-                "duration": 0.1,
-                "success": True,
-            })
+            recorder.record_event(
+                {
+                    "event": "agent_call",
+                    "agent": "monitor",
+                    "start_time": 0.0,
+                    "duration": 0.1,
+                }
+            )
+            recorder.record_event(
+                {
+                    "event": "agent_return",
+                    "agent": "monitor",
+                    "start_time": 0.0,
+                    "duration": 0.1,
+                    "success": True,
+                }
+            )
 
         analysis = recorder.analyze("agent/monitor")
         self.assertIsInstance(analysis, dict)
@@ -219,10 +236,22 @@ class IntelligenceRecorderTests(unittest.TestCase):
         program = parse(SOURCE)
         cache = FunctionResultCache(max_entries=16)
 
-        result1 = run(program, "main", None, inputs={"person": {"name": "Ada"}}, function_cache=cache)
+        result1 = run(
+            program,
+            "main",
+            None,
+            inputs={"person": {"name": "Ada"}},
+            function_cache=cache,
+        )
         self.assertEqual(result1, {"text": "Ada"})
 
-        result2 = run(program, "main", None, inputs={"person": {"name": "Ada"}}, function_cache=cache)
+        result2 = run(
+            program,
+            "main",
+            None,
+            inputs={"person": {"name": "Ada"}},
+            function_cache=cache,
+        )
         self.assertEqual(result2, {"text": "Ada"})
 
         stats = cache.stats()
@@ -233,8 +262,20 @@ class IntelligenceRecorderTests(unittest.TestCase):
         program = parse(SOURCE)
         cache = FunctionResultCache(max_entries=16)
 
-        run(program, "main", None, inputs={"person": {"name": "Ada"}}, function_cache=cache)
-        run(program, "main", None, inputs={"person": {"name": "Lin"}}, function_cache=cache)
+        run(
+            program,
+            "main",
+            None,
+            inputs={"person": {"name": "Ada"}},
+            function_cache=cache,
+        )
+        run(
+            program,
+            "main",
+            None,
+            inputs={"person": {"name": "Lin"}},
+            function_cache=cache,
+        )
 
         self.assertGreaterEqual(cache.stats()["entries"], 2)
 
@@ -260,8 +301,12 @@ class IntelligenceRecorderTests(unittest.TestCase):
 
         patterns = recorder.patterns
         self.assertTrue(patterns)
-        self.assertTrue(any("make_greeting" in v.get("operation_type", "")
-                            for v in patterns.values()))
+        self.assertTrue(
+            any(
+                "make_greeting" in v.get("operation_type", "")
+                for v in patterns.values()
+            )
+        )
 
     def test_repeated_runs_produce_patterns_and_cache_hits(self) -> None:
         program = parse(SOURCE)
@@ -283,7 +328,9 @@ class IntelligenceRecorderTests(unittest.TestCase):
 
         insights = recorder.insights
         self.assertGreaterEqual(insights["operations_analyzed"], 1)
-        self.assertTrue(any("make_greeting" in op["operation"] for op in insights["top_operations"]))
+        self.assertTrue(
+            any("make_greeting" in op["operation"] for op in insights["top_operations"])
+        )
 
     def test_cache_hits_are_published_as_function_events(self) -> None:
         # A cache hit is a real invocation. If it emitted no event, the trace
@@ -324,12 +371,18 @@ class IntelligenceRecorderTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             trace = Path(directory) / "cache.jsonl"
             first = run(
-                program, "main", trace,
-                inputs={"person": {"name": "Ada"}}, function_cache=cache,
+                program,
+                "main",
+                trace,
+                inputs={"person": {"name": "Ada"}},
+                function_cache=cache,
             )
             second = run(
-                program, "main", trace,
-                inputs={"person": {"name": "Ada"}}, function_cache=cache,
+                program,
+                "main",
+                trace,
+                inputs={"person": {"name": "Ada"}},
+                function_cache=cache,
             )
 
             self.assertEqual(first, second)

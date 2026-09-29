@@ -76,6 +76,7 @@ from .manifest import (
     write_manifest,
 )
 from .mcp_stdio import MCPProtocolError, MCPStdioClient
+from .metropolis import ENVIRONMENT_NAMES
 from .mindmap import build_mindmap, to_json, to_mermaid, to_text
 from .model import (
     ModelProvider,
@@ -114,11 +115,11 @@ from .unified_mindmap import (
 )
 from .unified_mindmap import to_mermaid as render_unified_mermaid
 from .unified_mindmap import to_text as render_unified_text
+from .world import WorldError, load_world_manifest
 
 COMMANDS: tuple[str, ...] = (
     "project",
     "check",
-    "editor",
     "analyze",
     "sourcemap",
     "mindmap",
@@ -175,6 +176,7 @@ def _render_journal_text(report: dict[str, Any]) -> str:
             )
     return "\n".join(lines)
 
+
 def _agent_model_fixture(path: Path, model_name: str) -> ModelProvider:
     payload = strict_json(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict) or model_name not in payload:
@@ -218,9 +220,7 @@ def _agent_model_fixture(path: Path, model_name: str) -> ModelProvider:
                 raise ValueError(
                     f"Agent model fixture response {index} contains an invalid tool call"
                 )
-            calls.append(
-                ModelToolCall(call["id"], call["name"], call["arguments"])
-            )
+            calls.append(ModelToolCall(call["id"], call["name"], call["arguments"]))
         usage = item.get("usage")
         if usage is not None and not isinstance(usage, dict):
             raise ValueError(
@@ -255,15 +255,11 @@ def _agent_tool_fixture(path: Path) -> dict[str, Any]:
         if isinstance(value, list) and (
             not value or any(not isinstance(item, dict) for item in value)
         ):
-            raise ValueError(
-                "Agent tool fixture record lists must be nonempty objects"
-            )
+            raise ValueError("Agent tool fixture record lists must be nonempty objects")
     return payload
 
 
-def _agent_tool_fixture_result(
-    fixture: dict[str, Any], declaration: ToolDecl
-) -> Any:
+def _agent_tool_fixture_result(fixture: dict[str, Any], declaration: ToolDecl) -> Any:
     value = fixture.get(declaration.name, fixture.get(declaration.operation))
     if value is None:
         raise AgentLoopError(
@@ -276,7 +272,6 @@ def _agent_tool_fixture_result(
             )
         return value.pop(0)
     return value
-
 
 
 def _run_agent_command(
@@ -313,9 +308,7 @@ def _run_agent_command(
         None,
     )
     model_name = args.model or (
-        declared_model.deployment
-        if declared_model is not None
-        else None
+        declared_model.deployment if declared_model is not None else None
     )
     if args.model_fixture is not None and not model_name and declared_model is not None:
         model_name = declared_model.name
@@ -499,6 +492,31 @@ def _assistant_provider(args: argparse.Namespace) -> ModelProvider | None:
     return None
 
 
+def _model_fixture_bindings(path: Path) -> dict[str, ModelProvider]:
+    payload = strict_json(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError(
+            "Model fixture must map model names to lists of output records"
+        )
+    providers: dict[str, ModelProvider] = {}
+    for name, results in payload.items():
+        if (
+            not isinstance(results, list)
+            or not results
+            or any(not isinstance(item, dict) for item in results)
+        ):
+            raise ValueError(
+                f"Model fixture {name!r} requires a nonempty list of records"
+            )
+        providers[name] = ScriptedModelProvider(
+            [
+                ModelResponse(content=json.dumps(item, allow_nan=False))
+                for item in results
+            ]
+        )
+    return providers
+
+
 def _workflow_model_bindings(args: argparse.Namespace) -> dict[str, ModelProvider]:
     live = (args.model_binding, args.model, args.model_url)
     if args.model_fixture is not None:
@@ -506,28 +524,8 @@ def _workflow_model_bindings(args: argparse.Namespace) -> dict[str, ModelProvide
             raise ValueError(
                 "Use either --model-fixture or an explicit live model binding"
             )
-        fixture = strict_json(args.model_fixture.read_text(encoding="utf-8"))
-        if not isinstance(fixture, dict):
-            raise ValueError(
-                "Model fixture must map model names to lists of output records"
-            )
-        providers: dict[str, ModelProvider] = {}
-        for name, results in fixture.items():
-            if (
-                not isinstance(results, list)
-                or not results
-                or any(not isinstance(item, dict) for item in results)
-            ):
-                raise ValueError(
-                    f"Model fixture {name!r} requires a nonempty list of records"
-                )
-            providers[name] = ScriptedModelProvider(
-                [
-                    ModelResponse(content=json.dumps(item, allow_nan=False))
-                    for item in results
-                ]
-            )
-        return providers
+        return _model_fixture_bindings(args.model_fixture)
+
     if any(live):
         if not all(live):
             raise ValueError(
@@ -592,9 +590,7 @@ def _publish_timeline(
 
     if args.design is None:
         return
-    manifest = build_timeline_design(
-        events, args.design_id, args.design_name
-    )
+    manifest = build_timeline_design(events, args.design_id, args.design_name)
     args.design.parent.mkdir(parents=True, exist_ok=True)
     write_design_manifest(manifest, args.design)
     summary = timeline_stage_summary(manifest)
@@ -641,10 +637,13 @@ def main() -> int:
     project_parser.add_argument(
         "--format", choices=("json",), default="json", help="Project report format."
     )
-    project_parser.add_argument("--output", type=Path, help="Optional JSON report path.")
+    project_parser.add_argument(
+        "--output", type=Path, help="Optional JSON report path."
+    )
 
     check_parser = subparsers.add_parser("check")
     check_parser.add_argument("source", type=Path)
+
     editor_parser = subparsers.add_parser(
         "editor",
         help="Return bounded JSON editor features for one Kosika source file.",
@@ -798,7 +797,7 @@ def main() -> int:
     assistant_parser.add_argument(
         "--fixture",
         type=Path,
-        help="Offline JSON list (or {\"responses\": [...]}) of answer strings.",
+        help='Offline JSON list (or {"responses": [...]}) of answer strings.',
     )
     assistant_parser.add_argument(
         "--model-url",
@@ -833,7 +832,9 @@ def main() -> int:
         default=[],
         help="Directory containing skill.json manifests; may be repeated.",
     )
-    skills_parser.add_argument("--task", help="Task used for automatic skill selection.")
+    skills_parser.add_argument(
+        "--task", help="Task used for automatic skill selection."
+    )
     skills_parser.add_argument(
         "--skill",
         action="append",
@@ -1105,6 +1106,18 @@ def main() -> int:
         "--format", choices=("text", "json", "svg", "live"), default="text"
     )
     city_parser.add_argument("--theme", choices=("lab", "day"), default="lab")
+    city_parser.add_argument(
+        "--environment",
+        choices=ENVIRONMENT_NAMES,
+        default="metropolitan",
+        help="Live-world environment preset.",
+    )
+    city_parser.add_argument(
+        "--world",
+        type=Path,
+        default=None,
+        help="Validated world manifest controlling live-world presentation.",
+    )
     city_parser.add_argument("--output", type=Path, default=None)
     city_parser.add_argument(
         "--name",
@@ -1118,6 +1131,15 @@ def main() -> int:
     )
     city_parser.add_argument("--host", default="127.0.0.1")
     city_parser.add_argument("--port", type=int, default=8787)
+    city_parser.add_argument(
+        "--trace",
+        type=Path,
+        default=None,
+        help=(
+            "Run the city once and write one replayable trace per resident "
+            "into this directory, without serving. Use with: kosika replay <trace>"
+        ),
+    )
     design_subparsers = design_parser.add_subparsers(
         dest="design_command", required=True
     )
@@ -1250,9 +1272,7 @@ def main() -> int:
             if args.network_command == "show":
                 print(render_network(load_network_manifest(args.path), args.format))
                 return 0
-            directory = NetworkDirectory.load(
-                args.directory, recursive=args.recursive
-            )
+            directory = NetworkDirectory.load(args.directory, recursive=args.recursive)
             print(render_directory(directory, args.format))
             return 0
         except (OSError, ValueError) as exc:
@@ -1283,7 +1303,9 @@ def main() -> int:
                     print("Uncertainties reported during scanning:")
                     for item in analysis["uncertainties"]:
                         print(f"- line {item['line']}: {item['reason']}")
-                print("Limitations: syntax-backed structure only; no execution or full semantic analysis.")
+                print(
+                    "Limitations: syntax-backed structure only; no execution or full semantic analysis."
+                )
             return 0
         except (OSError, ValueError) as exc:
             print(f"Source analysis failed safely: {exc}", file=sys.stderr)
@@ -1345,14 +1367,58 @@ def main() -> int:
             return 2
     if args.command == "city":
         try:
+            world = load_world_manifest(args.world) if args.world is not None else None
+            if args.trace is not None:
+                from .city_live import capture_trace
+
+                report = capture_trace(args.root, args.trace)
+                print(
+                    f"Captured {report['runs']} resident runs into {report['directory']}"
+                )
+                print(
+                    f"  replayable: {report['replayable']}"
+                    f"   awaiting approval: {report['awaiting_approval']}"
+                )
+                for entry in report["entries"]:
+                    if entry.get("replayable"):
+                        result = json.dumps(entry["replayed"], sort_keys=True)
+                        print(f"  [ok]   {entry['workflow']} -> {result[:96]}")
+                    else:
+                        print(
+                            f"  [held] {entry['workflow']} -> {entry.get('replay_error', '')}"
+                        )
+                if report["replayable"]:
+                    first = next(
+                        entry for entry in report["entries"] if entry.get("replayable")
+                    )
+                    print(f"Replay one with: kosika replay {first['trace']}")
+                return 0
             if args.serve:
                 from .city_live import serve_city
 
-                name = args.name or CITY_NAME
-                print(f"{name} live city on http://{args.host}:{args.port}")
-                serve_city(args.root, host=args.host, port=args.port, name=name)
+                name = world.name if world is not None else (args.name or CITY_NAME)
+                environment = (
+                    world.environment if world is not None else args.environment
+                )
+                labels = world.labels_by_domain if world is not None else None
+                print(f"{name} live world on http://{args.host}:{args.port}")
+                serve_city(
+                    args.root,
+                    host=args.host,
+                    port=args.port,
+                    name=name,
+                    environment=environment,
+                    world=world,
+                )
                 return 0
-            city = build_city(args.root, name=args.name)
+            city = build_city(
+                args.root,
+                name=world.name if world is not None else args.name,
+            )
+            if world is not None:
+                world.validate_city(city)
+            environment = world.environment if world is not None else args.environment
+            labels = world.labels_by_domain if world is not None else None
             if args.format == "json":
                 payload = city.to_dict()
             elif args.format == "svg":
@@ -1360,7 +1426,18 @@ def main() -> int:
             elif args.format == "live":
                 from .city_live import render_city_live
 
-                payload = render_city_live(city)
+                payload = render_city_live(
+                    city,
+                    environment=environment,
+                    world_name=world.name if world is not None else None,
+                    world_labels=labels,
+                    world_kinds=(world.kinds_by_domain if world is not None else None),
+                    world_buildings=(
+                        world.building_ids_by_resident if world is not None else None
+                    ),
+                    world_camera=world.camera if world is not None else "isometric",
+                    render_style=world.render_style if world is not None else "city",
+                )
             else:
                 payload = city.to_text()
             if args.output is not None:
@@ -1370,7 +1447,7 @@ def main() -> int:
             else:
                 print(payload)
             return 0
-        except (OSError, CityError) as exc:
+        except (OSError, CityError, WorldError) as exc:
             print(f"City failed safely: {exc}", file=sys.stderr)
             return 2
     if args.command == "design":
@@ -1448,9 +1525,7 @@ def main() -> int:
             print(json.dumps(extension_summary, indent=2, sort_keys=True))
         else:
             print(f"Valid extension manifest: {args.manifest}")
-            print(
-                f"Extension: {extension_manifest.id} {extension_manifest.version}"
-            )
+            print(f"Extension: {extension_manifest.id} {extension_manifest.version}")
             print(f"Contributions: {len(extension_manifest.contributions)}")
             print(f"Health checks: {len(extension_manifest.health_checks)}")
             print(f"Digest: {extension_summary['digest']}")
@@ -1556,9 +1631,7 @@ def main() -> int:
             extension_manifests = tuple(
                 load_extension_manifest(path) for path in args.extension_manifest
             )
-            mindmap = build_mindmap(
-                program, extension_manifests=extension_manifests
-            )
+            mindmap = build_mindmap(program, extension_manifests=extension_manifests)
             rendered = {
                 "json": to_json,
                 "mermaid": to_mermaid,

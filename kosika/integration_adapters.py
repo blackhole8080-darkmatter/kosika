@@ -7,14 +7,15 @@ tool providers, and cloud platforms.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, List
-import json
+from typing import Any, Dict, List, Optional
+
 import requests
 
 
 @dataclass
 class ModelRequest:
     """Standardized model request."""
+
     prompt: str
     max_tokens: int = 1000
     temperature: float = 0.7
@@ -26,6 +27,7 @@ class ModelRequest:
 @dataclass
 class ModelResponse:
     """Standardized model response."""
+
     content: str
     model: str
     tokens_used: int
@@ -63,6 +65,7 @@ class OpenAIAdapter(ModelProviderAdapter):
 
         try:
             import openai
+
             self.client = openai.OpenAI(api_key=api_key, base_url=base_url)
         except ImportError:
             print("OpenAI library not installed. Install with: pip install openai")
@@ -80,14 +83,14 @@ class OpenAIAdapter(ModelProviderAdapter):
                     max_tokens=request.max_tokens,
                     temperature=request.temperature,
                     tools=request.tools,
-                    function_call=request.function_call
+                    function_call=request.function_call,
                 )
             else:
                 response = self.client.chat.completions.create(
                     model="gpt-4",
                     messages=[{"role": "user", "content": request.prompt}],
                     max_tokens=request.max_tokens,
-                    temperature=request.temperature
+                    temperature=request.temperature,
                 )
 
             choice = response.choices[0]
@@ -99,7 +102,7 @@ class OpenAIAdapter(ModelProviderAdapter):
                 tokens_used=tokens_used,
                 finish_reason=choice.finish_reason,
                 tool_calls=choice.message.tool_calls,
-                cost=self._calculate_cost(response.model, tokens_used)
+                cost=self._calculate_cost(response.model, tokens_used),
             )
 
         except Exception as e:
@@ -117,11 +120,7 @@ class OpenAIAdapter(ModelProviderAdapter):
 
     def _calculate_cost(self, model: str, tokens: int) -> float:
         """Calculate actual cost based on model and tokens."""
-        pricing = {
-            "gpt-4": 0.03,
-            "gpt-4-turbo": 0.01,
-            "gpt-3.5-turbo": 0.002
-        }
+        pricing = {"gpt-4": 0.03, "gpt-4-turbo": 0.01, "gpt-3.5-turbo": 0.002}
         return (tokens / 1000) * pricing.get(model, 0.03)
 
 
@@ -134,9 +133,12 @@ class AnthropicAdapter(ModelProviderAdapter):
 
         try:
             import anthropic
+
             self.client = anthropic.Anthropic(api_key=api_key)
         except ImportError:
-            print("Anthropic library not installed. Install with: pip install anthropic")
+            print(
+                "Anthropic library not installed. Install with: pip install anthropic"
+            )
 
     def execute(self, request: ModelRequest) -> ModelResponse:
         """Execute request using Anthropic API."""
@@ -159,13 +161,13 @@ class AnthropicAdapter(ModelProviderAdapter):
                     model="claude-3-opus-20240229",
                     max_tokens=request.max_tokens,
                     system=system_message,
-                    messages=user_messages
+                    messages=user_messages,
                 )
             else:
                 response = self.client.messages.create(
                     model="claude-3-opus-20240229",
                     max_tokens=request.max_tokens,
-                    messages=[{"role": "user", "content": request.prompt}]
+                    messages=[{"role": "user", "content": request.prompt}],
                 )
 
             content = response.content[0].text
@@ -176,7 +178,7 @@ class AnthropicAdapter(ModelProviderAdapter):
                 model=response.model,
                 tokens_used=tokens_used,
                 finish_reason=response.stop_reason,
-                cost=self._calculate_cost(response.model, tokens_used)
+                cost=self._calculate_cost(response.model, tokens_used),
             )
 
         except Exception as e:
@@ -193,10 +195,7 @@ class AnthropicAdapter(ModelProviderAdapter):
 
     def _calculate_cost(self, model: str, tokens: int) -> float:
         """Calculate actual cost based on model and tokens."""
-        pricing = {
-            "claude-3-opus-20240229": 0.015,
-            "claude-3-sonnet-20240229": 0.003
-        }
+        pricing = {"claude-3-opus-20240229": 0.015, "claude-3-sonnet-20240229": 0.003}
         return (tokens / 1000) * pricing.get(model, 0.015)
 
 
@@ -216,8 +215,8 @@ class LocalModelAdapter(ModelProviderAdapter):
                 "stream": False,
                 "options": {
                     "num_predict": request.max_tokens,
-                    "temperature": request.temperature
-                }
+                    "temperature": request.temperature,
+                },
             }
 
             response = requests.post(url, json=payload, timeout=60)
@@ -228,9 +227,10 @@ class LocalModelAdapter(ModelProviderAdapter):
             return ModelResponse(
                 content=data.get("response", ""),
                 model=data.get("model", "local"),
-                tokens_used=data.get("eval_count", 0) + data.get("prompt_eval_count", 0),
+                tokens_used=data.get("eval_count", 0)
+                + data.get("prompt_eval_count", 0),
                 finish_reason=data.get("done_reason", "stop"),
-                cost=0.0  # Local models are free
+                cost=0.0,  # Local models are free
             )
 
         except Exception as e:
@@ -288,10 +288,14 @@ class GitHubAdapter(ToolProviderAdapter):
 
             elif operation == "create_issue":
                 url = f"{self.base_url}/repos/{arguments['owner']}/{arguments['repo']}/issues"
-                response = requests.post(url, headers=headers, json={
-                    "title": arguments["title"],
-                    "body": arguments.get("body", "")
-                })
+                response = requests.post(
+                    url,
+                    headers=headers,
+                    json={
+                        "title": arguments["title"],
+                        "body": arguments.get("body", ""),
+                    },
+                )
                 response.raise_for_status()
                 return response.json()
 
@@ -328,7 +332,9 @@ class FileSystemAdapter(ToolProviderAdapter):
         file_path = Path(arguments["path"])
 
         # Security check: ensure path is within allowed directories
-        if not any(str(file_path).startswith(allowed) for allowed in self.allowed_paths):
+        if not any(
+            str(file_path).startswith(allowed) for allowed in self.allowed_paths
+        ):
             raise PermissionError(f"Path not in allowed directories: {file_path}")
 
         try:
@@ -376,10 +382,10 @@ class WebSearchAdapter(ToolProviderAdapter):
                     {
                         "title": f"Mock result for: {query}",
                         "url": "https://example.com",
-                        "snippet": f"This is a mock search result for the query: {query}"
+                        "snippet": f"This is a mock search result for the query: {query}",
                     }
                 ],
-                "total_results": 1
+                "total_results": 1,
             }
 
         else:
@@ -428,7 +434,7 @@ def create_standard_integration(
     anthropic_key: Optional[str] = None,
     local_model_url: str = "http://localhost:11434",
     github_token: Optional[str] = None,
-    allowed_paths: Optional[List[str]] = None
+    allowed_paths: Optional[List[str]] = None,
 ) -> IntegrationManager:
     """Create a standard integration setup with common adapters."""
 

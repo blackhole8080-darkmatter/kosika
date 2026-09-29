@@ -1,0 +1,6 @@
+{
+  "request": {
+    "purpose": "Review Kosika source changes and report concrete regressions.",
+    "constraints": "Read-only review; never write files, run arbitrary shell, or grant capabilities."
+  }
+}

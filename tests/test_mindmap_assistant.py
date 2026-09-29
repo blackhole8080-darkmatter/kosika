@@ -57,9 +57,7 @@ class MindmapAssistantTests(unittest.TestCase):
         self.assertIn("record: DiskStatus", mermaid)
         self.assertIn("workflow: main", mermaid)
         self.assertTrue(any(node["kind"] == "field" for node in first["nodes"]))
-        self.assertTrue(
-            any(edge["relation"] == "tool_call" for edge in first["edges"])
-        )
+        self.assertTrue(any(edge["relation"] == "tool_call" for edge in first["edges"]))
 
     def test_imported_modules_and_declarations_keep_boundaries(self) -> None:
         program = load_program(COMPOSED)
@@ -80,9 +78,7 @@ class MindmapAssistantTests(unittest.TestCase):
         self.assertEqual(owners["Question"], "types.kos")
         self.assertEqual(owners["reader"], "research.kos")
         self.assertEqual(owners["main"], "main.kos")
-        self.assertTrue(
-            any(edge["relation"] == "imports" for edge in mindmap["edges"])
-        )
+        self.assertTrue(any(edge["relation"] == "imports" for edge in mindmap["edges"]))
 
     def test_assistant_fixture_receives_static_context_without_tools(self) -> None:
         provider = ScriptedModelProvider(
@@ -92,7 +88,9 @@ class MindmapAssistantTests(unittest.TestCase):
             "Explain the workflow", diagnostics=("example diagnostic",)
         )
         self.assertEqual(result.mode, "model")
-        self.assertEqual(result.answer, "The workflow calls the research module safely.")
+        self.assertEqual(
+            result.answer, "The workflow calls the research module safely."
+        )
         self.assertEqual(len(provider.requests), 1)
         request = provider.requests[0]
         self.assertEqual(request.tools, ())
@@ -119,7 +117,8 @@ class MindmapAssistantTests(unittest.TestCase):
 
         with self.assertRaisesRegex(AssistantError, "string-keyed objects"):
             KosikaAssistant(parse(SOURCE.read_text())).ask(
-                "Explain", source_analyses=(None,)  # type: ignore[arg-type]
+                "Explain",
+                source_analyses=(None,),  # type: ignore[arg-type]
             )
 
     def test_assistant_without_provider_is_offline_and_read_only(self) -> None:
@@ -164,9 +163,7 @@ class MindmapAssistantTests(unittest.TestCase):
 
     def test_assistant_rejects_provider_failures_and_empty_text(self) -> None:
         program = parse(SOURCE.read_text(encoding="utf-8"))
-        with self.assertRaisesRegex(
-            ModelProviderError, "has no response left"
-        ):
+        with self.assertRaisesRegex(ModelProviderError, "has no response left"):
             KosikaAssistant(program, ScriptedModelProvider([])).ask("Explain")
         with self.assertRaisesRegex(AssistantError, "failed safely"):
             KosikaAssistant(program, ExplodingProvider()).ask("Explain")
@@ -180,11 +177,7 @@ class MindmapAssistantTests(unittest.TestCase):
             KosikaAssistant(
                 parse(SOURCE.read_text()),
                 ScriptedModelProvider(
-                    [
-                        ModelResponse(
-                            tool_calls=(ModelToolCall("1", "shell", {}),)
-                        )
-                    ]
+                    [ModelResponse(tool_calls=(ModelToolCall("1", "shell", {}),))]
                 ),
             ).ask("Explain")
         with self.assertRaisesRegex(AssistantError, "did not complete"):
@@ -268,7 +261,9 @@ class MindmapAssistantTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             fixture = Path(directory) / "assistant.json"
             python_source = Path(directory) / "helper.py"
-            python_source.write_text("def helper():\n    return 'ok'\n", encoding="utf-8")
+            python_source.write_text(
+                "def helper():\n    return 'ok'\n", encoding="utf-8"
+            )
             fixture.write_text(
                 json.dumps({"responses": ["Fixture explanation."]}),
                 encoding="utf-8",
@@ -276,7 +271,9 @@ class MindmapAssistantTests(unittest.TestCase):
             output = io.StringIO()
             with (
                 patch.object(
-                    sys, "argv", ["kosika", "mindmap", str(SOURCE), "--format", "mermaid"]
+                    sys,
+                    "argv",
+                    ["kosika", "mindmap", str(SOURCE), "--format", "mermaid"],
                 ),
                 contextlib.redirect_stdout(output),
             ):

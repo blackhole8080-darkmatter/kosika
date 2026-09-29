@@ -9,12 +9,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence, cast
 
-from .agent import ToolExecutor
+from .agent import ApprovalRequiredError, ToolExecutor
 from .agent_steps import call_agent, validate_agent_transcript
 from .ast import (
     AgentCall,
     ArrayExpr,
+    Assignment,
     BinaryExpr,
+    Block,
     BreakExpr,
     ConditionalExpr,
     ContinueExpr,
@@ -28,6 +30,7 @@ from .ast import (
     FunctionRefExpr,
     IndexExpr,
     LiteralExpr,
+    LocalBinding,
     MatchExpr,
     ModelCall,
     Program,
@@ -70,9 +73,13 @@ class _ContinueLoop(Exception):
 class _FunctionRegistry(dict[str, FunctionDecl]):
     """Pure execution bounds shared by steps in one workflow invocation."""
 
-    def __init__(self, declarations: Sequence[FunctionDecl], control: ExecutionControl,
-                 cache: FunctionResultCache | None = None,
-                 intel: IntelligenceRecorder | None = None):
+    def __init__(
+        self,
+        declarations: Sequence[FunctionDecl],
+        control: ExecutionControl,
+        cache: FunctionResultCache | None = None,
+        intel: IntelligenceRecorder | None = None,
+    ):
         super().__init__((item.name, item) for item in declarations)
         self.active: list[str] = []
         self.control = control
@@ -132,8 +139,54 @@ def _format_number(value: int | float) -> str:
     return str(value)
 
 
+class _Scope(dict):
+    """A dict-compatible environment view over a chain of enclosing scopes.
+
+    Reads fall through to the parent, so a loop body can see an outer `var`.
+    `assign` walks back up to whichever scope actually owns the name and writes
+    there, which is what makes `for x in v { total = total + x }` accumulate
+    instead of writing into a throwaway copy.
+
+    Subclasses ``dict`` so every existing ``name in environment`` and
+    ``environment[name]`` call keeps working; only scope creation needs to know
+    this class exists, and those go through `child()`.
+    """
+
+    __slots__ = ("_parent",)
+
+    def __init__(self, source=None, parent: "_Scope | None" = None):
+        super().__init__(source or {})
+        self._parent = parent
+
+    def __contains__(self, key: object) -> bool:
+        if super().__contains__(key):
+            return True
+        return self._parent is not None and key in self._parent
+
+    def __missing__(self, key: str) -> Any:
+        if self._parent is None:
+            raise KeyError(key)
+        return self._parent[key]
+
+    def assign(self, key: str, value: Any) -> None:
+        if super().__contains__(key) or self._parent is None:
+            self[key] = value
+        else:
+            self._parent.assign(key, value)
+
+    def child(self) -> "_Scope":
+        return _Scope(parent=self)
+
+
+def _child_scope(environment: Any) -> _Scope:
+    """Push a new scope, tolerating a plain dict for existing call paths."""
+    return (
+        environment.child() if isinstance(environment, _Scope) else _Scope(environment)
+    )
+
+
 def _evaluate_expression(
-    expression: Expression,
+    expression: Expression | Assignment,
     environment: dict[str, Any],
     program: Program,
     functions: Mapping[str, FunctionDecl],
@@ -144,13 +197,76 @@ def _evaluate_expression(
     if isinstance(functions, _FunctionRegistry):
         functions.control.checkpoint()
     if isinstance(expression, MatchExpr):
-        subject = _evaluate_expression(expression.subject, environment, program, functions,
-                                       function_events, depth=depth)
+        subject = _evaluate_expression(
+            expression.subject,
+            environment,
+            program,
+            functions,
+            function_events,
+            depth=depth,
+        )
         for arm in expression.arms:
             if arm.pattern is None or _value_equal(subject, arm.pattern.value):
-                return _evaluate_expression(arm.value, environment, program, functions,
-                                            function_events, depth=depth)
+                return _evaluate_expression(
+                    arm.value,
+                    environment,
+                    program,
+                    functions,
+                    function_events,
+                    depth=depth,
+                )
         raise RuntimeError("Non-exhaustive match reached execution")
+    if isinstance(expression, Assignment):
+        # The checker already proved the target exists, is a `var`, and that the
+        # value matches its type, so this only has to perform the write.
+        if not isinstance(environment, _Scope):
+            raise RuntimeError("Assignment outside a scoped function body")
+        environment.assign(
+            expression.target,
+            _evaluate_expression(
+                expression.value,
+                environment,
+                program,
+                functions,
+                function_events,
+                depth=depth,
+            ),
+        )
+        return None
+    if isinstance(expression, Block):
+        inner = _child_scope(environment)
+        for statement in expression.statements:
+            if isinstance(statement, LocalBinding):
+                value = _evaluate_expression(
+                    statement.value,
+                    inner,
+                    program,
+                    functions,
+                    function_events,
+                    depth=depth,
+                )
+                if statement.type_name is not None:
+                    validate(value, schema_for_type(program, statement.type_name))
+                inner[statement.name] = value
+            else:
+                _evaluate_expression(
+                    statement,
+                    inner,
+                    program,
+                    functions,
+                    function_events,
+                    depth=depth,
+                )
+        if expression.result is None:
+            return None
+        return _evaluate_expression(
+            expression.result,
+            inner,
+            program,
+            functions,
+            function_events,
+            depth=depth,
+        )
     if isinstance(expression, LiteralExpr):
         return expression.value
     if isinstance(expression, VariableExpr):
@@ -262,9 +378,17 @@ def _evaluate_expression(
             # Number operand is rendered rather than raising a host TypeError.
             if isinstance(left, str) and isinstance(right, str):
                 return left + right
-            if isinstance(left, str) and isinstance(right, (int, float)) and not isinstance(right, bool):
+            if (
+                isinstance(left, str)
+                and isinstance(right, (int, float))
+                and not isinstance(right, bool)
+            ):
                 return left + _format_number(right)
-            if isinstance(left, (int, float)) and isinstance(right, str) and not isinstance(left, bool):
+            if (
+                isinstance(left, (int, float))
+                and isinstance(right, str)
+                and not isinstance(left, bool)
+            ):
                 return _format_number(left) + right
             return left + right
         if expression.operator == "-":
@@ -311,13 +435,16 @@ def _evaluate_expression(
         )
     if isinstance(expression, FunctionRefExpr):
         captures = {
-            name: _evaluate_expression(value, environment, program, functions,
-                                       function_events, depth=depth)
+            name: _evaluate_expression(
+                value, environment, program, functions, function_events, depth=depth
+            )
             for name, value in expression.captures
         }
-        return {'$function': expression.function_name,
-                '$type': public_type(functions[expression.function_name]),
-                '$captures': deepcopy(captures)}
+        return {
+            "$function": expression.function_name,
+            "$type": public_type(functions[expression.function_name]),
+            "$captures": deepcopy(captures),
+        }
     if isinstance(expression, FunctionCallExpr):
         argument_events: list[dict[str, Any]] = []
         arguments = {
@@ -331,7 +458,9 @@ def _evaluate_expression(
             )
             for name, value in expression.arguments
         }
-        function, captures = _resolve_function(expression.function_name, environment, functions)
+        function, captures = _resolve_function(
+            expression.function_name, environment, functions
+        )
         if set(arguments) & set(captures):
             raise RuntimeError("Cannot override lexical captures")
         result, call_events = _execute_function(
@@ -348,7 +477,11 @@ def _evaluate_expression(
         # Functional map: bind item_name per element in a child scope and
         # collect the body results into a new array.
         sequence = _evaluate_expression(
-            expression.sequence, environment, program, functions, function_events,
+            expression.sequence,
+            environment,
+            program,
+            functions,
+            function_events,
             depth=depth,
         )
         if not isinstance(sequence, list):
@@ -359,12 +492,16 @@ def _evaluate_expression(
             )
         collected: list[Any] = []
         for element in sequence:
-            scope = dict(environment)
+            scope = _child_scope(environment)
             scope[expression.item_name] = element
             try:
                 collected.append(
                     _evaluate_expression(
-                        expression.body, scope, program, functions, function_events,
+                        expression.body,
+                        scope,
+                        program,
+                        functions,
+                        function_events,
                         depth=depth + 1,
                     )
                 )
@@ -376,7 +513,11 @@ def _evaluate_expression(
     if isinstance(expression, RepeatExpr):
         # Evaluated up to count times; yields the last result.
         raw_count = _evaluate_expression(
-            expression.count, environment, program, functions, function_events,
+            expression.count,
+            environment,
+            program,
+            functions,
+            function_events,
             depth=depth,
         )
         if isinstance(raw_count, bool) or not isinstance(raw_count, (int, float)):
@@ -386,10 +527,14 @@ def _evaluate_expression(
             raise RuntimeError("repeat count must not be negative")
         result: Any = None
         for _ in range(count):
-            scope = dict(environment)
+            scope = _child_scope(environment)
             try:
                 result = _evaluate_expression(
-                    expression.body, scope, program, functions, function_events,
+                    expression.body,
+                    scope,
+                    program,
+                    functions,
+                    function_events,
                     depth=depth + 1,
                 )
             except _BreakLoop:
@@ -405,21 +550,29 @@ def _evaluate_expression(
 
 
 def _resolve_function(
-    name: str, environment: Mapping[str, Any], functions: Mapping[str, FunctionDecl],
+    name: str,
+    environment: Mapping[str, Any],
+    functions: Mapping[str, FunctionDecl],
 ) -> tuple[FunctionDecl, dict[str, Any]]:
     if name not in environment:
         return functions[name], {}
     closure = environment[name]
-    if not isinstance(closure, dict) or set(closure) != {'$function', '$type', '$captures'}:
+    if not isinstance(closure, dict) or set(closure) != {
+        "$function",
+        "$type",
+        "$captures",
+    }:
         raise RuntimeError("Invalid function value")
-    target = closure['$function']
+    target = closure["$function"]
     if not isinstance(target, str) or target not in functions:
         raise RuntimeError("Unknown closure target")
     function = functions[target]
-    captures = closure['$captures']
-    if closure['$type'] != public_type(function) or not isinstance(captures, dict):
+    captures = closure["$captures"]
+    if closure["$type"] != public_type(function) or not isinstance(captures, dict):
         raise RuntimeError("Closure signature mismatch")
-    if set(captures) != {p.name for p in function.parameters if p.name.startswith('$capture:')}:
+    if set(captures) != {
+        p.name for p in function.parameters if p.name.startswith("$capture:")
+    }:
         raise RuntimeError("Closure capture mismatch")
     return function, captures
 
@@ -522,11 +675,17 @@ def _execute_function(
     limit = function.recursion_limit or 1
     if functions.active.count(function.name) >= limit:
         raise RuntimeError(f"Recursion limit {limit} exceeded for {function.name!r}")
-    functions.control.consume('function_calls')
+    functions.control.consume("function_calls")
     functions.active.append(function.name)
     try:
-        return _execute_function_body(program, function, arguments, functions,
-                                      argument_events=argument_events, depth=depth)
+        return _execute_function_body(
+            program,
+            function,
+            arguments,
+            functions,
+            argument_events=argument_events,
+            depth=depth,
+        )
     except (Exception, KeyboardInterrupt):
         if not functions.control.failure_stack:
             functions.control.failure_stack = list(functions.active)
@@ -550,13 +709,30 @@ def _execute_function_body(
     output_schema = schema_for_type(program, function.output_type)
     validate(arguments, input_schema)
     body_events: list[dict[str, Any]] = []
-    local_environment = dict(arguments)
+    local_environment = _Scope(arguments)
     for binding in function.bindings:
         value = _evaluate_expression(
-            binding.value, local_environment, program, functions, body_events, depth=depth,
+            binding.value,
+            local_environment,
+            program,
+            functions,
+            body_events,
+            depth=depth,
         )
-        validate(value, schema_for_type(program, binding.type_name))
+        # An inferred binding has no declared type, so there is no contract to
+        # re-check here; the checker already resolved and proved it.
+        if binding.type_name is not None:
+            validate(value, schema_for_type(program, binding.type_name))
         local_environment[binding.name] = value
+    for statement in function.statements:
+        _evaluate_expression(
+            statement,
+            local_environment,
+            program,
+            functions,
+            body_events,
+            depth=depth,
+        )
     result = _evaluate_expression(
         function.return_value,
         local_environment,
@@ -591,11 +767,19 @@ def _execute_function_body(
 def _write_trace(trace_path: str | Path, events: list[dict[str, Any]]) -> None:
     path = Path(trace_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    payload = '\n'.join(json.dumps(item, sort_keys=True, allow_nan=False) for item in events) + '\n'
+    payload = (
+        "\n".join(json.dumps(item, sort_keys=True, allow_nan=False) for item in events)
+        + "\n"
+    )
     temporary: str | None = None
     try:
-        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=path.parent,
-                                         prefix='.kosika-trace-', delete=False) as stream:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=".kosika-trace-",
+            delete=False,
+        ) as stream:
             temporary = stream.name
             stream.write(payload)
         os.replace(temporary, path)
@@ -628,42 +812,73 @@ def run(
     events: list[dict[str, Any]] = []
     try:
         control.checkpoint()
-        result = _run_workflow(program, workflow_name, None, mcp_commands=mcp_commands,
-                               manifest=manifest, inputs=inputs, model_bindings=model_bindings,
-                               tool_bindings=tool_bindings, session=session,
-                               _events_out=events, _scope=_scope, _control=control,
-                               intelligence=intelligence,
-                               function_cache=function_cache)
+        result = _run_workflow(
+            program,
+            workflow_name,
+            None,
+            mcp_commands=mcp_commands,
+            manifest=manifest,
+            inputs=inputs,
+            model_bindings=model_bindings,
+            tool_bindings=tool_bindings,
+            session=session,
+            _events_out=events,
+            _scope=_scope,
+            _control=control,
+            intelligence=intelligence,
+            function_cache=function_cache,
+        )
     except (Exception, KeyboardInterrupt) as exc:
         interrupted = isinstance(exc, KeyboardInterrupt)
-        code = 'cancelled' if interrupted else (
-            exc.code if isinstance(exc, ExecutionError) and exc.code in {
-                'cancelled', 'deadline', 'budget', 'approval_required', 'usage_unknown', 'transient'
-            } else 'runtime_error'
+        code = (
+            "cancelled"
+            if interrupted
+            else (
+                "approval_required"
+                if isinstance(exc, ApprovalRequiredError)
+                else exc.code
+                if isinstance(exc, ExecutionError)
+                and exc.code
+                in {
+                    "cancelled",
+                    "deadline",
+                    "budget",
+                    "approval_required",
+                    "usage_unknown",
+                    "transient",
+                }
+                else "runtime_error"
+            )
         )
         if not events:
-            events.append(_event('run_start', workflow=workflow_name, trace_version=5))
-        terminal = 'run_cancelled' if code == 'cancelled' else 'run_failed'
-        if code == 'approval_required':
-            terminal = 'run_paused'
-        events.append(_event(terminal, workflow=workflow_name, scope=list(control.scope),
-                             error={'code': code, 'type': type(exc).__name__},
-                             execution=control.snapshot()))
+            events.append(_event("run_start", workflow=workflow_name, trace_version=5))
+        terminal = "run_cancelled" if code == "cancelled" else "run_failed"
+        if code == "approval_required":
+            terminal = "run_paused"
+        events.append(
+            _event(
+                terminal,
+                workflow=workflow_name,
+                scope=list(control.scope),
+                error={"code": code, "type": type(exc).__name__},
+                execution=control.snapshot(),
+            )
+        )
         if _events_out is not None:
             _events_out.extend(events)
         if trace_path is not None:
             try:
                 _write_trace(trace_path, events)
             except (OSError, ValueError, TypeError):
-                add_note = getattr(exc, 'add_note', None)
+                add_note = getattr(exc, "add_note", None)
                 if callable(add_note):
-                    add_note('Could not persist the execution failure trace')
+                    add_note("Could not persist the execution failure trace")
         if interrupted:
             control.cancel.set()
-            raise ExecutionError('cancelled', 'Execution was cancelled') from exc
+            raise ExecutionError("cancelled", "Execution was cancelled") from exc
         raise
-    if events and events[-1].get('event') == 'run_complete':
-        events[-1]['execution'] = control.snapshot()
+    if events and events[-1].get("event") == "run_complete":
+        events[-1]["execution"] = control.snapshot()
     if _events_out is not None:
         _events_out.extend(events)
     if trace_path is not None:
@@ -724,8 +939,13 @@ def _run_workflow(
     agents = {agent.name: agent for agent in program.agents}
     models = {model.name: model for model in program.models}
     workflows = {item.name: item for item in program.workflows}
-    functions = _FunctionRegistry(program.functions, _control, cache=function_cache, intel=intelligence)
-    providers = {name: _control.provider(provider) for name, provider in (model_bindings or {}).items()}
+    functions = _FunctionRegistry(
+        program.functions, _control, cache=function_cache, intel=intelligence
+    )
+    providers = {
+        name: _control.provider(provider)
+        for name, provider in (model_bindings or {}).items()
+    }
     host_tools = dict(tool_bindings or {})
     if set(host_tools) - set(tools):
         raise ValueError("Host supplied bindings for undeclared tools")
@@ -773,9 +993,9 @@ def _run_workflow(
                 )
             for name in asked_agent.can:
                 permitted = tools[name]
-                if permitted.access != "observe":
+                if permitted.access == "execute" and session is None:
                     raise PermissionError(
-                        "Workflow ask currently permits observe tools only"
+                        f"Agent tool {name!r} requires a verified approval record"
                     )
                 if (
                     name not in host_tools
@@ -813,7 +1033,7 @@ def _run_workflow(
     result: Any = {}
     for step in workflow.steps:
         _control.scope = (*_scope, workflow.name, step.name)
-        _control.consume('steps')
+        _control.consume("steps")
         expression_events: list[dict[str, Any]] = []
         arguments = {
             name: _evaluate_expression(
@@ -832,7 +1052,9 @@ def _run_workflow(
         if isinstance(step.call, WorkflowCall):
             step_output = workflows[step.call.workflow_name].output_type
         elif isinstance(step.call, FunctionCall):
-            function, captures = _resolve_function(step.call.function_name, environment, functions)
+            function, captures = _resolve_function(
+                step.call.function_name, environment, functions
+            )
             if set(arguments) & set(captures):
                 raise RuntimeError("Cannot override lexical captures")
             arguments = {**arguments, **captures}
@@ -853,7 +1075,7 @@ def _run_workflow(
                 events.extend(cached)
                 continue
         if isinstance(step.call, ToolCall):
-            _control.consume('tool_calls')
+            _control.consume("tool_calls")
         _control.checkpoint()
         if session is not None and not isinstance(step.call, WorkflowCall):
             mutation = (
@@ -912,7 +1134,9 @@ def _run_workflow(
             except (Exception, KeyboardInterrupt):
                 if intelligence is not None:
                     intelligence.record_events(child_events)
-                events.append(_event('workflow_failed', workflow=child.name, events=child_events))
+                events.append(
+                    _event("workflow_failed", workflow=child.name, events=child_events)
+                )
                 raise
             if intelligence is not None:
                 intelligence.record_events(child_events)
@@ -955,11 +1179,42 @@ def _run_workflow(
             def execute_agent_tool(
                 declaration: ToolDecl, values: dict[str, Any]
             ) -> Any:
-                _control.consume('tool_calls')
-                if declaration.access != "observe":
-                    raise PermissionError(
-                        "Workflow ask currently permits observe tools only"
+                _control.consume("tool_calls")
+                if declaration.access == "execute":
+                    # An ask that reaches an approval-gated tool is gated the
+                    # same way a direct call is: claim the action against the
+                    # verified approval record, or pause for a human. This is
+                    # deliberately not a widening of access, and deliberately
+                    # no host-binding exemption - a direct execute tool has
+                    # none either, and ask must not become the weaker path.
+                    if session is None:
+                        raise PermissionError(
+                            f"Workflow ask tool {declaration.name!r} requires a "
+                            "verified approval record"
+                        )
+                    inner = (*scope, f"ask:{declaration.name}")
+                    action = session.start(inner, declaration.name, values)
+                    outcome = _agent_tool_outcome(declaration, values)
+                    validate(outcome, schema_for_record(program, declaration.output))
+                    session.complete(
+                        inner,
+                        [
+                            _event(
+                                "tool_return",
+                                agent=asked_agent.name,
+                                tool=declaration.name,
+                                transport="host",
+                                result=outcome,
+                            )
+                        ],
+                        action,
                     )
+                    return outcome
+                return _agent_tool_outcome(declaration, values)
+
+            def _agent_tool_outcome(
+                declaration: ToolDecl, values: dict[str, Any]
+            ) -> Any:
                 if declaration.name in host_tools:
                     return host_tools[declaration.name](declaration, values)
                 outcome, _ = _call_declared_tool(

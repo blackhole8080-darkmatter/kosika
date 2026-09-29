@@ -73,10 +73,7 @@ class SwarmParsingTests(unittest.TestCase):
         with self.assertRaisesRegex(ParseError, "must declare `require approval`"):
             parse(
                 swarm_program(
-                    "swarm Crew {\n"
-                    "  agents: [worker]\n"
-                    "  workflow: inner\n"
-                    "}\n"
+                    "swarm Crew {\n  agents: [worker]\n  workflow: inner\n}\n"
                 )
             )
 
@@ -132,6 +129,7 @@ class SwarmParsingTests(unittest.TestCase):
                     "  max_rounds: many\n  require approval\n}\n"
                 )
             )
+
 
 class SwarmCheckingTests(unittest.TestCase):
     def check_source(self, body: str) -> None:
@@ -194,6 +192,8 @@ class SwarmCheckingTests(unittest.TestCase):
     def test_duplicate_swarm_declaration_is_rejected(self) -> None:
         with self.assertRaisesRegex(CheckError, "Duplicate swarm declaration"):
             self.check_source(VALID_SWARM + VALID_SWARM)
+
+
 class SwarmVisualisationTests(unittest.TestCase):
     def test_mindmap_exposes_the_swarm_and_its_approval(self) -> None:
         mindmap = build_mindmap(load_program(EXAMPLE))
@@ -206,8 +206,12 @@ class SwarmVisualisationTests(unittest.TestCase):
             (edge["source"], edge["relation"], edge["target"])
             for edge in mindmap["edges"]
         }
-        self.assertIn(("swarm:EditorialBoard", "coordinates", "agent:researcher"), relations)
-        self.assertIn(("swarm:EditorialBoard", "coordinates", "agent:editor"), relations)
+        self.assertIn(
+            ("swarm:EditorialBoard", "coordinates", "agent:researcher"), relations
+        )
+        self.assertIn(
+            ("swarm:EditorialBoard", "coordinates", "agent:editor"), relations
+        )
         self.assertIn(("swarm:EditorialBoard", "runs", "workflow:review"), relations)
 
     def test_mindmap_is_deterministic_with_a_swarm(self) -> None:
@@ -234,9 +238,15 @@ class SwarmVisualisationTests(unittest.TestCase):
         kinds = {node["id"]: node["kind"] for node in manifest.nodes}
         self.assertEqual(kinds["swarm.EditorialBoard"], "swarm")
         self.assertEqual(kinds["approval.swarm.EditorialBoard"], "approval")
-        edges = {(edge["source"], edge["kind"], edge["target"]) for edge in manifest.edges}
+        edges = {
+            (edge["source"], edge["kind"], edge["target"]) for edge in manifest.edges
+        }
         self.assertIn(
-            ("swarm.EditorialBoard", "requires_approval", "approval.swarm.EditorialBoard"),
+            (
+                "swarm.EditorialBoard",
+                "requires_approval",
+                "approval.swarm.EditorialBoard",
+            ),
             edges,
         )
         self.assertIn(("swarm.EditorialBoard", "uses", "agent.researcher"), edges)
@@ -248,6 +258,8 @@ class SwarmVisualisationTests(unittest.TestCase):
         )
         for output_format in ("text", "json", "mermaid", "svg"):
             self.assertTrue(render_design(manifest, output_format, "workflow", "lab"))
+
+
 class SwarmCliTests(unittest.TestCase):
     def run_cli(self, argv: list[str]) -> tuple[int, str, str]:
         out, err = io.StringIO(), io.StringIO()

@@ -17,7 +17,7 @@ from kosika.source_map import build_source_map
 
 class RustAdapterTests(unittest.TestCase):
     def test_extracts_rust_declarations_imports_methods_calls_and_effects(self) -> None:
-        source = '''
+        source = """
 use std::fs::File;
 use reqwest::Client;
 
@@ -38,7 +38,7 @@ impl Store {
 pub async fn fetch(client: Client) {
     reqwest::Client::get("https://example.com");
 }
-'''
+"""
         analysis = analyze_rust_source(source, path="store.rs")
 
         self.assertEqual(analysis["language"], "rust")
@@ -51,7 +51,9 @@ pub async fn fetch(client: Client) {
         symbols = analysis["symbols"]
         store_struct = next(item for item in symbols if item["kind"] == "struct")
         self.assertEqual(store_struct["qualified_name"], "Store")
-        store_load = next(item for item in symbols if item["qualified_name"] == "Store.load")
+        store_load = next(
+            item for item in symbols if item["qualified_name"] == "Store.load"
+        )
         self.assertEqual(store_load["kind"], "method")
         self.assertEqual(store_load["calls"][0]["observed_effect"], "filesystem")
         fetch = next(item for item in symbols if item["qualified_name"] == "fetch")
@@ -82,12 +84,11 @@ pub async fn fetch(client: Client) {
             self.assertEqual(project["summary"]["language_file_counts"], {"rust": 1})
             self.assertEqual(project["files"][0]["language"], "rust")
 
-
     def test_masking_does_not_invent_declarations_or_calls(self) -> None:
-        source = '''// fn fake() { File::open("no"); }
+        source = """// fn fake() { File::open("no"); }
 const TEXT: &str = r#"fn hidden() { println!(\"no\"); }"#;
 fn real() { helper(); }
-'''
+"""
         analysis = analyze_rust_source(source)
         names = [item["qualified_name"] for item in analysis["symbols"]]
         self.assertEqual(names, ["TEXT", "real"])

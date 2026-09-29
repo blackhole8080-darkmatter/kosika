@@ -5,7 +5,9 @@ import math
 from .ast import (
     AgentCall,
     ArrayExpr,
+    Assignment,
     BinaryExpr,
+    Block,
     BreakExpr,
     ConditionalExpr,
     ContinueExpr,
@@ -18,6 +20,7 @@ from .ast import (
     FunctionRefExpr,
     IndexExpr,
     LiteralExpr,
+    LocalBinding,
     MatchExpr,
     MethodCallExpr,
     ModelCall,
@@ -82,16 +85,93 @@ def _literal_type(value: object) -> str:
     raise CheckError(f"Unsupported literal value {value!r}")
 
 
+class _Env(dict):
+    """Name -> type map that also records which names may be assigned.
+
+    Subclasses ``dict`` so every existing ``name in bindings``,
+    ``bindings.get(name)`` and indexing call keeps working unchanged. Only scope
+    creation needs to know this class exists, and those go through ``child()``.
+    """
+
+    def __init__(self, source=None, *, mutable: set[str] | None = None):
+        super().__init__(source or {})
+        self.mutable: set[str] = set() if mutable is None else mutable
+
+    def child(self) -> _Env:
+        # A nested scope still sees the enclosing mutable names, so a `var`
+        # declared outside a loop stays assignable inside it.
+        return _Env(self, mutable=set(self.mutable))
+
+
 def _expression_type(
     expression: object,
-    bindings: dict[str, str],
+    bindings: _Env,
     program: Program,
     *,
     step_name: str,
     expected_type: str | None = None,
 ) -> str:
+    if isinstance(expression, Assignment):
+        target_type = bindings.get(expression.target)
+        if target_type is None:
+            raise CheckError(
+                f"Step {step_name!r} assigns to unknown variable {expression.target!r}"
+            )
+        if expression.target not in bindings.mutable:
+            raise CheckError(
+                f"Step {step_name!r} cannot assign to {expression.target!r}: "
+                f"declare it with 'var' to make it assignable"
+            )
+        assigned_type = _expression_type(
+            expression.value, bindings, program, step_name=step_name
+        )
+        if assigned_type != target_type:
+            raise CheckError(
+                f"Step {step_name!r} assigns {assigned_type!r} to "
+                f"{expression.target!r} of type {target_type!r}"
+            )
+        return target_type
+    if isinstance(expression, Block):
+        inner = bindings.child()
+        for statement in expression.statements:
+            if isinstance(statement, LocalBinding):
+                if statement.name in bindings:
+                    raise CheckError(
+                        f"Step {step_name!r} local {statement.name!r} shadows an "
+                        f"enclosing binding"
+                    )
+                if statement.type_name is not None:
+                    _validate_type_name(program, statement.type_name)
+                declared = _expression_type(
+                    statement.value,
+                    inner,
+                    program,
+                    step_name=step_name,
+                    expected_type=statement.type_name,
+                )
+                if statement.type_name is not None and declared != statement.type_name:
+                    raise CheckError(
+                        f"Step {step_name!r} local {statement.name!r} expects "
+                        f"{statement.type_name!r}, got {declared!r}"
+                    )
+                inner[statement.name] = declared
+                if statement.mutable:
+                    inner.mutable.add(statement.name)
+            else:
+                _expression_type(statement, inner, program, step_name=step_name)
+        if expression.result is None:
+            return "Null"
+        return _expression_type(
+            expression.result,
+            inner,
+            program,
+            step_name=step_name,
+            expected_type=expected_type,
+        )
     if isinstance(expression, MatchExpr):
-        subject_type = _expression_type(expression.subject, bindings, program, step_name=step_name)
+        subject_type = _expression_type(
+            expression.subject, bindings, program, step_name=step_name
+        )
         if subject_type not in _PRIMITIVE_TYPES:
             raise CheckError("Match subjects must be scalar values")
         seen: list[object] = []
@@ -109,9 +189,16 @@ def _expression_type(
                 if pattern in seen:
                     raise CheckError("Duplicate match pattern")
                 seen.append(pattern)
-                exhaustive = subject_type == "Null" or (subject_type == "Bool" and len(seen) == 2)
-            arm_type = _expression_type(arm.value, bindings, program, step_name=step_name,
-                                        expected_type=result_type)
+                exhaustive = subject_type == "Null" or (
+                    subject_type == "Bool" and len(seen) == 2
+                )
+            arm_type = _expression_type(
+                arm.value,
+                bindings,
+                program,
+                step_name=step_name,
+                expected_type=result_type,
+            )
             if result_type is not None and arm_type != result_type:
                 raise CheckError("Match branches must have the same result type")
             result_type = arm_type
@@ -143,32 +230,27 @@ def _expression_type(
             raise CheckError(
                 f"Step {step_name!r} repeat count expects 'Number', got {count_type!r}"
             )
-        return _expression_type(
-            expression.body, bindings, program, step_name=step_name
-        )
+        return _expression_type(expression.body, bindings, program, step_name=step_name)
     if isinstance(expression, ForExpr):
         sequence_type = _expression_type(
             expression.sequence, bindings, program, step_name=step_name
         )
         if not sequence_type.endswith("[]") or signature(sequence_type):
             raise CheckError(
-                f"Step {step_name!r} for loop requires an array, "
-                f"got {sequence_type!r}"
+                f"Step {step_name!r} for loop requires an array, got {sequence_type!r}"
             )
         # The body sees the element in a child scope, so its binding cannot
         # widen or shadow the enclosing one.
-        item_bindings = dict(bindings)
+        item_bindings = bindings.child()
         item_bindings[expression.item_name] = sequence_type[:-2]
         body_type = _expression_type(
             expression.body, item_bindings, program, step_name=step_name
         )
         return f"{body_type}[]"
     if isinstance(expression, TryExpr):
-        return _expression_type(
-            expression.body, bindings, program, step_name=step_name
-        )
+        return _expression_type(expression.body, bindings, program, step_name=step_name)
     if isinstance(expression, FunctionExpr):
-        function_bindings: dict[str, str] = {}
+        function_bindings = _Env()
         for parameter in expression.parameters:
             if parameter.name in function_bindings:
                 raise CheckError(
@@ -178,8 +260,11 @@ def _expression_type(
             _validate_type_name(program, parameter.type_name)
             function_bindings[parameter.name] = parameter.type_name
         body_type = _expression_type(
-            expression.body, function_bindings, program,
-            step_name=step_name, expected_type=expression.output_type,
+            expression.body,
+            function_bindings,
+            program,
+            step_name=step_name,
+            expected_type=expression.output_type,
         )
         output_type = expression.output_type or body_type
         if output_type != body_type:
@@ -195,9 +280,7 @@ def _expression_type(
         # Method dispatch on Text and array values is parsed but has no
         # checker or runtime implementation yet. Reject it here rather than
         # accepting a call the runtime cannot execute.
-        _expression_type(
-            expression.target, bindings, program, step_name=step_name
-        )
+        _expression_type(expression.target, bindings, program, step_name=step_name)
         raise CheckError(
             f"Step {step_name!r} method call {expression.method!r} is not "
             f"implemented in Kosika v0.1"
@@ -236,8 +319,14 @@ def _expression_type(
             )
         return base_type[:-2]
     if isinstance(expression, ArrayExpr):
-        if (expected_type is None or not expected_type.endswith("[]")
-                or signature(expected_type) is not None):
+        if expected_type is None:
+            # Reachable now that a local may omit its annotation. Element type
+            # is genuinely ambiguous here, so ask rather than guess.
+            raise CheckError(
+                f"Step {step_name!r} cannot infer the type of an array literal; "
+                f"annotate the binding with an array type"
+            )
+        if not expected_type.endswith("[]") or signature(expected_type) is not None:
             raise CheckError(
                 f"Step {step_name!r} array literal requires an array-typed field"
             )
@@ -257,7 +346,12 @@ def _expression_type(
                 )
         return expected_type
     if isinstance(expression, RecordExpr):
-        if expected_type is None or expected_type.endswith("[]"):
+        if expected_type is None:
+            raise CheckError(
+                f"Step {step_name!r} cannot infer the type of a record literal; "
+                f"annotate the binding with a record type"
+            )
+        if expected_type.endswith("[]"):
             raise CheckError(
                 f"Step {step_name!r} record literal requires a record-typed field"
             )
@@ -344,8 +438,7 @@ def _expression_type(
         )
         if condition_type != "Bool":
             raise CheckError(
-                f"Step {step_name!r} condition expects 'Bool', "
-                f"got {condition_type!r}"
+                f"Step {step_name!r} condition expects 'Bool', got {condition_type!r}"
             )
         true_type = _expression_type(
             expression.when_true,
@@ -368,23 +461,45 @@ def _expression_type(
             )
         return true_type
     if isinstance(expression, FunctionRefExpr):
-        function = next((item for item in program.functions
-                         if item.name == expression.function_name), None)
+        function = next(
+            (
+                item
+                for item in program.functions
+                if item.name == expression.function_name
+            ),
+            None,
+        )
         if function is None:
             raise CheckError(f"Unknown function reference {expression.function_name!r}")
-        _check_arguments(program, None, expression.captures, bindings, step_name=step_name,
-                         expected_fields={p.name: p.type_name for p in function.parameters
-                                          if p.name.startswith('$capture:')})
+        _check_arguments(
+            program,
+            None,
+            expression.captures,
+            bindings,
+            step_name=step_name,
+            expected_fields={
+                p.name: p.type_name
+                for p in function.parameters
+                if p.name.startswith("$capture:")
+            },
+        )
         return public_type(function)
     if isinstance(expression, FunctionCallExpr):
         if expression.function_name in bindings:
             function_signature = signature(bindings[expression.function_name])
             if function_signature is None:
-                raise CheckError(f"{expression.function_name!r} is not a function value")
+                raise CheckError(
+                    f"{expression.function_name!r} is not a function value"
+                )
             parameters, output = function_signature
-            _check_arguments(program, None, expression.arguments, bindings,
-                             step_name=step_name,
-                             expected_fields={p.name: p.type_name for p in parameters})
+            _check_arguments(
+                program,
+                None,
+                expression.arguments,
+                bindings,
+                step_name=step_name,
+                expected_fields={p.name: p.type_name for p in parameters},
+            )
             return output
         function = next(
             (
@@ -396,8 +511,7 @@ def _expression_type(
         )
         if function is None:
             raise CheckError(
-                f"Step {step_name!r} uses unknown function "
-                f"{expression.function_name!r}"
+                f"Step {step_name!r} uses unknown function {expression.function_name!r}"
             )
         _check_arguments(
             program,
@@ -417,7 +531,7 @@ def _check_arguments(
     program: Program,
     tool_input: str | None,
     arguments: tuple[tuple[str, object], ...],
-    bindings: dict[str, str],
+    bindings: _Env,
     *,
     step_name: str,
     expected_fields: dict[str, str] | None = None,
@@ -459,7 +573,9 @@ def _check_arguments(
 
 def check(program: Program) -> None:
     if any(function.nested for function in program.functions):
-        raise CheckError("Unlowered nested functions: use lower_nested_functions(program)")
+        raise CheckError(
+            "Unlowered nested functions: use lower_nested_functions(program)"
+        )
     if program.imports:
         raise CheckError("Unresolved imports: use load_program(path)")
     records = {record.name for record in program.records}
@@ -510,8 +626,12 @@ def check(program: Program) -> None:
                     f"{lower} and {upper}"
                 )
         stop = model.parameters.stop
-        if len(stop) > 4 or len(set(stop)) != len(stop) or any(
-            type(value) is not str or not 1 <= len(value) <= 256 for value in stop
+        if (
+            len(stop) > 4
+            or len(set(stop)) != len(stop)
+            or any(
+                type(value) is not str or not 1 <= len(value) <= 256 for value in stop
+            )
         ):
             raise CheckError(
                 f"Model {model.name!r} stop must contain up to four unique "
@@ -562,13 +682,8 @@ def check(program: Program) -> None:
                 f"Swarm {swarm.name!r} names unknown workflow {swarm.workflow!r}"
             )
         if not swarm.approval_required:
-            raise CheckError(
-                f"Swarm {swarm.name!r} must require human approval"
-            )
-        if (
-            type(swarm.max_rounds) is not int
-            or not 1 <= swarm.max_rounds <= 32
-        ):
+            raise CheckError(f"Swarm {swarm.name!r} must require human approval")
+        if type(swarm.max_rounds) is not int or not 1 <= swarm.max_rounds <= 32:
             raise CheckError("Swarm max_rounds must be an integer from 1 to 32")
         used = workflow_agents(swarm.workflow, set())
         participants = sorted(set(swarm.agents) - used)
@@ -609,8 +724,10 @@ def check(program: Program) -> None:
         if len(field_names) != len(set(field_names)):
             raise CheckError(f"Record {record.name!r} has duplicate fields")
         for field in record.fields:
-            if field.type_name.startswith('fn('):
-                raise CheckError("Function values are not allowed in external record schemas")
+            if field.type_name.startswith("fn("):
+                raise CheckError(
+                    "Function values are not allowed in external record schemas"
+                )
             _validate_type_name(program, field.type_name)
 
     visited_functions: dict[str, int] = {}
@@ -628,16 +745,20 @@ def check(program: Program) -> None:
         while pending:
             target = pending.pop()
             if target == name:
-                raise CheckError(f"Recursive function call involving {name!r} requires recurse limits")
+                raise CheckError(
+                    f"Recursive function call involving {name!r} requires recurse limits"
+                )
             if target not in reached:
                 reached.add(target)
                 pending.extend(function_graph.get(target, ()))
 
     def visit_function(name: str) -> int:
         if name in active_functions:
-            cycle = active_functions[active_functions.index(name):]
+            cycle = active_functions[active_functions.index(name) :]
             if any(functions[item].recursion_limit is None for item in cycle):
-                raise CheckError(f"Recursive function call involving {name!r} requires recurse limits")
+                raise CheckError(
+                    f"Recursive function call involving {name!r} requires recurse limits"
+                )
             return 0
         if name in visited_functions:
             return visited_functions[name]
@@ -660,11 +781,12 @@ def check(program: Program) -> None:
 
     for function in program.functions:
         if function.recursion_limit is not None and (
-            type(function.recursion_limit) is not int or not 1 <= function.recursion_limit <= 32
+            type(function.recursion_limit) is not int
+            or not 1 <= function.recursion_limit <= 32
         ):
             raise CheckError("Recursion limit must be an integer from 1 to 32")
         _validate_type_name(program, function.output_type)
-        function_bindings: dict[str, str] = {}
+        function_bindings = _Env()
         for parameter in function.parameters:
             if parameter.name in function_bindings:
                 raise CheckError(
@@ -675,18 +797,34 @@ def check(program: Program) -> None:
             function_bindings[parameter.name] = parameter.type_name
         for binding in function.bindings:
             if binding.name in function_bindings:
-                raise CheckError(f"Function {function.name!r} cannot rebind {binding.name!r}")
-            _validate_type_name(program, binding.type_name)
+                raise CheckError(
+                    f"Function {function.name!r} cannot rebind {binding.name!r}"
+                )
+            if binding.type_name is not None:
+                _validate_type_name(program, binding.type_name)
             binding_type = _expression_type(
-                binding.value, function_bindings, program,
+                binding.value,
+                function_bindings,
+                program,
                 step_name=f"function {function.name} local {binding.name}",
                 expected_type=binding.type_name,
             )
-            if binding_type != binding.type_name:
+            if binding.type_name is not None and binding_type != binding.type_name:
                 raise CheckError(
                     f"Local {binding.name!r} expects {binding.type_name!r}, got {binding_type!r}"
                 )
-            function_bindings[binding.name] = binding.type_name
+            # Store the resolved type, not the declared one, so an inferred
+            # binding behaves exactly like an annotated one downstream.
+            function_bindings[binding.name] = binding_type
+            if binding.mutable:
+                function_bindings.mutable.add(binding.name)
+        for statement in function.statements:
+            _expression_type(
+                statement,
+                function_bindings,
+                program,
+                step_name=f"function {function.name} statement",
+            )
         actual_type = _expression_type(
             function.return_value,
             function_bindings,
@@ -725,16 +863,21 @@ def check(program: Program) -> None:
             or not 0 < agent.deadline_seconds <= 86_400
         ):
             raise CheckError(
-                f"Agent {agent.name!r} deadline_seconds must be between "
-                "0 and 86400"
+                f"Agent {agent.name!r} deadline_seconds must be between 0 and 86400"
             )
         if type(agent.max_steps) is not int or not 1 <= agent.max_steps <= 64:
             raise CheckError(f"Agent {agent.name!r} max_steps must be between 1 and 64")
-        if type(agent.max_tool_calls) is not int or not 1 <= agent.max_tool_calls <= 1_000_000:
+        if (
+            type(agent.max_tool_calls) is not int
+            or not 1 <= agent.max_tool_calls <= 1_000_000
+        ):
             raise CheckError(
                 f"Agent {agent.name!r} max_tool_calls must be between 1 and 1000000"
             )
-        if type(agent.max_model_calls) is not int or not 1 <= agent.max_model_calls <= 1_000_000:
+        if (
+            type(agent.max_model_calls) is not int
+            or not 1 <= agent.max_model_calls <= 1_000_000
+        ):
             raise CheckError(
                 f"Agent {agent.name!r} max_model_calls must be between 1 and 1000000"
             )
@@ -784,7 +927,7 @@ def check(program: Program) -> None:
                 f"but final {final_kind} returns {final_output!r}"
             )
 
-        bindings: dict[str, str] = {}
+        bindings = _Env()
         for parameter in workflow.parameters:
             if parameter.name in bindings:
                 raise CheckError(f"Duplicate workflow parameter {parameter.name!r}")
@@ -810,7 +953,9 @@ def check(program: Program) -> None:
                 if step.call.function_name in bindings:
                     function_signature = signature(bindings[step.call.function_name])
                     if function_signature is None:
-                        raise CheckError(f"{step.call.function_name!r} is not a function value")
+                        raise CheckError(
+                            f"{step.call.function_name!r} is not a function value"
+                        )
                     parameters, call_output = function_signature
                     call_input = None
                     expected_fields = {p.name: p.type_name for p in parameters}

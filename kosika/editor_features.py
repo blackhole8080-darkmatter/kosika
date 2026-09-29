@@ -180,7 +180,16 @@ def _declaration_end(tokens: list[Token], name_index: int) -> Token:
         if tokens[index].value == "{":
             opening_index = index
             break
-        if tokens[index].value in {"}", "record", "tool", "agent", "swarm", "model", "workflow", "fn"}:
+        if tokens[index].value in {
+            "}",
+            "record",
+            "tool",
+            "agent",
+            "swarm",
+            "model",
+            "workflow",
+            "fn",
+        }:
             break
     if opening_index is None:
         return tokens[name_index]
@@ -213,7 +222,9 @@ def _detail(program: Any, kind: str, name: str) -> str:
     if declaration is None:
         return f"{kind} {name}"
     if kind == "struct":
-        fields = ", ".join(f"{field.name}: {field.type_name}" for field in declaration.fields)
+        fields = ", ".join(
+            f"{field.name}: {field.type_name}" for field in declaration.fields
+        )
         return f"record {name} {{{fields}}}"
     if kind == "tool":
         return f"tool {name} ({declaration.access}) {declaration.source}/{declaration.operation}"
@@ -226,7 +237,8 @@ def _detail(program: Any, kind: str, name: str) -> str:
     if kind == "workflow":
         return f"workflow {name}: {declaration.output_type}"
     parameters = ", ".join(
-        f"{parameter.name}: {parameter.type_name}" for parameter in declaration.parameters
+        f"{parameter.name}: {parameter.type_name}"
+        for parameter in declaration.parameters
     )
     return f"fn {name}({parameters}) -> {declaration.output_type}"
 
@@ -244,4 +256,9 @@ def _completions(symbols: list[dict[str, Any]]) -> list[dict[str, str]]:
     return sorted(items, key=lambda item: (item["label"], item["kind"]))
 
 
-__all__ = ["EDITOR_SCHEMA", "EditorFeatureError", "MAX_SOURCE_BYTES", "build_editor_features"]
+__all__ = [
+    "EDITOR_SCHEMA",
+    "EditorFeatureError",
+    "MAX_SOURCE_BYTES",
+    "build_editor_features",
+]

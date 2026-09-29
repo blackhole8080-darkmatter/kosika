@@ -63,7 +63,9 @@ class SkillRoutingTests(unittest.TestCase):
             policy="explicit",
         )
         self.assertEqual(selection.ids, ("security-review",))
-        self.assertEqual(selection.reasons, (("security-review", "explicitly requested"),))
+        self.assertEqual(
+            selection.reasons, (("security-review", "explicitly requested"),)
+        )
 
     def test_catalog_loads_manifest_and_instruction_file(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -85,7 +87,9 @@ class SkillRoutingTests(unittest.TestCase):
             )
             catalog = SkillCatalog.from_directory(root)
             self.assertEqual(len(catalog), 1)
-            self.assertEqual(catalog.require("rust-review").instructions, "Review Rust carefully.")
+            self.assertEqual(
+                catalog.require("rust-review").instructions, "Review Rust carefully."
+            )
 
     def test_catalog_rejects_duplicate_ids(self) -> None:
         skill = SkillDefinition("same", "1", "Same", (), (), "Instructions")
@@ -102,18 +106,26 @@ class SkillRoutingTests(unittest.TestCase):
             skill_router=SkillRouter(self.catalog()),
             skill_policy="hybrid",
         )
-        result = loop.run("monitor", "Review this Rust agent for capability security risks.")
-        self.assertEqual(set(result.selected_skills), {"rust-review", "security-review"})
+        result = loop.run(
+            "monitor", "Review this Rust agent for capability security risks."
+        )
+        self.assertEqual(
+            set(result.selected_skills), {"rust-review", "security-review"}
+        )
         self.assertEqual(len(result.selected_skills), 2)
         unskilled_loop = AgentLoop(program, provider, lambda tool, arguments: {})
         self.assertNotEqual(
-            loop.plan_hash_for("monitor", "Review this Rust agent for capability security risks."),
+            loop.plan_hash_for(
+                "monitor", "Review this Rust agent for capability security risks."
+            ),
             unskilled_loop.plan_hash_for(
                 "monitor", "Review this Rust agent for capability security risks."
             ),
         )
         self.assertNotEqual(
-            loop.plan_hash_for("monitor", "Review this Rust agent for capability security risks."),
+            loop.plan_hash_for(
+                "monitor", "Review this Rust agent for capability security risks."
+            ),
             loop.plan_hash_for("monitor", "Explain the workflow"),
         )
         system_messages = [

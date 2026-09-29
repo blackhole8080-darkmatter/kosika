@@ -28,7 +28,7 @@ class SourceMapTests(unittest.TestCase):
             'import { helper } from "./helper.js";\n'
             "/** Loads and saves. */\n"
             "export async function load(path) {\n"
-            '  return readFile(path);\n'
+            "  return readFile(path);\n"
             "}\n"
             "export class Store {\n"
             "  put(k, v) { return v; }\n"
@@ -36,7 +36,7 @@ class SourceMapTests(unittest.TestCase):
             encoding="utf-8",
         )
         (root / "helper.js").write_text(
-            'export function helper(a) { return a * 2; }\n', encoding="utf-8"
+            "export function helper(a) { return a * 2; }\n", encoding="utf-8"
         )
         (root / "engine.py").write_text(
             '"""Engine."""\n'
@@ -93,7 +93,9 @@ class SourceMapTests(unittest.TestCase):
             report = build_source_map(root)
             self.assertIn("helper", report["ambiguous_callees"])
             targets = {
-                edge["target"] for edge in report["edges"] if edge["relation"] == "calls"
+                edge["target"]
+                for edge in report["edges"]
+                if edge["relation"] == "calls"
             }
             self.assertFalse(any("helper" in target for target in targets))
 
@@ -121,7 +123,9 @@ class SourceMapTests(unittest.TestCase):
     def test_records_unreadable_files_instead_of_failing(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / "broken.js").write_text('const a = "unterminated\n', encoding="utf-8")
+            (root / "broken.js").write_text(
+                'const a = "unterminated\n', encoding="utf-8"
+            )
             (root / "ok.js").write_text("function good() {}\n", encoding="utf-8")
             report = build_source_map(root)
             self.assertEqual(report["summary"]["file_count"], 1)
@@ -141,7 +145,11 @@ class SourceMapTests(unittest.TestCase):
             report = build_source_map(root)
             self.assertIn("other", report["unresolved_callees"])
             self.assertIn("dupe", report["ambiguous_callees"])
-            targets = {edge["target"] for edge in report["edges"] if edge["relation"] == "calls"}
+            targets = {
+                edge["target"]
+                for edge in report["edges"]
+                if edge["relation"] == "calls"
+            }
             self.assertFalse(any("dupe" in target for target in targets))
 
     def test_skips_unsupported_extensions_and_hidden_directories(self) -> None:
@@ -150,7 +158,9 @@ class SourceMapTests(unittest.TestCase):
             (root / "a.js").write_text("function a() {}\n", encoding="utf-8")
             (root / "readme.md").write_text("# hi\n", encoding="utf-8")
             (root / "node_modules").mkdir()
-            (root / "node_modules" / "x.js").write_text("function x() {}\n", encoding="utf-8")
+            (root / "node_modules" / "x.js").write_text(
+                "function x() {}\n", encoding="utf-8"
+            )
             (root / ".git").mkdir()
             (root / ".git" / "y.js").write_text("function y() {}\n", encoding="utf-8")
             report = build_source_map(root)
@@ -272,7 +282,9 @@ class SourceMapRenderingTests(unittest.TestCase):
                 encoding="utf-8",
             )
             text = to_text(build_source_map(root))
-            declaration_lines = [line for line in text.splitlines() if "function" in line]
+            declaration_lines = [
+                line for line in text.splitlines() if "function" in line
+            ]
             self.assertEqual(len(declaration_lines), 1)
 
     def test_mermaid_output_is_stable_and_labels_nodes(self) -> None:
@@ -344,7 +356,9 @@ class SourceMapCliTests(unittest.TestCase):
             for name, (expected, body) in samples.items():
                 path = root / name
                 path.write_text(body, encoding="utf-8")
-                code, out, err = self.run_cli(["analyze", str(path), "--format", "text"])
+                code, out, err = self.run_cli(
+                    ["analyze", str(path), "--format", "text"]
+                )
                 self.assertEqual(code, 0, err)
                 self.assertIn(f"{expected} structure", out)
 

@@ -109,16 +109,19 @@ def test_city_name_defaults_to_maya_and_can_be_overridden(tmp_path: Path) -> Non
     assert build_city(tmp_path, name="Elsewhere").project == tmp_path.name
 
 
-def test_every_city_render_is_titled_with_the_city_name(tmp_path: Path) -> None:
+def test_every_city_render_is_titled_with_the_city_name_and_environment(
+    tmp_path: Path,
+) -> None:
     _write(tmp_path, "board.kos", PROGRAM_WITH_SWARM)
     city = build_city(tmp_path, name="Elsewhere")
     isometric = render_city_isometric(city)
-    assert '<title id="city-title">Elsewhere agent city at night</title>' in isometric
-    assert "Elsewhere agent city" in isometric
+    assert '<title id="city-title">Elsewhere metropolitan AI world</title>' in isometric
+    assert 'data-environment="metropolitan"' in isometric
+    assert "Elsewhere agent world" in isometric
     assert "Elsewhere —" in render_cityscape_svg(city)
     page = render_city_live(city)
-    assert "<title>Elsewhere live city</title>" in page
-    assert "<h1>Elsewhere &#183; live city</h1>" in page
+    assert "<title>Elsewhere live metropolitan world</title>" in page
+    assert "<h1>Elsewhere &#183; metropolitan world</h1>" in page
     assert city.to_text().startswith("Elsewhere, an agent city for ")
     assert city.to_dict()["name"] == "Elsewhere"
 
@@ -140,9 +143,7 @@ def test_prohibitions_are_carried_into_the_manifest(tmp_path: Path) -> None:
     city = build_city(tmp_path)
     assert city.resident("researcher").cannot == ("arbitrary_shell", "write_files")
     agent = next(
-        node
-        for node in city.to_manifest()["nodes"]
-        if node["id"] == "agent.researcher"
+        node for node in city.to_manifest()["nodes"] if node["id"] == "agent.researcher"
     )
     assert agent["cannot"] == ["arbitrary_shell", "write_files"]
     assert agent["can"] == ["read_docs"]
@@ -192,7 +193,9 @@ def test_districts_and_approvals_become_nodes(tmp_path: Path) -> None:
     # The only swarm requires approval, so it gets an approval node.
     assert kinds.count("approval") == 1
     assert kinds.count("agent") == 2
-    edges = {(edge["source"], edge["target"], edge["kind"]) for edge in manifest["edges"]}
+    edges = {
+        (edge["source"], edge["target"], edge["kind"]) for edge in manifest["edges"]
+    }
     assert ("swarm.Board", "agent.researcher", "contains") in edges
     assert ("swarm.Board", "approval.Board", "requires_approval") in edges
 
@@ -230,9 +233,9 @@ def test_programs_sharing_a_basename_do_not_overwrite_each_other(
     (tmp_path / "b").mkdir()
     (tmp_path / "a" / "research.kos").write_text(RESEARCH_LIKE, encoding="utf-8")
     (tmp_path / "b" / "research.kos").write_text(
-        RESEARCH_LIKE.replace("Board", "Board2").replace(
-            "researcher", "second_researcher"
-        ).replace("editor", "second_editor"),
+        RESEARCH_LIKE.replace("Board", "Board2")
+        .replace("researcher", "second_researcher")
+        .replace("editor", "second_editor"),
         encoding="utf-8",
     )
     city = build_city(tmp_path)
@@ -255,8 +258,12 @@ def test_manifest_places_nodes_without_overlap(tmp_path: Path) -> None:
     _write(tmp_path, "board.kos", PROGRAM_WITH_SWARM)
     nodes = build_city(tmp_path).to_manifest()["nodes"]
     boxes = [
-        (node["position"]["x"], node["position"]["y"],
-         node["size"]["width"], node["size"]["height"])
+        (
+            node["position"]["x"],
+            node["position"]["y"],
+            node["size"]["width"],
+            node["size"]["height"],
+        )
         for node in nodes
     ]
     for index, (x, y, w, h) in enumerate(boxes):
@@ -271,9 +278,7 @@ def test_agents_without_a_workflow_have_no_road(tmp_path: Path) -> None:
     city = build_city(tmp_path)
     plaza = next(d for d in city.districts if d.name == PLAZA)
     assert plaza.pipeline == ()
-    assert not [
-        edge for edge in city.to_manifest()["edges"] if edge["kind"] == "calls"
-    ]
+    assert not [edge for edge in city.to_manifest()["edges"] if edge["kind"] == "calls"]
 
 
 def test_walls_are_drawn_for_every_prohibited_agent(tmp_path: Path) -> None:
@@ -337,7 +342,7 @@ def test_a_large_population_renders(tmp_path: Path) -> None:
     for index in range(12):
         (tmp_path / f"dept{index}.kos").write_text(
             f"record Note {{ text: Text }}\n"
-            f'model m {{ input: Note output: Note }}\n'
+            f"model m {{ input: Note output: Note }}\n"
             f'tool t{index} {{ source mcp "s" operation: "o" access: observe output: Note }}\n'
             f"agent a{index} {{ model: m can: [t{index}] cannot: [arbitrary_shell] max_steps: 3 }}\n",
             encoding="utf-8",

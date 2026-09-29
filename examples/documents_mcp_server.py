@@ -1,18 +1,21 @@
 """MCP stdio server exposing a bounded document search tool.
 
 Serves the ``search`` operation for the ``documents`` source: a read-only
-keyword search over a fixed documents directory. Used by the Kosika agent
-CLI example (examples/document_assistant.kos).
+keyword search over a bounded documents directory. It defaults to the local
+``docs`` fixture and accepts ``KOSIKA_DOCUMENTS_DIR`` for another host-granted
+fixture directory.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
-
-DOCUMENTS_DIR = Path(__file__).parent / "docs"
+DOCUMENTS_DIR = Path(
+    os.environ.get("KOSIKA_DOCUMENTS_DIR", str(Path(__file__).parent / "docs"))
+)
 MAX_HITS = 8
 MAX_EXCERPT_CHARS = 200
 
@@ -61,7 +64,10 @@ def main() -> None:
                     "result": {
                         "protocolVersion": request["params"].get("protocolVersion"),
                         "capabilities": {"tools": {}},
-                        "serverInfo": {"name": "kosika-documents-mcp", "version": "0.1.0"},
+                        "serverInfo": {
+                            "name": "kosika-documents-mcp",
+                            "version": "0.1.0",
+                        },
                     },
                 }
             )

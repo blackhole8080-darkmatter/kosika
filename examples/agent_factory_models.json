@@ -1,0 +1,11 @@
+{
+  "architect": [
+    {
+      "name": "kosika_reviewer",
+      "model": "reviewer_model",
+      "can": ["read_diff", "run_tests"],
+      "cannot": ["write_files", "arbitrary_shell", "grant_capabilities"],
+      "max_steps": 4
+    }
+  ]
+}

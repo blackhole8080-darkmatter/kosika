@@ -125,10 +125,14 @@ class AgentLoopTests(unittest.TestCase):
             self.assertEqual(first.content, "first result")
             self.assertEqual(resumed.content, "first result")
             self.assertEqual(resumed_provider.requests, [])
-            with self.assertRaisesRegex(AgentLoopError, "different plan or host binding"):
+            with self.assertRaisesRegex(
+                AgentLoopError, "different plan or host binding"
+            ):
                 AgentLoop(
                     self.program(),
-                    ScriptedModelProvider([ModelResponse(content="must not be called")]),
+                    ScriptedModelProvider(
+                        [ModelResponse(content="must not be called")]
+                    ),
                     lambda tool, arguments: {},
                 ).run(
                     "monitor",
@@ -244,7 +248,10 @@ class AgentLoopTests(unittest.TestCase):
             self.assertEqual(len(calls), 2)
             self.assertEqual(len(resumed_provider.requests), 1)
             self.assertEqual(
-                [message.role for message in resumed_provider.requests[0].messages[-2:]],
+                [
+                    message.role
+                    for message in resumed_provider.requests[0].messages[-2:]
+                ],
                 ["tool", "tool"],
             )
 
@@ -278,7 +285,9 @@ class AgentLoopTests(unittest.TestCase):
             resumed_provider = ScriptedModelProvider(
                 [ModelResponse(content="must not be called")]
             )
-            with self.assertRaisesRegex(AgentLoopError, "requires reconciliation") as caught:
+            with self.assertRaisesRegex(
+                AgentLoopError, "requires reconciliation"
+            ) as caught:
                 AgentLoop(
                     self.program(), resumed_provider, lambda tool, arguments: {}
                 ).run(
@@ -335,7 +344,6 @@ class AgentLoopTests(unittest.TestCase):
             provider.requests[0].tools[0].input_schema["required"], ["mount"]
         )
 
-
     def test_model_declaration_configures_requests_and_agent_limits(self) -> None:
         program = parse(
             """
@@ -378,7 +386,9 @@ class AgentLoopTests(unittest.TestCase):
         self.assertEqual(request.presence_penalty, 0.1)
         self.assertEqual(request.stop, ("DONE", "END"))
 
-    def test_declared_agent_instructions_are_system_context_and_hash_input(self) -> None:
+    def test_declared_agent_instructions_are_system_context_and_hash_input(
+        self,
+    ) -> None:
         source = """
         record Request { prompt: Text }
         record Result { ok: Bool }
@@ -400,7 +410,10 @@ class AgentLoopTests(unittest.TestCase):
         )
 
         self.assertEqual(result.content, "Done.")
-        self.assertEqual(provider.requests[0].messages[0].content, "Be concise and cite tool results.")
+        self.assertEqual(
+            provider.requests[0].messages[0].content,
+            "Be concise and cite tool results.",
+        )
         self.assertEqual(
             provider.requests[0].messages[1].content,
             "Return the final answer plainly.",
@@ -417,7 +430,6 @@ class AgentLoopTests(unittest.TestCase):
             ).plan_hash_for("instructed", "Plan the work."),
         )
 
-
     def test_structured_agent_input_and_output_are_schema_checked(self) -> None:
         program = parse(
             """
@@ -433,7 +445,9 @@ class AgentLoopTests(unittest.TestCase):
             input_value={"prompt": "Plan"},
         )
         self.assertEqual(result.structured_output, {"ok": True})
-        self.assertEqual(provider.requests[0].messages[-1].content, '{"prompt": "Plan"}')
+        self.assertEqual(
+            provider.requests[0].messages[-1].content, '{"prompt": "Plan"}'
+        )
         with tempfile.TemporaryDirectory() as directory:
             trace = Path(directory) / "structured-agent.jsonl"
             traced = AgentLoop(
@@ -461,7 +475,6 @@ class AgentLoopTests(unittest.TestCase):
                 ScriptedModelProvider([ModelResponse(content='{"wrong": true}')]),
                 lambda tool, args: {},
             ).run("bounded", input_value={"prompt": "Plan"})
-
 
     def test_agent_deadline_and_cancellation_are_cooperative(self) -> None:
         source = """
@@ -543,9 +556,7 @@ class AgentLoopTests(unittest.TestCase):
 
         provider = ScriptedModelProvider(
             [
-                ModelResponse(
-                    tool_calls=(ModelToolCall("one", "inspect", {}),)
-                ),
+                ModelResponse(tool_calls=(ModelToolCall("one", "inspect", {}),)),
                 ModelResponse(content="Done."),
             ]
         )
@@ -855,12 +866,14 @@ class OpenAICompatibleProviderTests(unittest.TestCase):
         self.assertEqual(captured["payload"]["tools"][0]["function"]["name"], "inspect")
 
         for invalid in (0, True, -1):
-            with self.subTest(max_output_tokens=invalid), self.assertRaisesRegex(
-                ModelProviderError, "max_output_tokens"
+            with (
+                self.subTest(max_output_tokens=invalid),
+                self.assertRaisesRegex(ModelProviderError, "max_output_tokens"),
             ):
                 provider.complete(
                     ModelRequest(
-                        messages=(), max_output_tokens=invalid  # type: ignore[arg-type]
+                        messages=(),
+                        max_output_tokens=invalid,  # type: ignore[arg-type]
                     )
                 )
 
@@ -876,7 +889,10 @@ class OpenAICompatibleProviderTests(unittest.TestCase):
             ({"choices": []}, "did not contain choices"),
             ({"choices": [{}]}, "did not contain a message"),
             ({"choices": [{"message": {"content": 1}}]}, "content must be text"),
-            ({"choices": [{"message": {"tool_calls": {}}}]}, "tool_calls must be a list"),
+            (
+                {"choices": [{"message": {"tool_calls": {}}}]},
+                "tool_calls must be a list",
+            ),
             ({"choices": [{"message": {"tool_calls": [1]}}]}, "invalid tool call"),
             (
                 {"choices": [{"message": {"tool_calls": [{"function": {}}]}}]},
@@ -947,8 +963,9 @@ class OpenAICompatibleProviderTests(unittest.TestCase):
             ),
         )
         for payload, message in invalid_payloads:
-            with self.subTest(message=message), self.assertRaisesRegex(
-                ModelProviderError, message
+            with (
+                self.subTest(message=message),
+                self.assertRaisesRegex(ModelProviderError, message),
             ):
                 OpenAICompatibleProvider._parse_response(payload)
 

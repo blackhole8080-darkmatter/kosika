@@ -14,9 +14,15 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from kosika.agent import AgentLoopError
 from kosika.city import build_city
-from kosika.city_live import _drive, _handler, render_city_live
+from kosika.city_live import _drive, _handler, capture_trace, render_city_live
+from kosika.durable import ExecutionSession
+from kosika.execution import ExecutionLimits
 from kosika.metropolis import render_city_isometric
+from kosika.model import ModelResponse, ModelToolCall
+from kosika.parser import parse
+from kosika.runtime import run
 from kosika.synapse_bridge import normalize_event, normalize_events
 
 ROOT = Path(__file__).parents[1]
@@ -59,6 +65,60 @@ workflow main() -> Draft {
   step write {
     let made: Draft = execute writer.publish()
     return made
+  }
+}
+"""
+
+
+PROGRAM_PARAM = """
+record Note { text: Text }
+record Report { text: Text }
+tool read_notes {
+  source mcp "local_mock"
+  operation: "read"
+  access: observe
+  output: Note
+}
+tool write_notes {
+  source mcp "local_mock"
+  operation: "write"
+  access: observe
+  output: Report
+}
+agent archivist {
+  can: [read_notes, write_notes]
+  max_steps: 3
+}
+workflow main(note: Note) -> Report {
+  step first {
+    let found: Note = execute archivist.read_notes()
+    return found
+  }
+  step second {
+    let made: Report = execute archivist.write_notes()
+    return made
+  }
+}
+"""
+
+PROGRAM_ASK_EXECUTE = """
+record Draft { text: Text }
+model judge { input: Draft output: Draft }
+tool publish {
+  source mcp "local_mock"
+  operation: "write"
+  access: execute
+  output: Draft
+}
+agent writer {
+  model: judge
+  can: [publish]
+  max_steps: 2
+}
+workflow main() -> Draft {
+  step consult {
+    let advice: Draft = ask writer(text: "review")
+    return advice
   }
 }
 """
@@ -108,6 +168,17 @@ class LivePageTests(unittest.TestCase):
         assert drawing is not None
         ET.fromstring(drawing.group(1))
 
+    def test_lowpoly_page_embeds_three_scene_and_svg_fallback(self) -> None:
+        page = render_city_live(self.city(), render_style="isometric_lowpoly")
+        self.assertIn('id="three-world"', page)
+        self.assertIn("three.module.js", page)
+        self.assertIn('id="svg-fallback"', page)
+        block = re.search(r'id="scene-data">(.*?)</script>', page, re.S)
+        assert block is not None
+        scene = json.loads(block.group(1))
+        self.assertGreaterEqual(len(scene["buildings"]), 1)
+        self.assertEqual(len(scene["agents"]), len(self.city().residents))
+
     def test_page_roster_addresses_every_agent(self) -> None:
         city = self.city()
         page = render_city_live(city)
@@ -129,6 +200,11 @@ class LivePageTests(unittest.TestCase):
         page = render_city_live(city)
         self.assertIn(f"{len(city.residents)} agents", page)
         self.assertIn(f"{len(city.districts)} districts", page)
+
+    def test_page_exposes_selected_environment(self) -> None:
+        page = render_city_live(self.city(), environment="forest")
+        self.assertIn('data-environment="forest"', page)
+        self.assertIn("live forest world", page)
 
 
 class MotorwayTests(unittest.TestCase):
@@ -153,9 +229,7 @@ class MotorwayTests(unittest.TestCase):
 
     def test_roads_render_under_the_districts(self) -> None:
         drawing = render_city_isometric(build_city(ROOT))
-        self.assertLess(
-            drawing.index('data-road="ring"'), drawing.index("data-grand=")
-        )
+        self.assertLess(drawing.index('data-road="ring"'), drawing.index("data-grand="))
 
 
 class EventIdentityTests(unittest.TestCase):
@@ -183,7 +257,9 @@ class EventIdentityTests(unittest.TestCase):
         self.assertNotIn("tool", event.get("payload", {}))
 
     def test_sequences_stay_contiguous_across_batches(self) -> None:
-        first = normalize_events([{"event": "step_start", "step": "a"}], sequence_start=1)
+        first = normalize_events(
+            [{"event": "step_start", "step": "a"}], sequence_start=1
+        )
         second = normalize_events(
             [{"event": "step_start", "step": "b"}], sequence_start=len(first) + 1
         )
@@ -240,9 +316,7 @@ class DriveTests(unittest.TestCase):
 
         self.assertIn("writer", held)
         self.assertNotIn("writer", lit)
-        pending = [
-            item for item in seen if item["type"] == "kosika_approval_pending"
-        ]
+        pending = [item for item in seen if item["type"] == "kosika_approval_pending"]
         self.assertTrue(pending)
         self.assertEqual(pending[0]["payload"]["agent"], "writer")
 
@@ -360,6 +434,246 @@ class SwarmExampleTests(unittest.TestCase):
             )
             events, lit, _ = DriveTests("collect").collect(root)
         self.assertIn("researcher", lit)
+
+
+class TraceCaptureTests(unittest.TestCase):
+    """The city must be auditable on disk, not only live in a browser."""
+
+    def capture(self, source: str) -> tuple[dict, dict[str, str]]:
+        """Capture, then snapshot the files while the temp tree still exists."""
+
+        with TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "program.kos").write_text(source, encoding="utf-8")
+            out = root / "traces"
+            report = capture_trace(root, out)
+            written = {
+                path.name: path.read_text(encoding="utf-8")
+                for path in sorted(out.glob("*.jsonl"))
+            }
+        return report, written
+
+    @staticmethod
+    def strip_volatile(events: list[dict]) -> list[dict]:
+        """Drop wall-clock fields so determinism means *work*, not byte identity.
+
+        A trace is an execution record, so it legitimately carries a real
+        timestamp and a real elapsed time. Those differ every run; the work
+        and the results must not.
+        """
+
+        def clean(value):
+            if isinstance(value, dict):
+                return {
+                    key: clean(item)
+                    for key, item in value.items()
+                    if key not in {"timestamp", "elapsed_seconds"}
+                }
+            if isinstance(value, list):
+                return [clean(item) for item in value]
+            return value
+
+        return [clean(event) for event in events]
+
+    @staticmethod
+    def drive_for(report: dict, tool: str) -> dict:
+        matches = [entry for entry in report["entries"] if entry["tool"] == tool]
+        assert len(matches) == 1, f"expected one drive for {tool}, got {matches}"
+        return matches[0]
+
+    def test_observed_tool_run_is_written_and_replays(self) -> None:
+        report, written = self.capture(PROGRAM_OBSERVE)
+        entry = self.drive_for(report, "read_notes")
+        self.assertTrue(entry["replayable"], entry.get("replay_error"))
+        self.assertIn(f"{entry['workflow']}.jsonl", written)
+        events = [
+            json.loads(line)
+            for line in written[f"{entry['workflow']}.jsonl"].splitlines()
+        ]
+        self.assertEqual(events[0]["event"], "run_start")
+        self.assertEqual(events[-1]["event"], "run_complete")
+        self.assertEqual(
+            [event["event"] for event in events],
+            [
+                "run_start",
+                "step_start",
+                "tool_call",
+                "tool_return",
+                "step_complete",
+                "run_complete",
+            ],
+        )
+
+    def test_replayed_result_identifies_the_tool(self) -> None:
+        report, _ = self.capture(PROGRAM_OBSERVE)
+        entry = self.drive_for(report, "read_notes")
+        self.assertIn("read_notes", json.dumps(entry["replayed"]))
+
+    def test_approval_gated_run_is_recorded_not_faked(self) -> None:
+        report, _ = self.capture(PROGRAM_EXECUTE)
+        entry = self.drive_for(report, "publish")
+        self.assertTrue(entry["approval_pending"])
+        self.assertFalse(entry["replayable"])
+        self.assertIn("completed run", entry["replay_error"])
+
+    def test_trace_names_the_resident_and_tool(self) -> None:
+        report, _ = self.capture(PROGRAM_OBSERVE)
+        entry = self.drive_for(report, "read_notes")
+        self.assertEqual(entry["agent"], "archivist")
+        self.assertEqual(entry["tool"], "read_notes")
+
+    def test_capture_is_deterministic(self) -> None:
+        left_report, left = self.capture(PROGRAM_OBSERVE)
+        right_report, right = self.capture(PROGRAM_OBSERVE)
+        self.assertEqual(
+            [entry["replayed"] for entry in left_report["entries"]],
+            [entry["replayed"] for entry in right_report["entries"]],
+        )
+        self.assertEqual(sorted(left), sorted(right))
+        for name in sorted(left):
+            with self.subTest(trace=name):
+                self.assertEqual(
+                    self.strip_volatile(
+                        [json.loads(line) for line in left[name].splitlines()]
+                    ),
+                    self.strip_volatile(
+                        [json.loads(line) for line in right[name].splitlines()]
+                    ),
+                )
+
+    def test_shipped_city_runs_have_no_silent_failures(self) -> None:
+        with TemporaryDirectory() as raw:
+            out = Path(raw) / "traces"
+            report = capture_trace(ROOT / "examples" / "city", out)
+        self.assertGreater(report["runs"], 0)
+        for entry in report["entries"]:
+            with self.subTest(workflow=entry["workflow"]):
+                self.assertTrue(
+                    entry.get("replayable") or entry["approval_pending"],
+                    f"{entry['workflow']} neither replayed nor held for approval: "
+                    f"{entry.get('replay_error')}",
+                )
+        self.assertEqual(
+            report["replayable"] + report["awaiting_approval"], report["runs"]
+        )
+
+    def test_parameterised_workflow_runs_with_host_inputs(self) -> None:
+        report, written = self.capture(PROGRAM_PARAM)
+        authored = [entry for entry in report["entries"] if entry["authored"]]
+        self.assertEqual(len(authored), 1)
+        entry = authored[0]
+        self.assertEqual(entry["workflow"], "main")
+        self.assertTrue(entry["replayable"], entry.get("replay_error"))
+        events = [json.loads(line) for line in written["main.jsonl"].splitlines()]
+        # The authored multi-step workflow ran end to end, in order.
+        self.assertEqual(
+            [event["event"] for event in events],
+            [
+                "run_start",
+                "step_start",
+                "tool_call",
+                "tool_return",
+                "step_complete",
+                "step_start",
+                "tool_call",
+                "tool_return",
+                "step_complete",
+                "run_complete",
+            ],
+        )
+        self.assertEqual(
+            [event["step"] for event in events if event["event"] == "step_start"],
+            ["first", "second"],
+        )
+
+    def test_ask_reaching_execute_tool_pauses_for_approval(self) -> None:
+        """The gate this city fixture cannot reach: a model that asks for a tool.
+
+        The city fixture returns canned model text with no tool calls, so the
+        ask path never reaches an execute tool there. This drives ``run``
+        directly with a provider that does request one, which is the case the
+        ``ask`` gate exists for.
+        """
+
+        program = parse(PROGRAM_ASK_EXECUTE)
+        calls = [ModelResponse(tool_calls=(ModelToolCall("0", "publish", {}),))]
+
+        class _Provider:
+            def complete(self, request: object) -> ModelResponse:
+                return calls.pop(0) if calls else ModelResponse(content="")
+
+        limits = ExecutionLimits(max_steps=8, max_tool_calls=8, deadline_seconds=10.0)
+        with TemporaryDirectory() as raw:
+            session = ExecutionSession(Path(raw) / "j.jsonl", binding_id="kosika-test")
+            events: list[dict] = []
+            # The agent loop raises its own approval error before the tool
+            # callback runs; the runtime records that as run_paused.
+            with self.assertRaises(AgentLoopError):
+                run(
+                    program,
+                    "main",
+                    None,
+                    inputs={},
+                    session=session,
+                    model_bindings={"judge": _Provider()},
+                    tool_bindings={"publish": lambda tool, args: {"text": "ok"}},
+                    limits=limits,
+                    _events_out=events,
+                )
+        kinds = [event.get("event") for event in events]
+        self.assertEqual(kinds[0], "run_start")
+        self.assertIn("agent_call", kinds)
+        # It got as far as asking, then stopped for a human rather than
+        # silently running an execute tool.
+        self.assertEqual(kinds[-1], "run_paused")
+        self.assertNotIn("tool_call", kinds)
+        self.assertNotIn("run_complete", kinds)
+
+    def test_ask_without_session_refuses_before_any_tool_call(self) -> None:
+        program = parse(PROGRAM_ASK_EXECUTE)
+        limits = ExecutionLimits(max_steps=8, max_tool_calls=8, deadline_seconds=10.0)
+        with self.assertRaisesRegex(PermissionError, "verified approval record"):
+            run(
+                program,
+                "main",
+                None,
+                inputs={},
+                model_bindings={"judge": _Provider_stub()},
+                tool_bindings={"publish": lambda tool, args: {"text": "ok"}},
+                limits=limits,
+            )
+
+    def test_shipped_city_workflows_are_actually_executed(self) -> None:
+        with TemporaryDirectory() as raw:
+            report = capture_trace(ROOT / "examples" / "city", Path(raw) / "traces")
+        authored = {
+            entry["workflow"] for entry in report["entries"] if entry["authored"]
+        }
+        # Every department's own workflow now runs, not just generated drives.
+        self.assertLessEqual(
+            {"evaluate", "review_change", "teach", "narrate", "review", "run"},
+            authored,
+        )
+        for entry in report["entries"]:
+            if entry["authored"] and entry["workflow"] in {
+                "evaluate",
+                "review_change",
+                "teach",
+                "narrate",
+                "review",
+                "run",
+            }:
+                with self.subTest(workflow=entry["workflow"]):
+                    self.assertTrue(entry["replayable"], entry.get("replay_error"))
+                    self.assertTrue(
+                        str(entry["source"]).endswith(".kos"),
+                        "an authored run must name the .kos it came from",
+                    )
+
+
+class _Provider_stub:
+    def complete(self, request: object) -> ModelResponse:
+        return ModelResponse(content="")
 
 
 if __name__ == "__main__":

@@ -15,10 +15,11 @@ import secrets
 import tempfile
 import threading
 import time
+import zlib
 from html import escape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterator, Mapping
 
 from .ast import (
     AgentCall,
@@ -34,6 +35,8 @@ from .ast import (
 from .city import City, build_city
 from .metropolis import render_city_isometric
 from .sse import EventStream, ReplayGapError
+from .three_world import build_scene_data, render_three_world
+from .world import WorldManifest
 
 _STYLE = """
 :root {
@@ -51,6 +54,12 @@ body {
 #stage.dragging { cursor: grabbing; }
 #world { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
 #world svg { display: block; }
+#three-world {
+  display: none; position: relative; width: 2128px; height: 1224px;
+  background: #08141A;
+}
+#three-world.ready { display: block; }
+#three-world canvas { display: block; width: 2128px; height: 1224px; }
 
 header {
   position: absolute; inset: 0 0 auto 0; padding: 14px 18px; z-index: 5;
@@ -228,7 +237,7 @@ function glow(agent) {
   }, 2600));
 }
 function wake(agent) {
-  if (!agent) return;
+  window.kosikaThree?.wake(agent);
   const group = document.querySelector('g[data-agent="' + CSS.escape(agent) + '"]');
   if (!group) return;
   group.classList.add("active");
@@ -246,7 +255,7 @@ function recount() {
   $("working").textContent = lit;
 }
 function gate(agent) {
-  if (!agent) return;
+  window.kosikaThree?.gate(agent);
   const group = document.querySelector('g[data-agent="' + CSS.escape(agent) + '"]');
   if (!group) return;
   group.classList.add("pending");
@@ -404,14 +413,44 @@ def _roster(city: City) -> dict[str, str]:
     }
 
 
-def render_city_live(city: City) -> str:
-    """Return a self-contained page that animates the city from real events.
+def render_city_live(
+    city: City,
+    *,
+    environment: str = "metropolitan",
+    world_name: str | None = None,
+    world_labels: Mapping[str, str] | None = None,
+    world_kinds: Mapping[str, str] | None = None,
+    world_buildings: Mapping[str, str] | None = None,
+    world_camera: str = "isometric",
+    render_style: str = "city",
+) -> str:
+    """Return a self-contained live page for a named world environment.
 
     The page carries no timer of its own: a building only lights up when the
     workbench stream delivers an event naming that agent.
     """
 
-    drawing = render_city_isometric(city)
+    title = world_name or city.name
+    drawing = render_city_isometric(
+        city,
+        environment=environment,
+        world_name=title,
+        world_labels=world_labels,
+        world_kinds=world_kinds,
+        world_buildings=world_buildings,
+        world_camera=world_camera,
+        render_style=render_style,
+    )
+    if render_style == "isometric_lowpoly":
+        scene_data = build_scene_data(
+            city,
+            world_labels=world_labels,
+            world_kinds=world_kinds,
+            world_buildings=world_buildings,
+        )
+        drawing = (
+            render_three_world(scene_data) + f'<div id="svg-fallback">{drawing}</div>'
+        )
     roster = json.dumps(_roster(city), sort_keys=True).replace("<", "\\u003c")
     districts = ", ".join(district.name for district in city.districts)
     return f"""<!DOCTYPE html>
@@ -420,16 +459,16 @@ def render_city_live(city: City) -> str:
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="color-scheme" content="dark" />
-<meta name="description" content="A live isometric night view of the Kosika agent city, driven by real runtime events." />
+<meta name="description" content="A live {escape(environment)} view of the Kosika AI world, driven by real runtime events." />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23070A0F'/%3E%3Crect x='7' y='5' width='7' height='22' fill='%2322D3EE'/%3E%3Crect x='17' y='13' width='7' height='14' fill='%23F472B6'/%3E%3C/svg%3E" />
-<title>{escape(city.name)} live city</title>
+<title>{escape(title)} live {escape(environment)} world</title>
 <style>{_STYLE}</style>
 </head>
 <body>
 <div id="shell">
   <section id="stage">
     <header>
-      <h1>{escape(city.name)} &#183; live city</h1>
+      <h1>{escape(title)} &#183; {escape(environment)} world</h1>
       <span id="stats">{len(city.residents)} agents &#183; {len(city.districts)} districts
         &#183; <b id="working">0</b> working</span>
       <span id="link"><span id="dot" role="status" aria-live="polite"></span><span id="linktext">connecting</span></span>
@@ -469,17 +508,21 @@ class _Fixture:
     """
 
     def __init__(self, program: Program) -> None:
-        self.records: dict[str, RecordDecl] = {record.name: record for record in program.records}
+        self.records: dict[str, RecordDecl] = {
+            record.name: record for record in program.records
+        }
 
-    def value(self, type_name: str, depth: int = 0) -> Any:
+    def value(
+        self, type_name: str, depth: int = 0, seed: str = "", field: str = ""
+    ) -> Any:
         if depth > 6:
             return None
         if type_name.endswith("[]") or type_name.startswith("Array<"):
             return []
         if type_name in ("Text", "String"):
-            return ""
+            return self._leaf(seed, field, "text")
         if type_name in ("Number", "Int", "Float"):
-            return 0
+            return self._leaf_number(seed, field)
         if type_name == "Bool":
             return False
         if type_name == "Null":
@@ -487,7 +530,29 @@ class _Fixture:
         record = self.records.get(type_name)
         if record is None:
             return {}
-        return {field.name: self.value(field.type_name, depth + 1) for field in record.fields}
+        return {
+            member.name: self.value(member.type_name, depth + 1, seed, member.name)
+            for member in record.fields
+        }
+
+    @staticmethod
+    def _leaf(seed: str, field: str, kind: str) -> str:
+        """A stable, human-legible leaf so a replayed trace shows *what* ran.
+
+        Purely derived from the declaration names, so two runs of the same city
+        produce byte-identical traces. Zero-valued fields would satisfy the
+        schema but prove nothing about which resident did the work.
+        """
+
+        parts = [part for part in (seed, field) if part]
+        return "-".join(parts) if parts else kind
+
+    @staticmethod
+    def _leaf_number(seed: str, field: str) -> int:
+        parts = "".join(part for part in (seed, field) if part)
+        if not parts:
+            return 0
+        return zlib.crc32(parts.encode("utf-8")) % 1000
 
     def expr(self, type_name: str, depth: int = 0) -> Any:
         """Build a source expression that evaluates to a valid ``type_name``."""
@@ -510,16 +575,21 @@ class _Fixture:
         if record is None:
             return RecordExpr(())
         return RecordExpr(
-            tuple((field.name, self.expr(field.type_name, depth + 1)) for field in record.fields)
+            tuple(
+                (field.name, self.expr(field.type_name, depth + 1))
+                for field in record.fields
+            )
         )
 
     def tool(self, declaration: ToolDecl, arguments: dict[str, Any]) -> Any:
-        return self.value(declaration.output)
+        return self.value(declaration.output, seed=declaration.name)
 
     def provider(self, declaration: ModelDecl) -> Any:
         from .model import ModelResponse
 
-        body = json.dumps(self.value(declaration.output), sort_keys=True)
+        body = json.dumps(
+            self.value(declaration.output, seed=declaration.name), sort_keys=True
+        )
 
         class _Provider:
             def complete(self, request: Any) -> Any:
@@ -528,7 +598,9 @@ class _Fixture:
         return _Provider()
 
 
-def _harness(program: Program, fixture: "_Fixture") -> list[tuple[Program, str, str, str]]:
+def _harness(
+    program: Program, fixture: "_Fixture"
+) -> list[tuple[Program, str, str, str]]:
     """Build one isolated program per agent capability so every building can run.
 
     Each generated step calls a tool the agent already declares in ``can``, so
@@ -549,7 +621,10 @@ def _harness(program: Program, fixture: "_Fixture") -> list[tuple[Program, str, 
                 continue
             source = records.get(tool.input) if tool.input else None
             arguments = (
-                tuple((field.name, fixture.expr(field.type_name)) for field in source.fields)
+                tuple(
+                    (field.name, fixture.expr(field.type_name))
+                    for field in source.fields
+                )
                 if source is not None
                 else ()
             )
@@ -587,7 +662,9 @@ def _harness(program: Program, fixture: "_Fixture") -> list[tuple[Program, str, 
             continue
         source = records.get(model.input)
         arguments = (
-            tuple((field.name, fixture.expr(field.type_name)) for field in source.fields)
+            tuple(
+                (field.name, fixture.expr(field.type_name)) for field in source.fields
+            )
             if source is not None
             else ()
         )
@@ -605,9 +682,7 @@ def _harness(program: Program, fixture: "_Fixture") -> list[tuple[Program, str, 
                     agents=list(program.agents),
                     models=list(program.models),
                     workflows=[
-                        WorkflowDecl(
-                            name=name, output_type=model.output, steps=(step,)
-                        )
+                        WorkflowDecl(name=name, output_type=model.output, steps=(step,))
                     ],
                 ),
                 name,
@@ -618,17 +693,25 @@ def _harness(program: Program, fixture: "_Fixture") -> list[tuple[Program, str, 
     return drives
 
 
-def _drive(root: Path, publish: Callable[[list[dict[str, Any]]], None], stop: threading.Event) -> None:
-    """Run every workflow under ``root`` and publish the resulting traces."""
+def _iter_runs(root: Path, stop: threading.Event) -> Iterator[dict[str, Any]]:
+    """Yield one real execution per resident capability, in a stable order.
+
+    This is the single source of truth for "what actually ran". Both the live
+    view and the trace capture consume it, so a trace on disk is by
+    construction the same work the city shows. Nothing here fabricates an
+    event: every yielded list is the raw ``_events_out`` of a real ``run``.
+    """
 
     from .durable import ApprovalPending, ExecutionSession
     from .execution import ExecutionLimits
     from .parser import parse
     from .runtime import run
 
-    limits = ExecutionLimits(max_steps=200, max_tool_calls=64, max_model_calls=32, deadline_seconds=20.0)
+    limits = ExecutionLimits(
+        max_steps=200, max_tool_calls=64, max_model_calls=32, deadline_seconds=20.0
+    )
     paths = sorted(path for path in root.rglob("*.kos") if ".git" not in path.parts)
-    originals: list[tuple[Program, _Fixture]] = []
+    originals: list[tuple[Program, _Fixture, Path]] = []
     drives: list[tuple[Program, str, str, str]] = []
     for path in paths:
         try:
@@ -636,11 +719,30 @@ def _drive(root: Path, publish: Callable[[list[dict[str, Any]]], None], stop: th
         except (OSError, ValueError):
             continue
         fixture = _Fixture(parsed)
-        originals.append((parsed, fixture))
+        originals.append((parsed, fixture, path))
         drives.extend(_harness(parsed, fixture))
     originals.sort(key=lambda item: not item[0].agents)
 
-    for program, fixture in originals:
+    def record(
+        name: str,
+        agent: str | None,
+        tool: str | None,
+        events: list[dict[str, Any]],
+        source: Path | None,
+    ) -> dict[str, Any]:
+        kinds = [event.get("event") for event in events]
+        return {
+            "workflow": name,
+            "agent": agent,
+            "tool": tool,
+            "source": source.name if source else None,
+            "authored": source is not None,
+            "events": events,
+            "completed": kinds[-1:] == ["run_complete"],
+            "approval_pending": "approval_pending" in kinds,
+        }
+
+    for program, fixture, source in originals:
         if stop.is_set():
             return
         model_bindings = {
@@ -648,23 +750,51 @@ def _drive(root: Path, publish: Callable[[list[dict[str, Any]]], None], stop: th
         }
         tool_bindings = {tool.name: fixture.tool for tool in program.tools}
         for workflow in program.workflows:
-            if stop.is_set() or workflow.parameters:
+            if stop.is_set():
                 continue
+            # A workflow that declares parameters is still a real workflow.
+            # ``run`` requires the inputs to match the declared parameters
+            # exactly, so the host supplies one deterministic fixture value per
+            # parameter. Skipping these was why the authored departmental
+            # workflows never ran.
+            inputs = {
+                parameter.name: fixture.value(parameter.type_name)
+                for parameter in workflow.parameters
+            }
             events: list[dict[str, Any]] = []
             try:
-                run(
-                    program,
-                    workflow.name,
-                    None,
-                    inputs={},
-                    model_bindings=model_bindings,
-                    tool_bindings=tool_bindings,
-                    limits=limits,
-                    _events_out=events,
+                # A session is what lets an approval-gated step pause for a
+                # human instead of hard-failing. The direct drives below do
+                # the same; without it every departmental workflow would die
+                # with a PermissionError rather than report its pause.
+                with tempfile.TemporaryDirectory(prefix="kosika-city-") as journal:
+                    session = ExecutionSession(
+                        Path(journal) / f"{workflow.name}.jsonl",
+                        binding_id="kosika-city",
+                    )
+                    run(
+                        program,
+                        workflow.name,
+                        None,
+                        inputs=inputs,
+                        session=session,
+                        model_bindings=model_bindings,
+                        tool_bindings=tool_bindings,
+                        limits=limits,
+                        _events_out=events,
+                    )
+            except ApprovalPending as exc:
+                request = getattr(exc, "request", None)
+                events.append(
+                    {
+                        "event": "approval_pending",
+                        "workflow": workflow.name,
+                        "tool": (request or {}).get("tool"),
+                    }
                 )
             except (RuntimeError, ValueError) as exc:
                 events.append({"event": "run_failed", "error": str(exc)[:240]})
-            publish(events)
+            yield record(workflow.name, None, None, events, source)
             time.sleep(0.2)
 
     for program, name, agent_name, tool_name in drives:
@@ -687,7 +817,9 @@ def _drive(root: Path, publish: Callable[[list[dict[str, Any]]], None], stop: th
                     None,
                     inputs={},
                     session=session,
-                    model_bindings={model.name: fixture.provider(model) for model in program.models},
+                    model_bindings={
+                        model.name: fixture.provider(model) for model in program.models
+                    },
                     tool_bindings={tool.name: fixture.tool for tool in program.tools},
                     limits=limits,
                     _events_out=raw,
@@ -703,8 +835,17 @@ def _drive(root: Path, publish: Callable[[list[dict[str, Any]]], None], stop: th
                 )
             except (RuntimeError, ValueError) as exc:
                 raw.append({"event": "run_failed", "error": str(exc)[:240]})
-        publish(raw)
+        yield record(name, agent_name, tool_name, raw, None)
         time.sleep(0.12)
+
+
+def _drive(
+    root: Path, publish: Callable[[list[dict[str, Any]]], None], stop: threading.Event
+) -> None:
+    """Run every workflow under ``root`` and publish the resulting traces."""
+
+    for record_ in _iter_runs(root, stop):
+        publish(record_["events"])
 
 
 def _handler(page: str, stream: Any, token: str) -> type[BaseHTTPRequestHandler]:
@@ -735,7 +876,9 @@ def _handler(page: str, stream: Any, token: str) -> type[BaseHTTPRequestHandler]
                 self._send(200, page, "text/html; charset=utf-8")
                 return
             if path == "/api/session":
-                self._send(200, json.dumps({"token": token, "samples": []}), "application/json")
+                self._send(
+                    200, json.dumps({"token": token, "samples": []}), "application/json"
+                )
                 return
             if path == "/api/events":
                 self._stream()
@@ -787,6 +930,62 @@ def _handler(page: str, stream: Any, token: str) -> type[BaseHTTPRequestHandler]
     return Handler
 
 
+def capture_trace(root: Path, directory: Path) -> dict[str, Any]:
+    """Run the city once and write one replayable trace file per resident.
+
+    Each file holds the raw event stream of a single ``run`` in the format
+    ``kosika replay`` already understands, so the city can be audited without
+    starting a server. Approval-gated runs genuinely stop at ``run_paused``
+    and are recorded as such rather than being quietly completed: they are
+    written, and reported as not replayable, because that is what happened.
+    """
+
+    from .trace_replay import replay_trace
+
+    stop = threading.Event()
+    directory.mkdir(parents=True, exist_ok=True)
+    entries: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for record_ in _iter_runs(root, stop):
+        name = str(record_["workflow"])
+        slug = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in name)
+        if slug in seen:
+            slug = f"{slug}-{len(seen)}"
+        seen.add(slug)
+        target = directory / f"{slug}.jsonl"
+        target.write_text(
+            "".join(
+                json.dumps(event, sort_keys=True) + "\n" for event in record_["events"]
+            ),
+            encoding="utf-8",
+        )
+        entry: dict[str, Any] = {
+            "workflow": name,
+            "trace": str(target),
+            "agent": record_["agent"],
+            "tool": record_["tool"],
+            "source": record_["source"],
+            "authored": record_["authored"],
+            "events": len(record_["events"]),
+            "approval_pending": bool(record_["approval_pending"]),
+        }
+        try:
+            entry["replayed"] = replay_trace(target)
+        except (ValueError, OSError) as exc:
+            entry["replayable"] = False
+            entry["replay_error"] = str(exc)
+        else:
+            entry["replayable"] = True
+        entries.append(entry)
+    return {
+        "directory": str(directory),
+        "runs": len(entries),
+        "replayable": sum(1 for entry in entries if entry.get("replayable")),
+        "awaiting_approval": sum(1 for entry in entries if entry["approval_pending"]),
+        "entries": entries,
+    }
+
+
 def serve_city(
     root: Path,
     host: str = "127.0.0.1",
@@ -794,6 +993,8 @@ def serve_city(
     *,
     idle_delay: float = 1.0,
     name: str | None = None,
+    environment: str = "metropolitan",
+    world: WorldManifest | None = None,
 ) -> None:
     """Serve the live city and drive it from real executions under ``root``.
 
@@ -803,8 +1004,21 @@ def serve_city(
 
     from .synapse_bridge import normalize_events
 
-    city = build_city(root, name=name)
-    page = render_city_live(city)
+    city_title = world.name if world is not None else name
+    city = build_city(root, name=city_title)
+    if world is not None:
+        world.validate_city(city)
+    selected_environment = world.environment if world is not None else environment
+    page = render_city_live(
+        city,
+        environment=selected_environment,
+        world_name=world.name if world is not None else None,
+        world_labels=world.labels_by_domain if world is not None else None,
+        world_kinds=world.kinds_by_domain if world is not None else None,
+        world_buildings=(world.building_ids_by_resident if world is not None else None),
+        world_camera=world.camera if world is not None else "isometric",
+        render_style=world.render_style if world is not None else "city",
+    )
     stream = EventStream(buffer_size=16384, max_replay=16384)
     token = secrets.token_urlsafe(24)
     stop = threading.Event()
@@ -813,9 +1027,7 @@ def serve_city(
         if not raw or not stream.subscriber_count:
             return
         try:
-            stream.publish(
-                normalize_events(raw, sequence_start=stream.next_sequence)
-            )
+            stream.publish(normalize_events(raw, sequence_start=stream.next_sequence))
         except ValueError:
             return
 
@@ -842,4 +1054,4 @@ def serve_city(
         server.server_close()
 
 
-__all__ = ["render_city_live", "serve_city"]
+__all__ = ["capture_trace", "render_city_live", "serve_city"]

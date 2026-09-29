@@ -349,9 +349,7 @@ class AgentLoop:
                     code="journal_invalid",
                 )
             calls.append(
-                ModelToolCall(
-                    raw_call["id"], raw_call["name"], raw_call["arguments"]
-                )
+                ModelToolCall(raw_call["id"], raw_call["name"], raw_call["arguments"])
             )
         return ChatMessage(
             role=value.get("role", ""),
@@ -647,7 +645,10 @@ class AgentLoop:
                         )
                     resume_step = payload.get("step", 0)
                     resume_tool_index = payload.get("tool_index", 0)
-                    if type(resume_step) is not int or type(resume_tool_index) is not int:
+                    if (
+                        type(resume_step) is not int
+                        or type(resume_tool_index) is not int
+                    ):
                         raise ExecutionError(
                             "journal_invalid", "Agent journal position is invalid"
                         )
@@ -710,7 +711,11 @@ class AgentLoop:
                         stop=model.parameters.stop if model is not None else (),
                     )
                     trace_events.append(
-                        {"event": "agent_model_request", "step": step, **asdict(request)}
+                        {
+                            "event": "agent_model_request",
+                            "step": step,
+                            **asdict(request),
+                        }
                     )
                     if session is not None:
                         session.checkpoint(
@@ -786,8 +791,7 @@ class AgentLoop:
                 )
             if step == limits["max_steps"]:
                 raise AgentLoopError(
-                    "Agent loop exceeded maximum model steps "
-                    f"({limits['max_steps']})"
+                    f"Agent loop exceeded maximum model steps ({limits['max_steps']})"
                 )
             # Reject the whole model batch before any tool can have an effect.
             pending = []
@@ -896,9 +900,7 @@ class AgentLoop:
                         assert self.approval_ledger is not None
                         assert action_to_claim is not None
                         try:
-                            self.approval_ledger.finish(
-                                action_to_claim[0], error=exc
-                            )
+                            self.approval_ledger.finish(action_to_claim[0], error=exc)
                         except ApprovalLedgerError as ledger_exc:
                             raise AgentLoopError(
                                 "Tool failed and approval outcome could not be recorded: "

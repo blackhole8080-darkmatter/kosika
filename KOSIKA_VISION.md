@@ -1,5 +1,12 @@
 # Kosika Vision
 
+> **This document is a design target, not a description of the codebase.**
+> It describes a language substantially larger than what exists today. Much of
+> it — tensors, memory bubbles, personality policies, an extension ecosystem,
+> multi-agent consensus, semantic source migration — is unimplemented. See the
+> "Current reality" section at the end, and treat everything above it as
+> intent to be argued about rather than features that exist.
+
 ## Purpose
 
 Kosika is intended to become an AI-native programming language and execution platform for building intelligent systems, not merely another Python library or model wrapper.

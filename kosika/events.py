@@ -134,7 +134,9 @@ def _validate_payload_value(value: Any, depth: int = 0) -> None:
             raise EventValidationError("Event payload contains too many object fields")
         for key, child in value.items():
             if not isinstance(key, str) or not key or len(key) > _MAX_PAYLOAD_TEXT:
-                raise EventValidationError("Event payload contains an invalid field name")
+                raise EventValidationError(
+                    "Event payload contains an invalid field name"
+                )
             _validate_payload_value(child, depth + 1)
         return
     if isinstance(value, list):
@@ -207,14 +209,14 @@ def _validate_event_mapping(event: Mapping[str, Any]) -> dict[str, Any]:
         "access",
         "binding",
     ):
-        if key in data and (
-            not isinstance(data[key], str) or not data[key].strip()
-        ):
+        if key in data and (not isinstance(data[key], str) or not data[key].strip()):
             raise EventValidationError(f"Event field {key!r} must be non-empty text")
     try:
         json.dumps(data, sort_keys=True, allow_nan=False)
     except (TypeError, ValueError) as exc:
-        raise EventValidationError("Event contains values that are not strict JSON") from exc
+        raise EventValidationError(
+            "Event contains values that are not strict JSON"
+        ) from exc
     return data
 
 
@@ -241,9 +243,7 @@ def validate_events(
                 f"Event sequence gap: expected {expected}, got {item['sequence']}"
             )
         if item["event_id"] in event_ids:
-            raise EventValidationError(
-                f"Duplicate event id {item['event_id']!r}"
-            )
+            raise EventValidationError(f"Duplicate event id {item['event_id']!r}")
         event_ids.add(item["event_id"])
         validated.append(item)
     return tuple(validated)

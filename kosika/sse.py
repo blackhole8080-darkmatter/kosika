@@ -85,9 +85,7 @@ class EventStream:
             try:
                 loaded = list(read_event_jsonl(self.jsonl_path))
             except EventValidationError as exc:
-                raise EventStreamError(
-                    f"Event JSONL source is invalid: {exc}"
-                ) from exc
+                raise EventStreamError(f"Event JSONL source is invalid: {exc}") from exc
             self._history = loaded
             self._events.extend(loaded[-buffer_size:])
             if loaded:
@@ -108,7 +106,9 @@ class EventStream:
         with self._condition:
             return self._closed
 
-    def publish(self, events: Sequence[Mapping[str, Any]]) -> tuple[dict[str, Any], ...]:
+    def publish(
+        self, events: Sequence[Mapping[str, Any]]
+    ) -> tuple[dict[str, Any], ...]:
         """Validate and publish one contiguous batch of normalized events."""
 
         if not events:
@@ -178,10 +178,12 @@ class EventStream:
             return tuple(self._events)[-bounded_limit:]
         sequence = self._cursor_sequence(cursor)
         if self._events and sequence < self._events[0]["sequence"] - 1:
-            raise ReplayGapError(self._events[0]["sequence"], self._events[-1]["sequence"])
-        return tuple(
-            event for event in self._events if event["sequence"] > sequence
-        )[:bounded_limit]
+            raise ReplayGapError(
+                self._events[0]["sequence"], self._events[-1]["sequence"]
+            )
+        return tuple(event for event in self._events if event["sequence"] > sequence)[
+            :bounded_limit
+        ]
 
     def read_after(
         self, cursor: int | str | None = None, *, limit: int | None = None
@@ -214,7 +216,9 @@ class EventStream:
             if self._closed:
                 raise EventStreamError("Event stream is closed")
             if self._subscribers >= self.max_subscribers:
-                raise SubscriberLimitError("The event stream has reached its subscriber limit")
+                raise SubscriberLimitError(
+                    "The event stream has reached its subscriber limit"
+                )
             self._subscribers += 1
 
     def release_subscriber(self) -> None:
@@ -237,9 +241,7 @@ def format_sse(event: Mapping[str, Any]) -> bytes:
         validated, sort_keys=True, separators=(",", ":"), allow_nan=False
     )
     return (
-        f"id: {validated['event_id']}\n"
-        f"event: {validated['type']}\n"
-        f"data: {payload}\n\n"
+        f"id: {validated['event_id']}\nevent: {validated['type']}\ndata: {payload}\n\n"
     ).encode("utf-8")
 
 

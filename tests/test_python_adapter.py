@@ -59,13 +59,13 @@ async def fetch(url):
         self.assertTrue(any("not analyzed" in item for item in analysis["limitations"]))
 
     def test_output_is_deterministic_and_never_executes_or_imports_source(self) -> None:
-        source = '''
+        source = """
 raise RuntimeError("must not execute")
 import definitely_not_installed
 
 def process():
     open("never-created.txt", "w")
-'''
+"""
         first = analyze_python_source(source)
         second = analyze_python_source(source)
         self.assertEqual(first, second)
@@ -92,7 +92,9 @@ def process():
         self.assertEqual(symbols["Example.method"]["calls"], [])
 
     def test_complex_call_expressions_are_marked_dynamic(self) -> None:
-        analysis = analyze_python_source("def invoke(factory):\n    return factory()()\n")
+        analysis = analyze_python_source(
+            "def invoke(factory):\n    return factory()()\n"
+        )
         self.assertEqual(analysis["symbols"][0]["calls"][0]["callee"], "factory(...)")
         self.assertEqual(analysis["symbols"][0]["calls"][1]["callee"], "factory")
 
@@ -103,7 +105,9 @@ def process():
             with self.assertRaisesRegex(PythonSourceError, "4-byte"):
                 analyze_python_source("print('too large')")
 
-    def test_file_adapter_reads_utf8_without_importing_and_rejects_invalid_bytes(self) -> None:
+    def test_file_adapter_reads_utf8_without_importing_and_rejects_invalid_bytes(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             source_path = Path(directory) / "sample.py"
             source_path.write_text("def greet():\n    return 'hi'\n", encoding="utf-8")
@@ -125,7 +129,13 @@ def process():
                     patch.object(
                         sys,
                         "argv",
-                        ["kosika", "analyze", str(source_path), "--format", output_format],
+                        [
+                            "kosika",
+                            "analyze",
+                            str(source_path),
+                            "--format",
+                            output_format,
+                        ],
                     ),
                     contextlib.redirect_stdout(output),
                 ):

@@ -276,9 +276,7 @@ class AgentExecutionSession:
         finally:
             db.close()
 
-    def bind(
-        self, plan_hash: str, metadata: dict[str, Any]
-    ) -> dict[str, Any] | None:
+    def bind(self, plan_hash: str, metadata: dict[str, Any]) -> dict[str, Any] | None:
         with self._db() as db:
             row = db.execute(
                 "SELECT plan_hash, binding_id, state, payload FROM agent_run WHERE id=1"
@@ -315,7 +313,9 @@ class AgentExecutionSession:
                     "Agent journal metadata differs from this run",
                 )
             if not isinstance(payload, dict):
-                raise ExecutionError("journal_invalid", "Agent journal payload is invalid")
+                raise ExecutionError(
+                    "journal_invalid", "Agent journal payload is invalid"
+                )
             return {"state": row[2], "payload": payload}
 
     def checkpoint(self, state: str, payload: dict[str, Any]) -> None:
@@ -363,14 +363,14 @@ def inspect_journal(path: str | Path) -> dict[str, Any]:
     try:
         tables = {
             row[0]
-            for row in db.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            )
+            for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")
         }
         has_agent = "agent_run" in tables
         has_workflow = "steps" in tables
         if not has_agent and not has_workflow:
-            raise ExecutionError("journal_invalid", "Journal contains no Kosika run state")
+            raise ExecutionError(
+                "journal_invalid", "Journal contains no Kosika run state"
+            )
         result: dict[str, Any] = {
             "path": str(journal),
             "kind": (
@@ -386,7 +386,9 @@ def inspect_journal(path: str | Path) -> dict[str, Any]:
                 "SELECT plan_hash, binding_id, state, payload FROM agent_run WHERE id=1"
             ).fetchone()
             if row is None:
-                raise ExecutionError("journal_invalid", "Agent journal state is missing")
+                raise ExecutionError(
+                    "journal_invalid", "Agent journal state is missing"
+                )
             try:
                 payload = json.loads(row[3])
             except (TypeError, ValueError) as exc:
@@ -394,14 +396,20 @@ def inspect_journal(path: str | Path) -> dict[str, Any]:
                     "journal_invalid", "Agent journal payload is invalid"
                 ) from exc
             if not isinstance(payload, dict):
-                raise ExecutionError("journal_invalid", "Agent journal payload is invalid")
+                raise ExecutionError(
+                    "journal_invalid", "Agent journal payload is invalid"
+                )
             used = payload.get("used")
             checkpoint = {
                 "step": payload.get("step"),
                 "tool_index": payload.get("tool_index"),
                 "model_steps": payload.get("model_steps"),
-                "model_calls": used.get("model_calls") if isinstance(used, dict) else None,
-                "tool_calls": used.get("tool_calls") if isinstance(used, dict) else None,
+                "model_calls": used.get("model_calls")
+                if isinstance(used, dict)
+                else None,
+                "tool_calls": used.get("tool_calls")
+                if isinstance(used, dict)
+                else None,
                 "event_count": (
                     len(payload["trace_events"])
                     if isinstance(payload.get("trace_events"), list)
