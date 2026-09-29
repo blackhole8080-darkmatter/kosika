@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kosika — AI language preview · Freebuff-reviewed</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --paper:#f6f7f3;--white:#fff;--ink:#26332b;--muted:#7d8a78;
+  --green:#286b5d;--green-dark:#1d5448;--mint:#e8f1e9;
+  --line:#e4e8e1;--accent:#578965;--editor:#19221f;
+  --mono:"Cascadia Code",Consolas,monospace;
+  --sans:Inter,"Segoe UI",Arial,sans-serif;
+}
+body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.6;padding:40px 24px;max-width:1100px;margin:0 auto}
+h1{font-size:32px;letter-spacing:-1px;color:var(--green-dark);margin-bottom:6px;display:flex;align-items:center;gap:12px}
+h1 .logo{width:38px;height:38px;background:var(--green);border-radius:10px;display:grid;place-items:center;color:#fff;font-weight:700;font-size:18px;letter-spacing:-1px}
+h2{font-size:16px;color:var(--green-dark);margin:32px 0 10px;border-bottom:1px solid var(--line);padding-bottom:8px}
+p.note{font-size:13px;color:var(--muted);margin-bottom:28px}
+.card{background:var(--white);border:1px solid var(--line);border-radius:10px;padding:24px;margin-bottom:18px;box-shadow:0 4px 18px rgba(33,54,38,.06)}
+.card h3{font-size:13px;text-transform:uppercase;letter-spacing:1.3px;color:var(--muted);margin-bottom:14px}
+pre{background:var(--editor);color:#d4e0d4;border-radius:8px;padding:18px;font-family:var(--mono);font-size:13px;line-height:1.7;overflow-x:auto}
+ul.features{list-style:none;display:grid;grid-template-columns:1fr 1fr;gap:10px 24px;margin-top:10px}
+@media(max-width:760px){ul.features{grid-template-columns:1fr}}
+ul.features li{padding:8px 0;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:flex-start;font-size:13px}
+ul.features li:last-child{border-bottom:0}
+ul.features li svg{flex-shrink:0;margin-top:2px}
+.journey{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-top:16px}
+@media(max-width:760px){.journey{grid-template-columns:1fr 1fr}}
+.jstep{background:var(--white);border:1px solid var(--line);border-radius:8px;padding:16px;text-align:center}
+.jstep .n{font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:6px}
+.jstep .t{font-weight:600;font-size:13px;color:var(--green-dark)}
+.jstep .d{font-size:11px;color:var(--muted);margin-top:4px;min-height:32px}
+.chip{display:inline-block;font-size:10px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.5px;padding:4px 9px;border-radius:4px;margin:3px 4px 0 0}
+.chip.model{background:#d1fae5;color:#065f46;border:1px solid #a7f3d0}
+.chip.tool{background:#fef3c7;color:#92400e;border:1px solid #fde68a}
+.chip.workflow{background:#dbeafe;color:#1e40af;border:1px solid #bfdbfe}
+.chip.fn{background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe}
+.chip.ask{background:#fce7f3;color:#9d174d;border:1px solid #fbcfe8}
+.chip.agent{background:#f3e8ff;color:#6b21a8;border:1px solid #e9d5ff}
+.twins{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px}
+@media(max-width:760px){.twins{grid-template-columns:1fr}}
+.verdict{background:var(--mint);border:1px solid #c8e6d8;border-radius:10px;padding:20px;margin-top:18px;display:flex;gap:16px;align-items:flex-start}
+.verdict svg{flex-shrink:0}
+.verdict strong{display:block;font-size:14px;color:var(--green-dark);margin-bottom:4px}
+.verdict span{font-size:13px;color:var(--ink)}
+.yaml{font-family:var(--mono);font-size:12px;background:#f4f7ef;border:1px solid var(--line);border-radius:6px;padding:12px;color:#546749;line-height:1.7;margin-top:8px}
+.preview-box{background:linear-gradient(135deg,#f0f5ff 0%,#fdf2f8 100%);border:1px solid #e2e8f0;border-radius:10px;padding:20px;margin-bottom:18px}
+.preview-box h3{color:var(--green-dark)}
+</style>
+</head>
+<body>
+
+<h1><span class="logo">K</span> Kosika — the AI language for developers</h1>
+<p class="note">A local-first, capability-secure language and runtime. Build AI agents and workflows with any model, any MCP server, clean structure, and clear diagrams. Python-first. Zero external dependencies.<br><span style="font-size:11px;color:#93a08c">Preview reviewed and developed by Freebuff agents · live at http://127.0.0.1:8765</span></p>
+
+<div class="preview-box">
+<h3>Quick preview — what you write</h3>
+<pre style="margin-bottom:14px"><span style="color:#7dd3fc">record</span> <span style="color:#f9a8d4">Question</span> {
+  text: <span style="color:#7dd3fc">Text</span>
+}
+<span style="color:#7dd3fc">record</span> <span style="color:#f9a8d4">Answer</span> {
+  text: <span style="color:#7dd3fc">Text</span>
+  confidence: <span style="color:#7dd3fc">Number</span>
+}
+
+<span style="color:#7dd3fc">model</span> <span style="color:#6ee7b7">writer</span> {
+  input: <span style="color:#f9a8d4">Question</span>
+  output: <span style="color:#f9a8d4">Answer</span>
+}
+
+<span style="color:#7dd3fc">workflow</span> answer(<span style="color:#c4b5fd">question</span>: <span style="color:#f9a8d4">Question</span>) -> <span style="color:#f9a8d4">Answer</span> {
+  <span style="color:#7dd3fc">step</span> respond {
+    <span style="color:#7dd3fc">let</span> result: <span style="color:#f9a8d4">Answer</span> = <span style="color:#7dd3fc">use_model</span> <span style="color:#6ee7b7">writer</span>(text: question.text)
+    <span style="color:#7dd3fc">return</span> result
+  }
+}</pre>
+<div style="display:flex;gap:8px;flex-wrap:wrap">
+  <span class="chip model">model — any OpenAI-compatible provider</span>
+  <span class="chip workflow">workflow — typed steps</span>
+  <span class="chip fn">record — structured data</span>
+</div>
+</div>
+
+<h2>What Kosika is meant to do</h2>
+<div class="card">
+  <h3>For developers building AI</h3>
+  <p>Make AI <strong>easy</strong> to build, <strong>simple</strong> to read, and <strong>powerful</strong> to run — regardless of which model you use. Declarative structure. Typed boundaries. Reusable agents. Explainable code.</p>
+  <ul class="features">
+    <li><svg width="14" height="14" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4 12 14.01l-3-3"/></svg> One language for models, tools, agents, and workflows</li>
+    <li><svg width="14" height="14" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4 12 14.01l-3-3"/></svg> Works with <strong>any</strong> OpenAI-compatible model — local or cloud</li>
+    <li><svg width="14" height="14" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4 12 14.01l-3-3"/></svg> Connect <strong>any MCP server</strong> — pinned, validated manifests</li>
+    <li><svg width="14" height="14" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4 12 14.01l-3-3"/></svg> <strong>Typed</strong> records and tool inputs — schemas everywhere</li>
+    <li><svg width="14" height="14" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4 12 14.01l-3-3"/></svg> <strong>Deterministic</strong> mindmaps and diagrams — no guessing</li>
+    <li><svg width="14" height="14" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4 12 14.01l-3-3"/></svg> <strong>Replayable</strong> traces — run, replay, debug offline</li>
+    <li><svg width="14" height="14" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4 12 14.01l-3-3"/></svg> <strong>Approval pauses</strong> for durable mutations — human-in-the-loop</li>
+    <li><svg width="14" height="14" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4 12 14.01l-3-3"/></svg> <strong>Parallel</strong> read-only DAGs for batched research</li>
+    <li><svg width="14" height="14" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4 12 14.01l-3-3"/></svg> <strong>Capability-secure</strong> — tools declare observe/execute</li>
+    <li><svg width="14" height="14" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4 12 14.01l-3-3"/></svg> <strong>Pure functions</strong> — deterministic

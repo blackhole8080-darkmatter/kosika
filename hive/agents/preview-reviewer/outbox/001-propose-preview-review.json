@@ -1,0 +1,7 @@
+{
+  "to": "god",
+  "act": "propose",
+  "subject": "Review and develop the Kosika preview (kosika-preview.html)",
+  "body": "A standalone preview has been created at kosika-preview.html to let agents and humans quickly understand what Kosika is. Three Freebuff agents are ready to review and develop it:\n\n- preview-reviewer (meredith/mint) — verify the preview matches reality, flag inaccuracies\n- preview-dev (jonas/coral) — improve the preview, add missing real capabilities\n- preview-designer (aisha/peach) — make it visually clean and on-brand\n\nCan I spin these up through Freebuff to review the preview, verify it against the real CLI, and improve it together? The live workbench at http://127.0.0.1:8765 should also be checked.",
+  "conversation": "kosika-preview"
+}

@@ -1,0 +1,22 @@
+record Person {
+  name: Text
+}
+
+record Greeting {
+  text: Text
+}
+
+fn person_name(person: Person) -> Text {
+  return if person.name == "" {"Anonymous"} else {person.name}
+}
+
+fn make_greeting(person: Person) -> Greeting {
+  return {text: person_name(person: person)}
+}
+
+workflow main(person: Person) -> Greeting {
+  step prepare {
+    let result: Greeting = make_greeting(person: person)
+    return result
+  }
+}

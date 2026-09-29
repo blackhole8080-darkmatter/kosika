@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="1000" viewBox="0 0 1400 1000" role="img" aria-label="Test Host Agent Workflow · Mindmap">
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#05080D" />
+      <stop offset="100%" stop-color="#0A1017" />
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="6" stdDeviation="7" flood-color="#000000" flood-opacity="0.5" />
+    </filter>
+    <marker id="arrow" markerWidth="11" markerHeight="11" refX="9" refY="3.5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,7 L10,3.5 z" fill="#4A627A" />
+    </marker>
+  </defs>
+  <rect width="100%" height="100%" fill="url(#background)" />
+  <circle cx="1280" cy="850" r="220" fill="#22D3EE" fill-opacity="0.10" />
+  <circle cx="140" cy="850" r="180" fill="#A78BFA" fill-opacity="0.09" />
+  <text x="32" y="34" font-family="sans-serif" font-size="23" font-weight="700" fill="#DBE7F1">Test Host Agent Workflow</text>
+  <text x="32" y="55" font-family="sans-serif" font-size="12" fill="#586A7D">Mindmap view · deterministic design graph</text>
+  <text x="32" y="86" font-family="sans-serif" font-size="11" font-weight="700" letter-spacing="1.5" fill="#586A7D">STRUCTURE MINDMAP</text>
+  <g transform="translate(1010 18)">
+    <rect width="350" height="42" rx="14" fill="#0A0F16" fill-opacity="0.92" stroke="#1B2836" />
+    <rect x="12" y="7" width="10" height="10" rx="3" fill="#141029" stroke="#A78BFA" />
+    <text x="27" y="16" font-family="sans-serif" font-size="10" fill="#8A9BAD">agent</text>
+    <rect x="124" y="7" width="10" height="10" rx="3" fill="#1A0B1C" stroke="#F472B6" />
+    <text x="139" y="16" font-family="sans-serif" font-size="10" fill="#8A9BAD">network</text>
+    <rect x="236" y="7" width="10" height="10" rx="3" fill="#0D131A" stroke="#64748B" />
+    <text x="251" y="16" font-family="sans-serif" font-size="10" fill="#8A9BAD">network_node</text>
+    <rect x="12" y="25" width="10" height="10" rx="3" fill="#0D131A" stroke="#7C8FA3" />
+    <text x="27" y="34" font-family="sans-serif" font-size="10" fill="#8A9BAD">record</text>
+    <rect x="124" y="25" width="10" height="10" rx="3" fill="#071A1E" stroke="#22D3EE" />
+    <text x="139" y="34" font-family="sans-serif" font-size="10" fill="#8A9BAD">stage</text>
+    <rect x="236" y="25" width="10" height="10" rx="3" fill="#191305" stroke="#FBBF24" />
+    <text x="251" y="34" font-family="sans-serif" font-size="10" fill="#8A9BAD">tool</text>
+  </g>
+  <path d="M 1026.67 125 C 1101.67 125, 1101.67 875, 1026.67 875" fill="none" stroke="#2C4356" stroke-width="2" stroke-linecap="round" stroke-dasharray="none" marker-end="url(#arrow)" data-edge-kind="uses" />
+  <g transform="translate(1101.67 500)"><rect x="-36" y="-10" width="72" height="18" rx="9" fill="#0C121A" fill-opacity="0.9" /><text text-anchor="middle" y="3" font-family="sans-serif" font-size="10" fill="#8A9BAD">uses</text></g>
+  <path d="M 693.333 333.333 C 766.133 333.333, 793.867 250, 866.667 250" fill="none" stroke="#2C4356" stroke-width="2" stroke-linecap="round" stroke-dasharray="none" marker-end="url(#arrow)" data-edge-kind="contains" />
+  <g transform="translate(780 283.667)"><rect x="-36" y="-10" width="72" height="18" rx="9" fill="#0C121A" fill-opacity="0.9" /><text text-anchor="middle" y="3" font-family="sans-serif" font-size="10" fill="#8A9BAD">contains</text></g>
+  <path d="M 693.333 333.333 C 766.133 333.333, 793.867 375, 866.667 375" fill="none" stroke="#2C4356" stroke-width="2" stroke-linecap="round" stroke-dasharray="none" marker-end="url(#arrow)" data-edge-kind="contains" />
+  <g transform="translate(780 346.167)"><rect x="-36" y="-10" width="72" height="18" rx="9" fill="#0C121A" fill-opacity="0.9" /><text text-anchor="middle" y="3" font-family="sans-serif" font-size="10" fill="#8A9BAD">contains</text></g>
+  <path d="M 693.333 333.333 C 766.133 333.333, 793.867 500, 866.667 500" fill="none" stroke="#2C4356" stroke-width="2" stroke-linecap="round" stroke-dasharray="none" marker-end="url(#arrow)" data-edge-kind="contains" />
+  <g transform="translate(780 408.667)"><rect x="-36" y="-10" width="72" height="18" rx="9" fill="#0C121A" fill-opacity="0.9" /><text text-anchor="middle" y="3" font-family="sans-serif" font-size="10" fill="#8A9BAD">contains</text></g>
+  <path d="M 693.333 333.333 C 766.133 333.333, 793.867 625, 866.667 625" fill="none" stroke="#2C4356" stroke-width="2" stroke-linecap="round" stroke-dasharray="none" marker-end="url(#arrow)" data-edge-kind="contains" />
+  <g transform="translate(780 471.167)"><rect x="-36" y="-10" width="72" height="18" rx="9" fill="#0C121A" fill-opacity="0.9" /><text text-anchor="middle" y="3" font-family="sans-serif" font-size="10" fill="#8A9BAD">contains</text></g>
+  <path d="M 693.333 333.333 C 766.133 333.333, 793.867 750, 866.667 750" fill="none" stroke="#2C4356" stroke-width="2" stroke-linecap="round" stroke-dasharray="none" marker-end="url(#arrow)" data-edge-kind="contains" />
+  <g transform="translate(780 533.667)"><rect x="-36" y="-10" width="72" height="18" rx="9" fill="#0C121A" fill-opacity="0.9" /><text text-anchor="middle" y="3" font-family="sans-serif" font-size="10" fill="#8A9BAD">contains</text></g>
+  <path d="M 1026.67 375 C 1091.67 375, 1091.67 250, 1026.67 250" fill="none" stroke="#2C4356" stroke-width="2" stroke-linecap="round" stroke-dasharray="7 5" marker-end="url(#arrow)" data-edge-kind="connects" />
+  <g transform="translate(1091.67 312.5)"><rect x="-36" y="-10" width="72" height="18" rx="9" fill="#0C121A" fill-opacity="0.9" /><text text-anchor="middle" y="3" font-family="sans-serif" font-size="10" fill="#8A9BAD">connects</text></g>
+  <path d="M 1026.67 375 C 1094.67 375, 1094.67 750, 1026.67 750" fill="none" stroke="#2C4356" stroke-width="2" stroke-linecap="round" stroke-dasharray="7 5" marker-end="url(#arrow)" data-edge-kind="connects" />
+  <g transform="translate(1094.67 562.5)"><rect x="-36" y="-10" width="72" height="18" rx="9" fill="#0C121A" fill-opacity="0.9" /><text text-anchor="middle" y="3" font-family="sans-serif" font-size="10" fill="#8A9BAD">connects</text></g>
+  <path d="M 1026.67 375 C 1072.67 375, 1072.67 500, 1026.67 500" fill="none" stroke="#2C4356" stroke-width="2" stroke-linecap="round" stroke-dasharray="7 5" marker-end="url(#arrow)" data-edge-kind="connects" />
+  <g transform="translate(1072.67 437.5)"><rect x="-36" y="-10" width="72" height="18" rx="9" fill="#0C121A" fill-opacity="0.9" /><text text-anchor="middle" y="3" font-family="sans-serif" font-size="10" fill="#8A9BAD">connects</text></g>
+  <path d="M 1026.67 375 C 1105.67 375, 1105.67 625, 1026.67 625" fill="none" stroke="#2C4356" stroke-width="2" stroke-linecap="round" stroke-dasharray="7 5" marker-end="url(#arrow)" data-edge-kind="connects" />
+  <g transform="translate(1105.67 500)"><rect x="-36" y="-10" width="72" height="18" rx="9" fill="#0C121A" fill-opacity="0.9" /><text text-anchor="middle" y="3" font-family="sans-serif" font-size="10" fill="#8A9BAD">connects</text></g>
+  <path d="M 633.333 666.667 C 731.333 666.667, 768.667 125, 866.667 125" fill="none" stroke="#2C4356" stroke-width="2" stroke-linecap="round" stroke-dasharray="none" marker-end="url(#arrow)" data-edge-kind="calls" />
+  <g transform="translate(750 387.833)"><rect x="-36" y="-10" width="72" height="18" rx="9" fill="#0C121A" fill-opacity="0.9" /><text text-anchor="middle" y="3" font-family="sans-serif" font-size="10" fill="#8A9BAD">calls</text></g>
+  <path d="M 633.333 666.667 C 731.333 666.667, 768.667 875, 866.667 875" fill="none" stroke="#2C4356" stroke-width="2" stroke-linecap="round" stroke-dasharray="none" marker-end="url(#arrow)" data-edge-kind="invokes" />
+  <g transform="translate(750 762.833)"><rect x="-36" y="-10" width="72" height="18" rx="9" fill="#0C121A" fill-opacity="0.9" /><text text-anchor="middle" y="3" font-family="sans-serif" font-size="10" fill="#8A9BAD">invokes</text></g>
+  <path d="M 1026.67 875 C 1082.67 875, 1084 500, 1140 500" fill="none" stroke="#2C4356" stroke-width="2" stroke-linecap="round" stroke-dasharray="none" marker-end="url(#arrow)" data-edge-kind="outputs" />
+  <g transform="translate(1083.33 679.5)"><rect x="-36" y="-10" width="72" height="18" rx="9" fill="#0C121A" fill-opacity="0.9" /><text text-anchor="middle" y="3" font-family="sans-serif" font-size="10" fill="#8A9BAD">outputs</text></g>
+  <path d="M 240 500 C 338 500, 375.333 666.667, 473.333 666.667" fill="none" stroke="#2C4356" stroke-width="2" stroke-linecap="round" stroke-dasharray="none" marker-end="url(#arrow)" data-edge-kind="contains" />
+  <g transform="translate(356.667 575.333)"><rect x="-36" y="-10" width="72" height="18" rx="9" fill="#0C121A" fill-opacity="0.9" /><text text-anchor="middle" y="3" font-family="sans-serif" font-size="10" fill="#8A9BAD">contains</text></g>
+  <path d="M 240 500 C 338 500, 375.333 333.333, 473.333 333.333" fill="none" stroke="#2C4356" stroke-width="2" stroke-linecap="round" stroke-dasharray="7 5" marker-end="url(#arrow)" data-edge-kind="network_context" />
+  <g transform="translate(356.667 408.667)"><rect x="-36" y="-10" width="72" height="18" rx="9" fill="#0C121A" fill-opacity="0.9" /><text text-anchor="middle" y="3" font-family="sans-serif" font-size="10" fill="#8A9BAD">network_context</text></g>
+  <g id="agent.monitor" filter="url(#shadow)" data-node-kind="Agent"><rect x="866.667" y="93" width="160" height="64" rx="16" fill="#141029" stroke="#A78BFA" stroke-width="2" />
+    <text x="882.667" y="116" font-family="sans-serif" font-size="10" font-weight="700" letter-spacing="1" fill="#A78BFA">AGENT</text>
+    <text x="882.667" y="138" font-family="sans-serif" font-size="15" font-weight="600" fill="#DBE7F1">monitor</text></g>
+  <g id="network.kosika.example" filter="url(#shadow)" data-node-kind="Network"><rect x="473.333" y="301.333" width="220" height="64" rx="16" fill="#1A0B1C" stroke="#F472B6" stroke-width="2" />
+    <text x="489.333" y="324.333" font-family="sans-serif" font-size="10" font-weight="700" letter-spacing="1" fill="#F472B6">NETWORK</text>
+    <text x="489.333" y="346.333" font-family="sans-serif" font-size="15" font-weight="600" fill="#DBE7F1">Kosika Example Network</text></g>
+  <g id="network_node.developer-laptop" filter="url(#shadow)" data-node-kind="Network Node"><rect x="866.667" y="218" width="160" height="64" rx="16" fill="#0D131A" stroke="#64748B" stroke-width="2" />
+    <text x="882.667" y="241" font-family="sans-serif" font-size="10" font-weight="700" letter-spacing="1" fill="#64748B">NETWORK NODE</text>
+    <text x="882.667" y="263" font-family="sans-serif" font-size="15" font-weight="600" fill="#DBE7F1">Developer Laptop</text></g>
+  <g id="network_node.kosika-runtime" filter="url(#shadow)" data-node-kind="Network Node"><rect x="866.667" y="343" width="160" height="64" rx="16" fill="#0D131A" stroke="#64748B" stroke-width="2" />
+    <text x="882.667" y="366" font-family="sans-serif" font-size="10" font-weight="700" letter-spacing="1" fill="#64748B">NETWORK NODE</text>
+    <text x="882.667" y="388" font-family="sans-serif" font-size="15" font-weight="600" fill="#DBE7F1">Kosika Runtime</text></g>
+  <g id="network_node.local-model" filter="url(#shadow)" data-node-kind="Network Node"><rect x="866.667" y="468" width="160" height="64" rx="16" fill="#0D131A" stroke="#64748B" stroke-width="2" />
+    <text x="882.667" y="491" font-family="sans-serif" font-size="10" font-weight="700" letter-spacing="1" fill="#64748B">NETWORK NODE</text>
+    <text x="882.667" y="513" font-family="sans-serif" font-size="15" font-weight="600" fill="#DBE7F1">Local Model</text></g>
+  <g id="network_node.neural-space" filter="url(#shadow)" data-node-kind="Network Node"><rect x="866.667" y="593" width="160" height="64" rx="16" fill="#0D131A" stroke="#64748B" stroke-width="2" />
+    <text x="882.667" y="616" font-family="sans-serif" font-size="10" font-weight="700" letter-spacing="1" fill="#64748B">NETWORK NODE</text>
+    <text x="882.667" y="638" font-family="sans-serif" font-size="15" font-weight="600" fill="#DBE7F1">Neural Interface Space</text></g>
+  <g id="network_node.project-memory" filter="url(#shadow)" data-node-kind="Network Node"><rect x="866.667" y="718" width="160" height="64" rx="16" fill="#0D131A" stroke="#64748B" stroke-width="2" />
+    <text x="882.667" y="741" font-family="sans-serif" font-size="10" font-weight="700" letter-spacing="1" fill="#64748B">NETWORK NODE</text>
+    <text x="882.667" y="763" font-family="sans-serif" font-size="15" font-weight="600" fill="#DBE7F1">Project Memory Graph</text></g>
+  <g id="record.DiskStatus" filter="url(#shadow)" data-node-kind="Record"><rect x="1140" y="468" width="160" height="64" rx="16" fill="#0D131A" stroke="#7C8FA3" stroke-width="2" />
+    <text x="1156" y="491" font-family="sans-serif" font-size="10" font-weight="700" letter-spacing="1" fill="#7C8FA3">RECORD</text>
+    <text x="1156" y="513" font-family="sans-serif" font-size="15" font-weight="600" fill="#DBE7F1">DiskStatus</text></g>
+  <g id="stage.main.inspect" filter="url(#shadow)" data-node-kind="Stage"><rect x="473.333" y="634.667" width="160" height="64" rx="16" fill="#071A1E" stroke="#22D3EE" stroke-width="2" />
+    <text x="489.333" y="657.667" font-family="sans-serif" font-size="10" font-weight="700" letter-spacing="1" fill="#22D3EE">STAGE</text>
+    <text x="489.333" y="679.667" font-family="sans-serif" font-size="15" font-weight="600" fill="#DBE7F1">inspect</text></g>
+  <g id="tool.check_disk" filter="url(#shadow)" data-node-kind="Tool"><rect x="866.667" y="843" width="160" height="64" rx="16" fill="#191305" stroke="#FBBF24" stroke-width="2" />
+    <text x="882.667" y="866" font-family="sans-serif" font-size="10" font-weight="700" letter-spacing="1" fill="#FBBF24">TOOL</text>
+    <text x="882.667" y="888" font-family="sans-serif" font-size="15" font-weight="600" fill="#DBE7F1">check_disk</text></g>
+  <g id="workflow.main" filter="url(#shadow)" data-node-kind="Workflow"><rect x="80" y="468" width="160" height="64" rx="16" fill="#061A1D" stroke="#22D3EE" stroke-width="2" />
+    <text x="96" y="491" font-family="sans-serif" font-size="10" font-weight="700" letter-spacing="1" fill="#22D3EE">WORKFLOW</text>
+    <text x="96" y="513" font-family="sans-serif" font-size="15" font-weight="600" fill="#DBE7F1">main</text></g>
+</svg>

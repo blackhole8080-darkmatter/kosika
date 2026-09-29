@@ -1,0 +1,168 @@
+{
+  "manifestVersion": 1,
+  "networkVersion": 1,
+  "network": {
+    "id": "kosika.example",
+    "name": "Kosika Example Network",
+    "description": "A safe declarative network workspace for Kosika systems.",
+    "policy": {
+      "defaultAccess": "observe",
+      "allowRemote": false,
+      "requireApprovalFor": [
+        "propose",
+        "execute"
+      ]
+    }
+  },
+  "developers": [
+    {
+      "id": "developer-local",
+      "name": "Local developer",
+      "role": "owner"
+    }
+  ],
+  "modules": [
+    {
+      "id": "runtime-core",
+      "name": "Kosika runtime",
+      "kind": "runtime",
+      "owner": "developer-local"
+    },
+    {
+      "id": "model-gateway",
+      "name": "Model gateway",
+      "kind": "model_gateway",
+      "owner": "developer-local",
+      "provider": "local-or-approved-cloud"
+    },
+    {
+      "id": "memory-module",
+      "name": "Memory graph module",
+      "kind": "memory",
+      "owner": "developer-local"
+    },
+    {
+      "id": "space-module",
+      "name": "Virtual space module",
+      "kind": "virtual_space",
+      "owner": "developer-local"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "kosika-runtime",
+      "name": "Kosika Runtime",
+      "kind": "kosika",
+      "module": "runtime-core",
+      "access": "observe"
+    },
+    {
+      "id": "local-model",
+      "name": "Local Model",
+      "kind": "model",
+      "module": "model-gateway",
+      "access": "propose"
+    },
+    {
+      "id": "developer-laptop",
+      "name": "Developer Laptop",
+      "kind": "device",
+      "access": "observe"
+    },
+    {
+      "id": "project-memory",
+      "name": "Project Memory Graph",
+      "kind": "memory_graph",
+      "module": "memory-module",
+      "memoryGraph": "project-knowledge",
+      "access": "observe"
+    },
+    {
+      "id": "neural-space",
+      "name": "Neural Interface Space",
+      "kind": "virtual_space",
+      "module": "space-module",
+      "access": "propose"
+    }
+  ],
+  "tabs": [
+    {
+      "id": "network-tab",
+      "name": "Network topology",
+      "kind": "network",
+      "target": "kosika-runtime"
+    },
+    {
+      "id": "memory-tab",
+      "name": "Project memory",
+      "kind": "memory_graph",
+      "target": "project-memory"
+    },
+    {
+      "id": "space-tab",
+      "name": "Neural space",
+      "kind": "workspace",
+      "target": "neural-space"
+    }
+  ],
+  "links": [
+    {
+      "id": "runtime-model",
+      "source": "kosika-runtime",
+      "target": "local-model",
+      "kind": "model_request",
+      "access": "propose",
+      "approvalRequired": true
+    },
+    {
+      "id": "runtime-memory",
+      "source": "kosika-runtime",
+      "target": "project-memory",
+      "kind": "memory_read",
+      "access": "observe"
+    },
+    {
+      "id": "runtime-device",
+      "source": "kosika-runtime",
+      "target": "developer-laptop",
+      "kind": "device_observe",
+      "access": "observe"
+    },
+    {
+      "id": "runtime-space",
+      "source": "kosika-runtime",
+      "target": "neural-space",
+      "kind": "render_proposal",
+      "access": "propose",
+      "approvalRequired": true
+    }
+  ],
+  "memoryGraphs": [
+    {
+      "id": "project-knowledge",
+      "name": "Project knowledge",
+      "nodes": [
+        {
+          "id": "kosika-concept",
+          "label": "Kosika language",
+          "type": "concept",
+          "confidence": 1.0
+        },
+        {
+          "id": "network-concept",
+          "label": "Network layer",
+          "type": "concept",
+          "confidence": 0.9
+        }
+      ],
+      "edges": [
+        {
+          "id": "knowledge-relation",
+          "source": "kosika-concept",
+          "target": "network-concept",
+          "kind": "contains"
+        }
+      ]
+    }
+  ]
+}

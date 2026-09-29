@@ -1,0 +1,14 @@
+record Score { value: Number accepted: Bool }
+
+fn score(quality: Number, reliability: Number) -> Score {
+  let weighted: Number = quality * 0.7
+  let adjusted: Number = weighted + reliability * 0.3
+  return {value: adjusted, accepted: adjusted >= 0.8}
+}
+
+workflow main() -> Score {
+  step calculate {
+    let result: Score = score(quality: 0.9, reliability: 0.8)
+    return result
+  }
+}

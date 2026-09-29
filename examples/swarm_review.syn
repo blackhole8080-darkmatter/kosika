@@ -1,0 +1,56 @@
+// A human-approved swarm: two agents share one workflow, capped at three
+// review rounds, and the whole group cannot start without approval.
+record Draft { text: Text }
+record Review { text: Text }
+
+tool read_docs {
+  source mcp "local_mock"
+  operation: "search"
+  access: observe
+  output: Draft
+}
+
+model writer_model { input: Review output: Review }
+
+agent researcher {
+  can: [read_docs]
+  cannot: [write_files, arbitrary_shell]
+  max_steps: 4
+}
+
+agent editor {
+  model: writer_model
+  cannot: [arbitrary_shell]
+}
+
+workflow draft() -> Draft {
+  step gather {
+    let result: Draft = execute researcher.read_docs()
+    return result
+  }
+}
+
+workflow revise(draft: Draft) -> Review {
+  step rewrite {
+    let result: Review = ask editor(text: draft.text)
+    return result
+  }
+}
+
+workflow review() -> Review {
+  step start {
+    let gathered: Draft = call draft()
+    return gathered
+  }
+  step evolve {
+    let revised: Review = call revise(draft: gathered)
+    return revised
+  }
+}
+
+swarm EditorialBoard {
+  agents: [researcher, editor]
+  workflow: review
+  max_rounds: 3
+  require approval
+}

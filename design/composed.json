@@ -1,0 +1,259 @@
+{
+  "manifestVersion": 1,
+  "designVersion": 1,
+  "design": {
+    "id": "composed.design",
+    "name": "Composed Kosika Workflow",
+    "kind": "agent_workflow_network",
+    "canvas": {
+      "width": 1400.0,
+      "height": 1000.0,
+      "unit": "px"
+    }
+  },
+  "nodes": [
+    {
+      "id": "module.main.syn",
+      "label": "main.syn",
+      "kind": "module",
+      "position": {
+        "x": 1120.0,
+        "y": 80.0
+      },
+      "size": {
+        "width": 220.0,
+        "height": 64.0
+      },
+      "style": {}
+    },
+    {
+      "id": "module.research.syn",
+      "label": "research.syn",
+      "kind": "module",
+      "position": {
+        "x": 1120.0,
+        "y": 176.0
+      },
+      "size": {
+        "width": 220.0,
+        "height": 64.0
+      },
+      "style": {}
+    },
+    {
+      "id": "module.types.syn",
+      "label": "types.syn",
+      "kind": "module",
+      "position": {
+        "x": 1120.0,
+        "y": 272.0
+      },
+      "size": {
+        "width": 220.0,
+        "height": 64.0
+      },
+      "style": {}
+    },
+    {
+      "id": "record.Answer",
+      "label": "Answer",
+      "kind": "record",
+      "position": {
+        "x": 80.0,
+        "y": 80.0
+      },
+      "size": {
+        "width": 160.0,
+        "height": 64.0
+      },
+      "style": {}
+    },
+    {
+      "id": "record.Question",
+      "label": "Question",
+      "kind": "record",
+      "position": {
+        "x": 80.0,
+        "y": 176.0
+      },
+      "size": {
+        "width": 160.0,
+        "height": 64.0
+      },
+      "style": {}
+    },
+    {
+      "id": "model.reader",
+      "label": "reader",
+      "kind": "model",
+      "position": {
+        "x": 860.0,
+        "y": 80.0
+      },
+      "size": {
+        "width": 160.0,
+        "height": 64.0
+      },
+      "style": {}
+    },
+    {
+      "id": "workflow.main",
+      "label": "main",
+      "kind": "workflow",
+      "position": {
+        "x": 80.0,
+        "y": 480.0
+      },
+      "size": {
+        "width": 160.0,
+        "height": 64.0
+      },
+      "style": {}
+    },
+    {
+      "id": "stage.main.research",
+      "label": "research",
+      "kind": "stage",
+      "position": {
+        "x": 340.0,
+        "y": 480.0
+      },
+      "size": {
+        "width": 160.0,
+        "height": 64.0
+      },
+      "style": {}
+    },
+    {
+      "id": "workflow.research",
+      "label": "research",
+      "kind": "workflow",
+      "position": {
+        "x": 80.0,
+        "y": 660.0
+      },
+      "size": {
+        "width": 160.0,
+        "height": 64.0
+      },
+      "style": {}
+    },
+    {
+      "id": "stage.research.answer",
+      "label": "answer",
+      "kind": "stage",
+      "position": {
+        "x": 340.0,
+        "y": 660.0
+      },
+      "size": {
+        "width": 160.0,
+        "height": 64.0
+      },
+      "style": {}
+    }
+  ],
+  "edges": [
+    {
+      "id": "module.main.syn.imports.research.syn",
+      "source": "module.main.syn",
+      "target": "module.research.syn",
+      "kind": "imports"
+    },
+    {
+      "id": "module.main.syn.imports.types.syn",
+      "source": "module.main.syn",
+      "target": "module.types.syn",
+      "kind": "imports"
+    },
+    {
+      "id": "module.research.syn.imports.types.syn",
+      "source": "module.research.syn",
+      "target": "module.types.syn",
+      "kind": "imports"
+    },
+    {
+      "id": "module.types.syn.contains.record.Answer",
+      "source": "module.types.syn",
+      "target": "record.Answer",
+      "kind": "contains"
+    },
+    {
+      "id": "module.types.syn.contains.record.Question",
+      "source": "module.types.syn",
+      "target": "record.Question",
+      "kind": "contains"
+    },
+    {
+      "id": "module.research.syn.contains.model.reader",
+      "source": "module.research.syn",
+      "target": "model.reader",
+      "kind": "contains"
+    },
+    {
+      "id": "model.reader.input",
+      "source": "record.Question",
+      "target": "model.reader",
+      "kind": "inputs"
+    },
+    {
+      "id": "model.reader.output",
+      "source": "model.reader",
+      "target": "record.Answer",
+      "kind": "outputs"
+    },
+    {
+      "id": "module.main.syn.contains.workflow.main",
+      "source": "module.main.syn",
+      "target": "workflow.main",
+      "kind": "contains"
+    },
+    {
+      "id": "workflow.main.contains.research",
+      "source": "workflow.main",
+      "target": "stage.main.research",
+      "kind": "contains"
+    },
+    {
+      "id": "stage.main.research.workflow",
+      "source": "stage.main.research",
+      "target": "workflow.research",
+      "kind": "calls"
+    },
+    {
+      "id": "module.research.syn.contains.workflow.research",
+      "source": "module.research.syn",
+      "target": "workflow.research",
+      "kind": "contains"
+    },
+    {
+      "id": "workflow.research.contains.answer",
+      "source": "workflow.research",
+      "target": "stage.research.answer",
+      "kind": "contains"
+    },
+    {
+      "id": "stage.research.answer.model",
+      "source": "stage.research.answer",
+      "target": "model.reader",
+      "kind": "calls"
+    }
+  ],
+  "views": [
+    {
+      "id": "workflow-view",
+      "name": "Agent workflows",
+      "kind": "workflow"
+    },
+    {
+      "id": "network-view",
+      "name": "Network topology",
+      "kind": "network"
+    },
+    {
+      "id": "mindmap-view",
+      "name": "Structure mindmap",
+      "kind": "memory_graph"
+    }
+  ]
+}

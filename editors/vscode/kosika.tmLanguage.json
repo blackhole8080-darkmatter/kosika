@@ -3,7 +3,8 @@
   "patterns": [
     {"name": "comment.line.double-slash.kosika", "match": "//.*$"},
     {"name": "string.quoted.double.kosika", "begin": "\"", "end": "\"", "patterns": [{"name": "constant.character.escape.kosika", "match": "\\\\."}]},
-    {"name": "keyword.control.kosika", "match": "\\b(record|tool|agent|model|workflow|step|let|return|import|export|call|ask|execute|use_model|require|approval|can|cannot)\\b"},
+    {"name": "keyword.control.kosika", "match": "\\b(record|tool|agent|model|fn|ref|recurse|match|case|workflow|step|let|return|if|else|and|or|not|import|export|call|ask|execute|use_model|require|approval|can|cannot)\\b"},
+    {"name": "keyword.operator.kosika", "match": "==|!=|<=|>=|[+\\-*/<>]"},
     {"name": "storage.type.kosika", "match": "\\b(Text|Number|Bool|Null)\\b"},
     {"name": "constant.language.kosika", "match": "\\b(true|false|null)\\b"},
     {"name": "constant.numeric.kosika", "match": "\\b[0-9]+(?:\\.[0-9]+)?\\b"}

@@ -1,0 +1,58 @@
+record Result { value: Number }
+
+// Escaping closure: a function that returns a function capturing `base`.
+fn make_adder(base: Number) -> fn(value: Number) -> Number {
+  fn add(value: Number) -> Number { return base + value }
+  return ref add
+}
+
+// Higher-order function: consumes a function value.
+fn apply(operation: fn(value: Number) -> Number, value: Number) -> Result {
+  return {value: operation(value: value)}
+}
+
+// Function composition: returns a new closure that delegates to the captured one.
+fn compose(operation: fn(value: Number) -> Number) -> fn(value: Number) -> Number {
+  fn invoke(value: Number) -> Number { return operation(value: value) }
+  return ref invoke
+}
+
+// Top-level function referenced directly with `ref`.
+fn double(value: Number) -> Number { return value * 2 }
+
+workflow main() -> Result {
+  // Bind an escaping closure to a local with an explicit function type.
+  step create {
+    let add_ten: fn(value: Number) -> Number = make_adder(base: 10)
+    return add_ten
+  }
+
+  // Compose the bound closure into a new closure.
+  step compose_it {
+    let composed: fn(value: Number) -> Number = compose(operation: add_ten)
+    return composed
+  }
+
+  // Pass a top-level function reference (`ref double`) as an argument.
+  step use_ref {
+    let direct: Result = apply(operation: ref double, value: 5)
+    return direct
+  }
+
+  // Invoke a bound function value directly as a step call.
+  step invoke {
+    let number: Number = add_ten(value: 7)
+    return number
+  }
+
+  // Use the composed closure, layered on top of a second escaping closure.
+  step other {
+    let second: fn(value: Number) -> Number = make_adder(base: 100)
+    return second
+  }
+
+  step use {
+    let result: Result = apply(operation: composed, value: second(value: 5))
+    return result
+  }
+}

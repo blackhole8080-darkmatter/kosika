@@ -1,0 +1,52 @@
+{
+  "manifestVersion": 1,
+  "id": "kosika.example.cognitive-design",
+  "version": "0.1.0",
+  "author": "Kosika Project",
+  "license": "MIT",
+  "compatibility": {
+    "minVersion": "0.1.0",
+    "maxVersion": "0.2.0"
+  },
+  "contributions": [
+    {
+      "kind": "cognitive",
+      "name": "memory_inspector",
+      "entrypoint": "example.memory:inspect",
+      "permissions": ["memory:read"]
+    },
+    {
+      "kind": "design",
+      "name": "mindmap_layout",
+      "entrypoint": "example.design:layout",
+      "permissions": ["design:render"]
+    }
+  ],
+  "dependencies": [
+    {
+      "id": "kosika.runtime",
+      "constraint": ">=0.1.0",
+      "optional": false
+    }
+  ],
+  "permissions": [
+    "memory:read",
+    "design:render"
+  ],
+  "lifecycle": {
+    "activate": "example.extension:activate",
+    "deactivate": "example.extension:deactivate",
+    "healthCheck": "example.extension:health"
+  },
+  "healthChecks": [
+    {
+      "name": "extension_ready",
+      "entrypoint": "example.extension:health",
+      "timeoutMs": 1000,
+      "required": true
+    }
+  ],
+  "rollback": {
+    "strategy": "disable"
+  }
+}

@@ -1,0 +1,279 @@
+{
+  "manifestVersion": 1,
+  "designVersion": 1,
+  "design": {
+    "id": "test-host.design",
+    "name": "Test Host Agent Workflow",
+    "kind": "agent_workflow_network",
+    "canvas": {
+      "width": 1400.0,
+      "height": 1000.0,
+      "unit": "px"
+    }
+  },
+  "nodes": [
+    {
+      "id": "record.DiskStatus",
+      "label": "DiskStatus",
+      "kind": "record",
+      "position": {
+        "x": 80.0,
+        "y": 80.0
+      },
+      "size": {
+        "width": 160.0,
+        "height": 64.0
+      },
+      "style": {}
+    },
+    {
+      "id": "tool.check_disk",
+      "label": "check_disk",
+      "kind": "tool",
+      "position": {
+        "x": 340.0,
+        "y": 80.0
+      },
+      "size": {
+        "width": 160.0,
+        "height": 64.0
+      },
+      "style": {}
+    },
+    {
+      "id": "agent.monitor",
+      "label": "monitor",
+      "kind": "agent",
+      "position": {
+        "x": 600.0,
+        "y": 80.0
+      },
+      "size": {
+        "width": 160.0,
+        "height": 64.0
+      },
+      "style": {}
+    },
+    {
+      "id": "workflow.main",
+      "label": "main",
+      "kind": "workflow",
+      "position": {
+        "x": 80.0,
+        "y": 480.0
+      },
+      "size": {
+        "width": 160.0,
+        "height": 64.0
+      },
+      "style": {}
+    },
+    {
+      "id": "stage.main.inspect",
+      "label": "inspect",
+      "kind": "stage",
+      "position": {
+        "x": 340.0,
+        "y": 480.0
+      },
+      "size": {
+        "width": 160.0,
+        "height": 64.0
+      },
+      "style": {}
+    },
+    {
+      "id": "network.kosika.example",
+      "label": "Kosika Example Network",
+      "kind": "network",
+      "position": {
+        "x": 980.0,
+        "y": 700.0
+      },
+      "size": {
+        "width": 220.0,
+        "height": 64.0
+      },
+      "style": {}
+    },
+    {
+      "id": "network_node.developer-laptop",
+      "label": "Developer Laptop",
+      "kind": "network_node",
+      "position": {
+        "x": 980.0,
+        "y": 80.0
+      },
+      "size": {
+        "width": 160.0,
+        "height": 64.0
+      },
+      "style": {}
+    },
+    {
+      "id": "network_node.kosika-runtime",
+      "label": "Kosika Runtime",
+      "kind": "network_node",
+      "position": {
+        "x": 980.0,
+        "y": 176.0
+      },
+      "size": {
+        "width": 160.0,
+        "height": 64.0
+      },
+      "style": {}
+    },
+    {
+      "id": "network_node.local-model",
+      "label": "Local Model",
+      "kind": "network_node",
+      "position": {
+        "x": 980.0,
+        "y": 272.0
+      },
+      "size": {
+        "width": 160.0,
+        "height": 64.0
+      },
+      "style": {}
+    },
+    {
+      "id": "network_node.neural-space",
+      "label": "Neural Interface Space",
+      "kind": "network_node",
+      "position": {
+        "x": 980.0,
+        "y": 368.0
+      },
+      "size": {
+        "width": 160.0,
+        "height": 64.0
+      },
+      "style": {}
+    },
+    {
+      "id": "network_node.project-memory",
+      "label": "Project Memory Graph",
+      "kind": "network_node",
+      "position": {
+        "x": 980.0,
+        "y": 464.0
+      },
+      "size": {
+        "width": 160.0,
+        "height": 64.0
+      },
+      "style": {}
+    }
+  ],
+  "edges": [
+    {
+      "id": "tool.check_disk.outputs",
+      "source": "tool.check_disk",
+      "target": "record.DiskStatus",
+      "kind": "outputs"
+    },
+    {
+      "id": "agent.monitor.uses.check_disk",
+      "source": "agent.monitor",
+      "target": "tool.check_disk",
+      "kind": "uses"
+    },
+    {
+      "id": "workflow.main.contains.inspect",
+      "source": "workflow.main",
+      "target": "stage.main.inspect",
+      "kind": "contains"
+    },
+    {
+      "id": "stage.main.inspect.agent",
+      "source": "stage.main.inspect",
+      "target": "agent.monitor",
+      "kind": "calls"
+    },
+    {
+      "id": "stage.main.inspect.tool",
+      "source": "stage.main.inspect",
+      "target": "tool.check_disk",
+      "kind": "invokes"
+    },
+    {
+      "id": "network.kosika.example.contains.developer-laptop",
+      "source": "network.kosika.example",
+      "target": "network_node.developer-laptop",
+      "kind": "contains"
+    },
+    {
+      "id": "network.kosika.example.contains.kosika-runtime",
+      "source": "network.kosika.example",
+      "target": "network_node.kosika-runtime",
+      "kind": "contains"
+    },
+    {
+      "id": "network.kosika.example.contains.local-model",
+      "source": "network.kosika.example",
+      "target": "network_node.local-model",
+      "kind": "contains"
+    },
+    {
+      "id": "network.kosika.example.contains.neural-space",
+      "source": "network.kosika.example",
+      "target": "network_node.neural-space",
+      "kind": "contains"
+    },
+    {
+      "id": "network.kosika.example.contains.project-memory",
+      "source": "network.kosika.example",
+      "target": "network_node.project-memory",
+      "kind": "contains"
+    },
+    {
+      "id": "network.runtime-device",
+      "source": "network_node.kosika-runtime",
+      "target": "network_node.developer-laptop",
+      "kind": "connects"
+    },
+    {
+      "id": "network.runtime-memory",
+      "source": "network_node.kosika-runtime",
+      "target": "network_node.project-memory",
+      "kind": "connects"
+    },
+    {
+      "id": "network.runtime-model",
+      "source": "network_node.kosika-runtime",
+      "target": "network_node.local-model",
+      "kind": "connects"
+    },
+    {
+      "id": "network.runtime-space",
+      "source": "network_node.kosika-runtime",
+      "target": "network_node.neural-space",
+      "kind": "connects"
+    },
+    {
+      "id": "workflow.main.network",
+      "source": "workflow.main",
+      "target": "network.kosika.example",
+      "kind": "network_context"
+    }
+  ],
+  "views": [
+    {
+      "id": "workflow-view",
+      "name": "Agent workflows",
+      "kind": "workflow"
+    },
+    {
+      "id": "network-view",
+      "name": "Network topology",
+      "kind": "network"
+    },
+    {
+      "id": "mindmap-view",
+      "name": "Structure mindmap",
+      "kind": "memory_graph"
+    }
+  ]
+}

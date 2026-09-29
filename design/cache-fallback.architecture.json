@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Cache-first request flow",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "viewBox": [1000, 480]
+  },
+  "components": [
+    {"id": "request-browser", "type": "frontend", "label": "Browser", "sublabel": "Request origin", "pos": [80, 65], "size": [220, 90]},
+    {"id": "request-api", "type": "backend", "label": "API", "sublabel": "Coordinates the read", "pos": [680, 65], "size": [240, 90]},
+    {"id": "read-cache", "type": "database", "label": "Redis cache", "sublabel": "First lookup", "brand": "redis", "pos": [680, 325], "size": [240, 90]},
+    {"id": "fallback-store", "type": "database", "label": "PostgreSQL", "sublabel": "Fallback read", "brand": "postgresql", "pos": [80, 325], "size": [220, 90]}
+  ],
+  "connections": [
+    {"id": "browser-request", "from": "request-browser", "to": "request-api", "label": "Request", "variant": "emphasis"},
+    {"id": "cache-lookup", "from": "request-api", "to": "read-cache", "label": "Cache lookup", "labelAt": [800, 240]},
+    {"id": "cache-miss-fallback", "from": "read-cache", "to": "fallback-store", "label": "Cache miss: fallback via API", "variant": "dashed"}
+  ],
+  "cards": [
+    {"dot": "emerald", "title": "Cache hit", "items": ["The API returns cached data without reading PostgreSQL."]},
+    {"dot": "amber", "title": "Cache miss", "items": ["The API reads PostgreSQL. The fallback arrow shows control flow, not a Redis-to-database connection."]}
+  ]
+}

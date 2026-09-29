@@ -1,0 +1,24 @@
+record Total {
+  value: Number
+}
+
+fn calculate(base: Number) -> Total {
+  let adjustment: Number = 2
+
+  fn adjusted() -> Number {
+    return base + adjustment
+  }
+
+  fn scale(factor: Number) -> Number {
+    return adjusted() * factor
+  }
+
+  return {value: scale(factor: 3)}
+}
+
+workflow main() -> Total {
+  step calculate_total {
+    let total = calculate(base: 10)
+    return total
+  }
+}

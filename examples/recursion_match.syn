@@ -1,0 +1,52 @@
+record Result {
+  factorial: Number
+  parity: Text
+  classification: Text
+}
+
+fn factorial(n: Number) -> Number recurse 16 {
+  return match n {
+    case 0 { 1 }
+    case _ { n * factorial(n: n - 1) }
+  }
+}
+
+fn even(n: Number) -> Bool recurse 16 {
+  return match n {
+    case 0 { true }
+    case _ { odd(n: n - 1) }
+  }
+}
+
+fn odd(n: Number) -> Bool recurse 16 {
+  return match n {
+    case 0 { false }
+    case _ { even(n: n - 1) }
+  }
+}
+
+fn describe(value: Number) -> Text {
+  return match value {
+    case -1 { "negative one" }
+    case 0 { "zero" }
+    case _ { "other" }
+  }
+}
+
+fn summarize() -> Result {
+  return {
+    factorial: factorial(n: 5),
+    parity: match even(n: 7) {
+      case true { "even" }
+      case false { "odd" }
+    },
+    classification: describe(value: 0)
+  }
+}
+
+workflow main() -> Result {
+  step calculate {
+    let result = summarize()
+    return result
+  }
+}

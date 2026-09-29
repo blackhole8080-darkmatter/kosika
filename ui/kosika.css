@@ -1,0 +1,458 @@
+/* ==========================================================================
+   Kosika Design System — "intelligence lab"
+   Near-black, cyan structure, violet intelligence, amber authority.
+   Glow is reserved for live state and focus. Everything else is flat.
+   ========================================================================== */
+
+:root {
+  color-scheme: dark;
+
+  /* --- Surfaces: cool near-black, blue-green cast ---------------------- */
+  --void:       #04060A;
+  --canvas:     #070A0F;
+  --surface:    #0B1017;
+  --surface-2:  #0F1620;
+  --raised:     #131C27;
+  --editor:     #080C12;
+  --editor-top: #0C1219;
+
+  /* --- Lines: cyan-tinted hairlines, never pure grey ------------------- */
+  --line:        rgba(125, 200, 230, 0.10);
+  --line-strong: rgba(125, 200, 230, 0.20);
+  --line-live:   rgba(34, 211, 238, 0.42);
+
+  /* --- Text ------------------------------------------------------------ */
+  --text:       #DBE7F1;
+  --text-dim:   #8A9BAD;
+  --text-faint: #586A7D;
+
+  /* --- Signal. Each hue has exactly one meaning; never decorate. ------- */
+  --cyan:   #22D3EE;  /* structure    — declarations, links, the graph     */
+  --violet: #A78BFA;  /* intelligence — models, agents, anything inferring */
+  --amber:  #FBBF24;  /* authority    — a declared capability to act       */
+  --lime:   #4ADE80;  /* verified     — passed, complete, replayed         */
+  --rose:   #FB7185;  /* failure      — errors, denials                     */
+  --slate:  #64748B;  /* inert        — fixtures, offline, disabled        */
+
+  /* --- Washes: accent over canvas, for chips and fills ----------------- */
+  --cyan-a:   rgba(34, 211, 238, 0.10);
+  --violet-a: rgba(167, 139, 250, 0.10);
+  --amber-a:  rgba(251, 191, 36, 0.10);
+  --lime-a:   rgba(74, 222, 128, 0.10);
+  --rose-a:   rgba(251, 113, 133, 0.10);
+  --slate-a:  rgba(100, 116, 139, 0.10);
+
+  /* --- Glow: three levels, used sparingly ----------------------------- */
+  --glow-soft:  0 0 24px -8px rgba(34, 211, 238, 0.55);
+  --glow-live:  0 0 0 1px rgba(34, 211, 238, 0.40), 0 0 20px -6px rgba(34, 211, 238, 0.65);
+  --glow-focus: 0 0 0 2px var(--void), 0 0 0 4px rgba(34, 211, 238, 0.55);
+
+  /* --- Type ------------------------------------------------------------ */
+  --sans: Inter, "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+
+  --track-eyebrow: 0.18em;
+  --track-display: -0.03em;
+
+  /* --- Geometry -------------------------------------------------------- */
+  --r-sm: 5px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --grid: 44px;
+
+  /* --- Motion: fast, out-ease, never decorative ----------------------- */
+  --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+  --fast: 120ms var(--ease);
+  --slow: 240ms var(--ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* ==========================================================================
+   Base
+   ========================================================================== */
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--canvas);
+  color: var(--text);
+  font: 400 13px/1.7 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* The lab grid. Masked to the top so it reads as depth, not as a table. */
+.lab-grid {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(34, 211, 238, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(34, 211, 238, 0.05) 1px, transparent 1px);
+  background-size: var(--grid) var(--grid);
+  -webkit-mask-image: radial-gradient(ellipse 90% 60% at 50% 0%, #000 0%, transparent 78%);
+          mask-image: radial-gradient(ellipse 90% 60% at 50% 0%, #000 0%, transparent 78%);
+}
+
+.shell { position: relative; z-index: 1; }
+
+a { color: var(--cyan); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+:focus-visible { outline: none; box-shadow: var(--glow-focus); border-radius: var(--r-sm); }
+::selection { background: rgba(34, 211, 238, 0.26); color: #fff; }
+
+code, pre, kbd, .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+/* ==========================================================================
+   Typographic primitives
+   ========================================================================== */
+
+.eyebrow {
+  font: 600 10px/1 var(--mono);
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin: 0 0 14px;
+}
+.eyebrow .tick { color: var(--cyan); }
+
+.display { font: 600 46px/1.05 var(--sans); letter-spacing: var(--track-display); margin: 0; }
+.h1 { font: 600 30px/1.15 var(--sans); letter-spacing: -0.022em; margin: 0; }
+.h2 { font: 560 20px/1.35 var(--sans); letter-spacing: -0.016em; margin: 0; }
+.h3 { font: 560 15px/1.4 var(--sans); letter-spacing: -0.008em; margin: 0; }
+
+.lede { font-size: 14.5px; line-height: 1.75; color: var(--text-dim); max-width: 62ch; margin: 18px 0 0; }
+.muted { color: var(--text-dim); }
+.faint { color: var(--text-faint); }
+.num { font-size: 11px; color: var(--text-faint); letter-spacing: 0.02em; }
+
+/* ==========================================================================
+   Layout
+   ========================================================================== */
+
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 32px; }
+.section { padding: 76px 0 8px; }
+.section-head { margin-bottom: 30px; }
+.section-head p { color: var(--text-dim); max-width: 68ch; margin: 12px 0 0; }
+.rule { height: 1px; background: var(--line); border: 0; margin: 0; }
+
+/* ==========================================================================
+   Surfaces
+   ========================================================================== */
+
+.card {
+  background: linear-gradient(180deg, var(--surface-2) 0%, var(--surface) 100%);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 24px 26px;
+  position: relative;
+}
+
+/* A hairline of accent along the top edge marks a live surface. */
+.card--live { border-color: var(--line-live); box-shadow: var(--glow-soft); }
+.card--live::before {
+  content: "";
+  position: absolute;
+  inset: -1px -1px auto;
+  height: 1px;
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+  background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+  opacity: 0.75;
+}
+
+.card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.card-head .h3 { flex: 1; }
+
+.grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 900px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
+
+/* ==========================================================================
+   Chips — semantic, one hue per meaning
+   ========================================================================== */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: 600 10px/1 var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 5px 9px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-strong);
+  color: var(--text-dim);
+  background: var(--surface-2);
+  white-space: nowrap;
+}
+.chip--cyan   { color: var(--cyan);   background: var(--cyan-a);   border-color: rgba(34, 211, 238, 0.28); }
+.chip--violet { color: var(--violet); background: var(--violet-a); border-color: rgba(167, 139, 250, 0.28); }
+.chip--amber  { color: var(--amber);  background: var(--amber-a);  border-color: rgba(251, 191, 36, 0.28); }
+.chip--lime   { color: var(--lime);   background: var(--lime-a);   border-color: rgba(74, 222, 128, 0.28); }
+.chip--rose   { color: var(--rose);   background: var(--rose-a);   border-color: rgba(251, 113, 133, 0.28); }
+.chip--slate  { color: var(--slate);  background: var(--slate-a);  border-color: rgba(100, 116, 139, 0.28); }
+
+.chip .dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex: none; }
+
+/* The only animated element in the system: something is happening now. */
+.chip--live .dot { animation: beat 1.8s var(--ease) infinite; }
+@keyframes beat {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.45; }
+}
+
+/* ==========================================================================
+   Code surface
+   ========================================================================== */
+
+.code {
+  background: var(--editor);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 18px 20px;
+  font: 400 12.5px/1.85 var(--mono);
+  color: #B9CBD9;
+  overflow-x: auto;
+  white-space: pre;
+  tab-size: 2;
+  margin: 0;
+}
+
+/* Token colours. Deliberately narrow: four hues, high contrast, no rainbow. */
+.tok-key  { color: var(--cyan); font-weight: 500; }
+.tok-type { color: var(--violet); }
+.tok-name { color: #E2EDF5; }
+.tok-str  { color: var(--lime); }
+.tok-num  { color: var(--amber); }
+.tok-com  { color: #3E5266; font-style: italic; }
+.tok-punc { color: #566A7D; }
+
+/* ==========================================================================
+   Data display — keys, values, digests
+   ========================================================================== */
+
+.kv { display: grid; grid-template-columns: 168px minmax(0, 1fr); gap: 12px 20px; align-items: start; }
+@media (max-width: 620px) { .kv { grid-template-columns: 1fr; gap: 4px 0; } }
+
+.kv dt {
+  font: 600 10px/1.4 var(--mono);
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--text-faint);
+  padding-top: 3px;
+}
+.kv dd { margin: 0; font: 400 12.5px/1.85 var(--mono); color: var(--text); min-width: 0; overflow-wrap: anywhere; }
+
+.digest {
+  font: 400 12.5px/1 var(--mono);
+  color: var(--violet);
+  background: var(--violet-a);
+  border: 1px solid rgba(167, 139, 250, 0.24);
+  border-radius: var(--r-sm);
+  padding: 4px 8px;
+  display: inline-block;
+}
+
+/* ==========================================================================
+   Trace timeline
+   ========================================================================== */
+
+.trace { display: flex; flex-direction: column; }
+
+.trace-row {
+  display: grid;
+  grid-template-columns: 26px 132px minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: start;
+  padding: 13px 0;
+  border-top: 1px solid var(--line);
+  position: relative;
+}
+.trace-row:first-child { border-top: 0; }
+@media (max-width: 760px) {
+  .trace-row { grid-template-columns: 26px minmax(0, 1fr); }
+  .trace-row .trace-seq, .trace-row .trace-status { grid-column: 2; justify-self: start; }
+}
+
+/* The rail: one continuous line through the whole run. */
+.trace-row::before {
+  content: "";
+  position: absolute;
+  left: 12px;
+  top: 36px;
+  bottom: -14px;
+  width: 1px;
+  background: var(--line);
+}
+.trace-row:last-child::before { display: none; }
+
+.trace-node {
+  width: 25px; height: 25px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font: 400 9px/1 var(--mono);
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+  color: var(--text-faint);
+  z-index: 1;
+  flex: none;
+}
+.trace-node[data-state="complete"] { color: var(--lime); border-color: rgba(74, 222, 128, 0.4);  background: var(--lime-a); }
+.trace-node[data-state="live"]     { color: var(--cyan); border-color: var(--line-live); box-shadow: var(--glow-live); }
+.trace-node[data-state="denied"]   { color: var(--rose); border-color: rgba(251, 113, 133, 0.4); background: var(--rose-a); }
+
+.trace-kind {
+  font: 600 10px/1.4 var(--mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  padding-top: 6px;
+}
+.trace-name { font: 400 12.5px/1.85 var(--mono); color: var(--text); padding-top: 3px; overflow-wrap: anywhere; }
+.trace-name .op { color: var(--text-faint); }
+.trace-detail { font-size: 11.5px; line-height: 1.6; color: var(--text-dim); margin-top: 6px; }
+.trace-seq { font: 400 10px/1.5 var(--mono); color: var(--text-faint); padding-top: 7px; text-align: right; }
+.trace-status { font: 600 10px/1.4 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; padding-top: 6px; }
+.trace-status[data-state="complete"] { color: var(--lime); }
+.trace-status[data-state="live"]     { color: var(--cyan); }
+.trace-status[data-state="denied"]   { color: var(--rose); }
+
+/* ==========================================================================
+   Capability matrix — authority is the point
+   ========================================================================== */
+
+.matrix { width: 100%; border-collapse: collapse; font: 400 12.5px/1.6 var(--mono); }
+.matrix th, .matrix td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--line); }
+.matrix th {
+  font: 600 10px/1.4 var(--mono);
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.matrix td:first-child { color: var(--text); }
+.matrix td:not(:first-child) { text-align: center; }
+.matrix tr:last-child td { border-bottom: 0; }
+
+.perm { font: 600 10px/1 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; }
+.perm[data-allowed="yes"] { color: var(--amber); }
+.perm[data-allowed="no"]  { color: var(--text-faint); }
+
+/* ==========================================================================
+   Figures — SVG diagrams sit on a plate, never float on the page
+   ========================================================================== */
+
+.figure {
+  background:
+    radial-gradient(ellipse 70% 70% at 50% 0%, rgba(34, 211, 238, 0.05), transparent 70%),
+    var(--editor);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 20px;
+  overflow-x: auto;
+}
+.figure svg { display: block; width: 100%; height: auto; min-width: 640px; }
+.figure figcaption {
+  font: 400 10px/1.5 var(--mono);
+  color: var(--text-faint);
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+/* Diagram primitives */
+.dg-edge      { stroke: rgba(125, 200, 230, 0.26); stroke-width: 1; fill: none; }
+.dg-edge--live { stroke: var(--line-live); stroke-dasharray: 3 4; animation: flow 1.6s linear infinite; }
+@keyframes flow { to { stroke-dashoffset: -14; } }
+
+.dg-box          { fill: var(--surface-2); stroke: var(--line-strong); stroke-width: 1; }
+.dg-box--cyan    { stroke: rgba(34, 211, 238, 0.5);  fill: rgba(34, 211, 238, 0.05); }
+.dg-box--violet  { stroke: rgba(167, 139, 250, 0.5); fill: rgba(167, 139, 250, 0.05); }
+.dg-box--amber   { stroke: rgba(251, 191, 36, 0.45); fill: rgba(251, 191, 36, 0.05); }
+.dg-box--lime    { stroke: rgba(74, 222, 128, 0.45); fill: rgba(74, 222, 128, 0.05); }
+.dg-box--live    { stroke: var(--line-live); fill: rgba(34, 211, 238, 0.09); }
+
+.dg-label { font: 500 12px var(--mono); fill: var(--text); }
+.dg-sub   { font: 400 10px var(--mono); fill: var(--text-faint); letter-spacing: 0.06em; }
+.dg-kind  { font: 600 9px var(--mono); fill: var(--cyan); letter-spacing: 0.14em; }
+
+/* ==========================================================================
+   Buttons
+   ========================================================================== */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+  color: var(--text);
+  font: 500 12px var(--sans);
+  cursor: pointer;
+  transition: border-color var(--fast), background var(--fast), box-shadow var(--fast), transform var(--fast);
+}
+.btn:hover { border-color: var(--line-live); background: var(--raised); transform: translateY(-1px); }
+.btn--primary {
+  background: linear-gradient(180deg, rgba(34, 211, 238, 0.20), rgba(34, 211, 238, 0.10));
+  border-color: rgba(34, 211, 238, 0.45);
+  color: var(--cyan);
+  box-shadow: var(--glow-soft);
+}
+.btn--primary:hover { box-shadow: var(--glow-live); }
+
+kbd {
+  font: 400 10px/1 var(--mono);
+  border: 1px solid var(--line-strong);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 3px 5px;
+  color: var(--text-dim);
+  background: var(--surface-2);
+}
+
+/* ==========================================================================
+   Legend
+   ========================================================================== */
+
+.legend { display: flex; flex-wrap: wrap; gap: 8px 20px; }
+.legend-item { display: flex; align-items: center; gap: 7px; font: 400 10px/1.5 var(--mono); color: var(--text-dim); }
+.legend-swatch { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+.legend-swatch--cyan   { background: var(--cyan);   box-shadow: 0 0 8px rgba(34, 211, 238, 0.6); }
+.legend-swatch--violet { background: var(--violet); box-shadow: 0 0 8px rgba(167, 139, 250, 0.6); }
+.legend-swatch--amber  { background: var(--amber);  box-shadow: 0 0 8px rgba(251, 191, 36, 0.6); }
+.legend-swatch--lime   { background: var(--lime);   box-shadow: 0 0 8px rgba(74, 222, 128, 0.6); }
+.legend-swatch--rose   { background: var(--rose);   box-shadow: 0 0 8px rgba(251, 113, 133, 0.6); }
+
+/* ==========================================================================
+   Footer
+   ========================================================================== */
+
+.foot {
+  border-top: 1px solid var(--line);
+  margin-top: 80px;
+  padding: 30px 0 44px;
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+  font: 400 10px/1.5 var(--mono);
+  color: var(--text-faint);
+}
