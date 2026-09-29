@@ -3,7 +3,7 @@
 The `design/` directory contains deterministic visual design manifests for Kosika programs and
 networks. Design manifests are separate from executable source and network manifests:
 
-- `.syn` source declares records, tools, agents, and workflows.
+- `.kos` source declares records, tools, agents, and workflows.
 - `network/` manifests declare runtimes, models, devices, memory graphs, tabs, and virtual spaces.
 - `design/` manifests declare visual nodes, typed edges, canvas positions, views, and styles.
 
@@ -15,7 +15,7 @@ JSON, text, Mermaid, or SVG without asking a model to infer the program structur
 Generate a design from a Kosika program:
 
 ```text
-python -m kosika.cli design generate examples/test_host_live.syn \
+python -m kosika.cli design generate examples/test_host_live.kos \
   --id test-host.design \
   --name "Test Host Agent Workflow" \
   --network network/example-network.json \

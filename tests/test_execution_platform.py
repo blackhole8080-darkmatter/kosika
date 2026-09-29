@@ -242,7 +242,7 @@ class PlatformTests(unittest.TestCase):
         self.assertFalse((self.root / "cycle").exists())
 
     def test_developer_tools_and_evaluations(self):
-        source = self.root / "main.syn"
+        source = self.root / "main.kos"
         source.write_text(SOURCE)
         formatted = format_source(SOURCE)
         self.assertEqual(parse(formatted), parse(SOURCE))

@@ -1,0 +1,18 @@
+{
+  "scripted-research-model": [
+    {
+      "finish_reason": "tool_calls",
+      "tool_calls": [
+        {
+          "id": "call-1",
+          "name": "search_notes",
+          "arguments": {"query": "launch date"}
+        }
+      ]
+    },
+    {
+      "finish_reason": "stop",
+      "content": "{\"answer\":\"The notes schedule launch for June 1.\",\"sources\":[\"launch-plan\"]}"
+    }
+  ]
+}

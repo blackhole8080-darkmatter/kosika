@@ -1,0 +1,54 @@
+{
+  "manifestVersion": 1,
+  "server": {
+    "source": "documents",
+    "protocolVersion": "2025-11-25",
+    "name": "kosika-documents-mcp",
+    "version": "0.1.0"
+  },
+  "tools": {
+    "search": {
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "hits": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string"
+                },
+                "excerpt": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "source",
+                "excerpt"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "hits"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "a7e57049d56a0ad4320894675855d956883b095ac9f43e294b8d68976c8021f9"
+    }
+  }
+}

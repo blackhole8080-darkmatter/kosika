@@ -75,10 +75,10 @@ class LocalBindingTests(unittest.TestCase):
     def test_private_initializer_calls_and_types_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / 'lib.syn').write_text(
+            (root / 'lib.kos').write_text(
                 'record Secret { value: Number } fn hidden() -> Number { return 1 }')
-            main = root / 'main.syn'
+            main = root / 'main.kos'
             for binding in ('let x: Number = hidden()', 'let x: Secret = {value: 1}'):
-                main.write_text('import "lib.syn" fn main() -> Number { ' + binding + ' return 1 }')
+                main.write_text('import "lib.kos" fn main() -> Number { ' + binding + ' return 1 }')
                 with self.subTest(binding=binding), self.assertRaisesRegex(CheckError, 'private'):
                     load_program(main)

@@ -105,10 +105,10 @@ def load_program(path: str | Path, *, root: str | Path | None = None) -> Program
         if (
             candidate.is_symlink()
             or not resolved.is_relative_to(boundary)
-            or resolved.suffix != ".syn"
+            or resolved.suffix != ".kos"
         ):
             raise CheckError(
-                f"Import outside the granted .syn module root: {candidate}"
+                f"Import outside the granted .kos module root: {candidate}"
             )
         if resolved in active:
             raise CheckError(f"Import cycle at {resolved}")

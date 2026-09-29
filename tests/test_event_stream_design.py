@@ -173,14 +173,14 @@ workflow main(q: R) -> R { require approval
 }"""
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / "main.syn").write_text(source)
+            (root / "main.kos").write_text(source)
             (root / "input.json").write_text('{"q":{"text":"review me"}}')
             event_trace = root / "events.jsonl"
             design = root / "timeline.design.json"
             args = [
                 "kosika",
                 "run",
-                str(root / "main.syn"),
+                str(root / "main.kos"),
                 "--input",
                 str(root / "input.json"),
                 "--journal",

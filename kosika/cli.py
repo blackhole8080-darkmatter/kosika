@@ -14,6 +14,8 @@ from .approval_ledger import ApprovalLedger
 from .assistant import AssistantError, KosikaAssistant
 from .ast import ToolDecl
 from .checker import check
+from .city import CITY_NAME, CityError, build_city
+from .cityscape import render_cityscape_svg
 from .controls import ControlledProvider, ExecutionError, ModelLimits
 from .design import (
     DESIGN_THEMES,
@@ -22,7 +24,13 @@ from .design import (
     render_design,
     write_design_manifest,
 )
-from .durable import ApprovalPending, ExecutionSession
+from .durable import (
+    AgentExecutionSession,
+    ApprovalPending,
+    ExecutionSession,
+    inspect_journal,
+)
+from .editor_features import EditorFeatureError, build_editor_features
 from .event_stream_design import (
     DesignError,
     build_timeline_design,
@@ -73,6 +81,8 @@ from .model import (
     ModelProvider,
     ModelProviderError,
     ModelResponse,
+    ModelToolCall,
+    ModelUsage,
     OpenAICompatibleProvider,
     ScriptedModelProvider,
 )
@@ -90,6 +100,7 @@ from .network import (
 from .project_analysis import ProjectAnalysisError, analyze_python_project
 from .runtime import MockMCP, replay, run
 from .schema import schema_for_record, schema_for_tool_input, schemas_equal
+from .skills import SkillCatalog, SkillCatalogError, SkillRouter, SkillRoutingError
 from .source_map import (
     SourceMapError,
     build_source_map,
@@ -97,18 +108,28 @@ from .source_map import (
 from .source_map import to_mermaid as render_source_map_mermaid
 from .source_map import to_text as render_source_map_text
 from .synapse_bridge import normalize_events
+from .unified_mindmap import (
+    UnifiedMindmapError,
+    build_unified_mindmap,
+)
+from .unified_mindmap import to_mermaid as render_unified_mermaid
+from .unified_mindmap import to_text as render_unified_text
 
 COMMANDS: tuple[str, ...] = (
     "project",
     "check",
+    "editor",
     "analyze",
     "sourcemap",
     "mindmap",
+    "unified",
     "explain",
     "assistant",
+    "skills",
     "run",
     "agent",
     "replay",
+    "journal",
     "network",
     "design",
     "manifest",
@@ -129,24 +150,211 @@ def analyze_source_file(path: Path) -> dict[str, Any]:
     return adapter.analyze_file(path)
 
 
+def _render_journal_text(report: dict[str, Any]) -> str:
+    lines = [
+        f"Journal: {report['path']}",
+        f"Kind: {report['kind']}",
+    ]
+    agent = report.get("agent")
+    if isinstance(agent, dict):
+        lines.extend(
+            [
+                f"State: {agent['state']}",
+                f"Plan hash: {agent['plan_hash']}",
+                f"Binding ID: {agent['binding_id']}",
+                f"Checkpoint: {json.dumps(agent['checkpoint'], sort_keys=True)}",
+            ]
+        )
+    workflow = report.get("workflow")
+    if isinstance(workflow, dict):
+        steps = workflow.get("steps", [])
+        lines.append(f"Workflow steps: {len(steps)}")
+        for item in steps:
+            lines.append(
+                f"  {json.dumps(item['step'], separators=(',', ':'))}: {item['state']}"
+            )
+    return "\n".join(lines)
+
+def _agent_model_fixture(path: Path, model_name: str) -> ModelProvider:
+    payload = strict_json(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict) or model_name not in payload:
+        raise ValueError(
+            f"Agent model fixture must contain responses for {model_name!r}"
+        )
+    raw_responses = payload[model_name]
+    if (
+        not isinstance(raw_responses, list)
+        or not raw_responses
+        or any(not isinstance(item, dict) for item in raw_responses)
+    ):
+        raise ValueError(
+            f"Agent model fixture {model_name!r} requires a nonempty response list"
+        )
+    responses: list[ModelResponse] = []
+    for index, item in enumerate(raw_responses):
+        content = item.get("content")
+        if content is not None and not isinstance(content, str):
+            raise ValueError(
+                f"Agent model fixture response {index} content must be text or null"
+            )
+        finish_reason = item.get("finish_reason", "stop")
+        if not isinstance(finish_reason, str):
+            raise ValueError(
+                f"Agent model fixture response {index} finish_reason must be text"
+            )
+        raw_calls = item.get("tool_calls", [])
+        if not isinstance(raw_calls, list):
+            raise ValueError(
+                f"Agent model fixture response {index} tool_calls must be a list"
+            )
+        calls: list[ModelToolCall] = []
+        for call in raw_calls:
+            if (
+                not isinstance(call, dict)
+                or not isinstance(call.get("id"), str)
+                or not isinstance(call.get("name"), str)
+                or not isinstance(call.get("arguments"), dict)
+            ):
+                raise ValueError(
+                    f"Agent model fixture response {index} contains an invalid tool call"
+                )
+            calls.append(
+                ModelToolCall(call["id"], call["name"], call["arguments"])
+            )
+        usage = item.get("usage")
+        if usage is not None and not isinstance(usage, dict):
+            raise ValueError(
+                f"Agent model fixture response {index} usage must be an object"
+            )
+        try:
+            model_usage = ModelUsage(**usage) if usage is not None else None
+        except TypeError as exc:
+            raise ValueError(
+                f"Agent model fixture response {index} usage is invalid"
+            ) from exc
+        responses.append(
+            ModelResponse(
+                content=content,
+                tool_calls=tuple(calls),
+                finish_reason=finish_reason,
+                usage=model_usage,
+            )
+        )
+    return ScriptedModelProvider(responses)
+
+
+def _agent_tool_fixture(path: Path) -> dict[str, Any]:
+    payload = strict_json(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict) or not payload:
+        raise ValueError("Agent tool fixture must be a nonempty object")
+    for name, value in payload.items():
+        if not isinstance(name, str) or not isinstance(value, (dict, list)):
+            raise ValueError(
+                "Agent tool fixture values must be output records or record lists"
+            )
+        if isinstance(value, list) and (
+            not value or any(not isinstance(item, dict) for item in value)
+        ):
+            raise ValueError(
+                "Agent tool fixture record lists must be nonempty objects"
+            )
+    return payload
+
+
+def _agent_tool_fixture_result(
+    fixture: dict[str, Any], declaration: ToolDecl
+) -> Any:
+    value = fixture.get(declaration.name, fixture.get(declaration.operation))
+    if value is None:
+        raise AgentLoopError(
+            f"Agent tool fixture has no result for {declaration.name!r}"
+        )
+    if isinstance(value, list):
+        if not value:
+            raise AgentLoopError(
+                f"Agent tool fixture has no remaining result for {declaration.name!r}"
+            )
+        return value.pop(0)
+    return value
+
+
+
 def _run_agent_command(
     args: argparse.Namespace, parser: argparse.ArgumentParser
 ) -> int:
-    if not args.model:
-        parser.error("--model is required (or set KOSIKA_MODEL)")
     if args.mcp_server is not None and args.mcp_manifest is None:
         parser.error("--mcp-manifest is required when --mcp-server is used")
     if args.mcp_server is None and args.mcp_manifest is not None:
         parser.error("--mcp-manifest requires --mcp-server")
+    if args.tool_fixture is not None and args.mcp_server is not None:
+        parser.error("--tool-fixture cannot be combined with --mcp-server")
+    if args.tool_fixture is not None and args.mcp_manifest is not None:
+        parser.error("--tool-fixture cannot be combined with --mcp-manifest")
 
     if (args.approval_plan_hash is None) != (args.approval_action_hash is None):
         parser.error(
             "--approval-plan-hash and --approval-action-hash must be used together"
         )
+    if args.resume and args.journal is None:
+        parser.error("--resume requires --journal")
+    if args.journal is not None and not args.binding_id:
+        parser.error("--binding-id is required with --journal")
 
     program = load_program(args.source)
     check(program)
-    manifest: MCPManifest | None = None
+    agent_decl = next(
+        (agent for agent in program.agents if agent.name == args.agent),
+        None,
+    )
+    if agent_decl is None:
+        parser.error(f"Unknown Kosika agent {args.agent!r}")
+    declared_model = next(
+        (model for model in program.models if model.name == agent_decl.model),
+        None,
+    )
+    model_name = args.model or (
+        declared_model.deployment
+        if declared_model is not None
+        else None
+    )
+    if args.model_fixture is not None and not model_name and declared_model is not None:
+        model_name = declared_model.name
+    if not model_name:
+        parser.error(
+            "--model is required unless the selected agent references a model "
+            "with a deployment (or set KOSIKA_MODEL), or --model-fixture is used"
+        )
+    input_value: dict[str, Any] | None = None
+    if args.input is not None:
+        try:
+            parsed_input = strict_json(args.input.read_text(encoding="utf-8"))
+        except (OSError, TypeError, ValueError) as exc:
+            parser.error(f"Invalid agent input JSON: {exc}")
+        if not isinstance(parsed_input, dict):
+            parser.error("Agent input must be a JSON object")
+        input_value = parsed_input
+    if declared_model is not None and input_value is None:
+        parser.error(
+            "--input is required for agents with a declared model; "
+            "the file must match the model input record"
+        )
+    if declared_model is None and input_value is not None:
+        parser.error("--input requires the selected agent to declare a model")
+    task = args.task or "Run the agent."
+    try:
+        tool_fixture = (
+            _agent_tool_fixture(args.tool_fixture)
+            if args.tool_fixture is not None
+            else None
+        )
+    except (OSError, TypeError, ValueError) as exc:
+        print(f"Agent fixture failed safely: {exc}", file=sys.stderr)
+        return 2
+    try:
+        skill_router = SkillRouter(SkillCatalog.from_directories(args.skill_dir))
+    except SkillCatalogError as exc:
+        print(f"Skill catalog failed: {exc}", file=sys.stderr)
+        return 2
     with contextlib.ExitStack() as stack:
         client: MCPStdioClient | None = None
         if args.mcp_server is not None:
@@ -180,42 +388,85 @@ def _run_agent_command(
                     input_schema=input_schema,
                     output_schema=schema_for_record(program, declaration.output),
                 )
+            if tool_fixture is not None:
+                return _agent_tool_fixture_result(tool_fixture, declaration)
             return MockMCP().call(declaration.source, declaration.operation)
 
-        provider = OpenAICompatibleProvider(
-            args.model_url,
-            args.model,
-            api_key=os.environ.get("KOSIKA_MODEL_API_KEY"),
-        )
+        try:
+            provider = (
+                _agent_model_fixture(args.model_fixture, model_name)
+                if args.model_fixture is not None
+                else OpenAICompatibleProvider(
+                    args.model_url,
+                    model_name,
+                    api_key=os.environ.get("KOSIKA_MODEL_API_KEY"),
+                )
+            )
+        except (OSError, TypeError, ValueError) as exc:
+            print(f"Agent fixture failed safely: {exc}", file=sys.stderr)
+            return 2
         loop = AgentLoop(
             program,
             provider,
             execute_tool,
             max_steps=args.max_steps,
+            deadline_seconds=args.deadline_seconds,
             approval_ledger=ApprovalLedger(args.approval_ledger)
             if args.approval_ledger is not None
             else None,
+            skill_router=skill_router,
+            skill_policy=args.skill_policy,
+            explicit_skills=tuple(args.skill),
+            max_skills=args.max_skills,
         )
-        current_plan_hash = loop.plan_hash_for(args.agent, args.task)
-        approval = None
-        if args.approval_plan_hash is not None:
-            approval = ApprovalRecord(
-                plan_hash=args.approval_plan_hash,
-                approved_by=args.approved_by,
-                action_hash=args.approval_action_hash,
+        agent_session = (
+            AgentExecutionSession(
+                args.journal,
+                binding_id=args.binding_id,
+                resume=args.resume,
             )
-        print(f"Plan hash: {current_plan_hash}")
+            if args.journal is not None
+            else None
+        )
         try:
+            current_plan_hash = loop.plan_hash_for(
+                args.agent,
+                task,
+                input_value=input_value,
+            )
+            approval = None
+            if args.approval_plan_hash is not None:
+                approval = ApprovalRecord(
+                    plan_hash=args.approval_plan_hash,
+                    approved_by=args.approved_by,
+                    action_hash=args.approval_action_hash,
+                )
+            print(f"Plan hash: {current_plan_hash}")
             result = loop.run(
                 args.agent,
-                args.task,
+                task,
+                input_value=input_value,
                 system_prompt=args.system_prompt,
                 approval=approval,
+                trace_path=args.trace,
+                session=agent_session,
             )
-        except (AgentLoopError, ModelProviderError, MCPProtocolError) as exc:
+        except (
+            AgentLoopError,
+            ModelProviderError,
+            MCPProtocolError,
+            SkillRoutingError,
+        ) as exc:
             print(f"Agent failed safely: {exc}", file=sys.stderr)
             return 2
-        print(result.content)
+        if result.selected_skills:
+            print(f"Skills: {', '.join(result.selected_skills)}")
+        if result.structured_output is not None:
+            print(json.dumps(result.structured_output, indent=2, sort_keys=True))
+        else:
+            print(result.content)
+        if args.trace is not None:
+            print(f"Trace: {args.trace}")
         print(f"Model steps: {result.model_steps}")
         return 0
 
@@ -394,13 +645,26 @@ def main() -> int:
 
     check_parser = subparsers.add_parser("check")
     check_parser.add_argument("source", type=Path)
+    editor_parser = subparsers.add_parser(
+        "editor",
+        help="Return bounded JSON editor features for one Kosika source file.",
+    )
+    editor_parser.add_argument("source", type=Path)
+    editor_parser.add_argument(
+        "--stdin",
+        action="store_true",
+        help="Read unsaved source text from stdin instead of the file.",
+    )
+    editor_parser.add_argument("--format", choices=("json",), default="json")
 
     analyze_parser = subparsers.add_parser(
         "analyze",
         help="Extract bounded, read-only structural facts from supported source files.",
     )
     analyze_parser.add_argument(
-        "source", type=Path, help="Python, JavaScript, or TypeScript source file to analyze."
+        "source",
+        type=Path,
+        help="Python, JavaScript, TypeScript, or Rust source file to analyze.",
     )
     analyze_parser.add_argument(
         "--format", choices=("json", "text"), default="text", help="Output format."
@@ -409,8 +673,8 @@ def main() -> int:
     sourcemap_parser = subparsers.add_parser(
         "sourcemap",
         help=(
-            "Map Python, JavaScript, and TypeScript declarations in a directory "
-            "into one readable, deterministic map."
+            "Map Python, JavaScript, TypeScript, and Rust declarations in a "
+            "directory into one readable, deterministic map."
         ),
     )
     sourcemap_parser.add_argument("root", type=Path, help="Directory to map.")
@@ -447,6 +711,16 @@ def main() -> int:
         type=Path,
         help="Write the representation to a file instead of stdout.",
     )
+    unified_parser = subparsers.add_parser(
+        "unified",
+        help="Combine a checked Kosika mindmap with an optional external source map.",
+    )
+    unified_parser.add_argument("source", type=Path)
+    unified_parser.add_argument("--project", type=Path)
+    unified_parser.add_argument(
+        "--format", choices=("json", "mermaid", "text"), default="json"
+    )
+    unified_parser.add_argument("--output", type=Path)
 
     explain_parser = subparsers.add_parser(
         "explain",
@@ -548,6 +822,32 @@ def main() -> int:
         help="Print answer, diagnostics, and mindmap as structured JSON.",
     )
 
+    skills_parser = subparsers.add_parser(
+        "skills",
+        help="List local skills or select relevant skills for a task.",
+    )
+    skills_parser.add_argument(
+        "--skill-dir",
+        action="append",
+        type=Path,
+        default=[],
+        help="Directory containing skill.json manifests; may be repeated.",
+    )
+    skills_parser.add_argument("--task", help="Task used for automatic skill selection.")
+    skills_parser.add_argument(
+        "--skill",
+        action="append",
+        default=[],
+        help="Skill id to require; may be repeated.",
+    )
+    skills_parser.add_argument(
+        "--policy",
+        choices=("automatic", "explicit", "hybrid", "disabled"),
+        default="hybrid",
+    )
+    skills_parser.add_argument("--max-skills", type=int, default=6)
+    skills_parser.add_argument("--format", choices=("text", "json"), default="text")
+
     run_parser = subparsers.add_parser("run")
     run_parser.add_argument("source", type=Path)
     run_parser.add_argument("--workflow", default="main")
@@ -620,11 +920,19 @@ def main() -> int:
 
     agent_parser = subparsers.add_parser(
         "agent",
-        help="Run a declared Kosika agent against a local OpenAI-compatible model.",
+        help="Run a declared Kosika agent against a live or fixture provider.",
     )
     agent_parser.add_argument("source", type=Path)
     agent_parser.add_argument("--agent", required=True)
-    agent_parser.add_argument("--task", required=True)
+    agent_parser.add_argument(
+        "--task",
+        help="Natural-language task label; optional when --input is provided.",
+    )
+    agent_parser.add_argument(
+        "--input",
+        type=Path,
+        help="JSON object matching the selected model's input record.",
+    )
     agent_parser.add_argument(
         "--model-url",
         default=os.environ.get("KOSIKA_MODEL_URL", "http://localhost:11434/v1"),
@@ -636,15 +944,75 @@ def main() -> int:
         help="Local model name, or KOSIKA_MODEL.",
     )
     agent_parser.add_argument(
+        "--model-fixture",
+        type=Path,
+        help="Offline JSON agent responses grouped by model identifier.",
+    )
+    agent_parser.add_argument(
+        "--tool-fixture",
+        type=Path,
+        help="Offline JSON tool results grouped by tool name or operation.",
+    )
+    agent_parser.add_argument(
         "--system-prompt",
         default=None,
         help="Optional system prompt for the model.",
     )
     agent_parser.add_argument(
+        "--skill-dir",
+        action="append",
+        type=Path,
+        default=[],
+        help="Directory containing skill.json manifests; may be repeated.",
+    )
+    agent_parser.add_argument(
+        "--skill",
+        action="append",
+        default=[],
+        help="Skill id to require; may be repeated.",
+    )
+    agent_parser.add_argument(
+        "--skill-policy",
+        choices=("automatic", "explicit", "hybrid", "disabled"),
+        default="hybrid",
+        help="Skill selection policy.",
+    )
+    agent_parser.add_argument(
+        "--max-skills",
+        type=int,
+        default=6,
+        help="Maximum selected skills including dependencies.",
+    )
+    agent_parser.add_argument(
         "--max-steps",
         type=int,
-        default=8,
-        help="Maximum model responses allowed in one run.",
+        default=None,
+        help="Maximum model responses; defaults to the declared agent limit.",
+    )
+    agent_parser.add_argument(
+        "--deadline-seconds",
+        type=float,
+        default=None,
+        help="Maximum cooperative runtime; defaults to the declared agent limit.",
+    )
+    agent_parser.add_argument(
+        "--trace",
+        type=Path,
+        help="Write a completed direct-agent JSONL trace.",
+    )
+    agent_parser.add_argument(
+        "--journal",
+        type=Path,
+        help="SQLite journal for durable direct-agent execution.",
+    )
+    agent_parser.add_argument(
+        "--binding-id",
+        help="Host identity for the model, tools, and policy binding.",
+    )
+    agent_parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume a matching durable agent journal.",
     )
     agent_parser.add_argument(
         "--mcp-server",
@@ -678,6 +1046,17 @@ def main() -> int:
 
     replay_parser = subparsers.add_parser("replay")
     replay_parser.add_argument("trace", type=Path)
+    journal_parser = subparsers.add_parser(
+        "journal",
+        help="Inspect a durable Kosika workflow or direct-agent journal.",
+    )
+    journal_parser.add_argument("path", type=Path)
+    journal_parser.add_argument(
+        "--format",
+        choices=("text", "json"),
+        default="text",
+        help="Output format.",
+    )
 
     network_parser = subparsers.add_parser(
         "network",
@@ -716,6 +1095,29 @@ def main() -> int:
         "design",
         help="Generate and render deterministic agent-workflow vector designs.",
     )
+
+    city_parser = subparsers.add_parser(
+        "city",
+        help="Build and render the agent city across every program under a root.",
+    )
+    city_parser.add_argument("root", type=Path)
+    city_parser.add_argument(
+        "--format", choices=("text", "json", "svg", "live"), default="text"
+    )
+    city_parser.add_argument("--theme", choices=("lab", "day"), default="lab")
+    city_parser.add_argument("--output", type=Path, default=None)
+    city_parser.add_argument(
+        "--name",
+        default=None,
+        help=f"City name to render (default: {CITY_NAME}).",
+    )
+    city_parser.add_argument(
+        "--serve",
+        action="store_true",
+        help="Serve the live city and drive it from real executions under root.",
+    )
+    city_parser.add_argument("--host", default="127.0.0.1")
+    city_parser.add_argument("--port", type=int, default=8787)
     design_subparsers = design_parser.add_subparsers(
         dest="design_command", required=True
     )
@@ -906,6 +1308,71 @@ def main() -> int:
         except (OSError, SourceMapError, ValueError) as exc:
             print(f"Source map failed safely: {exc}", file=sys.stderr)
             return 2
+    if args.command == "skills":
+        try:
+            catalog = SkillCatalog.from_directories(args.skill_dir)
+            selection = None
+            if args.task is not None:
+                selection = SkillRouter(catalog).select(
+                    args.task,
+                    explicit=tuple(args.skill),
+                    policy=args.policy,
+                    max_skills=args.max_skills,
+                )
+            payload: dict[str, Any] = {
+                "skills": [skill.manifest() for skill in catalog],
+            }
+            if selection is not None:
+                payload["selection"] = {
+                    "policy": selection.policy,
+                    "selected": list(selection.plan_entries),
+                    "reasons": dict(selection.reasons),
+                    "scores": dict(selection.scores),
+                }
+            if args.format == "json":
+                print(json.dumps(payload, indent=2, sort_keys=True))
+            else:
+                for skill in payload["skills"]:
+                    print(f"- {skill['id']} v{skill['version']}: {skill['summary']}")
+                if selection is not None:
+                    print("Selected:")
+                    for skill_id in selection.ids:
+                        reason = dict(selection.reasons).get(skill_id, "selected")
+                        print(f"- {skill_id}: {reason}")
+            return 0
+        except (SkillCatalogError, SkillRoutingError) as exc:
+            print(f"Skill selection failed safely: {exc}", file=sys.stderr)
+            return 2
+    if args.command == "city":
+        try:
+            if args.serve:
+                from .city_live import serve_city
+
+                name = args.name or CITY_NAME
+                print(f"{name} live city on http://{args.host}:{args.port}")
+                serve_city(args.root, host=args.host, port=args.port, name=name)
+                return 0
+            city = build_city(args.root, name=args.name)
+            if args.format == "json":
+                payload = city.to_dict()
+            elif args.format == "svg":
+                payload = render_cityscape_svg(city, theme=args.theme)
+            elif args.format == "live":
+                from .city_live import render_city_live
+
+                payload = render_city_live(city)
+            else:
+                payload = city.to_text()
+            if args.output is not None:
+                args.output.parent.mkdir(parents=True, exist_ok=True)
+                args.output.write_text(payload, encoding="utf-8")
+                print(f"City written: {args.output}")
+            else:
+                print(payload)
+            return 0
+        except (OSError, CityError) as exc:
+            print(f"City failed safely: {exc}", file=sys.stderr)
+            return 2
     if args.command == "design":
         try:
             if args.design_command == "generate":
@@ -1018,6 +1485,18 @@ def main() -> int:
             f"Verified {len(manifest.tools)} MCP tool(s) against {manifest.server_name} {manifest.server_version}"
         )
         return 0
+    if args.command == "journal":
+        try:
+            report = inspect_journal(args.path)
+        except (ExecutionError, OSError, ValueError) as exc:
+            print(f"Journal inspection failed safely: {exc}", file=sys.stderr)
+            return 2
+        if args.format == "json":
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            print(_render_journal_text(report))
+        return 0
+
     if args.command == "replay":
         try:
             print(replay(args.trace))
@@ -1026,6 +1505,19 @@ def main() -> int:
             return 2
         return 0
 
+    if args.command == "editor":
+        try:
+            source = (
+                sys.stdin.read()
+                if args.stdin
+                else args.source.read_text(encoding="utf-8")
+            )
+            features = build_editor_features(source, path=args.source.as_posix())
+            print(json.dumps(features, indent=2, sort_keys=True))
+        except (EditorFeatureError, OSError, UnicodeError) as exc:
+            print(f"Editor feature analysis failed: {exc}", file=sys.stderr)
+            return 2
+        return 0
     if args.command == "analyze":
         return 0
 
@@ -1037,6 +1529,27 @@ def main() -> int:
         return 2
     if args.command == "check":
         print(f"OK: {args.source}")
+        return 0
+    if args.command == "unified":
+        try:
+            report = build_unified_mindmap(args.source, project=args.project)
+            rendered = (
+                json.dumps(report, indent=2, sort_keys=True)
+                if args.format == "json"
+                else (
+                    render_unified_mermaid(report)
+                    if args.format == "mermaid"
+                    else render_unified_text(report)
+                )
+            )
+            if args.output is not None:
+                args.output.write_text(rendered, encoding="utf-8")
+                print(f"Unified mindmap written: {args.output}")
+            else:
+                print(rendered, end="")
+        except (OSError, UnifiedMindmapError, ValueError) as exc:
+            print(f"Unified mindmap failed: {exc}", file=sys.stderr)
+            return 2
         return 0
     if args.command == "mindmap":
         try:

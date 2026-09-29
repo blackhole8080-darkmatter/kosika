@@ -11,7 +11,7 @@ from kosika.runtime import run
 
 
 def main() -> None:
-    program = load_program(Path(__file__).with_name("recursion_match.syn"))
+    program = load_program(Path(__file__).with_name("recursion_match.kos"))
     cancelled = threading.Event()
     cancelled.set()
     for label, limits, cancel in (

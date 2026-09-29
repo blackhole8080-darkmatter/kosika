@@ -469,8 +469,8 @@ def analyze_python_project(path: str | Path) -> dict[str, Any]:
         "other_language_files_truncated": len(other_files) > 100,
         "context_evidence": context_evidence,
         "limitations": [
-            "Python, JavaScript, and TypeScript files receive syntax-backed structural analysis; other listed languages are inventory only.",
-            "Local import edges link Python files only; JavaScript/TypeScript imports are reported per file without cross-file resolution.",
+            "Python, JavaScript, TypeScript, and Rust files receive syntax-backed structural analysis; other listed languages are inventory only.",
+            "Local import edges link Python files only; JavaScript, TypeScript, and Rust imports are reported per file without cross-file resolution.",
             "Imports link only when they resolve to one discovered file; unresolved candidates may be local, external, namespace-package, or dynamic imports.",
             "Calls are syntactic observations and are not resolved to definitions or runtime behavior.",
             "Dynamic imports, reflection, generated code, plugins, and monkey patching may hide relationships.",

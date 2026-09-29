@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from .agent_steps import validate_agent_transcript
+from .agent_trace import replay_agent_events
 from .model_steps import strict_json
 from .schema import validate
 
@@ -15,11 +16,15 @@ def _same_json(left: Any, right: Any) -> bool:
     )
 
 
-def replay_trace(trace_path: str | Path) -> dict[str, Any]:
+def replay_trace(trace_path: str | Path) -> Any:
     events = [
         strict_json(line)
         for line in Path(trace_path).read_text(encoding="utf-8").splitlines()
     ]
+    if events and isinstance(events[0], dict) and events[0].get(
+        "event"
+    ) == "agent_run_start":
+        return replay_agent_events(events)
     return replay_events(events)
 
 

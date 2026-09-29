@@ -15,10 +15,13 @@ from .ast import (
     AgentCall,
     ArrayExpr,
     BinaryExpr,
+    BreakExpr,
     ConditionalExpr,
+    ContinueExpr,
     Expression,
     Field,
     FieldExpr,
+    ForExpr,
     FunctionCall,
     FunctionCallExpr,
     FunctionDecl,
@@ -29,6 +32,7 @@ from .ast import (
     ModelCall,
     Program,
     RecordExpr,
+    RepeatExpr,
     ToolCall,
     ToolDecl,
     UnaryExpr,
@@ -40,6 +44,7 @@ from .controls import ExecutionError
 from .durable import ExecutionSession
 from .execution import ExecutionControl, ExecutionLimits
 from .function_types import public_type
+from .intelligence_runtime import FunctionResultCache, IntelligenceRecorder
 from .manifest import ManifestError, MCPManifest, verify_server
 from .mcp_stdio import MCPStdioClient
 from .model import ModelProvider
@@ -52,7 +57,14 @@ from .schema import (
     validate,
 )
 from .trace_replay import replay_trace
-from .intelligence_runtime import IntelligenceRecorder, FunctionResultCache
+
+
+class _BreakLoop(Exception):
+    """Raised by ``break`` to leave the innermost loop."""
+
+
+class _ContinueLoop(Exception):
+    """Raised by ``continue`` to skip to the next loop iteration."""
 
 
 class _FunctionRegistry(dict[str, FunctionDecl]):
@@ -332,6 +344,63 @@ def _evaluate_expression(
         )
         function_events.extend(call_events)
         return result
+    if isinstance(expression, ForExpr):
+        # Functional map: bind item_name per element in a child scope and
+        # collect the body results into a new array.
+        sequence = _evaluate_expression(
+            expression.sequence, environment, program, functions, function_events,
+            depth=depth,
+        )
+        if not isinstance(sequence, list):
+            raise RuntimeError("for loop requires an array sequence")
+        if len(sequence) > expression.limit:
+            raise RuntimeError(
+                f"for loop exceeded its limit of {expression.limit} iterations"
+            )
+        collected: list[Any] = []
+        for element in sequence:
+            scope = dict(environment)
+            scope[expression.item_name] = element
+            try:
+                collected.append(
+                    _evaluate_expression(
+                        expression.body, scope, program, functions, function_events,
+                        depth=depth + 1,
+                    )
+                )
+            except _BreakLoop:
+                break
+            except _ContinueLoop:
+                continue
+        return collected
+    if isinstance(expression, RepeatExpr):
+        # Evaluated up to count times; yields the last result.
+        raw_count = _evaluate_expression(
+            expression.count, environment, program, functions, function_events,
+            depth=depth,
+        )
+        if isinstance(raw_count, bool) or not isinstance(raw_count, (int, float)):
+            raise RuntimeError("repeat count must be a number")
+        count = int(raw_count)
+        if count < 0:
+            raise RuntimeError("repeat count must not be negative")
+        result: Any = None
+        for _ in range(count):
+            scope = dict(environment)
+            try:
+                result = _evaluate_expression(
+                    expression.body, scope, program, functions, function_events,
+                    depth=depth + 1,
+                )
+            except _BreakLoop:
+                break
+            except _ContinueLoop:
+                continue
+        return result
+    if isinstance(expression, BreakExpr):
+        raise _BreakLoop
+    if isinstance(expression, ContinueExpr):
+        raise _ContinueLoop
     raise RuntimeError("Workflow contains an unsupported expression")
 
 
@@ -932,7 +1001,16 @@ def _run_workflow(
                 )
             )
             result, response = call_model(
-                providers[model.name], arguments, output_schema
+                providers[model.name],
+                arguments,
+                output_schema,
+                model=model.deployment,
+                temperature=model.parameters.temperature,
+                max_output_tokens=model.parameters.max_output_tokens,
+                top_p=model.parameters.top_p,
+                frequency_penalty=model.parameters.frequency_penalty,
+                presence_penalty=model.parameters.presence_penalty,
+                stop=model.parameters.stop,
             )
             events.append(
                 _event("model_return", model=model.name, result=result, **response)

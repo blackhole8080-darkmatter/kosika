@@ -9,20 +9,45 @@ from pathlib import Path
 from typing import Any
 
 from .ast import (
-    AgentCall,
-    FunctionCall,
-    ModelCall,
     Program,
-    ToolCall,
-    WorkflowCall,
-    static_function_references,
 )
-from .checker import check
+from .mindmap import build_mindmap
 from .network import NetworkManifest
 
 
 class DesignError(ValueError):
     """Raised when a Kosika design manifest is invalid."""
+ 
+# node kinds that receive spatial layout positions in the design view
+_LAYOUT_KINDS = {
+    "module",
+    "record",
+    "tool",
+    "agent",
+    "swarm",
+    "model",
+    "function",
+    "workflow",
+    "stage",
+    "step",
+    "approval",
+}
+
+# network node kinds that share the network column layout
+_NETWORK_KINDS = {
+    "network",
+    "network_node",
+}
+
+
+def _node_by_id(
+    nodes: list[dict[str, Any]], node_id: str
+) -> dict[str, Any] | None:
+    """Return the first mindmap node whose ``id`` matches, or None."""
+    for node in nodes:
+        if node.get("id") == node_id:
+            return node
+    return None
 
 
 _ALLOWED_NODE_KINDS = {
@@ -59,7 +84,10 @@ _ALLOWED_EDGE_KINDS = {
     "writes",
 }
 _ALLOWED_VIEW_KINDS = {"canvas", "memory_graph", "network", "space", "workflow"}
-_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$")
+# Node ids are ``kind:key``. A key may be a lexical-lowered name, which carries
+# '/' by design (see kosika.lexical), or the "<memory>" sentinel that marks a
+# program with no backing file, so both are part of the id grammar.
+_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:/<>-]*$")
 
 
 def _canonical(value: Any) -> bytes:
@@ -300,6 +328,329 @@ def _edge(identifier: str, source: str, target: str, kind: str) -> dict[str, Any
     return {"id": identifier, "source": source, "target": target, "kind": kind}
 
 
+def _layout_node_position(kind: str, label: str, sorted_groups: dict[str, list[str]], workflow_stage_positions: dict[str, tuple[float, float]], node_id: str) -> tuple[float, float, float]:
+    """Return (x, y, width) for a design node derived from a mindmap node kind and label."""
+    if kind == "module":
+        index = sorted_groups["module"].index(label)
+        return (1120.0, 80.0 + index * 96.0, 220.0)
+    if kind == "record":
+        index = sorted_groups["record"].index(label)
+        return (80.0, 80.0 + index * 96.0, 160.0)
+    if kind == "tool":
+        index = sorted_groups["tool"].index(label)
+        return (340.0, 80.0 + index * 96.0, 160.0)
+    if kind == "agent":
+        index = sorted_groups["agent"].index(label)
+        return (600.0, 80.0 + index * 96.0, 160.0)
+    if kind == "swarm":
+        index = sorted_groups["swarm"].index(label)
+        return (600.0, 80.0 + index * 96.0, 160.0)
+    if kind == "model":
+        index = sorted_groups["model"].index(label)
+        return (860.0, 80.0 + index * 96.0, 160.0)
+    if kind == "function":
+        index = sorted_groups["function"].index(label)
+        return (1080.0, 80.0 + index * 96.0, 160.0)
+    if kind == "workflow":
+        index = sorted_groups["workflow"].index(label)
+        return (80.0, 480.0 + index * 180.0, 160.0)
+    if kind == "stage":
+        if node_id not in workflow_stage_positions:
+            return (80.0, 480.0, 160.0)
+        return (*workflow_stage_positions[node_id], 160.0)
+    if kind == "approval":
+        # placed adjacent to the workflow or swarm that owns it
+        if label.startswith("workflow:"):
+            index = sorted_groups["workflow"].index(label.split(":", 1)[1])
+            y = 480.0 + index * 180.0 + 90.0
+            return (80.0, y, 160.0)
+        if label.startswith("swarm:"):
+            index = sorted_groups["swarm"].index(label.split(":", 1)[1])
+            y = 80.0 + index * 96.0 + 90.0
+            return (600.0, y, 160.0)
+        return (80.0, 80.0, 160.0)
+    if kind in _NETWORK_KINDS:
+        return (980.0, 80.0, 160.0)
+    return (80.0, 80.0, 160.0)
+
+
+def _edge_map(mindmap_relation: str) -> str | None:
+    """Map a mindmap edge *relation* to a design edge kind, or None to drop.
+
+    Keyed strictly by ``MindmapEdge.relation``. Edge labels are prose and are
+    never passed here; an earlier version mixed both and silently dropped
+    every edge whose relation had no label twin.
+    """
+    return {
+        "imports": "imports",
+        "contains": "contains",
+        "has_field": None,  # not drawn in design view
+        "field_type": None,  # not drawn in design view
+        "input": "inputs",
+        "output": "outputs",
+        "parameter": None,  # not drawn in design view
+        "binding_type": None,  # not drawn in design view
+        "can": "uses",
+        "cannot": None,  # rendered as prohibition walls on the agent node
+        "model": "uses",
+        "coordinates": "uses",
+        "runs": "invokes",
+        "calls": "calls",
+        "computes": "calls",
+        "asks": "calls",
+        "executes": "calls",
+        "step": "contains",
+        "workflow_call": "calls",
+        "agent_call": "calls",
+        "tool_call": "calls",
+        "model_call": "calls",
+        "function_call": "calls",
+        "requires_approval": "requires_approval",
+        "network_context": "network_context",
+        "connects": "connects",
+    }.get(mindmap_relation)
+
+
+def _agent_prohibitions(mindmap_nodes: list[dict[str, Any]], mindmap_edges: list[dict[str, str]]) -> dict[str, list[str]]:
+    """Map agent labels to their sorted prohibition lists from `cannot` edges."""
+    prohibited: dict[str, list[str]] = {}
+    for edge in mindmap_edges:
+        if edge["relation"] != "cannot":
+            continue
+        source_node = _node_by_id(mindmap_nodes, edge["source"])
+        if source_node is None or source_node["kind"] != "agent":
+            continue
+        target_node = _node_by_id(mindmap_nodes, edge["target"])
+        prohibited_name = target_node["label"] if target_node is not None else edge["target"]
+        prohibited.setdefault(source_node["label"], []).append(prohibited_name)
+    return {agent: sorted(items) for agent, items in sorted(prohibited.items())}
+
+
+def _design_kind(mindmap_kind: str) -> str:
+    """Map a mindmap node kind into the design vocabulary.
+
+    The mindmap calls a workflow step a "step"; the design lab presents the
+    same node as a "stage".
+    """
+    return "stage" if mindmap_kind == "step" else mindmap_kind
+
+
+def _design_node_id(mindmap_kind: str, mindmap_id: str) -> str:
+    """Re-key a mindmap id into the design vocabulary.
+
+    The mindmap addresses declarations as ``kind:key``; a design manifest
+    addresses them as ``kind.key`` so node ids compose with edge ids
+    (``source.kind.target``) and with ``network.<id>`` roots. The kind prefix
+    is rewritten too, so a mindmap ``step`` becomes a design ``stage``.
+    """
+    key = mindmap_id[len(mindmap_kind):].lstrip(":").replace(":", ".")
+    return f"{_design_kind(mindmap_kind)}.{key}"
+
+
+def mindmap_to_design_graph(
+    mindmap: dict[str, Any],
+    *,
+    network: NetworkManifest | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, str]], list[dict[str, Any]]]:
+    """Lay out a mindmap as a design graph with spatial positions and rendering attrs.
+
+    The mindmap is the canonical structure; this function only assigns positions,
+    renames edge kinds for the design vocabulary, and extracts prohibition lists
+    for the renderer. No AST is traversed here.
+    """
+    mm_nodes = mindmap["nodes"]
+    mm_edges = mindmap["edges"]
+
+    # group labels by kind for stable layout ordering
+    sorted_groups: dict[str, list[str]] = {}
+    for node in mm_nodes:
+        kind = _design_kind(node["kind"])
+        if kind in _LAYOUT_KINDS:
+            sorted_groups.setdefault(kind, []).append(node["label"])
+    for labels in sorted_groups.values():
+        labels.sort()
+
+    # workflow stage positions depend on their parent workflow y-coordinate.
+    # Keyed by mindmap node id, because a step label ("1. respond") repeats
+    # across workflows.
+    workflow_stage_positions: dict[str, tuple[float, float]] = {}
+
+    def _owning_workflow(node: dict[str, Any]) -> str:
+        return str(node.get("attributes", {}).get("workflow", ""))
+
+    for node in mm_nodes:
+        if _design_kind(node["kind"]) != "stage":
+            continue
+        workflow_name = _owning_workflow(node)
+        if workflow_name not in sorted_groups.get("workflow", []):
+            continue
+        workflow_index = sorted_groups["workflow"].index(workflow_name)
+        workflow_y = 480.0 + workflow_index * 180.0
+        # find step index among stages belonging to this workflow
+        step_index = 0
+        for other in mm_nodes:
+            if _design_kind(other["kind"]) != "stage":
+                continue
+            if _owning_workflow(other) != workflow_name:
+                continue
+            if other["id"] == node["id"]:
+                break
+            step_index += 1
+        workflow_stage_positions[node["id"]] = (340.0 + step_index * 210.0, workflow_y)
+
+    nodes: list[dict[str, Any]] = []
+    edges: list[dict[str, str]] = []
+    # mindmap id -> design id, so edges can be re-keyed the same way
+    design_ids: dict[str, str] = {}
+    seen_edge_ids: set[str] = set()
+
+    for node in mm_nodes:
+        kind = _design_kind(node["kind"])
+        if kind not in _LAYOUT_KINDS:
+            continue
+        x, y, width = _layout_node_position(kind, node["label"], sorted_groups, workflow_stage_positions, node["id"])
+        design_id = _design_node_id(node["kind"], node["id"])
+        design_node: dict[str, Any] = {
+            "id": design_id,
+            "label": node["label"],
+            "kind": kind,
+            "position": {"x": x, "y": y},
+            "size": {"width": width, "height": 64.0},
+        }
+        if kind == "agent":
+            design_node["can"] = sorted(node["attributes"].get("can", []))
+            design_node["cannot"] = sorted(node["attributes"].get("cannot", []))
+            design_node["max_steps"] = int(node["attributes"].get("max_steps", 8))
+        if kind == "record":
+            design_node["width"] = width
+        if kind == "module":
+            design_node["width"] = width
+            design_node["height"] = 64.0
+        if "attributes" in node:
+            design_node.setdefault("attributes", {})
+            design_node["attributes"] = dict(node["attributes"])
+        nodes.append(design_node)
+        design_ids[node["id"]] = design_id
+
+    # An approval gate is a property of the design view, so it is synthesized
+    # here: the mindmap records "this swarm requires approval" as an attribute
+    # rather than as its own node.
+    approval_owners: list[tuple[str, str]] = []
+    for node in mm_nodes:
+        if not node.get("attributes", {}).get("approval_required"):
+            continue
+        owner_id = design_ids.get(node["id"])
+        if owner_id is None:
+            continue
+        approval_id = f"approval.{owner_id}"
+        label = f"{node['kind']}:{node['label']}"
+        x, y, width = _layout_node_position(
+            "approval", label, sorted_groups, workflow_stage_positions, approval_id
+        )
+        nodes.append({
+            "id": approval_id,
+            "label": label,
+            "kind": "approval",
+            "position": {"x": x, "y": y},
+            "size": {"width": width, "height": 64.0},
+        })
+        design_ids[approval_id] = approval_id
+        approval_owners.append((owner_id, approval_id))
+
+    edge_index: dict[str, int] = {}
+    for owner_id, approval_id in approval_owners:
+        edges.append({
+            "id": f"{owner_id}.requires_approval.{approval_id}",
+            "source": owner_id,
+            "target": approval_id,
+            "kind": "requires_approval",
+        })
+        seen_edge_ids.add(f"{owner_id}.requires_approval.{approval_id}")
+
+    for edge in mm_edges:
+        design_kind = _edge_map(edge["relation"])
+        if design_kind is None:
+            continue
+        source_id = design_ids.get(edge["source"])
+        target_id = design_ids.get(edge["target"])
+        if source_id is None or target_id is None:
+            continue
+        if design_kind == "inputs":
+            # The mindmap records a declaration ("this model accepts Question"),
+            # so it points model -> record. The design view draws data flow, so
+            # the input record feeds the consumer instead.
+            source_id, target_id = target_id, source_id
+        edge_id = f"{source_id}.{design_kind}.{target_id}"
+        count = edge_index.get(edge_id, 0)
+        edge_index[edge_id] = count + 1
+        if count > 0:
+            edge_id = f"{edge_id}_{count}"
+        edges.append({
+            "id": edge_id,
+            "source": source_id,
+            "target": target_id,
+            "kind": design_kind,
+        })
+        seen_edge_ids.add(edge_id)
+
+    network_nodes: dict[str, dict[str, Any]] = {}
+    network_node_ids: set[str] = set()
+    if network is not None:
+        network_root_id = f"network.{network.network_id}"
+        network_nodes[network_root_id] = {
+            "id": network_root_id,
+            "label": network.name,
+            "kind": "network",
+            "position": {"x": 980.0, "y": 700.0},
+            "size": {"width": 220.0, "height": 64.0},
+        }
+        for index, nn in enumerate(sorted(network.nodes, key=lambda item: str(item["id"]))):
+            nn_id = f"network_node.{nn['id']}"
+            network_nodes[nn_id] = {
+                "id": nn_id,
+                "label": str(nn.get("name", nn["id"])),
+                "kind": "network_node",
+                "position": {"x": 980.0, "y": 80.0 + index * 96.0},
+                "size": {"width": 160.0, "height": 64.0},
+            }
+            network_node_ids.add(nn["id"])
+        for link in sorted(network.links, key=lambda item: str(item["id"])):
+            if link["source"] in network_node_ids and link["target"] in network_node_ids:
+                edges.append({
+                    "id": f"network.{link['id']}",
+                    "source": f"network_node.{link['source']}",
+                    "target": f"network_node.{link['target']}",
+                    "kind": "connects",
+                })
+        # The network is ambient context for everything that executes, so the
+        # workflow view links it to each agent rather than to a single root.
+        for node in mm_nodes:
+            if node["kind"] != "agent":
+                continue
+            agent_id = design_ids.get(node["id"])
+            if agent_id is None:
+                continue
+            edges.append({
+                "id": f"{network_root_id}.network_context.{agent_id}",
+                "source": network_root_id,
+                "target": agent_id,
+                "kind": "network_context",
+            })
+        views = [
+            {"id": "workflow-view", "name": "Agent workflows", "kind": "workflow"},
+            {"id": "network-view", "name": "Network topology", "kind": "network"},
+            {"id": "mindmap-view", "name": "Structure mindmap", "kind": "memory_graph"},
+        ]
+        nodes.extend(network_nodes.values())
+    else:
+        views = [
+            {"id": "workflow-view", "name": "Agent workflows", "kind": "workflow"},
+            {"id": "mindmap-view", "name": "Structure mindmap", "kind": "memory_graph"},
+        ]
+
+    return nodes, edges, views
+
+
 def build_design_from_program(
     program: Program,
     design_id: str,
@@ -307,339 +658,14 @@ def build_design_from_program(
     *,
     network: NetworkManifest | None = None,
 ) -> DesignManifest:
-    """Build a deterministic vector design from checked Kosika declarations."""
-    check(program)
-    nodes: list[dict[str, Any]] = []
-    edges: list[dict[str, Any]] = []
+    """Build a deterministic vector design from checked Kosika declarations.
 
-    module_names = tuple(
-        sorted(
-            set(program.module_hashes)
-            | set(program.module_declarations)
-            | set(program.module_imports)
-        )
-    )
-
-    def module_node_id(module: str) -> str:
-        return f"module.{module.replace('/', '::')}"
-
-    module_ids = {module_node_id(module) for module in module_names}
-    module_owners: dict[str, str] = {}
-    for module, declarations in sorted(program.module_declarations.items()):
-        for declaration in declarations:
-            module_owners[declaration] = module
-    for index, module in enumerate(module_names):
-        nodes.append(
-            _node(
-                module_node_id(module),
-                module,
-                "module",
-                1120,
-                80 + index * 96,
-                width=220,
-            )
-        )
-    for module in module_names:
-        for imported in sorted(program.module_imports.get(module, ())):
-            if module_node_id(imported) in module_ids:
-                edges.append(
-                    _edge(
-                        f"{module_node_id(module)}.imports.{imported}",
-                        module_node_id(module),
-                        module_node_id(imported),
-                        "imports",
-                    )
-                )
-
-    def attach_module(declaration: str, node_id: str) -> None:
-        owner = module_owners.get(declaration)
-        if owner is not None and module_node_id(owner) in module_ids:
-            edges.append(
-                _edge(
-                    f"{module_node_id(owner)}.contains.{node_id}",
-                    module_node_id(owner),
-                    node_id,
-                    "contains",
-                )
-            )
-
-    for index, record in enumerate(sorted(program.records, key=lambda item: item.name)):
-        nodes.append(
-            _node(f"record.{record.name}", record.name, "record", 80, 80 + index * 96)
-        )
-        attach_module(record.name, f"record.{record.name}")
-    for index, tool in enumerate(sorted(program.tools, key=lambda item: item.name)):
-        nodes.append(
-            _node(f"tool.{tool.name}", tool.name, "tool", 340, 80 + index * 96)
-        )
-        attach_module(tool.name, f"tool.{tool.name}")
-        edges.append(
-            _edge(
-                f"tool.{tool.name}.outputs",
-                f"tool.{tool.name}",
-                f"record.{tool.output}",
-                "outputs",
-            )
-        )
-    for index, agent in enumerate(sorted(program.agents, key=lambda item: item.name)):
-        nodes.append(
-            _node(f"agent.{agent.name}", agent.name, "agent", 600, 80 + index * 96)
-        )
-        attach_module(agent.name, f"agent.{agent.name}")
-        for tool_name in sorted(agent.can):
-            if any(tool.name == tool_name for tool in program.tools):
-                edges.append(
-                    _edge(
-                        f"agent.{agent.name}.uses.{tool_name}",
-                        f"agent.{agent.name}",
-                        f"tool.{tool_name}",
-                        "uses",
-                    )
-                )
-        if agent.model is not None and any(
-            model.name == agent.model for model in program.models
-        ):
-            edges.append(
-                _edge(
-                    f"agent.{agent.name}.uses.{agent.model}",
-                    f"agent.{agent.name}",
-                    f"model.{agent.model}",
-                    "uses",
-                )
-            )
-
-    for index, swarm in enumerate(sorted(program.swarms, key=lambda item: item.name)):
-        swarm_id = f"swarm.{swarm.name}"
-        nodes.append(_node(swarm_id, swarm.name, "swarm", 600, 80 + index * 96))
-        attach_module(swarm.name, swarm_id)
-        for agent_name in sorted(swarm.agents):
-            if any(agent.name == agent_name for agent in program.agents):
-                edges.append(
-                    _edge(
-                        f"{swarm_id}.uses.{agent_name}",
-                        swarm_id,
-                        f"agent.{agent_name}",
-                        "uses",
-                    )
-                )
-        if any(workflow.name == swarm.workflow for workflow in program.workflows):
-            edges.append(
-                _edge(
-                    f"{swarm_id}.invokes.{swarm.workflow}",
-                    swarm_id,
-                    f"workflow.{swarm.workflow}",
-                    "invokes",
-                )
-            )
-        if swarm.approval_required:
-            swarm_approval_id = f"approval.swarm.{swarm.name}"
-            nodes.append(
-                _node(
-                    swarm_approval_id,
-                    "Approval",
-                    "approval",
-                    600,
-                    80 + index * 96 + 90,
-                )
-            )
-            edges.append(
-                _edge(
-                    f"{swarm_id}.approval",
-                    swarm_id,
-                    swarm_approval_id,
-                    "requires_approval",
-                )
-            )
-
-    for index, model in enumerate(sorted(program.models, key=lambda item: item.name)):
-        nodes.append(
-            _node(f"model.{model.name}", model.name, "model", 860, 80 + index * 96)
-        )
-        attach_module(model.name, f"model.{model.name}")
-        if any(record.name == model.input for record in program.records):
-            edges.append(
-                _edge(
-                    f"model.{model.name}.input",
-                    f"record.{model.input}",
-                    f"model.{model.name}",
-                    "inputs",
-                )
-            )
-        if any(record.name == model.output for record in program.records):
-            edges.append(
-                _edge(
-                    f"model.{model.name}.output",
-                    f"model.{model.name}",
-                    f"record.{model.output}",
-                    "outputs",
-                )
-            )
-
-    for index, function in enumerate(
-        sorted(program.functions, key=lambda item: item.name)
-    ):
-        function_id = f"function.{function.name.replace('/', '.')}"
-        nodes.append(
-            _node(function_id, function.name, "function", 1080, 80 + index * 96)
-        )
-        attach_module(function.name, function_id)
-        if any(record.name == function.output_type for record in program.records):
-            edges.append(
-                _edge(
-                    f"{function_id}.output",
-                    function_id,
-                    f"record.{function.output_type}",
-                    "outputs",
-                )
-            )
-        for call_index, call in enumerate(
-            static_function_references(function)
-        ):
-            edges.append(
-                _edge(
-                    f"{function_id}.calls.{call_index}",
-                    function_id,
-                    f"function.{call.function_name.replace('/', '.')}",
-                    "calls",
-                )
-            )
-
-    for workflow_index, workflow in enumerate(
-        sorted(program.workflows, key=lambda item: item.name)
-    ):
-        workflow_y = 480 + workflow_index * 180
-        workflow_id = f"workflow.{workflow.name}"
-        nodes.append(_node(workflow_id, workflow.name, "workflow", 80, workflow_y))
-        attach_module(workflow.name, workflow_id)
-        binding_stages: dict[str, str] = {}
-        for step_index, step in enumerate(workflow.steps):
-            stage_id = f"stage.{workflow.name}.{step.name}"
-            stage_x = 340 + step_index * 210
-            nodes.append(_node(stage_id, step.name, "stage", stage_x, workflow_y))
-            edges.append(
-                _edge(
-                    f"{workflow_id}.contains.{step.name}",
-                    workflow_id,
-                    stage_id,
-                    "contains",
-                )
-            )
-            if isinstance(step.call, ToolCall):
-                edges.append(
-                    _edge(
-                        f"{stage_id}.agent",
-                        stage_id,
-                        f"agent.{step.call.agent_name}",
-                        "calls",
-                    )
-                )
-                edges.append(
-                    _edge(
-                        f"{stage_id}.tool",
-                        stage_id,
-                        f"tool.{step.call.tool_name}",
-                        "invokes",
-                    )
-                )
-            elif isinstance(step.call, ModelCall):
-                edges.append(
-                    _edge(
-                        f"{stage_id}.model",
-                        stage_id,
-                        f"model.{step.call.model_name}",
-                        "calls",
-                    )
-                )
-            elif isinstance(step.call, AgentCall):
-                edges.append(
-                    _edge(
-                        f"{stage_id}.agent",
-                        stage_id,
-                        f"agent.{step.call.agent_name}",
-                        "calls",
-                    )
-                )
-            elif isinstance(step.call, WorkflowCall):
-                edges.append(
-                    _edge(
-                        f"{stage_id}.workflow",
-                        stage_id,
-                        f"workflow.{step.call.workflow_name}",
-                        "calls",
-                    )
-                )
-            elif isinstance(step.call, FunctionCall):
-                edges.append(
-                    _edge(
-                        f"{stage_id}.function",
-                        stage_id,
-                        binding_stages.get(step.call.function_name, f"function.{step.call.function_name}"),
-                        "calls",
-                    )
-                )
-            binding_stages[step.binding_name] = stage_id
-        if workflow.approval_required:
-            approval_id = f"approval.{workflow.name}"
-            nodes.append(
-                _node(approval_id, "Approval", "approval", 80, workflow_y + 90)
-            )
-            edges.append(
-                _edge(
-                    f"{workflow_id}.approval",
-                    workflow_id,
-                    approval_id,
-                    "requires_approval",
-                )
-            )
-
-    if network is not None:
-        network_root = f"network.{network.network_id}"
-        nodes.append(_node(network_root, network.name, "network", 980, 700, width=220))
-        for index, network_node in enumerate(
-            sorted(network.nodes, key=lambda item: str(item["id"]))
-        ):
-            node_id = f"network_node.{network_node['id']}"
-            nodes.append(
-                _node(
-                    node_id,
-                    str(network_node.get("name", network_node["id"])),
-                    "network_node",
-                    980,
-                    80 + index * 96,
-                )
-            )
-            edges.append(
-                _edge(
-                    f"{network_root}.contains.{network_node['id']}",
-                    network_root,
-                    node_id,
-                    "contains",
-                )
-            )
-        network_node_ids = {str(item["id"]) for item in network.nodes}
-        for link in sorted(network.links, key=lambda item: str(item["id"])):
-            if (
-                link["source"] in network_node_ids
-                and link["target"] in network_node_ids
-            ):
-                edges.append(
-                    _edge(
-                        f"network.{link['id']}",
-                        f"network_node.{link['source']}",
-                        f"network_node.{link['target']}",
-                        "connects",
-                    )
-                )
-        for workflow in program.workflows:
-            edges.append(
-                _edge(
-                    f"workflow.{workflow.name}.network",
-                    f"workflow.{workflow.name}",
-                    network_root,
-                    "network_context",
-                )
-            )
-
+    Structure is derived from the canonical mindmap; layout is a pure function
+    of node kind, label, and stable sort order. The design shares the mindmap
+    digest so the two views stay verifiably aligned.
+    """
+    mindmap = build_mindmap(program)
+    nodes, edges, views = mindmap_to_design_graph(mindmap, network=network)
     data = {
         "manifestVersion": 1,
         "designVersion": 1,
@@ -648,14 +674,11 @@ def build_design_from_program(
             "name": name,
             "kind": "agent_workflow_network",
             "canvas": {"width": 1400, "height": 1000, "unit": "px"},
+            "mindmapDigest": mindmap.get("digest", ""),
         },
         "nodes": nodes,
         "edges": edges,
-        "views": [
-            {"id": "workflow-view", "name": "Agent workflows", "kind": "workflow"},
-            {"id": "network-view", "name": "Network topology", "kind": "network"},
-            {"id": "mindmap-view", "name": "Structure mindmap", "kind": "memory_graph"},
-        ],
+        "views": views,
     }
     return validate_design(data)
 
@@ -751,12 +774,15 @@ _LAB_CHROME = {
     "shadow": ("#000000", "0.5"),
     "arrow": "#4A627A",
     "edge": "#2C4356",
+    "road": "#2F7D4F",
     "label_fill": "#0C121A",
     "label_text": "#8A9BAD",
     "legend_fill": "#0A0F16",
     "legend_stroke": "#1B2836",
     "legend_text": "#8A9BAD",
     "node_label": "#DBE7F1",
+    "wall_fill": "#1A1013",
+    "wall_stroke": "#E0644F",
     "fallback": ("#0D131A", "#7C8FA3"),
 }
 
@@ -772,12 +798,15 @@ _LIGHT_CHROME = {
     "shadow": ("#334155", "0.14"),
     "arrow": "#64748b",
     "edge": "#94a3b8",
+    "road": "#15803D",
     "label_fill": "#ffffff",
     "label_text": "#64748b",
     "legend_fill": "#ffffff",
     "legend_stroke": "#e2e8f0",
     "legend_text": "#475569",
     "node_label": "#0f172a",
+    "wall_fill": "#FDF0EC",
+    "wall_stroke": "#B4341F",
     "fallback": ("#f8fafc", "#475569"),
 }
 
@@ -903,7 +932,7 @@ def _svg_legend(
     kinds = sorted({str(node["kind"]) for node in manifest.nodes})
     lines = [
         '  <g transform="translate(1010 18)">',
-        f'    <rect width="350" height="42" rx="14" fill="{chrome["legend_fill"]}" '
+        f'    <rect width="350" height="{54 if any(_prohibitions(node) for node in manifest.nodes) else 42}" rx="14" fill="{chrome["legend_fill"]}" '
         f'fill-opacity="0.92" stroke="{chrome["legend_stroke"]}" />',
     ]
     for index, kind in enumerate(kinds[:6]):
@@ -917,8 +946,44 @@ def _svg_legend(
             f'    <text x="{x + 15}" y="{y}" font-family="sans-serif" font-size="10" '
             f'fill="{chrome["legend_text"]}">{html.escape(kind)}</text>'
         )
+    if any(_prohibitions(node) for node in manifest.nodes):
+        # The legend explains the hatch, otherwise the walls read as decoration.
+        y = 16 + (len(kinds[:6]) // 3 + 1) * 18
+        lines.append(
+            f'    <rect x="12" y="{y - 9}" width="10" height="10" rx="3" '
+            f'fill="url(#prohibition)" />'
+        )
+        lines.append(
+            f'    <text x="27" y="{y}" font-family="sans-serif" font-size="10" '
+            f'fill="{chrome["legend_text"]}">cannot</text>'
+        )
     lines.append("  </g>")
     return lines
+
+
+PROHIBITION_BAND = 9
+PROHIBITION_LABEL = 26
+
+# Edge kinds drawn as a road rather than a thin connection. A road means
+# "these run in this order", which is only true of call edges, so a design
+# that invents one will look like a street map that is not one.
+ROAD_EDGE_KINDS = frozenset({"calls"})
+
+
+def _prohibitions(node: dict[str, Any]) -> list[str]:
+    """The capabilities a node declared it ``cannot`` use.
+
+    Only agent nodes carry prohibitions, and an agent that declared none
+    returns an empty list rather than being drawn with an empty wall.
+    """
+    raw = node.get("cannot")
+    if not isinstance(raw, list):
+        return []
+    return [item for item in raw if isinstance(item, str) and item.strip()]
+
+
+def _shorten(text: str, limit: int) -> str:
+    return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
 def render_design_svg(
@@ -959,6 +1024,11 @@ def render_design_svg(
         '    <marker id="arrow" markerWidth="11" markerHeight="11" refX="9" refY="3.5" orient="auto" markerUnits="strokeWidth">',
         f'      <path d="M0,0 L0,7 L10,3.5 z" fill="{chrome["arrow"]}" />',
         "    </marker>",
+        '    <pattern id="prohibition" width="8" height="8" patternUnits="userSpaceOnUse" '
+        'patternTransform="rotate(45)">',
+        f'      <rect width="8" height="8" fill="{chrome["wall_fill"]}" />',
+        f'      <line x1="0" y1="0" x2="0" y2="8" stroke="{chrome["wall_stroke"]}" stroke-width="2.5" />',
+        "    </pattern>",
         "  </defs>",
         '  <rect width="100%" height="100%" fill="url(#background)" />',
         f'  <circle cx="1280" cy="850" r="220" fill="{chrome["glow"][0][0]}" fill-opacity="{chrome["glow"][0][1]}" />',
@@ -994,8 +1064,10 @@ def render_design_svg(
     lines.extend(_svg_legend(manifest, node_colors, chrome))
     for edge in sorted(manifest.edges, key=lambda item: str(item["id"])):
         path, label_x, label_y = _edge_curve(edge, positions)
+        road = str(edge["kind"]) in ROAD_EDGE_KINDS
         lines.append(
-            f'  <path d="{path}" fill="none" stroke="{chrome["edge"]}" stroke-width="2" stroke-linecap="round" '
+            f'  <path d="{path}" fill="none" stroke="{chrome["road"] if road else chrome["edge"]}" '
+            f'stroke-width="{(7 if road else 2) :g}" stroke-linecap="round" '
             f'stroke-dasharray="{"7 5" if edge["kind"] in {"network_context", "connects"} else "none"}" '
             f'marker-end="url(#arrow)" data-edge-kind="{html.escape(str(edge["kind"]))}" />'
         )
@@ -1020,8 +1092,21 @@ def render_design_svg(
         )
         lines.append(
             f'    <text x="{x + 16:g}" y="{y + node_height / 2 + 13:g}" font-family="sans-serif" '
-            f'font-size="15" font-weight="600" fill="{chrome["node_label"]}">{label}</text></g>'
+            f'font-size="15" font-weight="600" fill="{chrome["node_label"]}">{label}</text>'
         )
+        walls = _prohibitions(node)
+        if walls:
+            wall_y = y + node_height
+            lines.append(
+                f'    <g data-prohibitions="{html.escape(", ".join(walls))}">'
+                f'<rect x="{x:g}" y="{wall_y:g}" width="{node_width:g}" height="{PROHIBITION_BAND:g}" '
+                f'fill="url(#prohibition)" />'
+                f'<text x="{x + node_width / 2:g}" y="{wall_y + PROHIBITION_BAND + 13:g}" '
+                f'font-family="sans-serif" font-size="10" text-anchor="middle" '
+                f'fill="{chrome["wall_stroke"]}">walls: {html.escape(_shorten(", ".join(walls), PROHIBITION_LABEL))}</text>'
+                "</g>"
+            )
+        lines.append("</g>")
     lines.append("</svg>")
     return "\n".join(lines)
 

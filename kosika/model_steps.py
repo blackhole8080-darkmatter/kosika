@@ -29,8 +29,18 @@ def strict_json(text: str) -> Any:
 
 
 def call_model(
-    provider: ModelProvider, arguments: dict[str, Any], output_schema: dict[str, Any]
-) -> tuple[dict[str, Any], dict[str, Any]]:
+    provider: ModelProvider,
+    arguments: dict[str, Any],
+    output_schema: dict[str, Any],
+    *,
+    model: str | None = None,
+    temperature: float | None = None,
+    max_output_tokens: int | None = None,
+    top_p: float | None = None,
+    frequency_penalty: float | None = None,
+    presence_penalty: float | None = None,
+    stop: tuple[str, ...] = (),
+):
     response = provider.complete(
         ModelRequest(
             messages=(
@@ -45,6 +55,13 @@ def call_model(
                     content=json.dumps(arguments, sort_keys=True, allow_nan=False),
                 ),
             ),
+            model=model,
+            temperature=temperature,
+            max_output_tokens=max_output_tokens,
+            top_p=top_p,
+            frequency_penalty=frequency_penalty,
+            presence_penalty=presence_penalty,
+            stop=stop,
         )
     )
     if response.tool_calls or response.finish_reason != "stop":

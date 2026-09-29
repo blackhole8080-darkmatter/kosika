@@ -221,12 +221,12 @@ class ProgramLoader:
         if not directory.exists():
             raise FileNotFoundError(f"Directory not found: {directory}")
 
-        # Look for kosika.json or syn files
+        # Look for kosika.json or kos files
         manifest_file = directory / "kosika.json"
-        syn_files = list(directory.glob("*.syn"))
+        syn_files = list(directory.glob("*.kos"))
 
         if not syn_files:
-            raise ValueError(f"No .syn files found in {directory}")
+            raise ValueError(f"No .kos files found in {directory}")
 
         # Create manifest
         manifest = ProgramManifest(

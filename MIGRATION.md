@@ -9,7 +9,7 @@ Kosika is the official project and language name. Synapse was the earlier intern
 - CLI identity: `synapse` -> `kosika`
 - Package metadata: `synapse-language-v0-1` -> `kosika-language-v0-1`
 - Test module: `test_synapse.py` -> `test_kosika.py`
-- Source extension: `.syn` remains provisional while the grammar is still evolving
+- Source extension: `.kos` remains provisional while the grammar is still evolving
 
 The v0.1 language behavior is unchanged by this branding migration.
 

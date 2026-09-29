@@ -44,8 +44,8 @@ and a legend. These are presentation details only; node IDs and typed edges rema
 
 Kosika should support both directions:
 
-1. Developers write `.syn` source and Kosika generates the visual workflow.
-2. Developers design a validated graph and Kosika can later generate a safe `.syn` proposal.
+1. Developers write `.kos` source and Kosika generates the visual workflow.
+2. Developers design a validated graph and Kosika can later generate a safe `.kos` proposal.
 
 The second direction must remain proposal-only until the generated source passes parsing, static
 capability checks, schema validation, and explicit approval. This gives Kosika a visual programming

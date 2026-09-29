@@ -15,7 +15,7 @@ from kosika.parser import ParseError, parse
 from kosika.runtime import replay, run
 
 ROOT = Path(__file__).parents[1]
-SOURCE = ROOT / "examples" / "document_assistant.syn"
+SOURCE = ROOT / "examples" / "document_assistant.kos"
 DOCS = ROOT / "examples" / "documents"
 
 

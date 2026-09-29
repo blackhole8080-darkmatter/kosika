@@ -16,7 +16,7 @@ from kosika.runtime import run
 ROOT = Path(__file__).parents[1]
 SERVER = ROOT / "examples" / "mcp_host_server.py"
 MANIFEST = ROOT / "examples" / "mcp_manifest.json"
-LIVE_EXAMPLE = ROOT / "examples" / "test_host_live.syn"
+LIVE_EXAMPLE = ROOT / "examples" / "test_host_live.kos"
 
 
 class MCPStdioTests(unittest.TestCase):

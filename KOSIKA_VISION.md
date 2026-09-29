@@ -526,7 +526,7 @@ A future command family could look like:
 
 ```text
 kosika convert legacy_agent.py --to kosika --output src/
-kosika simplify src/main.syn --proposal rewrite.json
+kosika simplify src/main.kos --proposal rewrite.json
 kosika verify rewrite.json --fixtures tests/fixtures
 kosika benchmark rewrite.json
 kosika migrate project/ --language python
@@ -639,13 +639,13 @@ A future Kosika project should look like:
 project/
 ├── kosika.toml
 ├── src/
-│   ├── types.syn
-│   ├── models.syn
-│   ├── tools.syn
-│   ├── agents.syn
-│   ├── memory.syn
-│   ├── workflows.syn
-│   └── main.syn
+│   ├── types.kos
+│   ├── models.kos
+│   ├── tools.kos
+│   ├── agents.kos
+│   ├── memory.kos
+│   ├── workflows.kos
+│   └── main.kos
 ├── adapters/
 │   ├── python/
 │   └── javascript/

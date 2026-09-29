@@ -145,7 +145,7 @@ class BoundaryTests(unittest.TestCase):
             replay_dag(manifest_path.parent)
 
     def test_cli_devtools_and_durable_configuration(self):
-        source = self.root / "main.syn"
+        source = self.root / "main.kos"
         source.write_text(SOURCE)
         fixture = self.root / "models.json"
         fixture.write_text('{"m":[{"text":"hello"}]}')

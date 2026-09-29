@@ -182,7 +182,7 @@ class ProjectAnalysisTests(unittest.TestCase):
     def test_assistant_accepts_project_analysis_as_grounded_context(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = self.make_project(Path(directory) / "project")
-            kosika_source = Path(__file__).parents[1] / "examples" / "test_host.syn"
+            kosika_source = Path(__file__).parents[1] / "examples" / "test_host.kos"
             fixture = Path(directory) / "assistant.json"
             fixture.write_text(json.dumps(["Project-grounded answer."]), encoding="utf-8")
             output = io.StringIO()

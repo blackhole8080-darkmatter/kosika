@@ -1,0 +1,95 @@
+// History: archives, timelines, and criticism of primary sources.
+record Note { text: Text }
+record ArchiveQuery { text: Text }
+record Artefact { title: Text year: Number origin: Text }
+record TimelineEvent { year: Number label: Text }
+record Critique { credible: Bool reasoning: Text }
+
+model historian { input: Note output: Note }
+model critic { input: Note output: Note }
+
+tool search_archive {
+  source mcp "archive"
+  operation: "search"
+  access: observe
+  input: ArchiveQuery
+  output: Artefact
+}
+
+tool build_timeline {
+  source mcp "archive"
+  operation: "sequence"
+  access: observe
+  input: Artefact
+  output: TimelineEvent
+}
+
+tool read_primary {
+  source mcp "archive"
+  operation: "read"
+  access: observe
+  input: Artefact
+  output: Artefact
+}
+
+tool cross_reference {
+  source mcp "archive"
+  operation: "crossref"
+  access: observe
+  input: Critique
+  output: Critique
+}
+
+agent archivist {
+  model: historian
+  can: [search_archive, read_primary]
+  cannot: [write_files, arbitrary_shell, alter_records]
+  max_steps: 6
+}
+
+agent timeline_builder {
+  model: historian
+  can: [search_archive, build_timeline]
+  cannot: [write_files, arbitrary_shell, invent_dates]
+  max_steps: 5
+}
+
+agent source_critic {
+  model: critic
+  can: [read_primary, cross_reference]
+  cannot: [write_files, arbitrary_shell, dismiss_disagreement]
+  max_steps: 6
+}
+
+agent period_expert {
+  model: critic
+  can: [read_primary, search_archive]
+  cannot: [write_files, arbitrary_shell, project_presentism]
+  max_steps: 4
+}
+
+workflow narrate(note: Note) -> Note {
+  step gather {
+    let gathered: Note = ask archivist(text: note.text)
+    return gathered
+  }
+  step sequence {
+    let sequenced: Note = ask timeline_builder(text: gathered.text)
+    return sequenced
+  }
+  step critique {
+    let critiqued: Note = ask source_critic(text: sequenced.text)
+    return critiqued
+  }
+  step contextualise {
+    let contextualised: Note = ask period_expert(text: critiqued.text)
+    return contextualised
+  }
+}
+
+swarm HistoryDepartment {
+  agents: [archivist, timeline_builder, source_critic, period_expert]
+  workflow: narrate
+  max_rounds: 2
+  require approval
+}

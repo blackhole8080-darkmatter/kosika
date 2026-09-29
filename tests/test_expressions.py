@@ -167,6 +167,39 @@ class ExpressionTests(unittest.TestCase):
         check(program)
         self.assertEqual(run(program, "main", None), {"value": "leftright"})
 
+    def test_text_concatenation_matches_the_checker_at_runtime(self) -> None:
+        # The checker admits Text+Text and Text+Number. A program the checker
+        # approves must always execute, so the runtime must not raise a host
+        # TypeError on the operand mix the checker already permits.
+        cases = [
+            ('"left" + "right"', "leftright"),
+            ('"n=" + 5', "n=5"),
+            ('"n=" + 5.0', "n=5"),
+            ('"n=" + 1.5', "n=1.5"),
+        ]
+        for expression, expected in cases:
+            with self.subTest(expression=expression):
+                program = parse(
+                    "record Out { value: Text }\n"
+                    f"fn join() -> Out {{ return {{value: {expression}}} }}\n"
+                    "workflow main() -> Out {\n"
+                    "  step go { let o = join() return o }\n"
+                    "}\n"
+                )
+                check(program)
+                self.assertEqual(run(program, "main", None), {"value": expected})
+
+    def test_text_concatenation_rejects_number_left_operand(self) -> None:
+        program = parse(
+            'record Out { value: Text }\n'
+            'fn join() -> Out { return {value: 5 + "x"} }\n'
+            "workflow main() -> Out {\n"
+            "  step go { let o = join() return o }\n"
+            "}\n"
+        )
+        with self.assertRaisesRegex(CheckError, "expects Number operands"):
+            check(program)
+
     def test_mindmap_includes_calls_from_conditional_branches(self) -> None:
         mindmap = build_mindmap(parse(SOURCE))
         self.assertTrue(

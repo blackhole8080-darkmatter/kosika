@@ -1,0 +1,51 @@
+record ResearchRequest {
+  question: Text
+}
+
+record SearchRequest {
+  query: Text
+}
+
+record SearchHit {
+  title: Text
+  excerpt: Text
+}
+
+record SearchResults {
+  hits: SearchHit[]
+}
+
+record ResearchAnswer {
+  answer: Text
+  sources: Text[]
+}
+
+model research_writer {
+  input: ResearchRequest
+  output: ResearchAnswer
+  deployment: "scripted-research-model"
+  parameters: {
+    temperature: 0.2
+    max_output_tokens: 256
+    top_p: 0.9
+    stop: ["END"]
+  }
+}
+
+tool search_notes {
+  source mcp "local_notes"
+  operation: "search_notes"
+  access: observe
+  input: SearchRequest
+  output: SearchResults
+}
+
+agent researcher {
+  model: research_writer
+  instructions: "Use only the retrieved notes. Return concise evidence-backed JSON."
+  can: [search_notes]
+  cannot: [write_files, arbitrary_shell]
+  max_steps: 3
+  max_tool_calls: 2
+  max_model_calls: 3
+}

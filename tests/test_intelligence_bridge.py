@@ -285,6 +285,56 @@ class IntelligenceRecorderTests(unittest.TestCase):
         self.assertGreaterEqual(insights["operations_analyzed"], 1)
         self.assertTrue(any("make_greeting" in op["operation"] for op in insights["top_operations"]))
 
+    def test_cache_hits_are_published_as_function_events(self) -> None:
+        # A cache hit is a real invocation. If it emitted no event, the trace
+        # would silently drop every cached execution and the intelligence
+        # recorder could never observe the operation.
+        program = parse(SOURCE)
+        cache = FunctionResultCache(max_entries=16)
+
+        with tempfile.TemporaryDirectory() as directory:
+            trace = Path(directory) / "cache.jsonl"
+            for _ in range(3):
+                run(
+                    program,
+                    "main",
+                    trace,
+                    inputs={"person": {"name": "Ada"}},
+                    function_cache=cache,
+                )
+
+            events = [
+                json.loads(line)
+                for line in trace.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+
+        calls = [item for item in events if item.get("event") == "function_call"]
+        returns = [item for item in events if item.get("event") == "function_return"]
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(len(returns), 1)
+        # The single recorded run is itself a cache hit, and it is marked.
+        self.assertTrue(calls[0]["cache_hit"])
+        self.assertTrue(returns[0]["cache_hit"])
+
+    def test_cached_run_trace_still_replays(self) -> None:
+        program = parse(SOURCE)
+        cache = FunctionResultCache(max_entries=16)
+
+        with tempfile.TemporaryDirectory() as directory:
+            trace = Path(directory) / "cache.jsonl"
+            first = run(
+                program, "main", trace,
+                inputs={"person": {"name": "Ada"}}, function_cache=cache,
+            )
+            second = run(
+                program, "main", trace,
+                inputs={"person": {"name": "Ada"}}, function_cache=cache,
+            )
+
+            self.assertEqual(first, second)
+            self.assertEqual(replay(trace), second)
+
 
 class ReplayWithIntelligenceTests(unittest.TestCase):
     """Verify that enabling intelligence / cache does not break replayability."""

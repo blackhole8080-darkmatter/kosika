@@ -1,0 +1,96 @@
+// AI: model evaluation, prompt tuning, safety review, dataset curation.
+record Note { text: Text }
+record EvalCase { prompt: Text expected: Text }
+record EvalReport { passed: Number total: Number }
+record PromptVariant { text: Text }
+record SafetyFinding { severity: Text detail: Text }
+record DatasetSlice { rows: Number source: Text }
+
+model judge { input: Note output: Note }
+model tuner { input: Note output: Note }
+
+tool run_eval {
+  source mcp "ml"
+  operation: "evaluate"
+  access: execute
+  input: EvalCase
+  output: EvalReport
+}
+
+tool propose_prompt {
+  source mcp "ml"
+  operation: "tune"
+  access: observe
+  input: PromptVariant
+  output: PromptVariant
+}
+
+tool scan_for_harm {
+  source mcp "ml"
+  operation: "safety"
+  access: observe
+  input: Note
+  output: SafetyFinding
+}
+
+tool sample_dataset {
+  source mcp "ml"
+  operation: "sample"
+  access: observe
+  input: DatasetSlice
+  output: DatasetSlice
+}
+
+agent model_evaluator {
+  model: judge
+  can: [run_eval]
+  cannot: [write_files, arbitrary_shell, ignore_failures]
+  max_steps: 5
+}
+
+agent prompt_tuner {
+  model: tuner
+  can: [propose_prompt, run_eval]
+  cannot: [write_files, arbitrary_shell, ship_untested_prompts]
+  max_steps: 8
+}
+
+agent safety_reviewer {
+  model: judge
+  can: [scan_for_harm, run_eval]
+  cannot: [write_files, arbitrary_shell, waive_findings]
+  max_steps: 4
+}
+
+agent dataset_curator {
+  model: judge
+  can: [sample_dataset, scan_for_harm]
+  cannot: [arbitrary_shell, write_files, include_private_data]
+  max_steps: 6
+}
+
+workflow evaluate(note: Note) -> Note {
+  step evaluate_case {
+    let evaluated: Note = ask model_evaluator(text: note.text)
+    return evaluated
+  }
+  step tune {
+    let tuned: Note = ask prompt_tuner(text: evaluated.text)
+    return tuned
+  }
+  step safety {
+    let cleared: Note = ask safety_reviewer(text: tuned.text)
+    return cleared
+  }
+  step curate {
+    let curated: Note = ask dataset_curator(text: cleared.text)
+    return curated
+  }
+}
+
+swarm AIDepartment {
+  agents: [model_evaluator, prompt_tuner, safety_reviewer, dataset_curator]
+  workflow: evaluate
+  max_rounds: 3
+  require approval
+}

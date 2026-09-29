@@ -26,6 +26,7 @@ EFFECT_KINDS: frozenset[str] = frozenset(
 SYMBOL_KINDS: frozenset[str] = frozenset(
     {
         "class",
+        "impl",
         "constant",
         "enum",
         "function",

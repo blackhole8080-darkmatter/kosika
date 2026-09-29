@@ -225,14 +225,14 @@ def create_demo_server():
             author="kosika-demo",
             capabilities=["text_analysis", "document_processing"],
             requires=["model:openai"],
-            main_file="main.syn",
-            modules=["main.syn", "types.syn"],
+            main_file="main.kos",
+            modules=["main.kos", "types.kos"],
             hash="demo_hash_123",
             description="Demo document analyzer",
             tags=["demo", "document", "analysis"]
         ),
         source_files={
-            "main.syn": """
+            "main.kos": """
 record Question { text: Text }
 record Answer { text: Text }
 
@@ -245,7 +245,7 @@ workflow analyze(question: Question) -> Answer {
   }
 }
 """,
-            "types.syn": """
+            "types.kos": """
 record Question { text: Text }
 record Answer { text: Text }
 """

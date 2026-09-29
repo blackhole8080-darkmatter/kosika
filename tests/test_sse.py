@@ -149,7 +149,7 @@ class EventStreamTests(unittest.TestCase):
     def test_workbench_check_failure_publishes_failure_events(self) -> None:
         stream = EventStream(buffer_size=16, max_replay=16)
         sample = copy.deepcopy(SAMPLES[0])
-        files = {"main.syn": sample["files"]["main.syn"] + "\nrecord Broken {"}
+        files = {"main.kos": sample["files"]["main.kos"] + "\nrecord Broken {"}
         with self.assertRaises(ValueError):
             dispatch(
                 "check",

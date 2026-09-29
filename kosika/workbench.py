@@ -62,13 +62,13 @@ ASSETS = Path(__file__).with_name("workbench_assets")
 def _files(payload: dict[str, Any], directory: Path) -> Path:
     files = payload.get("files")
     if not isinstance(files, dict) or not 1 <= len(files) <= 16:
-        raise ValueError("A workspace needs 1–16 .syn files.")
+        raise ValueError("A workspace needs 1–16 .kos files.")
     total = 0
     folded = set()
     for name, source in files.items():
-        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_/-]+\.syn", name):
+        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_/-]+\.kos", name):
             raise ValueError(
-                "Use relative .syn filenames with letters, numbers, dashes, or underscores."
+                "Use relative .kos filenames with letters, numbers, dashes, or underscores."
             )
         parts = PurePosixPath(name).parts
         if (
@@ -103,7 +103,7 @@ def _files(payload: dict[str, Any], directory: Path) -> Path:
         target = directory.joinpath(*parts)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(source, encoding="utf-8")
-    entry = payload.get("entry", "main.syn")
+    entry = payload.get("entry", "main.kos")
     if not isinstance(entry, str) or entry not in files:
         raise ValueError("Choose an entry file from this workspace.")
     return directory.joinpath(*PurePosixPath(entry).parts)

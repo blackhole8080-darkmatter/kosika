@@ -1,5 +1,5 @@
-import "types.syn"
-import "research.syn"
+import "types.kos"
+import "research.kos"
 workflow main(question: Question) -> Answer {
   step research {
     let answer: Answer = call research(question: question)

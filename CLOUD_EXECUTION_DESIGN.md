@@ -39,8 +39,8 @@ GET  /api/v1/executions/{id}/trace
     "requires": ["model:openai-gpt4", "tool:filesystem"]
   },
   "program": {
-    "main": "main.syn",
-    "modules": ["types.syn", "agents.syn", "workflows.syn"],
+    "main": "main.kos",
+    "modules": ["types.kos", "agents.kos", "workflows.kos"],
     "hash": "sha256:abc123..."
   },
   "metadata": {
@@ -247,7 +247,7 @@ FROM python:3.10-slim
 RUN pip install kosika-language-v0-1
 COPY program /app/program
 WORKDIR /app
-CMD ["python", "-m", "kosika.runtime", "main.syn"]
+CMD ["python", "-m", "kosika.runtime", "main.kos"]
 ```
 
 **Resource Limits:**
@@ -357,7 +357,7 @@ POST /api/v1/agents/select
 curl -X POST https://api.kosika.cloud/v1/execute/url \
   -H "Authorization: Bearer $KOSIKA_KEY" \
   -d '{
-    "url": "https://github.com/user/kosika-programs/main.syn",
+    "url": "https://github.com/user/kosika-programs/main.kos",
     "input": {"text": "Hello world"}
   }'
 ```

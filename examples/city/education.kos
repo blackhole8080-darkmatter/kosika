@@ -1,0 +1,96 @@
+// Education: tutoring, curriculum, assessment, and feedback.
+record Note { text: Text }
+record Learner { level: Text goal: Text }
+record Lesson { title: Text body: Text }
+record Curriculum { units: Lesson[] }
+record Mark { score: Number note: Text }
+record Feedback { text: Text }
+
+model teacher { input: Note output: Note }
+model assessor_model { input: Note output: Note }
+
+tool fetch_lesson {
+  source mcp "curriculum"
+  operation: "fetch"
+  access: observe
+  input: Learner
+  output: Lesson
+}
+
+tool compose_lesson {
+  source mcp "curriculum"
+  operation: "compose"
+  access: observe
+  input: Learner
+  output: Lesson
+}
+
+tool grade_submission {
+  source mcp "assessment"
+  operation: "grade"
+  access: observe
+  input: Note
+  output: Mark
+}
+
+tool collect_feedback {
+  source mcp "assessment"
+  operation: "feedback"
+  access: observe
+  input: Mark
+  output: Feedback
+}
+
+agent tutor {
+  model: teacher
+  can: [fetch_lesson, compose_lesson]
+  cannot: [write_files, arbitrary_shell, do_homework_for_learner]
+  max_steps: 6
+}
+
+agent curriculum_planner {
+  model: teacher
+  can: [fetch_lesson, compose_lesson]
+  cannot: [write_files, arbitrary_shell, skip_prerequisites]
+  max_steps: 5
+}
+
+agent assessor {
+  model: assessor_model
+  can: [grade_submission]
+  cannot: [write_files, arbitrary_shell, grade_under_time_pressure]
+  max_steps: 4
+}
+
+agent feedback_reader {
+  model: assessor_model
+  can: [collect_feedback, grade_submission]
+  cannot: [write_files, arbitrary_shell, publish_raw_scores]
+  max_steps: 4
+}
+
+workflow teach(note: Note) -> Note {
+  step plan {
+    let planned: Note = ask curriculum_planner(text: note.text)
+    return planned
+  }
+  step teach_step {
+    let taught: Note = ask tutor(text: planned.text)
+    return taught
+  }
+  step assess {
+    let assessed: Note = ask assessor(text: taught.text)
+    return assessed
+  }
+  step read_back {
+    let reviewed: Note = ask feedback_reader(text: assessed.text)
+    return reviewed
+  }
+}
+
+swarm EducationDepartment {
+  agents: [tutor, curriculum_planner, assessor, feedback_reader]
+  workflow: teach
+  max_rounds: 3
+  require approval
+}

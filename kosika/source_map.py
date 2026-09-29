@@ -1,4 +1,4 @@
-"""Cross-language source maps for Python, JavaScript, and TypeScript.
+"""Cross-language source maps for Python, JavaScript, TypeScript, and Rust.
 
 A source map joins several :mod:`kosika.source_schema` analyses into one
 deterministic graph so a reader who does not know Kosika can still see what a
@@ -40,6 +40,7 @@ KIND_LABELS: dict[str, str] = {
     "constant": "value",
     "enum": "enum",
     "function": "function",
+    "impl": "implementation",
     "interface": "interface",
     "method": "method",
     "module": "module",
@@ -56,6 +57,8 @@ _IMPORT_KINDS = frozenset(
         "require",
         "side_effect_import",
         "re_export",
+        "use",
+        "extern_crate",
     }
 )
 
@@ -282,7 +285,9 @@ def build_source_map(root: str | Path) -> dict[str, Any]:
 
     # Link member symbols to their enclosing class.
     member_ids = {
-        node["qualified_name"]: node["id"] for node in nodes.values() if node["kind"] == "class"
+        node["qualified_name"]: node["id"]
+        for node in nodes.values()
+        if node["kind"] in {"class", "impl"}
     }
     for identifier, node in list(nodes.items()):
         if node["kind"] != "method":
@@ -364,7 +369,7 @@ def build_source_map(root: str | Path) -> dict[str, Any]:
         "unresolved_callees": sorted(unresolved)[:200],
         "ambiguous_callees": sorted(ambiguous)[:200],
         "limitations": [
-            "Only Python, JavaScript, and TypeScript receive structural analysis.",
+            "Only Python, JavaScript, TypeScript, and Rust receive structural analysis.",
             "Call targets are linked only when a single declaration shares the name; "
             "ambiguous and unresolved callees are listed rather than guessed.",
             "Import edges link only when the specifier resolves to a discovered file.",

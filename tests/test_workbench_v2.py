@@ -30,11 +30,11 @@ class WorkbenchV2Tests(unittest.TestCase):
             schema["properties"]["question"]["properties"]["text"], {"type": "string"}
         )
         self.assertFalse(schema["additionalProperties"])
-        data["files"]["main.syn"] = "record R { text Text }"
+        data["files"]["main.kos"] = "record R { text Text }"
         with self.assertRaises(ValueError) as caught:
             dispatch("run", data)
         info = diagnostic(str(caught.exception))
-        self.assertEqual(info["file"], "main.syn")
+        self.assertEqual(info["file"], "main.kos")
         self.assertEqual(info["line"], 1)
         self.assertGreater(info["column"], 1)
         self.assertNotIn("file", diagnostic("An invalid record has no source location"))

@@ -40,7 +40,7 @@ Begin by inspecting the actual repository. Do not assume that this prompt perfec
 
 The current Python-first foundation includes or is intended to include:
 
-- a lexer and parser for `.syn` source;
+- a lexer and parser for `.kos` source;
 - AST dataclasses;
 - static capability checking;
 - deterministic workflow execution;
@@ -411,13 +411,13 @@ Then:
 
 1. Run the existing test and quality commands.
 2. Summarize the current architecture and identify the actual next gap.
-3. Check whether the existing model provider and agent loop are exposed through a usable CLI and `.syn` workflow.
+3. Check whether the existing model provider and agent loop are exposed through a usable CLI and `.kos` workflow.
 4. If the CLI is missing or incomplete, implement the smallest safe `kosika agent` command or equivalent developer workflow.
 5. Support a local OpenAI-compatible endpoint without requiring credentials in source code.
 6. Keep model execution separate from tool execution.
 7. Require declared capabilities and schema validation.
 8. Add deterministic scripted tests without requiring a live model server.
-9. Add an example `.syn` program and documentation.
+9. Add an example `.kos` program and documentation.
 10. Run all checks and report the exact results.
 
 If the CLI is already sufficient, select the next highest-value language feature from the roadmap and implement one vertical slice instead. Do not stop at a list of suggestions.

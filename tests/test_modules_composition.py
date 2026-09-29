@@ -14,7 +14,7 @@ from kosika.runtime import replay, run
 class ModuleCompositionTests(unittest.TestCase):
     def test_composed_example_and_offline_replay(self):
         root = Path(__file__).parents[1] / "examples/composed"
-        program = load_program(root / "main.syn")
+        program = load_program(root / "main.kos")
         self.assertEqual(len(program.module_hashes), 3)
         provider = ScriptedModelProvider([ModelResponse(content='{"text":"done"}')])
         with tempfile.TemporaryDirectory() as directory:
@@ -40,18 +40,18 @@ class ModuleCompositionTests(unittest.TestCase):
     def test_import_privacy_cycles_and_escape(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / "types.syn").write_text("record R { text: Text }")
-            entry = root / "main.syn"
-            entry.write_text('import "types.syn" model m { input: R output: R }')
+            (root / "types.kos").write_text("record R { text: Text }")
+            entry = root / "main.kos"
+            entry.write_text('import "types.kos" model m { input: R output: R }')
             with self.assertRaisesRegex(ValueError, "private"):
                 load_program(entry)
-            entry.write_text('import "main.syn"')
+            entry.write_text('import "main.kos"')
             with self.assertRaisesRegex(ValueError, "cycle"):
                 load_program(entry)
             (root / "sub").mkdir()
-            (root / "sub/main.syn").write_text('import "../types.syn"')
+            (root / "sub/main.kos").write_text('import "../types.kos"')
             with self.assertRaisesRegex(ValueError, "outside"):
-                load_program(root / "sub/main.syn")
+                load_program(root / "sub/main.kos")
 
     def test_call_cycles_types_and_unresolved_imports(self):
         source = """record R { text: Text }
@@ -61,7 +61,7 @@ class ModuleCompositionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Recursive"):
             check(parse(source))
         with self.assertRaisesRegex(ValueError, "Unresolved imports"):
-            check(parse('import "x.syn"'))
+            check(parse('import "x.kos"'))
         source = """record R { text: Text }
         model m { input: R output: R }
         workflow child(q: R) -> R {
@@ -77,7 +77,7 @@ class ModuleCompositionTests(unittest.TestCase):
         root = Path(__file__).parents[1] / "examples/composed"
         with self.assertRaises(PermissionError):
             run(
-                load_program(root / "main.syn"),
+                load_program(root / "main.kos"),
                 "main",
                 None,
                 inputs={"question": {"text": "x"}},

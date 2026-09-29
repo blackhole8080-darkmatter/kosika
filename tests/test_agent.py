@@ -3,6 +3,8 @@ from __future__ import annotations
 import io
 import json
 import tempfile
+import threading
+import time
 import unittest
 import urllib.error
 from pathlib import Path
@@ -14,9 +16,10 @@ from kosika.agent import (
     ApprovalRecord,
     ApprovalRequiredError,
     action_hash,
-    plan_hash,
 )
 from kosika.approval_ledger import ApprovalLedger
+from kosika.checker import CheckError, check
+from kosika.durable import AgentExecutionSession
 from kosika.model import (
     ChatMessage,
     ModelProviderError,
@@ -28,9 +31,23 @@ from kosika.model import (
     ScriptedModelProvider,
 )
 from kosika.parser import parse
+from kosika.trace_replay import replay_trace
 
 ROOT = Path(__file__).parents[1]
-MOCK_SOURCE = ROOT / "examples" / "test_host.syn"
+MOCK_SOURCE = ROOT / "examples" / "test_host.kos"
+
+
+class InterruptingAgentSession(AgentExecutionSession):
+    def __init__(self, path: Path, *, binding_id: str, crash_state: str):
+        super().__init__(path, binding_id=binding_id)
+        self.crash_state = crash_state
+        self.crashed = False
+
+    def checkpoint(self, state: str, payload: dict[str, Any]) -> None:
+        super().checkpoint(state, payload)
+        if state == self.crash_state and not self.crashed:
+            self.crashed = True
+            raise RuntimeError(f"simulated interruption at {state}")
 
 
 class AgentLoopTests(unittest.TestCase):
@@ -53,9 +70,26 @@ class AgentLoopTests(unittest.TestCase):
             calls.append((tool.name, arguments))
             return {"mount": "/", "used_percent": 42.0}
 
-        result = AgentLoop(self.program(), provider, execute).run(
-            "monitor", "Check the disk."
-        )
+        with tempfile.TemporaryDirectory() as directory:
+            trace = Path(directory) / "agent.jsonl"
+            result = AgentLoop(self.program(), provider, execute).run(
+                "monitor", "Check the disk.", trace_path=trace
+            )
+            self.assertEqual(replay_trace(trace), "Disk usage is healthy.")
+            tampered = Path(directory) / "tampered.jsonl"
+            events = [
+                json.loads(line)
+                for line in trace.read_text(encoding="utf-8").splitlines()
+            ]
+            for event in events:
+                if event.get("event") == "agent_tool_call":
+                    event["result"]["used_percent"] = 99.0
+            tampered.write_text(
+                "\n".join(json.dumps(event) for event in events) + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "messages"):
+                replay_trace(tampered)
         self.assertEqual(result.content, "Disk usage is healthy.")
         self.assertEqual(result.model_steps, 2)
         self.assertEqual(calls, [("check_disk", {})])
@@ -63,6 +97,199 @@ class AgentLoopTests(unittest.TestCase):
         self.assertEqual(provider.requests[0].messages[-1].role, "user")
         self.assertEqual(provider.requests[1].messages[-1].role, "tool")
         self.assertEqual(len(result.plan_hash), 64)
+
+    def test_durable_agent_completion_is_cached_on_resume(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            journal = Path(directory) / "agent.sqlite"
+            first = AgentLoop(
+                self.program(),
+                ScriptedModelProvider([ModelResponse(content="first result")]),
+                lambda tool, arguments: {},
+            ).run(
+                "monitor",
+                "Run once.",
+                session=AgentExecutionSession(journal, binding_id="model-v1"),
+            )
+            resumed_provider = ScriptedModelProvider(
+                [ModelResponse(content="must not be called")]
+            )
+            resumed = AgentLoop(
+                self.program(), resumed_provider, lambda tool, arguments: {}
+            ).run(
+                "monitor",
+                "Run once.",
+                session=AgentExecutionSession(
+                    journal, binding_id="model-v1", resume=True
+                ),
+            )
+            self.assertEqual(first.content, "first result")
+            self.assertEqual(resumed.content, "first result")
+            self.assertEqual(resumed_provider.requests, [])
+            with self.assertRaisesRegex(AgentLoopError, "different plan or host binding"):
+                AgentLoop(
+                    self.program(),
+                    ScriptedModelProvider([ModelResponse(content="must not be called")]),
+                    lambda tool, arguments: {},
+                ).run(
+                    "monitor",
+                    "Run once.",
+                    session=AgentExecutionSession(
+                        journal, binding_id="different-host", resume=True
+                    ),
+                )
+
+    def test_durable_agent_resumes_from_ready_checkpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            journal = Path(directory) / "agent.sqlite"
+            interrupted_provider = ScriptedModelProvider(
+                [ModelResponse(content="must not be called")]
+            )
+            with self.assertRaisesRegex(RuntimeError, "ready"):
+                AgentLoop(
+                    self.program(), interrupted_provider, lambda tool, arguments: {}
+                ).run(
+                    "monitor",
+                    "Resume from ready.",
+                    session=InterruptingAgentSession(
+                        journal, binding_id="model-v1", crash_state="ready"
+                    ),
+                )
+            self.assertEqual(interrupted_provider.requests, [])
+            resumed_provider = ScriptedModelProvider(
+                [ModelResponse(content="resumed from ready")]
+            )
+            result = AgentLoop(
+                self.program(), resumed_provider, lambda tool, arguments: {}
+            ).run(
+                "monitor",
+                "Resume from ready.",
+                session=AgentExecutionSession(
+                    journal, binding_id="model-v1", resume=True
+                ),
+            )
+            self.assertEqual(result.content, "resumed from ready")
+            self.assertEqual(len(resumed_provider.requests), 1)
+
+    def test_durable_agent_resumes_from_model_response_checkpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            journal = Path(directory) / "agent.sqlite"
+            interrupted_provider = ScriptedModelProvider(
+                [ModelResponse(content="checkpointed final")]
+            )
+            with self.assertRaisesRegex(RuntimeError, "model_response"):
+                AgentLoop(
+                    self.program(), interrupted_provider, lambda tool, arguments: {}
+                ).run(
+                    "monitor",
+                    "Resume final response.",
+                    session=InterruptingAgentSession(
+                        journal, binding_id="model-v1", crash_state="model_response"
+                    ),
+                )
+            resumed_provider = ScriptedModelProvider(
+                [ModelResponse(content="must not be called")]
+            )
+            result = AgentLoop(
+                self.program(), resumed_provider, lambda tool, arguments: {}
+            ).run(
+                "monitor",
+                "Resume final response.",
+                session=AgentExecutionSession(
+                    journal, binding_id="model-v1", resume=True
+                ),
+            )
+            self.assertEqual(result.content, "checkpointed final")
+            self.assertEqual(resumed_provider.requests, [])
+
+    def test_durable_agent_resumes_from_tool_result_checkpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            journal = Path(directory) / "agent.sqlite"
+            first_provider = ScriptedModelProvider(
+                [
+                    ModelResponse(
+                        finish_reason="tool_calls",
+                        tool_calls=(
+                            ModelToolCall("call-1", "check_disk", {}),
+                            ModelToolCall("call-2", "check_disk", {}),
+                        ),
+                    )
+                ]
+            )
+            calls: list[dict[str, Any]] = []
+
+            def execute(tool, arguments):
+                calls.append(arguments)
+                return {"mount": "/", "used_percent": 42.0}
+
+            with self.assertRaisesRegex(RuntimeError, "tool_result"):
+                AgentLoop(self.program(), first_provider, execute).run(
+                    "monitor",
+                    "Resume after the first tool.",
+                    session=InterruptingAgentSession(
+                        journal, binding_id="model-v1", crash_state="tool_result"
+                    ),
+                )
+            self.assertEqual(len(calls), 1)
+            resumed_provider = ScriptedModelProvider(
+                [ModelResponse(content="both tools resumed")]
+            )
+            result = AgentLoop(self.program(), resumed_provider, execute).run(
+                "monitor",
+                "Resume after the first tool.",
+                session=AgentExecutionSession(
+                    journal, binding_id="model-v1", resume=True
+                ),
+            )
+            self.assertEqual(result.content, "both tools resumed")
+            self.assertEqual(len(calls), 2)
+            self.assertEqual(len(resumed_provider.requests), 1)
+            self.assertEqual(
+                [message.role for message in resumed_provider.requests[0].messages[-2:]],
+                ["tool", "tool"],
+            )
+
+    def test_durable_agent_rejects_interrupted_tool_call(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            journal = Path(directory) / "agent.sqlite"
+            provider = ScriptedModelProvider(
+                [
+                    ModelResponse(
+                        tool_calls=(ModelToolCall("call-1", "check_disk", {}),),
+                        finish_reason="tool_calls",
+                    )
+                ]
+            )
+
+            def interrupted(tool, arguments):
+                raise RuntimeError("tool process stopped")
+
+            with self.assertRaisesRegex(RuntimeError, "tool process stopped"):
+                AgentLoop(self.program(), provider, interrupted).run(
+                    "monitor",
+                    "Check the disk.",
+                    session=AgentExecutionSession(journal, binding_id="model-v1"),
+                )
+            self.assertEqual(
+                AgentExecutionSession(journal, binding_id="model-v1").inspect()[
+                    "state"
+                ],
+                "tool_pending",
+            )
+            resumed_provider = ScriptedModelProvider(
+                [ModelResponse(content="must not be called")]
+            )
+            with self.assertRaisesRegex(AgentLoopError, "requires reconciliation") as caught:
+                AgentLoop(
+                    self.program(), resumed_provider, lambda tool, arguments: {}
+                ).run(
+                    "monitor",
+                    "Check the disk.",
+                    session=AgentExecutionSession(
+                        journal, binding_id="model-v1", resume=True
+                    ),
+                )
+            self.assertEqual(caught.exception.code, "uncertain_outcome")
+            self.assertEqual(resumed_provider.requests, [])
 
     def test_agent_loop_exposes_typed_input_schema(self) -> None:
         program = parse(
@@ -107,6 +334,228 @@ class AgentLoopTests(unittest.TestCase):
         self.assertEqual(
             provider.requests[0].tools[0].input_schema["required"], ["mount"]
         )
+
+
+    def test_model_declaration_configures_requests_and_agent_limits(self) -> None:
+        program = parse(
+            """
+            record Request { prompt: Text }
+            record Result { ok: Bool }
+            model planner {
+              input: Request
+              output: Result
+              deployment: "declared-model"
+              parameters: {
+                temperature: 0.2
+                max_output_tokens: 128
+                top_p: 0.9
+                frequency_penalty: -0.2
+                presence_penalty: 0.1
+                stop: ["DONE", "END"]
+              }
+            }
+            agent bounded {
+              model: planner
+              can: []
+              cannot: []
+              max_steps: 2
+              max_tool_calls: 3
+              max_model_calls: 2
+            }
+            """
+        )
+        provider = ScriptedModelProvider([ModelResponse(content="Done.")])
+        loop = AgentLoop(program, provider, lambda tool, args: {})
+        result = loop.run("bounded", "Plan the work.")
+
+        self.assertEqual(result.content, "Done.")
+        request = provider.requests[0]
+        self.assertEqual(request.model, "declared-model")
+        self.assertEqual(request.temperature, 0.2)
+        self.assertEqual(request.max_output_tokens, 128)
+        self.assertEqual(request.top_p, 0.9)
+        self.assertEqual(request.frequency_penalty, -0.2)
+        self.assertEqual(request.presence_penalty, 0.1)
+        self.assertEqual(request.stop, ("DONE", "END"))
+
+    def test_declared_agent_instructions_are_system_context_and_hash_input(self) -> None:
+        source = """
+        record Request { prompt: Text }
+        record Result { ok: Bool }
+        model planner { input: Request output: Result }
+        agent instructed {
+          model: planner
+          instructions: "Be concise and cite tool results."
+          can: []
+          cannot: []
+        }
+        """
+        program = parse(source)
+        provider = ScriptedModelProvider([ModelResponse(content="Done.")])
+        loop = AgentLoop(program, provider, lambda tool, args: {})
+        result = loop.run(
+            "instructed",
+            "Plan the work.",
+            system_prompt="Return the final answer plainly.",
+        )
+
+        self.assertEqual(result.content, "Done.")
+        self.assertEqual(provider.requests[0].messages[0].content, "Be concise and cite tool results.")
+        self.assertEqual(
+            provider.requests[0].messages[1].content,
+            "Return the final answer plainly.",
+        )
+        without_instructions = parse(
+            source.replace('instructions: "Be concise and cite tool results."', "")
+        )
+        self.assertNotEqual(
+            loop.plan_hash_for("instructed", "Plan the work."),
+            AgentLoop(
+                without_instructions,
+                ScriptedModelProvider([]),
+                lambda tool, args: {},
+            ).plan_hash_for("instructed", "Plan the work."),
+        )
+
+
+    def test_structured_agent_input_and_output_are_schema_checked(self) -> None:
+        program = parse(
+            """
+            record Request { prompt: Text }
+            record Result { ok: Bool }
+            model planner { input: Request output: Result }
+            agent bounded { model: planner can: [] cannot: [] }
+            """
+        )
+        provider = ScriptedModelProvider([ModelResponse(content='{"ok": true}')])
+        result = AgentLoop(program, provider, lambda tool, args: {}).run(
+            "bounded",
+            input_value={"prompt": "Plan"},
+        )
+        self.assertEqual(result.structured_output, {"ok": True})
+        self.assertEqual(provider.requests[0].messages[-1].content, '{"prompt": "Plan"}')
+        with tempfile.TemporaryDirectory() as directory:
+            trace = Path(directory) / "structured-agent.jsonl"
+            traced = AgentLoop(
+                program,
+                ScriptedModelProvider([ModelResponse(content='{"ok": true}')]),
+                lambda tool, args: {},
+            ).run(
+                "bounded",
+                input_value={"prompt": "Plan"},
+                trace_path=trace,
+            )
+            self.assertEqual(traced.structured_output, {"ok": True})
+            self.assertEqual(replay_trace(trace), {"ok": True})
+
+        with self.assertRaisesRegex(AgentLoopError, "Invalid structured agent input"):
+            AgentLoop(
+                program,
+                ScriptedModelProvider([]),
+                lambda tool, args: {},
+            ).run("bounded", input_value={"wrong": True})
+
+        with self.assertRaisesRegex(AgentLoopError, "Invalid structured agent output"):
+            AgentLoop(
+                program,
+                ScriptedModelProvider([ModelResponse(content='{"wrong": true}')]),
+                lambda tool, args: {},
+            ).run("bounded", input_value={"prompt": "Plan"})
+
+
+    def test_agent_deadline_and_cancellation_are_cooperative(self) -> None:
+        source = """
+        record Request { prompt: Text }
+        record Result { ok: Bool }
+        model planner { input: Request output: Result }
+        agent bounded {
+          model: planner
+          deadline_seconds: 1
+          can: []
+          cannot: []
+        }
+        """
+        program = parse(source)
+        check(program)
+        with self.assertRaises(CheckError):
+            check(parse(source.replace("deadline_seconds: 1", "deadline_seconds: 0")))
+        cancel = threading.Event()
+        cancel.set()
+        cancelled = AgentLoop(
+            program,
+            ScriptedModelProvider([]),
+            lambda tool, args: {},
+            cancel=cancel,
+        )
+        with self.assertRaisesRegex(AgentLoopError, "cancelled") as cancelled_error:
+            cancelled.run("bounded", input_value={"prompt": "Plan"})
+        self.assertEqual(cancelled_error.exception.code, "cancelled")
+
+        class SlowProvider:
+            def complete(self, request):
+                time.sleep(0.02)
+                return ModelResponse(content='{"ok": true}')
+
+        deadline = AgentLoop(
+            program,
+            SlowProvider(),
+            lambda tool, args: {},
+            deadline_seconds=0.000001,
+        )
+        with self.assertRaisesRegex(AgentLoopError, "deadline") as deadline_error:
+            deadline.run("bounded", input_value={"prompt": "Plan"})
+        self.assertEqual(deadline_error.exception.code, "deadline")
+
+    def test_agent_tool_and_model_call_limits_are_enforced(self) -> None:
+        program = parse(
+            """
+            record Result { ok: Bool }
+            tool inspect {
+              source mcp "local_mock"
+              operation: "inspect"
+              access: observe
+              output: Result
+            }
+            agent bounded {
+              can: [inspect]
+              cannot: []
+              max_steps: 3
+              max_tool_calls: 1
+              max_model_calls: 2
+            }
+            """
+        )
+        check(program)
+        tool_response = ModelResponse(
+            tool_calls=(
+                ModelToolCall("one", "inspect", {}),
+                ModelToolCall("two", "inspect", {}),
+            )
+        )
+        calls: list[str] = []
+        with self.assertRaisesRegex(AgentLoopError, "maximum tool calls"):
+            AgentLoop(
+                program,
+                ScriptedModelProvider([tool_response]),
+                lambda tool, args: calls.append(tool.name) or {"ok": True},
+            ).run("bounded", "Inspect twice.")
+        self.assertEqual(calls, [])
+
+        provider = ScriptedModelProvider(
+            [
+                ModelResponse(
+                    tool_calls=(ModelToolCall("one", "inspect", {}),)
+                ),
+                ModelResponse(content="Done."),
+            ]
+        )
+        with self.assertRaisesRegex(AgentLoopError, "maximum model calls"):
+            AgentLoop(
+                program,
+                provider,
+                lambda tool, args: {"ok": True},
+                max_model_calls=1,
+            ).run("bounded", "Inspect.")
 
     def test_agent_loop_fails_closed_for_unknown_or_invalid_tools(self) -> None:
         unknown = ScriptedModelProvider(
@@ -163,13 +612,11 @@ class AgentLoopTests(unittest.TestCase):
         with self.assertRaises(ApprovalRequiredError):
             loop.run("operator", "Apply the change")
 
-        bindings = loop._bindings_for(program.agents[0])
+        plan = loop.plan_hash_for("operator", "Apply the change")
         approved = ApprovalRecord(
-            plan_hash=plan_hash("operator", "Apply the change", bindings),
+            plan_hash=plan,
             approved_by="test-user",
-            action_hash=action_hash(
-                plan_hash("operator", "Apply the change", bindings), "mutate", {}
-            ),
+            action_hash=action_hash(plan, "mutate", {}),
         )
         provider = ScriptedModelProvider([response, ModelResponse(content="Applied.")])
         with tempfile.TemporaryDirectory() as directory:
@@ -389,12 +836,20 @@ class OpenAICompatibleProviderTests(unittest.TestCase):
                 model="override",
                 temperature=0.2,
                 max_output_tokens=12,
+                top_p=0.8,
+                frequency_penalty=-0.4,
+                presence_penalty=0.3,
+                stop=("DONE", "END"),
             )
         )
         self.assertEqual(response.content, "ok")
         self.assertEqual(captured["payload"]["model"], "override")
         self.assertEqual(captured["payload"]["temperature"], 0.2)
         self.assertEqual(captured["payload"]["max_tokens"], 12)
+        self.assertEqual(captured["payload"]["top_p"], 0.8)
+        self.assertEqual(captured["payload"]["frequency_penalty"], -0.4)
+        self.assertEqual(captured["payload"]["presence_penalty"], 0.3)
+        self.assertEqual(captured["payload"]["stop"], ["DONE", "END"])
         self.assertEqual(captured["payload"]["messages"][0]["tool_call_id"], "call")
         self.assertEqual(captured["payload"]["messages"][0]["name"], "inspect")
         self.assertEqual(captured["payload"]["tools"][0]["function"]["name"], "inspect")

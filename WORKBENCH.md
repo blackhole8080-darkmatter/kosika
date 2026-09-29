@@ -45,7 +45,7 @@ Open http://127.0.0.1:8765. Stop the server with Ctrl+C.
 ## Try a program
 
 1. Choose an example from the library.
-2. Edit its `.syn` files and JSON inputs.
+2. Edit its `.kos` files and JSON inputs.
 3. Select **Check**, then **Run workflow**.
 4. Inspect the result, timeline, or JSONL trace. **Replay** reuses recorded outcomes.
 

@@ -48,6 +48,10 @@ class ModelRequest:
     model: str | None = None
     temperature: float | None = None
     max_output_tokens: int | None = None
+    top_p: float | None = None
+    frequency_penalty: float | None = None
+    presence_penalty: float | None = None
+    stop: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -124,6 +128,28 @@ class OpenAICompatibleProvider:
             payload["tools"] = [self._tool_to_dict(tool) for tool in request.tools]
         if request.temperature is not None:
             payload["temperature"] = request.temperature
+        for name, value, lower, upper in (
+            ("top_p", request.top_p, 0, 1),
+            ("frequency_penalty", request.frequency_penalty, -2, 2),
+            ("presence_penalty", request.presence_penalty, -2, 2),
+        ):
+            if value is not None and (
+                type(value) not in (int, float) or not lower <= value <= upper
+            ):
+                raise ModelProviderError(
+                    f"{name} must be between {lower} and {upper}"
+                )
+            if value is not None:
+                payload[name] = value
+        if request.stop:
+            if len(request.stop) > 4 or any(
+                type(value) is not str or not 1 <= len(value) <= 256
+                for value in request.stop
+            ):
+                raise ModelProviderError(
+                    "stop must contain up to four non-empty strings of at most 256 characters"
+                )
+            payload["stop"] = list(request.stop)
         if request.max_output_tokens is not None:
             if (
                 type(request.max_output_tokens) is not int

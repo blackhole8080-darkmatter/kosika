@@ -15,7 +15,7 @@ from kosika.schema import SchemaValidationError, schema_for_record, validate
 ROOT = Path(__file__).parents[1]
 SERVER = ROOT / "examples" / "mcp_host_server.py"
 MANIFEST = ROOT / "examples" / "mcp_manifest.json"
-LIVE_EXAMPLE = ROOT / "examples" / "test_host_live.syn"
+LIVE_EXAMPLE = ROOT / "examples" / "test_host_live.kos"
 WORKFLOW = ROOT / ".github" / "workflows" / "kosika-manifest-check.yml"
 
 

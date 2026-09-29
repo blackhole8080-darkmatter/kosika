@@ -131,23 +131,23 @@ class FunctionValueTests(unittest.TestCase):
     def test_module_visibility_for_function_references(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / "lib.syn").write_text(
+            (root / "lib.kos").write_text(
                 "fn hidden(value: Number) -> Number { return value }", encoding="utf-8"
             )
-            entry = root / "main.syn"
+            entry = root / "main.kos"
             entry.write_text(
-                'import "lib.syn" '
+                'import "lib.kos" '
                 "fn leak(hidden: Number) -> fn(value: Number) -> Number { return ref hidden }",
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(CheckError, "private"):
                 load_program(entry)
-            (root / "lib.syn").write_text(
+            (root / "lib.kos").write_text(
                 "export [make, apply, Result]\n" + SOURCE.split("workflow main")[0],
                 encoding="utf-8",
             )
             entry.write_text(
-                'import "lib.syn"\nworkflow main' + SOURCE.split("workflow main")[1],
+                'import "lib.kos"\nworkflow main' + SOURCE.split("workflow main")[1],
                 encoding="utf-8",
             )
             self.assertEqual(run(load_program(entry), "main", None), {"value": 15})
@@ -155,7 +155,7 @@ class FunctionValueTests(unittest.TestCase):
     def test_expanded_closures_example_runs_and_replays(self) -> None:
         from kosika.modules import load_program
 
-        source_path = Path(__file__).resolve().parent.parent / "examples" / "closures.syn"
+        source_path = Path(__file__).resolve().parent.parent / "examples" / "closures.kos"
         program = load_program(source_path)
         with tempfile.TemporaryDirectory() as directory:
             trace = Path(directory) / "closures.jsonl"

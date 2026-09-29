@@ -30,7 +30,7 @@ def describe_inputs(program: Program, workflow: str) -> dict[str, Any]:
 
 def diagnostic(message: str) -> dict[str, Any]:
     """Only report exact locations supplied by the parser, never guessed lines."""
-    location = re.search(r"(?:^|\s)([A-Za-z0-9_/-]+\.syn): .*?at (\d+):(\d+)", message)
+    location = re.search(r"(?:^|\s)([A-Za-z0-9_/-]+\.kos): .*?at (\d+):(\d+)", message)
     result: dict[str, Any] = {
         "message": message,
         "hint": "Check declared record types, capabilities, and model responses.",

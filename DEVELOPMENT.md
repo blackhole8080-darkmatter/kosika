@@ -7,8 +7,8 @@ of production readiness. Run commands from the repository root.
 ## 1. Modules and workflow composition
 
 ```kosika
-import "types.syn"
-import "research.syn"
+import "types.kos"
+import "research.kos"
 
 workflow main(question: Question) -> Answer {
   step investigate {
@@ -41,8 +41,8 @@ Nested execution and replay retain child traces. No generic loops were added.
 Try the three-file example:
 
 ```text
-python -m kosika.cli check examples/composed/main.syn
-python -m kosika.cli run examples/composed/main.syn --input examples/composed/inputs.json --model-fixture examples/composed/responses.json --trace composed.jsonl
+python -m kosika.cli check examples/composed/main.kos
+python -m kosika.cli run examples/composed/main.kos --input examples/composed/inputs.json --model-fixture examples/composed/responses.json --trace composed.jsonl
 python -m kosika.cli replay composed.jsonl
 ```
 
@@ -97,7 +97,7 @@ CLI run supports `--max-requests`, `--max-tokens`, `--max-output-tokens`, and
 ## 3. Durable runs and approval pauses
 
 ```text
-python -m kosika.cli run examples/composed/main.syn --input examples/composed/inputs.json --model-fixture examples/composed/responses.json --trace composed.jsonl --journal composed.sqlite --binding-id scripted-reader-v1
+python -m kosika.cli run examples/composed/main.kos --input examples/composed/inputs.json --model-fixture examples/composed/responses.json --trace composed.jsonl --journal composed.sqlite --binding-id scripted-reader-v1
 ```
 
 Repeat that command with the same program, inputs, and binding identity to rebuild
@@ -187,10 +187,10 @@ has been introduced.
 ## 6. Developer tools and evaluations
 
 ```text
-python -m kosika.devtools format examples/composed/main.syn --check
-python -m kosika.devtools complete examples/composed/main.syn --prefix re
+python -m kosika.devtools format examples/composed/main.kos --check
+python -m kosika.devtools complete examples/composed/main.kos --prefix re
 python -m kosika.devtools inspect composed.jsonl
-python -m kosika.devtools eval examples/composed/main.syn examples/composed/evaluations.json --output new-evaluation-directory
+python -m kosika.devtools eval examples/composed/main.kos examples/composed/evaluations.json --output new-evaluation-directory
 ```
 
 The formatter normalizes indentation while preserving comments and line structure;
@@ -199,10 +199,19 @@ to stdout. Completion lists declarations/keywords for a valid program. The trace
 inspector validates replay first and shows nested steps without printing prompts or
 outputs. These are foundations, not a full language server or IDE debugger.
 
-`editors/vscode` contains a local VS Code extension skeleton with `.syn` highlighting
-and snippets. It is not installed or published automatically. Open that folder in
-VS Code and use an Extension Development Host to try it. Dynamic editor diagnostics
-and semantic autocomplete remain future LSP work.
+`editors/vscode` contains a local VS Code extension with `.kos` highlighting,
+snippets, live diagnostics, bounded live workspace indexing, document symbols,
+hover, go-to-definition, references, and completion providers backed by a
+long-running stdlib-only Kosika LSP server. Document changes are debounced and
+stale provider responses are discarded. The index scans workspace `.kos` files
+and honors direct exported imports for cross-file navigation; VS Code file-watch
+events refresh changed, created, and deleted files.
+Open the repository in VS Code, run
+`code --extensionDevelopmentPath=editors/vscode`, and choose an Extension
+Development Host. Configure `kosika.pythonPath` and
+`kosika.skillDirectories` in VS Code settings when needed. The commands check
+the active file, explain it, render Kosika or unified Mermaid mindmaps, and
+inspect automatically selected skills.
 
 Evaluation fixtures declare named inputs, exact expected records and/or required
 text in output fields. Assertions are data, never Python/code expressions. Each
@@ -224,7 +233,7 @@ language names. The built-in registry currently provides:
 - Python: `.py`, `.pyi`
 - JavaScript: `.js`, `.mjs`, `.cjs`, `.jsx`
 - TypeScript: `.ts`, `.mts`, `.cts`, `.tsx`
-
+- Rust: `.rs`
 Adapters never import or execute analyzed code. To add a language, implement its
 bounded analyzer, create a `LanguageAdapter`, and add it to `REGISTRY`; project
 analysis, source maps, CLI analysis, and assistant source grounding then share the
@@ -234,17 +243,19 @@ CLI and remain inventory-only in project analysis.
 ### Read-only source analysis
 
 `kosika.python_adapter.analyze_python_file(path)` and
-`analyze_python_source(source)` use Python's standard-library AST parser. The
-JavaScript and TypeScript adapter uses a bounded syntax scanner. All adapters
-return deterministic `kosika.source-analysis/v1` reports containing source
-identity, declarations, imports, source spans, direct syntactic calls, and
-clearly-labeled effect observations.
+`analyze_python_source(source)` uses Python's standard-library AST parser. The
+JavaScript and TypeScript adapters use bounded syntax scanners. The Rust adapter
+uses Tree-sitter Rust as its primary parser backend and falls back to its bounded
+scanner only when the parser packages are unavailable. All adapters return
+deterministic `kosika.source-analysis/v1` reports containing source identity,
+declarations, imports, source spans, direct syntactic calls, and clearly-labeled
+effect observations.
 
 ```text
 python -m kosika.cli analyze path/to/module.py --format text
 python -m kosika.cli analyze path/to/module.py --format json
 python -m kosika.cli analyze path/to/module.ts --format json
-python -m kosika.cli assistant examples/test_host.syn --task "Explain this helper" --source-file path/to/module.py
+python -m kosika.cli assistant examples/test_host.kos --task "Explain this helper" --source-file path/to/module.py
 ```
 
 This is structural indexing, not complete semantic analysis: it does not resolve
@@ -268,12 +279,12 @@ and fails safely instead of silently truncating semantic data.
 
 ```text
 python -m kosika.cli project ./my-project --output project-map.json
-python -m kosika.cli assistant examples/test_host.syn --task "What is this codebase for?" --project ./my-project
+python -m kosika.cli assistant examples/test_host.kos --task "What is this codebase for?" --project ./my-project
 ```
 
 Repeat `--project` to compare multiple project roots; each report is included in
 bounded assistant context and returned in `project_analyses`. Local import edges
-currently link Python files only; JavaScript/TypeScript imports are reported per
+currently link Python files only; JavaScript, TypeScript, and Rust imports are reported per
 file without cross-file linking. Unresolved import candidates are not called
 external dependencies, and duplicate module names are reported as ambiguous
 rather than linked. README/config text is only evidence, not verified purpose or
@@ -287,8 +298,8 @@ hashes, declaration ownership, and direct import edges in `Program.module_hashes
 `Program.module_declarations`, and `Program.module_imports`.
 
 ```text
-python -m kosika.cli mindmap examples/composed/main.syn --format json --output code-map.json
-python -m kosika.cli mindmap examples/composed/main.syn --format mermaid --output code-map.mmd
+python -m kosika.cli mindmap examples/composed/main.kos --format json --output code-map.json
+python -m kosika.cli mindmap examples/composed/main.kos --format mermaid --output code-map.mmd
 ```
 
 The map is created after `load_program` and `check`; it never executes a workflow, opens a provider,
@@ -304,7 +315,7 @@ observations beside the static structure. `trace_path=` reads a JSONL trace, run
 program-hash comparison. It never re-executes the workflow. CLI usage is:
 
 ```text
-python -m kosika.cli explain examples/composed/main.syn \
+python -m kosika.cli explain examples/composed/main.kos \
   --workflow main --record Answer \
   --diagnostic "Review the model boundary" \
   --trace composed.jsonl --format json
@@ -324,6 +335,33 @@ OpenAI-compatible local provider. Assistant requests always have an empty tool l
 truncated responses, empty output, oversized context, and invalid tasks are rejected; assistant text
 never authorizes a capability or mutates a resource. Use `kosika.cli assistant --json` when a caller
 needs the answer, diagnostics, and exact static mindmap in one structured result.
+
+### Automatic skill routing
+
+Local skills are directories containing `skill.json` and, by default, `SKILL.md`:
+
+```json
+{
+  "id": "rust-review",
+  "version": "1.0",
+  "summary": "Review Rust source structure and ownership risks.",
+  "domains": ["rust", "systems"],
+  "keywords": ["borrow", "ownership"]
+}
+```
+
+The router combines explicitly requested skills with relevant supporting skills
+under the `hybrid` policy. Selection is deterministic, bounded, included in the
+agent plan hash, and rendered as advisory model context. Skills never grant
+tools, capabilities, permissions, or approval authority.
+
+```text
+python -m kosika.cli skills --skill-dir .kosika/skills \
+  --task "Review this Rust workflow for capability security" --format text
+python -m kosika.cli agent examples/test_host.kos --agent monitor \
+  --task "Review this Rust workflow for capability security" \
+  --skill-dir .kosika/skills --skill-policy hybrid
+```
 
 ## Validation and next limits
 
@@ -374,7 +412,7 @@ may shadow enclosing values without changing what sibling helpers capture.
 Helpers are not visible to preceding local initializers or outside their enclosing
 function. Duplicate sibling declarations and unannotated recursive call graphs are rejected.
 
-```syn
+```kos
 fn calculate(base: Number) -> Number {
   let adjustment: Number = 2
   fn adjusted() -> Number { return base + adjustment }
@@ -392,7 +430,7 @@ enclosing values, including shadowed bindings; these values appear as internal
 Host callers constructing nested ASTs must call `lower_nested_functions` before
 checking or running them. Existing flat ASTs need no extra step.
 
-Run `python -m kosika.cli run examples/nested_functions.syn` for a result of
+Run `python -m kosika.cli run examples/nested_functions.kos` for a result of
 `{"value": 36}`. Function bodies remain pure and immutable.
 
 ### Typed function values and escaping closures
@@ -403,7 +441,7 @@ between signatures. `ref name` creates a reference to a visible pure function.
 For nested functions, it snapshots the lexical captures so the reference can be
 returned and called after its creating invocation has finished.
 
-```syn
+```kos
 fn make_adder(base: Number) -> fn(value: Number) -> Number {
   fn add(value: Number) -> Number { return base + value }
   return ref add
@@ -411,7 +449,7 @@ fn make_adder(base: Number) -> fn(value: Number) -> Number {
 ```
 
 Invoke a function-valued binding using the same named call syntax as declarations.
-`examples/closures.syn` passes an escaped adder to a higher-order function and
+`examples/closures.kos` passes an escaped adder to a higher-order function and
 returns `{"value": 15}`. Function-valued parameters and locals shadow declarations
 for calls; explicit `ref name` always refers to a declaration, not a variable.
 
@@ -437,7 +475,7 @@ including the first invocation, regardless of which closure captures are used.
 Every declaration participating in a statically visible cycle must opt in; this
 includes mutual recursion. Workflow recursion remains forbidden.
 
-```syn
+```kos
 fn factorial(n: Number) -> Number recurse 16 {
   return match n {
     case 0 { 1 }
@@ -462,7 +500,7 @@ and Text require a final wildcard. Duplicates, unreachable arms, non-exhaustive
 matches and mismatched result types fail checking. Record/array destructuring,
 pattern-bound variables, guards and tagged unions are not implemented.
 
-Run `examples/recursion_match.syn` to obtain
+Run `examples/recursion_match.kos` to obtain
 `{"factorial": 120, "parity": "odd", "classification": "zero"}`. Successful recursive
 runs use existing version-5 call traces and replay validation. Replay enforces its
 global nesting limit but does not independently prove source-level recursion bounds
@@ -495,7 +533,7 @@ execution is reported as cancellation with exit code 130. Budget/deadline failur
 return 2; approval pauses retain exit code 3. Example:
 
 ```text
-python -m kosika.cli run examples/recursion_match.syn --max-function-calls 100 --deadline-seconds 5 --trace bounded.jsonl
+python -m kosika.cli run examples/recursion_match.kos --max-function-calls 100 --deadline-seconds 5 --trace bounded.jsonl
 ```
 
 For an offline comparison of success, budget exhaustion and cancellation, run
@@ -522,11 +560,15 @@ atomically; inability to write a failure trace must not replace the original err
 
 This is diagnostic failure telemetry, not failed-run replay or a full interrupted
 agent/function transcript. Successful replay deliberately rejects terminal failure
-events. The optional normalized event/timeline export remains a successful-run
-path; failure diagnostics are in the runtime `--trace` file. CLI setup errors before
-`run()` begins do not create runtime traces. Hard preemption, full agent-loop resume,
-global DAG budgets and configurable token/cost accounting across providers remain
-outside this slice.
+events. Direct agents now additionally support a durable SQLite journal: completed
+agent checkpoints can resume with the same plan metadata and host binding, while
+in-flight model/tool calls remain uncertain and are never repeated automatically.
+The `deadline_seconds` limit applies to each process invocation; resuming starts
+a new cooperative deadline window. The optional normalized event/timeline export
+remains a successful-run path; failure diagnostics are in the runtime `--trace`
+file. CLI setup errors before `run()` begins do not create runtime traces. Hard
+preemption, global DAG budgets and configurable token/cost accounting across
+providers remain outside this slice.
 
 Tests cover modules, private-name access, recursion, nested replay, budgets,
 approval pauses, one-use claims, uncertain outcomes, journal locking, actual

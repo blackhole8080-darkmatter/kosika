@@ -155,7 +155,7 @@ The workbench-timeline-visibility slice is complete:
 - A gap this exposed: `dispatch("timeline", ...)` existed and was tested, but the HTTP route allowlist in the workbench server did not include `/api/timeline`, so the browser received 404. The route was added and is now covered by an HTTP-level test posting a real run's events through the server.
 - New focused tests cover the run-dispatch → timeline-dispatch round trip (deterministic digest across repeats, SVG and Mermaid rendered, stage summary present), malformed timeline payloads failing closed at the dispatch layer, and the live HTTP route with both the success and the 400 branch.
 - A live browser session (workbench on 127.0.0.1) ran the research-pipeline sample end to end: Timeline tab shows the design section (digest, six `execution` stage chips, inline SVG) above the recorded step rows.
-- The same pipeline was demonstrated from the CLI: `python -m kosika.cli run examples/nested_functions.syn --event-trace ... --design ...` produced `{'value': 36}` from Strawberry's nested closures, a 6-event normalized bridge stream, and a deterministic SVG timeline design on disk.
+- The same pipeline was demonstrated from the CLI: `python -m kosika.cli run examples/nested_functions.kos --event-trace ... --design ...` produced `{'value': 36}` from Strawberry's nested closures, a 6-event normalized bridge stream, and a deterministic SVG timeline design on disk.
 
 ## Live event visibility slice (complete)
 

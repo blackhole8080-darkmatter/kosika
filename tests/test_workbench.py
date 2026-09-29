@@ -37,28 +37,28 @@ class WorkbenchTests(unittest.TestCase):
         data["fixtures"]["writer"] = [{"text": 7}]
         with self.assertRaisesRegex(ValueError, "string"):
             dispatch("run", data)
-        data["files"]["main.syn"] = "workflow broken("
+        data["files"]["main.kos"] = "workflow broken("
         with self.assertRaises(ValueError) as caught:
             dispatch("run", data)
-        self.assertIn("main.syn", str(caught.exception))
+        self.assertIn("main.kos", str(caught.exception))
         self.assertNotIn("kosika-workbench-", str(caught.exception))
         with self.assertRaises(ValueError):
             dispatch("replay", {"trace": "{}"})
 
     def test_paths_and_external_tool_grants_fail_closed(self):
         for name in (
-            "../outside.syn",
-            "/absolute.syn",
-            "C:/outside.syn",
-            "NUL.syn",
-            "sub//a.syn",
+            "../outside.kos",
+            "/absolute.kos",
+            "C:/outside.kos",
+            "NUL.kos",
+            "sub//a.kos",
         ):
             with self.subTest(name=name), self.assertRaises(ValueError):
                 dispatch(
                     "run", {"files": {name: "record R { text: Text }"}, "entry": name}
                 )
         data = payload(SAMPLES[2])
-        data["files"]["main.syn"] = data["files"]["main.syn"].replace(
+        data["files"]["main.kos"] = data["files"]["main.kos"].replace(
             "local_mock", "external"
         )
         with self.assertRaisesRegex(ValueError, "read-only local_mock"):
@@ -66,8 +66,8 @@ class WorkbenchTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             dispatch("run", {**payload(SAMPLES[1]), "model_url": "http://external"})
         data = payload(SAMPLES[1])
-        data["files"]["main.syn"] = (
-            'import "../external.syn"\n' + data["files"]["main.syn"]
+        data["files"]["main.kos"] = (
+            'import "../external.kos"\n' + data["files"]["main.kos"]
         )
         with self.assertRaises(ValueError):
             dispatch("run", data)

@@ -1,0 +1,106 @@
+// Research: literature, data collection, and source verification.
+record Note { text: Text }
+record Paper { title: Text venue: Text year: Number }
+record PaperSet { papers: Paper[] }
+record Verdict { url: Text trusted: Bool }
+record Citation { paper: Paper locator: Text }
+
+model scholar { input: Note output: Note }
+model auditor { input: Note output: Note }
+
+tool search_papers {
+  source mcp "literature"
+  operation: "search"
+  access: observe
+  input: Note
+  output: PaperSet
+}
+
+tool fetch_pdf {
+  source mcp "literature"
+  operation: "fetch"
+  access: observe
+  input: Paper
+  output: Paper
+}
+
+tool check_source {
+  source mcp "web"
+  operation: "verify"
+  access: observe
+  input: Note
+  output: Verdict
+}
+
+tool resolve_doi {
+  source mcp "literature"
+  operation: "resolve"
+  access: observe
+  input: Citation
+  output: Paper
+}
+
+agent literature_reviewer {
+  model: scholar
+  can: [search_papers, fetch_pdf]
+  cannot: [write_files, arbitrary_shell, publish_anything]
+  max_steps: 6
+}
+
+agent data_collector {
+  model: scholar
+  can: [search_papers, fetch_pdf]
+  cannot: [arbitrary_shell, delete_anything]
+  max_steps: 8
+}
+
+agent source_verifier {
+  model: auditor
+  can: [check_source, fetch_pdf]
+  cannot: [write_files, arbitrary_shell]
+  max_steps: 5
+}
+
+agent citation_auditor {
+  model: auditor
+  can: [resolve_doi, check_source]
+  cannot: [write_files, arbitrary_shell, fabricate_references]
+  max_steps: 4
+}
+
+agent abstract_summarizer {
+  model: scholar
+  can: [fetch_pdf]
+  cannot: [write_files, arbitrary_shell, add_claims]
+  max_steps: 6
+}
+
+workflow review(note: Note) -> Note {
+  step survey {
+    let surveyed: Note = ask literature_reviewer(text: note.text)
+    return surveyed
+  }
+  step collect {
+    let collected: Note = ask data_collector(text: surveyed.text)
+    return collected
+  }
+  step verify {
+    let verified: Note = ask source_verifier(text: collected.text)
+    return verified
+  }
+  step audit {
+    let audited: Note = ask citation_auditor(text: verified.text)
+    return audited
+  }
+  step summarise {
+    let summarised: Note = ask abstract_summarizer(text: audited.text)
+    return summarised
+  }
+}
+
+swarm ResearchDepartment {
+  agents: [literature_reviewer, data_collector, source_verifier, citation_auditor, abstract_summarizer]
+  workflow: review
+  max_rounds: 3
+  require approval
+}

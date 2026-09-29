@@ -70,6 +70,15 @@ class ExecutionControl:
             raise ExecutionError("budget", f"{label} budget exceeds {maximum}")
         self.counts[kind] += 1
 
+    def restore(self, used: dict[str, Any]) -> None:
+        """Restore counters at a durable checkpoint."""
+        for kind in self.counts:
+            value = used.get(kind, 0)
+            maximum = getattr(self.limits, f"max_{kind}")
+            if type(value) is not int or not 0 <= value <= maximum:
+                raise ExecutionError("journal_invalid", f"Invalid {kind} checkpoint")
+            self.counts[kind] = value
+
     def snapshot(self) -> dict[str, Any]:
         return {
             "limits": asdict(self.limits),

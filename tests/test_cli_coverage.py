@@ -14,8 +14,8 @@ from kosika.model import ModelResponse, ModelToolCall, ScriptedModelProvider
 ROOT = Path(__file__).parents[1]
 SERVER = ROOT / "examples" / "mcp_host_server.py"
 MANIFEST = ROOT / "examples" / "mcp_manifest.json"
-MOCK_SOURCE = ROOT / "examples" / "test_host.syn"
-LIVE_SOURCE = ROOT / "examples" / "test_host_live.syn"
+MOCK_SOURCE = ROOT / "examples" / "test_host.kos"
+LIVE_SOURCE = ROOT / "examples" / "test_host_live.kos"
 
 
 class CliCoverageTests(unittest.TestCase):
@@ -44,8 +44,16 @@ class CliCoverageTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             trace = Path(directory) / "trace.jsonl"
+            journal = Path(directory) / "workflow.sqlite"
             result, output = self.call_cli(
-                "run", str(MOCK_SOURCE), "--trace", str(trace)
+                "run",
+                str(MOCK_SOURCE),
+                "--trace",
+                str(trace),
+                "--journal",
+                str(journal),
+                "--binding-id",
+                "fixture-v1",
             )
             self.assertEqual(result, 0)
             self.assertIn("Trace:", output)
@@ -79,6 +87,131 @@ class CliCoverageTests(unittest.TestCase):
         self.assertIn("Disk usage is 42 percent.", output)
         self.assertIn("Model steps: 2", output)
         self.assertEqual(len(provider.requests), 2)
+
+    def test_agent_command_runs_typed_offline_fixtures(self) -> None:
+        result, output = self.call_cli(
+            "agent",
+            str(ROOT / "examples" / "research_agent.kos"),
+            "--agent",
+            "researcher",
+            "--input",
+            str(ROOT / "examples" / "research_agent_input.json"),
+            "--model-fixture",
+            str(ROOT / "examples" / "research_agent_models.json"),
+            "--tool-fixture",
+            str(ROOT / "examples" / "research_agent_tools.json"),
+        )
+        self.assertEqual(result, 0)
+        self.assertIn('"answer": "The notes schedule launch for June 1."', output)
+        self.assertIn('"sources": [', output)
+        self.assertIn("Model steps: 2", output)
+
+    def test_agent_command_resumes_completed_journal(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            journal = Path(directory) / "agent.sqlite"
+            first_provider = ScriptedModelProvider(
+                [ModelResponse(content="durable result")]
+            )
+            with patch.object(cli, "OpenAICompatibleProvider", return_value=first_provider):
+                result, output = self.call_cli(
+                    "agent",
+                    str(MOCK_SOURCE),
+                    "--agent",
+                    "monitor",
+                    "--task",
+                    "Check the disk",
+                    "--model",
+                    "test-model",
+                    "--journal",
+                    str(journal),
+                    "--binding-id",
+                    "test-model-v1",
+                )
+            self.assertEqual(result, 0)
+            self.assertIn("durable result", output)
+            status_result, status_output = self.call_cli(
+                "journal", str(journal), "--format", "json"
+            )
+            status = json.loads(status_output)
+            self.assertEqual(status_result, 0)
+            self.assertEqual(status["kind"], "agent")
+            self.assertEqual(status["agent"]["state"], "completed")
+            self.assertNotIn("durable result", status_output)
+            text_result, text_output = self.call_cli("journal", str(journal))
+            self.assertEqual(text_result, 0)
+            self.assertIn("State: completed", text_output)
+
+
+            resumed_provider = ScriptedModelProvider(
+                [ModelResponse(content="must not be called")]
+            )
+            with patch.object(
+                cli, "OpenAICompatibleProvider", return_value=resumed_provider
+            ):
+                result, output = self.call_cli(
+                    "agent",
+                    str(MOCK_SOURCE),
+                    "--agent",
+                    "monitor",
+                    "--task",
+                    "Check the disk",
+                    "--model",
+                    "test-model",
+                    "--journal",
+                    str(journal),
+                    "--binding-id",
+                    "test-model-v1",
+                    "--resume",
+                )
+            self.assertEqual(result, 0)
+            self.assertIn("durable result", output)
+            self.assertEqual(resumed_provider.requests, [])
+
+    def test_agent_command_uses_declared_deployment_without_model_flag(self) -> None:
+        source = """
+        record Request { prompt: Text }
+        record Result { ok: Bool }
+        model planner {
+          input: Request
+          output: Result
+          deployment: "declared-model"
+          parameters: { temperature: 0.1 max_output_tokens: 64 }
+        }
+        agent planner_agent { model: planner can: [] cannot: [] }
+        """
+        provider = ScriptedModelProvider([ModelResponse(content='{"ok": true}')])
+        with tempfile.TemporaryDirectory() as directory:
+            source_path = Path(directory) / "planner.kos"
+            input_path = Path(directory) / "request.json"
+            trace_path = Path(directory) / "agent-trace.jsonl"
+            source_path.write_text(source, encoding="utf-8")
+            input_path.write_text('{"prompt": "Plan"}', encoding="utf-8")
+            with patch.object(
+                cli, "OpenAICompatibleProvider", return_value=provider
+            ) as factory:
+                result, output = self.call_cli(
+                    "agent",
+                    str(source_path),
+                    "--agent",
+                    "planner_agent",
+                    "--input",
+                    str(input_path),
+                    "--trace",
+                    str(trace_path),
+                    "--task",
+                    "Plan",
+                )
+            replay_result, replay_output = self.call_cli("replay", str(trace_path))
+            self.assertEqual(replay_result, 0)
+            self.assertIn("'ok': True", replay_output)
+        self.assertEqual(result, 0)
+        self.assertIn('"ok": true', output)
+        factory.assert_called_once_with(
+            "http://localhost:11434/v1",
+            "declared-model",
+            api_key=None,
+        )
+        self.assertEqual(provider.requests[0].temperature, 0.1)
 
     def test_agent_command_requires_both_approval_hashes(self) -> None:
         with (

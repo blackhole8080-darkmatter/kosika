@@ -47,7 +47,7 @@ class WorkbenchMCPTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             dispatch("run", payload())
         data = payload()
-        data["files"]["main.syn"] = data["files"]["main.syn"].replace(
+        data["files"]["main.kos"] = data["files"]["main.kos"].replace(
             "words: Number", "words: Text"
         )
         with self.assertRaises(ValueError):

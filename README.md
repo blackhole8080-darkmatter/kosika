@@ -37,8 +37,8 @@ graphs.
 
 Function locals use `let name: Type = expression`. Initializers run in order;
 later locals and the return expression can refer to earlier bindings. Names cannot
-be rebound or shadow parameters. See `examples/local_bindings.syn` for a runnable
-example (`python -m kosika.cli run examples/local_bindings.syn`).
+be rebound or shadow parameters. See `examples/local_bindings.kos` for a runnable
+example (`python -m kosika.cli run examples/local_bindings.kos`).
 
 Pure expressions support precedence-aware numeric arithmetic, numeric comparisons,
 strict same-type equality, Boolean `and`/`or`/`not`, unary negation, parentheses,
@@ -46,8 +46,8 @@ and typed `if condition {value} else {value}` expressions. Boolean operators and
 conditionals evaluate only the selected branch.
 
 ```text
-python -m kosika.cli check examples/pure_function.syn
-python -m kosika.cli run examples/pure_function.syn --input examples/person.json
+python -m kosika.cli check examples/pure_function.kos
+python -m kosika.cli run examples/pure_function.kos --input examples/person.json
 ```
 
 ### Function values and escaping closures
@@ -88,10 +88,10 @@ closure signature and capture set, and replay rejects tampered closure payloads.
 Try the complete example offline from this repository:
 
 ```text
-python -m kosika.cli check examples/closures.syn
-python -m kosika.cli run examples/closures.syn --workflow main --trace closures.jsonl
+python -m kosika.cli check examples/closures.kos
+python -m kosika.cli run examples/closures.kos --workflow main --trace closures.jsonl
 python -m kosika.cli replay closures.jsonl
-python -m kosika.cli mindmap examples/closures.syn --format json
+python -m kosika.cli mindmap examples/closures.kos --format json
 ```
 
 Nested declarations, recursion, mutation, and loops remain separate language-core
@@ -116,11 +116,32 @@ workflow answer(question: Question) -> Answer {
 }
 ```
 
+Model deployments and request parameters can be declared without putting provider
+credentials in source. `temperature` is bounded to `0..2`, `top_p` to `0..1`,
+and both penalties to `-2..2`; output tokens are bounded to `1..1000000`.
+`stop` accepts up to four unique non-empty strings, each at most 256 characters.
+
+```kosika
+model research_writer {
+  input: Question
+  output: Answer
+  deployment: "local-research-model"
+  parameters: {
+    temperature: 0.2
+    max_output_tokens: 2048
+    top_p: 0.9
+    frequency_penalty: -0.1
+    presence_penalty: 0.1
+    stop: ["END"]
+  }
+}
+```
+
 Try the complete example offline from this repository:
 
 ```text
-python -m kosika.cli check examples/model_answer.syn
-python -m kosika.cli run examples/model_answer.syn --workflow answer --input examples/question.json --model-fixture examples/model_answers.json --trace answer.jsonl
+python -m kosika.cli check examples/model_answer.kos
+python -m kosika.cli run examples/model_answer.kos --workflow answer --input examples/question.json --model-fixture examples/model_answers.json --trace answer.jsonl
 python -m kosika.cli replay answer.jsonl
 ```
 
@@ -154,7 +175,7 @@ both the model and tool bindings before execution.
 Try the included sample from this repository:
 
 ```text
-python -m kosika.cli check examples/document_assistant.syn
+python -m kosika.cli check examples/document_assistant.kos
 python -m examples.document_assistant approval --trace document_trace.jsonl
 python -m kosika.cli replay document_trace.jsonl
 ```
@@ -180,7 +201,7 @@ limitations described above apply.
 
 ## Included
 
-- Small `.syn` lexer and parser
+- Small `.kos` lexer and parser
 - AST dataclasses
 - Static capability checker
 - Read-only mock MCP-style tool boundary
@@ -194,8 +215,8 @@ limitations described above apply.
 ## Run
 
 ```text
-python -m kosika.cli check examples/test_host.syn
-python -m kosika.cli run examples/test_host.syn --trace run_trace.jsonl
+python -m kosika.cli check examples/test_host.kos
+python -m kosika.cli run examples/test_host.kos --trace run_trace.jsonl
 python -m kosika.cli replay run_trace.jsonl
 python -m unittest discover -s tests -v
 ```
@@ -258,7 +279,7 @@ protocol version, server name/version, exact advertised tool set, input schema, 
 a canonical SHA-256 schema digest.
 
 ```text
-python -m kosika.cli run examples/test_host_live.syn `
+python -m kosika.cli run examples/test_host_live.kos `
   --mcp-server examples/mcp_host_server.py `
   --mcp-manifest examples/mcp_manifest.json `
   --trace live_trace.jsonl
@@ -283,6 +304,27 @@ production executor.
 
 The first v0.4-oriented agent seam is available as a Python API in `kosika.model` and `kosika.agent`.
 It is intentionally provider-neutral and keeps model output separate from tool execution:
+
+Agent declarations bind the model, instructions, and bounded execution directly in `.kos`:
+
+```kosika
+agent researcher {
+  model: research_writer
+  instructions: "Use only retrieved evidence and keep the answer concise."
+  can: [search_documents]
+  cannot: [shell]
+  max_steps: 8
+  max_tool_calls: 12
+  max_model_calls: 8
+  deadline_seconds: 60
+}
+```
+
+Declared instructions are added as system context before host-provided system
+prompts. Instructions and execution limits are included in the approval plan hash.
+The declared deployment is used when `--model` is omitted. CLI `--model`,
+`--max-steps`, and `--deadline-seconds` remain explicit overrides. Deadlines and
+cancellation are cooperative; they do not interrupt an in-flight provider call.
 
 ```python
 from kosika.agent import AgentLoop
@@ -309,16 +351,128 @@ putting credentials in source code:
 $env:KOSIKA_MODEL_URL = "http://localhost:11434/v1"
 $env:KOSIKA_MODEL = "your-local-model"
 $env:KOSIKA_MODEL_API_KEY = "optional-local-key"
-python -m kosika.cli agent examples/test_host.syn `
+python -m kosika.cli agent examples/test_host.kos `
   --agent monitor `
   --task "Check the disk and summarize the result."
 ```
+
+For an agent whose declared model has typed input and output records, use
+structured mode:
+
+```json
+{"prompt": "Summarize the retrieved evidence"}
+```
+
+```powershell
+python -m kosika.cli agent research.kos `
+  --agent researcher `
+  --input request.json
+```
+
+The input JSON must match the model input record. The final model response must
+be a JSON object matching the model output record; otherwise the run fails closed.
+The Python API uses `loop.run("researcher", input_value={"prompt": "..."})`.
+The repository includes a complete typed example in
+`examples/research_agent.kos`, including a read-only `search_notes` tool,
+bounded model settings, and structured `ResearchAnswer` output. Validate its
+declarations with:
+
+```powershell
+python -m kosika.cli check examples/research_agent.kos
+```
+Run the complete typed agent offline with deterministic model and tool fixtures:
+
+```powershell
+python -m kosika.cli agent examples/research_agent.kos `
+  --agent researcher `
+  --input examples/research_agent_input.json `
+  --model-fixture examples/research_agent_models.json `
+  --tool-fixture examples/research_agent_tools.json
+```
+
+Model fixtures map the declared deployment to response objects. Tool fixtures map
+the declared tool name or operation to one output record, or to a sequence of
+output records for repeated calls.
+
+
+
+Completed direct-agent runs can be recorded and replayed offline:
+
+```powershell
+python -m kosika.cli agent research.kos `
+  --agent researcher `
+  --input request.json `
+  --trace researcher.jsonl
+python -m kosika.cli replay researcher.jsonl
+```
+
+The trace records model requests/responses, tool calls/results, schemas,
+configuration, structured input/output, and the plan hash. Replay validates the
+recorded interaction without invoking the model or tools.
+Direct agents can also use a durable SQLite journal:
+
+```powershell
+python -m kosika.cli agent examples/research_agent.kos `
+  --agent researcher `
+  --input examples/research_agent_input.json `
+  --journal research-agent.sqlite `
+  --binding-id local-research-v1 `
+  --trace research-agent.jsonl
+
+python -m kosika.cli agent examples/research_agent.kos `
+  --agent researcher `
+  --input examples/research_agent_input.json `
+  --journal research-agent.sqlite `
+  --binding-id local-research-v1 `
+  --resume
+```
+
+The binding identity covers the host model, tools, and policy configuration.
+Completed runs return from the journal without another model call. An
+interrupted in-flight model or tool call is marked uncertain and is never
+automatically repeated. `deadline_seconds` applies to each process invocation;
+resuming a journal starts a new cooperative deadline window.
+Inspect a journal without exposing prompts, tool arguments, or model output:
+
+```powershell
+python -m kosika.cli journal research-agent.sqlite
+python -m kosika.cli journal research-agent.sqlite --format json
+```
+
+
+
+### Automatic skills
+
+Kosika can select multiple relevant local skills when a task does not name them
+explicitly. Store each skill in a directory containing `skill.json` and
+`SKILL.md`, then inspect the deterministic selection:
+
+```powershell
+python -m kosika.cli skills `
+  --skill-dir .kosika/skills `
+  --task "Review this Rust workflow for capability security" `
+  --format text
+```
+
+Use the same directory with an agent run:
+
+```powershell
+python -m kosika.cli agent examples/test_host.kos `
+  --agent monitor `
+  --task "Review this workflow for capability security" `
+  --skill-dir .kosika/skills `
+  --skill-policy hybrid
+```
+
+Selected skills are advisory context only. They are included in the plan hash
+for reproducibility but cannot grant tools, capabilities, or approvals.
+
 
 The command prints the deterministic plan hash before execution. For a live MCP source, a pinned
 manifest and server are required:
 
 ```powershell
-python -m kosika.cli agent examples/test_host_live.syn `
+python -m kosika.cli agent examples/test_host_live.kos `
   --agent monitor `
   --task "Check the disk and summarize the result." `
   --mcp-server examples/mcp_host_server.py `
@@ -337,6 +491,24 @@ A completed, failed, or interrupted claim cannot be reused with the same ledger.
 Keep the ledger at a stable path; removing or replacing it removes this local replay guard.
 The actor name is a label, not authenticated identity.
 One record authorizes one execute call per run.
+
+### Local VS Code commands
+
+The repository includes a local extension backed by a long-running Kosika LSP
+server. It provides syntax highlighting, snippets, debounced live diagnostics,
+live workspace indexing for `.kos` files, document symbols, hover,
+go-to-definition, references, completion, and commands for checking the active
+file, explaining it, rendering Kosika or unified Mermaid mindmaps, and
+inspecting selected skills:
+
+```powershell
+code --extensionDevelopmentPath=editors/vscode
+```
+
+Set `kosika.pythonPath` if the extension should use a specific Python
+interpreter. Set `kosika.skillDirectories` to one or more local skill roots.
+Set `kosika.modelName` to enable a local OpenAI-compatible model for the Explain
+command; leave it empty for deterministic static explanations.
 
 ## Typed tool inputs
 
@@ -372,7 +544,7 @@ Each step binds its validated record result with `let`. Later steps may referenc
 of its fields, and the checker resolves references in declaration order before runtime execution.
 Arguments currently support named string, number, boolean, `null`, variable, and field-access
 expressions. Existing tools without an `input` declaration remain zero-argument tools for backward
-compatibility. See `examples/typed_input.syn` for a complete runnable example.
+compatibility. See `examples/typed_input.kos` for a complete runnable example.
 
 Structured record fields may contain nested records or arrays. Workflow arguments can construct these
 values directly and later steps can access fields or index arrays:
@@ -395,7 +567,7 @@ inspect(tags: status.tags, metadata: status.metadata)
 
 The current structured-expression slice supports arrays, nested record literals, field access, and
 integer indexing. It intentionally does not yet include arithmetic, boolean operators, loops, or
-conditional control flow. See `examples/structured_values.syn` for a complete example.
+conditional control flow. See `examples/structured_values.kos` for a complete example.
 
 ## Code mindmaps and bounded assistant
 
@@ -405,9 +577,9 @@ nodes from the parser/AST. It can emit structured JSON for programs and tooling,
 diagram renderer, or a compact terminal summary:
 
 ```text
-python -m kosika.cli mindmap examples/composed/main.syn --format json --output code-map.json
-python -m kosika.cli mindmap examples/composed/main.syn --format mermaid --output code-map.mmd
-python -m kosika.cli mindmap examples/composed/main.syn --format text
+python -m kosika.cli mindmap examples/composed/main.kos --format json --output code-map.json
+python -m kosika.cli mindmap examples/composed/main.kos --format mermaid --output code-map.mmd
+python -m kosika.cli mindmap examples/composed/main.kos --format text
 ```
 
 Imported modules retain their relative paths, content hashes, declarations, and direct import edges.
@@ -418,17 +590,17 @@ Use `explain` when you want a focused explanation rather than the whole map. Sel
 workflows or records, attach diagnostics, and optionally validate a completed JSONL trace offline:
 
 ```text
-python -m kosika.cli run examples/composed/main.syn `
+python -m kosika.cli run examples/composed/main.kos `
   --input examples/composed/inputs.json `
   --model-fixture examples/composed/responses.json `
   --trace composed.jsonl
-python -m kosika.cli explain examples/composed/main.syn `
+python -m kosika.cli explain examples/composed/main.kos `
   --workflow main `
   --record Answer `
   --diagnostic "Review the model boundary" `
   --trace composed.jsonl `
   --format text
-python -m kosika.cli explain examples/composed/main.syn --workflow main --format json
+python -m kosika.cli explain examples/composed/main.kos --workflow main --format json
 ```
 
 Selection follows the deterministic mindmap relationships, so the result includes the selected
@@ -442,8 +614,8 @@ Offline use needs no provider and returns a deterministic static summary. Fixtur
 for repeatable tests and demos:
 
 ```text
-["The workflow enters research.syn, calls reader, and returns Answer."]
-python -m kosika.cli assistant examples/composed/main.syn `
+["The workflow enters research.kos, calls reader, and returns Answer."]
+python -m kosika.cli assistant examples/composed/main.kos `
   --task "Explain the code structure" `
   --fixture assistant-responses.json `
   --json
@@ -471,7 +643,7 @@ Generate a design manifest from checked Kosika source, then render a modern work
 mindmap view as SVG, Mermaid, JSON, or terminal text:
 
 ```text
-python -m kosika.cli design generate examples/test_host_live.syn `
+python -m kosika.cli design generate examples/test_host_live.kos `
   --id test-host.design `
   --name "Test Host Agent Workflow" `
   --network network/example-network.json `

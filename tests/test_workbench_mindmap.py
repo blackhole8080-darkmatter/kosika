@@ -42,15 +42,15 @@ class MindmapTests(unittest.TestCase):
 
     def test_imported_workflow_and_step_locations_are_exact(self):
         data = payload(SAMPLES[0])
-        data["files"]["research.syn"] = (
-            "// workflow fake { step misleading { } }\n" + data["files"]["research.syn"]
+        data["files"]["research.kos"] = (
+            "// workflow fake { step misleading { } }\n" + data["files"]["research.kos"]
         )
         result = dispatch("mindmap", data)["mindmap"]
         all_nodes = list(nodes(result["root"]))
-        self.assertEqual(result["files"], ["main.syn", "research.syn", "types.syn"])
+        self.assertEqual(result["files"], ["main.kos", "research.kos", "types.kos"])
         step = next(item for item in all_nodes if item["title"] == "1. respond")
-        self.assertEqual(step["location"]["file"], "research.syn")
-        line = data["files"]["research.syn"].splitlines()[step["location"]["line"] - 1]
+        self.assertEqual(step["location"]["file"], "research.kos")
+        line = data["files"]["research.kos"].splitlines()[step["location"]["line"] - 1]
         self.assertIn("step respond", line)
         self.assertTrue(
             any("Call workflow research" in item["explanation"] for item in all_nodes)
@@ -72,7 +72,7 @@ class MindmapTests(unittest.TestCase):
 
     def test_invalid_source_unknown_workflow_and_paths_fail(self):
         data = payload(SAMPLES[1])
-        data["files"]["main.syn"] = "record Broken {"
+        data["files"]["main.kos"] = "record Broken {"
         with self.assertRaises(ValueError):
             dispatch("mindmap", data)
         data = payload(SAMPLES[1])
@@ -81,7 +81,7 @@ class MindmapTests(unittest.TestCase):
             dispatch("mindmap", data)
         with self.assertRaises(ValueError):
             dispatch(
-                "mindmap", {"files": {"../escape.syn": ""}, "entry": "../escape.syn"}
+                "mindmap", {"files": {"../escape.kos": ""}, "entry": "../escape.kos"}
             )
         with self.assertRaises(ValueError):
             dispatch("mindmap", {**payload(SAMPLES[1]), "mode": "live"})
@@ -89,7 +89,7 @@ class MindmapTests(unittest.TestCase):
     def test_changed_source_changes_explanation_and_bounds_large_maps(self):
         data = payload(SAMPLES[1])
         before = dispatch("mindmap", data)
-        data["files"]["main.syn"] = data["files"]["main.syn"].replace(
+        data["files"]["main.kos"] = data["files"]["main.kos"].replace(
             "step answer", "step explain"
         )
         after = dispatch("mindmap", data)
@@ -100,7 +100,7 @@ class MindmapTests(unittest.TestCase):
                 for item in nodes(after["mindmap"]["root"])
             )
         )
-        data["files"]["main.syn"] += "\n" + "\n".join(
+        data["files"]["main.kos"] += "\n" + "\n".join(
             f"record R{i} {{ text: Text }}" for i in range(401)
         )
         with self.assertRaisesRegex(ValueError, "400 nodes"):

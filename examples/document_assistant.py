@@ -55,7 +55,7 @@ def run_assistant(
     trace: Path,
     provider: ModelProvider | None = None,
 ) -> dict[str, Any]:
-    program = parse(Path(__file__).with_suffix(".syn").read_text(encoding="utf-8"))
+    program = parse(Path(__file__).with_suffix(".kos").read_text(encoding="utf-8"))
     documents = LocalDocuments(document_root)
     retrieved: set[str] = set()
 

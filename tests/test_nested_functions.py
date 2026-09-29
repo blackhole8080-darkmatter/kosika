@@ -98,18 +98,18 @@ class NestedFunctionTests(unittest.TestCase):
     def test_module_exports_keep_nested_functions_private(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / "library.syn").write_text(
+            (root / "library.kos").write_text(
                 "export [Result, outer]\n" + SOURCE.split("workflow main")[0],
                 encoding="utf-8",
             )
-            entry = root / "main.syn"
+            entry = root / "main.kos"
             entry.write_text(
-                'import "library.syn"\nworkflow main() -> Result { '
+                'import "library.kos"\nworkflow main() -> Result { '
                 "step get { let result = outer(text: 10) return result } }",
                 encoding="utf-8",
             )
             self.assertEqual(run(load_program(entry), "main", None), {"text": 13})
-            (root / "library.syn").write_text(
+            (root / "library.kos").write_text(
                 "export [Result, outer, read]\n" + SOURCE.split("workflow main")[0],
                 encoding="utf-8",
             )

@@ -3,10 +3,89 @@
   "displayName": "Kosika Language",
   "version": "0.1.0",
   "publisher": "kosika-local",
-  "engines": {"vscode": "^1.85.0"},
+  "description": "Local-first Kosika language support and agent tooling.",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "main": "./src/extension.js",
+  "activationEvents": [
+    "onLanguage:kosika",
+    "onCommand:kosika.check",
+    "onCommand:kosika.explain",
+    "onCommand:kosika.mindmap",
+    "onCommand:kosika.skills",
+    "onCommand:kosika.unifiedMindmap"
+  ],
   "contributes": {
-    "languages": [{"id": "kosika", "aliases": ["Kosika"], "extensions": [".syn"]}],
-    "grammars": [{"language": "kosika", "scopeName": "source.kosika", "path": "./kosika.tmLanguage.json"}],
-    "snippets": [{"language": "kosika", "path": "./kosika.code-snippets"}]
+    "languages": [
+      {
+        "id": "kosika",
+        "aliases": ["Kosika"],
+        "extensions": [".kos"]
+      }
+    ],
+    "grammars": [
+      {
+        "language": "kosika",
+        "scopeName": "source.kosika",
+        "path": "./kosika.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "kosika",
+        "path": "./kosika.code-snippets"
+      }
+    ],
+    "commands": [
+      {
+        "command": "kosika.check",
+        "title": "Kosika: Check File"
+      },
+      {
+        "command": "kosika.explain",
+        "title": "Kosika: Explain File"
+      },
+      {
+        "command": "kosika.mindmap",
+        "title": "Kosika: Generate Mindmap"
+      },
+      {
+        "command": "kosika.skills",
+        "title": "Kosika: Inspect Selected Skills"
+      },
+      {
+        "command": "kosika.unifiedMindmap",
+        "title": "Kosika: Generate Unified Mindmap"
+      }
+    ],
+    "configuration": {
+      "title": "Kosika",
+      "properties": {
+        "kosika.pythonPath": {
+          "type": "string",
+          "default": "python",
+          "description": "Python executable used to run Kosika locally."
+        },
+        "kosika.skillDirectories": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Local directories containing skill.json manifests."
+        },
+        "kosika.modelUrl": {
+          "type": "string",
+          "default": "http://localhost:11434/v1",
+          "description": "OpenAI-compatible local model endpoint."
+        },
+        "kosika.modelName": {
+          "type": "string",
+          "default": "",
+          "description": "Optional local model name; empty keeps explanations static."
+        }
+      }
+    }
   }
 }

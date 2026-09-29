@@ -21,12 +21,12 @@ class ApprovalCliTests(unittest.TestCase):
         }"""
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / "main.syn").write_text(source)
+            (root / "main.kos").write_text(source)
             (root / "input.json").write_text('{"q":{"text":"review me"}}')
             args = [
                 "kosika",
                 "run",
-                str(root / "main.syn"),
+                str(root / "main.kos"),
                 "--input",
                 str(root / "input.json"),
                 "--journal",
@@ -77,13 +77,13 @@ class ApprovalCliTests(unittest.TestCase):
         }"""
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / "main.syn").write_text(source)
+            (root / "main.kos").write_text(source)
             (root / "responses.json").write_text('{"m":[{"text":"only one"}]}')
             telemetry = root / "telemetry.json"
             args = [
                 "kosika",
                 "run",
-                str(root / "main.syn"),
+                str(root / "main.kos"),
                 "--model-fixture",
                 str(root / "responses.json"),
                 "--trace",
@@ -108,7 +108,7 @@ class ApprovalCliTests(unittest.TestCase):
         }"""
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / "main.syn").write_text(source)
+            (root / "main.kos").write_text(source)
             (root / "input.json").write_text('{"q":{"text":"hello"}}')
             (root / "responses.json").write_text('{"m":[{"text":"done"}]}')
             trace = root / "run.jsonl"
@@ -116,7 +116,7 @@ class ApprovalCliTests(unittest.TestCase):
             args = [
                 "kosika",
                 "run",
-                str(root / "main.syn"),
+                str(root / "main.kos"),
                 "--input",
                 str(root / "input.json"),
                 "--model-fixture",

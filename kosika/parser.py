@@ -25,7 +25,7 @@ from .ast import (
     MethodCallExpr,
     ModelCall,
     ModelDecl,
-    ModelVarExpr,
+    ModelParameters,
     Program,
     RecordDecl,
     RecordExpr,
@@ -34,7 +34,6 @@ from .ast import (
     SwarmDecl,
     ToolCall,
     ToolDecl,
-    ToolVarExpr,
     TryExpr,
     UnaryExpr,
     VariableExpr,
@@ -99,10 +98,12 @@ class Parser:
         if self.accept("break"):
             if self.current.kind == "NUMBER":
                 token = self.advance()
-                label = int(token.value)
                 self.expect(":")
-            else:
-                label = None
+                # BreakExpr carries no label, so accepting one would silently
+                # break the innermost loop instead of the labelled one.
+                raise ParseError(
+                    f"Labelled break is not supported at {token.line}:{token.column}"
+                )
             return BreakExpr()
         if self.accept("continue"):
             return ContinueExpr()
@@ -223,7 +224,6 @@ class Parser:
                     method = self.advance().value
                     self.expect("(")
                     args = self.parse_arguments()
-                    self.expect(")")
                     value = MethodCallExpr(value, method, args)
                 else:
                     value = FieldExpr(value, self.identifier())
@@ -347,7 +347,7 @@ class Parser:
             if keyword == "import":
                 self.advance()
                 if self.current.kind != "STRING":
-                    raise ParseError("Import requires a quoted local .syn path")
+                    raise ParseError("Import requires a quoted local .kos path")
                 program.imports.append(self.advance().value)
             elif keyword == "export":
                 self.advance()
@@ -378,15 +378,89 @@ class Parser:
         name = self.identifier()
         self.expect("{")
         values: dict[str, str] = {}
+        deployment: str | None = None
+        parameters = ModelParameters()
+        seen: set[str] = set()
         while not self.accept("}"):
             key = self.identifier()
-            if key not in {"input", "output"} or key in values:
+            if key in seen:
                 raise ParseError(f"Invalid or duplicate model field {key!r}")
+            seen.add(key)
+            if key == "parameters":
+                self.expect(":")
+                parameters = self.parse_model_parameters()
+                continue
+            if key not in {"input", "output", "deployment"}:
+                raise ParseError(f"Invalid model field {key!r}")
             self.expect(":")
-            values[key] = self.identifier()
+            if key == "deployment":
+                deployment = self.string_or_identifier()
+            else:
+                values[key] = self.identifier()
         if set(values) != {"input", "output"}:
             raise ParseError(f"Model {name!r} requires input and output records")
-        return ModelDecl(name, values["input"], values["output"])
+        return ModelDecl(name, values["input"], values["output"], deployment, parameters)
+
+    def parse_model_parameters(self) -> ModelParameters:
+        self.expect("{")
+        temperature: float | None = None
+        max_output_tokens: int | None = None
+        top_p: float | None = None
+        frequency_penalty: float | None = None
+        presence_penalty: float | None = None
+        stop: tuple[str, ...] = ()
+        seen: set[str] = set()
+        while not self.accept("}"):
+            key = self.identifier()
+            if key in seen:
+                raise ParseError(f"Duplicate model parameter {key!r}")
+            seen.add(key)
+            self.expect(":")
+            if key == "stop":
+                stop = self.parse_string_list()
+                continue
+            if key == "max_output_tokens":
+                token = self.advance()
+                if token.kind != "NUMBER" or not token.value.isdigit():
+                    raise ParseError("Model max_output_tokens must be a positive integer")
+                max_output_tokens = int(token.value)
+                continue
+            if key not in {
+                "temperature",
+                "top_p",
+                "frequency_penalty",
+                "presence_penalty",
+            }:
+                raise ParseError(f"Unknown model parameter {key!r}")
+            sign = -1 if self.accept("-") else 1
+            token = self.advance()
+            if token.kind != "NUMBER":
+                raise ParseError(f"Model {key} must be a number")
+            value = sign * float(token.value)
+            if key == "temperature":
+                temperature = value
+            elif key == "top_p":
+                top_p = value
+            elif key == "frequency_penalty":
+                frequency_penalty = value
+            else:
+                presence_penalty = value
+        return ModelParameters(
+            temperature,
+            max_output_tokens,
+            top_p,
+            frequency_penalty,
+            presence_penalty,
+            stop,
+        )
+
+    def parse_string_list(self) -> tuple[str, ...]:
+        self.expect("[")
+        values: list[str] = []
+        while not self.accept("]"):
+            values.append(self.string_or_identifier())
+            self.accept(",")
+        return tuple(values)
 
     def parse_type_name(self, depth: int = 0) -> str:
         if depth >= 32:
@@ -465,6 +539,10 @@ class Parser:
         cannot: tuple[str, ...] = ()
         model: str | None = None
         max_steps = 8
+        max_tool_calls = 256
+        max_model_calls = 64
+        instructions: str | None = None
+        deadline_seconds: float | None = None
         seen: set[str] = set()
         while not self.accept("}"):
             key = self.identifier()
@@ -478,14 +556,37 @@ class Parser:
                 cannot = self.parse_name_list()
             elif key == "model":
                 model = self.identifier()
-            elif key == "max_steps":
+            elif key == "instructions":
+                instructions = self.string_or_identifier()
+            elif key in {"max_steps", "max_tool_calls", "max_model_calls"}:
                 token = self.advance()
                 if token.kind != "NUMBER" or not token.value.isdigit():
-                    raise ParseError("Agent max_steps must be a positive integer")
-                max_steps = int(token.value)
+                    raise ParseError(f"Agent {key} must be a positive integer")
+                value = int(token.value)
+                if key == "max_steps":
+                    max_steps = value
+                elif key == "max_tool_calls":
+                    max_tool_calls = value
+                else:
+                    max_model_calls = value
+            elif key == "deadline_seconds":
+                token = self.advance()
+                if token.kind != "NUMBER":
+                    raise ParseError("Agent deadline_seconds must be a positive number")
+                deadline_seconds = float(token.value)
             else:
                 raise ParseError(f"Unknown agent field {key!r}")
-        return AgentDecl(name, can, cannot, model, max_steps)
+        return AgentDecl(
+            name,
+            can,
+            cannot,
+            model,
+            max_steps,
+            max_tool_calls,
+            max_model_calls,
+            instructions,
+            deadline_seconds,
+        )
 
     def parse_swarm(self) -> SwarmDecl:
         """Parse ``swarm Name { agents: [..] workflow: w max_rounds: n require approval }``.

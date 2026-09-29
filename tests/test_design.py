@@ -20,7 +20,7 @@ from kosika.network import load_network_manifest
 from kosika.parser import parse
 
 ROOT = Path(__file__).parents[1]
-SOURCE = ROOT / "examples" / "test_host_live.syn"
+SOURCE = ROOT / "examples" / "test_host_live.kos"
 NETWORK = ROOT / "network" / "example-network.json"
 
 
@@ -138,19 +138,19 @@ class DesignManifestTests(unittest.TestCase):
 
     def test_design_includes_imported_module_declarations(self) -> None:
         root = ROOT / "examples" / "composed"
-        program = load_program(root / "main.syn")
+        program = load_program(root / "main.kos")
         design = build_design_from_program(
             program, "composed.design", "Composed Workflow"
         )
         self.assertEqual(
-            set(program.module_hashes), {"main.syn", "research.syn", "types.syn"}
+            set(program.module_hashes), {"main.kos", "research.kos", "types.kos"}
         )
         node_ids = {str(node["id"]) for node in design.nodes}
         self.assertTrue(
             {
-                "module.main.syn",
-                "module.research.syn",
-                "module.types.syn",
+                "module.main.kos",
+                "module.research.kos",
+                "module.types.kos",
                 "record.Question",
                 "record.Answer",
                 "model.reader",
@@ -171,19 +171,19 @@ class DesignManifestTests(unittest.TestCase):
             ("stage.main.research", "workflow.research", "calls"), relationships
         )
         self.assertIn(
-            ("module.main.syn", "module.research.syn", "imports"), relationships
+            ("module.main.kos", "module.research.kos", "imports"), relationships
         )
         self.assertIn(
-            ("module.research.syn", "module.types.syn", "imports"), relationships
+            ("module.research.kos", "module.types.kos", "imports"), relationships
         )
         self.assertIn(
-            ("module.types.syn", "record.Question", "contains"), relationships
+            ("module.types.kos", "record.Question", "contains"), relationships
         )
         self.assertIn(
-            ("module.research.syn", "model.reader", "contains"), relationships
+            ("module.research.kos", "model.reader", "contains"), relationships
         )
         self.assertIn(
-            ("module.main.syn", "workflow.main", "contains"), relationships
+            ("module.main.kos", "workflow.main", "contains"), relationships
         )
         self.assertEqual(
             design.digest,

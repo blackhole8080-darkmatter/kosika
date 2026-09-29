@@ -12,7 +12,7 @@ from kosika.parser import parse
 from kosika.runtime import replay, run
 from kosika.schema import SchemaValidationError
 
-EXAMPLE = Path(__file__).parents[1] / "examples" / "test_host.syn"
+EXAMPLE = Path(__file__).parents[1] / "examples" / "test_host.kos"
 TYPED_SOURCE = """
 record DiskRequest {
   mount: Text

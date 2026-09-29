@@ -25,7 +25,7 @@ from kosika.parser import ParseError, parse
 from kosika.runtime import replay, run
 
 ROOT = Path(__file__).parents[1]
-EXAMPLE = ROOT / "examples" / "model_answer.syn"
+EXAMPLE = ROOT / "examples" / "model_answer.kos"
 ANSWER = {"text": "A typed AI language.", "confidence": 0.9}
 INPUTS = {"question": {"text": "What is Kosika?"}}
 
@@ -73,6 +73,33 @@ class ModelWorkflowTests(unittest.TestCase):
             side_effect=AssertionError("offline replay called provider"),
         ):
             self.assertEqual(replay(self.trace), ANSWER)
+
+    def test_declared_model_parameters_reach_typed_provider_requests(self) -> None:
+        program = parse(
+            self.source.replace(
+                "output: Answer",
+                'output: Answer deployment: "typed-model" '
+                "parameters: { temperature: 0.3 max_output_tokens: 96 "
+                "top_p: 0.7 frequency_penalty: -0.1 presence_penalty: 0.2 "
+                'stop: ["DONE", "END"] }',
+            )
+        )
+        provider = self.provider()
+        run(
+            program,
+            "answer",
+            self.trace,
+            inputs=INPUTS,
+            model_bindings={"writer": provider},
+        )
+        request = provider.requests[0]
+        self.assertEqual(request.model, "typed-model")
+        self.assertEqual(request.temperature, 0.3)
+        self.assertEqual(request.max_output_tokens, 96)
+        self.assertEqual(request.top_p, 0.7)
+        self.assertEqual(request.frequency_penalty, -0.1)
+        self.assertEqual(request.presence_penalty, 0.2)
+        self.assertEqual(request.stop, ("DONE", "END"))
 
     def test_missing_binding_and_invalid_inputs_prevent_model_request(self) -> None:
         provider = self.provider()
@@ -164,6 +191,32 @@ class ModelWorkflowTests(unittest.TestCase):
         ):
             with self.subTest(fields=fields), self.assertRaises(ParseError):
                 parse("model writer { " + fields + " }")
+        for source in (
+            self.source.replace(
+                "output: Answer",
+                "output: Answer parameters: { temperature: 2.1 }",
+            ),
+            self.source.replace(
+                "output: Answer",
+                "output: Answer parameters: { top_p: 1.1 }",
+            ),
+            self.source.replace(
+                "output: Answer",
+                "output: Answer parameters: { frequency_penalty: 2.1 }",
+            ),
+            self.source.replace(
+                "output: Answer",
+                "output: Answer parameters: { presence_penalty: -2.1 }",
+            ),
+            self.source.replace(
+                "output: Answer",
+                'output: Answer parameters: { stop: ["a", "b", "c", "d", "e"] }',
+            ),
+            self.source
+            + "\nagent bounded { max_steps: 1 max_tool_calls: 0 max_model_calls: 1 }",
+        ):
+            with self.subTest(source=source), self.assertRaises((CheckError, ParseError)):
+                check(parse(source))
 
     def test_replay_rejects_incomplete_reordered_or_inconsistent_trace(self) -> None:
         run(
@@ -270,7 +323,7 @@ class ModelWorkflowTests(unittest.TestCase):
             replay(self.trace)
 
     def test_missing_model_binding_blocks_earlier_tool_step(self) -> None:
-        tool_source = (ROOT / "examples" / "test_host.syn").read_text(encoding="utf-8")
+        tool_source = (ROOT / "examples" / "test_host.kos").read_text(encoding="utf-8")
         declarations = tool_source.split("workflow main")[0]
         source = declarations + self.source.replace(
             "  step respond {",

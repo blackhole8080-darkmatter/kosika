@@ -38,7 +38,7 @@ Kosika is intended to provide:
 
 The current Python-first v0.1 vertical slice includes:
 
-- a lexer and parser for `.syn` source;
+- a lexer and parser for `.kos` source;
 - AST dataclasses;
 - static capability checking;
 - a deterministic interpreter;

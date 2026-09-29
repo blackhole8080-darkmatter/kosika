@@ -10,26 +10,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
-from .javascript_adapter import (
-    MAX_SOURCE_BYTES as JAVASCRIPT_MAX_SOURCE_BYTES,
-)
-from .javascript_adapter import (
-    MAX_SYMBOLS as JAVASCRIPT_MAX_SYMBOLS,
-)
-from .javascript_adapter import (
-    scan_javascript_file,
-    scan_javascript_source,
-)
-from .python_adapter import (
-    MAX_SOURCE_BYTES as PYTHON_MAX_SOURCE_BYTES,
-)
-from .python_adapter import (
-    MAX_SYMBOLS as PYTHON_MAX_SYMBOLS,
-)
-from .python_adapter import (
-    analyze_python_file,
-    analyze_python_source,
-)
+from .javascript_adapter import MAX_SOURCE_BYTES as JAVASCRIPT_MAX_SOURCE_BYTES
+from .javascript_adapter import MAX_SYMBOLS as JAVASCRIPT_MAX_SYMBOLS
+from .javascript_adapter import scan_javascript_file, scan_javascript_source
+from .python_adapter import MAX_SOURCE_BYTES as PYTHON_MAX_SOURCE_BYTES
+from .python_adapter import MAX_SYMBOLS as PYTHON_MAX_SYMBOLS
+from .python_adapter import analyze_python_file, analyze_python_source
+from .rust_adapter import MAX_SOURCE_BYTES as RUST_MAX_SOURCE_BYTES
+from .rust_adapter import MAX_SYMBOLS as RUST_MAX_SYMBOLS
+from .rust_adapter import analyze_rust_file, analyze_rust_source
 
 SourceAnalyzer = Callable[[str, str], dict[str, Any]]
 FileAnalyzer = Callable[[str | Path], dict[str, Any]]
@@ -160,6 +149,9 @@ def _analyze_javascript_source(source: str, path: str) -> dict[str, Any]:
 
 def _analyze_typescript_source(source: str, path: str) -> dict[str, Any]:
     return scan_javascript_source(source, path=path, language="typescript")
+def _analyze_rust_source(source: str, path: str) -> dict[str, Any]:
+    return analyze_rust_source(source, path=path)
+
 
 
 REGISTRY = LanguageAdapterRegistry(
@@ -187,6 +179,14 @@ REGISTRY = LanguageAdapterRegistry(
             JAVASCRIPT_MAX_SYMBOLS,
             _analyze_typescript_source,
             scan_javascript_file,
+        ),
+        LanguageAdapter(
+            "rust",
+            (".rs",),
+            RUST_MAX_SOURCE_BYTES,
+            RUST_MAX_SYMBOLS,
+            _analyze_rust_source,
+            analyze_rust_file,
         ),
     )
 )

@@ -102,6 +102,10 @@ class AgentDecl:
     cannot: tuple[str, ...]
     model: str | None = None
     max_steps: int = 8
+    max_tool_calls: int = 256
+    max_model_calls: int = 64
+    instructions: str | None = None
+    deadline_seconds: float | None = None
 
 
 @dataclass(frozen=True)
@@ -294,10 +298,21 @@ class ToolCall:
 
 
 @dataclass(frozen=True)
+class ModelParameters:
+    temperature: float | None = None
+    max_output_tokens: int | None = None
+    top_p: float | None = None
+    frequency_penalty: float | None = None
+    presence_penalty: float | None = None
+    stop: tuple[str, ...] = ()
+
+@dataclass(frozen=True)
 class ModelDecl:
     name: str
     input: str
     output: str
+    deployment: str | None = None
+    parameters: ModelParameters = ModelParameters()
 
 
 @dataclass(frozen=True)

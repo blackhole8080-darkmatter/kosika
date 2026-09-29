@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 from .ast import (
     AgentCall,
     ArrayExpr,
@@ -7,6 +9,7 @@ from .ast import (
     BreakExpr,
     ConditionalExpr,
     ContinueExpr,
+    Field,
     FieldExpr,
     ForExpr,
     FunctionCall,
@@ -30,7 +33,7 @@ from .ast import (
     WorkflowCall,
     static_function_references,
 )
-from .function_types import public_type, signature
+from .function_types import function_type, public_type, signature
 
 
 class CheckError(ValueError):
@@ -143,6 +146,23 @@ def _expression_type(
         return _expression_type(
             expression.body, bindings, program, step_name=step_name
         )
+    if isinstance(expression, ForExpr):
+        sequence_type = _expression_type(
+            expression.sequence, bindings, program, step_name=step_name
+        )
+        if not sequence_type.endswith("[]") or signature(sequence_type):
+            raise CheckError(
+                f"Step {step_name!r} for loop requires an array, "
+                f"got {sequence_type!r}"
+            )
+        # The body sees the element in a child scope, so its binding cannot
+        # widen or shadow the enclosing one.
+        item_bindings = dict(bindings)
+        item_bindings[expression.item_name] = sequence_type[:-2]
+        body_type = _expression_type(
+            expression.body, item_bindings, program, step_name=step_name
+        )
+        return f"{body_type}[]"
     if isinstance(expression, TryExpr):
         return _expression_type(
             expression.body, bindings, program, step_name=step_name
@@ -172,11 +192,16 @@ def _expression_type(
             output_type,
         )
     if isinstance(expression, MethodCallExpr):
-        target_type = _expression_type(
+        # Method dispatch on Text and array values is parsed but has no
+        # checker or runtime implementation yet. Reject it here rather than
+        # accepting a call the runtime cannot execute.
+        _expression_type(
             expression.target, bindings, program, step_name=step_name
         )
-        return _method_type(target_type, expression.method, expression.arguments,
-                           bindings, program, step_name)
+        raise CheckError(
+            f"Step {step_name!r} method call {expression.method!r} is not "
+            f"implemented in Kosika v0.1"
+        )
     if isinstance(expression, FieldExpr):
         base_type = _expression_type(
             expression.base, bindings, program, step_name=step_name
@@ -451,6 +476,47 @@ def check(program: Program) -> None:
             raise CheckError(
                 f"Model {model.name!r} requires known input and output records"
             )
+        if model.deployment is not None and not model.deployment:
+            raise CheckError(f"Model {model.name!r} deployment must not be empty")
+        temperature = model.parameters.temperature
+        if temperature is not None and (
+            type(temperature) not in (int, float)
+            or not math.isfinite(temperature)
+            or not 0 <= temperature <= 2
+        ):
+            raise CheckError(
+                f"Model {model.name!r} temperature must be between 0 and 2"
+            )
+        max_output_tokens = model.parameters.max_output_tokens
+        if max_output_tokens is not None and (
+            type(max_output_tokens) is not int
+            or not 1 <= max_output_tokens <= 1_000_000
+        ):
+            raise CheckError(
+                f"Model {model.name!r} max_output_tokens must be between 1 and 1000000"
+            )
+        for parameter_name, parameter_value, lower, upper in (
+            ("top_p", model.parameters.top_p, 0, 1),
+            ("frequency_penalty", model.parameters.frequency_penalty, -2, 2),
+            ("presence_penalty", model.parameters.presence_penalty, -2, 2),
+        ):
+            if parameter_value is not None and (
+                type(parameter_value) not in (int, float)
+                or not math.isfinite(parameter_value)
+                or not lower <= parameter_value <= upper
+            ):
+                raise CheckError(
+                    f"Model {model.name!r} {parameter_name} must be between "
+                    f"{lower} and {upper}"
+                )
+        stop = model.parameters.stop
+        if len(stop) > 4 or len(set(stop)) != len(stop) or any(
+            type(value) is not str or not 1 <= len(value) <= 256 for value in stop
+        ):
+            raise CheckError(
+                f"Model {model.name!r} stop must contain up to four unique "
+                "non-empty strings of at most 256 characters"
+            )
 
     if len(records) != len(program.records):
         raise CheckError("Duplicate record declaration")
@@ -651,8 +717,27 @@ def check(program: Program) -> None:
     for agent in program.agents:
         if agent.model is not None and agent.model not in models:
             raise CheckError(f"Agent {agent.name!r} uses unknown model {agent.model!r}")
+        if agent.instructions is not None and not agent.instructions.strip():
+            raise CheckError(f"Agent {agent.name!r} instructions must not be empty")
+        if agent.deadline_seconds is not None and (
+            type(agent.deadline_seconds) not in (int, float)
+            or not math.isfinite(agent.deadline_seconds)
+            or not 0 < agent.deadline_seconds <= 86_400
+        ):
+            raise CheckError(
+                f"Agent {agent.name!r} deadline_seconds must be between "
+                "0 and 86400"
+            )
         if type(agent.max_steps) is not int or not 1 <= agent.max_steps <= 64:
             raise CheckError(f"Agent {agent.name!r} max_steps must be between 1 and 64")
+        if type(agent.max_tool_calls) is not int or not 1 <= agent.max_tool_calls <= 1_000_000:
+            raise CheckError(
+                f"Agent {agent.name!r} max_tool_calls must be between 1 and 1000000"
+            )
+        if type(agent.max_model_calls) is not int or not 1 <= agent.max_model_calls <= 1_000_000:
+            raise CheckError(
+                f"Agent {agent.name!r} max_model_calls must be between 1 and 1000000"
+            )
         for tool_name in agent.can:
             if tool_name not in tools:
                 raise CheckError(

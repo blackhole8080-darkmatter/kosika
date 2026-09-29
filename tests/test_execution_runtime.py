@@ -294,7 +294,7 @@ class ExecutionRuntimeTests(unittest.TestCase):
 
     def test_cli_configures_budget_and_writes_failure_trace(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            source = Path(directory) / "main.syn"
+            source = Path(directory) / "main.kos"
             trace = Path(directory) / "trace.jsonl"
             source.write_text(PURE, encoding="utf-8")
             with (

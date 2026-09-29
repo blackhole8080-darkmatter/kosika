@@ -316,13 +316,13 @@ class FunctionTests(unittest.TestCase):
     def test_function_modules_mindmap_and_design(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / "library.syn").write_text(
+            (root / "library.kos").write_text(
                 "export [Person, Greeting, make_greeting]\n"
                 + SOURCE.split("workflow main", 1)[0],
                 encoding="utf-8",
             )
-            (root / "main.syn").write_text(
-                'import "library.syn"\n'
+            (root / "main.kos").write_text(
+                'import "library.kos"\n'
                 "workflow main(person: Person) -> Greeting {\n"
                 "  step prepare {\n"
                 "    let result: Greeting = make_greeting(person: person)\n"
@@ -331,7 +331,7 @@ class FunctionTests(unittest.TestCase):
                 "}\n",
                 encoding="utf-8",
             )
-            program = load_program(root / "main.syn")
+            program = load_program(root / "main.kos")
 
             mindmap = build_mindmap(program)
             function_nodes = [
@@ -348,14 +348,14 @@ class FunctionTests(unittest.TestCase):
                 any(node["kind"] == "function" for node in design.nodes)
             )
 
-            (root / "private.syn").write_text(
+            (root / "private.kos").write_text(
                 "export [Person]\n"
                 "record Person { name: Text }\n"
                 "fn hidden(person: Person) -> Person { return person }\n",
                 encoding="utf-8",
             )
-            (root / "private-main.syn").write_text(
-                'import "private.syn"\n'
+            (root / "private-main.kos").write_text(
+                'import "private.kos"\n'
                 "record Result { person: Person }\n"
                 "fn expose(person: Person) -> Result {\n"
                 "  return {person: hidden(person: person)}\n"
@@ -363,7 +363,7 @@ class FunctionTests(unittest.TestCase):
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(CheckError, "private"):
-                load_program(root / "private-main.syn")
+                load_program(root / "private-main.kos")
 
 
 if __name__ == "__main__":

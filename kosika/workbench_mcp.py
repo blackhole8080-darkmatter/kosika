@@ -131,10 +131,10 @@ DEMO_SAMPLE = {
     "id": "mcp-text",
     "name": "MCP text inspector",
     "description": "Call a pinned local MCP server over stdio. Only supplied text is inspected.",
-    "entry": "main.syn",
+    "entry": "main.kos",
     "workflow": "main",
     "files": {
-        "main.syn": """record Document { text: Text }
+        "main.kos": """record Document { text: Text }
 record Statistics { words: Number characters: Number }
 tool inspect_text {
   source mcp "workbench_demo"

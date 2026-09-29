@@ -1,4 +1,4 @@
-import "types.syn"
+import "types.kos"
 model reader { input: Question output: Answer }
 workflow research(question: Question) -> Answer {
   step answer {

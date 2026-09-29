@@ -244,6 +244,10 @@ def normalize_event(
     for key in ("arguments", "result", "inputs", "content", "output_schema"):
         if key in raw_event:
             payload[key] = _summary(raw_event[key])
+    for key in ("agent", "tool"):
+        identity = _safe_name(raw_event.get(key))
+        if identity is not None:
+            payload[key] = identity
     if "events" in raw_event and isinstance(raw_event["events"], list):
         payload["child_event_count"] = len(raw_event["events"])
     return _event(

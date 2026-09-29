@@ -15,7 +15,7 @@ from kosika.mindmap import build_mindmap, to_mermaid, to_text
 from kosika.parser import parse
 
 ROOT = Path(__file__).parents[1]
-SOURCE = ROOT / "examples" / "test_host.syn"
+SOURCE = ROOT / "examples" / "test_host.kos"
 EXTENSION = ROOT / "examples" / "extension_manifest.json"
 
 

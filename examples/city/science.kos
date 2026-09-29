@@ -1,0 +1,96 @@
+// Science: hypothesis formation, experiment design, simulation, results.
+record Note { text: Text }
+record Hypothesis { claim: Text }
+record Experiment { name: Text controls: Text[] }
+record Measurement { value: Number unit: Text }
+record Simulation { samples: Number }
+record Result { accepted: Bool detail: Text }
+
+model reasoner { input: Note output: Note }
+model analyst { input: Note output: Note }
+
+tool propose_hypothesis {
+  source mcp "science"
+  operation: "hypothesise"
+  access: observe
+  input: Hypothesis
+  output: Experiment
+}
+
+tool run_simulation {
+  source mcp "compute"
+  operation: "simulate"
+  access: execute
+  input: Experiment
+  output: Simulation
+}
+
+tool read_measurements {
+  source mcp "instruments"
+  operation: "read"
+  access: observe
+  input: Note
+  output: Measurement
+}
+
+tool plot_results {
+  source mcp "science"
+  operation: "plot"
+  access: observe
+  input: Measurement
+  output: Result
+}
+
+agent hypothesis_formulator {
+  model: reasoner
+  can: [propose_hypothesis]
+  cannot: [write_files, arbitrary_shell, run_unapproved_tests]
+  max_steps: 4
+}
+
+agent experiment_designer {
+  model: reasoner
+  can: [propose_hypothesis, read_measurements]
+  cannot: [write_files, arbitrary_shell, skip_controls]
+  max_steps: 6
+}
+
+agent simulation_runner {
+  model: analyst
+  can: [run_simulation]
+  cannot: [arbitrary_shell, write_files, exceed_budget]
+  max_steps: 8
+}
+
+agent results_checker {
+  model: analyst
+  can: [read_measurements, plot_results]
+  cannot: [write_files, arbitrary_shell, hide_disagreement]
+  max_steps: 5
+}
+
+workflow run(note: Note) -> Note {
+  step hypothesise {
+    let hypothesis: Note = ask hypothesis_formulator(text: note.text)
+    return hypothesis
+  }
+  step design {
+    let design: Note = ask experiment_designer(text: hypothesis.text)
+    return design
+  }
+  step simulate {
+    let simulation: Note = ask simulation_runner(text: design.text)
+    return simulation
+  }
+  step check {
+    let checked: Note = ask results_checker(text: simulation.text)
+    return checked
+  }
+}
+
+swarm ScienceDepartment {
+  agents: [hypothesis_formulator, experiment_designer, simulation_runner, results_checker]
+  workflow: run
+  max_rounds: 2
+  require approval
+}

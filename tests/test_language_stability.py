@@ -134,16 +134,16 @@ class LanguageStabilityTests(unittest.TestCase):
     def test_workflow_argument_calls_respect_module_exports(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            library = root / "library.syn"
+            library = root / "library.kos"
             source = (
                 "record Result { text: Text } "
                 'fn hidden() -> Text { return "hello" } '
                 "fn wrap(text: Text) -> Result { return {text: text} }"
             )
             library.write_text("export [Result, wrap] " + source, encoding="utf-8")
-            entry = root / "main.syn"
+            entry = root / "main.kos"
             entry.write_text(
-                'import "library.syn" workflow main() -> Result { '
+                'import "library.kos" workflow main() -> Result { '
                 "step get { let result = wrap(text: if true { hidden() } "
                 'else { "fallback" }) return result } }',
                 encoding="utf-8",

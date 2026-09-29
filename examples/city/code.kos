@@ -1,0 +1,115 @@
+// Code: review, test authorship, dependency audit, refactoring, docs.
+record Note { text: Text }
+record Diff { path: Text added: Number removed: Number }
+record ReviewComment { path: Text line: Number body: Text }
+record TestPlan { cases: Number }
+record DependencyReport { direct: Number vulnerable: Number }
+record DocPage { title: Text body: Text }
+
+model reviewer_model { input: Note output: Note }
+model builder_model { input: Note output: Note }
+
+tool read_diff {
+  source mcp "vcs"
+  operation: "diff"
+  access: observe
+  input: Diff
+  output: Diff
+}
+
+tool run_tests {
+  source mcp "build"
+  operation: "test"
+  access: execute
+  input: Note
+  output: TestPlan
+}
+
+tool query_dependencies {
+  source mcp "registry"
+  operation: "audit"
+  access: observe
+  input: DependencyReport
+  output: DependencyReport
+}
+
+tool apply_patch {
+  source mcp "vcs"
+  operation: "patch"
+  access: execute
+  input: ReviewComment
+  output: Diff
+}
+
+tool publish_docs {
+  source mcp "docs"
+  operation: "publish"
+  access: execute
+  input: DocPage
+  output: DocPage
+}
+
+agent code_reviewer {
+  model: reviewer_model
+  can: [read_diff, run_tests]
+  cannot: [write_files, arbitrary_shell, approve_own_change]
+  max_steps: 6
+}
+
+agent test_author {
+  model: builder_model
+  can: [read_diff, run_tests]
+  cannot: [write_files, arbitrary_shell, delete_failing_tests]
+  max_steps: 6
+}
+
+agent dependency_auditor {
+  model: reviewer_model
+  can: [query_dependencies]
+  cannot: [write_files, arbitrary_shell, install_anything]
+  max_steps: 4
+}
+
+agent refactorer {
+  model: builder_model
+  can: [read_diff, apply_patch, run_tests]
+  cannot: [arbitrary_shell, change_public_api, bypass_tests]
+  max_steps: 8
+}
+
+agent doc_writer {
+  model: builder_model
+  can: [read_diff, publish_docs]
+  cannot: [arbitrary_shell, publish_unreviewed, write_files]
+  max_steps: 5
+}
+
+workflow review_change(note: Note) -> Note {
+  step review {
+    let reviewed: Note = ask code_reviewer(text: note.text)
+    return reviewed
+  }
+  step test {
+    let tested: Note = ask test_author(text: reviewed.text)
+    return tested
+  }
+  step audit {
+    let audited: Note = ask dependency_auditor(text: tested.text)
+    return audited
+  }
+  step refactor {
+    let refactored: Note = ask refactorer(text: audited.text)
+    return refactored
+  }
+  step document {
+    let documented: Note = ask doc_writer(text: refactored.text)
+    return documented
+  }
+}
+
+swarm CodeDepartment {
+  agents: [code_reviewer, test_author, dependency_auditor, refactorer, doc_writer]
+  workflow: review_change
+  max_rounds: 4
+  require approval
+}

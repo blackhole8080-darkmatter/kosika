@@ -13,8 +13,8 @@
   },
   "nodes": [
     {
-      "id": "module.main.syn",
-      "label": "main.syn",
+      "id": "module.main.kos",
+      "label": "main.kos",
       "kind": "module",
       "position": {
         "x": 1120.0,
@@ -27,8 +27,8 @@
       "style": {}
     },
     {
-      "id": "module.research.syn",
-      "label": "research.syn",
+      "id": "module.research.kos",
+      "label": "research.kos",
       "kind": "module",
       "position": {
         "x": 1120.0,
@@ -41,8 +41,8 @@
       "style": {}
     },
     {
-      "id": "module.types.syn",
-      "label": "types.syn",
+      "id": "module.types.kos",
+      "label": "types.kos",
       "kind": "module",
       "position": {
         "x": 1120.0,
@@ -155,38 +155,38 @@
   ],
   "edges": [
     {
-      "id": "module.main.syn.imports.research.syn",
-      "source": "module.main.syn",
-      "target": "module.research.syn",
+      "id": "module.main.kos.imports.research.kos",
+      "source": "module.main.kos",
+      "target": "module.research.kos",
       "kind": "imports"
     },
     {
-      "id": "module.main.syn.imports.types.syn",
-      "source": "module.main.syn",
-      "target": "module.types.syn",
+      "id": "module.main.kos.imports.types.kos",
+      "source": "module.main.kos",
+      "target": "module.types.kos",
       "kind": "imports"
     },
     {
-      "id": "module.research.syn.imports.types.syn",
-      "source": "module.research.syn",
-      "target": "module.types.syn",
+      "id": "module.research.kos.imports.types.kos",
+      "source": "module.research.kos",
+      "target": "module.types.kos",
       "kind": "imports"
     },
     {
-      "id": "module.types.syn.contains.record.Answer",
-      "source": "module.types.syn",
+      "id": "module.types.kos.contains.record.Answer",
+      "source": "module.types.kos",
       "target": "record.Answer",
       "kind": "contains"
     },
     {
-      "id": "module.types.syn.contains.record.Question",
-      "source": "module.types.syn",
+      "id": "module.types.kos.contains.record.Question",
+      "source": "module.types.kos",
       "target": "record.Question",
       "kind": "contains"
     },
     {
-      "id": "module.research.syn.contains.model.reader",
-      "source": "module.research.syn",
+      "id": "module.research.kos.contains.model.reader",
+      "source": "module.research.kos",
       "target": "model.reader",
       "kind": "contains"
     },
@@ -203,8 +203,8 @@
       "kind": "outputs"
     },
     {
-      "id": "module.main.syn.contains.workflow.main",
-      "source": "module.main.syn",
+      "id": "module.main.kos.contains.workflow.main",
+      "source": "module.main.kos",
       "target": "workflow.main",
       "kind": "contains"
     },
@@ -221,8 +221,8 @@
       "kind": "calls"
     },
     {
-      "id": "module.research.syn.contains.workflow.research",
-      "source": "module.research.syn",
+      "id": "module.research.kos.contains.workflow.research",
+      "source": "module.research.kos",
       "target": "workflow.research",
       "kind": "contains"
     },

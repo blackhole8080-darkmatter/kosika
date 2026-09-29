@@ -36,8 +36,8 @@ from kosika.parser import parse
 from kosika.runtime import run
 
 ROOT = Path(__file__).parents[1]
-SOURCE = ROOT / "examples" / "test_host.syn"
-COMPOSED = ROOT / "examples" / "composed" / "main.syn"
+SOURCE = ROOT / "examples" / "test_host.kos"
+COMPOSED = ROOT / "examples" / "composed" / "main.kos"
 
 
 class ExplodingProvider:
@@ -66,20 +66,20 @@ class MindmapAssistantTests(unittest.TestCase):
         mindmap = build_mindmap(program)
         self.assertEqual(
             [module["path"] for module in mindmap["modules"]],
-            ["main.syn", "research.syn", "types.syn"],
+            ["main.kos", "research.kos", "types.kos"],
         )
         self.assertEqual(
             set(mindmap["modules"][0]["imports"]),
-            {"research.syn", "types.syn"},
+            {"research.kos", "types.kos"},
         )
         owners = {
             node["label"]: node["module"]
             for node in mindmap["nodes"]
             if node["kind"] in {"record", "model", "workflow"}
         }
-        self.assertEqual(owners["Question"], "types.syn")
-        self.assertEqual(owners["reader"], "research.syn")
-        self.assertEqual(owners["main"], "main.syn")
+        self.assertEqual(owners["Question"], "types.kos")
+        self.assertEqual(owners["reader"], "research.kos")
+        self.assertEqual(owners["main"], "main.kos")
         self.assertTrue(
             any(edge["relation"] == "imports" for edge in mindmap["edges"])
         )
@@ -328,7 +328,7 @@ class OutsiderExplanationTests(unittest.TestCase):
 
     def test_outsider_view_reports_permissions_and_human_notes(self) -> None:
         program = parse(
-            (ROOT / "examples" / "document_assistant.syn").read_text(encoding="utf-8")
+            (ROOT / "examples" / "document_assistant.kos").read_text(encoding="utf-8")
         )
         explanation = build_explanation(
             program, diagnostics=("Helps a team find answers.",)

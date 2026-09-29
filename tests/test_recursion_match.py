@@ -23,7 +23,7 @@ def runnable(function: str, call: str = "compute()") -> str:
 class RecursionMatchTests(unittest.TestCase):
     def test_example_executes_and_replays(self) -> None:
         program = load_program(
-            Path(__file__).resolve().parents[1] / "examples/recursion_match.syn"
+            Path(__file__).resolve().parents[1] / "examples/recursion_match.kos"
         )
         with tempfile.TemporaryDirectory() as directory:
             trace = Path(directory) / "trace.jsonl"
