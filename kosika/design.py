@@ -734,6 +734,7 @@ _LAB_NODE_COLORS = {
     "record": ("#0D131A", "#7C8FA3"),
     "space": ("#061A1D", "#2DD4BF"),
     "stage": ("#071A1E", "#22D3EE"),
+    "swarm": ("#1A0B1C", "#F472B6"),
     "tool": ("#191305", "#FBBF24"),
     "workflow": ("#061A1D", "#22D3EE"),
 }
