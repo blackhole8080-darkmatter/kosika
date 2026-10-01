@@ -88,6 +88,11 @@ class ScriptedModelProvider:
 
 Transport = Callable[[urllib.request.Request, float], bytes]
 
+#: Wire formats this adapter can speak. ``openai`` is the OpenAI-compatible
+#: ``/chat/completions`` shape most gateways expose. ``ollama`` is Ollama's native
+#: ``/api/chat`` shape, which is the only one of the two that honours ``think``.
+MODEL_PROTOCOLS = ("openai", "ollama")
+
 
 class OpenAICompatibleProvider:
     """Small stdlib-only adapter for local OpenAI-compatible model servers.
@@ -95,6 +100,13 @@ class OpenAICompatibleProvider:
     It supports servers such as a local gateway or an Ollama-compatible endpoint.
     The adapter performs no tool execution; it only translates model messages and
     parses a response into Kosika's provider-neutral types.
+
+    Two wire formats are available through ``protocol``. ``openai`` targets
+    ``/chat/completions`` and is the default. ``ollama`` targets Ollama's native
+    ``/api/chat``, which is the only one of the two that honours ``think``:
+    Ollama's OpenAI-compatible shim accepts the field and ignores it, so a
+    reasoning model spends its entire output budget on the trace and returns
+    empty content.
     """
 
     def __init__(
@@ -106,6 +118,7 @@ class OpenAICompatibleProvider:
         timeout: float = 60.0,
         transport: Transport | None = None,
         think: bool | None = None,
+        protocol: str = "openai",
     ) -> None:
         if not base_url:
             raise ValueError("Model base URL cannot be empty")
@@ -115,11 +128,26 @@ class OpenAICompatibleProvider:
             raise ValueError("Model timeout must be positive")
         if think is not None and type(think) is not bool:
             raise ValueError("think must be a boolean or None")
-        self.endpoint = (
-            base_url
-            if base_url.rstrip("/").endswith("/chat/completions")
-            else base_url.rstrip("/") + "/chat/completions"
-        )
+        if protocol not in MODEL_PROTOCOLS:
+            raise ValueError(
+                f"Model protocol must be one of {', '.join(MODEL_PROTOCOLS)}"
+            )
+        self.protocol = protocol
+        trimmed = base_url.rstrip("/")
+        if protocol == "ollama":
+            # Ollama's OpenAI-compatible /v1 shim silently drops `think`, so a
+            # reasoning model burns its whole budget on the trace and returns
+            # empty content. The native endpoint honours the flag, which is the
+            # difference between a usable patch call and an unusable one.
+            self.endpoint = (
+                trimmed if trimmed.endswith("/api/chat") else trimmed + "/api/chat"
+            )
+        else:
+            self.endpoint = (
+                base_url
+                if trimmed.endswith("/chat/completions")
+                else trimmed + "/chat/completions"
+            )
         self.model = model
         self.api_key = api_key
         self.timeout = timeout
@@ -131,6 +159,11 @@ class OpenAICompatibleProvider:
         self.think = think
 
     def complete(self, request: ModelRequest) -> ModelResponse:
+        if self.protocol == "ollama":
+            return self._complete_ollama(request)
+        return self._complete_openai(request)
+
+    def _complete_openai(self, request: ModelRequest) -> ModelResponse:
         payload: dict[str, Any] = {
             "model": request.model or self.model,
             "messages": [
@@ -194,6 +227,88 @@ class OpenAICompatibleProvider:
             raise ModelProviderError("Model provider returned invalid JSON") from exc
         return self._parse_response(decoded)
 
+    def _complete_ollama(self, request: ModelRequest) -> ModelResponse:
+        """Speak Ollama's native ``/api/chat`` shape.
+
+        Ollama streams by default, so ``stream`` must be sent as false or the
+        body arrives as newline-delimited JSON and fails to decode. Sampling
+        parameters live under ``options`` rather than at the top level.
+        """
+
+        options: dict[str, Any] = {}
+        if request.temperature is not None:
+            options["temperature"] = request.temperature
+        for name, value, lower, upper in (
+            ("top_p", request.top_p, 0, 1),
+            ("frequency_penalty", request.frequency_penalty, -2, 2),
+            ("presence_penalty", request.presence_penalty, -2, 2),
+        ):
+            if value is not None and (
+                type(value) not in (int, float) or not lower <= value <= upper
+            ):
+                raise ModelProviderError(f"{name} must be between {lower} and {upper}")
+            if value is not None:
+                options[name] = value
+        if request.stop:
+            if len(request.stop) > 4 or any(
+                type(value) is not str or not 1 <= len(value) <= 256
+                for value in request.stop
+            ):
+                raise ModelProviderError(
+                    "stop must contain up to four non-empty strings of at most 256 characters"
+                )
+            options["stop"] = list(request.stop)
+        if request.max_output_tokens is not None:
+            if (
+                type(request.max_output_tokens) is not int
+                or request.max_output_tokens < 1
+            ):
+                raise ModelProviderError("max_output_tokens must be a positive integer")
+            options["num_predict"] = request.max_output_tokens
+
+        payload: dict[str, Any] = {
+            "model": request.model or self.model,
+            "messages": [
+                self._message_to_dict(message) for message in request.messages
+            ],
+            "stream": False,
+        }
+        if options:
+            payload["options"] = options
+        if request.tools:
+            raise ModelProviderError(
+                "The ollama protocol does not support tool calling; use the "
+                "openai protocol for tool-enabled requests"
+            )
+        if self.think is not None:
+            payload["think"] = self.think
+        raw = self._exchange(payload)
+        return self._parse_response(raw, "ollama")
+
+    def _exchange(self, payload: dict[str, Any]) -> Any:
+        body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        request_object = urllib.request.Request(
+            self.endpoint,
+            data=body,
+            headers=headers,
+            method="POST",
+        )
+        try:
+            raw = self._send(request_object)
+            return json.loads(raw.decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise ModelProviderError(
+                f"Model provider returned HTTP {exc.code}: {detail}"
+            ) from exc
+        except urllib.error.URLError as exc:
+            raise ModelProviderError(f"Model provider request failed: {exc}") from exc
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ModelProviderError("Model provider returned invalid JSON") from exc
+
     def _send(self, request: urllib.request.Request) -> bytes:
         if self._transport is not None:
             return self._transport(request, self.timeout)
@@ -235,7 +350,53 @@ class OpenAICompatibleProvider:
         }
 
     @classmethod
-    def _parse_response(cls, payload: Any) -> ModelResponse:
+    def _parse_ollama_response(cls, payload: Any) -> ModelResponse:
+        """Read Ollama's native ``/api/chat`` reply.
+
+        The message is top level rather than wrapped in ``choices``, the
+        reasoning trace is ``thinking`` rather than ``reasoning`` or
+        ``reasoning_content``, and token counts are ``eval_count`` and
+        ``prompt_eval_count``. The trace is preserved rather than discarded so
+        a response spent on reasoning stays distinguishable from one that
+        produced nothing.
+        """
+
+        if not isinstance(payload, dict):
+            raise ModelProviderError("Model response must be a JSON object")
+        message = payload.get("message")
+        if not isinstance(message, dict):
+            raise ModelProviderError("Model response did not contain a message")
+        content = message.get("content")
+        if content is not None and not isinstance(content, str):
+            raise ModelProviderError("Model response content must be text or null")
+        thinking = message.get("thinking")
+        if thinking is not None and not isinstance(thinking, str):
+            thinking = None
+        completion_tokens = payload.get("eval_count")
+        prompt_tokens = payload.get("prompt_eval_count")
+        usage = None
+        if isinstance(completion_tokens, int) or isinstance(prompt_tokens, int):
+            prompt = prompt_tokens if isinstance(prompt_tokens, int) else 0
+            completion = completion_tokens if isinstance(completion_tokens, int) else 0
+            usage = ModelUsage(
+                prompt_tokens=prompt,
+                completion_tokens=completion,
+                total_tokens=prompt + completion,
+            )
+        done = payload.get("done")
+        finish_reason = "stop" if done is not False else "length"
+        return ModelResponse(
+            content=content,
+            tool_calls=(),
+            finish_reason=finish_reason,
+            usage=usage,
+            reasoning=thinking,
+        )
+
+    @classmethod
+    def _parse_response(cls, payload: Any, protocol: str = "openai") -> ModelResponse:
+        if protocol == "ollama":
+            return cls._parse_ollama_response(payload)
         if not isinstance(payload, dict):
             raise ModelProviderError("Model response must be a JSON object")
         choices = payload.get("choices")

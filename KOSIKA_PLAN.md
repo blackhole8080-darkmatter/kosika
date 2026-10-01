@@ -430,9 +430,47 @@ The live-publication-visibility slice is complete:
   semantics, restoring revoked authority as *not* a violation, invalid-proposal
   comparison, limit validation, crash handling, and the CLI. Branch coverage
   for `kosika/authoring_evaluation.py` is 93%.
-- No live-model run has been performed, so no model quality claim is made. The
-  harness supports one (`--solver model`); the report exists so a future run has
-  a fixed basis for comparison.
+- The first live-model measurement has now been performed; see the local model
+  protocol and live evaluation slice below for the numbers and what they do and
+  do not support.
+
+## Local model protocol and first live evaluation
+
+- `OpenAICompatibleProvider` takes a `protocol` of `openai` (default, unchanged)
+  or `ollama`. The `ollama` protocol targets Ollama's native `/api/chat`.
+- The reason this exists is measured. Ollama's OpenAI-compatible `/v1` endpoint
+  accepts a `think` field and ignores it, so a reasoning model spends its entire
+  output budget on the trace and returns empty content. Through the provider on
+  one machine, same model and prompt: `openai` 45.3s / 152 completion tokens /
+  675 reasoning characters, `ollama` 15.2s / 2 completion tokens / 0 reasoning
+  characters. The native endpoint also requires `stream: false` explicitly,
+  because Ollama streams by default and a streamed body fails to decode.
+- `kosika.authoring_evaluation.live_provider_factory` takes the protocol through
+  to the provider. `author-eval` and `benchmark` expose `--protocol`; `author`
+  exposes `--proposal-protocol` and `--proposal-think`, whose default is now
+  `off` because a machine-readable patch cannot be read out of a reasoning trace.
+- The Ollama protocol refuses tool calling rather than silently dropping it, and
+  reads the native `message`, `thinking`, `eval_count`, and `prompt_eval_count`
+  fields. A reasoning-only reply stays distinguishable from a reply with no
+  content. 28 focused tests cover endpoint derivation, payload shape, response
+  parsing, failure branches, the CLI wiring, and that the `openai` path is
+  unchanged.
+- **First live measurement, qwen3:1.7b over Ollama on CPU, 12 corpus cases
+  (11 repair, 1 valid):** repair rate 0/11; 22 attempts and 22 model calls;
+  15,646 prompt and 1,510 completion tokens; 733.7s model time and 734.2s wall
+  time; 0 authority violations; 0 needless edits on the valid program. Eight
+  cases had an expressible reference patch and none were repaired.
+- What this supports: the harness, the authority guarantees, and the protocol
+  are exercised end to end against a real local model, and the loop's safety
+  properties held under a real model rather than only under fixtures.
+- What this does not support: any claim that the model can author patches. A
+  1.7B model on CPU is far below the 0.630 reference ceiling, and this run says
+  nothing about whether a larger model would do better. Throughput improved by
+  roughly 3.7x per case against the same model on the `openai` path, which made
+  a bounded run practical; it did not make the model more capable.
+- The full corpus remains out of reach on this hardware. It is CPU-only
+  inference with roughly 2-4 tokens per second and about 15 GB of RAM against a
+  3 GB resident model.
 
 ## K08 cross-language component contracts (complete)
 

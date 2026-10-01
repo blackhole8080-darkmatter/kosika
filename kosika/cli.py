@@ -579,10 +579,13 @@ def _author_proposal_provider(args: argparse.Namespace) -> ModelProvider | None:
         )
     if not all(live):
         return None
+    proposal_think = {"auto": None, "on": True, "off": False}[args.proposal_think]
     return OpenAICompatibleProvider(
         args.proposal_base_url,
         args.proposal_model,
         api_key=os.environ.get("KOSIKA_MODEL_API_KEY"),
+        think=proposal_think,
+        protocol=args.proposal_protocol,
     )
 
 
@@ -695,6 +698,7 @@ def _run_authoring_evaluation(args: argparse.Namespace) -> int:
             api_key=args.api_key or os.environ.get("KOSIKA_API_KEY"),
             timeout=float(args.model_timeout),
             think=think,
+            protocol=args.protocol,
         )
         name = f"model:{args.model}"
     elif args.solver == "identity":
@@ -853,6 +857,7 @@ def _run_model_benchmark(args: argparse.Namespace, cases: list) -> int:
         model=args.model,  # type: ignore[attr-defined]
         api_key=args.api_key or os.environ.get("KOSIKA_API_KEY"),  # type: ignore[attr-defined]
         think=think,
+        protocol=args.protocol,  # type: ignore[attr-defined]
         # CPU inference on a 7B model takes minutes per case, and the first call
         # also pays the cost of loading the model. A short timeout reports a
         # spurious failure for a run that is merely slow.
@@ -997,6 +1002,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="OpenAI-compatible base URL for the model solver.",
     )
     benchmark_parser.add_argument(
+        "--protocol",
+        choices=("openai", "ollama"),
+        default="openai",
+        help=(
+            "Model wire format. 'ollama' targets Ollama's native /api/chat, "
+            "which honours --think."
+        ),
+    )
+    benchmark_parser.add_argument(
         "--api-key",
         help="API key for the model solver. Falls back to KOSIKA_API_KEY.",
     )
@@ -1096,6 +1110,24 @@ def build_parser() -> argparse.ArgumentParser:
         "--proposal-model", help="Model name used to propose patches."
     )
     author_parser.add_argument(
+        "--proposal-protocol",
+        choices=("openai", "ollama"),
+        default="openai",
+        help=(
+            "Proposing model wire format. 'ollama' targets Ollama's native "
+            "/api/chat and disables the reasoning trace, which a patch needs."
+        ),
+    )
+    author_parser.add_argument(
+        "--proposal-think",
+        choices=("auto", "on", "off"),
+        default="off",
+        help=(
+            "Reasoning mode for the proposing model. Defaults to 'off' because "
+            "a machine-readable patch cannot be read out of a reasoning trace."
+        ),
+    )
+    author_parser.add_argument(
         "--attempts",
         type=int,
         default=2,
@@ -1177,6 +1209,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     author_eval_parser.add_argument(
         "--base-url", help="OpenAI-compatible base URL for the model evaluator."
+    )
+    author_eval_parser.add_argument(
+        "--protocol",
+        choices=("openai", "ollama"),
+        default="openai",
+        help=(
+            "Model wire format. 'ollama' targets Ollama's native /api/chat, "
+            "which honours --think; its OpenAI-compatible shim accepts the "
+            "field and ignores it."
+        ),
     )
     author_eval_parser.add_argument(
         "--model", help="Model name for the model evaluator."

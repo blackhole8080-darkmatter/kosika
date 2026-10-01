@@ -394,6 +394,32 @@ python -m kosika.cli author-eval --solver model --base-url URL --model NAME \
     --limit 50 --think off
 ```
 
+### Local Ollama models
+
+`--protocol` selects the wire format. `openai` (the default) posts to
+`/chat/completions`, which is what most gateways expose. `ollama` posts to
+Ollama's native `/api/chat`:
+
+```text
+python -m kosika.cli author-eval --solver model \
+    --base-url http://127.0.0.1:11434 --model qwen3:1.7b \
+    --protocol ollama --think off --limit 12 --format text
+```
+
+Use `ollama` with a reasoning model such as qwen3. Ollama's OpenAI-compatible
+`/v1` endpoint accepts `think` and silently ignores it, so the model spends its
+whole output budget on the trace and returns empty content. On one CPU-only
+machine, same model and prompt: `openai` returned 152 completion tokens and 675
+characters of reasoning, `ollama` returned 2 tokens and no reasoning.
+
+`author` takes the same choice as `--proposal-protocol`, alongside
+`--proposal-think`, which defaults to `off` because a machine-readable patch
+cannot be read out of a reasoning trace.
+
+CPU-only local inference runs at roughly 2-4 tokens per second, so budget the
+`--limit` accordingly and expect `--model-timeout` to need raising for the first
+call, which also pays the cost of loading the model.
+
 The command exits 0 when `validate(...)` finds no unrepaired expressible case,
 no authority violation, and no unnecessary edit; otherwise 1.
 

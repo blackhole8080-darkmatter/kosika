@@ -427,6 +427,7 @@ def live_provider_factory(
     api_key: str | None = None,
     timeout: float = 600.0,
     think: bool | None = None,
+    protocol: str = "openai",
 ) -> ProviderFactory:
     """Use a real model for every case, including the valid ones.
 
@@ -444,6 +445,7 @@ def live_provider_factory(
             api_key=api_key,
             timeout=timeout,
             think=think,
+            protocol=protocol,
         )
 
     return factory
