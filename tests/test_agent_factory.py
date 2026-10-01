@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import unittest
 from pathlib import Path
+from typing import Any
 
 from examples.agent_factory_mcp_server import source_for
 from kosika.modules import load_program
@@ -21,7 +22,7 @@ class AgentFactoryTests(unittest.TestCase):
         self.assertEqual(program.agents[0].name, "source_writer")
 
     def test_source_writer_renders_parseable_restricted_agent_source(self) -> None:
-        arguments = {
+        arguments: dict[str, Any] = {
             "name": "kosika_reviewer",
             "model": "reviewer_model",
             "can": ["read_diff", "run_tests"],

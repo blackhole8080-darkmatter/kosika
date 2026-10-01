@@ -9,8 +9,45 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Dict, List, Optional
+
+
+def _path_component(value: object, field_name: str) -> str:
+    if (
+        not isinstance(value, str)
+        or not value
+        or value in {".", ".."}
+        or "/" in value
+        or "\\" in value
+        or ":" in value
+        or value[-1] in {" ", "."}
+        or "\x00" in value
+    ):
+        raise ValueError(f"Package {field_name} must be one safe path component")
+    return value
+
+
+def _source_path(package_dir: Path, filename: object) -> Path:
+    if not isinstance(filename, str) or not filename or "\x00" in filename:
+        raise ValueError("Package source filename must be non-empty text")
+    windows_path = PureWindowsPath(filename)
+    relative = PurePosixPath(filename.replace("\\", "/"))
+    if (
+        relative.is_absolute()
+        or windows_path.is_absolute()
+        or bool(windows_path.drive)
+        or ":" in filename
+        or any(part in {"", ".", ".."} for part in relative.parts)
+        or relative.suffix != ".kos"
+    ):
+        raise ValueError(
+            "Package source filename must be a relative .kos path without traversal"
+        )
+    target = package_dir.joinpath(*relative.parts)
+    if not target.resolve().is_relative_to(package_dir.resolve()):
+        raise ValueError("Package source filename escapes the package directory")
+    return target
 
 
 @dataclass
@@ -115,41 +152,38 @@ class ProgramRegistry:
             json.dump(self._index, f, indent=2)
 
     def register(self, package: ProgramPackage) -> str:
-        """Register a program package."""
-        program_id = f"{package.manifest.author}/{package.manifest.name}"
-        version_key = f"{program_id}@{package.manifest.version}"
+        """Register a program package inside the configured storage root."""
+        author = _path_component(package.manifest.author, "author")
+        name = _path_component(package.manifest.name, "name")
+        version = _path_component(package.manifest.version, "version")
+        program_id = f"{author}/{name}"
+        version_key = f"{program_id}@{version}"
+        package_dir = self.storage_path / author / name / version
+        source_files = [
+            (_source_path(package_dir, filename), source)
+            for filename, source in package.source_files.items()
+        ]
 
-        # Store package files
-        package_dir = self.storage_path / program_id / package.manifest.version
         package_dir.mkdir(parents=True, exist_ok=True)
-
-        # Save package manifest
         manifest_file = package_dir / "package.json"
         with open(manifest_file, "w") as f:
             json.dump(package.to_dict(), f, indent=2)
 
-        # Save source files
-        for filename, source in package.source_files.items():
-            source_file = package_dir / filename
+        for source_file, source in source_files:
+            source_file.parent.mkdir(parents=True, exist_ok=True)
             source_file.write_text(source)
 
-        # Update index
         if program_id not in self._index["programs"]:
             self._index["programs"][program_id] = {
-                "name": package.manifest.name,
-                "author": package.manifest.author,
+                "name": name,
+                "author": author,
                 "versions": [],
-                "latest": package.manifest.version,
+                "latest": version,
             }
 
-        if (
-            package.manifest.version
-            not in self._index["programs"][program_id]["versions"]
-        ):
-            self._index["programs"][program_id]["versions"].append(
-                package.manifest.version
-            )
-            self._index["programs"][program_id]["latest"] = package.manifest.version
+        if version not in self._index["programs"][program_id]["versions"]:
+            self._index["programs"][program_id]["versions"].append(version)
+            self._index["programs"][program_id]["latest"] = version
 
         self._index["versions"][version_key] = {
             "registered_at": datetime.now(timezone.utc).isoformat(),
@@ -163,13 +197,21 @@ class ProgramRegistry:
     def get(
         self, program_id: str, version: Optional[str] = None
     ) -> Optional[ProgramPackage]:
-        """Retrieve a program package."""
+        """Retrieve a program package from inside the configured storage root."""
         if program_id not in self._index["programs"]:
             return None
 
-        version = version or self._index["programs"][program_id]["latest"]
-        package_dir = self.storage_path / program_id / version
-        manifest_file = package_dir / "package.json"
+        identity = program_id.split("/")
+        if len(identity) != 2:
+            raise ValueError("Stored package identity is invalid")
+        author = _path_component(identity[0], "author")
+        name = _path_component(identity[1], "name")
+        selected_version = _path_component(
+            version or self._index["programs"][program_id]["latest"], "version"
+        )
+        manifest_file = (
+            self.storage_path / author / name / selected_version / "package.json"
+        )
 
         if not manifest_file.exists():
             return None

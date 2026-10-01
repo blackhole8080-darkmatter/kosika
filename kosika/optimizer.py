@@ -288,7 +288,7 @@ class PerformanceProfiler:
         with self.lock:
             self.memory_profiles[operation].append(memory_usage)
 
-    def get_performance_stats(self, operation: str) -> Dict[str, float]:
+    def get_performance_stats(self, operation: str) -> Dict[str, Any]:
         """Get performance statistics for an operation."""
         with self.lock:
             timings = self.operation_timings.get(operation, [])

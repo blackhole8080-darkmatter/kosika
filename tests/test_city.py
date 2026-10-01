@@ -135,13 +135,17 @@ def test_swarm_becomes_a_district_and_members_move_into_it(tmp_path: Path) -> No
     assert district.max_rounds == 3
     assert district.approval_required is True
     assert district.members == ("editor", "researcher")
-    assert city.resident("researcher").district == "Board"
+    researcher = city.resident("researcher")
+    assert researcher is not None
+    assert researcher.district == "Board"
 
 
 def test_prohibitions_are_carried_into_the_manifest(tmp_path: Path) -> None:
     _write(tmp_path, "board.kos", PROGRAM_WITH_SWARM)
     city = build_city(tmp_path)
-    assert city.resident("researcher").cannot == ("arbitrary_shell", "write_files")
+    researcher = city.resident("researcher")
+    assert researcher is not None
+    assert researcher.cannot == ("arbitrary_shell", "write_files")
     agent = next(
         node for node in city.to_manifest()["nodes"] if node["id"] == "agent.researcher"
     )

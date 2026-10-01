@@ -1,8 +1,10 @@
 # Kosika development guide
 
-Kosika (formerly Synapse Language) is a Python-first experimental language/runtime
-for typed AI workflows. The additions below are working first slices, not a claim
-of production readiness. Run commands from the repository root.
+Kosika (formerly Synapse Language) is an experimental AI programming language and
+runtime with a Python-hosted reference implementation. Python is the current host,
+not the intended boundary of Kosika applications or interoperability. The additions
+below are working first slices, not a claim of production readiness. Run commands
+from the repository root.
 
 The staged runnable-program path is tracked in
 [`examples/PROGRAM_SEQUENCE.md`](examples/PROGRAM_SEQUENCE.md). It starts with
@@ -222,6 +224,243 @@ Development Host. Configure `kosika.pythonPath` and
 `kosika.skillDirectories` in VS Code settings when needed. The commands check
 the active file, explain it, render Kosika or unified Mermaid mindmaps, and
 inspect automatically selected skills.
+
+### Structured diagnostic contract
+
+`python -m kosika.cli check PATH --format json` emits
+`kosika.diagnostics/v1`. The report includes the entry path, success state,
+error count, stable code set, and diagnostics. Each diagnostic carries its
+originating `path`, stable `code`, severity, message, optional owner, optional
+zero-based range, and repair data such as `expected`, `actual`, missing fields,
+or capability names.
+
+Path-based analysis calls the authoritative bounded `load_program` module
+loader, including import privacy, graph limits, and final whole-program
+checking. Editor buffers are passed as source overrides; the LSP republishes an
+imported failure for the imported document URI and invalidates direct
+dependents when a document changes. Lexical and parser locations cover the
+reported token. Checker failures point to a unique owning declaration or step.
+Ambiguous or unavailable ownership produces `range: null` plus
+`data.anchor_missing: true`; the LSP uses its protocol-required zero-length
+fallback range while preserving that marker. Analysis currently stops at the
+first parser, module, or checker failure.
+
+### Machine-readable development interface
+
+`kosika.development` is the supported structured façade over the existing
+loader, checker, runtime, replay validator, and mindmap builder. It does not
+implement language behavior. Its response schema is
+`kosika.development/v1`, with fixed `operation`, `ok`, `project`, `result`,
+`diagnostics`, and `error` fields.
+
+| Operation | Authoritative implementation | Result |
+| --- | --- | --- |
+| `inspect` | `load_program` and schema generation | bounded modules, hashes, declarations, and workflow input/output schemas |
+| `check` | `kosika.diagnostics/v1` | source-linked stable diagnostics |
+| `run` | `runtime.run` with `ExecutionLimits` | typed value, raw events, execution counters, and applied limits |
+| `trace` | validated exact replay through `inspect_trace` | workflow, trace version, hash, event count, nested steps, and replayed result |
+| `map` | `build_mindmap` over the checked program | deterministic checked-AST graph |
+
+Python hosts call `inspect_project`, `check_project`, `run_project`,
+`inspect_trace`, or `map_project`. `run_project` accepts explicit model/tool
+bindings, execution session, MCP manifest, cancellation event, and whole-run
+limits; it never discovers host authority. Runtime failures retain observed
+events in the structured response.
+
+For process integrations, write a strict JSON request and run:
+
+```text
+python -m kosika.cli development request.json
+python -m kosika.cli development - < request.json
+```
+
+Requests allow only operation-specific fields. Unknown fields, schema versions,
+operations, or limit names fail as `request/invalid`. The CLI does not accept
+provider or tool bindings through JSON; external authority must be supplied by
+an embedding host through the Python API.
+
+### Bounded AI authoring loop
+
+`kosika.authoring` is the `intent -> check -> propose -> repair -> run -> inspect`
+loop over that same interface. Its response schema is `kosika.authoring/v1`, and
+`author(...)` returns `status`, `attempts`, `proposals`, `diagnostics`,
+`execution`, `trace`, `limits`, and token `usage`.
+
+- **Model output is a proposal, never a mutation.** Patches are applied to an
+  in-memory copy of one file and returned under `proposals`. The loop never
+  writes to disk; applying a proposal stays a host decision.
+- **The host holds every capability.** The proposing provider, the run's model
+  and tool bindings, MCP commands, execution limits, cancellation, and trace
+  path are all host arguments. The loop mints no authority and declares none.
+- **A clean project needs no model.** `provider` may be `None`; if a diagnostic
+  then needs a proposal, the loop stops with `authoring/no-provider` instead of
+  claiming a repair it did not make.
+- **Only the failing file is patchable.** A diagnostic names its originating
+  path, so a patch is applied to that file only, and search text that matches
+  zero or several places is rejected instead of guessed at.
+- **Attempts are bounded and recorded.** `AuthoringLimits.max_attempts` caps the
+  whole loop (one provider call per attempt). Provider, configuration, and
+  missing-authority failures stop the loop instead of retrying; ambiguous or
+  unapplicable patches are fed back as feedback for the next attempt.
+
+From a Python host:
+
+```python
+from kosika.authoring import AuthoringLimits, author
+
+response = author(
+    "project/main.kos",
+    intent="Make the research workflow check cleanly",
+    provider=host_proposal_provider,
+    root="project",
+    limits=AuthoringLimits(max_attempts=2),
+    model_bindings={"reader": host_run_provider},
+)
+```
+
+From the CLI, the proposal authority and the run authority are separate flags so
+one cannot silently stand in for the other:
+
+```text
+python -m kosika.cli author project/main.kos --intent "..." --root project \
+    --proposal-fixture proposal.json --model-fixture models.json \
+    --input inputs.json --trace trace.jsonl
+```
+
+`--proposal-base-url` with `--proposal-model` uses a live OpenAI-compatible
+proposal model; `--model-fixture` supplies the run's declared models;
+`--no-run` stops after checking and proposing. With no proposal authority at
+all the command still checks, and reports `authoring/no-provider` if a
+diagnostic needed one. The command exits 0 on a clean loop, 1 when the loop did
+not reach a checked program, and 2 on invalid setup.
+
+The loop is deliberately not a `kosika.development/v1` JSON operation: a JSON
+request cannot carry a proposing provider or run bindings, so exposing it
+there would only produce a request that cannot be honoured.
+
+### Authoring evaluations
+
+`kosika.authoring_evaluation` measures the loop rather than assuming it works.
+Its report schema is `kosika.authoring-evaluation/v1`. `evaluate_authoring(...)`
+runs the loop over corpus cases, each materialised as a standalone project, and
+reports per-case measurements plus aggregates.
+
+| Measurement | What it answers |
+| --- | --- |
+| `checked_clean` | did the whole project reach a clean check, not just the file that failed |
+| `first_pass_clean` / `needless_edits` | did the loop leave an already-correct program alone |
+| `attempts`, `model_calls`, tokens, per-attempt provider `seconds`, case `seconds` | what a repair cost, reported beside its success rate |
+| `behavior` | does the repaired program still produce the unmutated program's result |
+| `authority` | did anything write to disk, escape the project, or gain a capability |
+
+Per-attempt cost is recorded by the loop itself rather than reconstructed by the
+harness: each `Attempt` in `kosika.authoring/v1` carries `model_called`,
+`prompt_tokens`, `completion_tokens`, and `seconds` measured around the provider
+call alone, so model latency is separable from checking and execution. The
+evaluation aggregates those into `model_seconds` beside whole-case `seconds`.
+
+Behaviour is compared against the *unmutated* program wherever both can run, and
+reported as `not-measured` with a reason wherever they cannot -- a program that
+needs host bindings produces no behavioural claim rather than a false pass.
+
+The authority audit is measured, not inferred. It hashes the project directory
+before and after the loop to detect writes, reads the declarations from the
+in-memory proposal (not from disk, where a correct loop wrote nothing), and
+compares them against the *original* program's tools, MCP sources, granted
+`agent.can` capabilities, and tool access levels. Explicit `agent.cannot`
+entries are denials, so losing one is a violation while restoring a revoked
+grant is not. Violations are `wrote:`, `proposed-outside:`, `tool-added:`,
+`mcp-source-added:`, `capability-added:`, `denial-removed:`, and
+`access-widened:`. The baseline is the original program deliberately: a
+repair that restores revoked authority is correct, and only authority the
+program never had counts.
+
+A program that does not load cannot be compared semantically, so declaration
+comparison is skipped instead of treating the program as an empty authority set.
+Otherwise every unreadable case would falsely report that all explicit denials
+had been removed.
+
+Two reference evaluators are always available, for the same reason the benchmark
+reports its baselines. `identity` grants no proposing model and is the floor.
+`reference` replays the corpus's stored repair as a patch and is the ceiling --
+but only over the cases whose stored repair is quotable as a unique
+search/replace block. The unquotable remainder is reported as
+`unexpressible_cases`, because that is a property of the patch format rather
+than a failure of the loop.
+
+```text
+python -m kosika.cli author-eval --solver reference --no-behavior
+python -m kosika.cli author-eval --solver model --base-url URL --model NAME \
+    --limit 50 --think off
+```
+
+The command exits 0 when `validate(...)` finds no unrepaired expressible case,
+no authority violation, and no unnecessary edit; otherwise 1.
+
+Measured on the full corpus (448 cases, 422 repair and 26 valid) with the
+reference evaluator: **266/422 repaired (0.630)**, 26 valid programs left
+untouched with zero model calls, **0 authority violations**, 43/43 measurable
+cases behaviorally correct, 0 incorrect, ~7s aggregate case time against a
+scripted provider. The 156
+unexpressible cases are repairs the loop's patch format cannot quote -- mostly
+deleted declarations whose surrounding text repeats. The identity floor
+measures 0.000 over the same corpus. A live-model run has not been performed, so
+no model quality claim is made.
+
+
+
+### Cross-language component contracts
+
+`kosika.components` implements the host-side `kosika.component/v1` contract.
+It connects an existing typed Kosika tool declaration to one local process
+artifact without adding language syntax or treating source analysis as execution
+authority. The contract carries:
+
+- component version, tool name, operation, and access class;
+- exact input and output JSON schemas;
+- namespaced effects and capabilities that the host must grant;
+- declared error codes with retryability;
+- `terminate` cancellation with a bounded deadline; and
+- relative artifact path, SHA-256 identity, and `json-stdio/v1` protocol.
+
+`bind_component(...)` compares the contract with the checked `ToolDecl` and the
+record schemas generated by `kosika.schema`, verifies all host grants, resolves
+the artifact inside its root, and hashes it before returning a normal
+`tool_bindings` callable. `execute_component(...)` re-hashes before every call,
+invokes the host-selected runtime without a shell, validates request and response
+records, accepts only declared errors, caps each message at 1 MiB, and kills the
+process at the contract deadline. Artifacts are capped at 16 MiB.
+
+The protocol sends one strict JSON request on stdin:
+
+```json
+{
+  "schema": "kosika.component-call/v1",
+  "component": "example.uppercase",
+  "version": "1.0.0",
+  "operation": "uppercase",
+  "input": {"text": "hello"}
+}
+```
+
+The process returns one `kosika.component-result/v1` object with either
+`{"ok": true, "output": {...}}` or a declared
+`{"ok": false, "error": {"code": "...", "message": "..."}}`.
+
+```text
+python -m kosika.cli component check examples/components/uppercase.component.json --json
+python -m kosika.cli run examples/component_uppercase.kos \
+  --input examples/component_uppercase_input.json \
+  --component-manifest examples/components/uppercase.component.json \
+  --component-runtime node \
+  --allow-component-effect cpu:compute \
+  --allow-component-capability text:transform
+```
+
+The JavaScript uppercase example is the exercised cross-language path. The
+artifact digest proves which bytes ran, not what those bytes do. The process
+inherits host OS authority; v1 is not a sandbox, remote transport, native ABI,
+signature system, or package manager.
 
 Evaluation fixtures declare named inputs, exact expected records and/or required
 text in output fields. Assertions are data, never Python/code expressions. Each

@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import cast
 from unittest.mock import patch
 
 from kosika import cli
@@ -139,7 +140,7 @@ class MindmapAssistantTests(unittest.TestCase):
         with self.assertRaisesRegex(AssistantError, "exceeds the 4096"):
             assistant.ask("x" * 4097)
         with self.assertRaisesRegex(AssistantError, "diagnostics must be text"):
-            assistant.ask("Explain", diagnostics=(None,))
+            assistant.ask("Explain", diagnostics=(cast(str, None),))
 
         context = assistant_context(
             build_mindmap(program), "Explain", diagnostics=("one warning",)

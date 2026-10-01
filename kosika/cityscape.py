@@ -188,8 +188,11 @@ def plan_cityscape(city: City) -> dict[str, Any]:
     lane_x = MARGIN
     max_lane_depth = 0
     for district in ordered_districts:
-        members = [city.resident(name) for name in district.members]
-        members = [person for person in members if person is not None]
+        members = [
+            person
+            for name in district.members
+            if (person := city.resident(name)) is not None
+        ]
         if not members:
             continue
         columns = 2

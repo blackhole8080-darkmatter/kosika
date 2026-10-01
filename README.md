@@ -1,4 +1,4 @@
-A dependency-free first vertical slice of the Kosika AI systems language. Synapse was the earlier working codename.
+A dependency-light first vertical slice of the Kosika AI systems language. Synapse was the earlier working codename.
 
 ## Status: prototype, not a released language
 
@@ -8,17 +8,25 @@ Kosika is an **early prototype**. It is published so the design can be
 reviewed and argued with, not because it is ready to depend on.
 
 - **What works today.** A real parser, type checker, and runtime; typed
-  records and workflows; declared models, agents, tools, and capabilities;
-  approval-gated execution; deterministic mindmaps; and an offline
-  trace/replay loop that re-runs a program without touching the network.
-- **What does not work yet.** Live model inference, a language server,
-  packaging/distribution, parallelism, and general error messages. Several
-  features in the tree are declared, checked, and rendered but never executed.
+  records, functions, bounded loops and recursion, modules, and workflows;
+  declared models, bounded agents, tools, and capabilities; approval-gated
+  execution; deterministic mindmaps; stable structured diagnostics across
+  local module graphs; a versioned machine-readable development interface; an
+  LSP/editor backend; installable `kosika` and `kosika-lsp` commands; a local
+  `.kos` workbench whose fixture-backed first-use path is browser-exercised;
+  offline validation/replay of recorded traces; and a pinned local
+  cross-language component contract.
+- **What remains incomplete.** A demonstrated live-model setup, published
+  releases and remote delivery, executable swarm semantics, component
+  sandboxing, expression-precise checker spans, and the full AI
+  author/check/repair/run loop. Several features in the tree are declared,
+  checked, rendered, or exposed as host experiments but are not integrated
+  into supported end-to-end behavior.
 - **[KOSIKA_VISION.md](KOSIKA_VISION.md) is a design target, not a
   description of this codebase.** It describes a much larger language —
-  tensors, memory bubbles, personality policies, an extension ecosystem,
-  multi-agent consensus. Almost none of that is implemented. It is included
-  to show intent and to argue about, not to claim delivery.
+  tensors, memory bubbles, personality policies, an extension ecosystem, and
+  multi-agent consensus. Most of those targets remain incomplete. The vision is
+  included to show intent and to argue about, not to claim delivery.
 - **The version is `0.1.0` and the API is unstable.** Interfaces will change.
 
 If you are evaluating Kosika for real use today, the honest answer is that it
@@ -26,17 +34,26 @@ is not there yet. If you are evaluating the *idea* — that an AI system's
 authority, evidence, and replayability should be enforced by the language
 rather than by convention — the rest of this file is the substance.
 
+See [KOSIKA.md](KOSIKA.md) for the versioned `kosika-language/0.1.0`
+grammar, typing, execution, capability, replay, and support-status contract.
+
+See [KOSIKA_PLAN.md](KOSIKA_PLAN.md) for the reconciled capability matrix,
+verification record, and prioritized K01–K12 backlog.
+
 ## Language and runtime expansion
 
-Kosika now includes local imports with explicit exports, typed workflow calls,
-nested replay, model budgets/telemetry, durable checkpoints and approval pauses,
-a bounded read-only DAG API, host-granted JSON/HTTP/SQLite adapters, development
-commands, editor snippets, and evaluation fixtures.
+Kosika includes local imports with explicit exports, typed workflow calls, pure
+functions, closures, higher-order values, bounded loops and recursion, nested
+replay, model budgets/telemetry, durable checkpoints and approval pauses, a
+bounded read-only DAG API, host-granted JSON/HTTP/SQLite adapters, development
+commands, an LSP/editor backend, and evaluation fixtures.
 
-See [DEVELOPMENT.md](DEVELOPMENT.md) for runnable examples, APIs, security boundaries,
-and current limitations. These are initial implementations: live inference on the
-installed local model timed out, parallelism is host-defined, and editor support
-does not yet include a language server.
+See [DEVELOPMENT.md](DEVELOPMENT.md) for runnable examples, APIs, security
+boundaries, and current limitations. Live provider bindings exist but a working
+model endpoint is environment-dependent and has not been established as a
+release guarantee. Parallel DAG execution is a host API rather than language
+swarm execution. Editor/LSP integration is implemented but not equivalent to a
+packaged, production-tested IDE experience.
 
 ### Hello World
 
@@ -102,8 +119,8 @@ fn make_greeting(person: Person) -> Greeting {
 Workflows invoke them with ordinary function-call syntax. Function arguments and
 results are checked statically, validated at runtime, and recorded in version 5
 traces for offline replay. Pure functions may call other pure functions in return
-expressions and workflow arguments; the checker rejects recursive or over-deep call
-graphs.
+expressions and workflow arguments. Unannotated recursion and over-deep call graphs
+are rejected; explicitly bounded recursion uses `recurse N`.
 
 Function locals use `let name = expression` or `let name: Type = expression`. The
 annotation is optional: when it is omitted the checker infers the type from the
@@ -348,16 +365,21 @@ The example uses `examples/research_input.json`,
 - Input and output JSON-schema validation at the live tool boundary
 - JSONL event trace
 - Exact replay from recorded tool output
-- Unit and integration tests using Python's standard library
+- Unit and integration tests using pytest
 
-## Run
+## Install and run
+
+From a source checkout, build and install Kosika into the active environment:
 
 ```text
-python -m kosika.cli check examples/test_host.kos
-python -m kosika.cli run examples/test_host.kos --trace run_trace.jsonl
-python -m kosika.cli replay run_trace.jsonl
-python -m unittest discover -s tests -v
+python -m pip install .
+kosika check examples/test_host.kos
+kosika run examples/test_host.kos --trace run_trace.jsonl
+kosika replay run_trace.jsonl
+python -m pytest -v
 ```
+
+`python -m kosika.cli` remains available for source-checkout development.
 
 ## Manifest generation and validation
 
@@ -752,6 +774,94 @@ interpreter. Set `kosika.skillDirectories` to one or more local skill roots.
 Set `kosika.modelName` to enable a local OpenAI-compatible model for the Explain
 command; leave it empty for deterministic static explanations.
 
+Diagnostics use the versioned `kosika.diagnostics/v1` JSON contract. Run
+`python -m kosika.cli check PATH --format json` for a module-aware report. Every
+diagnostic has a stable code and originating path; parser spans cover the
+offending token, while checker spans identify the unique owning declaration or
+step. If no truthful owner is available, JSON reports `range: null` and
+`data.anchor_missing: true` instead of inventing a source position. Imported
+file failures are published against the imported file URI by the LSP.
+
+### Machine-readable development interface
+
+`kosika.development/v1` exposes checked project inspection, K04 diagnostics,
+bounded execution, validated trace inspection, and deterministic maps without a
+second parser or runtime. Python hosts can call `inspect_project`,
+`check_project`, `run_project`, `inspect_trace`, and `map_project` from
+`kosika.development`.
+
+The CLI accepts one strict JSON request from a file or `-` for standard input:
+
+```json
+{
+  "schema": "kosika.development/v1",
+  "operation": "inspect",
+  "source": "examples/composed/main.kos",
+  "root": "examples/composed"
+}
+```
+
+```powershell
+python -m kosika.cli development request.json
+```
+
+Operations are `inspect`, `check`, `run`, `trace`, and `map`. Every response
+uses the same schema and includes `operation`, `ok`, `project`, `result`,
+`diagnostics`, and `error`. JSON requests cannot grant model or tool authority;
+an embedding host must inject explicit bindings into the Python API. Therefore
+CLI `run` requests support workflows requiring no external binding and otherwise
+fail closed.
+
+### Cross-language components
+
+`kosika.component/v1` binds one declared Kosika tool to one pinned local process
+artifact. The contract versions the tool input/output schemas, required access,
+effects and capabilities, declared errors, termination deadline, operation, and
+artifact SHA-256. The host must grant every required effect and capability
+explicitly before the process starts.
+
+The included JavaScript example uses the language-neutral `json-stdio/v1`
+request/response protocol:
+
+```text
+python -m kosika.cli component check examples/components/uppercase.component.json --json
+python -m kosika.cli run examples/component_uppercase.kos \
+  --input examples/component_uppercase_input.json \
+  --component-manifest examples/components/uppercase.component.json \
+  --component-runtime node \
+  --allow-component-effect cpu:compute \
+  --allow-component-capability text:transform
+```
+
+The host chooses the runtime executable; Kosika appends and re-hashes the pinned
+artifact before every call, invokes no shell, validates both JSON boundaries,
+accepts only declared component errors, bounds messages to 1 MiB, and kills the
+process at the contract deadline. This is a process contract, not an OS sandbox:
+the digest identifies bytes but does not prove their behavior.
+
+### Authoring evaluation
+
+`author-eval` measures the bounded `check -> propose -> repair -> run -> inspect`
+loop over the generated repair corpus. The report includes repair and first-pass
+rates, behavioral comparisons where execution is possible, authority violations,
+per-attempt model calls, prompt/completion tokens and provider latency, plus
+whole-case wall time.
+
+```text
+python -m kosika.cli author-eval --solver identity --limit 40 --no-behavior
+python -m kosika.cli author-eval --solver reference --limit 60 --no-behavior
+python -m kosika.cli author-eval --solver model --base-url URL --model NAME --limit 10 --format json
+```
+
+`identity` is the no-provider floor. `reference` is the stored-patch ceiling over
+repairs expressible as a unique search/replace block. A live model is never
+enabled implicitly. Evaluation works in temporary projects, never writes model
+proposals into the repository, and treats `agent.cannot` as denial rather than
+granted authority. See [DEVELOPMENT.md](DEVELOPMENT.md#authoring-evaluations)
+for the report and authority-audit contracts.
+
+
+
 ## Typed tool inputs
 
 Tools may declare an input record. The record becomes the model-facing JSON schema and is also used to
@@ -807,9 +917,10 @@ inspect(tags: ["disk", "local"], metadata: {name: "root-disk"})
 inspect(tags: status.tags, metadata: status.metadata)
 ```
 
-The current structured-expression slice supports arrays, nested record literals, field access, and
-integer indexing. It intentionally does not yet include arithmetic, boolean operators, loops, or
-conditional control flow. See `examples/structured_values.kos` for a complete example.
+Structured expressions support arrays, nested record literals, field access,
+integer indexing, arithmetic, Boolean operators, conditionals, pattern matching,
+assignment, and bounded loops. See `examples/structured_values.kos`,
+`examples/local_bindings.kos`, and `examples/recursion_match.kos`.
 
 ## Code mindmaps and bounded assistant
 
@@ -827,6 +938,52 @@ python -m kosika.cli mindmap examples/composed/main.kos --format text
 Imported modules retain their relative paths, content hashes, declarations, and direct import edges.
 The map is read-only and is generated only after static checking succeeds. It is an explanation of
 Kosika's checked structure, not an execution trace or a model-generated claim about intent.
+
+## Audience-adaptive maps
+
+`mindmap` answers "what does the checked program declare". `audience-map` answers it for a
+particular reader, and labels where every fact came from:
+
+```text
+python -m kosika.cli audience-map examples/research_agent.kos --audience reviewer --format text
+python -m kosika.cli audience-map examples/component_uppercase.kos --audience maintainer \
+    --component-contract examples/components/uppercase.component.json --format json
+python -m kosika.cli audience-map examples/composed/main.kos --audience operator \
+    --trace run.jsonl --format mermaid
+```
+
+Five audiences are available: `outsider`, `overview`, `operator`, `reviewer`, and `maintainer`.
+Each profile states the question it answers, so a new audience cannot silently inherit another
+audience's detail level.
+
+Four evidence classes are kept apart, even where several support the same entry:
+
+| Class | Source | What it does not mean |
+|---|---|---|
+| `checked` | the type-checked AST | nothing about runtime behavior |
+| `declared` | a versioned `kosika.component/v1` contract | the artifact's hash identifies bytes, not what they do |
+| `observed` | a completed trace whose recorded program hash matches this project | nothing about runs that were not recorded |
+| `human` | explicit `--purpose` notes | not independently verified |
+
+There is deliberately no `inferred` class. A fact that cannot be sourced from checked code, a
+contract, a matching trace, or an explicit note does not appear, and `coverage` reports how many
+checked entries the audience did not show so a narrow view cannot read as a smaller program.
+
+Two consequences are worth stating plainly. Executing a component does not make its contract
+`observed` — declared authority is a claim by the component, not a record of it being used. And a
+trace recorded against a different program contributes nothing at all, recorded as
+`trace-program-hash-mismatch`, because attaching one program's behavior to another is exactly the
+error this format exists to prevent. The command verifies evidence separation and content digest
+before printing, and exits non-zero rather than emit a map that fails its own checks.
+
+Purpose notes are the one input that is a human claim:
+
+```text
+python -m kosika.cli audience-map examples/hello_world.kos --audience outsider \
+    --purpose "Greets the caller on the public endpoint." --format text
+```
+
+See [KOSIKA_PLAN.md](KOSIKA_PLAN.md) for the K09 completion record.
 
 Use `explain` when you want a focused explanation rather than the whole map. Select one or more
 workflows or records, attach diagnostics, and optionally validate a completed JSONL trace offline:

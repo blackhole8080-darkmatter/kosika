@@ -57,18 +57,20 @@ from .workbench_support import LiveConfig, describe_inputs, diagnostic
 
 MAX_BODY = 1048576
 ASSETS = Path(__file__).with_name("workbench_assets")
+SOURCE_EXTENSION = ".kos"
 
 
 def _files(payload: dict[str, Any], directory: Path) -> Path:
     files = payload.get("files")
     if not isinstance(files, dict) or not 1 <= len(files) <= 16:
-        raise ValueError("A workspace needs 1–16 .kos files.")
+        raise ValueError(f"A workspace needs 1–16 {SOURCE_EXTENSION} files.")
     total = 0
     folded = set()
+    filename_pattern = rf"[A-Za-z0-9_/-]+{re.escape(SOURCE_EXTENSION)}"
     for name, source in files.items():
-        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_/-]+\.kos", name):
+        if not isinstance(name, str) or not re.fullmatch(filename_pattern, name):
             raise ValueError(
-                "Use relative .kos filenames with letters, numbers, dashes, or underscores."
+                f"Use relative {SOURCE_EXTENSION} filenames with letters, numbers, dashes, or underscores."
             )
         parts = PurePosixPath(name).parts
         if (
@@ -598,6 +600,7 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                 200,
                 {
                     "token": self.server.token,
+                    "source_extension": SOURCE_EXTENSION,
                     "samples": SAMPLES + ([DEMO_SAMPLE] if self.server.mcp else []),
                     "mcp": self.server.mcp.public() if self.server.mcp else None,
                     "mode": "fixture",

@@ -65,7 +65,9 @@ def test_svg_draws_one_wall_per_prohibited_agent() -> None:
     # The full list stays machine-readable on the node even though the drawn
     # caption is shortened to fit a 160px box.
     assert 'data-prohibitions="arbitrary_shell, write_files"' in svg
-    caption = re.search(r"walls: ([^<]*)</text>", svg).group(1)
+    match = re.search(r"walls: ([^<]*)</text>", svg)
+    assert match is not None
+    caption = match.group(1)
     assert caption.startswith("arbitrary_shell, write")
     assert caption.endswith("…")
     assert len(caption) == PROHIBITION_LABEL

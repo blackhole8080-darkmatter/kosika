@@ -60,7 +60,7 @@ def evaluate(
                 directory / f"{case.name}.jsonl",
                 inputs=case.inputs,
                 model_bindings=providers(case),
-                mcp_commands=mcp_commands,
+                mcp_commands=dict(mcp_commands) if mcp_commands is not None else None,
                 manifest=manifest,
             )
             failures = []

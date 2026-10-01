@@ -890,26 +890,36 @@ Kosika should be developed in stages.
 
 ## Current reality
 
-The current implementation is a Python-first experimental foundation. It already contains important first slices:
+The current implementation is a Python-hosted experimental foundation, not a
+Python-only product definition. It already contains important first slices:
 
-- Typed records and workflows.
-- Model declarations and provider bindings.
-- Bounded agents.
-- MCP stdio clients and pinned manifests.
-- Capability and approval checks.
-- Durable sessions.
-- Model budgets and telemetry.
-- Offline traces and replay.
-- Deterministic mindmaps.
-- Focused explanations.
-- Extension manifest validation.
-- Extension-aware mindmaps and explanations.
-- Assistant context handling.
-- Workbench visualization.
-- Normalized runtime events.
-- SSE-oriented live telemetry prototypes.
+- Typed records, arrays, expressions, modules, functions, closures, bounded loops,
+  bounded recursion, and workflows.
+- Model declarations, provider bindings, bounded agents, host tools, and MCP stdio
+  clients with pinned manifests.
+- Capability checks, exact-action approvals, durable sessions, resource budgets,
+  telemetry, and conservative uncertain-outcome handling.
+- Validated offline traces and replay.
+- A host-defined read-only parallel DAG API.
+- Deterministic checked-source mindmaps, focused explanations, vector designs, and
+  execution timeline projections.
+- Python, JavaScript, TypeScript, and Rust structural source analysis. This is not
+  execution or complete semantic understanding of those languages.
+- An editor feature API, an LSP implementation, and a VS Code development extension.
+- A local browser workbench with an exercised `.kos` open/check/run/map/replay
+  path, plus normalized events and SSE-oriented telemetry prototypes.
+- Bounded evaluations and a grounded read-only assistant.
+- Experimental intelligence, cloud, optimizer, and meta-agent host utilities that
+  are not all connected to the authoritative language runtime.
 
-The current implementation does not yet provide the complete future language described here. The vision is deliberately broader than the current prototype. New features should be introduced through small, typed, tested, replayable slices rather than a large uncontrolled rewrite.
+Executable swarm scheduling/consensus, typed cognitive state, a general
+cross-language component contract, autonomous AI author/check/repair/run,
+production distribution, and remote cloud execution are not complete.
+
+The vision is deliberately broader than the current prototype. New features
+should be introduced through small, typed, tested, replayable slices rather than
+a large uncontrolled rewrite. `KOSIKA_PLAN.md` is the reconciled implementation
+status and priority baseline.
 
 ## Success criteria
 

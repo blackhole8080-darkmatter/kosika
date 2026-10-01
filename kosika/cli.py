@@ -16,6 +16,12 @@ from .ast import ToolDecl
 from .checker import check
 from .city import CITY_NAME, CityError, build_city
 from .cityscape import render_cityscape_svg
+from .components import (
+    ComponentContractError,
+    bind_component,
+    load_component_contract,
+    verify_component_artifact,
+)
 from .controls import ControlledProvider, ExecutionError, ModelLimits
 from .design import (
     DESIGN_THEMES,
@@ -24,6 +30,7 @@ from .design import (
     render_design,
     write_design_manifest,
 )
+from .development import check_project, execute_development_json
 from .durable import (
     AgentExecutionSession,
     ApprovalPending,
@@ -117,25 +124,18 @@ from .unified_mindmap import to_mermaid as render_unified_mermaid
 from .unified_mindmap import to_text as render_unified_text
 from .world import WorldError, load_world_manifest
 
-COMMANDS: tuple[str, ...] = (
-    "project",
-    "check",
-    "analyze",
-    "sourcemap",
-    "mindmap",
-    "unified",
-    "explain",
-    "assistant",
-    "skills",
-    "run",
-    "agent",
-    "replay",
-    "journal",
-    "network",
-    "design",
-    "manifest",
-    "extension",
-)
+
+def command_metavar(subparsers: Any) -> str:
+    """Build the top-level usage list from the parsers that are registered.
+
+    The list used to be a hand-maintained tuple, which silently drifted: every
+    new command had to be remembered in two places, and the missing entries were
+    invisible in `--help` because argparse still printed their help lines. The
+    metavar is therefore derived from the subparsers themselves, so registering
+    a parser is the single act that makes a command discoverable.
+    """
+
+    return "{" + ",".join(subparsers.choices) + "}"
 
 
 def analyze_source_file(path: Path) -> dict[str, Any]:
@@ -541,6 +541,209 @@ def _workflow_model_bindings(args: argparse.Namespace) -> dict[str, ModelProvide
     return {}
 
 
+def _author_proposal_provider(args: argparse.Namespace) -> ModelProvider | None:
+    """Build the provider that proposes patches.
+
+    The proposal model and the program's own run-time models are separate
+    authorities, so they have separate flags: wiring a live proposal endpoint
+    must not silently become authority to execute the declared models. No
+    proposal authority at all is allowed, because a project that already checks
+    needs no model; if a diagnostic then needs one, the loop reports
+    `authoring/no-provider` rather than claiming a repair.
+    """
+
+    live = (args.proposal_base_url, args.proposal_model)
+    if args.proposal_fixture is not None:
+        if any(live):
+            raise ValueError(
+                "Use either --proposal-fixture or a live proposal model, not both"
+            )
+        payload = strict_json(args.proposal_fixture.read_text(encoding="utf-8"))
+        responses: Any = payload
+        if isinstance(payload, dict):
+            responses = payload.get("responses")
+        if (
+            not isinstance(responses, list)
+            or not responses
+            or any(not isinstance(item, str) or not item.strip() for item in responses)
+        ):
+            raise ValueError(
+                "Authoring fixture must be a nonempty JSON list of response strings"
+            )
+        return ScriptedModelProvider(
+            [ModelResponse(content=response) for response in responses]
+        )
+    if any(live) and not all(live):
+        raise ValueError(
+            "A live proposal model requires --proposal-base-url and --proposal-model"
+        )
+    if not all(live):
+        return None
+    return OpenAICompatibleProvider(
+        args.proposal_base_url,
+        args.proposal_model,
+        api_key=os.environ.get("KOSIKA_MODEL_API_KEY"),
+    )
+
+
+def _run_author_command(args: argparse.Namespace) -> int:
+    from .authoring import AuthoringLimits, author
+    from .repair import RepairStrategy
+
+    try:
+        provider = _author_proposal_provider(args)
+        inputs: Any = {}
+        if args.input is not None:
+            try:
+                inputs = strict_json(args.input)
+            except ValueError as exc:
+                raise ValueError(f"--input must be valid JSON: {exc}") from exc
+        if not isinstance(inputs, dict):
+            raise ValueError("--input must be a JSON object of workflow inputs")
+        execute = not args.no_run
+        response = author(
+            args.source,
+            intent=args.intent,
+            provider=provider,
+            root=args.root,
+            limits=AuthoringLimits(
+                max_attempts=args.attempts,
+                max_output_tokens=args.max_tokens,
+                strategy=RepairStrategy(args.strategy),
+            ),
+            model=args.proposal_model,
+            workflow=args.workflow,
+            inputs=inputs,
+            trace_path=args.trace,
+            execute=execute,
+            model_bindings=_model_fixture_bindings(args.model_fixture)
+            if execute and args.model_fixture is not None
+            else None,
+        )
+    except (OSError, TypeError, ValueError) as exc:
+        print(f"Authoring failed safely: {exc}", file=sys.stderr)
+        return 2
+
+    if args.format == "json":
+        print(json.dumps(response, indent=2, sort_keys=True))
+        return 0 if response["ok"] else 1
+
+    print(
+        f"status      : {response['status']}\n"
+        f"attempts    : {len(response['attempts'])} of {response['limits']['max_attempts']}\n"
+        f"model calls : {response['usage']['model_calls']} "
+        f"(prompt {response['usage']['prompt_tokens']}, "
+        f"completion {response['usage']['completion_tokens']})"
+    )
+    for attempt in response["attempts"]:
+        print(
+            f"  attempt {attempt['index'] + 1}: {attempt['path'] or '-'} "
+            f"[{attempt['code'] or '-'}] applied={attempt['applied']}"
+            + (f" error={attempt['error']}" if attempt["error"] else "")
+        )
+    for path in response["proposals"]:
+        # The proposal is printed, never written: applying it stays a host
+        # decision, so the CLI cannot turn model output into a mutation.
+        print(f"proposed    : {path} (not written to disk)")
+    if response["execution"] is not None:
+        observed = response["execution"]["result"].get("value")
+        if response["execution"]["ok"]:
+            print(f"run         : {json.dumps(observed, sort_keys=True)}")
+        else:
+            print(f"run failed  : {response['execution']['error']['message']}")
+    if response["error"] is not None:
+        print(f"error       : {response['error']['message']}", file=sys.stderr)
+    return 0 if response["ok"] else 1
+
+
+def _run_authoring_evaluation(args: argparse.Namespace) -> int:
+    """Measure the authoring loop over the repair corpus."""
+
+    from .authoring_evaluation import (
+        EvaluationLimits,
+        evaluate_authoring,
+        identity_provider_factory,
+        live_provider_factory,
+        reference_provider_factory,
+        to_text,
+        validate,
+    )
+    from .corpus import build_corpus
+    from .repair import RepairStrategy
+
+    try:
+        cases = build_corpus(Path(__file__).resolve().parent.parent)
+        limits = EvaluationLimits(
+            max_attempts=args.attempts,
+            max_output_tokens=args.max_tokens,
+            strategy=RepairStrategy(args.strategy),
+            limit=args.limit,
+            measure_behavior=not args.no_behavior,
+        ).validated()
+    except ValueError as exc:
+        print(f"Authoring evaluation setup failed: {exc}", file=sys.stderr)
+        return 2
+
+    think = {"auto": None, "on": True, "off": False}[args.think]
+    if args.solver == "model":
+        if not args.model or not args.base_url:
+            print("model evaluator requires --model and --base-url", file=sys.stderr)
+            return 2
+        factory = live_provider_factory(
+            base_url=args.base_url,
+            model=args.model,
+            api_key=args.api_key or os.environ.get("KOSIKA_API_KEY"),
+            timeout=float(args.model_timeout),
+            think=think,
+        )
+        name = f"model:{args.model}"
+    elif args.solver == "identity":
+        factory = identity_provider_factory()
+        name = "identity"
+    else:
+        factory = reference_provider_factory(args.attempts)
+        name = "reference"
+
+    seen: list = []
+
+    def progress(result) -> None:
+        mark = "ok  " if result.solved else "FAIL"
+        detail = (
+            "" if result.solved else f"  {', '.join(result.remaining_codes) or '-'}"
+        )
+        print(
+            f"[{len(seen) + 1}/{limits.limit or len(cases)}] {mark} {result.code or '-'}"
+            f" {result.attempts} attempt(s) {result.seconds:.2f}s{detail}",
+            file=sys.stderr,
+            flush=True,
+        )
+        seen.append(result)
+
+    evaluation = evaluate_authoring(
+        cases,
+        factory,
+        name=name,
+        limits=limits,
+        on_result=progress,
+    )
+    verdict = validate(evaluation)
+
+    if args.format == "json":
+        payload = evaluation.to_dict()
+        payload["validation"] = verdict
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0 if verdict["ok"] else 1
+
+    print(to_text(evaluation, top=args.slowest))
+    print(
+        f"expressible  : {verdict['expressible_cases']} case(s) "
+        f"({verdict['unexpressible_cases']} not quotable as a patch)"
+    )
+    for problem in verdict["problems"]:
+        print(f"PROBLEM {problem}", file=sys.stderr)
+    return 0 if verdict["ok"] else 1
+
+
 def _timeline_event(
     sequence: int,
     event_type: str,
@@ -621,13 +824,116 @@ def _publish_run_events(
     return normalized
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(prog="kosika")
-    subparsers = parser.add_subparsers(
-        dest="command",
-        required=True,
-        metavar="{" + ",".join(COMMANDS) + "}",
+def _run_model_benchmark(args: argparse.Namespace, cases: list) -> int:
+    """Score a real model through the same harness as the baselines."""
+
+    from .benchmark import score
+    from .model import OpenAICompatibleProvider
+    from .repair import ModelRepairSolver, RepairStrategy
+
+    if not args.model or not args.base_url:  # type: ignore[attr-defined]
+        print(
+            "model solver requires --model and --base-url",
+            file=sys.stderr,
+        )
+        return 2
+    if args.attempts < 1:  # type: ignore[attr-defined]
+        print("--attempts must be at least 1", file=sys.stderr)
+        return 2
+    repairable = [case for case in cases if case.is_repairable]
+    if args.limit is not None:  # type: ignore[attr-defined]
+        repairable = repairable[: max(args.limit, 0)]
+    if not repairable:
+        print("no repair cases selected", file=sys.stderr)
+        return 2
+
+    think = {"auto": None, "on": True, "off": False}[args.think]  # type: ignore[attr-defined]
+    provider = OpenAICompatibleProvider(
+        base_url=args.base_url,  # type: ignore[attr-defined]
+        model=args.model,  # type: ignore[attr-defined]
+        api_key=args.api_key or os.environ.get("KOSIKA_API_KEY"),  # type: ignore[attr-defined]
+        think=think,
+        # CPU inference on a 7B model takes minutes per case, and the first call
+        # also pays the cost of loading the model. A short timeout reports a
+        # spurious failure for a run that is merely slow.
+        timeout=float(args.model_timeout),  # type: ignore[attr-defined]
     )
+    solver = ModelRepairSolver(
+        provider,
+        strategy=RepairStrategy(args.strategy),  # type: ignore[attr-defined]
+        max_attempts=args.attempts,  # type: ignore[attr-defined]
+        model=args.model,  # type: ignore[attr-defined]
+        max_output_tokens=args.max_tokens,  # type: ignore[attr-defined]
+    )
+
+    def progress(result) -> None:
+        mark = "ok  " if result.solved else "FAIL"
+        detail = "" if result.solved else f"  {', '.join(result.raised) or 'no patch'}"
+        print(
+            f"[{len(seen) + 1}/{len(repairable)}] {mark} {result.code or '-'}{detail}",
+            file=sys.stderr,
+            flush=True,
+        )
+        seen.append(result)
+
+    seen: list = []
+    report = score(
+        repairable,
+        solver,
+        name=f"model:{args.model}:{args.strategy}",  # type: ignore[attr-defined]
+        on_result=progress,
+    )
+
+    outcomes = solver.outcomes
+    model_calls = sum(outcome.model_calls for outcome in outcomes)
+    prompt_tokens = sum(outcome.usage_prompt_tokens for outcome in outcomes)
+    completion_tokens = sum(outcome.usage_completion_tokens for outcome in outcomes)
+    applied = sum(1 for outcome in outcomes if any(a.applied for a in outcome.attempts))
+    payload = report.to_dict()
+    payload["model_calls"] = model_calls
+    payload["cases_with_an_applied_patch"] = applied
+    payload["prompt_tokens"] = prompt_tokens
+    payload["completion_tokens"] = completion_tokens
+
+    if args.format == "json":  # type: ignore[attr-defined]
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+    print(
+        f"solver      : {payload['solver']}\n"
+        f"score       : {report.score:.3f}  {report.solved}/{report.total}\n"
+        f"model calls : {model_calls} (limit {args.attempts}/case)\n"  # type: ignore[attr-defined]
+        f"produced a patch : {applied}/{report.total}\n"
+        f"tokens      : prompt {prompt_tokens}, completion {completion_tokens}"
+    )
+    if args.per_code:  # type: ignore[attr-defined]
+        for code, value in report.by_code().items():
+            print(
+                f"    {code:36} {value['solved']:>3}/{value['total']:<3} {value['rate']:.2f}"
+            )
+    if getattr(args, "show_responses", False):
+        print("\n--- model responses ---")
+        for outcome in outcomes[: args.limit or len(outcomes)]:  # type: ignore[attr-defined]
+            print(f"\n{outcome.case_id}  [{outcome.code}]  solved={outcome.solved}")
+            for attempt in outcome.attempts:
+                print(
+                    f"  attempt {attempt.index + 1}: applied={attempt.applied}"
+                    f" error={attempt.error}"
+                )
+                if attempt.response:
+                    for line in attempt.response.splitlines()[:12]:
+                        print(f"    | {line}")
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Build the top-level parser with every command registered.
+
+    Separated from `main` so tooling and tests can inspect the registered
+    commands without dispatching one.
+    """
+
+    parser = argparse.ArgumentParser(prog="kosika")
+    subparsers = parser.add_subparsers(dest="command", required=True)
 
     project_parser = subparsers.add_parser(
         "project",
@@ -641,8 +947,286 @@ def main() -> int:
         "--output", type=Path, help="Optional JSON report path."
     )
 
+    development_parser = subparsers.add_parser(
+        "development",
+        help="Execute one kosika.development/v1 JSON request.",
+    )
+    development_parser.add_argument(
+        "request",
+        help="JSON request file, or '-' to read the request from standard input.",
+    )
+
     check_parser = subparsers.add_parser("check")
     check_parser.add_argument("source", type=Path)
+    check_parser.add_argument(
+        "--format",
+        choices=("text", "json"),
+        default="text",
+        help="Output format. JSON emits machine-readable diagnostics.",
+    )
+
+    benchmark_parser = subparsers.add_parser(
+        "benchmark",
+        help="Score a solver against the repair corpus.",
+    )
+    benchmark_parser.add_argument(
+        "--format", choices=("text", "json"), default="text", help="Output format."
+    )
+    benchmark_parser.add_argument(
+        "--validate",
+        action="store_true",
+        help="Check that the harness discriminates, then exit non-zero if it does not.",
+    )
+    benchmark_parser.add_argument(
+        "--per-code",
+        action="store_true",
+        help="Include a per-diagnostic-code accuracy breakdown.",
+    )
+    benchmark_parser.add_argument(
+        "--solver",
+        choices=("identity", "oracle", "model"),
+        default="identity",
+        help="Which solver to score. Defaults to the identity floor.",
+    )
+    benchmark_parser.add_argument(
+        "--model",
+        help="Model name for the model solver, and the server's model id.",
+    )
+    benchmark_parser.add_argument(
+        "--base-url",
+        help="OpenAI-compatible base URL for the model solver.",
+    )
+    benchmark_parser.add_argument(
+        "--api-key",
+        help="API key for the model solver. Falls back to KOSIKA_API_KEY.",
+    )
+    benchmark_parser.add_argument(
+        "--strategy",
+        choices=("contextual", "full"),
+        default="contextual",
+        help="What the model solver is shown.",
+    )
+    benchmark_parser.add_argument(
+        "--attempts",
+        type=int,
+        default=2,
+        help="Repair attempts per case for the model solver.",
+    )
+    benchmark_parser.add_argument(
+        "--limit",
+        type=int,
+        help="Score only the first N repair cases.",
+    )
+    benchmark_parser.add_argument(
+        "--show-responses",
+        action="store_true",
+        help="Print the model response for each case, for debugging a low score.",
+    )
+    benchmark_parser.add_argument(
+        "--model-timeout",
+        type=float,
+        default=600.0,
+        help="Per-call model timeout in seconds. CPU inference is slow.",
+    )
+    benchmark_parser.add_argument(
+        "--max-tokens",
+        type=int,
+        default=2048,
+        help="Output token budget per model call. Too small truncates the answer.",
+    )
+    benchmark_parser.add_argument(
+        "--think",
+        choices=("auto", "on", "off"),
+        default="auto",
+        help=(
+            "Reasoning mode for reasoning models. 'off' is usually required "
+            "when the answer must be a machine-readable patch."
+        ),
+    )
+
+    corpus_parser = subparsers.add_parser(
+        "corpus",
+        help="Build a repair corpus from the repository's Kosika examples.",
+    )
+    corpus_parser.add_argument(
+        "--output", type=Path, help="Write the corpus as JSONL to this path."
+    )
+    corpus_parser.add_argument(
+        "--summary",
+        action="store_true",
+        help="Print coverage and integrity summary instead of the corpus.",
+    )
+    corpus_parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Exit non-zero when any case contradicts its mutation's intent.",
+    )
+    corpus_parser.add_argument(
+        "--format",
+        choices=("text", "json"),
+        default="text",
+        help="Summary output format. Ignored when writing JSONL.",
+    )
+
+    author_parser = subparsers.add_parser(
+        "author",
+        help=("Run the bounded authoring loop: check, propose, repair, run, inspect."),
+    )
+    author_parser.add_argument("source", type=Path, help="Entry .kos file.")
+    author_parser.add_argument(
+        "--intent",
+        required=True,
+        help="What the host wants the loop to achieve. Recorded, never executed.",
+    )
+    author_parser.add_argument(
+        "--root",
+        type=Path,
+        help="Project root. Defaults to the entry file's directory.",
+    )
+    author_parser.add_argument(
+        "--proposal-fixture",
+        type=Path,
+        help="JSON list of canned patch responses, for a hermetic run.",
+    )
+    author_parser.add_argument(
+        "--proposal-base-url",
+        help="OpenAI-compatible base URL for the proposing model.",
+    )
+    author_parser.add_argument(
+        "--proposal-model", help="Model name used to propose patches."
+    )
+    author_parser.add_argument(
+        "--attempts",
+        type=int,
+        default=2,
+        help="Maximum proposing attempts. Each attempt is at most one model call.",
+    )
+    author_parser.add_argument(
+        "--max-tokens",
+        type=int,
+        default=2048,
+        help="Output token budget per proposal call.",
+    )
+    author_parser.add_argument(
+        "--strategy",
+        choices=("contextual", "full"),
+        default="contextual",
+        help="What the proposing model is shown.",
+    )
+    author_parser.add_argument(
+        "--workflow", default="main", help="Workflow executed after a clean check."
+    )
+    author_parser.add_argument(
+        "--input", help="JSON object of workflow inputs for the run."
+    )
+    author_parser.add_argument(
+        "--trace", type=Path, help="Write the run trace here and inspect it."
+    )
+    author_parser.add_argument(
+        "--model-fixture",
+        type=Path,
+        help="JSON map of declared model name to outputs, for the run step.",
+    )
+    author_parser.add_argument(
+        "--no-run",
+        action="store_true",
+        help="Check and propose only. Nothing is executed.",
+    )
+    author_parser.add_argument(
+        "--format",
+        choices=("text", "json"),
+        default="text",
+        help="Loop report format.",
+    )
+
+    author_eval_parser = subparsers.add_parser(
+        "author-eval",
+        help="Measure the bounded authoring loop over the repair corpus.",
+    )
+    author_eval_parser.add_argument(
+        "--solver",
+        choices=("reference", "identity", "model"),
+        default="reference",
+        help=(
+            "reference replays the corpus's own repair (the ceiling), identity "
+            "grants no proposing model (the floor), model scores a live model."
+        ),
+    )
+    author_eval_parser.add_argument(
+        "--attempts",
+        type=int,
+        default=2,
+        help="Authoring attempts per case. Each attempt is at most one model call.",
+    )
+    author_eval_parser.add_argument(
+        "--limit",
+        type=int,
+        help="Evaluate only the first N corpus cases.",
+    )
+    author_eval_parser.add_argument(
+        "--max-tokens",
+        type=int,
+        default=2048,
+        help="Output token budget per proposal call.",
+    )
+    author_eval_parser.add_argument(
+        "--strategy",
+        choices=("contextual", "full"),
+        default="contextual",
+        help="What the proposing model is shown.",
+    )
+    author_eval_parser.add_argument(
+        "--base-url", help="OpenAI-compatible base URL for the model evaluator."
+    )
+    author_eval_parser.add_argument(
+        "--model", help="Model name for the model evaluator."
+    )
+    author_eval_parser.add_argument(
+        "--api-key",
+        help="API key for the model evaluator. Defaults to KOSIKA_API_KEY.",
+    )
+    author_eval_parser.add_argument(
+        "--model-timeout",
+        type=float,
+        default=600.0,
+        help="Per-call model timeout in seconds.",
+    )
+    author_eval_parser.add_argument(
+        "--think",
+        choices=("auto", "on", "off"),
+        default="auto",
+        help="Reasoning mode. 'off' is usually required for patch output.",
+    )
+    author_eval_parser.add_argument(
+        "--no-behavior",
+        action="store_true",
+        help="Skip running programs to compare repaired behavior.",
+    )
+    author_eval_parser.add_argument(
+        "--slowest",
+        type=int,
+        default=0,
+        help="List the N slowest cases after the summary.",
+    )
+    author_eval_parser.add_argument(
+        "--format",
+        choices=("text", "json"),
+        default="text",
+        help="Report format.",
+    )
+
+    coverage_parser = subparsers.add_parser(
+        "diagnostics-coverage",
+        help="Report whether every error raise site is claimed by a diagnostic code.",
+    )
+    coverage_parser.add_argument(
+        "--format", choices=("text", "json"), default="text", help="Output format."
+    )
+    coverage_parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Exit non-zero when any raise site is unclassified or any code is dead.",
+    )
 
     editor_parser = subparsers.add_parser(
         "editor",
@@ -710,6 +1294,33 @@ def main() -> int:
         type=Path,
         help="Write the representation to a file instead of stdout.",
     )
+
+    audience_map_parser = subparsers.add_parser(
+        "audience-map",
+        help="Build an evidence-labelled map for different readers.",
+    )
+    audience_map_parser.add_argument("source", type=Path)
+    audience_map_parser.add_argument(
+        "--audience",
+        choices=("outsider", "overview", "operator", "reviewer", "maintainer"),
+        default="outsider",
+    )
+    audience_map_parser.add_argument(
+        "--purpose",
+        action="append",
+        default=[],
+        help="Human-authored purpose context, labelled unverified.",
+    )
+    audience_map_parser.add_argument("--trace", type=Path)
+    audience_map_parser.add_argument(
+        "--component-contract", action="append", type=Path, default=[]
+    )
+    audience_map_parser.add_argument("--root", type=Path)
+    audience_map_parser.add_argument(
+        "--format", choices=("json", "mermaid", "text"), default="text"
+    )
+    audience_map_parser.add_argument("--output", type=Path)
+
     unified_parser = subparsers.add_parser(
         "unified",
         help="Combine a checked Kosika mindmap with an optional external source map.",
@@ -879,6 +1490,27 @@ def main() -> int:
         help="Pinned JSON manifest required for live MCP execution.",
     )
     run_parser.add_argument("--mcp-source", default="local_stdio")
+    run_parser.add_argument(
+        "--component-manifest",
+        type=Path,
+        help="Pinned kosika.component/v1 contract for one declared tool.",
+    )
+    run_parser.add_argument(
+        "--component-runtime",
+        help="Optional host-authorized interpreter prepended to the pinned artifact.",
+    )
+    run_parser.add_argument(
+        "--allow-component-effect",
+        action="append",
+        default=[],
+        help="Grant one namespaced effect required by the component contract.",
+    )
+    run_parser.add_argument(
+        "--allow-component-capability",
+        action="append",
+        default=[],
+        help="Grant one namespaced capability required by the component contract.",
+    )
     run_parser.add_argument(
         "--input",
         type=Path,
@@ -1217,6 +1849,24 @@ def main() -> int:
         help="Print the structured diff as JSON instead of a human-readable summary.",
     )
 
+    component_parser = subparsers.add_parser(
+        "component",
+        help="Validate a pinned cross-language component contract.",
+    )
+    component_subparsers = component_parser.add_subparsers(
+        dest="component_command", required=True
+    )
+    component_check_parser = component_subparsers.add_parser(
+        "check",
+        help="Validate a component contract and its pinned implementation artifact.",
+    )
+    component_check_parser.add_argument("manifest", type=Path)
+    component_check_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Print the validated component identity as JSON.",
+    )
+
     extension_parser = subparsers.add_parser(
         "extension",
         help="Validate a Kosika extension manifest.",
@@ -1235,7 +1885,87 @@ def main() -> int:
         help="Print the structured validation summary as JSON.",
     )
 
+    # Every subparser is registered by this point, so the usage list can be
+    # derived from them rather than maintained by hand.
+    subparsers.metavar = command_metavar(subparsers)
+    return parser
+
+
+def main() -> int:
+    parser = build_parser()
     args = parser.parse_args()
+    if args.command == "author":
+        return _run_author_command(args)
+    if args.command == "author-eval":
+        return _run_authoring_evaluation(args)
+    if args.command == "development":
+        try:
+            request_source = (
+                sys.stdin.read()
+                if args.request == "-"
+                else Path(args.request).read_text(encoding="utf-8")
+            )
+            response = execute_development_json(request_source)
+        except OSError as exc:
+            print(f"Development request failed: {exc}", file=sys.stderr)
+            return 2
+        print(json.dumps(response, indent=2, sort_keys=True))
+        return 0 if response["ok"] else 2
+
+    if args.command == "audience-map":
+        from .audience_maps import (
+            AudienceMapError,
+            build_audience_map,
+        )
+        from .audience_maps import (
+            to_mermaid as audience_map_to_mermaid,
+        )
+        from .audience_maps import (
+            to_text as audience_map_to_text,
+        )
+        from .audience_maps import (
+            verify as verify_audience_map,
+        )
+
+        try:
+            contracts = tuple(
+                load_component_contract(path) for path in args.component_contract
+            )
+            audience_map = build_audience_map(
+                args.source,
+                audience=args.audience,
+                root=args.root,
+                trace_path=args.trace,
+                contracts=contracts,
+                purpose=args.purpose,
+            )
+            verification = verify_audience_map(audience_map)
+            if not verification["ok"]:
+                raise AudienceMapError(
+                    "Audience map integrity check failed: "
+                    + "; ".join(verification["problems"])
+                )
+            rendered = {
+                "json": lambda item: (
+                    json.dumps(
+                        item.to_dict(), indent=2, sort_keys=True, ensure_ascii=False
+                    )
+                    + "\n"
+                ),
+                "mermaid": audience_map_to_mermaid,
+                "text": audience_map_to_text,
+            }[args.format](audience_map)
+            if args.output is not None:
+                args.output.parent.mkdir(parents=True, exist_ok=True)
+                args.output.write_text(rendered, encoding="utf-8")
+                print(f"Audience map written: {args.output}")
+            else:
+                print(rendered, end="")
+        except (AudienceMapError, OSError, ValueError) as exc:
+            print(f"Audience map failed safely: {exc}", file=sys.stderr)
+            return 2
+        return 0
+
     if args.command == "project":
         try:
             report = analyze_python_project(args.root)
@@ -1420,13 +2150,13 @@ def main() -> int:
             environment = world.environment if world is not None else args.environment
             labels = world.labels_by_domain if world is not None else None
             if args.format == "json":
-                payload = city.to_dict()
+                city_output = json.dumps(city.to_dict(), indent=2, sort_keys=True)
             elif args.format == "svg":
-                payload = render_cityscape_svg(city, theme=args.theme)
+                city_output = render_cityscape_svg(city, theme=args.theme)
             elif args.format == "live":
                 from .city_live import render_city_live
 
-                payload = render_city_live(
+                city_output = render_city_live(
                     city,
                     environment=environment,
                     world_name=world.name if world is not None else None,
@@ -1439,13 +2169,13 @@ def main() -> int:
                     render_style=world.render_style if world is not None else "city",
                 )
             else:
-                payload = city.to_text()
+                city_output = city.to_text()
             if args.output is not None:
                 args.output.parent.mkdir(parents=True, exist_ok=True)
-                args.output.write_text(payload, encoding="utf-8")
+                args.output.write_text(city_output, encoding="utf-8")
                 print(f"City written: {args.output}")
             else:
-                print(payload)
+                print(city_output)
             return 0
         except (OSError, CityError, WorldError) as exc:
             print(f"City failed safely: {exc}", file=sys.stderr)
@@ -1495,6 +2225,55 @@ def main() -> int:
             return 2
     if args.command == "agent":
         return _run_agent_command(args, parser)
+    if args.command == "component":
+        try:
+            component_contract = load_component_contract(args.manifest)
+            artifact = verify_component_artifact(
+                component_contract, args.manifest.parent
+            )
+        except (ComponentContractError, OSError) as exc:
+            print(f"Component check failed: {exc}", file=sys.stderr)
+            return 2
+        component_summary = {
+            "valid": True,
+            "schema": component_contract.schema,
+            "id": component_contract.component_id,
+            "version": component_contract.version,
+            "tool": component_contract.tool_name,
+            "operation": component_contract.operation,
+            "artifact": artifact.name,
+            "identity": component_contract.identity,
+            "access": component_contract.access,
+            "effects": list(component_contract.effects),
+            "capabilities": list(component_contract.capabilities),
+            "errors": [
+                {"code": error.code, "retryable": error.retryable}
+                for error in component_contract.errors
+            ],
+            "cancellation": {
+                "mode": component_contract.cancellation.mode,
+                "timeoutMs": component_contract.cancellation.timeout_ms,
+            },
+        }
+        if args.json:
+            print(json.dumps(component_summary, indent=2, sort_keys=True))
+        else:
+            print(f"Valid component contract: {args.manifest}")
+            print(
+                f"Component: {component_contract.component_id} "
+                f"{component_contract.version}"
+            )
+            print(
+                f"Tool: {component_contract.tool_name} ({component_contract.operation})"
+            )
+            print(
+                "Implementation: "
+                f"{component_contract.implementation.sha256} "
+                f"via {component_contract.implementation.protocol}"
+            )
+            print(f"Contract digest: {component_contract.identity['contractDigest']}")
+        return 0
+
     if args.command == "extension":
         try:
             extension_manifest = load_extension_manifest(args.manifest)
@@ -1580,6 +2359,114 @@ def main() -> int:
             return 2
         return 0
 
+    if args.command == "benchmark":
+        from .benchmark import run_reference_baselines, validate
+        from .corpus import build_corpus
+
+        cases = build_corpus(Path(__file__).resolve().parent.parent)
+        if args.validate:
+            report_data = validate(cases)
+            if args.format == "json":
+                print(json.dumps(report_data, indent=2, sort_keys=True))
+            else:
+                print(
+                    f"cases   : {report_data['cases']}\n"
+                    f"identity: {report_data['identity_score']}\n"
+                    f"oracle  : {report_data['oracle_score']}"
+                )
+                for problem in report_data["problems"]:
+                    print(f"  PROBLEM {problem}")
+            return 0 if report_data["ok"] else 1
+
+        if args.solver == "model":
+            return _run_model_benchmark(args, cases)
+
+        baselines = run_reference_baselines(cases)
+        if args.format == "json":
+            print(
+                json.dumps(
+                    {name: report.to_dict() for name, report in baselines.items()},
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
+        for name, baseline_report in baselines.items():
+            print(
+                f"{name:10} score={baseline_report.score:.3f}  "
+                f"{baseline_report.solved}/{baseline_report.total}"
+            )
+            if args.per_code:
+                for code, value in baseline_report.by_code().items():
+                    print(
+                        f"    {code:36} {value['solved']:>3}/{value['total']:<3} {value['rate']:.2f}"
+                    )
+        return 0
+    if args.command == "corpus":
+        from .corpus import build_corpus, corpus_summary, to_jsonl
+
+        cases = build_corpus(Path(__file__).resolve().parent.parent)
+        summary = corpus_summary(cases)
+        if args.check and summary["mislabelled_cases"]:
+            print(
+                f"corpus: {summary['mislabelled_cases']} case(s) contradict their "
+                f"mutation intent: {', '.join(summary['mislabelled_by_mutation'])}",
+                file=sys.stderr,
+            )
+            return 1
+        if args.output is not None:
+            args.output.write_text(to_jsonl(cases), encoding="utf-8")
+            if not args.summary:
+                print(f"Corpus written: {args.output} ({len(cases)} cases)")
+                return 0
+        if args.summary:
+            if args.format == "json":
+                print(json.dumps(summary, indent=2, sort_keys=True))
+            else:
+                print(
+                    f"cases           : {summary['cases']}\n"
+                    f"  valid         : {summary['valid_cases']}\n"
+                    f"  repair        : {summary['repair_cases']}\n"
+                    f"distinct codes  : {summary['distinct_codes']}"
+                    f" / {summary['registered_codes']}\n"
+                    f"mislabelled     : {summary['mislabelled_cases']}\n"
+                    f"origins         : {len(summary['origins'])}"
+                )
+                for code in summary["codes"]:
+                    print(f"  {code}")
+                uncovered = summary["uncovered_codes"]
+                if uncovered:
+                    print(f"uncovered codes : {len(uncovered)}")
+                    for code in uncovered:
+                        print(f"  - {code}")
+            return 0
+        print(to_jsonl(cases), end="")
+        return 0
+    if args.command == "diagnostics-coverage":
+        from .diagnostics_source import (
+            coverage_report,
+            iter_templates,
+            raise_sites,
+        )
+
+        root = Path(__file__).resolve().parent.parent
+        coverage_data = coverage_report(raise_sites(root), list(iter_templates()))
+        if args.format == "json":
+            print(json.dumps(coverage_data, indent=2, sort_keys=True))
+        else:
+            print(
+                f"raise sites: {coverage_data['site_count']}\n"
+                f"classified : {coverage_data['classified']}"
+            )
+            for item in coverage_data["unclassified"]:
+                print(f"  UNCLASSIFIED {item['label']}: {item['sample']}")
+            for code in coverage_data["unreachable_templates"]:
+                print(f"  DEAD CODE   {code}")
+        if args.check and (
+            coverage_data["unclassified"] or coverage_data["unreachable_templates"]
+        ):
+            return 1
+        return 0
     if args.command == "editor":
         try:
             source = (
@@ -1587,7 +2474,12 @@ def main() -> int:
                 if args.stdin
                 else args.source.read_text(encoding="utf-8")
             )
-            features = build_editor_features(source, path=args.source.as_posix())
+            features = build_editor_features(
+                source,
+                path=args.source.as_posix(),
+                source_path=args.source,
+                root=args.source.parent,
+            )
             print(json.dumps(features, indent=2, sort_keys=True))
         except (EditorFeatureError, OSError, UnicodeError) as exc:
             print(f"Editor feature analysis failed: {exc}", file=sys.stderr)
@@ -1596,6 +2488,13 @@ def main() -> int:
     if args.command == "analyze":
         return 0
 
+    json_check = args.command == "check" and getattr(args, "format", None) == "json"
+    if json_check:
+        response = check_project(args.source)
+        payload = response["diagnostics"]
+        assert isinstance(payload, dict)
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0 if payload["ok"] else 2
     try:
         program = load_program(args.source)
         check(program)
@@ -1683,7 +2582,7 @@ def main() -> int:
             project_analyses = tuple(
                 analyze_python_project(path) for path in args.project
             )
-            result = KosikaAssistant(
+            assistant_result = KosikaAssistant(
                 program,
                 provider,
                 max_output_tokens=args.max_output_tokens,
@@ -1694,17 +2593,17 @@ def main() -> int:
                 project_analyses=project_analyses,
             )
             if args.json:
-                print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+                print(json.dumps(assistant_result.to_dict(), indent=2, sort_keys=True))
             else:
-                print(result.answer)
-                print(f"Assistant mode: {result.mode}")
-                summary = result.mindmap.get("summary", {})
-                if not isinstance(summary, dict):
-                    summary = {}
+                print(assistant_result.answer)
+                print(f"Assistant mode: {assistant_result.mode}")
+                mindmap_summary = assistant_result.mindmap.get("summary", {})
+                if not isinstance(mindmap_summary, dict):
+                    mindmap_summary = {}
                 print(
                     "Mindmap: "
-                    f"{summary.get('node_count', 0)} nodes, "
-                    f"{summary.get('edge_count', 0)} edges"
+                    f"{mindmap_summary.get('node_count', 0)} nodes, "
+                    f"{mindmap_summary.get('edge_count', 0)} edges"
                 )
         except (
             AssistantError,
@@ -1717,6 +2616,15 @@ def main() -> int:
             return 2
         return 0
 
+    if args.component_manifest is None and (
+        args.component_runtime is not None
+        or args.allow_component_effect
+        or args.allow_component_capability
+    ):
+        parser.error(
+            "--component-runtime and component grants require --component-manifest"
+        )
+
     mcp_commands: dict[str, Sequence[str]] | None = None
     run_manifest: MCPManifest | None = None
     if args.mcp_server is not None:
@@ -1728,12 +2636,28 @@ def main() -> int:
         parser.error("--mcp-manifest requires --mcp-server")
     bindings: dict[str, ControlledProvider] = {}
     telemetry_error = False
+    component_tool_bindings = {}
     try:
         inputs = (
             strict_json(args.input.read_text(encoding="utf-8")) if args.input else {}
         )
         if not isinstance(inputs, dict):
             raise ValueError("Workflow input must be a JSON object")
+        if args.component_manifest is not None:
+            component_contract = load_component_contract(args.component_manifest)
+            component_binding = bind_component(
+                program,
+                component_contract,
+                args.component_manifest.parent,
+                (
+                    [args.component_runtime]
+                    if args.component_runtime is not None
+                    else []
+                ),
+                allowed_effects=args.allow_component_effect,
+                allowed_capabilities=args.allow_component_capability,
+            )
+            component_tool_bindings[component_contract.tool_name] = component_binding
         if bool(args.journal) != bool(args.binding_id) or (
             args.approval_record and not args.journal
         ):
@@ -1779,6 +2703,7 @@ def main() -> int:
             manifest=run_manifest,
             inputs=inputs,
             model_bindings=bindings,
+            tool_bindings=component_tool_bindings or None,
             session=session,
             limits=ExecutionLimits(
                 max_function_calls=args.max_function_calls,

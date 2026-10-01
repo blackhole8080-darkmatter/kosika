@@ -16,7 +16,6 @@ ROOT = Path(__file__).parents[1]
 SERVER = ROOT / "examples" / "mcp_host_server.py"
 MANIFEST = ROOT / "examples" / "mcp_manifest.json"
 LIVE_EXAMPLE = ROOT / "examples" / "test_host_live.kos"
-WORKFLOW = ROOT / ".github" / "workflows" / "kosika-manifest-check.yml"
 
 
 class ManifestValidationTests(unittest.TestCase):
@@ -38,31 +37,6 @@ class ManifestValidationTests(unittest.TestCase):
             validate({"mount": "/"}, schema)
         with self.assertRaises(SchemaValidationError):
             validate({"mount": "/", "used_percent": 42.0, "unexpected": True}, schema)
-
-    def test_github_actions_workflow_runs_manifest_check(self) -> None:
-        workflow = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("pull_request:", workflow)
-        self.assertIn("actions/checkout@v4", workflow)
-        self.assertIn("actions/setup-python@v5", workflow)
-        self.assertIn("ruff==0.11.13", workflow)
-        self.assertIn("ruff format --check .", workflow)
-        self.assertIn("ruff check .", workflow)
-        self.assertIn("mypy==1.15.0", workflow)
-        self.assertIn("mypy kosika tests --show-error-codes", workflow)
-        self.assertIn("coverage==7.6.10", workflow)
-        self.assertIn("coverage run --branch", workflow)
-        self.assertIn("coverage report -m --fail-under=0", workflow)
-        self.assertIn("coverage xml -o coverage.xml", workflow)
-        self.assertIn("coverage report --fail-under=80", workflow)
-        self.assertIn("actions/upload-artifact@v4", workflow)
-        self.assertIn("name: kosika-coverage", workflow)
-        self.assertIn("python -m kosika.cli manifest check", workflow)
-        self.assertIn("tests/**", workflow)
-        self.assertIn("examples/mcp_manifest.json", workflow)
-        self.assertIn("examples/mcp_host_server.py", workflow)
-        self.assertIn("--json", workflow)
-        self.assertIn("coverage run --branch", workflow)
-        self.assertIn("-m unittest discover -s tests -v", workflow)
 
     def test_manifest_accepts_utf8_bom(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

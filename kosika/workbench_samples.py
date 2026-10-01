@@ -1,6 +1,21 @@
 """Self-contained workbench examples. No credentials or live providers."""
 
-SAMPLES = [
+from typing import Any, TypedDict
+
+
+class WorkbenchSample(TypedDict):
+    id: str
+    name: str
+    description: str
+    tag: str
+    entry: str
+    workflow: str
+    files: dict[str, str]
+    inputs: dict[str, Any]
+    fixtures: dict[str, list[dict[str, Any]]]
+
+
+SAMPLES: list[WorkbenchSample] = [
     {
         "id": "research",
         "name": "Research pipeline",

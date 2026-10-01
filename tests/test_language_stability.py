@@ -2,6 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 
 from kosika.checker import CheckError, check
 from kosika.modules import load_program
@@ -28,7 +29,7 @@ class LanguageStabilityTests(unittest.TestCase):
             events = [json.loads(line) for line in trace.read_text().splitlines()]
             call = events[2]
             returned = events[3]
-            nested = []
+            nested: list[dict[str, Any]] = []
             for _ in range(32):
                 nested = [
                     dict(call, expression_events=[]),

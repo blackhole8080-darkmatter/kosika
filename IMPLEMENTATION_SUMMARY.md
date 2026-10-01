@@ -1,10 +1,17 @@
 # Kosika Cloud Implementation Summary
 
-## What We Built
+> **Historical prototype summary.** This document describes an exploratory
+> cloud/demo implementation, not the supported Kosika product. Remote execution,
+> authentication, isolation, durable service state, and production deployment
+> remain unimplemented. Current status is maintained in `KOSIKA_PLAN.md`.
 
-We've successfully implemented the foundational components to make Kosika programs accessible without requiring local installation, with intelligent agent orchestration and cloud execution capabilities.
+## Historical prototype scope
 
-## Implemented Components
+The prototype explored a local JSON registry, mock orchestration, and a Flask
+demonstration server. Its optional dependencies are intentionally excluded from
+the base runtime; use `pip install ".[cloud-demo]"` only for local inspection.
+
+## Prototype components
 
 ### 1. **Cloud Execution Architecture** (`CLOUD_EXECUTION_DESIGN.md`)
 - Complete design document for cloud-based Kosika execution
@@ -197,12 +204,13 @@ The meta-agent system has been tested and demonstrates:
 
 ## Conclusion
 
-We've successfully built the foundational architecture for making Kosika programs accessible without local installation, with intelligent agent orchestration that can unify various AI services, CLIs, and LLMs for smarter automated choices. The system provides:
+This historical prototype explored local registry and mock orchestration
+components. It did not establish:
 
-1. **Cloud Execution**: Run Kosika programs via API without local installation
-2. **Intelligent Selection**: Meta-agent chooses optimal configurations automatically
-3. **Program Distribution**: Share and discover Kosika programs easily
-4. **Service Integration**: Unified interface to multiple AI providers and tools
-5. **Security First**: Capability-based security with validation and approval
+1. Remote execution of Kosika programs.
+2. Authenticated service or reviewer identity.
+3. Isolated or sandboxed execution.
+4. Durable multi-user service state.
+5. A production package-distribution boundary.
 
-This implementation provides a solid foundation for a cloud-based Kosika platform that can compete with existing AI development ecosystems while offering superior security, intelligence, and ease of use.
+Use `KOSIKA_PLAN.md` for implemented capabilities and current priorities.

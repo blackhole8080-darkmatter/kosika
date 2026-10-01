@@ -279,7 +279,7 @@ class FunctionResultCache:
         self.misses = 0
 
     def get(self, function_name: str, arguments: Mapping[str, Any]) -> Any | None:
-        key = f"{function_name}::{_canonical_arguments(arguments)}"
+        key = f"{function_name}::{_canonical_arguments(arguments).decode('utf-8')}"
         if key in self._store:
             self.hits += 1
             return self._store[key]
@@ -289,7 +289,7 @@ class FunctionResultCache:
     def put(
         self, function_name: str, arguments: Mapping[str, Any], result: Any
     ) -> None:
-        key = f"{function_name}::{_canonical_arguments(arguments)}"
+        key = f"{function_name}::{_canonical_arguments(arguments).decode('utf-8')}"
         if key in self._store:
             return
         if len(self._store) >= self._max:

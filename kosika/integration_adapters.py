@@ -76,32 +76,37 @@ class OpenAIAdapter(ModelProviderAdapter):
             raise RuntimeError("OpenAI client not available")
 
         try:
-            if request.messages:
-                response = self.client.chat.completions.create(
-                    model="gpt-4",
-                    messages=request.messages,
-                    max_tokens=request.max_tokens,
-                    temperature=request.temperature,
-                    tools=request.tools,
-                    function_call=request.function_call,
+            messages = request.messages or [{"role": "user", "content": request.prompt}]
+            completion_arguments: dict[str, Any] = {
+                "model": "gpt-4",
+                "messages": messages,
+                "max_tokens": request.max_tokens,
+                "temperature": request.temperature,
+            }
+            if request.tools:
+                completion_arguments["tools"] = request.tools
+            if request.function_call:
+                completion_arguments["function_call"] = (
+                    request.function_call
+                    if request.function_call in {"auto", "none"}
+                    else {"name": request.function_call}
                 )
-            else:
-                response = self.client.chat.completions.create(
-                    model="gpt-4",
-                    messages=[{"role": "user", "content": request.prompt}],
-                    max_tokens=request.max_tokens,
-                    temperature=request.temperature,
-                )
+            response = self.client.chat.completions.create(**completion_arguments)
 
             choice = response.choices[0]
-            tokens_used = response.usage.total_tokens
+            tokens_used = response.usage.total_tokens if response.usage else 0
+            tool_calls = (
+                [call.model_dump() for call in choice.message.tool_calls]
+                if choice.message.tool_calls
+                else None
+            )
 
             return ModelResponse(
                 content=choice.message.content or "",
                 model=response.model,
                 tokens_used=tokens_used,
-                finish_reason=choice.finish_reason,
-                tool_calls=choice.message.tool_calls,
+                finish_reason=choice.finish_reason or "unknown",
+                tool_calls=tool_calls,
                 cost=self._calculate_cost(response.model, tokens_used),
             )
 
@@ -146,38 +151,39 @@ class AnthropicAdapter(ModelProviderAdapter):
             raise RuntimeError("Anthropic client not available")
 
         try:
-            if request.messages:
-                # Convert OpenAI format to Anthropic format
-                system_message = ""
-                user_messages = []
+            # Convert OpenAI format to Anthropic format and reject roles that
+            # cannot be represented by this legacy adapter.
+            system_message = ""
+            user_messages: list[dict[str, str]] = []
+            for msg in request.messages or []:
+                if msg["role"] == "system":
+                    system_message = msg["content"]
+                elif msg["role"] in {"user", "assistant"}:
+                    user_messages.append(msg)
+                else:
+                    raise ValueError(f"Unsupported Anthropic role: {msg['role']}")
+            if not user_messages:
+                user_messages.append({"role": "user", "content": request.prompt})
 
-                for msg in request.messages:
-                    if msg["role"] == "system":
-                        system_message = msg["content"]
-                    else:
-                        user_messages.append(msg)
+            message_arguments: dict[str, Any] = {
+                "model": "claude-3-opus-20240229",
+                "max_tokens": request.max_tokens,
+                "messages": user_messages,
+            }
+            if system_message:
+                message_arguments["system"] = system_message
+            response = self.client.messages.create(**message_arguments)
 
-                response = self.client.messages.create(
-                    model="claude-3-opus-20240229",
-                    max_tokens=request.max_tokens,
-                    system=system_message,
-                    messages=user_messages,
-                )
-            else:
-                response = self.client.messages.create(
-                    model="claude-3-opus-20240229",
-                    max_tokens=request.max_tokens,
-                    messages=[{"role": "user", "content": request.prompt}],
-                )
-
-            content = response.content[0].text
+            content = "".join(
+                block.text for block in response.content if block.type == "text"
+            )
             tokens_used = response.usage.input_tokens + response.usage.output_tokens
 
             return ModelResponse(
                 content=content,
                 model=response.model,
                 tokens_used=tokens_used,
-                finish_reason=response.stop_reason,
+                finish_reason=response.stop_reason or "unknown",
                 cost=self._calculate_cost(response.model, tokens_used),
             )
 
@@ -209,7 +215,7 @@ class LocalModelAdapter(ModelProviderAdapter):
         """Execute request using local model API."""
         try:
             url = f"{self.base_url}/api/generate"
-            payload = {
+            payload: dict[str, Any] = {
                 "model": "llama2",
                 "prompt": request.prompt,
                 "stream": False,

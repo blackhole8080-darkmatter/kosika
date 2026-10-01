@@ -76,7 +76,7 @@ def completions(path: str | Path, prefix: str = "") -> list[str]:
 
 
 def inspect_trace(path: str | Path) -> dict[str, Any]:
-    replay_trace(path)
+    result = replay_trace(path)
     events = [
         strict_json(line)
         for line in Path(path).read_text(encoding="utf-8").splitlines()
@@ -124,8 +124,11 @@ def inspect_trace(path: str | Path) -> dict[str, Any]:
     walk(events)
     return {
         "workflow": events[0]["workflow"],
+        "trace_version": events[0].get("trace_version", 1),
         "program_hash": events[0].get("program_hash"),
+        "event_count": len(events),
         "steps": steps,
+        "result": result,
         "mode": "exact_replay",
     }
 

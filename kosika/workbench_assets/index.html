@@ -51,9 +51,9 @@
       <div class="workbench-grid">
         <section class="editor-panel" aria-label="Source editor">
           <div class="editor-tabs"><div id="file-tabs" class="file-tabs" role="tablist" aria-label="Open files"></div><button id="format-button" class="editor-icon" aria-label="Format source" title="Format source"><svg><use href="#i-format"/></svg></button><button id="download-source" class="editor-icon" aria-label="Download source file" title="Download source file"><svg><use href="#i-download"/></svg></button></div>
-          <div class="editor-breadcrumb"><span id="editor-path">research-pipeline / main.syn</span><span><span class="tiny-dot"></span>Kosika</span></div>
+          <div class="editor-breadcrumb"><span id="editor-path">research-pipeline / main.kos</span><span><span class="tiny-dot"></span>Kosika</span></div>
           <div class="code-surface"><div class="line-numbers" id="line-numbers" aria-hidden="true"></div><div class="code-stack"><pre id="code-highlight" aria-hidden="true"></pre><textarea id="source-editor" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Kosika source editor" wrap="off"></textarea></div></div>
-          <div class="editor-status"><span><svg><use href="#i-code"/></svg><span id="cursor-position">Ln 1, Col 1</span></span><span>UTF-8 <span class="status-divider">/</span> 2 spaces <span class="status-divider">/</span> .syn</span></div>
+          <div class="editor-status"><span><svg><use href="#i-code"/></svg><span id="cursor-position">Ln 1, Col 1</span></span><span>UTF-8 <span class="status-divider">/</span> 2 spaces <span class="status-divider">/</span> <span id="source-extension">.kos</span></span></div>
         </section>
         <aside class="configuration" aria-label="Run configuration"><div class="config-heading"><h3>Run configuration</h3><span class="subtle-badge">LOCAL</span></div>
           <div class="config-body"><div class="config-row"><label for="entry-file">Entry file</label><select id="entry-file"></select></div><div class="config-row"><label for="workflow-name">Workflow</label><input id="workflow-name" value="main" autocomplete="off" spellcheck="false"></div>
@@ -103,5 +103,5 @@ model writer { input: Question output: Answer }</pre><span class="guide-number">
   </main>
 </div>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
-<dialog id="file-dialog"><form id="file-form"><div class="dialog-heading"><h2>Add a source file</h2><button type="button" class="icon-button" id="close-dialog" aria-label="Close dialog"><svg><use href="#i-close"/></svg></button></div><p>Keep reusable types and workflows in their own module.</p><label for="new-file-name">Filename</label><input id="new-file-name" placeholder="helpers.syn" autocomplete="off" required><div id="file-error" class="form-error" role="alert"></div><div class="dialog-actions"><button type="button" class="button secondary" id="cancel-dialog">Cancel</button><button class="button primary" type="submit">Create file</button></div></form></dialog>
+<dialog id="file-dialog"><form id="file-form"><div class="dialog-heading"><h2>Add a source file</h2><button type="button" class="icon-button" id="close-dialog" aria-label="Close dialog"><svg><use href="#i-close"/></svg></button></div><p>Keep reusable types and workflows in their own module.</p><label for="new-file-name">Filename</label><input id="new-file-name" placeholder="helpers.kos" autocomplete="off" required><div id="file-error" class="form-error" role="alert"></div><div class="dialog-actions"><button type="button" class="button secondary" id="cancel-dialog">Cancel</button><button class="button primary" type="submit">Create file</button></div></form></dialog>
 </body></html>

@@ -1,3 +1,4 @@
+import argparse
 import contextlib
 import io
 import json
@@ -36,6 +37,42 @@ class CliCoverageTests(unittest.TestCase):
         ):
             result = cli.main()
         return result, error.getvalue()
+
+    def test_top_level_usage_lists_all_recent_commands(self) -> None:
+        output = io.StringIO()
+        with (
+            patch.object(sys, "argv", ["kosika", "--help"]),
+            contextlib.redirect_stdout(output),
+            self.assertRaises(SystemExit) as caught,
+        ):
+            cli.main()
+        self.assertEqual(caught.exception.code, 0)
+        usage = output.getvalue().split("positional arguments:", 1)[0]
+        self.assertIn("diagnostics-coverage", usage)
+        self.assertIn("editor", usage)
+        self.assertIn("city", usage)
+        self.assertIn("benchmark", usage)
+        self.assertIn("corpus", usage)
+
+    def test_top_level_usage_covers_every_registered_command(self) -> None:
+        """The usage list is derived, so it cannot omit a registered command.
+
+        A spot-check list of names is what let `benchmark` and `corpus` ship
+        invisible in `--help`; this asserts the whole registered set instead.
+        """
+
+        parser = cli.build_parser()
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            parser.print_help()
+        usage = output.getvalue().split("positional arguments:", 1)[0]
+        action = next(
+            item
+            for item in parser._actions
+            if isinstance(item, argparse._SubParsersAction)
+        )
+        for command in action.choices:
+            self.assertIn(command, usage)
 
     def test_check_run_and_replay_commands(self) -> None:
         result, output = self.call_cli("check", str(MOCK_SOURCE))

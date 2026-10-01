@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-try:
+if TYPE_CHECKING:
     import tree_sitter_rust
     from tree_sitter import Language, Parser
-except ImportError:  # pragma: no cover - exercised when optional packages are absent
-    Language = None  # type: ignore[assignment]
-    Parser = None  # type: ignore[assignment]
-    tree_sitter_rust = None  # type: ignore[assignment]
+else:
+    try:
+        import tree_sitter_rust
+        from tree_sitter import Language, Parser
+    except ImportError:  # pragma: no cover - optional packages may be absent
+        Language = None
+        Parser = None
+        tree_sitter_rust = None
 
 
 class RustParserBackendError(ValueError):

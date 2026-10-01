@@ -1,0 +1,55 @@
+{
+  "schema": "kosika.component/v1",
+  "id": "example.uppercase",
+  "version": "1.0.0",
+  "tool": {
+    "name": "uppercase",
+    "operation": "uppercase"
+  },
+  "implementation": {
+    "artifact": "uppercase.js",
+    "sha256": "02d3682958efc3ec7d80d7d01bdd4cd7379577fec94c544b1be883a57bb59946",
+    "protocol": "json-stdio/v1"
+  },
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "text": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "text"
+    ],
+    "additionalProperties": false
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "text": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "text"
+    ],
+    "additionalProperties": false
+  },
+  "access": "analyze",
+  "effects": [
+    "cpu:compute"
+  ],
+  "capabilities": [
+    "text:transform"
+  ],
+  "errors": [
+    {
+      "code": "input:invalid",
+      "retryable": false
+    }
+  ],
+  "cancellation": {
+    "mode": "terminate",
+    "timeoutMs": 5000
+  }
+}

@@ -527,6 +527,7 @@ def build_city(root: str | Path, *, name: str | None = None) -> City:
     districts: list[District] = []
     for swarm_name in sorted(swarms):
         swarm = swarms[swarm_name]
+        program_name = swarm_program.get(swarm.name)
         districts.append(
             District(
                 name=swarm.name,
@@ -538,8 +539,10 @@ def build_city(root: str | Path, *, name: str | None = None) -> City:
                     sorted(member for member in swarm.agents if member in residents)
                 ),
                 pipeline=_pipeline_of(
-                    program_workflows.get(swarm_program.get(swarm.name), {}).get(
-                        swarm.workflow
+                    (
+                        program_workflows.get(program_name, {}).get(swarm.workflow)
+                        if program_name is not None
+                        else None
                     ),
                     residents,
                 ),

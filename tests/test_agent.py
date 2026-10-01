@@ -18,6 +18,7 @@ from kosika.agent import (
     action_hash,
 )
 from kosika.approval_ledger import ApprovalLedger
+from kosika.ast import ToolDecl
 from kosika.checker import CheckError, check
 from kosika.durable import AgentExecutionSession
 from kosika.model import (
@@ -276,12 +277,10 @@ class AgentLoopTests(unittest.TestCase):
                     "Check the disk.",
                     session=AgentExecutionSession(journal, binding_id="model-v1"),
                 )
-            self.assertEqual(
-                AgentExecutionSession(journal, binding_id="model-v1").inspect()[
-                    "state"
-                ],
-                "tool_pending",
-            )
+            inspection = AgentExecutionSession(journal, binding_id="model-v1").inspect()
+            self.assertIsNotNone(inspection)
+            assert inspection is not None
+            self.assertEqual(inspection["state"], "tool_pending")
             resumed_provider = ScriptedModelProvider(
                 [ModelResponse(content="must not be called")]
             )
@@ -546,11 +545,16 @@ class AgentLoopTests(unittest.TestCase):
             )
         )
         calls: list[str] = []
+
+        def record_call(tool: ToolDecl, _arguments: dict[str, Any]) -> dict[str, bool]:
+            calls.append(tool.name)
+            return {"ok": True}
+
         with self.assertRaisesRegex(AgentLoopError, "maximum tool calls"):
             AgentLoop(
                 program,
                 ScriptedModelProvider([tool_response]),
-                lambda tool, args: calls.append(tool.name) or {"ok": True},
+                record_call,
             ).run("bounded", "Inspect twice.")
         self.assertEqual(calls, [])
 
@@ -884,7 +888,7 @@ class OpenAICompatibleProviderTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "timeout"):
             OpenAICompatibleProvider("http://localhost", "model", timeout=0)
 
-        invalid_payloads = (
+        invalid_payloads: tuple[tuple[object, str], ...] = (
             (None, "JSON object"),
             ({"choices": []}, "did not contain choices"),
             ({"choices": [{}]}, "did not contain a message"),

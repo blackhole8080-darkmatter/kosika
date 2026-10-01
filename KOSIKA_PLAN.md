@@ -6,7 +6,7 @@ This document is the shared plan for human developers and coding agents working 
 
 ## Mission
 
-Kosika is a Python-first, AI-native programming language and runtime for typed programs, models, agents, MCP/tools, workflows, networks, memory, deterministic explanations, visual designs, and replayable execution.
+Kosika is an AI-native programming language and runtime for building typed AI applications, agents, multi-agent systems, tools, workflows, and understandable system maps. Its current implementation is Python-hosted, but the language and product are not restricted to Python applications.
 
 The long-term principle is:
 
@@ -20,35 +20,121 @@ Kosika should become more expressive than a collection of Python/JavaScript scri
 - Treat this checkout as authoritative. Do not confuse it with prototype folders or the separate Synapse/ai_agent project.
 - Do not modify protected `agent-lab` content.
 - Do not commit unless explicitly requested.
-- Keep the implementation dependency-light and Python-first.
+- Keep the current implementation dependency-light and maintain its supported Python runtime. Treat Python as the host implementation, not as the boundary of the Kosika language or its interoperability goals.
 - The checker, schema validation, approval system, and replay validator remain authoritative.
 - Model output is a proposal, never execution permission.
 - Unknown tools, invalid manifests, undeclared capabilities, invalid schemas, and unsafe imports fail closed.
 - Mindmaps, explanations, design graphs, and replay summaries must be deterministic from checked source, manifests, and traces.
 - Add focused tests for every new branch, then run the full suite, Ruff, and MyPy.
 
-## Current baseline
+## K01 — Reconciled capability baseline
 
-The repository currently contains:
+This matrix is the implementation baseline for subsequent work. It reconciles
+the checked source, existing tests, CLI smoke scenarios, and browser observation.
+It is deliberately narrower than `KOSIKA_VISION.md`.
 
-- Parser, typed AST, checker, records, tools, agents, models, and structured values.
-- Model, agent, tool, and nested workflow calls.
-- Bounded local module composition through `load_program(...)`.
-- MCP stdio transport, pinned manifests, schema checks, and replayable traces.
-- Approval-gated execution, model budgets, provider telemetry, and failure handling.
-- Deterministic mindmaps, focused explanations, and a bounded assistant.
-- Extension-manifest validation and extension-aware mindmaps.
-- Declarative network manifests and network indexing.
-- Deterministic workflow/network/code-mindmap vector designs rendered as SVG, Mermaid, JSON, and text.
-- A separate Synapse/ai_agent prototype integration; do not merge its source boundary into Kosika casually.
+Status meanings:
 
-The last verified baseline before each change should be recorded by running:
+- **Exercised** — K01 directly observed a representative local scenario.
+- **Implemented** — connected source and existing tests exist, but K01 did not
+  exercise the complete capability.
+- **Experimental** — a partial implementation or material integration gap exists.
+- **Planned** — no supported end-to-end implementation was found.
+
+| Capability | Status | Evidence and current boundary |
+|---|---|---|
+| Typed records, arrays, expressions, mutable locals, conditions, match, bounded loops | Exercised | `kosika/parser.py`, `kosika/checker.py`, and `kosika/runtime.py`; typed input/output scenario returned its checked result. |
+| Pure functions, nested functions, closures, higher-order values, bounded recursion | Exercised | `examples/closures.kos` returned `{'value': 115}`; `examples/recursion_match.kos` returned factorial `120`, parity `odd`, and classification `zero`. Recursion requires an explicit bound; async functions, generators, vectors, matrices, tensors, and signals remain planned. |
+| Local modules, explicit exports, typed workflow composition | Exercised | `kosika/modules.py` enforces bounded local `.kos` loading; the three-file `examples/composed` program checked and ran. There is no package registry or dynamic/remote import contract. |
+| Declared models and typed model calls | Exercised | The composed program ran with `ScriptedModelProvider` fixtures. `kosika/model.py` also contains an OpenAI-compatible HTTP provider, but K01 did not establish a successful live endpoint. |
+| Bounded agents and typed `ask` calls | Implemented | `kosika/agent.py`, `kosika/agent_steps.py`, and runtime dispatch are connected. Direct agent approval support exists; approval plumbing for an execute tool requested inside workflow `ask` is not established end to end. |
+| Tools, pinned MCP, capabilities, durable sessions, exact-action approval | Implemented | `kosika/runtime.py`, `kosika/durable.py`, `kosika/approval_ledger.py`, and existing approval tests implement fail-closed host authority. This is not an OS sandbox, authenticated reviewer identity, rollback, or distributed exactly-once execution. |
+| Trace validation and offline replay | Exercised | The composed fixture run replayed the same typed result without provider access. Replay validates and returns recorded outcomes; it does not re-execute source or provide tamper-proof attestation. |
+| Budgets, cancellation, deadlines, and retries | Implemented | `kosika/execution.py` and `kosika/controls.py` provide bounded accounting and cooperative checks. They do not hard-stop arbitrary host code or guarantee a remote token bill cannot overshoot. |
+| Read-only parallel workflow DAG | Implemented | `kosika/dag.py` schedules host-defined observe-only nodes with bounded concurrency and replay. There is no corresponding language syntax and it is not the swarm runtime. |
+| Swarm declarations, rounds, consensus, and group approval | Experimental | Swarms parse, check, and render through `kosika/parser.py`, `kosika/checker.py`, and `kosika/mindmap.py`. No executable swarm call, round scheduler, consensus algorithm, or enforced swarm-start approval gate was found. |
+| CLI and developer commands | Exercised | `check`, `run`, `replay`, `mindmap`, `editor`, and `analyze` were exercised through `python -m kosika.cli`. The CLI also exposes agent, explanation, network, design, manifest, extension, and journal surfaces that were not all exercised in K01. |
+| Editor data, LSP, and VS Code integration | Exercised | `kosika/editor_features.py`, `kosika/lsp.py`, `kosika_lsp`, and `editors/vscode` provide diagnostics and navigation. K04 drove the stdio LSP process and verified stable-code publication for both entry and imported document URIs. Path-based diagnostics use the authoritative bounded module loader; a running VS Code client was not exercised. |
+| Browser workbench | Exercised | The server advertises `.kos` as its source contract and the frontend consumes it for startup, imports, validation, status, and file creation. K02 exercised the default sample through check, run, checked-source map, and exact replay in a real Chrome session. |
+| Desktop application | Experimental | The Electron and legacy launchers wrap the workbench, but K02 did not build or exercise packaged artifacts. Distribution remains unsigned and Windows-specific. |
+| Deterministic purpose/structure maps and execution timelines | Exercised | `mindmap` produced a deterministic composed-program summary, and K09 adds `audience-map`: five audience profiles over one project with every entry labelled `checked`, `declared`, `observed`, or `human`. Omissions are counted in `coverage` rather than read as absence, and a trace whose recorded program hash does not match contributes nothing. Heuristic foreign-source observations remain a separate evidence layer and are not merged into an audience map. |
+| Python, JavaScript, TypeScript, and Rust source analysis | Exercised | `kosika.language_adapters` provides bounded read-only structure extraction. TypeScript analysis was exercised and explicitly reported that it does not execute code or provide full semantic analysis. |
+| Cross-language execution and component contracts | Exercised | `kosika.component/v1` pins one local process artifact, typed tool schemas, access, effects, capabilities, declared errors, termination, and SHA-256 implementation identity. `examples/component_uppercase.kos` executed the JavaScript artifact through the normal `tool_bindings` boundary. The host still supplies the runtime and OS authority; this is not a sandbox, remote ABI, signature system, or package manager. |
+| Grounded assistant and fixture evaluation | Implemented | `kosika/assistant.py` explains checked source without tools; `kosika/evaluation.py` performs fresh bounded cases with exact/substring assertions and traces. Neither is an autonomous author/check/repair/run loop. |
+| AI authoring and repair loop | Exercised | `kosika/authoring.py` runs K06 over `kosika.development/v1` with the benchmark's search/replace patch seam; proposals stay in memory, authority is host-only, and attempts are bounded and recorded. `kosika/authoring_evaluation.py` (K07) measures it over the corpus: 266/422 repaired by the reference evaluator, 0 authority violations, 26/26 clean programs left alone. No live-model run yet. |
+| Intelligence, memory, assumptions, judgments, and personality | Experimental | Runtime-connected cache/trace pattern hooks exist, while typed cognitive state remains a vision target. Standalone heuristics must not be described as language semantics or autonomous scheduling. |
+| Remote cloud execution and reproducible distribution | Experimental | Wheel and source-distribution builds now install the `kosika` and `kosika-lsp` commands, include workbench assets, and pass an isolated local check/run/replay/LSP/workbench smoke. CI defines Python 3.10, Python 3.12, and Windows coverage. No published release, remote execution service, authentication boundary, or cross-platform CI result is claimed yet. |
+
+### K01 verification record
+
+The following bounded observations establish the **Exercised** labels:
+
+```text
+python -B -m kosika.cli check examples/hello_world.kos
+  -> OK
+python -B -m kosika.cli run examples/typed_input_output.kos --input examples/typed_input.json --trace <temp>
+  -> {'score': 0.87, 'accepted': True}
+python -B -m kosika.cli run examples/closures.kos --trace <temp>
+  -> {'value': 115}
+python -B -m kosika.cli run examples/recursion_match.kos --trace <temp>
+  -> {'factorial': 120, 'parity': 'odd', 'classification': 'zero'}
+python -B -m kosika.cli run examples/composed/main.kos --input examples/composed/inputs.json --model-fixture examples/composed/responses.json --trace <temp>
+python -B -m kosika.cli replay <temp>
+  -> both returned {'text': 'Typed, capability-checked AI workflows with offline replay.'}
+python -B -m kosika.cli mindmap examples/composed/main.kos --format text
+  -> 3 modules, 12 nodes, 22 edges
+python -B -m kosika.cli editor examples/hello_world.kos
+  -> structured editor JSON
+python -B -m kosika.cli analyze examples/order_service.ts --format text
+  -> bounded TypeScript structure with explicit semantic-analysis limitations
+```
+
+The failing-before browser observation for K02 opened the local workbench, then
+loading **Research pipeline** failed with
+`A workspace needs 1–16 valid .syn source files.` The frontend and backend
+filename contracts disagreed. Temporary traces and the assessment host were removed.
+
+The project quality gates remain:
 
 ```powershell
 python -m pytest -q
 ruff check kosika tests
 python -m mypy kosika
 ```
+
+K01 did not rerun the complete gates because it changes documentation only.
+Later implementation slices must run focused scenarios plus these gates.
+
+### K02 completion record
+
+K02 established one `.kos` source-file contract:
+
+- `kosika.workbench.SOURCE_EXTENSION` owns the backend suffix and `/api/session`
+  advertises it to the browser.
+- The frontend uses that session value for workspace validation, new files,
+  status text, and examples. Legacy `.syn` names fail before dispatch.
+- The CLI usage list now includes `diagnostics-coverage`, `editor`, and `city`,
+  matching their registered parsers.
+- In a real Chrome session, the default three-file Research pipeline opened with
+  `main.kos`, passed checking, ran with fixtures, produced an 18-node checked-source
+  map, and replayed its typed result without model or tool calls.
+- The browser also rejected `helpers.syn` and created `helpers.kos` successfully.
+- A `.kosika.json` workspace containing `main.kos` imported successfully and
+  exported back to a 424-byte workspace retaining the `.kos` entry and source.
+
+Verification:
+
+```text
+Focused: 22 tests + 18 subtests passed
+Full suite: 662 tests + 316 subtests passed
+Ruff: passed
+Final CLI usage regression after command-list reconciliation: passed
+```
+
+Pytest emitted one environment warning because it could not write `.pytest_cache`.
+The repository-wide MyPy gate remains red with 54 errors across 16 files, including
+unrelated integration, intelligence, optimizer, agent, runtime, and CLI code.
+K02 did not broaden into those pre-existing worktree changes.
 
 ## Delivery phases
 
@@ -80,18 +166,26 @@ python -m mypy kosika
 - Keep network access, extension activation, remote execution, and mutation approval-gated.
 - Bound cancellation, cleanup, retries, process termination, and uncertain external outcomes.
 
-### Phase 5 — Mathematical and expressive programming
+### Phase 5 — Remaining mathematical and expressive programming
 
-- Add functions, nested functions, closures, recursion, higher-order functions, conditions, bounded loops, generators, async behavior, vectors, matrices, sequences, and signals.
-- Define resource limits and deterministic semantics before adding unrestricted execution.
+- Preserve the implemented functions, nested functions, closures, bounded recursion,
+  higher-order values, conditions, pattern matching, assignment, and bounded loops.
+- Add generators, async behavior, vectors, matrices, tensors, sequences, and signals
+  only after defining their resource limits, type rules, and replay semantics.
 - Connect mathematical values to safe animation and visualization primitives.
 
-### Phase 6 — Migration, optimization, and ecosystem
+### Phase 6 — Migration, optimization, interoperability, and ecosystem
 
-- Add grounded translation and modernization from Python/JavaScript into Kosika.
-- Preserve unsupported behavior behind typed adapters and mark it in mindmaps and migration reports.
-- Add packages, extensions, language tooling, editor support, benchmarks, and deployment adapters.
-- Claim improvements only when measured for correctness, latency, memory, token use, source size, network use, or cost.
+- Extend the existing language adapters, LSP, editor features, evaluations, and
+  deterministic maps rather than replacing them.
+- Add explicit cross-language component contracts before promising arbitrary
+  Python/JavaScript/Rust execution or automatic semantic understanding.
+- Add grounded translation and modernization with behavior verification.
+- Preserve unsupported behavior behind typed adapters and mark it in maps and
+  migration reports.
+- Add reproducible packages, benchmarks, deployment adapters, and release gates.
+- Claim improvements only when measured for correctness, latency, memory, token
+  use, source size, network use, or cost.
 
 ## Completed implementation slice
 
@@ -166,16 +260,299 @@ The live-publication-visibility slice is complete:
 - Two concurrency tests now cover the stream under real threading: one publisher with three concurrent subscribers (attachment gated on subscriber slots, `max_replay` sized to the whole run) receives every event exactly once in contiguous order, and a slow consumer on a two-event buffer either keeps pace or receives a deterministic replay-gap signal instead of skipped events. A bulk event helper avoids the seconds-only timestamp trap of the existing test helper.
 - A suspicious heartbeat byte sequence in the SSE handler was verified against the running code and is already well-formed (`: keep-alive\n\n`); no change was made, and the false lead is recorded here so it is not chased again.
 - A "Nested functions" workbench sample exercises Strawberry's lexical-closure slice in the UI: nested `fn` helpers capture outer variables, run under fixtures with no model or tools, and produced `{"value": 36}` with a six-event deterministic timeline live in the browser. The editor highlighter now colors the `fn` keyword.
-- True mid-run publication from inside `runtime.py` remains out of scope: the runtime collects events internally and hands them to the caller at completion, and that file is under active concurrent revision by another session (7 unrelated test failures persist there). This slice delivers live visibility end to end within the workbench boundary.
+- True mid-run publication from inside `runtime.py` remained out of scope for that slice. The current runtime still accumulates events and hands them to the caller after completion.
 
-## Next active slice
+## K03 supported-language contract (complete)
 
-The next bounded target is deep publication and runtime hardening (pick up only after the concurrent runtime/model edits in the working tree settle and their 7 test failures are resolved by that session):
+- `KOSIKA.md` is now the normative `kosika-language/0.1.0` contract. It
+  separates supported language behavior from host APIs, tooling-only
+  experiments, and planned vision work.
+- The contract defines the implemented lexical and module grammar, value and
+  typing rules, pure-function and workflow execution, model/tool/agent
+  declarations, capability and approval boundaries, whole-run controls, and
+  trace-version-5 validated outcome replay.
+- Parser-recognized but non-executable surfaces are explicit: swarms remain
+  tooling-only, anonymous inline functions and `try ... retry` are outside the
+  runtime contract, and method calls are checker-rejected.
+- `tests/test_language_contract.py` executes and replays the supported
+  hello-world, typed-input, closure, recursion/match, and composed-module/model
+  examples with exact observable results. The model replay path proves that
+  replay performs no live provider call.
+- Focused conformance passed: two contract tests execute five public examples,
+  validate exact outputs, emit trace version 5, and replay offline. Full Ruff
+  lint and the pinned MCP manifest check also passed.
+- The repository-wide gate remains red outside K03: the full suite ran 649
+  tests and failed only the concurrent corpus repair test on a trailing-newline
+  mismatch; branch coverage was 77% against the 80% gate after concurrent
+  modules entered the tree. The format check also found seven unrelated
+  diagnostics/corpus files still needing formatting after the K03 test was
+  formatted. Focused MyPy reached only pre-existing dependency errors and
+  reported none in `tests/test_language_contract.py`.
 
-1. Publish run events mid-execution from the runtime via an incremental event callback, retaining offline JSONL replay as the source of truth.
-2. Wire the workbench timeline action to the already-published stream so the browser need not repost events.
-3. Keep remote access disabled by default and require explicit approval for execute links or mutations.
-4. Evaluate WebSocket transport only if bidirectional control is actually required.
+## K04 structured diagnostics (complete)
+
+- `kosika.diagnostics/v1` is the stable JSON report contract. Lexical, parser,
+  checker, capability, and module failures map to a closed code registry with a
+  coverage check for every explicit compiler raise site.
+- Parser diagnostics cover the actual offending token and expose
+  `expected`/`actual` values when available. Checker diagnostics expose
+  repair-relevant type, field, argument, operator, and capability data.
+- Checker spans identify only a unique owning declaration or step. Missing or
+  ambiguous ownership returns no JSON range and sets `anchor_missing`; it does
+  not fabricate source precision.
+- `analyze_path` and `report_path` check the authoritative bounded module graph,
+  retain each failure's originating path, and support in-memory source
+  overrides. CLI JSON checking, editor features, and the LSP all use that path
+  for imported programs.
+- The stdio LSP publishes imported failures against the imported document URI
+  and republishes direct dependents after an open-buffer change.
+- Focused parser/checker/module, CLI, editor, LSP, workbench, and trailing-newline
+  repair checks passed. A clean child process ran 690 tests successfully while
+  excluding the previously reported corpus stored-patch failure; that excluded
+  failure remains an unresolved repository gate.
+- Full Ruff formatting and lint, the pinned MCP manifest check, and focused
+  MyPy for `diagnostics.py`, `editor_features.py`, and `lsp.py` passed. Package
+  branch coverage measured 63.90%, below the configured 80% repository gate;
+  broad experimental modules remain untested.
+
+## K05 machine-readable development interface (complete)
+
+- `kosika.development/v1` provides one response envelope for checked project
+  inspection, K04 diagnostics, bounded workflow execution, validated trace
+  inspection, and deterministic checked-AST maps.
+- `inspect_project`, `check_project`, `run_project`, `inspect_trace`, and
+  `map_project` delegate to the existing module loader, diagnostic registry,
+  runtime, replay validator, schema generator, and mindmap builder. No language
+  semantics were reimplemented.
+- Strict JSON requests support `inspect`, `check`, `run`, `trace`, and `map`.
+  Unknown schema versions, operations, fields, limit names, and malformed JSON
+  return stable `request/invalid` responses.
+- Execution exposes applied limits, counters, raw events, typed values, and
+  structured runtime failures. Model and tool authority can only be injected
+  by a Python host; the JSON CLI does not mint bindings.
+- CLI JSON checking and imported-document editor diagnostics now consume the
+  shared interface while preserving `kosika.diagnostics/v1`.
+- Eleven focused development-interface tests cover all operations, strict
+  request validation, imported project metadata, deterministic maps, bounded
+  execution, host-binding denial, exact trace replay, and the real CLI process.
+  Focused branch coverage for `kosika/development.py` is 96.17%.
+- Full Ruff formatting/lint, focused MyPy, and the pinned MCP manifest check
+  passed. A clean child process passed 702 of 703 discovered tests; the
+  previously reported corpus stored-patch failure was the sole excluded test.
+
+
+
+## K06 bounded AI authoring loop (complete)
+
+- `kosika.authoring` runs `intent -> check -> propose -> repair -> run ->
+  inspect` and reports through `kosika.authoring/v1`.
+- Checking, running, and trace inspection delegate to `kosika.development/v1`;
+  diagnostic text is the K04 contract and the patch format is the benchmark's
+  search/replace seam, extracted as `build_proposal_messages` so the authoring
+  loop and the benchmark solver share one prompt and one answer format.
+- Model output is a proposal only: patches are applied to an in-memory copy of
+  one source file and returned under `proposals`. The loop never writes to disk.
+- The host supplies the proposing provider, the run's model and tool bindings,
+  MCP commands, execution limits, cancellation, and trace path. The loop mints
+  no authority; a missing run binding fails closed as `runtime/error`, and a
+  diagnostic that needs a proposal with no provider fails closed as
+  `authoring/no-provider`. A project that already checks needs no model at all.
+- A diagnostic names its originating path, so only the failing file is
+  patchable. Search text matching zero or several lines is rejected, and an
+  out-of-project diagnostic is reported as `authoring/unmapped` rather than
+  repaired against the wrong file.
+- `AuthoringLimits.max_attempts` bounds the whole loop at one provider call per
+  attempt. Provider errors (`authoring/provider`), reasoning-only answers
+  (`authoring/no-answer`), and an exhausted budget (`authoring/uncheckable`)
+  each stop the loop with a distinct code instead of retrying blindly.
+- `kosika.cli author` exposes the loop with separate proposal and run authority:
+  `--proposal-fixture` or `--proposal-base-url`/`--proposal-model` for proposals,
+  `--model-fixture` for the run, `--no-run` to stop after proposing. It exits 0
+  on a clean loop, 1 when the program never checked, 2 on invalid setup.
+- 29 focused tests cover the clean path, an imported-file repair, the refusal to
+  write proposals, trace inspection, missing run authority, the attempt budget,
+  ambiguity feedback, a non-converging patch, missing patch blocks, provider and
+  reasoning-only failures, absent proposal authority, host source overrides,
+  unreadable and out-of-project files, input validation, limit validation, both
+  prompt strategies, and the CLI in-process paths. Branch coverage for
+  `kosika/authoring.py` is 96%.
+- Also fixed in this slice: the top-level `--help` usage list was a hand-maintained
+  tuple that had drifted from the registered subparsers, so `benchmark` and
+  `corpus` were registered, dispatchable, and invisible in discovery. It is now
+  derived from the registered parsers via `cli.build_parser()`, and the guard
+  test asserts the whole registered set rather than a spot-check list.
+
+## K07 AI authoring evaluations (complete)
+
+- `kosika.authoring_evaluation` measures the K06 loop over the repair corpus and
+  reports through `kosika.authoring-evaluation/v1`.
+- Each corpus case is materialised as a standalone project (its origin
+  directory's `.kos` sources copied flat) and run through `author()`, so the
+  measurement covers project context, the attempt budget, and the run -- not
+  just patch text.
+- Metrics per case: `checked_clean`, `first_pass_clean`, `needless_edits`,
+  `attempts`, per-attempt model calls/tokens/provider latency, aggregate model
+  time, whole-case time, and `behavior`.
+- Behavior is compared against the *unmutated* program wherever both can run,
+  and reported as `not-measured` with a reason otherwise. A repair that checks
+  clean but changes what a program returns is therefore distinguishable from one
+  that does not.
+- The authority audit is observed, not reported: file hashes before and after
+  detect writes, proposals are checked for escaping the project root, and valid
+  declarations in the in-memory proposal are compared against the *original*
+  program's tools, MCP sources, `agent.can` grants, `agent.cannot` denials, and
+  tool access levels. Invalid proposals are not misread as empty authority sets.
+- Two reference evaluators bracket every real run. `identity` (no proposing
+  model) measures 0.000; `reference` (the corpus's own stored repair replayed as
+  a patch) is the ceiling over the cases whose fix is quotable as a unique
+  search/replace block, with the remainder reported as `unexpressible_cases`
+  rather than scored as loop failures.
+- `kosika.cli author-eval` exposes the evaluation with per-case progress on
+  stderr, `--solver reference|identity|model`, `--limit`, `--attempts`,
+  `--no-behavior`, `--slowest`, and `--format text|json`.
+- **Measured on the full corpus (448 cases; 422 repair, 26 valid), reference
+  evaluator: 266/422 repaired (0.630); 26 valid programs untouched with zero
+  model calls; 0 authority violations; 43/43 measurable cases behaviorally
+  correct, 0 incorrect; ~7s aggregate case time against a scripted provider
+  (0.004s of it in the provider); 156 cases not quotable as a
+  patch.** Identity floor: 0.000, 0 violations. Per-code repair rates are
+  bimodal: most checker codes and `lex/unexpected-character` repair at 1.00,
+  while `check/unknown-tool`, `check/empty-workflow`,
+  `check/unknown-argument`, `check/unknown-field`, `check/field-access`,
+  `check/invalid-swarm`, `check/exhaustiveness`, and the
+  `parse/expected-identifier` / `parse/invalid-declaration` families repair at
+  0.00 -- all of them cases whose stored fix removes a declaration, or a line
+  the patch format cannot quote uniquely.
+- 36 focused tests cover reference-patch expressibility, case selection, project
+  materialisation, both baselines over the real corpus, behavioral comparison
+  and non-claims, per-attempt cost accounting, valid-case scoring, all seven
+  authority violation kinds plus a real source-swap violation, explicit denial
+  semantics, restoring revoked authority as *not* a violation, invalid-proposal
+  comparison, limit validation, crash handling, and the CLI. Branch coverage
+  for `kosika/authoring_evaluation.py` is 93%.
+- No live-model run has been performed, so no model quality claim is made. The
+  harness supports one (`--solver model`); the report exists so a future run has
+  a fixed basis for comparison.
+
+## K08 cross-language component contracts (complete)
+
+- `kosika.components` defines the strict `kosika.component/v1` manifest and the
+  language-neutral `json-stdio/v1` call/result protocol.
+- A contract pins component/tool version and identity, exact input/output
+  schemas, access class, required effects and capabilities, declared errors,
+  termination deadline, and implementation artifact SHA-256.
+- `bind_component(...)` compares the contract against the checked Kosika
+  `ToolDecl` and generated record schemas, requires explicit host grants, and
+  produces a normal `tool_bindings` callable. No parser, checker, or runtime
+  execution fork was added.
+- Artifacts must be relative regular files inside the component root and no
+  larger than 16 MiB. Every call re-hashes the artifact, invokes the
+  host-selected runtime without a shell, bounds request/response capture to
+  1 MiB, validates both JSON boundaries, rejects undeclared errors, and kills
+  the process at the contract deadline.
+- `kosika cli component check` validates contracts and artifacts without
+  executing them. `kosika cli run` accepts one component contract, optional
+  runtime executable, and repeatable effect/capability grants.
+- `examples/component_uppercase.kos` and
+  `examples/components/uppercase.js` exercise a JavaScript implementation
+  through the existing typed workflow tool boundary.
+- 11 focused tests plus 8 validation subtests cover deterministic identity,
+  path/digest/version/deadline validation, exact declaration and host-grant
+  matching, workflow execution, declared and undeclared errors, invalid output,
+  forced timeout termination, JavaScript execution, and both CLI surfaces.
+- The artifact hash identifies bytes; it does not prove behavior. Processes
+  inherit host OS authority. Remote transport, native in-process ABI, artifact
+  signatures, component packaging, and sandboxing remain future work.
+
+K01 through K09 are complete: the capability matrix, verification records,
+versioned language and host contracts, structured diagnostics, development
+interface, bounded authoring loop, its evaluations, cross-language component
+execution, and audience-adaptive maps above are the baseline. Subsequent work
+must update the matrix and contracts when a status or behavior changes.
+
+## K09 audience-adaptive maps (complete)
+
+- `kosika.audience_maps` renders one checked project for one named audience
+  (`outsider`, `overview`, `operator`, `reviewer`, `maintainer`) through
+  `kosika.audience-map/v1`.
+- Four evidence classes stay distinct and are never collapsed: `checked` from the
+  verified AST, `declared` from a K08 component contract, `observed` from a
+  completed hash-matched trace, and `human` for explicit purpose notes. There is
+  deliberately no `inferred` class.
+- A component contract is validated against a checked tool before it is shown:
+  name, operation, access, and both schemas must match, or the map fails closed.
+- Executing a component does not make its contract `observed`. Declared authority
+  is a claim by the component; the artifact hash identifies bytes, not behavior.
+- A trace whose recorded program hash does not match the checked program
+  contributes no entries and records `trace-program-hash-mismatch`; attaching one
+  program's behavior to another is the collapse this module exists to prevent.
+- `coverage` reports `checked_shown` against `checked_total`, so a narrowed
+  audience reads as a deliberate omission rather than a smaller program.
+- `verify()` re-derives the digest and rejects unknown evidence classes, missing
+  source links, mislabelled human notes, duplicate ids, and edges referencing
+  omitted entries. `kosika.cli audience-map` runs it before printing and exits 2
+  on any problem, so an unverifiable map is never emitted.
+- 57 focused tests cover all five audiences, determinism across repeated builds,
+  comment-safe source links, per-audience detail filtering, contract mismatch and
+  absent-tool rejection, trace hash mismatch, unreadable and missing traces,
+  purpose-note validation, all eight `verify()` failure branches, and the CLI
+  surfaces. Branch coverage for `kosika/audience_maps.py` is 95%.
+- The evidence-merge rule is tested directly because no current example makes a
+  checked node and an observed node share an id; leaving it unexercised would
+  have made the central claim untested.
+- Fixed in this slice: an out-of-root entry raised a bare `ValueError` from a
+  function whose contract is `AudienceMapError`, and a duplicate `relative_to`
+  computation existed for the same value.
+- Not claimed: the map describes what the checker verified, what a contract
+  claims, and what one recorded run observed. It is not a behavioural proof of a
+  component implementation, and it is not a semantic understanding of foreign
+  source.
+
+The next tasks are ordered by dependency:
+
+1. **K02 — Dependable first-use path (complete).** `.kos` is standardized across
+   the workbench contract and the real-browser open → check → run → map → replay
+   path passed. CLI discovery now lists every currently registered command.
+2. **K03 — Supported language contract (complete).** `KOSIKA.md` now publishes
+   versioned grammar, typing, execution, capability, and replay semantics, and
+   `tests/test_language_contract.py` executes the representative examples.
+3. **K04 — Structured diagnostics (complete).** Stable codes, truthful source
+   spans, repair data, authoritative imported-program diagnostics, and
+   repair-oriented tests now share `kosika.diagnostics/v1`.
+4. **K05 — Machine-readable development interface (complete).** Project
+   inspection, K04 checking, bounded execution, validated trace inspection, and
+   deterministic maps now share `kosika.development/v1`.
+5. **K06 — Bounded AI authoring loop (complete).** `kosika.authoring/v1` runs
+   intent → check → propose → repair → run → inspect with host-held authority,
+   proposal-only output, and a bounded, fully recorded attempt budget.
+6. **K07 — AI authoring evaluations (complete).** `kosika.authoring-evaluation/v1`
+   measures clean-check reach, unnecessary edits, attempts, calls, tokens,
+   provider and whole-case latency, behavioral equality with the unmutated
+   program, and seven kinds of authority violation, with a floor and a ceiling
+   evaluator.
+7. **K08 — Cross-language component contracts (complete).**
+   `kosika.component/v1` versions typed boundaries, authority requirements,
+   errors, termination, and pinned artifact identity for local process
+   implementations.
+8. **K09 — Audience-adaptive maps (complete).** `kosika.audience-map/v1` renders
+   one project per audience with `checked`, `declared`, `observed`, and `human`
+   evidence kept apart, counted omissions, hash-gated trace observations, and an
+   integrity check that blocks output.
+9. **K10 — Executable swarm semantics.** Define typed messages, scheduling,
+   state ownership, rounds, consensus, termination, failures, and aggregate budgets.
+10. **K11 — Approval-controlled AI changes.** Apply exact checked proposals only
+     after authenticated host review; resolve workflow-agent mutation integration.
+11. **K12 — Reproducible delivery (local slice exercised).** Build wheel and
+    source artifacts containing the CLI, LSP, and workbench assets; install the
+    wheel outside the checkout; and smoke check, run, replay, LSP, and workbench.
+    Published releases and remote execution remain planned.
+
+**Active task: K10.** Swarm declarations parse, check, and render, but there is no
+executable swarm call, round scheduler, consensus algorithm, or enforced
+swarm-start approval gate. K09's evidence classes are the vocabulary this should
+reuse: a consensus decision is a judgment over observed evidence rather than a
+model assertion, and swarm output must not acquire authority the way model output
+cannot.
 
 ## Standard coding-agent procedure
 

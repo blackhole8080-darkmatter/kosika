@@ -463,7 +463,7 @@ def _evaluate_expression(
         )
         if set(arguments) & set(captures):
             raise RuntimeError("Cannot override lexical captures")
-        result, call_events = _execute_function(
+        call_result, call_events = _execute_function(
             program,
             function,
             {**arguments, **captures},
@@ -472,7 +472,7 @@ def _evaluate_expression(
             depth=depth + 1,
         )
         function_events.extend(call_events)
-        return result
+        return call_result
     if isinstance(expression, ForExpr):
         # Functional map: bind item_name per element in a child scope and
         # collect the body results into a new array.

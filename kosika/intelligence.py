@@ -583,7 +583,7 @@ class LearningSystem:
             }
         )
 
-    def train_simple_model(self, feature_name: str) -> Dict[str, float]:
+    def train_simple_model(self, feature_name: str) -> Dict[str, Any]:
         """Train a simple linear regression model."""
         if len(self.training_data) < 10:
             return {"status": "insufficient_data"}
@@ -706,7 +706,9 @@ class IntelligenceSystem:
 
         # Add to learning system
         features = resource_usage.copy()
-        features["operation_hash"] = hashlib.md5(operation.encode()).hexdigest()[:8]
+        features["operation_hash"] = float(
+            int(hashlib.md5(operation.encode()).hexdigest()[:8], 16)
+        )
         self.learning_system.add_training_data(features, duration)
 
     def get_system_insights(self) -> Dict[str, Any]:
@@ -723,7 +725,7 @@ class IntelligenceSystem:
 
     def _get_top_operations(self) -> List[Dict[str, Any]]:
         """Get most frequently executed operations."""
-        operation_counts = defaultdict(int)
+        operation_counts: dict[str, int] = defaultdict(int)
         for profile in self.adaptive_executor.pattern_extractor.execution_history:
             operation_counts[profile.operation] += 1
 

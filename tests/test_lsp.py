@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 
 from kosika.lsp import (
     WATCH_CHANGED,
@@ -17,15 +18,15 @@ from kosika.lsp import (
 )
 
 
-def frame(message: dict[str, object]) -> bytes:
+def frame(message: dict[str, Any]) -> bytes:
     payload = json.dumps(message, separators=(",", ":")).encode("utf-8")
     return f"Content-Length: {len(payload)}\r\n\r\n".encode("ascii") + payload
 
 
-def messages(raw: bytes) -> list[dict[str, object]]:
+def messages(raw: bytes) -> list[dict[str, Any]]:
     reader = io.BytesIO(raw)
     transport = JsonRpcTransport(reader, io.BytesIO())
-    result = []
+    result: list[dict[str, Any]] = []
     while True:
         message = transport.read()
         if message is None:

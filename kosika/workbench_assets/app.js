@@ -1,7 +1,7 @@
 "use strict";
 
 const $ = (id) => document.getElementById(id);
-const state = {token: "", samples: [], project: null, file: "main.syn", view: "editor", output: "result", runs: [], current: null, busy: false, edited: false};
+const state = {token: "", samples: [], project: null, file: "main.kos", sourceExtension: ".kos", view: "editor", output: "result", runs: [], current: null, busy: false, edited: false};
 const storageKey = "kosika.workbench.draft.v1";
 let toastTimer;
 let saveTimer;
@@ -36,10 +36,15 @@ function draftFrom(sample) {
   return {version: 1, name: sample.name, description: sample.description, files: {...sample.files}, entry: sample.entry, workflow: sample.workflow,
     inputsText: JSON.stringify(sample.inputs, null, 2), fixturesText: JSON.stringify(sample.fixtures, null, 2)};
 }
+function validSourceName(name) {
+  if (typeof name !== "string" || !name.endsWith(state.sourceExtension)) return false;
+  const stem = name.slice(0, -state.sourceExtension.length);
+  return Boolean(stem) && /^[A-Za-z0-9_/-]+$/.test(stem);
+}
 function validateDraft(draft) {
   if (!draft || typeof draft !== "object" || !draft.files || Array.isArray(draft.files) || typeof draft.files !== "object") throw new Error("Choose a Kosika workspace JSON file.");
   const names = Object.keys(draft.files);
-  if (!names.length || names.length > 16 || names.some((name) => !/^[A-Za-z0-9_/-]+\.syn$/.test(name) || name.startsWith("/") || typeof draft.files[name] !== "string" || draft.files[name].length > 65536)) throw new Error("A workspace needs 1–16 valid .syn source files.");
+  if (!names.length || names.length > 16 || names.some((name) => !validSourceName(name) || name.startsWith("/") || typeof draft.files[name] !== "string" || draft.files[name].length > 65536)) throw new Error(`A workspace needs 1–16 valid ${state.sourceExtension} source files.`);
   if (!names.includes(draft.entry) || typeof draft.workflow !== "string") throw new Error("The workspace needs a valid entry file and workflow name.");
   const result = {version: 1, name: typeof draft.name === "string" ? draft.name.slice(0,80) : "Imported workspace", description: typeof draft.description === "string" ? draft.description.slice(0,160) : "Your local Kosika project.", files: {...draft.files}, entry: draft.entry, workflow: draft.workflow,
     inputsText: typeof draft.inputsText === "string" ? draft.inputsText : JSON.stringify(draft.inputs || {}, null, 2),
@@ -384,7 +389,7 @@ $("close-dialog").onclick = $("cancel-dialog").onclick = () => $("file-dialog").
 $("file-form").onsubmit = (event) => {
   event.preventDefault();
   const name = $("new-file-name").value.trim();
-  if (!/^[A-Za-z0-9_/-]+\.syn$/.test(name) || name.startsWith("/") || name.includes("//")) { $("file-error").textContent = "Use a relative filename such as helpers.syn."; return; }
+  if (!validSourceName(name) || name.startsWith("/") || name.includes("//")) { $("file-error").textContent = `Use a relative filename such as helpers${state.sourceExtension}.`; return; }
   if (Object.keys(state.project.files).some((file) => file.toLowerCase() === name.toLowerCase())) { $("file-error").textContent = "That filename already exists."; return; }
   if (Object.keys(state.project.files).length >= 16) { $("file-error").textContent = "The workbench supports up to 16 source files."; return; }
   state.project.files[name] = "// A new module. Export the declarations you want to share.\n";
@@ -438,6 +443,10 @@ async function initialize() {
     const response = await fetch("/api/session");
     if (!response.ok) throw new Error("Could not initialize the local workbench.");
     const session = await response.json();
+    if (typeof session.source_extension !== "string" || !/^\.[a-z0-9]+$/.test(session.source_extension)) throw new Error("The local runtime returned an invalid source extension.");
+    state.sourceExtension = session.source_extension;
+    $("source-extension").textContent = state.sourceExtension;
+    $("new-file-name").placeholder = `helpers${state.sourceExtension}`;
     state.token = session.token; state.samples = session.samples;
     document.dispatchEvent(new CustomEvent("kosika-session", {detail: session}));
     setConnection(true);

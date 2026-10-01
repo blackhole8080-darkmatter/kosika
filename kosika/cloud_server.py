@@ -1,27 +1,25 @@
-"""
-Kosika Cloud Server - Simple Flask-based API for remote execution
+"""Development-only sketch of a future Kosika cloud API.
 
-This is a demonstration of how Kosika programs could be executed in the cloud
-without requiring local installation.
+This module is not an authenticated or production execution service. It exposes
+mock execution and local registry behavior solely for bounded development use.
 """
 
 import uuid
+from typing import Any
 
 from flask import Flask, jsonify, request
-from flask_cors import CORS
 
 from .cloud import ProgramManifest, ProgramPackage, ProgramRegistry
 from .meta_agent import MetaAgent, select_optimal_configuration
 
 app = Flask(__name__)
-CORS(app)
 
 # Initialize services
 meta_agent = MetaAgent()
 program_registry = ProgramRegistry()
 
 # In-memory execution storage (in production, use a database)
-executions = {}
+executions: dict[str, Any] = {}
 
 
 @app.route("/health", methods=["GET"])
@@ -265,7 +263,7 @@ record Answer { text: Text }
 
 
 if __name__ == "__main__":
-    print("Starting Kosika Cloud Server...")
+    print("Starting the development-only Kosika Cloud Server...")
     print("Available endpoints:")
     print("  GET  /health")
     print("  POST /api/v1/agents/select")
@@ -275,7 +273,7 @@ if __name__ == "__main__":
     print("  POST /api/v1/execute/mock")
     print("  GET  /api/v1/executions/<id>")
     print("  GET  /api/v1/capabilities")
-    print("\nDemo server running on http://localhost:5000")
+    print("\nDevelopment server running on http://127.0.0.1:5000")
 
     app = create_demo_server()
-    app.run(debug=True, port=5000)
+    app.run(host="127.0.0.1", debug=False, port=5000)

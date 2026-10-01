@@ -185,7 +185,7 @@ class MCPStdioTests(unittest.TestCase):
 
     def test_mcp_close_is_idempotent_and_escalates_termination(self) -> None:
         client = MCPStdioClient(["unused"])
-        self.assertIsNone(client.close())
+        client.close()
 
         process = MagicMock()
         process.stdin = MagicMock()

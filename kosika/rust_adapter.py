@@ -124,10 +124,10 @@ def _mask(source: str) -> _Masked:
                 index += 1
             continue
         if source.startswith("//", index):
-            end = source.find("\n", index)
-            end = len(source) if end < 0 else end
-            _blank(masked, index, end)
-            index = end
+            comment_end = source.find("\n", index)
+            comment_end = len(source) if comment_end < 0 else comment_end
+            _blank(masked, index, comment_end)
+            index = comment_end
             continue
         if source.startswith("/*", index):
             block_depth = 1
@@ -155,11 +155,11 @@ def _mask(source: str) -> _Masked:
                 index += 1
                 continue
         if source[index] in {'"', "'"}:
-            end = _quoted_end(source, index, source[index])
-            if end is None:
+            literal_end = _quoted_end(source, index, source[index])
+            if literal_end is None:
                 raise RustSourceError("Rust source has an unterminated literal")
-            _blank(masked, index, end)
-            index = end
+            _blank(masked, index, literal_end)
+            index = literal_end
             continue
         index += 1
     if block_depth:

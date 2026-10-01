@@ -139,6 +139,48 @@ def test_cloud_package_loader_registry_and_requests(tmp_path):
         executor.get_status("run-1")
 
 
+@pytest.mark.parametrize(
+    ("field_name", "unsafe_value"),
+    [
+        ("author", "../outside"),
+        ("name", "nested/program"),
+        ("version", "..\\outside"),
+    ],
+)
+def test_registry_rejects_unsafe_package_identity(tmp_path, field_name, unsafe_value):
+    package = make_package()
+    setattr(package.manifest, field_name, unsafe_value)
+    registry = ProgramRegistry(tmp_path / "registry")
+
+    with pytest.raises(ValueError, match=field_name):
+        registry.register(package)
+
+    assert not (tmp_path / "outside").exists()
+
+
+def test_registry_rejects_unsafe_lookup_version(tmp_path):
+    registry = ProgramRegistry(tmp_path / "registry")
+    program_id = registry.register(make_package())
+
+    with pytest.raises(ValueError, match="version"):
+        registry.get(program_id, "../../outside")
+
+
+@pytest.mark.parametrize(
+    "filename",
+    ["../outside.kos", "..\\outside.kos", "/absolute.kos", "package.json"],
+)
+def test_registry_rejects_unsafe_source_paths(tmp_path, filename):
+    package = make_package()
+    package.source_files = {filename: "workflow main() {}\n"}
+    registry = ProgramRegistry(tmp_path / "registry")
+
+    with pytest.raises(ValueError, match="source filename"):
+        registry.register(package)
+
+    assert not (tmp_path / "outside.kos").exists()
+
+
 def test_expression_cache_jit_and_profiler_cover_real_transitions():
     cache = ExpressionCache(max_size=1)
     assert cache.get("x", {}) is None

@@ -37,6 +37,36 @@ class EditorFeatureTests(unittest.TestCase):
             )
         )
 
+    def test_imported_diagnostic_keeps_imported_path_and_range(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            library = root / "library.kos"
+            library.write_text(
+                "export [Result, broken]\n"
+                "record Result { text: Text name: Text }\n"
+                'fn broken() -> Result { return {text: "x"} }\n',
+                encoding="utf-8",
+            )
+            entry = root / "main.kos"
+            source = (
+                'import "library.kos"\n'
+                "workflow main() -> Result {\n"
+                "  step call { let result = broken() return result }\n"
+                "}\n"
+            )
+            entry.write_text(source, encoding="utf-8")
+            features = build_editor_features(
+                source,
+                path=entry.as_posix(),
+                source_path=entry,
+                root=root,
+            )
+
+        diagnostic = features["diagnostics"][0]
+        self.assertEqual(diagnostic["code"], "check/missing-field")
+        self.assertEqual(diagnostic["path"], str(library.resolve()))
+        self.assertEqual(diagnostic["range"]["start"]["line"], 2)
+
 
 class UnifiedMindmapTests(unittest.TestCase):
     def test_unified_graph_keeps_kosika_and_external_ids_distinct(self) -> None:

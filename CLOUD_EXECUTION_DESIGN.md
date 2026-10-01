@@ -1,5 +1,10 @@
 # Kosika Cloud Execution Architecture
 
+> **Design target, not current behavior.** The services, APIs, isolation,
+> authentication, and remote execution described here are a proposed architecture.
+> The development-only modules in `kosika/cloud.py` and `kosika/cloud_server.py`
+> do not implement this production boundary.
+
 ## Overview
 
 This document outlines how to extend Kosika to support remote execution, program sharing, and intelligent agent orchestration without requiring local installation.

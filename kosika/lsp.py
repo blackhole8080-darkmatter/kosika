@@ -99,7 +99,10 @@ class WorkspaceIndex:
             else:
                 self._ensure_capacity(uri, document.text)
                 self.documents[uri] = document
-        return sorted(set(before) | set(self._open_dependents(uri)))
+        affected = sorted(set(before) | set(self._open_dependents(uri)))
+        for affected_uri in affected:
+            self.documents[affected_uri].features = None
+        return affected
 
     def _open_dependents(self, uri: str) -> list[str]:
         return [
@@ -111,6 +114,16 @@ class WorkspaceIndex:
                 or any(imported.uri == uri for imported in self._imports(document))
             )
         ]
+
+    def invalidate(self, uri: str) -> list[str]:
+        """Invalidate an open document and direct import dependants."""
+
+        affected = sorted(set(self._open_dependents(uri)) | {uri})
+        for affected_uri in affected:
+            document = self.documents.get(affected_uri)
+            if document is not None:
+                document.features = None
+        return affected
 
     def open(self, uri: str, text: str, version: int | None) -> Document:
         document = self.documents.get(uri)
@@ -171,7 +184,27 @@ class WorkspaceIndex:
 
     def features(self, document: Document) -> dict[str, Any]:
         if document.features is None:
-            document.features = build_editor_features(document.text, path=document.uri)
+            options: dict[str, Any] = {}
+            if self.root is not None:
+                source_path = _path_from_uri(document.uri)
+                if self._inside_root(source_path) and source_path.exists():
+                    overrides: dict[Path, str] = {}
+                    for candidate in self.documents.values():
+                        candidate_path = _path_from_uri(candidate.uri)
+                        if candidate_path.exists() and self._inside_root(
+                            candidate_path
+                        ):
+                            overrides[candidate_path] = candidate.text
+                    options = {
+                        "source_path": source_path,
+                        "root": self.root,
+                        "source_overrides": overrides,
+                    }
+            document.features = build_editor_features(
+                document.text,
+                path=document.uri,
+                **options,
+            )
         return document.features
 
     def definitions(
@@ -343,6 +376,7 @@ class KosikaLanguageServer:
         self.transport = transport
         self.workspace = WorkspaceIndex()
         self.cancelled_requests: set[str | int] = set()
+        self._entry_diagnostics: dict[str, dict[str, list[dict[str, Any]]]] = {}
         self.shutdown_requested = False
         self.exit_code = 0
 
@@ -479,7 +513,8 @@ class KosikaLanguageServer:
             self._bounded_text(text_document.get("text")),
             text_document.get("version"),
         )
-        self._publish(uri)
+        for affected_uri in self.workspace.invalidate(uri):
+            self._publish(affected_uri)
 
     def _change(self, params: dict[str, Any]) -> None:
         text_document = params["textDocument"]
@@ -495,7 +530,8 @@ class KosikaLanguageServer:
             self._bounded_text(change.get("text")),
             text_document.get("version"),
         )
-        self._publish(uri)
+        for affected_uri in self.workspace.invalidate(uri):
+            self._publish(affected_uri)
 
     def _document(self, params: dict[str, Any]) -> Document:
         return self.workspace.get(params["textDocument"]["uri"])
@@ -511,43 +547,72 @@ class KosikaLanguageServer:
         try:
             document = self.workspace.get(uri)
             features = self.workspace.features(document)
-            diagnostics = [
-                {
-                    "range": item["range"],
+            grouped: dict[str, list[dict[str, Any]]] = {uri: []}
+            for item in features["diagnostics"]:
+                target = self._diagnostic_uri(item.get("path"), uri)
+                payload = {
+                    "range": item.get("range")
+                    or {
+                        "start": {"line": 0, "character": 0},
+                        "end": {"line": 0, "character": 0},
+                    },
                     "severity": 2 if item.get("severity") == "warning" else 1,
                     "source": "kosika",
                     "message": item["message"],
                 }
-                for item in features["diagnostics"]
-            ]
+                if item.get("code"):
+                    payload["code"] = item["code"]
+                if item.get("data"):
+                    payload["data"] = item["data"]
+                grouped.setdefault(target, []).append(payload)
         except (EditorFeatureError, UnicodeError, LspError) as exc:
-            diagnostics = [
-                {
-                    "range": {
-                        "start": {"line": 0, "character": 0},
-                        "end": {"line": 0, "character": 1},
-                    },
-                    "severity": 1,
-                    "source": "kosika",
-                    "message": str(exc),
-                }
-            ]
-        self.transport.write(
-            {
-                "jsonrpc": "2.0",
-                "method": "textDocument/publishDiagnostics",
-                "params": {"uri": uri, "diagnostics": diagnostics},
+            grouped = {
+                uri: [
+                    {
+                        "range": {
+                            "start": {"line": 0, "character": 0},
+                            "end": {"line": 0, "character": 0},
+                        },
+                        "severity": 1,
+                        "source": "kosika",
+                        "message": str(exc),
+                    }
+                ]
             }
-        )
+        previous = set(self._entry_diagnostics.get(uri, {}))
+        self._entry_diagnostics[uri] = grouped
+        self._republish(previous | set(grouped))
+
+    @staticmethod
+    def _diagnostic_uri(path: object, fallback: str) -> str:
+        if not isinstance(path, str) or path == "<memory>":
+            return fallback
+        if path.startswith("file:"):
+            return path
+        candidate = Path(path)
+        return _uri_for_path(candidate) if candidate.is_absolute() else fallback
+
+    def _republish(self, targets: set[str]) -> None:
+        for target in sorted(targets):
+            diagnostics: list[dict[str, Any]] = []
+            seen: set[str] = set()
+            for grouped in self._entry_diagnostics.values():
+                for item in grouped.get(target, []):
+                    key = json.dumps(item, sort_keys=True)
+                    if key not in seen:
+                        seen.add(key)
+                        diagnostics.append(item)
+            self.transport.write(
+                {
+                    "jsonrpc": "2.0",
+                    "method": "textDocument/publishDiagnostics",
+                    "params": {"uri": target, "diagnostics": diagnostics},
+                }
+            )
 
     def _publish_empty(self, uri: str) -> None:
-        self.transport.write(
-            {
-                "jsonrpc": "2.0",
-                "method": "textDocument/publishDiagnostics",
-                "params": {"uri": uri, "diagnostics": []},
-            }
-        )
+        previous = set(self._entry_diagnostics.pop(uri, {}))
+        self._republish(previous | {uri})
 
     def _hover(self, params: dict[str, Any]) -> dict[str, Any] | None:
         features = self._features(params)

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
+from typing import Any
 
 from kosika.language_adapters import (
     SUPPORTED_LANGUAGES,
@@ -18,19 +20,27 @@ class LanguageAdapterRegistryTests(unittest.TestCase):
             SUPPORTED_LANGUAGES,
             ("python", "javascript", "typescript", "rust"),
         )
-        self.assertEqual(adapter_for_suffix(".PY").language, "python")
-        self.assertEqual(adapter_for_suffix(".mjs").language, "javascript")
-        self.assertEqual(adapter_for_suffix(".tsx").language, "typescript")
-        self.assertEqual(adapter_for_suffix(".rs").language, "rust")
+        python = adapter_for_suffix(".PY")
+        javascript = adapter_for_suffix(".mjs")
+        typescript = adapter_for_suffix(".tsx")
+        rust = adapter_for_suffix(".rs")
+        assert python is not None
+        assert javascript is not None
+        assert typescript is not None
+        assert rust is not None
+        self.assertEqual(python.language, "python")
+        self.assertEqual(javascript.language, "javascript")
+        self.assertEqual(typescript.language, "typescript")
+        self.assertEqual(rust.language, "rust")
         self.assertIsNone(adapter_for_language("ruby"))
 
-        analysis = adapter_for_suffix(".ts").analyze_source(
+        analysis = typescript.analyze_source(
             "interface User { name: string; }\n",
             path="user.ts",
         )
         self.assertEqual(analysis["language"], "typescript")
 
-        rust_analysis = adapter_for_suffix(".rs").analyze_source(
+        rust_analysis = rust.analyze_source(
             'pub fn greet() { println!("hi"); }\n',
             path="lib.rs",
         )
@@ -38,10 +48,10 @@ class LanguageAdapterRegistryTests(unittest.TestCase):
         self.assertEqual(rust_analysis["symbols"][0]["name"], "greet")
 
     def test_registry_rejects_duplicate_language_and_suffix_ownership(self) -> None:
-        def analyze(_source: str, _path: str) -> dict:
+        def analyze(_source: str, _path: str) -> dict[str, Any]:
             return {}
 
-        def analyze_file(_path: str) -> dict:
+        def analyze_file(_path: str | Path) -> dict[str, Any]:
             return {}
 
         adapter = LanguageAdapter(

@@ -269,9 +269,15 @@ class SourceSchemaTests(unittest.TestCase):
         validate_source_analysis(document)
 
     def test_suffix_mapping(self) -> None:
-        self.assertEqual(adapter_for_suffix(".py").language, "python")
-        self.assertEqual(adapter_for_suffix(".TS").language, "typescript")
-        self.assertEqual(adapter_for_suffix(".mjs").language, "javascript")
+        python = adapter_for_suffix(".py")
+        typescript = adapter_for_suffix(".TS")
+        javascript = adapter_for_suffix(".mjs")
+        assert python is not None
+        assert typescript is not None
+        assert javascript is not None
+        self.assertEqual(python.language, "python")
+        self.assertEqual(typescript.language, "typescript")
+        self.assertEqual(javascript.language, "javascript")
         self.assertIsNone(adapter_for_suffix(".toml"))
 
     def test_validator_rejects_wrong_schema(self) -> None:

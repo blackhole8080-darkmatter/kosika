@@ -15,14 +15,30 @@ dependencies = [
     "tree-sitter-rust>=0.24,<0.25",
 ]
 
+[project.optional-dependencies]
+cloud-demo = ["Flask>=3,<4"]
+
 # The repository root holds many sibling directories (desktop, ui, examples,
 # tests, ...), so setuptools flat-layout auto-discovery is ambiguous. Declare
-# the importable package explicitly.
+# the importable packages explicitly.
 [tool.setuptools]
-packages = ["kosika"]
+packages = ["kosika", "kosika.workbench_assets", "kosika_lsp"]
+
+[tool.setuptools.package-data]
+kosika = [
+    "workbench_assets/*.css",
+    "workbench_assets/*.html",
+    "workbench_assets/*.js",
+    "workbench_assets/*.svg",
+]
+
+[project.scripts]
+kosika = "kosika.cli:main"
+kosika-lsp = "kosika_lsp.server:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+cache_dir = ".cache/pytest"
 
 [tool.ruff]
 target-version = "py310"

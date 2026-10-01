@@ -6,10 +6,13 @@ features without reimplementing Kosika parsing or checking in JavaScript.
 
 from __future__ import annotations
 
-import re
+from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 from .checker import CheckError, check
+from .development import check_project
+from .diagnostics import Diagnostic, anchors_for, diagnostic_from_exception
 from .lexer import Token, lex
 from .parser import ParseError, parse
 
@@ -46,14 +49,20 @@ _KEYWORDS = (
     "can",
     "cannot",
 )
-_LOCATION_RE = re.compile(r"at (\d+):(\d+)")
 
 
 class EditorFeatureError(ValueError):
     """Raised when editor feature input exceeds safe bounds."""
 
 
-def build_editor_features(source: str, *, path: str = "<memory>") -> dict[str, Any]:
+def build_editor_features(
+    source: str,
+    *,
+    path: str = "<memory>",
+    source_path: str | Path | None = None,
+    root: str | Path | None = None,
+    source_overrides: Mapping[Path, str] | None = None,
+) -> dict[str, Any]:
     """Return diagnostics and static editor features for one source document."""
 
     if not isinstance(source, str):
@@ -75,13 +84,25 @@ def build_editor_features(source: str, *, path: str = "<memory>") -> dict[str, A
         imports = list(program.imports)
         exports = list(program.exports)
     except (ParseError, ValueError) as exc:
-        diagnostics.append(_diagnostic(str(exc)))
+        diagnostics.append(_diagnostic(exc, tokens, path=path))
 
-    if program is not None and not program.imports:
-        try:
-            check(program)
-        except CheckError as exc:
-            diagnostics.append(_diagnostic(str(exc)))
+    if program is not None:
+        if program.imports and source_path is not None:
+            overrides = dict(source_overrides or {})
+            overrides[Path(source_path)] = source
+            checked = check_project(
+                source_path,
+                root=root,
+                source_overrides=overrides,
+            )
+            report = checked["diagnostics"]
+            assert isinstance(report, dict)
+            diagnostics.extend(report["diagnostics"])
+        else:
+            try:
+                check(program)
+            except CheckError as exc:
+                diagnostics.append(_diagnostic(exc, tokens, path=path))
 
     symbols = _symbols(tokens, program)
     definitions = [
@@ -129,17 +150,28 @@ def _range(token: Token, *, end: Token | None = None) -> dict[str, dict[str, int
     }
 
 
-def _diagnostic(message: str) -> dict[str, Any]:
-    match = _LOCATION_RE.search(message)
-    line = int(match.group(1)) if match else 1
-    column = int(match.group(2)) if match else 1
-    start = _position(line, column)
-    end = _position(line, column, 1)
-    return {
-        "message": message,
+def _diagnostic(exc: Exception, tokens: list[Token], *, path: str) -> dict[str, Any]:
+    structured = diagnostic_from_exception(
+        exc,
+        anchors=anchors_for(tokens) if tokens else None,
+        path=path,
+    )
+    return _diagnostic_payload(structured)
+
+
+def _diagnostic_payload(structured: Diagnostic) -> dict[str, Any]:
+    """Render a structured failure for the editor and LSP layers."""
+
+    payload: dict[str, Any] = {
+        "message": structured.message,
         "severity": "error",
-        "range": {"start": start, "end": end},
+        "range": structured.span.to_lsp() if structured.span is not None else None,
+        "path": structured.path,
+        "code": structured.code,
     }
+    if structured.data:
+        payload["data"] = dict(structured.data)
+    return payload
 
 
 def _symbols(tokens: list[Token], program: Any) -> list[dict[str, Any]]:

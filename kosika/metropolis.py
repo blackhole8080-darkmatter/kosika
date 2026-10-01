@@ -2035,7 +2035,14 @@ def _render_blockscape(
             )
         )
 
-    tree_sites = ((2, 4), (4, 23), (31, 4), (33, 22), (26, 25), (9, 25))
+    tree_sites: tuple[tuple[int, int], ...] = (
+        (2, 4),
+        (4, 23),
+        (31, 4),
+        (33, 22),
+        (26, 25),
+        (9, 25),
+    )
     if render_style == "isometric_lowpoly":
         tree_sites = tree_sites + ((12, 3), (23, 3), (2, 17), (33, 15), (13, 24))
     tree_colours = ("#3E9B58", "#4EAE63", "#2F7D4A", "#5DBB6D")

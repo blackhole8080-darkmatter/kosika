@@ -6,7 +6,7 @@ import math
 import threading
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Mapping
+from typing import TYPE_CHECKING, Any, Callable, Mapping, TypedDict
 
 from .agent_trace import write_agent_trace
 from .approval_ledger import ApprovalLedger, ApprovalLedgerError
@@ -46,6 +46,13 @@ class AgentLoopError(RuntimeError):
 
 class ApprovalRequiredError(AgentLoopError):
     """Raised when an execute-capability tool lacks matching approval."""
+
+
+class _AgentLimits(TypedDict):
+    max_steps: int
+    max_tool_calls: int
+    max_model_calls: int
+    deadline_seconds: float | None
 
 
 @dataclass(frozen=True)
@@ -89,7 +96,7 @@ def plan_hash(
     agent_config: Mapping[str, Any] | None = None,
     input_value: Mapping[str, Any] | None = None,
 ) -> str:
-    payload = {
+    payload: dict[str, Any] = {
         "agent": agent_name,
         "task": task,
         "tools": [
@@ -213,7 +220,7 @@ class AgentLoop:
     def _model_for(self, agent: AgentDecl) -> ModelDecl | None:
         return self._find_model(agent.model) if agent.model is not None else None
 
-    def _limits_for(self, agent: AgentDecl) -> dict[str, int | float | None]:
+    def _limits_for(self, agent: AgentDecl) -> _AgentLimits:
         return {
             "max_steps": self.max_steps
             if self.max_steps is not None
@@ -235,7 +242,7 @@ class AgentLoop:
     def _config_for(
         agent: AgentDecl,
         model: ModelDecl | None,
-        limits: Mapping[str, int | float | None],
+        limits: _AgentLimits,
     ) -> dict[str, Any]:
         model_config = None
         if model is not None:

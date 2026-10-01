@@ -6,6 +6,7 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 from kosika.agent import ApprovalRecord
@@ -118,7 +119,7 @@ class ExecutionRuntimeTests(unittest.TestCase):
         }
         fn wrap() -> Result { return {value: compute(n: 14)} }
         workflow main() -> Result { step get { let result = wrap() return result } }"""
-        events = []
+        events: list[dict[str, Any]] = []
         with self.assertRaises(ExecutionError) as stopped:
             run(
                 parse(source),
@@ -209,7 +210,7 @@ class ExecutionRuntimeTests(unittest.TestCase):
             cancelled.set()
             return {"value": 3}
 
-        events = []
+        events: list[dict[str, Any]] = []
         with self.assertRaises(ExecutionError):
             run(
                 parse(TOOLS),

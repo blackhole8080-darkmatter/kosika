@@ -60,6 +60,11 @@ class ModelResponse:
     tool_calls: tuple[ModelToolCall, ...] = ()
     finish_reason: str = "stop"
     usage: ModelUsage | None = None
+    #: Reasoning trace from a model that separates thinking from its answer.
+    #: Retained rather than discarded so a caller can see that a response was
+    #: spent on reasoning, which is otherwise indistinguishable from the model
+    #: having produced nothing.
+    reasoning: str | None = None
 
 
 class ModelProvider(Protocol):
@@ -100,6 +105,7 @@ class OpenAICompatibleProvider:
         api_key: str | None = None,
         timeout: float = 60.0,
         transport: Transport | None = None,
+        think: bool | None = None,
     ) -> None:
         if not base_url:
             raise ValueError("Model base URL cannot be empty")
@@ -107,6 +113,8 @@ class OpenAICompatibleProvider:
             raise ValueError("Model name cannot be empty")
         if timeout <= 0:
             raise ValueError("Model timeout must be positive")
+        if think is not None and type(think) is not bool:
+            raise ValueError("think must be a boolean or None")
         self.endpoint = (
             base_url
             if base_url.rstrip("/").endswith("/chat/completions")
@@ -116,6 +124,11 @@ class OpenAICompatibleProvider:
         self.api_key = api_key
         self.timeout = timeout
         self._transport = transport
+        #: Reasoning models such as qwen3 emit a separate reasoning trace that
+        #: consumes the output budget before any answer is produced. Set this
+        #: to False when the caller needs a direct answer, for example a
+        #: machine-readable patch. Left as None the server default applies.
+        self.think = think
 
     def complete(self, request: ModelRequest) -> ModelResponse:
         payload: dict[str, Any] = {
@@ -155,6 +168,8 @@ class OpenAICompatibleProvider:
             ):
                 raise ModelProviderError("max_output_tokens must be a positive integer")
             payload["max_tokens"] = request.max_output_tokens
+        if self.think is not None:
+            payload["think"] = self.think
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
         headers = {"Content-Type": "application/json"}
         if self.api_key:
@@ -267,11 +282,15 @@ class OpenAICompatibleProvider:
         finish_reason = choice.get("finish_reason", "stop")
         if not isinstance(finish_reason, str):
             finish_reason = "stop"
+        reasoning = message.get("reasoning")
+        if reasoning is not None and not isinstance(reasoning, str):
+            reasoning = None
         return ModelResponse(
             content=content,
             tool_calls=tuple(tool_calls),
             finish_reason=finish_reason,
             usage=usage,
+            reasoning=reasoning,
         )
 
     @staticmethod

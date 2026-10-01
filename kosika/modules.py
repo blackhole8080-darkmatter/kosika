@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .ast import (
     AgentCall,
     FunctionCall,
+    FunctionCallExpr,
     FunctionRefExpr,
     ModelCall,
     Program,
@@ -18,7 +21,7 @@ from .ast import (
 )
 from .checker import CheckError, check
 from .function_types import referenced_types
-from .parser import parse
+from .parser import ParseError, parse
 
 CATEGORIES = (
     "records",
@@ -29,6 +32,29 @@ CATEGORIES = (
     "functions",
     "workflows",
 )
+
+
+@dataclass
+class ModuleLoadContext:
+    """Source ownership collected by the authoritative module loader.
+
+    Diagnostics pass one context into :func:`load_program` and use it only when
+    loading fails. Runtime callers do not pay for a second module traversal.
+    """
+
+    boundary: Path | None = None
+    sources: dict[Path, str] = field(default_factory=dict)
+    declarations: dict[str, set[Path]] = field(default_factory=dict)
+    steps: dict[str, set[Path]] = field(default_factory=dict)
+    error_path: Path | None = None
+
+    def owner_path(self, name: str, kind: str | None) -> Path | None:
+        candidates = (
+            self.steps.get(name, set())
+            if kind == "step"
+            else self.declarations.get(name, set())
+        )
+        return next(iter(candidates)) if len(candidates) == 1 else None
 
 
 def _references(program: Program) -> set[str]:
@@ -76,7 +102,10 @@ def _references(program: Program) -> set[str]:
                     nested.function_name
                     for nested in expression_function_calls(argument)
                     if isinstance(nested, FunctionRefExpr)
-                    or nested.function_name not in bound
+                    or (
+                        isinstance(nested, FunctionCallExpr)
+                        and nested.function_name not in bound
+                    )
                 )
             if isinstance(call, WorkflowCall):
                 names.add(call.workflow_name)
@@ -93,46 +122,105 @@ def _references(program: Program) -> set[str]:
     return names - {"Text", "Number", "Bool", "Null"}
 
 
-def load_program(path: str | Path, *, root: str | Path | None = None) -> Program:
+def load_program(
+    path: str | Path,
+    *,
+    root: str | Path | None = None,
+    source_overrides: Mapping[Path, str] | None = None,
+    _diagnostic_context: ModuleLoadContext | None = None,
+) -> Program:
     entry = Path(path).absolute()
     boundary = (
         Path(root).resolve(strict=True) if root else entry.parent.resolve(strict=True)
     )
+    overrides = {
+        Path(candidate).resolve(strict=True): source
+        for candidate, source in (source_overrides or {}).items()
+    }
+    if any(not isinstance(source, str) for source in overrides.values()):
+        raise TypeError("Module source overrides must be text")
     loaded: dict[Path, Program] = {}
     active: set[Path] = set()
     merged = Program()
     owners: dict[str, Path] = {}
+    if _diagnostic_context is not None:
+        _diagnostic_context.boundary = boundary
+        _diagnostic_context.sources.clear()
+        _diagnostic_context.declarations.clear()
+        _diagnostic_context.steps.clear()
+        _diagnostic_context.error_path = None
+
+    def mark_error(candidate: Path) -> None:
+        if _diagnostic_context is not None and _diagnostic_context.error_path is None:
+            _diagnostic_context.error_path = candidate
 
     def load(candidate: Path) -> Program:
-        resolved = candidate.resolve(strict=True)
+        try:
+            resolved = candidate.resolve(strict=True)
+        except OSError:
+            if (
+                _diagnostic_context is not None
+                and _diagnostic_context.error_path is None
+            ):
+                _diagnostic_context.error_path = candidate.absolute()
+            raise
         if (
             candidate.is_symlink()
             or not resolved.is_relative_to(boundary)
             or resolved.suffix != ".kos"
         ):
+            mark_error(resolved)
             raise CheckError(
                 f"Import outside the granted .kos module root: {candidate}"
             )
         if resolved in active:
+            mark_error(resolved)
             raise CheckError(f"Import cycle at {resolved}")
         if resolved in loaded:
             return loaded[resolved]
         if len(loaded) + len(active) >= 64 or len(active) >= 16:
+            mark_error(resolved)
             raise CheckError("Module graph exceeds file/depth limit")
-        with resolved.open("rb") as stream:
-            data = stream.read(262145)
+        if resolved in overrides:
+            source = overrides[resolved]
+            data = source.encode("utf-8")
+        else:
+            with resolved.open("rb") as stream:
+                data = stream.read(262145)
+            if len(data) > 262144:
+                mark_error(resolved)
+                raise CheckError(f"Module exceeds 256 KiB: {resolved}")
+            try:
+                source = data.decode("utf-8")
+            except UnicodeDecodeError:
+                if (
+                    _diagnostic_context is not None
+                    and _diagnostic_context.error_path is None
+                ):
+                    _diagnostic_context.error_path = resolved
+                raise
         if len(data) > 262144:
+            mark_error(resolved)
             raise CheckError(f"Module exceeds 256 KiB: {resolved}")
+        if _diagnostic_context is not None:
+            _diagnostic_context.sources[resolved] = source
         try:
-            module = parse(data.decode("utf-8"))
+            module = parse(source)
         except ValueError as exc:
-            raise CheckError(f"{resolved}: {exc}") from exc
+            if (
+                _diagnostic_context is not None
+                and _diagnostic_context.error_path is None
+            ):
+                _diagnostic_context.error_path = resolved
+            error_type = ParseError if isinstance(exc, ParseError) else ValueError
+            raise error_type(f"{resolved}: {exc}") from None
         active.add(resolved)
         visible = set()
         direct_imports: list[str] = []
         for name in module.imports:
             relative = Path(name)
             if relative.is_absolute() or relative.drive:
+                mark_error(resolved)
                 raise CheckError("Import paths must be relative")
             dependency_path = resolved.parent / relative
             dependency = load(dependency_path)
@@ -147,16 +235,25 @@ def load_program(path: str | Path, *, root: str | Path | None = None) -> Program
             len(module.exports) != len(set(module.exports))
             or set(module.exports) - local
         ):
+            mark_error(resolved)
             raise CheckError(f"{resolved}: exports must name unique local declarations")
         hidden = _references(module) - local - visible
         if hidden:
+            mark_error(resolved)
             raise CheckError(
                 f"{resolved}: unavailable or private symbols {sorted(hidden)!r}"
             )
         for name in local:
             if name in owners and owners[name] != resolved:
+                mark_error(resolved)
                 raise CheckError(f"Conflicting module declaration {name!r}")
             owners[name] = resolved
+            if _diagnostic_context is not None:
+                _diagnostic_context.declarations.setdefault(name, set()).add(resolved)
+        if _diagnostic_context is not None:
+            for workflow in module.workflows:
+                for step in workflow.steps:
+                    _diagnostic_context.steps.setdefault(step.name, set()).add(resolved)
         module_key = resolved.relative_to(boundary).as_posix()
         merged.module_declarations[module_key] = tuple(sorted(local))
         merged.module_imports[module_key] = tuple(sorted(direct_imports))

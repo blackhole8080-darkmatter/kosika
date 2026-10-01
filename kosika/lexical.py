@@ -121,8 +121,8 @@ def lower_nested_functions(program: Program) -> Program:
             value = _expression(binding.value, variables, environment, functions)
             bindings.append(replace(binding, value=value))
             identity = f"{name}/{binding.name}"
-            variables[binding.name] = (identity, binding.type_name)
-            types[identity] = binding.type_name
+            variables[binding.name] = (identity, binding.type_name or "Any")
+            types[identity] = binding.type_name or "Any"
             environment[identity] = binding.name
         local_functions = dict(functions)
         seen: set[str] = set()

@@ -22,10 +22,10 @@ permissions:
   contents: read
 
 jobs:
-  manifest-check:
-    name: Check pinned MCP manifest
+  quality:
+    name: Quality and full test suite
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -35,12 +35,13 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install Python quality tools
+      - name: Install Python quality and test tools
         run: >-
           python -m pip install --disable-pip-version-check
           ruff==0.11.13
           mypy==1.15.0
           coverage==7.6.10
+          pytest==8.3.5
 
       - name: Install Kosika and its dependencies
         run: python -m pip install --disable-pip-version-check -e .
@@ -51,25 +52,18 @@ jobs:
       - name: Lint Python
         run: ruff check .
 
-      # Non-blocking: the codebase predates this gate and carries pre-existing
-      # type debt (~96 findings across 30 files). Reported so it stays visible
-      # and cannot grow silently, but it does not block a push until it is
-      # paid down. Remove `continue-on-error` once mypy is clean.
       - name: Type-check Python
-        continue-on-error: true
         run: mypy kosika tests --show-error-codes
 
       - name: Check pinned MCP manifest
         run: >-
-          python -m kosika.cli manifest check
+          kosika manifest check
           examples/mcp_manifest.json
           --mcp-server examples/mcp_host_server.py
           --json
 
-      - name: Run Kosika unit tests with coverage
-        run: >-
-          coverage run --branch
-          -m unittest discover -s tests -v
+      - name: Run the complete test corpus with coverage
+        run: coverage run --branch -m pytest -v
 
       - name: Report coverage
         run: |
@@ -93,3 +87,73 @@ jobs:
           name: kosika-coverage
           path: coverage.xml
           if-no-files-found: error
+
+  compatibility:
+    name: Tests (${{ matrix.os }}, Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python: "3.10"
+          - os: windows-latest
+            python: "3.12"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install Kosika and pytest
+        run: >-
+          python -m pip install --disable-pip-version-check
+          pytest==8.3.5
+          -e .
+
+      - name: Run the complete test corpus
+        run: python -m pytest -q
+
+  distribution:
+    name: Built distribution smoke
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build wheel and source distribution
+        run: |
+          python -m pip install --disable-pip-version-check build==1.2.2.post1
+          python -m build
+
+      - name: Install the wheel in an isolated environment
+        run: |
+          python -m venv .venv-smoke
+          .venv-smoke/bin/python -m pip install --disable-pip-version-check dist/*.whl
+
+      - name: Exercise installed CLI, LSP, replay, and workbench
+        run: |
+          smoke="$RUNNER_TEMP/kosika-smoke"
+          mkdir -p "$smoke"
+          cp examples/hello_world.kos "$smoke/"
+          cd "$smoke"
+          "$GITHUB_WORKSPACE/.venv-smoke/bin/kosika" --help
+          "$GITHUB_WORKSPACE/.venv-smoke/bin/kosika-lsp" --version
+          "$GITHUB_WORKSPACE/.venv-smoke/bin/kosika" check hello_world.kos
+          "$GITHUB_WORKSPACE/.venv-smoke/bin/kosika" run hello_world.kos --trace trace.jsonl
+          "$GITHUB_WORKSPACE/.venv-smoke/bin/kosika" replay trace.jsonl
+          "$GITHUB_WORKSPACE/.venv-smoke/bin/python" -m kosika.workbench --port 8765 >workbench.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+          curl --retry 10 --retry-connrefused --retry-delay 1 --fail http://127.0.0.1:8765/ | grep -q "Kosika"

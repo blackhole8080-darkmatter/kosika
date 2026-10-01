@@ -3,8 +3,10 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 
 from kosika.agent import ApprovalRecord
+from kosika.ast import ToolDecl
 from kosika.durable import ApprovalPending, ExecutionSession
 from kosika.modules import load_program
 from kosika.runtime import replay, run
@@ -16,9 +18,9 @@ EXAMPLE = ROOT / "examples" / "approval_mutation.kos"
 class ApprovalMutationTests(unittest.TestCase):
     def test_pause_exact_resume_single_effect_and_replay(self) -> None:
         program = load_program(EXAMPLE)
-        calls: list[tuple[str, dict[str, str]]] = []
+        calls: list[tuple[ToolDecl, dict[str, Any]]] = []
 
-        def apply_change(tool: str, arguments: dict[str, str]) -> dict[str, str]:
+        def apply_change(tool: ToolDecl, arguments: dict[str, Any]) -> dict[str, str]:
             calls.append((tool, arguments))
             return {
                 "status": "applied",

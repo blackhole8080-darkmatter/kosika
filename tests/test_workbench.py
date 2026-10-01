@@ -52,6 +52,7 @@ class WorkbenchTests(unittest.TestCase):
             "C:/outside.kos",
             "NUL.kos",
             "sub//a.kos",
+            "main.syn",
         ):
             with self.subTest(name=name), self.assertRaises(ValueError):
                 dispatch(
@@ -113,7 +114,16 @@ class WorkbenchTests(unittest.TestCase):
                 request("GET", "/api/session", headers={"Host": "evil.example"})[0], 403
             )
             status, body, _ = request("GET", "/api/session")
-            token = json.loads(body)["token"]
+            session = json.loads(body)
+            token = session["token"]
+            self.assertEqual(session["source_extension"], ".kos")
+            self.assertTrue(
+                all(
+                    name.endswith(session["source_extension"])
+                    for sample in session["samples"]
+                    for name in sample["files"]
+                )
+            )
             data = json.dumps(payload(SAMPLES[1]))
             self.assertEqual(
                 request("POST", "/api/run", data, {"Content-Type": "application/json"})[
