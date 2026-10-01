@@ -312,6 +312,7 @@ def build_mindmap(
             workflow=swarm.workflow,
             max_rounds=swarm.max_rounds,
             approval_required=swarm.approval_required,
+            executable=False,
         )
         connect(
             _node_id("module", module_for(swarm.name)),
@@ -323,7 +324,12 @@ def build_mindmap(
             connect(
                 swarm_id, _node_id("agent", agent_name), "coordinates", "works with"
             )
-        connect(swarm_id, _node_id("workflow", swarm.workflow), "runs", "runs together")
+        connect(
+            swarm_id,
+            _node_id("workflow", swarm.workflow),
+            "would_run",
+            "would run together",
+        )
 
     for function in sorted(program.functions, key=lambda item: item.name):
         function_id = add_node(

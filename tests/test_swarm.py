@@ -212,7 +212,9 @@ class SwarmVisualisationTests(unittest.TestCase):
         self.assertIn(
             ("swarm:EditorialBoard", "coordinates", "agent:editor"), relations
         )
-        self.assertIn(("swarm:EditorialBoard", "runs", "workflow:review"), relations)
+        self.assertIn(
+            ("swarm:EditorialBoard", "would_run", "workflow:review"), relations
+        )
 
     def test_mindmap_is_deterministic_with_a_swarm(self) -> None:
         program = load_program(EXAMPLE)
@@ -227,9 +229,13 @@ class SwarmVisualisationTests(unittest.TestCase):
 
     def test_developer_view_reports_swarm_fields(self) -> None:
         text = to_explanation_text(build_explanation(load_program(EXAMPLE)))
-        self.assertIn("Swarm EditorialBoard runs review with editor, researcher", text)
+        self.assertIn(
+            "Swarm EditorialBoard declares review with editor, researcher", text
+        )
         self.assertIn("max_rounds=3", text)
         self.assertIn("approval required: True", text)
+        self.assertIn("a swarm is not executable", text)
+        self.assertNotIn("EditorialBoard runs review", text)
 
     def test_design_contains_a_swarm_node_and_an_approval_edge(self) -> None:
         manifest = build_design_from_program(

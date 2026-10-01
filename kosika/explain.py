@@ -599,11 +599,16 @@ def to_explanation_text(explanation: dict[str, Any]) -> str:
             lines.append(f"  Step {node['label']} binds {attributes.get('binding')}")
         elif kind == "swarm":
             lines.append(
-                f"Swarm {node['label']} runs {attributes.get('workflow')} with "
-                f"{', '.join(sorted(attributes.get('agents', [])))}; "
+                f"Swarm {node['label']} declares {attributes.get('workflow')} "
+                f"with {', '.join(sorted(attributes.get('agents', [])))}; "
                 f"max_rounds={attributes.get('max_rounds')}; "
                 f"approval required: {attributes.get('approval_required', False)}"
             )
+            if not attributes.get("executable", False):
+                lines.append(
+                    "  Declared only: a swarm is not executable, so this states an "
+                    "intent that Kosika does not run."
+                )
         elif kind == "record":
             fields = attributes.get("fields", [])
             description = ", ".join(

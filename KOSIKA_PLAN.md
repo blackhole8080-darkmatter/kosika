@@ -576,21 +576,59 @@ The next tasks are ordered by dependency:
    one project per audience with `checked`, `declared`, `observed`, and `human`
    evidence kept apart, counted omissions, hash-gated trace observations, and an
    integrity check that blocks output.
-9. **K10 — Executable swarm semantics.** Define typed messages, scheduling,
-   state ownership, rounds, consensus, termination, failures, and aggregate budgets.
+9. **K10 — Executable swarm semantics (K10a complete).** Define typed messages,
+   scheduling, state ownership, rounds, consensus, termination, failures, and
+   aggregate budgets. K10a makes the current limit explicit; K10b makes one swarm
+   invocable.
 10. **K11 — Approval-controlled AI changes.** Apply exact checked proposals only
-     after authenticated host review; resolve workflow-agent mutation integration.
+    after authenticated host review; resolve workflow-agent mutation integration.
 11. **K12 — Reproducible delivery (local slice exercised).** Build wheel and
     source artifacts containing the CLI, LSP, and workbench assets; install the
     wheel outside the checkout; and smoke check, run, replay, LSP, and workbench.
     Published releases and remote execution remain planned.
 
-**Active task: K10.** Swarm declarations parse, check, and render, but there is no
-executable swarm call, round scheduler, consensus algorithm, or enforced
-swarm-start approval gate. K09's evidence classes are the vocabulary this should
-reuse: a consensus decision is a judgment over observed evidence rather than a
-model assertion, and swarm output must not acquire authority the way model output
-cannot.
+**Active task: K10b.** A declared swarm is not executable, and K10a made that
+visible everywhere the language describes one. K10b makes a single swarm
+invocable behind an authenticated approval gate: typed messages, deterministic
+round order, `max_rounds` and an aggregate step budget enforced across all
+members, approval recorded in the ledger, and every executed step labelled
+`observed`. K09's evidence classes are the vocabulary: a swarm decision is a
+judgment over observed evidence rather than a model assertion, and swarm output
+must not acquire authority the way model output cannot.
+
+## K10a swarm declarations are honest about not running (complete)
+
+- The gap this closes: `examples/swarm_review.kos` passed `kosika check`, and the
+  mindmap stated that the swarm *runs* `review`, while nothing in `cli.py`,
+  `runtime.py`, or `approval_ledger.py` referenced a swarm at all. Running it
+  reported `Unknown workflow 'main'`, which reads as a forgotten `main` and sends
+  the reader looking for the wrong bug.
+- `require approval` was already mandatory at parse time and re-checked at
+  `checker.py`, so the declaration's one meaningful field was a human gate that
+  nothing could grant. The declaration is kept, because a checked and mapped
+  intent is still true, but it now grants nothing and says so.
+- `runtime._entry_point_error` reports a swarm-only program honestly: it names the
+  swarms, states that a declared swarm is not an executable entry point, and lists
+  the workflows that can actually run. A program without a swarm keeps the plain
+  `Unknown workflow` message.
+- Swarm nodes carry `executable: false` as a mindmap attribute, so the limit is
+  machine-readable rather than a matter of prose. The swarm-to-workflow relation
+  is `would_run`, not `runs`; `design.py` maps it to the existing `invokes` design
+  edge, because that view describes intended architecture.
+- `explain` now reads "declares" rather than "runs" and adds an explicit
+  "Declared only" line. The audience map inherits both, since it is built from
+  mindmap attributes.
+- `SwarmDecl`'s docstring states that a declared swarm is not executable, so the
+  limitation is visible to anyone reading the type.
+- 12 new tests in `tests/test_swarm_declarations.py` cover the entry-point error,
+  the plain message when no swarm exists, the unreachable no-workflow branch
+  exercised on the value directly, the mindmap attributes and relation, map
+  determinism, and that `require approval` is still enforced. Three existing
+  assertions in `tests/test_swarm.py` were updated to the truthful relation and
+  wording; no enforcement was loosened.
+- Not claimed: no swarm executes, no approval gate is enforced at runtime, and no
+  round, consensus, or budget semantics exist. This slice only stops the language
+  from implying otherwise.
 
 ## Standard coding-agent procedure
 

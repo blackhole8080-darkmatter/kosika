@@ -886,6 +886,32 @@ def run(
     return result
 
 
+def _entry_point_error(program: Program, workflow_name: str) -> str:
+    """Explain a missing entry point, including when a swarm is the real reason.
+
+    A program whose only entry point is a declared swarm has nothing to run.
+    Reporting ``Unknown workflow 'main'`` there is worse than unhelpful: it reads
+    as a forgotten ``main`` and sends the reader looking for the wrong bug. The
+    swarm is the honest answer, so the error says so and names what can be run.
+    """
+
+    if program.swarms:
+        names = ", ".join(sorted(swarm.name for swarm in program.swarms))
+        available = sorted(workflow.name for workflow in program.workflows)
+        entry = (
+            f"This program declares swarm(s) {names}, and a declared swarm is a "
+            "statement of intent rather than an executable entry point. Kosika "
+            "does not execute swarms yet, so there is nothing to run for "
+            f"{workflow_name!r}."
+        )
+        if available:
+            entry += f" Runnable workflow(s): {', '.join(available)}."
+        else:
+            entry += " This program declares no workflow to run."
+        return entry
+    return f"Unknown workflow {workflow_name!r}"
+
+
 def _run_workflow(
     program: Program,
     workflow_name: str,
@@ -934,7 +960,7 @@ def _run_workflow(
         (item for item in program.workflows if item.name == workflow_name), None
     )
     if workflow is None:
-        raise ValueError(f"Unknown workflow {workflow_name!r}")
+        raise ValueError(_entry_point_error(program, workflow_name))
     tools = {tool.name: tool for tool in program.tools}
     agents = {agent.name: agent for agent in program.agents}
     models = {model.name: model for model in program.models}

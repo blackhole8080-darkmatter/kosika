@@ -399,6 +399,10 @@ def _edge_map(mindmap_relation: str) -> str | None:
         "cannot": None,  # rendered as prohibition walls on the agent node
         "model": "uses",
         "coordinates": "uses",
+        # A declared swarm is not executable, so the mindmap states the intent
+        # rather than a run. The design view keeps drawing it as an invocation
+        # because that view describes the intended architecture.
+        "would_run": "invokes",
         "runs": "invokes",
         "calls": "calls",
         "computes": "calls",

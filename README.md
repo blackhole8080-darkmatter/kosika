@@ -49,11 +49,13 @@ bounded read-only DAG API, host-granted JSON/HTTP/SQLite adapters, development
 commands, an LSP/editor backend, and evaluation fixtures.
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for runnable examples, APIs, security
-boundaries, and current limitations. Live provider bindings exist but a working
-model endpoint is environment-dependent and has not been established as a
-release guarantee. Parallel DAG execution is a host API rather than language
-swarm execution. Editor/LSP integration is implemented but not equivalent to a
-packaged, production-tested IDE experience.
+boundaries, and current limitations. A working local model endpoint has been
+exercised end to end, but model quality and hosted availability remain
+environment-dependent and are not release guarantees. Parallel DAG execution is a
+host API rather than language swarm execution: a `swarm` declaration is checked,
+mapped, and required to state `require approval`, but it is not executable, and
+every surface that describes one says so. Editor/LSP integration is implemented
+but not equivalent to a packaged, production-tested IDE experience.
 
 ### Hello World
 

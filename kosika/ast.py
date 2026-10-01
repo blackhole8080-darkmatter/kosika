@@ -114,7 +114,7 @@ class AgentDecl:
 
 @dataclass(frozen=True)
 class SwarmDecl:
-    """A named group of agents that work one shared workflow.
+    """A named group of agents declared to work one shared workflow.
 
     A swarm is a declaration of cooperation, not extra authority: it names
     agents that already exist, the workflow they run together, and the number
@@ -122,6 +122,12 @@ class SwarmDecl:
     declared swarm; the parser refuses a swarm that does not state
     ``require approval``. Human approval is a property of the declaration, so
     it cannot be removed by a model, a tool, or a later configuration change.
+
+    A declared swarm is not executable. No runtime entry point accepts one, so
+    a program whose only entry point is a swarm has nothing to run. The
+    declaration is kept because it states an intent that is checked and mapped
+    like any other, but it grants nothing and runs nothing until an executable
+    swarm path exists.
     """
 
     name: str
