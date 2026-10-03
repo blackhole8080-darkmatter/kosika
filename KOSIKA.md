@@ -378,6 +378,10 @@ human identity; authentication is a host responsibility.
 - Cancellation, deadline, and budget checks occur between language operations
   and provider/tool calls. They do not preempt an in-flight host effect.
 
+The Python builder `kosika.sdk` is a **Host API**: it renders `.kos` source and
+passes it through the same parser and checker, so it adds no syntax or
+semantics.
+
 The bounded read-only DAG executor, HTTP/JSON/SQLite adapters, live provider
 adapters, and retry helpers are **Host API** features. They do not add syntax
 or parallel execution semantics to `.kos`.

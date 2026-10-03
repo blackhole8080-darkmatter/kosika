@@ -593,6 +593,28 @@ left out: typed messages between members, state carried from one round to the
 next, and a termination judgment over observed evidence rather than result
 equality. Swarm output must not acquire authority the way model output cannot.
 
+## Python SDK (complete)
+
+- `kosika.sdk` builds a program from Python: `App.record`, `model`, `tool`,
+  `agent`, `workflow`, `swarm`, and `source`; workflow steps `use_model`, `ask`,
+  `execute`, `call`, and `function`. Step methods return a `Ref` to their
+  result so later steps can use it; `ref("question.text")` passes any Kosika
+  expression, and Python values become Kosika literals.
+- It is a source builder, not a second front end. `to_source()` renders `.kos`
+  text and `build()` runs `parse` and `check` on it, so the checker stays the
+  only authority and no AST is constructed by hand. `save()` writes a file only
+  after the program checks.
+- The SDK mints no authority: `run()` forwards explicit bindings to
+  `kosika.runtime.run`, and an unbound model fails closed.
+- 13 tests in `tests/test_sdk.py` prove AST equality between SDK-built programs
+  and three hand-written ones (the starter, `examples/research_agent.kos`, and
+  `examples/swarm_review.kos`), plus run, trace, replay, an approved swarm run
+  of an SDK-built program, literal rendering, 17 refused builder calls, and
+  that a checker rejection still surfaces.
+- Not claimed: no builder for pure functions, expressions, or imports (use
+  `source()` or a `.kos` file); Python only, so a TypeScript SDK would need its
+  own renderer; and `bind` cannot be used as an argument name.
+
 ## Beginner path (complete)
 
 - `kosika new DIR` writes a four-file starter (`kosika/starter.py`): a typed

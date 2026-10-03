@@ -134,4 +134,6 @@ for more detail, or `kosika mindmap main.kos --format mermaid` for a diagram.
   [README.md](README.md#local-model-provider-and-agent-loop).
 - Several agents under one human approval: `examples/swarm_review.kos` and
   [Approved swarm runs](README.md#approved-swarm-runs).
+- Build the same program from Python instead of a `.kos` file:
+  [Python SDK](README.md#python-sdk) and `examples/sdk_hello.py`.
 - The full language: [KOSIKA.md](KOSIKA.md).

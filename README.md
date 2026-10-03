@@ -53,6 +53,34 @@ kosika run main.kos --input input.json --model-fixture responses.json
 kosika run main.kos --input input.json --model YOUR_LOCAL_MODEL
 ```
 
+## Python SDK
+
+`kosika.sdk` builds a Kosika program from Python instead of a `.kos` file:
+
+```python
+from kosika.sdk import App, ref
+
+app = App()
+question = app.record("Question", text="Text")
+answer = app.record("Answer", text="Text")
+assistant = app.model("assistant", input=question, output=answer)
+main = app.workflow("main", output=answer, question=question)
+main.use_model("respond", assistant, text=ref("question.text"))
+
+program = app.build()              # parsed and checked like any .kos file
+app.save("main.kos")               # the same program as source
+app.run(inputs={...}, model_bindings={"assistant": provider})
+```
+
+It is not a second language. The builder renders ordinary `.kos` text and
+`build()` sends it through the same parser and checker, so the result is the
+same checked program, with the same limits, approvals, and replayable traces.
+`App` also has `tool`, `agent`, `swarm`, and `source` (for hand-written `fn`
+declarations); a workflow has `use_model`, `ask`, `execute`, `call`, and
+`function` steps. The SDK grants nothing: `run` takes explicit bindings, as
+`kosika.runtime.run` does. Run `python examples/sdk_hello.py` for a complete
+offline example.
+
 ## Language and runtime expansion
 
 Kosika includes local imports with explicit exports, typed workflow calls, pure
