@@ -50,14 +50,14 @@ class EntryPointErrorTests(unittest.TestCase):
     def test_a_swarm_only_program_says_it_has_nothing_to_run(self) -> None:
         message = _entry_point_error(program_from(SWARM_ONLY), "main")
         self.assertIn("EditorialBoard", message)
-        self.assertIn("does not execute swarms", message)
+        self.assertIn("not an executable entry point", message)
         self.assertIn("Runnable workflow(s):", message)
         self.assertIn("review", message)
         self.assertNotIn("Unknown workflow", message)
 
     def test_the_message_does_not_read_as_a_forgotten_main(self) -> None:
         message = _entry_point_error(program_from(SWARM_ONLY), "main")
-        self.assertIn("statement of intent", message)
+        self.assertIn("only under approval through `kosika swarm`", message)
 
     def test_a_program_without_a_swarm_keeps_the_plain_error(self) -> None:
         program = load_program(HELLO)
@@ -82,9 +82,7 @@ class EntryPointErrorTests(unittest.TestCase):
 class SwarmMindmapTests(unittest.TestCase):
     def setUp(self) -> None:
         self.map = build_mindmap(load_program(SWARM_REVIEW))
-        self.swarm = next(
-            node for node in self.map["nodes"] if node["kind"] == "swarm"
-        )
+        self.swarm = next(node for node in self.map["nodes"] if node["kind"] == "swarm")
 
     def test_a_swarm_node_states_that_it_is_not_executable(self) -> None:
         self.assertIs(self.swarm["attributes"]["executable"], False)
@@ -116,6 +114,7 @@ class DeclarationStillChecksTests(unittest.TestCase):
         text = SWARM_ONLY.replace("  require approval\n", "")
         with self.assertRaisesRegex(Exception, "require approval"):
             program_from(text)
+
     def test_the_example_program_still_checks(self) -> None:
         program = load_program(SWARM_REVIEW)
         self.assertEqual(len(program.swarms), 1)
@@ -123,10 +122,10 @@ class DeclarationStillChecksTests(unittest.TestCase):
 
     def test_the_example_is_declarative_only(self) -> None:
         program = load_program(SWARM_REVIEW)
-        self.assertEqual(
-            [swarm.name for swarm in program.swarms], ["EditorialBoard"]
+        self.assertEqual([swarm.name for swarm in program.swarms], ["EditorialBoard"])
+        self.assertIn(
+            "not an executable entry point", _entry_point_error(program, "main")
         )
-        self.assertIn("does not execute swarms", _entry_point_error(program, "main"))
 
 
 if __name__ == "__main__":

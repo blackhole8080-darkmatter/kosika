@@ -899,10 +899,10 @@ def _entry_point_error(program: Program, workflow_name: str) -> str:
         names = ", ".join(sorted(swarm.name for swarm in program.swarms))
         available = sorted(workflow.name for workflow in program.workflows)
         entry = (
-            f"This program declares swarm(s) {names}, and a declared swarm is a "
-            "statement of intent rather than an executable entry point. Kosika "
-            "does not execute swarms yet, so there is nothing to run for "
-            f"{workflow_name!r}."
+            f"This program declares swarm(s) {names}, and a declared swarm is "
+            "not an executable entry point for `run`, so there is nothing to run "
+            f"for {workflow_name!r}. A swarm runs only under approval through "
+            "`kosika swarm`."
         )
         if available:
             entry += f" Runnable workflow(s): {', '.join(available)}."

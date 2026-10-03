@@ -1363,6 +1363,56 @@ def build_parser() -> argparse.ArgumentParser:
     )
     audience_map_parser.add_argument("--output", type=Path)
 
+    swarm_parser = subparsers.add_parser(
+        "swarm",
+        help="Show a swarm's plan hash, or run it under one approval.",
+    )
+    swarm_parser.add_argument("source", type=Path)
+    swarm_parser.add_argument(
+        "--swarm", required=True, help="Name of the declared swarm to run."
+    )
+    swarm_parser.add_argument(
+        "--plan",
+        action="store_true",
+        help="Print the plan hash for review and exit without running anything.",
+    )
+    swarm_parser.add_argument(
+        "--approved-by",
+        help="Who approved this run. Required to run, and must not be blank.",
+    )
+    swarm_parser.add_argument(
+        "--plan-hash",
+        help="The plan hash from --plan that the approver reviewed.",
+    )
+    swarm_parser.add_argument(
+        "--approval-ledger",
+        type=Path,
+        help="Persistent one-use approval ledger. Required to run.",
+    )
+    swarm_parser.add_argument("--reason", default="", help="Why the run was approved.")
+    swarm_parser.add_argument("--mcp-source", help="MCP source name to bind.")
+    swarm_parser.add_argument(
+        "--mcp-server", type=Path, help="Local MCP server the swarm's tools bind to."
+    )
+    swarm_parser.add_argument(
+        "--mcp-manifest", type=Path, help="MCP manifest, required with --mcp-server."
+    )
+    swarm_parser.add_argument(
+        "--input", type=Path, help="JSON inputs for the swarm's workflow."
+    )
+    swarm_parser.add_argument(
+        "--model-fixture",
+        type=Path,
+        help="JSON map of model names to ordered deterministic output records.",
+    )
+    swarm_parser.add_argument(
+        "--tool-fixture",
+        type=Path,
+        help="JSON map of tool names to an output record or list of records.",
+    )
+    swarm_parser.add_argument("--format", choices=("json", "text"), default="text")
+    swarm_parser.add_argument("--output", type=Path)
+
     unified_parser = subparsers.add_parser(
         "unified",
         help="Combine a checked Kosika mindmap with an optional external source map.",
@@ -2005,6 +2055,136 @@ def main() -> int:
                 print(rendered, end="")
         except (AudienceMapError, OSError, ValueError) as exc:
             print(f"Audience map failed safely: {exc}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "swarm":
+        from .approval_ledger import ApprovalLedger
+        from .checker import CheckError
+        from .swarm import (
+            SwarmApproval,
+            SwarmRunError,
+            run_swarm,
+            swarm_plan_hash,
+        )
+
+        try:
+            program = load_program(args.source)
+            plan = swarm_plan_hash(program, args.swarm)
+            if args.plan:
+                declared = next(
+                    item for item in program.swarms if item.name == args.swarm
+                )
+                plan_payload = {
+                    "swarm": declared.name,
+                    "workflow": declared.workflow,
+                    "agents": list(declared.agents),
+                    "max_rounds": declared.max_rounds,
+                    "approval_required": declared.approval_required,
+                    "plan_hash": plan,
+                    "notice": (
+                        "Approving this hash authorizes exactly one run of this "
+                        "swarm against this checked program. No swarm executes "
+                        "until an approval naming this hash is supplied."
+                    ),
+                }
+                print(json.dumps(plan_payload, indent=2, sort_keys=True))
+                return 0
+
+            missing = [
+                name
+                for name, value in (
+                    ("--approved-by", args.approved_by),
+                    ("--plan-hash", args.plan_hash),
+                    ("--approval-ledger", args.approval_ledger),
+                )
+                if not value
+            ]
+            if missing:
+                raise SwarmRunError(
+                    "running a swarm requires "
+                    + ", ".join(missing)
+                    + f"; review the plan first with --plan (hash {plan})"
+                )
+            approval = SwarmApproval(
+                plan_hash=args.plan_hash,
+                approved_by=args.approved_by,
+                reason=args.reason,
+            )
+            if bool(args.mcp_server) != bool(args.mcp_manifest):
+                raise SwarmRunError("--mcp-server and --mcp-manifest are used together")
+            if args.tool_fixture is not None and args.mcp_server is not None:
+                raise SwarmRunError("Use either --tool-fixture or --mcp-server")
+            swarm_tool_bindings: dict[str, Any] | None = None
+            if args.tool_fixture is not None:
+                swarm_tool_fixture = _agent_tool_fixture(args.tool_fixture)
+
+                def swarm_fixture_tool(
+                    declaration: ToolDecl, _arguments: dict[str, Any]
+                ) -> Any:
+                    return _agent_tool_fixture_result(swarm_tool_fixture, declaration)
+
+                swarm_tool_bindings = {
+                    tool.name: swarm_fixture_tool
+                    for tool in program.tools
+                    if tool.name in swarm_tool_fixture
+                    or tool.operation in swarm_tool_fixture
+                }
+            swarm_mcp_commands: dict[str, Sequence[str]] | None = (
+                {args.mcp_source: [sys.executable, str(args.mcp_server)]}
+                if args.mcp_server is not None
+                else None
+            )
+            swarm_manifest = (
+                load_manifest(args.mcp_manifest)
+                if args.mcp_manifest is not None
+                else None
+            )
+            outcome = run_swarm(
+                program,
+                args.swarm,
+                approval=approval,
+                ledger=ApprovalLedger(args.approval_ledger),
+                mcp_commands=swarm_mcp_commands,
+                manifest=swarm_manifest,
+                model_bindings=_model_fixture_bindings(args.model_fixture)
+                if args.model_fixture is not None
+                else None,
+                tool_bindings=swarm_tool_bindings,
+                inputs=json.loads(args.input.read_text(encoding="utf-8"))
+                if args.input is not None
+                else None,
+            )
+            if args.format == "json":
+                print(json.dumps(outcome.to_dict(), indent=2, sort_keys=True))
+            else:
+                print(
+                    f"swarm       : {outcome.swarm}\n"
+                    f"workflow    : {outcome.workflow}\n"
+                    f"agents      : {', '.join(outcome.agents)}\n"
+                    f"rounds      : {len(outcome.rounds)} of at most "
+                    f"{outcome.max_rounds}\n"
+                    f"terminated  : {outcome.terminated_by}\n"
+                    f"approved by : {outcome.approved_by}\n"
+                    f"plan hash   : {outcome.plan_hash}\n"
+                    f"counts      : {json.dumps(outcome.counts, sort_keys=True)}\n"
+                    f"digest      : {outcome.digest}\n"
+                    f"result      : {json.dumps(outcome.result, sort_keys=True)}"
+                )
+            if args.output is not None:
+                args.output.parent.mkdir(parents=True, exist_ok=True)
+                args.output.write_text(
+                    json.dumps(outcome.to_dict(), indent=2, sort_keys=True) + "\n",
+                    encoding="utf-8",
+                )
+        except (
+            SwarmRunError,
+            AgentLoopError,
+            CheckError,
+            OSError,
+            ValueError,
+        ) as exc:
+            print(f"Swarm run failed safely: {exc}", file=sys.stderr)
             return 2
         return 0
 

@@ -17,7 +17,7 @@ reviewed and argued with, not because it is ready to depend on.
   offline validation/replay of recorded traces; and a pinned local
   cross-language component contract.
 - **What remains incomplete.** A demonstrated live-model setup, published
-  releases and remote delivery, executable swarm semantics, component
+  releases and remote delivery, swarm messaging and consensus, component
   sandboxing, expression-precise checker spans, and the full AI
   author/check/repair/run loop. Several features in the tree are declared,
   checked, rendered, or exposed as host experiments but are not integrated
@@ -53,8 +53,9 @@ boundaries, and current limitations. A working local model endpoint has been
 exercised end to end, but model quality and hosted availability remain
 environment-dependent and are not release guarantees. Parallel DAG execution is a
 host API rather than language swarm execution: a `swarm` declaration is checked,
-mapped, and required to state `require approval`, but it is not executable, and
-every surface that describes one says so. Editor/LSP integration is implemented
+mapped, and required to state `require approval`. `run` does not accept one; it
+runs only through `kosika swarm` under one approval (see
+[Approved swarm runs](#approved-swarm-runs)). Editor/LSP integration is implemented
 but not equivalent to a packaged, production-tested IDE experience.
 
 ### Hello World
@@ -565,6 +566,36 @@ The approval record is bound to this source, input, binding identity, workflow
 step, tool, and arguments. A changed action hash remains pending and cannot
 invoke the host effect.
 
+
+## Approved swarm runs
+
+A `swarm` names agents, one workflow, a round cap, and `require approval`.
+`kosika swarm` runs that workflow once per round. It stops when two consecutive
+rounds return the same result (`fixed_point`) or at `max_rounds`. One approval
+authorizes one run: it names the plan hash, which covers the swarm and the whole
+checked program, and it is claimed in the ledger before any member acts.
+
+Review the plan, then approve exactly that hash:
+
+```powershell
+python -m kosika.cli swarm examples/swarm_review.kos --swarm EditorialBoard --plan
+python -m kosika.cli swarm examples/swarm_review.kos `
+  --swarm EditorialBoard `
+  --approved-by "your-name" `
+  --plan-hash PLAN_HASH_FROM_ABOVE `
+  --approval-ledger swarm-approvals.sqlite `
+  --model-fixture examples/swarm_review_models.json `
+  --tool-fixture examples/swarm_review_tools.json
+```
+
+The fixtures are deterministic stand-ins for the model and the tool. Use
+`--mcp-server` with `--mcp-manifest` for a pinned MCP tool source instead of
+`--tool-fixture`. All rounds share one execution budget. A failed round still
+spends the approval, because members may already have acted, and the ledger
+records the failure. Rerunning with the same ledger is refused.
+
+This is not consensus. Members exchange no messages and share no state between
+rounds, and the approver name is a label, not an authenticated identity.
 
 ## Local model provider and agent loop
 

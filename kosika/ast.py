@@ -123,11 +123,10 @@ class SwarmDecl:
     ``require approval``. Human approval is a property of the declaration, so
     it cannot be removed by a model, a tool, or a later configuration change.
 
-    A declared swarm is not executable. No runtime entry point accepts one, so
-    a program whose only entry point is a swarm has nothing to run. The
-    declaration is kept because it states an intent that is checked and mapped
-    like any other, but it grants nothing and runs nothing until an executable
-    swarm path exists.
+    A declared swarm is not a workflow entry point: ``run`` does not accept one.
+    It runs only through ``kosika.swarm.run_swarm`` (``kosika swarm`` on the
+    command line), under one approval bound to the swarm's plan hash. The
+    declaration itself grants nothing and runs nothing.
     """
 
     name: str

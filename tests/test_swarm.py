@@ -234,7 +234,7 @@ class SwarmVisualisationTests(unittest.TestCase):
         )
         self.assertIn("max_rounds=3", text)
         self.assertIn("approval required: True", text)
-        self.assertIn("a swarm is not executable", text)
+        self.assertIn("a swarm is not a workflow entry point", text)
         self.assertNotIn("EditorialBoard runs review", text)
 
     def test_design_contains_a_swarm_node_and_an_approval_edge(self) -> None:

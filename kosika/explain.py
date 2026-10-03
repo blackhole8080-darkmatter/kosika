@@ -606,8 +606,8 @@ def to_explanation_text(explanation: dict[str, Any]) -> str:
             )
             if not attributes.get("executable", False):
                 lines.append(
-                    "  Declared only: a swarm is not executable, so this states an "
-                    "intent that Kosika does not run."
+                    "  Declared only: a swarm is not a workflow entry point. It runs "
+                    "only through `kosika swarm` under one approval."
                 )
         elif kind == "record":
             fields = attributes.get("fields", [])

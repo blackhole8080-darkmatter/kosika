@@ -451,7 +451,12 @@ python -m kosika.cli run examples/composed/main.kos \
 The parser recognizes some syntax outside the supported runtime contract:
 
 - `swarm` declarations are parsed, checked, and rendered in design views.
-  There is no swarm scheduler or `run` entry point. `swarm` is
+  `run` does not accept a swarm. The **Host API** `kosika.swarm.run_swarm`
+  (`kosika swarm`) runs a swarm's declared workflow once per round, up to
+  `max_rounds` or until two consecutive rounds return the same result, under
+  one ledger-claimed approval bound to the swarm's plan hash and one shared
+  execution budget. There is no member messaging, scheduling policy, shared
+  state between rounds, or consensus. The `swarm` syntax itself remains
   **Tooling-only experimental**.
 - Inline anonymous `fn(...) -> T { expression }` values are parsed and may pass
   checking when non-capturing, but the runtime does not execute them.

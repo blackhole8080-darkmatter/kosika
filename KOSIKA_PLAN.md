@@ -52,7 +52,7 @@ Status meanings:
 | Trace validation and offline replay | Exercised | The composed fixture run replayed the same typed result without provider access. Replay validates and returns recorded outcomes; it does not re-execute source or provide tamper-proof attestation. |
 | Budgets, cancellation, deadlines, and retries | Implemented | `kosika/execution.py` and `kosika/controls.py` provide bounded accounting and cooperative checks. They do not hard-stop arbitrary host code or guarantee a remote token bill cannot overshoot. |
 | Read-only parallel workflow DAG | Implemented | `kosika/dag.py` schedules host-defined observe-only nodes with bounded concurrency and replay. There is no corresponding language syntax and it is not the swarm runtime. |
-| Swarm declarations, rounds, consensus, and group approval | Experimental | Swarms parse, check, and render through `kosika/parser.py`, `kosika/checker.py`, and `kosika/mindmap.py`. No executable swarm call, round scheduler, consensus algorithm, or enforced swarm-start approval gate was found. |
+| Swarm declarations, rounds, consensus, and group approval | Experimental | Swarms parse, check, and render through `kosika/parser.py`, `kosika/checker.py`, and `kosika/mindmap.py`. `kosika/swarm.py` (K10b) runs one swarm's workflow in bounded rounds under one ledger-claimed approval and a shared budget, exercised from the CLI with fixtures. There is no member messaging, scheduling policy, shared round state, or consensus algorithm. |
 | CLI and developer commands | Exercised | `check`, `run`, `replay`, `mindmap`, `editor`, and `analyze` were exercised through `python -m kosika.cli`. The CLI also exposes agent, explanation, network, design, manifest, extension, and journal surfaces that were not all exercised in K01. |
 | Editor data, LSP, and VS Code integration | Exercised | `kosika/editor_features.py`, `kosika/lsp.py`, `kosika_lsp`, and `editors/vscode` provide diagnostics and navigation. K04 drove the stdio LSP process and verified stable-code publication for both entry and imported document URIs. Path-based diagnostics use the authoritative bounded module loader; a running VS Code client was not exercised. |
 | Browser workbench | Exercised | The server advertises `.kos` as its source contract and the frontend consumes it for startup, imports, validation, status, and file creation. K02 exercised the default sample through check, run, checked-source map, and exact replay in a real Chrome session. |
@@ -587,14 +587,43 @@ The next tasks are ordered by dependency:
     wheel outside the checkout; and smoke check, run, replay, LSP, and workbench.
     Published releases and remote execution remain planned.
 
-**Active task: K10b.** A declared swarm is not executable, and K10a made that
-visible everywhere the language describes one. K10b makes a single swarm
-invocable behind an authenticated approval gate: typed messages, deterministic
-round order, `max_rounds` and an aggregate step budget enforced across all
-members, approval recorded in the ledger, and every executed step labelled
-`observed`. K09's evidence classes are the vocabulary: a swarm decision is a
-judgment over observed evidence rather than a model assertion, and swarm output
-must not acquire authority the way model output cannot.
+**Active task: K10c.** K10b (below) made one swarm invocable under a one-use
+approval with deterministic rounds and an aggregate budget. K10c is what K10b
+left out: typed messages between members, state carried from one round to the
+next, and a termination judgment over observed evidence rather than result
+equality. Swarm output must not acquire authority the way model output cannot.
+
+## K10b approved swarm runs (complete)
+
+- `kosika.swarm.run_swarm` runs a declared swarm's workflow once per round, in
+  order, up to `max_rounds`, and reports `fixed_point` when a round returns the
+  same result as the previous one. Results use `kosika.swarm-run/v1`.
+- One approval authorizes one run. `swarm_plan_hash` covers the swarm, its
+  members, workflow, round cap, and the checked program hash. The claim is
+  committed to the approval ledger before any member executes; a missing,
+  unattributed, or mismatched approval, or a missing ledger, runs nothing.
+- The ledger records the outcome: `succeeded` with the final result hash, or
+  `failed` with the error type. A failed round does not release the approval,
+  because members may already have acted.
+- One `ExecutionControl` is shared by all rounds, so step, model-call, and
+  tool-call limits are aggregate.
+- `kosika swarm` exposes `--plan` (print the hash, run nothing) and the approved
+  run, with `--model-fixture`, `--tool-fixture`, or a pinned MCP server.
+  `examples/swarm_review.kos` runs end to end with the two fixture files beside
+  it and stops at a fixed point after two rounds.
+- `run` still refuses a swarm; its error, the `SwarmDecl` docstring, and
+  `explain` now point to `kosika swarm`. The mindmap attribute
+  `executable: false` and the `would_run` relation are unchanged and mean "not a
+  `run` entry point".
+- 17 tests in `tests/test_swarm_run.py` cover fixed-point and round-cap
+  termination, digest determinism, ledger outcomes, one-use approval, the four
+  refusal codes, plan-hash sensitivity to the program, a failed round spending
+  the approval, the shared budget, missing bindings, and six CLI paths. Four
+  wording assertions in the older swarm tests were updated; no enforcement was
+  loosened. Full suite: 967 tests passed; Ruff lint passed.
+- Not claimed: members do not exchange messages or share state, there is no
+  consensus or quorum, the approver name is a label rather than an authenticated
+  identity, and one plan hash can be approved only once per ledger.
 
 ## K10a swarm declarations are honest about not running (complete)
 
