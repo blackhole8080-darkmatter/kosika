@@ -593,6 +593,30 @@ left out: typed messages between members, state carried from one round to the
 next, and a termination judgment over observed evidence rather than result
 equality. Swarm output must not acquire authority the way model output cannot.
 
+## Beginner path (complete)
+
+- `kosika new DIR` writes a four-file starter (`kosika/starter.py`): a typed
+  question-and-answer workflow, its input, an offline model fixture, and a
+  README. It refuses a non-empty folder, so nothing is overwritten.
+- `kosika run FILE --model NAME` is the one-flag live path. Without
+  `--model-binding` it grants that provider to every declared model and prints
+  the grant to stderr. The endpoint is `--model-url`, then `KOSIKA_MODEL_URL`,
+  then a local Ollama server; `--model-protocol` selects `openai` or `ollama`.
+  A live model is still never enabled implicitly: no flag, no binding.
+- `--model-binding NAME --model M --model-url URL` keeps its single-model
+  meaning. `--model-url` or `--model-binding` without `--model` is refused.
+- A run that fails because a declared model has no binding now says how to
+  supply one (`--model` or `--model-fixture`).
+- `TUTORIAL.md` walks the path; each step was run against the starter.
+- Exercised live: the starter returned a schema-valid `Answer` from
+  `qwen3:1.7b` over local Ollama with `--model` alone (26s on the `openai`
+  protocol, 16s on `ollama`). The answer text was wrong about what Kosika is;
+  the run proves the path and the typed boundary, not the model's knowledge.
+- 15 tests in `tests/test_beginner_path.py` cover the starter (create, check,
+  offline run, replay, no overwrite), endpoint precedence, both protocols,
+  refused flag combinations, the missing-binding hint, and a full CLI run
+  through a stand-in provider.
+
 ## K10b approved swarm runs (complete)
 
 - `kosika.swarm.run_swarm` runs a declared swarm's workflow once per round, in

@@ -12,7 +12,7 @@ from typing import Any, Mapping, Sequence
 from .agent import AgentLoop, AgentLoopError, ApprovalRecord
 from .approval_ledger import ApprovalLedger
 from .assistant import AssistantError, KosikaAssistant
-from .ast import ToolDecl
+from .ast import Program, ToolDecl
 from .checker import check
 from .city import CITY_NAME, CityError, build_city
 from .cityscape import render_cityscape_svg
@@ -86,6 +86,7 @@ from .mcp_stdio import MCPProtocolError, MCPStdioClient
 from .metropolis import ENVIRONMENT_NAMES
 from .mindmap import build_mindmap, to_json, to_mermaid, to_text
 from .model import (
+    MODEL_PROTOCOLS,
     ModelProvider,
     ModelProviderError,
     ModelResponse,
@@ -517,7 +518,12 @@ def _model_fixture_bindings(path: Path) -> dict[str, ModelProvider]:
     return providers
 
 
-def _workflow_model_bindings(args: argparse.Namespace) -> dict[str, ModelProvider]:
+DEFAULT_LOCAL_MODEL_URL = "http://localhost:11434/v1"
+
+
+def _workflow_model_bindings(
+    args: argparse.Namespace, program: Program
+) -> dict[str, ModelProvider]:
     live = (args.model_binding, args.model, args.model_url)
     if args.model_fixture is not None:
         if any(live):
@@ -526,19 +532,55 @@ def _workflow_model_bindings(args: argparse.Namespace) -> dict[str, ModelProvide
             )
         return _model_fixture_bindings(args.model_fixture)
 
-    if any(live):
-        if not all(live):
-            raise ValueError(
-                "Live binding requires --model-binding, --model, and --model-url"
+    if not any(live):
+        return {}
+    if not args.model:
+        raise ValueError(
+            "A live binding needs --model NAME. Add --model-binding to grant "
+            "one declared model, or omit it to grant every declared model."
+        )
+    declared = [model.name for model in program.models]
+    if args.model_binding is not None:
+        if not args.model_url:
+            raise ValueError("--model-binding requires --model and --model-url")
+        granted = [args.model_binding]
+        url = args.model_url
+    else:
+        # `--model NAME` on its own is the short form: the person running the
+        # program grants that one provider to every model the program declares.
+        if not declared:
+            raise ValueError("--model was given, but this program declares no model")
+        granted = declared
+        url = (
+            args.model_url
+            or os.environ.get("KOSIKA_MODEL_URL")
+            or (
+                DEFAULT_LOCAL_MODEL_URL.removesuffix("/v1")
+                if args.model_protocol == "ollama"
+                else DEFAULT_LOCAL_MODEL_URL
             )
-        return {
-            args.model_binding: OpenAICompatibleProvider(
-                args.model_url,
-                args.model,
-                api_key=os.environ.get("KOSIKA_MODEL_API_KEY"),
-            )
-        }
-    return {}
+        )
+        print(
+            f"Model {args.model!r} at {url} answers for: {', '.join(granted)}",
+            file=sys.stderr,
+        )
+    provider = OpenAICompatibleProvider(
+        url,
+        args.model,
+        api_key=os.environ.get("KOSIKA_MODEL_API_KEY"),
+        protocol=args.model_protocol,
+    )
+    return dict.fromkeys(granted, provider)
+
+
+def _missing_model_hint(program: Program, message: str) -> str:
+    if "has no authorized host binding" not in message or not program.models:
+        return ""
+    return (
+        "\nThis program declares a model, and a declaration alone grants no "
+        "access. Add --model NAME to use a local model (default endpoint "
+        f"{DEFAULT_LOCAL_MODEL_URL}), or --model-fixture FILE to run offline."
+    )
 
 
 def _author_proposal_provider(args: argparse.Namespace) -> ModelProvider | None:
@@ -1637,11 +1679,30 @@ def build_parser() -> argparse.ArgumentParser:
         "--model-binding", help="Declared Kosika model granted access to this provider."
     )
     run_parser.add_argument(
-        "--model", help="Provider model identifier for the explicit live binding."
+        "--model",
+        help=(
+            "Provider model identifier. Without --model-binding it answers for "
+            "every model the program declares."
+        ),
     )
     run_parser.add_argument(
-        "--model-url", help="Explicit OpenAI-compatible endpoint for the live binding."
+        "--model-url",
+        help=(
+            "Model endpoint. Without --model-binding it defaults to "
+            "KOSIKA_MODEL_URL, then a local Ollama server."
+        ),
     )
+    run_parser.add_argument(
+        "--model-protocol",
+        choices=MODEL_PROTOCOLS,
+        default="openai",
+        help="Wire format of the model endpoint.",
+    )
+
+    new_parser = subparsers.add_parser(
+        "new", help="Create a starter Kosika project in a new folder."
+    )
+    new_parser.add_argument("directory", type=Path)
 
     agent_parser = subparsers.add_parser(
         "agent",
@@ -2056,6 +2117,24 @@ def main() -> int:
         except (AudienceMapError, OSError, ValueError) as exc:
             print(f"Audience map failed safely: {exc}", file=sys.stderr)
             return 2
+        return 0
+
+    if args.command == "new":
+        from .starter import StarterError, create_starter
+
+        try:
+            created = create_starter(args.directory)
+        except (StarterError, OSError) as exc:
+            print(f"Could not create the project: {exc}", file=sys.stderr)
+            return 2
+        print(f"Created a starter project in {args.directory}:")
+        for path in created:
+            print(f"  {path.name}")
+        print(
+            "Next:\n"
+            f"  cd {args.directory}\n"
+            "  kosika run main.kos --input input.json --model-fixture responses.json"
+        )
         return 0
 
     if args.command == "swarm":
@@ -2915,7 +2994,7 @@ def main() -> int:
         )
         bindings = {
             name: ControlledProvider(provider, limits)
-            for name, provider in _workflow_model_bindings(args).items()
+            for name, provider in _workflow_model_bindings(args, program).items()
         }
         run_result = run(
             program,
@@ -2962,7 +3041,10 @@ def main() -> int:
         print(f"Workflow stopped ({exc.code}): {exc}", file=sys.stderr)
         return 130 if exc.code == "cancelled" else 2
     except (ValueError, RuntimeError, OSError) as exc:
-        print(f"Workflow failed: {exc}", file=sys.stderr)
+        print(
+            f"Workflow failed: {exc}{_missing_model_hint(program, str(exc))}",
+            file=sys.stderr,
+        )
         return 2
     finally:
         if args.telemetry:

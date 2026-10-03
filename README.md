@@ -40,6 +40,19 @@ grammar, typing, execution, capability, replay, and support-status contract.
 See [KOSIKA_PLAN.md](KOSIKA_PLAN.md) for the reconciled capability matrix,
 verification record, and prioritized K01–K12 backlog.
 
+## Start here
+
+New to Kosika? [TUTORIAL.md](TUTORIAL.md) goes from nothing to a running,
+replayable model workflow in about ten minutes:
+
+```text
+python -m pip install .
+kosika new hello
+cd hello
+kosika run main.kos --input input.json --model-fixture responses.json
+kosika run main.kos --input input.json --model YOUR_LOCAL_MODEL
+```
+
 ## Language and runtime expansion
 
 Kosika includes local imports with explicit exports, typed workflow calls, pure
@@ -262,9 +275,13 @@ python -m kosika.cli replay answer.jsonl
 
 The input file maps workflow parameter names to records. The fixture maps declared
 model names to ordered lists of response records. These are deterministic test
-responses, not live inference. To explicitly bind a configured local model, replace
-`--model-fixture ...` with `--model-binding writer --model YOUR_MODEL --model-url
-http://localhost:11434/v1`. The provider uses `KOSIKA_MODEL_API_KEY` if supplied.
+responses, not live inference. To use a local model, replace `--model-fixture ...`
+with `--model YOUR_MODEL`. That one flag grants the model to every model the
+program declares, and Kosika prints the grant. The endpoint is `--model-url`, then
+`KOSIKA_MODEL_URL`, then `http://localhost:11434/v1`; `--model-protocol ollama`
+selects Ollama's native API. To grant a single declared model instead, use
+`--model-binding writer --model YOUR_MODEL --model-url URL`. The provider uses
+`KOSIKA_MODEL_API_KEY` if supplied.
 The Python API accepts `run(..., inputs={...}, model_bindings={"writer": provider})`.
 
 Missing bindings or invalid inputs are rejected before any workflow call. Model
