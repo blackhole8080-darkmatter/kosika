@@ -734,6 +734,8 @@ class Parser:
         while not self.accept("}"):
             if self.accept("step"):
                 steps.append(self.parse_step())
+            elif self.at_assignment():
+                steps.append(self.parse_short_step())
             elif self.accept("require"):
                 self.expect("approval")
                 approval_required = True
@@ -819,13 +821,43 @@ class Parser:
         if self.accept(")"):
             return ()
         while True:
-            name = self.identifier()
-            self.expect(":")
-            arguments.append((name, self.expression()))
+            following = self.peek()
+            if self.current.kind == "IDENT" and following.value == ":":
+                name = self.identifier()
+                self.expect(":")
+                arguments.append((name, self.expression()))
+            else:
+                # Short form: `f(order)` means `f(order: order)` and
+                # `f(question.text)` means `f(text: question.text)`. The name
+                # is read off the expression, so nothing is guessed, and the
+                # checker still rejects it if no such parameter exists.
+                start = self.current
+                value = self.expression()
+                if isinstance(value, VariableExpr):
+                    name = value.name
+                elif isinstance(value, FieldExpr):
+                    name = value.field_name
+                else:
+                    raise ParseError(
+                        f"Argument at {start.line}:{start.column} needs a name; "
+                        "write name: value"
+                    )
+                arguments.append((name, value))
             if self.accept(")"):
                 break
             self.expect(",")
         return tuple(arguments)
+
+    def parse_short_step(self) -> Step:
+        """Parse `name = call`, the one-line form of a step.
+
+        It is exactly `step name { let name = call  return name }`: the step
+        and its result share one name, and the result type is inferred.
+        """
+
+        name = self.identifier()
+        self.expect("=")
+        return Step(name, self.parse_step_call(), name, None, name)
 
     def parse_step(self) -> Step:
         name = self.identifier()
@@ -836,6 +868,21 @@ class Parser:
         if self.accept(":"):
             binding_type = self.parse_type_name()
         self.expect("=")
+        call = self.parse_step_call()
+        self.expect("return")
+        return_name = self.identifier()
+        self.expect("}")
+        return Step(
+            name,
+            call,
+            binding_name,
+            binding_type,
+            return_name,
+        )
+
+    def parse_step_call(
+        self,
+    ) -> ToolCall | ModelCall | AgentCall | WorkflowCall | FunctionCall:
         call: ToolCall | ModelCall | AgentCall | WorkflowCall | FunctionCall
         if self.accept("call"):
             workflow_name = self.identifier()
@@ -860,16 +907,7 @@ class Parser:
             tool_name = self.identifier()
             self.expect("(")
             call = ToolCall(agent_name, tool_name, self.parse_arguments())
-        self.expect("return")
-        return_name = self.identifier()
-        self.expect("}")
-        return Step(
-            name,
-            call,
-            binding_name,
-            binding_type,
-            return_name,
-        )
+        return call
 
 
 def parse(source: str) -> Program:

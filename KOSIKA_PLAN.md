@@ -593,6 +593,26 @@ left out: typed messages between members, state carried from one round to the
 next, and a termination judgment over observed evidence rather than result
 equality. Swarm output must not acquire authority the way model output cannot.
 
+## Simpler syntax (complete)
+
+- **One-line steps.** Inside a workflow, `name = call` is a step. The parser
+  expands it to the long form, so both produce the same tree and nothing
+  downstream changed.
+- **Short arguments.** `f(order)` means `f(order: order)` and `f(question.text)`
+  means `f(text: question.text)`. The name is read from the expression, never
+  guessed; any other expression must be named (`parse/unnamed-argument`).
+- **"Did you mean" hints** on unknown variables, fields, record fields,
+  argument names, methods, method arguments, and unknown type or function
+  names, from the closest known spelling (`difflib`, cutoff 0.7). No hint is
+  printed when nothing is close.
+- Errors in a one-line step anchor to that line.
+- `kosika new`, `TUTORIAL.md`, and `AGENT_GUIDE.md` now use the short forms.
+  The long forms remain valid and every existing program is unchanged.
+- 15 tests in `tests/test_simpler_syntax.py`, including tree equality between
+  the short and long forms and a traced, replayed run of the short form.
+- Not done: the write-from-spec benchmark has not been rerun on a live model
+  with the revised guide (the Gemini free quota is 20 requests a day).
+
 ## Core fixes from the first benchmark (complete)
 
 - **Function bodies run in written order.** The parser used to hoist every

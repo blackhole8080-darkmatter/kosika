@@ -18,10 +18,7 @@ fn greet(person: Person) -> Greeting {
 }
 
 workflow main(person: Person) -> Greeting {
-  step say_hello {
-    let greeting: Greeting = greet(person: person)
-    return greeting
-  }
+  greeting = greet(person)
 }
 ```
 
@@ -50,7 +47,11 @@ fn total(numbers: Numbers) -> Total {
 ```
 
 - A function is pure: it cannot call a model, tool, agent, or workflow.
-- **Every call uses named arguments**: `greet(person: p)`, never `greet(p)`.
+- **Arguments are named**: `greet(person: p)`. The short form `greet(person)`
+  is allowed only when the value is a variable or field with the same name as
+  the parameter: `greet(person)` means `greet(person: person)` and
+  `ask_about(question.text)` means `ask_about(text: question.text)`. Any other
+  value needs its name: `area(width: 2 + 1)`.
 - The body is `let`/`var` declarations and statements, run in the order they
   are written, then exactly one `return expression` as the last line. There is
   no early return.
@@ -122,10 +123,7 @@ model assistant {
 }
 
 workflow main(question: Question) -> Answer {
-  step respond {
-    let answer: Answer = use_model assistant(text: question.text)
-    return answer
-  }
+  answer = use_model assistant(question.text)
 }
 ```
 
@@ -158,20 +156,15 @@ Note `source mcp "name"` has no colon. Every other line does.
 
 ```kosika
 workflow main(city: City) -> Report {
-  step look_up {
-    let weather: Weather = execute forecaster.get_weather(name: city.name)
-    return weather
-  }
-  step summarize {
-    let report: Report = build_report(weather: weather)
-    return report
-  }
+  weather = execute forecaster.get_weather(city.name)
+  report = build_report(weather)
 }
 ```
 
 - A workflow's parameters and its result type are always records.
-- **Each step is exactly two lines: `let name: Type = <one call>` and
-  `return name`.** No other statements, no expressions, no `if`.
+- **Each step is one line: `name = <one call>`.** The name holds the result.
+  No other statements, no expressions, no `if`. (The older long form
+  `step s { let name: Type = <call>  return name }` means the same.)
 - The call is one of:
   - `some_function(arg: value)`
   - `use_model model_name(field: value)`
@@ -202,9 +195,9 @@ workflow.
 
 ## Checklist before answering
 
-1. Named arguments on every call.
+1. Name every argument unless it is a same-named variable or field.
 2. Only `Text`, `Number`, `Bool`, `Null`, arrays, and your records as types.
-3. Each workflow step: one `let` with one call, then `return` of that name.
+3. Each workflow step is one line: `name = one_call(...)`.
 4. One `return` at the end of each `fn`; logic lives in `fn`, not in steps.
 5. Only the built-in methods listed above; no semicolons; every `if` ends
    with an `else`.

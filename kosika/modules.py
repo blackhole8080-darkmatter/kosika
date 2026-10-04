@@ -19,6 +19,7 @@ from .ast import (
     expression_function_calls,
     static_function_references,
 )
+from .builtin_methods import did_you_mean
 from .checker import CheckError, check
 from .function_types import referenced_types
 from .parser import ParseError, parse
@@ -240,9 +241,13 @@ def load_program(
         hidden = _references(module) - local - visible
         if hidden:
             mark_error(resolved)
+            hint = did_you_mean(
+                sorted(hidden)[0], local | visible | {"Text", "Number", "Bool"}
+            )
             raise CheckError(
                 f"{resolved}: unknown names, not declared here and not exported "
-                f"by an import (unavailable or private symbols {sorted(hidden)!r})"
+                f"by an import (unavailable or private symbols {sorted(hidden)!r})."
+                f"{hint}"
             )
         for name in local:
             if name in owners and owners[name] != resolved:

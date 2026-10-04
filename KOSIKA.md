@@ -354,7 +354,8 @@ workflow = "workflow" identifier
 step = "step" identifier "{"
        "let" identifier [ ":" type ] "=" call
        "return" identifier
-       "}" ;
+       "}"
+     | identifier "=" call ;                               (* one-line step *)
 
 call = identifier "(" named-arguments ")"                 (* function *)
      | "call" identifier "(" named-arguments ")"          (* workflow *)
@@ -364,6 +365,14 @@ call = identifier "(" named-arguments ")"                 (* function *)
        "(" named-arguments ")" ;                           (* agent.tool *)
 ```
 
+- A one-line step `name = call` is exactly
+  `step name { let name = call  return name }`: the step and its result share
+  the name and the result type is inferred. Both forms parse to the same tree.
+- Named arguments have a short form. An argument written as a bare variable or
+  a field path takes its name from the last identifier: `f(order)` is
+  `f(order: order)` and `f(question.text)` is `f(text: question.text)`. Any
+  other expression MUST be named (`parse/unnamed-argument`). The short form
+  applies to every call, including methods.
 - Workflow parameters and outputs MUST be record types.
 - A workflow contains at least one uniquely named step.
 - Steps execute sequentially. Each step binds exactly one result and returns

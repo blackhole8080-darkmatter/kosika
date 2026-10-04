@@ -26,11 +26,9 @@ model assistant {
   output: Answer
 }
 
+// Each line of a workflow is one step: a name for the result, and one call.
 workflow main(question: Question) -> Answer {
-  step respond {
-    let answer: Answer = use_model assistant(text: question.text)
-    return answer
-  }
+  answer = use_model assistant(question.text)
 }
 """
 

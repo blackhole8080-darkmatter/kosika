@@ -42,17 +42,16 @@ model assistant {
 }
 
 workflow main(question: Question) -> Answer {
-  step respond {
-    let answer: Answer = use_model assistant(text: question.text)
-    return answer
-  }
+  answer = use_model assistant(question.text)
 }
 ```
 
 - A **record** is the shape of a piece of data.
 - A **model** says what goes in and what must come out. It does not say which
   real model answers. You choose that when you run the program.
-- A **workflow** is a list of named steps. This one asks the model once.
+- A **workflow** is a list of steps. Each line is one step: a name for the
+  result, then one call. This one asks the model once. `question.text` is short
+  for `text: question.text`.
 
 ## 3. Check it and run it offline
 

@@ -12,9 +12,10 @@ do not exist.
 
 from __future__ import annotations
 
+import difflib
 import math
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Callable, Iterable
 
 #: The element type of the receiving array, in a signature.
 ELEMENT = "$element"
@@ -23,6 +24,13 @@ ANY_ARRAY = "$array"
 #: Splitting cannot produce more parts than this; it fails instead.
 MAX_SPLIT_PARTS = 512
 _SCALARS = ("Text", "Number", "Bool", "Null")
+
+
+def did_you_mean(name: str, candidates: Iterable[str]) -> str:
+    """A trailing hint naming the closest known spelling, or nothing."""
+
+    close = difflib.get_close_matches(name, sorted(set(candidates)), n=1, cutoff=0.7)
+    return f" Did you mean {close[0]!r}?" if close and close[0] != name else ""
 
 
 class MethodError(ValueError):
@@ -129,8 +137,9 @@ def resolve(receiver_type: str, name: str) -> Method:
             f"{receiver_type!r} values have no methods; methods exist on Text, "
             "Number, and arrays"
         )
+    hint = did_you_mean(name, (method.name for method in candidates))
     raise MethodError(
-        f"{receiver_type!r} has no method {name!r}; available: {available}"
+        f"{receiver_type!r} has no method {name!r}; available: {available}.{hint}"
     )
 
 

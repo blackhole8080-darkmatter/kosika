@@ -37,7 +37,7 @@ from .ast import (
     function_body,
     static_function_references,
 )
-from .builtin_methods import MethodError
+from .builtin_methods import MethodError, did_you_mean
 from .builtin_methods import parameter_types as method_parameter_types
 from .builtin_methods import resolve as resolve_method
 from .function_types import function_type, public_type, signature
@@ -215,7 +215,8 @@ def _expression_type(
         value_type = bindings.get(expression.name)
         if value_type is None:
             raise CheckError(
-                f"Step {step_name!r} references unknown variable {expression.name!r}"
+                f"Step {step_name!r} references unknown variable {expression.name!r}."
+                f"{did_you_mean(expression.name, bindings)}"
             )
         return value_type
     if isinstance(expression, ModelVarExpr):
@@ -293,9 +294,10 @@ def _expression_type(
         supplied = [name for name, _ in expression.arguments]
         if sorted(supplied) != sorted(expected):
             wanted = ", ".join(f"{name}: {kind}" for name, kind in expected.items())
+            hint = did_you_mean(supplied[0], expected) if supplied else ""
             raise CheckError(
                 f"Step {step_name!r} method {expression.method!r} takes "
-                f"({wanted}), got ({', '.join(supplied)})"
+                f"({wanted}), got ({', '.join(supplied)}).{hint}"
             )
         for name, argument in expression.arguments:
             argument_type = _expression_type(
@@ -325,7 +327,8 @@ def _expression_type(
         if field_type is None:
             raise CheckError(
                 f"Step {step_name!r} references unknown field "
-                f"{expression.field_name!r} on {base_type!r}"
+                f"{expression.field_name!r} on {base_type!r}."
+                f"{did_you_mean(expression.field_name, fields)}"
             )
         return field_type
     if isinstance(expression, IndexExpr):
@@ -388,7 +391,8 @@ def _expression_type(
         unknown = set(names) - set(fields)
         if unknown:
             raise CheckError(
-                f"Step {step_name!r} has unknown record fields {sorted(unknown)!r}"
+                f"Step {step_name!r} has unknown record fields {sorted(unknown)!r}."
+                f"{did_you_mean(sorted(unknown)[0], fields)}"
             )
         missing = set(fields) - set(names)
         if missing:
@@ -574,7 +578,8 @@ def _check_arguments(
     unknown = provided - set(expected)
     if unknown:
         raise CheckError(
-            f"Step {step_name!r} has unknown tool arguments {sorted(unknown)!r}"
+            f"Step {step_name!r} has unknown tool arguments {sorted(unknown)!r}."
+            f"{did_you_mean(sorted(unknown)[0], expected)}"
         )
     missing = set(expected) - provided
     if missing:

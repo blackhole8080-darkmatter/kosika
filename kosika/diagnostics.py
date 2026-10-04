@@ -62,6 +62,7 @@ CODES: Mapping[str, str] = {
     # -- Syntactic -------------------------------------------------------
     "parse/expected-token": "A required token was not present.",
     "parse/expected-identifier": "A declaration or binding required an identifier.",
+    "parse/unnamed-argument": "A call argument needs a name.",
     "parse/empty-block": "A braced block declared neither a statement nor a result.",
     "parse/invalid-declaration": "A declaration was malformed.",
     "parse/limit-exceeded": "A declaration exceeded a fixed syntactic nesting limit.",
@@ -266,6 +267,7 @@ _RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ),
     # Local module loading. These rules run before checker fallbacks because a
     # module error may include quoted declarations that look like type prose.
+    ("parse/unnamed-argument", re.compile(r"^Argument at .* needs a name")),
     ("module/outside-root", re.compile(r"Import outside the granted .* module root")),
     ("module/cycle", re.compile(r"^Import cycle at ")),
     (
@@ -621,6 +623,7 @@ class _Anchors:
 
     def _build(self, tokens: Sequence[Token]) -> None:
         depth = 0
+        declaring = ""
         for index, token in enumerate(tokens[:-1]):
             if token.value in {"{", "["}:
                 depth += 1
@@ -630,10 +633,14 @@ class _Anchors:
                 continue
             following = tokens[index + 1]
             if depth == 0 and token.value in _DECLARATION_KEYWORDS:
+                declaring = token.value
                 if following.kind == "IDENT":
                     self._declarations.setdefault(following.value, []).append(following)
             elif token.value == "step" and following.kind == "IDENT":
                 self._steps.setdefault(following.value, []).append(following)
+            elif depth == 1 and declaring == "workflow" and following.value == "=":
+                # The one-line step form: `name = call`.
+                self._steps.setdefault(token.value, []).append(token)
 
     @staticmethod
     def _unique(candidates: Sequence[Token]) -> Token | None:

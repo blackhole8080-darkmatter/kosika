@@ -15,10 +15,22 @@ from kosika.model import ModelResponse, ScriptedModelProvider
 from kosika.parser import ParseError, parse
 from kosika.runtime import replay
 from kosika.sdk import App, Declared, SdkError, ref
-from kosika.starter import STARTER_SOURCE
 from kosika.swarm import SwarmApproval, run_swarm, swarm_plan_hash
 
 ROOT = Path(__file__).parents[1]
+
+# The long form of the starter program, which is what the SDK renders.
+STARTER_SOURCE = """
+record Question { text: Text }
+record Answer { text: Text }
+model assistant { input: Question output: Answer }
+workflow main(question: Question) -> Answer {
+  step respond {
+    let answer: Answer = use_model assistant(text: question.text)
+    return answer
+  }
+}
+"""
 SWARM_EXAMPLE = ROOT / "examples" / "swarm_review.kos"
 AGENT_EXAMPLE = ROOT / "examples" / "research_agent.kos"
 
