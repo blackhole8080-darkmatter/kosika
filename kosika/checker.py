@@ -28,6 +28,7 @@ from .ast import (
     Program,
     RecordExpr,
     RepeatExpr,
+    ReturnExpr,
     ToolCall,
     ToolVarExpr,
     TryExpr,
@@ -93,14 +94,37 @@ class _Env(dict):
     creation needs to know this class exists, and those go through ``child()``.
     """
 
-    def __init__(self, source=None, *, mutable: set[str] | None = None):
+    def __init__(
+        self,
+        source=None,
+        *,
+        mutable: set[str] | None = None,
+        return_type: str | None = None,
+    ):
         super().__init__(source or {})
         self.mutable: set[str] = set() if mutable is None else mutable
+        # The output type of the enclosing named function, or None where an
+        # early `return` has nothing to return from.
+        self.return_type = return_type
 
     def child(self) -> _Env:
         # A nested scope still sees the enclosing mutable names, so a `var`
         # declared outside a loop stays assignable inside it.
-        return _Env(self, mutable=set(self.mutable))
+        return _Env(self, mutable=set(self.mutable), return_type=self.return_type)
+
+
+#: The type of an expression that never produces a value because it leaves the
+#: function. It cannot be written in source, so it never names a real type.
+_NEVER = "Never"
+
+
+def _join_branches(first: str, second: str) -> str | None:
+    """The common type of two branches, or None when they disagree."""
+    if first == _NEVER:
+        return second
+    if second == _NEVER or first == second:
+        return first
+    return None
 
 
 def _expression_type(
@@ -110,7 +134,31 @@ def _expression_type(
     *,
     step_name: str,
     expected_type: str | None = None,
+    discard: bool = False,
 ) -> str:
+    """Return the type of ``expression``.
+
+    ``discard`` marks statement position: the value is thrown away, so the
+    branches of a conditional or match need not agree.
+    """
+    if isinstance(expression, ReturnExpr):
+        if bindings.return_type is None:
+            raise CheckError(
+                f"Step {step_name!r} uses return outside a named function body"
+            )
+        returned_type = _expression_type(
+            expression.value,
+            bindings,
+            program,
+            step_name=step_name,
+            expected_type=bindings.return_type,
+        )
+        if returned_type not in (bindings.return_type, _NEVER):
+            raise CheckError(
+                f"Step {step_name!r} early return expects "
+                f"{bindings.return_type!r}, got {returned_type!r}"
+            )
+        return _NEVER
     if isinstance(expression, Assignment):
         target_type = bindings.get(expression.target)
         if target_type is None:
@@ -149,16 +197,20 @@ def _expression_type(
                     step_name=step_name,
                     expected_type=statement.type_name,
                 )
-                if statement.type_name is not None and declared != statement.type_name:
+                if declared == _NEVER or (
+                    statement.type_name is not None and declared != statement.type_name
+                ):
                     raise CheckError(
                         f"Step {step_name!r} local {statement.name!r} expects "
-                        f"{statement.type_name!r}, got {declared!r}"
+                        f"{statement.type_name or 'a value'!r}, got {declared!r}"
                     )
                 inner[statement.name] = declared
                 if statement.mutable:
                     inner.mutable.add(statement.name)
             else:
-                _expression_type(statement, inner, program, step_name=step_name)
+                _expression_type(
+                    statement, inner, program, step_name=step_name, discard=True
+                )
         if expression.result is None:
             return "Null"
         return _expression_type(
@@ -167,6 +219,7 @@ def _expression_type(
             program,
             step_name=step_name,
             expected_type=expected_type,
+            discard=discard,
         )
     if isinstance(expression, MatchExpr):
         subject_type = _expression_type(
@@ -197,11 +250,20 @@ def _expression_type(
                 bindings,
                 program,
                 step_name=step_name,
-                expected_type=result_type,
+                expected_type=None if result_type == _NEVER else result_type,
+                discard=discard,
             )
-            if result_type is not None and arm_type != result_type:
+            if discard:
+                result_type = "Null"
+                continue
+            joined = (
+                arm_type
+                if result_type is None
+                else _join_branches(result_type, arm_type)
+            )
+            if joined is None:
                 raise CheckError("Match branches must have the same result type")
-            result_type = arm_type
+            result_type = joined
         if not exhaustive or result_type is None:
             raise CheckError("Non-exhaustive match: add a final case _")
         return result_type
@@ -230,7 +292,9 @@ def _expression_type(
             raise CheckError(
                 f"Step {step_name!r} repeat count expects 'Number', got {count_type!r}"
             )
-        return _expression_type(expression.body, bindings, program, step_name=step_name)
+        return _expression_type(
+            expression.body, bindings, program, step_name=step_name, discard=discard
+        )
     if isinstance(expression, ForExpr):
         sequence_type = _expression_type(
             expression.sequence, bindings, program, step_name=step_name
@@ -244,7 +308,11 @@ def _expression_type(
         item_bindings = bindings.child()
         item_bindings[expression.item_name] = sequence_type[:-2]
         body_type = _expression_type(
-            expression.body, item_bindings, program, step_name=step_name
+            expression.body,
+            item_bindings,
+            program,
+            step_name=step_name,
+            discard=discard,
         )
         return f"{body_type}[]"
     if isinstance(expression, TryExpr):
@@ -406,7 +474,7 @@ def _expression_type(
             expected_type=left_type,
         )
         operator = expression.operator
-        if operator in {"+", "-", "*", "/", "<", "<=", ">", ">="}:
+        if operator in {"+", "-", "*", "/", "%", "<", "<=", ">", ">="}:
             if left_type == "Number" and right_type == "Number":
                 return "Bool" if operator in {"<", "<=", ">", ">="} else "Number"
             if left_type == "Text" and right_type == "Text" and operator == "+":
@@ -446,20 +514,26 @@ def _expression_type(
             program,
             step_name=step_name,
             expected_type=expected_type,
+            discard=discard,
         )
         false_type = _expression_type(
             expression.when_false,
             bindings,
             program,
             step_name=step_name,
-            expected_type=expected_type or true_type,
+            expected_type=expected_type
+            or (None if true_type == _NEVER else true_type),
+            discard=discard,
         )
-        if true_type != false_type:
+        if discard:
+            return "Null"
+        joined = _join_branches(true_type, false_type)
+        if joined is None:
             raise CheckError(
                 f"Step {step_name!r} conditional branches differ: "
                 f"{true_type!r} and {false_type!r}"
             )
-        return true_type
+        return joined
     if isinstance(expression, FunctionRefExpr):
         function = next(
             (
@@ -786,7 +860,7 @@ def check(program: Program) -> None:
         ):
             raise CheckError("Recursion limit must be an integer from 1 to 32")
         _validate_type_name(program, function.output_type)
-        function_bindings = _Env()
+        function_bindings = _Env(return_type=function.output_type)
         for parameter in function.parameters:
             if parameter.name in function_bindings:
                 raise CheckError(
@@ -804,6 +878,7 @@ def check(program: Program) -> None:
                     function_bindings,
                     program,
                     step_name=f"function {function.name} statement",
+                    discard=True,
                 )
                 continue
             if binding.name in function_bindings:
@@ -819,9 +894,12 @@ def check(program: Program) -> None:
                 step_name=f"function {function.name} local {binding.name}",
                 expected_type=binding.type_name,
             )
-            if binding.type_name is not None and binding_type != binding.type_name:
+            if binding_type == _NEVER or (
+                binding.type_name is not None and binding_type != binding.type_name
+            ):
                 raise CheckError(
-                    f"Local {binding.name!r} expects {binding.type_name!r}, got {binding_type!r}"
+                    f"Local {binding.name!r} expects "
+                    f"{binding.type_name or 'a value'!r}, got {binding_type!r}"
                 )
             # Store the resolved type, not the declared one, so an inferred
             # binding behaves exactly like an annotated one downstream.
@@ -835,7 +913,8 @@ def check(program: Program) -> None:
             step_name=f"function {function.name}",
             expected_type=function.output_type,
         )
-        if actual_type != function.output_type:
+        # A final expression typed Never has already returned on every path.
+        if actual_type not in (function.output_type, _NEVER):
             raise CheckError(
                 f"Function {function.name!r} returns {function.output_type!r}, "
                 f"got {actual_type!r}"

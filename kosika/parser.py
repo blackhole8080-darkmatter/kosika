@@ -32,6 +32,7 @@ from .ast import (
     RecordDecl,
     RecordExpr,
     RepeatExpr,
+    ReturnExpr,
     Step,
     SwarmDecl,
     ToolCall,
@@ -123,8 +124,10 @@ class Parser:
     def parse_block(self) -> Expression:
         """Parse `{ statement* result? }` as an expression.
 
-        A body with no trailing expression evaluates to Null, which is what
-        makes a statement-only loop body read naturally:
+        Declarations, assignments, and expressions may be interleaved and run
+        in written order. A trailing expression is the block's value; a body
+        that ends in a declaration or assignment evaluates to Null, which is
+        what makes a statement-only loop body read naturally:
         ``for x in values { total = total + x }``.
 
         Returns the bare result expression when there are no statements, so
@@ -132,16 +135,40 @@ class Parser:
         before and no existing consumer has to learn about Block.
         """
         self.expect("{")
-        statements: list[LocalBinding | Assignment] = []
-        while self.check("let") or self.check("var") or self.at_assignment():
-            statements.append(self.parse_statement())
-        result = None if self.check("}") else self.expression()
+        statements: list[LocalBinding | Assignment | Expression] = []
+        while not self.check("}"):
+            if self.check("let") or self.check("var") or self.at_assignment():
+                statements.append(self.parse_statement())
+            else:
+                statements.append(self.expression())
         self.expect("}")
         if not statements:
-            if result is None:
-                raise ParseError("Empty block")
+            raise ParseError("Empty block")
+        result: Expression | None = None
+        last = statements[-1]
+        if not isinstance(last, (LocalBinding, Assignment)):
+            result = last
+            statements.pop()
+        if not statements and result is not None:
             return result
         return Block(tuple(statements), result)
+
+    def parse_conditional(self) -> ConditionalExpr:
+        """Parse the rest of an `if` after the keyword.
+
+        `else if` chains nest in the false branch. An `if` with no `else` is
+        the statement form: its body runs for effect and the whole expression
+        is Null, so it needs no new node and no consumer has to change.
+        """
+        condition = self.expression()
+        when_true = self.parse_block()
+        if not self.accept("else"):
+            return ConditionalExpr(
+                condition, Block((when_true,), None), LiteralExpr(None)
+            )
+        if self.accept("if"):
+            return ConditionalExpr(condition, when_true, self.parse_conditional())
+        return ConditionalExpr(condition, when_true, self.parse_block())
 
     def string_or_identifier(self) -> str:
         token = self.current
@@ -206,11 +233,11 @@ class Parser:
                 arms.append(MatchArm(pattern, value))
             return MatchExpr(subject, tuple(arms))
         if self.accept("if"):
-            condition = self.expression()
-            when_true = self.parse_block()
-            self.expect("else")
-            when_false = self.parse_block()
-            return ConditionalExpr(condition, when_true, when_false)
+            return self.parse_conditional()
+        if self.accept("return"):
+            # Reached only for a `return` nested in a block. A function body's
+            # final `return` is consumed by parse_function before it gets here.
+            return ReturnExpr(self.expression())
         if self.accept("for"):
             item_name = self.identifier()
             self.expect("in")
@@ -264,7 +291,7 @@ class Parser:
 
     def parse_factor_expression(self) -> Expression:
         value = self.parse_unary_expression()
-        while any(self.check(operator) for operator in ("*", "/")):
+        while any(self.check(operator) for operator in ("*", "/", "%")):
             operator = self.advance().value
             value = BinaryExpr(value, operator, self.parse_unary_expression())
         return value

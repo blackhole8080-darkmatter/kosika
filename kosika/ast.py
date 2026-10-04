@@ -14,6 +14,17 @@ class ContinueExpr:
 
 
 @dataclass(frozen=True)
+class ReturnExpr:
+    """Leave the enclosing named function now with ``value`` as its result.
+
+    Only produced for a ``return`` nested inside a block. The final ``return``
+    of a function body stays in ``FunctionDecl.return_value``.
+    """
+
+    value: Expression
+
+
+@dataclass(frozen=True)
 class RepeatExpr:
     """Bounded loop: ``repeat <count> times { <body> }``.
 
@@ -235,10 +246,11 @@ class Block:
 
     ``result`` is None for a statement-only body, which evaluates to Null. Only
     produced when at least one statement is present, so a body written before
-    blocks existed keeps the identical AST.
+    blocks existed keeps the identical AST. Statements run in written order; an
+    expression statement has its value discarded.
     """
 
-    statements: tuple[LocalBinding | Assignment, ...]
+    statements: tuple[LocalBinding | Assignment | Expression, ...]
     result: Expression | None = None
 
 
@@ -262,6 +274,7 @@ Expression = (
     | TryExpr
     | BreakExpr
     | ContinueExpr
+    | ReturnExpr
     | ModelVarExpr
     | Block
 )
@@ -320,11 +333,15 @@ def expression_function_calls(
             visit(value.body)
         elif isinstance(value, TryExpr):
             visit(value.body)
-        elif isinstance(value, Assignment):
+        elif isinstance(value, (Assignment, ReturnExpr)):
             visit(value.value)
         elif isinstance(value, Block):
             for statement in value.statements:
-                visit(statement.value)
+                visit(
+                    statement.value
+                    if isinstance(statement, LocalBinding)
+                    else statement
+                )
             if value.result is not None:
                 visit(value.result)
 

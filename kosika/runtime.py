@@ -36,6 +36,7 @@ from .ast import (
     Program,
     RecordExpr,
     RepeatExpr,
+    ReturnExpr,
     ToolCall,
     ToolDecl,
     UnaryExpr,
@@ -68,6 +69,14 @@ class _BreakLoop(Exception):
 
 class _ContinueLoop(Exception):
     """Raised by ``continue`` to skip to the next loop iteration."""
+
+
+class _ReturnValue(Exception):
+    """Raised by an early ``return`` to leave the enclosing function body."""
+
+    def __init__(self, value: Any):
+        super().__init__()
+        self.value = value
 
 
 class _FunctionRegistry(dict[str, FunctionDecl]):
@@ -399,6 +408,11 @@ def _evaluate_expression(
             if right == 0:
                 raise RuntimeError("Division by zero")
             return left / right
+        if expression.operator == "%":
+            if right == 0:
+                raise RuntimeError("Modulo by zero")
+            # Floored modulo: the result takes the sign of the divisor.
+            return left % right
         if expression.operator == "<":
             return left < right
         if expression.operator == "<=":
@@ -542,6 +556,17 @@ def _evaluate_expression(
             except _ContinueLoop:
                 continue
         return result
+    if isinstance(expression, ReturnExpr):
+        raise _ReturnValue(
+            _evaluate_expression(
+                expression.value,
+                environment,
+                program,
+                functions,
+                function_events,
+                depth=depth,
+            )
+        )
     if isinstance(expression, BreakExpr):
         raise _BreakLoop
     if isinstance(expression, ContinueExpr):
@@ -711,39 +736,42 @@ def _execute_function_body(
     body_events: list[dict[str, Any]] = []
     local_environment = _Scope(arguments)
     # The body runs in written order, so a local declared after a loop reads
-    # what the loop assigned.
-    for binding in function.body:
-        if not isinstance(binding, LocalBinding):
-            _evaluate_expression(
-                binding,
+    # what the loop assigned. An early `return` unwinds to here.
+    try:
+        for binding in function.body:
+            if not isinstance(binding, LocalBinding):
+                _evaluate_expression(
+                    binding,
+                    local_environment,
+                    program,
+                    functions,
+                    body_events,
+                    depth=depth,
+                )
+                continue
+            value = _evaluate_expression(
+                binding.value,
                 local_environment,
                 program,
                 functions,
                 body_events,
                 depth=depth,
             )
-            continue
-        value = _evaluate_expression(
-            binding.value,
+            # An inferred binding has no declared type, so there is no contract
+            # to re-check here; the checker already resolved and proved it.
+            if binding.type_name is not None:
+                validate(value, schema_for_type(program, binding.type_name))
+            local_environment[binding.name] = value
+        result = _evaluate_expression(
+            function.return_value,
             local_environment,
             program,
             functions,
             body_events,
             depth=depth,
         )
-        # An inferred binding has no declared type, so there is no contract to
-        # re-check here; the checker already resolved and proved it.
-        if binding.type_name is not None:
-            validate(value, schema_for_type(program, binding.type_name))
-        local_environment[binding.name] = value
-    result = _evaluate_expression(
-        function.return_value,
-        local_environment,
-        program,
-        functions,
-        body_events,
-        depth=depth,
-    )
+    except _ReturnValue as returned:
+        result = returned.value
     validate(result, output_schema)
     # Optional pure-function result cache — safe because these functions are
     # deterministic and free of model/tool/host authority.

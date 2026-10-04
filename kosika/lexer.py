@@ -25,7 +25,7 @@ _TOKEN_RE = re.compile(
     r"(?P<STRING>\"(?:\\.|[^\"\\])*\")|"
     r"(?P<NUMBER>\d+(?:\.\d+)?)|"
     r"(?P<IDENT>[A-Za-z_][A-Za-z0-9_]*)|"
-    r"(?P<SYMBOL>[{}\[\]():,.?=+\-*/<>])"
+    r"(?P<SYMBOL>[{}\[\]():,.?=+\-*/%<>])"
 )
 
 
