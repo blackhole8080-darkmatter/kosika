@@ -593,6 +593,56 @@ left out: typed messages between members, state carried from one round to the
 next, and a termination judgment over observed evidence rather than result
 equality. Swarm output must not acquire authority the way model output cannot.
 
+## Write-from-spec benchmark (first measurement)
+
+- The question: can an AI author write a whole Kosika program from a spec,
+  given only a short guide? The K07 repair corpus cannot answer it, because it
+  asks for a one-line fix to an existing program.
+- `AGENT_GUIDE.md` (about 1,000 words) is the guide for models. Its claims were
+  run against the real parser, checker, and runtime before use.
+- `benchmarks/spec/tasks.json` holds 20 specs: 10 pure computation, 4 model
+  calls, 4 tools and agents (least privilege, approval gate), 2 agent and swarm.
+  Each names its declarations exactly and carries inputs, fixtures, and the
+  expected result. `benchmarks/spec/reference` holds a passing program for each.
+- `kosika.spec_benchmark` judges a candidate with Kosika only: checker, required
+  structure in the checked program, then an exact result from a bounded
+  fixture-backed run. Solvers: `reference`, `model` (any endpoint), and
+  `command` (a command-line model on standard input, run without a shell in an
+  empty temporary folder). Reports use `kosika.spec-benchmark/v1` and keep
+  every attempted program.
+- **Measured, 2026-10-04, through the Gemini command-line tool:** Gemini 3.5
+  Flash-Lite passed 16 of 16 tasks on the first attempt (about 13.5s each);
+  the report is `benchmarks/spec/results/gemini-3.5-flash-lite.json`. Gemini
+  3.8 Flash passed the other 4 (01, 02, 03, 08) on the first attempt before its
+  free daily quota of 20 requests ran out; those four are from the run log, not
+  a saved report. 2 of the 16 saved programs equal the reference; the rest are
+  the model's own.
+- What this supports: with the guide, a small current model writes correct
+  Kosika for fully specified, single-file programs, including tools, agents,
+  approval gates, and a swarm declaration.
+- What it does not support: anything about harder work. The specs name every
+  declaration, no task needs more than about 40 lines, and the guide was written
+  after the reference programs, so it already warns about the traps they
+  exposed. A 100 percent score means the benchmark has no headroom left, not
+  that authoring is solved. A local `qwen2.5:7b` run on CPU was stopped as too
+  slow and produced no result.
+- Language problems found while writing the references and the guide:
+  1. `let` and `var` lines all run before any loop or assignment, whatever
+     their position. A `let` written after a loop silently reads the pre-loop
+     value (the first invoice reference returned discount 0).
+  2. `KOSIKA.md` showed `repeat 8 { ... }`; the parser requires
+     `repeat 8 times { ... }`. The contract is corrected.
+  3. There is no `else if`, no `%`, no array length, and no text functions.
+  4. An unknown type or function name reports `unavailable or private symbols`
+     with no line number.
+- Next: harder specs (underspecified names, multi-step agents, 100+ lines,
+  repair of a failing run) until a strong model drops below 100 percent, and
+  fix problem 1, which is a silent wrong-result trap.
+- 23 tests in `tests/test_spec_benchmark.py` cover every reference, the judge's
+  check, structure, run, and result stages, both live solvers through
+  stand-ins, bounded attempts, provider failure, task-file validation, and the
+  CLI.
+
 ## Python SDK (complete)
 
 - `kosika.sdk` builds a program from Python: `App.record`, `model`, `tool`,

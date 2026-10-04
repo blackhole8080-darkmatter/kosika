@@ -1,0 +1,16 @@
+record Rect { width: Number height: Number }
+record Shape { area: Number perimeter: Number }
+
+fn measure(rect: Rect) -> Shape {
+  return {
+    area: rect.width * rect.height,
+    perimeter: 2 * (rect.width + rect.height)
+  }
+}
+
+workflow main(rect: Rect) -> Shape {
+  step compute {
+    let shape: Shape = measure(rect: rect)
+    return shape
+  }
+}

@@ -1,0 +1,195 @@
+{
+  "schema": "kosika.spec-tasks/v1",
+  "tasks": [
+    {
+      "id": "01_greeting",
+      "level": "basic",
+      "spec": "Records: Person {name: Text}, Greeting {text: Text}. Workflow main(person: Person) -> Greeting returns text equal to \"Hello, \" followed by the person's name followed by \"!\".",
+      "inputs": {"person": {"name": "Ada"}},
+      "expected": {"text": "Hello, Ada!"}
+    },
+    {
+      "id": "02_rectangle",
+      "level": "basic",
+      "spec": "Records: Rect {width: Number, height: Number}, Shape {area: Number, perimeter: Number}. Workflow main(rect: Rect) -> Shape returns the rectangle's area and perimeter.",
+      "inputs": {"rect": {"width": 3, "height": 4}},
+      "expected": {"area": 12, "perimeter": 14}
+    },
+    {
+      "id": "03_grade",
+      "level": "basic",
+      "spec": "Records: Exam {score: Number}, Grade {letter: Text, passed: Bool}. Workflow main(exam: Exam) -> Grade. letter is \"A\" for a score of 90 or more, \"B\" for 75 or more, \"C\" for 50 or more, otherwise \"F\". passed is true when the score is 50 or more.",
+      "inputs": {"exam": {"score": 82}},
+      "expected": {"letter": "B", "passed": true}
+    },
+    {
+      "id": "04_sum_list",
+      "level": "basic",
+      "spec": "Records: Numbers {values: Number[]}, Total {sum: Number, count: Number}. Workflow main(numbers: Numbers) -> Total returns the sum of the values and how many values there are.",
+      "inputs": {"numbers": {"values": [4, 8, 15, 16, 23, 42]}},
+      "expected": {"sum": 108, "count": 6}
+    },
+    {
+      "id": "05_factorial",
+      "level": "basic",
+      "spec": "Records: Request {n: Number}, Result {value: Number}. Workflow main(request: Request) -> Result returns the factorial of n. n is a whole number from 0 to 10.",
+      "inputs": {"request": {"n": 6}},
+      "expected": {"value": 720}
+    },
+    {
+      "id": "06_double_list",
+      "level": "basic",
+      "spec": "Record: Numbers {values: Number[]}. Workflow main(numbers: Numbers) -> Numbers returns a Numbers whose values are each input value multiplied by 2, in the same order.",
+      "inputs": {"numbers": {"values": [1, 2, 3]}},
+      "expected": {"values": [2, 4, 6]}
+    },
+    {
+      "id": "07_command",
+      "level": "basic",
+      "spec": "Records: Command {name: Text}, Reply {text: Text}. Workflow main(command: Command) -> Reply. text is \"Starting\" when name is \"start\", \"Stopping\" when name is \"stop\", and \"Unknown command\" for anything else.",
+      "inputs": {"command": {"name": "stop"}},
+      "expected": {"text": "Stopping"}
+    },
+    {
+      "id": "08_invoice",
+      "level": "basic",
+      "spec": "Records: Customer {name: Text, vip: Bool}, Item {name: Text, price: Number, quantity: Number}, Order {customer: Customer, items: Item[]}, Invoice {customer: Text, total: Number, discount: Number}. Workflow main(order: Order) -> Invoice. customer is the customer's name. total is the sum of price times quantity over all items. discount is total divided by 10 when the customer is a vip, otherwise 0.",
+      "inputs": {
+        "order": {
+          "customer": {"name": "Grace", "vip": true},
+          "items": [
+            {"name": "pen", "price": 2, "quantity": 5},
+            {"name": "book", "price": 10, "quantity": 2}
+          ]
+        }
+      },
+      "expected": {"customer": "Grace", "total": 30, "discount": 3}
+    },
+    {
+      "id": "09_access",
+      "level": "basic",
+      "spec": "Records: Access {age: Number, member: Bool, banned: Bool}, Decision {allowed: Bool}. Workflow main(access: Access) -> Decision. allowed is true when the person is not banned and is either at least 18 years old or a member.",
+      "inputs": {"access": {"age": 16, "member": true, "banned": false}},
+      "expected": {"allowed": true}
+    },
+    {
+      "id": "10_two_workflows",
+      "level": "basic",
+      "spec": "Records: Reading {celsius: Number}, Temperature {fahrenheit: Number}, Report {fahrenheit: Number, hot: Bool}. Workflow convert(reading: Reading) -> Temperature converts Celsius to Fahrenheit (celsius * 9 / 5 + 32). Workflow main(reading: Reading) -> Report must call the convert workflow, then return the Fahrenheit value and hot, which is true when Fahrenheit is above 86.",
+      "inputs": {"reading": {"celsius": 35}},
+      "expected": {"fahrenheit": 95, "hot": true},
+      "structure": [
+        {"in": "workflows", "name": "convert"},
+        {"source_matches": "call\\s+convert\\s*\\("}
+      ]
+    },
+    {
+      "id": "11_ask_model",
+      "level": "model",
+      "spec": "Records: Question {text: Text}, Answer {text: Text}. Declare a model named assistant that takes a Question and returns an Answer. Workflow main(question: Question) -> Answer asks the model once with the question text and returns its answer.",
+      "inputs": {"question": {"text": "Capital of France?"}},
+      "model_fixture": {"assistant": [{"text": "Paris"}]},
+      "expected": {"text": "Paris"}
+    },
+    {
+      "id": "12_classify_route",
+      "level": "model",
+      "spec": "Records: Ticket {text: Text}, Label {category: Text, confidence: Number}, Routing {queue: Text, escalate: Bool}. Declare a model named classifier that takes a Ticket and returns a Label. Workflow main(ticket: Ticket) -> Routing asks the classifier, then returns queue equal to the category and escalate true when confidence is below 0.6.",
+      "inputs": {"ticket": {"text": "I was charged twice"}},
+      "model_fixture": {"classifier": [{"category": "billing", "confidence": 0.4}]},
+      "expected": {"queue": "billing", "escalate": true}
+    },
+    {
+      "id": "13_draft_edit",
+      "level": "model",
+      "spec": "Records: Topic {title: Text}, Draft {text: Text}, Final {text: Text, approved: Bool}. Declare a model named drafter (Topic in, Draft out) and a model named editor (Draft in, Final out). Workflow main(topic: Topic) -> Final asks drafter with the topic title, passes the draft text to editor, and returns the editor's Final.",
+      "inputs": {"topic": {"title": "Replayable agents"}},
+      "model_fixture": {
+        "drafter": [{"text": "rough draft"}],
+        "editor": [{"text": "polished draft", "approved": true}]
+      },
+      "expected": {"text": "polished draft", "approved": true}
+    },
+    {
+      "id": "14_model_settings",
+      "level": "model",
+      "spec": "Records: Document {body: Text}, Summary {text: Text}. Declare a model named summarizer (Document in, Summary out) with deployment \"local-summarizer\", temperature 0.2 and a maximum of 200 output tokens. Workflow main(document: Document) -> Summary asks the summarizer with the document body and returns its Summary.",
+      "inputs": {"document": {"body": "A long report."}},
+      "model_fixture": {"summarizer": [{"text": "Short."}]},
+      "expected": {"text": "Short."},
+      "structure": [
+        {
+          "in": "models",
+          "name": "summarizer",
+          "has": {
+            "deployment": "local-summarizer",
+            "parameters.temperature": 0.2,
+            "parameters.max_output_tokens": 200
+          }
+        }
+      ]
+    },
+    {
+      "id": "15_weather_tool",
+      "level": "tool",
+      "spec": "Records: City {name: Text}, Weather {celsius: Number, conditions: Text}. Declare a read-only tool named get_weather from MCP source \"weather\" with operation \"current\", taking a City and returning Weather. Declare an agent named forecaster that may use get_weather. Workflow main(city: City) -> Weather has the forecaster call get_weather with the city name and returns the result.",
+      "inputs": {"city": {"name": "Lisbon"}},
+      "tool_fixture": {"get_weather": {"celsius": 21, "conditions": "clear"}},
+      "expected": {"celsius": 21, "conditions": "clear"},
+      "structure": [
+        {"in": "tools", "name": "get_weather", "has": {"access": "observe", "source": "weather", "operation": "current"}}
+      ]
+    },
+    {
+      "id": "16_stock_check",
+      "level": "tool",
+      "spec": "Records: Sku {code: Text}, Stock {quantity: Number}, Availability {in_stock: Bool, quantity: Number}. Declare a read-only tool named lookup_stock from MCP source \"inventory\" with operation \"lookup\", taking a Sku and returning Stock. Declare an agent named clerk that may use lookup_stock. Workflow main(sku: Sku) -> Availability has the clerk look up the sku code, then returns the quantity and in_stock, which is true when the quantity is above 0.",
+      "inputs": {"sku": {"code": "A-1"}},
+      "tool_fixture": {"lookup_stock": {"quantity": 0}},
+      "expected": {"in_stock": false, "quantity": 0}
+    },
+    {
+      "id": "17_least_privilege",
+      "level": "tool",
+      "spec": "Record: Log {lines: Text[]}. Declare a read-only tool named read_log from MCP source \"logs\" with operation \"read\", taking no input and returning a Log. Declare an agent named auditor that may use read_log and is explicitly denied delete_log and shell. Workflow main() -> Log has the auditor read the log and returns it.",
+      "inputs": {},
+      "tool_fixture": {"read_log": {"lines": ["started", "stopped"]}},
+      "expected": {"lines": ["started", "stopped"]},
+      "structure": [
+        {"in": "agents", "name": "auditor", "contains": {"can": ["read_log"], "cannot": ["delete_log", "shell"]}}
+      ]
+    },
+    {
+      "id": "18_approval_gate",
+      "level": "tool",
+      "spec": "Records: Email {to: Text, subject: Text}, Receipt {sent: Bool}. Declare a tool named send_email from MCP source \"mail\" with operation \"send\" that changes the outside world (it is not read-only), taking an Email and returning a Receipt. Declare an agent named messenger that may use send_email. Workflow main(email: Email) -> Receipt has the messenger send the email. The program must pass the checker; it will not be run.",
+      "check_only": true,
+      "structure": [
+        {"in": "tools", "name": "send_email", "has": {"access": "execute"}},
+        {"in": "workflows", "name": "main", "has": {"approval_required": true}}
+      ]
+    },
+    {
+      "id": "19_research_agent",
+      "level": "agent",
+      "spec": "Records: Question {text: Text}, SearchRequest {query: Text}, SearchHit {source: Text, excerpt: Text}, SearchResults {hits: SearchHit[]}, Answer {text: Text, sources: Text[]}. Declare a model named reader (Question in, Answer out). Declare a read-only tool named search_docs from MCP source \"documents\" with operation \"search\", taking a SearchRequest and returning SearchResults. Declare an agent named researcher that uses the reader model, may use search_docs, is denied write_files, and is limited to 4 steps. Workflow main(question: Question) -> Answer asks the researcher agent with the question text and returns its Answer.",
+      "inputs": {"question": {"text": "What is replay?"}},
+      "model_fixture": {"reader": [{"text": "Replay returns recorded results.", "sources": []}]},
+      "tool_fixture": {"search_docs": {"hits": []}},
+      "expected": {"text": "Replay returns recorded results.", "sources": []},
+      "structure": [
+        {"in": "agents", "name": "researcher", "has": {"model": "reader", "max_steps": 4}, "contains": {"can": ["search_docs"], "cannot": ["write_files"]}},
+        {"source_matches": "ask\\s+researcher\\s*\\("}
+      ]
+    },
+    {
+      "id": "20_swarm",
+      "level": "agent",
+      "spec": "Record: Brief {text: Text}. Declare a model named writer_model (Brief in, Brief out). Declare an agent named writer that uses writer_model. Workflow refine(brief: Brief) -> Brief asks the writer agent with the brief text and returns the improved Brief. Declare a swarm named Panel whose only member is writer, which runs the refine workflow for at most 2 rounds. The program must pass the checker; it will not be run.",
+      "check_only": true,
+      "structure": [
+        {"in": "swarms", "name": "Panel", "has": {"workflow": "refine", "max_rounds": 2, "approval_required": true}, "contains": {"agents": ["writer"]}}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,331 @@
+{
+  "checked_first_try": 16,
+  "checked_first_try_rate": 1.0,
+  "failure_codes": {},
+  "failure_stages": {},
+  "levels": {
+    "agent": {
+      "first_try": 2,
+      "passed": 2,
+      "tasks": 2
+    },
+    "basic": {
+      "first_try": 6,
+      "passed": 6,
+      "tasks": 6
+    },
+    "model": {
+      "first_try": 4,
+      "passed": 4,
+      "tasks": 4
+    },
+    "tool": {
+      "first_try": 4,
+      "passed": 4,
+      "tasks": 4
+    }
+  },
+  "max_attempts": 2,
+  "passed": 16,
+  "passed_first_try": 16,
+  "passed_first_try_rate": 1.0,
+  "passed_rate": 1.0,
+  "results": [
+    {
+      "attempts": [
+        {
+          "codes": [],
+          "completion_tokens": 0,
+          "feedback": "",
+          "index": 1,
+          "prompt_tokens": 0,
+          "seconds": 10.375,
+          "source": "record Numbers { values: Number[] }\nrecord Total { sum: Number count: Number }\n\nfn total(numbers: Numbers) -> Total {\n  var sum = 0\n  var count = 0\n  for value in numbers.values {\n    sum = sum + value\n    count = count + 1\n  }\n  return {sum: sum, count: count}\n}\n\nworkflow main(numbers: Numbers) -> Total {\n  step compute {\n    let result: Total = total(numbers: numbers)\n    return result\n  }\n}\n",
+          "stage": "passed"
+        }
+      ],
+      "first_try": true,
+      "id": "04_sum_list",
+      "level": "basic",
+      "passed": true
+    },
+    {
+      "attempts": [
+        {
+          "codes": [],
+          "completion_tokens": 0,
+          "feedback": "",
+          "index": 1,
+          "prompt_tokens": 0,
+          "seconds": 12.063,
+          "source": "record Request { n: Number }\nrecord Result { value: Number }\n\nfn compute_factorial(n: Number) -> Number recurse 16 {\n  return if n <= 1 { 1 } else { n * compute_factorial(n: n - 1) }\n}\n\nfn calculate(request: Request) -> Result {\n  let val: Number = compute_factorial(n: request.n)\n  return {value: val}\n}\n\nworkflow main(request: Request) -> Result {\n  step compute {\n    let res: Result = calculate(request: request)\n    return res\n  }\n}\n",
+          "stage": "passed"
+        }
+      ],
+      "first_try": true,
+      "id": "05_factorial",
+      "level": "basic",
+      "passed": true
+    },
+    {
+      "attempts": [
+        {
+          "codes": [],
+          "completion_tokens": 0,
+          "feedback": "",
+          "index": 1,
+          "prompt_tokens": 0,
+          "seconds": 10.859,
+          "source": "record Numbers {\n  values: Number[]\n}\n\nfn double_numbers(numbers: Numbers) -> Numbers {\n  let doubled: Number[] = for value in numbers.values { value * 2 }\n  return {values: doubled}\n}\n\nworkflow main(numbers: Numbers) -> Numbers {\n  step compute {\n    let result: Numbers = double_numbers(numbers: numbers)\n    return result\n  }\n}\n",
+          "stage": "passed"
+        }
+      ],
+      "first_try": true,
+      "id": "06_double_list",
+      "level": "basic",
+      "passed": true
+    },
+    {
+      "attempts": [
+        {
+          "codes": [],
+          "completion_tokens": 0,
+          "feedback": "",
+          "index": 1,
+          "prompt_tokens": 0,
+          "seconds": 9.359,
+          "source": "record Command { name: Text }\nrecord Reply { text: Text }\n\nfn evaluate_command(command: Command) -> Reply {\n  let reply_text: Text = match command.name {\n    case \"start\" { \"Starting\" }\n    case \"stop\" { \"Stopping\" }\n    case _ { \"Unknown command\" }\n  }\n  return {text: reply_text}\n}\n\nworkflow main(command: Command) -> Reply {\n  step run {\n    let reply: Reply = evaluate_command(command: command)\n    return reply\n  }\n}\n",
+          "stage": "passed"
+        }
+      ],
+      "first_try": true,
+      "id": "07_command",
+      "level": "basic",
+      "passed": true
+    },
+    {
+      "attempts": [
+        {
+          "codes": [],
+          "completion_tokens": 0,
+          "feedback": "",
+          "index": 1,
+          "prompt_tokens": 0,
+          "seconds": 11.797,
+          "source": "record Access { age: Number member: Bool banned: Bool }\nrecord Decision { allowed: Bool }\n\nfn evaluate_access(access: Access) -> Decision {\n  let allowed: Bool = if access.banned { false } else {\n    if access.age >= 18 { true } else { access.member }\n  }\n  return {allowed: allowed}\n}\n\nworkflow main(access: Access) -> Decision {\n  step check {\n    let decision: Decision = evaluate_access(access: access)\n    return decision\n  }\n}\n",
+          "stage": "passed"
+        }
+      ],
+      "first_try": true,
+      "id": "09_access",
+      "level": "basic",
+      "passed": true
+    },
+    {
+      "attempts": [
+        {
+          "codes": [],
+          "completion_tokens": 0,
+          "feedback": "",
+          "index": 1,
+          "prompt_tokens": 0,
+          "seconds": 11.719,
+          "source": "record Reading { celsius: Number }\nrecord Temperature { fahrenheit: Number }\nrecord Report { fahrenheit: Number, hot: Bool }\n\nfn calc_fahrenheit(reading: Reading) -> Temperature {\n  let f: Number = reading.celsius * 9 / 5 + 32\n  return {fahrenheit: f}\n}\n\nfn build_report(temperature: Temperature) -> Report {\n  let is_hot: Bool = temperature.fahrenheit > 86\n  return {fahrenheit: temperature.fahrenheit, hot: is_hot}\n}\n\nworkflow convert(reading: Reading) -> Temperature {\n  step convert_step {\n    let temperature: Temperature = calc_fahrenheit(reading: reading)\n    return temperature\n  }\n}\n\nworkflow main(reading: Reading) -> Report {\n  step temp_step {\n    let temperature: Temperature = call convert(reading: reading)\n    return temperature\n  }\n  step report_step {\n    let report: Report = build_report(temperature: temperature)\n    return report\n  }\n}\n",
+          "stage": "passed"
+        }
+      ],
+      "first_try": true,
+      "id": "10_two_workflows",
+      "level": "basic",
+      "passed": true
+    },
+    {
+      "attempts": [
+        {
+          "codes": [],
+          "completion_tokens": 0,
+          "feedback": "",
+          "index": 1,
+          "prompt_tokens": 0,
+          "seconds": 10.234,
+          "source": "record Question { text: Text }\nrecord Answer { text: Text }\n\nmodel assistant {\n  input: Question\n  output: Answer\n}\n\nworkflow main(question: Question) -> Answer {\n  step respond {\n    let answer: Answer = use_model assistant(text: question.text)\n    return answer\n  }\n}\n",
+          "stage": "passed"
+        }
+      ],
+      "first_try": true,
+      "id": "11_ask_model",
+      "level": "model",
+      "passed": true
+    },
+    {
+      "attempts": [
+        {
+          "codes": [],
+          "completion_tokens": 0,
+          "feedback": "",
+          "index": 1,
+          "prompt_tokens": 0,
+          "seconds": 14.985,
+          "source": "record Ticket { text: Text }\nrecord Label { category: Text, confidence: Number }\nrecord Routing { queue: Text, escalate: Bool }\n\nmodel classifier {\n  input: Ticket\n  output: Label\n}\n\nfn route_ticket(label: Label) -> Routing {\n  let escalate: Bool = label.confidence < 0.6\n  return {queue: label.category, escalate: escalate}\n}\n\nworkflow main(ticket: Ticket) -> Routing {\n  step classify {\n    let label: Label = use_model classifier(text: ticket.text)\n    return label\n  }\n  step route {\n    let routing: Routing = route_ticket(label: label)\n    return routing\n  }\n}\n",
+          "stage": "passed"
+        }
+      ],
+      "first_try": true,
+      "id": "12_classify_route",
+      "level": "model",
+      "passed": true
+    },
+    {
+      "attempts": [
+        {
+          "codes": [],
+          "completion_tokens": 0,
+          "feedback": "",
+          "index": 1,
+          "prompt_tokens": 0,
+          "seconds": 9.64,
+          "source": "record Topic { title: Text }\nrecord Draft { text: Text }\nrecord Final { text: Text, approved: Bool }\n\nmodel drafter {\n  input: Topic\n  output: Draft\n}\n\nmodel editor {\n  input: Draft\n  output: Final\n}\n\nworkflow main(topic: Topic) -> Final {\n  step make_draft {\n    let draft: Draft = use_model drafter(title: topic.title)\n    return draft\n  }\n  step make_final {\n    let final: Final = use_model editor(text: draft.text)\n    return final\n  }\n}\n",
+          "stage": "passed"
+        }
+      ],
+      "first_try": true,
+      "id": "13_draft_edit",
+      "level": "model",
+      "passed": true
+    },
+    {
+      "attempts": [
+        {
+          "codes": [],
+          "completion_tokens": 0,
+          "feedback": "",
+          "index": 1,
+          "prompt_tokens": 0,
+          "seconds": 8.532,
+          "source": "record Document {\n  body: Text\n}\n\nrecord Summary {\n  text: Text\n}\n\nmodel summarizer {\n  input: Document\n  output: Summary\n  deployment: \"local-summarizer\"\n  parameters: {\n    temperature: 0.2\n    max_output_tokens: 200\n  }\n}\n\nworkflow main(document: Document) -> Summary {\n  step summarize {\n    let summary: Summary = use_model summarizer(body: document.body)\n    return summary\n  }\n}\n",
+          "stage": "passed"
+        }
+      ],
+      "first_try": true,
+      "id": "14_model_settings",
+      "level": "model",
+      "passed": true
+    },
+    {
+      "attempts": [
+        {
+          "codes": [],
+          "completion_tokens": 0,
+          "feedback": "",
+          "index": 1,
+          "prompt_tokens": 0,
+          "seconds": 10.047,
+          "source": "record City { name: Text }\nrecord Weather { celsius: Number, conditions: Text }\n\ntool get_weather {\n  source mcp \"weather\"\n  operation: \"current\"\n  access: observe\n  input: City\n  output: Weather\n}\n\nagent forecaster {\n  can: [get_weather]\n}\n\nworkflow main(city: City) -> Weather {\n  step look_up {\n    let weather: Weather = execute forecaster.get_weather(name: city.name)\n    return weather\n  }\n}\n",
+          "stage": "passed"
+        }
+      ],
+      "first_try": true,
+      "id": "15_weather_tool",
+      "level": "tool",
+      "passed": true
+    },
+    {
+      "attempts": [
+        {
+          "codes": [],
+          "completion_tokens": 0,
+          "feedback": "",
+          "index": 1,
+          "prompt_tokens": 0,
+          "seconds": 22.703,
+          "source": "record Sku { code: Text }\nrecord Stock { quantity: Number }\nrecord Availability { in_stock: Bool, quantity: Number }\n\ntool lookup_stock {\n  source mcp \"inventory\"\n  operation: \"lookup\"\n  access: observe\n  input: Sku\n  output: Stock\n}\n\nagent clerk {\n  instructions: \"Look up stock.\"\n  can: [lookup_stock]\n}\n\nfn make_availability(stock: Stock) -> Availability {\n  let in_stock: Bool = if stock.quantity > 0 { true } else { false }\n  return {in_stock: in_stock, quantity: stock.quantity}\n}\n\nworkflow main(sku: Sku) -> Availability {\n  step fetch_stock {\n    let stock: Stock = execute clerk.lookup_stock(code: sku.code)\n    return stock\n  }\n  step check_stock {\n    let availability: Availability = make_availability(stock: stock)\n    return availability\n  }\n}\n",
+          "stage": "passed"
+        }
+      ],
+      "first_try": true,
+      "id": "16_stock_check",
+      "level": "tool",
+      "passed": true
+    },
+    {
+      "attempts": [
+        {
+          "codes": [],
+          "completion_tokens": 0,
+          "feedback": "",
+          "index": 1,
+          "prompt_tokens": 0,
+          "seconds": 24.937,
+          "source": "record Log {\n  lines: Text[]\n}\n\ntool read_log {\n  source mcp \"logs\"\n  operation: \"read\"\n  access: observe\n  output: Log\n}\n\nagent auditor {\n  instructions: \"Read the log.\"\n  can: [read_log]\n  cannot: [delete_log, shell]\n}\n\nworkflow main() -> Log {\n  step read {\n    let log: Log = execute auditor.read_log()\n    return log\n  }\n}\n",
+          "stage": "passed"
+        }
+      ],
+      "first_try": true,
+      "id": "17_least_privilege",
+      "level": "tool",
+      "passed": true
+    },
+    {
+      "attempts": [
+        {
+          "codes": [],
+          "completion_tokens": 0,
+          "feedback": "",
+          "index": 1,
+          "prompt_tokens": 0,
+          "seconds": 15.266,
+          "source": "record Email {\n  to: Text\n  subject: Text\n}\n\nrecord Receipt {\n  sent: Bool\n}\n\ntool send_email {\n  source mcp \"mail\"\n  operation: \"send\"\n  access: execute\n  input: Email\n  output: Receipt\n}\n\nagent messenger {\n  instructions: \"Send the email.\"\n  can: [send_email]\n}\n\nworkflow main(email: Email) -> Receipt {\n  step send {\n    let receipt: Receipt = execute messenger.send_email(to: email.to, subject: email.subject)\n    return receipt\n  }\n  require approval\n}\n",
+          "stage": "passed"
+        }
+      ],
+      "first_try": true,
+      "id": "18_approval_gate",
+      "level": "tool",
+      "passed": true
+    },
+    {
+      "attempts": [
+        {
+          "codes": [],
+          "completion_tokens": 0,
+          "feedback": "",
+          "index": 1,
+          "prompt_tokens": 0,
+          "seconds": 10.359,
+          "source": "record Question { text: Text }\nrecord SearchRequest { query: Text }\nrecord SearchHit { source: Text, excerpt: Text }\nrecord SearchResults { hits: SearchHit[] }\nrecord Answer { text: Text, sources: Text[] }\n\nmodel reader {\n  input: Question\n  output: Answer\n}\n\ntool search_docs {\n  source mcp \"documents\"\n  operation: \"search\"\n  access: observe\n  input: SearchRequest\n  output: SearchResults\n}\n\nagent researcher {\n  model: reader\n  instructions: \"Answer the question using document search.\"\n  can: [search_docs]\n  cannot: [write_files]\n  max_steps: 4\n}\n\nworkflow main(question: Question) -> Answer {\n  step run_research {\n    let answer: Answer = ask researcher(text: question.text)\n    return answer\n  }\n}\n",
+          "stage": "passed"
+        }
+      ],
+      "first_try": true,
+      "id": "19_research_agent",
+      "level": "agent",
+      "passed": true
+    },
+    {
+      "attempts": [
+        {
+          "codes": [],
+          "completion_tokens": 0,
+          "feedback": "",
+          "index": 1,
+          "prompt_tokens": 0,
+          "seconds": 23.844,
+          "source": "record Brief { text: Text }\n\nmodel writer_model {\n  input: Brief\n  output: Brief\n}\n\nagent writer {\n  model: writer_model\n  instructions: \"Improve the brief.\"\n  can: []\n  cannot: [shell, delete_files]\n  max_steps: 4\n}\n\nworkflow refine(brief: Brief) -> Brief {\n  step improve {\n    let improved: Brief = ask writer(text: brief.text)\n    return improved\n  }\n}\n\nswarm Panel {\n  agents: [writer]\n  workflow: refine\n  max_rounds: 2\n  require approval\n}\n",
+          "stage": "passed"
+        }
+      ],
+      "first_try": true,
+      "id": "20_swarm",
+      "level": "agent",
+      "passed": true
+    }
+  ],
+  "schema": "kosika.spec-benchmark/v1",
+  "tasks": 16,
+  "usage": {
+    "attempts": 16,
+    "completion_tokens": 0,
+    "prompt_tokens": 0,
+    "seconds": 216.719
+  }
+}

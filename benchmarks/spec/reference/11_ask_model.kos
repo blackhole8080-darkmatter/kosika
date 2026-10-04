@@ -1,0 +1,14 @@
+record Question { text: Text }
+record Answer { text: Text }
+
+model assistant {
+  input: Question
+  output: Answer
+}
+
+workflow main(question: Question) -> Answer {
+  step respond {
+    let answer: Answer = use_model assistant(text: question.text)
+    return answer
+  }
+}

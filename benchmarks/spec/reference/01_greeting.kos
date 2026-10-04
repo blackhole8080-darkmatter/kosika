@@ -1,0 +1,13 @@
+record Person { name: Text }
+record Greeting { text: Text }
+
+fn greet(person: Person) -> Greeting {
+  return {text: "Hello, " + person.name + "!"}
+}
+
+workflow main(person: Person) -> Greeting {
+  step say_hello {
+    let greeting: Greeting = greet(person: person)
+    return greeting
+  }
+}

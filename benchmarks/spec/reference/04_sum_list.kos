@@ -1,0 +1,19 @@
+record Numbers { values: Number[] }
+record Total { sum: Number count: Number }
+
+fn total(numbers: Numbers) -> Total {
+  var sum = 0
+  var count = 0
+  for value in numbers.values {
+    sum = sum + value
+    count = count + 1
+  }
+  return {sum: sum, count: count}
+}
+
+workflow main(numbers: Numbers) -> Total {
+  step add_up {
+    let result: Total = total(numbers: numbers)
+    return result
+  }
+}

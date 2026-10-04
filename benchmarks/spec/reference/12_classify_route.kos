@@ -1,0 +1,23 @@
+record Ticket { text: Text }
+record Label { category: Text confidence: Number }
+record Routing { queue: Text escalate: Bool }
+
+model classifier {
+  input: Ticket
+  output: Label
+}
+
+fn route(label: Label) -> Routing {
+  return {queue: label.category, escalate: label.confidence < 0.6}
+}
+
+workflow main(ticket: Ticket) -> Routing {
+  step classify {
+    let label: Label = use_model classifier(text: ticket.text)
+    return label
+  }
+  step decide {
+    let routing: Routing = route(label: label)
+    return routing
+  }
+}

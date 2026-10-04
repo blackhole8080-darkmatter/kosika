@@ -1,0 +1,25 @@
+record Brief { text: Text }
+
+model writer_model {
+  input: Brief
+  output: Brief
+}
+
+agent writer {
+  model: writer_model
+  cannot: [shell]
+}
+
+workflow refine(brief: Brief) -> Brief {
+  step rewrite {
+    let improved: Brief = ask writer(text: brief.text)
+    return improved
+  }
+}
+
+swarm Panel {
+  agents: [writer]
+  workflow: refine
+  max_rounds: 2
+  require approval
+}

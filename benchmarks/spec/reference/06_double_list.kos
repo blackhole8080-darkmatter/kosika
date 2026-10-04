@@ -1,0 +1,13 @@
+record Numbers { values: Number[] }
+
+fn double(numbers: Numbers) -> Numbers {
+  let doubled: Number[] = for value in numbers.values { value * 2 }
+  return {values: doubled}
+}
+
+workflow main(numbers: Numbers) -> Numbers {
+  step transform {
+    let result: Numbers = double(numbers: numbers)
+    return result
+  }
+}

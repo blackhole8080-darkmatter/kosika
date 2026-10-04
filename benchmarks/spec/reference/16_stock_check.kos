@@ -1,0 +1,31 @@
+record Sku { code: Text }
+record Stock { quantity: Number }
+record Availability { in_stock: Bool quantity: Number }
+
+tool lookup_stock {
+  source mcp "inventory"
+  operation: "lookup"
+  access: observe
+  input: Sku
+  output: Stock
+}
+
+agent clerk {
+  can: [lookup_stock]
+  cannot: []
+}
+
+fn availability(stock: Stock) -> Availability {
+  return {in_stock: stock.quantity > 0, quantity: stock.quantity}
+}
+
+workflow main(sku: Sku) -> Availability {
+  step look_up {
+    let stock: Stock = execute clerk.lookup_stock(code: sku.code)
+    return stock
+  }
+  step decide {
+    let result: Availability = availability(stock: stock)
+    return result
+  }
+}

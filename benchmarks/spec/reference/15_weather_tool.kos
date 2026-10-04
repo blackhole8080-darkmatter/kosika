@@ -1,0 +1,22 @@
+record City { name: Text }
+record Weather { celsius: Number conditions: Text }
+
+tool get_weather {
+  source mcp "weather"
+  operation: "current"
+  access: observe
+  input: City
+  output: Weather
+}
+
+agent forecaster {
+  can: [get_weather]
+  cannot: []
+}
+
+workflow main(city: City) -> Weather {
+  step look_up {
+    let weather: Weather = execute forecaster.get_weather(name: city.name)
+    return weather
+  }
+}

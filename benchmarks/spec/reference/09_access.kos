@@ -1,0 +1,13 @@
+record Access { age: Number member: Bool banned: Bool }
+record Decision { allowed: Bool }
+
+fn decide(access: Access) -> Decision {
+  return {allowed: not access.banned and (access.age >= 18 or access.member)}
+}
+
+workflow main(access: Access) -> Decision {
+  step evaluate {
+    let decision: Decision = decide(access: access)
+    return decision
+  }
+}

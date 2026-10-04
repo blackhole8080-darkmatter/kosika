@@ -1405,6 +1405,50 @@ def build_parser() -> argparse.ArgumentParser:
     )
     audience_map_parser.add_argument("--output", type=Path)
 
+    spec_eval_parser = subparsers.add_parser(
+        "spec-eval",
+        help="Measure whether a model can write Kosika programs from specs.",
+    )
+    spec_eval_parser.add_argument(
+        "--tasks", type=Path, default=Path("benchmarks/spec/tasks.json")
+    )
+    spec_eval_parser.add_argument(
+        "--solver", choices=("reference", "model", "command"), default="reference"
+    )
+    spec_eval_parser.add_argument(
+        "--solver-command",
+        nargs=argparse.REMAINDER,
+        help=(
+            "For --solver command: the program and arguments to run. It reads "
+            "the prompt on standard input and prints its reply. Must be last."
+        ),
+    )
+    spec_eval_parser.add_argument(
+        "--reference-dir", type=Path, default=Path("benchmarks/spec/reference")
+    )
+    spec_eval_parser.add_argument(
+        "--guide",
+        type=Path,
+        default=Path("AGENT_GUIDE.md"),
+        help="Language guide shown to the model.",
+    )
+    spec_eval_parser.add_argument(
+        "--base-url", help="Model endpoint for --solver model."
+    )
+    spec_eval_parser.add_argument("--model", help="Model name for --solver model.")
+    spec_eval_parser.add_argument(
+        "--protocol", choices=MODEL_PROTOCOLS, default="openai"
+    )
+    spec_eval_parser.add_argument("--timeout", type=float, default=600.0)
+    spec_eval_parser.add_argument("--max-tokens", type=int, default=1200)
+    spec_eval_parser.add_argument("--attempts", type=int, default=2)
+    spec_eval_parser.add_argument("--limit", type=int)
+    spec_eval_parser.add_argument(
+        "--task", action="append", default=[], help="Run only this task id."
+    )
+    spec_eval_parser.add_argument("--format", choices=("json", "text"), default="text")
+    spec_eval_parser.add_argument("--output", type=Path)
+
     swarm_parser = subparsers.add_parser(
         "swarm",
         help="Show a swarm's plan hash, or run it under one approval.",
@@ -2136,6 +2180,90 @@ def main() -> int:
             "  kosika run main.kos --input input.json --model-fixture responses.json"
         )
         return 0
+
+    if args.command == "spec-eval":
+        from .spec_benchmark import (
+            SpecBenchmarkError,
+            TaskResult,
+            command_solver,
+            load_tasks,
+            model_solver,
+            reference_solver,
+            run_benchmark,
+        )
+        from .spec_benchmark import to_text as spec_to_text
+
+        try:
+            spec_tasks = load_tasks(args.tasks)
+            if args.task:
+                unknown_tasks = sorted(
+                    set(args.task) - {item.id for item in spec_tasks}
+                )
+                if unknown_tasks:
+                    raise SpecBenchmarkError(
+                        f"Unknown task id(s): {', '.join(unknown_tasks)}"
+                    )
+                spec_tasks = [item for item in spec_tasks if item.id in args.task]
+            if args.limit is not None:
+                if args.limit < 1:
+                    raise SpecBenchmarkError("--limit must be at least 1")
+                spec_tasks = spec_tasks[: args.limit]
+            if args.solver == "model":
+                if not args.base_url or not args.model:
+                    raise SpecBenchmarkError(
+                        "--solver model requires --base-url and --model"
+                    )
+                spec_solver = model_solver(
+                    OpenAICompatibleProvider(
+                        args.base_url,
+                        args.model,
+                        api_key=os.environ.get("KOSIKA_MODEL_API_KEY"),
+                        timeout=args.timeout,
+                        think=False,
+                        protocol=args.protocol,
+                    ),
+                    args.guide.read_text(encoding="utf-8"),
+                    model=args.model,
+                    max_output_tokens=args.max_tokens,
+                )
+            elif args.solver == "command":
+                if not args.solver_command:
+                    raise SpecBenchmarkError(
+                        "--solver command requires --solver-command PROGRAM [ARGS]"
+                    )
+                spec_solver = command_solver(
+                    args.solver_command,
+                    args.guide.read_text(encoding="utf-8"),
+                    timeout=args.timeout,
+                )
+            else:
+                spec_solver = reference_solver(args.reference_dir)
+
+            def spec_progress(result: TaskResult) -> None:
+                state = (
+                    "first try"
+                    if result.first_try
+                    else "passed"
+                    if result.passed
+                    else f"failed ({result.attempts[-1].verdict.stage})"
+                )
+                print(f"{result.id}: {state}", file=sys.stderr, flush=True)
+
+            spec_report = run_benchmark(
+                spec_tasks,
+                spec_solver,
+                max_attempts=args.attempts,
+                progress=spec_progress,
+            )
+        except (SpecBenchmarkError, OSError, ValueError) as exc:
+            print(f"Spec evaluation failed safely: {exc}", file=sys.stderr)
+            return 2
+        spec_json = json.dumps(spec_report, indent=2, sort_keys=True)
+        if args.output is not None:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(spec_json + "\n", encoding="utf-8")
+        print(spec_json if args.format == "json" else spec_to_text(spec_report))
+        return 0 if spec_report["passed"] == spec_report["tasks"] else 1
 
     if args.command == "swarm":
         from .approval_ledger import ApprovalLedger

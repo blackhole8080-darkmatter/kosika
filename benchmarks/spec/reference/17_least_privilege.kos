@@ -1,0 +1,20 @@
+record Log { lines: Text[] }
+
+tool read_log {
+  source mcp "logs"
+  operation: "read"
+  access: observe
+  output: Log
+}
+
+agent auditor {
+  can: [read_log]
+  cannot: [delete_log, shell]
+}
+
+workflow main() -> Log {
+  step read {
+    let log: Log = execute auditor.read_log()
+    return log
+  }
+}

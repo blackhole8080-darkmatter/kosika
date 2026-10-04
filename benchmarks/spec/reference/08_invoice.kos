@@ -1,0 +1,23 @@
+record Customer { name: Text vip: Bool }
+record Item { name: Text price: Number quantity: Number }
+record Order { customer: Customer items: Item[] }
+record Invoice { customer: Text total: Number discount: Number }
+
+fn bill(order: Order) -> Invoice {
+  var total = 0
+  for item in order.items {
+    total = total + item.price * item.quantity
+  }
+  return {
+    customer: order.customer.name,
+    total: total,
+    discount: if order.customer.vip { total / 10 } else { 0 }
+  }
+}
+
+workflow main(order: Order) -> Invoice {
+  step invoice {
+    let result: Invoice = bill(order: order)
+    return result
+  }
+}

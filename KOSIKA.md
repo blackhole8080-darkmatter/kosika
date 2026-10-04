@@ -186,7 +186,7 @@ more tightly. Parentheses override precedence.
 
 ```kosika
 for item in values limit 32 { expression }
-repeat 8 { expression }
+repeat 8 times { expression }
 ```
 
 - `for` is a functional map over an array and returns the collected body

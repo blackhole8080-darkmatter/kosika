@@ -1,0 +1,17 @@
+record Request { n: Number }
+record Result { value: Number }
+
+fn factorial(n: Number) -> Number recurse 16 {
+  return if n <= 1 { 1 } else { n * factorial(n: n - 1) }
+}
+
+fn solve(request: Request) -> Result {
+  return {value: factorial(n: request.n)}
+}
+
+workflow main(request: Request) -> Result {
+  step calculate {
+    let result: Result = solve(request: request)
+    return result
+  }
+}

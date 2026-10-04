@@ -1,0 +1,29 @@
+record Reading { celsius: Number }
+record Temperature { fahrenheit: Number }
+record Report { fahrenheit: Number hot: Bool }
+
+fn to_fahrenheit(reading: Reading) -> Temperature {
+  return {fahrenheit: reading.celsius * 9 / 5 + 32}
+}
+
+fn summarize(temperature: Temperature) -> Report {
+  return {fahrenheit: temperature.fahrenheit, hot: temperature.fahrenheit > 86}
+}
+
+workflow convert(reading: Reading) -> Temperature {
+  step compute {
+    let temperature: Temperature = to_fahrenheit(reading: reading)
+    return temperature
+  }
+}
+
+workflow main(reading: Reading) -> Report {
+  step converted {
+    let temperature: Temperature = call convert(reading: reading)
+    return temperature
+  }
+  step report {
+    let result: Report = summarize(temperature: temperature)
+    return result
+  }
+}

@@ -1,0 +1,19 @@
+record Document { body: Text }
+record Summary { text: Text }
+
+model summarizer {
+  input: Document
+  output: Summary
+  deployment: "local-summarizer"
+  parameters: {
+    temperature: 0.2
+    max_output_tokens: 200
+  }
+}
+
+workflow main(document: Document) -> Summary {
+  step summarize {
+    let summary: Summary = use_model summarizer(body: document.body)
+    return summary
+  }
+}

@@ -1,0 +1,202 @@
+# Kosika for AI authors
+
+Everything needed to write a correct Kosika program. Kosika is its own
+language. Do not use Python, JavaScript, or Rust syntax.
+
+## Shape of a program
+
+A program is a list of declarations in any order: `record`, `fn`, `model`,
+`tool`, `agent`, `workflow`, `swarm`. No semicolons. `//` starts a comment.
+The entry point is `workflow main`.
+
+```kosika
+record Person { name: Text }
+record Greeting { text: Text }
+
+fn greet(person: Person) -> Greeting {
+  return {text: "Hello, " + person.name + "!"}
+}
+
+workflow main(person: Person) -> Greeting {
+  step say_hello {
+    let greeting: Greeting = greet(person: person)
+    return greeting
+  }
+}
+```
+
+## Types
+
+- Primitives: `Text`, `Number`, `Bool`, `Null`. There is no `String`, `Int`,
+  or `Float`.
+- Arrays: `Number[]`, `Person[]`.
+- Records: `record Name { field: Type other: Type }`. Every field is
+  required. Record names start with a capital letter.
+- A record value is written `{field: value, other: value}`. An array value is
+  `[1, 2, 3]`. Read a field with `value.field` and an element with `list[0]`.
+
+## Functions
+
+```kosika
+fn total(numbers: Numbers) -> Total {
+  var sum = 0
+  var count = 0
+  for value in numbers.values {
+    sum = sum + value
+    count = count + 1
+  }
+  return {sum: sum, count: count}
+}
+```
+
+- A function is pure: it cannot call a model, tool, agent, or workflow.
+- **Every call uses named arguments**: `greet(person: p)`, never `greet(p)`.
+- The body is `let`/`var` declarations, then statements, then exactly one
+  `return expression` as the last line. There is no early return.
+- `let` cannot be reassigned. Use `var` for a value you assign later.
+- **All `let` and `var` lines run first, before any loop or assignment, even
+  if written after them.** To use a loop's result, compute it in the `return`
+  expression or assign it to a `var` declared earlier.
+- Operators: `+ - * /`, `< <= > >=`, `== !=`, `and`, `or`, `not`.
+  `Text + Text` and `Text + Number` join text. There is no `%`, `&&`, `||`,
+  or `!`.
+- There are no built-in functions and no methods: no `len(x)`, no
+  `x.length`, no `x.push(y)`. Count or sum with a `for` loop.
+
+## Choosing and repeating
+
+```kosika
+// if is an expression. Both branches are required, each in braces.
+let label: Text = if score >= 50 { "pass" } else { "fail" }
+
+// There is no "else if". Nest another if inside the else braces.
+let grade: Text = if score >= 90 { "A" } else {
+  if score >= 75 { "B" } else { "C" }
+}
+
+// match on Text, Number, or Bool. End with `case _`.
+let reply: Text = match name {
+  case "start" { "Starting" }
+  case _ { "Unknown" }
+}
+
+// for as an expression builds a new array.
+let doubled: Number[] = for value in numbers.values { value * 2 }
+
+// repeat runs a fixed number of times (a literal from 1 to 512).
+repeat 3 times { sum = sum + 1 }
+```
+
+There is no `while`. A function may call itself only with a declared bound:
+
+```kosika
+fn factorial(n: Number) -> Number recurse 16 {
+  return if n <= 1 { 1 } else { n * factorial(n: n - 1) }
+}
+```
+
+## Models
+
+A model is declared by its input and output records. A call passes the
+**fields of the input record** as named arguments.
+
+```kosika
+record Question { text: Text }
+record Answer { text: Text }
+
+model assistant {
+  input: Question
+  output: Answer
+  deployment: "local-model"        // optional
+  parameters: {                    // optional
+    temperature: 0.2
+    max_output_tokens: 200
+  }
+}
+
+workflow main(question: Question) -> Answer {
+  step respond {
+    let answer: Answer = use_model assistant(text: question.text)
+    return answer
+  }
+}
+```
+
+## Tools and agents
+
+A tool is something outside the program. Only an agent that lists the tool in
+`can` may use it.
+
+```kosika
+tool get_weather {
+  source mcp "weather"
+  operation: "current"
+  access: observe          // observe = read-only. execute = changes the world.
+  input: City              // optional; omit for a tool with no input
+  output: Weather
+}
+
+agent forecaster {
+  model: assistant         // needed only if the agent is used with `ask`
+  instructions: "Be brief."
+  can: [get_weather]
+  cannot: [shell, delete_files]
+  max_steps: 4
+}
+```
+
+Note `source mcp "name"` has no colon. Every other line does.
+
+## Workflows
+
+```kosika
+workflow main(city: City) -> Report {
+  step look_up {
+    let weather: Weather = execute forecaster.get_weather(name: city.name)
+    return weather
+  }
+  step summarize {
+    let report: Report = build_report(weather: weather)
+    return report
+  }
+}
+```
+
+- A workflow's parameters and its result type are always records.
+- **Each step is exactly two lines: `let name: Type = <one call>` and
+  `return name`.** No other statements, no expressions, no `if`.
+- The call is one of:
+  - `some_function(arg: value)`
+  - `use_model model_name(field: value)`
+  - `ask agent_name(field: value)` runs the agent's model with its tools; the
+    arguments are the fields of that model's input record, and the result is
+    that model's output record
+  - `execute agent_name.tool_name(field: value)` calls one tool directly
+  - `call other_workflow(param: value)`
+- Later steps can use the names bound by earlier steps and the parameters.
+- The last step's result must have the workflow's result type.
+- Put any logic in a `fn` and call it from a step.
+- If a step executes a tool whose access is `execute`, the workflow must end
+  with the line `require approval` after its last step.
+
+## Swarms
+
+```kosika
+swarm Panel {
+  agents: [writer]
+  workflow: refine
+  max_rounds: 2
+  require approval
+}
+```
+
+`require approval` is mandatory, and every listed agent must be used by the
+workflow.
+
+## Checklist before answering
+
+1. Named arguments on every call.
+2. Only `Text`, `Number`, `Bool`, `Null`, arrays, and your records as types.
+3. Each workflow step: one `let` with one call, then `return` of that name.
+4. One `return` at the end of each `fn`; logic lives in `fn`, not in steps.
+5. No `else if`, no methods, no built-in functions, no semicolons.

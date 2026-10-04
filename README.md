@@ -53,6 +53,24 @@ kosika run main.kos --input input.json --model-fixture responses.json
 kosika run main.kos --input input.json --model YOUR_LOCAL_MODEL
 ```
 
+## Can a model write Kosika?
+
+[AGENT_GUIDE.md](AGENT_GUIDE.md) is the language guide written for AI authors.
+`spec-eval` measures whether a model can write whole programs from it: 20
+plain-language specs in `benchmarks/spec`, each judged by Kosika itself (the
+checker, required declarations, and an exact result from a fixture-backed run).
+
+```text
+kosika spec-eval                                   # stored reference programs
+kosika spec-eval --solver model --base-url URL --model NAME
+kosika spec-eval --solver command --solver-command gemini -p ""
+```
+
+`--solver command` drives any command-line model that reads a prompt on standard
+input. A failed attempt is shown what Kosika reported and may try again
+(`--attempts`). Candidates run only with the task's fixtures, in a temporary
+folder. Measured results are recorded in [KOSIKA_PLAN.md](KOSIKA_PLAN.md).
+
 ## Python SDK
 
 `kosika.sdk` builds a Kosika program from Python instead of a `.kos` file:

@@ -1,0 +1,23 @@
+record Email { to: Text subject: Text }
+record Receipt { sent: Bool }
+
+tool send_email {
+  source mcp "mail"
+  operation: "send"
+  access: execute
+  input: Email
+  output: Receipt
+}
+
+agent messenger {
+  can: [send_email]
+  cannot: []
+}
+
+workflow main(email: Email) -> Receipt {
+  step send {
+    let receipt: Receipt = execute messenger.send_email(to: email.to, subject: email.subject)
+    return receipt
+  }
+  require approval
+}

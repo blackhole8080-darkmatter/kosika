@@ -1,0 +1,19 @@
+record Command { name: Text }
+record Reply { text: Text }
+
+fn respond(command: Command) -> Reply {
+  return {
+    text: match command.name {
+      case "start" { "Starting" }
+      case "stop" { "Stopping" }
+      case _ { "Unknown command" }
+    }
+  }
+}
+
+workflow main(command: Command) -> Reply {
+  step handle {
+    let reply: Reply = respond(command: command)
+    return reply
+  }
+}

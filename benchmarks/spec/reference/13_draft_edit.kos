@@ -1,0 +1,24 @@
+record Topic { title: Text }
+record Draft { text: Text }
+record Final { text: Text approved: Bool }
+
+model drafter {
+  input: Topic
+  output: Draft
+}
+
+model editor {
+  input: Draft
+  output: Final
+}
+
+workflow main(topic: Topic) -> Final {
+  step write {
+    let draft: Draft = use_model drafter(title: topic.title)
+    return draft
+  }
+  step edit {
+    let final: Final = use_model editor(text: draft.text)
+    return final
+  }
+}
