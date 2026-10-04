@@ -51,12 +51,12 @@ fn total(numbers: Numbers) -> Total {
 
 - A function is pure: it cannot call a model, tool, agent, or workflow.
 - **Every call uses named arguments**: `greet(person: p)`, never `greet(p)`.
-- The body is `let`/`var` declarations, then statements, then exactly one
-  `return expression` as the last line. There is no early return.
+- The body is `let`/`var` declarations, loops, and assignments in any mix,
+  then exactly one `return expression` as the last line. There is no early
+  return.
 - `let` cannot be reassigned. Use `var` for a value you assign later.
-- **All `let` and `var` lines run first, before any loop or assignment, even
-  if written after them.** To use a loop's result, compute it in the `return`
-  expression or assign it to a `var` declared earlier.
+- **Lines run top to bottom, in the order written.** A `let` after a loop sees
+  what the loop assigned. A line can only use names declared above it.
 - Operators: `+ - * /`, `< <= > >=`, `== !=`, `and`, `or`, `not`.
   `Text + Text` and `Text + Number` join text. There is no `%`, `&&`, `||`,
   or `!`.

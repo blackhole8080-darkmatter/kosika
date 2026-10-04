@@ -773,15 +773,14 @@ class Parser:
         self.expect("{")
         body: list[LocalBinding | Assignment | Expression] = []
         # Declarations, assignments, and value-discarding expressions may be
-        # interleaved, but `return` unambiguously ends the body, so the loop can
-        # stop without needing a terminator token.
+        # interleaved and are kept in written order, which is the order they
+        # run in. `return` unambiguously ends the body, so the loop can stop
+        # without needing a terminator token.
         while not (self.check("return") or self.check("}") or self.check("fn")):
             if self.check("let") or self.check("var") or self.at_assignment():
                 body.append(self.parse_statement())
             else:
                 body.append(self.expression())
-        bindings = tuple(item for item in body if isinstance(item, LocalBinding))
-        statements = tuple(item for item in body if not isinstance(item, LocalBinding))
         nested: list[FunctionDecl] = []
         while self.check("fn"):
             nested.append(self.parse_function(depth + 1))
@@ -793,10 +792,9 @@ class Parser:
             tuple(parameters),
             output_type,
             return_value,
-            bindings,
+            tuple(body),
             tuple(nested),
             recursion_limit,
-            statements,
         )
 
     def parse_arguments(

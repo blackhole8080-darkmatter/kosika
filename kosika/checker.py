@@ -795,7 +795,17 @@ def check(program: Program) -> None:
                 )
             _validate_type_name(program, parameter.type_name)
             function_bindings[parameter.name] = parameter.type_name
-        for binding in function.bindings:
+        # Written order is execution order: a statement sees only the locals
+        # declared above it, and a local sees every assignment made above it.
+        for binding in function.body:
+            if not isinstance(binding, LocalBinding):
+                _expression_type(
+                    binding,
+                    function_bindings,
+                    program,
+                    step_name=f"function {function.name} statement",
+                )
+                continue
             if binding.name in function_bindings:
                 raise CheckError(
                     f"Function {function.name!r} cannot rebind {binding.name!r}"
@@ -818,13 +828,6 @@ def check(program: Program) -> None:
             function_bindings[binding.name] = binding_type
             if binding.mutable:
                 function_bindings.mutable.add(binding.name)
-        for statement in function.statements:
-            _expression_type(
-                statement,
-                function_bindings,
-                program,
-                step_name=f"function {function.name} statement",
-            )
         actual_type = _expression_type(
             function.return_value,
             function_bindings,

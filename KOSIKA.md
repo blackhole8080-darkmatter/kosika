@@ -143,6 +143,10 @@ Supported functions:
   declaration.
 - May declare immutable `let` locals and assignable `var` locals. Assignment
   to a `let`, an unknown name, or a value of another type is rejected.
+- Run their body in written order. Declarations, assignments, and
+  value-discarding expressions such as loops may be interleaved; each one sees
+  only the names declared above it and every assignment made above it. Using a
+  local before its declaration is rejected by the checker.
 - May declare named nested functions. A nested function may capture lexical
   values. `ref name` creates a typed function value, including its captures,
   and function values may be passed, returned, stored in workflow bindings, and

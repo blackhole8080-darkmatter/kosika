@@ -710,7 +710,19 @@ def _execute_function_body(
     validate(arguments, input_schema)
     body_events: list[dict[str, Any]] = []
     local_environment = _Scope(arguments)
-    for binding in function.bindings:
+    # The body runs in written order, so a local declared after a loop reads
+    # what the loop assigned.
+    for binding in function.body:
+        if not isinstance(binding, LocalBinding):
+            _evaluate_expression(
+                binding,
+                local_environment,
+                program,
+                functions,
+                body_events,
+                depth=depth,
+            )
+            continue
         value = _evaluate_expression(
             binding.value,
             local_environment,
@@ -724,15 +736,6 @@ def _execute_function_body(
         if binding.type_name is not None:
             validate(value, schema_for_type(program, binding.type_name))
         local_environment[binding.name] = value
-    for statement in function.statements:
-        _evaluate_expression(
-            statement,
-            local_environment,
-            program,
-            functions,
-            body_events,
-            depth=depth,
-        )
     result = _evaluate_expression(
         function.return_value,
         local_environment,

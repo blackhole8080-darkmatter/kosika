@@ -23,6 +23,7 @@ from .ast import (
     MatchExpr,
     Program,
     RecordExpr,
+    Statement,
     UnaryExpr,
     VariableExpr,
 )
@@ -116,10 +117,13 @@ def lower_nested_functions(program: Program) -> Program:
             variables[parameter.name] = (identity, parameter.type_name)
             types[identity] = parameter.type_name
             environment[identity] = parameter.name
-        bindings: list[LocalBinding] = []
-        for binding in function.bindings:
+        body: list[LocalBinding | Statement] = []
+        for binding in function.body:
+            if not isinstance(binding, LocalBinding):
+                body.append(binding)
+                continue
             value = _expression(binding.value, variables, environment, functions)
-            bindings.append(replace(binding, value=value))
+            body.append(replace(binding, value=value))
             identity = f"{name}/{binding.name}"
             variables[binding.name] = (identity, binding.type_name or "Any")
             types[identity] = binding.type_name or "Any"
@@ -145,7 +149,7 @@ def lower_nested_functions(program: Program) -> Program:
                 function,
                 name=name,
                 parameters=parameters,
-                bindings=tuple(bindings),
+                body=tuple(body),
                 return_value=result,
                 nested=(),
             )

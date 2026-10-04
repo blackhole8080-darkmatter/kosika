@@ -420,8 +420,6 @@ class LocalBinding:
 
 
 # A function body statement is an assignment or a value-discarding expression.
-# Declarations are split out into FunctionDecl.bindings by the parser, so they
-# never appear here.
 Statement = Assignment | Expression
 
 
@@ -431,21 +429,32 @@ class FunctionDecl:
     parameters: tuple[Field, ...]
     output_type: str
     return_value: Expression
-    bindings: tuple[LocalBinding, ...] = ()
+    # Declarations, assignments, and value-discarding expressions exactly as
+    # written. The checker and the runtime walk this in order, so a `let`
+    # placed after a loop sees what the loop did.
+    body: tuple[LocalBinding | Statement, ...] = ()
     nested: tuple[FunctionDecl, ...] = ()
     recursion_limit: int | None = None
-    # Value-discarding statements that run after every binding and before the
-    # returned expression. Loops, conditionals, and assignments live here.
-    # Empty for every program written before statements existed.
-    statements: tuple[Statement, ...] = ()
+
+    @property
+    def bindings(self) -> tuple[LocalBinding, ...]:
+        """The `let`/`var` declarations of the body, in written order."""
+        return tuple(item for item in self.body if isinstance(item, LocalBinding))
+
+    @property
+    def statements(self) -> tuple[Statement, ...]:
+        """The body items that are not declarations, in written order."""
+        return tuple(item for item in self.body if not isinstance(item, LocalBinding))
 
 
 def function_calls(
     function: FunctionDecl,
 ) -> tuple[FunctionCallExpr | FunctionRefExpr | FunctionExpr, ...]:
     expressions = (
-        *[binding.value for binding in function.bindings],
-        *function.statements,
+        *[
+            item.value if isinstance(item, LocalBinding) else item
+            for item in function.body
+        ],
         function.return_value,
     )
     return tuple(
@@ -460,8 +469,10 @@ def static_function_references(
     bound = {parameter.name for parameter in function.parameters}
     references: list[FunctionCallExpr | FunctionRefExpr] = []
     for name, expression in (
-        *((binding.name, binding.value) for binding in function.bindings),
-        *(("", statement) for statement in function.statements),
+        *(
+            (item.name, item.value) if isinstance(item, LocalBinding) else ("", item)
+            for item in function.body
+        ),
         ("", function.return_value),
     ):
         references.extend(
