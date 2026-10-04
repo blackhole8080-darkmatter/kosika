@@ -110,21 +110,28 @@ class MethodCallGapTests(unittest.TestCase):
             with self.subTest(source=source):
                 parse(source)
 
-    def test_method_calls_are_rejected_with_a_clear_error(self) -> None:
-        # Method dispatch has no runtime implementation. It must fail at check
-        # time with a CheckError, never NameError, and never pass.
-        for source, method in (
-            ("fn size(text: Text) -> Number { return text.length() }", "length"),
-            ('fn parts(text: Text) -> Text[] { return text.split(sep: ",") }', "split"),
+    def test_only_built_in_methods_check(self) -> None:
+        # Methods are a closed built-in set. A call outside it, or with the
+        # wrong argument names, must fail at check time with a CheckError,
+        # never NameError, and never pass.
+        check(parse("fn size(text: Text) -> Number { return text.length() }"))
+        for source, expected in (
             (
-                'fn joined(items: Text[]) -> Text { return items.join(sep: ",") }',
-                "join",
+                "fn size(text: Text) -> Number { return text.size() }",
+                "no method 'size'",
+            ),
+            (
+                'fn parts(text: Text) -> Text[] { return text.split(sep: ",") }',
+                "takes (separator: Text)",
+            ),
+            (
+                'fn joined(items: Number[]) -> Text { return items.join(separator: ",") }',
+                "no method 'join'",
             ),
         ):
             with self.subTest(source=source), self.assertRaises(CheckError) as caught:
                 check(parse(source))
-            self.assertIn(method, str(caught.exception))
-            self.assertIn("not implemented", str(caught.exception))
+            self.assertIn(expected, str(caught.exception))
 
     def test_declare_nested_call_is_not_mistaken_for_a_method(self) -> None:
         # Field access must keep working; only a trailing "(" is a method call.

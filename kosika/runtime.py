@@ -32,6 +32,7 @@ from .ast import (
     LiteralExpr,
     LocalBinding,
     MatchExpr,
+    MethodCallExpr,
     ModelCall,
     Program,
     RecordExpr,
@@ -41,7 +42,10 @@ from .ast import (
     UnaryExpr,
     VariableExpr,
     WorkflowCall,
+    function_body,
 )
+from .builtin_methods import call as call_method
+from .builtin_methods import resolve as resolve_method
 from .checker import check
 from .controls import ExecutionError
 from .durable import ExecutionSession
@@ -183,6 +187,22 @@ def _child_scope(environment: Any) -> _Scope:
     return (
         environment.child() if isinstance(environment, _Scope) else _Scope(environment)
     )
+
+
+def _runtime_type_name(value: Any) -> str:
+    """The receiver type a checked method call was resolved against."""
+
+    if isinstance(value, str):
+        return "Text"
+    if isinstance(value, bool):
+        return "Bool"
+    if isinstance(value, (int, float)):
+        return "Number"
+    if isinstance(value, list):
+        # An empty array has no element to inspect; every array method the
+        # checker allows on it behaves the same whatever the element type.
+        return f"{_runtime_type_name(value[0])}[]" if value else "Text[]"
+    return "Record"
 
 
 def _evaluate_expression(
@@ -341,6 +361,31 @@ def _evaluate_expression(
             )
             for name, value in expression.fields
         }
+    if isinstance(expression, MethodCallExpr):
+        receiver = _evaluate_expression(
+            expression.target,
+            environment,
+            program,
+            functions,
+            function_events,
+            depth=depth,
+        )
+        method_arguments = {
+            name: _evaluate_expression(
+                argument,
+                environment,
+                program,
+                functions,
+                function_events,
+                depth=depth,
+            )
+            for name, argument in expression.arguments
+        }
+        return call_method(
+            resolve_method(_runtime_type_name(receiver), expression.method),
+            receiver,
+            method_arguments,
+        )
     if isinstance(expression, UnaryExpr):
         operand = _evaluate_expression(
             expression.operand,
@@ -399,6 +444,11 @@ def _evaluate_expression(
             if right == 0:
                 raise RuntimeError("Division by zero")
             return left / right
+        if expression.operator == "%":
+            if right == 0:
+                raise RuntimeError("Remainder by zero")
+            # Floored remainder: the result takes the sign of the divisor.
+            return left % right
         if expression.operator == "<":
             return left < right
         if expression.operator == "<=":
@@ -710,7 +760,17 @@ def _execute_function_body(
     validate(arguments, input_schema)
     body_events: list[dict[str, Any]] = []
     local_environment = _Scope(arguments)
-    for binding in function.bindings:
+    for binding in function_body(function):
+        if not isinstance(binding, LocalBinding):
+            _evaluate_expression(
+                binding,
+                local_environment,
+                program,
+                functions,
+                body_events,
+                depth=depth,
+            )
+            continue
         value = _evaluate_expression(
             binding.value,
             local_environment,
@@ -724,15 +784,6 @@ def _execute_function_body(
         if binding.type_name is not None:
             validate(value, schema_for_type(program, binding.type_name))
         local_environment[binding.name] = value
-    for statement in function.statements:
-        _evaluate_expression(
-            statement,
-            local_environment,
-            program,
-            functions,
-            body_events,
-            depth=depth,
-        )
     result = _evaluate_expression(
         function.return_value,
         local_environment,

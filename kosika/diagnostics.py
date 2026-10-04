@@ -97,6 +97,8 @@ CODES: Mapping[str, str] = {
     "check/operator-type-mismatch": "An operator's operands are of a type it does not accept.",
     "check/inference-failure": "A literal's type could not be inferred from context.",
     "check/unsupported-expression": "An expression form is recognised but not implemented.",
+    "check/unknown-method": "A method is not in the built-in set for that type.",
+    "check/method-arguments": "A method call has the wrong argument names.",
     "check/exhaustiveness": "A match does not cover every case.",
     "check/unreachable-arm": "A match arm can never be reached.",
     "check/missing-return": "A workflow step did not return its declared binding.",
@@ -220,6 +222,7 @@ class Diagnostic:
 # ---------------------------------------------------------------------------
 
 _LOCATION_RE = re.compile(r"at (\d+):(\d+)")
+_QUOTED_NAME_RE = re.compile(r"'([A-Za-z_][A-Za-z0-9_]*)'")
 _EXPECT_GOT_RE = re.compile(
     r"expects (?P<expected>'[^']*'|\S+?), got (?P<actual>'[^']*'|\S+)"
 )
@@ -273,6 +276,8 @@ _RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("module/private-symbol", re.compile(r"unavailable or private symbols")),
     ("module/conflict", re.compile(r"^Conflicting module declaration")),
     # Declaration structure.
+    ("check/unknown-method", re.compile(r"unknown method: ")),
+    ("check/method-arguments", re.compile(r"method '\w+' takes \(")),
     ("check/duplicate-declaration", re.compile(r"^Duplicate \w+ declaration")),
     ("check/duplicate-field", re.compile(r"^Duplicate \w+ field|has duplicate fields")),
     ("check/duplicate-parameter", re.compile(r"[Dd]uplicate\b.*\bparameter")),
@@ -643,6 +648,22 @@ class _Anchors:
     def token_at(self, line: int, column: int) -> Token | None:
         return self._positions.get((line, column))
 
+    def first_use(self, names: Sequence[str]) -> Token | None:
+        """The earliest identifier token spelling any of ``names``.
+
+        An unknown name has no declaration to anchor on, so its first use in
+        the source is the truthful place to point: that token is where the
+        unresolved reference actually is.
+        """
+
+        wanted = set(names)
+        uses = [
+            token
+            for token in self._positions.values()
+            if token.kind == "IDENT" and token.value in wanted
+        ]
+        return min(uses, key=lambda token: (token.line, token.column), default=None)
+
 
 def _span_for(
     anchors: _Anchors | None,
@@ -713,6 +734,17 @@ def diagnostic_from_exception(
     span, anchor_missing = _span_for(anchors, owner, owner_kind, location)
 
     data: dict[str, Any] = {}
+    if resolved_code == "module/private-symbol":
+        names = _QUOTED_NAME_RE.findall(message.split("symbols", 1)[-1])
+        data["names"] = names
+        use = anchors.first_use(names) if anchors is not None and span is None else None
+        if use is not None:
+            span = Span(
+                use.line - 1,
+                use.column - 1,
+                use.line - 1,
+                use.column - 1 + len(use.value),
+            )
     if resolved_code.startswith(("parse/", "lex/")):
         data["phase"] = "parse"
     elif resolved_code.startswith("module/"):

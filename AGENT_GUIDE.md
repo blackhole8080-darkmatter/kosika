@@ -51,17 +51,26 @@ fn total(numbers: Numbers) -> Total {
 
 - A function is pure: it cannot call a model, tool, agent, or workflow.
 - **Every call uses named arguments**: `greet(person: p)`, never `greet(p)`.
-- The body is `let`/`var` declarations, then statements, then exactly one
-  `return expression` as the last line. There is no early return.
+- The body is `let`/`var` declarations and statements, run in the order they
+  are written, then exactly one `return expression` as the last line. There is
+  no early return.
 - `let` cannot be reassigned. Use `var` for a value you assign later.
-- **All `let` and `var` lines run first, before any loop or assignment, even
-  if written after them.** To use a loop's result, compute it in the `return`
-  expression or assign it to a `var` declared earlier.
-- Operators: `+ - * /`, `< <= > >=`, `== !=`, `and`, `or`, `not`.
-  `Text + Text` and `Text + Number` join text. There is no `%`, `&&`, `||`,
-  or `!`.
-- There are no built-in functions and no methods: no `len(x)`, no
-  `x.length`, no `x.push(y)`. Count or sum with a `for` loop.
+- Operators: `+ - * / %`, `< <= > >=`, `== !=`, `and`, `or`, `not`.
+  `Text + Text` and `Text + Number` join text. There is no `&&`, `||`, or `!`.
+  `/` always gives a fraction (`7 / 2` is `3.5`); use `(7 / 2).floor()` for a
+  whole number, for example as an array index.
+- There are no free built-in functions (no `len(x)`), but there are built-in
+  methods, all with named arguments:
+
+| On | Methods |
+| --- | --- |
+| `Text` | `length()`, `upper()`, `lower()`, `trim()`, `contains(part: t)`, `starts_with(prefix: t)`, `ends_with(suffix: t)`, `split(separator: t)` |
+| any array | `length()`; `contains(item: x)` for arrays of Text, Number, or Bool |
+| `Text[]` | `join(separator: t)` |
+| `Number` | `floor()`, `ceil()`, `round()` |
+
+  Arrays cannot be changed in place: there is no `push`. Build a new array
+  with a `for` expression.
 
 ## Choosing and repeating
 
@@ -69,10 +78,8 @@ fn total(numbers: Numbers) -> Total {
 // if is an expression. Both branches are required, each in braces.
 let label: Text = if score >= 50 { "pass" } else { "fail" }
 
-// There is no "else if". Nest another if inside the else braces.
-let grade: Text = if score >= 90 { "A" } else {
-  if score >= 75 { "B" } else { "C" }
-}
+// else if chains are allowed. The final else is still required.
+let grade: Text = if score >= 90 { "A" } else if score >= 75 { "B" } else { "C" }
 
 // match on Text, Number, or Bool. End with `case _`.
 let reply: Text = match name {
@@ -199,4 +206,5 @@ workflow.
 2. Only `Text`, `Number`, `Bool`, `Null`, arrays, and your records as types.
 3. Each workflow step: one `let` with one call, then `return` of that name.
 4. One `return` at the end of each `fn`; logic lives in `fn`, not in steps.
-5. No `else if`, no methods, no built-in functions, no semicolons.
+5. Only the built-in methods listed above; no semicolons; every `if` ends
+   with an `else`.

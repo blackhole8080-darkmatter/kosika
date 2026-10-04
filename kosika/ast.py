@@ -434,10 +434,25 @@ class FunctionDecl:
     bindings: tuple[LocalBinding, ...] = ()
     nested: tuple[FunctionDecl, ...] = ()
     recursion_limit: int | None = None
-    # Value-discarding statements that run after every binding and before the
-    # returned expression. Loops, conditionals, and assignments live here.
+    # Value-discarding statements: loops, conditionals, and assignments.
     # Empty for every program written before statements existed.
     statements: tuple[Statement, ...] = ()
+    # Source order of the body, as ("binding" | "statement", index) pairs. The
+    # parser records it only when declarations and statements are interleaved;
+    # empty means every binding precedes every statement, which is also the
+    # order of every program written before interleaving was honoured.
+    order: tuple[tuple[str, int], ...] = ()
+
+
+def function_body(function: FunctionDecl) -> tuple[LocalBinding | Statement, ...]:
+    """The body's declarations and statements in the order they execute."""
+
+    if not function.order:
+        return (*function.bindings, *function.statements)
+    return tuple(
+        function.bindings[index] if kind == "binding" else function.statements[index]
+        for kind, index in function.order
+    )
 
 
 def function_calls(
@@ -460,8 +475,10 @@ def static_function_references(
     bound = {parameter.name for parameter in function.parameters}
     references: list[FunctionCallExpr | FunctionRefExpr] = []
     for name, expression in (
-        *((binding.name, binding.value) for binding in function.bindings),
-        *(("", statement) for statement in function.statements),
+        *(
+            (item.name, item.value) if isinstance(item, LocalBinding) else ("", item)
+            for item in function_body(function)
+        ),
         ("", function.return_value),
     ):
         references.extend(

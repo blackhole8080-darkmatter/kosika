@@ -593,6 +593,60 @@ left out: typed messages between members, state carried from one round to the
 next, and a termination judgment over observed evidence rather than result
 equality. Swarm output must not acquire authority the way model output cannot.
 
+## Core fixes from the first benchmark (complete)
+
+- **Function bodies run in written order.** The parser used to hoist every
+  `let` and `var` above every statement, so a `let` after a loop silently read
+  pre-loop values. `FunctionDecl.order` now records the source order whenever a
+  declaration follows a statement, and the checker and runtime walk
+  `ast.function_body`. A statement may use only names declared above it. A body
+  that already lists declarations first parses to the same tree as before, so
+  its program hash, traces, and approvals are unchanged.
+- **`else if` chains.** The else branch may be another conditional. A final
+  `else` is still required.
+- **Remainder `%`**, at multiplication precedence, floored (sign of the
+  divisor), failing the run on a zero divisor.
+- **Built-in methods** on Text, Number, and arrays (`kosika/builtin_methods.py`,
+  one table used by both checker and runtime): `length`, `upper`, `lower`,
+  `trim`, `contains`, `starts_with`, `ends_with`, `split`, `join`, `floor`,
+  `ceil`, `round`. The parser already produced `MethodCallExpr`; the checker
+  used to reject every one. Calls outside the set are check errors with stable
+  codes `check/unknown-method` and `check/method-arguments`.
+- **Unknown names have a position.** `module/private-symbol` now anchors at the
+  first use of the unknown name, lists the names in `data.names`, and says
+  "unknown names" in plain words. Plain `kosika check` prints the line and
+  column whenever the first diagnostic has a truthful position.
+- 22 tests in `tests/test_core_fixes.py`; one older test that pinned "every
+  method call is rejected" now pins the closed set instead. The diagnostics
+  raise-site coverage check still classifies every site.
+- Known limits: a nested function whose parent mixes statements and
+  declarations is lowered as before (`lexical.py` rewrites bindings and the
+  return expression only). There is no early `return`.
+
+### What blocks writing Kosika's own tooling in Kosika
+
+Kosika's tools (lexer, parser, checker) need things the language does not have.
+In rough order of cost:
+
+1. Character access and slicing on Text (`text[i]`, `slice`). Cheap; a lexer
+   cannot be written without it.
+2. Text to Number conversion, with a way to signal failure. Cheap once item 4
+   exists.
+3. Growing an array (`append`) or a `for` that filters. Cheap; today an array
+   can only be mapped one-to-one.
+4. Optional and tagged-union values (`Option`, `Result`, variants). Medium; an
+   AST is a tree of variants, and every "not found" needs a typed absent value.
+5. Recursive record types. Medium; an expression tree is recursive and `0.1.0`
+   forbids recursive schemas.
+6. Maps (text keys to values) for symbol tables. Medium.
+7. Unbounded or data-bounded loops and recursion deeper than 32. Hard, because
+   bounded execution is a core promise; it needs a budget model, not a removal.
+8. File reading as a declared capability. Medium; the host adapter exists but
+   has no language surface.
+
+Items 1 to 3 are small, self-contained additions. Items 4 and 5 are the real
+gate: without them a parser written in Kosika has nothing to return.
+
 ## Write-from-spec benchmark (first measurement)
 
 - The question: can an AI author write a whole Kosika program from a spec,

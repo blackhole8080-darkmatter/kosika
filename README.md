@@ -207,7 +207,8 @@ fn total(box: Box) -> Number {
 ```
 
 A function body may also contain loops, conditionals, and assignments as
-statements; they run after the declarations and before the returned expression.
+statements. The body runs in the order it is written, so a `let` placed after
+a loop sees the loop's result.
 A braced body with no trailing expression evaluates to `Null`, so
 `repeat 3 times { sum = sum + 1 }` needs no filler value.
 

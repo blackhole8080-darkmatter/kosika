@@ -21,6 +21,7 @@ from .ast import (
     IndexExpr,
     LocalBinding,
     MatchExpr,
+    MethodCallExpr,
     Program,
     RecordExpr,
     UnaryExpr,
@@ -75,6 +76,12 @@ def _expression(
     if isinstance(value, RecordExpr):
         return replace(
             value, fields=tuple((key, walk(item)) for key, item in value.fields)
+        )
+    if isinstance(value, MethodCallExpr):
+        return replace(
+            value,
+            target=walk(value.target),
+            arguments=tuple((key, walk(item)) for key, item in value.arguments),
         )
     if isinstance(value, UnaryExpr):
         return replace(value, operand=walk(value.operand))

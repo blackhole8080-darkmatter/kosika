@@ -573,6 +573,20 @@ def _workflow_model_bindings(
     return dict.fromkeys(granted, provider)
 
 
+def _failure_line(source: Path) -> str:
+    """Where the first diagnostic points, when a truthful position exists."""
+
+    try:
+        report = check_project(source)["diagnostics"]
+        position = report["diagnostics"][0]["range"]
+    except (OSError, ValueError, KeyError, IndexError, TypeError):
+        return ""
+    if not isinstance(position, dict):
+        return ""
+    start = position["start"]
+    return f" (line {start['line'] + 1}, column {start['character'] + 1})"
+
+
 def _missing_model_hint(program: Program, message: str) -> str:
     if "has no authorized host binding" not in message or not program.models:
         return ""
@@ -2928,7 +2942,7 @@ def main() -> int:
         program = load_program(args.source)
         check(program)
     except (ValueError, OSError) as exc:
-        print(f"Check failed: {exc}", file=sys.stderr)
+        print(f"Check failed: {exc}{_failure_line(args.source)}", file=sys.stderr)
         return 2
     if args.command == "check":
         print(f"OK: {args.source}")

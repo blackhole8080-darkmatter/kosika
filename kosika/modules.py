@@ -241,7 +241,8 @@ def load_program(
         if hidden:
             mark_error(resolved)
             raise CheckError(
-                f"{resolved}: unavailable or private symbols {sorted(hidden)!r}"
+                f"{resolved}: unknown names, not declared here and not exported "
+                f"by an import (unavailable or private symbols {sorted(hidden)!r})"
             )
         for name in local:
             if name in owners and owners[name] != resolved:

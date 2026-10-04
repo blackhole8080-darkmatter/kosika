@@ -141,6 +141,9 @@ Supported functions:
   workflows.
 - Use named arguments. Provided argument names and types MUST exactly match the
   declaration.
+- Run their body in the order it is written: each `let`, `var`, loop,
+  conditional, and assignment executes in turn, and a line may use only names
+  declared above it.
 - May declare immutable `let` locals and assignable `var` locals. Assignment
   to a `let`, an unknown name, or a value of another type is rejected.
 - May declare named nested functions. A nested function may capture lexical
@@ -163,12 +166,18 @@ The supported expression surface is:
 - Variables, record field access (`value.field`), and array indexing
   (`value[index]`). An index MUST evaluate to an integer and be in range.
 - Unary `not` on `Bool` and unary `-` on `Number`.
-- Number arithmetic `+`, `-`, `*`, `/`; division by zero fails the run.
+- Number arithmetic `+`, `-`, `*`, `/`, `%`; division or remainder by zero
+  fails the run. `/` always produces a fractional Number (`6 / 2` is `3.0`).
+  `%` is the floored remainder, so the result has the sign of the divisor
+  (`-7 % 3` is `2`).
+- Built-in methods, listed under "Built-in methods" below.
 - Number comparisons `<`, `<=`, `>`, `>=`.
 - Same-type equality `==` and inequality `!=`.
 - Short-circuit boolean `and` and `or`.
 - `Text + Text` and `Text + Number`.
 - Named function calls and `ref` references.
+- `else if` chains: `if a { x } else if b { y } else { z }`. A final `else`
+  is still required.
 - `if condition { value } else { value }`. The condition MUST be `Bool` and
   both branches MUST have the same type.
 - `match value { case literal { value } ... case _ { value } }`. The subject
@@ -179,8 +188,29 @@ The supported expression surface is:
 - Bounded loops described below.
 
 Binary precedence, from lowest to highest, is `or`, `and`, equality,
-comparison, addition/subtraction, multiplication/division. Unary operators bind
+comparison, addition/subtraction, multiplication/division/remainder. Unary operators bind
 more tightly. Parentheses override precedence.
+
+### Built-in methods
+
+A method call is `value.method(name: argument)`. The set is closed: there are
+no user-defined methods and records have none. The checker resolves a call from
+the receiver's type, and every method is pure and deterministic.
+
+| Receiver | Method | Result |
+| --- | --- | --- |
+| `Text` | `length()` | `Number` of characters |
+| `Text` | `upper()`, `lower()`, `trim()` | `Text` |
+| `Text` | `contains(part: Text)`, `starts_with(prefix: Text)`, `ends_with(suffix: Text)` | `Bool` |
+| `Text` | `split(separator: Text)` | `Text[]`; the separator MUST be non-empty and a result over 512 parts fails the run |
+| `Text[]` | `join(separator: Text)` | `Text` |
+| any array | `length()` | `Number` of elements |
+| array of `Text`, `Number`, or `Bool` | `contains(item: T)` | `Bool`, using `==` |
+| `Number` | `floor()`, `ceil()`, `round()` | whole `Number`; `round` rounds halves up |
+
+An unknown method or wrong argument name is a check error
+(`check/unknown-method`, `check/method-arguments`). A parenthesised literal is
+needed to call a method on a number literal: `(2.5).round()`.
 
 ### Bounded loops
 
@@ -466,8 +496,7 @@ The parser recognizes some syntax outside the supported runtime contract:
   checking when non-capturing, but the runtime does not execute them.
 - `try { ... } retry N` is parsed and type-checked, but the runtime does not
   execute it.
-- Method-call syntax such as `text.length()` is parsed and rejected by the
-  checker because method dispatch is not implemented.
+- Method calls outside the built-in set above are rejected by the checker.
 
 None of those forms is supported by `kosika-language/0.1.0`. Supported function
 values use named declarations plus `ref`; supported retry behavior must be

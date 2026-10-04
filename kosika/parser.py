@@ -209,7 +209,8 @@ class Parser:
             condition = self.expression()
             when_true = self.parse_block()
             self.expect("else")
-            when_false = self.parse_block()
+            # `else if` chains: the else branch is itself a conditional.
+            when_false = self.expression() if self.check("if") else self.parse_block()
             return ConditionalExpr(condition, when_true, when_false)
         if self.accept("for"):
             item_name = self.identifier()
@@ -264,7 +265,7 @@ class Parser:
 
     def parse_factor_expression(self) -> Expression:
         value = self.parse_unary_expression()
-        while any(self.check(operator) for operator in ("*", "/")):
+        while any(self.check(operator) for operator in ("*", "/", "%")):
             operator = self.advance().value
             value = BinaryExpr(value, operator, self.parse_unary_expression())
         return value
@@ -782,6 +783,17 @@ class Parser:
                 body.append(self.expression())
         bindings = tuple(item for item in body if isinstance(item, LocalBinding))
         statements = tuple(item for item in body if not isinstance(item, LocalBinding))
+        # The body runs in the order it is written. That order is recorded only
+        # when a declaration follows a statement, so a body that already lists
+        # its declarations first parses to the same tree as it always has.
+        order: list[tuple[str, int]] = []
+        counts = {"binding": 0, "statement": 0}
+        for item in body:
+            kind = "binding" if isinstance(item, LocalBinding) else "statement"
+            order.append((kind, counts[kind]))
+            counts[kind] += 1
+        if [kind for kind, _ in order] == sorted(kind for kind, _ in order):
+            order = []
         nested: list[FunctionDecl] = []
         while self.check("fn"):
             nested.append(self.parse_function(depth + 1))
@@ -797,6 +809,7 @@ class Parser:
             tuple(nested),
             recursion_limit,
             statements,
+            tuple(order),
         )
 
     def parse_arguments(

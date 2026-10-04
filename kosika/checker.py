@@ -34,8 +34,12 @@ from .ast import (
     UnaryExpr,
     VariableExpr,
     WorkflowCall,
+    function_body,
     static_function_references,
 )
+from .builtin_methods import MethodError
+from .builtin_methods import parameter_types as method_parameter_types
+from .builtin_methods import resolve as resolve_method
 from .function_types import function_type, public_type, signature
 
 
@@ -277,14 +281,36 @@ def _expression_type(
             output_type,
         )
     if isinstance(expression, MethodCallExpr):
-        # Method dispatch on Text and array values is parsed but has no
-        # checker or runtime implementation yet. Reject it here rather than
-        # accepting a call the runtime cannot execute.
-        _expression_type(expression.target, bindings, program, step_name=step_name)
-        raise CheckError(
-            f"Step {step_name!r} method call {expression.method!r} is not "
-            f"implemented in Kosika v0.1"
+        # Methods are a closed built-in set, resolved from the receiver's type.
+        receiver_type = _expression_type(
+            expression.target, bindings, program, step_name=step_name
         )
+        try:
+            method = resolve_method(receiver_type, expression.method)
+        except MethodError as exc:
+            raise CheckError(f"Step {step_name!r} unknown method: {exc}") from exc
+        expected = dict(method_parameter_types(method, receiver_type))
+        supplied = [name for name, _ in expression.arguments]
+        if sorted(supplied) != sorted(expected):
+            wanted = ", ".join(f"{name}: {kind}" for name, kind in expected.items())
+            raise CheckError(
+                f"Step {step_name!r} method {expression.method!r} takes "
+                f"({wanted}), got ({', '.join(supplied)})"
+            )
+        for name, argument in expression.arguments:
+            argument_type = _expression_type(
+                argument,
+                bindings,
+                program,
+                step_name=step_name,
+                expected_type=expected[name],
+            )
+            if argument_type != expected[name]:
+                raise CheckError(
+                    f"Step {step_name!r} method {expression.method!r} argument "
+                    f"{name!r} expects {expected[name]!r}, got {argument_type!r}"
+                )
+        return method.returns
     if isinstance(expression, FieldExpr):
         base_type = _expression_type(
             expression.base, bindings, program, step_name=step_name
@@ -406,7 +432,7 @@ def _expression_type(
             expected_type=left_type,
         )
         operator = expression.operator
-        if operator in {"+", "-", "*", "/", "<", "<=", ">", ">="}:
+        if operator in {"+", "-", "*", "/", "%", "<", "<=", ">", ">="}:
             if left_type == "Number" and right_type == "Number":
                 return "Bool" if operator in {"<", "<=", ">", ">="} else "Number"
             if left_type == "Text" and right_type == "Text" and operator == "+":
@@ -795,7 +821,16 @@ def check(program: Program) -> None:
                 )
             _validate_type_name(program, parameter.type_name)
             function_bindings[parameter.name] = parameter.type_name
-        for binding in function.bindings:
+        for binding in function_body(function):
+            if not isinstance(binding, LocalBinding):
+                # A statement sees only the names declared above it.
+                _expression_type(
+                    binding,
+                    function_bindings,
+                    program,
+                    step_name=f"function {function.name} statement",
+                )
+                continue
             if binding.name in function_bindings:
                 raise CheckError(
                     f"Function {function.name!r} cannot rebind {binding.name!r}"
@@ -818,13 +853,6 @@ def check(program: Program) -> None:
             function_bindings[binding.name] = binding_type
             if binding.mutable:
                 function_bindings.mutable.add(binding.name)
-        for statement in function.statements:
-            _expression_type(
-                statement,
-                function_bindings,
-                program,
-                step_name=f"function {function.name} statement",
-            )
         actual_type = _expression_type(
             function.return_value,
             function_bindings,
