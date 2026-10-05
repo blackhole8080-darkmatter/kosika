@@ -32,6 +32,7 @@ kosika = [
 [project.scripts]
 kosika = "kosika.cli:main"
 kosika-lsp = "kosika_lsp.server:main"
+kosika-mcp = "kosika.mcp_server:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

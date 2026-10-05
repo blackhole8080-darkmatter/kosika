@@ -108,6 +108,34 @@ is an ordinary typed model call underneath, so it is budgeted, traced, and
 replayable, and it still needs the model granted at run time with `--model` or
 `--model-fixture`. See [KOSIKA.md](KOSIKA.md) for the exact rules.
 
+## Use Kosika from an AI assistant (MCP server)
+
+`kosika-mcp` is a Model Context Protocol server. Connected to an assistant such
+as Claude Code or the Gemini CLI, it lets the assistant read the language
+guide, then write, check, run, replay, and map Kosika programs by itself.
+
+| Tool | What it does |
+| --- | --- |
+| `kosika_guide` | Returns `AGENT_GUIDE.md` |
+| `kosika_check` | Checks a program; returns codes, messages, and lines |
+| `kosika_run` | Runs a workflow with the inputs and scripted answers supplied |
+| `kosika_replay` | Validates a trace from `kosika_run` and returns its result |
+| `kosika_map` | Describes what a checked program declares |
+
+Connect it by adding a stdio server whose command is `kosika-mcp` (or
+`python -m kosika.mcp_server`). For Claude Code:
+
+```text
+claude mcp add kosika -- kosika-mcp
+```
+
+The server has no power of its own. Programs arrive as text and are checked in
+a temporary folder; no tool takes a file path, address, or command.
+`kosika_run` never calls a real model or tool: answers come only from the
+`model_answers` and `tool_answers` the assistant supplies, and a program that
+needs one it was not given fails. Runs are bounded to 16 model calls, 16 tool
+calls, and 10 seconds.
+
 ## Python SDK
 
 `kosika.sdk` builds a Kosika program from Python instead of a `.kos` file:

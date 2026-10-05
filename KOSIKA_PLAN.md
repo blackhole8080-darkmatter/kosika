@@ -593,6 +593,20 @@ left out: typed messages between members, state carried from one round to the
 next, and a termination judgment over observed evidence rather than result
 equality. Swarm output must not acquire authority the way model output cannot.
 
+## Phase 5, first slice: MCP server (complete)
+
+- `kosika.mcp_server` (`kosika-mcp`) serves five tools over stdio JSON-RPC:
+  `kosika_guide`, `kosika_check`, `kosika_run`, `kosika_replay`, `kosika_map`.
+- It delegates to `check_project`, `load_program`, `run`, `replay`, and
+  `build_mindmap`; no language behaviour is reimplemented.
+- No authority: sources are text checked in a temporary folder, no tool
+  accepts a path, address, or command, and `kosika_run` binds only scripted
+  answers supplied by the caller under fixed execution limits.
+- 16 tests in `tests/test_mcp_server.py`, including a real client process
+  driving the server through initialize, list, run, replay, and an error.
+- Not done: connecting it to a live assistant and watching one author a
+  program through it; an audience-specific map; multi-file projects.
+
 ## Phase 4: thinking steps (complete, not yet run on a live model)
 
 - `classify ... into ...`, `extract R from ...`, `summarize ...`, and
