@@ -45,7 +45,7 @@ from .ast import (
     function_body,
 )
 from .builtin_methods import call as call_method
-from .builtin_methods import resolve as resolve_method
+from .builtin_methods import resolve_for_value as resolve_method_for_value
 from .checker import check
 from .controls import ExecutionError
 from .durable import ExecutionSession
@@ -187,22 +187,6 @@ def _child_scope(environment: Any) -> _Scope:
     return (
         environment.child() if isinstance(environment, _Scope) else _Scope(environment)
     )
-
-
-def _runtime_type_name(value: Any) -> str:
-    """The receiver type a checked method call was resolved against."""
-
-    if isinstance(value, str):
-        return "Text"
-    if isinstance(value, bool):
-        return "Bool"
-    if isinstance(value, (int, float)):
-        return "Number"
-    if isinstance(value, list):
-        # An empty array has no element to inspect; every array method the
-        # checker allows on it behaves the same whatever the element type.
-        return f"{_runtime_type_name(value[0])}[]" if value else "Text[]"
-    return "Record"
 
 
 def _evaluate_expression(
@@ -382,7 +366,7 @@ def _evaluate_expression(
             for name, argument in expression.arguments
         }
         return call_method(
-            resolve_method(_runtime_type_name(receiver), expression.method),
+            resolve_method_for_value(receiver, expression.method),
             receiver,
             method_arguments,
         )

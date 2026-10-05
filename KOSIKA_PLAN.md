@@ -593,6 +593,31 @@ left out: typed messages between members, state carried from one round to the
 next, and a termination judgment over observed evidence rather than result
 equality. Swarm output must not acquire authority the way model output cannot.
 
+## Phase 2, second slice: optional values and maps (complete)
+
+- **`T?`** is a `T` or `null`. Assignability widens one way only (`T` and
+  `null` into `T?`); a conditional or match whose branches are `T` and `null`
+  has type `T?`. Methods: `or(default:)`, `exists()`, `value()`. An optional's
+  own fields and methods are unreachable until one of those is used.
+- **`T{}`** is a map from Text to `T`, with `get` (returns `T?`), `has`, `set`,
+  `remove`, `keys`, `values`, and `length`. Literals reuse `RecordExpr` with
+  quoted or bare keys, so no new tree node was needed. Maps are capped at 4,096
+  entries.
+- New optional-returning methods: `Text.to_number()`, `first()`, `last()`.
+- Types are still strings with suffixes; `function_types` gained `base_type`,
+  `assignable`, and `unify`, and the checker's equality comparisons at
+  assignment, argument, field, element, return, and branch sites now use them.
+- JSON schemas: `T?` is `anyOf [T, null]`, `T{}` is an object whose
+  `additionalProperties` is the value schema; `schema.validate` supports both.
+- `break` and `continue` now have the type `Never`, which agrees with any
+  other branch. This closes a gap an older test pinned: a loop body
+  `if x == "b" { break } else { x }` now checks and runs.
+- 18 tests in `tests/test_optional_and_map.py`.
+- Known limits: an optional record field must be present as `null` in input
+  JSON and in model output (it cannot be omitted); there is no narrowing, so
+  `if x.exists() { ... }` still needs `x.value()` inside; map keys are Text
+  only; tuples are not a separate type (use a small record).
+
 ## Phase 2, first slice: building and slicing (complete)
 
 - `for item in values where condition { ... }` filters as well as maps.

@@ -41,7 +41,16 @@ from .builtin_methods import MethodError, did_you_mean
 from .builtin_methods import parameter_types as method_parameter_types
 from .builtin_methods import resolve as resolve_method
 from .builtin_methods import return_type as method_return_type
-from .function_types import function_type, public_type, signature
+from .function_types import (
+    NEVER,
+    assignable,
+    function_type,
+    is_map,
+    is_optional,
+    public_type,
+    signature,
+    unify,
+)
 
 
 class CheckError(ValueError):
@@ -71,8 +80,13 @@ def _validate_type_name(program: Program, type_name: str) -> None:
         return
     if type_name in _PRIMITIVE_TYPES:
         return
-    if type_name.endswith("[]"):
+    if type_name.endswith(("[]", "{}")):
         _validate_type_name(program, type_name[:-2])
+        return
+    if type_name.endswith("?"):
+        if type_name.endswith("??") or type_name == "Null?":
+            raise CheckError(f"Unknown field type {type_name!r}")
+        _validate_type_name(program, type_name[:-1])
         return
     if type_name not in {record.name for record in program.records}:
         raise CheckError(f"Unknown field type {type_name!r}")
@@ -88,6 +102,15 @@ def _literal_type(value: object) -> str:
     if isinstance(value, (int, float)):
         return "Number"
     raise CheckError(f"Unsupported literal value {value!r}")
+
+
+def _absent_hint(type_name: str) -> str:
+    if is_map(type_name):
+        return "a map is read with .get(key: ...), .has(key: ...), or .keys()"
+    return (
+        "the value may be absent; use .or(default: ...) to supply a fallback, "
+        ".exists() to test it, or .value() to require it"
+    )
 
 
 class _Env(dict):
@@ -116,6 +139,10 @@ def _expression_type(
     step_name: str,
     expected_type: str | None = None,
 ) -> str:
+    # A literal written where `T?` is wanted is typed as the plain `T`; the
+    # caller's assignability check then accepts it.
+    if expected_type is not None and is_optional(expected_type):
+        expected_type = expected_type[:-1]
     if isinstance(expression, Assignment):
         target_type = bindings.get(expression.target)
         if target_type is None:
@@ -128,9 +155,13 @@ def _expression_type(
                 f"declare it with 'var' to make it assignable"
             )
         assigned_type = _expression_type(
-            expression.value, bindings, program, step_name=step_name
+            expression.value,
+            bindings,
+            program,
+            step_name=step_name,
+            expected_type=target_type,
         )
-        if assigned_type != target_type:
+        if not assignable(assigned_type, target_type):
             raise CheckError(
                 f"Step {step_name!r} assigns {assigned_type!r} to "
                 f"{expression.target!r} of type {target_type!r}"
@@ -204,9 +235,10 @@ def _expression_type(
                 step_name=step_name,
                 expected_type=result_type,
             )
-            if result_type is not None and arm_type != result_type:
+            merged = arm_type if result_type is None else unify(result_type, arm_type)
+            if merged is None:
                 raise CheckError("Match branches must have the same result type")
-            result_type = arm_type
+            result_type = merged
         if not exhaustive or result_type is None:
             raise CheckError("Non-exhaustive match: add a final case _")
         return result_type
@@ -224,10 +256,10 @@ def _expression_type(
         return "ModelMetadata"
     if isinstance(expression, ToolVarExpr):
         return "ToolMetadata"
-    if isinstance(expression, BreakExpr):
-        return "Null"
-    if isinstance(expression, ContinueExpr):
-        return "Null"
+    # `break` and `continue` never produce a value, so they agree with
+    # whatever the other branch of a choice yields.
+    if isinstance(expression, (BreakExpr, ContinueExpr)):
+        return NEVER
     if isinstance(expression, RepeatExpr):
         count_type = _expression_type(
             expression.count, bindings, program, step_name=step_name
@@ -236,7 +268,10 @@ def _expression_type(
             raise CheckError(
                 f"Step {step_name!r} repeat count expects 'Number', got {count_type!r}"
             )
-        return _expression_type(expression.body, bindings, program, step_name=step_name)
+        repeated = _expression_type(
+            expression.body, bindings, program, step_name=step_name
+        )
+        return "Null" if repeated == NEVER else repeated
     if isinstance(expression, ForExpr):
         sequence_type = _expression_type(
             expression.sequence, bindings, program, step_name=step_name
@@ -261,7 +296,7 @@ def _expression_type(
         body_type = _expression_type(
             expression.body, item_bindings, program, step_name=step_name
         )
-        return f"{body_type}[]"
+        return "Null[]" if body_type == NEVER else f"{body_type}[]"
     if isinstance(expression, TryExpr):
         return _expression_type(expression.body, bindings, program, step_name=step_name)
     if isinstance(expression, FunctionExpr):
@@ -317,7 +352,7 @@ def _expression_type(
                 step_name=step_name,
                 expected_type=expected[name],
             )
-            if argument_type != expected[name]:
+            if not assignable(argument_type, expected[name]):
                 raise CheckError(
                     f"Step {step_name!r} method {expression.method!r} argument "
                     f"{name!r} expects {expected[name]!r}, got {argument_type!r}"
@@ -331,6 +366,11 @@ def _expression_type(
             raise CheckError(
                 f"Step {step_name!r} cannot access field {expression.field_name!r} "
                 f"on array type {base_type!r}"
+            )
+        if is_optional(base_type) or is_map(base_type):
+            raise CheckError(
+                f"Step {step_name!r} cannot access field {expression.field_name!r} "
+                f"on {base_type!r}: {_absent_hint(base_type)}"
             )
         fields = _record_fields(program, base_type)
         field_type = fields.get(expression.field_name)
@@ -378,7 +418,7 @@ def _expression_type(
                 step_name=step_name,
                 expected_type=element_type,
             )
-            if actual_type != element_type:
+            if not assignable(actual_type, element_type):
                 raise CheckError(
                     f"Step {step_name!r} array item expects {element_type!r}, "
                     f"got {actual_type!r}"
@@ -390,7 +430,28 @@ def _expression_type(
                 f"Step {step_name!r} cannot infer the type of a record literal; "
                 f"annotate the binding with a record type"
             )
-        if expected_type.endswith("[]"):
+        if is_map(expected_type):
+            keys = [name for name, _ in expression.fields]
+            if len(keys) != len(set(keys)):
+                raise CheckError(
+                    f"Step {step_name!r} has duplicate record literal fields"
+                )
+            value_type = expected_type[:-2]
+            for name, value in expression.fields:
+                actual_type = _expression_type(
+                    value,
+                    bindings,
+                    program,
+                    step_name=step_name,
+                    expected_type=value_type,
+                )
+                if not assignable(actual_type, value_type):
+                    raise CheckError(
+                        f"Step {step_name!r} record field {name!r} expects "
+                        f"{value_type!r}, got {actual_type!r}"
+                    )
+            return expected_type
+        if expected_type.endswith(("[]", "{}")):
             raise CheckError(
                 f"Step {step_name!r} record literal requires a record-typed field"
             )
@@ -417,7 +478,7 @@ def _expression_type(
                 step_name=step_name,
                 expected_type=fields[name],
             )
-            if actual_type != fields[name]:
+            if not assignable(actual_type, fields[name]):
                 raise CheckError(
                     f"Step {step_name!r} record field {name!r} expects "
                     f"{fields[name]!r}, got {actual_type!r}"
@@ -465,7 +526,7 @@ def _expression_type(
                 )
             return "Bool"
         if operator in {"==", "!="}:
-            if left_type != right_type:
+            if unify(left_type, right_type) is None:
                 raise CheckError(
                     f"Step {step_name!r} operator {operator!r} requires matching "
                     f"types, got {left_type!r} and {right_type!r}"
@@ -494,12 +555,13 @@ def _expression_type(
             step_name=step_name,
             expected_type=expected_type or true_type,
         )
-        if true_type != false_type:
+        branch_type = unify(true_type, false_type)
+        if branch_type is None:
             raise CheckError(
                 f"Step {step_name!r} conditional branches differ: "
                 f"{true_type!r} and {false_type!r}"
             )
-        return true_type
+        return branch_type
     if isinstance(expression, FunctionRefExpr):
         function = next(
             (
@@ -605,7 +667,7 @@ def _check_arguments(
             expected_type=expected[name],
         )
         expected_type = expected[name]
-        if actual_type != expected_type:
+        if not assignable(actual_type, expected_type):
             raise CheckError(
                 f"Step {step_name!r} argument {name!r} expects {expected_type!r}, "
                 f"got {actual_type!r}"
@@ -859,13 +921,16 @@ def check(program: Program) -> None:
                 step_name=f"function {function.name} local {binding.name}",
                 expected_type=binding.type_name,
             )
-            if binding.type_name is not None and binding_type != binding.type_name:
+            if binding.type_name is not None and not assignable(
+                binding_type, binding.type_name
+            ):
                 raise CheckError(
                     f"Local {binding.name!r} expects {binding.type_name!r}, got {binding_type!r}"
                 )
-            # Store the resolved type, not the declared one, so an inferred
-            # binding behaves exactly like an annotated one downstream.
-            function_bindings[binding.name] = binding_type
+            # An annotation is the binding's type (it may be wider than the
+            # initialiser, as in `let x: Text? = "a"`); without one the
+            # inferred type is used, so both behave alike downstream.
+            function_bindings[binding.name] = binding.type_name or binding_type
             if binding.mutable:
                 function_bindings.mutable.add(binding.name)
         actual_type = _expression_type(
@@ -875,7 +940,7 @@ def check(program: Program) -> None:
             step_name=f"function {function.name}",
             expected_type=function.output_type,
         )
-        if actual_type != function.output_type:
+        if not assignable(actual_type, function.output_type):
             raise CheckError(
                 f"Function {function.name!r} returns {function.output_type!r}, "
                 f"got {actual_type!r}"

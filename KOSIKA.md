@@ -94,13 +94,24 @@ The primitive types are:
 Supported composite types:
 
 ```ebnf
-type          = identifier | identifier "[]" | function-type ;
+type          = identifier { "[]" | "{}" | "?" } | function-type ;
 function-type = "fn" "(" [ parameter { "," parameter } ] ")" "->" type ;
 parameter     = identifier ":" type ;
 ```
 
 - An identifier type MUST name a primitive or declared record.
 - `T[]` is a homogeneous array.
+- `T{}` is a map from `Text` keys to `T` values, in insertion order. The `{}`
+  MUST touch the type (`Number{}`), which is what tells it from a body brace.
+- `T?` is an optional `T`: either a `T` or `null`. A `T` or `null` may be
+  stored where `T?` is expected, never the reverse. A type is optional at most
+  once, and `Null?` is not a type. In JSON an optional field is still required
+  and carries `null` when absent.
+- Suffixes combine left to right: `Text[]{}` maps keys to lists of text and
+  `Item[]?` is an optional list.
+- A choice whose branches are `T` and `null` has type `T?`. `break` and
+  `continue` produce no value, so a branch containing one takes the type of
+  the other branch.
 - Function values are internal values with a checked named parameter list and
   output type. They MUST NOT appear in external record schemas.
 - Type nesting is limited to 32.
@@ -208,6 +219,20 @@ the receiver's type, and every method is pure and deterministic.
 | any array | `append(item: T)`, `concat(other: T[])`, `reverse()`, `slice(start: Number, end: Number)` | a new array of the same type; the receiver is never changed. A result over 4,096 elements fails the run |
 | `Text` | `slice(start: Number, end: Number)` | `Text` from position `start` up to, not including, `end` |
 | `Number` | `to_text()` | `Text`, formatted as in `Text + Number` |
+| `Text` | `to_number()` | `Number?`: the decimal number the trimmed text spells, else `null` |
+| any array | `first()`, `last()` | `T?`, `null` for an empty array |
+| any `T?` | `or(default: T)` | `T`: the value, or the default when absent |
+| any `T?` | `exists()` | `Bool` |
+| any `T?` | `value()` | `T`; fails the run when absent |
+| any `T{}` | `get(key: Text)` | `T?` |
+| any `T{}` | `has(key: Text)` | `Bool` |
+| any `T{}` | `set(key: Text, value: T)`, `remove(key: Text)` | a new map; the receiver is never changed. A result over 4,096 entries fails the run |
+| any `T{}` | `keys()`, `values()`, `length()` | `Text[]`, `T[]`, `Number` |
+
+An optional value has only `or`, `exists`, and `value`: its own methods and
+fields are reached after one of those. A map has no fields. A map literal is
+written like a record literal, with quoted or bare keys (`{"north": 4}`), and
+needs a map type from its context; `{}` is the empty map.
 | array of `Text`, `Number`, or `Bool` | `contains(item: T)` | `Bool`, using `==` |
 | `Number` | `floor()`, `ceil()`, `round()` | whole `Number`; `round` rounds halves up |
 
@@ -522,7 +547,7 @@ implemented by an explicit host policy rather than `.kos` syntax.
 
 Also unsupported:
 
-- Exceptions, user-defined generics, unions, optional types, and implicit
+- Exceptions, user-defined generics, unions other than `T?`, and implicit
   numeric/text coercions other than `Text + Number`.
 - Import aliases, package registries, remote imports, and dynamic loading.
 - Language-level parallel workflow steps or executable multi-agent consensus.

@@ -29,6 +29,7 @@ from .extensions import (
     extension_manifest_digest,
     extension_manifest_to_dict,
 )
+from .function_types import base_type
 
 MINDMAP_VERSION = 2
 MAX_NODES = 512
@@ -106,7 +107,7 @@ def _digest(value: Any) -> str:
 
 
 def _base_type(type_name: str) -> str:
-    return type_name[:-2] if type_name.endswith("[]") else type_name
+    return base_type(type_name)
 
 
 def _node_id(kind: str, key: str) -> str:

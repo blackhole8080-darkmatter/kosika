@@ -27,6 +27,11 @@ workflow main(person: Person) -> Greeting {
 - Primitives: `Text`, `Number`, `Bool`, `Null`. There is no `String`, `Int`,
   or `Float`.
 - Arrays: `Number[]`, `Person[]`.
+- Maps (dictionaries) from Text keys: `Number{}`, written with no space
+  before `{}`. A literal is `{"north": 4, "south": 2}`; `{}` is empty.
+- Optional values: `Text?` is a Text or `null`. Use `Text?` for anything that
+  may be missing. To use the value write `x.or(default: "none")`, test it with
+  `x.exists()`, or demand it with `x.value()` (fails the run if absent).
 - Records: `record Name { field: Type other: Type }`. Every field is
   required. Record names start with a capital letter.
 - A record value is written `{field: value, other: value}`. An array value is
@@ -69,6 +74,11 @@ fn total(numbers: Numbers) -> Total {
 | any array | `length()`, `append(item: x)`, `concat(other: xs)`, `reverse()`, `slice(start: a, end: b)`; `contains(item: x)` for arrays of Text, Number, or Bool |
 | `Text[]` | `join(separator: t)` |
 | `Number` | `floor()`, `ceil()`, `round()`, `to_text()` |
+| any `T{}` map | `get(key: k)` gives `T?`, `has(key: k)`, `set(key: k, value: v)`, `remove(key: k)`, `keys()`, `values()`, `length()` |
+| any `T?` | `or(default: v)`, `exists()`, `value()` |
+
+  Also `text.to_number()` gives `Number?`, and `items.first()` and
+  `items.last()` give `T?`. `set` and `remove` return a new map, like `append`.
 
   Arrays are never changed in place. `append` returns a new array, so write
   `items = items.append(item: x)` on a `var`.

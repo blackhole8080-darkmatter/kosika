@@ -41,6 +41,63 @@ def public_type(function: FunctionDecl) -> str:
     )
 
 
+#: Type suffixes: `T[]` is a list, `T{}` a map from Text to T, `T?` an
+#: optional T. They may be combined, as in `Number[]?` or `Text[]{}`.
+TYPE_SUFFIXES = ("[]", "{}", "?")
+
+
+def base_type(type_name: str) -> str:
+    """The named type left after every list, map, and optional suffix."""
+
+    while type_name.endswith(TYPE_SUFFIXES):
+        type_name = type_name[:-1] if type_name.endswith("?") else type_name[:-2]
+    return type_name
+
+
+def is_optional(type_name: str) -> bool:
+    return type_name.endswith("?") and signature(type_name) is None
+
+
+def is_map(type_name: str) -> bool:
+    return type_name.endswith("{}") and signature(type_name) is None
+
+
+def is_array(type_name: str) -> bool:
+    return type_name.endswith("[]") and signature(type_name) is None
+
+
+def assignable(actual: str, expected: str) -> bool:
+    """Whether a value of type ``actual`` may be stored where ``expected`` is.
+
+    Types match exactly, with one widening: an optional `T?` also accepts a
+    plain `T` and `null`.
+    """
+
+    if actual == expected:
+        return True
+    return is_optional(expected) and actual in ("Null", expected[:-1])
+
+
+#: The type of `break` and `continue`, which leave the loop instead of
+#: producing a value. It is never the type of a stored value.
+NEVER = "Never"
+
+
+def unify(left: str, right: str) -> str | None:
+    """The one type both branches of a choice produce, or None."""
+
+    if left == right:
+        return left
+    if NEVER in (left, right):
+        return right if left == NEVER else left
+    for first, second in ((left, right), (right, left)):
+        if assignable(first, second):
+            return second
+        if first == "Null" and second != "Null" and signature(second) is None:
+            return second if is_optional(second) else second + "?"
+    return None
+
+
 def referenced_types(type_name: str) -> set[str]:
     parsed = signature(type_name)
     if parsed:
@@ -49,4 +106,4 @@ def referenced_types(type_name: str) -> set[str]:
             referenced_types(output),
             *(referenced_types(p.type_name) for p in parameters),
         )
-    return {type_name.removesuffix("[]")}
+    return {base_type(type_name)}

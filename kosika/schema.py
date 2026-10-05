@@ -59,11 +59,25 @@ def validate(
 ) -> None:
     """Validate the JSON Schema subset needed by Kosika v0.1.
 
-    Supported keywords: type, properties, required, additionalProperties, items,
-    enum, const, and $ref to local #/$defs/... definitions.
+    Supported keywords: type, properties, required, additionalProperties (false
+    or a schema), items, anyOf, enum, const, and $ref to local #/$defs/...
+    definitions.
     """
     if root is None:
         root = schema
+    alternatives = schema.get("anyOf")
+    if isinstance(alternatives, list):
+        failures: list[str] = []
+        for alternative in alternatives:
+            try:
+                validate(value, alternative, path=path, root=root)
+                break
+            except SchemaValidationError as exc:
+                failures.append(str(exc))
+        else:
+            raise SchemaValidationError(
+                f"{path}: matches no allowed form ({'; '.join(failures)})"
+            )
     if "$ref" in schema:
         ref = schema["$ref"]
         if not isinstance(ref, str) or not ref.startswith("#/$defs/"):
@@ -107,12 +121,17 @@ def validate(
             for key, child_schema in properties.items():
                 if key in value:
                     validate(value[key], child_schema, path=f"{path}.{key}", root=root)
-        if schema.get("additionalProperties") is False:
+        additional = schema.get("additionalProperties")
+        if additional is False:
             unknown = set(value) - set(properties)
             if unknown:
                 raise SchemaValidationError(
                     f"{path}: unknown properties {sorted(unknown)!r}"
                 )
+        elif isinstance(additional, Mapping):
+            for key, item in value.items():
+                if key not in properties:
+                    validate(item, additional, path=f"{path}.{key}", root=root)
 
     if isinstance(value, list) and isinstance(schema.get("items"), Mapping):
         for index, item in enumerate(value):
@@ -155,6 +174,18 @@ def _schema_for_type(
     }
     if type_name in primitive_types:
         return {"type": primitive_types[type_name]}
+    if type_name.endswith("?"):
+        return {
+            "anyOf": [
+                _schema_for_type(program, type_name[:-1], stack),
+                {"type": "null"},
+            ]
+        }
+    if type_name.endswith("{}"):
+        return {
+            "type": "object",
+            "additionalProperties": _schema_for_type(program, type_name[:-2], stack),
+        }
     if type_name.endswith("[]"):
         return {
             "type": "array",

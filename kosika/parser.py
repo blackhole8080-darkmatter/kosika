@@ -405,7 +405,12 @@ class Parser:
         if self.accept("}"):
             return RecordExpr(())
         while True:
-            name = self.identifier()
+            # A quoted key writes a map entry: `{"north": 4}`. Both spellings
+            # produce the same literal; its expected type decides which it is.
+            if self.current.kind == "STRING":
+                name = self.advance().value
+            else:
+                name = self.identifier()
             self.expect(":")
             fields.append((name, self.expression()))
             if self.accept("}"):
@@ -538,6 +543,27 @@ class Parser:
             self.accept(",")
         return tuple(values)
 
+    def _at_map_suffix(self) -> bool:
+        """True at a `{}` written directly against the type, as in `Number{}`.
+
+        A body brace is always separated from the type before it by a space,
+        so requiring the three tokens to touch keeps `-> Report { }` a body.
+        """
+
+        if not self.check("{") or self.index == 0:
+            return False
+        previous, opening, closing = (
+            self.tokens[self.index - 1],
+            self.current,
+            self.peek(),
+        )
+        return (
+            closing.value == "}"
+            and previous.line == opening.line == closing.line
+            and previous.column + len(previous.value) == opening.column
+            and opening.column + 1 == closing.column
+        )
+
     def parse_type_name(self, depth: int = 0) -> str:
         if depth >= 32:
             raise ParseError("Function type nesting exceeds 32")
@@ -555,10 +581,27 @@ class Parser:
             self.expect("->")
             return function_type(tuple(parameters), self.parse_type_name(depth + 1))
         name = self.identifier()
-        if self.accept("["):
-            self.expect("]")
-            return f"{name}[]"
-        return name
+        # Suffixes: `T[]` list, `T{}` map from Text to T, `T?` optional.
+        while True:
+            if self.check("[") and self.peek().value == "]":
+                self.advance()
+                self.advance()
+                name += "[]"
+            elif self._at_map_suffix():
+                self.advance()
+                self.advance()
+                name += "{}"
+            elif self.check("?"):
+                if name.endswith("?"):
+                    token = self.current
+                    raise ParseError(
+                        f"A type is optional once, not twice, at "
+                        f"{token.line}:{token.column}"
+                    )
+                self.advance()
+                name += "?"
+            else:
+                return name
 
     def parse_record(self) -> RecordDecl:
         self.expect("record")

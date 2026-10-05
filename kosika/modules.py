@@ -21,7 +21,7 @@ from .ast import (
 )
 from .builtin_methods import did_you_mean
 from .checker import CheckError, check
-from .function_types import referenced_types
+from .function_types import base_type, referenced_types
 from .parser import ParseError, parse
 
 CATEGORIES = (
@@ -61,7 +61,7 @@ class ModuleLoadContext:
 def _references(program: Program) -> set[str]:
     names: set[str] = set()
     for record in program.records:
-        names.update(field.type_name.removesuffix("[]") for field in record.fields)
+        names.update(base_type(field.type_name) for field in record.fields)
     for tool in program.tools:
         names.add(tool.output)
         if tool.input:

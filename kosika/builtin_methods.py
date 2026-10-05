@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import difflib
 import math
+import re
 from dataclasses import dataclass
 from typing import Any, Callable, Iterable
 
@@ -23,6 +24,13 @@ ELEMENT = "$element"
 ANY_ARRAY = "$array"
 #: The receiver's own type, as a parameter or result.
 RECEIVER = "$receiver"
+#: A receiver that is any optional `T?`; ELEMENT is then `T`.
+ANY_OPTIONAL = "$optional"
+#: A receiver that is any map `T{}`; ELEMENT is then `T`.
+ANY_MAP = "$map"
+#: Building a map with more entries than this fails the run instead.
+MAX_MAP_ENTRIES = 4096
+_NUMBER_TEXT = re.compile(r"-?[0-9]+(\.[0-9]+)?\Z")
 #: Building an array longer than this fails the run instead.
 MAX_ARRAY_LENGTH = 4096
 #: Splitting cannot produce more parts than this; it fails instead.
@@ -92,6 +100,28 @@ def _slice(value: Any, start: Any, end: Any) -> Any:
     return value[first:last]
 
 
+def _to_number(text: str) -> int | float | None:
+    """Read a decimal number written as Kosika writes them, else nothing."""
+
+    trimmed = text.strip()
+    if not _NUMBER_TEXT.match(trimmed):
+        return None
+    return float(trimmed) if "." in trimmed else int(trimmed)
+
+
+def _require(value: Any) -> Any:
+    if value is None:
+        raise RuntimeError("value() was called on an absent value")
+    return value
+
+
+def _map_set(entries: dict[str, Any], key: str, value: Any) -> dict[str, Any]:
+    updated = {**entries, key: value}
+    if len(updated) > MAX_MAP_ENTRIES:
+        raise RuntimeError(f"map would exceed {MAX_MAP_ENTRIES} entries")
+    return updated
+
+
 def _contains(items: list[Any], item: Any) -> bool:
     # Same rule as `==`: true is never equal to 1.
     return any(
@@ -147,6 +177,45 @@ METHODS: tuple[Method, ...] = (
     ),
     Method("Text", "slice", (("start", "Number"), ("end", "Number")), "Text", _slice),
     Method("Number", "to_text", (), "Text", lambda value: format_number(value)),
+    Method("Text", "to_number", (), "Number?", _to_number),
+    Method(
+        ANY_ARRAY, "first", (), ELEMENT + "?", lambda items: items[0] if items else None
+    ),
+    Method(
+        ANY_ARRAY, "last", (), ELEMENT + "?", lambda items: items[-1] if items else None
+    ),
+    Method(
+        ANY_OPTIONAL,
+        "or",
+        (("default", ELEMENT),),
+        ELEMENT,
+        lambda value, default: default if value is None else value,
+    ),
+    Method(ANY_OPTIONAL, "exists", (), "Bool", lambda value: value is not None),
+    Method(ANY_OPTIONAL, "value", (), ELEMENT, _require),
+    Method(
+        ANY_MAP,
+        "get",
+        (("key", "Text"),),
+        ELEMENT + "?",
+        lambda entries, key: entries.get(key),
+    ),
+    Method(
+        ANY_MAP, "has", (("key", "Text"),), "Bool", lambda entries, key: key in entries
+    ),
+    Method(ANY_MAP, "set", (("key", "Text"), ("value", ELEMENT)), RECEIVER, _map_set),
+    Method(
+        ANY_MAP,
+        "remove",
+        (("key", "Text"),),
+        RECEIVER,
+        lambda entries, key: {k: v for k, v in entries.items() if k != key},
+    ),
+    Method(ANY_MAP, "keys", (), "Text[]", lambda entries: list(entries)),
+    Method(
+        ANY_MAP, "values", (), ELEMENT + "[]", lambda entries: list(entries.values())
+    ),
+    Method(ANY_MAP, "length", (), "Number", lambda entries: len(entries)),
     Method(ANY_ARRAY, "contains", (("item", ELEMENT),), "Bool", _contains),
     Method(
         "Text[]",
@@ -159,10 +228,42 @@ METHODS: tuple[Method, ...] = (
 
 
 def _candidates(receiver_type: str) -> list[Method]:
+    # The outermost suffix decides: `Text[]?` is an optional, not an array.
+    if receiver_type.endswith("?"):
+        return [method for method in METHODS if method.receiver == ANY_OPTIONAL]
+    if receiver_type.endswith("{}"):
+        return [method for method in METHODS if method.receiver == ANY_MAP]
     found = [method for method in METHODS if method.receiver == receiver_type]
     if receiver_type.endswith("[]"):
         found += [method for method in METHODS if method.receiver == ANY_ARRAY]
     return found
+
+
+def resolve_for_value(value: Any, name: str) -> Method:
+    """Find the method a checked call meant, from the runtime value."""
+
+    optional = next(
+        (m for m in METHODS if m.receiver == ANY_OPTIONAL and m.name == name), None
+    )
+    if optional is not None:
+        return optional
+    if isinstance(value, dict):
+        return resolve("Any{}", name)
+    return resolve(_value_type(value), name)
+
+
+def _value_type(value: Any) -> str:
+    if isinstance(value, str):
+        return "Text"
+    if isinstance(value, bool):
+        return "Bool"
+    if isinstance(value, (int, float)):
+        return "Number"
+    if isinstance(value, list):
+        # An empty array has no element to inspect; every array method the
+        # checker allows on it behaves the same whatever the element type.
+        return f"{_value_type(value[0])}[]" if value else "Text[]"
+    return "Record"
 
 
 def resolve(receiver_type: str, name: str) -> Method:
@@ -188,17 +289,26 @@ def resolve(receiver_type: str, name: str) -> Method:
             "Number, and arrays"
         )
     hint = did_you_mean(name, (method.name for method in candidates))
+    if receiver_type.endswith("?"):
+        hint += (
+            " The value may be absent, so reach its own methods through "
+            ".or(default: ...) or .value() first."
+        )
     raise MethodError(
         f"{receiver_type!r} has no method {name!r}; available: {available}.{hint}"
     )
 
 
 def _concrete(type_name: str, receiver_type: str) -> str:
-    if type_name == RECEIVER:
-        return receiver_type
-    if type_name == ELEMENT:
-        return receiver_type[:-2] if receiver_type.endswith("[]") else receiver_type
-    return type_name
+    if receiver_type.endswith("?"):
+        element = receiver_type[:-1]
+    elif receiver_type.endswith(("[]", "{}")):
+        element = receiver_type[:-2]
+    else:
+        element = receiver_type
+    concrete = type_name.replace(RECEIVER, receiver_type).replace(ELEMENT, element)
+    # `first()` on an array of optionals is still optional once, not twice.
+    return concrete[:-1] if concrete.endswith("??") else concrete
 
 
 def parameter_types(method: Method, receiver_type: str) -> tuple[tuple[str, str], ...]:

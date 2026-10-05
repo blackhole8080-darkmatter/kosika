@@ -32,6 +32,7 @@ from .event_stream_design import (
     publish_failure_event,
     timeline_stage_summary,
 )
+from .function_types import base_type
 from .model import (
     ModelResponse,
     ModelToolCall,
@@ -117,7 +118,7 @@ def _limits(program: Program, workflow: str, mcp: DemoMCP | None = None) -> None
     active: set[str] = set()
 
     def record_size(name: str) -> int:
-        name = name.removesuffix("[]")
+        name = base_type(name)
         if name not in records:
             return 1
         if name in active:

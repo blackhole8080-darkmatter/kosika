@@ -200,24 +200,24 @@ class RepeatLoopTests(unittest.TestCase):
 
 
 class BreakAndContinueTests(unittest.TestCase):
-    def test_break_and_continue_need_a_null_aware_context(self) -> None:
-        # `break` and `continue` type as Null, so they cannot be one arm of a
-        # conditional whose other arm yields the loop element. This is a known
-        # gap rather than a silent wrong answer.
-        with self.assertRaisesRegex(CheckError, "branches differ"):
-            check(
-                parse(
+    def test_break_and_continue_agree_with_the_other_branch(self) -> None:
+        # `break` and `continue` produce no value, so a conditional with one
+        # of them in a branch has the type of its other branch.
+        for keyword, expected in (("break", ["a"]), ("continue", ["a", "c"])):
+            with self.subTest(keyword=keyword):
+                program = parse(
                     """
                     record R { out: Text[] }
                     fn go(items: Text[]) -> R {
-                      return {out: for i in items { if i == "b" { break } else { i } }}
+                      return {out: for i in items { if i == "b" { KEYWORD } else { i } }}
                     }
                     workflow main() -> R {
-                      step s { let r = go(items: ["a","b"]) return r }
+                      step s { let r = go(items: ["a","b","c"]) return r }
                     }
-                    """
+                    """.replace("KEYWORD", keyword)
                 )
-            )
+                check(program)
+                self.assertEqual(run(program, "main", None), {"out": expected})
 
     def test_labelled_break_is_rejected(self) -> None:
         # BreakExpr carries no label, so accepting one would silently break
