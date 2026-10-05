@@ -221,6 +221,19 @@ the receiver's type, and every method is pure and deterministic.
 | `Number` | `to_text()` | `Text`, formatted as in `Text + Number` |
 | `Text` | `to_number()` | `Number?`: the decimal number the trimmed text spells, else `null` |
 | any array | `first()`, `last()` | `T?`, `null` for an empty array |
+| `Number[]`, `Text[]` | `sort()` | a new array in ascending order; Text sorts by character code |
+| array of `Text`, `Number`, or `Bool` | `unique()` | a new array keeping the first of each equal value |
+| `Number[]` | `sum()` | `Number`, `0` for an empty array |
+| `Number[]` | `min()`, `max()`, `average()` | `Number?`, `null` for an empty array |
+| array of records | `sort_by(field: "name")` | a new array ordered by a `Number` or `Text` field; equal elements keep their order |
+| array of records | `sum_by(field: "name")` | `Number`, the total of a `Number` field |
+| array of records | `min_by(field: "name")`, `max_by(field: "name")` | `T?`, the first element with the smallest or largest field |
+| array of records | `group_by(field: "name")` | `T[]{}`, elements grouped under each value of a `Text` field |
+
+A `field:` argument MUST be a text literal naming a field of the element
+record. The checker resolves it, so a misspelled or wrongly typed field is a
+check error rather than a run failure. To sort descending, follow `sort()` or
+`sort_by(...)` with `reverse()`.
 | any `T?` | `or(default: T)` | `T`: the value, or the default when absent |
 | any `T?` | `exists()` | `Bool` |
 | any `T?` | `value()` | `T`; fails the run when absent |

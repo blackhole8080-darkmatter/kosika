@@ -593,6 +593,24 @@ left out: typed messages between members, state carried from one round to the
 next, and a termination judgment over observed evidence rather than result
 equality. Swarm output must not acquire authority the way model output cannot.
 
+## Phase 3: built-in algorithms (complete)
+
+- Scalar arrays: `sort()` (Number and Text), `unique()`, and for `Number[]`
+  `sum()`, `min()`, `max()`, `average()`. The last three return `Number?`
+  because an empty array has no answer.
+- Arrays of records: `sort_by`, `sum_by`, `min_by`, `max_by`, and `group_by`,
+  each taking `field: "name"`. The field is a text literal the checker
+  resolves against the element record, including its type (`sum_by` needs a
+  Number field, `group_by` a Text field), so no lambdas are needed and a wrong
+  field cannot reach the runtime.
+- Sorting is stable, ties in `min_by`/`max_by` keep the first element, and
+  `unique` keeps first-seen order, so results are deterministic.
+- 6 tests in `tests/test_algorithms.py`.
+- Found while testing: a method cannot follow a bare `for` expression; the
+  loop must be parenthesised. Not done: descending sort (use `reverse()`),
+  sorting by more than one field, and predicates such as `find` or `count`
+  (use `for ... where` with `first()` or `length()`).
+
 ## Prototype modules removed
 
 - Removed seven modules that were never part of the language: `cloud.py`,

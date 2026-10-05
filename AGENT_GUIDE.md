@@ -72,10 +72,17 @@ fn total(numbers: Numbers) -> Total {
 | --- | --- |
 | `Text` | `length()`, `upper()`, `lower()`, `trim()`, `contains(part: t)`, `starts_with(prefix: t)`, `ends_with(suffix: t)`, `split(separator: t)`, `slice(start: a, end: b)` |
 | any array | `length()`, `append(item: x)`, `concat(other: xs)`, `reverse()`, `slice(start: a, end: b)`; `contains(item: x)` for arrays of Text, Number, or Bool |
-| `Text[]` | `join(separator: t)` |
 | `Number` | `floor()`, `ceil()`, `round()`, `to_text()` |
+| `Number[]` | `sum()`, `sort()`; `min()`, `max()`, `average()` give `Number?` |
+| `Text[]` | `sort()`, `join(separator: t)` |
+| scalar arrays | `unique()` |
+| arrays of records | `sort_by(field: "price")`, `sum_by(field: "price")`, `min_by(field: "price")`, `max_by(field: "price")` (give `T?`), `group_by(field: "city")` (gives `T[]{}`) |
 | any `T{}` map | `get(key: k)` gives `T?`, `has(key: k)`, `set(key: k, value: v)`, `remove(key: k)`, `keys()`, `values()`, `length()` |
 | any `T?` | `or(default: v)`, `exists()`, `value()` |
+
+  The `field:` argument is always a quoted field name of the record. There
+  is no descending sort: use `.sort().reverse()`. To call a method on a `for`
+  result, wrap the loop in parentheses: `(for x in xs { x.name }).first()`.
 
   Also `text.to_number()` gives `Number?`, and `items.first()` and
   `items.last()` give `T?`. `set` and `remove` return a new map, like `append`.

@@ -104,6 +104,48 @@ def _literal_type(value: object) -> str:
     raise CheckError(f"Unsupported literal value {value!r}")
 
 
+def _check_field_argument(
+    program: Program,
+    argument: object,
+    element_type: str,
+    allowed: list[str],
+    *,
+    step_name: str,
+    method: str,
+) -> None:
+    """A `field:` argument names a field of the array's record element.
+
+    It is a text literal, not a computed value, so the checker can prove the
+    field exists and has a type the method can order, add, or group by.
+    """
+
+    if element_type not in {record.name for record in program.records}:
+        array_type = element_type + "[]"
+        raise CheckError(
+            f"Step {step_name!r} unknown method: {method!r} needs an array of "
+            f"records, got {array_type!r}"
+        )
+    if not isinstance(argument, LiteralExpr) or not isinstance(argument.value, str):
+        raise CheckError(
+            f"Step {step_name!r} method {method!r} takes (field: Text), got "
+            "a computed value; write the field name in quotes"
+        )
+    fields = _record_fields(program, element_type)
+    field_type = fields.get(argument.value)
+    if field_type is None:
+        raise CheckError(
+            f"Step {step_name!r} references unknown field "
+            f"{argument.value!r} on {element_type!r}."
+            f"{did_you_mean(argument.value, fields)}"
+        )
+    if field_type not in allowed:
+        wanted = " or ".join(allowed)
+        raise CheckError(
+            f"Step {step_name!r} method {method!r} argument 'field' expects "
+            f"{wanted!r}, got {field_type!r}"
+        )
+
+
 def _absent_hint(type_name: str) -> str:
     if is_map(type_name):
         return "a map is read with .get(key: ...), .has(key: ...), or .keys()"
@@ -338,13 +380,26 @@ def _expression_type(
         expected = dict(method_parameter_types(method, receiver_type))
         supplied = [name for name, _ in expression.arguments]
         if sorted(supplied) != sorted(expected):
-            wanted = ", ".join(f"{name}: {kind}" for name, kind in expected.items())
+            wanted = ", ".join(
+                f"{name}: {'Text' if kind.startswith('$field') else kind}"
+                for name, kind in expected.items()
+            )
             hint = did_you_mean(supplied[0], expected) if supplied else ""
             raise CheckError(
                 f"Step {step_name!r} method {expression.method!r} takes "
                 f"({wanted}), got ({', '.join(supplied)}).{hint}"
             )
         for name, argument in expression.arguments:
+            if expected[name].startswith("$field"):
+                _check_field_argument(
+                    program,
+                    argument,
+                    receiver_type[:-2],
+                    expected[name].split(":", 1)[1].split("|"),
+                    step_name=step_name,
+                    method=expression.method,
+                )
+                continue
             argument_type = _expression_type(
                 argument,
                 bindings,

@@ -28,6 +28,12 @@ RECEIVER = "$receiver"
 ANY_OPTIONAL = "$optional"
 #: A receiver that is any map `T{}`; ELEMENT is then `T`.
 ANY_MAP = "$map"
+#: A parameter that names a field of the array's record element, written as
+#: a text literal and checked against the record: `orders.sort_by(field:
+#: "total")`. The part after the colon lists the field types allowed.
+FIELD_SORTABLE = "$field:Number|Text"
+FIELD_NUMBER = "$field:Number"
+FIELD_TEXT = "$field:Text"
 #: Building a map with more entries than this fails the run instead.
 MAX_MAP_ENTRIES = 4096
 _NUMBER_TEXT = re.compile(r"-?[0-9]+(\.[0-9]+)?\Z")
@@ -122,6 +128,29 @@ def _map_set(entries: dict[str, Any], key: str, value: Any) -> dict[str, Any]:
     return updated
 
 
+def _unique(items: list[Any]) -> list[Any]:
+    kept: list[Any] = []
+    for item in items:
+        if not _contains(kept, item):
+            kept.append(item)
+    return kept
+
+
+def _best(items: list[Any], field: str, largest: bool) -> Any:
+    if not items:
+        return None
+    # max/min keep the first of equal elements, so ties are deterministic.
+    pick = max if largest else min
+    return pick(items, key=lambda item: item[field])
+
+
+def _group_by(items: list[Any], field: str) -> dict[str, list[Any]]:
+    groups: dict[str, list[Any]] = {}
+    for item in items:
+        groups.setdefault(item[field], []).append(item)
+    return groups
+
+
 def _contains(items: list[Any], item: Any) -> bool:
     # Same rule as `==`: true is never equal to 1.
     return any(
@@ -172,6 +201,48 @@ METHODS: tuple[Method, ...] = (
         lambda items, other: _bounded([*items, *other]),
     ),
     Method(ANY_ARRAY, "reverse", (), RECEIVER, lambda items: list(reversed(items))),
+    Method(ANY_ARRAY, "unique", (), RECEIVER, _unique),
+    Method("Number[]", "sort", (), RECEIVER, lambda items: sorted(items)),
+    Method("Text[]", "sort", (), RECEIVER, lambda items: sorted(items)),
+    Method("Number[]", "sum", (), "Number", lambda items: sum(items)),
+    Method("Number[]", "min", (), "Number?", lambda items: min(items, default=None)),
+    Method("Number[]", "max", (), "Number?", lambda items: max(items, default=None)),
+    Method(
+        "Number[]",
+        "average",
+        (),
+        "Number?",
+        lambda items: sum(items) / len(items) if items else None,
+    ),
+    Method(
+        ANY_ARRAY,
+        "sort_by",
+        (("field", FIELD_SORTABLE),),
+        RECEIVER,
+        lambda items, field: sorted(items, key=lambda item: item[field]),
+    ),
+    Method(
+        ANY_ARRAY,
+        "sum_by",
+        (("field", FIELD_NUMBER),),
+        "Number",
+        lambda items, field: sum(item[field] for item in items),
+    ),
+    Method(
+        ANY_ARRAY,
+        "min_by",
+        (("field", FIELD_SORTABLE),),
+        ELEMENT + "?",
+        lambda items, field: _best(items, field, False),
+    ),
+    Method(
+        ANY_ARRAY,
+        "max_by",
+        (("field", FIELD_SORTABLE),),
+        ELEMENT + "?",
+        lambda items, field: _best(items, field, True),
+    ),
+    Method(ANY_ARRAY, "group_by", (("field", FIELD_TEXT),), RECEIVER + "{}", _group_by),
     Method(
         ANY_ARRAY, "slice", (("start", "Number"), ("end", "Number")), RECEIVER, _slice
     ),
@@ -249,6 +320,12 @@ def resolve_for_value(value: Any, name: str) -> Method:
         return optional
     if isinstance(value, dict):
         return resolve("Any{}", name)
+    if isinstance(value, list):
+        # The checker already matched the element type; at run time an empty
+        # array has none to inspect, so array methods are found by name alone.
+        for method in METHODS:
+            if method.name == name and method.receiver.endswith(("[]", ANY_ARRAY)):
+                return method
     return resolve(_value_type(value), name)
 
 
@@ -273,12 +350,12 @@ def resolve(receiver_type: str, name: str) -> Method:
     for method in candidates:
         if method.name == name:
             if (
-                method.name == "contains"
+                method.name in ("contains", "unique")
                 and method.receiver == ANY_ARRAY
                 and receiver_type[:-2] not in _SCALARS
             ):
                 raise MethodError(
-                    "contains works on arrays of Text, Number, or Bool, "
+                    f"{method.name} works on arrays of Text, Number, or Bool, "
                     f"not {receiver_type!r}"
                 )
             return method
