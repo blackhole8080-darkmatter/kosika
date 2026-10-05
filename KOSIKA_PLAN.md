@@ -593,6 +593,19 @@ left out: typed messages between members, state carried from one round to the
 next, and a termination judgment over observed evidence rather than result
 equality. Swarm output must not acquire authority the way model output cannot.
 
+## Phase 2, first slice: building and slicing (complete)
+
+- `for item in values where condition { ... }` filters as well as maps.
+  `ForExpr.condition` defaults to `None`, so loops without `where` parse to the
+  same tree as before.
+- New methods: arrays gain `append`, `concat`, `reverse`, and `slice`, each
+  returning a new array of the receiver's type; Text gains `slice`; Number
+  gains `to_text`. Arrays built by methods are capped at 4,096 elements and
+  `slice` positions outside the value fail the run.
+- 8 more tests in `tests/test_core_fixes.py`.
+- Still open in phase 2: maps, optional values, and text-to-number conversion
+  (which needs optional values to report failure).
+
 ## Simpler syntax (complete)
 
 - **One-line steps.** Inside a workflow, `name = call` is a step. The parser

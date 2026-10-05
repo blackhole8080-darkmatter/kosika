@@ -225,6 +225,92 @@ class MethodTests(unittest.TestCase):
         )
 
 
+class ListBuildingTests(unittest.TestCase):
+    WORDS = 'let words: Text[] = ["tiny", "elephant", "house", "ox"]\n'
+
+    def test_for_where_filters_and_maps(self) -> None:
+        body = (
+            self.WORDS
+            + "let long: Text[] = for w in words where w.length() > 4 { w.upper() }\n"
+        )
+        self.assertEqual(
+            result(body + out(items="long"))["items"], ["ELEPHANT", "HOUSE"]
+        )
+
+    def test_for_where_keeps_its_limit_and_needs_a_bool(self) -> None:
+        body = (
+            self.WORDS + "let few: Text[] = for w in words where true limit 2 { w }\n"
+        )
+        with self.assertRaisesRegex(RuntimeError, "limit of 2"):
+            result(body + out(items="few"))
+        wrong = self.WORDS + "let bad: Text[] = for w in words where w.length() { w }\n"
+        with self.assertRaisesRegex(CheckError, "condition expects 'Bool'"):
+            result(wrong + out(items="bad"))
+
+    def test_a_loop_without_where_parses_as_before(self) -> None:
+        program = parse(
+            HEADER
+            + "fn f() -> Out {\n"
+            + self.WORDS
+            + "let same: Text[] = for w in words { w }\n"
+            + out(items="same")
+            + "\n}\n"
+            + MAIN
+        )
+        self.assertIsNone(program.functions[0].bindings[1].value.condition)
+
+    def test_append_concat_reverse_and_slice_return_new_arrays(self) -> None:
+        body = (
+            self.WORDS
+            + 'var grown: Text[] = ["a"]\n'
+            + 'repeat 2 times { grown = grown.append(item: "b") }\n'
+        )
+        cases = {
+            "grown": ["a", "b", "b"],
+            'grown.concat(other: ["z"])': ["a", "b", "b", "z"],
+            "words.reverse()": ["ox", "house", "elephant", "tiny"],
+            "words.slice(start: 1, end: 3)": ["elephant", "house"],
+            "words.slice(start: 4, end: 4)": [],
+        }
+        for expression, expected in cases.items():
+            with self.subTest(expression=expression):
+                self.assertEqual(
+                    result(body + out(items=expression))["items"], expected
+                )
+        self.assertEqual(result(body + out(value="words.length()"))["value"], 4)
+
+    def test_text_slice_and_number_to_text(self) -> None:
+        self.assertEqual(
+            result(out(text='"kosika".slice(start: 2, end: 5)'))["text"], "sik"
+        )
+        self.assertEqual(
+            result(out(text='(3.5).to_text() + "/" + (4).to_text()'))["text"], "3.5/4"
+        )
+
+    def test_slices_outside_the_value_fail_the_run(self) -> None:
+        for expression, message in {
+            '"abc".slice(start: 2, end: 9)': "outside a value of length 3",
+            '"abc".slice(start: 2, end: 1)': "outside a value of length 3",
+            '"abc".slice(start: 0.5, end: 1)': "whole numbers",
+        }.items():
+            with self.subTest(expression=expression):
+                with self.assertRaisesRegex(RuntimeError, message):
+                    result(out(text=expression))
+
+    def test_building_methods_keep_the_element_type(self) -> None:
+        for expression in ("words.append(item: 1)", "words.concat(other: [1])"):
+            with self.subTest(expression=expression):
+                with self.assertRaises(CheckError):
+                    result(self.WORDS + out(items=expression))
+
+    def test_an_array_cannot_grow_without_bound(self) -> None:
+        from kosika.builtin_methods import MAX_ARRAY_LENGTH, call, resolve
+
+        full = ["x"] * MAX_ARRAY_LENGTH
+        with self.assertRaisesRegex(RuntimeError, "would exceed"):
+            call(resolve("Text[]", "append"), full, {"item": "y"})
+
+
 class UnknownNameAnchorTests(unittest.TestCase):
     def test_an_unknown_name_points_at_its_first_use(self) -> None:
         source = (

@@ -227,6 +227,9 @@ class ForExpr:
     sequence: "Expression"
     body: "Expression"
     limit: int = 128
+    # Optional `where <condition>`: elements for which it is false are skipped,
+    # so the loop filters as well as maps. None for every loop without one.
+    condition: "Expression | None" = None
 
 
 @dataclass(frozen=True)
@@ -314,6 +317,8 @@ def expression_function_calls(
                 visit(arm.value)
         elif isinstance(value, ForExpr):
             visit(value.sequence)
+            if value.condition is not None:
+                visit(value.condition)
             visit(value.body)
         elif isinstance(value, RepeatExpr):
             visit(value.count)

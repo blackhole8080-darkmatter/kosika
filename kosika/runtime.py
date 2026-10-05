@@ -544,6 +544,15 @@ def _evaluate_expression(
         for element in sequence:
             scope = _child_scope(environment)
             scope[expression.item_name] = element
+            if expression.condition is not None and not _evaluate_expression(
+                expression.condition,
+                scope,
+                program,
+                functions,
+                function_events,
+                depth=depth + 1,
+            ):
+                continue
             try:
                 collected.append(
                     _evaluate_expression(

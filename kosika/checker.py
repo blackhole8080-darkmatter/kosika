@@ -40,6 +40,7 @@ from .ast import (
 from .builtin_methods import MethodError, did_you_mean
 from .builtin_methods import parameter_types as method_parameter_types
 from .builtin_methods import resolve as resolve_method
+from .builtin_methods import return_type as method_return_type
 from .function_types import function_type, public_type, signature
 
 
@@ -248,6 +249,15 @@ def _expression_type(
         # widen or shadow the enclosing one.
         item_bindings = bindings.child()
         item_bindings[expression.item_name] = sequence_type[:-2]
+        if expression.condition is not None:
+            condition_type = _expression_type(
+                expression.condition, item_bindings, program, step_name=step_name
+            )
+            if condition_type != "Bool":
+                raise CheckError(
+                    f"Step {step_name!r} for loop where condition expects 'Bool', "
+                    f"got {condition_type!r}"
+                )
         body_type = _expression_type(
             expression.body, item_bindings, program, step_name=step_name
         )
@@ -312,7 +322,7 @@ def _expression_type(
                     f"Step {step_name!r} method {expression.method!r} argument "
                     f"{name!r} expects {expected[name]!r}, got {argument_type!r}"
                 )
-        return method.returns
+        return method_return_type(method, receiver_type)
     if isinstance(expression, FieldExpr):
         base_type = _expression_type(
             expression.base, bindings, program, step_name=step_name

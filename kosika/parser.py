@@ -216,6 +216,7 @@ class Parser:
             item_name = self.identifier()
             self.expect("in")
             sequence = self.expression()
+            where = self.expression() if self.accept("where") else None
             limit = 128
             if self.accept("limit"):
                 token = self.advance()
@@ -227,7 +228,7 @@ class Parser:
                     raise ParseError("for loop limit must be an integer from 1 to 512")
                 limit = int(token.value)
             body = self.parse_block()
-            return ForExpr(item_name, sequence, body, limit)
+            return ForExpr(item_name, sequence, body, limit, where)
         return self.parse_or_expression()
 
     def parse_or_expression(self) -> Expression:

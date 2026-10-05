@@ -65,13 +65,13 @@ fn total(numbers: Numbers) -> Total {
 
 | On | Methods |
 | --- | --- |
-| `Text` | `length()`, `upper()`, `lower()`, `trim()`, `contains(part: t)`, `starts_with(prefix: t)`, `ends_with(suffix: t)`, `split(separator: t)` |
-| any array | `length()`; `contains(item: x)` for arrays of Text, Number, or Bool |
+| `Text` | `length()`, `upper()`, `lower()`, `trim()`, `contains(part: t)`, `starts_with(prefix: t)`, `ends_with(suffix: t)`, `split(separator: t)`, `slice(start: a, end: b)` |
+| any array | `length()`, `append(item: x)`, `concat(other: xs)`, `reverse()`, `slice(start: a, end: b)`; `contains(item: x)` for arrays of Text, Number, or Bool |
 | `Text[]` | `join(separator: t)` |
-| `Number` | `floor()`, `ceil()`, `round()` |
+| `Number` | `floor()`, `ceil()`, `round()`, `to_text()` |
 
-  Arrays cannot be changed in place: there is no `push`. Build a new array
-  with a `for` expression.
+  Arrays are never changed in place. `append` returns a new array, so write
+  `items = items.append(item: x)` on a `var`.
 
 ## Choosing and repeating
 
@@ -88,8 +88,9 @@ let reply: Text = match name {
   case _ { "Unknown" }
 }
 
-// for as an expression builds a new array.
+// for as an expression builds a new array. `where` keeps only some elements.
 let doubled: Number[] = for value in numbers.values { value * 2 }
+let big: Number[] = for value in numbers.values where value > 10 { value }
 
 // repeat runs a fixed number of times (a literal from 1 to 512).
 repeat 3 times { sum = sum + 1 }

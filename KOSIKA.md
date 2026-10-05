@@ -205,8 +205,14 @@ the receiver's type, and every method is pure and deterministic.
 | `Text` | `split(separator: Text)` | `Text[]`; the separator MUST be non-empty and a result over 512 parts fails the run |
 | `Text[]` | `join(separator: Text)` | `Text` |
 | any array | `length()` | `Number` of elements |
+| any array | `append(item: T)`, `concat(other: T[])`, `reverse()`, `slice(start: Number, end: Number)` | a new array of the same type; the receiver is never changed. A result over 4,096 elements fails the run |
+| `Text` | `slice(start: Number, end: Number)` | `Text` from position `start` up to, not including, `end` |
+| `Number` | `to_text()` | `Text`, formatted as in `Text + Number` |
 | array of `Text`, `Number`, or `Bool` | `contains(item: T)` | `Bool`, using `==` |
 | `Number` | `floor()`, `ceil()`, `round()` | whole `Number`; `round` rounds halves up |
+
+`slice` positions MUST be whole numbers with `0 <= start <= end <= length`;
+anything else fails the run.
 
 An unknown method or wrong argument name is a check error
 (`check/unknown-method`, `check/method-arguments`). A parenthesised literal is
@@ -219,6 +225,9 @@ for item in values limit 32 { expression }
 repeat 8 times { expression }
 ```
 
+- `for item in values where condition { expression }` skips elements whose
+  `Bool` condition is false, so one loop both filters and maps. The limit still
+  counts every element of the input array.
 - `for` is a functional map over an array and returns the collected body
   results. Its `limit` is an integer from 1 through 512 and defaults to 128.
   Execution fails before the first iteration if the input array exceeds that

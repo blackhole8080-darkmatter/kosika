@@ -21,6 +21,10 @@ from typing import Any, Callable, Iterable
 ELEMENT = "$element"
 #: A receiver that is any array.
 ANY_ARRAY = "$array"
+#: The receiver's own type, as a parameter or result.
+RECEIVER = "$receiver"
+#: Building an array longer than this fails the run instead.
+MAX_ARRAY_LENGTH = 4096
 #: Splitting cannot produce more parts than this; it fails instead.
 MAX_SPLIT_PARTS = 512
 _SCALARS = ("Text", "Number", "Bool", "Null")
@@ -31,6 +35,14 @@ def did_you_mean(name: str, candidates: Iterable[str]) -> str:
 
     close = difflib.get_close_matches(name, sorted(set(candidates)), n=1, cutoff=0.7)
     return f" Did you mean {close[0]!r}?" if close and close[0] != name else ""
+
+
+def format_number(value: float) -> str:
+    """Whole numbers print without a decimal point, like `Text + Number`."""
+
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
 
 
 class MethodError(ValueError):
@@ -60,6 +72,24 @@ def _whole(value: float, name: str) -> int:
     if name == "round":
         return math.floor(value + 0.5)
     return int(getattr(math, name)(value))
+
+
+def _bounded(items: list[Any]) -> list[Any]:
+    if len(items) > MAX_ARRAY_LENGTH:
+        raise RuntimeError(f"array would exceed {MAX_ARRAY_LENGTH} elements")
+    return items
+
+
+def _slice(value: Any, start: Any, end: Any) -> Any:
+    for bound in (start, end):
+        if isinstance(bound, bool) or bound != int(bound):
+            raise RuntimeError("slice positions must be whole numbers")
+    first, last = int(start), int(end)
+    if not 0 <= first <= last <= len(value):
+        raise RuntimeError(
+            f"slice {first} to {last} is outside a value of length {len(value)}"
+        )
+    return value[first:last]
 
 
 def _contains(items: list[Any], item: Any) -> bool:
@@ -97,6 +127,26 @@ METHODS: tuple[Method, ...] = (
     Method("Number", "ceil", (), "Number", lambda value: _whole(value, "ceil")),
     Method("Number", "round", (), "Number", lambda value: _whole(value, "round")),
     Method(ANY_ARRAY, "length", (), "Number", lambda items: len(items)),
+    Method(
+        ANY_ARRAY,
+        "append",
+        (("item", ELEMENT),),
+        RECEIVER,
+        lambda items, item: _bounded([*items, item]),
+    ),
+    Method(
+        ANY_ARRAY,
+        "concat",
+        (("other", RECEIVER),),
+        RECEIVER,
+        lambda items, other: _bounded([*items, *other]),
+    ),
+    Method(ANY_ARRAY, "reverse", (), RECEIVER, lambda items: list(reversed(items))),
+    Method(
+        ANY_ARRAY, "slice", (("start", "Number"), ("end", "Number")), RECEIVER, _slice
+    ),
+    Method("Text", "slice", (("start", "Number"), ("end", "Number")), "Text", _slice),
+    Method("Number", "to_text", (), "Text", lambda value: format_number(value)),
     Method(ANY_ARRAY, "contains", (("item", ELEMENT),), "Bool", _contains),
     Method(
         "Text[]",
@@ -143,14 +193,25 @@ def resolve(receiver_type: str, name: str) -> Method:
     )
 
 
-def parameter_types(method: Method, receiver_type: str) -> tuple[tuple[str, str], ...]:
-    """The method's parameters with the element type filled in."""
+def _concrete(type_name: str, receiver_type: str) -> str:
+    if type_name == RECEIVER:
+        return receiver_type
+    if type_name == ELEMENT:
+        return receiver_type[:-2] if receiver_type.endswith("[]") else receiver_type
+    return type_name
 
-    element = receiver_type[:-2] if receiver_type.endswith("[]") else receiver_type
+
+def parameter_types(method: Method, receiver_type: str) -> tuple[tuple[str, str], ...]:
+    """The method's parameters with receiver and element types filled in."""
+
     return tuple(
-        (name, element if type_name == ELEMENT else type_name)
+        (name, _concrete(type_name, receiver_type))
         for name, type_name in method.parameters
     )
+
+
+def return_type(method: Method, receiver_type: str) -> str:
+    return _concrete(method.returns, receiver_type)
 
 
 def call(method: Method, receiver: Any, arguments: dict[str, Any]) -> Any:
