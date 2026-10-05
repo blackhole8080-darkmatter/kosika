@@ -39,6 +39,8 @@ node_modules/
 # Scratch workspace for previews, probes, and captured traces
 /build/
 .tmp-*
+# Holding folder for scratch files cleared out of the root; safe to delete.
+/_trash/
 
 # Editor and agent tool state
 .commandcode/

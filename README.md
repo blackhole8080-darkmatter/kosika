@@ -40,6 +40,20 @@ grammar, typing, execution, capability, replay, and support-status contract.
 See [KOSIKA_PLAN.md](KOSIKA_PLAN.md) for the reconciled capability matrix,
 verification record, and prioritized K01–K12 backlog.
 
+## Repository layout
+
+| Path | What it holds |
+| --- | --- |
+| `kosika/` | The language: lexer, parser, checker, runtime, and tools |
+| `kosika_lsp/`, `editors/` | Editor support (language server, VS Code extension) |
+| `examples/` | Example `.kos` programs and their fixtures |
+| `benchmarks/` | The write-from-spec benchmark and its results |
+| `tests/` | The test suite |
+| `design/`, `network/`, `ui/`, `hive/`, `desktop/` | Diagram output, network manifests, UI styles, agent notes, and the desktop app scaffold |
+| `archive/` | Historical documents, not used by the code |
+| `TUTORIAL.md`, `AGENT_GUIDE.md`, `KOSIKA.md`, `KOSIKA_PLAN.md` | Tutorial, guide for AI authors, language contract, and plan |
+| `DEVELOPMENT.md`, `WORKBENCH.md`, `KOSIKA_VISION.md` | Developer guide, browser workbench, and long-term vision |
+
 ## Start here
 
 New to Kosika? [TUTORIAL.md](TUTORIAL.md) goes from nothing to a running,
