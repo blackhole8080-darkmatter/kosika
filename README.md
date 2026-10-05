@@ -108,6 +108,32 @@ is an ordinary typed model call underneath, so it is budgeted, traced, and
 replayable, and it still needs the model granted at run time with `--model` or
 `--model-fixture`. See [KOSIKA.md](KOSIKA.md) for the exact rules.
 
+## Shell and file access, approved every time
+
+A program can run a command or touch files only through a declared `system`
+tool, and only when you grant it and approve each call:
+
+```kosika
+tool save_note {
+  source system "files"
+  operation: "write"
+  access: execute
+  input: FileWrite
+  output: FileWritten
+}
+```
+
+```text
+kosika run main.kos --input input.json --allow-folder ./workspace --approve
+```
+
+`--allow-folder` grants one folder to the program's files tools; add
+`--allow-shell` to grant its shell tools too. `--approve` stops before every
+such call, shows the exact tool and arguments, and asks `Approve this one
+action? [y/N]`. Anything but yes stops the run with nothing done for that call.
+With no terminal to ask, the run pauses instead of proceeding. See
+[KOSIKA.md](KOSIKA.md) for the limits that hold even after approval.
+
 ## Use Kosika from an AI assistant (MCP server)
 
 `kosika-mcp` is a Model Context Protocol server. Connected to an assistant such

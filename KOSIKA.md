@@ -397,6 +397,45 @@ MUST bind declared providers and tools explicitly. Bindings for undeclared
 models or tools are rejected, and reachable capabilities are preflighted
 before the first workflow step executes.
 
+### System tools: shell and files
+
+A tool whose source is `system` asks for access to the machine the program
+runs on. It adds no new statement: it is a tool, used with `execute`.
+
+```kosika
+tool run_tests {
+  source system "shell"
+  operation: "python"
+  access: execute
+  input: ShellArguments
+  output: ShellResult
+}
+```
+
+| Source | `operation` | Input record | Output record |
+| --- | --- | --- | --- |
+| `system "shell"` | the one program to start | `{args: Text[]}` | `{exit_code: Number, stdout: Text, stderr: Text}` |
+| `system "files"` | `read` | `{path: Text}` | `{text: Text}` |
+| `system "files"` | `write` | `{path: Text, text: Text}` | `{bytes: Number}` |
+| `system "files"` | `list` | `{path: Text}` | `{names: Text[]}` |
+
+- A system tool MUST declare `access: execute`, and its records MUST have
+  exactly the fields above (`check/invalid-system-tool`). A workflow that
+  executes one therefore MUST state `require approval`.
+- Declaring a system tool grants nothing. The host binds files tools only when
+  it grants a folder, and shell tools only when it also allows shell. An
+  unbound system tool fails the run before its first step.
+- Every call needs its own approval for that exact tool and arguments, through
+  the same session and ledger as any other `execute` tool.
+- A shell tool starts only the program named in `operation`, with `args`
+  passed as a list and never interpreted by a shell, inside the granted
+  folder, for at most 60 seconds, with output cut at 64 KiB per stream.
+- File paths are relative to the granted folder. A path that is absolute,
+  contains `..`, or passes through a symlink is refused. Files are UTF-8 text
+  of at most 1 MiB.
+- This is not an operating-system sandbox. An approved program runs with the
+  authority of the person who approved it.
+
 ### Host component contracts
 
 `kosika.component/v1` is the supported host contract for binding a declared tool

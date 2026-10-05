@@ -58,7 +58,7 @@ RAISE_SOURCES: Mapping[str, str] = {
 #: declaring a new one. Each must justify itself, so a site cannot be hidden
 #: by wrapping it.
 PASS_THROUGH: Mapping[tuple[str, int], str] = {
-    ("kosika/parser.py", 1008): "re-raises a lexer/parser ValueError unchanged",
+    ("kosika/parser.py", 1013): "re-raises a lexer/parser ValueError unchanged",
     ("kosika/modules.py", 297): "re-raises a thinking-step error unchanged",
 }
 

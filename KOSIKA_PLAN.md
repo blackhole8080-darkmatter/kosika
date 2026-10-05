@@ -593,6 +593,28 @@ left out: typed messages between members, state carried from one round to the
 next, and a termination judgment over observed evidence rather than result
 equality. Swarm output must not acquire authority the way model output cannot.
 
+## Phase 5, second slice: shell and files, approved every time (complete)
+
+- `source system "shell"` and `source system "files"` declare system tools
+  (`kosika/system_tools.py`). The checker requires `access: execute` and exact
+  record shapes, so the existing rule forces `require approval` on any
+  workflow that uses one.
+- Three independent gates: the declaration, a host grant (`--allow-folder`,
+  plus `--allow-shell` for shell tools), and an approval for each exact call
+  through the existing session and ledger. No new approval mechanism was added.
+- `kosika run --approve` asks at the terminal before each pending action and
+  resumes from the journal, so approved steps are not repeated. Without a
+  terminal it pauses with exit code 3, as before. Refusal runs nothing.
+- Enforced after approval too: one fixed program per shell tool, arguments as
+  a list with no shell, the granted folder as working directory, a 60 second
+  limit, clipped output; file paths confined to the granted folder with `..`,
+  absolute paths, and symlinks refused; 1 MiB UTF-8 files.
+- 18 tests in `tests/test_system_tools.py`, including path-escape and symlink
+  attempts, refusal at the first and at a later action, and no terminal.
+- Not claimed: this is not an operating-system sandbox, the approver name is a
+  label, an approved shell program can do anything that program can do, and an
+  agent inside `ask` choosing a system tool has not been exercised.
+
 ## Phase 5, first slice: MCP server (complete)
 
 - `kosika.mcp_server` (`kosika-mcp`) serves five tools over stdio JSON-RPC:

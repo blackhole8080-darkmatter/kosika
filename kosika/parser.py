@@ -635,8 +635,13 @@ class Parser:
         while not self.accept("}"):
             key = self.identifier()
             if key == "source":
-                self.expect("mcp")
-                values["source"] = self.string_or_identifier()
+                # `source mcp "name"` is an MCP server; `source system "shell"`
+                # or `"files"` asks for approved access to this machine.
+                if self.accept("system"):
+                    values["source"] = "system:" + self.string_or_identifier()
+                else:
+                    self.expect("mcp")
+                    values["source"] = self.string_or_identifier()
             else:
                 self.expect(":")
                 values[key] = self.string_or_identifier()

@@ -199,6 +199,19 @@ agent forecaster {
 
 Note `source mcp "name"` has no colon. Every other line does.
 
+For the machine itself use `source system "shell"` or `source system "files"`.
+These must be `access: execute` with these exact records:
+
+| Source and operation | Input record fields | Output record fields |
+| --- | --- | --- |
+| `system "shell"`, operation is the program name, e.g. `"python"` | `args: Text[]` | `exit_code: Number`, `stdout: Text`, `stderr: Text` |
+| `system "files"`, operation `"read"` | `path: Text` | `text: Text` |
+| `system "files"`, operation `"write"` | `path: Text`, `text: Text` | `bytes: Number` |
+| `system "files"`, operation `"list"` | `path: Text` | `names: Text[]` |
+
+Paths are relative to a folder the person running the program grants. A human
+approves every call.
+
 ## Workflows
 
 ```kosika

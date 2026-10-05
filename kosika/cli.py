@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import getpass
 import json
 import os
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -117,6 +119,7 @@ from .source_map import (
 from .source_map import to_mermaid as render_source_map_mermaid
 from .source_map import to_text as render_source_map_text
 from .synapse_bridge import normalize_events
+from .system_tools import bind_system_tools
 from .unified_mindmap import (
     UnifiedMindmapError,
     build_unified_mindmap,
@@ -586,6 +589,40 @@ def _failure_line(source: Path) -> str:
         return ""
     start = position["start"]
     return f" (line {start['line'] + 1}, column {start['character'] + 1})"
+
+
+def _ask_approval(
+    request: dict[str, Any], approved_by: str | None
+) -> ApprovalRecord | None:
+    """Show one pending action and ask the person at the terminal about it.
+
+    Returns an approval bound to exactly that action, or None when it is
+    refused or nobody is there to ask. The answer covers this one call with
+    these arguments only; the next action is asked about separately.
+    """
+
+    if not sys.stdin.isatty():
+        return None
+    print(
+        "\nApproval needed before this action runs:\n"
+        f"  step      : {' / '.join(request['step'])}\n"
+        f"  tool      : {request['tool']}\n"
+        f"  arguments : {json.dumps(request['arguments'], ensure_ascii=False)}",
+        file=sys.stderr,
+    )
+    try:
+        answer = input("Approve this one action? [y/N] ")
+    except EOFError:
+        return None
+    if answer.strip().lower() not in ("y", "yes"):
+        print("Refused. Nothing was run.", file=sys.stderr)
+        return None
+    return ApprovalRecord(
+        plan_hash=request["plan_hash"],
+        action_hash=request["action_hash"],
+        approved_by=approved_by or getpass.getuser(),
+        reason="approved at the terminal",
+    )
 
 
 def _missing_model_hint(program: Program, message: str) -> str:
@@ -1663,6 +1700,31 @@ def build_parser() -> argparse.ArgumentParser:
         help="Stable host configuration identity required with --journal",
     )
     run_parser.add_argument("--approval-record", type=Path)
+    run_parser.add_argument(
+        "--allow-folder",
+        type=Path,
+        help=(
+            "Grant the program's system files tools this folder, and run its "
+            "shell tools inside it. Every call still needs approval."
+        ),
+    )
+    run_parser.add_argument(
+        "--allow-shell",
+        action="store_true",
+        help="Also grant the program's system shell tools. Needs --allow-folder.",
+    )
+    run_parser.add_argument(
+        "--approve",
+        action="store_true",
+        help=(
+            "Ask on the terminal before each action that needs approval, "
+            "showing the exact tool and arguments."
+        ),
+    )
+    run_parser.add_argument(
+        "--approved-by",
+        help="Name recorded with approvals given through --approve.",
+    )
     run_parser.add_argument("--max-requests", type=int, default=64)
     run_parser.add_argument("--max-tokens", type=int)
     run_parser.add_argument("--max-output-tokens", type=int, default=1024)
@@ -3102,6 +3164,15 @@ def main() -> int:
                 allowed_capabilities=args.allow_component_capability,
             )
             component_tool_bindings[component_contract.tool_name] = component_binding
+        system_bindings = bind_system_tools(
+            program, folder=args.allow_folder, allow_shell=args.allow_shell
+        )
+        if args.approve and not args.journal:
+            # Approval needs a journal to remember what was approved between
+            # the pause and the resume; an asked-for run keeps one for itself.
+            approve_scratch = tempfile.TemporaryDirectory(prefix="kosika-approve-")
+            args.journal = Path(approve_scratch.name) / "run.sqlite"
+            args.binding_id = args.binding_id or "interactive"
         if bool(args.journal) != bool(args.binding_id) or (
             args.approval_record and not args.journal
         ):
@@ -3123,13 +3194,6 @@ def main() -> int:
                     "Approval record needs plan_hash, action_hash and approved_by strings"
                 )
             approvals.append(ApprovalRecord(**record))
-        session = (
-            ExecutionSession(
-                args.journal, binding_id=args.binding_id, approvals=approvals
-            )
-            if args.journal
-            else None
-        )
         limits = ModelLimits(
             max_requests=args.max_requests,
             max_tokens=args.max_tokens,
@@ -3139,24 +3203,47 @@ def main() -> int:
             name: ControlledProvider(provider, limits)
             for name, provider in _workflow_model_bindings(args, program).items()
         }
-        run_result = run(
-            program,
-            args.workflow,
-            args.trace,
-            mcp_commands=mcp_commands,
-            manifest=run_manifest,
-            inputs=inputs,
-            model_bindings=bindings,
-            tool_bindings=component_tool_bindings or None,
-            session=session,
-            limits=ExecutionLimits(
-                max_function_calls=args.max_function_calls,
-                max_steps=args.max_workflow_steps,
-                max_model_calls=args.max_model_calls,
-                max_tool_calls=args.max_tool_calls,
-                deadline_seconds=args.deadline_seconds,
-            ),
-        )
+        host_tool_bindings = {**component_tool_bindings, **system_bindings}
+        while True:
+            # A fresh session per attempt: after an approval the journal
+            # returns finished steps from its checkpoint and resumes at the
+            # one that was waiting, so nothing already done runs twice.
+            session = (
+                ExecutionSession(
+                    args.journal, binding_id=args.binding_id, approvals=approvals
+                )
+                if args.journal
+                else None
+            )
+            try:
+                run_result = run(
+                    program,
+                    args.workflow,
+                    args.trace,
+                    mcp_commands=mcp_commands,
+                    manifest=run_manifest,
+                    inputs=inputs,
+                    model_bindings=bindings,
+                    tool_bindings=host_tool_bindings or None,
+                    session=session,
+                    limits=ExecutionLimits(
+                        max_function_calls=args.max_function_calls,
+                        max_steps=args.max_workflow_steps,
+                        max_model_calls=args.max_model_calls,
+                        max_tool_calls=args.max_tool_calls,
+                        deadline_seconds=args.deadline_seconds,
+                    ),
+                )
+                break
+            except ApprovalPending as pending:
+                granted = (
+                    _ask_approval(pending.request, args.approved_by)
+                    if args.approve
+                    else None
+                )
+                if granted is None:
+                    raise
+                approvals.append(granted)
         published_events: tuple[dict[str, Any], ...] | None = None
         if args.event_trace is not None:
             published_events = _publish_run_events(args, args.trace)

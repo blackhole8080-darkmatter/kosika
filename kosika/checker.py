@@ -52,6 +52,7 @@ from .function_types import (
     signature,
     unify,
 )
+from .system_tools import declaration_problem
 
 
 class CheckError(ValueError):
@@ -1021,6 +1022,9 @@ def check(program: Program) -> None:
             raise CheckError(
                 f"Tool {tool.name!r} accepts unknown record {tool.input!r}"
             )
+        system_problem = declaration_problem(program, tool)
+        if system_problem is not None:
+            raise CheckError(f"Invalid system tool: {system_problem}")
 
     for agent in program.agents:
         if agent.model is not None and agent.model not in models:
