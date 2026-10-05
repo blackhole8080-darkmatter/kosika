@@ -310,6 +310,45 @@ workflow before execution. A direct `use_model` call sends the input record to
 that provider and accepts only a complete, strict JSON result matching the
 declared output record.
 
+### General models and thinking steps
+
+`model name`, with no body or with only `deployment` and `parameters`, declares
+a general model. Its input is the built-in record `Prompt {text: Text}` and its
+output `Reply {text: Text}`, so `use_model name(text: "...")` asks it directly.
+
+A thinking step is a workflow step that asks a model and binds a typed answer:
+
+```ebnf
+think = "classify"  expression "into" expression [ "using" identifier ]
+      | "extract"   identifier "from" expression [ "using" identifier ]
+      | "summarize" expression                   [ "using" identifier ]
+      | "decide"    expression "given" expression [ "using" identifier ] ;
+```
+
+| Step | Operands | Result record |
+| --- | --- | --- |
+| `classify text into choices` | `Text`, `Text[]` | `Choice {label: Text, confidence: Number}` |
+| `extract Record from text` | a declared record, `Text` | that record |
+| `summarize text` | `Text` | `Summary {text: Text}` |
+| `decide question given text` | `Text`, `Text` | `Decision {answer: Bool, confidence: Number, reason: Text}` |
+
+- `using name` selects a declared model. It MAY be omitted only when the
+  program declares exactly one model.
+- A thinking step is lowered to an ordinary typed model call before checking,
+  against a generated model named `<model>/<verb>` (or
+  `<model>/extract/<Record>`). The generated model uses the host binding,
+  deployment, and parameters of the declared model; it has no binding of its
+  own, so a thinking step grants nothing a `use_model` call would not.
+- Beyond its record shape, a `classify` answer MUST carry a label that is one
+  of the given choices, and `classify` and `decide` answers MUST carry a
+  confidence from 0 through 1. Any other answer fails the run. A confidence is
+  the model's own estimate, not a measured probability.
+- The result records, `Prompt`, and `Reply` are built in and added only to
+  programs that use them. A program MAY declare a record with one of those
+  names only with identical fields.
+- A thinking step is a step, not an expression: it cannot appear inside a `fn`.
+- Budgets, traces, and replay treat a thinking step as one model call.
+
 ## Tools and capabilities
 
 ```kosika

@@ -14,6 +14,7 @@ from .ast import (
     FunctionRefExpr,
     ModelCall,
     Program,
+    ThinkCall,
     ToolCall,
     WorkflowCall,
     expression_function_calls,
@@ -23,6 +24,7 @@ from .builtin_methods import did_you_mean
 from .checker import CheckError, check
 from .function_types import base_type, referenced_types
 from .parser import ParseError, parse
+from .thinking import BUILT_IN_RECORDS, ThinkingError, lower_thinking
 
 CATEGORIES = (
     "records",
@@ -98,7 +100,16 @@ def _references(program: Program) -> set[str]:
             if step.binding_type:
                 names.update(referenced_types(step.binding_type))
             call = step.call
-            for _, argument in call.arguments:
+            if isinstance(call, ThinkCall):
+                # Not yet lowered: its expressions are its subject and extra.
+                call_arguments: tuple = tuple(
+                    ("", item)
+                    for item in (call.subject, call.extra)
+                    if item is not None
+                )
+            else:
+                call_arguments = call.arguments
+            for _, argument in call_arguments:
                 names.update(
                     nested.function_name
                     for nested in expression_function_calls(argument)
@@ -115,6 +126,11 @@ def _references(program: Program) -> set[str]:
                     names.add(call.function_name)
             elif isinstance(call, ModelCall):
                 names.add(call.model_name)
+            elif isinstance(call, ThinkCall):
+                if call.model is not None:
+                    names.add(call.model)
+                if call.record is not None:
+                    names.add(call.record)
             elif isinstance(call, (AgentCall, ToolCall)):
                 names.add(call.agent_name)
                 if isinstance(call, ToolCall):
@@ -206,7 +222,7 @@ def load_program(
         if _diagnostic_context is not None:
             _diagnostic_context.sources[resolved] = source
         try:
-            module = parse(source)
+            module = parse(source, lower_thinking_steps=False)
         except ValueError as exc:
             if (
                 _diagnostic_context is not None
@@ -238,7 +254,8 @@ def load_program(
         ):
             mark_error(resolved)
             raise CheckError(f"{resolved}: exports must name unique local declarations")
-        hidden = _references(module) - local - visible
+        # Built-in records are added when thinking steps are lowered.
+        hidden = _references(module) - local - visible - set(BUILT_IN_RECORDS)
         if hidden:
             mark_error(resolved)
             hint = did_you_mean(
@@ -271,5 +288,12 @@ def load_program(
         return module
 
     load(entry)
+    # Thinking steps are lowered once over the merged program, so a general
+    # model declared in one module serves steps written in another and the
+    # built-in records are added a single time.
+    try:
+        merged = lower_thinking(merged)
+    except ThinkingError as exc:
+        raise CheckError(str(exc)) from exc
     check(merged)
     return merged

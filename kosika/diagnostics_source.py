@@ -51,13 +51,15 @@ RAISE_SOURCES: Mapping[str, str] = {
     "kosika/modules.py": "CheckError",
     "kosika/parser.py": "ParseError",
     "kosika/lexer.py": "LexError",
+    "kosika/thinking.py": "ThinkingError",
 }
 
 #: Raise sites that deliberately forward an existing message rather than
 #: declaring a new one. Each must justify itself, so a site cannot be hidden
 #: by wrapping it.
 PASS_THROUGH: Mapping[tuple[str, int], str] = {
-    ("kosika/parser.py", 963): "re-raises a lexer/parser ValueError unchanged",
+    ("kosika/parser.py", 1008): "re-raises a lexer/parser ValueError unchanged",
+    ("kosika/modules.py", 297): "re-raises a thinking-step error unchanged",
 }
 
 #: Placeholder substituted for an interpolated value when rendering a

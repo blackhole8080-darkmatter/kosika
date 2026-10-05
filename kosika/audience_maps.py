@@ -10,11 +10,11 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Iterable, Mapping
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .ast import Program
+from .ast import Program, program_payload
 from .explain import ExplainError, summarize_trace
 from .lexer import Token, lex
 from .mindmap import build_mindmap
@@ -185,7 +185,7 @@ _CALL_KINDS = {
 
 def _program_hash(program: Program) -> str:
     return hashlib.sha256(
-        json.dumps(asdict(program), sort_keys=True).encode("utf-8")
+        json.dumps(program_payload(program), sort_keys=True).encode("utf-8")
     ).hexdigest()
 
 

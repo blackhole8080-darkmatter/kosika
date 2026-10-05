@@ -83,6 +83,9 @@ CODES: Mapping[str, str] = {
     "check/unknown-function": "A function name is not in scope.",
     "check/unknown-workflow": "A workflow name is not in scope.",
     "check/unknown-model": "An agent references a model that is not declared.",
+    "check/thinking-model-required": "A thinking step has no single model to ask.",
+    "check/thinking-record-clash": "A declared record clashes with a built-in one.",
+    "check/thinking-unknown-record": "A thinking step extracts an undeclared record.",
     "check/shadowed-binding": "A local binding shadows an enclosing binding.",
     "check/assignment-to-immutable": "An assignment targets a binding that is not declared mutable.",
     "check/assignment-to-unknown": "An assignment targets a name that is not in scope.",
@@ -316,6 +319,9 @@ _RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
         re.compile(r"^Unknown workflow|^Recursive workflow call"),
     ),
     ("check/unknown-model", re.compile(r"uses unknown model")),
+    ("check/thinking-model-required", re.compile(r"needs a model for ")),
+    ("check/thinking-record-clash", re.compile(r"is built in as ")),
+    ("check/thinking-unknown-record", re.compile(r"extracts unknown record ")),
     ("check/shadowed-binding", re.compile(r"shadows an enclosing binding")),
     (
         "check/assignment-to-immutable",
@@ -433,7 +439,7 @@ _RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
         re.compile(
             r"is not a function value"
             r"|^Function values are not allowed"
-            r"|^Unlowered nested functions"
+            r"|^Unlowered nested functions|^Unlowered thinking steps"
         ),
     ),
     (

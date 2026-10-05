@@ -539,7 +539,8 @@ def _workflow_model_bindings(
             "A live binding needs --model NAME. Add --model-binding to grant "
             "one declared model, or omit it to grant every declared model."
         )
-    declared = [model.name for model in program.models]
+    # Thinking steps' generated models borrow a declared model's binding.
+    declared = [model.name for model in program.models if model.provider is None]
     if args.model_binding is not None:
         if not args.model_url:
             raise ValueError("--model-binding requires --model and --model-url")

@@ -10,12 +10,12 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from .ast import Program
+from .ast import Program, program_payload
 from .checker import check
 from .events import (
     EVENT_BRIDGE_VERSION,
@@ -284,7 +284,7 @@ def _check_event(
     error: BaseException | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
-        "program_hash": _hash(asdict(program)),
+        "program_hash": _hash(program_payload(program)),
         "workflow": workflow_name,
     }
     if error is not None:

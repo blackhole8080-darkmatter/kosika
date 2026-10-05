@@ -145,6 +145,35 @@ workflow main(question: Question) -> Answer {
 }
 ```
 
+## Thinking steps
+
+For common model tasks, declare a model by name only and use a thinking step.
+Each is one workflow step with a built-in, typed result.
+
+```kosika
+model assistant
+
+workflow main(ticket: Ticket) -> Routing {
+  label   = classify ticket.text into ["billing", "bug", "other"]
+  invoice = extract Invoice from ticket.text
+  brief   = summarize ticket.text
+  refund  = decide "Is this refund within policy?" given ticket.text
+  routing = route(label, refund, brief, invoice)
+}
+```
+
+| Step | Result |
+| --- | --- |
+| `classify text into choices` | `Choice {label: Text, confidence: Number}`; the label is always one of the choices |
+| `extract Record from text` | your own record `Record` |
+| `summarize text` | `Summary {text: Text}` |
+| `decide question given text` | `Decision {answer: Bool, confidence: Number, reason: Text}` |
+
+- Do not declare `Choice`, `Summary`, or `Decision` yourself; they are built in.
+  Use them as parameter types: `fn route(label: Choice, refund: Decision)`.
+- With more than one model, end the step with `using model_name`.
+- Thinking steps go in a workflow only, never inside a `fn`.
+
 ## Tools and agents
 
 A tool is something outside the program. Only an agent that lists the tool in

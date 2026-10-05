@@ -6,11 +6,10 @@ import hashlib
 import json
 import re
 from collections import Counter, deque
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Iterable
 
-from .ast import Program
+from .ast import Program, program_payload
 from .extensions import ExtensionManifest
 from .mindmap import build_mindmap, to_json, to_mermaid
 from .model_steps import strict_json
@@ -24,7 +23,7 @@ class ExplainError(ValueError):
 
 
 def _program_hash(program: Program) -> str:
-    payload = json.dumps(asdict(program), sort_keys=True).encode("utf-8")
+    payload = json.dumps(program_payload(program), sort_keys=True).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
 
 

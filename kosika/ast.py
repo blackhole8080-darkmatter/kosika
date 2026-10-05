@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -361,6 +362,30 @@ class ModelDecl:
     output: str
     deployment: str | None = None
     parameters: ModelParameters = ModelParameters()
+    # Set only on the models generated for thinking steps (`classify`,
+    # `extract`, `summarize`, `decide`). `provider` names the declared model
+    # whose host binding, deployment, and parameters the step uses.
+    provider: str | None = None
+    instruction: str | None = None
+    verb: str | None = None
+
+
+@dataclass(frozen=True)
+class ThinkCall:
+    """A thinking step as written, before it is lowered to a model call.
+
+    ``classify <subject> into <extra>``, ``extract <record> from <subject>``,
+    ``summarize <subject>``, and ``decide <subject> given <extra>``, each with
+    an optional ``using <model>``. `kosika.thinking.lower_thinking` replaces
+    every one with an ordinary :class:`ModelCall`, so nothing after parsing
+    sees this node.
+    """
+
+    verb: str
+    subject: "Expression"
+    extra: "Expression | None" = None
+    record: str | None = None
+    model: str | None = None
 
 
 @dataclass(frozen=True)
@@ -390,6 +415,8 @@ class FunctionCall:
 @dataclass(frozen=True)
 class Step:
     name: str
+    # Between parsing and `lower_thinking` a step may briefly hold a ThinkCall;
+    # every program handed to the checker or runtime holds only these five.
     call: ToolCall | ModelCall | AgentCall | WorkflowCall | FunctionCall
     binding_name: str = "result"
     binding_type: str | None = None
@@ -528,3 +555,39 @@ class Program:
     module_hashes: dict[str, str] = field(default_factory=dict)
     module_declarations: dict[str, tuple[str, ...]] = field(default_factory=dict)
     module_imports: dict[str, tuple[str, ...]] = field(default_factory=dict)
+
+
+#: Fields added to the tree after traces and approvals were first recorded,
+#: with the value each has in a program that does not use the newer feature.
+#: `program_payload` leaves these out, so such a program hashes exactly as it
+#: did before the field existed.
+_ABSENT_DEFAULTS: dict[str, tuple[Any, ...]] = {
+    "order": ((), []),
+    "condition": (None,),
+    "provider": (None,),
+    "instruction": (None,),
+    "verb": (None,),
+}
+
+
+def program_payload(program: Program) -> dict[str, Any]:
+    """The JSON-ready form of a program that every program hash is taken over."""
+
+    def prune(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {
+                key: prune(item)
+                for key, item in value.items()
+                if not (
+                    key in _ABSENT_DEFAULTS
+                    and any(
+                        type(item) is type(default) and item == default
+                        for default in _ABSENT_DEFAULTS[key]
+                    )
+                )
+            }
+        if isinstance(value, (list, tuple)):
+            return [prune(item) for item in value]
+        return value
+
+    return prune(asdict(program))

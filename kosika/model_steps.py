@@ -40,7 +40,9 @@ def call_model(
     frequency_penalty: float | None = None,
     presence_penalty: float | None = None,
     stop: tuple[str, ...] = (),
+    instruction: str | None = None,
 ):
+    task = f" Task: {instruction}" if instruction else ""
     response = provider.complete(
         ModelRequest(
             messages=(
@@ -48,7 +50,8 @@ def call_model(
                     role="system",
                     content="Return only one JSON object matching this JSON Schema. "
                     "Do not invoke tools or include Markdown. Schema: "
-                    + json.dumps(output_schema, sort_keys=True, allow_nan=False),
+                    + json.dumps(output_schema, sort_keys=True, allow_nan=False)
+                    + task,
                 ),
                 ChatMessage(
                     role="user",

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import cast
+
 from .ast import (
     AgentCall,
     AgentDecl,
@@ -34,6 +36,7 @@ from .ast import (
     RepeatExpr,
     Step,
     SwarmDecl,
+    ThinkCall,
     ToolCall,
     ToolDecl,
     TryExpr,
@@ -43,6 +46,8 @@ from .ast import (
     WorkflowDecl,
 )
 from .lexer import Token, lex
+from .thinking import GENERAL_INPUT, GENERAL_OUTPUT
+from .thinking import VERBS as THINKING_VERBS
 
 
 class ParseError(ValueError):
@@ -453,6 +458,9 @@ class Parser:
     def parse_model(self) -> ModelDecl:
         self.expect("model")
         name = self.identifier()
+        if not self.check("{"):
+            # `model assistant`: a general model that takes and returns text.
+            return ModelDecl(name, GENERAL_INPUT, GENERAL_OUTPUT)
         self.expect("{")
         values: dict[str, str] = {}
         deployment: str | None = None
@@ -474,6 +482,9 @@ class Parser:
                 deployment = self.string_or_identifier()
             else:
                 values[key] = self.identifier()
+        if not values:
+            # Only a deployment or parameters: still a general text model.
+            values = {"input": GENERAL_INPUT, "output": GENERAL_OUTPUT}
         if set(values) != {"input", "output"}:
             raise ParseError(f"Model {name!r} requires input and output records")
         return ModelDecl(
@@ -924,10 +935,36 @@ class Parser:
             return_name,
         )
 
+    def parse_think_call(self) -> ThinkCall:
+        """Parse a thinking step: a verb, its subject, and its keyword parts."""
+
+        verb = self.advance().value
+        record: str | None = None
+        extra: Expression | None = None
+        if verb == "extract":
+            record = self.identifier()
+            self.expect("from")
+        subject = self.expression()
+        if verb == "classify":
+            self.expect("into")
+            extra = self.expression()
+        elif verb == "decide":
+            self.expect("given")
+            extra = self.expression()
+        model = self.identifier() if self.accept("using") else None
+        return ThinkCall(verb, subject, extra, record, model)
+
     def parse_step_call(
         self,
     ) -> ToolCall | ModelCall | AgentCall | WorkflowCall | FunctionCall:
         call: ToolCall | ModelCall | AgentCall | WorkflowCall | FunctionCall
+        if (
+            self.current.kind == "IDENT"
+            and self.current.value in THINKING_VERBS
+            and self.peek().value != "("
+        ):
+            # Replaced by a ModelCall in `lower_thinking` before anything reads it.
+            return cast(ModelCall, self.parse_think_call())
         if self.accept("call"):
             workflow_name = self.identifier()
             self.expect("(")
@@ -954,10 +991,18 @@ class Parser:
         return call
 
 
-def parse(source: str) -> Program:
+def parse(source: str, *, lower_thinking_steps: bool = True) -> Program:
+    """Parse one source file.
+
+    Thinking steps are lowered to model calls here unless the caller will
+    lower the whole merged program itself, as the module loader does.
+    """
+
     from .lexical import lower_nested_functions
+    from .thinking import lower_thinking
 
     try:
-        return lower_nested_functions(Parser(lex(source)).parse())
+        program = lower_nested_functions(Parser(lex(source)).parse())
+        return lower_thinking(program) if lower_thinking_steps else program
     except ValueError as exc:
         raise ParseError(str(exc)) from exc

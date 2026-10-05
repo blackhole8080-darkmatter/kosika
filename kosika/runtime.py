@@ -43,6 +43,7 @@ from .ast import (
     VariableExpr,
     WorkflowCall,
     function_body,
+    program_payload,
 )
 from .builtin_methods import call as call_method
 from .builtin_methods import resolve_for_value as resolve_method_for_value
@@ -63,6 +64,7 @@ from .schema import (
     schemas_equal,
     validate,
 )
+from .thinking import check_answer
 from .trace_replay import replay_trace
 
 
@@ -1035,7 +1037,7 @@ def _run_workflow(
     if session is not None and not _scope:
         session.bind(
             {
-                "program": asdict(program),
+                "program": program_payload(program),
                 "workflow": workflow_name,
                 "inputs": environment,
                 "manifest": asdict(manifest) if manifest else None,
@@ -1077,9 +1079,13 @@ def _run_workflow(
                     )
             continue
         if isinstance(step.call, ModelCall):
-            if step.call.model_name not in providers:
+            # A thinking step's generated model uses the binding of the
+            # declared model it names; it has none of its own.
+            asked = models[step.call.model_name]
+            bound_name = asked.provider or asked.name
+            if bound_name not in providers:
                 raise PermissionError(
-                    f"Model {step.call.model_name!r} has no authorized host binding"
+                    f"Model {bound_name!r} has no authorized host binding"
                 )
             continue
         tool = tools[step.call.tool_name]
@@ -1094,7 +1100,7 @@ def _run_workflow(
             workflow=workflow.name,
             trace_version=5,
             program_hash=hashlib.sha256(
-                json.dumps(asdict(program), sort_keys=True).encode()
+                json.dumps(program_payload(program), sort_keys=True).encode()
             ).hexdigest(),
             inputs=environment.copy(),
             output_schema=schema_for_record(program, workflow.output_type),
@@ -1326,9 +1332,10 @@ def _run_workflow(
                 )
             )
             result, response = call_model(
-                providers[model.name],
+                providers[model.provider or model.name],
                 arguments,
                 output_schema,
+                instruction=model.instruction,
                 model=model.deployment,
                 temperature=model.parameters.temperature,
                 max_output_tokens=model.parameters.max_output_tokens,
@@ -1337,6 +1344,7 @@ def _run_workflow(
                 presence_penalty=model.parameters.presence_penalty,
                 stop=model.parameters.stop,
             )
+            check_answer(model, arguments, result)
             events.append(
                 _event("model_return", model=model.name, result=result, **response)
             )

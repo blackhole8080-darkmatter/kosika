@@ -373,7 +373,9 @@ class RegistryCoverageTests(unittest.TestCase):
         # for the wrong reason, so pin the discovery itself.
         self.assertGreater(len(self.sites), 140)
         kinds = {site.kind for site in self.sites}
-        self.assertEqual(kinds, {"CheckError", "ParseError", "LexError"})
+        self.assertEqual(
+            kinds, {"CheckError", "ParseError", "LexError", "ThinkingError"}
+        )
 
     def test_every_raise_site_is_classified(self) -> None:
         missing = unclassified(self.sites, self.templates)

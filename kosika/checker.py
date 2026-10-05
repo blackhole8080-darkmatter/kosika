@@ -28,6 +28,7 @@ from .ast import (
     Program,
     RecordExpr,
     RepeatExpr,
+    ThinkCall,
     ToolCall,
     ToolVarExpr,
     TryExpr,
@@ -730,6 +731,12 @@ def _check_arguments(
 
 
 def check(program: Program) -> None:
+    if any(
+        isinstance(step.call, ThinkCall)
+        for workflow in program.workflows
+        for step in workflow.steps
+    ):
+        raise CheckError("Unlowered thinking steps: use lower_thinking(program)")
     if any(function.nested for function in program.functions):
         raise CheckError(
             "Unlowered nested functions: use lower_nested_functions(program)"

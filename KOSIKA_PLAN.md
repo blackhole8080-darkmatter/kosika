@@ -593,6 +593,41 @@ left out: typed messages between members, state carried from one round to the
 next, and a termination judgment over observed evidence rather than result
 equality. Swarm output must not acquire authority the way model output cannot.
 
+## Phase 4: thinking steps (complete, not yet run on a live model)
+
+- `classify ... into ...`, `extract R from ...`, `summarize ...`, and
+  `decide ... given ...` are workflow steps with built-in typed results
+  (`Choice`, the named record, `Summary`, `Decision`). `model name` declares a
+  general text model.
+- `kosika.thinking.lower_thinking` rewrites each step into an ordinary
+  `ModelCall` against a generated `ModelDecl` whose `provider` names the
+  declared model. The checker, runtime, traces, replay, budgets, mindmap, and
+  bindings therefore needed no second path; only the provider lookup, the
+  system instruction, and an answer check were added to the model-call branch.
+- Guarantees enforced at run time: a `classify` label is one of the choices;
+  `classify` and `decide` confidences are from 0 through 1.
+- The module loader lowers once over the merged program, so a model declared
+  in one file serves steps in another and built-in records are added once.
+- Diagnostics: `check/thinking-model-required`, `check/thinking-record-clash`,
+  `check/thinking-unknown-record`.
+- 21 tests in `tests/test_thinking.py`, all with scripted providers.
+- Not claimed: the four verbs have not been run against a live model. The
+  local Ollama server was not running when this was built. Confidence is the
+  model's self-report. There is no evidence quoting, retry on a bad answer, or
+  memory yet, and `--model` grants one provider to every declared model.
+
+## Program hashes are stable again
+
+- The core-fixes slice claimed that programs written before it kept their
+  hash. That was wrong: the tree was equal, but `FunctionDecl.order` and later
+  `ForExpr.condition` added keys to the `asdict` form every hash is taken
+  over, so hashes of programs with functions or loops changed and older
+  traces stopped matching in `explain` and `audience-map`.
+- `ast.program_payload` now produces the hashed form and leaves out newer
+  fields at their absent value. All seven hash sites use it. Hashes of five
+  examples were compared against the code at commit `fc82697` and are
+  identical.
+
 ## Phase 3: built-in algorithms (complete)
 
 - Scalar arrays: `sort()` (Number and Text), `unique()`, and for `Number[]`

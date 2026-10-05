@@ -12,11 +12,10 @@ from __future__ import annotations
 import hashlib
 import html
 import json
-from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import Any, Mapping, Sequence
 
-from .ast import Program
+from .ast import Program, program_payload
 from .design import DesignError, DesignManifest, validate_design
 from .events import (
     EVENT_BRIDGE_VERSION as BRIDGE_VERSION,
@@ -72,7 +71,7 @@ def _digest(value: Any) -> str:
 def program_hash(program: Program) -> str:
     """Deterministic hash of a checked program for lifecycle telemetry."""
 
-    return _digest(asdict(program))
+    return _digest(program_payload(program))
 
 
 def _safe_name(value: Any) -> str | None:

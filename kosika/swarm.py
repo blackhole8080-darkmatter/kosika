@@ -37,7 +37,7 @@ from dataclasses import asdict, dataclass
 from typing import Any
 
 from .approval_ledger import ApprovalLedgerError
-from .ast import Program
+from .ast import Program, program_payload
 from .checker import check
 from .execution import ExecutionControl, ExecutionLimits
 from .runtime import ExecutionSession, run
@@ -106,7 +106,7 @@ def _canonical(value: Any) -> bytes:
 def program_hash(program: Program) -> str:
     """The same identity a trace records, so a run binds to a checked program."""
 
-    encoded = json.dumps(asdict(program), sort_keys=True).encode()
+    encoded = json.dumps(program_payload(program), sort_keys=True).encode()
     return hashlib.sha256(encoded).hexdigest()
 
 

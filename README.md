@@ -85,6 +85,29 @@ input. A failed attempt is shown what Kosika reported and may try again
 (`--attempts`). Candidates run only with the task's fixtures, in a temporary
 folder. Measured results are recorded in [KOSIKA_PLAN.md](KOSIKA_PLAN.md).
 
+## Thinking steps
+
+Four model tasks are single workflow steps with built-in, typed answers:
+
+```kosika
+model assistant
+
+workflow main(ticket: Ticket) -> Routing {
+  label   = classify ticket.text into ["billing", "bug", "other"]
+  invoice = extract Invoice from ticket.text
+  brief   = summarize ticket.text
+  refund  = decide "Is this refund within policy?" given ticket.text
+  routing = route(label, refund, brief, invoice)
+}
+```
+
+`classify` always returns one of the listed labels with a confidence; `extract`
+fills a record you declared; `decide` returns yes or no, a confidence, and its
+reason. An answer that breaks one of those guarantees fails the run. Each step
+is an ordinary typed model call underneath, so it is budgeted, traced, and
+replayable, and it still needs the model granted at run time with `--model` or
+`--model-fixture`. See [KOSIKA.md](KOSIKA.md) for the exact rules.
+
 ## Python SDK
 
 `kosika.sdk` builds a Kosika program from Python instead of a `.kos` file:
