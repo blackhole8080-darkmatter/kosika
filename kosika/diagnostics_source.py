@@ -57,9 +57,11 @@ RAISE_SOURCES: Mapping[str, str] = {
 #: Raise sites that deliberately forward an existing message rather than
 #: declaring a new one. Each must justify itself, so a site cannot be hidden
 #: by wrapping it.
-PASS_THROUGH: Mapping[tuple[str, int], str] = {
-    ("kosika/parser.py", 1013): "re-raises a lexer/parser ValueError unchanged",
-    ("kosika/modules.py", 297): "re-raises a thinking-step error unchanged",
+#: Keyed by file, not line, so editing a file does not break the pin. Each
+#: listed file may hold exactly one such site.
+PASS_THROUGH: Mapping[str, str] = {
+    "kosika/parser.py": "re-raises a lexer/parser ValueError unchanged",
+    "kosika/modules.py": "re-raises a thinking-step error unchanged",
 }
 
 #: Placeholder substituted for an interpolated value when rendering a
@@ -173,7 +175,7 @@ def _extract(path: Path, relative: str, kind: str) -> list[RaiseSite]:
             continue
         flattened = _flatten(argument)
         if flattened is None:
-            reason = PASS_THROUGH.get((relative, node.lineno))
+            reason = PASS_THROUGH.get(relative)
             sites.append(
                 RaiseSite(
                     path=relative,
@@ -186,7 +188,6 @@ def _extract(path: Path, relative: str, kind: str) -> list[RaiseSite]:
             )
             continue
         text, holes = flattened
-        declared = PASS_THROUGH.get((relative, node.lineno))
         sites.append(
             RaiseSite(
                 path=relative,
@@ -194,7 +195,7 @@ def _extract(path: Path, relative: str, kind: str) -> list[RaiseSite]:
                 kind=kind,
                 text=text,
                 holes=tuple(holes),
-                reason=declared,
+                reason=None,
             )
         )
     return sorted(sites, key=lambda site: site.line)

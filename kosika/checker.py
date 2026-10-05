@@ -52,6 +52,7 @@ from .function_types import (
     signature,
     unify,
 )
+from .sugar import resolve_unnamed
 from .system_tools import declaration_problem
 
 
@@ -338,7 +339,13 @@ def _expression_type(
                     f"got {condition_type!r}"
                 )
         body_type = _expression_type(
-            expression.body, item_bindings, program, step_name=step_name
+            expression.body,
+            item_bindings,
+            program,
+            step_name=step_name,
+            expected_type=expected_type[:-2]
+            if expected_type is not None and expected_type.endswith("[]")
+            else None,
         )
         return "Null[]" if body_type == NEVER else f"{body_type}[]"
     if isinstance(expression, TryExpr):
@@ -380,7 +387,8 @@ def _expression_type(
         except MethodError as exc:
             raise CheckError(f"Step {step_name!r} unknown method: {exc}") from exc
         expected = dict(method_parameter_types(method, receiver_type))
-        supplied = [name for name, _ in expression.arguments]
+        method_arguments = resolve_unnamed(expression.arguments, list(expected))
+        supplied = [name for name, _ in method_arguments]
         if sorted(supplied) != sorted(expected):
             wanted = ", ".join(
                 f"{name}: {'Text' if kind.startswith('$field') else kind}"
@@ -391,7 +399,7 @@ def _expression_type(
                 f"Step {step_name!r} method {expression.method!r} takes "
                 f"({wanted}), got ({', '.join(supplied)}).{hint}"
             )
-        for name, argument in expression.arguments:
+        for name, argument in method_arguments:
             if expected[name].startswith("$field"):
                 _check_field_argument(
                     program,
@@ -704,6 +712,8 @@ def _check_arguments(
         else ({} if tool_input is None else _record_fields(program, tool_input))
     )
     provided = set(argument_names)
+    if "" in provided:
+        raise CheckError(f"Step {step_name!r} argument needs a name; write name: value")
     unknown = provided - set(expected)
     if unknown:
         raise CheckError(

@@ -248,6 +248,20 @@ METHODS: tuple[Method, ...] = (
     ),
     Method("Text", "slice", (("start", "Number"), ("end", "Number")), "Text", _slice),
     Method("Number", "to_text", (), "Text", lambda value: format_number(value)),
+    Method(
+        "Number",
+        "min",
+        (("other", "Number"),),
+        "Number",
+        lambda a, b: b if b < a else a,
+    ),
+    Method(
+        "Number",
+        "max",
+        (("other", "Number"),),
+        "Number",
+        lambda a, b: b if b > a else a,
+    ),
     Method("Text", "to_number", (), "Number?", _to_number),
     Method(
         ANY_ARRAY, "first", (), ELEMENT + "?", lambda items: items[0] if items else None

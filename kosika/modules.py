@@ -24,6 +24,7 @@ from .builtin_methods import did_you_mean
 from .checker import CheckError, check
 from .function_types import base_type, referenced_types
 from .parser import ParseError, parse
+from .sugar import lower_sugar
 from .thinking import BUILT_IN_RECORDS, ThinkingError, lower_thinking
 
 CATEGORIES = (
@@ -292,7 +293,7 @@ def load_program(
     # model declared in one module serves steps written in another and the
     # built-in records are added a single time.
     try:
-        merged = lower_thinking(merged)
+        merged = lower_sugar(lower_thinking(merged))
     except ThinkingError as exc:
         raise CheckError(str(exc)) from exc
     check(merged)

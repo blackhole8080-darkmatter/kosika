@@ -593,6 +593,38 @@ left out: typed messages between members, state carried from one round to the
 next, and a termination judgment over observed evidence rather than result
 equality. Swarm output must not acquire authority the way model output cannot.
 
+## Closing the size gap (second measurement)
+
+- Changes, each a short form rewritten to the full language before checking
+  (`kosika/sugar.py`), so the checker and runtime are unchanged:
+  1. A call's single argument may be unnamed: `double(n + 1)`,
+     `use_model assistant("hi")`, `words.join("-")`, `stock.get("pen").or(0)`.
+     It binds to the callee's only parameter. Function, model, agent, tool,
+     and workflow calls are named by `name_sole_arguments`; built-in methods
+     in the checker, which knows the receiver type.
+  2. `fn main` with record parameters and a record result is an entry point:
+     the one-step `workflow main` is added when the program has none.
+  3. A `for` body may be a record literal when the loop's array type is known.
+  4. `a.min(b)` and `a.max(b)` on two Numbers.
+- A same-named variable argument (`show(input)`) lowers to exactly the tree it
+  did before, so those programs keep their hash; a test pins this.
+- Changed behaviour: `f(x)` where `f` has one parameter with a different name
+  used to be an "unknown argument" error and is now accepted, with a type
+  error if the value does not fit.
+- **Re-measured** after rewriting the Kosika solutions: Kosika 84 lines (was
+  103), plain Python 81, checked Python 108 plus 35 helper lines. Data tasks:
+  Kosika 50 (was 69), plain 38, checked 47. Model tasks unchanged at 34, 43,
+  and 61. Tokens: Kosika 817 (was 955), plain 633, checked 899 plus 286.
+  Bad cases refused are unchanged: 20, 9, and 20 of 20.
+- Honest reading: Kosika now matches plain Python in lines overall but is
+  still about 30 percent longer on data tasks and 30 percent heavier in
+  tokens. What remains is mostly record declarations, which are also what
+  makes the checking possible. The Python solutions were not re-tuned; the
+  author wrote both sides, so treat the numbers as indicative.
+- The diagnostics raise-site pin is now keyed by file rather than line, since
+  it broke on six unrelated edits.
+- 15 tests in `tests/test_sugar.py`.
+
 ## Phase 6: comparison with Python (first measurement)
 
 - `benchmarks/compare` holds six tasks, each with `solution.kos`, `plain.py`

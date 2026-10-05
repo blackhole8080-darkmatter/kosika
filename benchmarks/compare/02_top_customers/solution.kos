@@ -3,23 +3,14 @@ record Orders { orders: Order[] }
 record Spend { customer: Text total: Number }
 record Top { names: Text[] best_total: Number }
 
-fn spend(customer: Text, orders: Order[]) -> Spend {
-  return {customer: customer, total: orders.sum_by(field: "total")}
-}
-
-fn top(input: Orders) -> Top {
-  let groups = input.orders.group_by(field: "customer")
+fn main(input: Orders) -> Top {
+  let groups = input.orders.group_by("customer")
   let spends: Spend[] = for name in groups.keys() {
-    spend(customer: name, orders: groups.get(key: name).or(default: []))
+    {customer: name, total: groups.get(name).or([]).sum_by("total")}
   }
-  let ranked = spends.sort_by(field: "total").reverse()
-  let keep = if ranked.length() < 3 { ranked.length() } else { 3 }
+  let ranked = spends.sort_by("total").reverse()
   return {
-    names: for item in ranked.slice(start: 0, end: keep) { item.customer },
+    names: for item in ranked.slice(start: 0, end: ranked.length().min(3)) { item.customer },
     best_total: ranked.first().value().total
   }
-}
-
-workflow main(input: Orders) -> Top {
-  result = top(input)
 }

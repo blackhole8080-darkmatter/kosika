@@ -1,7 +1,7 @@
 record Raw { values: Text[] }
 record Stats { count: Number invalid: Number average: Number? largest: Number? }
 
-fn stats(raw: Raw) -> Stats {
+fn main(raw: Raw) -> Stats {
   let numbers: Number[] = for value in raw.values
     where value.to_number().exists() { value.to_number().value() }
   return {
@@ -10,8 +10,4 @@ fn stats(raw: Raw) -> Stats {
     average: numbers.average(),
     largest: numbers.max()
   }
-}
-
-workflow main(raw: Raw) -> Stats {
-  result = stats(raw)
 }

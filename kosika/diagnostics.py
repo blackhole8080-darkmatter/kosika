@@ -63,6 +63,7 @@ CODES: Mapping[str, str] = {
     "parse/expected-token": "A required token was not present.",
     "parse/expected-identifier": "A declaration or binding required an identifier.",
     "parse/unnamed-argument": "A call argument needs a name.",
+    "check/unnamed-argument": "A call's single argument cannot be named for it.",
     "parse/invalid-type": "A type is written with an invalid suffix.",
     "parse/empty-block": "A braced block declared neither a statement nor a result.",
     "parse/invalid-declaration": "A declaration was malformed.",
@@ -273,6 +274,7 @@ _RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     # Local module loading. These rules run before checker fallbacks because a
     # module error may include quoted declarations that look like type prose.
     ("parse/unnamed-argument", re.compile(r"^Argument at .* needs a name")),
+    ("check/unnamed-argument", re.compile(r"argument needs a name; write name")),
     ("parse/invalid-type", re.compile(r"^A type is optional once")),
     ("module/outside-root", re.compile(r"Import outside the granted .* module root")),
     ("module/cycle", re.compile(r"^Import cycle at ")),

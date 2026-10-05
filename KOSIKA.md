@@ -219,6 +219,7 @@ the receiver's type, and every method is pure and deterministic.
 | any array | `append(item: T)`, `concat(other: T[])`, `reverse()`, `slice(start: Number, end: Number)` | a new array of the same type; the receiver is never changed. A result over 4,096 elements fails the run |
 | `Text` | `slice(start: Number, end: Number)` | `Text` from position `start` up to, not including, `end` |
 | `Number` | `to_text()` | `Text`, formatted as in `Text + Number` |
+| `Number` | `min(other: Number)`, `max(other: Number)` | the smaller or larger of the two |
 | `Text` | `to_number()` | `Number?`: the decimal number the trimmed text spells, else `null` |
 | any array | `first()`, `last()` | `T?`, `null` for an empty array |
 | `Number[]`, `Text[]` | `sort()` | a new array in ascending order; Text sorts by character code |
@@ -266,6 +267,9 @@ repeat 8 times { expression }
 - `for item in values where condition { expression }` skips elements whose
   `Bool` condition is false, so one loop both filters and maps. The limit still
   counts every element of the input array.
+- When the loop's array type is known from context, the body is typed as its
+  element, so it may be a record literal:
+  `let rows: Row[] = for w in words { {name: w} }`.
 - `for` is a functional map over an array and returns the collected body
   results. Its `limit` is an integer from 1 through 512 and defaults to 128.
   Execution fails before the first iteration if the input array exceeds that
@@ -498,6 +502,16 @@ call = identifier "(" named-arguments ")"                 (* function *)
   `f(order: order)` and `f(question.text)` is `f(text: question.text)`. Any
   other expression MUST be named (`parse/unnamed-argument`). The short form
   applies to every call, including methods.
+- A call with exactly one argument MAY leave its name out, whatever the
+  expression: `double(n + 1)`, `use_model assistant("hi")`,
+  `words.join("-")`. It binds to the callee's only parameter. If the callee
+  has more or fewer than one parameter, or is a function value whose
+  parameters are not known where the call is written, the bare-variable rule
+  above applies, and any other expression is rejected
+  (`check/unnamed-argument`).
+- A program with `fn main` and no `workflow main` is given the workflow
+  `workflow main(<same parameters>) -> <same result> { result = main(...) }`,
+  provided every parameter and the result are records.
 - Workflow parameters and outputs MUST be record types.
 - A workflow contains at least one uniquely named step.
 - Steps execute sequentially. Each step binds exactly one result and returns

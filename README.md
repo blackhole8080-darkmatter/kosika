@@ -116,18 +116,20 @@ All three return the same answers. Measured on these six tasks:
 
 | | Kosika | Python, plain | Python, checked |
 | --- | --- | --- | --- |
-| Lines of code, all six tasks | 103 | 81 | 108, plus 35 shared helper lines |
-| Lines, four data tasks | 69 | 38 | 47 |
+| Lines of code, all six tasks | 84 | 81 | 108, plus 35 shared helper lines |
+| Lines, four data tasks | 50 | 38 | 47 |
 | Lines, two model tasks | 34 | 43 | 61 |
+| Tokens, all six tasks | 817 | 633 | 899, plus 286 in helpers |
 | Bad-data cases refused, of 20 | 20 | 9 | 20 |
 
-Kosika is longer than plain Python for ordinary data handling, and shorter
-once a model is involved. Its advantage is not size: it refuses every bad case
-without extra code, where plain Python silently accepted 11 of 20, such as a
-label the model invented or `true` where a number belongs. The bad cases were
-chosen by the author of the comparison, so read that column as "what Kosika
-checks for free", not as an unbiased error rate. Details and limits are in
-[KOSIKA_PLAN.md](KOSIKA_PLAN.md).
+Kosika is about the size of plain Python overall: somewhat longer for
+ordinary data handling, shorter once a model is involved. It still uses more
+tokens than plain Python, mostly for record declarations. Its advantage is
+not size: it refuses every bad case without extra code, where plain Python
+silently accepted 11 of 20, such as a label the model invented or `true` where
+a number belongs. The bad cases were chosen by the author of the comparison,
+so read that row as "what Kosika checks for free", not as an unbiased error
+rate. Details and limits are in [KOSIKA_PLAN.md](KOSIKA_PLAN.md).
 
 ## Shell and file access, approved every time
 

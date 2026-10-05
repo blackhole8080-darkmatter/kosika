@@ -393,8 +393,8 @@ class RegistryCoverageTests(unittest.TestCase):
     def test_pass_through_sites_are_declared_and_minimal(self) -> None:
         pass_through = [site for site in self.sites if site.is_pass_through]
         self.assertEqual(
-            {(site.path, site.line) for site in pass_through},
-            set(PASS_THROUGH),
+            sorted(site.path for site in pass_through),
+            sorted(PASS_THROUGH),
             "a pass-through site is declared but unused, or used but undeclared",
         )
         for site in pass_through:

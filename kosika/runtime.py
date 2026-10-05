@@ -64,6 +64,7 @@ from .schema import (
     schemas_equal,
     validate,
 )
+from .sugar import resolve_unnamed
 from .thinking import check_answer
 from .trace_replay import replay_trace
 
@@ -356,6 +357,7 @@ def _evaluate_expression(
             function_events,
             depth=depth,
         )
+        method = resolve_method_for_value(receiver, expression.method)
         method_arguments = {
             name: _evaluate_expression(
                 argument,
@@ -365,13 +367,11 @@ def _evaluate_expression(
                 function_events,
                 depth=depth,
             )
-            for name, argument in expression.arguments
+            for name, argument in resolve_unnamed(
+                expression.arguments, [name for name, _ in method.parameters]
+            )
         }
-        return call_method(
-            resolve_method_for_value(receiver, expression.method),
-            receiver,
-            method_arguments,
-        )
+        return call_method(method, receiver, method_arguments)
     if isinstance(expression, UnaryExpr):
         operand = _evaluate_expression(
             expression.operand,

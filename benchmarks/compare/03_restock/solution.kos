@@ -2,19 +2,12 @@ record Delivery { item: Text amount: Number }
 record Request { stock: Number{} deliveries: Delivery[] threshold: Number }
 record Shelf { stock: Number{} low: Text[] }
 
-fn restock(request: Request) -> Shelf {
+fn main(request: Request) -> Shelf {
   var stock = request.stock
   for delivery in request.deliveries {
-    stock = stock.set(
-      key: delivery.item,
-      value: stock.get(key: delivery.item).or(default: 0) + delivery.amount
-    )
+    stock = stock.set(key: delivery.item, value: stock.get(delivery.item).or(0) + delivery.amount)
   }
   let low: Text[] = for name in stock.keys()
-    where stock.get(key: name).or(default: 0) < request.threshold { name }
+    where stock.get(name).or(0) < request.threshold { name }
   return {stock: stock, low: low.sort()}
-}
-
-workflow main(request: Request) -> Shelf {
-  result = restock(request)
 }

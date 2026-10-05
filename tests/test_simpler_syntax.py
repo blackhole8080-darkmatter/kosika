@@ -136,12 +136,20 @@ workflow main(question: Question) -> Report {
         )
 
     def test_a_short_argument_must_match_a_parameter(self) -> None:
+        # A call's only argument binds to the callee's only parameter, so a
+        # wrong value is a type error rather than an unknown name.
         wrong = SHORT.replace("describe(answer)", "describe(question)")
-        self.assertIn("unknown tool arguments ['question']", error_of(wrong))
+        self.assertIn(
+            "argument 'answer' expects 'Answer', got 'Question'", error_of(wrong)
+        )
 
-    def test_an_expression_argument_needs_a_name(self) -> None:
-        message = error_of(SHORT.replace("describe(answer)", "describe(1 + 2)"))
-        self.assertIn("needs a name; write name: value", message)
+    def test_several_unnamed_expressions_need_names(self) -> None:
+        source = DECLARATIONS + (
+            "fn pair(a: Number, b: Number) -> Report {\n"
+            '  return {text: "x", length: a + b}\n}\n'
+            "workflow main() -> Report { report = pair(1 + 2, 3) }\n"
+        )
+        self.assertIn("needs a name; write name: value", error_of(source))
 
     def test_a_one_line_step_cannot_reuse_a_name(self) -> None:
         duplicate = SHORT.replace(

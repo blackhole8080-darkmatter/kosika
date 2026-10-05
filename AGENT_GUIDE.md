@@ -7,7 +7,8 @@ language. Do not use Python, JavaScript, or Rust syntax.
 
 A program is a list of declarations in any order: `record`, `fn`, `model`,
 `tool`, `agent`, `workflow`, `swarm`. No semicolons. `//` starts a comment.
-The entry point is `workflow main`.
+The entry point is `workflow main`. A program that only computes can use
+`fn main(input: In) -> Out` instead and needs no workflow.
 
 ```kosika
 record Person { name: Text }
@@ -52,11 +53,11 @@ fn total(numbers: Numbers) -> Total {
 ```
 
 - A function is pure: it cannot call a model, tool, agent, or workflow.
-- **Arguments are named**: `greet(person: p)`. The short form `greet(person)`
-  is allowed only when the value is a variable or field with the same name as
-  the parameter: `greet(person)` means `greet(person: person)` and
-  `ask_about(question.text)` means `ask_about(text: question.text)`. Any other
-  value needs its name: `area(width: 2 + 1)`.
+- **Arguments are named**: `area(width: 2, height: 3)`. Two short forms:
+  a call with exactly one argument needs no name (`double(n + 1)`,
+  `words.join("-")`, `stock.get("pen").or(0)`), and a variable or field with
+  the same name as the parameter needs none (`route(label, refund)`,
+  `ask_about(question.text)`).
 - The body is `let`/`var` declarations and statements, run in the order they
   are written, then exactly one `return expression` as the last line. There is
   no early return.
@@ -72,7 +73,7 @@ fn total(numbers: Numbers) -> Total {
 | --- | --- |
 | `Text` | `length()`, `upper()`, `lower()`, `trim()`, `contains(part: t)`, `starts_with(prefix: t)`, `ends_with(suffix: t)`, `split(separator: t)`, `slice(start: a, end: b)` |
 | any array | `length()`, `append(item: x)`, `concat(other: xs)`, `reverse()`, `slice(start: a, end: b)`; `contains(item: x)` for arrays of Text, Number, or Bool |
-| `Number` | `floor()`, `ceil()`, `round()`, `to_text()` |
+| `Number` | `floor()`, `ceil()`, `round()`, `to_text()`, `min(n)`, `max(n)` |
 | `Number[]` | `sum()`, `sort()`; `min()`, `max()`, `average()` give `Number?` |
 | `Text[]` | `sort()`, `join(separator: t)` |
 | scalar arrays | `unique()` |

@@ -57,12 +57,12 @@ class ComparisonTests(unittest.TestCase):
     def test_the_recorded_numbers_match_the_documents(self) -> None:
         totals = self.report["totals"]
         self.assertEqual(
-            [totals[variant]["lines"] for variant in VARIANTS], [103, 81, 108]
+            [totals[variant]["lines"] for variant in VARIANTS], [84, 81, 108]
         )
         self.assertEqual(totals["plain"]["caught"], 9)
         self.assertEqual(self.report["python_helpers"]["lines"], 35)
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
-        self.assertIn("| Lines of code, all six tasks | 103 | 81 | 108", readme)
+        self.assertIn("| Lines of code, all six tasks | 84 | 81 | 108", readme)
 
     def test_kosika_is_not_claimed_shorter_where_it_is_not(self) -> None:
         data = [task for task in self.report["tasks"] if not task["uses_model"]]

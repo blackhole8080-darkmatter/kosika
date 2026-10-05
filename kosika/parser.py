@@ -46,6 +46,7 @@ from .ast import (
     WorkflowDecl,
 )
 from .lexer import Token, lex
+from .sugar import inferred_name
 from .thinking import GENERAL_INPUT, GENERAL_OUTPUT
 from .thinking import VERBS as THINKING_VERBS
 
@@ -878,6 +879,7 @@ class Parser:
         self,
     ) -> tuple[tuple[str, Expression], ...]:
         arguments: list[tuple[str, Expression]] = []
+        unnamed: list[tuple[Token, Expression]] = []
         if self.accept(")"):
             return ()
         while True:
@@ -887,26 +889,33 @@ class Parser:
                 self.expect(":")
                 arguments.append((name, self.expression()))
             else:
-                # Short form: `f(order)` means `f(order: order)` and
-                # `f(question.text)` means `f(text: question.text)`. The name
-                # is read off the expression, so nothing is guessed, and the
-                # checker still rejects it if no such parameter exists.
+                # Short form. Several unnamed arguments each take their name
+                # from the expression: `f(order, question.text)` means
+                # `f(order: order, text: question.text)`. A call's only
+                # argument may be any expression; its empty name is filled in
+                # from the callee's single parameter by `kosika.sugar`.
                 start = self.current
                 value = self.expression()
-                if isinstance(value, VariableExpr):
-                    name = value.name
-                elif isinstance(value, FieldExpr):
-                    name = value.field_name
-                else:
+                unnamed.append((start, value))
+                arguments.append(("", value))
+            if self.accept(")"):
+                break
+            self.expect(",")
+        if len(arguments) == 1:
+            return tuple(arguments)
+        named: list[tuple[str, Expression]] = []
+        for name, value in arguments:
+            if name == "":
+                inferred = inferred_name(value)
+                if inferred is None:
+                    start = next(token for token, item in unnamed if item is value)
                     raise ParseError(
                         f"Argument at {start.line}:{start.column} needs a name; "
                         "write name: value"
                     )
-                arguments.append((name, value))
-            if self.accept(")"):
-                break
-            self.expect(",")
-        return tuple(arguments)
+                name = inferred
+            named.append((name, value))
+        return tuple(named)
 
     def parse_short_step(self) -> Step:
         """Parse `name = call`, the one-line form of a step.
@@ -1004,10 +1013,11 @@ def parse(source: str, *, lower_thinking_steps: bool = True) -> Program:
     """
 
     from .lexical import lower_nested_functions
+    from .sugar import lower_sugar
     from .thinking import lower_thinking
 
     try:
         program = lower_nested_functions(Parser(lex(source)).parse())
-        return lower_thinking(program) if lower_thinking_steps else program
+        return lower_sugar(lower_thinking(program)) if lower_thinking_steps else program
     except ValueError as exc:
         raise ParseError(str(exc)) from exc
