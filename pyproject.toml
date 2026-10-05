@@ -15,9 +15,6 @@ dependencies = [
     "tree-sitter-rust>=0.24,<0.25",
 ]
 
-[project.optional-dependencies]
-cloud-demo = ["Flask>=3,<4"]
-
 # The repository root holds many sibling directories (desktop, ui, examples,
 # tests, ...), so setuptools flat-layout auto-discovery is ambiguous. Declare
 # the importable packages explicitly.

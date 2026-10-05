@@ -593,6 +593,15 @@ left out: typed messages between members, state carried from one round to the
 next, and a termination judgment over observed evidence rather than result
 equality. Swarm output must not acquire authority the way model output cannot.
 
+## Prototype modules removed
+
+- Removed seven modules that were never part of the language: `cloud.py`,
+  `cloud_server.py`, `cli_cloud.py`, `meta_agent.py`,
+  `integration_adapters.py`, `backend.py`, and `optimizer.py` (about 2,950
+  lines), along with their tests and the `cloud-demo` optional dependency.
+  Nothing in the parser, checker, runtime, or CLI imported them. The design
+  notes that described them are in `archive/`, and git history keeps the code.
+
 ## Phase 2, second slice: optional values and maps (complete)
 
 - **`T?`** is a `T` or `null`. Assignability widens one way only (`T` and
