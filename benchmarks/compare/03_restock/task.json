@@ -1,0 +1,78 @@
+{
+  "about": "Update a dictionary and report what is running low.",
+  "inputs": {
+    "request": {
+      "stock": {
+        "pen": 5,
+        "lamp": 1,
+        "ink": 0
+      },
+      "deliveries": [
+        {
+          "item": "ink",
+          "amount": 2
+        },
+        {
+          "item": "tape",
+          "amount": 9
+        }
+      ],
+      "threshold": 3
+    }
+  },
+  "expected": {
+    "stock": {
+      "pen": 5,
+      "lamp": 1,
+      "ink": 2,
+      "tape": 9
+    },
+    "low": [
+      "ink",
+      "lamp"
+    ]
+  },
+  "bad": [
+    {
+      "label": "a stock level is true instead of a number",
+      "inputs": {
+        "request": {
+          "stock": {
+            "pen": true
+          },
+          "deliveries": [],
+          "threshold": 3
+        }
+      }
+    },
+    {
+      "label": "a delivery amount is text",
+      "inputs": {
+        "request": {
+          "stock": {
+            "pen": 1
+          },
+          "deliveries": [
+            {
+              "item": "pen",
+              "amount": "2"
+            }
+          ],
+          "threshold": 3
+        }
+      }
+    },
+    {
+      "label": "the threshold is missing",
+      "inputs": {
+        "request": {
+          "stock": {
+            "pen": 1
+          },
+          "deliveries": []
+        }
+      }
+    }
+  ],
+  "model_answers": []
+}

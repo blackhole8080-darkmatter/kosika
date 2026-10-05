@@ -1501,6 +1501,15 @@ def build_parser() -> argparse.ArgumentParser:
     spec_eval_parser.add_argument("--format", choices=("json", "text"), default="text")
     spec_eval_parser.add_argument("--output", type=Path)
 
+    compare_parser = subparsers.add_parser(
+        "compare-python",
+        help="Compare Kosika with Python on the tasks in benchmarks/compare.",
+    )
+    compare_parser.add_argument(
+        "--tasks", type=Path, default=Path("benchmarks/compare")
+    )
+    compare_parser.add_argument("--format", choices=("json", "text"), default="text")
+
     swarm_parser = subparsers.add_parser(
         "swarm",
         help="Show a swarm's plan hash, or run it under one approval.",
@@ -2341,6 +2350,22 @@ def main() -> int:
             args.output.write_text(spec_json + "\n", encoding="utf-8")
         print(spec_json if args.format == "json" else spec_to_text(spec_report))
         return 0 if spec_report["passed"] == spec_report["tasks"] else 1
+
+    if args.command == "compare-python":
+        from .comparison import ComparisonError, compare
+        from .comparison import to_text as comparison_to_text
+
+        try:
+            comparison = compare(args.tasks)
+        except (ComparisonError, OSError) as exc:
+            print(f"Comparison failed safely: {exc}", file=sys.stderr)
+            return 2
+        print(
+            json.dumps(comparison, indent=2, sort_keys=True)
+            if args.format == "json"
+            else comparison_to_text(comparison)
+        )
+        return 0
 
     if args.command == "swarm":
         from .approval_ledger import ApprovalLedger

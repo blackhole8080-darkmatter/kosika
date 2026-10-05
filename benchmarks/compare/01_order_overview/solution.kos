@@ -1,0 +1,16 @@
+record Order { customer: Text items: Text total: Number }
+record Overview { greeting: Text item_count: Number size: Text odd_total: Bool }
+
+fn overview(order: Order) -> Overview {
+  let count = order.items.split(separator: ",").length()
+  return {
+    greeting: "Hello, " + order.customer.trim().upper() + "!",
+    item_count: count,
+    size: if count >= 5 { "large" } else if count >= 2 { "medium" } else { "small" },
+    odd_total: order.total % 2 == 1
+  }
+}
+
+workflow main(order: Order) -> Overview {
+  result = overview(order)
+}

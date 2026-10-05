@@ -1,0 +1,53 @@
+{
+  "about": "Read numbers out of text, skipping what is not a number.",
+  "inputs": {
+    "raw": {
+      "values": [
+        "3",
+        "4.5",
+        "abc",
+        "",
+        " 7 "
+      ]
+    }
+  },
+  "expected": {
+    "count": 3,
+    "invalid": 2,
+    "average": 4.833333333333333,
+    "largest": 7
+  },
+  "bad": [
+    {
+      "label": "a value is a number instead of text",
+      "inputs": {
+        "raw": {
+          "values": [
+            "3",
+            4
+          ]
+        }
+      }
+    },
+    {
+      "label": "values is one text instead of a list",
+      "inputs": {
+        "raw": {
+          "values": "3,4"
+        }
+      }
+    },
+    {
+      "label": "a value is null",
+      "inputs": {
+        "raw": {
+          "values": [
+            "3",
+            null
+          ]
+        }
+      }
+    }
+  ],
+  "model_answers": []
+}

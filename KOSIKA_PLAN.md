@@ -593,6 +593,37 @@ left out: typed messages between members, state carried from one round to the
 next, and a termination judgment over observed evidence rather than result
 equality. Swarm output must not acquire authority the way model output cannot.
 
+## Phase 6: comparison with Python (first measurement)
+
+- `benchmarks/compare` holds six tasks, each with `solution.kos`, `plain.py`
+  (the short Python most people write first), and `checked.py` (Python that
+  also rejects wrongly shaped inputs and model answers, using a shared
+  `pyhelpers.py`). `kosika.comparison` proves all three return the same result
+  for the same inputs and scripted model answers, then runs 20 bad-data cases.
+  `kosika compare-python` prints the table.
+- **Measured:** lines of code are Kosika 103, plain Python 81, checked Python
+  108 plus 35 helper lines. Tokens are 955, 633, and 899 plus 286. On the four
+  data tasks Kosika is longer (69 lines against 38 plain and 47 checked). On
+  the two model tasks it is shorter (34 against 43 and 61). Bad cases refused:
+  Kosika 20 of 20, plain Python 9 of 20, checked Python 20 of 20.
+- What this supports: Kosika gives the checked behaviour at roughly the size
+  of unchecked Python, and is clearly smaller where a model is called.
+- What it does not support: "more concise than Python" in general. For plain
+  data work Kosika is about 1.8 times the lines of plain Python. The bad cases
+  were chosen by the author to be ones Kosika's types cover, six tasks is a
+  small sample, a library such as pydantic would shrink checked Python, and
+  the comparison ignores traces, replay, budgets, and approvals, which the
+  Python versions simply do not have. No model wrote any of these solutions.
+- Why Kosika was longer on data tasks, each a candidate fix: every value needs
+  a declared record; a one-function program still needs a workflow wrapper; a
+  record literal cannot appear in a `for` body, forcing a helper function;
+  there is no two-argument `min` or `max`; named arguments repeat names; and
+  an optional needs `.exists()` then `.value()` because there is no narrowing.
+- 8 tests in `tests/test_comparison.py`.
+- Not done: the AI-authoring half of the proof (how often a model writes each
+  version correctly). It needs a live model and runs model-written Python on
+  this machine, so it waits for an explicit decision.
+
 ## Phase 5, second slice: shell and files, approved every time (complete)
 
 - `source system "shell"` and `source system "files"` declare system tools

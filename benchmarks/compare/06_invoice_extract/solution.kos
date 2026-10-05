@@ -1,0 +1,22 @@
+record Email { text: Text }
+record Line { item: Text amount: Number }
+record Invoice { customer: Text lines: Line[] stated_total: Number }
+record Audit { customer: Text total: Number matches: Bool largest: Text }
+
+model assistant
+
+fn audit(invoice: Invoice) -> Audit {
+  let total = invoice.lines.sum_by(field: "amount")
+  let biggest = invoice.lines.max_by(field: "amount")
+  return {
+    customer: invoice.customer,
+    total: total,
+    matches: total == invoice.stated_total,
+    largest: if biggest.exists() { biggest.value().item } else { "none" }
+  }
+}
+
+workflow main(email: Email) -> Audit {
+  invoice = extract Invoice from email.text
+  result  = audit(invoice)
+}

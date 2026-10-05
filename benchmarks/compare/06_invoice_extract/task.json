@@ -1,0 +1,77 @@
+{
+  "about": "Ask a model to pull an invoice out of an email, then audit it.",
+  "inputs": {
+    "email": {
+      "text": "Invoice for Ada: pen 2, lamp 30. Total 32."
+    }
+  },
+  "expected": {
+    "customer": "Ada",
+    "total": 32,
+    "matches": true,
+    "largest": "lamp"
+  },
+  "bad": [
+    {
+      "label": "the model returns the customer as null",
+      "model_answers": [
+        {
+          "customer": null,
+          "lines": [],
+          "stated_total": 0
+        }
+      ]
+    },
+    {
+      "label": "the model returns an amount as text",
+      "model_answers": [
+        {
+          "customer": "Ada",
+          "lines": [
+            {
+              "item": "pen",
+              "amount": "2"
+            }
+          ],
+          "stated_total": 2
+        }
+      ]
+    },
+    {
+      "label": "the model adds a field nobody asked for",
+      "model_answers": [
+        {
+          "customer": "Ada",
+          "lines": [],
+          "stated_total": 0,
+          "note": "paid"
+        }
+      ]
+    },
+    {
+      "label": "the model replies with a list instead of a record",
+      "model_answers": [
+        [
+          "Ada",
+          32
+        ]
+      ]
+    }
+  ],
+  "model_answers": [
+    {
+      "customer": "Ada",
+      "lines": [
+        {
+          "item": "pen",
+          "amount": 2
+        },
+        {
+          "item": "lamp",
+          "amount": 30
+        }
+      ],
+      "stated_total": 32
+    }
+  ]
+}

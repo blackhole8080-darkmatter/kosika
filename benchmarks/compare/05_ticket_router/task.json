@@ -1,0 +1,81 @@
+{
+  "about": "Ask a model to label a ticket and judge urgency, then route it.",
+  "inputs": {
+    "ticket": {
+      "text": "I was charged twice and cannot close my books."
+    }
+  },
+  "expected": {
+    "queue": "billing",
+    "escalate": true,
+    "reason": "They cannot close their books."
+  },
+  "bad": [
+    {
+      "label": "the model invents a label that was not offered",
+      "model_answers": [
+        {
+          "label": "refunds",
+          "confidence": 0.9
+        },
+        {
+          "answer": true,
+          "confidence": 0.8,
+          "reason": "x"
+        }
+      ]
+    },
+    {
+      "label": "the model gives a confidence of 7",
+      "model_answers": [
+        {
+          "label": "bug",
+          "confidence": 7
+        },
+        {
+          "answer": true,
+          "confidence": 0.8,
+          "reason": "x"
+        }
+      ]
+    },
+    {
+      "label": "the model answers yes as text instead of true",
+      "model_answers": [
+        {
+          "label": "bug",
+          "confidence": 0.9
+        },
+        {
+          "answer": "yes",
+          "confidence": 0.8,
+          "reason": "x"
+        }
+      ]
+    },
+    {
+      "label": "the model leaves out the reason",
+      "model_answers": [
+        {
+          "label": "bug",
+          "confidence": 0.9
+        },
+        {
+          "answer": true,
+          "confidence": 0.8
+        }
+      ]
+    }
+  ],
+  "model_answers": [
+    {
+      "label": "billing",
+      "confidence": 0.9
+    },
+    {
+      "answer": true,
+      "confidence": 0.8,
+      "reason": "They cannot close their books."
+    }
+  ]
+}

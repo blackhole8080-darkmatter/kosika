@@ -1,0 +1,51 @@
+{
+  "about": "Text and list handling with a three-way choice.",
+  "inputs": {
+    "order": {
+      "customer": " ada ",
+      "items": "pen,book,lamp",
+      "total": 37
+    }
+  },
+  "expected": {
+    "greeting": "Hello, ADA!",
+    "item_count": 3,
+    "size": "medium",
+    "odd_total": true
+  },
+  "bad": [
+    {
+      "label": "total is true instead of a number",
+      "inputs": {
+        "order": {
+          "customer": "ada",
+          "items": "pen",
+          "total": true
+        }
+      }
+    },
+    {
+      "label": "items is a list instead of text",
+      "inputs": {
+        "order": {
+          "customer": "ada",
+          "items": [
+            "pen",
+            "book"
+          ],
+          "total": 3
+        }
+      }
+    },
+    {
+      "label": "customer is missing",
+      "inputs": {
+        "order": {
+          "items": "pen",
+          "total": 3
+        }
+      }
+    }
+  ],
+  "model_answers": []
+}

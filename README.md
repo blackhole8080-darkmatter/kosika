@@ -108,6 +108,27 @@ is an ordinary typed model call underneath, so it is budgeted, traced, and
 replayable, and it still needs the model granted at run time with `--model` or
 `--model-fixture`. See [KOSIKA.md](KOSIKA.md) for the exact rules.
 
+## How Kosika compares with Python
+
+`kosika compare-python` runs six tasks written three ways: Kosika, short
+"plain" Python, and "checked" Python that also rejects wrongly shaped data.
+All three return the same answers. Measured on these six tasks:
+
+| | Kosika | Python, plain | Python, checked |
+| --- | --- | --- | --- |
+| Lines of code, all six tasks | 103 | 81 | 108, plus 35 shared helper lines |
+| Lines, four data tasks | 69 | 38 | 47 |
+| Lines, two model tasks | 34 | 43 | 61 |
+| Bad-data cases refused, of 20 | 20 | 9 | 20 |
+
+Kosika is longer than plain Python for ordinary data handling, and shorter
+once a model is involved. Its advantage is not size: it refuses every bad case
+without extra code, where plain Python silently accepted 11 of 20, such as a
+label the model invented or `true` where a number belongs. The bad cases were
+chosen by the author of the comparison, so read that column as "what Kosika
+checks for free", not as an unbiased error rate. Details and limits are in
+[KOSIKA_PLAN.md](KOSIKA_PLAN.md).
+
 ## Shell and file access, approved every time
 
 A program can run a command or touch files only through a declared `system`

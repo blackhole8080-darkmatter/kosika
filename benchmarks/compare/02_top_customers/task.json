@@ -1,0 +1,83 @@
+{
+  "about": "Group, total, rank, and take the top three.",
+  "inputs": {
+    "input": {
+      "orders": [
+        {
+          "customer": "Ada",
+          "total": 30
+        },
+        {
+          "customer": "Bo",
+          "total": 12
+        },
+        {
+          "customer": "Ada",
+          "total": 45
+        },
+        {
+          "customer": "Cy",
+          "total": 99
+        },
+        {
+          "customer": "Di",
+          "total": 5
+        },
+        {
+          "customer": "Bo",
+          "total": 20
+        }
+      ]
+    }
+  },
+  "expected": {
+    "names": [
+      "Cy",
+      "Ada",
+      "Bo"
+    ],
+    "best_total": 99
+  },
+  "bad": [
+    {
+      "label": "a customer is a number instead of text",
+      "inputs": {
+        "input": {
+          "orders": [
+            {
+              "customer": 5,
+              "total": 30
+            }
+          ]
+        }
+      }
+    },
+    {
+      "label": "a total is text instead of a number",
+      "inputs": {
+        "input": {
+          "orders": [
+            {
+              "customer": "Ada",
+              "total": "30"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "label": "a total is true instead of a number",
+      "inputs": {
+        "input": {
+          "orders": [
+            {
+              "customer": "Ada",
+              "total": true
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "model_answers": []
+}
