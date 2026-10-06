@@ -777,9 +777,26 @@ tempting. Scoring is exact match, so "Priya Nair here" counts as wrong. Two
 models from one family were tried. `vote` and model routing were not
 measured.
 
-Found and not yet fixed: a model answer that omits an optional field is
-rejected, where treating it as null would be the kinder reading. That caused
-most of the rejections above.
+Fixed afterwards: a model answer that omits a field is now read as null when
+the field's type allows it (`model_steps.fill_absent`, 8 tests in
+`tests/test_absent_fields.py`; replay applies the same reading). Re-measured
+on qwen3:1.7b. The run was cut off after 12 of the 16 tickets, so the
+comparison is over those 12 (36 fields):
+
+| qwen3:1.7b, 12 tickets | Right | Invented | Wrong | Missed | Rejected runs |
+| --- | --- | --- | --- | --- | --- |
+| alone, before | 28 | 5 | 0 | 0 | 1 |
+| alone, after | 32 | 4 | 0 | 0 | 0 |
+| evidence only, before | 15 | 2 | 1 | 0 | 6 |
+| evidence only, after | 26 | 6 | 1 | 3 | 0 |
+| all guards, before | 28 | 4 | 2 | 2 | 0 |
+| all guards, after | 25 | 4 | 3 | 4 | 0 |
+
+The fix did what it was for: no run was rejected any more. It did not change
+the conclusion. With every guard on, the small model is still no better than
+it is alone (25 right against 32), and the differences between the two
+"all guards" rows are within what one run of a model that answers
+differently each time would give.
 
 ## Reliability: retry with feedback (built; measured above)
 
