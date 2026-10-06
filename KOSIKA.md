@@ -381,6 +381,24 @@ think = "classify"  expression "into" expression [ "using" identifier ]
   names only with identical fields.
 - A thinking step is a step, not an expression: it cannot appear inside a `fn`.
 - Budgets, traces, and replay treat a thinking step as one model call.
+- `classify`, `extract`, and `decide` MAY end `with evidence`, written before
+  any `using`: `extract Invoice from ticket.text with evidence`. The model is
+  then asked for quotes as well as its answer, and every quote MUST appear in
+  the text the step was given. Matching ignores letter case, runs of
+  whitespace, and straight versus curly quotation marks; a paraphrase is not
+  a quote. What must be quoted:
+  - `extract`: one quote for each field the model fills. A field left `null`
+    or empty needs none, so fields that may be missing SHOULD be optional.
+  - `classify`: at least one quote.
+  - `decide`: at least one quote for a `true` answer; a `false` answer may
+    have none.
+  An answer whose evidence is missing or not found fails the step like any
+  other broken answer, so an `otherwise` fallback runs. The step's value is
+  the plain record; the quotes are kept in the trace, and replay checks them
+  again against the recorded input. `summarize` cannot give evidence, and
+  neither can `extract` into a record with its own field named `evidence`.
+- Evidence proves the quoted words were in the input. It does not prove that
+  they support the answer.
 
 ## Tools and capabilities
 

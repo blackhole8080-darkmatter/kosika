@@ -19,6 +19,10 @@ What the language guarantees about an answer, beyond its record shape:
 * `classify` and `decide` return a confidence from 0 through 1.
 
 A confidence is the model's own estimate, not a measured probability.
+
+A step may end `with evidence` (before any `using`). The model must then quote
+the text it was given, and every quote is checked against that text; see
+`kosika.evidence` for the rule and for what it does not prove.
 """
 
 from __future__ import annotations
@@ -36,6 +40,9 @@ from .ast import (
     ThinkCall,
 )
 from .builtin_methods import did_you_mean
+from .evidence import INSTRUCTIONS as EVIDENCE_INSTRUCTIONS
+from .evidence import KEY as EVIDENCE_KEY
+from .evidence import KINDS as EVIDENCE_KINDS
 
 #: A general model declared as `model name` takes and returns plain text.
 GENERAL_INPUT = "Prompt"
@@ -175,6 +182,27 @@ def lower_thinking(program: Program) -> Program:
         name = f"{base.name}/{call.verb}"
         if call.verb == "extract":
             name += f"/{output_record}"
+        instruction = _INSTRUCTIONS[call.verb]
+        kind = None
+        if call.evidence:
+            kind = EVIDENCE_KINDS.get(call.verb)
+            if kind is None:
+                raise ThinkingError(
+                    f"Step {step.name!r} cannot give evidence: {call.verb} "
+                    "writes new text, so there is nothing to quote"
+                )
+            if call.verb == "extract" and any(
+                field.name == EVIDENCE_KEY
+                for record in program.records
+                if record.name == output_record
+                for field in record.fields
+            ):
+                raise ThinkingError(
+                    f"Step {step.name!r} cannot give evidence: record "
+                    f"{output_record!r} has its own field named {EVIDENCE_KEY!r}"
+                )
+            name += "/evidence"
+            instruction += EVIDENCE_INSTRUCTIONS[kind]
         generated.setdefault(
             name,
             ModelDecl(
@@ -184,8 +212,9 @@ def lower_thinking(program: Program) -> Program:
                 base.deployment,
                 base.parameters,
                 provider=base.name,
-                instruction=_INSTRUCTIONS[call.verb],
+                instruction=instruction,
                 verb=call.verb,
+                evidence=kind,
             ),
         )
         return ModelCall(name, _arguments(call))

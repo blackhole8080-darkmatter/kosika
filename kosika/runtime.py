@@ -52,6 +52,7 @@ from .builtin_methods import resolve_for_value as resolve_method_for_value
 from .checker import check
 from .controls import ExecutionError
 from .durable import ExecutionSession
+from .evidence import EvidenceError, answer_schema, split, verify
 from .execution import ExecutionControl, ExecutionLimits
 from .function_types import public_type
 from .intelligence_runtime import FunctionResultCache, IntelligenceRecorder
@@ -67,7 +68,7 @@ from .schema import (
     validate,
 )
 from .sugar import resolve_unnamed
-from .thinking import check_answer
+from .thinking import ThinkingAnswerError, check_answer
 from .trace_replay import replay_trace
 
 
@@ -1376,6 +1377,18 @@ def _run_workflow(
                 input_schema = schema_for_record(program, model.input)
                 output_schema = schema_for_record(program, model.output)
                 validate(arguments, input_schema)
+                # A step `with evidence` asks the model for the record plus
+                # its quotes. The quotes are checked and kept in the trace;
+                # the step's value is the record alone.
+                asked_schema = output_schema
+                call_evidence: dict[str, Any] = {}
+                if model.evidence is not None:
+                    asked_schema = answer_schema(
+                        model.evidence,
+                        output_schema,
+                        list(output_schema.get("properties", {})),
+                    )
+                    call_evidence = {"evidence": model.evidence}
                 events.append(
                     _event(
                         "model_call",
@@ -1384,12 +1397,13 @@ def _run_workflow(
                         expression_events=expression_events,
                         input_schema=input_schema,
                         output_schema=output_schema,
+                        **call_evidence,
                     )
                 )
                 result, response = call_model(
                     providers[model.provider or model.name],
                     arguments,
-                    output_schema,
+                    asked_schema,
                     instruction=model.instruction,
                     model=model.deployment,
                     temperature=model.parameters.temperature,
@@ -1399,6 +1413,15 @@ def _run_workflow(
                     presence_penalty=model.parameters.presence_penalty,
                     stop=model.parameters.stop,
                 )
+                if model.evidence is not None:
+                    result, quotes = split(result)
+                    try:
+                        verify(model.evidence, arguments, result, quotes)
+                    except EvidenceError as exc:
+                        raise ThinkingAnswerError(
+                            f"{model.verb} answered without evidence: {exc}"
+                        ) from exc
+                    response = {**response, "evidence": quotes}
                 check_answer(model, arguments, result)
                 events.append(
                     _event("model_return", model=model.name, result=result, **response)

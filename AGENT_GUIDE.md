@@ -178,6 +178,10 @@ workflow main(ticket: Ticket) -> Routing {
 - Do not declare `Choice`, `Summary`, or `Decision` yourself; they are built in.
   Use them as parameter types: `fn route(label: Choice, refund: Decision)`.
 - With more than one model, end the step with `using model_name`.
+- Add `with evidence` to `classify`, `extract`, or `decide` to make the model
+  quote the text: `invoice = extract Invoice from ticket.text with evidence`.
+  An answer whose quote is not in the text is rejected. With `extract`, make
+  fields that may be missing optional (`amount: Number?`).
 - Thinking steps go in a workflow only, never inside a `fn`.
 
 ## Tools and agents

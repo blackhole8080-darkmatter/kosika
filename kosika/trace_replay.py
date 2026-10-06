@@ -6,6 +6,9 @@ from typing import Any
 
 from .agent_steps import validate_agent_transcript
 from .agent_trace import replay_agent_events
+from .evidence import EvidenceError
+from .evidence import split as split_evidence
+from .evidence import verify as verify_evidence
 from .model_steps import strict_json
 from .schema import validate
 
@@ -148,7 +151,20 @@ def replay_events(events: list[Any], *, depth: int = 0) -> dict[str, Any]:
                 returned.get("content"), str
             ):
                 raise ValueError("Model trace contains an incomplete response")
-            if not _same_json(strict_json(returned["content"]), result):
+            answered = strict_json(returned["content"])
+            if "evidence" in call:
+                # The model answered with the record plus its quotes. Replay
+                # proves the quotes again from the recorded input.
+                if not isinstance(answered, dict) or not isinstance(result, dict):
+                    raise ValueError("Evidence trace requires a record answer")
+                answered, quotes = split_evidence(answered)
+                if not _same_json(quotes, returned.get("evidence")):
+                    raise ValueError("Model response and recorded evidence differ")
+                try:
+                    verify_evidence(call["evidence"], call["arguments"], result, quotes)
+                except EvidenceError as exc:
+                    raise ValueError(f"Trace evidence does not hold: {exc}") from exc
+            if not _same_json(answered, result):
                 raise ValueError("Model response and recorded outcome differ")
             if key == "agent":
                 validate_agent_transcript(call, returned)

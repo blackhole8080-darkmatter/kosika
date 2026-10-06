@@ -988,8 +988,12 @@ class Parser:
         elif verb == "decide":
             self.expect("given")
             extra = self.expression()
+        evidence = False
+        if self.accept("with"):
+            self.expect("evidence")
+            evidence = True
         model = self.identifier() if self.accept("using") else None
-        return ThinkCall(verb, subject, extra, record, model)
+        return ThinkCall(verb, subject, extra, record, model, evidence)
 
     def parse_step_call(
         self,

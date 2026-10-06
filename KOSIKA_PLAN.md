@@ -593,6 +593,23 @@ left out: typed messages between members, state carried from one round to the
 next, and a termination judgment over observed evidence rather than result
 equality. Swarm output must not acquire authority the way model output cannot.
 
+## Reliability: evidence (built, not yet measured)
+
+- `classify`, `extract`, and `decide` accept `with evidence`. The model is
+  asked for the record plus quotes; `kosika/evidence.py` checks every quote
+  against the step's input text and rejects the answer otherwise. The failure
+  is an ordinary broken answer, so `otherwise` recovers from it.
+- The step's value and type are unchanged. Quotes are stored on the
+  `model_return` trace event, and replay verifies them again from the recorded
+  input, so a trace cannot claim evidence its input does not contain.
+- Programs without `with evidence` keep the same tree and hash.
+- 15 tests in `tests/test_evidence.py`, all with scripted answers.
+- Not claimed: a quote proves the words were in the input, not that they
+  support the answer. A model can quote a real sentence and still conclude
+  wrongly. Number values are not compared with their quote. The program
+  cannot read the quotes yet; they are in the trace only. Traces with
+  evidence are not readable by an older Kosika (they fail closed).
+
 ## Fundamentals: narrowing optionals (complete)
 
 - A test of `name.exists()` makes `name` its plain type where the test is

@@ -386,6 +386,9 @@ class ModelDecl:
     provider: str | None = None
     instruction: str | None = None
     verb: str | None = None
+    # The evidence rule of a step written `with evidence`; see
+    # `kosika.evidence`. None for every other model.
+    evidence: str | None = None
 
 
 @dataclass(frozen=True)
@@ -404,6 +407,8 @@ class ThinkCall:
     extra: "Expression | None" = None
     record: str | None = None
     model: str | None = None
+    # `with evidence`: the answer must quote the text it was given.
+    evidence: bool = False
 
 
 @dataclass(frozen=True)
@@ -591,6 +596,7 @@ _ABSENT_DEFAULTS: dict[str, tuple[Any, ...]] = {
     "instruction": (None,),
     "verb": (None,),
     "fallback": (None,),
+    "evidence": (None, False),
 }
 
 
