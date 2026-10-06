@@ -461,6 +461,11 @@ class WorkflowDecl:
     steps: tuple[Step, ...]
     approval_required: bool = False
     parameters: tuple[Field, ...] = ()
+    # `budget 6 model calls, 30 seconds`: ceilings this workflow puts on its
+    # own run, as (kind, amount) pairs with kind one of "model_calls",
+    # "tool_calls", or "seconds". A budget only ever tightens the limits of
+    # whoever runs the program.
+    budget: tuple[tuple[str, int | float], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -601,6 +606,7 @@ _ABSENT_DEFAULTS: dict[str, tuple[Any, ...]] = {
     "fallback": (None,),
     "evidence": (None, False),
     "retries": (0,),
+    "budget": ((), []),
 }
 
 

@@ -960,6 +960,21 @@ def check(program: Program) -> None:
     ):
         raise CheckError("Unlowered thinking steps: use lower_thinking(program)")
     for workflow in program.workflows:
+        kinds = [kind for kind, _ in workflow.budget]
+        for kind, amount in workflow.budget:
+            label = kind.replace("_", " ")
+            if kinds.count(kind) > 1:
+                raise CheckError(
+                    f"Workflow {workflow.name!r} budget names {label} more than once"
+                )
+            whole = type(amount) is int and 1 <= amount <= 1_000_000
+            if kind == "seconds":
+                whole = type(amount) in (int, float) and 0 < amount <= 86_400
+            if not whole:
+                raise CheckError(
+                    f"Workflow {workflow.name!r} budget for {label} is out of "
+                    f"range, got {amount}"
+                )
         for step in workflow.steps:
             if step.retries == 0:
                 continue

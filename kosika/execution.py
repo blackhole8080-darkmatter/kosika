@@ -38,6 +38,27 @@ class ExecutionLimits:
             raise ValueError("deadline_seconds must be finite and positive")
 
 
+def within_budget(
+    limits: ExecutionLimits, budget: tuple[tuple[str, int | float], ...]
+) -> ExecutionLimits:
+    """The limits for a run of a workflow that declares `budget`.
+
+    A program's budget can only lower a limit. Whoever runs the program keeps
+    every limit they set; the stricter of the two always applies.
+    """
+
+    values = asdict(limits)
+    for kind, amount in budget:
+        if kind == "seconds":
+            current = values["deadline_seconds"]
+            values["deadline_seconds"] = (
+                float(amount) if current is None else min(current, float(amount))
+            )
+        else:
+            values[f"max_{kind}"] = min(values[f"max_{kind}"], int(amount))
+    return ExecutionLimits(**values)
+
+
 class ExecutionControl:
     def __init__(self, limits: ExecutionLimits, cancel: threading.Event | None = None):
         self.limits = limits

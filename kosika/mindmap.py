@@ -387,6 +387,11 @@ def build_mindmap(
             module_for(workflow.name),
             output=workflow.output_type,
             approval_required=workflow.approval_required,
+            **(
+                {"budget": [list(item) for item in workflow.budget]}
+                if workflow.budget
+                else {}
+            ),
             parameters=[
                 {"name": field.name, "type": field.type_name}
                 for field in workflow.parameters

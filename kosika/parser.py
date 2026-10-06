@@ -811,6 +811,7 @@ class Parser:
         self.expect("{")
         steps: list[Step] = []
         approval_required = False
+        budget: list[tuple[str, int | float]] = []
         while not self.accept("}"):
             if self.accept("step"):
                 steps.append(self.parse_step())
@@ -819,14 +820,45 @@ class Parser:
             elif self.accept("require"):
                 self.expect("approval")
                 approval_required = True
+            elif self.accept("budget"):
+                budget.extend(self.parse_budget())
             else:
                 token = self.current
                 raise ParseError(
                     f"Unexpected workflow item {token.value!r} at {token.line}:{token.column}"
                 )
         return WorkflowDecl(
-            name, output_type, tuple(steps), approval_required, tuple(parameters)
+            name,
+            output_type,
+            tuple(steps),
+            approval_required,
+            tuple(parameters),
+            tuple(budget),
         )
+
+    def parse_budget(self) -> list[tuple[str, int | float]]:
+        """Parse `<n> model calls, <n> tool calls, <n> seconds` in any order."""
+
+        items: list[tuple[str, int | float]] = []
+        while True:
+            token = self.advance()
+            if token.kind != "NUMBER":
+                raise ParseError(
+                    f"Expected 'amount' at {token.line}:{token.column}, "
+                    f"got {token.value!r}"
+                )
+            amount = float(token.value) if "." in token.value else int(token.value)
+            if self.accept("model"):
+                self.expect("calls")
+                items.append(("model_calls", amount))
+            elif self.accept("tool"):
+                self.expect("calls")
+                items.append(("tool_calls", amount))
+            else:
+                self.expect("seconds")
+                items.append(("seconds", amount))
+            if not self.accept(","):
+                return items
 
     def parse_function(self, depth: int = 0) -> FunctionDecl:
         if depth >= 32:
@@ -958,8 +990,7 @@ class Parser:
         token = self.advance()
         if token.kind != "NUMBER" or not token.value.isdigit():
             raise ParseError(
-                f"Expected 'count' at {token.line}:{token.column}, "
-                f"got {token.value!r}"
+                f"Expected 'count' at {token.line}:{token.column}, got {token.value!r}"
             )
         return int(token.value)
 

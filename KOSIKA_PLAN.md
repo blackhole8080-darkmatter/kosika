@@ -610,6 +610,18 @@ equality. Swarm output must not acquire authority the way model output cannot.
   cannot read the quotes yet; they are in the trace only. Traces with
   evidence are not readable by an older Kosika (they fail closed).
 
+## Reliability: budgets in the language (complete)
+
+- `budget N model calls, N tool calls, N seconds` inside a workflow
+  (`WorkflowDecl.budget`). `execution.within_budget` lowers the caller's
+  limits for the run; it can never raise one. Retries count, called workflows
+  are covered, and the mind map shows the budget on the workflow.
+- 11 tests in `tests/test_budget.py`.
+- Not claimed: there is no budget in money or tokens, because Kosika does not
+  know a model's price and not every provider reports token use. A called
+  workflow's own budget is ignored, and `kosika swarm` does not apply a
+  workflow budget.
+
 ## Reliability: measurement of evidence (prepared, not run)
 
 - `benchmarks/thinking/evidence_measure.py` extracts an `Order` (three

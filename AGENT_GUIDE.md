@@ -253,6 +253,9 @@ workflow main(city: City) -> Report {
   model answer: `label = classify t.text into ["a", "b"] otherwise
   keyword_label(t)`. Both calls must return the same type. Not allowed on
   `access: execute` tools.
+- A workflow can cap its own run with a line such as
+  `budget 6 model calls, 30 seconds` (also `tool calls`). Reaching it stops
+  the run; `otherwise` does not catch it.
 - If a step executes a tool whose access is `execute`, the workflow must end
   with the line `require approval` after its last step.
 

@@ -410,6 +410,28 @@ think = "classify"  expression "into" expression [ "using" identifier ]
   fails as it would have, so its `otherwise` runs. Rejected answers and their
   reasons are kept in the trace.
 
+### Budgets
+
+A workflow MAY declare ceilings on its own run:
+
+```kosika
+workflow main(ticket: Ticket) -> Routing {
+  budget 6 model calls, 30 seconds
+  label = classify ticket.text into ["billing", "bug"] retry 2
+  ...
+}
+```
+
+- The kinds are `model calls`, `tool calls` (whole numbers from 1 to
+  1,000,000) and `seconds` (above 0, at most 86,400). Each MAY appear once.
+- The budget of the workflow being run applies to the whole run, including
+  every retry and every workflow it reaches through `call`. A called
+  workflow's own budget is not applied.
+- A budget only tightens. Whoever runs the program keeps every limit they
+  set, and the stricter of the two applies.
+- A run that reaches its budget stops with a `budget` or `deadline` error.
+  This is not a failed step: `otherwise` does not catch it.
+
 ## Tools and capabilities
 
 ```kosika

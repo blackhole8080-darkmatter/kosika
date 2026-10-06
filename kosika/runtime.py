@@ -53,7 +53,7 @@ from .checker import check
 from .controls import ExecutionError
 from .durable import ExecutionSession
 from .evidence import EvidenceError, answer_schema, split, verify
-from .execution import ExecutionControl, ExecutionLimits
+from .execution import ExecutionControl, ExecutionLimits, within_budget
 from .function_types import public_type
 from .intelligence_runtime import FunctionResultCache, IntelligenceRecorder
 from .manifest import ManifestError, MCPManifest, verify_server
@@ -880,7 +880,17 @@ def run(
     _scope: tuple[str, ...] = (),
     _control: ExecutionControl | None = None,
 ) -> dict[str, Any]:
-    control = _control or ExecutionControl(limits or ExecutionLimits(), cancel)
+    if _control is None:
+        # The workflow being run may declare a budget, which tightens the
+        # caller's limits for the whole run, including workflows it calls.
+        declared = next(
+            (item.budget for item in program.workflows if item.name == workflow_name),
+            (),
+        )
+        _control = ExecutionControl(
+            within_budget(limits or ExecutionLimits(), declared), cancel
+        )
+    control = _control
     control.scope = (*_scope, workflow_name)
     events: list[dict[str, Any]] = []
     try:
