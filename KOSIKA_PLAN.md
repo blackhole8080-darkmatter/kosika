@@ -610,6 +610,22 @@ equality. Swarm output must not acquire authority the way model output cannot.
   cannot read the quotes yet; they are in the trace only. Traces with
   evidence are not readable by an older Kosika (they fail closed).
 
+## Sharing between devices: packs (complete, first step only)
+
+- `kosika pack make | check | unpack` (`kosika/pack.py`). A pack holds every
+  module and the program hash. Checking verifies each module's SHA-256,
+  reloads the program in a temporary folder, compares the program hash, and
+  reports the models and tools the program would need. `--test` runs the
+  pack's own tests.
+- A pack holds no binding, approval, or credential, so authority stays with
+  the receiving device. Module paths that could escape the folder, unused
+  extra modules, and a non-empty unpack target are refused.
+- 12 tests in `tests/test_pack.py`.
+- Not claimed: a pack is not signed, so it proves what the program is and
+  not who sent it. Devices are not connected live; one agent cannot yet call
+  an agent on another device. Nothing keeps two devices in step after the
+  first copy.
+
 ## Model routing (built, not yet run on live models)
 
 - A program can declare several models, mark one `default model NAME`, and

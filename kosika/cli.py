@@ -2080,6 +2080,28 @@ def build_parser() -> argparse.ArgumentParser:
 
     replay_parser = subparsers.add_parser("replay")
     replay_parser.add_argument("trace", type=Path)
+    pack_parser = subparsers.add_parser(
+        "pack", help="Carry a program to another device and prove it is the same."
+    )
+    pack_commands = pack_parser.add_subparsers(dest="pack_command", required=True)
+    pack_make = pack_commands.add_parser(
+        "make", help="Write a program and its hash into one pack file."
+    )
+    pack_make.add_argument("source", type=Path)
+    pack_make.add_argument("--out", type=Path, required=True)
+    pack_check = pack_commands.add_parser(
+        "check", help="Verify a pack and show what it would ask this device for."
+    )
+    pack_check.add_argument("pack", type=Path)
+    pack_check.add_argument(
+        "--test", action="store_true", help="Also run the tests inside the pack."
+    )
+    pack_check.add_argument("--json", action="store_true")
+    pack_unpack = pack_commands.add_parser(
+        "unpack", help="Verify a pack, then write its files into an empty folder."
+    )
+    pack_unpack.add_argument("pack", type=Path)
+    pack_unpack.add_argument("directory", type=Path)
     test_parser = subparsers.add_parser(
         "test", help="Run the tests written in a Kosika program."
     )
@@ -3005,6 +3027,31 @@ def main() -> int:
         else:
             print(_render_journal_text(report))
         return 0
+
+    if args.command == "pack":
+        from .pack import PackError, check_pack, unpack, write_pack
+        from .pack import to_text as pack_to_text
+
+        try:
+            if args.pack_command == "make":
+                made = write_pack(args.source, args.out)
+                print(f"Wrote {args.out}")
+                print(f"Program  {made['program_hash']}")
+                return 0
+            if args.pack_command == "unpack":
+                pack_report = unpack(args.pack, args.directory)
+                print(pack_to_text(pack_report))
+                print(f"\nUnpacked into {args.directory}")
+                return 0
+            pack_report = check_pack(args.pack, run_tests=args.test)
+        except (PackError, ValueError, OSError) as exc:
+            print(f"Pack rejected: {exc}", file=sys.stderr)
+            return 2
+        if args.json:
+            print(json.dumps(pack_report.to_dict(), indent=2))
+        else:
+            print(pack_to_text(pack_report))
+        return 0 if all(test["passed"] for test in pack_report.tests) else 1
 
     if args.command == "test":
         from .testing import run_tests

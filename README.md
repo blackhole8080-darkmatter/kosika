@@ -466,6 +466,25 @@ the last option:
 kosika run main.kos --input input.json --model-command gemini -m gemini-3.5-flash-lite -p ""
 ```
 
+### Sharing a program with another device
+
+A pack is one file holding every module of a program and the program's hash.
+
+```
+kosika pack make main.kos --out helper.kpack     # where the program was written
+kosika pack check helper.kpack --test            # on the other device
+kosika pack unpack helper.kpack helper/
+```
+
+`check` proves the files are the ones that were packed and that they load to
+the recorded program, runs the pack's own tests if asked, and lists what the
+program would need: which models, and which tools, marking any that change
+the world. Nothing else in the pack is run. A pack carries code only. It has
+no model, tool binding, approval, or credential in it, so the receiving
+device grants its own. A pack is not signed: it proves what the program is,
+not who sent it, so compare the program hash with one you got from the
+author.
+
 To give each declared model its own real model, write a small file and pass
 it with `--models`:
 
