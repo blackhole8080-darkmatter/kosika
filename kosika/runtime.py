@@ -59,7 +59,7 @@ from .intelligence_runtime import FunctionResultCache, IntelligenceRecorder
 from .manifest import ManifestError, MCPManifest, verify_server
 from .mcp_stdio import MCPStdioClient
 from .model import ModelProvider
-from .model_steps import call_model
+from .model_steps import RejectedAnswer, call_model
 from .schema import (
     schema_for_record,
     schema_for_tool_input,
@@ -1078,7 +1078,9 @@ def _run_workflow(
         step = pending.pop(0)
         if step.fallback is not None:
             # Both calls may run, so both must be authorized up front.
-            pending.append(dataclass_replace(step, call=step.fallback, fallback=None))
+            pending.append(
+                dataclass_replace(step, call=step.fallback, fallback=None, retries=0)
+            )
         if isinstance(step.call, WorkflowCall):
             name = step.call.workflow_name
             if name not in visited_workflows:
@@ -1400,29 +1402,53 @@ def _run_workflow(
                         **call_evidence,
                     )
                 )
-                result, response = call_model(
-                    providers[model.provider or model.name],
-                    arguments,
-                    asked_schema,
-                    instruction=model.instruction,
-                    model=model.deployment,
-                    temperature=model.parameters.temperature,
-                    max_output_tokens=model.parameters.max_output_tokens,
-                    top_p=model.parameters.top_p,
-                    frequency_penalty=model.parameters.frequency_penalty,
-                    presence_penalty=model.parameters.presence_penalty,
-                    stop=model.parameters.stop,
-                )
-                if model.evidence is not None:
-                    result, quotes = split(result)
+                # `retry N`: a rejected answer is shown back to the model with
+                # the reason, up to N more times. Every attempt is a model call
+                # for the limits, and every rejected one is kept in the trace.
+                rejected: list[tuple[str, str]] = []
+                while True:
+                    answered = None
                     try:
-                        verify(model.evidence, arguments, result, quotes)
-                    except EvidenceError as exc:
-                        raise ThinkingAnswerError(
-                            f"{model.verb} answered without evidence: {exc}"
-                        ) from exc
-                    response = {**response, "evidence": quotes}
-                check_answer(model, arguments, result)
+                        result, response = call_model(
+                            providers[model.provider or model.name],
+                            arguments,
+                            asked_schema,
+                            instruction=model.instruction,
+                            model=model.deployment,
+                            temperature=model.parameters.temperature,
+                            max_output_tokens=model.parameters.max_output_tokens,
+                            top_p=model.parameters.top_p,
+                            frequency_penalty=model.parameters.frequency_penalty,
+                            presence_penalty=model.parameters.presence_penalty,
+                            stop=model.parameters.stop,
+                            rejected=tuple(rejected),
+                        )
+                        answered = response["content"]
+                        if model.evidence is not None:
+                            result, quotes = split(result)
+                            try:
+                                verify(model.evidence, arguments, result, quotes)
+                            except EvidenceError as exc:
+                                raise ThinkingAnswerError(
+                                    f"{model.verb} answered without evidence: {exc}"
+                                ) from exc
+                            response = {**response, "evidence": quotes}
+                        check_answer(model, arguments, result)
+                        break
+                    except (RejectedAnswer, ThinkingAnswerError) as exc:
+                        if len(rejected) >= step.retries:
+                            raise
+                        if isinstance(exc, RejectedAnswer):
+                            answered = exc.content
+                        rejected.append((cast(str, answered), str(exc)))
+                if rejected:
+                    response = {
+                        **response,
+                        "rejected": [
+                            {"content": content, "reason": reason}
+                            for content, reason in rejected
+                        ],
+                    }
                 events.append(
                     _event("model_return", model=model.name, result=result, **response)
                 )
@@ -1486,7 +1512,9 @@ def _run_workflow(
             # (budgets, deadlines, cancellation, missing approval) never do.
             if step.fallback is None or isinstance(exc, ApprovalRequiredError):
                 raise
-            fallback_step = dataclass_replace(step, call=step.fallback, fallback=None)
+            fallback_step = dataclass_replace(
+                step, call=step.fallback, fallback=None, retries=0
+            )
             if isinstance(exc, ExecutionError):
                 # On resume, a step its fallback completed earlier is stored
                 # under the fallback's arguments, so look it up that way.

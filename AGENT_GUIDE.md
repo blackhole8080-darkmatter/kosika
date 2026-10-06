@@ -182,6 +182,9 @@ workflow main(ticket: Ticket) -> Routing {
   quote the text: `invoice = extract Invoice from ticket.text with evidence`.
   An answer whose quote is not in the text is rejected. With `extract`, make
   fields that may be missing optional (`amount: Number?`).
+- Add `retry 2` (1 to 5) after a model step to ask again when the answer is
+  rejected; the model is shown its mistake. Order: `with evidence`, `using`,
+  `retry`, then `otherwise`.
 - Thinking steps go in a workflow only, never inside a `fn`.
 
 ## Tools and agents

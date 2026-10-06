@@ -610,6 +610,20 @@ equality. Swarm output must not acquire authority the way model output cannot.
   cannot read the quotes yet; they are in the trace only. Traces with
   evidence are not readable by an older Kosika (they fail closed).
 
+## Reliability: retry with feedback (built, not yet measured)
+
+- `retry N` (1 to 5) on a model step re-asks after a rejected answer, adding
+  the rejected answer and the reason to the conversation
+  (`model_steps.RejectedAnswer`, `Step.retries`). It composes with evidence
+  and `otherwise`: quote check, then retry, then fallback.
+- Every attempt goes through the execution limits, so `max_model_calls` and
+  the deadline bound a retrying step. Rejected answers are stored on the
+  `model_return` event.
+- 11 tests in `tests/test_retry.py`.
+- Not claimed: replay does not re-derive the rejected attempts, it only keeps
+  them. A provider or transport failure is not retried. No measurement yet of
+  how often a second attempt succeeds.
+
 ## Fundamentals: narrowing optionals (complete)
 
 - A test of `name.exists()` makes `name` its plain type where the test is

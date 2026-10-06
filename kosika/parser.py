@@ -946,8 +946,22 @@ class Parser:
         name = self.identifier()
         self.expect("=")
         call = self.parse_step_call()
+        retries = self.parse_step_retries()
         fallback = self.parse_step_call() if self.accept("otherwise") else None
-        return Step(name, call, name, None, name, fallback)
+        return Step(name, call, name, None, name, fallback, retries)
+
+    def parse_step_retries(self) -> int:
+        """Parse an optional `retry N` after a step's call."""
+
+        if not self.accept("retry"):
+            return 0
+        token = self.advance()
+        if token.kind != "NUMBER" or not token.value.isdigit():
+            raise ParseError(
+                f"Expected 'count' at {token.line}:{token.column}, "
+                f"got {token.value!r}"
+            )
+        return int(token.value)
 
     def parse_step(self) -> Step:
         name = self.identifier()
@@ -959,6 +973,7 @@ class Parser:
             binding_type = self.parse_type_name()
         self.expect("=")
         call = self.parse_step_call()
+        retries = self.parse_step_retries()
         fallback = self.parse_step_call() if self.accept("otherwise") else None
         self.expect("return")
         return_name = self.identifier()
@@ -970,6 +985,7 @@ class Parser:
             binding_type,
             return_name,
             fallback,
+            retries,
         )
 
     def parse_think_call(self) -> ThinkCall:

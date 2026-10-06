@@ -449,6 +449,9 @@ class Step:
     fallback: ToolCall | ModelCall | AgentCall | WorkflowCall | FunctionCall | None = (
         None
     )
+    # `step = call retry 2`: how many more times a model is asked when its
+    # answer is rejected, each time shown the answer and why it failed.
+    retries: int = 0
 
 
 @dataclass(frozen=True)
@@ -597,6 +600,7 @@ _ABSENT_DEFAULTS: dict[str, tuple[Any, ...]] = {
     "verb": (None,),
     "fallback": (None,),
     "evidence": (None, False),
+    "retries": (0,),
 }
 
 

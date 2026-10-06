@@ -936,7 +936,12 @@ def _check_fallbacks(program: Program) -> None:
             replace(
                 workflow,
                 steps=tuple(
-                    replace(step, call=step.fallback or step.call, fallback=None)
+                    replace(
+                        step,
+                        call=step.fallback or step.call,
+                        fallback=None,
+                        retries=step.retries if step.fallback is None else 0,
+                    )
                     for step in workflow.steps
                 ),
             )
@@ -954,6 +959,20 @@ def check(program: Program) -> None:
         for step in workflow.steps
     ):
         raise CheckError("Unlowered thinking steps: use lower_thinking(program)")
+    for workflow in program.workflows:
+        for step in workflow.steps:
+            if step.retries == 0:
+                continue
+            if not isinstance(step.call, ModelCall):
+                raise CheckError(
+                    f"Step {step.name!r} cannot retry: only a model step "
+                    "(use_model or a thinking step) can be asked again"
+                )
+            if not 1 <= step.retries <= 5:
+                raise CheckError(
+                    f"Step {step.name!r} cannot retry: the count must be "
+                    f"from 1 to 5, got {step.retries}"
+                )
     if any(
         step.fallback is not None
         for workflow in program.workflows

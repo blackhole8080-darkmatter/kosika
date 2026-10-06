@@ -399,6 +399,16 @@ think = "classify"  expression "into" expression [ "using" identifier ]
   neither can `extract` into a record with its own field named `evidence`.
 - Evidence proves the quoted words were in the input. It does not prove that
   they support the answer.
+- A model step (`use_model` or a thinking step) MAY be followed by `retry N`,
+  with N from 1 to 5, written after the call and before any `otherwise`:
+  `label = classify t.text into ["a", "b"] with evidence retry 2 otherwise f(t)`.
+  When the model's answer is rejected (it is not valid for the record, breaks
+  a thinking-step guarantee, or lacks evidence), the model is asked again and
+  shown its rejected answer and the reason, up to N more times. Only a
+  rejected answer is retried; a provider failure is not. Every attempt counts
+  as a model call for the limits. When the retries are used up, the step
+  fails as it would have, so its `otherwise` runs. Rejected answers and their
+  reasons are kept in the trace.
 
 ## Tools and capabilities
 

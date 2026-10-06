@@ -28,6 +28,18 @@ def strict_json(text: str) -> Any:
     return result
 
 
+class RejectedAnswer(ModelProviderError):
+    """The model replied, but its answer is not valid for the step.
+
+    Carries the reply so that a step with `retry` can show it back to the
+    model together with the reason it was rejected.
+    """
+
+    def __init__(self, message: str, content: str):
+        super().__init__(message)
+        self.content = content
+
+
 def call_model(
     provider: ModelProvider,
     arguments: dict[str, Any],
@@ -41,8 +53,22 @@ def call_model(
     presence_penalty: float | None = None,
     stop: tuple[str, ...] = (),
     instruction: str | None = None,
+    rejected: tuple[tuple[str, str], ...] = (),
 ):
+    """Ask once. `rejected` holds earlier (answer, reason) pairs of this step."""
+
     task = f" Task: {instruction}" if instruction else ""
+    earlier: list[ChatMessage] = []
+    for answer, reason in rejected:
+        earlier.append(ChatMessage(role="assistant", content=answer))
+        earlier.append(
+            ChatMessage(
+                role="user",
+                content="That answer was rejected: "
+                + reason
+                + " Return one corrected JSON object.",
+            )
+        )
     response = provider.complete(
         ModelRequest(
             messages=(
@@ -57,6 +83,7 @@ def call_model(
                     role="user",
                     content=json.dumps(arguments, sort_keys=True, allow_nan=False),
                 ),
+                *earlier,
             ),
             model=model,
             temperature=temperature,
@@ -77,9 +104,11 @@ def call_model(
         result = strict_json(response.content)
         validate(result, output_schema)
     except (ValueError, TypeError) as exc:
-        raise ModelProviderError(f"Invalid structured model output: {exc}") from exc
+        raise RejectedAnswer(
+            f"Invalid structured model output: {exc}", response.content
+        ) from exc
     if not isinstance(result, dict):
-        raise ModelProviderError("Model step output must be a record")
+        raise RejectedAnswer("Model step output must be a record", response.content)
     return result, {
         "content": response.content,
         "finish_reason": response.finish_reason,
