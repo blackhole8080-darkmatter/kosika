@@ -625,8 +625,12 @@ equality. Swarm output must not acquire authority the way model output cannot.
 - A function still ends with a final `return`, so a body cannot fall off its
   end without a value.
 - 12 tests in `tests/test_early_return.py`.
+- The mind map now draws a step's fallback: an edge from the step to the
+  fallback's target, with the ordinary call relation and the label
+  `otherwise: computes` (or `otherwise: asks`, and so on), so every view that
+  reads relations shows it.
 - Still open: narrowing (an optional proved present by `if x.exists()` still
-  needs `.value()`) and the mind map's fallback edge.
+  needs `.value()`).
 
 ## Fundamentals: `otherwise` (complete)
 

@@ -12,6 +12,7 @@ from kosika.ast import program_payload
 from kosika.checker import CheckError, check
 from kosika.controls import ExecutionError
 from kosika.execution import ExecutionLimits
+from kosika.mindmap import build_mindmap, to_mermaid
 from kosika.model import ModelResponse, ScriptedModelProvider
 from kosika.modules import load_program
 from kosika.parser import ParseError, parse
@@ -195,6 +196,30 @@ class RecoveryTests(unittest.TestCase):
                 model_bindings={"assistant": scripted()},
             )
             self.assertEqual(resumed, result)
+
+    def test_the_mind_map_draws_the_fallback(self) -> None:
+        mindmap = build_mindmap(checked())
+        labels = {node["id"]: node["label"] for node in mindmap["nodes"]}
+        drawn = {
+            (labels[edge["source"]], edge["label"], labels[edge["target"]])
+            for edge in mindmap["edges"]
+            if labels[edge["source"]] == "1. label"
+            and edge["relation"] in ("model_call", "function_call")
+        }
+        self.assertEqual(
+            drawn,
+            {
+                ("1. label", "asks", "assistant/classify"),
+                ("1. label", "otherwise: computes", "keyword_label"),
+            },
+        )
+        self.assertIn("|otherwise: computes|", to_mermaid(mindmap))
+        plain = build_mindmap(
+            checked(SOURCE.replace(" otherwise keyword_label(ticket)", ""))
+        )
+        self.assertFalse(
+            [edge for edge in plain["edges"] if "otherwise" in edge["label"]]
+        )
 
     def test_the_long_step_form_accepts_otherwise(self) -> None:
         source = SOURCE.replace(

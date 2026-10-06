@@ -420,28 +420,34 @@ def build_mindmap(
             if step.binding_type in record_names:
                 binding_target = _node_id("record", step.binding_type)
                 connect(step_id, binding_target, "binding_type", "binds")
-            call = step.call
-            if isinstance(call, ToolCall):
-                agent_target = _node_id("agent", call.agent_name)
-                tool_target = _node_id("tool", call.tool_name)
-                connect(step_id, agent_target, "agent_call", "through agent")
-                connect(step_id, tool_target, "tool_call", "executes")
-            elif isinstance(call, ModelCall):
-                target = _node_id("model", call.model_name)
-                connect(step_id, target, "model_call", "asks")
-            elif isinstance(call, AgentCall):
-                target = _node_id("agent", call.agent_name)
-                connect(step_id, target, "agent_call", "asks")
-            elif isinstance(call, WorkflowCall):
-                target = _node_id("workflow", call.workflow_name)
-                connect(step_id, target, "workflow_call", "calls")
-            elif isinstance(call, FunctionCall):
-                target = binding_steps.get(
-                    call.function_name, _node_id("function", call.function_name)
-                )
-                connect(step_id, target, "function_call", "computes")
-            else:
-                raise MindmapError("Unsupported workflow call in mindmap")
+            # The fallback keeps the relation of an ordinary call, so every
+            # view draws it, and is told apart by its "otherwise" label.
+            for call, prefix in ((step.call, ""), (step.fallback, "otherwise: ")):
+                if call is None:
+                    continue
+                if isinstance(call, ToolCall):
+                    agent_target = _node_id("agent", call.agent_name)
+                    tool_target = _node_id("tool", call.tool_name)
+                    connect(
+                        step_id, agent_target, "agent_call", prefix + "through agent"
+                    )
+                    connect(step_id, tool_target, "tool_call", prefix + "executes")
+                elif isinstance(call, ModelCall):
+                    target = _node_id("model", call.model_name)
+                    connect(step_id, target, "model_call", prefix + "asks")
+                elif isinstance(call, AgentCall):
+                    target = _node_id("agent", call.agent_name)
+                    connect(step_id, target, "agent_call", prefix + "asks")
+                elif isinstance(call, WorkflowCall):
+                    target = _node_id("workflow", call.workflow_name)
+                    connect(step_id, target, "workflow_call", prefix + "calls")
+                elif isinstance(call, FunctionCall):
+                    target = binding_steps.get(
+                        call.function_name, _node_id("function", call.function_name)
+                    )
+                    connect(step_id, target, "function_call", prefix + "computes")
+                else:
+                    raise MindmapError("Unsupported workflow call in mindmap")
             binding_steps[step.binding_name] = step_id
 
     extension_payloads: list[dict[str, Any]] = []
