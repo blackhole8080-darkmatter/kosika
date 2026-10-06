@@ -34,6 +34,7 @@ from .ast import (
     RecordDecl,
     RecordExpr,
     RepeatExpr,
+    ReturnExpr,
     Step,
     SwarmDecl,
     ThinkCall,
@@ -171,6 +172,11 @@ class Parser:
             return BreakExpr()
         if self.accept("continue"):
             return ContinueExpr()
+        if self.accept("return"):
+            # An early return. A function's final `return` is consumed by
+            # parse_function before any expression is parsed, so reaching
+            # this means the `return` is nested inside a block.
+            return ReturnExpr(self.expression())
         if self.accept("repeat"):
             return self.parse_repeat_expression()
         if self.accept("try"):
@@ -214,7 +220,10 @@ class Parser:
         if self.accept("if"):
             condition = self.expression()
             when_true = self.parse_block()
-            self.expect("else")
+            if not self.accept("else"):
+                # `if` with no `else` does nothing otherwise: its other
+                # branch is null, so as a value it is optional.
+                return ConditionalExpr(condition, when_true, LiteralExpr(None))
             # `else if` chains: the else branch is itself a conditional.
             when_false = self.expression() if self.check("if") else self.parse_block()
             return ConditionalExpr(condition, when_true, when_false)

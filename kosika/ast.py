@@ -10,6 +10,18 @@ class BreakExpr:
 
 
 @dataclass(frozen=True)
+class ReturnExpr:
+    """Leave the enclosing function early with ``value`` as its result.
+
+    Written `return value` inside an `if`, `match` arm, or loop body. The
+    function's last line is still its ordinary `return`, which is stored in
+    ``FunctionDecl.return_value`` and is not one of these.
+    """
+
+    value: "Expression"
+
+
+@dataclass(frozen=True)
 class ContinueExpr:
     """Skip to the next iteration of the innermost enclosing ``for`` or ``repeat``."""
 
@@ -265,6 +277,7 @@ Expression = (
     | RepeatExpr
     | TryExpr
     | BreakExpr
+    | ReturnExpr
     | ContinueExpr
     | ModelVarExpr
     | Block
@@ -303,6 +316,8 @@ def expression_function_calls(
         elif isinstance(value, RecordExpr):
             for _name, item in value.fields:
                 visit(item)
+        elif isinstance(value, ReturnExpr):
+            visit(value.value)
         elif isinstance(value, UnaryExpr):
             visit(value.operand)
         elif isinstance(value, BinaryExpr):

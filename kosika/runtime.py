@@ -38,6 +38,7 @@ from .ast import (
     Program,
     RecordExpr,
     RepeatExpr,
+    ReturnExpr,
     ToolCall,
     ToolDecl,
     UnaryExpr,
@@ -72,6 +73,14 @@ from .trace_replay import replay_trace
 
 class _BreakLoop(Exception):
     """Raised by ``break`` to leave the innermost loop."""
+
+
+class _FunctionReturn(Exception):
+    """Raised by an early ``return`` to leave the enclosing function."""
+
+    def __init__(self, value: Any) -> None:
+        super().__init__()
+        self.value = value
 
 
 class _ContinueLoop(Exception):
@@ -592,6 +601,17 @@ def _evaluate_expression(
         raise _BreakLoop
     if isinstance(expression, ContinueExpr):
         raise _ContinueLoop
+    if isinstance(expression, ReturnExpr):
+        raise _FunctionReturn(
+            _evaluate_expression(
+                expression.value,
+                environment,
+                program,
+                functions,
+                function_events,
+                depth=depth,
+            )
+        )
     raise RuntimeError("Workflow contains an unsupported expression")
 
 
@@ -756,38 +776,43 @@ def _execute_function_body(
     validate(arguments, input_schema)
     body_events: list[dict[str, Any]] = []
     local_environment = _Scope(arguments)
-    for binding in function_body(function):
-        if not isinstance(binding, LocalBinding):
-            _evaluate_expression(
-                binding,
+    try:
+        for binding in function_body(function):
+            if not isinstance(binding, LocalBinding):
+                _evaluate_expression(
+                    binding,
+                    local_environment,
+                    program,
+                    functions,
+                    body_events,
+                    depth=depth,
+                )
+                continue
+            value = _evaluate_expression(
+                binding.value,
                 local_environment,
                 program,
                 functions,
                 body_events,
                 depth=depth,
             )
-            continue
-        value = _evaluate_expression(
-            binding.value,
+            # An inferred binding has no declared type, so there is no contract to
+            # re-check here; the checker already resolved and proved it.
+            if binding.type_name is not None:
+                validate(value, schema_for_type(program, binding.type_name))
+            local_environment[binding.name] = value
+        result = _evaluate_expression(
+            function.return_value,
             local_environment,
             program,
             functions,
             body_events,
             depth=depth,
         )
-        # An inferred binding has no declared type, so there is no contract to
-        # re-check here; the checker already resolved and proved it.
-        if binding.type_name is not None:
-            validate(value, schema_for_type(program, binding.type_name))
-        local_environment[binding.name] = value
-    result = _evaluate_expression(
-        function.return_value,
-        local_environment,
-        program,
-        functions,
-        body_events,
-        depth=depth,
-    )
+    except _FunctionReturn as early:
+        # An early return supplies the result; it is validated below
+        # exactly like the final one.
+        result = early.value
     validate(result, output_schema)
     # Optional pure-function result cache — safe because these functions are
     # deterministic and free of model/tool/host authority.

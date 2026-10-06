@@ -10,7 +10,7 @@ from typing import Any
 from kosika.builtin_methods import METHODS, MethodError, resolve
 from kosika.checker import CheckError, check
 from kosika.development import check_project
-from kosika.parser import ParseError, parse
+from kosika.parser import parse
 from kosika.runtime import replay, run
 
 HEADER = "record Out { value: Number text: Text flag: Bool items: Text[] }\n"
@@ -102,8 +102,10 @@ class ElseIfTests(unittest.TestCase):
             [self.grade(score) for score in (95, 80, 60, 10)], ["A", "B", "C", "F"]
         )
 
-    def test_a_chain_still_needs_a_final_else(self) -> None:
-        with self.assertRaises(ParseError):
+    def test_a_chain_without_a_final_else_is_optional(self) -> None:
+        # With no final else the value may be absent, so it is `Text?` and
+        # cannot be stored as a plain Text.
+        with self.assertRaisesRegex(CheckError, "expects 'Text', got 'Text\\?'"):
             result('let t: Text = if true { "a" } else if false { "b" }\n' + out())
 
     def test_branches_must_agree_on_a_type(self) -> None:

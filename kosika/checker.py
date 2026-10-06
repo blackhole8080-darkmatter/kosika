@@ -29,6 +29,7 @@ from .ast import (
     Program,
     RecordExpr,
     RepeatExpr,
+    ReturnExpr,
     ThinkCall,
     ToolCall,
     ToolVarExpr,
@@ -170,11 +171,16 @@ class _Env(dict):
     def __init__(self, source=None, *, mutable: set[str] | None = None):
         super().__init__(source or {})
         self.mutable: set[str] = set() if mutable is None else mutable
+        # The result type of the function being checked, for early returns.
+        # None outside a function body, where `return` is not allowed.
+        self.returns: str | None = None
 
     def child(self) -> _Env:
         # A nested scope still sees the enclosing mutable names, so a `var`
         # declared outside a loop stays assignable inside it.
-        return _Env(self, mutable=set(self.mutable))
+        scope = _Env(self, mutable=set(self.mutable))
+        scope.returns = self.returns
+        return scope
 
 
 def _expression_type(
@@ -305,6 +311,22 @@ def _expression_type(
     # `break` and `continue` never produce a value, so they agree with
     # whatever the other branch of a choice yields.
     if isinstance(expression, (BreakExpr, ContinueExpr)):
+        return NEVER
+    if isinstance(expression, ReturnExpr):
+        if bindings.returns is None:
+            raise CheckError(f"Step {step_name!r} uses return outside a function body")
+        returned_type = _expression_type(
+            expression.value,
+            bindings,
+            program,
+            step_name=step_name,
+            expected_type=bindings.returns,
+        )
+        if not assignable(returned_type, bindings.returns):
+            raise CheckError(
+                f"Step {step_name!r} early return expects {bindings.returns!r}, "
+                f"got {returned_type!r}"
+            )
         return NEVER
     if isinstance(expression, RepeatExpr):
         count_type = _expression_type(
@@ -1053,6 +1075,7 @@ def check(program: Program) -> None:
             raise CheckError("Recursion limit must be an integer from 1 to 32")
         _validate_type_name(program, function.output_type)
         function_bindings = _Env()
+        function_bindings.returns = function.output_type
         for parameter in function.parameters:
             if parameter.name in function_bindings:
                 raise CheckError(

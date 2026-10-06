@@ -24,6 +24,7 @@ from .ast import (
     MethodCallExpr,
     Program,
     RecordExpr,
+    ReturnExpr,
     UnaryExpr,
     VariableExpr,
 )
@@ -83,6 +84,8 @@ def _expression(
             target=walk(value.target),
             arguments=tuple((key, walk(item)) for key, item in value.arguments),
         )
+    if isinstance(value, ReturnExpr):
+        return replace(value, value=walk(value.value))
     if isinstance(value, UnaryExpr):
         return replace(value, operand=walk(value.operand))
     if isinstance(value, BinaryExpr):

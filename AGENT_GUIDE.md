@@ -59,8 +59,9 @@ fn total(numbers: Numbers) -> Total {
   the same name as the parameter needs none (`route(label, refund)`,
   `ask_about(question.text)`).
 - The body is `let`/`var` declarations and statements, run in the order they
-  are written, then exactly one `return expression` as the last line. There is
-  no early return.
+  are written, then a `return expression` as the last line. A function may
+  also return early from inside an `if` or loop:
+  `if n < 0 { return {text: "negative"} }`.
 - `let` cannot be reassigned. Use `var` for a value you assign later.
 - Operators: `+ - * / %`, `< <= > >=`, `== !=`, `and`, `or`, `not`.
   `Text + Text` and `Text + Number` join text. There is no `&&`, `||`, or `!`.
@@ -94,10 +95,11 @@ fn total(numbers: Numbers) -> Total {
 ## Choosing and repeating
 
 ```kosika
-// if is an expression. Both branches are required, each in braces.
+// if is an expression with braces around each branch. Without an else it
+// gives an optional value (null when false); as a statement it does nothing.
 let label: Text = if score >= 50 { "pass" } else { "fail" }
 
-// else if chains are allowed. The final else is still required.
+// else if chains are allowed.
 let grade: Text = if score >= 90 { "A" } else if score >= 75 { "B" } else { "C" }
 
 // match on Text, Number, or Bool. End with `case _`.
@@ -264,5 +266,5 @@ workflow.
 2. Only `Text`, `Number`, `Bool`, `Null`, arrays, and your records as types.
 3. Each workflow step is one line: `name = one_call(...)`.
 4. One `return` at the end of each `fn`; logic lives in `fn`, not in steps.
-5. Only the built-in methods listed above; no semicolons; every `if` ends
-   with an `else`.
+5. Only the built-in methods listed above; no semicolons; every function
+   ends with a `return`.

@@ -165,6 +165,11 @@ Supported functions:
   `recurse N`, where `N` is from 1 through 32. Static function nesting and call
   depth are also bounded at 32.
 - MUST end in one `return` expression with the declared output type.
+- MAY also return early. `return value` written inside an `if`, a `match`
+  arm, or a loop body leaves the innermost enclosing function at once with
+  that value, which MUST have the function's output type and is validated
+  like the final one. An early return produces no value where it stands, so
+  the branch holding it takes the type of the other branch.
 
 There is no implicit coercion. The one mixed arithmetic form is
 `Text + Number`, which formats the number and concatenates it to the text.
@@ -187,8 +192,10 @@ The supported expression surface is:
 - Short-circuit boolean `and` and `or`.
 - `Text + Text` and `Text + Number`.
 - Named function calls and `ref` references.
-- `else if` chains: `if a { x } else if b { y } else { z }`. A final `else`
-  is still required.
+- `else if` chains: `if a { x } else if b { y } else { z }`.
+- `if condition { value }` with no `else` evaluates to `null` when the
+  condition is false, so as a value it has type `T?`. As a statement it simply
+  does nothing otherwise.
 - `if condition { value } else { value }`. The condition MUST be `Bool` and
   both branches MUST have the same type.
 - `match value { case literal { value } ... case _ { value } }`. The subject

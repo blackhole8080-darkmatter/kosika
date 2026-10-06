@@ -593,6 +593,22 @@ left out: typed messages between members, state carried from one round to the
 next, and a termination judgment over observed evidence rather than result
 equality. Swarm output must not acquire authority the way model output cannot.
 
+## Fundamentals: early return and `if` without `else` (complete)
+
+- `return value` may appear inside an `if`, `match` arm, or loop body
+  (`ReturnExpr`). The checker gives it the type `Never`, requires its value to
+  fit the enclosing function's output type, and rejects it outside a function.
+  The runtime unwinds to the function and validates the value like the final
+  return. Recursion detection sees calls made in an early return.
+- `if condition { ... }` with no `else` has `null` as its other branch, so it
+  is a do-nothing statement or an optional value.
+- A function still ends with a final `return`, so a body cannot fall off its
+  end without a value.
+- 12 tests in `tests/test_early_return.py`.
+- Still open: narrowing (an optional proved present by `if x.exists()` still
+  needs `.value()`), the mind map's fallback edge, and a live-model run of the
+  thinking steps.
+
 ## Fundamentals: `otherwise` (complete)
 
 - `step = call otherwise fallback` gives a step one fallback call
