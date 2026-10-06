@@ -40,6 +40,8 @@ workflow main(person: Person) -> Greeting {
   required. Record names start with a capital letter.
 - A record value is written `{field: value, other: value}`. An array value is
   `[1, 2, 3]`. Read a field with `value.field` and an element with `list[0]`.
+  `var items = [1, 2, 3]` needs no type; an empty `[]` does:
+  `var items: Number[] = []`.
 
 ## Functions
 
@@ -56,11 +58,12 @@ fn total(numbers: Numbers) -> Total {
 ```
 
 - A function is pure: it cannot call a model, tool, agent, or workflow.
-- **Arguments are named**: `area(width: 2, height: 3)`. Two short forms:
-  a call with exactly one argument needs no name (`double(n + 1)`,
-  `words.join("-")`, `stock.get("pen").or(0)`), and a variable or field with
-  the same name as the parameter needs none (`route(label, refund)`,
-  `ask_about(question.text)`).
+- **Arguments** are named, `area(width: 2, height: 3)`, or all left unnamed
+  and given in the parameters' order: `area(2, 3)`, `gcd(48, 18)`,
+  `text.slice(0, 3)`, `double(n + 1)`. Do not mix the two in one call. One
+  special case: when every unnamed argument is a variable or field named
+  exactly like a parameter, they are matched by name, so `route(refund,
+  label)` and `route(label, refund)` mean the same.
 - The body is `let`/`var` declarations and statements, run in the order they
   are written, then a `return expression` as the last line. A function may
   also return early from inside an `if` or loop:
@@ -286,7 +289,7 @@ workflow.
 
 ## Checklist before answering
 
-1. Name every argument unless it is a same-named variable or field.
+1. In one call, name every argument or none (then use parameter order).
 2. Only `Text`, `Number`, `Bool`, `Null`, arrays, and your records as types.
 3. Each workflow step is one line: `name = one_call(...)`.
 4. One `return` at the end of each `fn`; logic lives in `fn`, not in steps.

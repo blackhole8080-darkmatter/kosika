@@ -202,7 +202,7 @@ class MutabilityRejectionTests(unittest.TestCase):
         # omitting the annotation must produce a clear request, not a crash or
         # a silently-None type.
         for source, pattern in (
-            ("fn f() -> Text { let x = [1, 2] return x }", "annotate"),
+            ("fn f() -> Text { let x = [] return x }", "annotate"),
             ("fn f() -> Text { let x = {a: 1} return x }", "annotate"),
         ):
             with (

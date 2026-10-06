@@ -143,11 +143,11 @@ workflow main(question: Question) -> Report {
             "argument 'answer' expects 'Answer', got 'Question'", error_of(wrong)
         )
 
-    def test_several_unnamed_expressions_need_names(self) -> None:
+    def test_a_named_and_an_unnamed_expression_cannot_be_mixed(self) -> None:
         source = DECLARATIONS + (
             "fn pair(a: Number, b: Number) -> Report {\n"
             '  return {text: "x", length: a + b}\n}\n'
-            "workflow main() -> Report { report = pair(1 + 2, 3) }\n"
+            "workflow main() -> Report { report = pair(a: 1 + 2, 3) }\n"
         )
         self.assertIn("needs a name; write name: value", error_of(source))
 

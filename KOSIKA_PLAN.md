@@ -610,6 +610,21 @@ equality. Swarm output must not acquire authority the way model output cannot.
   cannot read the quotes yet; they are in the trace only. Traces with
   evidence are not readable by an older Kosika (they fail closed).
 
+## Algorithms: arguments by position (complete)
+
+- A call may leave every argument unnamed: `gcd(48, 18)`,
+  `text.slice(0, 3)`, `items.set(0, 9)`. `sugar.resolve_unnamed` names them
+  from the callee's parameters, so a positional call and the named call are
+  the same program with the same hash.
+- Kept from before: when every unnamed argument is a variable or field named
+  like a parameter, they match by name, so same-named values passed in
+  another order are never silently swapped. Everything else goes by position.
+- Naming only some arguments of a call is still refused.
+- `var items = [1, 2, 3]` now infers `Number[]` from its items. An empty
+  literal, or items of different types, still needs a written type.
+- 11 tests in `tests/test_positional_arguments.py`.
+- Not claimed: no default parameter values and no variable-length arguments.
+
 ## Algorithms: loops that can do real work (complete)
 
 - Found by writing binary search, gcd, Fibonacci, a prime sieve, and bubble
@@ -630,8 +645,7 @@ equality. Swarm output must not acquire authority the way model output cannot.
 - Not claimed: speed. Kosika is interpreted in Python, so a loop here is
   many times slower than the same loop in Python. `items[i] = v` copies the
   array, which makes an in-place sort quadratic in copying. Arrays built with
-  `append` still stop at 4,096 elements, recursion at depth 32, and arguments
-  must still be named (`gcd(a: 48, b: 18)`).
+  `append` still stop at 4,096 elements and recursion at depth 32.
 
 ## Reliability: budgets in the language (complete)
 

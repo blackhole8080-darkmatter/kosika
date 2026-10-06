@@ -585,12 +585,23 @@ def _expression_type(
         return base_type[:-2]
     if isinstance(expression, ArrayExpr):
         if expected_type is None:
-            # Reachable now that a local may omit its annotation. Element type
-            # is genuinely ambiguous here, so ask rather than guess.
-            raise CheckError(
-                f"Step {step_name!r} cannot infer the type of an array literal; "
-                f"annotate the binding with an array type"
-            )
+            # No type from the context: `var items = [1, 2, 3]`. The items
+            # decide it when they agree. An empty literal, or items of
+            # different types, stay ambiguous, so ask rather than guess.
+            inferred: str | None = None
+            for item in expression.items:
+                item_type = _expression_type(
+                    item, bindings, program, step_name=step_name
+                )
+                inferred = item_type if inferred is None else unify(inferred, item_type)
+                if inferred is None:
+                    break
+            if inferred is None or inferred in (NEVER, "Null"):
+                raise CheckError(
+                    f"Step {step_name!r} cannot infer the type of an array literal; "
+                    f"annotate the binding with an array type"
+                )
+            return f"{inferred}[]"
         if not expected_type.endswith("[]") or signature(expected_type) is not None:
             raise CheckError(
                 f"Step {step_name!r} array literal requires an array-typed field"
@@ -828,6 +839,8 @@ def _check_arguments(
     expected_fields: dict[str, str] | None = None,
 ) -> None:
     argument_names = [name for name, _ in arguments]
+    if "" in argument_names:
+        raise CheckError(f"Step {step_name!r} argument needs a name; write name: value")
     if len(argument_names) != len(set(argument_names)):
         raise CheckError(f"Step {step_name!r} has duplicate tool arguments")
     expected = (

@@ -3,12 +3,14 @@
 Two conveniences live here. Neither adds meaning: each is replaced by the
 long form it stands for, so the checker and runtime never see it.
 
-* **One unnamed argument.** A call with a single argument may leave its name
-  out: `spend(order)` or `use_model assistant("hello")`. The parser records the
-  name as empty, and `name_sole_arguments` fills in the callee's only
-  parameter. When the callee is not known here (a function held in a
-  variable) the name is read off the expression, as in `f(order)` meaning
-  `f(order: order)`; otherwise the checker reports that a name is needed.
+* **Unnamed arguments.** A call may leave every argument name out:
+  `spend(order)`, `gcd(48, 18)`, or `use_model assistant("hello")`. The parser
+  records the names as empty, and `name_sole_arguments` fills them in from the
+  callee's parameters: by matching names when the arguments are same-named
+  variables, otherwise by position (see `resolve_unnamed`). When the callee
+  is not known here (a function held in a variable) the names are read off
+  the expressions, as in `f(order)` meaning `f(order: order)`; otherwise the
+  checker reports that a name is needed.
   Built-in methods resolve their one unnamed argument in the checker instead,
   because that needs the receiver's type.
 
@@ -53,15 +55,39 @@ def inferred_name(expression: Any) -> str | None:
 def resolve_unnamed(
     arguments: tuple[tuple[str, Any], ...], parameters: list[str] | None
 ) -> tuple[tuple[str, Any], ...]:
-    """Name a call's single unnamed argument, when that is possible."""
+    """Name a call's unnamed arguments, when that is possible.
 
-    if len(arguments) != 1 or arguments[0][0] != UNNAMED:
+    A call is either fully named or fully unnamed. Unnamed arguments are
+    matched in this order:
+
+    1. A single argument takes the callee's single parameter.
+    2. If every argument is a variable or field whose own name is a parameter,
+       and together they name every parameter, they are matched by name:
+       `route(refund, label)` is `route(refund: refund, label: label)`.
+    3. Otherwise they are matched by position: `gcd(48, 18)`.
+
+    Rule 2 comes first so that passing same-named values in a different order
+    can never silently swap them. When neither applies, the arguments are
+    returned as they came and the checker reports what is wrong.
+    """
+
+    if not arguments or any(name != UNNAMED for name, _ in arguments):
         return arguments
-    expression = arguments[0][1]
-    if parameters is not None and len(parameters) == 1:
-        return ((parameters[0], expression),)
-    name = inferred_name(expression)
-    return ((name, expression),) if name is not None else arguments
+    expressions = [expression for _, expression in arguments]
+    if len(arguments) == 1 and parameters is not None and len(parameters) == 1:
+        return ((parameters[0], expressions[0]),)
+    inferred = [inferred_name(expression) for expression in expressions]
+    names = [name for name in inferred if name is not None]
+    by_name = tuple(zip(names, expressions)) if len(names) == len(expressions) else None
+    if parameters is None:
+        return by_name or arguments
+    if by_name is not None and sorted(names) == sorted(parameters):
+        return by_name
+    if len(expressions) == len(parameters):
+        return tuple(zip(parameters, expressions))
+    # The count is wrong. Names read off the expressions let the checker say
+    # which argument is unknown or missing.
+    return by_name or arguments
 
 
 def _uses_unnamed(value: Any) -> bool:
@@ -69,10 +95,9 @@ def _uses_unnamed(value: Any) -> bool:
         return any(_uses_unnamed(item) for item in value)
     if is_dataclass(value) and not isinstance(value, type):
         arguments = getattr(value, "arguments", None)
-        if (
-            isinstance(arguments, tuple)
-            and len(arguments) == 1
-            and arguments[0][0] == UNNAMED
+        if isinstance(arguments, tuple) and any(
+            isinstance(item, tuple) and len(item) == 2 and item[0] == UNNAMED
+            for item in arguments
         ):
             return True
         return any(_uses_unnamed(getattr(value, item.name)) for item in fields(value))

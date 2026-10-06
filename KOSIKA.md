@@ -601,18 +601,28 @@ call = identifier "(" named-arguments ")"                 (* function *)
 - A one-line step `name = call` is exactly
   `step name { let name = call  return name }`: the step and its result share
   the name and the result type is inferred. Both forms parse to the same tree.
-- Named arguments have a short form. An argument written as a bare variable or
-  a field path takes its name from the last identifier: `f(order)` is
-  `f(order: order)` and `f(question.text)` is `f(text: question.text)`. Any
-  other expression MUST be named (`parse/unnamed-argument`). The short form
-  applies to every call, including methods.
-- A call with exactly one argument MAY leave its name out, whatever the
-  expression: `double(n + 1)`, `use_model assistant("hi")`,
-  `words.join("-")`. It binds to the callee's only parameter. If the callee
-  has more or fewer than one parameter, or is a function value whose
-  parameters are not known where the call is written, the bare-variable rule
-  above applies, and any other expression is rejected
+- A call names every argument or none. Naming only some is rejected
+  (`parse/unnamed-argument`). This applies to every call, including methods.
+- Unnamed arguments are matched to the callee's parameters as follows:
+  1. A single argument binds to the callee's only parameter, whatever the
+     expression: `double(n + 1)`, `use_model assistant("hi")`,
+     `words.join("-")`.
+  2. If every argument is a bare variable or a field path whose last
+     identifier is a parameter name, and together they name every parameter,
+     they are matched by name: `route(refund, label)` is
+     `route(refund: refund, label: label)` whatever the parameter order.
+  3. Otherwise they are matched by position, and their count MUST equal the
+     number of parameters: `gcd(48, 18)`, `text.slice(0, 3)`.
+  Rule 2 precedes rule 3 so that same-named values written in another order
+  are never silently swapped. A positional call and the equivalent named call
+  are the same program.
+- When the callee is a function value whose parameters are not known where
+  the call is written, each unnamed argument takes its name from its own
+  variable or field, and any other expression is rejected
   (`check/unnamed-argument`).
+- An array literal with at least one item needs no type from its context when
+  its items agree: `var items = [1, 2, 3]` is a `Number[]`. An empty literal
+  needs one.
 - A program with `fn main` and no `workflow main` is given the workflow
   `workflow main(<same parameters>) -> <same result> { result = main(...) }`,
   provided every parameter and the result are records.

@@ -1044,7 +1044,9 @@ class Parser:
             if self.accept(")"):
                 break
             self.expect(",")
-        if len(arguments) == 1:
+        if len(arguments) == 1 or len(unnamed) == len(arguments):
+            # Entirely unnamed: `kosika.sugar` names them once the callee's
+            # parameters are known, by matching names or else by position.
             return tuple(arguments)
         named: list[tuple[str, Expression]] = []
         for name, value in arguments:
