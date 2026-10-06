@@ -285,6 +285,7 @@ def load_program(
         merged.module_imports[module_key] = tuple(sorted(direct_imports))
         for category in CATEGORIES:
             getattr(merged, category).extend(getattr(module, category))
+        merged.tests.extend(module.tests)
         merged.module_hashes[module_key] = hashlib.sha256(data).hexdigest()
         active.remove(resolved)
         loaded[resolved] = module

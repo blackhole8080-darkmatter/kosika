@@ -610,6 +610,22 @@ equality. Swarm output must not acquire authority the way model output cannot.
   cannot read the quotes yet; they are in the trace only. Traces with
   evidence are not readable by an older Kosika (they fail closed).
 
+## Tests in the language (complete)
+
+- `test "name" { answers / name = ... / expect ... }` and `kosika test FILE`
+  (`kosika/testing.py`). A test runs functions and whole workflows on scripted
+  model answers, so thinking steps, evidence, retry, `otherwise`, and budgets
+  can all be tested with no model.
+- Tests are outside the program hash: adding one changes no trace or
+  approval.
+- A failure names the line, the expectation as written, and both sides of a
+  comparison.
+- 15 tests in `tests/test_kosika_tests.py`.
+- Not claimed: `kosika check` does not check test bodies; a mistake in a test
+  is reported when it is run. A test cannot script a tool, so a workflow that
+  executes a tool cannot be tested this way yet. There is no setup shared
+  between tests, and no test of what a run's trace contains.
+
 ## Algorithms: larger limits (complete)
 
 - Arrays built by methods may hold 1,000,000 elements (was 4,096), maps

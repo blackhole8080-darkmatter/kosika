@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import cast
 
 from .ast import (
@@ -37,6 +38,8 @@ from .ast import (
     ReturnExpr,
     Step,
     SwarmDecl,
+    TestDecl,
+    TestStep,
     ThinkCall,
     ToolCall,
     ToolDecl,
@@ -560,12 +563,61 @@ class Parser:
                 program.functions.append(self.parse_function())
             elif keyword == "model":
                 program.models.append(self.parse_model())
+            elif keyword == "test" and self.peek().kind == "STRING":
+                program.tests.append(self.parse_test())
             else:
                 token = self.current
                 raise ParseError(
                     f"Unexpected declaration {token.value!r} at {token.line}:{token.column}"
                 )
         return program
+
+    def parse_test(self) -> TestDecl:
+        """Parse `test "name" { answers / name = ... / expect ... }`."""
+
+        line = self.expect("test").line
+        name = self.advance().value
+        self.expect("{")
+        answers: list[tuple[str, Expression]] = []
+        steps: list[TestStep] = []
+        while not self.accept("}"):
+            token = self.current
+            if self.at_assignment() or (
+                token.kind == "IDENT" and self.peek().value == ":"
+            ):
+                target = self.identifier()
+                type_name = self.parse_type_name() if self.accept(":") else None
+                self.expect("=")
+                steps.append(
+                    TestStep(
+                        "let", self.expression(), target, token.line, "", type_name
+                    )
+                )
+            elif self.accept("answers"):
+                model = self.identifier()
+                self.expect(":")
+                answers.append((model, self.expression()))
+            else:
+                self.expect("expect")
+                start = self.index
+                value = self.expression()
+                text = self.written(start, self.index)
+                steps.append(TestStep("expect", value, "", token.line, text))
+        return TestDecl(name, tuple(answers), tuple(steps), line)
+
+    def written(self, start: int, end: int) -> str:
+        """The tokens from `start` to `end` roughly as they were typed."""
+
+        pieces: list[str] = []
+        column = None
+        line = None
+        for token in self.tokens[start:end]:
+            raw = json.dumps(token.value) if token.kind == "STRING" else token.value
+            if pieces and (token.line != line or token.column > (column or 0)):
+                pieces.append(" ")
+            pieces.append(raw)
+            line, column = token.line, token.column + len(raw)
+        return "".join(pieces)
 
     def parse_model(self) -> ModelDecl:
         self.expect("model")

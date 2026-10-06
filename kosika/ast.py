@@ -580,6 +580,31 @@ def static_function_references(
     return tuple(references)
 
 
+@dataclass(frozen=True)
+class TestStep:
+    """One line of a test: `name = expression` or `expect expression`."""
+
+    kind: str  # "let" or "expect"
+    value: Expression
+    name: str = ""
+    line: int = 0
+    # The expectation as written, for the failure message.
+    text: str = ""
+    # `name: Type = expression`, needed for a record or empty-list literal.
+    type_name: str | None = None
+
+
+@dataclass(frozen=True)
+class TestDecl:
+    """`test "name" { ... }`; see `kosika.testing`."""
+
+    name: str
+    # `answers MODEL: [...]` lines: the scripted answers of a declared model.
+    answers: tuple[tuple[str, Expression], ...] = ()
+    steps: tuple[TestStep, ...] = ()
+    line: int = 0
+
+
 @dataclass
 class Program:
     records: list[RecordDecl] = field(default_factory=list)
@@ -594,6 +619,9 @@ class Program:
     module_hashes: dict[str, str] = field(default_factory=dict)
     module_declarations: dict[str, tuple[str, ...]] = field(default_factory=dict)
     module_imports: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    # Tests are kept beside the program but are not part of what runs, so
+    # `program_payload` leaves them out of every hash.
+    tests: list[TestDecl] = field(default_factory=list)
 
 
 #: Fields added to the tree after traces and approvals were first recorded,
@@ -634,4 +662,6 @@ def program_payload(program: Program) -> dict[str, Any]:
             return [prune(item) for item in value]
         return value
 
-    return prune(asdict(program))
+    payload = prune(asdict(program))
+    payload.pop("tests", None)
+    return payload

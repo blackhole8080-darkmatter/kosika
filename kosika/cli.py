@@ -1990,6 +1990,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     replay_parser = subparsers.add_parser("replay")
     replay_parser.add_argument("trace", type=Path)
+    test_parser = subparsers.add_parser(
+        "test", help="Run the tests written in a Kosika program."
+    )
+    test_parser.add_argument("source", type=Path)
+    test_parser.add_argument("--only", help="Run only the test with this name.")
+    test_parser.add_argument("--json", action="store_true")
     journal_parser = subparsers.add_parser(
         "journal",
         help="Inspect a durable Kosika workflow or direct-agent journal.",
@@ -2909,6 +2915,21 @@ def main() -> int:
         else:
             print(_render_journal_text(report))
         return 0
+
+    if args.command == "test":
+        from .testing import run_tests
+        from .testing import to_text as tests_to_text
+
+        try:
+            results = run_tests(load_program(args.source), only=args.only)
+        except (ValueError, OSError) as exc:
+            print(f"Check failed: {exc}", file=sys.stderr)
+            return 2
+        if args.json:
+            print(json.dumps([result.to_dict() for result in results], indent=2))
+        else:
+            print(tests_to_text(results))
+        return 0 if all(result.passed for result in results) else 1
 
     if args.command == "replay":
         try:

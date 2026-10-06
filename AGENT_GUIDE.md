@@ -273,6 +273,26 @@ workflow main(city: City) -> Report {
 - If a step executes a tool whose access is `execute`, the workflow must end
   with the line `require approval` after its last step.
 
+## Tests
+
+Put tests in the same file. They run with `kosika test FILE` and call no real
+model: `answers` lists what a declared model returns, in order.
+
+```kosika
+test "a double charge goes to billing" {
+  answers assistant: [{label: "billing", confidence: 0.9}]
+  result = main({text: "My card was charged twice."})
+  expect result.queue == "billing"
+}
+
+test "gcd" {
+  expect gcd(48, 18) == 6
+}
+```
+
+Give one answer for every model step the workflow runs, in step order. A
+record literal bound to a name needs a type: `ticket: Ticket = {text: "x"}`.
+
 ## Swarms
 
 ```kosika

@@ -162,8 +162,8 @@ Supported functions:
   and function values may be passed, returned, stored in workflow bindings, and
   called.
 - May recurse only when every function participating in the cycle declares
-  `recurse N`, where `N` is from 1 through 128. Static function nesting and call
-  depth are also bounded at 32.
+  `recurse N`, where `N` is from 1 through 128. Call depth is bounded at 128
+  and static function nesting at 32.
 - MUST end in one `return` expression with the declared output type.
 - MAY also return early. `return value` written inside an `if`, a `match`
   arm, or a loop body leaves the innermost enclosing function at once with
@@ -456,6 +456,38 @@ workflow main(ticket: Ticket) -> Routing {
   set, and the stricter of the two applies.
 - A run that reaches its budget stops with a `budget` or `deadline` error.
   This is not a failed step: `otherwise` does not catch it.
+
+### Tests
+
+A program MAY hold tests beside the code they exercise. `kosika test FILE`
+runs them.
+
+```kosika
+test "a double charge goes to billing" {
+  answers assistant: [{label: "billing", confidence: 0.9}, {text: "Charged twice."}]
+  ticket: Ticket = {text: "My card was charged twice."}
+  result = main(ticket)
+  expect result.queue == "billing"
+}
+```
+
+- `answers MODEL: [record, ...]` gives the answers a declared model returns,
+  in the order it is asked. A test never calls a real model. A model that is
+  asked with no answer left fails the test, and so does an answer that was
+  never asked for.
+- `name = expression` binds a value; `name: Type = expression` gives it a
+  type, which a record literal needs. The expression MAY call a function, or
+  run a workflow by calling it like a function, with the workflow's
+  parameters as arguments.
+- `expect expression` MUST be a `Bool` and passes when it is `true`. A failed
+  comparison reports the value of each side.
+- A test stops at its first failure. A run that fails inside a test fails the
+  test with the run's own message.
+- Tests are not part of the program that runs. They are left out of the
+  program hash, so adding or changing a test never changes a trace or an
+  approval. A test cannot execute a tool.
+- `kosika test FILE` prints one line per test and exits 0 only if all pass;
+  `--only NAME` runs one test and `--json` prints the results as JSON.
 
 ## Tools and capabilities
 

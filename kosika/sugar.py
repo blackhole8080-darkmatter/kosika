@@ -107,7 +107,7 @@ def _uses_unnamed(value: Any) -> bool:
 def name_sole_arguments(program: Program) -> Program:
     """Fill in the name of every single unnamed argument whose callee is known."""
 
-    if not _uses_unnamed([program.functions, program.workflows]):
+    if not _uses_unnamed([program.functions, program.workflows, program.tests]):
         return program
 
     functions = {
@@ -149,7 +149,10 @@ def name_sole_arguments(program: Program) -> Program:
         node = replace(value, **changes) if changes else value
         parameters: list[str] | None
         if isinstance(node, (FunctionCallExpr, FunctionCall)):
-            parameters = functions.get(node.function_name)
+            # A test runs a workflow by calling it like a function.
+            parameters = functions.get(node.function_name) or workflows.get(
+                node.function_name
+            )
         elif isinstance(node, ModelCall):
             parameters = models.get(node.model_name)
         elif isinstance(node, AgentCall):
@@ -169,6 +172,7 @@ def name_sole_arguments(program: Program) -> Program:
         program,
         functions=rewrite(program.functions),
         workflows=rewrite(program.workflows),
+        tests=rewrite(program.tests),
     )
 
 
