@@ -466,6 +466,13 @@ class Step:
     # The models that take turns answering a `vote`, when a thinking step
     # names several with `using a, b`. Empty when one model answers them all.
     voters: tuple[str, ...] = ()
+    # `step = match subject { case "a" { call } case _ { call } }`: the step
+    # makes exactly one of these calls, chosen by the subject's value. Each
+    # branch is (pattern, call); a None pattern is the final `case _`. `call`
+    # above then holds the first branch, so every pass that reads one call
+    # still finds one.
+    subject: "Expression | None" = None
+    branches: tuple[tuple[Any, Any], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -661,6 +668,7 @@ _ABSENT_DEFAULTS: dict[str, tuple[Any, ...]] = {
     "retries": (0,),
     "votes": (0,),
     "voters": ((), []),
+    "branches": ((), []),
     "default": (False,),
     "more_models": ((), []),
     "budget": ((), []),

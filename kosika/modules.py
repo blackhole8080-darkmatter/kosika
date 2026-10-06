@@ -101,7 +101,11 @@ def _references(program: Program) -> set[str]:
         for step in workflow.steps:
             if step.binding_type:
                 names.update(referenced_types(step.binding_type))
-            for call in (step.call, step.fallback):
+            for call in (
+                step.call,
+                step.fallback,
+                *(branch for _, branch in step.branches),
+            ):
                 if call is None:
                     continue
                 if isinstance(call, ThinkCall):

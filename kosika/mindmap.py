@@ -440,7 +440,23 @@ def build_mindmap(
                 connect(step_id, binding_target, "binding_type", "binds")
             # The fallback keeps the relation of an ordinary call, so every
             # view draws it, and is told apart by its "otherwise" label.
-            for call, prefix in ((step.call, ""), (step.fallback, "otherwise: ")):
+            drawn: tuple[tuple[Any, str], ...] = (
+                (step.call, ""),
+                (step.fallback, "otherwise: "),
+            )
+            if step.branches:
+                # One edge for each call the step may make, labelled with the
+                # value that selects it.
+                drawn = tuple(
+                    (
+                        branch,
+                        "otherwise: "
+                        if pattern is None
+                        else f"when {json.dumps(pattern)}: ",
+                    )
+                    for pattern, branch in step.branches
+                )
+            for call, prefix in drawn:
                 if call is None:
                     continue
                 if isinstance(call, ToolCall):

@@ -486,6 +486,18 @@ was recalled or remembered, when a fallback took over, and what the run cost
 in model calls, tokens, and seconds. It reads only the trace. It first checks
 that the trace replays and says so, or warns when it does not.
 
+### Talking to a program
+
+```
+kosika chat main.kos --model MODEL --memory FOLDER
+```
+
+Each line you type is one ordinary run of the program's `main` workflow,
+which must take one record with a `text: Text` field. The program keeps the
+conversation itself, in a memory, so a chat has no powers a single run lacks.
+`--trace FILE` keeps the last turn's trace for `kosika story`.
+`my_examples/assistant` is a laptop assistant built this way.
+
 ### Sharing a program with another device
 
 A pack is one file holding every module of a program and the program's hash.

@@ -265,6 +265,9 @@ known to have passed:
   `if not name.exists() { return ... }` (or `break`, or `continue`);
 - in the body of `for x in xs where x.exists() { ... }`.
 
+- on the right of `and` when the left tests it (`n.exists() and n > 0`),
+  and on the right of `or` when the left is `not n.exists()`.
+
 Only a plain name declared with `let`, a parameter, or a loop variable is
 narrowed. A `var` is not, because it may be set back to `null`; a field or an
 index is not, so bind it to a `let` first. `exists`, `value`, and `or` remain
@@ -463,6 +466,30 @@ think = "classify"  expression "into" expression [ "using" identifier ]
 - Voting only helps when the answers can differ. A model run with no
   randomness gives the same answer every time, and N agreeing copies of one
   answer prove nothing.
+
+### Choosing between calls
+
+A one-line step MAY make one of several calls, chosen by a value:
+
+```kosika
+said = match kind.label {
+  case "game" { call game(msg) }
+  case "note" { call note(msg) }
+  case _ { call chat(msg) }
+}
+```
+
+- The subject MUST be `Text`, `Number`, or `Bool`. Each `case` holds a text,
+  number, or `true`/`false` literal and exactly one call of any step kind.
+  The last case MUST be `case _`, and no value may appear twice.
+- Exactly one call is made. Every branch MUST return the same type, which is
+  the step's type.
+- Every branch is authorized before the run starts, as if each were its own
+  step, so a missing model, tool, or memory grant is refused up front
+  whichever branch would be taken.
+- A branch MUST NOT be a tool whose access is `execute`, and a branch takes
+  no `vote`, `retry`, or `otherwise` of its own. Put such a step in a
+  workflow and `call` it from the branch.
 
 ### Budgets
 

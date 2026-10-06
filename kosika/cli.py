@@ -2098,6 +2098,32 @@ def build_parser() -> argparse.ArgumentParser:
 
     replay_parser = subparsers.add_parser("replay")
     replay_parser.add_argument("trace", type=Path)
+    chat_parser = subparsers.add_parser(
+        "chat", help="Talk to a Kosika program, one message at a time."
+    )
+    chat_parser.add_argument("source", type=Path)
+    chat_parser.add_argument("--workflow", default="main")
+    chat_parser.add_argument(
+        "--model", help="Model that answers for every declared model."
+    )
+    chat_parser.add_argument("--model-url", help="OpenAI-compatible model URL.")
+    chat_parser.add_argument(
+        "--model-protocol", choices=MODEL_PROTOCOLS, default="openai"
+    )
+    chat_parser.add_argument(
+        "--models", type=Path, help="JSON file giving each declared model its own."
+    )
+    chat_parser.add_argument(
+        "--model-fixture", type=Path, help="Saved answers instead of a live model."
+    )
+    chat_parser.add_argument(
+        "--memory", type=Path, help="Folder that holds the program's memories."
+    )
+    chat_parser.add_argument(
+        "--trace",
+        type=Path,
+        help="Write each turn's trace here, replacing the last, for `kosika story`.",
+    )
     story_parser = subparsers.add_parser(
         "story", help="Tell what happened in a run, in plain words, from its trace."
     )
@@ -3057,6 +3083,36 @@ def main() -> int:
             print(json.dumps(report, indent=2, sort_keys=True))
         else:
             print(_render_journal_text(report))
+        return 0
+
+    if args.command == "chat":
+        from .chat import ChatError, chat_loop, message_parameter
+
+        try:
+            program = load_program(args.source)
+            message_parameter(program, args.workflow)
+            args.model_binding = None
+            chat_models = _workflow_model_bindings(args, program)
+        except (ChatError, ValueError, OSError) as exc:
+            print(f"Chat unavailable: {exc}", file=sys.stderr)
+            return 2
+
+        def read_line() -> str | None:
+            try:
+                return input("you> ")
+            except EOFError:
+                return None
+
+        print('Type a message, or "exit" to stop.', file=sys.stderr)
+        chat_loop(
+            program,
+            args.workflow,
+            model_bindings=chat_models,
+            tool_bindings=bind_memory_tools(program, args.memory),
+            read=read_line,
+            write=print,
+            trace=args.trace,
+        )
         return 0
 
     if args.command == "story":

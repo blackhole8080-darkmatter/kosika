@@ -610,6 +610,32 @@ equality. Swarm output must not acquire authority the way model output cannot.
   cannot read the quotes yet; they are in the trace only. Traces with
   evidence are not readable by an older Kosika (they fail closed).
 
+## A laptop assistant, and what it needed (first version)
+
+- Building an assistant showed two gaps, now closed:
+  - A workflow could not do different things for different requests. A step
+    may now choose between calls: `x = match value { case "a" { call ... }
+    case _ { ... } }` (`Step.subject`, `Step.branches`,
+    `checker._check_branches`). Every branch is authorized before the run.
+  - A program could only be run once per command. `kosika chat` runs one
+    workflow per typed line (`kosika/chat.py`); the program keeps the
+    conversation in memory.
+- Also: the right side of `and` / `or` now uses what the left side proved
+  about an optional (`n.exists() and n > 0`).
+- `my_examples/assistant/main.kos`: routing by plain words first and by the
+  model only when unsure, chat with the last six lines of conversation,
+  notes, and tic-tac-toe played entirely in code. Six tests in the language.
+- First real conversation, 2026-10-06, qwen2.5:7b through Ollama: game moves,
+  notes, and the refusals answered in 0.1 to 0.2 seconds because no model is
+  asked; chat answers took 20 to 23 seconds each, and the first model call
+  69 seconds while the model loaded.
+- 15 tests in `tests/test_chat_and_step_match.py`.
+- Not claimed: the assistant has no internet, so no news. It cannot open,
+  change, or run anything on the laptop; that needs the approval flow inside
+  a chat, which is not built. It does not reach other AI tools. Its speed on
+  questions is the local model's speed. Voice is not built. A `match` branch
+  cannot carry its own retry, vote, or fallback.
+
 ## Understanding and starting agents (complete)
 
 - `kosika story TRACE` (`kosika/story.py`) narrates a run from its trace
@@ -662,7 +688,7 @@ equality. Swarm output must not acquire authority the way model output cannot.
   an agent on another device. Nothing keeps two devices in step after the
   first copy.
 
-## Model routing (built, not yet run on live models)
+## Model routing (built; run once on two local models)
 
 - A program can declare several models, mark one `default model NAME`, and
   send each thinking step to one with `using NAME`.

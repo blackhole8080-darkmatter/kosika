@@ -1214,6 +1214,13 @@ def _run_workflow(
     visited_workflows = {workflow.name}
     while pending:
         step = pending.pop(0)
+        if step.branches:
+            # Any branch may run, so every one must be authorized up front.
+            pending.extend(
+                dataclass_replace(step, call=branch, branches=(), subject=None)
+                for _, branch in step.branches
+            )
+            continue
         if step.fallback is not None:
             # Both calls may run, so both must be authorized up front.
             pending.append(
@@ -1298,6 +1305,25 @@ def _run_workflow(
         try:
             _control.scope = (*_scope, workflow.name, step.name)
             _control.consume("steps")
+            if step.branches and step.subject is not None:
+                # A `match` step: the subject's value picks the one call made.
+                chosen_by = _evaluate_expression(
+                    step.subject, environment, program, functions, [], depth=-1
+                )
+                step = dataclass_replace(
+                    step,
+                    call=next(
+                        branch
+                        for pattern, branch in step.branches
+                        if pattern is None
+                        or (
+                            isinstance(pattern, bool) == isinstance(chosen_by, bool)
+                            and pattern == chosen_by
+                        )
+                    ),
+                    branches=(),
+                    subject=None,
+                )
             expression_events: list[dict[str, Any]] = []
             arguments = {
                 name: _evaluate_expression(

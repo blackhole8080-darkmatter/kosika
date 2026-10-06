@@ -696,9 +696,18 @@ def _expression_type(
         left_type = _expression_type(
             expression.left, bindings, program, step_name=step_name
         )
+        # The right side of `and` runs only when the left is true, and of `or`
+        # only when it is false, so what the left proves holds on the right:
+        # `n.exists() and n > 0`.
+        right_bindings = bindings
+        if expression.operator in ("and", "or"):
+            when_true, when_false = _proved_present(expression.left, bindings)
+            proved = when_true if expression.operator == "and" else when_false
+            if proved:
+                right_bindings = bindings.narrowed(proved)
         right_type = _expression_type(
             expression.right,
-            bindings,
+            right_bindings,
             program,
             step_name=step_name,
             expected_type=left_type,
@@ -966,6 +975,71 @@ def _check_fallbacks(program: Program) -> None:
     check(swapped)
 
 
+def _check_branches(program: Program) -> None:
+    """Check a `match` step by checking the program each branch would make.
+
+    Every branch must produce the same type, the last one must be `case _`
+    so that some call is always made, and no value may be listed twice. A
+    branch may not be a tool that changes the world: which call a step makes
+    is decided as the workflow runs, after any approval of the plan.
+    """
+
+    tools = {tool.name: tool for tool in program.tools}
+    most = 0
+    for workflow in program.workflows:
+        for step in workflow.steps:
+            if not step.branches:
+                continue
+            most = max(most, len(step.branches))
+            patterns = [pattern for pattern, _ in step.branches]
+            if patterns[-1] is not None or None in patterns[:-1]:
+                raise CheckError(
+                    f"Step {step.name!r} match must end with exactly one `case _`"
+                )
+            seen = [(type(pattern), pattern) for pattern in patterns[:-1]]
+            if len(seen) != len(set(seen)):
+                raise CheckError(f"Step {step.name!r} match lists a value twice")
+            outputs = set()
+            for _, call in step.branches:
+                tool = tools.get(call.tool_name) if isinstance(call, ToolCall) else None
+                if tool is not None and tool.access == "execute":
+                    raise CheckError(
+                        f"Step {step.name!r} match cannot choose execute tool "
+                        f"{tool.name!r}"
+                    )
+                outputs.add(_call_output(program, call))
+            outputs.discard(None)
+            if len(outputs) > 1:
+                raise CheckError(
+                    f"Step {step.name!r} match branches return different "
+                    f"types: {', '.join(sorted(map(str, outputs)))}"
+                )
+    for index in range(most):
+        check(
+            replace(
+                program,
+                workflows=[
+                    replace(
+                        workflow,
+                        steps=tuple(
+                            replace(
+                                step,
+                                call=step.branches[min(index, len(step.branches) - 1)][
+                                    1
+                                ],
+                                branches=(),
+                            )
+                            if step.branches
+                            else step
+                            for step in workflow.steps
+                        ),
+                    )
+                    for workflow in program.workflows
+                ],
+            )
+        )
+
+
 def check(program: Program) -> None:
     if any(
         isinstance(step.call, ThinkCall)
@@ -1026,6 +1100,9 @@ def check(program: Program) -> None:
                     f"Step {step.name!r} cannot retry: the count must be "
                     f"from 1 to 5, got {step.retries}"
                 )
+    if any(step.branches for workflow in program.workflows for step in workflow.steps):
+        _check_branches(program)
+        return
     if any(
         step.fallback is not None
         for workflow in program.workflows
@@ -1414,6 +1491,15 @@ def check(program: Program) -> None:
         call_input: str | None
         for step in workflow.steps:
             expected_fields = None
+            if step.subject is not None:
+                subject_type = _expression_type(
+                    step.subject, _Env(bindings), program, step_name=step.name
+                )
+                if subject_type not in ("Text", "Number", "Bool"):
+                    raise CheckError(
+                        f"Step {step.name!r} match expects Text, Number, or "
+                        f"Bool, got {subject_type!r}"
+                    )
             if isinstance(step.call, WorkflowCall):
                 child = workflows[step.call.workflow_name]
                 call_input, call_output = None, child.output_type

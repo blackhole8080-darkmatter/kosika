@@ -167,7 +167,11 @@ def lower_thinking(program: Program) -> Program:
         isinstance(call, ThinkCall)
         for workflow in program.workflows
         for step in workflow.steps
-        for call in (step.call, step.fallback)
+        for call in (
+            step.call,
+            step.fallback,
+            *(branch for _, branch in step.branches),
+        )
     )
     if not uses_general and not thinks:
         return program
@@ -265,10 +269,27 @@ def lower_thinking(program: Program) -> Program:
                     f"Step {step.name!r} needs a model for "
                     f"{step.fallback.verb}: its fallback lists several models"
                 )
-            if call is step.call and fallback is step.fallback:
+            branches = tuple(
+                (pattern, lower_call(step, branch)) for pattern, branch in step.branches
+            )
+            if branches:
+                call = branches[0][1]
+            if (
+                call is step.call
+                and fallback is step.fallback
+                and all(new[1] is old[1] for new, old in zip(branches, step.branches))
+            ):
                 steps.append(step)
             else:
-                steps.append(replace(step, call=call, fallback=fallback, voters=voters))
+                steps.append(
+                    replace(
+                        step,
+                        call=call,
+                        fallback=fallback,
+                        voters=voters,
+                        branches=branches,
+                    )
+                )
         workflows.append(replace(workflow, steps=tuple(steps)))
 
     declared = {record.name: record for record in program.records}

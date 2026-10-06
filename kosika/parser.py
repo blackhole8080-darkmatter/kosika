@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
-from typing import cast
+from typing import Any, cast
 
 from .ast import (
     AgentCall,
@@ -1133,6 +1133,45 @@ class Parser:
 
         name = self.identifier()
         self.expect("=")
+        if self.accept("match"):
+            # The step makes one of several calls, chosen by a value.
+            subject = self.parse_or_expression()
+            self.expect("{")
+            branches: list[tuple[Any, Any]] = []
+            while not self.accept("}"):
+                self.expect("case")
+                pattern: Any = None
+                if not self.accept("_"):
+                    token = self.advance()
+                    if token.kind == "STRING":
+                        pattern = token.value
+                    elif token.kind == "NUMBER":
+                        pattern = (
+                            float(token.value)
+                            if "." in token.value
+                            else int(token.value)
+                        )
+                    elif token.kind == "IDENT" and token.value in ("true", "false"):
+                        pattern = token.value == "true"
+                    else:
+                        raise ParseError(
+                            f"Expected 'value' at {token.line}:{token.column}, "
+                            f"got {token.value!r}"
+                        )
+                self.expect("{")
+                branches.append((pattern, self.parse_step_call()))
+                self.expect("}")
+            if not branches:
+                self.expect("case")
+            return Step(
+                name,
+                branches[0][1],
+                name,
+                None,
+                name,
+                subject=subject,
+                branches=tuple(branches),
+            )
         call = self.parse_step_call()
         votes = self.parse_step_count("vote")
         retries = self.parse_step_count("retry")
