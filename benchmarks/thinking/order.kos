@@ -7,12 +7,24 @@ fn keep(order: Order) -> Order {
   return order
 }
 
+fn nothing_found(ticket: Ticket) -> Order {
+  return {customer: null, order_id: null, amount: null}
+}
+
+// The model alone.
 workflow plain(ticket: Ticket) -> Order {
   order  = extract Order from ticket.text
   result = keep(order)
 }
 
+// Evidence only: an answer whose quotes are not in the ticket fails the run.
 workflow grounded(ticket: Ticket) -> Order {
   order  = extract Order from ticket.text with evidence
+  result = keep(order)
+}
+
+// Evidence, two retries with the mistake shown, then a safe empty answer.
+workflow guarded(ticket: Ticket) -> Order {
+  order  = extract Order from ticket.text with evidence retry 2 otherwise nothing_found(ticket)
   result = keep(order)
 }

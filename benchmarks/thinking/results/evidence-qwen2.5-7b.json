@@ -1,0 +1,529 @@
+{
+  "model": "qwen2.5-7b",
+  "tickets": 16,
+  "totals": {
+    "plain": {
+      "right": 39,
+      "invented": 6,
+      "wrong": 0,
+      "missed": 0,
+      "rejected": 1,
+      "calls": 16,
+      "seconds": 179.3
+    },
+    "guarded": {
+      "right": 43,
+      "invented": 0,
+      "wrong": 0,
+      "missed": 5,
+      "rejected": 0,
+      "calls": 22,
+      "seconds": 433.5
+    }
+  },
+  "rows": [
+    {
+      "id": "all-stated",
+      "want": {
+        "customer": "Priya Nair",
+        "order_id": "KX-4471",
+        "amount": 59
+      },
+      "plain": {
+        "got": {
+          "customer": "Priya Nair",
+          "order_id": "KX-4471",
+          "amount": 59
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      },
+      "guarded": {
+        "got": {
+          "customer": "Priya Nair",
+          "order_id": "KX-4471",
+          "amount": 59
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      }
+    },
+    {
+      "id": "no-amount",
+      "want": {
+        "customer": "Tomas Reyes",
+        "order_id": "ZR-2085",
+        "amount": null
+      },
+      "plain": {
+        "got": {
+          "customer": "Tomas Reyes",
+          "order_id": "ZR-2085",
+          "amount": null
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      },
+      "guarded": {
+        "got": {
+          "amount": null,
+          "customer": "Tomas Reyes",
+          "order_id": "ZR-2085"
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      }
+    },
+    {
+      "id": "no-order-id",
+      "want": {
+        "customer": "Hana Sato",
+        "order_id": null,
+        "amount": 120
+      },
+      "plain": {
+        "got": {
+          "amount": 120,
+          "customer": "Hana Sato",
+          "order_id": null
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      },
+      "guarded": {
+        "got": {
+          "customer": "Hana Sato",
+          "order_id": null,
+          "amount": 120
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      }
+    },
+    {
+      "id": "nothing-stated",
+      "want": {
+        "customer": null,
+        "order_id": null,
+        "amount": null
+      },
+      "plain": {
+        "got": {
+          "customer": "you",
+          "order_id": "last month",
+          "amount": null
+        },
+        "marks": {
+          "customer": "invented",
+          "order_id": "invented",
+          "amount": "right"
+        }
+      },
+      "guarded": {
+        "got": {
+          "amount": null,
+          "customer": null,
+          "order_id": null
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      }
+    },
+    {
+      "id": "amount-in-words-only",
+      "want": {
+        "customer": "Olu Adeyemi",
+        "order_id": "BT-9930",
+        "amount": null
+      },
+      "plain": {
+        "got": {
+          "customer": "Olu Adeyemi",
+          "order_id": "BT-9930",
+          "amount": null
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      },
+      "guarded": {
+        "got": {
+          "amount": null,
+          "customer": "Olu Adeyemi",
+          "order_id": "BT-9930"
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      }
+    },
+    {
+      "id": "two-numbers",
+      "want": {
+        "customer": "Lena Fischer",
+        "order_id": "QM-1182",
+        "amount": 135
+      },
+      "plain": {
+        "got": {
+          "customer": "Lena Fischer",
+          "order_id": "QM-1182",
+          "amount": 135
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      },
+      "guarded": {
+        "got": {
+          "customer": "Lena Fischer",
+          "order_id": "QM-1182",
+          "amount": 135
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      }
+    },
+    {
+      "id": "someone-elses-name",
+      "want": {
+        "customer": null,
+        "order_id": "HD-3306",
+        "amount": null
+      },
+      "plain": {
+        "got": {
+          "customer": "you",
+          "order_id": "HD-3306",
+          "amount": null
+        },
+        "marks": {
+          "customer": "invented",
+          "order_id": "right",
+          "amount": "right"
+        }
+      },
+      "guarded": {
+        "got": {
+          "customer": null,
+          "order_id": "HD-3306",
+          "amount": null
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      }
+    },
+    {
+      "id": "phone-not-order",
+      "want": {
+        "customer": null,
+        "order_id": null,
+        "amount": 80
+      },
+      "plain": {
+        "got": {
+          "customer": "555-0142",
+          "order_id": null,
+          "amount": 80
+        },
+        "marks": {
+          "customer": "invented",
+          "order_id": "right",
+          "amount": "right"
+        }
+      },
+      "guarded": {
+        "got": {
+          "amount": 80,
+          "customer": null,
+          "order_id": null
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      }
+    },
+    {
+      "id": "signature-only",
+      "want": {
+        "customer": "Sofia Marin",
+        "order_id": "MN-5521",
+        "amount": null
+      },
+      "plain": {
+        "got": {
+          "customer": "Sofia Marin",
+          "order_id": "MN-5521",
+          "amount": null
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      },
+      "guarded": {
+        "got": {
+          "amount": null,
+          "customer": "Sofia Marin",
+          "order_id": "MN-5521"
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      }
+    },
+    {
+      "id": "discount-not-price",
+      "want": {
+        "customer": "Wei Chen",
+        "order_id": "TR-8804",
+        "amount": null
+      },
+      "plain": {
+        "got": {
+          "amount": null,
+          "customer": "Wei Chen",
+          "order_id": "TR-8804"
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      },
+      "guarded": {
+        "got": {
+          "customer": "Wei Chen",
+          "order_id": "TR-8804",
+          "amount": null
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      }
+    },
+    {
+      "id": "two-orders-one-named",
+      "want": {
+        "customer": "Amara Okafor",
+        "order_id": "PL-6610",
+        "amount": null
+      },
+      "plain": {
+        "got": {
+          "customer": "Amara Okafor",
+          "order_id": "PL-6610",
+          "amount": null
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      },
+      "guarded": {
+        "got": {
+          "customer": "Amara Okafor",
+          "order_id": "PL-6610",
+          "amount": null
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      }
+    },
+    {
+      "id": "price-of-other-item",
+      "want": {
+        "customer": "Jonas Berg",
+        "order_id": "DK-2247",
+        "amount": null
+      },
+      "plain": {
+        "got": {
+          "customer": "Jonas Berg",
+          "order_id": "DK-2247",
+          "amount": 300
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "invented"
+        }
+      },
+      "guarded": {
+        "got": {
+          "customer": null,
+          "order_id": null,
+          "amount": null
+        },
+        "marks": {
+          "customer": "missed",
+          "order_id": "missed",
+          "amount": "right"
+        }
+      }
+    },
+    {
+      "id": "no-name-with-amount",
+      "want": {
+        "customer": null,
+        "order_id": "VX-7003",
+        "amount": 42
+      },
+      "plain": {
+        "got": {
+          "amount": 42,
+          "customer": null,
+          "order_id": "VX-7003"
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      },
+      "guarded": {
+        "got": {
+          "amount": 42,
+          "customer": null,
+          "order_id": "VX-7003"
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      }
+    },
+    {
+      "id": "company-not-person",
+      "want": {
+        "customer": null,
+        "order_id": null,
+        "amount": null
+      },
+      "plain": {
+        "rejected": "RejectedAnswer: Invalid structured model output: $: missing required property 'customer'"
+      },
+      "guarded": {
+        "got": {
+          "customer": null,
+          "order_id": null,
+          "amount": null
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      }
+    },
+    {
+      "id": "date-not-order",
+      "want": {
+        "customer": "Ravi Menon",
+        "order_id": null,
+        "amount": 75
+      },
+      "plain": {
+        "got": {
+          "customer": "Ravi Menon",
+          "order_id": "12 March",
+          "amount": 75
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "invented",
+          "amount": "right"
+        }
+      },
+      "guarded": {
+        "got": {
+          "amount": 75,
+          "customer": "Ravi Menon",
+          "order_id": null
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      }
+    },
+    {
+      "id": "all-stated-2",
+      "want": {
+        "customer": "Greta Lund",
+        "order_id": "FS-3390",
+        "amount": 210
+      },
+      "plain": {
+        "got": {
+          "customer": "Greta Lund",
+          "order_id": "FS-3390",
+          "amount": 210
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      },
+      "guarded": {
+        "got": {
+          "customer": null,
+          "order_id": null,
+          "amount": null
+        },
+        "marks": {
+          "customer": "missed",
+          "order_id": "missed",
+          "amount": "missed"
+        }
+      }
+    }
+  ]
+}

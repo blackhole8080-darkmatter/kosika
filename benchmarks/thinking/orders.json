@@ -1,10 +1,146 @@
 [
-  {"id": "all-stated", "text": "Hi, Priya Nair here. Order KX-4471 arrived broken. I paid 59 dollars for it and would like a refund.", "want": {"customer": "Priya Nair", "order_id": "KX-4471", "amount": 59}},
-  {"id": "no-amount", "text": "This is Tomas Reyes. My order ZR-2085 still has not shipped after two weeks. What is going on?", "want": {"customer": "Tomas Reyes", "order_id": "ZR-2085", "amount": null}},
-  {"id": "no-order-id", "text": "My name is Hana Sato and my last order never arrived. I was charged 120 dollars for it.", "want": {"customer": "Hana Sato", "order_id": null, "amount": 120}},
-  {"id": "nothing-stated", "text": "I ordered from you last month and the usual monthly fee was taken, but the box was empty. Please sort this out.", "want": {"customer": null, "order_id": null, "amount": null}},
-  {"id": "amount-in-words-only", "text": "Olu Adeyemi writing. Order BT-9930 cost me a small fortune and it does not even switch on.", "want": {"customer": "Olu Adeyemi", "order_id": "BT-9930", "amount": null}},
-  {"id": "two-numbers", "text": "I am Lena Fischer. I bought 3 chairs on order QM-1182 and one leg snapped. Each chair was 45 dollars, so 135 dollars in total.", "want": {"customer": "Lena Fischer", "order_id": "QM-1182", "amount": 135}},
-  {"id": "someone-elses-name", "text": "Your agent Marcus told me order HD-3306 would be refunded last week. It has not been.", "want": {"customer": null, "order_id": "HD-3306", "amount": null}},
-  {"id": "phone-not-order", "text": "Call me back on 555-0142 about the 80 dollar charge on my card. I never placed an order with you.", "want": {"customer": null, "order_id": null, "amount": 80}}
+  {
+    "id": "all-stated",
+    "text": "Hi, Priya Nair here. Order KX-4471 arrived broken. I paid 59 dollars for it and would like a refund.",
+    "want": {
+      "customer": "Priya Nair",
+      "order_id": "KX-4471",
+      "amount": 59
+    }
+  },
+  {
+    "id": "no-amount",
+    "text": "This is Tomas Reyes. My order ZR-2085 still has not shipped after two weeks. What is going on?",
+    "want": {
+      "customer": "Tomas Reyes",
+      "order_id": "ZR-2085",
+      "amount": null
+    }
+  },
+  {
+    "id": "no-order-id",
+    "text": "My name is Hana Sato and my last order never arrived. I was charged 120 dollars for it.",
+    "want": {
+      "customer": "Hana Sato",
+      "order_id": null,
+      "amount": 120
+    }
+  },
+  {
+    "id": "nothing-stated",
+    "text": "I ordered from you last month and the usual monthly fee was taken, but the box was empty. Please sort this out.",
+    "want": {
+      "customer": null,
+      "order_id": null,
+      "amount": null
+    }
+  },
+  {
+    "id": "amount-in-words-only",
+    "text": "Olu Adeyemi writing. Order BT-9930 cost me a small fortune and it does not even switch on.",
+    "want": {
+      "customer": "Olu Adeyemi",
+      "order_id": "BT-9930",
+      "amount": null
+    }
+  },
+  {
+    "id": "two-numbers",
+    "text": "I am Lena Fischer. I bought 3 chairs on order QM-1182 and one leg snapped. Each chair was 45 dollars, so 135 dollars in total.",
+    "want": {
+      "customer": "Lena Fischer",
+      "order_id": "QM-1182",
+      "amount": 135
+    }
+  },
+  {
+    "id": "someone-elses-name",
+    "text": "Your agent Marcus told me order HD-3306 would be refunded last week. It has not been.",
+    "want": {
+      "customer": null,
+      "order_id": "HD-3306",
+      "amount": null
+    }
+  },
+  {
+    "id": "phone-not-order",
+    "text": "Call me back on 555-0142 about the 80 dollar charge on my card. I never placed an order with you.",
+    "want": {
+      "customer": null,
+      "order_id": null,
+      "amount": 80
+    }
+  },
+  {
+    "id": "signature-only",
+    "text": "The blender I received is the wrong colour. Order MN-5521.\n\nRegards,\nSofia Marin",
+    "want": {
+      "customer": "Sofia Marin",
+      "order_id": "MN-5521",
+      "amount": null
+    }
+  },
+  {
+    "id": "discount-not-price",
+    "text": "Wei Chen here. You promised 20 percent off order TR-8804 and it was not applied.",
+    "want": {
+      "customer": "Wei Chen",
+      "order_id": "TR-8804",
+      "amount": null
+    }
+  },
+  {
+    "id": "two-orders-one-named",
+    "text": "I am Amara Okafor. My previous order was fine, but order PL-6610 came without the charger.",
+    "want": {
+      "customer": "Amara Okafor",
+      "order_id": "PL-6610",
+      "amount": null
+    }
+  },
+  {
+    "id": "price-of-other-item",
+    "text": "Hello, Jonas Berg. A friend paid 300 dollars for the same desk elsewhere. Mine, order DK-2247, arrived scratched.",
+    "want": {
+      "customer": "Jonas Berg",
+      "order_id": "DK-2247",
+      "amount": null
+    }
+  },
+  {
+    "id": "no-name-with-amount",
+    "text": "Order VX-7003 was delivered to the wrong address and I have already paid 42 dollars.",
+    "want": {
+      "customer": null,
+      "order_id": "VX-7003",
+      "amount": 42
+    }
+  },
+  {
+    "id": "company-not-person",
+    "text": "We at Brightside Cafe never got our delivery this week. Please call the shop.",
+    "want": {
+      "customer": null,
+      "order_id": null,
+      "amount": null
+    }
+  },
+  {
+    "id": "date-not-order",
+    "text": "Ravi Menon. I ordered on 12 March and still have nothing. I paid 75 dollars.",
+    "want": {
+      "customer": "Ravi Menon",
+      "order_id": null,
+      "amount": 75
+    }
+  },
+  {
+    "id": "all-stated-2",
+    "text": "This is Greta Lund, order number FS-3390. The 210 dollar coat has a broken zip.",
+    "want": {
+      "customer": "Greta Lund",
+      "order_id": "FS-3390",
+      "amount": 210
+    }
+  }
 ]
