@@ -9,7 +9,7 @@ from .agent_trace import replay_agent_events
 from .evidence import EvidenceError
 from .evidence import split as split_evidence
 from .evidence import verify as verify_evidence
-from .model_steps import strict_json
+from .model_steps import fill_absent, strict_json
 from .schema import validate
 
 
@@ -31,6 +31,15 @@ def replay_trace(trace_path: str | Path) -> Any:
     ):
         return replay_agent_events(events)
     return replay_events(events)
+
+
+def _stated(quotes: Any) -> Any:
+    """Evidence without its empty entries: a missing quote and a null one
+    are the same statement."""
+
+    if isinstance(quotes, dict):
+        return {name: quote for name, quote in quotes.items() if quote is not None}
+    return quotes
 
 
 def _validate_function_events(events: list[Any], *, version: int, depth: int) -> None:
@@ -151,14 +160,18 @@ def replay_events(events: list[Any], *, depth: int = 0) -> dict[str, Any]:
                 returned.get("content"), str
             ):
                 raise ValueError("Model trace contains an incomplete response")
-            answered = strict_json(returned["content"])
+            # A field the model left out reads as null where null is allowed,
+            # exactly as it did when the run was made.
+            answered = fill_absent(
+                strict_json(returned["content"]), call["output_schema"]
+            )
             if "evidence" in call:
                 # The model answered with the record plus its quotes. Replay
                 # proves the quotes again from the recorded input.
                 if not isinstance(answered, dict) or not isinstance(result, dict):
                     raise ValueError("Evidence trace requires a record answer")
                 answered, quotes = split_evidence(answered)
-                if not _same_json(quotes, returned.get("evidence")):
+                if not _same_json(_stated(quotes), _stated(returned.get("evidence"))):
                     raise ValueError("Model response and recorded evidence differ")
                 try:
                     verify_evidence(call["evidence"], call["arguments"], result, quotes)

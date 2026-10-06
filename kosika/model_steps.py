@@ -28,6 +28,45 @@ def strict_json(text: str) -> Any:
     return result
 
 
+def _accepts_null(schema: Any) -> bool:
+    if not isinstance(schema, dict):
+        return False
+    if schema.get("type") == "null":
+        return True
+    return any(_accepts_null(option) for option in schema.get("anyOf", ()))
+
+
+def fill_absent(value: Any, schema: Any) -> Any:
+    """Read a field the model left out as null, where null is allowed.
+
+    Models often omit a field they have nothing for instead of writing
+    `null`. For an optional field the two mean the same, so the answer is
+    completed rather than rejected. A field that must hold a value is never
+    filled in: leaving that out is still an invalid answer.
+    """
+
+    if not isinstance(schema, dict):
+        return value
+    if isinstance(value, list):
+        return [fill_absent(item, schema.get("items")) for item in value]
+    if not isinstance(value, dict):
+        return value
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        # An optional record is "this record, or null": look inside the record.
+        for option in schema.get("anyOf", ()):
+            if isinstance(option, dict) and isinstance(option.get("properties"), dict):
+                return fill_absent(value, option)
+        return value
+    filled = dict(value)
+    for name, field in properties.items():
+        if name in filled:
+            filled[name] = fill_absent(filled[name], field)
+        elif _accepts_null(field):
+            filled[name] = None
+    return filled
+
+
 class RejectedAnswer(ModelProviderError):
     """The model replied, but its answer is not valid for the step.
 
@@ -101,7 +140,7 @@ def call_model(
     if not isinstance(response.content, str):
         raise ModelProviderError("Model step requires JSON text")
     try:
-        result = strict_json(response.content)
+        result = fill_absent(strict_json(response.content), output_schema)
         validate(result, output_schema)
     except (ValueError, TypeError) as exc:
         raise RejectedAnswer(

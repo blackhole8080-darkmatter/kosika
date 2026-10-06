@@ -413,6 +413,11 @@ think = "classify"  expression "into" expression [ "using" identifier ]
 - The result records, `Prompt`, and `Reply` are built in and added only to
   programs that use them. A program MAY declare a record with one of those
   names only with identical fields.
+- A model answer that leaves out a field is read as if the field were `null`
+  when the field's type allows it (`T?`), including inside an optional nested
+  record and in the evidence of an `extract`. A field that must hold a value
+  is never filled in; leaving it out is an invalid answer. This applies to
+  `use_model` and to every thinking step.
 - A thinking step is a step, not an expression: it cannot appear inside a `fn`.
 - Budgets, traces, and replay treat a thinking step as one model call.
 - `classify`, `extract`, and `decide` MAY end `with evidence`, written before
