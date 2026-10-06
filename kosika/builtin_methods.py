@@ -121,6 +121,30 @@ def _require(value: Any) -> Any:
     return value
 
 
+#: A number range longer than this fails the run instead.
+MAX_RANGE_LENGTH = 1_000_000
+
+
+def _range(start: Any, end: Any, inclusive: bool) -> list[int]:
+    for bound in (start, end):
+        if isinstance(bound, bool) or bound != int(bound):
+            raise RuntimeError("a range needs whole numbers")
+    first, last = int(start), int(end) + (1 if inclusive else 0)
+    if last - first > MAX_RANGE_LENGTH:
+        raise RuntimeError(f"range would exceed {MAX_RANGE_LENGTH} numbers")
+    return list(range(first, last))
+
+
+def _array_set(items: list[Any], key: Any, value: Any) -> list[Any]:
+    if isinstance(key, bool) or key != int(key) or not 0 <= key < len(items):
+        raise RuntimeError(
+            f"position {format_number(key)} is outside an array of length {len(items)}"
+        )
+    updated = list(items)
+    updated[int(key)] = value
+    return updated
+
+
 def _map_set(entries: dict[str, Any], key: str, value: Any) -> dict[str, Any]:
     updated = {**entries, key: value}
     if len(updated) > MAX_MAP_ENTRIES:
@@ -248,6 +272,27 @@ METHODS: tuple[Method, ...] = (
     ),
     Method("Text", "slice", (("start", "Number"), ("end", "Number")), "Text", _slice),
     Method("Number", "to_text", (), "Text", lambda value: format_number(value)),
+    Method(
+        "Number",
+        "to",
+        (("end", "Number"),),
+        "Number[]",
+        lambda start, end: _range(start, end, True),
+    ),
+    Method(
+        "Number",
+        "until",
+        (("end", "Number"),),
+        "Number[]",
+        lambda start, end: _range(start, end, False),
+    ),
+    Method(
+        ANY_ARRAY,
+        "set",
+        (("key", "Number"), ("value", ELEMENT)),
+        RECEIVER,
+        _array_set,
+    ),
     Method(
         "Number",
         "min",

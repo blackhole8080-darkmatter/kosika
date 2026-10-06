@@ -115,11 +115,22 @@ let reply: Text = match name {
 let doubled: Number[] = for value in numbers.values { value * 2 }
 let big: Number[] = for value in numbers.values where value > 10 { value }
 
-// repeat runs a fixed number of times (a literal from 1 to 512).
-repeat 3 times { sum = sum + 1 }
+// Count with a range: `to` includes the end, `until` stops before it.
+for i in 1 to 10 { total += i }
+for i in 0 until items.length() { items[i] = items[i] * 2 }
+
+// repeat runs a number of times; while runs until its condition is false.
+repeat 3 times { sum += 1 }
+while y != 0 {
+  let t = y
+  y = x % y
+  x = t
+}
 ```
 
-There is no `while`. A function may call itself only with a declared bound:
+`+=`, `-=`, `*=`, `/=` update a `var`. `items[i] = v` and `map["k"] = v` give
+the `var` a new array or map. `break` and `continue` work in every loop. A
+function may call itself only with a declared bound:
 
 ```kosika
 fn factorial(n: Number) -> Number recurse 16 {

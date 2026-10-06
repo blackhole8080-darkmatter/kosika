@@ -243,6 +243,9 @@ class ForExpr:
     # Optional `where <condition>`: elements for which it is false are skipped,
     # so the loop filters as well as maps. None for every loop without one.
     condition: "Expression | None" = None
+    # True when the loop was written with `limit N`. Only then is `limit`
+    # enforced; a loop without one is bounded by the run's loop budget.
+    capped: bool = False
 
 
 @dataclass(frozen=True)
@@ -607,6 +610,7 @@ _ABSENT_DEFAULTS: dict[str, tuple[Any, ...]] = {
     "evidence": (None, False),
     "retries": (0,),
     "budget": ((), []),
+    "capped": (False,),
 }
 
 

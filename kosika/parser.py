@@ -56,6 +56,12 @@ class ParseError(ValueError):
     pass
 
 
+_COMPOUND = ("+=", "-=", "*=", "/=")
+#: A `while` is a repeat with more passes than any run's loop budget allows,
+#: so a loop that never ends is stopped by the budget, never silently.
+WHILE_PASSES = 1_000_000_000
+
+
 class Parser:
     def __init__(self, tokens: list[Token]):
         self.tokens = tokens
@@ -120,12 +126,73 @@ class Parser:
         self.expect("=")
         return LocalBinding(name, type_name, self.expression(), mutable)
 
+    def at_update(self) -> bool:
+        """True at `name += ...` or at `name[index] = ...` and their kin."""
+
+        if self.current.kind != "IDENT" or self.index + 1 >= len(self.tokens):
+            return False
+        position = self.index + 1
+        if self.tokens[position].value == "[":
+            depth = 0
+            while position < len(self.tokens):
+                value = self.tokens[position].value
+                kind = self.tokens[position].kind
+                if kind == "SYMBOL" and value == "[":
+                    depth += 1
+                elif kind == "SYMBOL" and value == "]":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                elif kind == "EOF" or (kind == "SYMBOL" and value in "{}"):
+                    return False
+                position += 1
+            position += 1
+            if position >= len(self.tokens):
+                return False
+            following = self.tokens[position]
+            return following.kind in {"SYMBOL", "OP"} and following.value in (
+                "=",
+                *_COMPOUND,
+            )
+        following = self.tokens[position]
+        return following.kind == "OP" and following.value in _COMPOUND
+
+    def at_statement(self) -> bool:
+        return (
+            self.check("let")
+            or self.check("var")
+            or self.at_assignment()
+            or self.at_update()
+        )
+
     def parse_statement(self) -> LocalBinding | Assignment:
         if self.check("let") or self.check("var"):
             return self.parse_binding()
         target = self.identifier()
-        self.expect("=")
-        return Assignment(target, self.expression())
+        index: Expression | None = None
+        if self.accept("["):
+            index = self.expression()
+            self.expect("]")
+        operator = self.advance()
+        if operator.value not in ("=", *_COMPOUND):
+            raise ParseError(
+                f"Expected '=' at {operator.line}:{operator.column}, "
+                f"got {operator.value!r}"
+            )
+        value = self.expression()
+        current: Expression = VariableExpr(target)
+        if index is not None:
+            current = IndexExpr(current, index)
+        if operator.value != "=":
+            # `total += x` is `total = total + x`.
+            value = BinaryExpr(current, operator.value[0], value)
+        if index is not None:
+            # `items[i] = v` is `items = items.set(key: i, value: v)`: the
+            # variable gets a new array or map, and the old one is untouched.
+            value = MethodCallExpr(
+                VariableExpr(target), "set", (("key", index), ("value", value))
+            )
+        return Assignment(target, value)
 
     def parse_block(self) -> Expression:
         """Parse `{ statement* result? }` as an expression.
@@ -149,7 +216,7 @@ class Parser:
             if result is not None:
                 statements.append(result)
                 result = None
-            if self.check("let") or self.check("var") or self.at_assignment():
+            if self.at_statement():
                 statements.append(self.parse_statement())
             else:
                 result = self.expression()
@@ -189,6 +256,16 @@ class Parser:
             return ReturnExpr(self.expression())
         if self.accept("repeat"):
             return self.parse_repeat_expression()
+        if self.accept("while"):
+            # `while c { body }` repeats until c is false. It is a repeat
+            # that leaves when the condition fails, so every pass over the
+            # tree already understands it; the run's loop budget bounds it.
+            condition = self.expression()
+            body = self.parse_block()
+            leave = ConditionalExpr(
+                UnaryExpr("not", condition), BreakExpr(), LiteralExpr(None)
+            )
+            return RepeatExpr(LiteralExpr(WHILE_PASSES), Block((leave,), body))
         if self.accept("try"):
             return self.parse_try_expression()
         if self.accept("match"):
@@ -241,19 +318,31 @@ class Parser:
             item_name = self.identifier()
             self.expect("in")
             sequence = self.expression()
+            # `for i in 1 to n` counts through n; `for i in 0 until n` stops
+            # before n. Both are the Number methods of the same names.
+            for word in ("to", "until"):
+                if self.accept(word):
+                    sequence = MethodCallExpr(
+                        sequence, word, (("end", self.expression()),)
+                    )
+                    break
             where = self.expression() if self.accept("where") else None
             limit = 128
+            capped = False
             if self.accept("limit"):
                 token = self.advance()
                 if (
                     token.kind != "NUMBER"
                     or not token.value.isdigit()
-                    or not 1 <= int(token.value) <= 512
+                    or not 1 <= int(token.value) <= 1_000_000
                 ):
-                    raise ParseError("for loop limit must be an integer from 1 to 512")
+                    raise ParseError(
+                        "for loop limit must be an integer from 1 to 1000000"
+                    )
                 limit = int(token.value)
+                capped = True
             body = self.parse_block()
-            return ForExpr(item_name, sequence, body, limit, where)
+            return ForExpr(item_name, sequence, body, limit, where, capped)
         return self.parse_or_expression()
 
     def parse_or_expression(self) -> Expression:
@@ -388,16 +477,19 @@ class Parser:
         return FunctionExpr(tuple(parameters), output_type, body)
 
     def parse_repeat_expression(self) -> RepeatExpr:
-        token = self.advance()
-        if (
-            token.kind != "NUMBER"
-            or not token.value.isdigit()
-            or not 1 <= int(token.value) <= 512
-        ):
-            raise ParseError("repeat count must be an integer from 1 to 512")
+        token = self.current
+        following = self.tokens[min(self.index + 1, len(self.tokens) - 1)]
+        if token.kind == "NUMBER" and following.value == "times":
+            self.advance()
+            if not token.value.isdigit() or not 1 <= int(token.value) <= 1_000_000:
+                raise ParseError("repeat count must be an integer from 1 to 1000000")
+            count: Expression = LiteralExpr(int(token.value))
+        else:
+            # Any Number expression: `repeat items.length() times { ... }`.
+            count = self.parse_or_expression()
         self.expect("times")
         body = self.parse_block()
-        return RepeatExpr(LiteralExpr(int(token.value)), body)
+        return RepeatExpr(count, body)
 
     def parse_try_expression(self) -> TryExpr:
         body = self.parse_block()
@@ -891,7 +983,7 @@ class Parser:
         # interleaved, but `return` unambiguously ends the body, so the loop can
         # stop without needing a terminator token.
         while not (self.check("return") or self.check("}") or self.check("fn")):
-            if self.check("let") or self.check("var") or self.at_assignment():
+            if self.at_statement():
                 body.append(self.parse_statement())
             else:
                 body.append(self.expression())

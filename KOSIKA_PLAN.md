@@ -610,6 +610,29 @@ equality. Swarm output must not acquire authority the way model output cannot.
   cannot read the quotes yet; they are in the trace only. Traces with
   evidence are not readable by an older Kosika (they fail closed).
 
+## Algorithms: loops that can do real work (complete)
+
+- Found by writing binary search, gcd, Fibonacci, a prime sieve, and bubble
+  sort: there was no `while`, no way to count, no `+=`, no element update,
+  and every `for` stopped at 128 elements (512 at most).
+- Added `while`, `for i in a to b` / `a until b` (Number methods `to` and
+  `until`), `repeat` with any Number count, `+=` `-=` `*=` `/=`, and
+  `items[i] = v` / `map["k"] = v` (array method `set`). None adds a tree node:
+  `while` is a repeat that breaks, ranges are method calls, and the updates
+  are assignments, so the checker, traces, and tools needed no change.
+- Loops are bounded by a run-wide budget instead of a small per-loop cap:
+  `ExecutionLimits.max_loop_iterations`, default 1,000,000. A `for` enforces
+  `limit N` only when it is written.
+- 20 tests in `tests/test_writing_algorithms.py`.
+- Behaviour change: a `for` over more than 128 elements used to fail and now
+  runs. A program that wrote `limit N` gets a different program hash
+  (`capped`); programs without one keep theirs.
+- Not claimed: speed. Kosika is interpreted in Python, so a loop here is
+  many times slower than the same loop in Python. `items[i] = v` copies the
+  array, which makes an in-place sort quadratic in copying. Arrays built with
+  `append` still stop at 4,096 elements, recursion at depth 32, and arguments
+  must still be named (`gcd(a: 48, b: 18)`).
+
 ## Reliability: budgets in the language (complete)
 
 - `budget N model calls, N tool calls, N seconds` inside a workflow

@@ -40,6 +40,7 @@ _LIMIT_FIELDS = frozenset(
         "max_steps",
         "max_model_calls",
         "max_tool_calls",
+        "max_loop_iterations",
         "deadline_seconds",
     }
 )

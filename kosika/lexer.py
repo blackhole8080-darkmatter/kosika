@@ -21,7 +21,7 @@ _TOKEN_RE = re.compile(
     r"(?P<COMMENT>//[^\n]*)|"
     r"(?P<NEWLINE>\n)|"
     r"(?P<ARROW>->)|"
-    r"(?P<OP>==|!=|<=|>=)|"
+    r"(?P<OP>==|!=|<=|>=|\+=|-=|\*=|/=)|"
     r"(?P<STRING>\"(?:\\.|[^\"\\])*\")|"
     r"(?P<NUMBER>\d+(?:\.\d+)?)|"
     r"(?P<IDENT>[A-Za-z_][A-Za-z0-9_]*)|"

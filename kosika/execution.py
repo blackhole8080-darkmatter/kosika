@@ -19,6 +19,9 @@ class ExecutionLimits:
     max_model_calls: int = 64
     max_tool_calls: int = 256
     deadline_seconds: float | None = None
+    # Passes through `for`, `repeat`, and `while` bodies, counted over the
+    # whole run. This is what keeps a loop without its own limit bounded.
+    max_loop_iterations: int = 1_000_000
 
     def __post_init__(self) -> None:
         for name in (
@@ -26,6 +29,7 @@ class ExecutionLimits:
             "max_steps",
             "max_model_calls",
             "max_tool_calls",
+            "max_loop_iterations",
         ):
             value = getattr(self, name)
             if type(value) is not int or not 1 <= value <= 1_000_000:
@@ -65,7 +69,14 @@ class ExecutionControl:
         self.cancel = cancel if cancel is not None else threading.Event()
         self.started = time.monotonic()
         self.counts = dict.fromkeys(
-            ("function_calls", "steps", "model_calls", "tool_calls"), 0
+            (
+                "function_calls",
+                "steps",
+                "model_calls",
+                "tool_calls",
+                "loop_iterations",
+            ),
+            0,
         )
         self.scope: tuple[str, ...] = ()
         self.failure_stack: list[str] = []

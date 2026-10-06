@@ -223,6 +223,8 @@ the receiver's type, and every method is pure and deterministic.
 | `Text` | `split(separator: Text)` | `Text[]`; the separator MUST be non-empty and a result over 512 parts fails the run |
 | `Text[]` | `join(separator: Text)` | `Text` |
 | any array | `length()` | `Number` of elements |
+| any array | `set(key: Number, value: T)` | a new array with that position replaced |
+| `Number` | `to(end: Number)`, `until(end: Number)` | `Number[]` of whole numbers through, or up to, the end |
 | any array | `append(item: T)`, `concat(other: T[])`, `reverse()`, `slice(start: Number, end: Number)` | a new array of the same type; the receiver is never changed. A result over 4,096 elements fails the run |
 | `Text` | `slice(start: Number, end: Number)` | `Text` from position `start` up to, not including, `end` |
 | `Number` | `to_text()` | `Text`, formatted as in `Text + Number` |
@@ -289,8 +291,10 @@ needed to call a method on a number literal: `(2.5).round()`.
 ### Bounded loops
 
 ```kosika
-for item in values limit 32 { expression }
-repeat 8 times { expression }
+for item in values { expression }
+for i in 0 until count { expression }
+repeat count times { expression }
+while condition { statements }
 ```
 
 - `for item in values where condition { expression }` skips elements whose
@@ -300,11 +304,32 @@ repeat 8 times { expression }
   element, so it may be a record literal:
   `let rows: Row[] = for w in words { {name: w} }`.
 - `for` is a functional map over an array and returns the collected body
-  results. Its `limit` is an integer from 1 through 512 and defaults to 128.
-  Execution fails before the first iteration if the input array exceeds that
-  limit.
-- `repeat` takes an integer literal from 1 through 512 and returns the final
-  body result.
+  results. A loop MAY be written `for item in values limit N { ... }`, with N
+  from 1 through 1,000,000; execution then fails before the first iteration
+  if the array is longer than N. A loop without `limit` has no size of its
+  own.
+- `for i in a to b` counts the whole numbers from `a` through `b`, and
+  `for i in a until b` stops before `b`. They are the Number methods
+  `a.to(b)` and `a.until(b)`, which give a `Number[]`; an end below the start
+  gives an empty array, a bound that is not whole fails the run, and so does a
+  range of more than 1,000,000 numbers.
+- `repeat` takes a whole-number literal from 1 through 1,000,000 or any
+  `Number` expression, and returns the final body result. A count that is
+  negative or not whole fails the run.
+- `while condition { ... }` runs its body for as long as the `Bool` condition
+  holds, testing it before every pass. It is a statement; `break` and
+  `continue` work inside it.
+- Every pass through a `for`, `repeat`, or `while` body is counted against the
+  run's loop budget (`max_loop_iterations`, 1,000,000 unless the host sets
+  it). A run that reaches it stops with a `budget` error, so a loop that would
+  never end is always stopped.
+- `name += value`, `-=`, `*=`, and `/=` are `name = name + value` and so on.
+  `items[i] = value` gives the `var` a new array with that position replaced,
+  and `entries["key"] = value` a new map with that entry set; they are
+  `items = items.set(key: i, value: value)`. Compound forms combine:
+  `counts[i] += 1`. The target MUST be a `var`. A position outside the array
+  fails the run. No value is ever changed in place: another name holding the
+  old array still sees the old array.
 - `break` and `continue` are supported only inside these loop bodies. A break
   returns the results collected so far from `for`; `repeat` returns its latest
   completed result or `Null`.

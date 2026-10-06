@@ -533,12 +533,14 @@ def _evaluate_expression(
         )
         if not isinstance(sequence, list):
             raise RuntimeError("for loop requires an array sequence")
-        if len(sequence) > expression.limit:
+        if expression.capped and len(sequence) > expression.limit:
             raise RuntimeError(
                 f"for loop exceeded its limit of {expression.limit} iterations"
             )
         collected: list[Any] = []
         for element in sequence:
+            if isinstance(functions, _FunctionRegistry):
+                functions.control.consume("loop_iterations")
             scope = _child_scope(environment)
             scope[expression.item_name] = element
             if expression.condition is not None and not _evaluate_expression(
@@ -579,10 +581,12 @@ def _evaluate_expression(
         if isinstance(raw_count, bool) or not isinstance(raw_count, (int, float)):
             raise RuntimeError("repeat count must be a number")
         count = int(raw_count)
-        if count < 0:
-            raise RuntimeError("repeat count must not be negative")
+        if count < 0 or count != raw_count:
+            raise RuntimeError("repeat count must be a whole number, zero or more")
         result: Any = None
         for _ in range(count):
+            if isinstance(functions, _FunctionRegistry):
+                functions.control.consume("loop_iterations")
             scope = _child_scope(environment)
             try:
                 result = _evaluate_expression(
