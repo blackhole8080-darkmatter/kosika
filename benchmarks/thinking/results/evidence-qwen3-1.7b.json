@@ -1,0 +1,658 @@
+{
+  "model": "qwen3-1.7b",
+  "tickets": 16,
+  "totals": {
+    "plain": {
+      "right": 39,
+      "invented": 6,
+      "wrong": 0,
+      "missed": 0,
+      "rejected": 1,
+      "calls": 16,
+      "seconds": 355.4
+    },
+    "grounded": {
+      "right": 20,
+      "invented": 3,
+      "wrong": 1,
+      "missed": 0,
+      "rejected": 8,
+      "calls": 16,
+      "seconds": 1851.6
+    },
+    "guarded": {
+      "right": 34,
+      "invented": 5,
+      "wrong": 2,
+      "missed": 7,
+      "rejected": 0,
+      "calls": 28,
+      "seconds": 2164.7
+    }
+  },
+  "rows": [
+    {
+      "id": "all-stated",
+      "want": {
+        "customer": "Priya Nair",
+        "order_id": "KX-4471",
+        "amount": 59
+      },
+      "plain": {
+        "got": {
+          "customer": "Priya Nair",
+          "order_id": "KX-4471",
+          "amount": 59
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      },
+      "grounded": {
+        "got": {
+          "amount": 59,
+          "customer": "Priya Nair here",
+          "order_id": "KX-4471"
+        },
+        "marks": {
+          "customer": "wrong",
+          "order_id": "right",
+          "amount": "right"
+        }
+      },
+      "guarded": {
+        "got": {
+          "amount": 59,
+          "customer": "Priya Nair",
+          "order_id": "KX-4471"
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      }
+    },
+    {
+      "id": "no-amount",
+      "want": {
+        "customer": "Tomas Reyes",
+        "order_id": "ZR-2085",
+        "amount": null
+      },
+      "plain": {
+        "got": {
+          "customer": "Tomas Reyes",
+          "order_id": "ZR-2085",
+          "amount": null
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      },
+      "grounded": {
+        "rejected": "RejectedAnswer: Invalid structured model output: $: missing required property 'order_id'"
+      },
+      "guarded": {
+        "got": {
+          "amount": null,
+          "customer": "Tomas Reyes",
+          "order_id": "ZR-2085"
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      }
+    },
+    {
+      "id": "no-order-id",
+      "want": {
+        "customer": "Hana Sato",
+        "order_id": null,
+        "amount": 120
+      },
+      "plain": {
+        "got": {
+          "customer": "Hana Sato",
+          "order_id": null,
+          "amount": 120
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      },
+      "grounded": {
+        "got": {
+          "amount": 120,
+          "customer": "Hana Sato",
+          "order_id": null
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      },
+      "guarded": {
+        "got": {
+          "amount": 120,
+          "customer": "Hana Sato",
+          "order_id": null
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      }
+    },
+    {
+      "id": "nothing-stated",
+      "want": {
+        "customer": null,
+        "order_id": null,
+        "amount": null
+      },
+      "plain": {
+        "got": {
+          "customer": "you",
+          "order_id": null,
+          "amount": null
+        },
+        "marks": {
+          "customer": "invented",
+          "order_id": "right",
+          "amount": "right"
+        }
+      },
+      "grounded": {
+        "got": {
+          "amount": null,
+          "customer": "you",
+          "order_id": null
+        },
+        "marks": {
+          "customer": "invented",
+          "order_id": "right",
+          "amount": "right"
+        }
+      },
+      "guarded": {
+        "got": {
+          "amount": 1,
+          "customer": "you",
+          "order_id": null
+        },
+        "marks": {
+          "customer": "invented",
+          "order_id": "right",
+          "amount": "invented"
+        }
+      }
+    },
+    {
+      "id": "amount-in-words-only",
+      "want": {
+        "customer": "Olu Adeyemi",
+        "order_id": "BT-9930",
+        "amount": null
+      },
+      "plain": {
+        "rejected": "RejectedAnswer: Invalid structured model output: $.amount: matches no allowed form ($.amount: expected number, got str; $.amount: expected null, got str)"
+      },
+      "grounded": {
+        "rejected": "RejectedAnswer: Invalid structured model output: $.evidence: missing required property 'customer'"
+      },
+      "guarded": {
+        "got": {
+          "amount": null,
+          "customer": "Olu Adeyemi",
+          "order_id": "BT-9930"
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      }
+    },
+    {
+      "id": "two-numbers",
+      "want": {
+        "customer": "Lena Fischer",
+        "order_id": "QM-1182",
+        "amount": 135
+      },
+      "plain": {
+        "got": {
+          "customer": "Lena Fischer",
+          "order_id": "QM-1182",
+          "amount": 135
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      },
+      "grounded": {
+        "rejected": "RejectedAnswer: Invalid structured model output: $: missing required property 'order_id'"
+      },
+      "guarded": {
+        "got": {
+          "amount": 135,
+          "customer": "Lena Fischer",
+          "order_id": "QM-1182"
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      }
+    },
+    {
+      "id": "someone-elses-name",
+      "want": {
+        "customer": null,
+        "order_id": "HD-3306",
+        "amount": null
+      },
+      "plain": {
+        "got": {
+          "customer": "Marcus",
+          "order_id": "HD-3306",
+          "amount": null
+        },
+        "marks": {
+          "customer": "invented",
+          "order_id": "right",
+          "amount": "right"
+        }
+      },
+      "grounded": {
+        "got": {
+          "customer": null,
+          "order_id": "HD-3306",
+          "amount": null
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      },
+      "guarded": {
+        "got": {
+          "customer": "Marcus",
+          "order_id": "HD-3306",
+          "amount": null
+        },
+        "marks": {
+          "customer": "invented",
+          "order_id": "right",
+          "amount": "right"
+        }
+      }
+    },
+    {
+      "id": "phone-not-order",
+      "want": {
+        "customer": null,
+        "order_id": null,
+        "amount": 80
+      },
+      "plain": {
+        "got": {
+          "customer": "my card",
+          "order_id": null,
+          "amount": 80
+        },
+        "marks": {
+          "customer": "invented",
+          "order_id": "right",
+          "amount": "right"
+        }
+      },
+      "grounded": {
+        "got": {
+          "amount": 80,
+          "customer": "Call me back on 555-0142 about the 80 dollar charge on my card.",
+          "order_id": null
+        },
+        "marks": {
+          "customer": "invented",
+          "order_id": "right",
+          "amount": "right"
+        }
+      },
+      "guarded": {
+        "got": {
+          "customer": null,
+          "order_id": null,
+          "amount": null
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "missed"
+        }
+      }
+    },
+    {
+      "id": "signature-only",
+      "want": {
+        "customer": "Sofia Marin",
+        "order_id": "MN-5521",
+        "amount": null
+      },
+      "plain": {
+        "got": {
+          "customer": "Sofia Marin",
+          "order_id": "MN-5521",
+          "amount": null
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      },
+      "grounded": {
+        "rejected": "RejectedAnswer: Invalid structured model output: $: missing required property 'order_id'"
+      },
+      "guarded": {
+        "got": {
+          "amount": null,
+          "customer": null,
+          "order_id": "MN-5521"
+        },
+        "marks": {
+          "customer": "missed",
+          "order_id": "right",
+          "amount": "right"
+        }
+      }
+    },
+    {
+      "id": "discount-not-price",
+      "want": {
+        "customer": "Wei Chen",
+        "order_id": "TR-8804",
+        "amount": null
+      },
+      "plain": {
+        "got": {
+          "amount": 20,
+          "customer": "Wei Chen",
+          "order_id": "TR-8804"
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "invented"
+        }
+      },
+      "grounded": {
+        "rejected": "RejectedAnswer: Invalid structured model output: $: missing required property 'order_id'"
+      },
+      "guarded": {
+        "got": {
+          "amount": null,
+          "customer": "Wei Chen here",
+          "order_id": "TR-8804"
+        },
+        "marks": {
+          "customer": "wrong",
+          "order_id": "right",
+          "amount": "right"
+        }
+      }
+    },
+    {
+      "id": "two-orders-one-named",
+      "want": {
+        "customer": "Amara Okafor",
+        "order_id": "PL-6610",
+        "amount": null
+      },
+      "plain": {
+        "got": {
+          "customer": "Amara Okafor",
+          "order_id": "PL-6610",
+          "amount": null
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      },
+      "grounded": {
+        "got": {
+          "amount": null,
+          "customer": "Amara Okafor",
+          "order_id": "PL-6610"
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      },
+      "guarded": {
+        "got": {
+          "customer": "Amara Okafor",
+          "amount": null,
+          "order_id": "PL-6610"
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      }
+    },
+    {
+      "id": "price-of-other-item",
+      "want": {
+        "customer": "Jonas Berg",
+        "order_id": "DK-2247",
+        "amount": null
+      },
+      "plain": {
+        "got": {
+          "customer": "Jonas Berg",
+          "order_id": "DK-2247",
+          "amount": 300
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "invented"
+        }
+      },
+      "grounded": {
+        "rejected": "RejectedAnswer: Invalid structured model output: $: missing required property 'order_id'"
+      },
+      "guarded": {
+        "got": {
+          "amount": 300,
+          "customer": "Jonas Berg",
+          "order_id": "order DK-2247"
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "wrong",
+          "amount": "invented"
+        }
+      }
+    },
+    {
+      "id": "no-name-with-amount",
+      "want": {
+        "customer": null,
+        "order_id": "VX-7003",
+        "amount": 42
+      },
+      "plain": {
+        "got": {
+          "customer": null,
+          "order_id": "VX-7003",
+          "amount": 42
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      },
+      "grounded": {
+        "rejected": "RejectedAnswer: Invalid structured model output: $: missing required property 'order_id'"
+      },
+      "guarded": {
+        "got": {
+          "customer": null,
+          "order_id": null,
+          "amount": null
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "missed",
+          "amount": "missed"
+        }
+      }
+    },
+    {
+      "id": "company-not-person",
+      "want": {
+        "customer": null,
+        "order_id": null,
+        "amount": null
+      },
+      "plain": {
+        "got": {
+          "customer": "Brightside Cafe",
+          "order_id": null,
+          "amount": null
+        },
+        "marks": {
+          "customer": "invented",
+          "order_id": "right",
+          "amount": "right"
+        }
+      },
+      "grounded": {
+        "got": {
+          "customer": "Brightside Cafe",
+          "order_id": null,
+          "amount": null
+        },
+        "marks": {
+          "customer": "invented",
+          "order_id": "right",
+          "amount": "right"
+        }
+      },
+      "guarded": {
+        "got": {
+          "amount": null,
+          "customer": "Brightside Cafe",
+          "order_id": null
+        },
+        "marks": {
+          "customer": "invented",
+          "order_id": "right",
+          "amount": "right"
+        }
+      }
+    },
+    {
+      "id": "date-not-order",
+      "want": {
+        "customer": "Ravi Menon",
+        "order_id": null,
+        "amount": 75
+      },
+      "plain": {
+        "got": {
+          "customer": "Ravi Menon",
+          "order_id": null,
+          "amount": 75
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      },
+      "grounded": {
+        "got": {
+          "amount": 75,
+          "customer": "Ravi Menon",
+          "order_id": null
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      },
+      "guarded": {
+        "got": {
+          "amount": 75,
+          "customer": "Ravi Menon",
+          "order_id": null
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      }
+    },
+    {
+      "id": "all-stated-2",
+      "want": {
+        "customer": "Greta Lund",
+        "order_id": "FS-3390",
+        "amount": 210
+      },
+      "plain": {
+        "got": {
+          "customer": "Greta Lund",
+          "order_id": "FS-3390",
+          "amount": 210
+        },
+        "marks": {
+          "customer": "right",
+          "order_id": "right",
+          "amount": "right"
+        }
+      },
+      "grounded": {
+        "rejected": "TimeoutError: timed out"
+      },
+      "guarded": {
+        "got": {
+          "customer": null,
+          "order_id": null,
+          "amount": null
+        },
+        "marks": {
+          "customer": "missed",
+          "order_id": "missed",
+          "amount": "missed"
+        }
+      }
+    }
+  ]
+}

@@ -1,29 +1,61 @@
-"""Compare `extract` with and without evidence on tickets with missing facts.
+"""Measure invented answers in `extract`, with and without Kosika's guards.
 
-    python benchmarks/thinking/evidence_measure.py NAME PROGRAM [ARGS...]
+    python benchmarks/thinking/evidence_measure.py NAME MODES --ollama MODEL
+    python benchmarks/thinking/evidence_measure.py NAME MODES --command PROGRAM [ARGS...]
 
-Each ticket is extracted twice, once plainly and once `with evidence`, and
-each field is compared with a hand-written label. A field is "invented" when
-the model gave a value the ticket does not state. A grounded run that Kosika
-rejects is counted as rejected, not as an answer.
+MODES is a comma-separated list of the workflows in `order.kos`:
+
+    plain     the model alone
+    grounded  `with evidence`; a rejected answer fails the run
+    guarded   `with evidence retry 2 otherwise` an empty answer
+
+Each ticket in `orders.json` is extracted once per mode and each of its three
+fields is compared with a hand-written label:
+
+    right     the labelled value, or correctly left empty
+    invented  a value for a fact the ticket does not state
+    wrong     a value that differs from the stated one
+    missed    left empty although the ticket states it
+
+A grounded run that Kosika rejects counts as `rejected`, not as an answer.
 """
 
 from __future__ import annotations
 
 import json
 import sys
+import time
 from pathlib import Path
+from typing import Any
 
 from kosika.command_model import CommandModelProvider
+from kosika.model import (
+    ModelProvider,
+    ModelRequest,
+    ModelResponse,
+    OpenAICompatibleProvider,
+)
 from kosika.modules import load_program
 from kosika.runtime import run
 
 HERE = Path(__file__).parent
 FIELDS = ("customer", "order_id", "amount")
+KINDS = ("right", "invented", "wrong", "missed")
 
 
-def score(got: dict, want: dict) -> dict:
-    counts = {"right": 0, "invented": 0, "wrong": 0, "missed": 0}
+class Counting:
+    """Count the calls a provider receives."""
+
+    def __init__(self, inner: ModelProvider):
+        self.inner, self.calls = inner, 0
+
+    def complete(self, request: ModelRequest) -> ModelResponse:
+        self.calls += 1
+        return self.inner.complete(request)
+
+
+def score(got: dict[str, Any], want: dict[str, Any]) -> dict[str, str]:
+    marks = {}
     for field in FIELDS:
         have, truth = got.get(field), want[field]
         if isinstance(have, str) and isinstance(truth, str):
@@ -31,29 +63,36 @@ def score(got: dict, want: dict) -> dict:
         else:
             same = have == truth
         if same:
-            counts["right"] += 1
+            marks[field] = "right"
         elif truth is None:
-            counts["invented"] += 1
-        elif have is None:
-            counts["missed"] += 1
+            marks[field] = "invented"
+        elif have is None or have == "":
+            marks[field] = "missed"
         else:
-            counts["wrong"] += 1
-    return counts
+            marks[field] = "wrong"
+    return marks
 
 
 def main() -> int:
-    name, command = sys.argv[1], sys.argv[2:]
+    name, modes, kind = sys.argv[1], sys.argv[2].split(","), sys.argv[3]
+    if kind == "--ollama":
+        inner: ModelProvider = OpenAICompatibleProvider(
+            "http://localhost:11434/v1", sys.argv[4], timeout=600.0
+        )
+    else:
+        inner = CommandModelProvider(sys.argv[4:])
+    provider = Counting(inner)
     program = load_program(HERE / "order.kos")
-    provider = CommandModelProvider(command)
     tickets = json.loads((HERE / "orders.json").read_text("utf-8"))
-    rows = []
     totals = {
-        mode: {"right": 0, "invented": 0, "wrong": 0, "missed": 0, "rejected": 0}
-        for mode in ("plain", "grounded")
+        mode: {**dict.fromkeys(KINDS, 0), "rejected": 0, "calls": 0, "seconds": 0.0}
+        for mode in modes
     }
+    rows = []
     for ticket in tickets:
-        row: dict = {"id": ticket["id"], "want": ticket["want"]}
-        for mode in ("plain", "grounded"):
+        row: dict[str, Any] = {"id": ticket["id"], "want": ticket["want"]}
+        for mode in modes:
+            before, started = provider.calls, time.monotonic()
             try:
                 got = run(
                     program,
@@ -62,18 +101,23 @@ def main() -> int:
                     inputs={"ticket": {"text": ticket["text"]}},
                     model_bindings={"assistant": provider},
                 )
-                row[mode] = got
-                for key, value in score(got, ticket["want"]).items():
-                    totals[mode][key] += value
+                marks = score(got, ticket["want"])
+                row[mode] = {"got": got, "marks": marks}
+                for mark in marks.values():
+                    totals[mode][mark] += 1
             except Exception as exc:  # recorded, never hidden
                 row[mode] = {"rejected": f"{type(exc).__name__}: {exc}"[:300]}
                 totals[mode]["rejected"] += 1
+            totals[mode]["calls"] += provider.calls - before
+            totals[mode]["seconds"] = round(
+                totals[mode]["seconds"] + time.monotonic() - started, 1
+            )
         rows.append(row)
         print(json.dumps(row), flush=True)
     summary = {"model": name, "tickets": len(rows), "totals": totals, "rows": rows}
     out = HERE / "results" / f"evidence-{name}.json"
     out.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
-    print(json.dumps(totals))
+    print(json.dumps(totals, indent=1))
     return 0
 
 

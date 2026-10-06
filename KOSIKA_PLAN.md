@@ -593,7 +593,7 @@ left out: typed messages between members, state carried from one round to the
 next, and a termination judgment over observed evidence rather than result
 equality. Swarm output must not acquire authority the way model output cannot.
 
-## Reliability: evidence (built, not yet measured)
+## Reliability: evidence (built; measured above)
 
 - `classify`, `extract`, and `decide` accept `with evidence`. The model is
   asked for the record plus quotes; `kosika/evidence.py` checks every quote
@@ -722,19 +722,50 @@ equality. Swarm output must not acquire authority the way model output cannot.
   workflow's own budget is ignored, and `kosika swarm` does not apply a
   workflow budget.
 
-## Reliability: measurement of evidence (prepared, not run)
+## Reliability: measurement of evidence and retry (run on two local models)
 
-- `benchmarks/thinking/evidence_measure.py` extracts an `Order` (three
-  optional fields) from eight tickets, each with and without evidence, and
-  counts per field: right, invented (a value the ticket does not state),
-  wrong, missed, and grounded runs that Kosika rejected. Five of the eight
-  tickets leave at least one fact out.
-- Not run: on 2026-10-06 the Gemini free quota was used up (HTTP 429 on
-  `gemini-3.8-flash` and `gemini-3.5-flash`) before the first ticket
-  finished. There is no number for evidence yet. Sixteen model calls are
-  needed.
+Run on 2026-10-06 with Ollama 0.35.1 on this machine.
+`benchmarks/thinking/evidence_measure.py` extracts an `Order` with three
+optional fields from 16 hand-labelled tickets, 48 fields in all, of which 19
+are facts the ticket does not state. One run per ticket and mode.
 
-## Reliability: retry with feedback (built, not yet measured)
+| Model and mode | Right | Invented | Wrong | Missed | Fields in rejected runs | Calls | Seconds |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| qwen3:1.7b alone | 39 | 6 | 0 | 0 | 3 | 16 | 355 |
+| qwen3:1.7b, evidence only | 20 | 3 | 1 | 0 | 24 | 16 | 1852 |
+| qwen3:1.7b, evidence + retry 2 + fallback | 34 | 5 | 2 | 7 | 0 | 28 | 2165 |
+| qwen2.5:7b alone | 39 | 6 | 0 | 0 | 3 | 16 | 179 |
+| qwen2.5:7b, evidence + retry 2 + fallback | 43 | 0 | 0 | 5 | 0 | 22 | 434 |
+
+What this shows:
+
+- On the larger model the guards removed every invented value (6 to 0) and
+  raised correct fields from 39 to 43. The price was 5 fields left empty that
+  the ticket did state, and 2.4 times the running time.
+- On the small model the guards did not help: fewer correct fields (34
+  against 39) and nearly as many invented (5 against 6), at six times the
+  running time. Half of its evidence-only runs were rejected, mostly because
+  it left a field out instead of writing it as null, and it sometimes copied
+  the quote into the value ("Priya Nair here").
+- So the guards are not a way to make a weak model strong. They need a model
+  able to follow the evidence format, and then they trade invented answers
+  for empty ones.
+- The inventions that survived on the small model are misattributions whose
+  words are in the ticket: the support agent's name or a cafe as the
+  customer, a friend's price as the amount. A quote check cannot catch
+  those. This is the limit stated in `kosika/evidence.py`, now observed.
+
+What it does not show: 16 tickets and one run each is too few for a rate, and
+the tickets and labels were written by the same author as the feature, to be
+tempting. Scoring is exact match, so "Priya Nair here" counts as wrong. Two
+models from one family were tried. `vote` and model routing were not
+measured.
+
+Found and not yet fixed: a model answer that omits an optional field is
+rejected, where treating it as null would be the kinder reading. That caused
+most of the rejections above.
+
+## Reliability: retry with feedback (built; measured above)
 
 - `retry N` (1 to 5) on a model step re-asks after a rejected answer, adding
   the rejected answer and the reason to the conversation
