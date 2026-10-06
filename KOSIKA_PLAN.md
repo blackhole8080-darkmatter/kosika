@@ -610,6 +610,18 @@ equality. Swarm output must not acquire authority the way model output cannot.
   cannot read the quotes yet; they are in the trace only. Traces with
   evidence are not readable by an older Kosika (they fail closed).
 
+## Reliability: measurement of evidence (prepared, not run)
+
+- `benchmarks/thinking/evidence_measure.py` extracts an `Order` (three
+  optional fields) from eight tickets, each with and without evidence, and
+  counts per field: right, invented (a value the ticket does not state),
+  wrong, missed, and grounded runs that Kosika rejected. Five of the eight
+  tickets leave at least one fact out.
+- Not run: on 2026-10-06 the Gemini free quota was used up (HTTP 429 on
+  `gemini-3.8-flash` and `gemini-3.5-flash`) before the first ticket
+  finished. There is no number for evidence yet. Sixteen model calls are
+  needed.
+
 ## Reliability: retry with feedback (built, not yet measured)
 
 - `retry N` (1 to 5) on a model step re-asks after a rejected answer, adding

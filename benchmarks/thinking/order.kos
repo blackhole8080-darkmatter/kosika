@@ -1,0 +1,18 @@
+record Ticket { text: Text }
+record Order { customer: Text? order_id: Text? amount: Number? }
+
+model assistant
+
+fn keep(order: Order) -> Order {
+  return order
+}
+
+workflow plain(ticket: Ticket) -> Order {
+  order  = extract Order from ticket.text
+  result = keep(order)
+}
+
+workflow grounded(ticket: Ticket) -> Order {
+  order  = extract Order from ticket.text with evidence
+  result = keep(order)
+}
