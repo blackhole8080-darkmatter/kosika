@@ -593,6 +593,25 @@ left out: typed messages between members, state carried from one round to the
 next, and a termination judgment over observed evidence rather than result
 equality. Swarm output must not acquire authority the way model output cannot.
 
+## Fundamentals: gates and error positions (complete)
+
+- Quality gates re-measured on 2026-10-06. MyPy over `kosika` reports no
+  issues in 86 files (it was 54 errors in 16 files at K02; most were in the
+  removed prototype modules, and the last one was fixed here). Branch coverage
+  is 86 percent overall against the 80 percent gate, and 93 percent across the
+  twelve core language modules. Ruff passes. 1162 tests pass.
+- Checker errors now point at the token they name. When a message names a
+  field, variable, method, or argument that occurs exactly once inside the
+  owning function or step, the diagnostic's range is that token and
+  `data.anchor` is `name`. A name that occurs more than once is ambiguous and
+  is never guessed: the range falls back to the local's `let` line when the
+  checker named one, and otherwise to the declaration, as before.
+- The local type-mismatch message now carries its function, so it has an owner
+  and a position.
+- 9 tests in `tests/test_error_positions.py`.
+- Still open: error handling in the language, early `return`, narrowing of
+  optionals, and a run of the thinking steps against a live model.
+
 ## Closing the size gap (second measurement)
 
 - Changes, each a short form rewritten to the full language before checking

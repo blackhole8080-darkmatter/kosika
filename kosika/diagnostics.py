@@ -497,6 +497,7 @@ def code_for(message: str) -> str:
     return "kosika/internal-error"
 
 
+_LOCAL_LABEL_RE = re.compile(r"Step 'function [A-Za-z_]\w* local ([A-Za-z_]\w*)'")
 _FUNCTION_STEP_RE = re.compile(r"^function (?P<name>[A-Za-z_][A-Za-z0-9_]*)\b")
 
 
@@ -631,6 +632,7 @@ class _Anchors:
         self._declarations: dict[str, list[Token]] = {}
         self._steps: dict[str, list[Token]] = {}
         self._positions = {(token.line, token.column): token for token in tokens}
+        self._tokens = list(tokens)
         self._build(tokens)
 
     def _build(self, tokens: Sequence[Token]) -> None:
@@ -666,6 +668,78 @@ class _Anchors:
 
     def token_at(self, line: int, column: int) -> Token | None:
         return self._positions.get((line, column))
+
+    def named_within(self, owner: Token, names: Sequence[str]) -> Token | None:
+        """The one token inside ``owner``'s body that spells a named thing.
+
+        A checker message usually names what is wrong: a field, a variable, a
+        method. When that name occurs exactly once inside the owning
+        declaration or step, that occurrence is where the problem is, and
+        pointing at it is still truthful. A name that occurs twice is
+        ambiguous, so it is skipped rather than guessed at.
+        """
+
+        try:
+            start = self._tokens.index(owner)
+        except ValueError:
+            return None
+        body: list[Token] = []
+        depth = 0
+        opened = False
+        one_line_step = (
+            start + 1 < len(self._tokens) and self._tokens[start + 1].value == "="
+        )
+        for token in self._tokens[start + 1 :]:
+            if one_line_step:
+                if token.line != owner.line:
+                    break
+                body.append(token)
+                continue
+            if token.value == "{":
+                depth += 1
+                opened = True
+            elif token.value == "}":
+                depth -= 1
+                if opened and depth == 0:
+                    break
+            if opened:
+                body.append(token)
+        for name in names:
+            matches = [
+                token
+                for token in body
+                if token.kind in {"IDENT", "STRING"} and token.value == name
+            ]
+            if len(matches) == 1:
+                return matches[0]
+        return None
+
+    def local_binding(self, owner: Token, name: str) -> Token | None:
+        """The `let name` or `var name` token inside ``owner``'s body, if unique."""
+
+        try:
+            start = self._tokens.index(owner)
+        except ValueError:
+            return None
+        found: list[Token] = []
+        depth = 0
+        opened = False
+        previous = owner
+        for token in self._tokens[start + 1 :]:
+            if token.value == "{":
+                depth += 1
+                opened = True
+            elif token.value == "}":
+                depth -= 1
+                if opened and depth == 0:
+                    break
+            if opened and token.value == name and previous.value in {"let", "var"}:
+                found.append(token)
+            previous = token
+        return found[0] if len(found) == 1 else None
+
+    def owner_token(self, owner: str, owner_kind: str | None) -> Token | None:
+        return self.step(owner) if owner_kind == "step" else self.declaration(owner)
 
     def first_use(self, names: Sequence[str]) -> Token | None:
         """The earliest identifier token spelling any of ``names``.
@@ -715,6 +789,26 @@ def _span_for(
     return Span(line, character, line, character + len(token.value)), False
 
 
+def _named_in(message: str, owner: str) -> list[str]:
+    """Names a message points at, most specific first.
+
+    Text after "Did you mean" is a suggestion, not something in the source,
+    and the owner's own name is where the fallback span already points.
+    """
+
+    body = message.split(" Did you mean", 1)[0]
+    body = re.sub(r"^Step '[^']*'", "", body)
+    names = _QUOTED_NAME_RE.findall(body)
+    got = re.search(r"got \(([^)]*)\)", body)
+    if got is not None:
+        names = [*re.findall(r"[A-Za-z_][A-Za-z0-9_]*", got.group(1)), *names]
+    seen: list[str] = []
+    for name in names:
+        if name != owner and name not in seen:
+            seen.append(name)
+    return seen
+
+
 def _location(message: str) -> tuple[int, int] | None:
     match = _LOCATION_RE.search(message)
     if match is None:
@@ -753,6 +847,28 @@ def diagnostic_from_exception(
     span, anchor_missing = _span_for(anchors, owner, owner_kind, location)
 
     data: dict[str, Any] = {}
+    if anchors is not None and owner is not None and location is None:
+        owner_token = anchors.owner_token(owner, owner_kind)
+        named = (
+            anchors.named_within(owner_token, _named_in(message, owner))
+            if owner_token is not None
+            else None
+        )
+        local = _LOCAL_LABEL_RE.search(message)
+        if named is None and owner_token is not None and local is not None:
+            # Nothing named is unique, but the checker said which local's
+            # initialiser it was in, so point at that declaration.
+            named = anchors.local_binding(owner_token, local.group(1))
+        if named is not None:
+            # A string token's position is its opening quote.
+            width = len(named.value) + (2 if named.kind == "STRING" else 0)
+            span = Span(
+                named.line - 1,
+                named.column - 1,
+                named.line - 1,
+                named.column - 1 + width,
+            )
+            data["anchor"] = "name"
     if resolved_code == "module/private-symbol":
         names = _QUOTED_NAME_RE.findall(message.split("symbols", 1)[-1])
         data["names"] = names

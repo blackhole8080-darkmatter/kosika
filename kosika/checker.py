@@ -998,7 +998,9 @@ def check(program: Program) -> None:
                 binding_type, binding.type_name
             ):
                 raise CheckError(
-                    f"Local {binding.name!r} expects {binding.type_name!r}, got {binding_type!r}"
+                    f"Step 'function {function.name} local {binding.name}' local "
+                    f"{binding.name!r} expects {binding.type_name!r}, "
+                    f"got {binding_type!r}"
                 )
             # An annotation is the binding's type (it may be wider than the
             # initialiser, as in `let x: Text? = "a"`); without one the

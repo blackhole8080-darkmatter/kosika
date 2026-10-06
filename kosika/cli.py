@@ -3167,7 +3167,7 @@ def main() -> int:
         parser.error("--mcp-manifest requires --mcp-server")
     bindings: dict[str, ControlledProvider] = {}
     telemetry_error = False
-    component_tool_bindings = {}
+    component_tool_bindings: dict[str, Any] = {}
     try:
         inputs = (
             strict_json(args.input.read_text(encoding="utf-8")) if args.input else {}
