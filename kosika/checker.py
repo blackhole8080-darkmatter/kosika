@@ -174,13 +174,101 @@ class _Env(dict):
         # The result type of the function being checked, for early returns.
         # None outside a function body, where `return` is not allowed.
         self.returns: str | None = None
+        # Optional names proved present by a test such as `if x.exists()`.
+        # Their type here is the plain `T`; `exists`, `value`, and `or` still
+        # work on them so code written before narrowing keeps checking.
+        self.present: set[str] = set()
 
     def child(self) -> _Env:
         # A nested scope still sees the enclosing mutable names, so a `var`
         # declared outside a loop stays assignable inside it.
         scope = _Env(self, mutable=set(self.mutable))
         scope.returns = self.returns
+        scope.present = set(self.present)
         return scope
+
+    def narrowed(self, names: frozenset[str]) -> _Env:
+        """A child scope in which each of `names` is known to hold a value."""
+        scope = self.child()
+        scope.prove_present(names)
+        return scope
+
+    def prove_present(self, names: frozenset[str]) -> None:
+        for name in names:
+            self[name] = self[name][:-1]
+            self.present.add(name)
+
+
+_NOTHING: frozenset[str] = frozenset()
+
+
+def _proved_present(
+    condition: object, bindings: _Env
+) -> tuple[frozenset[str], frozenset[str]]:
+    """Names a condition proves present: (when it is true, when it is false).
+
+    Only a plain immutable name counts. A `var` could be set back to null
+    after the test, and a field or index is not a name the scope tracks.
+    """
+
+    if (
+        isinstance(condition, MethodCallExpr)
+        and condition.method == "exists"
+        and not condition.arguments
+        and isinstance(condition.target, VariableExpr)
+    ):
+        name = condition.target.name
+        if (
+            name not in bindings.mutable
+            and name not in bindings.present
+            and is_optional(bindings.get(name) or "")
+        ):
+            return frozenset({name}), _NOTHING
+        return _NOTHING, _NOTHING
+    if isinstance(condition, UnaryExpr) and condition.operator == "not":
+        when_true, when_false = _proved_present(condition.operand, bindings)
+        return when_false, when_true
+    if isinstance(condition, BinaryExpr) and condition.operator in ("and", "or"):
+        left = _proved_present(condition.left, bindings)
+        right = _proved_present(condition.right, bindings)
+        if condition.operator == "and":
+            return left[0] | right[0], _NOTHING
+        return _NOTHING, left[1] | right[1]
+    return _NOTHING, _NOTHING
+
+
+def _always_leaves(expression: object) -> bool:
+    """True when evaluating `expression` never continues to the next line."""
+
+    if isinstance(expression, (ReturnExpr, BreakExpr, ContinueExpr)):
+        return True
+    if isinstance(expression, Block):
+        if expression.result is not None:
+            return _always_leaves(expression.result)
+        return bool(expression.statements) and _always_leaves(expression.statements[-1])
+    if isinstance(expression, ConditionalExpr):
+        return _always_leaves(expression.when_true) and _always_leaves(
+            expression.when_false
+        )
+    return False
+
+
+def _present_after(statement: object, bindings: _Env) -> frozenset[str]:
+    """Names proved present for the lines after a guard statement.
+
+    `if not x.exists() { return ... }` leaves when `x` is absent, so every
+    line after it may use `x` directly.
+    """
+
+    if not isinstance(statement, ConditionalExpr):
+        return _NOTHING
+    when_true, when_false = _proved_present(statement.condition, bindings)
+    names = _NOTHING
+    if _always_leaves(statement.when_true):
+        names |= when_false
+    if _always_leaves(statement.when_false):
+        names |= when_true
+    return names
 
 
 def _expression_type(
@@ -247,6 +335,7 @@ def _expression_type(
                     inner.mutable.add(statement.name)
             else:
                 _expression_type(statement, inner, program, step_name=step_name)
+                inner.prove_present(_present_after(statement, inner))
         if expression.result is None:
             return "Null"
         return _expression_type(
@@ -361,6 +450,9 @@ def _expression_type(
                     f"Step {step_name!r} for loop where condition expects 'Bool', "
                     f"got {condition_type!r}"
                 )
+            item_bindings.prove_present(
+                _proved_present(expression.condition, item_bindings)[0]
+            )
         body_type = _expression_type(
             expression.body,
             item_bindings,
@@ -405,6 +497,12 @@ def _expression_type(
         receiver_type = _expression_type(
             expression.target, bindings, program, step_name=step_name
         )
+        if (
+            isinstance(expression.target, VariableExpr)
+            and expression.target.name in bindings.present
+            and expression.method in ("exists", "value", "or")
+        ):
+            receiver_type += "?"
         try:
             method = resolve_method(receiver_type, expression.method)
         except MethodError as exc:
@@ -629,16 +727,19 @@ def _expression_type(
             raise CheckError(
                 f"Step {step_name!r} condition expects 'Bool', got {condition_type!r}"
             )
+        present_if_true, present_if_false = _proved_present(
+            expression.condition, bindings
+        )
         true_type = _expression_type(
             expression.when_true,
-            bindings,
+            bindings.narrowed(present_if_true) if present_if_true else bindings,
             program,
             step_name=step_name,
             expected_type=expected_type,
         )
         false_type = _expression_type(
             expression.when_false,
-            bindings,
+            bindings.narrowed(present_if_false) if present_if_false else bindings,
             program,
             step_name=step_name,
             expected_type=expected_type or true_type,
@@ -1092,6 +1193,9 @@ def check(program: Program) -> None:
                     function_bindings,
                     program,
                     step_name=f"function {function.name} statement",
+                )
+                function_bindings.prove_present(
+                    _present_after(binding, function_bindings)
                 )
                 continue
             if binding.name in function_bindings:

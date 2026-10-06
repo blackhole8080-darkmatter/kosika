@@ -251,7 +251,29 @@ check error rather than a run failure. To sort descending, follow `sort()` or
 | any `T{}` | `keys()`, `values()`, `length()` | `Text[]`, `T[]`, `Number` |
 
 An optional value has only `or`, `exists`, and `value`: its own methods and
-fields are reached after one of those. A map has no fields. A map literal is
+fields are reached after one of those, or after a test proves it present.
+
+A test of `name.exists()` narrows `name` from `T?` to `T` wherever the test is
+known to have passed:
+
+- in the true branch of `if name.exists() { ... }`, and in the `else` branch
+  of `if not name.exists()`;
+- with `and`, for every name tested: `if a.exists() and b.exists() { a + b }`;
+- on the lines after a guard that always leaves when the value is absent:
+  `if not name.exists() { return ... }` (or `break`, or `continue`);
+- in the body of `for x in xs where x.exists() { ... }`.
+
+Only a plain name declared with `let`, a parameter, or a loop variable is
+narrowed. A `var` is not, because it may be set back to `null`; a field or an
+index is not, so bind it to a `let` first. `exists`, `value`, and `or` remain
+valid on a narrowed name. Narrowing is a check-time rule only and does not
+change what a program computes.
+
+A braced block holds declarations, assignments, and expressions in any order.
+An expression followed by another line is a statement whose value is
+discarded; the last expression, if any, is the block's value.
+
+A map has no fields. A map literal is
 written like a record literal, with quoted or bare keys (`{"north": 4}`), and
 needs a map type from its context; `{}` is the empty map.
 | array of `Text`, `Number`, or `Bool` | `contains(item: T)` | `Bool`, using `==` |

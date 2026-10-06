@@ -33,6 +33,9 @@ workflow main(person: Person) -> Greeting {
 - Optional values: `Text?` is a Text or `null`. Use `Text?` for anything that
   may be missing. To use the value write `x.or(default: "none")`, test it with
   `x.exists()`, or demand it with `x.value()` (fails the run if absent).
+  After a test the name is the plain value: `if n.exists() { n + 1 } else { 0 }`,
+  or `if not n.exists() { return fallback }` and then use `n` on later lines.
+  This works for a `let`, parameter, or loop variable, not a `var` or a field.
 - Records: `record Name { field: Type other: Type }`. Every field is
   required. Record names start with a capital letter.
 - A record value is written `{field: value, other: value}`. An array value is

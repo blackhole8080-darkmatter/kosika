@@ -254,7 +254,7 @@ class Block:
     blocks existed keeps the identical AST.
     """
 
-    statements: tuple[LocalBinding | Assignment, ...]
+    statements: tuple[LocalBinding | Assignment | Expression, ...]
     result: Expression | None = None
 
 
@@ -345,7 +345,10 @@ def expression_function_calls(
             visit(value.value)
         elif isinstance(value, Block):
             for statement in value.statements:
-                visit(statement.value)
+                if isinstance(statement, LocalBinding):
+                    visit(statement.value)
+                else:
+                    visit(statement)
             if value.result is not None:
                 visit(value.result)
 

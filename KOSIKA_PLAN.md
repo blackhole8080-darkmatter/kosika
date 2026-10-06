@@ -593,6 +593,24 @@ left out: typed messages between members, state carried from one round to the
 next, and a termination judgment over observed evidence rather than result
 equality. Swarm output must not acquire authority the way model output cannot.
 
+## Fundamentals: narrowing optionals (complete)
+
+- A test of `name.exists()` makes `name` its plain type where the test is
+  known to have passed: the matching branch of an `if` (with `not` and `and`),
+  the lines after a guard that returns, breaks, or continues, and the body of
+  a `for ... where`. Checker only (`_proved_present`, `_present_after`,
+  `_Env.present`); the runtime is unchanged.
+- Sound by restriction: only immutable plain names are narrowed. A `var`, a
+  field, and an index are not. `or` never narrows its true side.
+  `exists`/`value`/`or` still check on a narrowed name, so older code is
+  unaffected.
+- Found while testing: a nested block could not continue after an `if`, `for`,
+  or other expression (`if ... { continue }` then more lines failed to parse).
+  A block now holds expression statements like a function body does.
+- 11 tests in `tests/test_narrowing.py`.
+- Not claimed: no narrowing through `match`, through a helper function that
+  tests presence, or of record fields.
+
 ## Fundamentals: thinking steps on a live model (first run done)
 
 - `kosika run --model-command PROGRAM ARGS...` (`kosika/command_model.py`)
@@ -629,8 +647,6 @@ equality. Swarm output must not acquire authority the way model output cannot.
   fallback's target, with the ordinary call relation and the label
   `otherwise: computes` (or `otherwise: asks`, and so on), so every view that
   reads relations shows it.
-- Still open: narrowing (an optional proved present by `if x.exists()` still
-  needs `.value()`).
 
 ## Fundamentals: `otherwise` (complete)
 

@@ -139,10 +139,20 @@ class Parser:
         before and no existing consumer has to learn about Block.
         """
         self.expect("{")
-        statements: list[LocalBinding | Assignment] = []
-        while self.check("let") or self.check("var") or self.at_assignment():
-            statements.append(self.parse_statement())
-        result = None if self.check("}") else self.expression()
+        statements: list[LocalBinding | Assignment | Expression] = []
+        result: Expression | None = None
+        # As in a function body, declarations, assignments, and expressions
+        # may be interleaved. An expression followed by another line was a
+        # statement, such as `if not n.exists() { continue }`; only the last
+        # one is the block's value.
+        while not self.check("}"):
+            if result is not None:
+                statements.append(result)
+                result = None
+            if self.check("let") or self.check("var") or self.at_assignment():
+                statements.append(self.parse_statement())
+            else:
+                result = self.expression()
         self.expect("}")
         if not statements:
             if result is None:
