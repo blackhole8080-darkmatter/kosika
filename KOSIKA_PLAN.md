@@ -610,6 +610,16 @@ equality. Swarm output must not acquire authority the way model output cannot.
   cannot read the quotes yet; they are in the trace only. Traces with
   evidence are not readable by an older Kosika (they fail closed).
 
+## Algorithms: larger limits (complete)
+
+- Arrays built by methods may hold 1,000,000 elements (was 4,096), maps
+  100,000 entries (was 4,096), and `recurse N` and the call depth go to 128
+  (was 32). Replay accepts the same depth.
+- 128 is measured, not chosen: the Python-hosted interpreter fails between
+  200 and 250 nested calls, so 128 leaves room for deep expressions.
+- Not claimed: deep recursion. An algorithm that needs thousands of nested
+  calls must be written with a loop.
+
 ## Algorithms: arguments by position (complete)
 
 - A call may leave every argument unnamed: `gcd(48, 18)`,
@@ -645,7 +655,7 @@ equality. Swarm output must not acquire authority the way model output cannot.
 - Not claimed: speed. Kosika is interpreted in Python, so a loop here is
   many times slower than the same loop in Python. `items[i] = v` copies the
   array, which makes an in-place sort quadratic in copying. Arrays built with
-  `append` still stop at 4,096 elements and recursion at depth 32.
+  Recursion stops at depth 128.
 
 ## Reliability: budgets in the language (complete)
 

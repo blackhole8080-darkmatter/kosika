@@ -34,7 +34,7 @@ def replay_trace(trace_path: str | Path) -> Any:
 
 
 def _validate_function_events(events: list[Any], *, version: int, depth: int) -> None:
-    if events and depth >= 32:
+    if events and depth >= 128:
         raise ValueError("Nested function replay exceeds depth limit")
     if len(events) % 2 or any(not isinstance(event, dict) for event in events):
         raise ValueError("Function expression trace is incomplete")

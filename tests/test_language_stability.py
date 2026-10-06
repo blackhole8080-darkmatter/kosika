@@ -30,7 +30,7 @@ class LanguageStabilityTests(unittest.TestCase):
             call = events[2]
             returned = events[3]
             nested: list[dict[str, Any]] = []
-            for _ in range(32):
+            for _ in range(128):
                 nested = [
                     dict(call, expression_events=[]),
                     dict(returned, events=nested),

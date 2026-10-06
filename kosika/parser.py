@@ -973,9 +973,9 @@ class Parser:
             if (
                 token.kind != "NUMBER"
                 or not token.value.isdigit()
-                or not 1 <= int(token.value) <= 32
+                or not 1 <= int(token.value) <= 128
             ):
-                raise ParseError("Recursion limit must be an integer from 1 to 32")
+                raise ParseError("Recursion limit must be an integer from 1 to 128")
             recursion_limit = int(token.value)
         self.expect("{")
         body: list[LocalBinding | Assignment | Expression] = []

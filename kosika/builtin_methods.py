@@ -35,10 +35,10 @@ FIELD_SORTABLE = "$field:Number|Text"
 FIELD_NUMBER = "$field:Number"
 FIELD_TEXT = "$field:Text"
 #: Building a map with more entries than this fails the run instead.
-MAX_MAP_ENTRIES = 4096
+MAX_MAP_ENTRIES = 100_000
 _NUMBER_TEXT = re.compile(r"-?[0-9]+(\.[0-9]+)?\Z")
 #: Building an array longer than this fails the run instead.
-MAX_ARRAY_LENGTH = 4096
+MAX_ARRAY_LENGTH = 1_000_000
 #: Splitting cannot produce more parts than this; it fails instead.
 MAX_SPLIT_PARTS = 512
 _SCALARS = ("Text", "Number", "Bool", "Null")

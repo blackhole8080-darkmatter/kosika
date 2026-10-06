@@ -1218,9 +1218,9 @@ def check(program: Program) -> None:
     for function in program.functions:
         if function.recursion_limit is not None and (
             type(function.recursion_limit) is not int
-            or not 1 <= function.recursion_limit <= 32
+            or not 1 <= function.recursion_limit <= 128
         ):
-            raise CheckError("Recursion limit must be an integer from 1 to 32")
+            raise CheckError("Recursion limit must be an integer from 1 to 128")
         _validate_type_name(program, function.output_type)
         function_bindings = _Env()
         function_bindings.returns = function.output_type

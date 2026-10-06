@@ -774,8 +774,8 @@ def _execute_function_body(
     argument_events: list[dict[str, Any]],
     depth: int,
 ) -> tuple[Any, list[dict[str, Any]]]:
-    if depth >= 32:
-        raise RuntimeError("Function call depth exceeds 32")
+    if depth >= 128:
+        raise RuntimeError("Function call depth exceeds 128")
     input_schema = _parameter_schema(program, function.parameters)
     output_schema = schema_for_type(program, function.output_type)
     validate(arguments, input_schema)

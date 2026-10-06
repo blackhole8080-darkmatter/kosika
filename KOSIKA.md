@@ -162,7 +162,7 @@ Supported functions:
   and function values may be passed, returned, stored in workflow bindings, and
   called.
 - May recurse only when every function participating in the cycle declares
-  `recurse N`, where `N` is from 1 through 32. Static function nesting and call
+  `recurse N`, where `N` is from 1 through 128. Static function nesting and call
   depth are also bounded at 32.
 - MUST end in one `return` expression with the declared output type.
 - MAY also return early. `return value` written inside an `if`, a `match`
@@ -225,7 +225,7 @@ the receiver's type, and every method is pure and deterministic.
 | any array | `length()` | `Number` of elements |
 | any array | `set(key: Number, value: T)` | a new array with that position replaced |
 | `Number` | `to(end: Number)`, `until(end: Number)` | `Number[]` of whole numbers through, or up to, the end |
-| any array | `append(item: T)`, `concat(other: T[])`, `reverse()`, `slice(start: Number, end: Number)` | a new array of the same type; the receiver is never changed. A result over 4,096 elements fails the run |
+| any array | `append(item: T)`, `concat(other: T[])`, `reverse()`, `slice(start: Number, end: Number)` | a new array of the same type; the receiver is never changed. A result over 1,000,000 elements fails the run |
 | `Text` | `slice(start: Number, end: Number)` | `Text` from position `start` up to, not including, `end` |
 | `Number` | `to_text()` | `Text`, formatted as in `Text + Number` |
 | `Number` | `min(other: Number)`, `max(other: Number)` | the smaller or larger of the two |
@@ -249,7 +249,7 @@ check error rather than a run failure. To sort descending, follow `sort()` or
 | any `T?` | `value()` | `T`; fails the run when absent |
 | any `T{}` | `get(key: Text)` | `T?` |
 | any `T{}` | `has(key: Text)` | `Bool` |
-| any `T{}` | `set(key: Text, value: T)`, `remove(key: Text)` | a new map; the receiver is never changed. A result over 4,096 entries fails the run |
+| any `T{}` | `set(key: Text, value: T)`, `remove(key: Text)` | a new map; the receiver is never changed. A result over 100,000 entries fails the run |
 | any `T{}` | `keys()`, `values()`, `length()` | `Text[]`, `T[]`, `Number` |
 
 An optional value has only `or`, `exists`, and `value`: its own methods and

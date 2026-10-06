@@ -47,12 +47,12 @@ class RecursionMatchTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(RuntimeError, "Recursion limit 3"):
             run(parse(runnable(function, "compute(n: 3)")), "main", None)
-        function = function.replace("recurse 3", "recurse 32")
+        function = function.replace("recurse 3", "recurse 128")
         self.assertEqual(
-            run(parse(runnable(function, "compute(n: 30)")), "main", None), {"value": 9}
+            run(parse(runnable(function, "compute(n: 126)")), "main", None), {"value": 9}
         )
-        with self.assertRaisesRegex(RuntimeError, "Function call depth exceeds 32"):
-            run(parse(runnable(function, "compute(n: 31)")), "main", None)
+        with self.assertRaisesRegex(RuntimeError, "Function call depth exceeds 128"):
+            run(parse(runnable(function, "compute(n: 127)")), "main", None)
 
     def test_branching_recursion_has_total_call_budget(self) -> None:
         source = runnable(
@@ -64,7 +64,7 @@ class RecursionMatchTests(unittest.TestCase):
             run(parse(source), "main", None)
 
     def test_recursion_requires_valid_explicit_limits(self) -> None:
-        for limit in ("0", "33", "-1", "2.5", "true"):
+        for limit in ("0", "129", "-1", "2.5", "true"):
             with self.subTest(limit=limit), self.assertRaises(ParseError):
                 parse(f"fn compute() -> Number recurse {limit} {{ return 1 }}")
         source = (
