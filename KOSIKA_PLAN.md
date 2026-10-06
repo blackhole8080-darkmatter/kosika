@@ -626,8 +626,16 @@ equality. Swarm output must not acquire authority the way model output cannot.
   seconds, and the trace replayed to the same result.
 - 13 tests in `tests/test_command_model.py`, using a stand-in Python script as
   the program.
-- Not claimed: this is one ticket on one model, not a measurement. There is no
-  accuracy figure, no second model, and no run of `ask` with tools on a live
+- Small measurement, same day and model: `benchmarks/thinking/measure.py`
+  ran `classify` (four queues) and `decide` over six hand-labelled tickets,
+  twelve model calls. Queue 6/6, urgency 6/6, no failed or invalid answer,
+  about 15 seconds per ticket. Results in
+  `benchmarks/thinking/results/gemini-3.5-flash-lite.json`.
+- What that does not show: the tickets were written by the same author as the
+  labels and are clear-cut, so this is a smoke test, not an accuracy figure.
+  The reported confidence was 1.0 on five of six and 0.95 on the other, so
+  the self-reported confidence carried no information here.
+- Not claimed beyond that: one model, no hard or ambiguous cases. There is no run of `ask` with tools on a live
   model. The Ollama program is no longer installed on this machine, so no
   local model was tried.
 

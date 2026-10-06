@@ -1,0 +1,87 @@
+{
+  "model": "gemini-3.5-flash-lite",
+  "tickets": 6,
+  "ran": 6,
+  "queue_correct": 6,
+  "urgent_correct": 6,
+  "rows": [
+    {
+      "id": "double-charge",
+      "want": [
+        "billing",
+        false
+      ],
+      "got": [
+        "billing",
+        false
+      ],
+      "confidence": 1.0,
+      "seconds": 15.2
+    },
+    {
+      "id": "crash-on-open",
+      "want": [
+        "bug",
+        true
+      ],
+      "got": [
+        "bug",
+        true
+      ],
+      "confidence": 1.0,
+      "seconds": 15.1
+    },
+    {
+      "id": "locked-out",
+      "want": [
+        "account",
+        true
+      ],
+      "got": [
+        "account",
+        true
+      ],
+      "confidence": 0.95,
+      "seconds": 15.4
+    },
+    {
+      "id": "export-typo",
+      "want": [
+        "bug",
+        false
+      ],
+      "got": [
+        "bug",
+        false
+      ],
+      "confidence": 1.0,
+      "seconds": 15.0
+    },
+    {
+      "id": "invoice-copy",
+      "want": [
+        "billing",
+        false
+      ],
+      "got": [
+        "billing",
+        false
+      ],
+      "confidence": 1.0,
+      "seconds": 14.2
+    },
+    {
+      "id": "praise",
+      "want": [
+        "other",
+        false
+      ],
+      "got": [
+        "other",
+        false
+      ],
+      "confidence": 1.0,
+      "seconds": 14.8
+    }
+  ]
+}

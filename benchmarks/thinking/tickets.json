@@ -1,0 +1,8 @@
+[
+  {"id": "double-charge", "text": "I was billed twice for my March subscription. Please refund one of the payments.", "queue": "billing", "urgent": false},
+  {"id": "crash-on-open", "text": "Since this morning's update the app closes the moment I open it. I cannot do any work at all.", "queue": "bug", "urgent": true},
+  {"id": "locked-out", "text": "The password reset email never arrives, so I have been locked out of my account since Monday.", "queue": "account", "urgent": true},
+  {"id": "export-typo", "text": "Small thing: the column header in the CSV export says 'Adress' instead of 'Address'. Everything else works.", "queue": "bug", "urgent": false},
+  {"id": "invoice-copy", "text": "Could you send me a PDF copy of last month's invoice for my accountant?", "queue": "billing", "urgent": false},
+  {"id": "praise", "text": "No problem to report. I just wanted to say the new dashboard is lovely. Thank you!", "queue": "other", "urgent": false}
+]

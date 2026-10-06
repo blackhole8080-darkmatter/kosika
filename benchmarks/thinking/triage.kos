@@ -1,0 +1,19 @@
+record Ticket { text: Text }
+record Triage { queue: Text queue_confidence: Number urgent: Bool reason: Text }
+
+model assistant
+
+fn triage(label: Choice, urgent: Decision) -> Triage {
+  return {
+    queue: label.label,
+    queue_confidence: label.confidence,
+    urgent: urgent.answer,
+    reason: urgent.reason
+  }
+}
+
+workflow main(ticket: Ticket) -> Triage {
+  label  = classify ticket.text into ["billing", "bug", "account", "other"]
+  urgent = decide "Is the customer currently unable to use the product at all?" given ticket.text
+  result = triage(label, urgent)
+}
