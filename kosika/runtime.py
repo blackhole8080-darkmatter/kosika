@@ -5,6 +5,7 @@ import tempfile
 import threading
 from copy import deepcopy
 from dataclasses import asdict, dataclass
+from dataclasses import replace as dataclass_replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence, cast
@@ -1049,6 +1050,9 @@ def _run_workflow(
     visited_workflows = {workflow.name}
     while pending:
         step = pending.pop(0)
+        if step.fallback is not None:
+            # Both calls may run, so both must be authorized up front.
+            pending.append(dataclass_replace(step, call=step.fallback, fallback=None))
         if isinstance(step.call, WorkflowCall):
             name = step.call.workflow_name
             if name not in visited_workflows:
@@ -1107,293 +1111,350 @@ def _run_workflow(
         )
     )
     result: Any = {}
-    for step in workflow.steps:
-        _control.scope = (*_scope, workflow.name, step.name)
-        _control.consume("steps")
-        expression_events: list[dict[str, Any]] = []
-        arguments = {
-            name: _evaluate_expression(
-                expression,
-                environment,
-                program,
-                functions,
-                expression_events,
-                # Arguments run before entering the step's function frame.
-                depth=-1,
-            )
-            for name, expression in step.call.arguments
-        }
-        scope = (*_scope, workflow.name, step.name)
-        action = None
-        if isinstance(step.call, WorkflowCall):
-            step_output = workflows[step.call.workflow_name].output_type
-        elif isinstance(step.call, FunctionCall):
-            function, captures = _resolve_function(
-                step.call.function_name, environment, functions
-            )
-            if set(arguments) & set(captures):
-                raise RuntimeError("Cannot override lexical captures")
-            arguments = {**arguments, **captures}
-            step_output = function.output_type
-        elif isinstance(step.call, ModelCall):
-            step_output = models[step.call.model_name].output
-        elif isinstance(step.call, AgentCall):
-            step_output = models[agents[step.call.agent_name].model or ""].output
-        else:
-            step_output = tools[step.call.tool_name].output
-        if session is not None and not isinstance(step.call, WorkflowCall):
-            cached = session.cached(
-                scope, arguments, events[0], schema_for_type(program, step_output)
-            )
-            if cached is not None:
-                result = cached[-1]["result"]
-                environment[step.binding_name] = result
-                events.extend(cached)
-                continue
-        if isinstance(step.call, ToolCall):
-            _control.consume("tool_calls")
-        _control.checkpoint()
-        if session is not None and not isinstance(step.call, WorkflowCall):
-            mutation = (
-                tools[step.call.tool_name].name
-                if isinstance(step.call, ToolCall)
-                and tools[step.call.tool_name].access == "execute"
-                else None
-            )
-            # Check arguments before claiming approval or recording a started step.
-            if isinstance(step.call, ToolCall):
-                validate(
-                    arguments,
-                    schema_for_tool_input(program, tools[step.call.tool_name].input),
+    queue = list(workflow.steps)
+    recovered: dict[str, dict[str, str]] = {}
+    while queue:
+        step = queue.pop(0)
+        events_before = len(events)
+        try:
+            _control.scope = (*_scope, workflow.name, step.name)
+            _control.consume("steps")
+            expression_events: list[dict[str, Any]] = []
+            arguments = {
+                name: _evaluate_expression(
+                    expression,
+                    environment,
+                    program,
+                    functions,
+                    expression_events,
+                    # Arguments run before entering the step's function frame.
+                    depth=-1,
                 )
-            action = session.start(scope, mutation, arguments)
-        step_offset = len(events)
-        events.append(_event("step_start", step=step.name))
-        if isinstance(step.call, FunctionCall):
-            result, function_trace = _execute_function(
-                program,
-                function,
-                arguments,
-                functions,
-                argument_events=expression_events,
-                depth=0,
-            )
-            events.extend(function_trace)
-        elif isinstance(step.call, WorkflowCall):
-            child = workflows[step.call.workflow_name]
+                for name, expression in step.call.arguments
+            }
+            scope = (*_scope, workflow.name, step.name)
+            action = None
+            if isinstance(step.call, WorkflowCall):
+                step_output = workflows[step.call.workflow_name].output_type
+            elif isinstance(step.call, FunctionCall):
+                function, captures = _resolve_function(
+                    step.call.function_name, environment, functions
+                )
+                if set(arguments) & set(captures):
+                    raise RuntimeError("Cannot override lexical captures")
+                arguments = {**arguments, **captures}
+                step_output = function.output_type
+            elif isinstance(step.call, ModelCall):
+                step_output = models[step.call.model_name].output
+            elif isinstance(step.call, AgentCall):
+                step_output = models[agents[step.call.agent_name].model or ""].output
+            else:
+                step_output = tools[step.call.tool_name].output
+            if session is not None and not isinstance(step.call, WorkflowCall):
+                cached = session.cached(
+                    scope, arguments, events[0], schema_for_type(program, step_output)
+                )
+                if cached is not None:
+                    result = cached[-1]["result"]
+                    environment[step.binding_name] = result
+                    events.extend(cached)
+                    continue
+            if isinstance(step.call, ToolCall):
+                _control.consume("tool_calls")
+            _control.checkpoint()
+            if session is not None and not isinstance(step.call, WorkflowCall):
+                mutation = (
+                    tools[step.call.tool_name].name
+                    if isinstance(step.call, ToolCall)
+                    and tools[step.call.tool_name].access == "execute"
+                    else None
+                )
+                # Check arguments before claiming approval or recording a started step.
+                if isinstance(step.call, ToolCall):
+                    validate(
+                        arguments,
+                        schema_for_tool_input(
+                            program, tools[step.call.tool_name].input
+                        ),
+                    )
+                action = session.start(scope, mutation, arguments)
+            step_offset = len(events)
             events.append(
                 _event(
-                    "workflow_call",
-                    workflow=child.name,
-                    arguments=arguments,
-                    expression_events=expression_events,
+                    "step_start",
+                    step=step.name,
+                    **(
+                        {"recovered_from": recovered[step.name]}
+                        if step.name in recovered
+                        else {}
+                    ),
                 )
             )
-            child_events: list[dict[str, Any]] = []
-            try:
-                result = run(
+            if isinstance(step.call, FunctionCall):
+                result, function_trace = _execute_function(
                     program,
-                    child.name,
-                    None,
-                    inputs=arguments,
-                    model_bindings=providers,
-                    tool_bindings=host_tools,
-                    mcp_commands=mcp_commands,
-                    manifest=manifest,
-                    _events_out=child_events,
-                    session=session,
-                    _scope=scope,
-                    _control=_control,
-                    intelligence=intelligence,
-                    function_cache=function_cache,
+                    function,
+                    arguments,
+                    functions,
+                    argument_events=expression_events,
+                    depth=0,
                 )
-            except (Exception, KeyboardInterrupt):
+                events.extend(function_trace)
+            elif isinstance(step.call, WorkflowCall):
+                child = workflows[step.call.workflow_name]
+                events.append(
+                    _event(
+                        "workflow_call",
+                        workflow=child.name,
+                        arguments=arguments,
+                        expression_events=expression_events,
+                    )
+                )
+                child_events: list[dict[str, Any]] = []
+                try:
+                    result = run(
+                        program,
+                        child.name,
+                        None,
+                        inputs=arguments,
+                        model_bindings=providers,
+                        tool_bindings=host_tools,
+                        mcp_commands=mcp_commands,
+                        manifest=manifest,
+                        _events_out=child_events,
+                        session=session,
+                        _scope=scope,
+                        _control=_control,
+                        intelligence=intelligence,
+                        function_cache=function_cache,
+                    )
+                except (Exception, KeyboardInterrupt):
+                    if intelligence is not None:
+                        intelligence.record_events(child_events)
+                    events.append(
+                        _event(
+                            "workflow_failed", workflow=child.name, events=child_events
+                        )
+                    )
+                    raise
                 if intelligence is not None:
                     intelligence.record_events(child_events)
                 events.append(
-                    _event("workflow_failed", workflow=child.name, events=child_events)
-                )
-                raise
-            if intelligence is not None:
-                intelligence.record_events(child_events)
-            events.append(
-                _event(
-                    "workflow_return",
-                    workflow=child.name,
-                    result=result,
-                    events=child_events,
-                )
-            )
-        elif isinstance(step.call, AgentCall):
-            asked_agent = agents[step.call.agent_name]
-            assert asked_agent.model is not None
-            model = models[asked_agent.model]
-            input_schema = schema_for_record(program, model.input)
-            output_schema = schema_for_record(program, model.output)
-            validate(arguments, input_schema)
-            call_event = _event(
-                "agent_call",
-                agent=asked_agent.name,
-                model=model.name,
-                arguments=arguments,
-                expression_events=expression_events,
-                input_schema=input_schema,
-                output_schema=output_schema,
-                max_steps=asked_agent.max_steps,
-                tools={
-                    name: {
-                        "input_schema": schema_for_tool_input(
-                            program, tools[name].input
-                        ),
-                        "output_schema": schema_for_record(program, tools[name].output),
-                    }
-                    for name in asked_agent.can
-                },
-            )
-            events.append(call_event)
-
-            def execute_agent_tool(
-                declaration: ToolDecl, values: dict[str, Any]
-            ) -> Any:
-                _control.consume("tool_calls")
-                if declaration.access == "execute":
-                    # An ask that reaches an approval-gated tool is gated the
-                    # same way a direct call is: claim the action against the
-                    # verified approval record, or pause for a human. This is
-                    # deliberately not a widening of access, and deliberately
-                    # no host-binding exemption - a direct execute tool has
-                    # none either, and ask must not become the weaker path.
-                    if session is None:
-                        raise PermissionError(
-                            f"Workflow ask tool {declaration.name!r} requires a "
-                            "verified approval record"
-                        )
-                    inner = (*scope, f"ask:{declaration.name}")
-                    action = session.start(inner, declaration.name, values)
-                    outcome = _agent_tool_outcome(declaration, values)
-                    validate(outcome, schema_for_record(program, declaration.output))
-                    session.complete(
-                        inner,
-                        [
-                            _event(
-                                "tool_return",
-                                agent=asked_agent.name,
-                                tool=declaration.name,
-                                transport="host",
-                                result=outcome,
-                            )
-                        ],
-                        action,
+                    _event(
+                        "workflow_return",
+                        workflow=child.name,
+                        result=result,
+                        events=child_events,
                     )
-                    return outcome
-                return _agent_tool_outcome(declaration, values)
-
-            def _agent_tool_outcome(
-                declaration: ToolDecl, values: dict[str, Any]
-            ) -> Any:
-                if declaration.name in host_tools:
-                    return host_tools[declaration.name](declaration, values)
-                outcome, _ = _call_declared_tool(
-                    declaration,
-                    values,
-                    schema_for_tool_input(program, declaration.input),
-                    schema_for_record(program, declaration.output),
-                    mcp_commands,
-                    manifest,
                 )
-                return outcome
-
-            result, agent_response = call_agent(
-                program,
-                asked_agent,
-                providers[model.name],
-                execute_agent_tool,
-                arguments,
-                output_schema,
-            )
-            return_event = _event(
-                "agent_return", agent=asked_agent.name, result=result, **agent_response
-            )
-            validate_agent_transcript(call_event, return_event)
-            events.append(return_event)
-        elif isinstance(step.call, ModelCall):
-            model = models[step.call.model_name]
-            input_schema = schema_for_record(program, model.input)
-            output_schema = schema_for_record(program, model.output)
-            validate(arguments, input_schema)
-            events.append(
-                _event(
-                    "model_call",
+            elif isinstance(step.call, AgentCall):
+                asked_agent = agents[step.call.agent_name]
+                assert asked_agent.model is not None
+                model = models[asked_agent.model]
+                input_schema = schema_for_record(program, model.input)
+                output_schema = schema_for_record(program, model.output)
+                validate(arguments, input_schema)
+                call_event = _event(
+                    "agent_call",
+                    agent=asked_agent.name,
                     model=model.name,
                     arguments=arguments,
                     expression_events=expression_events,
                     input_schema=input_schema,
                     output_schema=output_schema,
+                    max_steps=asked_agent.max_steps,
+                    tools={
+                        name: {
+                            "input_schema": schema_for_tool_input(
+                                program, tools[name].input
+                            ),
+                            "output_schema": schema_for_record(
+                                program, tools[name].output
+                            ),
+                        }
+                        for name in asked_agent.can
+                    },
                 )
-            )
-            result, response = call_model(
-                providers[model.provider or model.name],
-                arguments,
-                output_schema,
-                instruction=model.instruction,
-                model=model.deployment,
-                temperature=model.parameters.temperature,
-                max_output_tokens=model.parameters.max_output_tokens,
-                top_p=model.parameters.top_p,
-                frequency_penalty=model.parameters.frequency_penalty,
-                presence_penalty=model.parameters.presence_penalty,
-                stop=model.parameters.stop,
-            )
-            check_answer(model, arguments, result)
-            events.append(
-                _event("model_return", model=model.name, result=result, **response)
-            )
-        else:
-            tool = tools[step.call.tool_name]
-            agent = agents[step.call.agent_name]
-            input_schema = schema_for_tool_input(program, tool.input)
-            output_schema = schema_for_record(program, tool.output)
-            validate(arguments, input_schema)
-            events.append(
-                _event(
-                    "tool_call",
-                    agent=agent.name,
-                    tool=tool.name,
-                    source=tool.source,
-                    operation=tool.operation,
-                    access=tool.access,
-                    arguments=arguments,
-                    expression_events=expression_events,
-                    input_schema=input_schema,
-                    output_schema=output_schema,
+                events.append(call_event)
+
+                def execute_agent_tool(
+                    declaration: ToolDecl, values: dict[str, Any]
+                ) -> Any:
+                    _control.consume("tool_calls")
+                    if declaration.access == "execute":
+                        # An ask that reaches an approval-gated tool is gated the
+                        # same way a direct call is: claim the action against the
+                        # verified approval record, or pause for a human. This is
+                        # deliberately not a widening of access, and deliberately
+                        # no host-binding exemption - a direct execute tool has
+                        # none either, and ask must not become the weaker path.
+                        if session is None:
+                            raise PermissionError(
+                                f"Workflow ask tool {declaration.name!r} requires a "
+                                "verified approval record"
+                            )
+                        inner = (*scope, f"ask:{declaration.name}")
+                        action = session.start(inner, declaration.name, values)
+                        outcome = _agent_tool_outcome(declaration, values)
+                        validate(
+                            outcome, schema_for_record(program, declaration.output)
+                        )
+                        session.complete(
+                            inner,
+                            [
+                                _event(
+                                    "tool_return",
+                                    agent=asked_agent.name,
+                                    tool=declaration.name,
+                                    transport="host",
+                                    result=outcome,
+                                )
+                            ],
+                            action,
+                        )
+                        return outcome
+                    return _agent_tool_outcome(declaration, values)
+
+                def _agent_tool_outcome(
+                    declaration: ToolDecl, values: dict[str, Any]
+                ) -> Any:
+                    if declaration.name in host_tools:
+                        return host_tools[declaration.name](declaration, values)
+                    outcome, _ = _call_declared_tool(
+                        declaration,
+                        values,
+                        schema_for_tool_input(program, declaration.input),
+                        schema_for_record(program, declaration.output),
+                        mcp_commands,
+                        manifest,
+                    )
+                    return outcome
+
+                result, agent_response = call_agent(
+                    program,
+                    asked_agent,
+                    providers[model.name],
+                    execute_agent_tool,
+                    arguments,
+                    output_schema,
                 )
-            )
-            if tool.name in host_tools:
-                outcome, transport = host_tools[tool.name](tool, arguments), "host"
+                return_event = _event(
+                    "agent_return",
+                    agent=asked_agent.name,
+                    result=result,
+                    **agent_response,
+                )
+                validate_agent_transcript(call_event, return_event)
+                events.append(return_event)
+            elif isinstance(step.call, ModelCall):
+                model = models[step.call.model_name]
+                input_schema = schema_for_record(program, model.input)
+                output_schema = schema_for_record(program, model.output)
+                validate(arguments, input_schema)
+                events.append(
+                    _event(
+                        "model_call",
+                        model=model.name,
+                        arguments=arguments,
+                        expression_events=expression_events,
+                        input_schema=input_schema,
+                        output_schema=output_schema,
+                    )
+                )
+                result, response = call_model(
+                    providers[model.provider or model.name],
+                    arguments,
+                    output_schema,
+                    instruction=model.instruction,
+                    model=model.deployment,
+                    temperature=model.parameters.temperature,
+                    max_output_tokens=model.parameters.max_output_tokens,
+                    top_p=model.parameters.top_p,
+                    frequency_penalty=model.parameters.frequency_penalty,
+                    presence_penalty=model.parameters.presence_penalty,
+                    stop=model.parameters.stop,
+                )
+                check_answer(model, arguments, result)
+                events.append(
+                    _event("model_return", model=model.name, result=result, **response)
+                )
             else:
-                outcome, transport = _call_declared_tool(
-                    tool, arguments, input_schema, output_schema, mcp_commands, manifest
+                tool = tools[step.call.tool_name]
+                agent = agents[step.call.agent_name]
+                input_schema = schema_for_tool_input(program, tool.input)
+                output_schema = schema_for_record(program, tool.output)
+                validate(arguments, input_schema)
+                events.append(
+                    _event(
+                        "tool_call",
+                        agent=agent.name,
+                        tool=tool.name,
+                        source=tool.source,
+                        operation=tool.operation,
+                        access=tool.access,
+                        arguments=arguments,
+                        expression_events=expression_events,
+                        input_schema=input_schema,
+                        output_schema=output_schema,
+                    )
                 )
-            validate(outcome, output_schema)
-            result = cast(dict[str, Any], outcome)
+                if tool.name in host_tools:
+                    outcome, transport = host_tools[tool.name](tool, arguments), "host"
+                else:
+                    outcome, transport = _call_declared_tool(
+                        tool,
+                        arguments,
+                        input_schema,
+                        output_schema,
+                        mcp_commands,
+                        manifest,
+                    )
+                validate(outcome, output_schema)
+                result = cast(dict[str, Any], outcome)
+                events.append(
+                    _event(
+                        "tool_return",
+                        tool=tool.name,
+                        transport=transport,
+                        result=result,
+                    )
+                )
+            _control.scope = (*_scope, workflow.name, step.name)
+            environment[step.binding_name] = result
             events.append(
                 _event(
-                    "tool_return", tool=tool.name, transport=transport, result=result
+                    "step_complete",
+                    step=step.name,
+                    binding=step.binding_name,
+                    result=result,
                 )
             )
-        _control.scope = (*_scope, workflow.name, step.name)
-        environment[step.binding_name] = result
-        events.append(
-            _event(
-                "step_complete",
-                step=step.name,
-                binding=step.binding_name,
-                result=result,
-            )
-        )
-        if session is not None and not isinstance(step.call, WorkflowCall):
-            session.complete(scope, events[step_offset:], action)
-        _control.checkpoint()
+            if session is not None and not isinstance(step.call, WorkflowCall):
+                session.complete(scope, events[step_offset:], action)
+            _control.checkpoint()
+        except (RuntimeError, ValueError) as exc:
+            # `otherwise`: a recoverable failure hands the step to its
+            # fallback call. Stops that are not failures of the work itself
+            # (budgets, deadlines, cancellation, missing approval) never do.
+            if step.fallback is None or isinstance(exc, ApprovalRequiredError):
+                raise
+            fallback_step = dataclass_replace(step, call=step.fallback, fallback=None)
+            if isinstance(exc, ExecutionError):
+                # On resume, a step its fallback completed earlier is stored
+                # under the fallback's arguments, so look it up that way.
+                if exc.code != "checkpoint_mismatch":
+                    raise
+                del events[events_before:]
+                queue.insert(0, fallback_step)
+                continue
+            del events[events_before:]
+            if session is not None:
+                session.recover((*_scope, workflow.name, step.name))
+            recovered[step.name] = {
+                "error": type(exc).__name__,
+                "message": str(exc)[:500],
+            }
+            queue.insert(0, fallback_step)
     _control.checkpoint()
     validate(result, schema_for_record(program, workflow.output_type))
     events.append(_event("run_complete", workflow=workflow.name, result=result))

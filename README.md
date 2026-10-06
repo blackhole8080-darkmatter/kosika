@@ -185,6 +185,20 @@ a temporary folder; no tool takes a file path, address, or command.
 needs one it was not given fails. Runs are bounded to 16 model calls, 16 tool
 calls, and 10 seconds.
 
+## Recovering from a failed step
+
+A step can name what to do if its call fails:
+
+```kosika
+label = classify ticket.text into ["billing", "bug", "other"] otherwise keyword_label(ticket)
+```
+
+If the model's answer is unusable (not one of the labels, the wrong shape, not
+JSON at all) the fallback call runs instead, and the trace records why. The
+fallback must return the same type. Running out of budget, a missing approval,
+or a missing model binding still stops the run, and `otherwise` is not allowed
+around a tool that changes the outside world.
+
 ## Python SDK
 
 `kosika.sdk` builds a Kosika program from Python instead of a `.kos` file:

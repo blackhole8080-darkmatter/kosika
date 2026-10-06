@@ -145,9 +145,10 @@ def lower_thinking(program: Program) -> Program:
 
     uses_general = any(is_general(model) for model in program.models)
     thinks = any(
-        isinstance(step.call, ThinkCall)
+        isinstance(call, ThinkCall)
         for workflow in program.workflows
         for step in workflow.steps
+        for call in (step.call, step.fallback)
     )
     if not uses_general and not thinks:
         return program
@@ -156,42 +157,49 @@ def lower_thinking(program: Program) -> Program:
     if uses_general:
         needed.update((GENERAL_INPUT, GENERAL_OUTPUT))
     generated: dict[str, ModelDecl] = {}
+
+    def lower_call(step: Step, call: Any) -> Any:
+        if not isinstance(call, ThinkCall):
+            return call
+        base = _choose_model(program, call, step)
+        input_record, output_record = _shape(call.verb, call.record)
+        known = {record.name for record in program.records}
+        if call.verb == "extract" and output_record not in known:
+            raise ThinkingError(
+                f"Step {step.name!r} extracts unknown record "
+                f"{output_record!r}.{did_you_mean(output_record, known)}"
+            )
+        needed.add(input_record)
+        if output_record in BUILT_IN_RECORDS:
+            needed.add(output_record)
+        name = f"{base.name}/{call.verb}"
+        if call.verb == "extract":
+            name += f"/{output_record}"
+        generated.setdefault(
+            name,
+            ModelDecl(
+                name,
+                input_record,
+                output_record,
+                base.deployment,
+                base.parameters,
+                provider=base.name,
+                instruction=_INSTRUCTIONS[call.verb],
+                verb=call.verb,
+            ),
+        )
+        return ModelCall(name, _arguments(call))
+
     workflows = []
     for workflow in program.workflows:
         steps = []
         for step in workflow.steps:
-            call = step.call
-            if not isinstance(call, ThinkCall):
+            call = lower_call(step, step.call)
+            fallback = lower_call(step, step.fallback)
+            if call is step.call and fallback is step.fallback:
                 steps.append(step)
-                continue
-            base = _choose_model(program, call, step)
-            input_record, output_record = _shape(call.verb, call.record)
-            known = {record.name for record in program.records}
-            if call.verb == "extract" and output_record not in known:
-                raise ThinkingError(
-                    f"Step {step.name!r} extracts unknown record "
-                    f"{output_record!r}.{did_you_mean(output_record, known)}"
-                )
-            needed.add(input_record)
-            if output_record in BUILT_IN_RECORDS:
-                needed.add(output_record)
-            name = f"{base.name}/{call.verb}"
-            if call.verb == "extract":
-                name += f"/{output_record}"
-            generated.setdefault(
-                name,
-                ModelDecl(
-                    name,
-                    input_record,
-                    output_record,
-                    base.deployment,
-                    base.parameters,
-                    provider=base.name,
-                    instruction=_INSTRUCTIONS[call.verb],
-                    verb=call.verb,
-                ),
-            )
-            steps.append(replace(step, call=ModelCall(name, _arguments(call))))
+            else:
+                steps.append(replace(step, call=call, fallback=fallback))
         workflows.append(replace(workflow, steps=tuple(steps)))
 
     declared = {record.name: record for record in program.records}

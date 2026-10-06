@@ -100,43 +100,45 @@ def _references(program: Program) -> set[str]:
         for step in workflow.steps:
             if step.binding_type:
                 names.update(referenced_types(step.binding_type))
-            call = step.call
-            if isinstance(call, ThinkCall):
-                # Not yet lowered: its expressions are its subject and extra.
-                call_arguments: tuple = tuple(
-                    ("", item)
-                    for item in (call.subject, call.extra)
-                    if item is not None
-                )
-            else:
-                call_arguments = call.arguments
-            for _, argument in call_arguments:
-                names.update(
-                    nested.function_name
-                    for nested in expression_function_calls(argument)
-                    if isinstance(nested, FunctionRefExpr)
-                    or (
-                        isinstance(nested, FunctionCallExpr)
-                        and nested.function_name not in bound
+            for call in (step.call, step.fallback):
+                if call is None:
+                    continue
+                if isinstance(call, ThinkCall):
+                    # Not yet lowered: its expressions are its subject and extra.
+                    call_arguments: tuple = tuple(
+                        ("", item)
+                        for item in (call.subject, call.extra)
+                        if item is not None
                     )
-                )
-            if isinstance(call, WorkflowCall):
-                names.add(call.workflow_name)
-            elif isinstance(call, FunctionCall):
-                if call.function_name not in bound:
-                    names.add(call.function_name)
-            elif isinstance(call, ModelCall):
-                names.add(call.model_name)
-            elif isinstance(call, ThinkCall):
-                if call.model is not None:
-                    names.add(call.model)
-                if call.record is not None:
-                    names.add(call.record)
-            elif isinstance(call, (AgentCall, ToolCall)):
-                names.add(call.agent_name)
-                if isinstance(call, ToolCall):
-                    names.add(call.tool_name)
-            bound.add(step.binding_name)
+                else:
+                    call_arguments = call.arguments
+                for _, argument in call_arguments:
+                    names.update(
+                        nested.function_name
+                        for nested in expression_function_calls(argument)
+                        if isinstance(nested, FunctionRefExpr)
+                        or (
+                            isinstance(nested, FunctionCallExpr)
+                            and nested.function_name not in bound
+                        )
+                    )
+                if isinstance(call, WorkflowCall):
+                    names.add(call.workflow_name)
+                elif isinstance(call, FunctionCall):
+                    if call.function_name not in bound:
+                        names.add(call.function_name)
+                elif isinstance(call, ModelCall):
+                    names.add(call.model_name)
+                elif isinstance(call, ThinkCall):
+                    if call.model is not None:
+                        names.add(call.model)
+                    if call.record is not None:
+                        names.add(call.record)
+                elif isinstance(call, (AgentCall, ToolCall)):
+                    names.add(call.agent_name)
+                    if isinstance(call, ToolCall):
+                        names.add(call.tool_name)
+                bound.add(step.binding_name)
     return names - {"Text", "Number", "Bool", "Null"}
 
 

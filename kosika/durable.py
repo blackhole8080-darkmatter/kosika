@@ -186,6 +186,15 @@ class ExecutionSession:
         self._save(scope, "started", {"arguments": arguments})
         return action
 
+    def recover(self, scope: tuple[str, ...]) -> None:
+        """Mark a failed, non-mutating step as not started.
+
+        Used when a step's `otherwise` call takes over. Only steps without a
+        claimed action reach here, so nothing uncertain is being forgotten.
+        """
+
+        self._save(scope, "pending", {"recovered": True})
+
     def complete(
         self, scope: tuple[str, ...], events: list[dict[str, Any]], action: str | None
     ) -> None:

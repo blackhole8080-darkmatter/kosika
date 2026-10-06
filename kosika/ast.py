@@ -421,6 +421,11 @@ class Step:
     binding_name: str = "result"
     binding_type: str | None = None
     return_name: str = "result"
+    # `step = call otherwise fallback`: the call made instead when the first
+    # one fails in a recoverable way. None for every step without one.
+    fallback: ToolCall | ModelCall | AgentCall | WorkflowCall | FunctionCall | None = (
+        None
+    )
 
 
 @dataclass(frozen=True)
@@ -567,6 +572,7 @@ _ABSENT_DEFAULTS: dict[str, tuple[Any, ...]] = {
     "provider": (None,),
     "instruction": (None,),
     "verb": (None,),
+    "fallback": (None,),
 }
 
 

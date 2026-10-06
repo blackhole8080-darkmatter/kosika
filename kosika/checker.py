@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 
 from .ast import (
     AgentCall,
@@ -741,6 +742,88 @@ def _check_arguments(
             )
 
 
+def _call_output(program: Program, call: object) -> str | None:
+    """The declared result type of a step call, when it can be read off."""
+
+    if isinstance(call, WorkflowCall):
+        return next(
+            (w.output_type for w in program.workflows if w.name == call.workflow_name),
+            None,
+        )
+    if isinstance(call, FunctionCall):
+        return next(
+            (f.output_type for f in program.functions if f.name == call.function_name),
+            None,
+        )
+    models = {model.name: model for model in program.models}
+    if isinstance(call, ModelCall):
+        model = models.get(call.model_name)
+        return model.output if model else None
+    if isinstance(call, AgentCall):
+        agent = next((a for a in program.agents if a.name == call.agent_name), None)
+        model = models.get(agent.model or "") if agent else None
+        return model.output if model else None
+    if isinstance(call, ToolCall):
+        return next((t.output for t in program.tools if t.name == call.tool_name), None)
+    return None
+
+
+def _check_fallbacks(program: Program) -> None:
+    """Check `otherwise` by checking the program each fallback would make.
+
+    A step with a fallback is valid when the program is valid with the first
+    call and also valid with the fallback in its place, and both calls produce
+    the same type. Neither call may be a tool that changes the outside world:
+    after such a call fails, whether it happened is not known, so quietly
+    doing something else instead would hide that.
+    """
+
+    tools = {tool.name: tool for tool in program.tools}
+    for workflow in program.workflows:
+        for step in workflow.steps:
+            if step.fallback is None:
+                continue
+            for call in (step.call, step.fallback):
+                tool = tools.get(call.tool_name) if isinstance(call, ToolCall) else None
+                if tool is not None and tool.access == "execute":
+                    raise CheckError(
+                        f"Step {step.name!r} cannot use otherwise with execute "
+                        f"tool {tool.name!r}: a failed action may still have happened"
+                    )
+            first = _call_output(program, step.call)
+            second = _call_output(program, step.fallback)
+            if first is not None and second is not None and first != second:
+                raise CheckError(
+                    f"Step {step.name!r} otherwise branch returns {second!r}, "
+                    f"but the step returns {first!r}"
+                )
+    without = replace(
+        program,
+        workflows=[
+            replace(
+                workflow,
+                steps=tuple(replace(step, fallback=None) for step in workflow.steps),
+            )
+            for workflow in program.workflows
+        ],
+    )
+    swapped = replace(
+        program,
+        workflows=[
+            replace(
+                workflow,
+                steps=tuple(
+                    replace(step, call=step.fallback or step.call, fallback=None)
+                    for step in workflow.steps
+                ),
+            )
+            for workflow in program.workflows
+        ],
+    )
+    check(without)
+    check(swapped)
+
+
 def check(program: Program) -> None:
     if any(
         isinstance(step.call, ThinkCall)
@@ -748,6 +831,13 @@ def check(program: Program) -> None:
         for step in workflow.steps
     ):
         raise CheckError("Unlowered thinking steps: use lower_thinking(program)")
+    if any(
+        step.fallback is not None
+        for workflow in program.workflows
+        for step in workflow.steps
+    ):
+        _check_fallbacks(program)
+        return
     if any(function.nested for function in program.functions):
         raise CheckError(
             "Unlowered nested functions: use lower_nested_functions(program)"

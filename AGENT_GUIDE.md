@@ -237,6 +237,10 @@ workflow main(city: City) -> Report {
 - Later steps can use the names bound by earlier steps and the parameters.
 - The last step's result must have the workflow's result type.
 - Put any logic in a `fn` and call it from a step.
+- A step can name a fallback for when its call fails, such as an unusable
+  model answer: `label = classify t.text into ["a", "b"] otherwise
+  keyword_label(t)`. Both calls must return the same type. Not allowed on
+  `access: execute` tools.
 - If a step executes a tool whose access is `execute`, the workflow must end
   with the line `require approval` after its last step.
 

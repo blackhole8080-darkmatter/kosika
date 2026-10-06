@@ -926,7 +926,9 @@ class Parser:
 
         name = self.identifier()
         self.expect("=")
-        return Step(name, self.parse_step_call(), name, None, name)
+        call = self.parse_step_call()
+        fallback = self.parse_step_call() if self.accept("otherwise") else None
+        return Step(name, call, name, None, name, fallback)
 
     def parse_step(self) -> Step:
         name = self.identifier()
@@ -938,6 +940,7 @@ class Parser:
             binding_type = self.parse_type_name()
         self.expect("=")
         call = self.parse_step_call()
+        fallback = self.parse_step_call() if self.accept("otherwise") else None
         self.expect("return")
         return_name = self.identifier()
         self.expect("}")
@@ -947,6 +950,7 @@ class Parser:
             binding_name,
             binding_type,
             return_name,
+            fallback,
         )
 
     def parse_think_call(self) -> ThinkCall:

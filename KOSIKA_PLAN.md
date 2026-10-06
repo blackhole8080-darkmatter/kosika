@@ -593,6 +593,28 @@ left out: typed messages between members, state carried from one round to the
 next, and a termination judgment over observed evidence rather than result
 equality. Swarm output must not acquire authority the way model output cannot.
 
+## Fundamentals: `otherwise` (complete)
+
+- `step = call otherwise fallback` gives a step one fallback call
+  (`Step.fallback`, absent from the hashed payload when unset).
+- Runtime: the step loop is now a queue. A recoverable failure discards the
+  step's partial events, marks a durable step as not started, and queues the
+  same step with the fallback as its call. The retried step's `step_start`
+  event carries `recovered_from`, so traces keep their four-events-per-step
+  shape and trace version 5 replay is unchanged.
+- Recoverable: `RuntimeError` and `ValueError` raised by the step's work.
+  Never recovered: `ExecutionError` (budget, deadline, cancellation),
+  `ApprovalRequiredError`, and `PermissionError` (missing bindings).
+- Checker: a program with fallbacks is valid when it is valid with every
+  fallback removed and also with every fallback swapped in, and each pair of
+  calls returns one type. `execute` tools are refused on either side.
+- Preflight authorizes the fallback's model and tools before the run starts.
+- 14 tests in `tests/test_otherwise.py`.
+- Limits: one fallback per step, no chaining; the swapped program is checked
+  with all fallbacks at once, not each alone; the mind map does not draw the
+  fallback edge yet; a function body still has no way to recover from its own
+  failure, and there is no early `return`.
+
 ## Fundamentals: gates and error positions (complete)
 
 - Quality gates re-measured on 2026-10-06. MyPy over `kosika` reports no

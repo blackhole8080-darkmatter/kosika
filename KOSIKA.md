@@ -484,7 +484,7 @@ step = "step" identifier "{"
        "let" identifier [ ":" type ] "=" call
        "return" identifier
        "}"
-     | identifier "=" call ;                               (* one-line step *)
+     | identifier "=" call [ "otherwise" call ] ;          (* one-line step *)
 
 call = identifier "(" named-arguments ")"                 (* function *)
      | "call" identifier "(" named-arguments ")"          (* workflow *)
@@ -512,6 +512,17 @@ call = identifier "(" named-arguments ")"                 (* function *)
 - A program with `fn main` and no `workflow main` is given the workflow
   `workflow main(<same parameters>) -> <same result> { result = main(...) }`,
   provided every parameter and the result are records.
+- A step MAY name a fallback: `label = first(...) otherwise second(...)`.
+  The long form takes `otherwise` after its call too. If the first call fails
+  in a recoverable way, the step's partial events are discarded and the second
+  call runs in its place; the step's `step_start` event then records
+  `recovered_from` with the failure's type and message. Recoverable means a
+  failure of the work itself: an unusable model answer, a failed or wrongly
+  shaped tool result, or a run-time failure in a function. Budgets, deadlines,
+  cancellation, missing approval, and missing host bindings are never
+  recovered. Both calls MUST produce the same type, both are checked and
+  authorized before the run starts, and neither may be an `access: execute`
+  tool, because a failed action may still have happened.
 - Workflow parameters and outputs MUST be record types.
 - A workflow contains at least one uniquely named step.
 - Steps execute sequentially. Each step binds exactly one result and returns
@@ -652,7 +663,8 @@ implemented by an explicit host policy rather than `.kos` syntax.
 
 Also unsupported:
 
-- Exceptions, user-defined generics, unions other than `T?`, and implicit
+- Exceptions and `try`/`catch` (a step's `otherwise` is the only recovery
+  form), user-defined generics, unions other than `T?`, and implicit
   numeric/text coercions other than `Text + Number`.
 - Import aliases, package registries, remote imports, and dynamic loading.
 - Language-level parallel workflow steps or executable multi-agent consensus.
