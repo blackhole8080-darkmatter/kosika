@@ -197,8 +197,10 @@ workflow main(ticket: Ticket) -> Routing {
   An answer whose quote is not in the text is rejected. With `extract`, make
   fields that may be missing optional (`amount: Number?`).
 - Add `retry 2` (1 to 5) after a model step to ask again when the answer is
-  rejected; the model is shown its mistake. Order: `with evidence`, `using`,
-  `retry`, then `otherwise`.
+  rejected; the model is shown its mistake.
+- Add `vote 3` (3, 5, 7, or 9) to ask that many times and accept only the
+  answer more than half agree on. Not for `summarize`.
+- Order on one step: `with evidence`, `using`, `vote`, `retry`, `otherwise`.
 - Thinking steps go in a workflow only, never inside a `fn`.
 
 ## Tools and agents
@@ -291,7 +293,8 @@ test "gcd" {
 ```
 
 Give one answer for every model step the workflow runs, in step order. A
-record literal bound to a name needs a type: `ticket: Ticket = {text: "x"}`.
+read-only tool is scripted the same way: `answers get_weather: [{temp: 12}]`.
+A record literal bound to a name needs a type: `ticket: Ticket = {text: "x"}`.
 
 ## Swarms
 

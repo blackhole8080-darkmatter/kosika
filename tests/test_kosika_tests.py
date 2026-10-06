@@ -112,7 +112,10 @@ class RunTests(unittest.TestCase):
         self.assertIn(
             "expects 'Ticket'", message('test "t" {\n  r = main(5)\n  expect true\n}\n')
         )
-        self.assertIn("unknown model", message('test "t" {\n  answers nobody: []\n}\n'))
+        self.assertIn(
+            "not a declared model or tool",
+            message('test "t" {\n  answers nobody: []\n}\n'),
+        )
         self.assertIn(
             "already bound", message('test "t" {\n  x = 1\n  x = 2\n  expect true\n}\n')
         )
@@ -173,3 +176,95 @@ class CommandTests(unittest.TestCase):
             code, output = self.invoke("test", str(source))
             self.assertEqual(code, 2)
             self.assertIn("Check failed", output)
+
+
+TOOLS = """
+record City { name: Text }
+record Weather { temp: Number }
+record Sent { ok: Bool }
+
+tool get_weather {
+  source mcp "weather"
+  operation: "current"
+  access: observe
+  input: City
+  output: Weather
+}
+
+tool send_alert {
+  source mcp "weather"
+  operation: "alert"
+  access: execute
+  input: City
+  output: Sent
+}
+
+agent forecaster {
+  can: [get_weather, send_alert]
+  max_steps: 2
+}
+
+fn warmer(a: Weather, b: Weather) -> Weather {
+  return if a.temp > b.temp { a } else { b }
+}
+
+workflow compare(first: City, second: City) -> Weather {
+  a = execute forecaster.get_weather(first.name)
+  b = execute forecaster.get_weather(second.name)
+  best = warmer(a, b)
+}
+"""
+
+
+class ToolTests(unittest.TestCase):
+    def outcome(self, tests: str):
+        program = parse(TOOLS + tests)
+        check(program)
+        (result,) = run_tests(program)
+        return result
+
+    def test_a_read_only_tool_gives_its_scripted_answers_in_order(self) -> None:
+        result = self.outcome(
+            'test "t" {\n'
+            "  answers get_weather: [{temp: 12}, {temp: 30}]\n"
+            '  best = compare({name: "Oslo"}, {name: "Cairo"})\n'
+            "  expect best.temp == 30\n}\n"
+        )
+        self.assertTrue(result.passed, result.message)
+
+    def test_a_tool_asked_too_often_fails_the_test(self) -> None:
+        result = self.outcome(
+            'test "t" {\n  answers get_weather: [{temp: 12}]\n'
+            '  best = compare({name: "Oslo"}, {name: "Cairo"})\n  expect true\n}\n'
+        )
+        self.assertIn("no answer left", result.message)
+
+    def test_a_tool_answer_of_the_wrong_shape_fails_the_test(self) -> None:
+        result = self.outcome(
+            'test "t" {\n  answers get_weather: [{temp: "hot"}, {temp: 1}]\n'
+            '  best = compare({name: "Oslo"}, {name: "Cairo"})\n  expect true\n}\n'
+        )
+        self.assertFalse(result.passed)
+
+    def test_a_tool_that_changes_the_world_cannot_be_scripted(self) -> None:
+        result = self.outcome(
+            'test "t" {\n  answers send_alert: [{ok: true}]\n  expect true\n}\n'
+        )
+        self.assertIn("changes the world", result.message)
+
+
+class CheckTests(unittest.TestCase):
+    def test_kosika_check_reports_a_mistake_inside_a_test(self) -> None:
+        from kosika.checker import CheckError
+        from kosika.modules import load_program
+
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "main.kos"
+            source.write_text(PROGRAM + GOOD, encoding="utf-8")
+            self.assertEqual(len(load_program(source).tests), 1)
+            source.write_text(
+                PROGRAM + 'test "typo" {\n  expect dubble(4) == 8\n}\n',
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(CheckError, r"^Test 'typo' line \d+: "):
+                load_program(source)

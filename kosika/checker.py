@@ -954,6 +954,7 @@ def _check_fallbacks(program: Program) -> None:
                         call=step.fallback or step.call,
                         fallback=None,
                         retries=step.retries if step.fallback is None else 0,
+                        votes=step.votes if step.fallback is None else 0,
                     )
                     for step in workflow.steps
                 ),
@@ -989,6 +990,30 @@ def check(program: Program) -> None:
                     f"range, got {amount}"
                 )
         for step in workflow.steps:
+            if step.votes:
+                asked = (
+                    next(
+                        (m for m in program.models if m.name == step.call.model_name),
+                        None,
+                    )
+                    if isinstance(step.call, ModelCall)
+                    else None
+                )
+                if asked is None:
+                    raise CheckError(
+                        f"Step {step.name!r} cannot vote: only a model step "
+                        "(use_model or a thinking step) can be asked several times"
+                    )
+                if asked.verb == "summarize":
+                    raise CheckError(
+                        f"Step {step.name!r} cannot vote: two summaries are "
+                        "never word for word the same, so they cannot agree"
+                    )
+                if step.votes not in (3, 5, 7, 9):
+                    raise CheckError(
+                        f"Step {step.name!r} cannot vote: the count must be "
+                        f"3, 5, 7, or 9, got {step.votes}"
+                    )
             if step.retries == 0:
                 continue
             if not isinstance(step.call, ModelCall):

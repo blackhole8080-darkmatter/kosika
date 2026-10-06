@@ -10,11 +10,12 @@ A program may hold tests next to the code they exercise:
 
 A test body is a list of lines, run in order:
 
-`answers MODEL: [record, ...]`
-    The answers a declared model gives, in the order it is asked. No real
-    model is called by a test. A model with no `answers` line fails the test
-    if it is asked anything, and so do answers that were never used.
-`name = expression`
+`answers NAME: [record, ...]`
+    The answers a declared model, or a read-only tool, gives in the order it
+    is asked. A test never calls a real model or a real tool. Anything asked
+    with no answer left fails the test, and so do answers that were never
+    used.
+`name = expression` or `name: Type = expression`
     Binds a value. The expression may call a function, or run a workflow by
     calling it like a function.
 `expect expression`
@@ -22,8 +23,12 @@ A test body is a list of lines, run in order:
 
 Tests are not part of the program that runs: `program_payload` leaves them
 out, so adding or changing a test never changes a program's hash, its traces,
-or its approvals. A test can only reach what a run with scripted models can
-reach. It cannot execute a tool.
+or its approvals. A test can only reach what a run with scripted answers can
+reach. A tool that changes the world (`access: execute`) cannot be scripted,
+because running one needs a recorded human approval.
+
+`check_tests` checks every test's names and types without running anything;
+the module loader calls it, so `kosika check` reports a mistake in a test.
 """
 
 from __future__ import annotations
@@ -32,7 +37,15 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-from .ast import BinaryExpr, FunctionCallExpr, Program, TestDecl, WorkflowDecl
+from .ast import (
+    BinaryExpr,
+    FunctionCallExpr,
+    Program,
+    TestDecl,
+    TestStep,
+    ToolDecl,
+    WorkflowDecl,
+)
 from .checker import CheckError, _Env, _expression_type
 from .execution import ExecutionControl, ExecutionLimits
 from .function_types import assignable
@@ -69,38 +82,55 @@ def _show(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
 
 
-def _run_one(program: Program, test: TestDecl) -> None:
+def _workflow_run(
+    program: Program, step: TestStep
+) -> tuple[WorkflowDecl, dict[str, Any]] | None:
+    """The workflow a `name = call(...)` line runs, with its named arguments."""
+
+    call = step.value
+    if not isinstance(call, FunctionCallExpr):
+        return None
+    workflow = next(
+        (item for item in program.workflows if item.name == call.function_name), None
+    )
+    if workflow is None:
+        return None
+    parameters = [parameter.name for parameter in workflow.parameters]
+    arguments = dict(resolve_unnamed(call.arguments, parameters))
+    if sorted(arguments) != sorted(parameters):
+        wanted = ", ".join(parameters) or "nothing"
+        raise _Failure(f"workflow {workflow.name!r} takes {wanted}", step.line)
+    return workflow, arguments
+
+
+def _check_one(program: Program, test: TestDecl) -> None:
+    """Check a test's names and types. Runs nothing."""
+
     where = f"test {test.name}"
-    workflows: dict[str, WorkflowDecl] = {w.name: w for w in program.workflows}
-    registry = _FunctionRegistry(program.functions, ExecutionControl(ExecutionLimits()))
-    values: dict[str, Any] = {}
+    models = {model.name for model in program.models if model.provider is None}
+    tools = {tool.name: tool for tool in program.tools}
+    seen: set[str] = set()
+    for name, _ in test.answers:
+        if name in seen:
+            raise _Failure(f"answers names {name!r} more than once", test.line)
+        seen.add(name)
+        if name in models:
+            continue
+        tool = tools.get(name)
+        if tool is None:
+            known = ", ".join(sorted(models | set(tools))) or "none"
+            raise _Failure(
+                f"answers names {name!r}, which is not a declared model or "
+                f"tool; declared: {known}",
+                test.line,
+            )
+        if tool.access != "observe":
+            raise _Failure(
+                f"answers cannot script tool {name!r}: it changes the world, "
+                "and running it needs a recorded approval",
+                test.line,
+            )
     types = _Env()
-
-    def evaluate(expression: Any) -> Any:
-        return _evaluate_expression(expression, values, program, registry, [], depth=0)
-
-    declared = [model.name for model in program.models if model.provider is None]
-    scripts: dict[str, list[ModelResponse]] = {name: [] for name in declared}
-    for model, expression in test.answers:
-        if model not in scripts:
-            known = ", ".join(sorted(declared)) or "none"
-            raise _Failure(
-                f"answers names unknown model {model!r}; declared: {known}", test.line
-            )
-        answers = _evaluate_expression(expression, {}, program, registry, [], depth=0)
-        if not isinstance(answers, list) or not all(
-            isinstance(answer, dict) for answer in answers
-        ):
-            raise _Failure(
-                f"answers for {model!r} must be a list of records", test.line
-            )
-        scripts[model].extend(
-            ModelResponse(content=json.dumps(answer)) for answer in answers
-        )
-    providers = {
-        name: ScriptedModelProvider(responses) for name, responses in scripts.items()
-    }
-
     for step in test.steps:
         try:
             if step.kind == "expect":
@@ -109,30 +139,13 @@ def _run_one(program: Program, test: TestDecl) -> None:
                     raise _Failure(
                         f"expect needs a Bool, got {kind!r}: {step.text}", step.line
                     )
-                if evaluate(step.value) is True:
-                    continue
-                detail = ""
-                expression = step.value
-                if (
-                    isinstance(expression, BinaryExpr)
-                    and expression.operator in _COMPARISONS
-                ):
-                    detail = (
-                        f" (left is {_show(evaluate(expression.left))}, "
-                        f"right is {_show(evaluate(expression.right))})"
-                    )
-                raise _Failure(f"expected {step.text}{detail}", step.line)
+                continue
             if step.name in types:
                 raise _Failure(f"{step.name!r} is already bound", step.line)
-            call = step.value
-            workflow = (
-                workflows.get(call.function_name)
-                if isinstance(call, FunctionCallExpr)
-                else None
-            )
-            if workflow is None or not isinstance(call, FunctionCallExpr):
+            target = _workflow_run(program, step)
+            if target is None:
                 found = _expression_type(
-                    call,
+                    step.value,
                     types,
                     program,
                     step_name=where,
@@ -144,14 +157,9 @@ def _run_one(program: Program, test: TestDecl) -> None:
                         step.line,
                     )
                 types[step.name] = step.type_name or found
-                values[step.name] = evaluate(call)
                 continue
+            workflow, arguments = target
             parameters = {p.name: p.type_name for p in workflow.parameters}
-            arguments = dict(resolve_unnamed(call.arguments, list(parameters)))
-            if sorted(arguments) != sorted(parameters):
-                wanted = ", ".join(parameters) or "nothing"
-                raise _Failure(f"workflow {workflow.name!r} takes {wanted}", step.line)
-            inputs: dict[str, Any] = {}
             for name, argument in arguments.items():
                 given = _expression_type(
                     argument,
@@ -166,21 +174,113 @@ def _run_one(program: Program, test: TestDecl) -> None:
                         f"{parameters[name]!r}, got {given!r}",
                         step.line,
                     )
-                inputs[name] = evaluate(argument)
-            values[step.name] = run(
-                program, workflow.name, None, inputs=inputs, model_bindings=providers
-            )
             types[step.name] = workflow.output_type
-        except _Failure:
-            raise
-        except (CheckError, RuntimeError, ValueError) as exc:
+        except CheckError as exc:
             raise _Failure(str(exc), step.line) from exc
 
-    for name, provider in providers.items():
-        unused = len(scripts[name]) - len(provider.requests)
-        if unused > 0:
+
+def check_tests(program: Program) -> None:
+    """Raise `CheckError` for the first test that is not well formed."""
+
+    for test in program.tests:
+        try:
+            _check_one(program, test)
+        except _Failure as failure:
+            raise CheckError(
+                f"Test {test.name!r} line {failure.line}: {failure}"
+            ) from failure
+
+
+class _ScriptedTool:
+    """A read-only tool that gives its scripted answers in order."""
+
+    def __init__(self, name: str, answers: list[Any]):
+        self.name, self.answers, self.asked = name, list(answers), 0
+
+    def __call__(self, tool: ToolDecl, arguments: dict[str, Any]) -> Any:
+        if self.asked >= len(self.answers):
+            raise RuntimeError(f"Scripted tool {self.name!r} has no answer left")
+        self.asked += 1
+        return self.answers[self.asked - 1]
+
+
+def _run_one(program: Program, test: TestDecl) -> None:
+    _check_one(program, test)
+    registry = _FunctionRegistry(program.functions, ExecutionControl(ExecutionLimits()))
+    values: dict[str, Any] = {}
+
+    def evaluate(expression: Any, scope: dict[str, Any] | None = None) -> Any:
+        return _evaluate_expression(
+            expression,
+            values if scope is None else scope,
+            program,
+            registry,
+            [],
+            depth=0,
+        )
+
+    declared = [model.name for model in program.models if model.provider is None]
+    scripts: dict[str, list[Any]] = {name: [] for name in declared}
+    tools: dict[str, _ScriptedTool] = {}
+    for name, expression in test.answers:
+        answers = evaluate(expression, {})
+        if not isinstance(answers, list) or not all(
+            isinstance(answer, dict) for answer in answers
+        ):
+            raise _Failure(f"answers for {name!r} must be a list of records", test.line)
+        if name in scripts:
+            scripts[name] = answers
+        else:
+            tools[name] = _ScriptedTool(name, answers)
+    providers = {
+        name: ScriptedModelProvider(
+            [ModelResponse(content=json.dumps(answer)) for answer in answers]
+        )
+        for name, answers in scripts.items()
+    }
+
+    for step in test.steps:
+        try:
+            if step.kind == "expect":
+                if evaluate(step.value) is True:
+                    continue
+                detail = ""
+                expression = step.value
+                if (
+                    isinstance(expression, BinaryExpr)
+                    and expression.operator in _COMPARISONS
+                ):
+                    detail = (
+                        f" (left is {_show(evaluate(expression.left))}, "
+                        f"right is {_show(evaluate(expression.right))})"
+                    )
+                raise _Failure(f"expected {step.text}{detail}", step.line)
+            target = _workflow_run(program, step)
+            if target is None:
+                values[step.name] = evaluate(step.value)
+                continue
+            workflow, arguments = target
+            values[step.name] = run(
+                program,
+                workflow.name,
+                None,
+                inputs={name: evaluate(value) for name, value in arguments.items()},
+                model_bindings=providers,
+                tool_bindings=tools,
+            )
+        except _Failure:
+            raise
+        except (CheckError, RuntimeError, ValueError, PermissionError) as exc:
+            raise _Failure(str(exc), step.line) from exc
+
+    unused = {
+        **{name: len(scripts[name]) - len(p.requests) for name, p in providers.items()},
+        **{name: len(tool.answers) - tool.asked for name, tool in tools.items()},
+    }
+    for name, count in unused.items():
+        if count > 0:
             raise _Failure(
-                f"{unused} answer(s) for {name!r} were never asked for", test.line
+                f"{count} answer(s) for {name!r} were never asked for", test.line
             )
 
 

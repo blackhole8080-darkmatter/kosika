@@ -35,6 +35,7 @@ from .ast import (
     MatchExpr,
     MethodCallExpr,
     ModelCall,
+    ModelDecl,
     Program,
     RecordExpr,
     RepeatExpr,
@@ -865,6 +866,124 @@ def _write_trace(trace_path: str | Path, events: list[dict[str, Any]]) -> None:
             os.unlink(temporary)
 
 
+def _ask_model(
+    provider: ModelProvider,
+    model: ModelDecl,
+    arguments: dict[str, Any],
+    asked_schema: dict[str, Any],
+    *,
+    retries: int,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Ask a model for one accepted answer.
+
+    `retry N`: a rejected answer is shown back to the model with the reason,
+    up to N more times. Every attempt is a model call for the limits, and
+    every rejected one is kept in the trace.
+    """
+
+    rejected: list[tuple[str, str]] = []
+    while True:
+        answered = None
+        try:
+            result, response = call_model(
+                provider,
+                arguments,
+                asked_schema,
+                instruction=model.instruction,
+                model=model.deployment,
+                temperature=model.parameters.temperature,
+                max_output_tokens=model.parameters.max_output_tokens,
+                top_p=model.parameters.top_p,
+                frequency_penalty=model.parameters.frequency_penalty,
+                presence_penalty=model.parameters.presence_penalty,
+                stop=model.parameters.stop,
+                rejected=tuple(rejected),
+            )
+            answered = response["content"]
+            if model.evidence is not None:
+                result, quotes = split(result)
+                try:
+                    verify(model.evidence, arguments, result, quotes)
+                except EvidenceError as exc:
+                    raise ThinkingAnswerError(
+                        f"{model.verb} answered without evidence: {exc}"
+                    ) from exc
+                response = {**response, "evidence": quotes}
+            check_answer(model, arguments, result)
+            break
+        except (RejectedAnswer, ThinkingAnswerError) as exc:
+            if len(rejected) >= retries:
+                raise
+            if isinstance(exc, RejectedAnswer):
+                answered = exc.content
+            rejected.append((cast(str, answered), str(exc)))
+    if rejected:
+        response = {
+            **response,
+            "rejected": [
+                {"content": content, "reason": reason} for content, reason in rejected
+            ],
+        }
+    return result, response
+
+
+def _ask_with_votes(
+    provider: ModelProvider,
+    model: ModelDecl,
+    arguments: dict[str, Any],
+    asked_schema: dict[str, Any],
+    *,
+    retries: int,
+    votes: int,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """`vote N`: ask N times and accept only what more than half agree on.
+
+    Two answers agree when they give the same label (`classify`), the same
+    answer (`decide`), or the same record (anything else). A ballot whose
+    answer is rejected counts as a vote for nothing. The step's value is the
+    first answer on the winning side.
+    """
+
+    if votes == 0:
+        return _ask_model(provider, model, arguments, asked_schema, retries=retries)
+    field = {"classify": "label", "decide": "answer"}.get(model.verb or "")
+    ballots: list[tuple[str, dict[str, Any], dict[str, Any]]] = []
+    failed: list[str] = []
+    for _ in range(votes):
+        try:
+            result, response = _ask_model(
+                provider, model, arguments, asked_schema, retries=retries
+            )
+        except (RejectedAnswer, ThinkingAnswerError) as exc:
+            failed.append(str(exc))
+            continue
+        choice = result[field] if field is not None else result
+        ballots.append((json.dumps(choice, sort_keys=True), result, response))
+    counts: dict[str, int] = {}
+    for key, _, _ in ballots:
+        counts[key] = counts.get(key, 0) + 1
+    winner = max(counts, key=lambda key: counts[key]) if counts else None
+    if winner is None or counts[winner] * 2 <= votes:
+        tally = ", ".join(f"{count} for {key}" for key, count in sorted(counts.items()))
+        raise ThinkingAnswerError(
+            f"{model.verb or 'model'} answers did not agree: of {votes} asked, "
+            f"{tally or 'none were accepted'}"
+            + (f", {len(failed)} rejected" if failed and counts else "")
+        )
+    result, response = next(
+        (result, response) for key, result, response in ballots if key == winner
+    )
+    return result, {
+        **response,
+        "votes": {
+            "asked": votes,
+            "agreed": counts[winner],
+            "tally": dict(sorted(counts.items())),
+            "rejected": failed,
+        },
+    }
+
+
 def run(
     program: Program,
     workflow_name: str,
@@ -1093,7 +1212,9 @@ def _run_workflow(
         if step.fallback is not None:
             # Both calls may run, so both must be authorized up front.
             pending.append(
-                dataclass_replace(step, call=step.fallback, fallback=None, retries=0)
+                dataclass_replace(
+                    step, call=step.fallback, fallback=None, retries=0, votes=0
+                )
             )
         if isinstance(step.call, WorkflowCall):
             name = step.call.workflow_name
@@ -1416,53 +1537,14 @@ def _run_workflow(
                         **call_evidence,
                     )
                 )
-                # `retry N`: a rejected answer is shown back to the model with
-                # the reason, up to N more times. Every attempt is a model call
-                # for the limits, and every rejected one is kept in the trace.
-                rejected: list[tuple[str, str]] = []
-                while True:
-                    answered = None
-                    try:
-                        result, response = call_model(
-                            providers[model.provider or model.name],
-                            arguments,
-                            asked_schema,
-                            instruction=model.instruction,
-                            model=model.deployment,
-                            temperature=model.parameters.temperature,
-                            max_output_tokens=model.parameters.max_output_tokens,
-                            top_p=model.parameters.top_p,
-                            frequency_penalty=model.parameters.frequency_penalty,
-                            presence_penalty=model.parameters.presence_penalty,
-                            stop=model.parameters.stop,
-                            rejected=tuple(rejected),
-                        )
-                        answered = response["content"]
-                        if model.evidence is not None:
-                            result, quotes = split(result)
-                            try:
-                                verify(model.evidence, arguments, result, quotes)
-                            except EvidenceError as exc:
-                                raise ThinkingAnswerError(
-                                    f"{model.verb} answered without evidence: {exc}"
-                                ) from exc
-                            response = {**response, "evidence": quotes}
-                        check_answer(model, arguments, result)
-                        break
-                    except (RejectedAnswer, ThinkingAnswerError) as exc:
-                        if len(rejected) >= step.retries:
-                            raise
-                        if isinstance(exc, RejectedAnswer):
-                            answered = exc.content
-                        rejected.append((cast(str, answered), str(exc)))
-                if rejected:
-                    response = {
-                        **response,
-                        "rejected": [
-                            {"content": content, "reason": reason}
-                            for content, reason in rejected
-                        ],
-                    }
+                result, response = _ask_with_votes(
+                    providers[model.provider or model.name],
+                    model,
+                    arguments,
+                    asked_schema,
+                    retries=step.retries,
+                    votes=step.votes,
+                )
                 events.append(
                     _event("model_return", model=model.name, result=result, **response)
                 )
@@ -1527,7 +1609,7 @@ def _run_workflow(
             if step.fallback is None or isinstance(exc, ApprovalRequiredError):
                 raise
             fallback_step = dataclass_replace(
-                step, call=step.fallback, fallback=None, retries=0
+                step, call=step.fallback, fallback=None, retries=0, votes=0
             )
             if isinstance(exc, ExecutionError):
                 # On resume, a step its fallback completed earlier is stored

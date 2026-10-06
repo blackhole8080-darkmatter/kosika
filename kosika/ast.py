@@ -455,6 +455,9 @@ class Step:
     # `step = call retry 2`: how many more times a model is asked when its
     # answer is rejected, each time shown the answer and why it failed.
     retries: int = 0
+    # `step = call vote 3`: how many times the model is asked. The step
+    # succeeds only when more than half of the answers agree.
+    votes: int = 0
 
 
 @dataclass(frozen=True)
@@ -637,6 +640,7 @@ _ABSENT_DEFAULTS: dict[str, tuple[Any, ...]] = {
     "fallback": (None,),
     "evidence": (None, False),
     "retries": (0,),
+    "votes": (0,),
     "budget": ((), []),
     "capped": (False,),
 }

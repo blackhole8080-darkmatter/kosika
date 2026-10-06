@@ -435,6 +435,21 @@ think = "classify"  expression "into" expression [ "using" identifier ]
   fails as it would have, so its `otherwise` runs. Rejected answers and their
   reasons are kept in the trace.
 
+- A model step MAY be followed by `vote N`, with N one of 3, 5, 7, or 9,
+  written after the call and before any `retry`:
+  `label = classify t.text into ["a", "b"] vote 3 retry 1 otherwise f(t)`.
+  The model is asked N times, and the step succeeds only when more than half
+  of the N answers agree. Two answers agree when they give the same label
+  (`classify`), the same answer (`decide`), or the same whole record
+  (`extract`, `use_model`). `summarize` cannot vote. The step's value is the
+  first answer on the winning side. An answer that is rejected, after its own
+  retries, is a vote for nothing. Without a majority the step fails like any
+  broken answer, so its `otherwise` runs. Every ask counts as a model call,
+  and the tally is kept in the trace.
+- Voting only helps when the answers can differ. A model run with no
+  randomness gives the same answer every time, and N agreeing copies of one
+  answer prove nothing.
+
 ### Budgets
 
 A workflow MAY declare ceilings on its own run:
@@ -471,10 +486,11 @@ test "a double charge goes to billing" {
 }
 ```
 
-- `answers MODEL: [record, ...]` gives the answers a declared model returns,
-  in the order it is asked. A test never calls a real model. A model that is
-  asked with no answer left fails the test, and so does an answer that was
-  never asked for.
+- `answers NAME: [record, ...]` gives the answers a declared model, or a
+  tool whose access is `observe`, returns in the order it is asked. A test
+  never calls a real model or tool. Anything asked with no answer left fails
+  the test, and so does an answer that was never asked for. A tool whose
+  access is `execute` cannot be scripted.
 - `name = expression` binds a value; `name: Type = expression` gives it a
   type, which a record literal needs. The expression MAY call a function, or
   run a workflow by calling it like a function, with the workflow's
@@ -485,7 +501,9 @@ test "a double charge goes to billing" {
   test with the run's own message.
 - Tests are not part of the program that runs. They are left out of the
   program hash, so adding or changing a test never changes a trace or an
-  approval. A test cannot execute a tool.
+  approval.
+- Tests are checked with the program: a wrong name or type inside a test is
+  a check error (`check/test`).
 - `kosika test FILE` prints one line per test and exits 0 only if all pass;
   `--only NAME` runs one test and `--json` prints the results as JSON.
 

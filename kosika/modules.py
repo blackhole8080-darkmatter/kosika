@@ -300,4 +300,9 @@ def load_program(
     except ThinkingError as exc:
         raise CheckError(str(exc)) from exc
     check(merged)
+    if merged.tests:
+        # Imported here: the test checker builds on the checker and runtime.
+        from .testing import check_tests
+
+        check_tests(merged)
     return merged

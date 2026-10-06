@@ -610,6 +610,29 @@ equality. Swarm output must not acquire authority the way model output cannot.
   cannot read the quotes yet; they are in the trace only. Traces with
   evidence are not readable by an older Kosika (they fail closed).
 
+## Reliability: voting (built, not yet measured)
+
+- `vote N` (3, 5, 7, 9) on a model step asks N times and accepts only what
+  more than half agree on (`runtime._ask_with_votes`, `Step.votes`). Agreement
+  is on the label, the answer, or the whole record. It composes with evidence
+  and retry inside each ask, and with `otherwise` when there is no majority.
+- The tally and the rejected ballots are stored on the `model_return` event.
+- 12 tests in `tests/test_vote.py`.
+- Not claimed: no measurement on a live model. Voting cannot help a model run
+  without randomness, and agreement between runs of one model is weaker
+  evidence than agreement between different models, which is not built.
+  Replay keeps the tally but does not re-derive it.
+
+## Tests in the language: tools and checking (complete)
+
+- `answers` also scripts a tool whose access is `observe`. A tool that
+  changes the world cannot be scripted, because running one needs a recorded
+  approval.
+- `testing.check_tests` checks names and types in every test without running
+  it, and the module loader calls it, so `kosika check` reports a mistake in
+  a test (`check/test`).
+- 5 more tests in `tests/test_kosika_tests.py`.
+
 ## Tests in the language (complete)
 
 - `test "name" { answers / name = ... / expect ... }` and `kosika test FILE`
@@ -621,10 +644,8 @@ equality. Swarm output must not acquire authority the way model output cannot.
 - A failure names the line, the expectation as written, and both sides of a
   comparison.
 - 15 tests in `tests/test_kosika_tests.py`.
-- Not claimed: `kosika check` does not check test bodies; a mistake in a test
-  is reported when it is run. A test cannot script a tool, so a workflow that
-  executes a tool cannot be tested this way yet. There is no setup shared
-  between tests, and no test of what a run's trace contains.
+- Not claimed: there is no setup shared between tests, and no test of what
+  a run's trace contains.
 
 ## Algorithms: larger limits (complete)
 
