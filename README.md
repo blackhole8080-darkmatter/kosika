@@ -457,6 +457,20 @@ program declares, and Kosika prints the grant. The endpoint is `--model-url`, th
 selects Ollama's native API. To grant a single declared model instead, use
 `--model-binding writer --model YOUR_MODEL --model-url URL`. The provider uses
 `KOSIKA_MODEL_API_KEY` if supplied.
+
+A model that is reached through a program instead of a URL, such as a vendor's
+signed-in command-line tool, is granted with `--model-command`, which must be
+the last option:
+
+```
+kosika run main.kos --input input.json --model-command gemini -m gemini-3.5-flash-lite -p ""
+```
+
+Kosika writes each request to the program's standard input and reads the reply
+from its output. The program runs without a shell in an empty temporary
+folder, and it answers for every declared model. It cannot be used by an agent
+that calls tools. If the reply wraps its JSON in one Markdown code fence, the
+fence is removed; nothing else is repaired.
 The Python API accepts `run(..., inputs={...}, model_bindings={"writer": provider})`.
 
 Missing bindings or invalid inputs are rejected before any workflow call. Model

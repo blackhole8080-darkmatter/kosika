@@ -593,6 +593,26 @@ left out: typed messages between members, state carried from one round to the
 next, and a termination judgment over observed evidence rather than result
 equality. Swarm output must not acquire authority the way model output cannot.
 
+## Fundamentals: thinking steps on a live model (first run done)
+
+- `kosika run --model-command PROGRAM ARGS...` (`kosika/command_model.py`)
+  grants a command-line program as the provider for every declared model. The
+  request goes to standard input; the program runs without a shell in an empty
+  temporary folder; tool calling is refused; one fenced JSON block is unwrapped
+  and nothing else is repaired.
+- First real run, 2026-10-06, `gemini-3.5-flash-lite` through the Gemini
+  command-line tool: one ticket ("charged twice ... 30 dollars each time")
+  through `classify`, `extract`, `summarize`, and `decide` in one workflow. All
+  four answers passed validation on the first attempt (label `billing`,
+  customer and amount extracted, decision true with a reason), the run took 33
+  seconds, and the trace replayed to the same result.
+- 13 tests in `tests/test_command_model.py`, using a stand-in Python script as
+  the program.
+- Not claimed: this is one ticket on one model, not a measurement. There is no
+  accuracy figure, no second model, and no run of `ask` with tools on a live
+  model. The Ollama program is no longer installed on this machine, so no
+  local model was tried.
+
 ## Fundamentals: early return and `if` without `else` (complete)
 
 - `return value` may appear inside an `if`, `match` arm, or loop body
@@ -606,8 +626,7 @@ equality. Swarm output must not acquire authority the way model output cannot.
   end without a value.
 - 12 tests in `tests/test_early_return.py`.
 - Still open: narrowing (an optional proved present by `if x.exists()` still
-  needs `.value()`), the mind map's fallback edge, and a live-model run of the
-  thinking steps.
+  needs `.value()`) and the mind map's fallback edge.
 
 ## Fundamentals: `otherwise` (complete)
 

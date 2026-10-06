@@ -18,6 +18,7 @@ from .ast import Program, ToolDecl
 from .checker import check
 from .city import CITY_NAME, CityError, build_city
 from .cityscape import render_cityscape_svg
+from .command_model import CommandModelProvider
 from .components import (
     ComponentContractError,
     bind_component,
@@ -528,6 +529,24 @@ def _workflow_model_bindings(
     args: argparse.Namespace, program: Program
 ) -> dict[str, ModelProvider]:
     live = (args.model_binding, args.model, args.model_url)
+    command = getattr(args, "model_command", None)
+    if command is not None:
+        if any(live) or args.model_fixture is not None:
+            raise ValueError(
+                "Use --model-command on its own, without --model, --model-url, "
+                "--model-binding, or --model-fixture"
+            )
+        declared_models = [m.name for m in program.models if m.provider is None]
+        if not declared_models:
+            raise ValueError(
+                "--model-command was given, but this program declares no model"
+            )
+        provider_from_command = CommandModelProvider(command)
+        print(
+            f"Command {command[0]!r} answers for: {', '.join(declared_models)}",
+            file=sys.stderr,
+        )
+        return dict.fromkeys(declared_models, provider_from_command)
     if args.model_fixture is not None:
         if any(live):
             raise ValueError(
@@ -1827,6 +1846,15 @@ def build_parser() -> argparse.ArgumentParser:
         choices=MODEL_PROTOCOLS,
         default="openai",
         help="Wire format of the model endpoint.",
+    )
+    run_parser.add_argument(
+        "--model-command",
+        nargs=argparse.REMAINDER,
+        help=(
+            "Use a command-line model for every declared model: the program "
+            "and its arguments. It reads the request on standard input and "
+            "prints its reply. Must be the last option."
+        ),
     )
 
     new_parser = subparsers.add_parser(
