@@ -379,6 +379,10 @@ def build_mindmap(
                 "calls",
             )
 
+    # A voting step names generated models; show the declared model behind each.
+    models_by_name = {
+        model.name: model.provider or model.name for model in program.models
+    }
     for workflow in sorted(program.workflows, key=lambda item: item.name):
         workflow_id = add_node(
             "workflow",
@@ -420,6 +424,15 @@ def build_mindmap(
                 binding=step.binding_name,
                 binding_type=step.binding_type,
                 return_name=step.return_name,
+                # Shown only when the step uses them, so older maps are
+                # unchanged.
+                **({"retries": step.retries} if step.retries else {}),
+                **({"votes": step.votes} if step.votes else {}),
+                **(
+                    {"voters": [models_by_name[v] for v in step.voters]}
+                    if step.voters
+                    else {}
+                ),
             )
             connect(workflow_id, step_id, "step", "runs")
             if step.binding_type in record_names:

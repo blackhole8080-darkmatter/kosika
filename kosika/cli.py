@@ -1960,6 +1960,15 @@ def build_parser() -> argparse.ArgumentParser:
         "new", help="Create a starter Kosika project in a new folder."
     )
     new_parser.add_argument("directory", type=Path)
+    new_parser.add_argument(
+        "--kind",
+        default="hello",
+        help=(
+            "What to start from: hello (default), support (an agent with "
+            "memory), expense (a model reads, code decides), or notes (a model "
+            "extracts, code organises)."
+        ),
+    )
 
     agent_parser = subparsers.add_parser(
         "agent",
@@ -2089,6 +2098,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     replay_parser = subparsers.add_parser("replay")
     replay_parser.add_argument("trace", type=Path)
+    story_parser = subparsers.add_parser(
+        "story", help="Tell what happened in a run, in plain words, from its trace."
+    )
+    story_parser.add_argument("trace", type=Path)
+    story_parser.add_argument("--json", action="store_true")
     pack_parser = subparsers.add_parser(
         "pack", help="Carry a program to another device and prove it is the same."
     )
@@ -2408,13 +2422,21 @@ def main() -> int:
         from .starter import StarterError, create_starter
 
         try:
-            created = create_starter(args.directory)
+            created = create_starter(args.directory, args.kind)
         except (StarterError, OSError) as exc:
             print(f"Could not create the project: {exc}", file=sys.stderr)
             return 2
         print(f"Created a starter project in {args.directory}:")
         for path in created:
             print(f"  {path.name}")
+        if args.kind != "hello":
+            print(
+                "Next:\n"
+                f"  cd {args.directory}\n"
+                "  kosika test main.kos\n"
+                "Then read README.md for how to run it on a model."
+            )
+            return 0
         print(
             "Next:\n"
             f"  cd {args.directory}\n"
@@ -3035,6 +3057,18 @@ def main() -> int:
             print(json.dumps(report, indent=2, sort_keys=True))
         else:
             print(_render_journal_text(report))
+        return 0
+
+    if args.command == "story":
+        from .story import StoryError, build_story, read_trace
+        from .story import to_text as story_to_text
+
+        try:
+            told = build_story(read_trace(args.trace))
+        except StoryError as exc:
+            print(f"Story unavailable: {exc}", file=sys.stderr)
+            return 2
+        print(json.dumps(told, indent=2) if args.json else story_to_text(told))
         return 0
 
     if args.command == "pack":

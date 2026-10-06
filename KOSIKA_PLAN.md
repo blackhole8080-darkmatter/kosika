@@ -610,6 +610,23 @@ equality. Swarm output must not acquire authority the way model output cannot.
   cannot read the quotes yet; they are in the trace only. Traces with
   evidence are not readable by an older Kosika (they fail closed).
 
+## Understanding and starting agents (complete)
+
+- `kosika story TRACE` (`kosika/story.py`) narrates a run from its trace
+  alone: steps, answers, evidence, rejections and retries, votes and which
+  model answered each ballot, memory reads and writes, fallbacks, and cost.
+  It states whether the trace replays. `--json` gives the same as data.
+- `kosika new DIR --kind support|expense|notes` starts from one of three
+  working agents (`kosika/agent_starters.py`), each with tests in the
+  language and a README.
+- The mind map shows a step's `retry`, `vote`, and the models that vote.
+- 9 tests in `tests/test_story.py`.
+- Not claimed: the story does not expand a called workflow or an agent's
+  tool loop; it reports their result. Tokens are those of the accepted answer
+  of each step, not of rejected attempts or losing ballots. The three agents
+  were each run once on qwen2.5:7b; that is a demonstration, not a
+  measurement.
+
 ## Memory (complete; first run on a live model done)
 
 - `memory NAME of Record`, `recall NAME under key`, and

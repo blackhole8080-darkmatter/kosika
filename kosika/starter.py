@@ -76,11 +76,57 @@ and to `responses.json`, then run `kosika check main.kos` again.
 """
 
 
+from .agent_starters import AGENT_STARTERS  # noqa: E402
+
+
 class StarterError(ValueError):
     """A starter project cannot be created at the requested location."""
 
 
-def starter_files(name: str) -> dict[str, str]:
+AGENT_README = """\
+# {name}
+
+{what}
+
+Run its tests first. They use saved answers and need no model:
+
+```
+kosika test main.kos
+```
+
+Run it on a model:
+
+```
+{command}
+```
+
+See what a run did, step by step:
+
+```
+{command} --trace run.jsonl
+kosika story run.jsonl
+```
+
+Then open `main.kos` and change it. `kosika check main.kos` tells you at once
+if something is wrong, and the tests tell you if you broke what worked.
+"""
+
+#: The kinds `kosika new --kind` accepts.
+KINDS = ("hello", *AGENT_STARTERS)
+
+
+def starter_files(name: str, kind: str = "hello") -> dict[str, str]:
+    if kind != "hello":
+        if kind not in AGENT_STARTERS:
+            raise StarterError(
+                f"Unknown kind {kind!r}; choose one of: {', '.join(KINDS)}"
+            )
+        what, command, source, inputs = AGENT_STARTERS[kind]
+        return {
+            "main.kos": source,
+            "input.json": inputs,
+            "README.md": AGENT_README.format(name=name, what=what, command=command),
+        }
     return {
         "main.kos": STARTER_SOURCE,
         "input.json": STARTER_INPUT,
@@ -89,9 +135,10 @@ def starter_files(name: str) -> dict[str, str]:
     }
 
 
-def create_starter(directory: Path) -> list[Path]:
+def create_starter(directory: Path, kind: str = "hello") -> list[Path]:
     """Write a starter project into a new or empty directory."""
 
+    files = starter_files(directory.resolve().name, kind)
     if directory.exists():
         if not directory.is_dir():
             raise StarterError(f"{directory} exists and is not a directory")
@@ -102,7 +149,7 @@ def create_starter(directory: Path) -> list[Path]:
             )
     directory.mkdir(parents=True, exist_ok=True)
     written = []
-    for filename, content in starter_files(directory.resolve().name).items():
+    for filename, content in files.items():
         path = directory / filename
         path.write_text(content, encoding="utf-8")
         written.append(path)

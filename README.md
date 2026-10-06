@@ -466,6 +466,26 @@ the last option:
 kosika run main.kos --input input.json --model-command gemini -m gemini-3.5-flash-lite -p ""
 ```
 
+### Starting an agent, and seeing what a run did
+
+`kosika new` can start from a complete, tested agent instead of hello-world:
+
+```
+kosika new my-desk --kind support     # an agent that remembers customers
+kosika new my-claims --kind expense   # a model reads a receipt, code decides
+kosika new my-notes --kind notes      # a model finds tasks, code organises them
+```
+
+Each project has its own tests (`kosika test main.kos`, no model needed) and
+a README with the command to run it on a model.
+
+After a run that wrote a trace, `kosika story run.jsonl` tells what happened
+in plain words: every step, what was asked and answered, the quotes that
+backed an answer, what was rejected and asked again, how a vote went, what
+was recalled or remembered, when a fallback took over, and what the run cost
+in model calls, tokens, and seconds. It reads only the trace. It first checks
+that the trace replays and says so, or warns when it does not.
+
 ### Sharing a program with another device
 
 A pack is one file holding every module of a program and the program's hash.
