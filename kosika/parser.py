@@ -28,6 +28,7 @@ from .ast import (
     LocalBinding,
     MatchArm,
     MatchExpr,
+    MemoryDecl,
     MethodCallExpr,
     ModelCall,
     ModelDecl,
@@ -567,6 +568,11 @@ class Parser:
             elif keyword == "default" and self.peek().value == "model":
                 self.advance()
                 program.models.append(replace(self.parse_model(), default=True))
+            elif keyword == "memory" and self.peek().kind == "IDENT":
+                self.advance()
+                memory_name = self.identifier()
+                self.expect("of")
+                program.memories.append(MemoryDecl(memory_name, self.identifier()))
             elif keyword == "test" and self.peek().kind == "STRING":
                 program.tests.append(self.parse_test())
             else:
@@ -1209,6 +1215,26 @@ class Parser:
         ):
             # Replaced by a ModelCall in `lower_thinking` before anything reads it.
             return cast(ModelCall, self.parse_think_call())
+        if self.check("remember") and self.peek().value != "(":
+            # `remember note in customers under key`: an ordinary call of the
+            # memory's generated tool; see `kosika.memory`.
+            self.advance()
+            value = self.expression()
+            self.expect("in")
+            memory_name = self.identifier()
+            self.expect("under")
+            return ToolCall(
+                "memory",
+                f"remember_{memory_name}",
+                (("key", self.expression()), ("value", value)),
+            )
+        if self.check("recall") and self.peek().value != "(":
+            self.advance()
+            memory_name = self.identifier()
+            self.expect("under")
+            return ToolCall(
+                "memory", f"recall_{memory_name}", (("key", self.expression()),)
+            )
         if self.accept("call"):
             workflow_name = self.identifier()
             self.expect("(")
@@ -1248,6 +1274,10 @@ def parse(source: str, *, lower_thinking_steps: bool = True) -> Program:
 
     try:
         program = lower_nested_functions(Parser(lex(source)).parse())
-        return lower_sugar(lower_thinking(program)) if lower_thinking_steps else program
+        if not lower_thinking_steps:
+            return program
+        from .memory import lower_memory
+
+        return lower_sugar(lower_thinking(lower_memory(program)))
     except ValueError as exc:
         raise ParseError(str(exc)) from exc

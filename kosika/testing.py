@@ -49,6 +49,7 @@ from .ast import (
 from .checker import CheckError, _Env, _expression_type
 from .execution import ExecutionControl, ExecutionLimits
 from .function_types import assignable
+from .memory import MemoryStore, bind_memory_tools
 from .model import ModelResponse, ScriptedModelProvider
 from .runtime import _evaluate_expression, _FunctionRegistry, run
 from .sugar import resolve_unnamed
@@ -232,6 +233,7 @@ def _run_one(program: Program, test: TestDecl) -> None:
             scripts[name] = answers
         else:
             tools[name] = _ScriptedTool(name, answers)
+    memory_tools = bind_memory_tools(program, None, store=MemoryStore())
     providers = {
         name: ScriptedModelProvider(
             [ModelResponse(content=json.dumps(answer)) for answer in answers]
@@ -266,7 +268,9 @@ def _run_one(program: Program, test: TestDecl) -> None:
                 None,
                 inputs={name: evaluate(value) for name, value in arguments.items()},
                 model_bindings=providers,
-                tool_bindings=tools,
+                # Each test starts with empty memories of its own, kept only
+                # for the test, so tests never read or write a real store.
+                tool_bindings={**memory_tools, **tools},
             )
         except _Failure:
             raise

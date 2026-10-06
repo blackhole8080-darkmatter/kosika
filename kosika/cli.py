@@ -86,6 +86,7 @@ from .manifest import (
     write_manifest,
 )
 from .mcp_stdio import MCPProtocolError, MCPStdioClient
+from .memory import bind_memory_tools
 from .metropolis import ENVIRONMENT_NAMES
 from .mindmap import build_mindmap, to_json, to_mermaid, to_text
 from .model import (
@@ -1929,6 +1930,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Wire format of the model endpoint.",
     )
     run_parser.add_argument(
+        "--memory",
+        type=Path,
+        help=(
+            "Folder that holds this program's memories, one JSON file each. "
+            "Without it, a program that declares a memory is refused."
+        ),
+    )
+    run_parser.add_argument(
         "--models",
         type=Path,
         help=(
@@ -3378,6 +3387,10 @@ def main() -> int:
         system_bindings = bind_system_tools(
             program, folder=args.allow_folder, allow_shell=args.allow_shell
         )
+        system_bindings = {
+            **system_bindings,
+            **bind_memory_tools(program, getattr(args, "memory", None)),
+        }
         if args.approve and not args.journal:
             # Approval needs a journal to remember what was approved between
             # the pause and the resume; an asked-for run keeps one for itself.

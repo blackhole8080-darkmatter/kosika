@@ -486,6 +486,44 @@ workflow main(ticket: Ticket) -> Routing {
 - A run that reaches its budget stops with a `budget` or `deadline` error.
   This is not a failed step: `otherwise` does not catch it.
 
+### Memory
+
+A program keeps facts between runs in a declared memory.
+
+```kosika
+memory customers of History
+
+workflow main(ticket: Ticket) -> Reply {
+  known   = recall customers under ticket.customer
+  history = updated(known, ticket)
+  saved   = remember history in customers under ticket.customer
+  ...
+}
+```
+
+- `memory NAME of Record` declares a memory that holds records of one type,
+  each under a `Text` key.
+- `recall NAME under key` gives the record `<Name>Recalled {found: Bool,
+  value: Record?}`, where `<Name>` is the memory's name with a capital letter
+  (`customers` gives `CustomersRecalled`).
+- `remember value in NAME under key` stores the record, replacing what was
+  under that key, and gives `MemorySaved {key: Text, entries: Number}`. The
+  value MUST be the memory's record. A key has 1 to 200 characters and a
+  memory holds at most 10,000 entries.
+- Both are workflow steps. A memory MUST be declared in the module that uses
+  it.
+- A memory is lowered to two read-only tools, `remember_NAME` and
+  `recall_NAME`, used through a generated agent named `memory`, so traces,
+  replay, limits, and the mind map treat it like any other tool. Replay uses
+  what the trace recorded and never the store.
+- Declaring a memory grants nothing. Whoever runs the program names the
+  folder that holds it, `kosika run --memory FOLDER`, and each memory is one
+  JSON file there. Without the grant, a program that uses memory is refused
+  before it starts. A memory write needs no approval: it can only change the
+  program's own typed records in the folder the runner set aside.
+- A test in the language gets empty memories of its own, kept only for that
+  test.
+
 ### Tests
 
 A program MAY hold tests beside the code they exercise. `kosika test FILE`

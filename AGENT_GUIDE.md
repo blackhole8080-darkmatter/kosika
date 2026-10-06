@@ -278,6 +278,25 @@ workflow main(city: City) -> Report {
 - If a step executes a tool whose access is `execute`, the workflow must end
   with the line `require approval` after its last step.
 
+## Memory
+
+To keep facts between runs, declare a memory of one record type and use it
+from workflow steps. Keys are Text.
+
+```kosika
+memory customers of History
+
+workflow main(ticket: Ticket) -> Out {
+  known = recall customers under ticket.customer      // CustomersRecalled
+  saved = remember history in customers under ticket.customer
+  ...
+}
+```
+
+`recall` gives `{found: Bool, value: History?}` in a record named after the
+memory with a capital letter plus `Recalled`. Check `known.found` before using
+`known.value.value()`.
+
 ## Tests
 
 Put tests in the same file. They run with `kosika test FILE` and call no real

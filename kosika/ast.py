@@ -592,6 +592,14 @@ def static_function_references(
 
 
 @dataclass(frozen=True)
+class MemoryDecl:
+    """`memory NAME of Record`; see `kosika.memory`."""
+
+    name: str
+    record: str
+
+
+@dataclass(frozen=True)
 class TestStep:
     """One line of a test: `name = expression` or `expect expression`."""
 
@@ -633,6 +641,9 @@ class Program:
     # Tests are kept beside the program but are not part of what runs, so
     # `program_payload` leaves them out of every hash.
     tests: list[TestDecl] = field(default_factory=list)
+    # `memory NAME of Record`. `kosika.memory.lower_memory` adds the tools
+    # and records each one stands for; this list says which memories exist.
+    memories: list[MemoryDecl] = field(default_factory=list)
 
 
 #: Fields added to the tree after traces and approvals were first recorded,
@@ -654,6 +665,7 @@ _ABSENT_DEFAULTS: dict[str, tuple[Any, ...]] = {
     "more_models": ((), []),
     "budget": ((), []),
     "capped": (False,),
+    "memories": ((), []),
 }
 
 

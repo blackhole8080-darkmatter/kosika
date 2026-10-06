@@ -610,6 +610,25 @@ equality. Swarm output must not acquire authority the way model output cannot.
   cannot read the quotes yet; they are in the trace only. Traces with
   evidence are not readable by an older Kosika (they fail closed).
 
+## Memory (complete; first run on a live model done)
+
+- `memory NAME of Record`, `recall NAME under key`, and
+  `remember value in NAME under key` (`kosika/memory.py`). Lowered to two
+  ordinary tools and a generated agent, so nothing else in the pipeline
+  needed to learn about memory.
+- Granted by the runner with `kosika run --memory FOLDER`; one JSON file per
+  memory, written whole and swapped in. Refused before the run starts when
+  not granted. Tests in the language get a fresh in-process memory each.
+- First real use, 2026-10-06, qwen2.5:7b through Ollama: the support desk
+  agent in `my_examples/agents/support_desk` greeted a new customer, and on a
+  second run recalled them ("Welcome back", ticket count 2). The second trace
+  replayed.
+- 15 tests in `tests/test_memory.py`.
+- Not claimed: there is no `forget`, no listing or search of a memory, and no
+  recall by meaning; a key must match exactly. Two runs writing the same
+  memory at once can lose one write. A memory must be declared in the module
+  that uses it. Nothing is encrypted.
+
 ## Sharing between devices: packs (complete, first step only)
 
 - `kosika pack make | check | unpack` (`kosika/pack.py`). A pack holds every

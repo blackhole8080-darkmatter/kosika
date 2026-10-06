@@ -374,7 +374,8 @@ class RegistryCoverageTests(unittest.TestCase):
         self.assertGreater(len(self.sites), 140)
         kinds = {site.kind for site in self.sites}
         self.assertEqual(
-            kinds, {"CheckError", "ParseError", "LexError", "ThinkingError"}
+            kinds,
+            {"CheckError", "ParseError", "LexError", "ThinkingError", "MemoryError_"},
         )
 
     def test_every_raise_site_is_classified(self) -> None:

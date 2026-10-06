@@ -1267,6 +1267,11 @@ def _run_workflow(
                     )
             continue
         tool = tools[step.call.tool_name]
+        if tool.source.startswith("memory:") and tool.name not in host_tools:
+            raise PermissionError(
+                f"Memory {tool.source.removeprefix('memory:')!r} was not granted; "
+                "run with --memory FOLDER to say where it is kept"
+            )
         if tool.access == "execute" and session is None:
             raise PermissionError(
                 f"Workflow tool {tool.name!r} requires a verified approval record"

@@ -23,6 +23,7 @@ from .ast import (
 from .builtin_methods import did_you_mean
 from .checker import CheckError, check
 from .function_types import base_type, referenced_types
+from .memory import MemoryError_, lower_memory, supplied_names
 from .parser import ParseError, parse
 from .sugar import lower_sugar
 from .thinking import BUILT_IN_RECORDS, ThinkingError, lower_thinking
@@ -258,7 +259,13 @@ def load_program(
             mark_error(resolved)
             raise CheckError(f"{resolved}: exports must name unique local declarations")
         # Built-in records are added when thinking steps are lowered.
-        hidden = _references(module) - local - visible - set(BUILT_IN_RECORDS)
+        hidden = (
+            _references(module)
+            - local
+            - visible
+            - set(BUILT_IN_RECORDS)
+            - supplied_names(module.memories)
+        )
         if hidden:
             mark_error(resolved)
             hint = did_you_mean(
@@ -286,6 +293,7 @@ def load_program(
         for category in CATEGORIES:
             getattr(merged, category).extend(getattr(module, category))
         merged.tests.extend(module.tests)
+        merged.memories.extend(module.memories)
         merged.module_hashes[module_key] = hashlib.sha256(data).hexdigest()
         active.remove(resolved)
         loaded[resolved] = module
@@ -296,8 +304,8 @@ def load_program(
     # model declared in one module serves steps written in another and the
     # built-in records are added a single time.
     try:
-        merged = lower_sugar(lower_thinking(merged))
-    except ThinkingError as exc:
+        merged = lower_sugar(lower_thinking(lower_memory(merged)))
+    except (ThinkingError, MemoryError_) as exc:
         raise CheckError(str(exc)) from exc
     check(merged)
     if merged.tests:
