@@ -392,6 +392,9 @@ class ModelDecl:
     # The evidence rule of a step written `with evidence`; see
     # `kosika.evidence`. None for every other model.
     evidence: str | None = None
+    # `default model NAME`: the model a thinking step uses when it names none
+    # and the program declares several.
+    default: bool = False
 
 
 @dataclass(frozen=True)
@@ -412,6 +415,8 @@ class ThinkCall:
     model: str | None = None
     # `with evidence`: the answer must quote the text it was given.
     evidence: bool = False
+    # `using a, b`: further models that take turns answering a `vote`.
+    more_models: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -458,6 +463,9 @@ class Step:
     # `step = call vote 3`: how many times the model is asked. The step
     # succeeds only when more than half of the answers agree.
     votes: int = 0
+    # The models that take turns answering a `vote`, when a thinking step
+    # names several with `using a, b`. Empty when one model answers them all.
+    voters: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -641,6 +649,9 @@ _ABSENT_DEFAULTS: dict[str, tuple[Any, ...]] = {
     "evidence": (None, False),
     "retries": (0,),
     "votes": (0,),
+    "voters": ((), []),
+    "default": (False,),
+    "more_models": ((), []),
     "budget": ((), []),
     "capped": (False,),
 }

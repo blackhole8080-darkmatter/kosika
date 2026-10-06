@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from typing import cast
 
 from .ast import (
@@ -563,6 +564,9 @@ class Parser:
                 program.functions.append(self.parse_function())
             elif keyword == "model":
                 program.models.append(self.parse_model())
+            elif keyword == "default" and self.peek().value == "model":
+                self.advance()
+                program.models.append(replace(self.parse_model(), default=True))
             elif keyword == "test" and self.peek().kind == "STRING":
                 program.tests.append(self.parse_test())
             else:
@@ -1189,7 +1193,10 @@ class Parser:
             self.expect("evidence")
             evidence = True
         model = self.identifier() if self.accept("using") else None
-        return ThinkCall(verb, subject, extra, record, model, evidence)
+        more: list[str] = []
+        while model is not None and self.accept(","):
+            more.append(self.identifier())
+        return ThinkCall(verb, subject, extra, record, model, evidence, tuple(more))
 
     def parse_step_call(
         self,

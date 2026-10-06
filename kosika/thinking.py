@@ -118,19 +118,30 @@ def _arguments(call: ThinkCall) -> tuple[tuple[str, Any], ...]:
     return (("text", call.subject),)
 
 
-def _choose_model(program: Program, call: ThinkCall, step: Step) -> ModelDecl:
+def _choose_model(
+    program: Program, call: ThinkCall, step: Step, named: str | None
+) -> ModelDecl:
     declared = [model for model in program.models if model.provider is None]
-    if call.model is not None:
+    if named is not None:
         for model in declared:
-            if model.name == call.model:
+            if model.name == named:
                 return model
         known = ", ".join(sorted(model.name for model in declared)) or "none"
         raise ThinkingError(
-            f"Step {step.name!r} uses unknown model {call.model!r}; "
+            f"Step {step.name!r} uses unknown model {named!r}; "
             f"declared model(s): {known}"
         )
     if len(declared) == 1:
         return declared[0]
+    defaults = [model for model in declared if model.default]
+    if len(defaults) == 1:
+        return defaults[0]
+    if len(defaults) > 1:
+        names = ", ".join(sorted(model.name for model in defaults))
+        raise ThinkingError(
+            f"Step {step.name!r} needs a model for {call.verb}: this program "
+            f"marks several models as default ({names})"
+        )
     if not declared:
         raise ThinkingError(
             f"Step {step.name!r} needs a model for {call.verb}: declare one "
@@ -139,7 +150,8 @@ def _choose_model(program: Program, call: ThinkCall, step: Step) -> ModelDecl:
     names = ", ".join(sorted(model.name for model in declared))
     raise ThinkingError(
         f"Step {step.name!r} needs a model for {call.verb}: this program "
-        f"declares several ({names}), so add `using NAME`"
+        f"declares several ({names}), so add `using NAME` or mark one "
+        "`default model NAME`"
     )
 
 
@@ -165,10 +177,10 @@ def lower_thinking(program: Program) -> Program:
         needed.update((GENERAL_INPUT, GENERAL_OUTPUT))
     generated: dict[str, ModelDecl] = {}
 
-    def lower_call(step: Step, call: Any) -> Any:
+    def lower_call(step: Step, call: Any, named: str | None = None) -> Any:
         if not isinstance(call, ThinkCall):
             return call
-        base = _choose_model(program, call, step)
+        base = _choose_model(program, call, step, named or call.model)
         input_record, output_record = _shape(call.verb, call.record)
         known = {record.name for record in program.records}
         if call.verb == "extract" and output_record not in known:
@@ -225,10 +237,38 @@ def lower_thinking(program: Program) -> Program:
         for step in workflow.steps:
             call = lower_call(step, step.call)
             fallback = lower_call(step, step.fallback)
+            voters: tuple[str, ...] = ()
+            asked = step.call
+            if isinstance(asked, ThinkCall) and asked.more_models:
+                # `using a, b`: each listed model gets its own generated
+                # model of the same shape, and they take turns in the vote.
+                if step.votes == 0:
+                    raise ThinkingError(
+                        f"Step {step.name!r} needs a model for {asked.verb}: it "
+                        "lists several, which is only for a step that ends "
+                        "`vote N`"
+                    )
+                voters = (
+                    call.model_name,
+                    *(
+                        lower_call(step, asked, name).model_name
+                        for name in asked.more_models
+                    ),
+                )
+                if len(set(voters)) != len(voters):
+                    raise ThinkingError(
+                        f"Step {step.name!r} needs a model for {asked.verb}: it "
+                        "lists the same model twice"
+                    )
+            if isinstance(step.fallback, ThinkCall) and step.fallback.more_models:
+                raise ThinkingError(
+                    f"Step {step.name!r} needs a model for "
+                    f"{step.fallback.verb}: its fallback lists several models"
+                )
             if call is step.call and fallback is step.fallback:
                 steps.append(step)
             else:
-                steps.append(replace(step, call=call, fallback=fallback))
+                steps.append(replace(step, call=call, fallback=fallback, voters=voters))
         workflows.append(replace(workflow, steps=tuple(steps)))
 
     declared = {record.name: record for record in program.records}

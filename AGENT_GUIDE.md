@@ -191,7 +191,10 @@ workflow main(ticket: Ticket) -> Routing {
 
 - Do not declare `Choice`, `Summary`, or `Decision` yourself; they are built in.
   Use them as parameter types: `fn route(label: Choice, refund: Decision)`.
-- With more than one model, end the step with `using model_name`.
+- With more than one model, end the step with `using model_name`, or mark
+  one `default model careful` so steps without `using` go to it.
+- A voting step can spread its ballots over models:
+  `decide q given t using cheap, careful, strict vote 3`.
 - Add `with evidence` to `classify`, `extract`, or `decide` to make the model
   quote the text: `invoice = extract Invoice from ticket.text with evidence`.
   An answer whose quote is not in the text is rejected. With `extract`, make

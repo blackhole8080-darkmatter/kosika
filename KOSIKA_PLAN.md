@@ -610,6 +610,22 @@ equality. Swarm output must not acquire authority the way model output cannot.
   cannot read the quotes yet; they are in the trace only. Traces with
   evidence are not readable by an older Kosika (they fail closed).
 
+## Model routing (built, not yet run on live models)
+
+- A program can declare several models, mark one `default model NAME`, and
+  send each thinking step to one with `using NAME`.
+- `using a, b, c` on a `vote N` step spreads the ballots over those models
+  (`Step.voters`), so agreement is between different models instead of
+  repeats of one. The trace records which model answered each ballot.
+- `kosika run --models FILE` grants a different real model, by URL or by
+  command, to each declared model. The file is the runner's; a `.kos` file
+  only names roles.
+- 17 tests in `tests/test_routing.py`, using scripted providers and stand-in
+  command programs.
+- Not claimed: no run against two real models yet. There is no automatic
+  routing by difficulty or cost; the author picks the model for each step.
+  `use_model` steps and agents cannot vote across models, only thinking steps.
+
 ## Reliability: voting (built, not yet measured)
 
 - `vote N` (3, 5, 7, 9) on a model step asks N times and accepts only what

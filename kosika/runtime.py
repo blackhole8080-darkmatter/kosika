@@ -928,8 +928,7 @@ def _ask_model(
 
 
 def _ask_with_votes(
-    provider: ModelProvider,
-    model: ModelDecl,
+    voters: list[tuple[ModelProvider, ModelDecl]],
     arguments: dict[str, Any],
     asked_schema: dict[str, Any],
     *,
@@ -941,18 +940,23 @@ def _ask_with_votes(
     Two answers agree when they give the same label (`classify`), the same
     answer (`decide`), or the same record (anything else). A ballot whose
     answer is rejected counts as a vote for nothing. The step's value is the
-    first answer on the winning side.
+    first answer on the winning side. When the step lists several models,
+    they take turns: ballot 1 asks the first, ballot 2 the second, and so on.
     """
 
+    provider, model = voters[0]
     if votes == 0:
         return _ask_model(provider, model, arguments, asked_schema, retries=retries)
     field = {"classify": "label", "decide": "answer"}.get(model.verb or "")
     ballots: list[tuple[str, dict[str, Any], dict[str, Any]]] = []
     failed: list[str] = []
-    for _ in range(votes):
+    asked_models: list[str] = []
+    for ballot in range(votes):
+        provider, voter = voters[ballot % len(voters)]
+        asked_models.append(voter.provider or voter.name)
         try:
             result, response = _ask_model(
-                provider, model, arguments, asked_schema, retries=retries
+                provider, voter, arguments, asked_schema, retries=retries
             )
         except (RejectedAnswer, ThinkingAnswerError) as exc:
             failed.append(str(exc))
@@ -980,6 +984,7 @@ def _ask_with_votes(
             "agreed": counts[winner],
             "tally": dict(sorted(counts.items())),
             "rejected": failed,
+            "models": asked_models,
         },
     }
 
@@ -1254,6 +1259,12 @@ def _run_workflow(
                 raise PermissionError(
                     f"Model {bound_name!r} has no authorized host binding"
                 )
+            for voter in step.voters:
+                voter_name = models[voter].provider or voter
+                if voter_name not in providers:
+                    raise PermissionError(
+                        f"Model {voter_name!r} has no authorized host binding"
+                    )
             continue
         tool = tools[step.call.tool_name]
         if tool.access == "execute" and session is None:
@@ -1538,8 +1549,10 @@ def _run_workflow(
                     )
                 )
                 result, response = _ask_with_votes(
-                    providers[model.provider or model.name],
-                    model,
+                    [
+                        (providers[voter.provider or voter.name], voter)
+                        for voter in ([models[name] for name in step.voters] or [model])
+                    ],
                     arguments,
                     asked_schema,
                     retries=step.retries,

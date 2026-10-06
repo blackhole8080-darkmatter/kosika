@@ -525,11 +525,92 @@ def _model_fixture_bindings(path: Path) -> dict[str, ModelProvider]:
 DEFAULT_LOCAL_MODEL_URL = "http://localhost:11434/v1"
 
 
+def _model_route_bindings(
+    path: Path, program: Program, default_protocol: str
+) -> dict[str, ModelProvider]:
+    """Read `--models FILE`: one real model for each declared model it names.
+
+    The file belongs to the person running the program. A `.kos` file can
+    name a model such as `cheap`; only this file says what `cheap` is.
+    """
+
+    try:
+        routes = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"Cannot read --models file {path}: {exc}") from exc
+    declared = {model.name for model in program.models if model.provider is None}
+    if not isinstance(routes, dict) or not routes:
+        raise ValueError("--models file must map declared model names to routes")
+    bindings: dict[str, ModelProvider] = {}
+    for name, route in routes.items():
+        if name not in declared:
+            known = ", ".join(sorted(declared)) or "none"
+            raise ValueError(
+                f"--models names {name!r}, which this program does not "
+                f"declare; declared: {known}"
+            )
+        if not isinstance(route, dict):
+            raise ValueError(f"--models route for {name!r} must be an object")
+        route_command = route.get("command")
+        if route_command is not None:
+            if (
+                set(route) != {"command"}
+                or not isinstance(route_command, list)
+                or not route_command
+                or not all(isinstance(part, str) for part in route_command)
+            ):
+                raise ValueError(
+                    f"--models route for {name!r}: command must be a list of "
+                    "text, with no other key"
+                )
+            bindings[name] = CommandModelProvider(route_command)
+            where = f"command {route_command[0]!r}"
+        else:
+            unknown = set(route) - {"model", "url", "protocol"}
+            model_id = route.get("model")
+            if unknown or not isinstance(model_id, str) or not model_id:
+                raise ValueError(
+                    f"--models route for {name!r} needs a model name and may "
+                    "set only url and protocol"
+                )
+            protocol = route.get("protocol", default_protocol)
+            if protocol not in MODEL_PROTOCOLS:
+                raise ValueError(
+                    f"--models route for {name!r} has unknown protocol {protocol!r}"
+                )
+            url = (
+                route.get("url")
+                or os.environ.get("KOSIKA_MODEL_URL")
+                or (
+                    DEFAULT_LOCAL_MODEL_URL.removesuffix("/v1")
+                    if protocol == "ollama"
+                    else DEFAULT_LOCAL_MODEL_URL
+                )
+            )
+            bindings[name] = OpenAICompatibleProvider(
+                url,
+                model_id,
+                api_key=os.environ.get("KOSIKA_MODEL_API_KEY"),
+                protocol=protocol,
+            )
+            where = f"model {model_id!r} at {url}"
+        print(f"{name}: {where}", file=sys.stderr)
+    return bindings
+
+
 def _workflow_model_bindings(
     args: argparse.Namespace, program: Program
 ) -> dict[str, ModelProvider]:
     live = (args.model_binding, args.model, args.model_url)
     command = getattr(args, "model_command", None)
+    routes = getattr(args, "models", None)
+    if routes is not None:
+        if any(live) or command is not None or args.model_fixture is not None:
+            raise ValueError(
+                "Use --models on its own, without --model, --model-url, "
+                "--model-binding, --model-command, or --model-fixture"
+            )
+        return _model_route_bindings(routes, program, args.model_protocol)
     if command is not None:
         if any(live) or args.model_fixture is not None:
             raise ValueError(
@@ -1846,6 +1927,15 @@ def build_parser() -> argparse.ArgumentParser:
         choices=MODEL_PROTOCOLS,
         default="openai",
         help="Wire format of the model endpoint.",
+    )
+    run_parser.add_argument(
+        "--models",
+        type=Path,
+        help=(
+            "JSON file granting a different real model to each declared "
+            'model: {"cheap": {"model": "NAME", "url": "URL"}, '
+            '"careful": {"command": ["program", "arg"]}}.'
+        ),
     )
     run_parser.add_argument(
         "--model-command",

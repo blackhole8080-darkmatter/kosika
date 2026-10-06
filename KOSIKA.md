@@ -390,8 +390,17 @@ think = "classify"  expression "into" expression [ "using" identifier ]
 | `summarize text` | `Text` | `Summary {text: Text}` |
 | `decide question given text` | `Text`, `Text` | `Decision {answer: Bool, confidence: Number, reason: Text}` |
 
-- `using name` selects a declared model. It MAY be omitted only when the
-  program declares exactly one model.
+- `using name` selects a declared model. It MAY be omitted when the program
+  declares exactly one model, or marks exactly one with `default model name`;
+  the step then uses that model. Marking more than one model as default is an
+  error.
+- A step that ends `vote N` MAY list several models, `using a, b, c`. They
+  take turns answering: the first ballot asks `a`, the second `b`, and so on,
+  starting again from `a` when the list is shorter than N. Agreement is then
+  between different models. Listing several models without `vote`, or the
+  same model twice, is an error, and so is a fallback that lists several.
+- A model name such as `cheap` says nothing about which real model answers.
+  Whoever runs the program decides that, one declared model at a time.
 - A thinking step is lowered to an ordinary typed model call before checking,
   against a generated model named `<model>/<verb>` (or
   `<model>/extract/<Record>`). The generated model uses the host binding,

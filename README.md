@@ -466,6 +466,25 @@ the last option:
 kosika run main.kos --input input.json --model-command gemini -m gemini-3.5-flash-lite -p ""
 ```
 
+To give each declared model its own real model, write a small file and pass
+it with `--models`:
+
+```json
+{
+  "cheap":   {"model": "qwen3:1.7b"},
+  "careful": {"model": "qwen2.5:7b", "url": "http://localhost:11434/v1"},
+  "strict":  {"command": ["gemini", "-m", "gemini-3.8-flash", "-p", ""]}
+}
+```
+
+```
+kosika run main.kos --input input.json --models models.json
+```
+
+A route is either a `model` name, with an optional `url` and `protocol`, or a
+`command`. A declared model the file leaves out has no binding, and a step
+that needs it is refused before anything runs.
+
 Kosika writes each request to the program's standard input and reads the reply
 from its output. The program runs without a shell in an empty temporary
 folder, and it answers for every declared model. It cannot be used by an agent
