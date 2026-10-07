@@ -610,6 +610,31 @@ equality. Swarm output must not acquire authority the way model output cannot.
   cannot read the quotes yet; they are in the trace only. Traces with
   evidence are not readable by an older Kosika (they fail closed).
 
+## Swarms that talk: boards (complete; one live run)
+
+- `board NAME of Record`, `post value to NAME as AGENT`, and `read NAME`
+  (`kosika/board.py`). Lowered to two ordinary tools, like memory. A run gets
+  its own board automatically; `run_swarm` keeps one for the whole swarm run,
+  which gives swarm rounds the shared state they lacked.
+- `kosika story` and the app describe posts and reads in words, and the app
+  lists a program's boards.
+- `kosika swarm` gained `--model`, `--models`, `--model-url`,
+  `--model-protocol`, and `--model-timeout`; before this a swarm could only
+  run on saved answers.
+- First live swarm, 2026-10-07, qwen2.5:7b through Ollama,
+  `my_examples/studio_swarm`: a writer and a critic over three rounds, six
+  model calls, 116 seconds, under one ledger-claimed approval. In rounds 2
+  and 3 the writer's prompt contained the critic's remark from the round
+  before, read from the board.
+- 13 tests in `tests/test_board.py`.
+- Not claimed: this is message passing, not agreement. There is no quorum or
+  consensus, and the swarm still stops at a fixed point or the round cap. In
+  that live run the third draft was worse than the second: the model wrote
+  the critique into the line. Passing messages does not make the result
+  better by itself. Agents still run one after another. The author on a post
+  is asserted by the program, not proved. A swarm run cannot be told by
+  `kosika story`, which reads a single run.
+
 ## Acting from a chat, with approval each time (complete for one action)
 
 - `kosika chat --approve`: a turn that reaches an `execute` tool stops with

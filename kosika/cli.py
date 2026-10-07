@@ -1666,6 +1666,17 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="JSON map of tool names to an output record or list of records.",
     )
+    swarm_parser.add_argument(
+        "--model", help="Live model that answers for every declared model."
+    )
+    swarm_parser.add_argument("--model-url", help="OpenAI-compatible model URL.")
+    swarm_parser.add_argument(
+        "--model-protocol", choices=MODEL_PROTOCOLS, default="openai"
+    )
+    swarm_parser.add_argument(
+        "--models", type=Path, help="JSON file giving each declared model its own."
+    )
+    swarm_parser.add_argument("--model-timeout", type=float, default=300.0)
     swarm_parser.add_argument("--format", choices=("json", "text"), default="text")
     swarm_parser.add_argument("--output", type=Path)
 
@@ -2707,6 +2718,8 @@ def main() -> int:
                 if args.mcp_manifest is not None
                 else None
             )
+            args.model_binding = None
+            swarm_models = _workflow_model_bindings(args, program)
             outcome = run_swarm(
                 program,
                 args.swarm,
@@ -2714,9 +2727,7 @@ def main() -> int:
                 ledger=ApprovalLedger(args.approval_ledger),
                 mcp_commands=swarm_mcp_commands,
                 manifest=swarm_manifest,
-                model_bindings=_model_fixture_bindings(args.model_fixture)
-                if args.model_fixture is not None
-                else None,
+                model_bindings=swarm_models or None,
                 tool_bindings=swarm_tool_bindings,
                 inputs=json.loads(args.input.read_text(encoding="utf-8"))
                 if args.input is not None

@@ -44,6 +44,7 @@ from .ast import (
     WorkflowCall,
     program_payload,
 )
+from .board import AGENT as BOARD_AGENT
 from .chat import ChatError, answer_text, message_parameter
 from .memory import AGENT as MEMORY_AGENT
 from .memory import bind_memory_tools
@@ -136,6 +137,17 @@ def _call_view(program: Program, call: Any) -> dict[str, Any]:
                 "kind": "memory",
                 "text": f"{tool.operation if tool else ''} {source[7:]}".strip(),
             }
+        if source.startswith("board:"):
+            author = dict(call.arguments).get("author")
+            signed = getattr(author, "value", None)
+            return {
+                "kind": "board",
+                "text": (
+                    f"{signed} posts to {source[6:]}"
+                    if tool and tool.operation == "post"
+                    else f"read {source[6:]}"
+                ),
+            }
         return {
             "kind": "files" if source.startswith("system:files") else "tool",
             "text": call.tool_name,
@@ -208,7 +220,11 @@ def describe(agent: Agent, *, detail: bool) -> dict[str, Any]:
     except ValueError as exc:
         return {**view, "error": str(exc), **({"source": source} if detail else {})}
     declared = [model for model in program.models if model.provider is None]
-    tools = [tool for tool in program.tools if not tool.source.startswith("memory:")]
+    tools = [
+        tool
+        for tool in program.tools
+        if not tool.source.startswith(("memory:", "board:"))
+    ]
     entry = next((w for w in program.workflows if w.name == "main"), None)
     try:
         message_parameter(program, "main")
@@ -219,6 +235,7 @@ def describe(agent: Agent, *, detail: bool) -> dict[str, Any]:
         models=[model.name for model in declared],
         default_model=next((m.name for m in declared if m.default), None),
         memories=[{"name": m.name, "record": m.record} for m in program.memories],
+        boards=[{"name": b.name, "record": b.record} for b in program.boards],
         tools=[
             {
                 "name": tool.name,
@@ -232,7 +249,7 @@ def describe(agent: Agent, *, detail: bool) -> dict[str, Any]:
         agents=[
             {"name": a.name, "can": list(a.can), "model": a.model}
             for a in program.agents
-            if a.name != MEMORY_AGENT
+            if a.name not in (MEMORY_AGENT, BOARD_AGENT)
         ],
         swarms=[
             {

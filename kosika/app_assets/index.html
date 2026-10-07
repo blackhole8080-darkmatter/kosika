@@ -51,7 +51,7 @@ p.lead { color: var(--soft); margin: 0 0 20px; max-width: 70ch; }
 .step:not(:last-child)::before { content: ""; position: absolute; left: 16px; top: 34px; bottom: 0; width: 2px; background: var(--line); }
 .num { width: 34px; height: 34px; border-radius: 50%; background: var(--code-soft); color: var(--code); display: grid; place-items: center; font-weight: 600; font-size: 13px; z-index: 1; }
 .num.think { background: var(--think-soft); color: var(--think); } .num.memory { background: var(--mem-soft); color: var(--mem); }
-.num.workflow, .num.agent { background: var(--accent-soft); color: var(--accent); } .num.files, .num.tool { background: var(--warn-soft); color: var(--warn); }
+.num.workflow, .num.agent, .num.board { background: var(--accent-soft); color: var(--accent); } .num.files, .num.tool { background: var(--warn-soft); color: var(--warn); }
 .step .body { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; }
 .step .name { font: 600 14px var(--mono); }
 .step .does { color: var(--soft); font-size: 13.5px; margin-top: 2px; }
@@ -154,6 +154,7 @@ function badges(agent) {
   const out = [];
   for (const model of agent.models) out.push(chip("model " + model, "think"));
   for (const memory of agent.memories) out.push(chip("remembers " + memory.name, "mem"));
+  for (const board of agent.boards || []) out.push(chip("board " + board.name, "accent"));
   if (agent.tools.length) out.push(chip(agent.tools.length + " tool" + (agent.tools.length > 1 ? "s" : ""), agent.changes_world ? "warn" : ""));
   if (agent.changes_world) out.push(chip("can change the world", "warn"));
   if (agent.swarms.length) out.push(chip("swarm", "accent"));
@@ -179,12 +180,13 @@ function showHome() {
   );
 }
 
-const KIND_WORDS = {code: "plain code", think: "asks a model", model: "asks a model", memory: "memory", workflow: "runs a workflow", agent: "asks an agent", files: "looks at files", tool: "uses a tool"};
+const KIND_WORDS = {board: "agents talking", code: "plain code", think: "asks a model", model: "asks a model", memory: "memory", workflow: "runs a workflow", agent: "asks an agent", files: "looks at files", tool: "uses a tool"};
 
 function callText(call) {
   if (call.kind === "think") return call.text + " with model " + call.model + (call.evidence ? ", must quote its evidence" : "");
   if (call.kind === "model") return "ask model " + call.text;
   if (call.kind === "memory") return call.text.replace(/^recall /, "look up in memory ").replace(/^remember /, "save to memory ");
+  if (call.kind === "board") return call.text.replace(/^read /, "read board ");
   if (call.kind === "workflow") return "run workflow " + call.text;
   if (call.kind === "agent") return "ask agent " + call.text;
   if (call.kind === "files" || call.kind === "tool") return "tool " + call.text + (call.changes ? " (changes the world)" : " (read-only)");
@@ -361,6 +363,7 @@ async function showAgent(id) {
   const facts = h("div", {class: "facts"},
     fact("Models it asks", agent.models.map(m => m + (m === agent.default_model ? " (default)" : "")), "none: this agent is plain code"),
     fact("What it remembers", agent.memories.map(m => m.name + ", holding " + m.record), "nothing between runs"),
+    (agent.boards || []).length ? fact("Where its agents talk", agent.boards.map(b => "board " + b.name + ", messages of " + b.record), "") : null,
     fact("Tools it may use", agent.tools.map(t => t.name + (t.changes ? " (changes the world)" : " (read-only)")), "none"),
     agent.agents.length ? fact("Agents inside", agent.agents.map(a => a.name + (a.can.length ? " may use " + a.can.join(", ") : "")), "") : null,
     agent.swarms.length ? fact("Swarms", agent.swarms.map(s => s.name + ": " + s.agents.join(", ") + " on " + s.workflow + ", up to " + s.max_rounds + " rounds"), "") : null,

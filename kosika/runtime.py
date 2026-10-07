@@ -49,6 +49,7 @@ from .ast import (
     function_body,
     program_payload,
 )
+from .board import BoardStore, bind_board_tools
 from .builtin_methods import call as call_method
 from .builtin_methods import resolve_for_value as resolve_method_for_value
 from .checker import check
@@ -1019,6 +1020,13 @@ def run(
         _control = ExecutionControl(
             within_budget(limits or ExecutionLimits(), declared), cancel
         )
+        if program.boards:
+            # A board lives for exactly this run. A caller that runs several
+            # workflows as one, such as a swarm, passes its own instead.
+            tool_bindings = {
+                **bind_board_tools(program, BoardStore()),
+                **(tool_bindings or {}),
+            }
     control = _control
     control.scope = (*_scope, workflow_name)
     events: list[dict[str, Any]] = []

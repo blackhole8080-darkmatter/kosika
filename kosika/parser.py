@@ -11,6 +11,7 @@ from .ast import (
     Assignment,
     BinaryExpr,
     Block,
+    BoardDecl,
     BreakExpr,
     ConditionalExpr,
     ContinueExpr,
@@ -568,6 +569,11 @@ class Parser:
             elif keyword == "default" and self.peek().value == "model":
                 self.advance()
                 program.models.append(replace(self.parse_model(), default=True))
+            elif keyword == "board" and self.peek().kind == "IDENT":
+                self.advance()
+                board_name = self.identifier()
+                self.expect("of")
+                program.boards.append(BoardDecl(board_name, self.identifier()))
             elif keyword == "memory" and self.peek().kind == "IDENT":
                 self.advance()
                 memory_name = self.identifier()
@@ -1267,6 +1273,26 @@ class Parser:
                 f"remember_{memory_name}",
                 (("key", self.expression()), ("value", value)),
             )
+        if self.check("post") and self.peek().value != "(":
+            # `post remark to desk as critic`: an ordinary call of the
+            # board's generated tool; see `kosika.board`.
+            self.advance()
+            body = self.expression()
+            self.expect("to")
+            board_name = self.identifier()
+            self.expect("as")
+            return ToolCall(
+                "board",
+                f"post_{board_name}",
+                (("author", LiteralExpr(self.identifier())), ("body", body)),
+            )
+        if (
+            self.check("read")
+            and self.peek().kind == "IDENT"
+            and self.peek().value != "("
+        ):
+            self.advance()
+            return ToolCall("board", f"read_{self.identifier()}", ())
         if self.check("recall") and self.peek().value != "(":
             self.advance()
             memory_name = self.identifier()
@@ -1315,8 +1341,9 @@ def parse(source: str, *, lower_thinking_steps: bool = True) -> Program:
         program = lower_nested_functions(Parser(lex(source)).parse())
         if not lower_thinking_steps:
             return program
+        from .board import lower_board
         from .memory import lower_memory
 
-        return lower_sugar(lower_thinking(lower_memory(program)))
+        return lower_sugar(lower_thinking(lower_board(lower_memory(program))))
     except ValueError as exc:
         raise ParseError(str(exc)) from exc

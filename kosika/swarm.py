@@ -38,6 +38,7 @@ from typing import Any
 
 from .approval_ledger import ApprovalLedgerError
 from .ast import Program, program_payload
+from .board import BoardStore, bind_board_tools
 from .checker import check
 from .execution import ExecutionControl, ExecutionLimits
 from .runtime import ExecutionSession, run
@@ -195,6 +196,14 @@ def run_swarm(
     previous: bytes | None = None
     final: Any = None
     terminated_by = "max_rounds"
+
+    if program.boards:
+        # One board for the whole swarm run, so a later round can read what an
+        # earlier round posted. This is how the members talk to each other.
+        tool_bindings = {
+            **bind_board_tools(program, BoardStore()),
+            **(tool_bindings or {}),
+        }
 
     for index in range(1, swarm.max_rounds + 1):
         try:

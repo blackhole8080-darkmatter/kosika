@@ -54,6 +54,7 @@ RAISE_SOURCES: Mapping[str, str] = {
     "kosika/thinking.py": "ThinkingError",
     "kosika/testing.py": "CheckError",
     "kosika/memory.py": "MemoryError_",
+    "kosika/board.py": "BoardError",
 }
 
 #: Raise sites that deliberately forward an existing message rather than

@@ -375,7 +375,14 @@ class RegistryCoverageTests(unittest.TestCase):
         kinds = {site.kind for site in self.sites}
         self.assertEqual(
             kinds,
-            {"CheckError", "ParseError", "LexError", "ThinkingError", "MemoryError_"},
+            {
+                "CheckError",
+                "ParseError",
+                "LexError",
+                "ThinkingError",
+                "MemoryError_",
+                "BoardError",
+            },
         )
 
     def test_every_raise_site_is_classified(self) -> None:

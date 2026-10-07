@@ -557,6 +557,37 @@ workflow main(ticket: Ticket) -> Reply {
 - A test in the language gets empty memories of its own, kept only for that
   test.
 
+### Boards
+
+The agents of one run leave messages for each other on a declared board.
+
+```kosika
+board desk of Remark
+
+workflow refine(brief: Brief) -> Outcome {
+  before = read desk
+  ...
+  posted = post said to desk as writer
+}
+```
+
+- `board NAME of Record` declares a board whose messages are records of one
+  type.
+- `post value to NAME as AGENT` appends one message and gives
+  `BoardPosted {posts: Number}`. `AGENT` MUST be a declared agent, and the
+  value MUST be the board's record.
+- `read NAME` gives `<Name>Board {posts: <Name>Post[]}`, oldest first, where
+  each `<Name>Post` is `{author: Text, body: Record}`.
+- A board lives for one run and starts empty. In a swarm run it lives for the
+  whole run, so a later round reads what an earlier round posted. It holds at
+  most 1,000 posts.
+- A board needs no grant: it reaches nothing outside the run. It is lowered
+  to two read-only tools, `post_NAME` and `read_NAME`, used through a
+  generated agent named `board`, so every post and read is in the trace and
+  replays.
+- The author of a post is what the step says. It records who the program
+  says spoke; it does not prove which model produced the words.
+
 ### Tests
 
 A program MAY hold tests beside the code they exercise. `kosika test FILE`

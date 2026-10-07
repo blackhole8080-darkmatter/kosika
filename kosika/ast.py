@@ -607,6 +607,14 @@ class MemoryDecl:
 
 
 @dataclass(frozen=True)
+class BoardDecl:
+    """`board NAME of Record`; see `kosika.board`."""
+
+    name: str
+    record: str
+
+
+@dataclass(frozen=True)
 class TestStep:
     """One line of a test: `name = expression` or `expect expression`."""
 
@@ -651,6 +659,8 @@ class Program:
     # `memory NAME of Record`. `kosika.memory.lower_memory` adds the tools
     # and records each one stands for; this list says which memories exist.
     memories: list[MemoryDecl] = field(default_factory=list)
+    # `board NAME of Record`: where the agents of one run leave messages.
+    boards: list[BoardDecl] = field(default_factory=list)
 
 
 #: Fields added to the tree after traces and approvals were first recorded,
@@ -674,6 +684,7 @@ _ABSENT_DEFAULTS: dict[str, tuple[Any, ...]] = {
     "budget": ((), []),
     "capped": (False,),
     "memories": ((), []),
+    "boards": ((), []),
 }
 
 

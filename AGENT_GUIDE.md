@@ -303,6 +303,20 @@ workflow main(ticket: Ticket) -> Out {
 memory with a capital letter plus `Recalled`. Check `known.found` before using
 `known.value.value()`.
 
+## Boards
+
+For agents to talk to each other inside a run or a swarm, declare a board and
+use it from workflow steps. A swarm keeps one board across all its rounds.
+
+```kosika
+board desk of Remark
+
+posted = post said to desk as writer     // `writer` must be a declared agent
+seen   = read desk                       // DeskBoard {posts: DeskPost[]}
+```
+
+Each post is `{author: Text, body: Remark}`.
+
 ## Tests
 
 Put tests in the same file. They run with `kosika test FILE` and call no real

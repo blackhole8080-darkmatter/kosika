@@ -20,6 +20,8 @@ from .ast import (
     expression_function_calls,
     static_function_references,
 )
+from .board import BoardError, lower_board
+from .board import supplied_names as board_names
 from .builtin_methods import did_you_mean
 from .checker import CheckError, check
 from .function_types import base_type, referenced_types
@@ -269,6 +271,7 @@ def load_program(
             - visible
             - set(BUILT_IN_RECORDS)
             - supplied_names(module.memories)
+            - board_names(module.boards)
         )
         if hidden:
             mark_error(resolved)
@@ -298,6 +301,7 @@ def load_program(
             getattr(merged, category).extend(getattr(module, category))
         merged.tests.extend(module.tests)
         merged.memories.extend(module.memories)
+        merged.boards.extend(module.boards)
         merged.module_hashes[module_key] = hashlib.sha256(data).hexdigest()
         active.remove(resolved)
         loaded[resolved] = module
@@ -308,8 +312,8 @@ def load_program(
     # model declared in one module serves steps written in another and the
     # built-in records are added a single time.
     try:
-        merged = lower_sugar(lower_thinking(lower_memory(merged)))
-    except (ThinkingError, MemoryError_) as exc:
+        merged = lower_sugar(lower_thinking(lower_board(lower_memory(merged))))
+    except (ThinkingError, MemoryError_, BoardError) as exc:
         raise CheckError(str(exc)) from exc
     check(merged)
     if merged.tests:

@@ -144,6 +144,25 @@ def _tool_step(call: dict[str, Any], returned: dict[str, Any]) -> dict[str, Any]
             "answer": f"memory {memory} now holds {result.get('entries')} entr"
             + ("y" if result.get("entries") == 1 else "ies"),
         }
+    if source.startswith("board:"):
+        board = source.removeprefix("board:")
+        if call.get("operation") == "post":
+            return {
+                "kind": "board",
+                "did": f"{arguments.get('author')} posted to board {board}",
+                "answer": _show(arguments.get("body")),
+            }
+        posts = result.get("posts") or []
+        last = posts[-1] if posts else None
+        return {
+            "kind": "board",
+            "did": f"read board {board}: {len(posts)} post(s)",
+            "answer": (
+                f"latest, from {last.get('author')}: {_show(last.get('body'), 80)}"
+                if isinstance(last, dict)
+                else "nothing posted yet"
+            ),
+        }
     effect = "changes the world" if call.get("access") == "execute" else "read-only"
     return {
         "kind": "tool",
