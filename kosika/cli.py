@@ -3289,7 +3289,8 @@ def main() -> int:
             # A local model is loaded on its first request, which can take
             # half a minute. Doing that now, and saying so, is kinder than
             # letting the first "hello" seem to hang.
-            from .model import ChatMessage, ModelProviderError, ModelRequest
+            from .model import ChatMessage as WarmMessage
+            from .model import ModelRequest as WarmRequest
 
             print("Getting the model ready...", file=sys.stderr, flush=True)
             warm_started = time.monotonic()
@@ -3300,12 +3301,12 @@ def main() -> int:
                 warmed.add(id(warm_provider))
                 try:
                     warm_provider.complete(
-                        ModelRequest(
-                            messages=(ChatMessage(role="user", content="hi"),),
+                        WarmRequest(
+                            messages=(WarmMessage(role="user", content="hi"),),
                             max_output_tokens=1,
                         )
                     )
-                except (ModelProviderError, OSError) as exc:
+                except (RuntimeError, OSError) as exc:
                     print(f"The model did not answer: {exc}", file=sys.stderr)
             print(
                 f"Ready in {time.monotonic() - warm_started:.0f} s.",
