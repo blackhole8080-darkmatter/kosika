@@ -610,6 +610,28 @@ equality. Swarm output must not acquire authority the way model output cannot.
   cannot read the quotes yet; they are in the trace only. Traces with
   evidence are not readable by an older Kosika (they fail closed).
 
+## The assistant can look at files (complete); changing them is not built
+
+- A `source system "files"` tool whose operation is `read` or `list` may now
+  be `access: observe`: it needs the runner's folder grant and no approval.
+  `write` and every shell tool still must be `execute`.
+- `kosika chat --allow-folder FOLDER` binds those read-only tools. A chat
+  still cannot write a file or start a program.
+- The assistant gained `list`, `read`, and `summarize` for paths inside the
+  granted folder. Tried on `Aryan_Private` with qwen2.5:7b: listing and
+  reading answered in 0.3 seconds; a summary of a 3,500-character file took
+  28 seconds; `../secret.txt` and `C:/Windows/win.ini` were refused.
+- A model that does not answer in time now fails its step as a provider
+  failure instead of escaping as a socket error, which had ended a chat.
+  `--model-timeout` sets the wait (60 seconds for `run`, 300 for `chat`).
+- 6 tests in `tests/test_readonly_files.py`; three more tests in the
+  assistant itself.
+- Not claimed: nothing can be changed from a chat. Approval inside a chat
+  (write, move, delete, run) is the next piece and is not built. Reading
+  sends a file's text to whichever model the runner bound; with a local
+  model it stays on the machine, with a hosted one it would not. Only UTF-8
+  text files up to 1 MiB can be read.
+
 ## A laptop assistant, and what it needed (first version)
 
 - Building an assistant showed two gaps, now closed:

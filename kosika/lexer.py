@@ -35,6 +35,11 @@ _ESCAPE_RE = re.compile(
 )
 
 
+#: The character after a backslash in an escape Kosika decodes. A backslash
+#: before anything else, as in a Windows path, is kept as it was written.
+_KNOWN_ESCAPES = frozenset("\\'\"abfnrtvxuUN01234567\n")
+
+
 def _decode_string(raw: str) -> str:
     """Decode escapes in a string token without corrupting non-ASCII text.
 
@@ -60,9 +65,18 @@ def _decode_string(raw: str) -> str:
             index += 1
             continue
         escape = match.group(0)
-        if escape[-1].isascii():
-            # Escapes are pure ASCII, so unicode_escape cannot mangle them.
-            pieces.append(escape.encode("ascii").decode("unicode_escape"))
+        # `\x`, `\u`, `\U`, and `\N` count only in their full form. On their
+        # own, as in "C:\Users", they are a backslash and a letter.
+        complete = escape[1] not in "xuUN" or len(escape) > 2
+        decoded = None
+        if escape[-1].isascii() and escape[1] in _KNOWN_ESCAPES and complete:
+            try:
+                # Escapes are pure ASCII, so unicode_escape cannot mangle them.
+                decoded = escape.encode("ascii").decode("unicode_escape")
+            except UnicodeDecodeError:  # for example \N{no such name}
+                decoded = None
+        if decoded is not None:
+            pieces.append(decoded)
         else:
             # A backslash before a literal non-ASCII character is not a known
             # escape: keep both characters as written.

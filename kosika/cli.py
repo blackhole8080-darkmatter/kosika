@@ -527,7 +527,7 @@ DEFAULT_LOCAL_MODEL_URL = "http://localhost:11434/v1"
 
 
 def _model_route_bindings(
-    path: Path, program: Program, default_protocol: str
+    path: Path, program: Program, default_protocol: str, timeout: float = 60.0
 ) -> dict[str, ModelProvider]:
     """Read `--models FILE`: one real model for each declared model it names.
 
@@ -593,6 +593,7 @@ def _model_route_bindings(
                 model_id,
                 api_key=os.environ.get("KOSIKA_MODEL_API_KEY"),
                 protocol=protocol,
+                timeout=timeout,
             )
             where = f"model {model_id!r} at {url}"
         print(f"{name}: {where}", file=sys.stderr)
@@ -611,7 +612,12 @@ def _workflow_model_bindings(
                 "Use --models on its own, without --model, --model-url, "
                 "--model-binding, --model-command, or --model-fixture"
             )
-        return _model_route_bindings(routes, program, args.model_protocol)
+        return _model_route_bindings(
+            routes,
+            program,
+            args.model_protocol,
+            getattr(args, "model_timeout", None) or 60.0,
+        )
     if command is not None:
         if any(live) or args.model_fixture is not None:
             raise ValueError(
@@ -674,6 +680,7 @@ def _workflow_model_bindings(
         args.model,
         api_key=os.environ.get("KOSIKA_MODEL_API_KEY"),
         protocol=args.model_protocol,
+        timeout=getattr(args, "model_timeout", None) or 60.0,
     )
     return dict.fromkeys(granted, provider)
 
@@ -1930,6 +1937,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Wire format of the model endpoint.",
     )
     run_parser.add_argument(
+        "--model-timeout",
+        type=float,
+        default=60.0,
+        help="Seconds to wait for one model answer (default 60).",
+    )
+    run_parser.add_argument(
         "--memory",
         type=Path,
         help=(
@@ -2123,6 +2136,20 @@ def build_parser() -> argparse.ArgumentParser:
         "--trace",
         type=Path,
         help="Write each turn's trace here, replacing the last, for `kosika story`.",
+    )
+    chat_parser.add_argument(
+        "--model-timeout",
+        type=float,
+        default=300.0,
+        help="Seconds to wait for one model answer (default 300).",
+    )
+    chat_parser.add_argument(
+        "--allow-folder",
+        type=Path,
+        help=(
+            "Folder the program's read-only file tools may look inside. "
+            "Nothing in a chat can write files or start programs."
+        ),
     )
     story_parser = subparsers.add_parser(
         "story", help="Tell what happened in a run, in plain words, from its trace."
@@ -3093,6 +3120,10 @@ def main() -> int:
             message_parameter(program, args.workflow)
             args.model_binding = None
             chat_models = _workflow_model_bindings(args, program)
+            chat_tools = {
+                **bind_system_tools(program, folder=args.allow_folder),
+                **bind_memory_tools(program, args.memory),
+            }
         except (ChatError, ValueError, OSError) as exc:
             print(f"Chat unavailable: {exc}", file=sys.stderr)
             return 2
@@ -3103,12 +3134,17 @@ def main() -> int:
             except EOFError:
                 return None
 
+        # Answers may hold any character; a console's default encoding
+        # must not turn that into a crash.
+        reconfigure = getattr(sys.stdout, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(errors="replace")
         print('Type a message, or "exit" to stop.', file=sys.stderr)
         chat_loop(
             program,
             args.workflow,
             model_bindings=chat_models,
-            tool_bindings=bind_memory_tools(program, args.memory),
+            tool_bindings=chat_tools,
             read=read_line,
             write=print,
             trace=args.trace,

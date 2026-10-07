@@ -242,7 +242,9 @@ These must be `access: execute` with these exact records:
 | `system "files"`, operation `"list"` | `path: Text` | `names: Text[]` |
 
 Paths are relative to a folder the person running the program grants. A human
-approves every call.
+approves every call. The exception: a files tool whose operation is `"read"`
+or `"list"` may be `access: observe`, which needs the folder grant but no
+approval, because it cannot change anything.
 
 ## Workflows
 

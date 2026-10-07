@@ -223,6 +223,12 @@ class OpenAICompatibleProvider:
             ) from exc
         except urllib.error.URLError as exc:
             raise ModelProviderError(f"Model provider request failed: {exc}") from exc
+        except TimeoutError as exc:
+            # A slow model must fail the step like any provider failure, not
+            # escape as a bare socket error.
+            raise ModelProviderError(
+                f"Model did not answer within {self.timeout:g} seconds"
+            ) from exc
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise ModelProviderError("Model provider returned invalid JSON") from exc
         return self._parse_response(decoded)
@@ -306,6 +312,12 @@ class OpenAICompatibleProvider:
             ) from exc
         except urllib.error.URLError as exc:
             raise ModelProviderError(f"Model provider request failed: {exc}") from exc
+        except TimeoutError as exc:
+            # A slow model must fail the step like any provider failure, not
+            # escape as a bare socket error.
+            raise ModelProviderError(
+                f"Model did not answer within {self.timeout:g} seconds"
+            ) from exc
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise ModelProviderError("Model provider returned invalid JSON") from exc
 

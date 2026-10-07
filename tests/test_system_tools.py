@@ -101,8 +101,8 @@ class DeclarationTests(unittest.TestCase):
 
     def test_a_system_tool_must_require_approval(self) -> None:
         message = check_error(
-            'operation: "read"\n  access: execute',
-            'operation: "read"\n  access: observe',
+            'operation: "write"\n  access: execute',
+            'operation: "write"\n  access: observe',
         )
         self.assertIn("must declare access: execute", message)
         self.assertIn(

@@ -21,7 +21,10 @@ A program asks for system access by declaring a tool with a `system` source:
 Three independent things must all be true before anything happens:
 
 1. The declaration. A system tool must have `access: execute`, so the checker
-   forces every workflow that uses one to state `require approval`.
+   forces every workflow that uses one to state `require approval`. The one
+   exception is a files tool whose operation is `read` or `list`: it may be
+   `access: observe`, because it cannot change anything. It still needs the
+   folder grant, and can see only inside that folder.
 2. The host grant. Nothing here is bound unless the person running the program
    passes a folder (and, for shell tools, allows shell). A declaration alone
    reaches nothing.
@@ -48,6 +51,7 @@ from .ast import Program, ToolDecl
 SYSTEM_PREFIX = "system:"
 SYSTEM_KINDS = ("shell", "files")
 FILE_OPERATIONS = ("read", "write", "list")
+READ_ONLY_OPERATIONS = ("read", "list")
 SHELL_TIMEOUT_SECONDS = 60
 MAX_OUTPUT_CHARACTERS = 64 * 1024
 MAX_FILE_BYTES = 1024 * 1024
@@ -88,7 +92,11 @@ def declaration_problem(program: Program, tool: ToolDecl) -> str | None:
             f"Tool {tool.name!r} has unknown system source {kind!r}; "
             f"use one of: {', '.join(SYSTEM_KINDS)}"
         )
-    if tool.access != "execute":
+    # Looking is not changing. A files tool that only reads or lists may be
+    # `observe`, which needs the folder grant but no approval for each call.
+    # Writing a file and starting a program always need approval.
+    looks_only = kind == "files" and tool.operation in READ_ONLY_OPERATIONS
+    if tool.access != "execute" and not looks_only:
         return (
             f"Tool {tool.name!r} uses system {kind} and must declare "
             "access: execute, so that every call needs approval"
