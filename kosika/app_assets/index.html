@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kosika</title>
+<style>
+:root {
+  --bg: #f6f5f1; --panel: #ffffff; --ink: #1c1b19; --soft: #6b6862; --line: #e4e1d9;
+  --accent: #b4532a; --accent-soft: #f6e6dd; --ok: #2f7d4f; --ok-soft: #e3f2e8;
+  --bad: #b3382c; --bad-soft: #f8e3e0; --warn: #8a6100; --warn-soft: #f7ecd0;
+  --think: #5b4bb5; --think-soft: #ebe8fa; --mem: #1f6f8b; --mem-soft: #dff0f5;
+  --code: #57534a; --code-soft: #eeece6; --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #171614; --panel: #201f1c; --ink: #ecebe6; --soft: #a19d94; --line: #34322d;
+    --accent: #e08a5f; --accent-soft: #3a261c; --ok: #6fc191; --ok-soft: #1c3226;
+    --bad: #ec8377; --bad-soft: #3b1f1c; --warn: #e2b54a; --warn-soft: #3a2f14;
+    --think: #a99cf0; --think-soft: #29254a; --mem: #6cc3de; --mem-soft: #17313a;
+    --code: #b9b4a8; --code-soft: #2b2925;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, "Segoe UI", sans-serif; }
+header.top { display: flex; align-items: center; gap: 16px; padding: 14px 24px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 5; }
+header.top .brand { font-weight: 700; font-size: 18px; letter-spacing: .2px; cursor: pointer; }
+header.top .brand span { color: var(--accent); }
+header.top .where { color: var(--soft); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+main { max-width: 1120px; margin: 0 auto; padding: 24px 16px 80px; }
+h1 { font-size: 26px; margin: 0 0 6px; } h2 { font-size: 17px; margin: 28px 0 10px; }
+p.lead { color: var(--soft); margin: 0 0 20px; max-width: 70ch; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 14px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; cursor: pointer; transition: border-color .12s, transform .12s; display: flex; flex-direction: column; gap: 10px; }
+.card:hover { border-color: var(--accent); transform: translateY(-1px); }
+.card h3 { margin: 0; font-size: 17px; }
+.card .about { color: var(--soft); font-size: 13.5px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; min-height: 3.9em; }
+.card .path { font: 12px var(--mono); color: var(--soft); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-size: 12px; padding: 2px 9px; border-radius: 999px; background: var(--code-soft); color: var(--code); white-space: nowrap; }
+.chip.think { background: var(--think-soft); color: var(--think); } .chip.mem { background: var(--mem-soft); color: var(--mem); }
+.chip.ok { background: var(--ok-soft); color: var(--ok); } .chip.bad { background: var(--bad-soft); color: var(--bad); }
+.chip.warn { background: var(--warn-soft); color: var(--warn); } .chip.accent { background: var(--accent-soft); color: var(--accent); }
+.back { color: var(--soft); cursor: pointer; font-size: 13px; display: inline-block; margin-bottom: 10px; } .back:hover { color: var(--accent); }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 22px 0 18px; flex-wrap: wrap; }
+.tab { padding: 8px 14px; cursor: pointer; border-bottom: 2px solid transparent; color: var(--soft); font-weight: 500; }
+.tab.on { color: var(--ink); border-color: var(--accent); }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+.flow { display: flex; flex-direction: column; gap: 0; }
+.step { display: grid; grid-template-columns: 34px 1fr; gap: 12px; position: relative; padding-bottom: 14px; }
+.step:not(:last-child)::before { content: ""; position: absolute; left: 16px; top: 34px; bottom: 0; width: 2px; background: var(--line); }
+.num { width: 34px; height: 34px; border-radius: 50%; background: var(--code-soft); color: var(--code); display: grid; place-items: center; font-weight: 600; font-size: 13px; z-index: 1; }
+.num.think { background: var(--think-soft); color: var(--think); } .num.memory { background: var(--mem-soft); color: var(--mem); }
+.num.workflow, .num.agent { background: var(--accent-soft); color: var(--accent); } .num.files, .num.tool { background: var(--warn-soft); color: var(--warn); }
+.step .body { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; }
+.step .name { font: 600 14px var(--mono); }
+.step .does { color: var(--soft); font-size: 13.5px; margin-top: 2px; }
+.step .branch { display: flex; gap: 8px; align-items: baseline; font-size: 13.5px; margin-top: 4px; }
+.step .branch .when { font: 12px var(--mono); color: var(--accent); min-width: 88px; }
+.wf-title { font: 600 15px var(--mono); margin: 0 0 4px; } .wf-sub { color: var(--soft); font-size: 13px; margin-bottom: 14px; }
+.wf + .wf { margin-top: 26px; padding-top: 22px; border-top: 1px dashed var(--line); }
+button { font: inherit; background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 8px 16px; cursor: pointer; font-weight: 600; }
+button:disabled { opacity: .5; cursor: default; } button.quiet { background: var(--code-soft); color: var(--ink); }
+textarea, input[type=text] { width: 100%; font: 14px var(--mono); background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; }
+textarea { min-height: 120px; resize: vertical; }
+pre { margin: 0; font: 13px/1.55 var(--mono); white-space: pre-wrap; word-break: break-word; }
+pre.source { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 14px; max-height: 70vh; overflow: auto; }
+.kw { color: var(--accent); font-weight: 600; } .cm { color: var(--soft); font-style: italic; } .st { color: var(--ok); }
+.row { display: flex; gap: 10px; align-items: center; } .row > input { flex: 1; }
+.test { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); align-items: baseline; } .test:last-child { border: 0; }
+.test .why { color: var(--bad); font: 13px var(--mono); margin-top: 2px; }
+.msg { margin: 10px 0; display: flex; } .msg.you { justify-content: flex-end; }
+.bubble { max-width: 78%; padding: 9px 13px; border-radius: 14px; white-space: pre-wrap; background: var(--bg); border: 1px solid var(--line); }
+.msg.you .bubble { background: var(--accent-soft); border-color: transparent; }
+.bubble .meta { display: block; font-size: 11.5px; color: var(--soft); margin-top: 4px; cursor: pointer; }
+.chatlog { min-height: 120px; max-height: 52vh; overflow: auto; margin-bottom: 12px; }
+.story .s { padding: 10px 0; border-bottom: 1px solid var(--line); } .story .s:last-child { border: 0; }
+.story .head { font-weight: 600; } .story .head .t { color: var(--soft); font-weight: 400; font-size: 12.5px; margin-left: 6px; }
+.story .ans { margin-top: 3px; font: 13px var(--mono); color: var(--ink); word-break: break-word; }
+.story .note { font-size: 13px; margin-top: 3px; } .story .note.bad { color: var(--bad); } .story .note.q { color: var(--ok); } .story .note.v { color: var(--think); }
+.runs { display: grid; grid-template-columns: 240px 1fr; gap: 16px; } @media (max-width: 760px) { .runs { grid-template-columns: 1fr; } }
+.runlist div { padding: 7px 10px; border-radius: 8px; cursor: pointer; font: 12.5px var(--mono); } .runlist div:hover, .runlist div.on { background: var(--code-soft); }
+.banner { padding: 10px 14px; border-radius: 10px; margin-bottom: 14px; font-size: 14px; }
+.banner.bad { background: var(--bad-soft); color: var(--bad); } .banner.warn { background: var(--warn-soft); color: var(--warn); } .banner.ok { background: var(--ok-soft); color: var(--ok); }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 16px; }
+.fact { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.fact b { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: .6px; color: var(--soft); margin-bottom: 6px; font-weight: 600; }
+.fact .line { font-size: 13.5px; } .empty { color: var(--soft); font-style: italic; }
+.spin { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: sp .7s linear infinite; vertical-align: -2px; margin-right: 6px; }
+@keyframes sp { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand" id="brand">Kos<span>ika</span></div>
+  <div class="where" id="where"></div>
+  <div class="chips" id="status"></div>
+</header>
+<main id="main"></main>
+<script>
+"use strict";
+const token = new URLSearchParams(location.search).get("token") || "";
+const main = document.getElementById("main");
+let overview = null;
+
+// Every piece of text reaches the page through textContent, never as markup.
+function h(tag, attrs, ...kids) {
+  const el = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs || {})) {
+    if (key === "class") el.className = value;
+    else if (key.startsWith("on")) el.addEventListener(key.slice(2), value);
+    else if (value !== false && value != null) el.setAttribute(key, value);
+  }
+  for (const kid of kids.flat()) {
+    if (kid == null || kid === false) continue;
+    el.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+  }
+  return el;
+}
+const chip = (text, kind) => h("span", {class: "chip " + (kind || "")}, text);
+
+async function api(path, options) {
+  const response = await fetch(path, {
+    ...(options || {}),
+    headers: {"X-Kosika-Token": token, "Content-Type": "application/json"},
+  });
+  const data = await response.json().catch(() => ({error: "The app gave an unreadable answer."}));
+  if (!response.ok) throw new Error(data.error || "Request failed");
+  return data;
+}
+
+function go(id) { location.hash = id ? "#" + encodeURIComponent(id) : ""; }
+window.addEventListener("hashchange", route);
+document.getElementById("brand").addEventListener("click", () => go(""));
+
+async function route() {
+  const id = decodeURIComponent(location.hash.slice(1));
+  main.replaceChildren(h("p", {class: "lead"}, h("span", {class: "spin"}), "Loading"));
+  try {
+    overview = await api("/api/agents");
+    document.getElementById("where").textContent = overview.root;
+    document.getElementById("status").replaceChildren(
+      overview.can_run ? chip("can run with " + overview.model, "ok") : chip("view and test only", "warn"),
+      overview.allow_folder ? chip("may look in " + overview.allow_folder, "mem") : null
+    );
+    if (id) await showAgent(id); else showHome();
+  } catch (error) {
+    main.replaceChildren(h("div", {class: "banner bad"}, String(error.message || error)));
+  }
+}
+
+function badges(agent) {
+  if (agent.error) return [chip("does not check", "bad")];
+  const out = [];
+  for (const model of agent.models) out.push(chip("model " + model, "think"));
+  for (const memory of agent.memories) out.push(chip("remembers " + memory.name, "mem"));
+  if (agent.tools.length) out.push(chip(agent.tools.length + " tool" + (agent.tools.length > 1 ? "s" : ""), agent.changes_world ? "warn" : ""));
+  if (agent.changes_world) out.push(chip("can change the world", "warn"));
+  if (agent.swarms.length) out.push(chip("swarm", "accent"));
+  if (agent.tests) out.push(chip(agent.tests + " test" + (agent.tests > 1 ? "s" : ""), "ok"));
+  out.push(chip(agent.steps + " step" + (agent.steps === 1 ? "" : "s")));
+  if (agent.chat) out.push(chip("chat", "accent"));
+  return out;
+}
+
+function showHome() {
+  const agents = overview.agents;
+  main.replaceChildren(
+    h("h1", null, "Your agents"),
+    h("p", {class: "lead"}, agents.length
+      ? agents.length + " program" + (agents.length > 1 ? "s" : "") + " found. Open one to see how it works, test it, run it, and read what its runs did."
+      : "No Kosika programs with a main workflow were found in this folder."),
+    h("div", {class: "grid"}, agents.map(agent =>
+      h("div", {class: "card", onclick: () => go(agent.id)},
+        h("h3", null, agent.title),
+        h("div", {class: "about"}, agent.error ? agent.error : (agent.about || "No description. Add a // comment at the top of the file.")),
+        h("div", {class: "chips"}, badges(agent)),
+        h("div", {class: "path"}, agent.path))))
+  );
+}
+
+const KIND_WORDS = {code: "plain code", think: "asks a model", model: "asks a model", memory: "memory", workflow: "runs a workflow", agent: "asks an agent", files: "looks at files", tool: "uses a tool"};
+
+function callText(call) {
+  if (call.kind === "think") return call.text + " with model " + call.model + (call.evidence ? ", must quote its evidence" : "");
+  if (call.kind === "model") return "ask model " + call.text;
+  if (call.kind === "memory") return call.text.replace(/^recall /, "look up in memory ").replace(/^remember /, "save to memory ");
+  if (call.kind === "workflow") return "run workflow " + call.text;
+  if (call.kind === "agent") return "ask agent " + call.text;
+  if (call.kind === "files" || call.kind === "tool") return "tool " + call.text + (call.changes ? " (changes the world)" : " (read-only)");
+  return "compute " + call.text + " in code";
+}
+
+function stepView(step, index) {
+  const first = step.options[0];
+  const kind = step.single ? first.kind : "workflow";
+  const body = h("div", {class: "body"}, h("div", {class: "name"}, step.name));
+  if (step.single) body.append(h("div", {class: "does"}, callText(first)));
+  else {
+    body.append(h("div", {class: "does"}, "chooses one:"));
+    for (const option of step.options)
+      body.append(h("div", {class: "branch"},
+        h("span", {class: "when"}, option.when === null ? "otherwise" : "when " + JSON.stringify(option.when)),
+        h("span", null, callText(option))));
+  }
+  const extras = [];
+  if (step.votes) extras.push(chip("vote " + step.votes + (step.voters && step.voters.length ? " across " + step.voters.join(", ") : ""), "think"));
+  if (step.retries) extras.push(chip("retry " + step.retries, "think"));
+  if (step.fallback) extras.push(chip("if it fails: " + callText(step.fallback), "warn"));
+  if (extras.length) body.append(h("div", {class: "chips", style: "margin-top:7px"}, extras));
+  return h("div", {class: "step"}, h("div", {class: "num " + kind, title: KIND_WORDS[kind] || ""}, index + 1), body);
+}
+
+function workflowTab(agent) {
+  return h("div", {class: "panel"}, agent.workflows.map(workflow => {
+    const budget = workflow.budget.map(([kind, amount]) => amount + " " + kind.replace("_", " ")).join(", ");
+    return h("div", {class: "wf"},
+      h("div", {class: "wf-title"}, "workflow " + workflow.name),
+      h("div", {class: "wf-sub"},
+        "takes " + (workflow.parameters.map(p => p.name + ": " + p.type).join(", ") || "nothing") + ", gives " + workflow.output +
+        (budget ? " · budget " + budget : "") + (workflow.approval ? " · needs approval" : "")),
+      h("div", {class: "flow"}, workflow.steps.map(stepView)));
+  }));
+}
+
+function highlight(source) {
+  const pre = h("pre", {class: "source"});
+  const words = /^(record|fn|workflow|model|default|memory|tool|agent|swarm|test|let|var|return|if|else|for|in|while|repeat|times|match|case|classify|extract|summarize|decide|recall|remember|under|into|from|given|using|with|evidence|vote|retry|otherwise|budget|expect|answers|call|execute|ask|use_model|require|approval|import|export|and|or|not|true|false|null|until|to|where)$/;
+  for (const line of source.split("\n")) {
+    const cut = line.indexOf("//");
+    const code = cut >= 0 ? line.slice(0, cut) : line;
+    for (const part of code.split(/("(?:\\.|[^"\\])*")/)) {
+      if (part.startsWith('"')) pre.append(h("span", {class: "st"}, part));
+      else for (const piece of part.split(/(\b[a-z_]+\b)/)) pre.append(words.test(piece) ? h("span", {class: "kw"}, piece) : piece);
+    }
+    if (cut >= 0) pre.append(h("span", {class: "cm"}, line.slice(cut)));
+    pre.append("\n");
+  }
+  return pre;
+}
+
+function storyView(story) {
+  const box = h("div", {class: "story"});
+  story.steps.forEach((step, index) => {
+    const row = h("div", {class: "s"},
+      h("div", {class: "head"}, (index + 1) + ". " + step.name + ": " + step.did, step.seconds ? h("span", {class: "t"}, step.seconds + " s") : null));
+    if (step.fallback) row.append(h("div", {class: "note bad"}, "First attempt failed: " + step.fallback + " The fallback ran instead."));
+    for (const reason of step.rejected || []) row.append(h("div", {class: "note bad"}, "Rejected, then asked again: " + reason));
+    if (step.vote) row.append(h("div", {class: "note v"}, "Vote: " + step.vote));
+    if (step.answer != null) row.append(h("div", {class: "ans"}, "→ " + step.answer));
+    for (const quote of step.evidence || []) row.append(h("div", {class: "note q"}, "Backed by " + quote));
+    if (step.unfinished) row.append(h("div", {class: "note bad"}, "This step did not finish."));
+    box.append(row);
+  });
+  const cost = [];
+  if (story.used && story.used.model_calls != null) cost.push(story.used.model_calls + " model call(s)");
+  if (story.used && story.used.tool_calls) cost.push(story.used.tool_calls + " tool or memory call(s)");
+  if (story.tokens) cost.push(story.tokens + " tokens");
+  if (story.seconds != null) cost.push(Math.round(story.seconds * 10) / 10 + " seconds");
+  return h("div", null,
+    story.finished ? null : h("div", {class: "banner bad"}, "The run stopped before finishing: " + (story.error || "no reason recorded")),
+    h("div", {class: "banner " + (story.replays ? "ok" : "warn")}, story.replays
+      ? "This run replays: what you see is exactly what was recorded."
+      : "Careful: this run does not replay. " + story.replay_problem),
+    box,
+    cost.length ? h("p", {class: "lead", style: "margin-top:12px"}, "Cost: " + cost.join(", ")) : null);
+}
+
+function testsTab(agent) {
+  const out = h("div");
+  const button = h("button", {onclick: async () => {
+    button.disabled = true; out.replaceChildren(h("p", {class: "lead"}, h("span", {class: "spin"}), "Running tests"));
+    try {
+      const data = await api("/api/test?id=" + encodeURIComponent(agent.id), {method: "POST"});
+      const failed = data.results.filter(r => !r.passed).length;
+      out.replaceChildren(
+        h("div", {class: "banner " + (failed ? "bad" : "ok")}, (data.results.length - failed) + " passed, " + failed + " failed"),
+        ...data.results.map(r => h("div", {class: "test"}, chip(r.passed ? "pass" : "fail", r.passed ? "ok" : "bad"),
+          h("div", null, r.name, r.passed ? null : h("div", {class: "why"}, "line " + r.line + ": " + r.message)))));
+    } catch (error) { out.replaceChildren(h("div", {class: "banner bad"}, error.message)); }
+    button.disabled = false;
+  }}, "Run tests");
+  return h("div", {class: "panel"},
+    h("p", {class: "lead"}, agent.test_names.length
+      ? "Tests use saved answers, so they need no model and change nothing."
+      : "This program has no tests yet. Add a test \"name\" { ... } block to the file."),
+    agent.test_names.length ? h("div", null, agent.test_names.map(name => h("div", {class: "test"}, chip("test"), name))) : null,
+    agent.test_names.length ? h("div", {style: "margin:14px 0"}, button) : null, out);
+}
+
+function runsTab(agent) {
+  const view = h("div", null, h("p", {class: "empty"}, "Choose a run to read what it did."));
+  const list = h("div", {class: "runlist"});
+  async function open(trace, row) {
+    for (const item of list.children) item.className = "";
+    if (row) row.className = "on";
+    view.replaceChildren(h("p", {class: "lead"}, h("span", {class: "spin"}), "Reading the run"));
+    try { view.replaceChildren(storyView(await api("/api/story?id=" + encodeURIComponent(agent.id) + "&trace=" + encodeURIComponent(trace)))); }
+    catch (error) { view.replaceChildren(h("div", {class: "banner bad"}, error.message)); }
+  }
+  for (const trace of agent.traces) {
+    const row = h("div", {onclick: () => open(trace.name, row)}, trace.name, h("br"), new Date(trace.modified * 1000).toLocaleString());
+    list.append(row);
+  }
+  if (!agent.traces.length) return h("div", {class: "panel"}, h("p", {class: "empty"}, "No runs recorded yet. Run this agent from the Try it tab, or with kosika run ... --trace."));
+  return h("div", {class: "panel runs"}, list, view);
+}
+
+function tryTab(agent) {
+  if (!overview.can_run)
+    return h("div", {class: "panel"}, h("div", {class: "banner warn"}, "This app was started without a model, so it can show and test agents but not run them. Start it with: kosika app FOLDER --model NAME"));
+  const panel = h("div", {class: "panel"});
+  if (agent.changes_world) panel.append(h("div", {class: "banner warn"}, "This agent has tools that change the world. The app never grants those, so steps that need them will fail here."));
+  if (agent.chat) {
+    const log = h("div", {class: "chatlog"}, h("p", {class: "empty"}, "Say something to " + agent.title + "."));
+    const input = h("input", {type: "text", placeholder: "Type a message and press Enter"});
+    const send = async () => {
+      const text = input.value.trim(); if (!text) return;
+      if (log.querySelector(".empty")) log.replaceChildren();
+      input.value = ""; input.disabled = true;
+      log.append(h("div", {class: "msg you"}, h("div", {class: "bubble"}, text)));
+      const waiting = h("div", {class: "msg"}, h("div", {class: "bubble"}, h("span", {class: "spin"}), "thinking")); log.append(waiting); log.scrollTop = log.scrollHeight;
+      try {
+        const data = await api("/api/run?id=" + encodeURIComponent(agent.id), {method: "POST", body: JSON.stringify({text})});
+        const detail = h("div", {style: "display:none;margin-top:8px"}, storyView(data.story));
+        waiting.replaceChildren(h("div", {class: "bubble"}, data.text,
+          h("span", {class: "meta", onclick: () => { detail.style.display = detail.style.display === "none" ? "block" : "none"; }}, data.seconds + " s · show what it did"), detail));
+      } catch (error) { waiting.replaceChildren(h("div", {class: "bubble"}, h("span", {style: "color:var(--bad)"}, error.message))); }
+      input.disabled = false; input.focus(); log.scrollTop = log.scrollHeight;
+    };
+    input.addEventListener("keydown", event => { if (event.key === "Enter") send(); });
+    panel.append(log, h("div", {class: "row"}, input, h("button", {onclick: send}, "Send")));
+  } else {
+    const input = h("textarea", null); input.value = agent.example_input || "{}";
+    const out = h("div", {style: "margin-top:14px"});
+    const button = h("button", {onclick: async () => {
+      let inputs; try { inputs = JSON.parse(input.value); } catch (e) { out.replaceChildren(h("div", {class: "banner bad"}, "The input is not valid JSON.")); return; }
+      button.disabled = true; out.replaceChildren(h("p", {class: "lead"}, h("span", {class: "spin"}), "Running. A local model can take a while."));
+      try {
+        const data = await api("/api/run?id=" + encodeURIComponent(agent.id), {method: "POST", body: JSON.stringify({inputs})});
+        out.replaceChildren(h("h2", null, "Result"), h("pre", {class: "source"}, JSON.stringify(data.result, null, 2)), h("h2", null, "What it did"), storyView(data.story));
+      } catch (error) { out.replaceChildren(h("div", {class: "banner bad"}, error.message)); }
+      button.disabled = false;
+    }}, "Run");
+    panel.append(h("p", {class: "lead"}, "The input for main, as JSON." + (agent.example_input ? " Filled in from input.json." : "")), input, h("div", {style: "margin-top:10px"}, button), out);
+  }
+  return panel;
+}
+
+async function showAgent(id) {
+  const agent = await api("/api/agent?id=" + encodeURIComponent(id));
+  const head = [h("span", {class: "back", onclick: () => go("")}, "← All agents"), h("h1", null, agent.title),
+    h("p", {class: "lead"}, agent.about || "No description. Add a // comment at the top of the file.")];
+  if (agent.error) {
+    main.replaceChildren(...head, h("div", {class: "banner bad"}, "This program does not check: " + agent.error),
+      agent.source ? highlight(agent.source) : null);
+    return;
+  }
+  const fact = (title, lines, empty) => h("div", {class: "fact"}, h("b", null, title),
+    lines.length ? lines.map(line => h("div", {class: "line"}, line)) : h("div", {class: "line empty"}, empty));
+  const facts = h("div", {class: "facts"},
+    fact("Models it asks", agent.models.map(m => m + (m === agent.default_model ? " (default)" : "")), "none: this agent is plain code"),
+    fact("What it remembers", agent.memories.map(m => m.name + ", holding " + m.record), "nothing between runs"),
+    fact("Tools it may use", agent.tools.map(t => t.name + (t.changes ? " (changes the world)" : " (read-only)")), "none"),
+    agent.agents.length ? fact("Agents inside", agent.agents.map(a => a.name + (a.can.length ? " may use " + a.can.join(", ") : "")), "") : null,
+    agent.swarms.length ? fact("Swarms", agent.swarms.map(s => s.name + ": " + s.agents.join(", ") + " on " + s.workflow + ", up to " + s.max_rounds + " rounds"), "") : null,
+    fact("Fingerprint", [agent.program_hash.slice(0, 16) + "…"], ""));
+  const tabs = {"Workflow": workflowTab, "Try it": tryTab, "Tests": testsTab, "Runs": runsTab, "Code": a => h("div", null, highlight(a.source))};
+  const area = h("div");
+  const bar = h("div", {class: "tabs"});
+  const built = {};
+  function pick(name) {
+    for (const tab of bar.children) tab.className = "tab" + (tab.textContent === name ? " on" : "");
+    built[name] = built[name] || tabs[name](agent);
+    area.replaceChildren(built[name]);
+  }
+  for (const name of Object.keys(tabs)) bar.append(h("div", {class: "tab", onclick: () => pick(name)}, name));
+  main.replaceChildren(...head, h("div", {class: "chips"}, badges(agent)), facts, bar, area);
+  pick("Workflow");
+}
+
+route();
+</script>
+</body>
+</html>

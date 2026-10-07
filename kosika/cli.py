@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import getpass
+import io
 import json
 import os
 import sys
@@ -2111,6 +2112,28 @@ def build_parser() -> argparse.ArgumentParser:
 
     replay_parser = subparsers.add_parser("replay")
     replay_parser.add_argument("trace", type=Path)
+    app_parser = subparsers.add_parser(
+        "app",
+        help="Open the Kosika app: look at agents, test them, run them, read runs.",
+    )
+    app_parser.add_argument("folder", type=Path, nargs="?", default=Path("."))
+    app_parser.add_argument(
+        "--model", help="Model that answers for every declared model in a run."
+    )
+    app_parser.add_argument("--model-url", help="OpenAI-compatible model URL.")
+    app_parser.add_argument(
+        "--model-protocol", choices=MODEL_PROTOCOLS, default="openai"
+    )
+    app_parser.add_argument("--model-timeout", type=float, default=300.0)
+    app_parser.add_argument(
+        "--allow-folder",
+        type=Path,
+        help="Folder that read-only file tools may look inside during a run.",
+    )
+    app_parser.add_argument("--port", type=int, default=0)
+    app_parser.add_argument(
+        "--no-browser", action="store_true", help="Print the address; do not open it."
+    )
     chat_parser = subparsers.add_parser(
         "chat", help="Talk to a Kosika program, one message at a time."
     )
@@ -3110,6 +3133,60 @@ def main() -> int:
             print(json.dumps(report, indent=2, sort_keys=True))
         else:
             print(_render_journal_text(report))
+        return 0
+
+    if args.command == "app":
+        import webbrowser
+
+        from .app import App, address, make_server
+
+        root = args.folder
+        if not root.is_dir():
+            print(f"App unavailable: {root} is not a folder", file=sys.stderr)
+            return 2
+        if args.allow_folder is not None and not args.allow_folder.is_dir():
+            print(
+                f"App unavailable: {args.allow_folder} is not a folder", file=sys.stderr
+            )
+            return 2
+        binder = None
+        if args.model:
+            args.model_binding = args.model_fixture = args.models = None
+
+            def binder(program: Program) -> dict[str, ModelProvider]:
+                if not any(model.provider is None for model in program.models):
+                    return {}
+                with contextlib.redirect_stderr(io.StringIO()):
+                    return _workflow_model_bindings(args, program)
+
+        studio = App(
+            root,
+            bind_models=binder,
+            model_label=args.model or "",
+            allow_folder=args.allow_folder,
+        )
+        try:
+            server = make_server(studio, args.port)
+        except OSError as exc:
+            print(f"App unavailable: {exc}", file=sys.stderr)
+            return 2
+        url = address(studio, server)
+        print(f"Kosika app for {studio.root}")
+        print(f"  {url}")
+        print(
+            "  It can run agents with model " + args.model
+            if args.model
+            else "  View and test only. Add --model NAME to run agents."
+        )
+        print("  Press Ctrl+C to stop.")
+        if not args.no_browser:
+            webbrowser.open(url)
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            server.server_close()
         return 0
 
     if args.command == "chat":

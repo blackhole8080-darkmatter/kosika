@@ -610,6 +610,34 @@ equality. Swarm output must not acquire authority the way model output cannot.
   cannot read the quotes yet; they are in the trace only. Traces with
   evidence are not readable by an older Kosika (they fail closed).
 
+## The app (first version)
+
+- `kosika app FOLDER [--model NAME] [--allow-folder FOLDER]`
+  (`kosika/app.py`, `kosika/app_assets/index.html`): a local page listing
+  every runnable program under a folder as a card, and for each one its
+  facts, its workflows drawn step by step, a chat or JSON run box, its tests,
+  its past runs told by `kosika story`, and its code.
+- No build step and no dependencies: one HTML file with plain JavaScript,
+  served by Python's standard library. Text reaches the page only as text,
+  never as markup.
+- Authority is the starting command's. No model flag means view and test
+  only. Tools whose access is `execute` are never bound. The server binds
+  127.0.0.1, checks the Host and Origin headers, and requires a random token
+  on every request.
+- Tried on `my_examples` (11 programs) with qwen2.5:7b: the assistant's nine
+  tests ran from the page's API, a game move ran in 0.3 seconds with its
+  story, and requests without the token, with a wrong token, another Host,
+  another Origin, an agent outside the folder, and a trace outside the agent
+  were all refused.
+- 15 tests in `tests/test_app.py`.
+- Not claimed: the page was checked through its data and one screenshot of
+  the home screen, not clicked through tab by tab by a person. It cannot
+  edit code. It shows a declared swarm's members but no swarm running,
+  because swarms do not yet exchange messages. One run at a time. Runs it
+  starts write trace files into the agent's `runs` folder and are never
+  cleaned up. It is separate from the older `kosika.workbench` editor, which
+  predates today's language and was not updated.
+
 ## The assistant can look at files (complete); changing them is not built
 
 - A `source system "files"` tool whose operation is `read` or `list` may now

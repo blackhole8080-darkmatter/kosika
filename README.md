@@ -486,6 +486,26 @@ was recalled or remembered, when a fallback took over, and what the run cost
 in model calls, tokens, and seconds. It reads only the trace. It first checks
 that the trace replays and says so, or warns when it does not.
 
+### The app
+
+```
+kosika app FOLDER --model MODEL
+```
+
+opens a page in your browser, served from your own machine, that shows every
+agent under FOLDER. For each one you see what it does, which models it asks,
+what it remembers, which tools it may use and whether any change the world.
+Open an agent to see its workflow step by step (including the steps that
+choose, retry, vote, or fall back), run its tests, talk to it or run it, read
+any of its past runs in plain words, and read its code.
+
+The app can do only what the command that started it allows. Without
+`--model` it shows and tests but cannot run anything. A run uses the agent's
+own `memory` folder, may look inside `--allow-folder`, and saves its trace
+under the agent's `runs` folder. Tools that change the world are never
+granted from the app. It listens on 127.0.0.1 only, and every request needs
+the token printed at start, so other pages in your browser cannot reach it.
+
 ### Talking to a program
 
 ```
