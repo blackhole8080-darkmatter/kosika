@@ -610,6 +610,29 @@ equality. Swarm output must not acquire authority the way model output cannot.
   cannot read the quotes yet; they are in the trace only. Traces with
   evidence are not readable by an older Kosika (they fail closed).
 
+## Why the assistant was slow, and what was done (2026-10-07)
+
+- Reported by the user: "hello" took 40 seconds and more.
+- Measured: Ollama runs qwen2.5:7b entirely on the CPU here. It reads about
+  16 tokens a second and writes about 5.5. Loading the model after it has
+  been idle takes about 16 seconds. And the assistant asked the model twice
+  for an unrecognised message: once to sort it, once to answer.
+- Changed: the assistant no longer asks the model to sort a message; plain
+  words route everything and anything unrecognised is one question.
+  Greetings and thanks are answered in code. Answers are capped at 160
+  tokens. `kosika chat` now loads the model before the first prompt and says
+  so ("Getting the model ready... Ready in 16 s.").
+- After, from a cold start: "hello" 0.3 seconds (was 10.9 warm, 40 or more
+  cold), "thanks" 0.2 (was 14.9), a short question 18 then about 9 seconds
+  once warm.
+- Also fixed: the instruction telling the model it cannot browse made it
+  refuse a plain request for help with physics. It now answers from its own
+  knowledge.
+- Not changed, and the real limit: a question still costs 9 to 25 seconds
+  because of the hardware. A smaller model, a graphics card, or a hosted
+  model would each be faster. Answers do not appear word by word as they
+  are written; that would make the wait feel shorter and is not built.
+
 ## Reading the web, on chosen sites (complete; tried on Wikipedia)
 
 - `source system "web"`, operation `fetch` (`kosika/web.py`): input

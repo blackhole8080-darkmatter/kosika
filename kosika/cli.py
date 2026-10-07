@@ -8,6 +8,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -3284,6 +3285,32 @@ def main() -> int:
         reconfigure = getattr(sys.stdout, "reconfigure", None)
         if reconfigure is not None:
             reconfigure(errors="replace")
+        if chat_models and args.model_fixture is None:
+            # A local model is loaded on its first request, which can take
+            # half a minute. Doing that now, and saying so, is kinder than
+            # letting the first "hello" seem to hang.
+            from .model import ChatMessage, ModelProviderError, ModelRequest
+
+            print("Getting the model ready...", file=sys.stderr, flush=True)
+            warm_started = time.monotonic()
+            warmed: set[int] = set()
+            for warm_provider in chat_models.values():
+                if id(warm_provider) in warmed:
+                    continue
+                warmed.add(id(warm_provider))
+                try:
+                    warm_provider.complete(
+                        ModelRequest(
+                            messages=(ChatMessage(role="user", content="hi"),),
+                            max_output_tokens=1,
+                        )
+                    )
+                except (ModelProviderError, OSError) as exc:
+                    print(f"The model did not answer: {exc}", file=sys.stderr)
+            print(
+                f"Ready in {time.monotonic() - warm_started:.0f} s.",
+                file=sys.stderr,
+            )
         print('Type a message, or "exit" to stop.', file=sys.stderr)
         chat_loop(
             program,
