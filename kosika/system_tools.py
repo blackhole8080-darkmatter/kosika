@@ -50,7 +50,7 @@ from .ast import Program, ToolDecl
 
 SYSTEM_PREFIX = "system:"
 SYSTEM_KINDS = ("shell", "files")
-FILE_OPERATIONS = ("read", "write", "list")
+FILE_OPERATIONS = ("read", "write", "create", "list")
 READ_ONLY_OPERATIONS = ("read", "list")
 SHELL_TIMEOUT_SECONDS = 60
 MAX_OUTPUT_CHARACTERS = 64 * 1024
@@ -65,6 +65,9 @@ SHAPES: dict[str, tuple[dict[str, str], dict[str, str]]] = {
     ),
     "read": ({"path": "Text"}, {"text": "Text"}),
     "write": ({"path": "Text", "text": "Text"}, {"bytes": "Number"}),
+    # Like write, but refuses when anything is already at that path, so it
+    # can add to a folder and never destroy what is there.
+    "create": ({"path": "Text", "text": "Text"}, {"bytes": "Number"}),
     "list": ({"path": "Text"}, {"names": "Text[]"}),
 }
 
@@ -212,6 +215,22 @@ def _files(tool: ToolDecl, folder: Path) -> Callable[[ToolDecl, dict[str, Any]],
         path.write_bytes(data)
         return {"bytes": len(data)}
 
+    def create(_tool: ToolDecl, arguments: dict[str, Any]) -> dict[str, Any]:
+        data = arguments["text"].encode("utf-8")
+        if len(data) > MAX_FILE_BYTES:
+            raise SystemToolError("text to write is larger than 1 MiB")
+        path = _inside(folder, arguments["path"])
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            # "x" fails if the path exists, checked and created in one step.
+            with path.open("xb") as stream:
+                stream.write(data)
+        except FileExistsError as exc:
+            raise SystemToolError(
+                f"{arguments['path']!r} already exists; create never overwrites"
+            ) from exc
+        return {"bytes": len(data)}
+
     def list_names(_tool: ToolDecl, arguments: dict[str, Any]) -> dict[str, Any]:
         path = (
             folder
@@ -227,7 +246,9 @@ def _files(tool: ToolDecl, folder: Path) -> Callable[[ToolDecl, dict[str, Any]],
             raise SystemToolError(f"folder has more than {MAX_LISTED_NAMES} entries")
         return {"names": names}
 
-    return {"read": read, "write": write, "list": list_names}[tool.operation]
+    return {"read": read, "write": write, "create": create, "list": list_names}[
+        tool.operation
+    ]
 
 
 def bind_system_tools(

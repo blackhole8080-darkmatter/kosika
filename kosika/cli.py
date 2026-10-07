@@ -2169,9 +2169,14 @@ def build_parser() -> argparse.ArgumentParser:
     chat_parser.add_argument(
         "--allow-folder",
         type=Path,
+        help="Folder the program's file tools may work inside.",
+    )
+    chat_parser.add_argument(
+        "--approve",
+        action="store_true",
         help=(
-            "Folder the program's read-only file tools may look inside. "
-            "Nothing in a chat can write files or start programs."
+            "Ask you before each action that changes something, and run it "
+            "only on yes. Without this, such actions always fail."
         ),
     )
     story_parser = subparsers.add_parser(
@@ -3211,6 +3216,25 @@ def main() -> int:
             except EOFError:
                 return None
 
+        def ask_first(request: dict[str, Any]) -> bool:
+            print("\nThe assistant wants to do this, and nothing else:")
+            print(f"  action : {request['tool']}")
+            for name, value in request["arguments"].items():
+                shown = value if isinstance(value, str) else json.dumps(value)
+                lines = shown.splitlines() or [""]
+                print(f"  {name:<7}: {lines[0]}")
+                for more in lines[1:12]:
+                    print(f"           {more}")
+                if len(lines) > 12:
+                    print(f"           ... {len(lines) - 12} more line(s)")
+            if args.allow_folder is not None:
+                print(f"  inside : {args.allow_folder.resolve()}")
+            try:
+                answer = input("Allow this one action? [y/N] ")
+            except EOFError:
+                return False
+            return answer.strip().lower() in ("y", "yes")
+
         # Answers may hold any character; a console's default encoding
         # must not turn that into a crash.
         reconfigure = getattr(sys.stdout, "reconfigure", None)
@@ -3225,6 +3249,8 @@ def main() -> int:
             read=read_line,
             write=print,
             trace=args.trace,
+            approve=ask_first if args.approve else None,
+            approved_by=getpass.getuser(),
         )
         return 0
 

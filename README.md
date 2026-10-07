@@ -516,6 +516,11 @@ Each line you type is one ordinary run of the program's `main` workflow,
 which must take one record with a `text: Text` field. The program keeps the
 conversation itself, in a memory, so a chat has no powers a single run lacks.
 `--trace FILE` keeps the last turn's trace for `kosika story`.
+`--allow-folder FOLDER` lets the program's file tools work inside one folder.
+With `--approve`, a turn that reaches a tool which changes something stops,
+shows the exact action and its arguments, and runs it only if you answer yes.
+The answer covers that one action. Without `--approve` such a turn fails and
+nothing is changed.
 `my_examples/assistant` is a laptop assistant built this way.
 
 ### Sharing a program with another device

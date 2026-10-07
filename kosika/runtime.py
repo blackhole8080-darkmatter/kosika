@@ -40,6 +40,7 @@ from .ast import (
     RecordExpr,
     RepeatExpr,
     ReturnExpr,
+    Step,
     ToolCall,
     ToolDecl,
     UnaryExpr,
@@ -1210,29 +1211,39 @@ def _run_workflow(
             }
         )
     # Preflight every capability before invoking any tool in the workflow.
-    pending = list(workflow.steps)
-    visited_workflows = {workflow.name}
+    # A step is `chosen` when it is reached only through a `match` branch,
+    # so this run may never make it. Its models and memories must still be
+    # granted up front, but a missing approval session is not an error until
+    # the step is actually taken; the call itself refuses then.
+    pending: list[tuple[Step, bool]] = [(item, False) for item in workflow.steps]
+    visited_workflows: set[tuple[str, bool]] = {(workflow.name, False)}
     while pending:
-        step = pending.pop(0)
+        step, chosen = pending.pop(0)
         if step.branches:
             # Any branch may run, so every one must be authorized up front.
             pending.extend(
-                dataclass_replace(step, call=branch, branches=(), subject=None)
+                (dataclass_replace(step, call=branch, branches=(), subject=None), True)
                 for _, branch in step.branches
             )
             continue
         if step.fallback is not None:
             # Both calls may run, so both must be authorized up front.
             pending.append(
-                dataclass_replace(
-                    step, call=step.fallback, fallback=None, retries=0, votes=0
+                (
+                    dataclass_replace(
+                        step, call=step.fallback, fallback=None, retries=0, votes=0
+                    ),
+                    chosen,
                 )
             )
         if isinstance(step.call, WorkflowCall):
             name = step.call.workflow_name
-            if name not in visited_workflows:
-                visited_workflows.add(name)
-                pending.extend(workflows[name].steps)
+            if (name, chosen) not in visited_workflows and (
+                name,
+                False,
+            ) not in visited_workflows:
+                visited_workflows.add((name, chosen))
+                pending.extend((item, chosen) for item in workflows[name].steps)
             continue
         if isinstance(step.call, FunctionCall):
             continue
@@ -1244,7 +1255,7 @@ def _run_workflow(
                 )
             for name in asked_agent.can:
                 permitted = tools[name]
-                if permitted.access == "execute" and session is None:
+                if permitted.access == "execute" and session is None and not chosen:
                     raise PermissionError(
                         f"Agent tool {name!r} requires a verified approval record"
                     )
@@ -1279,7 +1290,7 @@ def _run_workflow(
                 f"Memory {tool.source.removeprefix('memory:')!r} was not granted; "
                 "run with --memory FOLDER to say where it is kept"
             )
-        if tool.access == "execute" and session is None:
+        if tool.access == "execute" and session is None and not chosen:
             raise PermissionError(
                 f"Workflow tool {tool.name!r} requires a verified approval record"
             )
@@ -1594,6 +1605,13 @@ def _run_workflow(
                 )
             else:
                 tool = tools[step.call.tool_name]
+                if tool.access == "execute" and session is None:
+                    # The last line of defence: whatever path led here, a
+                    # tool that changes the world never runs unapproved.
+                    raise PermissionError(
+                        f"Workflow tool {tool.name!r} requires a verified "
+                        "approval record"
+                    )
                 agent = agents[step.call.agent_name]
                 input_schema = schema_for_tool_input(program, tool.input)
                 output_schema = schema_for_record(program, tool.output)

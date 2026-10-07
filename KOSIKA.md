@@ -490,6 +490,12 @@ said = match kind.label {
 - A branch MUST NOT be a tool whose access is `execute`, and a branch takes
   no `vote`, `retry`, or `otherwise` of its own. Put such a step in a
   workflow and `call` it from the branch.
+- A workflow that may reach an `execute` tool, directly or through a `call`,
+  MUST state `require approval`. When the tool is reached only through a
+  branch, a run with no approval session is allowed to start, because it may
+  never take that branch; if it does take it, the call is refused there. A
+  tool whose access is `execute` never runs without an approval for that
+  exact call, whatever path led to it.
 
 ### Budgets
 

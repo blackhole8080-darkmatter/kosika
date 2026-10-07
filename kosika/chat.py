@@ -11,18 +11,35 @@ can be traced, replayed, and told with `kosika story`.
 
 The workflow must take exactly one record that has a `text: Text` field, and
 its result is shown by its `text` field when it has one.
+
+A turn that reaches a tool which changes the world stops and asks. The
+approval is for that one call with those exact arguments; the next action is
+asked about separately, and nothing is remembered between turns. Without an
+approver, such a turn fails and nothing is changed.
 """
 
 from __future__ import annotations
 
 import json
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
+from .agent import ApprovalRecord
 from .ast import Program
+from .durable import ApprovalPending, ExecutionSession
 from .model import ModelProvider
 from .runtime import run
+
+#: Asked once for each action that would change the world. It is shown the
+#: exact tool and arguments and answers whether that one action may run.
+Approver = Callable[[dict[str, Any]], bool]
+
+
+class Refused(Exception):
+    """The person said no to an action, so the turn ends with nothing done."""
+
 
 QUIT = ("exit", "quit", "bye")
 
@@ -78,10 +95,56 @@ def chat_loop(
     write: Callable[[str], None],
     trace: Path | None = None,
     show_time: bool = True,
+    approve: Approver | None = None,
+    approved_by: str = "chat",
 ) -> int:
     """Run one workflow per line read. Returns how many turns were answered."""
 
     parameter, _ = message_parameter(program, workflow_name)
+
+    def turn(text: str) -> Any:
+        inputs = {parameter: {"text": text}}
+        if approve is None:
+            return run(
+                program,
+                workflow_name,
+                trace,
+                inputs=inputs,
+                model_bindings=model_bindings,
+                tool_bindings=tool_bindings,
+            )
+        # The journal lets the turn stop at an action, wait for the answer,
+        # and carry on from that step without redoing the ones before it.
+        with tempfile.TemporaryDirectory(prefix="kosika-chat-") as scratch:
+            journal = Path(scratch) / "turn.sqlite"
+            approvals: list[ApprovalRecord] = []
+            while True:
+                session = ExecutionSession(
+                    journal, binding_id="chat", approvals=approvals
+                )
+                try:
+                    return run(
+                        program,
+                        workflow_name,
+                        trace,
+                        inputs=inputs,
+                        model_bindings=model_bindings,
+                        tool_bindings=tool_bindings,
+                        session=session,
+                    )
+                except ApprovalPending as pending:
+                    request = pending.request
+                    if not approve(request):
+                        raise Refused from None
+                    approvals.append(
+                        ApprovalRecord(
+                            plan_hash=request["plan_hash"],
+                            action_hash=request["action_hash"],
+                            approved_by=approved_by,
+                            reason="approved in chat",
+                        )
+                    )
+
     answered = 0
     while True:
         line = read()
@@ -94,14 +157,10 @@ def chat_loop(
             break
         started = time.monotonic()
         try:
-            result = run(
-                program,
-                workflow_name,
-                trace,
-                inputs={parameter: {"text": text}},
-                model_bindings=model_bindings,
-                tool_bindings=tool_bindings,
-            )
+            result = turn(text)
+        except Refused:
+            write("Refused. Nothing was changed.")
+            continue
         except (RuntimeError, ValueError, PermissionError) as exc:
             # One failed turn should not end the conversation.
             write(f"(that did not work: {exc})")

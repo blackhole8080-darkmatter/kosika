@@ -610,6 +610,33 @@ equality. Swarm output must not acquire authority the way model output cannot.
   cannot read the quotes yet; they are in the trace only. Traces with
   evidence are not readable by an older Kosika (they fail closed).
 
+## Acting from a chat, with approval each time (complete for one action)
+
+- `kosika chat --approve`: a turn that reaches an `execute` tool stops with
+  the pending action, the person is shown the tool and its exact arguments,
+  and on yes the turn resumes from that step under a per-turn journal
+  (`chat.chat_loop`, reusing `ExecutionSession` and `ApprovalRecord`). The
+  approval is bound to that call's plan and action hashes. On no, the turn
+  ends with nothing done. Nothing carries over to the next turn.
+- New files operation `create`: writes a new file and fails if anything is
+  already at the path, so it can add but never destroy.
+- A step reached only through a `match` branch no longer needs an approval
+  session for the run to start. In exchange there is now a guard at the call
+  itself: an `execute` tool never runs with no session. Before this, that
+  was enforced only by the up-front check.
+- The assistant gained `write PATH: TEXT` and `save notes to PATH`, using
+  `create` only.
+- Tried in a scratch folder with qwen2.5:7b bound: an approved file was
+  created; a refused one was not; an approved overwrite of an existing file
+  and an approved `../escape.txt` were both rejected by the tool; the
+  existing file was unchanged.
+- 14 tests in `tests/test_chat_approval.py`; two more in the assistant.
+- Not claimed: only creating a text file. No edit, move, delete, or running
+  a program from a chat. The Kosika app cannot approve anything; it never
+  binds `execute` tools. The approval is typed at the terminal, so it is
+  only as trustworthy as whoever is at the keyboard. This was not tried on
+  the real `Aryan_Private` folder, only on a scratch folder.
+
 ## The app (first version)
 
 - `kosika app FOLDER [--model NAME] [--allow-folder FOLDER]`
