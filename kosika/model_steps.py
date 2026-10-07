@@ -131,6 +131,7 @@ def call_model(
             frequency_penalty=frequency_penalty,
             presence_penalty=presence_penalty,
             stop=stop,
+            json_object=True,
         )
     )
     if response.tool_calls or response.finish_reason != "stop":

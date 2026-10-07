@@ -52,6 +52,11 @@ class ModelRequest:
     frequency_penalty: float | None = None
     presence_penalty: float | None = None
     stop: tuple[str, ...] = ()
+    # Set when the reply must be one JSON object, as every model step's is.
+    # A provider that can ask its model for JSON does so; the reply is still
+    # parsed and checked by Kosika either way. Small models often ignore a
+    # written instruction to answer in JSON, and obey this.
+    json_object: bool = False
 
 
 @dataclass(frozen=True)
@@ -201,6 +206,8 @@ class OpenAICompatibleProvider:
             ):
                 raise ModelProviderError("max_output_tokens must be a positive integer")
             payload["max_tokens"] = request.max_output_tokens
+        if request.json_object and not request.tools:
+            payload["response_format"] = {"type": "json_object"}
         if self.think is not None:
             payload["think"] = self.think
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
@@ -286,6 +293,8 @@ class OpenAICompatibleProvider:
                 "The ollama protocol does not support tool calling; use the "
                 "openai protocol for tool-enabled requests"
             )
+        if request.json_object:
+            payload["format"] = "json"
         if self.think is not None:
             payload["think"] = self.think
         raw = self._exchange(payload)
