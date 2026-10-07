@@ -51,7 +51,7 @@ p.lead { color: var(--soft); margin: 0 0 20px; max-width: 70ch; }
 .step:not(:last-child)::before { content: ""; position: absolute; left: 16px; top: 34px; bottom: 0; width: 2px; background: var(--line); }
 .num { width: 34px; height: 34px; border-radius: 50%; background: var(--code-soft); color: var(--code); display: grid; place-items: center; font-weight: 600; font-size: 13px; z-index: 1; }
 .num.think { background: var(--think-soft); color: var(--think); } .num.memory { background: var(--mem-soft); color: var(--mem); }
-.num.workflow, .num.agent, .num.board { background: var(--accent-soft); color: var(--accent); } .num.files, .num.tool { background: var(--warn-soft); color: var(--warn); }
+.num.workflow, .num.agent, .num.board { background: var(--accent-soft); color: var(--accent); } .num.files, .num.tool, .num.web { background: var(--warn-soft); color: var(--warn); }
 .step .body { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; }
 .step .name { font: 600 14px var(--mono); }
 .step .does { color: var(--soft); font-size: 13.5px; margin-top: 2px; }
@@ -141,7 +141,8 @@ async function route() {
     document.getElementById("where").textContent = overview.root;
     document.getElementById("status").replaceChildren(
       overview.can_run ? chip("can run with " + overview.model, "ok") : chip("view and test only", "warn"),
-      overview.allow_folder ? chip("may look in " + overview.allow_folder, "mem") : null
+      overview.allow_folder ? chip("may look in " + overview.allow_folder, "mem") : null,
+      (overview.sites || []).length ? chip("may read " + overview.sites.join(", "), "mem") : null
     );
     if (id) await showAgent(id); else showHome();
   } catch (error) {
@@ -189,6 +190,7 @@ function callText(call) {
   if (call.kind === "board") return call.text.replace(/^read /, "read board ");
   if (call.kind === "workflow") return "run workflow " + call.text;
   if (call.kind === "agent") return "ask agent " + call.text;
+  if (call.kind === "web") return "read a web page with " + call.text + " (allowed sites only)";
   if (call.kind === "files" || call.kind === "tool") return "tool " + call.text + (call.changes ? " (changes the world)" : " (read-only)");
   return "compute " + call.text + " in code";
 }

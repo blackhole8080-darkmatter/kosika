@@ -163,6 +163,13 @@ def _tool_step(call: dict[str, Any], returned: dict[str, Any]) -> dict[str, Any]
                 else "nothing posted yet"
             ),
         }
+    if source == "system:web":
+        return {
+            "kind": "web",
+            "did": f"read the web page {arguments.get('url')}",
+            "answer": f"{result.get('title') or 'untitled'} "
+            f"({len(result.get('text') or '')} characters) from {result.get('url')}",
+        }
     effect = "changes the world" if call.get("access") == "execute" else "read-only"
     return {
         "kind": "tool",

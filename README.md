@@ -517,6 +517,10 @@ which must take one record with a `text: Text` field. The program keeps the
 conversation itself, in a memory, so a chat has no powers a single run lacks.
 `--trace FILE` keeps the last turn's trace for `kosika story`.
 `--allow-folder FOLDER` lets the program's file tools work inside one folder.
+`--allow-site SITE`, which may be repeated, lets its web tool read pages on
+that site and nowhere else. A fetch is one `https` GET that sends no cookies
+and no form, and returns the page's readable text with the address it came
+from.
 With `--approve`, a turn that reaches a tool which changes something stops,
 shows the exact action and its arguments, and runs it only if you answer yes.
 The answer covers that one action. Without `--approve` such a turn fails and

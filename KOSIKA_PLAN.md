@@ -610,6 +610,32 @@ equality. Swarm output must not acquire authority the way model output cannot.
   cannot read the quotes yet; they are in the trace only. Traces with
   evidence are not readable by an older Kosika (they fail closed).
 
+## Reading the web, on chosen sites (complete; tried on Wikipedia)
+
+- `source system "web"`, operation `fetch` (`kosika/web.py`): input
+  `{url}`, output `{url, title, text}`. May be `access: observe`. Bound only
+  when the runner passes `--allow-site SITE` to `run`, `chat`, or `app`.
+- One `https` GET on the standard port to an allowed host or a subdomain of
+  one. No IP addresses, no credentials in the address, no cookies, no body.
+  Redirects are checked against the allowed sites before they are followed.
+  At most 2 MiB, text pages only, 20 seconds, reduced to readable text of at
+  most 20,000 characters with scripts, styles, and menus removed.
+- The assistant gained `news` (Wikipedia's current events page) and
+  `look up TOPIC` (a Wikipedia article), each summarised with its source.
+- Tried 2026-10-07 with qwen2.5:7b and `--allow-site en.wikipedia.org`:
+  both worked and named their page. `http://`, another site, an IP address,
+  a look-alike host, and an address with a user name were refused. Without
+  `--allow-site` the assistant said it could not read the page.
+- 15 tests in `tests/test_web.py`, using a stand-in for the network.
+- Not claimed: the summaries took 115 and 158 seconds on this machine, which
+  is the local model reading 5,000 characters. Only the first 5,000
+  characters of a page are summarised. A summary is the model's reading and
+  was not checked against the page. Fetched text can try to mislead a model;
+  it cannot make one act, because a thinking step only returns its typed
+  answer, but it can produce a wrong summary. A host is checked by name
+  only, not by where it resolves. There is no search: the program must know
+  the address. No robots.txt handling and no caching.
+
 ## Swarms that talk: boards (complete; one live run)
 
 - `board NAME of Record`, `post value to NAME as AGENT`, and `read NAME`

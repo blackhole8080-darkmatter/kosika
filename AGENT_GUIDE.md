@@ -241,6 +241,7 @@ These must be `access: execute` with these exact records:
 | `system "files"`, operation `"write"` | `path: Text`, `text: Text` | `bytes: Number` |
 | `system "files"`, operation `"create"` (never overwrites) | `path: Text`, `text: Text` | `bytes: Number` |
 | `system "files"`, operation `"list"` | `path: Text` | `names: Text[]` |
+| `system "web"`, operation `"fetch"` (may be `observe`) | `url: Text` | `url: Text`, `title: Text`, `text: Text` |
 
 Paths are relative to a folder the person running the program grants. A human
 approves every call. The exception: a files tool whose operation is `"read"`

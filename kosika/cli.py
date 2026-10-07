@@ -1949,6 +1949,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Wire format of the model endpoint.",
     )
     run_parser.add_argument(
+        "--allow-site",
+        action="append",
+        default=[],
+        metavar="SITE",
+        help=(
+            "A site the program's web tool may read, such as en.wikipedia.org. "
+            "May be repeated. Without it, the web cannot be reached."
+        ),
+    )
+    run_parser.add_argument(
         "--model-timeout",
         type=float,
         default=60.0,
@@ -2141,6 +2151,16 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Folder that read-only file tools may look inside during a run.",
     )
+    app_parser.add_argument(
+        "--allow-site",
+        action="append",
+        default=[],
+        metavar="SITE",
+        help=(
+            "A site the program's web tool may read, such as en.wikipedia.org. "
+            "May be repeated. Without it, the web cannot be reached."
+        ),
+    )
     app_parser.add_argument("--port", type=int, default=0)
     app_parser.add_argument(
         "--no-browser", action="store_true", help="Print the address; do not open it."
@@ -2181,6 +2201,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--allow-folder",
         type=Path,
         help="Folder the program's file tools may work inside.",
+    )
+    chat_parser.add_argument(
+        "--allow-site",
+        action="append",
+        default=[],
+        metavar="SITE",
+        help=(
+            "A site the program's web tool may read, such as en.wikipedia.org. "
+            "May be repeated. Without it, the web cannot be reached."
+        ),
     )
     chat_parser.add_argument(
         "--approve",
@@ -3180,6 +3210,7 @@ def main() -> int:
             bind_models=binder,
             model_label=args.model or "",
             allow_folder=args.allow_folder,
+            sites=tuple(args.allow_site),
         )
         try:
             server = make_server(studio, args.port)
@@ -3214,7 +3245,9 @@ def main() -> int:
             args.model_binding = None
             chat_models = _workflow_model_bindings(args, program)
             chat_tools = {
-                **bind_system_tools(program, folder=args.allow_folder),
+                **bind_system_tools(
+                    program, folder=args.allow_folder, sites=args.allow_site
+                ),
                 **bind_memory_tools(program, args.memory),
             }
         except (ChatError, ValueError, OSError) as exc:
@@ -3625,7 +3658,10 @@ def main() -> int:
             )
             component_tool_bindings[component_contract.tool_name] = component_binding
         system_bindings = bind_system_tools(
-            program, folder=args.allow_folder, allow_shell=args.allow_shell
+            program,
+            folder=args.allow_folder,
+            allow_shell=args.allow_shell,
+            sites=getattr(args, "allow_site", ()),
         )
         system_bindings = {
             **system_bindings,

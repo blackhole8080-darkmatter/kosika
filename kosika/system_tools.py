@@ -44,12 +44,13 @@ from __future__ import annotations
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 
 from .ast import Program, ToolDecl
+from .web import WebError, bind_web_tool
 
 SYSTEM_PREFIX = "system:"
-SYSTEM_KINDS = ("shell", "files")
+SYSTEM_KINDS = ("shell", "files", "web")
 FILE_OPERATIONS = ("read", "write", "create", "list")
 READ_ONLY_OPERATIONS = ("read", "list")
 SHELL_TIMEOUT_SECONDS = 60
@@ -69,6 +70,8 @@ SHAPES: dict[str, tuple[dict[str, str], dict[str, str]]] = {
     # can add to a folder and never destroy what is there.
     "create": ({"path": "Text", "text": "Text"}, {"bytes": "Number"}),
     "list": ({"path": "Text"}, {"names": "Text[]"}),
+    # A web tool reads one page from a site the runner allowed; see kosika.web.
+    "fetch": ({"url": "Text"}, {"url": "Text", "title": "Text", "text": "Text"}),
 }
 
 
@@ -98,7 +101,14 @@ def declaration_problem(program: Program, tool: ToolDecl) -> str | None:
     # Looking is not changing. A files tool that only reads or lists may be
     # `observe`, which needs the folder grant but no approval for each call.
     # Writing a file and starting a program always need approval.
-    looks_only = kind == "files" and tool.operation in READ_ONLY_OPERATIONS
+    looks_only = (
+        kind == "files" and tool.operation in READ_ONLY_OPERATIONS
+    ) or kind == "web"
+    if kind == "web" and tool.operation != "fetch":
+        return (
+            f"Tool {tool.name!r} has unknown web operation {tool.operation!r}; "
+            "the only one is fetch"
+        )
     if tool.access != "execute" and not looks_only:
         return (
             f"Tool {tool.name!r} uses system {kind} and must declare "
@@ -252,13 +262,18 @@ def _files(tool: ToolDecl, folder: Path) -> Callable[[ToolDecl, dict[str, Any]],
 
 
 def bind_system_tools(
-    program: Program, *, folder: str | Path | None, allow_shell: bool = False
+    program: Program,
+    *,
+    folder: str | Path | None,
+    allow_shell: bool = False,
+    sites: Sequence[str] = (),
+    web_opener: Any = None,
 ) -> dict[str, Callable[[ToolDecl, dict[str, Any]], Any]]:
     """Bind the program's system tools that the host has granted.
 
     A files tool is bound when a folder is granted. A shell tool is bound only
-    when a folder is granted and shell is allowed. Anything not bound stays
-    unreachable and fails the run before its first step.
+    when a folder is granted and shell is allowed. A web tool is bound when
+    at least one site is allowed. Anything not bound stays unreachable.
     """
 
     system = [tool for tool in program.tools if system_kind(tool) is not None]
@@ -266,21 +281,32 @@ def bind_system_tools(
         problem = declaration_problem(program, tool)
         if problem is not None:
             raise SystemToolError(problem)
+    web: dict[str, Callable[[ToolDecl, dict[str, Any]], Any]] = {}
+    if sites:
+        try:
+            reader = (
+                bind_web_tool(sites)
+                if web_opener is None
+                else bind_web_tool(sites, web_opener)
+            )
+        except WebError as exc:
+            raise SystemToolError(str(exc)) from exc
+        web = {tool.name: reader for tool in system if system_kind(tool) == "web"}
     if folder is None:
         if allow_shell:
             raise SystemToolError(
                 "allowing shell also needs a granted folder to run in"
             )
-        return {}
+        return web
     root = Path(folder).resolve()
     if not root.is_dir():
         raise SystemToolError(
             f"granted folder {str(folder)!r} is not an existing folder"
         )
-    bindings: dict[str, Callable[[ToolDecl, dict[str, Any]], Any]] = {}
+    bindings: dict[str, Callable[[ToolDecl, dict[str, Any]], Any]] = dict(web)
     for tool in system:
         if system_kind(tool) == "files":
             bindings[tool.name] = _files(tool, root)
-        elif allow_shell:
+        elif system_kind(tool) == "shell" and allow_shell:
             bindings[tool.name] = _shell(tool, root)
     return bindings

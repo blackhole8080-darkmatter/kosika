@@ -149,7 +149,11 @@ def _call_view(program: Program, call: Any) -> dict[str, Any]:
                 ),
             }
         return {
-            "kind": "files" if source.startswith("system:files") else "tool",
+            "kind": "files"
+            if source.startswith("system:files")
+            else "web"
+            if source == "system:web"
+            else "tool",
             "text": call.tool_name,
             "changes": bool(tool and tool.access == "execute"),
         }
@@ -307,7 +311,9 @@ class App:
         bind_models: ModelBinder | None = None,
         model_label: str = "",
         allow_folder: Path | None = None,
+        sites: tuple[str, ...] = (),
     ):
+        self.sites = sites
         self.root = root.resolve()
         self.bind_models = bind_models
         self.model_label = model_label
@@ -336,6 +342,7 @@ class App:
             "can_run": self.bind_models is not None,
             "model": self.model_label,
             "allow_folder": str(self.allow_folder) if self.allow_folder else "",
+            "sites": list(self.sites),
             "agents": [describe(a, detail=False) for a in self.agents().values()],
         }
 
@@ -382,7 +389,9 @@ class App:
                 runs / f"{time.strftime('%Y%m%d-%H%M%S')}-{secrets.token_hex(2)}.jsonl"
             )
             tools = {
-                **bind_system_tools(program, folder=self.allow_folder),
+                **bind_system_tools(
+                    program, folder=self.allow_folder, sites=self.sites
+                ),
                 **bind_memory_tools(program, folder / "memory"),
             }
             # Only tools that cannot change the world are ever bound here.
