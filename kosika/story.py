@@ -209,6 +209,11 @@ def _step(events: list[dict[str, Any]]) -> dict[str, Any]:
                 did=f"ran workflow {call.get('workflow')}",
                 answer=_show(returned.get("result")),
             )
+            # What that workflow did, step by step, so nothing a run asked
+            # of a model is hidden behind the workflow that asked it.
+            inner = returned.get("events")
+            if isinstance(inner, list) and inner:
+                told["inside"] = _steps(inner)
         else:
             told.update(
                 kind="agent",
@@ -227,6 +232,24 @@ def _step(events: list[dict[str, Any]]) -> dict[str, Any]:
     return told
 
 
+def _steps(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    groups: list[list[dict[str, Any]]] = []
+    for event in events:
+        if not isinstance(event, dict) or event.get("event") == "run_start":
+            continue
+        if event.get("event") == "step_start":
+            groups.append([event])
+        elif groups and event.get("event") not in ("run_complete", "run_failed"):
+            groups[-1].append(event)
+    return [_step(group) for group in groups]
+
+
+def _tokens(steps: list[dict[str, Any]]) -> int:
+    return sum(
+        step.get("tokens", 0) + _tokens(step.get("inside", [])) for step in steps
+    )
+
+
 def build_story(events: list[dict[str, Any]]) -> dict[str, Any]:
     """The run as data: its steps and totals, ready to print or to inspect."""
 
@@ -238,13 +261,7 @@ def build_story(events: list[dict[str, Any]]) -> dict[str, Any]:
         replays, problem = True, ""
     except ValueError as exc:
         replays, problem = False, str(exc)
-    groups: list[list[dict[str, Any]]] = []
-    for event in events[1:]:
-        if event.get("event") == "step_start":
-            groups.append([event])
-        elif groups and event.get("event") not in ("run_complete", "run_failed"):
-            groups[-1].append(event)
-    steps = [_step(group) for group in groups]
+    steps = _steps(events[1:])
     last = events[-1]
     finished = last.get("event") == "run_complete"
     execution = _record(last.get("execution"))
@@ -265,8 +282,28 @@ def build_story(events: list[dict[str, Any]]) -> dict[str, Any]:
         "seconds": execution.get("elapsed_seconds", _seconds(start, last)),
         "used": used,
         "limits": limits,
-        "tokens": sum(step.get("tokens", 0) for step in steps),
+        "tokens": _tokens(steps),
     }
+
+
+def _tell(steps: list[dict[str, Any]], lines: list[str], indent: str) -> None:
+    for number, step in enumerate(steps, 1):
+        took = f"  [{step['seconds']} s]" if step.get("seconds") else ""
+        lines.append(f"{indent}{number}. {step['name']}: {step['did']}{took}")
+        if "fallback" in step:
+            lines.append(f"{indent}     the first attempt failed: {step['fallback']}")
+            lines.append(f"{indent}     so the fallback ran instead")
+        for reason in step.get("rejected", ()):
+            lines.append(f"{indent}     rejected, then asked again: {reason}")
+        if "vote" in step:
+            lines.append(f"{indent}     vote: {step['vote']}")
+        _tell(step.get("inside", []), lines, indent + "     ")
+        if "answer" in step:
+            lines.append(f"{indent}     -> {step['answer']}")
+        for quote in step.get("evidence", ()):
+            lines.append(f"{indent}     backed by {quote}")
+        if step.get("unfinished"):
+            lines.append(f"{indent}     this step did not finish")
 
 
 def to_text(story: dict[str, Any]) -> str:
@@ -274,22 +311,7 @@ def to_text(story: dict[str, Any]) -> str:
     for name, value in (story.get("inputs") or {}).items():
         lines.append(f"  given {name}: {_show(value)}")
     lines.append("")
-    for number, step in enumerate(story["steps"], 1):
-        took = f"  [{step['seconds']} s]" if step.get("seconds") else ""
-        lines.append(f"{number}. {step['name']}: {step['did']}{took}")
-        if "fallback" in step:
-            lines.append(f"     the first attempt failed: {step['fallback']}")
-            lines.append("     so the fallback ran instead")
-        for reason in step.get("rejected", ()):
-            lines.append(f"     rejected, then asked again: {reason}")
-        if "vote" in step:
-            lines.append(f"     vote: {step['vote']}")
-        if "answer" in step:
-            lines.append(f"     -> {step['answer']}")
-        for quote in step.get("evidence", ()):
-            lines.append(f"     backed by {quote}")
-        if step.get("unfinished"):
-            lines.append("     this step did not finish")
+    _tell(story["steps"], lines, "")
     lines.append("")
     if story["finished"]:
         lines.append(f"Result: {_show(story['result'], 400)}")

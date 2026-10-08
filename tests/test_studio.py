@@ -11,6 +11,7 @@ from unittest import mock
 from kosika import app as studio
 from kosika.modules import load_program
 from kosika.runtime import LiveEvents, run
+from kosika.story import build_story, read_trace, to_text
 
 SOURCE = """
 record In { n: Number }
@@ -87,6 +88,17 @@ class LiveEventTests(unittest.TestCase):
             raise RuntimeError("the display fell over")
 
         self.assertEqual(self.go("b.jsonl", on_event=broken), {"n": 8})
+
+    def test_the_story_tells_what_a_called_workflow_did(self) -> None:
+        self.go("s.jsonl")
+        story = build_story(read_trace(self.folder / "s.jsonl"))
+        first = story["steps"][0]
+        self.assertEqual(first["did"], "ran workflow inner")
+        self.assertEqual([step["name"] for step in first["inside"]], ["twice"])
+        self.assertNotIn("inside", story["steps"][1])
+        told = to_text(story)
+        self.assertIn("1. first: ran workflow inner", told)
+        self.assertIn("     1. twice: computed double in code", told)
 
     def test_live_events_are_still_an_ordinary_list(self) -> None:
         events = LiveEvents(lambda event, depth: None)
