@@ -706,8 +706,8 @@ equality. Swarm output must not acquire authority the way model output cannot.
   existing file was unchanged.
 - 14 tests in `tests/test_chat_approval.py`; two more in the assistant.
 - Not claimed: only creating a text file. No edit, move, delete, or running
-  a program from a chat. The Kosika app cannot approve anything; it never
-  binds `execute` tools. The approval is typed at the terminal, so it is
+  a program from a chat. At the time the Kosika app could not approve
+  anything (Kosika Studio, below, later added that). The approval is typed at the terminal, so it is
   only as trustworthy as whoever is at the keyboard. This was not tried on
   the real `Aryan_Private` folder, only on a scratch folder.
 
@@ -1563,6 +1563,47 @@ gate: without them a parser written in Kosika has nothing to return.
 - Not claimed: no swarm executes, no approval gate is enforced at runtime, and no
   round, consensus, or budget semantics exist. This slice only stops the language
   from implying otherwise.
+
+## Kosika Studio
+
+- `kosika studio FOLDER [--model NAME] [--allow-folder FOLDER]
+  [--allow-site SITE]` replaces the first app's page. `kosika app` serves
+  the same page in a browser tab; `studio` opens it as its own window with
+  Edge or Chrome's `--app=` when one is installed (`app.open_window`).
+- Live runs. `runtime.run(..., on_event=...)` tells a watcher about each
+  event as it is recorded, with the nesting depth of the workflow that
+  produced it (`runtime.LiveEvents`). Watching changes nothing: the same
+  events are written in the same order, and a watcher that raises is
+  ignored. The app turns this into jobs: `POST /api/start`, `GET /api/poll`,
+  `POST /api/decide`, `GET /api/memory`. Only the event kind, names and
+  counts travel to the page while a run is going, never the values.
+- Approval in the window. A tool whose access is `execute` is now bound in
+  the app (shell still never is), and the runtime still refuses it without
+  an approval record. The run pauses, the page shows the one action and its
+  arguments, and Allow once adds a record for exactly that action hash. No
+  answer within ten minutes, or Refuse, ends the run with nothing changed.
+  The older `POST /api/run` waits for the run and refuses any approval.
+- The page: sidebar (Assistant, Agents, Runs, Permissions); per agent the
+  tabs Live, Workflow, Parts, Data, Tests, Runs, Code; in Live a chat or a
+  JSON run box beside Live flow, What it did, Requests, and Memory. Story
+  steps for model calls now carry what was sent, the raw reply, and the
+  model, which is what Requests shows.
+- Tried on `my_examples` with qwen2.5:3b through the built-in browser: a
+  question went through the assistant with the nested `chat` workflow
+  unfolding and the answer arriving (about 20 seconds, one model call, 279
+  tokens); `write hello.txt: ...` paused on the card and, after Allow once,
+  created the file in a scratch folder; every tab and sidebar page was
+  opened with no console errors.
+- 22 tests in `tests/test_app.py` (7 new) and 7 in `tests/test_studio.py`.
+- Not claimed: the answer still arrives all at once, not word by word. A
+  swarm's rounds are not animated; only one agent's run is. One run at a
+  time. The own-window path was unit tested but not seen opening on this
+  machine, since the try-out used the built-in browser. It is a local page
+  in a browser window, not an installed program with an icon. The page
+  cannot edit code or create an agent. Approving is only as trustworthy as
+  whoever is at the screen. Runs started here leave trace files in the
+  agent's `runs` folder and write to its `memory` folder, as the try-out
+  did for the assistant.
 
 ## Standard coding-agent procedure
 

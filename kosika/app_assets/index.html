@@ -3,100 +3,137 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Kosika</title>
+<title>Kosika Studio</title>
 <style>
 :root {
-  --bg: #f6f5f1; --panel: #ffffff; --ink: #1c1b19; --soft: #6b6862; --line: #e4e1d9;
-  --accent: #b4532a; --accent-soft: #f6e6dd; --ok: #2f7d4f; --ok-soft: #e3f2e8;
-  --bad: #b3382c; --bad-soft: #f8e3e0; --warn: #8a6100; --warn-soft: #f7ecd0;
+  --bg: #f6f4ef; --panel: #ffffff; --rail: #efece5; --ink: #1d1b18; --soft: #6c675f; --faint: #9a958b; --line: #e3dfd6;
+  --accent: #b4532a; --accent-soft: #f7e7dd; --ok: #2f7d4f; --ok-soft: #e2f1e7;
+  --bad: #b3382c; --bad-soft: #f8e3e0; --warn: #8a6100; --warn-soft: #f8ecd0;
   --think: #5b4bb5; --think-soft: #ebe8fa; --mem: #1f6f8b; --mem-soft: #dff0f5;
-  --code: #57534a; --code-soft: #eeece6; --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+  --code: #57534a; --code-soft: #eeebe4; --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+  --ease: cubic-bezier(.2, .8, .2, 1);
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #171614; --panel: #201f1c; --ink: #ecebe6; --soft: #a19d94; --line: #34322d;
-    --accent: #e08a5f; --accent-soft: #3a261c; --ok: #6fc191; --ok-soft: #1c3226;
-    --bad: #ec8377; --bad-soft: #3b1f1c; --warn: #e2b54a; --warn-soft: #3a2f14;
+    --bg: #161513; --panel: #1f1e1b; --rail: #1a1917; --ink: #eceae5; --soft: #a39f96; --faint: #76726a; --line: #33312c;
+    --accent: #e08a5f; --accent-soft: #3a261c; --ok: #6fc191; --ok-soft: #1b3125;
+    --bad: #ec8377; --bad-soft: #3b1f1c; --warn: #e2b54a; --warn-soft: #392e13;
     --think: #a99cf0; --think-soft: #29254a; --mem: #6cc3de; --mem-soft: #17313a;
-    --code: #b9b4a8; --code-soft: #2b2925;
+    --code: #b9b4a8; --code-soft: #2a2824;
   }
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, "Segoe UI", sans-serif; }
-header.top { display: flex; align-items: center; gap: 16px; padding: 14px 24px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 5; }
-header.top .brand { font-weight: 700; font-size: 18px; letter-spacing: .2px; cursor: pointer; }
-header.top .brand span { color: var(--accent); }
-header.top .where { color: var(--soft); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-main { max-width: 1120px; margin: 0 auto; padding: 24px 16px 80px; }
-h1 { font-size: 26px; margin: 0 0 6px; } h2 { font-size: 17px; margin: 28px 0 10px; }
-p.lead { color: var(--soft); margin: 0 0 20px; max-width: 70ch; }
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 14px; }
-.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; cursor: pointer; transition: border-color .12s, transform .12s; display: flex; flex-direction: column; gap: 10px; }
-.card:hover { border-color: var(--accent); transform: translateY(-1px); }
-.card h3 { margin: 0; font-size: 17px; }
-.card .about { color: var(--soft); font-size: 13.5px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; min-height: 3.9em; }
-.card .path { font: 12px var(--mono); color: var(--soft); }
-.chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.chip { font-size: 12px; padding: 2px 9px; border-radius: 999px; background: var(--code-soft); color: var(--code); white-space: nowrap; }
-.chip.think { background: var(--think-soft); color: var(--think); } .chip.mem { background: var(--mem-soft); color: var(--mem); }
-.chip.ok { background: var(--ok-soft); color: var(--ok); } .chip.bad { background: var(--bad-soft); color: var(--bad); }
-.chip.warn { background: var(--warn-soft); color: var(--warn); } .chip.accent { background: var(--accent-soft); color: var(--accent); }
-.back { color: var(--soft); cursor: pointer; font-size: 13px; display: inline-block; margin-bottom: 10px; } .back:hover { color: var(--accent); }
-.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 22px 0 18px; flex-wrap: wrap; }
-.tab { padding: 8px 14px; cursor: pointer; border-bottom: 2px solid transparent; color: var(--soft); font-weight: 500; }
-.tab.on { color: var(--ink); border-color: var(--accent); }
-.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
-.flow { display: flex; flex-direction: column; gap: 0; }
-.step { display: grid; grid-template-columns: 34px 1fr; gap: 12px; position: relative; padding-bottom: 14px; }
-.step:not(:last-child)::before { content: ""; position: absolute; left: 16px; top: 34px; bottom: 0; width: 2px; background: var(--line); }
-.num { width: 34px; height: 34px; border-radius: 50%; background: var(--code-soft); color: var(--code); display: grid; place-items: center; font-weight: 600; font-size: 13px; z-index: 1; }
-.num.think { background: var(--think-soft); color: var(--think); } .num.memory { background: var(--mem-soft); color: var(--mem); }
-.num.workflow, .num.agent, .num.board { background: var(--accent-soft); color: var(--accent); } .num.files, .num.tool, .num.web { background: var(--warn-soft); color: var(--warn); }
-.step .body { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; }
-.step .name { font: 600 14px var(--mono); }
-.step .does { color: var(--soft); font-size: 13.5px; margin-top: 2px; }
-.step .branch { display: flex; gap: 8px; align-items: baseline; font-size: 13.5px; margin-top: 4px; }
-.step .branch .when { font: 12px var(--mono); color: var(--accent); min-width: 88px; }
-.wf-title { font: 600 15px var(--mono); margin: 0 0 4px; } .wf-sub { color: var(--soft); font-size: 13px; margin-bottom: 14px; }
-.wf + .wf { margin-top: 26px; padding-top: 22px; border-top: 1px dashed var(--line); }
-button { font: inherit; background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 8px 16px; cursor: pointer; font-weight: 600; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14.5px/1.5 system-ui, "Segoe UI", sans-serif; display: grid; grid-template-columns: 212px minmax(0, 1fr); }
+aside.rail { background: var(--rail); border-right: 1px solid var(--line); padding: 16px 10px; display: flex; flex-direction: column; gap: 3px; height: 100vh; position: sticky; top: 0; }
+.brand { font-weight: 700; font-size: 17px; padding: 2px 10px 14px; display: flex; align-items: center; gap: 9px; }
+.brand .mark { width: 22px; height: 22px; border-radius: 7px; background: var(--accent); display: grid; place-items: center; color: #fff; font-size: 13px; font-weight: 800; }
+.brand small { font-weight: 500; color: var(--soft); font-size: 17px; }
+.nav { padding: 8px 10px; border-radius: 9px; cursor: pointer; color: var(--soft); font-weight: 500; display: flex; gap: 9px; align-items: center; transition: background .15s, color .15s; user-select: none; }
+.nav:hover { background: var(--code-soft); color: var(--ink); } .nav.on { background: var(--accent-soft); color: var(--accent); }
+.nav svg { width: 17px; height: 17px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.rail .foot { margin-top: auto; padding: 10px; font-size: 12.5px; color: var(--soft); display: flex; flex-direction: column; gap: 6px; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); margin-right: 6px; } .dot.off { background: var(--warn); }
+main { padding: 22px 26px 60px; min-width: 0; }
+h1 { font-size: 23px; margin: 0 0 4px; } h2 { font-size: 15px; margin: 22px 0 9px; } p.lead { color: var(--soft); margin: 0 0 16px; max-width: 78ch; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 13px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 13px; padding: 15px; cursor: pointer; transition: border-color .15s, transform .15s var(--ease); display: flex; flex-direction: column; gap: 9px; }
+.card:hover { border-color: var(--accent); transform: translateY(-2px); }
+.card h3 { margin: 0; font-size: 16px; } .card .about { color: var(--soft); font-size: 13px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; min-height: 3.9em; }
+.path { font: 11.5px var(--mono); color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; } .chip { font-size: 11.5px; padding: 2px 9px; border-radius: 999px; background: var(--code-soft); color: var(--code); white-space: nowrap; }
+.chip.think { background: var(--think-soft); color: var(--think); } .chip.mem { background: var(--mem-soft); color: var(--mem); } .chip.ok { background: var(--ok-soft); color: var(--ok); }
+.chip.bad { background: var(--bad-soft); color: var(--bad); } .chip.warn { background: var(--warn-soft); color: var(--warn); } .chip.accent { background: var(--accent-soft); color: var(--accent); }
+.back { color: var(--soft); cursor: pointer; font-size: 13px; display: inline-block; margin-bottom: 8px; } .back:hover { color: var(--accent); }
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin: 16px 0; flex-wrap: wrap; }
+.tab { padding: 7px 13px; cursor: pointer; border-bottom: 2px solid transparent; color: var(--soft); font-weight: 500; transition: color .15s; } .tab:hover { color: var(--ink); } .tab.on { color: var(--ink); border-color: var(--accent); }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 13px; padding: 15px; }
+.split { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 15px; align-items: start; } @media (max-width: 1000px) { .split { grid-template-columns: 1fr; } }
+button { font: inherit; background: var(--accent); color: #fff; border: 0; border-radius: 9px; padding: 8px 15px; cursor: pointer; font-weight: 600; transition: transform .1s, opacity .15s; } button:active { transform: scale(.97); }
 button:disabled { opacity: .5; cursor: default; } button.quiet { background: var(--code-soft); color: var(--ink); }
-textarea, input[type=text] { width: 100%; font: 14px var(--mono); background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; }
-textarea { min-height: 120px; resize: vertical; }
-pre { margin: 0; font: 13px/1.55 var(--mono); white-space: pre-wrap; word-break: break-word; }
-pre.source { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 14px; max-height: 70vh; overflow: auto; }
-.kw { color: var(--accent); font-weight: 600; } .cm { color: var(--soft); font-style: italic; } .st { color: var(--ok); }
-.row { display: flex; gap: 10px; align-items: center; } .row > input { flex: 1; }
-.test { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); align-items: baseline; } .test:last-child { border: 0; }
-.test .why { color: var(--bad); font: 13px var(--mono); margin-top: 2px; }
-.msg { margin: 10px 0; display: flex; } .msg.you { justify-content: flex-end; }
-.bubble { max-width: 78%; padding: 9px 13px; border-radius: 14px; white-space: pre-wrap; background: var(--bg); border: 1px solid var(--line); }
-.msg.you .bubble { background: var(--accent-soft); border-color: transparent; }
-.bubble .meta { display: block; font-size: 11.5px; color: var(--soft); margin-top: 4px; cursor: pointer; }
-.chatlog { min-height: 120px; max-height: 52vh; overflow: auto; margin-bottom: 12px; }
-.story .s { padding: 10px 0; border-bottom: 1px solid var(--line); } .story .s:last-child { border: 0; }
-.story .head { font-weight: 600; } .story .head .t { color: var(--soft); font-weight: 400; font-size: 12.5px; margin-left: 6px; }
-.story .ans { margin-top: 3px; font: 13px var(--mono); color: var(--ink); word-break: break-word; }
-.story .note { font-size: 13px; margin-top: 3px; } .story .note.bad { color: var(--bad); } .story .note.q { color: var(--ok); } .story .note.v { color: var(--think); }
-.runs { display: grid; grid-template-columns: 240px 1fr; gap: 16px; } @media (max-width: 760px) { .runs { grid-template-columns: 1fr; } }
-.runlist div { padding: 7px 10px; border-radius: 8px; cursor: pointer; font: 12.5px var(--mono); } .runlist div:hover, .runlist div.on { background: var(--code-soft); }
-.banner { padding: 10px 14px; border-radius: 10px; margin-bottom: 14px; font-size: 14px; }
-.banner.bad { background: var(--bad-soft); color: var(--bad); } .banner.warn { background: var(--warn-soft); color: var(--warn); } .banner.ok { background: var(--ok-soft); color: var(--ok); }
-.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 16px; }
-.fact { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
-.fact b { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: .6px; color: var(--soft); margin-bottom: 6px; font-weight: 600; }
-.fact .line { font-size: 13.5px; } .empty { color: var(--soft); font-style: italic; }
-.spin { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: sp .7s linear infinite; vertical-align: -2px; margin-right: 6px; }
+textarea, input[type=text] { width: 100%; font: 14px system-ui, sans-serif; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; outline: none; transition: border-color .15s; }
+textarea:focus, input[type=text]:focus { border-color: var(--accent); } textarea { min-height: 110px; resize: vertical; font-family: var(--mono); font-size: 13px; }
+pre { margin: 0; font: 12.5px/1.55 var(--mono); white-space: pre-wrap; word-break: break-word; }
+pre.source { background: var(--bg); border: 1px solid var(--line); border-radius: 11px; padding: 13px; max-height: 70vh; overflow: auto; }
+.kw { color: var(--accent); font-weight: 600; } .cm { color: var(--faint); font-style: italic; } .st { color: var(--ok); }
+.row { display: flex; gap: 9px; align-items: center; } .row > input { flex: 1; }
+.banner { padding: 9px 13px; border-radius: 10px; margin-bottom: 12px; font-size: 13.5px; } .banner.bad { background: var(--bad-soft); color: var(--bad); } .banner.warn { background: var(--warn-soft); color: var(--warn); } .banner.ok { background: var(--ok-soft); color: var(--ok); }
+.empty { color: var(--faint); font-style: italic; }
+.spin { display: inline-block; width: 13px; height: 13px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: sp .7s linear infinite; vertical-align: -2px; margin-right: 6px; }
 @keyframes sp { to { transform: rotate(360deg); } }
+
+/* chat */
+.chatlog { min-height: 260px; max-height: 58vh; overflow: auto; margin-bottom: 11px; display: flex; flex-direction: column; gap: 9px; padding-right: 4px; }
+.msg { display: flex; animation: rise .28s var(--ease); } .msg.you { justify-content: flex-end; }
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.bubble { max-width: 84%; padding: 9px 13px; border-radius: 15px; white-space: pre-wrap; background: var(--bg); border: 1px solid var(--line); word-break: break-word; }
+.msg.you .bubble { background: var(--accent-soft); border-color: transparent; }
+.bubble .meta { display: block; font-size: 11.5px; color: var(--faint); margin-top: 4px; }
+.typing span { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--faint); margin-right: 4px; animation: bob 1s infinite; } .typing span:nth-child(2) { animation-delay: .15s; } .typing span:nth-child(3) { animation-delay: .3s; }
+@keyframes bob { 0%, 60%, 100% { transform: none; opacity: .5; } 30% { transform: translateY(-4px); opacity: 1; } }
+.ask { border: 1px solid var(--warn); background: var(--warn-soft); border-radius: 13px; padding: 12px 14px; animation: rise .28s var(--ease); max-width: 92%; }
+.ask b { color: var(--warn); } .ask pre { color: var(--ink); margin: 7px 0 10px; background: var(--panel); border-radius: 8px; padding: 8px 10px; max-height: 180px; overflow: auto; }
+.quick { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 9px; } .quick span { border: 1px solid var(--line); border-radius: 999px; padding: 3px 11px; font-size: 12.5px; color: var(--soft); cursor: pointer; transition: border-color .15s, color .15s; } .quick span:hover { border-color: var(--accent); color: var(--accent); }
+
+/* the flow: still and live */
+.wf + .wf { margin-top: 22px; padding-top: 18px; border-top: 1px dashed var(--line); }
+.wf-title { font: 600 13.5px var(--mono); margin: 0 0 3px; } .wf-sub { color: var(--soft); font-size: 12.5px; margin-bottom: 12px; }
+.step { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 11px; position: relative; padding-bottom: 12px; }
+.step::before { content: ""; position: absolute; left: 14px; top: 30px; bottom: 0; width: 2px; background: var(--line); }
+.step::after { content: ""; position: absolute; left: 14px; top: 30px; height: 0; width: 2px; background: var(--ok); transition: height .45s var(--ease); }
+.step.done::after { height: calc(100% - 30px); }
+.step:last-child::before, .step:last-child::after { display: none; }
+.num { width: 30px; height: 30px; border-radius: 50%; background: var(--code-soft); color: var(--code); display: grid; place-items: center; font-weight: 600; font-size: 12px; z-index: 1; transition: background .3s, color .3s, transform .3s var(--ease); }
+.num.think, .num.model { background: var(--think-soft); color: var(--think); } .num.memory { background: var(--mem-soft); color: var(--mem); }
+.num.workflow, .num.agent, .num.board { background: var(--accent-soft); color: var(--accent); } .num.files, .num.tool, .num.web { background: var(--warn-soft); color: var(--warn); }
+.step .body { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 11px; transition: border-color .3s, background .3s; min-width: 0; }
+.step .name { font: 600 13px var(--mono); } .step .does { color: var(--soft); font-size: 12.5px; margin-top: 1px; }
+.step .branch { display: flex; gap: 8px; align-items: baseline; font-size: 12.5px; margin-top: 3px; transition: opacity .3s; } .step .branch .when { font: 11.5px var(--mono); color: var(--accent); min-width: 84px; }
+.step .now { font-size: 12px; margin-top: 4px; color: var(--accent); } .step .now:empty { display: none; }
+.live { max-height: 64vh; overflow: auto; padding: 6px 6px 0 2px; }
+.live .step { opacity: .5; transition: opacity .35s; } .live .step.running, .live .step.done, .live .step.failed, .live .step.waiting { opacity: 1; }
+.live .step.running > .num { background: var(--accent); color: #fff; transform: scale(1.12); animation: pulse 1.3s infinite; }
+.live .step.running > .body { border-color: var(--accent); background: var(--accent-soft); }
+.live .step.done > .num { background: var(--ok); color: #fff; } .live .step.done > .body { border-color: var(--ok); } .live .step.done .now { color: var(--soft); }
+.live .step.failed > .num { background: var(--bad); color: #fff; } .live .step.failed > .body { border-color: var(--bad); }
+.live .step.waiting > .num { background: var(--warn); color: #fff; animation: pulse 1.3s infinite; } .live .step.waiting > .body { border-color: var(--warn); background: var(--warn-soft); }
+.live .branch.skipped { opacity: .32; } .live .branch.taken .when { font-weight: 700; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent); } 70% { box-shadow: 0 0 0 10px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+.sub { margin-top: 9px; padding: 9px 0 0 6px; border-top: 1px dashed var(--line); animation: unfold .4s var(--ease); }
+@keyframes unfold { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+.sub .wf-title { font-size: 12px; color: var(--soft); margin-bottom: 8px; }
+.tally { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--soft); padding: 9px 2px 0; border-top: 1px solid var(--line); margin-top: 8px; } .tally b { color: var(--ink); font-weight: 600; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+/* story, requests, data, memory */
+.story .s { padding: 9px 0; border-bottom: 1px solid var(--line); } .story .s:last-child { border: 0; }
+.head { font-weight: 600; font-size: 13.5px; } .head .t { color: var(--faint); font-weight: 400; font-size: 12px; margin-left: 6px; }
+.story .ans { margin-top: 3px; font: 12.5px var(--mono); word-break: break-word; } .note { font-size: 12.5px; margin-top: 3px; } .note.bad { color: var(--bad); } .note.q { color: var(--ok); } .note.v { color: var(--think); }
+.req { border: 1px solid var(--line); border-radius: 11px; padding: 11px 12px; margin-bottom: 10px; background: var(--bg); } .req .lab { font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--faint); margin: 8px 0 3px; font-weight: 600; }
+.rec { background: var(--bg); border: 1px solid var(--line); border-radius: 11px; padding: 10px 12px; transition: border-color .25s, box-shadow .25s; } .rec.hit { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.rec h4 { margin: 0 0 6px; font: 600 13.5px var(--mono); } .rec .f { display: flex; justify-content: space-between; gap: 10px; font: 12.5px var(--mono); padding: 2px 0; } .rec .f .ty { color: var(--think); } .rec .f .ty.link { cursor: pointer; text-decoration: underline dotted; }
+.memgraph { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 0 18px; align-items: start; margin-bottom: 20px; }
+.memroot { background: var(--mem-soft); color: var(--mem); border-radius: 11px; padding: 10px 12px; font-weight: 600; } .memroot small { display: block; font-weight: 400; opacity: .85; }
+.ment { position: relative; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 11px; margin-bottom: 8px; animation: rise .3s var(--ease); }
+.ment::before { content: ""; position: absolute; left: -18px; top: 18px; width: 18px; height: 2px; background: var(--mem); opacity: .5; } .ment .k { font: 600 12.5px var(--mono); color: var(--mem); }
+.runs { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 15px; } @media (max-width: 820px) { .runs { grid-template-columns: 1fr; } }
+.runlist { max-height: 70vh; overflow: auto; } .runlist div { padding: 7px 10px; border-radius: 8px; cursor: pointer; font: 12px var(--mono); transition: background .15s; } .runlist div:hover, .runlist div.on { background: var(--code-soft); } .runlist small { color: var(--faint); display: block; }
+.test { display: flex; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--line); align-items: baseline; } .test:last-child { border: 0; } .test .why { color: var(--bad); font: 12.5px var(--mono); margin-top: 2px; }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 11px; margin-top: 12px; } .fact { background: var(--panel); border: 1px solid var(--line); border-radius: 11px; padding: 11px 13px; }
+.fact b { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--faint); margin-bottom: 5px; font-weight: 600; } .fact .line { font-size: 13px; word-break: break-word; }
 </style>
 </head>
 <body>
-<header class="top">
-  <div class="brand" id="brand">Kos<span>ika</span></div>
-  <div class="where" id="where"></div>
-  <div class="chips" id="status"></div>
-</header>
+<aside class="rail">
+  <div class="brand"><span class="mark">K</span><span>Kosika <small>Studio</small></span></div>
+  <div id="nav"></div>
+  <div class="foot" id="foot"></div>
+</aside>
 <main id="main"></main>
+<template id="icon-assistant"><svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg></template>
+<template id="icon-agents"><svg viewBox="0 0 24 24"><path d="M9 7h6a4 4 0 0 1 4 4v5a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3v-5a4 4 0 0 1 4-4z"/><path d="M12 3v4"/><path d="M9.5 13h.01"/><path d="M14.5 13h.01"/></svg></template>
+<template id="icon-runs"><svg viewBox="0 0 24 24"><path d="M12 8v4l3 2"/><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/></svg></template>
+<template id="icon-permissions"><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.2 8-8 9-4.800-1-8-4.500-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/></svg></template>
 <script>
 "use strict";
 const token = new URLSearchParams(location.search).get("token") || "";
@@ -107,44 +144,58 @@ let overview = null;
 function h(tag, attrs, ...kids) {
   const el = document.createElement(tag);
   for (const [key, value] of Object.entries(attrs || {})) {
+    if (value === false || value == null) continue;
     if (key === "class") el.className = value;
     else if (key.startsWith("on")) el.addEventListener(key.slice(2), value);
-    else if (value !== false && value != null) el.setAttribute(key, value);
+    else el.setAttribute(key, value);
   }
-  for (const kid of kids.flat()) {
+  for (const kid of kids.flat(3)) {
     if (kid == null || kid === false) continue;
     el.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
   }
   return el;
 }
 const chip = (text, kind) => h("span", {class: "chip " + (kind || "")}, text);
+const sleep = ms => new Promise(done => setTimeout(done, ms));
+// replaceChildren and append would print a missing piece as the word "null".
+const fill = (el, ...kids) => { el.replaceChildren(...kids.flat().filter(kid => kid != null && kid !== false)); return el; };
+const icon = name => document.getElementById("icon-" + name).content.cloneNode(true);
 
 async function api(path, options) {
-  const response = await fetch(path, {
-    ...(options || {}),
-    headers: {"X-Kosika-Token": token, "Content-Type": "application/json"},
-  });
+  const response = await fetch(path, {...(options || {}), headers: {"X-Kosika-Token": token, "Content-Type": "application/json"}});
   const data = await response.json().catch(() => ({error: "The app gave an unreadable answer."}));
   if (!response.ok) throw new Error(data.error || "Request failed");
   return data;
 }
 
-function go(id) { location.hash = id ? "#" + encodeURIComponent(id) : ""; }
+function go(view, id) { location.hash = "#" + view + (id ? "/" + encodeURIComponent(id) : ""); }
 window.addEventListener("hashchange", route);
-document.getElementById("brand").addEventListener("click", () => go(""));
 
+function drawRail(active) {
+  const items = [["assistant", "Assistant"], ["agents", "Agents"], ["runs", "Runs"], ["permissions", "Permissions"]];
+  document.getElementById("nav").replaceChildren(...items.map(([key, label]) =>
+    h("div", {class: "nav" + (key === active ? " on" : ""), onclick: () => go(key)}, icon(key), label)));
+  document.getElementById("foot").replaceChildren(
+    h("div", null, h("span", {class: "dot" + (overview.can_run ? "" : " off")}), overview.can_run ? overview.model : "no model: view and test only"),
+    h("div", {class: "path", title: overview.root}, overview.root.split(/[\\/]/).slice(-2).join("/")));
+}
+
+let routing = 0;
 async function route() {
-  const id = decodeURIComponent(location.hash.slice(1));
-  main.replaceChildren(h("p", {class: "lead"}, h("span", {class: "spin"}), "Loading"));
+  const mine = ++routing;
+  const [view, rawId] = location.hash.slice(1).split("/");
+  const id = rawId ? decodeURIComponent(rawId) : "";
   try {
     overview = await api("/api/agents");
-    document.getElementById("where").textContent = overview.root;
-    document.getElementById("status").replaceChildren(
-      overview.can_run ? chip("can run with " + overview.model, "ok") : chip("view and test only", "warn"),
-      overview.allow_folder ? chip("may look in " + overview.allow_folder, "mem") : null,
-      (overview.sites || []).length ? chip("may read " + overview.sites.join(", "), "mem") : null
-    );
-    if (id) await showAgent(id); else showHome();
+    if (mine !== routing) return;
+    const active = view || "assistant";
+    drawRail(active === "agent" ? "agents" : active);
+    if (active === "agents") showAgents();
+    else if (active === "agent") await showAgent(id, false);
+    else if (active === "runs") await showRuns();
+    else if (active === "permissions") showPermissions();
+    else if (overview.assistant) await showAgent(overview.assistant, true);
+    else showAgents();
   } catch (error) {
     main.replaceChildren(h("div", {class: "banner bad"}, String(error.message || error)));
   }
@@ -157,32 +208,43 @@ function badges(agent) {
   for (const memory of agent.memories) out.push(chip("remembers " + memory.name, "mem"));
   for (const board of agent.boards || []) out.push(chip("board " + board.name, "accent"));
   if (agent.tools.length) out.push(chip(agent.tools.length + " tool" + (agent.tools.length > 1 ? "s" : ""), agent.changes_world ? "warn" : ""));
-  if (agent.changes_world) out.push(chip("can change the world", "warn"));
+  if (agent.changes_world) out.push(chip("asks before changing things", "warn"));
   if (agent.swarms.length) out.push(chip("swarm", "accent"));
   if (agent.tests) out.push(chip(agent.tests + " test" + (agent.tests > 1 ? "s" : ""), "ok"));
-  out.push(chip(agent.steps + " step" + (agent.steps === 1 ? "" : "s")));
   if (agent.chat) out.push(chip("chat", "accent"));
   return out;
 }
 
-function showHome() {
+function showAgents() {
   const agents = overview.agents;
   main.replaceChildren(
-    h("h1", null, "Your agents"),
-    h("p", {class: "lead"}, agents.length
-      ? agents.length + " program" + (agents.length > 1 ? "s" : "") + " found. Open one to see how it works, test it, run it, and read what its runs did."
-      : "No Kosika programs with a main workflow were found in this folder."),
-    h("div", {class: "grid"}, agents.map(agent =>
-      h("div", {class: "card", onclick: () => go(agent.id)},
-        h("h3", null, agent.title),
-        h("div", {class: "about"}, agent.error ? agent.error : (agent.about || "No description. Add a // comment at the top of the file.")),
-        h("div", {class: "chips"}, badges(agent)),
-        h("div", {class: "path"}, agent.path))))
-  );
+    h("h1", null, "Agents"),
+    h("p", {class: "lead"}, agents.length ? agents.length + " programs in this folder. Open one to watch it work, test it, and see what it is made of." : "No Kosika programs with a main workflow were found in this folder."),
+    h("div", {class: "grid"}, agents.map(agent => h("div", {class: "card", onclick: () => go("agent", agent.id)},
+      h("h3", null, agent.title),
+      h("div", {class: "about"}, agent.error ? agent.error : (agent.about || "No description. Add a // comment at the top of the file.")),
+      h("div", {class: "chips"}, badges(agent)), h("div", {class: "path"}, agent.path)))));
 }
 
-const KIND_WORDS = {board: "agents talking", code: "plain code", think: "asks a model", model: "asks a model", memory: "memory", workflow: "runs a workflow", agent: "asks an agent", files: "looks at files", tool: "uses a tool"};
+const fact = (title, lines, empty) => h("div", {class: "fact"}, h("b", null, title), lines.length ? lines.map(line => h("div", {class: "line"}, line)) : h("div", {class: "line empty"}, empty));
 
+function showPermissions() {
+  main.replaceChildren(
+    h("h1", null, "Permissions"),
+    h("p", {class: "lead"}, "What this Studio was allowed to do when it was started. Agents cannot give themselves more: a program only names what it wants, and these are the grants."),
+    h("div", {class: "facts"},
+      fact("Model", [overview.can_run ? overview.model + " answers for every agent" : "None. Agents can be viewed and tested, not run."]),
+      fact("Folder agents may look in", [overview.allow_folder || "None. File tools find nothing."]),
+      fact("Websites agents may read", overview.sites, "None. The web cannot be reached."),
+      fact("Changing things", ["Only after you press Allow once, for that one action.", "The card shows exactly what will be done before you answer.", "No answer in ten minutes counts as a refusal."]),
+      fact("Never allowed here", ["Running programs or shell commands", "Files outside the granted folder", "Websites that are not on the list"]),
+      fact("Where programs come from", [overview.root])),
+    h("h2", null, "How to change these"),
+    h("p", {class: "lead"}, "Stop Studio and start it again with different options: --model NAME, --allow-folder FOLDER, --allow-site SITE."));
+}
+
+// ---------------------------------------------------------------- the flow
+const KIND_WORDS = {board: "agents talking", code: "plain code", think: "asks a model", model: "asks a model", memory: "memory", workflow: "runs a workflow", agent: "asks an agent", files: "looks at files", web: "reads the web", tool: "uses a tool"};
 function callText(call) {
   if (call.kind === "think") return call.text + " with model " + call.model + (call.evidence ? ", must quote its evidence" : "");
   if (call.kind === "model") return "ask model " + call.text;
@@ -190,49 +252,202 @@ function callText(call) {
   if (call.kind === "board") return call.text.replace(/^read /, "read board ");
   if (call.kind === "workflow") return "run workflow " + call.text;
   if (call.kind === "agent") return "ask agent " + call.text;
-  if (call.kind === "web") return "read a web page with " + call.text + " (allowed sites only)";
-  if (call.kind === "files" || call.kind === "tool") return "tool " + call.text + (call.changes ? " (changes the world)" : " (read-only)");
+  if (call.kind === "web") return "read a web page (allowed sites only)";
+  if (call.kind === "files" || call.kind === "tool") return "tool " + call.text + (call.changes ? " (asks you first)" : " (read-only)");
   return "compute " + call.text + " in code";
 }
 
-function stepView(step, index) {
-  const first = step.options[0];
-  const kind = step.single ? first.kind : "workflow";
-  const body = h("div", {class: "body"}, h("div", {class: "name"}, step.name));
-  if (step.single) body.append(h("div", {class: "does"}, callText(first)));
-  else {
-    body.append(h("div", {class: "does"}, "chooses one:"));
-    for (const option of step.options)
-      body.append(h("div", {class: "branch"},
-        h("span", {class: "when"}, option.when === null ? "otherwise" : "when " + JSON.stringify(option.when)),
-        h("span", null, callText(option))));
-  }
-  const extras = [];
-  if (step.votes) extras.push(chip("vote " + step.votes + (step.voters && step.voters.length ? " across " + step.voters.join(", ") : ""), "think"));
-  if (step.retries) extras.push(chip("retry " + step.retries, "think"));
-  if (step.fallback) extras.push(chip("if it fails: " + callText(step.fallback), "warn"));
-  if (extras.length) body.append(h("div", {class: "chips", style: "margin-top:7px"}, extras));
-  return h("div", {class: "step"}, h("div", {class: "num " + kind, title: KIND_WORDS[kind] || ""}, index + 1), body);
+// Draws one workflow. Gives back its element and a map from step name to node.
+function drawWorkflow(workflow) {
+  const nodes = {};
+  const flow = h("div", {class: "flow"}, workflow.steps.map((step, index) => {
+    const first = step.options[0];
+    const kind = step.single ? first.kind : "workflow";
+    const now = h("div", {class: "now"});
+    const body = h("div", {class: "body"}, h("div", {class: "name"}, step.name));
+    const branches = [];
+    if (step.single) body.append(h("div", {class: "does"}, callText(first)));
+    else {
+      body.append(h("div", {class: "does"}, "chooses one:"));
+      for (const option of step.options) {
+        const row = h("div", {class: "branch"}, h("span", {class: "when"}, option.when === null ? "otherwise" : "when " + JSON.stringify(option.when)), h("span", null, callText(option)));
+        branches.push({option, row}); body.append(row);
+      }
+    }
+    const extras = [];
+    if (step.votes) extras.push(chip("vote " + step.votes + (step.voters && step.voters.length ? " across " + step.voters.join(", ") : ""), "think"));
+    if (step.retries) extras.push(chip("retry " + step.retries, "think"));
+    if (step.fallback) extras.push(chip("if it fails: " + callText(step.fallback), "warn"));
+    if (extras.length) body.append(h("div", {class: "chips", style: "margin-top:6px"}, extras));
+    body.append(now);
+    const el = h("div", {class: "step"}, h("div", {class: "num " + kind, title: KIND_WORDS[kind] || ""}, index + 1), body);
+    nodes[step.name] = {el, body, now, branches, started: 0};
+    return el;
+  }));
+  return {flow, nodes};
 }
 
 function workflowTab(agent) {
   return h("div", {class: "panel"}, agent.workflows.map(workflow => {
     const budget = workflow.budget.map(([kind, amount]) => amount + " " + kind.replace("_", " ")).join(", ");
-    return h("div", {class: "wf"},
-      h("div", {class: "wf-title"}, "workflow " + workflow.name),
-      h("div", {class: "wf-sub"},
-        "takes " + (workflow.parameters.map(p => p.name + ": " + p.type).join(", ") || "nothing") + ", gives " + workflow.output +
-        (budget ? " · budget " + budget : "") + (workflow.approval ? " · needs approval" : "")),
-      h("div", {class: "flow"}, workflow.steps.map(stepView)));
+    return h("div", {class: "wf"}, h("div", {class: "wf-title"}, "workflow " + workflow.name),
+      h("div", {class: "wf-sub"}, "takes " + (workflow.parameters.map(p => p.name + ": " + p.type).join(", ") || "nothing") + ", gives " + workflow.output + (budget ? " · budget " + budget : "") + (workflow.approval ? " · may ask for approval" : "")),
+      drawWorkflow(workflow).flow);
   }));
+}
+
+// The live view: the same flow, driven by the events of a run as they arrive.
+function liveView(agent) {
+  const byName = Object.fromEntries(agent.workflows.map(w => [w.name, w]));
+  const root = h("div", {class: "live"});
+  const tally = h("div", {class: "tally"});
+  const box = h("div", null, root, tally);
+  let frames = [], counts = null, began = 0;
+  function showTally(finished) {
+    const seconds = Math.round((performance.now() - began) / 100) / 10;
+    fill(tally, h("span", null, h("b", null, counts.steps), " steps"), h("span", null, h("b", null, counts.models), " model calls"),
+      h("span", null, h("b", null, counts.tools), " tool or memory calls"), counts.tokens ? h("span", null, h("b", null, counts.tokens), " tokens") : null,
+      began ? h("span", null, h("b", null, seconds), " s" + (finished ? "" : " so far")) : null);
+  }
+  function reset(starting) {
+    const top = drawWorkflow(byName.main || agent.workflows[0]);
+    root.replaceChildren(top.flow);
+    frames = [{nodes: top.nodes, current: null}];
+    counts = {models: 0, tools: 0, steps: 0, tokens: 0}; began = starting ? performance.now() : 0; showTally(false);
+  }
+  function say(depth, text) { const frame = frames[depth]; if (frame && frame.current) frame.current.now.textContent = text; }
+  function apply(event) {
+    const depth = event.depth || 0, frame = frames[depth];
+    if (!frame) return;
+    if (event.event === "step_start") {
+      const node = frame.nodes[event.step]; if (!node) return;
+      // A run that carried on after an approval does not repeat the steps it
+      // had already finished, so everything before this step is done.
+      for (const earlier of Object.values(frame.nodes)) { if (earlier === node) break; if (!earlier.el.classList.contains("failed")) earlier.el.classList.add("done"); }
+      frame.current = node; node.started = performance.now();
+      node.el.classList.remove("done", "failed", "waiting"); node.el.classList.add("running");
+      node.now.textContent = event.recovered ? "the first attempt failed, running the fallback" : "";
+      node.el.scrollIntoView({block: "nearest", behavior: "smooth"}); counts.steps += 1;
+    } else if (event.event === "model_call") { counts.models += 1; say(depth, "asking the model…"); }
+    else if (event.event === "model_return") {
+      if (event.tokens) counts.tokens += event.tokens;
+      const bits = ["the model answered"]; if (event.rejected) bits.push(event.rejected + " answer(s) rejected first");
+      if (event.votes && event.votes.asked) bits.push(event.votes.agreed + " of " + event.votes.asked + " agreed"); say(depth, bits.join(", "));
+    } else if (event.event === "tool_call") {
+      counts.tools += 1; const source = String(event.source || "");
+      say(depth, source.startsWith("memory:") ? (event.operation === "recall" ? "looking in memory " : "saving to memory ") + source.slice(7)
+        : source.startsWith("board:") ? (event.operation === "post" ? "posting to board " : "reading board ") + source.slice(6)
+        : source === "system:web" ? "reading a web page…" : "using " + (event.tool || "a tool") + "…");
+    } else if (event.event === "function_call") say(depth, "computing " + event.function + " in code");
+    else if (event.event === "workflow_call") {
+      const called = byName[event.workflow], node = frame.current; frames.length = depth + 1;
+      if (!called || !node) return;
+      for (const branch of node.branches) branch.row.classList.add(branch.option.kind === "workflow" && branch.option.text === event.workflow ? "taken" : "skipped");
+      const drawn = drawWorkflow(called); const old = node.body.querySelector(".sub"); if (old) old.remove();
+      node.body.append(h("div", {class: "sub"}, h("div", {class: "wf-title"}, "inside workflow " + event.workflow), drawn.flow));
+      node.now.textContent = ""; frames.push({nodes: drawn.nodes, current: null});
+    } else if (event.event === "step_complete") {
+      const node = frame.nodes[event.step]; if (!node) return;
+      node.el.classList.remove("running", "waiting"); node.el.classList.add("done");
+      const took = Math.round((performance.now() - node.started) / 100) / 10;
+      if (took >= 0.3) node.now.textContent = (node.now.textContent ? node.now.textContent + " · " : "") + took + " s";
+      frames.length = depth + 1;
+    } else if (event.event === "run_failed" || event.event === "run_cancelled") { if (frame.current) { frame.current.el.classList.remove("running"); frame.current.el.classList.add("failed"); } }
+    else if (event.event === "run_paused" && frame.current) { frame.current.el.classList.remove("running"); frame.current.el.classList.add("waiting"); frame.current.now.textContent = "waiting for you to allow or refuse"; }
+    showTally(false);
+  }
+  reset(false);
+  return {el: box, reset, apply, finish: () => showTally(true)};
+}
+
+// ------------------------------------------------- running, with the live view
+async function follow(agent, body, live, onAsk) {
+  const started = await api("/api/start?id=" + encodeURIComponent(agent.id), {method: "POST", body: JSON.stringify(body)});
+  const run = encodeURIComponent(started.run);
+  live.reset(true); let since = 0, asked = false;
+  for (;;) {
+    const view = await api("/api/poll?run=" + run + "&since=" + since);
+    since = view.next;
+    // Events are shown a beat apart, so quick steps can still be seen.
+    for (const event of view.events) { live.apply(event); await sleep(view.events.length > 12 ? 45 : 110); }
+    if (view.state === "waiting" && !asked) {
+      asked = true;
+      onAsk(view.request || {}, async allow => { await api("/api/decide?run=" + run, {method: "POST", body: JSON.stringify({allow})}); await sleep(400); asked = false; });
+    }
+    if (view.state === "done" || view.state === "failed" || view.state === "refused") { live.finish(); return view; }
+    await sleep(view.events.length ? 60 : 320);
+  }
+}
+
+function storyView(story) {
+  const box = h("div", {class: "story"});
+  story.steps.forEach((step, index) => {
+    const row = h("div", {class: "s"}, h("div", {class: "head"}, (index + 1) + ". " + step.name + ": " + step.did, step.seconds ? h("span", {class: "t"}, step.seconds + " s") : null));
+    if (step.fallback) row.append(h("div", {class: "note bad"}, "First attempt failed: " + step.fallback + " The fallback ran instead."));
+    for (const reason of step.rejected || []) row.append(h("div", {class: "note bad"}, "Rejected, then asked again: " + reason));
+    if (step.vote) row.append(h("div", {class: "note v"}, "Vote: " + step.vote));
+    if (step.answer != null) row.append(h("div", {class: "ans"}, "→ " + step.answer));
+    for (const quote of step.evidence || []) row.append(h("div", {class: "note q"}, "Backed by " + quote));
+    if (step.unfinished) row.append(h("div", {class: "note bad"}, "This step did not finish."));
+    box.append(row);
+  });
+  const cost = [];
+  if (story.used && story.used.model_calls != null) cost.push(story.used.model_calls + " model call(s)" + (story.limits && story.limits.max_model_calls ? " of " + story.limits.max_model_calls + " allowed" : ""));
+  if (story.used && story.used.tool_calls) cost.push(story.used.tool_calls + " tool or memory call(s)");
+  if (story.tokens) cost.push(story.tokens + " tokens");
+  if (story.seconds != null) cost.push(Math.round(story.seconds * 10) / 10 + " seconds");
+  return h("div", null,
+    story.finished ? null : h("div", {class: "banner bad"}, "The run stopped before finishing: " + (story.error || "no reason recorded")),
+    h("div", {class: "banner " + (story.replays ? "ok" : "warn")}, story.replays ? "This run replays: what you see is exactly what was recorded." : "Careful: this run does not replay. " + (story.replay_problem || "")),
+    box, cost.length ? h("p", {class: "lead", style: "margin-top:10px"}, "Cost: " + cost.join(", ")) : null);
+}
+
+function requestsView(story) {
+  const asked = story.steps.filter(step => step.kind === "model");
+  if (!asked.length) return h("p", {class: "empty"}, "No model was asked in this run. Everything was done by code, memory, or tools.");
+  return h("div", null, asked.map(step => h("div", {class: "req"},
+    h("div", {class: "head"}, step.name + ": " + step.did),
+    h("div", {class: "chips", style: "margin-top:5px"}, step.model ? chip(step.model, "think") : null, step.seconds ? chip(step.seconds + " s") : null, step.tokens ? chip(step.tokens + " tokens") : null),
+    h("div", {class: "lab"}, "What was sent"), h("pre", null, step.asked || ""),
+    h("div", {class: "lab"}, "What came back, exactly"), h("pre", null, step.raw || ""),
+    (step.rejected || []).length ? h("div", {class: "note bad", style: "margin-top:6px"}, step.rejected.length + " earlier answer(s) were rejected and asked again.") : null)));
+}
+
+async function memoryView(agent, target) {
+  target.replaceChildren(h("p", {class: "lead"}, h("span", {class: "spin"}), "Reading memory"));
+  try {
+    const data = await api("/api/memory?id=" + encodeURIComponent(agent.id));
+    if (!data.memories.length) { target.replaceChildren(h("p", {class: "empty"}, "This agent keeps nothing between runs. Declare a memory with: memory NAME of Record")); return; }
+    target.replaceChildren(...data.memories.map(memory => {
+      const keys = Object.keys(memory.entries);
+      return h("div", {class: "memgraph"},
+        h("div", {class: "memroot"}, memory.name, h("small", null, "holds " + memory.record), h("small", null, keys.length + (keys.length === 1 ? " entry" : " entries"))),
+        h("div", null, keys.length ? keys.map(key => h("div", {class: "ment"}, h("div", {class: "k"}, key), h("pre", null, JSON.stringify(memory.entries[key], null, 1)))) : h("p", {class: "empty", style: "margin:8px 0"}, "Nothing remembered yet.")));
+    }));
+  } catch (error) { target.replaceChildren(h("div", {class: "banner bad"}, error.message)); }
+}
+
+function dataTab(agent) {
+  const cards = {};
+  const names = new Set(agent.record_shapes.map(record => record.name));
+  const jump = name => { const card = cards[name]; if (!card) return; card.scrollIntoView({block: "center", behavior: "smooth"}); card.classList.add("hit"); setTimeout(() => card.classList.remove("hit"), 1400); };
+  return h("div", {class: "panel"},
+    h("p", {class: "lead"}, "Every kind of record this agent uses. A type that is another record is underlined: click it to jump to that record."),
+    h("div", {class: "grid", style: "grid-template-columns:repeat(auto-fill,minmax(230px,1fr))"}, agent.record_shapes.map(record => {
+      const card = h("div", {class: "rec"}, h("h4", null, record.name), record.fields.length ? record.fields.map(field => {
+        const base = field.type.replace(/(\[\]|\{\}|\?)+$/, "");
+        const linked = names.has(base) && base !== record.name;
+        return h("div", {class: "f"}, h("span", null, field.name), h("span", {class: "ty" + (linked ? " link" : ""), onclick: linked ? () => jump(base) : null}, field.type));
+      }) : h("div", {class: "empty"}, "no fields"));
+      cards[record.name] = card; return card;
+    })));
 }
 
 function highlight(source) {
   const pre = h("pre", {class: "source"});
-  const words = /^(record|fn|workflow|model|default|memory|tool|agent|swarm|test|let|var|return|if|else|for|in|while|repeat|times|match|case|classify|extract|summarize|decide|recall|remember|under|into|from|given|using|with|evidence|vote|retry|otherwise|budget|expect|answers|call|execute|ask|use_model|require|approval|import|export|and|or|not|true|false|null|until|to|where)$/;
+  const words = /^(record|fn|workflow|model|default|memory|board|tool|agent|swarm|test|let|var|return|if|else|for|in|while|repeat|times|match|case|classify|extract|summarize|decide|recall|remember|post|read|under|into|from|given|using|with|evidence|vote|retry|otherwise|budget|expect|answers|call|execute|ask|use_model|require|approval|import|export|and|or|not|true|false|null|until|to|as|where)$/;
   for (const line of source.split("\n")) {
-    const cut = line.indexOf("//");
-    const code = cut >= 0 ? line.slice(0, cut) : line;
+    const cut = line.indexOf("//"); const code = cut >= 0 ? line.slice(0, cut) : line;
     for (const part of code.split(/("(?:\\.|[^"\\])*")/)) {
       if (part.startsWith('"')) pre.append(h("span", {class: "st"}, part));
       else for (const piece of part.split(/(\b[a-z_]+\b)/)) pre.append(words.test(piece) ? h("span", {class: "kw"}, piece) : piece);
@@ -243,33 +458,6 @@ function highlight(source) {
   return pre;
 }
 
-function storyView(story) {
-  const box = h("div", {class: "story"});
-  story.steps.forEach((step, index) => {
-    const row = h("div", {class: "s"},
-      h("div", {class: "head"}, (index + 1) + ". " + step.name + ": " + step.did, step.seconds ? h("span", {class: "t"}, step.seconds + " s") : null));
-    if (step.fallback) row.append(h("div", {class: "note bad"}, "First attempt failed: " + step.fallback + " The fallback ran instead."));
-    for (const reason of step.rejected || []) row.append(h("div", {class: "note bad"}, "Rejected, then asked again: " + reason));
-    if (step.vote) row.append(h("div", {class: "note v"}, "Vote: " + step.vote));
-    if (step.answer != null) row.append(h("div", {class: "ans"}, "→ " + step.answer));
-    for (const quote of step.evidence || []) row.append(h("div", {class: "note q"}, "Backed by " + quote));
-    if (step.unfinished) row.append(h("div", {class: "note bad"}, "This step did not finish."));
-    box.append(row);
-  });
-  const cost = [];
-  if (story.used && story.used.model_calls != null) cost.push(story.used.model_calls + " model call(s)");
-  if (story.used && story.used.tool_calls) cost.push(story.used.tool_calls + " tool or memory call(s)");
-  if (story.tokens) cost.push(story.tokens + " tokens");
-  if (story.seconds != null) cost.push(Math.round(story.seconds * 10) / 10 + " seconds");
-  return h("div", null,
-    story.finished ? null : h("div", {class: "banner bad"}, "The run stopped before finishing: " + (story.error || "no reason recorded")),
-    h("div", {class: "banner " + (story.replays ? "ok" : "warn")}, story.replays
-      ? "This run replays: what you see is exactly what was recorded."
-      : "Careful: this run does not replay. " + story.replay_problem),
-    box,
-    cost.length ? h("p", {class: "lead", style: "margin-top:12px"}, "Cost: " + cost.join(", ")) : null);
-}
-
 function testsTab(agent) {
   const out = h("div");
   const button = h("button", {onclick: async () => {
@@ -277,111 +465,150 @@ function testsTab(agent) {
     try {
       const data = await api("/api/test?id=" + encodeURIComponent(agent.id), {method: "POST"});
       const failed = data.results.filter(r => !r.passed).length;
-      out.replaceChildren(
-        h("div", {class: "banner " + (failed ? "bad" : "ok")}, (data.results.length - failed) + " passed, " + failed + " failed"),
-        ...data.results.map(r => h("div", {class: "test"}, chip(r.passed ? "pass" : "fail", r.passed ? "ok" : "bad"),
-          h("div", null, r.name, r.passed ? null : h("div", {class: "why"}, "line " + r.line + ": " + r.message)))));
+      out.replaceChildren(h("div", {class: "banner " + (failed ? "bad" : "ok")}, (data.results.length - failed) + " passed, " + failed + " failed"),
+        ...data.results.map(r => h("div", {class: "test"}, chip(r.passed ? "pass" : "fail", r.passed ? "ok" : "bad"), h("div", null, r.name, r.passed ? null : h("div", {class: "why"}, "line " + r.line + ": " + r.message)))));
     } catch (error) { out.replaceChildren(h("div", {class: "banner bad"}, error.message)); }
     button.disabled = false;
   }}, "Run tests");
   return h("div", {class: "panel"},
-    h("p", {class: "lead"}, agent.test_names.length
-      ? "Tests use saved answers, so they need no model and change nothing."
-      : "This program has no tests yet. Add a test \"name\" { ... } block to the file."),
+    h("p", {class: "lead"}, agent.test_names.length ? "Tests use saved answers, so they need no model and change nothing." : "This program has no tests yet. Add a test \"name\" { ... } block to the file."),
     agent.test_names.length ? h("div", null, agent.test_names.map(name => h("div", {class: "test"}, chip("test"), name))) : null,
-    agent.test_names.length ? h("div", {style: "margin:14px 0"}, button) : null, out);
+    agent.test_names.length ? h("div", {style: "margin:12px 0"}, button) : null, out);
 }
 
-function runsTab(agent) {
+function runsPanel(agentId, traces) {
+  if (!traces.length) return h("div", {class: "panel"}, h("p", {class: "empty"}, "No runs recorded yet."));
   const view = h("div", null, h("p", {class: "empty"}, "Choose a run to read what it did."));
   const list = h("div", {class: "runlist"});
-  async function open(trace, row) {
-    for (const item of list.children) item.className = "";
-    if (row) row.className = "on";
-    view.replaceChildren(h("p", {class: "lead"}, h("span", {class: "spin"}), "Reading the run"));
-    try { view.replaceChildren(storyView(await api("/api/story?id=" + encodeURIComponent(agent.id) + "&trace=" + encodeURIComponent(trace)))); }
-    catch (error) { view.replaceChildren(h("div", {class: "banner bad"}, error.message)); }
-  }
-  for (const trace of agent.traces) {
-    const row = h("div", {onclick: () => open(trace.name, row)}, trace.name, h("br"), new Date(trace.modified * 1000).toLocaleString());
+  for (const trace of traces) {
+    const row = h("div", {onclick: async () => {
+      for (const item of list.children) item.className = "";
+      row.className = "on";
+      view.replaceChildren(h("p", {class: "lead"}, h("span", {class: "spin"}), "Reading the run"));
+      try {
+        const story = await api("/api/story?id=" + encodeURIComponent(trace.agent || agentId) + "&trace=" + encodeURIComponent(trace.name));
+        view.replaceChildren(storyView(story), h("h2", null, "What the model was asked"), requestsView(story));
+      } catch (error) { view.replaceChildren(h("div", {class: "banner bad"}, error.message)); }
+    }}, trace.label || trace.name, h("small", null, new Date(trace.modified * 1000).toLocaleString()));
     list.append(row);
   }
-  if (!agent.traces.length) return h("div", {class: "panel"}, h("p", {class: "empty"}, "No runs recorded yet. Run this agent from the Try it tab, or with kosika run ... --trace."));
   return h("div", {class: "panel runs"}, list, view);
 }
 
-function tryTab(agent) {
-  if (!overview.can_run)
-    return h("div", {class: "panel"}, h("div", {class: "banner warn"}, "This app was started without a model, so it can show and test agents but not run them. Start it with: kosika app FOLDER --model NAME"));
-  const panel = h("div", {class: "panel"});
-  if (agent.changes_world) panel.append(h("div", {class: "banner warn"}, "This agent has tools that change the world. The app never grants those, so steps that need them will fail here."));
-  if (agent.chat) {
-    const log = h("div", {class: "chatlog"}, h("p", {class: "empty"}, "Say something to " + agent.title + "."));
-    const input = h("input", {type: "text", placeholder: "Type a message and press Enter"});
-    const send = async () => {
-      const text = input.value.trim(); if (!text) return;
+async function showRuns() {
+  main.replaceChildren(h("h1", null, "Runs"), h("p", {class: "lead"}, h("span", {class: "spin"}), "Collecting runs"));
+  const all = [];
+  for (const card of overview.agents) {
+    if (card.error) continue;
+    try {
+      const detail = await api("/api/agent?id=" + encodeURIComponent(card.id));
+      for (const trace of detail.traces) all.push({...trace, agent: card.id, label: card.title + " · " + trace.name});
+    } catch (error) { continue; }
+  }
+  all.sort((a, b) => b.modified - a.modified);
+  main.replaceChildren(h("h1", null, "Runs"), h("p", {class: "lead"}, "Recorded runs of every agent, newest first. Each can be read step by step, with exactly what the model was asked."), runsPanel("", all.slice(0, 80)));
+}
+
+// ------------------------------------------------------ one agent, live
+function liveTab(agent, isAssistant) {
+  const live = liveView(agent);
+  const side = h("div");
+  const sideTabs = h("div", {class: "tabs", style: "margin:0 0 12px"});
+  const panes = {"Live": live.el, "What it did": h("p", {class: "empty"}, "Nothing has run yet."), "Requests": h("p", {class: "empty"}, "Nothing has run yet."), "Memory": h("div")};
+  function pick(name) {
+    for (const tab of sideTabs.children) tab.className = "tab" + (tab.textContent === name ? " on" : "");
+    side.replaceChildren(panes[name]);
+    if (name === "Memory") memoryView(agent, panes.Memory);
+  }
+  for (const name of Object.keys(panes)) sideTabs.append(h("div", {class: "tab", onclick: () => pick(name)}, name));
+  const right = h("div", {class: "panel"}, sideTabs, side);
+  const left = h("div", {class: "panel"});
+  let busy = false;
+  const after = view => { if (view.story) { panes["What it did"] = storyView(view.story); panes.Requests = requestsView(view.story); } };
+
+  if (!overview.can_run) left.append(h("div", {class: "banner warn"}, "Studio was started without a model, so agents can be viewed and tested but not run. Start it with: kosika studio FOLDER --model NAME"));
+  else if (agent.chat) {
+    const log = h("div", {class: "chatlog"}, h("p", {class: "empty"}, "Say something to " + (isAssistant ? "your assistant" : agent.title) + ". Watch the flow on the right as it works."));
+    const input = h("input", {type: "text", placeholder: "Ask anything"});
+    const send = async given => {
+      const text = (typeof given === "string" ? given : input.value).trim();
+      if (!text || busy) return;
+      busy = true;
       if (log.querySelector(".empty")) log.replaceChildren();
-      input.value = ""; input.disabled = true;
+      input.value = ""; input.disabled = true; pick("Live");
       log.append(h("div", {class: "msg you"}, h("div", {class: "bubble"}, text)));
-      const waiting = h("div", {class: "msg"}, h("div", {class: "bubble"}, h("span", {class: "spin"}), "thinking")); log.append(waiting); log.scrollTop = log.scrollHeight;
+      const waiting = h("div", {class: "msg"}, h("div", {class: "bubble typing"}, h("span"), h("span"), h("span")));
+      log.append(waiting); log.scrollTop = log.scrollHeight;
+      const answer = (text, meta, bad) => waiting.replaceChildren(h("div", {class: "bubble"}, bad ? h("span", {style: "color:var(--bad)"}, text) : text, meta ? h("span", {class: "meta"}, meta) : null));
       try {
-        const data = await api("/api/run?id=" + encodeURIComponent(agent.id), {method: "POST", body: JSON.stringify({text})});
-        const detail = h("div", {style: "display:none;margin-top:8px"}, storyView(data.story));
-        waiting.replaceChildren(h("div", {class: "bubble"}, data.text,
-          h("span", {class: "meta", onclick: () => { detail.style.display = detail.style.display === "none" ? "block" : "none"; }}, data.seconds + " s · show what it did"), detail));
-      } catch (error) { waiting.replaceChildren(h("div", {class: "bubble"}, h("span", {style: "color:var(--bad)"}, error.message))); }
-      input.disabled = false; input.focus(); log.scrollTop = log.scrollHeight;
+        const view = await follow(agent, {text}, live, (request, decide) => {
+          const card = h("div", {class: "ask"});
+          const lines = Object.entries(request.arguments || {}).map(([key, value]) => key + ": " + (typeof value === "string" ? value : JSON.stringify(value))).join("\n");
+          const press = allow => async () => { card.replaceChildren(h("b", null, allow ? "Allowed once." : "Refused.")); await decide(allow); };
+          card.append(h("b", null, "The assistant wants to do this, and nothing else: " + (request.tool || "an action")), h("pre", null, lines),
+            h("div", {class: "row"}, h("button", {onclick: press(true)}, "Allow once"), h("button", {class: "quiet", onclick: press(false)}, "Refuse")));
+          log.insertBefore(card, waiting); log.scrollTop = log.scrollHeight;
+        });
+        after(view);
+        if (view.state === "done") answer(view.text, view.seconds + " s");
+        else answer(view.error || "The run did not finish.", "", true);
+      } catch (error) { answer(error.message, "", true); }
+      busy = false; input.disabled = false; input.focus(); log.scrollTop = log.scrollHeight;
     };
     input.addEventListener("keydown", event => { if (event.key === "Enter") send(); });
-    panel.append(log, h("div", {class: "row"}, input, h("button", {onclick: send}, "Send")));
+    const quick = isAssistant ? h("div", {class: "quick"}, ["help", "play", "notes", "list", "any news today?"].map(text => h("span", {onclick: () => send(text)}, text))) : null;
+    fill(left, log, quick, h("div", {class: "row"}, input, h("button", {onclick: () => send()}, "Send")));
   } else {
     const input = h("textarea", null); input.value = agent.example_input || "{}";
-    const out = h("div", {style: "margin-top:14px"});
+    const out = h("div", {style: "margin-top:12px"});
     const button = h("button", {onclick: async () => {
-      let inputs; try { inputs = JSON.parse(input.value); } catch (e) { out.replaceChildren(h("div", {class: "banner bad"}, "The input is not valid JSON.")); return; }
-      button.disabled = true; out.replaceChildren(h("p", {class: "lead"}, h("span", {class: "spin"}), "Running. A local model can take a while."));
+      let inputs;
+      try { inputs = JSON.parse(input.value); } catch (error) { out.replaceChildren(h("div", {class: "banner bad"}, "The input is not valid JSON.")); return; }
+      button.disabled = true; pick("Live"); out.replaceChildren(h("p", {class: "lead"}, h("span", {class: "spin"}), "Running. Watch the flow on the right."));
       try {
-        const data = await api("/api/run?id=" + encodeURIComponent(agent.id), {method: "POST", body: JSON.stringify({inputs})});
-        out.replaceChildren(h("h2", null, "Result"), h("pre", {class: "source"}, JSON.stringify(data.result, null, 2)), h("h2", null, "What it did"), storyView(data.story));
+        const view = await follow(agent, {inputs}, live, (request, decide) => {
+          const press = allow => async () => { out.replaceChildren(h("p", {class: "lead"}, h("span", {class: "spin"}), allow ? "Allowed once. Carrying on." : "Refused.")); await decide(allow); };
+          out.replaceChildren(h("div", {class: "ask"}, h("b", null, "This agent wants to do this, and nothing else: " + (request.tool || "an action")), h("pre", null, JSON.stringify(request.arguments || {}, null, 1)),
+            h("div", {class: "row"}, h("button", {onclick: press(true)}, "Allow once"), h("button", {class: "quiet", onclick: press(false)}, "Refuse"))));
+        });
+        after(view);
+        out.replaceChildren(view.state === "done" ? h("div", null, h("h2", null, "Result"), h("pre", {class: "source"}, JSON.stringify(view.result, null, 2))) : h("div", {class: "banner bad"}, view.error || "The run did not finish."));
       } catch (error) { out.replaceChildren(h("div", {class: "banner bad"}, error.message)); }
       button.disabled = false;
     }}, "Run");
-    panel.append(h("p", {class: "lead"}, "The input for main, as JSON." + (agent.example_input ? " Filled in from input.json." : "")), input, h("div", {style: "margin-top:10px"}, button), out);
+    left.append(h("p", {class: "lead"}, "The input for main, as JSON." + (agent.example_input ? " Filled in from input.json." : "")), input, h("div", {style: "margin-top:9px"}, button), out);
   }
-  return panel;
+  pick("Live");
+  return h("div", {class: "split"}, left, right);
 }
 
-async function showAgent(id) {
+async function showAgent(id, isAssistant) {
+  main.replaceChildren(h("p", {class: "lead"}, h("span", {class: "spin"}), "Loading"));
   const agent = await api("/api/agent?id=" + encodeURIComponent(id));
-  const head = [h("span", {class: "back", onclick: () => go("")}, "← All agents"), h("h1", null, agent.title),
+  const head = [isAssistant ? null : h("span", {class: "back", onclick: () => go("agents")}, "← All agents"), h("h1", null, isAssistant ? "Assistant" : agent.title),
     h("p", {class: "lead"}, agent.about || "No description. Add a // comment at the top of the file.")];
-  if (agent.error) {
-    main.replaceChildren(...head, h("div", {class: "banner bad"}, "This program does not check: " + agent.error),
-      agent.source ? highlight(agent.source) : null);
-    return;
-  }
-  const fact = (title, lines, empty) => h("div", {class: "fact"}, h("b", null, title),
-    lines.length ? lines.map(line => h("div", {class: "line"}, line)) : h("div", {class: "line empty"}, empty));
-  const facts = h("div", {class: "facts"},
+  if (agent.error) { fill(main, head, h("div", {class: "banner bad"}, "This program does not check: " + agent.error), agent.source ? highlight(agent.source) : null); return; }
+  const parts = () => h("div", {class: "facts", style: "margin-top:0"},
     fact("Models it asks", agent.models.map(m => m + (m === agent.default_model ? " (default)" : "")), "none: this agent is plain code"),
     fact("What it remembers", agent.memories.map(m => m.name + ", holding " + m.record), "nothing between runs"),
     (agent.boards || []).length ? fact("Where its agents talk", agent.boards.map(b => "board " + b.name + ", messages of " + b.record), "") : null,
-    fact("Tools it may use", agent.tools.map(t => t.name + (t.changes ? " (changes the world)" : " (read-only)")), "none"),
+    fact("Tools it may use", agent.tools.map(t => t.name + (t.changes ? " (asks you first)" : " (read-only)")), "none"),
     agent.agents.length ? fact("Agents inside", agent.agents.map(a => a.name + (a.can.length ? " may use " + a.can.join(", ") : "")), "") : null,
     agent.swarms.length ? fact("Swarms", agent.swarms.map(s => s.name + ": " + s.agents.join(", ") + " on " + s.workflow + ", up to " + s.max_rounds + " rounds"), "") : null,
+    fact("Code functions", agent.functions, "none"),
+    fact("Budget", agent.budget.map(([kind, amount]) => amount + " " + kind.replace("_", " ")), "none declared"),
     fact("Fingerprint", [agent.program_hash.slice(0, 16) + "…"], ""));
-  const tabs = {"Workflow": workflowTab, "Try it": tryTab, "Tests": testsTab, "Runs": runsTab, "Code": a => h("div", null, highlight(a.source))};
-  const area = h("div");
-  const bar = h("div", {class: "tabs"});
-  const built = {};
-  function pick(name) {
+  const tabs = {"Live": a => liveTab(a, isAssistant), "Workflow": workflowTab, "Parts": parts, "Data": dataTab, "Tests": testsTab, "Runs": a => runsPanel(a.id, a.traces), "Code": a => h("div", null, highlight(a.source))};
+  const area = h("div"); const bar = h("div", {class: "tabs"}); const built = {};
+  async function pick(name) {
     for (const tab of bar.children) tab.className = "tab" + (tab.textContent === name ? " on" : "");
-    built[name] = built[name] || tabs[name](agent);
+    if (name === "Runs") { try { agent.traces = (await api("/api/agent?id=" + encodeURIComponent(id))).traces; } catch (error) { /* keep the old list */ } built.Runs = null; }
+    if (!built[name]) built[name] = tabs[name](agent);
     area.replaceChildren(built[name]);
   }
   for (const name of Object.keys(tabs)) bar.append(h("div", {class: "tab", onclick: () => pick(name)}, name));
-  main.replaceChildren(...head, h("div", {class: "chips"}, badges(agent)), facts, bar, area);
-  pick("Workflow");
+  fill(main, head, h("div", {class: "chips"}, badges(agent)), bar, area);
+  pick("Live");
 }
 
 route();

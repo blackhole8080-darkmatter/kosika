@@ -2134,38 +2134,44 @@ def build_parser() -> argparse.ArgumentParser:
 
     replay_parser = subparsers.add_parser("replay")
     replay_parser.add_argument("trace", type=Path)
-    app_parser = subparsers.add_parser(
-        "app",
-        help="Open the Kosika app: look at agents, test them, run them, read runs.",
-    )
-    app_parser.add_argument("folder", type=Path, nargs="?", default=Path("."))
-    app_parser.add_argument(
-        "--model", help="Model that answers for every declared model in a run."
-    )
-    app_parser.add_argument("--model-url", help="OpenAI-compatible model URL.")
-    app_parser.add_argument(
-        "--model-protocol", choices=MODEL_PROTOCOLS, default="openai"
-    )
-    app_parser.add_argument("--model-timeout", type=float, default=300.0)
-    app_parser.add_argument(
-        "--allow-folder",
-        type=Path,
-        help="Folder that read-only file tools may look inside during a run.",
-    )
-    app_parser.add_argument(
-        "--allow-site",
-        action="append",
-        default=[],
-        metavar="SITE",
-        help=(
-            "A site the program's web tool may read, such as en.wikipedia.org. "
-            "May be repeated. Without it, the web cannot be reached."
+    for app_name, app_help in (
+        (
+            "studio",
+            "Open Kosika Studio in its own window: watch agents work, live.",
         ),
-    )
-    app_parser.add_argument("--port", type=int, default=0)
-    app_parser.add_argument(
-        "--no-browser", action="store_true", help="Print the address; do not open it."
-    )
+        ("app", "The same as studio, opened as a tab in the browser."),
+    ):
+        app_parser = subparsers.add_parser(app_name, help=app_help)
+        app_parser.add_argument("folder", type=Path, nargs="?", default=Path("."))
+        app_parser.add_argument(
+            "--model", help="Model that answers for every declared model in a run."
+        )
+        app_parser.add_argument("--model-url", help="OpenAI-compatible model URL.")
+        app_parser.add_argument(
+            "--model-protocol", choices=MODEL_PROTOCOLS, default="openai"
+        )
+        app_parser.add_argument("--model-timeout", type=float, default=300.0)
+        app_parser.add_argument(
+            "--allow-folder",
+            type=Path,
+            help="Folder that read-only file tools may look inside during a run.",
+        )
+        app_parser.add_argument(
+            "--allow-site",
+            action="append",
+            default=[],
+            metavar="SITE",
+            help=(
+                "A site the program's web tool may read, such as en.wikipedia.org. "
+                "May be repeated. Without it, the web cannot be reached."
+            ),
+        )
+        app_parser.add_argument("--port", type=int, default=0)
+        app_parser.add_argument(
+            "--no-browser",
+            action="store_true",
+            help="Print the address; do not open it.",
+        )
     chat_parser = subparsers.add_parser(
         "chat", help="Talk to a Kosika program, one message at a time."
     )
@@ -3182,10 +3188,10 @@ def main() -> int:
             print(_render_journal_text(report))
         return 0
 
-    if args.command == "app":
+    if args.command in ("app", "studio"):
         import webbrowser
 
-        from .app import App, address, make_server
+        from .app import App, address, make_server, open_window
 
         root = args.folder
         if not root.is_dir():
@@ -3219,7 +3225,7 @@ def main() -> int:
             print(f"App unavailable: {exc}", file=sys.stderr)
             return 2
         url = address(studio, server)
-        print(f"Kosika app for {studio.root}")
+        print(f"Kosika Studio for {studio.root}")
         print(f"  {url}")
         print(
             "  It can run agents with model " + args.model
@@ -3228,7 +3234,10 @@ def main() -> int:
         )
         print("  Press Ctrl+C to stop.")
         if not args.no_browser:
-            webbrowser.open(url)
+            # Studio opens as a window of its own when a browser that can do
+            # that is installed, and as an ordinary tab otherwise.
+            if args.command != "studio" or not open_window(url):
+                webbrowser.open(url)
         try:
             server.serve_forever()
         except KeyboardInterrupt:

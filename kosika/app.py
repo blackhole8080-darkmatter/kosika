@@ -25,7 +25,11 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
 import secrets
+import shutil
+import subprocess
+import tempfile
 import threading
 import time
 from dataclasses import dataclass
@@ -34,6 +38,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 from urllib.parse import parse_qs, urlsplit
 
+from .agent import ApprovalRecord
 from .ast import (
     AgentCall,
     FunctionCall,
@@ -46,6 +51,7 @@ from .ast import (
 )
 from .board import AGENT as BOARD_AGENT
 from .chat import ChatError, answer_text, message_parameter
+from .durable import ApprovalPending, ExecutionSession
 from .memory import AGENT as MEMORY_AGENT
 from .memory import bind_memory_tools
 from .model import ModelProvider
@@ -294,11 +300,77 @@ def describe(agent: Agent, *, detail: bool) -> dict[str, Any]:
         ],
         functions=sorted(f.name for f in program.functions if "$" not in f.name),
         records=sorted(record.name for record in program.records),
+        record_shapes=[
+            {
+                "name": record.name,
+                "fields": [
+                    {"name": field.name, "type": field.type_name}
+                    for field in record.fields
+                ],
+            }
+            for record in sorted(program.records, key=lambda item: item.name)
+        ],
         test_names=[test.name for test in program.tests],
         traces=_traces(agent.path.parent),
         example_input=example.read_text(encoding="utf-8") if example.is_file() else "",
     )
     return view
+
+
+APPROVAL_WAIT_SECONDS = 600
+_EVENT_KEYS = (
+    "event",
+    "step",
+    "workflow",
+    "tool",
+    "function",
+    "model",
+    "agent",
+    "source",
+    "operation",
+    "access",
+    "timestamp",
+)
+
+
+def _slim(event: dict[str, Any], depth: int) -> dict[str, Any]:
+    """An event as the page needs it: what happened, not the whole payload."""
+
+    slim: dict[str, Any] = {key: event[key] for key in _EVENT_KEYS if key in event}
+    slim["depth"] = depth
+    if isinstance(event.get("recovered_from"), dict):
+        slim["recovered"] = str(event["recovered_from"].get("message", ""))[:200]
+    if "rejected" in event:
+        slim["rejected"] = len(event["rejected"])
+    if isinstance(event.get("votes"), dict):
+        slim["votes"] = {
+            key: event["votes"].get(key) for key in ("asked", "agreed", "models")
+        }
+    if isinstance(event.get("usage"), dict):
+        slim["tokens"] = event["usage"].get("total_tokens")
+    return slim
+
+
+class Job:
+    """One run started from the app, followed while it works."""
+
+    def __init__(self, job_id: str, agent_id: str, trace: Path, folder: Path):
+        self.id, self.agent_id, self.trace, self.folder = (
+            job_id,
+            agent_id,
+            trace,
+            folder,
+        )
+        self.state = "running"  # running, waiting, done, failed, refused
+        self.events: list[dict[str, Any]] = []
+        self.request: dict[str, Any] | None = None
+        self.allow: bool | None = None
+        self.decision = threading.Event()
+        self.result: Any = None
+        self.text = ""
+        self.story: dict[str, Any] | None = None
+        self.error = ""
+        self.seconds = 0.0
 
 
 class App:
@@ -312,6 +384,7 @@ class App:
         model_label: str = "",
         allow_folder: Path | None = None,
         sites: tuple[str, ...] = (),
+        approved_by: str = "app",
     ):
         self.sites = sites
         self.root = root.resolve()
@@ -320,6 +393,9 @@ class App:
         self.allow_folder = allow_folder
         self.token = secrets.token_urlsafe(24)
         self._lock = threading.Lock()
+        self._jobs: dict[str, Job] = {}
+        self._jobs_lock = threading.Lock()
+        self.approved_by = approved_by
 
     def agents(self) -> dict[str, Agent]:
         return {
@@ -337,14 +413,26 @@ class App:
         return found
 
     def overview(self) -> dict[str, Any]:
+        cards = [describe(a, detail=False) for a in self.agents().values()]
         return {
             "root": str(self.root),
             "can_run": self.bind_models is not None,
             "model": self.model_label,
             "allow_folder": str(self.allow_folder) if self.allow_folder else "",
             "sites": list(self.sites),
-            "agents": [describe(a, detail=False) for a in self.agents().values()],
+            "agents": cards,
+            "assistant": self.assistant(cards),
         }
+
+    def assistant(self, cards: list[dict[str, Any]] | None = None) -> str:
+        """The agent the app opens on: one that can be chatted with,
+        preferring a folder named `assistant`."""
+
+        if cards is None:
+            cards = [describe(a, detail=False) for a in self.agents().values()]
+        chatty = [card["id"] for card in cards if card.get("chat")]
+        named = [item for item in chatty if "assistant" in item.lower()]
+        return (named or chatty or [""])[0]
 
     def tests(self, agent_id: str) -> dict[str, Any]:
         agent = self.agent(agent_id)
@@ -363,8 +451,13 @@ class App:
         except StoryError as exc:
             raise AppError(str(exc)) from exc
 
-    def run(self, agent_id: str, body: dict[str, Any]) -> dict[str, Any]:
-        """Run the agent's `main` once, with what this app was granted."""
+    def start(self, agent_id: str, body: dict[str, Any]) -> Job:
+        """Begin one run of the agent's `main` and return at once.
+
+        The run happens on its own thread. Its events can be followed with
+        `poll` while it works, and if it reaches an action that changes the
+        world it stops and waits for `decide`.
+        """
 
         if self.bind_models is None:
             raise AppError(
@@ -388,41 +481,186 @@ class App:
             trace = (
                 runs / f"{time.strftime('%Y%m%d-%H%M%S')}-{secrets.token_hex(2)}.jsonl"
             )
+            # Shell is never allowed here. A tool that changes the world may
+            # be bound, and still cannot run until this person allows that
+            # one call: the runtime refuses it without an approval.
             tools = {
                 **bind_system_tools(
                     program, folder=self.allow_folder, sites=self.sites
                 ),
                 **bind_memory_tools(program, folder / "memory"),
             }
-            # Only tools that cannot change the world are ever bound here.
-            tools = {
-                name: tool
-                for name, tool in tools.items()
-                if not any(
-                    t.name == name and t.access == "execute" for t in program.tools
-                )
-            }
-            started = time.monotonic()
-            with self._lock:
-                result = run(
-                    program,
-                    "main",
-                    trace,
-                    inputs=inputs,
-                    model_bindings=self.bind_models(program),
-                    tool_bindings=tools,
-                )
+            models = self.bind_models(program)
         except AppError:
             raise
         except (RuntimeError, ValueError, PermissionError, OSError) as exc:
-            raise AppError(f"The run did not finish: {exc}", 422) from exc
-        return {
-            "result": result,
-            "text": answer_text(result),
-            "seconds": round(time.monotonic() - started, 1),
-            "trace": trace.relative_to(folder).as_posix(),
-            "story": build_story(read_trace(trace)),
+            raise AppError(f"The run could not start: {exc}", 422) from exc
+        job = Job(secrets.token_urlsafe(9), agent_id, trace, folder)
+        with self._jobs_lock:
+            # Keep the last few, so a page that reloads can still read them.
+            for old in list(self._jobs)[:-20]:
+                del self._jobs[old]
+            self._jobs[job.id] = job
+        threading.Thread(
+            target=self._work, args=(job, program, inputs, models, tools), daemon=True
+        ).start()
+        return job
+
+    def _work(
+        self,
+        job: Job,
+        program: Program,
+        inputs: dict[str, Any],
+        models: Mapping[str, ModelProvider],
+        tools: Mapping[str, Any],
+    ) -> None:
+        def watch(event: dict[str, Any], depth: int) -> None:
+            job.events.append(_slim(event, depth))
+
+        started = time.monotonic()
+        try:
+            with (
+                self._lock,
+                tempfile.TemporaryDirectory(prefix="kosika-app-") as scratch,
+            ):
+                approvals: list[ApprovalRecord] = []
+                while True:
+                    session = ExecutionSession(
+                        Path(scratch) / "run.sqlite",
+                        binding_id="studio",
+                        approvals=approvals,
+                    )
+                    try:
+                        result = run(
+                            program,
+                            "main",
+                            job.trace,
+                            inputs=inputs,
+                            model_bindings=models,
+                            tool_bindings=tools,
+                            session=session,
+                            on_event=watch,
+                        )
+                        break
+                    except ApprovalPending as pending:
+                        job.request = {
+                            "tool": pending.request["tool"],
+                            "arguments": pending.request["arguments"],
+                            "step": pending.request.get("step"),
+                        }
+                        job.allow = None
+                        job.decision.clear()
+                        job.state = "waiting"
+                        # Nobody answering is a no.
+                        job.decision.wait(timeout=APPROVAL_WAIT_SECONDS)
+                        if job.allow is not True:
+                            job.state = "refused"
+                            job.error = "Refused. Nothing was changed."
+                            return
+                        approvals.append(
+                            ApprovalRecord(
+                                plan_hash=pending.request["plan_hash"],
+                                action_hash=pending.request["action_hash"],
+                                approved_by=self.approved_by,
+                                reason="approved in the Kosika app",
+                            )
+                        )
+                        job.request = None
+                        job.events.append({"event": "resumed", "depth": 0})
+                        job.state = "running"
+            job.result = result
+            job.text = answer_text(result)
+            job.story = build_story(read_trace(job.trace))
+            job.state = "done"
+        except (RuntimeError, ValueError, PermissionError, OSError) as exc:
+            job.error = f"The run did not finish: {exc}"
+            job.state = "failed"
+        finally:
+            job.seconds = round(time.monotonic() - started, 1)
+
+    def job(self, job_id: str) -> Job:
+        with self._jobs_lock:
+            found = self._jobs.get(job_id)
+        if found is None:
+            raise AppError("No such run", 404)
+        return found
+
+    def poll(self, job_id: str, since: int) -> dict[str, Any]:
+        """Where a run stands, and the events it produced after `since`."""
+
+        job = self.job(job_id)
+        events = job.events[max(0, since) :]
+        view: dict[str, Any] = {
+            "run": job.id,
+            "state": job.state,
+            "events": events,
+            "next": max(0, since) + len(events),
         }
+        if job.state == "waiting":
+            view["request"] = job.request
+        if job.state in ("done", "failed", "refused"):
+            view["seconds"] = job.seconds
+            view["error"] = job.error
+        if job.state == "done":
+            view.update(
+                result=job.result,
+                text=job.text,
+                story=job.story,
+                trace=job.trace.relative_to(job.folder).as_posix(),
+            )
+        return view
+
+    def decide(self, job_id: str, allow: bool) -> dict[str, Any]:
+        """Answer the one action a waiting run is asking about."""
+
+        job = self.job(job_id)
+        if job.state != "waiting":
+            raise AppError("This run is not waiting for an answer", 409)
+        job.allow = bool(allow)
+        job.decision.set()
+        return {"run": job.id, "allowed": job.allow}
+
+    def run(self, agent_id: str, body: dict[str, Any]) -> dict[str, Any]:
+        """Run the agent's `main` once and wait for it. A run that asks for
+        approval is refused, because nobody is there to give it."""
+
+        job = self.start(agent_id, body)
+        while job.state == "running":
+            time.sleep(0.01)
+        if job.state == "waiting":
+            self.decide(job.id, False)
+            while job.state == "waiting":
+                time.sleep(0.01)
+        if job.state != "done":
+            raise AppError(job.error or "The run did not finish", 422)
+        return {
+            "result": job.result,
+            "text": job.text,
+            "seconds": job.seconds,
+            "trace": job.trace.relative_to(job.folder).as_posix(),
+            "story": job.story,
+        }
+
+    def memory(self, agent_id: str) -> dict[str, Any]:
+        """What the agent remembers right now, read from its memory folder."""
+
+        agent = self.agent(agent_id)
+        program = load_program(agent.path)
+        folder = agent.path.parent / "memory"
+        memories = []
+        for declared in program.memories:
+            entries: dict[str, Any] = {}
+            path = folder / f"{declared.name}.json"
+            if path.is_file():
+                try:
+                    loaded = json.loads(path.read_text(encoding="utf-8"))
+                    entries = loaded if isinstance(loaded, dict) else {}
+                except (OSError, ValueError):
+                    entries = {}
+            memories.append(
+                {"name": declared.name, "record": declared.record, "entries": entries}
+            )
+        return {"memories": memories}
 
 
 def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
@@ -452,6 +690,15 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                 json.dumps(payload, ensure_ascii=False).encode("utf-8"),
                 "application/json; charset=utf-8",
             )
+
+        def _body(self) -> dict[str, Any]:
+            length = int(self.headers.get("Content-Length") or 0)
+            if not 0 < length <= MAX_BODY:
+                raise AppError("The request is empty or too large")
+            body = json.loads(self.rfile.read(length).decode("utf-8"))
+            if not isinstance(body, dict):
+                raise AppError("The request must be an object")
+            return body
 
         def _allowed(self, query: dict[str, list[str]]) -> bool:
             host = self.headers.get("Host", "")
@@ -499,6 +746,27 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                     if not isinstance(body, dict):
                         raise AppError("The request must be an object")
                     self._json(200, app.run(agent_id, body))
+                elif method == "POST" and url.path == "/api/start":
+                    self._json(200, {"run": app.start(agent_id, self._body()).id})
+                elif method == "GET" and url.path == "/api/poll":
+                    since = (query.get("since") or ["0"])[0]
+                    self._json(
+                        200,
+                        app.poll(
+                            (query.get("run") or [""])[0],
+                            int(since) if since.isdigit() else 0,
+                        ),
+                    )
+                elif method == "POST" and url.path == "/api/decide":
+                    body = self._body()
+                    self._json(
+                        200,
+                        app.decide(
+                            (query.get("run") or [""])[0], body.get("allow") is True
+                        ),
+                    )
+                elif method == "GET" and url.path == "/api/memory":
+                    self._json(200, app.memory(agent_id))
                 else:
                     self._json(404, {"error": "Not found"})
             except AppError as exc:
@@ -522,6 +790,48 @@ def make_server(app: App, port: int = 0) -> ThreadingHTTPServer:
     server = ThreadingHTTPServer(("127.0.0.1", port), _handler(app, holder))
     holder[0] = server.server_address[1]
     return server
+
+
+def window_browsers() -> list[Path]:
+    """Installed browsers that can show a page as a window of its own."""
+
+    found: list[Path] = []
+    for variable in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA"):
+        base = os.environ.get(variable)
+        if not base:
+            continue
+        for tail in (
+            "Microsoft/Edge/Application/msedge.exe",
+            "Google/Chrome/Application/chrome.exe",
+        ):
+            candidate = Path(base) / tail
+            if candidate.is_file():
+                found.append(candidate)
+    for name in ("msedge", "google-chrome", "chromium", "chromium-browser"):
+        located = shutil.which(name)
+        if located:
+            found.append(Path(located))
+    return found
+
+
+def open_window(url: str) -> bool:
+    """Open the page as its own window, with no tabs or address bar.
+
+    Returns False when no browser that can do this is installed, so the
+    caller can open an ordinary tab instead.
+    """
+
+    for browser in window_browsers():
+        try:
+            subprocess.Popen(  # noqa: S603 - a fixed browser path and our own URL
+                [str(browser), f"--app={url}", "--window-size=1280,860"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return True
+        except OSError:
+            continue
+    return False
 
 
 def address(app: App, server: ThreadingHTTPServer) -> str:

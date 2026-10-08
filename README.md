@@ -486,25 +486,41 @@ was recalled or remembered, when a fallback took over, and what the run cost
 in model calls, tokens, and seconds. It reads only the trace. It first checks
 that the trace replays and says so, or warns when it does not.
 
-### The app
+### Kosika Studio
 
 ```
-kosika app FOLDER --model MODEL
+kosika studio FOLDER --model MODEL --allow-folder FOLDER --allow-site SITE
 ```
 
-opens a page in your browser, served from your own machine, that shows every
-agent under FOLDER. For each one you see what it does, which models it asks,
-what it remembers, which tools it may use and whether any change the world.
-Open an agent to see its workflow step by step (including the steps that
-choose, retry, vote, or fall back), run its tests, talk to it or run it, read
-any of its past runs in plain words, and read its code.
+opens Kosika Studio in a window of its own (through Edge or Chrome when one
+is installed, otherwise as a browser tab; `kosika app` always uses a tab).
+It is served from your own machine and shows every agent under FOLDER.
 
-The app can do only what the command that started it allows. Without
+It opens on the Assistant: the first agent that can be talked to, preferring
+one in a folder named `assistant`. While an agent works you watch it. Each
+step lights up as it starts and turns green when it finishes, a step that
+calls another workflow unfolds to show that workflow's steps, the branch
+that was taken is marked, and a line under the step says what it is doing
+right now: asking the model, looking in memory, using a tool. A running
+count shows steps, model calls, tool calls, tokens and seconds.
+
+After a run, "What it did" tells it in plain words and "Requests" shows
+exactly what was sent to the model and exactly what came back. "Memory"
+shows what the agent remembers, entry by entry. The other tabs show every
+workflow, the parts the agent is made of, its records and how they refer to
+each other, its tests, its past runs, and its code. The sidebar also lists
+all agents, all runs, and the permissions this Studio was started with.
+
+When an agent reaches an action that changes something, it stops and a card
+shows that one action and its exact arguments, with Allow once and Refuse.
+Nothing happens until you answer; no answer in ten minutes is a refusal.
+
+Studio can do only what the command that started it allows. Without
 `--model` it shows and tests but cannot run anything. A run uses the agent's
-own `memory` folder, may look inside `--allow-folder`, and saves its trace
-under the agent's `runs` folder. Tools that change the world are never
-granted from the app. It listens on 127.0.0.1 only, and every request needs
-the token printed at start, so other pages in your browser cannot reach it.
+own `memory` folder, may look inside `--allow-folder`, may read only the
+sites given with `--allow-site`, and saves its trace under the agent's
+`runs` folder. Shell tools are never bound. The server listens on 127.0.0.1
+only and requires a random token on every request.
 
 ### Talking to a program
 

@@ -90,6 +90,12 @@ def _model_step(call: dict[str, Any], returned: dict[str, Any]) -> dict[str, Any
         did = f"asked model {name}"
         answer = _show(result)
     step: dict[str, Any] = {"kind": "model", "did": did, "answer": answer}
+    # The request as it was sent and the reply as it came back, for anyone
+    # who wants to see exactly what the model was asked.
+    step["asked"] = _show(arguments, 1500)
+    if isinstance(returned.get("content"), str):
+        step["raw"] = _show(returned["content"], 1500)
+    step["model"] = name
     quotes = returned.get("evidence")
     if isinstance(quotes, dict):
         step["evidence"] = [

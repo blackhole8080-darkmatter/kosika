@@ -8,7 +8,7 @@ from dataclasses import asdict, dataclass
 from dataclasses import replace as dataclass_replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Mapping, Sequence, cast
+from typing import Any, Callable, Mapping, Sequence, cast
 
 from .agent import ApprovalRequiredError, ToolExecutor
 from .agent_steps import call_agent, validate_agent_transcript
@@ -132,6 +132,33 @@ def _event(event: str, **data: object) -> dict:
         "timestamp": datetime.now(timezone.utc).isoformat(),
         **data,
     }
+
+
+class LiveEvents(list):  # type: ignore[type-arg]
+    """A run's event list that also tells a watcher about each event as it
+    happens, with how deeply nested the workflow is that produced it.
+
+    Watching changes nothing about the run: the same events are recorded in
+    the same order, and the watcher is only told. A watcher that raises is
+    ignored, so a broken display can never break a run.
+    """
+
+    def __init__(self, watcher: Callable[[dict[str, Any], int], None], depth: int = 0):
+        super().__init__()
+        self.watcher, self.depth = watcher, depth
+
+    def append(self, event: Any) -> None:
+        super().append(event)
+        try:
+            self.watcher(event, self.depth)
+        except Exception:  # noqa: BLE001 - a display must not break a run
+            pass
+
+    def same_depth(self) -> "LiveEvents":
+        return LiveEvents(self.watcher, self.depth)
+
+    def child(self) -> "LiveEvents":
+        return LiveEvents(self.watcher, self.depth + 1)
 
 
 def _value_equal(left: Any, right: Any) -> bool:
@@ -1006,6 +1033,7 @@ def run(
     cancel: threading.Event | None = None,
     intelligence: IntelligenceRecorder | None = None,
     function_cache: FunctionResultCache | None = None,
+    on_event: Callable[[dict[str, Any], int], None] | None = None,
     _events_out: list[dict[str, Any]] | None = None,
     _scope: tuple[str, ...] = (),
     _control: ExecutionControl | None = None,
@@ -1030,6 +1058,11 @@ def run(
     control = _control
     control.scope = (*_scope, workflow_name)
     events: list[dict[str, Any]] = []
+    if on_event is not None:
+        events = LiveEvents(on_event)
+    elif isinstance(_events_out, LiveEvents):
+        # A called workflow reports as it goes too, one level deeper.
+        events = _events_out.same_depth()
     try:
         control.checkpoint()
         result = _run_workflow(
@@ -1434,7 +1467,9 @@ def _run_workflow(
                         expression_events=expression_events,
                     )
                 )
-                child_events: list[dict[str, Any]] = []
+                child_events: list[dict[str, Any]] = (
+                    events.child() if isinstance(events, LiveEvents) else []
+                )
                 try:
                     result = run(
                         program,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import tempfile
 import threading
+import time
 import unittest
 import urllib.error
 import urllib.request
@@ -218,7 +219,7 @@ class ActionTests(Fixture):
             self.app(can_run=False).run("desk/main.kos", {"text": "hello"})
         self.assertEqual(caught.exception.status, 403)
 
-    def test_a_tool_that_changes_the_world_is_never_bound(self) -> None:
+    def test_a_change_is_refused_when_nobody_is_there_to_allow_it(self) -> None:
         app = App(self.root, bind_models=lambda program: {}, allow_folder=self.root)
         with self.assertRaises(AppError) as caught:
             app.run(
@@ -237,6 +238,86 @@ class ActionTests(Fixture):
             app.story("desk/main.kos", "../../secret.jsonl")
         with self.assertRaises(AppError):
             app.run("desk/main.kos", {"nothing": 1})
+
+
+class LiveTests(Fixture):
+    """A run started from Studio can be followed, and asks before it acts."""
+
+    def writer(self) -> App:
+        return App(self.root, bind_models=lambda program: {}, allow_folder=self.root)
+
+    def until(self, app: App, run: str, *states: str) -> dict[str, Any]:
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            view = app.poll(run, 0)
+            if view["state"] in states:
+                return view
+            time.sleep(0.01)
+        self.fail(f"the run never reached {states}")
+
+    def test_a_run_reports_its_steps_as_it_goes_with_their_depth(self) -> None:
+        app = self.app()
+        job = app.start("desk/main.kos", {"text": "hello"})
+        view = self.until(app, job.id, "done")
+        self.assertEqual(view["text"], "visit 1")
+        told = [(e["event"], e.get("step"), e["depth"]) for e in view["events"]]
+        self.assertIn(("step_start", "kind", 0), told)
+        self.assertIn(("step_start", "known", 1), told)
+        self.assertIn(("step_complete", "said", 0), told)
+        calls = [e for e in view["events"] if e["event"] == "workflow_call"]
+        self.assertEqual(calls[0]["workflow"], "counted")
+        # Only what the page needs travels: never the values themselves.
+        self.assertTrue(all("arguments" not in e for e in view["events"]))
+        later = app.poll(job.id, view["next"])
+        self.assertEqual((later["events"], later["next"]), ([], view["next"]))
+
+    def test_a_change_waits_for_a_yes_and_then_happens_once(self) -> None:
+        app = self.writer()
+        note = {"note": {"path": "made.txt", "text": "hello"}}
+        job = app.start("writer/main.kos", {"inputs": note})
+        view = self.until(app, job.id, "waiting")
+        self.assertEqual(view["request"]["tool"], "save")
+        self.assertEqual(view["request"]["arguments"]["path"], "made.txt")
+        self.assertFalse((self.root / "made.txt").exists())
+        app.decide(job.id, True)
+        done = self.until(app, job.id, "done", "failed", "refused")
+        self.assertEqual(done["state"], "done")
+        self.assertEqual((self.root / "made.txt").read_text(encoding="utf-8"), "hello")
+        with self.assertRaises(AppError) as caught:
+            app.decide(job.id, True)
+        self.assertEqual(caught.exception.status, 409)
+
+    def test_a_refused_change_never_happens(self) -> None:
+        app = self.writer()
+        note = {"note": {"path": "never.txt", "text": "x"}}
+        job = app.start("writer/main.kos", {"inputs": note})
+        self.until(app, job.id, "waiting")
+        app.decide(job.id, False)
+        view = self.until(app, job.id, "refused", "done", "failed")
+        self.assertEqual(view["state"], "refused")
+        self.assertFalse((self.root / "never.txt").exists())
+
+    def test_memory_can_be_looked_at(self) -> None:
+        app = self.app()
+        self.assertEqual(
+            app.memory("desk/main.kos")["memories"],
+            [{"name": "people", "record": "Seen", "entries": {}}],
+        )
+        app.run("desk/main.kos", {"text": "hello"})
+        entries = app.memory("desk/main.kos")["memories"][0]["entries"]
+        self.assertEqual(entries, {"me": {"count": 1}})
+
+    def test_the_app_opens_on_an_agent_that_can_be_talked_to(self) -> None:
+        overview = self.app().overview()
+        self.assertEqual(overview["assistant"], "desk/main.kos")
+        (self.root / "assistant").mkdir()
+        (self.root / "assistant" / "main.kos").write_text(DESK, encoding="utf-8")
+        self.assertEqual(self.app().assistant(), "assistant/main.kos")
+
+    def test_an_unknown_run_is_not_found(self) -> None:
+        with self.assertRaises(AppError) as caught:
+            self.app().poll("nope", 0)
+        self.assertEqual(caught.exception.status, 404)
 
 
 class ServerTests(Fixture):
@@ -282,7 +363,7 @@ class ServerTests(Fixture):
     def test_the_page_and_the_data_are_served(self) -> None:
         status, page = self.ask("/?token=" + self.studio.token, token=None)
         self.assertEqual(status, 200)
-        self.assertIn("<title>Kosika</title>", page)
+        self.assertIn("<title>Kosika Studio</title>", page)
         status, data = self.ask("/api/agents")
         self.assertEqual(status, 200)
         self.assertEqual(len(data["agents"]), 3)
@@ -300,6 +381,23 @@ class ServerTests(Fixture):
             "/api/story?id=desk%2Fmain.kos&trace=" + ran["trace"].replace("/", "%2F")
         )
         self.assertEqual(story["workflow"], "main")
+
+    def test_a_run_can_be_started_and_followed_over_http(self) -> None:
+        status, started = self.ask("/api/start?id=desk%2Fmain.kos", body={"text": "hi"})
+        self.assertEqual(status, 200)
+        for _ in range(2000):
+            status, view = self.ask(f"/api/poll?run={started['run']}&since=0")
+            if view["state"] != "running":
+                break
+            time.sleep(0.01)
+        self.assertEqual(
+            (status, view["state"], view["text"]), (200, "done", "visit 1")
+        )
+        status, _ = self.ask(f"/api/decide?run={started['run']}", body={"allow": True})
+        self.assertEqual(status, 409)
+        status, memory = self.ask("/api/memory?id=desk%2Fmain.kos")
+        self.assertEqual(memory["memories"][0]["entries"], {"me": {"count": 1}})
+        self.assertEqual(self.ask("/api/poll?run=nope")[0], 404)
 
     def test_requests_without_the_token_or_from_elsewhere_are_refused(self) -> None:
         self.assertEqual(self.ask("/api/agents", token=None)[0], 403)
