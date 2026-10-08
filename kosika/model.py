@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
+import uuid
 from dataclasses import dataclass
 from typing import Any, Callable, Iterator, Protocol
 
@@ -392,18 +393,16 @@ class OpenAICompatibleProvider:
 
         payload: dict[str, Any] = {
             "model": request.model or self.model,
-            "messages": [
-                self._message_to_dict(message) for message in request.messages
-            ],
+            "messages": [self._ollama_message(message) for message in request.messages],
             "stream": False,
         }
         if options:
             payload["options"] = options
         if request.tools:
-            raise ModelProviderError(
-                "The ollama protocol does not support tool calling; use the "
-                "openai protocol for tool-enabled requests"
-            )
+            # Ollama takes the same tool descriptions as the OpenAI shape. A
+            # model that was not trained to choose tools answers in words and
+            # the server says so with an HTTP error.
+            payload["tools"] = [self._tool_to_dict(tool) for tool in request.tools]
         if request.json_object:
             payload["format"] = "json"
         if self.think is not None:
@@ -474,6 +473,20 @@ class OpenAICompatibleProvider:
         return payload
 
     @staticmethod
+    def _ollama_message(message: ChatMessage) -> dict[str, Any]:
+        """Ollama wants a tool call's arguments as an object, not as text."""
+
+        payload: dict[str, Any] = {"role": message.role, "content": message.content}
+        if message.tool_calls:
+            payload["tool_calls"] = [
+                {"function": {"name": call.name, "arguments": call.arguments}}
+                for call in message.tool_calls
+            ]
+        if message.role == "tool" and message.name is not None:
+            payload["tool_name"] = message.name
+        return payload
+
+    @staticmethod
     def _tool_to_dict(tool: ModelTool) -> dict[str, Any]:
         return {
             "type": "function",
@@ -520,9 +533,38 @@ class OpenAICompatibleProvider:
             )
         done = payload.get("done")
         finish_reason = "stop" if done is not False else "length"
+        raw_calls = message.get("tool_calls") or []
+        if not isinstance(raw_calls, list):
+            raise ModelProviderError("Model response tool_calls must be a list")
+        tool_calls: list[ModelToolCall] = []
+        for raw_call in raw_calls:
+            function = raw_call.get("function") if isinstance(raw_call, dict) else None
+            if not isinstance(function, dict) or not isinstance(
+                function.get("name"), str
+            ):
+                raise ModelProviderError("Model tool call lacked a function name")
+            arguments = function.get("arguments", {})
+            if isinstance(arguments, str):
+                try:
+                    arguments = json.loads(arguments)
+                except json.JSONDecodeError as exc:
+                    raise ModelProviderError(
+                        f"Model tool call {function['name']!r} had invalid JSON arguments"
+                    ) from exc
+            if not isinstance(arguments, dict):
+                raise ModelProviderError(
+                    f"Model tool call {function['name']!r} arguments must be an object"
+                )
+            # Each call needs an id of its own across the whole exchange, and
+            # Ollama does not always give one.
+            given = raw_call.get("id")
+            call_id = (
+                given if isinstance(given, str) and given else uuid.uuid4().hex[:12]
+            )
+            tool_calls.append(ModelToolCall(call_id, function["name"], arguments))
         return ModelResponse(
             content=content,
-            tool_calls=(),
+            tool_calls=tuple(tool_calls),
             finish_reason=finish_reason,
             usage=usage,
             reasoning=thinking,

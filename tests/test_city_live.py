@@ -14,10 +14,9 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from kosika.agent import AgentLoopError
 from kosika.city import build_city
 from kosika.city_live import _drive, _handler, capture_trace, render_city_live
-from kosika.durable import ExecutionSession
+from kosika.durable import ApprovalPending, ExecutionSession
 from kosika.execution import ExecutionLimits
 from kosika.metropolis import render_city_isometric
 from kosika.model import ModelResponse, ModelToolCall
@@ -606,9 +605,9 @@ class TraceCaptureTests(unittest.TestCase):
         with TemporaryDirectory() as raw:
             session = ExecutionSession(Path(raw) / "j.jsonl", binding_id="kosika-test")
             events: list[dict] = []
-            # The agent loop raises its own approval error before the tool
-            # callback runs; the runtime records that as run_paused.
-            with self.assertRaises(AgentLoopError):
+            # The run gates the tool the agent chose exactly as it gates a
+            # direct call: it stops for a person, recorded as run_paused.
+            with self.assertRaises(ApprovalPending):
                 run(
                     program,
                     "main",

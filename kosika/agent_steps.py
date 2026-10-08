@@ -3,25 +3,85 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from typing import Any
 
 from .agent import AgentLoop, AgentLoopError, ToolExecutor
 from .ast import AgentDecl, Program
-from .model import ModelProvider, ModelRequest, ModelResponse
+from .model import (
+    ChatMessage,
+    ModelProvider,
+    ModelProviderError,
+    ModelRequest,
+    ModelResponse,
+)
 from .model_steps import strict_json
 from .schema import validate
 
 
 class _CompleteResponses:
-    def __init__(self, provider: ModelProvider) -> None:
+    """The agent's model, with one courtesy: an answer given in plain words
+    is asked for once more as the record the step must return.
+
+    A model that has just been choosing tools often answers in a sentence
+    where a JSON object was asked for. Its answer is not thrown away: it is
+    shown back with the instruction to put it into shape, with no tools on
+    offer. What it first wrote is kept and recorded as `reformatted_from`.
+    """
+
+    def __init__(self, provider: ModelProvider, output_schema: dict[str, Any]) -> None:
         self.provider = provider
+        self.output_schema = output_schema
+        self.reformatted_from: str | None = None
+
+    def _fits(self, content: str | None) -> bool:
+        if not isinstance(content, str):
+            return False
+        try:
+            value = strict_json(content)
+            validate(value, self.output_schema)
+        except (TypeError, ValueError):
+            return False
+        return isinstance(value, dict)
 
     def complete(self, request: ModelRequest) -> ModelResponse:
         response = self.provider.complete(request)
         if not response.tool_calls and response.finish_reason != "stop":
             raise AgentLoopError("Agent step requires a complete final response")
-        return response
+        if response.tool_calls or self._fits(response.content):
+            return response
+        try:
+            shaped = self._reshape(request, response)
+        except ModelProviderError:
+            # Asking again did not work: let the loop refuse the first answer.
+            return response
+        if (
+            shaped.tool_calls
+            or shaped.finish_reason != "stop"
+            or not self._fits(shaped.content)
+        ):
+            return response
+        self.reformatted_from = response.content or ""
+        return shaped
+
+    def _reshape(self, request: ModelRequest, response: ModelResponse) -> ModelResponse:
+        return self.provider.complete(
+            replace(
+                request,
+                tools=(),
+                json_object=True,
+                messages=(
+                    *request.messages,
+                    ChatMessage(role="assistant", content=response.content or ""),
+                    ChatMessage(
+                        role="user",
+                        content="Put your answer into one JSON object matching "
+                        "the schema you were given. Return only that JSON "
+                        "object, with nothing before or after it.",
+                    ),
+                ),
+            )
+        )
 
 
 def call_agent(
@@ -32,7 +92,8 @@ def call_agent(
     arguments: dict[str, Any],
     output_schema: dict[str, Any],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    loop = AgentLoop(program, _CompleteResponses(provider), execute)
+    asked = _CompleteResponses(provider, output_schema)
+    loop = AgentLoop(program, asked, execute, tell_failures=True, defer_approval=True)
     try:
         completed = loop.run(
             agent.name,
@@ -61,6 +122,11 @@ def call_agent(
             )
         ),
         "plan_hash": completed.plan_hash,
+        **(
+            {"reformatted_from": asked.reformatted_from}
+            if asked.reformatted_from is not None
+            else {}
+        ),
     }
 
 
@@ -139,7 +205,6 @@ def validate_agent_transcript(call: dict[str, Any], returned: dict[str, Any]) ->
             ):
                 raise ValueError("Agent transcript has invalid tool call IDs")
             seen_ids.add(identifier)
-            validate(request.get("arguments"), tools[name]["input_schema"])
             if index >= len(messages):
                 raise ValueError("Agent transcript is missing a tool result")
             outcome = messages[index]
@@ -150,7 +215,15 @@ def validate_agent_transcript(call: dict[str, Any], returned: dict[str, Any]) ->
                 or outcome.get("tool_call_id") != identifier
             ):
                 raise ValueError("Agent transcript tool result mismatch")
-            validate(
-                strict_json(outcome.get("content", "")), tools[name]["output_schema"]
-            )
+            told = strict_json(outcome.get("content", ""))
+            # A look that went wrong was told to the model as an error and
+            # nothing ran, so there is no argument or result to check.
+            if (
+                isinstance(told, dict)
+                and set(told) == {"error"}
+                and isinstance(told["error"], str)
+            ):
+                continue
+            validate(request.get("arguments"), tools[name]["input_schema"])
+            validate(told, tools[name]["output_schema"])
     raise ValueError("Agent transcript has no final answer")

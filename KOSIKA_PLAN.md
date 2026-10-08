@@ -1661,6 +1661,59 @@ gate: without them a parser written in Kosika has nothing to return.
   undo history beyond the browser's. An approved program runs with your
   own authority: the folder limit is on where it starts, not a sandbox.
 
+## The tool loop, made usable
+
+- The loop was already in the core (`AgentLoop`, reached by `ask AGENT(...)`
+  with `can` and `max_steps`), with recorded and replay-checked transcripts.
+  It was recommended to the user as something new before the code was
+  read; that was wrong, and the user was told. This slice closes what
+  stopped it being used.
+- Ollama. The `ollama` protocol now offers tools and reads the model's
+  choices (`_ollama_message`, tool calls in `_parse_ollama_response`). It
+  used to refuse any request with tools, so Studio could not run the loop.
+- Words for tools. `agent.describe_tool` tells the model what each granted
+  tool does and what to put in it. Before, every tool was described as
+  "MCP operation SOURCE/OPERATION".
+- `tell_failures` (set for `ask` steps): a failed call to a tool that only
+  looks, or one with invalid arguments, is given to the model as
+  `{"error": ...}` instead of ending the run. Transcript validation accepts
+  that shape. Not for tools that change the world, and a request for an
+  undeclared tool still ends the run.
+- Reshaping. When the final answer is not the output record, the model is
+  asked once more, without tools and in JSON mode, to put its answer into
+  the record. The first answer is kept in the trace as `reformatted_from`.
+  If that second ask fails or still does not fit, the first answer is
+  rejected as before.
+- Approval inside the loop. `defer_approval` leaves gating to the run's
+  session. When the agent picks an `execute` tool the run pauses with
+  `ApprovalPending`, the `ask` step is marked not started, and after the
+  approval the step begins again. One approved change per `ask` step; a
+  second raises, because beginning again must not repeat the first.
+- `peek`: a read-only files operation that returns the first 4000
+  characters of a file.
+- Seen live. A watcher is told `agent_tool` for each choice (told, not
+  recorded). Studio shows the chain under the step, the story lists each
+  choice with what it gave back, and Requests shows the whole exchange.
+- `my_examples/agents/scout`: answers a question about a folder by
+  choosing `list_folder` and `look_at` itself.
+- Tried on a scratch project with three questions. qwen2.5:7b answered two
+  correctly, finding an undefined name by reading two files, and gave a
+  partial answer to the third while naming a file it had not opened; about
+  100 seconds a question on this CPU. qwen2.5:3b answered one correctly,
+  one wrongly without opening a file, and gave up on one; 30 to 50
+  seconds. With an approval-gated git tool the small model chose
+  `git log -1`, paused, and after Allow once reported the commit message.
+- 14 tests in `tests/test_tool_loop.py`. Three older tests changed: the
+  Ollama protocol test now expects tools to be sent, and the city test now
+  expects `ApprovalPending` where the loop's own approval error used to
+  come first.
+- Not claimed: the sources an agent names are not checked against the
+  files it opened in a workflow `ask`. When a step begins again after an
+  approval the model is asked again and may choose different arguments,
+  which asks the person again; that happened once in the try-out. The loop
+  does not stream its answer. Three questions on one small project is a
+  try-out, not a measurement. No MCP server was connected in this slice.
+
 ## Standard coding-agent procedure
 
 1. Inspect `git status`, the relevant source files, tests, and this plan.

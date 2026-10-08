@@ -87,9 +87,7 @@ class ProtocolSelectionTests(unittest.TestCase):
             OpenAICompatibleProvider(OPENAI_HOST, "m").endpoint,
             "http://localhost:11434/v1/chat/completions",
         )
-        self.assertEqual(
-            OpenAICompatibleProvider(OPENAI_HOST, "m").protocol, "openai"
-        )
+        self.assertEqual(OpenAICompatibleProvider(OPENAI_HOST, "m").protocol, "openai")
 
     def test_ollama_endpoint_targets_the_native_api(self) -> None:
         provider = OpenAICompatibleProvider(OLLAMA_HOST, "m", protocol="ollama")
@@ -111,7 +109,9 @@ class ProtocolSelectionTests(unittest.TestCase):
 
     def test_a_trailing_slash_does_not_double_up(self) -> None:
         self.assertEqual(
-            OpenAICompatibleProvider(OLLAMA_HOST + "/", "m", protocol="ollama").endpoint,
+            OpenAICompatibleProvider(
+                OLLAMA_HOST + "/", "m", protocol="ollama"
+            ).endpoint,
             "http://localhost:11434/api/chat",
         )
 
@@ -165,25 +165,36 @@ class OllamaRequestTests(unittest.TestCase):
         provider.complete(ModelRequest(messages=()))
         self.assertNotIn("options", capture.body)
 
-    def test_tool_calling_is_refused_rather_than_silently_dropped(self) -> None:
+    def test_tools_are_offered_to_the_model(self) -> None:
         capture = Capture(ollama_reply())
         provider = OpenAICompatibleProvider(
             OLLAMA_HOST, "qwen3:1.7b", protocol="ollama", transport=capture
         )
-        with self.assertRaisesRegex(ModelProviderError, "does not support tool calling"):
-            provider.complete(
-                ModelRequest(
-                    messages=(),
-                    tools=(
-                        ModelTool(
-                            name="read",
-                            description="Read a file.",
-                            input_schema={"type": "object"},
-                        ),
+        provider.complete(
+            ModelRequest(
+                messages=(),
+                tools=(
+                    ModelTool(
+                        name="read",
+                        description="Read a file.",
+                        input_schema={"type": "object"},
                     ),
-                )
+                ),
             )
-        self.assertEqual(capture.url, "")
+        )
+        self.assertEqual(
+            capture.body["tools"],
+            [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "read",
+                        "description": "Read a file.",
+                        "parameters": {"type": "object"},
+                    },
+                }
+            ],
+        )
 
     def test_out_of_range_parameters_fail_before_any_request(self) -> None:
         capture = Capture(ollama_reply())
@@ -240,9 +251,7 @@ class OllamaResponseTests(unittest.TestCase):
 
     def test_missing_token_counts_leave_usage_absent(self) -> None:
         response = self.parse(
-            json.loads(
-                json.dumps({"message": {"role": "assistant", "content": "OK"}})
-            )
+            json.loads(json.dumps({"message": {"role": "assistant", "content": "OK"}}))
         )
         self.assertIsNone(response.usage)
         self.assertEqual(response.content, "OK")
@@ -354,9 +363,7 @@ class CommandLineWiringTests(unittest.TestCase):
     def test_author_eval_passes_the_protocol_through(self) -> None:
         with contextlib.ExitStack() as stack:
             provider = self.patched(stack)
-            stack.enter_context(
-                patch("kosika.cli.OpenAICompatibleProvider", provider)
-            )
+            stack.enter_context(patch("kosika.cli.OpenAICompatibleProvider", provider))
             code, output = self.run_cli(
                 [
                     "author-eval",
@@ -380,9 +387,7 @@ class CommandLineWiringTests(unittest.TestCase):
     def test_author_eval_defaults_to_the_openai_protocol(self) -> None:
         with contextlib.ExitStack() as stack:
             provider = self.patched(stack)
-            stack.enter_context(
-                patch("kosika.cli.OpenAICompatibleProvider", provider)
-            )
+            stack.enter_context(patch("kosika.cli.OpenAICompatibleProvider", provider))
             code, output = self.run_cli(
                 [
                     "author-eval",
@@ -406,7 +411,7 @@ class CommandLineWiringTests(unittest.TestCase):
             provider.return_value = ScriptedModelProvider([])
             with tempfile.TemporaryDirectory() as directory:
                 code, output = self.run_cli(
-[
+                    [
                         "author",
                         str(broken_program(directory)),
                         "--intent",
@@ -430,7 +435,7 @@ class CommandLineWiringTests(unittest.TestCase):
             provider.return_value = ScriptedModelProvider([])
             with tempfile.TemporaryDirectory() as directory:
                 code, output = self.run_cli(
-[
+                    [
                         "author",
                         str(broken_program(directory)),
                         "--intent",
@@ -451,7 +456,7 @@ class CommandLineWiringTests(unittest.TestCase):
             provider.return_value = ScriptedModelProvider([])
             code, output = self.run_cli(
                 [
-str(EXAMPLES / "hello_world.kos"),
+                    str(EXAMPLES / "hello_world.kos"),
                     "--intent",
                     "Keep the greeting working.",
                     "--proposal-base-url",

@@ -140,6 +140,57 @@ def action_hash(plan_hash_value: str, tool_name: str, arguments: dict[str, Any])
         raise AgentLoopError("Model tool arguments are not JSON values") from exc
 
 
+def describe_tool(tool: ToolDecl) -> str:
+    """What a tool is for, in words a model can choose by.
+
+    A model picks a tool from its name and this sentence, so the sentence
+    says what the tool does and what to put in it.
+    """
+
+    source, operation = tool.source, tool.operation
+    asks = " The person is asked before it happens." if tool.access == "execute" else ""
+    if source == "system:files":
+        return {
+            "list": "List the names of the files and folders in a folder. `path` "
+            'is relative to the granted folder; use "." for the top. Folder '
+            "names end with a slash.",
+            "read": "Read a whole text file. `path` is relative to the granted "
+            "folder, such as notes/todo.txt.",
+            "peek": "Read the beginning of a text file, up to 4000 characters. "
+            "`path` is relative to the granted folder. Use this to look at a "
+            "file without reading all of it.",
+            "write": "Write `text` to the file at `path`, replacing it." + asks,
+            "create": "Create a new text file at `path` holding `text`. It "
+            "never replaces an existing file." + asks,
+        }.get(operation, f"File operation {operation}.")
+    if source == "system:shell":
+        return (
+            f"Run the program {operation} with `args`, a list of its arguments, "
+            "inside the granted folder. It gives back the exit code and what "
+            "the program printed." + asks
+        )
+    if source == "system:web":
+        return (
+            "Read one web page. `url` is a full https address on a site the "
+            "person allowed. It gives back the page's title and text."
+        )
+    if source.startswith("memory:"):
+        name = source.removeprefix("memory:")
+        return (
+            f"Look up what is stored under `key` in memory {name}."
+            if operation == "recall"
+            else f"Store `value` under `key` in memory {name}."
+        )
+    if source.startswith("board:"):
+        name = source.removeprefix("board:")
+        return (
+            f"Read every post on board {name}."
+            if operation == "read"
+            else f"Post to board {name}, where the other agents can read it."
+        )
+    return f"MCP operation {source}/{operation}"
+
+
 class AgentLoop:
     """Run a model against only the tools granted to one Kosika agent.
 
@@ -166,7 +217,20 @@ class AgentLoop:
         skill_policy: str = "disabled",
         explicit_skills: tuple[str, ...] = (),
         max_skills: int = 6,
+        tell_failures: bool = False,
+        defer_approval: bool = False,
     ) -> None:
+        #: When set, the loop does not judge approvals itself: whoever runs
+        #: the tools does, for every call that changes the world. A workflow
+        #: step uses this, because its run already gates each such call on a
+        #: recorded approval and can pause for a person.
+        self.defer_approval = defer_approval
+        #: When set, a look that goes wrong is told to the model instead of
+        #: ending the run: a missing file or a bad argument. The model reads `{"error": ...}` as that tool's result
+        #: and can try something else. This never applies to a tool that
+        #: changes the world, whose failure may mean it half happened, and a
+        #: request for a tool the agent was never given still ends the run.
+        self.tell_failures = tell_failures
         for name, value in (
             ("max_steps", max_steps),
             ("max_tool_calls", max_tool_calls),
@@ -509,10 +573,7 @@ class AgentLoop:
         tools = tuple(
             ModelTool(
                 name=binding.declaration.name,
-                description=(
-                    f"MCP operation {binding.declaration.source}/"
-                    f"{binding.declaration.operation}"
-                ),
+                description=describe_tool(binding.declaration),
                 input_schema=binding.input_schema,
             )
             for binding in bindings
@@ -801,7 +862,7 @@ class AgentLoop:
                     f"Agent loop exceeded maximum model steps ({limits['max_steps']})"
                 )
             # Reject the whole model batch before any tool can have an effect.
-            pending = []
+            pending: list[tuple[Any, ToolBinding | None, str | None]] = []
             execute_count = 0
             action_to_claim: tuple[str, str] | None = None
             if not 0 <= resume_tool_index <= len(response.tool_calls):
@@ -821,8 +882,17 @@ class AgentLoop:
                     raise AgentLoopError(
                         f"Model requested undeclared tool {call.name!r}"
                     )
-                self._validate_input(binding, call.arguments)
-                if binding.declaration.access == "execute":
+                try:
+                    self._validate_input(binding, call.arguments)
+                except AgentLoopError as exc:
+                    if (
+                        not self.tell_failures
+                        or binding.declaration.access == "execute"
+                    ):
+                        raise
+                    pending.append((call, binding, str(exc)))
+                    continue
+                if binding.declaration.access == "execute" and not self.defer_approval:
                     execute_count += 1
                     if approval_used or execute_count > 1:
                         raise ApprovalRequiredError(
@@ -844,7 +914,7 @@ class AgentLoop:
                             f"requires approval for plan {current_plan_hash} "
                             f"and action {current_action_hash}"
                         )
-                pending.append((call, binding))
+                pending.append((call, binding, None))
             if execution.counts["tool_calls"] + len(pending) > int(
                 limits["max_tool_calls"]
             ):
@@ -878,7 +948,7 @@ class AgentLoop:
                 except ApprovalLedgerError as exc:
                     raise ApprovalRequiredError(str(exc)) from exc
                 approval_used = True
-            for offset, (call, binding) in enumerate(pending):
+            for offset, (call, binding, problem) in enumerate(pending):
                 current_tool_index = resume_tool_index + offset
                 try:
                     execution.consume("tool_calls")
@@ -888,10 +958,28 @@ class AgentLoop:
                     execution.checkpoint()
                 except ExecutionError as exc:
                     raise AgentLoopError(str(exc), code=exc.code) from exc
-                is_execute = binding.declaration.access == "execute"
+                changes = (
+                    binding is not None and binding.declaration.access == "execute"
+                )
+                is_execute = changes and not self.defer_approval
                 try:
-                    result = self.execute_tool(binding.declaration, call.arguments)
-                    self._validate_output(binding, result)
+                    failure: Any
+                    if problem is not None or binding is None:
+                        failure = {"error": problem}
+                        result = failure
+                    else:
+                        try:
+                            result = self.execute_tool(
+                                binding.declaration, call.arguments
+                            )
+                            self._validate_output(binding, result)
+                        except (ExecutionError, PermissionError, AgentLoopError):
+                            raise
+                        except Exception as exc:
+                            if changes or not self.tell_failures:
+                                raise
+                            failure = {"error": str(exc)[:300]}
+                            result = failure
                     trace_events.append(
                         {
                             "event": "agent_tool_call",

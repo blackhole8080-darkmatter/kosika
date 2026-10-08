@@ -185,6 +185,32 @@ def _tool_step(call: dict[str, Any], returned: dict[str, Any]) -> dict[str, Any]
     }
 
 
+def _agent_tools(messages: Any) -> list[str]:
+    if not isinstance(messages, list):
+        return []
+    results = {
+        message.get("tool_call_id"): message.get("content")
+        for message in messages
+        if isinstance(message, dict) and message.get("role") == "tool"
+    }
+    used: list[str] = []
+    for message in messages:
+        if not isinstance(message, dict) or message.get("role") != "assistant":
+            continue
+        for call in message.get("tool_calls") or ():
+            if not isinstance(call, dict):
+                continue
+            given = ", ".join(
+                f"{name}: {_show(value, 60)}"
+                for name, value in (call.get("arguments") or {}).items()
+            )
+            used.append(
+                f"{call.get('name')}({given}) gave "
+                f"{_show(results.get(call.get('id')), 160)}"
+            )
+    return used
+
+
 def _step(events: list[dict[str, Any]]) -> dict[str, Any]:
     start = events[0]
     call = next((e for e in events if e.get("event") in _CALLS), None)
@@ -219,7 +245,20 @@ def _step(events: list[dict[str, Any]]) -> dict[str, Any]:
                 kind="agent",
                 did=f"asked agent {call.get('agent')}",
                 answer=_show(returned.get("result")),
+                asked=_show(call.get("arguments"), 1500),
             )
+            if isinstance(returned.get("content"), str):
+                told["raw"] = _show(returned["content"], 1500)
+            # The tools the agent chose for itself, in order, with what
+            # each gave back: the part of its work no step spells out.
+            used = _agent_tools(returned.get("messages"))
+            if used:
+                told["used"] = used
+                told["did"] += f", which chose {len(used)} tool call(s) itself"
+            if isinstance(returned.get("reformatted_from"), str):
+                told["reshaped"] = _show(returned["reformatted_from"], 300)
+            if isinstance(returned.get("model_steps"), int):
+                told["turns"] = returned["model_steps"]
     recovered = start.get("recovered_from")
     if isinstance(recovered, dict):
         told["fallback"] = _show(recovered.get("message"), 120)
@@ -297,6 +336,13 @@ def _tell(steps: list[dict[str, Any]], lines: list[str], indent: str) -> None:
             lines.append(f"{indent}     rejected, then asked again: {reason}")
         if "vote" in step:
             lines.append(f"{indent}     vote: {step['vote']}")
+        for use in step.get("used", ()):
+            lines.append(f"{indent}     it chose {use}")
+        if "reshaped" in step:
+            lines.append(
+                f"{indent}     it first answered in plain words, then put "
+                "that into the record"
+            )
         _tell(step.get("inside", []), lines, indent + "     ")
         if "answer" in step:
             lines.append(f"{indent}     -> {step['answer']}")

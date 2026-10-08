@@ -54,7 +54,7 @@ from .builtin_methods import call as call_method
 from .builtin_methods import resolve_for_value as resolve_method_for_value
 from .checker import check
 from .controls import ExecutionError
-from .durable import ExecutionSession
+from .durable import ApprovalPending, ExecutionSession
 from .evidence import EvidenceError, answer_schema, split, verify
 from .execution import ExecutionControl, ExecutionLimits, within_budget
 from .function_types import public_type
@@ -1536,9 +1536,29 @@ def _run_workflow(
                 )
                 events.append(call_event)
 
+                agent_changed: list[str] = []
+
                 def execute_agent_tool(
                     declaration: ToolDecl, values: dict[str, Any]
                 ) -> Any:
+                    # A watcher sees each tool the agent picks as it picks
+                    # it. This is told, not recorded: the trace keeps the
+                    # whole exchange in the agent's return, as before.
+                    if isinstance(events, LiveEvents):
+                        try:
+                            events.watcher(
+                                {
+                                    "event": "agent_tool",
+                                    "agent": asked_agent.name,
+                                    "tool": declaration.name,
+                                    "source": declaration.source,
+                                    "operation": declaration.operation,
+                                    "access": declaration.access,
+                                },
+                                events.depth,
+                            )
+                        except Exception:  # noqa: BLE001 - told only
+                            pass
                     _control.consume("tool_calls")
                     if declaration.access == "execute":
                         # An ask that reaches an approval-gated tool is gated the
@@ -1553,7 +1573,24 @@ def _run_workflow(
                                 "verified approval record"
                             )
                         inner = (*scope, f"ask:{declaration.name}")
-                        action = session.start(inner, declaration.name, values)
+                        if agent_changed:
+                            # One approved change can be paused for and
+                            # resumed safely. A second in the same step could
+                            # not be: resuming asks the model again, and the
+                            # first change must not happen twice.
+                            raise PermissionError(
+                                f"Agent {asked_agent.name!r} already made one "
+                                "approved change in this step; a second change "
+                                "needs a step of its own"
+                            )
+                        try:
+                            action = session.start(inner, declaration.name, values)
+                        except ApprovalPending:
+                            # Nothing has changed yet, so this step can be
+                            # begun again once a person has answered.
+                            session.recover(scope)
+                            raise
+                        agent_changed.append(declaration.name)
                         outcome = _agent_tool_outcome(declaration, values)
                         validate(
                             outcome, schema_for_record(program, declaration.output)

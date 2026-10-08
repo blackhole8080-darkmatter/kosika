@@ -369,7 +369,7 @@ function workflowTab(agent) {
 // The live view: the same flow, driven by the events of a run as they arrive.
 function liveView(agent, entry) {
   const byName = Object.fromEntries(agent.workflows.map(w => [w.name, w]));
-  let writing = "";
+  let writing = "", picked = [];
   const root = h("div", {class: "live"});
   const tally = h("div", {class: "tally"});
   const box = h("div", null, root, tally);
@@ -416,8 +416,13 @@ function liveView(agent, entry) {
       if (at.top < view.top || at.top + 90 > view.bottom) root.scrollTo({top: root.scrollTop + at.top - view.top - 50, behavior: "smooth"});
       counts.steps += 1;
     } else if (event.event === "model_call") { counts.models += 1; say(depth, "asking the model…"); }
-    else if (event.event === "agent_call") { counts.models += 1; say(depth, "asking agent " + event.agent + "…"); }
-    else if (event.event === "agent_return") { if (event.tokens) counts.tokens += event.tokens; say(depth, "agent " + (event.agent || "") + " answered"); }
+    else if (event.event === "agent_call") { counts.models += 1; picked = []; say(depth, "agent " + event.agent + " is thinking…"); }
+    else if (event.event === "agent_tool") {
+      // The agent chose this tool itself; show the chain of its choices.
+      counts.tools += 1; picked.push(event.tool);
+      say(depth, "agent " + event.agent + " chose: " + picked.join(" → ") + (event.access === "execute" ? " (asks you first)" : ""));
+    }
+    else if (event.event === "agent_return") { if (event.tokens) counts.tokens += event.tokens; say(depth, "agent " + (event.agent || "") + " answered" + (picked.length ? " after choosing " + picked.join(" → ") : "")); }
     else if (event.event === "model_return") {
       if (event.tokens) counts.tokens += event.tokens;
       const bits = ["the model answered"]; if (event.rejected) bits.push(event.rejected + " answer(s) rejected first");
@@ -482,6 +487,8 @@ function storySteps(steps) {
     if (step.fallback) row.append(h("div", {class: "note bad"}, "First attempt failed: " + step.fallback + " The fallback ran instead."));
     for (const reason of step.rejected || []) row.append(h("div", {class: "note bad"}, "Rejected, then asked again: " + reason));
     if (step.vote) row.append(h("div", {class: "note v"}, "Vote: " + step.vote));
+    for (const use of step.used || []) row.append(h("div", {class: "note v"}, "It chose " + use));
+    if (step.reshaped) row.append(h("div", {class: "note"}, "It first answered in plain words, then put that into the record."));
     if ((step.inside || []).length) row.append(h("div", {class: "inside"}, storySteps(step.inside)));
     if (step.answer != null) row.append(h("div", {class: "ans"}, "→ " + step.answer));
     for (const quote of step.evidence || []) row.append(h("div", {class: "note q"}, "Backed by " + quote));
@@ -507,12 +514,13 @@ function storyView(story) {
 }
 
 function requestsView(story) {
-  const asked = everyStep(story.steps).filter(step => step.kind === "model");
+  const asked = everyStep(story.steps).filter(step => step.kind === "model" || step.kind === "agent");
   if (!asked.length) return h("p", {class: "empty"}, "No model was asked in this run. Everything was done by code, memory, or tools.");
   return h("div", null, asked.map(step => h("div", {class: "req"},
     h("div", {class: "head"}, step.name + ": " + step.did),
     h("div", {class: "chips", style: "margin-top:5px"}, step.model ? chip(step.model, "think") : null, step.seconds ? chip(step.seconds + " s") : null, step.tokens ? chip(step.tokens + " tokens") : null),
     h("div", {class: "lab"}, "What was sent"), h("pre", null, step.asked || ""),
+    (step.used || []).length ? [h("div", {class: "lab"}, "Tools it chose itself, in " + (step.turns || "several") + " turns"), h("pre", null, step.used.map((use, index) => (index + 1) + ". " + use).join("\n"))] : null,
     h("div", {class: "lab"}, "What came back, exactly"), h("pre", null, step.raw || ""),
     (step.rejected || []).length ? h("div", {class: "note bad", style: "margin-top:6px"}, step.rejected.length + " earlier answer(s) were rejected and asked again.") : null)));
 }
@@ -638,6 +646,7 @@ function swarmTab(agent) {
       if (event.event === "swarm_round") { round.textContent = "Round " + event.round + " of up to " + chosen.max_rounds; live.redraw(); return; }
       if (event.event === "agent_call" && members[event.agent]) { rest(); active = members[event.agent]; active.el.classList.add("active"); active.doing.textContent = "thinking…"; }
       else if (event.event === "model_text" && active) active.doing.textContent = "writing…";
+      else if (event.event === "agent_tool" && members[event.agent]) members[event.agent].doing.textContent = "using " + event.tool + "…";
       else if (event.event === "agent_return") rest();
       else if (event.event === "tool_call" && event.said != null) {
         const who = members[event.author];

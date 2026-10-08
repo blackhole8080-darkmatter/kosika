@@ -12,7 +12,7 @@ A program asks for system access by declaring a tool with a `system` source:
 
     tool save_report {
       source system "files"
-      operation: "write"           // read, write, or list
+      operation: "write"           // read, peek, list, write, or create
       access: execute
       input: FileWrite             // {path: Text, text: Text}
       output: FileWritten          // {bytes: Number}
@@ -51,8 +51,10 @@ from .web import WebError, bind_web_tool
 
 SYSTEM_PREFIX = "system:"
 SYSTEM_KINDS = ("shell", "files", "web")
-FILE_OPERATIONS = ("read", "write", "create", "list")
-READ_ONLY_OPERATIONS = ("read", "list")
+FILE_OPERATIONS = ("read", "peek", "write", "create", "list")
+READ_ONLY_OPERATIONS = ("read", "peek", "list")
+#: How much of a file `peek` gives back.
+PEEK_CHARACTERS = 4000
 SHELL_TIMEOUT_SECONDS = 60
 MAX_OUTPUT_CHARACTERS = 64 * 1024
 MAX_FILE_BYTES = 1024 * 1024
@@ -65,6 +67,9 @@ SHAPES: dict[str, tuple[dict[str, str], dict[str, str]]] = {
         {"exit_code": "Number", "stdout": "Text", "stderr": "Text"},
     ),
     "read": ({"path": "Text"}, {"text": "Text"}),
+    # The beginning of a file. A model that chooses its own tools can look
+    # at a long file without the whole of it being handed back.
+    "peek": ({"path": "Text"}, {"text": "Text"}),
     "write": ({"path": "Text", "text": "Text"}, {"bytes": "Number"}),
     # Like write, but refuses when anything is already at that path, so it
     # can add to a folder and never destroy what is there.
@@ -214,6 +219,19 @@ def _files(tool: ToolDecl, folder: Path) -> Callable[[ToolDecl, dict[str, Any]],
         except UnicodeDecodeError as exc:
             raise SystemToolError(f"{arguments['path']!r} is not UTF-8 text") from exc
 
+    def peek(_tool: ToolDecl, arguments: dict[str, Any]) -> dict[str, Any]:
+        path = _inside(folder, arguments["path"])
+        if not path.is_file():
+            raise SystemToolError(f"{arguments['path']!r} is not a file")
+        try:
+            with path.open("r", encoding="utf-8") as stream:
+                text = stream.read(PEEK_CHARACTERS + 1)
+        except UnicodeDecodeError as exc:
+            raise SystemToolError(f"{arguments['path']!r} is not UTF-8 text") from exc
+        if len(text) > PEEK_CHARACTERS:
+            text = text[:PEEK_CHARACTERS] + "\n[the file goes on]"
+        return {"text": text}
+
     def write(_tool: ToolDecl, arguments: dict[str, Any]) -> dict[str, Any]:
         data = arguments["text"].encode("utf-8")
         if len(data) > MAX_FILE_BYTES:
@@ -256,9 +274,13 @@ def _files(tool: ToolDecl, folder: Path) -> Callable[[ToolDecl, dict[str, Any]],
             raise SystemToolError(f"folder has more than {MAX_LISTED_NAMES} entries")
         return {"names": names}
 
-    return {"read": read, "write": write, "create": create, "list": list_names}[
-        tool.operation
-    ]
+    return {
+        "read": read,
+        "peek": peek,
+        "write": write,
+        "create": create,
+        "list": list_names,
+    }[tool.operation]
 
 
 def bind_system_tools(

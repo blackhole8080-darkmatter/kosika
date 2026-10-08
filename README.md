@@ -538,6 +538,41 @@ sites given with `--allow-site`, and saves its trace under the agent's
 `runs` folder. Shell tools are bound only with `--allow-shell`. The server
 listens on 127.0.0.1 only and requires a random token on every request.
 
+### An agent that chooses its own tools
+
+Most steps say exactly what happens. An `ask` step hands a goal to an agent
+and lets its model choose:
+
+```
+agent scout {
+  model: thinker
+  can: [list_folder, look_at]
+  max_steps: 6
+}
+
+workflow main(msg: Msg) -> Said {
+  found = ask scout(msg.text)
+  said  = tell(found)
+}
+```
+
+The model is told what each tool in `can` is for, picks one, reads what it
+gave back, and picks again, for at most `max_steps` turns. Then it must
+answer with the model's output record. Every choice, its arguments and its
+result are recorded, `kosika story` lists them, and Studio shows each one as
+it is made.
+
+It can reach only the tools in `can`, and only as far as the person running
+it granted. A look that fails, such as a file that is not there, is told to
+the model so it can try something else. An answer given in plain words is
+asked for once more as the record. A tool that changes something stops for
+approval exactly as a direct call does; an agent may make one such change
+per `ask` step. Asking for a tool it was never given ends the run.
+
+This works with `--model-protocol ollama` and `openai`, on a model that was
+trained to choose tools. A files tool with `operation: "peek"` reads only
+the first 4000 characters, which suits a model reading for itself.
+
 ### Talking to a program
 
 ```
