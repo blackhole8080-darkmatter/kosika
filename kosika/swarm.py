@@ -41,7 +41,7 @@ from .ast import Program, program_payload
 from .board import BoardStore, bind_board_tools
 from .checker import check
 from .execution import ExecutionControl, ExecutionLimits
-from .runtime import ExecutionSession, run
+from .runtime import ExecutionSession, LiveEvents, run
 
 SWARM_RUN_SCHEMA = "kosika.swarm-run/v1"
 
@@ -148,6 +148,7 @@ def run_swarm(
     limits: ExecutionLimits | None = None,
     session: ExecutionSession | None = None,
     collect_events: bool = True,
+    on_event: Any = None,
 ) -> SwarmRunResult:
     """Run a declared swarm's workflow under one authenticated approval."""
 
@@ -191,7 +192,9 @@ def run_swarm(
 
     control = ExecutionControl(limits or ExecutionLimits())
     control.scope = (f"swarm:{swarm.name}",)
-    events: list[dict[str, Any]] = []
+    # A watcher is told about every round's events as they happen. It
+    # changes nothing about the run.
+    events: list[dict[str, Any]] = [] if on_event is None else LiveEvents(on_event)
     rounds: list[SwarmRound] = []
     previous: bytes | None = None
     final: Any = None
@@ -206,6 +209,11 @@ def run_swarm(
         }
 
     for index in range(1, swarm.max_rounds + 1):
+        if on_event is not None:
+            try:
+                on_event({"event": "swarm_round", "round": index}, 0)
+            except Exception:  # noqa: BLE001 - a display must not break a run
+                pass
         try:
             outcome = run(
                 program,

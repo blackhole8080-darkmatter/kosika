@@ -105,6 +105,28 @@ pre.source { background: var(--bg); border: 1px solid var(--line); border-radius
 .tally { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--soft); padding: 9px 2px 0; border-top: 1px solid var(--line); margin-top: 8px; } .tally b { color: var(--ink); font-weight: 600; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 
+.bubble.draft { color: var(--soft); } .caret { display: inline-block; width: 7px; height: 1em; background: var(--accent); margin-left: 2px; vertical-align: -2px; animation: blink 1s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+
+/* swarm */
+.stage { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; padding: 14px 6px 6px; }
+.member { width: 132px; text-align: center; padding: 10px 6px; border-radius: 13px; border: 1px solid transparent; transition: border-color .3s, background .3s, transform .3s var(--ease); }
+.member.active { border-color: var(--accent); background: var(--accent-soft); transform: translateY(-3px); }
+.face { width: 52px; height: 52px; border-radius: 50%; margin: 0 auto 6px; display: grid; place-items: center; font-weight: 700; color: #fff; transition: box-shadow .3s; }
+.member.active .face { animation: pulse 1.3s infinite; } .member.spoke .face { box-shadow: 0 0 0 5px var(--ok-soft); }
+.c0 { --who: #b4532a; } .c1 { --who: #1f6f8b; } .c2 { --who: #5b4bb5; } .c3 { --who: #2f7d4f; } .c4 { --who: #8a6100; }
+.face { background: var(--who, var(--accent)); } .who { font: 600 13px var(--mono); } .doing { font-size: 12px; color: var(--accent); min-height: 1.4em; }
+.round { text-align: center; font-size: 12.5px; color: var(--soft); min-height: 1.5em; }
+.feed { display: flex; flex-direction: column; gap: 8px; max-height: 300px; overflow: auto; margin: 10px 0; }
+.post { border-left: 3px solid var(--who, var(--accent)); background: var(--bg); border-radius: 0 10px 10px 0; padding: 7px 11px; animation: rise .3s var(--ease); white-space: pre-wrap; word-break: break-word; }
+.post b { display: block; font: 600 12px var(--mono); color: var(--who, var(--accent)); } .post small { color: var(--faint); }
+
+/* editor */
+textarea.editor { min-height: 62vh; font: 12.5px/1.55 var(--mono); tab-size: 2; white-space: pre; overflow: auto; }
+.bar { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; } .bar .say { font-size: 13px; color: var(--soft); }
+select { font: inherit; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; }
+.card.new { cursor: default; border-style: dashed; } .card.new:hover { transform: none; }
+
 /* story, requests, data, memory */
 .story .s { padding: 9px 0; border-bottom: 1px solid var(--line); } .story .s:last-child { border: 0; }
 .head { font-weight: 600; font-size: 13.5px; } .head .t { color: var(--faint); font-weight: 400; font-size: 12px; margin-left: 6px; }
@@ -161,6 +183,37 @@ const sleep = ms => new Promise(done => setTimeout(done, ms));
 // replaceChildren and append would print a missing piece as the word "null".
 const fill = (el, ...kids) => { el.replaceChildren(...kids.flat().filter(kid => kid != null && kid !== false)); return el; };
 const icon = name => document.getElementById("icon-" + name).content.cloneNode(true);
+
+// The readable part of an answer that is still being written. A model step
+// answers with one JSON object; this pulls out its first piece of text.
+function partial(raw) {
+  const open = raw.match(/^\s*\{\s*"[^"]*"\s*:\s*"/);
+  if (!open) return "";
+  const body = raw.slice(open[0].length);
+  let out = "";
+  for (let i = 0; i < body.length; i++) {
+    const c = body[i];
+    if (c === '"') break;
+    if (c !== "\\") { out += c; continue; }
+    if (i + 1 >= body.length) break;
+    const next = body[++i];
+    if (next === "u") { if (i + 4 >= body.length) break; out += String.fromCharCode(parseInt(body.slice(i + 1, i + 5), 16)); i += 4; }
+    else out += next === "n" ? "\n" : next === "t" ? "\t" : next === "r" ? "" : next;
+  }
+  return out;
+}
+
+// What an agent is asking to be allowed to do, in words.
+const isProgram = request => request.kind === "system:shell";
+const askTitle = request => isProgram(request) ? "Wants to start this program, and nothing else:" : "Wants to do this, and nothing else: " + (request.tool || "an action");
+function askLines(request) {
+  const given = request.arguments || {};
+  if (isProgram(request)) {
+    const words = (given.args || []).map(word => /[\s"]/.test(word) || word === "" ? JSON.stringify(word) : word);
+    return [request.operation, ...words].join(" ") + "\n\nIt runs inside the granted folder and is stopped after 60 seconds.";
+  }
+  return Object.entries(given).map(([key, value]) => key + ": " + (typeof value === "string" ? value : JSON.stringify(value))).join("\n");
+}
 
 async function api(path, options) {
   const response = await fetch(path, {...(options || {}), headers: {"X-Kosika-Token": token, "Content-Type": "application/json"}});
@@ -224,7 +277,22 @@ function showAgents() {
     h("div", {class: "grid"}, agents.map(agent => h("div", {class: "card", onclick: () => go("agent", agent.id)},
       h("h3", null, agent.title),
       h("div", {class: "about"}, agent.error ? agent.error : (agent.about || "No description. Add a // comment at the top of the file.")),
-      h("div", {class: "chips"}, badges(agent)), h("div", {class: "path"}, agent.path)))));
+      h("div", {class: "chips"}, badges(agent)), h("div", {class: "path"}, agent.path))), newAgentCard()));
+}
+
+function newAgentCard() {
+  const words = {support: "Support desk: sorts a message and drafts a reply", expense: "Expense checker: reads a receipt, code applies the rules", notes: "Meeting notes: summary, decisions and actions"};
+  const name = h("input", {type: "text", placeholder: "name, for example my_helper"});
+  const kind = h("select", null, (overview.starters || []).map(item => h("option", {value: item}, words[item] || item)));
+  const out = h("div");
+  const make = async () => {
+    try { const made = await api("/api/new", {method: "POST", body: JSON.stringify({name: name.value.trim(), kind: kind.value})}); go("agent", made.id); }
+    catch (error) { fill(out, h("div", {class: "banner bad", style: "margin:0"}, error.message)); }
+  };
+  name.addEventListener("keydown", event => { if (event.key === "Enter") make(); });
+  return h("div", {class: "card new"}, h("h3", null, "New agent"),
+    h("div", {class: "about", style: "min-height:0"}, "Start from a working example with its tests, then change it in the Code tab."),
+    name, kind, h("div", null, h("button", {onclick: make}, "Create")), out);
 }
 
 const fact = (title, lines, empty) => h("div", {class: "fact"}, h("b", null, title), lines.length ? lines.map(line => h("div", {class: "line"}, line)) : h("div", {class: "line empty"}, empty));
@@ -238,10 +306,11 @@ function showPermissions() {
       fact("Folder agents may look in", [overview.allow_folder || "None. File tools find nothing."]),
       fact("Websites agents may read", overview.sites, "None. The web cannot be reached."),
       fact("Changing things", ["Only after you press Allow once, for that one action.", "The card shows exactly what will be done before you answer.", "No answer in ten minutes counts as a refusal."]),
-      fact("Never allowed here", ["Running programs or shell commands", "Files outside the granted folder", "Websites that are not on the list"]),
+      fact("Starting programs", overview.shell ? ["Allowed, only the programs an agent's tools name.", "Each start waits for your Allow once and shows the exact command.", "Runs inside the granted folder, stopped after 60 seconds."] : ["Not allowed. Start Studio with --allow-shell to permit it."]),
+      fact("Never allowed here", ["Files outside the granted folder", "Websites that are not on the list", "Anything at all without the grants above"]),
       fact("Where programs come from", [overview.root])),
     h("h2", null, "How to change these"),
-    h("p", {class: "lead"}, "Stop Studio and start it again with different options: --model NAME, --allow-folder FOLDER, --allow-site SITE."));
+    h("p", {class: "lead"}, "Stop Studio and start it again with different options: --model NAME, --allow-folder FOLDER, --allow-site SITE, --allow-shell."));
 }
 
 // ---------------------------------------------------------------- the flow
@@ -298,8 +367,9 @@ function workflowTab(agent) {
 }
 
 // The live view: the same flow, driven by the events of a run as they arrive.
-function liveView(agent) {
+function liveView(agent, entry) {
   const byName = Object.fromEntries(agent.workflows.map(w => [w.name, w]));
+  let writing = "";
   const root = h("div", {class: "live"});
   const tally = h("div", {class: "tally"});
   const box = h("div", null, root, tally);
@@ -310,16 +380,29 @@ function liveView(agent) {
       h("span", null, h("b", null, counts.tools), " tool or memory calls"), counts.tokens ? h("span", null, h("b", null, counts.tokens), " tokens") : null,
       began ? h("span", null, h("b", null, seconds), " s" + (finished ? "" : " so far")) : null);
   }
-  function reset(starting) {
-    const top = drawWorkflow(byName.main || agent.workflows[0]);
+  function redraw() {
+    const top = drawWorkflow(byName[entry || "main"] || agent.workflows[0]);
     root.replaceChildren(top.flow);
     frames = [{nodes: top.nodes, current: null}];
+  }
+  function reset(starting) {
+    redraw();
     counts = {models: 0, tools: 0, steps: 0, tokens: 0}; began = starting ? performance.now() : 0; showTally(false);
   }
   function say(depth, text) { const frame = frames[depth]; if (frame && frame.current) frame.current.now.textContent = text; }
   function apply(event) {
+    if (event.event === "model_text") {
+      // The words arrive as the model writes them; show the latest under
+      // the step that asked.
+      writing += event.text;
+      const asking = [...frames].reverse().find(item => item.current);
+      const words = (partial(writing) || writing).replace(/\s+/g, " ");
+      if (asking) asking.current.now.textContent = "writing: " + (words.length > 90 ? "…" + words.slice(-90) : words);
+      return;
+    }
     const depth = event.depth || 0, frame = frames[depth];
     if (!frame) return;
+    if (event.event === "model_call") writing = "";
     if (event.event === "step_start") {
       const node = frame.nodes[event.step]; if (!node) return;
       // A run that carried on after an approval does not repeat the steps it
@@ -333,6 +416,8 @@ function liveView(agent) {
       if (at.top < view.top || at.top + 90 > view.bottom) root.scrollTo({top: root.scrollTop + at.top - view.top - 50, behavior: "smooth"});
       counts.steps += 1;
     } else if (event.event === "model_call") { counts.models += 1; say(depth, "asking the model…"); }
+    else if (event.event === "agent_call") { counts.models += 1; say(depth, "asking agent " + event.agent + "…"); }
+    else if (event.event === "agent_return") { if (event.tokens) counts.tokens += event.tokens; say(depth, "agent " + (event.agent || "") + " answered"); }
     else if (event.event === "model_return") {
       if (event.tokens) counts.tokens += event.tokens;
       const bits = ["the model answered"]; if (event.rejected) bits.push(event.rejected + " answer(s) rejected first");
@@ -361,25 +446,32 @@ function liveView(agent) {
     showTally(false);
   }
   reset(false);
-  return {el: box, reset, apply, finish: () => showTally(true)};
+  return {el: box, reset, redraw, apply, finish: () => showTally(true)};
 }
 
 // ------------------------------------------------- running, with the live view
-async function follow(agent, body, live, onAsk) {
-  const started = await api("/api/start?id=" + encodeURIComponent(agent.id), {method: "POST", body: JSON.stringify(body)});
+async function follow(agent, body, live, onAsk, onWrite, path) {
+  const started = await api((path || "/api/start") + "?id=" + encodeURIComponent(agent.id), {method: "POST", body: JSON.stringify(body)});
   const run = encodeURIComponent(started.run);
-  live.reset(true); let since = 0, asked = false;
+  live.reset(true); let since = 0, asked = false, raw = "";
   for (;;) {
     const view = await api("/api/poll?run=" + run + "&since=" + since);
     since = view.next;
-    // Events are shown a beat apart, so quick steps can still be seen.
-    for (const event of view.events) { live.apply(event); await sleep(view.events.length > 12 ? 45 : 110); }
+    const steps = view.events.filter(event => event.event !== "model_text").length;
+    for (const event of view.events) {
+      live.apply(event);
+      if (event.event === "model_call") raw = "";
+      // Words are shown the moment they arrive; steps a beat apart, so
+      // quick ones can still be seen.
+      if (event.event === "model_text") { raw += event.text; if (onWrite) onWrite(partial(raw)); continue; }
+      await sleep(steps > 12 ? 45 : 110);
+    }
     if (view.state === "waiting" && !asked) {
       asked = true;
       onAsk(view.request || {}, async allow => { await api("/api/decide?run=" + run, {method: "POST", body: JSON.stringify({allow})}); await sleep(400); asked = false; });
     }
     if (view.state === "done" || view.state === "failed" || view.state === "refused") { live.finish(); return view; }
-    await sleep(view.events.length ? 60 : 320);
+    await sleep(view.events.length ? 60 : 250);
   }
 }
 
@@ -521,6 +613,95 @@ async function showRuns() {
   main.replaceChildren(h("h1", null, "Runs"), h("p", {class: "lead"}, "Recorded runs of every agent, newest first. Each can be read step by step, with exactly what the model was asked."), runsPanel("", all.slice(0, 80)));
 }
 
+// ------------------------------------------------------ a swarm, live
+function swarmTab(agent) {
+  if (!overview.can_run) return h("div", {class: "panel"}, h("div", {class: "banner warn"}, "Studio was started without a model, so a swarm cannot run."));
+  let chosen = agent.swarms[0], members = {}, active = null, live = liveView(agent, chosen.workflow);
+  const stage = h("div", {class: "stage"}), round = h("div", {class: "round"});
+  const feed = h("div", {class: "feed"}), out = h("div"), flow = h("div");
+  const input = h("textarea", {style: "min-height:80px"}); input.value = agent.example_input || "{}";
+  const quiet = () => fill(feed, h("p", {class: "empty"}, "What the agents say to each other on their board appears here."));
+  function draw() {
+    members = {}; active = null; round.textContent = chosen.agents.length + " agents, up to " + chosen.max_rounds + " rounds of workflow " + chosen.workflow;
+    fill(stage, chosen.agents.map((name, index) => {
+      const doing = h("div", {class: "doing"});
+      const el = h("div", {class: "member c" + (index % 5)}, h("div", {class: "face"}, name.slice(0, 2).toUpperCase()), h("div", {class: "who"}, name), doing);
+      members[name] = {el, doing, index}; return el;
+    }));
+    live = liveView(agent, chosen.workflow); fill(flow, live.el); quiet();
+  }
+  function rest() { for (const member of Object.values(members)) { member.el.classList.remove("active"); member.doing.textContent = ""; } active = null; }
+  const view = {
+    reset(starting) { live.reset(starting); quiet(); },
+    finish() { live.finish(); rest(); },
+    apply(event) {
+      if (event.event === "swarm_round") { round.textContent = "Round " + event.round + " of up to " + chosen.max_rounds; live.redraw(); return; }
+      if (event.event === "agent_call" && members[event.agent]) { rest(); active = members[event.agent]; active.el.classList.add("active"); active.doing.textContent = "thinking…"; }
+      else if (event.event === "model_text" && active) active.doing.textContent = "writing…";
+      else if (event.event === "agent_return") rest();
+      else if (event.event === "tool_call" && event.said != null) {
+        const who = members[event.author];
+        if (feed.querySelector(".empty")) feed.replaceChildren();
+        feed.append(h("div", {class: "post c" + (who ? who.index % 5 : 0)}, h("b", null, event.author + " ", h("small", null, round.textContent.split(" of")[0].toLowerCase())), event.said));
+        feed.scrollTop = feed.scrollHeight;
+        if (who) { who.el.classList.add("spoke"); setTimeout(() => who.el.classList.remove("spoke"), 900); }
+      }
+      live.apply(event);
+    },
+  };
+  const button = h("button", null, "Run swarm");
+  button.addEventListener("click", () => {
+    let inputs;
+    try { inputs = JSON.parse(input.value); } catch (error) { fill(out, h("div", {class: "banner bad"}, "The input is not valid JSON.")); return; }
+    const go = async () => {
+      button.disabled = true; fill(out, h("p", {class: "lead"}, h("span", {class: "spin"}), "The swarm is working."));
+      try {
+        const done = await follow(agent, {swarm: chosen.name, inputs, allow: true}, view, () => {}, null, "/api/swarm");
+        if (done.state !== "done") fill(out, h("div", {class: "banner bad"}, done.error || "The swarm did not finish."));
+        else fill(out, h("div", {class: "banner ok"}, "Finished after " + done.result.rounds + " round(s) in " + done.seconds + " s, " + (done.result.ended === "fixed_point" ? "because a round changed nothing." : "at its round limit.")),
+          h("h2", null, "Result"), h("pre", {class: "source"}, JSON.stringify(done.result.result, null, 2)));
+      } catch (error) { fill(out, h("div", {class: "banner bad"}, error.message)); }
+      button.disabled = false;
+    };
+    fill(out, h("div", {class: "ask"}, h("b", null, "Allow swarm " + chosen.name + " to run once?"),
+      h("pre", null, chosen.agents.join(", ") + " will run workflow " + chosen.workflow + " for up to " + chosen.max_rounds + " rounds, asking the model each round."),
+      h("div", {class: "row"}, h("button", {onclick: go}, "Allow once"), h("button", {class: "quiet", onclick: () => fill(out)}, "Cancel"))));
+  });
+  const pick = agent.swarms.length > 1 ? h("select", {onchange: event => { chosen = agent.swarms.find(item => item.name === event.target.value); draw(); }}, agent.swarms.map(item => h("option", {value: item.name}, item.name))) : null;
+  draw();
+  return h("div", {class: "split"},
+    h("div", {class: "panel"}, h("div", {class: "bar"}, pick, h("span", {class: "say"}, "swarm " + chosen.name)), stage, round, feed,
+      h("p", {class: "lead", style: "margin:10px 0 6px"}, "The input for the swarm's workflow, as JSON."), input, h("div", {style: "margin:9px 0"}, button), out),
+    h("div", {class: "panel"}, flow));
+}
+
+// ------------------------------------------------------ the program's text
+function codeTab(agent) {
+  const area = h("textarea", {class: "editor", spellcheck: "false"}); area.value = agent.source || "";
+  const say = h("span", {class: "say"}), result = h("div"), holder = h("div", null, highlight(agent.source || ""));
+  const send = async path => api(path + "?id=" + encodeURIComponent(agent.id), {method: "POST", body: JSON.stringify({source: area.value})});
+  const tell = (answer, saved) => fill(result, h("div", {class: "banner " + (answer.ok ? "ok" : "bad")},
+    answer.ok ? (saved ? "Saved. " : "") + "It checks: " + answer.workflows + " workflow(s), " + answer.tests + " test(s)." : (saved ? "Saved, but it does not check: " : "It does not check: ") + answer.error));
+  area.addEventListener("keydown", event => {
+    if (event.key !== "Tab") return;
+    event.preventDefault(); area.setRangeText("  ", area.selectionStart, area.selectionEnd, "end");
+  });
+  area.addEventListener("input", () => { say.textContent = area.value === agent.source ? "" : "Not saved yet."; });
+  const check = h("button", {class: "quiet", onclick: async () => { try { tell(await send("/api/check"), false); } catch (error) { fill(result, h("div", {class: "banner bad"}, error.message)); } }}, "Check");
+  const save = h("button", {onclick: async () => {
+    try {
+      const answer = await send("/api/save"); tell(answer, true); agent.source = area.value; say.textContent = "";
+      if (answer.ok) { await sleep(700); route(); }
+    } catch (error) { fill(result, h("div", {class: "banner bad"}, error.message)); }
+  }}, "Save");
+  const undo = h("button", {class: "quiet", onclick: () => { area.value = agent.source || ""; say.textContent = ""; fill(result); }}, "Discard changes");
+  const bar = h("div", {class: "bar"});
+  const reading = () => { fill(bar, h("button", {class: "quiet", onclick: editing}, "Edit"), h("span", {class: "say"}, agent.path)); fill(holder, highlight(agent.source || "")); fill(result); };
+  const editing = () => { fill(bar, save, check, undo, h("button", {class: "quiet", onclick: reading}, "Done"), say); fill(holder, area); area.focus(); };
+  reading();
+  return h("div", null, bar, result, holder);
+}
+
 // ------------------------------------------------------ one agent, live
 function liveTab(agent, isAssistant) {
   const live = liveView(agent);
@@ -555,11 +736,14 @@ function liveTab(agent, isAssistant) {
       try {
         const view = await follow(agent, {text}, live, (request, decide) => {
           const card = h("div", {class: "ask"});
-          const lines = Object.entries(request.arguments || {}).map(([key, value]) => key + ": " + (typeof value === "string" ? value : JSON.stringify(value))).join("\n");
           const press = allow => async () => { card.replaceChildren(h("b", null, allow ? "Allowed once." : "Refused.")); await decide(allow); };
-          card.append(h("b", null, "The assistant wants to do this, and nothing else: " + (request.tool || "an action")), h("pre", null, lines),
+          card.append(h("b", null, askTitle(request)), h("pre", null, askLines(request)),
             h("div", {class: "row"}, h("button", {onclick: press(true)}, "Allow once"), h("button", {class: "quiet", onclick: press(false)}, "Refuse")));
           log.insertBefore(card, waiting); log.scrollTop = log.scrollHeight;
+        }, words => {
+          if (!words) return;
+          waiting.replaceChildren(h("div", {class: "bubble draft"}, words, h("span", {class: "caret"})));
+          log.scrollTop = log.scrollHeight;
         });
         after(view);
         if (view.state === "done") answer(view.text, view.seconds + " s");
@@ -580,7 +764,7 @@ function liveTab(agent, isAssistant) {
       try {
         const view = await follow(agent, {inputs}, live, (request, decide) => {
           const press = allow => async () => { out.replaceChildren(h("p", {class: "lead"}, h("span", {class: "spin"}), allow ? "Allowed once. Carrying on." : "Refused.")); await decide(allow); };
-          out.replaceChildren(h("div", {class: "ask"}, h("b", null, "This agent wants to do this, and nothing else: " + (request.tool || "an action")), h("pre", null, JSON.stringify(request.arguments || {}, null, 1)),
+          out.replaceChildren(h("div", {class: "ask"}, h("b", null, askTitle(request)), h("pre", null, askLines(request)),
             h("div", {class: "row"}, h("button", {onclick: press(true)}, "Allow once"), h("button", {class: "quiet", onclick: press(false)}, "Refuse"))));
         });
         after(view);
@@ -599,7 +783,7 @@ async function showAgent(id, isAssistant) {
   const agent = await api("/api/agent?id=" + encodeURIComponent(id));
   const head = [isAssistant ? null : h("span", {class: "back", onclick: () => go("agents")}, "← All agents"), h("h1", null, isAssistant ? "Assistant" : agent.title),
     h("p", {class: "lead"}, agent.about || "No description. Add a // comment at the top of the file.")];
-  if (agent.error) { fill(main, head, h("div", {class: "banner bad"}, "This program does not check: " + agent.error), agent.source ? highlight(agent.source) : null); return; }
+  if (agent.error) { fill(main, head, h("div", {class: "banner bad"}, "This program does not check: " + agent.error), agent.source != null ? codeTab(agent) : null); return; }
   const parts = () => h("div", {class: "facts", style: "margin-top:0"},
     fact("Models it asks", agent.models.map(m => m + (m === agent.default_model ? " (default)" : "")), "none: this agent is plain code"),
     fact("What it remembers", agent.memories.map(m => m.name + ", holding " + m.record), "nothing between runs"),
@@ -610,7 +794,10 @@ async function showAgent(id, isAssistant) {
     fact("Code functions", agent.functions, "none"),
     fact("Budget", agent.budget.map(([kind, amount]) => amount + " " + kind.replace("_", " ")), "none declared"),
     fact("Fingerprint", [agent.program_hash.slice(0, 16) + "…"], ""));
-  const tabs = {"Live": a => liveTab(a, isAssistant), "Workflow": workflowTab, "Parts": parts, "Data": dataTab, "Tests": testsTab, "Runs": a => runsPanel(a.id, a.traces), "Code": a => h("div", null, highlight(a.source))};
+  let tabs = {"Live": a => liveTab(a, isAssistant), "Workflow": workflowTab, "Parts": parts, "Data": dataTab, "Tests": testsTab, "Runs": a => runsPanel(a.id, a.traces), "Code": codeTab};
+  if (agent.swarms.length) tabs = {"Live": tabs.Live, "Swarm": swarmTab, ...tabs};
+  // A program that is only a swarm has no main to talk to or run.
+  if (!agent.has_main) delete tabs.Live;
   const area = h("div"); const bar = h("div", {class: "tabs"}); const built = {};
   async function pick(name) {
     for (const tab of bar.children) tab.className = "tab" + (tab.textContent === name ? " on" : "");
@@ -620,7 +807,7 @@ async function showAgent(id, isAssistant) {
   }
   for (const name of Object.keys(tabs)) bar.append(h("div", {class: "tab", onclick: () => pick(name)}, name));
   fill(main, head, h("div", {class: "chips"}, badges(agent)), bar, area);
-  pick("Live");
+  pick(Object.keys(tabs)[0]);
 }
 
 route();

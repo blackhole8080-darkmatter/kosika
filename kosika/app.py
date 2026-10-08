@@ -26,6 +26,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import shutil
 import subprocess
@@ -39,6 +40,7 @@ from typing import Any, Callable, Mapping
 from urllib.parse import parse_qs, urlsplit
 
 from .agent import ApprovalRecord
+from .approval_ledger import ApprovalLedger
 from .ast import (
     AgentCall,
     FunctionCall,
@@ -57,9 +59,11 @@ from .memory import bind_memory_tools
 from .model import ModelProvider
 from .modules import load_program
 from .runtime import run
+from .starter import KINDS, StarterError, create_starter
 from .story import StoryError, build_story, read_trace
+from .swarm import SwarmApproval, run_swarm, swarm_plan_hash
 from .system_tools import bind_system_tools
-from .testing import run_tests
+from .testing import check_tests, run_tests
 
 PAGE = Path(__file__).parent / "app_assets" / "index.html"
 MAX_AGENTS = 200
@@ -79,7 +83,7 @@ class AppError(ValueError):
 
 def find_agents(root: Path) -> list[Path]:
     """Every `.kos` file under `root` that can be run: it has `workflow main`
-    or `fn main`. Hidden folders and build leftovers are skipped."""
+    or `fn main`, or it declares a swarm. Hidden folders and build leftovers are skipped."""
 
     found: list[Path] = []
     pending = [root]
@@ -99,7 +103,9 @@ def find_agents(root: Path) -> list[Path]:
                     text = entry.read_text(encoding="utf-8")
                 except (OSError, UnicodeDecodeError):
                     continue
-                if "workflow main" in text or "fn main" in text:
+                # A program with a swarm can be run as that swarm even when
+                # it has no `main`.
+                if "workflow main" in text or "fn main" in text or _SWARM.search(text):
                     found.append(entry)
     return found[:MAX_AGENTS]
 
@@ -274,6 +280,7 @@ def describe(agent: Agent, *, detail: bool) -> dict[str, Any]:
         steps=len(entry.steps) if entry else 0,
         budget=[list(item) for item in entry.budget] if entry else [],
         chat=chat,
+        has_main=entry is not None,
     )
     if not detail:
         return view
@@ -318,6 +325,9 @@ def describe(agent: Agent, *, detail: bool) -> dict[str, Any]:
 
 
 APPROVAL_WAIT_SECONDS = 600
+MAX_SOURCE_BYTES = 1024 * 1024
+_SWARM = re.compile(r"^swarm\s+\w+\s*\{", re.MULTILINE)
+NEW_NAME = re.compile(r"[a-z][a-z0-9_]{0,39}")
 _EVENT_KEYS = (
     "event",
     "step",
@@ -330,6 +340,7 @@ _EVENT_KEYS = (
     "operation",
     "access",
     "timestamp",
+    "round",
 )
 
 
@@ -348,6 +359,23 @@ def _slim(event: dict[str, Any], depth: int) -> dict[str, Any]:
         }
     if isinstance(event.get("usage"), dict):
         slim["tokens"] = event["usage"].get("total_tokens")
+    # What agents say to each other on a board is the conversation the swarm
+    # view shows, so a post travels with who said it and a clip of the words.
+    arguments = event.get("arguments")
+    if (
+        event.get("event") == "tool_call"
+        and str(event.get("source", "")).startswith("board:")
+        and event.get("operation") == "post"
+        and isinstance(arguments, dict)
+    ):
+        body = arguments.get("body")
+        words = (
+            " ".join(str(value) for value in body.values())
+            if isinstance(body, dict)
+            else str(body)
+        )
+        slim["author"] = str(arguments.get("author", ""))
+        slim["said"] = words[:600]
     return slim
 
 
@@ -385,8 +413,12 @@ class App:
         allow_folder: Path | None = None,
         sites: tuple[str, ...] = (),
         approved_by: str = "app",
+        allow_shell: bool = False,
     ):
         self.sites = sites
+        # Starting programs is its own grant, on top of the folder they run
+        # in. Even then every start waits for a yes to that exact command.
+        self.allow_shell = allow_shell and allow_folder is not None
         self.root = root.resolve()
         self.bind_models = bind_models
         self.model_label = model_label
@@ -420,6 +452,8 @@ class App:
             "model": self.model_label,
             "allow_folder": str(self.allow_folder) if self.allow_folder else "",
             "sites": list(self.sites),
+            "shell": self.allow_shell,
+            "starters": [kind for kind in KINDS if kind != "hello"],
             "agents": cards,
             "assistant": self.assistant(cards),
         }
@@ -481,15 +515,7 @@ class App:
             trace = (
                 runs / f"{time.strftime('%Y%m%d-%H%M%S')}-{secrets.token_hex(2)}.jsonl"
             )
-            # Shell is never allowed here. A tool that changes the world may
-            # be bound, and still cannot run until this person allows that
-            # one call: the runtime refuses it without an approval.
-            tools = {
-                **bind_system_tools(
-                    program, folder=self.allow_folder, sites=self.sites
-                ),
-                **bind_memory_tools(program, folder / "memory"),
-            }
+            tools = self._tools(program, folder)
             models = self.bind_models(program)
         except AppError:
             raise
@@ -506,6 +532,153 @@ class App:
         ).start()
         return job
 
+    def _tools(self, program: Program, folder: Path) -> dict[str, Any]:
+        """What a run may reach. A tool that changes the world, or starts a
+        program, may be bound, and still cannot run until this person allows
+        that one call: the runtime refuses it without an approval."""
+
+        return {
+            **bind_system_tools(
+                program,
+                folder=self.allow_folder,
+                sites=self.sites,
+                allow_shell=self.allow_shell,
+            ),
+            **bind_memory_tools(program, folder / "memory"),
+        }
+
+    @staticmethod
+    def _show_writing(job: Job, models: Mapping[str, ModelProvider]) -> None:
+        """Let the page show an answer while the model writes it."""
+
+        def wrote(piece: str) -> None:
+            job.events.append({"event": "model_text", "text": piece, "depth": 0})
+
+        for provider in models.values():
+            if hasattr(provider, "on_text"):
+                setattr(provider, "on_text", wrote)
+
+    def start_swarm(self, agent_id: str, body: dict[str, Any]) -> Job:
+        """Begin one run of a declared swarm. A swarm runs only with a yes
+        to that swarm, which the page asks for before calling this."""
+
+        if self.bind_models is None:
+            raise AppError("This app was started without a model.", 403)
+        if body.get("allow") is not True:
+            raise AppError("A swarm runs only after you allow it", 403)
+        agent = self.agent(agent_id)
+        try:
+            program = load_program(agent.path)
+            name = str(body.get("swarm", ""))
+            if name not in [swarm.name for swarm in program.swarms]:
+                raise AppError("No such swarm in this program", 404)
+            inputs = body.get("inputs")
+            if not isinstance(inputs, dict):
+                raise AppError("Send the swarm's inputs as an object")
+            folder = agent.path.parent
+            tools = self._tools(program, folder)
+            models = self.bind_models(program)
+        except AppError:
+            raise
+        except (RuntimeError, ValueError, PermissionError, OSError) as exc:
+            raise AppError(f"The swarm could not start: {exc}", 422) from exc
+        job = Job(secrets.token_urlsafe(9), agent_id, folder / "swarm", folder)
+        with self._jobs_lock:
+            for old in list(self._jobs)[:-20]:
+                del self._jobs[old]
+            self._jobs[job.id] = job
+
+        def work() -> None:
+            started = time.monotonic()
+            self._show_writing(job, models)
+            try:
+                with (
+                    self._lock,
+                    tempfile.TemporaryDirectory(prefix="kosika-app-") as scratch,
+                ):
+                    outcome = run_swarm(
+                        program,
+                        name,
+                        approval=SwarmApproval(
+                            swarm_plan_hash(program, name),
+                            self.approved_by,
+                            "approved in Kosika Studio",
+                        ),
+                        ledger=ApprovalLedger(Path(scratch) / "ledger.sqlite"),
+                        inputs=inputs,
+                        model_bindings=models,
+                        tool_bindings=tools,
+                        collect_events=False,
+                        on_event=lambda event, depth: job.events.append(
+                            _slim(event, depth)
+                        ),
+                    )
+                summary = outcome.to_dict()
+                job.result = {
+                    "result": summary["result"],
+                    "rounds": len(summary["rounds"]),
+                    "ended": summary["terminated_by"],
+                    "counts": summary["counts"],
+                }
+                job.state = "done"
+            except (RuntimeError, ValueError, PermissionError, OSError) as exc:
+                job.error = f"The swarm did not finish: {exc}"
+                job.state = "failed"
+            finally:
+                job.seconds = round(time.monotonic() - started, 1)
+
+        threading.Thread(target=work, daemon=True).start()
+        return job
+
+    # ---- building agents in the window
+
+    def check_source(self, agent_id: str, source: str) -> dict[str, Any]:
+        """Would this text be a valid program in that agent's place? Nothing
+        is written: the text stands in for the file while it is checked."""
+
+        agent = self.agent(agent_id)
+        try:
+            program = load_program(agent.path, source_overrides={agent.path: source})
+            check_tests(program)
+        except (ValueError, TypeError) as exc:
+            return {"ok": False, "error": str(exc)}
+        return {
+            "ok": True,
+            "workflows": len(program.workflows),
+            "tests": len(program.tests),
+        }
+
+    def save_source(self, agent_id: str, source: str) -> dict[str, Any]:
+        """Write the program's text. The page's own Save button is the yes:
+        this is the person editing their own file. A text that does not
+        check is still saved, as an editor would, and the answer says so."""
+
+        agent = self.agent(agent_id)
+        if len(source.encode("utf-8")) > MAX_SOURCE_BYTES:
+            raise AppError("The program is larger than 1 MiB")
+        checked = self.check_source(agent_id, source)
+        try:
+            agent.path.write_text(source, encoding="utf-8", newline="")
+        except OSError as exc:
+            raise AppError(f"Could not save: {exc}", 422) from exc
+        return {"saved": True, **checked}
+
+    def new_agent(self, name: str, kind: str) -> dict[str, Any]:
+        """Create a starter agent in a new folder under the app's folder."""
+
+        if not NEW_NAME.fullmatch(name or ""):
+            raise AppError(
+                "Name it with lowercase letters, digits and underscores, "
+                "starting with a letter (for example: my_helper)"
+            )
+        if kind == "hello" or kind not in KINDS:
+            raise AppError("Unknown kind of agent")
+        try:
+            create_starter(self.root / name, kind)
+        except (StarterError, OSError) as exc:
+            raise AppError(f"Could not create it: {exc}", 422) from exc
+        return {"id": f"{name}/main.kos"}
+
     def _work(
         self,
         job: Job,
@@ -518,6 +691,7 @@ class App:
             job.events.append(_slim(event, depth))
 
         started = time.monotonic()
+        self._show_writing(job, models)
         try:
             with (
                 self._lock,
@@ -543,10 +717,22 @@ class App:
                         )
                         break
                     except ApprovalPending as pending:
+                        asked = next(
+                            (
+                                tool
+                                for tool in program.tools
+                                if tool.name == pending.request["tool"]
+                            ),
+                            None,
+                        )
                         job.request = {
                             "tool": pending.request["tool"],
                             "arguments": pending.request["arguments"],
                             "step": pending.request.get("step"),
+                            # So the page can say plainly what kind of
+                            # action this is, such as which program starts.
+                            "kind": asked.source if asked else "",
+                            "operation": asked.operation if asked else "",
                         }
                         job.allow = None
                         job.decision.clear()
@@ -602,12 +788,7 @@ class App:
             view["seconds"] = job.seconds
             view["error"] = job.error
         if job.state == "done":
-            view.update(
-                result=job.result,
-                text=job.text,
-                story=job.story,
-                trace=job.trace.relative_to(job.folder).as_posix(),
-            )
+            view.update(result=job.result, text=job.text, story=job.story)
         return view
 
     def decide(self, job_id: str, allow: bool) -> dict[str, Any]:
@@ -763,6 +944,26 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                         200,
                         app.decide(
                             (query.get("run") or [""])[0], body.get("allow") is True
+                        ),
+                    )
+                elif method == "POST" and url.path == "/api/swarm":
+                    self._json(200, {"run": app.start_swarm(agent_id, self._body()).id})
+                elif method == "POST" and url.path in ("/api/check", "/api/save"):
+                    source = self._body().get("source")
+                    if not isinstance(source, str):
+                        raise AppError("Send the program's text as source")
+                    act = (
+                        app.check_source
+                        if url.path == "/api/check"
+                        else app.save_source
+                    )
+                    self._json(200, act(agent_id, source))
+                elif method == "POST" and url.path == "/api/new":
+                    body = self._body()
+                    self._json(
+                        200,
+                        app.new_agent(
+                            str(body.get("name", "")), str(body.get("kind", ""))
                         ),
                     )
                 elif method == "GET" and url.path == "/api/memory":

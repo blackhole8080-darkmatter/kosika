@@ -1605,6 +1605,62 @@ gate: without them a parser written in Kosika has nothing to return.
   agent's `runs` folder and write to its `memory` folder, as the try-out
   did for the assistant.
 
+## Studio: streaming, programs, swarms, and building
+
+- Word by word. A provider with `on_text` set asks for a streamed reply
+  (Ollama's newline JSON or the OpenAI event stream), hands each piece of
+  text to the listener, and returns the same `ModelResponse` as without it,
+  so traces, replay and validation are untouched. Studio sets the listener
+  and sends the pieces to the page as `model_text` events, which are never
+  written to a trace. The page shows the readable part of the JSON answer
+  as it grows.
+- Programs. `kosika studio --allow-shell` (needs `--allow-folder`) binds
+  shell tools. Nothing else changed about them: one named program per tool,
+  arguments as a list, inside the granted folder, 60 seconds, and an
+  approval for every call. The approval card names the program and shows
+  the command. Without the flag a shell tool is not bound and the run fails.
+- Swarms. `run_swarm(..., on_event=...)` reports each round's events live
+  and a `swarm_round` marker. Studio runs a swarm from `POST /api/swarm`,
+  only with `allow: true`, which the page sends after its own Allow once
+  card; that one yes is the swarm's single approval. A board post travels
+  to the page with its author and a clip of its words. A program that only
+  declares a swarm, with no `main`, is now listed.
+- Building. `POST /api/check` checks unsaved text in the file's place
+  through `source_overrides`, writing nothing. `POST /api/save` writes the
+  file (the person's own Save is the yes) and reports whether it checks.
+  `POST /api/new` creates a starter agent in a new folder under the root;
+  the name is limited to lowercase letters, digits and underscores.
+- A step that uses an `execute` tool still cannot have `otherwise`: the
+  checker refused it while the two agents below were written, and the
+  agents were changed, not the rule.
+- Two agents in `my_examples/agents`, written in Kosika:
+  `workbench` starts git and python (status, log, explain changes, run
+  tests, run a file, check a Kosika file, work out an expression), reads
+  what they print in code, keeps a journal, and has the model explain the
+  last failure; 6 tests. `planner` keeps tasks in order, plans a day into
+  50-minute blocks with breaks in code, has the model break a goal into
+  tasks, writes a standup from finished tasks and today's commits, and
+  saves a plan to a new file; 8 tests.
+- Tried with qwen2.5:3b in a scratch git project: `status`, `test tests`,
+  `run report.py`, `py: 2 ** 10` and `changes` each paused on the card and
+  ran after Allow once; `why` explained a NameError; the planner's
+  `standup` started `git log` and `save plan to plan.md` created the file.
+  The example swarm ran three rounds with six posts shown as they were
+  made. In the page, 43 partial answers were seen before the final one, and
+  the editor reported a good text and a misspelt type name correctly.
+- 15 tests in `tests/test_studio_building.py`.
+- Not claimed: the small model's explanations are often shallow or wrong
+  (it suggested `repr()` for the misspelt name `repot`); the facts above it
+  come from code. A swarm in Studio cannot use tools that need approval,
+  because a swarm has one approval for the whole run. Tests cannot script a
+  shell tool, so the agents' program steps are covered by the live try-out
+  and by tests of the code around them, not by their own tests. A program
+  that needs more than 60 seconds is stopped, which rules out this
+  project's own full test suite. Streaming was tried only against Ollama.
+  The editor is a plain text box with no highlighting while typing and no
+  undo history beyond the browser's. An approved program runs with your
+  own authority: the folder limit is on where it starts, not a sandbox.
+
 ## Standard coding-agent procedure
 
 1. Inspect `git status`, the relevant source files, tests, and this plan.

@@ -489,7 +489,7 @@ that the trace replays and says so, or warns when it does not.
 ### Kosika Studio
 
 ```
-kosika studio FOLDER --model MODEL --allow-folder FOLDER --allow-site SITE
+kosika studio FOLDER --model MODEL --allow-folder FOLDER --allow-site SITE --allow-shell
 ```
 
 opens Kosika Studio in a window of its own (through Edge or Chrome when one
@@ -511,16 +511,32 @@ workflow, the parts the agent is made of, its records and how they refer to
 each other, its tests, its past runs, and its code. The sidebar also lists
 all agents, all runs, and the permissions this Studio was started with.
 
+An answer appears word by word while the model writes it, in the chat and
+under the step that asked.
+
 When an agent reaches an action that changes something, it stops and a card
 shows that one action and its exact arguments, with Allow once and Refuse.
 Nothing happens until you answer; no answer in ten minutes is a refusal.
+
+With `--allow-shell` an agent may also start the programs its shell tools
+name, such as git or python, inside `--allow-folder`. Each start is one of
+those cards and shows the exact command. A program is given its arguments
+as a list, never through a shell, and is stopped after 60 seconds.
+
+A program that declares a swarm gets a Swarm tab. After you allow the run,
+you watch its agents take turns: the one being asked lights up, what each
+posts to their board appears as a conversation, and the round is counted.
+
+The Code tab edits the program. Check tells you whether the text is a valid
+program without saving it; Save writes the file. The Agents page creates a
+new agent from a working example, in a new folder, never over an old one.
 
 Studio can do only what the command that started it allows. Without
 `--model` it shows and tests but cannot run anything. A run uses the agent's
 own `memory` folder, may look inside `--allow-folder`, may read only the
 sites given with `--allow-site`, and saves its trace under the agent's
-`runs` folder. Shell tools are never bound. The server listens on 127.0.0.1
-only and requires a random token on every request.
+`runs` folder. Shell tools are bound only with `--allow-shell`. The server
+listens on 127.0.0.1 only and requires a random token on every request.
 
 ### Talking to a program
 

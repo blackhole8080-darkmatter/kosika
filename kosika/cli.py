@@ -2166,6 +2166,14 @@ def build_parser() -> argparse.ArgumentParser:
                 "May be repeated. Without it, the web cannot be reached."
             ),
         )
+        app_parser.add_argument(
+            "--allow-shell",
+            action="store_true",
+            help=(
+                "Let agents start the programs their shell tools name, inside "
+                "--allow-folder. Every start still waits for your Allow once."
+            ),
+        )
         app_parser.add_argument("--port", type=int, default=0)
         app_parser.add_argument(
             "--no-browser",
@@ -3202,6 +3210,13 @@ def main() -> int:
                 f"App unavailable: {args.allow_folder} is not a folder", file=sys.stderr
             )
             return 2
+        if args.allow_shell and args.allow_folder is None:
+            print(
+                "App unavailable: --allow-shell also needs --allow-folder, the "
+                "folder programs run in",
+                file=sys.stderr,
+            )
+            return 2
         binder = None
         if args.model:
             args.model_binding = args.model_fixture = args.models = None
@@ -3218,6 +3233,7 @@ def main() -> int:
             model_label=args.model or "",
             allow_folder=args.allow_folder,
             sites=tuple(args.allow_site),
+            allow_shell=args.allow_shell,
         )
         try:
             server = make_server(studio, args.port)

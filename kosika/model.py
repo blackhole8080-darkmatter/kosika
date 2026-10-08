@@ -4,7 +4,7 @@ import json
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
-from typing import Any, Callable, Protocol
+from typing import Any, Callable, Iterator, Protocol
 
 
 class ModelProviderError(RuntimeError):
@@ -162,6 +162,106 @@ class OpenAICompatibleProvider:
         #: to False when the caller needs a direct answer, for example a
         #: machine-readable patch. Left as None the server default applies.
         self.think = think
+        #: Set by a host that wants to show an answer while it is written.
+        #: When set, the reply is asked for as a stream and each piece of
+        #: text is handed over as it arrives. The response returned at the
+        #: end is the same as without it, so nothing downstream can tell.
+        self.on_text: Callable[[str], None] | None = None
+
+    def _streams(self, request: ModelRequest) -> bool:
+        return (
+            self.on_text is not None and self._transport is None and not request.tools
+        )
+
+    def _tell(self, piece: str) -> None:
+        if piece and self.on_text is not None:
+            try:
+                self.on_text(piece)
+            except Exception:  # noqa: BLE001 - a display must not break a run
+                pass
+
+    def _lines(self, request: urllib.request.Request) -> Iterator[bytes]:
+        with urllib.request.urlopen(request, timeout=self.timeout) as response:
+            yield from response
+
+    def _exchange_stream(self, payload: dict[str, Any], *, sse: bool) -> Any:
+        """Ask for a streamed reply and put it back together as one reply."""
+
+        body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        request_object = urllib.request.Request(
+            self.endpoint, data=body, headers=headers, method="POST"
+        )
+        text: list[str] = []
+        thought: list[str] = []
+        last: dict[str, Any] = {}
+        finish: Any = None
+        usage: Any = None
+        try:
+            for raw in self._lines(request_object):
+                line = raw.decode("utf-8").strip()
+                if sse:
+                    if not line.startswith("data:"):
+                        continue
+                    line = line[5:].strip()
+                    if line == "[DONE]":
+                        break
+                if not line:
+                    continue
+                chunk = json.loads(line)
+                if not isinstance(chunk, dict):
+                    raise ModelProviderError("Model provider returned invalid JSON")
+                if isinstance(chunk.get("error"), (str, dict)):
+                    raise ModelProviderError(
+                        f"Model provider reported an error: {chunk['error']}"
+                    )
+                if sse:
+                    usage = chunk.get("usage") or usage
+                    choices = chunk.get("choices")
+                    if not isinstance(choices, list) or not choices:
+                        continue
+                    choice = choices[0] if isinstance(choices[0], dict) else {}
+                    delta = choice.get("delta")
+                    delta = delta if isinstance(delta, dict) else {}
+                    finish = choice.get("finish_reason") or finish
+                    reasoning = delta.get("reasoning")
+                else:
+                    last = chunk
+                    delta = chunk.get("message")
+                    delta = delta if isinstance(delta, dict) else {}
+                    reasoning = delta.get("thinking")
+                piece = delta.get("content")
+                if isinstance(piece, str) and piece:
+                    text.append(piece)
+                    self._tell(piece)
+                if isinstance(reasoning, str):
+                    thought.append(reasoning)
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise ModelProviderError(
+                f"Model provider returned HTTP {exc.code}: {detail}"
+            ) from exc
+        except urllib.error.URLError as exc:
+            raise ModelProviderError(f"Model provider request failed: {exc}") from exc
+        except TimeoutError as exc:
+            raise ModelProviderError(
+                f"Model did not answer within {self.timeout:g} seconds"
+            ) from exc
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ModelProviderError("Model provider returned invalid JSON") from exc
+        message: dict[str, Any] = {"role": "assistant", "content": "".join(text)}
+        if sse:
+            if thought:
+                message["reasoning"] = "".join(thought)
+            return {
+                "choices": [{"message": message, "finish_reason": finish or "stop"}],
+                "usage": usage,
+            }
+        if thought:
+            message["thinking"] = "".join(thought)
+        return {**last, "message": message}
 
     def complete(self, request: ModelRequest) -> ModelResponse:
         if self.protocol == "ollama":
@@ -210,6 +310,17 @@ class OpenAICompatibleProvider:
             payload["response_format"] = {"type": "json_object"}
         if self.think is not None:
             payload["think"] = self.think
+        if self._streams(request):
+            return self._parse_response(
+                self._exchange_stream(
+                    {
+                        **payload,
+                        "stream": True,
+                        "stream_options": {"include_usage": True},
+                    },
+                    sse=True,
+                )
+            )
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
         headers = {"Content-Type": "application/json"}
         if self.api_key:
@@ -297,7 +408,10 @@ class OpenAICompatibleProvider:
             payload["format"] = "json"
         if self.think is not None:
             payload["think"] = self.think
-        raw = self._exchange(payload)
+        if self._streams(request):
+            raw = self._exchange_stream({**payload, "stream": True}, sse=False)
+        else:
+            raw = self._exchange(payload)
         return self._parse_response(raw, "ollama")
 
     def _exchange(self, payload: dict[str, Any]) -> Any:
