@@ -145,6 +145,46 @@ class RecordMethodTests(unittest.TestCase):
         with self.assertRaises(ParseError):
             parse('record A { n: Number\n  fn show() -> Text { return "a" } }')
 
+    def test_a_record_is_copied_with_some_fields_changed(self) -> None:
+        source = (
+            "record Task { title: Text done: Bool spent: Number\n"
+            "  fn finished(self) -> Task { return {..self, done: true} }\n"
+            "  fn logged(self, minutes: Number) -> Task { return {..self, spent: self.spent + minutes} }\n"
+            "}\n"
+            "record Out { before: Task after: Task same: Task }\n"
+            "fn solve(task: Task) -> Out {\n"
+            "  return {before: task, after: task.logged(20).finished(), same: {..task}}\n"
+            "}\n"
+            "workflow main(task: Task) -> Out {\n  out = solve(task)\n}\n"
+        )
+        result = run(
+            self.program(source),
+            "main",
+            self.folder / "run.jsonl",
+            inputs={"task": {"title": "tea", "done": False, "spent": 5}},
+        )
+        # The record that was copied is not changed.
+        self.assertEqual(result["before"], {"title": "tea", "done": False, "spent": 5})
+        self.assertEqual(result["after"], {"title": "tea", "done": True, "spent": 25})
+        self.assertEqual(result["same"], result["before"])
+        self.assertEqual(replay_trace(self.folder / "run.jsonl"), result)
+
+    def test_a_record_update_must_fit_the_record(self) -> None:
+        base = (
+            "record Task { title: Text done: Bool }\n"
+            "fn change(task: Task, n: Number) -> Task {\n  return CHANGE\n}\n"
+            "workflow main(task: Task) -> Task {\n  out = change(task, 1)\n}\n"
+        )
+        for change, reason in (
+            ("{..task, finished: true}", "not a field of 'Task'"),
+            ("{..task, done: 1}", "expects 'Bool'"),
+            ("{..task, done: true, done: false}", "more than once"),
+            ("{..n, done: true}", "needs a record"),
+        ):
+            with self.subTest(change=change), self.assertRaises(CheckError) as caught:
+                self.program(base.replace("CHANGE", change))
+            self.assertIn(reason, str(caught.exception))
+
     def test_a_record_without_methods_hashes_as_before(self) -> None:
         plain = parse("record A { n: Number }\nfn main(a: A) -> A {\n  return a\n}")
         self.assertNotIn("methods", json.dumps(program_payload(plain)))

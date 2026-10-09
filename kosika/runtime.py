@@ -431,16 +431,32 @@ def _evaluate_expression(
             for item in expression.items
         ]
     if isinstance(expression, RecordExpr):
-        return {
-            name: _evaluate_expression(
-                value,
-                environment,
-                program,
-                functions,
-                function_events,
-                depth=depth,
+        copied: dict[str, Any] = {}
+        if expression.base is not None:
+            # A copy with some fields changed; the record it copies is not.
+            copied = dict(
+                _evaluate_expression(
+                    expression.base,
+                    environment,
+                    program,
+                    functions,
+                    function_events,
+                    depth=depth,
+                )
             )
-            for name, value in expression.fields
+        return {
+            **copied,
+            **{
+                name: _evaluate_expression(
+                    value,
+                    environment,
+                    program,
+                    functions,
+                    function_events,
+                    depth=depth,
+                )
+                for name, value in expression.fields
+            },
         }
     if isinstance(expression, MethodCallExpr):
         receiver = _evaluate_expression(

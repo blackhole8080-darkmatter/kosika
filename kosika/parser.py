@@ -608,6 +608,15 @@ class Parser:
         fields: list[tuple[str, Expression]] = []
         if self.accept("}"):
             return RecordExpr(())
+        base: Expression | None = None
+        if self.check(".") and self.peek().value == ".":
+            # `{..task, done: true}`: the record `task` with fields changed.
+            self.advance()
+            self.advance()
+            base = self.expression()
+            if self.accept("}"):
+                return RecordExpr((), base)
+            self.expect(",")
         while True:
             # A quoted key writes a map entry: `{"north": 4}`. Both spellings
             # produce the same literal; its expected type decides which it is.
@@ -618,7 +627,7 @@ class Parser:
             self.expect(":")
             fields.append((name, self.expression()))
             if self.accept("}"):
-                return RecordExpr(tuple(fields))
+                return RecordExpr(tuple(fields), base)
             self.expect(",")
 
     def parse(self) -> Program:

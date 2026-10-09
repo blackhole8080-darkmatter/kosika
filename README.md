@@ -636,6 +636,9 @@ record Item {
 let cost = item.discounted(10).total()
 ```
 
+`{..item, price: 3}` is a copy of `item` with those fields changed. The
+record it copies is not changed.
+
 A function written inside a record takes the record as `self` and is called
 on a value of that record. It is an ordinary pure function underneath. There
 is no inheritance, and a method cannot change the record: it returns a new

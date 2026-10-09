@@ -21,7 +21,42 @@ record Clip { text: Text ok: Bool }
 
 // priority: 3 high, 2 normal, 1 low. minutes: how long you think it takes.
 // spent: minutes already logged. rank: its place in the list, lower first.
-record Task { title: Text priority: Number minutes: Number due: Text done: Bool spent: Number rank: Number }
+record Task {
+  title: Text
+  priority: Number
+  minutes: Number
+  due: Text
+  done: Bool
+  spent: Number
+  rank: Number
+
+  // Urgent and important first, then the shorter job. Done tasks sink.
+  fn ranked(self) -> Task {
+    let urgency = if self.due.length() > 0 { 50 } else { 0 }
+    let score = self.priority * 100 + urgency - self.minutes / 10
+    return {..self, rank: (if self.done { 100000 } else { 0 }) - score}
+  }
+
+  fn finished(self) -> Task {
+    return {..self, done: true, rank: 0}
+  }
+
+  fn logged(self, minutes: Number) -> Task {
+    return {..self, spent: self.spent + minutes, rank: 0}
+  }
+
+  // How much work is still to do, never less than a quarter of an hour.
+  fn left(self) -> Number {
+    return (self.minutes - self.spent).max(15)
+  }
+
+  fn line(self) -> Text {
+    let mark = if self.priority == 3 { " !high" } else { if self.priority == 1 { " !low" } else { "" } }
+    let due = if self.due.length() > 0 { f", due {self.due}" } else { "" }
+    let spent = if self.spent > 0 { f", {length_text(self.spent)} done" } else { "" }
+    return f"{self.title}{mark} ({length_text(self.minutes)}{due}{spent})"
+  }
+}
 record Book { tasks: Task[] }
 // The list after a request, and what to tell you about it.
 record Change { book: Book text: Text }
@@ -98,17 +133,9 @@ fn tasks_of(known: BooksRecalled) -> Task[] {
   return if known.found { known.value.value().tasks } else { none }
 }
 
-// Urgent and important first, then the shorter job. Done tasks sink.
-fn ranked(task: Task) -> Task {
-  let urgency = if task.due.length() > 0 { 50 } else { 0 }
-  let score = task.priority * 100 + urgency - task.minutes / 10
-  let rank = (if task.done { 100000 } else { 0 }) - score
-  return {title: task.title, priority: task.priority, minutes: task.minutes, due: task.due, done: task.done, spent: task.spent, rank: rank}
-}
-
 fn ordered(tasks: Task[]) -> Task[] {
   var out: Task[] = []
-  for task in tasks { out = out.append(ranked(task)) }
+  for task in tasks { out = out.append(task.ranked()) }
   return out.sort_by(field: "rank")
 }
 
@@ -119,17 +146,10 @@ fn open_tasks(tasks: Task[]) -> Task[] {
 }
 
 fn length_text(minutes: Number) -> Text {
-  if minutes < 60 { return minutes.to_text() + "m" }
+  if minutes < 60 { return f"{minutes}m" }
   let hours = (minutes / 60).floor()
   let rest = minutes - hours * 60
-  return hours.to_text() + "h" + (if rest > 0 { " " + rest.to_text() + "m" } else { "" })
-}
-
-fn line_for(task: Task) -> Text {
-  let mark = if task.priority == 3 { " !high" } else { if task.priority == 1 { " !low" } else { "" } }
-  let due = if task.due.length() > 0 { ", due " + task.due } else { "" }
-  let spent = if task.spent > 0 { ", " + length_text(task.spent) + " done" } else { "" }
-  return task.title + mark + " (" + length_text(task.minutes) + due + spent + ")"
+  return if rest > 0 { f"{hours}h {rest}m" } else { f"{hours}h" }
 }
 
 fn show_tasks(tasks: Task[]) -> Text {
@@ -137,7 +157,7 @@ fn show_tasks(tasks: Task[]) -> Text {
   if open.length() == 0 { return "Nothing is waiting. Say \"add: write the report !high 2h\" to add a task." }
   var rows: Text[] = []
   for i in 0 until open.length() {
-    rows = rows.append((i + 1).to_text() + ". " + line_for(open[i]))
+    rows = rows.append(f"{i + 1}. {open[i].line()}")
   }
   return "Your tasks, most important first:\n" + rows.join("\n")
 }
@@ -184,7 +204,7 @@ fn add_task(msg: Msg, known: BooksRecalled) -> Change {
     return {book: {tasks: tasks}, text: "Tell me the task, like this: add: write the report !high 2h due friday"}
   }
   let all = ordered(tasks.append(task))
-  return {book: {tasks: all}, text: "Added: " + line_for(task) + "\n" + show_tasks(all)}
+  return {book: {tasks: all}, text: f"Added: {task.line()}\n{show_tasks(all)}"}
 }
 
 // The first whole number you wrote, or 0.
@@ -204,12 +224,12 @@ fn edit(msg: Msg, known: BooksRecalled) -> Change {
   let verb = text.split(" ").first().or("")
   if text == "clear done" {
     let left = open_tasks(tasks)
-    return {book: {tasks: left}, text: "Cleared " + (tasks.length() - left.length()) + " finished task(s).\n" + show_tasks(left)}
+    return {book: {tasks: left}, text: f"Cleared {tasks.length() - left.length()} finished task(s).\n{show_tasks(left)}"}
   }
   let open = open_tasks(tasks)
   let pick = number_in(msg)
   if pick < 1 or pick > open.length() {
-    return {book: {tasks: tasks}, text: "Tell me which task by its number, like this: " + verb + " 1\n" + show_tasks(tasks)}
+    return {book: {tasks: tasks}, text: f"Tell me which task by its number, like this: {verb} 1\n{show_tasks(tasks)}"}
   }
   let chosen = open[pick - 1]
   var logged = 0
@@ -217,7 +237,7 @@ fn edit(msg: Msg, known: BooksRecalled) -> Change {
     if as_minutes(word) > 0 { logged = as_minutes(word) }
   }
   if verb == "log" and logged == 0 {
-    return {book: {tasks: tasks}, text: "Tell me how long, like this: log " + pick + " 45m"}
+    return {book: {tasks: tasks}, text: f"Tell me how long, like this: log {pick} 45m"}
   }
   var out: Task[] = []
   var seen = 0
@@ -226,13 +246,13 @@ fn edit(msg: Msg, known: BooksRecalled) -> Change {
     else {
       seen += 1
       if seen != pick { out = out.append(task) }
-      else if verb == "done" { out = out.append({title: task.title, priority: task.priority, minutes: task.minutes, due: task.due, done: true, spent: task.spent, rank: 0}) }
-      else if verb == "log" { out = out.append({title: task.title, priority: task.priority, minutes: task.minutes, due: task.due, done: false, spent: task.spent + logged, rank: 0}) }
+      else if verb == "done" { out = out.append(task.finished()) }
+      else if verb == "log" { out = out.append(task.logged(logged)) }
     }
   }
   let all = ordered(out)
-  let told = if verb == "done" { "Done: " + chosen.title + ". Well done." } else { if verb == "log" { "Logged " + length_text(logged) + " on " + chosen.title + "." } else { "Dropped: " + chosen.title + "." } }
-  return {book: {tasks: all}, text: told + "\n" + show_tasks(all)}
+  let told = if verb == "done" { f"Done: {chosen.title}. Well done." } else { if verb == "log" { f"Logged {length_text(logged)} on {chosen.title}." } else { f"Dropped: {chosen.title}." } }
+  return {book: {tasks: all}, text: f"{told}\n{show_tasks(all)}"}
 }
 
 fn book_of(change: Change) -> Book {
@@ -251,9 +271,9 @@ fn next_said(known: BooksRecalled) -> Said {
   let open = open_tasks(ordered(tasks_of(known)))
   if open.length() == 0 { return {text: "Nothing is waiting. Enjoy the quiet, or add a task."} }
   let task = open[0]
-  let why = if task.priority == 3 { "it is marked high" } else { if task.due.length() > 0 { "it is due " + task.due } else { "it is the shortest of what matters most" } }
-  let left = (task.minutes - task.spent).max(15)
-  return {text: "Do this next: " + task.title + ".\nWhy: " + why + ". It needs about " + length_text(left) + ". Start with one focus block of " + length_text(left.min(50)) + "."}
+  let why = if task.priority == 3 { "it is marked high" } else { if task.due.length() > 0 { f"it is due {task.due}" } else { "it is the shortest of what matters most" } }
+  let left = task.left()
+  return {text: f"Do this next: {task.title}.\nWhy: {why}. It needs about {length_text(left)}. Start with one focus block of {length_text(left.min(50))}."}
 }
 
 // ------------------------------------------------------------ the timetable
@@ -291,27 +311,27 @@ fn day_plan(msg: Msg, known: BooksRecalled) -> Said {
   var rows: Text[] = []
   var later: Text[] = []
   for task in open {
-    var left = (task.minutes - task.spent).max(15)
+    var left = task.left()
     var part = 1
     let blocks = (left / 50).ceil()
     if now + left.min(50) > finish { later = later.append(task.title) }
     else {
       while left > 0 and now + left.min(50) <= finish {
         let block = left.min(50)
-        let label = if blocks > 1 { " (" + part + " of " + blocks + ")" } else { "" }
-        rows = rows.append(clock(now) + "-" + clock(now + block) + "  " + task.title + label)
+        let label = if blocks > 1 { f" ({part} of {blocks})" } else { "" }
+        rows = rows.append(f"{clock(now)}-{clock(now + block)}  {task.title}{label}")
         now += block
         left -= block
         part += 1
         if now + 10 <= finish and block == 50 {
-          rows = rows.append(clock(now) + "-" + clock(now + 10) + "  break")
+          rows = rows.append(f"{clock(now)}-{clock(now + 10)}  break")
           now += 10
         }
       }
-      if left > 0 { later = later.append(task.title + " (" + length_text(left) + " left)") }
+      if left > 0 { later = later.append(f"{task.title} ({length_text(left)} left)") }
     }
   }
-  var text = "Your plan for " + length_text(room) + ", starting " + clock(start) + ":\n" + rows.join("\n")
+  var text = f"Your plan for {length_text(room)}, starting {clock(start)}:\n" + rows.join("\n")
   if later.length() > 0 { text += "\nLeft for later:\n" + later.join("\n") }
   return {text: text}
 }
@@ -327,7 +347,7 @@ fn review_said(known: BooksRecalled) -> Said {
     waiting += (task.minutes - task.spent).max(0)
     if task.priority == 3 { high += 1 }
   }
-  return {text: "Finished: " + (tasks.length() - open.length()) + " task(s).\nWaiting: " + open.length() + " task(s), about " + length_text(waiting) + " of work, " + high + " marked high.\nTime logged: " + length_text(logged) + "."}
+  return {text: f"Finished: {tasks.length() - open.length()} task(s).\nWaiting: {open.length()} task(s), about {length_text(waiting)} of work, {high} marked high.\nTime logged: {length_text(logged)}."}
 }
 
 // ------------------------------------------------------- breaking a goal down
@@ -368,7 +388,7 @@ fn add_steps(goal: Clip, steps: Steps, known: BooksRecalled) -> Change {
 fn advice_prompt(msg: Msg, known: BooksRecalled) -> Prompt {
   let open = open_tasks(ordered(tasks_of(known)))
   var rows: Text[] = []
-  for task in open.slice(0, open.length().min(12)) { rows = rows.append("- " + line_for(task)) }
+  for task in open.slice(0, open.length().min(12)) { rows = rows.append(f"- {task.line()}") }
   let list = if rows.length() > 0 { rows.join("\n") } else { "(no tasks yet)" }
   return {text: "You are a calm, practical productivity coach. Answer in at most four short sentences. Be specific to the tasks below; do not invent tasks.\n\nThe user's open tasks, most important first:\n" + list + "\n\nUser: " + msg.text + "\nCoach:"}
 }
@@ -420,7 +440,7 @@ fn cannot_save(draft: Draft) -> Said {
 }
 
 fn saved_said(draft: Draft, done: Written) -> Said {
-  return {text: "Created " + draft.path + " (" + done.bytes + " bytes). It never overwrites: use a new name next time."}
+  return {text: f"Created {draft.path} ({done.bytes} bytes). It never overwrites: use a new name next time."}
 }
 
 fn help(msg: Msg) -> Said {

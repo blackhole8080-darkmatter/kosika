@@ -199,6 +199,9 @@ class ArrayExpr:
 @dataclass(frozen=True)
 class RecordExpr:
     fields: tuple[tuple[str, "Expression"], ...]
+    # `{..task, done: true}`: a copy of the record `base` with these fields
+    # changed. None for an ordinary record literal.
+    base: "Expression | None" = None
 
 
 @dataclass(frozen=True)
@@ -344,6 +347,8 @@ def expression_function_calls(
             for item in value.items:
                 visit(item)
         elif isinstance(value, RecordExpr):
+            if value.base is not None:
+                visit(value.base)
             for _name, item in value.fields:
                 visit(item)
         elif isinstance(value, ReturnExpr):
@@ -730,6 +735,7 @@ _ABSENT_DEFAULTS: dict[str, tuple[Any, ...]] = {
     "voters": ((), []),
     "branches": ((), []),
     "verify": (None,),
+    "base": (None,),
     "methods": ((), []),
     "escalate": (None,),
     "group": (0,),

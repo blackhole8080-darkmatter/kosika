@@ -2019,6 +2019,30 @@ gate: without them a parser written in Kosika has nothing to return.
   model call it made was still counted against the budget. Studio shows
   the steps of a block lighting up one after another, not together.
 
+## Rewriting the planner with the new features, and record update
+
+- The planner example was rewritten with record functions and `f"..."`
+  templates, keeping all 8 of its tests unchanged and passing. It did not
+  get shorter: 24,087 characters became 24,199. Reading it showed why:
+  three small functions each copied all seven fields of a record to change
+  one or two.
+- Record update, `{..base, field: value}` (`RecordExpr.base`): a copy of a
+  record with the named fields replaced. Its type is the base's, so it
+  needs no annotation. With it the planner is 23,827 characters, about one
+  percent smaller than where it started, and 637 lines against 617 because
+  the record is now written over several lines.
+- So the honest result is that these features make a program clearer and
+  safer to change, not noticeably shorter. Most of the planner is its own
+  logic and its wording to the user, which no syntax removes.
+- The author agent's guide now teaches `f"..."` in place of telling the
+  model there is no text formatting.
+- 2 more tests in `tests/test_record_methods.py`.
+- Not claimed: only one agent was rewritten. No comparison with an
+  equivalent Python program was made. With the changed guide the author
+  scored 4 of 6 on qwen2.5:7b again, with a different pair of tasks failing
+  than last time (classify failed, long words passed), so one run per task
+  cannot show whether the change helped.
+
 ## Standard coding-agent procedure
 
 1. Inspect `git status`, the relevant source files, tests, and this plan.

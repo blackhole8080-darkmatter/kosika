@@ -77,7 +77,9 @@ def _expression(
         return replace(value, items=tuple(walk(item) for item in value.items))
     if isinstance(value, RecordExpr):
         return replace(
-            value, fields=tuple((key, walk(item)) for key, item in value.fields)
+            value,
+            fields=tuple((key, walk(item)) for key, item in value.fields),
+            base=None if value.base is None else walk(value.base),
         )
     if isinstance(value, MethodCallExpr):
         return replace(

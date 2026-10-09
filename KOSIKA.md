@@ -489,6 +489,12 @@ think = "classify"  expression "into" expression [ "using" identifier ]
   names MUST NOT both declare the same NAME. There is no inheritance. A
   record with no functions is unchanged and keeps its hash.
 
+- A record literal MAY begin with `..BASE`, as in `{..task, done: true}`.
+  BASE MUST be a record. The value is a copy of BASE with the named
+  fields replaced; BASE is unchanged. Each named field MUST be a field of
+  BASE's record with a value of its type, and MUST be named once. The
+  type of the whole is BASE's record, so no annotation is needed.
+
 - A workflow step MAY be `read file PATH`, `list files PATH`,
   `write file PATH with TEXT`, or `fetch URL`. Each stands for a call to a
   built-in `system "files"` or `system "web"` tool (`file_read`, `file_list`,

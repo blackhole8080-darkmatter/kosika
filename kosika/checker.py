@@ -688,6 +688,43 @@ def _expression_type(
                     f"got {actual_type!r}"
                 )
         return expected_type
+    if isinstance(expression, RecordExpr) and expression.base is not None:
+        # `{..task, done: true}`: the type is the base's own, so nothing has
+        # to be inferred, and only the fields named are checked.
+        base_type = _expression_type(
+            expression.base, bindings, program, step_name=step_name
+        )
+        if base_type not in {record.name for record in program.records}:
+            raise CheckError(
+                f"Step {step_name!r} record update needs a record after '..', "
+                f"got {base_type!r}"
+            )
+        known_fields = _record_fields(program, base_type)
+        changed = [name for name, _ in expression.fields]
+        if len(changed) != len(set(changed)):
+            raise CheckError(
+                f"Step {step_name!r} record update names a field more than once"
+            )
+        for name, value in expression.fields:
+            if name not in known_fields:
+                raise CheckError(
+                    f"Step {step_name!r} record update names {name!r}, which is "
+                    f"not a field of {base_type!r}."
+                    f"{did_you_mean(name, known_fields)}"
+                )
+            given = _expression_type(
+                value,
+                bindings,
+                program,
+                step_name=step_name,
+                expected_type=known_fields[name],
+            )
+            if not assignable(given, known_fields[name]):
+                raise CheckError(
+                    f"Step {step_name!r} record update field {name!r} expects "
+                    f"{known_fields[name]!r}, got {given!r}"
+                )
+        return base_type
     if isinstance(expression, RecordExpr):
         if expected_type is None:
             raise CheckError(
