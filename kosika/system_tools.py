@@ -12,7 +12,7 @@ A program asks for system access by declaring a tool with a `system` source:
 
     tool save_report {
       source system "files"
-      operation: "write"           // read, peek, list, write, or create
+      operation: "write"           // read, peek, search, list, write, or create
       access: execute
       input: FileWrite             // {path: Text, text: Text}
       output: FileWritten          // {bytes: Number}
@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
@@ -51,8 +52,23 @@ from .web import WebError, bind_web_tool
 
 SYSTEM_PREFIX = "system:"
 SYSTEM_KINDS = ("shell", "files", "web")
-FILE_OPERATIONS = ("read", "peek", "write", "create", "list")
-READ_ONLY_OPERATIONS = ("read", "peek", "list")
+FILE_OPERATIONS = ("read", "peek", "search", "write", "create", "list")
+READ_ONLY_OPERATIONS = ("read", "peek", "search", "list")
+#: Limits on one search of a folder, so it always comes back.
+MAX_SEARCH_MATCHES = 40
+MAX_SEARCH_FILES = 5000
+MAX_SEARCH_SECONDS = 8.0
+MAX_SEARCH_LINE = 240
+#: Folders a search never walks into: tools' own stores, not writing.
+_NOT_SEARCHED = {
+    "node_modules",
+    "__pycache__",
+    "venv",
+    "dist",
+    "build",
+    "target",
+    "_trash",
+}
 #: How much of a file `peek` gives back.
 PEEK_CHARACTERS = 4000
 SHELL_TIMEOUT_SECONDS = 60
@@ -70,6 +86,10 @@ SHAPES: dict[str, tuple[dict[str, str], dict[str, str]]] = {
     # The beginning of a file. A model that chooses its own tools can look
     # at a long file without the whole of it being handed back.
     "peek": ({"path": "Text"}, {"text": "Text"}),
+    # Find the lines of the text files under a folder that hold the words
+    # asked for. Each match is `path:line: text`, best matches first, so an
+    # answer can be tied to the exact line it came from.
+    "search": ({"path": "Text", "query": "Text"}, {"matches": "Text[]"}),
     "write": ({"path": "Text", "text": "Text"}, {"bytes": "Number"}),
     # Like write, but refuses when anything is already at that path, so it
     # can add to a folder and never destroy what is there.
@@ -232,6 +252,57 @@ def _files(tool: ToolDecl, folder: Path) -> Callable[[ToolDecl, dict[str, Any]],
             text = text[:PEEK_CHARACTERS] + "\n[the file goes on]"
         return {"text": text}
 
+    def search(_tool: ToolDecl, arguments: dict[str, Any]) -> dict[str, Any]:
+        start = (
+            folder
+            if arguments["path"] in (".", "")
+            else _inside(folder, arguments["path"])
+        )
+        if not start.is_dir():
+            raise SystemToolError(f"{arguments['path']!r} is not a folder")
+        words = [word for word in arguments["query"].lower().split() if word]
+        if not words:
+            raise SystemToolError("a search needs at least one word")
+        deadline = time.monotonic() + MAX_SEARCH_SECONDS
+        found: list[tuple[int, str, int, str]] = []
+        seen = 0
+        pending = [start]
+        while pending and seen < MAX_SEARCH_FILES and time.monotonic() < deadline:
+            current = pending.pop(0)
+            try:
+                entries = sorted(current.iterdir(), key=lambda entry: entry.name)
+            except OSError:
+                continue
+            for entry in entries:
+                if entry.name.startswith(".") or entry.is_symlink():
+                    continue
+                if entry.is_dir():
+                    if entry.name not in _NOT_SEARCHED:
+                        pending.append(entry)
+                    continue
+                seen += 1
+                try:
+                    if entry.stat().st_size > MAX_FILE_BYTES:
+                        continue
+                    text = entry.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError):
+                    continue
+                name = entry.relative_to(folder).as_posix()
+                for number, row in enumerate(text.splitlines(), 1):
+                    lower = row.lower()
+                    hits = sum(1 for word in words if word in lower)
+                    if hits:
+                        found.append((hits, name, number, row.strip()))
+        # Lines holding more of the words first; then by file and line, so
+        # the same search always gives the same answer.
+        found.sort(key=lambda item: (-item[0], item[1], item[2]))
+        return {
+            "matches": [
+                f"{name}:{number}: {row[:MAX_SEARCH_LINE]}"
+                for _, name, number, row in found[:MAX_SEARCH_MATCHES]
+            ]
+        }
+
     def write(_tool: ToolDecl, arguments: dict[str, Any]) -> dict[str, Any]:
         data = arguments["text"].encode("utf-8")
         if len(data) > MAX_FILE_BYTES:
@@ -277,6 +348,7 @@ def _files(tool: ToolDecl, folder: Path) -> Callable[[ToolDecl, dict[str, Any]],
     return {
         "read": read,
         "peek": peek,
+        "search": search,
         "write": write,
         "create": create,
         "list": list_names,

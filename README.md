@@ -573,6 +573,36 @@ This works with `--model-protocol ollama` and `openai`, on a model that was
 trained to choose tools. A files tool with `operation: "peek"` reads only
 the first 4000 characters, which suits a model reading for itself.
 
+### Example agents
+
+`examples/agents` holds six agents written in Kosika, each with its own
+tests. Point Studio at the folder to try them:
+
+```
+kosika studio examples/agents --model MODEL --allow-folder YOUR_FOLDER --allow-shell
+```
+
+- `researcher` answers questions from the files in the granted folder. Code
+  searches for the key words, the model answers from the lines found and
+  must give an exact quote, and code checks the quote is really there and
+  names the file and line. An answer it cannot prove is not shown.
+- `doctor` measures this computer's disk, memory, battery and biggest files
+  with small read-only Python programs you approve, and reads the numbers
+  in code. Written for Windows.
+- `coach` quizzes you on any subject. The model writes the question; code
+  shuffles the choices, marks the answer, and re-asks what you missed.
+- `workbench` starts git and python for a code project and explains what
+  they print.
+- `planner` keeps tasks, plans a day into focus blocks, and writes a
+  standup note.
+- `scout` is given a question and two tools and chooses for itself which
+  files to open.
+
+A files tool with `operation: "search"` takes `{path, query}` and gives
+back the lines under that folder holding the words, as `path:line: text`,
+best first. It only reads, skips hidden folders, and never leaves the
+granted folder.
+
 ### Tools from MCP servers
 
 An MCP server is a separate program that offers tools. A Kosika program

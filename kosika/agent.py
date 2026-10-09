@@ -159,6 +159,10 @@ def describe_tool(tool: ToolDecl) -> str:
             "peek": "Read the beginning of a text file, up to 4000 characters. "
             "`path` is relative to the granted folder. Use this to look at a "
             "file without reading all of it.",
+            "search": "Search the text files under a folder for the words in "
+            '`query`. `path` is the folder, "." for the top. It gives back '
+            "matching lines as path:line: text, best first. Use a few key "
+            "words, not a sentence.",
             "write": "Write `text` to the file at `path`, replacing it." + asks,
             "create": "Create a new text file at `path` holding `text`. It "
             "never replaces an existing file." + asks,

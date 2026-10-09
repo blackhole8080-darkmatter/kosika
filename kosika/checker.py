@@ -935,13 +935,6 @@ def _check_fallbacks(program: Program) -> None:
                         f"Step {step.name!r} cannot use otherwise with execute "
                         f"tool {tool.name!r}: a failed action may still have happened"
                     )
-            first = _call_output(program, step.call)
-            second = _call_output(program, step.fallback)
-            if first is not None and second is not None and first != second:
-                raise CheckError(
-                    f"Step {step.name!r} otherwise branch returns {second!r}, "
-                    f"but the step returns {first!r}"
-                )
     without = replace(
         program,
         workflows=[
@@ -971,7 +964,21 @@ def _check_fallbacks(program: Program) -> None:
             for workflow in program.workflows
         ],
     )
+    # The program must first be sound without its fallbacks. A fault in a
+    # declaration, such as a tool that returns an unknown record, is then
+    # reported as itself and not as the type disagreement it also causes.
     check(without)
+    for workflow in program.workflows:
+        for step in workflow.steps:
+            if step.fallback is None:
+                continue
+            first = _call_output(program, step.call)
+            second = _call_output(program, step.fallback)
+            if first is not None and second is not None and first != second:
+                raise CheckError(
+                    f"Step {step.name!r} otherwise branch returns {second!r}, "
+                    f"but the step returns {first!r}"
+                )
     check(swapped)
 
 

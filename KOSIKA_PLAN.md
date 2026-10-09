@@ -1757,6 +1757,48 @@ gate: without them a parser written in Kosika has nothing to return.
   taken on trust. Nested input fields cannot be declared. A granted server
   is not sandboxed. `kosika run` and `kosika chat` do not take `--mcp` yet.
 
+## Agents for the laptop, and file search
+
+- `search`, a read-only files operation: `{path, query}` to `{matches}`.
+  It walks the granted folder, skipping hidden folders, tool stores such
+  as `node_modules`, symlinks, files over 1 MiB and files that are not
+  UTF-8, and returns up to 40 lines as `path:line: text`, lines holding
+  more of the words first, then by file and line so a search is
+  repeatable. Limits: 5000 files, 8 seconds, 240 characters a line. It is
+  word matching, not meaning: a question phrased in other words than the
+  file finds nothing.
+- Three new agents, in `examples/agents` with the three earlier ones (and
+  in `my_examples/agents`):
+  `researcher` (7 tests) searches, has the model answer from the found
+  lines with one exact quote, and checks in code that the quote is in a
+  found line before showing the answer with its file and line.
+  `doctor` (7 tests) runs read-only Python measurements after approval and
+  parses the numbers in code; the model only gives advice from them.
+  `coach` (6 tests) has the model write a question with one right and
+  three wrong answers; code shuffles, marks, scores and re-asks misses.
+- The pattern in all three: code does everything that must be exact, and
+  the model's part is small and checked. This is why they work with the
+  3b model where the tool-choosing `scout` did not.
+- Tried on this laptop with qwen2.5:3b. Researcher: three questions
+  answered correctly with a verified quote and line in 8 to 20 seconds,
+  an unknown subject refused in 0.3 seconds with no model call, and one
+  question refused because no quote backed it. Doctor: one approval gave
+  disk 63.4 GB free of 475.5 GB, memory 89% in use with the six largest
+  users named, battery 79%. Coach: questions, hint, marking, review and
+  score worked; the model wrote the same question twice in a row, so the
+  prompt now asks for a different kind of question each turn and code
+  refuses an exact repeat.
+- `tests/test_example_agents.py`: every example agent must check and pass
+  its own tests, and six tests of `search`, including that it never looks
+  outside the granted folder.
+- Not claimed: the quote check proves the words are in the file, not that
+  the answer follows from them. The coach's questions and answer keys come
+  from the model and can be wrong. The doctor's advice was generic. The
+  doctor's programs are Windows-only and were run on one machine. The
+  varied-question change to the coach was tested by its tests, not tried
+  again on the model. Search has no index, so a very large folder is cut
+  off at its limits.
+
 ## Standard coding-agent procedure
 
 1. Inspect `git status`, the relevant source files, tests, and this plan.
