@@ -1183,9 +1183,19 @@ class Parser:
         verify = self.parse_step_call() if self.accept("verify") else None
         votes = self.parse_step_count("vote")
         retries = self.parse_step_count("retry")
+        escalate = self.identifier() if self.accept("escalate") else None
         fallback = self.parse_step_call() if self.accept("otherwise") else None
         return Step(
-            name, call, name, None, name, fallback, retries, votes, verify=verify
+            name,
+            call,
+            name,
+            None,
+            name,
+            fallback,
+            retries,
+            votes,
+            verify=verify,
+            escalate=escalate,
         )
 
     def parse_step_count(self, word: str) -> int:
@@ -1213,6 +1223,7 @@ class Parser:
         verify = self.parse_step_call() if self.accept("verify") else None
         votes = self.parse_step_count("vote")
         retries = self.parse_step_count("retry")
+        escalate = self.identifier() if self.accept("escalate") else None
         fallback = self.parse_step_call() if self.accept("otherwise") else None
         self.expect("return")
         return_name = self.identifier()
@@ -1227,6 +1238,7 @@ class Parser:
             retries,
             votes,
             verify=verify,
+            escalate=escalate,
         )
 
     def parse_think_call(self) -> ThinkCall:

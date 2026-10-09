@@ -173,6 +173,12 @@ def describe_tool(tool: ToolDecl) -> str:
             "inside the granted folder. It gives back the exit code and what "
             "the program printed." + asks
         )
+    if source == "system:kosika":
+        return (
+            "Check a Kosika program given as text in `source` and run the "
+            "tests written in it. It says whether it is ok and, if not, the "
+            "first thing wrong."
+        )
     if source == "system:web":
         return (
             "Read one web page. `url` is a full https address on a site the "

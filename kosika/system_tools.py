@@ -18,7 +18,12 @@ A program asks for system access by declaring a tool with a `system` source:
       output: FileWritten          // {bytes: Number}
     }
 
-Three independent things must all be true before anything happens:
+A fourth kind, `source system "kosika"` with `operation: "check"`, checks a
+Kosika program given as text and runs its tests. It reaches nothing outside
+itself, so unlike the others it needs no grant and no approval.
+
+For the other kinds, three independent things must all be true before
+anything happens:
 
 1. The declaration. A system tool must have `access: execute`, so the checker
    forces every workflow that uses one to state `require approval`. The one
@@ -51,7 +56,11 @@ from .ast import Program, ToolDecl
 from .web import WebError, bind_web_tool
 
 SYSTEM_PREFIX = "system:"
-SYSTEM_KINDS = ("shell", "files", "web")
+SYSTEM_KINDS = ("shell", "files", "web", "kosika")
+#: The largest program text the `kosika` tool will look at.
+MAX_CHECKED_SOURCE = 64 * 1024
+#: How many of a checked program's tests are run.
+MAX_CHECKED_TESTS = 30
 FILE_OPERATIONS = ("read", "peek", "search", "write", "create", "list")
 READ_ONLY_OPERATIONS = ("read", "peek", "search", "list")
 #: Limits on one search of a folder, so it always comes back.
@@ -95,6 +104,13 @@ SHAPES: dict[str, tuple[dict[str, str], dict[str, str]]] = {
     # can add to a folder and never destroy what is there.
     "create": ({"path": "Text", "text": "Text"}, {"bytes": "Number"}),
     "list": ({"path": "Text"}, {"names": "Text[]"}),
+    # A Kosika program, given as text, is checked and its own tests are run.
+    # `problem` is empty when it checks and every test passes; otherwise it
+    # is the first thing wrong, in the checker's own words.
+    "check": (
+        {"source": "Text"},
+        {"ok": "Bool", "problem": "Text", "tests": "Number", "passed": "Number"},
+    ),
     # A web tool reads one page from a site the runner allowed; see kosika.web.
     "fetch": ({"url": "Text"}, {"url": "Text", "title": "Text", "text": "Text"}),
 }
@@ -127,8 +143,15 @@ def declaration_problem(program: Program, tool: ToolDecl) -> str | None:
     # `observe`, which needs the folder grant but no approval for each call.
     # Writing a file and starting a program always need approval.
     looks_only = (
-        kind == "files" and tool.operation in READ_ONLY_OPERATIONS
-    ) or kind == "web"
+        (kind == "files" and tool.operation in READ_ONLY_OPERATIONS)
+        or kind == "web"
+        or kind == "kosika"
+    )
+    if kind == "kosika" and tool.operation != "check":
+        return (
+            f"Tool {tool.name!r} has unknown kosika operation {tool.operation!r}; "
+            "the only one is check"
+        )
     if kind == "web" and tool.operation != "fetch":
         return (
             f"Tool {tool.name!r} has unknown web operation {tool.operation!r}; "
@@ -167,6 +190,74 @@ def declaration_problem(program: Program, tool: ToolDecl) -> str | None:
                 f"fields {{{shape}}}"
             )
     return None
+
+
+def check_source(_tool: ToolDecl, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Check a Kosika program given as text and run the tests written in it.
+
+    This reaches nothing. The text is put in a folder made for the purpose
+    and deleted afterwards, it can import nothing, and its tests run the way
+    `kosika test` runs them: scripted answers only, memories of their own,
+    no real model, tool, file or network. So it needs no grant, and a
+    program that writes programs can find out whether they are right.
+    """
+
+    import tempfile
+
+    from .modules import load_program
+    from .testing import run_tests
+
+    source = arguments["source"]
+    if len(source.encode("utf-8")) > MAX_CHECKED_SOURCE:
+        return {
+            "ok": False,
+            "problem": "The program is larger than 64 KiB.",
+            "tests": 0,
+            "passed": 0,
+        }
+    with tempfile.TemporaryDirectory(prefix="kosika-check-") as scratch:
+        path = Path(scratch) / "main.kos"
+        path.write_text(source, encoding="utf-8")
+        try:
+            program = load_program(path)
+        except (ValueError, TypeError, RecursionError, OSError) as exc:
+            # OSError: it tried to import a file, and there are none here.
+            problem = (
+                str(exc).replace(str(path) + ": ", "").replace(str(path), "main.kos")
+            )
+            return {"ok": False, "problem": problem[:600], "tests": 0, "passed": 0}
+        try:
+            results = run_tests(program)[:MAX_CHECKED_TESTS]
+        except (ValueError, RuntimeError, RecursionError) as exc:
+            return {
+                "ok": False,
+                "problem": f"The tests could not be run: {str(exc)[:500]}",
+                "tests": 0,
+                "passed": 0,
+            }
+    failed = next((result for result in results if not result.passed), None)
+    return {
+        "ok": failed is None,
+        "problem": ""
+        if failed is None
+        else f'Test "{failed.name}" failed at line {failed.line}: {failed.message}'[
+            :600
+        ],
+        "tests": len(results),
+        "passed": sum(1 for result in results if result.passed),
+    }
+
+
+def bind_kosika_tools(
+    program: Program,
+) -> dict[str, Callable[[ToolDecl, dict[str, Any]], Any]]:
+    """Bind the program's `kosika` tools. They need no grant; see check_source."""
+
+    return {
+        tool.name: check_source
+        for tool in program.tools
+        if system_kind(tool) == "kosika"
+    }
 
 
 def _inside(folder: Path, relative: str) -> Path:
@@ -375,7 +466,9 @@ def bind_system_tools(
         problem = declaration_problem(program, tool)
         if problem is not None:
             raise SystemToolError(problem)
-    web: dict[str, Callable[[ToolDecl, dict[str, Any]], Any]] = {}
+    web: dict[str, Callable[[ToolDecl, dict[str, Any]], Any]] = dict(
+        bind_kosika_tools(program)
+    )
     if sites:
         try:
             reader = (
@@ -385,7 +478,7 @@ def bind_system_tools(
             )
         except WebError as exc:
             raise SystemToolError(str(exc)) from exc
-        web = {tool.name: reader for tool in system if system_kind(tool) == "web"}
+        web.update({tool.name: reader for tool in system if system_kind(tool) == "web"})
     if folder is None:
         if allow_shell:
             raise SystemToolError(

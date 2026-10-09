@@ -105,6 +105,12 @@ def _model_step(call: dict[str, Any], returned: dict[str, Any]) -> dict[str, Any
         ]
     elif isinstance(quotes, list):
         step["evidence"] = [repr(_show(quote, 90)) for quote in quotes]
+    moved = returned.get("escalated")
+    if isinstance(moved, dict):
+        step["escalated"] = (
+            f"moved to model {moved.get('to')} because the first model's "
+            f"answer was refused: {_show(moved.get('because'), 160)}"
+        )
     rejected = returned.get("rejected")
     if isinstance(rejected, list) and rejected:
         step["rejected"] = [_show(item.get("reason"), 100) for item in rejected]
@@ -336,6 +342,8 @@ def _tell(steps: list[dict[str, Any]], lines: list[str], indent: str) -> None:
             lines.append(f"{indent}     rejected, then asked again: {reason}")
         if "vote" in step:
             lines.append(f"{indent}     vote: {step['vote']}")
+        if "escalated" in step:
+            lines.append(f"{indent}     {step['escalated']}")
         for use in step.get("used", ()):
             lines.append(f"{indent}     it chose {use}")
         if "reshaped" in step:

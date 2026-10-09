@@ -36,7 +36,7 @@ tool search_files {
 class ExampleAgentTests(unittest.TestCase):
     def test_every_example_agent_checks_and_passes_its_own_tests(self) -> None:
         found = sorted(AGENTS.glob("*/main.kos"))
-        self.assertGreaterEqual(len(found), 6)
+        self.assertGreaterEqual(len(found), 7)
         for path in found:
             with self.subTest(agent=path.parent.name):
                 program = load_program(path)

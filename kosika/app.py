@@ -362,6 +362,8 @@ def _slim(event: dict[str, Any], depth: int) -> dict[str, Any]:
         }
     if isinstance(event.get("usage"), dict):
         slim["tokens"] = event["usage"].get("total_tokens")
+    if isinstance(event.get("escalated"), dict):
+        slim["escalated"] = str(event["escalated"].get("to", ""))
     # What agents say to each other on a board is the conversation the swarm
     # view shows, so a post travels with who said it and a clip of the words.
     arguments = event.get("arguments")

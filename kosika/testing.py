@@ -258,7 +258,12 @@ def _run_one(
             scripts[name] = answers
         else:
             tools[name] = _ScriptedTool(name, answers)
-    memory_tools = bind_memory_tools(program, None, store=MemoryStore())
+    from .system_tools import bind_kosika_tools
+
+    memory_tools = {
+        **bind_kosika_tools(program),
+        **bind_memory_tools(program, None, store=MemoryStore()),
+    }
     providers: dict[str, Any] = dict(live or {}) or {
         name: ScriptedModelProvider(
             [ModelResponse(content=json.dumps(answer)) for answer in answers]

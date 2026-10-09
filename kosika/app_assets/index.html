@@ -456,7 +456,7 @@ function liveView(agent, entry) {
     else if (event.event === "agent_return") { if (event.tokens) counts.tokens += event.tokens; say(depth, "agent " + (event.agent || "") + " answered" + (picked.length ? " after choosing " + picked.join(" → ") : "")); }
     else if (event.event === "model_return") {
       if (event.tokens) counts.tokens += event.tokens;
-      const bits = ["the model answered"]; if (event.rejected) bits.push(event.rejected + " answer(s) rejected first");
+      const bits = [event.escalated ? "model " + event.escalated + " answered, after the first model's answer was refused" : "the model answered"]; if (event.rejected) bits.push(event.rejected + " answer(s) rejected first");
       if (event.votes && event.votes.asked) bits.push(event.votes.agreed + " of " + event.votes.asked + " agreed"); say(depth, bits.join(", "));
     } else if (event.event === "tool_call") {
       counts.tools += 1; const source = String(event.source || "");
@@ -516,6 +516,7 @@ function storySteps(steps) {
   steps.forEach((step, index) => {
     const row = h("div", {class: "s"}, h("div", {class: "head"}, (index + 1) + ". " + step.name + ": " + step.did, step.seconds ? h("span", {class: "t"}, step.seconds + " s") : null));
     if (step.fallback) row.append(h("div", {class: "note bad"}, "First attempt failed: " + step.fallback + " The fallback ran instead."));
+    if (step.escalated) row.append(h("div", {class: "note v"}, step.escalated.charAt(0).toUpperCase() + step.escalated.slice(1)));
     for (const reason of step.rejected || []) row.append(h("div", {class: "note bad"}, "Rejected, then asked again: " + reason));
     if (step.vote) row.append(h("div", {class: "note v"}, "Vote: " + step.vote));
     for (const use of step.used || []) row.append(h("div", {class: "note v"}, "It chose " + use));

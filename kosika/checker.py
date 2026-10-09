@@ -958,6 +958,7 @@ def _check_fallbacks(program: Program) -> None:
                         fallback=None,
                         retries=step.retries if step.fallback is None else 0,
                         votes=step.votes if step.fallback is None else 0,
+                        escalate=step.escalate if step.fallback is None else None,
                     )
                     for step in workflow.steps
                 ),
@@ -1162,6 +1163,31 @@ def check(program: Program) -> None:
                     raise CheckError(
                         f"Step {step.name!r} cannot vote: the count must be "
                         f"3, 5, 7, or 9, got {step.votes}"
+                    )
+            if step.escalate is not None:
+                if not isinstance(step.call, ModelCall) or step.branches:
+                    raise CheckError(
+                        f"Step {step.name!r} cannot escalate: only a model step "
+                        "(use_model or a thinking step) can be asked of "
+                        "another model"
+                    )
+                if step.votes:
+                    raise CheckError(
+                        f"Step {step.name!r} cannot escalate: a voting step "
+                        "already asks more than once; name its models with using"
+                    )
+                stronger = next(
+                    (m for m in program.models if m.name == step.escalate), None
+                )
+                if stronger is None or stronger.provider is not None:
+                    raise CheckError(
+                        f"Step {step.name!r} cannot escalate: {step.escalate!r} "
+                        "is not a model declared in the program"
+                    )
+                if step.escalate == step.call.model_name:
+                    raise CheckError(
+                        f"Step {step.name!r} cannot escalate: {step.escalate!r} "
+                        "is the model it already asks"
                     )
             if step.retries == 0:
                 continue

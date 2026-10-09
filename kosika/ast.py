@@ -478,6 +478,11 @@ class Step:
     # with it, or "" when nothing is. A complaint rejects the answer exactly
     # as a malformed one is rejected, so `retry` shows it back to the model.
     verify: Any = None
+    # `step = call retry 1 escalate strong`: the declared model whose
+    # binding is asked the same question when every answer of the
+    # step's own model was rejected. Fast and cheap first, strong only
+    # when the answer did not pass.
+    escalate: str | None = None
 
 
 @dataclass(frozen=True)
@@ -689,6 +694,7 @@ _ABSENT_DEFAULTS: dict[str, tuple[Any, ...]] = {
     "voters": ((), []),
     "branches": ((), []),
     "verify": (None,),
+    "escalate": (None,),
     "default": (False,),
     "more_models": ((), []),
     "budget": ((), []),

@@ -677,14 +677,37 @@ def _workflow_model_bindings(
             f"Model {args.model!r} at {url} answers for: {', '.join(granted)}",
             file=sys.stderr,
         )
-    provider = OpenAICompatibleProvider(
-        url,
-        args.model,
-        api_key=os.environ.get("KOSIKA_MODEL_API_KEY"),
-        protocol=args.model_protocol,
-        timeout=getattr(args, "model_timeout", None) or 60.0,
-    )
-    return dict.fromkeys(granted, provider)
+    # `--model fast,strong=big`: every declared model is answered by `fast`,
+    # except the one the program calls `strong`, which is answered by `big`.
+    base, *others = [part.strip() for part in args.model.split(",")]
+    overrides: dict[str, str] = {}
+    for part in others:
+        declared_name, found, real = part.partition("=")
+        if not found or not declared_name.strip() or not real.strip():
+            raise ValueError(
+                f"--model part {part!r} must look like NAME=MODEL, where NAME "
+                "is a model the program declares"
+            )
+        if declared_name.strip() not in granted:
+            raise ValueError(
+                f"--model names {declared_name.strip()!r}, which is not a model "
+                f"this program declares; it declares: {', '.join(granted)}"
+            )
+        overrides[declared_name.strip()] = real.strip()
+    if not base or "=" in base:
+        raise ValueError("--model must begin with the model that answers by default")
+
+    def provider_for(name: str) -> ModelProvider:
+        return OpenAICompatibleProvider(
+            url,
+            name,
+            api_key=os.environ.get("KOSIKA_MODEL_API_KEY"),
+            protocol=args.model_protocol,
+            timeout=getattr(args, "model_timeout", None) or 60.0,
+        )
+
+    made = {name: provider_for(name) for name in {base, *overrides.values()}}
+    return {name: made[overrides.get(name, base)] for name in granted}
 
 
 def _failure_line(source: Path) -> str:

@@ -1339,7 +1339,13 @@ def _run_workflow(
             pending.append(
                 (
                     dataclass_replace(
-                        step, call=step.fallback, fallback=None, retries=0, votes=0
+                        step,
+                        call=step.fallback,
+                        fallback=None,
+                        retries=0,
+                        votes=0,
+                        verify=None,
+                        escalate=None,
                     ),
                     chosen,
                 )
@@ -1391,6 +1397,10 @@ def _run_workflow(
                     raise PermissionError(
                         f"Model {voter_name!r} has no authorized host binding"
                     )
+            if step.escalate is not None and step.escalate not in providers:
+                raise PermissionError(
+                    f"Model {step.escalate!r} has no authorized host binding"
+                )
             continue
         tool = tools[step.call.tool_name]
         if tool.source.startswith("memory:") and tool.name not in host_tools:
@@ -1748,21 +1758,46 @@ def _run_workflow(
                         **call_evidence,
                     )
                 )
-                result, response = _ask_with_votes(
-                    [
-                        (providers[voter.provider or voter.name], voter)
-                        for voter in ([models[name] for name in step.voters] or [model])
-                    ],
-                    arguments,
-                    asked_schema,
-                    retries=step.retries,
-                    votes=step.votes,
-                    verify_answer=(
-                        _verifier(step, environment, program, functions)
-                        if step.verify is not None
-                        else None
-                    ),
+                judge = (
+                    _verifier(step, environment, program, functions)
+                    if step.verify is not None
+                    else None
                 )
+                try:
+                    result, response = _ask_with_votes(
+                        [
+                            (providers[voter.provider or voter.name], voter)
+                            for voter in (
+                                [models[name] for name in step.voters] or [model]
+                            )
+                        ],
+                        arguments,
+                        asked_schema,
+                        retries=step.retries,
+                        votes=step.votes,
+                        verify_answer=judge,
+                    )
+                except (RejectedAnswer, ThinkingAnswerError) as refused:
+                    if step.escalate is None:
+                        raise
+                    # `escalate`: every answer of the step's own model was
+                    # rejected, so the same question, with the same checks,
+                    # goes to the model bound to the named one.
+                    result, response = _ask_with_votes(
+                        [(providers[step.escalate], model)],
+                        arguments,
+                        asked_schema,
+                        retries=step.retries,
+                        votes=0,
+                        verify_answer=judge,
+                    )
+                    response = {
+                        **response,
+                        "escalated": {
+                            "to": step.escalate,
+                            "because": str(refused)[:500],
+                        },
+                    }
                 events.append(
                     _event("model_return", model=model.name, result=result, **response)
                 )
@@ -1834,7 +1869,13 @@ def _run_workflow(
             if step.fallback is None or isinstance(exc, ApprovalRequiredError):
                 raise
             fallback_step = dataclass_replace(
-                step, call=step.fallback, fallback=None, retries=0, votes=0
+                step,
+                call=step.fallback,
+                fallback=None,
+                retries=0,
+                votes=0,
+                verify=None,
+                escalate=None,
             )
             if isinstance(exc, ExecutionError):
                 # On resume, a step its fallback completed earlier is stored

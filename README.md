@@ -592,6 +592,25 @@ may stand. A complaint refuses the answer, and with `retry` the model is
 shown its answer and your complaint and asked again. The check that passed
 is recorded in the trace and replay looks at it again.
 
+### Fast model first, strong model when needed
+
+```
+found = use_model reader(prompt.text) verify proven(found, hits) escalate strong otherwise unproven(hits)
+```
+
+The step asks `reader`. If its answer is refused, by your `verify` or
+because it is not a valid record, the same question goes to the model the
+program calls `strong`, held to the same check. Say which real model
+stands behind each name when you run:
+
+```
+kosika studio FOLDER --model-protocol ollama --model qwen2.5:3b,strong=qwen2.5:7b
+```
+
+Every declared model is answered by the first one named, except those
+given a model of their own with `NAME=MODEL`. The same form works for
+`kosika run`, `chat` and `measure`.
+
 ### Measuring a program on real models
 
 An `eval` is written like a `test`, but the models answer for themselves.
@@ -618,7 +637,7 @@ eval that did not always pass.
 
 ### Example agents
 
-`examples/agents` holds six agents written in Kosika, each with its own
+`examples/agents` holds seven agents written in Kosika, each with its own
 tests. Point Studio at the folder to try them:
 
 ```
@@ -640,6 +659,17 @@ kosika studio examples/agents --model MODEL --allow-folder YOUR_FOLDER --allow-s
   standup note.
 - `scout` is given a question and two tools and chooses for itself which
   files to open.
+- `author` writes Kosika programs. The model writes a program with its
+  own tests, Kosika checks it and runs the tests, and what is wrong goes
+  back to the model up to two more times. You can run a test of your own
+  against what it wrote, and save it after approving.
+
+A tool with `source system "kosika"` and `operation: "check"` takes a
+program as text, `{source}`, and gives back `{ok, problem, tests, passed}`:
+whether it is valid Kosika, how many of the tests written in it pass, and
+the first thing wrong. It needs no grant, because it reaches nothing: the
+text is checked in a folder made for the purpose, can import nothing, and
+its tests use scripted answers only.
 
 A files tool with `operation: "search"` takes `{path, query}` and gives
 back the lines under that folder holding the words, as `path:line: text`,

@@ -465,6 +465,19 @@ think = "classify"  expression "into" expression [ "using" identifier ]
   have returned `""`. A `match` step and a step that is not a model step
   MUST NOT have `verify`.
 
+- A model step MAY be followed by `escalate NAME`, written after any
+  `retry` and before any `otherwise`:
+  `found = use_model reader(p.text) verify proven(found, hits) escalate strong`.
+  NAME MUST be a model declared in the program other than the one the step
+  asks. When every answer of the step's own model has been rejected, the
+  same question, with the same record, `verify`, and `retry`, is asked of
+  the model bound to NAME. Only rejected answers escalate; a provider
+  failure does not. If that model's answers are rejected too, the step
+  fails as it would have, so its `otherwise` runs. The trace records that
+  the step escalated, to which name, and why. A voting step and a step
+  that is not a model step MUST NOT have `escalate`. The model bound to
+  NAME must be granted before the run starts.
+
 - A program MAY contain `eval "name" { ... }` blocks, written exactly like
   `test` blocks. An eval's models are not scripted: it MUST NOT give
   `answers` for a declared model, and MAY give them for read-only tools.

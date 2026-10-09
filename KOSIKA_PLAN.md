@@ -1846,6 +1846,68 @@ gate: without them a parser written in Kosika has nothing to return.
   automatic tuning of prompts was built. Meaning-based search was not
   started: it needs an embedding model that is not installed.
 
+## `escalate`: fast model first, strong when refused
+
+- `escalate NAME` on a model step (`Step.escalate`), after any `retry` and
+  before `otherwise`. When every answer of the step's own model is
+  rejected, the same question with the same record, `verify` and `retry`
+  is asked of the provider bound to NAME. Provider failures do not
+  escalate. The return event records `escalated: {to, because}`; the story
+  and Studio say so. Preflight requires NAME to be bound.
+- `--model fast,NAME=big` in the short form of `--model` (run, chat,
+  studio, measure): every declared model is answered by the first model,
+  except the names given their own.
+- The researcher asks `reader`, escalates to `strong`, and its check now
+  refuses an empty answer too, so that giving up is a reason to escalate.
+- Measured, four evals three times each: qwen2.5:3b 9 of 12 in 92 s;
+  qwen2.5:7b 12 of 12 in 141 s; 3b escalating to 7b 12 of 12 in 286 s.
+  Escalation reached the large model's accuracy and was twice as slow as
+  the large model alone. Two of the four evals escalate every time (one
+  the small model cannot do, one that has no answer, where both models
+  are asked), and this laptop cannot keep both models in memory, so each
+  switch reloads one. It pays only when most questions stop at the fast
+  model and both models stay loaded; here neither held.
+- 11 tests in `tests/test_escalate.py`.
+- Not claimed: no speed benefit was shown. A legitimate "the lines do not
+  say" now costs a call to each model. One fixed pair of models was tried.
+
+## The `kosika` tool and the author agent
+
+- `source system "kosika"` with `operation: "check"`: `{source}` to
+  `{ok, problem, tests, passed}`. The text is written to a temporary
+  folder, loaded, and its tests run with `run_tests`. It is bound without
+  any grant, in runs, Studio, tests and evals, because it reaches nothing:
+  no import resolves, and tests use scripted answers and their own
+  memories. Limits: 64 KiB of source, 30 tests.
+- `examples/agents/author`: the model is given a guide to Kosika of about
+  2300 characters and writes a program with tests as `{source}`. A
+  `verify` function refuses what is plainly not Kosika (no `workflow
+  main`, no tests, Python or Markdown) and escalates to `strong`. The real
+  check then runs, and a failing program goes back with the checker's own
+  message, up to two more times. `test: ...` runs a test of the person's
+  own against the last program; `fix: ...` repairs with a hint; `save
+  NAME` creates `NAME.kos` after approval. 7 tests, in which the checking
+  is real, and 3 evals that each run a hidden test against what the model
+  wrote.
+- Measured once each: qwen2.5:7b passed 3 of 3 hidden tests, each program
+  right on the first attempt, 143 s in all; qwen2.5:3b passed 2 of 3 in
+  114 s with 5 model calls. In Studio the 7b model was asked for total,
+  count and average of a list of prices: the first attempt failed the
+  check, the second passed, a test of mine it had not seen passed, and the
+  saved file passed `kosika test`; 171 s.
+- Found while writing the tests: importing a missing file raised an
+  `OSError` out of the check. It is now reported as a problem with the
+  program.
+- 6 tests in `tests/test_kosika_tool.py`; the examples test now covers
+  seven agents.
+- Not claimed: three small tasks, run once, on programs of one function.
+  Nothing here shows it can write an agent with tools, memory or model
+  steps; the guide does not teach those. A program that passes its own
+  tests can still be wrong, since the model wrote both; only a test
+  written by someone else says more. The agent did not write any part of
+  Kosika itself. The check runs the candidate's tests in the same process,
+  bounded by the language's loop and depth limits and nothing else.
+
 ## Standard coding-agent procedure
 
 1. Inspect `git status`, the relevant source files, tests, and this plan.
