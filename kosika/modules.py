@@ -26,6 +26,8 @@ from .board import BoardError, lower_board
 from .board import supplied_names as board_names
 from .builtin_methods import did_you_mean
 from .checker import CheckError, check
+from .direct import lower_direct
+from .direct import supplied_names as direct_names
 from .function_types import base_type, referenced_types
 from .memory import MemoryError_, lower_memory, supplied_names
 from .parser import ParseError, parse
@@ -276,6 +278,7 @@ def load_program(
             - supplied_names(module.memories)
             - board_names(module.boards)
             - ambient_names(module)
+            - direct_names(module)
         )
         if hidden:
             mark_error(resolved)
@@ -317,7 +320,9 @@ def load_program(
     # built-in records are added a single time.
     try:
         merged = lower_sugar(
-            lower_thinking(lower_board(lower_memory(lower_ambient(merged))))
+            lower_thinking(
+                lower_board(lower_memory(lower_direct(lower_ambient(merged))))
+            )
         )
     except (ThinkingError, MemoryError_, BoardError) as exc:
         raise CheckError(str(exc)) from exc

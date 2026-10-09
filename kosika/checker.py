@@ -12,6 +12,7 @@ from .ast import (
     BreakExpr,
     ConditionalExpr,
     ContinueExpr,
+    FailExpr,
     Field,
     FieldExpr,
     ForExpr,
@@ -39,6 +40,7 @@ from .ast import (
     VariableExpr,
     WorkflowCall,
     function_body,
+    method_function,
     static_function_references,
 )
 from .builtin_methods import MethodError, did_you_mean
@@ -241,7 +243,7 @@ def _proved_present(
 def _always_leaves(expression: object) -> bool:
     """True when evaluating `expression` never continues to the next line."""
 
-    if isinstance(expression, (ReturnExpr, BreakExpr, ContinueExpr)):
+    if isinstance(expression, (ReturnExpr, BreakExpr, ContinueExpr, FailExpr)):
         return True
     if isinstance(expression, Block):
         if expression.result is not None:
@@ -464,8 +466,45 @@ def _expression_type(
             else None,
         )
         return "Null[]" if body_type == NEVER else f"{body_type}[]"
+    if isinstance(expression, FailExpr):
+        reason_type = _expression_type(
+            expression.message, bindings, program, step_name=step_name
+        )
+        if reason_type != "Text":
+            raise CheckError(
+                f"Step {step_name!r} fail expects a Text reason, got {reason_type!r}"
+            )
+        # Like `return`, it never gives a value, so it agrees with whatever
+        # the other branch of a choice yields.
+        return NEVER
     if isinstance(expression, TryExpr):
-        return _expression_type(expression.body, bindings, program, step_name=step_name)
+        body_type = _expression_type(
+            expression.body,
+            bindings.child(),
+            program,
+            step_name=step_name,
+            expected_type=expected_type,
+        )
+        if expression.fallback is None:
+            return body_type
+        rescue = bindings.child()
+        if expression.error_name is not None:
+            rescue[expression.error_name] = "Text"
+        fallback_type = _expression_type(
+            expression.fallback,
+            rescue,
+            program,
+            step_name=step_name,
+            expected_type=expected_type if body_type == NEVER else body_type,
+        )
+        if body_type == NEVER:
+            return fallback_type
+        if fallback_type not in (NEVER, body_type):
+            raise CheckError(
+                f"Step {step_name!r} try gives {body_type!r} but its otherwise "
+                f"gives {fallback_type!r}; both must give the same type"
+            )
+        return body_type
     if isinstance(expression, FunctionExpr):
         function_bindings = _Env()
         for parameter in expression.parameters:
@@ -498,6 +537,32 @@ def _expression_type(
         receiver_type = _expression_type(
             expression.target, bindings, program, step_name=step_name
         )
+        # Unless the receiver is a record that has a function of that name:
+        # then the call is that function, with the record as `self`.
+        owner = next(
+            (
+                record
+                for record in program.records
+                if record.name == receiver_type and expression.method in record.methods
+            ),
+            None,
+        )
+        if owner is not None:
+            belonging = next(
+                function
+                for function in program.functions
+                if function.name == method_function(owner.name, expression.method)
+            )
+            rest = resolve_unnamed(
+                expression.arguments,
+                [parameter.name for parameter in belonging.parameters[1:]],
+            )
+            return _expression_type(
+                FunctionCallExpr(belonging.name, (("self", expression.target), *rest)),
+                bindings,
+                program,
+                step_name=step_name,
+            )
         if (
             isinstance(expression.target, VariableExpr)
             and expression.target.name in bindings.present
@@ -1116,7 +1181,45 @@ def _check_branches(program: Program) -> None:
         )
 
 
+#: Names a record's own function may not take, because a map already
+#: answers to them and a record and a map look alike when a program runs.
+_MAP_METHODS = ("get", "has", "set", "remove", "keys", "values", "length")
+
+
+def _check_record_methods(program: Program) -> None:
+    shapes: dict[tuple[str, frozenset[str]], str] = {}
+    for record in program.records:
+        fields = {field.name for field in record.fields}
+        for method in record.methods:
+            if record.methods.count(method) > 1:
+                raise CheckError(
+                    f"Record {record.name!r} method {method!r} is declared "
+                    "more than once"
+                )
+            if method in fields:
+                raise CheckError(
+                    f"Record {record.name!r} method {method!r} has the same "
+                    "name as one of its fields"
+                )
+            if method in _MAP_METHODS:
+                raise CheckError(
+                    f"Record {record.name!r} method {method!r} cannot use that "
+                    f"name; these belong to maps: {', '.join(_MAP_METHODS)}"
+                )
+            # A record is told apart by its fields when a program runs, so
+            # two records with the same fields cannot both answer to a name.
+            key = (method, frozenset(fields))
+            if key in shapes:
+                raise CheckError(
+                    f"Record {record.name!r} method {method!r} is also on "
+                    f"{shapes[key]!r}, which has exactly the same fields; "
+                    "give one of the methods another name"
+                )
+            shapes[key] = record.name
+
+
 def check(program: Program) -> None:
+    _check_record_methods(program)
     if any(
         isinstance(step.call, ThinkCall)
         for workflow in program.workflows

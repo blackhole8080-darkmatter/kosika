@@ -16,6 +16,7 @@ from .ast import (
     ConditionalExpr,
     ContinueExpr,
     Expression,
+    FailExpr,
     Field,
     FieldExpr,
     ForExpr,
@@ -51,6 +52,7 @@ from .ast import (
     VariableExpr,
     WorkflowCall,
     WorkflowDecl,
+    method_function,
 )
 from .lexer import Token, lex
 from .sugar import inferred_name
@@ -274,6 +276,14 @@ class Parser:
             return RepeatExpr(LiteralExpr(WHILE_PASSES), Block((leave,), body))
         if self.accept("try"):
             return self.parse_try_expression()
+        # `fail "reason"` or `fail f"..."`. Only a text may follow, so a
+        # variable that happens to be called fail is still a variable.
+        if self.check("fail") and (
+            self.peek().kind == "STRING"
+            or (self.peek().kind == "IDENT" and self.peek().value == "f")
+        ):
+            self.advance()
+            return FailExpr(self.expression())
         if self.accept("match"):
             subject = self.expression()
             self.expect("{")
@@ -575,7 +585,12 @@ class Parser:
             ):
                 raise ParseError("try retry count must be an integer from 1 to 32")
             retry = int(token.value)
-        return TryExpr(body, retry)
+        if not self.accept("otherwise"):
+            return TryExpr(body, retry)
+        # `otherwise problem { ... }` names the reason; `otherwise { ... }`
+        # does not need it.
+        error_name = None if self.check("{") else self.identifier()
+        return TryExpr(body, retry, self.parse_block(), error_name)
 
     def parse_array_expression(self) -> ArrayExpr:
         self.expect("[")
@@ -608,6 +623,7 @@ class Parser:
 
     def parse(self) -> Program:
         program = Program()
+        self.record_methods: list[FunctionDecl] = []
         while self.current.kind != "EOF":
             keyword = self.current.value if self.current.kind == "IDENT" else None
             if keyword == "import":
@@ -652,6 +668,7 @@ class Parser:
                 raise ParseError(
                     f"Unexpected declaration {token.value!r} at {token.line}:{token.column}"
                 )
+        program.functions.extend(self.record_methods)
         return program
 
     def parse_test(self) -> TestDecl:
@@ -866,13 +883,21 @@ class Parser:
         name = self.identifier()
         self.expect("{")
         fields: list[Field] = []
+        methods: list[str] = []
         while not self.accept("}"):
+            if self.check("fn"):
+                # A function that belongs to the record. It is kept with the
+                # program's other functions, under the record's name.
+                method = self.parse_function(owner=name)
+                methods.append(method.name.split("$", 1)[1])
+                self.record_methods.append(method)
+                continue
             field_name = self.identifier()
             self.expect(":")
             type_name = self.parse_type_name()
             fields.append(Field(field_name, type_name))
             self.accept(",")
-        return RecordDecl(name, tuple(fields))
+        return RecordDecl(name, tuple(fields), tuple(methods))
 
     def parse_tool(self) -> ToolDecl:
         self.expect("tool")
@@ -1087,13 +1112,20 @@ class Parser:
             if not self.accept(","):
                 return items
 
-    def parse_function(self, depth: int = 0) -> FunctionDecl:
+    def parse_function(self, depth: int = 0, owner: str | None = None) -> FunctionDecl:
         if depth >= 32:
             raise ParseError("Function declaration nesting exceeds 32")
         self.expect("fn")
         name = self.identifier()
         self.expect("(")
         parameters: list[Field] = []
+        if owner is not None:
+            # A record's function always takes the record first, as `self`.
+            name = method_function(owner, name)
+            self.expect("self")
+            parameters.append(Field("self", owner))
+            if not self.check(")"):
+                self.expect(",")
         while not self.accept(")"):
             parameter_name = self.identifier()
             self.expect(":")
@@ -1373,10 +1405,30 @@ class Parser:
         if (
             self.check("read")
             and self.peek().kind == "IDENT"
-            and self.peek().value != "("
+            and self.peek().value not in ("(", "file")
         ):
             self.advance()
             return ToolCall("board", f"read_{self.identifier()}", ())
+        # Files and pages in one line: see kosika.direct.
+        if self.check("read") and self.peek().value == "file":
+            self.advance()
+            self.advance()
+            return ToolCall("direct", "file_read", (("path", self.expression()),))
+        if self.check("list") and self.peek().value == "files":
+            self.advance()
+            self.advance()
+            return ToolCall("direct", "file_list", (("path", self.expression()),))
+        if self.check("write") and self.peek().value == "file":
+            self.advance()
+            self.advance()
+            target = self.expression()
+            self.expect("with")
+            return ToolCall(
+                "direct", "file_write", (("path", target), ("text", self.expression()))
+            )
+        if self.check("fetch") and self.peek().value not in ("(", ".", "="):
+            self.advance()
+            return ToolCall("direct", "web_fetch", (("url", self.expression()),))
         # `today = now` and `roll = random 1 to 6`: see kosika.ambient.
         if self.check("now") and self.peek().value not in ("(", "."):
             self.advance()
@@ -1438,10 +1490,13 @@ def parse(source: str, *, lower_thinking_steps: bool = True) -> Program:
             return program
         from .ambient import lower_ambient
         from .board import lower_board
+        from .direct import lower_direct
         from .memory import lower_memory
 
         return lower_sugar(
-            lower_thinking(lower_board(lower_memory(lower_ambient(program))))
+            lower_thinking(
+                lower_board(lower_memory(lower_direct(lower_ambient(program))))
+            )
         )
     except ValueError as exc:
         raise ParseError(str(exc)) from exc

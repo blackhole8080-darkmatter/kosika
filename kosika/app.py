@@ -54,6 +54,7 @@ from .ast import (
 )
 from .board import AGENT as BOARD_AGENT
 from .chat import ChatError, answer_text, message_parameter
+from .direct import AGENT as DIRECT_AGENT
 from .durable import ApprovalPending, ExecutionSession
 from .mcp_tools import MCPHub, bind_mcp_tools, declaration
 from .memory import AGENT as MEMORY_AGENT
@@ -272,7 +273,7 @@ def describe(agent: Agent, *, detail: bool) -> dict[str, Any]:
         agents=[
             {"name": a.name, "can": list(a.can), "model": a.model}
             for a in program.agents
-            if a.name not in (MEMORY_AGENT, BOARD_AGENT, WORLD_AGENT)
+            if a.name not in (MEMORY_AGENT, BOARD_AGENT, WORLD_AGENT, DIRECT_AGENT)
         ],
         swarms=[
             {

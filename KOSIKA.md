@@ -469,6 +469,35 @@ think = "classify"  expression "into" expression [ "using" identifier ]
   host grant. They MUST NOT appear inside a `fn`. A program that uses
   neither is unchanged and keeps its hash.
 
+- `fail TEXT` MAY appear wherever an expression may, where TEXT is a text
+  literal or an `f"..."` template. It never yields a value and stops
+  evaluation with that reason. `try { BODY } otherwise { OTHER }` yields
+  BODY's value, or OTHER's when BODY fails; `otherwise NAME { OTHER }` binds
+  the reason as Text. `try { BODY } retry N otherwise { OTHER }` evaluates
+  BODY up to N more times first. BODY and OTHER MUST have the same type.
+  What BODY recorded before failing is not kept in the trace. A failure of
+  the limits (budget, deadline, cancellation) MUST NOT be caught. A failure
+  that no `try` takes fails the workflow step, where the step's `otherwise`
+  applies as for any failure.
+
+- A `record` MAY contain functions: `fn NAME(self, parameters) -> Type`. The
+  first parameter MUST be written `self` and has the record's type. The
+  function is called as `VALUE.NAME(arguments)` on a value of that record
+  and is otherwise an ordinary function, named `Record$NAME`. NAME MUST NOT
+  equal a field of the record, MUST NOT be `get`, `has`, `set`, `remove`,
+  `keys`, `values` or `length`, and two records with exactly the same field
+  names MUST NOT both declare the same NAME. There is no inheritance. A
+  record with no functions is unchanged and keeps its hash.
+
+- A workflow step MAY be `read file PATH`, `list files PATH`,
+  `write file PATH with TEXT`, or `fetch URL`. Each stands for a call to a
+  built-in `system "files"` or `system "web"` tool (`file_read`, `file_list`,
+  `file_write`, `web_fetch`) with built-in records `FileContent {text}`,
+  `FileNames {names}`, `FileSaved {bytes}` and `WebPage {url, title, text}`.
+  All the rules of those tools apply: the host MUST grant the folder or
+  site, and `write file` is an `execute` tool, so its workflow MUST say
+  `require approval`. They MUST NOT appear inside a `fn`.
+
 - A model step MAY be followed by `verify CHECK(arguments)`, written after
   the call and before any `vote` or `retry`:
   `found = use_model reader(p.text) verify proven(found, hits) retry 1`.

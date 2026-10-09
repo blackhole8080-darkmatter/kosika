@@ -23,6 +23,7 @@ from .ast import (
     ConditionalExpr,
     ContinueExpr,
     Expression,
+    FailExpr,
     Field,
     FieldExpr,
     ForExpr,
@@ -44,10 +45,12 @@ from .ast import (
     Step,
     ToolCall,
     ToolDecl,
+    TryExpr,
     UnaryExpr,
     VariableExpr,
     WorkflowCall,
     function_body,
+    method_function,
     program_payload,
 )
 from .board import BoardStore, bind_board_tools
@@ -74,6 +77,12 @@ from .schema import (
 from .sugar import resolve_unnamed
 from .thinking import ThinkingAnswerError, check_answer
 from .trace_replay import replay_trace
+
+_MAP_METHODS = ("get", "has", "set", "remove", "keys", "values", "length")
+
+
+class Failure(RuntimeError):
+    """A program said `fail "reason"`."""
 
 
 class _BreakLoop(Exception):
@@ -399,6 +408,38 @@ def _evaluate_expression(
             function_events,
             depth=depth,
         )
+        if isinstance(receiver, dict) and expression.method not in _MAP_METHODS:
+            # A record's own function. Which record this is, is told from
+            # its fields; the checker made sure that cannot be mistaken.
+            keys = set(receiver)
+            owner = next(
+                (
+                    record
+                    for record in program.records
+                    if expression.method in record.methods
+                    and {field.name for field in record.fields} == keys
+                ),
+                None,
+            )
+            if owner is not None:
+                belonging = functions[method_function(owner.name, expression.method)]
+                return _evaluate_expression(
+                    FunctionCallExpr(
+                        belonging.name,
+                        (
+                            ("self", LiteralExpr(receiver)),
+                            *resolve_unnamed(
+                                expression.arguments,
+                                [item.name for item in belonging.parameters[1:]],
+                            ),
+                        ),
+                    ),
+                    environment,
+                    program,
+                    functions,
+                    function_events,
+                    depth=depth,
+                )
         method = resolve_method_for_value(receiver, expression.method)
         method_arguments = {
             name: _evaluate_expression(
@@ -633,6 +674,66 @@ def _evaluate_expression(
             except _ContinueLoop:
                 continue
         return result
+    if isinstance(expression, FailExpr):
+        raise Failure(
+            str(
+                _evaluate_expression(
+                    expression.message,
+                    environment,
+                    program,
+                    functions,
+                    function_events,
+                    depth=depth,
+                )
+            )
+        )
+    if isinstance(expression, TryExpr):
+        attempts = expression.retry + 1
+        while True:
+            attempts -= 1
+            recorded = len(function_events)
+            scope = (
+                environment.child()
+                if isinstance(environment, _Scope)
+                else _Scope(environment)
+            )
+            try:
+                value = _evaluate_expression(
+                    expression.body,
+                    scope,
+                    program,
+                    functions,
+                    function_events,
+                    depth=depth,
+                )
+            except ExecutionError:
+                # A spent budget or a cancelled run is not a failure of the
+                # body. Nothing may catch it.
+                raise
+            except RuntimeError as failure:
+                # What the body recorded before it failed did not happen as
+                # far as the trace is concerned.
+                del function_events[recorded:]
+                if attempts > 0:
+                    continue
+                if expression.fallback is None:
+                    raise
+                rescue = (
+                    environment.child()
+                    if isinstance(environment, _Scope)
+                    else _Scope(environment)
+                )
+                if expression.error_name is not None:
+                    rescue[expression.error_name] = str(failure)[:500]
+                return _evaluate_expression(
+                    expression.fallback,
+                    rescue,
+                    program,
+                    functions,
+                    function_events,
+                    depth=depth,
+                )
+            return value
     if isinstance(expression, BreakExpr):
         raise _BreakLoop
     if isinstance(expression, ContinueExpr):

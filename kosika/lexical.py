@@ -13,6 +13,7 @@ from .ast import (
     BinaryExpr,
     ConditionalExpr,
     Expression,
+    FailExpr,
     Field,
     FieldExpr,
     FunctionCallExpr,
@@ -86,6 +87,8 @@ def _expression(
         )
     if isinstance(value, ReturnExpr):
         return replace(value, value=walk(value.value))
+    if isinstance(value, FailExpr):
+        return replace(value, message=walk(value.message))
     if isinstance(value, UnaryExpr):
         return replace(value, operand=walk(value.operand))
     if isinstance(value, BinaryExpr):

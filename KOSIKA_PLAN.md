@@ -1952,6 +1952,41 @@ gate: without them a parser written in Kosika has nothing to return.
   gives whole numbers only. A program that already declares an agent named
   `world` does not get these steps.
 
+## Comforts, second part: `fail`/`try`, record methods, one-line files
+
+- `fail TEXT` (`FailExpr`) raises `runtime.Failure`. `try { } otherwise
+  [NAME] { }` completes the `TryExpr` that was parsed and type-checked
+  before but never evaluated: the runtime now runs it, drops whatever the
+  body recorded before failing, retries if asked, and evaluates the
+  fallback with the reason bound. `ExecutionError` (limits, cancellation)
+  is never caught. `fail` is a keyword only directly before a text, so a
+  variable named `fail` still works. 9 tests.
+- Record methods: `fn name(self, ...)` inside a record becomes the function
+  `Record$name` with `self` first; `RecordDecl.methods` lists them. The
+  checker turns `value.name(...)` on a record that has the method into
+  that call. At run time there are no types, so the record is told from
+  its field names; the checker therefore refuses the cases where that
+  could be wrong (a method named like a map method, or two records with
+  identical fields sharing a method name). 8 tests.
+- `read file`, `list files`, `write file ... with ...`, `fetch`
+  (`kosika/direct.py`): lowered to ordinary system tools through an agent
+  named `direct`, so grants, the folder boundary, approval for writes,
+  traces and replay are those of the tools. 7 tests.
+- The user asked for direct access. What was built is direct to write and
+  unchanged in what it can reach, and the reply said so: a program written
+  by a model must not be able to change files because it says so.
+- Not claimed: parallel steps, the last of the seven asked for, are not
+  built. They need the workflow loop in `runtime._run_workflow` split so
+  one step can run apart from the others, with the session and the budget
+  made safe for that; it was left for its own slice rather than rushed.
+  Methods cannot be static, there are no constructors beyond the record
+  literal, and no inheritance or interfaces. Recursion through methods is
+  bounded by the call-depth limit, not by a declared `recurse`. A `var`
+  assigned inside a `try` body keeps the assignment even if the body then
+  fails. There is no `append file`, `delete file` or `move file`, and
+  `fetch` only reads. The author agent's guide does not teach any of this
+  yet.
+
 ## Standard coding-agent procedure
 
 1. Inspect `git status`, the relevant source files, tests, and this plan.

@@ -49,6 +49,22 @@ class TryExpr:
 
     body: Expression
     retry: int = 0
+    # `try { ... } otherwise { ... }`: the value used when the body fails.
+    # `try { ... } otherwise problem { ... }` also names the reason, as Text.
+    fallback: "Expression | None" = None
+    error_name: str | None = None
+
+
+@dataclass(frozen=True)
+class FailExpr:
+    """`fail "reason"`: stop here with a reason.
+
+    The failure travels outward until a `try ... otherwise` takes it, or, at
+    a workflow step, until the step's own `otherwise` does. If nothing takes
+    it the run fails with that reason.
+    """
+
+    message: Expression
 
 
 @dataclass(frozen=True)
@@ -100,6 +116,16 @@ class Field:
 class RecordDecl:
     name: str
     fields: tuple[Field, ...]
+    # Functions written inside the record: `fn total(self) -> Number`. Each
+    # is an ordinary function named `Record$method` whose first parameter is
+    # the record itself, called as `value.method(...)`.
+    methods: tuple[str, ...] = ()
+
+
+def method_function(record: str, method: str) -> str:
+    """The name of the function that a record's method is."""
+
+    return f"{record}${method}"
 
 
 @dataclass(frozen=True)
@@ -279,6 +305,7 @@ Expression = (
     | ForExpr
     | RepeatExpr
     | TryExpr
+    | FailExpr
     | BreakExpr
     | ReturnExpr
     | ContinueExpr
@@ -344,6 +371,10 @@ def expression_function_calls(
             visit(value.body)
         elif isinstance(value, TryExpr):
             visit(value.body)
+            if value.fallback is not None:
+                visit(value.fallback)
+        elif isinstance(value, FailExpr):
+            visit(value.message)
         elif isinstance(value, Assignment):
             visit(value.value)
         elif isinstance(value, Block):
@@ -694,6 +725,7 @@ _ABSENT_DEFAULTS: dict[str, tuple[Any, ...]] = {
     "voters": ((), []),
     "branches": ((), []),
     "verify": (None,),
+    "methods": ((), []),
     "escalate": (None,),
     "default": (False,),
     "more_models": ((), []),

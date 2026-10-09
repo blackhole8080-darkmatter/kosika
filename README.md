@@ -597,6 +597,69 @@ drawn are written in the trace, so replaying a run sees the same moment
 and the same number. Neither needs a grant. In a test, script them as
 `answers clock_now: [...]` and `answers random_number: [{value: 4}]`.
 
+### Failing and recovering
+
+```
+fn share(amount: Number, people: Number) -> Number {
+  if people <= 0 { fail "there must be at least one person" }
+  return amount / people
+}
+
+let each = try { share(total, people) } otherwise problem { return {text: f"Could not split it: {problem}"} }
+let safe = try { items[7] } otherwise { 0 }
+```
+
+`fail "reason"` stops with a reason. `try { } otherwise { }` gives the
+second value when the first fails; `otherwise NAME { }` also names the
+reason, as Text. Both sides must give the same type. A failure that no `try`
+takes travels out to the workflow step, where the step's own `otherwise`
+can take it; if nothing does, the run fails with that reason. A spent budget
+or a cancelled run cannot be caught.
+
+### Records with functions of their own
+
+```
+record Item {
+  name: Text
+  price: Number
+  count: Number
+
+  fn total(self) -> Number {
+    return self.price * self.count
+  }
+
+  fn discounted(self, percent: Number) -> Item {
+    return {name: self.name, price: self.price * (100 - percent) / 100, count: self.count}
+  }
+}
+
+let cost = item.discounted(10).total()
+```
+
+A function written inside a record takes the record as `self` and is called
+on a value of that record. It is an ordinary pure function underneath. There
+is no inheritance, and a method cannot change the record: it returns a new
+one. A method may not be named like a field of its record or like a map
+method (`get`, `has`, `set`, `remove`, `keys`, `values`, `length`).
+
+### Files and pages in one line
+
+```
+workflow main(msg: Msg) -> Out {
+  note  = read file "notes/todo.txt"                 // note.text
+  names = list files "notes"                          // names.names
+  page  = fetch "https://en.wikipedia.org/wiki/Tea"    // page.title, page.text
+  saved = write file "out/report.txt" with report.text // saved.bytes
+  out   = build(note, page)
+  require approval
+}
+```
+
+No tool has to be declared. The access is the same as for declared tools:
+the folder and the site are granted by whoever runs the program, a path
+outside the folder is refused, and `write file` waits for a yes that shows
+the path and the text.
+
 ### Checking a model's answer with your own code
 
 A model step can name a function that judges its answer:
