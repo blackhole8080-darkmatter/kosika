@@ -36,7 +36,7 @@ import time
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Sequence
 from urllib.parse import parse_qs, urlsplit
 
 from .agent import ApprovalRecord
@@ -54,6 +54,7 @@ from .ast import (
 from .board import AGENT as BOARD_AGENT
 from .chat import ChatError, answer_text, message_parameter
 from .durable import ApprovalPending, ExecutionSession
+from .mcp_tools import MCPHub, bind_mcp_tools, declaration
 from .memory import AGENT as MEMORY_AGENT
 from .memory import bind_memory_tools
 from .model import ModelProvider
@@ -414,7 +415,11 @@ class App:
         sites: tuple[str, ...] = (),
         approved_by: str = "app",
         allow_shell: bool = False,
+        mcp: Mapping[str, Sequence[str]] | None = None,
     ):
+        # MCP servers this person named. Each is started when first needed
+        # and kept until the app stops.
+        self.mcp = MCPHub(mcp) if mcp else None
         self.sites = sites
         # Starting programs is its own grant, on top of the folder they run
         # in. Even then every start waits for a yes to that exact command.
@@ -453,6 +458,7 @@ class App:
             "allow_folder": str(self.allow_folder) if self.allow_folder else "",
             "sites": list(self.sites),
             "shell": self.allow_shell,
+            "mcp": self.mcp.names if self.mcp else [],
             "starters": [kind for kind in KINDS if kind != "hello"],
             "agents": cards,
             "assistant": self.assistant(cards),
@@ -545,7 +551,38 @@ class App:
                 allow_shell=self.allow_shell,
             ),
             **bind_memory_tools(program, folder / "memory"),
+            **bind_mcp_tools(program, self.mcp),
         }
+
+    def mcp_tools(self) -> dict[str, Any]:
+        """Every granted MCP server with the tools it offers, and for each
+        tool the Kosika text that declares it."""
+
+        servers = []
+        for name in self.mcp.names if self.mcp else []:
+            assert self.mcp is not None
+            entry: dict[str, Any] = {
+                "name": name,
+                "command": " ".join(self.mcp.servers[name]),
+            }
+            try:
+                entry["tools"] = [
+                    {
+                        "name": tool["name"],
+                        "description": tool["description"][:600],
+                        "read_only": tool["read_only"],
+                        "declaration": declaration(name, tool),
+                    }
+                    for tool in self.mcp.tools(name)
+                ]
+            except ValueError as exc:
+                entry["error"] = str(exc)
+            servers.append(entry)
+        return {"servers": servers}
+
+    def close(self) -> None:
+        if self.mcp is not None:
+            self.mcp.close()
 
     @staticmethod
     def _show_writing(job: Job, models: Mapping[str, ModelProvider]) -> None:
@@ -966,6 +1003,8 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                             str(body.get("name", "")), str(body.get("kind", ""))
                         ),
                     )
+                elif method == "GET" and url.path == "/api/mcp":
+                    self._json(200, app.mcp_tools())
                 elif method == "GET" and url.path == "/api/memory":
                     self._json(200, app.memory(agent_id))
                 else:

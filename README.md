@@ -573,6 +573,42 @@ This works with `--model-protocol ollama` and `openai`, on a model that was
 trained to choose tools. A files tool with `operation: "peek"` reads only
 the first 4000 characters, which suits a model reading for itself.
 
+### Tools from MCP servers
+
+An MCP server is a separate program that offers tools. A Kosika program
+asks for one of them by the server's name:
+
+```
+tool search_notes {
+  source mcp "notes"
+  operation: "search_notes"
+  access: observe
+  input: SearchNotesIn
+  output: SearchNotesOut
+}
+```
+
+Naming a server reaches nothing. The person starting Studio says what each
+name stands for:
+
+```
+kosika studio FOLDER --model MODEL --mcp notes="python examples/mcp/notes_server.py notes.json"
+```
+
+Kosika starts that command itself, never through a shell, and keeps the
+server running while Studio is open. The Tools page lists every granted
+server with the tools it offers, and for each tool the Kosika text to paste
+into a program. An agent given such tools in its `can` list is told what
+they do in the server's own words and chooses among them.
+
+A tool may be `access: observe` only when the server itself marks it
+read-only. Any other tool must be `access: execute`, so each use waits for
+your Allow once. A tool that answers in plain text needs an output record
+with one Text field. `examples/mcp` has a small notes server and an agent,
+`librarian.kos`, that uses it.
+
+A granted server runs with your authority. Grant only servers you trust.
+
 ### Talking to a program
 
 ```

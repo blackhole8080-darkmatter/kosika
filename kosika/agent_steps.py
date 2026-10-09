@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, replace
-from typing import Any
+from typing import Any, Mapping
 
 from .agent import AgentLoop, AgentLoopError, ToolExecutor
 from .ast import AgentDecl, Program
@@ -91,9 +91,17 @@ def call_agent(
     execute: ToolExecutor,
     arguments: dict[str, Any],
     output_schema: dict[str, Any],
+    tool_descriptions: Mapping[str, str] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     asked = _CompleteResponses(provider, output_schema)
-    loop = AgentLoop(program, asked, execute, tell_failures=True, defer_approval=True)
+    loop = AgentLoop(
+        program,
+        asked,
+        execute,
+        tell_failures=True,
+        defer_approval=True,
+        tool_descriptions=tool_descriptions,
+    )
     try:
         completed = loop.run(
             agent.name,

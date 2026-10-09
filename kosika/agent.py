@@ -219,7 +219,11 @@ class AgentLoop:
         max_skills: int = 6,
         tell_failures: bool = False,
         defer_approval: bool = False,
+        tool_descriptions: Mapping[str, str] | None = None,
     ) -> None:
+        #: Words for a tool that only its host knows, such as what an MCP
+        #: server says its own tool does. They replace the general sentence.
+        self.tool_descriptions = dict(tool_descriptions or {})
         #: When set, the loop does not judge approvals itself: whoever runs
         #: the tools does, for every call that changes the world. A workflow
         #: step uses this, because its run already gates each such call on a
@@ -573,7 +577,8 @@ class AgentLoop:
         tools = tuple(
             ModelTool(
                 name=binding.declaration.name,
-                description=describe_tool(binding.declaration),
+                description=self.tool_descriptions.get(binding.declaration.name)
+                or describe_tool(binding.declaration),
                 input_schema=binding.input_schema,
             )
             for binding in bindings

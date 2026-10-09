@@ -156,6 +156,7 @@ select { font: inherit; background: var(--bg); color: var(--ink); border: 1px so
 <template id="icon-assistant"><svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg></template>
 <template id="icon-agents"><svg viewBox="0 0 24 24"><path d="M9 7h6a4 4 0 0 1 4 4v5a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3v-5a4 4 0 0 1 4-4z"/><path d="M12 3v4"/><path d="M9.5 13h.01"/><path d="M14.5 13h.01"/></svg></template>
 <template id="icon-runs"><svg viewBox="0 0 24 24"><path d="M12 8v4l3 2"/><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/></svg></template>
+<template id="icon-tools"><svg viewBox="0 0 24 24"><path d="M14.5 6.5a4 4 0 0 0-5.300 5.300L3 18l3 3 6.200-6.200a4 4 0 0 0 5.300-5.300l-2.500 2.500-2.500-2.500 2.500-2.500z"/></svg></template>
 <template id="icon-permissions"><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.2 8-8 9-4.800-1-8-4.500-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/></svg></template>
 <script>
 "use strict";
@@ -212,7 +213,9 @@ function askLines(request) {
     const words = (given.args || []).map(word => /[\s"]/.test(word) || word === "" ? JSON.stringify(word) : word);
     return [request.operation, ...words].join(" ") + "\n\nIt runs inside the granted folder and is stopped after 60 seconds.";
   }
-  return Object.entries(given).map(([key, value]) => key + ": " + (typeof value === "string" ? value : JSON.stringify(value))).join("\n");
+  const lines = Object.entries(given).filter(([key, value]) => value != null).map(([key, value]) => key + ": " + (typeof value === "string" ? value : JSON.stringify(value)));
+  if (request.kind && !request.kind.includes(":")) lines.push("", "This goes to the MCP server " + request.kind + ".");
+  return lines.join("\n");
 }
 
 async function api(path, options) {
@@ -226,7 +229,7 @@ function go(view, id) { location.hash = "#" + view + (id ? "/" + encodeURICompon
 window.addEventListener("hashchange", route);
 
 function drawRail(active) {
-  const items = [["assistant", "Assistant"], ["agents", "Agents"], ["runs", "Runs"], ["permissions", "Permissions"]];
+  const items = [["assistant", "Assistant"], ["agents", "Agents"], ["runs", "Runs"], ["tools", "Tools"], ["permissions", "Permissions"]];
   document.getElementById("nav").replaceChildren(...items.map(([key, label]) =>
     h("div", {class: "nav" + (key === active ? " on" : ""), onclick: () => go(key)}, icon(key), label)));
   document.getElementById("foot").replaceChildren(
@@ -247,6 +250,7 @@ async function route() {
     if (active === "agents") showAgents();
     else if (active === "agent") await showAgent(id, false);
     else if (active === "runs") await showRuns();
+    else if (active === "tools") await showTools();
     else if (active === "permissions") showPermissions();
     else if (overview.assistant) await showAgent(overview.assistant, true);
     else showAgents();
@@ -297,6 +301,32 @@ function newAgentCard() {
 
 const fact = (title, lines, empty) => h("div", {class: "fact"}, h("b", null, title), lines.length ? lines.map(line => h("div", {class: "line"}, line)) : h("div", {class: "line empty"}, empty));
 
+// The MCP servers this Studio was started with, and what each offers.
+async function showTools() {
+  main.replaceChildren(h("h1", null, "Tools"), h("p", {class: "lead"}, h("span", {class: "spin"}), "Asking the servers what they offer"));
+  const head = [h("h1", null, "Tools"),
+    h("p", {class: "lead"}, "MCP servers are programs that offer tools: search, files, calendars, databases and many more. An agent may use a server's tool only when you named that server when starting Studio. Copy a tool's text into an agent's Code tab, then add the tool to an agent's can list.")];
+  if (!overview.mcp.length) {
+    fill(main, head, h("div", {class: "banner warn"}, "No MCP server was granted. Start Studio with --mcp NAME=COMMAND, for example: --mcp notes=\"python notes_server.py\""));
+    return;
+  }
+  const data = await api("/api/mcp");
+  fill(main, head, data.servers.map(server => h("div", {class: "panel", style: "margin-bottom:14px"},
+    h("div", {class: "wf-title"}, "server " + server.name), h("div", {class: "wf-sub"}, "started with: " + server.command),
+    server.error ? h("div", {class: "banner bad", style: "margin:0"}, server.error)
+      : h("div", {class: "grid", style: "grid-template-columns:repeat(auto-fill,minmax(330px,1fr))"}, server.tools.map(tool => {
+        const text = h("pre", {class: "source", style: "max-height:230px;display:none"}, tool.declaration);
+        const copy = h("button", {class: "quiet", onclick: async () => {
+          try { await navigator.clipboard.writeText(tool.declaration); copy.textContent = "Copied"; }
+          catch (error) { text.style.display = "block"; copy.textContent = "Select and copy below"; }
+        }}, "Copy Kosika text");
+        return h("div", {class: "rec"}, h("h4", null, tool.name),
+          h("div", {class: "chips", style: "margin-bottom:6px"}, tool.read_only ? chip("only reads", "ok") : chip("asks you before each use", "warn")),
+          h("div", {class: "about", style: "color:var(--soft);font-size:13px;margin-bottom:8px"}, tool.description || "The server gives no description."),
+          h("div", {class: "row"}, copy, h("button", {class: "quiet", onclick: () => { text.style.display = text.style.display === "none" ? "block" : "none"; }}, "Show")), text);
+      })))));
+}
+
 function showPermissions() {
   main.replaceChildren(
     h("h1", null, "Permissions"),
@@ -306,11 +336,12 @@ function showPermissions() {
       fact("Folder agents may look in", [overview.allow_folder || "None. File tools find nothing."]),
       fact("Websites agents may read", overview.sites, "None. The web cannot be reached."),
       fact("Changing things", ["Only after you press Allow once, for that one action.", "The card shows exactly what will be done before you answer.", "No answer in ten minutes counts as a refusal."]),
+      fact("MCP servers", overview.mcp, "None. Start Studio with --mcp NAME=COMMAND to grant one."),
       fact("Starting programs", overview.shell ? ["Allowed, only the programs an agent's tools name.", "Each start waits for your Allow once and shows the exact command.", "Runs inside the granted folder, stopped after 60 seconds."] : ["Not allowed. Start Studio with --allow-shell to permit it."]),
       fact("Never allowed here", ["Files outside the granted folder", "Websites that are not on the list", "Anything at all without the grants above"]),
       fact("Where programs come from", [overview.root])),
     h("h2", null, "How to change these"),
-    h("p", {class: "lead"}, "Stop Studio and start it again with different options: --model NAME, --allow-folder FOLDER, --allow-site SITE, --allow-shell."));
+    h("p", {class: "lead"}, "Stop Studio and start it again with different options: --model NAME, --allow-folder FOLDER, --allow-site SITE, --allow-shell, --mcp NAME=COMMAND."));
 }
 
 // ---------------------------------------------------------------- the flow

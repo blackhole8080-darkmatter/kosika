@@ -1714,6 +1714,49 @@ gate: without them a parser written in Kosika has nothing to return.
   does not stream its answer. Three questions on one small project is a
   try-out, not a measurement. No MCP server was connected in this slice.
 
+## MCP servers in Studio
+
+- `kosika/mcp_tools.py`. `kosika studio --mcp NAME=COMMAND` (repeatable)
+  grants a server by the name programs use in `source mcp "NAME"`. `MCPHub`
+  starts a server on first use, keeps one process per server, and closes
+  them when Studio stops. `bind_mcp_tools` binds a program's tools whose
+  source is a granted name through the ordinary host tool bindings, so
+  approval, budgets, traces and the tool loop treat them like any tool.
+- This sits beside the older pinned-manifest path (`--mcp-server` with
+  `--mcp-manifest` on `run`, `agent` and `swarm`), which is unchanged. That
+  path requires schemas to match a pinned manifest exactly and starts the
+  server anew for each call. The new path is looser on purpose: the result
+  is checked against the declared output record only, and a plain-text
+  answer is put into a record with one Text field, cut at 20,000
+  characters.
+- Read-only by the server's word. A tool may be declared `observe` only
+  when the server marks it `readOnlyHint: true`; otherwise the call is
+  refused with the instruction to declare `execute`. A server that marks
+  nothing therefore needs approval for every call.
+- The loop is told each server tool in the server's own description
+  (`MCPToolCall.describe`, passed through `call_agent`).
+- Studio: `GET /api/mcp`, a Tools page listing each server's tools, whether
+  each only reads, and a Kosika declaration to copy
+  (`mcp_tools.declaration`; fields Kosika has no type for are left out and
+  named in a comment). The approval card names the server. Permissions
+  lists the granted servers.
+- `examples/mcp/notes_server.py`, a small MCP server in standard-library
+  Python, and `examples/mcp/librarian.kos`; copies in
+  `my_examples/agents/librarian`.
+- Tried with the notes server as a real separate process and qwen2.5:3b:
+  "When is my dentist appointment?" chose `search_notes` and answered from
+  the note; "Remember that the car service is on the 14th" chose
+  `add_note`, paused on the card, and after Allow once the note was in the
+  file; "What do I need to buy?" was answered wrongly without any tool.
+- 13 tests in `tests/test_mcp_tools.py`, most against the real server
+  process.
+- Not claimed: only servers that speak MCP over standard input and output
+  as newline-delimited JSON were tried, and only this one. No third-party
+  server was downloaded or run. Remote servers over HTTP, sign-in,
+  resources and prompts are not supported. A server's read-only mark is
+  taken on trust. Nested input fields cannot be declared. A granted server
+  is not sandboxed. `kosika run` and `kosika chat` do not take `--mcp` yet.
+
 ## Standard coding-agent procedure
 
 1. Inspect `git status`, the relevant source files, tests, and this plan.

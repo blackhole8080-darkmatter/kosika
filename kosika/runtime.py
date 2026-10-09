@@ -1626,6 +1626,16 @@ def _run_workflow(
                     )
                     return outcome
 
+                # A host that knows more about a tool than its declaration
+                # says, as with an MCP server's own description, may say so.
+                described: dict[str, str] = {}
+                for granted in asked_agent.can:
+                    describe = getattr(host_tools.get(granted), "describe", None)
+                    if callable(describe):
+                        try:
+                            described[granted] = str(describe())
+                        except Exception:  # noqa: BLE001 - the general words do
+                            pass
                 result, agent_response = call_agent(
                     program,
                     asked_agent,
@@ -1633,6 +1643,7 @@ def _run_workflow(
                     execute_agent_tool,
                     arguments,
                     output_schema,
+                    described,
                 )
                 return_event = _event(
                     "agent_return",

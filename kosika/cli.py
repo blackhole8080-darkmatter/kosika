@@ -2174,6 +2174,17 @@ def build_parser() -> argparse.ArgumentParser:
                 "--allow-folder. Every start still waits for your Allow once."
             ),
         )
+        app_parser.add_argument(
+            "--mcp",
+            action="append",
+            default=[],
+            metavar="NAME=COMMAND",
+            help=(
+                "An MCP server that programs may use tools from, by the name "
+                'they give it, such as notes="python notes_server.py". May be '
+                "repeated. The command is started by Kosika, not by a shell."
+            ),
+        )
         app_parser.add_argument("--port", type=int, default=0)
         app_parser.add_argument(
             "--no-browser",
@@ -3217,6 +3228,13 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 2
+        from .mcp_tools import MCPGrantError, parse_grant
+
+        try:
+            mcp_servers = dict(parse_grant(grant) for grant in args.mcp)
+        except MCPGrantError as exc:
+            print(f"App unavailable: {exc}", file=sys.stderr)
+            return 2
         binder = None
         if args.model:
             args.model_binding = args.model_fixture = args.models = None
@@ -3234,6 +3252,7 @@ def main() -> int:
             allow_folder=args.allow_folder,
             sites=tuple(args.allow_site),
             allow_shell=args.allow_shell,
+            mcp=mcp_servers,
         )
         try:
             server = make_server(studio, args.port)
@@ -3260,6 +3279,7 @@ def main() -> int:
             pass
         finally:
             server.server_close()
+            studio.close()
         return 0
 
     if args.command == "chat":
