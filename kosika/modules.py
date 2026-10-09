@@ -7,6 +7,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .ambient import lower_ambient
+from .ambient import supplied_names as ambient_names
 from .ast import (
     AgentCall,
     FunctionCall,
@@ -273,6 +275,7 @@ def load_program(
             - set(BUILT_IN_RECORDS)
             - supplied_names(module.memories)
             - board_names(module.boards)
+            - ambient_names(module)
         )
         if hidden:
             mark_error(resolved)
@@ -313,7 +316,9 @@ def load_program(
     # model declared in one module serves steps written in another and the
     # built-in records are added a single time.
     try:
-        merged = lower_sugar(lower_thinking(lower_board(lower_memory(merged))))
+        merged = lower_sugar(
+            lower_thinking(lower_board(lower_memory(lower_ambient(merged))))
+        )
     except (ThinkingError, MemoryError_, BoardError) as exc:
         raise CheckError(str(exc)) from exc
     check(merged)

@@ -1908,6 +1908,50 @@ gate: without them a parser written in Kosika has nothing to return.
   Kosika itself. The check runs the candidate's tests in the same process,
   bounded by the language's loop and depth limits and nothing else.
 
+## The author learns model steps and memory
+
+- The author's guide is now chosen per request: the basics always, plus a
+  lesson on model steps (`classify`, `summarize`, `decide`, with how tests
+  script their answers) when the request needs a model to read text, and a
+  lesson on memory (`recall`, `remember`) when it must keep something
+  between runs. Each lesson ends with a whole example program, and a test
+  proves each example is valid Kosika that passes its own tests.
+- Measured once each, six tasks with hidden tests: qwen2.5:7b 4 of 6 in
+  676 s, qwen2.5:3b 4 of 6 in 350 s. Both wrote a working program that
+  remembers. The 7b wrote a working classify program; the 3b did not.
+  Neither wrote the summarize-and-count program. The 7b failed "counts
+  long words", which it had passed in the earlier run of three.
+- Not claimed: one run per task is noisy, as the long-words result shows;
+  these numbers say what is possible, not how often. The summarize lesson
+  has no example of its own and that task failed on both models. Tools and
+  agents are still not taught. Other work was using the same CPU during
+  this run, so the times are longer than they would be alone.
+
+## Comforts: text templates, the clock, and chance
+
+- The user asked for classes, exceptions, a clock, random numbers, direct
+  file and network access, text formatting, and parallel steps, to make
+  Kosika a replacement for Python. Plan agreed in the thread, in this
+  order: templates; clock and random; `fail` with `try`/`otherwise`;
+  functions that belong to a record, without inheritance; parallel steps;
+  one-line `read`, `write` and `fetch` that still need the host's grant.
+- `f"..."` templates (`Parser.parse_template`): lowered while parsing to
+  the same `+` joining a person would write, so nothing downstream changed
+  and the hash is the same either way. `f` must touch the quotation mark;
+  a variable called `f` is still a variable.
+- `now` and `random LOW to HIGH` (`kosika/ambient.py`): workflow steps
+  lowered to read-only tool calls through an agent named `world`, with
+  built-in records `Moment`, `RandomRange` and `RandomNumber`. Bound in
+  every run without a grant; recorded in the trace, so replay sees the
+  same time and number. A test scripts them like any read-only tool.
+- 12 tests in `tests/test_comforts.py`.
+- Not claimed: the lexer ends a text at the first quotation mark, so an
+  expression inside braces cannot contain one. Only Text and Number can be
+  written in. There is no formatting of numbers (decimal places, padding).
+  `now` is local time with no time zones and no date arithmetic. `random`
+  gives whole numbers only. A program that already declares an agent named
+  `world` does not get these steps.
+
 ## Standard coding-agent procedure
 
 1. Inspect `git status`, the relevant source files, tests, and this plan.

@@ -40,6 +40,7 @@ from typing import Any, Callable, Mapping, Sequence
 from urllib.parse import parse_qs, urlsplit
 
 from .agent import ApprovalRecord
+from .ambient import AGENT as WORLD_AGENT
 from .approval_ledger import ApprovalLedger
 from .ast import (
     AgentCall,
@@ -150,6 +151,11 @@ def _call_view(program: Program, call: Any) -> dict[str, Any]:
                 "kind": "memory",
                 "text": f"{tool.operation if tool else ''} {source[7:]}".strip(),
             }
+        if source.startswith("world:"):
+            return {
+                "kind": "code",
+                "text": "the clock" if source == "world:clock" else "a random number",
+            }
         if source.startswith("board:"):
             author = dict(call.arguments).get("author")
             signed = getattr(author, "value", None)
@@ -240,7 +246,7 @@ def describe(agent: Agent, *, detail: bool) -> dict[str, Any]:
     tools = [
         tool
         for tool in program.tools
-        if not tool.source.startswith(("memory:", "board:"))
+        if not tool.source.startswith(("memory:", "board:", "world:"))
     ]
     entry = next((w for w in program.workflows if w.name == "main"), None)
     try:
@@ -266,7 +272,7 @@ def describe(agent: Agent, *, detail: bool) -> dict[str, Any]:
         agents=[
             {"name": a.name, "can": list(a.can), "model": a.model}
             for a in program.agents
-            if a.name not in (MEMORY_AGENT, BOARD_AGENT)
+            if a.name not in (MEMORY_AGENT, BOARD_AGENT, WORLD_AGENT)
         ],
         swarms=[
             {

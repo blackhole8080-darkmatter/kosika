@@ -573,6 +573,30 @@ This works with `--model-protocol ollama` and `openai`, on a model that was
 trained to choose tools. A files tool with `operation: "peek"` reads only
 the first 4000 characters, which suits a model reading for itself.
 
+### Text with values in it, the time, and chance
+
+```
+let line = f"{order.count} x {order.item} is {order.price * order.count}"
+```
+
+`f"..."` writes the value of each `{expression}` into the text. A value
+must be Text or a Number. Write `{{` and `}}` for braces. An expression
+inside the braces cannot itself contain a quotation mark.
+
+```
+workflow main(msg: Msg) -> Out {
+  today = now                // Moment: date, time, weekday, year, month, day, hour, minute, epoch
+  roll  = random 1 to 6      // RandomNumber: value, both ends included
+  out   = build(today, roll)
+}
+```
+
+`now` and `random` are workflow steps, not functions, because a function
+must give the same result every time. What the clock said and what was
+drawn are written in the trace, so replaying a run sees the same moment
+and the same number. Neither needs a grant. In a test, script them as
+`answers clock_now: [...]` and `answers random_number: [{value: 4}]`.
+
 ### Checking a model's answer with your own code
 
 A model step can name a function that judges its answer:

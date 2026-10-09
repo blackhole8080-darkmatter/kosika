@@ -15,8 +15,11 @@
 // for your yes.
 //
 // A caution. No model was trained on Kosika, so the model learns it from
-// the short guide below each time. Expect small, plain programs: records,
-// functions, loops. The check tells you honestly when it did not manage.
+// the short guide below each time. The guide always teaches records,
+// functions and loops. When your request needs a model to understand text,
+// or needs to remember something between runs, the lesson for that is added.
+// It does not yet know tools or agents. The check tells you honestly when it
+// did not manage.
 //
 // Say: write: WHAT YOU WANT, show, test: A KOSIKA TEST, fix: WHAT TO
 // CHANGE, save NAME, or help.
@@ -106,12 +109,50 @@ fn guide() -> Text {
   return "You write programs in Kosika, a small programming language. Kosika is NOT Python, JavaScript or Rust. Use only what is shown here.\n\nRULES\n- Types are Text, Number and Bool. A list is written Number[] or Text[].\n- Data is a record. Fields are separated by spaces, never commas: record Order { item: Text price: Number }\n- A record value is written {item: \"tea\", price: 3}. Read a field with order.price.\n- A function: fn area(box: Box) -> Number { return box.w * box.h }\n- let x = 1 cannot change. var total = 0 can change: total = total + 1\n- if a > b { ... } else if a == b { ... } else { ... }\n- Operators: + - * / == != < > <= >= and or not\n- Loops: for item in list { ... }   for i in 0 until n { ... }   while count < 10 { ... }\n- Lists: [1, 2, 3]   list.length()   list[0]   list.contains(x)   list.reverse()\n- Adding to a list makes a new list: items = items.append(x)\n- An empty list needs its type: var items: Number[] = []\n- Text: a + b joins two texts, text.length(), text.upper(), text.lower(), text.trim(), text.contains(\"x\"), text.split(\" \"), parts.join(\" \"), number.to_text()\n- No semicolons. No classes. No print. No null. No imports. No string formatting. A comment starts with //\n- The entry is always: workflow main(input: In) -> Out { result = solve(input) }\n- In and Out are records. solve is a function you write that takes In and returns Out.\n- End with two or three tests. A test calls main with one record and checks fields of the answer.\n\nEXAMPLE PROGRAM\nrecord In { numbers: Number[] }\nrecord Out { total: Number biggest: Number }\n\nfn solve(input: In) -> Out {\n  var total = 0\n  var biggest = 0\n  for n in input.numbers {\n    total = total + n\n    if n > biggest { biggest = n }\n  }\n  return {total: total, biggest: biggest}\n}\n\nworkflow main(input: In) -> Out {\n  result = solve(input)\n}\n\ntest \"adds and finds the biggest\" {\n  a = main({numbers: [1, 5, 3]})\n  expect a.total == 9\n  expect a.biggest == 5\n}\n\ntest \"an empty list\" {\n  a = main({numbers: []})\n  expect a.total == 0\n}\n"
 }
 
+// The example a lesson teaches from. Each is a whole program that checks
+// and passes its tests; a test below proves that.
+fn model_example() -> Text {
+  return "record In { text: Text }\nrecord Out { queue: Text reason: Text }\n\nmodel helper\n\nfn route(input: In, kind: Choice) -> Out {\n  let queue = if kind.label == \"complaint\" { \"support\" } else { \"general\" }\n  return {queue: queue, reason: \"It looks like a \" + kind.label}\n}\n\nworkflow main(input: In) -> Out {\n  kind   = classify input.text into [\"question\", \"complaint\", \"praise\"]\n  result = route(input, kind)\n}\n\ntest \"a complaint goes to support\" {\n  answers helper: [{label: \"complaint\", confidence: 1}]\n  a = main({text: \"My order arrived broken.\"})\n  expect a.queue == \"support\"\n}\n\ntest \"praise goes to general\" {\n  answers helper: [{label: \"praise\", confidence: 1}]\n  a = main({text: \"Great service!\"})\n  expect a.queue == \"general\"\n}\n"
+}
+
+fn memory_example() -> Text {
+  return "record In { name: Text }\nrecord Out { count: Number }\nrecord Seen { count: Number }\n\nmemory seen of Seen\n\nfn bump(known: SeenRecalled) -> Seen {\n  return {count: if known.found { known.value.value().count + 1 } else { 1 }}\n}\n\nfn result(now: Seen) -> Out {\n  return {count: now.count}\n}\n\nworkflow main(input: In) -> Out {\n  known = recall seen under input.name\n  now   = bump(known)\n  saved = remember now in seen under input.name\n  out   = result(now)\n}\n\ntest \"counts each name on its own\" {\n  a = main({name: \"ada\"})\n  b = main({name: \"ada\"})\n  c = main({name: \"bob\"})\n  expect b.count == 2\n  expect c.count == 1\n}\n"
+}
+
+// Does the request need a model to read or judge text?
+fn wants_model(spec: Text) -> Bool {
+  let text = spec.lower()
+  for word in ["classif", "categor", "summar", "decide", "sentiment", "model", "label ", "judge", "is it about", "what kind of"] {
+    if text.contains(word) { return true }
+  }
+  return false
+}
+
+// Does the request need to keep something from one run to the next?
+fn wants_memory(spec: Text) -> Bool {
+  let text = spec.lower()
+  for word in ["remember", "memory", "between runs", "keep track", "how many times", "so far", "each time", "history"] {
+    if text.contains(word) { return true }
+  }
+  return false
+}
+
+// The guide for one request: the basics, plus only the lessons it needs,
+// so a small model is not given more to read than it can hold.
+fn guide_for(spec: Text) -> Text {
+  var text = guide()
+  if wants_model(spec) { text += "\n" + "MODEL STEPS. Use these because the task needs a model to understand text.\n- Declare one model by name only, on its own line: model helper\n- A model step is a line in the workflow. It is never inside a fn.\n    kind = classify input.text into [\"a\", \"b\", \"c\"]     gives a Choice: kind.label is one of the choices\n    brief = summarize input.text                           gives a Summary: brief.text\n    urgent = decide \"Is this urgent?\" given input.text     gives a Decision: urgent.answer is true or false, urgent.reason is Text\n- Choice, Summary and Decision are built in. Do NOT declare them. Use them as parameter types of your functions.\n- The workflow has the model steps first, then one function step that builds Out from their results.\n- Every test must give the model's answers, in the order of the steps:\n    answers helper: [{label: \"a\", confidence: 1}]                      for classify\n    answers helper: [{text: \"A short summary.\"}]                       for summarize\n    answers helper: [{answer: true, confidence: 1, reason: \"why\"}]     for decide\n\nEXAMPLE WITH A MODEL STEP\n" + model_example() }
+  if wants_memory(spec) { text += "\n" + "MEMORY. Use this because the task must remember something from one run to the next.\n- Declare a record for what is kept, and the memory: memory seen of Seen\n- Reading and writing memory are workflow steps. They are never inside a fn.\n    known = recall seen under input.name          gives SeenRecalled: known.found is true or false\n    saved = remember now in seen under input.name   where now is a Seen record\n- The type of a recall is the memory's name with a capital letter plus Recalled: memory seen gives SeenRecalled.\n- Read the stored record only after checking found: if known.found { known.value.value().count } else { 0 }\n- Each test starts with an empty memory, so call main several times in one test.\n\nEXAMPLE WITH MEMORY\n" + memory_example() }
+  if wants_model(spec) or wants_memory(spec) { text += "\nFor this task the workflow main has several steps, as in the last example, not only result = solve(input).\n" }
+  return text
+}
+
 fn first_prompt(spec: Text) -> Ask {
-  return {text: guide() + "\nTASK\nWrite a complete Kosika program for this: " + spec + "\nKeep it short and plain. Put the whole program in source."}
+  return {text: guide_for(spec) + "\nTASK\nWrite a complete Kosika program for this: " + spec + "\nKeep it short and plain. Put the whole program in source."}
 }
 
 fn repair_prompt(job: Job) -> Ask {
-  return {text: guide() + "\nTASK\nThis Kosika program was written for: " + job.spec + "\n\nPROGRAM\n" + job.source + "\n\nKosika checked it and found this problem:\n" + job.problem + "\n\nWrite the whole program again with the problem fixed. Change only what is needed. Put the whole program in source."}
+  return {text: guide_for(job.spec) + "\nTASK\nThis Kosika program was written for: " + job.spec + "\n\nPROGRAM\n" + job.source + "\n\nKosika checked it and found this problem:\n" + job.problem + "\n\nWrite the whole program again with the problem fixed. Change only what is needed. Put the whole program in source."}
 }
 
 // A quick look before the real check: something that is plainly not a
@@ -320,6 +361,25 @@ test "the guide's own example is valid Kosika and its tests pass" {
   expect guide().contains("fn solve(input: In) -> Out {")
 }
 
+test "each lesson's example is valid Kosika and passes its own tests" {
+  answers coder: [{source: model_example()}, {source: memory_example()}]
+  a = main({text: "write: classify a message"})
+  b = main({text: "write: remember how many times each name was seen"})
+  expect a.text.starts_with("Written and checked on the first try: it is valid Kosika and 2 of 2 of its own tests pass.")
+  expect b.text.starts_with("Written and checked on the first try: it is valid Kosika and 1 of 1 of its own tests pass.")
+}
+
+test "a request is given only the lessons it needs" {
+  plain = guide_for("add up a list of numbers")
+  both = guide_for("classify each message and remember how many times each label came up")
+  expect plain == guide()
+  expect guide_for("summarize a note").contains("MODEL STEPS")
+  expect not guide_for("summarize a note").contains("MEMORY. Use this")
+  expect both.contains("MODEL STEPS") and both.contains("MEMORY. Use this")
+  expect wants_memory("count how many times a name was seen")
+  expect not wants_model("double a number")
+}
+
 test "a program with a mistake goes back with what Kosika said, and is repaired" {
   answers coder: [
     {source: "record In { n: Number }\nrecord Out { twice: Number }\n\nfn solve(input: In) -> Out {\n  return {twice: input.m * 2}\n}\n\nworkflow main(input: In) -> Out {\n  result = solve(input)\n}\n\ntest \"doubles\" {\n  a = main({n: 4})\n  expect a.twice == 8\n}\n"},
@@ -397,5 +457,23 @@ eval "it writes a program that counts long words" {
 eval "it writes a program with a condition" {
   a = main({text: "write: say whether a number is even. In has one field, n: Number. Out has one field, even: Bool."})
   b = main({text: "test: test \"hidden\" { r = main({n: 10}) s = main({n: 7}) expect r.even == true expect s.even == false }"})
+  expect b.text.starts_with("Your test passes")
+}
+
+eval "it writes a program with a model step" {
+  a = main({text: "write: classify a message as question, complaint or praise. In has one field, text: Text. Out has one field, queue: Text, which is \"support\" for a complaint and \"general\" for anything else. Declare the model as: model helper"})
+  b = main({text: "test: test \"hidden\" { answers helper: [{label: \"complaint\", confidence: 1}, {label: \"praise\", confidence: 1}] r = main({text: \"It broke.\"}) s = main({text: \"Lovely.\"}) expect r.queue == \"support\" expect s.queue == \"general\" }"})
+  expect b.text.starts_with("Your test passes")
+}
+
+eval "it writes a program that summarizes and counts" {
+  a = main({text: "write: summarize a note. In has one field, text: Text. Out has two fields, summary: Text and words: Number, where words is how many words the summary has. Declare the model as: model helper"})
+  b = main({text: "test: test \"hidden\" { answers helper: [{text: \"Buy milk today\"}] r = main({text: \"Remember that we are out of milk and need some today.\"}) expect r.summary == \"Buy milk today\" expect r.words == 3 }"})
+  expect b.text.starts_with("Your test passes")
+}
+
+eval "it writes a program that remembers" {
+  a = main({text: "write: remember how many times each name has been seen. In has one field, name: Text. Out has one field, count: Number, which is 1 the first time a name is seen, 2 the second time, and so on."})
+  b = main({text: "test: test \"hidden\" { a = main({name: \"ada\"}) b = main({name: \"ada\"}) c = main({name: \"bob\"}) d = main({name: \"ada\"}) expect b.count == 2 expect c.count == 1 expect d.count == 3 }"})
   expect b.text.starts_with("Your test passes")
 }

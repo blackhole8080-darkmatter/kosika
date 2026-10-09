@@ -450,6 +450,14 @@ class Parser:
                 if token.value in {"true", "false", "null"}:
                     literal = {"true": True, "false": False, "null": None}
                     value = LiteralExpr(literal[token.value])
+                elif (
+                    token.value == "f"
+                    and self.current.kind == "STRING"
+                    and self.current.line == token.line
+                    and self.current.column == token.column + 1
+                ):
+                    # `f"Hello {name}"`: text with values written into it.
+                    value = self.parse_template(self.advance())
                 elif self.accept("("):
                     value = FunctionCallExpr(token.value, self.parse_arguments())
                 else:
@@ -460,6 +468,64 @@ class Parser:
                     f"got {token.value!r}"
                 )
         return value
+
+    def parse_template(self, token: Token) -> Expression:
+        """Turn `f"Total: {order.total} for {name}"` into the joining it means.
+
+        Each `{...}` holds one expression. The result is exactly the text
+        joined with `+`, so everything the checker and the trace know about
+        joining text applies and nothing new exists at run time. A value
+        written in must be Text or a Number. `{{` and `}}` write a brace.
+        """
+
+        text = token.value
+        parts: list[Expression] = []
+        literal = ""
+        index = 0
+        while index < len(text):
+            char = text[index]
+            if char in "{}" and text[index + 1 : index + 2] == char:
+                literal += char
+                index += 2
+            elif char == "{":
+                end = text.find("}", index)
+                if end < 0:
+                    raise ParseError(
+                        f"Expected '}}' at {token.line}:{token.column}, "
+                        "got 'the end of the text'"
+                    )
+                inner = text[index + 1 : end].strip()
+                if not inner:
+                    raise ParseError(
+                        f"Expected expression at {token.line}:{token.column}, got '}}'"
+                    )
+                if literal:
+                    parts.append(LiteralExpr(literal))
+                    literal = ""
+                sub = Parser(lex(inner))
+                parts.append(sub.expression())
+                if sub.current.kind != "EOF":
+                    raise ParseError(
+                        f"Expected '}}' at {token.line}:{token.column}, "
+                        f"got {sub.current.value!r}"
+                    )
+                index = end + 1
+            elif char == "}":
+                raise ParseError(
+                    f"Expected '{{' at {token.line}:{token.column}, got '}}'"
+                )
+            else:
+                literal += char
+                index += 1
+        if literal:
+            parts.append(LiteralExpr(literal))
+        # Begin with text, so that the first join is text joined to a value.
+        joined: Expression = LiteralExpr("")
+        if parts and isinstance(parts[0], LiteralExpr):
+            joined, parts = parts[0], parts[1:]
+        for part in parts:
+            joined = BinaryExpr(joined, "+", part)
+        return joined
 
     def parse_function_expression(self) -> FunctionExpr:
         parameters: list[Field] = []
@@ -1311,6 +1377,17 @@ class Parser:
         ):
             self.advance()
             return ToolCall("board", f"read_{self.identifier()}", ())
+        # `today = now` and `roll = random 1 to 6`: see kosika.ambient.
+        if self.check("now") and self.peek().value not in ("(", "."):
+            self.advance()
+            return ToolCall("world", "clock_now", ())
+        if self.check("random") and self.peek().value not in ("(", ".", "="):
+            self.advance()
+            low = self.expression()
+            self.expect("to")
+            return ToolCall(
+                "world", "random_number", (("low", low), ("high", self.expression()))
+            )
         if self.check("recall") and self.peek().value != "(":
             self.advance()
             memory_name = self.identifier()
@@ -1359,9 +1436,12 @@ def parse(source: str, *, lower_thinking_steps: bool = True) -> Program:
         program = lower_nested_functions(Parser(lex(source)).parse())
         if not lower_thinking_steps:
             return program
+        from .ambient import lower_ambient
         from .board import lower_board
         from .memory import lower_memory
 
-        return lower_sugar(lower_thinking(lower_board(lower_memory(program))))
+        return lower_sugar(
+            lower_thinking(lower_board(lower_memory(lower_ambient(program))))
+        )
     except ValueError as exc:
         raise ParseError(str(exc)) from exc

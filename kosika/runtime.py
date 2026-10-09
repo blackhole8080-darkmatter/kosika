@@ -12,6 +12,7 @@ from typing import Any, Callable, Mapping, Sequence, cast
 
 from .agent import ApprovalRequiredError, ToolExecutor
 from .agent_steps import call_agent, validate_agent_transcript
+from .ambient import bind_ambient_tools
 from .ast import (
     AgentCall,
     ArrayExpr,
@@ -1115,6 +1116,11 @@ def run(
         _control = ExecutionControl(
             within_budget(limits or ExecutionLimits(), declared), cancel
         )
+        # The clock and chance need no grant; see kosika.ambient. A caller
+        # may still supply its own, as a test does with scripted answers.
+        ambient = bind_ambient_tools(program)
+        if ambient:
+            tool_bindings = {**ambient, **(tool_bindings or {})}
         if program.boards:
             # A board lives for exactly this run. A caller that runs several
             # workflows as one, such as a swarm, passes its own instead.

@@ -139,6 +139,19 @@ def _tool_step(call: dict[str, Any], returned: dict[str, Any]) -> dict[str, Any]
     source = str(call.get("source", ""))
     arguments = call.get("arguments") or {}
     result = returned.get("result") or {}
+    if source == "world:clock":
+        return {
+            "kind": "code",
+            "did": "looked at the clock",
+            "answer": f"{result.get('weekday')} {result.get('date')}, {result.get('time')}",
+        }
+    if source == "world:random":
+        return {
+            "kind": "code",
+            "did": f"drew a number from {_show(arguments.get('low'))} to "
+            f"{_show(arguments.get('high'))}",
+            "answer": _show(result.get("value")),
+        }
     if source.startswith("memory:"):
         memory = source.removeprefix("memory:")
         key = arguments.get("key")

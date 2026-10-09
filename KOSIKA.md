@@ -452,6 +452,23 @@ think = "classify"  expression "into" expression [ "using" identifier ]
   fails as it would have, so its `otherwise` runs. Rejected answers and their
   reasons are kept in the trace.
 
+- A text literal written `f"..."`, with `f` directly before the opening
+  quotation mark, is a template. Each `{expression}` in it is replaced by
+  the value of that expression, which MUST be Text or a Number. `{{` and
+  `}}` stand for one brace. It means exactly the same as joining the parts
+  with `+`, and a program written either way has the same hash. An
+  expression in braces MUST NOT contain a quotation mark or a brace.
+
+- A workflow step MAY be `NAME = now` or `NAME = random LOW to HIGH`. `now`
+  gives the built-in record `Moment {date: Text, time: Text, weekday: Text,
+  year, month, day, hour, minute, epoch: Number}` in the host's local time.
+  `random` gives `RandomNumber {value: Number}`, a whole number from LOW to
+  HIGH inclusive; both MUST be whole numbers with LOW not above HIGH. Each
+  is recorded in the trace as a read-only tool call (`clock_now`,
+  `random_number`), so replay reads the recorded value. Neither needs a
+  host grant. They MUST NOT appear inside a `fn`. A program that uses
+  neither is unchanged and keeps its hash.
+
 - A model step MAY be followed by `verify CHECK(arguments)`, written after
   the call and before any `vote` or `retry`:
   `found = use_model reader(p.text) verify proven(found, hits) retry 1`.
