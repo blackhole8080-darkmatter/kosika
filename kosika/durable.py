@@ -145,6 +145,15 @@ class ExecutionSession:
         )
         return events
 
+    def finished(self, scope: tuple[str, ...]) -> bool:
+        """Whether this step already completed in an earlier attempt."""
+
+        with self._db() as db:
+            row = db.execute(
+                "SELECT state FROM steps WHERE name=?", (json.dumps(scope),)
+            ).fetchone()
+        return row is not None and row[0] == "completed"
+
     def _save(self, scope: tuple[str, ...], state: str, payload: Any) -> None:
         with self._db() as db:
             db.execute(

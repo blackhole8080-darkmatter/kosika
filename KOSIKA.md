@@ -498,6 +498,17 @@ think = "classify"  expression "into" expression [ "using" identifier ]
   site, and `write file` is an `execute` tool, so its workflow MUST say
   `require approval`. They MUST NOT appear inside a `fn`.
 
+- A workflow MAY contain `parallel { STEPS }`, where each of STEPS is a
+  step written `NAME = CALL`. A step in the block MUST NOT use the name of
+  another step in the same block, and MUST NOT be a `match` step, a
+  workflow call, an `ask`, a memory or board step, or a tool whose access
+  is `execute`. An implementation MAY begin the model calls and read-only
+  tool calls of the block at the same time. Everything else about each
+  step (its events, the step budget, the session, `otherwise`) happens in
+  written order, and the trace MUST be the one that running the steps in
+  written order produces. A workflow with no `parallel` block is unchanged
+  and keeps its hash.
+
 - A model step MAY be followed by `verify CHECK(arguments)`, written after
   the call and before any `vote` or `retry`:
   `found = use_model reader(p.text) verify proven(found, hits) retry 1`.

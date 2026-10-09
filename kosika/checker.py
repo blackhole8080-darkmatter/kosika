@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import math
-from dataclasses import replace
+from dataclasses import fields, is_dataclass, replace
+from typing import Any
 
 from .ast import (
     AgentCall,
@@ -1218,8 +1219,67 @@ def _check_record_methods(program: Program) -> None:
             shapes[key] = record.name
 
 
+def _names_used(value: Any) -> set[str]:
+    """Every variable an expression mentions."""
+
+    if isinstance(value, VariableExpr):
+        return {value.name}
+    if isinstance(value, (list, tuple)):
+        return set().union(*(_names_used(item) for item in value)) if value else set()
+    if is_dataclass(value) and not isinstance(value, type):
+        found: set[str] = set()
+        for item in fields(value):
+            found |= _names_used(getattr(value, item.name))
+        return found
+    return set()
+
+
+def _check_parallel(program: Program) -> None:
+    """Steps written in one `parallel` block must be able to run apart."""
+
+    tools = {tool.name: tool for tool in program.tools}
+    for workflow in program.workflows:
+        blocks: dict[int, list[Step]] = {}
+        for step in workflow.steps:
+            if step.group:
+                blocks.setdefault(step.group, []).append(step)
+        for members in blocks.values():
+            names = {member.binding_name for member in members}
+            for member in members:
+                reason = ""
+                call = member.call
+                if member.branches:
+                    reason = "a match step chooses its call as the workflow runs"
+                elif isinstance(call, WorkflowCall):
+                    reason = "it calls a workflow"
+                elif isinstance(call, AgentCall):
+                    reason = "it asks an agent, which chooses its own tools"
+                elif isinstance(call, ToolCall):
+                    tool = tools.get(call.tool_name)
+                    if tool is not None and tool.access == "execute":
+                        reason = "it changes something, and changes happen in order"
+                    elif tool is not None and tool.source.startswith(
+                        ("memory:", "board:")
+                    ):
+                        reason = "memory and boards are read and written in order"
+                if reason:
+                    raise CheckError(
+                        f"Step {member.name!r} cannot run in parallel: {reason}"
+                    )
+                used = _names_used((call, member.verify, member.fallback)) & (
+                    names - {member.binding_name}
+                )
+                if used:
+                    raise CheckError(
+                        f"Step {member.name!r} cannot run in parallel: it uses "
+                        f"{sorted(used)[0]!r}, which is worked out in the same "
+                        "parallel block"
+                    )
+
+
 def check(program: Program) -> None:
     _check_record_methods(program)
+    _check_parallel(program)
     if any(
         isinstance(step.call, ThinkCall)
         for workflow in program.workflows

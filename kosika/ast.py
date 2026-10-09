@@ -514,6 +514,11 @@ class Step:
     # step's own model was rejected. Fast and cheap first, strong only
     # when the answer did not pass.
     escalate: str | None = None
+    # `parallel { a = ...  b = ... }`: steps with the same number were
+    # written in one parallel block. They may not use each other's
+    # results, so their slow calls can be made at the same time. 0
+    # for every step written outside such a block.
+    group: int = 0
 
 
 @dataclass(frozen=True)
@@ -727,6 +732,7 @@ _ABSENT_DEFAULTS: dict[str, tuple[Any, ...]] = {
     "verify": (None,),
     "methods": ((), []),
     "escalate": (None,),
+    "group": (0,),
     "default": (False,),
     "more_models": ((), []),
     "budget": ((), []),

@@ -196,6 +196,8 @@ def check_tests(program: Program) -> None:
 class _ScriptedTool:
     """A read-only tool that gives its scripted answers in order."""
 
+    ordered = True
+
     def __init__(self, name: str, answers: list[Any]):
         self.name, self.answers, self.asked = name, list(answers), 0
 

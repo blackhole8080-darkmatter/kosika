@@ -660,6 +660,32 @@ the folder and the site are granted by whoever runs the program, a path
 outside the folder is refused, and `write file` waits for a yes that shows
 the path and the text.
 
+### Steps at the same time
+
+```
+workflow main(q: Question) -> Out {
+  parallel {
+    wiki  = fetch q.first
+    other = fetch q.second
+    kind  = classify q.text into ["fact", "opinion"]
+  }
+  out = build(wiki, other, kind)
+}
+```
+
+The steps in a `parallel` block do not wait for each other: asking a model
+and using a tool that only looks are started together. A step in the block
+may not use another's result, and may not be a workflow call, an `ask`, a
+`match`, a memory or board step, or anything that changes the world; those
+happen in order for good reason. The trace is written in the order the
+steps appear, exactly as if they had run one after another, so it replays
+the same way.
+
+How much time it saves depends on what is behind the steps. Three web
+pages or three different hosted models overlap fully. Two steps that ask
+the same local model do not, because one model on one computer answers one
+question at a time.
+
 ### Checking a model's answer with your own code
 
 A model step can name a function that judges its answer:

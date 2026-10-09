@@ -7,6 +7,7 @@ from copy import deepcopy
 from dataclasses import asdict, dataclass
 from dataclasses import replace as dataclass_replace
 from datetime import datetime, timezone
+from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence, cast
 
@@ -79,6 +80,48 @@ from .thinking import ThinkingAnswerError, check_answer
 from .trace_replay import replay_trace
 
 _MAP_METHODS = ("get", "has", "set", "remove", "keys", "values", "length")
+
+
+class _Ahead:
+    """A slow call begun early, on a thread of its own.
+
+    `result()` waits for it and gives what it gave, or raises what it raised,
+    exactly as making the call there and then would have.
+    """
+
+    def __init__(self, call: Callable[[], Any]) -> None:
+        self._done = threading.Event()
+        self._value: Any = None
+        self._error: BaseException | None = None
+
+        def work() -> None:
+            try:
+                self._value = call()
+            except BaseException as exc:  # noqa: BLE001 - handed to result()
+                self._error = exc
+            finally:
+                self._done.set()
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def result(self) -> Any:
+        self._done.wait()
+        if self._error is not None:
+            raise self._error
+        return self._value
+
+
+def _in_order(thing: Any) -> bool:
+    """True for a model or tool whose answers come in a fixed order, as a
+    scripted one's do. It is never asked from two places at once."""
+
+    for _ in range(6):
+        if thing is None:
+            return False
+        if getattr(thing, "ordered", False):
+            return True
+        thing = getattr(thing, "provider", None)
+    return False
 
 
 class Failure(RuntimeError):
@@ -1535,12 +1578,119 @@ def _run_workflow(
     result: Any = {}
     queue = list(workflow.steps)
     recovered: dict[str, dict[str, str]] = {}
+    ahead: dict[str, _Ahead] = {}
+    begun: set[int] = set()
+
+    def model_answer(
+        member: Step, member_arguments: dict[str, Any]
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Ask a model step's model, with its checks, retries and escalation."""
+
+        assert isinstance(member.call, ModelCall)
+        asked_model = models[member.call.model_name]
+        schema = schema_for_record(program, asked_model.output)
+        if asked_model.evidence is not None:
+            schema = answer_schema(
+                asked_model.evidence, schema, list(schema.get("properties", {}))
+            )
+        judge = (
+            _verifier(member, environment, program, functions)
+            if member.verify is not None
+            else None
+        )
+        try:
+            return _ask_with_votes(
+                [
+                    (providers[voter.provider or voter.name], voter)
+                    for voter in (
+                        [models[name] for name in member.voters] or [asked_model]
+                    )
+                ],
+                member_arguments,
+                schema,
+                retries=member.retries,
+                votes=member.votes,
+                verify_answer=judge,
+            )
+        except (RejectedAnswer, ThinkingAnswerError) as refused:
+            if member.escalate is None:
+                raise
+            # `escalate`: every answer of the step's own model was rejected,
+            # so the same question, with the same checks, goes to the model
+            # bound to the named one.
+            answer, reply = _ask_with_votes(
+                [(providers[member.escalate], asked_model)],
+                member_arguments,
+                schema,
+                retries=member.retries,
+                votes=0,
+                verify_answer=judge,
+            )
+            return answer, {
+                **reply,
+                "escalated": {"to": member.escalate, "because": str(refused)[:500]},
+            }
+
+    def begin_together(first: Step) -> None:
+        """Start the slow calls of one `parallel` block at the same time.
+
+        Only the call itself is made early: asking a model, or using a tool
+        that only looks. Everything that keeps a run honest (the events, the
+        budget of steps, the session, `otherwise`) still happens in the
+        written order, when the loop below reaches each step and takes the
+        answer that is already there or on its way. The trace is therefore
+        exactly what running the steps one after another would have written.
+        """
+
+        for member in [first, *(item for item in queue if item.group == first.group)]:
+            call = member.call
+            if session is not None and session.finished(
+                (*_scope, workflow.name, member.name)
+            ):
+                continue
+            try:
+                member_arguments = {
+                    name: _evaluate_expression(
+                        expression, environment, program, functions, [], depth=-1
+                    )
+                    for name, expression in call.arguments
+                }
+            except (RuntimeError, ValueError):
+                # Its arguments fail: let the step say so when its turn comes.
+                continue
+            if isinstance(call, ModelCall):
+                asked = [
+                    providers.get(models[name].provider or name)
+                    for name in (member.voters or (call.model_name,))
+                ]
+                if any(_in_order(provider) for provider in asked):
+                    continue
+                ahead[member.name] = _Ahead(
+                    partial(model_answer, member, member_arguments)
+                )
+            elif isinstance(call, ToolCall):
+                declared = tools[call.tool_name]
+                executor = host_tools.get(declared.name)
+                if (
+                    executor is None
+                    or declared.access != "observe"
+                    or declared.source.startswith(("memory:", "board:", "world:"))
+                    or _in_order(executor)
+                ):
+                    continue
+                ahead[member.name] = _Ahead(
+                    partial(executor, declared, member_arguments)
+                )
+
     while queue:
         step = queue.pop(0)
         events_before = len(events)
         try:
             _control.scope = (*_scope, workflow.name, step.name)
             _control.consume("steps")
+            if step.group and step.group not in begun:
+                begun.add(step.group)
+                begin_together(step)
             if step.branches and step.subject is not None:
                 # A `match` step: the subject's value picks the one call made.
                 chosen_by = _evaluate_expression(
@@ -1845,15 +1995,9 @@ def _run_workflow(
                 # A step `with evidence` asks the model for the record plus
                 # its quotes. The quotes are checked and kept in the trace;
                 # the step's value is the record alone.
-                asked_schema = output_schema
-                call_evidence: dict[str, Any] = {}
-                if model.evidence is not None:
-                    asked_schema = answer_schema(
-                        model.evidence,
-                        output_schema,
-                        list(output_schema.get("properties", {})),
-                    )
-                    call_evidence = {"evidence": model.evidence}
+                call_evidence: dict[str, Any] = (
+                    {} if model.evidence is None else {"evidence": model.evidence}
+                )
                 events.append(
                     _event(
                         "model_call",
@@ -1865,46 +2009,12 @@ def _run_workflow(
                         **call_evidence,
                     )
                 )
-                judge = (
-                    _verifier(step, environment, program, functions)
-                    if step.verify is not None
-                    else None
+                early = ahead.pop(step.name, None)
+                result, response = (
+                    early.result()
+                    if early is not None
+                    else model_answer(step, arguments)
                 )
-                try:
-                    result, response = _ask_with_votes(
-                        [
-                            (providers[voter.provider or voter.name], voter)
-                            for voter in (
-                                [models[name] for name in step.voters] or [model]
-                            )
-                        ],
-                        arguments,
-                        asked_schema,
-                        retries=step.retries,
-                        votes=step.votes,
-                        verify_answer=judge,
-                    )
-                except (RejectedAnswer, ThinkingAnswerError) as refused:
-                    if step.escalate is None:
-                        raise
-                    # `escalate`: every answer of the step's own model was
-                    # rejected, so the same question, with the same checks,
-                    # goes to the model bound to the named one.
-                    result, response = _ask_with_votes(
-                        [(providers[step.escalate], model)],
-                        arguments,
-                        asked_schema,
-                        retries=step.retries,
-                        votes=0,
-                        verify_answer=judge,
-                    )
-                    response = {
-                        **response,
-                        "escalated": {
-                            "to": step.escalate,
-                            "because": str(refused)[:500],
-                        },
-                    }
                 events.append(
                     _event("model_return", model=model.name, result=result, **response)
                 )
@@ -1935,7 +2045,10 @@ def _run_workflow(
                         output_schema=output_schema,
                     )
                 )
-                if tool.name in host_tools:
+                early = ahead.pop(step.name, None)
+                if early is not None:
+                    outcome, transport = early.result(), "host"
+                elif tool.name in host_tools:
                     outcome, transport = host_tools[tool.name](tool, arguments), "host"
                 else:
                     outcome, transport = _call_declared_tool(

@@ -81,6 +81,10 @@ class ModelProvider(Protocol):
 class ScriptedModelProvider:
     """Deterministic provider for tests, fixtures, and exact replay experiments."""
 
+    #: Its answers come in the order they are asked for, so it must never
+    #: be asked from two places at once.
+    ordered = True
+
     def __init__(self, responses: list[ModelResponse]) -> None:
         self._responses = list(responses)
         self.requests: list[ModelRequest] = []

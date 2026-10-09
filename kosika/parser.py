@@ -1064,11 +1064,25 @@ class Parser:
         steps: list[Step] = []
         approval_required = False
         budget: list[tuple[str, int | float]] = []
+        groups = 0
         while not self.accept("}"):
             if self.accept("step"):
                 steps.append(self.parse_step())
             elif self.at_assignment():
                 steps.append(self.parse_short_step())
+            elif self.check("parallel") and self.peek().value == "{":
+                # `parallel { a = ...  b = ... }`: see Step.group.
+                self.advance()
+                self.advance()
+                groups += 1
+                while not self.accept("}"):
+                    if not self.at_assignment():
+                        token = self.current
+                        raise ParseError(
+                            f"Unexpected workflow item {token.value!r} at "
+                            f"{token.line}:{token.column}"
+                        )
+                    steps.append(replace(self.parse_short_step(), group=groups))
             elif self.accept("require"):
                 self.expect("approval")
                 approval_required = True

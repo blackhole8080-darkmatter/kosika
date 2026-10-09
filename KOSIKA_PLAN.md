@@ -1987,6 +1987,38 @@ gate: without them a parser written in Kosika has nothing to return.
   `fetch` only reads. The author agent's guide does not teach any of this
   yet.
 
+## Parallel steps
+
+- `parallel { a = ...  b = ... }` in a workflow sets `Step.group` on its
+  steps. When the workflow loop reaches the first step of a block it starts
+  the slow call of every eligible member on its own thread
+  (`runtime._Ahead`): a model step's whole asking (with `verify`, `retry`,
+  `vote`, `escalate`), or a host tool whose access is `observe`. The loop
+  then runs each step in written order as before and takes the answer that
+  is ready or on its way instead of making the call. So events, budgets,
+  the session and `otherwise` are untouched, and the trace is identical to
+  a sequential run. This avoided splitting the workflow loop, which the
+  earlier note said was needed.
+- The checker refuses members that use each other's results, `match`
+  steps, workflow calls, `ask`, memory and board steps, and `execute`
+  tools.
+- A scripted model or tool (`ordered = True`) is never asked early, so
+  tests and replays of scripted runs stay deterministic. A step a resumed
+  session already completed is not asked again.
+- The model step's asking code moved into one local function,
+  `model_answer`, used by both paths.
+- 7 tests in `tests/test_parallel.py`: three 0.4-second reads finish in
+  under a second with all three open at once; two different models
+  overlap; the trace lists the steps in written order and replays; a
+  failure in the block reaches that step's `otherwise`.
+- Not claimed: no speed-up was measured on a real model, and two steps
+  asking the same local model will not overlap, since Ollama on this
+  machine answers one at a time. Function steps in a block run in order.
+  A call begun early is not stopped if an earlier step of the block then
+  fails; it finishes on its thread and its result is dropped, though a
+  model call it made was still counted against the budget. Studio shows
+  the steps of a block lighting up one after another, not together.
+
 ## Standard coding-agent procedure
 
 1. Inspect `git status`, the relevant source files, tests, and this plan.
