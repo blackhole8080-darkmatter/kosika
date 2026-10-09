@@ -2279,6 +2279,33 @@ def build_parser() -> argparse.ArgumentParser:
     test_parser.add_argument("source", type=Path)
     test_parser.add_argument("--only", help="Run only the test with this name.")
     test_parser.add_argument("--json", action="store_true")
+    measure_parser = subparsers.add_parser(
+        "measure",
+        help=(
+            "Run a program's evals on one or more real models and report how "
+            "often each passes, how long it took, and how many model calls."
+        ),
+    )
+    measure_parser.add_argument("source", type=Path)
+    measure_parser.add_argument(
+        "--model",
+        action="append",
+        required=True,
+        help="A model to measure. Repeat to compare several.",
+    )
+    measure_parser.add_argument("--model-url", help="OpenAI-compatible model URL.")
+    measure_parser.add_argument(
+        "--model-protocol", choices=MODEL_PROTOCOLS, default="openai"
+    )
+    measure_parser.add_argument("--model-timeout", type=float, default=300.0)
+    measure_parser.add_argument(
+        "--repeat",
+        type=int,
+        default=1,
+        help="How many times to run each eval on each model (default 1).",
+    )
+    measure_parser.add_argument("--only", help="Run only the eval with this name.")
+    measure_parser.add_argument("--json", action="store_true")
     journal_parser = subparsers.add_parser(
         "journal",
         help="Inspect a durable Kosika workflow or direct-agent journal.",
@@ -3407,6 +3434,37 @@ def main() -> int:
         else:
             print(pack_to_text(pack_report))
         return 0 if all(test["passed"] for test in pack_report.tests) else 1
+
+    if args.command == "measure":
+        from .testing import measure, measure_to_text
+
+        if not 1 <= args.repeat <= 50:
+            print("Measure unavailable: --repeat must be from 1 to 50", file=sys.stderr)
+            return 2
+        try:
+            measured_program = load_program(args.source)
+        except (ValueError, OSError) as exc:
+            print(f"Check failed: {exc}", file=sys.stderr)
+            return 2
+        wanted = list(args.model)
+
+        def bind_for(name: str) -> dict[str, ModelProvider]:
+            args.model = name
+            args.model_binding = args.model_fixture = args.models = None
+            with contextlib.redirect_stderr(io.StringIO()):
+                return _workflow_model_bindings(args, measured_program)
+
+        try:
+            measured = measure(
+                measured_program, bind_for, wanted, repeat=args.repeat, only=args.only
+            )
+        except (ValueError, RuntimeError, OSError) as exc:
+            print(f"Measure failed: {exc}", file=sys.stderr)
+            return 2
+        print(
+            json.dumps(measured, indent=2) if args.json else measure_to_text(measured)
+        )
+        return 0
 
     if args.command == "test":
         from .testing import run_tests

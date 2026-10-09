@@ -34,8 +34,9 @@ the module loader calls it, so `kosika check` reports a mistake in a test.
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable, Mapping, Sequence
 
 from .ast import (
     BinaryExpr,
@@ -205,7 +206,25 @@ class _ScriptedTool:
         return self.answers[self.asked - 1]
 
 
-def _run_one(program: Program, test: TestDecl) -> None:
+class _Counted:
+    """A real model, with a count of how often it was asked."""
+
+    def __init__(self, provider: Any):
+        self.provider, self.calls = provider, 0
+
+    def complete(self, request: Any) -> Any:
+        self.calls += 1
+        return self.provider.complete(request)
+
+
+def _run_one(
+    program: Program,
+    test: TestDecl,
+    live: Mapping[str, Any] | None = None,
+) -> None:
+    """Run one test. With `live` models it is an eval: the models answer
+    for themselves and only tools are scripted."""
+
     _check_one(program, test)
     registry = _FunctionRegistry(program.functions, ExecutionControl(ExecutionLimits()))
     values: dict[str, Any] = {}
@@ -230,11 +249,17 @@ def _run_one(program: Program, test: TestDecl) -> None:
         ):
             raise _Failure(f"answers for {name!r} must be a list of records", test.line)
         if name in scripts:
+            if live is not None:
+                raise _Failure(
+                    f"an eval asks the real model, so it cannot script "
+                    f"answers for {name!r}",
+                    test.line,
+                )
             scripts[name] = answers
         else:
             tools[name] = _ScriptedTool(name, answers)
     memory_tools = bind_memory_tools(program, None, store=MemoryStore())
-    providers = {
+    providers: dict[str, Any] = dict(live or {}) or {
         name: ScriptedModelProvider(
             [ModelResponse(content=json.dumps(answer)) for answer in answers]
         )
@@ -278,7 +303,14 @@ def _run_one(program: Program, test: TestDecl) -> None:
             raise _Failure(str(exc), step.line) from exc
 
     unused = {
-        **{name: len(scripts[name]) - len(p.requests) for name, p in providers.items()},
+        **(
+            {}
+            if live is not None
+            else {
+                name: len(scripts[name]) - len(p.requests)
+                for name, p in providers.items()
+            }
+        ),
         **{name: len(tool.answers) - tool.asked for name, tool in tools.items()},
     }
     for name, count in unused.items():
@@ -288,12 +320,122 @@ def _run_one(program: Program, test: TestDecl) -> None:
             )
 
 
+def measure(
+    program: Program,
+    bind: Callable[[str], Mapping[str, Any]],
+    models: Sequence[str],
+    *,
+    repeat: int = 1,
+    only: str | None = None,
+) -> dict[str, Any]:
+    """Run the program's evals on each model and say how each one did.
+
+    `bind(name)` gives the providers to use when every declared model is
+    answered by the model called `name`. Each eval runs `repeat` times on
+    each model, because a model does not answer the same way twice.
+    """
+
+    evals = [
+        test
+        for test in program.tests
+        if test.live and (only is None or test.name == only)
+    ]
+    report: dict[str, Any] = {
+        "evals": [test.name for test in evals],
+        "repeat": repeat,
+        "models": [],
+    }
+    for name in models:
+        providers = bind(name)
+        rows: list[dict[str, Any]] = []
+        for test in evals:
+            passed, calls, seconds, why = 0, 0, 0.0, ""
+            for _ in range(repeat):
+                # Counted afresh each run, and counted whether or not the
+                # eval passes: a failed attempt still cost its model calls.
+                counted = {key: _Counted(value) for key, value in providers.items()}
+                started = time.monotonic()
+                try:
+                    _run_one(program, test, counted)
+                    passed += 1
+                except _Failure as failure:
+                    why = why or f"line {failure.line}: {failure}"
+                seconds += time.monotonic() - started
+                calls += sum(item.calls for item in counted.values())
+            rows.append(
+                {
+                    "name": test.name,
+                    "passed": passed,
+                    "runs": repeat,
+                    "model_calls": calls,
+                    "seconds": round(seconds, 1),
+                    "first_failure": why,
+                }
+            )
+        report["models"].append(
+            {
+                "model": name,
+                "passed": sum(row["passed"] for row in rows),
+                "runs": repeat * len(evals),
+                "model_calls": sum(row["model_calls"] for row in rows),
+                "seconds": round(sum(row["seconds"] for row in rows), 1),
+                "evals": rows,
+            }
+        )
+    return report
+
+
+def measure_to_text(report: dict[str, Any]) -> str:
+    if not report["evals"]:
+        return (
+            "No evals found. Write one like a test, with the word eval:\n"
+            '  eval "it finds the date" { ... expect a.text.contains("Tuesday") }'
+        )
+    models = report["models"]
+    width = max(len(entry["model"]) for entry in models) + 2
+    lines = [
+        f"Measured {len(report['evals'])} eval(s), {report['repeat']} time(s) each",
+        "",
+        f"{'model':<{width}}{'passed':<12}{'seconds':<10}model calls",
+    ]
+    for entry in models:
+        score = f"{entry['passed']} of {entry['runs']}"
+        lines.append(
+            f"{entry['model']:<{width}}{score:<12}{entry['seconds']:<10}"
+            f"{entry['model_calls']}"
+        )
+    name_width = min(max(len(name) for name in report["evals"]), 48) + 2
+    lines += [
+        "",
+        f"{'eval':<{name_width}}" + "".join(f"{e['model']:<{width}}" for e in models),
+    ]
+    for index, name in enumerate(report["evals"]):
+        cells = "".join(
+            f"{str(e['evals'][index]['passed']) + ' of ' + str(e['evals'][index]['runs']):<{width}}"
+            for e in models
+        )
+        lines.append(f"{name[:48]:<{name_width}}{cells}")
+    failures = [
+        f"  {entry['model']}, {row['name']}: {row['first_failure'][:300]}"
+        for entry in models
+        for row in entry["evals"]
+        if row["first_failure"]
+    ]
+    if failures:
+        lines += ["", "First failure of each eval that did not always pass:", *failures]
+    return "\n".join(lines)
+
+
 def run_tests(program: Program, *, only: str | None = None) -> list[TestResult]:
-    """Run the program's tests, or the one named `only`, and report each."""
+    """Run the program's tests, or the one named `only`, and report each.
+
+    Evals are not tests: they ask a real model, so they are left to
+    `measure`.
+    """
 
     results: list[TestResult] = []
     for test in program.tests:
-        if only is not None and test.name != only:
+        if test.live or (only is not None and test.name != only):
             continue
         try:
             _run_one(program, test)

@@ -277,7 +277,8 @@ def describe(agent: Agent, *, detail: bool) -> dict[str, Any]:
             }
             for s in program.swarms
         ],
-        tests=len(program.tests),
+        tests=sum(1 for test in program.tests if not test.live),
+        evals=sum(1 for test in program.tests if test.live),
         steps=len(entry.steps) if entry else 0,
         budget=[list(item) for item in entry.budget] if entry else [],
         chat=chat,
@@ -318,7 +319,8 @@ def describe(agent: Agent, *, detail: bool) -> dict[str, Any]:
             }
             for record in sorted(program.records, key=lambda item: item.name)
         ],
-        test_names=[test.name for test in program.tests],
+        test_names=[test.name for test in program.tests if not test.live],
+        eval_names=[test.name for test in program.tests if test.live],
         traces=_traces(agent.path.parent),
         example_input=example.read_text(encoding="utf-8") if example.is_file() else "",
     )

@@ -179,6 +179,16 @@ def replay_events(events: list[Any], *, depth: int = 0) -> dict[str, Any]:
                     raise ValueError(f"Trace evidence does not hold: {exc}") from exc
             if not _same_json(answered, result):
                 raise ValueError("Model response and recorded outcome differ")
+            if "verified" in returned:
+                # The program's own check of this answer was recorded as the
+                # function call it was. It must be well formed and must have
+                # found nothing wrong, or the answer would not be here.
+                checked = returned["verified"]
+                if not isinstance(checked, list) or len(checked) != 2:
+                    raise ValueError("Verified answer requires its recorded check")
+                _validate_function_events(checked, version=version, depth=0)
+                if checked[1].get("result") != "":
+                    raise ValueError("Trace keeps an answer its own check refused")
             if key == "agent":
                 validate_agent_transcript(call, returned)
         if key == "tool" and version >= 3:

@@ -573,6 +573,49 @@ This works with `--model-protocol ollama` and `openai`, on a model that was
 trained to choose tools. A files tool with `operation: "peek"` reads only
 the first 4000 characters, which suits a model reading for itself.
 
+### Checking a model's answer with your own code
+
+A model step can name a function that judges its answer:
+
+```
+fn proven(found: Found, hits: Hits) -> Text {
+  if proof(hits, found.quote).length() == 0 { return "Your quote is not in any of the lines." }
+  return ""
+}
+
+found = use_model reader(prompt.text) verify proven(found, hits) retry 1 otherwise unproven(hits)
+```
+
+The function is given the answer under the step's own name, beside anything
+earlier steps produced. It returns what is wrong, or `""` when the answer
+may stand. A complaint refuses the answer, and with `retry` the model is
+shown its answer and your complaint and asked again. The check that passed
+is recorded in the trace and replay looks at it again.
+
+### Measuring a program on real models
+
+An `eval` is written like a `test`, but the models answer for themselves.
+Tools can still be scripted, so every model is given the same thing to work
+with:
+
+```
+eval "it copies a number exactly" {
+  answers search_files: [{matches: ["notes/home.md:3: Rent is 900 euros a month."]}]
+  a = main({text: "How much is the rent?"})
+  expect a.text.contains("900")
+}
+```
+
+`kosika test` skips evals. `kosika measure` runs them:
+
+```
+kosika measure main.kos --model qwen2.5:3b --model qwen2.5:7b --model-protocol ollama --repeat 2
+```
+
+It reports, for each model, how many runs passed, the seconds taken and the
+model calls made, then each eval by model, and the first failure of any
+eval that did not always pass.
+
 ### Example agents
 
 `examples/agents` holds six agents written in Kosika, each with its own

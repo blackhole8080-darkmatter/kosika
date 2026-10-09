@@ -579,7 +579,7 @@ class Parser:
                 memory_name = self.identifier()
                 self.expect("of")
                 program.memories.append(MemoryDecl(memory_name, self.identifier()))
-            elif keyword == "test" and self.peek().kind == "STRING":
+            elif keyword in ("test", "eval") and self.peek().kind == "STRING":
                 program.tests.append(self.parse_test())
             else:
                 token = self.current
@@ -591,7 +591,8 @@ class Parser:
     def parse_test(self) -> TestDecl:
         """Parse `test "name" { answers / name = ... / expect ... }`."""
 
-        line = self.expect("test").line
+        opening = self.advance()
+        line, live = opening.line, opening.value == "eval"
         name = self.advance().value
         self.expect("{")
         answers: list[tuple[str, Expression]] = []
@@ -619,7 +620,7 @@ class Parser:
                 value = self.expression()
                 text = self.written(start, self.index)
                 steps.append(TestStep("expect", value, "", token.line, text))
-        return TestDecl(name, tuple(answers), tuple(steps), line)
+        return TestDecl(name, tuple(answers), tuple(steps), line, live)
 
     def written(self, start: int, end: int) -> str:
         """The tokens from `start` to `end` roughly as they were typed."""
@@ -1179,10 +1180,13 @@ class Parser:
                 branches=tuple(branches),
             )
         call = self.parse_step_call()
+        verify = self.parse_step_call() if self.accept("verify") else None
         votes = self.parse_step_count("vote")
         retries = self.parse_step_count("retry")
         fallback = self.parse_step_call() if self.accept("otherwise") else None
-        return Step(name, call, name, None, name, fallback, retries, votes)
+        return Step(
+            name, call, name, None, name, fallback, retries, votes, verify=verify
+        )
 
     def parse_step_count(self, word: str) -> int:
         """Parse an optional `vote N` or `retry N` after a step's call."""
@@ -1206,6 +1210,7 @@ class Parser:
             binding_type = self.parse_type_name()
         self.expect("=")
         call = self.parse_step_call()
+        verify = self.parse_step_call() if self.accept("verify") else None
         votes = self.parse_step_count("vote")
         retries = self.parse_step_count("retry")
         fallback = self.parse_step_call() if self.accept("otherwise") else None
@@ -1221,6 +1226,7 @@ class Parser:
             fallback,
             retries,
             votes,
+            verify=verify,
         )
 
     def parse_think_call(self) -> ThinkCall:

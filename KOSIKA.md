@@ -452,6 +452,26 @@ think = "classify"  expression "into" expression [ "using" identifier ]
   fails as it would have, so its `otherwise` runs. Rejected answers and their
   reasons are kept in the trace.
 
+- A model step MAY be followed by `verify CHECK(arguments)`, written after
+  the call and before any `vote` or `retry`:
+  `found = use_model reader(p.text) verify proven(found, hits) retry 1`.
+  CHECK MUST be a function declared in the program that returns Text. Its
+  arguments may use the step's own name, which holds the model's answer, and
+  the values of earlier steps. It is called on every answer that is
+  otherwise acceptable. A result other than `""` rejects the answer with
+  that text as the reason, exactly as a malformed answer is rejected, so
+  `retry` and `otherwise` apply unchanged. The check of the accepted answer
+  is kept in the trace, and replay requires it to be well formed and to
+  have returned `""`. A `match` step and a step that is not a model step
+  MUST NOT have `verify`.
+
+- A program MAY contain `eval "name" { ... }` blocks, written exactly like
+  `test` blocks. An eval's models are not scripted: it MUST NOT give
+  `answers` for a declared model, and MAY give them for read-only tools.
+  `kosika test` does not run evals. `kosika measure FILE --model NAME` runs
+  each eval on each named model and reports how many runs passed. Evals,
+  like tests, are not part of the program hash.
+
 - A model step MAY be followed by `vote N`, with N one of 3, 5, 7, or 9,
   written after the call and before any `retry`:
   `label = classify t.text into ["a", "b"] vote 3 retry 1 otherwise f(t)`.

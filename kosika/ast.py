@@ -473,6 +473,11 @@ class Step:
     # still finds one.
     subject: "Expression | None" = None
     branches: tuple[tuple[Any, Any], ...] = ()
+    # `step = call verify check(step, other)`: a function, written in the
+    # program, that is given the model's answer and returns what is wrong
+    # with it, or "" when nothing is. A complaint rejects the answer exactly
+    # as a malformed one is rejected, so `retry` shows it back to the model.
+    verify: Any = None
 
 
 @dataclass(frozen=True)
@@ -637,6 +642,10 @@ class TestDecl:
     answers: tuple[tuple[str, Expression], ...] = ()
     steps: tuple[TestStep, ...] = ()
     line: int = 0
+    # `eval "name" { ... }`: written like a test, but its models are real.
+    # `kosika test` leaves it alone; `kosika measure` runs it on each model
+    # it is given and reports how often each passes.
+    live: bool = False
 
 
 @dataclass
@@ -679,6 +688,7 @@ _ABSENT_DEFAULTS: dict[str, tuple[Any, ...]] = {
     "votes": (0,),
     "voters": ((), []),
     "branches": ((), []),
+    "verify": (None,),
     "default": (False,),
     "more_models": ((), []),
     "budget": ((), []),

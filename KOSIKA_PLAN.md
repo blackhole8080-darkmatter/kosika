@@ -1799,6 +1799,53 @@ gate: without them a parser written in Kosika has nothing to return.
   again on the model. Search has no index, so a very large folder is cut
   off at its limits.
 
+## `verify`, `eval`, and `kosika measure`
+
+- `verify CHECK(arguments)` on a model step (`Step.verify`). CHECK is a
+  function of the program that returns Text: the complaint, or `""`. It
+  sees the answer under the step's own name. A complaint raises the same
+  `RejectedAnswer` a malformed answer does, so `retry` shows the model its
+  answer and the complaint, and `otherwise` takes over when retries run
+  out. The check of the accepted answer is recorded on `model_return` as
+  `verified` (its function call and return), and replay requires it to be
+  well formed and to have returned `""`.
+- The checker handles `verify` the way it handles `otherwise` and `match`:
+  it checks the program in which the check is an ordinary step placed
+  after the verified one. Absent, the field leaves a program's hash as it
+  was.
+- `eval "name" { ... }` parses as a test with `live` set. `run_tests`,
+  packs and Studio's test list skip evals. `testing.measure` runs each eval
+  on each named model with the real provider, scripted answers allowed
+  only for tools, and counts passes, seconds and model calls, including
+  the calls of runs that failed. `kosika measure FILE --model A --model B
+  [--repeat N] [--only NAME] [--json]`.
+- The checker now reports a faulty declaration before the fallback type
+  disagreement it causes (found by the corpus when the new examples
+  joined it).
+- The researcher uses both: `read_and_prove` verifies the quote with one
+  retry, and four evals fix what the search "found" so models are compared
+  on the same lines.
+- Measured on this laptop, three runs of each of the four evals. First
+  run, before a fix: qwen2.5:7b 8 of 8, qwen2.5:3b 4 of 8. The measure
+  showed the 3b failing "it copies a number exactly" every time; looking
+  at its answers, it quoted "Rent is 900 euros a month." where the line
+  continues with a comma. The check was changed to ignore punctuation at
+  the two ends of a quote and nothing else. After: qwen2.5:7b 12 of 12 in
+  146 seconds, qwen2.5:3b 8 of 12 in 66 seconds; the number eval went from
+  0 of 2 to 3 of 3. The 3b still failed "it picks the right line among
+  several" 3 of 3 and the date eval 1 of 3, with one model call each, so
+  it gave up rather than misquoted.
+- 14 tests in `tests/test_verify_and_measure.py`; the researcher has 8
+  tests.
+- Not claimed: four evals with three runs each is a small sample, enough
+  to see a large difference and not a small one. `verify` is for model
+  steps only, not `ask` agents or `match` steps. Replay checks that the
+  recorded check passed and is well formed; it does not run the function
+  again. A check is only as good as the function written: the quote check
+  proves the words are in the file, not that the answer follows. No
+  automatic tuning of prompts was built. Meaning-based search was not
+  started: it needs an embedding model that is not installed.
+
 ## Standard coding-agent procedure
 
 1. Inspect `git status`, the relevant source files, tests, and this plan.

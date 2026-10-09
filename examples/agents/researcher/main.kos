@@ -8,8 +8,14 @@
 // searches the folder. Only the lines that were found are shown to the
 // model, which must answer and give one exact quote. Code then checks that
 // the quote really is in one of those lines, and it is code, not the model,
-// that names the file and line. An answer whose quote cannot be found is
-// not shown: you get the closest lines instead.
+// that names the file and line. A quote that is not there is sent back to
+// the model once, with the reason. If it still cannot prove its answer, the
+// answer is not shown: you get the closest lines instead.
+//
+//   kosika measure main.kos --model qwen2.5:3b --model qwen2.5:7b --model-protocol ollama
+//
+// runs the evals at the end of this file on each model, so you can see
+// which model is right more often and how long each takes.
 //
 // It only reads. Say: a question, find WORDS, read FILE, summarize FILE,
 // or help.
@@ -135,11 +141,33 @@ fn nothing(msg: Msg) -> Found {
   return {answer: "", quote: ""}
 }
 
+// A quote without the marks around it. A model often ends a quote with a
+// full stop where the line goes on with a comma. The words between must
+// still be found exactly, so this forgives the ends and nothing else.
+fn bare(quote: Text) -> Text {
+  var text = quote.lower().trim()
+  var trimming = true
+  while trimming and text.length() > 0 {
+    trimming = false
+    for mark in [".", ",", ";", ":", "!", "?", "\"", "'"] {
+      if text.ends_with(mark) {
+        text = text.slice(0, text.length() - 1).trim()
+        trimming = true
+      }
+      if text.starts_with(mark) {
+        text = text.slice(1, text.length()).trim()
+        trimming = true
+      }
+    }
+  }
+  return text
+}
+
 // The hit that really holds the quote, or "" when none does. This is the
 // check: the model's quote must be found, letter for letter apart from
 // capitals, in a line the search returned.
 fn proof(hits: Hits, quote: Text) -> Text {
-  let wanted = quote.lower().trim()
+  let wanted = bare(quote)
   if wanted.length() < 6 { return "" }
   for hit in hits.matches {
     if hit.lower().contains(wanted) { return hit }
@@ -152,6 +180,20 @@ fn source_of(hit: Text) -> Text {
   let parts = hit.split(":")
   if parts.length() < 3 { return hit }
   return parts[0] + ", line " + parts[1]
+}
+
+// The program's own check of the model's answer, used by `verify`. It
+// returns what is wrong, which is shown to the model, or "" when the answer
+// may stand. Saying "the lines do not answer" is always allowed.
+fn proven(found: Found, hits: Hits) -> Text {
+  if found.answer.trim().length() == 0 and found.quote.trim().length() == 0 { return "" }
+  if found.quote.trim().length() < 6 { return "Give a quote of at least a few words copied from one line, or set answer and quote to \"\" if the lines do not answer." }
+  if proof(hits, found.quote).length() == 0 { return "Your quote is not word for word in any of the lines. Copy the exact words from one line without changing them, and do not include the file name or line number. If the lines do not answer the question, set answer and quote to \"\"." }
+  return ""
+}
+
+fn unproven(hits: Hits) -> Found {
+  return {answer: "", quote: ""}
 }
 
 fn closest(hits: Hits) -> Text {
@@ -225,13 +267,18 @@ fn help(msg: Msg) -> Said {
 
 // ------------------------------------------------------------ the requests
 
+// Ask, check, and ask once more with the reason if the check fails.
+workflow read_and_prove(prompt: Ask, hits: Hits) -> Found {
+  found = use_model reader(prompt.text) verify proven(found, hits) retry 1 otherwise unproven(hits)
+}
+
 workflow ask_files(msg: Msg) -> Said {
   ask    = question_query(msg)
   hits   = execute hands.search_files(ask.path, ask.query) otherwise no_hits(msg)
   pack   = passages(hits)
   prompt = ask_prompt(msg, pack)
   found  = match pack.ok {
-    case true { use_model reader(prompt.text) }
+    case true { call read_and_prove(prompt, hits) }
     case _ { nothing(msg) }
   }
   said   = answered(ask, hits, found)
@@ -290,7 +337,10 @@ test "an answer is shown with its quote and the line it came from" {
 
 test "an answer whose quote is not in the files is not shown" {
   answers search_files: [{matches: ["notes/work.md:12: Kosika demo for Ravi is next Tuesday at 3pm"]}]
-  answers reader: [{answer: "The demo is on Friday.", quote: "The demo is on Friday at noon"}]
+  answers reader: [
+    {answer: "The demo is on Friday.", quote: "The demo is on Friday at noon"},
+    {answer: "The demo is on Friday.", quote: "Friday at noon, as I said"}
+  ]
   a = main({text: "When is the demo with Ravi?"})
   expect a.text.starts_with("I will not guess")
   expect a.text.contains("notes/work.md:12")
@@ -318,10 +368,58 @@ test "find lists matching lines without a model" {
   expect a.text == "2 line(s) for \"add\", best first:\ncalc.py:1: def add(a, b):\ntests/test_calc.py:1: from calc import add"
 }
 
+test "a quote that is not there is sent back, and a second honest try is accepted" {
+  answers search_files: [{matches: ["notes/work.md:12: Kosika demo for Ravi is next Tuesday at 3pm"]}]
+  answers reader: [
+    {answer: "It is next Tuesday.", quote: "The demo will be held next Tuesday"},
+    {answer: "It is next Tuesday at 3pm.", quote: "next Tuesday at 3pm"}
+  ]
+  a = main({text: "When is the demo with Ravi?"})
+  expect a.text == "It is next Tuesday at 3pm.\nQuote: \"next Tuesday at 3pm\"\nFrom: notes/work.md, line 12"
+  expect proven({answer: "x", quote: "not in any line at all"}, {matches: ["a.md:1: something else"]}).starts_with("Your quote is not word for word")
+  expect proven({answer: "", quote: ""}, {matches: []}) == ""
+}
+
 test "the check itself: a quote is proved only by a line that holds it" {
   hits: Hits = {matches: ["a.md:3: The rent is 900 euros a month", "b.md:9: Rent is due on the 1st"]}
   expect proof(hits, "rent is due on the 1st") == "b.md:9: Rent is due on the 1st"
   expect proof(hits, "The rent is 950 euros") == ""
   expect proof(hits, "rent") == ""
   expect source_of("a.md:3: The rent is 900 euros a month") == "a.md, line 3"
+  expect proof({matches: ["h.md:3: Rent is 900 euros a month, due on the 1st."]}, "\"Rent is 900 euros a month.\"") == "h.md:3: Rent is 900 euros a month, due on the 1st."
+  expect proof({matches: ["h.md:3: Rent is 900 euros a month, due on the 1st."]}, "Rent is 950 euros a month.") == ""
+  expect bare(" ...\"Due on the 1st!\" ") == "due on the 1st"
+}
+
+// ------------------------------------------------------------------ evals
+// An eval is written like a test, but the model answers for itself. The
+// lines the search "found" are fixed here, so every model is given exactly
+// the same thing to read. `kosika test` skips these; `kosika measure` runs
+// them on the models you name.
+
+eval "it finds a date and proves it" {
+  answers search_files: [{matches: ["notes/work.md:12: Kosika demo for Ravi is next Tuesday at 3pm in room 4.", "notes/old.md:4: the last demo went well"]}]
+  a = main({text: "When is the demo with Ravi?"})
+  expect a.text.contains("Tuesday")
+  expect a.text.contains("From: notes/work.md, line 12")
+}
+
+eval "it copies a number exactly" {
+  answers search_files: [{matches: ["notes/home.md:3: Rent is 900 euros a month, due on the 1st.", "notes/home.md:5: Car insurance renews in March; the policy number is KX-22917."]}]
+  a = main({text: "How much is the rent?"})
+  expect a.text.contains("900")
+  expect a.text.contains("From: notes/home.md, line 3")
+}
+
+eval "it picks the right line among several" {
+  answers search_files: [{matches: ["notes/home.md:3: Rent is 900 euros a month, due on the 1st.", "notes/home.md:4: The landlord, Mr Okafor, can be reached on 555-0134.", "notes/home.md:5: Car insurance renews in March; the policy number is KX-22917."]}]
+  a = main({text: "What is the policy number of the car insurance?"})
+  expect a.text.contains("KX-22917")
+  expect a.text.contains("From: notes/home.md, line 5")
+}
+
+eval "it will not answer what the lines do not say" {
+  answers search_files: [{matches: ["notes/home.md:3: Rent is 900 euros a month, due on the 1st.", "notes/work.md:5: The staging server password is rotated every 90 days."]}]
+  a = main({text: "What is the wifi password at home?"})
+  expect a.text.starts_with("I will not guess")
 }

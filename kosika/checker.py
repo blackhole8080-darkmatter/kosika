@@ -30,6 +30,7 @@ from .ast import (
     RecordExpr,
     RepeatExpr,
     ReturnExpr,
+    Step,
     ThinkCall,
     ToolCall,
     ToolVarExpr,
@@ -982,6 +983,73 @@ def _check_fallbacks(program: Program) -> None:
     check(swapped)
 
 
+def _check_verify(program: Program) -> None:
+    """Check `verify` by checking the program in which the check is a step.
+
+    A verified step is valid when the program is valid with the check
+    written as an ordinary step straight after it, where the answer is in
+    scope under the step's own name. The check must be a function that
+    returns Text, and only a model's answer can be checked this way.
+    """
+
+    functions = {function.name: function for function in program.functions}
+    workflows = []
+    for workflow in program.workflows:
+        steps: list[Step] = []
+        for index, step in enumerate(workflow.steps):
+            if step.verify is None:
+                steps.append(step)
+                continue
+            if not isinstance(step.call, ModelCall):
+                raise CheckError(
+                    f"Step {step.name!r} cannot verify: only a model step "
+                    "(use_model or a thinking step) gives an answer to check"
+                )
+            if step.branches:
+                raise CheckError(
+                    f"Step {step.name!r} cannot verify: a match step makes "
+                    "one of several calls"
+                )
+            checker = (
+                functions.get(step.verify.function_name)
+                if isinstance(step.verify, FunctionCall)
+                else None
+            )
+            if checker is None:
+                raise CheckError(
+                    f"Step {step.name!r} cannot verify: the check must be a "
+                    "function declared in the program"
+                )
+            if checker.output_type != "Text":
+                raise CheckError(
+                    f"Step {step.name!r} cannot verify: function "
+                    f"{checker.name!r} must return Text, the reason the answer "
+                    f'is refused or "" when it is fine, but returns '
+                    f"{checker.output_type!r}"
+                )
+            plain = replace(step, verify=None)
+            steps.append(plain)
+            check_name = f"{step.name}__verified"
+            steps.append(Step(check_name, step.verify, check_name, None, check_name))
+            if index == len(workflow.steps) - 1:
+                # The workflow's value is its last step's. Put the answer
+                # back in that place so the workflow's own type still holds.
+                again = f"{step.name}__answer"
+                steps.append(
+                    replace(
+                        plain,
+                        name=again,
+                        binding_name=again,
+                        return_name=again,
+                        fallback=None,
+                        retries=0,
+                        votes=0,
+                    )
+                )
+        workflows.append(replace(workflow, steps=tuple(steps)))
+    check(replace(program, workflows=workflows))
+
+
 def _check_branches(program: Program) -> None:
     """Check a `match` step by checking the program each branch would make.
 
@@ -1107,6 +1175,9 @@ def check(program: Program) -> None:
                     f"Step {step.name!r} cannot retry: the count must be "
                     f"from 1 to 5, got {step.retries}"
                 )
+    if any(step.verify for workflow in program.workflows for step in workflow.steps):
+        _check_verify(program)
+        return
     if any(step.branches for workflow in program.workflows for step in workflow.steps):
         _check_branches(program)
         return

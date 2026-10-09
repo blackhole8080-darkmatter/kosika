@@ -895,6 +895,47 @@ def _write_trace(trace_path: str | Path, events: list[dict[str, Any]]) -> None:
             os.unlink(temporary)
 
 
+def _verifier(
+    step: Step,
+    environment: dict[str, Any],
+    program: Program,
+    functions: Mapping[str, FunctionDecl],
+) -> Callable[[dict[str, Any]], tuple[str, list[Any]]]:
+    """The step's own check, as something that judges one answer.
+
+    The check is an ordinary function of the program. It sees the answer
+    under the step's name, beside everything earlier steps produced, and
+    what it did is returned as events so the trace can keep them.
+    """
+
+    assert step.verify is not None
+    check_call = step.verify
+
+    def judge(candidate: dict[str, Any]) -> tuple[str, list[Any]]:
+        seen = {**environment, step.binding_name: candidate}
+        argument_events: list[dict[str, Any]] = []
+        arguments = {
+            name: _evaluate_expression(
+                expression, seen, program, functions, argument_events, depth=-1
+            )
+            for name, expression in check_call.arguments
+        }
+        function, captures = _resolve_function(
+            check_call.function_name, seen, functions
+        )
+        verdict, function_trace = _execute_function(
+            program,
+            function,
+            {**arguments, **captures},
+            functions,
+            argument_events=argument_events,
+            depth=0,
+        )
+        return (verdict if isinstance(verdict, str) else ""), list(function_trace)
+
+    return judge
+
+
 def _ask_model(
     provider: ModelProvider,
     model: ModelDecl,
@@ -902,8 +943,13 @@ def _ask_model(
     asked_schema: dict[str, Any],
     *,
     retries: int,
+    verify_answer: Callable[[dict[str, Any]], tuple[str, list[Any]]] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Ask a model for one accepted answer.
+
+    `verify`: the program's own check is given each answer that is otherwise
+    acceptable. What it returns is the complaint; a complaint rejects the
+    answer like any other fault, so `retry` shows it back to the model.
 
     `retry N`: a rejected answer is shown back to the model with the reason,
     up to N more times. Every attempt is a model call for the limits, and
@@ -939,6 +985,14 @@ def _ask_model(
                     ) from exc
                 response = {**response, "evidence": quotes}
             check_answer(model, arguments, result)
+            if verify_answer is not None:
+                complaint, checked = verify_answer(result)
+                if complaint.strip():
+                    raise RejectedAnswer(
+                        f"The answer was checked and refused: {complaint.strip()}",
+                        answered,
+                    )
+                response = {**response, "verified": checked}
             break
         except (RejectedAnswer, ThinkingAnswerError) as exc:
             if len(rejected) >= retries:
@@ -963,6 +1017,7 @@ def _ask_with_votes(
     *,
     retries: int,
     votes: int,
+    verify_answer: Callable[[dict[str, Any]], tuple[str, list[Any]]] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """`vote N`: ask N times and accept only what more than half agree on.
 
@@ -975,7 +1030,14 @@ def _ask_with_votes(
 
     provider, model = voters[0]
     if votes == 0:
-        return _ask_model(provider, model, arguments, asked_schema, retries=retries)
+        return _ask_model(
+            provider,
+            model,
+            arguments,
+            asked_schema,
+            retries=retries,
+            verify_answer=verify_answer,
+        )
     field = {"classify": "label", "decide": "answer"}.get(model.verb or "")
     ballots: list[tuple[str, dict[str, Any], dict[str, Any]]] = []
     failed: list[str] = []
@@ -985,7 +1047,12 @@ def _ask_with_votes(
         asked_models.append(voter.provider or voter.name)
         try:
             result, response = _ask_model(
-                provider, voter, arguments, asked_schema, retries=retries
+                provider,
+                voter,
+                arguments,
+                asked_schema,
+                retries=retries,
+                verify_answer=verify_answer,
             )
         except (RejectedAnswer, ThinkingAnswerError) as exc:
             failed.append(str(exc))
@@ -1690,6 +1757,11 @@ def _run_workflow(
                     asked_schema,
                     retries=step.retries,
                     votes=step.votes,
+                    verify_answer=(
+                        _verifier(step, environment, program, functions)
+                        if step.verify is not None
+                        else None
+                    ),
                 )
                 events.append(
                     _event("model_return", model=model.name, result=result, **response)

@@ -106,6 +106,7 @@ def _references(program: Program) -> set[str]:
             for call in (
                 step.call,
                 step.fallback,
+                step.verify,
                 *(branch for _, branch in step.branches),
             ):
                 if call is None:
