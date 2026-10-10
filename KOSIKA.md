@@ -239,6 +239,8 @@ the receiver's type, and every method is pure and deterministic.
 | array of records | `sum_by(field: "name")` | `Number`, the total of a `Number` field |
 | array of records | `min_by(field: "name")`, `max_by(field: "name")` | `T?`, the first element with the smallest or largest field |
 | array of records | `group_by(field: "name")` | `T[]{}`, elements grouped under each value of a `Text` field |
+| `Number` | `sin()`, `cos()` | `Number`: the sine or cosine of an angle given in degrees, rounded to nine places so every computer gives the same result |
+| `Number` | `sqrt()` | `Number`, rounded to nine places; a negative number fails the run |
 | `Text`, any array | `is_empty()` | `Bool`, true when the length is `0` |
 | `Text`, any array | `take(count: Number)`, `drop(count: Number)` | the first `count` characters or elements, or all but those. A count beyond the length gives everything, or nothing; a negative or fractional count fails the run |
 | `Text` | `words()` | `Text[]`: the parts between runs of spaces, tabs and line ends, with no empty parts; over 512 parts fails the run |

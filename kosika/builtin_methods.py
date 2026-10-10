@@ -108,6 +108,19 @@ def _slice(value: Any, start: Any, end: Any) -> Any:
     return value[first:last]
 
 
+def _wave(value: float, name: str) -> float:
+    # Degrees in, and rounded, so that the same program gives the same
+    # numbers on every computer and a recorded run replays exactly.
+    result = getattr(math, name)(math.radians(value))
+    return round(result, 9) + 0.0
+
+
+def _sqrt(value: float) -> float:
+    if value < 0:
+        raise RuntimeError("sqrt needs a number that is not negative")
+    return round(math.sqrt(value), 9)
+
+
 def _count(count: Any, name: str) -> int:
     if isinstance(count, bool) or count != int(count) or count < 0:
         raise RuntimeError(f"{name} needs a whole number that is not negative")
@@ -380,6 +393,9 @@ METHODS: tuple[Method, ...] = (
     ),
     Method(ANY_MAP, "length", (), "Number", lambda entries: len(entries)),
     Method(ANY_ARRAY, "contains", (("item", ELEMENT),), "Bool", _contains),
+    Method("Number", "sin", (), "Number", lambda value: _wave(value, "sin")),
+    Method("Number", "cos", (), "Number", lambda value: _wave(value, "cos")),
+    Method("Number", "sqrt", (), "Number", _sqrt),
     Method("Text", "is_empty", (), "Bool", lambda text: len(text) == 0),
     Method(ANY_ARRAY, "is_empty", (), "Bool", lambda items: len(items) == 0),
     Method("Text", "take", (("count", "Number"),), "Text", _take),

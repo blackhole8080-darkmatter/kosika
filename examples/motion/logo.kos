@@ -1,0 +1,103 @@
+// An animated Kosika mark, described in Kosika and played by any browser.
+//
+//   kosika test examples/motion/logo.kos
+//   kosika motion examples/motion/logo.kos --out logo.html
+//
+// The program does not draw. It builds a scene: shapes, and the moves each
+// one makes. `kosika motion` checks the scene and writes one web file.
+//
+// What happens: a ring of twelve dots flies in from the centre one after
+// another, the orange tile drops in and settles, the K fades up, the ring
+// turns, and the name slides in underneath.
+
+record Shape { id: Text kind: Text x: Number y: Number size: Number color: Text text: Text }
+record Move { shape: Text what: Text to: Number start: Number seconds: Number ease: Text }
+record Scene { width: Number height: Number seconds: Number background: Text shapes: Shape[] moves: Move[] }
+record Ask { dots: Number }
+
+fn move(shape: Text, what: Text, to: Number, start: Number, seconds: Number) -> Move {
+  return {shape: shape, what: what, to: to, start: start, seconds: seconds, ease: "out"}
+}
+
+// A shape that is there from the start but cannot be seen yet.
+fn hidden(shape: Text) -> Move {
+  return {shape: shape, what: "fade", to: 0, start: 0, seconds: 0, ease: "linear"}
+}
+
+// One dot of the ring: it starts at the centre and flies out to its place.
+// Each dot leaves a little after the one before it.
+fn dot_moves(i: Number, dots: Number, cx: Number, cy: Number, radius: Number) -> Move[] {
+  let name = f"dot{i}"
+  let angle = 360 * i / dots
+  let leave = 0.2 + i * 0.07
+  return [
+    hidden(name),
+    move(name, "fade", 1, leave, 0.2),
+    move(name, "x", cx + radius * angle.cos(), leave, 0.9),
+    move(name, "y", cy + radius * angle.sin(), leave, 0.9),
+    move(name, "size", 9, 2.6 + i * 0.05, 0.25),
+    move(name, "size", 16, 2.85 + i * 0.05, 0.25)
+  ]
+}
+
+fn build(ask: Ask) -> Scene {
+  let cx = 320
+  let cy = 190
+  var shapes: Shape[] = []
+  var moves: Move[] = []
+  for i in 0 until ask.dots {
+    // Warm colours, alternating, so the ring reads as a pattern.
+    let color = if i % 3 == 0 { "#e8813a" } else if i % 3 == 1 { "#f2b880" } else { "#8a4b22" }
+    shapes = shapes.append({id: f"dot{i}", kind: "circle", x: cx, y: cy, size: 16, color: color, text: ""})
+    moves = moves.concat(dot_moves(i, ask.dots, cx, cy, 120))
+  }
+  shapes = shapes.concat([
+    {id: "halo", kind: "ring", x: cx, y: cy, size: 240, color: "#3a2a20", text: ""},
+    {id: "tile", kind: "square", x: cx, y: -80, size: 110, color: "#e8813a", text: ""},
+    {id: "letter", kind: "text", x: cx, y: cy + 4, size: 78, color: "#1a1410", text: "K"},
+    {id: "name", kind: "text", x: cx, y: 420, size: 34, color: "#f4e9df", text: "Kosika"}
+  ])
+  moves = moves.concat([
+    hidden("halo"),
+    move("halo", "fade", 1, 1.0, 0.8),
+    move("halo", "turn", 180, 1.0, 4.0),
+    move("tile", "y", cy + 14, 1.2, 0.5),
+    move("tile", "y", cy, 1.7, 0.25),
+    move("tile", "turn", 90, 1.2, 0.75),
+    hidden("letter"),
+    move("letter", "fade", 1, 1.9, 0.5),
+    hidden("name"),
+    move("name", "fade", 1, 2.4, 0.6),
+    move("name", "y", 356, 2.4, 0.6)
+  ])
+  return {width: 640, height: 420, seconds: 5, background: "#1a1410", shapes: shapes, moves: moves}
+}
+
+// How many moves would still be going when the scene is over.
+fn still_moving(scene: Scene) -> Number {
+  var late = 0
+  for m in scene.moves where m.start + m.seconds > scene.seconds { late += 1 }
+  return late
+}
+
+workflow main(ask: Ask) -> Scene {
+  scene = build(ask)
+}
+
+test "the ring has a dot and six moves for each one asked for" {
+  a = main({dots: 12})
+  expect a.shapes.length() == 16
+  expect a.moves.length() == 12 * 6 + 11
+  expect a.shapes[0].id == "dot0"
+}
+
+test "the first dot flies straight to the right of the centre" {
+  a = main({dots: 4})
+  expect a.moves[2].what == "x" and a.moves[2].to == 440
+  expect a.moves[3].what == "y" and a.moves[3].to == 190
+}
+
+test "nothing is still moving when the scene ends" {
+  a = main({dots: 12})
+  expect still_moving(a) == 0
+}

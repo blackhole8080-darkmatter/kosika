@@ -2233,7 +2233,10 @@ gate: without them a parser written in Kosika has nothing to return.
   open, bringing back overwrites it. The Linux side at first had no
   `python` or `pytest`; both were installed later the same day, with the
   owner's yes, and `python`, `python -m pytest` and `git` were then run
-  inside a session. The workbench agent itself was not run in one. No limit on memory or processor. No model was
+  inside a session. The workbench agent was then run in one through
+  Studio with qwen2.5:7b: `status`, `test`, `run report.py` and a
+  calculation each finished in 2 to 3 seconds, none waited for a yes, and
+  the session held no changes afterwards. No limit on memory or processor. No model was
   involved in the trial, and no one but the author has used it. MCP and
   web tools are outside the wall.
 
@@ -2281,6 +2284,30 @@ gate: without them a parser written in Kosika has nothing to return.
   the declaration, not at the misspelling. It does not write code for
   you; that would need a model. The existing language server
   (`kosika/lsp.py`) and the VS Code folder were not touched or tried.
+
+### An experiment: animation described in Kosika
+
+- `kosika/motion.py`: `check_scene` says in words everything wrong with
+  a scene record; `to_svg` and `to_html` turn a scene that checks into
+  one SVG picture animated with SVG's own elements, with no script and
+  nothing fetched. Each shape sits in nested groups so that moving,
+  turning, growing and fading do not undo one another, and a later move
+  of the same kind takes over from the earlier one.
+- `kosika motion SOURCE --out FILE [--input JSON]` runs the program's
+  workflow, checks the scene it returns, and writes the file.
+- `Number` gains `sin()`, `cos()` (degrees) and `sqrt()`, rounded to nine
+  places so that a run replays exactly on any computer.
+- `examples/motion/logo.kos`: 16 shapes and 83 moves from about fifty
+  lines, with three tests. Played in a browser and read back at several
+  moments: the dots reached their places on the circle, the tile
+  dropped and turned a quarter, the letter and the name faded in.
+- `tests/test_motion.py`.
+- Not claimed: no picture of it was captured; it was verified by reading
+  positions, sizes and fades from the browser, not by looking. Four
+  kinds of shape and five of move; no paths, images, colour changes,
+  repeats, or reaction to the mouse. No agent writes scenes yet, and no
+  model was involved. It is not shown in Studio. Whether this is worth
+  growing is exactly what is not yet known.
 
 ## Standard coding-agent procedure
 

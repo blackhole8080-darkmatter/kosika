@@ -2363,6 +2363,20 @@ def build_parser() -> argparse.ArgumentParser:
             "often each passes, how long it took, and how many model calls."
         ),
     )
+    motion_parser = subparsers.add_parser(
+        "motion",
+        help=(
+            "An experiment: run a program whose workflow returns a scene "
+            "(shapes and their moves), check it, and write one web file "
+            "that plays it."
+        ),
+    )
+    motion_parser.add_argument("source", type=Path)
+    motion_parser.add_argument("--out", type=Path, required=True)
+    motion_parser.add_argument("--workflow", default="main")
+    motion_parser.add_argument(
+        "--input", type=Path, help="A JSON file of the workflow's inputs."
+    )
     measure_parser.add_argument("source", type=Path)
     measure_parser.add_argument(
         "--model",
@@ -3580,6 +3594,42 @@ def main() -> int:
             return 2
         print(
             json.dumps(measured, indent=2) if args.json else measure_to_text(measured)
+        )
+        return 0
+
+    if args.command == "motion":
+        from .motion import check_scene, to_html
+
+        try:
+            scene_program = load_program(args.source)
+            given = (
+                json.loads(args.input.read_text(encoding="utf-8"))
+                if args.input is not None
+                else {}
+            )
+            with tempfile.TemporaryDirectory(prefix="kosika-motion-") as scratch:
+                scene = run(
+                    scene_program,
+                    args.workflow,
+                    Path(scratch) / "run.jsonl",
+                    inputs=given,
+                )
+        except (ValueError, RuntimeError, OSError) as exc:
+            print(f"Motion failed: {exc}", file=sys.stderr)
+            return 2
+        problems = check_scene(scene)
+        if problems:
+            print("The scene cannot be played:", file=sys.stderr)
+            for problem in problems[:20]:
+                print(f"  {problem}", file=sys.stderr)
+            return 1
+        args.out.write_text(
+            to_html(scene, args.source.stem), encoding="utf-8", newline="\n"
+        )
+        print(
+            f"Wrote {args.out}: {len(scene['shapes'])} shape(s), "
+            f"{len(scene['moves'])} move(s), {scene['seconds']:g} seconds. "
+            "Open it in a browser."
         )
         return 0
 
