@@ -99,6 +99,17 @@ pre.source { background: var(--bg); border: 1px solid var(--line); border-radius
 .step .name { font: 600 13px var(--mono); } .step .does { color: var(--soft); font-size: 12.5px; margin-top: 1px; }
 .step .branch { display: flex; gap: 8px; align-items: baseline; font-size: 12.5px; margin-top: 3px; transition: opacity .3s; } .step .branch .when { font: 11.5px var(--mono); color: var(--accent); min-width: 84px; }
 .step .now { font-size: 12px; margin-top: 4px; color: var(--accent); } .step .now:empty { display: none; }
+.stage-wrap { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 6px 10px; margin-bottom: 12px; overflow: hidden; }
+.stage-svg { width: 100%; height: auto; max-height: 340px; display: block; }
+.stage-line { fill: none; stroke: var(--line); stroke-width: 1.4; } .stage-box { fill: var(--bg); stroke: var(--line); stroke-width: 1.2; transition: stroke .25s, fill .25s, filter .25s; }
+.stage-label { font: 600 12.5px system-ui, sans-serif; fill: var(--ink); } .stage-word { font: 10.5px system-ui, sans-serif; fill: var(--faint); } .stage-count { font: 600 11px var(--mono); fill: var(--soft); }
+.stage-dot.k-think, .stage-light.k-think { fill: var(--think); } .stage-dot.k-mem, .stage-light.k-mem { fill: var(--mem); } .stage-dot.k-warn, .stage-light.k-warn { fill: var(--warn); } .stage-dot.k-code, .stage-light.k-code { fill: var(--code); }
+.stage-dot.k-accent, .stage-light.k-accent { fill: var(--accent); } .stage-light.k-ok { fill: var(--ok); } .stage-light.k-bad { fill: var(--bad); } .stage-light { filter: drop-shadow(0 0 5px currentColor); }
+.stage-node.lit .stage-box { stroke: var(--accent); fill: var(--accent-soft); filter: drop-shadow(0 0 7px color-mix(in srgb, var(--accent) 55%, transparent)); }
+.stage-node.lit .stage-box.k-think { stroke: var(--think); fill: var(--think-soft); filter: drop-shadow(0 0 7px color-mix(in srgb, var(--think) 55%, transparent)); }
+.stage-node.lit .stage-box.k-mem { stroke: var(--mem); fill: var(--mem-soft); filter: drop-shadow(0 0 7px color-mix(in srgb, var(--mem) 55%, transparent)); }
+.stage-node.lit .stage-box.k-warn { stroke: var(--warn); fill: var(--warn-soft); }
+.stage-node.done .stage-box { stroke: var(--ok); fill: var(--ok-soft); } .stage-node.failed .stage-box { stroke: var(--bad); fill: var(--bad-soft); } .stage-node.asking .stage-box { stroke: var(--warn); fill: var(--warn-soft); }
 .live { max-height: 64vh; overflow: auto; padding: 6px 6px 0 2px; }
 .live .step { opacity: .5; transition: opacity .35s; } .live .step.running, .live .step.done, .live .step.failed, .live .step.waiting { opacity: 1; }
 .live .step.running > .num { background: var(--accent); color: #fff; transform: scale(1.12); animation: pulse 1.3s infinite; }
@@ -169,6 +180,51 @@ select { font: inherit; background: var(--bg); color: var(--ink); border: 1px so
 .test { display: flex; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--line); align-items: baseline; } .test:last-child { border: 0; } .test .why { color: var(--bad); font: 12.5px var(--mono); margin-top: 2px; }
 .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 11px; margin-top: 12px; } .fact { background: var(--panel); border: 1px solid var(--line); border-radius: 11px; padding: 11px 13px; }
 .fact b { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--faint); margin-bottom: 5px; font-weight: 600; } .fact .line { font-size: 13px; word-break: break-word; }
+/* ---- The look: depth, type and colour, laid over the plain layout above. ---- */
+:root {
+  --display: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --shadow: 0 1px 2px rgba(60, 40, 24, .06), 0 10px 26px -14px rgba(60, 40, 24, .22);
+  --lift: 0 2px 4px rgba(60, 40, 24, .08), 0 20px 38px -18px color-mix(in srgb, var(--accent) 50%, transparent);
+  --glow: color-mix(in srgb, var(--accent) 24%, transparent);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #110f0e; --panel: #1b1917; --rail: #151311; --line: #2f2b26;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .45), 0 12px 30px -16px rgba(0, 0, 0, .8);
+    --lift: 0 2px 4px rgba(0, 0, 0, .5), 0 22px 40px -18px color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+}
+body {
+  background:
+    radial-gradient(900px 520px at 88% -12%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 70%),
+    radial-gradient(760px 460px at -8% 112%, color-mix(in srgb, var(--think) 8%, transparent), transparent 70%),
+    var(--bg);
+  background-attachment: fixed;
+}
+* { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+::selection { background: color-mix(in srgb, var(--accent) 32%, transparent); }
+aside.rail { background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 7%, var(--rail)), var(--rail) 46%); }
+.brand { font-family: var(--display); font-size: 18px; letter-spacing: -.01em; }
+.nav.on { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent); }
+main { padding: 26px 32px 64px; }
+h1 { font: 700 28px/1.15 var(--display); letter-spacing: -.022em; }
+h2 { font-family: var(--display); letter-spacing: -.01em; }
+p.lead { font-size: 15px; line-height: 1.58; }
+p.lead.clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; cursor: pointer; }
+p.lead.clamp.open { display: block; }
+.card { border-radius: 16px; box-shadow: var(--shadow); background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 4%, var(--panel)), var(--panel) 62%); transition: border-color .2s, transform .22s var(--ease), box-shadow .22s; }
+.card:hover { box-shadow: var(--lift); transform: translateY(-3px); border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.card.new:hover { box-shadow: var(--shadow); }
+.card h3 { font: 650 16.5px var(--display); letter-spacing: -.012em; }
+.panel, .fact, .stage-wrap { box-shadow: var(--shadow); border-radius: 15px; }
+.chip { font-weight: 550; border: 1px solid color-mix(in srgb, currentColor 18%, transparent); }
+button { background: linear-gradient(180deg, color-mix(in srgb, #fff 16%, var(--accent)), var(--accent)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2), 0 8px 16px -10px var(--accent); transition: transform .1s, filter .15s, box-shadow .15s; }
+button:hover:not(:disabled) { filter: brightness(1.07); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2), 0 10px 20px -10px var(--accent); }
+button.quiet { background: var(--code-soft); box-shadow: none; } button.quiet:hover:not(:disabled) { box-shadow: none; filter: brightness(1.08); }
+textarea, input[type=text] { transition: border-color .15s, box-shadow .15s; }
+textarea:focus, input[type=text]:focus { box-shadow: 0 0 0 3px var(--glow); }
+.tabs { gap: 4px; } .tab { border-radius: 8px 8px 0 0; } .tab:hover { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.banner { box-shadow: var(--shadow); }
 </style>
 </head>
 <body>
@@ -469,7 +525,7 @@ function drawWorkflow(workflow) {
     if (extras.length) body.append(h("div", {class: "chips", style: "margin-top:6px"}, extras));
     body.append(now);
     const el = h("div", {class: "step"}, h("div", {class: "num " + kind, title: KIND_WORDS[kind] || ""}, index + 1), body);
-    nodes[step.name] = {el, body, now, branches, started: 0};
+    nodes[step.name] = {el, body, now, branches, kind, started: 0};
     return el;
   }));
   return {flow, nodes};
@@ -485,12 +541,117 @@ function workflowTab(agent) {
 }
 
 // The live view: the same flow, driven by the events of a run as they arrive.
+// The stage: a run drawn as a moving diagram. The program sits in the
+// middle; you are on the left; the models, tools, memory and plain code it
+// uses are on the right. Each time the run reaches for one of them a light
+// travels along the line and the part lights up, with a count of its calls.
+// The name of SVG, which is only a name: nothing is fetched. It is put together
+// here so that this page can go on containing no web address at all.
+const SVGNS = String.fromCharCode(104, 116, 116, 112) + "://www.w3.org/2000/svg";
+function s(tag, attrs, ...kids) {
+  const el = document.createElementNS(SVGNS, tag);
+  for (const [key, value] of Object.entries(attrs || {})) if (value != null && value !== false) el.setAttribute(key, value);
+  for (const kid of kids.flat()) if (kid != null && kid !== false) el.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+  return el;
+}
+function stageParts(agent) {
+  const parts = [];
+  for (const model of agent.models.slice(0, 3)) parts.push({key: "model:" + model, label: model, word: "model", kind: "think"});
+  if (!agent.models.length && agent.workflows.some(w => w.steps.some(step => step.options.some(o => o.kind === "think" || o.kind === "model")))) parts.push({key: "model:", label: "the model", word: "model", kind: "think"});
+  const kinds = {files: ["files", "your folder", "mem"], web: ["web", "allowed sites", "mem"], shell: ["programs", "asks you first", "warn"], outside: ["outside tools", "not visible to Kosika", "warn"], meaning: ["meaning", "embedding model", "think"]};
+  const seen = new Set();
+  for (const tool of agent.tools) { const kind = toolKind(tool.source); if (kinds[kind] && !seen.has(kind)) { seen.add(kind); parts.push({key: "tool:" + kind, label: kinds[kind][0], word: kinds[kind][1], kind: kinds[kind][2]}); } }
+  if (agent.memories.length) parts.push({key: "memory", label: "memory", word: agent.memories.map(m => m.name).join(", "), kind: "mem"});
+  if ((agent.boards || []).length) parts.push({key: "board", label: "board", word: "agents talking", kind: "accent"});
+  parts.push({key: "code", label: "plain code", word: agent.functions.length + " function(s)", kind: "code"});
+  return parts.slice(0, 7);
+}
+function toolKind(source) {
+  source = String(source || "");
+  if (source.startsWith("memory:")) return "memory"; if (source.startsWith("board:")) return "board"; if (source.startsWith("world:") || source === "system:kosika") return "code";
+  if (source === "system:files") return "files"; if (source === "system:web") return "web"; if (source === "system:shell") return "shell"; if (source === "system:meaning") return "meaning";
+  return "outside";
+}
+function runStage(agent) {
+  const parts = stageParts(agent), W = 600, rowH = 46, H = Math.max(190, parts.length * rowH + 26), cx = 236, cy = H / 2, half = 75, right = 492;
+  const svg = s("svg", {viewBox: "0 0 " + W + " " + H, class: "stage-svg", role: "img"});
+  const lines = s("g"), lights = s("g"), nodes = s("g");
+  svg.append(lines, nodes, lights);
+  const still = stillness.matches, places = {}, counts = {}, queue = [];
+  let busy = false, token = 0;
+  function node(key, x, y, w, label, word, kind) {
+    const count = s("text", {x: x + w / 2 - 12, y: y + 4, class: "stage-count", "text-anchor": "end"}, "");
+    const box = s("rect", {x: x - w / 2, y: y - 18, width: w, height: 36, rx: 11, class: "stage-box k-" + kind});
+    const group = s("g", {class: "stage-node"}, box, s("circle", {cx: x - w / 2 + 16, cy: y, r: 4.5, class: "stage-dot k-" + kind}),
+      s("text", {x: x - w / 2 + 28, y: y - 1, class: "stage-label"}, label.length > 16 ? label.slice(0, 15) + "…" : label), word ? s("text", {x: x - w / 2 + 28, y: y + 11, class: "stage-word"}, word.length > 24 ? word.slice(0, 23) + "…" : word) : null, count);
+    nodes.append(group); places[key] = {x, y, w, group, count}; counts[key] = 0;
+  }
+  node("you", 52, cy, 96, "you", "ask, allow", "accent");
+  node("program", cx, cy, half * 2, agent.title, agent.workflows.length + " workflow(s)", "accent");
+  lines.append(s("path", {d: "M100 " + cy + " L" + (cx - half) + " " + cy, class: "stage-line"}));
+  parts.forEach((part, index) => {
+    const y = H / 2 + (index - (parts.length - 1) / 2) * rowH;
+    node(part.key, right, y, 196, part.label, part.word, part.kind);
+    lines.append(s("path", {d: "M" + (cx + half) + " " + cy + " C" + (cx + half + 42) + " " + cy + " " + (right - 140) + " " + y + " " + (right - 98) + " " + y, class: "stage-line"}));
+  });
+  const end = key => { const place = places[key]; return key === "you" ? [place.x + place.w / 2, place.y] : key === "program" ? null : [place.x - place.w / 2, place.y]; };
+  function glow(key, on) { const place = places[key]; if (place) place.group.classList.toggle("lit", on); }
+  function bump(key) { counts[key] += 1; places[key].count.textContent = counts[key] > 0 ? "×" + counts[key] : ""; }
+  // One light, from one part to another, along a straight path.
+  function travel(from, to, kind, done) {
+    const a = from === "program" ? [to === "you" ? cx - half : cx + half, cy] : end(from), b = to === "program" ? [from === "you" ? cx - half : cx + half, cy] : end(to);
+    if (still) { done(); return; }
+    const light = s("circle", {r: 5, cx: a[0], cy: a[1], class: "stage-light k-" + kind}); lights.append(light);
+    const began = performance.now(), length = 420, mine = token;
+    let over = false;
+    // The light is moved when the page is drawn, but the run's story does not
+    // wait for that: a page that is not being drawn (behind another window)
+    // must still count every call and end in the right state.
+    setTimeout(() => { over = true; light.remove(); if (mine === token) done(); }, length + 20);
+    (function step(now) {
+      if (over || mine !== token || !svg.isConnected) { light.remove(); return; }
+      const at = Math.min(1, (now - began) / length), eased = 1 - Math.pow(1 - at, 3);
+      // A gentle arc, so that lights going out and coming back do not overlap.
+      const lift = Math.sin(eased * Math.PI) * (b[0] > a[0] ? -14 : 14);
+      light.setAttribute("cx", a[0] + (b[0] - a[0]) * eased); light.setAttribute("cy", a[1] + (b[1] - a[1]) * eased + lift);
+      if (at < 1) requestAnimationFrame(step);
+    })(began);
+  }
+  function next() {
+    if (busy) return; const job = queue.shift(); if (!job) return; busy = true;
+    travel(job.from, job.to, job.kind, () => { job.then(); busy = false; next(); });
+  }
+  function send(from, to, kind, then) { queue.push({from, to, kind, then: then || (() => {})}); if (queue.length > 40) queue.splice(0, queue.length - 40); next(); }
+  function reach(key, kind) { if (!places[key]) key = "code"; send("program", key, kind, () => { glow(key, true); bump(key); }); return key; }
+  function back(key, kind) { if (!places[key]) key = "code"; send(key, "program", kind, () => glow(key, false)); }
+  const modelKey = name => places["model:" + name] ? "model:" + name : Object.keys(places).find(key => key.startsWith("model:")) || "code";
+  let lastTool = "code", lastModel = "code";
+  return {
+    el: h("div", {class: "stage-wrap"}, svg),
+    reset(starting) { token += 1; queue.length = 0; busy = false; fill(lights); for (const key of Object.keys(places)) { counts[key] = 0; places[key].count.textContent = ""; glow(key, false); } places.program.group.classList.remove("done", "failed", "asking"); if (starting) { glow("program", true); send("you", "program", "accent"); } },
+    apply(event) {
+      const kind = event.event;
+      if (kind === "model_call" || kind === "agent_call") lastModel = reach(modelKey(event.model || ""), "think");
+      else if (kind === "model_return" || kind === "agent_return") back(lastModel, "think");
+      else if (kind === "tool_call" || kind === "agent_tool") { const part = toolKind(event.source); lastTool = reach(part === "memory" || part === "board" || part === "code" ? part : "tool:" + part, part === "shell" || part === "outside" ? "warn" : "mem"); }
+      else if (kind === "tool_return") back(lastTool, "mem");
+      else if (kind === "code_step") { reach("code", "code"); back("code", "code"); }
+      else if (kind === "run_paused") { places.program.group.classList.add("asking"); send("program", "you", "warn", () => glow("you", true)); }
+      else if (kind === "resumed" || kind === "session_allowed") { places.program.group.classList.remove("asking"); send("you", "program", "ok", () => glow("you", false)); }
+      else if (kind === "run_failed" || kind === "run_cancelled") places.program.group.classList.add("failed");
+    },
+    finish(failed) { send("program", "you", failed ? "bad" : "ok", () => { glow("program", false); places.program.group.classList.add(failed ? "failed" : "done"); glow("you", false); }); },
+    counts,
+  };
+}
+
 function liveView(agent, entry) {
   const byName = Object.fromEntries(agent.workflows.map(w => [w.name, w]));
   let writing = "", picked = [];
   const root = h("div", {class: "live"});
   const tally = h("div", {class: "tally"});
-  const box = h("div", null, root, tally);
+  const stage = runStage(agent);
+  const box = h("div", null, stage.el, root, tally);
   let frames = [], counts = null, began = 0;
   function showTally(finished) {
     const seconds = Math.round((performance.now() - began) / 100) / 10;
@@ -506,6 +667,7 @@ function liveView(agent, entry) {
   function reset(starting) {
     redraw();
     counts = {models: 0, tools: 0, steps: 0, tokens: 0}; began = starting ? performance.now() : 0; showTally(false);
+    stage.reset(starting);
   }
   function say(depth, text) { const frame = frames[depth]; if (frame && frame.current) frame.current.now.textContent = text; }
   function apply(event) {
@@ -518,6 +680,7 @@ function liveView(agent, entry) {
       if (asking) asking.current.now.textContent = "writing: " + (words.length > 90 ? "…" + words.slice(-90) : words);
       return;
     }
+    stage.apply(event);
     const depth = event.depth || 0, frame = frames[depth];
     if (!frame) return;
     if (event.event === "model_call") writing = "";
@@ -527,6 +690,9 @@ function liveView(agent, entry) {
       // had already finished, so everything before this step is done.
       for (const earlier of Object.values(frame.nodes)) { if (earlier === node) break; if (!earlier.el.classList.contains("failed")) earlier.el.classList.add("done"); }
       frame.current = node; node.started = performance.now();
+      // A step of plain code makes no call of its own to show, so the
+      // diagram is told here.
+      if (node.kind === "code") stage.apply({event: "code_step"});
       node.el.classList.remove("done", "failed", "waiting"); node.el.classList.add("running");
       node.now.textContent = event.recovered ? "the first attempt failed, running the fallback" : "";
       // Follow the running step inside the flow's own box; the page stays put.
@@ -570,7 +736,7 @@ function liveView(agent, entry) {
     showTally(false);
   }
   reset(false);
-  return {el: box, reset, redraw, apply, finish: () => showTally(true)};
+  return {el: box, reset, redraw, apply, stage, finish: failed => { showTally(true); stage.finish(failed === true); }};
 }
 
 // ------------------------------------------------- running, with the live view
@@ -594,7 +760,7 @@ async function follow(agent, body, live, onAsk, onWrite, path) {
       asked = true;
       onAsk(view.request || {}, async allow => { await api("/api/decide?run=" + run, {method: "POST", body: JSON.stringify({allow})}); await sleep(400); asked = false; });
     }
-    if (view.state === "done" || view.state === "failed" || view.state === "refused") { live.finish(); return view; }
+    if (view.state === "done" || view.state === "failed" || view.state === "refused") { live.finish(view.state !== "done"); return view; }
     await sleep(view.events.length ? 60 : 250);
   }
 }
@@ -1069,7 +1235,7 @@ async function showAgent(id, isAssistant) {
   main.replaceChildren(h("p", {class: "lead"}, h("span", {class: "spin"}), "Loading"));
   const agent = await api("/api/agent?id=" + encodeURIComponent(id));
   const head = [isAssistant ? null : h("span", {class: "back", onclick: () => go("agents")}, "← All agents"), h("h1", null, isAssistant ? "Assistant" : agent.title),
-    h("p", {class: "lead"}, agent.about || "No description. Add a // comment at the top of the file.")];
+    h("p", {class: "lead clamp", title: "Click to read all of it", onclick: event => event.currentTarget.classList.toggle("open")}, agent.about || "No description. Add a // comment at the top of the file.")];
   if (agent.error) { fill(main, head, h("div", {class: "banner bad"}, "This program does not check: " + agent.error), agent.source != null ? codeTab(agent) : null); return; }
   const parts = () => h("div", {class: "facts", style: "margin-top:0"},
     fact("Models it asks", agent.models.map(m => m + (m === agent.default_model ? " (default)" : "")), "none: this agent is plain code"),

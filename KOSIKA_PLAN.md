@@ -2420,6 +2420,34 @@ gate: without them a parser written in Kosika has nothing to return.
   motion itself was checked by reading values. The mark's colours are
   fixed and were looked at on the dark theme only.
 
+### A run drawn as a moving diagram, and a richer look
+
+- The Live view draws a diagram above the steps: you, the program, and
+  up to seven parts on the right (each declared model, files, web,
+  programs, outside tools, meaning, memory, board, plain code), made
+  from what the agent declares. The run's own events drive it: a light
+  travels to a part when it is called and back when it answers, the
+  part lights up and counts, a pause for approval sends the light to
+  you, and the end colours the program. Events are queued so lights
+  follow one another.
+- The look: a soft warm glow behind the page, deeper dark colours,
+  shadows and rounder corners on cards and panels, a display face for
+  headings, a graded button, a focus ring, and an agent's long
+  description shown as three lines that open on a click.
+- Tried with qwen2.5:7b on the researcher and the coach: the counts on
+  the diagram matched the run's own tally (one model call and two file
+  calls; two memory calls and three code steps), a light was caught in
+  flight in a screenshot, and the program ended green.
+- A fault found on the way: the diagram advanced only when the browser
+  drew a frame, so in a window that was not being drawn it froze on
+  the first light and never counted. It now advances on a timer and
+  uses drawing only to move the light.
+- Not claimed: the diagram is page code with no test of its behaviour,
+  only a test that it is present; what it shows was checked by hand on
+  two runs. Whether the look is better is the owner's judgment. Seen on
+  the dark theme only. The diagram shows the kinds of part, not each
+  tool, and does not replay a past run.
+
 ## Standard coding-agent procedure
 
 1. Inspect `git status`, the relevant source files, tests, and this plan.

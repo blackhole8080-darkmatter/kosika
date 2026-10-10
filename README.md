@@ -607,6 +607,14 @@ any part of the map.
 An answer appears word by word while the model writes it, in the chat and
 under the step that asked.
 
+Above the steps, a run is also drawn as a moving diagram. The program
+sits in the middle, you are on the left, and on the right are the parts it
+uses: each model, your files, the web, programs it may start, outside
+tools, its memory, and its plain code. Each time the run reaches for one
+of them a light travels along the line, the part lights up, and its count
+goes up. When the run waits for your yes the light comes to you; when it
+ends, the program turns green, or red if it failed.
+
 Studio's own moving mark, in the sidebar and beside page titles, is not a
 stored picture. Studio carries a Kosika program, `app_assets/brand.kos`,
 runs it when it starts, and plays the scene it describes: ten dots fly

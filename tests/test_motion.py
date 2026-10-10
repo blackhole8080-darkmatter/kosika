@@ -407,6 +407,22 @@ class StudioSceneTests(unittest.TestCase):
         self.assertIn("/api/brand", page)
         self.assertIn("prefers-reduced-motion", page)
 
+    def test_the_page_draws_a_run_as_a_moving_diagram(self) -> None:
+        page = studio.PAGE.read_text(encoding="utf-8")
+        for needed in (
+            "function runStage(agent)",
+            "stage.apply(event)",
+            "stage.finish(failed === true)",
+            # It must keep count and finish when the page is not being drawn.
+            "setTimeout(() => { over = true;",
+            'class: "lead clamp"',
+        ):
+            self.assertIn(needed, page)
+        # Still no web address anywhere in the page, and nothing set as markup.
+        self.assertNotIn("http://", page)
+        self.assertNotIn("https://", page)
+        self.assertNotIn("innerHTML", page)
+
     def test_a_scene_a_model_took_part_in_is_checked_and_drawn_the_same(self) -> None:
         drawn = self.app.draw_scene("logo.kos", SCENE)
         self.assertTrue(drawn["ok"])
