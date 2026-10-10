@@ -17,7 +17,6 @@
 
 record Msg { text: Text }
 record Said { text: Text }
-record Kind { label: Text }
 
 // What the model writes: a question, the right answer, three wrong ones,
 // and one sentence on why the right one is right.
@@ -58,7 +57,7 @@ memory sheets of Sheet
 
 // ---------------------------------------------------------------- routing
 
-fn kind_of(msg: Msg) -> Kind {
+fn kind_of(msg: Msg) -> Text {
   let text = msg.text.lower().trim()
   let first = text.split(" ").first().or("")
   var kind = "explain"
@@ -68,7 +67,7 @@ fn kind_of(msg: Msg) -> Kind {
   else if text == "review" { kind = "review" }
   else if text == "hint" or text == "skip" or text == "score" or text == "progress" or text == "reset" { kind = "sheet" }
   else if first == "plan" { kind = "plan" }
-  return {label: kind}
+  return kind
 }
 
 // ------------------------------------------------------------- the sheet
@@ -103,7 +102,7 @@ fn topic_from(msg: Msg, sheet: Sheet) -> Text {
     if item.length() > 0 and (words.length() > 0 or not skip.contains(item.lower())) { words = words.append(item) }
   }
   var topic = words.join(" ")
-  for mark in ["?", ".", "!", "\""] { topic = topic.split(mark).join("") }
+  for mark in ["?", ".", "!", "\""] { topic = topic.replace(mark, "") }
   return if topic.trim().length() > 0 { topic.trim() } else { sheet.topic }
 }
 
@@ -117,10 +116,6 @@ fn quiz_prompt(msg: Msg, known: SheetsRecalled) -> Prompt {
   let turn = sheet.right + sheet.wrong + sheet.asked.length()
   let angle = angles[turn - (turn / angles.length()).floor() * angles.length()]
   return {text: "Write one multiple-choice question that tests understanding of this subject: " + topic + ".\nMake it about " + angle + ".\nquestion: one clear sentence ending in a question mark.\ncorrect: the one right answer, a few words.\nwrong: exactly three answers that are clearly wrong but sound plausible, a few words each.\nwhy: one sentence explaining why the correct answer is right.\nMake sure the correct answer really is correct." + before}
-}
-
-fn bad_draft(msg: Msg) -> Draft {
-  return {question: "", correct: "", wrong: [], why: ""}
 }
 
 fn no_draft(msg: Msg) -> Draft {
@@ -137,7 +132,7 @@ fn card_from(draft: Draft, topic: Text, turn: Number) -> Card {
       wrong = wrong.append(text)
     }
   }
-  if draft.question.trim().length() == 0 or draft.correct.trim().length() == 0 or wrong.length() < 2 { return no_card() }
+  if draft.question.trim().is_empty() or draft.correct.trim().is_empty() or wrong.length() < 2 { return no_card() }
   let place = (turn - (turn / (wrong.length() + 1)).floor() * (wrong.length() + 1)).max(0)
   var choices: Text[] = []
   var used = 0
@@ -154,11 +149,11 @@ fn card_from(draft: Draft, topic: Text, turn: Number) -> Card {
 fn start_quiz(msg: Msg, known: SheetsRecalled, draft: Draft) -> Turn {
   let sheet = sheet_of(known)
   let topic = topic_from(msg, sheet)
-  if topic.length() == 0 {
+  if topic.is_empty() {
     return {sheet: sheet, text: "Tell me the subject, like this: quiz physics"}
   }
   let card = card_from(draft, topic, sheet.right + sheet.wrong + sheet.asked.length() + 1)
-  if card.question.length() == 0 {
+  if card.question.is_empty() {
     return {sheet: sheet, text: "I could not write a good question on " + topic + " just now. Say \"next\" to try again."}
   }
   for old in sheet.asked {
@@ -191,7 +186,7 @@ fn picked(msg: Msg) -> Number {
 fn mark(msg: Msg, known: SheetsRecalled) -> Turn {
   let sheet = sheet_of(known)
   let card = sheet.card
-  if card.question.length() == 0 {
+  if card.question.is_empty() {
     return {sheet: sheet, text: "There is no question waiting. Say \"quiz physics\" to get one, or \"review\" for one you missed."}
   }
   let pick = picked(msg)
@@ -211,7 +206,7 @@ fn mark(msg: Msg, known: SheetsRecalled) -> Turn {
 
 fn review(known: SheetsRecalled) -> Turn {
   let sheet = sheet_of(known)
-  if sheet.missed.length() == 0 {
+  if sheet.missed.is_empty() {
     return {sheet: sheet, text: "Nothing to review: you have no missed questions. Say \"quiz physics\" for a new one."}
   }
   let card = sheet.missed[0]
@@ -233,7 +228,7 @@ fn on_sheet(msg: Msg, known: SheetsRecalled) -> Turn {
   }
   if text == "score" or text == "progress" { return {sheet: sheet, text: score_text(sheet)} }
   let card = sheet.card
-  if card.question.length() == 0 { return {sheet: sheet, text: "There is no question waiting. Say \"quiz physics\" to get one."} }
+  if card.question.is_empty() { return {sheet: sheet, text: "There is no question waiting. Say \"quiz physics\" to get one."} }
   if text == "skip" {
     let kept = without(sheet.missed, card.question).append(card)
     return {sheet: {topic: sheet.topic, card: no_card(), right: sheet.right, wrong: sheet.wrong, missed: kept, asked: sheet.asked, reviewing: false}, text: "Skipped. It is in your review list. Say \"next\" for another."}
@@ -260,26 +255,18 @@ fn explain_prompt(msg: Msg) -> Prompt {
   return {text: "You are a patient tutor. Explain this to a beginner in at most five short sentences, with one everyday example. If you are not sure of a fact, say so.\n\nStudent: " + msg.text.trim()}
 }
 
-fn sorry(msg: Msg) -> Reply {
-  return {text: "Sorry, I could not get an answer just now. Please try again."}
-}
-
 fn reply_said(reply: Reply) -> Said {
   return {text: reply.text.trim()}
 }
 
 fn plan_prompt(msg: Msg) -> Prompt {
   let text = msg.text.trim()
-  let subject = text.slice(4.min(text.length()), text.length()).trim()
+  let subject = text.drop(4).trim()
   return {text: "Make a study plan of five steps for learning this subject from the start: " + subject + ". Each step is one short line that begins with a verb and can be done in one sitting. Put them in the order to do them."}
 }
 
-fn no_steps(msg: Msg) -> Steps {
-  return {items: []}
-}
-
 fn plan_said(steps: Steps) -> Said {
-  if steps.items.length() == 0 { return {text: "I could not make a plan just now. Tell me the subject, like this: plan calculus"} }
+  if steps.items.is_empty() { return {text: "I could not make a plan just now. Tell me the subject, like this: plan calculus"} }
   var rows: Text[] = []
   for i in 0 until steps.items.length().min(6) {
     rows = rows.append((i + 1).to_text() + ". " + steps.items[i].trim())
@@ -287,16 +274,12 @@ fn plan_said(steps: Steps) -> Said {
   return {text: "A study plan:\n" + rows.join("\n") + "\nSay \"quiz\" and the subject when you are ready to be tested."}
 }
 
-fn help(msg: Msg) -> Said {
-  return {text: "I quiz you and remember what you miss.\nquiz physics: a question on any subject\na, b, c or d: your answer\nnext: another on the same subject\nhint, skip\nreview: a question you missed before\nscore: how you are doing\nexplain entropy: a short explanation\nplan calculus: five steps to learn a subject\nreset: clear your score"}
-}
-
 // ------------------------------------------------------------ the requests
 
 workflow quiz(msg: Msg) -> Said {
   known  = recall sheets under "me"
   prompt = quiz_prompt(msg, known)
-  draft  = use_model examiner(prompt.text) retry 1 otherwise bad_draft(msg)
+  draft  = use_model examiner(prompt.text) retry 1 otherwise {question: "", correct: "", wrong: [], why: ""}
   turn   = start_quiz(msg, known, draft)
   sheet  = sheet_in(turn)
   saved  = remember sheet in sheets under "me"
@@ -329,26 +312,26 @@ workflow sheet_request(msg: Msg) -> Said {
 
 workflow explain(msg: Msg) -> Said {
   prompt = explain_prompt(msg)
-  reply  = use_model tutor(prompt.text) retry 1 otherwise sorry(msg)
+  reply  = use_model tutor(prompt.text) retry 1 otherwise {text: "Sorry, I could not get an answer just now. Please try again."}
   said   = reply_said(reply)
 }
 
 workflow study_plan(msg: Msg) -> Said {
   prompt = plan_prompt(msg)
-  steps  = use_model planner(prompt.text) retry 1 otherwise no_steps(msg)
+  steps  = use_model planner(prompt.text) retry 1 otherwise {items: []}
   said   = plan_said(steps)
 }
 
 workflow main(msg: Msg) -> Said {
   budget 3 model calls, 240 seconds
   kind = kind_of(msg)
-  said = match kind.label {
+  said = match kind {
     case "quiz" { call quiz(msg) }
     case "answer" { call answer(msg) }
     case "review" { call review_one(msg) }
     case "sheet" { call sheet_request(msg) }
     case "plan" { call study_plan(msg) }
-    case "help" { help(msg) }
+    case "help" { {text: "I quiz you and remember what you miss.\nquiz physics: a question on any subject\na, b, c or d: your answer\nnext: another on the same subject\nhint, skip\nreview: a question you missed before\nscore: how you are doing\nexplain entropy: a short explanation\nplan calculus: five steps to learn a subject\nreset: clear your score"} }
     case _ { call explain(msg) }
   }
 }

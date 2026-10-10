@@ -16,7 +16,6 @@
 
 record Msg { text: Text }
 record Said { text: Text }
-record Kind { label: Text }
 record Clip { text: Text ok: Bool }
 
 // priority: 3 high, 2 normal, 1 low. minutes: how long you think it takes.
@@ -109,7 +108,7 @@ agent hands {
 
 // ---------------------------------------------------------------- routing
 
-fn kind_of(msg: Msg) -> Kind {
+fn kind_of(msg: Msg) -> Text {
   let text = msg.text.lower().trim()
   let first = text.split(" ").first().or("")
   var kind = "advise"
@@ -123,7 +122,7 @@ fn kind_of(msg: Msg) -> Kind {
   else if text == "review" { kind = "review" }
   else if text == "standup" { kind = "standup" }
   else if text.starts_with("save plan") { kind = "save" }
-  return {label: kind}
+  return kind
 }
 
 // -------------------------------------------------------------- the list
@@ -154,7 +153,7 @@ fn length_text(minutes: Number) -> Text {
 
 fn show_tasks(tasks: Task[]) -> Text {
   let open = open_tasks(tasks)
-  if open.length() == 0 { return "Nothing is waiting. Say \"add: write the report !high 2h\" to add a task." }
+  if open.is_empty() { return "Nothing is waiting. Say \"add: write the report !high 2h\" to add a task." }
   var rows: Text[] = []
   for i in 0 until open.length() {
     rows = rows.append(f"{i + 1}. {open[i].line()}")
@@ -176,7 +175,7 @@ fn as_minutes(word: Text) -> Number {
 // "add: write the report !high 2h due friday"
 fn parse_task(msg: Msg) -> Task {
   let text = msg.text.trim()
-  let body = if text.lower().starts_with("add:") { text.slice(4, text.length()) } else { text.slice(3.min(text.length()), text.length()) }
+  let body = if text.lower().starts_with("add:") { text.drop(4) } else { text.drop(3) }
   var words: Text[] = []
   var priority = 2
   var minutes = 30
@@ -185,7 +184,7 @@ fn parse_task(msg: Msg) -> Task {
   for word in body.trim().split(" ") {
     let clean = word.trim()
     let lower = clean.lower()
-    if clean.length() == 0 { wants_due = wants_due }
+    if clean.is_empty() { wants_due = wants_due }
     else if wants_due { due = lower
       wants_due = false }
     else if lower == "!high" or lower == "!h" { priority = 3 }
@@ -200,7 +199,7 @@ fn parse_task(msg: Msg) -> Task {
 fn add_task(msg: Msg, known: BooksRecalled) -> Change {
   let tasks = tasks_of(known)
   let task = parse_task(msg)
-  if task.title.length() == 0 {
+  if task.title.is_empty() {
     return {book: {tasks: tasks}, text: "Tell me the task, like this: add: write the report !high 2h due friday"}
   }
   let all = ordered(tasks.append(task))
@@ -269,7 +268,7 @@ fn list_said(known: BooksRecalled) -> Said {
 
 fn next_said(known: BooksRecalled) -> Said {
   let open = open_tasks(ordered(tasks_of(known)))
-  if open.length() == 0 { return {text: "Nothing is waiting. Enjoy the quiet, or add a task."} }
+  if open.is_empty() { return {text: "Nothing is waiting. Enjoy the quiet, or add a task."} }
   let task = open[0]
   let why = if task.priority == 3 { "it is marked high" } else { if task.due.length() > 0 { f"it is due {task.due}" } else { "it is the shortest of what matters most" } }
   let left = task.left()
@@ -305,7 +304,7 @@ fn day_plan(msg: Msg, known: BooksRecalled) -> Said {
     else if as_minutes(word) > 0 { room = as_minutes(word) }
   }
   let open = open_tasks(ordered(tasks_of(known)))
-  if open.length() == 0 { return {text: "There is nothing to plan. Add a task first."} }
+  if open.is_empty() { return {text: "There is nothing to plan. Add a task first."} }
   var now = start
   let finish = start + room
   var rows: Text[] = []
@@ -355,7 +354,7 @@ fn review_said(known: BooksRecalled) -> Said {
 fn goal_of(msg: Msg) -> Clip {
   let text = msg.text.trim()
   let head = text.split(":").first().or("")
-  let goal = if head.length() < text.length() { text.slice(head.length() + 1, text.length()).trim() } else { text.slice(10.min(text.length()), text.length()).trim() }
+  let goal = if head.length() < text.length() { text.drop(head.length() + 1).trim() } else { text.drop(10).trim() }
   return {text: goal, ok: goal.length() > 0}
 }
 
@@ -363,17 +362,13 @@ fn split_prompt(goal: Clip) -> Prompt {
   return {text: "Break this goal into 3 to 5 small, concrete tasks. Each task is one short phrase that starts with a verb and can be done in under an hour. Return them in the order they should be done.\n\nGoal: " + goal.text}
 }
 
-fn no_steps(msg: Msg) -> Steps {
-  return {items: []}
-}
-
 fn add_steps(goal: Clip, steps: Steps, known: BooksRecalled) -> Change {
   let tasks = tasks_of(known)
   if not goal.ok { return {book: {tasks: tasks}, text: "Tell me the goal, like this: break down: launch the website"} }
-  if steps.items.length() == 0 { return {book: {tasks: tasks}, text: "I could not break that down just now. Please try again."} }
+  if steps.items.is_empty() { return {book: {tasks: tasks}, text: "I could not break that down just now. Please try again."} }
   var all = tasks
   var rows: Text[] = []
-  for item in steps.items.slice(0, steps.items.length().min(6)) {
+  for item in steps.items.take(6) {
     let title = item.trim()
     if title.length() > 0 {
       all = all.append({title: title, priority: 2, minutes: 30, due: "", done: false, spent: 0, rank: 0})
@@ -388,7 +383,7 @@ fn add_steps(goal: Clip, steps: Steps, known: BooksRecalled) -> Change {
 fn advice_prompt(msg: Msg, known: BooksRecalled) -> Prompt {
   let open = open_tasks(ordered(tasks_of(known)))
   var rows: Text[] = []
-  for task in open.slice(0, open.length().min(12)) { rows = rows.append(f"- {task.line()}") }
+  for task in open.take(12) { rows = rows.append(f"- {task.line()}") }
   let list = if rows.length() > 0 { rows.join("\n") } else { "(no tasks yet)" }
   return {text: "You are a calm, practical productivity coach. Answer in at most four short sentences. Be specific to the tasks below; do not invent tasks.\n\nThe user's open tasks, most important first:\n" + list + "\n\nUser: " + msg.text + "\nCoach:"}
 }
@@ -412,8 +407,8 @@ fn standup_prompt(known: BooksRecalled, ran: Ran) -> Prompt {
   var finished: Text[] = []
   for task in tasks where task.done { finished = finished.append("- " + task.title) }
   var coming: Text[] = []
-  for task in open_tasks(tasks).slice(0, open_tasks(tasks).length().min(3)) { coming = coming.append("- " + task.title) }
-  let commits = if ran.exit_code == 0 and ran.stdout.trim().length() > 0 { ran.stdout.slice(0, ran.stdout.length().min(1500)).trim() } else { "(none today)" }
+  for task in open_tasks(tasks).take(3) { coming = coming.append("- " + task.title) }
+  let commits = if ran.exit_code == 0 and ran.stdout.trim().length() > 0 { ran.stdout.take(1500).trim() } else { "(none today)" }
   return {text: "Write a short standup note with exactly three lines, starting with \"Done:\", \"Next:\" and \"Blockers:\". Use only the facts below. If nothing blocks, write \"Blockers: none\".\n\nTasks finished:\n" + (if finished.length() > 0 { finished.join("\n") } else { "(none)" }) + "\n\nCommits today:\n" + commits + "\n\nNext tasks:\n" + (if coming.length() > 0 { coming.join("\n") } else { "(none)" })}
 }
 
@@ -423,9 +418,9 @@ fn draft_plan(msg: Msg, known: BooksRecalled) -> Draft {
   let text = msg.text.trim()
   var path = "day-plan.md"
   if text.lower().starts_with("save plan to ") {
-    path = text.slice(13, text.length()).trim().split("\\").join("/").split("\"").join("")
+    path = text.drop(13).trim().replace("\\", "/").replace("\"", "")
   }
-  if path.length() == 0 or path.contains("..") or path.contains(":") or path.starts_with("/") {
+  if path.is_empty() or path.contains("..") or path.contains(":") or path.starts_with("/") {
     return {path: "", text: "", problem: "Give me a file name inside the granted folder, like this: save plan to plan.md"}
   }
   if open_tasks(tasks_of(known)).length() == 0 {
@@ -441,10 +436,6 @@ fn cannot_save(draft: Draft) -> Said {
 
 fn saved_said(draft: Draft, done: Written) -> Said {
   return {text: f"Created {draft.path} ({done.bytes} bytes). It never overwrites: use a new name next time."}
-}
-
-fn help(msg: Msg) -> Said {
-  return {text: "I keep your tasks and plan your time.\nadd: write the report !high 2h due friday\ntasks: the list, most important first\nnext: the one thing to do now\ndone 2, drop 3, log 2 45m, clear done\nplan 4h from 9:30: a timetable of focus blocks\nbreak down: launch the website\nreview: where you stand\nstandup: a note from finished tasks and today's commits (asks before starting git)\nsave plan to plan.md (asks before creating the file)\nOr ask me what to focus on."}
 }
 
 // ------------------------------------------------------------ the requests
@@ -491,7 +482,7 @@ workflow break_down(msg: Msg) -> Said {
   prompt = split_prompt(goal)
   steps  = match goal.ok {
     case true { use_model splitter(prompt.text) }
-    case _ { no_steps(msg) }
+    case _ { {items: []} }
   }
   change = add_steps(goal, steps, known)
   book   = book_of(change)
@@ -535,7 +526,7 @@ workflow save_plan(msg: Msg) -> Said {
 workflow main(msg: Msg) -> Said {
   budget 3 model calls, 240 seconds
   kind = kind_of(msg)
-  said = match kind.label {
+  said = match kind {
     case "add" { call add(msg) }
     case "edit" { call change_one(msg) }
     case "tasks" { call show(msg) }
@@ -545,7 +536,7 @@ workflow main(msg: Msg) -> Said {
     case "split" { call break_down(msg) }
     case "standup" { call standup(msg) }
     case "save" { call save_plan(msg) }
-    case "help" { help(msg) }
+    case "help" { {text: "I keep your tasks and plan your time.\nadd: write the report !high 2h due friday\ntasks: the list, most important first\nnext: the one thing to do now\ndone 2, drop 3, log 2 45m, clear done\nplan 4h from 9:30: a timetable of focus blocks\nbreak down: launch the website\nreview: where you stand\nstandup: a note from finished tasks and today's commits (asks before starting git)\nsave plan to plan.md (asks before creating the file)\nOr ask me what to focus on."} }
     case _ { call advise(msg) }
   }
   require approval

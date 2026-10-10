@@ -704,7 +704,7 @@ A model step can name a function that judges its answer:
 
 ```
 fn proven(found: Found, hits: Hits) -> Text {
-  if proof(hits, found.quote).length() == 0 { return "Your quote is not in any of the lines." }
+  if proof(hits, found.quote).is_empty() { return "Your quote is not in any of the lines." }
   return ""
 }
 

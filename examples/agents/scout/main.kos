@@ -57,10 +57,6 @@ fn question(msg: Msg) -> Question {
   return {text: msg.text.trim()}
 }
 
-fn nothing_found(msg: Msg) -> Finding {
-  return {answer: "I could not work that out from the files. Try naming the file, or ask in another way.", sources: []}
-}
-
 fn tell(found: Finding) -> Said {
   var sources: Text[] = []
   for source in found.sources {
@@ -73,7 +69,7 @@ fn tell(found: Finding) -> Said {
 workflow main(msg: Msg) -> Said {
   budget 8 model calls, 300 seconds
   ask   = question(msg)
-  found = ask scout(ask.text) otherwise nothing_found(msg)
+  found = ask scout(ask.text) otherwise {answer: "I could not work that out from the files. Try naming the file, or ask in another way.", sources: []}
   said  = tell(found)
 }
 

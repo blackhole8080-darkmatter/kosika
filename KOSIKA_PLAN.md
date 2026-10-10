@@ -2078,9 +2078,31 @@ gate: without them a parser written in Kosika has nothing to return.
   Its eight tests are unchanged and pass.
 - `tests/test_value_steps.py`.
 - Not claimed: the value cannot use a parameter or an earlier step. An
-  error inside it names the generated function. The other example agents
-  were not rewritten, so they still show the long style. One agent and
-  one model is a small comparison.
+  error inside it names the generated function. One agent and one model
+  is a small comparison.
+
+### The other example agents in the short style
+
+- The six other agents were given the short forms: `take`, `drop`,
+  `is_empty`, `replace`, a value after `otherwise` or in a `case` where a
+  function only returned one fixed record, and `kind_of` returning Text
+  with no `Kind` record around it.
+- Working lines, before to after: author 256 to 249, coach 278 to 265,
+  doctor 257 to 250, planner 451 to 444, scout 55 to 52, workbench 350 to
+  340. That is two to five percent. The researcher's quarter came from
+  wrappers these agents never had: most of each is its own logic and its
+  wording to the user.
+- The author agent's guide now teaches `words`, `replace`, `take`, `drop`,
+  `is_empty` and `for x in xs where cond { x }`.
+- Every agent's own tests pass unchanged, apart from `kind_of(...)` in two
+  tests no longer needing `.label`.
+- Not claimed: the workflows of these agents still pass a `Prompt` record
+  to each model step and wrap replies in small functions; that was left
+  as it is. With the longer guide the author scored 3 of 6 on qwen2.5:7b in
+  one run (977 s), against 4 of 6 in each of two earlier runs: the three
+  plain-code tasks passed and the model, summary and memory tasks failed.
+  One run cannot show whether the longer guide cost a task or whether it
+  is the usual noise; it has not been run again.
 
 ## Standard coding-agent procedure
 

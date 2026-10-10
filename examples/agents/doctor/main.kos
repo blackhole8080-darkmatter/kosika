@@ -16,7 +16,6 @@
 
 record Msg { text: Text }
 record Said { text: Text }
-record Kind { label: Text }
 
 record Command { args: Text[] }
 record Ran { exit_code: Number stdout: Text stderr: Text }
@@ -49,7 +48,7 @@ agent hands {
 
 // ---------------------------------------------------------------- routing
 
-fn kind_of(msg: Msg) -> Kind {
+fn kind_of(msg: Msg) -> Text {
   let text = msg.text.lower().trim()
   var kind = "advice"
   if text == "help" or text.contains("what can you do") { kind = "help" }
@@ -59,7 +58,7 @@ fn kind_of(msg: Msg) -> Kind {
   else if text.contains("disk") or text.contains("space") or text.contains("storage") { kind = "disk" }
   else if text.contains("memory") or text.contains("ram") or text.contains("process") { kind = "memory" }
   else if text.contains("battery") or text.contains("charge") or text.contains("power") { kind = "battery" }
-  return {label: kind}
+  return kind
 }
 
 // ------------------------------------------------ the programs it may start
@@ -123,7 +122,7 @@ fn size_text(bytes: Number) -> Text {
 // The rows of output that start with a given word, as their other words.
 fn rows(ran: Ran, tag: Text) -> Text[] {
   var out: Text[] = []
-  let text = ran.stdout.slice(0, ran.stdout.length().min(6000))
+  let text = ran.stdout.take(6000)
   for row in text.split("\n") {
     if row.starts_with(tag + " ") { out = out.append(row.slice(tag.length() + 1, row.length()).trim()) }
   }
@@ -139,17 +138,17 @@ fn number_at(row: Text, place: Number) -> Number {
 // Everything after the first number: a name that may hold spaces.
 fn name_after(row: Text) -> Text {
   let head = row.split(" ").first().or("")
-  return row.slice((head.length() + 1).min(row.length()), row.length()).trim()
+  return row.drop(head.length() + 1).trim()
 }
 
 fn failed(what: Text, ran: Ran) -> Finding {
-  let why = if ran.stderr.trim().length() > 0 { ran.stderr.slice(0, ran.stderr.length().min(300)).trim() } else { "it printed nothing I could read" }
+  let why = if ran.stderr.trim().length() > 0 { ran.stderr.take(300).trim() } else { "it printed nothing I could read" }
   return {text: "I could not measure " + what + ": " + why, facts: "", keep: false}
 }
 
 fn disk_line(ran: Ran) -> Text {
   let found = rows(ran, "DISK")
-  if found.length() == 0 { return "" }
+  if found.is_empty() { return "" }
   let total = number_at(found[0], 0)
   let free = number_at(found[0], 2)
   let percent = if total > 0 { (free * 100 / total).round() } else { 0 }
@@ -159,7 +158,7 @@ fn disk_line(ran: Ran) -> Text {
 
 fn memory_lines(ran: Ran) -> Text {
   let found = rows(ran, "MEMORY")
-  if found.length() == 0 { return "" }
+  if found.is_empty() { return "" }
   let load = number_at(found[0], 0)
   let total = number_at(found[0], 1)
   let free = number_at(found[0], 2)
@@ -167,7 +166,7 @@ fn memory_lines(ran: Ran) -> Text {
   var lines: Text[] = ["Memory: " + load + "% in use, " + size_text(free) + " free of " + size_text(total) + "." + word]
   let users = rows(ran, "USES")
   if users.length() > 0 { lines = lines.append("Using the most memory:") }
-  for row in users.slice(0, users.length().min(6)) {
+  for row in users.take(6) {
     lines = lines.append("  " + size_text(number_at(row, 0) * 1024) + "  " + name_after(row))
   }
   return lines.join("\n")
@@ -175,7 +174,7 @@ fn memory_lines(ran: Ran) -> Text {
 
 fn battery_line(ran: Ran) -> Text {
   let found = rows(ran, "BATTERY")
-  if found.length() == 0 { return "" }
+  if found.is_empty() { return "" }
   let plugged = number_at(found[0], 0)
   let percent = number_at(found[0], 1)
   let left = number_at(found[0], 2)
@@ -188,19 +187,19 @@ fn battery_line(ran: Ran) -> Text {
 
 fn disk_found(ran: Ran) -> Finding {
   let line = disk_line(ran)
-  if line.length() == 0 { return failed("the disk", ran) }
+  if line.is_empty() { return failed("the disk", ran) }
   return {text: line, facts: line, keep: true}
 }
 
 fn memory_found(ran: Ran) -> Finding {
   let lines = memory_lines(ran)
-  if lines.length() == 0 { return failed("memory", ran) }
+  if lines.is_empty() { return failed("memory", ran) }
   return {text: lines, facts: lines, keep: true}
 }
 
 fn battery_found(ran: Ran) -> Finding {
   let line = battery_line(ran)
-  if line.length() == 0 { return failed("the battery", ran) }
+  if line.is_empty() { return failed("the battery", ran) }
   return {text: line, facts: line, keep: true}
 }
 
@@ -209,19 +208,19 @@ fn checkup_found(ran: Ran) -> Finding {
   for part in [disk_line(ran), memory_lines(ran), battery_line(ran)] {
     if part.length() > 0 { parts = parts.append(part) }
   }
-  if parts.length() == 0 { return failed("this laptop", ran) }
+  if parts.is_empty() { return failed("this laptop", ran) }
   let all = parts.join("\n")
   return {text: all + "\nSay \"advice\" and I will tell you what I would do about it.", facts: all, keep: true}
 }
 
 fn sizes_found(ran: Ran, tag: Text, title: Text) -> Finding {
   let found = rows(ran, tag)
-  if found.length() == 0 { return failed("the " + title, ran) }
+  if found.is_empty() { return failed("the " + title, ran) }
   var lines: Text[] = ["The biggest " + title + " in the folder you granted:"]
   for row in found {
-    lines = lines.append("  " + size_text(number_at(row, 0)) + "  " + name_after(row).split("\\").join("/"))
+    lines = lines.append("  " + size_text(number_at(row, 0)) + "  " + name_after(row).replace("\\", "/"))
   }
-  return {text: lines.join("\n"), facts: lines.slice(0, lines.length().min(7)).join("\n"), keep: true}
+  return {text: lines.join("\n"), facts: lines.take(7).join("\n"), keep: true}
 }
 
 fn files_found(ran: Ran) -> Finding {
@@ -240,16 +239,8 @@ fn advice_prompt(msg: Msg, known: ChartsRecalled) -> Prompt {
   return {text: "You are a careful computer technician. Using only the measurements below, give at most three short, practical pieces of advice for this Windows laptop, most important first. Refer to the numbers. If everything looks healthy, say so in one sentence. Do not suggest deleting system files. If nothing has been measured, tell the user to say \"checkup\" first.\n\nMeasurements:\n" + seen + "\n\nUser: " + msg.text.trim()}
 }
 
-fn sorry(msg: Msg) -> Reply {
-  return {text: "Sorry, I could not get an answer just now. Please try again."}
-}
-
 fn advised(reply: Reply) -> Finding {
   return {text: reply.text.trim(), facts: "", keep: false}
-}
-
-fn help(msg: Msg) -> Finding {
-  return {text: "I check this laptop and tell you what I find. I never change anything.\ncheckup: disk, memory and battery in one go\ndisk, memory, battery: one at a time\nbig files, folders: what takes the space in the folder you granted\nadvice: what I would do about the last check-up\nEach measurement is a small Python program that I show you first.", facts: "", keep: false}
 }
 
 // A new measurement is added to what is known, newest last, kept short.
@@ -311,21 +302,21 @@ workflow check_folders(msg: Msg) -> Finding {
 workflow advise(msg: Msg) -> Finding {
   known  = recall charts under "me"
   prompt = advice_prompt(msg, known)
-  reply  = use_model adviser(prompt.text) retry 1 otherwise sorry(msg)
+  reply  = use_model adviser(prompt.text) retry 1 otherwise {text: "Sorry, I could not get an answer just now. Please try again."}
   found  = advised(reply)
 }
 
 workflow main(msg: Msg) -> Said {
   budget 2 model calls, 240 seconds
   kind  = kind_of(msg)
-  found = match kind.label {
+  found = match kind {
     case "checkup" { call check_all(msg) }
     case "disk" { call check_disk(msg) }
     case "memory" { call check_memory(msg) }
     case "battery" { call check_battery(msg) }
     case "files" { call check_files(msg) }
     case "folders" { call check_folders(msg) }
-    case "help" { help(msg) }
+    case "help" { {text: "I check this laptop and tell you what I find. I never change anything.\ncheckup: disk, memory and battery in one go\ndisk, memory, battery: one at a time\nbig files, folders: what takes the space in the folder you granted\nadvice: what I would do about the last check-up\nEach measurement is a small Python program that I show you first.", facts: "", keep: false} }
     case _ { call advise(msg) }
   }
   known = recall charts under "me"
@@ -340,11 +331,11 @@ workflow main(msg: Msg) -> Said {
 // the programs print and everything around them.
 
 test "requests are understood" {
-  expect kind_of({text: "checkup"}).label == "checkup"
-  expect kind_of({text: "how much disk space is left?"}).label == "disk"
-  expect kind_of({text: "what is using my memory"}).label == "memory"
-  expect kind_of({text: "biggest files"}).label == "files"
-  expect kind_of({text: "why is it slow?"}).label == "advice"
+  expect kind_of({text: "checkup"}) == "checkup"
+  expect kind_of({text: "how much disk space is left?"}) == "disk"
+  expect kind_of({text: "what is using my memory"}) == "memory"
+  expect kind_of({text: "biggest files"}) == "files"
+  expect kind_of({text: "why is it slow?"}) == "advice"
 }
 
 test "sizes are written the way people say them" {

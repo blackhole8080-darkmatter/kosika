@@ -15,7 +15,6 @@
 
 record Msg { text: Text }
 record Said { text: Text }
-record Kind { label: Text }
 record Clip { text: Text ok: Bool }
 
 // What a program is started with, and what it gave back. These two shapes
@@ -64,7 +63,7 @@ agent runner {
 
 // ---------------------------------------------------------------- routing
 
-fn kind_of(msg: Msg) -> Kind {
+fn kind_of(msg: Msg) -> Text {
   let text = msg.text.lower().trim()
   let first = text.split(" ").first().or("")
   var kind = "ask"
@@ -78,7 +77,7 @@ fn kind_of(msg: Msg) -> Kind {
   else if text.starts_with("py:") or first == "calc" { kind = "calc" }
   else if text == "why" or text.starts_with("why did") or text.starts_with("explain the error") { kind = "why" }
   else if text == "history" { kind = "history" }
-  return {label: kind}
+  return kind
 }
 
 // ------------------------------------------------------------ small tools
@@ -89,7 +88,7 @@ fn tail(text: Text, most: Number) -> Text {
 }
 
 fn head(text: Text, most: Number) -> Text {
-  return text.slice(0, text.length().min(most))
+  return text.take(most)
 }
 
 // The lines of some output that have anything on them. Long output is cut
@@ -154,7 +153,7 @@ fn plan_test(msg: Msg) -> Plan {
 fn plan_run(msg: Msg) -> Plan {
   let words = rest_words(msg)
   let file = words.first().or("")
-  if file.length() == 0 {
+  if file.is_empty() {
     return cannot("python", "Tell me which file, like this: run tools/report.py")
   }
   if not file.lower().ends_with(".py") {
@@ -179,8 +178,8 @@ fn plan_check(msg: Msg) -> Plan {
 fn plan_calc(msg: Msg) -> Plan {
   let text = msg.text.trim()
   let cut = if text.lower().starts_with("py:") { 3 } else { 4 }
-  let sum = text.slice(cut.min(text.length()), text.length()).trim()
-  if sum.length() == 0 {
+  let sum = text.drop(cut).trim()
+  if sum.is_empty() {
     return cannot("python", "Give me something to work out, like this: py: 2 ** 10")
   }
   return {args: ["-c", "print(" + sum + ")"], what: "python -c print(" + sum + ")", problem: ""}
@@ -210,14 +209,14 @@ fn status_done(plan: Plan, ran: Ran) -> Done {
   var changed: Text[] = []
   var fresh: Text[] = []
   for row in lines_of(ran.stdout) {
-    if row.starts_with("## ") { branch = row.slice(3, row.length()).split("...").first().or("").trim() }
-    else if row.starts_with("??") { fresh = fresh.append(row.slice(3, row.length()).trim()) }
+    if row.starts_with("## ") { branch = row.drop(3).split("...").first().or("").trim() }
+    else if row.starts_with("??") { fresh = fresh.append(row.drop(3).trim()) }
     else { changed = changed.append(row.trim()) }
   }
   var text = "On " + branch + ": " + changed.length() + " changed, " + fresh.length() + " new."
-  if changed.length() + fresh.length() == 0 { text = "On " + branch + ": nothing has changed since the last commit." }
-  if changed.length() > 0 { text += "\nChanged:\n" + changed.slice(0, changed.length().min(15)).join("\n") }
-  if fresh.length() > 0 { text += "\nNew:\n" + fresh.slice(0, fresh.length().min(15)).join("\n") }
+  if changed.is_empty() and fresh.is_empty() { text = "On " + branch + ": nothing has changed since the last commit." }
+  if changed.length() > 0 { text += "\nChanged:\n" + changed.take(15).join("\n") }
+  if fresh.length() > 0 { text += "\nNew:\n" + fresh.take(15).join("\n") }
   return {text: text, what: plan.what, code: 0, output: kept(ran), ran: true}
 }
 
@@ -225,14 +224,14 @@ fn test_done(plan: Plan, ran: Ran) -> Done {
   var summary = ""
   var failed: Text[] = []
   for row in lines_of(tail(ran.stdout, 3500)) {
-    if row.starts_with("FAILED ") { failed = failed.append(row.slice(7, row.length())) }
+    if row.starts_with("FAILED ") { failed = failed.append(row.drop(7)) }
     if row.contains(" passed") or row.contains(" failed") or row.contains(" error") or row.contains("no tests ran") {
-      summary = row.split("=").join("").trim()
+      summary = row.replace("=", "").trim()
     }
   }
-  if summary.length() == 0 { return output_done(plan, ran) }
+  if summary.is_empty() { return output_done(plan, ran) }
   var text = if ran.exit_code == 0 { "All tests passed: " + summary } else { "Tests did not pass: " + summary }
-  if failed.length() > 0 { text += "\nFailed:\n" + failed.slice(0, failed.length().min(10)).join("\n") }
+  if failed.length() > 0 { text += "\nFailed:\n" + failed.take(10).join("\n") }
   if ran.exit_code != 0 { text += "\nSay \"why\" and I will explain the failure." }
   return {text: text, what: plan.what, code: ran.exit_code, output: kept(ran), ran: true}
 }
@@ -247,17 +246,9 @@ fn changes_prompt(part: Clip) -> Prompt {
   return {text: "These are the uncommitted changes in a code project. In at most four short sentences say in plain words what was changed and why it might matter. Then, on its own last line, suggest a commit message that starts with \"Commit: \".\n\n" + part.text}
 }
 
-fn no_reply(msg: Msg) -> Reply {
-  return {text: ""}
-}
-
-fn sorry(msg: Msg) -> Reply {
-  return {text: "Sorry, I could not get an answer just now. Please try again."}
-}
-
 fn changes_done(plan: Plan, ran: Ran, reply: Reply) -> Done {
   if ran.exit_code != 0 { return output_done(plan, ran) }
-  if reply.text.trim().length() == 0 {
+  if reply.text.trim().is_empty() {
     return {text: "There are no uncommitted changes to explain.", what: plan.what, code: 0, output: "", ran: true}
   }
   return {text: reply.text.trim(), what: plan.what, code: 0, output: head(ran.stdout, 1800), ran: true}
@@ -293,7 +284,7 @@ fn talk_done(reply: Reply) -> Done {
 // ------------------------------------------------------------- the journal
 
 fn journal_done(past: JournalRecalled) -> Done {
-  if not past.found or past.value.value().runs.length() == 0 {
+  if not past.found or past.value.value().runs.is_empty() {
     return {text: "I have not run anything yet.", what: "history", code: 0, output: "", ran: false}
   }
   var rows: Text[] = []
@@ -309,10 +300,6 @@ fn noted(past: JournalRecalled, done: Done) -> History {
   if not done.ran { return book }
   let all = book.runs.append({what: done.what, code: done.code})
   return {runs: all.slice((all.length() - 12).max(0), all.length()), last_what: done.what, last_code: done.code, last_output: done.output}
-}
-
-fn help(msg: Msg) -> Done {
-  return {text: "I start git and python for you in the granted folder, after you allow each start.\nstatus: what has changed\nlog: the latest commits\nchanges: explain the uncommitted changes and suggest a commit message\ntest tests/test_app.py: run tests and report\nrun tools/report.py: run a Python file\ncheck main.kos: check a Kosika program\npy: 2 ** 10: work something out\nwhy: explain the last failure\nhistory: what I ran\nOr ask me a coding question.", what: "help", code: 0, output: "", ran: false}
 }
 
 fn say(done: Done) -> Said {
@@ -342,7 +329,7 @@ workflow explain_changes(msg: Msg) -> Done {
   prompt = changes_prompt(part)
   reply  = match part.ok {
     case true { use_model helper(prompt.text) }
-    case _ { no_reply(msg) }
+    case _ { {text: ""} }
   }
   done   = changes_done(plan, ran, reply)
   require approval
@@ -402,7 +389,7 @@ workflow explain_failure(msg: Msg) -> Done {
   prompt = why_prompt(part)
   reply  = match part.ok {
     case true { use_model helper(prompt.text) }
-    case _ { no_reply(msg) }
+    case _ { {text: ""} }
   }
   done   = why_done(part, reply)
 }
@@ -415,14 +402,14 @@ workflow show_history(msg: Msg) -> Done {
 workflow answer(msg: Msg) -> Done {
   past   = recall journal under "me"
   prompt = ask_prompt(msg, past)
-  reply  = use_model helper(prompt.text) retry 1 otherwise sorry(msg)
+  reply  = use_model helper(prompt.text) retry 1 otherwise {text: "Sorry, I could not get an answer just now. Please try again."}
   done   = talk_done(reply)
 }
 
 workflow main(msg: Msg) -> Said {
   budget 3 model calls, 240 seconds
   kind  = kind_of(msg)
-  done  = match kind.label {
+  done  = match kind {
     case "status" { call git_status(msg) }
     case "log" { call git_log(msg) }
     case "changes" { call explain_changes(msg) }
@@ -432,7 +419,7 @@ workflow main(msg: Msg) -> Said {
     case "calc" { call work_out(msg) }
     case "why" { call explain_failure(msg) }
     case "history" { call show_history(msg) }
-    case "help" { help(msg) }
+    case "help" { {text: "I start git and python for you in the granted folder, after you allow each start.\nstatus: what has changed\nlog: the latest commits\nchanges: explain the uncommitted changes and suggest a commit message\ntest tests/test_app.py: run tests and report\nrun tools/report.py: run a Python file\ncheck main.kos: check a Kosika program\npy: 2 ** 10: work something out\nwhy: explain the last failure\nhistory: what I ran\nOr ask me a coding question.", what: "help", code: 0, output: "", ran: false} }
     case _ { call answer(msg) }
   }
   past  = recall journal under "me"
@@ -447,12 +434,12 @@ workflow main(msg: Msg) -> Said {
 // around it: understanding the request, and reading what a program printed.
 
 test "requests are understood from plain words" {
-  expect kind_of({text: "status"}).label == "status"
-  expect kind_of({text: "Test tests/test_app.py"}).label == "test"
-  expect kind_of({text: "run tools/report.py --fast"}).label == "run"
-  expect kind_of({text: "py: 2 ** 10"}).label == "calc"
-  expect kind_of({text: "why"}).label == "why"
-  expect kind_of({text: "how do I reverse a list in python?"}).label == "ask"
+  expect kind_of({text: "status"}) == "status"
+  expect kind_of({text: "Test tests/test_app.py"}) == "test"
+  expect kind_of({text: "run tools/report.py --fast"}) == "run"
+  expect kind_of({text: "py: 2 ** 10"}) == "calc"
+  expect kind_of({text: "why"}) == "why"
+  expect kind_of({text: "how do I reverse a list in python?"}) == "ask"
 }
 
 test "a command is built exactly, and only inside the folder" {
