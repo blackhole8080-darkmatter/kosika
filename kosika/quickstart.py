@@ -10,6 +10,7 @@ Studio opens, with the command to run to decide otherwise.
 from __future__ import annotations
 
 import json
+import os
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -66,6 +67,25 @@ def choose_model(models: list[dict[str, Any]]) -> str | None:
     return str(fitting[0]["name"]) if fitting else None
 
 
+def one_model_warning(setting: str | None) -> list[str]:
+    """What to say when Ollama is set to keep a single model in memory.
+
+    Search by meaning uses a second, small model. If only one model may be
+    loaded, the chat model is thrown out each time and loaded again, which on
+    a laptop was measured at about 12 seconds for every question.
+    """
+
+    if setting is None or setting.strip() != "1":
+        return []
+    return [
+        "  Slow: Ollama is set to keep only one model in memory",
+        "    (OLLAMA_MAX_LOADED_MODELS=1). With search by meaning on, the chat",
+        "    model is reloaded for every question, which can add ten seconds or",
+        "    more each time. If this computer has memory to spare, set it to 2",
+        "    and restart Ollama.",
+    ]
+
+
 def start_plan(
     folder: Path, models: list[dict[str, Any]] | None
 ) -> tuple[list[str], list[str]]:
@@ -107,6 +127,7 @@ def start_plan(
             lines.append(
                 f"  Search by meaning: on, with {embedding.removesuffix(':latest')}."
             )
+            lines += one_model_warning(os.environ.get("OLLAMA_MAX_LOADED_MODELS"))
     elif models is None:
         lines += [
             "  Model: none found. You can look at agents, read their maps and run their tests.",

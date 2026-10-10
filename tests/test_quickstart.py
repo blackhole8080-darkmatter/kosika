@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 from kosika import app as studio
 from kosika.cli import build_parser
-from kosika.quickstart import STARTERS, choose_model, start_plan
+from kosika.quickstart import STARTERS, choose_model, one_model_warning, start_plan
 
 GB = 1024**3
 INSTALLED = [
@@ -98,6 +99,23 @@ class QuickstartTests(unittest.TestCase):
         self.assertEqual(choose_model(others), "mid:6b")
         self.assertEqual(choose_model([others[0]]), "huge:70b")
         self.assertIsNone(choose_model([INSTALLED[0]]))
+
+    def test_it_warns_when_only_one_model_may_be_loaded(self) -> None:
+        self.assertEqual(one_model_warning(None), [])
+        self.assertEqual(one_model_warning("3"), [])
+        told = "\n".join(one_model_warning(" 1 "))
+        self.assertIn("OLLAMA_MAX_LOADED_MODELS=1", told)
+        self.assertIn("set it to 2", told)
+        with unittest.mock.patch.dict("os.environ", {"OLLAMA_MAX_LOADED_MODELS": "1"}):
+            _, lines = start_plan(self.folder, INSTALLED)
+            self.assertIn("Slow: Ollama is set to keep only one", "\n".join(lines))
+            # It is only about search by meaning: with no embedding model
+            # installed, nothing is said.
+            _, quiet = start_plan(self.folder, [INSTALLED[2]])
+            self.assertNotIn("Slow:", "\n".join(quiet))
+        with unittest.mock.patch.dict("os.environ", {"OLLAMA_MAX_LOADED_MODELS": "2"}):
+            _, lines = start_plan(self.folder, INSTALLED)
+            self.assertNotIn("Slow:", "\n".join(lines))
 
     def test_the_command_exists(self) -> None:
         parsed = build_parser().parse_args(["start"])
