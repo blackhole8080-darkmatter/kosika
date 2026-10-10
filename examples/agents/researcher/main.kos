@@ -97,7 +97,7 @@ fn kind_of(msg: Msg) -> Kind {
 fn clean(word: Text) -> Text {
   var out = word.lower()
   for mark in ["?", "!", ",", ";", "\"", "'", "(", ")", ":"] {
-    out = out.split(mark).join("")
+    out = out.replace(mark, "")
   }
   // A full stop ends a sentence but belongs inside a file name.
   if out.ends_with(".") { out = out.slice(0, out.length() - 1) }
@@ -110,7 +110,7 @@ fn key_words(text: Text, skip_first: Bool) -> Text {
   let small = ["a", "an", "the", "is", "are", "was", "were", "be", "do", "does", "did", "i", "me", "my", "we", "our", "you", "your", "it", "its", "of", "in", "on", "at", "to", "for", "from", "by", "with", "about", "and", "or", "what", "when", "where", "which", "who", "whom", "why", "how", "tell", "say", "says", "said", "there", "that", "this", "these", "those", "have", "has", "had", "can", "could", "should", "would", "will", "please", "any", "all", "much", "many", "need", "find", "search", "show"]
   var words: Text[] = []
   var seen = false
-  for word in text.trim().split(" ") {
+  for word in text.words() {
     let item = clean(word)
     if item.length() > 0 {
       if (seen or not skip_first) and item.length() > 1 and not small.contains(item) and not words.contains(item) {
@@ -119,7 +119,7 @@ fn key_words(text: Text, skip_first: Bool) -> Text {
       seen = true
     }
   }
-  return words.slice(0, words.length().min(6)).join(" ")
+  return words.take(6).join(" ")
 }
 
 fn question_query(msg: Msg) -> Query {
@@ -162,22 +162,7 @@ fn nothing(msg: Msg) -> Found {
 // full stop where the line goes on with a comma. The words between must
 // still be found exactly, so this forgives the ends and nothing else.
 fn bare(quote: Text) -> Text {
-  var text = quote.lower().trim()
-  var trimming = true
-  while trimming and text.length() > 0 {
-    trimming = false
-    for mark in [".", ",", ";", ":", "!", "?", "\"", "'"] {
-      if text.ends_with(mark) {
-        text = text.slice(0, text.length() - 1).trim()
-        trimming = true
-      }
-      if text.starts_with(mark) {
-        text = text.slice(1, text.length()).trim()
-        trimming = true
-      }
-    }
-  }
-  return text
+  return quote.lower().trim_marks(".,;:!?\"'")
 }
 
 // The hit that really holds the quote, or "" when none does. This is the
@@ -204,7 +189,7 @@ fn source_of(hit: Text) -> Text {
 // may stand. An answer left empty is refused too, so that a fast model
 // giving up is a reason to ask the strong one.
 fn proven(found: Found, hits: Hits) -> Text {
-  if found.answer.trim().length() == 0 { return "No answer was given. Answer from the lines and give an exact quote." }
+  if found.answer.trim().is_empty() { return "No answer was given. Answer from the lines and give an exact quote." }
   if found.quote.trim().length() < 6 { return "Give a quote of at least a few words copied from one line, or set answer and quote to \"\" if the lines do not answer." }
   if proof(hits, found.quote).length() == 0 { return "Your quote is not word for word in any of the lines. Copy the exact words from one line without changing them, and do not include the file name or line number. If the lines do not answer the question, set answer and quote to \"\"." }
   return ""
@@ -215,44 +200,35 @@ fn unproven(hits: Hits) -> Found {
 }
 
 fn closest(hits: Hits) -> Text {
-  return hits.matches.slice(0, hits.matches.length().min(5)).join("\n")
+  return hits.matches.take(5).join("\n")
 }
 
 fn answered(ask: Query, hits: Hits, found: Found) -> Said {
-  if ask.query.length() == 0 {
+  if ask.query.is_empty() {
     return {text: "Ask me something about the files, or say \"find\" and a few words."}
   }
-  if hits.matches.length() == 0 {
+  if hits.matches.is_empty() {
     return {text: "I found nothing about \"" + ask.query + "\" in the folder. Try other words, or say \"find\" and a word you know is in the file."}
   }
   let hit = proof(hits, found.quote)
-  if found.answer.trim().length() == 0 or hit.length() == 0 {
+  if found.answer.trim().is_empty() or hit.is_empty() {
     return {text: "I will not guess: I could not back an answer with an exact quote. The closest lines I found for \"" + ask.query + "\" are:\n" + closest(hits)}
   }
   return {text: found.answer.trim() + "\nQuote: \"" + found.quote.trim() + "\"\nFrom: " + source_of(hit)}
 }
 
 fn listed(ask: Query, hits: Hits) -> Said {
-  if ask.query.length() == 0 { return {text: "Tell me what to look for, like this: find invoice 2026"} }
-  if hits.matches.length() == 0 { return {text: "No line in the folder has \"" + ask.query + "\"."} }
-  let shown = hits.matches.slice(0, hits.matches.length().min(15))
+  if ask.query.is_empty() { return {text: "Tell me what to look for, like this: find invoice 2026"} }
+  if hits.matches.is_empty() { return {text: "No line in the folder has \"" + ask.query + "\"."} }
+  let shown = hits.matches.take(15)
   return {text: hits.matches.length().to_text() + " line(s) for \"" + ask.query + "\", best first:\n" + shown.join("\n")}
 }
 
 // ------------------------------------------------------------------ files
 
 fn path_from(msg: Msg) -> Where {
-  var parts: Text[] = []
-  var seen = false
-  for word in msg.text.trim().split(" ") {
-    let item = word.trim()
-    if item.length() > 0 {
-      if seen { parts = parts.append(item) }
-      seen = true
-    }
-  }
-  var path = parts.join(" ").split("\\").join("/")
-  for mark in ["\"", "'", "?"] { path = path.split(mark).join("") }
+  var path = msg.text.words().drop(1).join(" ").replace("\\", "/")
+  for mark in ["\"", "'", "?"] { path = path.replace(mark, "") }
   return {path: path.trim()}
 }
 
@@ -261,13 +237,13 @@ fn no_text(msg: Msg) -> FileText {
 }
 
 fn shown(where: Where, file: FileText) -> Said {
-  if where.path.length() == 0 { return {text: "Tell me which file, like this: read notes/plan.md"} }
-  if file.text.length() == 0 { return {text: "I could not read \"" + where.path + "\". It may be missing, not text, or outside the folder I may look in."} }
-  return {text: where.path + ":\n" + file.text.slice(0, file.text.length().min(1500))}
+  if where.path.is_empty() { return {text: "Tell me which file, like this: read notes/plan.md"} }
+  if file.text.is_empty() { return {text: "I could not read \"" + where.path + "\". It may be missing, not text, or outside the folder I may look in."} }
+  return {text: where.path + ":\n" + file.text.take(1500)}
 }
 
 fn part_of(file: FileText) -> Clip {
-  return {text: file.text.slice(0, file.text.length().min(3500)), ok: file.text.length() > 0}
+  return {text: file.text.take(3500), ok: file.text.length() > 0}
 }
 
 fn no_summary(msg: Msg) -> Summary {
@@ -275,7 +251,7 @@ fn no_summary(msg: Msg) -> Summary {
 }
 
 fn summed(where: Where, brief: Summary) -> Said {
-  if brief.text.length() == 0 { return {text: "I could not read \"" + where.path + "\", so there is nothing to summarise."} }
+  if brief.text.is_empty() { return {text: "I could not read \"" + where.path + "\", so there is nothing to summarise."} }
   return {text: "Summary of " + where.path + ":\n" + brief.text.trim()}
 }
 

@@ -2043,6 +2043,28 @@ gate: without them a parser written in Kosika has nothing to return.
   than last time (classify failed, long words passed), so one run per task
   cannot show whether the change helped.
 
+### The researcher in Python, and the short methods it showed were missing
+
+- `benchmarks/python_comparison/` holds the researcher agent written again
+  in plain Python (standard library, local Ollama), its tests, a counter
+  and a live measure. Its README is the result.
+- First result: the two programs were the same size, 8,787 characters in
+  Kosika against 8,723 in Python. Kosika needed none of Python's 110 lines
+  of folder safety, model calling and measuring, and spent about 100 more
+  lines on the agent's own logic. On qwen2.5:7b both were right 12 of 12.
+- Six causes are listed in that README. The first, second and part of the
+  fifth are fixed by six built-in methods: `take`, `drop`, `words`,
+  `replace`, `trim_marks`, `is_empty` (Text and arrays; `words`, `replace`
+  and `trim_marks` on Text only). The researcher is now 219 lines and 8,142
+  characters.
+- `tests/test_short_methods.py`.
+- Not claimed: still open are a fallback written as a value
+  (`otherwise {matches: []}`), steps that pass plain text without a wrapping
+  record, a filter over a list, and a literal argument in a workflow step.
+  The shorter researcher was not run on a real model again. `is_empty` was
+  not added to maps, because a map's method names are reserved from record
+  methods. One agent and one model is a small comparison.
+
 ## Standard coding-agent procedure
 
 1. Inspect `git status`, the relevant source files, tests, and this plan.

@@ -41,6 +41,8 @@ _NUMBER_TEXT = re.compile(r"-?[0-9]+(\.[0-9]+)?\Z")
 MAX_ARRAY_LENGTH = 1_000_000
 #: Splitting cannot produce more parts than this; it fails instead.
 MAX_SPLIT_PARTS = 512
+#: A replace that would make a text longer than this fails instead.
+MAX_TEXT_LENGTH = 10_000_000
 _SCALARS = ("Text", "Number", "Bool", "Null")
 
 
@@ -104,6 +106,37 @@ def _slice(value: Any, start: Any, end: Any) -> Any:
             f"slice {first} to {last} is outside a value of length {len(value)}"
         )
     return value[first:last]
+
+
+def _count(count: Any, name: str) -> int:
+    if isinstance(count, bool) or count != int(count) or count < 0:
+        raise RuntimeError(f"{name} needs a whole number that is not negative")
+    return int(count)
+
+
+def _take(value: Any, count: Any) -> Any:
+    # Unlike slice, asking for more than there is gives all there is.
+    return value[: _count(count, "take")]
+
+
+def _drop(value: Any, count: Any) -> Any:
+    return value[_count(count, "drop") :]
+
+
+def _words(text: str) -> list[str]:
+    parts = text.split()
+    if len(parts) > MAX_SPLIT_PARTS:
+        raise RuntimeError(f"words produced more than {MAX_SPLIT_PARTS} parts")
+    return parts
+
+
+def _replace(text: str, old: str, new: str) -> str:
+    if old == "":
+        raise RuntimeError("replace needs a non-empty text to look for")
+    replaced = text.replace(old, new)
+    if len(replaced) > MAX_TEXT_LENGTH:
+        raise RuntimeError(f"replace would exceed {MAX_TEXT_LENGTH} characters")
+    return replaced
 
 
 def _to_number(text: str) -> int | float | None:
@@ -347,6 +380,21 @@ METHODS: tuple[Method, ...] = (
     ),
     Method(ANY_MAP, "length", (), "Number", lambda entries: len(entries)),
     Method(ANY_ARRAY, "contains", (("item", ELEMENT),), "Bool", _contains),
+    Method("Text", "is_empty", (), "Bool", lambda text: len(text) == 0),
+    Method(ANY_ARRAY, "is_empty", (), "Bool", lambda items: len(items) == 0),
+    Method("Text", "take", (("count", "Number"),), "Text", _take),
+    Method(ANY_ARRAY, "take", (("count", "Number"),), RECEIVER, _take),
+    Method("Text", "drop", (("count", "Number"),), "Text", _drop),
+    Method(ANY_ARRAY, "drop", (("count", "Number"),), RECEIVER, _drop),
+    Method("Text", "words", (), "Text[]", _words),
+    Method("Text", "replace", (("old", "Text"), ("new", "Text")), "Text", _replace),
+    Method(
+        "Text",
+        "trim_marks",
+        (("marks", "Text"),),
+        "Text",
+        lambda text, marks: text.strip(marks + " \t\r\n"),
+    ),
     Method(
         "Text[]",
         "join",
