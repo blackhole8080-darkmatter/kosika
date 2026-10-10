@@ -485,6 +485,19 @@ think = "classify"  expression "into" expression [ "using" identifier ]
   that no `try` takes fails the workflow step, where the step's `otherwise`
   applies as for any failure.
 
+- A record value MAY be written where a step expects a call, in two
+  places: after `otherwise`, and as a branch of a step's `match`:
+  `hits = execute hands.search(q) otherwise {matches: []}` and
+  `case _ { {answer: "", quote: ""} }`. The value has the result type of
+  the step's call (for a `match`, of its first branch that is a call) and
+  is checked against it. It is evaluated with no names in scope, so it
+  MUST NOT use a parameter or an earlier step; write a function for
+  that. It stands for a call of a generated function named
+  `WORKFLOW$STEP$otherwise` or `WORKFLOW$STEP$caseN`, which takes nothing
+  and returns it, so traces and replay treat it as any function step. A
+  value with no call beside it to take a type from is a check error
+  (`check/value-step`).
+
 - A `record` MAY contain functions: `fn NAME(self, parameters) -> Type`. The
   first parameter MUST be written `self` and has the record's type. The
   function is called as `VALUE.NAME(arguments)` on a value of that record

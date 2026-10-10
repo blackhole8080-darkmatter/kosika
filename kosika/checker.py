@@ -58,7 +58,8 @@ from .function_types import (
     signature,
     unify,
 )
-from .sugar import resolve_unnamed
+from .sugar import VALUE_CALL, resolve_unnamed
+from .sugar import call_output as _call_output
 from .system_tools import declaration_problem
 
 
@@ -991,32 +992,6 @@ def _check_arguments(
             )
 
 
-def _call_output(program: Program, call: object) -> str | None:
-    """The declared result type of a step call, when it can be read off."""
-
-    if isinstance(call, WorkflowCall):
-        return next(
-            (w.output_type for w in program.workflows if w.name == call.workflow_name),
-            None,
-        )
-    if isinstance(call, FunctionCall):
-        return next(
-            (f.output_type for f in program.functions if f.name == call.function_name),
-            None,
-        )
-    models = {model.name: model for model in program.models}
-    if isinstance(call, ModelCall):
-        model = models.get(call.model_name)
-        return model.output if model else None
-    if isinstance(call, AgentCall):
-        agent = next((a for a in program.agents if a.name == call.agent_name), None)
-        model = models.get(agent.model or "") if agent else None
-        return model.output if model else None
-    if isinstance(call, ToolCall):
-        return next((t.output for t in program.tools if t.name == call.tool_name), None)
-    return None
-
-
 def _check_fallbacks(program: Program) -> None:
     """Check `otherwise` by checking the program each fallback would make.
 
@@ -1315,6 +1290,22 @@ def _check_parallel(program: Program) -> None:
 
 
 def check(program: Program) -> None:
+    for workflow in program.workflows:
+        for step in workflow.steps:
+            calls = [step.call, step.fallback, *(c for _, c in step.branches)]
+            # Only a value with no call beside it is reported here. Beside a
+            # call that is itself wrong, that call's own fault is the one to
+            # report, and it is found below.
+            if all(
+                call is None
+                or (isinstance(call, FunctionCall) and call.function_name == VALUE_CALL)
+                for call in calls
+            ):
+                raise CheckError(
+                    f"Step {step.name!r} has a value where a call is needed; a "
+                    "value may stand after 'otherwise' or in a 'case', beside a "
+                    "call whose result type it takes"
+                )
     _check_record_methods(program)
     _check_parallel(program)
     if any(

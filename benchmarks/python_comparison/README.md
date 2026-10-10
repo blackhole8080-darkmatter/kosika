@@ -23,7 +23,7 @@ formatter.
 | | Kosika | Python |
 |---|---|---|
 | The program, first comparison | 243 lines, 8,787 characters | 253 lines, 8,723 characters |
-| The program, after the short methods below | 219 lines, 8,142 characters | the same |
+| The program now | 184 lines, 7,266 characters | the same |
 | of which the agent's own logic | all of it | 140 lines, 5,027 characters |
 | of which folder safety and search | 0 (the granted `files` tool) | 59 lines |
 | of which calling the model and checking its shape | 0 (`use_model`) | 33 lines |
@@ -31,34 +31,42 @@ formatter.
 | Tests | 82 lines, with the 4 evals | 113 lines |
 | Measuring on a real model | 0 (`kosika measure`) | 71 lines (`measure.py`) |
 
-**Kosika was not shorter.** At the first comparison the two programs were
-the same size: Kosika saved about 110 lines of plumbing and then spent
-about 100 more than Python on the agent's own logic. Fixing the first two
-causes below and part of the fifth took 24 lines off, so Kosika is now
-about a seventh shorter than Python in lines, and still about 80 lines
-longer in the logic itself.
+**At first Kosika was not shorter.** The two programs were the same size:
+Kosika saved about 110 lines of plumbing and then spent about 100 more
+than Python on the agent's own logic.
 
-## Why the logic is longer in Kosika
+**Now it is about a quarter shorter**: 184 lines against 253, and 7,266
+characters against 8,723. Its own logic is still 44 lines longer than
+Python's 140. What is left is mostly declarations Python does not have
+(the records, the two models, the two tools) and those are also what the
+guarantees below rest on.
 
-These are things to fix in the language, found by this comparison. The
-ones marked fixed were added straight after it: `take`, `drop`, `words`,
-`replace`, `trim_marks` and `is_empty`.
+## What made the first version long
 
-1. **Fixed: no way to trim chosen characters.** `bare` is 17 lines in Kosika and
-   one in Python (`quote.strip(".,;:!?\"' ")`). Now `trim_marks`.
-2. **Fixed: no short slice.** `text.slice(0, text.length().min(1500))` against
-   `text[:1500]`. It appeared five times. Now `text.take(1500)`.
-3. **A fallback must be a named function.** `no_hits`, `nothing`,
-   `unproven`, `no_text` and `no_summary` each take three lines to return
-   one fixed value. `otherwise {matches: []}` would remove all five.
-4. **Every step passes records.** `Msg`, `Said`, `Kind`, `Clip`, `Where`,
-   `Ask` exist only to wrap one text, and each function unwraps and rewraps.
-5. **Partly fixed: no `replace`, no `is_empty`, no filter over a list.**
-   `replace` and `is_empty` now exist. Filtering a list is still a
-   hand-written loop.
-6. **Two functions that differ by one flag** (`question_query`,
-   `find_query`) because a workflow step cannot pass a literal argument
-   alongside a value.
+Six causes were found. Three were real gaps in the language and are fixed.
+Three were not gaps at all: the program had been written the long way.
+
+Fixed in the language:
+
+1. **No way to trim chosen characters.** `bare` was 17 lines in Kosika and
+   one in Python. Now `quote.trim_marks(".,;:!?")`.
+2. **No short slice, replace or emptiness test.**
+   `text.slice(0, text.length().min(1500))` against `text[:1500]`. Now
+   `take`, `drop`, `words`, `replace` and `is_empty`.
+3. **A fallback had to be a named function.** Five three-line functions
+   existed to return one fixed value each. Now
+   `otherwise {matches: []}`, and the same as a branch of a `match`.
+
+Never gaps, only the way the program was written:
+
+4. **Every step passed a record.** `Kind`, `Clip` and others wrapped one
+   text each. A step can pass plain Text.
+5. **Two functions that differed by one flag.** A step call can take
+   literal and computed arguments: `key_words(msg.text, true)`.
+6. **Filtering by hand.** `for x in xs where cond { x }` already filters.
+
+The lesson from 4 to 6: the examples teach the style. The other example
+agents are still written the long way.
 
 ## What each one guarantees
 
@@ -88,11 +96,12 @@ The same four questions, the same fixed lines to read, three runs each, on
 | Python (`measure.py`) | 12 of 12 | 101 |
 | Kosika (`kosika measure`) | 12 of 12 | 112, 15 model calls |
 
-This run was made with the first version of the Kosika program. The
-shorter one passes the same tests and has not been run on the model again.
+The Kosika row is the first version of the program. The shorter one, run
+later the same day, was again right 12 of 12 with the same 15 model calls,
+in 138 seconds. The same calls took 112 and then 138 seconds, so on this
+laptop the timing varies by more than the two programs differ.
 
-Equally right. Kosika took about a tenth longer on this run; one run is not
-enough to say whether that is the language or the laptop.
+Equally right, and no difference in speed that these runs can show.
 
 ## Not claimed
 

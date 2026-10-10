@@ -31,7 +31,7 @@ from .direct import supplied_names as direct_names
 from .function_types import base_type, referenced_types
 from .memory import MemoryError_, lower_memory, supplied_names
 from .parser import ParseError, parse
-from .sugar import lower_sugar
+from .sugar import VALUE_CALL, lower_sugar
 from .thinking import BUILT_IN_RECORDS, ThinkingError, lower_thinking
 
 CATEGORIES = (
@@ -279,6 +279,8 @@ def load_program(
             - board_names(module.boards)
             - ambient_names(module)
             - direct_names(module)
+            # A value written as a step call; `lower_sugar` gives it a name.
+            - {VALUE_CALL}
         )
         if hidden:
             mark_error(resolved)

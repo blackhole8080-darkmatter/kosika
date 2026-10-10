@@ -29,8 +29,6 @@
 
 record Msg { text: Text }
 record Said { text: Text }
-record Kind { label: Text }
-record Clip { text: Text ok: Bool }
 
 record Query { path: Text query: Text }
 record Hits { matches: Text[] }
@@ -81,15 +79,14 @@ agent hands {
 
 // ---------------------------------------------------------------- routing
 
-fn kind_of(msg: Msg) -> Kind {
-  let text = msg.text.lower().trim()
-  let first = text.split(" ").first().or("")
-  var kind = "ask"
-  if text == "help" or text.contains("what can you do") { kind = "help" }
-  else if first == "find" or first == "search" or first == "grep" { kind = "find" }
-  else if first == "read" or first == "open" or first == "show" { kind = "read" }
-  else if first == "summarize" or first == "summarise" { kind = "summary" }
-  return {label: kind}
+fn kind_of(text: Text) -> Text {
+  let lower = text.lower().trim()
+  let first = lower.words().first().or("")
+  if lower == "help" or lower.contains("what can you do") { return "help" }
+  if ["find", "search", "grep"].contains(first) { return "find" }
+  if ["read", "open", "show"].contains(first) { return "read" }
+  if ["summarize", "summarise"].contains(first) { return "summary" }
+  return "ask"
 }
 
 // ------------------------------------------------------------- key words
@@ -112,7 +109,7 @@ fn key_words(text: Text, skip_first: Bool) -> Text {
   var seen = false
   for word in text.words() {
     let item = clean(word)
-    if item.length() > 0 {
+    if not item.is_empty() {
       if (seen or not skip_first) and item.length() > 1 and not small.contains(item) and not words.contains(item) {
         words = words.append(item)
       }
@@ -122,23 +119,11 @@ fn key_words(text: Text, skip_first: Bool) -> Text {
   return words.take(6).join(" ")
 }
 
-fn question_query(msg: Msg) -> Query {
-  return {path: ".", query: key_words(msg.text, false)}
-}
-
-fn find_query(msg: Msg) -> Query {
-  return {path: ".", query: key_words(msg.text, true)}
-}
-
-fn no_hits(msg: Msg) -> Hits {
-  return {matches: []}
-}
-
 // ------------------------------------------------------------- answering
 
 // The lines found, as the model will see them. Kept short so a small
 // model can read all of it.
-fn passages(hits: Hits) -> Clip {
+fn passages(hits: Hits) -> Text {
   var rows: Text[] = []
   var size = 0
   for hit in hits.matches {
@@ -147,15 +132,11 @@ fn passages(hits: Hits) -> Clip {
       size += hit.length()
     }
   }
-  return {text: rows.join("\n"), ok: rows.length() > 0}
+  return rows.join("\n")
 }
 
-fn ask_prompt(msg: Msg, pack: Clip) -> Ask {
-  return {text: "Answer the question using only the lines below. Each line is written as file:line: text.\nGive the answer in one or two short sentences.\nIn quote, copy the exact words from one line that prove your answer: the text only, without the file and line number, and without changing a single character.\nIf the lines do not answer the question, set answer to \"\" and quote to \"\".\n\nLines:\n" + pack.text + "\n\nQuestion: " + msg.text.trim()}
-}
-
-fn nothing(msg: Msg) -> Found {
-  return {answer: "", quote: ""}
+fn ask_prompt(question: Text, lines: Text) -> Ask {
+  return {text: "Answer the question using only the lines below. Each line is written as file:line: text.\nGive the answer in one or two short sentences.\nIn quote, copy the exact words from one line that prove your answer: the text only, without the file and line number, and without changing a single character.\nIf the lines do not answer the question, set answer to \"\" and quote to \"\".\n\nLines:\n" + lines + "\n\nQuestion: " + question.trim()}
 }
 
 // A quote without the marks around it. A model often ends a quote with a
@@ -191,71 +172,50 @@ fn source_of(hit: Text) -> Text {
 fn proven(found: Found, hits: Hits) -> Text {
   if found.answer.trim().is_empty() { return "No answer was given. Answer from the lines and give an exact quote." }
   if found.quote.trim().length() < 6 { return "Give a quote of at least a few words copied from one line, or set answer and quote to \"\" if the lines do not answer." }
-  if proof(hits, found.quote).length() == 0 { return "Your quote is not word for word in any of the lines. Copy the exact words from one line without changing them, and do not include the file name or line number. If the lines do not answer the question, set answer and quote to \"\"." }
+  if proof(hits, found.quote).is_empty() { return "Your quote is not word for word in any of the lines. Copy the exact words from one line without changing them, and do not include the file name or line number. If the lines do not answer the question, set answer and quote to \"\"." }
   return ""
 }
 
-fn unproven(hits: Hits) -> Found {
-  return {answer: "", quote: ""}
-}
-
-fn closest(hits: Hits) -> Text {
-  return hits.matches.take(5).join("\n")
-}
-
-fn answered(ask: Query, hits: Hits, found: Found) -> Said {
-  if ask.query.is_empty() {
+fn answered(query: Text, hits: Hits, found: Found) -> Said {
+  if query.is_empty() {
     return {text: "Ask me something about the files, or say \"find\" and a few words."}
   }
   if hits.matches.is_empty() {
-    return {text: "I found nothing about \"" + ask.query + "\" in the folder. Try other words, or say \"find\" and a word you know is in the file."}
+    return {text: "I found nothing about \"" + query + "\" in the folder. Try other words, or say \"find\" and a word you know is in the file."}
   }
   let hit = proof(hits, found.quote)
   if found.answer.trim().is_empty() or hit.is_empty() {
-    return {text: "I will not guess: I could not back an answer with an exact quote. The closest lines I found for \"" + ask.query + "\" are:\n" + closest(hits)}
+    return {text: "I will not guess: I could not back an answer with an exact quote. The closest lines I found for \"" + query + "\" are:\n" + hits.matches.take(5).join("\n")}
   }
   return {text: found.answer.trim() + "\nQuote: \"" + found.quote.trim() + "\"\nFrom: " + source_of(hit)}
 }
 
-fn listed(ask: Query, hits: Hits) -> Said {
-  if ask.query.is_empty() { return {text: "Tell me what to look for, like this: find invoice 2026"} }
-  if hits.matches.is_empty() { return {text: "No line in the folder has \"" + ask.query + "\"."} }
-  let shown = hits.matches.take(15)
-  return {text: hits.matches.length().to_text() + " line(s) for \"" + ask.query + "\", best first:\n" + shown.join("\n")}
+fn listed(query: Text, hits: Hits) -> Said {
+  if query.is_empty() { return {text: "Tell me what to look for, like this: find invoice 2026"} }
+  if hits.matches.is_empty() { return {text: "No line in the folder has \"" + query + "\"."} }
+  return {text: hits.matches.length().to_text() + " line(s) for \"" + query + "\", best first:\n" + hits.matches.take(15).join("\n")}
 }
 
 // ------------------------------------------------------------------ files
 
-fn path_from(msg: Msg) -> Where {
-  var path = msg.text.words().drop(1).join(" ").replace("\\", "/")
+fn path_from(text: Text) -> Text {
+  var path = text.words().drop(1).join(" ").replace("\\", "/")
   for mark in ["\"", "'", "?"] { path = path.replace(mark, "") }
-  return {path: path.trim()}
+  return path.trim()
 }
 
-fn no_text(msg: Msg) -> FileText {
-  return {text: ""}
+fn shown(path: Text, file: FileText) -> Said {
+  if path.is_empty() { return {text: "Tell me which file, like this: read notes/plan.md"} }
+  if file.text.is_empty() { return {text: "I could not read \"" + path + "\". It may be missing, not text, or outside the folder I may look in."} }
+  return {text: path + ":\n" + file.text.take(1500)}
 }
 
-fn shown(where: Where, file: FileText) -> Said {
-  if where.path.is_empty() { return {text: "Tell me which file, like this: read notes/plan.md"} }
-  if file.text.is_empty() { return {text: "I could not read \"" + where.path + "\". It may be missing, not text, or outside the folder I may look in."} }
-  return {text: where.path + ":\n" + file.text.take(1500)}
+fn summed(path: Text, brief: Summary) -> Said {
+  if brief.text.is_empty() { return {text: "I could not read \"" + path + "\", so there is nothing to summarise."} }
+  return {text: "Summary of " + path + ":\n" + brief.text.trim()}
 }
 
-fn part_of(file: FileText) -> Clip {
-  return {text: file.text.take(3500), ok: file.text.length() > 0}
-}
-
-fn no_summary(msg: Msg) -> Summary {
-  return {text: ""}
-}
-
-fn summed(where: Where, brief: Summary) -> Said {
-  if brief.text.is_empty() { return {text: "I could not read \"" + where.path + "\", so there is nothing to summarise."} }
-  return {text: "Summary of " + where.path + ":\n" + brief.text.trim()}
-}
-
-fn help(msg: Msg) -> Said {
+fn help() -> Said {
   return {text: "I answer from the files in the folder you granted, with an exact quote and its line.\nAsk a question: when is the demo with Ravi?\nfind WORDS: every matching line, no model needed\nread FILE: the start of a file\nsummarize FILE: what a file says\nI only read. I never change anything."}
 }
 
@@ -264,52 +224,48 @@ fn help(msg: Msg) -> Said {
 // Ask the fast model and check its answer. If the check refuses it, ask
 // the strong model. If that is refused too, there is no answer.
 workflow read_and_prove(prompt: Ask, hits: Hits) -> Found {
-  found = use_model reader(prompt.text) verify proven(found, hits) escalate strong otherwise unproven(hits)
+  found = use_model reader(prompt.text) verify proven(found, hits) escalate strong otherwise {answer: "", quote: ""}
 }
 
 workflow ask_files(msg: Msg) -> Said {
-  ask    = question_query(msg)
-  hits   = execute hands.search_files(ask.path, ask.query) otherwise no_hits(msg)
-  pack   = passages(hits)
-  prompt = ask_prompt(msg, pack)
-  found  = match pack.ok {
-    case true { call read_and_prove(prompt, hits) }
-    case _ { nothing(msg) }
+  query = key_words(msg.text, false)
+  hits  = execute hands.search_files(".", query) otherwise {matches: []}
+  found = match hits.matches.is_empty() {
+    case false { call read_and_prove(ask_prompt(msg.text, passages(hits)), hits) }
+    case _ { {answer: "", quote: ""} }
   }
-  said   = answered(ask, hits, found)
+  said  = answered(query, hits, found)
 }
 
 workflow find_lines(msg: Msg) -> Said {
-  ask  = find_query(msg)
-  hits = execute hands.search_files(ask.path, ask.query) otherwise no_hits(msg)
-  said = listed(ask, hits)
+  query = key_words(msg.text, true)
+  hits  = execute hands.search_files(".", query) otherwise {matches: []}
+  said  = listed(query, hits)
 }
 
 workflow read_one(msg: Msg) -> Said {
-  where = path_from(msg)
-  file  = execute hands.look_at(where.path) otherwise no_text(msg)
-  said  = shown(where, file)
+  path = path_from(msg.text)
+  file = execute hands.look_at(path) otherwise {text: ""}
+  said = shown(path, file)
 }
 
 workflow summarise_one(msg: Msg) -> Said {
-  where = path_from(msg)
-  file  = execute hands.look_at(where.path) otherwise no_text(msg)
-  part  = part_of(file)
-  brief = match part.ok {
-    case true { summarize part.text }
-    case _ { no_summary(msg) }
+  path  = path_from(msg.text)
+  file  = execute hands.look_at(path) otherwise {text: ""}
+  brief = match file.text.is_empty() {
+    case false { summarize file.text.take(3500) }
+    case _ { {text: ""} }
   }
-  said  = summed(where, brief)
+  said  = summed(path, brief)
 }
 
 workflow main(msg: Msg) -> Said {
   budget 3 model calls, 240 seconds
-  kind = kind_of(msg)
-  said = match kind.label {
+  said = match kind_of(msg.text) {
     case "find" { call find_lines(msg) }
     case "read" { call read_one(msg) }
     case "summary" { call summarise_one(msg) }
-    case "help" { help(msg) }
+    case "help" { help() }
     case _ { call ask_files(msg) }
   }
 }

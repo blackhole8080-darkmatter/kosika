@@ -357,6 +357,7 @@ function callText(call) {
   if (call.kind === "files" || call.kind === "tool") return "tool " + call.text + (call.changes ? " (asks you first)" : " (read-only)");
   if (call.text === "the clock") return "look at the clock";
   if (call.text === "a random number") return "draw a random number";
+  if (/\$(otherwise|case\d+)$/.test(call.text)) return "use the value written in the program";
   return "compute " + call.text + " in code";
 }
 
@@ -465,7 +466,7 @@ function liveView(agent, entry) {
       say(depth, source === "world:clock" ? "looking at the clock" : source === "world:random" ? "drawing a random number" : source.startsWith("memory:") ? (event.operation === "recall" ? "looking in memory " : "saving to memory ") + source.slice(7)
         : source.startsWith("board:") ? (event.operation === "post" ? "posting to board " : "reading board ") + source.slice(6)
         : source === "system:web" ? "reading a web page…" : "using " + (event.tool || "a tool") + "…");
-    } else if (event.event === "function_call") say(depth, "computing " + event.function + " in code");
+    } else if (event.event === "function_call") say(depth, /\$(otherwise|case\d+)$/.test(event.function) ? "using the value written in the program" : "computing " + event.function + " in code");
     else if (event.event === "workflow_call") {
       const called = byName[event.workflow], node = frame.current; frames.length = depth + 1;
       if (!called || !node) return;

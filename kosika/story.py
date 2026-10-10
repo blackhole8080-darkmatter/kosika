@@ -230,6 +230,16 @@ def _agent_tools(messages: Any) -> list[str]:
     return used
 
 
+def _code_step(function: str) -> str:
+    # A value written where a call was expected runs as a generated function
+    # named workflow$step$otherwise or workflow$step$caseN.
+    if function.count("$") == 2 and function.rsplit("$", 1)[1].startswith(
+        ("otherwise", "case")
+    ):
+        return "used the value written in the program"
+    return f"computed {function} in code"
+
+
 def _step(events: list[dict[str, Any]]) -> dict[str, Any]:
     start = events[0]
     call = next((e for e in events if e.get("event") in _CALLS), None)
@@ -245,7 +255,7 @@ def _step(events: list[dict[str, Any]]) -> dict[str, Any]:
         elif kind == "function":
             told.update(
                 kind="code",
-                did=f"computed {call.get('function')} in code",
+                did=_code_step(str(call.get("function"))),
                 answer=_show(returned.get("result")),
             )
         elif kind == "workflow":

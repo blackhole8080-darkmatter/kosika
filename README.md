@@ -199,6 +199,15 @@ fallback must return the same type. Running out of budget, a missing approval,
 or a missing model binding still stops the run, and `otherwise` is not allowed
 around a tool that changes the outside world.
 
+When the fallback is just a fixed value, write the value:
+
+```kosika
+hits = execute hands.search_files(".", query) otherwise {matches: []}
+```
+
+It is checked against the type the call would have returned. The same works
+as a branch of a step's `match`: `case _ { {answer: "", quote: ""} }`.
+
 ## Python SDK
 
 `kosika.sdk` builds a Kosika program from Python instead of a `.kos` file:
@@ -699,7 +708,7 @@ fn proven(found: Found, hits: Hits) -> Text {
   return ""
 }
 
-found = use_model reader(prompt.text) verify proven(found, hits) retry 1 otherwise unproven(hits)
+found = use_model reader(prompt.text) verify proven(found, hits) retry 1 otherwise {answer: "", quote: ""}
 ```
 
 The function is given the answer under the step's own name, beside anything
@@ -711,7 +720,7 @@ is recorded in the trace and replay looks at it again.
 ### Fast model first, strong model when needed
 
 ```
-found = use_model reader(prompt.text) verify proven(found, hits) escalate strong otherwise unproven(hits)
+found = use_model reader(prompt.text) verify proven(found, hits) escalate strong otherwise {answer: "", quote: ""}
 ```
 
 The step asks `reader`. If its answer is refused, by your `verify` or

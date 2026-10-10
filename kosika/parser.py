@@ -55,7 +55,7 @@ from .ast import (
     method_function,
 )
 from .lexer import Token, lex
-from .sugar import inferred_name
+from .sugar import VALUE_CALL, inferred_name
 from .thinking import GENERAL_INPUT, GENERAL_OUTPUT
 from .thinking import VERBS as THINKING_VERBS
 
@@ -1392,6 +1392,11 @@ class Parser:
         self,
     ) -> ToolCall | ModelCall | AgentCall | WorkflowCall | FunctionCall:
         call: ToolCall | ModelCall | AgentCall | WorkflowCall | FunctionCall
+        if self.check("{"):
+            # A value where a call is expected: `otherwise {matches: []}`.
+            # `kosika.sugar` turns it into a call of a function that
+            # returns it.
+            return FunctionCall(VALUE_CALL, (("value", self.expression()),))
         if (
             self.current.kind == "IDENT"
             and self.current.value in THINKING_VERBS

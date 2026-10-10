@@ -14,6 +14,13 @@ long form it stands for, so the checker and runtime never see it.
   Built-in methods resolve their one unnamed argument in the checker instead,
   because that needs the receiver's type.
 
+* **A value where a call is expected.** After `otherwise`, or as a branch
+  of a step's `match`, a record may be written directly:
+  `hits = execute hands.search(q) otherwise {matches: []}`. `lower_values`
+  replaces it with a call of a generated function that takes nothing and
+  returns it. The function's type is the result type of the call the value
+  stands in for, so the value is checked against it like any return.
+
 * **A `main` function as the entry point.** A program with `fn main` and no
   `workflow main` gets the one-step workflow that calls it, provided the
   function takes and returns records as a workflow must.
@@ -29,6 +36,7 @@ from .ast import (
     FieldExpr,
     FunctionCall,
     FunctionCallExpr,
+    FunctionDecl,
     ModelCall,
     Program,
     Step,
@@ -40,6 +48,8 @@ from .ast import (
 
 #: The name the parser gives a call's single unnamed argument.
 UNNAMED = ""
+#: The name the parser gives a value written where a call is expected.
+VALUE_CALL = "$value"
 
 
 def inferred_name(expression: Any) -> str | None:
@@ -208,5 +218,86 @@ def add_main_workflow(program: Program) -> Program:
     return replace(program, workflows=[*program.workflows, workflow])
 
 
+def call_output(program: Program, call: object) -> str | None:
+    """The declared result type of a step call, when it can be read off."""
+
+    if isinstance(call, WorkflowCall):
+        return next(
+            (w.output_type for w in program.workflows if w.name == call.workflow_name),
+            None,
+        )
+    if isinstance(call, FunctionCall):
+        return next(
+            (f.output_type for f in program.functions if f.name == call.function_name),
+            None,
+        )
+    models = {model.name: model for model in program.models}
+    if isinstance(call, ModelCall):
+        model = models.get(call.model_name)
+        return model.output if model else None
+    if isinstance(call, AgentCall):
+        agent = next((a for a in program.agents if a.name == call.agent_name), None)
+        model = models.get(agent.model or "") if agent else None
+        return model.output if model else None
+    if isinstance(call, ToolCall):
+        return next((t.output for t in program.tools if t.name == call.tool_name), None)
+    return None
+
+
+def _is_value(call: object) -> bool:
+    return isinstance(call, FunctionCall) and call.function_name == VALUE_CALL
+
+
+def lower_values(program: Program) -> Program:
+    """Replace each value written as a step call by a function returning it."""
+
+    made: list[FunctionDecl] = []
+
+    def stand_in(call: Any, name: str, type_name: str | None) -> Any:
+        if not _is_value(call) or type_name is None:
+            # With no call to take the type from, the value is left as it
+            # is and the checker says what is missing.
+            return call
+        made.append(FunctionDecl(name, (), type_name, call.arguments[0][1]))
+        return FunctionCall(name)
+
+    workflows = []
+    for workflow in program.workflows:
+        steps = []
+        for step in workflow.steps:
+            calls = [call for _, call in step.branches] or [step.call]
+            known = next(
+                (
+                    found
+                    for found in (
+                        call_output(program, call)
+                        for call in calls
+                        if not _is_value(call)
+                    )
+                    if found is not None
+                ),
+                None,
+            )
+            prefix = f"{workflow.name}${step.name}$"
+            changes: dict[str, Any] = {}
+            if step.branches:
+                branches = tuple(
+                    (pattern, stand_in(call, f"{prefix}case{index + 1}", known))
+                    for index, (pattern, call) in enumerate(step.branches)
+                )
+                if branches != step.branches:
+                    changes["branches"] = branches
+                    changes["call"] = branches[0][1]
+            if step.fallback is not None:
+                fallback = stand_in(step.fallback, f"{prefix}otherwise", known)
+                if fallback is not step.fallback:
+                    changes["fallback"] = fallback
+            steps.append(replace(step, **changes) if changes else step)
+        workflows.append(replace(workflow, steps=tuple(steps)))
+    if not made:
+        return program
+    return replace(program, workflows=workflows, functions=[*program.functions, *made])
+
+
 def lower_sugar(program: Program) -> Program:
-    return add_main_workflow(name_sole_arguments(program))
+    return add_main_workflow(name_sole_arguments(lower_values(program)))

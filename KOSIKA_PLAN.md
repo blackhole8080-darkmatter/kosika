@@ -2058,12 +2058,29 @@ gate: without them a parser written in Kosika has nothing to return.
   and `trim_marks` on Text only). The researcher is now 219 lines and 8,142
   characters.
 - `tests/test_short_methods.py`.
-- Not claimed: still open are a fallback written as a value
-  (`otherwise {matches: []}`), steps that pass plain text without a wrapping
-  record, a filter over a list, and a literal argument in a workflow step.
-  The shorter researcher was not run on a real model again. `is_empty` was
-  not added to maps, because a map's method names are reserved from record
-  methods. One agent and one model is a small comparison.
+- Not claimed: `is_empty` was not added to maps, because a map's method
+  names are reserved from record methods.
+
+### A value where a step expects a call, and a correction
+
+- After `otherwise`, and as a branch of a step's `match`, a record value
+  may be written directly. `kosika.sugar.lower_values` replaces it with a
+  call of a generated function `WORKFLOW$STEP$otherwise` or `...$caseN`
+  that takes nothing and returns it, typed from the call it stands beside.
+  The story and Studio say "used the value written in the program".
+- A correction to the comparison. Three of the six causes it listed were
+  not gaps in the language: a step can already pass plain Text, a step
+  call can already take literal and computed arguments, and
+  `for x in xs where cond { x }` already filters. The researcher had
+  simply been written the long way, with a record around every text.
+- Rewritten with all of this, the researcher is 184 working lines and
+  7,266 characters, from 243 and 8,787, against Python's 253 and 8,723.
+  Its eight tests are unchanged and pass.
+- `tests/test_value_steps.py`.
+- Not claimed: the value cannot use a parameter or an earlier step. An
+  error inside it names the generated function. The other example agents
+  were not rewritten, so they still show the long style. One agent and
+  one model is a small comparison.
 
 ## Standard coding-agent procedure
 
