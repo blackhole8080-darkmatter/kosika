@@ -122,6 +122,16 @@ pre.source { background: var(--bg); border: 1px solid var(--line); border-radius
 .post b { display: block; font: 600 12px var(--mono); color: var(--who, var(--accent)); } .post small { color: var(--faint); }
 
 /* editor */
+.map { display: grid; gap: 14px; } .map h4 { margin: 0 0 7px; font-size: 12px; text-transform: uppercase; letter-spacing: .6px; color: var(--faint); }
+.map .purpose { font-size: 16px; line-height: 1.45; } .map .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 13px; padding: 14px 16px; }
+.map .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+.map .item { padding: 6px 0; border-top: 1px solid var(--line); font-size: 13.5px; } .map .item:first-of-type { border-top: 0; }
+.map .item .from { float: right; font-size: 11px; color: var(--faint); margin-left: 8px; } .map .item .small { display: block; color: var(--soft); font-size: 12px; }
+.map .unseen { border-style: dashed; } .map .step { display: flex; gap: 10px; align-items: baseline; padding: 7px 0; border-top: 1px solid var(--line); font-size: 13.5px; }
+.map .step:first-of-type { border-top: 0; } .map .step .n { flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 700; display: grid; place-items: center; }
+.map details, .map .choice { font-size: 12.5px; color: var(--soft); margin-top: 4px; } .map summary { cursor: pointer; } .map .choice { padding-left: 14px; }
+.map .in { margin: 4px 0 4px 16px; padding-left: 10px; border-left: 2px solid var(--line); color: var(--ink); } .map .in .small { display: block; color: var(--soft); }
+.map .empty { color: var(--faint); font-size: 13px; } .map .foot { color: var(--faint); font-size: 12px; }
 textarea.editor { min-height: 62vh; font: 12.5px/1.55 var(--mono); tab-size: 2; white-space: pre; overflow: auto; }
 .bar { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; } .bar .say { font-size: 13px; color: var(--soft); }
 select { font: inherit; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; }
@@ -823,6 +833,54 @@ function liveTab(agent, isAssistant) {
   return h("div", {class: "split"}, left, right);
 }
 
+// The Map tab: what this agent is for, what it may touch and what it does.
+// Every line says where it comes from. Nothing here is written by a model.
+const MAP_FROM = {checked: "from the program", comment: "from the comment at the top of the file", person: "written by a person"};
+function mapTab(agent) {
+  const box = h("div", {class: "map"}, h("p", {class: "lead"}, h("span", {class: "spin"}), "Drawing the map"));
+  const where = item => item.line ? "line " + item.line : "";
+  const entry = item => h("div", {class: "item"}, h("span", {class: "from"}, [MAP_FROM[item.source], where(item)].filter(Boolean).join(", ")),
+    h("b", null, item.name), " ", item.does, item.needs ? h("span", {class: "small"}, "Needs: " + item.needs) : null, item.unseen ? h("span", {class: "small"}, item.unseen) : null);
+  const panel = (title, items, none, extra) => h("div", {class: "panel" + (extra || "")}, h("h4", null, title), items.length ? items.map(entry) : h("div", {class: "empty"}, none));
+  const shape = fields => fields.length ? fields.map(f => f.name + " (" + f.type + ")").join(", ") : "";
+  // A line that opens to show the steps of the workflow it runs.
+  const inner = step => h("div", {class: "in"}, h("b", null, step.name), " ", step.does, (step.notes || []).map(line => h("span", {class: "small"}, line)));
+  const within = (title, steps) => (steps || []).length ? h("details", null, h("summary", null, title), steps.map(inner)) : h("div", {class: "choice"}, title);
+  function draw(map) {
+    const note = h("input", {type: "text", maxlength: "600", placeholder: "One sentence: what is this agent for?"}); note.value = map.purpose.source === "person" ? map.purpose.text : "";
+    const say = h("span", {class: "say"});
+    const keep = async () => { say.textContent = "Saving"; try { draw(await api("/api/purpose?id=" + encodeURIComponent(agent.id), {method: "POST", body: JSON.stringify({text: note.value})})); } catch (error) { say.textContent = error.message; } };
+    const purpose = h("div", {class: "panel"}, h("h4", null, "What it is for"),
+      h("div", {class: "purpose"}, map.purpose.text || "No purpose written yet."),
+      h("div", {class: "foot", style: "margin:6px 0 10px"}, map.purpose.source === "none" ? "Kosika does not guess a purpose. Write one below." : MAP_FROM[map.purpose.source] + "."),
+      h("div", {class: "row"}, note, h("button", {class: "quiet", onclick: keep}, "Save note"), say));
+    const flow = h("div", {class: "panel"}, h("h4", null, "In and out"),
+      map.has_main ? [h("div", {class: "item"}, h("b", null, "You give it "), map.given.length ? map.given.map(g => g.name + ": " + (shape(g.fields) || g.type)).join("; ") : "nothing"),
+        h("div", {class: "item"}, h("b", null, "It gives back "), shape(map.gives.fields || []) || map.gives.type || "nothing")] : h("div", {class: "empty"}, "This program has no main workflow to run."),
+      map.budget.length ? h("div", {class: "item"}, h("b", null, "Its own limit "), map.budget.map(([kind, amount]) => amount + " " + kind.replace("_", " ")).join(", ")) : null);
+    const models = [...map.models, ...map.thinking.map(verb => ({name: verb, does: "is asked of whichever model you start Studio with", source: "checked"}))];
+    const steps = h("div", {class: "panel"}, h("h4", null, "What it does, in order"),
+      map.steps.length ? map.steps.map((step, index) => h("div", {class: "step"}, h("span", {class: "n"}, index + 1),
+        h("div", null, h("b", null, step.name), " ", step.does, step.line ? h("span", {class: "foot"}, "  line " + step.line) : null,
+          (step.choices || []).map(choice => within("When it is " + choice.when + ": " + choice.does, choice.inside)),
+          step.inside ? within("Inside that workflow", step.inside) : null,
+          (step.notes || []).map(line => h("span", {class: "small", style: "display:block;color:var(--soft);font-size:12.5px"}, line))))) : h("div", {class: "empty"}, "No steps to show."),
+      map.more_steps ? h("div", {class: "foot"}, "And " + map.more_steps + " more step(s). See the Workflow tab for all of them.") : null,
+      map.other_workflows.length ? h("div", {class: "foot", style: "margin-top:8px"}, "Other workflows it can run: " + map.other_workflows.join(", ") + ".") : null);
+    const c = map.coverage;
+    fill(box, purpose, flow,
+      h("div", {class: "cols"}, panel("It only looks at", map.reads, "Nothing outside itself."),
+        panel("It may change (asks you first, every time)", map.changes, "Nothing. It cannot change anything."),
+        panel("It asks these models", models, "None. It is plain code."),
+        panel("It remembers", map.memories, "Nothing between runs.")),
+      map.outside.length ? panel("It looks through things Kosika cannot see inside", map.outside, "", " unseen") : null,
+      steps,
+      h("div", {class: "foot"}, "This map holds " + c.checked + " item(s) read from the checked program, " + (c.person + c.comment) + " written by a person, and " + c.unseen + " that reach where Kosika cannot see. No model wrote any of it."));
+  }
+  api("/api/map?id=" + encodeURIComponent(agent.id)).then(draw).catch(error => fill(box, h("div", {class: "banner bad"}, error.message)));
+  return box;
+}
+
 async function showAgent(id, isAssistant) {
   main.replaceChildren(h("p", {class: "lead"}, h("span", {class: "spin"}), "Loading"));
   const agent = await api("/api/agent?id=" + encodeURIComponent(id));
@@ -839,7 +897,7 @@ async function showAgent(id, isAssistant) {
     fact("Code functions", agent.functions, "none"),
     fact("Budget", agent.budget.map(([kind, amount]) => amount + " " + kind.replace("_", " ")), "none declared"),
     fact("Fingerprint", [agent.program_hash.slice(0, 16) + "…"], ""));
-  let tabs = {"Live": a => liveTab(a, isAssistant), "Workflow": workflowTab, "Parts": parts, "Data": dataTab, "Tests": testsTab, "Runs": a => runsPanel(a.id, a.traces), "Code": codeTab};
+  let tabs = {"Live": a => liveTab(a, isAssistant), "Map": mapTab, "Workflow": workflowTab, "Parts": parts, "Data": dataTab, "Tests": testsTab, "Runs": a => runsPanel(a.id, a.traces), "Code": codeTab};
   if (agent.swarms.length) tabs = {"Live": tabs.Live, "Swarm": swarmTab, ...tabs};
   // A program that is only a swarm has no main to talk to or run.
   if (!agent.has_main) delete tabs.Live;

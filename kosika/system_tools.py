@@ -57,7 +57,7 @@ from .embeddings import EmbeddingError, Meaning
 from .web import WebError, bind_web_tool
 
 SYSTEM_PREFIX = "system:"
-SYSTEM_KINDS = ("shell", "files", "web", "kosika")
+SYSTEM_KINDS = ("shell", "files", "web", "kosika", "meaning")
 #: The largest program text the `kosika` tool will look at.
 MAX_CHECKED_SOURCE = 64 * 1024
 #: How many of a checked program's tests are run.
@@ -124,6 +124,9 @@ SHAPES: dict[str, tuple[dict[str, str], dict[str, str]]] = {
         {"source": "Text"},
         {"ok": "Bool", "problem": "Text", "tests": "Number", "passed": "Number"},
     ),
+    # How near two texts are in meaning, from -1 to 1. It reaches nothing
+    # but the embedding model the runner granted.
+    "near": ({"a": "Text", "b": "Text"}, {"score": "Number"}),
     # A web tool reads one page from a site the runner allowed; see kosika.web.
     "fetch": ({"url": "Text"}, {"url": "Text", "title": "Text", "text": "Text"}),
 }
@@ -159,7 +162,13 @@ def declaration_problem(program: Program, tool: ToolDecl) -> str | None:
         (kind == "files" and tool.operation in READ_ONLY_OPERATIONS)
         or kind == "web"
         or kind == "kosika"
+        or kind == "meaning"
     )
+    if kind == "meaning" and tool.operation != "near":
+        return (
+            f"Tool {tool.name!r} has unknown meaning operation {tool.operation!r}; "
+            "the only one is near"
+        )
     if kind == "kosika" and tool.operation != "check":
         return (
             f"Tool {tool.name!r} has unknown kosika operation {tool.operation!r}; "
@@ -363,6 +372,22 @@ def _lines(
                 yield name, number, row
 
 
+def _near(meaning: Meaning) -> Callable[[ToolDecl, dict[str, Any]], Any]:
+    def near(_tool: ToolDecl, arguments: dict[str, Any]) -> dict[str, Any]:
+        first, second = arguments["a"].strip(), arguments["b"].strip()
+        if not first or not second:
+            raise SystemToolError("near needs two texts to compare")
+        try:
+            ranked = meaning.nearest(first, [second])
+        except EmbeddingError as exc:
+            raise SystemToolError(str(exc)) from exc
+        if not ranked:
+            raise SystemToolError("the embedding model gave nothing to compare")
+        return {"score": round(ranked[0][0], 4)}
+
+    return near
+
+
 def _files(
     tool: ToolDecl, folder: Path, meaning: Meaning | None = None
 ) -> Callable[[ToolDecl, dict[str, Any]], Any]:
@@ -541,6 +566,14 @@ def bind_system_tools(
         except WebError as exc:
             raise SystemToolError(str(exc)) from exc
         web.update({tool.name: reader for tool in system if system_kind(tool) == "web"})
+    if meaning is not None:
+        web.update(
+            {
+                tool.name: _near(meaning)
+                for tool in system
+                if system_kind(tool) == "meaning"
+            }
+        )
     if folder is None:
         if allow_shell:
             raise SystemToolError(

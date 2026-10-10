@@ -808,6 +808,7 @@ tool run_tests {
 | `system "files"` | `list` | `{path: Text}` | `{names: Text[]}` |
 | `system "files"` | `search` | `{path: Text, query: Text}` | `{matches: Text[]}` |
 | `system "files"` | `find` | `{path: Text, query: Text}` | `{matches: Text[]}` |
+| `system "meaning"` | `near` | `{a: Text, b: Text}` | `{score: Number}` |
 
 - A system tool MUST declare `access: execute`, and its records MUST have
   exactly the fields above (`check/invalid-system-tool`). A workflow that
@@ -830,6 +831,11 @@ tool run_tests {
   outside the granted folder, so searching never writes to the folder. At
   most 400 lines not seen before are sent to the embedding model in one
   call; a larger folder is covered over several calls.
+- A `system "meaning"` tool with operation `near` gives how near two
+  texts are in meaning, from -1 to 1, rounded to four places. It MAY be
+  `access: observe`. It needs no folder and is bound only when the host
+  grants an embedding model. What score counts as near depends on the
+  embedding model, so the program chooses its own threshold.
 - File paths are relative to the granted folder. A path that is absolute,
   contains `..`, or passes through a symlink is refused. Files are UTF-8 text
   of at most 1 MiB.

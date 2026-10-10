@@ -61,6 +61,7 @@ from .memory import AGENT as MEMORY_AGENT
 from .memory import bind_memory_tools
 from .model import ModelProvider
 from .modules import load_program
+from .project_map import beginner_map, read_note, save_note
 from .runtime import run
 from .starter import KINDS, StarterError, create_starter
 from .story import StoryError, build_story, read_trace
@@ -113,13 +114,16 @@ def find_agents(root: Path) -> list[Path]:
     return found[:MAX_AGENTS]
 
 
-def _about(source: str) -> str:
-    """The comment at the top of a file, as the author's own description."""
+def _about(source: str, *, first_only: bool = False) -> str:
+    """The comment at the top of a file, as the author's own description.
+    With `first_only`, only its first paragraph: what the program is for."""
 
-    lines = []
+    lines: list[str] = []
     for line in source.splitlines():
         stripped = line.strip()
         if stripped.startswith("//"):
+            if first_only and lines and not stripped[2:].strip():
+                break
             lines.append(stripped[2:].strip())
         elif stripped or lines:
             break
@@ -718,6 +722,34 @@ class App:
             raise AppError(f"Could not save: {exc}", 422) from exc
         return {"saved": True, **checked}
 
+    def map(self, agent_id: str) -> dict[str, Any]:
+        """What this agent is for, what it may touch and what it does, from
+        the checked program and a person's own note. No model is asked."""
+
+        agent = self.agent(agent_id)
+        try:
+            source = agent.path.read_text(encoding="utf-8")
+            program = load_program(agent.path)
+        except (OSError, UnicodeDecodeError, ValueError) as exc:
+            raise AppError(f"No map: the program does not check. {exc}", 422) from exc
+        return beginner_map(
+            program,
+            source,
+            about=_about(source, first_only=True),
+            note=read_note(agent.path.parent),
+        )
+
+    def save_purpose(self, agent_id: str, text: str) -> dict[str, Any]:
+        """Keep this person's sentence about what the agent is for, in a
+        small file beside the program."""
+
+        agent = self.agent(agent_id)
+        try:
+            save_note(agent.path.parent, text)
+        except OSError as exc:
+            raise AppError(f"Could not save the note: {exc}", 422) from exc
+        return self.map(agent_id)
+
     def new_agent(self, name: str, kind: str) -> dict[str, Any]:
         """Create a starter agent in a new folder under the app's folder."""
 
@@ -1021,6 +1053,13 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                             str(body.get("name", "")), str(body.get("kind", ""))
                         ),
                     )
+                elif method == "GET" and url.path == "/api/map":
+                    self._json(200, app.map(agent_id))
+                elif method == "POST" and url.path == "/api/purpose":
+                    text = self._body().get("text")
+                    if not isinstance(text, str):
+                        raise AppError("Send the note as text")
+                    self._json(200, app.save_purpose(agent_id, text))
                 elif method == "GET" and url.path == "/api/mcp":
                     self._json(200, app.mcp_tools())
                 elif method == "GET" and url.path == "/api/memory":

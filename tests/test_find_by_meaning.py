@@ -137,5 +137,62 @@ class FindTests(unittest.TestCase):
             ](self.program.tools[0], {"path": ".", "query": "  "})
 
 
+NEAR = """
+record Msg { text: Text }
+record Pair { a: Text b: Text }
+record Near { score: Number }
+
+tool near_to {
+  source system "meaning"
+  operation: "near"
+  access: observe
+  input: Pair
+  output: Near
+}
+
+agent hands {
+  can: [near_to]
+  max_steps: 1
+}
+
+workflow main(msg: Msg) -> Near {
+  about = execute hands.near_to(msg.text, "The flat costs 900 euros a month.") otherwise {score: -9}
+}
+"""
+
+
+class NearTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._dir.cleanup)
+        self.root = Path(self._dir.name)
+
+    def score(self, text: str, meaning: Meaning | None, source: str = NEAR) -> Any:
+        (self.root / "main.kos").write_text(source, encoding="utf-8")
+        program = load_program(self.root / "main.kos")
+        # No folder is granted: comparing two texts reaches no file.
+        tools = bind_system_tools(program, folder=None, meaning=meaning)
+        return run(
+            program,
+            "main",
+            self.root / "run.jsonl",
+            inputs={"msg": {"text": text}},
+            tool_bindings=tools,
+        )["score"]
+
+    def test_texts_about_the_same_thing_score_higher(self) -> None:
+        meaning = Meaning(Fake())
+        same = self.score("What do I pay my landlord?", meaning)
+        other = self.score("Would you like a cup of tea?", meaning)
+        self.assertGreater(same, 0.9)
+        self.assertLess(other, 0.1)
+
+    def test_it_needs_the_embedding_grant_and_the_right_operation(self) -> None:
+        self.assertEqual(self.score("rent", None), -9)
+        self.assertEqual(self.score("   ", Meaning(Fake())), -9)
+        with self.assertRaisesRegex(ValueError, "the only one is near"):
+            self.score("rent", None, NEAR.replace('"near"', '"far"'))
+
+
 if __name__ == "__main__":
     unittest.main()

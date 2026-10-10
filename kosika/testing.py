@@ -223,9 +223,11 @@ def _run_one(
     program: Program,
     test: TestDecl,
     live: Mapping[str, Any] | None = None,
+    live_tools: Mapping[str, Any] | None = None,
 ) -> None:
     """Run one test. With `live` models it is an eval: the models answer
-    for themselves and only tools are scripted."""
+    for themselves and only tools are scripted. `live_tools` are real
+    tools an eval may also use, where it scripts no answers for them."""
 
     _check_one(program, test)
     registry = _FunctionRegistry(program.functions, ExecutionControl(ExecutionLimits()))
@@ -302,7 +304,7 @@ def _run_one(
                 model_bindings=providers,
                 # Each test starts with empty memories of its own, kept only
                 # for the test, so tests never read or write a real store.
-                tool_bindings={**memory_tools, **tools},
+                tool_bindings={**memory_tools, **(live_tools or {}), **tools},
             )
         except _Failure:
             raise
@@ -334,6 +336,7 @@ def measure(
     *,
     repeat: int = 1,
     only: str | None = None,
+    live_tools: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run the program's evals on each model and say how each one did.
 
@@ -363,7 +366,7 @@ def measure(
                 counted = {key: _Counted(value) for key, value in providers.items()}
                 started = time.monotonic()
                 try:
-                    _run_one(program, test, counted)
+                    _run_one(program, test, counted, live_tools)
                     passed += 1
                 except _Failure as failure:
                     why = why or f"line {failure.line}: {failure}"

@@ -2362,6 +2362,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     measure_parser.add_argument("--model-url", help="OpenAI-compatible model URL.")
     measure_parser.add_argument(
+        "--embed-model",
+        metavar="NAME",
+        help=(
+            "An embedding model for the program's meaning tools, such as "
+            "nomic-embed-text. Without it they cannot be reached."
+        ),
+    )
+    measure_parser.add_argument(
         "--model-protocol", choices=MODEL_PROTOCOLS, default="openai"
     )
     measure_parser.add_argument("--model-timeout", type=float, default=300.0)
@@ -3527,8 +3535,20 @@ def main() -> int:
                 return _workflow_model_bindings(args, measured_program)
 
         try:
+            # An eval scripts what its file tools find, so that every model
+            # reads the same lines. A tool that only compares meanings
+            # reaches nothing but the embedding model, so it may be real.
             measured = measure(
-                measured_program, bind_for, wanted, repeat=args.repeat, only=args.only
+                measured_program,
+                bind_for,
+                wanted,
+                repeat=args.repeat,
+                only=args.only,
+                live_tools=bind_system_tools(
+                    measured_program, folder=None, meaning=_meaning(args)
+                )
+                if args.embed_model
+                else None,
             )
         except (ValueError, RuntimeError, OSError) as exc:
             print(f"Measure failed: {exc}", file=sys.stderr)

@@ -2146,6 +2146,62 @@ gate: without them a parser written in Kosika has nothing to return.
   near or not. The vectors store grows and is never trimmed. No hosted
   embedding service is supported.
 
+### A second check: is the proving line about the question?
+
+- A tool with `source system "meaning"` and `operation: "near"` takes two
+  texts and gives how near they are in meaning. It is bound when an
+  embedding model is granted and needs no folder. `kosika measure` takes
+  `--embed-model`, so an eval can use the real comparison while its file
+  tools stay scripted.
+- The researcher compares the question with the line that proves the
+  answer, and does not show an answer whose line scores under 0.61. With no
+  embedding model the step falls to its `otherwise` and the answer stands
+  on its quote alone, as before.
+- Measured on the researcher's five evals, three runs each. Without the
+  check: qwen2.5:1.5b 12 of 15, qwen2.5:3b 12, 1.5b with 7b as `strong` 13.
+  With it: 1.5b 15 of 15, 3b 12, 1.5b with 7b 15, 7b 15. The gain is the
+  question the lines do not answer, which 1.5b had got wrong 3 times of 3
+  and now refuses 3 of 3; no right answer was withheld. 3b's three failures
+  are a different fault (it quotes the wrong line among several), which
+  this check does not address.
+- The cost here is large: 1.5b took 72 s without the check and 172 s with
+  it, and 7b 476 s against about 160. The comparison itself is quick; the
+  time is most likely Ollama swapping the chat model and the embedding
+  model in and out of memory on a 16 GB laptop. That was not confirmed.
+- Not claimed: the threshold 0.61 was chosen from fourteen pairs, with a
+  gap of 0.03 between the lowest answering pair and the highest
+  non-answering one, and the wifi question in the eval is one of those
+  fourteen, so the eval is not an independent test of the threshold. It
+  holds for nomic-embed-text only. A line can be about the question and
+  still not answer it.
+- The author's guide went back to the shorter text. Three runs each on
+  qwen2.5:7b: 13 of 18 with the shorter guide, 9 of 18 with the longer one
+  that taught the new short methods; over all runs 21 of 30 against 12 of
+  24. The longer guide cost most on the plain-code tasks. The agents'
+  own code keeps the short methods; only the guide given to the model
+  changed back.
+
+### A map of an agent in Studio
+
+- `kosika/project_map.py` builds a beginner's map of one program from
+  the checked program and a person's own words: purpose, what goes in
+  and out, what it only looks at, what it may change, what it reaches
+  that Kosika cannot see inside, its models, its memories, and the main
+  workflow's steps (at most ten, each opening one level into a workflow
+  it runs). Each item carries its source (`checked`, `comment`, `person`)
+  and its line. A purpose is never guessed.
+- Studio has a Map tab, `/api/map`, and `/api/purpose`, which saves one
+  sentence in `purpose.txt` beside the program.
+- `tests/test_project_map.py`. Looked at in the real page for the
+  researcher and the workbench.
+- Not claimed: no one but the author has read a map, so whether it
+  explains an agent to a newcomer is untested. It is the beginner view
+  only; the developer and system-designer views of the blueprint are not
+  built. It covers one Kosika program, not a project of several, and no
+  code in other languages. Lines come from matching the source text, not
+  from the parser. The older `mindmap` and `audience-map` commands are
+  unchanged and are not what the tab shows.
+
 ## Standard coding-agent procedure
 
 1. Inspect `git status`, the relevant source files, tests, and this plan.

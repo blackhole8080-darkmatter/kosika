@@ -3,6 +3,15 @@
 Written 10 October 2026. Every number here was measured on this project and
 can be re-run; where something is not proven, it says so.
 
+## In one sentence
+
+Kosika is an AI software development language and platform, starting with
+agents and growing toward accessible, shareable, networked AI applications
+and systems.
+
+The first half of that sentence is built. The second half is the aim: what
+exists today is the language and its tools for agents, used by one person.
+
 ## What Kosika is
 
 - **A programming language for building AI agents.** You write a `.kos`
@@ -39,7 +48,7 @@ What it is not, today:
 ## How it is being built
 
 - **In small steps, each one tested.** Every change is one small commit.
-  Before each commit the full suite is run (1,617 tests at the last
+  Before each commit the full suite is run (1,628 tests at the last
   commit), plus a style check and a type check. Nothing is merged into the
   main branch without the owner saying so.
 - **As a pipeline with clear stages:** text is split into words, parsed
@@ -61,8 +70,8 @@ What it is not, today:
     got 12 of 12 (137 s). The fastest, `qwen2.5:1.5b`, got 8 of 12 (52 s).
   - Rewriting the other six agents in the shorter style saved only two to
     five percent each.
-  - The author agent writes a working, tested program for about half of
-    its six writing tasks on a local model (12 of 24 runs with the current
+  - The author agent writes a working, tested program for about two thirds of
+    its six writing tasks on a local model (21 of 30 runs with the current
     guide).
 - **With safety decided first.** File tools cannot leave the granted
   folder. The web is limited to sites you name. Starting a program needs
@@ -109,6 +118,8 @@ Not proven:
   long-running or multi-device agents. None of these was built.
 - A known weakness: the quote check proves a quote is real, not that it
   answers the question. A small model passed it with an irrelevant quote.
+  A second check, comparing the question and the quoted line for meaning,
+  stopped that in a first measurement, at a large cost in time.
 
 ## What comes next
 

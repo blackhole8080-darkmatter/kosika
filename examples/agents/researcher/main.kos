@@ -31,6 +31,12 @@
 //
 //   --embed-model nomic-embed-text
 //
+// With it there is also a second check. A quote can be real and still not
+// answer the question: asked for the wifi password, a small model quoted
+// a line about a server password. So the question and the proving line
+// are compared for meaning, and an answer whose line is not about the
+// question is not shown.
+//
 // It only reads. Say: a question, find WORDS, read FILE, summarize FILE,
 // or help.
 
@@ -44,6 +50,8 @@ record FileText { text: Text }
 // What the model must give back: the answer, and the words that prove it.
 record Found { answer: Text quote: Text }
 record Ask { text: Text }
+record Pair { a: Text b: Text }
+record Near { score: Number }
 
 default model reader {
   input: Ask
@@ -81,6 +89,16 @@ tool find_files {
   output: Hits
 }
 
+// How near two texts are in meaning, from -1 to 1. Reachable only with
+// an embedding model.
+tool near_to {
+  source system "meaning"
+  operation: "near"
+  access: observe
+  input: Pair
+  output: Near
+}
+
 tool look_at {
   source system "files"
   operation: "peek"
@@ -90,7 +108,7 @@ tool look_at {
 }
 
 agent hands {
-  can: [search_files, find_files, look_at]
+  can: [search_files, find_files, look_at, near_to]
   max_steps: 1
 }
 
@@ -189,6 +207,19 @@ fn source_of(hit: Text) -> Text {
   return parts[0] + ", line " + parts[1]
 }
 
+// The text of a hit without its file and line number.
+fn line_of(hit: Text) -> Text {
+  return hit.split(":").drop(2).join(":").trim()
+}
+
+// Below this, the proving line is taken to be about something else.
+// Found by trying nomic-embed-text on fourteen pairs: lines that
+// answered scored 0.62 and up, lines that did not scored 0.60 and down.
+// That gap is narrow, so treat the number as a first guess.
+fn on_topic(about: Near) -> Bool {
+  return about.score >= 0.61
+}
+
 // The program's own check of the model's answer, used by `verify`. It
 // returns what is wrong, which is shown to the model, or "" when the answer
 // may stand. An answer left empty is refused too, so that a fast model
@@ -200,7 +231,7 @@ fn proven(found: Found, hits: Hits) -> Text {
   return ""
 }
 
-fn answered(query: Text, hits: Hits, found: Found) -> Said {
+fn answered(query: Text, hits: Hits, found: Found, about: Near) -> Said {
   if query.is_empty() {
     return {text: "Ask me something about the files, or say \"find\" and a few words."}
   }
@@ -210,6 +241,9 @@ fn answered(query: Text, hits: Hits, found: Found) -> Said {
   let hit = proof(hits, found.quote)
   if found.answer.trim().is_empty() or hit.is_empty() {
     return {text: "I will not guess: I could not back an answer with an exact quote. The closest lines I found for \"" + query + "\" are:\n" + hits.matches.take(5).join("\n")}
+  }
+  if not on_topic(about) {
+    return {text: "I will not guess: the only line I could quote is not about your question. The closest lines I found for \"" + query + "\" are:\n" + hits.matches.take(5).join("\n")}
   }
   return {text: found.answer.trim() + "\nQuote: \"" + found.quote.trim() + "\"\nFrom: " + source_of(hit)}
 }
@@ -267,7 +301,10 @@ workflow ask_files(msg: Msg) -> Said {
     case false { call read_and_prove(ask_prompt(msg.text, passages(hits)), hits) }
     case _ { {answer: "", quote: ""} }
   }
-  said  = answered(query, hits, found)
+  // Without an embedding model this step cannot run, and the answer stands
+  // on its quote alone.
+  about = execute hands.near_to(msg.text, line_of(proof(hits, found.quote))) otherwise {score: 1}
+  said  = answered(query, hits, found, about)
 }
 
 workflow find_lines(msg: Msg) -> Said {
@@ -353,6 +390,17 @@ test "lines found by meaning are read when the key words find nothing" {
   expect a.text == "You pay 900 euros a month.\nQuote: \"Rent is 900 euros a month\"\nFrom: notes/home.md, line 3"
   both = together({matches: ["a:1: x", "b:2: y"]}, {matches: ["b:2: y", "c:3: z"]})
   expect both.matches == ["a:1: x", "b:2: y", "c:3: z"]
+}
+
+test "a real quote that is not about the question is not shown" {
+  answers search_files: [{matches: ["notes/work.md:5: The staging server password is rotated every 90 days."]}]
+  answers reader: [{answer: "It is rotated every 90 days.", quote: "password is rotated every 90 days"}]
+  answers near_to: [{score: 0.58}]
+  a = main({text: "What is the wifi password at home?"})
+  expect a.text.starts_with("I will not guess: the only line I could quote is not about your question")
+  expect not a.text.contains("Quote:")
+  expect line_of("notes/a.md:3: Due: the 1st.") == "Due: the 1st."
+  expect on_topic({score: 0.7}) and not on_topic({score: 0.5})
 }
 
 test "find lists matching lines without a model" {

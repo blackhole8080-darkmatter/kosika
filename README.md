@@ -520,6 +520,19 @@ workflow, the parts the agent is made of, its records and how they refer to
 each other, its tests, its past runs, and its code. The sidebar also lists
 all agents, all runs, and the permissions this Studio was started with.
 
+The Map tab is the place to start with an agent you do not know. It says
+what the agent is for, what you give it and get back, what it only looks
+at, what it may change (always after asking you), which models it asks,
+what it remembers, and what it does in order; a step that runs another
+workflow opens to show that workflow's steps. Every item says where it
+comes from: "from the program" with its line, "from the comment at the
+top of the file", or "written by a person". Kosika never guesses a
+purpose: if there is no comment, the map says none is written, and you can
+save one sentence of your own, kept in `purpose.txt` beside the program.
+Where the agent reaches something Kosika cannot look inside, such as a
+program it starts or an outside server, the map says so. No model writes
+any part of the map.
+
 An answer appears word by word while the model writes it, in the chat and
 under the step that asked.
 
@@ -817,6 +830,14 @@ first, then the lines nearest in meaning. What the embedding model says
 about each line is kept in `.kosika/embeddings.sqlite3` in your home
 folder, never in the folder being searched, so each line is only sent to
 the model once.
+
+The same grant gives a tool that compares two texts: `source system
+"meaning"`, `operation: "near"`, taking `{a, b}` and giving `{score}`
+from -1 to 1. The researcher uses it as a second check on an answer. A
+quote can be real and still not answer the question, so the question and
+the line that proves the answer are compared, and an answer whose line is
+about something else is not shown. `kosika measure` takes `--embed-model`
+too, so evals can use the real comparison.
 
 ### Tools from MCP servers
 
