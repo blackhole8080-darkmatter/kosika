@@ -2501,6 +2501,74 @@ gate: without them a parser written in Kosika has nothing to return.
   them. Only Ollama is looked for. Nothing was tried on another
   operating system. There is no uninstaller beyond `pip uninstall`.
 
+### Why two models were slow together
+
+- Measured on this laptop with qwen2.5:7b and nomic-embed-text: a chat
+  call with the model already loaded took 1.7 s; the same call straight
+  after an embedding call took 14 to 16 s, of which 11 to 15 s was loading.
+  After each call only the model just used was in memory.
+- The cause is a setting in the owner's environment,
+  `OLLAMA_MAX_LOADED_MODELS=1`. Every question that uses search by meaning
+  therefore reloads the chat model. This confirms what was guessed when the
+  second check made runs slower, and it also explains the slow fast-then-
+  strong runs measured earlier, where two chat models took turns.
+- `kosika start` now says so when that setting is 1 and search by meaning
+  is on, with what it costs and how to change it. `tests/test_quickstart.py`.
+- Not claimed: Kosika can only see the setting when it is in its own
+  environment, which is where the owner's is; an Ollama started some other
+  way with the same limit is not noticed.
+- After the owner agreed, the setting was changed to 2 for his user account
+  and Ollama restarted. Measured again on the same laptop: a chat call
+  straight after an embedding call took 1.6 to 1.8 s, with both models in
+  memory. The researcher's own 15 tests with search by meaning on took
+  170 s, where they had taken 476 s, still 15 of 15. The forty questions
+  took 828 s, where they had taken 1663 s, with the same result: 39 right,
+  1 missed, 0 false. The run is kept in
+  `benchmarks/researcher/results/20261011-004343_qwen2.5-7b_meaning_twomodels.json`.
+- Not claimed: one run of each, on one laptop. Keeping two models loaded
+  uses about 6.3 GB of memory together, where one used 5.9 GB.
+
+### An agent that plans before it changes anything
+
+- Before this, an agent that chose its own tools could make one change per
+  step, and each change was asked about on its own. A task that needs
+  several changes could not be done in one step.
+- `plan: first` on an agent. Its model looks with the reading tools, then
+  asks for every change in one reply. That list is the plan. It is handed
+  over whole before any of it happens: Studio shows each change in order
+  with its exact details and one button, and `kosika run --approve` prints
+  the same list. The approval is bound to exactly that list, so a yes for
+  one plan does not count for another.
+- After the yes the changes run in order and stop at the first failure. A
+  change that is not the next one in the approved plan is refused by the
+  runtime, whatever the model asks.
+- A step begins again after a person answers. For a planning agent the
+  model is not asked again: what it said before the question is kept in the
+  run's journal and given back, so the plan carried out is the plan shown.
+- If the model asks for more changes after its plan was carried out, they
+  do not happen and it is told so; it can still give its answer.
+- The checker refuses `plan: first` on an agent with no model, with nothing
+  it can change, or with fewer than 2 turns.
+- The beginner's map says of such a step that the agent "shows you its
+  whole plan of changes and waits for one yes".
+- A ninth example agent, `examples/agents/builder`: it lists a folder and
+  makes the files asked for, after showing the plan.
+- Measured on this laptop with qwen2.5:7b, in a scratch folder: 8 requests,
+  each asked about once, plans of 1 to 3 files. 7 finished, in 27 to 78 s.
+  The one that did not was the model asking for more changes after its
+  plan, which at that time ended the step; it is now told no instead, and
+  the same request then finished. `tests/test_plan_first.py`, 14 tests.
+- Not claimed: the plan is a flat list fixed before anything happens, so a
+  later change cannot depend on what an earlier one gave back. The reading
+  tools run again when the step begins again, and the model's kept words
+  are used even if a file changed in between. If a change fails midway the
+  earlier ones stay done; nothing is undone. What the agent says it made is
+  the model's own words: in one run it listed `.hello.py` for `hello.py`,
+  and in another it was asked for readme.txt, which existed, and made
+  hello.txt without saying why. Only qwen2.5:7b was tried; a smaller model
+  may not put several changes in one reply. Inside a session the plan card
+  was not tried with a real model.
+
 ## Standard coding-agent procedure
 
 1. Inspect `git status`, the relevant source files, tests, and this plan.

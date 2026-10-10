@@ -727,6 +727,36 @@ This works with `--model-protocol ollama` and `openai`, on a model that was
 trained to choose tools. A files tool with `operation: "peek"` reads only
 the first 4000 characters, which suits a model reading for itself.
 
+### An agent that plans before it changes anything
+
+```
+agent builder {
+  model: maker
+  can: [list_folder, create_file]
+  plan: first
+  max_steps: 5
+}
+```
+
+With `plan: first` the agent looks around as before, then asks for every
+change it wants in one reply. Nothing has happened yet. That list is its
+plan: Studio shows each change in order with its exact details, and
+`kosika run --approve` prints the same list. One yes covers exactly that
+list, in that order, and nothing else. A no means none of it happens.
+
+After the yes the changes are carried out one by one. If one fails, the ones
+after it do not happen. The agent is then shown what each change gave back
+and writes its answer. If it then asks for more changes, they do
+not happen and it is told so: only what you saw is done.
+
+The yes is tied to the plan that was shown: the model is not asked again
+after you answer, so it cannot swap in a different plan. Inside a session
+(`--in-session`) the plan is still shown and asked about once, and the
+changes then happen in the session's copy.
+
+An agent with `plan: first` needs a model, at least one tool with
+`access: execute`, and `max_steps` of 2 or more.
+
 ### Text with values in it, the time, and chance
 
 ```
@@ -907,7 +937,7 @@ eval that did not always pass.
 
 ### Example agents
 
-`examples/agents` holds eight agents written in Kosika, each with its own
+`examples/agents` holds nine agents written in Kosika, each with its own
 tests. Point Studio at the folder to try them:
 
 ```
@@ -929,6 +959,8 @@ kosika studio examples/agents --model MODEL --allow-folder YOUR_FOLDER --allow-s
   standup note.
 - `scout` is given a question and two tools and chooses for itself which
   files to open.
+- `builder` makes the files you ask for, after showing you its whole plan:
+  every file with its full text, and one yes or no for the lot.
 - `author` writes Kosika programs. The model writes a program with its
   own tests, Kosika checks it and runs the tests, and what is wrong goes
   back to the model up to two more times. You can run a test of your own

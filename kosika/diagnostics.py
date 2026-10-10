@@ -142,6 +142,7 @@ CODES: Mapping[str, str] = {
     # each is distinct rather than folded into a shared "invalid" bucket.
     "check/capability-denied": "An agent attempted a capability it does not hold.",
     "check/approval-required": "A mutation requires approval that was not declared.",
+    "check/plan-first": "An agent that plans first lacks a model or the turns to plan.",
     "check/unknown-agent": "An agent name is not declared.",
     "check/unknown-tool": "A tool name is not declared.",
     "check/agent-conflict": "An agent both allows and denies the same capability.",
@@ -406,7 +407,12 @@ _RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("check/unreachable-arm", re.compile(r"^Unreachable match arm")),
     # Capability and approval. These are the errors an editing agent most needs
     # to distinguish, so each gets its own code rather than a shared bucket.
-    ("check/capability-denied", re.compile(r"^Capability violation:")),
+    (
+        "check/capability-denied",
+        re.compile(r"^Capability violation:|plans first but can change nothing"),
+    ),
+    ("check/plan-first", re.compile(r"plans first, so ")),
+    ("parse/invalid-declaration", re.compile(r"^Agent plan must be `first`")),
     (
         "check/approval-required",
         re.compile(r"needs approval before execute tool|must require approval for"),

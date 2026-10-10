@@ -310,8 +310,12 @@ function partial(raw) {
 
 // What an agent is asking to be allowed to do, in words.
 const isProgram = request => request.kind === "system:shell";
-const askTitle = request => isProgram(request) ? "Wants to start this program, and nothing else:" : "Wants to do this, and nothing else: " + (request.tool || "an action");
+const askTitle = request => request.plan ? "Wants to carry out this plan of " + request.plan.length + (request.plan.length === 1 ? " change" : " changes") + ", in this order, and nothing else:" : isProgram(request) ? "Wants to start this program, and nothing else:" : "Wants to do this, and nothing else: " + (request.tool || "an action");
 function askLines(request) {
+  if (request.plan) {
+    const steps = request.plan.map((step, at) => (at + 1) + ". " + (isProgram(step) ? "start a program\n" : step.tool + "\n") + askLines(step).split("\n\n")[0].split("\n").map(line => "     " + line).join("\n"));
+    return steps.join("\n\n") + "\n\nOne yes covers exactly these, with exactly these details. If one fails, the ones after it do not happen." + (request.walled ? "\nThey happen in the session's copy, not in your folder." : "");
+  }
   const given = request.arguments || {};
   if (isProgram(request)) {
     const words = (given.args || []).map(word => /[\s"]/.test(word) || word === "" ? JSON.stringify(word) : word);
@@ -773,6 +777,7 @@ function liveView(agent, entry) {
       counts.tools += 1; picked.push(event.tool);
       say(depth, "agent " + event.agent + " chose: " + picked.join(" → ") + (event.access === "execute" ? " (asks you first)" : ""));
     }
+    else if (event.event === "agent_plan") say(depth, "agent " + event.agent + " has a plan of " + event.actions + (event.actions === 1 ? " change" : " changes") + " (asks you once)");
     else if (event.event === "agent_return") { if (event.tokens) counts.tokens += event.tokens; say(depth, "agent " + (event.agent || "") + " answered" + (picked.length ? " after choosing " + picked.join(" → ") : "")); }
     else if (event.event === "model_return") {
       if (event.tokens) counts.tokens += event.tokens;
@@ -1166,7 +1171,7 @@ function liveTab(agent, isAssistant) {
           const card = h("div", {class: "ask"});
           const press = allow => async () => { card.replaceChildren(h("b", null, allow ? "Allowed once." : "Refused.")); await decide(allow); };
           card.append(h("b", null, askTitle(request)), h("pre", null, askLines(request)),
-            h("div", {class: "row"}, h("button", {onclick: press(true)}, "Allow once"), h("button", {class: "quiet", onclick: press(false)}, "Refuse")));
+            h("div", {class: "row"}, h("button", {onclick: press(true)}, request.plan ? "Allow this plan" : "Allow once"), h("button", {class: "quiet", onclick: press(false)}, "Refuse")));
           log.insertBefore(card, waiting); log.scrollTop = log.scrollHeight;
         }, words => {
           if (!words) return;
@@ -1193,7 +1198,7 @@ function liveTab(agent, isAssistant) {
         const view = await follow(agent, {inputs}, live, (request, decide) => {
           const press = allow => async () => { out.replaceChildren(h("p", {class: "lead"}, h("span", {class: "spin"}), allow ? "Allowed once. Carrying on." : "Refused.")); await decide(allow); };
           out.replaceChildren(h("div", {class: "ask"}, h("b", null, askTitle(request)), h("pre", null, askLines(request)),
-            h("div", {class: "row"}, h("button", {onclick: press(true)}, "Allow once"), h("button", {class: "quiet", onclick: press(false)}, "Refuse"))));
+            h("div", {class: "row"}, h("button", {onclick: press(true)}, request.plan ? "Allow this plan" : "Allow once"), h("button", {class: "quiet", onclick: press(false)}, "Refuse"))));
         });
         after(view);
         out.replaceChildren(view.state === "done" ? h("div", null, h("h2", null, "Result"), h("pre", {class: "source"}, JSON.stringify(view.result, null, 2))) : h("div", {class: "banner bad"}, view.error || "The run did not finish."));

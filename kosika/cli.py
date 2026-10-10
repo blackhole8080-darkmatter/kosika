@@ -37,6 +37,7 @@ from .design import (
 )
 from .development import check_project, execute_development_json
 from .durable import (
+    PLAN_TOOL,
     AgentExecutionSession,
     ApprovalPending,
     ExecutionSession,
@@ -753,15 +754,33 @@ def _ask_approval(
 
     if not sys.stdin.isatty():
         return None
-    print(
-        "\nApproval needed before this action runs:\n"
-        f"  step      : {' / '.join(request['step'])}\n"
-        f"  tool      : {request['tool']}\n"
-        f"  arguments : {json.dumps(request['arguments'], ensure_ascii=False)}",
-        file=sys.stderr,
-    )
+    is_plan = request["tool"] == PLAN_TOOL
+    if is_plan:
+        print(
+            f"\nAgent {request['arguments']['agent']} wants to carry out this "
+            "plan, in this order, and nothing else:",
+            file=sys.stderr,
+        )
+        for at, action in enumerate(request["arguments"]["actions"], 1):
+            print(
+                f"  {at}. {action['tool']}  "
+                f"{json.dumps(action['arguments'], ensure_ascii=False)}",
+                file=sys.stderr,
+            )
+    else:
+        print(
+            "\nApproval needed before this action runs:\n"
+            f"  step      : {' / '.join(request['step'])}\n"
+            f"  tool      : {request['tool']}\n"
+            f"  arguments : {json.dumps(request['arguments'], ensure_ascii=False)}",
+            file=sys.stderr,
+        )
     try:
-        answer = input("Approve this one action? [y/N] ")
+        answer = input(
+            "Approve this whole plan? [y/N] "
+            if is_plan
+            else "Approve this one action? [y/N] "
+        )
     except EOFError:
         return None
     if answer.strip().lower() not in ("y", "yes"):

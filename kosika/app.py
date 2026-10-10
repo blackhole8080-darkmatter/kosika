@@ -57,7 +57,7 @@ from .builtin_methods import METHODS
 from .chat import ChatError, answer_text, message_parameter
 from .diagnostics import anchors_for, diagnostic_from_exception
 from .direct import AGENT as DIRECT_AGENT
-from .durable import ApprovalPending, ExecutionSession
+from .durable import PLAN_TOOL, ApprovalPending, ExecutionSession
 from .lexer import lex
 from .mcp_tools import MCPHub, bind_mcp_tools, declaration
 from .memory import AGENT as MEMORY_AGENT
@@ -479,6 +479,8 @@ def _slim(event: dict[str, Any], depth: int) -> dict[str, Any]:
         slim["recovered"] = str(event["recovered_from"].get("message", ""))[:200]
     if "rejected" in event:
         slim["rejected"] = len(event["rejected"])
+    if event.get("event") == "agent_plan":
+        slim["actions"] = event.get("actions")
     if isinstance(event.get("votes"), dict):
         slim["votes"] = {
             key: event["votes"].get(key) for key in ("asked", "agreed", "models")
@@ -1179,6 +1181,28 @@ class App:
                             "kind": asked.source if asked else "",
                             "operation": asked.operation if asked else "",
                         }
+                        if pending.request["tool"] == PLAN_TOOL:
+                            # A planning agent's whole list of changes: one
+                            # question, even inside a session, because this
+                            # is where the person sees what will be done.
+                            declared = {tool.name: tool for tool in program.tools}
+                            job.request = {
+                                "tool": "plan",
+                                "agent": pending.request["arguments"]["agent"],
+                                "step": pending.request.get("step"),
+                                "walled": walled,
+                                "plan": [
+                                    {
+                                        "tool": action["tool"],
+                                        "arguments": action["arguments"],
+                                        "kind": declared[action["tool"]].source,
+                                        "operation": declared[action["tool"]].operation,
+                                    }
+                                    for action in pending.request["arguments"][
+                                        "actions"
+                                    ]
+                                ],
+                            }
                         job.allow = None
                         job.decision.clear()
                         job.state = "waiting"

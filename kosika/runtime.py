@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence, cast
 
 from .agent import ApprovalRequiredError, ToolExecutor
-from .agent_steps import call_agent, validate_agent_transcript
+from .agent_steps import SaidBefore, call_agent, validate_agent_transcript
 from .ambient import bind_ambient_tools
 from .ast import (
     AgentCall,
@@ -59,7 +59,7 @@ from .builtin_methods import call as call_method
 from .builtin_methods import resolve_for_value as resolve_method_for_value
 from .checker import check
 from .controls import ExecutionError
-from .durable import ApprovalPending, ExecutionSession
+from .durable import PLAN_TOOL, ApprovalPending, ExecutionSession
 from .evidence import EvidenceError, answer_schema, split, verify
 from .execution import ExecutionControl, ExecutionLimits, within_budget
 from .function_types import public_type
@@ -1887,6 +1887,51 @@ def _run_workflow(
                 events.append(call_event)
 
                 agent_changed: list[str] = []
+                # A planning agent's changes: what was approved, in order,
+                # how far it has got, and what each one gave back.
+                plan_scope = (*scope, PLAN_TOOL)
+                planned: list[tuple[str, dict[str, Any]]] = []
+                plan_results: list[dict[str, Any]] = []
+                plan_action: list[str | None] = []
+
+                def approve_agent_plan(
+                    actions: list[tuple[ToolDecl, dict[str, Any]]],
+                ) -> None:
+                    if session is None:
+                        raise PermissionError(
+                            f"Agent {asked_agent.name!r} plans changes, which "
+                            "requires a verified approval record"
+                        )
+                    wanted = {
+                        "agent": asked_agent.name,
+                        "actions": [
+                            {"tool": declaration.name, "arguments": values}
+                            for declaration, values in actions
+                        ],
+                    }
+                    if isinstance(events, LiveEvents):
+                        try:
+                            events.watcher(
+                                {
+                                    "event": "agent_plan",
+                                    "agent": asked_agent.name,
+                                    "actions": len(actions),
+                                },
+                                events.depth,
+                            )
+                        except Exception:  # noqa: BLE001 - told only
+                            pass
+                    # What the model said is kept first, so the step can
+                    # begin again with the same plan once a person answers.
+                    session.remember((*scope, PLAN_TOOL + ":said"), said.said)
+                    try:
+                        plan_action.append(session.start(plan_scope, PLAN_TOOL, wanted))
+                    except ApprovalPending:
+                        session.recover(scope)
+                        raise
+                    planned.extend(
+                        (declaration.name, values) for declaration, values in actions
+                    )
 
                 def execute_agent_tool(
                     declaration: ToolDecl, values: dict[str, Any]
@@ -1922,6 +1967,42 @@ def _run_workflow(
                                 f"Workflow ask tool {declaration.name!r} requires a "
                                 "verified approval record"
                             )
+                        if asked_agent.plan_first:
+                            # Only what is in the approved plan happens, and
+                            # in the order it was shown.
+                            at = len(plan_results)
+                            if at >= len(planned) or planned[at] != (
+                                declaration.name,
+                                values,
+                            ):
+                                raise PermissionError(
+                                    f"Agent {asked_agent.name!r} asked for a "
+                                    "change that is not the next one in its "
+                                    "approved plan"
+                                )
+                            outcome = _agent_tool_outcome(declaration, values)
+                            validate(
+                                outcome,
+                                schema_for_record(program, declaration.output),
+                            )
+                            plan_results.append(
+                                {"tool": declaration.name, "result": outcome}
+                            )
+                            if len(plan_results) == len(planned):
+                                session.complete(
+                                    plan_scope,
+                                    [
+                                        _event(
+                                            "tool_return",
+                                            agent=asked_agent.name,
+                                            tool=PLAN_TOOL,
+                                            transport="host",
+                                            result={"results": plan_results},
+                                        )
+                                    ],
+                                    plan_action[0],
+                                )
+                            return outcome
                         inner = (*scope, f"ask:{declaration.name}")
                         if agent_changed:
                             # One approved change can be paused for and
@@ -1986,14 +2067,24 @@ def _run_workflow(
                             described[granted] = str(describe())
                         except Exception:  # noqa: BLE001 - the general words do
                             pass
+                said = SaidBefore(
+                    providers[model.name],
+                    (
+                        session.remembered((*scope, PLAN_TOOL + ":said"))
+                        if session is not None and asked_agent.plan_first
+                        else None
+                    )
+                    or [],
+                )
                 result, agent_response = call_agent(
                     program,
                     asked_agent,
-                    providers[model.name],
+                    said if asked_agent.plan_first else providers[model.name],
                     execute_agent_tool,
                     arguments,
                     output_schema,
                     described,
+                    approve_agent_plan if asked_agent.plan_first else None,
                 )
                 return_event = _event(
                     "agent_return",

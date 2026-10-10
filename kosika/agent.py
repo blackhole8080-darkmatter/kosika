@@ -82,6 +82,10 @@ class AgentRunResult:
 
 
 ToolExecutor = Callable[[ToolDecl, dict[str, Any]], Any]
+#: Called with every change a planning agent asked for in one reply, in
+#: order, before any of them happens. It returns to let them all happen, or
+#: raises to stop: to wait for a person, or because the answer was no.
+PlanApprover = Callable[[list[tuple[ToolDecl, dict[str, Any]]]], None]
 
 
 def _canonical(value: Any) -> bytes:
@@ -230,7 +234,12 @@ class AgentLoop:
         tell_failures: bool = False,
         defer_approval: bool = False,
         tool_descriptions: Mapping[str, str] | None = None,
+        approve_plan: PlanApprover | None = None,
     ) -> None:
+        #: Set for an agent that plans first. The changes asked for in one
+        #: reply are its plan: they are handed over whole before any happens,
+        #: and the agent gets no second set of changes.
+        self.approve_plan = approve_plan
         #: Words for a tool that only its host knows, such as what an MCP
         #: server says its own tool does. They replace the general sentence.
         self.tool_descriptions = dict(tool_descriptions or {})
@@ -656,6 +665,7 @@ class AgentLoop:
             "plan_hash": current_plan_hash,
         }
         approval_used = False
+        plan_done = False
         resume_response: ModelResponse | None = None
         resume_step = 0
         resume_tool_index = 0
@@ -938,6 +948,34 @@ class AgentLoop:
                     f"({limits['max_tool_calls']})",
                     code="budget",
                 )
+            planned = [
+                (binding.declaration, call.arguments)
+                for call, binding, problem in pending
+                if binding is not None
+                and problem is None
+                and binding.declaration.access == "execute"
+            ]
+            if self.approve_plan is not None and planned:
+                if plan_done:
+                    # Its plan was approved and carried out. Anything more
+                    # was never shown to the person, so it does not happen:
+                    # the model is told so and can still give its answer.
+                    pending = [
+                        (
+                            call,
+                            binding,
+                            "Your plan has already been carried out. No more "
+                            "changes can be made. Give your answer now."
+                            if binding is not None
+                            and problem is None
+                            and binding.declaration.access == "execute"
+                            else problem,
+                        )
+                        for call, binding, problem in pending
+                    ]
+                else:
+                    self.approve_plan(planned)
+                    plan_done = True
             if session is not None and pending:
                 session.checkpoint(
                     "tool_pending",

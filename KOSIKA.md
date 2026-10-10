@@ -781,6 +781,17 @@ Agent defaults and bounds:
 | `max_tool_calls` | 256 | 1–1,000,000 |
 | `max_model_calls` | 64 | 1–1,000,000 |
 | `deadline_seconds` | none | greater than 0 and at most 86,400 |
+| `plan` | not set | `first` |
+
+An agent with `plan: first` MUST name a model, MUST be granted at least one
+tool with `access: execute`, and MUST have `max_steps` of at least 2. Every
+`execute` call its model requests in one reply forms its plan. The host is
+asked once, with the whole ordered list of tools and arguments, before any of
+them runs; the approval is bound to exactly that list. The calls then run in
+order and stop at the first failure. An `execute` call requested in a later
+reply MUST NOT run; the model is told so as that call's result. When the step is resumed after
+approval the model's earlier replies are replayed from the run's journal, not
+requested again.
 
 Declarations are requests for authority, never authority themselves. The host
 MUST bind declared providers and tools explicitly. Bindings for undeclared

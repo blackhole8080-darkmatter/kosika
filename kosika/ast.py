@@ -149,6 +149,9 @@ class AgentDecl:
     max_model_calls: int = 64
     instructions: str | None = None
     deadline_seconds: float | None = None
+    #: `plan: first`. The agent asks for all its changes together, they are
+    #: shown as one plan, and one yes covers exactly that list.
+    plan_first: bool = False
 
 
 @dataclass(frozen=True)

@@ -146,6 +146,12 @@ def _does(program: Program, call: Any) -> str:
             return f"asks a model to {model.verb}"
         return f"asks the model {call.model_name}"
     if isinstance(call, AgentCall):
+        agent = next((a for a in program.agents if a.name == call.agent_name), None)
+        if agent is not None and agent.plan_first:
+            return (
+                f"asks the agent {call.agent_name}, which shows you its whole "
+                "plan of changes and waits for one yes"
+            )
         return f"asks the agent {call.agent_name}, which may choose its own tools"
     if isinstance(call, WorkflowCall):
         return f"runs the workflow {call.workflow_name}"

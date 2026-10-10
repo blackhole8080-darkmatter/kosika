@@ -959,6 +959,7 @@ class Parser:
         max_model_calls = 64
         instructions: str | None = None
         deadline_seconds: float | None = None
+        plan_first = False
         seen: set[str] = set()
         while not self.accept("}"):
             key = self.identifier()
@@ -990,6 +991,10 @@ class Parser:
                 if token.kind != "NUMBER":
                     raise ParseError("Agent deadline_seconds must be a positive number")
                 deadline_seconds = float(token.value)
+            elif key == "plan":
+                if self.identifier() != "first":
+                    raise ParseError("Agent plan must be `first`")
+                plan_first = True
             else:
                 raise ParseError(f"Unknown agent field {key!r}")
         return AgentDecl(
@@ -1002,6 +1007,7 @@ class Parser:
             max_model_calls,
             instructions,
             deadline_seconds,
+            plan_first,
         )
 
     def parse_swarm(self) -> SwarmDecl:

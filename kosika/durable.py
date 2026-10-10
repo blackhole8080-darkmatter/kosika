@@ -24,6 +24,11 @@ def digest(value: Any) -> str:
     ).hexdigest()
 
 
+#: The name an approval request carries when it is for a planning agent's
+#: whole list of changes. No declared tool can have it: it is not a name.
+PLAN_TOOL = "$plan"
+
+
 class ApprovalPending(ExecutionError):
     def __init__(self, request: dict[str, Any]):
         super().__init__(
@@ -194,6 +199,18 @@ class ExecutionSession:
             self.ledger.claim(action, self.plan_hash, approval.approved_by, tool)
         self._save(scope, "started", {"arguments": arguments})
         return action
+
+    def remember(self, scope: tuple[str, ...], payload: Any) -> None:
+        """Keep something beside the steps, to be read when a step begins again."""
+
+        self._save(scope, "note", payload)
+
+    def remembered(self, scope: tuple[str, ...]) -> Any:
+        with self._db() as db:
+            row = db.execute(
+                "SELECT state, payload FROM steps WHERE name=?", (json.dumps(scope),)
+            ).fetchone()
+        return json.loads(row[1]) if row is not None and row[0] == "note" else None
 
     def recover(self, scope: tuple[str, ...]) -> None:
         """Mark a failed, non-mutating step as not started.

@@ -1714,6 +1714,25 @@ def check(program: Program) -> None:
             )
         if type(agent.max_steps) is not int or not 1 <= agent.max_steps <= 64:
             raise CheckError(f"Agent {agent.name!r} max_steps must be between 1 and 64")
+        if agent.plan_first:
+            if agent.model is None:
+                raise CheckError(
+                    f"Agent {agent.name!r} plans first, so it needs a model to "
+                    "write the plan"
+                )
+            # A name that is not a tool is reported as that, further on.
+            if all(name in tools for name in agent.can) and not any(
+                tools[name].access == "execute" for name in agent.can
+            ):
+                raise CheckError(
+                    f"Agent {agent.name!r} plans first but can change nothing: "
+                    "give it a tool with `access: execute`, or remove `plan: first`"
+                )
+            if agent.max_steps < 2:
+                raise CheckError(
+                    f"Agent {agent.name!r} plans first, so max_steps must be at "
+                    "least 2: one turn to plan and one to answer"
+                )
         if (
             type(agent.max_tool_calls) is not int
             or not 1 <= agent.max_tool_calls <= 1_000_000

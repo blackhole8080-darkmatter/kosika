@@ -1,0 +1,86 @@
+// Builder: say what files you want made, and it shows you its whole plan
+// before it makes any of them.
+//
+//   kosika test main.kos
+//   kosika studio FOLDER --model qwen2.5:7b --model-protocol ollama --allow-folder YOUR_FOLDER
+//
+// Scout may only look. Builder may also make new files, so it has
+// `plan: first`: it looks around, then asks for every file it wants to make
+// in one go. You see the list, each file with its full text, and say yes or
+// no once. A yes covers exactly that list. It gets no second set of changes.
+//
+// It can only make new files. It cannot replace or delete one that exists,
+// and if making one fails, the ones after it are not made.
+//
+// Say: make a notes folder with a todo list and a readme that explains it
+
+record Msg { text: Text }
+record Said { text: Text }
+record Request { text: Text }
+record Where { path: Text }
+record Listing { names: Text[] }
+record NewFile { path: Text text: Text }
+record Written { bytes: Number }
+// What the builder did: a sentence about it, and the files it made.
+record Built { summary: Text made: Text[] }
+
+model maker {
+  input: Request
+  output: Built
+  parameters: {
+    max_output_tokens: 900
+  }
+}
+
+tool list_folder {
+  source system "files"
+  operation: "list"
+  access: observe
+  input: Where
+  output: Listing
+}
+
+tool create_file {
+  source system "files"
+  operation: "create"
+  access: execute
+  input: NewFile
+  output: Written
+}
+
+agent builder {
+  model: maker
+  can: [list_folder, create_file]
+  plan: first
+  max_steps: 5
+  max_tool_calls: 12
+  instructions: "You make small text files in one folder. First list the folder with path \".\" to see what is already there. Never use a path that already exists. Then call create_file once for every file that is needed, all in the same reply, each with its complete text. Keep files short. After they are made, answer with one sentence in summary and the paths you made in made."
+}
+
+fn request(msg: Msg) -> Request {
+  return {text: msg.text.trim()}
+}
+
+fn tell(built: Built) -> Said {
+  var made: Text[] = []
+  for path in built.made {
+    if path.trim().length() > 0 { made = made.append(path.trim()) }
+  }
+  let tail = if made.length() > 0 { "\nMade: " + made.unique().join(", ") } else { "\nNothing was made." }
+  return {text: built.summary.trim() + tail}
+}
+
+workflow main(msg: Msg) -> Said {
+  budget 6 model calls, 300 seconds
+  wanted = request(msg)
+  built  = ask builder(wanted.text)
+  said   = tell(built)
+  require approval
+}
+
+test "the answer lists what was made" {
+  a = tell({summary: " Made a todo list. ", made: ["notes/todo.txt", "notes/todo.txt", " "]})
+  b = tell({summary: "The folder already has those files.", made: []})
+  expect a.text == "Made a todo list.\nMade: notes/todo.txt"
+  expect b.text == "The folder already has those files.\nNothing was made."
+}
