@@ -64,6 +64,7 @@ from .memory import AGENT as MEMORY_AGENT
 from .memory import bind_memory_tools
 from .model import ModelProvider
 from .modules import load_program
+from .motion import check_scene, to_html, to_svg
 from .project_index import project_index
 from .project_map import beginner_map, read_note, save_note
 from .runtime import run
@@ -299,6 +300,16 @@ def describe(agent: Agent, *, detail: bool) -> dict[str, Any]:
         budget=[list(item) for item in entry.budget] if entry else [],
         chat=chat,
         has_main=entry is not None,
+        # A program whose main gives back shapes and moves describes an
+        # animation, which the app can play.
+        scene=entry is not None
+        and {"shapes", "moves"}
+        <= {
+            field.name
+            for record in program.records
+            if record.name == entry.output_type
+            for field in record.fields
+        },
     )
     if not detail:
         return view
@@ -984,6 +995,31 @@ class App:
             [(agent.id, agent.title, agent.path) for agent in self.agents().values()]
         )
 
+    def scene(self, agent_id: str, inputs: dict[str, Any]) -> dict[str, Any]:
+        """Run a program that describes an animation, and give back the
+        picture to play or what is wrong with the description. Only plain
+        code is run here: no model is asked and no tool is reachable, so
+        nothing needs a yes."""
+
+        agent = self.agent(agent_id)
+        try:
+            program = load_program(agent.path)
+            with tempfile.TemporaryDirectory(prefix="kosika-scene-") as scratch:
+                made = run(program, "main", Path(scratch) / "run.jsonl", inputs=inputs)
+        except (ValueError, RuntimeError, OSError) as exc:
+            raise AppError(f"The scene could not be made: {exc}", 422) from exc
+        problems = check_scene(made)
+        if problems:
+            return {"ok": False, "problems": problems[:30]}
+        return {
+            "ok": True,
+            "svg": to_svg(made),
+            "page": to_html(made, agent.title),
+            "seconds": made["seconds"],
+            "shapes": len(made["shapes"]),
+            "moves": len(made["moves"]),
+        }
+
     def map(self, agent_id: str) -> dict[str, Any]:
         """What this agent is for, what it may touch and what it does, from
         the checked program and a person's own note. No model is asked."""
@@ -1346,6 +1382,11 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                             str(body.get("name", "")), str(body.get("kind", ""))
                         ),
                     )
+                elif method == "POST" and url.path == "/api/scene":
+                    given = self._body().get("inputs")
+                    if not isinstance(given, dict):
+                        raise AppError("Send the inputs as an object")
+                    self._json(200, app.scene(agent_id, given))
                 elif method == "GET" and url.path == "/api/project":
                     self._json(200, app.project())
                 elif method == "GET" and url.path == "/api/map":

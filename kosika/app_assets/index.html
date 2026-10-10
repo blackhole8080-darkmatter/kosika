@@ -134,6 +134,7 @@ pre.source { background: var(--bg); border: 1px solid var(--line); border-radius
 .map details.item { color: var(--ink); font-size: 13.5px; margin: 0; } .difflines { font: 12px/1.5 var(--mono); margin: 8px 0 4px; padding: 8px 10px; background: var(--bg); border-radius: 8px; overflow-x: auto; white-space: pre; }
 .difflines .add { color: var(--ok); } .difflines .cut { color: var(--bad); } .difflines .at { color: var(--faint); }
 .map .empty { color: var(--faint); font-size: 13px; } .map .foot { color: var(--faint); font-size: 12px; }
+.stage { background: var(--bg); border-radius: 10px; overflow: hidden; display: grid; place-items: center; min-height: 120px; } .stage svg { width: 100%; height: auto; max-height: 62vh; display: block; }
 .offers { min-height: 30px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; } .hint { color: var(--faint); font-size: 12px; }
 .offer { font: 12.5px var(--mono); padding: 3px 9px; border-radius: 7px; background: var(--code-soft); color: var(--ink); cursor: pointer; } .offer.first { background: var(--accent-soft); color: var(--accent); }
 .offer i { font: 11px system-ui, sans-serif; color: var(--faint); font-style: normal; }
@@ -904,6 +905,39 @@ function liveTab(agent, isAssistant) {
   return h("div", {class: "split"}, left, right);
 }
 
+// The Scene tab: play the animation a program describes. The picture is
+// made by the app from the checked description; it holds no script.
+function sceneTab(agent) {
+  const given = h("textarea", {spellcheck: "false", style: "min-height:64px"}); given.value = agent.example_input || "{}";
+  const stage = h("div", {class: "stage"}), tell = h("div"), controls = h("div", {class: "row", style: "margin-top:10px"});
+  let ticking = null;
+  function show(scene) {
+    clearInterval(ticking);
+    if (!scene.ok) { fill(stage); fill(controls); fill(tell, h("div", {class: "banner bad"}, "The scene cannot be played yet:"), scene.problems.map(problem => h("div", {class: "item"}, problem))); return; }
+    const parsed = new DOMParser().parseFromString(scene.svg, "image/svg+xml");
+    const svg = document.importNode(parsed.documentElement, true); svg.removeAttribute("width"); svg.removeAttribute("height");
+    fill(stage, svg);
+    const slider = h("input", {type: "range", min: "0", max: String(scene.seconds), step: "0.02", value: "0", style: "flex:1"}), clock = h("span", {class: "hint", style: "min-width:74px"});
+    const at = () => { clock.textContent = svg.getCurrentTime().toFixed(1) + " of " + scene.seconds + " s"; };
+    const play = h("button", {class: "quiet", onclick: () => { if (svg.animationsPaused()) { if (svg.getCurrentTime() >= scene.seconds) svg.setCurrentTime(0); svg.unpauseAnimations(); play.textContent = "Pause"; } else { svg.pauseAnimations(); play.textContent = "Play"; } }}, "Pause");
+    slider.addEventListener("input", () => { svg.pauseAnimations(); play.textContent = "Play"; svg.setCurrentTime(Number(slider.value)); at(); });
+    ticking = setInterval(() => { if (!svg.isConnected) { clearInterval(ticking); return; } if (!svg.animationsPaused()) { slider.value = String(Math.min(svg.getCurrentTime(), scene.seconds)); at(); } }, 80);
+    const again = h("button", {class: "quiet", onclick: () => { svg.setCurrentTime(0); svg.unpauseAnimations(); play.textContent = "Pause"; }}, "From the start");
+    const keep = h("button", {class: "quiet", onclick: () => { const link = h("a", {href: URL.createObjectURL(new Blob([scene.page], {type: "text/html"})), download: agent.title + ".html"}); link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 4000); }}, "Save as a web file");
+    svg.setCurrentTime(0); at();
+    fill(controls, play, again, slider, clock, keep);
+    fill(tell, h("div", {class: "hint", style: "margin-top:8px"}, scene.shapes + " shape(s), " + scene.moves + " move(s). The description was checked before it was drawn. Drag the slider to look at any moment."));
+  }
+  async function make() {
+    let inputs; try { inputs = JSON.parse(given.value || "{}"); } catch (error) { fill(tell, h("div", {class: "banner bad"}, "What you give it is not valid JSON: " + error.message)); return; }
+    fill(tell, h("p", {class: "lead"}, h("span", {class: "spin"}), "Making the scene"));
+    try { show(await api("/api/scene?id=" + encodeURIComponent(agent.id), {method: "POST", body: JSON.stringify({inputs})})); } catch (error) { fill(stage); fill(controls); fill(tell, h("div", {class: "banner bad"}, error.message)); }
+  }
+  make();
+  return h("div", {class: "map"}, h("div", {class: "panel"}, h("h4", null, "The scene"), stage, controls, tell),
+    h("div", {class: "panel"}, h("h4", null, "What you give it"), given, h("div", {class: "row", style: "margin-top:8px"}, h("button", {onclick: make}, "Make the scene again"), h("span", {class: "hint"}, "Change a number and make it again. Only plain code runs: no model, no tools."))));
+}
+
 // The Session tab: what an agent changed in its own copy of the folder, and
 // the one decision that brings it into the real folder or throws it away.
 function sessionTab(agent) {
@@ -1001,6 +1035,7 @@ async function showAgent(id, isAssistant) {
   let tabs = {"Live": a => liveTab(a, isAssistant), "Map": mapTab, "Workflow": workflowTab, "Parts": parts, "Data": dataTab, "Tests": testsTab, "Runs": a => runsPanel(a.id, a.traces), "Code": codeTab};
   if (agent.swarms.length) tabs = {"Live": tabs.Live, "Swarm": swarmTab, ...tabs};
   if (overview && overview.sessions) tabs = {...tabs, "Session": sessionTab};
+  if (agent.scene) tabs = {"Scene": sceneTab, ...tabs};
   // A program that is only a swarm has no main to talk to or run.
   if (!agent.has_main) delete tabs.Live;
   const area = h("div"); const bar = h("div", {class: "tabs"}); const built = {};

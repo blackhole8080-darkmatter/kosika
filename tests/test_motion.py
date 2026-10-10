@@ -12,6 +12,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
+from kosika import app as studio
 from kosika.cli import main as cli_main
 from kosika.modules import load_program
 from kosika.motion import check_scene, to_html, to_svg
@@ -127,7 +128,13 @@ class SceneCheckTests(unittest.TestCase):
             "Two shapes are both called 'ball'": broken(shapes__1__id="ball"),
             "width must be a number above 0": broken(width=0),
             "is of kind text and has no text": broken(shapes__1__text=""),
-            "use one of: linear, in, out, both": broken(moves__0__ease="bounce"),
+            "use one of: linear, in, out, both, bounce, back": broken(
+                moves__0__ease="wobble"
+            ),
+            "needs a color written like": broken(moves__0__what="color"),
+            "repeats 2.5 times": broken(moves__0__repeat=2.5),
+            "ends at 4 s, after the scene's 3 s": broken(moves__0__repeat=2),
+            "repeats without end and lasts no time": broken(moves__3__repeat=0),
             "needs a number for x": broken(shapes__0__x="left"),
         }
         for wanted, found in cases.items():
@@ -164,14 +171,12 @@ class PlayerTests(unittest.TestCase):
     def test_each_move_starts_from_where_the_shape_then_is(self) -> None:
         ball = self.animations("ball")
         slide = next(a for a in ball if a.get("type") == "translate")
-        self.assertEqual((slide.get("from"), slide.get("to")), ("20 50", "180 50"))
+        self.assertEqual(slide.get("values"), "20 0;180 0")
         self.assertEqual((slide.get("begin"), slide.get("dur")), ("0s", "2s"))
         self.assertEqual(slide.get("fill"), "freeze")
         sizes = [a for a in ball if a.get("type") == "scale"]
         # 20 to 10, then 10 to 40: the second begins where the first ended.
-        self.assertEqual(
-            [(a.get("from"), a.get("to")) for a in sizes], [("1", "0.5"), ("0.5", "2")]
-        )
+        self.assertEqual([a.get("values") for a in sizes], ["1;0.5", "0.5;2"])
         # A later move takes over from an earlier one; it is not added to it.
         self.assertTrue(all(a.get("additive") is None for a in ball))
 
@@ -179,12 +184,110 @@ class PlayerTests(unittest.TestCase):
         word = self.animations("word")
         fade = next(a for a in word if a.tag == f"{SVG}animate")
         self.assertEqual(
-            (fade.get("attributeName"), fade.get("from"), fade.get("to")),
-            ("opacity", "1", "0"),
+            (fade.get("attributeName"), fade.get("values")), ("opacity", "1;0")
         )
         turn = next(a for a in word if a.get("type") == "rotate")
-        self.assertEqual((turn.get("from"), turn.get("to")), ("0", "360"))
+        self.assertEqual(turn.get("values"), "0;360")
         self.assertEqual(turn.get("keySplines"), "0.42 0 1 1")
+
+    def played(self, *moves: dict[str, Any]) -> list[ET.Element]:
+        scene = {**SCENE, "moves": list(moves)}
+        self.assertEqual(check_scene(scene), [])
+        self.root = ET.fromstring(to_svg(scene))
+        return self.animations("ball")
+
+    def test_going_across_and_going_down_do_not_undo_each_other(self) -> None:
+        across = {"shape": "ball", "what": "x", "to": 180, "start": 0, "seconds": 2}
+        down = {"shape": "ball", "what": "y", "to": 90, "start": 0, "seconds": 2}
+        self.played(across, down)
+        outer = next(g for g in self.root.iter(f"{SVG}g") if g.get("id") == "ball")
+        inner = outer.find(f"{SVG}g")
+        assert inner is not None
+        # Each has a group of its own: x on the outer one, y on the next.
+        self.assertEqual(outer.get("transform"), "translate(20 0)")
+        self.assertEqual(inner.get("transform"), "translate(0 50)")
+        self.assertEqual(
+            outer.find(f"{SVG}animateTransform").get("values"), "20 0;180 0"
+        )  # type: ignore[union-attr]
+        self.assertEqual(
+            inner.find(f"{SVG}animateTransform").get("values"), "0 50;0 90"
+        )  # type: ignore[union-attr]
+
+    def test_a_bounce_overshoots_and_settles(self) -> None:
+        (move,) = self.played(
+            {
+                "shape": "ball",
+                "what": "x",
+                "to": 120,
+                "start": 0,
+                "seconds": 1,
+                "ease": "bounce",
+            }
+        )
+        self.assertEqual(move.get("values"), "20 0;132 0;115 0;120 0")
+        self.assertEqual(move.get("keyTimes"), "0;0.6;0.82;1")
+        self.assertEqual(len(str(move.get("keySplines")).split(";")), 3)
+
+    def test_there_and_back_leaves_the_shape_where_it_was(self) -> None:
+        pulse, after = self.played(
+            {
+                "shape": "ball",
+                "what": "size",
+                "to": 40,
+                "start": 0,
+                "seconds": 1,
+                "ease": "back",
+            },
+            {"shape": "ball", "what": "size", "to": 10, "start": 1, "seconds": 1},
+        )
+        self.assertEqual(pulse.get("values"), "1;2;1")
+        # The next move starts from the size the shape came back to.
+        self.assertEqual(after.get("values"), "1;0.5")
+
+    def test_a_move_can_repeat_a_number_of_times_or_without_end(self) -> None:
+        twice, forever = self.played(
+            {
+                "shape": "ball",
+                "what": "turn",
+                "to": 360,
+                "start": 0,
+                "seconds": 1,
+                "repeat": 2,
+            },
+            {
+                "shape": "ball",
+                "what": "fade",
+                "to": 0.3,
+                "start": 0,
+                "seconds": 1,
+                "ease": "back",
+                "repeat": 0,
+            },
+        )
+        self.assertEqual(twice.get("repeatCount"), "2")
+        self.assertEqual(forever.get("repeatCount"), "indefinite")
+        once = self.played(
+            {"shape": "ball", "what": "turn", "to": 9, "start": 0, "seconds": 1}
+        )
+        self.assertIsNone(once[0].get("repeatCount"))
+
+    def test_a_shape_can_change_colour(self) -> None:
+        (move,) = self.played(
+            {
+                "shape": "ball",
+                "what": "color",
+                "to": 0,
+                "color": "#00ff00",
+                "start": 1,
+                "seconds": 1,
+            }
+        )
+        self.assertEqual(
+            (move.get("attributeName"), move.get("values")), ("fill", "#e8813a;#00ff00")
+        )
+        # The colour change is on the shape itself, not on a group.
+        circle = next(self.root.iter(f"{SVG}circle"))
+        self.assertIs(circle.find(f"{SVG}animate"), move)
 
     def test_the_page_fetches_nothing_and_runs_no_script(self) -> None:
         page = to_html(SCENE, "a <scene>")
@@ -208,7 +311,11 @@ class LogoProgramTests(unittest.TestCase):
             program, "main", self.root / "run.jsonl", inputs={"ask": {"dots": 12}}
         )
         self.assertEqual(check_scene(scene), [])
-        self.assertEqual((len(scene["shapes"]), len(scene["moves"])), (16, 83))
+        self.assertEqual((len(scene["shapes"]), len(scene["moves"])), (16, 82))
+        self.assertEqual(
+            {m["ease"] for m in scene["moves"]}, {"out", "linear", "back", "bounce"}
+        )
+        self.assertEqual(sum(1 for m in scene["moves"] if m["repeat"] == 0), 1)
         # The dots really are on a circle of radius 120 about the centre.
         for move_x, move_y in zip(
             [
@@ -245,6 +352,42 @@ class LogoProgramTests(unittest.TestCase):
             cli(["motion", str(bad), "--input", str(given), "--out", str(other)]), 1
         )
         self.assertFalse(other.exists())
+
+
+class StudioSceneTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.app = studio.App(LOGO.parent)
+
+    def test_a_program_that_describes_a_scene_gets_a_scene_tab(self) -> None:
+        view = studio.describe(self.app.agent("logo.kos"), detail=True)
+        self.assertTrue(view["scene"])
+        self.assertIn('"dots": 12', view["example_input"])
+        researcher = LOGO.parent.parent / "agents" / "researcher"
+        other = studio.describe(studio.App(researcher).agent("main.kos"), detail=True)
+        self.assertFalse(other["scene"])
+
+    def test_studio_gives_the_picture_or_the_problems(self) -> None:
+        made = self.app.scene("logo.kos", {"ask": {"dots": 6}})
+        self.assertTrue(made["ok"])
+        self.assertEqual((made["shapes"], made["moves"], made["seconds"]), (10, 46, 5))
+        ET.fromstring(made["svg"])
+        self.assertIn("<svg", made["page"])
+        too_many = self.app.scene("logo.kos", {"ask": {"dots": 500}})
+        self.assertFalse(too_many["ok"])
+        self.assertIn("at most 400 shapes", too_many["problems"][0])
+        with self.assertRaises(studio.AppError):
+            self.app.scene("logo.kos", {"wrong": 1})
+
+    def test_the_page_can_play_scrub_and_save_a_scene(self) -> None:
+        page = studio.PAGE.read_text(encoding="utf-8")
+        for needed in (
+            '"Scene": sceneTab',
+            "/api/scene",
+            "setCurrentTime",
+            "Save as a web file",
+        ):
+            self.assertIn(needed, page)
+        self.assertNotIn("innerHTML", page)
 
 
 class TrigTests(unittest.TestCase):

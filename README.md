@@ -221,8 +221,11 @@ kosika motion examples/motion/logo.kos --input ask.json --out logo.html
 The workflow returns one record: `width`, `height`, `seconds`,
 `background`, a list of shapes (`id`, `kind`, `x`, `y`, `size`, `color`,
 `text`; kind is circle, square, ring or text) and a list of moves
-(`shape`, `what`, `to`, `start`, `seconds`, `ease`; what is x, y, size,
-turn or fade). Because the scene is built by ordinary Kosika code, a loop
+(`shape`, `what`, `to`, `start`, `seconds`, `ease`, and if wanted `repeat`
+and `color`). What is x, y, size, turn, fade or color. Ease is linear, in,
+out, both, `bounce` (overshoots a little and settles) or `back` (goes
+there and returns). `repeat` is how many times, with 0 meaning without
+end. Because the scene is built by ordinary Kosika code, a loop
 can place twelve dots on a circle and start each a little after the last
 (`Number` has `sin()`, `cos()` in degrees, and `sqrt()` for this), and a
 test can assert that nothing is still moving when the scene ends.
@@ -232,8 +235,14 @@ said in words: a move that names no shape, a kind that does not exist, a
 move that ends after the scene does. The file it writes holds one SVG
 picture, fetches nothing, and runs no script.
 
-It is deliberately small, four shapes and five moves, to find out whether
-describing motion this way is worth growing.
+In Studio, a program whose `main` gives back shapes and moves gets a Scene
+tab: the animation plays there, a slider drags through time to look at any
+moment, the inputs can be changed and the scene made again, and "Save as a
+web file" gives the same file the command writes. Only plain code runs
+for this: no model and no tool.
+
+It is deliberately small, four shapes and six kinds of move, to find out
+whether describing motion this way is worth growing.
 
 ## Python SDK
 

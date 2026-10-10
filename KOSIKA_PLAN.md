@@ -2309,6 +2309,30 @@ gate: without them a parser written in Kosika has nothing to return.
   model was involved. It is not shown in Studio. Whether this is worth
   growing is exactly what is not yet known.
 
+### Animation: richer motion and a Scene tab
+
+- Moves gain `color` (to the colour in the move's `color` field), the
+  eases `bounce` and `back`, and `repeat` (a count, or 0 for without
+  end). A move is now written as a list of values with their times, so
+  a bounce is four values and there-and-back is three.
+- A fault found and fixed: going across and going up and down shared one
+  group, so when a shape did both at once the second replaced the first
+  and the shape jumped sideways instead of gliding. Each now has its own
+  group. The first version of the logo had this fault in flight; its
+  resting positions, which were what had been read back, were right.
+- Studio shows a Scene tab for a program whose `main` returns shapes and
+  moves: play and pause, a slider through time, the inputs to change,
+  and saving the web file. `/api/scene` runs only plain code.
+- The logo example uses a bounce, a flash of colour round the dots, and a
+  ring that turns without end.
+- Tried in the real page: the tab appeared first, the slider held the
+  scene at 1.6 s with the tile below its resting place (mid-bounce) and
+  at 5 s with it settled.
+- Not claimed: still no picture was captured and nobody has watched it
+  but the owner, who saw the first version. No paths, lines, images or
+  groups of shapes. A scene program that needs a model or a tool cannot
+  be played in the Scene tab. No agent writes scenes yet.
+
 ## Standard coding-agent procedure
 
 1. Inspect `git status`, the relevant source files, tests, and this plan.

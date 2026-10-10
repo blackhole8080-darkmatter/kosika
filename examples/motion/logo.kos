@@ -7,21 +7,32 @@
 // one makes. `kosika motion` checks the scene and writes one web file.
 //
 // What happens: a ring of twelve dots flies in from the centre one after
-// another, the orange tile drops in and settles, the K fades up, the ring
-// turns, and the name slides in underneath.
+// another, the orange tile drops in with a bounce, the K fades up, a wave
+// of light runs round the dots, the name slides in underneath, and the
+// thin ring behind keeps turning for as long as the page is open.
 
 record Shape { id: Text kind: Text x: Number y: Number size: Number color: Text text: Text }
-record Move { shape: Text what: Text to: Number start: Number seconds: Number ease: Text }
+record Move { shape: Text what: Text to: Number start: Number seconds: Number ease: Text repeat: Number color: Text }
 record Scene { width: Number height: Number seconds: Number background: Text shapes: Shape[] moves: Move[] }
 record Ask { dots: Number }
 
 fn move(shape: Text, what: Text, to: Number, start: Number, seconds: Number) -> Move {
-  return {shape: shape, what: what, to: to, start: start, seconds: seconds, ease: "out"}
+  return {shape: shape, what: what, to: to, start: start, seconds: seconds, ease: "out", repeat: 1, color: ""}
+}
+
+// The same move, eased another way: bounce, back, linear ...
+fn eased(m: Move, ease: Text) -> Move {
+  return {..m, ease: ease}
+}
+
+// A flash of another colour that returns to the shape's own.
+fn flash(shape: Text, color: Text, start: Number) -> Move {
+  return {shape: shape, what: "color", to: 0, start: start, seconds: 0.5, ease: "back", repeat: 1, color: color}
 }
 
 // A shape that is there from the start but cannot be seen yet.
 fn hidden(shape: Text) -> Move {
-  return {shape: shape, what: "fade", to: 0, start: 0, seconds: 0, ease: "linear"}
+  return {shape: shape, what: "fade", to: 0, start: 0, seconds: 0, ease: "linear", repeat: 1, color: ""}
 }
 
 // One dot of the ring: it starts at the centre and flies out to its place.
@@ -35,8 +46,8 @@ fn dot_moves(i: Number, dots: Number, cx: Number, cy: Number, radius: Number) ->
     move(name, "fade", 1, leave, 0.2),
     move(name, "x", cx + radius * angle.cos(), leave, 0.9),
     move(name, "y", cy + radius * angle.sin(), leave, 0.9),
-    move(name, "size", 9, 2.6 + i * 0.05, 0.25),
-    move(name, "size", 16, 2.85 + i * 0.05, 0.25)
+    eased(move(name, "size", 26, 2.6 + i * 0.06, 0.5), "back"),
+    flash(name, "#fff4e6", 2.6 + i * 0.06)
   ]
 }
 
@@ -60,9 +71,9 @@ fn build(ask: Ask) -> Scene {
   moves = moves.concat([
     hidden("halo"),
     move("halo", "fade", 1, 1.0, 0.8),
-    move("halo", "turn", 180, 1.0, 4.0),
-    move("tile", "y", cy + 14, 1.2, 0.5),
-    move("tile", "y", cy, 1.7, 0.25),
+    // 0 times means without end: the ring keeps turning.
+    {..eased(move("halo", "turn", 360, 1.0, 12), "linear"), repeat: 0},
+    eased(move("tile", "y", cy, 1.2, 0.8), "bounce"),
     move("tile", "turn", 90, 1.2, 0.75),
     hidden("letter"),
     move("letter", "fade", 1, 1.9, 0.5),
@@ -73,10 +84,11 @@ fn build(ask: Ask) -> Scene {
   return {width: 640, height: 420, seconds: 5, background: "#1a1410", shapes: shapes, moves: moves}
 }
 
-// How many moves would still be going when the scene is over.
+// How many moves would still be going when the scene is over, leaving out
+// those meant to go on without end.
 fn still_moving(scene: Scene) -> Number {
   var late = 0
-  for m in scene.moves where m.start + m.seconds > scene.seconds { late += 1 }
+  for m in scene.moves where m.repeat != 0 and m.start + m.seconds * m.repeat > scene.seconds { late += 1 }
   return late
 }
 
@@ -87,7 +99,7 @@ workflow main(ask: Ask) -> Scene {
 test "the ring has a dot and six moves for each one asked for" {
   a = main({dots: 12})
   expect a.shapes.length() == 16
-  expect a.moves.length() == 12 * 6 + 11
+  expect a.moves.length() == 12 * 6 + 10
   expect a.shapes[0].id == "dot0"
 }
 
@@ -97,7 +109,9 @@ test "the first dot flies straight to the right of the centre" {
   expect a.moves[3].what == "y" and a.moves[3].to == 190
 }
 
-test "nothing is still moving when the scene ends" {
+test "nothing is still moving when the scene ends, except what never stops" {
   a = main({dots: 12})
   expect still_moving(a) == 0
+  expect eased(move("tile", "y", 1, 0, 1), "bounce").ease == "bounce"
+  expect flash("dot0", "#ffffff", 2).what == "color"
 }
