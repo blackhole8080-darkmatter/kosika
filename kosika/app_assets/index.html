@@ -131,6 +131,8 @@ pre.source { background: var(--bg); border: 1px solid var(--line); border-radius
 .map .step:first-of-type { border-top: 0; } .map .step .n { flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 700; display: grid; place-items: center; }
 .map details, .map .choice { font-size: 12.5px; color: var(--soft); margin-top: 4px; } .map summary { cursor: pointer; } .map .choice { padding-left: 14px; }
 .map .in { margin: 4px 0 4px 16px; padding-left: 10px; border-left: 2px solid var(--line); color: var(--ink); } .map .in .small { display: block; color: var(--soft); }
+.map details.item { color: var(--ink); font-size: 13.5px; margin: 0; } .difflines { font: 12px/1.5 var(--mono); margin: 8px 0 4px; padding: 8px 10px; background: var(--bg); border-radius: 8px; overflow-x: auto; white-space: pre; }
+.difflines .add { color: var(--ok); } .difflines .cut { color: var(--bad); } .difflines .at { color: var(--faint); }
 .map .empty { color: var(--faint); font-size: 13px; } .map .foot { color: var(--faint); font-size: 12px; }
 textarea.editor { min-height: 62vh; font: 12.5px/1.55 var(--mono); tab-size: 2; white-space: pre; overflow: auto; }
 .bar { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; } .bar .say { font-size: 13px; color: var(--soft); }
@@ -852,7 +854,12 @@ function sessionTab(agent) {
       h("div", {class: "panel"}, h("h4", null, "Waiting in the session"),
         h("div", {class: "purpose"}, view.count ? view.count + " file(s) differ from " + view.folder : "Nothing differs from " + view.folder),
         h("div", {class: "foot", style: "margin:6px 0 10px"}, "None of this is in the real folder yet. Read the list before you bring it back: what you bring back is as real as if you had written it."),
-        view.changes.map(change => h("div", {class: "item"}, h("span", {class: "from"}, words[change.kind] + (change.kind === "removed" ? "" : ", " + change.bytes + " bytes")), h("b", null, change.path))),
+        view.changes.map(change => { const body = h("div", {class: "difflines"}); let asked = false;
+          const open = async event => { if (!event.target.open || asked) return; asked = true; fill(body, h("span", {class: "spin"}));
+            try { const shown = await api("/api/session/file?id=" + encodeURIComponent(agent.id) + "&path=" + encodeURIComponent(change.path));
+              fill(body, shown.lines.map(line => h("div", {class: line.startsWith("+") ? "add" : line.startsWith("-") ? "cut" : line.startsWith("@@") ? "at" : ""}, line || " ")), shown.note ? h("div", {class: "at"}, shown.note) : null, !shown.lines.length && !shown.note ? h("div", {class: "at"}, "An empty file.") : null);
+            } catch (error) { fill(body, h("div", {class: "cut"}, error.message)); } };
+          return h("details", {class: "item", ontoggle: open}, h("summary", null, h("span", {class: "from"}, words[change.kind] + (change.kind === "removed" ? "" : ", " + change.bytes + " bytes")), h("b", null, change.path)), body); }),
         view.count > view.changes.length ? h("div", {class: "foot"}, "And " + (view.count - view.changes.length) + " more.") : null),
       h("div", {class: "row"}, view.count ? h("button", {onclick: () => end(true)}, "Bring these into the real folder") : null, h("button", {class: "quiet", onclick: () => end(false)}, "Throw the session away"), h("button", {class: "quiet", onclick: load}, "Look again")));
   }

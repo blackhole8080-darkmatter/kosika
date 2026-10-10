@@ -629,6 +629,18 @@ class App:
             )
         return view
 
+    def session_file(self, agent_id: str, path: str) -> dict[str, Any]:
+        """What changed inside one of the session's files."""
+
+        agent = self.agent(agent_id)
+        found = self._sessions.get(self._session_key(agent.path.parent))
+        if found is None:
+            raise AppError("This agent has no open session", 409)
+        try:
+            return dict(found.show(path))
+        except SessionError as exc:
+            raise AppError(str(exc), 404) from exc
+
     def end_session(self, agent_id: str, keep: bool) -> dict[str, Any]:
         """Bring the session's changes into the real folder, or throw them
         away. Either way the session ends. This is the person's yes or no."""
@@ -1159,6 +1171,11 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                     self._json(200, app.save_purpose(agent_id, text))
                 elif method == "GET" and url.path == "/api/session":
                     self._json(200, app.session(agent_id))
+                elif method == "GET" and url.path == "/api/session/file":
+                    self._json(
+                        200,
+                        app.session_file(agent_id, (query.get("path") or [""])[0]),
+                    )
                 elif method == "POST" and url.path == "/api/session":
                     self._json(
                         200,

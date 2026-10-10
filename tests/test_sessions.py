@@ -142,6 +142,21 @@ class SessionTests(unittest.TestCase):
         self.assertFalse((self.real / "sub" / "old.txt").exists())
         self.assertEqual(self.session.changes(), [])
 
+    def test_a_changed_file_is_shown_line_by_line(self) -> None:
+        (self.session.work / "calc.py").write_bytes(b"print(6 * 7)\nprint(1)\n")
+        (self.session.work / "made.txt").write_bytes(b"made\n")
+        (self.session.work / "picture.bin").write_bytes(b"\xff\xfe\x00")
+        (self.session.work / "sub" / "old.txt").unlink()
+        shown = self.session.show("calc.py")
+        self.assertEqual(shown["kind"], "changed")
+        self.assertIn("+print(1)", shown["lines"])
+        self.assertIn(" print(6 * 7)", shown["lines"])
+        self.assertEqual(self.session.show("made.txt")["lines"][-1], "+made")
+        self.assertEqual(self.session.show("sub/old.txt")["lines"][-1], "-old")
+        self.assertIn("not text", self.session.show("picture.bin")["note"])
+        with self.assertRaises(SessionError):
+            self.session.show("../outside.txt")
+
     def test_throwing_a_session_away_leaves_the_real_folder_alone(self) -> None:
         (self.session.work / "calc.py").write_text("ruined", encoding="utf-8")
         self.session.discard()

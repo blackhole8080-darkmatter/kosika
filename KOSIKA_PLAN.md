@@ -2228,9 +2228,8 @@ gate: without them a parser written in Kosika has nothing to return.
   them back wrote them.
 - Not claimed: only Studio has the switch, not `kosika run` or `chat`.
   A session does not survive Studio stopping (its copy stays on disk
-  and is not found again). Changes are listed by name and size, with no
-  view of what changed inside a file, and are brought back all
-  together from the page. If the real folder changes while a session is
+  and is not found again). Each change opens to show its lines (text files up to 200 KB),
+  but changes are brought back all together from the page. If the real folder changes while a session is
   open, bringing back overwrites it. The Linux side here has no
   `python` or `pytest`, so the workbench agent's tools do not work in a
   session as written. No limit on memory or processor. No model was

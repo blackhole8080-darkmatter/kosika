@@ -23,6 +23,7 @@ the copy is brought back if the person says yes without reading it.
 
 from __future__ import annotations
 
+import difflib
 import filecmp
 import os
 import shutil
@@ -39,6 +40,9 @@ MAX_COPY_FILES = 20_000
 #: How many changed files are listed; the rest are counted.
 MAX_LISTED_CHANGES = 500
 RUN_TIMEOUT_SECONDS = 60
+#: A file larger than this is named as changed but not shown line by line.
+MAX_SHOWN_BYTES = 200 * 1024
+MAX_SHOWN_LINES = 400
 #: Never copied in or brought back: other tools' own stores.
 _SKIPPED = {"node_modules", "__pycache__", ".venv", "venv"}
 
@@ -245,6 +249,46 @@ class Session:
             Change(relative, "removed", 0) for relative in real if relative not in copy
         )
         return sorted(found, key=lambda change: change.path)
+
+    def show(self, path: str) -> dict[str, object]:
+        """What changed inside one file: the lines taken out and put in."""
+
+        change = next((c for c in self.changes() if c.path == path), None)
+        if change is None:
+            raise SessionError(f"{path} is not among the session's changes")
+
+        def read(file: Path) -> list[str] | None:
+            try:
+                if file.stat().st_size > MAX_SHOWN_BYTES:
+                    return None
+                return file.read_text(encoding="utf-8").splitlines()
+            except (OSError, UnicodeDecodeError):
+                return None
+
+        before = [] if change.kind == "new" else read(self.folder / path)
+        after = [] if change.kind == "removed" else read(self.work / path)
+        if before is None or after is None:
+            return {
+                "path": path,
+                "kind": change.kind,
+                "lines": [],
+                "note": "This file is not text, or is too large to show.",
+            }
+        lines = list(
+            difflib.unified_diff(
+                before, after, "now", "in the session", lineterm="", n=2
+            )
+        )[2:]
+        return {
+            "path": path,
+            "kind": change.kind,
+            "lines": lines[:MAX_SHOWN_LINES],
+            "note": (
+                f"And {len(lines) - MAX_SHOWN_LINES} more line(s)."
+                if len(lines) > MAX_SHOWN_LINES
+                else ""
+            ),
+        }
 
     def apply(self, paths: Sequence[str] | None = None) -> list[Change]:
         """Put the copy's changes into the real folder. Only ever called on

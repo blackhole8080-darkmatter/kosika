@@ -553,7 +553,7 @@ kosika studio my_agents --model qwen2.5:7b --model-protocol ollama --allow-folde
   steps are not stopped one by one. The Live view says "allowed inside the
   session".
 - The Session tab lists every file that is new, changed or removed in
-  the copy. "Bring these into the real folder" is your yes; "Throw the
+  the copy, and each one opens to show the lines taken out and put in. "Bring these into the real folder" is your yes; "Throw the
   session away" leaves the real folder untouched. Either one ends the
   session, and the next run starts a fresh copy.
 - Tools that reach elsewhere (an MCP server, the web) are not walled and
