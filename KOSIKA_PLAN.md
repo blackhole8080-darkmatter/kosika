@@ -2230,9 +2230,10 @@ gate: without them a parser written in Kosika has nothing to return.
   A session does not survive Studio stopping (its copy stays on disk
   and is not found again). Each change opens to show its lines (text files up to 200 KB),
   but changes are brought back all together from the page. If the real folder changes while a session is
-  open, bringing back overwrites it. The Linux side here has no
-  `python` or `pytest`, so the workbench agent's tools do not work in a
-  session as written. No limit on memory or processor. No model was
+  open, bringing back overwrites it. The Linux side at first had no
+  `python` or `pytest`; both were installed later the same day, with the
+  owner's yes, and `python`, `python -m pytest` and `git` were then run
+  inside a session. The workbench agent itself was not run in one. No limit on memory or processor. No model was
   involved in the trial, and no one but the author has used it. MCP and
   web tools are outside the wall.
 
@@ -2254,6 +2255,32 @@ gate: without them a parser written in Kosika has nothing to return.
   cannot be dismissed. Functions are not listed. Search is by words in
   names and descriptions, not by meaning. The page lists one folder of
   programs and knows nothing of how they relate to each other.
+
+### Help while writing in Studio
+
+- `/api/assist` checks the text being edited without saving it and
+  returns the first problem (message, code, line, column, length) and
+  the words that can be completed: about fifty words of the language
+  with a line on how each is used, every built-in method, and the names
+  and fields found in the text.
+- The checker places a problem at the function or step it is in.
+  `_sharpen` moves that to the word the message quotes, when the word
+  is found inside the same declaration.
+- The Code tab shows a bar of up to eight completions for the word being
+  typed (Tab takes the first; after a dot, fields and methods only) and
+  the first problem under the text, 0.7 s after typing stops; clicking it
+  selects the word at fault.
+- `tests/test_writing_help.py`. Tried in the real page: a misspelt method
+  was reported on its line and selected on click, and `hits.mat` then Tab
+  gave `hits.matches`.
+- Not claimed: this is a bar above a plain text box, not a list at the
+  cursor, and errors are not underlined in the text. Only the first
+  problem is shown. Completions do not know types: after a dot every
+  field and method in the file is offered, whatever the value is. A
+  name the program does not declare (a misspelt tool) is pointed at
+  the declaration, not at the misspelling. It does not write code for
+  you; that would need a model. The existing language server
+  (`kosika/lsp.py`) and the VS Code folder were not touched or tried.
 
 ## Standard coding-agent procedure
 

@@ -520,6 +520,16 @@ workflow, the parts the agent is made of, its records and how they refer to
 each other, its tests, its past runs, and its code. The sidebar also lists
 all agents, all runs, and the permissions this Studio was started with.
 
+The Code tab helps while you write. Press Edit and, as you type, a bar
+above the text offers words that begin with what you typed: the
+language's own words (each with a one-line reminder of how it is used),
+the built-in methods, and the names declared in the file. Tab takes the
+first one; after a dot only fields and methods are offered. Under the
+text, the first problem the checker finds is shown a moment after you stop
+typing, with its line; click it to jump to the word at fault. This comes
+from the checker, not from a model, and nothing is saved until you press
+Save.
+
 The Project page, in the sidebar, is the whole folder in one place: every
 agent, workflow, model, tool, memory and data record, each with the program
 it belongs to and its line, and one search box over all of them. Above the
@@ -568,8 +578,9 @@ kosika studio my_agents --model qwen2.5:7b --model-protocol ollama --allow-folde
   still ask you each time.
 
 The wall is bubblewrap, which on Windows runs inside WSL. A session has
-the programs the Linux side has: here that is `python3` and `git`, and
-not `python` or `pytest`. It is a strong wall, not a perfect one: it
+only the programs the Linux side has, so a tool that starts `python` or
+`pytest` needs them installed there (on Ubuntu: `python-is-python3` and
+`python3-pytest`). It is a strong wall, not a perfect one: it
 relies on the Linux kernel, and what you bring back without reading is as
 real as anything you wrote yourself.
 

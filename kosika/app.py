@@ -53,9 +53,12 @@ from .ast import (
     program_payload,
 )
 from .board import AGENT as BOARD_AGENT
+from .builtin_methods import METHODS
 from .chat import ChatError, answer_text, message_parameter
+from .diagnostics import anchors_for, diagnostic_from_exception
 from .direct import AGENT as DIRECT_AGENT
 from .durable import ApprovalPending, ExecutionSession
+from .lexer import lex
 from .mcp_tools import MCPHub, bind_mcp_tools, declaration
 from .memory import AGENT as MEMORY_AGENT
 from .memory import bind_memory_tools
@@ -340,10 +343,104 @@ def describe(agent: Agent, *, detail: bool) -> dict[str, Any]:
     return view
 
 
+#: Words of the language offered while writing, with what each is for.
+WRITING_WORDS = {
+    "record": "a shape of data: record Name { field: Type }",
+    "fn": "a function: fn name(x: Type) -> Type { return ... }",
+    "workflow": "the steps of a program: workflow main(msg: Msg) -> Said { ... }",
+    "model": "a model the program may ask: model name { input: A output: B }",
+    "tool": "something the program may use, granted by whoever runs it",
+    "agent": "which tools may be used together: agent hands { can: [tool] }",
+    "memory": "values kept between runs: memory notes of Note",
+    "test": 'a test with scripted answers: test "name" { ... }',
+    "eval": "like a test, but a real model answers",
+    "use_model": "ask a declared model: x = use_model name(text)",
+    "execute": "use a tool through an agent: x = execute hands.tool(args)",
+    "call": "run another workflow: x = call other(msg)",
+    "ask": "let an agent choose its own tools: x = ask scout(text)",
+    "classify": 'x = classify text into ["a", "b"]',
+    "summarize": "x = summarize text",
+    "extract": "x = extract Record from text",
+    "decide": "x = decide question given facts",
+    "verify": "the answer must pass a check: ... verify ok(x)",
+    "retry": "ask again if refused: ... retry 1",
+    "escalate": "ask a stronger model if refused: ... escalate strong",
+    "otherwise": "what to do if the step fails: ... otherwise fallback(x)",
+    "budget": "this workflow's own limit: budget 3 model calls, 60 seconds",
+    "parallel": "steps that may run at the same time: parallel { ... }",
+    "match": 'choose by a value: match x { case "a" { ... } case _ { ... } }',
+    "case": "one branch of a match",
+    "require": "require approval: a person must allow this workflow's changes",
+    "let": "a name that cannot change: let x = 1",
+    "var": "a name that can change: var total = 0",
+    "return": "the value a function gives back",
+    "if": "if a > b { ... } else { ... }",
+    "else": "the other branch of an if",
+    "for": "for item in list { ... }, or with: where condition",
+    "while": "while count < 10 { ... }",
+    "where": "keep only some items: for x in xs where x > 0 { x }",
+    "try": "try { ... } otherwise { ... }",
+    "fail": 'stop with a reason: fail "why"',
+    "expect": 'in a test: expect a.text == "hi"',
+    "answers": "in a test: answers model_name: [{...}]",
+    "remember": "remember value in notes under key",
+    "recall": "x = recall notes under key",
+    "true": "",
+    "false": "",
+    "null": "",
+    "and": "",
+    "or": "",
+    "not": "",
+    "Text": "words",
+    "Number": "a number",
+    "Bool": "true or false",
+}
+
+
+def _sharpen(problem: dict[str, Any], source: str) -> None:
+    """Point at the word a problem names, when it is found close by.
+
+    The checker says which function or step a problem is in, and the place
+    it gives is that function's name. Most messages also quote the word at
+    fault. If that word appears within the next lines, point there instead.
+    """
+
+    line = problem.get("line")
+    if not isinstance(line, int):
+        return
+    rows = source.splitlines()
+    if not 1 <= line <= len(rows):
+        return
+    starts = ("fn ", "workflow ", "record ", "test ", "eval ", "tool ", "model ")
+    # The declaration the problem is in: from the nearest line above that
+    # begins one, to the line before the next.
+    first = line
+    while first > 1 and not rows[first - 1].startswith(starts):
+        first -= 1
+    last = first
+    while last < len(rows) and not rows[last].startswith(starts):
+        last += 1
+    quoted = re.findall(r"'([A-Za-z_]\w*)'", str(problem["message"]))
+    for word in quoted:
+        pattern = re.compile(rf"(?<![\w]){re.escape(word)}(?![\w])")
+        for number in range(first, last + 1):
+            found = pattern.search(rows[number - 1])
+            # Its own name on the declaring line is where the checker
+            # already pointed, and says nothing more.
+            if found and number != first:
+                problem.update(line=number, column=found.start() + 1, length=len(word))
+                return
+
+
 APPROVAL_WAIT_SECONDS = 600
 MAX_SOURCE_BYTES = 1024 * 1024
 _SWARM = re.compile(r"^swarm\s+\w+\s*\{", re.MULTILINE)
 NEW_NAME = re.compile(r"[a-z][a-z0-9_]{0,39}")
+_DECLARED = re.compile(
+    r"^\s*(?:default\s+)?(record|fn|workflow|model|tool|agent|memory|board|swarm)\s+([A-Za-z_]\w*)",
+    re.MULTILINE,
+)
+_FIELD = re.compile(r"\b([A-Za-z_]\w{2,})\s*:")
 _EVENT_KEYS = (
     "event",
     "step",
@@ -791,6 +888,79 @@ class App:
             "tests": len(program.tests),
         }
 
+    def assist(self, agent_id: str, source: str) -> dict[str, Any]:
+        """Help while writing: where the first problem is, and the words that
+        could come next. The words are the language's own, its built-in
+        methods, and the names declared in this text. No model is asked.
+        Nothing is written."""
+
+        agent = self.agent(agent_id)
+        if len(source.encode("utf-8")) > MAX_SOURCE_BYTES:
+            raise AppError("The program is larger than 1 MiB")
+        problem: dict[str, Any] | None = None
+        try:
+            program = load_program(agent.path, source_overrides={agent.path: source})
+            check_tests(program)
+        except (ValueError, TypeError) as exc:
+            try:
+                tokens = lex(source)
+            except ValueError:
+                tokens = []
+            found = diagnostic_from_exception(
+                exc, anchors=anchors_for(tokens) if tokens else None, path=agent.id
+            )
+            message = found.message
+            prefix = f"{agent.path}: "
+            if message.startswith(prefix):
+                message = message[len(prefix) :]
+            problem = {
+                "message": message,
+                "code": found.code,
+                "line": found.span.start_line + 1 if found.span else None,
+                "column": found.span.start_character + 1 if found.span else None,
+                "length": (
+                    max(1, found.span.end_character - found.span.start_character)
+                    if found.span and found.span.end_line == found.span.start_line
+                    else 1
+                ),
+            }
+            _sharpen(problem, source)
+        words: dict[str, dict[str, str]] = {
+            word: {"label": word, "kind": "word", "detail": detail}
+            for word, detail in WRITING_WORDS.items()
+        }
+        for method in METHODS:
+            given = ", ".join(name for name, _ in method.parameters)
+            words.setdefault(
+                method.name,
+                {
+                    "label": method.name,
+                    "kind": "method",
+                    "detail": f"value.{method.name}({given})",
+                },
+            )
+        for match in _DECLARED.finditer(source):
+            kind, name = match.group(1), match.group(2)
+            words[name] = {
+                "label": name,
+                "kind": kind,
+                "detail": f"{kind} declared in this file",
+            }
+        for match in _FIELD.finditer(source):
+            words.setdefault(
+                match.group(1),
+                {
+                    "label": match.group(1),
+                    "kind": "field",
+                    "detail": "a field or name in this file",
+                },
+            )
+        return {
+            "ok": problem is None,
+            "problem": problem,
+            "words": sorted(words.values(), key=lambda w: w["label"].lower()),
+        }
+
     def save_source(self, agent_id: str, source: str) -> dict[str, Any]:
         """Write the program's text. The page's own Save button is the yes:
         this is the person editing their own file. A text that does not
@@ -1153,6 +1323,11 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                     )
                 elif method == "POST" and url.path == "/api/swarm":
                     self._json(200, {"run": app.start_swarm(agent_id, self._body()).id})
+                elif method == "POST" and url.path == "/api/assist":
+                    source = self._body().get("source")
+                    if not isinstance(source, str):
+                        raise AppError("Send the program's text as source")
+                    self._json(200, app.assist(agent_id, source))
                 elif method == "POST" and url.path in ("/api/check", "/api/save"):
                     source = self._body().get("source")
                     if not isinstance(source, str):

@@ -134,6 +134,9 @@ pre.source { background: var(--bg); border: 1px solid var(--line); border-radius
 .map details.item { color: var(--ink); font-size: 13.5px; margin: 0; } .difflines { font: 12px/1.5 var(--mono); margin: 8px 0 4px; padding: 8px 10px; background: var(--bg); border-radius: 8px; overflow-x: auto; white-space: pre; }
 .difflines .add { color: var(--ok); } .difflines .cut { color: var(--bad); } .difflines .at { color: var(--faint); }
 .map .empty { color: var(--faint); font-size: 13px; } .map .foot { color: var(--faint); font-size: 12px; }
+.offers { min-height: 30px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; } .hint { color: var(--faint); font-size: 12px; }
+.offer { font: 12.5px var(--mono); padding: 3px 9px; border-radius: 7px; background: var(--code-soft); color: var(--ink); cursor: pointer; } .offer.first { background: var(--accent-soft); color: var(--accent); }
+.offer i { font: 11px system-ui, sans-serif; color: var(--faint); font-style: normal; }
 textarea.editor { min-height: 62vh; font: 12.5px/1.55 var(--mono); tab-size: 2; white-space: pre; overflow: auto; }
 .bar { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; } .bar .say { font-size: 13px; color: var(--soft); }
 select { font: inherit; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; }
@@ -777,11 +780,39 @@ function codeTab(agent) {
   const send = async path => api(path + "?id=" + encodeURIComponent(agent.id), {method: "POST", body: JSON.stringify({source: area.value})});
   const tell = (answer, saved) => fill(result, h("div", {class: "banner " + (answer.ok ? "ok" : "bad")},
     answer.ok ? (saved ? "Saved. " : "") + "It checks: " + answer.workflows + " workflow(s), " + answer.tests + " test(s)." : (saved ? "Saved, but it does not check: " : "It does not check: ") + answer.error));
+  // Help while writing. The words offered are the language's own, its
+  // built-in methods, and the names in this file; the first problem is
+  // shown with its place. All of it comes from the checker, none from a model.
+  const offers = h("div", {class: "offers"}), trouble = h("div");
+  let words = [], offered = [], asking = 0;
+  const prefix = () => { const before = area.value.slice(0, area.selectionStart); const found = before.match(/[A-Za-z_][A-Za-z0-9_]*$/); return area.selectionStart === area.selectionEnd && found && !/[A-Za-z0-9_]/.test(area.value[area.selectionStart] || "") ? found[0] : ""; };
+  function take(word) { const start = area.selectionStart - prefix().length; area.setRangeText(word.label, start, area.selectionStart, "end"); area.focus(); changed(); }
+  function offer() {
+    const typed = prefix(), low = typed.toLowerCase();
+    // After a dot only a field or a method can come.
+    const dotted = area.value[area.selectionStart - typed.length - 1] === ".";
+    offered = typed.length < 2 ? [] : words.filter(w => w.label.toLowerCase().startsWith(low) && w.label !== typed && (!dotted || w.kind === "method" || w.kind === "field")).sort((a, b) => (a.kind === "word" || a.kind === "method" || a.kind === "field") - (b.kind === "word" || b.kind === "method" || b.kind === "field") || a.label.length - b.label.length).slice(0, 8);
+    fill(offers, offered.length ? [h("span", {class: "hint"}, "Tab completes the first:"), ...offered.map((word, index) => h("span", {class: "offer" + (index ? "" : " first"), title: word.detail || word.kind, onmousedown: event => { event.preventDefault(); take(word); }}, word.label, h("i", null, word.kind === "word" ? "" : " " + word.kind)))] : h("span", {class: "hint"}, typed.length < 2 ? "Type two letters for suggestions." : "No suggestion for \u201c" + typed + "\u201d."));
+  }
+  function jump(problem) { const rows = area.value.split("\n"); let at = 0; for (let i = 0; i < problem.line - 1 && i < rows.length; i++) at += rows[i].length + 1; at += Math.max(0, (problem.column || 1) - 1); area.focus(); area.setSelectionRange(at, at + (problem.length || 1));
+    area.scrollTop = Math.max(0, (problem.line - 6) * parseFloat(getComputedStyle(area).lineHeight || "19")); }
+  async function assist() {
+    const mine = ++asking;
+    try { const answer = await send("/api/assist"); if (mine !== asking) return; words = answer.words;
+      fill(trouble, answer.ok ? h("div", {class: "banner ok", style: "margin:8px 0 0"}, "No problems found.") : h("div", {class: "banner bad", style: "margin:8px 0 0;cursor:pointer", title: "Click to go there", onclick: () => answer.problem.line && jump(answer.problem)},
+        (answer.problem.line ? "Line " + answer.problem.line + ": " : "") + answer.problem.message, answer.problem.line ? h("span", {class: "hint"}, "  Click to go there.") : null));
+      offer();
+    } catch (error) { if (mine === asking) fill(trouble, h("div", {class: "banner bad", style: "margin:8px 0 0"}, error.message)); }
+  }
+  let waiting = null;
+  function changed() { say.textContent = area.value === agent.source ? "" : "Not saved yet."; offer(); clearTimeout(waiting); waiting = setTimeout(assist, 700); }
   area.addEventListener("keydown", event => {
     if (event.key !== "Tab") return;
-    event.preventDefault(); area.setRangeText("  ", area.selectionStart, area.selectionEnd, "end");
+    event.preventDefault();
+    if (offered.length) take(offered[0]); else { area.setRangeText("  ", area.selectionStart, area.selectionEnd, "end"); changed(); }
   });
-  area.addEventListener("input", () => { say.textContent = area.value === agent.source ? "" : "Not saved yet."; });
+  area.addEventListener("input", changed);
+  area.addEventListener("click", offer); area.addEventListener("keyup", event => { if (event.key.startsWith("Arrow")) offer(); });
   const check = h("button", {class: "quiet", onclick: async () => { try { tell(await send("/api/check"), false); } catch (error) { fill(result, h("div", {class: "banner bad"}, error.message)); } }}, "Check");
   const save = h("button", {onclick: async () => {
     try {
@@ -792,7 +823,7 @@ function codeTab(agent) {
   const undo = h("button", {class: "quiet", onclick: () => { area.value = agent.source || ""; say.textContent = ""; fill(result); }}, "Discard changes");
   const bar = h("div", {class: "bar"});
   const reading = () => { fill(bar, h("button", {class: "quiet", onclick: editing}, "Edit"), h("span", {class: "say"}, agent.path)); fill(holder, highlight(agent.source || "")); fill(result); };
-  const editing = () => { fill(bar, save, check, undo, h("button", {class: "quiet", onclick: reading}, "Done"), say); fill(holder, area); area.focus(); };
+  const editing = () => { fill(bar, save, check, undo, h("button", {class: "quiet", onclick: reading}, "Done"), say); fill(holder, offers, area, trouble); area.focus(); offer(); assist(); };
   reading();
   return h("div", null, bar, result, holder);
 }
