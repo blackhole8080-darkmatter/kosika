@@ -1,0 +1,282 @@
+[
+ {
+  "kind": "words",
+  "question": "What is the yearly fee for the allotment?",
+  "answer": "64",
+  "file": "garden.md",
+  "line": 3
+ },
+ {
+  "kind": "words",
+  "question": "What is the shed padlock code?",
+  "answer": "4071",
+  "file": "garden.md",
+  "line": 7
+ },
+ {
+  "kind": "words",
+  "question": "What is the registration of the car?",
+  "answer": "LK19 TWN",
+  "file": "car.md",
+  "line": 3
+ },
+ {
+  "kind": "words",
+  "question": "When does the MOT run out?",
+  "answer": "14 November",
+  "file": "car.md",
+  "line": 4
+ },
+ {
+  "kind": "words",
+  "question": "Who is Noor's teacher?",
+  "answer": "Abernathy",
+  "file": "school.md",
+  "line": 3
+ },
+ {
+  "kind": "words",
+  "question": "When is the parents' evening?",
+  "answer": "9 March",
+  "file": "school.md",
+  "line": 6
+ },
+ {
+  "kind": "words",
+  "question": "What ink does the printer take?",
+  "answer": "104",
+  "file": "computer.md",
+  "line": 6
+ },
+ {
+  "kind": "words",
+  "question": "At what time do backups run?",
+  "answer": "02:00",
+  "file": "computer.md",
+  "line": 4
+ },
+ {
+  "kind": "words",
+  "question": "What is Noor allergic to?",
+  "answer": "cashews",
+  "file": "kitchen.md",
+  "line": 8
+ },
+ {
+  "kind": "words",
+  "question": "When does the veg box arrive?",
+  "answer": "Tuesday",
+  "file": "kitchen.md",
+  "line": 6
+ },
+ {
+  "kind": "words",
+  "question": "What is my chess rating?",
+  "answer": "1482",
+  "file": "club/chess.md",
+  "line": 6
+ },
+ {
+  "kind": "words",
+  "question": "What is my part in the choir?",
+  "answer": "second tenor",
+  "file": "club/choir.md",
+  "line": 7
+ },
+ {
+  "kind": "meaning",
+  "question": "How much air should the front wheels have?",
+  "answer": "2.3",
+  "file": "car.md",
+  "line": 5
+ },
+ {
+  "kind": "meaning",
+  "question": "Who do I phone if the car stops working on the road?",
+  "answer": "RoadMate",
+  "file": "car.md",
+  "line": 7
+ },
+ {
+  "kind": "meaning",
+  "question": "Which months is trimming the hedge allowed?",
+  "answer": "September",
+  "file": "garden.md",
+  "line": 11
+ },
+ {
+  "kind": "meaning",
+  "question": "How big is the rain barrel?",
+  "answer": "210",
+  "file": "garden.md",
+  "line": 5
+ },
+ {
+  "kind": "meaning",
+  "question": "What time do lessons finish for the day?",
+  "answer": "15:15",
+  "file": "school.md",
+  "line": 4
+ },
+ {
+  "kind": "meaning",
+  "question": "Which day does Noor need her bathing things?",
+  "answer": "Wednesday",
+  "file": "school.md",
+  "line": 5
+ },
+ {
+  "kind": "meaning",
+  "question": "Where are the AI models stored on disk?",
+  "answer": "D:\\models",
+  "file": "computer.md",
+  "line": 10
+ },
+ {
+  "kind": "meaning",
+  "question": "How much RAM does my notebook computer have?",
+  "answer": "16",
+  "file": "computer.md",
+  "line": 3
+ },
+ {
+  "kind": "meaning",
+  "question": "How long does grandmother's lentil dish cook?",
+  "answer": "20 minutes",
+  "file": "kitchen.md",
+  "line": 4
+ },
+ {
+  "kind": "meaning",
+  "question": "What should I serve visitors to drink?",
+  "answer": "Assam",
+  "file": "kitchen.md",
+  "line": 11
+ },
+ {
+  "kind": "meaning",
+  "question": "How many games are played at the April competition?",
+  "answer": "six",
+  "file": "club/chess.md",
+  "line": 5
+ },
+ {
+  "kind": "meaning",
+  "question": "What piece are we performing in the summer?",
+  "answer": "Rutter",
+  "file": "club/choir.md",
+  "line": 4
+ },
+ {
+  "kind": "several",
+  "question": "Who is the treasurer of the chess club?",
+  "answer": "Olamide",
+  "file": "club/chess.md",
+  "line": 4
+ },
+ {
+  "kind": "several",
+  "question": "Who is the treasurer of the choir?",
+  "answer": "Benedikt",
+  "file": "club/choir.md",
+  "line": 5
+ },
+ {
+  "kind": "several",
+  "question": "Which locker holds the chess clocks?",
+  "answer": "9",
+  "file": "club/chess.md",
+  "line": 7
+ },
+ {
+  "kind": "several",
+  "question": "On what date is the choir concert?",
+  "answer": "21 June",
+  "file": "club/choir.md",
+  "line": 4
+ },
+ {
+  "kind": "several",
+  "question": "Where is the spare key for the car?",
+  "answer": "blue tin",
+  "file": "car.md",
+  "line": 10
+ },
+ {
+  "kind": "several",
+  "question": "What is the order number for the slow cooker lid?",
+  "answer": "60-3318",
+  "file": "kitchen.md",
+  "line": 12
+ },
+ {
+  "kind": "several",
+  "question": "What is the case number of the laptop warranty?",
+  "answer": "W-55102",
+  "file": "computer.md",
+  "line": 7
+ },
+ {
+  "kind": "several",
+  "question": "How much do recorder lessons cost?",
+  "answer": "6 pounds",
+  "file": "school.md",
+  "line": 9
+ },
+ {
+  "kind": "none",
+  "question": "What is the wifi password?",
+  "answer": "",
+  "file": "",
+  "line": 0
+ },
+ {
+  "kind": "none",
+  "question": "When is Noor's birthday?",
+  "answer": "",
+  "file": "",
+  "line": 0
+ },
+ {
+  "kind": "none",
+  "question": "What is Dariusz's surname?",
+  "answer": "",
+  "file": "",
+  "line": 0
+ },
+ {
+  "kind": "none",
+  "question": "How much did the laptop cost?",
+  "answer": "",
+  "file": "",
+  "line": 0
+ },
+ {
+  "kind": "none",
+  "question": "What is the phone number of the chess club?",
+  "answer": "",
+  "file": "",
+  "line": 0
+ },
+ {
+  "kind": "none",
+  "question": "When was the car last washed?",
+  "answer": "",
+  "file": "",
+  "line": 0
+ },
+ {
+  "kind": "none",
+  "question": "What is the recipe for the sourdough bread?",
+  "answer": "",
+  "file": "",
+  "line": 0
+ },
+ {
+  "kind": "none",
+  "question": "Which seat am I in at the concert?",
+  "answer": "",
+  "file": "",
+  "line": 0
+ }
+]

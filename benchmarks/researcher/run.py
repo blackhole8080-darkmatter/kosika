@@ -75,13 +75,21 @@ def main() -> int:
     parser.add_argument("--kind", choices=KINDS, help="Ask only this kind of question.")
     parser.add_argument("--limit", type=int, help="Ask only the first N questions.")
     parser.add_argument(
+        "--set",
+        choices=("first", "unseen"),
+        default="first",
+        help="Which notes and questions: the first forty, which the agent "
+        "was improved against, or the unseen forty, which it was not.",
+    )
+    parser.add_argument(
         "--label",
         default="",
         help="A word for this version of the agent, kept with the results.",
     )
     args = parser.parse_args()
 
-    questions = json.loads((HERE / "questions.json").read_text(encoding="utf-8"))
+    base = HERE if args.set == "first" else HERE / args.set
+    questions = json.loads((base / "questions.json").read_text(encoding="utf-8"))
     if args.kind:
         questions = [q for q in questions if q["kind"] == args.kind]
     questions = questions[: args.limit] if args.limit else questions
@@ -109,7 +117,7 @@ def main() -> int:
             if args.embed_model
             else None
         )
-        tools = bind_system_tools(program, folder=HERE / "notes", meaning=meaning)
+        tools = bind_system_tools(program, folder=base / "notes", meaning=meaning)
         rows: list[dict[str, Any]] = []
         started = time.monotonic()
         for number, question in enumerate(questions, 1):
@@ -176,7 +184,7 @@ def main() -> int:
     out = (
         HERE
         / "results"
-        / f"{stamp}_{name}{'_meaning' if args.embed_model else ''}{'_' + args.label if args.label else ''}.json"
+        / f"{stamp}_{name}{'_meaning' if args.embed_model else ''}{'_unseen' if args.set == 'unseen' else ''}{'_' + args.label if args.label else ''}.json"
     )
     out.parent.mkdir(exist_ok=True)
     out.write_text(
@@ -184,6 +192,7 @@ def main() -> int:
             {
                 "when": stamp,
                 "label": args.label,
+                "set": args.set,
                 "model": spec,
                 "embed_model": args.embed_model or "",
                 "runs": args.runs,
