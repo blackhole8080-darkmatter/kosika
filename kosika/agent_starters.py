@@ -13,23 +13,37 @@ AGENT_STARTERS: dict[str, tuple[str, str, str, str]] = {
         "kosika run main.kos --input input.json --model MODEL --memory memory",
         """\
 // A support desk that remembers each customer between runs.
+//
+// How to read this file, top to bottom:
+//   records   the shapes of the data
+//   model     a model the program may ask (you choose which one when you run it)
+//   memory    what it keeps between runs
+//   fn        plain code: exact, and the same every time
+//   workflow  the steps, in order
+//   test      checks that need no model, because the answers are scripted
 
+// What comes in, what is remembered, and what goes out.
 record Ticket { customer: Text text: Text }
 record History { tickets: Number last_queue: Text }
 record DeskReply { queue: Text urgent: Bool returning: Bool tickets: Number message: Text }
 
 model assistant
+// One History is kept for each customer, under the customer's name.
 memory customers of History
 
+// Count this ticket. `known` is what memory gave back: it says whether
+// anything was found, and holds the value if so.
 fn updated(known: CustomersRecalled, label: Choice) -> History {
   let before = if known.found { known.value.value().tickets } else { 0 }
   return {tickets: before + 1, last_queue: label.label}
 }
 
+// Used only if the model's label is unusable twice in a row.
 fn fallback_label(ticket: Ticket) -> Choice {
   return {label: "other", confidence: 0}
 }
 
+// Put the answer together. The model wrote the summary; code does the rest.
 fn reply(ticket: Ticket, known: CustomersRecalled, history: History, label: Choice, urgent: Decision, draft: Summary) -> DeskReply {
   let greeting = if known.found { "Welcome back, " } else { "Hello, " }
   return {
@@ -41,7 +55,10 @@ fn reply(ticket: Ticket, known: CustomersRecalled, history: History, label: Choi
   }
 }
 
+// Each line is one step: a name, then what it does. A later step may use
+// the result of an earlier one by its name.
 workflow main(ticket: Ticket) -> DeskReply {
+  // The most this run may ask of the model and of the clock.
   budget 12 model calls, 300 seconds
   known   = recall customers under ticket.customer
   label   = classify ticket.text into ["billing", "bug", "account", "other"] retry 1 otherwise fallback_label(ticket)
@@ -52,6 +69,8 @@ workflow main(ticket: Ticket) -> DeskReply {
   result  = reply(ticket, known, history, label, urgent, draft)
 }
 
+// `answers` gives the model's replies in the order it will be asked, so the
+// test runs in a moment and always the same way.
 test "a new customer is greeted and remembered" {
   answers assistant: [
     {label: "bug", confidence: 0.9},
@@ -91,13 +110,18 @@ test "the second ticket knows the customer" {
         "kosika run main.kos --input input.json --model MODEL",
         """\
 // An expense checker: the model reads the receipt, code applies the rules.
+//
+// The idea to notice: a model is good at reading a messy receipt and bad
+// at being exact. So the model only reads, and the limits are plain code.
 
+// A `?` after a type means the value may be missing.
 record Claim { employee: Text receipt: Text }
 record Receipt { merchant: Text? total: Number? category: Text? }
 record Verdict { approved: Bool amount: Number category: Text reasons: Text[] }
 
 model assistant
 
+// What the workflow uses if the model cannot read the receipt at all.
 fn unreadable(claim: Claim) -> Receipt {
   return {merchant: null, total: null, category: null}
 }
@@ -112,6 +136,7 @@ fn limit_for(category: Text) -> Number {
   }
 }
 
+// Decide, and collect every reason for a refusal so the person can see why.
 fn judge(receipt: Receipt, personal: Decision) -> Verdict {
   var reasons: Text[] = []
   if not receipt.total.exists() {
@@ -129,6 +154,9 @@ fn judge(receipt: Receipt, personal: Decision) -> Verdict {
   return {approved: reasons.length() == 0, amount: total, category: category, reasons: reasons}
 }
 
+// `with evidence` makes the model quote the receipt for what it claims, and
+// the quote is checked. `retry 2` asks again if the answer is refused.
+// `otherwise` says what to do if it is refused every time.
 workflow main(claim: Claim) -> Verdict {
   budget 8 model calls, 300 seconds
   receipt  = extract Receipt from claim.receipt with evidence retry 2 otherwise unreadable(claim)
@@ -178,7 +206,11 @@ test "a made-up total is rejected and the claim is not approved" {
         "kosika run main.kos --input input.json --model MODEL",
         """\
 // A meeting notes agent: the model finds the tasks, code organises them.
+//
+// The model turns free text into a list of Task records. Sorting, grouping
+// and counting are then done by code, which never miscounts.
 
+// `Task[]` is a list of tasks.
 record Notes { text: Text }
 record Task { owner: Text what: Text days: Number }
 record TaskList { tasks: Task[] }
@@ -187,11 +219,14 @@ record Plan { summary: Text first: Text? total: Number busiest: Text? loads: Own
 
 model assistant
 
+// What the workflow uses if the model finds no usable list.
 fn none(notes: Notes) -> TaskList {
   return {tasks: []}
 }
 
+// `let` names a value that does not change; `var` one that does.
 fn plan(found: TaskList, brief: Summary) -> Plan {
+  // Soonest first, and each owner's tasks together.
   let ordered = found.tasks.sort_by(field: "days")
   let by_owner = found.tasks.group_by(field: "owner")
   var loads: OwnerLoad[] = []
@@ -211,6 +246,8 @@ fn plan(found: TaskList, brief: Summary) -> Plan {
   }
 }
 
+// `extract` asks the model to fill in a record from text; `summarize` asks
+// it for a short version.
 workflow main(notes: Notes) -> Plan {
   budget 6 model calls, 300 seconds
   found  = extract TaskList from notes.text retry 2 otherwise none(notes)

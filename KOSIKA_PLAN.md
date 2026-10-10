@@ -2472,6 +2472,35 @@ gate: without them a parser written in Kosika has nothing to return.
   three are page code checked by hand once each; the tests only check
   that they are there.
 
+### One command to start, and a guide for a newcomer
+
+- `kosika start` (`kosika/quickstart.py`) takes no options. It makes
+  `KosikaAgents` in the home folder with three starter agents if there
+  is none, asks Ollama on this computer what is installed, picks a chat
+  model (a preferred one, else the largest under 9 GB) and an embedding
+  model if there is one, says in plain words what it found and that it
+  grants nothing, and then is an ordinary `kosika studio`.
+- The three starter agents carry comments that explain each part to
+  someone reading Kosika for the first time. Their code is unchanged.
+- `GETTING_STARTED.md`: fifteen minutes from install to having changed
+  an agent, written for someone who does not program. The README
+  points to it first.
+- An installable file: `python -m pip wheel . --no-deps -w dist` makes
+  one `.whl` of about 630 KB.
+- `tests/test_quickstart.py`. Tried for real: the file was built and
+  installed into a clean environment with nothing downloaded;
+  `kosika start` there made the three agents, chose qwen2.5:7b and
+  nomic-embed-text, and opened Studio with the moving mark and the
+  Project page working; all three starter agents then ran on the model
+  to the end (63 s, 86 s and about a minute).
+- Not claimed: nobody but the author has followed the guide, which is
+  the whole point of it and is still to do. The clean install was on
+  the same laptop, without the two tree-sitter packages the project
+  lists as needed; Studio and the starters work without them, the Rust
+  source reader was not tried, and a normal install would download
+  them. Only Ollama is looked for. Nothing was tried on another
+  operating system. There is no uninstaller beyond `pip uninstall`.
+
 ## Standard coding-agent procedure
 
 1. Inspect `git status`, the relevant source files, tests, and this plan.

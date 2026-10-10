@@ -2363,6 +2363,22 @@ def build_parser() -> argparse.ArgumentParser:
             "often each passes, how long it took, and how many model calls."
         ),
     )
+    start_parser = subparsers.add_parser(
+        "start",
+        help=(
+            "The easiest way in. Makes a folder of starter agents if you have "
+            "none, finds a model already on this computer, and opens Studio. "
+            "Grants nothing."
+        ),
+    )
+    start_parser.add_argument(
+        "folder",
+        type=Path,
+        nargs="?",
+        help="Where your agents live. Default: KosikaAgents in your home folder.",
+    )
+    start_parser.add_argument("--port", type=int, default=0)
+    start_parser.add_argument("--no-browser", action="store_true")
     motion_parser = subparsers.add_parser(
         "motion",
         help=(
@@ -2620,6 +2636,19 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
+    if args.command == "start":
+        from .quickstart import default_folder, installed_models, start_plan
+
+        start_arguments, start_lines = start_plan(
+            args.folder or default_folder(), installed_models()
+        )
+        print("\n".join(start_lines))
+        if args.port:
+            start_arguments += ["--port", str(args.port)]
+        if args.no_browser:
+            start_arguments.append("--no-browser")
+        # From here it is an ordinary `kosika studio` with those choices.
+        args = parser.parse_args(start_arguments)
     if args.command == "author":
         return _run_author_command(args)
     if args.command == "author-eval":

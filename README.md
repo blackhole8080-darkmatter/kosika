@@ -1,5 +1,9 @@
 A dependency-light first vertical slice of the Kosika AI systems language. Synapse was the earlier working codename.
 
+**New here? Read [GETTING_STARTED.md](GETTING_STARTED.md).** Install, type
+`kosika start`, and in fifteen minutes you will have looked at an agent,
+tested it, run it and changed it.
+
 ## Status: prototype, not a released language
 
 Read this before evaluating anything below.
