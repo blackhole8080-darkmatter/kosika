@@ -806,6 +806,8 @@ tool run_tests {
 | `system "files"` | `read` | `{path: Text}` | `{text: Text}` |
 | `system "files"` | `write` | `{path: Text, text: Text}` | `{bytes: Number}` |
 | `system "files"` | `list` | `{path: Text}` | `{names: Text[]}` |
+| `system "files"` | `search` | `{path: Text, query: Text}` | `{matches: Text[]}` |
+| `system "files"` | `find` | `{path: Text, query: Text}` | `{matches: Text[]}` |
 
 - A system tool MUST declare `access: execute`, and its records MUST have
   exactly the fields above (`check/invalid-system-tool`). A workflow that
@@ -818,6 +820,16 @@ tool run_tests {
 - A shell tool starts only the program named in `operation`, with `args`
   passed as a list and never interpreted by a shell, inside the granted
   folder, for at most 60 seconds, with output cut at 64 KiB per stream.
+- `search` gives the lines holding the query's words and `find` the lines
+  nearest to it in meaning, each as `path:line: text`, best first. Both
+  only read and MAY be declared `access: observe`. `find` gives at most
+  12 lines, compares at most 4,000 lines of at least 12 characters, and
+  is bound only when the host also grants an embedding model
+  (`--embed-model NAME`); otherwise it is unreachable like any ungranted
+  tool. The host keeps what the embedding model returns for each line
+  outside the granted folder, so searching never writes to the folder. At
+  most 400 lines not seen before are sent to the embedding model in one
+  call; a larger folder is covered over several calls.
 - File paths are relative to the granted folder. A path that is absolute,
   contains `..`, or passes through a symlink is refused. Files are UTF-8 text
   of at most 1 MiB.

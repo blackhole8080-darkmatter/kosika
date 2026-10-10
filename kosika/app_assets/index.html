@@ -337,6 +337,7 @@ function showPermissions() {
       fact("Websites agents may read", overview.sites, "None. The web cannot be reached."),
       fact("Changing things", ["Only after you press Allow once, for that one action.", "The card shows exactly what will be done before you answer.", "No answer in ten minutes counts as a refusal."]),
       fact("MCP servers", overview.mcp, "None. Start Studio with --mcp NAME=COMMAND to grant one."),
+      fact("Search by meaning", overview.embed ? ["Allowed, with the embedding model " + overview.embed + ".", "It only reads, inside the granted folder.", "What it learns about each line is kept on this computer, outside that folder."] : ["Not allowed. Start Studio with --embed-model to permit it."]),
       fact("Starting programs", overview.shell ? ["Allowed, only the programs an agent's tools name.", "Each start waits for your Allow once and shows the exact command.", "Runs inside the granted folder, stopped after 60 seconds."] : ["Not allowed. Start Studio with --allow-shell to permit it."]),
       fact("Never allowed here", ["Files outside the granted folder", "Websites that are not on the list", "Anything at all without the grants above"]),
       fact("Where programs come from", [overview.root])),

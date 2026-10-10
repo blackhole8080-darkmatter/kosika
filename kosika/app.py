@@ -427,7 +427,12 @@ class App:
         approved_by: str = "app",
         allow_shell: bool = False,
         mcp: Mapping[str, Sequence[str]] | None = None,
+        meaning: Any = None,
+        embed_label: str = "",
     ):
+        # Search by meaning, when this person named an embedding model.
+        self.meaning = meaning
+        self.embed_label = embed_label
         # MCP servers this person named. Each is started when first needed
         # and kept until the app stops.
         self.mcp = MCPHub(mcp) if mcp else None
@@ -469,6 +474,7 @@ class App:
             "allow_folder": str(self.allow_folder) if self.allow_folder else "",
             "sites": list(self.sites),
             "shell": self.allow_shell,
+            "embed": self.embed_label,
             "mcp": self.mcp.names if self.mcp else [],
             "starters": [kind for kind in KINDS if kind != "hello"],
             "agents": cards,
@@ -560,6 +566,7 @@ class App:
                 folder=self.allow_folder,
                 sites=self.sites,
                 allow_shell=self.allow_shell,
+                meaning=self.meaning,
             ),
             **bind_memory_tools(program, folder / "memory"),
             **bind_mcp_tools(program, self.mcp),

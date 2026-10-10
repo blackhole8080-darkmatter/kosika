@@ -528,6 +528,23 @@ def _model_fixture_bindings(path: Path) -> dict[str, ModelProvider]:
 DEFAULT_LOCAL_MODEL_URL = "http://localhost:11434/v1"
 
 
+def _meaning(args: argparse.Namespace) -> Any:
+    """The search-by-meaning grant, or None when no embedding model is named."""
+
+    name = getattr(args, "embed_model", None)
+    if not name:
+        return None
+    from .embeddings import Meaning, default_store, ollama_embedder
+
+    url = getattr(args, "model_url", None) or DEFAULT_LOCAL_MODEL_URL
+    # Embeddings are asked of Ollama's own address, without the /v1 that
+    # its OpenAI-compatible chat address ends in.
+    base = url.rstrip("/")
+    if base.endswith("/v1"):
+        base = base[:-3]
+    return Meaning(ollama_embedder(name, base), name, default_store())
+
+
 def _model_route_bindings(
     path: Path, program: Program, default_protocol: str, timeout: float = 60.0
 ) -> dict[str, ModelProvider]:
@@ -1862,6 +1879,15 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     run_parser.add_argument(
+        "--embed-model",
+        metavar="NAME",
+        help=(
+            "An embedding model, such as nomic-embed-text, for file tools that "
+            "search by meaning (operation find). Asked at the same address as "
+            "--model-url. Without it those tools cannot be reached."
+        ),
+    )
+    run_parser.add_argument(
         "--allow-shell",
         action="store_true",
         help="Also grant the program's system shell tools. Needs --allow-folder.",
@@ -2190,6 +2216,15 @@ def build_parser() -> argparse.ArgumentParser:
             ),
         )
         app_parser.add_argument(
+            "--embed-model",
+            metavar="NAME",
+            help=(
+                "An embedding model, such as nomic-embed-text, for file tools that "
+                "search by meaning (operation find). Asked at the same address as "
+                "--model-url. Without it those tools cannot be reached."
+            ),
+        )
+        app_parser.add_argument(
             "--allow-shell",
             action="store_true",
             help=(
@@ -2250,6 +2285,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--allow-folder",
         type=Path,
         help="Folder the program's file tools may work inside.",
+    )
+    chat_parser.add_argument(
+        "--embed-model",
+        metavar="NAME",
+        help=(
+            "An embedding model, such as nomic-embed-text, for file tools that "
+            "search by meaning (operation find). Asked at the same address as "
+            "--model-url. Without it those tools cannot be reached."
+        ),
     )
     chat_parser.add_argument(
         "--allow-site",
@@ -3303,6 +3347,8 @@ def main() -> int:
             sites=tuple(args.allow_site),
             allow_shell=args.allow_shell,
             mcp=mcp_servers,
+            meaning=_meaning(args),
+            embed_label=args.embed_model or "",
         )
         try:
             server = make_server(studio, args.port)
@@ -3342,7 +3388,10 @@ def main() -> int:
             chat_models = _workflow_model_bindings(args, program)
             chat_tools = {
                 **bind_system_tools(
-                    program, folder=args.allow_folder, sites=args.allow_site
+                    program,
+                    folder=args.allow_folder,
+                    sites=args.allow_site,
+                    meaning=_meaning(args),
                 ),
                 **bind_memory_tools(program, args.memory),
             }
@@ -3816,6 +3865,7 @@ def main() -> int:
             folder=args.allow_folder,
             allow_shell=args.allow_shell,
             sites=getattr(args, "allow_site", ()),
+            meaning=_meaning(args),
         )
         system_bindings = {
             **system_bindings,

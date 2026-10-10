@@ -50,9 +50,10 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, Callable, Sequence
+from typing import Any, Callable, Iterator, Sequence
 
 from .ast import Program, ToolDecl
+from .embeddings import EmbeddingError, Meaning
 from .web import WebError, bind_web_tool
 
 SYSTEM_PREFIX = "system:"
@@ -61,13 +62,21 @@ SYSTEM_KINDS = ("shell", "files", "web", "kosika")
 MAX_CHECKED_SOURCE = 64 * 1024
 #: How many of a checked program's tests are run.
 MAX_CHECKED_TESTS = 30
-FILE_OPERATIONS = ("read", "peek", "search", "write", "create", "list")
-READ_ONLY_OPERATIONS = ("read", "peek", "search", "list")
+FILE_OPERATIONS = ("read", "peek", "search", "find", "write", "create", "list")
+READ_ONLY_OPERATIONS = ("read", "peek", "search", "find", "list")
 #: Limits on one search of a folder, so it always comes back.
 MAX_SEARCH_MATCHES = 40
 MAX_SEARCH_FILES = 5000
 MAX_SEARCH_SECONDS = 8.0
 MAX_SEARCH_LINE = 240
+#: Limits on one search by meaning. Only so many lines are compared,
+#: and only so many new ones are sent to the embedding model in one
+#: call; the rest are picked up by later calls, which remember.
+MAX_FIND_MATCHES = 12
+MAX_FIND_LINES = 4000
+MAX_FIND_NEW = 400
+#: A line shorter than this says too little to compare meanings.
+MIN_FIND_LINE = 12
 #: Folders a search never walks into: tools' own stores, not writing.
 _NOT_SEARCHED = {
     "node_modules",
@@ -99,6 +108,10 @@ SHAPES: dict[str, tuple[dict[str, str], dict[str, str]]] = {
     # asked for. Each match is `path:line: text`, best matches first, so an
     # answer can be tied to the exact line it came from.
     "search": ({"path": "Text", "query": "Text"}, {"matches": "Text[]"}),
+    # The lines nearest in meaning to the query, in the same form as
+    # `search`, nearest first. It needs an embedding model, which the
+    # person running the program grants; see kosika.embeddings.
+    "find": ({"path": "Text", "query": "Text"}, {"matches": "Text[]"}),
     "write": ({"path": "Text", "text": "Text"}, {"bytes": "Number"}),
     # Like write, but refuses when anything is already at that path, so it
     # can add to a folder and never destroy what is there.
@@ -318,7 +331,41 @@ def _shell(tool: ToolDecl, folder: Path) -> Callable[[ToolDecl, dict[str, Any]],
     return run_program
 
 
-def _files(tool: ToolDecl, folder: Path) -> Callable[[ToolDecl, dict[str, Any]], Any]:
+def _lines(
+    folder: Path, start: Path, deadline: float
+) -> Iterator[tuple[str, int, str]]:
+    """Every line of the text files under `start`: (file, number, line)."""
+
+    seen = 0
+    pending = [start]
+    while pending and seen < MAX_SEARCH_FILES and time.monotonic() < deadline:
+        current = pending.pop(0)
+        try:
+            entries = sorted(current.iterdir(), key=lambda entry: entry.name)
+        except OSError:
+            continue
+        for entry in entries:
+            if entry.name.startswith(".") or entry.is_symlink():
+                continue
+            if entry.is_dir():
+                if entry.name not in _NOT_SEARCHED:
+                    pending.append(entry)
+                continue
+            seen += 1
+            try:
+                if entry.stat().st_size > MAX_FILE_BYTES:
+                    continue
+                text = entry.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            name = entry.relative_to(folder).as_posix()
+            for number, row in enumerate(text.splitlines(), 1):
+                yield name, number, row
+
+
+def _files(
+    tool: ToolDecl, folder: Path, meaning: Meaning | None = None
+) -> Callable[[ToolDecl, dict[str, Any]], Any]:
     def read(_tool: ToolDecl, arguments: dict[str, Any]) -> dict[str, Any]:
         path = _inside(folder, arguments["path"])
         if not path.is_file():
@@ -356,34 +403,11 @@ def _files(tool: ToolDecl, folder: Path) -> Callable[[ToolDecl, dict[str, Any]],
             raise SystemToolError("a search needs at least one word")
         deadline = time.monotonic() + MAX_SEARCH_SECONDS
         found: list[tuple[int, str, int, str]] = []
-        seen = 0
-        pending = [start]
-        while pending and seen < MAX_SEARCH_FILES and time.monotonic() < deadline:
-            current = pending.pop(0)
-            try:
-                entries = sorted(current.iterdir(), key=lambda entry: entry.name)
-            except OSError:
-                continue
-            for entry in entries:
-                if entry.name.startswith(".") or entry.is_symlink():
-                    continue
-                if entry.is_dir():
-                    if entry.name not in _NOT_SEARCHED:
-                        pending.append(entry)
-                    continue
-                seen += 1
-                try:
-                    if entry.stat().st_size > MAX_FILE_BYTES:
-                        continue
-                    text = entry.read_text(encoding="utf-8")
-                except (OSError, UnicodeDecodeError):
-                    continue
-                name = entry.relative_to(folder).as_posix()
-                for number, row in enumerate(text.splitlines(), 1):
-                    lower = row.lower()
-                    hits = sum(1 for word in words if word in lower)
-                    if hits:
-                        found.append((hits, name, number, row.strip()))
+        for name, number, row in _lines(folder, start, deadline):
+            lower = row.lower()
+            hits = sum(1 for word in words if word in lower)
+            if hits:
+                found.append((hits, name, number, row.strip()))
         # Lines holding more of the words first; then by file and line, so
         # the same search always gives the same answer.
         found.sort(key=lambda item: (-item[0], item[1], item[2]))
@@ -391,6 +415,41 @@ def _files(tool: ToolDecl, folder: Path) -> Callable[[ToolDecl, dict[str, Any]],
             "matches": [
                 f"{name}:{number}: {row[:MAX_SEARCH_LINE]}"
                 for _, name, number, row in found[:MAX_SEARCH_MATCHES]
+            ]
+        }
+
+    def find(_tool: ToolDecl, arguments: dict[str, Any]) -> dict[str, Any]:
+        assert meaning is not None
+        start = (
+            folder
+            if arguments["path"] in (".", "")
+            else _inside(folder, arguments["path"])
+        )
+        if not start.is_dir():
+            raise SystemToolError(f"{arguments['path']!r} is not a folder")
+        question = arguments["query"].strip()
+        if not question:
+            raise SystemToolError("a search by meaning needs a question")
+        deadline = time.monotonic() + MAX_SEARCH_SECONDS
+        rows: list[tuple[str, int, str]] = []
+        for name, number, row in _lines(folder, start, deadline):
+            line = row.strip()
+            if len(line) >= MIN_FIND_LINE:
+                rows.append((name, number, line[:MAX_SEARCH_LINE]))
+                if len(rows) >= MAX_FIND_LINES:
+                    break
+        if not rows:
+            return {"matches": []}
+        try:
+            ranked = meaning.nearest(
+                question, [line for _, _, line in rows], MAX_FIND_NEW
+            )
+        except EmbeddingError as exc:
+            raise SystemToolError(str(exc)) from exc
+        return {
+            "matches": [
+                f"{rows[at][0]}:{rows[at][1]}: {rows[at][2]}"
+                for _, at in ranked[:MAX_FIND_MATCHES]
             ]
         }
 
@@ -440,6 +499,7 @@ def _files(tool: ToolDecl, folder: Path) -> Callable[[ToolDecl, dict[str, Any]],
         "read": read,
         "peek": peek,
         "search": search,
+        "find": find,
         "write": write,
         "create": create,
         "list": list_names,
@@ -453,10 +513,12 @@ def bind_system_tools(
     allow_shell: bool = False,
     sites: Sequence[str] = (),
     web_opener: Any = None,
+    meaning: Meaning | None = None,
 ) -> dict[str, Callable[[ToolDecl, dict[str, Any]], Any]]:
     """Bind the program's system tools that the host has granted.
 
-    A files tool is bound when a folder is granted. A shell tool is bound only
+    A files tool is bound when a folder is granted, and one that searches by
+    meaning only when an embedding model is granted too. A shell tool is bound only
     when a folder is granted and shell is allowed. A web tool is bound when
     at least one site is allowed. Anything not bound stays unreachable.
     """
@@ -493,7 +555,9 @@ def bind_system_tools(
     bindings: dict[str, Callable[[ToolDecl, dict[str, Any]], Any]] = dict(web)
     for tool in system:
         if system_kind(tool) == "files":
-            bindings[tool.name] = _files(tool, root)
+            if tool.operation == "find" and meaning is None:
+                continue
+            bindings[tool.name] = _files(tool, root, meaning)
         elif system_kind(tool) == "shell" and allow_shell:
             bindings[tool.name] = _shell(tool, root)
     return bindings

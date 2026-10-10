@@ -801,6 +801,23 @@ back the lines under that folder holding the words, as `path:line: text`,
 best first. It only reads, skips hidden folders, and never leaves the
 granted folder.
 
+`operation: "find"` takes and gives the same, but ranks lines by meaning
+instead of shared words, so "what do I pay my landlord" finds "Rent is 900
+euros a month". It needs an embedding model, which you grant when you
+start, exactly as you grant a folder:
+
+```
+ollama pull nomic-embed-text
+kosika studio my_agents --model qwen2.5:3b --model-protocol ollama --allow-folder NOTES --embed-model nomic-embed-text
+```
+
+Without `--embed-model` a `find` tool cannot be reached, and a step that
+uses it falls to its `otherwise`. The researcher uses both: key words
+first, then the lines nearest in meaning. What the embedding model says
+about each line is kept in `.kosika/embeddings.sqlite3` in your home
+folder, never in the folder being searched, so each line is only sent to
+the model once.
+
 ### Tools from MCP servers
 
 An MCP server is a separate program that offers tools. A Kosika program

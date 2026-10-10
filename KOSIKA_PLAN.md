@@ -2104,6 +2104,48 @@ gate: without them a parser written in Kosika has nothing to return.
   One run cannot show whether the longer guide cost a task or whether it
   is the usual noise; it has not been run again.
 
+### Search by meaning
+
+- A files tool may have `operation: "find"`: the lines of a folder
+  nearest in meaning to a question, in the same `path:line: text` form
+  as `search`, so a program can swap one for the other and the
+  researcher's quote check works unchanged.
+- It needs an embedding model. `--embed-model NAME` on `run`, `chat` and
+  `studio` grants one, asked at the Ollama address. Without it the tool
+  is not bound. Studio's Permissions page says whether it is granted.
+- `kosika/embeddings.py`: `ollama_embedder`, and `Meaning`, which ranks
+  by cosine nearness and remembers every vector in a SQLite file in the
+  user's home folder, keyed by model and text. The searched folder is
+  never written to.
+- The researcher asks for key-word lines and, when the question has key
+  words at all, for lines near in meaning; it reads the best eight of
+  the first, then up to six of the second, then the rest.
+- `tests/test_find_by_meaning.py` (a stand-in embedder, no network), one
+  more test and one more eval in the researcher.
+- Tried with nomic-embed-text on a made-up folder of three notes files:
+  four questions sharing no useful word with their answer (flat and rent,
+  tooth doctor and dentist, away and on leave, rubbish and bins) each got
+  the right line first; key words found one of the four. The first call
+  took 1.8 s, later ones under 0.2 s. The researcher's evals on qwen2.5:7b:
+  15 of 15, the new one 3 of 3.
+- The same day, five setups on the researcher's four older evals, three
+  runs each: gemma3:1b 5 of 12 in 74 s, qwen2.5:1.5b 8 in 52 s, qwen2.5:3b
+  9 in 84 s, qwen2.5:7b 12 in 137 s, and 1.5b with 7b as `strong` 9 in
+  60 s. The 1.5b model never refused the question the lines do not answer:
+  it gave a real quote that proves nothing, which the quote check passes,
+  so `escalate` is never reached. The check proves a quote is real, not
+  that it answers the question.
+- The author with the longer guide, three more runs on qwen2.5:7b: 9 of
+  18, so 12 of 24 over all four runs against 8 of 12 for the two runs with
+  the shorter guide. That points to the longer guide costing something,
+  without settling it.
+- Not claimed: the trial folder was sixteen lines; nothing was measured on
+  a large folder, where only 400 new lines are embedded per call and a
+  first search is therefore incomplete. Ranking is by one embedding model
+  with no threshold, so `find` always returns its twelve nearest lines,
+  near or not. The vectors store grows and is never trimmed. No hosted
+  embedding service is supported.
+
 ## Standard coding-agent procedure
 
 1. Inspect `git status`, the relevant source files, tests, and this plan.
