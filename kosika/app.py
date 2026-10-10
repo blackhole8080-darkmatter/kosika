@@ -76,6 +76,8 @@ from .system_tools import bind_system_tools
 from .testing import check_tests, run_tests
 
 PAGE = Path(__file__).parent / "app_assets" / "index.html"
+#: The program that describes Studio's own moving mark.
+BRAND = Path(__file__).parent / "app_assets" / "brand.kos"
 MAX_AGENTS = 200
 MAX_BODY = 64 * 1024
 _SKIPPED = {"_trash", "archive", "node_modules", "__pycache__", "runs"}
@@ -552,6 +554,7 @@ class App:
         self.in_session = in_session and allow_folder is not None
         self.session_home = session_home or default_home()
         self._sessions: dict[str, Session] = {}
+        self._brand: dict[str, Any] | None = None
         # Search by meaning, when this person named an embedding model.
         self.meaning = meaning
         self.embed_label = embed_label
@@ -987,6 +990,30 @@ class App:
             raise AppError(f"Could not save: {exc}", 422) from exc
         return {"saved": True, **checked}
 
+    def brand(self) -> dict[str, Any]:
+        """Studio's own moving mark. It is not a stored picture: the Kosika
+        program beside the page is run, and the scene it describes is
+        drawn. Made once and kept."""
+
+        if self._brand is None:
+            try:
+                with tempfile.TemporaryDirectory(prefix="kosika-brand-") as scratch:
+                    made = run(
+                        load_program(BRAND),
+                        "main",
+                        Path(scratch) / "run.jsonl",
+                        inputs={},
+                    )
+                self._brand = {
+                    "ok": True,
+                    "svg": to_svg(made, backdrop=False),
+                    "seconds": made["seconds"],
+                }
+            except (ValueError, RuntimeError, OSError) as exc:
+                # The page falls back to a plain letter.
+                self._brand = {"ok": False, "error": str(exc)}
+        return self._brand
+
     def project(self) -> dict[str, Any]:
         """Everything in this folder in one list, with suggestions that
         come from rules, never from a model."""
@@ -1397,6 +1424,8 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                         self._json(200, app.scene(agent_id, body["inputs"]))
                     else:
                         raise AppError("Send inputs to run, or a scene to draw")
+                elif method == "GET" and url.path == "/api/brand":
+                    self._json(200, app.brand())
                 elif method == "GET" and url.path == "/api/project":
                     self._json(200, app.project())
                 elif method == "GET" and url.path == "/api/map":

@@ -390,6 +390,23 @@ class StudioSceneTests(unittest.TestCase):
             self.assertIn(needed, page)
         self.assertNotIn("innerHTML", page)
 
+    def test_studios_own_mark_is_a_kosika_program_that_is_run(self) -> None:
+        self.assertTrue(all(r.passed for r in run_tests(load_program(studio.BRAND))))
+        brand = self.app.brand()
+        self.assertTrue(brand["ok"], brand)
+        root = ET.fromstring(brand["svg"])
+        ids = [g.get("id") for g in root.iter(f"{SVG}g") if g.get("id")]
+        self.assertEqual(len(ids), 12)
+        self.assertEqual(ids[-2:], ["tile", "letter"])
+        # It sits on Studio's own background, so it brings none of its own.
+        self.assertEqual(list(root.findall(f"{SVG}rect")), [])
+        self.assertIn("<rect", to_svg(SCENE).split("\n")[1])
+        # Made once, then kept.
+        self.assertIs(self.app.brand(), brand)
+        page = studio.PAGE.read_text(encoding="utf-8")
+        self.assertIn("/api/brand", page)
+        self.assertIn("prefers-reduced-motion", page)
+
     def test_a_scene_a_model_took_part_in_is_checked_and_drawn_the_same(self) -> None:
         drawn = self.app.draw_scene("logo.kos", SCENE)
         self.assertTrue(drawn["ok"])

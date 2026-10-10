@@ -272,8 +272,10 @@ def _draw(shape: dict[str, Any], inside: str) -> str:
     )
 
 
-def to_svg(scene: dict[str, Any]) -> str:
-    """The scene as one SVG picture that moves. The scene must check."""
+def to_svg(scene: dict[str, Any], *, backdrop: bool = True) -> str:
+    """The scene as one SVG picture that moves. The scene must check.
+    Without `backdrop` the background is left out, so the picture can sit
+    on whatever is behind it."""
 
     problems = check_scene(scene)
     if problems:
@@ -283,8 +285,9 @@ def to_svg(scene: dict[str, Any]) -> str:
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" '
         f'width="{width}" height="{height}" role="img">',
-        f'<rect width="{width}" height="{height}" fill="{background}"/>',
     ]
+    if backdrop:
+        parts.append(f'<rect width="{width}" height="{height}" fill="{background}"/>')
     for shape in scene["shapes"]:
         state: dict[str, Any] = {
             "x": float(shape["x"]),

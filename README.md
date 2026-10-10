@@ -607,6 +607,14 @@ any part of the map.
 An answer appears word by word while the model writes it, in the chat and
 under the step that asked.
 
+Studio's own moving mark, in the sidebar and beside page titles, is not a
+stored picture. Studio carries a Kosika program, `app_assets/brand.kos`,
+runs it when it starts, and plays the scene it describes: ten dots fly
+out into a ring, the tile drops in with a bounce, the K fades up, and a
+slow wave of light goes round. Pages, cards and panels ease in one after
+another. If your computer is set to reduce motion, all of it stays still
+and the mark is shown finished.
+
 ### Sessions: let an agent work freely, behind a wall
 
 Normally an agent's file and shell tools work in the folder you granted,

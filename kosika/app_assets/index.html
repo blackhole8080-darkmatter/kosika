@@ -28,6 +28,15 @@ body { margin: 0; background: var(--bg); color: var(--ink); font: 14.5px/1.5 sys
 aside.rail { background: var(--rail); border-right: 1px solid var(--line); padding: 16px 10px; display: flex; flex-direction: column; gap: 3px; height: 100vh; position: sticky; top: 0; align-self: start; }
 .brand { font-weight: 700; font-size: 17px; padding: 2px 10px 14px; display: flex; align-items: center; gap: 9px; }
 .brand .mark { width: 22px; height: 22px; border-radius: 7px; background: var(--accent); display: grid; place-items: center; color: #fff; font-size: 13px; font-weight: 800; }
+.brand .mark.moving { background: none; width: 30px; height: 30px; margin: -4px -2px -4px -4px; } .mark svg, .hero svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.hero { width: 54px; height: 54px; flex: none; } .titled { display: flex; align-items: center; gap: 14px; margin-bottom: 4px; } .titled h1 { margin: 0; }
+/* Each page eases in, its parts one after another. */
+main > * { animation: rise .42s var(--ease) both; } main > *:nth-child(2) { animation-delay: .04s; } main > *:nth-child(3) { animation-delay: .08s; } main > *:nth-child(4) { animation-delay: .12s; } main > *:nth-child(n+5) { animation-delay: .16s; }
+.grid > .card { animation: rise .5s var(--ease) both; } .grid > .card:nth-child(2) { animation-delay: .05s; } .grid > .card:nth-child(3) { animation-delay: .1s; } .grid > .card:nth-child(4) { animation-delay: .15s; } .grid > .card:nth-child(5) { animation-delay: .2s; } .grid > .card:nth-child(n+6) { animation-delay: .25s; }
+.map > * { animation: rise .45s var(--ease) both; } .map > *:nth-child(2) { animation-delay: .06s; } .map > *:nth-child(3) { animation-delay: .12s; } .map > *:nth-child(n+4) { animation-delay: .18s; }
+.nav { position: relative; } .nav.on::before { content: ""; position: absolute; left: -10px; top: 9px; bottom: 9px; width: 3px; border-radius: 0 3px 3px 0; background: var(--accent); animation: grow .3s var(--ease) both; }
+@keyframes grow { from { transform: scaleY(0); } to { transform: none; } }
+button:active { transform: scale(.97); } .panel, .fact { transition: border-color .2s, box-shadow .2s; } .panel:hover, .fact:hover { border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
 .brand small { font-weight: 500; color: var(--soft); font-size: 17px; }
 .nav { padding: 8px 10px; border-radius: 9px; cursor: pointer; color: var(--soft); font-weight: 500; display: flex; gap: 9px; align-items: center; transition: background .15s, color .15s; user-select: none; }
 .nav:hover { background: var(--code-soft); color: var(--ink); } .nav.on { background: var(--accent-soft); color: var(--accent); }
@@ -164,7 +173,7 @@ select { font: inherit; background: var(--bg); color: var(--ink); border: 1px so
 </head>
 <body>
 <aside class="rail">
-  <div class="brand"><span class="mark">K</span><span>Kosika <small>Studio</small></span></div>
+  <div class="brand"><span class="mark" id="mark">K</span><span>Kosika <small>Studio</small></span></div>
   <div id="nav"></div>
   <div class="foot" id="foot"></div>
 </aside>
@@ -242,6 +251,27 @@ async function api(path, options) {
   return data;
 }
 
+// Studio's own moving mark. The app runs a Kosika program that describes
+// it and sends the picture; until then, and if that fails, a plain K.
+let brandSvg = null;
+const stillness = window.matchMedia("(prefers-reduced-motion: reduce)");
+function brandMark() {
+  if (!brandSvg) return null;
+  const copy = brandSvg.cloneNode(true);
+  // Someone who asked their computer for less motion gets the finished mark, still.
+  if (stillness.matches) queueMicrotask(() => { try { copy.setCurrentTime(1.9); copy.pauseAnimations(); } catch (error) { /* drawn but not yet in the page */ } });
+  return copy;
+}
+function titled(text) { const mark = brandMark(); return mark ? h("div", {class: "titled"}, h("div", {class: "hero"}, mark), h("h1", null, text)) : h("h1", null, text); }
+async function loadBrand() {
+  try {
+    const brand = await api("/api/brand"); if (!brand.ok) return;
+    const parsed = new DOMParser().parseFromString(brand.svg, "image/svg+xml");
+    brandSvg = document.importNode(parsed.documentElement, true); brandSvg.removeAttribute("width"); brandSvg.removeAttribute("height");
+    const holder = document.getElementById("mark"); holder.classList.add("moving"); fill(holder, brandMark());
+  } catch (error) { /* the plain K stays */ }
+}
+
 function go(view, id) { location.hash = "#" + view + (id ? "/" + encodeURIComponent(id) : ""); }
 window.addEventListener("hashchange", route);
 
@@ -315,7 +345,7 @@ async function showProject() {
   search.addEventListener("input", draw);
   const must = project.suggestions.filter(s => s.must), could = project.suggestions.filter(s => !s.must);
   const advice = s => h("div", {class: "item", style: "cursor:pointer", onclick: () => go("agent", s.agent)}, h("span", {class: "from"}, "rule: " + s.rule + (s.line ? ", line " + s.line : "")), h("b", null, s.title), " ", s.text);
-  fill(main, h("h1", null, "Project"),
+  fill(main, titled("Project"),
     h("p", {class: "lead"}, "Everything in this folder, in one place. Click anything to open the agent it belongs to."),
     h("div", {class: "map"},
       must.length ? h("div", {class: "panel"}, h("h4", null, "To fix"), must.map(advice)) : null,
@@ -328,7 +358,7 @@ async function showProject() {
 function showAgents() {
   const agents = overview.agents;
   main.replaceChildren(
-    h("h1", null, "Agents"),
+    titled("Agents"),
     h("p", {class: "lead"}, agents.length ? agents.length + " programs in this folder. Open one to watch it work, test it, and see what it is made of." : "No Kosika programs with a main workflow were found in this folder."),
     h("div", {class: "grid"}, agents.map(agent => h("div", {class: "card", onclick: () => go("agent", agent.id)},
       h("h3", null, agent.title),
@@ -1070,7 +1100,7 @@ async function showAgent(id, isAssistant) {
   pick(Object.keys(tabs)[0]);
 }
 
-route();
+loadBrand().finally(route);
 </script>
 </body>
 </html>

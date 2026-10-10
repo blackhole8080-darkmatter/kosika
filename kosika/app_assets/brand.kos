@@ -1,0 +1,69 @@
+// The moving mark in Kosika Studio's own sidebar and headings.
+//
+// Studio does not carry a drawing of its mark. It carries this program, runs
+// it when it starts, and plays the scene it describes. So the first
+// animation anyone sees in Studio was written in Kosika.
+//
+// What happens: ten dots fly out from the centre into a ring, the orange
+// tile drops in with a bounce and a quarter turn, the K fades up, and then a
+// slow wave of light keeps going round the ring.
+
+record Shape { id: Text kind: Text x: Number y: Number size: Number color: Text text: Text }
+record Move { shape: Text what: Text to: Number start: Number seconds: Number ease: Text repeat: Number color: Text }
+record Scene { width: Number height: Number seconds: Number background: Text shapes: Shape[] moves: Move[] }
+
+fn move(shape: Text, what: Text, to: Number, start: Number, seconds: Number, ease: Text) -> Move {
+  return {shape: shape, what: what, to: to, start: start, seconds: seconds, ease: ease, repeat: 1, color: ""}
+}
+
+fn hidden(shape: Text) -> Move {
+  return move(shape, "fade", 0, 0, 0, "linear")
+}
+
+fn forever(m: Move) -> Move {
+  return {..m, repeat: 0}
+}
+
+fn build() -> Scene {
+  let dots = 10
+  var shapes: Shape[] = []
+  var moves: Move[] = []
+  for i in 0 until dots {
+    let id = f"dot{i}"
+    let angle = 360 * i / dots - 90
+    let leave = 0.1 + i * 0.05
+    shapes = shapes.append({id: id, kind: "circle", x: 60, y: 60, size: 9, color: if i % 2 == 0 { "#e8813a" } else { "#f2b880" }, text: ""})
+    moves = moves.concat([
+      hidden(id),
+      move(id, "fade", 1, leave, 0.2, "out"),
+      move(id, "x", 60 + 47 * angle.cos(), leave, 0.7, "bounce"),
+      move(id, "y", 60 + 47 * angle.sin(), leave, 0.7, "bounce"),
+      // The wave: each dot swells a little after the one before it, for
+      // as long as Studio is open.
+      forever(move(id, "size", 14, 2 + i * 0.3, 3, "back")),
+      forever({shape: id, what: "color", to: 0, start: 2 + i * 0.3, seconds: 3, ease: "back", repeat: 1, color: "#fff1e0"})
+    ])
+  }
+  shapes = shapes.concat([
+    {id: "tile", kind: "square", x: 60, y: -40, size: 56, color: "#d9703a", text: ""},
+    {id: "letter", kind: "text", x: 60, y: 62, size: 38, color: "#fff8f0", text: "K"}
+  ])
+  moves = moves.concat([
+    move("tile", "y", 60, 0.5, 0.7, "bounce"),
+    move("tile", "turn", 90, 0.5, 0.7, "out"),
+    hidden("letter"),
+    move("letter", "fade", 1, 1.1, 0.4, "out")
+  ])
+  return {width: 120, height: 120, seconds: 2, background: "#000000", shapes: shapes, moves: moves}
+}
+
+workflow main() -> Scene {
+  scene = build()
+}
+
+test "the mark has a ring of dots, a tile and a letter" {
+  a = main()
+  expect a.shapes.length() == 12
+  expect a.moves.length() == 10 * 6 + 4
+  expect a.shapes[11].text == "K"
+}

@@ -2363,9 +2363,10 @@ gate: without them a parser written in Kosika has nothing to return.
   and there is no eval in the agent yet. Whether a design looks good
   was not judged by anyone. The patterns are four fixed ones; "complex"
   here means many well-timed moves, not new kinds of motion. `draw:`
-  is slow and gives small scenes. Nobody has used it through Studio
-  with a real model: the Scene tab's description box was tested only
-  through its parts.
+  is slow and gives small scenes. Through Studio's Scene tab with
+  qwen2.5:7b it was tried once: "a gold burst of sparks on black, titled
+  Hello Aryan" was drawn 40 s after pressing Design it, gold on near
+  black, with that title and the play controls.
 
 ### A benchmark of forty questions, and what it changed
 
@@ -2397,6 +2398,27 @@ gate: without them a parser written in Kosika has nothing to return.
   `benchmarks/python_comparison` was not given these fixes, so the two
   no longer do the same thing and its size comparison describes the
   agent as it was.
+
+### Motion in Studio itself
+
+- `kosika/app_assets/brand.kos` describes Studio's mark as a scene, with
+  one test. Studio runs it once (`/api/brand`), draws it without a
+  background (`to_svg(..., backdrop=False)`), and shows it in the
+  sidebar and beside the Agents and Project titles. If the program
+  fails, the plain K stays.
+- Each page's parts, the agent cards, and the panels of the Map, Scene
+  and Session tabs ease in one after another; the chosen sidebar item
+  gets a bar that grows in; panels answer the pointer.
+- With the system's reduce-motion setting on, the page's own rule turns
+  the eases off, and the mark is set to its finished moment and paused.
+- Seen in a screenshot of the real page: the mark with its ring in both
+  places. Read back from the page: the tile at rest in the centre at
+  1.8 s, the letter visible, a dot swollen mid-wave at 3.5 s.
+- Not claimed: whether this is good design is the owner's call and has
+  not been made. The reduce-motion path was written, not tried on a
+  computer set that way. Only a still picture was captured, so the
+  motion itself was checked by reading values. The mark's colours are
+  fixed and were looked at on the dark theme only.
 
 ## Standard coding-agent procedure
 
