@@ -520,6 +520,14 @@ workflow, the parts the agent is made of, its records and how they refer to
 each other, its tests, its past runs, and its code. The sidebar also lists
 all agents, all runs, and the permissions this Studio was started with.
 
+The Project page, in the sidebar, is the whole folder in one place: every
+agent, workflow, model, tool, memory and data record, each with the program
+it belongs to and its line, and one search box over all of them. Above the
+list are suggestions, such as "it has no tests", "this model step has no
+`otherwise`", "this tool is declared but never used" or "nothing says what
+it is for". Each suggestion comes from a rule applied to the checked
+program, names its rule, and never comes from a model.
+
 The Map tab is the place to start with an agent you do not know. It says
 what the agent is for, what you give it and get back, what it only looks
 at, what it may change (always after asking you), which models it asks,

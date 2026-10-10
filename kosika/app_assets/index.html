@@ -166,6 +166,7 @@ select { font: inherit; background: var(--bg); color: var(--ink); border: 1px so
 </aside>
 <main id="main"></main>
 <template id="icon-assistant"><svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg></template>
+<template id="icon-project"><svg viewBox="0 0 24 24"><path d="M4 5h6v6H4z"/><path d="M14 5h6v6h-6z"/><path d="M4 15h6v4H4z"/><path d="M14 15h6v4h-6z"/></svg></template>
 <template id="icon-agents"><svg viewBox="0 0 24 24"><path d="M9 7h6a4 4 0 0 1 4 4v5a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3v-5a4 4 0 0 1 4-4z"/><path d="M12 3v4"/><path d="M9.5 13h.01"/><path d="M14.5 13h.01"/></svg></template>
 <template id="icon-runs"><svg viewBox="0 0 24 24"><path d="M12 8v4l3 2"/><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/></svg></template>
 <template id="icon-tools"><svg viewBox="0 0 24 24"><path d="M14.5 6.5a4 4 0 0 0-5.300 5.300L3 18l3 3 6.200-6.200a4 4 0 0 0 5.300-5.300l-2.500 2.500-2.500-2.500 2.500-2.500z"/></svg></template>
@@ -241,7 +242,7 @@ function go(view, id) { location.hash = "#" + view + (id ? "/" + encodeURICompon
 window.addEventListener("hashchange", route);
 
 function drawRail(active) {
-  const items = [["assistant", "Assistant"], ["agents", "Agents"], ["runs", "Runs"], ["tools", "Tools"], ["permissions", "Permissions"]];
+  const items = [["assistant", "Assistant"], ["project", "Project"], ["agents", "Agents"], ["runs", "Runs"], ["tools", "Tools"], ["permissions", "Permissions"]];
   document.getElementById("nav").replaceChildren(...items.map(([key, label]) =>
     h("div", {class: "nav" + (key === active ? " on" : ""), onclick: () => go(key)}, icon(key), label)));
   document.getElementById("foot").replaceChildren(
@@ -261,6 +262,7 @@ async function route() {
     drawRail(active === "agent" ? "agents" : active);
     if (active === "agents") showAgents();
     else if (active === "agent") await showAgent(id, false);
+    else if (active === "project") await showProject();
     else if (active === "runs") await showRuns();
     else if (active === "tools") await showTools();
     else if (active === "permissions") showPermissions();
@@ -283,6 +285,40 @@ function badges(agent) {
   if (agent.tests) out.push(chip(agent.tests + " test" + (agent.tests > 1 ? "s" : ""), "ok"));
   if (agent.chat) out.push(chip("chat", "accent"));
   return out;
+}
+
+// The Project page: everything in the folder in one list, searchable, and
+// suggestions that come from rules applied to the checked programs.
+const KIND_ORDER = ["agent", "workflow", "model", "tool", "memory", "board", "swarm", "record"];
+const KIND_LABEL = {agent: "Agents", workflow: "Workflows", model: "Models", tool: "Tools", memory: "Memories", board: "Boards", swarm: "Swarms", record: "Data records"};
+const KIND_CHIP = {agent: "accent", workflow: "", model: "think", tool: "warn", memory: "mem", board: "accent", swarm: "accent", record: "ok"};
+async function showProject() {
+  main.replaceChildren(h("p", {class: "lead"}, h("span", {class: "spin"}), "Reading every program"));
+  const project = await api("/api/project");
+  const search = h("input", {type: "text", placeholder: "Search every agent, workflow, model, tool, memory and record"});
+  const list = h("div"), tally = h("div", {class: "chips", style: "margin:12px 0"});
+  let only = "";
+  function draw() {
+    const words = search.value.toLowerCase().split(/\s+/).filter(Boolean);
+    const hit = item => (!only || item.kind === only) && words.every(word => (item.name + " " + item.detail + " " + item.title + " " + item.kind).toLowerCase().includes(word));
+    const found = project.items.filter(hit);
+    fill(tally, h("span", {class: "chip" + (only ? "" : " accent"), style: "cursor:pointer", onclick: () => { only = ""; draw(); }}, "Everything " + project.items.length),
+      KIND_ORDER.filter(kind => project.counts[kind]).map(kind => h("span", {class: "chip " + (only === kind ? "accent" : ""), style: "cursor:pointer", onclick: () => { only = only === kind ? "" : kind; draw(); }}, KIND_LABEL[kind] + " " + project.counts[kind])));
+    fill(list, found.length ? KIND_ORDER.filter(kind => found.some(item => item.kind === kind)).map(kind => h("div", {class: "panel", style: "margin-bottom:12px"}, h("h4", null, KIND_LABEL[kind]),
+      found.filter(item => item.kind === kind).slice(0, 200).map(item => h("div", {class: "item", style: "cursor:pointer", onclick: () => go("agent", item.agent)},
+        h("span", {class: "from"}, item.title + (item.line ? ", line " + item.line : "")), h("b", null, item.name), " ", h("span", {class: "small", style: "display:inline"}, item.detail))))) : h("div", {class: "empty"}, "Nothing matches."));
+  }
+  search.addEventListener("input", draw);
+  const must = project.suggestions.filter(s => s.must), could = project.suggestions.filter(s => !s.must);
+  const advice = s => h("div", {class: "item", style: "cursor:pointer", onclick: () => go("agent", s.agent)}, h("span", {class: "from"}, "rule: " + s.rule + (s.line ? ", line " + s.line : "")), h("b", null, s.title), " ", s.text);
+  fill(main, h("h1", null, "Project"),
+    h("p", {class: "lead"}, "Everything in this folder, in one place. Click anything to open the agent it belongs to."),
+    h("div", {class: "map"},
+      must.length ? h("div", {class: "panel"}, h("h4", null, "To fix"), must.map(advice)) : null,
+      h("div", {class: "panel"}, h("h4", null, "Suggestions"), could.length ? could.map(advice) : h("div", {class: "empty"}, "None. Every rule is satisfied."),
+        h("div", {class: "foot", style: "margin-top:8px"}, "Each suggestion comes from a rule applied to the checked program, never from a model. Ignore any that does not fit.")),
+      h("div", null, search, tally, list)));
+  draw();
 }
 
 function showAgents() {

@@ -2236,6 +2236,25 @@ gate: without them a parser written in Kosika has nothing to return.
   involved in the trial, and no one but the author has used it. MCP and
   web tools are outside the wall.
 
+### A Project page in Studio
+
+- `kosika/project_index.py` lists every agent, workflow, model, tool,
+  memory, board, swarm and record under Studio's folder, each with its
+  program, line and a short description. Studio serves it at
+  `/api/project` and shows it on a Project page with a search box and a
+  filter by kind.
+- Nine suggestion rules, applied to the checked program: `does-not-check`,
+  `no-tests`, `no-evals`, `model-step-no-fallback`, `no-budget`,
+  `unused-tool`, `unused-model`, `unused-workflow`, `no-purpose`. Each
+  suggestion shows its rule. On the seven example agents the only
+  suggestions are five missing evals.
+- `tests/test_project_index.py`. Looked at in the real page.
+- Not claimed: the rules are a first set chosen by the author and have
+  not been checked against what a newcomer finds useful. A suggestion
+  cannot be dismissed. Functions are not listed. Search is by words in
+  names and descriptions, not by meaning. The page lists one folder of
+  programs and knows nothing of how they relate to each other.
+
 ## Standard coding-agent procedure
 
 1. Inspect `git status`, the relevant source files, tests, and this plan.

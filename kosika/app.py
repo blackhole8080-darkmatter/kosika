@@ -61,6 +61,7 @@ from .memory import AGENT as MEMORY_AGENT
 from .memory import bind_memory_tools
 from .model import ModelProvider
 from .modules import load_program
+from .project_index import project_index
 from .project_map import beginner_map, read_note, save_note
 from .runtime import run
 from .sessions import Session, SessionError, default_home
@@ -805,6 +806,14 @@ class App:
             raise AppError(f"Could not save: {exc}", 422) from exc
         return {"saved": True, **checked}
 
+    def project(self) -> dict[str, Any]:
+        """Everything in this folder in one list, with suggestions that
+        come from rules, never from a model."""
+
+        return project_index(
+            [(agent.id, agent.title, agent.path) for agent in self.agents().values()]
+        )
+
     def map(self, agent_id: str) -> dict[str, Any]:
         """What this agent is for, what it may touch and what it does, from
         the checked program and a person's own note. No model is asked."""
@@ -1162,6 +1171,8 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                             str(body.get("name", "")), str(body.get("kind", ""))
                         ),
                     )
+                elif method == "GET" and url.path == "/api/project":
+                    self._json(200, app.project())
                 elif method == "GET" and url.path == "/api/map":
                     self._json(200, app.map(agent_id))
                 elif method == "POST" and url.path == "/api/purpose":
