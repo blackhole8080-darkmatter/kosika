@@ -2202,6 +2202,41 @@ gate: without them a parser written in Kosika has nothing to return.
   from the parser. The older `mindmap` and `audience-map` commands are
   unchanged and are not what the tab shows.
 
+### Sessions: an agent's own copy of the folder, behind a wall
+
+- `kosika/sessions.py`: a `Session` copies the granted folder (up to
+  20,000 files and 200 MB, without `node_modules`, `__pycache__` and
+  virtual environments), runs one named program at a time behind
+  bubblewrap (no network, read-only system, only the copy writable,
+  environment cleared, stopped at the time limit), lists what differs
+  from the real folder, and applies those differences only when asked.
+  On Windows the command is run through `wsl.exe`.
+- `bind_system_tools(..., session=)`: file tools work in the copy and
+  shell tools run behind the wall.
+- Studio: `--in-session` (needs `--allow-folder`, and refuses to start
+  if the wall does not work). One session per agent, made on its first
+  run. File and shell approvals inside it are given by the session and
+  recorded as such; a Session tab lists the changes, with one button to
+  bring them back and one to throw them away.
+- `tests/test_sessions.py`: twelve tests, eleven with a stand-in for the
+  wall and one against the real wall, skipped where there is none. On
+  this laptop the real one runs: the program saw only the copy, had no
+  network, and could not write to the system.
+- Tried through Studio's server with the real wall: a run with one
+  program start and one file write finished in 4.7 s without asking,
+  the real folder was unchanged, both files were listed, and bringing
+  them back wrote them.
+- Not claimed: only Studio has the switch, not `kosika run` or `chat`.
+  A session does not survive Studio stopping (its copy stays on disk
+  and is not found again). Changes are listed by name and size, with no
+  view of what changed inside a file, and are brought back all
+  together from the page. If the real folder changes while a session is
+  open, bringing back overwrites it. The Linux side here has no
+  `python` or `pytest`, so the workbench agent's tools do not work in a
+  session as written. No limit on memory or processor. No model was
+  involved in the trial, and no one but the author has used it. MCP and
+  web tools are outside the wall.
+
 ## Standard coding-agent procedure
 
 1. Inspect `git status`, the relevant source files, tests, and this plan.

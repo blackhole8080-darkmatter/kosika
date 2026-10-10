@@ -63,6 +63,7 @@ from .model import ModelProvider
 from .modules import load_program
 from .project_map import beginner_map, read_note, save_note
 from .runtime import run
+from .sessions import Session, SessionError, default_home
 from .starter import KINDS, StarterError, create_starter
 from .story import StoryError, build_story, read_trace
 from .swarm import SwarmApproval, run_swarm, swarm_plan_hash
@@ -433,7 +434,15 @@ class App:
         mcp: Mapping[str, Sequence[str]] | None = None,
         meaning: Any = None,
         embed_label: str = "",
+        in_session: bool = False,
+        session_home: Path | None = None,
     ):
+        # With sessions on, each agent works in its own copy of the
+        # granted folder, behind a wall. What it does there needs no yes
+        # step by step; bringing the result back does.
+        self.in_session = in_session and allow_folder is not None
+        self.session_home = session_home or default_home()
+        self._sessions: dict[str, Session] = {}
         # Search by meaning, when this person named an embedding model.
         self.meaning = meaning
         self.embed_label = embed_label
@@ -479,6 +488,7 @@ class App:
             "sites": list(self.sites),
             "shell": self.allow_shell,
             "embed": self.embed_label,
+            "sessions": self.in_session,
             "mcp": self.mcp.names if self.mcp else [],
             "starters": [kind for kind in KINDS if kind != "hello"],
             "agents": cards,
@@ -571,10 +581,71 @@ class App:
                 sites=self.sites,
                 allow_shell=self.allow_shell,
                 meaning=self.meaning,
+                session=self._session_for(program, folder),
             ),
             **bind_memory_tools(program, folder / "memory"),
             **bind_mcp_tools(program, self.mcp),
         }
+
+    @staticmethod
+    def _session_key(folder: Path) -> str:
+        return hashlib.sha256(str(folder.resolve()).encode("utf-8")).hexdigest()[:12]
+
+    def _session_for(self, program: Program, folder: Path) -> Session | None:
+        """This agent's session, made when it first needs one. Only an agent
+        with file or shell tools has anything to wall off."""
+
+        if not self.in_session or self.allow_folder is None:
+            return None
+        if not any(
+            tool.source in ("system:files", "system:shell") for tool in program.tools
+        ):
+            return None
+        key = self._session_key(folder)
+        if key not in self._sessions:
+            try:
+                self._sessions[key] = Session(
+                    self.allow_folder, self.session_home, name=key
+                )
+            except (SessionError, OSError) as exc:
+                raise AppError(f"No session: {exc}", 422) from exc
+        return self._sessions[key]
+
+    def session(self, agent_id: str) -> dict[str, Any]:
+        """What is waiting in this agent's session to be brought back."""
+
+        agent = self.agent(agent_id)
+        found = self._sessions.get(self._session_key(agent.path.parent))
+        view: dict[str, Any] = {"on": self.in_session, "open": found is not None}
+        if found is not None:
+            changes = found.changes()
+            view.update(
+                folder=str(found.folder),
+                count=len(changes),
+                changes=[
+                    {"path": c.path, "kind": c.kind, "bytes": c.bytes}
+                    for c in changes[:500]
+                ],
+            )
+        return view
+
+    def end_session(self, agent_id: str, keep: bool) -> dict[str, Any]:
+        """Bring the session's changes into the real folder, or throw them
+        away. Either way the session ends. This is the person's yes or no."""
+
+        agent = self.agent(agent_id)
+        key = self._session_key(agent.path.parent)
+        found = self._sessions.get(key)
+        if found is None:
+            raise AppError("This agent has no open session", 409)
+        with self._lock:
+            try:
+                applied = found.apply() if keep else []
+            except (SessionError, OSError) as exc:
+                raise AppError(f"Could not bring the changes back: {exc}", 422) from exc
+            found.discard()
+            del self._sessions[key]
+        return {"kept": keep, "applied": [change.path for change in applied]}
 
     def mcp_tools(self) -> dict[str, Any]:
         """Every granted MCP server with the tools it offers, and for each
@@ -785,6 +856,8 @@ class App:
                 tempfile.TemporaryDirectory(prefix="kosika-app-") as scratch,
             ):
                 approvals: list[ApprovalRecord] = []
+                # True when this agent's file and shell tools work in a session.
+                walled = self._session_key(job.folder) in self._sessions
                 while True:
                     session = ExecutionSession(
                         Path(scratch) / "run.sqlite",
@@ -812,6 +885,30 @@ class App:
                             ),
                             None,
                         )
+                        if (
+                            walled
+                            and asked is not None
+                            and asked.source in ("system:files", "system:shell")
+                        ):
+                            # Inside a session this cannot reach the real
+                            # folder, so it does not wait for a yes. The
+                            # yes comes when the changes are brought back.
+                            approvals.append(
+                                ApprovalRecord(
+                                    plan_hash=pending.request["plan_hash"],
+                                    action_hash=pending.request["action_hash"],
+                                    approved_by="session",
+                                    reason="confined to the session's copy",
+                                )
+                            )
+                            job.events.append(
+                                {
+                                    "event": "session_allowed",
+                                    "tool": pending.request["tool"],
+                                    "depth": 0,
+                                }
+                            )
+                            continue
                         job.request = {
                             "tool": pending.request["tool"],
                             "arguments": pending.request["arguments"],
@@ -1060,6 +1157,13 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                     if not isinstance(text, str):
                         raise AppError("Send the note as text")
                     self._json(200, app.save_purpose(agent_id, text))
+                elif method == "GET" and url.path == "/api/session":
+                    self._json(200, app.session(agent_id))
+                elif method == "POST" and url.path == "/api/session":
+                    self._json(
+                        200,
+                        app.end_session(agent_id, self._body().get("keep") is True),
+                    )
                 elif method == "GET" and url.path == "/api/mcp":
                     self._json(200, app.mcp_tools())
                 elif method == "GET" and url.path == "/api/memory":

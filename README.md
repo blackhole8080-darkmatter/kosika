@@ -536,6 +536,35 @@ any part of the map.
 An answer appears word by word while the model writes it, in the chat and
 under the step that asked.
 
+### Sessions: let an agent work freely, behind a wall
+
+Normally an agent's file and shell tools work in the folder you granted,
+and every change waits for your yes. With `--in-session` each agent gets
+its own *copy* of that folder instead, and the programs it starts run
+behind a wall:
+
+```
+kosika studio my_agents --model qwen2.5:7b --model-protocol ollama --allow-folder PROJECT --allow-shell --in-session
+```
+
+- A program started in a session sees the copy and nothing else of your
+  files, on a read-only system, with no network, for at most 60 seconds.
+- Because nothing it does can reach the real folder, its file and shell
+  steps are not stopped one by one. The Live view says "allowed inside the
+  session".
+- The Session tab lists every file that is new, changed or removed in
+  the copy. "Bring these into the real folder" is your yes; "Throw the
+  session away" leaves the real folder untouched. Either one ends the
+  session, and the next run starts a fresh copy.
+- Tools that reach elsewhere (an MCP server, the web) are not walled and
+  still ask you each time.
+
+The wall is bubblewrap, which on Windows runs inside WSL. A session has
+the programs the Linux side has: here that is `python3` and `git`, and
+not `python` or `pytest`. It is a strong wall, not a perfect one: it
+relies on the Linux kernel, and what you bring back without reading is as
+real as anything you wrote yourself.
+
 When an agent reaches an action that changes something, it stops and a card
 shows that one action and its exact arguments, with Allow once and Refuse.
 Nothing happens until you answer; no answer in ten minutes is a refusal.

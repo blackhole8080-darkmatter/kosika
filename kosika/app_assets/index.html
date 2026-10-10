@@ -347,6 +347,7 @@ function showPermissions() {
       fact("Websites agents may read", overview.sites, "None. The web cannot be reached."),
       fact("Changing things", ["Only after you press Allow once, for that one action.", "The card shows exactly what will be done before you answer.", "No answer in ten minutes counts as a refusal."]),
       fact("MCP servers", overview.mcp, "None. Start Studio with --mcp NAME=COMMAND to grant one."),
+      fact("Sessions", overview.sessions ? ["On. Each agent works in its own copy of the granted folder.", "Its programs run behind a wall: no network, no other files, a read-only system.", "Its steps there do not ask you one by one. Nothing reaches the real folder until you bring the changes back."] : ["Off. Agents work in the granted folder itself, and each change asks you first.", "Start Studio with --in-session to turn them on."]),
       fact("Search by meaning", overview.embed ? ["Allowed, with the embedding model " + overview.embed + ".", "It only reads, inside the granted folder.", "What it learns about each line is kept on this computer, outside that folder."] : ["Not allowed. Start Studio with --embed-model to permit it."]),
       fact("Starting programs", overview.shell ? ["Allowed, only the programs an agent's tools name.", "Each start waits for your Allow once and shows the exact command.", "Runs inside the granted folder, stopped after 60 seconds."] : ["Not allowed. Start Studio with --allow-shell to permit it."]),
       fact("Never allowed here", ["Files outside the granted folder", "Websites that are not on the list", "Anything at all without the grants above"]),
@@ -493,6 +494,7 @@ function liveView(agent, entry) {
       frames.length = depth + 1;
     } else if (event.event === "run_failed" || event.event === "run_cancelled") { if (frame.current) { frame.current.el.classList.remove("running"); frame.current.el.classList.add("failed"); } }
     else if (event.event === "run_paused" && frame.current) { frame.current.el.classList.remove("running"); frame.current.el.classList.add("waiting"); frame.current.now.textContent = "waiting for you to allow or refuse"; }
+    else if (event.event === "session_allowed") { const at = frames[0].current; if (at) { at.el.classList.remove("waiting"); at.el.classList.add("running"); at.now.textContent = "allowed inside the session: " + event.tool; } }
     showTally(false);
   }
   reset(false);
@@ -833,6 +835,31 @@ function liveTab(agent, isAssistant) {
   return h("div", {class: "split"}, left, right);
 }
 
+// The Session tab: what an agent changed in its own copy of the folder, and
+// the one decision that brings it into the real folder or throws it away.
+function sessionTab(agent) {
+  const box = h("div", {class: "map"}, h("p", {class: "lead"}, h("span", {class: "spin"}), "Looking in the session"));
+  const words = {new: "new file", changed: "changed", removed: "removed"};
+  const load = () => api("/api/session?id=" + encodeURIComponent(agent.id)).then(draw).catch(error => fill(box, h("div", {class: "banner bad"}, error.message)));
+  async function end(keep) {
+    try { const done = await api("/api/session?id=" + encodeURIComponent(agent.id), {method: "POST", body: JSON.stringify({keep})});
+      fill(box, h("div", {class: "banner ok"}, keep ? done.applied.length + " file(s) were brought into the real folder. The session is closed." : "The session was thrown away. The real folder was not touched."), h("button", {class: "quiet", onclick: load}, "Look again"));
+    } catch (error) { fill(box, h("div", {class: "banner bad"}, error.message)); }
+  }
+  function draw(view) {
+    if (!view.open) { fill(box, h("div", {class: "panel"}, h("h4", null, "Session"), h("div", {class: "purpose"}, "No session is open for this agent."), h("div", {class: "foot", style: "margin-top:6px"}, "One opens the first time the agent runs. It is a copy of the granted folder; the agent works there, behind a wall.")), h("button", {class: "quiet", onclick: load}, "Look again")); return; }
+    fill(box,
+      h("div", {class: "panel"}, h("h4", null, "Waiting in the session"),
+        h("div", {class: "purpose"}, view.count ? view.count + " file(s) differ from " + view.folder : "Nothing differs from " + view.folder),
+        h("div", {class: "foot", style: "margin:6px 0 10px"}, "None of this is in the real folder yet. Read the list before you bring it back: what you bring back is as real as if you had written it."),
+        view.changes.map(change => h("div", {class: "item"}, h("span", {class: "from"}, words[change.kind] + (change.kind === "removed" ? "" : ", " + change.bytes + " bytes")), h("b", null, change.path))),
+        view.count > view.changes.length ? h("div", {class: "foot"}, "And " + (view.count - view.changes.length) + " more.") : null),
+      h("div", {class: "row"}, view.count ? h("button", {onclick: () => end(true)}, "Bring these into the real folder") : null, h("button", {class: "quiet", onclick: () => end(false)}, "Throw the session away"), h("button", {class: "quiet", onclick: load}, "Look again")));
+  }
+  load();
+  return box;
+}
+
 // The Map tab: what this agent is for, what it may touch and what it does.
 // Every line says where it comes from. Nothing here is written by a model.
 const MAP_FROM = {checked: "from the program", comment: "from the comment at the top of the file", person: "written by a person"};
@@ -899,12 +926,14 @@ async function showAgent(id, isAssistant) {
     fact("Fingerprint", [agent.program_hash.slice(0, 16) + "…"], ""));
   let tabs = {"Live": a => liveTab(a, isAssistant), "Map": mapTab, "Workflow": workflowTab, "Parts": parts, "Data": dataTab, "Tests": testsTab, "Runs": a => runsPanel(a.id, a.traces), "Code": codeTab};
   if (agent.swarms.length) tabs = {"Live": tabs.Live, "Swarm": swarmTab, ...tabs};
+  if (overview && overview.sessions) tabs = {...tabs, "Session": sessionTab};
   // A program that is only a swarm has no main to talk to or run.
   if (!agent.has_main) delete tabs.Live;
   const area = h("div"); const bar = h("div", {class: "tabs"}); const built = {};
   async function pick(name) {
     for (const tab of bar.children) tab.className = "tab" + (tab.textContent === name ? " on" : "");
     if (name === "Runs") { try { agent.traces = (await api("/api/agent?id=" + encodeURIComponent(id))).traces; } catch (error) { /* keep the old list */ } built.Runs = null; }
+    if (name === "Session") built.Session = null;
     if (!built[name]) built[name] = tabs[name](agent);
     area.replaceChildren(built[name]);
   }

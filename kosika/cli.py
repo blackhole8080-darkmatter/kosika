@@ -2233,6 +2233,16 @@ def build_parser() -> argparse.ArgumentParser:
             ),
         )
         app_parser.add_argument(
+            "--in-session",
+            action="store_true",
+            help=(
+                "Give each agent its own copy of --allow-folder and run its "
+                "programs behind a wall (bubblewrap; on Windows inside WSL), "
+                "with no network. What it does there needs no yes step by "
+                "step; you approve the changes when they are brought back."
+            ),
+        )
+        app_parser.add_argument(
             "--mcp",
             action="append",
             default=[],
@@ -3330,6 +3340,20 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 2
+        if args.in_session:
+            from .sessions import unavailable
+
+            if args.allow_folder is None:
+                print(
+                    "App unavailable: --in-session also needs --allow-folder, "
+                    "the folder each session gets a copy of",
+                    file=sys.stderr,
+                )
+                return 2
+            problem = unavailable()
+            if problem is not None:
+                print(f"App unavailable: {problem}", file=sys.stderr)
+                return 2
         from .mcp_tools import MCPGrantError, parse_grant
 
         try:
@@ -3357,6 +3381,7 @@ def main() -> int:
             mcp=mcp_servers,
             meaning=_meaning(args),
             embed_label=args.embed_model or "",
+            in_session=args.in_session,
         )
         try:
             server = make_server(studio, args.port)

@@ -54,6 +54,7 @@ from typing import Any, Callable, Iterator, Sequence
 
 from .ast import Program, ToolDecl
 from .embeddings import EmbeddingError, Meaning
+from .sessions import Session, SessionError
 from .web import WebError, bind_web_tool
 
 SYSTEM_PREFIX = "system:"
@@ -340,6 +341,25 @@ def _shell(tool: ToolDecl, folder: Path) -> Callable[[ToolDecl, dict[str, Any]],
     return run_program
 
 
+def _session_shell(
+    tool: ToolDecl, session: Session
+) -> Callable[[ToolDecl, dict[str, Any]], Any]:
+    """The program runs behind the session's wall, in its copy of the folder."""
+
+    def run_program(_tool: ToolDecl, arguments: dict[str, Any]) -> dict[str, Any]:
+        try:
+            done = session.run(tool.operation, arguments["args"], SHELL_TIMEOUT_SECONDS)
+        except SessionError as exc:
+            raise SystemToolError(str(exc)) from exc
+        return {
+            "exit_code": done["exit_code"],
+            "stdout": _clip(str(done["stdout"])),
+            "stderr": _clip(str(done["stderr"])),
+        }
+
+    return run_program
+
+
 def _lines(
     folder: Path, start: Path, deadline: float
 ) -> Iterator[tuple[str, int, str]]:
@@ -539,6 +559,7 @@ def bind_system_tools(
     sites: Sequence[str] = (),
     web_opener: Any = None,
     meaning: Meaning | None = None,
+    session: Session | None = None,
 ) -> dict[str, Callable[[ToolDecl, dict[str, Any]], Any]]:
     """Bind the program's system tools that the host has granted.
 
@@ -546,6 +567,10 @@ def bind_system_tools(
     meaning only when an embedding model is granted too. A shell tool is bound only
     when a folder is granted and shell is allowed. A web tool is bound when
     at least one site is allowed. Anything not bound stays unreachable.
+
+    With a `session`, file tools work in the session's copy of the folder
+    and shell tools run behind its wall, so nothing they do reaches the
+    granted folder itself.
     """
 
     system = [tool for tool in program.tools if system_kind(tool) is not None]
@@ -580,7 +605,7 @@ def bind_system_tools(
                 "allowing shell also needs a granted folder to run in"
             )
         return web
-    root = Path(folder).resolve()
+    root = (session.work if session is not None else Path(folder)).resolve()
     if not root.is_dir():
         raise SystemToolError(
             f"granted folder {str(folder)!r} is not an existing folder"
@@ -592,5 +617,7 @@ def bind_system_tools(
                 continue
             bindings[tool.name] = _files(tool, root, meaning)
         elif system_kind(tool) == "shell" and allow_shell:
-            bindings[tool.name] = _shell(tool, root)
+            bindings[tool.name] = (
+                _shell(tool, root) if session is None else _session_shell(tool, session)
+            )
     return bindings
