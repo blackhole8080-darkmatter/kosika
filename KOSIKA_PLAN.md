@@ -2448,6 +2448,30 @@ gate: without them a parser written in Kosika has nothing to return.
   the dark theme only. The diagram shows the kinds of part, not each
   tool, and does not replay a past run.
 
+### Replaying a run, a theme switch, and a box that jumps anywhere
+
+- Under Runs, a chosen run gets a Play button. The recorded story's
+  steps, with the steps inside each workflow, are played on the same
+  diagram as a live run, at 1, 2 or 4 times the speed, with a progress
+  line and a caption for the step. Nothing is run.
+- A theme switch at the foot of the sidebar: as the computer, light, or
+  dark, kept in the browser. Each set of dark colours is now written
+  twice, once for the computer's setting unless light was chosen and
+  once for dark chosen outright.
+- Ctrl+K opens a box over the six pages and everything the Project
+  page lists; arrows move, Enter opens, Escape closes.
+- Tried in the real page: a recorded researcher run replayed to the end
+  with one model call and two file calls counted, as recorded; the
+  light theme was looked at for the first time and reads cleanly;
+  typing "memory" in the box left the coach's memory, and Enter opened
+  the coach.
+- Not claimed: the replay gives every step the same length of time, not
+  the time it really took, and shows the kinds of part, not what was
+  said. It reads the story, so a step the story does not name a kind
+  for moves no light. The jump box opens the agent, not the line. All
+  three are page code checked by hand once each; the tests only check
+  that they are there.
+
 ## Standard coding-agent procedure
 
 1. Inspect `git status`, the relevant source files, tests, and this plan.

@@ -423,6 +423,23 @@ class StudioSceneTests(unittest.TestCase):
         self.assertNotIn("https://", page)
         self.assertNotIn("innerHTML", page)
 
+    def test_the_page_can_replay_a_run_switch_theme_and_jump_anywhere(self) -> None:
+        page = studio.PAGE.read_text(encoding="utf-8")
+        for needed in (
+            "function replayPanel(agent, story)",
+            "Nothing runs and no model is asked.",
+            # A chosen theme wins over the computer's setting, both ways.
+            ':root:not([data-theme="light"])',
+            ':root[data-theme="dark"]',
+            'localStorage.setItem("kosika-theme"',
+            "async function openJump()",
+            'event.key.toLowerCase() === "k"',
+        ):
+            self.assertIn(needed, page)
+        # Each set of dark colours is written for both cases.
+        self.assertEqual(page.count(':root[data-theme="dark"] {'), 2)
+        self.assertEqual(page.count(':root:not([data-theme="light"]) {'), 2)
+
     def test_a_scene_a_model_took_part_in_is_checked_and_drawn_the_same(self) -> None:
         drawn = self.app.draw_scene("logo.kos", SCENE)
         self.assertTrue(drawn["ok"])

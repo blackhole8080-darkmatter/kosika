@@ -14,13 +14,20 @@
   --ease: cubic-bezier(.2, .8, .2, 1);
 }
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #161513; --panel: #1f1e1b; --rail: #1a1917; --ink: #eceae5; --soft: #a39f96; --faint: #76726a; --line: #33312c;
     --accent: #e08a5f; --accent-soft: #3a261c; --ok: #6fc191; --ok-soft: #1b3125;
     --bad: #ec8377; --bad-soft: #3b1f1c; --warn: #e2b54a; --warn-soft: #392e13;
     --think: #a99cf0; --think-soft: #29254a; --mem: #6cc3de; --mem-soft: #17313a;
     --code: #b9b4a8; --code-soft: #2a2824;
   }
+}
+:root[data-theme="dark"] {
+  --bg: #161513; --panel: #1f1e1b; --rail: #1a1917; --ink: #eceae5; --soft: #a39f96; --faint: #76726a; --line: #33312c;
+  --accent: #e08a5f; --accent-soft: #3a261c; --ok: #6fc191; --ok-soft: #1b3125;
+  --bad: #ec8377; --bad-soft: #3b1f1c; --warn: #e2b54a; --warn-soft: #392e13;
+  --think: #a99cf0; --think-soft: #29254a; --mem: #6cc3de; --mem-soft: #17313a;
+  --code: #b9b4a8; --code-soft: #2a2824;
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; }
@@ -110,6 +117,8 @@ pre.source { background: var(--bg); border: 1px solid var(--line); border-radius
 .stage-node.lit .stage-box.k-mem { stroke: var(--mem); fill: var(--mem-soft); filter: drop-shadow(0 0 7px color-mix(in srgb, var(--mem) 55%, transparent)); }
 .stage-node.lit .stage-box.k-warn { stroke: var(--warn); fill: var(--warn-soft); }
 .stage-node.done .stage-box { stroke: var(--ok); fill: var(--ok-soft); } .stage-node.failed .stage-box { stroke: var(--bad); fill: var(--bad-soft); } .stage-node.asking .stage-box { stroke: var(--warn); fill: var(--warn-soft); }
+.replay { margin-bottom: 16px; } .replay-now { font-size: 13.5px; min-height: 22px; margin-top: 8px; } .replay-bar { height: 3px; border-radius: 3px; background: var(--line); overflow: hidden; margin-top: -4px; }
+.replay-bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s var(--ease); }
 .live { max-height: 64vh; overflow: auto; padding: 6px 6px 0 2px; }
 .live .step { opacity: .5; transition: opacity .35s; } .live .step.running, .live .step.done, .live .step.failed, .live .step.waiting { opacity: 1; }
 .live .step.running > .num { background: var(--accent); color: #fff; transform: scale(1.12); animation: pulse 1.3s infinite; }
@@ -158,6 +167,14 @@ pre.source { background: var(--bg); border: 1px solid var(--line); border-radius
 .offers { min-height: 30px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; } .hint { color: var(--faint); font-size: 12px; }
 .offer { font: 12.5px var(--mono); padding: 3px 9px; border-radius: 7px; background: var(--code-soft); color: var(--ink); cursor: pointer; } .offer.first { background: var(--accent-soft); color: var(--accent); }
 .offer i { font: 11px system-ui, sans-serif; color: var(--faint); font-style: normal; }
+.theme { cursor: pointer; user-select: none; display: flex; align-items: center; gap: 7px; padding: 5px 8px; margin: 0 -8px; border-radius: 8px; } .theme:hover { background: var(--code-soft); color: var(--ink); }
+.theme i { width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid currentColor; background: linear-gradient(90deg, currentColor 50%, transparent 50%); flex: none; }
+.veil { position: fixed; inset: 0; background: color-mix(in srgb, #000 45%, transparent); display: grid; place-items: start center; padding-top: 14vh; z-index: 50; animation: rise .18s var(--ease) both; }
+.jump { width: min(620px, 92vw); background: var(--panel); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 30px 70px -20px rgba(0, 0, 0, .55); overflow: hidden; }
+.jump input { border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 15px 18px; font-size: 16px; background: transparent; } .jump input:focus { box-shadow: none; }
+.jump .found { max-height: 46vh; overflow: auto; padding: 6px; } .jump .hit { padding: 8px 12px; border-radius: 9px; cursor: pointer; display: flex; gap: 10px; align-items: baseline; }
+.jump .hit.on { background: var(--accent-soft); } .jump .hit b { font-weight: 600; } .jump .hit small { color: var(--faint); margin-left: auto; white-space: nowrap; } .jump .hit span { color: var(--soft); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jump .keys { padding: 8px 16px; border-top: 1px solid var(--line); color: var(--faint); font-size: 12px; }
 textarea.editor { min-height: 62vh; font: 12.5px/1.55 var(--mono); tab-size: 2; white-space: pre; overflow: auto; }
 .bar { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; } .bar .say { font-size: 13px; color: var(--soft); }
 select { font: inherit; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; }
@@ -188,11 +205,16 @@ select { font: inherit; background: var(--bg); color: var(--ink); border: 1px so
   --glow: color-mix(in srgb, var(--accent) 24%, transparent);
 }
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #110f0e; --panel: #1b1917; --rail: #151311; --line: #2f2b26;
     --shadow: 0 1px 2px rgba(0, 0, 0, .45), 0 12px 30px -16px rgba(0, 0, 0, .8);
     --lift: 0 2px 4px rgba(0, 0, 0, .5), 0 22px 40px -18px color-mix(in srgb, var(--accent) 45%, transparent);
   }
+}
+:root[data-theme="dark"] {
+  --bg: #110f0e; --panel: #1b1917; --rail: #151311; --line: #2f2b26;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .45), 0 12px 30px -16px rgba(0, 0, 0, .8);
+  --lift: 0 2px 4px rgba(0, 0, 0, .5), 0 22px 40px -18px color-mix(in srgb, var(--accent) 45%, transparent);
 }
 body {
   background:
@@ -307,6 +329,49 @@ async function api(path, options) {
   return data;
 }
 
+// Light, dark, or whatever the computer is set to. The choice is kept in
+// this browser; nothing is sent anywhere.
+const THEMES = ["system", "light", "dark"], THEME_WORDS = {system: "as your computer", light: "light", dark: "dark"};
+function theme() { try { const kept = localStorage.getItem("kosika-theme"); return THEMES.includes(kept) ? kept : "system"; } catch (error) { return "system"; } }
+function setTheme(name) {
+  if (name === "system") document.documentElement.removeAttribute("data-theme"); else document.documentElement.setAttribute("data-theme", name);
+  try { localStorage.setItem("kosika-theme", name); } catch (error) { /* the choice lasts until the page closes */ }
+}
+setTheme(theme());
+
+// Jump anywhere: one box over every page, agent, workflow, model, tool,
+// memory and record. Ctrl+K opens it; Enter goes; Escape closes.
+let jumpItems = null;
+async function openJump() {
+  if (document.querySelector(".veil")) return;
+  const pages = [["assistant", "Assistant"], ["project", "Project"], ["agents", "Agents"], ["runs", "Runs"], ["tools", "Tools"], ["permissions", "Permissions"]].map(([view, name]) => ({kind: "page", name, detail: "", title: "Studio", view}));
+  const box = h("input", {type: "text", placeholder: "Jump to an agent, workflow, model, tool, memory or record"}), found = h("div", {class: "found"});
+  const veil = h("div", {class: "veil", onclick: event => { if (event.target === veil) close(); }}, h("div", {class: "jump"}, box, found, h("div", {class: "keys"}, "↑ ↓ to move · Enter to open · Esc to close")));
+  let hits = [], at = 0;
+  function close() { veil.remove(); }
+  function open(item) { close(); if (item.kind === "page") go(item.view); else go("agent", item.agent); }
+  function draw() {
+    const words = box.value.toLowerCase().split(/\s+/).filter(Boolean);
+    hits = [...pages, ...(jumpItems || [])].filter(item => words.every(word => (item.name + " " + item.kind + " " + item.title + " " + item.detail).toLowerCase().includes(word))).slice(0, 40);
+    at = Math.min(at, Math.max(0, hits.length - 1));
+    fill(found, hits.length ? hits.map((item, index) => h("div", {class: "hit" + (index === at ? " on" : ""), onclick: () => open(item), onmousemove: () => { if (at !== index) { at = index; draw(); } }},
+      chip(item.kind, KIND_CHIP[item.kind] || ""), h("b", null, item.name), h("span", null, item.detail), h("small", null, item.kind === "page" ? "" : item.title))) : h("div", {class: "empty", style: "padding:14px"}, jumpItems ? "Nothing matches." : "Reading every program…"));
+    const on = found.querySelector(".hit.on"); if (on) on.scrollIntoView({block: "nearest"});
+  }
+  box.addEventListener("input", () => { at = 0; draw(); });
+  box.addEventListener("keydown", event => {
+    if (event.key === "Escape") close();
+    else if (event.key === "ArrowDown") { event.preventDefault(); at = Math.min(at + 1, hits.length - 1); draw(); }
+    else if (event.key === "ArrowUp") { event.preventDefault(); at = Math.max(at - 1, 0); draw(); }
+    else if (event.key === "Enter" && hits[at]) open(hits[at]);
+  });
+  document.body.append(veil); box.focus(); draw();
+  if (!jumpItems) { try { jumpItems = (await api("/api/project")).items; } catch (error) { jumpItems = []; } if (veil.isConnected) draw(); }
+}
+window.addEventListener("keydown", event => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") { event.preventDefault(); openJump(); } });
+// What is in the folder may have changed by the next time the box is opened.
+window.addEventListener("hashchange", () => { jumpItems = null; });
+
 // Studio's own moving mark. The app runs a Kosika program that describes
 // it and sends the picture; until then, and if that fails, a plain K.
 let brandSvg = null;
@@ -337,7 +402,9 @@ function drawRail(active) {
     h("div", {class: "nav" + (key === active ? " on" : ""), onclick: () => go(key)}, icon(key), label)));
   document.getElementById("foot").replaceChildren(
     h("div", null, h("span", {class: "dot" + (overview.can_run ? "" : " off")}), overview.can_run ? overview.model : "no model: view and test only"),
-    h("div", {class: "path", title: overview.root}, overview.root.split(/[\\/]/).slice(-2).join("/")));
+    h("div", {class: "path", title: overview.root}, overview.root.split(/[\\/]/).slice(-2).join("/")),
+    h("div", {class: "theme", title: "Jump to any agent, workflow, tool or record", onclick: openJump}, h("span", null, "Jump to…"), h("small", {style: "margin-left:auto;color:var(--faint)"}, "Ctrl K")),
+    h("div", {class: "theme", title: "Change between your computer's setting, light and dark", onclick: () => { setTheme(THEMES[(THEMES.indexOf(theme()) + 1) % THEMES.length]); drawRail(active); }}, h("i"), "Theme: " + THEME_WORDS[theme()]));
 }
 
 let routing = 0;
@@ -874,6 +941,41 @@ function testsTab(agent) {
     agent.test_names.length ? h("div", {style: "margin:12px 0"}, button) : null, out);
 }
 
+// A past run, played again on the diagram. Nothing is run and no model is
+// asked: the run was recorded, and this reads the record step by step.
+function replayPanel(agent, story) {
+  const stage = runStage(agent), caption = h("div", {class: "replay-now"}, "Press Play to watch this run again."), bar = h("div", {class: "replay-bar"}, h("i"));
+  // Every step in the order it happened, with the steps inside a workflow after the step that ran it.
+  const beats = [];
+  (function walk(steps, depth) { for (const step of steps || []) { beats.push({step, depth}); walk(step.inside, depth + 1); } })(story.steps, 0);
+  const sourceOf = step => { const tool = agent.tools.find(item => step.did.includes("tool " + item.name)); return tool ? tool.source : step.kind === "memory" ? "memory:" : step.kind === "board" ? "board:" : ""; };
+  function eventsOf(step) {
+    if (step.kind === "model" || step.kind === "think" || step.kind === "agent") return [{event: "model_call", model: step.model || ""}, {event: "model_return"}];
+    if (step.kind === "tool" || step.kind === "memory" || step.kind === "board" || step.kind === "files" || step.kind === "web") return [{event: "tool_call", source: sourceOf(step)}, {event: "tool_return"}];
+    if (step.kind === "code") return [{event: "code_step"}];
+    return [];
+  }
+  let playing = 0, speed = 1;
+  async function play() {
+    const mine = ++playing; stage.reset(true); button.textContent = "Stop";
+    for (let index = 0; index < beats.length; index++) {
+      if (mine !== playing || !caption.isConnected) return;
+      const {step, depth} = beats[index];
+      fill(caption, h("b", null, (depth ? "inside: " : "") + step.name), " " + step.did.slice(0, 110), step.seconds >= 0.1 ? h("span", {class: "hint"}, "  took " + step.seconds + " s") : null);
+      bar.firstChild.style.width = Math.round((index + 1) / beats.length * 100) + "%";
+      for (const event of eventsOf(step)) stage.apply(event);
+      await sleep((step.kind === "workflow" ? 350 : 1000) / speed);
+    }
+    if (mine !== playing) return;
+    stage.finish(!story.finished);
+    fill(caption, story.finished ? "The run finished." : "The run did not finish: " + (story.error || "it stopped."), h("span", {class: "hint"}, "  " + beats.length + " step(s), " + (story.seconds ? Math.round(story.seconds * 10) / 10 + " s when it really ran." : "")));
+    button.textContent = "Play again"; playing = 0;
+  }
+  const button = h("button", {onclick: () => { if (playing) { playing = 0; button.textContent = "Play"; stage.reset(false); caption.textContent = "Stopped."; } else play(); }}, "Play");
+  const faster = h("button", {class: "quiet", onclick: () => { speed = speed === 1 ? 2 : speed === 2 ? 4 : 1; faster.textContent = speed + "× speed"; }}, "1× speed");
+  return h("div", {class: "replay"}, h("div", {class: "row", style: "margin-bottom:10px"}, button, faster, h("span", {class: "hint"}, "A recording played back. Nothing runs and no model is asked.")), stage.el, bar, caption);
+}
+
 function runsPanel(agentId, traces) {
   if (!traces.length) return h("div", {class: "panel"}, h("p", {class: "empty"}, "No runs recorded yet."));
   const view = h("div", null, h("p", {class: "empty"}, "Choose a run to read what it did."));
@@ -884,8 +986,11 @@ function runsPanel(agentId, traces) {
       row.className = "on";
       view.replaceChildren(h("p", {class: "lead"}, h("span", {class: "spin"}), "Reading the run"));
       try {
-        const story = await api("/api/story?id=" + encodeURIComponent(trace.agent || agentId) + "&trace=" + encodeURIComponent(trace.name));
-        view.replaceChildren(storyView(story), h("h2", null, "What the model was asked"), requestsView(story));
+        const owner = trace.agent || agentId;
+        const story = await api("/api/story?id=" + encodeURIComponent(owner) + "&trace=" + encodeURIComponent(trace.name));
+        // The diagram needs to know what the agent is made of; a program that no longer checks has no diagram.
+        let detail = null; try { detail = await api("/api/agent?id=" + encodeURIComponent(owner)); } catch (error) { detail = null; }
+        fill(view, detail && !detail.error ? replayPanel(detail, story) : null, storyView(story), h("h2", null, "What the model was asked"), requestsView(story));
       } catch (error) { view.replaceChildren(h("div", {class: "banner bad"}, error.message)); }
     }}, trace.label || trace.name, h("small", null, new Date(trace.modified * 1000).toLocaleString()));
     list.append(row);

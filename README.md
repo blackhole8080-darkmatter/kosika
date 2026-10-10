@@ -615,6 +615,17 @@ of them a light travels along the line, the part lights up, and its count
 goes up. When the run waits for your yes the light comes to you; when it
 ends, the program turns green, or red if it failed.
 
+A past run can be watched again. Choose it under Runs and press Play: the
+same diagram plays the recording step by step, at one, two or four times
+the speed, with a line saying what each step did. Nothing runs and no
+model is asked.
+
+Ctrl+K, or "Jump to" at the foot of the sidebar, opens one box over every
+page, agent, workflow, model, tool, memory and record; type a few letters
+and press Enter to go there. "Theme" beside it switches between your
+computer's setting, light and dark, and the choice is kept in your
+browser.
+
 Studio's own moving mark, in the sidebar and beside page titles, is not a
 stored picture. Studio carries a Kosika program, `app_assets/brand.kos`,
 runs it when it starts, and plays the scene it describes: ten dots fly
