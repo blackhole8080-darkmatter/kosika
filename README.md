@@ -208,6 +208,20 @@ hits = execute hands.search_files(".", query) otherwise {matches: []}
 It is checked against the type the call would have returned. The same works
 as a branch of a step's `match`: `case _ { {answer: "", quote: ""} }`.
 
+## How good is it? The benchmark
+
+`benchmarks/researcher` asks the researcher agent forty questions about a
+folder of notes, with nothing scripted, and keeps every answer. On the
+last run, `qwen2.5:7b` with search by meaning was right 39 times of 40 and
+showed no false answer; the much smaller `qwen2.5:1.5b` was right 32
+times and showed 8 false answers. The first run found four faults in the
+agent and the search, which were fixed. Its README has the full tables,
+the faults, and what the numbers do not show.
+
+```
+python benchmarks/researcher/run.py --model qwen2.5:7b --embed-model nomic-embed-text
+```
+
 ## An experiment: animation described in Kosika
 
 Kosika does not draw. As an experiment, a program can *describe* a scene
@@ -238,8 +252,11 @@ picture, fetches nothing, and runs no script.
 In Studio, a program whose `main` gives back shapes and moves gets a Scene
 tab: the animation plays there, a slider drags through time to look at any
 moment, the inputs can be changed and the scene made again, and "Save as a
-web file" gives the same file the command writes. Only plain code runs
-for this: no model and no tool.
+web file" gives the same file the command writes. For a program of plain
+code nothing else is needed. For one that asks a model, such as the
+`animator` agent, the tab has a box to describe the motion; the run is an
+ordinary run, and the scene it gives back is checked and drawn the same
+way.
 
 It is deliberately small, four shapes and six kinds of move, to find out
 whether describing motion this way is worth growing.
@@ -859,7 +876,7 @@ eval that did not always pass.
 
 ### Example agents
 
-`examples/agents` holds seven agents written in Kosika, each with its own
+`examples/agents` holds eight agents written in Kosika, each with its own
 tests. Point Studio at the folder to try them:
 
 ```
@@ -885,6 +902,12 @@ kosika studio examples/agents --model MODEL --allow-folder YOUR_FOLDER --allow-s
   own tests, Kosika checks it and runs the tests, and what is wrong goes
   back to the model up to two more times. You can run a test of your own
   against what it wrote, and save it after approving.
+- `animator` makes motion designs from a description. The model fills in
+  a short plan (a pattern, how many shapes, colours, a title, how long)
+  and code builds the whole scene from it, every shape and every timed
+  move: a ring, a grid, a wave or a burst. Start the request with
+  `draw:` and the model writes the scene itself, with each mistake sent
+  back to it. Studio plays the result in its Scene tab.
 
 A tool with `source system "kosika"` and `operation: "check"` takes a
 program as text, `{source}`, and gives back `{ok, problem, tests, passed}`:
@@ -895,7 +918,9 @@ its tests use scripted answers only.
 
 A files tool with `operation: "search"` takes `{path, query}` and gives
 back the lines under that folder holding the words, as `path:line: text`,
-best first. It only reads, skips hidden folders, and never leaves the
+best first. A word is matched where a word begins, so `rent` finds
+`rental` and not `current`, and a word of three letters or fewer must be
+the whole word. It only reads, skips hidden folders, and never leaves the
 granted folder.
 
 `operation: "find"` takes and gives the same, but ranks lines by meaning

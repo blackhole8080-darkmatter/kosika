@@ -31,11 +31,9 @@
 //
 //   --embed-model nomic-embed-text
 //
-// With it there is also a second check. A quote can be real and still not
-// answer the question: asked for the wifi password, a small model quoted
-// a line about a server password. So the question and the proving line
-// are compared for meaning, and an answer whose line is not about the
-// question is not shown.
+// With it there is also a further check. A quote can be real and still be
+// about something else, so the line that proves an answer must be one of
+// the five nearest in meaning to the question.
 //
 // It only reads. Say: a question, find WORDS, read FILE, summarize FILE,
 // or help.
@@ -50,8 +48,6 @@ record FileText { text: Text }
 // What the model must give back: the answer, and the words that prove it.
 record Found { answer: Text quote: Text }
 record Ask { text: Text }
-record Pair { a: Text b: Text }
-record Near { score: Number }
 
 default model reader {
   input: Ask
@@ -89,16 +85,6 @@ tool find_files {
   output: Hits
 }
 
-// How near two texts are in meaning, from -1 to 1. Reachable only with
-// an embedding model.
-tool near_to {
-  source system "meaning"
-  operation: "near"
-  access: observe
-  input: Pair
-  output: Near
-}
-
 tool look_at {
   source system "files"
   operation: "peek"
@@ -108,7 +94,7 @@ tool look_at {
 }
 
 agent hands {
-  can: [search_files, find_files, look_at, near_to]
+  can: [search_files, find_files, look_at]
   max_steps: 1
 }
 
@@ -136,10 +122,15 @@ fn clean(word: Text) -> Text {
   return out.trim()
 }
 
+// Words that say nothing about what a question or an answer is about.
+fn small_words() -> Text[] {
+  return ["a", "an", "the", "is", "are", "was", "were", "be", "do", "does", "did", "i", "me", "my", "we", "our", "you", "your", "it", "its", "of", "in", "on", "at", "to", "for", "from", "by", "with", "about", "and", "or", "what", "when", "where", "which", "who", "whom", "why", "how", "tell", "say", "says", "said", "there", "that", "this", "these", "those", "have", "has", "had", "can", "could", "should", "would", "will", "please", "any", "all", "much", "many", "need", "find", "search", "show", "am", "not", "no", "yes", "answer", "question", "line", "lines", "text"]
+}
+
 // The words of a question worth searching for: not the small words every
 // question has. At most six, so the search stays sharp.
 fn key_words(text: Text, skip_first: Bool) -> Text {
-  let small = ["a", "an", "the", "is", "are", "was", "were", "be", "do", "does", "did", "i", "me", "my", "we", "our", "you", "your", "it", "its", "of", "in", "on", "at", "to", "for", "from", "by", "with", "about", "and", "or", "what", "when", "where", "which", "who", "whom", "why", "how", "tell", "say", "says", "said", "there", "that", "this", "these", "those", "have", "has", "had", "can", "could", "should", "would", "will", "please", "any", "all", "much", "many", "need", "find", "search", "show"]
+  let small = small_words()
   var words: Text[] = []
   var seen = false
   for word in text.words() {
@@ -212,26 +203,36 @@ fn line_of(hit: Text) -> Text {
   return hit.split(":").drop(2).join(":").trim()
 }
 
-// Below this, the proving line is taken to be about something else.
-// Found by trying nomic-embed-text on fourteen pairs: lines that
-// answered scored 0.62 and up, lines that did not scored 0.60 and down.
-// That gap is narrow, so treat the number as a first guess.
-fn on_topic(about: Near) -> Bool {
-  return about.score >= 0.61
+// Does the line say what the answer says? The answer's own words, those
+// that are not already in the question, must be found in the line. So
+// "N/A", "it is not provided" and an answer taken from somewhere else
+// are all refused: none of them is in the line.
+fn supported(answer: Text, question: Text, line: Text) -> Bool {
+  let asked = for word in question.words() { clean(word) }
+  let lower = line.lower()
+  var found = 0
+  for word in answer.words() {
+    let item = clean(word)
+    if item.length() > 1 and not small_words().contains(item) and not asked.contains(item) and lower.contains(item) { found += 1 }
+  }
+  return found > 0
 }
 
-// The program's own check of the model's answer, used by `verify`. It
-// returns what is wrong, which is shown to the model, or "" when the answer
-// may stand. An answer left empty is refused too, so that a fast model
-// giving up is a reason to ask the strong one.
-fn proven(found: Found, hits: Hits) -> Text {
+fn proven(found: Found, hits: Hits, close: Hits, msg: Msg) -> Text {
   if found.answer.trim().is_empty() { return "No answer was given. Answer from the lines and give an exact quote." }
   if found.quote.trim().length() < 6 { return "Give a quote of at least a few words copied from one line, or set answer and quote to \"\" if the lines do not answer." }
-  if proof(hits, found.quote).is_empty() { return "Your quote is not word for word in any of the lines. Copy the exact words from one line without changing them, and do not include the file name or line number. If the lines do not answer the question, set answer and quote to \"\"." }
+  let hit = proof(hits, found.quote)
+  if hit.is_empty() { return "Your quote is not word for word in any of the lines. Copy the exact words from one line without changing them, and do not include the file name or line number. If the lines do not answer the question, set answer and quote to \"\"." }
+  if line_of(hit).starts_with("#") { return "Your quote is a heading, which states no fact. Quote the line that holds the fact, or set answer and quote to \"\" if no line does." }
+  if not supported(found.answer, msg.text, line_of(hit)) { return "Your answer is not what the quoted line says. Answer only with what that line states, or set answer and quote to \"\" if the lines do not answer." }
+  // With search by meaning, the proving line must be among the lines
+  // nearest in meaning to the question. A real line about something else
+  // is not proof.
+  if not close.matches.is_empty() and not close.matches.take(5).contains(hit) { return "The line you quoted is about something else. If none of the lines answers this exact question, set answer and quote to \"\"." }
   return ""
 }
 
-fn answered(query: Text, hits: Hits, found: Found, about: Near) -> Said {
+fn answered(query: Text, hits: Hits, found: Found) -> Said {
   if query.is_empty() {
     return {text: "Ask me something about the files, or say \"find\" and a few words."}
   }
@@ -241,9 +242,6 @@ fn answered(query: Text, hits: Hits, found: Found, about: Near) -> Said {
   let hit = proof(hits, found.quote)
   if found.answer.trim().is_empty() or hit.is_empty() {
     return {text: "I will not guess: I could not back an answer with an exact quote. The closest lines I found for \"" + query + "\" are:\n" + hits.matches.take(5).join("\n")}
-  }
-  if not on_topic(about) {
-    return {text: "I will not guess: the only line I could quote is not about your question. The closest lines I found for \"" + query + "\" are:\n" + hits.matches.take(5).join("\n")}
   }
   return {text: found.answer.trim() + "\nQuote: \"" + found.quote.trim() + "\"\nFrom: " + source_of(hit)}
 }
@@ -281,8 +279,8 @@ fn help() -> Said {
 
 // Ask the fast model and check its answer. If the check refuses it, ask
 // the strong model. If that is refused too, there is no answer.
-workflow read_and_prove(prompt: Ask, hits: Hits) -> Found {
-  found = use_model reader(prompt.text) verify proven(found, hits) escalate strong otherwise {answer: "", quote: ""}
+workflow read_and_prove(prompt: Ask, hits: Hits, close: Hits, msg: Msg) -> Found {
+  found = use_model reader(prompt.text) verify proven(found, hits, close, msg) escalate strong otherwise {answer: "", quote: ""}
 }
 
 workflow near(msg: Msg) -> Hits {
@@ -298,13 +296,10 @@ workflow ask_files(msg: Msg) -> Said {
   }
   hits  = together(words, close)
   found = match hits.matches.is_empty() {
-    case false { call read_and_prove(ask_prompt(msg.text, passages(hits)), hits) }
+    case false { call read_and_prove(ask_prompt(msg.text, passages(hits)), hits, close, msg) }
     case _ { {answer: "", quote: ""} }
   }
-  // Without an embedding model this step cannot run, and the answer stands
-  // on its quote alone.
-  about = execute hands.near_to(msg.text, line_of(proof(hits, found.quote))) otherwise {score: 1}
-  said  = answered(query, hits, found, about)
+  said  = answered(query, hits, found)
 }
 
 workflow find_lines(msg: Msg) -> Said {
@@ -392,15 +387,28 @@ test "lines found by meaning are read when the key words find nothing" {
   expect both.matches == ["a:1: x", "b:2: y", "c:3: z"]
 }
 
-test "a real quote that is not about the question is not shown" {
-  answers search_files: [{matches: ["notes/work.md:5: The staging server password is rotated every 90 days."]}]
+test "a real quote from a line about something else is not shown" {
+  answers search_files: [{matches: ["notes/work.md:5: The staging server password is rotated every 90 days.", "notes/home.md:9: Electricity is with Northwind Energy, account 40-7718."]}]
+  answers find_files: [{matches: ["notes/home.md:9: Electricity is with Northwind Energy, account 40-7718."]}]
   answers reader: [{answer: "It is rotated every 90 days.", quote: "password is rotated every 90 days"}]
-  answers near_to: [{score: 0.58}]
+  answers strong: [{answer: "", quote: ""}]
   a = main({text: "What is the wifi password at home?"})
-  expect a.text.starts_with("I will not guess: the only line I could quote is not about your question")
+  expect a.text.starts_with("I will not guess")
   expect not a.text.contains("Quote:")
   expect line_of("notes/a.md:3: Due: the 1st.") == "Due: the 1st."
-  expect on_topic({score: 0.7}) and not on_topic({score: 0.5})
+}
+
+test "a heading, a non-answer, and an answer the line does not say are all refused" {
+  hits: Hits = {matches: ["home.md:1: # Home", "home.md:4: The landlord, Mr Okafor, can be reached on 555-0134."]}
+  none: Hits = {matches: []}
+  expect proven({answer: "It is not provided.", quote: "# Home"}, hits, none, {text: "What is the wifi password at home?"}).starts_with("Your quote is a heading")
+  expect proven({answer: "N/A", quote: "The landlord, Mr Okafor, can be reached"}, hits, none, {text: "What is his email?"}).starts_with("Your answer is not what the quoted line says")
+  expect proven({answer: "The answer is not found in the provided lines.", quote: "The landlord, Mr Okafor, can be reached"}, hits, none, {text: "What is his email?"}).starts_with("Your answer is not what")
+  expect proven({answer: "His number is 555-0134.", quote: "can be reached on 555-0134"}, hits, none, {text: "How can I reach the landlord?"}) == ""
+  expect supported("Tom", "Which friend cannot eat nuts?", "Tom is allergic to peanuts.")
+  expect not supported("the friend", "Which friend cannot eat nuts?", "Tom is allergic to peanuts.")
+  expect proven({answer: "555-0134", quote: "can be reached on 555-0134"}, hits, {matches: ["a.md:1: x", "home.md:4: The landlord, Mr Okafor, can be reached on 555-0134."]}, {text: "landlord phone"}) == ""
+  expect proven({answer: "555-0134", quote: "can be reached on 555-0134"}, hits, {matches: ["a.md:1: something else entirely"]}, {text: "landlord phone"}).starts_with("The line you quoted is about something else")
 }
 
 test "find lists matching lines without a model" {
@@ -415,8 +423,8 @@ test "when the fast model cannot prove its answer the strong model is asked" {
   answers strong: [{answer: "It is next Tuesday at 3pm.", quote: "next Tuesday at 3pm"}]
   a = main({text: "When is the demo with Ravi?"})
   expect a.text == "It is next Tuesday at 3pm.\nQuote: \"next Tuesday at 3pm\"\nFrom: notes/work.md, line 12"
-  expect proven({answer: "x", quote: "not in any line at all"}, {matches: ["a.md:1: something else"]}).starts_with("Your quote is not word for word")
-  expect proven({answer: "", quote: ""}, {matches: []}).starts_with("No answer was given")
+  expect proven({answer: "x", quote: "not in any line at all"}, {matches: ["a.md:1: something else"]}, {matches: []}, {text: "q"}).starts_with("Your quote is not word for word")
+  expect proven({answer: "", quote: ""}, {matches: []}, {matches: []}, {text: "q"}).starts_with("No answer was given")
 }
 
 test "the check itself: a quote is proved only by a line that holds it" {

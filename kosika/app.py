@@ -1008,6 +1008,13 @@ class App:
                 made = run(program, "main", Path(scratch) / "run.jsonl", inputs=inputs)
         except (ValueError, RuntimeError, OSError) as exc:
             raise AppError(f"The scene could not be made: {exc}", 422) from exc
+        return self.draw_scene(agent_id, made)
+
+    def draw_scene(self, agent_id: str, made: Any) -> dict[str, Any]:
+        """The picture for a scene that is already made, such as the result
+        of a run in which a model took part. It is checked like any other."""
+
+        agent = self.agent(agent_id)
         problems = check_scene(made)
         if problems:
             return {"ok": False, "problems": problems[:30]}
@@ -1383,10 +1390,13 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                         ),
                     )
                 elif method == "POST" and url.path == "/api/scene":
-                    given = self._body().get("inputs")
-                    if not isinstance(given, dict):
-                        raise AppError("Send the inputs as an object")
-                    self._json(200, app.scene(agent_id, given))
+                    body = self._body()
+                    if isinstance(body.get("scene"), dict):
+                        self._json(200, app.draw_scene(agent_id, body["scene"]))
+                    elif isinstance(body.get("inputs"), dict):
+                        self._json(200, app.scene(agent_id, body["inputs"]))
+                    else:
+                        raise AppError("Send inputs to run, or a scene to draw")
                 elif method == "GET" and url.path == "/api/project":
                     self._json(200, app.project())
                 elif method == "GET" and url.path == "/api/map":

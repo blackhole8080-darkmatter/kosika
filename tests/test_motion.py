@@ -385,9 +385,53 @@ class StudioSceneTests(unittest.TestCase):
             "/api/scene",
             "setCurrentTime",
             "Save as a web file",
+            "Design it",
         ):
             self.assertIn(needed, page)
         self.assertNotIn("innerHTML", page)
+
+    def test_a_scene_a_model_took_part_in_is_checked_and_drawn_the_same(self) -> None:
+        drawn = self.app.draw_scene("logo.kos", SCENE)
+        self.assertTrue(drawn["ok"])
+        self.assertEqual(drawn["shapes"], 2)
+        refused = self.app.draw_scene("logo.kos", {**SCENE, "shapes": []})
+        self.assertEqual(refused["ok"], False)
+        self.assertFalse(self.app.draw_scene("logo.kos", "not a scene")["ok"])
+
+    def test_every_pattern_of_the_animator_plays(self) -> None:
+        animator = LOGO.parent.parent / "agents" / "animator" / "main.kos"
+        source = animator.read_text(encoding="utf-8") + (
+            "\nworkflow made(plan: Plan) -> Scene {\n  scene = build(plan)\n}\n"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "main.kos"
+            path.write_text(source, encoding="utf-8")
+            program = load_program(path)
+            for pattern, count in (
+                ("ring", 18),
+                ("grid", 35),
+                ("wave", 28),
+                ("burst", 48),
+                ("ring", 3),
+                ("grid", 60),
+                ("wave", 3),
+            ):
+                with self.subTest(pattern=pattern, count=count):
+                    plan = {
+                        "pattern": pattern,
+                        "count": count,
+                        "color": "#e8813a",
+                        "accent": "#f4e9df",
+                        "background": "#1a1410",
+                        "title": "A title",
+                        # Shorter than any pattern needs: the scene must
+                        # be made long enough all the same.
+                        "seconds": 3,
+                    }
+                    scene = run(program, "made", None, inputs={"plan": plan})
+                    self.assertEqual(check_scene(scene), [])
+                    self.assertGreaterEqual(len(scene["shapes"]), count + 1)
+                    ET.fromstring(to_svg(scene))
 
 
 class TrigTests(unittest.TestCase):

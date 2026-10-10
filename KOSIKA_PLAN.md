@@ -2333,6 +2333,71 @@ gate: without them a parser written in Kosika has nothing to return.
   groups of shapes. A scene program that needs a model or a tool cannot
   be played in the Scene tab. No agent writes scenes yet.
 
+### An agent that designs motion
+
+- `examples/agents/animator`: the model fills in a `Plan` of seven fields
+  (pattern, count, two colours, background, title, seconds); a `verify`
+  written in Kosika sends a plan that breaks a rule back once; code then
+  builds the scene. Four patterns: ring, grid, wave, burst. A grid of 35
+  tiles is 213 moves, none of them written by the model.
+- `draw:` asks the model for the whole scene instead, checked by a
+  second `verify` written in Kosika, with two more tries.
+- The Scene tab takes a description for a program that asks a model: an
+  ordinary run, whose result is checked and drawn by `/api/scene`.
+- Six tests in the agent with scripted answers. A Python test builds
+  every pattern at several sizes through the real checker. Each pattern
+  was read back from a browser at several moments: tiles hidden, then
+  overshooting to 1.07 of their size and settling; the wave reaching its
+  top with its flash of colour and returning, each dot later than the
+  last; sparks flying out, fading, and starting again.
+- On qwen2.5:7b, five requests asked three times over. In the first
+  round the model chose a fitting pattern, count and title each time,
+  in 16 to 29 s, but one scene would not play (the model asked for 3
+  seconds and the ring needs a little more) and colour names were
+  ignored in favour of the one colour the prompt showed. After two
+  fixes (a scene is made long enough for its own moves; the prompt
+  lists nine named colours) all ten scenes of the next two rounds
+  played and used the colours asked for. `draw:` took 96 to 113 s and
+  played each time; once it left out the word the request asked for.
+- Not claimed: fifteen runs on one model is a trial, not a measurement,
+  and there is no eval in the agent yet. Whether a design looks good
+  was not judged by anyone. The patterns are four fixed ones; "complex"
+  here means many well-timed moves, not new kinds of motion. `draw:`
+  is slow and gives small scenes. Nobody has used it through Studio
+  with a real model: the Scene tab's description box was tested only
+  through its parts.
+
+### A benchmark of forty questions, and what it changed
+
+- `benchmarks/researcher/`: eight files of made-up notes, forty
+  questions of four kinds (key words shared, meaning only, several
+  candidate lines, not answered by the notes), a runner that asks the
+  real agent with nothing scripted and sorts each answer into right,
+  false answer shown, declined or failed, and every run's answers kept
+  in `results/`. Its README has the tables.
+- First run: qwen2.5:7b 32 right and none false; with search by meaning
+  36 and none false. qwen2.5:1.5b 24 right and 12 false; with search by
+  meaning 27 and 9 false.
+- Four faults were read out of the wrong answers and fixed. The word
+  search matched fragments; it now matches where a word begins, and
+  words of three letters or fewer whole. In the researcher, a heading
+  is no longer proof; an answer must have words of its own in the
+  quoted line; and the fixed score for "is the line about the
+  question" is replaced by requiring the proving line among the five
+  nearest in meaning. The `near` tool stays in the language; the
+  researcher no longer uses it.
+- Second run: 7b 31 and none false; with meaning 39 and none false.
+  1.5b 26 and 6 false; with meaning 32 and 8 false.
+- The earlier report of 15 of 15 for 1.5b with the second check is
+  withdrawn in the benchmark's README: it rested on five questions.
+- Not claimed: the fixes were made after reading these same questions'
+  wrong answers, so the second run is not a test on unseen questions.
+  One run per setup. The author wrote both the agent and the
+  questions. The Python version of the researcher in
+  `benchmarks/python_comparison` was not given these fixes, so the two
+  no longer do the same thing and its size comparison describes the
+  agent as it was.
+
 ## Standard coding-agent procedure
 
 1. Inspect `git status`, the relevant source files, tests, and this plan.

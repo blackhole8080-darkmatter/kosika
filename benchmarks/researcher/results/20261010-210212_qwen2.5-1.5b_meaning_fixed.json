@@ -1,0 +1,562 @@
+{
+ "when": "20261010-210212",
+ "label": "fixed",
+ "model": "qwen2.5:1.5b",
+ "embed_model": "nomic-embed-text",
+ "runs": 1,
+ "seconds": 491.9,
+ "total": {
+  "right": 32,
+  "wrong shown": 8,
+  "missed": 0,
+  "failed": 0
+ },
+ "by_kind": {
+  "words": {
+   "right": 12,
+   "wrong shown": 0,
+   "missed": 0,
+   "failed": 0
+  },
+  "meaning": {
+   "right": 10,
+   "wrong shown": 2,
+   "missed": 0,
+   "failed": 0
+  },
+  "several": {
+   "right": 8,
+   "wrong shown": 0,
+   "missed": 0,
+   "failed": 0
+  },
+  "none": {
+   "right": 2,
+   "wrong shown": 6,
+   "missed": 0,
+   "failed": 0
+  }
+ },
+ "questions": [
+  {
+   "kind": "words",
+   "question": "How much is the rent?",
+   "answer": "900",
+   "file": "home.md",
+   "line": 3,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "900 euros a month\nQuote: \"home.md:3: Rent is 900 euros a month, due on the 1st.\"\nFrom: home.md, line 3"
+   ]
+  },
+  {
+   "kind": "words",
+   "question": "What is the policy number of the car insurance?",
+   "answer": "KX-22917",
+   "file": "home.md",
+   "line": 5,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "KX-22917\nQuote: \"home.md:5: Car insurance renews in March; the policy number is KX-22917.\"\nFrom: home.md, line 5"
+   ]
+  },
+  {
+   "kind": "words",
+   "question": "When is the demo for Ravi?",
+   "answer": "Tuesday",
+   "file": "work.md",
+   "line": 3,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "next Tuesday at 3pm in room 4\nQuote: \"work.md:3: Kosika demo for Ravi is next Tuesday at 3pm in room 4.\"\nFrom: work.md, line 3"
+   ]
+  },
+  {
+   "kind": "words",
+   "question": "Until when is Priya on leave?",
+   "answer": "20th",
+   "file": "work.md",
+   "line": 6,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "until the 20th\nQuote: \"work.md:6: Priya is on leave until the 20th.\"\nFrom: work.md, line 6"
+   ]
+  },
+  {
+   "kind": "words",
+   "question": "When is the dentist appointment?",
+   "answer": "14 November",
+   "file": "health.md",
+   "line": 3,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "Dentist appointment with Dr Lim on 14 November at 9am.\nQuote: \"health.md:3: Dentist appointment with Dr Lim on 14 November at 9am.\"\nFrom: health.md, line 3"
+   ]
+  },
+  {
+   "kind": "words",
+   "question": "How much does the gym membership cost?",
+   "answer": "35",
+   "file": "health.md",
+   "line": 5,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "35 euros\nQuote: \"health.md:5: Gym membership costs 35 euros and ends in January.\"\nFrom: health.md, line 5"
+   ]
+  },
+  {
+   "kind": "words",
+   "question": "When does the flight to Lisbon leave?",
+   "answer": "3 May",
+   "file": "travel.md",
+   "line": 3,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "06:40 on 3 May\nQuote: \"Flight to Lisbon leaves on 3 May at 06:40 from terminal 2.\"\nFrom: travel.md, line 3"
+   ]
+  },
+  {
+   "kind": "words",
+   "question": "When does the passport expire?",
+   "answer": "2031",
+   "file": "travel.md",
+   "line": 5,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "2031\nQuote: \"travel.md:5: Passport expires in 2031.\"\nFrom: travel.md, line 5"
+   ]
+  },
+  {
+   "kind": "words",
+   "question": "When were the tomatoes planted?",
+   "answer": "12 April",
+   "file": "projects/garden.md",
+   "line": 3,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "On 12 April.\nQuote: \"projects/garden.md:3: Tomatoes were planted on 12 April in the raised bed.\"\nFrom: projects/garden.md, line 3"
+   ]
+  },
+  {
+   "kind": "words",
+   "question": "What is the library card number?",
+   "answer": "2290-4417",
+   "file": "projects/reading.md",
+   "line": 7,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "2290-4417\nQuote: \"projects/reading.md:7: The library card number is 2290-4417.\"\nFrom: projects/reading.md, line 7"
+   ]
+  },
+  {
+   "kind": "words",
+   "question": "What is the savings goal for the year?",
+   "answer": "6000",
+   "file": "money.md",
+   "line": 3,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "6000 euros\nQuote: \"money.md:3: Savings goal for the year is 6000 euros.\"\nFrom: money.md, line 3"
+   ]
+  },
+  {
+   "kind": "words",
+   "question": "When is Maya's birthday?",
+   "answer": "9 September",
+   "file": "people.md",
+   "line": 3,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "Maya's birthday is on 9 September.\nQuote: \"people.md:3: Maya's birthday is on 9 September.\"\nFrom: people.md, line 3"
+   ]
+  },
+  {
+   "kind": "meaning",
+   "question": "What do I pay for the flat each month?",
+   "answer": "900",
+   "file": "home.md",
+   "line": 3,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "The rent is 900 euros a month.\nQuote: \"home.md:3: Rent is 900 euros a month, due on the 1st.\"\nFrom: home.md, line 3"
+   ]
+  },
+  {
+   "kind": "meaning",
+   "question": "When should the rubbish be taken outside?",
+   "answer": "Thursday",
+   "file": "home.md",
+   "line": 7,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "Thursday evening\nQuote: \"Bins go out on Thursday evening.\"\nFrom: home.md, line 7"
+   ]
+  },
+  {
+   "kind": "meaning",
+   "question": "Who has a copy of my house keys?",
+   "answer": "Lindqvist",
+   "file": "home.md",
+   "line": 8,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "Mrs Lindqvist at number 14\nQuote: \"home.md:8: The spare key is with Mrs Lindqvist at number 14.\"\nFrom: home.md, line 8"
+   ]
+  },
+  {
+   "kind": "meaning",
+   "question": "Who is away from the office at the moment?",
+   "answer": "Priya",
+   "file": "work.md",
+   "line": 6,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "Priya\nQuote: \"Priya is on leave until the 20th.\"\nFrom: work.md, line 6"
+   ]
+  },
+  {
+   "kind": "meaning",
+   "question": "Who is my manager?",
+   "answer": "Dana Whitfield",
+   "file": "work.md",
+   "line": 10,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "Dana Whitfield\nQuote: \"work.md:10: Our team lead is Dana Whitfield.\"\nFrom: work.md, line 10"
+   ]
+  },
+  {
+   "kind": "meaning",
+   "question": "When do I see the tooth doctor?",
+   "answer": "14 November",
+   "file": "health.md",
+   "line": 3,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "14 November at 9am\nQuote: \"health.md:3: Dentist appointment with Dr Lim on 14 November at 9am.\"\nFrom: health.md, line 3"
+   ]
+  },
+  {
+   "kind": "meaning",
+   "question": "Where am I staying in Portugal?",
+   "answer": "Casa Azul",
+   "file": "travel.md",
+   "line": 4,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "Casa Azul\nQuote: \"The hotel in Lisbon is the Casa Azul, booked for four nights.\"\nFrom: travel.md, line 4"
+   ]
+  },
+  {
+   "kind": "meaning",
+   "question": "What novel am I in the middle of?",
+   "answer": "Overstory",
+   "file": "projects/reading.md",
+   "line": 3,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "The Overstory\nQuote: \"Currently reading The Overstory, on page 210.\"\nFrom: projects/reading.md, line 3"
+   ]
+  },
+  {
+   "kind": "meaning",
+   "question": "How often do the young plants need watering?",
+   "answer": "second day",
+   "file": "projects/garden.md",
+   "line": 5,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "Water the seedlings every second day.\nQuote: \"projects/garden.md:5: Water the seedlings every second day.\"\nFrom: projects/garden.md, line 5"
+   ]
+  },
+  {
+   "kind": "meaning",
+   "question": "Which friend cannot eat nuts?",
+   "answer": "Tom",
+   "file": "people.md",
+   "line": 4,
+   "outcomes": [
+    "wrong shown"
+   ],
+   "said": [
+    "Grandma\nQuote: \"Grandma prefers to be called on Sunday mornings.\"\nFrom: people.md, line 5"
+   ]
+  },
+  {
+   "kind": "meaning",
+   "question": "By what date must I file my taxes?",
+   "answer": "31 July",
+   "file": "money.md",
+   "line": 5,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "by 31 July\nQuote: \"money.md:5: Tax return must be submitted by 31 July.\"\nFrom: money.md, line 5"
+   ]
+  },
+  {
+   "kind": "meaning",
+   "question": "How much do I spend on my mobile each month?",
+   "answer": "22",
+   "file": "money.md",
+   "line": 4,
+   "outcomes": [
+    "wrong shown"
+   ],
+   "said": [
+    "Streaming subscriptions add up to 31 euros a month.\nQuote: \"money.md:7: Streaming subscriptions add up to 31 euros a month.\"\nFrom: money.md, line 7"
+   ]
+  },
+  {
+   "kind": "several",
+   "question": "What is the reference of the travel insurance?",
+   "answer": "TR-5561",
+   "file": "travel.md",
+   "line": 7,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "TR-5561\nQuote: \"travel.md:7: Travel insurance is with Meridian, reference TR-5561.\"\nFrom: travel.md, line 7"
+   ]
+  },
+  {
+   "kind": "several",
+   "question": "When does the return flight land?",
+   "answer": "22:15",
+   "file": "travel.md",
+   "line": 8,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "22:15 on 7 May\nQuote: \"travel.md:8: Return flight lands at 22:15 on 7 May.\"\nFrom: travel.md, line 8"
+   ]
+  },
+  {
+   "kind": "several",
+   "question": "Where is Dr Lim's practice?",
+   "answer": "Harbour Street",
+   "file": "health.md",
+   "line": 8,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "Harbour Street\nQuote: \"health.md:8: Dr Lim's practice is on Harbour Street.\"\nFrom: health.md, line 8"
+   ]
+  },
+  {
+   "kind": "several",
+   "question": "When does the phone contract end?",
+   "answer": "October",
+   "file": "money.md",
+   "line": 4,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "October\nQuote: \"money.md:4: The phone contract costs 22 euros a month and ends in October.\"\nFrom: money.md, line 4"
+   ]
+  },
+  {
+   "kind": "several",
+   "question": "When does the lease end?",
+   "answer": "31 August",
+   "file": "home.md",
+   "line": 10,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "31 August next year.\nQuote: \"The lease ends on 31 August next year.\"\nFrom: home.md, line 10"
+   ]
+  },
+  {
+   "kind": "several",
+   "question": "What time does the office close on Fridays?",
+   "answer": "7pm",
+   "file": "work.md",
+   "line": 8,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "The office closes at 7pm on Fridays.\nQuote: \"work.md:8: The office closes at 7pm on Fridays.\"\nFrom: work.md, line 8"
+   ]
+  },
+  {
+   "kind": "several",
+   "question": "When was the boiler serviced?",
+   "answer": "June",
+   "file": "home.md",
+   "line": 6,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "June\nQuote: \"The boiler was serviced in June and is next due in a year.\"\nFrom: home.md, line 6"
+   ]
+  },
+  {
+   "kind": "several",
+   "question": "When was the compost last turned?",
+   "answer": "March",
+   "file": "projects/garden.md",
+   "line": 7,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "Compost was last turned in March.\nQuote: \"projects/garden.md:7: Compost was last turned in March.\"\nFrom: projects/garden.md, line 7"
+   ]
+  },
+  {
+   "kind": "none",
+   "question": "What is the wifi password at home?",
+   "answer": "",
+   "file": "",
+   "line": 0,
+   "outcomes": [
+    "wrong shown"
+   ],
+   "said": [
+    "The staging server password is rotated every 90 days.\nQuote: \"The staging server password is rotated every 90 days.\"\nFrom: work.md, line 4"
+   ]
+  },
+  {
+   "kind": "none",
+   "question": "What is Mr Okafor's email address?",
+   "answer": "",
+   "file": "",
+   "line": 0,
+   "outcomes": [
+    "wrong shown"
+   ],
+   "said": [
+    "Mr Okafor can be reached on 555-0134.\nQuote: \"home.md:4: The landlord, Mr Okafor, can be reached on 555-0134.\"\nFrom: home.md, line 4"
+   ]
+  },
+  {
+   "kind": "none",
+   "question": "How much does the flight to Lisbon cost?",
+   "answer": "",
+   "file": "",
+   "line": 0,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "I will not guess: I could not back an answer with an exact quote. The closest lines I found for \"flight lisbon cost\" are:\ntravel.md:3: Flight to Lisbon leaves on 3 May at 06:40 from terminal 2.\nhealth.md:5: Gym membership costs 35 euros and ends in January.\nmoney.md:4: The phone contract costs 22 euros a month and ends in October.\ntravel.md:4: The hotel in Lisbon is the Casa Azul, booked for four nights.\ntravel.md:8: Return flight lands at 22:15 on 7 May."
+   ]
+  },
+  {
+   "kind": "none",
+   "question": "What is Dana Whitfield's phone number?",
+   "answer": "",
+   "file": "",
+   "line": 0,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "I will not guess: I could not back an answer with an exact quote. The closest lines I found for \"dana whitfields phone number\" are:\nhome.md:5: Car insurance renews in March; the policy number is KX-22917.\nhome.md:8: The spare key is with Mrs Lindqvist at number 14.\nmoney.md:4: The phone contract costs 22 euros a month and ends in October.\nprojects/reading.md:7: The library card number is 2290-4417.\nwork.md:10: Our team lead is Dana Whitfield."
+   ]
+  },
+  {
+   "kind": "none",
+   "question": "When is Tom's birthday?",
+   "answer": "",
+   "file": "",
+   "line": 0,
+   "outcomes": [
+    "wrong shown"
+   ],
+   "said": [
+    "Tom's birthday is on 9 September.\nQuote: \"people.md:3: Maya's birthday is on 9 September.\"\nFrom: people.md, line 3"
+   ]
+  },
+  {
+   "kind": "none",
+   "question": "What is the name of my dog?",
+   "answer": "",
+   "file": "",
+   "line": 0,
+   "outcomes": [
+    "wrong shown"
+   ],
+   "said": [
+    "Tom\nQuote: \"people.md:4: Tom is allergic to peanuts.\"\nFrom: people.md, line 4"
+   ]
+  },
+  {
+   "kind": "none",
+   "question": "How much is the electricity bill each month?",
+   "answer": "",
+   "file": "",
+   "line": 0,
+   "outcomes": [
+    "wrong shown"
+   ],
+   "said": [
+    "900 euros a month\nQuote: \"home.md:3: Rent is 900 euros a month, due on the 1st.\"\nFrom: home.md, line 3"
+   ]
+  },
+  {
+   "kind": "none",
+   "question": "Which seat do I have on the flight?",
+   "answer": "",
+   "file": "",
+   "line": 0,
+   "outcomes": [
+    "wrong shown"
+   ],
+   "said": [
+    "I have a return flight on the 7 May at 22:15.\nQuote: \"Return flight lands at 22:15 on 7 May.\"\nFrom: travel.md, line 8"
+   ]
+  }
+ ]
+}

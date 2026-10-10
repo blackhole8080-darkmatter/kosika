@@ -823,7 +823,9 @@ tool run_tests {
 - A shell tool starts only the program named in `operation`, with `args`
   passed as a list and never interpreted by a shell, inside the granted
   folder, for at most 60 seconds, with output cut at 64 KiB per stream.
-- `search` gives the lines holding the query's words and `find` the lines
+- `search` gives the lines holding the query's words (a word is matched
+  where a word begins, and a word of three letters or fewer must be the
+  whole word) and `find` the lines
   nearest to it in meaning, each as `path:line: text`, best first. Both
   only read and MAY be declared `access: observe`. `find` gives at most
   12 lines, compares at most 4,000 lines of at least 12 characters, and

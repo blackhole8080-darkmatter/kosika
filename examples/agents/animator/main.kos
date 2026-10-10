@@ -1,0 +1,329 @@
+// Animator: describe a motion design in words and watch it play.
+//
+//   kosika test main.kos
+//   kosika studio FOLDER --model qwen2.5:7b --model-protocol ollama
+//
+// The model decides, the code draws. A model is poor at writing hundreds of
+// exact numbers and good at choosing a handful of options. So for an
+// ordinary request the model fills in a short plan (which pattern, how
+// many shapes, the colours, a title, how long) and the code below builds
+// the whole scene from it, every shape and every precisely timed move.
+//
+// Start your request with "draw:" and the model writes the scene itself,
+// shape by shape. Code checks what it wrote, and anything wrong is sent
+// back to it to fix.
+//
+// Either way what comes back is a scene: shapes, and the moves each makes.
+// Studio plays it in the Scene tab; `kosika motion` writes it as a web file.
+//
+// Patterns: ring, grid, wave, burst.
+
+record Msg { text: Text }
+record Ask { text: Text }
+record Shape { id: Text kind: Text x: Number y: Number size: Number color: Text text: Text }
+record Move { shape: Text what: Text to: Number start: Number seconds: Number ease: Text repeat: Number color: Text }
+record Scene { width: Number height: Number seconds: Number background: Text shapes: Shape[] moves: Move[] }
+// What the model chooses for a pattern.
+record Plan { pattern: Text count: Number color: Text accent: Text background: Text title: Text seconds: Number }
+
+default model planner {
+  input: Ask
+  output: Plan
+  parameters: {
+    max_output_tokens: 160
+  }
+}
+
+model artist {
+  input: Ask
+  output: Scene
+  parameters: {
+    max_output_tokens: 900
+  }
+}
+
+// ------------------------------------------------------------ small helpers
+
+fn move(shape: Text, what: Text, to: Number, start: Number, seconds: Number, ease: Text) -> Move {
+  return {shape: shape, what: what, to: to, start: start, seconds: seconds, ease: ease, repeat: 1, color: ""}
+}
+
+// A shape that is there from the start but cannot be seen yet.
+fn hidden(shape: Text) -> Move {
+  return move(shape, "fade", 0, 0, 0, "linear")
+}
+
+fn recolor(shape: Text, color: Text, start: Number, seconds: Number) -> Move {
+  return {shape: shape, what: "color", to: 0, start: start, seconds: seconds, ease: "back", repeat: 1, color: color}
+}
+
+fn forever(m: Move) -> Move {
+  return {..m, repeat: 0}
+}
+
+fn dot(id: Text, kind: Text, x: Number, y: Number, size: Number, color: Text) -> Shape {
+  return {id: id, kind: kind, x: x, y: y, size: size, color: color, text: ""}
+}
+
+// A colour is written #rgb or #rrggbb.
+fn is_color(text: Text) -> Bool {
+  if not text.starts_with("#") or (text.length() != 4 and text.length() != 7) { return false }
+  for i in 1 until text.length() {
+    if not "0123456789abcdefABCDEF".contains(text.slice(i, i + 1)) { return false }
+  }
+  return true
+}
+
+// ------------------------------------------------------------- the patterns
+
+// Dots fly out from the centre to a circle, one after another, then pulse.
+fn ring(plan: Plan) -> Scene {
+  var shapes: Shape[] = []
+  var moves: Move[] = []
+  let step = (1.4 / plan.count).min(0.09)
+  for i in 0 until plan.count {
+    let id = f"d{i}"
+    let angle = 360 * i / plan.count
+    let leave = 0.2 + i * step
+    shapes = shapes.append(dot(id, "circle", 320, 160, 15, if i % 2 == 0 { plan.color } else { plan.accent }))
+    moves = moves.concat([
+      hidden(id),
+      move(id, "fade", 1, leave, 0.2, "out"),
+      move(id, "x", 320 + 112 * angle.cos(), leave, 0.9, "bounce"),
+      move(id, "y", 160 + 112 * angle.sin(), leave, 0.9, "bounce"),
+      move(id, "size", 24, 2.2 + i * step, 0.5, "back"),
+      recolor(id, "#ffffff", 2.2 + i * step, 0.5)
+    ])
+  }
+  shapes = shapes.append(dot("halo", "ring", 320, 160, 224, plan.accent))
+  moves = moves.concat([hidden("halo"), move("halo", "fade", 0.35, 1.2, 0.8, "out"), forever(move("halo", "turn", 360, 1.2, 14, "linear"))])
+  return {width: 640, height: 360, seconds: plan.seconds, background: plan.background, shapes: shapes, moves: moves}
+}
+
+// Tiles pop in across a grid like a wave passing from one corner.
+fn grid(plan: Plan) -> Scene {
+  var shapes: Shape[] = []
+  var moves: Move[] = []
+  let columns = plan.count.sqrt().ceil()
+  let rows = (plan.count / columns).ceil()
+  let gap = (300 / rows).min(520 / columns).min(56)
+  let left = 320 - gap * (columns - 1) / 2
+  let top = 160 - gap * (rows - 1) / 2
+  for i in 0 until plan.count {
+    let id = f"t{i}"
+    let column = i % columns
+    let row = (i / columns).floor()
+    let at = 0.2 + (column + row) * 0.09
+    shapes = shapes.append(dot(id, "square", left + column * gap, top + row * gap, gap * 0.72, if (column + row) % 2 == 0 { plan.color } else { plan.accent }))
+    moves = moves.concat([
+      hidden(id),
+      move(id, "size", 0, 0, 0, "linear"),
+      move(id, "fade", 1, at, 0.15, "out"),
+      move(id, "size", gap * 0.72, at, 0.5, "bounce"),
+      move(id, "turn", 90, at, 0.5, "out"),
+      forever(move(id, "size", gap * 0.5, 2.4 + (column + row) * 0.09, 1.6, "back"))
+    ])
+  }
+  return {width: 640, height: 360, seconds: plan.seconds, background: plan.background, shapes: shapes, moves: moves}
+}
+
+// A row of dots that ripples up and down without end.
+fn wave(plan: Plan) -> Scene {
+  var shapes: Shape[] = []
+  var moves: Move[] = []
+  let space = 520 / (plan.count - 1)
+  for i in 0 until plan.count {
+    let id = f"w{i}"
+    shapes = shapes.append(dot(id, "circle", 60 + i * space, 170, (space * 0.6).min(22).max(6), if i % 2 == 0 { plan.color } else { plan.accent }))
+    moves = moves.concat([
+      hidden(id),
+      move(id, "fade", 1, i * 0.04, 0.3, "out"),
+      forever(move(id, "y", 110, 0.5 + i * 0.07, 1.3, "back")),
+      forever(recolor(id, "#ffffff", 0.5 + i * 0.07, 1.3))
+    ])
+  }
+  return {width: 640, height: 360, seconds: plan.seconds, background: plan.background, shapes: shapes, moves: moves}
+}
+
+// Sparks fly out from the centre and fade, again and again.
+fn burst(plan: Plan) -> Scene {
+  var shapes: Shape[] = []
+  var moves: Move[] = []
+  for i in 0 until plan.count {
+    let id = f"s{i}"
+    // 137.5 degrees between sparks spreads them evenly however many there are.
+    let angle = i * 137.5
+    let reach = 70 + (i * 37) % 110
+    let at = 0.1 + (i % 6) * 0.12
+    shapes = shapes.append(dot(id, "circle", 320, 160, 6 + i % 4 * 3, if i % 3 == 0 { plan.accent } else { plan.color }))
+    moves = moves.concat([
+      forever(move(id, "x", 320 + reach * angle.cos(), at, 1.5, "out")),
+      forever(move(id, "y", 160 + reach * angle.sin(), at, 1.5, "out")),
+      forever(move(id, "fade", 0, at, 1.5, "in"))
+    ])
+  }
+  shapes = shapes.append(dot("core", "circle", 320, 160, 26, plan.accent))
+  moves = moves.append(forever(move("core", "size", 40, 0, 0.75, "back")))
+  return {width: 640, height: 360, seconds: plan.seconds, background: plan.background, shapes: shapes, moves: moves}
+}
+
+// The title is the same for every pattern: it fades up under the motion.
+fn titled(scene: Scene, plan: Plan) -> Scene {
+  if plan.title.trim().is_empty() { return scene }
+  let words: Shape = {id: "title", kind: "text", x: 320, y: 340, size: 24, color: plan.accent, text: plan.title.trim().take(40)}
+  return {..scene, shapes: scene.shapes.append(words), moves: scene.moves.concat([hidden("title"), move("title", "fade", 1, 0.8, 0.8, "out"), move("title", "y", 318, 0.8, 0.8, "out")])}
+}
+
+// A scene must last until its last move is over. The model may ask for a
+// scene shorter than the pattern needs; the pattern wins, so that nothing
+// is cut off. Moves that go on without end are left out of the sum.
+fn long_enough(scene: Scene) -> Scene {
+  var needed = scene.seconds
+  for m in scene.moves where m.repeat != 0 {
+    needed = needed.max(m.start + m.seconds * m.repeat)
+  }
+  return {..scene, seconds: (needed * 10).ceil() / 10}
+}
+
+fn build(plan: Plan) -> Scene {
+  if plan.pattern == "grid" { return long_enough(titled(grid(plan), plan)) }
+  if plan.pattern == "wave" { return long_enough(titled(wave(plan), plan)) }
+  if plan.pattern == "burst" { return long_enough(titled(burst(plan), plan)) }
+  return long_enough(titled(ring(plan), plan))
+}
+
+// ------------------------------------------------------- checking the model
+
+// What is wrong with a plan, said so the model can fix it. "" when nothing.
+fn plan_problem(plan: Plan) -> Text {
+  if not ["ring", "grid", "wave", "burst"].contains(plan.pattern) { return "pattern must be exactly one of: ring, grid, wave, burst." }
+  if plan.count < 3 or plan.count > 60 or plan.count != plan.count.floor() { return "count must be a whole number from 3 to 60." }
+  if not is_color(plan.color) or not is_color(plan.accent) or not is_color(plan.background) { return "color, accent and background must each be written like #e8813a." }
+  if plan.seconds < 3 or plan.seconds > 12 { return "seconds must be from 3 to 12." }
+  return ""
+}
+
+// What is wrong with a scene the model wrote. The player checks again and
+// more strictly; this catches what a model most often gets wrong, in words
+// it can act on.
+fn scene_problem(scene: Scene) -> Text {
+  if scene.shapes.is_empty() { return "The scene has no shapes. Give at least one." }
+  if scene.shapes.length() > 80 or scene.moves.length() > 500 { return "Use at most 80 shapes and 500 moves." }
+  if scene.seconds < 1 or scene.seconds > 20 { return "seconds must be from 1 to 20." }
+  if not is_color(scene.background) { return "background must be a colour written like #101820." }
+  var ids: Text[] = []
+  for shape in scene.shapes {
+    if ids.contains(shape.id) { return f"Two shapes are both called {shape.id}. Every id must be different." }
+    if not ["circle", "square", "ring", "text"].contains(shape.kind) { return f"Shape {shape.id} has kind {shape.kind}. Use circle, square, ring or text." }
+    if not is_color(shape.color) { return f"Shape {shape.id} needs a colour written like #e8813a." }
+    if shape.kind == "text" and shape.text.is_empty() { return f"Shape {shape.id} is of kind text and has no text." }
+    ids = ids.append(shape.id)
+  }
+  for m in scene.moves {
+    if not ids.contains(m.shape) { return f"A move names the shape {m.shape}, and no shape has that id." }
+    if not ["x", "y", "size", "turn", "fade", "color"].contains(m.what) { return f"A move of {m.shape} changes {m.what}. Use x, y, size, turn, fade or color." }
+    if not ["linear", "in", "out", "both", "bounce", "back"].contains(m.ease) { return f"A move of {m.shape} has ease {m.ease}. Use linear, in, out, both, bounce or back." }
+    if m.what == "color" and not is_color(m.color) { return f"A color move of {m.shape} needs its color written like #e8813a." }
+    if m.what == "fade" and (m.to < 0 or m.to > 1) { return f"A fade of {m.shape} goes to {m.to}. A fade is from 0 to 1." }
+    if m.repeat == 1 and m.start + m.seconds > scene.seconds { return f"A move of {m.shape} ends after the scene's {scene.seconds} seconds." }
+  }
+  return ""
+}
+
+// ------------------------------------------------------------- the prompts
+
+fn plan_prompt(text: Text) -> Ask {
+  return {text: "Choose a motion design for this request by filling in the plan.\npattern: one of ring (dots fly out to a circle and pulse), grid (tiles pop in like a wave), wave (a row of dots ripples), burst (sparks fly out again and again).\ncount: how many shapes, a whole number from 3 to 60.\ncolor, accent, background: Colours are written as # and six digits: red #d32f2f, orange #e8813a, gold #f5b301, green #2fa866, blue #2f7de1, purple #8e44ad, pink #e84a8a, white #ffffff, near black #14161a. Use the colours the request names. Pick a dark background unless the request says otherwise.\ntitle: a few words to show under the motion, or \"\" for none.\nseconds: how long the scene is, from 3 to 12.\n\nRequest: " + text.trim()}
+}
+
+fn draw_prompt(text: Text) -> Ask {
+  return {text: "Write an animated scene for this request. The canvas is 640 wide and 360 high; x and y are the centre of a shape.\nA shape has: id (a short word, each different), kind (circle, square, ring or text), x, y, size, color, text (the words, for kind text; otherwise \"\").\nColours are written as # and six digits: red #d32f2f, orange #e8813a, gold #f5b301, green #2fa866, blue #2f7de1, purple #8e44ad, pink #e84a8a, white #ffffff, near black #14161a. Use the colours the request names.\nA move has: shape (an id), what (x, y, size, turn, fade or color), to (the number to reach; a fade is 0 to 1, a turn is degrees), start and seconds, ease (linear, in, out, both, bounce or back), repeat (1 for once, 0 for without end), color (for what color, like #ffffff; otherwise \"\").\nUse at most 8 shapes and 20 moves. Give the scene seconds from 3 to 10 and a dark background colour.\n\nRequest: " + text.trim().drop(5).trim()}
+}
+
+fn default_plan() -> Plan {
+  return {pattern: "ring", count: 12, color: "#e8813a", accent: "#f4e9df", background: "#1a1410", title: "", seconds: 6}
+}
+
+// Shown when the model could not write a scene that checks.
+fn sorry() -> Scene {
+  let words: Shape = {id: "sorry", kind: "text", x: 320, y: 180, size: 22, color: "#f4e9df", text: "I could not draw that. Try a pattern: ring, grid, wave or burst."}
+  return {width: 640, height: 360, seconds: 3, background: "#1a1410", shapes: [words], moves: []}
+}
+
+// ------------------------------------------------------------ the requests
+
+workflow from_plan(msg: Msg) -> Scene {
+  plan  = use_model planner(plan_prompt(msg.text).text) verify plan_problem(plan) retry 1 otherwise default_plan()
+  scene = build(plan)
+}
+
+workflow draw(msg: Msg) -> Scene {
+  scene = use_model artist(draw_prompt(msg.text).text) verify scene_problem(scene) retry 2 otherwise sorry()
+}
+
+workflow main(msg: Msg) -> Scene {
+  budget 4 model calls, 600 seconds
+  scene = match msg.text.lower().trim().starts_with("draw:") {
+    case true { call draw(msg) }
+    case _ { call from_plan(msg) }
+  }
+}
+
+// ------------------------------------------------------------------ tests
+
+test "the model chooses a plan and code builds every shape and move" {
+  answers planner: [{pattern: "ring", count: 10, color: "#3aa0e8", accent: "#ffffff", background: "#101820", title: "Hello", seconds: 6}]
+  a = main({text: "a calm blue ring for my channel intro"})
+  expect a.shapes.length() == 12
+  expect a.moves.length() == 10 * 6 + 3 + 3
+  expect a.background == "#101820"
+  expect a.shapes[11].text == "Hello"
+  expect scene_problem(a) == ""
+}
+
+test "a plan that breaks a rule is sent back, and the second one is used" {
+  answers planner: [{pattern: "spiral", count: 10, color: "#3aa0e8", accent: "#ffffff", background: "#101820", title: "", seconds: 6}, {pattern: "wave", count: 9, color: "#3aa0e8", accent: "#ffffff", background: "#101820", title: "", seconds: 5}]
+  a = main({text: "ripples"})
+  expect a.shapes.length() == 9
+  expect a.shapes[0].id == "w0"
+  expect plan_problem({pattern: "spiral", count: 10, color: "#3aa0e8", accent: "#fff", background: "#101820", title: "", seconds: 6}).starts_with("pattern must be")
+  expect plan_problem({pattern: "ring", count: 500, color: "#3aa0e8", accent: "#fff", background: "#101820", title: "", seconds: 6}).starts_with("count must be")
+  expect plan_problem({pattern: "ring", count: 5, color: "blue", accent: "#fff", background: "#101820", title: "", seconds: 6}).starts_with("color, accent")
+}
+
+test "when no plan passes, a plain ring is drawn rather than nothing" {
+  answers planner: [{pattern: "x", count: 1, color: "", accent: "", background: "", title: "", seconds: 0}, {pattern: "y", count: 1, color: "", accent: "", background: "", title: "", seconds: 0}]
+  a = main({text: "anything"})
+  expect a.shapes.length() == 13
+  expect a.background == "#1a1410"
+}
+
+test "a scene is made long enough for its own moves" {
+  short = build({pattern: "ring", count: 6, color: "#8e44ad", accent: "#ffffff", background: "#14161a", title: "", seconds: 3})
+  expect short.seconds > 3 and short.seconds < 4
+  expect scene_problem(short) == ""
+  long = build({pattern: "ring", count: 6, color: "#8e44ad", accent: "#ffffff", background: "#14161a", title: "", seconds: 9})
+  expect long.seconds == 9
+}
+
+test "every pattern builds a scene that passes the check" {
+  expect scene_problem(build({pattern: "grid", count: 20, color: "#e8813a", accent: "#f4e9df", background: "#1a1410", title: "Grid", seconds: 6})) == ""
+  expect scene_problem(build({pattern: "wave", count: 24, color: "#e8813a", accent: "#f4e9df", background: "#1a1410", title: "", seconds: 6})) == ""
+  expect scene_problem(build({pattern: "burst", count: 36, color: "#e8813a", accent: "#f4e9df", background: "#1a1410", title: "Burst", seconds: 6})) == ""
+  expect build({pattern: "grid", count: 20, color: "#e8813a", accent: "#f4e9df", background: "#1a1410", title: "", seconds: 6}).moves.length() == 120
+}
+
+test "draw: the model writes the scene, and a mistake is sent back to it" {
+  answers artist: [{width: 640, height: 360, seconds: 4, background: "#101820", shapes: [{id: "ball", kind: "circle", x: 80, y: 180, size: 40, color: "#e8813a", text: ""}], moves: [{shape: "bal", what: "x", to: 560, start: 0, seconds: 2, ease: "bounce", repeat: 1, color: ""}]}, {width: 640, height: 360, seconds: 4, background: "#101820", shapes: [{id: "ball", kind: "circle", x: 80, y: 180, size: 40, color: "#e8813a", text: ""}], moves: [{shape: "ball", what: "x", to: 560, start: 0, seconds: 2, ease: "bounce", repeat: 1, color: ""}]}]
+  a = main({text: "draw: a ball that bounces across"})
+  expect a.moves[0].shape == "ball"
+  expect a.shapes.length() == 1
+}
+
+test "the check says what is wrong in words the model can act on" {
+  expect is_color("#e8813a") and is_color("#fff") and not is_color("orange") and not is_color("#12345g")
+  expect scene_problem(sorry()) == ""
+  expect scene_problem({width: 640, height: 360, seconds: 4, background: "#101820", shapes: [], moves: []}).starts_with("The scene has no shapes")
+  expect scene_problem({width: 640, height: 360, seconds: 4, background: "#101820", shapes: [dot("a", "star", 1, 1, 1, "#ffffff")], moves: []}) == "Shape a has kind star. Use circle, square, ring or text."
+  expect scene_problem({width: 640, height: 360, seconds: 4, background: "#101820", shapes: [dot("a", "circle", 1, 1, 1, "#ffffff")], moves: [move("a", "x", 9, 3, 2, "out")]}) == "A move of a ends after the scene's 4 seconds."
+}

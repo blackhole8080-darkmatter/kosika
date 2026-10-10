@@ -46,6 +46,7 @@ program runs with the authority of the person who approved it.
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import time
@@ -446,11 +447,22 @@ def _files(
         words = [word for word in arguments["query"].lower().split() if word]
         if not words:
             raise SystemToolError("a search needs at least one word")
+        # A word is looked for where a word begins, so that "rent" finds
+        # "rental" and not "current". A word of three letters or fewer
+        # must be the whole word, or "see" would find "seedlings".
+        wanted = [
+            re.compile(
+                r"(?<![a-z0-9])"
+                + re.escape(word)
+                + (r"(?![a-z0-9])" if len(word) <= 3 else "")
+            )
+            for word in words
+        ]
         deadline = time.monotonic() + MAX_SEARCH_SECONDS
         found: list[tuple[int, str, int, str]] = []
         for name, number, row in _lines(folder, start, deadline):
             lower = row.lower()
-            hits = sum(1 for word in words if word in lower)
+            hits = sum(1 for pattern in wanted if pattern.search(lower))
             if hits:
                 found.append((hits, name, number, row.strip()))
         # Lines holding more of the words first; then by file and line, so

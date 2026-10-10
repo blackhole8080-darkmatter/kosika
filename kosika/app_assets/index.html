@@ -928,11 +928,30 @@ function sceneTab(agent) {
     fill(controls, play, again, slider, clock, keep);
     fill(tell, h("div", {class: "hint", style: "margin-top:8px"}, scene.shapes + " shape(s), " + scene.moves + " move(s). The description was checked before it was drawn. Drag the slider to look at any moment."));
   }
+  // A program that asks a model is run like any other run, and the scene
+  // it gives back is then checked and drawn.
+  const asksModel = agent.models.length > 0;
+  async function describe() {
+    if (!overview.can_run) { fill(tell, h("div", {class: "banner warn"}, "This agent asks a model to design the scene. Start Studio with --model NAME to use it.")); return; }
+    if (!wish.value.trim()) { fill(tell, h("div", {class: "hint"}, "Say what you would like to see, then press Design it.")); return; }
+    clearInterval(ticking); fill(tell, h("p", {class: "lead"}, h("span", {class: "spin"}), "The model is choosing a design. On a laptop this can take a minute."));
+    try {
+      const started = await api("/api/start?id=" + encodeURIComponent(agent.id), {method: "POST", body: JSON.stringify({text: wish.value})});
+      let view; do { await sleep(500); view = await api("/api/poll?run=" + started.run + "&since=0"); } while (view.state === "running");
+      if (view.state !== "done") { fill(stage); fill(controls); fill(tell, h("div", {class: "banner bad"}, view.error || "The run did not finish.")); return; }
+      show(await api("/api/scene?id=" + encodeURIComponent(agent.id), {method: "POST", body: JSON.stringify({scene: view.result})}));
+    } catch (error) { fill(stage); fill(controls); fill(tell, h("div", {class: "banner bad"}, error.message)); }
+  }
+  const wish = h("input", {type: "text", placeholder: "For example: a calm blue ripple for a channel intro, titled Hello"});
+  wish.addEventListener("keydown", event => { if (event.key === "Enter") describe(); });
   async function make() {
     let inputs; try { inputs = JSON.parse(given.value || "{}"); } catch (error) { fill(tell, h("div", {class: "banner bad"}, "What you give it is not valid JSON: " + error.message)); return; }
     fill(tell, h("p", {class: "lead"}, h("span", {class: "spin"}), "Making the scene"));
     try { show(await api("/api/scene?id=" + encodeURIComponent(agent.id), {method: "POST", body: JSON.stringify({inputs})})); } catch (error) { fill(stage); fill(controls); fill(tell, h("div", {class: "banner bad"}, error.message)); }
   }
+  if (asksModel) { describe(); return h("div", {class: "map"}, h("div", {class: "panel"}, h("h4", null, "Describe the motion"), h("div", {class: "row"}, wish, h("button", {onclick: describe}, "Design it")),
+      h("div", {class: "hint", style: "margin-top:8px"}, "The model chooses the design; code builds every shape and move from it, and checks the result before it is drawn.")),
+    h("div", {class: "panel"}, h("h4", null, "The scene"), stage, controls, tell)); }
   make();
   return h("div", {class: "map"}, h("div", {class: "panel"}, h("h4", null, "The scene"), stage, controls, tell),
     h("div", {class: "panel"}, h("h4", null, "What you give it"), given, h("div", {class: "row", style: "margin-top:8px"}, h("button", {onclick: make}, "Make the scene again"), h("span", {class: "hint"}, "Change a number and make it again. Only plain code runs: no model, no tools."))));

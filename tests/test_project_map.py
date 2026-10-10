@@ -24,7 +24,7 @@ class MapTests(unittest.TestCase):
         view = map_of(EXAMPLES / "agents" / "researcher" / "main.kos")
         self.assertEqual(
             {item["name"] for item in view["reads"]},
-            {"search_files", "find_files", "look_at", "near_to"},
+            {"search_files", "find_files", "look_at"},
         )
         self.assertEqual(view["changes"], [])
         self.assertEqual(view["outside"], [])
