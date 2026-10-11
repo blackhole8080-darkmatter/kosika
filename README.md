@@ -774,12 +774,19 @@ The next line is one sentence saying what the folder is for.
 The first line says what the skill is. The `When:` line lists the words or
 phrases that mean it fits. The rest is given to the model.
 
-Before an `ask` step begins, Kosika reads the words the agent was given and
-picks the skills whose `When:` words are in them, at most three, the one
-with the most matching words first. No model is asked, so the same request
-always picks the same skills. The picked skills are given to the model with
-its instructions, written into the run's trace with the words that chose
-each one, and shown in Studio as the agent starts.
+Before an `ask` step begins, skills are picked in two ways, at most three
+in all. First by words: a skill fits when one of its `When:` words is in
+what the agent was given. Then the agent's own model is shown the list of
+skills, one line each, and asked which fit; this finds a skill when the
+request means it without saying its words. That is one short extra model
+call, and it counts toward the workflow's budget. The model can only name
+skills that exist. If it cannot be asked or its answer is not a list, the
+words alone decide.
+
+The picked skills are given to the model with its instructions, written
+into the run's trace with why each was picked, and shown in Studio as the
+agent starts. A step that begins again after you answer a plan keeps the
+skills it first had.
 
 A skill is advice. It gives an agent no tool and no permission it did not
 have. `kosika studio` and `kosika run` read the folder; nothing has to be

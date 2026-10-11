@@ -66,7 +66,7 @@ from .function_types import public_type
 from .intelligence_runtime import FunctionResultCache, IntelligenceRecorder
 from .manifest import ManifestError, MCPManifest, verify_server
 from .mcp_stdio import MCPStdioClient
-from .model import ModelProvider
+from .model import ChatMessage, ModelProvider, ModelProviderError, ModelRequest
 from .model_steps import RejectedAnswer, call_model
 from .schema import (
     schema_for_record,
@@ -75,7 +75,15 @@ from .schema import (
     schemas_equal,
     validate,
 )
-from .skills import SkillCatalog, pick_skills, skills_text
+from .skills import (
+    SkillCatalog,
+    choose_question,
+    pick_skills,
+    read_choice,
+    selection_of,
+    skills_text,
+    with_chosen,
+)
 from .sugar import resolve_unnamed
 from .thinking import ThinkingAnswerError, check_answer
 from .trace_replay import replay_trace
@@ -1871,18 +1879,54 @@ def _run_workflow(
                 validate(arguments, input_schema)
                 # Skills are chosen before the agent begins, from the words
                 # it was given. They are advice: they add no tool.
-                picked = (
-                    pick_skills(
-                        skills,
-                        " ".join(
-                            value
-                            for value in arguments.values()
-                            if isinstance(value, str)
-                        ),
+                picked = None
+                if skills is not None and len(skills) > 0:
+                    asked_for = " ".join(
+                        value for value in arguments.values() if isinstance(value, str)
                     )
-                    if skills is not None
-                    else None
-                )
+                    skills_scope = (*scope, "$skills")
+                    # A step that begins again, after a person answered,
+                    # keeps the skills it had the first time.
+                    picked = (
+                        selection_of(skills, session.remembered(skills_scope))
+                        if session is not None
+                        else None
+                    )
+                    if picked is None and asked_for.strip():
+                        picked = pick_skills(skills, asked_for)
+                        # The agent's own model also chooses. Words find a
+                        # skill only when the request uses them; the model
+                        # finds it when the request means it. If the model
+                        # cannot be asked, the words alone decide.
+                        system_words, question = choose_question(skills, asked_for)
+                        try:
+                            choice = providers[model.name].complete(
+                                ModelRequest(
+                                    messages=(
+                                        ChatMessage(
+                                            role="system", content=system_words
+                                        ),
+                                        ChatMessage(role="user", content=question),
+                                    ),
+                                    model=model.deployment,
+                                    temperature=0,
+                                    max_output_tokens=60,
+                                    json_object=True,
+                                )
+                            )
+                            picked = with_chosen(
+                                skills, picked, read_choice(skills, choice.content)
+                            )
+                        except ModelProviderError:
+                            pass
+                        if session is not None:
+                            session.remember(
+                                skills_scope,
+                                [
+                                    {"id": skill_id, "why": why}
+                                    for skill_id, why in picked.reasons
+                                ],
+                            )
                 chosen_skills = (
                     {
                         "skills": [

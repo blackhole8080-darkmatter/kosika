@@ -2598,11 +2598,40 @@ gate: without them a parser written in Kosika has nothing to return.
   model write a longer file correctly.
 - `tests/test_skill_notes.py`, 14 tests; `tests/test_plan_first.py` gained 4.
 - Not claimed: one run each way and nine files is a small sample. Skills
-  are picked by words, not by meaning, so a request that says "document
-  this folder" does not pick the readme skill. Nothing checks afterwards
+  were picked by words only at this point; the next section adds the
+  model's own choice. Nothing checks afterwards
   that the work followed the skill. `kosika test` and `kosika measure` do
   not read the skills folder. Skills are given to `ask` steps only, not to
   plain model steps.
+
+### Skills chosen by the agent's own model
+
+- Picking by words misses a request that means a skill without saying its
+  words. Two ways to fix that were measured before building either.
+- By meaning, with nomic-embed-text: no use. Requests that fit a skill
+  scored 0.47 to 0.64 against it and unrelated requests 0.45 to 0.53, so no
+  line separates them.
+- By asking the model: shown the three skills and twelve requests, of which
+  none used a trigger word in seven, qwen2.5:7b chose the right set for 11
+  of 12 in about 3 s each once loaded. Its one mistake was choosing the
+  Python skill for "make a.txt b.txt and c.txt". qwen2.5:1.5b got 9 of 12.
+- Built: after the word pick, the agent's model is asked once which skills
+  fit. It can name only skills that exist. A wrong or unreadable answer, or
+  a model that cannot be reached, leaves the word pick as it was. The choice
+  is kept in the run's journal, so a step that begins again after a plan is
+  approved has the same skills and the model is not asked to choose twice.
+  The extra call counts toward the budget; the builder's went from 6 to 7.
+- Measured through the builder on qwen2.5:7b, five requests with no trigger
+  word: the skill picked was right for 4 of 5, the same mistake as above.
+- What that run also showed, and it matters more: with the right skill in
+  hand the model followed it in 1 of 4 files. Asked for "something to tick
+  off before a weekend trip", it wrote that sentence into the file. Asked
+  for a small program, it made an empty file. Picking the skill is now the
+  easy part; a 7b model given a vague request does not do the work well,
+  with or without the skill.
+- `tests/test_skill_notes.py`, now 20 tests.
+- Not claimed: one run. Nothing yet checks the work against the skill
+  before the plan is shown, which is what that last result calls for.
 
 ### Questions the researcher had never seen
 

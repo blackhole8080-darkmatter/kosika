@@ -796,9 +796,11 @@ that list. The calls then run in order and stop at the first failure. An
 as that call's result. When the step is resumed after approval the model's
 earlier replies are replayed from the run's journal, not requested again.
 
-A host MAY supply skills to a run. Before an `ask` step the runtime selects,
-without a model, the skills whose trigger words occur in the step's text
-arguments, at most three. Selected skills are appended to the agent's system
+A host MAY supply skills to a run. Before an `ask` step the runtime selects
+at most three: first the skills whose trigger words occur in the step's text
+arguments, then any the agent's model names when shown the list of skills. A
+name that is not a supplied skill is ignored. The selection is journaled, so
+a resumed step uses the same skills. Selected skills are appended to the agent's system
 text and listed in the `agent_call` trace event as `skills`, each with an `id`
 and the reason it was selected. Skills MUST NOT change which tools an agent
 can reach or what requires approval.

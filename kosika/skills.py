@@ -528,6 +528,86 @@ def pick_skills(
     )
 
 
+#: What the model is told when it is asked which skills fit.
+CHOOSE = (
+    "You choose which notes of know-how fit a request. Choose a note only if "
+    "the request clearly asks for the kind of thing the note is about. Most "
+    "requests fit none; then answer with an empty list. Answer with one JSON "
+    'object and nothing else: {"skills": ["name", ...]}'
+)
+
+
+def choose_question(catalog: SkillCatalog, request: str) -> tuple[str, str]:
+    """What to ask a model so that it chooses skills: system words, then the ask."""
+
+    menu = "\n".join(
+        f"- {skill.skill_id}: {skill.summary}. Used for: {', '.join(skill.keywords)}"
+        for skill in catalog
+    )
+    return CHOOSE + "\n\nThe notes:\n" + menu, "Request: " + request
+
+
+def read_choice(catalog: SkillCatalog, answer: str | None) -> list[str]:
+    """The skills a model named, keeping only real ones. Anything else is none."""
+
+    try:
+        named = json.loads(answer or "").get("skills")
+    except (ValueError, AttributeError):
+        return []
+    if not isinstance(named, list):
+        return []
+    return list(
+        dict.fromkeys(
+            name
+            for name in named
+            if isinstance(name, str) and catalog.get(name) is not None
+        )
+    )
+
+
+def with_chosen(
+    catalog: SkillCatalog,
+    by_words: SkillSelection,
+    chosen: Iterable[str],
+    limit: int = MAX_PICKED,
+) -> SkillSelection:
+    """The skills picked by words, then those a model chose, up to the limit."""
+
+    selected = list(by_words.selected)
+    reasons = list(by_words.reasons)
+    for name in chosen:
+        skill = catalog.get(name)
+        if skill is None or skill in selected or len(selected) >= limit:
+            continue
+        selected.append(skill)
+        reasons.append((name, "the model chose it for this request"))
+    return SkillSelection(
+        selected=tuple(selected),
+        reasons=tuple(reasons),
+        scores=by_words.scores,
+        policy="automatic",
+    )
+
+
+def selection_of(catalog: SkillCatalog, kept: object) -> SkillSelection | None:
+    """A selection written down earlier in a run, read back. None if it no
+    longer matches the skills that exist."""
+
+    if not isinstance(kept, list):
+        return None
+    selected: list[SkillDefinition] = []
+    reasons: list[tuple[str, str]] = []
+    for item in kept:
+        skill = catalog.get(str(item.get("id"))) if isinstance(item, dict) else None
+        if skill is None:
+            return None
+        selected.append(skill)
+        reasons.append((skill.skill_id, str(item.get("why", ""))))
+    return SkillSelection(
+        selected=tuple(selected), reasons=tuple(reasons), policy="automatic"
+    )
+
+
 def skills_text(selection: SkillSelection) -> str:
     """The chosen skills as words for the model."""
 
@@ -545,6 +625,10 @@ def skills_text(selection: SkillSelection) -> str:
 __all__ = [
     "MAX_PICKED",
     "SKILLS_FOLDER",
+    "choose_question",
+    "read_choice",
+    "selection_of",
+    "with_chosen",
     "load_skill_note",
     "load_skill_notes",
     "pick_skills",

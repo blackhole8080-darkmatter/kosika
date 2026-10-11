@@ -74,7 +74,7 @@ fn tell(built: Built) -> Said {
 }
 
 workflow main(msg: Msg) -> Said {
-  budget 6 model calls, 300 seconds
+  budget 7 model calls, 300 seconds
   wanted = request(msg)
   built  = ask builder(wanted.text)
   said   = tell(built)
