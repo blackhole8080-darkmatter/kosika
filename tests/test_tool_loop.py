@@ -100,6 +100,7 @@ agent hands {
   model: thinker
   can: [run_python]
   max_steps: 4
+  plan: off
 }
 
 fn tell(found: Finding) -> Said {

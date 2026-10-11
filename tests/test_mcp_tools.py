@@ -233,12 +233,16 @@ class StudioTests(unittest.TestCase):
 
     def test_a_server_tool_that_changes_things_waits_for_a_yes(self) -> None:
         add = picks("add_note", {"text": "Car service on the 14th", "tag": None})
-        app = self.app([add, add, says("Saved.")])
+        # An agent that can change things shows its plan first, so the model
+        # is asked once and the change is the one step of that plan.
+        app = self.app([add, says("Saved.")])
         job = app.start("librarian/main.kos", {"text": "remember the car service"})
         view = self.until(app, job.id, "waiting", "failed")
         self.assertEqual(view["state"], "waiting", view.get("error"))
+        self.assertEqual(view["request"]["tool"], "plan")
         self.assertEqual(
-            (view["request"]["tool"], view["request"]["kind"]), ("add_note", "notes")
+            [(step["tool"], step["kind"]) for step in view["request"]["plan"]],
+            [("add_note", "notes")],
         )
         self.assertEqual(len(json.loads(self.notes.read_text("utf-8"))), 1)
         app.decide(job.id, True)

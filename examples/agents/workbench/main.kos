@@ -497,3 +497,12 @@ test "a question goes to the model, and a bad request needs no program" {
   expect b.text.contains("like this")
   expect c.text == "I have not run anything yet."
 }
+
+// ------------------------------------------------------------------ evals
+// These ask a real model. Run them with:
+//   kosika measure main.kos --model qwen2.5:7b --model-protocol ollama
+
+eval "it answers a coding question" {
+  a = main({text: "how do I reverse a list in python?"})
+  expect a.text.contains("reverse") or a.text.contains("[::-1]")
+}

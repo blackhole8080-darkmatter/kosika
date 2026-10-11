@@ -116,7 +116,14 @@ from .network import (
 from .project_analysis import ProjectAnalysisError, analyze_python_project
 from .runtime import MockMCP, replay, run
 from .schema import schema_for_record, schema_for_tool_input, schemas_equal
-from .skills import SkillCatalog, SkillCatalogError, SkillRouter, SkillRoutingError
+from .skills import (
+    SKILLS_FOLDER,
+    SkillCatalog,
+    SkillCatalogError,
+    SkillRouter,
+    SkillRoutingError,
+    load_skill_notes,
+)
 from .source_map import (
     SourceMapError,
     build_source_map,
@@ -4067,6 +4074,7 @@ def main() -> int:
                     program,
                     args.workflow,
                     args.trace,
+                    skills=load_skill_notes(Path(args.source).parent / SKILLS_FOLDER),
                     mcp_commands=mcp_commands,
                     manifest=run_manifest,
                     inputs=inputs,

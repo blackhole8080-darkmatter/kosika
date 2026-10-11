@@ -1714,7 +1714,7 @@ def check(program: Program) -> None:
             )
         if type(agent.max_steps) is not int or not 1 <= agent.max_steps <= 64:
             raise CheckError(f"Agent {agent.name!r} max_steps must be between 1 and 64")
-        if agent.plan_first:
+        if agent.plan == "first":
             if agent.model is None:
                 raise CheckError(
                     f"Agent {agent.name!r} plans first, so it needs a model to "

@@ -69,6 +69,7 @@ from .project_index import project_index
 from .project_map import beginner_map, read_note, save_note
 from .runtime import run
 from .sessions import Session, SessionError, default_home
+from .skills import SKILLS_FOLDER, load_skill_notes
 from .starter import KINDS, StarterError, create_starter
 from .story import StoryError, build_story, read_trace
 from .swarm import SwarmApproval, run_swarm, swarm_plan_hash
@@ -481,6 +482,8 @@ def _slim(event: dict[str, Any], depth: int) -> dict[str, Any]:
         slim["rejected"] = len(event["rejected"])
     if event.get("event") == "agent_plan":
         slim["actions"] = event.get("actions")
+    if isinstance(event.get("skills"), list):
+        slim["skills"] = [str(skill.get("id", "")) for skill in event["skills"]]
     if isinstance(event.get("votes"), dict):
         slim["votes"] = {
             key: event["votes"].get(key) for key in ("asked", "agreed", "models")
@@ -1132,6 +1135,7 @@ class App:
                             program,
                             "main",
                             job.trace,
+                            skills=load_skill_notes(job.folder / SKILLS_FOLDER),
                             inputs=inputs,
                             model_bindings=models,
                             tool_bindings=tools,

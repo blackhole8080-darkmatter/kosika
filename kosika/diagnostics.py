@@ -412,7 +412,7 @@ _RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
         re.compile(r"^Capability violation:|plans first but can change nothing"),
     ),
     ("check/plan-first", re.compile(r"plans first, so ")),
-    ("parse/invalid-declaration", re.compile(r"^Agent plan must be `first`")),
+    ("parse/invalid-declaration", re.compile(r"^Agent plan must be `first` or `off`")),
     (
         "check/approval-required",
         re.compile(r"needs approval before execute tool|must require approval for"),

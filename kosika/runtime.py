@@ -75,6 +75,7 @@ from .schema import (
     schemas_equal,
     validate,
 )
+from .skills import SkillCatalog, pick_skills, skills_text
 from .sugar import resolve_unnamed
 from .thinking import ThinkingAnswerError, check_answer
 from .trace_replay import replay_trace
@@ -1262,6 +1263,7 @@ def run(
     intelligence: IntelligenceRecorder | None = None,
     function_cache: FunctionResultCache | None = None,
     on_event: Callable[[dict[str, Any], int], None] | None = None,
+    skills: SkillCatalog | None = None,
     _events_out: list[dict[str, Any]] | None = None,
     _scope: tuple[str, ...] = (),
     _control: ExecutionControl | None = None,
@@ -1313,6 +1315,7 @@ def run(
             _control=control,
             intelligence=intelligence,
             function_cache=function_cache,
+            skills=skills,
         )
     except (Exception, KeyboardInterrupt) as exc:
         interrupted = isinstance(exc, KeyboardInterrupt)
@@ -1414,6 +1417,7 @@ def _run_workflow(
     _control: ExecutionControl,
     intelligence: IntelligenceRecorder | None = None,
     function_cache: FunctionResultCache | None = None,
+    skills: SkillCatalog | None = None,
 ) -> dict[str, Any]:
     if len(_scope) > 64:
         raise ValueError("Workflow call depth exceeds 32")
@@ -1440,6 +1444,7 @@ def _run_workflow(
                 _control=_control,
                 intelligence=intelligence,
                 function_cache=function_cache,
+                skills=skills,
             )
     check(program)
     workflow = next(
@@ -1836,6 +1841,7 @@ def _run_workflow(
                         _control=_control,
                         intelligence=intelligence,
                         function_cache=function_cache,
+                        skills=skills,
                     )
                 except (Exception, KeyboardInterrupt):
                     if intelligence is not None:
@@ -1863,11 +1869,36 @@ def _run_workflow(
                 input_schema = schema_for_record(program, model.input)
                 output_schema = schema_for_record(program, model.output)
                 validate(arguments, input_schema)
+                # Skills are chosen before the agent begins, from the words
+                # it was given. They are advice: they add no tool.
+                picked = (
+                    pick_skills(
+                        skills,
+                        " ".join(
+                            value
+                            for value in arguments.values()
+                            if isinstance(value, str)
+                        ),
+                    )
+                    if skills is not None
+                    else None
+                )
+                chosen_skills = (
+                    {
+                        "skills": [
+                            {"id": skill_id, "why": why}
+                            for skill_id, why in picked.reasons
+                        ]
+                    }
+                    if picked is not None and picked.selected
+                    else {}
+                )
                 call_event = _event(
                     "agent_call",
                     agent=asked_agent.name,
                     model=model.name,
                     arguments=arguments,
+                    **chosen_skills,
                     expression_events=expression_events,
                     input_schema=input_schema,
                     output_schema=output_schema,
@@ -1887,6 +1918,7 @@ def _run_workflow(
                 events.append(call_event)
 
                 agent_changed: list[str] = []
+                plans = asked_agent.plans_first(program.tools)
                 # A planning agent's changes: what was approved, in order,
                 # how far it has got, and what each one gave back.
                 plan_scope = (*scope, PLAN_TOOL)
@@ -1967,7 +1999,7 @@ def _run_workflow(
                                 f"Workflow ask tool {declaration.name!r} requires a "
                                 "verified approval record"
                             )
-                        if asked_agent.plan_first:
+                        if plans:
                             # Only what is in the approved plan happens, and
                             # in the order it was shown.
                             at = len(plan_results)
@@ -2071,7 +2103,7 @@ def _run_workflow(
                     providers[model.name],
                     (
                         session.remembered((*scope, PLAN_TOOL + ":said"))
-                        if session is not None and asked_agent.plan_first
+                        if session is not None and plans
                         else None
                     )
                     or [],
@@ -2079,12 +2111,13 @@ def _run_workflow(
                 result, agent_response = call_agent(
                     program,
                     asked_agent,
-                    said if asked_agent.plan_first else providers[model.name],
+                    said if plans else providers[model.name],
                     execute_agent_tool,
                     arguments,
                     output_schema,
                     described,
-                    approve_agent_plan if asked_agent.plan_first else None,
+                    approve_agent_plan if plans else None,
+                    skills_text(picked) if picked is not None else "",
                 )
                 return_event = _event(
                     "agent_return",

@@ -626,3 +626,22 @@ test "a plan is drafted for saving, or the reason it cannot be" {
   expect b.problem.contains("inside the granted folder")
   expect c.text == "There is nothing to save yet. Add a task first."
 }
+
+// ------------------------------------------------------------------ evals
+// These ask a real model. Run them with:
+//   kosika measure main.kos --model qwen2.5:7b --model-protocol ollama
+
+eval "it breaks a goal into tasks" {
+  a = main({text: "break down: plan a birthday party"})
+  b = main({text: "tasks"})
+  expect a.text.starts_with("I broke \"plan a birthday party\" into ")
+  expect b.text.contains("1. ")
+  expect b.text.contains("2. ")
+}
+
+eval "its advice is about the tasks it was given" {
+  a = main({text: "add: write the report 40m due today"})
+  b = main({text: "what should I focus on?"})
+  expect b.text.lower().contains("report")
+  expect not b.text.starts_with("Sorry")
+}

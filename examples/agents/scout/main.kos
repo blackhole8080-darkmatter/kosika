@@ -79,3 +79,15 @@ test "the answer names where it came from" {
   expect a.text == "It adds two numbers.\nFrom: calc.py"
   expect b.text == "Nothing here says."
 }
+
+// ------------------------------------------------------------------ evals
+// These ask a real model. Run them with:
+//   kosika measure main.kos --model qwen2.5:7b --model-protocol ollama
+
+eval "it looks at the file and says where the answer came from" {
+  answers list_folder: [{names: ["calc.py", "notes/"]}]
+  answers look_at: [{text: "def add(a, b):\n    return a + b\n"}]
+  a = main({text: "What does calc.py do?"})
+  expect a.text.lower().contains("add")
+  expect a.text.contains("From: calc.py")
+}

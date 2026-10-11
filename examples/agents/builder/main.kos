@@ -4,10 +4,14 @@
 //   kosika test main.kos
 //   kosika studio FOLDER --model qwen2.5:7b --model-protocol ollama --allow-folder YOUR_FOLDER
 //
-// Scout may only look. Builder may also make new files, so it has
-// `plan: first`: it looks around, then asks for every file it wants to make
-// in one go. You see the list, each file with its full text, and say yes or
-// no once. A yes covers exactly that list. It gets no second set of changes.
+// Scout may only look. Builder may also make new files, and an agent that
+// can change things plans first: it looks around, then asks for every file
+// it wants to make in one go. You see the list, each file with its full
+// text, and say yes or no once. A yes covers exactly that list.
+//
+// It also has skills: short notes in the `skills` folder on how a readme,
+// a Python file and a to-do list should be written. Before it begins, the
+// notes that fit your request are picked and given to it.
 //
 // It can only make new files. It cannot replace or delete one that exists,
 // and if making one fails, the ones after it are not made.
@@ -51,7 +55,6 @@ tool create_file {
 agent builder {
   model: maker
   can: [list_folder, create_file]
-  plan: first
   max_steps: 5
   max_tool_calls: 12
   instructions: "You make small text files in one folder. First list the folder with path \".\" to see what is already there. Never use a path that already exists. Then call create_file once for every file that is needed, all in the same reply, each with its complete text. Keep files short. After they are made, answer with one sentence in summary and the paths you made in made."

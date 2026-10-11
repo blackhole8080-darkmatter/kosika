@@ -2569,6 +2569,76 @@ gate: without them a parser written in Kosika has nothing to return.
   may not put several changes in one reply. Inside a session the plan card
   was not tried with a real model.
 
+### Planning without being told, and skills picked beforehand
+
+- The owner asked that he should not have to write `plan: first`, and that
+  agents choose the skills a request needs before they start.
+- Planning is now the default. An agent with a model, a tool that changes
+  something, and at least two turns plans first. `plan: off` goes back to
+  one change per step, each asked about. `plan: first` still exists and is
+  checked. The builder example no longer says it.
+- Skills are notes in a `skills` folder beside the program: a title, a
+  `When:` line of words or phrases, and the know-how. Before an `ask` step,
+  the skills whose `When:` words are in the request are picked, at most
+  three, without a model. They are added to what the model is told, written
+  into the `agent_call` trace event with the words that chose each, and
+  shown in Studio's live view. `kosika studio` and `kosika run` read the
+  folder. A skill adds no tool and no permission.
+- The builder has three skills: readme, python, lists.
+- Measured once on this laptop with qwen2.5:7b, six requests each way, in
+  scratch folders. Each file made was checked against its skill's rules by
+  code. With skills: 6 of 9 files followed the rules (readmes 3 of 3, lists
+  2 of 3, Python 1 of 3), all 6 requests finished, 396 s. Without: 0 of 8
+  files followed them, 5 of 6 finished, 223 s. The right skills were picked
+  for all six requests.
+- What the measurement also showed: two of the three Python files made with
+  the skill were not usable, one with the characters backslash-n written
+  where line breaks belong and one empty. Without the skill one of two was
+  usable. A skill changes the shape of the work; it does not make a small
+  model write a longer file correctly.
+- `tests/test_skill_notes.py`, 14 tests; `tests/test_plan_first.py` gained 4.
+- Not claimed: one run each way and nine files is a small sample. Skills
+  are picked by words, not by meaning, so a request that says "document
+  this folder" does not pick the readme skill. Nothing checks afterwards
+  that the work followed the skill. `kosika test` and `kosika measure` do
+  not read the skills folder. Skills are given to `ask` steps only, not to
+  plain model steps.
+
+### Questions the researcher had never seen
+
+- The forty questions used so far are the ones the researcher was improved
+  against, so its score on them flatters it. A second set was written on
+  new notes about other things (garden, car, school, computer, kitchen, two
+  clubs) and committed before the agent was run on it:
+  `benchmarks/researcher/unseen`, run with `run.py --set unseen`.
+- qwen2.5:7b with search by meaning, one run: 35 right, 1 false answer
+  shown, 4 missed, in 958 s. On the first set the same agent scored 39, 0
+  and 1. Without search by meaning: 31 right, 0 false, 9 missed, in 439 s.
+- By kind, with meaning: exact-word questions 12 of 12, questions the notes
+  do not answer 8 of 8 declined, questions with several near lines 7 of 8,
+  questions worded differently from the notes 8 of 12.
+- The false answer: asked who to phone if the car stops on the road, it
+  gave the garage and its number, with a true quote, where the notes also
+  name a breakdown service. The four misses were declined, each showing the
+  closest lines, and in three the right line was among them.
+- Not claimed: the questions were written by the same author who built the
+  agent, so they are unseen by the agent's tuning but not independent. One
+  run. Nothing was changed in the agent after this run.
+
+### Tests on a real model for the agents that had none
+
+- Six agents had only scripted tests: coach, planner, animator, doctor,
+  workbench, scout. Each now has `eval` blocks that ask a real model and
+  check the answer by code. The builder has none, because an eval cannot
+  answer its plan question.
+- Run once with `kosika measure` on qwen2.5:7b: coach 3 of 3 (68 s),
+  planner 2 of 2 (27 s), animator 2 of 2 (124 s), doctor 1 of 1 (12 s),
+  workbench 1 of 1 (15 s), scout 1 of 1 (58 s). 10 of 10.
+- Not claimed: one run each, and the checks are loose. They ask that an
+  answer has the right shape and mentions the subject, not that it is
+  correct. The doctor and workbench evals reach only their advice step, not
+  the steps that start programs.
+
 ## Standard coding-agent procedure
 
 1. Inspect `git status`, the relevant source files, tests, and this plan.

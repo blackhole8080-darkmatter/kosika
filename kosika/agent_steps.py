@@ -130,6 +130,7 @@ def call_agent(
     output_schema: dict[str, Any],
     tool_descriptions: Mapping[str, str] | None = None,
     approve_plan: PlanApprover | None = None,
+    know_how: str = "",
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     asked = _CompleteResponses(provider, output_schema)
     loop = AgentLoop(
@@ -151,6 +152,7 @@ def call_agent(
                 "matching this schema: "
                 + json.dumps(output_schema, sort_keys=True)
                 + (PLAN_FIRST if approve_plan is not None else "")
+                + ("\n\n" + know_how if know_how else "")
             ),
         )
     except AgentLoopError as exc:

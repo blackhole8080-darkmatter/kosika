@@ -405,3 +405,26 @@ test "explaining and planning ask the model" {
   expect a.text == "Entropy measures disorder."
   expect b.text == "A study plan:\n1. Learn limits\n2. Practise derivatives\nSay \"quiz\" and the subject when you are ready to be tested."
 }
+
+// ------------------------------------------------------------------ evals
+// These ask a real model. Run them with:
+//   kosika measure main.kos --model qwen2.5:7b --model-protocol ollama
+
+eval "it writes a question with four choices" {
+  a = main({text: "quiz the planets of the solar system"})
+  expect a.text.contains("A. ")
+  expect a.text.contains("D. ")
+  expect a.text.ends_with("Answer a, b, c or d. Or say hint, or skip.")
+}
+
+eval "it writes a study plan as numbered steps" {
+  a = main({text: "plan fractions"})
+  expect a.text.starts_with("A study plan:\n1. ")
+  expect a.text.contains("\n2. ")
+}
+
+eval "it explains a subject in its own words" {
+  a = main({text: "explain photosynthesis"})
+  expect a.text.lower().contains("light")
+  expect not a.text.starts_with("Sorry")
+}

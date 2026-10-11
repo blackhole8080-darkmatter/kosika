@@ -147,7 +147,7 @@ def _does(program: Program, call: Any) -> str:
         return f"asks the model {call.model_name}"
     if isinstance(call, AgentCall):
         agent = next((a for a in program.agents if a.name == call.agent_name), None)
-        if agent is not None and agent.plan_first:
+        if agent is not None and agent.plans_first(program.tools):
             return (
                 f"asks the agent {call.agent_name}, which shows you its whole "
                 "plan of changes and waits for one yes"

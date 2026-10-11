@@ -386,3 +386,13 @@ test "advice is asked of the model with what was measured" {
   expect chart.facts == "Disk C: 15 GB free."
   expect advice_prompt({text: "why slow"}, none).text.contains("nothing has been measured yet")
 }
+
+// ------------------------------------------------------------------ evals
+// These ask a real model. Run them with:
+//   kosika measure main.kos --model qwen2.5:7b --model-protocol ollama
+
+eval "its advice is given, not an apology" {
+  a = main({text: "why is my laptop slow?"})
+  expect a.text.length() > 40
+  expect not a.text.starts_with("Sorry")
+}

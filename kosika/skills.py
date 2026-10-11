@@ -395,7 +395,160 @@ def _load_manifest(path: Path) -> SkillDefinition:
     )
 
 
+#: The folder beside a program that holds its skills, one note each.
+SKILLS_FOLDER = "skills"
+#: At most this many skills are given to an agent for one request.
+MAX_PICKED = 3
+_WHEN_RE = re.compile(r"^\s*when\s*:\s*(.+)$", re.IGNORECASE)
+
+
+def _stem(word: str) -> str:
+    """A word without a plural ending, so "readmes" finds "readme"."""
+
+    if word.endswith("ies") and len(word) > 5:
+        return word[:-3] + "y"
+    if word.endswith("s") and not word.endswith("ss") and len(word) > 3:
+        return word[:-1]
+    return word
+
+
+def load_skill_note(path: Path) -> SkillDefinition:
+    """Read one skill written as a note.
+
+        # What a good readme has
+        When: readme, explain a folder
+
+        Start with one line that says what the folder is for. ...
+
+    The first line is what the skill is. The `When:` line lists the words
+    that, found in a request, mean the skill fits. The rest is the know-how
+    given to the model. The file's name is the skill's name.
+    """
+
+    skill_id = path.stem.lower().replace(" ", "-").replace("_", "-")
+    if not _valid_skill_id(skill_id):
+        raise SkillCatalogError(
+            f"Skill file {path.name!r} needs a name of letters, digits and dashes"
+        )
+    try:
+        raw = path.read_bytes()
+    except OSError as exc:
+        raise SkillCatalogError(f"Cannot read skill {path.name}: {exc}") from exc
+    if len(raw) > MAX_SKILL_BYTES:
+        raise SkillCatalogError(
+            f"Skill {path.name} is larger than {MAX_SKILL_BYTES} bytes"
+        )
+    try:
+        lines = raw.decode("utf-8").replace("\r\n", "\n").split("\n")
+    except UnicodeDecodeError as exc:
+        raise SkillCatalogError(f"Skill {path.name} is not UTF-8 text") from exc
+    summary = ""
+    keywords: tuple[str, ...] = ()
+    body: list[str] = []
+    for line in lines:
+        when = _WHEN_RE.match(line)
+        if not summary and line.strip():
+            summary = line.strip().lstrip("#").strip()
+        elif when and not keywords:
+            keywords = tuple(
+                dict.fromkeys(
+                    part.strip().lower()
+                    for part in when.group(1).split(",")
+                    if part.strip()
+                )
+            )
+        else:
+            body.append(line)
+    instructions = "\n".join(body).strip()
+    if not summary:
+        raise SkillCatalogError(f"Skill {path.name} is empty")
+    if not keywords:
+        raise SkillCatalogError(
+            f"Skill {path.name} needs a line such as `When: readme, notes` "
+            "naming the words that mean it fits"
+        )
+    if not instructions:
+        raise SkillCatalogError(f"Skill {path.name} has no know-how under its title")
+    return SkillDefinition(
+        skill_id=skill_id,
+        version="1",
+        summary=summary,
+        domains=(),
+        keywords=keywords,
+        instructions=instructions,
+        source=path.as_posix(),
+    )
+
+
+def load_skill_notes(folder: Path) -> SkillCatalog:
+    """Every skill note in a folder, or an empty catalog if there is none."""
+
+    if not folder.is_dir():
+        return SkillCatalog()
+    return SkillCatalog(
+        load_skill_note(path) for path in sorted(folder.glob("*.md")) if path.is_file()
+    )
+
+
+def pick_skills(
+    catalog: SkillCatalog, request: str, limit: int = MAX_PICKED
+) -> SkillSelection:
+    """The skills that fit a request, best first, with the words that chose them.
+
+    A skill fits when one of its `When:` words or phrases is in the request.
+    Nothing is guessed and no model is asked: the same request always picks
+    the same skills.
+    """
+
+    words = [_stem(word) for word in _tokens(request)]
+    said = " " + " ".join(words) + " "
+    found: list[tuple[int, str, SkillDefinition, list[str]]] = []
+    for skill in catalog:
+        stems = {
+            " ".join(_stem(word) for word in _tokens(keyword)): keyword
+            for keyword in reversed(skill.keywords)
+        }
+        hits = [
+            keyword
+            for keyword in skill.keywords
+            if stems.get(" ".join(_stem(word) for word in _tokens(keyword))) == keyword
+            and " " + " ".join(_stem(word) for word in _tokens(keyword)) + " " in said
+        ]
+        if hits:
+            found.append((-len(hits), skill.skill_id, skill, hits))
+    found.sort(key=lambda item: item[:2])
+    chosen = found[:limit]
+    return SkillSelection(
+        selected=tuple(item[2] for item in chosen),
+        reasons=tuple(
+            (item[1], "the request says: " + ", ".join(item[3])) for item in chosen
+        ),
+        scores=tuple((item[1], -item[0]) for item in found),
+        policy="automatic",
+    )
+
+
+def skills_text(selection: SkillSelection) -> str:
+    """The chosen skills as words for the model."""
+
+    if not selection.selected:
+        return ""
+    parts = [
+        "Know-how for this request follows. It is advice on doing the work "
+        "well. It gives you no new tools and no new permissions."
+    ]
+    for skill in selection.selected:
+        parts.append(f"## {skill.summary}\n{skill.instructions}")
+    return "\n\n".join(parts)
+
+
 __all__ = [
+    "MAX_PICKED",
+    "SKILLS_FOLDER",
+    "load_skill_note",
+    "load_skill_notes",
+    "pick_skills",
+    "skills_text",
     "SkillCatalog",
     "SkillCatalogError",
     "SkillDefinition",

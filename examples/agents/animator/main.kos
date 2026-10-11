@@ -327,3 +327,20 @@ test "the check says what is wrong in words the model can act on" {
   expect scene_problem({width: 640, height: 360, seconds: 4, background: "#101820", shapes: [dot("a", "star", 1, 1, 1, "#ffffff")], moves: []}) == "Shape a has kind star. Use circle, square, ring or text."
   expect scene_problem({width: 640, height: 360, seconds: 4, background: "#101820", shapes: [dot("a", "circle", 1, 1, 1, "#ffffff")], moves: [move("a", "x", 9, 3, 2, "out")]}) == "A move of a ends after the scene's 4 seconds."
 }
+
+// ------------------------------------------------------------------ evals
+// These ask a real model. Run them with:
+//   kosika measure main.kos --model qwen2.5:7b --model-protocol ollama
+
+eval "its plan becomes a scene that passes the check" {
+  a = main({text: "a calm blue ring for my channel intro"})
+  expect scene_problem(a) == ""
+  expect a.shapes.length() > 3
+  expect a.moves.length() > 3
+}
+
+eval "a scene it draws itself passes the check" {
+  a = main({text: "draw: a ball that bounces across"})
+  expect scene_problem(a) == ""
+  expect a.shapes.length() > 0
+}

@@ -719,9 +719,8 @@ it is made.
 It can reach only the tools in `can`, and only as far as the person running
 it granted. A look that fails, such as a file that is not there, is told to
 the model so it can try something else. An answer given in plain words is
-asked for once more as the record. A tool that changes something stops for
-approval exactly as a direct call does; an agent may make one such change
-per `ask` step. Asking for a tool it was never given ends the run.
+asked for once more as the record. A tool that changes something never
+runs without your yes; how an agent asks for it is the next section. Asking for a tool it was never given ends the run.
 
 This works with `--model-protocol ollama` and `openai`, on a model that was
 trained to choose tools. A files tool with `operation: "peek"` reads only
@@ -733,12 +732,13 @@ the first 4000 characters, which suits a model reading for itself.
 agent builder {
   model: maker
   can: [list_folder, create_file]
-  plan: first
   max_steps: 5
 }
 ```
 
-With `plan: first` the agent looks around as before, then asks for every
+`create_file` is a tool with `access: execute`: it changes something. An
+agent that has a model, such a tool, and at least two turns plans first, and
+you do not have to say so. It looks around as before, then asks for every
 change it wants in one reply. Nothing has happened yet. That list is its
 plan: Studio shows each change in order with its exact details, and
 `kosika run --approve` prints the same list. One yes covers exactly that
@@ -746,16 +746,45 @@ list, in that order, and nothing else. A no means none of it happens.
 
 After the yes the changes are carried out one by one. If one fails, the ones
 after it do not happen. The agent is then shown what each change gave back
-and writes its answer. If it then asks for more changes, they do
-not happen and it is told so: only what you saw is done.
+and writes its answer. If it then asks for more changes, they do not happen
+and it is told so: only what you saw is done.
 
 The yes is tied to the plan that was shown: the model is not asked again
 after you answer, so it cannot swap in a different plan. Inside a session
 (`--in-session`) the plan is still shown and asked about once, and the
 changes then happen in the session's copy.
 
-An agent with `plan: first` needs a model, at least one tool with
-`access: execute`, and `max_steps` of 2 or more.
+Write `plan: off` in the agent to go back to one change per step, each
+asked about on its own. `plan: first` says the same as the default, and the
+checker then insists the agent has what planning needs.
+
+### Skills an agent picks before it begins
+
+A skill is a short note of know-how. Put notes in a folder named `skills`
+beside the agent's `main.kos`, one file each:
+
+```
+# What a good readme has
+When: readme, explain the folder
+
+Start with a title line that begins with "# " and names the folder.
+The next line is one sentence saying what the folder is for.
+```
+
+The first line says what the skill is. The `When:` line lists the words or
+phrases that mean it fits. The rest is given to the model.
+
+Before an `ask` step begins, Kosika reads the words the agent was given and
+picks the skills whose `When:` words are in them, at most three, the one
+with the most matching words first. No model is asked, so the same request
+always picks the same skills. The picked skills are given to the model with
+its instructions, written into the run's trace with the words that chose
+each one, and shown in Studio as the agent starts.
+
+A skill is advice. It gives an agent no tool and no permission it did not
+have. `kosika studio` and `kosika run` read the folder; nothing has to be
+declared in the program. A note that cannot be used, such as one with no
+`When:` line, stops the run and says which file and why.
 
 ### Text with values in it, the time, and chance
 
@@ -1584,7 +1613,11 @@ python -m kosika.cli journal research-agent.sqlite --format json
 
 
 
-### Automatic skills
+### Skill catalogs for `kosika agent`
+
+This is the older form of skills, used only by the `kosika agent` command.
+For agents in workflows and in Studio, see "Skills an agent picks before it
+begins" above.
 
 Kosika can select multiple relevant local skills when a task does not name them
 explicitly. Store each skill in a directory containing `skill.json` and

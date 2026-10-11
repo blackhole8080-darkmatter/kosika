@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import Any
+from typing import Any, Iterable
 
 
 @dataclass(frozen=True)
@@ -149,9 +149,26 @@ class AgentDecl:
     max_model_calls: int = 64
     instructions: str | None = None
     deadline_seconds: float | None = None
-    #: `plan: first`. The agent asks for all its changes together, they are
-    #: shown as one plan, and one yes covers exactly that list.
-    plan_first: bool = False
+    #: `plan: first`, `plan: off`, or None when the program does not say.
+    #: See `plans_first`.
+    plan: str | None = None
+
+    def plans_first(self, tools: Iterable[ToolDecl]) -> bool:
+        """Whether this agent shows all its changes as one plan before any.
+
+        It does when the program says `plan: first`, and does not when it
+        says `plan: off`. When the program says nothing, an agent plans if it
+        can: it has a model to write the plan, a tool that changes something,
+        and at least two turns, one to plan and one to answer.
+        """
+
+        if self.plan is not None:
+            return self.plan == "first"
+        return (
+            self.model is not None
+            and self.max_steps >= 2
+            and any(tool.access == "execute" for tool in tools if tool.name in self.can)
+        )
 
 
 @dataclass(frozen=True)

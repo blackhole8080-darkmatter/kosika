@@ -238,6 +238,31 @@ class RuntimeTests(Base):
         self.assertEqual(list(self.work.iterdir()), [])
 
 
+class WhoPlansTests(Base):
+    def plans(self, old: str, new: str) -> bool:
+        self.assertIn(old, TIDY)
+        self.source.write_text(TIDY.replace(old, new), encoding="utf-8")
+        program = load_program(self.source)
+        return program.agents[0].plans_first(program.tools)
+
+    def test_an_agent_that_can_change_things_plans_without_being_told(self) -> None:
+        self.assertTrue(self.plans("  plan: first\n", ""))
+
+    def test_it_can_be_switched_off(self) -> None:
+        self.assertFalse(self.plans("plan: first", "plan: off"))
+
+    def test_an_agent_that_only_looks_has_nothing_to_plan(self) -> None:
+        self.assertFalse(
+            self.plans(
+                "can: [list_folder, create_file]\n  max_steps: 6\n  plan: first",
+                "can: [list_folder]\n  max_steps: 6",
+            )
+        )
+
+    def test_with_one_turn_it_cannot_plan_and_answer(self) -> None:
+        self.assertFalse(self.plans("max_steps: 6\n  plan: first", "max_steps: 1"))
+
+
 class CheckTests(Base):
     def problem(self, old: str, new: str) -> str:
         self.source.write_text(TIDY.replace(old, new), encoding="utf-8")
@@ -258,7 +283,7 @@ class CheckTests(Base):
         self.source.write_text(
             TIDY.replace("plan: first", "plan: later"), encoding="utf-8"
         )
-        with self.assertRaisesRegex(Exception, "Agent plan must be `first`"):
+        with self.assertRaisesRegex(Exception, "Agent plan must be `first` or `off`"):
             load_program(self.source)
 
 
@@ -280,8 +305,10 @@ class MapTests(Base):
             / "builder"
             / "main.kos"
         )
-        builder = load_program(example).agents[0]
-        self.assertTrue(builder.plan_first)
+        program = load_program(example)
+        builder = program.agents[0]
+        self.assertIsNone(builder.plan)
+        self.assertTrue(builder.plans_first(program.tools))
         self.assertEqual(builder.can, ("list_folder", "create_file"))
 
 

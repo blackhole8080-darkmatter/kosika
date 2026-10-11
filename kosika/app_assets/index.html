@@ -771,7 +771,7 @@ function liveView(agent, entry) {
       if (at.top < view.top || at.top + 90 > view.bottom) root.scrollTo({top: root.scrollTop + at.top - view.top - 50, behavior: "smooth"});
       counts.steps += 1;
     } else if (event.event === "model_call") { counts.models += 1; say(depth, "asking the model…"); }
-    else if (event.event === "agent_call") { counts.models += 1; picked = []; say(depth, "agent " + event.agent + " is thinking…"); }
+    else if (event.event === "agent_call") { counts.models += 1; picked = []; say(depth, "agent " + event.agent + (event.skills && event.skills.length ? " picked " + (event.skills.length === 1 ? "the skill " : "the skills ") + event.skills.join(", ") + " and" : "") + " is thinking…"); }
     else if (event.event === "agent_tool") {
       // The agent chose this tool itself; show the chain of its choices.
       counts.tools += 1; picked.push(event.tool);

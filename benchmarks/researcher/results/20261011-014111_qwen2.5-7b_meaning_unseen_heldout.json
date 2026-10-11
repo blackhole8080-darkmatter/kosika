@@ -1,0 +1,563 @@
+{
+ "when": "20261011-014111",
+ "label": "heldout",
+ "set": "unseen",
+ "model": "qwen2.5:7b",
+ "embed_model": "nomic-embed-text",
+ "runs": 1,
+ "seconds": 957.7,
+ "total": {
+  "right": 35,
+  "wrong shown": 1,
+  "missed": 4,
+  "failed": 0
+ },
+ "by_kind": {
+  "words": {
+   "right": 12,
+   "wrong shown": 0,
+   "missed": 0,
+   "failed": 0
+  },
+  "meaning": {
+   "right": 8,
+   "wrong shown": 1,
+   "missed": 3,
+   "failed": 0
+  },
+  "several": {
+   "right": 7,
+   "wrong shown": 0,
+   "missed": 1,
+   "failed": 0
+  },
+  "none": {
+   "right": 8,
+   "wrong shown": 0,
+   "missed": 0,
+   "failed": 0
+  }
+ },
+ "questions": [
+  {
+   "kind": "words",
+   "question": "What is the yearly fee for the allotment?",
+   "answer": "64",
+   "file": "garden.md",
+   "line": 3,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "64 pounds\nQuote: \"The yearly fee is 64 pounds.\"\nFrom: garden.md, line 3"
+   ]
+  },
+  {
+   "kind": "words",
+   "question": "What is the shed padlock code?",
+   "answer": "4071",
+   "file": "garden.md",
+   "line": 7,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "4071\nQuote: \"- The shed padlock code is 4071.\"\nFrom: garden.md, line 7"
+   ]
+  },
+  {
+   "kind": "words",
+   "question": "What is the registration of the car?",
+   "answer": "LK19 TWN",
+   "file": "car.md",
+   "line": 3,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "LK19 TWN\nQuote: \"registration LK19 TWN.\"\nFrom: car.md, line 3"
+   ]
+  },
+  {
+   "kind": "words",
+   "question": "When does the MOT run out?",
+   "answer": "14 November",
+   "file": "car.md",
+   "line": 4,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "The MOT runs out on 14 November.\nQuote: \"The MOT runs out on 14 November.\"\nFrom: car.md, line 4"
+   ]
+  },
+  {
+   "kind": "words",
+   "question": "Who is Noor's teacher?",
+   "answer": "Abernathy",
+   "file": "school.md",
+   "line": 3,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "Ms Abernathy\nQuote: \"Noor is in class 4B and her teacher is Ms Abernathy.\"\nFrom: school.md, line 3"
+   ]
+  },
+  {
+   "kind": "words",
+   "question": "When is the parents' evening?",
+   "answer": "9 March",
+   "file": "school.md",
+   "line": 6,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "The parents' evening is on 9 March at 17:30.\nQuote: \"The parents' evening is on 9 March at 17:30.\"\nFrom: school.md, line 6"
+   ]
+  },
+  {
+   "kind": "words",
+   "question": "What ink does the printer take?",
+   "answer": "104",
+   "file": "computer.md",
+   "line": 6,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "The printer takes ink number 104.\nQuote: \"The printer is an Epson ET-2850 and takes ink number 104.\"\nFrom: computer.md, line 6"
+   ]
+  },
+  {
+   "kind": "words",
+   "question": "At what time do backups run?",
+   "answer": "02:00",
+   "file": "computer.md",
+   "line": 4,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "Backups run at 02:00 every night.\nQuote: \"Backups run every night at 02:00 to the drive named Vault.\"\nFrom: computer.md, line 4"
+   ]
+  },
+  {
+   "kind": "words",
+   "question": "What is Noor allergic to?",
+   "answer": "cashews",
+   "file": "kitchen.md",
+   "line": 8,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "Noor is allergic to cashews.\nQuote: \"Noor is allergic to cashews, so check every sauce.\"\nFrom: kitchen.md, line 8"
+   ]
+  },
+  {
+   "kind": "words",
+   "question": "When does the veg box arrive?",
+   "answer": "Tuesday",
+   "file": "kitchen.md",
+   "line": 6,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "The veg box arrives on Tuesday.\nQuote: \"The veg box from Marlow Farm arrives on Tuesday and costs 18 pounds.\"\nFrom: kitchen.md, line 6"
+   ]
+  },
+  {
+   "kind": "words",
+   "question": "What is my chess rating?",
+   "answer": "1482",
+   "file": "club/chess.md",
+   "line": 6,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "1482\nQuote: \"My rating went up to 1482 after the winter league.\"\nFrom: club/chess.md, line 6"
+   ]
+  },
+  {
+   "kind": "words",
+   "question": "What is my part in the choir?",
+   "answer": "second tenor",
+   "file": "club/choir.md",
+   "line": 7,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "Second tenor.\nQuote: \"My part is second tenor.\"\nFrom: club/choir.md, line 7"
+   ]
+  },
+  {
+   "kind": "meaning",
+   "question": "How much air should the front wheels have?",
+   "answer": "2.3",
+   "file": "car.md",
+   "line": 5,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "2.3 bar\nQuote: \"Tyre pressure should be 2.3 bar at the front and 2.1 bar at the back.\"\nFrom: car.md, line 5"
+   ]
+  },
+  {
+   "kind": "meaning",
+   "question": "Who do I phone if the car stops working on the road?",
+   "answer": "RoadMate",
+   "file": "car.md",
+   "line": 7,
+   "outcomes": [
+    "wrong shown"
+   ],
+   "said": [
+    "Call Dariusz at Bexley Motors on 555-0177.\nQuote: \"ask for Dariusz on 555-0177.\"\nFrom: car.md, line 6"
+   ]
+  },
+  {
+   "kind": "meaning",
+   "question": "Which months is trimming the hedge allowed?",
+   "answer": "September",
+   "file": "garden.md",
+   "line": 11,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "September to February\nQuote: \"The hedge may only be cut between September and February because of nesting birds.\"\nFrom: garden.md, line 11"
+   ]
+  },
+  {
+   "kind": "meaning",
+   "question": "How big is the rain barrel?",
+   "answer": "210",
+   "file": "garden.md",
+   "line": 5,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "210 litres\nQuote: \"The water butt holds 210 litres and is emptied before the first frost.\"\nFrom: garden.md, line 5"
+   ]
+  },
+  {
+   "kind": "meaning",
+   "question": "What time do lessons finish for the day?",
+   "answer": "15:15",
+   "file": "school.md",
+   "line": 4,
+   "outcomes": [
+    "missed"
+   ],
+   "said": [
+    "I will not guess: I could not back an answer with an exact quote. The closest lines I found for \"time lessons finish day\" are:\nschool.md:9: Recorder lessons cost 6 pounds a week and happen on Friday before lunch.\nschool.md:4: School starts at 8:40 and ends at 15:15.\nschool.md:11: After-school club runs until 17:45 and is in the green hall.\nschool.md:5: Swimming is on Wednesday, so the kit bag goes in that morning.\nclub/choir.md:3: Rehearsal is on Monday at 19:30 in St Aldhelm's hall."
+   ]
+  },
+  {
+   "kind": "meaning",
+   "question": "Which day does Noor need her bathing things?",
+   "answer": "Wednesday",
+   "file": "school.md",
+   "line": 5,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "Wednesday\nQuote: \"Swimming is on Wednesday, so the kit bag goes in that morning.\"\nFrom: school.md, line 5"
+   ]
+  },
+  {
+   "kind": "meaning",
+   "question": "Where are the AI models stored on disk?",
+   "answer": "D:\\models",
+   "file": "computer.md",
+   "line": 10,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "The AI models are stored in the folder D:\\models.\nQuote: \"Ollama keeps its models in the folder D:\\models.\"\nFrom: computer.md, line 10"
+   ]
+  },
+  {
+   "kind": "meaning",
+   "question": "How much RAM does my notebook computer have?",
+   "answer": "16",
+   "file": "computer.md",
+   "line": 3,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "16 GB\nQuote: \"16 GB of memory\"\nFrom: computer.md, line 3"
+   ]
+  },
+  {
+   "kind": "meaning",
+   "question": "How long does grandmother's lentil dish cook?",
+   "answer": "20 minutes",
+   "file": "kitchen.md",
+   "line": 4,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "20 minutes\nQuote: \"Grandma's dal needs 20 minutes in the pressure cooker.\"\nFrom: kitchen.md, line 4"
+   ]
+  },
+  {
+   "kind": "meaning",
+   "question": "What should I serve visitors to drink?",
+   "answer": "Assam",
+   "file": "kitchen.md",
+   "line": 11,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "Serve visitors Assam tea from the red caddy.\nQuote: \"Tea for guests is the Assam in the red caddy.\"\nFrom: kitchen.md, line 11"
+   ]
+  },
+  {
+   "kind": "meaning",
+   "question": "How many games are played at the April competition?",
+   "answer": "six",
+   "file": "club/chess.md",
+   "line": 5,
+   "outcomes": [
+    "missed"
+   ],
+   "said": [
+    "I will not guess: I could not back an answer with an exact quote. The closest lines I found for \"games played april competition\" are:\ncar.md:9: The parking permit for zone C costs 95 pounds a year and is renewed each April.\nclub/chess.md:5: The spring tournament is on 21 April and has six rounds.\ngarden.md:12: The mower blade was sharpened in April by Castell Tools.\nclub/chess.md:6: My rating went up to 1482 after the winter league.\nschool.md:10: The summer trip is to the coast at Whitby and the form is due by 2 May."
+   ]
+  },
+  {
+   "kind": "meaning",
+   "question": "What piece are we performing in the summer?",
+   "answer": "Rutter",
+   "file": "club/choir.md",
+   "line": 4,
+   "outcomes": [
+    "missed"
+   ],
+   "said": [
+    "I will not guess: I could not back an answer with an exact quote. The closest lines I found for \"piece performing summer\" are:\ncomputer.md:11: The old tablet was given to Uncle Feroz in the summer.\nschool.md:10: The summer trip is to the coast at Whitby and the form is due by 2 May.\nclub/choir.md:4: The concert is on 21 June and we sing the Rutter Gloria.\nclub/choir.md:3: Rehearsal is on Monday at 19:30 in St Aldhelm's hall.\nclub/chess.md:5: The spring tournament is on 21 April and has six rounds."
+   ]
+  },
+  {
+   "kind": "several",
+   "question": "Who is the treasurer of the chess club?",
+   "answer": "Olamide",
+   "file": "club/chess.md",
+   "line": 4,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "Olamide\nQuote: \"paid to the treasurer, Olamide.\"\nFrom: club/chess.md, line 4"
+   ]
+  },
+  {
+   "kind": "several",
+   "question": "Who is the treasurer of the choir?",
+   "answer": "Benedikt",
+   "file": "club/choir.md",
+   "line": 5,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "Benedikt\nQuote: \"paid to the treasurer, Benedikt.\"\nFrom: club/choir.md, line 5"
+   ]
+  },
+  {
+   "kind": "several",
+   "question": "Which locker holds the chess clocks?",
+   "answer": "9",
+   "file": "club/chess.md",
+   "line": 7,
+   "outcomes": [
+    "missed"
+   ],
+   "said": [
+    "I will not guess: I could not back an answer with an exact quote. The closest lines I found for \"locker holds chess clocks\" are:\nclub/chess.md:7: The clocks are kept in locker 9; the key hangs behind the desk.\nclub/chess.md:1: # Chess club\nclub/choir.md:6: The folders are kept in locker 3 at the back of the hall.\ngarden.md:5: The water butt holds 210 litres and is emptied before the first frost.\ncar.md:10: The spare key lives in the blue tin in the hallway."
+   ]
+  },
+  {
+   "kind": "several",
+   "question": "On what date is the choir concert?",
+   "answer": "21 June",
+   "file": "club/choir.md",
+   "line": 4,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "The concert is on 21 June.\nQuote: \"The concert is on 21 June and we sing the Rutter Gloria.\"\nFrom: club/choir.md, line 4"
+   ]
+  },
+  {
+   "kind": "several",
+   "question": "Where is the spare key for the car?",
+   "answer": "blue tin",
+   "file": "car.md",
+   "line": 10,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "In the blue tin in the hallway.\nQuote: \"The spare key lives in the blue tin in the hallway.\"\nFrom: car.md, line 10"
+   ]
+  },
+  {
+   "kind": "several",
+   "question": "What is the order number for the slow cooker lid?",
+   "answer": "60-3318",
+   "file": "kitchen.md",
+   "line": 12,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "60-3318\nQuote: \"order 60-3318\"\nFrom: kitchen.md, line 12"
+   ]
+  },
+  {
+   "kind": "several",
+   "question": "What is the case number of the laptop warranty?",
+   "answer": "W-55102",
+   "file": "computer.md",
+   "line": 7,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "W-55102\nQuote: \"The warranty for the laptop ends on 19 January next year, case number W-55102.\"\nFrom: computer.md, line 7"
+   ]
+  },
+  {
+   "kind": "several",
+   "question": "How much do recorder lessons cost?",
+   "answer": "6 pounds",
+   "file": "school.md",
+   "line": 9,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "6 pounds a week\nQuote: \"Recorder lessons cost 6 pounds a week and happen on Friday before lunch.\"\nFrom: school.md, line 9"
+   ]
+  },
+  {
+   "kind": "none",
+   "question": "What is the wifi password?",
+   "answer": "",
+   "file": "",
+   "line": 0,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "I will not guess: I could not back an answer with an exact quote. The closest lines I found for \"wifi password\" are:\ncomputer.md:5: The router sits behind the television and its admin page is at 192.168.1.1.\ncar.md:10: The spare key lives in the blue tin in the hallway.\ngarden.md:7: - The shed padlock code is 4071.\ncomputer.md:7: The warranty for the laptop ends on 19 January next year, case number W-55102.\ncar.md:7: Breakdown cover is with RoadMate, membership 7730-441."
+   ]
+  },
+  {
+   "kind": "none",
+   "question": "When is Noor's birthday?",
+   "answer": "",
+   "file": "",
+   "line": 0,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "I will not guess: I could not back an answer with an exact quote. The closest lines I found for \"noors birthday\" are:\nschool.md:3: Noor is in class 4B and her teacher is Ms Abernathy.\ngarden.md:9: The apple tree is a Bramley and was planted when Noor was born.\nkitchen.md:8: Noor is allergic to cashews, so check every sauce.\nschool.md:6: The parents' evening is on 9 March at 17:30.\nclub/choir.md:4: The concert is on 21 June and we sing the Rutter Gloria."
+   ]
+  },
+  {
+   "kind": "none",
+   "question": "What is Dariusz's surname?",
+   "answer": "",
+   "file": "",
+   "line": 0,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "I will not guess: I could not back an answer with an exact quote. The closest lines I found for \"dariuszs surname\" are:\ncar.md:6: The garage is Bexley Motors; ask for Dariusz on 555-0177.\ncomputer.md:11: The old tablet was given to Uncle Feroz in the summer.\nkitchen.md:8: Noor is allergic to cashews, so check every sauce.\ngarden.md:9: The apple tree is a Bramley and was planted when Noor was born.\ncar.md:3: The car is a grey Skoda Fabia, registration LK19 TWN."
+   ]
+  },
+  {
+   "kind": "none",
+   "question": "How much did the laptop cost?",
+   "answer": "",
+   "file": "",
+   "line": 0,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "I will not guess: I could not back an answer with an exact quote. The closest lines I found for \"laptop cost\" are:\ncar.md:9: The parking permit for zone C costs 95 pounds a year and is renewed each April.\ncomputer.md:3: The laptop is a Lenovo with 16 GB of memory, bought in January last year.\ncomputer.md:7: The warranty for the laptop ends on 19 January next year, case number W-55102.\ncomputer.md:8: The domain sagarnotes.example renews in October and costs 12 dollars.\nkitchen.md:6: The veg box from Marlow Farm arrives on Tuesday and costs 18 pounds."
+   ]
+  },
+  {
+   "kind": "none",
+   "question": "What is the phone number of the chess club?",
+   "answer": "",
+   "file": "",
+   "line": 0,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "I will not guess: I could not back an answer with an exact quote. The closest lines I found for \"phone number chess club\" are:\nclub/chess.md:1: # Chess club\nclub/chess.md:3: The club meets on Thursday at 19:00 in the library annexe.\ncomputer.md:6: The printer is an Epson ET-2850 and takes ink number 104.\ncomputer.md:7: The warranty for the laptop ends on 19 January next year, case number W-55102.\ngarden.md:6: - Seed order comes from Hollis and Reed, customer number 88-1420."
+   ]
+  },
+  {
+   "kind": "none",
+   "question": "When was the car last washed?",
+   "answer": "",
+   "file": "",
+   "line": 0,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "I will not guess: I could not back an answer with an exact quote. The closest lines I found for \"car last washed\" are:\ncar.md:1: # Car\ncar.md:3: The car is a grey Skoda Fabia, registration LK19 TWN.\ncar.md:8: The last oil change was at 61,200 miles.\ncomputer.md:3: The laptop is a Lenovo with 16 GB of memory, bought in January last year.\nkitchen.md:10: The water filter is changed every eight weeks; the last change was 3 June."
+   ]
+  },
+  {
+   "kind": "none",
+   "question": "What is the recipe for the sourdough bread?",
+   "answer": "",
+   "file": "",
+   "line": 0,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "I will not guess: I could not back an answer with an exact quote. The closest lines I found for \"recipe sourdough bread\" are:\nkitchen.md:3: The sourdough starter is fed every morning with 50 grams of flour.\nkitchen.md:5: The oven runs hot, so bake everything 10 degrees lower than the recipe says.\nkitchen.md:12: The slow cooker's lid cracked and a new one is on order from Brightware, order 60-3318.\nkitchen.md:11: Tea for guests is the Assam in the red caddy.\nkitchen.md:4: Grandma's dal needs 20 minutes in the pressure cooker."
+   ]
+  },
+  {
+   "kind": "none",
+   "question": "Which seat am I in at the concert?",
+   "answer": "",
+   "file": "",
+   "line": 0,
+   "outcomes": [
+    "right"
+   ],
+   "said": [
+    "I will not guess: I could not back an answer with an exact quote. The closest lines I found for \"seat concert\" are:\nclub/choir.md:4: The concert is on 21 June and we sing the Rutter Gloria.\nclub/choir.md:7: My part is second tenor.\nclub/choir.md:3: Rehearsal is on Monday at 19:30 in St Aldhelm's hall.\nclub/chess.md:3: The club meets on Thursday at 19:00 in the library annexe.\ncomputer.md:5: The router sits behind the television and its admin page is at 192.168.1.1."
+   ]
+  }
+ ]
+}
