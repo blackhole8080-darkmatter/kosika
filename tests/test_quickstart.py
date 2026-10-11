@@ -65,6 +65,7 @@ class QuickstartTests(unittest.TestCase):
         ):
             self.assertNotIn(grant, arguments)
         self.assertIn("Granted: nothing.", "\n".join(lines))
+        self.assertIn("open Permissions in Studio", "\n".join(lines))
         # The arguments are an ordinary studio command.
         parsed = build_parser().parse_args(arguments)
         self.assertEqual(parsed.command, "studio")

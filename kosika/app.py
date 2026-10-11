@@ -58,6 +58,7 @@ from .chat import ChatError, answer_text, message_parameter
 from .diagnostics import anchors_for, diagnostic_from_exception
 from .direct import AGENT as DIRECT_AGENT
 from .durable import PLAN_TOOL, ApprovalPending, ExecutionSession
+from .grants import native_folder_window, too_wide
 from .lexer import lex
 from .mcp_tools import MCPHub, bind_mcp_tools, declaration
 from .memory import AGENT as MEMORY_AGENT
@@ -69,6 +70,7 @@ from .project_index import project_index
 from .project_map import beginner_map, read_note, save_note
 from .runtime import run
 from .sessions import Session, SessionError, default_home, system_name
+from .sessions import unavailable as sessions_unavailable
 from .skills import SKILLS_FOLDER, load_skill_notes
 from .starter import KINDS, StarterError, create_starter
 from .story import StoryError, build_story, read_trace
@@ -552,7 +554,15 @@ class App:
         embed_label: str = "",
         in_session: bool = False,
         session_home: Path | None = None,
+        pick_folder: Callable[[], str] | None = None,
     ):
+        # How a person picks a folder: the computer's own folder window.
+        # A test hands in its own.
+        self._pick_folder = pick_folder or native_folder_window
+        # The folder last picked there, waiting to be confirmed. Only this
+        # one can be granted from the page.
+        self._picked: Path | None = None
+        self._grant_lock = threading.Lock()
         # With sessions on, each agent works in its own copy of the
         # granted folder, behind a wall. What it does there needs no yes
         # step by step; bringing the result back does.
@@ -579,6 +589,81 @@ class App:
         self._jobs: dict[str, Job] = {}
         self._jobs_lock = threading.Lock()
         self.approved_by = approved_by
+
+    def pick_folder(self) -> dict[str, Any]:
+        """Open the folder window. What is picked is remembered, not yet
+        granted: the person still has to confirm it."""
+
+        picked = self._pick_folder()
+        if not picked:
+            return {"folder": ""}
+        folder = Path(picked)
+        if not folder.is_dir():
+            raise AppError(f"{picked} is not a folder", 422)
+        problem = too_wide(folder)
+        if problem is not None:
+            raise AppError(problem, 422)
+        self._picked = folder.resolve()
+        return {"folder": str(self._picked)}
+
+    def grant(self, body: dict[str, Any]) -> dict[str, Any]:
+        """Change what agents may touch: the folder, starting programs, and
+        working in a session.
+
+        `folder` is "keep", "none", or "picked", which means the folder last
+        chosen in the folder window. No other folder can be named here.
+        """
+
+        # One change at a time: checking that sessions can work takes a few
+        # seconds, and a second answer must not be decided on what the
+        # first one found.
+        with self._grant_lock:
+            return self._grant(body)
+
+    def _grant(self, body: dict[str, Any]) -> dict[str, Any]:
+        choice = body.get("folder", "keep")
+        if choice not in ("keep", "none", "picked"):
+            raise AppError("folder must be keep, none or picked")
+        with self._jobs_lock:
+            busy = any(
+                job.state in ("running", "waiting") for job in self._jobs.values()
+            )
+        if busy:
+            raise AppError(
+                "An agent is working. Change this when it has finished.", 409
+            )
+        if self._sessions:
+            raise AppError(
+                "A session is open. Bring its changes back or throw it away "
+                "first, in the agent's Session tab.",
+                409,
+            )
+        if choice == "picked" and self._picked is None:
+            raise AppError("Choose a folder first.", 409)
+        folder = (
+            self.allow_folder
+            if choice == "keep"
+            else None
+            if choice == "none"
+            else self._picked
+        )
+        shell = body.get("shell") is True and folder is not None
+        sessions = body.get("sessions") is True and folder is not None
+        if sessions and not self.in_session:
+            problem = sessions_unavailable()
+            if problem is not None:
+                raise AppError(problem, 422)
+        with self._lock:
+            self.allow_folder = folder
+            self.allow_shell = shell
+            self.in_session = sessions
+            if choice == "picked":
+                self._picked = None
+        return {
+            "allow_folder": str(folder) if folder else "",
+            "shell": shell,
+            "sessions": sessions,
+        }
 
     def agents(self) -> dict[str, Agent]:
         return {
@@ -1451,6 +1536,10 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                             int(since) if since.isdigit() else 0,
                         ),
                     )
+                elif method == "POST" and url.path == "/api/grant/pick":
+                    self._json(200, app.pick_folder())
+                elif method == "POST" and url.path == "/api/grant":
+                    self._json(200, app.grant(self._body()))
                 elif method == "POST" and url.path == "/api/decide":
                     body = self._body()
                     self._json(

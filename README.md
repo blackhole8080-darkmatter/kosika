@@ -659,6 +659,13 @@ behind a wall:
 kosika studio my_agents --model qwen2.5:7b --model-protocol ollama --allow-folder PROJECT --allow-shell --in-session
 ```
 
+The folder, starting programs and sessions can also be chosen inside
+Studio, on the Permissions page, with no command line. The folder is picked
+in the computer's own folder window, which Kosika opens; the page can only
+confirm what was picked there, so nothing but a person at the computer can
+grant a folder. A whole drive, the user folder or a system folder is
+refused. A change is refused while an agent is working or a session is open.
+
 - A program started in a session sees the copy and nothing else of your
   files, on a read-only system, with no network, for at most 60 seconds.
 - Because nothing it does can reach the real folder, its file and shell

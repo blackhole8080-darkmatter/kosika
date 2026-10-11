@@ -106,15 +106,21 @@ your greeting back.
 
 ## 7. Let an agent see a folder
 
-Agents can touch nothing until you grant it. To let them read one folder,
-stop Studio (Ctrl+C in the terminal) and start it with that folder named:
+Agents can touch nothing until you grant it. In Studio, open
+**Permissions** and press **Choose a folder**. Your computer's own folder
+window opens; pick one folder, such as your notes or one project, then
+press **Apply**. A whole drive or your whole user folder is refused.
 
-```
-kosika studio KosikaAgents --model qwen2.5:7b --model-protocol ollama --allow-folder MY_NOTES
-```
+Two switches sit beside it:
 
-Reading needs only that. Anything that would change a file still stops
-and asks you, showing exactly what it wants to do.
+- **Work in a session.** Agents then work in a copy of the folder. Nothing
+  reaches the real folder until you open the agent's Session tab and tick
+  the files to bring back. Turn this on for any agent that changes files.
+- **Let agents start programs.** Needed by agents that run things, such as
+  the coder running your tests.
+
+Reading needs only the folder. Anything that would change a file still
+shows you its whole plan first and waits for your yes.
 
 ## 8. Make your own
 

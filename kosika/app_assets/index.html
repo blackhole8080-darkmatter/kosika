@@ -537,23 +537,54 @@ async function showTools() {
       })))));
 }
 
+// What agents may touch, and the place to change it without a command line.
 function showPermissions() {
+  let picked = "";
+  const note = h("div", {class: "foot", style: "margin:8px 0"});
+  const programs = h("input", {type: "checkbox"}), copy = h("input", {type: "checkbox"});
+  programs.checked = !!overview.shell; copy.checked = !!overview.sessions;
+  const where = h("div", {class: "purpose"});
+  const say = () => { where.textContent = picked ? "Picked, not yet applied: " + picked : overview.allow_folder ? overview.allow_folder : "No folder. Agents can read and change no files."; programs.disabled = copy.disabled = !(picked || overview.allow_folder); };
+  const fail = error => { note.textContent = error.message; note.style.color = "var(--bad)"; };
+  const good = text => { note.textContent = text; note.style.color = ""; };
+  let applying = false;
+  async function apply(folder) {
+    // One answer at a time: a second press waits for the first to finish.
+    if (applying) return;
+    applying = true; good(copy.checked && !overview.sessions ? "Checking that sessions can work on this computer…" : "Applying…");
+    main.querySelectorAll("button, input").forEach(control => { control.disabled = true; });
+    try {
+      const now = await api("/api/grant", {method: "POST", body: JSON.stringify({folder, shell: programs.checked, sessions: copy.checked})});
+      overview.allow_folder = now.allow_folder; overview.shell = now.shell; overview.sessions = now.sessions; picked = "";
+      showPermissions();
+    } catch (error) { applying = false; main.querySelectorAll("button, input").forEach(control => { control.disabled = false; }); say(); fail(error); }
+  }
+  const choose = h("button", {onclick: async () => {
+    good("A folder window has opened on this computer. It may be behind this one.");
+    try { const answer = await api("/api/grant/pick", {method: "POST", body: "{}"}); picked = answer.folder || ""; good(picked ? "Press Apply to let agents work in it." : "No folder was picked."); say(); }
+    catch (error) { fail(error); }
+  }}, "Choose a folder…");
+  say();
   main.replaceChildren(
     h("h1", null, "Permissions"),
-    h("p", {class: "lead"}, "What this Studio was allowed to do when it was started. Agents cannot give themselves more: a program only names what it wants, and these are the grants."),
+    h("p", {class: "lead"}, "What agents may touch. They cannot give themselves more: a program only names what it wants, and you grant it here."),
+    h("div", {class: "panel"}, h("h4", null, "The folder agents may work in"), where,
+      h("div", {class: "row", style: "margin-top:10px"}, choose, overview.allow_folder ? h("button", {class: "quiet", onclick: () => apply("none")}, "Stop sharing this folder") : null),
+      h("label", {style: "display:block;margin-top:12px"}, copy, " Work in a session: a safe copy of the folder. Nothing reaches the real folder until you bring it back."),
+      h("label", {style: "display:block;margin-top:6px"}, programs, " Let agents start the programs their tools name, such as python. Outside a session each start asks you first."),
+      h("div", {class: "row", style: "margin-top:12px"}, h("button", {onclick: () => apply(picked ? "picked" : "keep")}, "Apply")),
+      note,
+      h("div", {class: "foot"}, "The folder is chosen in this computer's own folder window, so only a person sitting here can grant one. A whole drive or your whole user folder is refused: give agents one piece of work.")),
     h("div", {class: "facts"},
       fact("Model", [overview.can_run ? overview.model + " answers for every agent" : "None. Agents can be viewed and tested, not run."]),
-      fact("Folder agents may look in", [overview.allow_folder || "None. File tools find nothing."]),
       fact("Websites agents may read", overview.sites, "None. The web cannot be reached."),
-      fact("Changing things", ["Only after you press Allow once, for that one action.", "The card shows exactly what will be done before you answer.", "No answer in ten minutes counts as a refusal."]),
+      fact("Changing things", ["An agent shows you its whole plan first, and one yes covers exactly that plan.", "In a session, changes happen in the copy and you choose which files to bring back.", "No answer in ten minutes counts as a refusal."]),
       fact("MCP servers", overview.mcp, "None. Start Studio with --mcp NAME=COMMAND to grant one."),
-      fact("Sessions", overview.sessions ? ["On. Each agent works in its own copy of the granted folder.", "Its programs run behind a wall: no network, no other files, a read-only system.", "Its steps there do not ask you one by one. Nothing reaches the real folder until you bring the changes back."] : ["Off. Agents work in the granted folder itself, and each change asks you first.", "Start Studio with --in-session to turn them on."]),
       fact("Search by meaning", overview.embed ? ["Allowed, with the embedding model " + overview.embed + ".", "It only reads, inside the granted folder.", "What it learns about each line is kept on this computer, outside that folder."] : ["Not allowed. Start Studio with --embed-model to permit it."]),
-      fact("Starting programs", overview.shell ? ["Allowed, only the programs an agent's tools name.", "Each start waits for your Allow once and shows the exact command.", "Runs inside the granted folder, stopped after 60 seconds."] : ["Not allowed. Start Studio with --allow-shell to permit it."]),
       fact("Never allowed here", ["Files outside the granted folder", "Websites that are not on the list", "Anything at all without the grants above"]),
       fact("Where programs come from", [overview.root])),
-    h("h2", null, "How to change these"),
-    h("p", {class: "lead"}, "Stop Studio and start it again with different options: --model NAME, --allow-folder FOLDER, --allow-site SITE, --allow-shell, --mcp NAME=COMMAND."));
+    h("h2", null, "What still needs the command line"),
+    h("p", {class: "lead"}, "The model, websites, MCP servers and search by meaning are chosen when Studio starts: --model NAME, --allow-site SITE, --mcp NAME=COMMAND, --embed-model NAME."));
 }
 
 // ---------------------------------------------------------------- the flow

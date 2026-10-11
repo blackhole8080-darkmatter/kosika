@@ -141,8 +141,7 @@ def start_plan(
         ]
     lines += [
         "  Granted: nothing. No agent can read your files, start programs or reach the web.",
-        "  To let agents read one folder, stop this and run:",
-        f'    kosika studio "{folder}" --allow-folder YOUR_FOLDER'
-        + (f" --model {chosen} --model-protocol ollama" if chosen else ""),
+        "  To let agents work in one folder, open Permissions in Studio and",
+        "  press Choose a folder. You pick it in this computer's own folder window.",
     ]
     return arguments, lines

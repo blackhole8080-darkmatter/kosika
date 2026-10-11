@@ -2810,6 +2810,36 @@ gate: without them a parser written in Kosika has nothing to return.
   answer the plan question. Only Python and pytest. The `fix` path was
   not reached in a real run, because the one good run passed first time.
 
+### Granting from inside Studio
+
+- The owner tried to start Studio with `--allow-folder Aryan_Private` and
+  was told it was not a folder. Two things followed. The message now shows
+  the full path that was tried and asks for a full path. And he asked to do
+  this in the app instead of the command line.
+- Studio's Permissions page now has "Choose a folder", which asks the
+  server to open the computer's own folder window (Tk, run as a separate
+  process). What is picked there is remembered on the server. The page can
+  then confirm it, keep the current folder, or remove it; it cannot send a
+  folder name of its own. Two switches set starting programs and sessions.
+- Refused: a whole drive, the user folder or anything holding it, and
+  system folders. Refused while an agent is working or a session is open.
+  Turning sessions on checks first that the wall works, and says why if not.
+- Found while trying it in a real Studio window: two changes pressed
+  quickly overlapped, and the slower one put back the folder the faster one
+  had removed. Changes are now made one at a time on the server, and the
+  page disables its buttons while one is applied. A test holds the first
+  change open and shows the second waits.
+- Tried in the browser on a scratch folder: the page showed the granted
+  folder, the programs switch took effect, the session switch said it was
+  checking and then took effect, and "Stop sharing this folder" removed the
+  folder and both switches. `kosika start` and the beginner's guide now
+  point here instead of at a command. `tests/test_grants.py`, 19 tests.
+- Not claimed: the folder window itself was not opened in this work. It
+  appears on the owner's screen and needs a person to answer it, so the
+  owner's first use is its first real test. Tests use a stand-in for it.
+  The model, websites, MCP servers and search by meaning are still chosen
+  when Studio starts. The grant lasts until Studio stops; it is not saved.
+
 ## Standard coding-agent procedure
 
 1. Inspect `git status`, the relevant source files, tests, and this plan.
