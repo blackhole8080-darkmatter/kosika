@@ -2876,6 +2876,56 @@ gate: without them a parser written in Kosika has nothing to return.
   The limit is 4,000,000 numbers. The owner was told eigenvalues would be
   there; they are not, and are the next thing to add.
 
+### One box that finds the right agent
+
+- The owner wants to grow a researcher and a coder into assistants. A first
+  step is not having to choose the agent: Studio's Assistant page has a box
+  that takes any request and passes it on.
+- Calling one Kosika program from another was looked at first. An import
+  from outside the program's own folder is refused, and two agents declare
+  the same names (`Msg`, `Said`, `main`), so it cannot be done in the
+  language today. The choosing is done by Studio instead, and the chosen
+  agent then runs as itself, with its own grants, plan and session.
+- The agents' purposes are shown to the bound model, which names one. It
+  can name only an agent that exists. With no model, or an answer that is
+  not one of them, the agent whose description shares the most uncommon
+  words with the request is used; failing that, the usual one. The page
+  says which agent was chosen and why, and nothing is run by the choosing.
+- First real try: 2 of 3. "What do my notes say about the rent?" went to
+  the workbench. The model had been shown 320 characters of each program's
+  top comment, most of it how to run the program. It is now shown only the
+  first paragraph, which says what the agent is for.
+- Measured after that, qwen2.5:7b, twelve requests across the ten example
+  agents: 11 of 12 went to an agent that fits, about 7 s each once loaded.
+  The miss: "explain photosynthesis and then test me" went to the
+  researcher where the coach fits. `tests/test_agent_routing.py`, 13 tests.
+- Not claimed: one run. A request that needs two agents goes to one. An
+  agent with no comment at the top cannot be chosen well. Agents calling
+  agents inside the language is still not possible.
+
+### What an agent really changed, and the coder measured
+
+- Measured before any change, qwen2.5:7b, six small tasks in sessions on
+  scratch Python projects: 3 of 6 done, where done means the tests pass and
+  the asked-for change is in the files. Two of the three failures were the
+  model claiming work it had not done: in one its plan held only one of the
+  two files it then said it wrote, and in the other it made no plan at all
+  and answered "Created greet.py ... and test_greet.py". The third was a
+  bug fix where it also rewrote the test file and dropped its import.
+- An agent's answer record may now have a field `did: Text[]`. The runtime
+  fills it from the transcript: each call of a tool that changes something
+  whose result was not an error, as the tool and its path. The model's own
+  value is thrown away. Replay works the list out again from the recorded
+  calls and refuses a trace whose `did` differs.
+- The coder and the builder report from `did`. With nothing written they
+  say so, and show the model's sentence only as what it said. The coder
+  asks its model once more when nothing was written, and is told to leave
+  the tests alone when fixing a bug. `tests/test_agent_did.py`, 6 tests.
+- Not claimed: the second measurement, after these changes, had not
+  finished when this was written, so whether the coder now completes more
+  than 3 of 6 is not known. `did` says what was written, not whether it
+  was right.
+
 ### Maths, saved for later
 
 The owner asked for the rest of the maths work to be planned and kept for

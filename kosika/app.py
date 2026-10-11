@@ -591,6 +591,17 @@ class App:
         self._jobs_lock = threading.Lock()
         self.approved_by = approved_by
 
+    def _purpose(self, card: dict[str, Any]) -> str:
+        """What an agent is for: the first paragraph of the comment at the
+        top of its program. The rest of that comment is how to run it, which
+        only blurs the choice between agents."""
+
+        try:
+            source = self.agent(card["id"]).path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError, AppError):
+            return str(card.get("about", ""))
+        return _about(source, first_only=True) or str(card.get("about", ""))
+
     def route(self, text: str) -> dict[str, Any]:
         """Which agent a request should go to, and why. Nothing is run."""
 
@@ -599,7 +610,7 @@ class App:
             raise AppError("Say what you want first.")
         cards = [describe(agent, detail=False) for agent in self.agents().values()]
         candidates = [
-            Candidate(card["id"], card["title"], card.get("about", ""))
+            Candidate(card["id"], card["title"], self._purpose(card))
             for card in cards
             if card.get("chat") and not card.get("error")
         ]
