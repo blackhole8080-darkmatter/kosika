@@ -11,15 +11,13 @@ import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Sequence
 
 from .agent import AgentLoop, AgentLoopError, ApprovalRecord
 from .approval_ledger import ApprovalLedger
 from .assistant import AssistantError, KosikaAssistant
 from .ast import Program, ToolDecl
 from .checker import check
-from .city import CITY_NAME, CityError, build_city
-from .cityscape import render_cityscape_svg
 from .command_model import CommandModelProvider
 from .components import (
     ComponentContractError,
@@ -28,13 +26,6 @@ from .components import (
     verify_component_artifact,
 )
 from .controls import ControlledProvider, ExecutionError, ModelLimits
-from .design import (
-    DESIGN_THEMES,
-    build_design_from_program,
-    load_design_manifest,
-    render_design,
-    write_design_manifest,
-)
 from .development import check_project, execute_development_json
 from .durable import (
     PLAN_TOOL,
@@ -44,12 +35,6 @@ from .durable import (
     inspect_journal,
 )
 from .editor_features import EditorFeatureError, build_editor_features
-from .event_stream_design import (
-    DesignError,
-    build_timeline_design,
-    publish_approval_event,
-    timeline_stage_summary,
-)
 from .events import (
     EVENT_BRIDGE_VERSION as BRIDGE_VERSION,
 )
@@ -90,7 +75,6 @@ from .manifest import (
 )
 from .mcp_stdio import MCPProtocolError, MCPStdioClient
 from .memory import bind_memory_tools
-from .metropolis import ENVIRONMENT_NAMES
 from .mindmap import build_mindmap, to_json, to_mermaid, to_text
 from .model import (
     MODEL_PROTOCOLS,
@@ -106,7 +90,6 @@ from .model_steps import strict_json
 from .modules import load_program
 from .network import (
     NetworkDirectory,
-    NetworkManifest,
     load_network_manifest,
     new_network_manifest,
     render_directory,
@@ -138,7 +121,6 @@ from .unified_mindmap import (
 )
 from .unified_mindmap import to_mermaid as render_unified_mermaid
 from .unified_mindmap import to_text as render_unified_text
-from .world import WorldError, load_world_manifest
 
 
 def command_metavar(subparsers: Any) -> str:
@@ -1057,27 +1039,7 @@ def _timeline_event(
 def _cli_approval_event(sequence: int) -> dict[str, Any]:
     """One normalized approval-pause event using the shared lifecycle identity."""
 
-    event = publish_approval_event(sequence)
-    event["event_id"] = f"kosika-cli-{sequence:04d}-kosika_approval_pending"
-    return validate_event(event)
-
-
-def _publish_timeline(
-    args: argparse.Namespace, events: Sequence[Mapping[str, Any]]
-) -> None:
-    """Write the deterministic timeline design when --design is supplied."""
-
-    if args.design is None:
-        return
-    manifest = build_timeline_design(events, args.design_id, args.design_name)
-    args.design.parent.mkdir(parents=True, exist_ok=True)
-    write_design_manifest(manifest, args.design)
-    summary = timeline_stage_summary(manifest)
-    print(
-        "Timeline design: "
-        f"{args.design} (stage {summary['first_stage']}, "
-        f"{summary['event_count']} event(s))"
-    )
+    return _timeline_event(sequence, "kosika_approval_pending", "pending")
 
 
 def _publish_run_events(
@@ -1984,21 +1946,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional normalized event JSONL for SSE replay and timeline views.",
     )
     run_parser.add_argument(
-        "--design",
-        type=Path,
-        help="Write a deterministic event-timeline design manifest from the run.",
-    )
-    run_parser.add_argument(
-        "--design-id",
-        default="event-timeline",
-        help="Design id recorded in the timeline manifest (with --design).",
-    )
-    run_parser.add_argument(
-        "--design-name",
-        default="Kosika run timeline",
-        help="Design name recorded in the timeline manifest (with --design).",
-    )
-    run_parser.add_argument(
         "--model-fixture",
         type=Path,
         help="Offline JSON model outputs grouped by declared model name.",
@@ -2502,87 +2449,6 @@ def build_parser() -> argparse.ArgumentParser:
     network_index_parser.add_argument(
         "--format", choices=("text", "json"), default="text"
     )
-
-    design_parser = subparsers.add_parser(
-        "design",
-        help="Generate and render deterministic agent-workflow vector designs.",
-    )
-
-    city_parser = subparsers.add_parser(
-        "city",
-        help="Build and render the agent city across every program under a root.",
-    )
-    city_parser.add_argument("root", type=Path)
-    city_parser.add_argument(
-        "--format", choices=("text", "json", "svg", "live"), default="text"
-    )
-    city_parser.add_argument("--theme", choices=("lab", "day"), default="lab")
-    city_parser.add_argument(
-        "--environment",
-        choices=ENVIRONMENT_NAMES,
-        default="metropolitan",
-        help="Live-world environment preset.",
-    )
-    city_parser.add_argument(
-        "--world",
-        type=Path,
-        default=None,
-        help="Validated world manifest controlling live-world presentation.",
-    )
-    city_parser.add_argument("--output", type=Path, default=None)
-    city_parser.add_argument(
-        "--name",
-        default=None,
-        help=f"City name to render (default: {CITY_NAME}).",
-    )
-    city_parser.add_argument(
-        "--serve",
-        action="store_true",
-        help="Serve the live city and drive it from real executions under root.",
-    )
-    city_parser.add_argument("--host", default="127.0.0.1")
-    city_parser.add_argument("--port", type=int, default=8787)
-    city_parser.add_argument(
-        "--trace",
-        type=Path,
-        default=None,
-        help=(
-            "Run the city once and write one replayable trace per resident "
-            "into this directory, without serving. Use with: kosika replay <trace>"
-        ),
-    )
-    design_subparsers = design_parser.add_subparsers(
-        dest="design_command", required=True
-    )
-    design_generate_parser = design_subparsers.add_parser(
-        "generate", help="Generate a design manifest from a Kosika source file."
-    )
-    design_generate_parser.add_argument("source", type=Path)
-    design_generate_parser.add_argument("--output", type=Path, required=True)
-    design_generate_parser.add_argument("--id", required=True)
-    design_generate_parser.add_argument("--name", required=True)
-    design_generate_parser.add_argument("--network", type=Path)
-    design_validate_parser = design_subparsers.add_parser(
-        "validate", help="Validate a design manifest."
-    )
-    design_validate_parser.add_argument("path", type=Path)
-    design_show_parser = design_subparsers.add_parser(
-        "show", help="Render a design manifest as text, JSON, Mermaid, or SVG."
-    )
-    design_show_parser.add_argument("path", type=Path)
-    design_show_parser.add_argument(
-        "--format", choices=("text", "json", "mermaid", "svg"), default="text"
-    )
-    design_show_parser.add_argument(
-        "--view", choices=("workflow", "network", "mindmap"), default="workflow"
-    )
-    design_show_parser.add_argument(
-        "--theme",
-        choices=DESIGN_THEMES,
-        default="lab",
-        help="SVG presentation theme. Never affects the design digest.",
-    )
-    design_show_parser.add_argument("--output", type=Path)
 
     manifest_parser = subparsers.add_parser("manifest")
     manifest_subparsers = manifest_parser.add_subparsers(
@@ -3142,134 +3008,6 @@ def main() -> int:
             return 0
         except (SkillCatalogError, SkillRoutingError) as exc:
             print(f"Skill selection failed safely: {exc}", file=sys.stderr)
-            return 2
-    if args.command == "city":
-        try:
-            world = load_world_manifest(args.world) if args.world is not None else None
-            if args.trace is not None:
-                from .city_live import capture_trace
-
-                report = capture_trace(args.root, args.trace)
-                print(
-                    f"Captured {report['runs']} resident runs into {report['directory']}"
-                )
-                print(
-                    f"  replayable: {report['replayable']}"
-                    f"   awaiting approval: {report['awaiting_approval']}"
-                )
-                for entry in report["entries"]:
-                    if entry.get("replayable"):
-                        result = json.dumps(entry["replayed"], sort_keys=True)
-                        print(f"  [ok]   {entry['workflow']} -> {result[:96]}")
-                    else:
-                        print(
-                            f"  [held] {entry['workflow']} -> {entry.get('replay_error', '')}"
-                        )
-                if report["replayable"]:
-                    first = next(
-                        entry for entry in report["entries"] if entry.get("replayable")
-                    )
-                    print(f"Replay one with: kosika replay {first['trace']}")
-                return 0
-            if args.serve:
-                from .city_live import serve_city
-
-                name = world.name if world is not None else (args.name or CITY_NAME)
-                environment = (
-                    world.environment if world is not None else args.environment
-                )
-                labels = world.labels_by_domain if world is not None else None
-                print(f"{name} live world on http://{args.host}:{args.port}")
-                serve_city(
-                    args.root,
-                    host=args.host,
-                    port=args.port,
-                    name=name,
-                    environment=environment,
-                    world=world,
-                )
-                return 0
-            city = build_city(
-                args.root,
-                name=world.name if world is not None else args.name,
-            )
-            if world is not None:
-                world.validate_city(city)
-            environment = world.environment if world is not None else args.environment
-            labels = world.labels_by_domain if world is not None else None
-            if args.format == "json":
-                city_output = json.dumps(city.to_dict(), indent=2, sort_keys=True)
-            elif args.format == "svg":
-                city_output = render_cityscape_svg(city, theme=args.theme)
-            elif args.format == "live":
-                from .city_live import render_city_live
-
-                city_output = render_city_live(
-                    city,
-                    environment=environment,
-                    world_name=world.name if world is not None else None,
-                    world_labels=labels,
-                    world_kinds=(world.kinds_by_domain if world is not None else None),
-                    world_buildings=(
-                        world.building_ids_by_resident if world is not None else None
-                    ),
-                    world_camera=world.camera if world is not None else "isometric",
-                    render_style=world.render_style if world is not None else "city",
-                )
-            else:
-                city_output = city.to_text()
-            if args.output is not None:
-                args.output.parent.mkdir(parents=True, exist_ok=True)
-                args.output.write_text(city_output, encoding="utf-8")
-                print(f"City written: {args.output}")
-            else:
-                print(city_output)
-            return 0
-        except (OSError, CityError, WorldError) as exc:
-            print(f"City failed safely: {exc}", file=sys.stderr)
-            return 2
-    if args.command == "design":
-        try:
-            if args.design_command == "generate":
-                program = load_program(args.source)
-                check(program)
-                attached_network: NetworkManifest | None = None
-                if args.network is not None:
-                    attached_network = load_network_manifest(args.network)
-                design_manifest = build_design_from_program(
-                    program,
-                    args.id,
-                    args.name,
-                    network=attached_network,
-                )
-                write_design_manifest(design_manifest, args.output)
-                print(f"Generated design manifest: {args.output}")
-                print(
-                    f"Design contains {len(design_manifest.nodes)} node(s) and "
-                    f"{len(design_manifest.edges)} edge(s)"
-                )
-                return 0
-            design_manifest = load_design_manifest(args.path)
-            if args.design_command == "validate":
-                print(f"Valid design manifest: {args.path}")
-                print(
-                    f"Design contains {len(design_manifest.nodes)} node(s), "
-                    f"{len(design_manifest.edges)} edge(s), and "
-                    f"{len(design_manifest.views)} view(s)"
-                )
-                return 0
-            rendered = render_design(
-                design_manifest, args.format, args.view, getattr(args, "theme", "lab")
-            )
-            if args.output is not None:
-                args.output.parent.mkdir(parents=True, exist_ok=True)
-                args.output.write_text(rendered + "\n", encoding="utf-8")
-                print(f"Rendered {args.format} design: {args.output}")
-            else:
-                print(rendered)
-            return 0
-        except (OSError, ValueError) as exc:
-            print(f"Design failed: {exc}", file=sys.stderr)
             return 2
     if args.command == "agent":
         return _run_agent_command(args, parser)
@@ -4123,26 +3861,17 @@ def main() -> int:
                 if granted is None:
                     raise
                 approvals.append(granted)
-        published_events: tuple[dict[str, Any], ...] | None = None
         if args.event_trace is not None:
-            published_events = _publish_run_events(args, args.trace)
-        if args.design is not None and published_events is not None:
-            _publish_timeline(args, published_events)
+            _publish_run_events(args, args.trace)
     except ApprovalPending as exc:
-        normalized = None
         if args.event_trace is not None:
             try:
-                normalized = write_event_jsonl(
+                write_event_jsonl(
                     args.event_trace,
                     [_cli_approval_event(1)],
                 )
             except (EventValidationError, OSError) as stream_exc:
                 print(f"Event stream write failed: {stream_exc}", file=sys.stderr)
-                return 2
-            try:
-                _publish_timeline(args, normalized)
-            except (DesignError, OSError) as design_exc:
-                print(f"Timeline design failed: {design_exc}", file=sys.stderr)
                 return 2
         print(json.dumps({"status": exc.code, **exc.request}, indent=2))
         return 3

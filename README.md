@@ -53,7 +53,7 @@ verification record, and prioritized K01–K12 backlog.
 | `examples/` | Example `.kos` programs and their fixtures |
 | `benchmarks/` | The write-from-spec benchmark and its results |
 | `tests/` | The test suite |
-| `design/`, `network/`, `ui/`, `hive/`, `desktop/` | Diagram output, network manifests, UI styles, agent notes, and the desktop app scaffold |
+| `network/`, `ui/`, `hive/` | Network manifests, UI styles, and agent notes |
 | `archive/` | Historical documents, not used by the code |
 | `TUTORIAL.md`, `AGENT_GUIDE.md`, `KOSIKA.md`, `KOSIKA_PLAN.md` | Tutorial, guide for AI authors, language contract, and plan |
 | `DEVELOPMENT.md`, `KOSIKA_VISION.md` | Developer guide and long-term vision |
@@ -1983,80 +1983,15 @@ environment. The assistant receives no tools, cannot execute workflows or shell 
 tool-call or truncated responses. The checker, schema validation, replay, and approval system remain
 authoritative; assistant text is an explanation, not permission to mutate anything.
 
-## Live AI worlds
+## Networks
 
-Kosika can render the same checked agent system as a live, event-backed world.
-The world view is not a simulation: a resident only wakes, walks, or lights up
-when the runtime publishes an event for that real agent or tool call.
-
-Choose a deterministic environment preset for the live isometric view:
-
-```powershell
-python -m kosika.cli city examples `
-  --format live `
-  --environment forest `
-  --serve `
-  --port 8787
-```
-
-Available environments are `metropolitan`, `urban`, `suburban`, `rural`,
-`desert`, `forest`, and `water`. The Kosika declarations remain authoritative;
-the environment changes terrain, atmosphere, roads, and presentation without
-changing capabilities or execution behavior.
-
-World manifests customize the presentation without changing Kosika execution
-contracts. The reference Forest Knowledge Reserve maps real knowledge domains
-and residents from `examples/city` to named institutions:
-
-```powershell
-python -m kosika.cli city examples/city `
-  --format live `
-  --world examples/worlds/forest_knowledge_reserve.json `
-  --output forest-knowledge-reserve.html
-```
-
-The same manifest can be served live with `--serve`. Its buildings are labels
-over the checked domains; the event stream and replay traces remain generated
-by real Kosika executions.
-
-The reference manifest uses the `isometric_lowpoly` render style: an original
-Three.js game-world view with procedural landmark buildings, layered roofs,
-flags, windows, a plaza fountain, rocks, water tiles, terrain, trees, shadows,
-and animated resident figures. Materials use generated hand-painted-style
-textures, while the page retains the deterministic SVG fallback if WebGL or
-the optional glTF loader is unavailable. Runtime event identity remains
-authoritative and drives the 3D activity state.
-
-## Network and vector design
-
-Kosika also includes a declarative network directory and deterministic vector design layer for agent
-workflows, model boundaries, MCP nodes, devices, memory graphs, and virtual spaces. Network manifests
-are validated before rendering and can be indexed without connecting to external systems:
+Kosika also includes a declarative network directory for agent workflows,
+model boundaries, MCP nodes, devices, memory graphs, and virtual spaces.
+Network manifests are validated before use and can be indexed without
+connecting to external systems:
 
 ```text
 python -m kosika.cli network validate network/example-network.json
 python -m kosika.cli network show network/example-network.json --format mermaid
 python -m kosika.cli network index network --recursive --format text
 ```
-
-Generate a design manifest from checked Kosika source, then render a modern workflow, network, or code
-mindmap view as SVG, Mermaid, JSON, or terminal text:
-
-```text
-python -m kosika.cli design generate examples/test_host_live.kos `
-  --id test-host.design `
-  --name "Test Host Agent Workflow" `
-  --network network/example-network.json `
-  --output design/test-host.json
-python -m kosika.cli design show design/test-host.json `
-  --format svg --view workflow --output design/test-host.svg
-python -m kosika.cli design show design/test-host.json `
-  --format svg --view network --output design/test-host-network.svg
-python -m kosika.cli design show design/test-host.json `
-  --format svg --view mindmap --output design/test-host-mindmap.svg
-```
-
-The design graph is derived from the checked AST, bounded module graph, and declared network manifest.
-For composed programs it includes module containers, declaration-ownership edges, and direct import edges.
-It uses curved edges, arrowheads, category colors, legends, and bounded deterministic layout; it does
-not ask a model to infer program structure.

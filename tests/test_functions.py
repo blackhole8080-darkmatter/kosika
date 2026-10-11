@@ -7,7 +7,6 @@ from pathlib import Path
 
 from kosika.ast import FieldExpr, FunctionCall, FunctionCallExpr, RecordExpr
 from kosika.checker import CheckError, check
-from kosika.design import build_design_from_program
 from kosika.devtools import inspect_trace
 from kosika.explain import summarize_trace
 from kosika.mindmap import build_mindmap
@@ -318,7 +317,7 @@ class FunctionTests(unittest.TestCase):
 
             self.assertEqual(replay(trace), result)
 
-    def test_function_modules_mindmap_and_design(self) -> None:
+    def test_function_modules_and_mindmap(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "library.kos").write_text(
@@ -348,10 +347,6 @@ class FunctionTests(unittest.TestCase):
             self.assertTrue(
                 any(edge["relation"] == "function_call" for edge in mindmap["edges"])
             )
-            design = build_design_from_program(
-                program, design_id="functions", name="Functions"
-            )
-            self.assertTrue(any(node["kind"] == "function" for node in design.nodes))
 
             (root / "private.kos").write_text(
                 "export [Person]\n"

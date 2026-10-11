@@ -50,7 +50,7 @@ class CliCoverageTests(unittest.TestCase):
         usage = output.getvalue().split("positional arguments:", 1)[0]
         self.assertIn("diagnostics-coverage", usage)
         self.assertIn("editor", usage)
-        self.assertIn("city", usage)
+        self.assertNotIn("city", usage)
         self.assertIn("benchmark", usage)
         self.assertIn("corpus", usage)
 
@@ -142,32 +142,6 @@ class CliCoverageTests(unittest.TestCase):
         self.assertIn('"answer": "The notes schedule launch for June 1."', output)
         self.assertIn('"sources": [', output)
         self.assertIn("Model steps: 2", output)
-
-    def test_city_command_renders_reference_world_manifest(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            output_path = Path(directory) / "forest-world.html"
-            result, output = self.call_cli(
-                "city",
-                str(ROOT / "examples" / "city"),
-                "--format",
-                "live",
-                "--world",
-                str(ROOT / "examples" / "worlds" / "forest_knowledge_reserve.json"),
-                "--output",
-                str(output_path),
-            )
-
-            self.assertEqual(result, 0)
-            self.assertIn("City written:", output)
-            page = output_path.read_text(encoding="utf-8")
-            self.assertIn(
-                "<title>Forest Knowledge Reserve live forest world</title>", page
-            )
-            self.assertIn('data-world="Forest Knowledge Reserve"', page)
-            self.assertIn("Archive Lodge", page)
-            self.assertIn('data-camera="isometric"', page)
-            self.assertIn('data-building="archive-lodge"', page)
-            self.assertIn("Research Institute", page)
 
     def test_agent_command_resumes_completed_journal(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

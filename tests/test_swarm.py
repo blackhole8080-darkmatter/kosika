@@ -14,7 +14,6 @@ from unittest.mock import patch
 from kosika import cli
 from kosika.ast import SwarmDecl
 from kosika.checker import CheckError, check
-from kosika.design import build_design_from_program, render_design
 from kosika.explain import (
     build_explanation,
     to_explanation_outsider,
@@ -236,34 +235,6 @@ class SwarmVisualisationTests(unittest.TestCase):
         self.assertIn("approval required: True", text)
         self.assertIn("a swarm is not a workflow entry point", text)
         self.assertNotIn("EditorialBoard runs review", text)
-
-    def test_design_contains_a_swarm_node_and_an_approval_edge(self) -> None:
-        manifest = build_design_from_program(
-            load_program(EXAMPLE), "swarm.design", "Editorial Board"
-        )
-        kinds = {node["id"]: node["kind"] for node in manifest.nodes}
-        self.assertEqual(kinds["swarm.EditorialBoard"], "swarm")
-        self.assertEqual(kinds["approval.swarm.EditorialBoard"], "approval")
-        edges = {
-            (edge["source"], edge["kind"], edge["target"]) for edge in manifest.edges
-        }
-        self.assertIn(
-            (
-                "swarm.EditorialBoard",
-                "requires_approval",
-                "approval.swarm.EditorialBoard",
-            ),
-            edges,
-        )
-        self.assertIn(("swarm.EditorialBoard", "uses", "agent.researcher"), edges)
-        self.assertIn(("swarm.EditorialBoard", "invokes", "workflow.review"), edges)
-
-    def test_design_renders_every_format_with_a_swarm(self) -> None:
-        manifest = build_design_from_program(
-            load_program(EXAMPLE), "swarm.design", "Editorial Board"
-        )
-        for output_format in ("text", "json", "mermaid", "svg"):
-            self.assertTrue(render_design(manifest, output_format, "workflow", "lab"))
 
 
 class SwarmCliTests(unittest.TestCase):
