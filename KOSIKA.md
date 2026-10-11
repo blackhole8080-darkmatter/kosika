@@ -492,11 +492,14 @@ think = "classify"  expression "into" expression [ "using" identifier ]
   `hits = execute hands.search(q) otherwise {matches: []}` and
   `case _ { {answer: "", quote: ""} }`. The value has the result type of
   the step's call (for a `match`, of its first branch that is a call) and
-  is checked against it. It is evaluated with no names in scope, so it
-  MUST NOT use a parameter or an earlier step; write a function for
-  that. It stands for a call of a generated function named
-  `WORKFLOW$STEP$otherwise` or `WORKFLOW$STEP$caseN`, which takes nothing
-  and returns it, so traces and replay treat it as any function step. A
+  is checked against it. It MAY use the workflow's parameters and the
+  steps before its own; it MUST NOT use its own step or a later one. It
+  stands for a call of a generated function named
+  `WORKFLOW$STEP$otherwise` or `WORKFLOW$STEP$caseN`, which takes the
+  names the value uses as its parameters and returns the value, so traces
+  and replay treat it as any function step. A check error about such a
+  value names the step and where the value stands, not the generated
+  name. A
   value with no call beside it to take a type from is a check error
   (`check/value-step`).
 

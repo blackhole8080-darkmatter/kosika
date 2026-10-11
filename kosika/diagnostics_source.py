@@ -65,6 +65,7 @@ RAISE_SOURCES: Mapping[str, str] = {
 PASS_THROUGH: Mapping[str, str] = {
     "kosika/parser.py": "re-raises a lexer/parser ValueError unchanged",
     "kosika/modules.py": "re-raises a thinking-step error unchanged",
+    "kosika/checker.py": "re-raises a check error with made-up names put in the writer's words",
 }
 
 #: Placeholder substituted for an interpolated value when rendering a

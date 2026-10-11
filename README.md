@@ -212,6 +212,16 @@ hits = execute hands.search_files(".", query) otherwise {matches: []}
 It is checked against the type the call would have returned. The same works
 as a branch of a step's `match`: `case _ { {answer: "", quote: ""} }`.
 
+The value may use the workflow's inputs and the steps before it:
+
+```kosika
+reply = use_model helper(msg.text) otherwise {text: "I could not answer: " + msg.text}
+```
+
+If such a value is wrong, the error names the step and where the value
+stands, for example "Step 'reply' in workflow 'main': the value after
+`otherwise` ...".
+
 ## How good is it? The benchmark
 
 `benchmarks/researcher` asks the researcher agent forty questions about a

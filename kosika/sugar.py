@@ -33,6 +33,7 @@ from typing import Any
 
 from .ast import (
     AgentCall,
+    Field,
     FieldExpr,
     FunctionCall,
     FunctionCallExpr,
@@ -248,22 +249,52 @@ def _is_value(call: object) -> bool:
     return isinstance(call, FunctionCall) and call.function_name == VALUE_CALL
 
 
+def _names_used(value: Any) -> set[str]:
+    """Every variable an expression mentions."""
+
+    if isinstance(value, VariableExpr):
+        return {value.name}
+    if isinstance(value, (list, tuple)):
+        return set().union(*(_names_used(item) for item in value)) if value else set()
+    if is_dataclass(value) and not isinstance(value, type):
+        found: set[str] = set()
+        for item in fields(value):
+            found |= _names_used(getattr(value, item.name))
+        return found
+    return set()
+
+
 def lower_values(program: Program) -> Program:
-    """Replace each value written as a step call by a function returning it."""
+    """Replace each value written as a step call by a function returning it.
+
+    The value may use the workflow's inputs and the steps before it, as in
+    `otherwise {text: msg.text}`: each one it names becomes a parameter of
+    the function, handed in where the value stood.
+    """
 
     made: list[FunctionDecl] = []
+    # What the value may name: filled in per workflow, step by step.
+    seen: dict[str, str] = {}
 
     def stand_in(call: Any, name: str, type_name: str | None) -> Any:
         if not _is_value(call) or type_name is None:
             # With no call to take the type from, the value is left as it
             # is and the checker says what is missing.
             return call
-        made.append(FunctionDecl(name, (), type_name, call.arguments[0][1]))
-        return FunctionCall(name)
+        value = call.arguments[0][1]
+        used = sorted(_names_used(value) & set(seen))
+        made.append(
+            FunctionDecl(
+                name, tuple(Field(item, seen[item]) for item in used), type_name, value
+            )
+        )
+        return FunctionCall(name, tuple((item, VariableExpr(item)) for item in used))
 
     workflows = []
     for workflow in program.workflows:
         steps = []
+        seen.clear()
+        seen.update({field.name: field.type_name for field in workflow.parameters})
         for step in workflow.steps:
             calls = [call for _, call in step.branches] or [step.call]
             known = next(
@@ -293,6 +324,9 @@ def lower_values(program: Program) -> Program:
                 if fallback is not step.fallback:
                     changes["fallback"] = fallback
             steps.append(replace(step, **changes) if changes else step)
+            if known is not None:
+                # From here on, later values may name this step.
+                seen[step.name] = known
         workflows.append(replace(workflow, steps=tuple(steps)))
     if not made:
         return program

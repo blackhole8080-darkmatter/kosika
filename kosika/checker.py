@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import fields, is_dataclass, replace
 from typing import Any
 
@@ -1289,7 +1290,45 @@ def _check_parallel(program: Program) -> None:
                     )
 
 
+_MADE_NAME_RE = re.compile(
+    r"(?:Step |Function )?'(?:function )?([A-Za-z_]\w*)\$([A-Za-z_]\w*)\$(otherwise|case(\d+))'"
+)
+
+
+def plain_names(message: str) -> str:
+    """A message with the names Kosika made up put back into the writer's words.
+
+    A value written where a call belongs is kept as a function whose name
+    joins the workflow, the step and where it stood. Nobody wrote that name,
+    so an error about it is said in terms of the step.
+    """
+
+    def said(found: "re.Match[str]") -> str:
+        where = (
+            "after `otherwise`"
+            if found.group(3) == "otherwise"
+            else f"in case {found.group(4)}"
+        )
+        return (
+            f"Step {found.group(2)!r} in workflow {found.group(1)!r}: the value {where}"
+        )
+
+    return _MADE_NAME_RE.sub(said, message)
+
+
 def check(program: Program) -> None:
+    """Check a program, saying any fault in the words its writer used."""
+
+    try:
+        _check(program)
+    except CheckError as exc:
+        plain = plain_names(str(exc))
+        if plain == str(exc):
+            raise
+        raise CheckError(plain) from exc
+
+
+def _check(program: Program) -> None:
     for workflow in program.workflows:
         for step in workflow.steps:
             calls = [step.call, step.fallback, *(c for _, c in step.branches)]

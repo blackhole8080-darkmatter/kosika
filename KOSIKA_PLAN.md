@@ -2701,6 +2701,26 @@ gate: without them a parser written in Kosika has nothing to return.
   correct. The doctor and workbench evals reach only their advice step, not
   the steps that start programs.
 
+### Two rough edges in the language
+
+- A value written where a call belongs, such as `otherwise {matches: []}`,
+  could not use anything: `otherwise {text: msg.text}` was an error, and a
+  function had to be written for it. It may now use the workflow's inputs
+  and the steps before it. Each name it uses becomes a parameter of the
+  function Kosika makes for it, with that name's type, so it is checked
+  like any other code and a step cannot use itself or a later step.
+- An error about such a value used to name the function Kosika made, as in
+  "Step 'function main$hits$otherwise' array item expects ...". It now says
+  "Step 'hits' in workflow 'main': the value after `otherwise` array item
+  expects ...". The line and column reported also became the step's own,
+  where before they pointed elsewhere.
+- `tests/test_value_names.py`, 6 tests.
+- Not claimed: only check errors are reworded. The generated name still
+  appears in traces and in `kosika story`, which already say it in words.
+  The third rough edge listed earlier, the written contract falling behind
+  the code, was handled as each change above was made rather than as a
+  review of the whole contract; that review has not been done.
+
 ## Standard coding-agent procedure
 
 1. Inspect `git status`, the relevant source files, tests, and this plan.
