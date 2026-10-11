@@ -18,6 +18,8 @@ import re
 from dataclasses import dataclass
 from typing import Any, Callable, Iterable
 
+from . import matrices
+
 #: The element type of the receiving array, in a signature.
 ELEMENT = "$element"
 #: A receiver that is any array.
@@ -418,6 +420,90 @@ METHODS: tuple[Method, ...] = (
         "Text",
         lambda items, separator: separator.join(items),
     ),
+    # Vectors and matrices. A vector is a Number[], a matrix a Number[][].
+    # The arithmetic is in kosika.matrices: exact for whole numbers, and done
+    # by NumPy for decimals when it is installed.
+    Method(
+        "Number[]", "plus", (("other", "Number[]"),), "Number[]", matrices.vector_plus
+    ),
+    Method(
+        "Number[]", "minus", (("other", "Number[]"),), "Number[]", matrices.vector_minus
+    ),
+    Method(
+        "Number[]", "scaled", (("by", "Number"),), "Number[]", matrices.vector_scaled
+    ),
+    Method("Number[]", "dot", (("other", "Number[]"),), "Number", matrices.dot),
+    Method("Number[]", "cross", (("other", "Number[]"),), "Number[]", matrices.cross),
+    Method("Number[]", "norm", (), "Number", matrices.norm),
+    Method("Number[]", "mean", (), "Number", matrices.mean),
+    Method("Number", "identity", (), "Number[][]", matrices.identity),
+    Method("Number", "zeros", (("columns", "Number"),), "Number[][]", matrices.zeros),
+    Method("Number[][]", "rows", (), "Number", lambda m: matrices.shape(m)[0]),
+    Method("Number[][]", "columns", (), "Number", lambda m: matrices.shape(m)[1]),
+    Method("Number[][]", "transpose", (), "Number[][]", matrices.transpose),
+    Method(
+        "Number[][]", "plus", (("other", "Number[][]"),), "Number[][]", matrices.plus
+    ),
+    Method(
+        "Number[][]", "minus", (("other", "Number[][]"),), "Number[][]", matrices.minus
+    ),
+    Method("Number[][]", "scaled", (("by", "Number"),), "Number[][]", matrices.scaled),
+    Method(
+        "Number[][]", "times", (("other", "Number[][]"),), "Number[][]", matrices.times
+    ),
+    Method(
+        "Number[][]", "apply", (("vector", "Number[]"),), "Number[]", matrices.apply
+    ),
+    Method(
+        "Number[][]", "power", (("exponent", "Number"),), "Number[][]", matrices.power
+    ),
+    Method("Number[][]", "trace", (), "Number", matrices.trace),
+    Method("Number[][]", "determinant", (), "Number", matrices.determinant),
+    Method("Number[][]", "inverse", (), "Number[][]", matrices.inverse),
+    Method("Number[][]", "solve", (("right", "Number[]"),), "Number[]", matrices.solve),
+    # Relations and graphs, as matrices of 0s and 1s.
+    Method("Number[][]", "is_reflexive", (), "Bool", matrices.is_reflexive),
+    Method("Number[][]", "is_symmetric", (), "Bool", matrices.is_symmetric),
+    Method("Number[][]", "is_antisymmetric", (), "Bool", matrices.is_antisymmetric),
+    Method("Number[][]", "is_transitive", (), "Bool", matrices.is_transitive),
+    Method(
+        "Number[][]",
+        "bool_times",
+        (("other", "Number[][]"),),
+        "Number[][]",
+        matrices.bool_times,
+    ),
+    Method("Number[][]", "closure", (), "Number[][]", matrices.closure),
+    Method(
+        "Number[][]",
+        "adjacency",
+        (("nodes", "Number"),),
+        "Number[][]",
+        matrices.adjacency,
+    ),
+    Method(
+        "Number[][]",
+        "directed_adjacency",
+        (("nodes", "Number"),),
+        "Number[][]",
+        lambda edges, nodes: matrices.adjacency(edges, nodes, True),
+    ),
+    Method("Number[][]", "degrees", (), "Number[]", matrices.degrees),
+    Method(
+        "Number[][]",
+        "neighbours",
+        (("node", "Number"),),
+        "Number[]",
+        matrices.neighbours,
+    ),
+    Method(
+        "Number[][]",
+        "shortest_path",
+        (("start", "Number"), ("end", "Number")),
+        "Number[]",
+        matrices.shortest_path,
+    ),
+    Method("Number[][]", "components", (), "Number[][]", matrices.components),
 )
 
 
@@ -444,6 +530,12 @@ def resolve_for_value(value: Any, name: str) -> Method:
     if isinstance(value, dict):
         return resolve("Any{}", name)
     if isinstance(value, list):
+        # A vector and a matrix share method names, such as `plus`. The
+        # value itself says which one this is.
+        exact = _value_type(value)
+        for method in METHODS:
+            if method.name == name and method.receiver == exact:
+                return method
         # The checker already matched the element type; at run time an empty
         # array has none to inspect, so array methods are found by name alone.
         for method in METHODS:
