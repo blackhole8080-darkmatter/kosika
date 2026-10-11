@@ -247,7 +247,9 @@ class StudioSessionTests(unittest.TestCase):
             [{"path": "notes/made.txt", "kind": "new", "bytes": 17}],
         )
         kept = app.end_session("maker/main.kos", True)
-        self.assertEqual(kept, {"kept": True, "applied": ["notes/made.txt"]})
+        self.assertEqual(
+            kept, {"kept": True, "applied": ["notes/made.txt"], "left": []}
+        )
         self.assertEqual(
             (self.real / "notes" / "made.txt").read_text(encoding="utf-8"),
             "made by the agent",
@@ -258,11 +260,53 @@ class StudioSessionTests(unittest.TestCase):
         app = self.app(True)
         self.go(app)
         self.assertEqual(
-            app.end_session("maker/main.kos", False), {"kept": False, "applied": []}
+            app.end_session("maker/main.kos", False),
+            {"kept": False, "applied": [], "left": []},
         )
         self.assertFalse((self.real / "notes").exists())
         with self.assertRaises(studio.AppError):
             app.end_session("maker/main.kos", False)
+
+    def two_changes(self) -> studio.App:
+        app = self.app(True)
+        self.go(app)
+        session = next(iter(app._sessions.values()))
+        (session.work / "extra.txt").write_text("not wanted", encoding="utf-8")
+        return app
+
+    def test_only_the_files_named_are_brought_back(self) -> None:
+        app = self.two_changes()
+        kept = app.end_session("maker/main.kos", True, ["notes/made.txt"])
+        self.assertEqual(
+            kept,
+            {"kept": True, "applied": ["notes/made.txt"], "left": ["extra.txt"]},
+        )
+        self.assertTrue((self.real / "notes" / "made.txt").exists())
+        self.assertFalse((self.real / "extra.txt").exists())
+        # What was left behind went with the session.
+        self.assertFalse(app.session("maker/main.kos")["open"])
+
+    def test_naming_a_file_that_did_not_change_brings_nothing_back(self) -> None:
+        app = self.two_changes()
+        with self.assertRaisesRegex(studio.AppError, "Not among the session's changes"):
+            app.end_session("maker/main.kos", True, ["notes/made.txt", "../x.txt"])
+        self.assertFalse((self.real / "notes").exists())
+        # The session is still open, so the person can answer again.
+        self.assertTrue(app.session("maker/main.kos")["open"])
+
+    def test_naming_no_files_brings_nothing_and_ends_the_session(self) -> None:
+        app = self.two_changes()
+        kept = app.end_session("maker/main.kos", True, [])
+        self.assertEqual(kept["applied"], [])
+        self.assertEqual(sorted(kept["left"]), ["extra.txt", "notes/made.txt"])
+        self.assertFalse((self.real / "notes").exists())
+
+    def test_the_page_lets_a_file_be_left_behind(self) -> None:
+        page = (Path(studio.__file__).parent / "app_assets" / "index.html").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("Untick a file to leave it behind", page)
+        self.assertIn("left behind and thrown away", page)
 
     def test_without_sessions_each_change_still_waits_for_a_yes(self) -> None:
         app = self.app(False)

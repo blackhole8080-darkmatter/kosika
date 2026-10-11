@@ -118,10 +118,64 @@ def _launch(command: Sequence[str], timeout: float) -> subprocess.CompletedProce
     )
 
 
+#: The WSL system sessions run in, or None for the one WSL uses by default.
+_system: str | None = None
+
+
+def systems(launcher: Launcher = _launch) -> list[str]:
+    """The Linux systems WSL has on this computer. Empty off Windows."""
+
+    if sys.platform != "win32" or shutil.which("wsl.exe") is None:
+        return []
+    try:
+        listed = subprocess.run(
+            ["wsl.exe", "-l", "-q"],
+            capture_output=True,
+            timeout=30.0,
+            stdin=subprocess.DEVNULL,
+            check=False,
+        ).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    # WSL answers this one in UTF-16.
+    text = listed.decode("utf-16-le", errors="ignore").replace("\ufeff", "")
+    return [line.strip() for line in text.splitlines() if line.strip()]
+
+
+def use_system(name: str | None, installed: Sequence[str] | None = None) -> None:
+    """Run sessions in the named WSL system, such as kali-linux.
+
+    The name must be one WSL has. It is handed to wsl.exe as one argument,
+    never through a shell.
+    """
+
+    global _system
+    if name is None:
+        _system = None
+        return
+    known = list(systems() if installed is None else installed)
+    if name not in known:
+        raise SessionError(
+            f"WSL has no system named {name!r}. It has: "
+            + (", ".join(known) if known else "none")
+        )
+    _system = name
+
+
+def system_name() -> str:
+    """The system sessions run in, in words for a person."""
+
+    if sys.platform != "win32":
+        return "this computer"
+    return _system or "the default WSL system"
+
+
 def _prefix() -> list[str]:
     """What goes before a Linux command so that it runs in Linux."""
 
-    return ["wsl.exe", "--"] if sys.platform == "win32" else []
+    if sys.platform != "win32":
+        return []
+    return ["wsl.exe", "-d", _system, "--"] if _system else ["wsl.exe", "--"]
 
 
 def unavailable(launcher: Launcher = _launch) -> str | None:

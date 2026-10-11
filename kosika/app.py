@@ -68,7 +68,7 @@ from .motion import check_scene, to_html, to_svg
 from .project_index import project_index
 from .project_map import beginner_map, read_note, save_note
 from .runtime import run
-from .sessions import Session, SessionError, default_home
+from .sessions import Session, SessionError, default_home, system_name
 from .skills import SKILLS_FOLDER, load_skill_notes
 from .starter import KINDS, StarterError, create_starter
 from .story import StoryError, build_story, read_trace
@@ -733,7 +733,11 @@ class App:
 
         agent = self.agent(agent_id)
         found = self._sessions.get(self._session_key(agent.path.parent))
-        view: dict[str, Any] = {"on": self.in_session, "open": found is not None}
+        view: dict[str, Any] = {
+            "on": self.in_session,
+            "open": found is not None,
+            "system": system_name(),
+        }
         if found is not None:
             changes = found.changes()
             view.update(
@@ -758,9 +762,15 @@ class App:
         except SessionError as exc:
             raise AppError(str(exc), 404) from exc
 
-    def end_session(self, agent_id: str, keep: bool) -> dict[str, Any]:
+    def end_session(
+        self, agent_id: str, keep: bool, paths: list[str] | None = None
+    ) -> dict[str, Any]:
         """Bring the session's changes into the real folder, or throw them
-        away. Either way the session ends. This is the person's yes or no."""
+        away. Either way the session ends. This is the person's yes or no.
+
+        With `paths`, only those changed files are brought back; the rest
+        are thrown away with the session.
+        """
 
         agent = self.agent(agent_id)
         key = self._session_key(agent.path.parent)
@@ -768,13 +778,27 @@ class App:
         if found is None:
             raise AppError("This agent has no open session", 409)
         with self._lock:
+            waiting = [change.path for change in found.changes()]
+            if keep and paths is not None:
+                unknown = sorted(set(paths) - set(waiting))
+                if unknown:
+                    # Nothing is brought back and the session stays open.
+                    raise AppError(
+                        "Not among the session's changes: " + ", ".join(unknown[:5]),
+                        422,
+                    )
             try:
-                applied = found.apply() if keep else []
+                applied = found.apply(paths) if keep else []
             except (SessionError, OSError) as exc:
                 raise AppError(f"Could not bring the changes back: {exc}", 422) from exc
             found.discard()
             del self._sessions[key]
-        return {"kept": keep, "applied": [change.path for change in applied]}
+        brought = [change.path for change in applied]
+        return {
+            "kept": keep,
+            "applied": brought,
+            "left": [path for path in waiting if path not in brought] if keep else [],
+        }
 
     def mcp_tools(self) -> dict[str, Any]:
         """Every granted MCP server with the tools it offers, and for each
@@ -1357,6 +1381,19 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                 raise AppError("The request must be an object")
             return body
 
+        def _session_answer(self, agent_id: str) -> tuple[str, bool, list[str] | None]:
+            """The person's answer about a session: keep it or not, and if
+            they named files, exactly which."""
+
+            body = self._body()
+            paths = body.get("paths")
+            if paths is not None and (
+                not isinstance(paths, list)
+                or any(not isinstance(path, str) for path in paths)
+            ):
+                raise AppError("paths must be a list of file names")
+            return agent_id, body.get("keep") is True, paths
+
         def _allowed(self, query: dict[str, list[str]]) -> bool:
             host = self.headers.get("Host", "")
             port = port_holder[0]
@@ -1476,7 +1513,7 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                 elif method == "POST" and url.path == "/api/session":
                     self._json(
                         200,
-                        app.end_session(agent_id, self._body().get("keep") is True),
+                        app.end_session(*self._session_answer(agent_id)),
                     )
                 elif method == "GET" and url.path == "/api/mcp":
                     self._json(200, app.mcp_tools())

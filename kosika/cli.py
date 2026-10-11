@@ -2271,6 +2271,15 @@ def build_parser() -> argparse.ArgumentParser:
             ),
         )
         app_parser.add_argument(
+            "--session-system",
+            metavar="NAME",
+            help=(
+                "On Windows, the WSL system sessions run in, such as "
+                "kali-linux. It must have bubblewrap. Without this, the "
+                "system WSL uses by default."
+            ),
+        )
+        app_parser.add_argument(
             "--mcp",
             action="append",
             default=[],
@@ -3411,9 +3420,22 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 2
+        if args.session_system and not args.in_session:
+            print(
+                "App unavailable: --session-system only means something with "
+                "--in-session",
+                file=sys.stderr,
+            )
+            return 2
         if args.in_session:
-            from .sessions import unavailable
+            from .sessions import SessionError, unavailable, use_system
 
+            if args.session_system:
+                try:
+                    use_system(args.session_system)
+                except SessionError as exc:
+                    print(f"App unavailable: {exc}", file=sys.stderr)
+                    return 2
             if args.allow_folder is None:
                 print(
                     "App unavailable: --in-session also needs --allow-folder, "

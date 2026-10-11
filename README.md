@@ -665,11 +665,19 @@ kosika studio my_agents --model qwen2.5:7b --model-protocol ollama --allow-folde
   steps are not stopped one by one. The Live view says "allowed inside the
   session".
 - The Session tab lists every file that is new, changed or removed in
-  the copy, and each one opens to show the lines taken out and put in. "Bring these into the real folder" is your yes; "Throw the
-  session away" leaves the real folder untouched. Either one ends the
-  session, and the next run starts a fresh copy.
+  the copy, and each one opens to show the lines taken out and put in.
+  "Bring these into the real folder" is your yes; "Throw the session away"
+  leaves the real folder untouched. Either one ends the session, and the
+  next run starts a fresh copy.
+- Each file has a tick. Untick the ones you do not want: only the ticked
+  files are brought back, and the rest go when the session ends.
 - Tools that reach elsewhere (an MCP server, the web) are not walled and
   still ask you each time.
+
+On Windows, `--session-system NAME` chooses which WSL system the sessions
+run in, for example `--session-system kali-linux`, so an agent has that
+system's programs. It must be a system WSL already has, with bubblewrap in
+it. The wall is the same: the copy only, read-only system, no network.
 
 The wall is bubblewrap, which on Windows runs inside WSL. A session has
 only the programs the Linux side has, so a tool that starts `python` or

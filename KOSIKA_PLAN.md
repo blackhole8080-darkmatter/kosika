@@ -2721,6 +2721,36 @@ gate: without them a parser written in Kosika has nothing to return.
   the code, was handled as each change above was made rather than as a
   review of the whole contract; that review has not been done.
 
+### Sessions: bring back some files, and choose the system
+
+- A session's changes could only be brought back all together or not at
+  all. In Studio's Session tab each file now has a tick. With one or more
+  unticked, only the ticked files are brought into the real folder and the
+  rest go when the session ends. A file name that is not among the
+  session's changes is refused, nothing is brought back, and the session
+  stays open.
+- `kosika studio ... --in-session --session-system NAME` runs sessions in
+  the named WSL system. The name must be one `wsl.exe -l` lists; it is
+  handed to wsl.exe as one argument. The Session tab says which system.
+- Tried for real on this laptop in a scratch folder, in Ubuntu and in
+  kali-linux: a Python program behind the wall reported the right system,
+  could not reach the network, wrote one file to the copy, and the real
+  folder was unchanged. 0.3 s each.
+- `tests/test_sessions.py` gained 4 tests; `tests/test_session_system.py`,
+  5 tests.
+- Tried end to end in Studio on a scratch folder, with qwen2.5:7b and
+  sessions in kali-linux: the builder picked two skills, its plan of two
+  files was shown once with no warning and approved, both files appeared
+  in the session and none in the real folder. In the browser one file was
+  unticked, which did not open it; the button then read "Bring the 1
+  ticked file(s) into the real folder, throw the other 1 away"; pressing it
+  brought that one file and reported the other left behind. This is also
+  the first time the plan card was used inside a session with a real model.
+- Not claimed: one such run. Kali's own tools were not tried, and most of
+  them need the
+  network or raw devices, which the wall keeps away; a session is for
+  working on files, not for scanning a network.
+
 ## Standard coding-agent procedure
 
 1. Inspect `git status`, the relevant source files, tests, and this plan.

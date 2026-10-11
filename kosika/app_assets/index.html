@@ -1270,25 +1270,33 @@ function sessionTab(agent) {
   const box = h("div", {class: "map"}, h("p", {class: "lead"}, h("span", {class: "spin"}), "Looking in the session"));
   const words = {new: "new file", changed: "changed", removed: "removed"};
   const load = () => api("/api/session?id=" + encodeURIComponent(agent.id)).then(draw).catch(error => fill(box, h("div", {class: "banner bad"}, error.message)));
+  // Which of the listed files to bring back. All of them, until one is unticked.
+  let left = new Set(), shown = [], total = 0;
   async function end(keep) {
-    try { const done = await api("/api/session?id=" + encodeURIComponent(agent.id), {method: "POST", body: JSON.stringify({keep})});
-      fill(box, h("div", {class: "banner ok"}, keep ? done.applied.length + " file(s) were brought into the real folder. The session is closed." : "The session was thrown away. The real folder was not touched."), h("button", {class: "quiet", onclick: load}, "Look again"));
+    // Naming files means only those come back. With none unticked nothing is named, so files the list was too long to show come too.
+    const body = keep && left.size ? {keep, paths: shown.filter(path => !left.has(path))} : {keep};
+    try { const done = await api("/api/session?id=" + encodeURIComponent(agent.id), {method: "POST", body: JSON.stringify(body)});
+      fill(box, h("div", {class: "banner ok"}, keep ? done.applied.length + " file(s) were brought into the real folder" + ((done.left || []).length ? ", and " + done.left.length + " left behind and thrown away" : "") + ". The session is closed." : "The session was thrown away. The real folder was not touched."), h("button", {class: "quiet", onclick: load}, "Look again"));
     } catch (error) { fill(box, h("div", {class: "banner bad"}, error.message)); }
   }
   function draw(view) {
-    if (!view.open) { fill(box, h("div", {class: "panel"}, h("h4", null, "Session"), h("div", {class: "purpose"}, "No session is open for this agent."), h("div", {class: "foot", style: "margin-top:6px"}, "One opens the first time the agent runs. It is a copy of the granted folder; the agent works there, behind a wall.")), h("button", {class: "quiet", onclick: load}, "Look again")); return; }
+    left = new Set(); shown = (view.changes || []).map(change => change.path); total = view.count || 0;
+    const bring = h("button", {onclick: () => end(true)}, "Bring these into the real folder");
+    const say = () => { const ticked = shown.length - left.size; bring.disabled = left.size > 0 && ticked === 0; bring.textContent = !left.size ? "Bring these into the real folder" : "Bring the " + ticked + " ticked file(s) into the real folder, throw the other " + (total - ticked) + " away"; };
+    if (!view.open) { fill(box, h("div", {class: "panel"}, h("h4", null, "Session"), h("div", {class: "purpose"}, "No session is open for this agent."), h("div", {class: "foot", style: "margin-top:6px"}, "One opens the first time the agent runs. It is a copy of the granted folder; the agent works there, behind a wall, in " + (view.system || "Linux") + ".")), h("button", {class: "quiet", onclick: load}, "Look again")); return; }
     fill(box,
       h("div", {class: "panel"}, h("h4", null, "Waiting in the session"),
         h("div", {class: "purpose"}, view.count ? view.count + " file(s) differ from " + view.folder : "Nothing differs from " + view.folder),
-        h("div", {class: "foot", style: "margin:6px 0 10px"}, "None of this is in the real folder yet. Read the list before you bring it back: what you bring back is as real as if you had written it."),
+        h("div", {class: "foot", style: "margin:6px 0 10px"}, "None of this is in the real folder yet. Read the list before you bring it back: what you bring back is as real as if you had written it. Untick a file to leave it behind."),
         view.changes.map(change => { const body = h("div", {class: "difflines"}); let asked = false;
           const open = async event => { if (!event.target.open || asked) return; asked = true; fill(body, h("span", {class: "spin"}));
             try { const shown = await api("/api/session/file?id=" + encodeURIComponent(agent.id) + "&path=" + encodeURIComponent(change.path));
               fill(body, shown.lines.map(line => h("div", {class: line.startsWith("+") ? "add" : line.startsWith("-") ? "cut" : line.startsWith("@@") ? "at" : ""}, line || " ")), shown.note ? h("div", {class: "at"}, shown.note) : null, !shown.lines.length && !shown.note ? h("div", {class: "at"}, "An empty file.") : null);
             } catch (error) { fill(body, h("div", {class: "cut"}, error.message)); } };
-          return h("details", {class: "item", ontoggle: open}, h("summary", null, h("span", {class: "from"}, words[change.kind] + (change.kind === "removed" ? "" : ", " + change.bytes + " bytes")), h("b", null, change.path)), body); }),
+          const tick = h("input", {type: "checkbox", title: "Bring this file back", style: "margin-right:8px", onclick: event => event.stopPropagation(), onchange: event => { if (event.target.checked) left.delete(change.path); else left.add(change.path); say(); }}); tick.checked = true;
+          return h("details", {class: "item", ontoggle: open}, h("summary", null, tick, h("span", {class: "from"}, words[change.kind] + (change.kind === "removed" ? "" : ", " + change.bytes + " bytes")), h("b", null, change.path)), body); }),
         view.count > view.changes.length ? h("div", {class: "foot"}, "And " + (view.count - view.changes.length) + " more.") : null),
-      h("div", {class: "row"}, view.count ? h("button", {onclick: () => end(true)}, "Bring these into the real folder") : null, h("button", {class: "quiet", onclick: () => end(false)}, "Throw the session away"), h("button", {class: "quiet", onclick: load}, "Look again")));
+      h("div", {class: "row"}, view.count ? bring : null, h("button", {class: "quiet", onclick: () => end(false)}, "Throw the session away"), h("button", {class: "quiet", onclick: load}, "Look again")));
   }
   load();
   return box;
