@@ -2751,6 +2751,60 @@ gate: without them a parser written in Kosika has nothing to return.
   network or raw devices, which the wall keeps away; a session is for
   working on files, not for scanning a network.
 
+### Retiring what Studio replaced
+
+- Measured by following imports: Studio, the runtime, `kosika test`,
+  `kosika start`, `kosika motion` and sessions reached 49 of 106 modules,
+  23,000 of 52,700 lines. The owner chose to retire four groups that only
+  older commands reached. Each is its own commit, so each can be brought
+  back with one `git revert`.
+- The first desktop app: `kosika.workbench` and its helpers, the packaged
+  desktop host, its assets, docs and tests, and the CI step that started
+  it. The `workbench` example agent is a different thing and stays.
+- The city pictures: the city, cityscape, metropolis, live city, world and
+  design modules, the `city` and `design` commands, `kosika run --design`,
+  their tests and generated pictures. `kosika run --event-trace` stays.
+- The Python authoring loop: `kosika.authoring`, its evaluation, and the
+  `author` and `author-eval` commands. The `author` example agent, written
+  in Kosika, does that job. `repair`, `corpus` and `benchmark` stay,
+  because `kosika benchmark` and the diagnostics tests use them.
+- The full suite was run after each: 1710 passed after the first, 1587
+  after the second.
+- Not claimed: the untracked build folders under `desktop/` were left on
+  disk, because they are not in git and were not mine to delete. The
+  module `synapse_bridge`, listed with the desktop app, stays: the event
+  trace of `kosika run` uses it.
+
+### A coder agent
+
+- The owner asked for basic agents, a researcher and a coder, to grow into
+  assistants. The researcher exists. `examples/agents/coder` is new.
+- Given one small task in a Python project, it lists and reads files,
+  plans every file it will write with its whole new text, and after one
+  yes writes them. The workflow then runs `python -m pytest` itself, so
+  the tests are run by code and not left to the model. The report says
+  what was written and whether the tests passed. `fix` asks it again with
+  what the tests printed.
+- It has one writing tool, which replaces a whole file. A first draft had
+  two, create and replace, and the model used create on a file that
+  existed, which failed the step. One tool removed that mistake.
+- When nothing was written, passing tests are not reported as success: it
+  says "Nothing was changed, so the task is not done."
+- Two skills: how a function is added, and how a test file is written,
+  each with checks.
+- Tried on qwen2.5:7b in a session, on a scratch project with two
+  functions and two tests, asked to "add a function is_even to calc.py
+  that says whether a number is even, with a test". Run 1, first draft:
+  failed as described above. Run 2, same draft: the plan held both files
+  but one used create on an existing file, and nothing was written. Run 3,
+  after the change to one tool: the plan wrote calc.py and test_calc.py,
+  kept the existing functions and tests, the tests passed in the session,
+  and the real folder was untouched. 151 s.
+- Not claimed: one success on one easy task. It replaces whole files, so
+  a long file is beyond a 7b model. It has no eval, because an eval cannot
+  answer the plan question. Only Python and pytest. The `fix` path was
+  not reached in a real run, because the one good run passed first time.
+
 ## Standard coding-agent procedure
 
 1. Inspect `git status`, the relevant source files, tests, and this plan.

@@ -1,0 +1,294 @@
+// Coder: give it a small task in a Python project, and it shows you every
+// file it will make or change before it touches one. Then it runs the
+// project's tests and tells you what happened.
+//
+//   kosika test main.kos
+//   kosika studio FOLDER --model qwen2.5:7b --model-protocol ollama --allow-folder YOUR_PROJECT --allow-shell --in-session
+//
+// Run it with --in-session. It then works in a copy of your project: its
+// changes and its test run happen there, and nothing reaches your real
+// folder until you tick the files to bring back in the Session tab.
+//
+// What it does with one task:
+//   1. It looks: lists folders, reads the files it needs, searches for words.
+//   2. It plans: every file it will write, each with its whole new text.
+//      You see that plan once and say yes or no.
+//   3. The files are written, and python -m pytest is run.
+//   4. It tells you what it changed and whether the tests passed.
+//
+// Say "fix" after a failing run and it tries again, shown what the tests
+// printed. It keeps only the last run in memory.
+//
+// It replaces whole files, so it suits small files. It starts only python.
+//
+// Say: add a function is_even to calc.py, with a test
+
+record Msg { text: Text }
+record Said { text: Text }
+record Task { text: Text }
+record Where { path: Text }
+record Listing { names: Text[] }
+record FileText { text: Text }
+record Query { path: Text query: Text }
+record Hits { matches: Text[] }
+record NewFile { path: Text text: Text }
+record Written { bytes: Number }
+record Command { args: Text[] }
+record Ran { exit_code: Number stdout: Text stderr: Text }
+
+// What the coder says it did: one or two sentences, and the files it wrote.
+record Work { summary: Text files: Text[] }
+// The last run: the task, what the tests printed, and whether they passed.
+record Last { task: Text output: Text passed: Bool known: Bool }
+record Result { text: Text last: Last }
+
+model engineer {
+  input: Task
+  output: Work
+  parameters: {
+    max_output_tokens: 1400
+  }
+}
+
+memory journal of Last
+
+tool list_folder {
+  source system "files"
+  operation: "list"
+  access: observe
+  input: Where
+  output: Listing
+}
+
+tool read_file {
+  source system "files"
+  operation: "read"
+  access: observe
+  input: Where
+  output: FileText
+}
+
+tool find_text {
+  source system "files"
+  operation: "search"
+  access: observe
+  input: Query
+  output: Hits
+}
+
+tool write_file {
+  source system "files"
+  operation: "write"
+  access: execute
+  input: NewFile
+  output: Written
+}
+
+tool run_python {
+  source system "shell"
+  operation: "python"
+  access: execute
+  input: Command
+  output: Ran
+}
+
+agent coder {
+  model: engineer
+  can: [list_folder, read_file, find_text, write_file]
+  max_steps: 8
+  max_tool_calls: 16
+  instructions: "You are a careful programmer working in one Python project. You cannot see anything until you use a tool. First list the folder with path \".\". Read every file you will write before you write it; that includes the test file if one exists. Then request all your changes in one reply, one write_file for each file. write_file replaces the whole file, so its text must be the complete new file: every line that was there and should stay, plus what you add. A task that adds a function with a test needs two write_file calls: the source file with the new function added, and the test file with its old tests kept and the new test added. Import the new function in the test file. Change nothing the task does not need. After the changes, answer with what you did in summary and the paths you wrote in files."
+}
+
+agent runner {
+  can: [run_python]
+  max_steps: 1
+}
+
+// ---------------------------------------------------------------- routing
+
+fn kind_of(msg: Msg) -> Text {
+  let text = msg.text.lower().trim()
+  var kind = "task"
+  if text == "" or text == "help" { kind = "help" }
+  else if text == "fix" or text == "try again" or text.starts_with("fix it") { kind = "fix" }
+  else if text == "test" or text == "tests" or text == "run the tests" { kind = "test" }
+  return kind
+}
+
+fn task_of(msg: Msg) -> Task {
+  return {text: msg.text.trim()}
+}
+
+// What the coder is asked when the last run's tests failed.
+fn fix_task(last: Last) -> Task {
+  return {text: "The tests fail after your last change. The task was: " + last.task + "\nThis is what the tests printed:\n" + last.output.take(1800) + "\nRead the files involved again and put it right."}
+}
+
+// ---------------------------------------------------------------- reading the tests
+
+// The end of what pytest printed is where the verdict is.
+fn printed(ran: Ran) -> Text {
+  let both = (ran.stdout + "\n" + ran.stderr).trim()
+  let lines = both.split("\n")
+  return if lines.length() > 25 { lines.drop(lines.length() - 25).join("\n") } else { both }
+}
+
+fn verdict(ran: Ran) -> Text {
+  var said = "The tests failed."
+  if ran.exit_code == 0 { said = "The tests pass." }
+  else if ran.exit_code == 5 { said = "No tests were found to run." }
+  return said
+}
+
+fn files_line(work: Work) -> Text {
+  var files: Text[] = []
+  for path in work.files {
+    if path.trim().length() > 0 { files = files.append(path.trim()) }
+  }
+  return if files.length() > 0 { "Wrote: " + files.unique().join(", ") } else { "It says it wrote no files." }
+}
+
+fn worked(task: Task, work: Work, ran: Ran) -> Result {
+  let out = printed(ran)
+  let tail = if ran.exit_code == 0 { "" } else { "\n" + out + "\nSay \"fix\" and I will try to put it right." }
+  // With nothing written, passing tests say nothing about the task.
+  let judged = if work.files.length() == 0 and ran.exit_code == 0 { "Nothing was changed, so the task is not done. The tests as they were still pass." } else { verdict(ran) }
+  return {
+    text: work.summary.trim() + "\n" + files_line(work) + "\n" + judged + tail,
+    last: {task: task.text, output: out, passed: ran.exit_code == 0, known: true}
+  }
+}
+
+fn tested(last: Last, ran: Ran) -> Result {
+  let out = printed(ran)
+  return {
+    text: verdict(ran) + "\n" + out,
+    last: {task: last.task, output: out, passed: ran.exit_code == 0, known: last.known}
+  }
+}
+
+fn nothing(last: Last, text: Text) -> Result {
+  return {text: text, last: last}
+}
+
+// The last run as it was kept, or an empty one when there has been none.
+fn earlier(past: JournalRecalled) -> Last {
+  let none: Last = {task: "", output: "", passed: false, known: false}
+  return if past.found { past.value.value() } else { none }
+}
+
+fn last_of(result: Result) -> Last {
+  return result.last
+}
+
+fn say(result: Result) -> Said {
+  return {text: result.text}
+}
+
+// ---------------------------------------------------------------- workflows
+
+workflow do_task(task: Task) -> Result {
+  work   = ask coder(task.text) otherwise {summary: "I could not finish a plan for that. Try a smaller task, or name the file.", files: []}
+  ran    = execute runner.run_python(["-m", "pytest", "-q", "-x", "--no-header", "-p", "no:cacheprovider"])
+  result = worked(task, work, ran)
+  require approval
+}
+
+workflow new_task(msg: Msg) -> Result {
+  task   = task_of(msg)
+  result = call do_task(task)
+  require approval
+}
+
+workflow fix_last(msg: Msg) -> Result {
+  past   = recall journal under "me"
+  last   = earlier(past)
+  task   = fix_task(last)
+  result = match last.known {
+    case true { call do_task(task) }
+    case _ { nothing(last, "There is no earlier run to fix. Give me a task first.") }
+  }
+  require approval
+}
+
+workflow only_test(msg: Msg) -> Result {
+  past   = recall journal under "me"
+  last   = earlier(past)
+  ran    = execute runner.run_python(["-m", "pytest", "-q", "-x", "--no-header", "-p", "no:cacheprovider"])
+  result = tested(last, ran)
+  require approval
+}
+
+workflow help(msg: Msg) -> Result {
+  past   = recall journal under "me"
+  last   = earlier(past)
+  result = nothing(last, "Give me one small task in this project, such as: add a function is_even to calc.py, with a test.\nI show you every file I will make or change before I do it, then I run the tests.\nfix: try again after failing tests\ntest: only run the tests")
+}
+
+workflow main(msg: Msg) -> Said {
+  budget 10 model calls, 900 seconds
+  kind   = kind_of(msg)
+  result = match kind {
+    case "help" { call help(msg) }
+    case "fix" { call fix_last(msg) }
+    case "test" { call only_test(msg) }
+    case _ { call new_task(msg) }
+  }
+  last   = last_of(result)
+  saved  = remember last in journal under "me"
+  said   = say(result)
+  require approval
+}
+
+// ------------------------------------------------------------------ tests
+
+test "requests are understood" {
+  expect kind_of({text: "add a function"}) == "task"
+  expect kind_of({text: " Fix "}) == "fix"
+  expect kind_of({text: "tests"}) == "test"
+  expect kind_of({text: ""}) == "help"
+}
+
+test "what the tests printed is read" {
+  ok = worked({text: "add is_even"}, {summary: " Added is_even. ", files: ["calc.py", "calc.py", " "]}, {exit_code: 0, stdout: "2 passed in 0.01s\n", stderr: ""})
+  bad = worked({text: "add is_even"}, {summary: "Added is_even.", files: []}, {exit_code: 1, stdout: "E  assert 1 == 2\n1 failed", stderr: ""})
+  none = verdict({exit_code: 5, stdout: "", stderr: ""})
+  expect ok.text == "Added is_even.\nWrote: calc.py\nThe tests pass."
+  expect ok.last.passed == true
+  expect bad.text.contains("It says it wrote no files.\nThe tests failed.\nE  assert 1 == 2")
+  expect bad.text.ends_with("Say \"fix\" and I will try to put it right.")
+  expect bad.last.passed == false
+  idle = worked({text: "add is_even"}, {summary: "I could not.", files: []}, {exit_code: 0, stdout: "2 passed", stderr: ""})
+  expect idle.text.contains("Nothing was changed, so the task is not done.")
+  expect none == "No tests were found to run."
+}
+
+test "only the end of a long test run is kept" {
+  long = printed({exit_code: 1, stdout: "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no\np\nq\nr\ns\nt\nu\nv\nw\nx\ny\nz\nlast line", stderr: ""})
+  expect long.starts_with("c\nd")
+  expect long.ends_with("last line")
+}
+
+test "fix asks about the last failure" {
+  a = fix_task({task: "add is_even", output: "1 failed", passed: false, known: true})
+  expect a.text.contains("The task was: add is_even")
+  expect a.text.contains("1 failed")
+}
+
+test "with no earlier run there is nothing to fix" {
+  none: JournalRecalled = {found: false, value: null}
+  last = earlier(none)
+  expect last.known == false
+  expect last.task == ""
+}
+
+test "help needs no model and no tool" {
+  a = help({text: "help"})
+  expect a.text.starts_with("Give me one small task in this project")
+  expect a.last.known == false
+}
+
+// ------------------------------------------------------------------ evals
+// These ask a real model. Run them with:
+//   kosika measure main.kos --model qwen2.5:7b --model-protocol ollama
