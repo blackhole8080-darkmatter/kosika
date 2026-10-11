@@ -66,5 +66,21 @@ class SystemTests(unittest.TestCase):
         self.assertIn("only means something with --in-session", said.getvalue())
 
 
+class FolderMessageTests(unittest.TestCase):
+    def test_a_short_folder_name_is_shown_with_where_it_was_looked_for(self) -> None:
+        from pathlib import Path
+
+        said = cli._no_folder(Path("Aryan_Private"))
+        self.assertIn("Aryan_Private is not a folder. I looked for ", said)
+        self.assertIn(str(Path("Aryan_Private").resolve()), said)
+        self.assertIn("give its full path", said)
+
+    def test_a_full_path_is_not_explained_twice(self) -> None:
+        from pathlib import Path
+
+        full = Path("Aryan_Private").resolve()
+        self.assertEqual(cli._no_folder(full), f"{full} is not a folder")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -2768,8 +2768,13 @@ gate: without them a parser written in Kosika has nothing to return.
   `author` and `author-eval` commands. The `author` example agent, written
   in Kosika, does that job. `repair`, `corpus` and `benchmark` stay,
   because `kosika benchmark` and the diagnostics tests use them.
+- The older maps: `audience_maps`, `explain`, `unified_mindmap` and
+  `assistant`, with the commands `audience-map`, `unified`, `explain` and
+  `assistant`. Studio's Map tab does this for a beginner. The `mindmap`
+  module and command stay: other code and many tests use them.
 - The full suite was run after each: 1710 passed after the first, 1587
-  after the second.
+  after the second, 1517 after the third with the coder added, 1440
+  after the fourth. It now takes about 8 minutes, where it took 13.
 - Not claimed: the untracked build folders under `desktop/` were left on
   disk, because they are not in git and were not mine to delete. The
   module `synapse_bridge`, listed with the desktop app, stays: the event

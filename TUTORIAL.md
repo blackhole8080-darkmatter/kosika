@@ -120,11 +120,12 @@ Run it again and it passes. A live model is told the new shape automatically.
 ## 7. See what the program contains
 
 ```text
-kosika audience-map main.kos --audience outsider --format text
+kosika mindmap main.kos --format text
 ```
 
-This prints a map built from the checked program. Try `--audience reviewer`
-for more detail, or `kosika mindmap main.kos --format mermaid` for a diagram.
+This prints a map built from the checked program. Try
+`kosika mindmap main.kos --format mermaid` for a diagram, or open the
+program in Kosika Studio and look at its Map tab.
 
 ## Where next
 

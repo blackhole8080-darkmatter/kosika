@@ -1860,7 +1860,7 @@ integer indexing, arithmetic, Boolean operators, conditionals, pattern matching,
 assignment, and bounded loops. See `examples/structured_values.kos`,
 `examples/local_bindings.kos`, and `examples/recursion_match.kos`.
 
-## Code mindmaps and bounded assistant
+## Code mindmaps
 
 Kosika can explain a checked program without asking a model to infer its structure. The `mindmap`
 command derives deterministic module, record, field, tool, model, agent, workflow, step, and call-graph
@@ -1876,93 +1876,6 @@ python -m kosika.cli mindmap examples/composed/main.kos --format text
 Imported modules retain their relative paths, content hashes, declarations, and direct import edges.
 The map is read-only and is generated only after static checking succeeds. It is an explanation of
 Kosika's checked structure, not an execution trace or a model-generated claim about intent.
-
-## Audience-adaptive maps
-
-`mindmap` answers "what does the checked program declare". `audience-map` answers it for a
-particular reader, and labels where every fact came from:
-
-```text
-python -m kosika.cli audience-map examples/research_agent.kos --audience reviewer --format text
-python -m kosika.cli audience-map examples/component_uppercase.kos --audience maintainer \
-    --component-contract examples/components/uppercase.component.json --format json
-python -m kosika.cli audience-map examples/composed/main.kos --audience operator \
-    --trace run.jsonl --format mermaid
-```
-
-Five audiences are available: `outsider`, `overview`, `operator`, `reviewer`, and `maintainer`.
-Each profile states the question it answers, so a new audience cannot silently inherit another
-audience's detail level.
-
-Four evidence classes are kept apart, even where several support the same entry:
-
-| Class | Source | What it does not mean |
-|---|---|---|
-| `checked` | the type-checked AST | nothing about runtime behavior |
-| `declared` | a versioned `kosika.component/v1` contract | the artifact's hash identifies bytes, not what they do |
-| `observed` | a completed trace whose recorded program hash matches this project | nothing about runs that were not recorded |
-| `human` | explicit `--purpose` notes | not independently verified |
-
-There is deliberately no `inferred` class. A fact that cannot be sourced from checked code, a
-contract, a matching trace, or an explicit note does not appear, and `coverage` reports how many
-checked entries the audience did not show so a narrow view cannot read as a smaller program.
-
-Two consequences are worth stating plainly. Executing a component does not make its contract
-`observed` — declared authority is a claim by the component, not a record of it being used. And a
-trace recorded against a different program contributes nothing at all, recorded as
-`trace-program-hash-mismatch`, because attaching one program's behavior to another is exactly the
-error this format exists to prevent. The command verifies evidence separation and content digest
-before printing, and exits non-zero rather than emit a map that fails its own checks.
-
-Purpose notes are the one input that is a human claim:
-
-```text
-python -m kosika.cli audience-map examples/hello_world.kos --audience outsider \
-    --purpose "Greets the caller on the public endpoint." --format text
-```
-
-See [KOSIKA_PLAN.md](KOSIKA_PLAN.md) for the K09 completion record.
-
-Use `explain` when you want a focused explanation rather than the whole map. Select one or more
-workflows or records, attach diagnostics, and optionally validate a completed JSONL trace offline:
-
-```text
-python -m kosika.cli run examples/composed/main.kos `
-  --input examples/composed/inputs.json `
-  --model-fixture examples/composed/responses.json `
-  --trace composed.jsonl
-python -m kosika.cli explain examples/composed/main.kos `
-  --workflow main `
-  --record Answer `
-  --diagnostic "Review the model boundary" `
-  --trace composed.jsonl `
-  --format text
-python -m kosika.cli explain examples/composed/main.kos --workflow main --format json
-```
-
-Selection follows the deterministic mindmap relationships, so the result includes the selected
-workflow or record plus its connected steps, contracts, calls, permissions, and module boundaries.
-Trace summaries use the existing strict replay validator and never execute the workflow, tool, or model.
-A trace built from a different loaded program is reported through `program_hash_match: false` in JSON
-and as a warning in text output.
-
-The `assistant` command supplies that checked mindmap and optional diagnostics to a bounded assistant.
-Offline use needs no provider and returns a deterministic static summary. Fixture responses are useful
-for repeatable tests and demos:
-
-```text
-["The workflow enters research.kos, calls reader, and returns Answer."]
-python -m kosika.cli assistant examples/composed/main.kos `
-  --task "Explain the code structure" `
-  --fixture assistant-responses.json `
-  --json
-```
-
-For optional local inference, omit `--fixture` and configure `KOSIKA_MODEL` (and optionally
-`KOSIKA_MODEL_URL`); the adapter is OpenAI-compatible and uses `KOSIKA_MODEL_API_KEY` only from the
-environment. The assistant receives no tools, cannot execute workflows or shell commands, and rejects
-tool-call or truncated responses. The checker, schema validation, replay, and approval system remain
-authoritative; assistant text is an explanation, not permission to mutate anything.
 
 ## Networks
 

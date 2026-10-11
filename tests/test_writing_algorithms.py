@@ -82,7 +82,9 @@ class WhileTests(unittest.TestCase):
 
     def test_the_condition_must_be_a_bool(self) -> None:
         with self.assertRaises(CheckError):
-            check(parse(program("  while input.n { break }\n  return {n: 0, values: []}")))
+            check(
+                parse(program("  while input.n { break }\n  return {n: 0, values: []}"))
+            )
 
 
 class RangeTests(unittest.TestCase):

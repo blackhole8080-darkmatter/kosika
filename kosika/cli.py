@@ -15,7 +15,6 @@ from typing import Any, Sequence
 
 from .agent import AgentLoop, AgentLoopError, ApprovalRecord
 from .approval_ledger import ApprovalLedger
-from .assistant import AssistantError, KosikaAssistant
 from .ast import Program, ToolDecl
 from .checker import check
 from .command_model import CommandModelProvider
@@ -46,14 +45,6 @@ from .events import (
     write_event_jsonl,
 )
 from .execution import ExecutionLimits
-from .explain import (
-    ExplainError,
-    build_explanation,
-    to_explanation_json,
-    to_explanation_mermaid,
-    to_explanation_outsider,
-    to_explanation_text,
-)
 from .extensions import (
     ExtensionManifestError,
     extension_manifest_digest,
@@ -115,12 +106,6 @@ from .source_map import to_mermaid as render_source_map_mermaid
 from .source_map import to_text as render_source_map_text
 from .synapse_bridge import normalize_events
 from .system_tools import bind_system_tools
-from .unified_mindmap import (
-    UnifiedMindmapError,
-    build_unified_mindmap,
-)
-from .unified_mindmap import to_mermaid as render_unified_mermaid
-from .unified_mindmap import to_text as render_unified_text
 
 
 def command_metavar(subparsers: Any) -> str:
@@ -795,6 +780,20 @@ def _missing_model_hint(program: Program, message: str) -> str:
     )
 
 
+def _no_folder(given: Path) -> str:
+    """Why a folder named on the command line cannot be used, with the place
+    that was actually looked in, since a short name is read from where the
+    command was run."""
+
+    looked = given.resolve()
+    if given.is_absolute():
+        return f"{given} is not a folder"
+    return (
+        f"{given} is not a folder. I looked for {looked}. "
+        "If it is somewhere else, give its full path."
+    )
+
+
 def _timeline_event(
     sequence: int,
     event_type: str,
@@ -1189,32 +1188,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Write the representation to a file instead of stdout.",
     )
 
-    audience_map_parser = subparsers.add_parser(
-        "audience-map",
-        help="Build an evidence-labelled map for different readers.",
-    )
-    audience_map_parser.add_argument("source", type=Path)
-    audience_map_parser.add_argument(
-        "--audience",
-        choices=("outsider", "overview", "operator", "reviewer", "maintainer"),
-        default="outsider",
-    )
-    audience_map_parser.add_argument(
-        "--purpose",
-        action="append",
-        default=[],
-        help="Human-authored purpose context, labelled unverified.",
-    )
-    audience_map_parser.add_argument("--trace", type=Path)
-    audience_map_parser.add_argument(
-        "--component-contract", action="append", type=Path, default=[]
-    )
-    audience_map_parser.add_argument("--root", type=Path)
-    audience_map_parser.add_argument(
-        "--format", choices=("json", "mermaid", "text"), default="text"
-    )
-    audience_map_parser.add_argument("--output", type=Path)
-
     spec_eval_parser = subparsers.add_parser(
         "spec-eval",
         help="Measure whether a model can write Kosika programs from specs.",
@@ -1328,117 +1301,6 @@ def build_parser() -> argparse.ArgumentParser:
     swarm_parser.add_argument("--model-timeout", type=float, default=300.0)
     swarm_parser.add_argument("--format", choices=("json", "text"), default="text")
     swarm_parser.add_argument("--output", type=Path)
-
-    unified_parser = subparsers.add_parser(
-        "unified",
-        help="Combine a checked Kosika mindmap with an optional external source map.",
-    )
-    unified_parser.add_argument("source", type=Path)
-    unified_parser.add_argument("--project", type=Path)
-    unified_parser.add_argument(
-        "--format", choices=("json", "mermaid", "text"), default="json"
-    )
-    unified_parser.add_argument("--output", type=Path)
-
-    explain_parser = subparsers.add_parser(
-        "explain",
-        help="Explain selected code and optionally validate a trace offline.",
-    )
-    explain_parser.add_argument("source", type=Path)
-    explain_parser.add_argument(
-        "--extension-manifest",
-        action="append",
-        type=Path,
-        default=[],
-        help="Extension manifest to include; may be repeated.",
-    )
-    explain_parser.add_argument(
-        "--workflow",
-        action="append",
-        default=[],
-        help="Workflow to explain; may be repeated. Defaults to the whole program.",
-    )
-    explain_parser.add_argument(
-        "--record",
-        action="append",
-        default=[],
-        help="Record contract to explain; may be repeated.",
-    )
-    explain_parser.add_argument(
-        "--diagnostic",
-        action="append",
-        default=[],
-        help="Diagnostic to include; may be repeated.",
-    )
-    explain_parser.add_argument(
-        "--trace",
-        type=Path,
-        help="Completed JSONL trace to validate and summarize offline.",
-    )
-    explain_parser.add_argument(
-        "--format",
-        choices=("text", "json", "mermaid", "outsider"),
-        default="text",
-        help="Explanation representation to print.",
-    )
-    explain_parser.add_argument(
-        "--output",
-        type=Path,
-        help="Write the representation to a file instead of stdout.",
-    )
-
-    assistant_parser = subparsers.add_parser(
-        "assistant",
-        help="Explain checked Kosika code with a fixture or optional local model.",
-    )
-    assistant_parser.add_argument("source", type=Path)
-    assistant_parser.add_argument("--task", required=True)
-    assistant_parser.add_argument(
-        "--source-file",
-        action="append",
-        type=Path,
-        default=[],
-        help="Read-only Python source file to include as grounded assistant context; repeatable.",
-    )
-    assistant_parser.add_argument(
-        "--project",
-        action="append",
-        type=Path,
-        default=[],
-        help="Bounded project root to analyze for grounded assistant context; repeatable.",
-    )
-    assistant_parser.add_argument(
-        "--diagnostic",
-        action="append",
-        default=[],
-        help="Diagnostic to include as assistant context; may be repeated.",
-    )
-    assistant_parser.add_argument(
-        "--fixture",
-        type=Path,
-        help='Offline JSON list (or {"responses": [...]}) of answer strings.',
-    )
-    assistant_parser.add_argument(
-        "--model-url",
-        default=os.environ.get("KOSIKA_MODEL_URL", "http://localhost:11434/v1"),
-        help="OpenAI-compatible model URL, or KOSIKA_MODEL_URL.",
-    )
-    assistant_parser.add_argument(
-        "--model",
-        default=os.environ.get("KOSIKA_MODEL"),
-        help="Optional local model name, or KOSIKA_MODEL.",
-    )
-    assistant_parser.add_argument(
-        "--max-output-tokens",
-        type=int,
-        default=1024,
-        help="Maximum output tokens requested from a configured model.",
-    )
-    assistant_parser.add_argument(
-        "--json",
-        action="store_true",
-        help="Print answer, diagnostics, and mindmap as structured JSON.",
-    )
 
     skills_parser = subparsers.add_parser(
         "skills",
@@ -2184,60 +2046,6 @@ def main() -> int:
         print(json.dumps(response, indent=2, sort_keys=True))
         return 0 if response["ok"] else 2
 
-    if args.command == "audience-map":
-        from .audience_maps import (
-            AudienceMapError,
-            build_audience_map,
-        )
-        from .audience_maps import (
-            to_mermaid as audience_map_to_mermaid,
-        )
-        from .audience_maps import (
-            to_text as audience_map_to_text,
-        )
-        from .audience_maps import (
-            verify as verify_audience_map,
-        )
-
-        try:
-            contracts = tuple(
-                load_component_contract(path) for path in args.component_contract
-            )
-            audience_map = build_audience_map(
-                args.source,
-                audience=args.audience,
-                root=args.root,
-                trace_path=args.trace,
-                contracts=contracts,
-                purpose=args.purpose,
-            )
-            verification = verify_audience_map(audience_map)
-            if not verification["ok"]:
-                raise AudienceMapError(
-                    "Audience map integrity check failed: "
-                    + "; ".join(verification["problems"])
-                )
-            rendered = {
-                "json": lambda item: (
-                    json.dumps(
-                        item.to_dict(), indent=2, sort_keys=True, ensure_ascii=False
-                    )
-                    + "\n"
-                ),
-                "mermaid": audience_map_to_mermaid,
-                "text": audience_map_to_text,
-            }[args.format](audience_map)
-            if args.output is not None:
-                args.output.parent.mkdir(parents=True, exist_ok=True)
-                args.output.write_text(rendered, encoding="utf-8")
-                print(f"Audience map written: {args.output}")
-            else:
-                print(rendered, end="")
-        except (AudienceMapError, OSError, ValueError) as exc:
-            print(f"Audience map failed safely: {exc}", file=sys.stderr)
-            return 2
-        return 0
-
     if args.command == "new":
         from .starter import StarterError, create_starter
 
@@ -2758,12 +2566,10 @@ def main() -> int:
 
         root = args.folder
         if not root.is_dir():
-            print(f"App unavailable: {root} is not a folder", file=sys.stderr)
+            print(f"App unavailable: {_no_folder(root)}", file=sys.stderr)
             return 2
         if args.allow_folder is not None and not args.allow_folder.is_dir():
-            print(
-                f"App unavailable: {args.allow_folder} is not a folder", file=sys.stderr
-            )
+            print(f"App unavailable: {_no_folder(args.allow_folder)}", file=sys.stderr)
             return 2
         if args.allow_shell and args.allow_folder is None:
             print(
@@ -3232,27 +3038,6 @@ def main() -> int:
     if args.command == "check":
         print(f"OK: {args.source}")
         return 0
-    if args.command == "unified":
-        try:
-            report = build_unified_mindmap(args.source, project=args.project)
-            rendered = (
-                json.dumps(report, indent=2, sort_keys=True)
-                if args.format == "json"
-                else (
-                    render_unified_mermaid(report)
-                    if args.format == "mermaid"
-                    else render_unified_text(report)
-                )
-            )
-            if args.output is not None:
-                args.output.write_text(rendered, encoding="utf-8")
-                print(f"Unified mindmap written: {args.output}")
-            else:
-                print(rendered, end="")
-        except (OSError, UnifiedMindmapError, ValueError) as exc:
-            print(f"Unified mindmap failed: {exc}", file=sys.stderr)
-            return 2
-        return 0
     if args.command == "mindmap":
         try:
             extension_manifests = tuple(
@@ -3273,77 +3058,6 @@ def main() -> int:
             print(f"Mindmap failed: {exc}", file=sys.stderr)
             return 2
         return 0
-    if args.command == "explain":
-        try:
-            extension_manifests = tuple(
-                load_extension_manifest(path) for path in args.extension_manifest
-            )
-            explanation = build_explanation(
-                program,
-                workflows=args.workflow,
-                records=args.record,
-                diagnostics=args.diagnostic,
-                trace_path=args.trace,
-                extension_manifests=extension_manifests,
-            )
-            rendered = {
-                "json": to_explanation_json,
-                "mermaid": to_explanation_mermaid,
-                "text": to_explanation_text,
-                "outsider": to_explanation_outsider,
-            }[args.format](explanation)
-            if args.output is not None:
-                args.output.write_text(rendered, encoding="utf-8")
-                print(f"Explanation written: {args.output}")
-            else:
-                print(rendered, end="")
-        except (ExplainError, OSError, ValueError) as exc:
-            print(f"Explain failed: {exc}", file=sys.stderr)
-            return 2
-        return 0
-    if args.command == "assistant":
-        try:
-            provider = _assistant_provider(args)
-            source_analyses = tuple(
-                analyze_source_file(path) for path in args.source_file
-            )
-            project_analyses = tuple(
-                analyze_python_project(path) for path in args.project
-            )
-            assistant_result = KosikaAssistant(
-                program,
-                provider,
-                max_output_tokens=args.max_output_tokens,
-            ).ask(
-                args.task,
-                diagnostics=args.diagnostic,
-                source_analyses=source_analyses,
-                project_analyses=project_analyses,
-            )
-            if args.json:
-                print(json.dumps(assistant_result.to_dict(), indent=2, sort_keys=True))
-            else:
-                print(assistant_result.answer)
-                print(f"Assistant mode: {assistant_result.mode}")
-                mindmap_summary = assistant_result.mindmap.get("summary", {})
-                if not isinstance(mindmap_summary, dict):
-                    mindmap_summary = {}
-                print(
-                    "Mindmap: "
-                    f"{mindmap_summary.get('node_count', 0)} nodes, "
-                    f"{mindmap_summary.get('edge_count', 0)} edges"
-                )
-        except (
-            AssistantError,
-            ModelProviderError,
-            OSError,
-            ProjectAnalysisError,
-            ValueError,
-        ) as exc:
-            print(f"Assistant failed safely: {exc}", file=sys.stderr)
-            return 2
-        return 0
-
     if args.component_manifest is None and (
         args.component_runtime is not None
         or args.allow_component_effect

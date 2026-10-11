@@ -342,7 +342,7 @@ The development evaluation command can also pass a local stdio MCP server and
 matching manifest with `--mcp-server`, `--mcp-manifest`, and `--mcp-source`;
 the server process receives only host-selected fixture configuration.
 
-## 7. Static code mindmaps and assistant context
+## 7. Static code mindmaps
 
 ### Language adapter registry
 
@@ -377,7 +377,6 @@ effect observations.
 python -m kosika.cli analyze path/to/module.py --format text
 python -m kosika.cli analyze path/to/module.py --format json
 python -m kosika.cli analyze path/to/module.ts --format json
-python -m kosika.cli assistant examples/test_host.kos --task "Explain this helper" --source-file path/to/module.py
 ```
 
 This is structural indexing, not complete semantic analysis: it does not resolve
@@ -401,11 +400,9 @@ and fails safely instead of silently truncating semantic data.
 
 ```text
 python -m kosika.cli project ./my-project --output project-map.json
-python -m kosika.cli assistant examples/test_host.kos --task "What is this codebase for?" --project ./my-project
 ```
 
-Repeat `--project` to compare multiple project roots; each report is included in
-bounded assistant context and returned in `project_analyses`. Local import edges
+Local import edges
 currently link Python files only; JavaScript, TypeScript, and Rust imports are reported per
 file without cross-file linking. Unresolved import candidates are not called
 external dependencies, and duplicate module names are reported as ambiguous
@@ -428,35 +425,6 @@ The map is created after `load_program` and `check`; it never executes a workflo
 or interprets model output. A forbidden capability that is named but not declared as a tool appears as
 a `capability` node with `status: forbidden`. The map has a 512-node bound and fails closed on invalid
 relationship endpoints.
-
-`kosika.explain.build_explanation(...)` provides a focused deterministic view over that map. Pass
-`workflows=(...)` and/or `records=(...)` to select roots; the result walks connected semantic edges,
-then retains module containers and import boundaries. Pass diagnostic strings to keep compiler or host
-observations beside the static structure. `trace_path=` reads a JSONL trace, runs the existing strict
-`replay_events` validator, and returns event counts, nested step paths, the recorded result, and a
-program-hash comparison. It never re-executes the workflow. CLI usage is:
-
-```text
-python -m kosika.cli explain examples/composed/main.kos \
-  --workflow main --record Answer \
-  --diagnostic "Review the model boundary" \
-  --trace composed.jsonl --format json
-```
-
-JSON contains the selected mindmap and trace summary; text adds a compact explanation; Mermaid emits
-the selected graph. `--format outsider` renders the same selected graph as plain language: workflow
-story, step actions, agent permissions, human diagnostics, and offline trace counts, with type names
-hidden. It adds no edges and infers no purpose; business intent still comes from human diagnostics.
-Unknown selections, malformed traces, reordered events, outcome mismatches, and
-invalid endpoints fail closed. A valid trace from another loaded program is not silently treated as
-matching: JSON exposes `program_hash_match: false` and text reports a warning.
-
-`kosika.assistant.KosikaAssistant` receives only the checked mindmap and host-supplied diagnostic text.
-It supports a deterministic static mode, `ScriptedModelProvider` fixture mode, and an optional
-OpenAI-compatible local provider. Assistant requests always have an empty tool list. Tool calls,
-truncated responses, empty output, oversized context, and invalid tasks are rejected; assistant text
-never authorizes a capability or mutates a resource. Use `kosika.cli assistant --json` when a caller
-needs the answer, diagnostics, and exact static mindmap in one structured result.
 
 ### Automatic skill routing
 

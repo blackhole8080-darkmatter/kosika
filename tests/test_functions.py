@@ -8,7 +8,6 @@ from pathlib import Path
 from kosika.ast import FieldExpr, FunctionCall, FunctionCallExpr, RecordExpr
 from kosika.checker import CheckError, check
 from kosika.devtools import inspect_trace
-from kosika.explain import summarize_trace
 from kosika.mindmap import build_mindmap
 from kosika.modules import load_program
 from kosika.parser import ParseError, parse
@@ -188,10 +187,6 @@ class FunctionTests(unittest.TestCase):
             )
             self.assertEqual(returned["events"][0]["function"], "person_name")
             self.assertEqual(replay(trace), result)
-            self.assertIn(
-                "prepare/person_name",
-                [step["step"] for step in summarize_trace(trace)["steps"]],
-            )
             self.assertIn(
                 "prepare/person_name",
                 [step["step"] for step in inspect_trace(trace)["steps"]],

@@ -463,7 +463,7 @@ class CliCoverageTests(unittest.TestCase):
             self.assertEqual(result, 2)
             self.assertIn("Approval record needs", error)
 
-    def test_cli_rejects_invalid_model_and_assistant_fixtures(self) -> None:
+    def test_cli_rejects_an_invalid_model_fixture(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             model_fixture = root / "model.json"
@@ -476,21 +476,6 @@ class CliCoverageTests(unittest.TestCase):
             )
             self.assertEqual(result, 2)
             self.assertIn("requires a nonempty list", error)
-
-            assistant_fixture = root / "assistant.json"
-            assistant_fixture.write_text(
-                json.dumps({"responses": []}), encoding="utf-8"
-            )
-            result, error = self.call_cli_error(
-                "assistant",
-                str(MOCK_SOURCE),
-                "--task",
-                "Explain",
-                "--fixture",
-                str(assistant_fixture),
-            )
-            self.assertEqual(result, 2)
-            self.assertIn("Assistant fixture", error)
 
 
 if __name__ == "__main__":
