@@ -2921,9 +2921,16 @@ gate: without them a parser written in Kosika has nothing to return.
   say so, and show the model's sentence only as what it said. The coder
   asks its model once more when nothing was written, and is told to leave
   the tests alone when fixing a bug. `tests/test_agent_did.py`, 6 tests.
-- Not claimed: the second measurement, after these changes, had not
-  finished when this was written, so whether the coder now completes more
-  than 3 of 6 is not known. `did` says what was written, not whether it
+- Measured again after these changes, same six tasks, one run: 4 of 6
+  done, where it had been 3. Three of the four needed the `fix` round to
+  get there. No report named a file that was not written. The two that
+  failed were real mistakes left standing after a fix: an import of a name
+  that no longer existed after a rename, and a new test file that did not
+  import the function it tested. The run took 3082 s where the first took
+  1519 s, because the fix rounds and the second try cost model time, and
+  for part of it other work was using the same model.
+- Not claimed: one run of six easy tasks each time, so 3 and 4 are not far
+  enough apart to be sure of. `did` says what was written, not whether it
   was right.
 
 ### Maths, saved for later
@@ -2976,6 +2983,46 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   starts two Studios. Closing was tested by ending the window's process,
   not by a person pressing the X. The log holds the address with its token,
   in a folder only this user can read.
+
+### An assistant to talk to
+
+- The owner asked for an assistant "with reference to Siri", made with
+  Kosika, on his computer.
+- `examples/agents/assistant`. By rule and in plain code: the time and the
+  date from the clock, reminders that are kept, listed and finished, things
+  it is told to remember, and forgetting it all. Anything else goes to the
+  model with the date, the time, the reminders and what it remembers, and
+  an instruction to answer in one to three sentences fit to be read aloud.
+  It has a clock and its own memory and no other tool.
+- Studio opens on it, because it is the folder named `assistant`, and its
+  chat has a switch "Speak answers aloud". Only a voice the browser marks
+  as living on this computer is used; one that would send the words to a
+  service to be spoken is never picked. The switch is off until chosen.
+- Tried on qwen2.5:7b: the time, a reminder and a thing to remember each
+  answered in about a second with no model call; questions took 10 to 26 s
+  while another job was using the model. It used what it had been told
+  ("when is my exam?" gave "Your discrete maths exam is on Friday").
+- The same try found the fault that matters most in an assistant. Asked to
+  "open my web browser and search for cats", it answered "Sure, I'll open
+  the web browser and search for cats". It can do no such thing. Two
+  guards were added, both in code: a request that begins with a verb for
+  acting on the computer (open, play, search, send, set and others) is
+  answered with a fixed sentence saying it cannot, without asking the
+  model; and any model answer that claims such an action is replaced by
+  that sentence.
+- In a real Studio window: the assistant was the page shown, nine voices
+  were found of which six English ones are on this computer, a sentence
+  was spoken at zero volume to its end, and "what time is it" typed into
+  the chat was answered in half a second. 7 tests in the program, 3 evals,
+  and `tests/test_assistant_agent.py` with 6 tests.
+- Not claimed: it does not hear. The owner was asked to choose between
+  local speech recognition (a download of about 150 MB), the browser's
+  own (which sends the voice to Google), and typing; nothing that opens
+  the microphone is in the page until he answers. There is no wake word.
+  It cannot open programs or act on the computer, by design. Reminders
+  have no times and nothing rings. The guard against false claims is a
+  list of phrases, so a claim worded differently can still get through.
+  Speaking aloud was heard by no one: it was run silent.
 
 ## Standard coding-agent procedure
 

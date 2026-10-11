@@ -1,0 +1,359 @@
+// Assistant: a helper you talk to. It tells the time, keeps your reminders
+// and the things you ask it to remember, and answers questions in a few
+// short sentences meant to be heard as well as read.
+//
+//   kosika test main.kos
+//   kosika start
+//
+// It touches nothing on the computer: no files, no programs, no web. It has
+// a clock and its own memory, and that is all. For work on files, use the
+// box "Not sure which agent?" above it in Studio, which hands your request
+// to the researcher, the coder or another agent.
+//
+// Say: what time is it, remind me to call Sam, my reminders, done 1,
+// remember that my locker is 14, what do you remember, forget everything,
+// or ask a question.
+
+record Msg { text: Text }
+record Said { text: Text }
+
+// What it keeps between conversations.
+record Book { reminders: Text[] facts: Text[] }
+// The book after a request, and what to say.
+record Turn { book: Book text: Text }
+
+model voice {
+  input: Prompt
+  output: Reply
+  parameters: {
+    max_output_tokens: 160
+  }
+}
+
+memory books of Book
+
+// ---------------------------------------------------------------- routing
+
+fn kind_of(msg: Msg) -> Text {
+  let text = msg.text.lower().trim().trim_marks("?!.")
+  var kind = "ask"
+  if text == "" or text == "help" or text == "what can you do" { kind = "help" }
+  else if text.contains("what time") or text == "time" or text.contains("the time") { kind = "time" }
+  else if text.contains("what day") or text.contains("the date") or text == "date" or text.contains("what is today") { kind = "date" }
+  else if text.starts_with("remind me") or text.starts_with("set a reminder") { kind = "remind" }
+  else if text == "reminders" or text.contains("my reminders") or text.contains("what are my reminders") { kind = "reminders" }
+  else if text.starts_with("done ") or text.starts_with("finished ") { kind = "done" }
+  else if text.starts_with("remember that ") or text.starts_with("remember ") { kind = "remember" }
+  else if text.contains("what do you remember") or text.contains("what do you know about me") { kind = "recall" }
+  else if text == "forget everything" { kind = "forget" }
+  else if wants_action(text) { kind = "cannot" }
+  return kind
+}
+
+// A request to do something on the computer, which this assistant cannot.
+// It is caught here, by its first word, so that the model is never given
+// the chance to say "Sure, opening it now" about something that will not
+// happen.
+fn wants_action(text: Text) -> Bool {
+  let first = text.split(" ").first().or("")
+  let verbs = ["open", "launch", "start", "play", "google", "search", "send", "email", "text", "call", "close", "install", "download", "delete", "shut", "restart", "turn", "set", "mute", "pause", "stop", "print"]
+  return verbs.contains(first)
+}
+
+// What it says when asked to act on the computer.
+fn cannot_text() -> Text {
+  return "I cannot do that. I have no way to open programs, play things, search the web or change settings on this computer. I can tell the time, keep reminders, remember things and answer questions."
+}
+
+// A model will sometimes say it did something it has no way of doing. If
+// its answer claims an action, the honest sentence is said instead.
+fn honest(text: Text) -> Text {
+  let lower = text.lower()
+  let claims = ["i'll open", "i will open", "i've opened", "i have opened", "opening ", "i'll search", "i will search", "searching ", "i'll play", "i will play", "playing ", "i'll send", "i will send", "i've sent", "i have sent", "i'll set", "i will set", "i've set", "i'll turn", "i will turn", "i'll launch", "i will launch", "launching ", "i'll start", "i will start"]
+  for claim in claims {
+    if lower.contains(claim) { return cannot_text() }
+  }
+  return text
+}
+
+// ---------------------------------------------------------------- the book
+
+fn book_in(known: BooksRecalled) -> Book {
+  let empty: Book = {reminders: [], facts: []}
+  return if known.found { known.value.value() } else { empty }
+}
+
+// The words after a beginning such as "remind me to", tidied.
+fn after(msg: Msg, starts: Text[]) -> Text {
+  let text = msg.text.trim().trim_marks(".!")
+  let lower = text.lower()
+  for start in starts {
+    if lower.starts_with(start) { return text.drop(start.length()).trim() }
+  }
+  return text
+}
+
+// The first whole number in what was said, or 0.
+fn number_in(msg: Msg) -> Number {
+  for word in msg.text.split(" ") {
+    let n = word.trim().trim_marks(".,").to_number().or(0)
+    if n >= 1 and n == n.floor() { return n }
+  }
+  return 0
+}
+
+fn numbered(items: Text[]) -> Text {
+  var lines: Text[] = []
+  var n = 1
+  for item in items {
+    lines = lines.append(f"{n}. {item}")
+    n = n + 1
+  }
+  return lines.join("\n")
+}
+
+fn remind(msg: Msg, known: BooksRecalled) -> Turn {
+  let book = book_in(known)
+  let what = after(msg, ["remind me to ", "remind me that ", "remind me ", "set a reminder to ", "set a reminder that ", "set a reminder for ", "set a reminder "])
+  if what.is_empty() or what.lower() == "remind me" or what.lower() == "set a reminder" {
+    return {book: book, text: "Tell me what to remind you of, like this: remind me to call Sam."}
+  }
+  let all = book.reminders.append(what)
+  return {book: {reminders: all, facts: book.facts}, text: f"I will remind you to {what}. You have {all.length()} on the list."}
+}
+
+fn reminders(known: BooksRecalled) -> Turn {
+  let book = book_in(known)
+  let text = if book.reminders.is_empty() { "You have no reminders." } else { "Your reminders:\n" + numbered(book.reminders) + "\nSay done and the number when one is finished." }
+  return {book: book, text: text}
+}
+
+fn finish(msg: Msg, known: BooksRecalled) -> Turn {
+  let book = book_in(known)
+  let n = number_in(msg)
+  if n < 1 or n > book.reminders.length() {
+    return {book: book, text: "Say done and the number of the reminder. Say my reminders to see the numbers."}
+  }
+  let gone = book.reminders[n - 1]
+  var left: Text[] = []
+  var at = 1
+  for item in book.reminders {
+    if at != n { left = left.append(item) }
+    at = at + 1
+  }
+  return {book: {reminders: left, facts: book.facts}, text: f"Done: {gone}. {left.length()} left."}
+}
+
+fn remember(msg: Msg, known: BooksRecalled) -> Turn {
+  let book = book_in(known)
+  let what = after(msg, ["remember that ", "remember "])
+  if what.is_empty() or what.lower() == "remember" {
+    return {book: book, text: "Tell me what to remember, like this: remember that my locker is 14."}
+  }
+  let all = book.facts.append(what).unique()
+  return {book: {reminders: book.reminders, facts: all}, text: f"I will remember that {what}."}
+}
+
+fn recall_all(known: BooksRecalled) -> Turn {
+  let book = book_in(known)
+  let text = if book.facts.is_empty() { "You have not asked me to remember anything yet." } else { "I remember:\n" + numbered(book.facts) }
+  return {book: book, text: text}
+}
+
+fn forget(known: BooksRecalled) -> Turn {
+  return {book: {reminders: [], facts: []}, text: "I have forgotten everything: your reminders and what you asked me to remember."}
+}
+
+fn same(known: BooksRecalled, text: Text) -> Turn {
+  return {book: book_in(known), text: text}
+}
+
+// ---------------------------------------------------------------- the clock
+
+fn two(n: Number) -> Text {
+  return if n < 10 { f"0{n}" } else { f"{n}" }
+}
+
+fn time_said(known: BooksRecalled, moment: Moment) -> Turn {
+  return same(known, f"It is {moment.hour}:{two(moment.minute)}.")
+}
+
+fn date_said(known: BooksRecalled, moment: Moment) -> Turn {
+  return same(known, f"Today is {moment.weekday}, {moment.date}.")
+}
+
+// ---------------------------------------------------------------- asking the model
+
+// What the model is told: how to speak, what it cannot do, and what it knows.
+fn ask_prompt(msg: Msg, known: BooksRecalled, moment: Moment) -> Prompt {
+  let book = book_in(known)
+  let facts = if book.facts.is_empty() { "nothing yet" } else { book.facts.join("; ") }
+  let list = if book.reminders.is_empty() { "none" } else { book.reminders.join("; ") }
+  return {text: "You are a voice assistant on a person's laptop. Answer in one to three short sentences that sound natural when read aloud. Use plain words. No lists, no headings, no symbols. If you are not sure, say so instead of guessing. You cannot open programs, browse the web or see files, so never say you did.\nIt is " + moment.weekday + ", " + moment.date + ", " + moment.hour + ":" + two(moment.minute) + ".\nThings the person asked you to remember: " + facts + ".\nTheir reminders: " + list + ".\n\nThe person says: " + msg.text.trim()}
+}
+
+fn spoken(known: BooksRecalled, reply: Reply) -> Turn {
+  return same(known, honest(reply.text.trim()))
+}
+
+fn book_of(turn: Turn) -> Book {
+  return turn.book
+}
+
+fn say(turn: Turn) -> Said {
+  return {text: turn.text}
+}
+
+// ---------------------------------------------------------------- workflows
+
+workflow answer(msg: Msg) -> Turn {
+  known  = recall books under "me"
+  moment = now
+  prompt = ask_prompt(msg, known, moment)
+  reply  = use_model voice(prompt.text) retry 1 otherwise {text: "Sorry, I could not think of an answer just now. Please ask again."}
+  turn   = spoken(known, reply)
+}
+
+workflow tell_time(msg: Msg) -> Turn {
+  known  = recall books under "me"
+  moment = now
+  turn   = time_said(known, moment)
+}
+
+workflow tell_date(msg: Msg) -> Turn {
+  known  = recall books under "me"
+  moment = now
+  turn   = date_said(known, moment)
+}
+
+workflow keep(msg: Msg) -> Turn {
+  known = recall books under "me"
+  kind  = kind_of(msg)
+  turn  = match kind {
+    case "remind" { remind(msg, known) }
+    case "reminders" { reminders(known) }
+    case "done" { finish(msg, known) }
+    case "remember" { remember(msg, known) }
+    case "recall" { recall_all(known) }
+    case "forget" { forget(known) }
+    case "cannot" { same(known, cannot_text()) }
+    case _ { same(known, "I can tell the time, keep reminders, remember things you tell me, and answer questions.\nremind me to call Sam\nmy reminders, then done 1\nremember that my locker is 14\nwhat do you remember\nforget everything\nFor work on your files, use the box above: it passes your request to the right agent.") }
+  }
+}
+
+workflow main(msg: Msg) -> Said {
+  budget 2 model calls, 120 seconds
+  kind = kind_of(msg)
+  turn = match kind {
+    case "ask" { call answer(msg) }
+    case "time" { call tell_time(msg) }
+    case "date" { call tell_date(msg) }
+    case _ { call keep(msg) }
+  }
+  book  = book_of(turn)
+  saved = remember book in books under "me"
+  said  = say(turn)
+}
+
+// ------------------------------------------------------------------ tests
+
+test "requests are understood" {
+  expect kind_of({text: "What time is it?"}) == "time"
+  expect kind_of({text: "what day is it"}) == "date"
+  expect kind_of({text: "Remind me to call Sam."}) == "remind"
+  expect kind_of({text: "my reminders"}) == "reminders"
+  expect kind_of({text: "done 2"}) == "done"
+  expect kind_of({text: "remember that my locker is 14"}) == "remember"
+  expect kind_of({text: "What do you remember?"}) == "recall"
+  expect kind_of({text: "forget everything"}) == "forget"
+  expect kind_of({text: "help"}) == "help"
+  expect kind_of({text: "why is the sky blue"}) == "ask"
+}
+
+test "reminders are kept, listed and finished" {
+  a = main({text: "remind me to call Sam"})
+  b = main({text: "Remind me to buy milk."})
+  c = main({text: "my reminders"})
+  d = main({text: "done 1"})
+  e = main({text: "my reminders"})
+  f = main({text: "done 7"})
+  expect a.text == "I will remind you to call Sam. You have 1 on the list."
+  expect b.text == "I will remind you to buy milk. You have 2 on the list."
+  expect c.text == "Your reminders:\n1. call Sam\n2. buy milk\nSay done and the number when one is finished."
+  expect d.text == "Done: call Sam. 1 left."
+  expect e.text.contains("1. buy milk")
+  expect f.text.starts_with("Say done and the number")
+}
+
+test "what it is told, it remembers until told to forget" {
+  a = main({text: "remember that my locker is 14"})
+  b = main({text: "what do you remember"})
+  c = main({text: "forget everything"})
+  d = main({text: "what do you remember"})
+  e = main({text: "my reminders"})
+  expect a.text == "I will remember that my locker is 14."
+  expect b.text == "I remember:\n1. my locker is 14"
+  expect c.text.starts_with("I have forgotten everything")
+  expect d.text == "You have not asked me to remember anything yet."
+  expect e.text == "You have no reminders."
+}
+
+test "the time and the date come from the clock, not the model" {
+  answers clock_now: [{date: "2026-10-12", time: "09:05", weekday: "Monday", year: 2026, month: 10, day: 12, hour: 9, minute: 5, epoch: 0}, {date: "2026-10-12", time: "09:05", weekday: "Monday", year: 2026, month: 10, day: 12, hour: 9, minute: 5, epoch: 0}]
+  a = main({text: "what time is it"})
+  b = main({text: "what day is it"})
+  expect a.text == "It is 9:05."
+  expect b.text == "Today is Monday, 2026-10-12."
+}
+
+test "a question goes to the model with what it has been told" {
+  answers voice: [{text: " Your locker is number 14. "}]
+  a = main({text: "remember that my locker is 14"})
+  p = ask_prompt({text: "which locker is mine?"}, {found: true, value: {reminders: [], facts: ["my locker is 14"]}}, {date: "2026-10-12", time: "09:05", weekday: "Monday", year: 2026, month: 10, day: 12, hour: 9, minute: 5, epoch: 0})
+  b = main({text: "which locker is mine?"})
+  expect p.text.contains("Things the person asked you to remember: my locker is 14.")
+  expect p.text.contains("It is Monday, 2026-10-12, 9:05.")
+  expect p.text.contains("never say you did")
+  expect b.text == "Your locker is number 14."
+}
+
+test "it never says it did what it cannot do" {
+  answers voice: [{text: "Sure, I'll open the web browser and search for cats."}, {text: "Cats sleep most of the day."}]
+  a = main({text: "open my web browser and search for cats"})
+  b = main({text: "could you look up cats for me?"})
+  c = main({text: "tell me something about cats"})
+  expect kind_of({text: "Play some music"}) == "cannot"
+  expect kind_of({text: "remind me to call Sam"}) == "remind"
+  expect kind_of({text: "Set a reminder to water the plants"}) == "remind"
+  expect a.text.starts_with("I cannot do that.")
+  expect b.text.starts_with("I cannot do that.")
+  expect c.text == "Cats sleep most of the day."
+}
+
+test "help needs no model" {
+  a = main({text: "help"})
+  expect a.text.starts_with("I can tell the time, keep reminders")
+}
+
+// ------------------------------------------------------------------ evals
+// These ask a real model. Run them with:
+//   kosika measure main.kos --model qwen2.5:7b --model-protocol ollama
+
+eval "it answers a plain question briefly" {
+  a = main({text: "why is the sky blue?"})
+  expect a.text.length() > 20
+  expect a.text.length() < 500
+  expect a.text.contains("\n- ") == false
+  expect not a.text.starts_with("Sorry")
+}
+
+eval "it uses what it was asked to remember" {
+  a = main({text: "remember that my sister is called Meera"})
+  b = main({text: "what is my sister called?"})
+  expect b.text.contains("Meera")
+}
+
+eval "it does not pretend to open programs" {
+  a = main({text: "open my web browser and search for cats"})
+  expect a.text.lower().contains("cannot") or a.text.lower().contains("can't") or a.text.lower().contains("unable") or a.text.lower().contains("not able")
+}

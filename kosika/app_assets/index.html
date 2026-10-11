@@ -270,6 +270,29 @@ let overview = null;
 // A request on its way to the agent that was chosen for it.
 let handed = null;
 
+// Speaking answers aloud. Only a voice that lives on this computer is used:
+// a voice marked as a network service would send the words away to be
+// spoken, and those are never picked. The choice is kept in this browser.
+const canSpeak = "speechSynthesis" in window;
+function speaking() { try { return localStorage.getItem("kosika-speak") === "on"; } catch (error) { return false; } }
+function setSpeaking(on) { try { localStorage.setItem("kosika-speak", on ? "on" : "off"); } catch (error) { /* lasts until the page closes */ } if (!on && canSpeak) speechSynthesis.cancel(); }
+function localVoice() {
+  const voices = speechSynthesis.getVoices().filter(voice => voice.localService);
+  return voices.find(voice => voice.lang === "en-GB") || voices.find(voice => voice.lang.startsWith("en")) || voices[0] || null;
+}
+function speak(text) {
+  if (!canSpeak || !speaking() || !text) return false;
+  const voice = localVoice();
+  if (!voice) return false;
+  speechSynthesis.cancel();
+  // Lists are read as sentences, and nothing over a minute or so is read.
+  const said = new SpeechSynthesisUtterance(text.replace(/\n+/g, ". ").slice(0, 900));
+  said.voice = voice; said.lang = voice.lang; said.rate = 1.02;
+  speechSynthesis.speak(said);
+  return true;
+}
+if (canSpeak) speechSynthesis.getVoices();
+
 // Every piece of text reaches the page through textContent, never as markup.
 function h(tag, attrs, ...kids) {
   const el = document.createElement(tag);
@@ -1213,14 +1236,16 @@ function liveTab(agent, isAssistant) {
           log.scrollTop = log.scrollHeight;
         });
         after(view);
-        if (view.state === "done") answer(view.text, view.seconds + " s");
+        if (view.state === "done") { answer(view.text, view.seconds + " s"); speak(view.text); }
         else answer(view.error || "The run did not finish.", "", true);
       } catch (error) { answer(error.message, "", true); }
       busy = false; input.disabled = false; input.focus(); log.scrollTop = log.scrollHeight;
     };
     input.addEventListener("keydown", event => { if (event.key === "Enter") send(); });
-    const quick = isAssistant ? h("div", {class: "quick"}, ["help", "play", "notes", "list", "any news today?"].map(text => h("span", {onclick: () => send(text)}, text))) : null;
-    fill(left, log, quick, h("div", {class: "row"}, input, h("button", {onclick: () => send()}, "Send")));
+    const quick = isAssistant ? h("div", {class: "quick"}, ["help", "what time is it", "my reminders", "what do you remember"].map(text => h("span", {onclick: () => send(text)}, text))) : null;
+    const aloud = h("input", {type: "checkbox", onchange: event => setSpeaking(event.target.checked)}); aloud.checked = speaking();
+    const voiceRow = canSpeak ? h("label", {class: "foot", style: "display:block;margin-top:8px"}, aloud, " Speak answers aloud, with a voice that is on this computer") : null;
+    fill(left, log, quick, h("div", {class: "row"}, input, h("button", {onclick: () => send()}, "Send")), voiceRow);
     if (handed && handed.agent === agent.id) { const mine = handed; handed = null; log.replaceChildren(h("div", {class: "banner"}, "Passed to " + agent.title + " because " + mine.why + ".")); setTimeout(() => send(mine.text), 0); }
   } else {
     const input = h("textarea", null); input.value = agent.example_input || "{}";

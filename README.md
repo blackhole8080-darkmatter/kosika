@@ -1087,7 +1087,7 @@ eval that did not always pass.
 
 ### Example agents
 
-`examples/agents` holds ten agents written in Kosika, each with its own
+`examples/agents` holds eleven agents written in Kosika, each with its own
 tests. Point Studio at the folder to try them:
 
 ```
@@ -1111,6 +1111,10 @@ kosika studio examples/agents --model MODEL --allow-folder YOUR_FOLDER --allow-s
   files to open.
 - `builder` makes the files you ask for, after showing you its whole plan:
   every file with its full text, and one yes or no for the lot.
+- `assistant` is the one you talk to: the time, reminders, things you ask
+  it to remember, and short answers meant to be heard. It touches nothing
+  on the computer, and says so when asked to. Studio opens on it and can
+  speak its answers aloud.
 - `coder` does one small task in a Python project. It reads the files it
   needs, shows you every file it will write, writes them, runs the tests
   and reports. Run it with `--in-session` so it works in a copy. Say `fix`

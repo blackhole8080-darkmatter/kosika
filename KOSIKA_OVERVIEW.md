@@ -33,7 +33,8 @@ exists today is the language and its tools for agents, used by one person.
   - a trace of every run that can be replayed without the model;
   - Kosika Studio, a desktop-style app to see agents, run them, watch each
     step, and approve their actions.
-- **Ten example agents written in it:** researcher, planner, coach,
+- **Eleven example agents written in it:** assistant (the one you talk
+  to), researcher, planner, coach,
   doctor, workbench, scout, builder (shows its whole plan before it makes
   any file), coder (does a small task in a Python project and runs the
   tests), author (an agent that writes Kosika), and animator (motion
