@@ -7,6 +7,7 @@ files and optional instruction files.
 
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 import json
 import re
@@ -46,6 +47,11 @@ class SkillDefinition:
     risk: str = "low"
     cost: str = "low"
     source: str = "<memory>"
+    #: File name patterns the checks apply to, such as `*.py`. Empty means
+    #: the skill has no checks.
+    files: tuple[str, ...] = ()
+    #: Rules a file made under this skill must keep. See `check_problem`.
+    checks: tuple[str, ...] = ()
 
     @property
     def digest(self) -> str:
@@ -400,6 +406,10 @@ SKILLS_FOLDER = "skills"
 #: At most this many skills are given to an agent for one request.
 MAX_PICKED = 3
 _WHEN_RE = re.compile(r"^\s*when\s*:\s*(.+)$", re.IGNORECASE)
+_HEAD_RE = re.compile(r"^\s*(files|check)\s*:\s*(.+)$", re.IGNORECASE)
+_CHECK_RE = re.compile(
+    r'^(starts with|contains|every line starts with)\s+"(.+)"\s*$', re.IGNORECASE
+)
 
 
 def _stem(word: str) -> str:
@@ -444,9 +454,14 @@ def load_skill_note(path: Path) -> SkillDefinition:
         raise SkillCatalogError(f"Skill {path.name} is not UTF-8 text") from exc
     summary = ""
     keywords: tuple[str, ...] = ()
+    files: tuple[str, ...] = ()
+    checks: list[str] = []
     body: list[str] = []
     for line in lines:
         when = _WHEN_RE.match(line)
+        # `Files:` and `Check:` lines belong to the top of the note, before
+        # the know-how begins, so know-how may itself use those words.
+        heading = None if body else _HEAD_RE.match(line)
         if not summary and line.strip():
             summary = line.strip().lstrip("#").strip()
         elif when and not keywords:
@@ -457,8 +472,28 @@ def load_skill_note(path: Path) -> SkillDefinition:
                     if part.strip()
                 )
             )
-        else:
+        elif heading and heading.group(1).lower() == "files":
+            files = tuple(
+                part.strip().lower()
+                for part in heading.group(2).split(",")
+                if part.strip()
+            )
+        elif heading:
+            rule = heading.group(2).strip()
+            if _CHECK_RE.match(rule) is None:
+                raise SkillCatalogError(
+                    f"Skill {path.name} has a check Kosika cannot read: {rule!r}. "
+                    'A check is `starts with "..."`, `contains "..."` or '
+                    '`every line starts with "..."`'
+                )
+            checks.append(rule)
+        elif line.strip() or body:
             body.append(line)
+    if checks and not files:
+        raise SkillCatalogError(
+            f"Skill {path.name} has checks, so it needs a line such as "
+            "`Files: *.py` saying which files they are for"
+        )
     instructions = "\n".join(body).strip()
     if not summary:
         raise SkillCatalogError(f"Skill {path.name} is empty")
@@ -477,7 +512,98 @@ def load_skill_note(path: Path) -> SkillDefinition:
         keywords=keywords,
         instructions=instructions,
         source=path.as_posix(),
+        files=files,
+        checks=tuple(checks),
     )
+
+
+def check_problem(rule: str, text: str) -> str | None:
+    """Why a text breaks one rule, or None if it keeps it.
+
+    A rule is `starts with "..."`, `contains "..."`, or
+    `every line starts with "..."`, where empty lines do not count.
+    """
+
+    found = _CHECK_RE.match(rule)
+    if found is None:
+        return None
+    kind, wanted = found.group(1).lower(), found.group(2)
+    if kind == "starts with":
+        return (
+            None
+            if text.lstrip().startswith(wanted)
+            else f"it must start with {wanted!r}"
+        )
+    if kind == "contains":
+        return None if wanted in text else f"it must contain {wanted!r}"
+    lines = [line for line in text.split("\n") if line.strip()]
+    if all(line.startswith(wanted) for line in lines):
+        return None
+    return f"every line must start with {wanted!r}"
+
+
+def plan_problems(
+    selection: SkillSelection | None,
+    request: str,
+    actions: Iterable[tuple[str, Mapping[str, object]]],
+) -> list[str]:
+    """What is wrong with the files a plan would write, in plain words.
+
+    Only actions that write text to a path are looked at. A file must not be
+    empty, and must not just repeat the request. A file whose name fits a
+    picked skill's `Files:` pattern must keep that skill's checks.
+    """
+
+    problems: list[str] = []
+    asked = " ".join(_tokens(request))
+    seen: set[str] = set()
+    for _tool, arguments in actions:
+        path, text = arguments.get("path"), arguments.get("text")
+        if not isinstance(path, str) or not isinstance(text, str):
+            continue
+        name = path.replace("\\", "/").rsplit("/", 1)[-1].lower()
+        where = path.replace("\\", "/").removeprefix("./").lower()
+        if where in seen:
+            problems.append(f"{path}: the plan writes this file twice; write it once")
+            continue
+        seen.add(where)
+        if not text.strip():
+            problems.append(f"{path}: the file would be empty")
+            continue
+        if "\\n" in text and "\n" not in text:
+            problems.append(
+                f"{path}: line breaks were written as the two characters "
+                "backslash and n; use real line breaks"
+            )
+            continue
+        said = _tokens(text)
+        if len(said) >= 4 and " ".join(said) in asked:
+            problems.append(
+                f"{path}: the file only repeats the request; write what was asked for"
+            )
+            continue
+        # When the name fits more than one picked skill, the one whose
+        # pattern says the most about the name is the one that applies:
+        # readme.txt is a readme before it is a text file.
+        fitting = [
+            (max(len(pattern.replace("*", "")) for pattern in matched), skill)
+            for skill in (selection.selected if selection is not None else ())
+            if (
+                matched := [
+                    pattern
+                    for pattern in skill.files
+                    if fnmatch.fnmatchcase(name, pattern)
+                ]
+            )
+        ]
+        if not fitting:
+            continue
+        skill = max(fitting, key=lambda item: item[0])[1]
+        for rule in skill.checks:
+            why = check_problem(rule, text)
+            if why is not None:
+                problems.append(f"{path}: {why} ({skill.summary})")
+    return problems
 
 
 def load_skill_notes(folder: Path) -> SkillCatalog:
@@ -625,7 +751,9 @@ def skills_text(selection: SkillSelection) -> str:
 __all__ = [
     "MAX_PICKED",
     "SKILLS_FOLDER",
+    "check_problem",
     "choose_question",
+    "plan_problems",
     "read_choice",
     "selection_of",
     "with_chosen",

@@ -788,6 +788,26 @@ into the run's trace with why each was picked, and shown in Studio as the
 agent starts. A step that begins again after you answer a plan keeps the
 skills it first had.
 
+A skill can also say what the work must look like, with two more kinds of
+line at the top:
+
+```
+# How a list for a person is written
+When: todo, checklist, shopping list
+Files: *.txt
+Check: every line starts with "- [ ] "
+```
+
+`Files:` names which files the checks are for. A check is one of
+`starts with "..."`, `contains "..."` or `every line starts with "..."`.
+
+Before a plan is shown to you, every file it would write is checked: it must
+not be empty, must not just repeat your request, must not be written twice,
+and must keep the checks of the picked skill that fits its name. A plan that
+fails goes back to the model once, with what is wrong. If the next plan
+still fails, you are shown it with the problems listed above the button, so
+the decision is yours and you make it knowing.
+
 A skill is advice. It gives an agent no tool and no permission it did not
 have. `kosika studio` and `kosika run` read the folder; nothing has to be
 declared in the program. A note that cannot be used, such as one with no

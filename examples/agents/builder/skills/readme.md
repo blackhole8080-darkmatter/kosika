@@ -1,5 +1,8 @@
 # What a good readme has
 When: readme, explain the folder, describe the folder, introduction
+Files: readme*
+Check: starts with "# "
+Check: contains "## Files"
 
 Start with a title line that begins with "# " and names the folder.
 The next line is one sentence saying what the folder is for.

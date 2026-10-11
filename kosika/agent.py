@@ -86,6 +86,11 @@ ToolExecutor = Callable[[ToolDecl, dict[str, Any]], Any]
 #: order, before any of them happens. It returns to let them all happen, or
 #: raises to stop: to wait for a person, or because the answer was no.
 PlanApprover = Callable[[list[tuple[ToolDecl, dict[str, Any]]]], None]
+#: Called with the same list first. What it returns is what is wrong with
+#: the plan, in words for the model; an empty list means nothing is.
+PlanReviewer = Callable[[list[tuple[ToolDecl, dict[str, Any]]]], list[str]]
+#: How many times a plan found wanting goes back to the model.
+PLAN_RETRIES = 1
 
 
 def _canonical(value: Any) -> bytes:
@@ -235,7 +240,11 @@ class AgentLoop:
         defer_approval: bool = False,
         tool_descriptions: Mapping[str, str] | None = None,
         approve_plan: PlanApprover | None = None,
+        review_plan: PlanReviewer | None = None,
     ) -> None:
+        #: Looks at a plan before a person is asked about it. A plan it finds
+        #: wanting goes back to the model, PLAN_RETRIES times at most.
+        self.review_plan = review_plan
         #: Set for an agent that plans first. The changes asked for in one
         #: reply are its plan: they are handed over whole before any happens,
         #: and the agent gets no second set of changes.
@@ -666,6 +675,7 @@ class AgentLoop:
         }
         approval_used = False
         plan_done = False
+        plans_sent_back = 0
         resume_response: ModelResponse | None = None
         resume_step = 0
         resume_tool_index = 0
@@ -974,8 +984,38 @@ class AgentLoop:
                         for call, binding, problem in pending
                     ]
                 else:
-                    self.approve_plan(planned)
-                    plan_done = True
+                    wrong = (
+                        self.review_plan(planned)
+                        if self.review_plan is not None
+                        and plans_sent_back < PLAN_RETRIES
+                        else []
+                    )
+                    if wrong:
+                        # Nothing is shown to the person and nothing happens:
+                        # the model is told what is wrong and plans again.
+                        plans_sent_back += 1
+                        told = (
+                            "Not done. Your plan was not shown to the person "
+                            "because: "
+                            + "; ".join(wrong)
+                            + ". Request every change again in one reply, "
+                            "with this put right."
+                        )
+                        pending = [
+                            (
+                                call,
+                                binding,
+                                told
+                                if binding is not None
+                                and problem is None
+                                and binding.declaration.access == "execute"
+                                else problem,
+                            )
+                            for call, binding, problem in pending
+                        ]
+                    else:
+                        self.approve_plan(planned)
+                        plan_done = True
             if session is not None and pending:
                 session.checkpoint(
                     "tool_pending",

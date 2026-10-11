@@ -2630,8 +2630,41 @@ gate: without them a parser written in Kosika has nothing to return.
   easy part; a 7b model given a vague request does not do the work well,
   with or without the skill.
 - `tests/test_skill_notes.py`, now 20 tests.
-- Not claimed: one run. Nothing yet checks the work against the skill
-  before the plan is shown, which is what that last result calls for.
+- Not claimed: one run. The check this calls for is the next section.
+
+### A plan is checked before the person sees it
+
+- The last measurement showed the model often did not follow a skill it was
+  given. Asking a small model to review itself was not tried: the checks
+  here are done by code.
+- A skill note can carry `Files:` and `Check:` lines. A check is
+  `starts with`, `contains` or `every line starts with`. When a file name
+  fits more than one picked skill, the skill whose pattern says most about
+  the name applies, so readme.txt is checked as a readme, not as a list.
+- With or without skills, a planned file must not be empty, must not only
+  repeat the request, must not have its line breaks written as backslash-n,
+  and must not be written twice in one plan.
+- A plan that fails goes back to the model once and nothing is shown or
+  done. If the second plan still fails, the person is shown it with the
+  problems listed: Studio prints them above the button and `kosika run
+  --approve` under the plan. The person decides.
+- The builder's three skills now carry checks.
+- Measured on qwen2.5:7b, the same eleven requests as before, one run.
+  Six clear requests: 6 of 8 files followed their rules, where it had been
+  6 of 9; no file was empty or had broken line breaks, where two had. Five
+  vague requests: 2 of 4 files under a rightly picked skill followed it,
+  where it had been 1 of 4. Across both, three files still broke a rule the
+  checker knows, and all three plans carried the warning.
+- One request failed in both runs of this measurement: the model planned
+  the same file twice and the second write was refused. That is now one of
+  the things the check sends back. Not measured again after adding it.
+- `tests/test_plan_review.py`, 14 tests.
+- Not claimed: the checks are about shape. A to-do list of nonsense that
+  starts every line with a box passes. The model wrongly given the Python
+  skill for plain text files is not caught, because no file name fitted.
+  When the lists skill is picked, every other .txt file in the plan is
+  held to its rule too. The measurement approved every plan, so files with
+  warnings were made; a person reading the warning might have said no.
 
 ### Questions the researcher had never seen
 

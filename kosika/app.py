@@ -1195,6 +1195,9 @@ class App:
                                 "agent": pending.request["arguments"]["agent"],
                                 "step": pending.request.get("step"),
                                 "walled": walled,
+                                "warnings": pending.request["arguments"].get(
+                                    "warnings", []
+                                ),
                                 "plan": [
                                     {
                                         "tool": action["tool"],

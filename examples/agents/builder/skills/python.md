@@ -1,5 +1,8 @@
 # How a small Python file is written
 When: python, .py, py file, script
+Files: *.py
+Check: contains "def main"
+Check: contains "__main__"
 
 Begin the file with a docstring in triple quotes that says in one line what
 the program does. Put the work in a function named main. End the file with:

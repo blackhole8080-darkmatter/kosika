@@ -79,6 +79,7 @@ from .skills import (
     SkillCatalog,
     choose_question,
     pick_skills,
+    plan_problems,
     read_choice,
     selection_of,
     skills_text,
@@ -1970,6 +1971,19 @@ def _run_workflow(
                 plan_results: list[dict[str, Any]] = []
                 plan_action: list[str | None] = []
 
+                def review_agent_plan(
+                    actions: list[tuple[ToolDecl, dict[str, Any]]],
+                ) -> list[str]:
+                    return plan_problems(
+                        picked,
+                        " ".join(
+                            value
+                            for value in arguments.values()
+                            if isinstance(value, str)
+                        ),
+                        [(declaration.name, values) for declaration, values in actions],
+                    )
+
                 def approve_agent_plan(
                     actions: list[tuple[ToolDecl, dict[str, Any]]],
                 ) -> None:
@@ -1978,13 +1992,18 @@ def _run_workflow(
                             f"Agent {asked_agent.name!r} plans changes, which "
                             "requires a verified approval record"
                         )
-                    wanted = {
+                    wanted: dict[str, Any] = {
                         "agent": asked_agent.name,
                         "actions": [
                             {"tool": declaration.name, "arguments": values}
                             for declaration, values in actions
                         ],
                     }
+                    # A plan that was sent back and still has something
+                    # wrong is shown all the same, with what is wrong.
+                    still_wrong = review_agent_plan(actions)
+                    if still_wrong:
+                        wanted["warnings"] = still_wrong
                     if isinstance(events, LiveEvents):
                         try:
                             events.watcher(
@@ -2162,6 +2181,7 @@ def _run_workflow(
                     described,
                     approve_agent_plan if plans else None,
                     skills_text(picked) if picked is not None else "",
+                    review_agent_plan if plans else None,
                 )
                 return_event = _event(
                     "agent_return",

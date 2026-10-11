@@ -774,6 +774,8 @@ def _ask_approval(
                 f"{json.dumps(action['arguments'], ensure_ascii=False)}",
                 file=sys.stderr,
             )
+        for warning in request["arguments"].get("warnings", []):
+            print(f"  ! checked and found wrong: {warning}", file=sys.stderr)
     else:
         print(
             "\nApproval needed before this action runs:\n"

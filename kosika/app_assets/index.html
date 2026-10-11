@@ -314,7 +314,8 @@ const askTitle = request => request.plan ? "Wants to carry out this plan of " + 
 function askLines(request) {
   if (request.plan) {
     const steps = request.plan.map((step, at) => (at + 1) + ". " + (isProgram(step) ? "start a program\n" : step.tool + "\n") + askLines(step).split("\n\n")[0].split("\n").map(line => "     " + line).join("\n"));
-    return steps.join("\n\n") + "\n\nOne yes covers exactly these, with exactly these details. If one fails, the ones after it do not happen." + (request.walled ? "\nThey happen in the session's copy, not in your folder." : "");
+    const warned = (request.warnings || []).length ? "\n\nBefore you say yes, this plan was checked and something is wrong:\n" + request.warnings.map(line => "  ! " + line).join("\n") : "";
+    return steps.join("\n\n") + warned + "\n\nOne yes covers exactly these, with exactly these details. If one fails, the ones after it do not happen." + (request.walled ? "\nThey happen in the session's copy, not in your folder." : "");
   }
   const given = request.arguments || {};
   if (isProgram(request)) {

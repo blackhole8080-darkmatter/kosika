@@ -805,6 +805,12 @@ text and listed in the `agent_call` trace event as `skills`, each with an `id`
 and the reason it was selected. Skills MUST NOT change which tools an agent
 can reach or what requires approval.
 
+Before a plan is offered for approval the runtime reviews each planned call
+that carries a text `path` and a text `text`. A plan with a problem is
+returned to the model once, as the result of each planned call, and nothing
+runs. If the next plan still has a problem, the approval request carries the
+problems as `warnings`.
+
 Declarations are requests for authority, never authority themselves. The host
 MUST bind declared providers and tools explicitly. Bindings for undeclared
 models or tools are rejected, and reachable capabilities are preflighted

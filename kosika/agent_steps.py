@@ -6,7 +6,13 @@ import json
 from dataclasses import asdict, replace
 from typing import Any, Mapping
 
-from .agent import AgentLoop, AgentLoopError, PlanApprover, ToolExecutor
+from .agent import (
+    AgentLoop,
+    AgentLoopError,
+    PlanApprover,
+    PlanReviewer,
+    ToolExecutor,
+)
 from .ast import AgentDecl, Program
 from .model import (
     ChatMessage,
@@ -131,6 +137,7 @@ def call_agent(
     tool_descriptions: Mapping[str, str] | None = None,
     approve_plan: PlanApprover | None = None,
     know_how: str = "",
+    review_plan: PlanReviewer | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     asked = _CompleteResponses(provider, output_schema)
     loop = AgentLoop(
@@ -141,6 +148,7 @@ def call_agent(
         defer_approval=True,
         tool_descriptions=tool_descriptions,
         approve_plan=approve_plan,
+        review_plan=review_plan,
     )
     try:
         completed = loop.run(
