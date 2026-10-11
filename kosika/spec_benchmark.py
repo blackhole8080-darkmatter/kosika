@@ -1,6 +1,6 @@
 """Measure whether a model can write Kosika from a plain-language spec.
 
-The repair corpus (`kosika.authoring_evaluation`) asks a model to fix one
+The repair corpus (`kosika benchmark`) asks a model to fix one
 mutated line. This benchmark asks the harder question an AI author faces:
 given only a short language guide and a spec, write the whole program.
 

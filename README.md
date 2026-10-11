@@ -1796,29 +1796,6 @@ accepts only declared component errors, bounds messages to 1 MiB, and kills the
 process at the contract deadline. This is a process contract, not an OS sandbox:
 the digest identifies bytes but does not prove their behavior.
 
-### Authoring evaluation
-
-`author-eval` measures the bounded `check -> propose -> repair -> run -> inspect`
-loop over the generated repair corpus. The report includes repair and first-pass
-rates, behavioral comparisons where execution is possible, authority violations,
-per-attempt model calls, prompt/completion tokens and provider latency, plus
-whole-case wall time.
-
-```text
-python -m kosika.cli author-eval --solver identity --limit 40 --no-behavior
-python -m kosika.cli author-eval --solver reference --limit 60 --no-behavior
-python -m kosika.cli author-eval --solver model --base-url URL --model NAME --limit 10 --format json
-```
-
-`identity` is the no-provider floor. `reference` is the stored-patch ceiling over
-repairs expressible as a unique search/replace block. A live model is never
-enabled implicitly. Evaluation works in temporary projects, never writes model
-proposals into the repository, and treats `agent.cannot` as denial rather than
-granted authority. See [DEVELOPMENT.md](DEVELOPMENT.md#authoring-evaluations)
-for the report and authority-audit contracts.
-
-
-
 ## Typed tool inputs
 
 Tools may declare an input record. The record becomes the model-facing JSON schema and is also used to

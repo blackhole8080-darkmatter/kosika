@@ -10,17 +10,11 @@ that changes either shape fails here rather than as an empty patch.
 
 from __future__ import annotations
 
-import contextlib
-import io
 import json
-import sys
-import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
 
-from kosika import cli
 from kosika.model import (
     MODEL_PROTOCOLS,
     ChatMessage,
@@ -28,7 +22,6 @@ from kosika.model import (
     ModelRequest,
     ModelTool,
     OpenAICompatibleProvider,
-    ScriptedModelProvider,
 )
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -334,138 +327,6 @@ class OpenAiRegressionTests(unittest.TestCase):
         response = provider.complete(ModelRequest(messages=()))
         self.assertEqual(response.tool_calls[0].name, "read")
         self.assertEqual(response.tool_calls[0].arguments, {"path": "/"})
-
-
-class CommandLineWiringTests(unittest.TestCase):
-    """The flags must reach the provider, not just exist on the parser."""
-
-    def run_cli(self, argv: list[str]) -> tuple[int, str]:
-        output = io.StringIO()
-        with (
-            patch.object(sys, "argv", ["kosika", *argv]),
-            contextlib.redirect_stdout(output),
-            contextlib.redirect_stderr(output),
-        ):
-            try:
-                code = cli.main()
-            except SystemExit as request:
-                code = int(request.code or 0)
-        return code, output.getvalue()
-
-    def patched(self, stack: contextlib.ExitStack) -> Any:
-        return stack.enter_context(
-            patch(
-                "kosika.model.OpenAICompatibleProvider",
-                return_value=ScriptedModelProvider([]),
-            )
-        )
-
-    def test_author_eval_passes_the_protocol_through(self) -> None:
-        with contextlib.ExitStack() as stack:
-            provider = self.patched(stack)
-            stack.enter_context(patch("kosika.cli.OpenAICompatibleProvider", provider))
-            code, output = self.run_cli(
-                [
-                    "author-eval",
-                    "--solver",
-                    "model",
-                    "--base-url",
-                    OLLAMA_HOST,
-                    "--model",
-                    "qwen3:1.7b",
-                    "--protocol",
-                    "ollama",
-                    "--limit",
-                    "1",
-                    "--format",
-                    "json",
-                ]
-            )
-        self.assertTrue(provider.called, output)
-        self.assertEqual(provider.call_args.kwargs["protocol"], "ollama")
-
-    def test_author_eval_defaults_to_the_openai_protocol(self) -> None:
-        with contextlib.ExitStack() as stack:
-            provider = self.patched(stack)
-            stack.enter_context(patch("kosika.cli.OpenAICompatibleProvider", provider))
-            code, output = self.run_cli(
-                [
-                    "author-eval",
-                    "--solver",
-                    "model",
-                    "--base-url",
-                    OPENAI_HOST,
-                    "--model",
-                    "local",
-                    "--limit",
-                    "1",
-                    "--format",
-                    "json",
-                ]
-            )
-        self.assertTrue(provider.called, output)
-        self.assertEqual(provider.call_args.kwargs["protocol"], "openai")
-
-    def test_author_passes_the_proposal_protocol_and_think_through(self) -> None:
-        with patch("kosika.cli.OpenAICompatibleProvider") as provider:
-            provider.return_value = ScriptedModelProvider([])
-            with tempfile.TemporaryDirectory() as directory:
-                code, output = self.run_cli(
-                    [
-                        "author",
-                        str(broken_program(directory)),
-                        "--intent",
-                        "Fix the broken record.",
-                        "--proposal-base-url",
-                        OLLAMA_HOST,
-                        "--proposal-model",
-                        "qwen3:1.7b",
-                        "--proposal-protocol",
-                        "ollama",
-                        "--proposal-think",
-                        "off",
-                    ]
-                )
-        self.assertTrue(provider.called, output)
-        self.assertEqual(provider.call_args.kwargs["protocol"], "ollama")
-        self.assertIs(provider.call_args.kwargs["think"], False)
-
-    def test_author_proposal_think_defaults_to_off(self) -> None:
-        with patch("kosika.cli.OpenAICompatibleProvider") as provider:
-            provider.return_value = ScriptedModelProvider([])
-            with tempfile.TemporaryDirectory() as directory:
-                code, output = self.run_cli(
-                    [
-                        "author",
-                        str(broken_program(directory)),
-                        "--intent",
-                        "Fix the broken record.",
-                        "--proposal-base-url",
-                        OLLAMA_HOST,
-                        "--proposal-model",
-                        "qwen3:1.7b",
-                    ]
-                )
-        self.assertTrue(provider.called, output)
-        self.assertIs(provider.call_args.kwargs["think"], False)
-
-    def test_a_clean_project_never_constructs_a_proposal_provider(self) -> None:
-        """A project that already checks needs no model, so none is built."""
-
-        with patch("kosika.cli.OpenAICompatibleProvider") as provider:
-            provider.return_value = ScriptedModelProvider([])
-            code, output = self.run_cli(
-                [
-                    str(EXAMPLES / "hello_world.kos"),
-                    "--intent",
-                    "Keep the greeting working.",
-                    "--proposal-base-url",
-                    OLLAMA_HOST,
-                    "--proposal-model",
-                    "qwen3:1.7b",
-                ]
-            )
-        self.assertFalse(provider.called, output)
 
 
 if __name__ == "__main__":
