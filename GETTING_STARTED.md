@@ -104,6 +104,23 @@ Press **Save**, then run the tests again. One fails: it expected "Hello".
 That is the test doing its job. Change the word in the test too, or change
 your greeting back.
 
+## Kosika Studio as an app on your desktop
+
+Run this once:
+
+```
+kosika desktop
+```
+
+It puts **Kosika Studio** on your Desktop and in the Start menu, with its
+own icon. Open it like any other app: it opens in a window of its own, with
+no black console window, and it stops when you close that window. To take
+the shortcuts away again, run `kosika desktop --remove`.
+
+The app starts with nothing granted, exactly like `kosika start`. Name a
+folder after the command to choose where your agents live:
+`kosika desktop MY_AGENTS`.
+
 ## 7. Let an agent see a folder
 
 Agents can touch nothing until you grant it. In Studio, open

@@ -6,8 +6,10 @@ import getpass
 import io
 import json
 import os
+import subprocess
 import sys
 import tempfile
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1723,6 +1725,11 @@ def build_parser() -> argparse.ArgumentParser:
             action="store_true",
             help="Print the address; do not open it.",
         )
+        app_parser.add_argument(
+            "--until-closed",
+            action="store_true",
+            help="Open Studio in a window of its own and stop when it is closed.",
+        )
     chat_parser = subparsers.add_parser(
         "chat", help="Talk to a Kosika program, one message at a time."
     )
@@ -1843,6 +1850,27 @@ def build_parser() -> argparse.ArgumentParser:
     )
     start_parser.add_argument("--port", type=int, default=0)
     start_parser.add_argument("--no-browser", action="store_true")
+    start_parser.add_argument(
+        "--until-closed",
+        action="store_true",
+        help="Stop when the Studio window is closed, as the desktop app does.",
+    )
+    desktop_parser = subparsers.add_parser(
+        "desktop",
+        help=(
+            "Put Kosika Studio on the Desktop and in the Start menu, as an "
+            "app that opens in its own window. Grants nothing."
+        ),
+    )
+    desktop_parser.add_argument(
+        "folder",
+        nargs="?",
+        type=Path,
+        help="Where your agents live. Default: KosikaAgents in your home folder.",
+    )
+    desktop_parser.add_argument(
+        "--remove", action="store_true", help="Take the shortcuts away again."
+    )
     motion_parser = subparsers.add_parser(
         "motion",
         help=(
@@ -2030,8 +2058,36 @@ def main() -> int:
             start_arguments += ["--port", str(args.port)]
         if args.no_browser:
             start_arguments.append("--no-browser")
+        if args.until_closed:
+            start_arguments.append("--until-closed")
         # From here it is an ordinary `kosika studio` with those choices.
         args = parser.parse_args(start_arguments)
+    if args.command == "desktop":
+        from .desktop_app import make_shortcuts, remove_shortcuts
+
+        try:
+            if args.remove:
+                gone = remove_shortcuts()
+                print(
+                    "Removed:\n  " + "\n  ".join(str(path) for path in gone)
+                    if gone
+                    else "There was no Kosika Studio shortcut to remove."
+                )
+                return 0
+            if args.folder is not None and not args.folder.is_dir():
+                print(f"Not done: {_no_folder(args.folder)}", file=sys.stderr)
+                return 2
+            shortcuts = make_shortcuts(args.folder)
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            print(f"Not done: {exc}", file=sys.stderr)
+            return 2
+        print("Kosika Studio is now an app on this computer:")
+        for path in shortcuts:
+            print(f"  {path}")
+        print("Open it like any other app. It starts with nothing granted;")
+        print("choose a folder inside Studio, on the Permissions page.")
+        print("To take it away again: kosika desktop --remove")
+        return 0
     if args.command == "development":
         try:
             request_source = (
@@ -2651,7 +2707,20 @@ def main() -> int:
         if not args.no_browser:
             # Studio opens as a window of its own when a browser that can do
             # that is installed, and as an ordinary tab otherwise.
-            if args.command != "studio" or not open_window(url):
+            window = None
+            if args.until_closed:
+                from .app import open_app_window
+                from .desktop_app import home as app_home
+
+                window = open_app_window(url, app_home() / "window")
+            if window is not None:
+                # The app ends when its window does.
+                def stop_with_window() -> None:
+                    window.wait()
+                    server.shutdown()
+
+                threading.Thread(target=stop_with_window, daemon=True).start()
+            elif args.command != "studio" or not open_window(url):
                 webbrowser.open(url)
         try:
             server.serve_forever()

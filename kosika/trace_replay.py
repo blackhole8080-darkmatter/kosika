@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .agent_steps import validate_agent_transcript
+from .agent_steps import DID_FIELD, did_from, takes_did, validate_agent_transcript
 from .agent_trace import replay_agent_events
 from .evidence import EvidenceError
 from .evidence import split as split_evidence
@@ -177,6 +177,14 @@ def replay_events(events: list[Any], *, depth: int = 0) -> dict[str, Any]:
                     verify_evidence(call["evidence"], call["arguments"], result, quotes)
                 except EvidenceError as exc:
                     raise ValueError(f"Trace evidence does not hold: {exc}") from exc
+            if key == "agent" and takes_did(call["output_schema"]):
+                # What the agent changed is not the model's to say. It must
+                # be exactly what its recorded tool calls show.
+                shown = did_from(returned.get("messages"), call.get("changes"))
+                if not isinstance(result, dict) or result.get(DID_FIELD) != shown:
+                    raise ValueError("Agent trace claims changes its calls do not show")
+                if isinstance(answered, dict):
+                    answered = {**answered, DID_FIELD: shown}
             if not _same_json(answered, result):
                 raise ValueError("Model response and recorded outcome differ")
             if "verified" in returned:

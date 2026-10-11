@@ -2840,6 +2840,93 @@ gate: without them a parser written in Kosika has nothing to return.
   The model, websites, MCP servers and search by meaning are still chosen
   when Studio starts. The grant lasts until Studio stops; it is not saved.
 
+### Vectors, matrices, relations and graphs
+
+- The owner is studying discrete mathematics and asked whether Kosika should
+  have matrix operations and graphs. A first answer said yes for discrete
+  maths but not for heavy numerical work. He disagreed: he wants Kosika
+  usable by maths and science students for real calculation. He was right
+  that it can be: Kosika runs on Python, and Python's own speed at this
+  comes from NumPy, which was already installed.
+- Before building, matrix multiplication was written in today's Kosika as a
+  check. It worked and took about 20 lines of loops.
+- `kosika/matrices.py` and 36 built-in methods on `Number[]`, `Number[][]`
+  and `Number`. Whole numbers are exact at any size, by Python's integers
+  or, for large products of small numbers, NumPy's 64-bit integers when a
+  bound proves they cannot overflow. The determinant of an integer matrix
+  is exact (Bareiss). Decimals go to NumPy when present and to plain Python
+  otherwise, and are rounded to 9 places.
+- Relations as 0/1 matrices: the four properties, the Boolean product, and
+  Warshall's closure. Graphs: adjacency from edges, degrees, neighbours,
+  shortest path breadth first, connected parts.
+- Shapes are checked before any arithmetic and the message gives them.
+- A vector and a matrix share method names such as `plus`. At run time the
+  method was found by name alone among arrays, which would have picked the
+  wrong one; it is now found from the value's own shape first.
+- Measured on this laptop, while other work was running: a 500 by 500
+  decimal product 0.26 s with NumPy; 200 by 200, 0.08 s with NumPy and
+  1.1 s in plain Python; solving 300 equations 0.7 s.
+- `tests/test_matrices.py`, 24 tests, among them the two engines compared on
+  the same inputs, and `examples/discrete_maths.kos` with 6 tests.
+- Not claimed: shapes are checked when the program runs, not when it is
+  checked, because the type `Number[][]` does not carry a size. There are
+  no eigenvalues, no complex numbers, no calculus and no statistics beyond
+  the mean yet. A matrix is a list of lists, so very large ones use far
+  more memory than NumPy's own arrays, and each call converts in and out.
+  The limit is 4,000,000 numbers. The owner was told eigenvalues would be
+  there; they are not, and are the next thing to add.
+
+### Maths, saved for later
+
+The owner asked for the rest of the maths work to be planned and kept for
+later, and for the desktop app first. Planned, in this order, none of it
+built:
+
+1. Eigenvalues and eigenvectors of a square matrix. The difficulty is
+   giving the same answer with and without NumPy, and saying plainly when
+   they are complex numbers, which Kosika does not have.
+2. Functions on whole vectors: `sqrt`, `exp`, `log`, `sin`, `cos`, powers,
+   and statistics beyond the mean (median, variance, standard deviation).
+3. Calculus helpers: a numerical derivative, an integral, and root finding,
+   each with a stated error.
+4. Libraries written in Kosika itself, on top of the built-in methods, for
+   topics such as number theory, statistics and geometry. A library is a
+   `.kos` file of functions that is imported. The owner's discrete maths
+   course is the natural first one, and he may want to write it himself.
+5. Drawing a graph or a mind map in Studio from its adjacency matrix, using
+   the scene drawing that already exists.
+
+The owner's own next step, if he wants it: write matrix multiplication by
+hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
+
+### Kosika Studio as a desktop app
+
+- The owner asked for Studio on his desktop "like a real functioning app".
+- `kosika desktop [FOLDER]` writes an icon and makes a shortcut on the
+  Desktop and in the Start menu. The shortcut runs `pythonw -m
+  kosika.desktop_app`, which does what `kosika start` does with no console,
+  opens Studio in a browser app window, and stops when that window closes.
+  `kosika desktop --remove` deletes the two shortcuts.
+- The window is given browser settings of its own. Without that the browser
+  hands the page to one already running and exits at once, so there is
+  nothing to wait for; with it, the process lasts as long as the window.
+- The icon is drawn in code, a dark tile with an orange ring and a pale
+  dot, at 16, 32, 48 and 256 pixels, and is also served as the window icon.
+- With no console, what would be printed goes to a log file that is started
+  afresh each time, and a failure to start shows a message box.
+- The folder name is handed to PowerShell in the environment, never pasted
+  into the command, and a name holding a quotation mark is refused.
+- Done for the owner on this laptop: the two shortcuts were made, pointing
+  at `examples/agents`. Tried for real: opened through the Desktop shortcut,
+  the window appeared, the app ran under pythonw with no console, and
+  closing the window ended the app. `tests/test_desktop_app.py`, 15 tests.
+- Not claimed: Windows only. It is a shortcut to the Python already on the
+  computer, not a packaged program: it needs Python and this folder to stay
+  where they are, and Chrome or Edge for the window. Opening it twice
+  starts two Studios. Closing was tested by ending the window's process,
+  not by a person pressing the X. The log holds the address with its token,
+  in a folder only this user can read.
+
 ## Standard coding-agent procedure
 
 1. Inspect `git status`, the relevant source files, tests, and this plan.

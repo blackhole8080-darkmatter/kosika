@@ -36,8 +36,10 @@ record Written { bytes: Number }
 record Command { args: Text[] }
 record Ran { exit_code: Number stdout: Text stderr: Text }
 
-// What the coder says it did: one or two sentences, and the files it wrote.
-record Work { summary: Text files: Text[] }
+// What the coder says it did, in one or two sentences, and what it really
+// did. `did` is filled in by Kosika from the changes that ran, never by the
+// model, which will sometimes say it wrote a file it did not.
+record Work { summary: Text did: Text[] }
 // The last run: the task, what the tests printed, and whether they passed.
 record Last { task: Text output: Text passed: Bool known: Bool }
 record Result { text: Text last: Last }
@@ -97,7 +99,7 @@ agent coder {
   can: [list_folder, read_file, find_text, write_file]
   max_steps: 8
   max_tool_calls: 16
-  instructions: "You are a careful programmer working in one Python project. You cannot see anything until you use a tool. First list the folder with path \".\". Read every file you will write before you write it; that includes the test file if one exists. Then request all your changes in one reply, one write_file for each file. write_file replaces the whole file, so its text must be the complete new file: every line that was there and should stay, plus what you add. A task that adds a function with a test needs two write_file calls: the source file with the new function added, and the test file with its old tests kept and the new test added. Import the new function in the test file. Change nothing the task does not need. After the changes, answer with what you did in summary and the paths you wrote in files."
+  instructions: "You are a careful programmer working in one Python project. You cannot see anything until you use a tool. First list the folder with path \".\". Read every file you will write before you write it; that includes the test file if one exists. Then request all your changes in one reply, one write_file for each file. write_file replaces the whole file, so its text must be the complete new file: every line that was there and should stay, plus what you add. A task that adds a function with a test needs two write_file calls: the source file with the new function added, and the test file with its old tests kept and the new test added. Import the new function in the test file. Change nothing the task does not need. Write only the files the task needs changed: to fix a bug, change the file with the bug and leave the tests as they are. After the changes, answer with what you did in summary, and an empty list in did."
 }
 
 agent runner {
@@ -141,21 +143,41 @@ fn verdict(ran: Ran) -> Text {
   return said
 }
 
+fn wrote_something(work: Work) -> Said {
+  return {text: if work.did.length() > 0 { "yes" } else { "no" }}
+}
+
+fn kept(work: Work) -> Work {
+  return work
+}
+
+// The task again, for a coder that answered without changing anything.
+fn pushed(task: Task) -> Task {
+  return {text: task.text + "\nYou answered before without writing anything, so nothing has been done. List the folder, read the files, then call write_file for every file that must be created or changed. Do not answer until the files are written."}
+}
+
+// With nothing written, what the model wrote is shown as what it said.
+fn said_only(work: Work) -> Text {
+  return if work.did.length() == 0 and work.summary.trim().length() > 0 { " The coder said: " + work.summary.trim() } else { "" }
+}
+
+// The files that were really written, from Kosika's own record.
 fn files_line(work: Work) -> Text {
   var files: Text[] = []
-  for path in work.files {
-    if path.trim().length() > 0 { files = files.append(path.trim()) }
+  for line in work.did {
+    files = files.append(line.replace("write_file ", ""))
   }
-  return if files.length() > 0 { "Wrote: " + files.unique().join(", ") } else { "It says it wrote no files." }
+  return if files.length() > 0 { "Wrote: " + files.unique().join(", ") } else { "No file was written." }
 }
 
 fn worked(task: Task, work: Work, ran: Ran) -> Result {
   let out = printed(ran)
   let tail = if ran.exit_code == 0 { "" } else { "\n" + out + "\nSay \"fix\" and I will try to put it right." }
-  // With nothing written, passing tests say nothing about the task.
-  let judged = if work.files.length() == 0 and ran.exit_code == 0 { "Nothing was changed, so the task is not done. The tests as they were still pass." } else { verdict(ran) }
+  // With nothing written, passing tests say nothing about the task, and
+  // what the model says it did is not to be believed.
+  let judged = if work.did.length() == 0 and ran.exit_code == 0 { "Nothing was changed, so the task is not done. The tests as they were still pass." } else { verdict(ran) }
   return {
-    text: work.summary.trim() + "\n" + files_line(work) + "\n" + judged + tail,
+    text: (if work.did.length() == 0 { "" } else { work.summary.trim() + "\n" }) + files_line(work) + said_only(work) + "\n" + judged + tail,
     last: {task: task.text, output: out, passed: ran.exit_code == 0, known: true}
   }
 }
@@ -188,8 +210,22 @@ fn say(result: Result) -> Said {
 
 // ---------------------------------------------------------------- workflows
 
+workflow second_try(task: Task) -> Work {
+  work = ask coder(task.text) otherwise {summary: "I could not finish a plan for that. Try a smaller task, or name the file.", did: []}
+  require approval
+}
+
 workflow do_task(task: Task) -> Result {
-  work   = ask coder(task.text) otherwise {summary: "I could not finish a plan for that. Try a smaller task, or name the file.", files: []}
+  first  = ask coder(task.text) otherwise {summary: "", did: []}
+  wrote  = wrote_something(first)
+  again  = pushed(task)
+  // A model sometimes answers as if it had done the work without asking
+  // for a single change. It is asked once more, told plainly that nothing
+  // has been written.
+  work   = match wrote.text {
+    case "yes" { kept(first) }
+    case _ { call second_try(again) }
+  }
   ran    = execute runner.run_python(["-m", "pytest", "-q", "-x", "--no-header", "-p", "no:cacheprovider"])
   result = worked(task, work, ran)
   require approval
@@ -227,7 +263,7 @@ workflow help(msg: Msg) -> Result {
 }
 
 workflow main(msg: Msg) -> Said {
-  budget 10 model calls, 900 seconds
+  budget 20 model calls, 1500 seconds
   kind   = kind_of(msg)
   result = match kind {
     case "help" { call help(msg) }
@@ -251,17 +287,26 @@ test "requests are understood" {
 }
 
 test "what the tests printed is read" {
-  ok = worked({text: "add is_even"}, {summary: " Added is_even. ", files: ["calc.py", "calc.py", " "]}, {exit_code: 0, stdout: "2 passed in 0.01s\n", stderr: ""})
-  bad = worked({text: "add is_even"}, {summary: "Added is_even.", files: []}, {exit_code: 1, stdout: "E  assert 1 == 2\n1 failed", stderr: ""})
+  ok = worked({text: "add is_even"}, {summary: " Added is_even. ", did: ["write_file calc.py", "write_file test_calc.py", "write_file calc.py"]}, {exit_code: 0, stdout: "2 passed in 0.01s\n", stderr: ""})
+  bad = worked({text: "add is_even"}, {summary: "Added is_even.", did: ["write_file calc.py"]}, {exit_code: 1, stdout: "E  assert 1 == 2\n1 failed", stderr: ""})
   none = verdict({exit_code: 5, stdout: "", stderr: ""})
-  expect ok.text == "Added is_even.\nWrote: calc.py\nThe tests pass."
+  expect ok.text == "Added is_even.\nWrote: calc.py, test_calc.py\nThe tests pass."
   expect ok.last.passed == true
-  expect bad.text.contains("It says it wrote no files.\nThe tests failed.\nE  assert 1 == 2")
+  expect bad.text.contains("Wrote: calc.py\nThe tests failed.\nE  assert 1 == 2")
   expect bad.text.ends_with("Say \"fix\" and I will try to put it right.")
   expect bad.last.passed == false
-  idle = worked({text: "add is_even"}, {summary: "I could not.", files: []}, {exit_code: 0, stdout: "2 passed", stderr: ""})
-  expect idle.text.contains("Nothing was changed, so the task is not done.")
   expect none == "No tests were found to run."
+}
+
+test "a claim with nothing written is not believed" {
+  idle = worked({text: "add greet.py"}, {summary: "Created greet.py and its test.", did: []}, {exit_code: 0, stdout: "2 passed", stderr: ""})
+  expect idle.text == "No file was written. The coder said: Created greet.py and its test.\nNothing was changed, so the task is not done. The tests as they were still pass."
+}
+
+test "a coder that wrote nothing is asked again" {
+  expect wrote_something({summary: "Done.", did: []}).text == "no"
+  expect wrote_something({summary: "Done.", did: ["write_file a.py"]}).text == "yes"
+  expect pushed({text: "add greet.py"}).text.starts_with("add greet.py\nYou answered before without writing anything")
 }
 
 test "only the end of a long test run is kept" {

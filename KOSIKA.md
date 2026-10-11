@@ -246,6 +246,25 @@ the receiver's type, and every method is pure and deterministic.
 | `Text` | `words()` | `Text[]`: the parts between runs of spaces, tabs and line ends, with no empty parts; over 512 parts fails the run |
 | `Text` | `replace(old: Text, new: Text)` | `Text` with every `old` replaced; `old` MUST be non-empty |
 | `Text` | `trim_marks(marks: Text)` | `Text` without spaces or any character of `marks` at its two ends; the middle is untouched |
+| `Number[]` | `plus(other)`, `minus(other)`, `scaled(by: Number)`, `cross(other)` | `Number[]`; lengths MUST agree, and `cross` needs two vectors of 3 |
+| `Number[]` | `dot(other)`, `norm()`, `mean()` | `Number` |
+| `Number` | `identity()`, `zeros(columns: Number)` | `Number[][]`: the identity matrix of that size, or a matrix of zeros with that many rows |
+| `Number[][]` | `rows()`, `columns()`, `trace()`, `determinant()` | `Number`; `trace` and `determinant` need a square matrix |
+| `Number[][]` | `transpose()`, `plus(other)`, `minus(other)`, `scaled(by: Number)`, `times(other)`, `power(exponent: Number)`, `inverse()` | `Number[][]` |
+| `Number[][]` | `apply(vector: Number[])`, `solve(right: Number[])` | `Number[]`: the matrix times a column vector, and the `x` with matrix times `x` equal to `right` |
+| `Number[][]` of 0s and 1s | `is_reflexive()`, `is_symmetric()`, `is_antisymmetric()`, `is_transitive()` | `Bool` |
+| `Number[][]` of 0s and 1s | `bool_times(other)`, `closure()` | `Number[][]`: the Boolean product, and the transitive closure |
+| `Number[][]` of pairs | `adjacency(nodes: Number)`, `directed_adjacency(nodes: Number)` | `Number[][]`: the adjacency matrix of the graph with those edges; nodes are numbered from 0 |
+| `Number[][]` | `degrees()`, `neighbours(node: Number)`, `shortest_path(start: Number, end: Number)` | `Number[]`; an empty path when there is none |
+| `Number[][]` | `components()` | `Number[][]`: the connected parts, each a sorted list of nodes |
+
+Matrix and vector methods MUST give exact integers when every number given is
+an integer and the operation stays within the integers (`inverse`, `solve`,
+`norm` and `mean` do not). Every other result MUST be rounded to nine decimal
+places. A row of a different length, shapes that do not fit, a matrix with no
+inverse, and a node outside the graph MUST fail the run with a message naming
+the shapes or the value. An implementation MAY use a numerical library for
+this arithmetic, and MUST give the same results without one.
 
 A `field:` argument MUST be a text literal naming a field of the element
 record. The checker resolves it, so a misspelled or wrongly typed field is a
@@ -798,6 +817,13 @@ that list. The calls then run in order and stop at the first failure. An
 `execute` call requested in a later reply MUST NOT run; the model is told so
 as that call's result. When the step is resumed after approval the model's
 earlier replies are replayed from the run's journal, not requested again.
+
+If the output record of an agent's model has a field `did` of type
+`Text[]`, the runtime MUST replace its value with the changes that ran in
+that step: one entry for each `execute` tool call whose result was not an
+error, in order, written as the tool name followed by the call's `path`
+argument when it has one. Replay MUST recompute the list from the recorded
+transcript and reject a trace whose `did` differs.
 
 A host MAY supply skills to a run. Before an `ask` step the runtime selects
 at most three: first the skills whose trigger words occur in the step's text

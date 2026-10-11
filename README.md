@@ -659,6 +659,22 @@ behind a wall:
 kosika studio my_agents --model qwen2.5:7b --model-protocol ollama --allow-folder PROJECT --allow-shell --in-session
 ```
 
+`kosika desktop` makes Studio an app: a shortcut on the Desktop and in the
+Start menu that opens Studio in its own window with no console, and stops
+when the window is closed. It runs `kosika start`, so it grants nothing.
+What would have been printed goes to a log file, and a failure to start is
+shown in a message box. `kosika desktop --remove` takes the shortcuts away.
+Windows only for now.
+
+On the Assistant page, the box "Not sure which agent?" takes a request
+and passes it to the agent that fits. The agents' own descriptions (the
+comment at the top of each program) are shown to the model, which names
+one; it can only name an agent that exists. If no model can be asked, the
+agent whose description shares the most words with the request is used.
+The page says which agent was chosen and why, then that agent runs exactly
+as if you had opened it yourself, with the same grants and the same plan to
+approve.
+
 The folder, starting programs and sessions can also be chosen inside
 Studio, on the Permissions page, with no command line. The folder is picked
 in the computer's own folder window, which Kosika opens; the page can only
@@ -783,6 +799,22 @@ Write `plan: off` in the agent to go back to one change per step, each
 asked about on its own. `plan: first` says the same as the default, and the
 checker then insists the agent has what planning needs.
 
+### What an agent really changed
+
+A model will sometimes answer "I created greet.py" without having asked for
+a single change. So an agent's answer record may have a field named `did`:
+
+```
+record Work { summary: Text did: Text[] }
+```
+
+Kosika fills `did` in itself, from the changes that actually ran, one line
+each, such as `write_file calc.py`. Whatever the model put there is thrown
+away. If nothing ran, the list is empty, and the program can say so instead
+of repeating the model's claim. Replaying a trace works the list out again
+from the recorded tool calls, so a trace cannot claim a change its calls do
+not show.
+
 ### Skills an agent picks before it begins
 
 A skill is a short note of know-how. Put notes in a folder named `skills`
@@ -837,6 +869,43 @@ A skill is advice. It gives an agent no tool and no permission it did not
 have. `kosika studio` and `kosika run` read the folder; nothing has to be
 declared in the program. A note that cannot be used, such as one with no
 `When:` line, stops the run and says which file and why.
+
+### Vectors, matrices, relations and graphs
+
+A vector is a `Number[]` and a matrix is a `Number[][]`. They are ordinary
+values, so they go into traces and replay like anything else.
+
+```
+let a = [[1, 2], [3, 4]]
+let c = a.times([[5, 6], [7, 8]])        // [[19, 22], [43, 50]]
+let x = [[2, 1], [1, 3]].solve([3, 5])   // [0.8, 1.4]
+let d = a.determinant()                  // -2
+let i = 3.identity()                     // the 3 by 3 identity
+let n = [3, 4].norm()                    // 5
+```
+
+| On | Methods |
+| --- | --- |
+| a vector | `plus`, `minus`, `scaled(by)`, `dot`, `cross`, `norm`, `mean`, and `sum`, `min`, `max` as before |
+| a matrix | `rows`, `columns`, `transpose`, `plus`, `minus`, `scaled(by)`, `times`, `apply(vector)`, `power(n)`, `trace`, `determinant`, `inverse`, `solve(right)` |
+| a number | `identity()`, `zeros(columns)` |
+| a relation: a square matrix of 0s and 1s | `is_reflexive`, `is_symmetric`, `is_antisymmetric`, `is_transitive`, `bool_times`, `closure` (Warshall) |
+| a graph | `edges.adjacency(nodes)` and `edges.directed_adjacency(nodes)` build the matrix from pairs of node numbers starting at 0; then `degrees`, `neighbours(node)`, `shortest_path(start, end)`, `components`, and `power(n)` to count walks of length n |
+
+Whole numbers stay whole and exact, however large: `[[2]].power(200)` is
+exactly 2 to the 200. Anything with a decimal is rounded to 9 places, like
+`sqrt()`, so the same program gives the same answer on every computer.
+
+Decimal work is done by NumPy when it is installed, and by plain Python when
+it is not, with the same answers. On this project's laptop a 500 by 500
+product took 0.26 s with NumPy; plain Python took 1.1 s for 200 by 200.
+Kosika's part is the notation and the checking. The speed is NumPy's.
+
+A shape that does not fit stops the run and says what the shapes were: "a 2
+by 2 matrix cannot be multiplied by a 3 by 1 one: the first has 2 columns
+and the second has 3 rows, and those must be equal". A matrix with no
+inverse says so instead of returning nonsense.
+`examples/discrete_maths.kos` shows relations and graphs with tests.
 
 ### Text with values in it, the time, and chance
 

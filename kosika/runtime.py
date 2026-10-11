@@ -12,7 +12,14 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence, cast
 
 from .agent import ApprovalRequiredError, ToolExecutor
-from .agent_steps import SaidBefore, call_agent, validate_agent_transcript
+from .agent_steps import (
+    DID_FIELD,
+    SaidBefore,
+    call_agent,
+    did_from,
+    takes_did,
+    validate_agent_transcript,
+)
 from .ambient import bind_ambient_tools
 from .ast import (
     AgentCall,
@@ -1948,6 +1955,11 @@ def _run_workflow(
                     input_schema=input_schema,
                     output_schema=output_schema,
                     max_steps=asked_agent.max_steps,
+                    changes=sorted(
+                        name
+                        for name in asked_agent.can
+                        if tools[name].access == "execute"
+                    ),
                     tools={
                         name: {
                             "input_schema": schema_for_tool_input(
@@ -2183,6 +2195,16 @@ def _run_workflow(
                     skills_text(picked) if picked is not None else "",
                     review_agent_plan if plans else None,
                 )
+                if takes_did(output_schema):
+                    # What the agent changed is written by the runtime, from
+                    # what ran, never by the model: a model will say it wrote
+                    # a file it did not.
+                    result = {
+                        **result,
+                        DID_FIELD: did_from(
+                            agent_response["messages"], call_event["changes"]
+                        ),
+                    }
                 return_event = _event(
                     "agent_return",
                     agent=asked_agent.name,

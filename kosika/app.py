@@ -63,11 +63,12 @@ from .lexer import lex
 from .mcp_tools import MCPHub, bind_mcp_tools, declaration
 from .memory import AGENT as MEMORY_AGENT
 from .memory import bind_memory_tools
-from .model import ModelProvider
+from .model import ChatMessage, ModelProvider, ModelProviderError, ModelRequest
 from .modules import load_program
 from .motion import check_scene, to_html, to_svg
 from .project_index import project_index
 from .project_map import beginner_map, read_note, save_note
+from .routing import Candidate, by_words, read_route, route_question
 from .runtime import run
 from .sessions import Session, SessionError, default_home, system_name
 from .sessions import unavailable as sessions_unavailable
@@ -589,6 +590,61 @@ class App:
         self._jobs: dict[str, Job] = {}
         self._jobs_lock = threading.Lock()
         self.approved_by = approved_by
+
+    def route(self, text: str) -> dict[str, Any]:
+        """Which agent a request should go to, and why. Nothing is run."""
+
+        text = text.strip()
+        if not text:
+            raise AppError("Say what you want first.")
+        cards = [describe(agent, detail=False) for agent in self.agents().values()]
+        candidates = [
+            Candidate(card["id"], card["title"], card.get("about", ""))
+            for card in cards
+            if card.get("chat") and not card.get("error")
+        ]
+        if not candidates:
+            raise AppError("No agent in this folder can be talked to.", 404)
+
+        def answer(candidate: Candidate, why: str) -> dict[str, Any]:
+            return {"agent": candidate.agent_id, "title": candidate.title, "why": why}
+
+        if len(candidates) == 1:
+            return answer(candidates[0], "it is the only agent here you can talk to")
+        chosen: Candidate | None = None
+        if self.bind_models is not None:
+            system_words, question = route_question(candidates, text)
+            try:
+                program = load_program(self.agent(candidates[0].agent_id).path)
+                provider = next(iter(self.bind_models(program).values()), None)
+                if provider is not None:
+                    said = provider.complete(
+                        ModelRequest(
+                            messages=(
+                                ChatMessage(role="system", content=system_words),
+                                ChatMessage(role="user", content=question),
+                            ),
+                            temperature=0,
+                            max_output_tokens=40,
+                            json_object=True,
+                        )
+                    )
+                    chosen = read_route(candidates, said.content)
+            except (ModelProviderError, ValueError, OSError):
+                chosen = None
+        if chosen is not None:
+            return answer(
+                chosen, "the model chose it from what each agent says it does"
+            )
+        worded = by_words(candidates, text)
+        if worded is not None:
+            found = next(c for c in candidates if c.agent_id == worded.agent_id)
+            return answer(found, worded.why)
+        first = next(
+            (c for c in candidates if c.agent_id == self.assistant(cards)),
+            candidates[0],
+        )
+        return answer(first, "nothing pointed to one agent, so this is the usual one")
 
     def pick_folder(self) -> dict[str, Any]:
         """Open the folder window. What is picked is remembered, not yet
@@ -1498,6 +1554,13 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
         def _serve(self, method: str) -> None:
             url = urlsplit(self.path)
             query = parse_qs(url.query)
+            if method == "GET" and url.path == "/favicon.ico":
+                # The window's icon. It is the same picture for everyone and
+                # says nothing about this computer, so it needs no token.
+                from .desktop_app import icon_bytes
+
+                self._send(200, icon_bytes(), "image/x-icon")
+                return
             if not self._allowed(query):
                 self._json(
                     403, {"error": "This page was not opened from the Kosika app."}
@@ -1536,6 +1599,8 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                             int(since) if since.isdigit() else 0,
                         ),
                     )
+                elif method == "POST" and url.path == "/api/route":
+                    self._json(200, app.route(str(self._body().get("text", ""))))
                 elif method == "POST" and url.path == "/api/grant/pick":
                     self._json(200, app.pick_folder())
                 elif method == "POST" and url.path == "/api/grant":
@@ -1673,6 +1738,35 @@ def open_window(url: str) -> bool:
         except OSError:
             continue
     return False
+
+
+def open_app_window(url: str, settings: Path) -> subprocess.Popen[bytes] | None:
+    """Open the page as an app window that can be waited for.
+
+    The browser is given a settings folder of its own. Without one it hands
+    the page to a browser that is already running and exits at once, and
+    there would be nothing to wait for. With one, the process lasts exactly
+    as long as the window does.
+    """
+
+    settings.mkdir(parents=True, exist_ok=True)
+    for browser in window_browsers():
+        try:
+            return subprocess.Popen(  # noqa: S603 - a fixed browser path and our own URL
+                [
+                    str(browser),
+                    f"--app={url}",
+                    f"--user-data-dir={settings}",
+                    "--no-first-run",
+                    "--no-default-browser-check",
+                    "--window-size=1280,860",
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except OSError:
+            continue
+    return None
 
 
 def address(app: App, server: ThreadingHTTPServer) -> str:

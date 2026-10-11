@@ -267,6 +267,8 @@ textarea:focus, input[type=text]:focus { box-shadow: 0 0 0 3px var(--glow); }
 const token = new URLSearchParams(location.search).get("token") || "";
 const main = document.getElementById("main");
 let overview = null;
+// A request on its way to the agent that was chosen for it.
+let handed = null;
 
 // Every piece of text reaches the page through textContent, never as markup.
 function h(tag, attrs, ...kids) {
@@ -1219,6 +1221,7 @@ function liveTab(agent, isAssistant) {
     input.addEventListener("keydown", event => { if (event.key === "Enter") send(); });
     const quick = isAssistant ? h("div", {class: "quick"}, ["help", "play", "notes", "list", "any news today?"].map(text => h("span", {onclick: () => send(text)}, text))) : null;
     fill(left, log, quick, h("div", {class: "row"}, input, h("button", {onclick: () => send()}, "Send")));
+    if (handed && handed.agent === agent.id) { const mine = handed; handed = null; log.replaceChildren(h("div", {class: "banner"}, "Passed to " + agent.title + " because " + mine.why + ".")); setTimeout(() => send(mine.text), 0); }
   } else {
     const input = h("textarea", null); input.value = agent.example_input || "{}";
     const out = h("div", {style: "margin-top:12px"});
@@ -1381,10 +1384,29 @@ function mapTab(agent) {
   return box;
 }
 
+// One box for anything: Studio finds the agent that fits and hands it over.
+function anyoneBox() {
+  const box = h("input", {type: "text", placeholder: "Ask for anything. I will pass it to the agent that fits."});
+  const note = h("div", {class: "foot", style: "margin-top:6px"});
+  let asking = false;
+  const ask = async () => {
+    const text = box.value.trim();
+    if (!text || asking) return;
+    asking = true; box.disabled = true; note.textContent = "Finding the right agent…";
+    try {
+      const found = await api("/api/route", {method: "POST", body: JSON.stringify({text})});
+      handed = {agent: found.agent, text, why: found.why};
+      if (location.hash === "#agent/" + encodeURIComponent(found.agent)) route(); else go("agent", found.agent);
+    } catch (error) { note.textContent = error.message; asking = false; box.disabled = false; }
+  };
+  box.addEventListener("keydown", event => { if (event.key === "Enter") ask(); });
+  return h("div", {class: "panel", style: "margin-bottom:16px"}, h("h4", null, "Not sure which agent?"), h("div", {class: "row"}, box, h("button", {onclick: ask}, "Ask")), note);
+}
+
 async function showAgent(id, isAssistant) {
   main.replaceChildren(h("p", {class: "lead"}, h("span", {class: "spin"}), "Loading"));
   const agent = await api("/api/agent?id=" + encodeURIComponent(id));
-  const head = [isAssistant ? null : h("span", {class: "back", onclick: () => go("agents")}, "← All agents"), h("h1", null, isAssistant ? "Assistant" : agent.title),
+  const head = [isAssistant ? anyoneBox() : h("span", {class: "back", onclick: () => go("agents")}, "← All agents"), h("h1", null, isAssistant ? "Assistant" : agent.title),
     h("p", {class: "lead clamp", title: "Click to read all of it", onclick: event => event.currentTarget.classList.toggle("open")}, agent.about || "No description. Add a // comment at the top of the file.")];
   if (agent.error) { fill(main, head, h("div", {class: "banner bad"}, "This program does not check: " + agent.error), agent.source != null ? codeTab(agent) : null); return; }
   const parts = () => h("div", {class: "facts", style: "margin-top:0"},
