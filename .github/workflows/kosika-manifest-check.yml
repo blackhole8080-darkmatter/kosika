@@ -142,7 +142,7 @@ jobs:
           python -m venv .venv-smoke
           .venv-smoke/bin/python -m pip install --disable-pip-version-check dist/*.whl
 
-      - name: Exercise installed CLI, LSP, replay, and workbench
+      - name: Exercise installed CLI, LSP, and replay
         run: |
           smoke="$RUNNER_TEMP/kosika-smoke"
           mkdir -p "$smoke"
@@ -153,7 +153,3 @@ jobs:
           "$GITHUB_WORKSPACE/.venv-smoke/bin/kosika" check hello_world.kos
           "$GITHUB_WORKSPACE/.venv-smoke/bin/kosika" run hello_world.kos --trace trace.jsonl
           "$GITHUB_WORKSPACE/.venv-smoke/bin/kosika" replay trace.jsonl
-          "$GITHUB_WORKSPACE/.venv-smoke/bin/python" -m kosika.workbench --port 8765 >workbench.log 2>&1 &
-          server_pid=$!
-          trap 'kill "$server_pid"' EXIT
-          curl --retry 10 --retry-connrefused --retry-delay 1 --fail http://127.0.0.1:8765/ | grep -q "Kosika"

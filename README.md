@@ -56,7 +56,7 @@ verification record, and prioritized K01–K12 backlog.
 | `design/`, `network/`, `ui/`, `hive/`, `desktop/` | Diagram output, network manifests, UI styles, agent notes, and the desktop app scaffold |
 | `archive/` | Historical documents, not used by the code |
 | `TUTORIAL.md`, `AGENT_GUIDE.md`, `KOSIKA.md`, `KOSIKA_PLAN.md` | Tutorial, guide for AI authors, language contract, and plan |
-| `DEVELOPMENT.md`, `WORKBENCH.md`, `KOSIKA_VISION.md` | Developer guide, browser workbench, and long-term vision |
+| `DEVELOPMENT.md`, `KOSIKA_VISION.md` | Developer guide and long-term vision |
 
 ## Start here
 
@@ -2060,7 +2060,3 @@ The design graph is derived from the checked AST, bounded module graph, and decl
 For composed programs it includes module containers, declaration-ownership edges, and direct import edges.
 It uses curved edges, arrowheads, category colors, legends, and bounded deterministic layout; it does
 not ask a model to infer program structure.
-
-## Browser workbench
-
-Use [Kosika Workbench](WORKBENCH.md) to edit, check, run, and replay programs locally with deterministic model fixtures. Start with `python -B -m kosika.workbench --port 8765`, then open http://127.0.0.1:8765.

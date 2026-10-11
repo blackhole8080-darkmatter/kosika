@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import copy
 import json
 import tempfile
 import unittest
@@ -266,41 +265,6 @@ class CliEventPublishingTests(unittest.TestCase):
                 .splitlines()[0]
             )
             self.assertEqual(persisted["schema"], "synapse.kosika.event/v1")
-
-
-class WorkbenchTimelineRoundTripTests(unittest.TestCase):
-    def test_run_dispatch_events_feed_timeline_dispatch(self) -> None:
-        from kosika.workbench import dispatch
-        from kosika.workbench_samples import SAMPLES
-
-        sample = SAMPLES[0]
-        run = dispatch(
-            "run",
-            {
-                key: copy.deepcopy(sample[key])
-                for key in ("files", "entry", "workflow", "inputs", "fixtures")
-            },
-        )
-        self.assertTrue(run["events"])
-        self.assertLessEqual(len(run["events"]), 512)
-        timeline = dispatch("timeline", {"events": run["events"]})
-        self.assertEqual(timeline["design"]["kind"], "event_timeline")
-        self.assertTrue(timeline["design"]["stages"])
-        self.assertTrue(timeline["design"]["digest"])
-        self.assertIn("<svg", timeline["svg"])
-        self.assertIn("flowchart", timeline["mermaid"])
-        again = dispatch("timeline", {"events": run["events"]})
-        self.assertEqual(timeline["design"], again["design"])
-
-    def test_timeline_dispatch_rejects_bad_event_payloads(self) -> None:
-        from kosika.workbench import dispatch
-
-        with self.assertRaises(ValueError):
-            dispatch("timeline", {"events": "not-an-array"})
-        with self.assertRaises(ValueError):
-            dispatch("timeline", {"events": [42]})
-        with self.assertRaises(ValueError):
-            dispatch("timeline", {"events": [{} for _ in range(513)]})
 
 
 if __name__ == "__main__":

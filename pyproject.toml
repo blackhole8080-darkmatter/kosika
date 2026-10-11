@@ -19,16 +19,12 @@ dependencies = [
 # tests, ...), so setuptools flat-layout auto-discovery is ambiguous. Declare
 # the importable packages explicitly.
 [tool.setuptools]
-packages = ["kosika", "kosika.app_assets", "kosika.workbench_assets", "kosika_lsp"]
+packages = ["kosika", "kosika.app_assets", "kosika_lsp"]
 
 [tool.setuptools.package-data]
 kosika = [
     "app_assets/*.html",
     "app_assets/*.kos",
-    "workbench_assets/*.css",
-    "workbench_assets/*.html",
-    "workbench_assets/*.js",
-    "workbench_assets/*.svg",
 ]
 
 [project.scripts]
