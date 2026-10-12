@@ -65,6 +65,122 @@ class EngineTests(unittest.TestCase):
         self.assertIsNone(pill.read_book(self.agents / "nowhere"))
 
 
+class AskingTests(unittest.TestCase):
+    """An agent Kosi handed a request to wants to change a file."""
+
+    def setUp(self) -> None:
+        from tests.test_hand_over import SCRIBE
+
+        self._dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._dir.cleanup)
+        top = Path(self._dir.name)
+        self.agents, self.work = top / "agents", top / "work"
+        self.work.mkdir()
+        shutil.copytree(
+            ASSISTANT,
+            self.agents / "assistant",
+            ignore=shutil.ignore_patterns("memory", "runs"),
+        )
+        (self.agents / "scribe").mkdir()
+        (self.agents / "scribe" / "main.kos").write_text(SCRIBE, encoding="utf-8")
+        self.engine = pill.Engine(self.agents, None)
+        self.addCleanup(self.engine.app.close)
+        self.engine.pick = lambda: str(self.work)
+
+    def test_no_folder_is_reachable_until_one_is_chosen(self) -> None:
+        self.assertEqual(self.engine.folder(), "")
+        said = self.engine.choose_folder()
+        self.assertIn("Anything they want to change there, I will ask you first", said)
+        self.assertEqual(Path(self.engine.folder()), self.work.resolve())
+        self.assertEqual(
+            self.engine.forget_folder(), "Agents can no longer reach any folder."
+        )
+        self.assertEqual(self.engine.folder(), "")
+
+    def test_picking_nothing_grants_nothing(self) -> None:
+        self.engine.pick = lambda: ""
+        self.assertEqual(self.engine.choose_folder(), "")
+        self.assertEqual(self.engine.folder(), "")
+
+    def test_a_yes_lets_the_change_happen_and_the_question_says_who_and_what(
+        self,
+    ) -> None:
+        self.engine.choose_folder()
+        seen: list[dict[str, Any]] = []
+
+        def yes(request: dict[str, Any]) -> bool:
+            seen.append(request)
+            return True
+
+        answer = self.engine.ask("@scribe remember the milk", decide=yes)
+        self.assertEqual(answer.text, "The scribe agent says: saved 17 bytes")
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(
+            pill.ask_words(seen[0]),
+            "The scribe agent wants to write the file note.txt (17 characters).",
+        )
+        self.assertEqual(
+            (self.work / "note.txt").read_text(encoding="utf-8"), "remember the milk"
+        )
+
+    def test_a_no_changes_nothing(self) -> None:
+        self.engine.choose_folder()
+        answer = self.engine.ask(
+            "@scribe remember the milk", decide=lambda request: False
+        )
+        self.assertEqual(answer.text, "That was refused, so nothing was changed.")
+        self.assertFalse((self.work / "note.txt").exists())
+
+    def test_with_nobody_to_ask_the_answer_is_no(self) -> None:
+        self.engine.choose_folder()
+        self.engine.ask("@scribe remember the milk")
+        self.assertFalse((self.work / "note.txt").exists())
+
+    def test_the_question_in_words(self) -> None:
+        self.assertEqual(
+            pill.ask_words(
+                {
+                    "kind": "system:shell",
+                    "operation": "python",
+                    "arguments": {"args": ["-m", "pytest"]},
+                }
+            ),
+            "An agent wants to start the program: python -m pytest.",
+        )
+        plan = pill.ask_words(
+            {
+                "tool": "plan",
+                "agent": "coder",
+                "warnings": ["calc.py is not valid Python"],
+                "plan": [
+                    {"tool": "write_file", "kind": "system:files", "operation": "write",
+                     "arguments": {"path": "calc.py", "text": "x = 1\n"}},
+                    {"tool": "write_file", "kind": "system:files", "operation": "create",
+                     "arguments": {"path": "test_calc.py", "text": "y"}},
+                ],
+            }
+        )  # fmt: skip
+        self.assertEqual(
+            plan.splitlines(),
+            [
+                "The coder agent wants to make these 2 changes, in this order:",
+                "1. write the file calc.py (6 characters)",
+                "2. create the file test_calc.py (1 characters)",
+                "Checked before asking, and something is wrong: calc.py is not valid Python",
+            ],
+        )
+        long = pill.ask_words({"plan": [{"tool": "t"}] * 9})
+        self.assertIn("and 3 more. Open Kosika Studio to read them all.", long)
+        self.assertEqual(
+            pill.ask_words(None),
+            "An agent wants to do something it could not describe.",
+        )
+        self.assertEqual(
+            pill.ask_words({"tool": "send", "arguments": {"to": "x" * 200}}).count("x"),
+            59,
+        )
+
+
 class LogicTests(unittest.TestCase):
     def test_it_sits_against_the_right_edge_half_way_down(self) -> None:
         self.assertEqual(pill.place((1920, 1032), (38, 72)), (1874, 480))

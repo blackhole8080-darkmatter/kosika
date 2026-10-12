@@ -8,7 +8,10 @@ line to type on. The answer appears above it.
 It is the same assistant Studio shows: the Kosika program in the agents
 folder named `assistant`, run with the same grants, which for that program
 are a clock, its own memory, and passing a request to another agent in
-the folder. The pill adds no power. It does not listen,
+the folder. The pill adds no power of its own. A folder for the agents to
+work in is granted only when the person chooses one from the pill's menu,
+for as long as the pill runs, and whatever an agent then wants to change
+is shown above the pill with Allow and No before it happens. It does not listen,
 and it does not watch the screen or the keyboard: the one key combination
 it asks Windows to tell it about is its own.
 
@@ -248,6 +251,67 @@ def _no_model(program: Any) -> dict[str, Any]:
     return {m.name: _NoModel() for m in program.models if m.provider is None}
 
 
+def _clip(value: Any, most: int = 160) -> str:
+    """A value as one short line."""
+
+    words = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+    words = " ".join(words.split())
+    return words if len(words) <= most else words[: most - 1].rstrip() + "…"
+
+
+def _action_words(action: dict[str, Any]) -> str:
+    """One thing an agent wants to do, in a line or two."""
+
+    given = action.get("arguments")
+    given = given if isinstance(given, dict) else {}
+    kind, operation = action.get("kind", ""), action.get("operation", "")
+    if kind == "system:shell":
+        arguments = given.get("args")
+        words = (
+            " ".join(str(a) for a in arguments) if isinstance(arguments, list) else ""
+        )
+        return f"start the program: {_clip(f'{operation} {words}'.strip())}"
+    if kind == "system:files" and operation in ("write", "create"):
+        text = given.get("text")
+        size = f"{len(text)} characters" if isinstance(text, str) else "some text"
+        verb = "write" if operation == "write" else "create"
+        return f"{verb} the file {given.get('path', '?')} ({size})"
+    details = ", ".join(f"{key}: {_clip(value, 60)}" for key, value in given.items())
+    return f"{action.get('tool', 'an action')}" + (f" ({details})" if details else "")
+
+
+def ask_words(request: Any) -> str:
+    """What an agent is asking to be allowed to do, for the bubble above
+    the pill. It says who asks, and every change, and nothing else."""
+
+    if not isinstance(request, dict):
+        return "An agent wants to do something it could not describe."
+    who = request.get("handed") or request.get("agent") or ""
+    opening = f"The {who} agent wants to" if who else "An agent wants to"
+    plan = request.get("plan")
+    if isinstance(plan, list) and plan:
+        lines = [
+            f"{at}. {_action_words(step if isinstance(step, dict) else {})}"
+            for at, step in enumerate(plan[:6], 1)
+        ]
+        if len(plan) > 6:
+            lines.append(
+                f"and {len(plan) - 6} more. Open Kosika Studio to read them all."
+            )
+        many = (
+            "this change"
+            if len(plan) == 1
+            else f"these {len(plan)} changes, in this order"
+        )
+        warned = request.get("warnings")
+        if isinstance(warned, list) and warned:
+            lines.append(
+                "Checked before asking, and something is wrong: " + _clip(warned[0])
+            )
+        return f"{opening} make {many}:\n" + "\n".join(lines)
+    return f"{opening} {_action_words(request)}."
+
+
 class Engine:
     """Runs the assistant for the pill, one request at a time."""
 
@@ -255,10 +319,54 @@ class Engine:
         from .app import App
 
         self.agents = agents
-        self.app = App(agents, bind_models=bind_models or _no_model)
+        #: How a folder is picked. The window sets this to its own folder
+        #: window; until it does, no folder can be picked.
+        self.pick: Callable[[], str] = lambda: ""
+        self.app = App(
+            agents,
+            bind_models=bind_models or _no_model,
+            pick_folder=lambda: self.pick(),
+        )
         self._busy = threading.Lock()
 
-    def ask(self, text: str, timeout: float = 900.0) -> Answer:
+    def folder(self) -> str:
+        """The folder agents may work in, or "" when none is granted."""
+
+        return str(self.app.allow_folder) if self.app.allow_folder else ""
+
+    def choose_folder(self) -> str:
+        """Let the person pick the folder agents may work in. What comes
+        back is a sentence saying what happened."""
+
+        from .app import AppError
+
+        try:
+            picked = self.app.pick_folder().get("folder")
+            if not picked:
+                return ""
+            self.app.grant({"folder": "picked"})
+        except AppError as exc:
+            return str(exc)
+        return (
+            f"Agents may now read {picked}. Anything they want to change "
+            "there, I will ask you first. This lasts until you quit me."
+        )
+
+    def forget_folder(self) -> str:
+        from .app import AppError
+
+        try:
+            self.app.grant({"folder": "none"})
+        except AppError as exc:
+            return str(exc)
+        return "Agents can no longer reach any folder."
+
+    def ask(
+        self,
+        text: str,
+        timeout: float = 900.0,
+        decide: Callable[[dict[str, Any]], bool] | None = None,
+    ) -> Answer:
         text = text.strip()
         if not text:
             return Answer("")
@@ -270,13 +378,23 @@ class Engine:
             except Exception as exc:  # noqa: BLE001 - shown to the person
                 return Answer(f"I could not start: {exc}", failed=True)
             deadline = time.monotonic() + timeout
+            asked: Any = None
             while job.state in ("running", "waiting") and time.monotonic() < deadline:
-                if job.state == "waiting":
-                    # The assistant has nothing that changes the world. If
-                    # an agent it handed a request to asks to change
-                    # something, the pill says no: that is for Studio, where
-                    # the person can read what is asked.
-                    self.app.decide(job.id, False)
+                request = job.request
+                if (
+                    job.state == "waiting"
+                    and request is not None
+                    and request is not asked
+                ):
+                    # The assistant itself changes nothing. An agent it
+                    # handed a request to may ask to: the person is shown
+                    # what, and with nobody to show it to the answer is no.
+                    asked = request
+                    allow = bool(decide(dict(request))) if decide else False
+                    try:
+                        self.app.decide(job.id, allow)
+                    except Exception:  # noqa: BLE001 - it stopped waiting meanwhile
+                        pass
                 time.sleep(0.05)
             if job.state != "done":
                 return Answer(job.error or "That took too long.", failed=True)
@@ -622,6 +740,7 @@ class Pill:
         self.hovering = False
         self.thinking = False
         self.is_hint = False
+        self.asking = False
         self.turn = 0
         self.told: set[str] = set()
         self.fade: str | None = None
@@ -645,6 +764,11 @@ class Pill:
             except tk.TclError:
                 pass
         self.settle()
+        from tkinter import filedialog
+
+        engine.pick = lambda: filedialog.askdirectory(
+            parent=root, title="A folder for Kosika's agents to work in"
+        )
         root.after(400, lambda: self.ask_quietly("hello"))
         root.after(15000, self.check_due)
 
@@ -760,8 +884,20 @@ class Pill:
     # -- the bubble above the pill
 
     def say(
-        self, words: str, hint: bool = False, suggest: tuple[str, ...] = ()
+        self,
+        words: str,
+        hint: bool = False,
+        suggest: tuple[str, ...] = (),
+        choices: tuple[tuple[str, Callable[[], None]], ...] = (),
     ) -> None:
+        """Show words above the pill. `suggest` are things to ask next;
+        `choices` are answers to a question, each with what it does, and a
+        bubble that has them stays until one is picked."""
+
+        if self.asking and not choices:
+            # A question is waiting for its answer; nothing may cover it.
+            return
+        self.asking = bool(choices)
         tk = self.tk
         self.unsay()
         bubble = tk.Toplevel(self.root)
@@ -790,6 +926,23 @@ class Pill:
                 )
                 chip.pack(side="left", padx=self.px(3))
                 chip.bind("<Button-1>", lambda _e, said=offer: self.ask(said))
+        if choices:
+            row = tk.Frame(bubble, bg=_WAKE)
+            row.pack(anchor="e", padx=self.px(12), pady=(0, self.px(12)))
+            for at, (label, chosen) in enumerate(choices):
+                first = at == 0
+                button = tk.Label(
+                    row,
+                    text=label,
+                    font=self.font,
+                    bg=_ACCENT if first else mix(_WAKE, "#ffffff", 0.14),
+                    fg="#1b1b1e" if first else _INK,
+                    padx=self.px(16),
+                    pady=self.px(5),
+                    cursor="hand2",
+                )
+                button.pack(side="left", padx=self.px(4))
+                button.bind("<Button-1>", lambda _e, act=chosen: act())
         bubble.update_idletasks()
         width, height = bubble.winfo_reqwidth(), bubble.winfo_reqheight()
         # Its right edge lines up with the pill's, and it sits just above.
@@ -799,10 +952,14 @@ class Pill:
         bubble.geometry(f"{width}x{height}+{x}+{y}")
         bubble.update_idletasks()
         round_corners(bubble)
-        bubble.bind("<Button-1>", lambda _e: self.unsay())
+        if not choices:
+            bubble.bind("<Button-1>", lambda _e: self.unsay())
         self.bubble = bubble
         self.is_hint = hint
-        if not hint:
+        if self.fade is not None and choices:
+            self.root.after_cancel(self.fade)
+            self.fade = None
+        if not hint and not choices:
             if self.fade is not None:
                 self.root.after_cancel(self.fade)
             self.fade = self.root.after(int(stay_seconds(words) * 1000), self.unsay)
@@ -874,10 +1031,46 @@ class Pill:
         self.spin()
 
         def work() -> None:
-            answer = self.engine.ask(text)
+            answer = self.engine.ask(text, decide=self.confirm)
             self.root.after(0, lambda: self.answered(answer))
 
         threading.Thread(target=work, daemon=True, name="kosi-answer").start()
+
+    def confirm(self, request: dict[str, Any]) -> bool:
+        """Ask the person whether an agent may do what it asks. Called
+        from the answering thread, which waits here; no answer in five
+        minutes is a no."""
+
+        answered = threading.Event()
+        said: list[bool] = []
+
+        def pick(allow: bool) -> None:
+            said.append(allow)
+            self.asking = False
+            self.unsay()
+            answered.set()
+
+        def show() -> None:
+            self.say(
+                ask_words(request),
+                choices=(("Allow", lambda: pick(True)), ("No", lambda: pick(False))),
+            )
+
+        self.root.after(0, show)
+        if not answered.wait(300):
+            self.root.after(0, lambda: pick(False))
+        return bool(said and said[0])
+
+    def choose_folder(self) -> None:
+        if self.thinking:
+            self.say("One moment, I am still answering.")
+            return
+        words = self.engine.choose_folder()
+        if words:
+            self.say(words)
+
+    def forget_folder(self) -> None:
+        self.say(self.engine.forget_folder())
 
     def ask_quietly(self, text: str) -> None:
         """Ask without a spinning ring, for the hello when the pill starts."""
@@ -911,6 +1104,19 @@ class Pill:
         menu = tk.Menu(self.root, tearoff=0)
         menu.add_command(label=f"Ask {NAME}", command=self.open)
         menu.add_command(label="Open Kosika Studio", command=self.open_studio)
+        menu.add_separator()
+        folder = self.engine.folder()
+        menu.add_command(
+            label=f"Agents may work in: {Path(folder).name}"
+            if folder
+            else "Agents can reach no folder",
+            state="disabled",
+        )
+        menu.add_command(
+            label="Choose a folder for agents…", command=self.choose_folder
+        )
+        if folder:
+            menu.add_command(label="Take the folder away", command=self.forget_folder)
         menu.add_separator()
         menu.add_command(
             label=f"Model: {self.model}"

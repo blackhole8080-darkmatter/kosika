@@ -3248,6 +3248,29 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   slow path costs up to four more model calls, about a minute on this
   laptop. Twenty runs is a small sample.
 
+### The pill asks before an agent changes anything
+
+- Kosi could hand a request to the coder from the pill, but the coder
+  could do nothing there: the pill granted no folder, and any request to
+  change something was refused because there was nowhere to show it.
+- A folder is now chosen from the pill's right-click menu, in the
+  computer's own folder window, through the same grant Studio uses (so a
+  folder that is too wide, such as a whole drive, is refused). It lasts
+  until the pill is quit. Starting programs is not granted from the pill.
+- When an agent wants to change something, the bubble above the pill says
+  who asks and exactly what ("The coder agent wants to make these 2
+  changes, in this order: 1. write the file calc.py ..."), with Allow and
+  No. The bubble stays until one is picked, nothing else may cover it, and
+  no answer in five minutes is a no. `ask_words` writes that text and is
+  tested on its own.
+- Seen: the question bubble was shown and captured on the owner's screen.
+  27 tests in `tests/test_pill.py`, including a real hand-over to an agent
+  that writes a file, allowed once and refused once.
+- Not claimed: a plan of more than six changes shows the first six and
+  points to Studio. The text of a file about to be written is not shown,
+  only its name and length. No real coder run was approved through the
+  pill by a person yet.
+
 ## Standard coding-agent procedure
 
 1. Inspect `git status`, the relevant source files, tests, and this plan.

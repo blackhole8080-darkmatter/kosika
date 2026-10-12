@@ -132,7 +132,10 @@ against the right-hand edge of the screen, half way down. Hover over it to see i
 Ctrl+Alt+K). Click it or press the combination, type, and press Enter; the
 answer appears above the pill. Esc closes the line; right-click the pill to
 quit. It is the same assistant as in Studio, with the same reminders, and
-it announces a reminder when its time comes. It only ever sees the one key
+it announces a reminder when its time comes. To let Kosi pass work to your
+other agents ("ask the coder to ..."), right-click the pill and choose a
+folder for them; before any of them changes a file there, the pill shows
+what it wants to do with Allow and No. It only ever sees the one key
 combination, and it does not start with Windows unless you set that up
 yourself.
 
