@@ -121,6 +121,21 @@ The app starts with nothing granted, exactly like `kosika start`. Name a
 folder after the command to choose where your agents live:
 `kosika desktop MY_AGENTS`.
 
+### Kosi, always on the screen
+
+```
+kosika desktop --kosi
+```
+
+This makes a second shortcut, "Kosi". Open it and a small grey pill stands
+against the right-hand edge of the screen, half way down. Hover over it to see its key combination (usually
+Ctrl+Alt+K). Click it or press the combination, type, and press Enter; the
+answer appears above the pill. Esc closes the line; right-click the pill to
+quit. It is the same assistant as in Studio, with the same reminders, and
+it announces a reminder when its time comes. It only ever sees the one key
+combination, and it does not start with Windows unless you set that up
+yourself.
+
 ## 7. Let an agent see a folder
 
 Agents can touch nothing until you grant it. In Studio, open

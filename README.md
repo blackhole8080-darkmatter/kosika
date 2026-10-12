@@ -666,6 +666,11 @@ What would have been printed goes to a log file, and a failure to start is
 shown in a message box. `kosika desktop --remove` takes the shortcuts away.
 Windows only for now.
 
+`kosika pill` shows Kosi, the assistant, as a small translucent pill that
+stays against the right-hand edge of the screen: click it or press its key combination
+(Ctrl+Alt+K when free), type, and the answer appears above it.
+`kosika desktop --kosi` makes its shortcut.
+
 On the Assistant page, the box "Not sure which agent?" takes a request
 and passes it to the agent that fits. The agents' own descriptions (the
 comment at the top of each program) are shown to the model, which names

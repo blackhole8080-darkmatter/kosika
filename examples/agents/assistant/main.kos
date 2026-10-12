@@ -32,6 +32,14 @@ record When { due: Number at: Text rest: Text }
 // A sum worked out, or the reason it could not be.
 record Sum { ok: Bool value: Number problem: Text }
 
+record Folded { ok: Bool words: Text[] problem: Text }
+
+record Unit { kind: Text size: Number name: Text }
+
+record Conv { ok: Bool text: Text }
+
+record Date { ok: Bool year: Number month: Number day: Number }
+
 model voice {
   input: Prompt
   output: Reply
@@ -50,6 +58,10 @@ fn kind_of(msg: Msg) -> Text {
   var kind = "ask"
   if text == "" or text == "help" or text == "what can you do" { kind = "help" }
   else if ["hello", "hi", "hey", "good morning", "good afternoon", "good evening", "hello kosi", "hi kosi", "hey kosi"].contains(text) { kind = "hello" }
+  else if text.starts_with("set an alarm") or text.starts_with("set alarm") or text.starts_with("alarm ") or text.starts_with("wake me ") { kind = "alarm" }
+  else if text.starts_with("set a timer") or text.starts_with("start a timer") or text.starts_with("timer ") { kind = "timer" }
+  else if text.contains("days until") or text.contains("days till") or text.contains("days to ") or text.contains("days before") or text.contains("how long until") or text.contains("how long till") { kind = "until" }
+  else if text.starts_with("what day ") and has_month(text) { kind = "weekday" }
   else if text.contains("what time") or text == "time" or text.contains("the time") { kind = "time" }
   else if text.contains("what day") or text.contains("the date") or text == "date" or text.contains("what is today") { kind = "date" }
   else if text.starts_with("remind me") or text.starts_with("set a reminder") { kind = "remind" }
@@ -61,6 +73,7 @@ fn kind_of(msg: Msg) -> Text {
   else if text.starts_with("remember that ") or text.starts_with("remember ") { kind = "remember" }
   else if text.contains("what do you remember") or text.contains("what do you know about me") { kind = "recall" }
   else if text == "forget everything" { kind = "forget" }
+  else if convert_of(text).ok { kind = "convert" }
   else if sum_of(text).ok { kind = "sum" }
   else if wants_action(first) { kind = "cannot" }
   return kind
@@ -99,6 +112,9 @@ fn sum_words(text: Text) -> Text[] {
   for lead in [" what is ", " what's ", " whats ", " calculate ", " work out ", " how much is "] {
     t = t.replace(lead, " ")
   }
+  t = t.replace(" the square root of ", " root ").replace(" square root of ", " root ").replace(" sqrt ", " root ")
+  t = t.replace(" to the power of ", " ^ ").replace(" to the power ", " ^ ").replace(" squared ", " ^ 2 ").replace(" cubed ", " ^ 3 ")
+  t = t.replace("^", " ^ ").replace("(", " ( ").replace(")", " ) ")
   t = t.replace(" multiplied by ", " * ").replace(" times ", " * ").replace(" x ", " * ").replace("×", " * ")
   t = t.replace(" divided by ", " / ").replace(" over ", " / ").replace("÷", " / ")
   t = t.replace(" plus ", " + ").replace(" add ", " + ").replace(" minus ", " - ").replace(" take away ", " - ")
@@ -107,12 +123,70 @@ fn sum_words(text: Text) -> Text[] {
   return t.words()
 }
 
-// Works out a sum written as numbers with signs between them. Multiplying
-// and dividing are done before adding and taking away, as in school.
-fn sum_of(text: Text) -> Sum {
+// A number multiplied by itself a whole number of times.
+fn raised(base: Number, exponent: Number) -> Sum {
+  if exponent != exponent.floor() or exponent > 60 or exponent < -60 {
+    return {ok: true, value: 0, problem: "I can only raise a number to a whole power, up to 60."}
+  }
+  let times = if exponent < 0 { 0 - exponent } else { exponent }
+  var total = 1
+  var i = 0
+  while i < times {
+    total = total * base
+    i = i + 1
+  }
+  if exponent < 0 {
+    if total == 0 { return {ok: true, value: 0, problem: "You cannot divide by zero."} }
+    return {ok: true, value: 1 / total, problem: ""}
+  }
+  return {ok: true, value: total, problem: ""}
+}
+
+// Powers and square roots are worked out first, so 2 + 3 ^ 2 is 11. What
+// comes back is the sum with each of them replaced by its answer.
+fn powers(words: Text[]) -> Folded {
+  let no: Folded = {ok: false, words: [], problem: ""}
+  var out: Text[] = []
+  var root = false
+  var power = false
+  for word in words {
+    if word == "root" { root = true }
+    else if word == "^" { power = true }
+    else {
+      var text = word
+      if root {
+        let n = word.to_number()
+        if not n.exists() { return no }
+        if n.value() < 0 { return {ok: true, words: [], problem: "A negative number has no square root."} }
+        text = f"{n.value().sqrt()}"
+        root = false
+      }
+      if power {
+        let base = out.last().or("").to_number()
+        let by = text.to_number()
+        if base.exists() == false or by.exists() == false { return no }
+        let made = raised(base.value(), by.value())
+        if made.problem.length() > 0 { return {ok: true, words: [], problem: made.problem} }
+        out = out.take(out.length() - 1)
+        text = f"{made.value}"
+        power = false
+      }
+      out = out.append(text)
+    }
+  }
+  if root or power { return no }
+  return {ok: true, words: out, problem: ""}
+}
+
+// A sum with no brackets in it. Multiplying and dividing are done before
+// adding and taking away, as in school.
+fn plain_sum(given: Text[]) -> Sum {
   let no: Sum = {ok: false, value: 0, problem: ""}
-  let words = sum_words(text)
-  if words.length() < 3 or words.length() == (words.length() / 2).floor() * 2 { return no }
+  let folded = powers(given)
+  if folded.problem.length() > 0 { return {ok: true, value: 0, problem: folded.problem} }
+  if folded.ok == false { return no }
+  let words = folded.words
+  if words.length() % 2 == 0 { return no }
   // First pass: numbers and signs must take turns; fold * and / as we go.
   var terms: Number[] = []
   var signs: Text[] = []
@@ -120,7 +194,7 @@ fn sum_of(text: Text) -> Sum {
   var doing = ""
   var at = 0
   for word in words {
-    if at == (at / 2).floor() * 2 {
+    if at % 2 == 0 {
       let n = word.to_number()
       if not n.exists() { return no }
       if doing == "*" { held = held * n.value() }
@@ -147,7 +221,150 @@ fn sum_of(text: Text) -> Sum {
     total = if sign == "+" { total + terms[i] } else { total - terms[i] }
     i = i + 1
   }
-  return {ok: true, value: (total * 1000000).round() / 1000000, problem: ""}
+  return {ok: true, value: total, problem: ""}
+}
+
+// Works out a sum written as numbers with signs between them. What is in
+// brackets is worked out first, the innermost brackets before the rest.
+fn sum_of(text: Text) -> Sum {
+  let no: Sum = {ok: false, value: 0, problem: ""}
+  var words = sum_words(text)
+  var signed = false
+  for word in words {
+    if ["*", "/", "+", "-", "^", "root"].contains(word) { signed = true }
+  }
+  if not signed { return no }
+  var passes = 0
+  while words.contains("(") or words.contains(")") {
+    passes = passes + 1
+    if passes > 20 { return no }
+    var open = -1
+    var close = -1
+    var i = 0
+    for word in words {
+      if word == "(" and close < 0 { open = i }
+      if word == ")" and close < 0 { close = i }
+      i = i + 1
+    }
+    if open < 0 or close < open { return no }
+    let inner = plain_sum(words.slice(open + 1, close))
+    if inner.ok == false or inner.problem.length() > 0 { return inner }
+    var next: Text[] = []
+    var j = 0
+    for word in words {
+      if j < open or j > close { next = next.append(word) }
+      else if j == open { next = next.append(f"{inner.value}") }
+      j = j + 1
+    }
+    words = next
+  }
+  let sum = plain_sum(words)
+  if sum.ok == false or sum.problem.length() > 0 { return sum }
+  return {ok: true, value: (sum.value * 1000000).round() / 1000000, problem: ""}
+}
+
+// ---------------------------------------------------------------- units
+
+// What a unit is called, what kind of thing it measures, and how many of
+// that kind's base unit (metres, grams, millilitres, seconds, metres a
+// second) one of it is.
+fn unit_of(word: Text) -> Unit {
+  let w = word.lower().trim_marks(".,?")
+  if ["mm", "millimetre", "millimetres", "millimeter", "millimeters"].contains(w) { return {kind: "length", size: 0.001, name: "mm"} }
+  if ["cm", "centimetre", "centimetres", "centimeter", "centimeters"].contains(w) { return {kind: "length", size: 0.01, name: "cm"} }
+  if ["m", "metre", "metres", "meter", "meters"].contains(w) { return {kind: "length", size: 1, name: "m"} }
+  if ["km", "kms", "kilometre", "kilometres", "kilometer", "kilometers"].contains(w) { return {kind: "length", size: 1000, name: "km"} }
+  if ["in", "inch", "inches"].contains(w) { return {kind: "length", size: 0.0254, name: "inches"} }
+  if ["ft", "foot", "feet"].contains(w) { return {kind: "length", size: 0.3048, name: "feet"} }
+  if ["yd", "yard", "yards"].contains(w) { return {kind: "length", size: 0.9144, name: "yards"} }
+  if ["mi", "mile", "miles"].contains(w) { return {kind: "length", size: 1609.344, name: "miles"} }
+  if ["mg", "milligram", "milligrams"].contains(w) { return {kind: "weight", size: 0.001, name: "mg"} }
+  if ["g", "gram", "grams"].contains(w) { return {kind: "weight", size: 1, name: "g"} }
+  if ["kg", "kgs", "kilo", "kilos", "kilogram", "kilograms"].contains(w) { return {kind: "weight", size: 1000, name: "kg"} }
+  if ["oz", "ounce", "ounces"].contains(w) { return {kind: "weight", size: 28.349523125, name: "oz"} }
+  if ["lb", "lbs", "pound", "pounds"].contains(w) { return {kind: "weight", size: 453.59237, name: "lb"} }
+  if ["tonne", "tonnes"].contains(w) { return {kind: "weight", size: 1000000, name: "tonnes"} }
+  if ["ml", "millilitre", "millilitres", "milliliter", "milliliters"].contains(w) { return {kind: "volume", size: 1, name: "ml"} }
+  if ["l", "litre", "litres", "liter", "liters"].contains(w) { return {kind: "volume", size: 1000, name: "litres"} }
+  if ["s", "sec", "secs", "second", "seconds"].contains(w) { return {kind: "time", size: 1, name: "seconds"} }
+  if ["min", "mins", "minute", "minutes"].contains(w) { return {kind: "time", size: 60, name: "minutes"} }
+  if ["h", "hr", "hrs", "hour", "hours"].contains(w) { return {kind: "time", size: 3600, name: "hours"} }
+  if ["day", "days"].contains(w) { return {kind: "time", size: 86400, name: "days"} }
+  if ["week", "weeks"].contains(w) { return {kind: "time", size: 604800, name: "weeks"} }
+  if ["km/h", "kmh", "kph"].contains(w) { return {kind: "speed", size: 1000 / 3600, name: "km/h"} }
+  if ["mph"].contains(w) { return {kind: "speed", size: 0.44704, name: "mph"} }
+  if ["m/s"].contains(w) { return {kind: "speed", size: 1, name: "m/s"} }
+  if ["c", "celsius", "centigrade"].contains(w) { return {kind: "heat", size: 1, name: "C"} }
+  if ["f", "fahrenheit"].contains(w) { return {kind: "heat", size: 1, name: "F"} }
+  if ["k", "kelvin"].contains(w) { return {kind: "heat", size: 1, name: "K"} }
+  return {kind: "", size: 0, name: ""}
+}
+
+// A number kept to the places worth reading: fewer for a large number.
+fn tidy(value: Number) -> Number {
+  let size = if value < 0 { 0 - value } else { value }
+  var scale = 10000
+  if size >= 100 { scale = 100 }
+  else if size < 0.01 { scale = 100000000 }
+  return (value * scale).round() / scale
+}
+
+// "convert 5 km to miles", "5 km in miles", "how many miles is 5 km".
+fn convert_of(text: Text) -> Conv {
+  let no: Conv = {ok: false, text: ""}
+  var t = " " + text.lower().trim().trim_marks("?.!") + " "
+  for lead in [" convert ", " what is ", " what's ", " how much is "] {
+    t = t.replace(lead, " ")
+  }
+  t = t.replace(" degrees ", " ").replace(" degree ", " ").replace(" into ", " to ").replace(" are there in ", " in ").replace(" are in ", " in ")
+  t = t.replace(" a ", " 1 ").replace(" an ", " 1 ").replace(" one ", " 1 ")
+  var words = t.words()
+  // "how many miles is 5 km" is "5 km to miles" said the other way round.
+  if words.length() == 6 and words[0] == "how" and words[1] == "many" and ["is", "in"].contains(words[3]) {
+    words = [words[4], words[5], "to", words[2]]
+  }
+  // "5km" is "5 km".
+  if words.length() == 3 and words[0].to_number().exists() == false {
+    let joined = words[0]
+    var cut = 0
+    var k = joined.length() - 1
+    while k >= 1 and cut == 0 {
+      if joined.take(k).to_number().exists() { cut = k }
+      k = k - 1
+    }
+    if cut == 0 { return no }
+    words = [joined.take(cut), joined.drop(cut), words[1], words[2]]
+  }
+  if words.length() != 4 { return no }
+  if not ["to", "in", "as"].contains(words[2]) { return no }
+  let n = words[0].to_number()
+  let a = unit_of(words[1])
+  let b = unit_of(words[3])
+  if n.exists() == false or a.kind == "" or b.kind == "" { return no }
+  if a.kind != b.kind { return {ok: true, text: f"I cannot turn {a.name} into {b.name}: one measures {a.kind} and the other {b.kind}."} }
+  var value = 0
+  if a.kind == "heat" {
+    let x = n.value()
+    let c = if a.name == "F" { (x - 32) * 5 / 9 } else if a.name == "K" { x - 273.15 } else { x }
+    value = if b.name == "F" { c * 9 / 5 + 32 } else if b.name == "K" { c + 273.15 } else { c }
+  } else {
+    value = n.value() * a.size / b.size
+  }
+  let shown = tidy(value)
+  let first = if n.value() == 1 { single(a.name) } else { a.name }
+  let second = if shown == 1 { single(b.name) } else { b.name }
+  return {ok: true, text: f"{n.value()} {first} is {shown} {second}."}
+}
+
+// The name of a unit when there is one of it: 1 mile, not 1 miles.
+fn single(name: Text) -> Text {
+  if name == "inches" { return "inch" }
+  if name == "feet" { return "foot" }
+  return if name.length() > 3 and name.ends_with("s") { name.take(name.length() - 1) } else { name }
+}
+
+fn convert_said(msg: Msg, known: BooksRecalled) -> Turn {
+  return {book: book_in(known), text: convert_of(msg.text).text, suggest: []}
 }
 
 // ---------------------------------------------------------------- the book
@@ -215,44 +432,198 @@ fn clock_minutes(word: Text, half: Text) -> Number {
   return hour * 60 + m
 }
 
-// Finds "at 6pm" or "in 10 minutes" in what was said. The time is turned
-// into the moment it falls due, counted from now; a clock time already
-// past today means tomorrow.
+// Monday is 0 and Sunday is 6; -1 when the word is not a day.
+fn day_number(word: Text) -> Number {
+  let name = word.lower().trim_marks(".,")
+  var n = 0
+  for day in ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] {
+    if day == name { return n }
+    n = n + 1
+  }
+  return -1
+}
+
+fn day_name(n: Number) -> Text {
+  let names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+  return names[n % 7]
+}
+
+// Minutes after midnight as a clock reads them: 545 is 9:05.
+fn clock_text(minutes: Number) -> Text {
+  let whole = minutes.floor()
+  return f"{(whole / 60).floor()}:{two(whole % 60)}"
+}
+
+// Finds when in what was said: "at 6pm", "in 10 minutes", "tomorrow",
+// "on Friday at 9". The time is turned into the moment it falls due,
+// counted from now. A clock time already past today means tomorrow, a day
+// with no time means nine in the morning, and a day of the week that is
+// today with its time already past means a week from now.
 fn when_of(text: Text, moment: Moment) -> When {
   let words = text.words()
   let now_minutes = moment.hour * 60 + moment.minute
   // The start of this minute, so a reminder falls due on the minute.
   let base = moment.epoch - (moment.epoch - (moment.epoch / 60).floor() * 60)
-  var due = 0
-  var at = ""
+  let today = day_number(moment.weekday)
+  var clock = -1
+  var ahead = -1
+  var named = false
+  var wait = 0
   var kept: Text[] = []
   var skip = 0
   var i = 0
   for word in words {
+    let low = word.lower().trim_marks(".,")
     let next = if i + 1 < words.length() { words[i + 1] } else { "" }
     let after_next = if i + 2 < words.length() { words[i + 2].lower().trim_marks(".,") } else { "" }
+    let free = ahead < 0 and wait == 0
     if skip > 0 { skip = skip - 1 }
-    else if due == 0 and word.lower() == "at" and clock_minutes(next, after_next) >= 0 {
-      let minutes = clock_minutes(next, after_next)
-      var wait = minutes - now_minutes
-      if wait <= 0 { wait = wait + 24 * 60 }
-      due = base + wait * 60
-      at = f"{(minutes / 60).floor()}:{two(minutes - (minutes / 60).floor() * 60)}"
+    else if clock < 0 and wait == 0 and low == "at" and clock_minutes(next, after_next) >= 0 {
+      clock = clock_minutes(next, after_next)
       skip = if after_next == "am" or after_next == "pm" { 2 } else { 1 }
     }
-    else if due == 0 and word.lower() == "in" and next.to_number().or(0) > 0 and ["minute", "minutes", "min", "mins", "hour", "hours"].contains(after_next) {
+    else if clock < 0 and free and low == "in" and next.to_number().or(0) > 0 and ["minute", "minutes", "min", "mins", "hour", "hours", "day", "days"].contains(after_next) {
       let count = next.to_number().or(0)
-      let wait = if after_next.starts_with("hour") { count * 60 } else { count }
-      let minutes = now_minutes + wait
-      let on_clock = minutes - (minutes / 1440).floor() * 1440
-      due = base + (wait * 60).round()
-      at = f"{(on_clock / 60).floor()}:{two((on_clock - (on_clock / 60).floor() * 60).floor())}"
+      wait = if after_next.starts_with("hour") { count * 60 } else if after_next.starts_with("day") { count * 1440 } else { count }
       skip = 2
+    }
+    else if free and low == "tomorrow" { ahead = 1 }
+    else if free and low == "today" { ahead = 0 }
+    else if free and today >= 0 and ["on", "next", "this"].contains(low) and day_number(next) >= 0 {
+      ahead = (day_number(next) - today + 7) % 7
+      named = true
+      skip = 1
+    }
+    else if free and today >= 0 and i == 0 and day_number(low) >= 0 {
+      ahead = (day_number(low) - today + 7) % 7
+      named = true
     }
     else { kept = kept.append(word) }
     i = i + 1
   }
+  var due = 0
+  var at = ""
+  var gap = 0
+  if wait > 0 {
+    gap = wait
+    due = base + (wait * 60).round()
+    at = clock_text((now_minutes + wait) % 1440)
+  } else if clock >= 0 or ahead >= 0 {
+    let minutes = if clock >= 0 { clock } else { 540 }
+    gap = minutes - now_minutes
+    if ahead > 0 { gap = gap + ahead * 1440 }
+    if gap <= 0 { gap = gap + (if named { 7 * 1440 } else { 1440 }) }
+    due = base + gap * 60
+    at = clock_text(minutes)
+  }
+  // A time that is not today says which day it is.
+  let days = ((now_minutes + gap) / 1440).floor()
+  if due > 0 and days >= 1 and today >= 0 { at = at + " on " + day_name(today + days) }
   return {due: due, at: at, rest: kept.join(" ")}
+}
+
+// ---------------------------------------------------------------- dates
+
+fn month_number(word: Text) -> Number {
+  let w = word.lower().trim_marks(".,")
+  var n = 1
+  for name in ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"] {
+    if name == w or (w.length() == 3 and name.take(3) == w) or (w == "sept" and n == 9) { return n }
+    n = n + 1
+  }
+  return 0
+}
+
+fn month_name(n: Number) -> Text {
+  let names = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
+  return names[n - 1]
+}
+
+fn has_month(text: Text) -> Bool {
+  for word in text.words() {
+    if month_number(word) > 0 { return true }
+  }
+  return text.contains("christmas") or text.contains("new year") or text.contains("halloween")
+}
+
+fn days_in(year: Number, month: Number) -> Number {
+  let leap = (year % 4 == 0 and year % 100 != 0) or year % 400 == 0
+  if month == 2 { return if leap { 29 } else { 28 } }
+  return if [4, 6, 9, 11].contains(month) { 30 } else { 31 }
+}
+
+// Days from the first of January 1970 to a date, which makes the days
+// between two dates a subtraction and the day of the week a remainder.
+fn day_count(year: Number, month: Number, day: Number) -> Number {
+  let y = if month <= 2 { year - 1 } else { year }
+  let era = (y / 400).floor()
+  let yoe = y - era * 400
+  let mp = if month > 2 { month - 3 } else { month + 9 }
+  let doy = ((153 * mp + 2) / 5).floor() + day - 1
+  let doe = yoe * 365 + (yoe / 4).floor() - (yoe / 100).floor() + doy
+  return era * 146097 + doe - 719468
+}
+
+// The date named in what was said: "25 December", "December 25th 2027",
+// "2026-12-25", "Christmas". With no year it is the next one to come.
+fn date_in(text: Text, moment: Moment) -> Date {
+  let no: Date = {ok: false, year: 0, month: 0, day: 0}
+  let lower = text.lower().trim().trim_marks("?.!").replace(",", " ")
+  var year = 0
+  var month = 0
+  var day = 0
+  if lower.contains("christmas") { month = 12  day = 25 }
+  else if lower.contains("new year") { month = 1  day = 1 }
+  else if lower.contains("halloween") { month = 10  day = 31 }
+  for word in lower.words() {
+    let parts = word.split("-")
+    var bare = word
+    if word.length() > 2 and ["st", "nd", "rd", "th"].contains(word.drop(word.length() - 2)) and word.take(word.length() - 2).to_number().exists() {
+      bare = word.take(word.length() - 2)
+    }
+    let n = bare.to_number().or(0)
+    if parts.length() == 3 and parts[0].to_number().or(0) >= 1000 {
+      year = parts[0].to_number().or(0)
+      month = parts[1].to_number().or(0)
+      day = parts[2].to_number().or(0)
+    }
+    else if month_number(word) > 0 and month == 0 { month = month_number(word) }
+    else if n >= 1000 and n == n.floor() and year == 0 { year = n }
+    else if n >= 1 and n <= 31 and n == n.floor() and day == 0 { day = n }
+  }
+  if month < 1 or month > 12 or day < 1 { return no }
+  if year == 0 {
+    year = moment.year
+    if month < moment.month or (month == moment.month and day < moment.day) { year = year + 1 }
+  }
+  if day > days_in(year, month) { return no }
+  return {ok: true, year: year, month: month, day: day}
+}
+
+fn until_said(msg: Msg, known: BooksRecalled, moment: Moment) -> Turn {
+  let book = book_in(known)
+  let date = date_in(msg.text, moment)
+  if date.ok == false {
+    return {book: book, text: "Tell me the date, like this: days until 25 December.", suggest: ["days until 25 December"]}
+  }
+  let count = day_count(date.year, date.month, date.day)
+  let gap = count - day_count(moment.year, moment.month, moment.day)
+  let named = f"{day_name(count + 3)}, {date.day} {month_name(date.month)} {date.year}"
+  var text = f"{gap} days until {named}."
+  if gap == 0 { text = f"That is today: {named}." }
+  else if gap == 1 { text = f"1 day until {named}." }
+  else if gap < 0 { text = f"{named} was {0 - gap} days ago." }
+  return {book: book, text: text, suggest: []}
+}
+
+fn weekday_said(msg: Msg, known: BooksRecalled, moment: Moment) -> Turn {
+  let book = book_in(known)
+  let date = date_in(msg.text, moment)
+  if date.ok == false {
+    return {book: book, text: "Tell me the date, like this: what day is 25 December.", suggest: []}
+  }
+  let count = day_count(date.year, date.month, date.day)
+  return {book: book, text: f"{date.day} {month_name(date.month)} {date.year} is a {day_name(count + 3)}.", suggest: []}
 }
 
 // ---------------------------------------------------------------- what it does
@@ -270,6 +641,38 @@ fn remind(msg: Msg, known: BooksRecalled, moment: Moment) -> Turn {
   return {
     book: {name: book.name, you: book.you, reminders: all, facts: book.facts},
     text: f"I will remind you to {what}{timed}. You have {all.length()} on the list.",
+    suggest: ["my reminders"]
+  }
+}
+
+// A timer is a reminder with nothing to say but that the time is up.
+fn timer(msg: Msg, known: BooksRecalled, moment: Moment) -> Turn {
+  let book = book_in(known)
+  let long = after(msg.text, ["set a timer for", "start a timer for", "set a timer", "start a timer", "timer for", "timer"])
+  let when = when_of("in " + long, moment)
+  if when.due == 0 or when.rest.length() > 0 {
+    return {book: book, text: "Tell me how long, like this: timer 5 minutes.", suggest: ["timer 5 minutes"]}
+  }
+  let all = book.reminders.append({what: f"your {long} timer is up", due: when.due, at: when.at})
+  return {
+    book: {name: book.name, you: book.you, reminders: all, facts: book.facts},
+    text: f"Timer set for {long}. I will tell you at {when.at}.",
+    suggest: ["my reminders"]
+  }
+}
+
+// An alarm is a reminder at a clock time: "set an alarm for 7am".
+fn alarm(msg: Msg, known: BooksRecalled, moment: Moment) -> Turn {
+  let book = book_in(known)
+  let rest = after(msg.text, ["set an alarm for", "set an alarm at", "set an alarm", "set alarm for", "alarm for", "alarm at", "alarm", "wake me up at", "wake me at"])
+  let when = when_of("at " + rest, moment)
+  if when.due == 0 or when.rest.length() > 0 {
+    return {book: book, text: "Tell me the time, like this: alarm at 7am.", suggest: ["alarm at 7am"]}
+  }
+  let all = book.reminders.append({what: "your alarm", due: when.due, at: when.at})
+  return {
+    book: {name: book.name, you: book.you, reminders: all, facts: book.facts},
+    text: f"Alarm set for {when.at}. I can only tell you while I am open on this computer.",
     suggest: ["my reminders"]
   }
 }
@@ -352,7 +755,7 @@ fn help_said(known: BooksRecalled) -> Turn {
   let book = book_in(known)
   return {
     book: book,
-    text: f"I am {book.name}. I can tell the time, do sums, keep reminders, remember things you tell me, and answer questions.\nwhat is 17 times 23\nremind me at 6pm to call Sam\nremind me in 10 minutes to stretch\nmy reminders, then done 1\nremember that my locker is 14\nwhat do you remember\ncall me Aryan, or call yourself Nova\nforget everything\nFor work on your files, use the box above: it passes your request to the right agent.",
+    text: f"I am {book.name}. I can tell the time, do sums, keep reminders, remember things you tell me, and answer questions.\nwhat is 17 times 23\nremind me at 6pm to call Sam\nremind me tomorrow at 9 to pack\nremind me in 10 minutes to stretch\ntimer 5 minutes\nmy reminders, then done 1\nconvert 5 km to miles\ndays until 25 December\nwhat is (2 + 3) squared\nremember that my locker is 14\nwhat do you remember\ncall me Aryan, or call yourself Nova\nforget everything\nFor work on your files, use the box above: it passes your request to the right agent.",
     suggest: ["what time is it", "what is 17 times 23", "my reminders"]
   }
 }
@@ -438,7 +841,11 @@ workflow by_clock(msg: Msg) -> Turn {
   turn   = match kind {
     case "time" { time_said(known, moment) }
     case "date" { date_said(known, moment) }
+    case "alarm" { alarm(msg, known, moment) }
     case "remind" { remind(msg, known, moment) }
+    case "timer" { timer(msg, known, moment) }
+    case "until" { until_said(msg, known, moment) }
+    case "weekday" { weekday_said(msg, known, moment) }
     case _ { hello_said(known, moment) }
   }
 }
@@ -457,6 +864,7 @@ workflow keep(msg: Msg) -> Turn {
     case "rename" { rename(msg, known) }
     case "who" { who(known) }
     case "sum" { sum_said(msg, known) }
+    case "convert" { convert_said(msg, known) }
     case "cannot" { same(known, cannot_text()) }
     case _ { help_said(known) }
   }
@@ -469,7 +877,11 @@ workflow main(msg: Msg) -> Said {
     case "ask" { call answer(msg) }
     case "time" { call by_clock(msg) }
     case "date" { call by_clock(msg) }
+    case "alarm" { call by_clock(msg) }
     case "remind" { call by_clock(msg) }
+    case "timer" { call by_clock(msg) }
+    case "until" { call by_clock(msg) }
+    case "weekday" { call by_clock(msg) }
     case "hello" { call by_clock(msg) }
     case _ { call keep(msg) }
   }
@@ -547,7 +959,7 @@ test "a time in a reminder is read and turned into a moment" {
   expect c.at == "9:15"
   expect c.due == 1000000020 + 600
   expect d.at == "11:05"
-  expect e.at == "8:00"
+  expect e.at == "8:00 on Tuesday"
   expect e.due == 1000000020 + (8 * 60 - 545 + 1440) * 60
   expect f.due == 0
   expect f.rest == "to look at the stars"
@@ -555,6 +967,108 @@ test "a time in a reminder is read and turned into a moment" {
   expect clock_minutes("12", "am") == 0
   expect clock_minutes("25", "") == -1
   expect clock_minutes("soon", "") == -1
+}
+
+test "tomorrow, a day of the week, and days ahead are understood" {
+  // 09:05 on Monday 12 October 2026.
+  nine: Moment = {date: "2026-10-12", time: "09:05", weekday: "Monday", year: 2026, month: 10, day: 12, hour: 9, minute: 5, epoch: 1000000020}
+  a = when_of("tomorrow at 9 to pack", nine)
+  b = when_of("tomorrow to call the bank", nine)
+  c = when_of("on Friday at 5pm to hand in the essay", nine)
+  d = when_of("on Monday at 8 to go running", nine)
+  e = when_of("today at 6pm to cook", nine)
+  f = when_of("in 2 days to water the plants", nine)
+  g = when_of("to watch Friday Night Lights", nine)
+  expect a.at == "9:00 on Tuesday"
+  expect a.rest == "to pack"
+  expect a.due == 1000000020 + (1440 - 5) * 60
+  expect b.at == "9:00 on Tuesday"
+  expect c.at == "17:00 on Friday"
+  expect c.rest == "to hand in the essay"
+  expect c.due == 1000000020 + (4 * 1440 + 17 * 60 - 545) * 60
+  expect d.at == "8:00 on Monday"
+  expect d.due == 1000000020 + (7 * 1440 + 8 * 60 - 545) * 60
+  expect e.at == "18:00"
+  expect f.at == "9:05 on Wednesday"
+  expect g.due == 0
+  expect g.rest == "to watch Friday Night Lights"
+}
+
+test "a timer is a reminder that says the time is up" {
+  answers clock_now: [{date: "2026-10-12", time: "09:05", weekday: "Monday", year: 2026, month: 10, day: 12, hour: 9, minute: 5, epoch: 1000000020}, {date: "2026-10-12", time: "09:05", weekday: "Monday", year: 2026, month: 10, day: 12, hour: 9, minute: 5, epoch: 1000000020}]
+  a = main({text: "Set a timer for 5 minutes"})
+  b = main({text: "timer soon"})
+  c = main({text: "my reminders"})
+  expect kind_of({text: "timer 10 min"}) == "timer"
+  expect a.text == "Timer set for 5 minutes. I will tell you at 9:10."
+  expect b.text == "Tell me how long, like this: timer 5 minutes."
+  expect c.text.contains("1. your 5 minutes timer is up, at 9:10")
+}
+
+test "an alarm is a reminder at a clock time" {
+  answers clock_now: [{date: "2026-10-12", time: "09:05", weekday: "Monday", year: 2026, month: 10, day: 12, hour: 9, minute: 5, epoch: 1000000020}, {date: "2026-10-12", time: "09:05", weekday: "Monday", year: 2026, month: 10, day: 12, hour: 9, minute: 5, epoch: 1000000020}]
+  a = main({text: "Set an alarm for 7am"})
+  b = main({text: "wake me up at noonish"})
+  expect a.text == "Alarm set for 7:00 on Tuesday. I can only tell you while I am open on this computer."
+  expect b.text == "Tell me the time, like this: alarm at 7am."
+}
+
+test "brackets, powers and square roots" {
+  expect sum_of("(2 + 3) * 4").value == 20
+  expect sum_of("2 * (3 + (4 - 1))").value == 12
+  expect sum_of("2 + 3 ^ 2").value == 11
+  expect sum_of("what is 12 squared").value == 144
+  expect sum_of("2 to the power of 10").value == 1024
+  expect sum_of("what is the square root of 144").value == 12
+  expect sum_of("square root of (9 + 16)").value == 5
+  expect sum_of("2 ^ -1").value == 0.5
+  expect sum_of("square root of -4").problem == "A negative number has no square root."
+  expect sum_of("2 ^ 0.5").problem == "I can only raise a number to a whole power, up to 60."
+  expect sum_of("(2 + 3").ok == false
+  expect sum_of("2 + 3)").ok == false
+  expect sum_of("()").ok == false
+  expect sum_of("7").ok == false
+  a = main({text: "what is (2 + 3) squared?"})
+  expect a.text == "25"
+}
+
+test "units are converted by code" {
+  expect convert_of("convert 5 km to miles").text == "5 km is 3.1069 miles."
+  expect convert_of("10 miles in km").text == "10 miles is 16.0934 km."
+  expect convert_of("how many grams is 2 kg").text == "2 kg is 2000 g."
+  expect convert_of("how many minutes are in 2 hours").text == "2 hours is 120 minutes."
+  expect convert_of("100 C to F").text == "100 C is 212 F."
+  expect convert_of("What is 98.6 degrees fahrenheit in celsius?").text == "98.6 F is 37 C."
+  expect convert_of("5km to m").text == "5 km is 5000 m."
+  expect convert_of("60 mph to km/h").text == "60 mph is 96.5606 km/h."
+  expect convert_of("how many feet in a mile").text == "1 mile is 5280 feet."
+  expect convert_of("how many inches are in a foot").text == "1 foot is 12 inches."
+  expect convert_of("1000 m to km").text == "1000 m is 1 km."
+  expect convert_of("5 km to kg").text == "I cannot turn km into kg: one measures length and the other weight."
+  expect convert_of("5 minutes to midnight").ok == false
+  expect convert_of("why is the sky blue").ok == false
+  expect kind_of({text: "convert 3 feet to cm"}) == "convert"
+  a = main({text: "convert 3 feet to cm"})
+  expect a.text == "3 feet is 91.44 cm."
+}
+
+test "days until a date, and the day of the week it falls on" {
+  answers clock_now: [{date: "2026-10-12", time: "09:05", weekday: "Monday", year: 2026, month: 10, day: 12, hour: 9, minute: 5, epoch: 0}, {date: "2026-10-12", time: "09:05", weekday: "Monday", year: 2026, month: 10, day: 12, hour: 9, minute: 5, epoch: 0}, {date: "2026-10-12", time: "09:05", weekday: "Monday", year: 2026, month: 10, day: 12, hour: 9, minute: 5, epoch: 0}, {date: "2026-10-12", time: "09:05", weekday: "Monday", year: 2026, month: 10, day: 12, hour: 9, minute: 5, epoch: 0}, {date: "2026-10-12", time: "09:05", weekday: "Monday", year: 2026, month: 10, day: 12, hour: 9, minute: 5, epoch: 0}]
+  a = main({text: "How many days until Christmas?"})
+  b = main({text: "days until 1 March"})
+  c = main({text: "days until 2026-10-13"})
+  d = main({text: "what day is 25 December 2027?"})
+  e = main({text: "days until 31 February"})
+  expect day_count(1970, 1, 1) == 0
+  expect day_count(2026, 10, 12) == 20738
+  expect days_in(2028, 2) == 29
+  expect days_in(2100, 2) == 28
+  expect a.text == "74 days until Friday, 25 December 2026."
+  expect b.text == "140 days until Monday, 1 March 2027."
+  expect c.text == "1 day until Tuesday, 13 October 2026."
+  expect d.text == "25 December 2027 is a Saturday."
+  expect e.text.starts_with("Tell me the date")
+  expect kind_of({text: "what day is it"}) == "date"
 }
 
 test "a reminder with a time says when" {

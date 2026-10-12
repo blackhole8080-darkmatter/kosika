@@ -3059,6 +3059,84 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   as part of the reminder with no time. The orb was looked at once in a
   screenshot; whether it feels right is the owner's to say.
 
+### Kosi as a pill that stays on the screen
+
+- The owner asked for "a live interface on screen always minimized", like
+  the small translucent grey pill of a dictation app: hover to see what it
+  is for and its key combination, and reach it easily.
+- `kosika pill [FOLDER]` (module `kosika.pill`) shows a small borderless
+  window against the right-hand edge of the screen, half way down, above
+  other windows: at rest a small translucent grey pill standing on end
+  with only its ring, the way a dictation pill lies along the bottom
+  edge. Hovering, thinking or opening it widens it to the left. (It began
+  at the bottom centre; the owner asked for the right-hand side, its
+  middle, and a sharper look.)
+- How it is drawn: the program tells Windows it draws at the screen's real
+  resolution, so nothing is stretched on a scaled display. The pill is a
+  picture made with Pillow, drawn four times too large and brought down,
+  with a hair of lighter edge and a soft shadow, and handed to Windows
+  with every pixel saying how solid it is (`UpdateLayeredWindow`), so the
+  edge fades instead of ending in steps. The line to type on is a window
+  of its own laid over the pill. The answer bubble asks Windows 11 for
+  rounded corners. Without Pillow, or off Windows, it falls back to plain
+  shapes. Hovering wakes it and shows "Ask Kosi" with the key
+  combination. Clicking it, or pressing the combination from anywhere,
+  opens a line to type in; Enter asks, Esc closes. The answer appears in a
+  bubble above the pill with what Kosi offers next as chips, and stays up
+  longer for a longer answer. Right-click: Ask, Open Kosika Studio, Quit.
+- `kosika desktop --kosi` makes its Desktop and Start-menu shortcut, and
+  `kosika desktop --kosi --remove` takes it away.
+- It runs the same `assistant` agent through the same `App` as Studio, so
+  the reminders and facts are the same ones, and a reminder that comes due
+  is announced by the pill even with Studio closed.
+- Only one pill runs at a time. Only one key combination is registered with
+  Windows (`RegisterHotKey`); the first free of Ctrl+Alt+K,
+  Ctrl+Shift+Space, Ctrl+Alt+J is taken, since another program may hold
+  one. No other key is seen, and a test checks the module holds no keyboard
+  hook, microphone or screen capture.
+- With no model on the computer the pill still starts: sums, the time and
+  reminders work, and an open question gets a polite "could not think of an
+  answer".
+- Verified on the owner's laptop, first by inspecting the window and
+  then by capturing only that corner of the screen: the pill at rest, the
+  opened line with typed words, and the greeting bubble with its chips
+  were each seen. 22 tests in `tests/test_pill.py`.
+- Every agent's own tests on the real model (qwen2.5:7b), as a baseline:
+  researcher 5 of 5, coach 3 of 3, planner 2 of 2, animator 2 of 2, doctor
+  1 of 1, workbench 1 of 1, scout 1 of 1, assistant 2 of 3.
+- Not claimed: the hover state was seen only as a rendered picture, not
+  live. The window code itself (hover, the bubble, the hand-over to
+  Windows) has no automated test, only the logic and the picture under it. It does not start with Windows. Windows only.
+  It answers nothing that needs a grant: if the assistant ever asked for
+  one, the pill says no.
+
+### Kosi understands more, in plain code
+
+- The owner asked for a smarter Kosi. Everything here is worked out by the
+  Kosika program itself, with no model, so it is exact and instant.
+- Times: "tomorrow at 9", "tomorrow" (nine in the morning), "on Friday at
+  5pm", "next Sunday", "today at 6pm", "in 2 days". A time that is not
+  today says its day: "at 9:00 on Tuesday". A day of the week that is
+  today with its time past means a week from now.
+- "timer 25 minutes" and "alarm at 7am" are reminders with a time, so the
+  pill and Studio announce them like any other.
+- Sums: brackets (innermost first), powers ("^", "squared", "cubed", "to
+  the power of") and square roots, before multiplying and adding.
+- Units: length, weight, volume, time, speed and temperature, in "convert
+  5 km to miles", "5 km in miles", "how many feet in a mile", "5km to m".
+  Two different kinds of unit get a plain refusal.
+- Dates: "days until 25 December", "how many days until Christmas", "what
+  day is 1 January 2030". The count of days is integer arithmetic written
+  in Kosika (`day_count`), checked against Python's own for five dates.
+- 17 tests in the program, up from 11.
+- Not claimed: an alarm or timer is announced only while the pill or
+  Studio is open; nothing rings with both closed, and Kosi says so when
+  an alarm is set. "tonight", "next week", "noon" and "half past" are not
+  understood. Seconds are not: a timer is in minutes, hours or days.
+  Gallons, cups and currencies are left out on purpose (they mean
+  different things in different places, or change by the day). Open
+  questions are no smarter than before: that needs a better model.
+
 ## Standard coding-agent procedure
 
 1. Inspect `git status`, the relevant source files, tests, and this plan.

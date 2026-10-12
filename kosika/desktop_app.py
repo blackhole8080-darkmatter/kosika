@@ -118,20 +118,26 @@ def write_icon() -> Path:
 # ------------------------------------------------------------------ the shortcuts
 
 
-def shortcut_places() -> list[Path]:
+#: The second app: Kosi as a pill that stays on the screen.
+PILL_NAME = "Kosi"
+PILL_MODULE = "kosika.pill"
+STUDIO_MODULE = "kosika.desktop_app"
+
+
+def shortcut_places(name: str = NAME) -> list[Path]:
     """Where the shortcut goes: the Desktop and the Start menu."""
 
     places: list[Path] = []
     profile = Path(os.environ.get("USERPROFILE") or Path.home())
     for desktop in (profile / "Desktop", profile / "OneDrive" / "Desktop"):
         if desktop.is_dir():
-            places.append(desktop / f"{NAME}.lnk")
+            places.append(desktop / f"{name}.lnk")
             break
     roaming = os.environ.get("APPDATA")
     if roaming:
         programs = Path(roaming) / "Microsoft" / "Windows" / "Start Menu" / "Programs"
         if programs.is_dir():
-            places.append(programs / f"{NAME}.lnk")
+            places.append(programs / f"{name}.lnk")
     return places
 
 
@@ -154,16 +160,16 @@ _MAKE = (
     "$s.Arguments = $env:KOSIKA_ARGS; "
     "$s.WorkingDirectory = $env:KOSIKA_DIR; "
     "$s.IconLocation = $env:KOSIKA_ICON; "
-    "$s.Description = 'Kosika Studio: build, run and watch AI agents'; "
+    "$s.Description = $env:KOSIKA_WORDS; "
     "$s.Save()"
 )
 
 
-def shortcut_arguments(agents: Path | None) -> str:
+def shortcut_arguments(agents: Path | None, module: str = STUDIO_MODULE) -> str:
     """What the shortcut hands to Python. The folder is quoted, and a folder
     whose name holds a quotation mark is refused rather than guessed at."""
 
-    arguments = "-m kosika.desktop_app"
+    arguments = f"-m {module}"
     if agents is not None:
         text = str(agents.resolve())
         if '"' in text:
@@ -172,21 +178,26 @@ def shortcut_arguments(agents: Path | None) -> str:
     return arguments
 
 
-def make_shortcuts(agents: Path | None) -> list[Path]:
+def make_shortcuts(
+    agents: Path | None, name: str = NAME, module: str = STUDIO_MODULE
+) -> list[Path]:
     """Put the shortcut on the Desktop and in the Start menu. Windows only."""
 
     if sys.platform != "win32":
         raise OSError("Desktop shortcuts are made on Windows only, for now")
     icon = write_icon()
     made: list[Path] = []
-    for place in shortcut_places():
+    for place in shortcut_places(name):
         # Everything is handed over in the environment, never pasted into
         # the command, so no folder name can be read as PowerShell.
         environment = {
             **os.environ,
             "KOSIKA_LNK": str(place),
             "KOSIKA_TARGET": str(launcher()),
-            "KOSIKA_ARGS": shortcut_arguments(agents),
+            "KOSIKA_ARGS": shortcut_arguments(agents, module),
+            "KOSIKA_WORDS": "Kosi: your assistant, always on the screen"
+            if module == PILL_MODULE
+            else "Kosika Studio: build, run and watch AI agents",
             "KOSIKA_DIR": str(code_folder()),
             "KOSIKA_ICON": str(icon),
         }
@@ -208,9 +219,9 @@ def make_shortcuts(agents: Path | None) -> list[Path]:
     return made
 
 
-def remove_shortcuts() -> list[Path]:
+def remove_shortcuts(name: str = NAME) -> list[Path]:
     gone: list[Path] = []
-    for place in shortcut_places():
+    for place in shortcut_places(name):
         if place.is_file():
             place.unlink()
             gone.append(place)

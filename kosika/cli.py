@@ -1871,6 +1871,27 @@ def build_parser() -> argparse.ArgumentParser:
     desktop_parser.add_argument(
         "--remove", action="store_true", help="Take the shortcuts away again."
     )
+    desktop_parser.add_argument(
+        "--kosi",
+        action="store_true",
+        help=(
+            "Make (or with --remove, take away) the shortcut for Kosi, the "
+            "assistant as a small pill that stays on the screen."
+        ),
+    )
+    pill_parser = subparsers.add_parser(
+        "pill",
+        help=(
+            "Show Kosi, the assistant, as a small pill that stays on the "
+            "screen. Click it or press Ctrl+Alt+K to ask."
+        ),
+    )
+    pill_parser.add_argument(
+        "folder",
+        nargs="?",
+        type=Path,
+        help="Where your agents live. Default: KosikaAgents in your home folder.",
+    )
     motion_parser = subparsers.add_parser(
         "motion",
         help=(
@@ -2062,31 +2083,53 @@ def main() -> int:
             start_arguments.append("--until-closed")
         # From here it is an ordinary `kosika studio` with those choices.
         args = parser.parse_args(start_arguments)
-    if args.command == "desktop":
-        from .desktop_app import make_shortcuts, remove_shortcuts
+    if args.command == "pill":
+        from .pill import main as pill_main
 
+        if args.folder is not None and not args.folder.is_dir():
+            print(f"Not started: {_no_folder(args.folder)}", file=sys.stderr)
+            return 2
+        return pill_main([str(args.folder)] if args.folder is not None else [])
+    if args.command == "desktop":
+        from .desktop_app import (
+            NAME,
+            PILL_MODULE,
+            PILL_NAME,
+            STUDIO_MODULE,
+            make_shortcuts,
+            remove_shortcuts,
+        )
+
+        app_name = PILL_NAME if args.kosi else NAME
         try:
             if args.remove:
-                gone = remove_shortcuts()
+                gone = remove_shortcuts(app_name)
                 print(
                     "Removed:\n  " + "\n  ".join(str(path) for path in gone)
                     if gone
-                    else "There was no Kosika Studio shortcut to remove."
+                    else f"There was no {app_name} shortcut to remove."
                 )
                 return 0
             if args.folder is not None and not args.folder.is_dir():
                 print(f"Not done: {_no_folder(args.folder)}", file=sys.stderr)
                 return 2
-            shortcuts = make_shortcuts(args.folder)
+            shortcuts = make_shortcuts(
+                args.folder, app_name, PILL_MODULE if args.kosi else STUDIO_MODULE
+            )
         except (OSError, ValueError, subprocess.SubprocessError) as exc:
             print(f"Not done: {exc}", file=sys.stderr)
             return 2
-        print("Kosika Studio is now an app on this computer:")
+        print(f"{app_name} is now an app on this computer:")
         for path in shortcuts:
             print(f"  {path}")
-        print("Open it like any other app. It starts with nothing granted;")
-        print("choose a folder inside Studio, on the Permissions page.")
-        print("To take it away again: kosika desktop --remove")
+        if args.kosi:
+            print("Open it and a small pill appears at the bottom of the screen.")
+            print("Click it or press Ctrl+Alt+K to ask. Right-click to quit.")
+            print("To take it away again: kosika desktop --kosi --remove")
+        else:
+            print("Open it like any other app. It starts with nothing granted;")
+            print("choose a folder inside Studio, on the Permissions page.")
+            print("To take it away again: kosika desktop --remove")
         return 0
     if args.command == "development":
         try:
