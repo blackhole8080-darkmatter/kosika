@@ -39,7 +39,7 @@
 // "what are the two homeworks worth together" against "Homework 3 is worth
 // 15 marks and homework 4 is worth 25 marks". When no answer can be proven
 // word for word, the model called thinker is asked to work the answer out
-// from one line and to say how. Such an answer is always marked as worked
+// from one line, or from two lines together, and to say how. Such an answer is always marked as worked
 // out and shown with its step, its quote and its line, so you can check
 // it. The line must still be real, and must be about what was asked.
 //
@@ -57,8 +57,12 @@ record FileText { text: Text }
 record Found { answer: Text quote: Text }
 record Ask { text: Text }
 // An answer the lines do not state but lead to: the answer, the words it
-// was worked out from, and the step taken.
-record Worked { answer: Text quote: Text how: Text }
+// was worked out from, the step taken, and the words of a second line when
+// two were needed ("" when one was enough).
+record Worked { answer: Text quote: Text how: Text also: Text }
+// The second look: the judge's own working, its own answer, and whether
+// it thinks the proposed answer agrees with that.
+record Verdict { working: Text answer: Text agrees: Bool }
 
 default model reader {
   input: Ask
@@ -80,7 +84,13 @@ model strong {
 
 // The model that takes a second look at a worked-out answer and says
 // only whether it follows. Give it the stronger model too.
-model judge
+model judge {
+  input: Ask
+  output: Verdict
+  parameters: {
+    max_output_tokens: 260
+  }
+}
 
 // The model asked to work an answer out when none could be proven word
 // for word. Give it the stronger model: --model fast,strong=big,thinker=big
@@ -260,7 +270,7 @@ fn proven(found: Found, hits: Hits, close: Hits, msg: Msg) -> Text {
 // --------------------------------------------------------- working it out
 
 fn work_prompt(question: Text, lines: Text) -> Ask {
-  return {text: "The lines below do not state the answer to the question word for word. Work the answer out from them if you can, for example by adding two numbers, comparing a time with a closing time, or using what a word means. Each line is written as file:line: text.\nIn answer, give the answer in one short sentence.\nIn quote, copy the exact words from the one line you worked it out from: the text only, without the file and line number, and without changing a single character.\nIn how, say the step you took in one short sentence, using the numbers or words from that line.\nUse nothing that is not in the lines, apart from plain arithmetic and what ordinary words mean. If the lines are about something else, or the answer cannot be worked out from them, set answer, quote and how to \"\".\n\nLines:\n" + lines + "\n\nQuestion: " + question.trim()}
+  return {text: "The lines below do not state the answer to the question word for word. Work the answer out from them if you can, for example by adding two numbers, comparing a time with a closing time, using what a word means, or putting two lines together. Each line is written as file:line: text.\nIn answer, give the answer in one short sentence.\nIn quote, copy the exact words from the line you worked it out from: the text only, without the file and line number, and without changing a single character.\nIn also, if you needed a second line as well, copy the exact words from that line in the same way; if one line was enough, set also to \"\".\nIn how, say the step you took in one short sentence, using the numbers or words from the lines.\nUse nothing that is not in the lines, apart from plain arithmetic and what ordinary words mean. If the lines are about something else, or the answer cannot be worked out from them, set answer, quote, also and how to \"\".\n\nLines:\n" + lines + "\n\nQuestion: " + question.trim()}
 }
 
 // An answer that says there is no answer is not an answer.
@@ -284,6 +294,27 @@ fn shared(question: Text, line: Text) -> Number {
   return count
 }
 
+// A small model asked for the words of two lines often writes both in
+// quote, one after the other, and leaves also empty. When the quote as a
+// whole is in no line but two of its sentences each are, they are taken as
+// the two quotes they were meant to be.
+fn spread(worked: Worked, hits: Hits) -> Worked {
+  if not worked.also.trim().is_empty() or not proof(hits, worked.quote).is_empty() { return worked }
+  var found: Text[] = []
+  for piece in worked.quote.replace("\n", ". ").split(".") {
+    let part = piece.trim()
+    if found.length() < 2 and part.length() >= 6 and not proof(hits, part).is_empty() and not found.contains(part) {
+      found = found.append(part)
+    }
+  }
+  if found.length() < 2 { return worked }
+  return {answer: worked.answer, quote: found[0], how: worked.how, also: found[1]}
+}
+
+fn reasoned_spread(worked: Worked, hits: Hits, close: Hits, msg: Msg) -> Text {
+  return reasoned(spread(worked, hits), hits, close, msg)
+}
+
 // Why a worked-out answer is refused, or "" when it may be shown. Saying
 // there is no answer is allowed, and ends the matter.
 fn reasoned(worked: Worked, hits: Hits, close: Hits, msg: Msg) -> Text {
@@ -296,7 +327,24 @@ fn reasoned(worked: Worked, hits: Hits, close: Hits, msg: Msg) -> Text {
   if shared(msg.text, line_of(hit)) < 1 { return "The line you quoted is about something else. If no line is about this exact question, set answer, quote and how to \"\"." }
   if not close.matches.is_empty() and not close.matches.take(5).contains(hit) { return "The line you quoted is about something else. If no line is about this exact question, set answer, quote and how to \"\"." }
   if worked.how.trim().length() < 8 { return "In how, say the step you took to get from the line to the answer." }
+  // A second line, when one is given, is held to the same: real, a fact,
+  // about the question, and not the first line over again.
+  if not worked.also.trim().is_empty() {
+    let second = proof(hits, worked.also)
+    if second.is_empty() { return "The words in also are not word for word in any of the lines. Copy the exact words from the second line, or set also to \"\" if one line was enough." }
+    if line_of(second).starts_with("#") { return "The words in also are a heading, which states no fact. Quote the second line you used, or set also to \"\"." }
+    if shared(msg.text, line_of(second)) < 1 { return "The second line you quoted is about something else. Set also to \"\" if one line was enough." }
+  }
   return ""
+}
+
+// The second line of a worked-out answer, as it is shown, or "" when the
+// answer needed one line only or names the same line twice.
+fn second_source(worked: Worked, hits: Hits) -> Text {
+  let first = proof(hits, worked.quote)
+  let second = proof(hits, worked.also)
+  if worked.also.trim().is_empty() or second.is_empty() or second == first { return "" }
+  return "\nAnd: \"" + worked.also.trim() + "\"\nFrom: " + source_of(second)
 }
 
 fn answered(query: Text, hits: Hits, found: Found, worked: Worked) -> Said {
@@ -309,7 +357,7 @@ fn answered(query: Text, hits: Hits, found: Found, worked: Worked) -> Said {
   let hit = proof(hits, found.quote)
   let from = proof(hits, worked.quote)
   if (found.answer.trim().is_empty() or hit.is_empty()) and not worked.answer.trim().is_empty() and not from.is_empty() {
-    return {text: "Worked out, not stated word for word: " + worked.answer.trim() + "\nHow: " + worked.how.trim() + "\nQuote: \"" + worked.quote.trim() + "\"\nFrom: " + source_of(from)}
+    return {text: "Worked out, not stated word for word: " + worked.answer.trim() + "\nHow: " + worked.how.trim() + "\nQuote: \"" + worked.quote.trim() + "\"\nFrom: " + source_of(from) + second_source(worked, hits)}
   }
   if found.answer.trim().is_empty() or hit.is_empty() {
     return {text: "I will not guess: I could not back an answer with an exact quote. The closest lines I found for \"" + query + "\" are:\n" + hits.matches.take(5).join("\n")}
@@ -356,30 +404,73 @@ workflow read_and_prove(prompt: Ask, hits: Hits, close: Hits, msg: Msg) -> Found
 
 // Asked only when nothing could be proven word for word.
 workflow work_out(prompt: Ask, hits: Hits, close: Hits, msg: Msg) -> Worked {
-  worked = use_model thinker(prompt.text) verify reasoned(worked, hits, close, msg) otherwise {answer: "", quote: "", how: ""}
+  raw    = use_model thinker(prompt.text) verify reasoned_spread(raw, hits, close, msg) retry 1 otherwise {answer: "", quote: "", how: "", also: ""}
+  worked = spread(raw, hits)
 }
 
 // A second look at a worked-out answer before it is shown. A small model
 // can take the right step and still say the wrong thing: "6pm is after
-// 5pm" and then "yes, it is open". So the answer and its step are read
-// again, by the model called judge, which says only whether one follows from the
-// other.
-fn check_text(msg: Msg, worked: Worked, hits: Hits) -> Text {
-  return "A question was answered by working from one line of a file. Decide whether the answer is correct.
-Line: " + line_of(proof(hits, worked.quote)) + "
-Question: " + msg.text.trim() + "
-Answer given: " + worked.answer.trim() + "
-Step taken: " + worked.how.trim() + "
-Say follows if the answer is correct for the question, given the line and plain arithmetic. Say wrong if the answer is mistaken, contradicts its own step, or is not supported by the line."
+// 5pm" and then "yes, it is open". So the model called judge is given the
+// same lines and question and works the answer out for itself, in writing,
+// before it is shown the answer to compare with. Asked only for a verdict,
+// a small model calls right answers wrong as often as not; made to do the
+// work first, it does much better.
+fn check_text(msg: Msg, worked: Worked, hits: Hits) -> Ask {
+  let second = proof(hits, worked.also)
+  let more = if worked.also.trim().is_empty() or second.is_empty() { "" } else { "\n" + line_of(second) }
+  return {text: "Lines from a file:\n" + line_of(proof(hits, worked.quote)) + more + "\n\nQuestion: " + msg.text.trim() + "\n\nFirst, in working, answer the question yourself from the lines, step by step, using only the lines, plain arithmetic and what ordinary words mean. A place that closes at 5pm is closed at 6pm.\nIn answer, give your own answer in a few words: the number, or yes or no, or the name.\nThen compare your own answer with this proposed answer: " + worked.answer.trim() + "\nSet agrees to true if the proposed answer says the same as yours, and false if it says something different or the lines cannot answer the question."}
 }
 
-workflow second_look(msg: Msg, worked: Worked, hits: Hits) -> Choice {
-  judged = classify check_text(msg, worked, hits) into ["follows", "wrong"] using judge otherwise {label: "wrong", confidence: 0}
+fn worked_through(verdict: Verdict) -> Text {
+  return if verdict.working.trim().length() < 8 { "In working, answer the question yourself from the lines before you compare." } else { "" }
 }
 
-// The worked-out answer if the second look let it stand, else none.
-fn kept(worked: Worked, judged: Choice) -> Worked {
-  return if judged.label == "follows" { worked } else { {answer: "", quote: "", how: ""} }
+workflow second_look(msg: Msg, worked: Worked, hits: Hits) -> Verdict {
+  prompt  = check_text(msg, worked, hits)
+  verdict = use_model judge(prompt.text) verify worked_through(verdict) retry 1 otherwise {working: "", answer: "", agrees: false}
+}
+
+// The numbers written in a text, as written, without thousands commas.
+fn numbers_in(text: Text) -> Text[] {
+  var found: Text[] = []
+  for word in text.replace(",", "").words() {
+    let item = word.trim_marks(".?!;:()\"'%")
+    if item.to_number().exists() and not found.contains(item) { found = found.append(item) }
+  }
+  return found
+}
+
+// Whether a short answer says yes ("yes") or no ("no"), or neither ("").
+fn says(answer: Text) -> Text {
+  let words = for word in answer.lower().words() { word.trim_marks(".,!?;:\"'") }
+  let first = words.first().or("")
+  if first == "no" or words.contains("not") or words.contains("cannot") or words.contains("closed") or words.contains("never") { return "no" }
+  if first == "yes" { return "yes" }
+  return ""
+}
+
+// Do two answers say the same? A small model does the working well and
+// then compares badly: it wrote "15 + 25 = 40 marks" and said that "40"
+// disagreed. So where code can tell, code decides: two answers with
+// numbers agree when they share a number, and two that say yes or no
+// agree when they say the same. Only for anything else is the judge's own
+// word taken.
+fn agreed(worked: Worked, verdict: Verdict) -> Bool {
+  let mine = numbers_in(worked.answer)
+  let theirs = numbers_in(verdict.answer)
+  if not mine.is_empty() and not theirs.is_empty() {
+    for number in mine {
+      if theirs.contains(number) { return true }
+    }
+    return false
+  }
+  if says(worked.answer) != "" and says(verdict.answer) != "" { return says(worked.answer) == says(verdict.answer) }
+  return verdict.agrees
+}
+
+// The worked-out answer if the second look agreed with it, else none.
+fn kept(worked: Worked, verdict: Verdict) -> Worked {
+  return if agreed(worked, verdict) { worked } else { {answer: "", quote: "", how: "", also: ""} }
 }
 
 fn nothing_proven(found: Found, hits: Hits) -> Bool {
@@ -404,11 +495,11 @@ workflow ask_files(msg: Msg) -> Said {
   }
   worked = match nothing_proven(found, hits) {
     case true { call work_out(work_prompt(msg.text, passages(hits)), hits, close, msg) }
-    case _ { {answer: "", quote: "", how: ""} }
+    case _ { {answer: "", quote: "", how: "", also: ""} }
   }
   judged = match worked.answer.trim().is_empty() {
     case false { call second_look(msg, worked, hits) }
-    case _ { {label: "wrong", confidence: 0} }
+    case _ { {working: "", answer: "", agrees: false} }
   }
   said  = answered(query, hits, found, kept(worked, judged))
 }
@@ -436,7 +527,7 @@ workflow summarise_one(msg: Msg) -> Said {
 }
 
 workflow main(msg: Msg) -> Said {
-  budget 7 model calls, 600 seconds
+  budget 9 model calls, 900 seconds
   said = match kind_of(msg.text) {
     case "find" { call find_lines(msg) }
     case "read" { call read_one(msg) }
@@ -553,8 +644,8 @@ test "an answer the lines lead to is shown as worked out, with its step" {
   answers search_files: [{matches: ["maths.md:5: Homework 3 is worth 15 marks and homework 4 is worth 25 marks."]}]
   answers reader: [{answer: "40 marks.", quote: "Homework 3 is worth 15 marks and homework 4 is worth 25 marks"}]
   answers strong: [{answer: "", quote: ""}]
-  answers thinker: [{answer: "Together they are worth 40 marks.", quote: "Homework 3 is worth 15 marks and homework 4 is worth 25 marks", how: "15 plus 25 is 40."}]
-  answers judge: [{label: "follows", confidence: 0.9}]
+  answers thinker: [{answer: "Together they are worth 40 marks.", quote: "Homework 3 is worth 15 marks and homework 4 is worth 25 marks", how: "15 plus 25 is 40.", also: ""}]
+  answers judge: [{working: "15 plus 25 is 40, so 40 marks.", answer: "40 marks", agrees: true}]
   a = main({text: "How many marks are homework 3 and homework 4 worth together?"})
   expect a.text == "Worked out, not stated word for word: Together they are worth 40 marks.\nHow: 15 plus 25 is 40.\nQuote: \"Homework 3 is worth 15 marks and homework 4 is worth 25 marks\"\nFrom: maths.md, line 5"
 }
@@ -564,38 +655,88 @@ test "a worked-out answer is held to a real line about the question" {
   none: Hits = {matches: []}
   rent: Msg = {text: "What is the rent for a whole year?"}
   wifi: Msg = {text: "What is the wifi code at home?"}
-  expect reasoned({answer: "10800 euros.", quote: "Rent is 900 euros a month", how: "900 times 12 is 10800."}, hits, none, rent) == ""
-  expect reasoned({answer: "", quote: "", how: ""}, hits, none, rent) == ""
-  expect reasoned({answer: "10800 euros.", quote: "Rent is 950 euros a month", how: "950 times 12."}, hits, none, rent).starts_with("Your quote is not word for word")
-  expect reasoned({answer: "10800 euros.", quote: "Rent is 900 euros a month", how: ""}, hits, none, rent).starts_with("In how, say the step")
-  expect reasoned({answer: "It cannot be determined.", quote: "Rent is 900 euros a month", how: "Nothing says."}, hits, none, rent).starts_with("If the answer cannot be worked out")
-  expect reasoned({answer: "It changes every 90 days.", quote: "password is rotated every 90 days", how: "The password is rotated."}, hits, none, wifi).starts_with("The line you quoted is about something else")
-  expect reasoned({answer: "Home.", quote: "# Home", how: "It is the heading."}, hits, none, wifi).starts_with("Your quote is a heading")
-  expect reasoned({answer: "10800 euros.", quote: "Rent is 900 euros a month", how: "900 times 12 is 10800."}, hits, {matches: ["work.md:5: The staging server password is rotated every 90 days."]}, rent).starts_with("The line you quoted is about something else")
+  expect reasoned({answer: "10800 euros.", quote: "Rent is 900 euros a month", how: "900 times 12 is 10800.", also: ""}, hits, none, rent) == ""
+  expect reasoned({answer: "", quote: "", how: "", also: ""}, hits, none, rent) == ""
+  expect reasoned({answer: "10800 euros.", quote: "Rent is 950 euros a month", how: "950 times 12.", also: ""}, hits, none, rent).starts_with("Your quote is not word for word")
+  expect reasoned({answer: "10800 euros.", quote: "Rent is 900 euros a month", how: "", also: ""}, hits, none, rent).starts_with("In how, say the step")
+  expect reasoned({answer: "It cannot be determined.", quote: "Rent is 900 euros a month", how: "Nothing says.", also: ""}, hits, none, rent).starts_with("If the answer cannot be worked out")
+  expect reasoned({answer: "It changes every 90 days.", quote: "password is rotated every 90 days", how: "The password is rotated.", also: ""}, hits, none, wifi).starts_with("The line you quoted is about something else")
+  expect reasoned({answer: "Home.", quote: "# Home", how: "It is the heading.", also: ""}, hits, none, wifi).starts_with("Your quote is a heading")
+  expect reasoned({answer: "10800 euros.", quote: "Rent is 900 euros a month", how: "900 times 12 is 10800.", also: ""}, hits, {matches: ["work.md:5: The staging server password is rotated every 90 days."]}, rent).starts_with("The line you quoted is about something else")
   expect shared("What is the rent for a whole year?", "Rent is 900 euros a month, due on the 1st.") == 1
   expect shared("What is the wifi code at home?", "The staging server password is rotated every 90 days.") == 0
   expect non_answer("The answer is not provided in the lines.")
   expect not non_answer("Together they are worth 40 marks.")
 }
 
+test "an answer that needs two lines shows both" {
+  answers search_files: [{matches: ["maths.md:5: Homework 3 is worth 15 marks.", "maths.md:9: Homework 4 is worth 25 marks.", "maths.md:1: # Discrete maths"]}]
+  answers reader: [{answer: "", quote: ""}]
+  answers strong: [{answer: "", quote: ""}]
+  answers thinker: [{answer: "Homework 4, by 10 marks.", quote: "Homework 4 is worth 25 marks", how: "25 minus 15 is 10.", also: "Homework 3 is worth 15 marks"}]
+  answers judge: [{working: "25 is more than 15, by 10.", answer: "Homework 4, by 10", agrees: true}]
+  a = main({text: "Which homework is worth more marks, and by how much?"})
+  expect a.text == "Worked out, not stated word for word: Homework 4, by 10 marks.\nHow: 25 minus 15 is 10.\nQuote: \"Homework 4 is worth 25 marks\"\nFrom: maths.md, line 9\nAnd: \"Homework 3 is worth 15 marks\"\nFrom: maths.md, line 5"
+  hits: Hits = {matches: ["maths.md:5: Homework 3 is worth 15 marks.", "maths.md:9: Homework 4 is worth 25 marks.", "maths.md:1: # Discrete maths", "plan.md:2: Gym on Monday."]}
+  none: Hits = {matches: []}
+  q: Msg = {text: "Which homework is worth more marks, and by how much?"}
+  expect reasoned({answer: "Homework 4.", quote: "Homework 4 is worth 25 marks", how: "25 is more than 15.", also: "Homework 3 is worth 15 marks"}, hits, none, q) == ""
+  expect reasoned({answer: "Homework 4.", quote: "Homework 4 is worth 25 marks", how: "25 is more than 12.", also: "Homework 3 is worth 12 marks"}, hits, none, q).starts_with("The words in also are not word for word")
+  expect reasoned({answer: "Homework 4.", quote: "Homework 4 is worth 25 marks", how: "25 is more than 15.", also: "# Discrete maths"}, hits, none, q).starts_with("The words in also are a heading")
+  expect reasoned({answer: "Homework 4.", quote: "Homework 4 is worth 25 marks", how: "25 is more than 15.", also: "Gym on Monday"}, hits, none, q).starts_with("The second line you quoted is about something else")
+  expect second_source({answer: "x", quote: "Homework 4 is worth 25 marks", how: "y", also: "Homework 4 is worth 25 marks"}, hits) == ""
+}
+
+test "two lines written as one quote are taken as the two they are" {
+  hits: Hits = {matches: ["maths.md:5: Homework 3 is worth 15 marks.", "maths.md:9: Homework 4 is worth 25 marks."]}
+  a = spread({answer: "40 marks", quote: "Homework 3 is worth 15 marks.\nHomework 4 is worth 25 marks.", how: "Added them.", also: ""}, hits)
+  b = spread({answer: "40 marks", quote: "Homework 3 is worth 15 marks.Homework 4 is worth 25 marks.", how: "Added them.", also: ""}, hits)
+  c = spread({answer: "15", quote: "Homework 3 is worth 15 marks", how: "Read it.", also: ""}, hits)
+  d = spread({answer: "x", quote: "Homework 3 is worth 15 marks. Homework 9 is worth 99 marks.", how: "y", also: ""}, hits)
+  expect a.quote == "Homework 3 is worth 15 marks"
+  expect a.also == "Homework 4 is worth 25 marks"
+  expect b.also == "Homework 4 is worth 25 marks"
+  expect c.also == ""
+  expect d.also == ""
+  expect reasoned_spread({answer: "40 marks", quote: "Homework 3 is worth 15 marks.\nHomework 4 is worth 25 marks.", how: "Added them.", also: ""}, hits, {matches: []}, {text: "How many marks are homework 3 and homework 4 worth together?"}) == ""
+}
+
+test "code, not the model, decides whether two numbers or two yeses agree" {
+  forty: Worked = {answer: "40", quote: "q", how: "h", also: ""}
+  no: Worked = {answer: "No", quote: "q", how: "h", also: ""}
+  oak: Worked = {answer: "An oak tree.", quote: "q", how: "h", also: ""}
+  expect agreed(forty, {working: "15 + 25 = 40 marks", answer: "40 marks", agrees: false})
+  expect not agreed(forty, {working: "15 + 25 = 45", answer: "45", agrees: true})
+  expect agreed({answer: "10,800 euros a year", quote: "q", how: "h", also: ""}, {working: "900 x 12", answer: "10800", agrees: false})
+  expect agreed(no, {working: "It closes at 5pm.", answer: "No, it is closed.", agrees: false})
+  expect not agreed(no, {working: "It is open.", answer: "Yes", agrees: true})
+  expect agreed({answer: "The library is not open at 6pm.", quote: "q", how: "h", also: ""}, {working: "w", answer: "no", agrees: false})
+  expect agreed(oak, {working: "w", answer: "oak", agrees: true})
+  expect not agreed(oak, {working: "w", answer: "birch", agrees: false})
+  expect numbers_in("15 marks and 25 marks, 15 again (1,000).") == ["15", "25", "1000"]
+  expect says("Yes, it is.") == "yes"
+  expect says("It is closed.") == "no"
+  expect says("An oak tree.") == ""
+}
+
 test "a worked-out answer that does not survive a second look is not shown" {
   answers search_files: [{matches: ["plan.md:4: The library closes at 9pm on weekdays and 5pm on Saturday."]}]
   answers reader: [{answer: "", quote: ""}]
   answers strong: [{answer: "", quote: ""}]
-  answers thinker: [{answer: "Yes.", quote: "5pm on Saturday", how: "6pm is after 5pm."}]
-  answers judge: [{label: "wrong", confidence: 0.8}]
+  answers thinker: [{answer: "Yes.", quote: "5pm on Saturday", how: "6pm is after 5pm.", also: ""}]
+  answers judge: [{working: "It closes at 5pm, so at 6pm it is closed. The answer is no.", answer: "No", agrees: false}]
   a = main({text: "Is the library open at 6pm on Saturday?"})
   expect a.text.starts_with("I will not guess")
   expect not a.text.contains("Yes.")
-  expect kept({answer: "x", quote: "y", how: "z"}, {label: "follows", confidence: 1}).answer == "x"
-  expect kept({answer: "x", quote: "y", how: "z"}, {label: "wrong", confidence: 1}).answer == ""
+  expect kept({answer: "x", quote: "y", how: "z", also: ""}, {working: "w", answer: "", agrees: true}).answer == "x"
+  expect kept({answer: "x", quote: "y", how: "z", also: ""}, {working: "w", answer: "", agrees: false}).answer == ""
 }
 
 test "when nothing can be worked out either, there is still no guess" {
   answers search_files: [{matches: ["a.md:1: Ravi likes tea"]}]
   answers reader: [{answer: "", quote: ""}]
   answers strong: [{answer: "", quote: ""}]
-  answers thinker: [{answer: "", quote: "", how: ""}]
+  answers thinker: [{answer: "", quote: "", how: "", also: ""}]
   a = main({text: "When is the demo with Ravi?"})
   expect a.text.starts_with("I will not guess")
 }
@@ -673,4 +814,19 @@ eval "it still will not work out what no line is about" {
   answers search_files: [{matches: ["notes/home.md:3: Rent is 900 euros a month, due on the 1st.", "notes/work.md:5: The staging server password is rotated every 90 days.", "notes/home.md:4: The landlord, Mr Okafor, can be reached on 555-0134."]}]
   a = main({text: "What is my landlord's email address?"})
   expect a.text.starts_with("I will not guess")
+}
+
+eval "it puts two lines together" {
+  answers search_files: [{matches: ["maths.md:5: Homework 3 is worth 15 marks.", "maths.md:9: Homework 4 is worth 25 marks.", "maths.md:2: The exam is on 14 November in room B204."]}]
+  a = main({text: "How many marks are homework 3 and homework 4 worth together?"})
+  expect a.text.contains("40")
+  expect a.text.contains("maths.md, line 5")
+  expect a.text.contains("maths.md, line 9")
+}
+
+eval "it compares two lines" {
+  answers search_files: [{matches: ["trees.md:2: Oak trees can live for over 800 years.", "trees.md:6: Birch trees usually live for about 100 years.", "trees.md:3: The tallest tree on record is 115.9 metres."]}]
+  a = main({text: "Which lives longer, an oak tree or a birch tree?"})
+  expect a.text.lower().contains("oak")
+  expect a.text.contains("trees.md, line 2")
 }

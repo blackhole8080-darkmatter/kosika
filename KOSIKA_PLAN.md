@@ -3271,6 +3271,35 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   only its name and length. No real coder run was approved through the
   pill by a person yet.
 
+### The researcher puts two lines together
+
+- A worked-out answer may now rest on two lines: "which homework is worth
+  more" when each homework has its own line. The second quote is held to
+  the same rules as the first (real, not a heading, about the question)
+  and both lines are shown.
+- The first version of this measured worse, 16 of 24, and the cause was
+  the second look, not the answers. Asked only "follows or wrong", the
+  small model called right answers wrong about half the time. Three
+  changes, each from reading the model's own words:
+  - The judge now works the answer out for itself, in writing, before it
+    sees the answer to compare with.
+  - Code decides whether two answers agree where it can: two answers with
+    numbers agree when they share a number, two that say yes or no agree
+    when they say the same. The model had written "15 + 25 = 40 marks"
+    and then said "40" disagreed.
+  - A small model asked for two quotes often writes both in the first.
+    When the whole is in no line but two of its sentences each are, they
+    are taken as the two quotes.
+- Measured on qwen2.5:7b, twelve evals three times each: 34 of 36. Ten
+  evals passed 3 of 3, including both two-line ones. The closing-time
+  question passed 1 of 3: the model reworded its quote, which is refused,
+  so both misses were refusals and not wrong answers.
+- 18 tests in the program; its budget is 9 model calls and 900 seconds.
+- Not claimed: where neither a number nor a yes or no is in the answer,
+  the judge's own word is still what decides, and that is the weak case.
+  Three lines together are not attempted. The slow path now takes up to a
+  minute and a half on this laptop.
+
 ## Standard coding-agent procedure
 
 1. Inspect `git status`, the relevant source files, tests, and this plan.
