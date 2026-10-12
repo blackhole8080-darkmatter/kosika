@@ -134,6 +134,27 @@ pre.source { background: var(--bg); border: 1px solid var(--line); border-radius
 .tally { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--soft); padding: 9px 2px 0; border-top: 1px solid var(--line); margin-top: 8px; } .tally b { color: var(--ink); font-weight: 600; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 
+.orb { position: relative; width: 132px; height: 132px; margin: 4px auto 14px; }
+.orb i { position: absolute; inset: 0; border-radius: 50%; display: block; }
+.orb .halo { background: radial-gradient(circle, color-mix(in srgb, var(--accent) 34%, transparent) 0%, transparent 68%); filter: blur(6px); animation: orb-breathe 5.2s ease-in-out infinite; }
+.orb .ring { inset: 16px; background: conic-gradient(from 0deg, var(--accent), #e8a23a, #d9486a, #7a5bd0, var(--accent)); -webkit-mask: radial-gradient(circle, transparent 57%, #000 59%, #000 70%, transparent 72%); mask: radial-gradient(circle, transparent 57%, #000 59%, #000 70%, transparent 72%); animation: orb-turn 16s linear infinite, orb-breathe 5.2s ease-in-out infinite; }
+.orb .core { inset: 47px; background: radial-gradient(circle at 38% 34%, #fff, var(--accent-soft) 55%, color-mix(in srgb, var(--accent) 45%, var(--panel)) 100%); box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 45%, transparent); animation: orb-breathe 5.2s ease-in-out infinite; }
+.orb .wave { inset: 30px; border: 2px solid var(--accent); opacity: 0; }
+.orb.thinking .ring { animation: orb-turn 1.5s linear infinite; }
+.orb.thinking .core { animation: orb-think 0.9s ease-in-out infinite; }
+.orb.thinking .halo { animation: orb-think 0.9s ease-in-out infinite; }
+.orb.speaking .ring { animation: orb-turn 7s linear infinite; }
+.orb.speaking .core { animation: orb-speak 0.46s ease-in-out infinite alternate; }
+.orb.speaking .wave { animation: orb-wave 1.25s ease-out infinite; }
+.orb.speaking .wave.late { animation-delay: 0.62s; }
+.orb.due .ring { animation: orb-turn 0.9s linear infinite; } .orb.due .wave { animation: orb-wave 0.8s ease-out infinite; }
+.orb-name { text-align: center; font-size: 12.5px; color: var(--soft); margin: -6px 0 12px; letter-spacing: 0.04em; }
+@keyframes orb-turn { to { transform: rotate(360deg); } }
+@keyframes orb-breathe { 0%, 100% { scale: 1; opacity: 0.92; } 50% { scale: 1.045; opacity: 1; } }
+@keyframes orb-think { 0%, 100% { scale: 0.86; } 50% { scale: 1.12; } }
+@keyframes orb-speak { from { scale: 0.9; } to { scale: 1.28; } }
+@keyframes orb-wave { 0% { scale: 0.62; opacity: 0.75; } 100% { scale: 1.75; opacity: 0; } }
+.suggest { display: flex; gap: 6px; flex-wrap: wrap; margin: -2px 0 2px; } .suggest span { border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line)); border-radius: 999px; padding: 3px 11px; font-size: 12.5px; color: var(--accent); cursor: pointer; } .suggest span:hover { background: var(--accent-soft); }
 .bubble.draft { color: var(--soft); } .caret { display: inline-block; width: 7px; height: 1em; background: var(--accent); margin-left: 2px; vertical-align: -2px; animation: blink 1s steps(2) infinite; }
 @keyframes blink { 50% { opacity: 0; } }
 
@@ -269,6 +290,8 @@ const main = document.getElementById("main");
 let overview = null;
 // A request on its way to the agent that was chosen for it.
 let handed = null;
+// Whether the assistant has said hello since the page was opened.
+let greeted = false;
 
 // Speaking answers aloud. Only a voice that lives on this computer is used:
 // a voice marked as a network service would send the words away to be
@@ -288,6 +311,13 @@ function speak(text) {
   // Lists are read as sentences, and nothing over a minute or so is read.
   const said = new SpeechSynthesisUtterance(text.replace(/\n+/g, ". ").slice(0, 900));
   said.voice = voice; said.lang = voice.lang; said.rate = 1.02;
+  return said;
+}
+// Says something, and tells `ended` when it has finished or could not start.
+function sayAloud(text, ended) {
+  const said = speak(text);
+  if (!said) { if (ended) ended(false); return false; }
+  said.onend = said.onerror = () => { if (ended) ended(true); };
   speechSynthesis.speak(said);
   return true;
 }
@@ -1213,13 +1243,28 @@ function liveTab(agent, isAssistant) {
   else if (agent.chat) {
     const log = h("div", {class: "chatlog"}, h("p", {class: "empty"}, "Say something to " + (isAssistant ? "your assistant" : agent.title) + ". Watch the flow on the right as it works."));
     const input = h("input", {type: "text", placeholder: "Ask anything"});
-    const send = async given => {
+    // The orb: still when idle, turning while it thinks, pulsing while it speaks.
+    const orb = isAssistant ? h("div", {class: "orb", role: "img", "aria-label": "The assistant is idle"}, h("i", {class: "halo"}), h("i", {class: "ring"}), h("i", {class: "wave"}), h("i", {class: "wave late"}), h("i", {class: "core"})) : null;
+    const orbName = isAssistant ? h("div", {class: "orb-name"}, "") : null;
+    let orbTimer = 0;
+    const mood = (state, forMs) => {
+      if (!orb) return;
+      clearTimeout(orbTimer);
+      orb.className = "orb" + (state ? " " + state : "");
+      orb.setAttribute("aria-label", "The assistant is " + (state || "idle"));
+      if (forMs) orbTimer = setTimeout(() => mood(""), forMs);
+    };
+    // An answer is shown, then spoken if speaking is on; the orb follows.
+    const voiced = text => { mood("speaking"); if (!sayAloud(text, () => mood(""))) mood("speaking", Math.min(4200, 900 + text.length * 22)); };
+    const send = async (given, quiet) => {
       const text = (typeof given === "string" ? given : input.value).trim();
       if (!text || busy) return;
       busy = true;
       if (log.querySelector(".empty")) log.replaceChildren();
-      input.value = ""; input.disabled = true; pick("Live");
-      log.append(h("div", {class: "msg you"}, h("div", {class: "bubble"}, text)));
+      for (const old of log.querySelectorAll(".suggest")) old.remove();
+      input.value = ""; input.disabled = true; if (!quiet) pick("Live");
+      mood("thinking");
+      if (!quiet) log.append(h("div", {class: "msg you"}, h("div", {class: "bubble"}, text)));
       const waiting = h("div", {class: "msg"}, h("div", {class: "bubble typing"}, h("span"), h("span"), h("span")));
       log.append(waiting); log.scrollTop = log.scrollHeight;
       const answer = (text, meta, bad) => waiting.replaceChildren(h("div", {class: "bubble"}, bad ? h("span", {style: "color:var(--bad)"}, text) : text, meta ? h("span", {class: "meta"}, meta) : null));
@@ -1236,16 +1281,55 @@ function liveTab(agent, isAssistant) {
           log.scrollTop = log.scrollHeight;
         });
         after(view);
-        if (view.state === "done") { answer(view.text, view.seconds + " s"); speak(view.text); }
-        else answer(view.error || "The run did not finish.", "", true);
-      } catch (error) { answer(error.message, "", true); }
+        if (view.state === "done") {
+          answer(view.text, quiet ? "" : view.seconds + " s"); voiced(view.text);
+          // Things the agent offers to be said next, to tap.
+          const offers = view.result && Array.isArray(view.result.suggest) ? view.result.suggest.filter(item => typeof item === "string" && item).slice(0, 4) : [];
+          if (offers.length) log.append(h("div", {class: "suggest"}, offers.map(item => h("span", {onclick: () => send(item)}, item))));
+          if (orbName) refreshBook();
+        }
+        else { answer(view.error || "The run did not finish.", "", true); mood(""); }
+      } catch (error) { answer(error.message, "", true); mood(""); }
       busy = false; input.disabled = false; input.focus(); log.scrollTop = log.scrollHeight;
     };
+    // What the assistant keeps: its name for under the orb, and reminders
+    // with a time. One that has fallen due is shown and said once.
+    let book = null;
+    const told = () => { try { return JSON.parse(localStorage.getItem("kosika-told") || "[]"); } catch (error) { return []; } };
+    const refreshBook = async () => {
+      try {
+        const kept = await api("/api/memory?id=" + encodeURIComponent(agent.id));
+        book = ((kept.memories || [])[0] || {}).entries ? kept.memories[0].entries.me || null : null;
+        if (orbName) orbName.textContent = book && book.name ? book.name : "Kosi";
+      } catch (error) { /* the orb keeps its last name */ }
+    };
+    const checkDue = () => {
+      if (!book || !Array.isArray(book.reminders) || busy) return;
+      const now = Date.now() / 1000, seen = told();
+      for (const item of book.reminders) {
+        const key = item.due + "|" + item.what;
+        if (!item.due || item.due > now || seen.includes(key)) continue;
+        try { localStorage.setItem("kosika-told", JSON.stringify([...seen, key].slice(-60))); } catch (error) { /* it may be said again */ }
+        if (log.querySelector(".empty")) log.replaceChildren();
+        const words = "Reminder: " + item.what + ".";
+        for (const old of log.querySelectorAll(".suggest")) old.remove();
+        log.append(h("div", {class: "msg"}, h("div", {class: "bubble"}, words, h("span", {class: "meta"}, "due at " + item.at))), h("div", {class: "suggest"}, h("span", {onclick: () => send("my reminders")}, "my reminders")));
+        log.scrollTop = log.scrollHeight;
+        mood("due"); if (!sayAloud(words, () => mood(""))) mood("due", 5000);
+        return;
+      }
+    };
+    if (isAssistant) {
+      const watch = setInterval(() => { if (!document.body.contains(log)) { clearInterval(watch); return; } checkDue(); }, 15000);
+      refreshBook().then(checkDue);
+    }
     input.addEventListener("keydown", event => { if (event.key === "Enter") send(); });
-    const quick = isAssistant ? h("div", {class: "quick"}, ["help", "what time is it", "my reminders", "what do you remember"].map(text => h("span", {onclick: () => send(text)}, text))) : null;
+    const quick = isAssistant ? h("div", {class: "quick"}, ["what can you do", "what time is it", "my reminders", "what do you remember"].map(text => h("span", {onclick: () => send(text)}, text))) : null;
     const aloud = h("input", {type: "checkbox", onchange: event => setSpeaking(event.target.checked)}); aloud.checked = speaking();
     const voiceRow = canSpeak ? h("label", {class: "foot", style: "display:block;margin-top:8px"}, aloud, " Speak answers aloud, with a voice that is on this computer") : null;
-    fill(left, log, quick, h("div", {class: "row"}, input, h("button", {onclick: () => send()}, "Send")), voiceRow);
+    fill(left, orb, orbName, log, quick, h("div", {class: "row"}, input, h("button", {onclick: () => send()}, "Send")), voiceRow);
+    // It greets you when it is opened: by the clock, with no model.
+    if (isAssistant && !(handed && handed.agent === agent.id) && !greeted) { greeted = true; setTimeout(() => send("hello", true), 250); }
     if (handed && handed.agent === agent.id) { const mine = handed; handed = null; log.replaceChildren(h("div", {class: "banner"}, "Passed to " + agent.title + " because " + mine.why + ".")); setTimeout(() => send(mine.text), 0); }
   } else {
     const input = h("textarea", null); input.value = agent.example_input || "{}";

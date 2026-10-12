@@ -3024,6 +3024,41 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   list of phrases, so a claim worded differently can still get through.
   Speaking aloud was heard by no one: it was run silent.
 
+### Kosi: the assistant made to feel alive
+
+- The owner chose typing over a microphone, asked what the assistant is
+  called, and asked for Siri's animations and features. It had no name. It
+  is now Kosi by default; `call yourself Nova` renames it and `call me
+  Aryan` tells it who it is talking to. The look is Kosika's own, grown
+  from the ring in the desktop icon, not a copy of Apple's.
+- In the program, all in plain code with no model: a greeting by the hour
+  with the person's name and how many reminders wait; sums worked out with
+  multiplying and dividing before adding and taking away, from words or
+  signs, with percentages; reminders that may carry a time written as
+  "at 6pm", "at 18:30" or "in 10 minutes", turned into the moment they fall
+  due; and a few things to say next, returned beside each answer in a
+  `suggest` field.
+- In Studio: an orb above the assistant's chat, still when idle, turning
+  fast while a run is going, pulsing while an answer is spoken or shown,
+  and ringing when a reminder is due. It is drawn with CSS only and stops
+  for a person who asked for less motion. The assistant says hello when
+  the page opens. Suggestions are shown as things to tap. Every 15 seconds
+  the page reads the assistant's memory and shows, and says if speaking is
+  on, any reminder whose time has come, once.
+- Tried in a real Studio window on a scratch copy: the greeting was "You
+  are up late." at 1:45 at night; "what is 17 times 23" gave 391 in 0.7 s
+  with the orb turning and then pulsing; "call me Aryan" was answered and
+  offered "hello"; "remind me in 1 minute to stretch" was answered "at
+  1:46" and, a minute later, "Reminder: stretch." appeared by itself with
+  the orb ringing. No errors in the page's console.
+- 11 tests in the program, and `tests/test_assistant_agent.py` now has 11.
+- Not claimed: a reminder is announced only while Studio is open on the
+  assistant's page; nothing runs when the app is closed. The sums cover
+  the four operations and percentages, not brackets or powers. A time such
+  as "tomorrow at 9" or "on Friday" is not understood: the words are kept
+  as part of the reminder with no time. The orb was looked at once in a
+  screenshot; whether it feels right is the owner's to say.
+
 ## Standard coding-agent procedure
 
 1. Inspect `git status`, the relevant source files, tests, and this plan.

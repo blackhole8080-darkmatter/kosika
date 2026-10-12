@@ -16,7 +16,7 @@ ASSISTANT = ROOT / "examples" / "agents" / "assistant" / "main.kos"
 class AssistantTests(unittest.TestCase):
     def test_its_own_tests_pass(self) -> None:
         results = run_tests(load_program(ASSISTANT))
-        self.assertGreaterEqual(len(results), 7)
+        self.assertGreaterEqual(len(results), 11)
         self.assertEqual([r.name for r in results if not r.passed], [])
 
     def test_it_is_granted_nothing_but_a_clock_and_its_memory(self) -> None:
@@ -49,6 +49,35 @@ class SpeakingTests(unittest.TestCase):
     def test_the_page_does_not_listen(self) -> None:
         # Hearing is a separate decision; nothing here opens the microphone.
         for word in ("SpeechRecognition", "getUserMedia", "webkitSpeech"):
+            self.assertNotIn(word, self.page)
+
+
+class OrbTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.page = (
+            Path(studio.__file__).parent / "app_assets" / "index.html"
+        ).read_text(encoding="utf-8")
+
+    def test_the_orb_has_a_look_for_each_thing_it_is_doing(self) -> None:
+        for state in (".orb.thinking", ".orb.speaking", ".orb.due"):
+            self.assertIn(state, self.page)
+        self.assertIn('mood("thinking")', self.page)
+        self.assertIn("The assistant is ", self.page)
+
+    def test_stillness_is_respected(self) -> None:
+        # One rule stops every animation for a person who asked for less motion.
+        self.assertIn("prefers-reduced-motion: reduce", self.page)
+
+    def test_it_greets_once_and_offers_things_to_tap(self) -> None:
+        self.assertIn('send("hello", true)', self.page)
+        self.assertIn("view.result.suggest", self.page)
+
+    def test_a_due_reminder_is_said_once(self) -> None:
+        self.assertIn("kosika-told", self.page)
+        self.assertIn('"Reminder: " + item.what', self.page)
+
+    def test_the_orb_draws_nothing_from_outside(self) -> None:
+        for word in ("http://", "https://", "innerHTML", "<img", "url("):
             self.assertNotIn(word, self.page)
 
 

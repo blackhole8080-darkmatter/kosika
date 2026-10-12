@@ -1111,10 +1111,13 @@ kosika studio examples/agents --model MODEL --allow-folder YOUR_FOLDER --allow-s
   files to open.
 - `builder` makes the files you ask for, after showing you its whole plan:
   every file with its full text, and one yes or no for the lot.
-- `assistant` is the one you talk to: the time, reminders, things you ask
-  it to remember, and short answers meant to be heard. It touches nothing
-  on the computer, and says so when asked to. Studio opens on it and can
-  speak its answers aloud.
+- `assistant` is Kosi, the one you talk to by typing. It greets you by the
+  clock, does sums exactly in code, keeps reminders with or without a time,
+  remembers what you tell it and your name, and answers questions in a few
+  sentences meant to be heard. It touches nothing on the computer, and says
+  so when asked to. Studio opens on it with an orb that turns while it
+  thinks and pulses while it speaks, can speak its answers aloud, shows a
+  reminder when it falls due, and offers things to tap next.
 - `coder` does one small task in a Python project. It reads the files it
   needs, shows you every file it will write, writes them, runs the tests
   and reports. Run it with `--in-session` so it works in a copy. Say `fix`
