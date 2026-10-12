@@ -76,7 +76,7 @@ from .skills import SKILLS_FOLDER, load_skill_notes
 from .starter import KINDS, StarterError, create_starter
 from .story import StoryError, build_story, read_trace
 from .swarm import SwarmApproval, run_swarm, swarm_plan_hash
-from .system_tools import bind_system_tools
+from .system_tools import bind_agent_tools, bind_system_tools
 from .testing import check_tests, run_tests
 
 PAGE = Path(__file__).parent / "app_assets" / "index.html"
@@ -513,6 +513,10 @@ def _slim(event: dict[str, Any], depth: int) -> dict[str, Any]:
         slim["author"] = str(arguments.get("author", ""))
         slim["said"] = words[:600]
     return slim
+
+
+class _Refused(Exception):
+    """The person said no, or did not answer, to something a run asked."""
 
 
 class Job:
@@ -1297,124 +1301,251 @@ class App:
                 self._lock,
                 tempfile.TemporaryDirectory(prefix="kosika-app-") as scratch,
             ):
-                approvals: list[ApprovalRecord] = []
-                # True when this agent's file and shell tools work in a session.
-                walled = self._session_key(job.folder) in self._sessions
-                while True:
-                    session = ExecutionSession(
-                        Path(scratch) / "run.sqlite",
-                        binding_id="studio",
-                        approvals=approvals,
-                    )
-                    try:
-                        result = run(
-                            program,
-                            "main",
-                            job.trace,
-                            skills=load_skill_notes(job.folder / SKILLS_FOLDER),
-                            inputs=inputs,
-                            model_bindings=models,
-                            tool_bindings=tools,
-                            session=session,
-                            on_event=watch,
-                        )
-                        break
-                    except ApprovalPending as pending:
-                        asked = next(
-                            (
-                                tool
-                                for tool in program.tools
-                                if tool.name == pending.request["tool"]
-                            ),
-                            None,
-                        )
-                        if (
-                            walled
-                            and asked is not None
-                            and asked.source in ("system:files", "system:shell")
-                        ):
-                            # Inside a session this cannot reach the real
-                            # folder, so it does not wait for a yes. The
-                            # yes comes when the changes are brought back.
-                            approvals.append(
-                                ApprovalRecord(
-                                    plan_hash=pending.request["plan_hash"],
-                                    action_hash=pending.request["action_hash"],
-                                    approved_by="session",
-                                    reason="confined to the session's copy",
-                                )
-                            )
-                            job.events.append(
-                                {
-                                    "event": "session_allowed",
-                                    "tool": pending.request["tool"],
-                                    "depth": 0,
-                                }
-                            )
-                            continue
-                        job.request = {
-                            "tool": pending.request["tool"],
-                            "arguments": pending.request["arguments"],
-                            "step": pending.request.get("step"),
-                            # So the page can say plainly what kind of
-                            # action this is, such as which program starts.
-                            "kind": asked.source if asked else "",
-                            "operation": asked.operation if asked else "",
-                        }
-                        if pending.request["tool"] == PLAN_TOOL:
-                            # A planning agent's whole list of changes: one
-                            # question, even inside a session, because this
-                            # is where the person sees what will be done.
-                            declared = {tool.name: tool for tool in program.tools}
-                            job.request = {
-                                "tool": "plan",
-                                "agent": pending.request["arguments"]["agent"],
-                                "step": pending.request.get("step"),
-                                "walled": walled,
-                                "warnings": pending.request["arguments"].get(
-                                    "warnings", []
-                                ),
-                                "plan": [
-                                    {
-                                        "tool": action["tool"],
-                                        "arguments": action["arguments"],
-                                        "kind": declared[action["tool"]].source,
-                                        "operation": declared[action["tool"]].operation,
-                                    }
-                                    for action in pending.request["arguments"][
-                                        "actions"
-                                    ]
-                                ],
-                            }
-                        job.allow = None
-                        job.decision.clear()
-                        job.state = "waiting"
-                        # Nobody answering is a no.
-                        job.decision.wait(timeout=APPROVAL_WAIT_SECONDS)
-                        if job.allow is not True:
-                            job.state = "refused"
-                            job.error = "Refused. Nothing was changed."
-                            return
-                        approvals.append(
-                            ApprovalRecord(
-                                plan_hash=pending.request["plan_hash"],
-                                action_hash=pending.request["action_hash"],
-                                approved_by=self.approved_by,
-                                reason="approved in the Kosika app",
-                            )
-                        )
-                        job.request = None
-                        job.events.append({"event": "resumed", "depth": 0})
-                        job.state = "running"
+                tools = {
+                    **tools,
+                    **bind_agent_tools(program, self._hand(job, Path(scratch))),
+                }
+                result = self._run_asking(
+                    job,
+                    program,
+                    inputs,
+                    models,
+                    tools,
+                    trace=job.trace,
+                    folder=job.folder,
+                    journal=Path(scratch) / "run.sqlite",
+                    on_event=watch,
+                )
             job.result = result
             job.text = answer_text(result)
             job.story = build_story(read_trace(job.trace))
             job.state = "done"
+        except _Refused:
+            job.state = "refused"
+            job.error = "Refused. Nothing was changed."
         except (RuntimeError, ValueError, PermissionError, OSError) as exc:
             job.error = f"The run did not finish: {exc}"
             job.state = "failed"
         finally:
             job.seconds = round(time.monotonic() - started, 1)
+
+    def _run_asking(
+        self,
+        job: Job,
+        program: Program,
+        inputs: dict[str, Any],
+        models: Mapping[str, ModelProvider],
+        tools: Mapping[str, Any],
+        *,
+        trace: Path,
+        folder: Path,
+        journal: Path,
+        on_event: Any = None,
+        handed: str = "",
+    ) -> Any:
+        """Run a program's `main`, stopping to ask the person each time it
+        reaches something that changes the world, and give back its result.
+
+        `handed` names the agent when this is a request another agent
+        handed over, so the question says who is asking. A no, or no answer,
+        raises _Refused.
+        """
+
+        approvals: list[ApprovalRecord] = []
+        # True when this agent's file and shell tools work in a session.
+        walled = self._session_key(folder) in self._sessions
+        while True:
+            session = ExecutionSession(
+                journal,
+                binding_id="studio",
+                approvals=approvals,
+            )
+            try:
+                return run(
+                    program,
+                    "main",
+                    trace,
+                    skills=load_skill_notes(folder / SKILLS_FOLDER),
+                    inputs=inputs,
+                    model_bindings=models,
+                    tool_bindings=tools,
+                    session=session,
+                    on_event=on_event,
+                )
+            except ApprovalPending as pending:
+                asked = next(
+                    (
+                        tool
+                        for tool in program.tools
+                        if tool.name == pending.request["tool"]
+                    ),
+                    None,
+                )
+                if (
+                    walled
+                    and asked is not None
+                    and asked.source in ("system:files", "system:shell")
+                ):
+                    # Inside a session this cannot reach the real
+                    # folder, so it does not wait for a yes. The
+                    # yes comes when the changes are brought back.
+                    approvals.append(
+                        ApprovalRecord(
+                            plan_hash=pending.request["plan_hash"],
+                            action_hash=pending.request["action_hash"],
+                            approved_by="session",
+                            reason="confined to the session's copy",
+                        )
+                    )
+                    job.events.append(
+                        {
+                            "event": "session_allowed",
+                            "tool": pending.request["tool"],
+                            "depth": 0,
+                        }
+                    )
+                    continue
+                job.request = {
+                    "tool": pending.request["tool"],
+                    "arguments": pending.request["arguments"],
+                    "step": pending.request.get("step"),
+                    # So the page can say plainly what kind of
+                    # action this is, such as which program starts.
+                    "kind": asked.source if asked else "",
+                    "operation": asked.operation if asked else "",
+                }
+                if pending.request["tool"] == PLAN_TOOL:
+                    # A planning agent's whole list of changes: one
+                    # question, even inside a session, because this
+                    # is where the person sees what will be done.
+                    declared = {tool.name: tool for tool in program.tools}
+                    job.request = {
+                        "tool": "plan",
+                        "agent": pending.request["arguments"]["agent"],
+                        "step": pending.request.get("step"),
+                        "walled": walled,
+                        "warnings": pending.request["arguments"].get("warnings", []),
+                        "plan": [
+                            {
+                                "tool": action["tool"],
+                                "arguments": action["arguments"],
+                                "kind": declared[action["tool"]].source,
+                                "operation": declared[action["tool"]].operation,
+                            }
+                            for action in pending.request["arguments"]["actions"]
+                        ],
+                    }
+                if handed:
+                    job.request["handed"] = handed
+                job.allow = None
+                job.decision.clear()
+                job.state = "waiting"
+                # Nobody answering is a no.
+                job.decision.wait(timeout=APPROVAL_WAIT_SECONDS)
+                if job.allow is not True:
+                    job.request = None
+                    job.state = "running"
+                    raise _Refused
+                approvals.append(
+                    ApprovalRecord(
+                        plan_hash=pending.request["plan_hash"],
+                        action_hash=pending.request["action_hash"],
+                        approved_by=self.approved_by,
+                        reason="approved in the Kosika app",
+                    )
+                )
+                job.request = None
+                job.events.append({"event": "resumed", "depth": 0})
+                job.state = "running"
+
+    def _named(self, wanted: str) -> Agent | None:
+        """The agent someone means by a name: its folder, its file, or its
+        title, whatever the capitals."""
+
+        want = wanted.strip().lower()
+        for agent_id, agent in self.agents().items():
+            folder = agent.path.parent.name.lower()
+            if want in (agent_id.lower(), folder, agent.title.lower()):
+                return agent
+        return None
+
+    def _hand(self, job: Job, scratch: Path) -> Any:
+        """What an `agents` tool does in a run here: pass a request to
+        another agent in the folder and give back what it said.
+
+        The other agent runs as if the person had opened it: its own tools,
+        the same grants, and its own questions, which appear in this run and
+        say who is asking. It is not given this tool, so a request is handed
+        on once and no further.
+        """
+
+        done: dict[tuple[str, str], dict[str, Any]] = {}
+
+        def ask(_tool: Any, arguments: dict[str, Any]) -> dict[str, Any]:
+            wanted = str(arguments.get("agent", "")).strip()
+            text = str(arguments.get("text", "")).strip()
+
+            def no(words: str, agent: str = "") -> dict[str, Any]:
+                return {"ok": False, "agent": agent, "text": words}
+
+            if not text:
+                return no("There was nothing to hand over.")
+            if (wanted, text) in done:
+                return done[(wanted, text)]
+            others = [
+                agent
+                for agent_id, agent in self.agents().items()
+                if agent_id != job.agent_id
+            ]
+            if wanted:
+                chosen = self._named(wanted)
+                if chosen is None:
+                    names = ", ".join(sorted(a.path.parent.name for a in others))
+                    return no(
+                        f"There is no agent called {wanted}. The agents here are: {names}."
+                    )
+            else:
+                try:
+                    chosen = self.agent(self.route(text)["agent"])
+                except AppError as exc:
+                    return no(str(exc))
+            name = chosen.path.parent.name
+            if chosen.path == self.agent(job.agent_id).path:
+                return no(
+                    "Nobody else here fits that, and an agent cannot hand a request to itself.",
+                    name,
+                )
+            job.events.append({"event": "handed", "agent": name, "depth": 0})
+            try:
+                program = load_program(chosen.path)
+                parameter, _ = message_parameter(program, "main")
+                folder = chosen.path.parent
+                runs = folder / "runs"
+                runs.mkdir(exist_ok=True)
+                trace = runs / (
+                    f"{time.strftime('%Y%m%d-%H%M%S')}-{secrets.token_hex(2)}.jsonl"
+                )
+                result = self._run_asking(
+                    job,
+                    program,
+                    {parameter: {"text": text}},
+                    self.bind_models(program) if self.bind_models else {},
+                    self._tools(program, folder),
+                    trace=trace,
+                    folder=folder,
+                    journal=scratch / f"handed-{len(done)}.sqlite",
+                    handed=name,
+                )
+                answer = {"ok": True, "agent": name, "text": answer_text(result)}
+            except _Refused:
+                answer = no("That was refused, so nothing was changed.", name)
+            except (RuntimeError, ValueError, PermissionError, OSError) as exc:
+                answer = no(f"{name} did not finish: {exc}", name)
+            job.events.append({"event": "handed_back", "agent": name, "depth": 0})
+            done[(wanted, text)] = answer
+            return answer
+
+        return ask
 
     def job(self, job_id: str) -> Job:
         with self._jobs_lock:

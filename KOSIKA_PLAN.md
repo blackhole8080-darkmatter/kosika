@@ -3178,6 +3178,43 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   such as `["a", "b"][0]`, was not tried. `chars()` splits by code point,
   so an emoji made of several is several parts.
 
+### One agent handing a request to another
+
+- The owner wants Kosi to grow into an assistant that gets work done
+  through the other agents. Until now only the person could choose an
+  agent; no program could.
+- No new syntax. Another agent is a tool: `source system "agents"`,
+  `operation: "ask"`, taking `{agent, text}` and giving `{ok, agent,
+  text}`. A program that wants to hand work over declares it and calls it
+  like any other tool.
+- Handing over grants nothing, which is why the tool may be `observe`.
+  The other agent runs as if the person had opened it: its own tools, the
+  same grants, its own run kept in its own folder, and its own questions
+  before anything changes. Studio shows such a question as "This was
+  handed to coder, which asks: ...". A no stops that agent only; the
+  asking agent is told it was refused and carries on.
+- Limits: an agent cannot hand to itself; an agent that was handed a
+  request is not given the tool, so there are no chains or loops; an
+  empty name lets Studio's own router choose.
+- `App._work`'s approval loop became `App._run_asking`, used both for a
+  run and for a handed-over run, so the two cannot drift apart.
+- Kosi uses it: "ask the coder to ...", "tell the researcher to ...",
+  "@coder ...", and "hand over: ..." go to the other agent, and the
+  answer comes back as "The coder agent says: ...". Its time budget went
+  from 120 to 900 seconds, because a handed request takes as long as the
+  other agent takes.
+- Tried for real on qwen2.5:7b in a scratch folder: "ask the coach to
+  explain what a matrix is in two sentences" came back in 33 seconds with
+  the coach's answer; a made-up agent was named as missing with the list
+  of real ones.
+- 11 tests in `tests/test_hand_over.py`; 18 in the assistant, up from 17.
+- Not claimed: from the pill, an agent that asks to change something is
+  refused, because the pill has nowhere to show what is asked; that work
+  is for Studio. The other agent's steps are not shown live in Studio,
+  only "handing this to coder" and "coder has answered". The agents are
+  not asked together: one hand-over at a time, and the asking run waits.
+  `kosika run` on the command line does not bind the tool.
+
 ## Standard coding-agent procedure
 
 1. Inspect `git status`, the relevant source files, tests, and this plan.

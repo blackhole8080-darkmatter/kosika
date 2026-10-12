@@ -7,7 +7,8 @@ line to type on. The answer appears above it.
 
 It is the same assistant Studio shows: the Kosika program in the agents
 folder named `assistant`, run with the same grants, which for that program
-are a clock and its own memory. The pill adds no power. It does not listen,
+are a clock, its own memory, and passing a request to another agent in
+the folder. The pill adds no power. It does not listen,
 and it does not watch the screen or the keyboard: the one key combination
 it asks Windows to tell it about is its own.
 
@@ -257,7 +258,7 @@ class Engine:
         self.app = App(agents, bind_models=bind_models or _no_model)
         self._busy = threading.Lock()
 
-    def ask(self, text: str, timeout: float = 180.0) -> Answer:
+    def ask(self, text: str, timeout: float = 900.0) -> Answer:
         text = text.strip()
         if not text:
             return Answer("")
@@ -271,8 +272,10 @@ class Engine:
             deadline = time.monotonic() + timeout
             while job.state in ("running", "waiting") and time.monotonic() < deadline:
                 if job.state == "waiting":
-                    # The assistant has nothing that changes the world. If a
-                    # program in its place ever asks, the pill says no.
+                    # The assistant has nothing that changes the world. If
+                    # an agent it handed a request to asks to change
+                    # something, the pill says no: that is for Studio, where
+                    # the person can read what is asked.
                     self.app.decide(job.id, False)
                 time.sleep(0.05)
             if job.state != "done":

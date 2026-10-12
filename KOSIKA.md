@@ -876,6 +876,7 @@ tool run_tests {
 | `system "files"` | `search` | `{path: Text, query: Text}` | `{matches: Text[]}` |
 | `system "files"` | `find` | `{path: Text, query: Text}` | `{matches: Text[]}` |
 | `system "meaning"` | `near` | `{a: Text, b: Text}` | `{score: Number}` |
+| `system "agents"` | `ask` | `{agent: Text, text: Text}` | `{ok: Bool, agent: Text, text: Text}` |
 
 - A system tool MUST declare `access: execute`, and its records MUST have
   exactly the fields above (`check/invalid-system-tool`). A workflow that
@@ -905,6 +906,19 @@ tool run_tests {
   `access: observe`. It needs no folder and is bound only when the host
   grants an embedding model. What score counts as near depends on the
   embedding model, so the program chooses its own threshold.
+- A `system "agents"` tool with operation `ask` hands `text` to another
+  agent in the same folder and gives back what it said. It MAY be
+  `access: observe`, because handing over grants nothing: the other agent
+  runs as if the person had opened it, with its own tools, the host's same
+  grants, and its own approvals, which the host shows as coming from that
+  agent. `agent` names the other agent by its folder; an empty `agent`
+  lets the host choose. `ok` is `false`, with the reason in `text`, when
+  there is no such agent, the agent named is the one asking, an approval
+  was refused, or the other agent did not finish. The other agent is not
+  given this tool, so a request is handed on once and no further. It is
+  bound only by a host that has a folder of agents (Studio and the Kosi
+  pill); elsewhere it is unreachable like any ungranted tool. The time
+  the other agent takes counts against the asking run's own deadline.
 - File paths are relative to the granted folder. A path that is absolute,
   contains `..`, or passes through a symlink is refused. Files are UTF-8 text
   of at most 1 MiB.

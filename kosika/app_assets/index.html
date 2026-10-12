@@ -367,7 +367,8 @@ function partial(raw) {
 
 // What an agent is asking to be allowed to do, in words.
 const isProgram = request => request.kind === "system:shell";
-const askTitle = request => request.plan ? "Wants to carry out this plan of " + request.plan.length + (request.plan.length === 1 ? " change" : " changes") + ", in this order, and nothing else:" : isProgram(request) ? "Wants to start this program, and nothing else:" : "Wants to do this, and nothing else: " + (request.tool || "an action");
+const askTitle = request => (request.handed ? "This was handed to " + request.handed + ", which asks: " : "") + askWants(request);
+const askWants = request => request.plan ? "Wants to carry out this plan of " + request.plan.length + (request.plan.length === 1 ? " change" : " changes") + ", in this order, and nothing else:" : isProgram(request) ? "Wants to start this program, and nothing else:" : "Wants to do this, and nothing else: " + (request.tool || "an action");
 function askLines(request) {
   if (request.plan) {
     const steps = request.plan.map((step, at) => (at + 1) + ". " + (isProgram(step) ? "start a program\n" : step.tool + "\n") + askLines(step).split("\n\n")[0].split("\n").map(line => "     " + line).join("\n"));
@@ -866,6 +867,8 @@ function liveView(agent, entry) {
       counts.tools += 1; picked.push(event.tool);
       say(depth, "agent " + event.agent + " chose: " + picked.join(" → ") + (event.access === "execute" ? " (asks you first)" : ""));
     }
+    else if (event.event === "handed") say(depth, "handing this to " + event.agent + "…");
+    else if (event.event === "handed_back") say(depth, event.agent + " has answered");
     else if (event.event === "agent_plan") say(depth, "agent " + event.agent + " has a plan of " + event.actions + (event.actions === 1 ? " change" : " changes") + " (asks you once)");
     else if (event.event === "agent_return") { if (event.tokens) counts.tokens += event.tokens; say(depth, "agent " + (event.agent || "") + " answered" + (picked.length ? " after choosing " + picked.join(" → ") : "")); }
     else if (event.event === "model_return") {

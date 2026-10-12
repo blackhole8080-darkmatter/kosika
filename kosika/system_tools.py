@@ -22,6 +22,24 @@ A fourth kind, `source system "kosika"` with `operation: "check"`, checks a
 Kosika program given as text and runs its tests. It reaches nothing outside
 itself, so unlike the others it needs no grant and no approval.
 
+A fifth kind, `source system "agents"` with `operation: "ask"`, hands a
+request to another agent in the same folder and gives back what it said:
+
+    tool hand_over {
+      source system "agents"
+      operation: "ask"
+      access: observe
+      input: Handover              // {agent: Text, text: Text}
+      output: Handed               // {ok: Bool, agent: Text, text: Text}
+    }
+
+Handing over grants nothing. The other agent runs as if the person had
+opened it: with its own tools, the same grants, and its own questions to
+the person before anything changes. So the tool itself may be `observe`.
+It is bound only by a host that has a folder of agents, such as Studio. An
+empty `agent` lets the host choose; an agent cannot hand to itself, and an
+agent that was handed a request cannot hand it on.
+
 For the other kinds, three independent things must all be true before
 anything happens:
 
@@ -59,7 +77,7 @@ from .sessions import Session, SessionError
 from .web import WebError, bind_web_tool
 
 SYSTEM_PREFIX = "system:"
-SYSTEM_KINDS = ("shell", "files", "web", "kosika", "meaning")
+SYSTEM_KINDS = ("shell", "files", "web", "kosika", "meaning", "agents")
 #: The largest program text the `kosika` tool will look at.
 MAX_CHECKED_SOURCE = 64 * 1024
 #: How many of a checked program's tests are run.
@@ -131,6 +149,13 @@ SHAPES: dict[str, tuple[dict[str, str], dict[str, str]]] = {
     "near": ({"a": "Text", "b": "Text"}, {"score": "Number"}),
     # A web tool reads one page from a site the runner allowed; see kosika.web.
     "fetch": ({"url": "Text"}, {"url": "Text", "title": "Text", "text": "Text"}),
+    # A request handed to another agent in the same folder. `agent` may be
+    # empty, which lets the host choose. `ok` is false, with the reason in
+    # `text`, when nobody could be asked or the other agent did not finish.
+    "ask": (
+        {"agent": "Text", "text": "Text"},
+        {"ok": "Bool", "agent": "Text", "text": "Text"},
+    ),
 }
 
 
@@ -165,7 +190,13 @@ def declaration_problem(program: Program, tool: ToolDecl) -> str | None:
         or kind == "web"
         or kind == "kosika"
         or kind == "meaning"
+        or kind == "agents"
     )
+    if kind == "agents" and tool.operation != "ask":
+        return (
+            f"Tool {tool.name!r} has unknown agents operation {tool.operation!r}; "
+            "the only one is ask"
+        )
     if kind == "meaning" and tool.operation != "near":
         return (
             f"Tool {tool.name!r} has unknown meaning operation {tool.operation!r}; "
@@ -282,6 +313,15 @@ def bind_kosika_tools(
         for tool in program.tools
         if system_kind(tool) == "kosika"
     }
+
+
+def bind_agent_tools(
+    program: Program, ask: Callable[[ToolDecl, dict[str, Any]], Any]
+) -> dict[str, Callable[[ToolDecl, dict[str, Any]], Any]]:
+    """Bind the program's `agents` tools to the host's way of asking
+    another agent. Only a host with a folder of agents can offer one."""
+
+    return {tool.name: ask for tool in program.tools if system_kind(tool) == "agents"}
 
 
 def _inside(folder: Path, relative: str) -> Path:

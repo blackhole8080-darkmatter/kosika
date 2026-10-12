@@ -40,6 +40,26 @@ record Conv { ok: Bool text: Text }
 
 record Date { ok: Bool year: Number month: Number day: Number }
 
+record Handover { agent: Text text: Text }
+
+record Handed { ok: Bool agent: Text text: Text }
+
+// Another agent in the same folder, asked on the person's behalf. Handing
+// over gives that agent nothing new: it has its own tools and still asks
+// before it changes anything.
+tool hand_over {
+  source system "agents"
+  operation: "ask"
+  access: observe
+  input: Handover
+  output: Handed
+}
+
+agent desk {
+  can: [hand_over]
+  max_steps: 1
+}
+
 model voice {
   input: Prompt
   output: Reply
@@ -64,6 +84,7 @@ fn kind_of(msg: Msg) -> Text {
   else if text.starts_with("what day ") and has_month(text) { kind = "weekday" }
   else if text.contains("what time") or text == "time" or text.contains("the time") { kind = "time" }
   else if text.contains("what day") or text.contains("the date") or text == "date" or text.contains("what is today") { kind = "date" }
+  else if hand_of(msg.text).text.length() > 0 { kind = "hand" }
   else if text.starts_with("remind me") or text.starts_with("set a reminder") { kind = "remind" }
   else if text == "reminders" or text.contains("my reminders") or text.contains("what are my reminders") { kind = "reminders" }
   else if text.starts_with("done ") or text.starts_with("finished ") { kind = "done" }
@@ -77,6 +98,32 @@ fn kind_of(msg: Msg) -> Text {
   else if sum_of(text).ok { kind = "sum" }
   else if wants_action(first) { kind = "cannot" }
   return kind
+}
+
+// A request meant for another agent: "ask the coder to write a test",
+// "tell the researcher to find my notes on trees", "@coder fix it", or
+// "hand over: tidy my notes", which leaves the choice of agent to the app.
+// What comes back has an empty text when it is no such request.
+fn hand_of(said: Text) -> Handover {
+  let tidy = said.trim()
+  let lower = tidy.lower()
+  let words = tidy.words()
+  if lower.starts_with("@") and words.length() > 1 {
+    return {agent: words[0].drop(1).trim_marks(":,").lower(), text: words.drop(1).join(" ")}
+  }
+  for lead in ["hand over:", "hand this over:", "pass this on:", "pass on:"] {
+    if lower.starts_with(lead) { return {agent: "", text: tidy.drop(lead.length()).trim()} }
+  }
+  let asks = ["ask", "tell", "get", "have"].contains(words.first().or("").lower())
+  if asks and words.length() > 4 and words[1].lower() == "the" and words[3].lower() == "to" {
+    return {agent: words[2].lower(), text: words.drop(4).join(" ")}
+  }
+  return {agent: "", text: ""}
+}
+
+fn handed_said(known: BooksRecalled, got: Handed) -> Turn {
+  let text = if got.ok { "The " + got.agent + " agent says: " + got.text } else { got.text }
+  return {book: book_in(known), text: text, suggest: []}
 }
 
 // A request to do something on the computer, which this assistant cannot.
@@ -740,7 +787,7 @@ fn help_said(known: BooksRecalled) -> Turn {
   let book = book_in(known)
   return {
     book: book,
-    text: f"I am {book.name}. I can tell the time, do sums, keep reminders, remember things you tell me, and answer questions.\nwhat is 17 times 23\nremind me at 6pm to call Sam\nremind me tomorrow at 9 to pack\nremind me in 10 minutes to stretch\ntimer 5 minutes\nmy reminders, then done 1\nconvert 5 km to miles\ndays until 25 December\nwhat is (2 + 3) squared\nremember that my locker is 14\nwhat do you remember\ncall me Aryan, or call yourself Nova\nforget everything\nFor work on your files, use the box above: it passes your request to the right agent.",
+    text: f"I am {book.name}. I can tell the time, do sums, keep reminders, remember things you tell me, and answer questions.\nwhat is 17 times 23\nremind me at 6pm to call Sam\nremind me tomorrow at 9 to pack\nremind me in 10 minutes to stretch\ntimer 5 minutes\nmy reminders, then done 1\nconvert 5 km to miles\ndays until 25 December\nwhat is (2 + 3) squared\nask the coder to write a function that reverses a list\nremember that my locker is 14\nwhat do you remember\ncall me Aryan, or call yourself Nova\nforget everything\nFor work on your files, use the box above: it passes your request to the right agent.",
     suggest: ["what time is it", "what is 17 times 23", "my reminders"]
   }
 }
@@ -818,6 +865,14 @@ workflow answer(msg: Msg) -> Turn {
   turn   = spoken(known, reply)
 }
 
+// A request for another agent is passed to it, and its answer passed back.
+workflow pass_on(msg: Msg) -> Turn {
+  known = recall books under "me"
+  ask   = hand_of(msg.text)
+  got   = execute desk.hand_over(ask.agent, ask.text) otherwise {ok: false, agent: "", text: "I have no way to reach the other agents from here. Open Kosika Studio and ask there."}
+  turn  = handed_said(known, got)
+}
+
 // Everything that needs the clock and no model.
 workflow by_clock(msg: Msg) -> Turn {
   known  = recall books under "me"
@@ -856,10 +911,13 @@ workflow keep(msg: Msg) -> Turn {
 }
 
 workflow main(msg: Msg) -> Said {
-  budget 2 model calls, 120 seconds
+  // The time is long because a request handed to another agent takes as
+  // long as that agent takes.
+  budget 2 model calls, 900 seconds
   kind = kind_of(msg)
   turn = match kind {
     case "ask" { call answer(msg) }
+    case "hand" { call pass_on(msg) }
     case "time" { call by_clock(msg) }
     case "date" { call by_clock(msg) }
     case "alarm" { call by_clock(msg) }
@@ -1125,6 +1183,29 @@ test "it never says it did what it cannot do" {
   expect a.text.starts_with("I cannot do that.")
   expect b.text.starts_with("I cannot do that.")
   expect c.text == "Cats sleep most of the day."
+}
+
+test "a request for another agent is handed to it" {
+  answers hand_over: [{ok: true, agent: "coder", text: "Done: reverse.py"}, {ok: false, agent: "", text: "There is no agent called teacher. The agents here are: coder."}, {ok: true, agent: "researcher", text: "Three notes mention trees."}]
+  a = hand_of("Ask the coder to write a function that reverses a list")
+  b = hand_of("@Researcher: find my notes on trees")
+  c = hand_of("hand over: tidy my notes")
+  expect a.agent == "coder"
+  expect a.text == "write a function that reverses a list"
+  expect b.agent == "researcher"
+  expect b.text == "find my notes on trees"
+  expect c.agent == ""
+  expect c.text == "tidy my notes"
+  expect hand_of("tell me a joke").text == ""
+  expect hand_of("ask the coder").text == ""
+  expect hand_of("why is the sky blue").text == ""
+  expect kind_of({text: "tell the researcher to find my notes"}) == "hand"
+  d = main({text: "ask the coder to write a function that reverses a list"})
+  e = main({text: "ask the teacher to mark my essay"})
+  f = main({text: "hand over: what do my notes say about trees"})
+  expect d.text == "The coder agent says: Done: reverse.py"
+  expect e.text == "There is no agent called teacher. The agents here are: coder."
+  expect f.text == "The researcher agent says: Three notes mention trees."
 }
 
 test "help needs no model" {

@@ -19,10 +19,13 @@ class AssistantTests(unittest.TestCase):
         self.assertGreaterEqual(len(results), 11)
         self.assertEqual([r.name for r in results if not r.passed], [])
 
-    def test_it_is_granted_nothing_but_a_clock_and_its_memory(self) -> None:
+    def test_it_reaches_a_clock_its_memory_and_the_other_agents_only(self) -> None:
         program = load_program(ASSISTANT)
         sources = sorted({tool.source for tool in program.tools})
-        self.assertEqual(sources, ["memory:books", "world:clock"])
+        self.assertEqual(sources, ["memory:books", "system:agents", "world:clock"])
+        # Handing a request to another agent changes nothing by itself: no
+        # tool of the assistant's own may change the world.
+        self.assertEqual({tool.access for tool in program.tools} & {"execute"}, set())
 
     def test_studio_opens_on_it(self) -> None:
         self.assertEqual(
