@@ -1512,7 +1512,7 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
             self.send_header(
                 "Content-Security-Policy",
                 "default-src 'none'; style-src 'unsafe-inline'; "
-                "script-src 'unsafe-inline'; connect-src 'self'",
+                "script-src 'unsafe-inline'; connect-src 'self'; font-src 'self'",
             )
             self.end_headers()
             self.wfile.write(body)
@@ -1571,6 +1571,17 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                 from .desktop_app import icon_bytes
 
                 self._send(200, icon_bytes(), "image/x-icon")
+                return
+            if method == "GET" and url.path.startswith("/fonts/"):
+                # The two typefaces Kosika carries. Like the icon they are
+                # the same for everyone, and only those two files are given.
+                from .fonts import served
+
+                font = served(url.path[len("/fonts/") :])
+                if font is None:
+                    self._json(404, {"error": "There is no such font."})
+                else:
+                    self._send(200, font, "font/ttf")
                 return
             if not self._allowed(query):
                 self._json(

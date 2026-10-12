@@ -77,8 +77,12 @@ class OrbTests(unittest.TestCase):
         self.assertIn('"Reminder: " + item.what', self.page)
 
     def test_the_orb_draws_nothing_from_outside(self) -> None:
-        for word in ("http://", "https://", "innerHTML", "<img", "url("):
+        for word in ("http://", "https://", "innerHTML", "<img"):
             self.assertNotIn(word, self.page)
+        # The only things the page fetches by address are Kosika's own two
+        # typefaces, from this computer.
+        self.assertEqual(self.page.count("url("), 2)
+        self.assertEqual(self.page.count('url("/fonts/'), 2)
 
 
 if __name__ == "__main__":

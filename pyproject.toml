@@ -25,6 +25,7 @@ packages = ["kosika", "kosika.app_assets", "kosika_lsp"]
 kosika = [
     "app_assets/*.html",
     "app_assets/*.kos",
+    "app_assets/fonts/*",
 ]
 
 [project.scripts]

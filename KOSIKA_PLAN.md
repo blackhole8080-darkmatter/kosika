@@ -3137,6 +3137,28 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   different things in different places, or change by the day). Open
   questions are no smarter than before: that needs a better model.
 
+### Two typefaces of its own
+
+- The owner asked for a fancier font for Kosi and Kosika and liked the
+  ones on a dictation app's website. That site uses EB Garamond for
+  headings and Figtree for the rest; both are under the SIL Open Font
+  License, so Kosika carries them. He approved the download (under 1 MB).
+- The files and their licence texts are in `kosika/app_assets/fonts/`.
+  `kosika/fonts.py` says where they are and gives out only those two.
+- Studio: EB Garamond for the name, headings and card titles; Figtree for
+  everything else. The page asks this computer for them at `/fonts/...`
+  and nowhere else, and the page's security policy now allows fonts from
+  itself only.
+- The pill: Figtree for its label, the typing line and the answer. The
+  fonts are lent to the running program only (`AddFontResourceEx`, kept
+  private); nothing is installed into Windows.
+- Seen: Studio's page reported both families loaded and was looked at;
+  the pill's bubble and label were captured with the new face. 6 tests in
+  `tests/test_fonts.py`.
+- Not claimed: the serif is not used on the pill, where small light text
+  on dark is easier to read without it. Only Studio's first page was
+  looked at with the new headings, not every page.
+
 ## Standard coding-agent procedure
 
 1. Inspect `git status`, the relevant source files, tests, and this plan.

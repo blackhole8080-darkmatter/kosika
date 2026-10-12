@@ -92,12 +92,23 @@ _LOOK = {
 
 
 def _font(pixels: int) -> Any:
-    """Segoe UI at a size in pixels, or whatever Pillow has without it."""
+    """Kosika's own text face at a size in pixels; without its file, Segoe
+    UI, and without that whatever Pillow has."""
 
     import os
 
     from PIL import ImageFont
 
+    from .fonts import TEXT, font_path
+
+    own = font_path(TEXT)
+    if own is not None:
+        try:
+            face = ImageFont.truetype(str(own), pixels)
+            face.set_variation_by_name("Medium")
+            return face
+        except (OSError, ValueError):
+            pass
     folder = Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts"
     for name in ("segoeui.ttf", "arial.ttf"):
         try:
@@ -585,8 +596,11 @@ class Pill:
         root.configure(bg=_KEY)
         #: How much larger than life this screen draws: 1.25 at 125%.
         self.scale = max(1.0, root.winfo_fpixels("1i") / 96.0)
-        self.font = tkfont.Font(family="Segoe UI", size=10)
-        self.small = tkfont.Font(family="Segoe UI", size=9)
+        from .fonts import TEXT, lend_to_this_program
+
+        family = TEXT if TEXT in lend_to_this_program() else "Segoe UI"
+        self.font = tkfont.Font(family=family, size=10)
+        self.small = tkfont.Font(family=family, size=9)
         self.canvas = tk.Canvas(root, bg=_KEY, highlightthickness=0, bd=0)
         self.canvas.pack(fill="both", expand=True)
         # The line to type on is a window of its own, laid over the pill.
