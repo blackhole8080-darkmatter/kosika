@@ -28,10 +28,13 @@ class MapTests(unittest.TestCase):
         )
         self.assertEqual(view["changes"], [])
         self.assertEqual(view["outside"], [])
-        self.assertEqual([m["name"] for m in view["models"]], ["reader", "strong"])
-        self.assertEqual(view["thinking"], ["summarize"])
+        self.assertEqual(
+            [m["name"] for m in view["models"]],
+            ["reader", "strong", "judge", "thinker"],
+        )
+        self.assertEqual(sorted(view["thinking"]), ["classify", "summarize"])
         self.assertEqual(view["given"][0]["fields"], [{"name": "text", "type": "Text"}])
-        self.assertEqual(view["budget"], [["model_calls", 3], ["seconds", 240]])
+        self.assertEqual(view["budget"], [["model_calls", 7], ["seconds", 600]])
 
     def test_starting_a_program_is_a_change_that_kosika_cannot_see_inside(self) -> None:
         view = map_of(EXAMPLES / "agents" / "workbench" / "main.kos")

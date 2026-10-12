@@ -143,6 +143,13 @@ def _suggestions(program: Program, source: str, folder: Path) -> list[dict[str, 
     }
     used_models.update(step.escalate for _, step, _ in calls if step.escalate)
     used_models.update(agent.model for agent in program.agents if agent.model)
+    # A thinking step that names its model (`classify ... using judge`) is
+    # lowered to a generated model whose provider is the one it named.
+    used_models.update(
+        model.provider
+        for model in program.models
+        if model.provider and model.name in used_models
+    )
     for model in program.models:
         if (
             model.provider is None

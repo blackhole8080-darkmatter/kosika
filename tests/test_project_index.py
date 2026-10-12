@@ -145,6 +145,24 @@ class ProjectIndexTests(unittest.TestCase):
         self.assertTrue(only["must"])
         self.assertEqual(only["rule"], "does-not-check")
 
+    def test_a_model_named_by_a_thinking_step_is_not_called_unused(self) -> None:
+        self.write(
+            "judged",
+            "record Msg { text: Text }\n"
+            "model judge\nmodel idle\n"
+            'fn no(msg: Msg) -> Choice {\n  return {label: "b", confidence: 0}\n}\n'
+            "workflow main(msg: Msg) -> Choice {\n"
+            "  budget 2 model calls\n"
+            '  said = classify msg.text into ["a", "b"] using judge otherwise no(msg)\n'
+            "}\n",
+        )
+        unused = [
+            s["text"]
+            for s in index_of(self.root)["suggestions"]
+            if s["rule"] == "unused-model"
+        ]
+        self.assertEqual(unused, ["Model idle is declared but no step asks it."])
+
     def test_the_examples_are_clean_apart_from_missing_evals(self) -> None:
         rules = {s["rule"] for s in index_of(EXAMPLES)["suggestions"]}
         self.assertEqual(rules, {"no-evals"})

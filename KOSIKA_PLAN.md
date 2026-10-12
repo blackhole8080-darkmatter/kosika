@@ -3215,6 +3215,39 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   not asked together: one hand-over at a time, and the asking run waits.
   `kosika run` on the command line does not bind the tool.
 
+### The researcher works an answer out, and says so
+
+- The owner asked whether the researcher works perfectly. Asked five real
+  questions about a scratch folder on qwen2.5:7b, it answered what a line
+  states and refused what no line says, but refused everything that needs
+  a step: two marks added together, a time against a closing time, "a
+  tree" against "a connected graph with no cycles".
+- The cause was the program's own check, not the model: an answer had to
+  use words found in the quoted line, so "40" was thrown away because the
+  line says 15 and 25.
+- Now, when nothing can be proven word for word, the model named
+  `thinker` is asked to work the answer out from one line and to say the
+  step. Code still checks that the quote is really in a found line, is not
+  a heading, shares a key word with the question, and (with search by
+  meaning) is among the nearest lines. The answer is shown marked "Worked
+  out, not stated word for word", with its step, quote and line.
+- A second look. On the first try the model wrote "6pm is after 5pm" and
+  answered "Yes" to "is the library open at 6pm". So the model named
+  `judge` reads the line, question, answer and step and says only
+  "follows" or "wrong"; a "wrong" means no answer is shown.
+- Measured on qwen2.5:7b, ten evals run twice: 19 of 20. The five old
+  evals 10 of 10; adding, multiplying and using what a word means 6 of 6;
+  refusing what no line is about 2 of 2; the closing-time question 1 of 2,
+  and the miss was a refusal, not a wrong answer. Before the change the
+  five new evals could not pass at all.
+- 15 tests in the program, up from 11; its budget is 7 model calls and 600
+  seconds, up from 3 and 240.
+- Not claimed: a worked-out answer is checked by a model, not proved by
+  code, so it can still be wrong; that is why it is marked and shows its
+  step. A question that needs two lines together is not attempted. The
+  slow path costs up to four more model calls, about a minute on this
+  laptop. Twenty runs is a small sample.
+
 ## Standard coding-agent procedure
 
 1. Inspect `git status`, the relevant source files, tests, and this plan.
