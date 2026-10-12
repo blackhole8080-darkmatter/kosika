@@ -125,21 +125,11 @@ fn sum_words(text: Text) -> Text[] {
 
 // A number multiplied by itself a whole number of times.
 fn raised(base: Number, exponent: Number) -> Sum {
-  if exponent != exponent.floor() or exponent > 60 or exponent < -60 {
+  if not exponent.is_whole() or exponent.abs() > 60 {
     return {ok: true, value: 0, problem: "I can only raise a number to a whole power, up to 60."}
   }
-  let times = if exponent < 0 { 0 - exponent } else { exponent }
-  var total = 1
-  var i = 0
-  while i < times {
-    total = total * base
-    i = i + 1
-  }
-  if exponent < 0 {
-    if total == 0 { return {ok: true, value: 0, problem: "You cannot divide by zero."} }
-    return {ok: true, value: 1 / total, problem: ""}
-  }
-  return {ok: true, value: total, problem: ""}
+  if exponent < 0 and base == 0 { return {ok: true, value: 0, problem: "You cannot divide by zero."} }
+  return {ok: true, value: base.power(exponent), problem: ""}
 }
 
 // Powers and square roots are worked out first, so 2 + 3 ^ 2 is 11. What
@@ -302,7 +292,7 @@ fn unit_of(word: Text) -> Unit {
 
 // A number kept to the places worth reading: fewer for a large number.
 fn tidy(value: Number) -> Number {
-  let size = if value < 0 { 0 - value } else { value }
+  let size = value.abs()
   var scale = 10000
   if size >= 100 { scale = 100 }
   else if size < 0.01 { scale = 100000000 }
@@ -394,7 +384,7 @@ fn number_in(msg: Msg) -> Number {
 }
 
 fn two(n: Number) -> Text {
-  return if n < 10 { f"0{n}" } else { f"{n}" }
+  return f"{n}".pad_left(2, "0")
 }
 
 fn reminder_line(r: Reminder) -> Text {
@@ -434,13 +424,8 @@ fn clock_minutes(word: Text, half: Text) -> Number {
 
 // Monday is 0 and Sunday is 6; -1 when the word is not a day.
 fn day_number(word: Text) -> Number {
-  let name = word.lower().trim_marks(".,")
-  var n = 0
-  for day in ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] {
-    if day == name { return n }
-    n = n + 1
-  }
-  return -1
+  let days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+  return days.index_of(word.lower().trim_marks(".,")).or(-1)
 }
 
 fn day_name(n: Number) -> Text {

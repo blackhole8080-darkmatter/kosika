@@ -241,6 +241,13 @@ the receiver's type, and every method is pure and deterministic.
 | array of records | `group_by(field: "name")` | `T[]{}`, elements grouped under each value of a `Text` field |
 | `Number` | `sin()`, `cos()` | `Number`: the sine or cosine of an angle given in degrees, rounded to nine places so every computer gives the same result |
 | `Number` | `sqrt()` | `Number`, rounded to nine places; a negative number fails the run |
+| `Number` | `abs()` | `Number` without its sign |
+| `Number` | `power(exponent: Number)` | `Number`. A whole power of a whole number is exact; any other is rounded to nine places. The run fails for a whole exponent beyond 1000 either way, `0` to a negative power, a negative number to a power that is not whole, or a result too large to hold |
+| `Number` | `is_whole()` | `Bool`, true when there is nothing after the decimal point |
+| any array | `index_of(item: T)` | `Number?`: the position of the first element equal to `item`, counted from `0`, else `null` |
+| `Text` | `index_of(part: Text)` | `Number?`: where `part` first begins, counted from `0`, else `null`; `part` MUST be non-empty |
+| `Text` | `chars()` | `Text[]` of its characters, one each; over 512 fails the run |
+| `Text` | `pad_left(width: Number, fill: Text)`, `pad_right(width: Number, fill: Text)` | `Text` made at least `width` long by adding `fill`, which MUST be one character, before or after; a text already that long is unchanged |
 | `Text`, any array | `is_empty()` | `Bool`, true when the length is `0` |
 | `Text`, any array | `take(count: Number)`, `drop(count: Number)` | the first `count` characters or elements, or all but those. A count beyond the length gives everything, or nothing; a negative or fractional count fails the run |
 | `Text` | `words()` | `Text[]`: the parts between runs of spaces, tabs and line ends, with no empty parts; over 512 parts fails the run |

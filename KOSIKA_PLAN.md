@@ -3159,6 +3159,25 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   on dark is easier to read without it. Only Studio's first page was
   looked at with the new headings, not every page.
 
+### Methods the assistant's own program wished for
+
+- Writing Kosi's new skills in Kosika showed what the language lacked: each
+  of these had to be written by hand inside the assistant first.
+- `Number`: `abs()`, `power(exponent)` (a whole power of a whole number is
+  exact, anything else is rounded to nine places, and what cannot be held
+  fails the run in plain words), `is_whole()`.
+- Any array and `Text`: `index_of(...)`, giving `Number?` so "not there"
+  is absent rather than a made-up -1.
+- `Text`: `chars()`, `pad_left(width, fill)`, `pad_right(width, fill)`.
+- The assistant now uses them: its hand-written power loop, zero padding,
+  day lookup and absolute value are gone, and its 17 tests pass unchanged.
+- 12 tests in `tests/test_more_methods.py`; the methods are in the table
+  in `KOSIKA.md`.
+- Not claimed: there is still no `**` operator and no `+` between arrays
+  (`power` and `concat` are the ways). Indexing a list written in place,
+  such as `["a", "b"][0]`, was not tried. `chars()` splits by code point,
+  so an emoji made of several is several parts.
+
 ## Standard coding-agent procedure
 
 1. Inspect `git status`, the relevant source files, tests, and this plan.

@@ -223,6 +223,81 @@ def _group_by(items: list[Any], field: str) -> dict[str, list[Any]]:
     return groups
 
 
+#: A whole power may not be larger than this, so a result stays a size a
+#: person could read and a run cannot be made to work for ever.
+MAX_POWER = 1000
+
+
+def _power(base: Any, exponent: Any) -> Any:
+    """A number raised to a power. Whole numbers stay exact; a power that
+    is not whole goes through decimals and is rounded to nine places."""
+
+    if exponent == int(exponent):
+        times = int(exponent)
+        if abs(times) > MAX_POWER:
+            raise RuntimeError(
+                f"power needs an exponent between -{MAX_POWER} and {MAX_POWER}"
+            )
+        if times < 0 and base == 0:
+            raise RuntimeError("0 cannot be raised to a negative power")
+        try:
+            if times >= 0:
+                result = base**times
+            elif isinstance(base, int):
+                result = 1 / (base**-times)
+            else:
+                result = base**times
+        except OverflowError:
+            raise RuntimeError("power gives a number too large to hold") from None
+        if isinstance(result, float):
+            if math.isinf(result) or math.isnan(result):
+                raise RuntimeError("power gives a number too large to hold")
+            result = round(result, 9)
+            return (
+                int(result) if result == int(result) and abs(result) < 1e15 else result
+            )
+        return result
+    if base < 0:
+        raise RuntimeError("power needs a whole exponent when the number is negative")
+    try:
+        result = round(float(base) ** float(exponent), 9)
+    except (OverflowError, ZeroDivisionError):
+        raise RuntimeError("power gives a number too large to hold") from None
+    return int(result) if result == int(result) and abs(result) < 1e15 else result
+
+
+def _index_of(items: list[Any], item: Any) -> int | None:
+    # Same rule as `==` and `contains`: true is never equal to 1.
+    for position, candidate in enumerate(items):
+        if isinstance(candidate, bool) == isinstance(item, bool) and candidate == item:
+            return position
+    return None
+
+
+def _text_index_of(text: str, part: str) -> int | None:
+    if part == "":
+        raise RuntimeError("index_of needs a non-empty text to look for")
+    position = text.find(part)
+    return None if position < 0 else position
+
+
+def _chars(text: str) -> list[str]:
+    if len(text) > MAX_SPLIT_PARTS:
+        raise RuntimeError(f"chars produced more than {MAX_SPLIT_PARTS} parts")
+    return list(text)
+
+
+def _pad(text: str, width: Any, fill: str, left: bool) -> str:
+    name = "pad_left" if left else "pad_right"
+    if isinstance(width, bool) or width != int(width) or width < 0:
+        raise RuntimeError(f"{name} needs a whole width that is not negative")
+    if len(fill) != 1:
+        raise RuntimeError(f"{name} needs exactly one character to fill with")
+    if width > MAX_TEXT_LENGTH:
+        raise RuntimeError(f"{name} would exceed {MAX_TEXT_LENGTH} characters")
+    return text.rjust(int(width), fill) if left else text.ljust(int(width), fill)
+
+
 def _contains(items: list[Any], item: Any) -> bool:
     # Same rule as `==`: true is never equal to 1.
     return any(
@@ -398,6 +473,26 @@ METHODS: tuple[Method, ...] = (
     Method("Number", "sin", (), "Number", lambda value: _wave(value, "sin")),
     Method("Number", "cos", (), "Number", lambda value: _wave(value, "cos")),
     Method("Number", "sqrt", (), "Number", _sqrt),
+    Method("Number", "abs", (), "Number", lambda value: abs(value)),
+    Method("Number", "power", (("exponent", "Number"),), "Number", _power),
+    Method("Number", "is_whole", (), "Bool", lambda value: value == int(value)),
+    Method(ANY_ARRAY, "index_of", (("item", ELEMENT),), "Number?", _index_of),
+    Method("Text", "index_of", (("part", "Text"),), "Number?", _text_index_of),
+    Method("Text", "chars", (), "Text[]", _chars),
+    Method(
+        "Text",
+        "pad_left",
+        (("width", "Number"), ("fill", "Text")),
+        "Text",
+        lambda text, width, fill: _pad(text, width, fill, True),
+    ),
+    Method(
+        "Text",
+        "pad_right",
+        (("width", "Number"), ("fill", "Text")),
+        "Text",
+        lambda text, width, fill: _pad(text, width, fill, False),
+    ),
     Method("Text", "is_empty", (), "Bool", lambda text: len(text) == 0),
     Method(ANY_ARRAY, "is_empty", (), "Bool", lambda items: len(items) == 0),
     Method("Text", "take", (("count", "Number"),), "Text", _take),
