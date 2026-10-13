@@ -1,4 +1,4 @@
-// Coder: give it a small task in a Python project, and it shows you every
+// Coder: give it a small task in a Python or Kosika project, and it shows you every
 // file it will make or change before it touches one. Then it runs the
 // project's tests and tells you what happened.
 //
@@ -21,6 +21,11 @@
 //
 // It replaces whole files, so it suits small files. It starts only python.
 //
+// Kosika files (.kos) are held to more than Python ones. Before anything
+// is written, Kosika itself checks each one and runs the tests written in
+// it; a file that does not check, or has a failing test, never reaches
+// you. That is possible because a Kosika test can reach nothing.
+//
 // A stronger helper, if you have one. Some people have another AI agent
 // installed that runs from the command line, such as devin or omp. If you
 // have allowed one (kosika outside --allow devin --within FOLDER), the
@@ -29,6 +34,13 @@
 // plan check as the coder's own work, and is shown to you as one list to
 // allow or refuse. If none is allowed, or its work does not pass the
 // check twice, the coder does the task itself with its own model.
+//
+// A second pair of eyes. If you allowed two outside agents, the one that
+// did not write the change reads it: the files as they would be, beside
+// the files as they are. If it finds a problem, the first is asked once
+// more, told what was found. What the reviewer said is shown to you with
+// the list of files, before you say yes. Tests catch what was tested for;
+// a reviewer catches a wrong edge case the tests never tried.
 //
 // Say: add a function is_even to calc.py, with a test
 
@@ -59,8 +71,20 @@ record Tested { ran: Ran only: Text }
 // could be asked, what it said, and the files it would change.
 record Handover { agent: Text text: Text }
 record Proposed { ok: Bool agent: Text said: Text files: Planned[] }
-record Batch { files: Planned[] }
+// The files to write, and a note for the person who is asked.
+record Batch { files: Planned[] note: Text }
+record Batchless { files: Planned[] }
+// A change handed to a reviewer, and what the reviewer said.
+record Reviewing { agent: Text text: Text files: Planned[] }
+record Reviewed { ok: Bool agent: Text said: Text }
+record Note { text: Text }
+// What the engine itself finds wrong with files about to be written.
+record Engine { problems: Text[] }
+record Faults { items: Text[] }
 record Saved { count: Number }
+
+// Reads what a reviewer wrote and says only whether it reports a problem.
+model reader
 
 model engineer {
   input: Task
@@ -131,8 +155,29 @@ tool save_all {
   output: Saved
 }
 
+// A second outside agent, asked to read a proposed change. It is shown
+// the change in a copy and changes nothing.
+tool ask_review {
+  source system "outside"
+  operation: "review"
+  access: observe
+  input: Reviewing
+  output: Reviewed
+}
+
+// Kosika's own reading of files about to be written: Python that is not
+// valid or uses a name it never defines; Kosika that does not check or
+// whose tests fail. It reaches nothing, so asking needs no approval.
+tool code_check {
+  source system "kosika"
+  operation: "check_files"
+  access: observe
+  input: Batchless
+  output: Engine
+}
+
 agent helper {
-  can: [ask_outside]
+  can: [ask_outside, ask_review, code_check]
   max_steps: 1
 }
 
@@ -168,18 +213,34 @@ agent runner {
 // is now, and whether it is there now at all.
 record Planned { path: Text text: Text before: Text exists: Bool }
 
-// The functions and classes a Python file defines at its left margin.
+// What a file defines at its left margin. In Python: its functions and
+// classes. In Kosika: its functions, records, workflows, agents, tools and
+// models by name, and each test by its words, as `test "what it shows"`.
 fn defined(text: Text) -> Text[] {
   var names: Text[] = []
   for line in text.lines() {
     var rest = ""
-    if line.starts_with("def ") { rest = line.drop(4) }
-    else if line.starts_with("async def ") { rest = line.drop(10) }
-    else if line.starts_with("class ") { rest = line.drop(6) }
-    let name = rest.split("(").first().or("").split(":").first().or("").trim()
+    for start in ["def ", "async def ", "class ", "fn ", "record ", "workflow ", "agent ", "tool ", "model ", "default model ", "memory "] {
+      if rest.is_empty() and line.starts_with(start) { rest = line.drop(start.length()) }
+    }
+    var name = rest.split("(").first().or("").split(":").first().or("").split("{").first().or("").trim()
+    if line.starts_with("test \"") { name = "test \"" + line.drop(6).split("\"").first().or("") + "\"" }
     if not name.is_empty() and not names.contains(name) { names = names.append(name) }
   }
   return names
+}
+
+fn is_kosika(path: Text) -> Bool {
+  return path.lower().ends_with(".kos")
+}
+
+// How many tests a Kosika text holds.
+fn test_count(text: Text) -> Number {
+  var count = 0
+  for line in text.lines() {
+    if line.starts_with("test \"") { count += 1 }
+  }
+  return count
 }
 
 fn file_name(path: Text) -> Text {
@@ -244,6 +305,26 @@ fn plan_check(request: Text, files: Planned[]) -> Text[] {
   }
   if python > 0 and tests == 0 and wants_test(request) {
     wrong = wrong.append("the task asks for a test, but the plan writes no test file. Add a write_file for the test file as well")
+  }
+  // Kosika keeps a file's tests in the file. What it had must stay, and a
+  // task that asks for a test must leave some file with one more.
+  var kosika = 0
+  var gained = 0
+  for file in files {
+    if is_kosika(file.path) {
+      kosika += 1
+      let now = defined(file.text)
+      let lost = for name in defined(file.before) where not now.contains(name) and not (leaving and (named.contains(name) or name.starts_with("test \""))) { name }
+      if file.exists and not lost.is_empty() {
+        wrong = wrong.append(file.path + ": it no longer has " + listed(lost) + ", which the file has now. Keep everything that is there and add to it")
+      }
+      let had = defined(file.before)
+      let fresh = for name in now where name.starts_with("test ") and not had.contains(name) { name }
+      if not fresh.is_empty() { gained += 1 }
+    }
+  }
+  if kosika > 0 and python == 0 and gained == 0 and wants_test(request) {
+    wrong = wrong.append("the task asks for a test, but no Kosika file gains one. Add a test block, written test \"what it shows\" { expect ... }, to the file")
   }
   return wrong
 }
@@ -355,6 +436,18 @@ fn test_names(work: Work) -> Text[] {
   return names.take(8)
 }
 
+// The Kosika file whose tests to run after a change that touched no
+// Python: the first one written. "" when Python was changed too.
+fn kosika_file(work: Work) -> Text {
+  var found = ""
+  for line in work.did {
+    let path = line.words().drop(1).join(" ")
+    if path.lower().ends_with(".py") { return "" }
+    if found.is_empty() and is_kosika(path) { found = path }
+  }
+  return found
+}
+
 fn test_args(names: Text[]) -> Text[] {
   let all = ["-m", "pytest", "-q", "-x", "--no-header", "-p", "no:cacheprovider"]
   return if names.is_empty() { all } else { all.concat(["-k", names.join(" or ")]) }
@@ -426,6 +519,18 @@ fn proposal_problems(task: Task, got: Proposed) -> Text[] {
   return plan_check(task.text, got.files)
 }
 
+// A proposal read twice: by the coder's own check, and by the engine.
+fn all_faults(task: Task, got: Proposed, engine: Engine) -> Faults {
+  let mine = proposal_problems(task, got)
+  let theirs = for line in engine.problems where not mine.contains(line) { line }
+  return {items: mine.concat(theirs)}
+}
+
+workflow judge(task: Task, got: Proposed) -> Faults {
+  engine = execute helper.code_check(got.files) otherwise {problems: []}
+  faults = all_faults(task, got, engine)
+}
+
 // The task again, with what was wrong with the first answer.
 fn outside_again(task: Task, wrong: Text[]) -> Task {
   return {text: task.text + "\nYour first answer was not accepted because: " + wrong.join("; ") + ". Do the task again with this put right."}
@@ -443,7 +548,11 @@ fn verdict_on(got: Proposed, wrong: Text[], second: Bool) -> Text {
 // and the files that were written.
 fn outside_work(got: Proposed) -> Work {
   let did = for file in got.files { "save_all " + file.path }
-  let said = got.said.trim().lines().last().or("").take(300)
+  // Its last line that says something: some agents end with "Working...".
+  var said = ""
+  for line in got.said.trim().lines() {
+    if not line.trim().is_empty() and not line.trim().lower().starts_with("working") { said = line.trim().take(300) }
+  }
   return {summary: "Asked " + got.agent + ". It said: " + said, did: did}
 }
 
@@ -453,7 +562,7 @@ workflow run_all() -> Tested {
   require approval
 }
 
-workflow run_tests(work: Work) -> Tested {
+workflow test_python(work: Work) -> Tested {
   first  = execute runner.run_python(test_args(test_names(work)))
   tested = match found_none(first, test_names(work)) {
     case true { call run_all() }
@@ -462,12 +571,101 @@ workflow run_tests(work: Work) -> Tested {
   require approval
 }
 
+// A Kosika file's tests are in the file, and Kosika runs them.
+workflow test_kosika(file: Note) -> Tested {
+  ran    = execute runner.run_python(["-m", "kosika.cli", "test", file.text])
+  tested = as_tested(ran, [file.text])
+  require approval
+}
+
+workflow run_tests(work: Work) -> Tested {
+  tested = match kosika_file(work).is_empty() {
+    case false { call test_kosika(noted(kosika_file(work))) }
+    case _ { call test_python(work) }
+  }
+  require approval
+}
+
 workflow ask_helper(task: Task) -> Proposed {
   got = execute helper.ask_outside("", task.text) otherwise nobody()
 }
 
-workflow write_proposal(task: Task, got: Proposed) -> Result {
-  saved  = execute writer.save_all(got.files)
+// ---------------------------------------------------------------- a second pair of eyes
+
+fn noted(text: Text) -> Note {
+  return {text: text}
+}
+
+fn no_review() -> Reviewed {
+  return {ok: false, agent: "", said: ""}
+}
+
+// What the reviewer said, without the working noise some agents end with.
+fn review_words(read: Reviewed) -> Text {
+  var kept: Text[] = []
+  for line in read.said.trim().lines() {
+    if not line.trim().is_empty() and not line.trim().lower().starts_with("working") { kept = kept.append(line.trim()) }
+  }
+  return kept.join(" ").take(600)
+}
+
+fn review_question(read: Reviewed) -> Text {
+  return "A programmer reviewed a change and wrote the text below. Does the review report at least one real problem with the change, such as a bug, a wrong result, a weak or missing test, or something changed that was not asked for? Answer problem if it does. Answer fine if the review says there are no findings or that the change looks good.\n\nReview:\n" + review_words(read)
+}
+
+// "problem" when the reviewer found one, else "write".
+fn after_reading(read: Reviewed, judged: Choice) -> Text {
+  return if read.ok and judged.label == "problem" { "problem" } else { "write" }
+}
+
+// What the person is told with the list of files.
+fn review_note(read: Reviewed, judged: Choice) -> Text {
+  if not read.ok { return "Not read by a second agent." }
+  let found = if judged.label == "problem" { ", which found a problem" } else if judged.label == "fine" { ", which found no problem" } else { "" }
+  return "Read by " + read.agent + found + ". It said: " + review_words(read)
+}
+
+// The task again for the author, with what the reviewer found.
+fn after_review(task: Task, read: Reviewed) -> Task {
+  return {text: task.text + "\nA reviewer read your first answer and found this: " + review_words(read) + "\nDo the task again with this put right."}
+}
+
+workflow get_review(task: Task, got: Proposed) -> Reviewed {
+  read = execute helper.ask_review("not:" + got.agent, task.text, got.files) otherwise no_review()
+}
+
+workflow judge_review(read: Reviewed) -> Choice {
+  judged = classify review_question(read) into ["problem", "fine"] using reader otherwise {label: "unclear", confidence: 0}
+}
+
+// The author's second answer, after the reviewer's remarks, is written if
+// it passes the plan check. If it does not, the first answer is offered
+// with the reviewer's remarks, and the person decides.
+workflow redo_after_review(task: Task, got: Proposed, read: Reviewed) -> Result {
+  again  = call ask_helper(after_review(task, read))
+  faults = call judge(task, again)
+  result = match faults.items.is_empty() {
+    case true { call write_proposal(task, again, noted("A reviewer (" + read.agent + ") found a problem in the first answer, and the task was done again. It had said: " + review_words(read))) }
+    case _ { call write_proposal(task, got, noted("A reviewer (" + read.agent + ") found a problem that has NOT been put right: " + review_words(read))) }
+  }
+  require approval
+}
+
+workflow reviewed_write(task: Task, got: Proposed) -> Result {
+  read   = call get_review(task, got)
+  judged = match read.ok {
+    case true { call judge_review(read) }
+    case _ { {label: "none", confidence: 0} }
+  }
+  result = match after_reading(read, judged) {
+    case "problem" { call redo_after_review(task, got, read) }
+    case _ { call write_proposal(task, got, noted(review_note(read, judged))) }
+  }
+  require approval
+}
+
+workflow write_proposal(task: Task, got: Proposed, note: Note) -> Result {
+  saved  = execute writer.save_all(got.files, note.text)
   tested = call run_tests(outside_work(got))
   result = worked_on(task, outside_work(got), tested)
   require approval
@@ -475,8 +673,9 @@ workflow write_proposal(task: Task, got: Proposed) -> Result {
 
 workflow second_helper(task: Task, again: Task) -> Result {
   got    = call ask_helper(again)
-  result = match verdict_on(got, proposal_problems(task, got), true) {
-    case "use" { call write_proposal(task, got) }
+  faults = call judge(task, got)
+  result = match verdict_on(got, faults.items, true) {
+    case "use" { call reviewed_write(task, got) }
     case _ { call do_it_myself(task) }
   }
   require approval
@@ -486,10 +685,10 @@ workflow second_helper(task: Task, again: Task) -> Result {
 // the tool is not there, and the coder does the task itself.
 workflow do_task(task: Task) -> Result {
   got    = call ask_helper(task)
-  wrong  = proposal_problems(task, got)
-  result = match verdict_on(got, wrong, false) {
-    case "use" { call write_proposal(task, got) }
-    case "again" { call second_helper(task, outside_again(task, wrong)) }
+  faults = call judge(task, got)
+  result = match verdict_on(got, faults.items, false) {
+    case "use" { call reviewed_write(task, got) }
+    case "again" { call second_helper(task, outside_again(task, faults.items)) }
     case _ { call do_it_myself(task) }
   }
   require approval
@@ -543,7 +742,7 @@ workflow help(msg: Msg) -> Result {
 }
 
 workflow main(msg: Msg) -> Said {
-  budget 20 model calls, 1500 seconds
+  budget 22 model calls, 1800 seconds
   kind   = kind_of(msg)
   result = match kind {
     case "help" { call help(msg) }
@@ -721,6 +920,57 @@ test "a narrowed run says that it was narrowed" {
   expect some.last.passed == true
   expect all.text == "Added is_even.\nWrote: calc.py\nThe tests pass."
   expect bad.text.contains("The tests failed.")
+}
+
+test "what a reviewer said decides what happens next, and is told to the person" {
+  found: Reviewed = {ok: true, agent: "omp", said: "- [HIGH] calc.py:11 When n > high, clamp returns low.\n\nNo files edited.\nWorking..."}
+  clean: Reviewed = {ok: true, agent: "omp", said: "No findings.\nWorking..."}
+  expect review_words(found) == "- [HIGH] calc.py:11 When n > high, clamp returns low. No files edited."
+  expect after_reading(found, {label: "problem", confidence: 0.9}) == "problem"
+  expect after_reading(clean, {label: "fine", confidence: 0.9}) == "write"
+  expect after_reading(found, {label: "unclear", confidence: 0}) == "write"
+  expect after_reading(no_review(), {label: "problem", confidence: 1}) == "write"
+  expect review_note(clean, {label: "fine", confidence: 0.9}) == "Read by omp, which found no problem. It said: No findings."
+  expect review_note(found, {label: "unclear", confidence: 0}).starts_with("Read by omp. It said: - [HIGH]")
+  expect review_note(no_review(), {label: "none", confidence: 0}) == "Not read by a second agent."
+  expect after_review({text: "add clamp"}, found).text.starts_with("add clamp\nA reviewer read your first answer and found this: - [HIGH] calc.py:11")
+  expect review_question(clean).ends_with("Review:\nNo findings.")
+}
+
+test "a Kosika file keeps what it had and gains a test when asked" {
+  tools = "fn shout(text: Text) -> Text {\n  return text.upper()\n}\n\ntest \"shout makes it loud\" {\n  expect shout(\"hi\") == \"HI\"\n}\n"
+  more = tools + "\nfn is_even(n: Number) -> Bool {\n  return n % 2 == 0\n}\n\ntest \"even and odd\" {\n  expect is_even(2)\n}\n"
+  bare = tools + "\nfn is_even(n: Number) -> Bool {\n  return n % 2 == 0\n}\n"
+  only = "fn is_even(n: Number) -> Bool {\n  return n % 2 == 0\n}\n\ntest \"even and odd\" {\n  expect is_even(2)\n}\n"
+  good: Planned[] = [{path: "tools.kos", text: more, before: tools, exists: true}]
+  untested: Planned[] = [{path: "tools.kos", text: bare, before: tools, exists: true}]
+  lost: Planned[] = [{path: "tools.kos", text: only, before: tools, exists: true}]
+  expect defined(tools) == ["shout", "test \"shout makes it loud\""]
+  expect defined("record Point { x: Number y: Number }\nworkflow main(msg: Msg) -> Said {\nmodel voice {\ndefault model careful\nagent hands {\ntool save {") == ["Point", "main", "voice", "careful", "hands", "save"]
+  expect test_count(more) == 2
+  expect plan_check("add a function is_even to tools.kos, with a test", good) == []
+  expect plan_check("add a function is_even to tools.kos, with a test", untested) == ["the task asks for a test, but no Kosika file gains one. Add a test block, written test \"what it shows\" { expect ... }, to the file"]
+  expect plan_check("add a function is_even to tools.kos", untested) == []
+  expect plan_check("add a function is_even to tools.kos, with a test", lost) == ["tools.kos: it no longer has shout and test \"shout makes it loud\", which the file has now. Keep everything that is there and add to it"]
+}
+
+test "the engine's reading joins the coder's own" {
+  got: Proposed = {ok: true, agent: "omp", said: "", files: [{path: "a.kos", text: "fn f() -> Number {\n  return 1\n}\n", before: "", exists: false}]}
+  both = all_faults({text: "add f"}, got, {problems: ["a.kos: it is not valid Kosika: x"]})
+  none = all_faults({text: "add f"}, got, {problems: []})
+  expect both.items == ["a.kos: it is not valid Kosika: x"]
+  expect none.items == []
+  expect verdict_on(got, both.items, false) == "again"
+}
+
+test "after a change to Kosika only, that file's own tests are run" {
+  kos: Work = {summary: "s", did: ["save_all tools.kos", "save_all notes.md"]}
+  mixed: Work = {summary: "s", did: ["save_all tools.kos", "save_all calc.py"]}
+  expect kosika_file(kos) == "tools.kos"
+  expect kosika_file(mixed) == ""
+  expect kosika_file({summary: "s", did: []}) == ""
+  done = worked_on({text: "add is_even"}, kos, {ran: {exit_code: 0, stdout: "3 passed, 0 failed", stderr: ""}, only: "tools.kos"})
+  expect done.text.contains("The tests for tools.kos pass.")
 }
 
 test "only the end of a long test run is kept" {

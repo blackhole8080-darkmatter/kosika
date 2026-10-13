@@ -193,11 +193,17 @@ class CoderTests(unittest.TestCase):
             ignore=shutil.ignore_patterns("memory", "runs"),
         )
         self.started: list[str] = []
+        self.reviews: list[str] = []
+        self.reader = ScriptedModelProvider([])
+        self.Scripted = ScriptedModelProvider
 
         def make(folder: Path, allowed: tuple[str, ...] = ("devin",)) -> App:
             app = App(
                 top / "agents",
-                bind_models=lambda program: {"engineer": ScriptedModelProvider([])},
+                bind_models=lambda program: {
+                    "engineer": ScriptedModelProvider([]),
+                    "reader": self.reader,
+                },
                 allow_folder=folder,
                 allow_shell=True,
                 outside=allowed,
@@ -211,6 +217,14 @@ class CoderTests(unittest.TestCase):
 
     def runner(self, command: list[str], copy: Path) -> tuple[int, str]:
         self.started.append(command[0])
+        if command[-1].startswith("Review a change"):
+            # The reviewer is shown the change in place, the old file beside it.
+            self.reviews.append(
+                f"{'def subtract' in (copy / 'calc.py').read_text(encoding='utf-8')}"
+                f"/{(copy / '_before' / 'calc.py').read_text(encoding='utf-8') == CALC}"
+                f"/{(copy / '_before' / 'test_calc.py').exists()}"
+            )
+            return 0, "- [HIGH] calc.py: subtract has no docstring.\nWorking..."
         (copy / "calc.py").write_text(
             CALC + "\n\ndef subtract(a, b):\n    return a - b\n", encoding="utf-8"
         )
@@ -356,3 +370,167 @@ class WhatIsShownTests(unittest.TestCase):
         shown = sorted(outside._files(self.work))
         # Untracked files that are not ignored are part of the project too.
         self.assertEqual(shown, [".gitignore", "calc.py", "notes.txt"])
+
+
+class ReviewTests(CoderTests):
+    """With two outside agents, the one that did not write reads the change."""
+
+    def start(self, label: str):  # type: ignore[no-untyped-def]
+        from kosika.model import ModelResponse
+
+        self.reader = self.Scripted(
+            [ModelResponse(content='{"label": "%s", "confidence": 0.9}' % label)]
+        )
+        app = self.make(self.work, allowed=("devin", "omp"))
+        job = app.start(
+            "coder/main.kos",
+            {"text": "add a function subtract(a, b) to calc.py, with a test"},
+        )
+        asked = self.until(app, job.id, "waiting", "done", "failed")
+        self.assertEqual(asked["state"], "waiting", asked)
+        return asked["request"]["arguments"]["note"]
+
+    def test_the_other_agent_reads_the_change_and_the_person_is_told(self) -> None:
+        note = self.start("fine")
+        self.assertEqual(self.started, ["devin", "omp"])
+        # It saw the new file in place, the old one beside it, and no old
+        # copy of a file that is new.
+        self.assertEqual(self.reviews, ["True/True/False"])
+        self.assertEqual(
+            note,
+            "Read by omp, which found no problem. It said: - [HIGH] calc.py: subtract has no docstring.",
+        )
+        self.assertEqual((self.work / "calc.py").read_text(encoding="utf-8"), CALC)
+
+    def test_a_problem_found_sends_the_task_back_to_its_author_once(self) -> None:
+        note = self.start("problem")
+        self.assertEqual(self.started, ["devin", "omp", "devin"])
+        self.assertTrue(
+            note.startswith(
+                "A reviewer (omp) found a problem in the first answer, and the task was done again."
+            ),
+            note,
+        )
+
+    def test_with_one_agent_nobody_reviews_and_the_note_says_so(self) -> None:
+        app = self.make(self.work)
+        job = app.start(
+            "coder/main.kos", {"text": "add subtract to calc.py, with a test"}
+        )
+        asked = self.until(app, job.id, "waiting", "done", "failed")
+        self.assertEqual(
+            asked["request"]["arguments"]["note"], "Not read by a second agent."
+        )
+        self.assertEqual(self.started, ["devin"])
+
+
+class FailureTests(Base):
+    def test_an_agent_out_of_allowance_is_no_answer(self) -> None:
+        def spent(command: list[str], copy: Path) -> tuple[int, str]:
+            return 1, "Error: Agent error: Your daily usage quota has been exhausted."
+
+        with self.assertRaises(OutsideError) as caught:
+            self.ask(spent)
+        self.assertEqual(
+            str(caught.exception), "devin has used up its allowance for now."
+        )
+
+    def test_any_other_error_is_told_with_its_first_line(self) -> None:
+        with self.assertRaises(OutsideError) as caught:
+            self.ask(lambda command, copy: (2, "starting\nError: not signed in\nmore"))
+        self.assertEqual(
+            str(caught.exception), "devin stopped with an error: Error: not signed in"
+        )
+
+    def test_a_script_is_not_started_through_a_shell(self) -> None:
+        from unittest import mock
+
+        with (
+            mock.patch.object(outside.sys, "platform", "win32"),
+            mock.patch.object(
+                outside.shutil, "which", return_value=r"C:\tools\agent.cmd"
+            ),
+        ):
+            with self.assertRaises(OutsideError) as caught:
+                outside._program("agent")
+        self.assertIn("installed as a script (agent.cmd)", str(caught.exception))
+        with mock.patch.object(outside.shutil, "which", return_value=None):
+            with self.assertRaises(OutsideError):
+                outside._program("agent")
+
+
+class NextAgentTests(CoderTests):
+    # The tests of the class it borrows its set-up from assume devin
+    # answers; here it does not, so they are not run again.
+    test_its_work_is_shown_as_one_list_and_nothing_changes_before_a_yes = None  # type: ignore[assignment]
+    test_a_no_leaves_the_folder_as_it_was = None  # type: ignore[assignment]
+    test_outside_the_named_root_it_is_never_started = None  # type: ignore[assignment]
+    test_with_none_allowed_it_is_never_started = None  # type: ignore[assignment]
+
+    def runner(self, command: list[str], copy: Path) -> tuple[int, str]:
+        if command[0] == "devin":
+            self.started.append("devin")
+            return 1, "Error: Your daily usage quota has been exhausted."
+        return super().runner(command, copy)
+
+    def test_when_the_first_agent_cannot_answer_the_next_is_asked(self) -> None:
+        app = self.make(self.work, allowed=("devin", "omp"))
+        job = app.start(
+            "coder/main.kos",
+            {"text": "add a function subtract(a, b) to calc.py, with a test"},
+        )
+        asked = self.until(app, job.id, "waiting", "done", "failed")
+        self.assertEqual(asked["state"], "waiting", asked)
+        # devin was tried and had nothing left; omp did the work. The only
+        # reviewer left is devin, which cannot answer, so nobody read it.
+        self.assertEqual(self.started[:2], ["devin", "omp"])
+        self.assertEqual(
+            [f["path"] for f in asked["request"]["arguments"]["files"]],
+            ["calc.py", "test_calc.py"],
+        )
+        self.assertEqual(
+            asked["request"]["arguments"]["note"], "Not read by a second agent."
+        )
+
+
+class KosikaNotesTests(unittest.TestCase):
+    def test_every_example_in_the_guide_is_real_kosika(self) -> None:
+        import re
+
+        from kosika.modules import load_program
+        from kosika.testing import run_tests
+
+        notes = outside.kosika_notes()
+        blocks = re.findall(r"```kosika\n(.*?)```", notes, flags=re.S)
+        self.assertGreaterEqual(len(blocks), 3)
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "main.kos"
+            path.write_text("\n".join(blocks), encoding="utf-8")
+            results = run_tests(load_program(path))
+        self.assertTrue(results and all(result.passed for result in results))
+
+    def test_every_method_the_guide_names_exists(self) -> None:
+        import re
+
+        from kosika.builtin_methods import METHODS
+
+        notes = outside.kosika_notes()
+        section = notes.split("## Methods you can use")[1].split("There is no `len`")[0]
+        named = set(re.findall(r"`([a-z_]+)\(", section))
+        # `len(text)` is there as what not to write.
+        known = {method.name for method in METHODS} | {"or", "len"}
+        self.assertEqual(sorted(named - known), [])
+        self.assertGreater(len(named), 30)
+
+    def test_the_guide_goes_with_a_request_about_kosika_and_no_other(self) -> None:
+        plain = outside.with_notes("add subtract to calc.py", ["calc.py", "README.md"])
+        by_file = outside.with_notes("add is_even", ["tools.kos"])
+        by_word = outside.with_notes(
+            "write a Kosika program that greets", ["notes.txt"]
+        )
+        self.assertEqual(plain, "add subtract to calc.py")
+        self.assertTrue(
+            by_file.startswith("add is_even\n\nSome of this is written in Kosika")
+        )
+        self.assertIn("# Writing Kosika", by_file)
+        self.assertIn("# Writing Kosika", by_word)

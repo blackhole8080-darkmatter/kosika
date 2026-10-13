@@ -153,6 +153,40 @@ def save_settings(
     return target
 
 
+def kosika_notes() -> str:
+    """The short guide to writing Kosika that ships with it, or "" if the
+    file has gone missing."""
+
+    try:
+        return (Path(__file__).parent / "app_assets" / "writing_kosika.md").read_text(
+            encoding="utf-8"
+        )
+    except OSError:
+        return ""
+
+
+def with_notes(request: str, names: Sequence[str]) -> str:
+    """A request, followed by the guide to writing Kosika when the work
+    is in Kosika: the folder has `.kos` files, or the request speaks of
+    one. An outside agent has not been taught the language; it writes it
+    from habit unless it is shown how."""
+
+    lower = request.lower()
+    if not (
+        any(name.lower().endswith(".kos") for name in names)
+        or ".kos" in lower
+        or "kosika" in lower
+    ):
+        return request
+    notes = kosika_notes()
+    if not notes:
+        return request
+    return (
+        request + "\n\nSome of this is written in Kosika, a language you have not "
+        "been taught. This is how it is written:\n\n" + notes
+    )
+
+
 class OutsideError(ValueError):
     """An outside agent could not be asked, in words for a person."""
 
@@ -381,7 +415,9 @@ def propose(
     if not request.strip():
         raise OutsideError("There was nothing to ask.")
     files = _files(folder)
-    with tempfile.TemporaryDirectory(prefix=f"kosika-outside-{agent}-") as scratch:
+    with tempfile.TemporaryDirectory(
+        prefix=f"kosika-outside-{agent}-", ignore_cleanup_errors=True
+    ) as scratch:
         copy = Path(scratch) / "work"
         copy.mkdir()
         for name, path in files.items():
@@ -390,21 +426,150 @@ def propose(
             shutil.copyfile(path, target)
         started = time.monotonic()
         code, said = (runner or _run)(
-            COMMANDS[agent](copy, request.strip() + RULES), copy
+            COMMANDS[agent](copy, with_notes(request.strip() + RULES, list(files))),
+            copy,
         )
         seconds = round(time.monotonic() - started, 1)
-        if code != 0 and not said.strip():
-            raise OutsideError(f"{agent} stopped with an error and said nothing.")
+        _stopped(agent, code, said)
         changes, left_out = compare(folder, copy)
     return Proposal(
         agent, said.strip()[-2000:], seconds, tuple(changes), tuple(left_out)
     )
 
 
+def _stopped(agent: str, code: int, said: str) -> None:
+    """Refuse an answer from an agent that ended with an error: it has run
+    out of its daily allowance, is not signed in, or broke. What it printed
+    then is not work, and whoever asked should try another."""
+
+    if code == 0:
+        return
+    lines = [line.strip() for line in said.strip().splitlines() if line.strip()]
+    why = next(
+        (line for line in lines if "error" in line.lower()), lines[0] if lines else ""
+    )
+    if "quota" in said.lower() or "resource_exhausted" in said.lower():
+        raise OutsideError(f"{agent} has used up its allowance for now.")
+    raise OutsideError(
+        f"{agent} stopped with an error"
+        + (f": {why[:240]}" if why else " and said nothing.")
+    )
+
+
+#: The folder, inside a reviewer's copy, that holds changed files as they
+#: were before the change.
+BEFORE = "_before"
+
+
+def review_request(task: str, paths: Sequence[str]) -> str:
+    """What a reviewing agent is asked."""
+
+    return (
+        "Review a change another programmer has just made in this folder. "
+        "Do not edit any file and do not run anything.\n"
+        f"The task they were given: {task.strip()}\n"
+        f"The files they changed: {', '.join(paths)}. Each is in this folder as "
+        f"it is AFTER the change. The folder `{BEFORE}` holds the same files as "
+        "they were BEFORE the change; a file not there is new.\n"
+        "Read both versions of each file. Check: does the change do the task "
+        "correctly, including edge cases; do the tests really test it; is "
+        "anything changed or added that the task did not ask for; is anything "
+        "that was there before lost.\n"
+        "Answer in a few short sentences: either that you found no problem, or "
+        "one sentence for each problem, most serious first."
+    )
+
+
+def review(
+    agent: str,
+    task: str,
+    changes: Sequence[Change],
+    folder: Path,
+    *,
+    within: Path | None,
+    allowed: Sequence[str],
+    runner: Callable[[list[str], Path], tuple[int, str]] | None = None,
+) -> Proposal:
+    """Ask an outside agent to read a proposed change and say what is wrong
+    with it. The change is applied in a copy, with the old files beside it,
+    so the reviewer reads real files. Nothing it edits is kept, and the
+    folder itself is not touched.
+    """
+
+    if agent not in COMMANDS:
+        raise OutsideError(
+            f"{agent!r} is not an outside agent Kosika knows how to ask. "
+            f"It knows: {', '.join(COMMANDS)}."
+        )
+    if agent not in allowed:
+        raise OutsideError(f"The outside agent {agent} has not been allowed here.")
+    if within is None or not inside(folder, within):
+        raise OutsideError(
+            "An outside agent is shown only folders the owner named for it, "
+            f"and {folder} is not one."
+        )
+    if runner is None and shutil.which(agent) is None:
+        raise OutsideError(f"{agent} is not installed on this computer.")
+    if not changes:
+        raise OutsideError("There is no change to review.")
+    files = _files(folder)
+    with tempfile.TemporaryDirectory(
+        prefix=f"kosika-review-{agent}-", ignore_cleanup_errors=True
+    ) as scratch:
+        copy = Path(scratch) / "work"
+        copy.mkdir()
+        for name, path in files.items():
+            target = copy / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(path, target)
+        for change in changes:
+            target = (copy / change.path).resolve()
+            if not inside(target, copy):
+                raise OutsideError(f"{change.path!r} would leave the folder.")
+            if change.existed:
+                kept = copy / BEFORE / change.path
+                kept.parent.mkdir(parents=True, exist_ok=True)
+                kept.write_text(change.before, encoding="utf-8", newline="")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(change.text, encoding="utf-8", newline="")
+        started = time.monotonic()
+        code, said = (runner or _run)(
+            COMMANDS[agent](copy, review_request(task, [c.path for c in changes])), copy
+        )
+        seconds = round(time.monotonic() - started, 1)
+        _stopped(agent, code, said)
+    return Proposal(agent, said.strip()[-2000:], seconds)
+
+
+def _program(name: str) -> str:
+    """The program file an agent's name stands for.
+
+    It is started directly, never through a shell. A shell on Windows cuts
+    an argument at its first line break and reads `&`, `|` and `"` as its
+    own, so a request of several lines would arrive as its first line
+    alone, without the rules that follow it. A name that leads to a script
+    the shell would have to run (.cmd, .bat) is refused for that reason.
+    """
+
+    found = shutil.which(name)
+    if found is None:
+        raise OutsideError(f"{name} is not installed on this computer.")
+    if sys.platform == "win32" and Path(found).suffix.lower() in (
+        ".cmd",
+        ".bat",
+        ".ps1",
+    ):
+        raise OutsideError(
+            f"{name} is installed as a script ({Path(found).name}), which cannot "
+            "be handed a request of several lines safely."
+        )
+    return found
+
+
 def _run(command: list[str], folder: Path) -> tuple[int, str]:
     try:
         done = subprocess.run(  # noqa: S603 - a known agent, in a scratch copy
-            command,
+            [_program(command[0]), *command[1:]],
             cwd=folder,
             capture_output=True,
             text=True,
@@ -412,8 +577,7 @@ def _run(command: list[str], folder: Path) -> tuple[int, str]:
             errors="replace",
             timeout=TIMEOUT_SECONDS,
             stdin=subprocess.DEVNULL,
-            # On Windows these agents are often .cmd files, found by the shell.
-            shell=sys.platform == "win32",
+            shell=False,
         )
     except subprocess.TimeoutExpired as exc:
         raise OutsideError(

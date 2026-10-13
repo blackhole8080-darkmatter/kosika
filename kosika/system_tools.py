@@ -171,7 +171,15 @@ SHAPES: dict[str, tuple[dict[str, str], dict[str, str]]] = {
     # Write several whole files in one step, so one approval covers exactly
     # that list. Each is given as a planned file; only its path and text
     # are used. If one cannot be written, the ones after it are not.
-    "write_all": ({"files": PLANNED_FILES}, {"count": "Number"}),
+    # `note` is for the person who is asked: it is shown with the list and
+    # changes nothing that is written.
+    "write_all": ({"files": PLANNED_FILES, "note": "Text"}, {"count": "Number"}),
+    # A second outside agent reads a proposed change, applied in a copy
+    # with the old files beside it, and says what it finds wrong.
+    "review": (
+        {"agent": "Text", "text": "Text", "files": PLANNED_FILES},
+        {"ok": "Bool", "agent": "Text", "said": "Text"},
+    ),
     # An outside agent's answer: what it said, and the files it would
     # change, worked out in a copy. See kosika.outside.
     "propose": (
@@ -186,6 +194,10 @@ SHAPES: dict[str, tuple[dict[str, str], dict[str, str]]] = {
         {"source": "Text"},
         {"ok": "Bool", "problem": "Text", "tests": "Number", "passed": "Number"},
     ),
+    # The engine's own reading of files a program means to write: what is
+    # not valid Python or Kosika, a name never defined, a Kosika test that
+    # fails. It reaches nothing, like `check`.
+    "check_files": ({"files": PLANNED_FILES}, {"problems": "Text[]"}),
     # How near two texts are in meaning, from -1 to 1. It reaches nothing
     # but the embedding model the runner granted.
     "near": ({"a": "Text", "b": "Text"}, {"score": "Number"}),
@@ -256,10 +268,10 @@ def declaration_problem(program: Program, tool: ToolDecl) -> str | None:
         or kind == "agents"
         or kind == "outside"
     )
-    if kind == "outside" and tool.operation != "propose":
+    if kind == "outside" and tool.operation not in ("propose", "review"):
         return (
             f"Tool {tool.name!r} has unknown outside operation {tool.operation!r}; "
-            "the only one is propose"
+            "use one of: propose, review"
         )
     if kind == "agents" and tool.operation != "ask":
         return (
@@ -271,10 +283,10 @@ def declaration_problem(program: Program, tool: ToolDecl) -> str | None:
             f"Tool {tool.name!r} has unknown meaning operation {tool.operation!r}; "
             "the only one is near"
         )
-    if kind == "kosika" and tool.operation != "check":
+    if kind == "kosika" and tool.operation not in ("check", "check_files"):
         return (
             f"Tool {tool.name!r} has unknown kosika operation {tool.operation!r}; "
-            "the only one is check"
+            "use one of: check, check_files"
         )
     if kind == "web" and tool.operation != "fetch":
         return (
@@ -376,13 +388,41 @@ def check_source(_tool: ToolDecl, arguments: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def check_files(_tool: ToolDecl, arguments: dict[str, Any]) -> dict[str, Any]:
+    """What the engine finds wrong with files a program means to write.
+
+    The same reading a planning agent's plan is given: Python that is not
+    valid, or uses a name it never defines, or imports what another of the
+    files does not have; Kosika that does not check, or whose tests fail.
+    Nothing on the machine is read or changed: each file's `before` is all
+    that is known of the files as they are.
+    """
+
+    from .code_checks import plan_code_problems
+
+    planned = [item for item in arguments["files"] if isinstance(item, dict)]
+    now = {
+        str(item.get("path", "")).replace("\\", "/").removeprefix("./"): str(
+            item.get("before", "")
+        )
+        for item in planned
+        if item.get("exists") is True
+    }
+    return {
+        "problems": plan_code_problems(
+            {str(item.get("path", "")): str(item.get("text", "")) for item in planned},
+            now.get,
+        )
+    }
+
+
 def bind_kosika_tools(
     program: Program,
 ) -> dict[str, Callable[[ToolDecl, dict[str, Any]], Any]]:
     """Bind the program's `kosika` tools. They need no grant; see check_source."""
 
     return {
-        tool.name: check_source
+        tool.name: check_files if tool.operation == "check_files" else check_source
         for tool in program.tools
         if system_kind(tool) == "kosika"
     }

@@ -157,3 +157,105 @@ if __name__ == "__main__":
 
 if __name__ == "__main__":
     unittest.main()
+
+
+GOOD_KOS = 'fn f(n: Number) -> Number {\n  return n + 1\n}\n\ntest "f adds one" {\n  expect f(1) == 2\n}\n'
+
+
+class KosikaTests(unittest.TestCase):
+    """A Kosika file must check, and its tests must pass, before it is written."""
+
+    def test_a_sound_file_raises_nothing(self) -> None:
+        self.assertEqual(check({"a.kos": GOOD_KOS}), [])
+
+    def test_a_failing_test_is_named_with_its_line(self) -> None:
+        found = check({"a.kos": GOOD_KOS.replace("== 2", "== 3")})
+        self.assertEqual(len(found), 1)
+        self.assertTrue(
+            found[0].startswith('a.kos: its test "f adds one" fails at line 6:'),
+            found[0],
+        )
+
+    def test_what_is_not_kosika_is_said_in_the_checkers_words(self) -> None:
+        habit = check({"a.kos": GOOD_KOS.replace("n + 1", "len(n)")})
+        python = check({"lib/a.kos": "def f(n):\n    return n\n"})
+        self.assertTrue(habit[0].startswith("a.kos: it is not valid Kosika:"), habit[0])
+        self.assertIn("len", habit[0])
+        self.assertEqual(
+            python,
+            ["lib/a.kos: it is not valid Kosika: Unexpected declaration 'def' at 1:1"],
+        )
+
+    def test_one_planned_file_may_import_another(self) -> None:
+        files = {
+            "lib.kos": "export [double]\n\nfn double(n: Number) -> Number {\n  return n * 2\n}\n",
+            "main.kos": 'import "lib.kos"\n\ntest "it doubles" {\n  expect double(2) == 4\n}\n',
+        }
+        self.assertEqual(check(files), [])
+        self.assertTrue(
+            check(
+                {"main.kos": files["main.kos"].replace("== 4", "== 5")}
+                | {"lib.kos": files["lib.kos"]}
+            )
+        )
+
+    def test_a_file_that_imports_one_not_in_the_plan_is_not_judged(self) -> None:
+        self.assertEqual(
+            check(
+                {
+                    "main.kos": 'import "elsewhere.kos"\n\ntest "x" {\n  expect 1 == 2\n}\n'
+                }
+            ),
+            [],
+        )
+
+    def test_python_and_kosika_are_both_read_in_one_plan(self) -> None:
+        found = check(
+            {"t.py": "print(nowhere)\n", "a.kos": GOOD_KOS.replace("== 2", "== 3")}
+        )
+        self.assertEqual(len(found), 2)
+
+    def test_a_program_may_ask_for_this_reading_as_a_tool(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        from kosika.modules import load_program
+        from kosika.runtime import run
+        from kosika.system_tools import bind_system_tools
+
+        source = (
+            "record Planned { path: Text text: Text before: Text exists: Bool }\n"
+            "record Batch { files: Planned[] }\n"
+            "record Engine { problems: Text[] }\n"
+            'tool code_check {\n  source system "kosika"\n  operation: "check_files"\n'
+            "  access: observe\n  input: Batch\n  output: Engine\n}\n"
+            "agent helper {\n  can: [code_check]\n  max_steps: 1\n}\n"
+            "workflow main(batch: Batch) -> Engine {\n  found = execute helper.code_check(batch.files)\n}\n"
+        )
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "main.kos"
+            path.write_text(source, encoding="utf-8")
+            program = load_program(path)
+            files = [
+                {
+                    "path": "a.kos",
+                    "text": GOOD_KOS.replace("== 2", "== 3"),
+                    "before": "",
+                    "exists": False,
+                },
+                {"path": "t.py", "text": "def f(:\n", "before": "", "exists": False},
+            ]
+            result = run(
+                program,
+                "main",
+                None,
+                inputs={"batch": {"files": files}},
+                tool_bindings=bind_system_tools(program, folder=None),
+            )
+        self.assertEqual(len(result["problems"]), 2)
+        self.assertTrue(
+            result["problems"][0].startswith("t.py: it is not valid Python")
+        )
+        self.assertTrue(
+            result["problems"][1].startswith('a.kos: its test "f adds one" fails')
+        )

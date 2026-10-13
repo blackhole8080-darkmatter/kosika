@@ -3438,6 +3438,59 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   another name is not seen until all are run. devin again ran tests of
   its own in its copy.
 
+### A second agent reads the change, and the coder writes Kosika
+
+- A reviewer. With two outside agents allowed, the one that did not write
+  a change reads it before the person is asked: `system "outside"`,
+  operation `review`. The change is applied in a copy with the old files
+  beside it, because an agent handed the new text in its request read the
+  files on disk and reviewed those. The local model then says only whether
+  the review reports a problem; if it does, the author is asked once more,
+  told what was found. What the reviewer said is shown with the list of
+  files (`note` on `write_all`), before the yes.
+- Tried alone on four changes, one sound and three with a fault their
+  tests did not catch (a wrong upper bound, a test that asserts nothing, a
+  change nobody asked for): omp and devin each passed the sound one and
+  found the fault in the other three.
+- Two faults of mine found on the way, and one cost.
+  - The request to an outside agent was cut at its first line break. It
+    was started through the Windows shell, which ends an argument there.
+    The agents had been given the task and never the rules after it, such
+    as "do not run programs". They are now started directly. With the
+    whole request, omp answered "No programs, tests, or installers run".
+  - The measuring script looked for the words "The tests pass." and so
+    counted every narrowed run, "The tests for calc pass", as a failure,
+    then asked for a "fix" that damaged sound work. That run is discarded.
+  - devin's free daily allowance was used up by these runs. An agent that
+    ends in an error now counts as no answer, and when none was named the
+    next allowed one is asked.
+- Kosika. An outside agent has not been taught the language. Given six
+  small Kosika tasks and nothing else, devin got 4 of 6: `words.length`
+  for `words.length()`, and a `Point(...)` that Kosika does not have.
+  - A guide, `kosika/app_assets/writing_kosika.md`, goes with any request
+    about Kosika. A test checks that every example in it is real Kosika
+    and every method it names exists.
+  - Before anything is written, the engine checks each planned `.kos` file
+    and runs the tests in it: `system "kosika"`, operation `check_files`,
+    which the coder calls on every proposal. The same reading now covers
+    what an outside agent proposes in Python, which it did not before.
+  - The coder's own check, in Kosika, reads Kosika files too: what a file
+    had must stay, and a task that asks for a test must add one.
+  - After a change to Kosika only, that file's own tests are run with
+    `kosika test`, not pytest.
+- Measured: the whole coder with omp on the six Kosika tasks, scored
+  strictly. Five were done in 23 to 58 seconds each. The sixth did not
+  finish: the run stood for an hour and ended on its deadline, most likely
+  the laptop sleeping. Run again alone it was done in 31 seconds.
+- 19 tests in the coder's program; 32 in `tests/test_outside.py`.
+- Not claimed: the six Python tasks have not been run again since the
+  request was fixed, and never with a reviewer; devin was spent. Whether
+  the guide helps was not measured, for the same reason: the only number
+  without it is devin's 4 of 6 and the only number with it is omp's. Six
+  tasks of one small kind are not a measure of writing real Kosika
+  programs with workflows, agents and tools; the guide does not teach
+  those yet.
+
 ### Other local models, measured
 
 - The owner asked which models should be installed, and about DeepSeek

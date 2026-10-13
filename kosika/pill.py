@@ -281,7 +281,13 @@ def _action_words(action: dict[str, Any]) -> str:
         ]
         more = f" and {len(files) - 6} more" if len(files) > 6 else ""
         count = f"{len(files)} file{'' if len(files) == 1 else 's'}"
-        return f"write {count}: {', '.join(names)}{more}"
+        note = given.get("note")
+        noted = (
+            f". {_clip(note, 220).rstrip('.')}"
+            if isinstance(note, str) and note.strip()
+            else ""
+        )
+        return f"write {count}: {', '.join(names)}{more}{noted}"
     if kind == "system:files" and operation in ("write", "create"):
         text = given.get("text")
         size = f"{len(text)} characters" if isinstance(text, str) else "some text"

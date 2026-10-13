@@ -899,8 +899,10 @@ tool run_tests {
 | `system "files"` | `find` | `{path: Text, query: Text}` | `{matches: Text[]}` |
 | `system "meaning"` | `near` | `{a: Text, b: Text}` | `{score: Number}` |
 | `system "agents"` | `ask` | `{agent: Text, text: Text}` | `{ok: Bool, agent: Text, text: Text}` |
-| `system "files"` | `write_all` | `{files: R[]}` | `{count: Number}` |
+| `system "files"` | `write_all` | `{files: R[], note: Text}` | `{count: Number}` |
 | `system "outside"` | `propose` | `{agent: Text, text: Text}` | `{ok: Bool, agent: Text, said: Text, files: R[]}` |
+| `system "outside"` | `review` | `{agent: Text, text: Text, files: R[]}` | `{ok: Bool, agent: Text, said: Text}` |
+| `system "kosika"` | `check_files` | `{files: R[]}` | `{problems: Text[]}` |
 
 - A system tool MUST declare `access: execute`, and its records MUST have
   exactly the fields above (`check/invalid-system-tool`). A workflow that
@@ -964,7 +966,27 @@ tool run_tests {
   only for the outside agents its owner allowed, and only when the granted
   folder is inside the one root the owner named for them; otherwise it is
   unreachable like any ungranted tool. What an outside agent reads leaves
-  the machine.
+  the machine. An outside agent that ends with an error gave no answer;
+  when no agent was named, the next one allowed is asked. `agent` may be
+  `not:NAME`, which means any allowed agent but that one. When the folder
+  holds `.kos` files, or `text` speaks of Kosika, the guide to writing
+  Kosika that ships with the language is added to what is asked.
+- A `system "outside"` tool with operation `review` gives `files`, a
+  proposed change, to an outside agent to read: in a copy of the granted
+  folder each file is as it would be, and a folder `_before` holds each
+  changed file as it is now. `said` is what the agent found. Nothing it
+  edits is kept. It is bound and limited as `propose` is.
+- The `note` of `write_all` is for the person who is asked to approve: the
+  host shows it with the list of files. It changes nothing that is written.
+- A `system "kosika"` tool with operation `check_files` gives what the
+  engine itself finds wrong with files a program means to write, one text
+  each: for a path ending `.py`, text that is not valid Python, a name
+  used and never defined or imported, an import from another of the files
+  of a name it does not define; for a path ending `.kos`, a file that does
+  not check, or a test in it that fails. Kosika files are checked together,
+  so one may import another; a file that imports one not among `files` is
+  not judged. It reaches nothing, needs no grant, and MAY be `access:
+  observe`. The same reading is given to an agent's plan before approval.
 - File paths are relative to the granted folder. A path that is absolute,
   contains `..`, or passes through a symlink is refused. Files are UTF-8 text
   of at most 1 MiB.

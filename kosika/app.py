@@ -890,27 +890,82 @@ class App:
         session = self._session_for(program, folder)
         root = session.work if session is not None else granted
 
-        def ask(_tool: Any, arguments: dict[str, Any]) -> dict[str, Any]:
-            wanted = str(arguments.get("agent", "")).strip().lower()
+        def choices(wanted: str) -> list[str]:
+            """The outside agents to try, in order: the one named; with no
+            name, every one that can be asked; with `not:NAME`, every one
+            but that, so that a change is not reviewed by its author. One
+            that fails, having used up its allowance say, is passed over
+            for the next."""
+
             ready = outside_agents.installed(self.outside)
-            name = wanted or (ready[0] if ready else "")
-            try:
-                if not name:
-                    raise outside_agents.OutsideError(
-                        "None of the outside agents allowed here is installed."
+            if self._outside_runner is not None:
+                ready = list(self.outside)
+            if wanted.startswith("not:"):
+                return [name for name in ready if name != wanted[4:]]
+            return [wanted] if wanted else ready
+
+        def first_that_answers(wanted: str, asking: Any) -> Any:
+            """Ask each choice in turn until one answers. With none, the
+            last refusal is raised, or a plain one if there was nobody."""
+
+            refusal: outside_agents.OutsideError | None = None
+            for name in choices(wanted):
+                try:
+                    return asking(name)
+                except outside_agents.OutsideError as exc:
+                    refusal = exc
+            raise refusal or outside_agents.OutsideError(
+                "None of the outside agents allowed here is installed."
+            )
+
+        def ask(tool: Any, arguments: dict[str, Any]) -> dict[str, Any]:
+            wanted = str(arguments.get("agent", "")).strip().lower()
+            if tool.operation == "review":
+                try:
+                    if not choices(wanted):
+                        raise outside_agents.OutsideError(
+                            "There is no second outside agent to review it."
+                        )
+                    read = first_that_answers(
+                        wanted,
+                        lambda name: outside_agents.review(
+                            name,
+                            str(arguments.get("text", "")),
+                            [
+                                outside_agents.Change(
+                                    str(item.get("path", "")),
+                                    str(item.get("text", "")),
+                                    str(item.get("before", "")),
+                                    item.get("exists") is True,
+                                )
+                                for item in arguments.get("files") or []
+                                if isinstance(item, dict)
+                            ],
+                            root,
+                            within=root,
+                            allowed=self.outside,
+                            runner=self._outside_runner,
+                        ),
                     )
-                found = outside_agents.propose(
-                    name,
-                    str(arguments.get("text", "")),
-                    root,
-                    # The limit is on the folder the owner granted; the
-                    # session's copy of it stands in the same place.
-                    within=root,
-                    allowed=self.outside,
-                    runner=self._outside_runner,
+                except outside_agents.OutsideError as exc:
+                    return {"ok": False, "agent": "", "said": str(exc)}
+                return {"ok": True, "agent": read.agent, "said": read.said}
+            try:
+                found = first_that_answers(
+                    wanted,
+                    lambda name: outside_agents.propose(
+                        name,
+                        str(arguments.get("text", "")),
+                        root,
+                        # The limit is on the folder the owner granted; the
+                        # session's copy of it stands in the same place.
+                        within=root,
+                        allowed=self.outside,
+                        runner=self._outside_runner,
+                    ),
                 )
             except outside_agents.OutsideError as exc:
-                return {"ok": False, "agent": name, "said": str(exc), "files": []}
+                return {"ok": False, "agent": "", "said": str(exc), "files": []}
             said = found.said
             if found.left_out:
                 said += "\nNot offered: " + "; ".join(found.left_out) + "."

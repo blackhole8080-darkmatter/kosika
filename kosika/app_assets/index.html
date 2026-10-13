@@ -382,7 +382,8 @@ function askLines(request) {
     const count = text => text ? text.split("\n").length - (text.endsWith("\n") ? 1 : 0) : 0;
     const head = given.files.map((file, at) => (at + 1) + ". " + file.path + (file.exists ? ": " + count(file.before) + " lines become " + count(file.text) : ": new, " + count(file.text) + " lines"));
     const body = given.files.map(file => "----- " + file.path + " -----\n" + file.text);
-    return head.join("\n") + "\n\nOne yes writes exactly these files, with exactly this text.\n\n" + body.join("\n\n");
+    const note = given.note ? given.note + "\n\n" : "";
+    return note + head.join("\n") + "\n\nOne yes writes exactly these files, with exactly this text.\n\n" + body.join("\n\n");
   }
   if (isProgram(request)) {
     const words = (given.args || []).map(word => /[\s"]/.test(word) || word === "" ? JSON.stringify(word) : word);
