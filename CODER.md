@@ -138,10 +138,13 @@ fixed, and that task then took 30 seconds.
   agent's change is refused above 40 files.
 - **Anything but Python.** The tests it runs are pytest. It does not write
   Kosika yet.
-- **Run only the tests that matter.** It runs them all. Kosika's own suite
-  takes 17 minutes, so it is not ready to work on Kosika itself.
-- **Work on your real projects, proven.** Every number above is from a
-  scratch project of two tiny files. That is the next thing to test.
+- **Choose tests by meaning.** It runs the tests named after the files it
+  changed, and all of them if it finds none. A change that breaks a test
+  named after something else is not seen until all are run.
+- **Work on your real projects, proven.** The table above is from a
+  scratch project of two tiny files. One real job has been done since: on
+  a copy of Kosika itself, devin's change was checked, written and tested
+  in 97 seconds. One job is not yet a track record.
 - **Review.** Nothing reads the change for sense, only for the faults the
   checks know. A second agent reviewing the first is planned.
 

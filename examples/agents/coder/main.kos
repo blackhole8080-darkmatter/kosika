@@ -52,6 +52,8 @@ record Work { summary: Text did: Text[] }
 // The last run: the task, what the tests printed, and whether they passed.
 record Last { task: Text output: Text passed: Bool known: Bool }
 record Result { text: Text last: Last }
+// A test run, and the names it was narrowed to ("" when all were run).
+record Tested { ran: Ran only: Text }
 
 // What is asked of an outside agent, and what comes back: whether it
 // could be asked, what it said, and the files it would change.
@@ -321,6 +323,62 @@ fn worked(task: Task, work: Work, ran: Ran) -> Result {
   }
 }
 
+// ---------------------------------------------------------------- which tests to run
+//
+// A large project's tests can take a quarter of an hour. After a change
+// only the tests that have to do with the changed files are run: pytest
+// is asked for the tests whose names hold the name of a changed file. If
+// that finds none, they are all run, so a change is never left untested.
+
+// A name pytest can be asked for: letters, digits and underscores only.
+fn plain_name(name: Text) -> Bool {
+  if name.is_empty() or name.length() > 60 { return false }
+  for letter in name.lower().chars() {
+    if not "abcdefghijklmnopqrstuvwxyz0123456789_".contains(letter) { return false }
+  }
+  return true
+}
+
+// The names to look for among the tests: each changed Python file's name
+// without .py, and without the test_ a test file begins with.
+fn test_names(work: Work) -> Text[] {
+  var names: Text[] = []
+  for line in work.did {
+    let file = file_name(line.words().drop(1).join(" "))
+    if file.lower().ends_with(".py") {
+      var name = file.take(file.length() - 3)
+      if name.starts_with("test_") { name = name.drop(5) }
+      if name.ends_with("_test") { name = name.take(name.length() - 5) }
+      if plain_name(name) and not names.contains(name) { names = names.append(name) }
+    }
+  }
+  return names.take(8)
+}
+
+fn test_args(names: Text[]) -> Text[] {
+  let all = ["-m", "pytest", "-q", "-x", "--no-header", "-p", "no:cacheprovider"]
+  return if names.is_empty() { all } else { all.concat(["-k", names.join(" or ")]) }
+}
+
+fn as_tested(ran: Ran, names: Text[]) -> Tested {
+  return {ran: ran, only: names.join(", ")}
+}
+
+// Narrowed and found nothing to run: then they must all be run.
+fn found_none(ran: Ran, names: Text[]) -> Bool {
+  return ran.exit_code == 5 and not names.is_empty()
+}
+
+// The report of a run, saying so when only some of the tests were run.
+fn worked_on(task: Task, work: Work, tested: Tested) -> Result {
+  let whole = worked(task, work, tested.ran)
+  if tested.only.is_empty() or tested.ran.exit_code != 0 or work.did.is_empty() { return whole }
+  return {
+    text: whole.text.replace("The tests pass.", "The tests for " + tested.only + " pass. Only those were run; say \"test\" to run them all."),
+    last: whole.last
+  }
+}
+
 fn tested(last: Last, ran: Ran) -> Result {
   let out = printed(ran)
   return {
@@ -389,14 +447,29 @@ fn outside_work(got: Proposed) -> Work {
   return {summary: "Asked " + got.agent + ". It said: " + said, did: did}
 }
 
+workflow run_all() -> Tested {
+  ran    = execute runner.run_python(["-m", "pytest", "-q", "-x", "--no-header", "-p", "no:cacheprovider"])
+  tested = as_tested(ran, [])
+  require approval
+}
+
+workflow run_tests(work: Work) -> Tested {
+  first  = execute runner.run_python(test_args(test_names(work)))
+  tested = match found_none(first, test_names(work)) {
+    case true { call run_all() }
+    case _ { as_tested(first, test_names(work)) }
+  }
+  require approval
+}
+
 workflow ask_helper(task: Task) -> Proposed {
   got = execute helper.ask_outside("", task.text) otherwise nobody()
 }
 
 workflow write_proposal(task: Task, got: Proposed) -> Result {
   saved  = execute writer.save_all(got.files)
-  ran    = execute runner.run_python(["-m", "pytest", "-q", "-x", "--no-header", "-p", "no:cacheprovider"])
-  result = worked(task, outside_work(got), ran)
+  tested = call run_tests(outside_work(got))
+  result = worked_on(task, outside_work(got), tested)
   require approval
 }
 
@@ -433,8 +506,8 @@ workflow do_it_myself(task: Task) -> Result {
     case "yes" { kept(first) }
     case _ { call second_try(again) }
   }
-  ran    = execute runner.run_python(["-m", "pytest", "-q", "-x", "--no-header", "-p", "no:cacheprovider"])
-  result = worked(task, work, ran)
+  tested = call run_tests(work)
+  result = worked_on(task, work, tested)
   require approval
 }
 
@@ -623,6 +696,31 @@ test "an outside agent that loses a function is asked again, told why" {
   expect proposal_problems({text: "x"}, nobody()) == ["nobody could be asked"]
   expect verdict_on(nobody(), ["nobody could be asked"], false) == "self"
   expect proposal_problems({text: "x"}, {ok: true, agent: "omp", said: "", files: []}) == ["it changed no file"]
+}
+
+test "only the tests that have to do with the change are asked for" {
+  work: Work = {summary: "s", did: ["write_file kosika/builtin_methods.py", "save_all tests/test_more_methods.py", "write_file KOSIKA.md", "write_file calc_test.py", "write_file my-file.py"]}
+  expect test_names(work) == ["builtin_methods", "more_methods", "calc"]
+  expect test_args(test_names(work)) == ["-m", "pytest", "-q", "-x", "--no-header", "-p", "no:cacheprovider", "-k", "builtin_methods or more_methods or calc"]
+  expect test_args([]) == ["-m", "pytest", "-q", "-x", "--no-header", "-p", "no:cacheprovider"]
+  expect test_names({summary: "s", did: []}) == []
+  expect plain_name("more_methods")
+  expect not plain_name("a or b")
+  expect not plain_name("x;y")
+  expect found_none({exit_code: 5, stdout: "", stderr: ""}, ["calc"])
+  expect not found_none({exit_code: 5, stdout: "", stderr: ""}, [])
+  expect not found_none({exit_code: 1, stdout: "", stderr: ""}, ["calc"])
+}
+
+test "a narrowed run says that it was narrowed" {
+  work: Work = {summary: "Added is_even.", did: ["write_file calc.py"]}
+  some = worked_on({text: "add is_even"}, work, {ran: {exit_code: 0, stdout: "2 passed", stderr: ""}, only: "calc"})
+  all = worked_on({text: "add is_even"}, work, {ran: {exit_code: 0, stdout: "9 passed", stderr: ""}, only: ""})
+  bad = worked_on({text: "add is_even"}, work, {ran: {exit_code: 1, stdout: "1 failed", stderr: ""}, only: "calc"})
+  expect some.text == "Added is_even.\nWrote: calc.py\nThe tests for calc pass. Only those were run; say \"test\" to run them all."
+  expect some.last.passed == true
+  expect all.text == "Added is_even.\nWrote: calc.py\nThe tests pass."
+  expect bad.text.contains("The tests failed.")
 }
 
 test "only the end of a long test run is kept" {

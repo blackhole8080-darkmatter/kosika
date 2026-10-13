@@ -3420,6 +3420,24 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   run all of Kosika's tests (about 17 minutes); the proposal was tested by
   hand with the two test files that matter. One job is one job.
 
+### The coder runs only the tests that matter
+
+- Kosika's own tests take about 17 minutes, so the coder could not be
+  used on Kosika. Written in the coder's program, in Kosika: after a
+  change, pytest is asked for the tests whose names hold the name of a
+  changed Python file (`-k "builtin_methods or more_methods"`). If that
+  finds none, they are all run, so a change is never left untested. The
+  report says when only some were run and how to run them all.
+- The whole flow on a copy of Kosika, with devin: asked, checked, the
+  three files written after approval, the narrowed tests run, 97 seconds
+  from start to finish. The test run was 23 seconds of that.
+- 15 tests in the coder's program.
+- Not claimed: tests are chosen by file name only. A change to a file
+  whose tests are named differently, and whose name appears in no test's
+  name, falls back to running everything; a change that breaks a test of
+  another name is not seen until all are run. devin again ran tests of
+  its own in its copy.
+
 ### Other local models, measured
 
 - The owner asked which models should be installed, and about DeepSeek
