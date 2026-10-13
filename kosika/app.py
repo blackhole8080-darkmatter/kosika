@@ -72,11 +72,16 @@ from .routing import Candidate, by_words, read_route, route_question
 from .runtime import run
 from .sessions import Session, SessionError, default_home, system_name
 from .sessions import unavailable as sessions_unavailable
-from .skills import SKILLS_FOLDER, load_skill_notes
+from .skills import SKILLS_FOLDER, load_skill_notes, pick_skills, skills_text
 from .starter import KINDS, StarterError, create_starter
 from .story import StoryError, build_story, read_trace
 from .swarm import SwarmApproval, run_swarm, swarm_plan_hash
-from .system_tools import bind_agent_tools, bind_outside_tools, bind_system_tools
+from .system_tools import (
+    bind_agent_tools,
+    bind_kosika_tools,
+    bind_outside_tools,
+    bind_system_tools,
+)
 from .testing import check_tests, run_tests
 
 PAGE = Path(__file__).parent / "app_assets" / "index.html"
@@ -866,6 +871,8 @@ class App:
             **bind_memory_tools(program, folder / "memory"),
             **bind_mcp_tools(program, self.mcp),
             **self._outside_tools(program, folder),
+            # The agent's own skills give `check_files` their rules.
+            **bind_kosika_tools(program, load_skill_notes(folder / SKILLS_FOLDER)),
         }
 
     def _outside_tools(self, program: Program, folder: Path) -> dict[str, Any]:
@@ -889,6 +896,15 @@ class App:
             return {}
         session = self._session_for(program, folder)
         root = session.work if session is not None else granted
+        catalog = load_skill_notes(folder / SKILLS_FOLDER)
+
+        def with_skills(text: str) -> str:
+            """What is asked, followed by the agent's skills that fit it. An
+            outside agent has not read them; they are the owner's know-how
+            for this kind of work, and it is held to their rules after."""
+
+            know_how = skills_text(pick_skills(catalog, text)) if len(catalog) else ""
+            return text + ("\n\n" + know_how if know_how else "")
 
         def choices(wanted: str) -> list[str]:
             """The outside agents to try, in order: the one named; with no
@@ -955,7 +971,7 @@ class App:
                     wanted,
                     lambda name: outside_agents.propose(
                         name,
-                        str(arguments.get("text", "")),
+                        with_skills(str(arguments.get("text", ""))),
                         root,
                         # The limit is on the folder the owner granted; the
                         # session's copy of it stands in the same place.

@@ -197,7 +197,12 @@ SHAPES: dict[str, tuple[dict[str, str], dict[str, str]]] = {
     # The engine's own reading of files a program means to write: what is
     # not valid Python or Kosika, a name never defined, a Kosika test that
     # fails. It reaches nothing, like `check`.
-    "check_files": ({"files": PLANNED_FILES}, {"problems": "Text[]"}),
+    # `text` is what was asked for: it chooses the skills whose rules the
+    # files are held to, when the host has skills for the program.
+    "check_files": (
+        {"text": "Text", "files": PLANNED_FILES},
+        {"problems": "Text[]"},
+    ),
     # How near two texts are in meaning, from -1 to 1. It reaches nothing
     # but the embedding model the runner granted.
     "near": ({"a": "Text", "b": "Text"}, {"score": "Number"}),
@@ -388,41 +393,71 @@ def check_source(_tool: ToolDecl, arguments: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def check_files(_tool: ToolDecl, arguments: dict[str, Any]) -> dict[str, Any]:
-    """What the engine finds wrong with files a program means to write.
+def files_checker(
+    skills: Any = None,
+) -> Callable[[ToolDecl, dict[str, Any]], dict[str, Any]]:
+    """What a `check_files` tool does: say what is wrong with files a
+    program means to write.
 
-    The same reading a planning agent's plan is given: Python that is not
-    valid, or uses a name it never defines, or imports what another of the
-    files does not have; Kosika that does not check, or whose tests fail.
-    Nothing on the machine is read or changed: each file's `before` is all
-    that is known of the files as they are.
+    It is the reading a planning agent's plan is given before approval. A
+    file that would be empty, or only repeats the request. Python that is
+    not valid, uses a name it never defines, or imports what another of
+    the files does not have. Kosika that does not check, or whose tests
+    fail. And, when the host has `skills` for the program, the rules of
+    the skills that fit what was asked: a stylesheet that must mention
+    `prefers-reduced-motion`, say. Nothing on the machine is read or
+    changed: each file's `before` is all that is known of the files as
+    they are.
     """
 
-    from .code_checks import plan_code_problems
+    def check(_tool: ToolDecl, arguments: dict[str, Any]) -> dict[str, Any]:
+        from .skills import pick_skills, plan_problems
 
-    planned = [item for item in arguments["files"] if isinstance(item, dict)]
-    now = {
-        str(item.get("path", "")).replace("\\", "/").removeprefix("./"): str(
-            item.get("before", "")
+        request = str(arguments.get("text", ""))
+        planned = [item for item in arguments["files"] if isinstance(item, dict)]
+        now = {
+            str(item.get("path", "")).replace("\\", "/").removeprefix("./"): str(
+                item.get("before", "")
+            )
+            for item in planned
+            if item.get("exists") is True
+        }
+        picked = (
+            pick_skills(skills, request) if skills is not None and len(skills) else None
         )
-        for item in planned
-        if item.get("exists") is True
-    }
-    return {
-        "problems": plan_code_problems(
-            {str(item.get("path", "")): str(item.get("text", "")) for item in planned},
-            now.get,
-        )
-    }
+        return {
+            "problems": plan_problems(
+                picked,
+                request,
+                [
+                    (
+                        "write",
+                        {
+                            "path": str(item.get("path", "")),
+                            "text": str(item.get("text", "")),
+                        },
+                    )
+                    for item in planned
+                ],
+                now.get,
+            )
+        }
+
+    return check
 
 
 def bind_kosika_tools(
     program: Program,
+    skills: Any = None,
 ) -> dict[str, Callable[[ToolDecl, dict[str, Any]], Any]]:
-    """Bind the program's `kosika` tools. They need no grant; see check_source."""
+    """Bind the program's `kosika` tools. They need no grant; see
+    check_source. `skills` are the host's skills for the program, whose
+    rules `check_files` then holds files to."""
 
     return {
-        tool.name: check_files if tool.operation == "check_files" else check_source
+        tool.name: files_checker(skills)
+        if tool.operation == "check_files"
+        else check_source
         for tool in program.tools
         if system_kind(tool) == "kosika"
     }

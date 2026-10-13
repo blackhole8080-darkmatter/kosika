@@ -3491,6 +3491,44 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   programs with workflows, agents and tools; the guide does not teach
   those yet.
 
+### Skills reach the outside agent, and a skill for motion
+
+- The owner proposed a skill that explains motion on a web page, scroll
+  and cursor effects, for the coder to use on a portfolio. A skill until
+  now reached only the coder's own local model; the outside agents, which
+  do the writing, never saw one.
+- Now the skills that fit a task are added to what the outside agent is
+  asked, and its work is held to their checks afterwards: `check_files`
+  takes what was asked for, picks the skills, and reports a file that
+  breaks a rule. Tested end to end with a stand-in: a stylesheet that
+  ignored a skill's rule was sent back with the rule quoted, before any
+  person was asked.
+- Two draft skills beside the coder, `motion.md` for stylesheets and
+  `motion-script.md` for scripts: what moves on scroll, what follows the
+  cursor, what keeps it smooth, what keeps it kind. Their checks: both
+  files must speak of `prefers-reduced-motion`, the stylesheet of
+  `transition`, the script of `IntersectionObserver`. They are picked by
+  words of motion, not by "website", so a task that asks for no motion is
+  not held to them. The words are a draft for the owner to change.
+- Tried in a scratch folder. First the coder was asked for a portfolio
+  site with nothing there: omp wrote three files, about 400 lines, shown
+  as one list, in 3.5 minutes. Then, with the motion skills picked, it was
+  asked to add scroll and cursor motion: 6 minutes. Looked at afterwards:
+  every section and its text still there, no error on load, 16 elements
+  set to rise into view, a reading bar and a cursor glow, motion switched
+  off for people who ask for less, cursor effects only for a real pointer.
+- A fault found by the first of those runs: when an outside agent's
+  scratch copy could not be deleted at once, the run failed and its work
+  was lost. Deleting it is now allowed to fail.
+- Said plainly to the owner, who had taken the page for Kosika's own work:
+  omp wrote it. The coder ran the job: handed it over in a copy, took back
+  the files, checked them, asked before writing.
+- Not claimed: whether the motion is tasteful, which a picture cannot
+  show and only the owner can judge. Kosika checks nothing about HTML, CSS
+  or JavaScript beyond a skill's `contains` rules; a page that loads is
+  not a page that is right. The phone layout looked cut off in a capture
+  and was not settled.
+
 ### Other local models, measured
 
 - The owner asked which models should be installed, and about DeepSeek

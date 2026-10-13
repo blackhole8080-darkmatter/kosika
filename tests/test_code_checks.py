@@ -225,12 +225,12 @@ class KosikaTests(unittest.TestCase):
 
         source = (
             "record Planned { path: Text text: Text before: Text exists: Bool }\n"
-            "record Batch { files: Planned[] }\n"
+            "record Batch { text: Text files: Planned[] }\n"
             "record Engine { problems: Text[] }\n"
             'tool code_check {\n  source system "kosika"\n  operation: "check_files"\n'
             "  access: observe\n  input: Batch\n  output: Engine\n}\n"
             "agent helper {\n  can: [code_check]\n  max_steps: 1\n}\n"
-            "workflow main(batch: Batch) -> Engine {\n  found = execute helper.code_check(batch.files)\n}\n"
+            "workflow main(batch: Batch) -> Engine {\n  found = execute helper.code_check(batch.text, batch.files)\n}\n"
         )
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "main.kos"
@@ -249,7 +249,7 @@ class KosikaTests(unittest.TestCase):
                 program,
                 "main",
                 None,
-                inputs={"batch": {"files": files}},
+                inputs={"batch": {"text": "write them", "files": files}},
                 tool_bindings=bind_system_tools(program, folder=None),
             )
         self.assertEqual(len(result["problems"]), 2)

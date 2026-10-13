@@ -902,7 +902,7 @@ tool run_tests {
 | `system "files"` | `write_all` | `{files: R[], note: Text}` | `{count: Number}` |
 | `system "outside"` | `propose` | `{agent: Text, text: Text}` | `{ok: Bool, agent: Text, said: Text, files: R[]}` |
 | `system "outside"` | `review` | `{agent: Text, text: Text, files: R[]}` | `{ok: Bool, agent: Text, said: Text}` |
-| `system "kosika"` | `check_files` | `{files: R[]}` | `{problems: Text[]}` |
+| `system "kosika"` | `check_files` | `{text: Text, files: R[]}` | `{problems: Text[]}` |
 
 - A system tool MUST declare `access: execute`, and its records MUST have
   exactly the fields above (`check/invalid-system-tool`). A workflow that
@@ -987,6 +987,12 @@ tool run_tests {
   so one may import another; a file that imports one not among `files` is
   not judged. It reaches nothing, needs no grant, and MAY be `access:
   observe`. The same reading is given to an agent's plan before approval.
+  `text` is what was asked for. A host that has skills for the program
+  selects those whose trigger words occur in `text` and also reports each
+  file that breaks one of their checks.
+- When a host has skills for a program, the skills whose trigger words
+  occur in the `text` of a `propose` call are added, as words, to what the
+  outside agent is asked.
 - File paths are relative to the granted folder. A path that is absolute,
   contains `..`, or passes through a symlink is refused. Files are UTF-8 text
   of at most 1 MiB.

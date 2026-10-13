@@ -73,7 +73,8 @@ record Handover { agent: Text text: Text }
 record Proposed { ok: Bool agent: Text said: Text files: Planned[] }
 // The files to write, and a note for the person who is asked.
 record Batch { files: Planned[] note: Text }
-record Batchless { files: Planned[] }
+// What the engine is asked to read: what was asked for, and the files.
+record Reading { text: Text files: Planned[] }
 // A change handed to a reviewer, and what the reviewer said.
 record Reviewing { agent: Text text: Text files: Planned[] }
 record Reviewed { ok: Bool agent: Text said: Text }
@@ -167,12 +168,13 @@ tool ask_review {
 
 // Kosika's own reading of files about to be written: Python that is not
 // valid or uses a name it never defines; Kosika that does not check or
-// whose tests fail. It reaches nothing, so asking needs no approval.
+// whose tests fail; and the rules of the skills that fit the task. It
+// reaches nothing, so asking needs no approval.
 tool code_check {
   source system "kosika"
   operation: "check_files"
   access: observe
-  input: Batchless
+  input: Reading
   output: Engine
 }
 
@@ -527,7 +529,7 @@ fn all_faults(task: Task, got: Proposed, engine: Engine) -> Faults {
 }
 
 workflow judge(task: Task, got: Proposed) -> Faults {
-  engine = execute helper.code_check(got.files) otherwise {problems: []}
+  engine = execute helper.code_check(task.text, got.files) otherwise {problems: []}
   faults = all_faults(task, got, engine)
 }
 

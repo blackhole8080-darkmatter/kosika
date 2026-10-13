@@ -534,3 +534,62 @@ class KosikaNotesTests(unittest.TestCase):
         )
         self.assertIn("# Writing Kosika", by_file)
         self.assertIn("# Writing Kosika", by_word)
+
+
+class SkillTests(CoderTests):
+    """The owner's skills go to the outside agent, and it is held to them."""
+
+    test_its_work_is_shown_as_one_list_and_nothing_changes_before_a_yes = None  # type: ignore[assignment]
+    test_a_no_leaves_the_folder_as_it_was = None  # type: ignore[assignment]
+    test_outside_the_named_root_it_is_never_started = None  # type: ignore[assignment]
+    test_with_none_allowed_it_is_never_started = None  # type: ignore[assignment]
+
+    SKILL = (
+        "# How a page is styled\n"
+        "When: page, website\n"
+        "Files: *.css\n"
+        'Check: contains "prefers-reduced-motion"\n'
+        "\n"
+        "Respect people who have turned motion off.\n"
+    )
+
+    def runner(self, command: list[str], copy: Path) -> tuple[int, str]:
+        self.started.append(command[0])
+        self.asked.append(command[-1])
+        kind = "@media (prefers-reduced-motion: reduce) { * { transition: none; } }\n"
+        css = "body { transition: color 1s; }\n" + (kind if len(self.asked) > 1 else "")
+        (copy / "style.css").write_text(css, encoding="utf-8")
+        return 0, "Wrote the stylesheet."
+
+    def test_a_skill_reaches_the_agent_and_its_rule_sends_poor_work_back(self) -> None:
+        self.asked: list[str] = []
+        app = self.make(self.work)
+        skills = app.root / "coder" / "skills"
+        (skills / "web.md").write_text(self.SKILL, encoding="utf-8")
+        job = app.start(
+            "coder/main.kos", {"text": "make a page look good with style.css"}
+        )
+        asked = self.until(app, job.id, "waiting", "done", "failed")
+        self.assertEqual(asked["state"], "waiting", asked)
+        # The skill's own words were part of what the agent was asked.
+        self.assertIn("Respect people who have turned motion off.", self.asked[0])
+        self.assertIn("How a page is styled", self.asked[0])
+        # Its first stylesheet broke the skill's rule, so it was asked again
+        # and told which rule, before any person was asked anything.
+        self.assertEqual(len(self.asked), 2)
+        self.assertIn(
+            "style.css: it must contain 'prefers-reduced-motion'", self.asked[1]
+        )
+        written = asked["request"]["arguments"]["files"]
+        self.assertEqual([f["path"] for f in written], ["style.css"])
+        self.assertIn("prefers-reduced-motion", written[0]["text"])
+
+    def test_a_task_the_skill_does_not_fit_is_asked_without_it(self) -> None:
+        self.asked = []
+        app = self.make(self.work)
+        (app.root / "coder" / "skills" / "web.md").write_text(
+            self.SKILL, encoding="utf-8"
+        )
+        job = app.start("coder/main.kos", {"text": "tidy style.css"})
+        self.until(app, job.id, "waiting", "done", "failed")
+        self.assertNotIn("Respect people who have turned motion off.", self.asked[0])
