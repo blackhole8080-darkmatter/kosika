@@ -1879,6 +1879,25 @@ def build_parser() -> argparse.ArgumentParser:
             "assistant as a small pill that stays on the screen."
         ),
     )
+    outside_parser = subparsers.add_parser(
+        "outside",
+        help=(
+            "Say which outside command-line agents (devin, omp) Kosika's agents "
+            "may ask for help, and the one folder they may be shown."
+        ),
+    )
+    outside_parser.add_argument(
+        "--allow", nargs="+", metavar="NAME", help="The agents that may be asked."
+    )
+    outside_parser.add_argument(
+        "--within",
+        type=Path,
+        metavar="FOLDER",
+        help="They are shown only granted folders inside this one.",
+    )
+    outside_parser.add_argument(
+        "--off", action="store_true", help="Allow none. This is how it starts."
+    )
     pill_parser = subparsers.add_parser(
         "pill",
         help=(
@@ -2065,6 +2084,14 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _outside_settings() -> tuple[tuple[str, ...], Path | None]:
+    """The outside agents the owner allowed, and the root they may see."""
+
+    from .outside import load_settings
+
+    return load_settings()
+
+
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
@@ -2083,6 +2110,33 @@ def main() -> int:
             start_arguments.append("--until-closed")
         # From here it is an ordinary `kosika studio` with those choices.
         args = parser.parse_args(start_arguments)
+    if args.command == "outside":
+        from . import outside as outside_agents
+
+        try:
+            if args.off:
+                outside_agents.save_settings((), None)
+            elif args.allow:
+                outside_agents.save_settings(args.allow, args.within)
+        except outside_agents.OutsideError as exc:
+            print(f"Not done: {exc}", file=sys.stderr)
+            return 2
+        allowed, within = outside_agents.load_settings()
+        installed = outside_agents.installed()
+        print(
+            "Outside agents Kosika knows how to ask: "
+            + ", ".join(outside_agents.COMMANDS)
+        )
+        print("Installed here: " + (", ".join(installed) or "none"))
+        if allowed:
+            print("Allowed: " + ", ".join(allowed))
+            print(f"They are shown only folders inside: {within}")
+            print("What they read is sent to the company that runs each of them.")
+            print("They work in a copy; nothing changes until you approve it.")
+        else:
+            print("Allowed: none. No outside agent is ever asked.")
+            print("To allow some: kosika outside --allow devin omp --within FOLDER")
+        return 0
     if args.command == "pill":
         from .pill import main as pill_main
 
@@ -2732,6 +2786,8 @@ def main() -> int:
             meaning=_meaning(args),
             embed_label=args.embed_model or "",
             in_session=args.in_session,
+            outside=_outside_settings()[0],
+            outside_within=_outside_settings()[1],
         )
         try:
             server = make_server(studio, args.port)

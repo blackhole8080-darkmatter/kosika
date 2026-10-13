@@ -899,6 +899,8 @@ tool run_tests {
 | `system "files"` | `find` | `{path: Text, query: Text}` | `{matches: Text[]}` |
 | `system "meaning"` | `near` | `{a: Text, b: Text}` | `{score: Number}` |
 | `system "agents"` | `ask` | `{agent: Text, text: Text}` | `{ok: Bool, agent: Text, text: Text}` |
+| `system "files"` | `write_all` | `{files: R[]}` | `{count: Number}` |
+| `system "outside"` | `propose` | `{agent: Text, text: Text}` | `{ok: Bool, agent: Text, said: Text, files: R[]}` |
 
 - A system tool MUST declare `access: execute`, and its records MUST have
   exactly the fields above (`check/invalid-system-tool`). A workflow that
@@ -941,6 +943,28 @@ tool run_tests {
   bound only by a host that has a folder of agents (Studio and the Kosi
   pill); elsewhere it is unreachable like any ungranted tool. The time
   the other agent takes counts against the asking run's own deadline.
+- In the two rows above that have `R[]`, R is any record of the program
+  with exactly the fields `{path: Text, text: Text, before: Text, exists:
+  Bool}`: a file by its path, its whole new text, the file as it is now,
+  and whether it is there now.
+- A `system "files"` tool with operation `write_all` writes every file of
+  `files` to its `path` with its `text`, in order, and gives the number
+  written. Every path is checked before any file is written, so a list
+  with a path that is refused writes nothing. It MUST be `access:
+  execute`: one approval covers exactly that list.
+- A `system "outside"` tool with operation `propose` asks an outside
+  command-line agent installed on the machine to do `text` in a copy of
+  the granted folder, and gives back what it said and the files it changed
+  or added there. The granted folder is not touched, so the tool MAY be
+  `access: observe`; writing the files is a separate step. `agent` names
+  the outside agent; an empty `agent` takes the first one allowed and
+  installed. `ok` is `false`, with the reason in `said`, when none could
+  be asked. A file it deleted, a file that is not text, and a file over
+  1 MiB are not offered and are named in `said`. The host binds this tool
+  only for the outside agents its owner allowed, and only when the granted
+  folder is inside the one root the owner named for them; otherwise it is
+  unreachable like any ungranted tool. What an outside agent reads leaves
+  the machine.
 - File paths are relative to the granted folder. A path that is absolute,
   contains `..`, or passes through a symlink is refused. Files are UTF-8 text
   of at most 1 MiB.

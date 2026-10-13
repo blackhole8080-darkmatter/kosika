@@ -139,6 +139,23 @@ what it wants to do with Allow and No. It only ever sees the one key
 combination, and it does not start with Windows unless you set that up
 yourself.
 
+## A stronger helper for the coder
+
+If you have another AI agent installed that runs from the command line
+(Kosika knows devin and omp), the coder can ask it first:
+
+```
+kosika outside --allow devin omp --within MY_PROJECTS
+```
+
+It is off until you do this. The outside agent works in a copy of the
+folder you granted and can only edit files there. What it would change
+comes back to the coder, is checked, and is shown to you as one list to
+allow or refuse. Two things to know: what it reads is sent to the company
+that runs it, and it is shown only folders inside the one you name after
+`--within`. `kosika outside` shows the setting and `kosika outside --off`
+turns it off.
+
 ## 7. Let an agent see a folder
 
 Agents can touch nothing until you grant it. In Studio, open

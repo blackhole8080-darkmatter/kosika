@@ -3359,6 +3359,41 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   library in `.kos`; Kosika's lexer in Kosika; its parser and checker in
   Kosika; an engine that is not Python.
 
+### The coder asks an outside agent first
+
+- Two more pieces of language, so that this could be written in the
+  coder's own program and not in the engine: a `system "outside"` tool
+  (`propose`), and a `system "files"` operation `write_all` that writes
+  several files with one approval. A workflow cannot repeat a tool call
+  over a list, which is why the second was needed.
+- The coder's program, in Kosika: ask the outside agent; run the same
+  `plan_check` on what it proposes; if something is wrong, ask it once
+  more with what was wrong; if that fails too, or nobody can be asked, do
+  the task with the local model as before. A proposal that passes is
+  written with `write_all` after one approval, and the tests are run.
+- The owner's limit is a setting, not a habit: `kosika outside --allow
+  NAMES --within FOLDER`, kept in `outside.json` beside the app's other
+  files. Off until set. The tool is bound only for allowed agents and only
+  when the granted folder is inside that root. Studio and the pill read
+  the setting when they start.
+- Measured on the same six tasks, scored strictly, with devin: 6 of 6 in
+  745 seconds (2 of 6 in 2044 s with the local model and no checks; 5 of 6
+  in 3152 s with checks). Five tasks took 25 to 48 seconds.
+- The sixth showed a fault in the check. On "rename double to twice" it
+  refused devin's correct work twice, because the test `test_double` was
+  renamed too and counted as lost; the coder fell back to the local model
+  and finished in 568 s. The check now lets the test of a renamed or
+  removed function go with it. Rerun: 30 seconds.
+- 16 tests in `tests/test_outside.py`, four of them the coder end to end
+  with a stand-in for the outside agent; 13 tests in the coder's program.
+- Not claimed: what an outside agent proposes is not put through the
+  engine's Python checks (valid Python, undefined names), only through
+  the coder's own check and then the real tests. Six tasks is a small
+  sample and all are toy-sized. The outside agents were told not to run
+  programs but are trusted to obey; they are started with edit-only
+  permission, which is their own setting, not Kosika's. No real project
+  of the owner's has been given to one yet.
+
 ## Standard coding-agent procedure
 
 1. Inspect `git status`, the relevant source files, tests, and this plan.

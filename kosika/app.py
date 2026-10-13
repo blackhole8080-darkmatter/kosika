@@ -76,7 +76,7 @@ from .skills import SKILLS_FOLDER, load_skill_notes
 from .starter import KINDS, StarterError, create_starter
 from .story import StoryError, build_story, read_trace
 from .swarm import SwarmApproval, run_swarm, swarm_plan_hash
-from .system_tools import bind_agent_tools, bind_system_tools
+from .system_tools import bind_agent_tools, bind_outside_tools, bind_system_tools
 from .testing import check_tests, run_tests
 
 PAGE = Path(__file__).parent / "app_assets" / "index.html"
@@ -560,7 +560,13 @@ class App:
         in_session: bool = False,
         session_home: Path | None = None,
         pick_folder: Callable[[], str] | None = None,
+        outside: Sequence[str] = (),
+        outside_within: Path | None = None,
     ):
+        # Outside command-line agents the owner allowed, and the one root
+        # they may be shown. With either missing, none is ever asked.
+        self.outside = tuple(outside)
+        self.outside_within = outside_within
         # How a person picks a folder: the computer's own folder window.
         # A test hands in its own.
         self._pick_folder = pick_folder or native_folder_window
@@ -760,6 +766,7 @@ class App:
             "allow_folder": str(self.allow_folder) if self.allow_folder else "",
             "sites": list(self.sites),
             "shell": self.allow_shell,
+            "outside": list(self.outside) if self.outside_within else [],
             "embed": self.embed_label,
             "sessions": self.in_session,
             "mcp": self.mcp.names if self.mcp else [],
@@ -858,7 +865,74 @@ class App:
             ),
             **bind_memory_tools(program, folder / "memory"),
             **bind_mcp_tools(program, self.mcp),
+            **self._outside_tools(program, folder),
         }
+
+    def _outside_tools(self, program: Program, folder: Path) -> dict[str, Any]:
+        """The program's way of asking an outside agent, when the owner has
+        allowed one and the granted folder is inside the root named for
+        them. Otherwise the tool stays unreachable, like any ungranted one.
+
+        The outside agent works in a copy of the folder the agent's own
+        file tools use, so what it proposes fits what they would write.
+        """
+
+        from . import outside as outside_agents
+
+        granted, within = self.allow_folder, self.outside_within
+        if (
+            not self.outside
+            or granted is None
+            or within is None
+            or not outside_agents.inside(granted, within)
+        ):
+            return {}
+        session = self._session_for(program, folder)
+        root = session.work if session is not None else granted
+
+        def ask(_tool: Any, arguments: dict[str, Any]) -> dict[str, Any]:
+            wanted = str(arguments.get("agent", "")).strip().lower()
+            ready = outside_agents.installed(self.outside)
+            name = wanted or (ready[0] if ready else "")
+            try:
+                if not name:
+                    raise outside_agents.OutsideError(
+                        "None of the outside agents allowed here is installed."
+                    )
+                found = outside_agents.propose(
+                    name,
+                    str(arguments.get("text", "")),
+                    root,
+                    # The limit is on the folder the owner granted; the
+                    # session's copy of it stands in the same place.
+                    within=root,
+                    allowed=self.outside,
+                    runner=self._outside_runner,
+                )
+            except outside_agents.OutsideError as exc:
+                return {"ok": False, "agent": name, "said": str(exc), "files": []}
+            said = found.said
+            if found.left_out:
+                said += "\nNot offered: " + "; ".join(found.left_out) + "."
+            return {
+                "ok": True,
+                "agent": found.agent,
+                "said": said,
+                "files": [
+                    {
+                        "path": change.path,
+                        "text": change.text,
+                        "before": change.before,
+                        "exists": change.existed,
+                    }
+                    for change in found.changes
+                ],
+            }
+
+        return bind_outside_tools(program, ask)
+
+    #: How an outside agent is started; a test puts its own here.
+    _outside_runner: Any = None
 
     @staticmethod
     def _session_key(folder: Path) -> str:

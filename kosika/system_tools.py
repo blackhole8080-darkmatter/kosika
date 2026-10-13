@@ -40,6 +40,26 @@ It is bound only by a host that has a folder of agents, such as Studio. An
 empty `agent` lets the host choose; an agent cannot hand to itself, and an
 agent that was handed a request cannot hand it on.
 
+A sixth kind, `source system "outside"` with `operation: "propose"`, asks
+an outside command-line agent the owner has installed and allowed, such as
+devin or omp, to do something to the granted folder:
+
+    tool ask_outside {
+      source system "outside"
+      operation: "propose"
+      access: observe
+      input: Handover              // {agent: Text, text: Text}
+      output: Proposed             // {ok: Bool, agent: Text, said: Text, files: Planned[]}
+    }
+
+It may be `observe` because it changes nothing: the outside agent works in
+a copy of the folder, and what it changed there comes back as `files`,
+each `{path, text, before, exists}`. Writing them is a separate step that
+needs approval, usually one `system "files"` tool of operation `write_all`.
+What the outside agent reads is sent to the company that runs it, so the
+host binds this tool only for agents the owner allowed and only when the
+granted folder is inside the one root the owner named; see kosika.outside.
+
 For the other kinds, three independent things must all be true before
 anything happens:
 
@@ -71,18 +91,30 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Iterator, Sequence
 
-from .ast import Program, ToolDecl
+from .ast import PLAN_FILE_FIELDS, Program, ToolDecl
 from .embeddings import EmbeddingError, Meaning
 from .sessions import Session, SessionError
 from .web import WebError, bind_web_tool
 
 SYSTEM_PREFIX = "system:"
-SYSTEM_KINDS = ("shell", "files", "web", "kosika", "meaning", "agents")
+SYSTEM_KINDS = ("shell", "files", "web", "kosika", "meaning", "agents", "outside")
 #: The largest program text the `kosika` tool will look at.
 MAX_CHECKED_SOURCE = 64 * 1024
 #: How many of a checked program's tests are run.
 MAX_CHECKED_TESTS = 30
-FILE_OPERATIONS = ("read", "peek", "search", "find", "write", "create", "list")
+FILE_OPERATIONS = (
+    "read",
+    "peek",
+    "search",
+    "find",
+    "write",
+    "create",
+    "write_all",
+    "list",
+)
+#: In a shape, an array of records that each have exactly the fields of a
+#: planned file: {path, text, before, exists}.
+PLANNED_FILES = "<planned files>"
 READ_ONLY_OPERATIONS = ("read", "peek", "search", "find", "list")
 #: Limits on one search of a folder, so it always comes back.
 MAX_SEARCH_MATCHES = 40
@@ -136,6 +168,16 @@ SHAPES: dict[str, tuple[dict[str, str], dict[str, str]]] = {
     # Like write, but refuses when anything is already at that path, so it
     # can add to a folder and never destroy what is there.
     "create": ({"path": "Text", "text": "Text"}, {"bytes": "Number"}),
+    # Write several whole files in one step, so one approval covers exactly
+    # that list. Each is given as a planned file; only its path and text
+    # are used. If one cannot be written, the ones after it are not.
+    "write_all": ({"files": PLANNED_FILES}, {"count": "Number"}),
+    # An outside agent's answer: what it said, and the files it would
+    # change, worked out in a copy. See kosika.outside.
+    "propose": (
+        {"agent": "Text", "text": "Text"},
+        {"ok": "Bool", "agent": "Text", "said": "Text", "files": PLANNED_FILES},
+    ),
     "list": ({"path": "Text"}, {"names": "Text[]"}),
     # A Kosika program, given as text, is checked and its own tests are run.
     # `problem` is empty when it checks and every test passes; otherwise it
@@ -171,6 +213,27 @@ def system_kind(tool: ToolDecl) -> str | None:
     return tool.source[len(SYSTEM_PREFIX) :]
 
 
+def _fits(
+    records: dict[str, dict[str, str]],
+    actual: dict[str, str] | None,
+    wanted: dict[str, str],
+) -> bool:
+    """Whether a record has exactly the wanted fields. A wanted type of
+    PLANNED_FILES is met by an array of any record that has exactly the
+    fields of a planned file, whatever the program calls it."""
+
+    if actual is None or set(actual) != set(wanted):
+        return False
+    for name, kind in wanted.items():
+        have = actual[name]
+        if kind != PLANNED_FILES:
+            if have != kind:
+                return False
+        elif not have.endswith("[]") or records.get(have[:-2]) != PLAN_FILE_FIELDS:
+            return False
+    return True
+
+
 def declaration_problem(program: Program, tool: ToolDecl) -> str | None:
     """Why a system tool's declaration is unacceptable, if it is."""
 
@@ -191,7 +254,13 @@ def declaration_problem(program: Program, tool: ToolDecl) -> str | None:
         or kind == "kosika"
         or kind == "meaning"
         or kind == "agents"
+        or kind == "outside"
     )
+    if kind == "outside" and tool.operation != "propose":
+        return (
+            f"Tool {tool.name!r} has unknown outside operation {tool.operation!r}; "
+            "the only one is propose"
+        )
     if kind == "agents" and tool.operation != "ask":
         return (
             f"Tool {tool.name!r} has unknown agents operation {tool.operation!r}; "
@@ -230,6 +299,7 @@ def declaration_problem(program: Program, tool: ToolDecl) -> str | None:
             "with its arguments passed in args"
         )
     wanted_input, wanted_output = SHAPES["shell" if kind == "shell" else tool.operation]
+    planned = ", ".join(f"{name}: {kind_}" for name, kind_ in PLAN_FILE_FIELDS.items())
     records = {
         record.name: {field.name: field.type_name for field in record.fields}
         for record in program.records
@@ -238,8 +308,11 @@ def declaration_problem(program: Program, tool: ToolDecl) -> str | None:
         ("input", tool.input, wanted_input),
         ("output", tool.output, wanted_output),
     ):
-        if records.get(record_name or "") != wanted:
-            shape = ", ".join(f"{name}: {kind_}" for name, kind_ in wanted.items())
+        if not _fits(records, records.get(record_name or ""), wanted):
+            shape = ", ".join(
+                f"{name}: {'R[], where R is a record {' + planned + '}' if kind_ == PLANNED_FILES else kind_}"
+                for name, kind_ in wanted.items()
+            )
             return (
                 f"Tool {tool.name!r} {label} record must have exactly the "
                 f"fields {{{shape}}}"
@@ -322,6 +395,15 @@ def bind_agent_tools(
     another agent. Only a host with a folder of agents can offer one."""
 
     return {tool.name: ask for tool in program.tools if system_kind(tool) == "agents"}
+
+
+def bind_outside_tools(
+    program: Program, ask: Callable[[ToolDecl, dict[str, Any]], Any]
+) -> dict[str, Callable[[ToolDecl, dict[str, Any]], Any]]:
+    """Bind the program's `outside` tools to the host's way of asking an
+    outside agent. A host binds them only when the owner has allowed one."""
+
+    return {tool.name: ask for tool in program.tools if system_kind(tool) == "outside"}
 
 
 def _inside(folder: Path, relative: str) -> Path:
@@ -577,6 +659,24 @@ def _files(
             ) from exc
         return {"bytes": len(data)}
 
+    def write_all(_tool: ToolDecl, arguments: dict[str, Any]) -> dict[str, Any]:
+        files = arguments["files"]
+        # Every path is looked at before any file is written, so a list
+        # with one bad path writes nothing.
+        ready = []
+        for item in files:
+            data = item["text"].encode("utf-8")
+            if len(data) > MAX_FILE_BYTES:
+                raise SystemToolError(f"{item['path']!r} would be larger than 1 MiB")
+            path = _inside(folder, item["path"])
+            if path.is_dir():
+                raise SystemToolError(f"{item['path']!r} is a folder")
+            ready.append((path, data))
+        for path, data in ready:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+        return {"count": len(ready)}
+
     def list_names(_tool: ToolDecl, arguments: dict[str, Any]) -> dict[str, Any]:
         path = (
             folder
@@ -599,6 +699,7 @@ def _files(
         "find": find,
         "write": write,
         "create": create,
+        "write_all": write_all,
         "list": list_names,
     }[tool.operation]
 

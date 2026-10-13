@@ -376,6 +376,14 @@ function askLines(request) {
     return steps.join("\n\n") + warned + "\n\nOne yes covers exactly these, with exactly these details. If one fails, the ones after it do not happen." + (request.walled ? "\nThey happen in the session's copy, not in your folder." : "");
   }
   const given = request.arguments || {};
+  if (request.kind === "system:files" && request.operation === "write_all" && Array.isArray(given.files)) {
+    // Several whole files in one step: each with whether it is new, and
+    // how its length changes, then the new text of each.
+    const count = text => text ? text.split("\n").length - (text.endsWith("\n") ? 1 : 0) : 0;
+    const head = given.files.map((file, at) => (at + 1) + ". " + file.path + (file.exists ? ": " + count(file.before) + " lines become " + count(file.text) : ": new, " + count(file.text) + " lines"));
+    const body = given.files.map(file => "----- " + file.path + " -----\n" + file.text);
+    return head.join("\n") + "\n\nOne yes writes exactly these files, with exactly this text.\n\n" + body.join("\n\n");
+  }
   if (isProgram(request)) {
     const words = (given.args || []).map(word => /[\s"]/.test(word) || word === "" ? JSON.stringify(word) : word);
     return [request.operation, ...words].join(" ") + "\n\nIt runs inside the granted folder and is stopped after 60 seconds.";

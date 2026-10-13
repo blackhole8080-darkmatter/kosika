@@ -24,6 +24,8 @@ nothing is downloaded.
 
 from __future__ import annotations
 
+import json
+import os
 import shutil
 import subprocess
 import sys
@@ -87,6 +89,67 @@ RULES = (
     "tests or installers. Change only what the task needs, and keep "
     "everything else in each file as it is."
 )
+
+
+def settings_path() -> Path:
+    """Where the owner's choice is kept: which outside agents may be asked,
+    and the one root they may be shown."""
+
+    base = os.environ.get("LOCALAPPDATA") or str(Path.home() / ".local" / "share")
+    return Path(base) / "kosika" / "outside.json"
+
+
+def load_settings(path: Path | None = None) -> tuple[tuple[str, ...], Path | None]:
+    """The agents the owner allowed and the root they may be shown. With no
+    choice made, or one that cannot be read, nobody is allowed."""
+
+    try:
+        kept = json.loads((path or settings_path()).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return (), None
+    if not isinstance(kept, dict):
+        return (), None
+    names = kept.get("agents")
+    within = kept.get("within")
+    agents = (
+        tuple(name for name in names if isinstance(name, str) and name in COMMANDS)
+        if isinstance(names, list)
+        else ()
+    )
+    root = Path(within) if isinstance(within, str) and within.strip() else None
+    if not agents or root is None or not root.is_dir():
+        return (), None
+    return agents, root
+
+
+def save_settings(
+    agents: Sequence[str], within: Path | None, path: Path | None = None
+) -> Path:
+    """Keep the owner's choice. An empty list, or no root, allows nobody."""
+
+    unknown = [name for name in agents if name not in COMMANDS]
+    if unknown:
+        raise OutsideError(
+            f"{unknown[0]!r} is not an outside agent Kosika knows how to ask. "
+            f"It knows: {', '.join(COMMANDS)}."
+        )
+    if agents and (within is None or not within.is_dir()):
+        raise OutsideError(
+            "Name the one folder outside agents may be shown, with --within FOLDER."
+        )
+    target = path or settings_path()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        json.dumps(
+            {
+                "agents": list(agents),
+                "within": str(within.resolve()) if within and agents else "",
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    return target
 
 
 class OutsideError(ValueError):

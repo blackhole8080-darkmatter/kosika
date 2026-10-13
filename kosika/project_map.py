@@ -43,6 +43,7 @@ _FILE_WORDS = {
     "find": "searches the folder by meaning",
     "write": "writes a file",
     "create": "creates a new file, never over an old one",
+    "write_all": "writes several files in one step",
 }
 
 

@@ -271,6 +271,17 @@ def _action_words(action: dict[str, Any]) -> str:
             " ".join(str(a) for a in arguments) if isinstance(arguments, list) else ""
         )
         return f"start the program: {_clip(f'{operation} {words}'.strip())}"
+    if kind == "system:files" and operation == "write_all":
+        files = given.get("files")
+        files = files if isinstance(files, list) else []
+        names = [
+            f"{item.get('path', '?')}{'' if item.get('exists') else ' (new)'}"
+            for item in files[:6]
+            if isinstance(item, dict)
+        ]
+        more = f" and {len(files) - 6} more" if len(files) > 6 else ""
+        count = f"{len(files)} file{'' if len(files) == 1 else 's'}"
+        return f"write {count}: {', '.join(names)}{more}"
     if kind == "system:files" and operation in ("write", "create"):
         text = given.get("text")
         size = f"{len(text)} characters" if isinstance(text, str) else "some text"
@@ -315,7 +326,12 @@ def ask_words(request: Any) -> str:
 class Engine:
     """Runs the assistant for the pill, one request at a time."""
 
-    def __init__(self, agents: Path, bind_models: Any) -> None:
+    def __init__(
+        self,
+        agents: Path,
+        bind_models: Any,
+        outside: tuple[tuple[str, ...], Path | None] = ((), None),
+    ) -> None:
         from .app import App
 
         self.agents = agents
@@ -326,6 +342,8 @@ class Engine:
             agents,
             bind_models=bind_models or _no_model,
             pick_folder=lambda: self.pick(),
+            outside=outside[0],
+            outside_within=outside[1],
         )
         self._busy = threading.Lock()
 
@@ -1165,7 +1183,9 @@ def main(argv: list[str] | None = None) -> int:
                 return 2
             bind, model = local_binder()
             print(f"Kosi for {agents}; model: {model or 'none'}")
-            engine = Engine(agents, bind)
+            from .outside import load_settings
+
+            engine = Engine(agents, bind, load_settings())
             pill_holder: list[Pill] = []
 
             def pressed() -> None:

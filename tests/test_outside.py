@@ -165,3 +165,145 @@ class CommandTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CoderTests(unittest.TestCase):
+    """The coder asks an outside agent first, and Kosika stays in charge."""
+
+    def setUp(self) -> None:
+        import shutil
+        import time
+
+        from kosika.app import App
+        from kosika.model import ScriptedModelProvider
+
+        self.time = time
+        self._dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._dir.cleanup)
+        top = Path(self._dir.name)
+        self.mine, self.other = top / "mine", top / "other"
+        self.work = self.mine / "project"
+        self.work.mkdir(parents=True)
+        self.other.mkdir()
+        (self.work / "calc.py").write_text(CALC, encoding="utf-8")
+        coder = Path(__file__).resolve().parents[1] / "examples" / "agents" / "coder"
+        shutil.copytree(
+            coder,
+            top / "agents" / "coder",
+            ignore=shutil.ignore_patterns("memory", "runs"),
+        )
+        self.started: list[str] = []
+
+        def make(folder: Path, allowed: tuple[str, ...] = ("devin",)) -> App:
+            app = App(
+                top / "agents",
+                bind_models=lambda program: {"engineer": ScriptedModelProvider([])},
+                allow_folder=folder,
+                allow_shell=True,
+                outside=allowed,
+                outside_within=self.mine,
+            )
+            app._outside_runner = self.runner
+            self.addCleanup(app.close)
+            return app
+
+        self.make = make
+
+    def runner(self, command: list[str], copy: Path) -> tuple[int, str]:
+        self.started.append(command[0])
+        (copy / "calc.py").write_text(
+            CALC + "\n\ndef subtract(a, b):\n    return a - b\n", encoding="utf-8"
+        )
+        (copy / "test_calc.py").write_text(
+            "from calc import add, subtract\n\n\ndef test_subtract():\n    assert subtract(add(1, 2), 1) == 2\n",
+            encoding="utf-8",
+        )
+        return 0, "Added subtract and a test for it."
+
+    def until(self, app, job_id: str, *states: str):  # type: ignore[no-untyped-def]
+        deadline = self.time.monotonic() + 90
+        while self.time.monotonic() < deadline:
+            view = app.poll(job_id, 0)
+            if view["state"] in states:
+                return view
+            self.time.sleep(0.05)
+        self.fail(f"never reached {states}: {app.poll(job_id, 0)}")
+
+    def test_its_work_is_shown_as_one_list_and_nothing_changes_before_a_yes(
+        self,
+    ) -> None:
+        app = self.make(self.work)
+        job = app.start(
+            "coder/main.kos",
+            {"text": "add a function subtract(a, b) to calc.py, with a test"},
+        )
+        asked = self.until(app, job.id, "waiting", "done", "failed")
+        self.assertEqual(asked["state"], "waiting", asked)
+        self.assertEqual(self.started, ["devin"])
+        request = asked["request"]
+        self.assertEqual(
+            (request["tool"], request["operation"]), ("save_all", "write_all")
+        )
+        self.assertEqual(
+            [f["path"] for f in request["arguments"]["files"]],
+            ["calc.py", "test_calc.py"],
+        )
+        # Nothing has changed yet.
+        self.assertEqual((self.work / "calc.py").read_text(encoding="utf-8"), CALC)
+        self.assertFalse((self.work / "test_calc.py").exists())
+
+        app.decide(job.id, True)
+        # Next it asks to run the tests: a second question, of another kind.
+        deadline = self.time.monotonic() + 60
+        tests = asked
+        while (tests.get("request") or {}).get("kind") != "system:shell":
+            self.assertLess(self.time.monotonic(), deadline, tests)
+            self.time.sleep(0.05)
+            tests = app.poll(job.id, 0)
+            self.assertIn(tests["state"], ("waiting", "running"), tests)
+        self.assertIn(
+            "def subtract", (self.work / "calc.py").read_text(encoding="utf-8")
+        )
+        app.decide(job.id, True)
+        done = self.until(app, job.id, "done", "failed", "refused")
+        self.assertEqual(done["state"], "done", done)
+        self.assertTrue(
+            done["text"].startswith(
+                "Asked devin. It said: Added subtract and a test for it."
+            )
+        )
+        self.assertIn("Wrote: calc.py, test_calc.py", done["text"])
+        self.assertIn("The tests pass.", done["text"])
+
+    def test_a_no_leaves_the_folder_as_it_was(self) -> None:
+        app = self.make(self.work)
+        job = app.start(
+            "coder/main.kos", {"text": "add subtract to calc.py, with a test"}
+        )
+        self.until(app, job.id, "waiting")
+        app.decide(job.id, False)
+        self.assertEqual(
+            self.until(app, job.id, "refused", "done", "failed")["state"], "refused"
+        )
+        self.assertEqual((self.work / "calc.py").read_text(encoding="utf-8"), CALC)
+        self.assertFalse((self.work / "test_calc.py").exists())
+
+    def test_outside_the_named_root_it_is_never_started(self) -> None:
+        (self.other / "calc.py").write_text(CALC, encoding="utf-8")
+        app = self.make(self.other)
+        job = app.start(
+            "coder/main.kos", {"text": "add subtract to calc.py, with a test"}
+        )
+        self.until(app, job.id, "waiting", "done", "failed", "refused")
+        self.assertEqual(self.started, [])
+
+    def test_with_none_allowed_it_is_never_started(self) -> None:
+        app = self.make(self.work, allowed=())
+        job = app.start(
+            "coder/main.kos", {"text": "add subtract to calc.py, with a test"}
+        )
+        self.until(app, job.id, "waiting", "done", "failed", "refused")
+        self.assertEqual(self.started, [])
+        self.assertEqual(
+            app.overview()["outside"] if "outside" in app.overview() else [], []
+        )

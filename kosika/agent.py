@@ -175,6 +175,8 @@ def describe_tool(tool: ToolDecl) -> str:
             "write": "Write `text` to the file at `path`, replacing it." + asks,
             "create": "Create a new text file at `path` holding `text`. It "
             "never replaces an existing file." + asks,
+            "write_all": "Write every file in `files`, each to its `path` with "
+            "its `text`, replacing what is there." + asks,
         }.get(operation, f"File operation {operation}.")
     if source == "system:shell":
         return (

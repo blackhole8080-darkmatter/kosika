@@ -21,6 +21,15 @@
 //
 // It replaces whole files, so it suits small files. It starts only python.
 //
+// A stronger helper, if you have one. Some people have another AI agent
+// installed that runs from the command line, such as devin or omp. If you
+// have allowed one (kosika outside --allow devin --within FOLDER), the
+// coder asks it first. It works in a copy of your project and changes
+// nothing; what it would change comes back here, is checked by the same
+// plan check as the coder's own work, and is shown to you as one list to
+// allow or refuse. If none is allowed, or its work does not pass the
+// check twice, the coder does the task itself with its own model.
+//
 // Say: add a function is_even to calc.py, with a test
 
 record Msg { text: Text }
@@ -43,6 +52,13 @@ record Work { summary: Text did: Text[] }
 // The last run: the task, what the tests printed, and whether they passed.
 record Last { task: Text output: Text passed: Bool known: Bool }
 record Result { text: Text last: Last }
+
+// What is asked of an outside agent, and what comes back: whether it
+// could be asked, what it said, and the files it would change.
+record Handover { agent: Text text: Text }
+record Proposed { ok: Bool agent: Text said: Text files: Planned[] }
+record Batch { files: Planned[] }
+record Saved { count: Number }
 
 model engineer {
   input: Task
@@ -92,6 +108,35 @@ tool run_python {
   access: execute
   input: Command
   output: Ran
+}
+
+// An outside agent, asked to do the task in a copy of the project. It
+// changes nothing here, so asking needs no approval.
+tool ask_outside {
+  source system "outside"
+  operation: "propose"
+  access: observe
+  input: Handover
+  output: Proposed
+}
+
+// Every file of a proposal, written in one step with one approval.
+tool save_all {
+  source system "files"
+  operation: "write_all"
+  access: execute
+  input: Batch
+  output: Saved
+}
+
+agent helper {
+  can: [ask_outside]
+  max_steps: 1
+}
+
+agent writer {
+  can: [save_all]
+  max_steps: 1
 }
 
 agent coder {
@@ -184,7 +229,8 @@ fn plan_check(request: Text, files: Planned[]) -> Text[] {
       // A function the file has and the plan drops. One the request names
       // while speaking of removing or renaming is meant to go; naming it
       // alone is not enough, or "add a function" would excuse losing add.
-      let gone = for name in had where not now.contains(name) and not (leaving and named.contains(name)) { name }
+      // The test of a function that is renamed or removed goes with it.
+      let gone = for name in had where not now.contains(name) and not (leaving and (named.contains(name) or (name.starts_with("test_") and named.contains(name.drop(5))))) { name }
       if file.exists and not gone.is_empty() {
         wrong = wrong.append(file.path + ": it no longer has " + listed(gone) + ", which the file has now. write_file replaces the whole file: keep everything that is there and add to it")
       }
@@ -258,7 +304,7 @@ fn said_only(work: Work) -> Text {
 fn files_line(work: Work) -> Text {
   var files: Text[] = []
   for line in work.did {
-    files = files.append(line.replace("write_file ", ""))
+    files = files.append(line.words().drop(1).join(" "))
   }
   return if files.length() > 0 { "Wrote: " + files.unique().join(", ") } else { "No file was written." }
 }
@@ -308,7 +354,75 @@ workflow second_try(task: Task) -> Work {
   require approval
 }
 
+// ---------------------------------------------------------------- outside help
+
+fn nobody() -> Proposed {
+  return {ok: false, agent: "", said: "", files: []}
+}
+
+// What is wrong with what an outside agent proposes. Nothing proposed is
+// itself something wrong.
+fn proposal_problems(task: Task, got: Proposed) -> Text[] {
+  if not got.ok { return ["nobody could be asked"] }
+  if got.files.is_empty() { return ["it changed no file"] }
+  return plan_check(task.text, got.files)
+}
+
+// The task again, with what was wrong with the first answer.
+fn outside_again(task: Task, wrong: Text[]) -> Task {
+  return {text: task.text + "\nYour first answer was not accepted because: " + wrong.join("; ") + ". Do the task again with this put right."}
+}
+
+// "use" when a proposal can be written, "again" when it is worth asking
+// once more, "self" when the coder should do the task itself.
+fn verdict_on(got: Proposed, wrong: Text[], second: Bool) -> Text {
+  if wrong.is_empty() { return "use" }
+  if got.ok and not second { return "again" }
+  return "self"
+}
+
+// An outside agent's work, as the coder's own is reported: what it said,
+// and the files that were written.
+fn outside_work(got: Proposed) -> Work {
+  let did = for file in got.files { "save_all " + file.path }
+  let said = got.said.trim().lines().last().or("").take(300)
+  return {summary: "Asked " + got.agent + ". It said: " + said, did: did}
+}
+
+workflow ask_helper(task: Task) -> Proposed {
+  got = execute helper.ask_outside("", task.text) otherwise nobody()
+}
+
+workflow write_proposal(task: Task, got: Proposed) -> Result {
+  saved  = execute writer.save_all(got.files)
+  ran    = execute runner.run_python(["-m", "pytest", "-q", "-x", "--no-header", "-p", "no:cacheprovider"])
+  result = worked(task, outside_work(got), ran)
+  require approval
+}
+
+workflow second_helper(task: Task, again: Task) -> Result {
+  got    = call ask_helper(again)
+  result = match verdict_on(got, proposal_problems(task, got), true) {
+    case "use" { call write_proposal(task, got) }
+    case _ { call do_it_myself(task) }
+  }
+  require approval
+}
+
+// An outside agent is asked first. If none is allowed this costs nothing:
+// the tool is not there, and the coder does the task itself.
 workflow do_task(task: Task) -> Result {
+  got    = call ask_helper(task)
+  wrong  = proposal_problems(task, got)
+  result = match verdict_on(got, wrong, false) {
+    case "use" { call write_proposal(task, got) }
+    case "again" { call second_helper(task, outside_again(task, wrong)) }
+    case _ { call do_it_myself(task) }
+  }
+  require approval
+}
+
+workflow do_it_myself(task: Task) -> Result {
   first  = ask coder(task.text) otherwise {summary: "", did: []}
   wrote  = wrote_something(first)
   again  = pushed(task)
@@ -420,6 +534,41 @@ test "a function the request renames or removes may go" {
   calc = "def add(a, b):\n    return a + b\n\n\ndef double(n):\n    return n * 2\n"
   renamed: Planned[] = [{path: "calc.py", text: "def add(a, b):\n    return a + b\n\n\ndef twice(n):\n    return n * 2\n", before: calc, exists: true}]
   expect plan_check("rename the function double to twice everywhere", renamed) == []
+  tests = "from calc import add, double
+
+
+def test_add():
+    assert add(2, 3) == 5
+
+
+def test_double():
+    assert double(4) == 8
+"
+  both: Planned[] = [{path: "calc.py", text: "def add(a, b):
+    return a + b
+
+
+def twice(n):
+    return n * 2
+", before: calc, exists: true}, {path: "test_calc.py", text: "from calc import add, twice
+
+
+def test_add():
+    assert add(2, 3) == 5
+
+
+def test_twice():
+    assert twice(4) == 8
+", before: tests, exists: true}]
+  lost: Planned[] = [{path: "test_calc.py", text: "from calc import twice
+
+
+def test_twice():
+    assert twice(4) == 8
+", before: tests, exists: true}]
+  expect plan_check("rename the function double to twice everywhere, the tests included", both) == []
+  expect plan_check("rename the function double to twice everywhere, the tests included", lost).length() == 1
+  expect plan_check("rename the function double to twice everywhere, the tests included", lost)[0].contains("it no longer has test_add,")
   expect plan_check("tidy calc.py", renamed).length() == 1
   expect plan_check("tidy calc.py", renamed)[0].contains("it no longer has double")
   expect takes_away("Remove the old helper.")
@@ -442,6 +591,38 @@ test "tests in the wrong file, and a missing test file, are caught" {
   expect not is_test_file("contest.py")
   expect listed(["a"]) == "a"
   expect listed(["a", "b", "c"]) == "a, b and c"
+}
+
+test "an outside agent's work is reported like the coder's own" {
+  calc = "def add(a, b):\n    return a + b\n"
+  files: Planned[] = [{path: "calc.py", text: calc + "\n\ndef subtract(a, b):\n    return a - b\n", before: calc, exists: true}, {path: "test_calc.py", text: "from calc import subtract\n\n\ndef test_subtract():\n    assert subtract(3, 1) == 2\n", before: "", exists: false}]
+  got: Proposed = {ok: true, agent: "devin", said: "Reading files.
+Added subtract and its test.", files: files}
+  work = outside_work(got)
+  expect proposal_problems({text: "add a function subtract(a, b) to calc.py, with a test"}, got) == []
+  expect work.summary == "Asked devin. It said: Added subtract and its test."
+  expect work.did == ["save_all calc.py", "save_all test_calc.py"]
+  done = worked({text: "add subtract"}, work, {exit_code: 0, stdout: "3 passed in 0.01s
+", stderr: ""})
+  expect done.text == "Asked devin. It said: Added subtract and its test.
+Wrote: calc.py, test_calc.py
+The tests pass."
+}
+
+test "an outside agent that loses a function is asked again, told why" {
+  calc = "def add(a, b):\n    return a + b\n"
+  bad: Planned[] = [{path: "calc.py", text: "def subtract(a, b):\n    return a - b\n", before: calc, exists: true}]
+  got: Proposed = {ok: true, agent: "omp", said: "Done.", files: bad}
+  wrong = proposal_problems({text: "add subtract to calc.py"}, got)
+  expect wrong.length() == 1
+  expect wrong[0].contains("it no longer has add")
+  expect verdict_on(got, wrong, false) == "again"
+  expect verdict_on(got, wrong, true) == "self"
+  expect verdict_on(got, [], false) == "use"
+  expect outside_again({text: "add subtract"}, wrong).text.contains("was not accepted because: calc.py: it no longer has add")
+  expect proposal_problems({text: "x"}, nobody()) == ["nobody could be asked"]
+  expect verdict_on(nobody(), ["nobody could be asked"], false) == "self"
+  expect proposal_problems({text: "x"}, {ok: true, agent: "omp", said: "", files: []}) == ["it changed no file"]
 }
 
 test "only the end of a long test run is kept" {
