@@ -307,3 +307,52 @@ class CoderTests(unittest.TestCase):
         self.assertEqual(
             app.overview()["outside"] if "outside" in app.overview() else [], []
         )
+
+
+class WhatIsShownTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._dir.cleanup)
+        self.work = Path(self._dir.name) / "project"
+        self.work.mkdir()
+        for name, text in (
+            ("calc.py", CALC),
+            (".env", "KEY=1"),
+            (".env.local", "KEY=2"),
+            ("deploy.pem", "x"),
+            ("id_rsa", "x"),
+            ("notes.txt", "hello"),
+            ("cache/big.bin", "x"),
+        ):
+            path = self.work / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+
+    def test_files_named_like_secrets_are_never_shown(self) -> None:
+        self.assertEqual(
+            sorted(outside._files(self.work)), ["cache/big.bin", "calc.py", "notes.txt"]
+        )
+        for name in (
+            ".env",
+            "a/.ENV.production",
+            "x.pem",
+            "id_ed25519.pub",
+            "credentials.json",
+        ):
+            self.assertTrue(outside._secret(name), name)
+        for name in ("environment.py", "keys.py", "calc.py"):
+            self.assertFalse(outside._secret(name), name)
+
+    def test_in_a_git_project_what_it_ignores_is_not_shown(self) -> None:
+        import shutil
+        import subprocess
+
+        if shutil.which("git") is None:
+            self.skipTest("git is not installed")
+        subprocess.run(
+            ["git", "init", "-q"], cwd=self.work, check=True, capture_output=True
+        )
+        (self.work / ".gitignore").write_text("cache/\n", encoding="utf-8")
+        shown = sorted(outside._files(self.work))
+        # Untracked files that are not ignored are part of the project too.
+        self.assertEqual(shown, [".gitignore", "calc.py", "notes.txt"])

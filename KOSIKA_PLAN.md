@@ -3394,6 +3394,32 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   permission, which is their own setting, not Kosika's. No real project
   of the owner's has been given to one yet.
 
+### An outside agent on Kosika itself
+
+- The first job that was not a toy: devin, in a copy of this repository,
+  asked to add `Text.capital()` with its test and its row in the reference.
+- Kosika's folder was refused at first as too large (over 40 MB): caches
+  and old builds. An outside agent is now shown what git tracks or would
+  add, 515 files and 5.5 MB here, so what a project ignores stays private.
+  Files named like secrets (`.env`, `*.pem`, `id_rsa`, ...) are never
+  shown, in a git project or not.
+- Result of the second run: 56 seconds, three files changed and nothing
+  else, one line in each of the engine and the reference and one test.
+  Applied to a second copy: the two relevant test files pass (43 tests),
+  ruff is clean, the engine's own plan checks find nothing wrong. The
+  change was not applied to the real repository; it was a trial.
+- What the first run showed. It took 185 seconds because devin ran the
+  tests, although it was told not to run programs and was started in the
+  mode that approves edits only. It did so inside the copy. The caches it
+  left came back as "changed files"; they are now dropped, as anything
+  the project's git rules ignore is.
+- Not claimed: an outside agent cannot be stopped from running programs
+  on this computer. It is told not to and it works in a copy, but that is
+  its good behaviour and its own setting, not a wall of Kosika's. The
+  coder's flow through Studio was not used for this job, because it would
+  run all of Kosika's tests (about 17 minutes); the proposal was tested by
+  hand with the two test files that matter. One job is one job.
+
 ## Standard coding-agent procedure
 
 1. Inspect `git status`, the relevant source files, tests, and this plan.

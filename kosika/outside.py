@@ -73,6 +73,7 @@ SKIPPED = frozenset(
         "build",
         "target",
         "_trash",
+        ".cache",
         ".mypy_cache",
         ".pytest_cache",
         ".ruff_cache",
@@ -191,11 +192,89 @@ def inside(folder: Path, within: Path) -> bool:
     return True
 
 
+def _secret(name: str) -> bool:
+    """Whether a file's name says it holds a secret. Such a file is never
+    shown to an outside agent, whatever else is."""
+
+    last = name.rsplit("/", 1)[-1].lower()
+    return (
+        last.startswith(".env")
+        or last.endswith((".pem", ".key", ".pfx", ".p12", ".keystore"))
+        or last.startswith(("id_rsa", "id_ed25519", "id_ecdsa"))
+        or last in ("credentials.json", "secrets.json", ".npmrc", ".pypirc", ".netrc")
+    )
+
+
+def _git_names(folder: Path) -> list[str] | None:
+    """In a git project, the files git knows of or would add: what the
+    project's own ignore rules keep out stays out. None when the folder is
+    not the top of a git project or git cannot be asked."""
+
+    if not (folder / ".git").exists() or shutil.which("git") is None:
+        return None
+    try:
+        done = subprocess.run(  # noqa: S603, S607 - git, asked only to list
+            ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+            cwd=folder,
+            capture_output=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if done.returncode != 0:
+        return None
+    return [
+        name for name in done.stdout.decode("utf-8", "replace").split(chr(0)) if name
+    ]
+
+
+def _git_ignored(folder: Path, names: Sequence[str]) -> set[str]:
+    """Which of some paths a git project would ignore. They need not
+    exist. Empty when the folder is not a git project."""
+
+    if not names or not (folder / ".git").exists() or shutil.which("git") is None:
+        return set()
+    try:
+        done = subprocess.run(  # noqa: S603, S607 - git, asked only what it ignores
+            ["git", "check-ignore", "-z", "--stdin"],
+            cwd=folder,
+            input=chr(0).join(names).encode("utf-8"),
+            capture_output=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return set()
+    return {
+        name for name in done.stdout.decode("utf-8", "replace").split(chr(0)) if name
+    }
+
+
 def _files(folder: Path) -> dict[str, Path]:
-    """Every file under a folder that is the person's own, by its path."""
+    """Every file under a folder that is the person's own, by its path.
+
+    In a git project that is what git tracks or would add, so caches,
+    builds and anything the project ignores are left out. Elsewhere it is
+    everything outside the folders in SKIPPED. Files whose names say they
+    hold secrets are always left out.
+    """
 
     found: dict[str, Path] = {}
     total = 0
+    listed = _git_names(folder)
+    if listed is not None:
+        for name in sorted(listed):
+            path = folder / name
+            if _secret(name) or path.is_symlink() or not path.is_file():
+                continue
+            total += path.stat().st_size
+            found[name] = path
+            if len(found) > MAX_COPIED_FILES or total > MAX_COPIED_BYTES:
+                raise OutsideError(
+                    "The folder is too large to hand to an outside agent: more "
+                    f"than {MAX_COPIED_FILES} files or {MAX_COPIED_BYTES // (1024 * 1024)} "
+                    "MB. Grant a smaller folder."
+                )
+        return found
     stack = [folder]
     while stack:
         here = stack.pop()
@@ -206,7 +285,7 @@ def _files(folder: Path) -> dict[str, Path]:
                 if entry.name not in SKIPPED:
                     stack.append(entry)
                 continue
-            if not entry.is_file():
+            if not entry.is_file() or _secret(entry.name):
                 continue
             size = entry.stat().st_size
             total += size
@@ -238,9 +317,14 @@ def compare(folder: Path, copy: Path) -> tuple[list[Change], list[str]]:
     before, after = _files(folder), _files(copy)
     changes: list[Change] = []
     left_out: list[str] = []
+    ignored = _git_ignored(folder, [name for name in after if name not in before])
     for name, path in sorted(after.items()):
         old = before.get(name)
         if old is not None and old.read_bytes() == path.read_bytes():
+            continue
+        if name in ignored:
+            # A cache or a build it left behind, which the project itself
+            # keeps out. It is not part of the work.
             continue
         new_text = _text(path)
         old_text = _text(old) if old is not None else ""
