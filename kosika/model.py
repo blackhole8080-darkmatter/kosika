@@ -102,6 +102,8 @@ Transport = Callable[[urllib.request.Request, float], bytes]
 #: ``/chat/completions`` shape most gateways expose. ``ollama`` is Ollama's native
 #: ``/api/chat`` shape, which is the only one of the two that honours ``think``.
 MODEL_PROTOCOLS = ("openai", "ollama")
+#: How long Ollama is asked to keep a model loaded after it answers.
+OLLAMA_KEEP_ALIVE = "30m"
 
 
 class OpenAICompatibleProvider:
@@ -399,6 +401,10 @@ class OpenAICompatibleProvider:
             "model": request.model or self.model,
             "messages": [self._ollama_message(message) for message in request.messages],
             "stream": False,
+            # Ollama unloads a model five minutes after its last answer,
+            # and loading it again costs ten to twenty seconds on a slow
+            # machine. Asked to, it keeps the model ready for half an hour.
+            "keep_alive": OLLAMA_KEEP_ALIVE,
         }
         if options:
             payload["options"] = options
