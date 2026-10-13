@@ -218,8 +218,15 @@ class SendBackTests(Base):
 
     def test_a_plan_still_wrong_is_shown_with_what_is_wrong(self) -> None:
         worse = make("todo.txt", "* wash up")
+        # A plan goes back twice. The third, still wrong, is shown.
         provider = ScriptedModelProvider(
-            [chooses(), picks(self.BAD), picks(worse), finding("Made it.")]
+            [
+                chooses(),
+                picks(self.BAD),
+                picks(make("todo.txt", "+ wash up")),
+                picks(worse),
+                finding("Made it."),
+            ]
         )
         with self.assertRaises(ApprovalPending) as asked:
             self.attempt(provider, [])

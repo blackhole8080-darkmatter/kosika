@@ -143,6 +143,7 @@ CODES: Mapping[str, str] = {
     "check/capability-denied": "An agent attempted a capability it does not hold.",
     "check/approval-required": "A mutation requires approval that was not declared.",
     "check/plan-first": "An agent that plans first lacks a model or the turns to plan.",
+    "check/plan-check": "An agent's plan check is not a function of the right shape.",
     "check/unknown-agent": "An agent name is not declared.",
     "check/unknown-tool": "A tool name is not declared.",
     "check/agent-conflict": "An agent both allows and denies the same capability.",
@@ -412,6 +413,10 @@ _RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
         re.compile(r"^Capability violation:|plans first but can change nothing"),
     ),
     ("check/plan-first", re.compile(r"plans first, so ")),
+    (
+        "check/plan-check",
+        re.compile(r"^Agent \S+ check \S+ (is not a function|must be a function)"),
+    ),
     ("parse/invalid-declaration", re.compile(r"^Agent plan must be `first` or `off`")),
     (
         "check/approval-required",

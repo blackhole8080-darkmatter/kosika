@@ -960,6 +960,7 @@ class Parser:
         instructions: str | None = None
         deadline_seconds: float | None = None
         plan: str | None = None
+        check: str | None = None
         seen: set[str] = set()
         while not self.accept("}"):
             key = self.identifier()
@@ -995,6 +996,8 @@ class Parser:
                 plan = self.identifier()
                 if plan not in ("first", "off"):
                     raise ParseError("Agent plan must be `first` or `off`")
+            elif key == "check":
+                check = self.identifier()
             else:
                 raise ParseError(f"Unknown agent field {key!r}")
         return AgentDecl(
@@ -1008,6 +1011,7 @@ class Parser:
             instructions,
             deadline_seconds,
             plan,
+            check,
         )
 
     def parse_swarm(self) -> SwarmDecl:

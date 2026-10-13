@@ -138,6 +138,12 @@ class ToolDecl:
     input: str | None = None
 
 
+#: The fields of the record an agent's `check` function is given for each
+#: file the plan would write: where, the whole new text, the file as it is
+#: now, and whether it is there now at all.
+PLAN_FILE_FIELDS = {"path": "Text", "text": "Text", "before": "Text", "exists": "Bool"}
+
+
 @dataclass(frozen=True)
 class AgentDecl:
     name: str
@@ -152,6 +158,10 @@ class AgentDecl:
     #: `plan: first`, `plan: off`, or None when the program does not say.
     #: See `plans_first`.
     plan: str | None = None
+    #: `check: NAME`: a function of the program that reads the agent's plan
+    #: before a person is asked about it, and says what is wrong with it.
+    #: See `PLAN_FILE_FIELDS`.
+    check: str | None = None
 
     def plans_first(self, tools: Iterable[ToolDecl]) -> bool:
         """Whether this agent shows all its changes as one plan before any.

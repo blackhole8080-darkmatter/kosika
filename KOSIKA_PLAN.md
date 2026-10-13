@@ -3300,6 +3300,65 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   Three lines together are not attempted. The slow path now takes up to a
   minute and a half on this laptop.
 
+### The coder tested for real, and its plan checked in Kosika
+
+- The owner asked for the coder to be tested, "because this agent will
+  write the code to develop Kosika itself". Six small tasks in a scratch
+  Python project on qwen2.5:7b, each really run with its tests: 3 of 6.
+- Read from the files it left: it wrote a file again with only the new
+  function in it, losing the others; it put tests in the source file; a
+  test forgot its import; one file was not valid Python.
+- None of that needs a model to see. A plan is now checked before a person
+  is asked, and sent back to the model with what is wrong.
+- The owner then asked why this was written in Python "when Kosika can do
+  it itself", and said he wants Kosika gradually independent of Python.
+  The first version of these checks was all in the engine. It was taken
+  apart again:
+  - A language change: an agent may name a function of its own program
+    with `check: NAME`. It is given the request and every file the plan
+    would write, with the file as it is now, and returns what is wrong.
+  - `Text.lines()` was added, because `split` stops at 512 parts and a
+    file has more lines than that.
+  - The checks that only read lines are now in the coder's own program, in
+    Kosika: a function the file has and the plan drops, tests in the wrong
+    file, a task that asks for a test and writes none. 3 tests there.
+  - Only what needs a Python parser stayed in the engine
+    (`kosika/code_checks.py`, 187 lines): not valid Python, a name never
+    defined, an import the other file does not have.
+- A bug found by the tests of my own check: "add a function" was excusing
+  the loss of the function named `add`, because the request named it. A
+  function is now excused only when the request also speaks of renaming
+  or removing.
+- What is read for the check is journaled. Without that, a step resumed
+  after approval would check its plan against the files it had just
+  written, see nothing lost, and no longer match what was approved.
+- Measured, and scored strictly. My first scoring counted a task done when
+  its tests passed and the new function was there, which let through runs
+  that had deleted the project's other functions and rewritten the tests
+  to match. Counting only runs where everything the project had is still
+  there: 2 of 6 before the checks (not the 3 of 6 first reported), 5 of 6
+  with them. The sixth reached the approval step carrying three warnings.
+- A plan found wrong now goes back to the model twice, not once
+  (`PLAN_RETRIES`). On the task that failed, three more runs: 3 of 3.
+- Asking an outside agent (`kosika/outside.py`, not yet reachable from a
+  program). The owner has other command-line agents installed and said
+  they may be given folders inside `Aryan_Private` only. The folder is
+  copied, the agent is started in the copy allowed to edit files and
+  nothing more, and what it changed comes back as a list; the real folder
+  is not touched. A folder outside the one named root is refused before
+  anything is started. Tried by hand on a scratch project: devin and omp
+  each did the task the local coder failed, correctly, in 31 seconds; kilo
+  changed nothing (it is set to an image model); freebuff cannot be run
+  with one request. 12 tests, with a stand-in for the agent.
+- Not claimed: six tasks and three reruns are a small sample, all of one
+  kind (small Python functions). No program can ask an outside agent yet.
+  The three engine checks are for Python only. The coder still writes
+  whole files, which is slow: 4 to 13 minutes a task on this laptop.
+- Stage 1 of five toward Kosika being independent of Python: hooks an
+  author needs are written in Kosika. The others, not started: a standard
+  library in `.kos`; Kosika's lexer in Kosika; its parser and checker in
+  Kosika; an engine that is not Python.
+
 ## Standard coding-agent procedure
 
 1. Inspect `git status`, the relevant source files, tests, and this plan.

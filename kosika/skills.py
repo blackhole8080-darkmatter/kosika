@@ -13,7 +13,7 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Mapping
+from typing import Callable, Iterable, Mapping
 
 SKILL_MANIFEST = "skill.json"
 MAX_SKILLS = 256
@@ -546,14 +546,22 @@ def plan_problems(
     selection: SkillSelection | None,
     request: str,
     actions: Iterable[tuple[str, Mapping[str, object]]],
+    before: Callable[[str], str | None] | None = None,
 ) -> list[str]:
     """What is wrong with the files a plan would write, in plain words.
 
     Only actions that write text to a path are looked at. A file must not be
     empty, and must not just repeat the request. A file whose name fits a
-    picked skill's `Files:` pattern must keep that skill's checks.
+    picked skill's `Files:` pattern must keep that skill's checks. A Python
+    file must be Python and must define or import what it uses; see
+    `kosika.code_checks`. `before` gives a file as it is now, or None when
+    it does not exist, so that an import from a file the plan leaves alone
+    can be looked up.
     """
 
+    from .code_checks import plan_code_problems
+
+    files: dict[str, str] = {}
     problems: list[str] = []
     asked = " ".join(_tokens(request))
     seen: set[str] = set()
@@ -582,6 +590,8 @@ def plan_problems(
                 f"{path}: the file only repeats the request; write what was asked for"
             )
             continue
+        # Only a file with nothing plainly wrong is read as code.
+        files[path] = text
         # When the name fits more than one picked skill, the one whose
         # pattern says the most about the name is the one that applies:
         # readme.txt is a readme before it is a text file.
@@ -603,6 +613,12 @@ def plan_problems(
             why = check_problem(rule, text)
             if why is not None:
                 problems.append(f"{path}: {why} ({skill.summary})")
+    problems.extend(
+        plan_code_problems(
+            files,
+            before or (lambda path: None),
+        )
+    )
     return problems
 
 

@@ -99,12 +99,105 @@ agent coder {
   can: [list_folder, read_file, find_text, write_file]
   max_steps: 8
   max_tool_calls: 16
+  check: plan_check
   instructions: "You are a careful programmer working in one Python project. You cannot see anything until you use a tool. First list the folder with path \".\". Read every file you will write before you write it; that includes the test file if one exists. Then request all your changes in one reply, one write_file for each file. write_file replaces the whole file, so its text must be the complete new file: every line that was there and should stay, plus what you add. A task that adds a function with a test needs two write_file calls: the source file with the new function added, and the test file with its old tests kept and the new test added. Import the new function in the test file. Change nothing the task does not need. Write only the files the task needs changed: to fix a bug, change the file with the bug and leave the tests as they are. After the changes, answer with what you did in summary, and an empty list in did."
 }
 
 agent runner {
   can: [run_python]
   max_steps: 1
+}
+
+// ---------------------------------------------------------------- checking the plan
+//
+// A small model asked to add a function will often write the file again
+// with only the new function in it, or put its tests in the wrong file.
+// That can be seen by reading lines, so it is checked here, in Kosika,
+// before the plan is shown to anyone. A plan with something wrong is sent
+// back to the model with these sentences. (Whether a file is valid Python
+// at all needs a Python parser, and Kosika's engine checks that.)
+
+// One file the plan would write: where, its whole new text, the file as it
+// is now, and whether it is there now at all.
+record Planned { path: Text text: Text before: Text exists: Bool }
+
+// The functions and classes a Python file defines at its left margin.
+fn defined(text: Text) -> Text[] {
+  var names: Text[] = []
+  for line in text.lines() {
+    var rest = ""
+    if line.starts_with("def ") { rest = line.drop(4) }
+    else if line.starts_with("async def ") { rest = line.drop(10) }
+    else if line.starts_with("class ") { rest = line.drop(6) }
+    let name = rest.split("(").first().or("").split(":").first().or("").trim()
+    if not name.is_empty() and not names.contains(name) { names = names.append(name) }
+  }
+  return names
+}
+
+fn file_name(path: Text) -> Text {
+  return path.replace("\\", "/").split("/").last().or(path)
+}
+
+fn is_test_file(path: Text) -> Bool {
+  let name = file_name(path).lower()
+  return name.starts_with("test_") or name.ends_with("_test.py")
+}
+
+// "a", "a and b", "a, b and c".
+fn listed(names: Text[]) -> Text {
+  if names.length() < 2 { return names.join("") }
+  return names.take(names.length() - 1).join(", ") + " and " + names.last().or("")
+}
+
+// Does the request speak of taking something away or changing its name?
+fn takes_away(request: Text) -> Bool {
+  let words = for word in request.lower().words() { word.trim_marks(".,;:!?()'\"`") }
+  for verb in ["rename", "renamed", "remove", "removed", "delete", "deleted", "drop", "replace", "replaced", "move", "moved"] {
+    if words.contains(verb) { return true }
+  }
+  return false
+}
+
+// Does the request ask for a test along with the change?
+fn wants_test(request: Text) -> Bool {
+  let said = request.lower().words().join(" ")
+  for words in ["with a test", "with tests", "and a test", "and tests", "with its test", "tests for", "test file"] {
+    if said.contains(words) { return true }
+  }
+  return false
+}
+
+// What is wrong with a plan, one sentence for each thing, or nothing.
+fn plan_check(request: Text, files: Planned[]) -> Text[] {
+  var wrong: Text[] = []
+  let named = for word in request.words() { word.trim_marks(".,;:!?()'\"`") }
+  let leaving = takes_away(request)
+  var python = 0
+  var tests = 0
+  for file in files {
+    if file.path.lower().ends_with(".py") {
+      python += 1
+      if is_test_file(file.path) { tests += 1 }
+      let now = defined(file.text)
+      let had = defined(file.before)
+      // A function the file has and the plan drops. One the request names
+      // while speaking of removing or renaming is meant to go; naming it
+      // alone is not enough, or "add a function" would excuse losing add.
+      let gone = for name in had where not now.contains(name) and not (leaving and named.contains(name)) { name }
+      if file.exists and not gone.is_empty() {
+        wrong = wrong.append(file.path + ": it no longer has " + listed(gone) + ", which the file has now. write_file replaces the whole file: keep everything that is there and add to it")
+      }
+      let strays = for name in now where name.starts_with("test_") and not had.contains(name) { name }
+      if not is_test_file(file.path) and not strays.is_empty() {
+        wrong = wrong.append(file.path + ": it holds the test " + listed(strays) + ". Tests go in a test file, such as test_" + file_name(file.path))
+      }
+    }
+  }
+  if python > 0 and tests == 0 and wants_test(request) {
+    wrong = wrong.append("the task asks for a test, but the plan writes no test file. Add a write_file for the test file as well")
+  }
+  return wrong
 }
 
 // ---------------------------------------------------------------- routing
@@ -307,6 +400,48 @@ test "a coder that wrote nothing is asked again" {
   expect wrote_something({summary: "Done.", did: []}).text == "no"
   expect wrote_something({summary: "Done.", did: ["write_file a.py"]}).text == "yes"
   expect pushed({text: "add greet.py"}).text.starts_with("add greet.py\nYou answered before without writing anything")
+}
+
+test "a file written again with only the new function is caught" {
+  calc = "def add(a, b):\n    return a + b\n\n\ndef double(n):\n    return n * 2\n"
+  only: Planned[] = [{path: "calc.py", text: "def subtract(a, b):\n    return a - b\n", before: calc, exists: true}]
+  kept: Planned[] = [{path: "calc.py", text: calc + "\n\ndef subtract(a, b):\n    return a - b\n", before: calc, exists: true}]
+  fresh: Planned[] = [{path: "greet.py", text: "def greet(name):\n    return name\n", before: "", exists: false}]
+  a = plan_check("add a function subtract(a, b) to calc.py", only)
+  expect a == ["calc.py: it no longer has add and double, which the file has now. write_file replaces the whole file: keep everything that is there and add to it"]
+  expect plan_check("add a function subtract(a, b) to calc.py", kept) == []
+  expect plan_check("add greet.py", fresh) == []
+  expect defined(calc) == ["add", "double"]
+  expect defined("class Shape:\n    def area(self):\n        return 0\n\nasync def fetch(url):\n    pass\n") == ["Shape", "fetch"]
+  expect defined("") == []
+}
+
+test "a function the request renames or removes may go" {
+  calc = "def add(a, b):\n    return a + b\n\n\ndef double(n):\n    return n * 2\n"
+  renamed: Planned[] = [{path: "calc.py", text: "def add(a, b):\n    return a + b\n\n\ndef twice(n):\n    return n * 2\n", before: calc, exists: true}]
+  expect plan_check("rename the function double to twice everywhere", renamed) == []
+  expect plan_check("tidy calc.py", renamed).length() == 1
+  expect plan_check("tidy calc.py", renamed)[0].contains("it no longer has double")
+  expect takes_away("Remove the old helper.")
+  expect not takes_away("add a function")
+}
+
+test "tests in the wrong file, and a missing test file, are caught" {
+  calc = "def add(a, b):\n    return a + b\n"
+  mixed: Planned[] = [{path: "calc.py", text: calc + "\n\ndef clamp(n, low, high):\n    return max(low, min(n, high))\n\n\ndef test_clamp():\n    assert clamp(5, 0, 3) == 3\n", before: calc, exists: true}]
+  alone: Planned[] = [{path: "calc.py", text: calc + "\n\ndef subtract(a, b):\n    return a - b\n", before: calc, exists: true}]
+  both: Planned[] = [{path: "calc.py", text: calc + "\n\ndef subtract(a, b):\n    return a - b\n", before: calc, exists: true}, {path: "tests/test_calc.py", text: "from calc import subtract\n\n\ndef test_subtract():\n    assert subtract(3, 1) == 2\n", before: "", exists: false}]
+  notes: Planned[] = [{path: "notes.md", text: "def nothing", before: "def something\n", exists: true}]
+  expect plan_check("add clamp to calc.py", mixed) == ["calc.py: it holds the test test_clamp. Tests go in a test file, such as test_calc.py"]
+  expect plan_check("add subtract to calc.py, with a test", alone) == ["the task asks for a test, but the plan writes no test file. Add a write_file for the test file as well"]
+  expect plan_check("add subtract to calc.py, with a test", both) == []
+  expect plan_check("the test for add fails. find the bug and fix it", alone) == []
+  expect plan_check("write notes with a test", notes) == []
+  expect is_test_file("tests/test_calc.py")
+  expect is_test_file("calc_test.py")
+  expect not is_test_file("contest.py")
+  expect listed(["a"]) == "a"
+  expect listed(["a", "b", "c"]) == "a, b and c"
 }
 
 test "only the end of a long test run is kept" {

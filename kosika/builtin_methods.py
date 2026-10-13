@@ -281,6 +281,13 @@ def _text_index_of(text: str, part: str) -> int | None:
     return None if position < 0 else position
 
 
+def _lines(text: str) -> list[str]:
+    """A text as its lines, without their line ends. A file is read this
+    way, so the limit is that of any array, not the small one of `split`."""
+
+    return _bounded(text.splitlines())
+
+
 def _chars(text: str) -> list[str]:
     if len(text) > MAX_SPLIT_PARTS:
         raise RuntimeError(f"chars produced more than {MAX_SPLIT_PARTS} parts")
@@ -479,6 +486,7 @@ METHODS: tuple[Method, ...] = (
     Method(ANY_ARRAY, "index_of", (("item", ELEMENT),), "Number?", _index_of),
     Method("Text", "index_of", (("part", "Text"),), "Number?", _text_index_of),
     Method("Text", "chars", (), "Text[]", _chars),
+    Method("Text", "lines", (), "Text[]", _lines),
     Method(
         "Text",
         "pad_left",

@@ -90,7 +90,7 @@ PlanApprover = Callable[[list[tuple[ToolDecl, dict[str, Any]]]], None]
 #: the plan, in words for the model; an empty list means nothing is.
 PlanReviewer = Callable[[list[tuple[ToolDecl, dict[str, Any]]]], list[str]]
 #: How many times a plan found wanting goes back to the model.
-PLAN_RETRIES = 1
+PLAN_RETRIES = 2
 
 
 def _canonical(value: Any) -> bytes:

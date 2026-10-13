@@ -1983,18 +1983,87 @@ def _run_workflow(
                 plan_results: list[dict[str, Any]] = []
                 plan_action: list[str | None] = []
 
+                def file_before(path: str) -> str | None:
+                    """A file as it is before the plan, read with the
+                    agent's own reading tool, or None when it is not there
+                    or the agent has no such tool. What is read is kept, so
+                    a step that begins again after a person answered checks
+                    its plan against the same text, not against the file
+                    the plan has since written."""
+
+                    key = (*scope, PLAN_TOOL + ":before", path)
+                    if session is not None:
+                        kept = session.remembered(key)
+                        if isinstance(kept, dict):
+                            found = kept.get("text")
+                            return found if isinstance(found, str) else None
+                    text: str | None = None
+                    for name in asked_agent.can:
+                        reader = tools[name]
+                        if (
+                            reader.source == "system:files"
+                            and reader.operation == "read"
+                            and name in host_tools
+                        ):
+                            try:
+                                got = host_tools[name](reader, {"path": path})
+                            except Exception:  # noqa: BLE001 - a file that cannot be read is no file
+                                got = None
+                            if isinstance(got, dict) and isinstance(
+                                got.get("text"), str
+                            ):
+                                text = got["text"]
+                            break
+                    if session is not None:
+                        session.remember(key, {"text": text})
+                    return text
+
                 def review_agent_plan(
                     actions: list[tuple[ToolDecl, dict[str, Any]]],
                 ) -> list[str]:
-                    return plan_problems(
-                        picked,
-                        " ".join(
-                            value
-                            for value in arguments.values()
-                            if isinstance(value, str)
-                        ),
-                        [(declaration.name, values) for declaration, values in actions],
+                    request = " ".join(
+                        value for value in arguments.values() if isinstance(value, str)
                     )
+                    problems = plan_problems(
+                        picked,
+                        request,
+                        [(declaration.name, values) for declaration, values in actions],
+                        file_before,
+                    )
+                    if asked_agent.check is None:
+                        return problems
+                    # The program's own check, written in Kosika: it is
+                    # given every file the plan would write, with the file
+                    # as it is now, and says what is wrong.
+                    files = []
+                    for _declaration, values in actions:
+                        path, text = values.get("path"), values.get("text")
+                        if isinstance(path, str) and isinstance(text, str):
+                            was = file_before(path)
+                            files.append(
+                                {
+                                    "path": path,
+                                    "text": text,
+                                    "before": was or "",
+                                    "exists": was is not None,
+                                }
+                            )
+                    checker_function = functions[asked_agent.check]
+                    first, second = checker_function.parameters
+                    said_wrong, _trace = _execute_function(
+                        program,
+                        checker_function,
+                        {first.name: request, second.name: files},
+                        functions,
+                        argument_events=[],
+                        depth=0,
+                    )
+                    own = [
+                        line
+                        for line in said_wrong or []
+                        if isinstance(line, str) and line.strip()
+                    ]
+                    return problems + [line for line in own if line not in problems]
 
                 def approve_agent_plan(
                     actions: list[tuple[ToolDecl, dict[str, Any]]],

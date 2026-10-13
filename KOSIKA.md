@@ -247,6 +247,7 @@ the receiver's type, and every method is pure and deterministic.
 | any array | `index_of(item: T)` | `Number?`: the position of the first element equal to `item`, counted from `0`, else `null` |
 | `Text` | `index_of(part: Text)` | `Number?`: where `part` first begins, counted from `0`, else `null`; `part` MUST be non-empty |
 | `Text` | `chars()` | `Text[]` of its characters, one each; over 512 fails the run |
+| `Text` | `lines()` | `Text[]` of its lines, without their line ends, however each ends; an empty text has none. A whole file may be read this way |
 | `Text` | `pad_left(width: Number, fill: Text)`, `pad_right(width: Number, fill: Text)` | `Text` made at least `width` long by adding `fill`, which MUST be one character, before or after; a text already that long is unchanged |
 | `Text`, any array | `is_empty()` | `Bool`, true when the length is `0` |
 | `Text`, any array | `take(count: Number)`, `drop(count: Number)` | the first `count` characters or elements, or all but those. A count beyond the length gives everything, or nothing; a negative or fractional count fails the run |
@@ -811,6 +812,7 @@ Agent defaults and bounds:
 | `max_model_calls` | 64 | 1–1,000,000 |
 | `deadline_seconds` | none | greater than 0 and at most 86,400 |
 | `plan` | not set | `first` or `off` |
+| `check` | not set | the name of a function of the program |
 
 An agent plans first when it says `plan: first`, and does not when it says
 `plan: off`. When `plan` is not set, an agent plans first if it names a model,
@@ -843,9 +845,29 @@ can reach or what requires approval.
 
 Before a plan is offered for approval the runtime reviews each planned call
 that carries a text `path` and a text `text`. A plan with a problem is
-returned to the model once, as the result of each planned call, and nothing
-runs. If the next plan still has a problem, the approval request carries the
+returned to the model, as the result of each planned call, and nothing
+runs; this happens at most twice. If the plan after that still has a problem, the approval request carries the
 problems as `warnings`.
+
+The runtime's own review says that a file would be empty, is written twice,
+only repeats the request, or breaks a selected skill's check; and, for a
+path ending `.py`, that the text is not valid Python, uses a name it never
+defines or imports, or imports from another file of the plan or the folder
+a name that file does not define.
+
+An agent MAY add its own review with `check: NAME`. NAME MUST be a function
+of the program declared as `fn NAME(request: Text, files: R[]) -> Text[]`,
+where R is a record with exactly the fields `{path: Text, text: Text,
+before: Text, exists: Bool}` (`check/plan-check`). It is called only for an
+agent that plans first.
+The function is given the text the agent was asked with and one R for each
+planned call that carries a text `path` and a text `text`: `before` is the
+file as it is now, read with a `system "files"` tool of operation `read`
+that the agent can use and the host has bound, and `exists` is whether it
+could be read. Each non-empty text the function returns is a problem, added
+to the runtime's own. What was read for `before` is journaled, so a step
+resumed after approval gives the function the same files, not the files the
+plan has since written.
 
 Declarations are requests for authority, never authority themselves. The host
 MUST bind declared providers and tools explicitly. Bindings for undeclared

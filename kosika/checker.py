@@ -6,7 +6,9 @@ from dataclasses import fields, is_dataclass, replace
 from typing import Any
 
 from .ast import (
+    PLAN_FILE_FIELDS,
     AgentCall,
+    AgentDecl,
     ArrayExpr,
     Assignment,
     BinaryExpr,
@@ -1063,6 +1065,30 @@ def _check_fallbacks(program: Program) -> None:
     check(swapped)
 
 
+def _plan_check_fits(program: Program, agent: AgentDecl) -> bool:
+    """Whether an agent's `check` has the shape a plan check must have.
+
+    The check is an ordinary function of the program. It is given the
+    request and every file the plan would write, and gives back what is
+    wrong, one sentence each: `fn NAME(request: Text, files: R[]) -> Text[]`
+    where R is a record with exactly the fields of `PLAN_FILE_FIELDS`.
+    """
+
+    function = next((f for f in program.functions if f.name == agent.check), None)
+    if function is None:
+        return False
+    if len(function.parameters) != 2 or function.output_type != "Text[]":
+        return False
+    first, second = function.parameters
+    if first.type_name != "Text" or not second.type_name.endswith("[]"):
+        return False
+    record = next((r for r in program.records if r.name == second.type_name[:-2]), None)
+    return (
+        record is not None
+        and {field.name: field.type_name for field in record.fields} == PLAN_FILE_FIELDS
+    )
+
+
 def _check_verify(program: Program) -> None:
     """Check `verify` by checking the program in which the check is a step.
 
@@ -1771,6 +1797,19 @@ def _check(program: Program) -> None:
                 raise CheckError(
                     f"Agent {agent.name!r} plans first, so max_steps must be at "
                     "least 2: one turn to plan and one to answer"
+                )
+        if agent.check is not None:
+            if not any(f.name == agent.check for f in program.functions):
+                raise CheckError(
+                    f"Agent {agent.name!r} check {agent.check!r} is not a "
+                    "function declared in the program"
+                )
+            if not _plan_check_fits(program, agent):
+                raise CheckError(
+                    f"Agent {agent.name!r} check {agent.check!r} must be a "
+                    "function `fn NAME(request: Text, files: R[]) -> Text[]`, "
+                    "where R is a record with exactly the fields {path: Text, "
+                    "text: Text, before: Text, exists: Bool}"
                 )
         if (
             type(agent.max_tool_calls) is not int
