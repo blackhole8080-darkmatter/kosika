@@ -3420,6 +3420,27 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   run all of Kosika's tests (about 17 minutes); the proposal was tested by
   hand with the two test files that matter. One job is one job.
 
+### Other local models, measured
+
+- The owner asked which models should be installed, and about DeepSeek
+  and other open models. This laptop has 4 cores, 15 GB and no separate
+  graphics card, so only models of about 7B and under are practical.
+  Three were downloaded with his yes and put on the scoreboards.
+- Researcher, twelve evals twice each: qwen2.5:7b 24 of 24; gemma3:4b 18
+  of 24, and it answered 3 of the 4 questions whose right answer is "I
+  will not guess"; deepseek-r1:7b 8 of 24, most often failing to give a
+  quote that is in the lines.
+- Coder, six tasks, local only: qwen2.5-coder:7b 0 of 6. It never asked
+  for a tool, so no plan was made; the coder said "No file was written"
+  each time, which is the honest report.
+- Kept as before: qwen2.5:7b, qwen2.5:3b, nomic-embed-text. Removing the
+  three new ones is the owner's to say.
+- Ollama is now asked to keep a model loaded for 30 minutes after an
+  answer (`keep_alive`), which saves the reload on the next question.
+- Not claimed: the times of each model were not kept. Two runs of twelve
+  questions is a small sample. The models were tried only as they come,
+  with no prompt written for them.
+
 ## Standard coding-agent procedure
 
 1. Inspect `git status`, the relevant source files, tests, and this plan.
