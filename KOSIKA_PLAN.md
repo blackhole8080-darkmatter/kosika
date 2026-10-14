@@ -3491,6 +3491,34 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   programs with workflows, agents and tools; the guide does not teach
   those yet.
 
+### The native engine asks models, as a test scripts them
+
+- The native engine now reads models with the records they take and give
+  (`deployment` and `parameters` too, checked as the reference checks
+  them), and runs `use_model` steps from a test that scripts the model's
+  answers. An answer is completed as the reference completes it (a field
+  the model left out reads as null where null is allowed), held to the
+  output record, and on refusal asked for again up to `retry N` times;
+  the last refusal is the step's failure, and a fallback may take it.
+  Model calls count against the workflow's budget.
+- Not yet: general models (`model NAME` with no records, whose records
+  the language supplies), asking an agent, thinking steps, `verify`,
+  `vote`, `escalate`, and any real model. Each is refused by name.
+- Found by comparing every example the engine can now read (87 files):
+  a nested function calling a function value it captures was refused as
+  an unknown name. Fixed, and held by a new case in `cases/records.kos`.
+- The suite: `cases/models.kos`, `failing/models.kos`, and five refusals
+  (a model whose output is not a record, a temperature out of range, a
+  wrong input field, `retry` on a function step, `retry 9`). Both engines
+  pass all 53 programs.
+- Measured by mutation: 1,000 mutants of the model programs and 3,567 of
+  every example both engines read (all but `discrete_maths.kos`, whose
+  matrices the native engine cannot work out yet); every one gave the
+  same output from both.
+- Next: general models and thinking steps (`classify`, `extract`,
+  `summarize`, `decide`); then asking an agent; then `verify`, `vote`
+  and `escalate`.
+
 ### The native engine runs fallbacks and match steps
 
 - Asked for the big plan, the owner was given it from this document and

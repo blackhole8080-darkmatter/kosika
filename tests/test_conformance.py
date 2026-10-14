@@ -128,8 +128,17 @@ class NativeTests(unittest.TestCase):
         ran = self.run_engine("test", str(ROOT / "examples" / "mcp" / "librarian.kos"))
         self.assertEqual(ran.returncode, 1)
         said = ran.stderr.decode("utf-8", "replace")
-        self.assertIn("kosika-native cannot read a model yet", said)
+        self.assertIn("kosika-native cannot run a step that asks an agent yet", said)
         self.assertEqual(ran.stdout, b"")
+        with tempfile.TemporaryDirectory() as scratch:
+            general = Path(scratch) / "general.kos"
+            general.write_text("model assistant\n", encoding="utf-8")
+            ran = self.run_engine("test", str(general))
+        self.assertEqual(ran.returncode, 1)
+        self.assertIn(
+            "kosika-native cannot read a general model yet",
+            ran.stderr.decode("utf-8", "replace"),
+        )
         with tempfile.TemporaryDirectory() as scratch:
             asking = Path(scratch) / "asking.kos"
             asking.write_text(

@@ -17,9 +17,9 @@ Kosika can run on a machine with no Python.
     refused/NAME.kos           a program the checker must refuse
     refused/NAME.expected.txt  the one line `test` prints for it
 
-Every program here gives the same result on any machine. It asks no
-model and reaches no file; where a workflow uses a tool, the test scripts
-what the tool answers.
+Every program here gives the same result on any machine. It reaches no
+file and no real model; where a workflow asks a model or uses a tool, the
+test scripts what it answers.
 
 ## What an engine must do
 
@@ -45,9 +45,8 @@ it must be what Kosika should do, not merely what one engine happens to do.
 
 ## What the suite does not cover yet
 
-- Models, agents that ask them, and the step forms that go with them
-  (`verify`, `vote`, `retry`, `escalate`), and `parallel`. Memories,
-  boards and imports.
+- General models, agents that ask a model, thinking steps, `verify`,
+  `vote`, `escalate` and `parallel`. Memories, boards and imports.
 - Vectors and matrices.
-- 7 passing programs, 3 failing ones and 36 refused ones are a beginning. A method or rule
+- 8 passing programs, 4 failing ones and 41 refused ones are a beginning. A method or rule
   that no case uses is not held to anything.

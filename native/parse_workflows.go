@@ -19,7 +19,7 @@ func (p *Parser) stringOrIdentifier() string {
 }
 
 func notYetStep(token Token, what string) {
-	parseFail("kosika-native cannot run %s yet (at %d:%d); it runs steps that call a function, a workflow or a tool", what, token.Line, token.Column)
+	parseFail("kosika-native cannot run %s yet (at %d:%d); it runs steps that call a function, run a workflow, use a tool or ask a model", what, token.Line, token.Column)
 }
 
 func (p *Parser) parseTool() *ToolDecl {
