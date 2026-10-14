@@ -11,8 +11,11 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import sys
 import tempfile
+import threading
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from kosika import conformance
@@ -168,6 +171,71 @@ class NativeTests(unittest.TestCase):
             ran = self.run_engine("test", str(bad))
         self.assertEqual(ran.returncode, 1)
         self.assertIn("Expected expression at 3:1, got '}'", ran.stderr.decode("utf-8"))
+
+    def test_it_asks_a_model_server_as_the_reference_does(self) -> None:
+        # A stand-in model server that answers in either wire format, and
+        # keeps what each engine asked of it.
+        replies = [
+            {"label": "billing", "confidence": 0.9},
+            {"number": "A-7", "total": 40},
+            {"text": "Charged twice."},
+            {"answer": True, "confidence": 0.8, "reason": "It says so."},
+        ]
+        asked: list[dict] = []
+
+        class Server(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:  # noqa: N802 - the http.server name
+                body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                asked.append({"path": self.path, **body})
+                reply = json.dumps(replies[(len(asked) - 1) % len(replies)])
+                if self.path.endswith("/api/chat"):
+                    answer = {"message": {"role": "assistant", "content": reply}, "done": True}
+                else:
+                    answer = {
+                        "choices": [
+                            {"message": {"role": "assistant", "content": reply}, "finish_reason": "stop"}
+                        ]
+                    }
+                data = json.dumps(answer).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            def log_message(self, *_: object) -> None:
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Server)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.shutdown)
+        url = f"http://127.0.0.1:{server.server_port}"
+        program = ROOT / "conformance" / "cases" / "thinking.kos"
+        with tempfile.TemporaryDirectory() as scratch:
+            inputs = Path(scratch) / "input.json"
+            inputs.write_text(json.dumps({"ticket": {"text": "Charged twice."}}))
+            for protocol, endpoint in (("openai", url + "/v1"), ("ollama", url)):
+                with self.subTest(protocol):
+                    flags = [
+                        "--input", str(inputs), "--model", "small",
+                        "--model-url", endpoint, "--model-protocol", protocol,
+                    ]
+                    asked.clear()
+                    reference = subprocess.run(
+                        [sys.executable, "-m", "kosika.cli", "run", str(program),
+                         *flags, "--trace", str(Path(scratch) / "trace.jsonl")],
+                        cwd=ROOT, capture_output=True, text=True,
+                    )
+                    by_reference = list(asked)
+                    asked.clear()
+                    native = self.run_engine("run", str(program), *flags)
+                    self.assertEqual(native.returncode, 0, native.stderr.decode())
+                    self.assertEqual(
+                        native.stdout.decode("utf-8").splitlines()[0],
+                        reference.stdout.splitlines()[0],
+                    )
+                    # Each engine asked the same questions, word for word.
+                    self.assertEqual(asked, by_reference)
 
 
 if __name__ == "__main__":

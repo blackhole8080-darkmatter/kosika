@@ -3506,6 +3506,37 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   programs with workflows, agents and tools; the guide does not teach
   those yet.
 
+### The native engine asks real models
+
+- The owner asked that his other projects be recorded in Kosika so that
+  it remembers them; they are now under "Projects that may use Kosika" at
+  the top of this plan. He then said to focus on Kosika's development, and
+  the native engine was given real models, as recommended to him.
+- `kosika-native run FILE --input IN.json --model NAME` runs a workflow
+  and asks a real model server: the OpenAI-compatible `/chat/completions`
+  shape or Ollama's own `/api/chat`, with the reference's flags, its
+  default of a local Ollama server, its cap of 1,024 output tokens, and
+  its words: the same system and user messages, the same JSON schema in
+  them, the same retry messages. A model server that fails stops the run
+  ("Workflow stopped (provider)"), as the reference's controlled provider
+  stops it, and is not handed to a fallback. A test's scripted answers
+  now go through the same path, as JSON text, as the reference's do.
+- Tried with this machine's Ollama: `qwen2.5:3b` on `model_answer.kos`
+  and on an agent, and `qwen2.5:7b` on all four thinking steps. On the
+  thinking steps both engines gave the same result, to the `40.0`.
+- `tests/test_conformance.py` now holds `run` to the reference with a
+  stand-in model server in both wire formats: both engines must print the
+  same result and send the same requests, word for word. They do.
+- Found on the way: the time in "Model did not answer within N seconds"
+  was written wrong (6 for 60); fixed. A 7b model loading for the first
+  time took longer than the default 60 seconds; `--model-timeout` says
+  how long to wait, as in the reference.
+- Not yet: an agent calling its tools (an agent with tools is refused
+  before the run, since no tool can be reached), traces, journals and
+  approvals, and real tools (MCP servers, `system` tools).
+- Next: real tools, starting with MCP servers, so that an agent can call
+  its tools; then traces.
+
 ### The native engine asks agents
 
 - Asked whether Kosika could serve his other projects (DEEP, Ananta,

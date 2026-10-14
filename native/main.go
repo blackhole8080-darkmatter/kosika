@@ -3,11 +3,12 @@
 //	kosika-native tokens FILE.kos    the file's tokens, one JSON object a line
 //	kosika-native test FILE.kos      run the tests the file carries
 //	kosika-native test --json FILE.kos   the same, as JSON
+//	kosika-native run FILE.kos [--workflow NAME] [--input FILE.json]
+//	    [--model NAME] [--model-url URL] [--model-protocol openai|ollama]
+//	    [--model-timeout SECONDS]    run a workflow, asking a real model
 //
-// It has the core of the language: records, functions and tests, which
-// reach nothing outside the program. Workflows, agents, tools and models
-// are not here yet, and a file that has them is refused by name. It is
-// built up stage by stage against the conformance suite.
+// It is built up stage by stage against the conformance suite; what it
+// cannot do yet it refuses by name. See README.md.
 package main
 
 import (
@@ -30,14 +31,42 @@ func read(path string) string {
 	return string(source)
 }
 
+// load reads, lowers and checks a program, as the reference's load_program
+// does, and ends the command when it cannot be run.
+func load(path string) *Program {
+	program, err := Parse(read(path))
+	if err != nil {
+		fail("Check failed: %s: %v", path, err)
+	}
+	if problem := ModuleProblem(program, path); problem != "" {
+		fail("Check failed: %s", problem)
+	}
+	lowered, refused := LowerThinking(program)
+	if refused != "" {
+		fmt.Printf("Check failed: %s\n", refused)
+		os.Exit(2)
+	}
+	program = LowerValues(lowered)
+	// A program the checker refuses is not run, and says why as the
+	// reference does: on the output, with exit code 2.
+	if refused := Check(program); refused != nil {
+		fmt.Printf("Check failed: %s\n", refused)
+		os.Exit(2)
+	}
+	return program
+}
+
 func main() {
 	args := os.Args[1:]
+	if len(args) >= 2 && args[0] == "run" {
+		os.Exit(runCommand(args[1:]))
+	}
 	asJSON := false
 	if len(args) == 3 && args[1] == "--json" {
 		asJSON, args = true, []string{args[0], args[2]}
 	}
 	if len(args) != 2 {
-		fail("usage: kosika-native tokens FILE.kos | kosika-native test [--json] FILE.kos")
+		fail("usage: kosika-native tokens FILE.kos | kosika-native test [--json] FILE.kos | kosika-native run FILE.kos [options]")
 	}
 	switch args[0] {
 	case "tokens":
@@ -55,26 +84,7 @@ func main() {
 			fail("%v", lexErr)
 		}
 	case "test":
-		program, err := Parse(read(args[1]))
-		if err != nil {
-			fail("Check failed: %s: %v", args[1], err)
-		}
-		if problem := ModuleProblem(program, args[1]); problem != "" {
-			fail("Check failed: %s", problem)
-		}
-		lowered, refused := LowerThinking(program)
-		if refused != "" {
-			fmt.Printf("Check failed: %s\n", refused)
-			os.Exit(2)
-		}
-		program = LowerValues(lowered)
-		// A program the checker refuses is not run, and says why as the
-		// reference does: on the output, with exit code 2.
-		if refused := Check(program); refused != nil {
-			fmt.Printf("Check failed: %s\n", refused)
-			os.Exit(2)
-		}
-		results := RunTests(program)
+		results := RunTests(load(args[1]))
 		failed := 0
 		for _, result := range results {
 			if !result.Passed {

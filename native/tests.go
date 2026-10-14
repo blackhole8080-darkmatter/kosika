@@ -87,6 +87,8 @@ func runStep(machine *Machine, step TestStep, at frame, tools, models map[string
 				problem = failure.Message
 			case *budgetError:
 				problem = failure.Message
+			case *permissionError:
+				problem = failure.Message
 			case breakSignal, continueSignal, returnSignal:
 				problem = "break, continue or return outside a loop or function"
 			default:
@@ -101,7 +103,7 @@ func runStep(machine *Machine, step TestStep, at frame, tools, models map[string
 			for _, arg := range args {
 				inputs[arg.Name] = machine.eval(arg.Value, at)
 			}
-			at.scope.vars[step.Target] = newRun(machine.program, tools, models, workflow).workflow(workflow, inputs, 0)
+			at.scope.vars[step.Target] = newRun(machine.program, tools, scripted(models), workflow).workflow(workflow, inputs, 0)
 			return ""
 		}
 		at.scope.vars[step.Target] = machine.eval(step.Value, at)
@@ -127,6 +129,15 @@ func RunTests(program *Program) []TestResult {
 		results = append(results, runTest(program, test))
 	}
 	return results
+}
+
+// scripted binds each declared model to the answers its test scripts.
+func scripted(models map[string]*scriptedTool) map[string]modelProvider {
+	providers := map[string]modelProvider{}
+	for name, script := range models {
+		providers[name] = &scriptedProvider{script}
+	}
+	return providers
 }
 
 func runTest(program *Program, test *TestDecl) TestResult {

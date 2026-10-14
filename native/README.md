@@ -6,6 +6,15 @@ file.
     go build -o kosika-native.exe .
     kosika-native test FILE.kos      run the tests the file carries
     kosika-native tokens FILE.kos    the file's tokens, one JSON object a line
+    kosika-native run FILE.kos --input IN.json --model qwen2.5:7b
+                                     run a workflow, asking a real model
+
+`run` takes the reference's flags for models: `--model NAME` (or
+`fast,strong=big`), `--model-url`, `--model-protocol openai|ollama`,
+`--model-binding`, `--model-timeout`, `--max-output-tokens`, and
+`--workflow` and `--input`. Without `--model-url` it asks a local Ollama
+server. It prints the workflow's result as `kosika run` does. It writes no
+trace yet.
 
 ## What it has
 
@@ -22,10 +31,11 @@ model (asked again on a refused answer with `retry`), ask an agent, or
 think (`classify`, `extract`, `summarize`, `decide`), with a fallback
 (`otherwise`) or a choice of call (`match`); tools and agents as they are
 declared; and tests that run a workflow and script what its models and
-tools answer. A model or a tool is reached only through those scripted
-answers: this engine reaches no real one yet, and a tool that changes the
-world is refused, as the reference refuses it in a test, for want of a
-recorded approval.
+tools answer. With `run`, a model is a real one: a model server spoken to
+as the reference speaks to it, with the same requests word for word. A tool
+is reached only through a test's scripted answers: this engine reaches no
+real tool yet, and one that changes the world is refused, as the reference
+refuses it in a test, for want of a recorded approval.
 
 Before it runs a program it checks it, as the reference does: a program
 whose types do not agree is refused, with the reference's own message, on
@@ -42,7 +52,8 @@ print what the reference engine prints, word for word. See
   test an agent's turn is its model's answer, as in the reference.
 - Steps with `verify`, `vote`, `escalate` or `with evidence`, and
   `parallel` blocks.
-- Reaching a real model, or a real tool: MCP servers, `system` tools, files, pages, the
+- Traces, journals and approvals for a run.
+- Reaching a real tool: MCP servers, `system` tools, files, pages, the
   clock and chance. Approvals.
 - Memories, boards, swarms and imports.
 - A file that has any of these is refused, and the refusal names it.
@@ -57,6 +68,8 @@ print what the reference engine prints, word for word. See
     parse_workflows.go   reading tools, agents and workflows
     parse_models.go      reading models
     thinking.go  thinking steps made model calls, and general models
+    live.go      asking a model: scripted answers, or a model server
+    run.go       the run command
     check.go     the checker: refusing a program before it runs
     check_workflows.go   the checker's rules for tools, agents, workflows
     workflows.go running a workflow, and the tools a test scripts

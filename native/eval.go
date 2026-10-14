@@ -66,10 +66,22 @@ type breakSignal struct{}
 type continueSignal struct{}
 type returnSignal struct{ value Value }
 
-// A budgetError ends the run and cannot be caught by try.
-type budgetError struct{ Message string }
+// A budgetError ends the run and cannot be caught by try. Its Code says
+// why it stopped, as the reference's ExecutionError does: "" is a spent
+// budget, "provider" a model server that could not answer.
+type budgetError struct {
+	Message string
+	Code    string
+}
 
 func (e *budgetError) Error() string { return e.Message }
+
+// A permissionError ends the run before or as it reaches something it was
+// not granted: a model with no binding, or a change with no approval. Like
+// a spent budget, no fallback and no try can answer it.
+type permissionError struct{ Message string }
+
+func (e *permissionError) Error() string { return e.Message }
 
 type Machine struct {
 	program   *Program
@@ -101,7 +113,7 @@ func (f frame) with(scope *Scope) frame { return frame{scope, f.funcs, f.depth} 
 func (m *Machine) loopPass() {
 	m.loops++
 	if m.loops > maxLoopIterations {
-		panic(&budgetError{fmt.Sprintf("Execution exceeded max_loop_iterations=%d", maxLoopIterations)})
+		panic(&budgetError{Message: fmt.Sprintf("Execution exceeded max_loop_iterations=%d", maxLoopIterations)})
 	}
 }
 
@@ -581,7 +593,7 @@ func (m *Machine) invoke(decl *FuncDecl, arguments, captured map[string]Value, f
 	}
 	m.calls++
 	if m.calls > maxFunctionCalls {
-		panic(&budgetError{fmt.Sprintf("Execution exceeded max_function_calls=%d", maxFunctionCalls)})
+		panic(&budgetError{Message: fmt.Sprintf("Execution exceeded max_function_calls=%d", maxFunctionCalls)})
 	}
 	if depth >= maxCallDepth {
 		runFail("Function call depth exceeds 128")
