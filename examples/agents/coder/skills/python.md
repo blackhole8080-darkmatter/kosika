@@ -1,7 +1,9 @@
 # How a function is added to a Python file
-When: function, add a, python, .py, method
+When: python, .py
 Files: *.py
 Check: contains "def "
+
+This is for Python files only. Ignore it for other languages.
 
 Keep every function the file already has, unchanged, and add the new one
 after them. Give the new function a one-line docstring. Use type hints if

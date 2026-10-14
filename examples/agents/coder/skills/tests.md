@@ -1,8 +1,10 @@
 # How a test file is written
-When: test, tests, tested, with a test
+When: python, .py, pytest
 Files: test_*.py
 Check: contains "def test_"
 Check: contains "assert"
+
+This is for Python files only. Ignore it for other languages.
 
 Write tests for pytest. A test is a function whose name starts with test_
 and takes no arguments. Use plain assert. Import what you test at the top

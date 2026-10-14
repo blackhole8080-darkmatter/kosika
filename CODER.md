@@ -132,12 +132,35 @@ fixed, and that task then took 30 seconds.
 - **It does not understand a project.** It reads the files it thinks it
   needs. It has no map of the code and no memory beyond its last run.
 
+### JavaScript and TypeScript
+
+The same six-task measure, in JavaScript and TypeScript. Stricter than the
+Python one: after each run a test file the coder never saw was added, and
+Node ran every test. A task counts only if all of them pass and everything
+the files had is still there.
+
+| Setup | Done right | Time for all six |
+|---|---|---|
+| Local model (qwen2.5:7b) alone, with the checks | 1 of 6 | 50 min |
+| omp helping, with the checks | 6 of 6 | 4 min |
+
+The local model's five misses, read one by one: twice it answered as if
+it had written files and had written none (Kosika's own record said so,
+and the report said "No file was written"); once its TypeScript did not
+run; once its fix passed its own test and failed on an edge the hidden
+test tried; once it renamed a function in the test file but not in the
+source, and its own tests still passed. The last two were reported to the
+person as passing. A second agent reading the change is what catches
+that kind, and there was none in the "alone" runs.
+
 ## What it cannot do yet
 
 - **Large files or many files.** It replaces whole files, and an outside
   agent's change is refused above 40 files.
-- **Anything but Python.** The tests it runs are pytest. It does not write
-  Kosika yet.
+- **Languages beyond four.** Python (pytest), Kosika (its own tests),
+  JavaScript and TypeScript (Node's own test runner, nothing installed).
+  A JavaScript project that tests with a library and a build step is not
+  served. Nothing checks HTML or CSS beyond a skill's rules.
 - **Choose tests by meaning.** It runs the tests named after the files it
   changed, and all of them if it finds none. A change that breaks a test
   named after something else is not seen until all are run.

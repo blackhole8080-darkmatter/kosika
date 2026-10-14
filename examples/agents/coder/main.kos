@@ -1,4 +1,4 @@
-// Coder: give it a small task in a Python or Kosika project, and it shows you every
+// Coder: give it a small task in a Python, Kosika, JavaScript or TypeScript project, and it shows you every
 // file it will make or change before it touches one. Then it runs the
 // project's tests and tells you what happened.
 //
@@ -19,7 +19,15 @@
 // Say "fix" after a failing run and it tries again, shown what the tests
 // printed. It keeps only the last run in memory.
 //
-// It replaces whole files, so it suits small files. It starts only python.
+// It replaces whole files, so it suits small files. It starts only python
+// and node.
+//
+// JavaScript and TypeScript (.js, .ts and their kin) are read as Python
+// is: what a file had must stay, a test goes in a test file such as
+// calc.test.ts, and an import must name a file and a thing that are there.
+// Their tests are run by Node itself (node --test), which also runs
+// TypeScript, so nothing is installed. A project that tests another way,
+// with a library and a build step, is not served yet.
 //
 // Kosika files (.kos) are held to more than Python ones. Before anything
 // is written, Kosika itself checks each one and runs the tests written in
@@ -137,6 +145,15 @@ tool run_python {
   output: Ran
 }
 
+// Node, for the tests of a JavaScript or TypeScript project.
+tool run_node {
+  source system "shell"
+  operation: "node"
+  access: execute
+  input: Command
+  output: Ran
+}
+
 // An outside agent, asked to do the task in a copy of the project. It
 // changes nothing here, so asking needs no approval.
 tool ask_outside {
@@ -179,7 +196,7 @@ tool code_check {
 }
 
 agent helper {
-  can: [ask_outside, ask_review, code_check]
+  can: [ask_outside, ask_review, code_check, list_folder]
   max_steps: 1
 }
 
@@ -194,11 +211,11 @@ agent coder {
   max_steps: 8
   max_tool_calls: 16
   check: plan_check
-  instructions: "You are a careful programmer working in one Python project. You cannot see anything until you use a tool. First list the folder with path \".\". Read every file you will write before you write it; that includes the test file if one exists. Then request all your changes in one reply, one write_file for each file. write_file replaces the whole file, so its text must be the complete new file: every line that was there and should stay, plus what you add. A task that adds a function with a test needs two write_file calls: the source file with the new function added, and the test file with its old tests kept and the new test added. Import the new function in the test file. Change nothing the task does not need. Write only the files the task needs changed: to fix a bug, change the file with the bug and leave the tests as they are. After the changes, answer with what you did in summary, and an empty list in did."
+  instructions: "You are a careful programmer working in one project. It may be Python, Kosika, JavaScript or TypeScript: write in the language of the files that are there. You cannot see anything until you use a tool. First list the folder with path \".\". Read every file you will write before you write it; that includes the test file if one exists. Then request all your changes in one reply, one write_file for each file. write_file replaces the whole file, so its text must be the complete new file: every line that was there and should stay, plus what you add. A task that adds a function with a test needs two write_file calls: the source file with the new function added, and the test file with its old tests kept and the new test added. Import the new function in the test file. Change nothing the task does not need. Write only the files the task needs changed: to fix a bug, change the file with the bug and leave the tests as they are. After the changes, answer with what you did in summary, and an empty list in did."
 }
 
 agent runner {
-  can: [run_python]
+  can: [run_python, run_node]
   max_steps: 1
 }
 
@@ -234,6 +251,156 @@ fn defined(text: Text) -> Text[] {
 
 fn is_kosika(path: Text) -> Bool {
   return path.lower().ends_with(".kos")
+}
+
+// ---------------------------------------------------------------- JavaScript and TypeScript
+//
+// The same reading for a third family of files. Node runs both, and runs
+// their tests itself, so nothing has to be installed.
+
+fn is_script(path: Text) -> Bool {
+  let name = path.lower()
+  for ending in [".js", ".mjs", ".cjs", ".ts", ".mts", ".jsx", ".tsx"] {
+    if name.ends_with(ending) { return true }
+  }
+  return false
+}
+
+// A test file as Node finds one: calc.test.ts, or anything in a test folder.
+fn is_script_test(path: Text) -> Bool {
+  let name = file_name(path).lower()
+  let folders = path.replace("\\", "/").lower().split("/")
+  return name.contains(".test.") or name.contains(".spec.") or folders.contains("test") or folders.contains("__tests__")
+}
+
+// The name a line begins with: its letters, digits, _ and $.
+fn name_at(text: Text) -> Text {
+  var name = ""
+  for letter in text.chars() {
+    if not "abcdefghijklmnopqrstuvwxyz0123456789_$".contains(letter.lower()) { return name }
+    name = name + letter
+  }
+  return name
+}
+
+// The words inside the quotes a text begins with, or "".
+fn quoted(text: Text) -> Text {
+  let mark = text.take(1)
+  if mark != "\"" and mark != "'" and mark != "`" { return "" }
+  return text.drop(1).split(mark).first().or("")
+}
+
+// A line without the words that may stand before what it declares.
+fn bare(line: Text) -> Text {
+  var rest = line
+  for word in ["export ", "default ", "declare ", "async ", "abstract "] {
+    if rest.starts_with(word) { rest = rest.drop(word.length()) }
+  }
+  return rest
+}
+
+// What a JavaScript or TypeScript file defines at its left margin: its
+// functions, classes, constants, types and interfaces by name, and each
+// test, wherever it stands, by its words, as `test("what it shows")`.
+fn script_defined(text: Text) -> Text[] {
+  var names: Text[] = []
+  for line in text.lines() {
+    let rest = bare(line)
+    var name = ""
+    for start in ["function* ", "function ", "class ", "const ", "let ", "var ", "interface ", "type ", "enum "] {
+      if name.is_empty() and rest.starts_with(start) { name = name_at(rest.drop(start.length())) }
+    }
+    for start in ["test(", "it("] {
+      if line.trim().starts_with(start) and not quoted(line.trim().drop(start.length())).is_empty() {
+        name = "test(\"" + quoted(line.trim().drop(start.length())) + "\")"
+      }
+    }
+    if not name.is_empty() and not names.contains(name) { names = names.append(name) }
+  }
+  return names
+}
+
+// What a file lets others import: what it declares after `export`, and
+// the names in a line such as `export { a, b as c }`.
+fn exported(text: Text) -> Text[] {
+  var names: Text[] = []
+  for line in text.lines() {
+    if line.starts_with("export {") {
+      for part in line.drop(8).split("}").first().or("").split(",") {
+        let name = part.trim().words().last().or("")
+        if not name.is_empty() { names = names.append(name) }
+      }
+    } else if line.starts_with("export ") {
+      names = names.concat(script_defined(line))
+    }
+  }
+  return names
+}
+
+// A file's name without its ending: calc for calc.test.ts is calc.test.
+fn stem(path: Text) -> Text {
+  let parts = file_name(path).split(".")
+  return if parts.length() < 2 { file_name(path) } else { parts.take(parts.length() - 1).join(".") }
+}
+
+// What one file's imports get wrong about the other files of the plan: a
+// name the other file does not export, or the other file called by a name
+// Node will not find. Only imports written on one line are read.
+fn import_problems(file: Planned, files: Planned[]) -> Text[] {
+  var wrong: Text[] = []
+  for line in file.text.lines() {
+    if line.starts_with("import ") and line.contains(" from ") and line.contains("{") {
+      let source = quoted(line.split(" from ").last().or("").trim())
+      for other in files {
+        // "./calc", "./calc.js" and "./calc.ts" all mean the planned calc.ts.
+        let meant = stem(other.path) == stem(source) or stem(other.path) == file_name(source)
+        if source.starts_with(".") and other.path != file.path and is_script(other.path) and meant {
+          if file_name(other.path) != file_name(source) {
+            wrong = wrong.append(file.path + ": it imports from \"" + source + "\", but the file is " + file_name(other.path) + ". Node needs the whole name: \"./" + file_name(other.path) + "\"")
+          }
+          let has = exported(other.text)
+          for part in line.split("{").last().or("").split("}").first().or("").split(",") {
+            let name = part.trim().words().first().or("")
+            let wanted = if name == "type" { part.trim().words().drop(1).first().or("") } else { name }
+            if not wanted.is_empty() and not has.contains(wanted) {
+              wrong = wrong.append(file.path + ": it imports " + wanted + " from " + file_name(other.path) + ", which does not export it")
+            }
+          }
+        }
+      }
+    }
+  }
+  return wrong
+}
+
+// What is wrong with the JavaScript and TypeScript files of a plan.
+fn script_check(request: Text, files: Planned[]) -> Text[] {
+  var wrong: Text[] = []
+  let named = for word in request.words() { word.trim_marks(".,;:!?()'\"`") }
+  let leaving = takes_away(request)
+  var scripts = 0
+  var tests = 0
+  for file in files {
+    if is_script(file.path) {
+      scripts += 1
+      if is_script_test(file.path) { tests += 1 }
+      let now = script_defined(file.text)
+      let had = script_defined(file.before)
+      let gone = for name in had where not now.contains(name) and not (leaving and (named.contains(name) or name.starts_with("test("))) { name }
+      if file.exists and not gone.is_empty() {
+        wrong = wrong.append(file.path + ": it no longer has " + listed(gone) + ", which the file has now. write_file replaces the whole file: keep everything that is there and add to it")
+      }
+      let strays = for name in now where name.starts_with("test(") and not had.contains(name) { name }
+      if not is_script_test(file.path) and not strays.is_empty() {
+        wrong = wrong.append(file.path + ": it holds the test " + listed(strays) + ". Tests go in a test file, such as " + stem(file.path) + ".test." + file_name(file.path).split(".").last().or("js"))
+      }
+      wrong = wrong.concat(import_problems(file, files))
+    }
+  }
+  if scripts > 0 and tests == 0 and wants_test(request) {
+    wrong = wrong.append("the task asks for a test, but the plan writes no test file. Add a write_file for one, named like calc.test.ts for calc.ts")
+  }
+  return wrong
 }
 
 // How many tests a Kosika text holds.
@@ -328,7 +495,7 @@ fn plan_check(request: Text, files: Planned[]) -> Text[] {
   if kosika > 0 and python == 0 and gained == 0 and wants_test(request) {
     wrong = wrong.append("the task asks for a test, but no Kosika file gains one. Add a test block, written test \"what it shows\" { expect ... }, to the file")
   }
-  return wrong
+  return wrong.concat(script_check(request, files))
 }
 
 // ---------------------------------------------------------------- routing
@@ -360,9 +527,18 @@ fn printed(ran: Ran) -> Text {
   return if lines.length() > 25 { lines.drop(lines.length() - 25).join("\n") } else { both }
 }
 
+// Node says "tests 0" and calls that a success when it finds no test.
+fn none_ran(ran: Ran) -> Bool {
+  for line in ran.stdout.lines() {
+    if line.trim().ends_with(" tests 0") { return true }
+  }
+  return false
+}
+
 fn verdict(ran: Ran) -> Text {
   var said = "The tests failed."
-  if ran.exit_code == 0 { said = "The tests pass." }
+  if ran.exit_code == 0 and none_ran(ran) { said = "No tests were found to run." }
+  else if ran.exit_code == 0 { said = "The tests pass." }
   else if ran.exit_code == 5 { said = "No tests were found to run." }
   return said
 }
@@ -402,7 +578,7 @@ fn worked(task: Task, work: Work, ran: Ran) -> Result {
   let judged = if work.did.length() == 0 and ran.exit_code == 0 { "Nothing was changed, so the task is not done. The tests as they were still pass." } else { verdict(ran) }
   return {
     text: (if work.did.length() == 0 { "" } else { work.summary.trim() + "\n" }) + files_line(work) + said_only(work) + "\n" + judged + tail,
-    last: {task: task.text, output: out, passed: ran.exit_code == 0, known: true}
+    last: {task: task.text, output: out, passed: ran.exit_code == 0 and not none_ran(ran), known: true}
   }
 }
 
@@ -450,6 +626,46 @@ fn kosika_file(work: Work) -> Text {
   return found
 }
 
+// The test files a change wrote, for Node to run. With none, Node is
+// left to find every test the project has.
+fn script_tests(work: Work) -> Text[] {
+  var files: Text[] = []
+  for line in work.did {
+    let path = line.words().drop(1).join(" ").replace("\\", "/")
+    if is_script(path) and is_script_test(path) and not files.contains(path) { files = files.append(path) }
+  }
+  return files.take(8)
+}
+
+fn node_args(files: Text[]) -> Text[] {
+  return ["--test"].concat(files)
+}
+
+// Which tests follow a change: "python" when any Python was written,
+// "kosika" when a Kosika file was, "node" when only JavaScript or
+// TypeScript was. With nothing written, the project's Python tests.
+fn runner_of(work: Work) -> Text {
+  var scripts = 0
+  for line in work.did {
+    let path = line.words().drop(1).join(" ")
+    if path.lower().ends_with(".py") { return "python" }
+    if is_script(path) { scripts += 1 }
+  }
+  if not kosika_file(work).is_empty() { return "kosika" }
+  return if scripts > 0 { "node" } else { "python" }
+}
+
+// Which tests a folder has when nothing is known of the last change:
+// Node's, if it holds JavaScript or TypeScript and no Python.
+fn runner_in(folder: Listing) -> Text {
+  var scripts = 0
+  for name in folder.names {
+    if name.lower().ends_with(".py") or name == "pyproject.toml" { return "python" }
+    if is_script(name) or name == "package.json" { scripts += 1 }
+  }
+  return if scripts > 0 { "node" } else { "python" }
+}
+
 fn test_args(names: Text[]) -> Text[] {
   let all = ["-m", "pytest", "-q", "-x", "--no-header", "-p", "no:cacheprovider"]
   return if names.is_empty() { all } else { all.concat(["-k", names.join(" or ")]) }
@@ -478,7 +694,7 @@ fn tested(last: Last, ran: Ran) -> Result {
   let out = printed(ran)
   return {
     text: verdict(ran) + "\n" + out,
-    last: {task: last.task, output: out, passed: ran.exit_code == 0, known: last.known}
+    last: {task: last.task, output: out, passed: ran.exit_code == 0 and not none_ran(ran), known: last.known}
   }
 }
 
@@ -580,9 +796,27 @@ workflow test_kosika(file: Note) -> Tested {
   require approval
 }
 
+fn ran_of(tested: Tested) -> Ran {
+  return tested.ran
+}
+
+workflow run_all_node() -> Tested {
+  ran    = execute runner.run_node(["--test"])
+  tested = as_tested(ran, [])
+  require approval
+}
+
+// Node runs a JavaScript or TypeScript project's tests itself.
+workflow test_script(work: Work) -> Tested {
+  ran    = execute runner.run_node(node_args(script_tests(work)))
+  tested = as_tested(ran, script_tests(work))
+  require approval
+}
+
 workflow run_tests(work: Work) -> Tested {
-  tested = match kosika_file(work).is_empty() {
-    case false { call test_kosika(noted(kosika_file(work))) }
+  tested = match runner_of(work) {
+    case "kosika" { call test_kosika(noted(kosika_file(work))) }
+    case "node" { call test_script(work) }
     case _ { call test_python(work) }
   }
   require approval
@@ -732,8 +966,12 @@ workflow fix_last(msg: Msg) -> Result {
 workflow only_test(msg: Msg) -> Result {
   past   = recall journal under "me"
   last   = earlier(past)
-  ran    = execute runner.run_python(["-m", "pytest", "-q", "-x", "--no-header", "-p", "no:cacheprovider"])
-  result = tested(last, ran)
+  folder = execute helper.list_folder(".") otherwise {names: []}
+  all    = match runner_in(folder) {
+    case "node" { call run_all_node() }
+    case _ { call run_all() }
+  }
+  result = tested(last, ran_of(all))
   require approval
 }
 
@@ -973,6 +1211,59 @@ test "after a change to Kosika only, that file's own tests are run" {
   expect kosika_file({summary: "s", did: []}) == ""
   done = worked_on({text: "add is_even"}, kos, {ran: {exit_code: 0, stdout: "3 passed, 0 failed", stderr: ""}, only: "tools.kos"})
   expect done.text.contains("The tests for tools.kos pass.")
+}
+
+test "what a TypeScript file defines is read from its lines" {
+  text = "import { test } from \"node:test\";\nexport function add(a: number, b: number): number {\n  return a + b;\n}\nexport const double = (n: number): number => n * 2;\nexport default async function load() {}\nclass Shape {}\nexport interface Point { x: number }\nexport type Size = \"low\" | \"high\";\ntest(\"add works\", () => {\n});\ndescribe(\"group\", () => {\n  it('goes deep', () => {});\n});\n"
+  expect script_defined(text) == ["add", "double", "load", "Shape", "Point", "Size", "test(\"add works\")", "test(\"goes deep\")"]
+  expect exported(text + "export { Shape, add as plus };\n") == ["add", "double", "load", "Point", "Size", "Shape", "plus"]
+  expect is_script("src/calc.TS") and is_script("a.mjs") and not is_script("calc.py") and not is_script("notes.json")
+  expect is_script_test("calc.test.ts") and is_script_test("test/calc.js") and not is_script_test("contest.ts")
+  expect stem("src/calc.test.ts") == "calc.test"
+}
+
+test "a TypeScript plan keeps what the file had and puts tests in a test file" {
+  calc = "export function add(a: number, b: number): number {\n  return a + b;\n}\n"
+  more = calc + "\nexport function isEven(n: number): boolean {\n  return n % 2 === 0;\n}\n"
+  tests = "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { isEven } from \"./calc.ts\";\n\ntest(\"isEven\", () => {\n  assert.equal(isEven(2), true);\n});\n"
+  only: Planned[] = [{path: "calc.ts", text: "export function isEven(n: number): boolean {\n  return n % 2 === 0;\n}\n", before: calc, exists: true}]
+  good: Planned[] = [{path: "calc.ts", text: more, before: calc, exists: true}, {path: "calc.test.ts", text: tests, before: "", exists: false}]
+  alone: Planned[] = [{path: "calc.ts", text: more, before: calc, exists: true}]
+  mixed: Planned[] = [{path: "calc.ts", text: more + "\ntest(\"isEven\", () => {});\n", before: calc, exists: true}]
+  expect plan_check("add isEven to calc.ts, with a test", only)[0].contains("calc.ts: it no longer has add")
+  expect plan_check("add isEven to calc.ts, with a test", good) == []
+  expect plan_check("add isEven to calc.ts, with a test", alone) == ["the task asks for a test, but the plan writes no test file. Add a write_file for one, named like calc.test.ts for calc.ts"]
+  expect plan_check("add isEven to calc.ts", alone) == []
+  expect plan_check("add isEven to calc.ts", mixed) == ["calc.ts: it holds the test test(\"isEven\"). Tests go in a test file, such as calc.test.ts"]
+  expect plan_check("rename add to plus in calc.ts", [{path: "calc.ts", text: "export function plus(a: number, b: number): number {\n  return a + b;\n}\n", before: calc, exists: true}]) == []
+}
+
+test "an import must name a file and a thing that are there" {
+  calc = "export function add(a, b) {\n  return a + b;\n}\n"
+  head = "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\n"
+  short: Planned[] = [{path: "calc.ts", text: calc, before: calc, exists: true}, {path: "calc.test.ts", text: head + "import { add } from \"./calc\";\n", before: "", exists: false}]
+  missing: Planned[] = [{path: "calc.js", text: calc, before: calc, exists: true}, {path: "calc.test.js", text: head + "import { add, subtract as minus } from './calc.js';\n", before: "", exists: false}]
+  expect plan_check("add a test for calc.ts", short) == ["calc.test.ts: it imports from \"./calc\", but the file is calc.ts. Node needs the whole name: \"./calc.ts\""]
+  expect plan_check("add a test for calc.js", missing) == ["calc.test.js: it imports subtract from calc.js, which does not export it"]
+}
+
+test "after a change to JavaScript or TypeScript only, Node runs the tests" {
+  ts: Work = {summary: "s", did: ["save_all src/calc.ts", "save_all src/calc.test.ts", "save_all README.md"]}
+  page: Work = {summary: "s", did: ["write_file index.html", "write_file script.js"]}
+  both: Work = {summary: "s", did: ["write_file calc.ts", "write_file calc.py"]}
+  expect runner_of(ts) == "node"
+  expect node_args(script_tests(ts)) == ["--test", "src/calc.test.ts"]
+  expect node_args(script_tests(page)) == ["--test"]
+  expect runner_of(both) == "python"
+  expect runner_of({summary: "s", did: ["save_all tools.kos"]}) == "kosika"
+  expect runner_of({summary: "s", did: []}) == "python"
+  expect runner_in({names: ["package.json", "src", "README.md"]}) == "node"
+  expect runner_in({names: ["calc.ts", "calc.py"]}) == "python"
+  expect runner_in({names: ["README.md"]}) == "python"
+  none: Ran = {exit_code: 0, stdout: "i tests 0\ni pass 0\n", stderr: ""}
+  some: Ran = {exit_code: 0, stdout: "i tests 10\ni pass 10\n", stderr: ""}
+  expect verdict(none) == "No tests were found to run."
+  expect verdict(some) == "The tests pass."
 }
 
 test "only the end of a long test run is kept" {
