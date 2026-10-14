@@ -6,6 +6,7 @@
 //	kosika-native run FILE.kos [--workflow NAME] [--input FILE.json]
 //	    [--model NAME] [--model-url URL] [--model-protocol openai|ollama]
 //	    [--model-timeout SECONDS]    run a workflow, asking a real model
+//	kosika-native replay TRACE.jsonl  check a run's trace, running nothing
 //
 // It is built up stage by stage against the conformance suite; what it
 // cannot do yet it refuses by name. See README.md.
@@ -60,6 +61,9 @@ func main() {
 	args := os.Args[1:]
 	if len(args) >= 2 && args[0] == "run" {
 		os.Exit(runCommand(args[1:]))
+	}
+	if len(args) == 2 && args[0] == "replay" {
+		os.Exit(replayCommand(args[1]))
 	}
 	asJSON := false
 	if len(args) == 3 && args[1] == "--json" {

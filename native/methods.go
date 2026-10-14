@@ -661,10 +661,12 @@ func (m *Machine) callMethod(e *MethodExpr, at frame) Value {
 				}
 				function := m.functions[decl.Name+"$"+e.Name]
 				arguments := map[string]Value{"self": receiver}
-				for _, argument := range resolveUnnamed(e.Args, paramNames(function)[1:]) {
-					arguments[argument.Name] = m.eval(argument.Value, at)
-				}
-				return m.invoke(function, arguments, map[string]Value{}, nil, at.depth+1)
+				argumentEvents := m.collect(func() {
+					for _, argument := range resolveUnnamed(e.Args, paramNames(function)[1:]) {
+						arguments[argument.Name] = m.eval(argument.Value, at)
+					}
+				})
+				return m.callTraced(function, arguments, map[string]Value{}, nil, at.depth+1, argumentEvents)
 			}
 		}
 	}

@@ -84,6 +84,7 @@ type permissionError struct{ Message string }
 func (e *permissionError) Error() string { return e.Message }
 
 type Machine struct {
+	tracing   *tracer // set when a run is traced
 	program   *Program
 	functions map[string]*FuncDecl
 	records   []*RecordDecl
@@ -571,10 +572,12 @@ func (m *Machine) call(e *CallExpr, at frame) Value {
 		runFail(fmt.Sprintf("Unknown function %s", quoted(e.Name)))
 	}
 	arguments := map[string]Value{}
-	for _, argument := range resolveUnnamed(e.Args, paramNames(decl)) {
-		arguments[argument.Name] = m.eval(argument.Value, at)
-	}
-	return m.invoke(decl, arguments, captured, funcs, at.depth+1)
+	argumentEvents := m.collect(func() {
+		for _, argument := range resolveUnnamed(e.Args, paramNames(decl)) {
+			arguments[argument.Name] = m.eval(argument.Value, at)
+		}
+	})
+	return m.callTraced(decl, arguments, captured, funcs, at.depth+1, argumentEvents)
 }
 
 func (m *Machine) invoke(decl *FuncDecl, arguments, captured map[string]Value, funcs map[string]*FuncDecl, depth int) (result Value) {

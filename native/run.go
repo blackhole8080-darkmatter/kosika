@@ -3,20 +3,22 @@ package main
 // `kosika-native run`: run one workflow of a program, with its inputs read
 // from a JSON file, asking a real model where the program asks one. It
 // takes the reference's flags for this and prints what `kosika run` prints:
-// the workflow's result, as Python writes it. It writes no trace yet.
+// the workflow's result, as Python writes it, and where its trace is.
 
 import (
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func runCommand(args []string) int {
 	path := args[0]
 	options := map[string]string{"--workflow": "main", "--model-protocol": "openai", "--model-timeout": "60", "--max-output-tokens": "1024"}
 	options["--mcp-source"] = "local_stdio"
-	known := map[string]bool{"--mcp-server": true, "--mcp-manifest": true, "--mcp-source": true, "--workflow": true, "--input": true, "--model": true, "--model-url": true, "--model-protocol": true, "--model-timeout": true, "--model-binding": true, "--max-output-tokens": true}
+	options["--trace"] = "run_trace.jsonl"
+	known := map[string]bool{"--trace": true, "--model-fixture": true, "--mcp-server": true, "--mcp-manifest": true, "--mcp-source": true, "--workflow": true, "--input": true, "--model": true, "--model-url": true, "--model-protocol": true, "--model-timeout": true, "--model-binding": true, "--max-output-tokens": true}
 	for i := 1; i < len(args); i++ {
 		name, value, joined := strings.Cut(args[i], "=")
 		if !known[name] {
@@ -66,6 +68,13 @@ func runCommand(args []string) int {
 	}
 	program := load(path)
 	providers, problem := modelBindings(program, options, protocol, seconds, maxOutput)
+	if problem == "" && options["--model-fixture"] != "" {
+		if len(providers) > 0 || options["--model-url"] != "" {
+			problem = "Use either --model-fixture or an explicit live model binding"
+		} else {
+			providers, problem = fixtureBindings(options["--model-fixture"])
+		}
+	}
 	if problem != "" {
 		fmt.Fprintf(os.Stderr, "Workflow failed: %s\n", problem)
 		return 2
@@ -89,6 +98,14 @@ func runCommand(args []string) int {
 		return 2
 	}
 	code := "budget"
+	running := newRun(program, map[string]*scriptedTool{}, providers, workflow)
+	running.servers = servers
+	running.traced = true
+	running.hash = programHash(read(path))
+	running.machine.tracing = newTracer(running.checker)
+	running.machine.tracing.events = &[]Value{}
+	started := time.Now()
+	permission := false
 	result, stopped, failure := func() (result Value, stopped, failure string) {
 		defer func() {
 			if caught := recover(); caught != nil {
@@ -96,7 +113,7 @@ func runCommand(args []string) int {
 				case *RunError:
 					failure = problem.Message
 				case *permissionError:
-					failure = problem.Message
+					failure, permission = problem.Message, true
 				case *budgetError:
 					stopped = problem.Message
 					if problem.Code != "" {
@@ -107,10 +124,42 @@ func runCommand(args []string) int {
 				}
 			}
 		}()
-		running := newRun(program, map[string]*scriptedTool{}, providers, workflow)
-		running.servers = servers
-		return running.workflow(workflow, inputs, 0), "", ""
+		result, events := running.workflowEvents(workflow, inputs, 0)
+		running.events = &events
+		return result, "", ""
 	}()
+	var events []Value
+	if running.events != nil {
+		events = *running.events
+	}
+	if stopped != "" || failure != "" {
+		// A run that ends early is written down too, as far as it got.
+		kind, kindType := "runtime_error", failureType(failure)
+		if permission {
+			kindType = "PermissionError"
+		}
+		if stopped != "" {
+			kind, kindType = code, "ExecutionError"
+		}
+		if len(events) == 0 {
+			events = append(events, event("run_start", "workflow", workflow.Name, "trace_version", bigInt(5)))
+		}
+		scope := []Value{workflow.Name}
+		if running.failingStep != "" {
+			// The step it failed in, begun, and its call, if it was made.
+			scope = append(scope, running.failingStep)
+			events = append(events, event("step_start", "step", running.failingStep))
+			if running.inFlight != nil {
+				events = append(events, running.inFlight)
+			}
+		}
+		problem := newRecord()
+		problem.set("code", kind)
+		problem.set("type", kindType)
+		events = append(events, event("run_failed", "workflow", workflow.Name, "scope", scope,
+			"error", problem, "execution", running.execution(started)))
+		_ = writeTrace(options["--trace"], events)
+	}
 	if stopped != "" {
 		fmt.Fprintf(os.Stderr, "Workflow stopped (%s): %s\n", code, stopped)
 		return 2
@@ -123,8 +172,38 @@ func runCommand(args []string) int {
 		fmt.Fprintf(os.Stderr, "Workflow failed: %s%s\n", failure, hint)
 		return 2
 	}
+	if err := writeTrace(options["--trace"], events); err != nil {
+		fmt.Fprintf(os.Stderr, "Workflow failed: %v\n", err)
+		return 2
+	}
 	fmt.Println(pyReprAny(result))
+	fmt.Printf("Trace: %s\n", options["--trace"])
 	return 0
+}
+
+// fixtureBindings answers each model a program declares from a file of
+// its answers, as the reference's --model-fixture does: offline.
+func fixtureBindings(path string) (map[string]modelProvider, string) {
+	value, unreadable := parseStrictJSON(read(path))
+	fixture, ok := value.(*Record)
+	if unreadable != "" || !ok {
+		return nil, "Model fixture must map model names to lists of output records"
+	}
+	providers := map[string]modelProvider{}
+	for _, name := range fixture.Keys {
+		answers, ok := fixture.Fields[name].([]Value)
+		allRecords := ok && len(answers) > 0
+		for _, answer := range answers {
+			if _, isRecord := answer.(*Record); !isRecord {
+				allRecords = false
+			}
+		}
+		if !allRecords {
+			return nil, fmt.Sprintf("Model fixture %s requires a nonempty list of records", pyRepr(name))
+		}
+		providers[name] = &scriptedProvider{&scriptedTool{name: name, answers: answers}}
+	}
+	return providers, ""
 }
 
 // modelBindings grants the models a program declares to a model server, as

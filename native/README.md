@@ -8,6 +8,7 @@ file.
     kosika-native tokens FILE.kos    the file's tokens, one JSON object a line
     kosika-native run FILE.kos --input IN.json --model qwen2.5:7b
                                      run a workflow, asking a real model
+    kosika-native replay TRACE.jsonl check a run's trace, running nothing
 
 `run` takes the reference's flags for models: `--model NAME` (or
 `fast,strong=big`), `--model-url`, `--model-protocol openai|ollama`,
@@ -16,9 +17,13 @@ file.
 server. `--mcp-server SERVER --mcp-manifest PINNED.json [--mcp-source
 NAME]` lets the program's tools from that source reach an MCP server,
 checked against its pinned manifest first; a server written in Python is
-started with the Python on the machine, as the reference starts it. It
-prints the workflow's result as `kosika run` does. It writes no trace
-yet.
+started with the Python on the machine, as the reference starts it.
+`--model-fixture FILE` answers each model from a file instead, offline. It
+prints the workflow's result as `kosika run` does, and writes the run's
+trace to `--trace` (`run_trace.jsonl` unless told otherwise): the same
+events as the reference's, apart from the time and the program's hash,
+which here is a hash of the program's text. Each engine's `replay`
+accepts the other's traces.
 
 ## What it has
 
@@ -55,8 +60,9 @@ print what the reference engine prints, word for word. See
 
 - Steps with `verify`, `vote`, `escalate` or `with evidence`, and
   `parallel` blocks.
-- Traces, journals and approvals for a run, and so any tool that changes
-  the world.
+- Journals and approvals for a run, and so any tool that changes the
+  world. Replaying an agent run's own trace, an answer with evidence, or a
+  verified answer.
 - Reaching a real tool other than through an MCP server: MCP servers, `system` tools, files, pages, the
   clock and chance. Approvals.
 - Memories, boards, swarms and imports.
@@ -75,6 +81,8 @@ print what the reference engine prints, word for word. See
     live.go      asking a model: scripted answers, or a model server
     mcp.go       reaching a tool on a pinned MCP server
     run.go       the run command
+    trace.go     writing a run's trace
+    replay.go    checking a trace
     check.go     the checker: refusing a program before it runs
     check_workflows.go   the checker's rules for tools, agents, workflows
     workflows.go running a workflow, and the tools a test scripts

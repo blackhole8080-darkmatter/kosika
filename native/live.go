@@ -511,3 +511,23 @@ var thinkingInstructions = map[string]string{
 	"summarize": "Summarize the text briefly and faithfully, adding nothing.",
 	"decide":    "Answer the question using only the given text. Set answer to true or false, confidence to your confidence from 0 to 1, and reason to one sentence that cites the given text.",
 }
+
+// record is a message as the reference writes it in a trace: asdict of
+// its ChatMessage.
+func (message chatMessage) record() *Record {
+	calls := []Value{}
+	for _, call := range message.ToolCalls {
+		recorded := newRecord()
+		recorded.set("id", call.ID)
+		recorded.set("name", call.Name)
+		recorded.set("arguments", call.Arguments)
+		calls = append(calls, recorded)
+	}
+	record := newRecord()
+	record.set("role", message.Role)
+	record.set("content", message.Content)
+	record.set("tool_calls", calls)
+	record.set("tool_call_id", optionalText(message.ToolCallID))
+	record.set("name", optionalText(message.Name))
+	return record
+}

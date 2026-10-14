@@ -3506,6 +3506,37 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   programs with workflows, agents and tools; the guide does not teach
   those yet.
 
+### The native engine writes traces, and replays them
+
+- The owner said to continue in the order given: traces, then approvals,
+  then the remaining declarations.
+- `kosika-native run` now writes a run's trace, trace version 5, as
+  `kosika/runtime.py` writes it: every step's start, call, return and
+  completion; every function call with the calls made working out its
+  arguments and the calls made in its body; a workflow's own run inside
+  its call; a model's refused answers; an agent's whole transcript; a
+  fallback's `recovered_from`; and, for a run that fails, how far it got.
+  Set beside the reference's trace of the same run, with the time, the
+  program's hash and the elapsed time set aside, they are the same, event
+  for event: 18, 26 and 6 events on three programs that between them use
+  nested functions with captures, record methods, a called workflow, a
+  fallback, a model refused twice, thinking steps, an agent whose answer
+  was reshaped, a match step and an MCP tool; and a failed run's 12.
+- The program's hash is a hash of the program's text, not the reference's
+  hash of its tree; replay asks only that a called workflow's trace carry
+  the same hash as its caller's.
+- `kosika-native replay TRACE` checks a trace, running nothing, as
+  `kosika/trace_replay.py` does, with its JSON schema subset, its reading
+  of a model's answer again, and its checks of an agent's transcript.
+  Each engine's replay accepts the other's traces. Traces tampered with in
+  hundreds of small ways get the same verdict and the same words from both,
+  except where the reference's replay crashes outright on a schema made
+  impossible (`TypeError: unhashable type`), which is its fault to fix.
+- `--model-fixture FILE` answers models offline, as the reference's does.
+- Not yet: replaying an agent run's own trace (`kosika agent`), answers
+  with evidence, verified answers; journals and approvals.
+- Next: approvals, so a tool that changes the world can run.
+
 ### The native engine reaches MCP servers, and agents call their tools
 
 - The owner said to go on, and that once this work on Kosika is done the

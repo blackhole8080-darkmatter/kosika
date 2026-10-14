@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"sort"
 	"strings"
+	"time"
 )
 
 // A scriptedTool gives a test's answers for a tool, in order.
@@ -22,15 +23,24 @@ type scriptedTool struct {
 
 // A run is one workflow run from a test, with the workflows it calls.
 type run struct {
-	machine    *Machine
-	checker    *checker
-	tools      map[string]*scriptedTool
-	providers  map[string]modelProvider
-	servers    map[string]*mcpServer // by tool source, when a run names one
-	toolCalls  int
-	maxTools   int
-	modelCalls int
-	maxModels  int
+	machine   *Machine
+	checker   *checker
+	tools     map[string]*scriptedTool
+	providers map[string]modelProvider
+	traced    bool      // whether the run is written down as a trace
+	hash      string    // the program's, for its trace
+	events    *[]Value  // the top workflow's trace, as far as it got
+	steps     int       // steps begun, for the trace
+	note      *stepNote // what the call now running says of itself
+	// The top workflow's step now running, and its call's first event
+	// once made, for the trace of a run that fails in it.
+	failingStep string
+	inFlight    *Record
+	servers     map[string]*mcpServer // by tool source, when a run names one
+	toolCalls   int
+	maxTools    int
+	modelCalls  int
+	maxModels   int
 }
 
 func newRun(program *Program, tools map[string]*scriptedTool, providers map[string]modelProvider, workflow *WorkflowDecl) *run {
@@ -121,6 +131,13 @@ func (r *run) preflight(workflow *WorkflowDecl) {
 }
 
 func (r *run) workflow(workflow *WorkflowDecl, inputs map[string]Value, depth int) Value {
+	result, _ := r.workflowEvents(workflow, inputs, depth)
+	return result
+}
+
+// workflowEvents runs a workflow, and gives its trace when the run is
+// traced: run_start, each step's events, run_complete.
+func (r *run) workflowEvents(workflow *WorkflowDecl, inputs map[string]Value, depth int) (Value, []Value) {
 	if depth > 64 {
 		runFail("Workflow call depth exceeds 32")
 	}
@@ -139,32 +156,75 @@ func (r *run) workflow(workflow *WorkflowDecl, inputs map[string]Value, depth in
 	if depth == 0 {
 		r.preflight(workflow)
 	}
+	started := time.Now()
 	environment := newScope(nil)
-	for name, value := range inputs {
-		environment.vars[name] = value
+	recorded := newRecord()
+	for _, param := range workflow.Params {
+		environment.vars[param.Name] = inputs[param.Name]
+		recorded.set(param.Name, inputs[param.Name])
+	}
+	events := []Value{}
+	if r.traced {
+		events = append(events, event("run_start", "workflow", workflow.Name, "trace_version", bigInt(5),
+			"program_hash", r.hash, "inputs", recorded, "output_schema", r.checker.schemaFor(workflow.Out)))
+	}
+	if depth == 0 {
+		r.events = &events
 	}
 	at := frame{environment, nil, 0}
 	var result Value = newRecord()
 	for _, step := range workflow.Steps {
-		value, failure := r.attempt(step, step.Call, environment, at, depth)
+		r.steps++
+		if depth == 0 {
+			r.failingStep, r.inFlight = step.Name, nil
+		}
+		value, stepEvents, failure := r.attempt(step, step.Call, environment, at, depth)
+		var recovered *Record
 		if failure != nil {
 			// `otherwise`: a failure of the work hands the step to its
 			// fallback. A spent budget or a missing approval is not one.
 			if step.Fallback == nil {
 				panic(failure)
 			}
-			value = r.call(step.Fallback, environment, at, depth, 0)
+			message := []rune(failure.Message)
+			if len(message) > 500 {
+				message = message[:500]
+			}
+			// The fallback is a step of its own, as the reference counts it.
+			r.steps++
+			recovered = newRecord()
+			recovered.set("error", failureType(failure.Message))
+			recovered.set("message", string(message))
+			if depth == 0 {
+				r.inFlight = nil
+			}
+			value, stepEvents = r.call(step.Fallback, environment, at, depth, 0)
 		}
 		result = value
 		environment.vars[step.Binding] = result
+		if r.traced {
+			start := event("step_start", "step", step.Name)
+			if recovered != nil {
+				start.set("recovered_from", recovered)
+			}
+			events = append(events, start)
+			events = append(events, stepEvents...)
+			events = append(events, event("step_complete", "step", step.Name, "binding", step.Binding, "result", result))
+		}
+		if depth == 0 {
+			r.failingStep, r.inFlight = "", nil
+		}
 	}
 	r.validate(result, workflow.Out, "$")
-	return result
+	if r.traced {
+		events = append(events, event("run_complete", "workflow", workflow.Name, "result", result, "execution", r.execution(started)))
+	}
+	return result, events
 }
 
 // attempt makes a step's call, or the one its match picks, and gives the
 // failure of the work instead of panicking with it.
-func (r *run) attempt(step *Step, call *StepCall, environment *Scope, at frame, depth int) (value Value, failure *RunError) {
+func (r *run) attempt(step *Step, call *StepCall, environment *Scope, at frame, depth int) (value Value, events []Value, failure *RunError) {
 	defer func() {
 		if caught := recover(); caught != nil {
 			if problem, ok := caught.(*RunError); ok {
@@ -183,35 +243,109 @@ func (r *run) attempt(step *Step, call *StepCall, environment *Scope, at frame, 
 			}
 		}
 	}
-	return r.call(call, environment, at, depth, step.Retries), nil
+	value, events = r.call(call, environment, at, depth, step.Retries)
+	return value, events, nil
 }
 
-func (r *run) call(call *StepCall, environment *Scope, at frame, depth, retries int) Value {
+// A stepNote is what a call says about itself beyond its result, for its
+// trace: the model's own words, the agent's transcript, the tool's way.
+type stepNote struct {
+	transport   string
+	content     string
+	usage       Value
+	rejected    []Value
+	messages    []Value
+	modelSteps  int
+	reformatted *string
+}
+
+// call makes a step's call, and gives its result and its two trace events.
+func (r *run) call(call *StepCall, environment *Scope, at frame, depth, retries int) (Value, []Value) {
 	args := resolveUnnamed(call.Args, r.checker.stepParams(call))
 	arguments := map[string]Value{}
-	for _, arg := range args {
-		arguments[arg.Name] = r.machine.eval(arg.Value, at)
-	}
+	recorded := newRecord()
+	expressionEvents := r.machine.collect(func() {
+		for _, arg := range args {
+			arguments[arg.Name] = r.machine.eval(arg.Value, at)
+			recorded.set(arg.Name, arguments[arg.Name])
+		}
+	})
+	r.note = &stepNote{}
 	switch call.Kind {
 	case "function":
+		decl, captured, funcs := r.machine.functions[call.Name], map[string]Value(nil), map[string]*FuncDecl(nil)
 		if value, bound := environment.lookup(call.Name); bound {
 			closure, ok := value.(*Closure)
 			if !ok {
 				runFail("Invalid function value")
 			}
-			return r.machine.invoke(closure.Decl, arguments, closure.Captured, closure.Funcs, 0)
+			decl, captured, funcs = closure.Decl, closure.Captured, closure.Funcs
 		}
-		return r.machine.invoke(r.machine.functions[call.Name], arguments, nil, nil, 0)
+		if !r.traced {
+			return r.machine.invoke(decl, arguments, captured, funcs, 0), nil
+		}
+		gathered := []Value{}
+		saved := r.machine.tracing.events
+		r.machine.tracing.events = &gathered
+		defer func() { r.machine.tracing.events = saved }()
+		result := r.machine.callTraced(decl, arguments, captured, funcs, 0, expressionEvents)
+		return result, gathered
 	case "workflow":
-		return r.workflow(r.checker.workflows[call.Name], arguments, depth+1)
+		child := r.checker.workflows[call.Name]
+		first := r.begin(depth, event("workflow_call", "workflow", child.Name, "arguments", recorded, "expression_events", eventList(expressionEvents)))
+		result, childEvents := r.workflowEvents(child, arguments, depth+1)
+		return result, []Value{first,
+			event("workflow_return", "workflow", child.Name, "result", result, "events", eventList(childEvents)),
+		}
+	case "model":
+		model := r.checker.models[call.Name]
+		first := r.begin(depth, event("model_call", "model", model.Name, "arguments", recorded, "expression_events", eventList(expressionEvents),
+			"input_schema", r.checker.schemaFor(model.Input), "output_schema", r.checker.schemaFor(model.Output)))
+		result := r.model(model, arguments, retries)
+		returned := event("model_return", "model", model.Name, "result", result, "content", r.note.content,
+			"finish_reason", "stop", "usage", r.note.usage)
+		if len(r.note.rejected) > 0 {
+			returned.set("rejected", r.note.rejected)
+		}
+		return result, []Value{first, returned}
+	case "agent":
+		agent := r.checker.agents[call.Name]
+		model := r.checker.models[agent.Model]
+		tools := newRecord()
+		for _, name := range agent.Can {
+			schemas := newRecord()
+			schemas.set("input_schema", r.inputSchema(r.checker.tools[name]))
+			schemas.set("output_schema", r.checker.schemaFor(r.checker.tools[name].Output))
+			tools.set(name, schemas)
+		}
+		first := r.begin(depth, event("agent_call", "agent", agent.Name, "model", model.Name, "arguments", recorded,
+			"expression_events", eventList(expressionEvents), "input_schema", r.checker.schemaFor(model.Input),
+			"output_schema", r.checker.schemaFor(model.Output), "max_steps", bigInt(agent.MaxSteps),
+			"changes", []Value{}, "tools", tools))
+		result := r.agent(agent, arguments)
+		returned := event("agent_return", "agent", agent.Name, "result", result, "content", r.note.content,
+			"finish_reason", "stop", "model_steps", bigInt(r.note.modelSteps), "messages", eventList(r.note.messages),
+			"plan_hash", programHash(agent.Name+"\x00"+pyJSON(recorded, true)))
+		if r.note.reformatted != nil {
+			returned.set("reformatted_from", *r.note.reformatted)
+		}
+		return result, []Value{first, returned}
 	}
-	if call.Kind == "model" {
-		return r.model(r.checker.models[call.Name], arguments, retries)
+	tool := r.checker.tools[call.Name]
+	first := r.begin(depth, event("tool_call", "agent", call.Agent, "tool", tool.Name, "source", tool.Source, "operation", tool.Operation,
+		"access", tool.Access, "arguments", recorded, "expression_events", eventList(expressionEvents),
+		"input_schema", r.inputSchema(tool), "output_schema", r.checker.schemaFor(tool.Output)))
+	result := r.tool(tool, arguments)
+	return result, []Value{first, event("tool_return", "tool", tool.Name, "transport", r.note.transport, "result", result)}
+}
+
+// begin notes a call's first event before the call is made, so that the
+// trace of a run that fails in it keeps it, as the reference's does.
+func (r *run) begin(depth int, first *Record) *Record {
+	if depth == 0 {
+		r.inFlight = first
 	}
-	if call.Kind == "agent" {
-		return r.agent(r.checker.agents[call.Name], arguments)
-	}
-	return r.tool(r.checker.tools[call.Name], arguments)
+	return first
 }
 
 func (r *run) tool(tool *ToolDecl, arguments map[string]Value) Value {
@@ -243,10 +377,13 @@ func (r *run) tool(tool *ToolDecl, arguments map[string]Value) Value {
 		}
 		scripted.asked++
 		outcome = scripted.answers[scripted.asked-1]
+		r.note.transport = "host"
 	} else if r.servers[tool.Source] != nil {
 		outcome = r.callDeclaredTool(tool, input)
+		r.note.transport = "stdio"
 	} else {
 		outcome = mockTool(tool)
+		r.note.transport = "mock"
 	}
 	r.validate(outcome, tool.Output, "$")
 	return outcome
@@ -294,12 +431,17 @@ func (r *run) model(model *ModelDecl, arguments map[string]Value, retries int) V
 			}
 		}
 		if problem == "" {
+			r.note.content = response.Content
 			return answer
 		}
 		if rejected >= retries {
 			runFail(problem)
 		}
 		rejected++
+		refusal := newRecord()
+		refusal.set("content", response.Content)
+		refusal.set("reason", problem)
+		r.note.rejected = append(r.note.rejected, refusal)
 		messages = append(messages,
 			chatMessage{Role: "assistant", Content: response.Content},
 			chatMessage{Role: "user", Content: "That answer was rejected: " + problem + " Return one corrected JSON object."})
@@ -384,6 +526,8 @@ func (r *run) agent(agent *AgentDecl, arguments map[string]Value) Value {
 				return r.ask(model, &again), nil
 			}()
 			if failure == nil && len(reshaped.ToolCalls) == 0 && reshaped.Finish == "stop" && fits(reshaped.Content) {
+				first := response.Content
+				r.note.reformatted = &first
 				response = reshaped
 			}
 		}
@@ -404,6 +548,10 @@ func (r *run) agent(agent *AgentDecl, arguments map[string]Value) Value {
 				// What the agent changed is what ran: only tools that look
 				// can run here, so it changed nothing.
 				record.Fields["did"] = []Value{}
+			}
+			r.note.content, r.note.modelSteps = response.Content, step
+			for _, message := range messages {
+				r.note.messages = append(r.note.messages, message.record())
 			}
 			return record
 		}

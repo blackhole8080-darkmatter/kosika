@@ -321,6 +321,83 @@ class NativeTests(unittest.TestCase):
                     self.assertEqual(len(asked), 2)
                     self.assertEqual(asked, by_reference)
 
+    def test_its_trace_is_the_reference_trace(self) -> None:
+        # Apart from the time, the program's hash and how long it took, the
+        # native engine writes down a run as the reference does, and each
+        # engine's replay accepts the other's trace.
+        ignored = {"timestamp", "program_hash", "elapsed_seconds", "function_stack", "plan_hash"}
+
+        def clean(value: object) -> object:
+            if isinstance(value, dict):
+                return {k: clean(v) for k, v in value.items() if k not in ignored}
+            if isinstance(value, list):
+                return [clean(v) for v in value]
+            return value
+
+        source = (
+            "record Ask { text: Text kind: Text }\n"
+            "record Said { text: Text n: Number }\n"
+            "record Answer { text: Text did: Text[] }\n"
+            "record Box {\n  label: Text\n  size: Number\n"
+            "  fn grown(self, by: Number) -> Box { return {..self, size: self.size + by} }\n}\n"
+            "model writer {\n  input: Ask\n  output: Said\n}\n"
+            "model helper {\n  input: Ask\n  output: Answer\n}\n"
+            "default model assistant\n"
+            'agent plain {\n  model: helper\n  can: []\n  instructions: "Help."\n}\n'
+            "fn scaled(base: Number, factor: Number) -> Number {\n"
+            "  let shift: Number = 2\n"
+            "  fn apply(value: Number) -> Number { return value * factor + shift }\n"
+            "  return apply(value: base)\n}\n"
+            "fn sized(ask: Ask) -> Said {\n  let box: Box = {label: ask.text, size: 1}\n"
+            "  let bigger = box.grown(scaled(2, 3))\n  return {text: bigger.label, n: bigger.size}\n}\n"
+            "fn quiet(ask: Ask) -> Said { return {text: ask.text, n: 0} }\n"
+            "fn bad(ask: Ask) -> Said {\n  if ask.text != \"\" { fail \"no\" }\n  return {text: \"\", n: 0}\n}\n"
+            "workflow inner(ask: Ask) -> Said {\n  said = sized(ask)\n}\n"
+            "workflow main(ask: Ask) -> Said {\n"
+            "  first = sized(ask)\n"
+            "  nested = call inner(ask)\n"
+            "  third = bad(ask) otherwise quiet(ask)\n"
+            "  retried = use_model writer(text: first.text, kind: ask.kind) retry 2\n"
+            '  kind = classify ask.text into ["a", "b"]\n'
+            "  brief = summarize ask.text\n"
+            "  helped = ask plain(text: ask.text, kind: ask.kind)\n"
+            "  routed = match ask.kind {\n"
+            '    case "loud" { sized(ask) }\n    case _ { quiet(ask) }\n  }\n}\n'
+        )
+        fixture = {
+            "writer": [{"text": "x"}, {"text": "y", "n": "bad"}, {"text": "ok", "n": 2}],
+            "assistant": [{"label": "a", "confidence": 1}, {"text": "short"}],
+            "helper": [{"words": 1}, {"text": "fine", "did": ["claimed"]}],
+        }
+        with tempfile.TemporaryDirectory() as scratch:
+            folder = Path(scratch)
+            (folder / "p.kos").write_text(source, encoding="utf-8")
+            (folder / "fixture.json").write_text(json.dumps(fixture), encoding="utf-8")
+            (folder / "input.json").write_text(json.dumps({"ask": {"text": "hi", "kind": "loud"}}))
+            flags = ["--input", str(folder / "input.json"), "--model-fixture", str(folder / "fixture.json")]
+            subprocess.run(
+                [sys.executable, "-m", "kosika.cli", "run", str(folder / "p.kos"), *flags,
+                 "--trace", str(folder / "reference.jsonl")],
+                cwd=ROOT, capture_output=True, text=True, check=True,
+            )
+            native = self.run_engine("run", str(folder / "p.kos"), *flags, "--trace", str(folder / "native.jsonl"))
+            self.assertEqual(native.returncode, 0, native.stderr.decode())
+
+            def events(name: str) -> list:
+                lines = (folder / name).read_text(encoding="utf-8").splitlines()
+                return [clean(json.loads(line)) for line in lines]
+
+            self.assertEqual(events("native.jsonl"), events("reference.jsonl"))
+            for written, reader in (("native.jsonl", "reference"), ("reference.jsonl", "native")):
+                trace = str(folder / written)
+                ran = (
+                    subprocess.run([sys.executable, "-m", "kosika.cli", "replay", trace],
+                                   cwd=ROOT, capture_output=True, text=True)
+                    if reader == "reference"
+                    else self.run_engine("replay", trace)
+                )
+                self.assertEqual(ran.returncode, 0, f"{reader} replay of {written}")
+
     def test_it_reaches_a_pinned_mcp_server_as_the_reference_does(self) -> None:
         program = ROOT / "examples" / "test_host_live.kos"
         flags = [
