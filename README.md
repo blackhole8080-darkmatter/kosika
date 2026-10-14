@@ -1205,6 +1205,12 @@ server with the tools it offers, and for each tool the Kosika text to paste
 into a program. An agent given such tools in its `can` list is told what
 they do in the server's own words and chooses among them.
 
+The Skills page lists the skills kept beside each agent, in its `skills`
+folder: what each is for, the words that pick it, and the rules it holds
+files to. Type a request there to see which skills it would pick, and
+why; no model is asked. A skill can be changed or a new one written on
+the page. One that Kosika cannot read is not saved, and the page says why.
+
 A tool may be `access: observe` only when the server itself marks it
 read-only. Any other tool must be `access: execute`, so each use waits for
 your Allow once. A tool that answers in plain text needs an output record

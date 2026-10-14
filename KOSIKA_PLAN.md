@@ -3491,6 +3491,46 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   programs with workflows, agents and tools; the guide does not teach
   those yet.
 
+### The coder in JavaScript and TypeScript, and a Skills section in the app
+
+- The owner's order for the coder was Kosika first, then JavaScript and
+  TypeScript. Node is on his machine and runs TypeScript itself, and its
+  own test runner needs no library, so nothing was installed.
+- Written in Kosika, in the coder, not in the engine: what a `.js` or
+  `.ts` file defines is read from its lines (functions, classes,
+  constants, types, interfaces, and each `test("...")`). A plan that drops
+  what a file had is sent back; so is a test put in a source file, a
+  task that asks for a test and writes no test file, an import of a name
+  the other planned file does not export, and an import that calls a file
+  by a name Node will not find (`./calc` for `calc.ts`).
+- After a change to JavaScript or TypeScript only, `node --test` runs the
+  test files that were written, or all of them if none was. Node calls
+  "no tests found" a success; the coder says "No tests were found to run".
+  The word "test" alone now looks at the folder to choose pytest or Node.
+- Skills are picked by language: `script.md` and `script-tests.md` for
+  JavaScript and TypeScript, and the two Python skills now only for
+  Python. Before, a task in any language picked the Python advice.
+- Measured strictly, with a test file added afterwards that the coder
+  never saw. With omp: 6 of 6, about 40 seconds each. The local model
+  alone: 1 of 6 in 50 minutes. Its misses are listed in CODER.md.
+- The same day the coder was run alone on the portfolio task, at the
+  owner's wish, for comparison with omp's 3.5 minutes: in 22 minutes it
+  wrote no file, said it had, and Kosika reported that none was written.
+- Studio has a Skills section, asked for by the owner: every skill by the
+  folder whose agents it serves, with its words, its file patterns and
+  how many rules; a box that shows which skills a request would pick and
+  why, with no model asked; and an editor to change a skill or write a
+  new one. Save is the person's own yes. A note Kosika cannot read is
+  shown with the reason and is never saved, because one unreadable note
+  stops every skill beside that agent.
+- Not claimed: a skill cannot be deleted or renamed from the app. Found
+  and not yet put right: when the local model writes nothing in a
+  JavaScript project, the coder still runs pytest; a test file that
+  defines its own copy of the function it tests passes the plan check;
+  `node --check` does not catch a TypeScript syntax error, so only the
+  test run does. The Python six have not been re-measured since skills
+  are picked by language.
+
 ### Skills reach the outside agent, and a skill for motion
 
 - The owner proposed a skill that explains motion on a web page, scroll

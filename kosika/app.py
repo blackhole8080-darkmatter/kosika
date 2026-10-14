@@ -72,7 +72,15 @@ from .routing import Candidate, by_words, read_route, route_question
 from .runtime import run
 from .sessions import Session, SessionError, default_home, system_name
 from .sessions import unavailable as sessions_unavailable
-from .skills import SKILLS_FOLDER, load_skill_notes, pick_skills, skills_text
+from .skills import (
+    MAX_SKILL_BYTES,
+    SKILLS_FOLDER,
+    SkillCatalogError,
+    load_skill_note,
+    load_skill_notes,
+    pick_skills,
+    skills_text,
+)
 from .starter import KINDS, StarterError, create_starter
 from .story import StoryError, build_story, read_trace
 from .swarm import SwarmApproval, run_swarm, swarm_plan_hash
@@ -458,6 +466,8 @@ APPROVAL_WAIT_SECONDS = 600
 MAX_SOURCE_BYTES = 1024 * 1024
 _SWARM = re.compile(r"^swarm\s+\w+\s*\{", re.MULTILINE)
 NEW_NAME = re.compile(r"[a-z][a-z0-9_]{0,39}")
+#: What a skill may be called: its file is this name and `.md`.
+SKILL_NAME = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?")
 _DECLARED = re.compile(
     r"^\s*(?:default\s+)?(record|fn|workflow|model|tool|agent|memory|board|swarm)\s+([A-Za-z_]\w*)",
     re.MULTILINE,
@@ -1100,6 +1110,110 @@ class App:
             "applied": brought,
             "left": [path for path in waiting if path not in brought] if keep else [],
         }
+
+    def _skills_folder(self, agent_id: str) -> Path:
+        return self.agent(agent_id).path.parent / SKILLS_FOLDER
+
+    def skills(self) -> dict[str, Any]:
+        """Every skill in the app's folder, gathered by the folder whose
+        agents it serves. A skill is a note of know-how beside a program:
+        it is picked by the words of a request and given to the model, and
+        its checks are rules a file made under it must keep. A note that
+        cannot be read is still listed, with the reason."""
+
+        places: dict[Path, dict[str, Any]] = {}
+        for agent in self.agents().values():
+            folder = agent.path.parent / SKILLS_FOLDER
+            place = places.setdefault(
+                folder,
+                {
+                    "id": agent.id,
+                    "title": agent.path.parent.name
+                    if agent.path.parent != self.root
+                    else "this folder",
+                    "agents": [],
+                    "skills": [],
+                },
+            )
+            place["agents"].append(agent.title)
+        for folder, place in places.items():
+            for path in sorted(folder.glob("*.md")) if folder.is_dir() else []:
+                if not path.is_file():
+                    continue
+                item: dict[str, Any] = {"name": path.stem}
+                try:
+                    item["text"] = path.read_text(encoding="utf-8")[:MAX_SKILL_BYTES]
+                    skill = load_skill_note(path)
+                    item.update(
+                        summary=skill.summary,
+                        when=list(skill.keywords),
+                        files=list(skill.files),
+                        checks=list(skill.checks),
+                    )
+                except (SkillCatalogError, OSError, UnicodeDecodeError) as exc:
+                    item.setdefault("text", "")
+                    item["error"] = str(exc)
+                place["skills"].append(item)
+        return {"places": list(places.values())}
+
+    def try_skills(self, agent_id: str, text: str) -> dict[str, Any]:
+        """Which of an agent's skills a request would pick, and the words
+        that pick each. No model is asked and nothing is run."""
+
+        try:
+            catalog = load_skill_notes(self._skills_folder(agent_id))
+        except SkillCatalogError as exc:
+            raise AppError(str(exc), 422) from exc
+        picked = pick_skills(catalog, text) if len(catalog) else None
+        return {
+            "picked": [
+                {"name": name, "why": why}
+                for name, why in (picked.reasons if picked else ())
+            ]
+        }
+
+    def check_skill(self, name: str, text: str) -> dict[str, Any]:
+        """Would this text be a skill Kosika can read? Nothing is written."""
+
+        if not SKILL_NAME.fullmatch(name or ""):
+            return {
+                "ok": False,
+                "error": "Name it with lowercase letters, digits and dashes "
+                "(for example: page-motion)",
+            }
+        if len(text.encode("utf-8")) > MAX_SKILL_BYTES:
+            return {"ok": False, "error": "A skill may be at most 64 KiB."}
+        with tempfile.TemporaryDirectory(prefix="kosika-skill-") as scratch:
+            path = Path(scratch) / f"{name}.md"
+            path.write_text(text, encoding="utf-8", newline="")
+            try:
+                skill = load_skill_note(path)
+            except SkillCatalogError as exc:
+                return {"ok": False, "error": str(exc)}
+        return {
+            "ok": True,
+            "summary": skill.summary,
+            "when": list(skill.keywords),
+            "files": list(skill.files),
+            "checks": list(skill.checks),
+        }
+
+    def save_skill(self, agent_id: str, name: str, text: str) -> dict[str, Any]:
+        """Write a skill beside an agent. The page's own Save button is the
+        yes: this is the person editing their own note. A note Kosika cannot
+        read is not saved, because one unreadable note would stop every
+        skill beside that agent from being used."""
+
+        folder = self._skills_folder(agent_id)
+        checked = self.check_skill(name, text)
+        if not checked["ok"]:
+            raise AppError(checked["error"], 422)
+        try:
+            folder.mkdir(exist_ok=True)
+            (folder / f"{name}.md").write_text(text, encoding="utf-8", newline="")
+        except OSError as exc:
+            raise AppError(f"Could not save: {exc}", 422) from exc
+        return {"saved": True, **checked}
 
     def mcp_tools(self) -> dict[str, Any]:
         """Every granted MCP server with the tools it offers, and for each
@@ -1967,6 +2081,25 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                         200,
                         app.end_session(*self._session_answer(agent_id)),
                     )
+                elif method == "GET" and url.path == "/api/skills":
+                    self._json(200, app.skills())
+                elif method == "POST" and url.path in (
+                    "/api/skills/try",
+                    "/api/skills/check",
+                    "/api/skills/save",
+                ):
+                    body = self._body()
+                    name, text = body.get("name"), body.get("text")
+                    if not isinstance(text, str) or (
+                        not url.path.endswith("/try") and not isinstance(name, str)
+                    ):
+                        raise AppError("name and text must be text")
+                    if url.path.endswith("/try"):
+                        self._json(200, app.try_skills(agent_id, text))
+                    elif url.path.endswith("/check"):
+                        self._json(200, app.check_skill(str(name), text))
+                    else:
+                        self._json(200, app.save_skill(agent_id, str(name), text))
                 elif method == "GET" and url.path == "/api/mcp":
                     self._json(200, app.mcp_tools())
                 elif method == "GET" and url.path == "/api/memory":

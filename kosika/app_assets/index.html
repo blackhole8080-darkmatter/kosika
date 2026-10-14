@@ -284,6 +284,7 @@ textarea:focus, input[type=text]:focus { box-shadow: 0 0 0 3px var(--glow); }
 <template id="icon-agents"><svg viewBox="0 0 24 24"><path d="M9 7h6a4 4 0 0 1 4 4v5a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3v-5a4 4 0 0 1 4-4z"/><path d="M12 3v4"/><path d="M9.5 13h.01"/><path d="M14.5 13h.01"/></svg></template>
 <template id="icon-runs"><svg viewBox="0 0 24 24"><path d="M12 8v4l3 2"/><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/></svg></template>
 <template id="icon-tools"><svg viewBox="0 0 24 24"><path d="M14.5 6.5a4 4 0 0 0-5.300 5.300L3 18l3 3 6.200-6.200a4 4 0 0 0 5.300-5.300l-2.500 2.500-2.500-2.500 2.500-2.500z"/></svg></template>
+<template id="icon-skills"><svg viewBox="0 0 24 24"><path d="M12 3l2.600 5.400L20 9.300l-4 4 1 5.700-5-2.700L7 19l1-5.700-4-4 5.400-.900L12 3z"/></svg></template>
 <template id="icon-permissions"><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.2 8-8 9-4.800-1-8-4.500-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/></svg></template>
 <script>
 "use strict";
@@ -416,7 +417,7 @@ setTheme(theme());
 let jumpItems = null;
 async function openJump() {
   if (document.querySelector(".veil")) return;
-  const pages = [["assistant", "Assistant"], ["project", "Project"], ["agents", "Agents"], ["runs", "Runs"], ["tools", "Tools"], ["permissions", "Permissions"]].map(([view, name]) => ({kind: "page", name, detail: "", title: "Studio", view}));
+  const pages = [["assistant", "Assistant"], ["project", "Project"], ["agents", "Agents"], ["runs", "Runs"], ["tools", "Tools"], ["skills", "Skills"], ["permissions", "Permissions"]].map(([view, name]) => ({kind: "page", name, detail: "", title: "Studio", view}));
   const box = h("input", {type: "text", placeholder: "Jump to an agent, workflow, model, tool, memory or record"}), found = h("div", {class: "found"});
   const veil = h("div", {class: "veil", onclick: event => { if (event.target === veil) close(); }}, h("div", {class: "jump"}, box, found, h("div", {class: "keys"}, "↑ ↓ to move · Enter to open · Esc to close")));
   let hits = [], at = 0;
@@ -469,7 +470,7 @@ function go(view, id) { location.hash = "#" + view + (id ? "/" + encodeURICompon
 window.addEventListener("hashchange", route);
 
 function drawRail(active) {
-  const items = [["assistant", "Assistant"], ["project", "Project"], ["agents", "Agents"], ["runs", "Runs"], ["tools", "Tools"], ["permissions", "Permissions"]];
+  const items = [["assistant", "Assistant"], ["project", "Project"], ["agents", "Agents"], ["runs", "Runs"], ["tools", "Tools"], ["skills", "Skills"], ["permissions", "Permissions"]];
   document.getElementById("nav").replaceChildren(...items.map(([key, label]) =>
     h("div", {class: "nav" + (key === active ? " on" : ""), onclick: () => go(key)}, icon(key), label)));
   document.getElementById("foot").replaceChildren(
@@ -494,6 +495,7 @@ async function route() {
     else if (active === "project") await showProject();
     else if (active === "runs") await showRuns();
     else if (active === "tools") await showTools();
+    else if (active === "skills") await showSkills();
     else if (active === "permissions") showPermissions();
     else if (overview.assistant) await showAgent(overview.assistant, true);
     else showAgents();
@@ -602,6 +604,84 @@ async function showTools() {
           h("div", {class: "about", style: "color:var(--soft);font-size:13px;margin-bottom:8px"}, tool.description || "The server gives no description."),
           h("div", {class: "row"}, copy, h("button", {class: "quiet", onclick: () => { text.style.display = text.style.display === "none" ? "block" : "none"; }}, "Show")), text);
       })))));
+}
+
+// Skills: the know-how kept beside each agent. See what there is, try a
+// request to learn which would be picked, and write or change one.
+const SKILL_START = "# What this skill is, in one line\nWhen: word, another word, a short phrase\nFiles: *.py\nCheck: contains \"def \"\n\nThe know-how itself: how to do this kind of work well. Write it as you\nwould explain it to a careful colleague. Remove the Files and Check lines\nif there is no rule a file must keep.\n";
+async function showSkills(open) {
+  main.replaceChildren(h("h1", null, "Skills"), h("p", {class: "lead"}, h("span", {class: "spin"}), "Reading the skills"));
+  const data = await api("/api/skills");
+  // Folders that have skills come first.
+  data.places.sort((a, b) => (b.skills.length > 0) - (a.skills.length > 0));
+  const editor = h("div");
+  function edit(place, skill) {
+    const fresh = !skill;
+    const name = h("input", {type: "text", placeholder: "name, for example page-motion", value: fresh ? "" : skill.name});
+    name.disabled = !fresh;
+    const text = h("textarea", {class: "editor", style: "min-height:44vh", spellcheck: "false"});
+    text.value = fresh ? SKILL_START : skill.text;
+    const note = h("div", {class: "foot", style: "margin:8px 0"});
+    const told = (words, bad) => { note.textContent = words; note.style.color = bad ? "var(--bad)" : ""; };
+    const body = () => JSON.stringify({name: name.value.trim(), text: text.value});
+    const read = found => "Kosika reads it as: " + found.summary + ". Picked when a request says: " + found.when.join(", ") + "." + (found.checks.length ? " Holds " + found.files.join(", ") + " to " + found.checks.length + " rule" + (found.checks.length > 1 ? "s" : "") + "." : " It has no rules.");
+    const check = async () => {
+      try { const found = await api("/api/skills/check", {method: "POST", body: body()}); told(found.ok ? read(found) : found.error, !found.ok); }
+      catch (error) { told(error.message, true); }
+    };
+    const save = async () => {
+      try { await api("/api/skills/save?id=" + encodeURIComponent(place.id), {method: "POST", body: body()}); await showSkills({place: place.id, name: name.value.trim(), saved: true}); }
+      catch (error) { told(error.message, true); }
+    };
+    fill(editor, h("div", {class: "panel", style: "margin-bottom:14px"},
+      h("div", {class: "wf-title"}, fresh ? "A new skill for " + place.title : "skill " + skill.name),
+      h("div", {class: "wf-sub"}, "The first line says what it is. When: lists the words that pick it. Files: and Check: are rules a file made under it must keep. The rest is the know-how the model is given."),
+      fresh ? h("div", {style: "margin:10px 0"}, name) : null, text, note,
+      h("div", {class: "row"}, h("button", {onclick: save}, "Save"), h("button", {class: "quiet", onclick: check}, "Check"), h("button", {class: "quiet", onclick: () => fill(editor)}, "Close"))));
+    if (open && open.saved && !fresh) told("Saved.");
+    editor.scrollIntoView({block: "nearest", behavior: "smooth"});
+  }
+  const places = data.places.filter(place => place.skills.length);
+  const where = h("select", null, data.places.map(place => h("option", {value: place.id}, place.title)));
+  if (open) where.value = open.place; else if (places.length) where.value = places[0].id;
+  const asked = h("input", {type: "text", placeholder: "A request, for example: add a function is_even to calc.py, with a test"});
+  const answer = h("div", {class: "chips", style: "margin-top:10px"});
+  const tryIt = async () => {
+    if (!asked.value.trim()) { fill(answer); return; }
+    try {
+      const got = await api("/api/skills/try?id=" + encodeURIComponent(where.value), {method: "POST", body: JSON.stringify({text: asked.value})});
+      fill(answer, got.picked.length ? got.picked.map(item => h("span", {class: "chip accent", title: item.why}, item.name + ": " + item.why)) : chip("No skill would be picked for this request."));
+    } catch (error) { fill(answer, chip(error.message, "bad")); }
+  };
+  asked.addEventListener("keydown", event => { if (event.key === "Enter") tryIt(); });
+  const count = data.places.reduce((sum, place) => sum + place.skills.length, 0);
+  fill(main, h("h1", null, "Skills"),
+    h("p", {class: "lead"}, "A skill is know-how written down beside an agent: how a test is written, how motion is styled on a web page. The words of a request pick the skills that fit, with no model asked. The picked skills are given to the agent, and to an outside agent it hands the work to, and a skill's rules are checked on every file before you are asked to allow it. " + (count ? count + " skill" + (count > 1 ? "s" : "") + " in this folder." : "There is no skill in this folder yet.")),
+    h("div", {class: "panel", style: "margin-bottom:14px"}, h("h4", null, "Try a request"),
+      h("div", {class: "wf-sub"}, "See which skills a request would pick, and the words that pick them."),
+      h("div", {class: "row", style: "margin-top:10px;gap:8px"}, where, asked, h("button", {onclick: tryIt}, "Try")), answer),
+    editor,
+    places.length < data.places.length ? h("div", {class: "panel", style: "margin-bottom:14px"},
+      h("h4", null, "Agents with no skill yet"), h("div", {class: "wf-sub"}, "Pick one to write its first skill."),
+      h("div", {class: "row", style: "margin-top:10px;flex-wrap:wrap;gap:8px"}, data.places.filter(place => !place.skills.length).map(place => h("button", {class: "quiet", onclick: () => edit(place, null)}, "+ " + place.title)))) : null,
+    places.map(place => h("div", {class: "panel", style: "margin-bottom:14px"},
+      h("div", {class: "wf-title"}, place.title), h("div", {class: "wf-sub"}, "for " + place.agents.join(", ")),
+      h("div", {class: "grid", style: "grid-template-columns:repeat(auto-fill,minmax(300px,1fr));margin-top:10px"},
+        place.skills.map(skill => h("div", {class: "rec", style: "cursor:pointer", onclick: () => edit(place, skill)},
+          h("h4", null, skill.name),
+          h("div", {class: "about", style: "color:var(--soft);font-size:13px;margin-bottom:8px"}, skill.error || skill.summary),
+          h("div", {class: "chips"}, skill.error ? chip("cannot be read", "bad") : [
+            (skill.when || []).slice(0, 5).map(word => chip(word)),
+            skill.when.length > 5 ? chip("+" + (skill.when.length - 5) + " more") : null,
+            skill.files.map(pattern => chip("for " + pattern, "think")),
+            skill.checks.length ? chip(skill.checks.length + " rule" + (skill.checks.length > 1 ? "s" : ""), "warn") : null]))),
+        h("div", {class: "rec", style: "cursor:pointer;border-style:dashed", onclick: () => edit(place, null)},
+          h("h4", null, "+ New skill"), h("div", {class: "about", style: "color:var(--soft);font-size:13px"}, "Write down how a kind of work is done well."))))));
+  if (open) {
+    const place = data.places.find(item => item.id === open.place);
+    const skill = place && place.skills.find(item => item.name === open.name);
+    if (skill) edit(place, skill);
+  }
 }
 
 // What agents may touch, and the place to change it without a command line.

@@ -103,6 +103,13 @@ workflow main(note: Note) -> Done {
 """
 
 
+SKILL_NOTE = """# How a list is written
+When: todo, shopping list
+
+One thing on a line.
+"""
+
+
 class Fixture(unittest.TestCase):
     def setUp(self) -> None:
         self._dir = tempfile.TemporaryDirectory()
@@ -418,6 +425,38 @@ class ServerTests(Fixture):
         )
         self.assertEqual(status, 400)
         self.assertIn("error", data)
+
+    def test_the_skills_section_is_served(self) -> None:
+        status, data = self.ask("/api/skills")
+        self.assertEqual(status, 200)
+        self.assertIn("desk", [place["title"] for place in data["places"]])
+        status, saved = self.ask(
+            "/api/skills/save?id=desk/main.kos",
+            body={"name": "lists", "text": SKILL_NOTE},
+        )
+        self.assertEqual((status, saved["saved"]), (200, True))
+        status, picked = self.ask(
+            "/api/skills/try?id=desk/main.kos", body={"text": "a todo for today"}
+        )
+        self.assertEqual(picked["picked"][0]["name"], "lists")
+        status, checked = self.ask(
+            "/api/skills/check", body={"name": "x", "text": "nothing"}
+        )
+        self.assertEqual((status, checked["ok"]), (200, False))
+        status, _ = self.ask(
+            "/api/skills/save?id=desk/main.kos",
+            body={"name": "bad name", "text": SKILL_NOTE},
+        )
+        self.assertEqual(status, 422)
+        status, _ = self.ask("/api/skills/save?id=desk/main.kos", body={"name": 3})
+        self.assertEqual(status, 400)
+        self.assertEqual(self.ask("/api/skills", token="wrong")[0], 403)
+
+    def test_the_page_has_a_skills_section(self) -> None:
+        page = PAGE.read_text(encoding="utf-8")
+        self.assertEqual(page.count('["skills", "Skills"]'), 2)
+        self.assertIn('id="icon-skills"', page)
+        self.assertIn("async function showSkills(", page)
 
 
 class PageTests(unittest.TestCase):
