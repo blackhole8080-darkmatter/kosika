@@ -1,0 +1,14 @@
+// Refused: a match step must end with `case _`, so some call is made.
+
+record Ask { kind: Text }
+record Said { text: Text }
+
+fn yes(ask: Ask) -> Said { return {text: "yes"} }
+fn no(ask: Ask) -> Said { return {text: "no"} }
+
+workflow main(ask: Ask) -> Said {
+  said = match ask.kind {
+    case "y" { yes(ask) }
+    case "n" { no(ask) }
+  }
+}

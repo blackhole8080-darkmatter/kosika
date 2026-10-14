@@ -62,6 +62,7 @@ func main() {
 		if problem := ModuleProblem(program, args[1]); problem != "" {
 			fail("Check failed: %s", problem)
 		}
+		program = LowerValues(program)
 		// A program the checker refuses is not run, and says why as the
 		// reference does: on the output, with exit code 2.
 		if refused := Check(program); refused != nil {

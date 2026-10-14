@@ -289,6 +289,12 @@ func (c *checker) checkWorkflows() {
 }
 
 func (c *checker) checkStep(workflow *WorkflowDecl, step *Step, env *Env) {
+	if step.Subject != nil {
+		subject := c.typeOf(step.Subject, env.child(), step.Name, "")
+		if subject != "Text" && subject != "Number" && subject != "Bool" {
+			checkFail("Step %s match expects Text, Number, or Bool, got %s", pyRepr(step.Name), pyRepr(subject))
+		}
+	}
 	call := step.Call
 	var params []Param
 	var output string
@@ -412,4 +418,138 @@ func (c *checker) checkAnswers(test *TestDecl) string {
 		}
 	}
 	return ""
+}
+
+// withSteps is the program with each workflow's steps changed by change.
+func withSteps(program *Program, change func(*Step) *Step) *Program {
+	copied := *program
+	copied.Workflows = nil
+	for _, workflow := range program.Workflows {
+		changed := *workflow
+		changed.Steps = nil
+		for _, step := range workflow.Steps {
+			changed.Steps = append(changed.Steps, change(step))
+		}
+		copied.Workflows = append(copied.Workflows, &changed)
+	}
+	return &copied
+}
+
+func patternKind(v Value) string {
+	switch v.(type) {
+	case bool:
+		return "bool"
+	case string:
+		return "str"
+	case float64:
+		return "float"
+	}
+	return "int"
+}
+
+// checkBranches checks a match step by checking the program each branch
+// would make.
+func (c *checker) checkBranches() {
+	most := 0
+	for _, workflow := range c.program.Workflows {
+		for _, step := range workflow.Steps {
+			if len(step.Branches) == 0 {
+				continue
+			}
+			most = max(most, len(step.Branches))
+			last := len(step.Branches) - 1
+			for i, branch := range step.Branches {
+				if branch.Any != (i == last) {
+					checkFail("Step %s match must end with exactly one `case _`", pyRepr(step.Name))
+				}
+			}
+			seen := map[string]bool{}
+			for _, branch := range step.Branches[:last] {
+				key := patternKind(branch.Pattern) + ":" + showText(branch.Pattern)
+				if seen[key] {
+					checkFail("Step %s match lists a value twice", pyRepr(step.Name))
+				}
+				seen[key] = true
+			}
+			outputs := map[string]bool{}
+			for _, branch := range step.Branches {
+				if branch.Call.Kind == "tool" {
+					if tool := c.tools[branch.Call.Name]; tool != nil && tool.Access == "execute" {
+						checkFail("Step %s match cannot choose execute tool %s", pyRepr(step.Name), pyRepr(tool.Name))
+					}
+				}
+				if out := callOutput(c.program, branch.Call); out != "" {
+					outputs[out] = true
+				}
+			}
+			if len(outputs) > 1 {
+				var names []string
+				for name := range outputs {
+					names = append(names, name)
+				}
+				sort.Strings(names)
+				checkFail("Step %s match branches return different types: %s", pyRepr(step.Name), strings.Join(names, ", "))
+			}
+		}
+	}
+	for index := 0; index < most; index++ {
+		variant := withSteps(c.program, func(step *Step) *Step {
+			if len(step.Branches) == 0 {
+				return step
+			}
+			changed := *step
+			changed.Call = step.Branches[min(index, len(step.Branches)-1)].Call
+			changed.Branches = nil
+			return &changed
+		})
+		newChecker(variant).checkDeclarations()
+	}
+}
+
+// checkFallbacks checks a step's fallback by checking the program without
+// it, and the program with it in the call's place.
+func (c *checker) checkFallbacks() {
+	for _, workflow := range c.program.Workflows {
+		for _, step := range workflow.Steps {
+			if step.Fallback == nil {
+				continue
+			}
+			for _, call := range []*StepCall{step.Call, step.Fallback} {
+				if call.Kind != "tool" {
+					continue
+				}
+				if tool := c.tools[call.Name]; tool != nil && tool.Access == "execute" {
+					checkFail("Step %s cannot use otherwise with execute tool %s: a failed action may still have happened", pyRepr(step.Name), pyRepr(tool.Name))
+				}
+			}
+		}
+	}
+	without := withSteps(c.program, func(step *Step) *Step {
+		changed := *step
+		changed.Fallback = nil
+		return &changed
+	})
+	swapped := withSteps(c.program, func(step *Step) *Step {
+		changed := *step
+		if step.Fallback != nil {
+			changed.Call = step.Fallback
+		}
+		changed.Fallback = nil
+		return &changed
+	})
+	// First sound without its fallbacks, so a fault in a declaration is
+	// reported as itself and not as the disagreement it also causes.
+	newChecker(without).checkDeclarations()
+	for _, workflow := range c.program.Workflows {
+		for _, step := range workflow.Steps {
+			if step.Fallback == nil {
+				continue
+			}
+			first, second := callOutput(c.program, step.Call), callOutput(c.program, step.Fallback)
+			if first != "" && second != "" && first != second {
+				checkFail("Step %s otherwise branch returns %s, but the step returns %s", pyRepr(step.Name), pyRepr(second), pyRepr(first))
+			}
+		}
+	}
+	newChecker(swapped).checkDeclarations()
 }

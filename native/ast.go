@@ -173,12 +173,26 @@ type StepCall struct {
 	Line  int
 }
 
+// A Branch is one case of a match step: the call made when the subject
+// equals Pattern, or always when Any.
+type Branch struct {
+	Any     bool
+	Pattern Value
+	Call    *StepCall
+}
+
 type Step struct {
 	Name        string
 	Call        *StepCall
 	Binding     string
 	BindingType string
 	Return      string
+	// Fallback is the call made instead when Call fails: `otherwise`.
+	Fallback *StepCall
+	// A match step makes one of its Branches' calls, chosen by Subject.
+	// Call is then the first branch's.
+	Subject  Expr
+	Branches []Branch
 }
 
 // A Budget is one ceiling a workflow puts on its own run.

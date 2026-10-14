@@ -1,0 +1,15 @@
+// Refused: a match step lists each value once.
+
+record Ask { kind: Text }
+record Said { text: Text }
+
+fn yes(ask: Ask) -> Said { return {text: "yes"} }
+fn no(ask: Ask) -> Said { return {text: "no"} }
+
+workflow main(ask: Ask) -> Said {
+  said = match ask.kind {
+    case "y" { yes(ask) }
+    case "y" { no(ask) }
+    case _ { no(ask) }
+  }
+}

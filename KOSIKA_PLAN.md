@@ -3491,6 +3491,32 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   programs with workflows, agents and tools; the guide does not teach
   those yet.
 
+### The native engine runs fallbacks and match steps
+
+- Asked for the big plan, the owner was given it from this document and
+  the vision, and said to go on. The native engine now runs a step with a
+  fallback (`x = call otherwise other`) and a step that chooses its call
+  (`x = match subject { case ... }`), with a value standing in for a call
+  after `otherwise` or in a case.
+- The checker does what the reference does: it checks the program without
+  the fallbacks and then with each fallback in its call's place, and the
+  program each branch of a match would make. A value beside a call is
+  made a call of a function that gives it (`native/sugar.go`, as
+  `lower_values`), and a fault in it is reported in the writer's words:
+  "Step 'said' in workflow 'main': the value after `otherwise` ...".
+- At run time a failure of the work hands the step to its fallback; a
+  spent budget or a missing approval does not, as in the reference.
+- The suite: `cases/steps.kos`, `failing/steps.kos`, and eight refusals
+  (a match without `case _`, a value listed twice, branches of different
+  types, a subject that is a record, a fallback of another type, a
+  fallback beside a tool that changes the world, a wrong value after
+  `otherwise`, a match choosing a tool that changes the world). Both
+  engines pass all 46 programs.
+- Measured by mutation: 1,000 mutants of the two new programs and 1,970
+  of all the suite's programs; every one gave the same output from both.
+- Next: models, with tests that script their answers; then asking an
+  agent, thinking steps, and `verify`, `vote`, `retry`, `escalate`.
+
 ### The native engine runs workflows, and the tools a test scripts
 
 - Asked to go on, the owner agreed to workflows next. The native engine now

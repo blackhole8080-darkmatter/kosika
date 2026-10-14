@@ -1,0 +1,67 @@
+// Conformance: what a failing fallback or match step says.
+
+record Ask { text: Text n: Number }
+record Said { text: Text }
+
+tool search {
+  source mcp "web"
+  operation: "search"
+  access: observe
+  input: Ask
+  output: Said
+}
+
+agent finder {
+  can: [search]
+}
+
+fn first(ask: Ask) -> Said {
+  if ask.n == 0 { fail "the first way failed" }
+  return {text: ask.text}
+}
+
+fn second(ask: Ask) -> Said {
+  if ask.n == 0 { fail f"the second way failed too, for {ask.text}" }
+  return {text: ask.text}
+}
+
+fn pick(items: Text[], at: Number) -> Text {
+  return items[at]
+}
+
+fn said(text: Text) -> Said {
+  return {text: text}
+}
+
+workflow both(ask: Ask) -> Said {
+  result = first(ask) otherwise second(ask)
+}
+
+workflow choose(ask: Ask) -> Said {
+  chosen = match pick(["a", "b"], ask.n) {
+    case "a" { said("A") }
+    case _ { said("other") }
+  }
+}
+
+workflow budgeted(ask: Ask) -> Said {
+  budget 1 tool calls
+  one = execute finder.search(text: ask.text, n: ask.n)
+  two = execute finder.search(text: ask.text, n: ask.n) otherwise said("spared")
+}
+
+test "when the fallback fails too, its failure is reported" {
+  r = both({text: "x", n: 0})
+  expect r.text == "x"
+}
+
+test "a match subject that fails" {
+  r = choose({text: "x", n: 5})
+  expect r.text == "other"
+}
+
+test "a spent budget is not something a fallback can answer" {
+  answers search: [{text: "a"}, {text: "b"}]
+  r = budgeted({text: "x", n: 0})
+  expect r.text == "spared"
+}

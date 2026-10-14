@@ -1,0 +1,15 @@
+// Refused: every call a match step may make gives the same type.
+
+record Ask { kind: Text }
+record Said { text: Text }
+record Count { n: Number }
+
+fn yes(ask: Ask) -> Said { return {text: "yes"} }
+fn size(ask: Ask) -> Count { return {n: ask.kind.length()} }
+
+workflow main(ask: Ask) -> Said {
+  said = match ask.kind {
+    case "y" { yes(ask) }
+    case _ { size(ask) }
+  }
+}

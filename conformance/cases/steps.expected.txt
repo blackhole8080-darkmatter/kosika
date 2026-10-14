@@ -1,0 +1,6 @@
+PASS  a fallback is taken when the call fails
+PASS  a match step makes the call its subject picks
+PASS  a tool that fails hands its step to the fallback
+PASS  a tool that answers is used
+PASS  numbers are matched by value
+5 passed, 0 failed

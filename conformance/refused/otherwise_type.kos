@@ -1,0 +1,12 @@
+// Refused: a fallback must give what the step gives.
+
+record Ask { text: Text }
+record Said { text: Text }
+record Count { n: Number }
+
+fn say(ask: Ask) -> Said { return {text: ask.text} }
+fn count(ask: Ask) -> Count { return {n: 1} }
+
+workflow main(ask: Ask) -> Said {
+  said = say(ask) otherwise count(ask)
+}

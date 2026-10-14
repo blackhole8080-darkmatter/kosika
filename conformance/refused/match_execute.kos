@@ -1,0 +1,26 @@
+// Refused: a match step may not choose a tool that changes the world.
+
+record Change { id: Text kind: Text }
+record Done { id: Text }
+
+tool apply {
+  source mcp "shop"
+  operation: "apply"
+  access: execute
+  input: Change
+  output: Done
+}
+
+agent clerk {
+  can: [apply]
+}
+
+fn skip(change: Change) -> Done { return {id: change.id} }
+
+workflow main(change: Change) -> Done {
+  require approval
+  done = match change.kind {
+    case "go" { execute clerk.apply(id: change.id, kind: change.kind) }
+    case _ { skip(change) }
+  }
+}

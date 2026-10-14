@@ -43,20 +43,43 @@ func newRun(program *Program, tools map[string]*scriptedTool, workflow *Workflow
 // preflight refuses, before any step runs, a workflow that would use a
 // tool that changes the world: a test has no recorded approval.
 func (r *run) preflight(workflow *WorkflowDecl) {
-	pending := append([]*Step{}, workflow.Steps...)
-	visited := map[string]bool{workflow.Name: true}
-	for len(pending) > 0 {
-		step := pending[0]
-		pending = pending[1:]
-		switch step.Call.Kind {
+	// A call reached only through a match may never be made, so a tool in
+	// it is not refused here; the call itself refuses when it is made.
+	type pending struct {
+		call   *StepCall
+		chosen bool
+	}
+	var queue []pending
+	add := func(steps []*Step, chosen bool) {
+		for _, step := range steps {
+			if len(step.Branches) > 0 {
+				for _, branch := range step.Branches {
+					queue = append(queue, pending{branch.Call, true})
+				}
+				continue
+			}
+			queue = append(queue, pending{step.Call, chosen})
+			if step.Fallback != nil {
+				queue = append(queue, pending{step.Fallback, chosen})
+			}
+		}
+	}
+	add(workflow.Steps, false)
+	visited := map[string]bool{workflow.Name + "|false": true}
+	for len(queue) > 0 {
+		item := queue[0]
+		queue = queue[1:]
+		switch item.call.Kind {
 		case "workflow":
-			if !visited[step.Call.Name] {
-				visited[step.Call.Name] = true
-				pending = append(pending, r.checker.workflows[step.Call.Name].Steps...)
+			name := item.call.Name
+			key := fmt.Sprintf("%s|%t", name, item.chosen)
+			if !visited[key] && !visited[name+"|false"] {
+				visited[key] = true
+				add(r.checker.workflows[name].Steps, item.chosen)
 			}
 		case "tool":
-			if tool := r.checker.tools[step.Call.Name]; tool.Access == "execute" {
-				runFail(fmt.Sprintf("Workflow tool %s requires a verified approval record", pyRepr(tool.Name)))
+			if tool := r.checker.tools[item.call.Name]; tool.Access == "execute" && !item.chosen {
+				panic(&budgetError{fmt.Sprintf("Workflow tool %s requires a verified approval record", pyRepr(tool.Name))})
 			}
 		}
 	}
@@ -88,32 +111,66 @@ func (r *run) workflow(workflow *WorkflowDecl, inputs map[string]Value, depth in
 	at := frame{environment, nil, 0}
 	var result Value = newRecord()
 	for _, step := range workflow.Steps {
-		call := step.Call
-		args := resolveUnnamed(call.Args, r.checker.stepParams(call))
-		arguments := map[string]Value{}
-		for _, arg := range args {
-			arguments[arg.Name] = r.machine.eval(arg.Value, at)
-		}
-		switch call.Kind {
-		case "function":
-			if value, bound := environment.lookup(call.Name); bound {
-				closure, ok := value.(*Closure)
-				if !ok {
-					runFail("Invalid function value")
-				}
-				result = r.machine.invoke(closure.Decl, arguments, closure.Captured, closure.Funcs, 0)
-			} else {
-				result = r.machine.invoke(r.machine.functions[call.Name], arguments, nil, nil, 0)
+		value, failure := r.attempt(step, step.Call, environment, at, depth)
+		if failure != nil {
+			// `otherwise`: a failure of the work hands the step to its
+			// fallback. A spent budget or a missing approval is not one.
+			if step.Fallback == nil {
+				panic(failure)
 			}
-		case "workflow":
-			result = r.workflow(r.checker.workflows[call.Name], arguments, depth+1)
-		case "tool":
-			result = r.tool(r.checker.tools[call.Name], arguments)
+			value = r.call(step.Fallback, environment, at, depth)
 		}
+		result = value
 		environment.vars[step.Binding] = result
 	}
 	r.validate(result, workflow.Out, "$")
 	return result
+}
+
+// attempt makes a step's call, or the one its match picks, and gives the
+// failure of the work instead of panicking with it.
+func (r *run) attempt(step *Step, call *StepCall, environment *Scope, at frame, depth int) (value Value, failure *RunError) {
+	defer func() {
+		if caught := recover(); caught != nil {
+			if problem, ok := caught.(*RunError); ok {
+				failure = problem
+				return
+			}
+			panic(caught)
+		}
+	}()
+	if len(step.Branches) > 0 && step.Subject != nil {
+		chosen := r.machine.eval(step.Subject, at)
+		for _, branch := range step.Branches {
+			if branch.Any || valueEqual(branch.Pattern, chosen) {
+				call = branch.Call
+				break
+			}
+		}
+	}
+	return r.call(call, environment, at, depth), nil
+}
+
+func (r *run) call(call *StepCall, environment *Scope, at frame, depth int) Value {
+	args := resolveUnnamed(call.Args, r.checker.stepParams(call))
+	arguments := map[string]Value{}
+	for _, arg := range args {
+		arguments[arg.Name] = r.machine.eval(arg.Value, at)
+	}
+	switch call.Kind {
+	case "function":
+		if value, bound := environment.lookup(call.Name); bound {
+			closure, ok := value.(*Closure)
+			if !ok {
+				runFail("Invalid function value")
+			}
+			return r.machine.invoke(closure.Decl, arguments, closure.Captured, closure.Funcs, 0)
+		}
+		return r.machine.invoke(r.machine.functions[call.Name], arguments, nil, nil, 0)
+	case "workflow":
+		return r.workflow(r.checker.workflows[call.Name], arguments, depth+1)
+	}
+	return r.tool(r.checker.tools[call.Name], arguments)
 }
 
 func (r *run) tool(tool *ToolDecl, arguments map[string]Value) Value {
@@ -122,7 +179,8 @@ func (r *run) tool(tool *ToolDecl, arguments map[string]Value) Value {
 	}
 	r.toolCalls++
 	if tool.Access == "execute" {
-		runFail(fmt.Sprintf("Workflow tool %s requires a verified approval record", pyRepr(tool.Name)))
+		// Not a failure of the work: no fallback may answer it.
+		panic(&budgetError{fmt.Sprintf("Workflow tool %s requires a verified approval record", pyRepr(tool.Name))})
 	}
 	input := newRecord()
 	for name, value := range arguments {

@@ -183,25 +183,58 @@ func (p *Parser) parseBudget() []Budget {
 	}
 }
 
-// stepEnding refuses what may follow a step's call that this engine
-// cannot run yet: a check, votes, retries, a stronger model, a fallback.
-func (p *Parser) stepEnding() {
-	for _, word := range []string{"verify", "vote", "retry", "escalate", "otherwise"} {
+// stepEnding reads what may follow a step's call: a fallback. A check,
+// votes, retries and a stronger model belong to models, which this engine
+// cannot ask yet, and are refused.
+func (p *Parser) stepEnding() *StepCall {
+	for _, word := range []string{"verify", "vote", "retry", "escalate"} {
 		if p.check(word) {
 			notYetStep(p.current(), "a step with "+word)
 		}
 	}
+	if p.accept("otherwise") {
+		return p.parseStepCall()
+	}
+	return nil
 }
 
 func (p *Parser) parseShortStep() *Step {
 	name := p.identifier()
 	p.expect("=")
-	if p.check("match") {
-		notYetStep(p.current(), "a match step")
+	if p.accept("match") {
+		// The step makes one of several calls, chosen by a value.
+		step := &Step{Name: name, Binding: name, Return: name, Subject: p.parseOr()}
+		p.expect("{")
+		for !p.accept("}") {
+			p.expect("case")
+			branch := Branch{Any: true}
+			if !p.accept("_") {
+				token := p.advance()
+				branch.Any = false
+				switch {
+				case token.Kind == "STRING":
+					branch.Pattern = token.Value
+				case token.Kind == "NUMBER":
+					branch.Pattern = numberLiteral(token.Value, false)
+				case token.Kind == "IDENT" && (token.Value == "true" || token.Value == "false"):
+					branch.Pattern = token.Value == "true"
+				default:
+					parseFail("Expected 'value' at %d:%d, got %s", token.Line, token.Column, quoted(token.Value))
+				}
+			}
+			p.expect("{")
+			branch.Call = p.parseStepCall()
+			p.expect("}")
+			step.Branches = append(step.Branches, branch)
+		}
+		if len(step.Branches) == 0 {
+			p.expect("case")
+		}
+		step.Call = step.Branches[0].Call
+		return step
 	}
 	call := p.parseStepCall()
-	p.stepEnding()
-	return &Step{Name: name, Call: call, Binding: name, Return: name}
+	return &Step{Name: name, Call: call, Binding: name, Return: name, Fallback: p.stepEnding()}
 }
 
 func (p *Parser) parseLongStep() *Step {
@@ -214,7 +247,7 @@ func (p *Parser) parseLongStep() *Step {
 	}
 	p.expect("=")
 	step.Call = p.parseStepCall()
-	p.stepEnding()
+	step.Fallback = p.stepEnding()
 	p.expect("return")
 	step.Return = p.identifier()
 	p.expect("}")

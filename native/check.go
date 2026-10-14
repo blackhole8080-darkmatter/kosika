@@ -1048,6 +1048,33 @@ func (c *checker) gather() {
 	}
 }
 
+// usedByCall adds the names a step's call uses.
+func usedByCall(call *StepCall, bound, used map[string]bool) {
+	for _, arg := range call.Args {
+		walkCalls(arg.Value, func(found Expr) {
+			switch e := found.(type) {
+			case *FuncRefExpr:
+				used[e.Name] = true
+			case *CallExpr:
+				if !bound[e.Name] {
+					used[e.Name] = true
+				}
+			}
+		})
+	}
+	switch call.Kind {
+	case "workflow":
+		used[call.Name] = true
+	case "function":
+		if !bound[call.Name] && call.Name != valueCall {
+			used[call.Name] = true
+		}
+	case "tool":
+		used[call.Agent] = true
+		used[call.Name] = true
+	}
+}
+
 // ModuleProblem is the reference's check, made as a file is read, that
 // every name a declaration uses is declared. It is reported, like a fault
 // in the text, with the file's path.
@@ -1095,28 +1122,15 @@ func ModuleProblem(program *Program, path string) string {
 			if step.BindingType != "" {
 				referencedTypes(step.BindingType, used)
 			}
-			for _, arg := range step.Call.Args {
-				walkCalls(arg.Value, func(call Expr) {
-					switch e := call.(type) {
-					case *FuncRefExpr:
-						used[e.Name] = true
-					case *CallExpr:
-						if !bound[e.Name] {
-							used[e.Name] = true
-						}
-					}
-				})
+			calls := []*StepCall{step.Call}
+			if step.Fallback != nil {
+				calls = append(calls, step.Fallback)
 			}
-			switch step.Call.Kind {
-			case "workflow":
-				used[step.Call.Name] = true
-			case "function":
-				if !bound[step.Call.Name] && step.Call.Name != valueCall {
-					used[step.Call.Name] = true
-				}
-			case "tool":
-				used[step.Call.Agent] = true
-				used[step.Call.Name] = true
+			for _, branch := range step.Branches {
+				calls = append(calls, branch.Call)
+			}
+			for _, call := range calls {
+				usedByCall(call, bound, used)
 			}
 			bound[step.Binding] = true
 		}
@@ -1203,7 +1217,7 @@ func Check(program *Program) (err error) {
 	defer func() {
 		if caught := recover(); caught != nil {
 			if failure, ok := caught.(*CheckError); ok {
-				err = failure
+				err = &CheckError{plainNames(failure.Message)}
 				return
 			}
 			panic(caught)
@@ -1219,6 +1233,22 @@ func (c *checker) checkDeclarations() {
 	c.checkValueSteps()
 	c.checkRecordMethods()
 	c.checkBudgets()
+	for _, workflow := range c.program.Workflows {
+		for _, step := range workflow.Steps {
+			if len(step.Branches) > 0 {
+				c.checkBranches()
+				return
+			}
+		}
+	}
+	for _, workflow := range c.program.Workflows {
+		for _, step := range workflow.Steps {
+			if step.Fallback != nil {
+				c.checkFallbacks()
+				return
+			}
+		}
+	}
 	if len(c.records) != len(c.program.Records) {
 		checkFail("Duplicate record declaration")
 	}

@@ -16,7 +16,8 @@ values written in (`f"..."`), and the built-in methods on text, numbers,
 lists, maps and optional values. Whole numbers are exact at any size.
 
 Workflows, whose steps call a function, run another workflow, or use a
-tool through an agent; tools and agents as they are declared; and tests
+tool through an agent, with a fallback (`otherwise`) or a choice of call
+(`match`); tools and agents as they are declared; and tests
 that run a workflow and script what its tools answer. A tool is reached
 only through those scripted answers: this engine reaches no real tool yet,
 and one that changes the world is refused, as the reference refuses it in
@@ -34,8 +35,8 @@ print what the reference engine prints, word for word. See
 ## What it does not have yet
 
 - Models, and so asking an agent or a model, and thinking steps.
-- Steps with `otherwise`, `verify`, `vote`, `retry` or `escalate`, steps
-  that `match`, and `parallel` blocks.
+- Steps with `verify`, `vote`, `retry` or `escalate`, which belong to
+  models, and `parallel` blocks.
 - Reaching a real tool: MCP servers, `system` tools, files, pages, the
   clock and chance. Approvals.
 - Memories, boards, swarms and imports.
@@ -52,6 +53,7 @@ print what the reference engine prints, word for word. See
     check.go     the checker: refusing a program before it runs
     check_workflows.go   the checker's rules for tools, agents, workflows
     workflows.go running a workflow, and the tools a test scripts
+    sugar.go     a value written where a call belongs, made a call
     types.go     what the checker knows about types and methods
     eval.go      working expressions out, calling functions
     methods.go   the built-in methods
