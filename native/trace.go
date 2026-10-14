@@ -152,7 +152,11 @@ func programHash(source string) string {
 // execution is the run's limits and what it used, as run_complete records.
 func (r *run) execution(started time.Time) *Record {
 	limits := newRecord()
-	limits.set("deadline_seconds", nil)
+	if r.deadline > 0 {
+		limits.set("deadline_seconds", r.deadline)
+	} else {
+		limits.set("deadline_seconds", nil)
+	}
 	limits.set("max_function_calls", bigInt(maxFunctionCalls))
 	limits.set("max_loop_iterations", bigInt(maxLoopIterations))
 	limits.set("max_model_calls", bigInt(r.maxModels))

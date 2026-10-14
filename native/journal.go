@@ -13,6 +13,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -49,6 +50,9 @@ func openJournal(path, bindingID string, approvals []approvalRecord) *journal {
 // lock claims the journal for this process. A second run of the same
 // journal at the same time is refused.
 func (j *journal) lock() {
+	// The journal's folder is made when it is first used, as the
+	// reference makes it.
+	_ = os.MkdirAll(filepath.Dir(j.lockPath), 0o755)
 	file, err := os.OpenFile(j.lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
 	if err != nil {
 		stopRun("run_busy", "Another process owns this run journal")

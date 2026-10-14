@@ -492,6 +492,106 @@ class NativeTests(unittest.TestCase):
             reference.stderr.strip().splitlines()[-1],
         )
 
+    def test_it_runs_in_an_environment_as_the_reference_does(self) -> None:
+        # A project's kosika.env names what its programs may reach; both
+        # engines find it above the program, take everything from it, keep
+        # their traces and journals where it says, and refuse alike.
+        ignored = {"timestamp", "program_hash", "elapsed_seconds", "function_stack", "plan_hash"}
+
+        def clean(value: object) -> object:
+            if isinstance(value, dict):
+                return {k: clean(v) for k, v in value.items() if k not in ignored}
+            if isinstance(value, list):
+                return [clean(v) for v in value]
+            return value
+
+        examples = ROOT / "examples"
+        server = [Path(sys.executable).as_posix(), (examples / "approval_mutation_mcp_server.py").as_posix()]
+        settings = (
+            "environment test {\n"
+            '  models answer from "fixture.json"\n'
+            "  budget 3 model calls, 60 seconds\n"
+            '  keep ".kosika/test"\n}\n'
+            "environment live {\n"
+            f"  mcp approval_mutation: {json.dumps(server)}\n"
+            f'    pinned "{(examples / "approval_mutation_manifest.json").as_posix()}"\n'
+            '  keep ".kosika/live"\n}\n'
+        )
+        source = (
+            "record Ask { text: Text }\nrecord Said { text: Text n: Number }\n"
+            "model writer {\n  input: Ask\n  output: Said\n}\n"
+            "workflow main(ask: Ask) -> Said {\n  said = use_model writer(text: ask.text)\n}\n"
+        )
+        seen: dict[str, dict[str, object]] = {}
+        for name in ("reference", "native"):
+            with self.subTest(name), tempfile.TemporaryDirectory() as scratch:
+                project = Path(scratch)
+                (project / "kosika.env").write_text(settings, encoding="utf-8")
+                (project / "fixture.json").write_text(json.dumps({"writer": [{"text": "ok", "n": 1}]}))
+                (project / "programs").mkdir()
+                (project / "programs" / "p.kos").write_text(source, encoding="utf-8")
+                shutil.copy(examples / "approval_mutation.kos", project / "programs")
+                (project / "in.json").write_text(json.dumps({"ask": {"text": "hi"}}))
+                (project / "req.json").write_text(json.dumps({"request": {"change": "rename"}}))
+
+                def engine(*arguments: str) -> subprocess.CompletedProcess[str]:
+                    command = (
+                        [sys.executable, "-m", "kosika.cli", "run"]
+                        if name == "reference"
+                        else [str(self.engine), "run"]
+                    )
+                    return subprocess.run(
+                        [*command, *arguments], cwd=project, capture_output=True, text=True,
+                        env={**os.environ, "PYTHONPATH": str(ROOT)},
+                    )
+
+                def said(ran: subprocess.CompletedProcess[str]) -> tuple[int, str, str]:
+                    lines = [line for line in ran.stderr.splitlines() if line.strip()]
+                    return ran.returncode, ran.stdout.splitlines()[0] if ran.stdout else "", (
+                        lines[-1].replace(str(project), "PROJECT") if lines else ""
+                    )
+
+                outcome: dict[str, object] = {}
+                ran = engine("programs/p.kos", "--env", "test", "--input", "in.json")
+                self.assertEqual(ran.returncode, 0, ran.stderr)
+                outcome["result"] = ran.stdout.splitlines()[0]
+                traces = list((project / ".kosika" / "test" / "traces").iterdir())
+                self.assertEqual(len(traces), 1)
+                outcome["trace"] = [
+                    clean(json.loads(line))
+                    for line in traces[0].read_text(encoding="utf-8").splitlines()
+                ]
+                for refused in (
+                    ["--env", "test", "--model-fixture", "fixture.json"],
+                    ["--env", "test", "--journal", "j", "--binding-id", "b"],
+                    ["--env", "elsewhere"],
+                ):
+                    outcome[" ".join(refused)] = said(engine("programs/p.kos", "--input", "in.json", *refused))
+                # A change waits for its approval in the environment's own
+                # journal, and once approved is made, and the journal let go.
+                change = ["programs/approval_mutation.kos", "--env", "live",
+                          "--workflow", "apply_change", "--input", "req.json"]
+                ran = engine(*change)
+                self.assertEqual(ran.returncode, 3, ran.stderr)
+                request = json.loads(ran.stdout)
+                outcome["asked"] = {k: request[k] for k in ("status", "tool", "arguments", "step")}
+                approval = {k: request[k] for k in ("plan_hash", "action_hash")}
+                (project / "approval.json").write_text(json.dumps({**approval, "approved_by": "tester"}))
+                ran = engine(*change, "--approval-record", "approval.json")
+                self.assertEqual(ran.returncode, 0, ran.stderr)
+                outcome["applied"] = ran.stdout.splitlines()[0]
+                self.assertTrue((project / "mutation_sink.json").exists())
+                journals = project / ".kosika" / "live" / "journals"
+                self.assertFalse(
+                    [p for p in journals.iterdir() if not p.name.endswith((".lock.sqlite", ".approvals.sqlite", ".approvals.json"))]
+                )
+                # A broken environment file is refused with its place.
+                (project / "kosika.env").write_text("environment test { budget 3 hours }")
+                outcome["broken"] = said(engine("programs/p.kos", "--env", "test", "--input", "in.json"))
+                seen[name] = outcome
+        for key in seen["reference"]:
+            self.assertEqual(seen["native"][key], seen["reference"][key], key)
+
 
 if __name__ == "__main__":
     unittest.main()

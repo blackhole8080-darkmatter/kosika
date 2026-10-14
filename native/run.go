@@ -22,7 +22,7 @@ func runCommand(args []string) int {
 	options["--mcp-source"] = "local_stdio"
 	options["--trace"] = "run_trace.jsonl"
 	flags := map[string]bool{"--approve": true}
-	known := map[string]bool{"--journal": true, "--binding-id": true, "--approval-record": true, "--approved-by": true, "--trace": true, "--model-fixture": true, "--mcp-server": true, "--mcp-manifest": true, "--mcp-source": true, "--workflow": true, "--input": true, "--model": true, "--model-url": true, "--model-protocol": true, "--model-timeout": true, "--model-binding": true, "--max-output-tokens": true}
+	known := map[string]bool{"--env": true, "--journal": true, "--binding-id": true, "--approval-record": true, "--approved-by": true, "--trace": true, "--model-fixture": true, "--mcp-server": true, "--mcp-manifest": true, "--mcp-source": true, "--workflow": true, "--input": true, "--model": true, "--model-url": true, "--model-protocol": true, "--model-timeout": true, "--model-binding": true, "--max-output-tokens": true}
 	for i := 1; i < len(args); i++ {
 		name, value, joined := strings.Cut(args[i], "=")
 		if flags[name] && !joined {
@@ -58,7 +58,39 @@ func runCommand(args []string) int {
 		fmt.Fprintln(os.Stderr, "--max-output-tokens must be a positive integer")
 		return 2
 	}
+	// The program is checked first, as the reference checks it, before
+	// anything it would reach is looked at.
+	program := load(path)
+	var env *environment
+	if name := options["--env"]; name != "" {
+		for _, flag := range environmentDecided {
+			if _, given := options[flag]; given {
+				fmt.Fprintf(os.Stderr, "Workflow failed: %s cannot be used with --env; name it in the environment\n", flag)
+				return 2
+			}
+		}
+		found, problem := findEnvironment(path, name)
+		if problem != "" {
+			fmt.Fprintf(os.Stderr, "Workflow failed: %s\n", problem)
+			return 2
+		}
+		env = found
+		if options["--trace"] == "run_trace.jsonl" && env.keep != "" {
+			options["--trace"] = env.tracePath()
+		}
+	}
 	servers := map[string]*mcpServer{}
+	if env != nil {
+		for _, source := range sortedKeys(env.mcp) {
+			route := env.mcp[source]
+			manifest, problem := loadManifest(route.manifest)
+			if problem != "" {
+				fmt.Fprintf(os.Stderr, "Workflow failed: %s\n", problem)
+				return 2
+			}
+			servers[source] = &mcpServer{route.command, manifest}
+		}
+	}
 	if options["--mcp-server"] != "" {
 		if options["--mcp-manifest"] == "" {
 			fmt.Fprintln(os.Stderr, "--mcp-manifest is required when --mcp-server is used")
@@ -98,12 +130,16 @@ func runCommand(args []string) int {
 			bindingID = "interactive"
 		}
 	}
-	if (journalPath == "") != (bindingID == "") || (len(approvals) > 0 && journalPath == "") {
+	// An environment that keeps things keeps the run's journal too.
+	keeps := env != nil && env.keep != ""
+	if (journalPath == "") != (bindingID == "") || (len(approvals) > 0 && journalPath == "" && !keeps) {
 		fmt.Fprintln(os.Stderr, "Workflow failed: Use --journal with --binding-id; approvals also require a journal")
 		return 2
 	}
-	program := load(path)
 	providers, problem := modelBindings(program, options, protocol, seconds, maxOutput)
+	if env != nil {
+		providers, problem = env.bindings(program, maxOutput)
+	}
 	if problem == "" && options["--model-fixture"] != "" {
 		if len(providers) > 0 || options["--model-url"] != "" {
 			problem = "Use either --model-fixture or an explicit live model binding"
@@ -127,6 +163,11 @@ func runCommand(args []string) int {
 			inputs[key] = record.Fields[key]
 		}
 	}
+	if env != nil && env.keep != "" {
+		// A run keeps a journal of its own, named by what it runs, so one
+		// paused for an approval is found again when run again.
+		journalPath, bindingID = env.journalPath(path, options["--workflow"], inputs), env.name
+	}
 	checker := newChecker(program)
 	workflow := checker.workflows[options["--workflow"]]
 	if workflow == nil {
@@ -145,6 +186,18 @@ func runCommand(args []string) int {
 	attempt := func() (result Value, stopped, failure string) {
 		running = newRun(program, map[string]*scriptedTool{}, providers, workflow)
 		running.servers = servers
+		if env != nil {
+			// An environment's budget only tightens the workflow's.
+			if amount, given := env.budget["model_calls"]; given && int(toFloat(amount)) < running.maxModels {
+				running.maxModels = int(toFloat(amount))
+			}
+			if amount, given := env.budget["tool_calls"]; given && int(toFloat(amount)) < running.maxTools {
+				running.maxTools = int(toFloat(amount))
+			}
+			if amount, given := env.budget["seconds"]; given {
+				running.deadline, running.started = toFloat(amount), started
+			}
+		}
 		running.traced = true
 		running.hash = programHash(read(path))
 		running.machine.tracing = newTracer(running.checker)
@@ -258,6 +311,11 @@ func runCommand(args []string) int {
 	if err := writeTrace(options["--trace"], events); err != nil {
 		fmt.Fprintf(os.Stderr, "Workflow failed: %v\n", err)
 		return 2
+	}
+	if env != nil && journalPath != "" {
+		// The run is finished: there is nothing to begin again. Its
+		// approvals' ledger stays, so an approval is never used twice.
+		os.Remove(journalPath)
 	}
 	fmt.Println(pyReprAny(result))
 	fmt.Printf("Trace: %s\n", options["--trace"])

@@ -862,8 +862,11 @@ def _call_declared_tool(
     input_schema: dict,
     output_schema: dict,
     mcp_commands: dict[str, Sequence[str]] | None,
-    manifest: MCPManifest | None,
+    manifest: MCPManifest | Mapping[str, MCPManifest] | None,
 ) -> tuple[object, str]:
+    if isinstance(manifest, Mapping):
+        # An environment pins a manifest for each server it names.
+        manifest = manifest.get(tool.source)
     if mcp_commands is not None and tool.source in mcp_commands:
         if manifest is None:
             raise ManifestError(
@@ -1269,7 +1272,7 @@ def run(
     trace_path: str | Path | None,
     *,
     mcp_commands: dict[str, Sequence[str]] | None = None,
-    manifest: MCPManifest | None = None,
+    manifest: MCPManifest | Mapping[str, MCPManifest] | None = None,
     inputs: dict[str, Any] | None = None,
     model_bindings: Mapping[str, ModelProvider] | None = None,
     tool_bindings: Mapping[str, ToolExecutor] | None = None,
@@ -1423,7 +1426,7 @@ def _run_workflow(
     trace_path: str | Path | None,
     *,
     mcp_commands: dict[str, Sequence[str]] | None = None,
-    manifest: MCPManifest | None = None,
+    manifest: MCPManifest | Mapping[str, MCPManifest] | None = None,
     inputs: dict[str, Any] | None = None,
     model_bindings: Mapping[str, ModelProvider] | None = None,
     tool_bindings: Mapping[str, ToolExecutor] | None = None,
@@ -1501,7 +1504,13 @@ def _run_workflow(
                 "program": program_payload(program),
                 "workflow": workflow_name,
                 "inputs": environment,
-                "manifest": asdict(manifest) if manifest else None,
+                "manifest": (
+                    {source: asdict(item) for source, item in manifest.items()}
+                    if isinstance(manifest, Mapping)
+                    else asdict(manifest)
+                    if manifest
+                    else None
+                ),
                 "mcp_commands": mcp_commands,
             }
         )

@@ -3506,6 +3506,37 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   programs with workflows, agents and tools; the guide does not teach
   those yet.
 
+### Kosika environments, in both engines
+
+- The owner's idea, agreed and shaped "in kosika form": a project keeps a
+  `kosika.env` beside its programs, written in Kosika's own words, with an
+  `environment NAME { ... }` for each way it runs: `model NAME: "..." at
+  "..." protocol ollama`, `models answer from "file"`, `mcp SOURCE:
+  "command" pinned "manifest"`, `allow folder/shell/site`, `budget N model
+  calls, N tool calls, N seconds` and `keep "folder"`.
+- `kosika run --env NAME` (kosika/environment.py) and `kosika-native run
+  --env NAME` (native/env.go) find the file beside the program or above
+  it and take everything from it. The options it decides (`--model`,
+  `--mcp-server`, `--allow-folder`, `--journal` and the rest) are refused
+  beside `--env`. Budgets only tighten. Traces go to `keep/traces`, one a
+  run; a journal named by program, workflow and input goes to
+  `keep/journals`, so an approval resumes the right run, and is let go
+  when the run finishes. An environment may name a server for each MCP
+  source, each pinned by its own manifest.
+- The native engine gained the deadline a `seconds` budget sets, stopping
+  a run with `deadline` as the reference does, and now checks a program
+  before it looks at anything the run would reach, as the reference does.
+- Held by `tests/test_conformance.py`: in a project made for the test,
+  both engines give the same result and the same trace in the test
+  environment, refuse the same options and an unknown environment in the
+  same words, wait for the same approval in the live one with a real MCP
+  server, make the change once approved, let the journal go, and refuse a
+  broken file in the same words. Separately, 27 broken files were read by
+  both: 26 refused word for word; the last differs only in the operating
+  system's own words for a missing manifest, as `--mcp-manifest` already did.
+- Not yet in the native engine: the folder, shell and site grants, which
+  wait for its `system` tools; memories, which wait for its memories.
+
 ### The native engine runs a change once it is approved
 
 - Asked to choose, the owner took the recommendation: the native engine

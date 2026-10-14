@@ -36,6 +36,8 @@ from .durable import (
     inspect_journal,
 )
 from .editor_features import EditorFeatureError, build_editor_features
+from .environment import DECIDED as ENVIRONMENT_DECIDED
+from .environment import Environment, EnvironmentError_, find_environment
 from .events import (
     EVENT_BRIDGE_VERSION as BRIDGE_VERSION,
 )
@@ -58,6 +60,7 @@ from .language_adapters import (
     adapter_for_suffix,
 )
 from .manifest import (
+    ManifestError,
     MCPManifest,
     diff_manifests,
     format_manifest_diff,
@@ -772,6 +775,38 @@ def _ask_approval(
     )
 
 
+def _environment_model_bindings(
+    environment: Environment, program: Program
+) -> dict[str, ModelProvider]:
+    """The models an environment names, for the models a program declares.
+
+    A model named in the environment that this program does not declare is
+    left out: one environment serves every program of a project.
+    """
+
+    if environment.fixture is not None:
+        return _model_fixture_bindings(environment.fixture)
+    declared = {model.name for model in program.models if model.provider is None}
+    bindings: dict[str, ModelProvider] = {}
+    for name, route in environment.models.items():
+        if name not in declared:
+            continue
+        url = route.url or (
+            DEFAULT_LOCAL_MODEL_URL.removesuffix("/v1")
+            if route.protocol == "ollama"
+            else DEFAULT_LOCAL_MODEL_URL
+        )
+        bindings[name] = OpenAICompatibleProvider(
+            url,
+            route.model,
+            api_key=os.environ.get("KOSIKA_MODEL_API_KEY"),
+            protocol=route.protocol,
+            timeout=60.0,
+        )
+        print(f"{name}: model {route.model!r} at {url}", file=sys.stderr)
+    return bindings
+
+
 def _missing_model_hint(program: Program, message: str) -> str:
     if "has no authorized host binding" not in message or not program.models:
         return ""
@@ -1335,6 +1370,14 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser = subparsers.add_parser("run")
     run_parser.add_argument("source", type=Path)
     run_parser.add_argument("--workflow", default="main")
+    run_parser.add_argument(
+        "--env",
+        help=(
+            "An environment in the kosika.env beside the program: the models, "
+            "MCP servers, grants, budgets and the folder it keeps things in. "
+            "Given, they are taken from it and from nowhere else."
+        ),
+    )
     run_parser.add_argument("--trace", type=Path, default=Path("run_trace.jsonl"))
     run_parser.add_argument("--journal", type=Path)
     run_parser.add_argument(
@@ -3235,8 +3278,60 @@ def main() -> int:
             "--component-runtime and component grants require --component-manifest"
         )
 
+    environment: Environment | None = None
+    if getattr(args, "env", None):
+        decided = [
+            flag
+            for attribute, flag in ENVIRONMENT_DECIDED
+            if getattr(args, attribute, None) not in (None, False, [])
+        ]
+        if decided:
+            print(
+                f"Workflow failed: {decided[0]} cannot be used with --env; "
+                "name it in the environment",
+                file=sys.stderr,
+            )
+            return 2
+        try:
+            environment = find_environment(args.source, args.env)
+        except EnvironmentError_ as exc:
+            print(f"Workflow failed: {exc}", file=sys.stderr)
+            return 2
+        args.allow_folder = environment.allow_folder
+        args.allow_shell = environment.allow_shell
+        args.allow_site = list(environment.sites)
+        args.memory = environment.memory_folder()
+        args.max_model_calls = min(
+            args.max_model_calls,
+            int(environment.budget.get("model_calls", args.max_model_calls)),
+        )
+        args.max_tool_calls = min(
+            args.max_tool_calls,
+            int(environment.budget.get("tool_calls", args.max_tool_calls)),
+        )
+        if "seconds" in environment.budget:
+            args.deadline_seconds = (
+                float(environment.budget["seconds"])
+                if args.deadline_seconds is None
+                else min(args.deadline_seconds, float(environment.budget["seconds"]))
+            )
+        if args.trace == Path("run_trace.jsonl") and environment.keep is not None:
+            args.trace = environment.trace_path()
+
     mcp_commands: dict[str, Sequence[str]] | None = None
-    run_manifest: MCPManifest | None = None
+    run_manifest: MCPManifest | dict[str, MCPManifest] | None = None
+    if environment is not None and environment.mcp:
+        try:
+            mcp_commands = {
+                source: list(route.command) for source, route in environment.mcp.items()
+            }
+            run_manifest = {
+                source: load_manifest(route.manifest)
+                for source, route in environment.mcp.items()
+            }
+        except ManifestError as exc:
+            print(f"Workflow failed: {exc}", file=sys.stderr)
+            return 2
     if args.mcp_server is not None:
         if args.mcp_manifest is None:
             parser.error("--mcp-manifest is required when --mcp-server is used")
@@ -3253,6 +3348,11 @@ def main() -> int:
         )
         if not isinstance(inputs, dict):
             raise ValueError("Workflow input must be a JSON object")
+        if environment is not None and environment.keep is not None:
+            # A run keeps a journal of its own, named by what it runs, so
+            # one paused for an approval is found again when run again.
+            args.journal = environment.journal_path(args.source, args.workflow, inputs)
+            args.binding_id = environment.name
         if args.component_manifest is not None:
             component_contract = load_component_contract(args.component_manifest)
             component_binding = bind_component(
@@ -3313,7 +3413,11 @@ def main() -> int:
         )
         bindings = {
             name: ControlledProvider(provider, limits)
-            for name, provider in _workflow_model_bindings(args, program).items()
+            for name, provider in (
+                _environment_model_bindings(environment, program)
+                if environment is not None
+                else _workflow_model_bindings(args, program)
+            ).items()
         }
         host_tool_bindings = {**component_tool_bindings, **system_bindings}
         while True:
@@ -3398,6 +3502,11 @@ def main() -> int:
                 telemetry_error = True
     if telemetry_error:
         return 2
+    if environment is not None and args.journal is not None:
+        # The run is finished: there is nothing to begin again. Its
+        # approvals' ledger stays, so an approval is never used twice.
+        Path(args.journal).unlink(missing_ok=True)
+        Path(str(args.journal) + ".lock.sqlite").unlink(missing_ok=True)
     print(run_result)
     print(f"Trace: {args.trace}")
     return 0

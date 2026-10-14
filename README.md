@@ -1211,14 +1211,50 @@ files to. Type a request there to see which skills it would pick, and
 why; no model is asked. A skill can be changed or a new one written on
 the page. One that Kosika cannot read is not saved, and the page says why.
 
+## Environments: what a project may reach, in one file
+
+A project can keep a file named `kosika.env` beside its programs. Each
+`environment` in it says which models answer, which MCP servers its tools
+reach, what folder, sites and shell it may touch, its budgets, and the
+folder where its traces and journals are kept:
+
+```
+environment test {
+  models answer from "fixtures/answers.json"
+  keep "./.kosika/test"
+}
+
+environment live {
+  model writer: "qwen2.5:7b" protocol ollama
+  mcp notes: "python servers/notes_server.py" pinned "servers/notes.manifest.json"
+  allow folder "./notes"
+  budget 20 model calls, 50 tool calls, 300 seconds
+  keep "./.kosika/live"
+}
+```
+
+```
+kosika run main.kos --env test
+```
+
+A run given an environment takes nothing else: `--model`, `--mcp-server`,
+`--allow-folder`, `--journal` and the other options the file decides are
+refused beside `--env`, so what a run may reach is what the file says. The
+file is found beside the program or in the nearest folder above it, and
+its paths are read from its own folder. Budgets only ever tighten a
+workflow's own. Each run writes its trace to `keep/traces`, and keeps a
+journal named by its program, workflow and input in `keep/journals`, so a
+run paused for an approval is found again when run again; the journal is
+let go once the run finishes. `kosika-native run --env` does the same.
+
 ## Kosika without Python
 
 `native/` holds a second engine, written in Go, that builds to one program
-file and runs the core of Kosika (records, functions and tests) on a
-machine with no Python. `conformance/` holds the programs both engines
-must agree on, with what each must print. The native engine has no checker
-and no workflows, agents, tools or models yet; see `native/README.md` for
-what it has and what it lacks.
+file and runs Kosika on a machine with no Python: the checker, workflows,
+tools, agents, real models, pinned MCP servers, traces and replay,
+approvals and environments. `conformance/` holds the programs both engines
+must agree on, with what each must print. See `native/README.md` for what
+it has and what it still lacks.
 
 A tool may be `access: observe` only when the server itself marks it
 read-only. Any other tool must be `access: execute`, so each use waits for

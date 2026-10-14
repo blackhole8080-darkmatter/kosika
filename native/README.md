@@ -61,6 +61,12 @@ whose types do not agree is refused, with the reference's own message, on
 the output and with exit code 2. A name the file uses but never declares is
 refused as the file is read, like a fault in the text.
 
+`run --env NAME` runs in an environment of the project's `kosika.env`, as
+`kosika run --env` does: the models, MCP servers, budgets and the folder
+for traces and journals all come from it, the options it decides are
+refused beside it, and a broken file is refused with the reference's
+words and place.
+
 It is held to the conformance suite in `../conformance`, where it must
 print what the reference engine prints, word for word. See
 `tests/test_conformance.py`.
@@ -71,12 +77,12 @@ print what the reference engine prints, word for word. See
   `parallel` blocks.
 - An agent using a tool that changes the world. Replaying an agent run's
   own trace, an answer with evidence, or a verified answer.
-- Reaching a real tool other than through an MCP server: MCP servers, `system` tools, files, pages, the
-  clock and chance. Approvals.
+- Reaching a real tool other than through an MCP server: `system` tools,
+  files, pages, the clock and chance. So an environment's `allow folder`,
+  `allow shell` and `allow site` are read but grant nothing here yet.
 - Memories, boards, swarms and imports.
 - A file that has any of these is refused, and the refusal names it.
 - Vectors and matrices.
-- Traces and replay.
 
 ## How it is laid out
 
@@ -92,6 +98,7 @@ print what the reference engine prints, word for word. See
     trace.go     writing a run's trace
     replay.go    checking a trace
     journal.go   the journal, and approvals
+    env.go       environments: reading kosika.env
     check.go     the checker: refusing a program before it runs
     check_workflows.go   the checker's rules for tools, agents, workflows
     workflows.go running a workflow, and the tools a test scripts

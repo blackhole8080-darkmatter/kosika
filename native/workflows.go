@@ -49,6 +49,17 @@ type run struct {
 	maxTools   int
 	modelCalls int
 	maxModels  int
+	// deadline, when a run has one, is how many seconds it may take from
+	// started; it is looked at before each step and each call.
+	deadline float64
+	started  time.Time
+}
+
+// checkpoint stops a run that is past its deadline.
+func (r *run) checkpoint() {
+	if r.deadline > 0 && time.Since(r.started).Seconds() >= r.deadline {
+		panic(&budgetError{"Execution deadline exceeded", "deadline"})
+	}
 }
 
 func newRun(program *Program, tools map[string]*scriptedTool, providers map[string]modelProvider, workflow *WorkflowDecl) *run {
@@ -182,6 +193,7 @@ func (r *run) workflowEvents(workflow *WorkflowDecl, inputs map[string]Value, de
 	at := frame{environment, nil, 0}
 	var result Value = newRecord()
 	for _, step := range workflow.Steps {
+		r.checkpoint()
 		r.steps++
 		if depth == 0 {
 			r.failingStep, r.inFlight = step.Name, nil
@@ -387,6 +399,7 @@ func (r *run) begin(depth int, first *Record) *Record {
 }
 
 func (r *run) tool(tool *ToolDecl, arguments map[string]Value) Value {
+	r.checkpoint()
 	if r.toolCalls >= r.maxTools {
 		panic(&budgetError{Message: fmt.Sprintf("tool calls budget exceeds %d", r.maxTools)})
 	}
@@ -496,6 +509,7 @@ func deployment(model *ModelDecl) string {
 // ask puts one request to the provider bound to a declared model, counted
 // against the workflow's budget of model calls.
 func (r *run) ask(model *ModelDecl, request *modelRequest) *modelResponse {
+	r.checkpoint()
 	if r.modelCalls >= r.maxModels {
 		panic(&budgetError{Message: fmt.Sprintf("model calls budget exceeds %d", r.maxModels)})
 	}
@@ -668,6 +682,7 @@ func (r *run) schemaProblem(arguments *Record, tool *ToolDecl) string {
 // workflow's budget of tool calls. A failure of a tool that only looks is
 // given back, to be told to the model.
 func (r *run) agentTool(tool *ToolDecl, arguments *Record) (outcome Value, failure string) {
+	r.checkpoint()
 	if r.toolCalls >= r.maxTools {
 		panic(&budgetError{Message: fmt.Sprintf("tool calls budget exceeds %d", r.maxTools)})
 	}
