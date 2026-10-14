@@ -62,7 +62,12 @@ func main() {
 		if problem := ModuleProblem(program, args[1]); problem != "" {
 			fail("Check failed: %s", problem)
 		}
-		program = LowerValues(program)
+		lowered, refused := LowerThinking(program)
+		if refused != "" {
+			fmt.Printf("Check failed: %s\n", refused)
+			os.Exit(2)
+		}
+		program = LowerValues(lowered)
 		// A program the checker refuses is not run, and says why as the
 		// reference does: on the output, with exit code 2.
 		if refused := Check(program); refused != nil {

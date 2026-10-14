@@ -168,10 +168,16 @@ const valueCall = "$value"
 // model ("model").
 type StepCall struct {
 	Kind  string
-	Name  string // the function, workflow or tool
+	Name  string // the function, workflow, tool or model
 	Agent string
 	Args  []Arg
 	Line  int
+	// A thinking step (Kind "think") before it is made a model call: its
+	// verb, the record `extract` makes, and the models named with `using`.
+	Verb   string
+	Record string
+	Model  string
+	More   []string
 }
 
 // A Branch is one case of a match step: the call made when the subject
@@ -225,6 +231,12 @@ type ModelDecl struct {
 	FrequencyPenalty    *float64
 	PresencePenalty     *float64
 	Stop                []string
+	// Default is `default model NAME`: the one a thinking step asks when
+	// it names none and several are declared.
+	Default bool
+	// A model made for a thinking step names, as Provider, the declared
+	// model whose answers it gives, and the Verb it was made for.
+	Provider, Verb string
 }
 
 type Program struct {

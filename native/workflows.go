@@ -234,18 +234,28 @@ func (r *run) model(model *ModelDecl, arguments map[string]Value, retries int) V
 			panic(&budgetError{fmt.Sprintf("model calls budget exceeds %d", r.maxModels)})
 		}
 		r.modelCalls++
-		scripted := r.models[model.Name]
+		// A model made for a thinking step gives its declared model's answers.
+		provider := model.Name
+		if model.Provider != "" {
+			provider = model.Provider
+		}
+		scripted := r.models[provider]
 		scripted.asked++
 		if scripted.asked > len(scripted.answers) {
 			runFail("Scripted model provider has no response left")
 		}
 		answer := r.fillAbsent(copyValue(scripted.answers[scripted.asked-1]), model.Output)
 		problem := r.problem(answer, model.Output, "$")
+		if problem != "" {
+			problem = "Invalid structured model output: " + problem
+		} else {
+			problem = brokenPromise(model, arguments, answer.(*Record))
+		}
 		if problem == "" {
 			return answer
 		}
 		if rejected >= retries {
-			runFail("Invalid structured model output: " + problem)
+			runFail(problem)
 		}
 		rejected++
 	}

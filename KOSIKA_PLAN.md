@@ -3491,6 +3491,32 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   programs with workflows, agents and tools; the guide does not teach
   those yet.
 
+### The native engine thinks: general models and thinking steps
+
+- The owner said to go on. The native engine now reads general models
+  (`model assistant`, and `default model NAME`) and the four thinking
+  steps, `classify`, `extract`, `summarize` and `decide`. As the
+  reference's `lower_thinking` does (`native/thinking.go`), each step is
+  made an ordinary model call against a model made for it, which gives the
+  answers of the declared model it names or chooses, and the records these
+  need are added from those the language supplies. What each step
+  promises beyond its record (a label among the choices, a confidence from
+  0 through 1) is held, and an answer that breaks it is asked for again
+  under `retry`, as the reference does.
+- Refused as the reference refuses them, without a path, since the
+  reference finds them as it lowers: a thinking step with no model, or
+  with several and none the default, or naming several models without
+  voting; and a program that declares a built-in record differently.
+- Not yet: `with evidence`, `vote`, `verify`, `escalate`, asking an agent,
+  and any real model. Each is refused by name.
+- The suite: `cases/thinking.kos`, `failing/thinking.kos`, and five
+  refusals. Both engines pass all 60 programs.
+- Measured by mutation: 1,000 mutants of the thinking programs, and 3,224
+  of the 104 files both engines can now read (up from 87); every one gave
+  the same output from both.
+- Next: asking an agent; then `verify`, `vote`, `escalate` and `with
+  evidence`; then reaching real models and tools.
+
 ### The native engine asks models, as a test scripts them
 
 - The native engine now reads models with the records they take and give

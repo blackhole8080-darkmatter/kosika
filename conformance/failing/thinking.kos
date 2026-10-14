@@ -1,0 +1,31 @@
+// Conformance: what a thinking step says when its answer breaks a promise.
+
+record Ticket { text: Text }
+
+model assistant
+
+workflow sort(ticket: Ticket) -> Choice {
+  kind = classify ticket.text into ["a", "b"]
+}
+
+workflow judge(ticket: Ticket) -> Decision {
+  ok = decide "Is it fine?" given ticket.text
+}
+
+test "a label that is not one of the choices" {
+  answers assistant: [{label: "c", confidence: 1}]
+  r = sort({text: "x"})
+  expect r.label == "c"
+}
+
+test "a confidence above one" {
+  answers assistant: [{answer: true, confidence: 1.5, reason: "yes"}]
+  r = judge({text: "x"})
+  expect r.answer
+}
+
+test "a decision without its reason" {
+  answers assistant: [{answer: true, confidence: 1}]
+  r = judge({text: "x"})
+  expect r.answer
+}

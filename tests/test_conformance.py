@@ -131,12 +131,17 @@ class NativeTests(unittest.TestCase):
         self.assertIn("kosika-native cannot run a step that asks an agent yet", said)
         self.assertEqual(ran.stdout, b"")
         with tempfile.TemporaryDirectory() as scratch:
-            general = Path(scratch) / "general.kos"
-            general.write_text("model assistant\n", encoding="utf-8")
-            ran = self.run_engine("test", str(general))
+            quoting = Path(scratch) / "quoting.kos"
+            quoting.write_text(
+                "record T { text: Text }\nmodel assistant\n"
+                "workflow main(t: T) -> Summary {\n"
+                "  s = summarize t.text with evidence\n}\n",
+                encoding="utf-8",
+            )
+            ran = self.run_engine("test", str(quoting))
         self.assertEqual(ran.returncode, 1)
         self.assertIn(
-            "kosika-native cannot read a general model yet",
+            "kosika-native cannot run a step with evidence yet",
             ran.stderr.decode("utf-8", "replace"),
         )
         with tempfile.TemporaryDirectory() as scratch:

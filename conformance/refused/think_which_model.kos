@@ -1,0 +1,11 @@
+// Refused: with several models and none the default, a thinking step must
+// say which it asks.
+
+record Ticket { text: Text }
+
+model quick
+model careful
+
+workflow main(ticket: Ticket) -> Summary {
+  brief = summarize ticket.text
+}

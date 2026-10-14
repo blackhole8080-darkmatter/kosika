@@ -1,0 +1,4 @@
+PASS  each thinking step asks its model and binds a typed answer
+PASS  an answer that breaks a step's promise is asked for again
+PASS  a general model takes and gives text
+3 passed, 0 failed

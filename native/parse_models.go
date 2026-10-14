@@ -1,19 +1,18 @@
 package main
 
-// Reading a model declaration, as kosika/parser.py reads one. A general
-// model, which takes and gives text in records the language supplies, is
-// not read yet.
+// Reading a model declaration, as kosika/parser.py reads one. A model with
+// no records is a general one, which takes and gives text in records the
+// language supplies (see thinking.go).
 
 import "strconv"
 
 func (p *Parser) parseModel() *ModelDecl {
-	opening := p.expect("model")
+	p.expect("model")
 	model := &ModelDecl{Name: p.identifier()}
-	general := func() {
-		parseFail("kosika-native cannot read a general model yet (at %d:%d); give the model input and output records", opening.Line, opening.Column)
-	}
 	if !p.check("{") {
-		general()
+		// `model assistant`: a general model, which takes and gives text.
+		model.Input, model.Output = generalInput, generalOutput
+		return model
 	}
 	p.expect("{")
 	values := map[string]string{}
@@ -41,7 +40,8 @@ func (p *Parser) parseModel() *ModelDecl {
 		}
 	}
 	if len(values) == 0 {
-		general()
+		// Only a deployment or parameters: still a general model.
+		values = map[string]string{"input": generalInput, "output": generalOutput}
 	}
 	if len(values) != 2 {
 		parseFail("Model %s requires input and output records", pyRepr(model.Name))

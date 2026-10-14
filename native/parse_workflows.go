@@ -275,8 +275,6 @@ func (p *Parser) parseStepCall() *StepCall {
 	}
 	if token.Kind == "IDENT" {
 		switch {
-		case thinkingVerbs[token.Value] && following != "(":
-			notYetStep(token, "a thinking step")
 		case token.Value == "remember" && following != "(":
 			notYetStep(token, "a step that remembers")
 		case token.Value == "recall" && following != "(":
@@ -301,6 +299,9 @@ func (p *Parser) parseStepCall() *StepCall {
 			notYetStep(token, "a step that asks an agent")
 		}
 	}
+	if token.Kind == "IDENT" && thinkingVerbs[token.Value] && following != "(" {
+		return p.parseThinkCall()
+	}
 	if p.accept("use_model") {
 		name := p.identifier()
 		p.expect("(")
@@ -322,4 +323,36 @@ func (p *Parser) parseStepCall() *StepCall {
 	tool := p.identifier()
 	p.expect("(")
 	return &StepCall{Kind: "tool", Name: tool, Agent: agent, Args: p.parseArguments(), Line: token.Line}
+}
+
+// parseThinkCall reads a thinking step: a verb, its subject, and its
+// keyword parts. It is made a model call before it is checked.
+func (p *Parser) parseThinkCall() *StepCall {
+	token := p.advance()
+	call := &StepCall{Kind: "think", Verb: token.Value, Line: token.Line}
+	if call.Verb == "extract" {
+		call.Record = p.identifier()
+		p.expect("from")
+	}
+	subject := p.expression()
+	switch call.Verb {
+	case "classify":
+		p.expect("into")
+		call.Args = []Arg{{"text", subject}, {"choices", p.expression()}}
+	case "decide":
+		p.expect("given")
+		call.Args = []Arg{{"question", subject}, {"given", p.expression()}}
+	default:
+		call.Args = []Arg{{"text", subject}}
+	}
+	if p.check("with") {
+		notYetStep(p.current(), "a step with evidence")
+	}
+	if p.accept("using") {
+		call.Model = p.identifier()
+		for p.accept(",") {
+			call.More = append(call.More, p.identifier())
+		}
+	}
+	return call
 }

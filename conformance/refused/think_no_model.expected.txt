@@ -1,0 +1,1 @@
+Check failed: Step 'brief' needs a model for summarize: declare one with `model assistant`

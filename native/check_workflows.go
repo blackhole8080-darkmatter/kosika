@@ -483,14 +483,16 @@ func (c *checker) checkAnswers(test *TestDecl) string {
 			return fmt.Sprintf("answers names %s more than once", pyRepr(answer.Name))
 		}
 		seen[answer.Name] = true
-		if c.models[answer.Name] != nil {
+		if model := c.models[answer.Name]; model != nil && model.Provider == "" {
 			continue
 		}
 		tool := c.tools[answer.Name]
 		if tool == nil {
 			var known []string
 			for _, declared := range c.program.Models {
-				known = append(known, declared.Name)
+				if declared.Provider == "" {
+					known = append(known, declared.Name)
+				}
 			}
 			for _, declared := range c.program.Tools {
 				known = append(known, declared.Name)

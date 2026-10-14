@@ -1,0 +1,9 @@
+// Refused: a thinking step works on text.
+
+record Ticket { count: Number }
+
+model assistant
+
+workflow main(ticket: Ticket) -> Summary {
+  brief = summarize ticket.count
+}

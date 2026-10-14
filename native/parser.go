@@ -887,6 +887,11 @@ func (p *Parser) parseProgram() *Program {
 			program.Functions = append(program.Functions, p.parseFunction(0, ""))
 		case keyword == "model":
 			program.Models = append(program.Models, p.parseModel())
+		case keyword == "default" && p.peek().Value == "model":
+			p.advance()
+			model := p.parseModel()
+			model.Default = true
+			program.Models = append(program.Models, model)
 		case keyword == "tool":
 			program.Tools = append(program.Tools, p.parseTool())
 		case keyword == "agent":

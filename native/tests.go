@@ -140,7 +140,9 @@ func runTest(program *Program, test *TestDecl) TestResult {
 	// Every declared model has a script, empty when the test gives none.
 	models := map[string]*scriptedTool{}
 	for _, model := range program.Models {
-		models[model.Name] = &scriptedTool{name: model.Name}
+		if model.Provider == "" {
+			models[model.Name] = &scriptedTool{name: model.Name}
+		}
 	}
 	for _, answer := range test.Answers {
 		scope := newScope(nil)
@@ -170,7 +172,9 @@ func runTest(program *Program, test *TestDecl) TestResult {
 	// Models first, in the order they are declared; then tools.
 	var unused []*scriptedTool
 	for _, model := range program.Models {
-		unused = append(unused, models[model.Name])
+		if model.Provider == "" {
+			unused = append(unused, models[model.Name])
+		}
 	}
 	for _, answer := range test.Answers {
 		if tools[answer.Name] != nil {
