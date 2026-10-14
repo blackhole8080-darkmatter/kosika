@@ -592,6 +592,116 @@ class NativeTests(unittest.TestCase):
         for key in seen["reference"]:
             self.assertEqual(seen["native"][key], seen["reference"][key], key)
 
+    def test_an_agent_makes_its_approved_change_as_the_reference_does(self) -> None:
+        # A stand-in model asks for a change (twice over, when `second`),
+        # then answers from what the change gave back. An agent that plans
+        # shows its changes as one plan; one with `plan: off` makes one
+        # change a step. Each waits for its approval, makes the change once
+        # approved, and does not make it again.
+        ignored = {"timestamp", "program_hash", "elapsed_seconds", "function_stack", "plan_hash", "duration_ms"}
+
+        def clean(value: object) -> object:
+            if isinstance(value, dict):
+                return {k: clean(v) for k, v in value.items() if k not in ignored}
+            if isinstance(value, list):
+                return [clean(v) for v in value]
+            return value
+
+        asked: list[dict] = []
+        second = [False]
+
+        class Server(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:  # noqa: N802 - the http.server name
+                body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                asked.append(body)
+                told = [m for m in body["messages"] if m["role"] == "tool"]
+                if not told or (second[0] and len(told) == 1):
+                    n = len(told) + 1
+                    call = {"id": f"call_{n}", "type": "function",
+                            "function": {"name": "apply_change",
+                                         "arguments": json.dumps({"change": f"rename{n}"})}}
+                    answer = {"choices": [{"message": {"role": "assistant", "content": "", "tool_calls": [call]},
+                                           "finish_reason": "tool_calls"}]}
+                else:
+                    reply = json.dumps({"text": "done: " + told[-1]["content"], "did": []})
+                    answer = {"choices": [{"message": {"role": "assistant", "content": reply},
+                                           "finish_reason": "stop"}]}
+                data = json.dumps(answer).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            def log_message(self, *_: object) -> None:
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Server)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.shutdown)
+        url = f"http://127.0.0.1:{server.server_port}/v1"
+        examples = ROOT / "examples"
+        for plan, twice in (("", False), ("", True), ("  plan: off\n", False), ("  plan: off\n", True)):
+            second[0] = twice
+            source = (
+                "record Ask { text: Text }\nrecord Answer { text: Text did: Text[] }\n"
+                "record MutationRequest { change: Text }\n"
+                "record MutationResult { status: Text change: Text sink: Text }\n"
+                'tool apply_change {\n  source mcp "approval_mutation"\n  operation: "apply_change"\n'
+                "  access: execute\n  input: MutationRequest\n  output: MutationResult\n}\n"
+                "model thinker {\n  input: Ask\n  output: Answer\n}\n"
+                f"agent operator {{\n  model: thinker\n  can: [apply_change]\n{plan}}}\n"
+                "workflow main(ask: Ask) -> Answer {\n  answer = ask operator(ask.text)\n}\n"
+            )
+            seen: dict[str, dict[str, object]] = {}
+            for name in ("reference", "native"):
+                with self.subTest(plan=plan, second=twice, engine=name), tempfile.TemporaryDirectory() as scratch:
+                    folder = Path(scratch)
+                    (folder / "p.kos").write_text(source, encoding="utf-8")
+                    (folder / "in.json").write_text(json.dumps({"ask": {"text": "rename it"}}))
+                    command = (
+                        [sys.executable, "-m", "kosika.cli", "run"]
+                        if name == "reference"
+                        else [str(self.engine), "run"]
+                    )
+                    flags = [
+                        "p.kos", "--input", "in.json", "--model", "small", "--model-url", url,
+                        "--mcp-source", "approval_mutation",
+                        "--mcp-server", str(examples / "approval_mutation_mcp_server.py"),
+                        "--mcp-manifest", str(examples / "approval_mutation_manifest.json"),
+                        "--trace", "trace.jsonl",
+                    ]
+
+                    def engine(*more: str) -> tuple[int, str, str, list[dict]]:
+                        asked.clear()
+                        ran = subprocess.run(
+                            [*command, *flags, *more], cwd=folder, capture_output=True, text=True,
+                            env={**os.environ, "PYTHONPATH": str(ROOT)},
+                        )
+                        said = [line for line in ran.stderr.splitlines() if line.strip()]
+                        return ran.returncode, ran.stdout.strip(), said[-1] if said else "", list(asked)
+
+                    outcome: dict[str, object] = {"without a journal": engine()}
+                    journal = ["--journal", "run.journal", "--binding-id", "here"]
+                    code, printed, said, models = engine(*journal)
+                    self.assertEqual(code, 3, said)
+                    request = json.loads(printed)
+                    outcome["asked"] = ({k: request[k] for k in ("status", "tool", "arguments", "step")}, models)
+                    approval = {k: request[k] for k in ("plan_hash", "action_hash")}
+                    (folder / "approval.json").write_text(json.dumps({**approval, "approved_by": "tester"}))
+                    outcome["approved"] = engine(*journal, "--approval-record", "approval.json")
+                    if outcome["approved"][0] == 0:
+                        outcome["trace"] = [
+                            clean(json.loads(line))
+                            for line in (folder / "trace.jsonl").read_text(encoding="utf-8").splitlines()
+                        ]
+                    outcome["changed"] = (folder / "mutation_sink.json").read_text(encoding="utf-8")
+                    outcome["again"] = engine(*journal, "--approval-record", "approval.json")
+                    self.assertEqual((folder / "mutation_sink.json").read_text(encoding="utf-8"), outcome["changed"])
+                    seen[name] = outcome
+            for key in seen["reference"]:
+                self.assertEqual(seen["native"][key], seen["reference"][key], f"{plan!r} {twice} {key}")
+
 
 if __name__ == "__main__":
     unittest.main()

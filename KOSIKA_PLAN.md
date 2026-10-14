@@ -3506,6 +3506,28 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   programs with workflows, agents and tools; the guide does not teach
   those yet.
 
+### The native engine lets an agent make its approved changes
+
+- An agent's model may now ask for a tool that changes the world, in the
+  native engine as in the reference (native/agent_changes.go). An agent
+  that plans (`plan: first`, or by default when it has a model, a tool
+  that changes something and two turns) shows all its changes as one
+  plan; the run waits with exit code 3 for an approval of that plan, and
+  begun again it is given back what its model said before, so the plan
+  carried out is the one approved, in order. Changes asked for after the
+  plan was carried out are told they cannot happen. An agent with `plan:
+  off` may make one approved change a step; a second is refused. What the
+  agent changed (`did`) is written from what ran.
+- Held by `tests/test_conformance.py` with a stand-in model and the
+  example MCP server that makes a change, in four ways (planning or not,
+  one change or two): both engines refuse without a journal, ask for the
+  same approval after the same model requests, make the change once
+  approved with the same result and the same trace, and do not make it
+  again.
+- Not yet: a plan that writes files, and an agent's own `check` of its
+  plan. The reference checks both before showing a plan, partly with its
+  Python code checks; the native engine refuses them by name.
+
 ### Kosika environments, in both engines
 
 - The owner's idea, agreed and shaped "in kosika form": a project keeps a

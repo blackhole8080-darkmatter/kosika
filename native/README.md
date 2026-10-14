@@ -75,8 +75,10 @@ print what the reference engine prints, word for word. See
 
 - Steps with `verify`, `vote`, `escalate` or `with evidence`, and
   `parallel` blocks.
-- An agent using a tool that changes the world. Replaying an agent run's
-  own trace, an answer with evidence, or a verified answer.
+- An agent's plan that writes files, or an agent with its own `check`:
+  the reference checks such a plan before showing it, and those checks are
+  not here yet, so such a plan is refused by name. Replaying an agent
+  run's own trace, an answer with evidence, or a verified answer.
 - Reaching a real tool other than through an MCP server: `system` tools,
   files, pages, the clock and chance. So an environment's `allow folder`,
   `allow shell` and `allow site` are read but grant nothing here yet.
@@ -99,6 +101,7 @@ print what the reference engine prints, word for word. See
     replay.go    checking a trace
     journal.go   the journal, and approvals
     env.go       environments: reading kosika.env
+    agent_changes.go   an agent's own changes, planned and approved
     check.go     the checker: refusing a program before it runs
     check_workflows.go   the checker's rules for tools, agents, workflows
     workflows.go running a workflow, and the tools a test scripts
