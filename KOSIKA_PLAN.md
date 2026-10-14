@@ -3506,6 +3506,40 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   programs with workflows, agents and tools; the guide does not teach
   those yet.
 
+### The native engine reaches MCP servers, and agents call their tools
+
+- The owner said to go on, and that once this work on Kosika is done the
+  next focus is Kosi, as a modern assistant "like Siri but better in every
+  aspect". He also pointed to his own MCP server, urlscan-mcp (15 tools for
+  urlscan.io); it is a candidate real server, not yet tried, since it
+  reaches the internet and some of its tools need his API key.
+- `run` now takes `--mcp-server`, `--mcp-manifest` and `--mcp-source` as
+  the reference does. The manifest is read and its schema hashes checked;
+  it must pin the tool, with exactly the schemas the program's records
+  make; the server is started, its protocol, name, version and advertised
+  tools held to the manifest; then the tool is called. All of this is
+  `native/mcp.go`, newline-delimited JSON-RPC over the server's standard
+  input and output, as `kosika/mcp_stdio.py` speaks it.
+- An agent's model is now offered the agent's tools, described as the
+  reference describes them. Each tool it asks for is called and its answer
+  given back; arguments that do not fit, or a tool that only looks and
+  fails, are told to the model as `{"error": ...}`; the step, tool and
+  model-call limits are the agent's. This is the reference's `AgentLoop`
+  for a workflow step, without approvals: an agent that may change the
+  world is still refused before the run.
+- Held by `tests/test_conformance.py`: the example MCP server gives both
+  engines the same result, a manifest that pins nothing is refused by both
+  with the same words, and a stand-in model that calls the disk tool and
+  then answers receives the same requests from both engines, in both wire
+  formats, turn for turn.
+- Tried with `qwen2.5:7b`: the agent called the disk tool on the example
+  server and answered "The disk is 42.0% full." In the reference's run the
+  model sent arguments the tool does not take, and was told so, as the
+  native engine would have told it.
+- Next: traces of a run; then approvals, so that a tool that changes the
+  world can run; then the remaining declarations (memories, `system`
+  tools, imports, swarms).
+
 ### The native engine asks real models
 
 - The owner asked that his other projects be recorded in Kosika so that

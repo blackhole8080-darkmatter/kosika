@@ -13,8 +13,12 @@ file.
 `fast,strong=big`), `--model-url`, `--model-protocol openai|ollama`,
 `--model-binding`, `--model-timeout`, `--max-output-tokens`, and
 `--workflow` and `--input`. Without `--model-url` it asks a local Ollama
-server. It prints the workflow's result as `kosika run` does. It writes no
-trace yet.
+server. `--mcp-server SERVER --mcp-manifest PINNED.json [--mcp-source
+NAME]` lets the program's tools from that source reach an MCP server,
+checked against its pinned manifest first; a server written in Python is
+started with the Python on the machine, as the reference starts it. It
+prints the workflow's result as `kosika run` does. It writes no trace
+yet.
 
 ## What it has
 
@@ -32,10 +36,11 @@ think (`classify`, `extract`, `summarize`, `decide`), with a fallback
 (`otherwise`) or a choice of call (`match`); tools and agents as they are
 declared; and tests that run a workflow and script what its models and
 tools answer. With `run`, a model is a real one: a model server spoken to
-as the reference speaks to it, with the same requests word for word. A tool
-is reached only through a test's scripted answers: this engine reaches no
-real tool yet, and one that changes the world is refused, as the reference
-refuses it in a test, for want of a recorded approval.
+as the reference speaks to it, with the same requests word for word; a
+tool is answered by a pinned MCP server; and an agent's model may call the
+agent's tools, each answer given back to it, until it answers. A tool that
+changes the world is refused, as the reference refuses it without a
+recorded approval.
 
 Before it runs a program it checks it, as the reference does: a program
 whose types do not agree is refused, with the reference's own message, on
@@ -48,12 +53,11 @@ print what the reference engine prints, word for word. See
 
 ## What it does not have yet
 
-- An agent that calls its tools. A scripted answer calls none, so in a
-  test an agent's turn is its model's answer, as in the reference.
 - Steps with `verify`, `vote`, `escalate` or `with evidence`, and
   `parallel` blocks.
-- Traces, journals and approvals for a run.
-- Reaching a real tool: MCP servers, `system` tools, files, pages, the
+- Traces, journals and approvals for a run, and so any tool that changes
+  the world.
+- Reaching a real tool other than through an MCP server: MCP servers, `system` tools, files, pages, the
   clock and chance. Approvals.
 - Memories, boards, swarms and imports.
 - A file that has any of these is refused, and the refusal names it.
@@ -69,6 +73,7 @@ print what the reference engine prints, word for word. See
     parse_models.go      reading models
     thinking.go  thinking steps made model calls, and general models
     live.go      asking a model: scripted answers, or a model server
+    mcp.go       reaching a tool on a pinned MCP server
     run.go       the run command
     check.go     the checker: refusing a program before it runs
     check_workflows.go   the checker's rules for tools, agents, workflows

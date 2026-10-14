@@ -237,6 +237,90 @@ class NativeTests(unittest.TestCase):
                     # Each engine asked the same questions, word for word.
                     self.assertEqual(asked, by_reference)
 
+    def test_an_agent_calls_its_tools_as_the_reference_does(self) -> None:
+        # A stand-in model that asks for the disk tool, then answers from
+        # what the tool gave back; the tool is the example MCP server.
+        asked: list[dict] = []
+
+        class Server(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:  # noqa: N802 - the http.server name
+                body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                asked.append({"path": self.path, **body})
+                ollama = self.path.endswith("/api/chat")
+                if not any(m["role"] == "tool" for m in body["messages"]):
+                    if ollama:
+                        call = {"function": {"name": "check_disk", "arguments": {}}}
+                        answer = {"message": {"role": "assistant", "content": "", "tool_calls": [call]}, "done": True}
+                    else:
+                        call = {"id": "call_1", "type": "function",
+                                "function": {"name": "check_disk", "arguments": "{}"}}
+                        answer = {"choices": [{"message": {"role": "assistant", "content": "", "tool_calls": [call]},
+                                               "finish_reason": "tool_calls"}]}
+                else:
+                    told = json.loads(body["messages"][-1]["content"])
+                    reply = json.dumps({"text": f"{told['used_percent']} percent used", "did": []})
+                    message = {"role": "assistant", "content": reply}
+                    answer = (
+                        {"message": message, "done": True}
+                        if ollama
+                        else {"choices": [{"message": message, "finish_reason": "stop"}]}
+                    )
+                data = json.dumps(answer).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            def log_message(self, *_: object) -> None:
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Server)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.shutdown)
+        url = f"http://127.0.0.1:{server.server_port}"
+        with tempfile.TemporaryDirectory() as scratch:
+            program = Path(scratch) / "disk.kos"
+            program.write_text(
+                "record Question { text: Text }\n"
+                "record Answer { text: Text did: Text[] }\n"
+                "record DiskStatus { mount: Text used_percent: Number }\n"
+                'tool check_disk {\n  source mcp "local_stdio"\n  operation: "get_disk_info"\n'
+                "  access: observe\n  output: DiskStatus\n}\n"
+                "model thinker {\n  input: Question\n  output: Answer\n}\n"
+                "agent watcher {\n  model: thinker\n  can: [check_disk]\n"
+                '  instructions: "Answer from the disk."\n}\n'
+                "workflow main(question: Question) -> Answer {\n"
+                "  answer = ask watcher(question.text)\n}\n",
+                encoding="utf-8",
+            )
+            inputs = Path(scratch) / "input.json"
+            inputs.write_text(json.dumps({"question": {"text": "How full is the disk?"}}))
+            for protocol, endpoint in (("openai", url + "/v1"), ("ollama", url)):
+                with self.subTest(protocol):
+                    flags = [
+                        "--input", str(inputs), "--model", "small",
+                        "--model-url", endpoint, "--model-protocol", protocol,
+                        "--mcp-server", str(ROOT / "examples" / "mcp_host_server.py"),
+                        "--mcp-manifest", str(ROOT / "examples" / "mcp_manifest.json"),
+                    ]
+                    asked.clear()
+                    reference = subprocess.run(
+                        [sys.executable, "-m", "kosika.cli", "run", str(program),
+                         *flags, "--trace", str(Path(scratch) / "trace.jsonl")],
+                        cwd=ROOT, capture_output=True, text=True,
+                    )
+                    by_reference = list(asked)
+                    asked.clear()
+                    native = self.run_engine("run", str(program), *flags)
+                    self.assertEqual(native.returncode, 0, native.stderr.decode())
+                    self.assertEqual(
+                        native.stdout.decode("utf-8").splitlines()[0],
+                        reference.stdout.splitlines()[0],
+                    )
+                    self.assertEqual(len(asked), 2)
+                    self.assertEqual(asked, by_reference)
+
     def test_it_reaches_a_pinned_mcp_server_as_the_reference_does(self) -> None:
         program = ROOT / "examples" / "test_host_live.kos"
         flags = [

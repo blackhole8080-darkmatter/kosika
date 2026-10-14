@@ -7,6 +7,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,12 +25,29 @@ import (
 
 type chatMessage struct {
 	Role, Content string
+	ToolCalls     []toolCall // what an assistant's reply asked for
+	ToolCallID    string     // the call a tool's reply answers
+	Name          string     // the tool that replied
+}
+
+// A toolCall is a model asking for one of the tools it was offered.
+type toolCall struct {
+	ID, Name  string
+	Arguments *Record
+}
+
+// A modelTool is a tool offered to a model: its name, what it is for, and
+// the schema of what it takes.
+type modelTool struct {
+	Name, Description string
+	Schema            Value
 }
 
 // A modelRequest is one question to a model. Model is a deployment name
 // that overrides the provider's own; the parameters are the model's.
 type modelRequest struct {
 	Messages   []chatMessage
+	Tools      []modelTool
 	Model      string
 	Decl       *ModelDecl
 	JSONObject bool
@@ -37,7 +56,7 @@ type modelRequest struct {
 type modelResponse struct {
 	Content   string
 	Finish    string
-	ToolCalls []string // the names of any tools the model asked for
+	ToolCalls []toolCall
 }
 
 // A modelProvider answers requests, or fails the step with runFail.
@@ -95,9 +114,17 @@ func (h *httpProvider) complete(request *modelRequest) *modelResponse {
 	}
 	messages := make([]map[string]any, len(request.Messages))
 	for i, message := range request.Messages {
-		messages[i] = map[string]any{"role": message.Role, "content": message.Content}
+		messages[i] = h.message(message)
 	}
 	payload := map[string]any{"model": model, "messages": messages}
+	if len(request.Tools) > 0 {
+		var tools []any
+		for _, tool := range request.Tools {
+			tools = append(tools, map[string]any{"type": "function", "function": map[string]any{
+				"name": tool.Name, "description": tool.Description, "parameters": plainJSON(tool.Schema)}})
+		}
+		payload["tools"] = tools
+	}
 	options := payload
 	if h.protocol == "ollama" {
 		options = map[string]any{}
@@ -129,7 +156,7 @@ func (h *httpProvider) complete(request *modelRequest) *modelResponse {
 	if h.protocol == "ollama" && len(options) > 0 {
 		payload["options"] = options
 	}
-	if request.JSONObject {
+	if request.JSONObject && (h.protocol == "ollama" || len(request.Tools) == 0) {
 		if h.protocol == "ollama" {
 			payload["format"] = "json"
 		} else {
@@ -197,14 +224,79 @@ func (h *httpProvider) complete(request *modelRequest) *modelResponse {
 	}
 	calls, _ := message["tool_calls"].([]any)
 	for _, call := range calls {
-		function, _ := call.(map[string]any)["function"].(map[string]any)
+		raw, _ := call.(map[string]any)
+		function, _ := raw["function"].(map[string]any)
 		name, _ := function["name"].(string)
 		if name == "" {
 			stopProvider("Model tool call lacked a function name")
 		}
-		response.ToolCalls = append(response.ToolCalls, name)
+		var arguments Value = newRecord()
+		switch given := function["arguments"].(type) {
+		case string:
+			parsed, problem := parseStrictJSON(given)
+			if problem != "" {
+				stopProvider("Model tool call %s had invalid JSON arguments", pyRepr(name))
+			}
+			arguments = parsed
+		case nil:
+		default:
+			encoded, _ := json.Marshal(given)
+			arguments, _ = parseStrictJSON(string(encoded))
+		}
+		record, ok := arguments.(*Record)
+		if !ok {
+			stopProvider("Model tool call %s arguments must be an object", pyRepr(name))
+		}
+		// Each call needs an id of its own, and Ollama does not always give one.
+		id, _ := raw["id"].(string)
+		if id == "" {
+			id = newCallID()
+		}
+		response.ToolCalls = append(response.ToolCalls, toolCall{id, name, record})
 	}
 	return response
+}
+
+func newCallID() string {
+	var bytes [6]byte
+	_, _ = rand.Read(bytes[:])
+	return hex.EncodeToString(bytes[:])
+}
+
+// message is one message as the server's wire format writes it.
+func (h *httpProvider) message(message chatMessage) map[string]any {
+	payload := map[string]any{"role": message.Role, "content": message.Content}
+	if len(message.ToolCalls) > 0 {
+		var calls []any
+		for _, call := range message.ToolCalls {
+			if h.protocol == "ollama" {
+				// Ollama wants a call's arguments as an object, not as text.
+				calls = append(calls, map[string]any{"function": map[string]any{"name": call.Name, "arguments": plainJSON(call.Arguments)}})
+			} else {
+				calls = append(calls, map[string]any{"id": call.ID, "type": "function", "function": map[string]any{
+					"name": call.Name, "arguments": pyJSONWith(call.Arguments, true, true)}})
+			}
+		}
+		payload["tool_calls"] = calls
+	}
+	if h.protocol == "ollama" {
+		if message.Role == "tool" && message.Name != "" {
+			payload["tool_name"] = message.Name
+		}
+		return payload
+	}
+	if message.ToolCallID != "" {
+		payload["tool_call_id"] = message.ToolCallID
+	}
+	if message.Name != "" {
+		payload["name"] = message.Name
+	}
+	return payload
+}
+
+// plainJSON is a value as encoding/json writes it, whole numbers exact.
+func plainJSON(v Value) any {
+	return json.RawMessage(pyJSONWith(v, false, true))
 }
 
 // pyShortFloat writes a number of seconds as Python's {:g} does.
