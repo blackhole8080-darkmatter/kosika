@@ -15,7 +15,8 @@ import (
 func runCommand(args []string) int {
 	path := args[0]
 	options := map[string]string{"--workflow": "main", "--model-protocol": "openai", "--model-timeout": "60", "--max-output-tokens": "1024"}
-	known := map[string]bool{"--workflow": true, "--input": true, "--model": true, "--model-url": true, "--model-protocol": true, "--model-timeout": true, "--model-binding": true, "--max-output-tokens": true}
+	options["--mcp-source"] = "local_stdio"
+	known := map[string]bool{"--mcp-server": true, "--mcp-manifest": true, "--mcp-source": true, "--workflow": true, "--input": true, "--model": true, "--model-url": true, "--model-protocol": true, "--model-timeout": true, "--model-binding": true, "--max-output-tokens": true}
 	for i := 1; i < len(args); i++ {
 		name, value, joined := strings.Cut(args[i], "=")
 		if !known[name] {
@@ -45,6 +46,22 @@ func runCommand(args []string) int {
 	maxOutput, err := strconv.Atoi(options["--max-output-tokens"])
 	if err != nil || maxOutput < 1 {
 		fmt.Fprintln(os.Stderr, "--max-output-tokens must be a positive integer")
+		return 2
+	}
+	servers := map[string]*mcpServer{}
+	if options["--mcp-server"] != "" {
+		if options["--mcp-manifest"] == "" {
+			fmt.Fprintln(os.Stderr, "--mcp-manifest is required when --mcp-server is used")
+			return 2
+		}
+		manifest, problem := loadManifest(options["--mcp-manifest"])
+		if problem != "" {
+			fmt.Fprintf(os.Stderr, "Workflow failed: %s\n", problem)
+			return 2
+		}
+		servers[options["--mcp-source"]] = &mcpServer{serverCommand(options["--mcp-server"]), manifest}
+	} else if options["--mcp-manifest"] != "" {
+		fmt.Fprintln(os.Stderr, "--mcp-manifest requires --mcp-server")
 		return 2
 	}
 	program := load(path)
@@ -90,7 +107,9 @@ func runCommand(args []string) int {
 				}
 			}
 		}()
-		return newRun(program, map[string]*scriptedTool{}, providers, workflow).workflow(workflow, inputs, 0), "", ""
+		running := newRun(program, map[string]*scriptedTool{}, providers, workflow)
+		running.servers = servers
+		return running.workflow(workflow, inputs, 0), "", ""
 	}()
 	if stopped != "" {
 		fmt.Fprintf(os.Stderr, "Workflow stopped (%s): %s\n", code, stopped)

@@ -26,6 +26,7 @@ type run struct {
 	checker    *checker
 	tools      map[string]*scriptedTool
 	providers  map[string]modelProvider
+	servers    map[string]*mcpServer // by tool source, when a run names one
 	toolCalls  int
 	maxTools   int
 	modelCalls int
@@ -111,7 +112,7 @@ func (r *run) preflight(workflow *WorkflowDecl) {
 				if tool.Access == "execute" && !item.chosen {
 					panic(&permissionError{fmt.Sprintf("Agent tool %s requires a verified approval record", pyRepr(name))})
 				}
-				if r.tools[name] == nil && tool.Source != "local_mock" {
+				if r.tools[name] == nil && r.servers[tool.Source] == nil && tool.Source != "local_mock" {
 					panic(&permissionError{fmt.Sprintf("Agent tool %s has no authorized host binding", pyRepr(name))})
 				}
 			}
@@ -242,6 +243,8 @@ func (r *run) tool(tool *ToolDecl, arguments map[string]Value) Value {
 		}
 		scripted.asked++
 		outcome = scripted.answers[scripted.asked-1]
+	} else if r.servers[tool.Source] != nil {
+		outcome = r.callDeclaredTool(tool, input)
 	} else {
 		outcome = mockTool(tool)
 	}

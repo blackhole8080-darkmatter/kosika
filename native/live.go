@@ -283,7 +283,15 @@ func parseStrictJSON(text string) (value Value, problem string) {
 
 // pyJSON writes a value as Python's json.dumps does: ", " and ": " between
 // parts, text outside ASCII escaped, and keys sorted when asked.
-func pyJSON(v Value, sortKeys bool) string {
+func pyJSON(v Value, sortKeys bool) string { return pyJSONWith(v, sortKeys, false) }
+
+// pyJSONWith is pyJSON, written compactly (separators=(",", ":")) when
+// asked.
+func pyJSONWith(v Value, sortKeys, compact bool) string {
+	comma, colon := ", ", ": "
+	if compact {
+		comma, colon = ",", ":"
+	}
 	var out strings.Builder
 	var write func(Value)
 	write = func(v Value) {
@@ -306,7 +314,7 @@ func pyJSON(v Value, sortKeys bool) string {
 			out.WriteString("[")
 			for i, item := range x {
 				if i > 0 {
-					out.WriteString(", ")
+					out.WriteString(comma)
 				}
 				write(item)
 			}
@@ -319,10 +327,10 @@ func pyJSON(v Value, sortKeys bool) string {
 			out.WriteString("{")
 			for i, key := range keys {
 				if i > 0 {
-					out.WriteString(", ")
+					out.WriteString(comma)
 				}
 				out.WriteString(pyJSONString(key))
-				out.WriteString(": ")
+				out.WriteString(colon)
 				write(x.Fields[key])
 			}
 			out.WriteString("}")

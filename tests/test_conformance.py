@@ -237,6 +237,43 @@ class NativeTests(unittest.TestCase):
                     # Each engine asked the same questions, word for word.
                     self.assertEqual(asked, by_reference)
 
+    def test_it_reaches_a_pinned_mcp_server_as_the_reference_does(self) -> None:
+        program = ROOT / "examples" / "test_host_live.kos"
+        flags = [
+            "--mcp-server", str(ROOT / "examples" / "mcp_host_server.py"),
+            "--mcp-manifest", str(ROOT / "examples" / "mcp_manifest.json"),
+        ]
+        with tempfile.TemporaryDirectory() as scratch:
+            reference = subprocess.run(
+                [sys.executable, "-m", "kosika.cli", "run", str(program), *flags,
+                 "--trace", str(Path(scratch) / "trace.jsonl")],
+                cwd=ROOT, capture_output=True, text=True,
+            )
+        native = self.run_engine("run", str(program), *flags)
+        self.assertEqual(native.returncode, 0, native.stderr.decode())
+        self.assertEqual(
+            native.stdout.decode("utf-8").splitlines()[0],
+            reference.stdout.splitlines()[0],
+        )
+        # A manifest that pins nothing for the tool is refused by both.
+        with tempfile.TemporaryDirectory() as scratch:
+            empty = Path(scratch) / "manifest.json"
+            pinned = json.loads((ROOT / "examples" / "mcp_manifest.json").read_text())
+            pinned["tools"] = {}
+            empty.write_text(json.dumps(pinned), encoding="utf-8")
+            flags[-1] = str(empty)
+            reference = subprocess.run(
+                [sys.executable, "-m", "kosika.cli", "run", str(program), *flags,
+                 "--trace", str(Path(scratch) / "trace.jsonl")],
+                cwd=ROOT, capture_output=True, text=True,
+            )
+            native = self.run_engine("run", str(program), *flags)
+        self.assertEqual(native.returncode, 2)
+        self.assertEqual(
+            native.stderr.decode("utf-8").strip().splitlines()[-1],
+            reference.stderr.strip().splitlines()[-1],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
