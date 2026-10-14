@@ -27,6 +27,21 @@ Kosika should become more expressive than a collection of Python/JavaScript scri
 - Mindmaps, explanations, design graphs, and replay summaries must be deterministic from checked source, manifests, and traces.
 - Add focused tests for every new branch, then run the full suite, Ruff, and MyPy.
 
+## Projects that may use Kosika
+
+The owner's other projects, kept here so that work on Kosika remembers
+them. Recorded 2026-10-14 from each project's README. The owner chose to
+keep developing Kosika itself first; none of these is being worked on in
+Kosika yet.
+
+| Project | What it is | Where | How Kosika could serve it |
+|---|---|---|---|
+| **Ananta** | A multi-agent knowledge engine: 108 specialist nodes in 9 clusters, an adversarial "courtroom" of a proposer, a critic and judges that debate a problem to a grounded answer, within hard round and cost ceilings, bound by a five-part "Constitution". Python, with local and cloud models. | github.com/blackhole8080-darkmatter/Ananta | **Best fit.** The debate is agents, workflows, budgets and checked answers; the Constitution's rules can be checks every answer must pass (`verify`); the round ceiling is a budget. The strongest showcase Kosika could have. |
+| **DEEP** | A local-first, JARVIS-style assistant with a cybersecurity brain: live network monitoring, MITRE ATT&CK and CVE-enriched threat detection, threat intelligence, voice and chat, offline through Ollama, with cloud models as fallback. | github.com/blackhole8080-darkmatter/DEEP | **Fits its reasoning, not its core.** Kosika could own triaging a threat, choosing which tool to run, approval before any action, a local model first with a cloud model on escalation, and a trace of each decision. Monitoring, packet work and the trained classifier stay in Python, reached as tools. |
+| **Synapse** | A local neural-field prototype with four regions (DEEP, Synapse, Kosika, Ananta) that streams Kosika's normalized run events to a browser. | `../synapse` (this machine) | **Already a Kosika front end**: it runs on `kosika.synapse_bridge` and shows Kosika as one of its regions. |
+| **Deadline** | A first-person noir detective game in the browser: three suspects, questioning decides the killer. TypeScript, on GitHub Pages. | github.com/blackhole8080-darkmatter/deadline-noir | **A small fit.** Kosika could drive what each suspect says (agents with typed answers) and test the questioning with scripted answers. The game stays TypeScript, and would need a server or answers prepared in advance, since Pages serves only static files. |
+| **Parlour** | A local-first board game parlour: seven games, a shared game-spec engine with alpha-beta AI, no accounts. TypeScript. | github.com/blackhole8080-darkmatter/parlour | **Not a fit.** Game rules and search in the browser, with no agents, in the right language already. |
+
 ## K01 — Reconciled capability baseline
 
 This matrix is the implementation baseline for subsequent work. It reconciles
