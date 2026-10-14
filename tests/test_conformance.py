@@ -125,10 +125,12 @@ class NativeTests(unittest.TestCase):
         self.assertGreater(compared, 1000)
 
     def test_what_it_cannot_do_yet_it_refuses_by_name(self) -> None:
-        ran = self.run_engine("test", str(ROOT / "examples" / "mcp" / "librarian.kos"))
+        ran = self.run_engine(
+            "test", str(ROOT / "benchmarks" / "spec" / "reference" / "20_swarm.kos")
+        )
         self.assertEqual(ran.returncode, 1)
         said = ran.stderr.decode("utf-8", "replace")
-        self.assertIn("kosika-native cannot run a step that asks an agent yet", said)
+        self.assertIn("kosika-native cannot read a swarm yet", said)
         self.assertEqual(ran.stdout, b"")
         with tempfile.TemporaryDirectory() as scratch:
             quoting = Path(scratch) / "quoting.kos"
@@ -145,16 +147,17 @@ class NativeTests(unittest.TestCase):
             ran.stderr.decode("utf-8", "replace"),
         )
         with tempfile.TemporaryDirectory() as scratch:
-            asking = Path(scratch) / "asking.kos"
-            asking.write_text(
-                "record A { text: Text }\n"
-                "workflow main(a: A) -> A {\n  b = ask helper(a.text)\n}\n",
+            voting = Path(scratch) / "voting.kos"
+            voting.write_text(
+                "record A { text: Text }\nmodel assistant\n"
+                "workflow main(a: A) -> Summary {\n"
+                "  s = summarize a.text vote 3\n}\n",
                 encoding="utf-8",
             )
-            ran = self.run_engine("test", str(asking))
+            ran = self.run_engine("test", str(voting))
         self.assertEqual(ran.returncode, 1)
         self.assertIn(
-            "kosika-native cannot run a step that asks an agent yet",
+            "kosika-native cannot run a step with vote yet",
             ran.stderr.decode("utf-8", "replace"),
         )
 

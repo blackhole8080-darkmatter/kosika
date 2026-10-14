@@ -1,0 +1,18 @@
+// Refused: an agent is given the fields of its model's input record.
+
+record Question { text: Text }
+record Answer { text: Text }
+
+model thinker {
+  input: Question
+  output: Answer
+}
+
+agent helper {
+  model: thinker
+  can: []
+}
+
+workflow main(question: Question) -> Answer {
+  answer = ask helper(words: question.text)
+}

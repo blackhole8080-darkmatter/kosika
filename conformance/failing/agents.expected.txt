@@ -1,0 +1,11 @@
+FAIL  an agent tool the test does not answer
+      line 59: Agent tool 'notes' has no authorized host binding
+FAIL  an agent that can change the world needs an approval
+      line 65: Agent tool 'write' requires a verified approval record
+FAIL  an answer in the wrong shape twice
+      line 71: Invalid structured agent output: $: missing required property 'text'
+FAIL  an answer in the wrong shape, and nothing left to ask
+      line 77: Invalid structured agent output: $: missing required property 'text'
+FAIL  an agent with no answer
+      line 82: Scripted model provider has no response left
+0 passed, 5 failed

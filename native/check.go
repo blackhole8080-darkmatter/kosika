@@ -1080,7 +1080,7 @@ func usedByCall(call *StepCall, bound, used map[string]bool) {
 	case "tool":
 		used[call.Agent] = true
 		used[call.Name] = true
-	case "model":
+	case "model", "agent":
 		used[call.Name] = true
 	case "think":
 		if call.Model != "" {

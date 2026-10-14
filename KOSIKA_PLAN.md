@@ -3491,6 +3491,33 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   programs with workflows, agents and tools; the guide does not teach
   those yet.
 
+### The native engine asks agents
+
+- Asked whether Kosika could serve his other projects (DEEP, Ananta,
+  Synapse, Parlour, Deadline), the owner was told, from their READMEs:
+  Ananta fits best (a debating panel with bounded rounds is what agents,
+  budgets and checks are for), DEEP's reasoning layer fits, Synapse is
+  already a Kosika front end, Deadline only a little, Parlour not. He
+  said to go on with the native engine first.
+- The native engine now runs `ask AGENT(...)` steps. In a test the
+  agent's model answers from the script, and a scripted answer calls no
+  tool, so the agent's turn is that one answer, taken as the reference's
+  `call_agent` takes it: an answer in the wrong shape is asked for once
+  more, the answer is held to the model's output record, and a `did`
+  field is written by the engine from what ran (here, nothing). Before
+  the run, every tool the agent may choose must be one the test answers,
+  and none may change the world without an approval, as the reference
+  requires.
+- The suite: `cases/agents.kos`, `failing/agents.kos` (five ways), and two
+  refusals. Both engines pass all 64 programs.
+- Measured by mutation: 1,000 mutants of the agent programs and 2,912 of
+  the 112 files both engines can now read; all the same. Of the
+  repository's 132 Kosika files, what still stops the native engine:
+  swarms (8), memories (6), system tools (4), imports and exports (3),
+  `verify` (1) and `with evidence` (1).
+- Next: an agent calling its tools when a real model chooses them, with
+  real models; then memories, system tools, imports and swarms.
+
 ### The native engine thinks: general models and thinking steps
 
 - The owner said to go on. The native engine now reads general models

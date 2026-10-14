@@ -87,6 +87,18 @@ func (r *run) preflight(workflow *WorkflowDecl) {
 			if tool := r.checker.tools[item.call.Name]; tool.Access == "execute" && !item.chosen {
 				panic(&budgetError{fmt.Sprintf("Workflow tool %s requires a verified approval record", pyRepr(tool.Name))})
 			}
+		case "agent":
+			// Every tool an agent may choose must be answerable before it
+			// begins: a test answers only the tools it scripts.
+			for _, name := range r.checker.agents[item.call.Name].Can {
+				tool := r.checker.tools[name]
+				if tool.Access == "execute" && !item.chosen {
+					panic(&budgetError{fmt.Sprintf("Agent tool %s requires a verified approval record", pyRepr(name))})
+				}
+				if r.tools[name] == nil && tool.Source != "local_mock" {
+					panic(&budgetError{fmt.Sprintf("Agent tool %s has no authorized host binding", pyRepr(name))})
+				}
+			}
 		}
 	}
 }
@@ -179,6 +191,9 @@ func (r *run) call(call *StepCall, environment *Scope, at frame, depth, retries 
 	if call.Kind == "model" {
 		return r.model(r.checker.models[call.Name], arguments, retries)
 	}
+	if call.Kind == "agent" {
+		return r.agent(r.checker.agents[call.Name], arguments)
+	}
 	return r.tool(r.checker.tools[call.Name], arguments)
 }
 
@@ -230,21 +245,12 @@ func (r *run) model(model *ModelDecl, arguments map[string]Value, retries int) V
 	r.validate(input, model.Input, "$")
 	rejected := 0
 	for {
-		if r.modelCalls >= r.maxModels {
-			panic(&budgetError{fmt.Sprintf("model calls budget exceeds %d", r.maxModels)})
-		}
-		r.modelCalls++
 		// A model made for a thinking step gives its declared model's answers.
-		provider := model.Name
+		asked := model
 		if model.Provider != "" {
-			provider = model.Provider
+			asked = r.checker.models[model.Provider]
 		}
-		scripted := r.models[provider]
-		scripted.asked++
-		if scripted.asked > len(scripted.answers) {
-			runFail("Scripted model provider has no response left")
-		}
-		answer := r.fillAbsent(copyValue(scripted.answers[scripted.asked-1]), model.Output)
+		answer := r.fillAbsent(r.ask(asked), model.Output)
 		problem := r.problem(answer, model.Output, "$")
 		if problem != "" {
 			problem = "Invalid structured model output: " + problem
@@ -259,6 +265,60 @@ func (r *run) model(model *ModelDecl, arguments map[string]Value, retries int) V
 		}
 		rejected++
 	}
+}
+
+// ask gives the next answer a model's test scripts, counted against the
+// workflow's budget of model calls.
+func (r *run) ask(model *ModelDecl) Value {
+	if r.modelCalls >= r.maxModels {
+		panic(&budgetError{fmt.Sprintf("model calls budget exceeds %d", r.maxModels)})
+	}
+	r.modelCalls++
+	scripted := r.models[model.Name]
+	scripted.asked++
+	if scripted.asked > len(scripted.answers) {
+		runFail("Scripted model provider has no response left")
+	}
+	return copyValue(scripted.answers[scripted.asked-1])
+}
+
+// agent asks an agent. A scripted answer calls no tool, so the agent's
+// turn is its model's one answer, as call_agent in kosika/agent_steps.py
+// takes it: an answer in the wrong shape is asked for once more, and what
+// the agent did, when its record says, is what ran, which here is nothing.
+func (r *run) agent(agent *AgentDecl, arguments map[string]Value) Value {
+	model := r.checker.models[agent.Model]
+	input := newRecord()
+	for name, value := range arguments {
+		input.set(name, value)
+	}
+	r.validate(input, model.Input, "$")
+	answer := r.ask(model)
+	if r.problem(answer, model.Output, "$") != "" {
+		reshaped, failure := func() (value Value, failure *RunError) {
+			defer func() {
+				if caught := recover(); caught != nil {
+					if problem, ok := caught.(*RunError); ok {
+						failure = problem
+						return
+					}
+					panic(caught)
+				}
+			}()
+			return r.ask(model), nil
+		}()
+		if failure == nil && r.problem(reshaped, model.Output, "$") == "" {
+			answer = reshaped
+		}
+	}
+	if problem := r.problem(answer, model.Output, "$"); problem != "" {
+		runFail("Invalid structured agent output: " + problem)
+	}
+	record := answer.(*Record)
+	if did, ok := fieldType(r.checker.records[model.Output].Fields, "did"); ok && did == "Text[]" {
+		record.Fields["did"] = []Value{}
+	}
+	return record
 }
 
 // copyValue is a scripted answer as the model's JSON gives it back: a

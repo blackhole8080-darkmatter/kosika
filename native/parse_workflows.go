@@ -19,7 +19,7 @@ func (p *Parser) stringOrIdentifier() string {
 }
 
 func notYetStep(token Token, what string) {
-	parseFail("kosika-native cannot run %s yet (at %d:%d); it runs steps that call a function, run a workflow, use a tool or ask a model", what, token.Line, token.Column)
+	parseFail("kosika-native cannot run %s yet (at %d:%d); it runs steps that call a function, run a workflow, use a tool, or ask a model or an agent", what, token.Line, token.Column)
 }
 
 func (p *Parser) parseTool() *ToolDecl {
@@ -295,12 +295,15 @@ func (p *Parser) parseStepCall() *StepCall {
 			notYetStep(token, "a step that reads the clock")
 		case token.Value == "random" && following != "(" && following != "." && following != "=":
 			notYetStep(token, "a step that picks a random number")
-		case token.Value == "ask":
-			notYetStep(token, "a step that asks an agent")
 		}
 	}
 	if token.Kind == "IDENT" && thinkingVerbs[token.Value] && following != "(" {
 		return p.parseThinkCall()
+	}
+	if p.accept("ask") {
+		name := p.identifier()
+		p.expect("(")
+		return &StepCall{Kind: "agent", Name: name, Args: p.parseArguments(), Line: token.Line}
 	}
 	if p.accept("use_model") {
 		name := p.identifier()

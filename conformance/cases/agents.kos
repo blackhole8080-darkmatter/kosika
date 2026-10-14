@@ -1,0 +1,53 @@
+// Conformance: asking an agent, whose model's answers the test scripts.
+// The agent may be given tools; a test that runs it says what each answers.
+
+record Question { text: Text }
+record Answer { text: Text did: Text[] }
+record Found { text: Text }
+
+tool notes {
+  source mcp "notes"
+  operation: "search"
+  access: observe
+  input: Question
+  output: Found
+}
+
+model thinker {
+  input: Question
+  output: Answer
+}
+
+agent helper {
+  model: thinker
+  can: [notes]
+  max_steps: 3
+  instructions: "Answer from the notes."
+}
+
+agent plain {
+  model: thinker
+  can: []
+}
+
+workflow main(question: Question) -> Answer {
+  answer = ask helper(question.text)
+}
+
+workflow simple(question: Question) -> Answer {
+  answer = ask plain(text: question.text)
+}
+
+test "an agent answers, and what it did is what ran" {
+  answers notes: []
+  answers thinker: [{text: "hi", did: ["a change it never made"]}]
+  r = main({text: "x"})
+  expect r.text == "hi"
+  expect r.did == []
+}
+
+test "an answer in the wrong shape is asked for once more" {
+  answers thinker: [{words: "hi"}, {text: "ok", did: []}]
+  r = simple({text: "x"})
+  expect r.text == "ok"
+}

@@ -293,6 +293,13 @@ func (c *checker) stepParams(call *StepCall) []string {
 			return fieldNames(c.records[model.Input].Fields)
 		}
 		return nil
+	case "agent":
+		if agent := c.agents[call.Name]; agent != nil {
+			if model := c.models[agent.Model]; model != nil && c.records[model.Input] != nil {
+				return fieldNames(c.records[model.Input].Fields)
+			}
+		}
+		return nil
 	}
 	if tool := c.tools[call.Name]; tool != nil && tool.Input != "" {
 		if record := c.records[tool.Input]; record != nil {
@@ -321,6 +328,12 @@ func (c *checker) finalOutput(call *StepCall) string {
 	case "model":
 		if model := c.models[call.Name]; model != nil {
 			return model.Output
+		}
+	case "agent":
+		if agent := c.agents[call.Name]; agent != nil {
+			if model := c.models[agent.Model]; model != nil {
+				return model.Output
+			}
 		}
 	}
 	return ""
@@ -421,6 +434,13 @@ func (c *checker) checkStep(workflow *WorkflowDecl, step *Step, env *Env) {
 		if model == nil {
 			checkFail("Step %s uses unknown model %s", pyRepr(step.Name), pyRepr(call.Name))
 		}
+		params, output = c.recordFields(model.Input), model.Output
+	case "agent":
+		agent := c.agents[call.Name]
+		if agent == nil || agent.Model == "" {
+			checkFail("Step %s requires a known agent with a model", pyRepr(step.Name))
+		}
+		model := c.models[agent.Model]
 		params, output = c.recordFields(model.Input), model.Output
 	}
 	c.checkArguments(resolveUnnamed(call.Args, c.stepParams(call)), params, env, step.Name)

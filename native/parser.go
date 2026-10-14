@@ -901,7 +901,11 @@ func (p *Parser) parseProgram() *Program {
 		case (keyword == "test" || keyword == "eval") && p.peek().Kind == "STRING":
 			program.Tests = append(program.Tests, p.parseTest())
 		case notYet[keyword]:
-			parseFail("kosika-native cannot read a %s yet (at %d:%d); it has models, records, functions, tools, agents, workflows and tests", keyword, token.Line, token.Column)
+			article := "a"
+			if keyword == "import" || keyword == "export" {
+				article = "an"
+			}
+			parseFail("kosika-native cannot read %s %s yet (at %d:%d); it has models, records, functions, tools, agents, workflows and tests", article, keyword, token.Line, token.Column)
 		default:
 			parseFail("Unexpected declaration %s at %d:%d", quoted(token.Value), token.Line, token.Column)
 		}

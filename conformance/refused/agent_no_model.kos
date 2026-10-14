@@ -1,0 +1,11 @@
+// Refused: an agent that is asked must have a model.
+
+record Question { text: Text }
+
+agent helper {
+  can: []
+}
+
+workflow main(question: Question) -> Question {
+  answer = ask helper(question.text)
+}

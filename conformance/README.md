@@ -45,8 +45,8 @@ it must be what Kosika should do, not merely what one engine happens to do.
 
 ## What the suite does not cover yet
 
-- Agents that ask a model, `verify`, `vote`, `escalate`, `with
-  evidence` and `parallel`. Memories, boards and imports.
+- An agent calling its tools, `verify`, `vote`, `escalate`, `with
+  evidence` and `parallel`. Memories, boards, swarms and imports.
 - Vectors and matrices.
-- 9 passing programs, 5 failing ones and 46 refused ones are a beginning. A method or rule
+- 10 passing programs, 6 failing ones and 48 refused ones are a beginning. A method or rule
   that no case uses is not held to anything.

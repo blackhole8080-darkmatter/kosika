@@ -18,8 +18,8 @@ lists, maps and optional values. Whole numbers are exact at any size.
 Models, with the records they take and give, and general ones that take
 and give text. Workflows, whose steps call
 a function, run another workflow, use a tool through an agent, or ask a
-model (asked again on a refused answer with `retry`), or think
-(`classify`, `extract`, `summarize`, `decide`), with a fallback
+model (asked again on a refused answer with `retry`), ask an agent, or
+think (`classify`, `extract`, `summarize`, `decide`), with a fallback
 (`otherwise`) or a choice of call (`match`); tools and agents as they are
 declared; and tests that run a workflow and script what its models and
 tools answer. A model or a tool is reached only through those scripted
@@ -38,7 +38,8 @@ print what the reference engine prints, word for word. See
 
 ## What it does not have yet
 
-- Asking an agent.
+- An agent that calls its tools. A scripted answer calls none, so in a
+  test an agent's turn is its model's answer, as in the reference.
 - Steps with `verify`, `vote`, `escalate` or `with evidence`, and
   `parallel` blocks.
 - Reaching a real model, or a real tool: MCP servers, `system` tools, files, pages, the

@@ -164,8 +164,8 @@ type AgentDecl struct {
 const valueCall = "$value"
 
 // A StepCall is what a step does: call a function (Kind "function"), run
-// a workflow ("workflow"), use a tool through an agent ("tool") or ask a
-// model ("model").
+// a workflow ("workflow"), use a tool through an agent ("tool"), ask a
+// model ("model") or ask an agent ("agent").
 type StepCall struct {
 	Kind  string
 	Name  string // the function, workflow, tool or model

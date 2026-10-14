@@ -41,6 +41,17 @@ func callOutput(program *Program, call *StepCall) string {
 				return model.Output
 			}
 		}
+	case "agent":
+		for _, agent := range program.Agents {
+			if agent.Name == call.Name {
+				for _, model := range program.Models {
+					if model.Name == agent.Model {
+						return model.Output
+					}
+				}
+				return ""
+			}
+		}
 	}
 	return ""
 }
