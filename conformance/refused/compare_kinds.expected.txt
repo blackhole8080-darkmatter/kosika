@@ -1,0 +1,1 @@
+Check failed: Step 'function is_ten' operator '==' requires matching types, got 'Text' and 'Number'

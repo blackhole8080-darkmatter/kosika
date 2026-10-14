@@ -1,0 +1,7 @@
+// Refused: an argument of the wrong type.
+
+fn twice(n: Number) -> Number {
+  return n * 2
+}
+
+test "never runs" { expect twice(n: "3") == 6 }

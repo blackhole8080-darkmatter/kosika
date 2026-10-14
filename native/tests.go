@@ -144,6 +144,9 @@ func TestsText(results []TestResult) string {
 			lines = append(lines, fmt.Sprintf("      line %d: %s", result.Line, result.Message))
 		}
 	}
+	if len(results) == 0 {
+		return "No tests found"
+	}
 	lines = append(lines, fmt.Sprintf("%d passed, %d failed", len(results)-failed, failed))
 	return strings.Join(lines, "\n")
 }

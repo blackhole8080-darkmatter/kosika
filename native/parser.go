@@ -726,13 +726,15 @@ func (p *Parser) parseTypeName(depth int) string {
 		for !p.accept(")") {
 			name := p.identifier()
 			p.expect(":")
-			parts = append(parts, name+": "+p.parseTypeName(depth+1))
+			parts = append(parts, name+":"+p.parseTypeName(depth+1))
 			if !p.check(")") {
 				p.expect(",")
 			}
 		}
 		p.expect("->")
-		return "fn(" + strings.Join(parts, ", ") + ") -> " + p.parseTypeName(depth+1)
+		// Written as the reference writes it, so that a checker message names
+		// the type in the same words: fn(value:Number)->Number.
+		return "fn(" + strings.Join(parts, ",") + ")->" + p.parseTypeName(depth+1)
 	}
 	name := p.identifier()
 	for {

@@ -1,0 +1,9 @@
+// Refused: a name bound with let cannot be set again.
+
+fn count(items: Text[]) -> Number {
+  let seen = 0
+  for item in items {
+    seen = seen + 1
+  }
+  return seen
+}

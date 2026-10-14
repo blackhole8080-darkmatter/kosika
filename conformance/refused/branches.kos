@@ -1,0 +1,5 @@
+// Refused: the two branches of an if give different types.
+
+fn size(n: Number) -> Text {
+  return if n > 10 { "big" } else { n }
+}

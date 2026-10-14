@@ -1,0 +1,8 @@
+// Refused: a match on a number must say what happens for any other number.
+
+fn word(n: Number) -> Text {
+  return match n {
+    case 1 { "one" }
+    case 2 { "two" }
+  }
+}

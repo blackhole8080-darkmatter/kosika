@@ -14,6 +14,8 @@ Kosika can run on a machine with no Python.
     cases/NAME.expected.txt    what `test` prints for it
     failing/NAME.kos           a program whose tests fail on purpose
     failing/NAME.expected.txt  what `test` prints for it, failures and all
+    refused/NAME.kos           a program the checker must refuse
+    refused/NAME.expected.txt  the one line `test` prints for it
 
 Every program here is pure: records, functions and tests. It asks no
 model, uses no tool and reaches no file, so it gives the same result on
@@ -22,8 +24,9 @@ any machine.
 ## What an engine must do
 
 For each `.kos` file, `ENGINE test FILE` must print exactly the text in
-the file beside it, and end with exit code 0 when every test passed and 1
-when one failed. Line ends may be `\n` or `\r\n`.
+the file beside it, and end with exit code 0 when every test passed, 1
+when one failed, and 2 when the program was refused before it ran. A
+refused program prints `Check failed: ` and the reason, and nothing else. Line ends may be `\n` or `\r\n`.
 
 An engine must also split every `.kos` file in this repository into the
 same tokens as the reference: `ENGINE tokens FILE` prints one JSON object
@@ -42,10 +45,7 @@ it must be what Kosika should do, not merely what one engine happens to do.
 
 ## What the suite does not cover yet
 
-- Programs that must be refused before they run. The reference engine
-  checks types first; the native engine has no checker yet, and nothing
-  here would catch that.
 - Workflows, agents, tools, models, memories and imports.
 - Vectors and matrices.
-- 5 passing programs and 1 failing one are a beginning. A method or rule
+- 5 passing programs, 1 failing one and 18 refused ones are a beginning. A method or rule
   that no case uses is not held to anything.

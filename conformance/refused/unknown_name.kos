@@ -1,0 +1,5 @@
+// Refused: a name used but never bound, with the near spelling offered.
+
+fn area(width: Number, height: Number) -> Number {
+  return width * heigth
+}

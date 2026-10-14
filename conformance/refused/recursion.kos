@@ -1,0 +1,6 @@
+// Refused: a function that calls itself must say how deep it may go.
+
+fn countdown(n: Number) -> Number {
+  if n == 0 { return 0 }
+  return countdown(n - 1)
+}

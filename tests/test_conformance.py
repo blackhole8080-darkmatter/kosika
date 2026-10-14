@@ -25,7 +25,7 @@ NATIVE = ROOT / "native"
 class ReferenceTests(unittest.TestCase):
     def test_the_suite_has_programs_and_each_has_its_expected_report(self) -> None:
         programs = conformance.programs()
-        self.assertGreaterEqual(len(programs), 6)
+        self.assertGreaterEqual(len(programs), 24)
         for program in programs:
             with self.subTest(program.name):
                 self.assertTrue(conformance.expected_path(program).is_file())
@@ -36,13 +36,20 @@ class ReferenceTests(unittest.TestCase):
                 text, code = conformance.report(program)
                 wanted = conformance.expected_path(program).read_text(encoding="utf-8")
                 self.assertEqual(text, wanted)
-                # A case passes; a failing program fails, and is not refused.
-                self.assertEqual(code, 0 if program.parent.name == "cases" else 1)
+                # A case passes; a failing program fails, and is not refused;
+                # a refused one never runs.
+                self.assertEqual(code, conformance.EXIT_CODES[program.parent.name])
 
     def test_a_passing_case_has_no_failure_and_a_failing_one_has_some(self) -> None:
         for program in conformance.programs():
             with self.subTest(program.name):
                 wanted = conformance.expected_path(program).read_text(encoding="utf-8")
+                if program.parent.name == "refused":
+                    # Refused by the checker, not on the way in: no path.
+                    self.assertTrue(wanted.startswith("Check failed: "))
+                    self.assertEqual(wanted.count("\n"), 1)
+                    self.assertNotIn(".kos", wanted)
+                    continue
                 self.assertIn(" passed, ", wanted)
                 if program.parent.name == "cases":
                     self.assertNotIn("FAIL  ", wanted)
@@ -82,7 +89,7 @@ class NativeTests(unittest.TestCase):
                 wanted = conformance.expected_path(program).read_text(encoding="utf-8")
                 self.assertEqual(printed, wanted, ran.stderr.decode("utf-8", "replace"))
                 self.assertEqual(
-                    ran.returncode, 0 if program.parent.name == "cases" else 1
+                    ran.returncode, conformance.EXIT_CODES[program.parent.name]
                 )
 
     def test_it_splits_every_kosika_file_into_the_reference_tokens(self) -> None:

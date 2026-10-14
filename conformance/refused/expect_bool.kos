@@ -1,0 +1,6 @@
+// Refused: what a test expects must be true or false.
+
+test "an expectation that is not a question" {
+  total = 2 + 2
+  expect total
+}

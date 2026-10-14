@@ -1,0 +1,7 @@
+// Refused: a field a record does not have, with the near spelling offered.
+
+record Point { x: Number y: Number }
+
+fn far(p: Point) -> Bool {
+  return p.xx > 10
+}

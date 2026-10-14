@@ -1,0 +1,7 @@
+// Refused: a function gives a type other than the one it states.
+
+fn half(n: Number) -> Text {
+  return n / 2
+}
+
+test "never runs" { expect half(4) == "2" }

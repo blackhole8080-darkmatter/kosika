@@ -15,7 +15,10 @@ from .modules import load_program
 from .testing import run_tests, to_text
 
 ROOT = Path(__file__).resolve().parents[1] / "conformance"
-FOLDERS = ("cases", "failing")
+FOLDERS = ("cases", "failing", "refused")
+#: The exit code an engine must end with, by folder: every test passed, one
+#: failed, or the program was refused before it ran.
+EXIT_CODES = {"cases": 0, "failing": 1, "refused": 2}
 
 
 def programs(root: Path = ROOT) -> list[Path]:

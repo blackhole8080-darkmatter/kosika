@@ -3491,6 +3491,44 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   programs with workflows, agents and tools; the guide does not teach
   those yet.
 
+### The native engine checks a program before it runs it
+
+- The native engine had no checker, and ran programs the reference rightly
+  refused. Now it has one, in `native/check.go` and `native/types.go`, some
+  1,800 lines of Go. It is a port of `kosika/checker.py` and the test
+  checker in `kosika/testing.py`, rule for rule and message for message:
+  types, optionals and what a test proves about them, matches, loops, try,
+  records and their methods, maps, the built-in methods and their
+  `field:` arguments, recursion and depth, and the "did you mean" hint,
+  which is difflib's own measure written again.
+- The reference checks nested functions after lowering them; the native
+  engine checks them where they stand and names them as the reference does
+  (`outer/inner`). Two of the reference's quirks are kept because the suite
+  must agree with it: a nested function that captures anything must have
+  its arguments named, and one inside a function with an unannotated `let`
+  is refused as the file is read (the capture's type is `Any`).
+- A name used but never declared is refused as the file is read, with the
+  file's path, as the reference does. A program the checker refuses prints
+  `Check failed: ` and the reason, and ends with exit code 2.
+- `conformance/refused/`: 18 programs that must be refused, one fault each,
+  with the line each engine must print. Both engines pass all 24 programs.
+- Measured: a scratch harness mutated the suite's programs, the benchmark
+  solutions and a program written to touch every rule above (a type
+  swapped, a name misspelt, a literal changed, and so on) and ran each
+  mutant through both engines. Of 3,623 that both could read, at least
+  1,777 were refused by the checker; every one gave the same message from
+  both engines, word for word, and every program both ran gave the same
+  report. (Two differences were found and closed on the way: nested calls
+  with unnamed arguments, and "No tests found".)
+- Not claimed. The harness reaches only what its mutations reach; a rule no
+  mutant touched is held only by reading. Workflows, agents, tools and
+  models are still refused by name. One difference at run time was seen
+  and not closed: the reference cannot work out a function written as a
+  value inside a test (`Workflow contains an unsupported expression`); the
+  native engine can. The checker's message for a function call's
+  arguments says "tool arguments", as the reference's does.
+- Next: workflows and tools in the native engine; then models.
+
 ### Kosika runs without Python: a native engine and a conformance suite
 
 - The owner asked for Kosika to be "a strong and independent programming

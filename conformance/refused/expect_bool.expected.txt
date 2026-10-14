@@ -1,0 +1,1 @@
+Check failed: Test 'an expectation that is not a question' line 5: expect needs a Bool, got 'Number': total

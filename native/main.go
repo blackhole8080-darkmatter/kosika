@@ -59,6 +59,15 @@ func main() {
 		if err != nil {
 			fail("Check failed: %s: %v", args[1], err)
 		}
+		if problem := ModuleProblem(program, args[1]); problem != "" {
+			fail("Check failed: %s", problem)
+		}
+		// A program the checker refuses is not run, and says why as the
+		// reference does: on the output, with exit code 2.
+		if refused := Check(program); refused != nil {
+			fmt.Printf("Check failed: %s\n", refused)
+			os.Exit(2)
+		}
 		results := RunTests(program)
 		failed := 0
 		for _, result := range results {

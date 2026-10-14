@@ -1,0 +1,1 @@
+Check failed: Step 'function shout' unknown method: 'Text' has no method 'uppercase'; available: chars, contains, drop, ends_with, index_of, is_empty, length, lines, lower, pad_left, pad_right, replace, slice, split, starts_with, take, to_number, trim, trim_marks, upper, words. Did you mean 'upper'?
