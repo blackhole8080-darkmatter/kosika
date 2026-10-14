@@ -125,11 +125,24 @@ class NativeTests(unittest.TestCase):
         self.assertGreater(compared, 1000)
 
     def test_what_it_cannot_do_yet_it_refuses_by_name(self) -> None:
-        ran = self.run_engine("test", str(ROOT / "examples" / "hello_world.kos"))
+        ran = self.run_engine("test", str(ROOT / "examples" / "mcp" / "librarian.kos"))
         self.assertEqual(ran.returncode, 1)
         said = ran.stderr.decode("utf-8", "replace")
-        self.assertIn("kosika-native cannot read a workflow yet", said)
+        self.assertIn("kosika-native cannot read a model yet", said)
         self.assertEqual(ran.stdout, b"")
+        with tempfile.TemporaryDirectory() as scratch:
+            asking = Path(scratch) / "asking.kos"
+            asking.write_text(
+                "record A { text: Text }\n"
+                "workflow main(a: A) -> A {\n  b = ask helper(a.text)\n}\n",
+                encoding="utf-8",
+            )
+            ran = self.run_engine("test", str(asking))
+        self.assertEqual(ran.returncode, 1)
+        self.assertIn(
+            "kosika-native cannot run a step that asks an agent yet",
+            ran.stderr.decode("utf-8", "replace"),
+        )
 
     def test_a_text_that_is_not_kosika_is_refused_with_its_place(self) -> None:
         with tempfile.TemporaryDirectory() as scratch:

@@ -6,7 +6,6 @@ package main
 // models, memories, imports) is refused by name, never guessed at.
 
 import (
-	"encoding/json"
 	"fmt"
 	"math/big"
 	"strconv"
@@ -827,8 +826,7 @@ func (p *Parser) written(start, end int) string {
 	for i, token := range p.tokens[start:end] {
 		raw := token.Value
 		if token.Kind == "STRING" {
-			encoded, _ := json.Marshal(token.Value)
-			raw = string(encoded)
+			raw = pyJSONString(token.Value)
 		}
 		if i > 0 && (token.Line != line || token.Column > column) {
 			out.WriteString(" ")
@@ -854,8 +852,10 @@ func (p *Parser) parseTest() *TestDecl {
 			p.expect("=")
 			step.Value = p.expression()
 			test.Steps = append(test.Steps, step)
-		} else if p.check("answers") {
-			parseFail("kosika-native cannot run a test that scripts a model yet (answers at %d:%d)", token.Line, token.Column)
+		} else if p.accept("answers") {
+			name := p.identifier()
+			p.expect(":")
+			test.Answers = append(test.Answers, Answer{name, p.expression()})
 		} else {
 			p.expect("expect")
 			start := p.index
@@ -866,10 +866,10 @@ func (p *Parser) parseTest() *TestDecl {
 	return test
 }
 
-// notYet are the declarations the core does not have.
+// notYet are the declarations this engine does not read yet.
 var notYet = map[string]bool{
-	"import": true, "export": true, "tool": true, "agent": true, "swarm": true,
-	"workflow": true, "model": true, "default": true, "board": true, "memory": true,
+	"import": true, "export": true, "swarm": true, "model": true, "default": true,
+	"board": true, "memory": true,
 }
 
 func (p *Parser) parseProgram() *Program {
@@ -885,10 +885,16 @@ func (p *Parser) parseProgram() *Program {
 			program.Records = append(program.Records, p.parseRecord())
 		case keyword == "fn":
 			program.Functions = append(program.Functions, p.parseFunction(0, ""))
+		case keyword == "tool":
+			program.Tools = append(program.Tools, p.parseTool())
+		case keyword == "agent":
+			program.Agents = append(program.Agents, p.parseAgent())
+		case keyword == "workflow":
+			program.Workflows = append(program.Workflows, p.parseWorkflow())
 		case (keyword == "test" || keyword == "eval") && p.peek().Kind == "STRING":
 			program.Tests = append(program.Tests, p.parseTest())
 		case notYet[keyword]:
-			parseFail("kosika-native cannot read a %s yet (at %d:%d); it has records, functions and tests", keyword, token.Line, token.Column)
+			parseFail("kosika-native cannot read a %s yet (at %d:%d); it has records, functions, tools, agents, workflows and tests", keyword, token.Line, token.Column)
 		default:
 			parseFail("Unexpected declaration %s at %d:%d", quoted(token.Value), token.Line, token.Column)
 		}

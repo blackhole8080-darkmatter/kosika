@@ -1,0 +1,5 @@
+PASS  a workflow runs its steps in order
+PASS  a workflow may be run on its own
+PASS  each scripted answer is used once, in order
+PASS  functions and workflows are tested side by side
+4 passed, 0 failed

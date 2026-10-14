@@ -1,0 +1,7 @@
+// Refused: a step is a call; a bare value may stand only beside one.
+
+record Said { text: Text }
+
+workflow main() -> Said {
+  said = {text: "hi"}
+}

@@ -85,6 +85,9 @@ type checker struct {
 	order     []string
 	locals    map[*FuncDecl]map[string]string
 	captures  map[*FuncDecl][]capture
+	tools     map[string]*ToolDecl
+	agents    map[string]*AgentDecl
+	workflows map[string]*WorkflowDecl
 }
 
 // A capture is a name a nested function sees from the functions around it.
@@ -1057,7 +1060,67 @@ func ModuleProblem(program *Program, path string) string {
 	for name := range c.functions {
 		local[name] = true
 	}
+	for _, tool := range program.Tools {
+		local[tool.Name] = true
+	}
+	for _, agent := range program.Agents {
+		local[agent.Name] = true
+	}
+	for _, workflow := range program.Workflows {
+		local[workflow.Name] = true
+	}
 	used := map[string]bool{}
+	for _, tool := range program.Tools {
+		used[tool.Output] = true
+		if tool.Input != "" {
+			used[tool.Input] = true
+		}
+	}
+	for _, agent := range program.Agents {
+		for _, tool := range agent.Can {
+			used[tool] = true
+		}
+		if agent.Model != "" {
+			used[agent.Model] = true
+		}
+	}
+	for _, workflow := range program.Workflows {
+		used[workflow.Out] = true
+		bound := map[string]bool{}
+		for _, param := range workflow.Params {
+			used[param.Type] = true
+			bound[param.Name] = true
+		}
+		for _, step := range workflow.Steps {
+			if step.BindingType != "" {
+				referencedTypes(step.BindingType, used)
+			}
+			for _, arg := range step.Call.Args {
+				walkCalls(arg.Value, func(call Expr) {
+					switch e := call.(type) {
+					case *FuncRefExpr:
+						used[e.Name] = true
+					case *CallExpr:
+						if !bound[e.Name] {
+							used[e.Name] = true
+						}
+					}
+				})
+			}
+			switch step.Call.Kind {
+			case "workflow":
+				used[step.Call.Name] = true
+			case "function":
+				if !bound[step.Call.Name] && step.Call.Name != valueCall {
+					used[step.Call.Name] = true
+				}
+			case "tool":
+				used[step.Call.Agent] = true
+				used[step.Call.Name] = true
+			}
+			bound[step.Binding] = true
+		}
+	}
 	for _, record := range program.Records {
 		for _, field := range record.Fields {
 			used[baseType(field.Type)] = true
@@ -1114,6 +1177,22 @@ func newChecker(program *Program) *checker {
 			c.records[record.Name] = record
 		}
 	}
+	c.tools, c.agents, c.workflows = map[string]*ToolDecl{}, map[string]*AgentDecl{}, map[string]*WorkflowDecl{}
+	for _, tool := range program.Tools {
+		if c.tools[tool.Name] == nil {
+			c.tools[tool.Name] = tool
+		}
+	}
+	for _, agent := range program.Agents {
+		if c.agents[agent.Name] == nil {
+			c.agents[agent.Name] = agent
+		}
+	}
+	for _, workflow := range program.Workflows {
+		if c.workflows[workflow.Name] == nil {
+			c.workflows[workflow.Name] = workflow
+		}
+	}
 	c.gather()
 	return c
 }
@@ -1137,12 +1216,25 @@ func Check(program *Program) (err error) {
 }
 
 func (c *checker) checkDeclarations() {
+	c.checkValueSteps()
+	c.checkRecordMethods()
+	c.checkBudgets()
 	if len(c.records) != len(c.program.Records) {
 		checkFail("Duplicate record declaration")
+	}
+	if len(c.tools) != len(c.program.Tools) {
+		checkFail("Duplicate tool declaration")
+	}
+	if len(c.agents) != len(c.program.Agents) {
+		checkFail("Duplicate agent declaration")
+	}
+	if len(c.workflows) != len(c.program.Workflows) {
+		checkFail("Duplicate workflow declaration")
 	}
 	if len(c.functions) != len(c.order) {
 		checkFail("Duplicate function declaration")
 	}
+	c.checkWorkflowCalls()
 	for _, record := range c.program.Records {
 		if len(uniqueNames(fieldNames(record.Fields))) != len(record.Fields) {
 			checkFail("Record %s has duplicate fields", pyRepr(record.Name))
@@ -1221,7 +1313,9 @@ func (c *checker) checkDeclarations() {
 	for _, name := range c.order {
 		c.checkFunction(name, c.functions[name])
 	}
-	c.checkRecordMethods()
+	c.checkTools()
+	c.checkAgents()
+	c.checkWorkflows()
 }
 
 func (c *checker) checkFunction(name string, decl *FuncDecl) {
@@ -1326,6 +1420,9 @@ func (c *checker) checkTests() {
 
 func (c *checker) checkTest(test *TestDecl) (line int, problem string) {
 	where := "test " + test.Name
+	if problem := c.checkAnswers(test); problem != "" {
+		return test.Line, problem
+	}
 	env := newEnv()
 	for _, step := range test.Steps {
 		line = step.Line
@@ -1348,6 +1445,20 @@ func (c *checker) checkTest(test *TestDecl) (line int, problem string) {
 			}
 			if _, taken := env.types[step.Target]; taken {
 				return pyRepr(step.Target) + " is already bound"
+			}
+			if workflow, args := c.workflowRun(step); workflow != nil {
+				if problem := workflowArguments(workflow, args); problem != "" {
+					return problem
+				}
+				for _, arg := range args {
+					wanted, _ := fieldType(workflow.Params, arg.Name)
+					given := c.typeOf(arg.Value, env, where, wanted)
+					if !assignable(given, wanted) {
+						return fmt.Sprintf("workflow %s argument %s expects %s, got %s", pyRepr(workflow.Name), pyRepr(arg.Name), pyRepr(wanted), pyRepr(given))
+					}
+				}
+				env.types[step.Target] = workflow.Out
+				return ""
 			}
 			found := c.typeOf(step.Value, env, where, step.Type)
 			if step.Type != "" && !assignable(found, step.Type) {

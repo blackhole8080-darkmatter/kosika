@@ -1,0 +1,1 @@
+Check failed: Test 'never runs' line 23: answers cannot script tool 'set_stock': it changes the world, and running it needs a recorded approval

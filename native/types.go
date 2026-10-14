@@ -475,3 +475,37 @@ func concrete(typeName, receiverType string) string {
 	}
 	return filled
 }
+
+// pyJSONString is Python's json.dumps of a text: every character outside
+// ASCII written as \uXXXX, as the reference writes a failed expectation.
+func pyJSONString(text string) string {
+	var out strings.Builder
+	out.WriteByte('"')
+	for _, r := range text {
+		switch {
+		case r == '"':
+			out.WriteString(`\"`)
+		case r == '\\':
+			out.WriteString(`\\`)
+		case r == '\n':
+			out.WriteString(`\n`)
+		case r == '\r':
+			out.WriteString(`\r`)
+		case r == '\t':
+			out.WriteString(`\t`)
+		case r == '\b':
+			out.WriteString(`\b`)
+		case r == '\f':
+			out.WriteString(`\f`)
+		case r < 0x20 || (r > 0x7e && r <= 0xffff):
+			fmt.Fprintf(&out, `\u%04x`, r)
+		case r > 0xffff:
+			r -= 0x10000
+			fmt.Fprintf(&out, `\u%04x\u%04x`, 0xd800+(r>>10), 0xdc00+(r&0x3ff))
+		default:
+			out.WriteRune(r)
+		}
+	}
+	out.WriteByte('"')
+	return out.String()
+}

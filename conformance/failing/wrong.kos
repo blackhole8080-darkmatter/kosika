@@ -53,3 +53,7 @@ test "reaching past the end of a list fails the test" {
 test "this one passes" {
   expect half(4) == 2
 }
+
+test "text outside ASCII is written escaped in what was expected" {
+  expect "café".upper() == "cafe"
+}

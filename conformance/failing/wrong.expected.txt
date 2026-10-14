@@ -15,4 +15,6 @@ FAIL  too deep a recursion fails the test
 FAIL  reaching past the end of a list fails the test
       line 50: Array index 5 is out of range
 PASS  this one passes
-1 passed, 8 failed
+FAIL  text outside ASCII is written escaped in what was expected
+      line 58: expected "caf\u00e9".upper() == "cafe" (left is "CAFÉ", right is "cafe")
+1 passed, 9 failed

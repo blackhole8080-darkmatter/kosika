@@ -1,9 +1,8 @@
 package main
 
-// What a program is once it has been read: its records, its functions and
-// its tests, each a tree of expressions. This is the core of Kosika: what
-// can be worked out with no model and no tool. Workflows, agents, tools and
-// models are not read yet, and a file that has them is refused by name.
+// What a program is once it has been read: its records, functions, tools,
+// agents, workflows and tests. Models, swarms, memories, boards and imports
+// are not read yet, and a file that has one is refused by name.
 
 type Expr interface{}
 
@@ -129,15 +128,79 @@ type TestStep struct {
 	Text   string
 }
 
-type TestDecl struct {
+// An Answer is a test's `answers TOOL: [...]`: what a tool says, in order.
+type Answer struct {
 	Name  string
-	Steps []TestStep
+	Value Expr
+}
+
+type TestDecl struct {
+	Name    string
+	Answers []Answer
+	Steps   []TestStep
+	Line    int
+	Live    bool
+}
+
+// A ToolDecl's Source is the MCP server's name, or "system:KIND".
+type ToolDecl struct {
+	Name, Source, Operation, Access, Output, Input string // Input "" when none
+}
+
+type AgentDecl struct {
+	Name          string
+	Can, Cannot   []string
+	Model         string // "" when none
+	MaxSteps      int
+	MaxToolCalls  int
+	MaxModelCalls int
+	Instructions  *string
+	Deadline      *float64
+	Plan, Check   string
+}
+
+// valueCall is the name a value written where a call belongs is given, as
+// the reference names it.
+const valueCall = "$value"
+
+// A StepCall is what a step does: call a function (Kind "function"), run
+// a workflow ("workflow") or use a tool through an agent ("tool").
+type StepCall struct {
+	Kind  string
+	Name  string // the function, workflow or tool
+	Agent string
+	Args  []Arg
 	Line  int
-	Live  bool
+}
+
+type Step struct {
+	Name        string
+	Call        *StepCall
+	Binding     string
+	BindingType string
+	Return      string
+}
+
+// A Budget is one ceiling a workflow puts on its own run.
+type Budget struct {
+	Kind   string // model_calls, tool_calls or seconds
+	Amount Value  // a whole number or a decimal
+}
+
+type WorkflowDecl struct {
+	Name     string
+	Params   []Param
+	Out      string
+	Steps    []*Step
+	Approval bool
+	Budget   []Budget
 }
 
 type Program struct {
 	Records   []*RecordDecl
+	Tools     []*ToolDecl
+	Agents    []*AgentDecl
+	Workflows []*WorkflowDecl
 	Functions []*FuncDecl
 	Tests     []*TestDecl
 }

@@ -3491,6 +3491,43 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   programs with workflows, agents and tools; the guide does not teach
   those yet.
 
+### The native engine runs workflows, and the tools a test scripts
+
+- Asked to go on, the owner agreed to workflows next. The native engine now
+  reads tools, agents and workflows; checks them with the reference's
+  rules and messages; and runs a workflow from a test: steps in order,
+  each calling a function, running another workflow, or using a tool
+  through an agent, with the last step's result checked against the
+  record the workflow gives. A test may script what a tool answers
+  (`answers TOOL: [...]`), and the answers are held to the tool's record
+  as the reference holds them, message for message.
+- A tool is reached only through scripted answers. One no test answers
+  fails as the reference fails it ("Mock MCP operation is not
+  allowlisted"), and one that changes the world fails for want of a
+  recorded approval, before any step runs. Models, asking an agent,
+  thinking steps, `otherwise`, `verify`, `vote`, `retry`, `escalate`,
+  `match` steps, `parallel`, `system` tools, memories, boards, swarms and
+  imports are refused by name.
+- Fixed on the way: the checker now looks at record methods first, where
+  the reference does; and a failed expectation now writes text outside
+  ASCII as `é`, as the reference's JSON does (a new failing case
+  holds that).
+- The suite: `cases/workflows.kos` (four tests), `failing/workflows.kos`
+  (nine ways a workflow test fails), and ten more refusals, among them a
+  capability violation, an execute tool without approval, a workflow
+  whose last step gives the wrong record, and scripting a tool that
+  changes the world. Both engines pass all 36 programs.
+- Measured as before, by mutation: 1,300 mutants of the workflow programs
+  (the suite's two and a wider one written for it), and 1,300 more of the
+  earlier programs to see nothing went back. All gave the same output
+  from both engines except two, where the reference itself crashes: a
+  test's scripted answers are never type-checked, and an answer such as
+  `-[1]` stops the reference with a Python error. The native engine
+  reports the test as failed instead. Not closed; it is the reference's
+  fault to fix, not the native engine's to copy.
+- Next: `otherwise` and `match` steps; then models, with tests that
+  script their answers.
+
 ### The native engine checks a program before it runs it
 
 - The native engine had no checker, and ran programs the reference rightly

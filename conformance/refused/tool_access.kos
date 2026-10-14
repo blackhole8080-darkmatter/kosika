@@ -1,0 +1,12 @@
+// Refused: a tool's access is observe, analyze, prepare or execute.
+
+record Ask { id: Text }
+record Stock { id: Text left: Number }
+
+tool stock_of {
+  source mcp "shop"
+  operation: "stock_of"
+  access: look
+  input: Ask
+  output: Stock
+}

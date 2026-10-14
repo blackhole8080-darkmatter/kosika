@@ -1,0 +1,20 @@
+// Refused: a workflow that can change the world must say it needs approval.
+
+record Change { id: Text left: Number }
+record Stock { id: Text left: Number }
+
+tool set_stock {
+  source mcp "shop"
+  operation: "set_stock"
+  access: execute
+  input: Change
+  output: Stock
+}
+
+agent clerk {
+  can: [set_stock]
+}
+
+workflow main(change: Change) -> Stock {
+  stock = execute clerk.set_stock(id: change.id, left: change.left)
+}

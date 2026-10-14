@@ -15,6 +15,13 @@ depth), `if`, `match`, `for`, `while`, `repeat`, `try`, `fail`, text with
 values written in (`f"..."`), and the built-in methods on text, numbers,
 lists, maps and optional values. Whole numbers are exact at any size.
 
+Workflows, whose steps call a function, run another workflow, or use a
+tool through an agent; tools and agents as they are declared; and tests
+that run a workflow and script what its tools answer. A tool is reached
+only through those scripted answers: this engine reaches no real tool yet,
+and one that changes the world is refused, as the reference refuses it in
+a test, for want of a recorded approval.
+
 Before it runs a program it checks it, as the reference does: a program
 whose types do not agree is refused, with the reference's own message, on
 the output and with exit code 2. A name the file uses but never declares is
@@ -26,9 +33,13 @@ print what the reference engine prints, word for word. See
 
 ## What it does not have yet
 
-- Workflows, agents, tools, models, memories, boards, swarms and imports.
-  A file that has one is refused, and the refusal names it.
-- Tests that script a model's answers.
+- Models, and so asking an agent or a model, and thinking steps.
+- Steps with `otherwise`, `verify`, `vote`, `retry` or `escalate`, steps
+  that `match`, and `parallel` blocks.
+- Reaching a real tool: MCP servers, `system` tools, files, pages, the
+  clock and chance. Approvals.
+- Memories, boards, swarms and imports.
+- A file that has any of these is refused, and the refusal names it.
 - Vectors and matrices.
 - Traces and replay.
 
@@ -37,7 +48,10 @@ print what the reference engine prints, word for word. See
     lexer.go     text to tokens
     parser.go    tokens to a program (ast.go says what a program is)
     values.go    what a value is, and how numbers behave
+    parse_workflows.go   reading tools, agents and workflows
     check.go     the checker: refusing a program before it runs
+    check_workflows.go   the checker's rules for tools, agents, workflows
+    workflows.go running a workflow, and the tools a test scripts
     types.go     what the checker knows about types and methods
     eval.go      working expressions out, calling functions
     methods.go   the built-in methods

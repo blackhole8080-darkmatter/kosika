@@ -1,0 +1,291 @@
+package main
+
+// Running a workflow: its steps in order, each binding what it gives, the
+// last one's result being the workflow's. It follows _run_workflow in
+// kosika/runtime.py. A tool is reached only through a test's scripted
+// answers; this engine reaches no real tool yet.
+
+import (
+	"fmt"
+	"math"
+	"math/big"
+	"sort"
+	"strings"
+)
+
+// A scriptedTool gives a test's answers for a tool, in order.
+type scriptedTool struct {
+	name    string
+	answers []Value
+	asked   int
+}
+
+// A run is one workflow run from a test, with the workflows it calls.
+type run struct {
+	machine   *Machine
+	checker   *checker
+	tools     map[string]*scriptedTool
+	toolCalls int
+	maxTools  int
+}
+
+func newRun(program *Program, tools map[string]*scriptedTool, workflow *WorkflowDecl) *run {
+	limit := 256
+	// A workflow's budget only ever tightens the limit of whoever runs it.
+	for _, item := range workflow.Budget {
+		if whole, ok := item.Amount.(*big.Int); ok && item.Kind == "tool_calls" && whole.IsInt64() && int(whole.Int64()) < limit {
+			limit = int(whole.Int64())
+		}
+	}
+	return &run{machine: newMachine(program), checker: newChecker(program), tools: tools, maxTools: limit}
+}
+
+// preflight refuses, before any step runs, a workflow that would use a
+// tool that changes the world: a test has no recorded approval.
+func (r *run) preflight(workflow *WorkflowDecl) {
+	pending := append([]*Step{}, workflow.Steps...)
+	visited := map[string]bool{workflow.Name: true}
+	for len(pending) > 0 {
+		step := pending[0]
+		pending = pending[1:]
+		switch step.Call.Kind {
+		case "workflow":
+			if !visited[step.Call.Name] {
+				visited[step.Call.Name] = true
+				pending = append(pending, r.checker.workflows[step.Call.Name].Steps...)
+			}
+		case "tool":
+			if tool := r.checker.tools[step.Call.Name]; tool.Access == "execute" {
+				runFail(fmt.Sprintf("Workflow tool %s requires a verified approval record", pyRepr(tool.Name)))
+			}
+		}
+	}
+}
+
+func (r *run) workflow(workflow *WorkflowDecl, inputs map[string]Value, depth int) Value {
+	if depth > 64 {
+		runFail("Workflow call depth exceeds 32")
+	}
+	wanted := fieldNames(workflow.Params)
+	var given []string
+	for name := range inputs {
+		given = append(given, name)
+	}
+	if !sameNames(given, wanted) {
+		sort.Strings(wanted)
+		runFail(fmt.Sprintf("Workflow requires input parameters %s", pyList(wanted)))
+	}
+	for _, param := range workflow.Params {
+		r.validate(inputs[param.Name], param.Type, "$")
+	}
+	if depth == 0 {
+		r.preflight(workflow)
+	}
+	environment := newScope(nil)
+	for name, value := range inputs {
+		environment.vars[name] = value
+	}
+	at := frame{environment, nil, 0}
+	var result Value = newRecord()
+	for _, step := range workflow.Steps {
+		call := step.Call
+		args := resolveUnnamed(call.Args, r.checker.stepParams(call))
+		arguments := map[string]Value{}
+		for _, arg := range args {
+			arguments[arg.Name] = r.machine.eval(arg.Value, at)
+		}
+		switch call.Kind {
+		case "function":
+			if value, bound := environment.lookup(call.Name); bound {
+				closure, ok := value.(*Closure)
+				if !ok {
+					runFail("Invalid function value")
+				}
+				result = r.machine.invoke(closure.Decl, arguments, closure.Captured, closure.Funcs, 0)
+			} else {
+				result = r.machine.invoke(r.machine.functions[call.Name], arguments, nil, nil, 0)
+			}
+		case "workflow":
+			result = r.workflow(r.checker.workflows[call.Name], arguments, depth+1)
+		case "tool":
+			result = r.tool(r.checker.tools[call.Name], arguments)
+		}
+		environment.vars[step.Binding] = result
+	}
+	r.validate(result, workflow.Out, "$")
+	return result
+}
+
+func (r *run) tool(tool *ToolDecl, arguments map[string]Value) Value {
+	if r.toolCalls >= r.maxTools {
+		panic(&budgetError{fmt.Sprintf("tool calls budget exceeds %d", r.maxTools)})
+	}
+	r.toolCalls++
+	if tool.Access == "execute" {
+		runFail(fmt.Sprintf("Workflow tool %s requires a verified approval record", pyRepr(tool.Name)))
+	}
+	input := newRecord()
+	for name, value := range arguments {
+		input.set(name, value)
+	}
+	if tool.Input == "" {
+		if len(input.Keys) > 0 {
+			keys := append([]string{}, input.Keys...)
+			sort.Strings(keys)
+			runFail(fmt.Sprintf("$: unknown properties %s", pyList(keys)))
+		}
+	} else {
+		r.validate(input, tool.Input, "$")
+	}
+	var outcome Value
+	if scripted := r.tools[tool.Name]; scripted != nil {
+		if scripted.asked >= len(scripted.answers) {
+			runFail(fmt.Sprintf("Scripted tool %s has no answer left", pyRepr(scripted.name)))
+		}
+		scripted.asked++
+		outcome = scripted.answers[scripted.asked-1]
+	} else {
+		outcome = mockTool(tool)
+	}
+	r.validate(outcome, tool.Output, "$")
+	return outcome
+}
+
+// mockTool is the reference's fallback for a tool no one answers: two
+// operations of its first example, and a refusal for anything else.
+func mockTool(tool *ToolDecl) Value {
+	if tool.Source == "local_mock" && tool.Operation == "get_disk_info" {
+		disk := newRecord()
+		disk.set("mount", "/")
+		disk.set("used_percent", 42.0)
+		return disk
+	}
+	if tool.Source == "local_mock" && tool.Operation == "get_structured_info" {
+		metadata := newRecord()
+		metadata.set("name", "root-disk")
+		info := newRecord()
+		info.set("mount", "/")
+		info.set("tags", []Value{"disk", "local"})
+		info.set("metadata", metadata)
+		return info
+	}
+	runFail(fmt.Sprintf("Mock MCP operation is not allowlisted: %s/%s", tool.Source, tool.Operation))
+	return nil
+}
+
+// pyTypeName is what Python calls a value's type, for a validation message.
+func pyTypeName(v Value) string {
+	switch v.(type) {
+	case nil:
+		return "NoneType"
+	case bool:
+		return "bool"
+	case string:
+		return "str"
+	case *big.Int:
+		return "int"
+	case float64:
+		return "float"
+	case []Value:
+		return "list"
+	}
+	return "dict"
+}
+
+// validate holds a value to the schema the reference makes from a type,
+// with its messages: kosika/schema.py.
+func (r *run) validate(value Value, typeName, path string) {
+	if problem := r.problem(value, typeName, path); problem != "" {
+		runFail(problem)
+	}
+}
+
+func (r *run) problem(value Value, typeName, path string) string {
+	if isFunctionType(typeName) {
+		if _, ok := value.(*Closure); ok {
+			return ""
+		}
+		return fmt.Sprintf("%s: expected object, got %s", path, pyTypeName(value))
+	}
+	expected := map[string]string{"Text": "string", "Number": "number", "Bool": "boolean", "Null": "null"}
+	if kind, primitive := expected[typeName]; primitive {
+		matches := false
+		switch x := value.(type) {
+		case string:
+			matches = kind == "string"
+		case bool:
+			matches = kind == "boolean"
+		case nil:
+			matches = kind == "null"
+		case *big.Int:
+			matches = kind == "number"
+		case float64:
+			matches = kind == "number" && !math.IsInf(x, 0) && !math.IsNaN(x)
+		}
+		if !matches {
+			return fmt.Sprintf("%s: expected %s, got %s", path, kind, pyTypeName(value))
+		}
+		return ""
+	}
+	if strings.HasSuffix(typeName, "?") {
+		first := r.problem(value, typeName[:len(typeName)-1], path)
+		if first == "" {
+			return ""
+		}
+		second := r.problem(value, "Null", path)
+		if second == "" {
+			return ""
+		}
+		return fmt.Sprintf("%s: matches no allowed form (%s; %s)", path, first, second)
+	}
+	if strings.HasSuffix(typeName, "{}") {
+		record, ok := value.(*Record)
+		if !ok {
+			return fmt.Sprintf("%s: expected object, got %s", path, pyTypeName(value))
+		}
+		for _, key := range record.Keys {
+			if problem := r.problem(record.Fields[key], typeName[:len(typeName)-2], path+"."+key); problem != "" {
+				return problem
+			}
+		}
+		return ""
+	}
+	if strings.HasSuffix(typeName, "[]") {
+		items, ok := value.([]Value)
+		if !ok {
+			return fmt.Sprintf("%s: expected array, got %s", path, pyTypeName(value))
+		}
+		for i, item := range items {
+			if problem := r.problem(item, typeName[:len(typeName)-2], fmt.Sprintf("%s[%d]", path, i)); problem != "" {
+				return problem
+			}
+		}
+		return ""
+	}
+	declared := r.checker.records[typeName]
+	record, ok := value.(*Record)
+	if !ok {
+		return fmt.Sprintf("%s: expected object, got %s", path, pyTypeName(value))
+	}
+	for _, field := range declared.Fields {
+		if _, has := record.Fields[field.Name]; !has {
+			return fmt.Sprintf("%s: missing required property %s", path, pyRepr(field.Name))
+		}
+	}
+	for _, field := range declared.Fields {
+		if problem := r.problem(record.Fields[field.Name], field.Type, path+"."+field.Name); problem != "" {
+			return problem
+		}
+	}
+	var unknown []string
+	for _, key := range record.Keys {
+		if _, known := fieldType(declared.Fields, key); !known {
+			unknown = append(unknown, key)
+		}
+	}
+	if len(unknown) > 0 {
+		sort.Strings(unknown)
+		return fmt.Sprintf("%s: unknown properties %s", path, pyList(unknown))
+	}
+	return ""
+}

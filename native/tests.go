@@ -79,7 +79,7 @@ func writeJSON(out *bytes.Buffer, v Value) {
 var comparisons = map[string]bool{"==": true, "!=": true, "<": true, "<=": true, ">": true, ">=": true}
 
 // runStep works one step of a test out, and gives what went wrong, if anything.
-func runStep(machine *Machine, step TestStep, at frame) (problem string) {
+func runStep(machine *Machine, step TestStep, at frame, tools map[string]*scriptedTool) (problem string) {
 	defer func() {
 		if caught := recover(); caught != nil {
 			switch failure := caught.(type) {
@@ -95,6 +95,15 @@ func runStep(machine *Machine, step TestStep, at frame) (problem string) {
 		}
 	}()
 	if !step.Expect {
+		checker := newChecker(machine.program)
+		if workflow, args := checker.workflowRun(step); workflow != nil {
+			inputs := map[string]Value{}
+			for _, arg := range args {
+				inputs[arg.Name] = machine.eval(arg.Value, at)
+			}
+			at.scope.vars[step.Target] = newRun(machine.program, tools, workflow).workflow(workflow, inputs, 0)
+			return ""
+		}
 		at.scope.vars[step.Target] = machine.eval(step.Value, at)
 		return ""
 	}
@@ -115,18 +124,46 @@ func RunTests(program *Program) []TestResult {
 		if test.Live {
 			continue
 		}
-		machine := newMachine(program)
-		at := frame{newScope(nil), nil, 0}
-		result := TestResult{Name: test.Name, Passed: true, Line: test.Line}
-		for _, step := range test.Steps {
-			if problem := runStep(machine, step, at); problem != "" {
-				result = TestResult{test.Name, false, problem, step.Line}
-				break
-			}
-		}
-		results = append(results, result)
+		results = append(results, runTest(program, test))
 	}
 	return results
+}
+
+func runTest(program *Program, test *TestDecl) TestResult {
+	machine := newMachine(program)
+	at := frame{newScope(nil), nil, 0}
+	failed := func(message string, line int) TestResult {
+		return TestResult{test.Name, false, message, line}
+	}
+	// The answers a test scripts are worked out first, each on its own.
+	tools := map[string]*scriptedTool{}
+	for _, answer := range test.Answers {
+		scope := newScope(nil)
+		if problem := runStep(machine, TestStep{Target: "answers", Value: answer.Value}, frame{scope, nil, 0}, nil); problem != "" {
+			return failed(problem, test.Line)
+		}
+		list, allRecords := scope.vars["answers"].([]Value)
+		for _, item := range list {
+			if _, ok := item.(*Record); !ok {
+				allRecords = false
+			}
+		}
+		if !allRecords {
+			return failed(fmt.Sprintf("answers for %s must be a list of records", pyRepr(answer.Name)), test.Line)
+		}
+		tools[answer.Name] = &scriptedTool{name: answer.Name, answers: list}
+	}
+	for _, step := range test.Steps {
+		if problem := runStep(machine, step, at, tools); problem != "" {
+			return failed(problem, step.Line)
+		}
+	}
+	for _, answer := range test.Answers {
+		if left := len(tools[answer.Name].answers) - tools[answer.Name].asked; left > 0 {
+			return failed(fmt.Sprintf("%d answer(s) for %s were never asked for", left, pyRepr(answer.Name)), test.Line)
+		}
+	}
+	return TestResult{Name: test.Name, Passed: true, Line: test.Line}
 }
 
 // TestsText is the report `kosika test` prints.
