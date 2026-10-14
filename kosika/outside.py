@@ -437,6 +437,62 @@ def propose(
     )
 
 
+#: Said before a question that is only to be answered.
+ANSWER_RULES = (
+    "Answer the question at the end in plain sentences, as if speaking "
+    "aloud to one person: no lists, no headings, no code, no symbols, and "
+    "at most six sentences. Give real substance: name the things and say "
+    "why. Do not create, change or read any file, and do not run anything. "
+    "Give only the answer itself.\n\n"
+)
+#: The most of an outside agent's answer that is passed on.
+MAX_ANSWER_CHARS = 1500
+
+
+def answer(
+    agent: str,
+    question: str,
+    *,
+    allowed: Sequence[str],
+    runner: Callable[[list[str], Path], tuple[int, str]] | None = None,
+) -> tuple[str, str]:
+    """Ask an outside agent a question and give back who answered and
+    what it said. It is started in an empty folder made for the purpose,
+    so it is shown no file at all: the question is everything it gets.
+    The question itself still goes to the company that runs the agent,
+    which is why only agents the owner `allowed` are asked.
+    """
+
+    if agent not in COMMANDS:
+        raise OutsideError(
+            f"{agent!r} is not an outside agent Kosika knows how to ask. "
+            f"It knows: {', '.join(COMMANDS)}."
+        )
+    if agent not in allowed:
+        raise OutsideError(f"The outside agent {agent} has not been allowed here.")
+    if runner is None and shutil.which(agent) is None:
+        raise OutsideError(f"{agent} is not installed on this computer.")
+    if not question.strip():
+        raise OutsideError("There was nothing to ask.")
+    with tempfile.TemporaryDirectory(
+        prefix=f"kosika-outside-{agent}-", ignore_cleanup_errors=True
+    ) as scratch:
+        empty = Path(scratch) / "empty"
+        empty.mkdir()
+        code, said = (runner or _run)(
+            COMMANDS[agent](empty, ANSWER_RULES + question.strip()), empty
+        )
+        _stopped(agent, code, said)
+    lines = [
+        line.strip()
+        for line in said.strip().splitlines()
+        if line.strip() and not line.strip().lower().startswith("working")
+    ]
+    if not lines:
+        raise OutsideError(f"{agent} said nothing.")
+    return agent, " ".join(lines)[:MAX_ANSWER_CHARS]
+
+
 def _stopped(agent: str, code: int, said: str) -> None:
     """Refuse an answer from an agent that ended with an error: it has run
     out of its daily allowance, is not signed in, or broke. What it printed

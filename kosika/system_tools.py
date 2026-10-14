@@ -60,6 +60,12 @@ What the outside agent reads is sent to the company that runs it, so the
 host binds this tool only for agents the owner allowed and only when the
 granted folder is inside the one root the owner named; see kosika.outside.
 
+With `operation: "answer"` and the shape `{agent, text}` to `{ok, agent,
+text}`, an outside agent is only asked a question. It is started in an
+empty folder and shown no file, so the host binds it whenever the owner has
+allowed an outside agent, with no folder granted. The words of the question
+still go to the company that runs the agent.
+
 For the other kinds, three independent things must all be true before
 anything happens:
 
@@ -186,6 +192,12 @@ SHAPES: dict[str, tuple[dict[str, str], dict[str, str]]] = {
         {"agent": "Text", "text": "Text"},
         {"ok": "Bool", "agent": "Text", "said": "Text", "files": PLANNED_FILES},
     ),
+    # An outside agent asked a question and shown no file. See
+    # kosika.outside.answer.
+    "answer": (
+        {"agent": "Text", "text": "Text"},
+        {"ok": "Bool", "agent": "Text", "text": "Text"},
+    ),
     "list": ({"path": "Text"}, {"names": "Text[]"}),
     # A Kosika program, given as text, is checked and its own tests are run.
     # `problem` is empty when it checks and every test passes; otherwise it
@@ -273,10 +285,10 @@ def declaration_problem(program: Program, tool: ToolDecl) -> str | None:
         or kind == "agents"
         or kind == "outside"
     )
-    if kind == "outside" and tool.operation not in ("propose", "review"):
+    if kind == "outside" and tool.operation not in ("propose", "review", "answer"):
         return (
             f"Tool {tool.name!r} has unknown outside operation {tool.operation!r}; "
-            "use one of: propose, review"
+            "use one of: propose, review, answer"
         )
     if kind == "agents" and tool.operation != "ask":
         return (

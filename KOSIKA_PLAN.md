@@ -3491,6 +3491,52 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   programs with workflows, agents and tools; the guide does not teach
   those yet.
 
+### Kosi follows the talk, and may put a question to a stronger mind
+
+- The owner said Kosi did not feel smart, and showed three answers: a
+  thin one, then two that spoke of his stretch reminder when he had asked
+  about quantum projects. Reading how each was made showed the fault was
+  mostly Kosi's, not the model's. Every message went to the model alone,
+  with no word of the talk before it; the reminders were in every prompt,
+  so they were all the model could seize on; and answers were held to
+  three sentences and 160 tokens.
+- Now Kosi keeps the last eight lines said, in a memory of its own, and
+  gives them to the model; the model is told what pointing words mean,
+  told not to bring up reminders unasked, and allowed up to six sentences.
+  The same three messages, the same model, a reminder set as his was:
+  each was answered properly. A plain "thanks" is answered by code.
+- He then agreed, asked plainly, that open questions may go to omp. A new
+  outside operation, `answer`, puts a question to an outside agent in an
+  empty folder: no file is shown, so no folder need be granted. Kosi asks
+  omp by name for questions of five words or more, sending the question
+  and the earlier questions and answers only. His name, reminders and
+  remembered facts are kept out of it, and a test holds that. omp is told
+  to say LOCAL when a question turns on something only Kosi knows; then,
+  or when omp cannot be asked, Kosi's own model answers. An answer from
+  omp ends "(answered by omp)".
+- Tried on a scratch copy: three open questions answered by omp in 14 to
+  22 seconds each, against 31 to 41 for the local model, and with plainly
+  more substance. "What is the number of my locker" came back as LOCAL
+  and was answered here, which cost that question two waits, 44 seconds.
+- The first wording of the LOCAL rule was too wide and sent every
+  question back, the quantum one among them; nothing showed it but the
+  missing "(answered by omp)". It was narrowed and tried on four
+  questions.
+- Not claimed: that "five words" is the right line; it is a guess. That
+  the answers are right; nothing checks them. A question the person
+  words with a private fact in it carries that fact to omp, as any
+  question they choose to ask does.
+- A leak found while writing this down, and closed: the talk a later
+  question took along held every earlier answer, among them one Kosi's
+  own model had given from a remembered fact. Now only turns omp itself
+  answered go with a later question.
+- The owner asked whether Kosika can make a model smarter. Said to him:
+  not its numbers, which only training changes; but several models
+  arranged in Kosika can score above the one inside, as the researcher
+  does. Agreed as next: one shared "mind" in Kosika that agents ask as
+  they would a model, measured against the bare model on fixed questions,
+  using the local model only.
+
 ### The coder in JavaScript and TypeScript, and a Skills section in the app
 
 - The owner's order for the coder was Kosika first, then JavaScript and

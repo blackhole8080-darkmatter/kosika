@@ -897,13 +897,25 @@ class App:
         from . import outside as outside_agents
 
         granted, within = self.allow_folder, self.outside_within
+        if not self.outside:
+            return {}
+        # A folder may be shown only when one is granted inside the root the
+        # owner named. A question alone shows no folder and needs neither.
         if (
-            not self.outside
-            or granted is None
+            granted is None
             or within is None
             or not outside_agents.inside(granted, within)
         ):
-            return {}
+            return {
+                name: bound
+                for name, bound in bind_outside_tools(
+                    program, self._outside_answer
+                ).items()
+                if any(
+                    tool.name == name and tool.operation == "answer"
+                    for tool in program.tools
+                )
+            }
         session = self._session_for(program, folder)
         root = session.work if session is not None else granted
         catalog = load_skill_notes(folder / SKILLS_FOLDER)
@@ -946,6 +958,8 @@ class App:
 
         def ask(tool: Any, arguments: dict[str, Any]) -> dict[str, Any]:
             wanted = str(arguments.get("agent", "")).strip().lower()
+            if tool.operation == "answer":
+                return self._outside_answer(tool, arguments)
             if tool.operation == "review":
                 try:
                     if not choices(wanted):
@@ -1011,6 +1025,33 @@ class App:
             }
 
         return bind_outside_tools(program, ask)
+
+    def _outside_answer(self, _tool: Any, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Ask the allowed outside agents a question, the named one or each
+        in turn until one answers. They are shown no folder."""
+
+        from . import outside as outside_agents
+
+        wanted = str(arguments.get("agent", "")).strip().lower()
+        ready = (
+            list(self.outside)
+            if self._outside_runner is not None
+            else outside_agents.installed(self.outside)
+        )
+        refusal = "None of the outside agents allowed here is installed."
+        for name in [wanted] if wanted else ready:
+            try:
+                agent, text = outside_agents.answer(
+                    name,
+                    str(arguments.get("text", "")),
+                    allowed=self.outside,
+                    runner=self._outside_runner,
+                )
+            except outside_agents.OutsideError as exc:
+                refusal = str(exc)
+                continue
+            return {"ok": True, "agent": agent, "text": text}
+        return {"ok": False, "agent": "", "text": refusal}
 
     #: How an outside agent is started; a test puts its own here.
     _outside_runner: Any = None

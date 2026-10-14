@@ -901,6 +901,7 @@ tool run_tests {
 | `system "agents"` | `ask` | `{agent: Text, text: Text}` | `{ok: Bool, agent: Text, text: Text}` |
 | `system "files"` | `write_all` | `{files: R[], note: Text}` | `{count: Number}` |
 | `system "outside"` | `propose` | `{agent: Text, text: Text}` | `{ok: Bool, agent: Text, said: Text, files: R[]}` |
+| `system "outside"` | `answer` | `{agent: Text, text: Text}` | `{ok: Bool, agent: Text, text: Text}` |
 | `system "outside"` | `review` | `{agent: Text, text: Text, files: R[]}` | `{ok: Bool, agent: Text, said: Text}` |
 | `system "kosika"` | `check_files` | `{text: Text, files: R[]}` | `{problems: Text[]}` |
 
@@ -971,6 +972,13 @@ tool run_tests {
   `not:NAME`, which means any allowed agent but that one. When the folder
   holds `.kos` files, or `text` speaks of Kosika, the guide to writing
   Kosika that ships with the language is added to what is asked.
+- A `system "outside"` tool with operation `answer` puts `text`, a
+  question, to an outside agent and gives back what it said as `text`.
+  The agent is started in an empty folder and shown no file, so a host
+  binds this tool whenever the owner has allowed an outside agent, with
+  no folder granted. The words of the question go to the company that
+  runs the agent. With `agent` empty, each allowed agent is tried in turn;
+  `ok` is false, with the reason in `text`, when none answered.
 - A `system "outside"` tool with operation `review` gives `files`, a
   proposed change, to an outside agent to read: in a copy of the granted
   folder each file is as it would be, and a folder `_before` holds each

@@ -11,6 +11,18 @@
 // something, it says plainly that it cannot. For work on files, use the box
 // "Not sure which agent?" above it in Studio.
 //
+// It keeps the last few things said, so "these" and "no, I meant" have
+// something to point at. Told to forget everything, it forgets that too.
+//
+// A stronger mind, if you have allowed one. If omp is allowed as an outside
+// agent (kosika outside --allow omp), a question of five words or more is
+// put to it, and the answer ends "(answered by omp)". omp is shown no file,
+// and is sent only the question and the earlier questions and answers of
+// the talk: never your name, your reminders or what you asked Kosi to
+// remember. A question that turns on those comes back to Kosi's own model.
+// The words of the question do go to omp's company. With omp not allowed,
+// nothing leaves the computer.
+//
 // Say: hello, what time is it, what is 17 times 23, remind me at 6pm to call
 // Sam, remind me in 10 minutes to stretch, my reminders, done 1, remember
 // that my locker is 14, what do you remember, call me Aryan, call yourself
@@ -25,6 +37,12 @@ record Said { text: Text suggest: Text[] }
 record Reminder { what: Text due: Number at: Text }
 // What it keeps between conversations.
 record Book { name: Text you: Text reminders: Reminder[] facts: Text[] }
+// The last things said, oldest first, so that "these" and "I meant" have
+// something to point at. Each line begins "You:" or with Kosi's name.
+// `open` holds only the questions put to a model and their answers: the
+// part of the talk that may be shown to an outside agent. What was said
+// about reminders, names and things to remember is never in it.
+record Talk { lines: Text[] open: Text[] }
 // The book after a request, what to say, and what to suggest.
 record Turn { book: Book text: Text suggest: Text[] }
 // A time found in what was said: when, in words, and the words left over.
@@ -55,8 +73,19 @@ tool hand_over {
   output: Handed
 }
 
+// A stronger mind, if the owner has allowed one: an outside agent such as
+// omp, asked a question and shown no file. Its company receives the words
+// of the question, so only open questions go, and nothing Kosi keeps.
+tool think_outside {
+  source system "outside"
+  operation: "answer"
+  access: observe
+  input: Handover
+  output: Handed
+}
+
 agent desk {
-  can: [hand_over]
+  can: [hand_over, think_outside]
   max_steps: 1
 }
 
@@ -64,11 +93,12 @@ model voice {
   input: Prompt
   output: Reply
   parameters: {
-    max_output_tokens: 160
+    max_output_tokens: 420
   }
 }
 
 memory books of Book
+memory talks of Talk
 
 // ---------------------------------------------------------------- routing
 
@@ -78,6 +108,7 @@ fn kind_of(msg: Msg) -> Text {
   var kind = "ask"
   if text == "" or text == "help" or text == "what can you do" { kind = "help" }
   else if ["hello", "hi", "hey", "good morning", "good afternoon", "good evening", "hello kosi", "hi kosi", "hey kosi"].contains(text) { kind = "hello" }
+  else if ["thanks", "thank you", "thanks kosi", "thank you kosi", "thanks a lot", "thank you so much", "ok thanks", "ok", "okay", "cool", "nice", "great", "got it"].contains(text) { kind = "thanks" }
   else if text.starts_with("set an alarm") or text.starts_with("set alarm") or text.starts_with("alarm ") or text.starts_with("wake me ") { kind = "alarm" }
   else if text.starts_with("set a timer") or text.starts_with("start a timer") or text.starts_with("timer ") { kind = "timer" }
   else if text.contains("days until") or text.contains("days till") or text.contains("days to ") or text.contains("days before") or text.contains("how long until") or text.contains("how long till") { kind = "until" }
@@ -840,7 +871,69 @@ fn ask_prompt(msg: Msg, known: BooksRecalled, moment: Moment) -> Prompt {
   for r in book.reminders { lines = lines.append(reminder_line(r)) }
   let list = if lines.is_empty() { "none" } else { lines.join("; ") }
   let person = if book.you.is_empty() { "The person has not told you their name." } else { "The person's name is " + book.you + "." }
-  return {text: "You are " + book.name + ", a voice assistant on a person's laptop. Answer in one to three short sentences that sound natural when read aloud. Use plain words. No lists, no headings, no symbols. If you are not sure, say so instead of guessing. You cannot open programs, browse the web or see files, so never say you did.\n" + person + "\nIt is " + moment.weekday + ", " + moment.date + ", " + moment.hour + ":" + two(moment.minute) + ".\nThings the person asked you to remember: " + facts + ".\nTheir reminders: " + list + ".\n\nThe person says: " + msg.text.trim()}
+  return {text: "You are " + book.name + ", a voice assistant on a person's laptop. Answer in sentences that sound natural when read aloud: one or two for a simple question, and up to six for a question that asks for ideas, reasons, advice or a plan. Give real substance: name the things, and say why. Use plain words. No lists, no headings, no symbols. If you are not sure, say so instead of guessing. Answer what the person says now. When their words point back at something, such as these, that, it, or I meant, they mean the conversation so far. Do not mention their reminders or what they asked you to remember unless they ask about them. You cannot open programs, browse the web or see files, so never say you did.\n" + person + "\nIt is " + moment.weekday + ", " + moment.date + ", " + moment.hour + ":" + two(moment.minute) + ".\nThings the person asked you to remember: " + facts + ".\nTheir reminders: " + list + ".\n\nThe person says: " + msg.text.trim()}
+}
+
+// How many lines of the talk are kept, and how long one may be.
+fn talk_in(past: TalksRecalled) -> Talk {
+  let none: Talk = {lines: [], open: []}
+  return if past.found { past.value.value() } else { none }
+}
+
+// The prompt with the conversation so far put before what is said now.
+fn with_talk(prompt: Prompt, past: TalksRecalled) -> Prompt {
+  let lines = talk_in(past).lines
+  if lines.is_empty() { return prompt }
+  let parts = prompt.text.split("\n\nThe person says: ")
+  return {text: parts.first().or("") + "\n\nThe conversation so far, oldest first:\n" + lines.join("\n") + "\n\nThe person says: " + parts.drop(1).join("\n\nThe person says: ")}
+}
+
+// The talk with this turn added: the last eight lines are kept, each cut
+// short. Told to forget everything, it forgets the talk as well.
+fn heard(past: TalksRecalled, msg: Msg, turn: Turn) -> Talk {
+  if kind_of(msg) == "forget" { return {lines: [], open: []} }
+  let now = ["You: " + msg.text.trim().take(300), turn.book.name + ": " + turn.text.trim().take(400)]
+  let lines = talk_in(past).lines.concat(now)
+  // Only a turn an outside agent itself answered may be shown to one
+  // again. An answer Kosi's own model gave may rest on a remembered fact.
+  let open = if kind_of(msg) == "ask" and turn.text.contains("(answered by ") { talk_in(past).open.concat(now) } else { talk_in(past).open }
+  return {
+    lines: if lines.length() > 8 { lines.drop(lines.length() - 8) } else { lines },
+    open: if open.length() > 6 { open.drop(open.length() - 6) } else { open }
+  }
+}
+
+// A question worth a stronger mind: one of five words or more. "Thanks"
+// and "how are you" stay here.
+fn is_open(msg: Msg) -> Bool {
+  return msg.text.trim().words().length() >= 5
+}
+
+// What an outside agent is asked: the question, and before it only the
+// earlier questions and answers of this talk. Not the person's name, not
+// their reminders, not what they asked to have remembered. It cannot know
+// those, so it is told to say LOCAL when the question turns on them.
+// The owner agreed to omp for this, so omp is the one asked, and no other.
+fn outside_question(msg: Msg, past: TalksRecalled) -> Handover {
+  let open = talk_in(past).open
+  let before = if open.is_empty() { "" } else { "The conversation so far, oldest first:\n" + open.join("\n") + "\n\n" }
+  return {agent: "omp", text: "Questions that ask for ideas, advice, an explanation or a plan are to be answered, also when they say I, my or we. Only when the question cannot be answered without a private fact about the person that is not given here, such as where they keep something, their timetable, or what they told their assistant before, answer with the single word LOCAL and nothing more.\n\n" + before + "The question: " + msg.text.trim()}
+}
+
+fn no_help() -> Handed {
+  return {ok: false, agent: "", text: ""}
+}
+
+// Is there an answer to pass on? Not when nobody could be asked, nothing
+// was said, or the agent said the question is one for Kosi itself.
+fn usable(got: Handed) -> Bool {
+  let said = got.text.trim().trim_marks(".!\"'`*")
+  return got.ok and not said.is_empty() and said.upper() != "LOCAL"
+}
+
+// The outside agent's answer, marked so the person knows where it came from.
+fn outside_said(known: BooksRecalled, got: Handed) -> Turn {
+  return same(known, honest(got.text.trim()) + "\n(answered by " + got.agent + ")")
 }
 
 fn spoken(known: BooksRecalled, reply: Reply) -> Turn {
@@ -857,10 +950,32 @@ fn say(turn: Turn) -> Said {
 
 // ---------------------------------------------------------------- workflows
 
+// An open question goes to an outside agent when one is allowed. When
+// none is, or it has nothing to say, Kosi's own model answers.
+workflow answer_outside(msg: Msg) -> Turn {
+  known = recall books under "me"
+  past  = recall talks under "me"
+  ask   = outside_question(msg, past)
+  got   = execute desk.think_outside(ask.agent, ask.text) otherwise no_help()
+  turn  = match usable(got) {
+    case true { outside_said(known, got) }
+    case _ { call answer_here(msg) }
+  }
+}
+
 workflow answer(msg: Msg) -> Turn {
+  turn = match is_open(msg) {
+    case true { call answer_outside(msg) }
+    case _ { call answer_here(msg) }
+  }
+}
+
+workflow answer_here(msg: Msg) -> Turn {
   known  = recall books under "me"
   moment = now
-  prompt = ask_prompt(msg, known, moment)
+  past   = recall talks under "me"
+  first  = ask_prompt(msg, known, moment)
+  prompt = with_talk(first, past)
   reply  = use_model voice(prompt.text) retry 1 otherwise {text: "Sorry, I could not think of an answer just now. Please ask again."}
   turn   = spoken(known, reply)
 }
@@ -905,6 +1020,7 @@ workflow keep(msg: Msg) -> Turn {
     case "who" { who(known) }
     case "sum" { sum_said(msg, known) }
     case "convert" { convert_said(msg, known) }
+    case "thanks" { same(known, "You are welcome.") }
     case "cannot" { same(known, cannot_text()) }
     case _ { help_said(known) }
   }
@@ -930,6 +1046,9 @@ workflow main(msg: Msg) -> Said {
   }
   book  = book_of(turn)
   saved = remember book in books under "me"
+  past  = recall talks under "me"
+  talk  = heard(past, msg, turn)
+  kept  = remember talk in talks under "me"
   said  = say(turn)
 }
 
@@ -952,6 +1071,9 @@ test "requests are understood" {
   expect kind_of({text: "What is your name?"}) == "who"
   expect kind_of({text: "what is 17 times 23"}) == "sum"
   expect kind_of({text: "why is the sky blue"}) == "ask"
+  expect kind_of({text: "Thanks Kosi!"}) == "thanks"
+  thanked = main({text: "ok"})
+  expect thanked.text == "You are welcome."
 }
 
 test "sums are worked out by code, exactly" {
@@ -1172,6 +1294,59 @@ test "a question goes to the model with what it has been told" {
   expect p.text.contains("It is Monday, 2026-10-12, 9:05.")
   expect p.text.contains("never say you did")
   expect b.text == "Your locker is number 14."
+}
+
+test "it keeps the last of the talk, so a question can point back" {
+  answers voice: [{text: "A simulator and a key exchange."}, {text: "They teach you skills; they are not a way to invest."}]
+  a = main({text: "which quantum projects should we build?"})
+  b = main({text: "will these help me earn money?"})
+  none: TalksRecalled = {found: false, value: null}
+  past: TalksRecalled = {found: true, value: {lines: ["You: which quantum projects should we build?", "Kosi: A simulator and a key exchange."], open: []}}
+  plain: Prompt = {text: "You are Kosi.\n\nThe person says: will these help me earn money?"}
+  expect with_talk(plain, none) == plain
+  expect with_talk(plain, past).text == "You are Kosi.\n\nThe conversation so far, oldest first:\nYou: which quantum projects should we build?\nKosi: A simulator and a key exchange.\n\nThe person says: will these help me earn money?"
+  turn: Turn = {book: {name: "Kosi", you: "", reminders: [], facts: []}, text: " They teach you skills. ", suggest: []}
+  expect heard(past, {text: " will these help? "}, turn).lines == ["You: which quantum projects should we build?", "Kosi: A simulator and a key exchange.", "You: will these help?", "Kosi: They teach you skills."]
+  expect heard(past, {text: "forget everything"}, turn).lines == []
+  long: TalksRecalled = {found: true, value: {lines: ["1", "2", "3", "4", "5", "6", "7", "8"], open: []}}
+  expect heard(long, {text: "nine"}, turn).lines == ["3", "4", "5", "6", "7", "8", "You: nine", "Kosi: They teach you skills."]
+  expect b.text == "They teach you skills; they are not a way to invest."
+  expect ask_prompt({text: "hi there you"}, {found: false, value: null}, {date: "2026-10-12", time: "09:05", weekday: "Monday", year: 2026, month: 10, day: 12, hour: 9, minute: 5, epoch: 0}).text.contains("Do not mention their reminders")
+}
+
+test "an open question may go to an outside agent, with nothing Kosi keeps" {
+  expect is_open({text: "what shall we build with quantum computing"})
+  expect not is_open({text: "how are you"})
+  book: Book = {name: "Kosi", you: "Aryan", reminders: [{what: "stretch", due: 5, at: "2:49"}], facts: ["my locker is 14"]}
+  turn: Turn = {book: book, text: "A simulator.", suggest: []}
+  none: TalksRecalled = {found: false, value: null}
+  kept = heard(none, {text: "remember that my locker is 14"}, turn)
+  here = heard({found: true, value: kept}, {text: "which locker is mine"}, {book: book, text: "Your locker is 14.", suggest: []})
+  out: Turn = {book: book, text: "A simulator. (answered by omp)", suggest: []}
+  asked = heard({found: true, value: here}, {text: "what quantum projects should we build"}, out)
+  // Only the question put to a model is in the part that may go outside.
+  expect kept.open == []
+  expect kept.lines.length() == 2
+  // Nor is a question its own model answered, which may rest on a fact.
+  expect here.open == []
+  expect asked.open == ["You: what quantum projects should we build", "Kosi: A simulator. (answered by omp)"]
+  q = outside_question({text: " will these earn money? "}, {found: true, value: asked})
+  expect q.agent == "omp"
+  expect q.text.ends_with("The conversation so far, oldest first:\nYou: what quantum projects should we build\nKosi: A simulator. (answered by omp)\n\nThe question: will these earn money?")
+  expect not q.text.contains("locker")
+  expect not q.text.contains("stretch")
+  expect not q.text.contains("Aryan")
+  expect usable({ok: true, agent: "omp", text: "Build a simulator first."})
+  expect not usable({ok: true, agent: "omp", text: " LOCAL. "})
+  expect not usable({ok: true, agent: "omp", text: "  "})
+  expect not usable(no_help())
+  said = outside_said({found: true, value: book}, {ok: true, agent: "omp", text: " Build a simulator first. "})
+  expect said.text == "Build a simulator first.\n(answered by omp)"
+  expect said.book == book
+  // With no outside agent allowed, its own model answers as before.
+  answers voice: [{text: "Cats sleep most of the day."}]
+  a = main({text: "tell me something about cats please"})
+  expect a.text == "Cats sleep most of the day."
 }
 
 test "it never says it did what it cannot do" {
