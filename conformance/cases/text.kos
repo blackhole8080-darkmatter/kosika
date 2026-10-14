@@ -1,0 +1,54 @@
+// Conformance: text and its methods.
+
+test "joining and measuring" {
+  expect "ab" + "cd" == "abcd"
+  expect "hello".length() == 5
+  expect "".is_empty()
+  expect not "a".is_empty()
+}
+
+test "case and trimming" {
+  expect "Hello".upper() == "HELLO"
+  expect "Hello".lower() == "hello"
+  expect "  hi  ".trim() == "hi"
+  expect "(hi!)".trim_marks("()!") == "hi"
+}
+
+test "looking inside" {
+  expect "kosika".contains("sik")
+  expect not "kosika".contains("z")
+  expect "kosika".starts_with("ko")
+  expect "kosika".ends_with("ka")
+  expect "kosika".index_of("s").or(-1) == 2
+  expect "kosika".index_of("z").or(-1) == -1
+}
+
+test "taking parts" {
+  expect "kosika".take(2) == "ko"
+  expect "kosika".drop(2) == "sika"
+  expect "kosika".slice(1, 4) == "osi"
+  expect "kosika".take(99) == "kosika"
+  expect "kosika".drop(99) == ""
+}
+
+test "splitting and joining" {
+  expect "a,b,c".split(",") == ["a", "b", "c"]
+  expect "one two  three".words() == ["one", "two", "three"]
+  expect "a\nb\nc".lines() == ["a", "b", "c"]
+  expect "abc".chars() == ["a", "b", "c"]
+  expect ["a", "b", "c"].join("-") == "a-b-c"
+  expect "a-b-c".replace("-", "+") == "a+b+c"
+}
+
+test "escapes in a string" {
+  expect "a\tb".length() == 3
+  expect "line\nbreak".lines().length() == 2
+  expect "say \"hi\"".length() == 8
+  expect "back\\slash".length() == 10
+}
+
+test "text is compared exactly" {
+  expect "a" == "a"
+  expect "a" != "A"
+  expect "café" == "café"
+}

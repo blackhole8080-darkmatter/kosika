@@ -1,0 +1,88 @@
+// Conformance: choosing and repeating.
+
+fn sign(n: Number) -> Text {
+  if n < 0 { return "negative" }
+  else if n == 0 { return "zero" }
+  return "positive"
+}
+
+fn grade(score: Number) -> Text {
+  return if score >= 90 { "A" } else if score >= 70 { "B" } else { "C" }
+}
+
+fn name_of(n: Number) -> Text {
+  return match n {
+    case 0 { "zero" }
+    case 1 { "one" }
+    case _ { "many" }
+  }
+}
+
+fn yes_no(flag: Bool) -> Text {
+  return match flag {
+    case true { "yes" }
+    case false { "no" }
+  }
+}
+
+fn kind(word: Text) -> Text {
+  return match word {
+    case "cat" { "animal" }
+    case "oak" { "tree" }
+    case _ { "unknown" }
+  }
+}
+
+fn count_up(limit: Number) -> Number {
+  var n = 0
+  while n < limit { n += 1 }
+  return n
+}
+
+// The whole numbers below `limit` that are not multiples of three, stopping at the first above ten.
+fn picked(limit: Number) -> Number[] {
+  var found: Number[] = []
+  var n = 0
+  while n < limit {
+    n += 1
+    if n % 3 == 0 { continue }
+    if n > 10 { break }
+    found = found.append(n)
+  }
+  return found
+}
+
+test "if as a statement and as a value" {
+  expect sign(-4) == "negative"
+  expect sign(0) == "zero"
+  expect sign(9) == "positive"
+  expect grade(95) == "A"
+  expect grade(75) == "B"
+  expect grade(10) == "C"
+}
+
+test "match on numbers, truth and text" {
+  expect name_of(0) == "zero"
+  expect name_of(1) == "one"
+  expect name_of(7) == "many"
+  expect yes_no(true) == "yes"
+  expect yes_no(false) == "no"
+  expect kind("oak") == "tree"
+  expect kind("rock") == "unknown"
+}
+
+test "and, or, not" {
+  expect true and true
+  expect not (true and false)
+  expect true or false
+  expect not (false or false)
+  expect not false
+  expect 1 < 2 and 2 < 3
+}
+
+test "while, break and continue" {
+  expect count_up(5) == 5
+  expect count_up(0) == 0
+  expect picked(8) == [1, 2, 4, 5, 7, 8]
+  expect picked(50) == [1, 2, 4, 5, 7, 8, 10]
+}

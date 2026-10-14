@@ -1,0 +1,7 @@
+PASS  a record holds named values, and equals another with the same
+PASS  a record is never changed; a new one is made
+PASS  records inside records and lists inside records
+PASS  arguments by place and by name
+PASS  a function may call itself, within its stated depth
+PASS  a function is a value that remembers where it was made
+6 passed, 0 failed

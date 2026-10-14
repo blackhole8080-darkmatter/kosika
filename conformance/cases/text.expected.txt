@@ -1,0 +1,8 @@
+PASS  joining and measuring
+PASS  case and trimming
+PASS  looking inside
+PASS  taking parts
+PASS  splitting and joining
+PASS  escapes in a string
+PASS  text is compared exactly
+7 passed, 0 failed

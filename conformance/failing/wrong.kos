@@ -1,0 +1,55 @@
+// Conformance: what a failing test says.
+
+record Point { x: Number y: Number }
+
+fn half(n: Number) -> Number {
+  return n / 2
+}
+
+fn deep(n: Number) -> Number recurse 3 {
+  return deep(n + 1)
+}
+
+fn pick(items: Number[], at: Number) -> Number {
+  return items[at]
+}
+
+test "a wrong sum says both sides" {
+  expect 2 + 2 == 5
+}
+
+test "a wrong text says both sides" {
+  name = "kos" + "ika"
+  expect name.upper() == "KOSIKA!"
+}
+
+test "a wrong record and list" {
+  p: Point = {y: 2, x: 1}
+  expect p == {x: 1, y: 3}
+}
+
+test "a decimal is shown as a decimal" {
+  expect half(9) == 4
+  expect half(8) == 5
+}
+
+test "a condition that is simply false" {
+  expect "abc".contains("z")
+}
+
+test "division by zero fails the test" {
+  x = 1 / 0
+  expect x == 0
+}
+
+test "too deep a recursion fails the test" {
+  expect deep(1) == 0
+}
+
+test "reaching past the end of a list fails the test" {
+  expect pick([1, 2], 5) == 0
+}
+
+test "this one passes" {
+  expect half(4) == 2
+}

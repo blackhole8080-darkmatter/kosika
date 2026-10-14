@@ -1,0 +1,8 @@
+PASS  whole-number arithmetic is exact
+PASS  division gives a decimal when it must
+PASS  comparison
+PASS  rounding to a whole number
+PASS  roots, powers and size
+PASS  a number as text and back
+PASS  compound assignment
+7 passed, 0 failed

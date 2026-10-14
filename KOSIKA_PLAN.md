@@ -3491,6 +3491,48 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   programs with workflows, agents and tools; the guide does not teach
   those yet.
 
+### Kosika runs without Python: a native engine and a conformance suite
+
+- The owner asked for Kosika to be "a strong and independent programming
+  language, without the assistance of python". The first plan put to him
+  was to write Kosika in Kosika: lexer, parser, then a compiler. He then
+  shared the advice of two outside agents, kilocode and omp. Both said:
+  a native runtime first, held to a conformance suite; self-hosting later,
+  only if useful. They were right, and he was told so. Self-hosting
+  reaches "no Python" at its last step; a native engine reaches it early.
+- He asked for both Go and Rust. Agreed: Go first, because Go is on his
+  machine and builds one program file; Rust after, against the finished
+  suite, which is work an outside agent can be given with the suite as
+  judge. Two engines passing one suite is also the proof that the suite,
+  not an engine, says what Kosika means.
+- `conformance/`: programs with what `test` must print for each. Five
+  that pass (numbers, text, lists, choices, records and functions; 31
+  tests) and one whose nine tests fail on purpose, so that what a failure
+  says is held too. `python -m kosika.conformance write` lets the
+  reference say what it prints; a person reads it before it becomes law.
+- `native/`: a Go engine for the core of the language, which reaches
+  nothing outside the program. Lexer, parser, runner and about 80 built-in
+  methods, in some 3,100 lines. It builds to one 4 MB file.
+- Measured. Its lexer gives the reference's tokens on 78 of 78 Kosika
+  files, 67,316 tokens. It passes 31 of 31 conformance tests. On the
+  failing program both engines print the same report, word for word.
+  `tests/test_conformance.py` holds both engines to this, and skips the
+  native half, saying so, where Go is not installed.
+- Not claimed. Kosika is not independent of Python: the app, the agents,
+  models, tools, workflows, traces and the checker are all still Python
+  only. The native engine has no checker, and on its first day ran a
+  program the reference rightly refused (a list of mixed kinds); the suite
+  has no case that would catch that. Six programs are a beginning: a rule
+  no case uses is held to nothing. Known differences not yet closed: the
+  reference counts any Unicode digit as a digit and decodes `\N{name}` in
+  a string; the native lexer does neither.
+- A lexer written in Kosika itself was drafted the same day, before the
+  plan changed. It needs two primitives the language lacks, a character's
+  number and back. It is kept as a future conformance program, not as the
+  road.
+- Next: refusal cases in the suite and a checker in the native engine;
+  then workflows and tools; then models.
+
 ### Kosi follows the talk, and may put a question to a stronger mind
 
 - The owner said Kosi did not feel smart, and showed three answers: a

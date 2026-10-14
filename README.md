@@ -1211,6 +1211,15 @@ files to. Type a request there to see which skills it would pick, and
 why; no model is asked. A skill can be changed or a new one written on
 the page. One that Kosika cannot read is not saved, and the page says why.
 
+## Kosika without Python
+
+`native/` holds a second engine, written in Go, that builds to one program
+file and runs the core of Kosika (records, functions and tests) on a
+machine with no Python. `conformance/` holds the programs both engines
+must agree on, with what each must print. The native engine has no checker
+and no workflows, agents, tools or models yet; see `native/README.md` for
+what it has and what it lacks.
+
 A tool may be `access: observe` only when the server itself marks it
 read-only. Any other tool must be `access: execute`, so each use waits for
 your Allow once. A tool that answers in plain text needs an output record

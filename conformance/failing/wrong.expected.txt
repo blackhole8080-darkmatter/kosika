@@ -1,0 +1,18 @@
+FAIL  a wrong sum says both sides
+      line 18: expected 2 + 2 == 5 (left is 4, right is 5)
+FAIL  a wrong text says both sides
+      line 23: expected name.upper() == "KOSIKA!" (left is "KOSIKA", right is "KOSIKA!")
+FAIL  a wrong record and list
+      line 28: expected p == {x: 1, y: 3} (left is {"x": 1, "y": 2}, right is {"x": 1, "y": 3})
+FAIL  a decimal is shown as a decimal
+      line 32: expected half(9) == 4 (left is 4.5, right is 4)
+FAIL  a condition that is simply false
+      line 37: expected "abc".contains("z")
+FAIL  division by zero fails the test
+      line 41: Division by zero
+FAIL  too deep a recursion fails the test
+      line 46: Recursion limit 3 exceeded for 'deep'
+FAIL  reaching past the end of a list fails the test
+      line 50: Array index 5 is out of range
+PASS  this one passes
+1 passed, 8 failed

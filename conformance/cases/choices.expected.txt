@@ -1,0 +1,5 @@
+PASS  if as a statement and as a value
+PASS  match on numbers, truth and text
+PASS  and, or, not
+PASS  while, break and continue
+4 passed, 0 failed

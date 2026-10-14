@@ -1,0 +1,82 @@
+// Conformance: records, functions that call functions, and recursion.
+
+record Point { x: Number y: Number }
+record Line { from: Point to: Point label: Text }
+record Team { name: Text members: Text[] }
+
+fn moved(p: Point, dx: Number, dy: Number) -> Point {
+  return {x: p.x + dx, y: p.y + dy}
+}
+
+fn width(line: Line) -> Number {
+  return (line.to.x - line.from.x).abs()
+}
+
+fn with_member(team: Team, who: Text) -> Team {
+  return {name: team.name, members: team.members.append(who)}
+}
+
+fn factorial(n: Number) -> Number recurse 20 {
+  return match n {
+    case 0 { 1 }
+    case _ { n * factorial(n - 1) }
+  }
+}
+
+fn fib(n: Number) -> Number recurse 20 {
+  if n < 2 { return n }
+  return fib(n - 1) + fib(n - 2)
+}
+
+fn make_adder(base: Number) -> fn(value: Number) -> Number {
+  fn add(value: Number) -> Number { return base + value }
+  return ref add
+}
+
+fn twice(operation: fn(value: Number) -> Number, value: Number) -> Number {
+  return operation(value: operation(value: value))
+}
+
+test "a record holds named values, and equals another with the same" {
+  p: Point = {x: 1, y: 2}
+  expect p.x == 1
+  expect p.y == 2
+  expect p == {x: 1, y: 2}
+  expect p != {x: 1, y: 3}
+}
+
+test "a record is never changed; a new one is made" {
+  p: Point = {x: 1, y: 2}
+  q = moved(p, 10, 20)
+  expect p == {x: 1, y: 2}
+  expect q == {x: 11, y: 22}
+}
+
+test "records inside records and lists inside records" {
+  line: Line = {from: {x: 2, y: 0}, to: {x: 9, y: 0}, label: "base"}
+  expect width(line) == 7
+  expect line.from.x == 2
+  team: Team = {name: "red", members: ["ana"]}
+  bigger = with_member(team, "ben")
+  expect bigger.members == ["ana", "ben"]
+  expect team.members.length() == 1
+}
+
+test "arguments by place and by name" {
+  p: Point = {x: 0, y: 0}
+  expect moved(p, 1, 2) == moved(p: p, dx: 1, dy: 2)
+}
+
+test "a function may call itself, within its stated depth" {
+  expect factorial(0) == 1
+  expect factorial(5) == 120
+  expect factorial(10) == 3628800
+  expect fib(10) == 55
+}
+
+test "a function is a value that remembers where it was made" {
+  add_ten: fn(value: Number) -> Number = make_adder(10)
+  expect add_ten(value: 5) == 15
+  expect twice(add_ten, 1) == 21
+  expect twice(make_adder(100), 1) == 201
+}
