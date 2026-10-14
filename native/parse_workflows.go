@@ -183,19 +183,27 @@ func (p *Parser) parseBudget() []Budget {
 	}
 }
 
-// stepEnding reads what may follow a step's call: a fallback. A check,
-// votes, retries and a stronger model belong to models, which this engine
-// cannot ask yet, and are refused.
-func (p *Parser) stepEnding() *StepCall {
-	for _, word := range []string{"verify", "vote", "retry", "escalate"} {
+// stepEnding reads what may follow a step's call: asking a model again,
+// and a fallback. A check, votes and a stronger model are refused.
+func (p *Parser) stepEnding(step *Step) {
+	for _, word := range []string{"verify", "vote"} {
 		if p.check(word) {
 			notYetStep(p.current(), "a step with "+word)
 		}
 	}
-	if p.accept("otherwise") {
-		return p.parseStepCall()
+	if p.accept("retry") {
+		token := p.advance()
+		if token.Kind != "NUMBER" || !isDigits(token.Value) {
+			parseFail("Expected 'count' at %d:%d, got %s", token.Line, token.Column, quoted(token.Value))
+		}
+		step.Retries, _ = strconv.Atoi(token.Value)
 	}
-	return nil
+	if p.check("escalate") {
+		notYetStep(p.current(), "a step with escalate")
+	}
+	if p.accept("otherwise") {
+		step.Fallback = p.parseStepCall()
+	}
 }
 
 func (p *Parser) parseShortStep() *Step {
@@ -233,8 +241,9 @@ func (p *Parser) parseShortStep() *Step {
 		step.Call = step.Branches[0].Call
 		return step
 	}
-	call := p.parseStepCall()
-	return &Step{Name: name, Call: call, Binding: name, Return: name, Fallback: p.stepEnding()}
+	step := &Step{Name: name, Call: p.parseStepCall(), Binding: name, Return: name}
+	p.stepEnding(step)
+	return step
 }
 
 func (p *Parser) parseLongStep() *Step {
@@ -247,7 +256,7 @@ func (p *Parser) parseLongStep() *Step {
 	}
 	p.expect("=")
 	step.Call = p.parseStepCall()
-	step.Fallback = p.stepEnding()
+	p.stepEnding(step)
 	p.expect("return")
 	step.Return = p.identifier()
 	p.expect("}")
@@ -290,9 +299,12 @@ func (p *Parser) parseStepCall() *StepCall {
 			notYetStep(token, "a step that picks a random number")
 		case token.Value == "ask":
 			notYetStep(token, "a step that asks an agent")
-		case token.Value == "use_model":
-			notYetStep(token, "a step that asks a model")
 		}
+	}
+	if p.accept("use_model") {
+		name := p.identifier()
+		p.expect("(")
+		return &StepCall{Kind: "model", Name: name, Args: p.parseArguments(), Line: token.Line}
 	}
 	if p.accept("call") {
 		name := p.identifier()

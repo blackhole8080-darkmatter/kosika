@@ -85,6 +85,7 @@ type checker struct {
 	order     []string
 	locals    map[*FuncDecl]map[string]string
 	captures  map[*FuncDecl][]capture
+	models    map[string]*ModelDecl
 	tools     map[string]*ToolDecl
 	agents    map[string]*AgentDecl
 	workflows map[string]*WorkflowDecl
@@ -956,6 +957,13 @@ func (c *checker) staticCalls(decl *FuncDecl, locals map[string]string) []string
 	for _, param := range decl.Params {
 		bound[param.Name] = true
 	}
+	// What a nested function captures is a parameter of it once lowered,
+	// so calling a captured function value names no declaration.
+	for _, captured := range c.captures[decl] {
+		if _, local := locals[captured.Name]; !local {
+			bound[captured.Name] = true
+		}
+	}
 	name := func(written string) string {
 		if qualified, ok := locals[written]; ok {
 			return qualified
@@ -1072,6 +1080,8 @@ func usedByCall(call *StepCall, bound, used map[string]bool) {
 	case "tool":
 		used[call.Agent] = true
 		used[call.Name] = true
+	case "model":
+		used[call.Name] = true
 	}
 }
 
@@ -1081,6 +1091,7 @@ func usedByCall(call *StepCall, bound, used map[string]bool) {
 func ModuleProblem(program *Program, path string) string {
 	c := newChecker(program)
 	local := map[string]bool{}
+	used := map[string]bool{}
 	for _, record := range program.Records {
 		local[record.Name] = true
 	}
@@ -1090,13 +1101,17 @@ func ModuleProblem(program *Program, path string) string {
 	for _, tool := range program.Tools {
 		local[tool.Name] = true
 	}
+	for _, model := range program.Models {
+		local[model.Name] = true
+		used[model.Input] = true
+		used[model.Output] = true
+	}
 	for _, agent := range program.Agents {
 		local[agent.Name] = true
 	}
 	for _, workflow := range program.Workflows {
 		local[workflow.Name] = true
 	}
-	used := map[string]bool{}
 	for _, tool := range program.Tools {
 		used[tool.Output] = true
 		if tool.Input != "" {
@@ -1192,6 +1207,12 @@ func newChecker(program *Program) *checker {
 		}
 	}
 	c.tools, c.agents, c.workflows = map[string]*ToolDecl{}, map[string]*AgentDecl{}, map[string]*WorkflowDecl{}
+	c.models = map[string]*ModelDecl{}
+	for _, model := range program.Models {
+		if c.models[model.Name] == nil {
+			c.models[model.Name] = model
+		}
+	}
 	for _, tool := range program.Tools {
 		if c.tools[tool.Name] == nil {
 			c.tools[tool.Name] = tool
@@ -1249,6 +1270,7 @@ func (c *checker) checkDeclarations() {
 			}
 		}
 	}
+	c.checkModels()
 	if len(c.records) != len(c.program.Records) {
 		checkFail("Duplicate record declaration")
 	}

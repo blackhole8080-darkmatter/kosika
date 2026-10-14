@@ -22,22 +22,28 @@ type scriptedTool struct {
 
 // A run is one workflow run from a test, with the workflows it calls.
 type run struct {
-	machine   *Machine
-	checker   *checker
-	tools     map[string]*scriptedTool
-	toolCalls int
-	maxTools  int
+	machine    *Machine
+	checker    *checker
+	tools      map[string]*scriptedTool
+	models     map[string]*scriptedTool
+	toolCalls  int
+	maxTools   int
+	modelCalls int
+	maxModels  int
 }
 
-func newRun(program *Program, tools map[string]*scriptedTool, workflow *WorkflowDecl) *run {
-	limit := 256
+func newRun(program *Program, tools, models map[string]*scriptedTool, workflow *WorkflowDecl) *run {
+	limits := map[string]int{"tool_calls": 256, "model_calls": 64}
 	// A workflow's budget only ever tightens the limit of whoever runs it.
 	for _, item := range workflow.Budget {
-		if whole, ok := item.Amount.(*big.Int); ok && item.Kind == "tool_calls" && whole.IsInt64() && int(whole.Int64()) < limit {
-			limit = int(whole.Int64())
+		if whole, ok := item.Amount.(*big.Int); ok && whole.IsInt64() {
+			if current, counted := limits[item.Kind]; counted && int(whole.Int64()) < current {
+				limits[item.Kind] = int(whole.Int64())
+			}
 		}
 	}
-	return &run{machine: newMachine(program), checker: newChecker(program), tools: tools, maxTools: limit}
+	return &run{machine: newMachine(program), checker: newChecker(program), tools: tools, models: models,
+		maxTools: limits["tool_calls"], maxModels: limits["model_calls"]}
 }
 
 // preflight refuses, before any step runs, a workflow that would use a
@@ -118,7 +124,7 @@ func (r *run) workflow(workflow *WorkflowDecl, inputs map[string]Value, depth in
 			if step.Fallback == nil {
 				panic(failure)
 			}
-			value = r.call(step.Fallback, environment, at, depth)
+			value = r.call(step.Fallback, environment, at, depth, 0)
 		}
 		result = value
 		environment.vars[step.Binding] = result
@@ -148,10 +154,10 @@ func (r *run) attempt(step *Step, call *StepCall, environment *Scope, at frame, 
 			}
 		}
 	}
-	return r.call(call, environment, at, depth), nil
+	return r.call(call, environment, at, depth, step.Retries), nil
 }
 
-func (r *run) call(call *StepCall, environment *Scope, at frame, depth int) Value {
+func (r *run) call(call *StepCall, environment *Scope, at frame, depth, retries int) Value {
 	args := resolveUnnamed(call.Args, r.checker.stepParams(call))
 	arguments := map[string]Value{}
 	for _, arg := range args {
@@ -169,6 +175,9 @@ func (r *run) call(call *StepCall, environment *Scope, at frame, depth int) Valu
 		return r.machine.invoke(r.machine.functions[call.Name], arguments, nil, nil, 0)
 	case "workflow":
 		return r.workflow(r.checker.workflows[call.Name], arguments, depth+1)
+	}
+	if call.Kind == "model" {
+		return r.model(r.checker.models[call.Name], arguments, retries)
 	}
 	return r.tool(r.checker.tools[call.Name], arguments)
 }
@@ -207,6 +216,101 @@ func (r *run) tool(tool *ToolDecl, arguments map[string]Value) Value {
 	}
 	r.validate(outcome, tool.Output, "$")
 	return outcome
+}
+
+// model asks a model for one answer it accepts: an answer is the next one
+// its test scripts, completed and held to the model's output record. A
+// refused answer is asked for again, up to `retries` more times, as
+// _ask_model in kosika/runtime.py does.
+func (r *run) model(model *ModelDecl, arguments map[string]Value, retries int) Value {
+	input := newRecord()
+	for name, value := range arguments {
+		input.set(name, value)
+	}
+	r.validate(input, model.Input, "$")
+	rejected := 0
+	for {
+		if r.modelCalls >= r.maxModels {
+			panic(&budgetError{fmt.Sprintf("model calls budget exceeds %d", r.maxModels)})
+		}
+		r.modelCalls++
+		scripted := r.models[model.Name]
+		scripted.asked++
+		if scripted.asked > len(scripted.answers) {
+			runFail("Scripted model provider has no response left")
+		}
+		answer := r.fillAbsent(copyValue(scripted.answers[scripted.asked-1]), model.Output)
+		problem := r.problem(answer, model.Output, "$")
+		if problem == "" {
+			return answer
+		}
+		if rejected >= retries {
+			runFail("Invalid structured model output: " + problem)
+		}
+		rejected++
+	}
+}
+
+// copyValue is a scripted answer as the model's JSON gives it back: a
+// fresh copy, so that completing it changes nothing in the test.
+func copyValue(v Value) Value {
+	switch x := v.(type) {
+	case []Value:
+		items := make([]Value, len(x))
+		for i, item := range x {
+			items[i] = copyValue(item)
+		}
+		return items
+	case *Record:
+		record := newRecord()
+		for _, key := range x.Keys {
+			record.set(key, copyValue(x.Fields[key]))
+		}
+		return record
+	}
+	return v
+}
+
+// fillAbsent reads a field the model left out as null, where null is
+// allowed: fill_absent in kosika/model_steps.py.
+func (r *run) fillAbsent(value Value, typeName string) Value {
+	if isFunctionType(typeName) {
+		return value
+	}
+	if strings.HasSuffix(typeName, "[]") {
+		items, ok := value.([]Value)
+		if !ok {
+			return value
+		}
+		for i, item := range items {
+			items[i] = r.fillAbsent(item, typeName[:len(typeName)-2])
+		}
+		return items
+	}
+	record, ok := value.(*Record)
+	if !ok {
+		return value
+	}
+	if strings.HasSuffix(typeName, "?") {
+		// An optional record is "this record, or null": look inside it.
+		inner := typeName[:len(typeName)-1]
+		if r.checker.records[inner] != nil {
+			return r.fillAbsent(value, inner)
+		}
+		return value
+	}
+	declared := r.checker.records[typeName]
+	if declared == nil {
+		return value
+	}
+	for _, field := range declared.Fields {
+		if current, has := record.Fields[field.Name]; has {
+			record.Fields[field.Name] = r.fillAbsent(current, field.Type)
+		} else if isOptional(field.Type) || field.Type == "Null" {
+			record.set(field.Name, nil)
+		}
+	}
+	return record
 }
 
 // mockTool is the reference's fallback for a tool no one answers: two

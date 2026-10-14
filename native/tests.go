@@ -79,7 +79,7 @@ func writeJSON(out *bytes.Buffer, v Value) {
 var comparisons = map[string]bool{"==": true, "!=": true, "<": true, "<=": true, ">": true, ">=": true}
 
 // runStep works one step of a test out, and gives what went wrong, if anything.
-func runStep(machine *Machine, step TestStep, at frame, tools map[string]*scriptedTool) (problem string) {
+func runStep(machine *Machine, step TestStep, at frame, tools, models map[string]*scriptedTool) (problem string) {
 	defer func() {
 		if caught := recover(); caught != nil {
 			switch failure := caught.(type) {
@@ -101,7 +101,7 @@ func runStep(machine *Machine, step TestStep, at frame, tools map[string]*script
 			for _, arg := range args {
 				inputs[arg.Name] = machine.eval(arg.Value, at)
 			}
-			at.scope.vars[step.Target] = newRun(machine.program, tools, workflow).workflow(workflow, inputs, 0)
+			at.scope.vars[step.Target] = newRun(machine.program, tools, models, workflow).workflow(workflow, inputs, 0)
 			return ""
 		}
 		at.scope.vars[step.Target] = machine.eval(step.Value, at)
@@ -137,9 +137,14 @@ func runTest(program *Program, test *TestDecl) TestResult {
 	}
 	// The answers a test scripts are worked out first, each on its own.
 	tools := map[string]*scriptedTool{}
+	// Every declared model has a script, empty when the test gives none.
+	models := map[string]*scriptedTool{}
+	for _, model := range program.Models {
+		models[model.Name] = &scriptedTool{name: model.Name}
+	}
 	for _, answer := range test.Answers {
 		scope := newScope(nil)
-		if problem := runStep(machine, TestStep{Target: "answers", Value: answer.Value}, frame{scope, nil, 0}, nil); problem != "" {
+		if problem := runStep(machine, TestStep{Target: "answers", Value: answer.Value}, frame{scope, nil, 0}, nil, nil); problem != "" {
 			return failed(problem, test.Line)
 		}
 		list, allRecords := scope.vars["answers"].([]Value)
@@ -151,16 +156,30 @@ func runTest(program *Program, test *TestDecl) TestResult {
 		if !allRecords {
 			return failed(fmt.Sprintf("answers for %s must be a list of records", pyRepr(answer.Name)), test.Line)
 		}
-		tools[answer.Name] = &scriptedTool{name: answer.Name, answers: list}
+		if models[answer.Name] != nil {
+			models[answer.Name].answers = list
+		} else {
+			tools[answer.Name] = &scriptedTool{name: answer.Name, answers: list}
+		}
 	}
 	for _, step := range test.Steps {
-		if problem := runStep(machine, step, at, tools); problem != "" {
+		if problem := runStep(machine, step, at, tools, models); problem != "" {
 			return failed(problem, step.Line)
 		}
 	}
+	// Models first, in the order they are declared; then tools.
+	var unused []*scriptedTool
+	for _, model := range program.Models {
+		unused = append(unused, models[model.Name])
+	}
 	for _, answer := range test.Answers {
-		if left := len(tools[answer.Name].answers) - tools[answer.Name].asked; left > 0 {
-			return failed(fmt.Sprintf("%d answer(s) for %s were never asked for", left, pyRepr(answer.Name)), test.Line)
+		if tools[answer.Name] != nil {
+			unused = append(unused, tools[answer.Name])
+		}
+	}
+	for _, script := range unused {
+		if left := len(script.answers) - script.asked; left > 0 {
+			return failed(fmt.Sprintf("%d answer(s) for %s were never asked for", left, pyRepr(script.name)), test.Line)
 		}
 	}
 	return TestResult{Name: test.Name, Passed: true, Line: test.Line}

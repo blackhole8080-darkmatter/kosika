@@ -1,0 +1,13 @@
+// Refused: a model step is asked again at most five times.
+
+record Question { text: Text }
+record Answer { text: Text }
+
+model writer {
+  input: Question
+  output: Answer
+}
+
+workflow main(question: Question) -> Answer {
+  answer = use_model writer(question) retry 9
+}

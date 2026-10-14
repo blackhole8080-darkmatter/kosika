@@ -80,3 +80,13 @@ test "a function is a value that remembers where it was made" {
   expect twice(add_ten, 1) == 21
   expect twice(make_adder(100), 1) == 201
 }
+
+fn compose(operation: fn(value: Number) -> Number) -> fn(value: Number) -> Number {
+  fn invoke(value: Number) -> Number { return operation(value: value) + 1 }
+  return ref invoke
+}
+
+test "a nested function may call a function value it captures" {
+  more: fn(value: Number) -> Number = compose(make_adder(10))
+  expect more(value: 1) == 12
+}

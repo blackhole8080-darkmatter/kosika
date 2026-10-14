@@ -56,6 +56,61 @@ func (c *checker) checkBudgets() {
 				checkFail("Workflow %s budget for %s is out of range, got %s", pyRepr(workflow.Name), label, pyNumber(item.Amount))
 			}
 		}
+		for _, step := range workflow.Steps {
+			if step.Retries == 0 {
+				continue
+			}
+			if step.Call.Kind != "model" {
+				checkFail("Step %s cannot retry: only a model step (use_model or a thinking step) can be asked again", pyRepr(step.Name))
+			}
+			if step.Retries < 1 || step.Retries > 5 {
+				checkFail("Step %s cannot retry: the count must be from 1 to 5, got %d", pyRepr(step.Name), step.Retries)
+			}
+		}
+	}
+}
+
+func finiteBetween(value *float64, low, high float64) bool {
+	return value == nil || (!math.IsInf(*value, 0) && !math.IsNaN(*value) && *value >= low && *value <= high)
+}
+
+// checkModels: what each model takes and gives, and its parameters.
+func (c *checker) checkModels() {
+	if len(c.models) != len(c.program.Models) {
+		checkFail("Duplicate model declaration")
+	}
+	for _, model := range c.program.Models {
+		name := pyRepr(model.Name)
+		if c.records[model.Input] == nil || c.records[model.Output] == nil {
+			checkFail("Model %s requires known input and output records", name)
+		}
+		if model.Deployment != nil && *model.Deployment == "" {
+			checkFail("Model %s deployment must not be empty", name)
+		}
+		if !finiteBetween(model.Temperature, 0, 2) {
+			checkFail("Model %s temperature must be between 0 and 2", name)
+		}
+		if model.MaxOutputTokens != nil && (*model.MaxOutputTokens < 1 || *model.MaxOutputTokens > 1_000_000) {
+			checkFail("Model %s max_output_tokens must be between 1 and 1000000", name)
+		}
+		for _, parameter := range []struct {
+			name      string
+			value     *float64
+			low, high float64
+		}{{"top_p", model.TopP, 0, 1}, {"frequency_penalty", model.FrequencyPenalty, -2, 2}, {"presence_penalty", model.PresencePenalty, -2, 2}} {
+			if !finiteBetween(parameter.value, parameter.low, parameter.high) {
+				checkFail("Model %s %s must be between %d and %d", name, parameter.name, int(parameter.low), int(parameter.high))
+			}
+		}
+		unique := len(uniqueNames(model.Stop)) == len(model.Stop)
+		for _, stop := range model.Stop {
+			if n := len([]rune(stop)); n < 1 || n > 256 {
+				unique = false
+			}
+		}
+		if len(model.Stop) > 4 || !unique {
+			checkFail("Model %s stop must contain up to four unique non-empty strings of at most 256 characters", name)
+		}
 	}
 }
 
@@ -150,8 +205,7 @@ func (c *checker) planCheckFits(name string) bool {
 func (c *checker) checkAgents() {
 	for _, agent := range c.program.Agents {
 		name := pyRepr(agent.Name)
-		if agent.Model != "" {
-			// This engine reads no model, so every one an agent names is unknown.
+		if agent.Model != "" && c.models[agent.Model] == nil {
 			checkFail("Agent %s uses unknown model %s", name, pyRepr(agent.Model))
 		}
 		if agent.Instructions != nil && strings.TrimSpace(*agent.Instructions) == "" {
@@ -164,7 +218,22 @@ func (c *checker) checkAgents() {
 			checkFail("Agent %s max_steps must be between 1 and 64", name)
 		}
 		if agent.Plan == "first" {
-			checkFail("Agent %s plans first, so it needs a model to write the plan", name)
+			if agent.Model == "" {
+				checkFail("Agent %s plans first, so it needs a model to write the plan", name)
+			}
+			// A name that is not a tool is reported as that, further on.
+			allTools, changes := true, false
+			for _, tool := range agent.Can {
+				declared := c.tools[tool]
+				allTools = allTools && declared != nil
+				changes = changes || (declared != nil && declared.Access == "execute")
+			}
+			if allTools && !changes {
+				checkFail("Agent %s plans first but can change nothing: give it a tool with `access: execute`, or remove `plan: first`", name)
+			}
+			if agent.MaxSteps < 2 {
+				checkFail("Agent %s plans first, so max_steps must be at least 2: one turn to plan and one to answer", name)
+			}
 		}
 		if agent.Check != "" {
 			found := false
@@ -219,6 +288,11 @@ func (c *checker) stepParams(call *StepCall) []string {
 			return fieldNames(workflow.Params)
 		}
 		return nil
+	case "model":
+		if model := c.models[call.Name]; model != nil && c.records[model.Input] != nil {
+			return fieldNames(c.records[model.Input].Fields)
+		}
+		return nil
 	}
 	if tool := c.tools[call.Name]; tool != nil && tool.Input != "" {
 		if record := c.records[tool.Input]; record != nil {
@@ -243,6 +317,10 @@ func (c *checker) finalOutput(call *StepCall) string {
 	case "tool":
 		if tool := c.tools[call.Name]; tool != nil {
 			return tool.Output
+		}
+	case "model":
+		if model := c.models[call.Name]; model != nil {
+			return model.Output
 		}
 	}
 	return ""
@@ -338,6 +416,12 @@ func (c *checker) checkStep(workflow *WorkflowDecl, step *Step, env *Env) {
 			params = c.recordFields(tool.Input)
 		}
 		output = tool.Output
+	case "model":
+		model := c.models[call.Name]
+		if model == nil {
+			checkFail("Step %s uses unknown model %s", pyRepr(step.Name), pyRepr(call.Name))
+		}
+		params, output = c.recordFields(model.Input), model.Output
 	}
 	c.checkArguments(resolveUnnamed(call.Args, c.stepParams(call)), params, env, step.Name)
 	if step.BindingType != "" {
@@ -399,9 +483,15 @@ func (c *checker) checkAnswers(test *TestDecl) string {
 			return fmt.Sprintf("answers names %s more than once", pyRepr(answer.Name))
 		}
 		seen[answer.Name] = true
+		if c.models[answer.Name] != nil {
+			continue
+		}
 		tool := c.tools[answer.Name]
 		if tool == nil {
 			var known []string
+			for _, declared := range c.program.Models {
+				known = append(known, declared.Name)
+			}
 			for _, declared := range c.program.Tools {
 				known = append(known, declared.Name)
 			}

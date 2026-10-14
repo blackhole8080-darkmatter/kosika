@@ -1,7 +1,7 @@
 package main
 
-// What a program is once it has been read: its records, functions, tools,
-// agents, workflows and tests. Models, swarms, memories, boards and imports
+// What a program is once it has been read: its models, records, functions,
+// tools, agents, workflows and tests. Swarms, memories, boards and imports
 // are not read yet, and a file that has one is refused by name.
 
 type Expr interface{}
@@ -164,7 +164,8 @@ type AgentDecl struct {
 const valueCall = "$value"
 
 // A StepCall is what a step does: call a function (Kind "function"), run
-// a workflow ("workflow") or use a tool through an agent ("tool").
+// a workflow ("workflow"), use a tool through an agent ("tool") or ask a
+// model ("model").
 type StepCall struct {
 	Kind  string
 	Name  string // the function, workflow or tool
@@ -187,6 +188,9 @@ type Step struct {
 	Binding     string
 	BindingType string
 	Return      string
+	// Retries is how many more times a model is asked when its answer is
+	// refused: `retry N`.
+	Retries int
 	// Fallback is the call made instead when Call fails: `otherwise`.
 	Fallback *StepCall
 	// A match step makes one of its Branches' calls, chosen by Subject.
@@ -210,7 +214,21 @@ type WorkflowDecl struct {
 	Budget   []Budget
 }
 
+// A ModelDecl is a model a step may ask, with the records it takes and
+// gives. A parameter left out is nil.
+type ModelDecl struct {
+	Name, Input, Output string
+	Deployment          *string
+	Temperature         *float64
+	MaxOutputTokens     *int
+	TopP                *float64
+	FrequencyPenalty    *float64
+	PresencePenalty     *float64
+	Stop                []string
+}
+
 type Program struct {
+	Models    []*ModelDecl
 	Records   []*RecordDecl
 	Tools     []*ToolDecl
 	Agents    []*AgentDecl

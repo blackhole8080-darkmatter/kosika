@@ -868,7 +868,7 @@ func (p *Parser) parseTest() *TestDecl {
 
 // notYet are the declarations this engine does not read yet.
 var notYet = map[string]bool{
-	"import": true, "export": true, "swarm": true, "model": true, "default": true,
+	"import": true, "export": true, "swarm": true, "default": true,
 	"board": true, "memory": true,
 }
 
@@ -885,6 +885,8 @@ func (p *Parser) parseProgram() *Program {
 			program.Records = append(program.Records, p.parseRecord())
 		case keyword == "fn":
 			program.Functions = append(program.Functions, p.parseFunction(0, ""))
+		case keyword == "model":
+			program.Models = append(program.Models, p.parseModel())
 		case keyword == "tool":
 			program.Tools = append(program.Tools, p.parseTool())
 		case keyword == "agent":
@@ -894,7 +896,7 @@ func (p *Parser) parseProgram() *Program {
 		case (keyword == "test" || keyword == "eval") && p.peek().Kind == "STRING":
 			program.Tests = append(program.Tests, p.parseTest())
 		case notYet[keyword]:
-			parseFail("kosika-native cannot read a %s yet (at %d:%d); it has records, functions, tools, agents, workflows and tests", keyword, token.Line, token.Column)
+			parseFail("kosika-native cannot read a %s yet (at %d:%d); it has models, records, functions, tools, agents, workflows and tests", keyword, token.Line, token.Column)
 		default:
 			parseFail("Unexpected declaration %s at %d:%d", quoted(token.Value), token.Line, token.Column)
 		}

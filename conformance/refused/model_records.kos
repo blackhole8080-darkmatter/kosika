@@ -1,0 +1,8 @@
+// Refused: a model takes and gives declared records.
+
+record Question { text: Text }
+
+model writer {
+  input: Question
+  output: Text
+}

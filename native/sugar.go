@@ -35,6 +35,12 @@ func callOutput(program *Program, call *StepCall) string {
 				return tool.Output
 			}
 		}
+	case "model":
+		for _, model := range program.Models {
+			if model.Name == call.Name {
+				return model.Output
+			}
+		}
 	}
 	return ""
 }

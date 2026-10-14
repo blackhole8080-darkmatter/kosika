@@ -4,4 +4,5 @@ PASS  records inside records and lists inside records
 PASS  arguments by place and by name
 PASS  a function may call itself, within its stated depth
 PASS  a function is a value that remembers where it was made
-6 passed, 0 failed
+PASS  a nested function may call a function value it captures
+7 passed, 0 failed
