@@ -9,6 +9,7 @@ without Go, and says so.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -320,6 +321,62 @@ class NativeTests(unittest.TestCase):
                     )
                     self.assertEqual(len(asked), 2)
                     self.assertEqual(asked, by_reference)
+
+    def test_a_change_waits_for_its_approval_as_in_the_reference(self) -> None:
+        # Each engine keeps its own journal and names a run by its own plan
+        # hash, so an approval serves only the engine that asked for it. What
+        # each asks, and what an approval then lets happen, are the same.
+        program = ROOT / "examples" / "approval_mutation.kos"
+        server = [
+            "--mcp-source", "approval_mutation",
+            "--mcp-server", str(ROOT / "examples" / "approval_mutation_mcp_server.py"),
+            "--mcp-manifest", str(ROOT / "examples" / "approval_mutation_manifest.json"),
+        ]
+
+        def engine(name: str, folder: Path, *flags: str) -> subprocess.CompletedProcess[str]:
+            command = (
+                [sys.executable, "-m", "kosika.cli", "run", str(program)]
+                if name == "reference"
+                else [str(self.engine), "run", str(program)]
+            )
+            environment = {**os.environ, "PYTHONPATH": str(ROOT)}
+            return subprocess.run(
+                [*command, "--workflow", "apply_change", "--input", "in.json", *server,
+                 "--trace", "trace.jsonl", *flags],
+                cwd=folder, capture_output=True, text=True, env=environment,
+            )
+
+        asked = {}
+        for name in ("reference", "native"):
+            with self.subTest(name), tempfile.TemporaryDirectory() as scratch:
+                folder = Path(scratch)
+                (folder / "in.json").write_text(json.dumps({"request": {"change": "rename"}}))
+                journal = ["--journal", "run.journal", "--binding-id", "here"]
+                # Without a journal the change is refused outright.
+                ran = engine(name, folder)
+                self.assertEqual(ran.returncode, 2)
+                self.assertIn("requires a verified approval record", ran.stderr)
+                # With one, the run waits for an approval of this one action.
+                ran = engine(name, folder, *journal)
+                self.assertEqual(ran.returncode, 3, ran.stderr)
+                request = json.loads(ran.stdout)
+                asked[name] = {k: request[k] for k in ("status", "tool", "arguments", "step")}
+                self.assertFalse((folder / "mutation_sink.json").exists())
+                approval = {
+                    "plan_hash": request["plan_hash"],
+                    "action_hash": request["action_hash"],
+                    "approved_by": "tester",
+                }
+                (folder / "approval.json").write_text(json.dumps(approval))
+                ran = engine(name, folder, *journal, "--approval-record", "approval.json")
+                self.assertEqual(ran.returncode, 0, ran.stderr)
+                self.assertIn("'status': 'applied'", ran.stdout)
+                written = (folder / "mutation_sink.json").stat().st_mtime_ns
+                # Begun again, the change that already happened is not repeated.
+                ran = engine(name, folder, *journal, "--approval-record", "approval.json")
+                self.assertEqual(ran.returncode, 0, ran.stderr)
+                self.assertEqual((folder / "mutation_sink.json").stat().st_mtime_ns, written)
+        self.assertEqual(asked["native"], asked["reference"])
 
     def test_its_trace_is_the_reference_trace(self) -> None:
         # Apart from the time, the program's hash and how long it took, the

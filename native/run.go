@@ -6,8 +6,11 @@ package main
 // the workflow's result, as Python writes it, and where its trace is.
 
 import (
+	"bufio"
 	"fmt"
 	"os"
+	"os/user"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -18,9 +21,14 @@ func runCommand(args []string) int {
 	options := map[string]string{"--workflow": "main", "--model-protocol": "openai", "--model-timeout": "60", "--max-output-tokens": "1024"}
 	options["--mcp-source"] = "local_stdio"
 	options["--trace"] = "run_trace.jsonl"
-	known := map[string]bool{"--trace": true, "--model-fixture": true, "--mcp-server": true, "--mcp-manifest": true, "--mcp-source": true, "--workflow": true, "--input": true, "--model": true, "--model-url": true, "--model-protocol": true, "--model-timeout": true, "--model-binding": true, "--max-output-tokens": true}
+	flags := map[string]bool{"--approve": true}
+	known := map[string]bool{"--journal": true, "--binding-id": true, "--approval-record": true, "--approved-by": true, "--trace": true, "--model-fixture": true, "--mcp-server": true, "--mcp-manifest": true, "--mcp-source": true, "--workflow": true, "--input": true, "--model": true, "--model-url": true, "--model-protocol": true, "--model-timeout": true, "--model-binding": true, "--max-output-tokens": true}
 	for i := 1; i < len(args); i++ {
 		name, value, joined := strings.Cut(args[i], "=")
+		if flags[name] && !joined {
+			options[name] = "yes"
+			continue
+		}
 		if !known[name] {
 			fmt.Fprintf(os.Stderr, "kosika-native run does not take %s\n", args[i])
 			return 2
@@ -66,6 +74,34 @@ func runCommand(args []string) int {
 		fmt.Fprintln(os.Stderr, "--mcp-manifest requires --mcp-server")
 		return 2
 	}
+	var approvals []approvalRecord
+	if file := options["--approval-record"]; file != "" {
+		record, problem := readApproval(file)
+		if problem != "" {
+			fmt.Fprintf(os.Stderr, "Workflow failed: %s\n", problem)
+			return 2
+		}
+		approvals = append(approvals, record)
+	}
+	journalPath, bindingID := options["--journal"], options["--binding-id"]
+	if options["--approve"] != "" && journalPath == "" {
+		// Approval needs a journal to remember what was approved between
+		// the pause and the resume; an asked-for run keeps one for itself.
+		scratch, err := os.MkdirTemp("", "kosika-approve-")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Workflow failed: %v\n", err)
+			return 2
+		}
+		defer os.RemoveAll(scratch)
+		journalPath = filepath.Join(scratch, "run.json")
+		if bindingID == "" {
+			bindingID = "interactive"
+		}
+	}
+	if (journalPath == "") != (bindingID == "") || (len(approvals) > 0 && journalPath == "") {
+		fmt.Fprintln(os.Stderr, "Workflow failed: Use --journal with --binding-id; approvals also require a journal")
+		return 2
+	}
 	program := load(path)
 	providers, problem := modelBindings(program, options, protocol, seconds, maxOutput)
 	if problem == "" && options["--model-fixture"] != "" {
@@ -98,15 +134,23 @@ func runCommand(args []string) int {
 		return 2
 	}
 	code := "budget"
-	running := newRun(program, map[string]*scriptedTool{}, providers, workflow)
-	running.servers = servers
-	running.traced = true
-	running.hash = programHash(read(path))
-	running.machine.tracing = newTracer(running.checker)
-	running.machine.tracing.events = &[]Value{}
+	var running *run
+	var pending *Record
+	var session *journal
+	if journalPath != "" {
+		session = openJournal(journalPath, bindingID, approvals)
+	}
 	started := time.Now()
 	permission := false
-	result, stopped, failure := func() (result Value, stopped, failure string) {
+	attempt := func() (result Value, stopped, failure string) {
+		running = newRun(program, map[string]*scriptedTool{}, providers, workflow)
+		running.servers = servers
+		running.traced = true
+		running.hash = programHash(read(path))
+		running.machine.tracing = newTracer(running.checker)
+		running.machine.tracing.events = &[]Value{}
+		running.session = session
+		pending = nil
 		defer func() {
 			if caught := recover(); caught != nil {
 				switch problem := caught.(type) {
@@ -119,15 +163,54 @@ func runCommand(args []string) int {
 					if problem.Code != "" {
 						code = problem.Code
 					}
+				case *approvalPending:
+					pending = problem.request
 				default:
 					panic(caught)
 				}
 			}
 		}()
+		if session != nil {
+			session.lock()
+			defer session.unlock()
+			// The run the journal is for: this program, workflow, input
+			// and the tools it may reach.
+			plan := newRecord()
+			plan.set("program", running.hash)
+			plan.set("workflow", workflow.Name)
+			recorded := newRecord()
+			for _, key := range sortedKeys(inputs) {
+				recorded.set(key, inputs[key])
+			}
+			plan.set("inputs", recorded)
+			reached := newRecord()
+			for source, server := range servers {
+				commands := []Value{}
+				for _, part := range server.command {
+					commands = append(commands, part)
+				}
+				reached.set(source, commands)
+			}
+			plan.set("mcp", reached)
+			session.bind(plan)
+		}
 		result, events := running.workflowEvents(workflow, inputs, 0)
 		running.events = &events
 		return result, "", ""
-	}()
+	}
+	result, stopped, failure := attempt()
+	for pending != nil && options["--approve"] != "" {
+		granted := askApproval(pending, options["--approved-by"])
+		if granted == nil {
+			break
+		}
+		session.approvals = append(session.approvals, *granted)
+		result, stopped, failure = attempt()
+	}
+	if pending != nil {
+		fmt.Println(pyJSONIndent(withStatus(pending), "  ", ""))
+		return 3
+	}
 	var events []Value
 	if running.events != nil {
 		events = *running.events
@@ -271,4 +354,70 @@ func modelBindings(program *Program, options map[string]string, protocol string,
 		providers[name] = newHTTPProvider(url, answering, protocol, seconds, maxOutput)
 	}
 	return providers, ""
+}
+
+func withStatus(request *Record) *Record {
+	shown := newRecord()
+	shown.set("status", "approval_required")
+	for _, key := range request.Keys {
+		shown.set(key, request.Fields[key])
+	}
+	return shown
+}
+
+// pyJSONIndent is json.dumps(value, indent=2), as the reference prints a
+// pending approval.
+func pyJSONIndent(v Value, step, at string) string {
+	inner := at + step
+	switch x := v.(type) {
+	case []Value:
+		if len(x) == 0 {
+			return "[]"
+		}
+		parts := make([]string, len(x))
+		for i, item := range x {
+			parts[i] = inner + pyJSONIndent(item, step, inner)
+		}
+		return "[\n" + strings.Join(parts, ",\n") + "\n" + at + "]"
+	case *Record:
+		if len(x.Keys) == 0 {
+			return "{}"
+		}
+		parts := make([]string, len(x.Keys))
+		for i, key := range x.Keys {
+			parts[i] = inner + pyJSONString(key) + ": " + pyJSONIndent(x.Fields[key], step, inner)
+		}
+		return "{\n" + strings.Join(parts, ",\n") + "\n" + at + "}"
+	}
+	return pyJSON(v, false)
+}
+
+// askApproval shows one pending action and asks the person at the
+// terminal about it, as the reference's --approve does. It approves
+// exactly this action, once; nothing else.
+func askApproval(request *Record, approvedBy string) *approvalRecord {
+	if info, err := os.Stdin.Stat(); err != nil || info.Mode()&os.ModeCharDevice == 0 {
+		return nil
+	}
+	var steps []string
+	for _, part := range request.Fields["step"].([]Value) {
+		steps = append(steps, showText(part))
+	}
+	fmt.Fprintf(os.Stderr, "\nApproval needed before this action runs:\n  step      : %s\n  tool      : %s\n  arguments : %s\n",
+		strings.Join(steps, " / "), showText(request.Fields["tool"]), pyJSON(request.Fields["arguments"], false))
+	fmt.Fprint(os.Stderr, "Approve this one action? [y/N] ")
+	answer, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	if err != nil && answer == "" {
+		return nil
+	}
+	if reply := strings.ToLower(strings.TrimSpace(answer)); reply != "y" && reply != "yes" {
+		fmt.Fprintln(os.Stderr, "Refused. Nothing was run.")
+		return nil
+	}
+	if approvedBy == "" {
+		if who, err := user.Current(); err == nil {
+			approvedBy = who.Username
+		}
+	}
+	return &approvalRecord{showText(request.Fields["plan_hash"]), showText(request.Fields["action_hash"]), approvedBy, "approved at the terminal"}
 }

@@ -36,11 +36,19 @@ type run struct {
 	// once made, for the trace of a run that fails in it.
 	failingStep string
 	inFlight    *Record
-	servers     map[string]*mcpServer // by tool source, when a run names one
-	toolCalls   int
-	maxTools    int
-	modelCalls  int
-	maxModels   int
+	// The journal, when the run keeps one; the steps around the one now
+	// running, as the journal names a step; and what the step now running
+	// did with the journal.
+	session    *journal
+	prefix     []string
+	stepScope  []string
+	stepAction string
+	stepCached bool
+	servers    map[string]*mcpServer // by tool source, when a run names one
+	toolCalls  int
+	maxTools   int
+	modelCalls int
+	maxModels  int
 }
 
 func newRun(program *Program, tools map[string]*scriptedTool, providers map[string]modelProvider, workflow *WorkflowDecl) *run {
@@ -107,7 +115,7 @@ func (r *run) preflight(workflow *WorkflowDecl) {
 				add(r.checker.workflows[name].Steps, item.chosen)
 			}
 		case "tool":
-			if tool := r.checker.tools[item.call.Name]; tool.Access == "execute" && !item.chosen {
+			if tool := r.checker.tools[item.call.Name]; tool.Access == "execute" && r.session == nil && !item.chosen {
 				panic(&permissionError{fmt.Sprintf("Workflow tool %s requires a verified approval record", pyRepr(tool.Name))})
 			}
 		case "agent":
@@ -119,7 +127,7 @@ func (r *run) preflight(workflow *WorkflowDecl) {
 			// begins: a test answers only the tools it scripts.
 			for _, name := range agent.Can {
 				tool := r.checker.tools[name]
-				if tool.Access == "execute" && !item.chosen {
+				if tool.Access == "execute" && r.session == nil && !item.chosen {
 					panic(&permissionError{fmt.Sprintf("Agent tool %s requires a verified approval record", pyRepr(name))})
 				}
 				if r.tools[name] == nil && r.servers[tool.Source] == nil && tool.Source != "local_mock" {
@@ -178,6 +186,8 @@ func (r *run) workflowEvents(workflow *WorkflowDecl, inputs map[string]Value, de
 		if depth == 0 {
 			r.failingStep, r.inFlight = step.Name, nil
 		}
+		r.stepScope = append(append([]string{}, r.prefix...), workflow.Name, step.Name)
+		r.stepAction, r.stepCached = "", false
 		value, stepEvents, failure := r.attempt(step, step.Call, environment, at, depth)
 		var recovered *Record
 		if failure != nil {
@@ -198,18 +208,26 @@ func (r *run) workflowEvents(workflow *WorkflowDecl, inputs map[string]Value, de
 			if depth == 0 {
 				r.inFlight = nil
 			}
+			if r.session != nil {
+				r.session.recover(r.stepScope)
+			}
+			r.stepAction, r.stepCached = "", false
 			value, stepEvents = r.call(step.Fallback, environment, at, depth, 0)
 		}
 		result = value
 		environment.vars[step.Binding] = result
+		start := event("step_start", "step", step.Name)
+		if recovered != nil {
+			start.set("recovered_from", recovered)
+		}
+		completed := event("step_complete", "step", step.Name, "binding", step.Binding, "result", result)
 		if r.traced {
-			start := event("step_start", "step", step.Name)
-			if recovered != nil {
-				start.set("recovered_from", recovered)
-			}
 			events = append(events, start)
 			events = append(events, stepEvents...)
-			events = append(events, event("step_complete", "step", step.Name, "binding", step.Binding, "result", result))
+			events = append(events, completed)
+		}
+		if r.session != nil && !r.stepCached && len(stepEvents) == 2 && step.Call.Kind != "workflow" {
+			r.session.complete(r.stepScope, append([]Value{start}, stepEvents[0], stepEvents[1], completed), r.stepAction)
 		}
 		if depth == 0 {
 			r.failingStep, r.inFlight = "", nil
@@ -271,6 +289,23 @@ func (r *run) call(call *StepCall, environment *Scope, at frame, depth, retries 
 		}
 	})
 	r.note = &stepNote{}
+	if r.session != nil && call.Kind != "workflow" {
+		if call.Kind == "tool" {
+			// The arguments are checked before an approval is asked for.
+			if problem := r.schemaProblem(recorded, r.checker.tools[call.Name]); problem != "" {
+				runFail(problem)
+			}
+		}
+		if cached := r.session.cached(r.stepScope, recorded); cached != nil {
+			r.stepCached = true
+			return cached[3].(*Record).Fields["result"], []Value{cached[1], cached[2]}
+		}
+		mutation := ""
+		if call.Kind == "tool" && r.checker.tools[call.Name].Access == "execute" {
+			mutation = r.checker.tools[call.Name].Name
+		}
+		r.stepAction = r.session.start(r.stepScope, mutation, recorded)
+	}
 	switch call.Kind {
 	case "function":
 		decl, captured, funcs := r.machine.functions[call.Name], map[string]Value(nil), map[string]*FuncDecl(nil)
@@ -293,7 +328,10 @@ func (r *run) call(call *StepCall, environment *Scope, at frame, depth, retries 
 	case "workflow":
 		child := r.checker.workflows[call.Name]
 		first := r.begin(depth, event("workflow_call", "workflow", child.Name, "arguments", recorded, "expression_events", eventList(expressionEvents)))
+		saved := r.prefix
+		r.prefix = append([]string{}, r.stepScope...)
 		result, childEvents := r.workflowEvents(child, arguments, depth+1)
+		r.prefix = saved
 		return result, []Value{first,
 			event("workflow_return", "workflow", child.Name, "result", result, "events", eventList(childEvents)),
 		}
@@ -353,7 +391,7 @@ func (r *run) tool(tool *ToolDecl, arguments map[string]Value) Value {
 		panic(&budgetError{Message: fmt.Sprintf("tool calls budget exceeds %d", r.maxTools)})
 	}
 	r.toolCalls++
-	if tool.Access == "execute" {
+	if tool.Access == "execute" && r.session == nil {
 		// Not a failure of the work: no fallback may answer it.
 		panic(&permissionError{fmt.Sprintf("Workflow tool %s requires a verified approval record", pyRepr(tool.Name))})
 	}
@@ -635,6 +673,9 @@ func (r *run) agentTool(tool *ToolDecl, arguments *Record) (outcome Value, failu
 	}
 	r.toolCalls++
 	if tool.Access == "execute" {
+		if r.session != nil {
+			panic(&permissionError{fmt.Sprintf("kosika-native cannot let an agent use %s yet: approving an agent's own change is not built", pyRepr(tool.Name))})
+		}
 		panic(&permissionError{fmt.Sprintf("Workflow ask tool %s requires a verified approval record", pyRepr(tool.Name))})
 	}
 	defer func() {

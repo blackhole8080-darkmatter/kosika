@@ -25,6 +25,15 @@ events as the reference's, apart from the time and the program's hash,
 which here is a hash of the program's text. Each engine's `replay`
 accepts the other's traces.
 
+A tool that changes the world runs only with an approval of exactly that
+action, as in the reference: `--journal FILE --binding-id ID` keeps what
+the run has done, a run that reaches such a tool stops with exit code 3
+and prints the action to approve, and `--approval-record FILE` (or
+`--approve`, asking at the terminal) lets it run, once. Begun again, a run
+takes what it already did from its journal and does nothing twice. The
+journal is this engine's own: two JSON files, not the reference's SQLite,
+so an approval given to one engine does not serve the other.
+
 ## What it has
 
 The core of the language, which reaches nothing outside the program:
@@ -60,9 +69,8 @@ print what the reference engine prints, word for word. See
 
 - Steps with `verify`, `vote`, `escalate` or `with evidence`, and
   `parallel` blocks.
-- Journals and approvals for a run, and so any tool that changes the
-  world. Replaying an agent run's own trace, an answer with evidence, or a
-  verified answer.
+- An agent using a tool that changes the world. Replaying an agent run's
+  own trace, an answer with evidence, or a verified answer.
 - Reaching a real tool other than through an MCP server: MCP servers, `system` tools, files, pages, the
   clock and chance. Approvals.
 - Memories, boards, swarms and imports.
@@ -83,6 +91,7 @@ print what the reference engine prints, word for word. See
     run.go       the run command
     trace.go     writing a run's trace
     replay.go    checking a trace
+    journal.go   the journal, and approvals
     check.go     the checker: refusing a program before it runs
     check_workflows.go   the checker's rules for tools, agents, workflows
     workflows.go running a workflow, and the tools a test scripts

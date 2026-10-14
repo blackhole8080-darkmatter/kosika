@@ -3506,6 +3506,30 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   programs with workflows, agents and tools; the guide does not teach
   those yet.
 
+### The native engine runs a change once it is approved
+
+- Asked to choose, the owner took the recommendation: the native engine
+  keeps a journal of its own, plain JSON, rather than sharing the
+  reference's SQLite journal, which would have needed a SQLite module
+  downloaded for Go and a port of the reference's hash of a program's tree.
+- `kosika-native run` takes `--journal`, `--binding-id`,
+  `--approval-record`, `--approve` and `--approved-by` as `kosika run`
+  does. A run that reaches a tool that changes the world stops with exit
+  code 3 and prints the action to approve; an approval names that one
+  action of that one run and is claimed once, in a ledger beside the
+  journal; begun again, the run takes each step it already finished from
+  the journal, so the change is made once. A journal of a different
+  program, input or binding is refused, and so is a step left half done.
+- Held by `tests/test_conformance.py` on the example
+  `approval_mutation.kos`: both engines refuse the change without a
+  journal, ask for the same action (tool, arguments, step) with one, make
+  the change once approved, and do not make it again when run again.
+- Not yet: an agent's own change, which asks for approval inside its
+  loop; approvals are refused there by name.
+- Next: Kosika environments, the owner's idea, agreed: one checked-in file
+  per project naming the models, tools, grants, budgets and the place
+  where memories, traces and approvals are kept.
+
 ### The native engine writes traces, and replays them
 
 - The owner said to continue in the order given: traces, then approvals,
