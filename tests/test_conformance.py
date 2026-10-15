@@ -659,6 +659,97 @@ class NativeTests(unittest.TestCase):
                 )
                 self.assertNotEqual(native.returncode, 0)
 
+    def test_it_reaches_files_and_programs_as_the_reference_does(self) -> None:
+        # Files in a granted folder, and a program started there: what each
+        # engine gives back, refuses, and changes, side by side.
+        source = (
+            "record Ask { path: Text query: Text }\n"
+            "record Query { path: Text query: Text }\n"
+            "record Hits { matches: Text[] }\n"
+            "record Command { args: Text[] }\n"
+            "record Ran { exit_code: Number stdout: Text stderr: Text }\n"
+            'tool find_text {\n  source system "files"\n  operation: "search"\n'
+            "  access: observe\n  input: Query\n  output: Hits\n}\n"
+            'tool run_python {\n  source system "shell"\n  operation: "python"\n'
+            "  access: execute\n  input: Command\n  output: Ran\n}\n"
+            "agent hands {\n  can: [find_text, run_python]\n}\n"
+            "workflow names(ask: Ask) -> FileNames {\n  names = list files ask.path\n}\n"
+            "workflow note(ask: Ask) -> FileContent {\n  note = read file ask.path\n}\n"
+            "workflow hits(ask: Ask) -> Hits {\n  hits = execute hands.find_text(ask.path, ask.query)\n}\n"
+            "workflow save(ask: Ask) -> FileSaved {\n"
+            '  saved = write file ask.path with ask.query\n  require approval\n}\n'
+            "workflow python(ask: Ask) -> Ran {\n"
+            '  ran = execute hands.run_python(["-c", ask.query])\n  require approval\n}\n'
+        )
+        runs = [
+            ("names", ".", "", []),
+            ("names", "notes", "", []),
+            ("note", "notes/todo.txt", "", []),
+            ("note", "../outside.txt", "", []),
+            ("note", "missing.txt", "", []),
+            ("note", "notes", "", []),
+            ("hits", ".", "rent lists", []),
+            ("hits", ".", "", []),
+            ("save", "out/report.txt", "written", []),
+            ("save", "out/report.txt", "written", ["journal"]),
+            ("python", ".", "print('ran here')", ["journal"]),
+            ("names", ".", "", ["no folder"]),
+            ("names", ".", "", ["shell, no folder"]),
+        ]
+        seen: dict[str, list[object]] = {}
+        for name in ("reference", "native"):
+            outcome: list[object] = []
+            with tempfile.TemporaryDirectory() as scratch:
+                root = Path(scratch)
+                (root / "p.kos").write_text(source, encoding="utf-8")
+                (root / "outside.txt").write_text("not yours\n")
+                granted = root / "granted"
+                (granted / "notes").mkdir(parents=True)
+                (granted / "notes" / "todo.txt").write_text("rent is due\r\nbuy lists\ncurrent rental\n")
+                (granted / "readme.md").write_text("Lists of rent.\n")
+                for workflow, path, query, how in runs:
+                    (root / "in.json").write_text(json.dumps({"ask": {"path": path, "query": query}}))
+                    flags = ["--workflow", workflow, "--input", "in.json", "--trace", "t.jsonl"]
+                    if "no folder" in how or "shell, no folder" in how:
+                        flags += ["--allow-shell"] if "shell, no folder" in how else []
+                    else:
+                        flags += ["--allow-folder", "granted", "--allow-shell"]
+                    if "journal" in how:
+                        flags += ["--journal", f"{workflow}.journal", "--binding-id", "b"]
+                    command = (
+                        [sys.executable, "-m", "kosika.cli", "run", "p.kos"]
+                        if name == "reference"
+                        else [str(self.engine), "run", "p.kos"]
+                    )
+                    ran = subprocess.run(
+                        [*command, *flags], cwd=root, capture_output=True, text=True,
+                        encoding="utf-8", env={**os.environ, "PYTHONPATH": str(ROOT)},
+                    )
+                    said = [
+                        line for line in ran.stderr.splitlines()
+                        if line.strip() and "platform independent" not in line
+                    ]
+                    first = ran.stdout.splitlines()[:1]
+                    if ran.returncode == 3:
+                        asked = json.loads(ran.stdout)
+                        first = [{k: asked[k] for k in ("tool", "arguments", "step")}]
+                        (root / "ok.json").write_text(json.dumps({
+                            "plan_hash": asked["plan_hash"], "action_hash": asked["action_hash"],
+                            "approved_by": "tester",
+                        }))
+                        again = subprocess.run(
+                            [*command, *flags, "--approval-record", "ok.json"], cwd=root,
+                            capture_output=True, text=True, encoding="utf-8",
+                            env={**os.environ, "PYTHONPATH": str(ROOT)},
+                        )
+                        first.append((again.returncode, again.stdout.splitlines()[:1]))
+                    outcome.append((workflow, path, ran.returncode, first, said[-1:]))
+                written = granted / "out" / "report.txt"
+                outcome.append(written.read_text() if written.exists() else None)
+            seen[name] = outcome
+        for native, reference in zip(seen["native"], seen["reference"]):
+            self.assertEqual(native, reference)
+
     def test_it_keeps_memories_as_the_reference_does(self) -> None:
         # Run twice over one memory folder, each engine writes the same file
         # and gives the same results and traces; without a folder both

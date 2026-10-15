@@ -21,8 +21,8 @@ func runCommand(args []string) int {
 	options := map[string]string{"--workflow": "main", "--model-protocol": "openai", "--model-timeout": "60", "--max-output-tokens": "1024"}
 	options["--mcp-source"] = "local_stdio"
 	options["--trace"] = "run_trace.jsonl"
-	flags := map[string]bool{"--approve": true}
-	known := map[string]bool{"--memory": true, "--env": true, "--journal": true, "--binding-id": true, "--approval-record": true, "--approved-by": true, "--trace": true, "--model-fixture": true, "--mcp-server": true, "--mcp-manifest": true, "--mcp-source": true, "--workflow": true, "--input": true, "--model": true, "--model-url": true, "--model-protocol": true, "--model-timeout": true, "--model-binding": true, "--max-output-tokens": true}
+	flags := map[string]bool{"--approve": true, "--allow-shell": true}
+	known := map[string]bool{"--allow-folder": true, "--memory": true, "--env": true, "--journal": true, "--binding-id": true, "--approval-record": true, "--approved-by": true, "--trace": true, "--model-fixture": true, "--mcp-server": true, "--mcp-manifest": true, "--mcp-source": true, "--workflow": true, "--input": true, "--model": true, "--model-url": true, "--model-protocol": true, "--model-timeout": true, "--model-binding": true, "--max-output-tokens": true}
 	for i := 1; i < len(args); i++ {
 		name, value, joined := strings.Cut(args[i], "=")
 		if flags[name] && !joined {
@@ -168,6 +168,24 @@ func runCommand(args []string) int {
 			inputs[key] = record.Fields[key]
 		}
 	}
+	// The folder files tools may reach, and whether programs may be started
+	// in it: granted by the person running the program, or its environment.
+	folder, allowShell := options["--allow-folder"], options["--allow-shell"] != ""
+	if env != nil {
+		folder, allowShell = env.allowFolder, env.allowShell
+	}
+	if folder == "" && allowShell {
+		fmt.Fprintln(os.Stderr, "Workflow failed: allowing shell also needs a granted folder to run in")
+		return 2
+	}
+	if folder != "" {
+		granted := realPath(folder)
+		if granted == "" || !isDir(granted) {
+			fmt.Fprintf(os.Stderr, "Workflow failed: granted folder %s is not an existing folder\n", pyRepr(folder))
+			return 2
+		}
+		folder = granted
+	}
 	if env != nil && env.keep != "" {
 		// A run keeps a journal of its own, named by what it runs, so one
 		// paused for an approval is found again when run again.
@@ -194,6 +212,7 @@ func runCommand(args []string) int {
 		if memory != "" {
 			running.memory = newMemoryStore(memory)
 		}
+		running.folder, running.allowShell = folder, allowShell
 		if env != nil {
 			// An environment's budget only tightens the workflow's.
 			if amount, given := env.budget["model_calls"]; given && int(toFloat(amount)) < running.maxModels {

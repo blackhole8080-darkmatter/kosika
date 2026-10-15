@@ -3506,6 +3506,28 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   programs with workflows, agents and tools; the guide does not teach
   those yet.
 
+### The clock, chance, files and programs in the native engine
+
+- `now` and `random LOW to HIGH` (native/ambient.go), lowered to tools as
+  the reference lowers them, answered by the computer's clock and its
+  source of chance. Held by `cases/clock.kos` and `failing/random_order.kos`;
+  a trace of either engine replays in the other.
+- `source system "files"` and `source system "shell"` tools
+  (native/system.go), with `--allow-folder` and `--allow-shell` (or an
+  environment's `allow folder` and `allow shell`): read, peek, search,
+  list, write, create and write_all within the folder, a path that leaves
+  it refused; a program found on the path started there, for at most a
+  minute; writing and starting programs wait for an approval. The
+  checker's refusals of a badly declared system tool are the reference's,
+  word for word. `read file`, `list files` and `write file` in one line
+  (native/direct.go). Held by a test in `tests/test_conformance.py` that
+  runs thirteen requests in both engines: listings, reads, a search, the
+  refusals, a write and a program run once approved.
+- Six of the eleven example agents (builder, coach, doctor, planner,
+  scout, workbench) now pass their own tests in the native engine, word
+  for word as in the reference. The rest wait for steps with `verify`, and
+  for the agents, kosika and outside kinds of system tool.
+
 ### Imports in the native engine, and stronger agents
 
 - The native engine reads a program in several files (native/modules.go),

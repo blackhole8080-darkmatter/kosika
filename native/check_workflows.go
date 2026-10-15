@@ -163,6 +163,9 @@ func (c *checker) checkTools() {
 		if tool.Input != "" && c.records[tool.Input] == nil {
 			checkFail("Tool %s accepts unknown record %s", pyRepr(tool.Name), pyRepr(tool.Input))
 		}
+		if problem := c.systemProblem(tool); problem != "" {
+			checkFail("Invalid system tool: %s", problem)
+		}
 	}
 }
 

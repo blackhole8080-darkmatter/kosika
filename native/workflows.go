@@ -56,6 +56,10 @@ type run struct {
 	// The program's memories, when granted, and the boards of this run.
 	memory *memoryStore
 	boards *boardStore
+	// The folder files tools may reach, made whole, and whether programs
+	// may be started in it.
+	folder     string
+	allowShell bool
 }
 
 // checkpoint stops a run that is past its deadline.
@@ -148,7 +152,7 @@ func (r *run) preflight(workflow *WorkflowDecl) {
 				if tool.Access == "execute" && r.session == nil && !item.chosen {
 					panic(&permissionError{fmt.Sprintf("Agent tool %s requires a verified approval record", pyRepr(name))})
 				}
-				hosted := strings.HasPrefix(tool.Source, boardSource) || strings.HasPrefix(tool.Source, "world:") || (strings.HasPrefix(tool.Source, memorySource) && r.memory != nil)
+				hosted := strings.HasPrefix(tool.Source, boardSource) || strings.HasPrefix(tool.Source, "world:") || (strings.HasPrefix(tool.Source, memorySource) && r.memory != nil) || r.systemBound(tool)
 				if r.tools[name] == nil && !hosted && r.servers[tool.Source] == nil && tool.Source != "local_mock" {
 					panic(&permissionError{fmt.Sprintf("Agent tool %s has no authorized host binding", pyRepr(name))})
 				}

@@ -244,6 +244,8 @@ func (r *run) changeOutcome(tool *ToolDecl, arguments *Record) Value {
 		}
 		scripted.asked++
 		outcome = scripted.answers[scripted.asked-1]
+	} else if hosted, ok := r.hostTool(tool, arguments); ok {
+		outcome = hosted
 	} else if r.servers[tool.Source] != nil {
 		outcome = r.callDeclaredTool(tool, arguments)
 	} else {

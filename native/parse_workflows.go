@@ -1,8 +1,7 @@
 package main
 
 // Reading tools, agents and workflows, as kosika/parser.py reads them. A
-// step this engine cannot run yet (files and pages) is
-// refused by name.
+// step this engine cannot run yet (fetching a page) is refused by name.
 
 import (
 	"strconv"
@@ -32,7 +31,12 @@ func (p *Parser) parseTool() *ToolDecl {
 		if key == "source" {
 			if p.check("system") {
 				token := p.advance()
-				parseFail("kosika-native cannot read a system tool yet (at %d:%d); it reaches tools only through a test's scripted answers", token.Line, token.Column)
+				kind := p.stringOrIdentifier()
+				if hasName(systemKinds, kind) && !systemKindsHere[kind] {
+					parseFail("kosika-native cannot read a system %s tool yet (at %d:%d); it reaches files and programs, and other tools through MCP servers", kind, token.Line, token.Column)
+				}
+				values["source"] = systemPrefix + kind
+				continue
 			}
 			p.expect("mcp")
 			values["source"] = p.stringOrIdentifier()
@@ -294,14 +298,23 @@ func (p *Parser) parseStepCall() *StepCall {
 			author := p.identifier()
 			return &StepCall{Kind: "tool", Agent: boardAgent, Name: "post_" + name, Args: []Arg{{"author", &Literal{author}}, {"body", body}}, Line: token.Line}
 		case token.Value == "read" && following == "file":
-			notYetStep(token, "a step that reads a file")
+			// Files in one line: see direct.go.
+			p.advance()
+			p.advance()
+			return &StepCall{Kind: "tool", Agent: directAgent, Name: "file_read", Args: []Arg{{"path", p.expression()}}, Line: token.Line}
 		case token.Value == "read" && p.peek().Kind == "IDENT" && following != "(":
 			p.advance()
 			return &StepCall{Kind: "tool", Agent: boardAgent, Name: "read_" + p.identifier(), Line: token.Line}
 		case token.Value == "list" && following == "files":
-			notYetStep(token, "a step that lists files")
+			p.advance()
+			p.advance()
+			return &StepCall{Kind: "tool", Agent: directAgent, Name: "file_list", Args: []Arg{{"path", p.expression()}}, Line: token.Line}
 		case token.Value == "write" && following == "file":
-			notYetStep(token, "a step that writes a file")
+			p.advance()
+			p.advance()
+			target := p.expression()
+			p.expect("with")
+			return &StepCall{Kind: "tool", Agent: directAgent, Name: "file_write", Args: []Arg{{"path", target}, {"text", p.expression()}}, Line: token.Line}
 		case token.Value == "fetch" && following != "(" && following != "." && following != "=":
 			notYetStep(token, "a step that fetches a page")
 		case token.Value == "now" && following != "(" && following != ".":

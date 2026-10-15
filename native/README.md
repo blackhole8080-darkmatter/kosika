@@ -85,9 +85,9 @@ print what the reference engine prints, word for word. See
   the reference checks such a plan before showing it, and those checks are
   not here yet, so such a plan is refused by name. Replaying an agent
   run's own trace, an answer with evidence, or a verified answer.
-- Reaching a real tool other than through an MCP server: `system` tools,
-  files and pages. So an environment's `allow folder`,
-  `allow shell` and `allow site` are read but grant nothing here yet.
+- `system` tools other than files and shell (web, kosika, meaning, agents,
+  outside), and `fetch`; so an environment's `allow site` grants nothing
+  here yet. Searching by meaning (`find`).
 - Swarms.
 - A file that has any of these is refused, and the refusal names it.
 - Vectors and matrices.
@@ -110,6 +110,8 @@ print what the reference engine prints, word for word. See
     stores.go    memories and boards, made tools, and where they are kept
     modules.go   a program in several files: import and export
     ambient.go   the clock and chance: `now` and `random`
+    system.go    files in the granted folder, and programs started there
+    direct.go    `read file`, `list files`, `write file` in one line
     agent_changes.go   an agent's own changes, planned and approved
     check.go     the checker: refusing a program before it runs
     check_workflows.go   the checker's rules for tools, agents, workflows
