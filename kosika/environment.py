@@ -331,4 +331,5 @@ DECIDED = (
     ("journal", "--journal"),
     ("binding_id", "--binding-id"),
     ("memory", "--memory"),
+    ("notify", "--notify"),
 )

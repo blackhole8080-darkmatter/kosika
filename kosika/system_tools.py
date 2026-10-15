@@ -99,11 +99,21 @@ from typing import Any, Callable, Iterator, Sequence
 
 from .ast import PLAN_FILE_FIELDS, Program, ToolDecl
 from .embeddings import EmbeddingError, Meaning
+from .notify import NotifyError, bind_notify_tool
 from .sessions import Session, SessionError
 from .web import WebError, bind_web_tool
 
 SYSTEM_PREFIX = "system:"
-SYSTEM_KINDS = ("shell", "files", "web", "kosika", "meaning", "agents", "outside")
+SYSTEM_KINDS = (
+    "shell",
+    "files",
+    "web",
+    "kosika",
+    "meaning",
+    "agents",
+    "outside",
+    "notify",
+)
 #: The largest program text the `kosika` tool will look at.
 MAX_CHECKED_SOURCE = 64 * 1024
 #: How many of a checked program's tests are run.
@@ -220,6 +230,8 @@ SHAPES: dict[str, tuple[dict[str, str], dict[str, str]]] = {
     "near": ({"a": "Text", "b": "Text"}, {"score": "Number"}),
     # A web tool reads one page from a site the runner allowed; see kosika.web.
     "fetch": ({"url": "Text"}, {"url": "Text", "title": "Text", "text": "Text"}),
+    # A note sent to the one address the person named; see kosika.notify.
+    "send": ({"title": "Text", "text": "Text"}, {"sent": "Bool"}),
     # A request handed to another agent in the same folder. `agent` may be
     # empty, which lets the host choose. `ok` is false, with the reason in
     # `text`, when nobody could be asked or the other agent did not finish.
@@ -284,6 +296,7 @@ def declaration_problem(program: Program, tool: ToolDecl) -> str | None:
         or kind == "meaning"
         or kind == "agents"
         or kind == "outside"
+        or kind == "notify"
     )
     if kind == "outside" and tool.operation not in ("propose", "review", "answer"):
         return (
@@ -304,6 +317,11 @@ def declaration_problem(program: Program, tool: ToolDecl) -> str | None:
         return (
             f"Tool {tool.name!r} has unknown kosika operation {tool.operation!r}; "
             "use one of: check, check_files"
+        )
+    if kind == "notify" and tool.operation != "send":
+        return (
+            f"Tool {tool.name!r} has unknown notify operation {tool.operation!r}; "
+            "the only one is send"
         )
     if kind == "web" and tool.operation != "fetch":
         return (
@@ -800,6 +818,7 @@ def bind_system_tools(
     web_opener: Any = None,
     meaning: Meaning | None = None,
     session: Session | None = None,
+    notify: str | None = None,
 ) -> dict[str, Callable[[ToolDecl, dict[str, Any]], Any]]:
     """Bind the program's system tools that the host has granted.
 
@@ -831,6 +850,12 @@ def bind_system_tools(
         except WebError as exc:
             raise SystemToolError(str(exc)) from exc
         web.update({tool.name: reader for tool in system if system_kind(tool) == "web"})
+    if notify:
+        try:
+            note = bind_notify_tool(notify)
+        except NotifyError as exc:
+            raise SystemToolError(str(exc)) from exc
+        web.update({tool.name: note for tool in system if system_kind(tool) == "notify"})
     if meaning is not None:
         web.update(
             {

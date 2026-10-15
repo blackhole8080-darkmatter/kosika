@@ -18,6 +18,11 @@
 // An arXiv paper is a preprint, not yet reviewed by other scientists, and
 // it says so.
 //
+// It can send each digest to your phone as a notification. Install the
+// free ntfy app (iOS or Android), subscribe to a topic name only you know,
+// and run with --notify https://ntfy.sh/THAT-NAME. Notes go to that one
+// address and nowhere else. Without --notify nothing is sent.
+//
 // The models explain from each paper's abstract. They are told not to add
 // what the abstract does not say, and each explanation says it was made
 // from the abstract alone.
@@ -57,8 +62,19 @@ tool read_feed {
   output: Page
 }
 
+record Note { title: Text text: Text }
+record Sent { sent: Bool }
+
+tool tell_me {
+  source system "notify"
+  operation: "send"
+  access: observe
+  input: Note
+  output: Sent
+}
+
 agent library {
-  can: [read_feed]
+  can: [read_feed, tell_me]
 }
 
 model teacher {
@@ -230,6 +246,12 @@ fn fields_named(papers: Paper[]) -> Text {
   return (for paper in papers { paper.field }).unique().join(", ")
 }
 
+fn shown_with(said: Said, sent: Sent) -> Said {
+  return if sent.sent { {text: said.text + "
+
+(Sent to your phone.)"} } else { said }
+}
+
 fn day_of(today: Moment, papers: Paper[]) -> Day {
   return {date: today.date, papers: papers}
 }
@@ -270,6 +292,28 @@ fn evening_text(batch: Batch, deeper: Deeper) -> Said {
   return {text: parts.join("\n")}
 }
 
+// What is sent to the phone: short enough to read there. The whole digest
+// is what the run prints.
+fn phone_note(title: Text, said: Said) -> Note {
+  var kept: Text[] = []
+  for line in said.text.lines() {
+    if line.starts_with("### ") { kept = kept.append("
+" + line.drop(4)) }
+    else if line.starts_with("## ") { kept = kept.append("
+" + line.drop(3)) }
+    else if line.starts_with("https://") { kept = kept.append(line) }
+    else if line.starts_with("The idea: ") { kept = kept.append(line.drop(10).take(300)) }
+    else if line.starts_with("An example: ") { kept = kept.append(line.drop(12).take(300)) }
+  }
+  let body = if kept.is_empty() { said.text } else { kept.join("
+").trim() }
+  return {title: title, text: body}
+}
+
+fn not_sent() -> Sent {
+  return {sent: false}
+}
+
 // ---------------------------------------------------------------- workflows
 
 workflow afternoon(msg: Msg) -> Said {
@@ -289,6 +333,9 @@ workflow afternoon(msg: Msg) -> Said {
   kept   = remember day in days under "last"
   marked = remember seen_with(past, papers) in seen under "all"
   said   = digest(today, papers, first, second)
+  note   = phone_note("Research digest " + today.date, said)
+  sent   = execute library.tell_me(note.title, note.text) otherwise not_sent()
+  shown  = shown_with(said, sent)
 }
 
 workflow evening(msg: Msg) -> Said {
@@ -297,6 +344,9 @@ workflow evening(msg: Msg) -> Said {
   batch  = evening_batch(past)
   deeper = use_model tutor(batch.task, batch.papers) retry 1 otherwise {items: []}
   said   = evening_text(batch, deeper)
+  note   = phone_note("Evening lesson", said)
+  sent   = execute library.tell_me(note.title, note.text) otherwise not_sent()
+  shown  = shown_with(said, sent)
 }
 
 workflow main(msg: Msg) -> Said {
@@ -384,4 +434,12 @@ test "with nothing read there is nothing to explain" {
   expect d.text.starts_with("No new papers could be read today.")
   e = evening({text: ""})
   expect e.text.starts_with("There is no afternoon digest")
+}
+
+test "the phone gets the titles, the links and the ideas" {
+  said: Said = {text: "# Research digest\n\n### Light in glass\nOptics · 2026-10-14 · Ann Lee\nhttps://arxiv.org/abs/1 (preprint; explained from its abstract)\n\nThe idea: How to bend light.\nWhat it found: A new lens."}
+  note = phone_note("Research digest", said)
+  expect note.text == "Light in glass\nhttps://arxiv.org/abs/1 (preprint; explained from its abstract)\nHow to bend light."
+  expect shown_with(said, {sent: true}).text.ends_with("(Sent to your phone.)")
+  expect shown_with(said, {sent: false}).text == said.text
 }

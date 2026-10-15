@@ -1509,6 +1509,14 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     run_parser.add_argument(
+        "--notify",
+        metavar="URL",
+        help=(
+            "The one address a notify tool sends notes to, such as "
+            "https://ntfy.sh/your-private-topic. Without it, nothing is sent."
+        ),
+    )
+    run_parser.add_argument(
         "--model-timeout",
         type=float,
         default=60.0,
@@ -3374,6 +3382,7 @@ def main() -> int:
             allow_shell=args.allow_shell,
             sites=getattr(args, "allow_site", ()),
             meaning=_meaning(args),
+            notify=getattr(args, "notify", None),
         )
         system_bindings = {
             **system_bindings,
