@@ -12,6 +12,7 @@ do not exist.
 
 from __future__ import annotations
 
+import datetime
 import difflib
 import math
 import re
@@ -313,6 +314,84 @@ def _contains(items: list[Any], item: Any) -> bool:
     )
 
 
+def _capitalized(text: str) -> str:
+    return text[:1].upper() + text[1:].lower()
+
+
+def _count_part(text: str, part: str) -> int:
+    if not part:
+        raise RuntimeError("count needs a part that is not empty")
+    return text.count(part)
+
+
+def _repeat(text: str, times: Any) -> str:
+    count = _count(times, "repeat")
+    if len(text) * count > MAX_TEXT_LENGTH:
+        raise RuntimeError(f"repeat would exceed {MAX_TEXT_LENGTH} characters")
+    return text * count
+
+
+def _clamp(value: Any, low: Any, high: Any) -> Any:
+    if low > high:
+        raise RuntimeError("clamp needs low to be no more than high")
+    return low if value < low else high if value > high else value
+
+
+def _log(value: Any) -> float:
+    if value <= 0:
+        raise RuntimeError("log needs a number above zero")
+    return round(math.log(value), 9) + 0.0
+
+
+def _exp(value: Any) -> float:
+    try:
+        return round(math.exp(value), 9) + 0.0
+    except OverflowError as exc:
+        raise RuntimeError("exp gives a number too large") from exc
+
+
+def _to_fixed(value: Any, digits: Any) -> str:
+    if isinstance(digits, bool) or digits != int(digits) or not 0 <= digits <= 20:
+        raise RuntimeError("to_fixed needs a whole number of digits from 0 to 20")
+    return f"{float(value):.{int(digits)}f}"
+
+
+def _count_item(items: list[Any], item: Any) -> int:
+    return sum(
+        1
+        for candidate in items
+        if isinstance(candidate, bool) == isinstance(item, bool) and candidate == item
+    )
+
+
+_DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
+_WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+
+
+def _date(text: str, name: str) -> datetime.date:
+    """A date written YYYY-MM-DD, as `now` gives one."""
+
+    try:
+        if not _DATE.fullmatch(text):
+            raise ValueError
+        return datetime.date(int(text[:4]), int(text[5:7]), int(text[8:]))
+    except ValueError:
+        raise RuntimeError(f"{name} needs a date written YYYY-MM-DD, got {text!r}") from None
+
+
+def _add_days(text: str, days: Any) -> str:
+    if isinstance(days, bool) or days != int(days):
+        raise RuntimeError("add_days needs a whole number of days")
+    try:
+        return (_date(text, "add_days") + datetime.timedelta(days=int(days))).isoformat()
+    except OverflowError:
+        raise RuntimeError("add_days goes past the years 1 to 9999") from None
+
+
+def _days_until(text: str, other: str) -> int:
+    return (_date(other, "days_until") - _date(text, "days_until")).days
+
+
 METHODS: tuple[Method, ...] = (
     Method("Text", "length", (), "Number", lambda text: len(text)),
     Method("Text", "upper", (), "Text", lambda text: text.upper()),
@@ -607,6 +686,34 @@ METHODS: tuple[Method, ...] = (
         matrices.shortest_path,
     ),
     Method("Number[][]", "components", (), "Number[][]", matrices.components),
+    # Text, numbers, lists and dates, as people use them every day.
+    Method("Text", "capitalize", (), "Text", _capitalized),
+    Method(
+        "Text",
+        "title",
+        (),
+        "Text",
+        lambda text: " ".join(_capitalized(word) for word in text.split(" ")),
+    ),
+    Method("Text", "count", (("part", "Text"),), "Number", _count_part),
+    Method("Text", "repeat", (("times", "Number"),), "Text", _repeat),
+    Method("Text", "reverse", (), "Text", lambda text: text[::-1]),
+    Method(
+        "Number", "clamp", (("low", "Number"), ("high", "Number")), "Number", _clamp
+    ),
+    Method("Number", "log", (), "Number", _log),
+    Method("Number", "exp", (), "Number", _exp),
+    Method("Number", "to_fixed", (("digits", "Number"),), "Text", _to_fixed),
+    Method(ANY_ARRAY, "count", (("item", ELEMENT),), "Number", _count_item),
+    Method("Text", "add_days", (("days", "Number"),), "Text", _add_days),
+    Method("Text", "days_until", (("other", "Text"),), "Number", _days_until),
+    Method(
+        "Text",
+        "weekday",
+        (),
+        "Text",
+        lambda text: _WEEKDAYS[_date(text, "weekday").weekday()],
+    ),
 )
 
 

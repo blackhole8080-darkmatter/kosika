@@ -291,6 +291,12 @@ the receiver's type, and every method is pure and deterministic.
 | `Text` | `contains(part: Text)`, `starts_with(prefix: Text)`, `ends_with(suffix: Text)` | `Bool` |
 | `Text` | `split(separator: Text)` | `Text[]`; the separator MUST be non-empty and a result over 512 parts fails the run |
 | `Text[]` | `join(separator: Text)` | `Text` |
+| `Text` | `capitalize()`, `title()`, `reverse()` | `Text`: the first letter of the text, or of each word, upper case and the rest lower; the characters backwards |
+| `Text` | `count(part: Text)`, `repeat(times: Number)` | `Number` of times a non-empty part appears, not overlapping; `Text` repeated a whole number of times |
+| `Text` | `add_days(days: Number)`, `days_until(other: Text)`, `weekday()` | for a date written `YYYY-MM-DD`, as `now` gives one: the date that many whole days later, the whole days to another date, and its weekday's name; any other text fails the run |
+| `Number` | `clamp(low: Number, high: Number)` | the number, kept from `low` through `high`; `low` above `high` fails the run |
+| `Number` | `log()`, `exp()`, `to_fixed(digits: Number)` | the natural logarithm of a number above zero and `e` to a power, rounded to nine places; `Text` with 0 to 20 digits after the point |
+| `T[]` | `count(item: T)` | `Number` of items equal to `item` |
 | any array | `length()` | `Number` of elements |
 | any array | `set(key: Number, value: T)` | a new array with that position replaced |
 | `Number` | `to(end: Number)`, `until(end: Number)` | `Number[]` of whole numbers through, or up to, the end |

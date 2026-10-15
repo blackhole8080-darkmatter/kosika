@@ -3506,6 +3506,15 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   programs with workflows, agents and tools; the guide does not teach
   those yet.
 
+### Everyday methods, in both engines
+
+- Text: `capitalize()`, `title()`, `count(part)`, `repeat(times)`,
+  `reverse()`; numbers: `clamp(low, high)`, `log()`, `exp()`,
+  `to_fixed(digits)`; lists: `count(item)`; dates written `YYYY-MM-DD`:
+  `add_days(days)`, `days_until(other)`, `weekday()`. Exact where whole
+  numbers are, refusals in the same words in both engines. Held by
+  `cases/everyday.kos` and `failing/everyday.kos`.
+
 ### Shapes, in both engines
 
 - `shape Priced { fn price(self) -> Number }` (kosika/checker.py,

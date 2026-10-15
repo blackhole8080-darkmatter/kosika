@@ -408,6 +408,20 @@ var methodTypes = []methodType{
 	m("Number[][]", "neighbours", "Number[]", "node", "Number"),
 	m("Number[][]", "shortest_path", "Number[]", "start", "Number", "end", "Number"),
 	m("Number[][]", "components", "Number[][]"),
+	// Text, numbers, lists and dates, as people use them every day.
+	m("Text", "capitalize", "Text"),
+	m("Text", "title", "Text"),
+	m("Text", "count", "Number", "part", "Text"),
+	m("Text", "repeat", "Text", "times", "Number"),
+	m("Text", "reverse", "Text"),
+	m("Number", "clamp", "Number", "low", "Number", "high", "Number"),
+	m("Number", "log", "Number"),
+	m("Number", "exp", "Number"),
+	m("Number", "to_fixed", "Text", "digits", "Number"),
+	m(anyArray, "count", "Number", "item", element),
+	m("Text", "add_days", "Text", "days", "Number"),
+	m("Text", "days_until", "Number", "other", "Text"),
+	m("Text", "weekday", "Text"),
 }
 
 func methodCandidates(receiverType string) []methodType {

@@ -115,6 +115,7 @@ print what the reference engine prints, word for word. See
     defaults.go  default values, and making a record by calling it
     enums.go     enums
     shapes.go    shapes: types every record with their functions is
+    everyday.go  everyday methods on text, numbers, lists and dates
     agent_changes.go   an agent's own changes, planned and approved
     check.go     the checker: refusing a program before it runs
     check_workflows.go   the checker's rules for tools, agents, workflows
