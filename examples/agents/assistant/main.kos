@@ -171,7 +171,23 @@ fn hand_of(said: Text) -> Handover {
     let task = rest.drop(at).join(" ").trim()
     if marked and not task.is_empty() { return {agent: named, text: task} }
   }
+  // A request to make something that is made of code or files goes to
+  // the coder, said in any of the usual ways: "pls make a website for my
+  // portfolio", "create a researcher agent", "can you build me a game".
+  if makes_something(rest) { return {agent: "coder", text: tidy} }
   return {agent: "", text: ""}
+}
+
+// Whether words ask for something to be made that the coder makes: a
+// verb of making near the start, and a thing made of code or files.
+fn makes_something(words: Text[]) -> Bool {
+  let lower = for word in words { word.lower().trim_marks(".,:;!?") }
+  let start = for word in lower.take(4) where ["make", "create", "build", "write", "design", "develop", "code", "generate", "program"].contains(word) { word }
+  if start.is_empty() { return false }
+  for thing in ["website", "webpage", "page", "site", "portfolio", "app", "application", "program", "script", "game", "function", "agent", "tool", "animation", "animations", "graphics", "code", "html", "css", "javascript", "python", "kosika", "module", "test", "tests", "file", "files", "folder", "project"] {
+    if lower.contains(thing) { return true }
+  }
+  return false
 }
 
 fn handed_said(known: BooksRecalled, got: Handed) -> Turn {
@@ -893,7 +909,18 @@ fn ask_prompt(msg: Msg, known: BooksRecalled, moment: Moment) -> Prompt {
   for r in book.reminders { lines = lines.append(reminder_line(r)) }
   let list = if lines.is_empty() { "none" } else { lines.join("; ") }
   let person = if book.you.is_empty() { "The person has not told you their name." } else { "The person's name is " + book.you + "." }
-  return {text: "You are " + book.name + ", a voice assistant on a person's laptop. Answer in sentences that sound natural when read aloud: one or two for a simple question, and up to six for a question that asks for ideas, reasons, advice or a plan. Give real substance: name the things, and say why. Use plain words. No lists, no headings, no symbols. If you are not sure, say so instead of guessing. Answer what the person says now. When their words point back at something, such as these, that, it, or I meant, they mean the conversation so far. Do not mention their reminders or what they asked you to remember unless they ask about them. You cannot open programs, browse the web or see files, so never say you did.\n" + person + "\nIt is " + moment.weekday + ", " + moment.date + ", " + moment.hour + ":" + two(moment.minute) + ".\nThings the person asked you to remember: " + facts + ".\nTheir reminders: " + list + ".\n\nThe person says: " + msg.text.trim()}
+  let about = if mentions_kosika(msg.text) { "\n" + kosika_primer() } else { "" }
+  return {text: "You are " + book.name + ", a voice assistant on a person's laptop. Answer in sentences that sound natural when read aloud: one or two for a simple question, and up to six for a question that asks for ideas, reasons, advice or a plan. Give real substance: name the things, and say why. Use plain words. No lists, no headings, no symbols. If you are not sure, say so instead of guessing. Answer what the person says now. When their words point back at something, such as these, that, it, or I meant, they mean the conversation so far. Do not mention their reminders or what they asked you to remember unless they ask about them. You cannot open programs, browse the web or see files, so never say you did.\n" + person + "\nIt is " + moment.weekday + ", " + moment.date + ", " + moment.hour + ":" + two(moment.minute) + ".\nThings the person asked you to remember: " + facts + ".\nTheir reminders: " + list + "." + about + "\n\nThe person says: " + msg.text.trim()}
+}
+
+fn mentions_kosika(text: Text) -> Bool {
+  return text.lower().contains("kosika")
+}
+
+// What Kosika is and can do, for a question about it: you are made with
+// it, and a model that has never heard of it would guess.
+fn kosika_primer() -> Text {
+  return "About Kosika, which you and the other agents here are written in: Kosika is a programming language for AI agents that are safe to trust. A Kosika program has records, functions, workflows, models, agents and tools, and is checked before it runs. It can ask a language model and get a typed answer, fetch web pages from sites the person allows (for example arxiv.org), read and write files in a folder the person grants, run programs such as python when allowed, keep memories between runs, and ask another agent. Anything that changes something waits for the person's yes. Kosika Studio runs the agents; the coder agent writes new Kosika programs and websites when asked, and Kosi passes such requests to it. Kosika has no built-in clock that starts a run at a set time; a run can be started every day by the computer's own task scheduler. When asked to build something, say that you will pass it to the coder, or that the person can say: use the coder agent to ..."
 }
 
 // How many lines of the talk are kept, and how long one may be.
@@ -939,7 +966,8 @@ fn is_open(msg: Msg) -> Bool {
 fn outside_question(msg: Msg, past: TalksRecalled) -> Handover {
   let open = talk_in(past).open
   let before = if open.is_empty() { "" } else { "The conversation so far, oldest first:\n" + open.join("\n") + "\n\n" }
-  return {agent: "omp", text: "Questions that ask for ideas, advice, an explanation or a plan are to be answered, also when they say I, my or we. Only when the question cannot be answered without a private fact about the person that is not given here, such as where they keep something, their timetable, or what they told their assistant before, answer with the single word LOCAL and nothing more.\n\n" + before + "The question: " + msg.text.trim()}
+  let about = if mentions_kosika(msg.text) { kosika_primer() + "\n\n" } else { "" }
+  return {agent: "omp", text: about + "Questions that ask for ideas, advice, an explanation or a plan are to be answered, also when they say I, my or we. Only when the question cannot be answered without a private fact about the person that is not given here, such as where they keep something, their timetable, or what they told their assistant before, answer with the single word LOCAL and nothing more.\n\n" + before + "The question: " + msg.text.trim()}
 }
 
 fn no_help() -> Handed {
@@ -1409,6 +1437,14 @@ test "a request for another agent is handed to it" {
   expect hand_of("tell the truth about cats").text == ""
   expect hand_of("let the dog out").text == ""
   expect kind_of({text: "use the coder agent to create a magnificent website"}) == "hand"
+  m = hand_of("pls make a mind-blowing motion graphics website for my portfolio, go all out")
+  expect m.agent == "coder"
+  expect m.text == "pls make a mind-blowing motion graphics website for my portfolio, go all out"
+  expect hand_of("create a researcher agent that summarizes papers").agent == "coder"
+  expect hand_of("Kosi, can you build me a small game").agent == "coder"
+  expect hand_of("make me laugh").text == ""
+  expect hand_of("write a poem about rain").text == ""
+  expect kind_of({text: "please create a website for my bakery"}) == "hand"
   d = main({text: "ask the coder to write a function that reverses a list"})
   e = main({text: "ask the teacher to mark my essay"})
   f = main({text: "hand over: what do my notes say about trees"})
