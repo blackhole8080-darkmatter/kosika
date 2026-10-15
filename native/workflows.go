@@ -148,7 +148,7 @@ func (r *run) preflight(workflow *WorkflowDecl) {
 				if tool.Access == "execute" && r.session == nil && !item.chosen {
 					panic(&permissionError{fmt.Sprintf("Agent tool %s requires a verified approval record", pyRepr(name))})
 				}
-				hosted := strings.HasPrefix(tool.Source, boardSource) || (strings.HasPrefix(tool.Source, memorySource) && r.memory != nil)
+				hosted := strings.HasPrefix(tool.Source, boardSource) || strings.HasPrefix(tool.Source, "world:") || (strings.HasPrefix(tool.Source, memorySource) && r.memory != nil)
 				if r.tools[name] == nil && !hosted && r.servers[tool.Source] == nil && tool.Source != "local_mock" {
 					panic(&permissionError{fmt.Sprintf("Agent tool %s has no authorized host binding", pyRepr(name))})
 				}

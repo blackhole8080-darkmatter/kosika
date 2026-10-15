@@ -1,7 +1,7 @@
 package main
 
 // Reading tools, agents and workflows, as kosika/parser.py reads them. A
-// step this engine cannot run yet (files, pages, the clock, chance) is
+// step this engine cannot run yet (files and pages) is
 // refused by name.
 
 import (
@@ -305,9 +305,14 @@ func (p *Parser) parseStepCall() *StepCall {
 		case token.Value == "fetch" && following != "(" && following != "." && following != "=":
 			notYetStep(token, "a step that fetches a page")
 		case token.Value == "now" && following != "(" && following != ".":
-			notYetStep(token, "a step that reads the clock")
+			// `today = now`, `roll = random 1 to 6`: see ambient.go.
+			p.advance()
+			return &StepCall{Kind: "tool", Agent: worldAgent, Name: clockTool, Line: token.Line}
 		case token.Value == "random" && following != "(" && following != "." && following != "=":
-			notYetStep(token, "a step that picks a random number")
+			p.advance()
+			low := p.expression()
+			p.expect("to")
+			return &StepCall{Kind: "tool", Agent: worldAgent, Name: randomTool, Args: []Arg{{"low", low}, {"high", p.expression()}}, Line: token.Line}
 		case token.Value == "recall" && following != "(":
 			p.advance()
 			name := p.identifier()

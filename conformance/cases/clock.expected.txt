@@ -1,0 +1,3 @@
+PASS  the clock and the dice are scripted like any tool
+PASS  with one number to choose from, chance has no choice
+2 passed, 0 failed

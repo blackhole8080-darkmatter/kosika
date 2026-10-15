@@ -43,7 +43,7 @@ func load(path string) *Program {
 		fmt.Printf("Check failed: %s\n", failure.message)
 		os.Exit(2)
 	}
-	stored, refused := LowerStores(program)
+	stored, refused := LowerStores(LowerAmbient(program))
 	if refused != "" {
 		fmt.Printf("Check failed: %s\n", refused)
 		os.Exit(2)

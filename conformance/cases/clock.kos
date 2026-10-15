@@ -1,0 +1,36 @@
+// The clock and chance are workflow steps: `now` and `random LOW to HIGH`.
+// A test scripts them like any tool, so it means the same thing tomorrow.
+
+record Ask { low: Number high: Number }
+record Said { text: Text roll: Number }
+
+fn said(today: Moment, roll: RandomNumber) -> Said {
+  return {text: f"{today.weekday} {today.date} at {today.time}", roll: roll.value}
+}
+
+
+workflow main(ask: Ask) -> Said {
+  today = now
+  roll  = random ask.low to ask.high
+  out   = said(today, roll)
+}
+
+workflow pick(ask: Ask) -> RandomNumber {
+  roll  = random ask.low to ask.high
+
+}
+
+test "the clock and the dice are scripted like any tool" {
+  answers clock_now: [{date: "2026-10-09", time: "14:05", weekday: "Friday", year: 2026, month: 10, day: 9, hour: 14, minute: 5, epoch: 1791554700}]
+  answers random_number: [{value: 4}]
+  s = main({low: 1, high: 6})
+  expect s.text == "Friday 2026-10-09 at 14:05"
+  expect s.roll == 4
+}
+
+test "with one number to choose from, chance has no choice" {
+  r1 = pick({low: 5, high: 5})
+  expect r1.value == 5
+  r2 = pick({low: -3.0, high: -3})
+  expect r2.value == -3
+}

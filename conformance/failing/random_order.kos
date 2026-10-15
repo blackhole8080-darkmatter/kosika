@@ -1,0 +1,24 @@
+// random needs the smaller number first, and whole numbers.
+
+record Ask { low: Number high: Number }
+
+
+workflow pick(ask: Ask) -> RandomNumber {
+  roll  = random ask.low to ask.high
+
+}
+
+test "the larger number first" {
+  r1 = pick({low: 6, high: 1})
+  expect r1.value == 1
+}
+
+test "a number that is not whole" {
+  r2 = pick({low: 1.5, high: 2})
+  expect r2.value == 2
+}
+
+test "too wide a span" {
+  r3 = pick({low: 0, high: 2000000000})
+  expect r3.value == 0
+}

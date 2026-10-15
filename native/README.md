@@ -86,7 +86,7 @@ print what the reference engine prints, word for word. See
   not here yet, so such a plan is refused by name. Replaying an agent
   run's own trace, an answer with evidence, or a verified answer.
 - Reaching a real tool other than through an MCP server: `system` tools,
-  files, pages, the clock and chance. So an environment's `allow folder`,
+  files and pages. So an environment's `allow folder`,
   `allow shell` and `allow site` are read but grant nothing here yet.
 - Swarms.
 - A file that has any of these is refused, and the refusal names it.
@@ -109,6 +109,7 @@ print what the reference engine prints, word for word. See
     env.go       environments: reading kosika.env
     stores.go    memories and boards, made tools, and where they are kept
     modules.go   a program in several files: import and export
+    ambient.go   the clock and chance: `now` and `random`
     agent_changes.go   an agent's own changes, planned and approved
     check.go     the checker: refusing a program before it runs
     check_workflows.go   the checker's rules for tools, agents, workflows

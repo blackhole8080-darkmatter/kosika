@@ -47,7 +47,7 @@ func titled(name string) string {
 // storeNames are the names a program may use because it declares these
 // memories and boards.
 func storeNames(program *Program) map[string]bool {
-	names := map[string]bool{}
+	names := ambientNames(program)
 	for _, memory := range program.Memories {
 		for _, name := range []string{memoryAgent, memoryKeyRecord, memorySavedRecord,
 			titled(memory.Name) + "Entry", titled(memory.Name) + "Recalled",
@@ -368,6 +368,10 @@ func (r *run) hostTool(tool *ToolDecl, arguments *Record) (Value, bool) {
 			return r.memory.recall(name, key), true
 		}
 		return r.memory.remember(name, key, arguments.Fields["value"]), true
+	case tool.Source == "world:clock":
+		return moment(), true
+	case tool.Source == "world:random":
+		return draw(arguments), true
 	case strings.HasPrefix(tool.Source, boardSource):
 		name := strings.TrimPrefix(tool.Source, boardSource)
 		if tool.Operation == "read" {

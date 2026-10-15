@@ -1,0 +1,7 @@
+FAIL  the larger number first
+      line 12: random needs the smaller number first, got 6 to 1
+FAIL  a number that is not whole
+      line 17: random needs whole numbers: random 1 to 6
+FAIL  too wide a span
+      line 22: random can span at most a thousand million numbers
+0 passed, 3 failed
