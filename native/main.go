@@ -35,12 +35,13 @@ func read(path string) string {
 // load reads, lowers and checks a program, as the reference's load_program
 // does, and ends the command when it cannot be run.
 func load(path string) *Program {
-	program, err := Parse(read(path))
-	if err != nil {
-		fail("Check failed: %s: %v", path, err)
+	program, failure := loadModules(path)
+	if failure != nil && failure.parse {
+		fail("Check failed: %s", failure.message)
 	}
-	if problem := ModuleProblem(program, path); problem != "" {
-		fail("Check failed: %s", problem)
+	if failure != nil {
+		fmt.Printf("Check failed: %s\n", failure.message)
+		os.Exit(2)
 	}
 	stored, refused := LowerStores(program)
 	if refused != "" {

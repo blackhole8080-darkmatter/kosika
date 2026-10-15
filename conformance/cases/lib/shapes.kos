@@ -1,0 +1,12 @@
+// Shapes, for modules.kos: what is exported is seen by the file that
+// imports this one; the helper is not.
+
+export [Box, area, grown]
+
+record Box { width: Number height: Number }
+
+fn twice(n: Number) -> Number { return n * 2 }
+
+fn area(box: Box) -> Number { return box.width * box.height }
+
+fn grown(box: Box) -> Box { return {width: twice(box.width), height: twice(box.height)} }

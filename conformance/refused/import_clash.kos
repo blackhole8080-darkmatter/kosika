@@ -1,0 +1,5 @@
+// A file may not declare a name a file it imports declares.
+
+import "lib/clash.kos"
+
+fn area(n: Number) -> Number { return n }

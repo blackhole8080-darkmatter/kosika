@@ -1,0 +1,1 @@
+Check failed: Conflicting module declaration 'area'

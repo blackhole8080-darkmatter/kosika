@@ -3506,6 +3506,36 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   programs with workflows, agents and tools; the guide does not teach
   those yet.
 
+### Imports in the native engine, and stronger agents
+
+- The native engine reads a program in several files (native/modules.go),
+  as `load_program` does: `import "path.kos"`, `export [names]`, each file
+  seeing its own declarations and what its imports export, a file imported
+  twice read once, and the same refusals in the same words: a private
+  name (with its "did you mean"), a cycle, a file outside the program's
+  folder or not a `.kos` file, an export that is not a unique local name,
+  a name declared in two files, a text that is not Kosika in an imported
+  file. Held by `cases/modules.kos` (with `cases/lib/`),
+  `refused/import_clash.kos`, and a test in `tests/test_conformance.py`
+  that makes nine broken programs and compares what both engines say.
+  A refusal of a program now ends with exit code 2 on the output in the
+  native engine, as the reference's does.
+- Agents, for the owner's wish that they do any task well:
+  - Ollama gave every local model 4096 tokens and silently dropped the
+    start of a longer conversation: the agent's instructions and skills.
+    Both engines now ask for 8192, 16384 or 32768 tokens as a request needs.
+  - The coder builds websites: an outside agent (omp) is asked for the
+    whole site first; otherwise its own model writes it in three rounds
+    (page, style, motion), each file allowed before it is written, with
+    checks for a page cut short and a stylesheet that does not close, and
+    Node reading the script in place of tests. Two skills, `page.md` and
+    `style.md`. Measured on one coffee-studio request: omp gave a polished
+    three-file site in six minutes; qwen2.5:7b on the laptop's CPU wrote a
+    plain page before the half-hour budget ran out, now an hour.
+  - Studio says which permission an agent lacks (a folder, or starting
+    programs) instead of naming a tool with no binding; Kosi hands a
+    request on however it is said ("use the coder agent to ...").
+
 ### Memories and boards in the native engine
 
 - `memory NAME of Record` with `recall` and `remember`, and `board NAME of

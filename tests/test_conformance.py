@@ -592,6 +592,73 @@ class NativeTests(unittest.TestCase):
         for key in seen["reference"]:
             self.assertEqual(seen["native"][key], seen["reference"][key], key)
 
+    def test_it_refuses_imports_as_the_reference_does(self) -> None:
+        # What a refusal of an import says names files by their whole path,
+        # so these are made here, in a folder of their own, not in the suite.
+        cases = {
+            "private": {
+                "main.kos": 'import "lib.kos"\nfn f() -> Number { return hidden() }\n',
+                "lib.kos": "export [shown]\nfn shown() -> Number { return 1 }\n"
+                "fn hidden() -> Number { return 2 }\n",
+            },
+            "typo": {
+                "main.kos": 'import "lib.kos"\nfn f() -> Number { return shwn() }\n',
+                "lib.kos": "export [shown]\nfn shown() -> Number { return 1 }\n",
+            },
+            "cycle": {
+                "main.kos": 'import "a.kos"\nfn f() -> Number { return 1 }\n',
+                "a.kos": 'import "b.kos"\nexport [a]\nfn a() -> Number { return 1 }\n',
+                "b.kos": 'import "a.kos"\nexport [b]\nfn b() -> Number { return 2 }\n',
+            },
+            "outside": {
+                "main.kos": 'import "../elsewhere.kos"\nfn f() -> Number { return 1 }\n',
+            },
+            "not a module": {
+                "main.kos": 'import "notes.txt"\nfn f() -> Number { return 1 }\n',
+                "notes.txt": "hello\n",
+            },
+            "exports": {
+                "main.kos": 'import "lib.kos"\nfn f() -> Number { return 1 }\n',
+                "lib.kos": "export [shown, shown]\nfn shown() -> Number { return 1 }\n",
+            },
+            "export unknown": {
+                "main.kos": "export [nothing]\nfn f() -> Number { return 1 }\n",
+            },
+            "bad text": {
+                "main.kos": 'import "lib.kos"\nfn f() -> Number { return 1 }\n',
+                "lib.kos": "fn g( -> Number { return 1 }\n",
+            },
+            "no path": {
+                "main.kos": "import lib\nfn f() -> Number { return 1 }\n",
+            },
+        }
+        for name, files in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as scratch:
+                project = Path(scratch) / "project"
+                project.mkdir()
+                (Path(scratch) / "elsewhere.kos").write_text("fn e() -> Number { return 1 }\n")
+                for file, text in files.items():
+                    (project / file).write_text(text, encoding="utf-8")
+                entry = str(project / "main.kos")
+                reference = subprocess.run(
+                    [sys.executable, "-m", "kosika.cli", "test", entry],
+                    cwd=ROOT, capture_output=True, text=True,
+                )
+                native = self.run_engine("test", entry)
+
+                def said(out: str, err: str) -> str:
+                    lines = [
+                        line for line in (out + err).splitlines()
+                        if line.strip() and "platform independent" not in line
+                    ]
+                    return lines[-1].replace(str(Path(scratch).resolve()), "SCRATCH") if lines else ""
+
+                self.assertEqual(
+                    said(native.stdout.decode("utf-8"), native.stderr.decode("utf-8")),
+                    said(reference.stdout, reference.stderr),
+                )
+                self.assertNotEqual(native.returncode, 0)
+
     def test_it_keeps_memories_as_the_reference_does(self) -> None:
         # Run twice over one memory folder, each engine writes the same file
         # and gives the same results and traces; without a folder both

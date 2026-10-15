@@ -1095,7 +1095,7 @@ func usedByCall(call *StepCall, bound, used map[string]bool) {
 // ModuleProblem is the reference's check, made as a file is read, that
 // every name a declaration uses is declared. It is reported, like a fault
 // in the text, with the file's path.
-func ModuleProblem(program *Program, path string) string {
+func ModuleProblem(program *Program, path string, visible map[string]bool) string {
 	c := newChecker(program)
 	local := map[string]bool{}
 	used := map[string]bool{}
@@ -1183,7 +1183,7 @@ func ModuleProblem(program *Program, path string) string {
 	var hidden []string
 	supplied := storeNames(program)
 	for name := range used {
-		if !local[name] && !primitiveTypes[name] && !builtInRecords[name] && !supplied[name] {
+		if !local[name] && !visible[name] && !primitiveTypes[name] && !builtInRecords[name] && !supplied[name] {
 			hidden = append(hidden, name)
 		}
 	}
@@ -1193,6 +1193,9 @@ func ModuleProblem(program *Program, path string) string {
 	sort.Strings(hidden)
 	candidates := []string{"Text", "Number", "Bool"}
 	for name := range local {
+		candidates = append(candidates, name)
+	}
+	for name := range visible {
 		candidates = append(candidates, name)
 	}
 	if absolute, err := filepath.Abs(path); err == nil {

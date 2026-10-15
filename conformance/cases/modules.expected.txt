@@ -1,0 +1,3 @@
+PASS  what an import exports can be used
+PASS  a workflow uses functions from two files
+2 passed, 0 failed

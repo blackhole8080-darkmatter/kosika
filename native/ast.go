@@ -1,7 +1,7 @@
 package main
 
 // What a program is once it has been read: its models, records, functions,
-// tools, agents, workflows, memories, boards and tests. Swarms and imports
+// tools, agents, workflows, memories, boards, imports and tests. Swarms
 // are not read yet, and a file that has one is refused by name.
 
 type Expr interface{}
@@ -250,4 +250,6 @@ type Program struct {
 	// `memory NAME of Record` and `board NAME of Record`, before
 	// LowerStores makes them tools.
 	Memories, Boards []*StoreDecl
+	// `import "path.kos"` and `export [names]`: see modules.go.
+	Imports, Exports []string
 }
