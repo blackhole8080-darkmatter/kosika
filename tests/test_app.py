@@ -12,8 +12,18 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-from kosika.app import PAGE, App, AppError, address, describe, find_agents, make_server
+from kosika.app import (
+    PAGE,
+    App,
+    AppError,
+    address,
+    describe,
+    find_agents,
+    make_server,
+    plain_refusal,
+)
 from kosika.model import ModelResponse, ScriptedModelProvider
+from kosika.parser import parse
 
 DESK = """// A desk that remembers people.
 //
@@ -245,6 +255,23 @@ class ActionTests(Fixture):
             app.story("desk/main.kos", "../../secret.jsonl")
         with self.assertRaises(AppError):
             app.run("desk/main.kos", {"nothing": 1})
+
+
+class RefusalTests(unittest.TestCase):
+    def test_a_missing_grant_says_what_to_do_in_studio(self) -> None:
+        program = parse(
+            "record P { path: Text }\nrecord L { text: Text }\n"
+            'tool list_folder {\n  source system "files"\n  operation: "list"\n'
+            "  access: observe\n  input: P\n  output: L\n}\n"
+            'tool run_tests {\n  source system "shell"\n  operation: "run"\n'
+            "  access: execute\n  input: P\n  output: L\n}\n"
+        )
+        folder = plain_refusal(program, "Agent tool 'list_folder' has no authorized host binding")
+        self.assertIn("Choose a folder", folder)
+        shell = plain_refusal(program, "Agent tool 'run_tests' has no authorized host binding")
+        self.assertIn("Let agents start programs", shell)
+        other = "Agent 'coder' has no authorized model binding"
+        self.assertEqual(plain_refusal(program, other), other)
 
 
 class LiveTests(Fixture):

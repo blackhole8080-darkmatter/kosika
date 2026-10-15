@@ -556,6 +556,32 @@ class Job:
         self.seconds = 0.0
 
 
+def plain_refusal(program: Program, message: str) -> str:
+    """A run refused for want of a grant, said as what to do about it in
+    Studio. Any other message is given back as it is."""
+
+    found = re.search(r"Agent tool '([^']+)' has no authorized host binding", message)
+    tool = next(
+        (item for item in program.tools if found and item.name == found.group(1)),
+        None,
+    )
+    if tool is None:
+        return message
+    if tool.source == "system:files":
+        return (
+            "this agent works on files, and no folder is granted yet. Open "
+            "Permissions, press Choose a folder, pick the folder it should work "
+            "in, press Apply, and ask again."
+        )
+    if tool.source == "system:shell":
+        return (
+            "this agent starts programs, such as your tests, and that is not "
+            "allowed yet. Open Permissions, turn on Let agents start programs, "
+            "press Apply, and ask again."
+        )
+    return message
+
+
 class App:
     """The agents under one folder, and what may be done with them."""
 
@@ -1624,7 +1650,7 @@ class App:
             job.state = "refused"
             job.error = "Refused. Nothing was changed."
         except (RuntimeError, ValueError, PermissionError, OSError) as exc:
-            job.error = f"The run did not finish: {exc}"
+            job.error = f"The run did not finish: {plain_refusal(program, str(exc))}"
             job.state = "failed"
         finally:
             job.seconds = round(time.monotonic() - started, 1)
