@@ -22,6 +22,7 @@ from kosika.model import (
     ModelRequest,
     ModelTool,
     OpenAICompatibleProvider,
+    ollama_context,
 )
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -140,6 +141,20 @@ class OllamaRequestTests(unittest.TestCase):
         self.assertNotIn("max_tokens", capture.body)
         self.assertNotIn("temperature", capture.body)
 
+    def test_the_context_window_holds_the_request_and_its_answer(self) -> None:
+        # Ollama's own default is 4096 tokens, and it drops the start of a
+        # conversation that does not fit.
+        capture = Capture(ollama_reply())
+        self.complete(capture)
+        self.assertEqual(capture.body["options"]["num_ctx"], 8192)
+        long = ModelRequest(
+            messages=(ChatMessage(role="user", content="x" * 30_000),),
+            max_output_tokens=4000,
+        )
+        self.assertEqual(ollama_context(long), 16384)
+        huge = ModelRequest(messages=(ChatMessage(role="user", content="x" * 400_000),))
+        self.assertEqual(ollama_context(huge), 32768)
+
     def test_think_false_reaches_the_wire(self) -> None:
         capture = Capture(ollama_reply())
         self.complete(capture, think=False)
@@ -150,13 +165,13 @@ class OllamaRequestTests(unittest.TestCase):
         self.complete(capture)
         self.assertNotIn("think", capture.body)
 
-    def test_options_are_omitted_when_nothing_is_requested(self) -> None:
+    def test_only_the_context_window_is_sent_when_nothing_is_requested(self) -> None:
         capture = Capture(ollama_reply())
         provider = OpenAICompatibleProvider(
             OLLAMA_HOST, "qwen3:1.7b", protocol="ollama", transport=capture
         )
         provider.complete(ModelRequest(messages=()))
-        self.assertNotIn("options", capture.body)
+        self.assertEqual(capture.body["options"], {"num_ctx": 8192})
 
     def test_tools_are_offered_to_the_model(self) -> None:
         capture = Capture(ollama_reply())

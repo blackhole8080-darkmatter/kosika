@@ -150,6 +150,7 @@ func (h *httpProvider) complete(request *modelRequest) *modelResponse {
 	}
 	if h.protocol == "ollama" {
 		options["num_predict"] = capped
+		options["num_ctx"] = ollamaContext(request, capped)
 	} else {
 		options["max_tokens"] = capped
 	}
@@ -530,4 +531,37 @@ func (message chatMessage) record() *Record {
 	record.set("tool_call_id", optionalText(message.ToolCallID))
 	record.set("name", optionalText(message.Name))
 	return record
+}
+
+// ollamaContexts are the context windows Ollama is asked for, smallest
+// first: ollama_context in kosika/model.py. Ollama gives a model 4096
+// tokens unless told otherwise, and quietly drops the start of a
+// conversation that does not fit, which is where an agent's instructions
+// are.
+var ollamaContexts = []int{8192, 16384, 32768}
+
+// ollamaContext is the smallest window that holds a request, at about three
+// characters a token, its answer and a margin.
+func ollamaContext(request *modelRequest, answer int) int {
+	text := 0
+	for _, message := range request.Messages {
+		text += len([]rune(message.Content))
+		for _, call := range message.ToolCalls {
+			arguments := Value(call.Arguments)
+			if call.Arguments == nil {
+				arguments = newRecord()
+			}
+			text += len([]rune(call.Name)) + len([]rune(pyJSON(arguments, true)))
+		}
+	}
+	for _, tool := range request.Tools {
+		text += len([]rune(tool.Name)) + len([]rune(tool.Description)) + len([]rune(pyJSON(tool.Schema, true)))
+	}
+	wanted := text/3 + answer + 512
+	for _, size := range ollamaContexts {
+		if size >= wanted {
+			return size
+		}
+	}
+	return ollamaContexts[len(ollamaContexts)-1]
 }

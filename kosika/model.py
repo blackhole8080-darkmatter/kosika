@@ -104,6 +104,29 @@ Transport = Callable[[urllib.request.Request, float], bytes]
 MODEL_PROTOCOLS = ("openai", "ollama")
 #: How long Ollama is asked to keep a model loaded after it answers.
 OLLAMA_KEEP_ALIVE = "30m"
+#: The context windows Ollama is asked for, smallest first. Ollama gives a
+#: model 4096 tokens unless told otherwise, and quietly drops the start of a
+#: conversation that does not fit, which is where an agent's instructions
+#: are. A request is given the smallest window that holds it and its answer;
+#: a few sizes only, since Ollama loads a model again when the size changes.
+OLLAMA_CONTEXTS = (8192, 16384, 32768)
+
+
+def ollama_context(request: ModelRequest) -> int:
+    """The context window a request to Ollama needs: its text, at about three
+    characters a token, its answer and a margin, rounded up to a size in
+    OLLAMA_CONTEXTS."""
+
+    text = 0
+    for message in request.messages:
+        text += len(message.content or "")
+        for call in message.tool_calls:
+            text += len(call.name) + len(json.dumps(call.arguments, sort_keys=True))
+    for tool in request.tools:
+        text += len(tool.name) + len(tool.description)
+        text += len(json.dumps(tool.input_schema, sort_keys=True))
+    wanted = text // 3 + (request.max_output_tokens or 1024) + 512
+    return next((size for size in OLLAMA_CONTEXTS if size >= wanted), OLLAMA_CONTEXTS[-1])
 
 
 class OpenAICompatibleProvider:
@@ -396,6 +419,7 @@ class OpenAICompatibleProvider:
             ):
                 raise ModelProviderError("max_output_tokens must be a positive integer")
             options["num_predict"] = request.max_output_tokens
+        options["num_ctx"] = ollama_context(request)
 
         payload: dict[str, Any] = {
             "model": request.model or self.model,
