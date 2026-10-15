@@ -50,6 +50,17 @@
 // the list of files, before you say yes. Tests catch what was tested for;
 // a reviewer catches a wrong edge case the tests never tried.
 //
+// A website. Ask for a site or a web page and the coder builds it in
+// three rounds, one file each, so that each fits in what a model can write
+// at once: the page (index.html), its look (styles.css), then its motion
+// (script.js). You see and allow each file before it is written. Each round
+// reads what the round before wrote, and the skills in the skills folder say
+// how a page, its style and its motion are made well. An outside agent, if
+// allowed, is asked for the whole site first. A site has no tests to run:
+// instead the files are checked (a page that is whole, a stylesheet whose
+// braces close, a script Node can read), and you are told which file to
+// open in your browser.
+//
 // Say: add a function is_even to calc.py, with a test
 
 record Msg { text: Text }
@@ -95,11 +106,12 @@ record Saved { count: Number }
 // Reads what a reviewer wrote and says only whether it reports a problem.
 model reader
 
+// Room for a whole file in one answer: a web page's stylesheet is long.
 model engineer {
   input: Task
   output: Work
   parameters: {
-    max_output_tokens: 1400
+    max_output_tokens: 6000
   }
 }
 
@@ -217,6 +229,16 @@ agent coder {
 agent runner {
   can: [run_python, run_node]
   max_steps: 1
+}
+
+// The builder of a website: one file a round.
+agent builder {
+  model: engineer
+  can: [list_folder, read_file, write_file]
+  max_steps: 6
+  max_tool_calls: 10
+  check: plan_check
+  instructions: "You are a web designer and front-end developer who builds modern, beautiful, professional websites with plain HTML, CSS and JavaScript: no frameworks, no build step and nothing loaded from the internet. Each request asks for one file. First list the folder with path \".\" and read the files the request names, so what you write fits what is there. Then call write_file once, for that one file, with its complete text: every line of it, finished, never cut short and never with a placeholder or a comment saying more goes here. Write real, specific words for the content, never lorem ipsum. After the file is written, answer with what you made in summary, and an empty list in did."
 }
 
 // ---------------------------------------------------------------- checking the plan
@@ -495,7 +517,7 @@ fn plan_check(request: Text, files: Planned[]) -> Text[] {
   if kosika > 0 and python == 0 and gained == 0 and wants_test(request) {
     wrong = wrong.append("the task asks for a test, but no Kosika file gains one. Add a test block, written test \"what it shows\" { expect ... }, to the file")
   }
-  return wrong.concat(script_check(request, files))
+  return wrong.concat(script_check(request, files)).concat(site_check(files))
 }
 
 // ---------------------------------------------------------------- routing
@@ -506,6 +528,7 @@ fn kind_of(msg: Msg) -> Text {
   if text == "" or text == "help" { kind = "help" }
   else if text == "fix" or text == "try again" or text.starts_with("fix it") { kind = "fix" }
   else if text == "test" or text == "tests" or text == "run the tests" { kind = "test" }
+  else if is_site_request(text) { kind = "site" }
   return kind
 }
 
@@ -645,6 +668,7 @@ fn node_args(files: Text[]) -> Text[] {
 // "kosika" when a Kosika file was, "node" when only JavaScript or
 // TypeScript was. With nothing written, the project's Python tests.
 fn runner_of(work: Work) -> Text {
+  if is_site_work(work) { return "web" }
   var scripts = 0
   for line in work.did {
     let path = line.words().drop(1).join(" ")
@@ -682,6 +706,7 @@ fn found_none(ran: Ran, names: Text[]) -> Bool {
 
 // The report of a run, saying so when only some of the tests were run.
 fn worked_on(task: Task, work: Work, tested: Tested) -> Result {
+  if is_site_work(work) { return site_report(task, work, tested.ran) }
   let whole = worked(task, work, tested.ran)
   if tested.only.is_empty() or tested.ran.exit_code != 0 or work.did.is_empty() { return whole }
   return {
@@ -817,6 +842,7 @@ workflow run_tests(work: Work) -> Tested {
   tested = match runner_of(work) {
     case "kosika" { call test_kosika(noted(kosika_file(work))) }
     case "node" { call test_script(work) }
+    case "web" { call check_site(work) }
     case _ { call test_python(work) }
   }
   require approval
@@ -946,6 +972,161 @@ workflow do_it_myself(task: Task) -> Result {
   require approval
 }
 
+// ---------------------------------------------------------------- websites
+
+// A request for a website or a web page, said in so many words.
+fn is_site_request(text: Text) -> Bool {
+  let said = " " + text.lower().words().join(" ") + " "
+  for words in [" website", " web site", " web page", " webpage", " landing page", " homepage", " home page", " portfolio site", " one-page site", " one page site", " site for ", " page for ", " index.html"] {
+    if said.contains(words) { return true }
+  }
+  return false
+}
+
+fn is_web_file(path: Text) -> Bool {
+  let name = path.lower()
+  return name.ends_with(".html") or name.ends_with(".htm") or name.ends_with(".css")
+}
+
+// Work that wrote a web page: an HTML or CSS file, and no Python or tests.
+fn is_site_work(work: Work) -> Bool {
+  var web = 0
+  for line in work.did {
+    let path = line.words().drop(1).join(" ")
+    if is_web_file(path) { web += 1 }
+    if path.lower().ends_with(".py") or is_kosika(path) or is_script_test(path) { return false }
+  }
+  return web > 0
+}
+
+// The scripts a site's work wrote, which Node is asked to read.
+fn site_scripts(work: Work) -> Text[] {
+  let paths = for line in work.did { line.words().drop(1).join(" ") }
+  return for path in paths.unique() where is_script(path) { path }
+}
+
+fn check_args(scripts: Text[]) -> Text[] {
+  return ["--check"].concat(scripts)
+}
+
+// The files of a page, each whole: a model that runs out of room stops in
+// the middle, and such a file must not be written.
+fn site_check(files: Planned[]) -> Text[] {
+  var wrong: Text[] = []
+  for file in files {
+    let path = file.path.lower()
+    let text = file.text.lower()
+    if path.ends_with(".html") or path.ends_with(".htm") {
+      if not text.contains("<html") or not text.contains("</html>") or not text.contains("</body>") {
+        wrong = wrong.append(file.path + ": the page is not whole; it must run from <!doctype html> and <html> to </body> and </html>")
+      }
+      if text.contains("lorem ipsum") {
+        wrong = wrong.append(file.path + ": it has lorem ipsum; write real words for this page")
+      }
+    }
+    if path.ends_with(".css") {
+      if file.text.split("{").length() != file.text.split("}").length() {
+        wrong = wrong.append(file.path + ": its braces do not close; every { needs its }. Write the whole stylesheet")
+      }
+    }
+  }
+  return wrong
+}
+
+// The three rounds of building a site, each asking for one file.
+fn round_task(task: Task, round: Text) -> Task {
+  if round == "page" {
+    return {text: "Write index.html, the page for this request: " + task.text + "\nThis round writes index.html only. Use semantic HTML: a header with the name and a nav, a main with a hero and several sections, and a footer. Write real, specific content for this subject. In the head link styles.css; at the end of the body load script.js with defer. Give each section and card the class reveal, and give the hero the class hero, so the style and motion rounds can use them. The other two files are written in later rounds; do not write them now."}
+  }
+  if round == "style" {
+    return {text: "Write styles.css, the design and animation for index.html, for this request: " + task.text + "\nThis round writes styles.css only. Read index.html first and style every element and class it uses. Make it modern and professional: a design system in :root variables (colours, a type scale, spacing, radius, the motion easing and durations), a strong hero, generous spacing, a responsive layout with grid and flex that works on a phone, and visible focus. Add the motion styles: transitions, scroll reveal, hover and the reduced-motion rules."}
+  }
+  return {text: "Write script.js, the motion for index.html and styles.css, for this request: " + task.text + "\nThis round writes script.js only. Read index.html and styles.css first and use their classes and variables. It is a plain script loaded with defer, with no import or export and no library: scroll reveal with IntersectionObserver, the reading progress, the hero's motion, cursor and hover effects, all switched off when reduced motion is asked for."}
+}
+
+// The task as an outside agent is given it: the whole site at once.
+fn site_task(task: Task) -> Task {
+  return {text: task.text + "\nBuild it as a static site with plain HTML, CSS and JavaScript: index.html, styles.css and script.js, with no framework, no build step and nothing loaded from the internet."}
+}
+
+// What three rounds did, as one piece of work.
+fn rounds_work(page: Work, style: Work, motion: Work) -> Work {
+  var said: Text[] = []
+  for one in [page, style, motion] {
+    if not one.summary.trim().is_empty() { said = said.append(one.summary.trim()) }
+  }
+  return {summary: said.join(" "), did: page.did.concat(style.did).concat(motion.did)}
+}
+
+fn no_work() -> Work {
+  return {summary: "", did: []}
+}
+
+// What a site's builder tells the person: what was written, whether it
+// reads cleanly, and how to see it.
+fn site_report(task: Task, work: Work, ran: Ran) -> Result {
+  let out = printed(ran)
+  let wrote = files_line(work)
+  var judged = "Open index.html from the project folder in your browser to see it."
+  if ran.exit_code != 0 {
+    judged = "The script does not read cleanly, so the page's motion will not run:\n" + out + "\nSay \"fix\" and I will try to put it right."
+  }
+  let summary = if work.summary.trim().is_empty() { "" } else { work.summary.trim().take(600) + "\n" }
+  return {
+    text: summary + wrote + said_only(work) + "\n" + judged,
+    last: {task: task.text, output: out, passed: ran.exit_code == 0, known: true}
+  }
+}
+
+fn clean_run() -> Ran {
+  return {exit_code: 0, stdout: "", stderr: ""}
+}
+
+// A site has no tests: its scripts are read by Node, which says whether
+// they are valid JavaScript without running them.
+workflow check_site(work: Work) -> Tested {
+  tested = match site_scripts(work).is_empty() {
+    case true { as_tested(clean_run(), []) }
+    case _ { call read_scripts(work) }
+  }
+  require approval
+}
+
+workflow read_scripts(work: Work) -> Tested {
+  ran    = execute runner.run_node(check_args(site_scripts(work)))
+  tested = as_tested(ran, [])
+  require approval
+}
+
+// The site built in rounds by the coder's own model, one file each.
+workflow build_site(task: Task) -> Result {
+  page   = ask builder(round_task(task, "page").text) otherwise no_work()
+  style  = ask builder(round_task(task, "style").text) otherwise no_work()
+  motion = ask builder(round_task(task, "motion").text) otherwise no_work()
+  work   = rounds_work(page, style, motion)
+  tested = call run_tests(work)
+  result = worked_on(task, work, tested)
+  require approval
+}
+
+// An outside agent is asked for the whole site first; its work is written
+// if it passes the checks, and otherwise the coder builds it in rounds.
+workflow do_site(task: Task) -> Result {
+  got    = call ask_helper(site_task(task))
+  faults = call judge(task, got)
+  result = match verdict_on(got, faults.items, true) {
+    case "use" { call reviewed_write(task, got) }
+    case _ { call build_site(task) }
+  }
+  require approval
+}
+
+workflow new_site(msg: Msg) -> Result {
+  task   = task_of(msg)
+  result = call do_site(task)
+  require approval
+}
+
 workflow new_task(msg: Msg) -> Result {
   task   = task_of(msg)
   result = call do_task(task)
@@ -978,7 +1159,7 @@ workflow only_test(msg: Msg) -> Result {
 workflow help(msg: Msg) -> Result {
   past   = recall journal under "me"
   last   = earlier(past)
-  result = nothing(last, "Give me one small task in this project, such as: add a function is_even to calc.py, with a test.\nI show you every file I will make or change before I do it, then I run the tests.\nfix: try again after failing tests\ntest: only run the tests")
+  result = nothing(last, "Give me one small task in this project, such as: add a function is_even to calc.py, with a test.\nI show you every file I will make or change before I do it, then I run the tests.\nOr ask for a website, such as: a one-page website for my bakery, with scroll animations. I build it in three rounds: the page, its style, its motion.\nfix: try again after failing tests\ntest: only run the tests")
 }
 
 workflow main(msg: Msg) -> Said {
@@ -988,6 +1169,7 @@ workflow main(msg: Msg) -> Said {
     case "help" { call help(msg) }
     case "fix" { call fix_last(msg) }
     case "test" { call only_test(msg) }
+    case "site" { call new_site(msg) }
     case _ { call new_task(msg) }
   }
   last   = last_of(result)
@@ -1289,6 +1471,50 @@ test "help needs no model and no tool" {
   a = help({text: "help"})
   expect a.text.starts_with("Give me one small task in this project")
   expect a.last.known == false
+}
+
+test "a request for a website is built as one" {
+  expect kind_of({text: "Create a beautiful website for a coffee studio"}) == "site"
+  expect kind_of({text: "make a landing page for my app"}) == "site"
+  expect kind_of({text: "add a function is_even to calc.py"}) == "task"
+  expect kind_of({text: "fix"}) == "fix"
+  page: Work = {summary: "s", did: ["write_file index.html", "write_file styles.css", "write_file script.js", "write_file script.js"]}
+  expect runner_of(page) == "web"
+  expect site_scripts(page) == ["script.js"]
+  expect check_args(site_scripts(page)) == ["--check", "script.js"]
+  expect runner_of({summary: "s", did: ["write_file index.html", "write_file app.test.js"]}) == "node"
+  expect runner_of({summary: "s", did: ["write_file index.html", "write_file app.py"]}) == "python"
+  task: Task = {text: "a site for Ember"}
+  expect round_task(task, "page").text.starts_with("Write index.html")
+  expect round_task(task, "style").text.contains("Read index.html first")
+  expect round_task(task, "motion").text.contains("no import or export")
+}
+
+test "a page that is cut short, or a stylesheet that does not close, is caught" {
+  whole: Planned = {path: "index.html", text: "<!doctype html>\n<html><body><main>Ember</main></body></html>\n", before: "", exists: false}
+  cut: Planned = {path: "index.html", text: "<!doctype html>\n<html><body><main>Ember", before: "", exists: false}
+  filler: Planned = {path: "about.html", text: "<html><body>Lorem ipsum dolor</body></html>", before: "", exists: false}
+  closed: Planned = {path: "styles.css", text: ":root { --a: 1px; }\n.hero { padding: var(--a); }\n", before: "", exists: false}
+  open: Planned = {path: "styles.css", text: ".hero { padding: 0;\n.card {", before: "", exists: false}
+  expect site_check([whole, closed]) == []
+  expect site_check([cut]) == ["index.html: the page is not whole; it must run from <!doctype html> and <html> to </body> and </html>"]
+  expect site_check([filler]) == ["about.html: it has lorem ipsum; write real words for this page"]
+  expect site_check([open]) == ["styles.css: its braces do not close; every { needs its }. Write the whole stylesheet"]
+  expect plan_check("a site", [cut]).length() == 1
+}
+
+test "a built site says how to see it, or what is wrong with its script" {
+  three = rounds_work({summary: "The page.", did: ["write_file index.html"]}, {summary: "", did: ["write_file styles.css"]}, {summary: "The motion.", did: ["write_file script.js"]})
+  expect three.summary == "The page. The motion."
+  expect three.did == ["write_file index.html", "write_file styles.css", "write_file script.js"]
+  good = site_report({text: "a site"}, three, clean_run())
+  expect good.text == "The page. The motion.\nWrote: index.html, styles.css, script.js\nOpen index.html from the project folder in your browser to see it."
+  expect good.last.passed == true
+  bad = site_report({text: "a site"}, three, {exit_code: 1, stdout: "", stderr: "SyntaxError: Unexpected token"})
+  expect bad.text.contains("The script does not read cleanly")
+  expect bad.text.contains("SyntaxError: Unexpected token")
+  expect bad.last.passed == false
+  expect worked_on({text: "a site"}, three, {ran: clean_run(), only: ""}).text == good.text
 }
 
 // ------------------------------------------------------------------ evals

@@ -565,6 +565,9 @@ class SkillTests(CoderTests):
         self.asked: list[str] = []
         app = self.make(self.work)
         skills = app.root / "coder" / "skills"
+        # Only this skill: the coder's own web skills have rules of their own.
+        for kept in skills.glob("*.md"):
+            kept.unlink()
         (skills / "web.md").write_text(self.SKILL, encoding="utf-8")
         job = app.start(
             "coder/main.kos", {"text": "make a page look good with style.css"}
