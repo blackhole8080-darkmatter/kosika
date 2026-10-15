@@ -111,12 +111,16 @@ type FuncDecl struct {
 	Return  Expr
 	Recurse int // 0 when no depth was stated
 	Line    int
+	// Defaults are the parameters' values when left out: see defaults.go.
+	Defaults map[string]Expr
 }
 
 type RecordDecl struct {
 	Name    string
 	Fields  []Param
 	Methods []string
+	// Defaults are the fields' values when left out: see defaults.go.
+	Defaults map[string]Expr
 }
 
 type TestStep struct {

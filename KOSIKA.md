@@ -139,7 +139,8 @@ integer `1` and floating-point `1.0` are equal.
 ## Records and pure functions
 
 ```ebnf
-record   = "record" identifier "{" { identifier ":" type [","] } "}" ;
+record   = "record" identifier "{" { identifier ":" type [ "=" default ] [","] } "}" ;
+default  = number | "-" number | string | "true" | "false" | "null" | "[" "]" ;
 function = "fn" identifier "(" [ parameter { "," parameter } ] ")"
            "->" type [ "recurse" integer ]
            "{" { statement } { nested-function }
@@ -151,7 +152,16 @@ Supported functions:
 - Are pure language computation: they cannot call models, tools, agents, or
   workflows.
 - Use named arguments. Provided argument names and types MUST exactly match the
-  declaration.
+  declaration, except that a parameter declared with a default may be left
+  out: `fn greet(name: Text, loud: Bool = false) -> Text` is called as
+  `greet(name: "Ann")`, or, in order, `greet("Ann")`. A default MUST be
+  written out (a number, text, `true`, `false`, `null` or `[]`) and be a value
+  of the parameter's type; `null` only for an optional type. A record's
+  function and a nested function cannot have defaults yet.
+- A record may give its fields defaults too, `count: Number = 1`, and is
+  made by calling it like a function: `Item(name: "pen")` or `Item("pen")`
+  gives an `Item` with every field left out set to its default. A record
+  literal `{...}` still names every field.
 - Run their body in the order it is written: each `let`, `var`, loop,
   conditional, and assignment executes in turn, and a line may use only names
   declared above it.

@@ -3506,6 +3506,23 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   programs with workflows, agents and tools; the guide does not teach
   those yet.
 
+### Default values, and making a record by calling it
+
+- The owner asked for Kosika to match Python's functions, classes and
+  attributes, and do better. Agreed order: default values, enums, shapes
+  (interfaces), a larger standard library.
+- Default values, in both engines (kosika/sugar.py `fill_defaults`,
+  native/defaults.go): `fn greet(name: Text, loud: Bool = false)` may be
+  called without `loud`, by name or in order; `record Item { count: Number
+  = 1 }` gives a field a default, and `Item(name: "pen")` makes an Item, as
+  a class is made in Python. A default must be written out and fit its
+  type, checked before the program runs. The call is given its defaults
+  before anything checks it, so traces, replay and every other part see an
+  ordinary call; a program without defaults keeps its tree and its hash.
+- Held by `cases/defaults.kos`, `refused/default_type.kos`,
+  `refused/default_null.kos`, ten more programs compared by hand, and a run
+  whose trace is the same in both engines.
+
 ### The clock, chance, files and programs in the native engine
 
 - `now` and `random LOW to HIGH` (native/ambient.go), lowered to tools as

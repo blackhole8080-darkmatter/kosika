@@ -1,0 +1,53 @@
+// Default values: a parameter or a field may say what it is when left out.
+
+record Item {
+  name: Text
+  price: Number = 0
+  count: Number = 1
+  tags: Text[] = []
+  note: Text? = null
+}
+
+record Order { items: Item[] }
+
+fn greet(name: Text, loud: Bool = false, mark: Text = "!") -> Text {
+  let said = "Hello, " + name + mark
+  return if loud { said.upper() } else { said }
+}
+
+fn total(order: Order) -> Number {
+  var sum = 0
+  for item in order.items { sum = sum + item.price * item.count }
+  return sum
+}
+
+fn shift(by: Number = -2) -> Number { return 10 + by }
+
+workflow buy(order: Order) -> Item {
+  first = Item("pen", 3)
+}
+
+test "a parameter left out takes its default" {
+  expect greet(name: "Ann") == "Hello, Ann!"
+  expect greet("Ann") == "Hello, Ann!"
+  expect greet(name: "Ann", loud: true) == "HELLO, ANN!"
+  expect greet("Ann", true, "?") == "HELLO, ANN?"
+  expect shift() == 8
+  expect shift(by: 1) == 11
+}
+
+test "a record is made like a call, with its defaults" {
+  pen = Item(name: "pen", price: 2)
+  expect pen.count == 1
+  expect pen.tags == []
+  expect pen.note == null
+  cup = Item(name: "cup", price: 5, count: 3)
+  expect total({items: [pen, cup]}) == 17
+  expect Item("ink").price == 0
+}
+
+test "a workflow may make one" {
+  got = buy({items: []})
+  expect got.name == "pen"
+  expect got.price == 3
+}

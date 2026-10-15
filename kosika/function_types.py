@@ -26,7 +26,10 @@ def signature(type_name: str) -> tuple[tuple[Field, ...], str] | None:
                     parts.append(type_name[start:index])
                 if type_name[index + 1 : index + 3] != "->":
                     raise ValueError("Invalid function type")
-                fields = tuple(Field(*part.split(":", 1)) for part in parts)
+                fields = tuple(
+                    Field(name, kind)
+                    for name, kind in (part.split(":", 1) for part in parts)
+                )
                 return fields, type_name[index + 3 :]
         elif char == "," and depth == 1:
             parts.append(type_name[start:index])

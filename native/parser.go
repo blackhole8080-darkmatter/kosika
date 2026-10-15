@@ -773,6 +773,12 @@ func (p *Parser) parseRecord() *RecordDecl {
 		name := p.identifier()
 		p.expect(":")
 		record.Fields = append(record.Fields, Param{name, p.parseTypeName(0)})
+		if given := p.parseDefault(); given != nil {
+			if record.Defaults == nil {
+				record.Defaults = map[string]Expr{}
+			}
+			record.Defaults[name] = given
+		}
 		p.accept(",")
 	}
 	return record
@@ -793,7 +799,7 @@ func (p *Parser) parseFunction(depth int, owner string) *FuncDecl {
 			p.expect(",")
 		}
 	}
-	function.Params = append(function.Params, p.parseParams()...)
+	p.parseFunctionParams(function, depth, owner)
 	p.expect("->")
 	function.Out = p.parseTypeName(0)
 	if p.accept("recurse") {

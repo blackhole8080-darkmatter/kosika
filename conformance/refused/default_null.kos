@@ -1,0 +1,3 @@
+// Only an optional field may be null by default.
+
+record Item { name: Text count: Number = null }

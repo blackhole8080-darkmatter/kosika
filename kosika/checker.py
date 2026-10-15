@@ -1226,6 +1226,53 @@ def _check_branches(program: Program) -> None:
 _MAP_METHODS = ("get", "has", "set", "remove", "keys", "values", "length")
 
 
+def _default_kind(value: Any) -> str:
+    """What a default written out is: Text, Number, Bool, Null, or a list."""
+
+    if isinstance(value, ArrayExpr):
+        return "[]"
+    if isinstance(value, UnaryExpr):
+        return "Number"
+    held = value.value
+    if held is None:
+        return "Null"
+    if isinstance(held, bool):
+        return "Bool"
+    return "Text" if isinstance(held, str) else "Number"
+
+
+def _default_fits(kind: str, type_name: str) -> bool:
+    plain = type_name[:-1] if type_name.endswith("?") else type_name
+    if kind == "Null":
+        return type_name.endswith("?")
+    if kind == "[]":
+        return plain.endswith("[]")
+    return plain == kind
+
+
+def _check_defaults(program: Program) -> None:
+    """A default must be a value of the type it stands for."""
+
+    owners = [
+        (f"Record {record.name!r} field", record.fields) for record in program.records
+    ] + [
+        (f"Function {function.name!r} parameter", function.parameters)
+        for function in program.functions
+        if not any(function.name == record.name for record in program.records)
+    ]
+    for owner, items in owners:
+        for item in items:
+            if item.default_value is None:
+                continue
+            kind = _default_kind(item.default_value)
+            if not _default_fits(kind, item.type_name):
+                said = "an empty list" if kind == "[]" else repr(kind)
+                raise CheckError(
+                    f"{owner} {item.name!r} is {item.type_name!r}, so its "
+                    f"default cannot be {said}"
+                )
+
+
 def _check_record_methods(program: Program) -> None:
     shapes: dict[tuple[str, frozenset[str]], str] = {}
     for record in program.records:
@@ -1371,6 +1418,7 @@ def _check(program: Program) -> None:
                     "value may stand after 'otherwise' or in a 'case', beside a "
                     "call whose result type it takes"
                 )
+    _check_defaults(program)
     _check_record_methods(program)
     _check_parallel(program)
     if any(

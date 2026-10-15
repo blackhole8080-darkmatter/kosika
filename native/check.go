@@ -1263,6 +1263,7 @@ func Check(program *Program) (err error) {
 
 func (c *checker) checkDeclarations() {
 	c.checkValueSteps()
+	c.checkDefaults()
 	c.checkRecordMethods()
 	c.checkBudgets()
 	for _, workflow := range c.program.Workflows {

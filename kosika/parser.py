@@ -904,7 +904,7 @@ class Parser:
             field_name = self.identifier()
             self.expect(":")
             type_name = self.parse_type_name()
-            fields.append(Field(field_name, type_name))
+            fields.append(Field(field_name, type_name, self.parse_default()))
             self.accept(",")
         return RecordDecl(name, tuple(fields), tuple(methods))
 
@@ -1145,6 +1145,30 @@ class Parser:
             if not self.accept(","):
                 return items
 
+    def parse_default(self) -> Expression | None:
+        """`= value` after a parameter or a field: what it is when left out."""
+
+        if not self.accept("="):
+            return None
+        token = self.current
+        value = self.expression()
+        constant = (
+            isinstance(value, LiteralExpr)
+            or (
+                isinstance(value, UnaryExpr)
+                and value.operator == "-"
+                and isinstance(value.operand, LiteralExpr)
+                and type(value.operand.value) in (int, float)
+            )
+            or (isinstance(value, ArrayExpr) and not value.items)
+        )
+        if not constant:
+            raise ParseError(
+                f"A default value at {token.line}:{token.column} must be written "
+                "out: a number, text, true, false, null or []"
+            )
+        return value
+
     def parse_function(self, depth: int = 0, owner: str | None = None) -> FunctionDecl:
         if depth >= 32:
             raise ParseError("Function declaration nesting exceeds 32")
@@ -1162,7 +1186,17 @@ class Parser:
         while not self.accept(")"):
             parameter_name = self.identifier()
             self.expect(":")
-            parameters.append(Field(parameter_name, self.parse_type_name()))
+            type_name = self.parse_type_name()
+            default = self.parse_default()
+            if default is not None and owner is not None:
+                raise ParseError(
+                    "A record's function cannot give a parameter a default value yet"
+                )
+            if default is not None and depth > 0:
+                raise ParseError(
+                    "A nested function cannot give a parameter a default value yet"
+                )
+            parameters.append(Field(parameter_name, type_name, default))
             if not self.check(")"):
                 self.expect(",")
         self.expect("->")

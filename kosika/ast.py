@@ -110,6 +110,10 @@ class MethodCallExpr:
 class Field:
     name: str
     type_name: str
+    # `count: Number = 1`: the value given when a call leaves it out. Only a
+    # value written out may stand here: a number, text, true, false, null or
+    # []. See kosika.sugar.fill_defaults.
+    default_value: "Expression | None" = None
 
 
 @dataclass(frozen=True)
@@ -770,6 +774,7 @@ _ABSENT_DEFAULTS: dict[str, tuple[Any, ...]] = {
     "escalate": (None,),
     "group": (0,),
     "default": (False,),
+    "default_value": (None,),
     "more_models": ((), []),
     "budget": ((), []),
     "capped": (False,),

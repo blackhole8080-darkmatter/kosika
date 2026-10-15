@@ -1,0 +1,4 @@
+PASS  a parameter left out takes its default
+PASS  a record is made like a call, with its defaults
+PASS  a workflow may make one
+3 passed, 0 failed

@@ -53,7 +53,7 @@ func load(path string) *Program {
 		fmt.Printf("Check failed: %s\n", refused)
 		os.Exit(2)
 	}
-	program = LowerValues(lowered)
+	program = FillDefaults(LowerValues(lowered))
 	// A program the checker refuses is not run, and says why as the
 	// reference does: on the output, with exit code 2.
 	if refused := Check(program); refused != nil {
