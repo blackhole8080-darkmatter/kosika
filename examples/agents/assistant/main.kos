@@ -145,9 +145,31 @@ fn hand_of(said: Text) -> Handover {
   for lead in ["hand over:", "hand this over:", "pass this on:", "pass on:"] {
     if lower.starts_with(lead) { return {agent: "", text: tidy.drop(lead.length()).trim()} }
   }
-  let asks = ["ask", "tell", "get", "have"].contains(words.first().or("").lower())
-  if asks and words.length() > 4 and words[1].lower() == "the" and words[3].lower() == "to" {
-    return {agent: words[2].lower(), text: words.drop(4).join(" ")}
+  // "please", "kosi," and "can you" in front change nothing.
+  var rest = words
+  while rest.length() > 0 and ["please", "kosi", "kosi,", "can", "could", "would", "will", "you"].contains(rest.first().or("").lower()) {
+    rest = rest.drop(1)
+  }
+  // ask, tell, get, have, use, let or make, the agent's name, the word
+  // agent if it is said, then what it is to do: "use the coder agent to
+  // build a website", "have the researcher find my notes".
+  let asks = ["ask", "tell", "get", "have", "use", "let", "make"].contains(rest.first().or("").lower())
+  if asks and rest.length() > 3 and rest[1].lower() == "the" {
+    // The name is followed by the word agent, or by to, or both: "tell
+    // the truth about it" and "let the dog out" are not hand-overs.
+    var at = 3
+    var marked = false
+    if rest.length() > at and rest[at].lower() == "agent" {
+      at += 1
+      marked = true
+    }
+    if rest.length() > at and rest[at].lower() == "to" {
+      at += 1
+      marked = true
+    }
+    let named = rest[2].lower().trim_marks(".,:;!?")
+    let task = rest.drop(at).join(" ").trim()
+    if marked and not task.is_empty() { return {agent: named, text: task} }
   }
   return {agent: "", text: ""}
 }
@@ -1375,6 +1397,18 @@ test "a request for another agent is handed to it" {
   expect hand_of("ask the coder").text == ""
   expect hand_of("why is the sky blue").text == ""
   expect kind_of({text: "tell the researcher to find my notes"}) == "hand"
+  g = hand_of("use the coder agent to create a website with motion graphics. go all out")
+  expect g.agent == "coder"
+  expect g.text == "create a website with motion graphics. go all out"
+  h = hand_of("Kosi, can you have the planner agent sort out my week")
+  expect h.agent == "planner"
+  expect h.text == "sort out my week"
+  expect hand_of("please ask the coder to add a test").agent == "coder"
+  expect hand_of("use the force").text == ""
+  expect hand_of("get the time").text == ""
+  expect hand_of("tell the truth about cats").text == ""
+  expect hand_of("let the dog out").text == ""
+  expect kind_of({text: "use the coder agent to create a magnificent website"}) == "hand"
   d = main({text: "ask the coder to write a function that reverses a list"})
   e = main({text: "ask the teacher to mark my essay"})
   f = main({text: "hand over: what do my notes say about trees"})

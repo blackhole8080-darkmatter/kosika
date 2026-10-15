@@ -1842,6 +1842,7 @@ class App:
                     name,
                 )
             job.events.append({"event": "handed", "agent": name, "depth": 0})
+            program: Program | None = None
             try:
                 program = load_program(chosen.path)
                 parameter, _ = message_parameter(program, "main")
@@ -1866,7 +1867,8 @@ class App:
             except _Refused:
                 answer = no("That was refused, so nothing was changed.", name)
             except (RuntimeError, ValueError, PermissionError, OSError) as exc:
-                answer = no(f"{name} did not finish: {exc}", name)
+                said = str(exc) if program is None else plain_refusal(program, str(exc))
+                answer = no(f"{name} did not finish: {said}", name)
             job.events.append({"event": "handed_back", "agent": name, "depth": 0})
             done[(wanted, text)] = answer
             return answer
