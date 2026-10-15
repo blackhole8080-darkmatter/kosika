@@ -1,0 +1,387 @@
+// Digest: learn something new from the newest research, twice a day.
+//
+//   kosika test main.kos
+//   kosika run main.kos --workflow afternoon --model qwen2.5:7b --model-protocol ollama
+//       --allow-site export.arxiv.org --memory memory
+//   kosika run main.kos --workflow evening ...the same...
+//
+// In the afternoon it reads arXiv's newest papers in five fields, a
+// different five each day from twenty across the sciences, AI, maths and
+// computing, and explains each paper in plain words: the question it asks,
+// what it found, how strong the evidence is, and what it leaves open. In
+// the evening it takes two of the afternoon's papers further, with an
+// example worked through and questions to check you understood.
+//
+// It only reads. It reaches nothing but the arXiv site you allow, every
+// paper is shown with its link so you can read it yourself, and a paper is
+// never explained twice: the links it has shown are kept in its memory.
+// An arXiv paper is a preprint, not yet reviewed by other scientists, and
+// it says so.
+//
+// The models explain from each paper's abstract. They are told not to add
+// what the abstract does not say, and each explanation says it was made
+// from the abstract alone.
+
+record Msg { text: Text }
+record Said { text: Text }
+
+record PageRequest { url: Text }
+record Page { url: Text title: Text text: Text }
+
+// A paper as the feed gives it.
+record Paper { title: Text link: Text published: Text authors: Text summary: Text field: Text }
+// What a model is asked: how to teach, and the papers.
+record Batch { task: Text papers: Paper[] }
+
+// One paper explained, in plain words.
+record Explained { title: Text idea: Text found: Text evidence: Text open: Text use: Text }
+record Lessons { items: Explained[] }
+
+// One paper taken further, for the evening.
+record Deep { title: Text lesson: Text example: Text questions: Text[] try_it: Text }
+record Deeper { items: Deep[] }
+
+// What one afternoon covered, for the evening to go on from.
+record Day { date: Text papers: Paper[] }
+// Every paper ever shown, by its link.
+record Seen { links: Text[] }
+
+record Field { code: Text name: Text }
+record Plan { fields: Field[] urls: Text[] }
+
+tool read_feed {
+  source system "web"
+  operation: "fetch"
+  access: observe
+  input: PageRequest
+  output: Page
+}
+
+agent library {
+  can: [read_feed]
+}
+
+model teacher {
+  input: Batch
+  output: Lessons
+  parameters: {
+    max_output_tokens: 4000
+  }
+}
+
+model tutor {
+  input: Batch
+  output: Deeper
+  parameters: {
+    max_output_tokens: 3000
+  }
+}
+
+memory days of Day
+memory seen of Seen
+
+// ---------------------------------------------------------------- the fields
+
+fn fields() -> Field[] {
+  return [
+    {code: "cs.AI", name: "Artificial intelligence"},
+    {code: "physics.optics", name: "Optics"},
+    {code: "q-bio.NC", name: "Neuroscience"},
+    {code: "math.PR", name: "Probability"},
+    {code: "physics.chem-ph", name: "Chemistry"},
+    {code: "cs.LG", name: "Machine learning"},
+    {code: "astro-ph.GA", name: "Galaxies"},
+    {code: "q-bio.GN", name: "Genomics"},
+    {code: "math.CO", name: "Combinatorics"},
+    {code: "cond-mat.mtrl-sci", name: "Materials"},
+    {code: "cs.CL", name: "Language and computers"},
+    {code: "quant-ph", name: "Quantum physics"},
+    {code: "physics.bio-ph", name: "Biophysics"},
+    {code: "stat.ML", name: "Statistics"},
+    {code: "econ.GN", name: "Economics"},
+    {code: "cs.CR", name: "Computer security"},
+    {code: "astro-ph.EP", name: "Planets"},
+    {code: "q-bio.PE", name: "Evolution"},
+    {code: "math.NA", name: "Numerical methods"},
+    {code: "cs.RO", name: "Robotics"}
+  ]
+}
+
+fn feed_url(field: Field) -> Text {
+  return "https://export.arxiv.org/api/query?search_query=cat:" + field.code + "&sortBy=submittedDate&sortOrder=descending&max_results=6"
+}
+
+// The five fields of a day: a different five each day, all twenty in four
+// days, so every subject comes round again.
+fn plan_for(day: Number) -> Plan {
+  let all = fields()
+  let start = (day * 5) % all.length()
+  var chosen: Field[] = []
+  for i in 0 until 5 { chosen = chosen.append(all[(start + i) % all.length()]) }
+  return {fields: chosen, urls: for field in chosen { feed_url(field) }}
+}
+
+// ---------------------------------------------------------------- reading a feed
+
+// The papers in a feed's text: an entry begins with ---, then a line for
+// each of its parts.
+fn papers_in(text: Text, field: Text) -> Paper[] {
+  var found: Paper[] = []
+  var title = ""
+  var link = ""
+  var published = ""
+  var authors: Text[] = []
+  var summary = ""
+  var open = false
+  for line in (text + "\n---").lines() {
+    if line.trim() == "---" {
+      if open and not title.is_empty() and not link.is_empty() {
+        found = found.append({title: title, link: link, published: published.take(10), authors: authors.take(4).join(", "), summary: summary.take(1500), field: field})
+      }
+      title = ""
+      link = ""
+      published = ""
+      authors = []
+      summary = ""
+      open = true
+    } else if line.starts_with("Title: ") { title = line.drop(7).trim() }
+    else if line.starts_with("Link: ") { link = line.drop(6).trim() }
+    else if line.starts_with("Published: ") { published = line.drop(11).trim() }
+    else if line.starts_with("Author: ") { authors = authors.append(line.drop(8).trim()) }
+    else if line.starts_with("Summary: ") { summary = line.drop(9).trim() }
+  }
+  return found
+}
+
+// Up to `most` papers of a feed that have not been shown before.
+fn new_papers(page: Page, field: Field, seen: Text[], most: Number) -> Paper[] {
+  var kept: Paper[] = []
+  for paper in papers_in(page.text, field.name) {
+    if kept.length() < most and not seen.contains(paper.link) { kept = kept.append(paper) }
+  }
+  return kept
+}
+
+fn gathered(plan: Plan, pages: Page[], past: SeenRecalled) -> Paper[] {
+  let seen = if past.found { past.value.value().links } else { [] }
+  var all: Paper[] = []
+  for i in 0 until pages.length() {
+    all = all.concat(new_papers(pages[i], plan.fields[i], seen, 3))
+  }
+  return all
+}
+
+fn no_page() -> Page {
+  return {url: "", title: "", text: ""}
+}
+
+// ---------------------------------------------------------------- asking the models
+
+fn teach_task() -> Text {
+  return "You are a patient teacher who explains new research to a curious person who is not an expert in the field. For each paper, in the same order, write: idea, the question the paper asks and why it matters, in two or three sentences; found, what it found or built, with its key numbers if the abstract gives them; evidence, how strong the evidence is and what kind (an experiment, a proof, a simulation, a survey), remembering that an arXiv paper is a preprint not yet reviewed by other scientists; open, what is still uncertain or limited; use, one practical way the idea could be used or tested. Define any technical term in plain words the first time you use it. Use only what the abstract says: do not invent results, numbers or methods it does not state. Keep the paper's title exactly."
+}
+
+fn tutor_task() -> Text {
+  return "You are a tutor giving an evening lesson that goes deeper into two research papers the person met this afternoon. For each paper write: lesson, a clear explanation of the main idea from the ground up in five to eight sentences, with the background a beginner needs; example, one small worked example or analogy that shows the idea in action, step by step; questions, three short questions that check understanding, from easy to harder; try_it, one thing the person could do, read or try next to learn more. Use only what the abstract says about the paper itself, and say so when you add general background. Keep the paper's title exactly."
+}
+
+fn half(papers: Paper[], part: Number) -> Batch {
+  let middle = (papers.length() + 1) / 2
+  let first = papers.take(middle.round())
+  let rest = papers.drop(middle.round())
+  return {task: teach_task(), papers: if part == 0 { first } else { rest }}
+}
+
+fn no_lessons() -> Lessons {
+  return {items: []}
+}
+
+// ---------------------------------------------------------------- what is shown
+
+fn explained_text(item: Explained, paper: Paper) -> Text {
+  return f"### {paper.title}\n{paper.field} · {paper.published} · {paper.authors}\n{paper.link} (preprint; explained from its abstract)\n\nThe idea: {item.idea}\nWhat it found: {item.found}\nHow strong the evidence is: {item.evidence}\nStill open: {item.open}\nUse it: {item.use}\n"
+}
+
+fn plain_text(paper: Paper) -> Text {
+  return f"### {paper.title}\n{paper.field} · {paper.published} · {paper.authors}\n{paper.link} (preprint)\n\n{paper.summary.take(600)}\n"
+}
+
+// The afternoon's digest: each paper with its explanation, or, when the
+// model gave none for it, its own abstract.
+fn digest(today: Moment, papers: Paper[], first: Lessons, second: Lessons) -> Said {
+  if papers.is_empty() {
+    return {text: "No new papers could be read today. Check that export.arxiv.org is allowed and the computer is online, then ask again."}
+  }
+  let lessons = first.items.concat(second.items)
+  var parts: Text[] = [f"# Research digest, {today.weekday} {today.date}\n\n{papers.length()} new papers from {fields_named(papers)}. Each is a preprint on arXiv; read the paper before relying on it.\n"]
+  for i in 0 until papers.length() {
+    let paper = papers[i]
+    var shown = plain_text(paper)
+    for item in lessons {
+      if item.title.trim().lower() == paper.title.trim().lower() { shown = explained_text(item, paper) }
+    }
+    parts = parts.append(shown)
+  }
+  parts = parts.append("Tonight at eight: two of these, taken further.")
+  return {text: parts.join("\n")}
+}
+
+fn fields_named(papers: Paper[]) -> Text {
+  return (for paper in papers { paper.field }).unique().join(", ")
+}
+
+fn day_of(today: Moment, papers: Paper[]) -> Day {
+  return {date: today.date, papers: papers}
+}
+
+fn seen_with(past: SeenRecalled, papers: Paper[]) -> Seen {
+  let before = if past.found { past.value.value().links } else { [] }
+  return {links: before.concat(for paper in papers { paper.link }).unique()}
+}
+
+// The evening's two papers: the first two of different fields.
+fn evening_batch(past: DaysRecalled) -> Batch {
+  let papers = if past.found { past.value.value().papers } else { [] }
+  var chosen: Paper[] = []
+  for paper in papers {
+    if chosen.length() < 2 and not (for c in chosen { c.field }).contains(paper.field) { chosen = chosen.append(paper) }
+  }
+  return {task: tutor_task(), papers: chosen}
+}
+
+fn lesson_text(item: Deep, paper: Paper) -> Text {
+  var asked: Text[] = []
+  for i in 0 until item.questions.length() { asked = asked.append(f"{i + 1}. {item.questions[i]}") }
+  return f"## {paper.title}\n{paper.link}\n\n{item.lesson}\n\nAn example: {item.example}\n\nCheck yourself:\n{asked.join(\"\\n\")}\n\nNext: {item.try_it}\n"
+}
+
+fn evening_text(batch: Batch, deeper: Deeper) -> Said {
+  if batch.papers.is_empty() {
+    return {text: "There is no afternoon digest to go on from yet. Run the afternoon digest first."}
+  }
+  var parts: Text[] = ["# Evening lesson\n"]
+  for paper in batch.papers {
+    var shown = plain_text(paper)
+    for item in deeper.items {
+      if item.title.trim().lower() == paper.title.trim().lower() { shown = lesson_text(item, paper) }
+    }
+    parts = parts.append(shown)
+  }
+  return {text: parts.join("\n")}
+}
+
+// ---------------------------------------------------------------- workflows
+
+workflow afternoon(msg: Msg) -> Said {
+  budget 4 model calls, 3600 seconds
+  today  = now
+  plan   = plan_for(today.day)
+  past   = recall seen under "all"
+  a      = execute library.read_feed(plan.urls[0]) otherwise no_page()
+  b      = execute library.read_feed(plan.urls[1]) otherwise no_page()
+  c      = execute library.read_feed(plan.urls[2]) otherwise no_page()
+  d      = execute library.read_feed(plan.urls[3]) otherwise no_page()
+  e      = execute library.read_feed(plan.urls[4]) otherwise no_page()
+  papers = gathered(plan, [a, b, c, d, e], past)
+  first  = use_model teacher(half(papers, 0).task, half(papers, 0).papers) retry 1 otherwise no_lessons()
+  second = use_model teacher(half(papers, 1).task, half(papers, 1).papers) retry 1 otherwise no_lessons()
+  day    = day_of(today, papers)
+  kept   = remember day in days under "last"
+  marked = remember seen_with(past, papers) in seen under "all"
+  said   = digest(today, papers, first, second)
+}
+
+workflow evening(msg: Msg) -> Said {
+  budget 2 model calls, 3600 seconds
+  past   = recall days under "last"
+  batch  = evening_batch(past)
+  deeper = use_model tutor(batch.task, batch.papers) retry 1 otherwise {items: []}
+  said   = evening_text(batch, deeper)
+}
+
+workflow main(msg: Msg) -> Said {
+  budget 4 model calls, 3600 seconds
+  said = call afternoon(msg)
+}
+
+// ---------------------------------------------------------------- tests
+
+test "five fields a day, all twenty in four days" {
+  one = plan_for(1)
+  expect one.fields.length() == 5
+  expect one.urls[0].starts_with("https://export.arxiv.org/api/query?search_query=cat:")
+  expect four_days().unique().length() == 20
+}
+
+fn four_days() -> Text[] {
+  var all: Text[] = []
+  for day in 0 until 4 { all = all.concat(for field in plan_for(day).fields { field.code }) }
+  return all
+}
+
+test "a feed's text becomes papers" {
+  text = "---\nTitle: Light in glass\nUpdated: 2026-10-14T10:00:00Z\nLink: https://arxiv.org/abs/1\nSummary: We bend light.\nPublished: 2026-10-14T10:00:00Z\nAuthor: Ann Lee\nAuthor: Bo Kim\n---\nTitle: No link here\n---\nTitle: Second\nLink: https://arxiv.org/abs/2\nSummary: More."
+  papers = papers_in(text, "Optics")
+  expect papers.length() == 2
+  expect papers[0].title == "Light in glass"
+  expect papers[0].authors == "Ann Lee, Bo Kim"
+  expect papers[0].published == "2026-10-14"
+  expect papers[1].link == "https://arxiv.org/abs/2"
+}
+
+test "a paper is never shown twice" {
+  page: Page = {url: "u", title: "", text: "---\nTitle: A\nLink: L1\nSummary: s\n---\nTitle: B\nLink: L2\nSummary: s"}
+  field: Field = {code: "x", name: "X"}
+  expect new_papers(page, field, ["L1"], 3).length() == 1
+  expect new_papers(page, field, [], 1).length() == 1
+}
+
+test "the afternoon explains each new paper, and keeps what it showed" {
+  answers clock_now: [{date: "2026-10-15", time: "15:00", weekday: "Thursday", year: 2026, month: 10, day: 15, hour: 15, minute: 0, epoch: 1791810000}]
+  answers read_feed: [
+    {url: "a", title: "", text: "---\nTitle: Light in glass\nLink: https://arxiv.org/abs/1\nPublished: 2026-10-14T10:00:00Z\nAuthor: Ann Lee\nSummary: We bend light."},
+    {url: "b", title: "", text: ""},
+    {url: "c", title: "", text: "---\nTitle: Cells talk\nLink: https://arxiv.org/abs/2\nSummary: Cells send signals."},
+    {url: "d", title: "", text: ""},
+    {url: "e", title: "", text: ""}
+  ]
+  answers teacher: [
+    {items: [{title: "Light in glass", idea: "How to bend light.", found: "A new lens.", evidence: "One experiment.", open: "Only red light.", use: "Try a prism."}]},
+    {items: []}
+  ]
+  d = afternoon({text: ""})
+  expect d.text.starts_with("# Research digest, Thursday 2026-10-15")
+  expect d.text.contains("The idea: How to bend light.")
+  expect d.text.contains("https://arxiv.org/abs/1 (preprint; explained from its abstract)")
+  expect d.text.contains("### Cells talk")
+  expect d.text.contains("Cells send signals.")
+}
+
+test "the evening goes deeper into the afternoon's papers" {
+  answers clock_now: [{date: "2026-10-15", time: "15:00", weekday: "Thursday", year: 2026, month: 10, day: 15, hour: 15, minute: 0, epoch: 1791810000}]
+  answers read_feed: [
+    {url: "a", title: "", text: "---\nTitle: Light in glass\nLink: https://arxiv.org/abs/1\nSummary: We bend light."},
+    {url: "b", title: "", text: "---\nTitle: Cells talk\nLink: https://arxiv.org/abs/2\nSummary: Cells send signals."},
+    {url: "c", title: "", text: ""},
+    {url: "d", title: "", text: ""},
+    {url: "e", title: "", text: ""}
+  ]
+  answers teacher: [{items: []}, {items: []}]
+  answers tutor: [{items: [{title: "Cells talk", lesson: "Cells use molecules.", example: "Like a letter.", questions: ["What is a signal?", "Why?", "How?"], try_it: "Read about hormones."}]}]
+  first = afternoon({text: ""})
+  e = evening({text: ""})
+  expect e.text.starts_with("# Evening lesson")
+  expect e.text.contains("## Cells talk")
+  expect e.text.contains("1. What is a signal?")
+  expect e.text.contains("### Light in glass")
+}
+
+test "with nothing read there is nothing to explain" {
+  answers clock_now: [{date: "2026-10-15", time: "15:00", weekday: "Thursday", year: 2026, month: 10, day: 15, hour: 15, minute: 0, epoch: 1791810000}]
+  answers read_feed: [{url: "", title: "", text: ""}, {url: "", title: "", text: ""}, {url: "", title: "", text: ""}, {url: "", title: "", text: ""}, {url: "", title: "", text: ""}]
+  answers teacher: [{items: []}, {items: []}]
+  d = afternoon({text: ""})
+  expect d.text.starts_with("No new papers could be read today.")
+  e = evening({text: ""})
+  expect e.text.starts_with("There is no afternoon digest")
+}

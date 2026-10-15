@@ -1,0 +1,17 @@
+[
+  {"id": "py-add-function", "folder": "py",
+   "task": "add a function is_even to calc.py that says whether a number is even, with a test",
+   "checks": [["python", "-m", "pytest", "-q"], ["python", "-c", "from calc import is_even; assert is_even(4) and not is_even(7)"]]},
+  {"id": "py-fix-bug", "folder": "py",
+   "task": "average in calc.py fails on an empty list; make it return 0 for an empty list, with a test",
+   "checks": [["python", "-m", "pytest", "-q"], ["python", "-c", "from calc import average; assert average([]) == 0 and average([1, 3]) == 2"]]},
+  {"id": "py-new-module", "folder": "py",
+   "task": "create words.py with a function count_words(text) that returns how many words a text has, and test_words.py with tests for it",
+   "checks": [["python", "-m", "pytest", "-q"], ["python", "-c", "from words import count_words; assert count_words('a b  c') == 3 and count_words('') == 0"]]},
+  {"id": "ts-add-function", "folder": "js",
+   "task": "add a function whisper to text.ts that makes a text lower case and adds three dots, with a test in text.test.ts",
+   "checks": [["node", "--test"], ["node", "-e", "import('./text.ts').then(m => { if (m.whisper('Hi') !== 'hi...') process.exit(1) })"]]},
+  {"id": "website", "folder": "site",
+   "task": "create a modern one-page website for a bakery called Crumb, with a hero, a menu of six items with prices, opening hours, and scroll animations",
+   "checks": [["python", "-c", "import pathlib,re; h=pathlib.Path('index.html').read_text(); c=pathlib.Path('styles.css').read_text(); assert '</html>' in h and h.count('<section')>=3 and 'styles.css' in h and 'script.js' in h; assert c.count('{')==c.count('}') and '@media' in c and len(c)>1500"], ["node", "--check", "script.js"]]}
+]

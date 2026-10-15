@@ -17,6 +17,7 @@ from kosika.web import (
     clean_site,
     fetch,
     readable,
+    readable_feed,
 )
 
 SITES = ("en.wikipedia.org", "example.org")
@@ -163,6 +164,32 @@ class FetchTests(unittest.TestCase):
                         SITES,
                         opener({"https://example.org/x": answer}),
                     )
+
+    def test_a_feed_becomes_one_line_for_each_part_of_each_entry(self) -> None:
+        feed = (
+            b'<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom">'
+            b"<title>Search results</title><entry><title>Tea   leaves</title>"
+            b"<published>2026-10-14T10:00:00Z</published>"
+            b'<link href="https://example.org/abs/1" rel="alternate"/>'
+            b'<link href="https://example.org/pdf/1" rel="related"/>'
+            b"<summary>Tea &amp; light.</summary><author><name>Ann Lee</name></author>"
+            b"</entry><entry><title>Second</title></entry></feed>"
+        )
+        got = fetch(
+            "https://example.org/feed",
+            SITES,
+            opener({"https://example.org/feed": (200, {"content-type": "application/atom+xml"}, feed)}),
+        )
+        self.assertEqual(
+            got["text"],
+            "---\nTitle: Tea leaves\nPublished: 2026-10-14T10:00:00Z\n"
+            "Link: https://example.org/abs/1\nSummary: Tea & light.\nAuthor: Ann Lee\n"
+            "---\nTitle: Second",
+        )
+        self.assertEqual(
+            readable_feed("<rss><item><title>A</title><description>B</description></item></rss>"),
+            "---\nTitle: A\nSummary: B",
+        )
 
     def test_text_is_clipped(self) -> None:
         body = b"<main><p>" + b"word " * 20000 + b"</p></main>"

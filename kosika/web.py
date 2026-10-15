@@ -22,7 +22,8 @@ What a fetch is, exactly:
 * Nothing is sent but the request itself: no cookies, no login, no form, no
   body. It cannot post, submit, or sign in to anything.
 * A redirect is followed only to another allowed address, at most five times.
-* At most 2 MiB is read, only `text/html` or `text/plain`, within 20 seconds.
+* At most 2 MiB is read, only `text/html`, `text/plain` or a feed (Atom or
+  RSS, such as arXiv's lists of new papers), within 20 seconds.
 * The page is reduced to its readable text, at most 20,000 characters, with
   scripts, styles, and markup removed. The address actually read is returned
   with it, so an answer can say where it came from.
@@ -163,6 +164,70 @@ class _Text(html.parser.HTMLParser):
             self._add(data)
 
 
+#: Feeds: what a site lists as new, such as arXiv's newest papers.
+FEED_TYPES = (
+    "application/atom+xml",
+    "application/rss+xml",
+    "application/xml",
+    "text/xml",
+)
+
+
+class _Feed(html.parser.HTMLParser):
+    """A feed as plain lines: each entry begins with `---`, then one line for
+    each of its title, date, authors, link and summary that it has."""
+
+    _ENTRY = frozenset(("entry", "item"))
+    _LABELS = {
+        "title": "Title",
+        "published": "Published",
+        "pubdate": "Published",
+        "updated": "Updated",
+        "name": "Author",
+        "summary": "Summary",
+        "description": "Summary",
+    }
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.lines: list[str] = []
+        self._entry = 0
+        self._label: str | None = None
+        self._text: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: Any) -> None:
+        if tag in self._ENTRY:
+            self._entry += 1
+            self.lines.append("---")
+        elif self._entry and tag in self._LABELS:
+            self._label, self._text = self._LABELS[tag], []
+        elif self._entry and tag == "link":
+            found = dict(attrs)
+            if found.get("href") and found.get("rel", "alternate") == "alternate":
+                self.lines.append(f"Link: {found['href']}")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in self._ENTRY and self._entry:
+            self._entry -= 1
+        elif self._label is not None and self._LABELS.get(tag) == self._label:
+            said = " ".join("".join(self._text).split())
+            if said:
+                self.lines.append(f"{self._label}: {said}")
+            self._label = None
+
+    def handle_data(self, data: str) -> None:
+        if self._label is not None:
+            self._text.append(data)
+
+
+def readable_feed(body: str) -> str:
+    """The entries of an Atom or RSS feed, one labelled line each."""
+
+    parser = _Feed()
+    parser.feed(body)
+    return "\n".join(parser.lines)[:MAX_CHARACTERS]
+
+
 def _tidy(parts: list[str]) -> str:
     lines = [" ".join(line.split()) for line in "".join(parts).splitlines()]
     return "\n".join(line for line in lines if line)
@@ -189,7 +254,11 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 def _open(url: str) -> tuple[int, dict[str, str], bytes]:
     opener = urllib.request.build_opener(_NoRedirect())
     request = urllib.request.Request(
-        url, headers={"User-Agent": USER_AGENT, "Accept": "text/html, text/plain"}
+        url,
+        headers={
+            "User-Agent": USER_AGENT,
+            "Accept": "text/html, text/plain, application/atom+xml, application/rss+xml",
+        },
     )
     try:
         with opener.open(request, timeout=TIMEOUT_SECONDS) as response:
@@ -223,7 +292,7 @@ def fetch(url: str, sites: Sequence[str], opener: Opener = _open) -> dict[str, s
         if status != 200:
             raise WebError(f"{current} answered with status {status}")
         kind = headers.get("content-type", "").split(";")[0].strip().lower()
-        if kind not in ("text/html", "text/plain", "application/xhtml+xml"):
+        if kind not in ("text/html", "text/plain", "application/xhtml+xml", *FEED_TYPES):
             raise WebError(f"{current} is {kind or 'of unknown type'}, not a text page")
         if len(body) > MAX_BYTES:
             raise WebError(f"{current} is larger than 2 MiB")
@@ -234,7 +303,10 @@ def fetch(url: str, sites: Sequence[str], opener: Opener = _open) -> dict[str, s
             )
         except LookupError:
             decoded = body.decode("utf-8", errors="replace")
-        title, text = readable(decoded, kind != "text/plain")
+        if kind in FEED_TYPES:
+            title, text = "", readable_feed(decoded)
+        else:
+            title, text = readable(decoded, kind != "text/plain")
         return {"url": current, "title": title, "text": text}
     raise WebError(f"{url} redirected more than {MAX_REDIRECTS} times")
 
