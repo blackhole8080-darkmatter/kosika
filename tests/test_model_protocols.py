@@ -10,10 +10,15 @@ that changes either shape fails here rather than as an empty patch.
 
 from __future__ import annotations
 
+import http.client
+import io
 import json
 import unittest
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 from kosika.model import (
     MODEL_PROTOCOLS,
@@ -286,6 +291,60 @@ class OllamaResponseTests(unittest.TestCase):
                     continue
                 with self.assertRaisesRegex(ModelProviderError, message):
                     self.parse(payload)
+
+
+class RestartingServerTests(unittest.TestCase):
+    """A model server that is restarting is waited for, not given up on."""
+
+    def tries(self, url: str, failures: list[BaseException]) -> tuple[list[float], Any]:
+        slept: list[float] = []
+        calls = iter(failures)
+
+        def opener(request: Any, timeout: float) -> Any:
+            failure = next(calls, None)
+            if failure is not None:
+                raise failure
+            return io.BytesIO(b"ok")
+
+        provider = OpenAICompatibleProvider(url, "m", protocol="ollama")
+        request = urllib.request.Request(url, data=b"{}", method="POST")
+        with (
+            mock.patch("urllib.request.urlopen", opener),
+            mock.patch("time.sleep", slept.append),
+        ):
+            try:
+                return slept, provider._send(request)
+            except BaseException as exc:  # noqa: BLE001
+                return slept, exc
+
+    def test_a_refused_connection_is_tried_again(self) -> None:
+        refused = urllib.error.URLError(ConnectionRefusedError(10061, "refused"))
+        slept, got = self.tries(
+            "https://models.example.com/api/chat", [refused, refused]
+        )
+        self.assertEqual(got, b"ok")
+        self.assertEqual(slept, [5, 10])
+
+    def test_a_dropped_answer_is_tried_again_only_on_this_computer(self) -> None:
+        dropped = http.client.RemoteDisconnected("closed")
+        slept, got = self.tries("http://localhost:11434/api/chat", [dropped])
+        self.assertEqual((slept, got), ([5], b"ok"))
+        slept, got = self.tries("https://models.example.com/api/chat", [dropped])
+        self.assertEqual(slept, [])
+        self.assertIsInstance(got, http.client.RemoteDisconnected)
+
+    def test_it_gives_up_after_about_five_minutes(self) -> None:
+        refused = urllib.error.URLError(ConnectionRefusedError(10061, "refused"))
+        slept, got = self.tries("http://localhost:11434/api/chat", [refused] * 20)
+        self.assertIsInstance(got, urllib.error.URLError)
+        self.assertEqual(sum(slept), 315)
+
+    def test_other_failures_are_not_waited_on(self) -> None:
+        slept, got = self.tries(
+            "http://localhost:11434/api/chat", [urllib.error.URLError("offline")]
+        )
+        self.assertEqual(slept, [])
+        self.assertIsInstance(got, urllib.error.URLError)
 
 
 class OpenAiRegressionTests(unittest.TestCase):

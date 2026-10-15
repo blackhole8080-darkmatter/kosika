@@ -1,11 +1,37 @@
 from __future__ import annotations
 
+import http.client
 import json
+import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from dataclasses import dataclass
 from typing import Any, Callable, Iterator, Protocol
+
+#: Seconds to wait between tries while a model server is restarting: about
+#: five minutes in all.
+RECONNECT_WAITS = (5, 10, 20, 40, 60, 60, 60, 60)
+
+
+def _server_restarting(exc: BaseException, url: str) -> bool:
+    """Whether a failed request found the model server down rather than
+    wrong. A refused connection reached nobody, so trying again is safe
+    anywhere; a dropped one may have been answered, so it is tried again
+    only on this computer, where a repeat costs nothing."""
+
+    reason = exc.reason if isinstance(exc, urllib.error.URLError) else exc
+    if isinstance(reason, ConnectionRefusedError):
+        return True
+    host = urllib.parse.urlsplit(url).hostname or ""
+    return isinstance(
+        reason, (http.client.RemoteDisconnected, ConnectionResetError)
+    ) and host in (
+        "localhost",
+        "127.0.0.1",
+        "::1",
+    )
 
 
 class ModelProviderError(RuntimeError):
@@ -126,7 +152,9 @@ def ollama_context(request: ModelRequest) -> int:
         text += len(tool.name) + len(tool.description)
         text += len(json.dumps(tool.input_schema, sort_keys=True))
     wanted = text // 3 + (request.max_output_tokens or 1024) + 512
-    return next((size for size in OLLAMA_CONTEXTS if size >= wanted), OLLAMA_CONTEXTS[-1])
+    return next(
+        (size for size in OLLAMA_CONTEXTS if size >= wanted), OLLAMA_CONTEXTS[-1]
+    )
 
 
 class OpenAICompatibleProvider:
@@ -211,7 +239,7 @@ class OpenAICompatibleProvider:
                 pass
 
     def _lines(self, request: urllib.request.Request) -> Iterator[bytes]:
-        with urllib.request.urlopen(request, timeout=self.timeout) as response:
+        with self._open(request) as response:
             yield from response
 
     def _exchange_stream(self, payload: dict[str, Any], *, sse: bool) -> Any:
@@ -480,8 +508,24 @@ class OpenAICompatibleProvider:
     def _send(self, request: urllib.request.Request) -> bytes:
         if self._transport is not None:
             return self._transport(request, self.timeout)
-        with urllib.request.urlopen(request, timeout=self.timeout) as response:
+        with self._open(request) as response:
             return response.read()
+
+    def _open(self, request: urllib.request.Request) -> Any:
+        waits = list(RECONNECT_WAITS)
+        while True:
+            try:
+                return urllib.request.urlopen(request, timeout=self.timeout)
+            except (
+                urllib.error.URLError,
+                http.client.RemoteDisconnected,
+                ConnectionResetError,
+            ) as exc:
+                if not waits or not _server_restarting(exc, request.full_url):
+                    raise
+                # A model server that is restarting, as Ollama does when it
+                # updates itself, is waited for rather than given up on.
+                time.sleep(waits.pop(0))
 
     @staticmethod
     def _message_to_dict(message: ChatMessage) -> dict[str, Any]:

@@ -723,6 +723,25 @@ fn tested(last: Last, ran: Ran) -> Result {
   }
 }
 
+fn as_is(result: Result) -> Result {
+  return result
+}
+
+// Its own change wrote something and the tests that ran then failed.
+fn needs_mending(work: Work, tested: Tested) -> Bool {
+  return not work.did.is_empty() and tested.ran.exit_code != 0 and tested.ran.exit_code != 5 and not is_site_work(work)
+}
+
+// The second try, saying there was a first; or the first, if the second
+// wrote nothing.
+fn mended(before: Result, after: Result, fixed: Work) -> Result {
+  if fixed.did.is_empty() { return before }
+  let opening = if after.last.passed { "My first try failed its tests, so I read what they printed and put it right.
+" } else { "My first try failed its tests and a second try did not fix them.
+" }
+  return {text: opening + after.text, last: after.last}
+}
+
 fn nothing(last: Last, text: Text) -> Result {
   return {text: text, last: last}
 }
@@ -968,7 +987,20 @@ workflow do_it_myself(task: Task) -> Result {
     case _ { call second_try(again) }
   }
   tested = call run_tests(work)
-  result = worked_on(task, work, tested)
+  report = worked_on(task, work, tested)
+  // Tests that fail after its own change are read and put right once,
+  // before the person hears about it.
+  result = match needs_mending(work, tested) {
+    case true { call mend(task, report) }
+    case _ { as_is(report) }
+  }
+  require approval
+}
+
+workflow mend(task: Task, before: Result) -> Result {
+  fixed  = ask coder(fix_task(before.last).text) otherwise {summary: "", did: []}
+  tested = call run_tests(fixed)
+  result = mended(before, worked_on(task, fixed, tested), fixed)
   require approval
 }
 
@@ -1520,3 +1552,15 @@ test "a built site says how to see it, or what is wrong with its script" {
 // ------------------------------------------------------------------ evals
 // These ask a real model. Run them with:
 //   kosika measure main.kos --model qwen2.5:7b --model-protocol ollama
+
+test "its own change that fails the tests is put right once" {
+  wrote: Work = {summary: "added", did: ["wrote calc.py"]}
+  failed: Tested = {ran: {exit_code: 1, stdout: "1 failed", stderr: ""}, only: ""}
+  expect needs_mending(wrote, failed)
+  expect not needs_mending({summary: "", did: []}, failed)
+  expect not needs_mending(wrote, {ran: {exit_code: 5, stdout: "", stderr: ""}, only: ""})
+  before: Result = {text: "failed", last: {task: "t", output: "1 failed", passed: false, known: true}}
+  after: Result = {text: "The tests pass.", last: {task: "t", output: "ok", passed: true, known: true}}
+  expect mended(before, after, wrote).text.starts_with("My first try failed its tests, so I read")
+  expect mended(before, after, {summary: "", did: []}).text == "failed"
+}
