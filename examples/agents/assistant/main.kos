@@ -11,6 +11,16 @@
 // something, it says plainly that it cannot. For work on files, use the box
 // "Not sure which agent?" above it in Studio.
 //
+// Reminders can ring on your phone. Started with --notify and an address
+// of yours (such as https://ntfy.sh/your-private-topic), "check reminders"
+// sends every reminder whose time has come to that address and nowhere
+// else. Run it every few minutes and reminders ring:
+//
+//   kosika run main.kos --input ring.json --memory memory
+//     --notify https://ntfy.sh/your-private-topic
+//
+// where ring.json holds {"msg": {"text": "check reminders"}}.
+//
 // It keeps the last few things said, so "these" and "no, I meant" have
 // something to point at. Told to forget everything, it forgets that too.
 //
@@ -62,6 +72,13 @@ record Handover { agent: Text text: Text }
 
 record Handed { ok: Bool agent: Text text: Text }
 
+// A note to the person's phone, and whether it went.
+record Note { title: Text text: Text }
+record Sent { sent: Bool }
+// The reminders that have fallen due: the book without them, and the note
+// that tells of them.
+record Ringing { book: Book note: Note count: Number }
+
 // Another agent in the same folder, asked on the person's behalf. Handing
 // over gives that agent nothing new: it has its own tools and still asks
 // before it changes anything.
@@ -84,8 +101,18 @@ tool think_outside {
   output: Handed
 }
 
+// The person's phone. It reaches only the one address they named when
+// starting Kosi with --notify; without it, nothing is sent.
+tool tell_phone {
+  source system "notify"
+  operation: "send"
+  access: observe
+  input: Note
+  output: Sent
+}
+
 agent desk {
-  can: [hand_over, think_outside]
+  can: [hand_over, think_outside, tell_phone]
   max_steps: 1
 }
 
@@ -107,6 +134,7 @@ fn kind_of(msg: Msg) -> Text {
   let first = text.split(" ").first().or("")
   var kind = "ask"
   if text == "" or text == "help" or text == "what can you do" { kind = "help" }
+  else if text == "check reminders" or text == "ring" { kind = "due" }
   else if ["hello", "hi", "hey", "good morning", "good afternoon", "good evening", "hello kosi", "hi kosi", "hey kosi"].contains(text) { kind = "hello" }
   else if ["thanks", "thank you", "thanks kosi", "thank you kosi", "thanks a lot", "thank you so much", "ok thanks", "ok", "okay", "cool", "nice", "great", "got it"].contains(text) { kind = "thanks" }
   else if text.starts_with("set an alarm") or text.starts_with("set alarm") or text.starts_with("alarm ") or text.starts_with("wake me ") { kind = "alarm" }
@@ -848,6 +876,39 @@ fn who(known: BooksRecalled) -> Turn {
   return {book: book, text: f"I am {book.name}, your assistant, written in Kosika. I run on this computer and nothing you tell me leaves it.", suggest: ["what can you do"]}
 }
 
+// The reminders whose time has come, taken out of the book. A reminder
+// with no time never falls due.
+fn due_now(known: BooksRecalled, moment: Moment) -> Ringing {
+  let book = book_in(known)
+  var left: Reminder[] = []
+  var rung: Text[] = []
+  for r in book.reminders {
+    if r.due > 0 and r.due <= moment.epoch { rung = rung.append(r.what) } else { left = left.append(r) }
+  }
+  let title = if rung.length() == 1 { "Reminder" } else { f"{rung.length()} reminders" }
+  return {
+    book: {name: book.name, you: book.you, reminders: left, facts: book.facts},
+    note: {title: title, text: rung.join("
+")},
+    count: rung.length()
+  }
+}
+
+fn not_sent() -> Sent {
+  return {sent: false}
+}
+
+// What ringing said. A reminder the phone did not get stays in the book,
+// to be tried again.
+fn rung(known: BooksRecalled, ringing: Ringing, sent: Sent) -> Turn {
+  if ringing.count == 0 { return same(known, "Nothing is due.") }
+  if not sent.sent { return same(known, "Due now:
+" + ringing.note.text + "
+I could not reach your phone, so they stay on your list.") }
+  return {book: ringing.book, text: "Sent to your phone:
+" + ringing.note.text, suggest: ["my reminders"]}
+}
+
 fn same(known: BooksRecalled, text: Text) -> Turn {
   return {book: book_in(known), text: text, suggest: []}
 }
@@ -1055,6 +1116,23 @@ workflow by_clock(msg: Msg) -> Turn {
   }
 }
 
+// Reminders whose time has come go to the phone. Run every few minutes
+// with "check reminders", this is what makes a reminder ring.
+workflow ring(msg: Msg) -> Turn {
+  known   = recall books under "me"
+  moment  = now
+  ringing = due_now(known, moment)
+  sent    = match ringing.count > 0 {
+    case true { call send_note(ringing.note) }
+    case _ { not_sent() }
+  }
+  turn    = rung(known, ringing, sent)
+}
+
+workflow send_note(note: Note) -> Sent {
+  sent = execute desk.tell_phone(note.title, note.text) otherwise not_sent()
+}
+
 // Everything that needs neither the clock nor a model.
 workflow keep(msg: Msg) -> Turn {
   known = recall books under "me"
@@ -1092,6 +1170,7 @@ workflow main(msg: Msg) -> Said {
     case "until" { call by_clock(msg) }
     case "weekday" { call by_clock(msg) }
     case "hello" { call by_clock(msg) }
+    case "due" { call ring(msg) }
     case _ { call keep(msg) }
   }
   book  = book_of(turn)
@@ -1479,4 +1558,18 @@ eval "it uses what it was asked to remember" {
 eval "it does not pretend to act on the computer" {
   a = main({text: "could you put on some music for me?"})
   expect a.text.lower().contains("cannot") or a.text.lower().contains("can't") or a.text.lower().contains("unable") or a.text.lower().contains("not able")
+}
+
+test "a reminder whose time has come goes to the phone" {
+  answers clock_now: [{date: "2026-10-12", time: "09:05", weekday: "Monday", year: 2026, month: 10, day: 12, hour: 9, minute: 5, epoch: 1000000000}, {date: "2026-10-12", time: "09:05", weekday: "Monday", year: 2026, month: 10, day: 12, hour: 9, minute: 5, epoch: 1000000000}, {date: "2026-10-12", time: "09:20", weekday: "Monday", year: 2026, month: 10, day: 12, hour: 9, minute: 20, epoch: 1000000900}, {date: "2026-10-12", time: "09:21", weekday: "Monday", year: 2026, month: 10, day: 12, hour: 9, minute: 21, epoch: 1000000960}]
+  answers tell_phone: [{sent: true}]
+  a = main({text: "remind me in 10 minutes to stretch"})
+  b = main({text: "remind me at 6pm to call Sam"})
+  c = main({text: "check reminders"})
+  d = main({text: "check reminders"})
+  e = main({text: "my reminders"})
+  expect c.text == "Sent to your phone:\nstretch"
+  expect d.text == "Nothing is due."
+  expect e.text.contains("1. call Sam, at 18:00")
+  expect not e.text.contains("stretch")
 }
