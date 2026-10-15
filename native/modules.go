@@ -57,6 +57,9 @@ func localNames(module *Program) []string {
 	for _, record := range module.Records {
 		names = append(names, record.Name)
 	}
+	for _, enum := range module.Enums {
+		names = append(names, enum.Name)
+	}
 	for _, tool := range module.Tools {
 		names = append(names, tool.Name)
 	}
@@ -162,6 +165,7 @@ func loadModules(entry string) (merged *Program, failure *moduleError) {
 			owners[name] = resolved
 		}
 		merged.Records = append(merged.Records, module.Records...)
+		merged.Enums = append(merged.Enums, module.Enums...)
 		merged.Tools = append(merged.Tools, module.Tools...)
 		merged.Agents = append(merged.Agents, module.Agents...)
 		merged.Models = append(merged.Models, module.Models...)

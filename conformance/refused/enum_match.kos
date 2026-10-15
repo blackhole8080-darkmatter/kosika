@@ -1,0 +1,10 @@
+// A match on an enum that leaves a value out needs a final case _.
+
+enum Size { small, medium, large }
+
+fn price(size: Size) -> Number {
+  return match size {
+    case "small" { 2 }
+    case "large" { 4 }
+  }
+}

@@ -897,6 +897,15 @@ func (p *Parser) parseProgram() *Program {
 			model := p.parseModel()
 			model.Default = true
 			program.Models = append(program.Models, model)
+		case keyword == "enum" && p.peek().Kind == "IDENT":
+			p.advance()
+			enum := &EnumDecl{Name: p.identifier()}
+			p.expect("{")
+			for !p.accept("}") {
+				enum.Values = append(enum.Values, p.identifier())
+				p.accept(",")
+			}
+			program.Enums = append(program.Enums, enum)
 		case (keyword == "memory" || keyword == "board") && p.peek().Kind == "IDENT":
 			p.advance()
 			store := &StoreDecl{Name: p.identifier()}

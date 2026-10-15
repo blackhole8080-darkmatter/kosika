@@ -485,6 +485,9 @@ func (c *checker) schemaFor(typeName string) Value {
 	if kind, ok := primitive[typeName]; ok {
 		return object("type", kind)
 	}
+	if values := c.enumValues(typeName); values != nil {
+		return object("type", "string", "enum", stringValues(values))
+	}
 	switch {
 	case strings.HasSuffix(typeName, "?"):
 		return object("anyOf", []Value{c.schemaFor(typeName[:len(typeName)-1]), object("type", "null")})

@@ -1,0 +1,4 @@
+PASS  an enum value is one of its names
+PASS  a workflow takes an enum from its input
+PASS  a match step that names every value needs no case _
+3 passed, 0 failed

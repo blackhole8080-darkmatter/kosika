@@ -240,7 +240,7 @@ func (c *checker) validateType(t string) {
 			checkFail("Unknown field type %s", pyRepr(t))
 		}
 		c.validateType(t[:len(t)-1])
-	case c.records[t] == nil:
+	case c.records[t] == nil && c.enumValues(t) == nil:
 		checkFail("Unknown field type %s", pyRepr(t))
 	}
 }
@@ -319,7 +319,8 @@ func (c *checker) typeOf(expression Expr, env *Env, step, expected string) strin
 		return c.typeOf(e.Result, inner, step, expected)
 	case *MatchExpr:
 		subject := c.typeOf(e.Subject, env, step, "")
-		if !primitiveTypes[subject] {
+		values := c.enumValues(subject)
+		if !primitiveTypes[subject] && values == nil {
 			checkFail("Match subjects must be scalar values")
 		}
 		var seen []Value
@@ -332,7 +333,13 @@ func (c *checker) typeOf(expression Expr, env *Env, step, expected string) strin
 			if arm.Any {
 				exhaustive = true
 			} else {
-				if literalType(arm.Pattern) != subject {
+				if values != nil {
+					// An enum is matched by the text of its values.
+					text, isText := arm.Pattern.(string)
+					if !isText || !hasName(values, text) {
+						checkFail("Enum %s has no value %s; it has: %s", pyRepr(subject), pyReprAny(arm.Pattern), strings.Join(values, ", "))
+					}
+				} else if literalType(arm.Pattern) != subject {
 					checkFail("Match pattern type differs from subject")
 				}
 				for _, earlier := range seen {
@@ -341,7 +348,7 @@ func (c *checker) typeOf(expression Expr, env *Env, step, expected string) strin
 					}
 				}
 				seen = append(seen, arm.Pattern)
-				exhaustive = subject == "Null" || (subject == "Bool" && len(seen) == 2)
+				exhaustive = subject == "Null" || (subject == "Bool" && len(seen) == 2) || (values != nil && len(seen) == len(values))
 			}
 			armType := c.typeOf(arm.Value, env, step, result)
 			merged := armType
@@ -462,6 +469,13 @@ func (c *checker) typeOf(expression Expr, env *Env, step, expected string) strin
 	case *MethodExpr:
 		return c.methodType(e, env, step)
 	case *FieldExpr:
+		if enum := c.enumOf(e); enum != "" {
+			values := c.enumValues(enum)
+			if !hasName(values, e.Name) {
+				checkFail("Enum %s has no value %s; it has: %s", pyRepr(enum), pyRepr(e.Name), strings.Join(values, ", "))
+			}
+			return enum
+		}
 		base := c.typeOf(e.Target, env, step, "")
 		if strings.HasSuffix(base, "[]") {
 			checkFail("Step %s cannot access field %s on array type %s", pyRepr(step), pyRepr(e.Name), pyRepr(base))
@@ -793,6 +807,15 @@ func (c *checker) binaryType(e *BinaryExpr, env *Env, step string) string {
 		}
 	}
 	right := c.typeOf(e.Right, rightEnv, step, left)
+	if e.Op == "+" {
+		// An enum's value is text, and may be joined to text.
+		if c.enumValues(left) != nil && right == "Text" {
+			left = "Text"
+		}
+		if c.enumValues(right) != nil && left == "Text" {
+			right = "Text"
+		}
+	}
 	switch {
 	case arithmeticOps[e.Op]:
 		if left == "Number" && right == "Number" {
@@ -1102,6 +1125,9 @@ func ModuleProblem(program *Program, path string, visible map[string]bool) strin
 	for _, record := range program.Records {
 		local[record.Name] = true
 	}
+	for _, enum := range program.Enums {
+		local[enum.Name] = true
+	}
 	for name := range c.functions {
 		local[name] = true
 	}
@@ -1263,14 +1289,17 @@ func Check(program *Program) (err error) {
 
 func (c *checker) checkDeclarations() {
 	c.checkValueSteps()
+	c.checkEnums()
 	c.checkDefaults()
 	c.checkRecordMethods()
 	c.checkBudgets()
 	for _, workflow := range c.program.Workflows {
 		for _, step := range workflow.Steps {
-			if len(step.Branches) > 0 {
-				c.checkBranches()
-				return
+			for _, branch := range step.Branches {
+				if branch.Call != step.Call {
+					c.checkBranches()
+					return
+				}
 			}
 		}
 	}

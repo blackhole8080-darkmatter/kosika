@@ -113,6 +113,7 @@ print what the reference engine prints, word for word. See
     system.go    files in the granted folder, and programs started there
     direct.go    `read file`, `list files`, `write file` in one line
     defaults.go  default values, and making a record by calling it
+    enums.go     enums
     agent_changes.go   an agent's own changes, planned and approved
     check.go     the checker: refusing a program before it runs
     check_workflows.go   the checker's rules for tools, agents, workflows

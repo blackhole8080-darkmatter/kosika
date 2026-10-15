@@ -385,8 +385,23 @@ func (c *checker) checkWorkflows() {
 func (c *checker) checkStep(workflow *WorkflowDecl, step *Step, env *Env) {
 	if step.Subject != nil {
 		subject := c.typeOf(step.Subject, env.child(), step.Name, "")
-		if subject != "Text" && subject != "Number" && subject != "Bool" {
+		values := c.enumValues(subject)
+		if subject != "Text" && subject != "Number" && subject != "Bool" && values == nil {
 			checkFail("Step %s match expects Text, Number, or Bool, got %s", pyRepr(step.Name), pyRepr(subject))
+		}
+		covered := map[string]bool{}
+		for _, branch := range step.Branches {
+			if branch.Any || values == nil {
+				continue
+			}
+			text, isText := branch.Pattern.(string)
+			if !isText || !hasName(values, text) {
+				checkFail("Enum %s has no value %s; it has: %s", pyRepr(subject), pyReprAny(branch.Pattern), strings.Join(values, ", "))
+			}
+			covered[text] = true
+		}
+		if len(step.Branches) > 0 && !step.Branches[len(step.Branches)-1].Any && (values == nil || len(covered) != len(values)) {
+			checkFail("Step %s match must end with exactly one `case _`", pyRepr(step.Name))
 		}
 	}
 	call := step.Call
@@ -573,13 +588,19 @@ func (c *checker) checkBranches() {
 			}
 			most = max(most, len(step.Branches))
 			last := len(step.Branches) - 1
-			for i, branch := range step.Branches {
-				if branch.Any != (i == last) {
+			// A match on an enum that names every value needs no `case _`;
+			// that is checked with the subject's type.
+			for _, branch := range step.Branches[:last] {
+				if branch.Any {
 					checkFail("Step %s match must end with exactly one `case _`", pyRepr(step.Name))
 				}
 			}
 			seen := map[string]bool{}
-			for _, branch := range step.Branches[:last] {
+			upto := last
+			if !step.Branches[last].Any {
+				upto = last + 1
+			}
+			for _, branch := range step.Branches[:upto] {
 				key := patternKind(branch.Pattern) + ":" + showText(branch.Pattern)
 				if seen[key] {
 					checkFail("Step %s match lists a value twice", pyRepr(step.Name))
@@ -614,7 +635,14 @@ func (c *checker) checkBranches() {
 			}
 			changed := *step
 			changed.Call = step.Branches[min(index, len(step.Branches)-1)].Call
-			changed.Branches = nil
+			// Each case now makes this one call, so the program is checked
+			// with it, and its cases are still there to be checked against
+			// the subject.
+			changed.Branches = make([]Branch, len(step.Branches))
+			for i, branch := range step.Branches {
+				branch.Call = changed.Call
+				changed.Branches[i] = branch
+			}
 			return &changed
 		})
 		newChecker(variant).checkDeclarations()

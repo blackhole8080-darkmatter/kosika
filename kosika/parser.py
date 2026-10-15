@@ -15,6 +15,7 @@ from .ast import (
     BreakExpr,
     ConditionalExpr,
     ContinueExpr,
+    EnumDecl,
     Expression,
     FailExpr,
     Field,
@@ -660,6 +661,15 @@ class Parser:
             elif keyword == "default" and self.peek().value == "model":
                 self.advance()
                 program.models.append(replace(self.parse_model(), default=True))
+            elif keyword == "enum" and self.peek().kind == "IDENT":
+                self.advance()
+                enum_name = self.identifier()
+                self.expect("{")
+                values: list[str] = []
+                while not self.accept("}"):
+                    values.append(self.identifier())
+                    self.accept(",")
+                program.enums.append(EnumDecl(enum_name, tuple(values)))
             elif keyword == "board" and self.peek().kind == "IDENT":
                 self.advance()
                 board_name = self.identifier()

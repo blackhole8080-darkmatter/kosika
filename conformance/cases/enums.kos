@@ -1,0 +1,59 @@
+// Enums: a type whose value is one of the names it lists.
+
+enum Size { small, medium, large }
+enum Mood { calm, busy }
+
+record Cup { size: Size price: Number }
+record Ask { size: Size }
+
+fn price_of(size: Size) -> Number {
+  return match size {
+    case "small" { 2 }
+    case "medium" { 3 }
+    case "large" { 4 }
+  }
+}
+
+fn cup(size: Size) -> Cup { return {size: size, price: price_of(size)} }
+
+fn label(size: Size) -> Text { return f"a {size} cup" }
+
+fn upgraded(size: Size) -> Size {
+  return if size == Size.small { Size.medium } else { Size.large }
+}
+
+workflow order(ask: Ask) -> Cup {
+  made = cup(ask.size)
+}
+
+test "an enum value is one of its names" {
+  expect price_of(Size.small) == 2
+  expect cup(Size.large).price == 4
+  expect label(Size.medium) == "a medium cup"
+  expect upgraded(Size.small) == Size.medium
+  expect upgraded(Size.medium) != Size.medium
+}
+
+test "a workflow takes an enum from its input" {
+  c = order({size: Size.large})
+  expect c.price == 4
+}
+
+record Brew { text: Text }
+fn espresso(ask: Ask) -> Brew { return {text: "a short " + ask.size} }
+fn filter(ask: Ask) -> Brew { return {text: "a long " + ask.size} }
+
+workflow brew(ask: Ask) -> Brew {
+  made = match ask.size {
+    case "small" { espresso(ask) }
+    case "medium" { filter(ask) }
+    case "large" { filter(ask) }
+  }
+}
+
+test "a match step that names every value needs no case _" {
+  a = brew({size: Size.small})
+  b = brew({size: Size.large})
+  expect a.text == "a short small"
+  expect b.text == "a long large"
+}

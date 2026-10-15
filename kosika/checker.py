@@ -16,6 +16,7 @@ from .ast import (
     BreakExpr,
     ConditionalExpr,
     ContinueExpr,
+    EnumValueExpr,
     FailExpr,
     Field,
     FieldExpr,
@@ -101,8 +102,32 @@ def _validate_type_name(program: Program, type_name: str) -> None:
             raise CheckError(f"Unknown field type {type_name!r}")
         _validate_type_name(program, type_name[:-1])
         return
-    if type_name not in {record.name for record in program.records}:
+    if type_name not in {record.name for record in program.records} | {
+        enum.name for enum in program.enums
+    }:
         raise CheckError(f"Unknown field type {type_name!r}")
+
+
+def _enum_values(program: Program, type_name: str) -> tuple[str, ...] | None:
+    for enum in program.enums:
+        if enum.name == type_name:
+            return enum.values
+    return None
+
+
+def _check_enums(program: Program) -> None:
+    taken = {record.name for record in program.records}
+    seen: set[str] = set()
+    for enum in program.enums:
+        if enum.name in seen:
+            raise CheckError(f"Enum {enum.name!r} is declared more than once")
+        if enum.name in taken or enum.name in _PRIMITIVE_TYPES:
+            raise CheckError(f"Enum {enum.name!r} has the name of a record or a type")
+        seen.add(enum.name)
+        if not enum.values:
+            raise CheckError(f"Enum {enum.name!r} needs at least one value")
+        if len(set(enum.values)) != len(enum.values):
+            raise CheckError(f"Enum {enum.name!r} names a value twice")
 
 
 def _literal_type(value: object) -> str:
@@ -357,7 +382,8 @@ def _expression_type(
         subject_type = _expression_type(
             expression.subject, bindings, program, step_name=step_name
         )
-        if subject_type not in _PRIMITIVE_TYPES:
+        values = _enum_values(program, subject_type)
+        if subject_type not in _PRIMITIVE_TYPES and values is None:
             raise CheckError("Match subjects must be scalar values")
         seen: list[object] = []
         exhaustive = False
@@ -369,13 +395,22 @@ def _expression_type(
                 exhaustive = True
             else:
                 pattern = arm.pattern.value
-                if _literal_type(pattern) != subject_type:
+                if values is not None:
+                    # An enum is matched by the text of its values.
+                    if not isinstance(pattern, str) or pattern not in values:
+                        raise CheckError(
+                            f"Enum {subject_type!r} has no value {pattern!r}; "
+                            f"it has: {', '.join(values)}"
+                        )
+                elif _literal_type(pattern) != subject_type:
                     raise CheckError("Match pattern type differs from subject")
                 if pattern in seen:
                     raise CheckError("Duplicate match pattern")
                 seen.append(pattern)
-                exhaustive = subject_type == "Null" or (
-                    subject_type == "Bool" and len(seen) == 2
+                exhaustive = (
+                    subject_type == "Null"
+                    or (subject_type == "Bool" and len(seen) == 2)
+                    or (values is not None and len(seen) == len(values))
                 )
             arm_type = _expression_type(
                 arm.value,
@@ -391,6 +426,14 @@ def _expression_type(
         if not exhaustive or result_type is None:
             raise CheckError("Non-exhaustive match: add a final case _")
         return result_type
+    if isinstance(expression, EnumValueExpr):
+        values = _enum_values(program, expression.enum_name) or ()
+        if expression.value not in values:
+            raise CheckError(
+                f"Enum {expression.enum_name!r} has no value {expression.value!r}; "
+                f"it has: {', '.join(values)}"
+            )
+        return expression.enum_name
     if isinstance(expression, LiteralExpr):
         return _literal_type(expression.value)
     if isinstance(expression, VariableExpr):
@@ -821,6 +864,12 @@ def _expression_type(
             expected_type=left_type,
         )
         operator = expression.operator
+        if operator == "+":
+            # An enum's value is text, and may be joined to text.
+            if _enum_values(program, left_type) is not None and right_type == "Text":
+                left_type = "Text"
+            if _enum_values(program, right_type) is not None and left_type == "Text":
+                right_type = "Text"
         if operator in {"+", "-", "*", "/", "%", "<", "<=", ">", ">="}:
             if left_type == "Number" and right_type == "Number":
                 return "Bool" if operator in {"<", "<=", ">", ">="} else "Number"
@@ -1173,11 +1222,15 @@ def _check_branches(program: Program) -> None:
                 continue
             most = max(most, len(step.branches))
             patterns = [pattern for pattern, _ in step.branches]
-            if patterns[-1] is not None or None in patterns[:-1]:
+            # A match on an enum that names every value needs no `case _`;
+            # that is checked with the subject's type.
+            if None in patterns[:-1]:
                 raise CheckError(
                     f"Step {step.name!r} match must end with exactly one `case _`"
                 )
-            seen = [(type(pattern), pattern) for pattern in patterns[:-1]]
+            seen = [
+                (type(pattern), pattern) for pattern in patterns if pattern is not None
+            ]
             if len(seen) != len(set(seen)):
                 raise CheckError(f"Step {step.name!r} match lists a value twice")
             outputs = set()
@@ -1208,7 +1261,19 @@ def _check_branches(program: Program) -> None:
                                 call=step.branches[min(index, len(step.branches) - 1)][
                                     1
                                 ],
-                                branches=(),
+                                # Each case now makes this one call, so the
+                                # program is checked with it, and its cases
+                                # are still there to be checked against the
+                                # subject.
+                                branches=tuple(
+                                    (
+                                        pattern,
+                                        step.branches[
+                                            min(index, len(step.branches) - 1)
+                                        ][1],
+                                    )
+                                    for pattern, _ in step.branches
+                                ),
                             )
                             if step.branches
                             else step
@@ -1418,6 +1483,7 @@ def _check(program: Program) -> None:
                     "value may stand after 'otherwise' or in a 'case', beside a "
                     "call whose result type it takes"
                 )
+    _check_enums(program)
     _check_defaults(program)
     _check_record_methods(program)
     _check_parallel(program)
@@ -1508,7 +1574,11 @@ def _check(program: Program) -> None:
     if any(step.verify for workflow in program.workflows for step in workflow.steps):
         _check_verify(program)
         return
-    if any(step.branches for workflow in program.workflows for step in workflow.steps):
+    if any(
+        any(call != step.call for _, call in step.branches)
+        for workflow in program.workflows
+        for step in workflow.steps
+    ):
         _check_branches(program)
         return
     if any(
@@ -1935,10 +2005,26 @@ def _check(program: Program) -> None:
                 subject_type = _expression_type(
                     step.subject, _Env(bindings), program, step_name=step.name
                 )
-                if subject_type not in ("Text", "Number", "Bool"):
+                values = _enum_values(program, subject_type)
+                if subject_type not in ("Text", "Number", "Bool") and values is None:
                     raise CheckError(
                         f"Step {step.name!r} match expects Text, Number, or "
                         f"Bool, got {subject_type!r}"
+                    )
+                patterns = [pattern for pattern, _ in step.branches]
+                for pattern in patterns:
+                    if values is not None and pattern is not None and (
+                        not isinstance(pattern, str) or pattern not in values
+                    ):
+                        raise CheckError(
+                            f"Enum {subject_type!r} has no value {pattern!r}; "
+                            f"it has: {', '.join(values)}"
+                        )
+                if patterns and patterns[-1] is not None and (
+                    values is None or set(patterns) != set(values)
+                ):
+                    raise CheckError(
+                        f"Step {step.name!r} match must end with exactly one `case _`"
                     )
             if isinstance(step.call, WorkflowCall):
                 child = workflows[step.call.workflow_name]

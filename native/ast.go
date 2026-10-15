@@ -256,4 +256,6 @@ type Program struct {
 	Memories, Boards []*StoreDecl
 	// `import "path.kos"` and `export [names]`: see modules.go.
 	Imports, Exports []string
+	// `enum Size { small, medium, large }`: see enums.go.
+	Enums []*EnumDecl
 }

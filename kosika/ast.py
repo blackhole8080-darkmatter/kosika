@@ -215,6 +215,23 @@ class LiteralExpr:
 
 
 @dataclass(frozen=True)
+class EnumValueExpr(LiteralExpr):
+    """`Size.small`: one value of a declared enum. It is the text of the
+    value, typed as the enum, so everything that reads a literal reads it."""
+
+    enum_name: str = ""
+
+
+@dataclass(frozen=True)
+class EnumDecl:
+    """`enum Size { small, medium, large }`: a type whose value is one of
+    these names, kept as text."""
+
+    name: str
+    values: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class VariableExpr:
     name: str
 
@@ -750,6 +767,8 @@ class Program:
     memories: list[MemoryDecl] = field(default_factory=list)
     # `board NAME of Record`: where the agents of one run leave messages.
     boards: list[BoardDecl] = field(default_factory=list)
+    # `enum NAME { values }`.
+    enums: list[EnumDecl] = field(default_factory=list)
 
 
 #: Fields added to the tree after traces and approvals were first recorded,
@@ -780,6 +799,7 @@ _ABSENT_DEFAULTS: dict[str, tuple[Any, ...]] = {
     "capped": (False,),
     "memories": ((), []),
     "boards": ((), []),
+    "enums": ((), []),
 }
 
 

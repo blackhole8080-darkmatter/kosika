@@ -136,6 +136,36 @@ name or the element type of an unannotated array literal.
 Equality is structural JSON equality. Booleans are distinct from numbers;
 integer `1` and floating-point `1.0` are equal.
 
+### Enums
+
+```kosika
+enum Size { small, medium, large }
+
+record Cup { size: Size  price: Number }
+
+fn price(size: Size) -> Number {
+  return match size {
+    case "small" { 2 }
+    case "medium" { 3 }
+    case "large" { 4 }
+  }
+}
+```
+
+- `enum NAME { value, value, ... }` declares a type whose value is one of the
+  names listed, kept as text. It needs at least one value, each once, and a
+  name no record or primitive type has.
+- `Size.small` is a value of the enum; a name it does not list is refused.
+- A value of an enum may be joined to text with `+` and written into
+  `f"..."`. It is compared only with values of the same enum.
+- A `match` on an enum, expression or workflow step, is matched by the text
+  of its values; a pattern that is not a value is refused, and a match that
+  names every value needs no `case _`.
+- A value coming in from outside (a workflow's input, a tool's or a model's
+  answer) must be one of the values: its JSON schema is
+  `{"type": "string", "enum": [...]}`, so a model is told the values too.
+- Enums may be exported and imported like records.
+
 ## Records and pure functions
 
 ```ebnf

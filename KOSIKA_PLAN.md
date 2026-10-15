@@ -3506,6 +3506,24 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   programs with workflows, agents and tools; the guide does not teach
   those yet.
 
+### Enums, in both engines
+
+- `enum Size { small, medium, large }` (kosika/checker.py, kosika/sugar.py
+  `lower_enums`, native/enums.go): a type whose values are names kept as
+  text; `Size.small`; fields and parameters of the type; values from
+  outside held to the list by their JSON schema, which a model is shown;
+  `+` and f-strings with text; a `match`, in an expression or a workflow
+  step, that names every value needs no `case _`. Refusals, in the same
+  words in both engines: an unknown value, a value named twice, an enum
+  with no values or with a taken name, a pattern that is no value, a match
+  that leaves a value out.
+- A match step's cases are now checked against its subject in the program
+  each case makes, which is what lets a step matching an enum leave out
+  `case _`.
+- Held by `cases/enums.kos`, `refused/enum_value.kos`,
+  `refused/enum_match.kos`, fourteen more programs compared side by side,
+  and a run whose trace is the same in both engines.
+
 ### Default values, and making a record by calling it
 
 - The owner asked for Kosika to match Python's functions, classes and

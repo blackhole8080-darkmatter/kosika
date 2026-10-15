@@ -919,6 +919,13 @@ func (r *run) problem(value Value, typeName, path string) string {
 		}
 		return fmt.Sprintf("%s: expected object, got %s", path, pyTypeName(value))
 	}
+	if values := r.checker.enumValues(typeName); values != nil {
+		text, isText := value.(string)
+		if !isText || !hasName(values, text) {
+			return fmt.Sprintf("%s: value %s is not in enum", path, pyReprAny(value))
+		}
+		return ""
+	}
 	expected := map[string]string{"Text": "string", "Number": "number", "Bool": "boolean", "Null": "null"}
 	if kind, primitive := expected[typeName]; primitive {
 		matches := false

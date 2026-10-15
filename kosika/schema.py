@@ -174,6 +174,9 @@ def _schema_for_type(
     }
     if type_name in primitive_types:
         return {"type": primitive_types[type_name]}
+    for enum in program.enums:
+        if enum.name == type_name:
+            return {"type": "string", "enum": list(enum.values)}
     if type_name.endswith("?"):
         return {
             "anyOf": [

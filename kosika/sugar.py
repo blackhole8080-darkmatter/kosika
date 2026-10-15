@@ -33,6 +33,7 @@ from typing import Any
 
 from .ast import (
     AgentCall,
+    EnumValueExpr,
     Field,
     FieldExpr,
     FunctionCall,
@@ -434,5 +435,44 @@ def fill_defaults(program: Program) -> Program:
     )
 
 
+def lower_enums(program: Program) -> Program:
+    """Make each `Size.small` an enum value. A program with no enum is
+    returned unchanged."""
+
+    enums = {enum.name for enum in program.enums}
+    if not enums:
+        return program
+
+    def rewrite(value: Any) -> Any:
+        if isinstance(value, tuple):
+            return tuple(rewrite(item) for item in value)
+        if isinstance(value, list):
+            return [rewrite(item) for item in value]
+        if not is_dataclass(value) or isinstance(value, type):
+            return value
+        if (
+            isinstance(value, FieldExpr)
+            and isinstance(value.base, VariableExpr)
+            and value.base.name in enums
+        ):
+            return EnumValueExpr(value.field_name, value.base.name)
+        changes = {}
+        for item in fields(value):
+            current = getattr(value, item.name)
+            updated = rewrite(current)
+            if updated is not current:
+                changes[item.name] = updated
+        return replace(value, **changes) if changes else value
+
+    return replace(
+        program,
+        functions=rewrite(program.functions),
+        workflows=rewrite(program.workflows),
+        tests=rewrite(program.tests),
+    )
+
+
 def lower_sugar(program: Program) -> Program:
-    return add_main_workflow(fill_defaults(name_sole_arguments(lower_values(program))))
+    return add_main_workflow(
+        fill_defaults(name_sole_arguments(lower_values(lower_enums(program))))
+    )

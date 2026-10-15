@@ -89,13 +89,17 @@ type Machine struct {
 	program    *Program
 	functions  map[string]*FuncDecl
 	records    []*RecordDecl
+	enums      map[string]bool // the program's enums, by name
 	active     []string
 	calls      int
 	loops      int
 }
 
 func newMachine(program *Program) *Machine {
-	machine := &Machine{program: program, functions: map[string]*FuncDecl{}, records: program.Records}
+	machine := &Machine{program: program, functions: map[string]*FuncDecl{}, records: program.Records, enums: map[string]bool{}}
+	for _, enum := range program.Enums {
+		machine.enums[enum.Name] = true
+	}
 	for _, function := range program.Functions {
 		machine.functions[function.Name] = function
 	}
@@ -130,6 +134,9 @@ func (m *Machine) eval(expression Expr, at frame) Value {
 		}
 		return value
 	case *FieldExpr:
+		if variable, ok := e.Target.(*VarExpr); ok && m.enums[variable.Name] {
+			return e.Name
+		}
 		base := m.eval(e.Target, at)
 		record, ok := base.(*Record)
 		if !ok {
