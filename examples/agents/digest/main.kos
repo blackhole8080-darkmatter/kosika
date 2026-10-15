@@ -366,9 +366,13 @@ workflow evening(msg: Msg) -> Said {
   shown  = shown_with(said, sent)
 }
 
+// "evening" gives the evening lesson; anything else, the afternoon digest.
 workflow main(msg: Msg) -> Said {
-  budget 10 model calls, 7200 seconds
-  said = call afternoon(msg)
+  budget 12 model calls, 10800 seconds
+  said = match msg.text.trim().lower() == "evening" {
+    case true { call evening(msg) }
+    case _ { call afternoon(msg) }
+  }
 }
 
 // ---------------------------------------------------------------- tests
