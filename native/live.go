@@ -488,6 +488,14 @@ func (c *checker) schemaFor(typeName string) Value {
 	if values := c.enumValues(typeName); values != nil {
 		return object("type", "string", "enum", stringValues(values))
 	}
+	if shape := c.shape(typeName); shape != nil {
+		// A shape's value is one of the records that are it.
+		forms := []Value{}
+		for _, name := range c.shapeMembers(shape) {
+			forms = append(forms, c.schemaFor(name))
+		}
+		return object("anyOf", forms)
+	}
 	switch {
 	case strings.HasSuffix(typeName, "?"):
 		return object("anyOf", []Value{c.schemaFor(typeName[:len(typeName)-1]), object("type", "null")})

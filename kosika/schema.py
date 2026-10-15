@@ -177,6 +177,16 @@ def _schema_for_type(
     for enum in program.enums:
         if enum.name == type_name:
             return {"type": "string", "enum": list(enum.values)}
+    for shape in program.shapes:
+        if shape.name == type_name:
+            # A shape's value is one of the records that are it.
+            return {
+                "anyOf": [
+                    _schema_for_type(program, record.name, stack)
+                    for record in program.records
+                    if implements(program, record.name, shape.name)
+                ]
+            }
     if type_name.endswith("?"):
         return {
             "anyOf": [
@@ -223,3 +233,23 @@ def schema_for_record(program: Program, record_name: str) -> dict[str, Any]:
 def schema_for_type(program: Program, type_name: str) -> dict[str, Any]:
     """Return the bounded JSON schema for any checked Kosika value type."""
     return _schema_for_type(program, type_name, ())
+
+
+def implements(program: Program, record_name: str, shape_name: str) -> bool:
+    """Whether a record is a shape: it has each of the shape's functions,
+    taking the same parameters and giving the same type."""
+
+    shape = next((item for item in program.shapes if item.name == shape_name), None)
+    record = next((item for item in program.records if item.name == record_name), None)
+    if shape is None or record is None:
+        return False
+    functions = {function.name: function for function in program.functions}
+    for method in shape.methods:
+        function = functions.get(f"{record.name}${method.name}")
+        if method.name not in record.methods or function is None:
+            return False
+        if [(p.name, p.type_name) for p in function.parameters[1:]] != [
+            (p.name, p.type_name) for p in method.parameters
+        ] or function.output_type != method.output_type:
+            return False
+    return True

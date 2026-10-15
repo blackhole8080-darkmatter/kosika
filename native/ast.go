@@ -258,4 +258,6 @@ type Program struct {
 	Imports, Exports []string
 	// `enum Size { small, medium, large }`: see enums.go.
 	Enums []*EnumDecl
+	// `shape Priced { fn price(self) -> Number }`: see shapes.go.
+	Shapes []*ShapeDecl
 }

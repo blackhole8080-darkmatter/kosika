@@ -114,6 +114,7 @@ print what the reference engine prints, word for word. See
     direct.go    `read file`, `list files`, `write file` in one line
     defaults.go  default values, and making a record by calling it
     enums.go     enums
+    shapes.go    shapes: types every record with their functions is
     agent_changes.go   an agent's own changes, planned and approved
     check.go     the checker: refusing a program before it runs
     check_workflows.go   the checker's rules for tools, agents, workflows

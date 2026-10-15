@@ -54,6 +54,7 @@ from .builtin_methods import resolve as resolve_method
 from .builtin_methods import return_type as method_return_type
 from .function_types import (
     NEVER,
+    SHAPES,
     assignable,
     function_type,
     is_map,
@@ -62,6 +63,7 @@ from .function_types import (
     signature,
     unify,
 )
+from .schema import implements
 from .sugar import VALUE_CALL, resolve_unnamed
 from .sugar import call_output as _call_output
 from .system_tools import declaration_problem
@@ -104,7 +106,7 @@ def _validate_type_name(program: Program, type_name: str) -> None:
         return
     if type_name not in {record.name for record in program.records} | {
         enum.name for enum in program.enums
-    }:
+    } | {shape.name for shape in program.shapes}:
         raise CheckError(f"Unknown field type {type_name!r}")
 
 
@@ -113,6 +115,40 @@ def _enum_values(program: Program, type_name: str) -> tuple[str, ...] | None:
         if enum.name == type_name:
             return enum.values
     return None
+
+
+def _check_shapes(program: Program) -> None:
+    taken = {record.name for record in program.records} | {
+        enum.name for enum in program.enums
+    }
+    seen: set[str] = set()
+    for shape in program.shapes:
+        if shape.name in seen:
+            raise CheckError(f"Shape {shape.name!r} is declared more than once")
+        if shape.name in taken or shape.name in _PRIMITIVE_TYPES:
+            raise CheckError(
+                f"Shape {shape.name!r} has the name of a record, an enum or a type"
+            )
+        seen.add(shape.name)
+        if not shape.methods:
+            raise CheckError(f"Shape {shape.name!r} needs at least one function")
+        names = [method.name for method in shape.methods]
+        if len(set(names)) != len(names):
+            raise CheckError(f"Shape {shape.name!r} names a function twice")
+        for method in shape.methods:
+            for parameter in method.parameters:
+                _validate_type_name(program, parameter.type_name)
+            _validate_type_name(program, method.output_type)
+    SHAPES.set(
+        {
+            shape.name: frozenset(
+                record.name
+                for record in program.records
+                if implements(program, record.name, shape.name)
+            )
+            for shape in program.shapes
+        }
+    )
 
 
 def _check_enums(program: Program) -> None:
@@ -611,6 +647,36 @@ def _expression_type(
                 program,
                 step_name=step_name,
             )
+        shape = next(
+            (item for item in program.shapes if item.name == receiver_type), None
+        )
+        if shape is not None:
+            # A shape's function: the one of whichever record the value is.
+            shape_method = next(
+                (item for item in shape.methods if item.name == expression.method),
+                None,
+            )
+            if shape_method is None:
+                raise CheckError(
+                    f"Step {step_name!r} shape {shape.name!r} has no function "
+                    f"{expression.method!r}; it has: "
+                    f"{', '.join(item.name for item in shape.methods)}"
+                )
+            rest = resolve_unnamed(
+                expression.arguments, [parameter.name for parameter in shape_method.parameters]
+            )
+            _check_arguments(
+                program,
+                None,
+                (("self", expression.target), *rest),
+                bindings,
+                step_name=step_name,
+                expected_fields={
+                    "self": shape.name,
+                    **{p.name: p.type_name for p in shape_method.parameters},
+                },
+            )
+            return shape_method.output_type
         if (
             isinstance(expression.target, VariableExpr)
             and expression.target.name in bindings.present
@@ -671,6 +737,11 @@ def _expression_type(
             raise CheckError(
                 f"Step {step_name!r} cannot access field {expression.field_name!r} "
                 f"on {base_type!r}: {_absent_hint(base_type)}"
+            )
+        if any(shape.name == base_type for shape in program.shapes):
+            raise CheckError(
+                f"Step {step_name!r} cannot read field {expression.field_name!r} "
+                f"of shape {base_type!r}; a shape has only its functions"
             )
         fields = _record_fields(program, base_type)
         field_type = fields.get(expression.field_name)
@@ -1484,6 +1555,7 @@ def _check(program: Program) -> None:
                     "call whose result type it takes"
                 )
     _check_enums(program)
+    _check_shapes(program)
     _check_defaults(program)
     _check_record_methods(program)
     _check_parallel(program)

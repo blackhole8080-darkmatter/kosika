@@ -3506,6 +3506,23 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   programs with workflows, agents and tools; the guide does not teach
   those yet.
 
+### Shapes, in both engines
+
+- `shape Priced { fn price(self) -> Number }` (kosika/checker.py,
+  kosika/schema.py `implements`, kosika/function_types.py `assignable`,
+  native/shapes.go): a type that every record with those functions is, as
+  an interface is in other languages, without inheritance. A record stands
+  for its shape alone, in a list or optional; a shape's value is called
+  only by its functions; its schema is `anyOf` the records that are it, so
+  values from outside are checked against each.
+- Held by `cases/shapes.kos`, `refused/shape_function.kos`,
+  `refused/shape_record.kos`, `refused/shape_field.kos`, eleven more
+  programs compared side by side, and a run whose trace, schemas included,
+  is the same in both engines.
+- With defaults, constructors (`Item(...)`), records with functions and
+  enums, this is what Python's classes are mostly used for, checked before
+  the program runs.
+
 ### Enums, in both engines
 
 - `enum Size { small, medium, large }` (kosika/checker.py, kosika/sugar.py

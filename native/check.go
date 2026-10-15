@@ -240,7 +240,7 @@ func (c *checker) validateType(t string) {
 			checkFail("Unknown field type %s", pyRepr(t))
 		}
 		c.validateType(t[:len(t)-1])
-	case c.records[t] == nil && c.enumValues(t) == nil:
+	case c.records[t] == nil && c.enumValues(t) == nil && c.shape(t) == nil:
 		checkFail("Unknown field type %s", pyRepr(t))
 	}
 }
@@ -483,6 +483,9 @@ func (c *checker) typeOf(expression Expr, env *Env, step, expected string) strin
 		if isOptional(base) || isMap(base) {
 			checkFail("Step %s cannot access field %s on %s: %s", pyRepr(step), pyRepr(e.Name), pyRepr(base), absentHint(base))
 		}
+		if c.shape(base) != nil {
+			checkFail("Step %s cannot read field %s of shape %s; a shape has only its functions", pyRepr(step), pyRepr(e.Name), pyRepr(base))
+		}
 		fields := c.recordFields(base)
 		t, known := fieldType(fields, e.Name)
 		if !known {
@@ -614,6 +617,10 @@ func (c *checker) methodType(e *MethodExpr, env *Env, step string) string {
 		args := append([]Arg{{"self", e.Target}}, rest...)
 		c.checkArguments(args, decl.Params, env, step)
 		return decl.Out
+	}
+	if shape := c.shape(receiverType); shape != nil {
+		// A shape's function: the one of whichever record the value is.
+		return c.shapeCall(shape, e, env, step)
 	}
 	if target, ok := e.Target.(*VarExpr); ok && env.present[target.Name] &&
 		(e.Name == "exists" || e.Name == "value" || e.Name == "or") {
@@ -1128,6 +1135,9 @@ func ModuleProblem(program *Program, path string, visible map[string]bool) strin
 	for _, enum := range program.Enums {
 		local[enum.Name] = true
 	}
+	for _, shape := range program.Shapes {
+		local[shape.Name] = true
+	}
 	for name := range c.functions {
 		local[name] = true
 	}
@@ -1290,6 +1300,7 @@ func Check(program *Program) (err error) {
 func (c *checker) checkDeclarations() {
 	c.checkValueSteps()
 	c.checkEnums()
+	c.checkShapes()
 	c.checkDefaults()
 	c.checkRecordMethods()
 	c.checkBudgets()

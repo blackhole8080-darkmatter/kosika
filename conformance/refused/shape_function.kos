@@ -1,0 +1,6 @@
+// A shape has only the functions it lists.
+
+shape Priced { fn price(self) -> Number }
+record Book { pages: Number  fn price(self) -> Number { return self.pages } }
+record Note { text: Text }
+fn f(p: Priced) -> Number { return p.cost() }

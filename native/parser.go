@@ -897,6 +897,8 @@ func (p *Parser) parseProgram() *Program {
 			model := p.parseModel()
 			model.Default = true
 			program.Models = append(program.Models, model)
+		case keyword == "shape" && p.peek().Kind == "IDENT":
+			program.Shapes = append(program.Shapes, p.parseShape())
 		case keyword == "enum" && p.peek().Kind == "IDENT":
 			p.advance()
 			enum := &EnumDecl{Name: p.identifier()}

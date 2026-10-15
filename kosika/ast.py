@@ -232,6 +232,24 @@ class EnumDecl:
 
 
 @dataclass(frozen=True)
+class ShapeMethod:
+    """One function a shape asks for: `fn price(self) -> Number`."""
+
+    name: str
+    parameters: tuple[Field, ...]
+    output_type: str
+
+
+@dataclass(frozen=True)
+class ShapeDecl:
+    """`shape Priced { fn price(self) -> Number }`: a type that every record
+    with these functions is. See kosika.function_types.assignable."""
+
+    name: str
+    methods: tuple[ShapeMethod, ...]
+
+
+@dataclass(frozen=True)
 class VariableExpr:
     name: str
 
@@ -769,6 +787,8 @@ class Program:
     boards: list[BoardDecl] = field(default_factory=list)
     # `enum NAME { values }`.
     enums: list[EnumDecl] = field(default_factory=list)
+    # `shape NAME { fn ... }`.
+    shapes: list[ShapeDecl] = field(default_factory=list)
 
 
 #: Fields added to the tree after traces and approvals were first recorded,
@@ -800,6 +820,7 @@ _ABSENT_DEFAULTS: dict[str, tuple[Any, ...]] = {
     "memories": ((), []),
     "boards": ((), []),
     "enums": ((), []),
+    "shapes": ((), []),
 }
 
 

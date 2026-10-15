@@ -919,6 +919,17 @@ func (r *run) problem(value Value, typeName, path string) string {
 		}
 		return fmt.Sprintf("%s: expected object, got %s", path, pyTypeName(value))
 	}
+	if shape := r.checker.shape(typeName); shape != nil {
+		var failures []string
+		for _, name := range r.checker.shapeMembers(shape) {
+			problem := r.problem(value, name, path)
+			if problem == "" {
+				return ""
+			}
+			failures = append(failures, problem)
+		}
+		return fmt.Sprintf("%s: matches no allowed form (%s)", path, strings.Join(failures, "; "))
+	}
 	if values := r.checker.enumValues(typeName); values != nil {
 		text, isText := value.(string)
 		if !isText || !hasName(values, text) {

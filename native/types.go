@@ -75,7 +75,16 @@ func assignable(actual, expected string) bool {
 	if actual == expected {
 		return true
 	}
-	return isOptional(expected) && (actual == "Null" || actual == expected[:len(expected)-1])
+	// A shape accepts every record that is it, alone, in a list or
+	// optional.
+	if shapeRecords[expected][actual] {
+		return true
+	}
+	if strings.HasSuffix(actual, "[]") && strings.HasSuffix(expected, "[]") && shapeRecords[expected[:len(expected)-2]] != nil &&
+		assignable(actual[:len(actual)-2], expected[:len(expected)-2]) {
+		return true
+	}
+	return isOptional(expected) && (actual == "Null" || actual == expected[:len(expected)-1] || assignable(actual, expected[:len(expected)-1]))
 }
 
 // unify is the one type both branches of a choice give, or "".

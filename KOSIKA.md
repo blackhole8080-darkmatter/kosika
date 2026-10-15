@@ -166,6 +166,35 @@ fn price(size: Size) -> Number {
   `{"type": "string", "enum": [...]}`, so a model is told the values too.
 - Enums may be exported and imported like records.
 
+### Shapes
+
+```kosika
+shape Priced {
+  fn price(self) -> Number
+  fn label(self, currency: Text) -> Text
+}
+
+fn total(items: Priced[]) -> Number {
+  var sum = 0
+  for item in items { sum = sum + item.price() }
+  return sum
+}
+```
+
+- `shape NAME { fn name(self, parameters) -> Type ... }` declares a type that
+  every record is which has each of those functions (written inside the
+  record), taking the same parameters and giving the same type. No record
+  says which shapes it is; having the functions is enough.
+- A record may stand where its shape is expected: alone, in a list
+  (`Book[]` as `Priced[]`) or optional.
+- A value of a shape is used only through the shape's functions. Which
+  record it is, is told from its fields when the program runs, as for any
+  record's function.
+- A shape's JSON schema is `anyOf` the schemas of the records that are it,
+  so a value from outside is one of those records.
+- A shape needs at least one function, each once, and a name no record,
+  enum or primitive type has.
+
 ## Records and pure functions
 
 ```ebnf

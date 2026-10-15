@@ -41,6 +41,8 @@ from .ast import (
     RecordExpr,
     RepeatExpr,
     ReturnExpr,
+    ShapeDecl,
+    ShapeMethod,
     Step,
     SwarmDecl,
     TestDecl,
@@ -661,6 +663,8 @@ class Parser:
             elif keyword == "default" and self.peek().value == "model":
                 self.advance()
                 program.models.append(replace(self.parse_model(), default=True))
+            elif keyword == "shape" and self.peek().kind == "IDENT":
+                program.shapes.append(self.parse_shape())
             elif keyword == "enum" and self.peek().kind == "IDENT":
                 self.advance()
                 enum_name = self.identifier()
@@ -1154,6 +1158,32 @@ class Parser:
                 items.append(("seconds", amount))
             if not self.accept(","):
                 return items
+
+    def parse_shape(self) -> ShapeDecl:
+        """`shape Priced { fn price(self) -> Number ... }`: functions
+        without bodies, each taking the value first as `self`."""
+
+        self.expect("shape")
+        name = self.identifier()
+        self.expect("{")
+        methods: list[ShapeMethod] = []
+        while not self.accept("}"):
+            self.expect("fn")
+            method = self.identifier()
+            self.expect("(")
+            self.expect("self")
+            parameters: list[Field] = []
+            if not self.check(")"):
+                self.expect(",")
+            while not self.accept(")"):
+                parameter_name = self.identifier()
+                self.expect(":")
+                parameters.append(Field(parameter_name, self.parse_type_name()))
+                if not self.check(")"):
+                    self.expect(",")
+            self.expect("->")
+            methods.append(ShapeMethod(method, tuple(parameters), self.parse_type_name()))
+        return ShapeDecl(name, tuple(methods))
 
     def parse_default(self) -> Expression | None:
         """`= value` after a parameter or a field: what it is when left out."""

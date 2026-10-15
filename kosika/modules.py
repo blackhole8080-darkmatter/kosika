@@ -37,6 +37,7 @@ from .thinking import BUILT_IN_RECORDS, ThinkingError, lower_thinking
 CATEGORIES = (
     "records",
     "enums",
+    "shapes",
     "tools",
     "agents",
     "swarms",

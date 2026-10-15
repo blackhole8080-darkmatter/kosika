@@ -1,0 +1,7 @@
+// Only a record that has a shape's functions is that shape.
+
+shape Priced { fn price(self) -> Number }
+record Book { pages: Number  fn price(self) -> Number { return self.pages } }
+record Note { text: Text }
+fn f(p: Priced) -> Number { return p.price() }
+fn g(n: Note) -> Number { return f(n) }
