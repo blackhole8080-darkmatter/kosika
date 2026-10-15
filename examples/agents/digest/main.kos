@@ -2,6 +2,7 @@
 //
 //   kosika test main.kos
 //   kosika run main.kos --workflow afternoon --model qwen2.5:7b --model-protocol ollama
+//       --model-timeout 1800 --max-output-tokens 4000
 //       --allow-site export.arxiv.org --memory memory
 //   kosika run main.kos --workflow evening ...the same...
 //
@@ -201,11 +202,11 @@ fn tutor_task() -> Text {
   return "You are a tutor giving an evening lesson that goes deeper into two research papers the person met this afternoon. For each paper write: lesson, a clear explanation of the main idea from the ground up in five to eight sentences, with the background a beginner needs; example, one small worked example or analogy that shows the idea in action, step by step; questions, three short questions that check understanding, from easy to harder; try_it, one thing the person could do, read or try next to learn more. Use only what the abstract says about the paper itself, and say so when you add general background. Keep the paper's title exactly."
 }
 
-fn half(papers: Paper[], part: Number) -> Batch {
-  let middle = (papers.length() + 1) / 2
-  let first = papers.take(middle.round())
-  let rest = papers.drop(middle.round())
-  return {task: teach_task(), papers: if part == 0 { first } else { rest }}
+// The papers of one field, to be explained together: a few at a time is
+// what a small model on a laptop writes well.
+fn field_batch(papers: Paper[], plan: Plan, which: Number) -> Batch {
+  let name = plan.fields[which].name
+  return {task: teach_task(), papers: for paper in papers where paper.field == name { paper }}
 }
 
 fn no_lessons() -> Lessons {
@@ -224,11 +225,12 @@ fn plain_text(paper: Paper) -> Text {
 
 // The afternoon's digest: each paper with its explanation, or, when the
 // model gave none for it, its own abstract.
-fn digest(today: Moment, papers: Paper[], first: Lessons, second: Lessons) -> Said {
+fn digest(today: Moment, papers: Paper[], explained: Lessons[]) -> Said {
   if papers.is_empty() {
     return {text: "No new papers could be read today. Check that export.arxiv.org is allowed and the computer is online, then ask again."}
   }
-  let lessons = first.items.concat(second.items)
+  var lessons: Explained[] = []
+  for one in explained { lessons = lessons.concat(one.items) }
   var parts: Text[] = [f"# Research digest, {today.weekday} {today.date}\n\n{papers.length()} new papers from {fields_named(papers)}. Each is a preprint on arXiv; read the paper before relying on it.\n"]
   for i in 0 until papers.length() {
     let paper = papers[i]
@@ -317,7 +319,7 @@ fn not_sent() -> Sent {
 // ---------------------------------------------------------------- workflows
 
 workflow afternoon(msg: Msg) -> Said {
-  budget 4 model calls, 3600 seconds
+  budget 10 model calls, 7200 seconds
   today  = now
   plan   = plan_for(today.day)
   past   = recall seen under "all"
@@ -327,15 +329,30 @@ workflow afternoon(msg: Msg) -> Said {
   d      = execute library.read_feed(plan.urls[3]) otherwise no_page()
   e      = execute library.read_feed(plan.urls[4]) otherwise no_page()
   papers = gathered(plan, [a, b, c, d, e], past)
-  first  = use_model teacher(half(papers, 0).task, half(papers, 0).papers) retry 1 otherwise no_lessons()
-  second = use_model teacher(half(papers, 1).task, half(papers, 1).papers) retry 1 otherwise no_lessons()
+  ta     = call teach(field_batch(papers, plan, 0))
+  tb     = call teach(field_batch(papers, plan, 1))
+  tc     = call teach(field_batch(papers, plan, 2))
+  td     = call teach(field_batch(papers, plan, 3))
+  te     = call teach(field_batch(papers, plan, 4))
   day    = day_of(today, papers)
   kept   = remember day in days under "last"
   marked = remember seen_with(past, papers) in seen under "all"
-  said   = digest(today, papers, first, second)
+  said   = digest(today, papers, [ta, tb, tc, td, te])
   note   = phone_note("Research digest " + today.date, said)
   sent   = execute library.tell_me(note.title, note.text) otherwise not_sent()
   shown  = shown_with(said, sent)
+}
+
+// One field's papers explained; a field with none asks no model.
+workflow teach(batch: Batch) -> Lessons {
+  lessons = match batch.papers.is_empty() {
+    case true { no_lessons() }
+    case _ { call ask_teacher(batch) }
+  }
+}
+
+workflow ask_teacher(batch: Batch) -> Lessons {
+  lessons = use_model teacher(batch.task, batch.papers) retry 1 otherwise no_lessons()
 }
 
 workflow evening(msg: Msg) -> Said {
@@ -350,7 +367,7 @@ workflow evening(msg: Msg) -> Said {
 }
 
 workflow main(msg: Msg) -> Said {
-  budget 4 model calls, 3600 seconds
+  budget 10 model calls, 7200 seconds
   said = call afternoon(msg)
 }
 
@@ -429,8 +446,7 @@ test "the evening goes deeper into the afternoon's papers" {
 test "with nothing read there is nothing to explain" {
   answers clock_now: [{date: "2026-10-15", time: "15:00", weekday: "Thursday", year: 2026, month: 10, day: 15, hour: 15, minute: 0, epoch: 1791810000}]
   answers read_feed: [{url: "", title: "", text: ""}, {url: "", title: "", text: ""}, {url: "", title: "", text: ""}, {url: "", title: "", text: ""}, {url: "", title: "", text: ""}]
-  answers teacher: [{items: []}, {items: []}]
-  d = afternoon({text: ""})
+    d = afternoon({text: ""})
   expect d.text.starts_with("No new papers could be read today.")
   e = evening({text: ""})
   expect e.text.starts_with("There is no afternoon digest")
