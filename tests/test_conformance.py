@@ -592,6 +592,52 @@ class NativeTests(unittest.TestCase):
         for key in seen["reference"]:
             self.assertEqual(seen["native"][key], seen["reference"][key], key)
 
+    def test_it_keeps_memories_as_the_reference_does(self) -> None:
+        # Run twice over one memory folder, each engine writes the same file
+        # and gives the same results and traces; without a folder both
+        # refuse to begin.
+        ignored = {"timestamp", "program_hash", "elapsed_seconds", "function_stack", "plan_hash"}
+
+        def clean(value: object) -> object:
+            if isinstance(value, dict):
+                return {k: clean(v) for k, v in value.items() if k not in ignored}
+            if isinstance(value, list):
+                return [clean(v) for v in value]
+            return value
+
+        program = ROOT / "conformance" / "cases" / "memories.kos"
+        seen: dict[str, list[object]] = {}
+        for name in ("reference", "native"):
+            with tempfile.TemporaryDirectory() as scratch:
+                folder = Path(scratch)
+                (folder / "in.json").write_text(json.dumps({"ask": {"text": "hi é", "key": "k"}}))
+                command = (
+                    [sys.executable, "-m", "kosika.cli", "run"]
+                    if name == "reference"
+                    else [str(self.engine), "run"]
+                )
+                outcome: list[object] = []
+                for flags in ([], ["--memory", "kept"], ["--memory", "kept"]):
+                    ran = subprocess.run(
+                        [*command, str(program), "--workflow", "note", "--input", "in.json",
+                         "--trace", "trace.jsonl", *flags],
+                        cwd=folder, capture_output=True, text=True, encoding="utf-8",
+                        env={**os.environ, "PYTHONPATH": str(ROOT), "PYTHONIOENCODING": "utf-8"},
+                    )
+                    said = [
+                        line for line in ran.stderr.splitlines()
+                        if line.strip() and "platform independent" not in line
+                    ]
+                    outcome.append((ran.returncode, ran.stdout.splitlines()[:1], said[-1:]))
+                    if ran.returncode == 0:
+                        outcome.append([
+                            clean(json.loads(line))
+                            for line in (folder / "trace.jsonl").read_text(encoding="utf-8").splitlines()
+                        ])
+                outcome.append((folder / "kept" / "notes.json").read_text(encoding="utf-8"))
+                seen[name] = outcome
+        self.assertEqual(seen["native"], seen["reference"])
+
     def test_an_agent_makes_its_approved_change_as_the_reference_does(self) -> None:
         # A stand-in model asks for a change (twice over, when `second`),
         # then answers from what the change gave back. An agent that plans

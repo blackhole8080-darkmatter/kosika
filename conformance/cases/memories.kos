@@ -1,0 +1,89 @@
+// Memories keep records under Text keys; boards carry messages between the
+// agents of one run. A test's memories are its own.
+
+record Note { text: Text times: Number }
+record Ask { text: Text key: Text }
+record Remark { says: Text }
+record Seen { count: Number last: Text }
+
+memory notes of Note
+board desk of Remark
+
+agent writer {
+  can: []
+}
+
+agent critic {
+  can: []
+}
+
+fn again(known: NotesRecalled, ask: Ask) -> Note {
+  if known.found {
+    let before = known.value.or({text: ask.text, times: 0})
+    return {text: ask.text, times: before.times + 1}
+  }
+  return {text: ask.text, times: 1}
+}
+
+fn seen(board: DeskBoard) -> Seen {
+  if board.posts.is_empty() { return {count: 0, last: ""} }
+  let last = board.posts[board.posts.length() - 1]
+  return {count: board.posts.length(), last: last.author + ": " + last.body.says}
+}
+
+fn remark(text: Text) -> Remark { return {says: text} }
+
+fn blank(ask: Ask) -> Note { return {text: ask.text, times: 0} }
+
+fn saved_anyway() -> MemorySaved { return {key: "none", entries: 0} }
+
+workflow note(ask: Ask) -> NotesRecalled {
+  known = recall notes under ask.key
+  next  = again(known, ask)
+  saved = remember next in notes under ask.key
+  after = recall notes under ask.key
+}
+
+workflow talk(ask: Ask) -> Seen {
+  before = read desk
+  said   = remark(ask.text)
+  posted = post said to desk as writer
+  answer = remark("not yet")
+  back   = post answer to desk as critic
+  board  = read desk
+  shown  = seen(board)
+}
+
+workflow guarded(ask: Ask) -> MemorySaved {
+  value = blank(ask)
+  saved = remember value in notes under "" otherwise saved_anyway()
+}
+
+test "a memory starts empty and keeps what is remembered" {
+  first = note({text: "hello", key: "a"})
+  expect first.found
+  expect first.value.or({text: "", times: 0}).times == 1
+  second = note({text: "hello again", key: "a"})
+  expect second.value.or({text: "", times: 0}).times == 2
+  expect second.value.or({text: "", times: 0}).text == "hello again"
+  other = note({text: "elsewhere", key: "b"})
+  expect other.value.or({text: "", times: 0}).times == 1
+}
+
+test "each test has memories of its own" {
+  first = note({text: "hello", key: "a"})
+  expect first.value.or({text: "", times: 0}).times == 1
+}
+
+test "a board carries messages in order, within one run" {
+  shown = talk({text: "draft one", key: ""})
+  expect shown.count == 2
+  expect shown.last == "critic: not yet"
+  again = talk({text: "draft two", key: ""})
+  expect again.count == 2
+}
+
+test "a key must not be empty" {
+  saved = guarded({text: "x", key: ""})
+  expect saved.key == "none"
+}

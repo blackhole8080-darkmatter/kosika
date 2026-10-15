@@ -53,6 +53,9 @@ type run struct {
 	// started; it is looked at before each step and each call.
 	deadline float64
 	started  time.Time
+	// The program's memories, when granted, and the boards of this run.
+	memory *memoryStore
+	boards *boardStore
 }
 
 // checkpoint stops a run that is past its deadline.
@@ -73,7 +76,7 @@ func newRun(program *Program, tools map[string]*scriptedTool, providers map[stri
 		}
 	}
 	return &run{machine: newMachine(program), checker: newChecker(program), tools: tools, providers: providers,
-		maxTools: limits["tool_calls"], maxModels: limits["model_calls"]}
+		maxTools: limits["tool_calls"], maxModels: limits["model_calls"], boards: &boardStore{posts: map[string][]Value{}}}
 }
 
 // preflight refuses, before any step runs, a workflow that would ask a
@@ -126,7 +129,11 @@ func (r *run) preflight(workflow *WorkflowDecl) {
 				add(r.checker.workflows[name].Steps, item.chosen)
 			}
 		case "tool":
-			if tool := r.checker.tools[item.call.Name]; tool.Access == "execute" && r.session == nil && !item.chosen {
+			tool := r.checker.tools[item.call.Name]
+			if strings.HasPrefix(tool.Source, memorySource) && r.memory == nil && r.tools[tool.Name] == nil {
+				panic(&permissionError{fmt.Sprintf("Memory %s was not granted; run with --memory FOLDER to say where it is kept", pyRepr(strings.TrimPrefix(tool.Source, memorySource)))})
+			}
+			if tool.Access == "execute" && r.session == nil && !item.chosen {
 				panic(&permissionError{fmt.Sprintf("Workflow tool %s requires a verified approval record", pyRepr(tool.Name))})
 			}
 		case "agent":
@@ -141,7 +148,8 @@ func (r *run) preflight(workflow *WorkflowDecl) {
 				if tool.Access == "execute" && r.session == nil && !item.chosen {
 					panic(&permissionError{fmt.Sprintf("Agent tool %s requires a verified approval record", pyRepr(name))})
 				}
-				if r.tools[name] == nil && r.servers[tool.Source] == nil && tool.Source != "local_mock" {
+				hosted := strings.HasPrefix(tool.Source, boardSource) || (strings.HasPrefix(tool.Source, memorySource) && r.memory != nil)
+				if r.tools[name] == nil && !hosted && r.servers[tool.Source] == nil && tool.Source != "local_mock" {
 					panic(&permissionError{fmt.Sprintf("Agent tool %s has no authorized host binding", pyRepr(name))})
 				}
 			}
@@ -428,6 +436,9 @@ func (r *run) tool(tool *ToolDecl, arguments map[string]Value) Value {
 		}
 		scripted.asked++
 		outcome = scripted.answers[scripted.asked-1]
+		r.note.transport = "host"
+	} else if hosted, ok := r.hostTool(tool, input); ok {
+		outcome = hosted
 		r.note.transport = "host"
 	} else if r.servers[tool.Source] != nil {
 		outcome = r.callDeclaredTool(tool, input)
@@ -732,6 +743,9 @@ func (r *run) agentTool(tool *ToolDecl, arguments *Record) (outcome Value, failu
 		}
 		scripted.asked++
 		return scripted.answers[scripted.asked-1], ""
+	}
+	if hosted, ok := r.hostTool(tool, arguments); ok {
+		return hosted, ""
 	}
 	if r.servers[tool.Source] != nil {
 		return r.callDeclaredTool(tool, arguments), ""

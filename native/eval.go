@@ -84,13 +84,14 @@ type permissionError struct{ Message string }
 func (e *permissionError) Error() string { return e.Message }
 
 type Machine struct {
-	tracing   *tracer // set when a run is traced
-	program   *Program
-	functions map[string]*FuncDecl
-	records   []*RecordDecl
-	active    []string
-	calls     int
-	loops     int
+	testMemory *memoryStore // a test's own memories
+	tracing    *tracer      // set when a run is traced
+	program    *Program
+	functions  map[string]*FuncDecl
+	records    []*RecordDecl
+	active     []string
+	calls      int
+	loops      int
 }
 
 func newMachine(program *Program) *Machine {

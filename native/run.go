@@ -22,7 +22,7 @@ func runCommand(args []string) int {
 	options["--mcp-source"] = "local_stdio"
 	options["--trace"] = "run_trace.jsonl"
 	flags := map[string]bool{"--approve": true}
-	known := map[string]bool{"--env": true, "--journal": true, "--binding-id": true, "--approval-record": true, "--approved-by": true, "--trace": true, "--model-fixture": true, "--mcp-server": true, "--mcp-manifest": true, "--mcp-source": true, "--workflow": true, "--input": true, "--model": true, "--model-url": true, "--model-protocol": true, "--model-timeout": true, "--model-binding": true, "--max-output-tokens": true}
+	known := map[string]bool{"--memory": true, "--env": true, "--journal": true, "--binding-id": true, "--approval-record": true, "--approved-by": true, "--trace": true, "--model-fixture": true, "--mcp-server": true, "--mcp-manifest": true, "--mcp-source": true, "--workflow": true, "--input": true, "--model": true, "--model-url": true, "--model-protocol": true, "--model-timeout": true, "--model-binding": true, "--max-output-tokens": true}
 	for i := 1; i < len(args); i++ {
 		name, value, joined := strings.Cut(args[i], "=")
 		if flags[name] && !joined {
@@ -78,6 +78,11 @@ func runCommand(args []string) int {
 		if options["--trace"] == "run_trace.jsonl" && env.keep != "" {
 			options["--trace"] = env.tracePath()
 		}
+	}
+	// The folder the program's memories are kept in, when granted.
+	memory := options["--memory"]
+	if env != nil && env.keep != "" {
+		memory = filepath.Join(env.keep, "memory")
 	}
 	servers := map[string]*mcpServer{}
 	if env != nil {
@@ -186,6 +191,9 @@ func runCommand(args []string) int {
 	attempt := func() (result Value, stopped, failure string) {
 		running = newRun(program, map[string]*scriptedTool{}, providers, workflow)
 		running.servers = servers
+		if memory != "" {
+			running.memory = newMemoryStore(memory)
+		}
 		if env != nil {
 			// An environment's budget only tightens the workflow's.
 			if amount, given := env.budget["model_calls"]; given && int(toFloat(amount)) < running.maxModels {

@@ -1,0 +1,4 @@
+// A memory holds a record the program does not declare.
+record Note { text: Text }
+record Ask { text: Text }
+memory notes of Missing

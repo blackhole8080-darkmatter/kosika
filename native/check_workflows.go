@@ -644,7 +644,9 @@ func (c *checker) checkFallbacks() {
 	swapped := withSteps(c.program, func(step *Step) *Step {
 		changed := *step
 		if step.Fallback != nil {
-			changed.Call = step.Fallback
+			// The fallback is asked once: what the call is asked again
+			// with does not go with it.
+			changed.Call, changed.Retries = step.Fallback, 0
 		}
 		changed.Fallback = nil
 		return &changed

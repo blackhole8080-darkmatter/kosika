@@ -61,6 +61,12 @@ whose types do not agree is refused, with the reference's own message, on
 the output and with exit code 2. A name the file uses but never declares is
 refused as the file is read, like a fault in the text.
 
+Memories and boards, as the reference has them: each is made two tools
+that only look, used through a generated agent. `run --memory FOLDER`
+keeps a program's memories there, one JSON file a memory written as the
+reference writes it; an environment keeps them in its own folder; a test's
+memories are its own. A board lives for one run.
+
 `run --env NAME` runs in an environment of the project's `kosika.env`, as
 `kosika run --env` does: the models, MCP servers, budgets and the folder
 for traces and journals all come from it, the options it decides are
@@ -82,7 +88,7 @@ print what the reference engine prints, word for word. See
 - Reaching a real tool other than through an MCP server: `system` tools,
   files, pages, the clock and chance. So an environment's `allow folder`,
   `allow shell` and `allow site` are read but grant nothing here yet.
-- Memories, boards, swarms and imports.
+- Swarms and imports.
 - A file that has any of these is refused, and the refusal names it.
 - Vectors and matrices.
 
@@ -101,6 +107,7 @@ print what the reference engine prints, word for word. See
     replay.go    checking a trace
     journal.go   the journal, and approvals
     env.go       environments: reading kosika.env
+    stores.go    memories and boards, made tools, and where they are kept
     agent_changes.go   an agent's own changes, planned and approved
     check.go     the checker: refusing a program before it runs
     check_workflows.go   the checker's rules for tools, agents, workflows

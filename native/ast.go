@@ -1,7 +1,7 @@
 package main
 
 // What a program is once it has been read: its models, records, functions,
-// tools, agents, workflows and tests. Swarms, memories, boards and imports
+// tools, agents, workflows, memories, boards and tests. Swarms and imports
 // are not read yet, and a file that has one is refused by name.
 
 type Expr interface{}
@@ -247,4 +247,7 @@ type Program struct {
 	Workflows []*WorkflowDecl
 	Functions []*FuncDecl
 	Tests     []*TestDecl
+	// `memory NAME of Record` and `board NAME of Record`, before
+	// LowerStores makes them tools.
+	Memories, Boards []*StoreDecl
 }

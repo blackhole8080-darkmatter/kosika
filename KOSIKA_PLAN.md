@@ -3506,6 +3506,33 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   programs with workflows, agents and tools; the guide does not teach
   those yet.
 
+### Memories and boards in the native engine
+
+- `memory NAME of Record` with `recall` and `remember`, and `board NAME of
+  Record` with `post ... as AGENT` and `read`, now run in the native engine
+  (native/stores.go). As in the reference they are lowered to ordinary
+  tools that only look, through generated agents named `memory` and
+  `board`, with the same records, the same refusals when they cannot be
+  (an unknown record, a name already taken, a post signed by no agent),
+  and the same failures when a key is empty or a memory is full.
+- `kosika-native run --memory FOLDER` keeps memories as one JSON file each,
+  written byte for byte as the reference writes them; an environment keeps
+  them in `keep/memory` and refuses `--memory` beside `--env`; a test's
+  memories are its own; a run that needs a memory not granted is refused
+  before it starts.
+- Found on the way, by running the example agents: the native checker
+  refused `use_model ... retry 1 otherwise {...}`, carrying the retry over
+  to the fallback when it checked it. Fixed; the coach example's six tests
+  now pass in both engines, word for word.
+- Held by the suite (`cases/memories.kos`, `failing/memory_key.kos`,
+  `refused/memory_record.kos`, `refused/memory_clash.kos`,
+  `refused/board_author.kos`) and by `tests/test_conformance.py`: both
+  engines run the same program twice over one memory folder and give the
+  same results, traces and file.
+- Still refused by name in the native engine: files, pages, the clock and
+  chance (`read file`, `fetch`, `now`, `random`) and system tools, which
+  the other example agents use; swarms and imports.
+
 ### The native engine lets an agent make its approved changes
 
 - An agent's model may now ask for a tool that changes the world, in the

@@ -42,7 +42,12 @@ func load(path string) *Program {
 	if problem := ModuleProblem(program, path); problem != "" {
 		fail("Check failed: %s", problem)
 	}
-	lowered, refused := LowerThinking(program)
+	stored, refused := LowerStores(program)
+	if refused != "" {
+		fmt.Printf("Check failed: %s\n", refused)
+		os.Exit(2)
+	}
+	lowered, refused := LowerThinking(stored)
 	if refused != "" {
 		fmt.Printf("Check failed: %s\n", refused)
 		os.Exit(2)

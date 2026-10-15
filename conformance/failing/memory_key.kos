@@ -1,0 +1,13 @@
+// An empty key is refused when the step runs.
+record Note { text: Text }
+record Ask { text: Text }
+memory notes of Note
+fn n(a: Ask) -> Note { return {text: a.text} }
+workflow w(a: Ask) -> MemorySaved {
+  x = n(a)
+  s = remember x in notes under ""
+}
+test "empty key" {
+  s = w({text: "q"})
+  expect s.entries == 1
+}

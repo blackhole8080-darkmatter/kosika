@@ -103,7 +103,10 @@ func runStep(machine *Machine, step TestStep, at frame, tools, models map[string
 			for _, arg := range args {
 				inputs[arg.Name] = machine.eval(arg.Value, at)
 			}
-			at.scope.vars[step.Target] = newRun(machine.program, tools, scripted(models), workflow).workflow(workflow, inputs, 0)
+			running := newRun(machine.program, tools, scripted(models), workflow)
+			// A test's memories are its own, kept only for that test.
+			running.memory = machine.testMemory
+			at.scope.vars[step.Target] = running.workflow(workflow, inputs, 0)
 			return ""
 		}
 		at.scope.vars[step.Target] = machine.eval(step.Value, at)
@@ -142,6 +145,7 @@ func scripted(models map[string]*scriptedTool) map[string]modelProvider {
 
 func runTest(program *Program, test *TestDecl) TestResult {
 	machine := newMachine(program)
+	machine.testMemory = newMemoryStore("")
 	at := frame{newScope(nil), nil, 0}
 	failed := func(message string, line int) TestResult {
 		return TestResult{test.Name, false, message, line}

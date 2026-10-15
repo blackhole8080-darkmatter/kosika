@@ -1181,8 +1181,9 @@ func ModuleProblem(program *Program, path string) string {
 		}
 	}
 	var hidden []string
+	supplied := storeNames(program)
 	for name := range used {
-		if !local[name] && !primitiveTypes[name] && !builtInRecords[name] {
+		if !local[name] && !primitiveTypes[name] && !builtInRecords[name] && !supplied[name] {
 			hidden = append(hidden, name)
 		}
 	}

@@ -1,8 +1,8 @@
 package main
 
 // Reading tools, agents and workflows, as kosika/parser.py reads them. A
-// step this engine cannot run yet (asking a model or an agent, a thinking
-// step, memories, boards, files, the clock) is refused by name.
+// step this engine cannot run yet (files, pages, the clock, chance) is
+// refused by name.
 
 import (
 	"strconv"
@@ -276,15 +276,28 @@ func (p *Parser) parseStepCall() *StepCall {
 	if token.Kind == "IDENT" {
 		switch {
 		case token.Value == "remember" && following != "(":
-			notYetStep(token, "a step that remembers")
-		case token.Value == "recall" && following != "(":
-			notYetStep(token, "a step that recalls")
+			// `remember note in customers under key`: a call of the
+			// memory's tool; see stores.go.
+			p.advance()
+			value := p.expression()
+			p.expect("in")
+			name := p.identifier()
+			p.expect("under")
+			return &StepCall{Kind: "tool", Agent: memoryAgent, Name: "remember_" + name, Args: []Arg{{"key", p.expression()}, {"value", value}}, Line: token.Line}
 		case token.Value == "post" && following != "(":
-			notYetStep(token, "a step that posts to a board")
+			// `post remark to desk as critic`: a call of the board's tool.
+			p.advance()
+			body := p.expression()
+			p.expect("to")
+			name := p.identifier()
+			p.expect("as")
+			author := p.identifier()
+			return &StepCall{Kind: "tool", Agent: boardAgent, Name: "post_" + name, Args: []Arg{{"author", &Literal{author}}, {"body", body}}, Line: token.Line}
 		case token.Value == "read" && following == "file":
 			notYetStep(token, "a step that reads a file")
 		case token.Value == "read" && p.peek().Kind == "IDENT" && following != "(":
-			notYetStep(token, "a step that reads a board")
+			p.advance()
+			return &StepCall{Kind: "tool", Agent: boardAgent, Name: "read_" + p.identifier(), Line: token.Line}
 		case token.Value == "list" && following == "files":
 			notYetStep(token, "a step that lists files")
 		case token.Value == "write" && following == "file":
@@ -295,6 +308,11 @@ func (p *Parser) parseStepCall() *StepCall {
 			notYetStep(token, "a step that reads the clock")
 		case token.Value == "random" && following != "(" && following != "." && following != "=":
 			notYetStep(token, "a step that picks a random number")
+		case token.Value == "recall" && following != "(":
+			p.advance()
+			name := p.identifier()
+			p.expect("under")
+			return &StepCall{Kind: "tool", Agent: memoryAgent, Name: "recall_" + name, Args: []Arg{{"key", p.expression()}}, Line: token.Line}
 		}
 	}
 	if token.Kind == "IDENT" && thinkingVerbs[token.Value] && following != "(" {

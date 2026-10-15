@@ -1,0 +1,5 @@
+// A record that memory needs is already declared, differently.
+record Note { text: Text }
+record Ask { text: Text }
+record MemorySaved { key: Text }
+memory notes of Note

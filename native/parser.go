@@ -2,8 +2,8 @@ package main
 
 // The parser: tokens in, a Program out. It follows the reference parser
 // rule for rule, so that the same text means the same thing in both
-// engines. What the core does not have yet (workflows, agents, tools,
-// models, memories, imports) is refused by name, never guessed at.
+// engines. What it does not have yet (swarms, imports) is refused by
+// name, never guessed at.
 
 import (
 	"fmt"
@@ -869,7 +869,6 @@ func (p *Parser) parseTest() *TestDecl {
 // notYet are the declarations this engine does not read yet.
 var notYet = map[string]bool{
 	"import": true, "export": true, "swarm": true, "default": true,
-	"board": true, "memory": true,
 }
 
 func (p *Parser) parseProgram() *Program {
@@ -892,6 +891,16 @@ func (p *Parser) parseProgram() *Program {
 			model := p.parseModel()
 			model.Default = true
 			program.Models = append(program.Models, model)
+		case (keyword == "memory" || keyword == "board") && p.peek().Kind == "IDENT":
+			p.advance()
+			store := &StoreDecl{Name: p.identifier()}
+			p.expect("of")
+			store.Record = p.identifier()
+			if keyword == "memory" {
+				program.Memories = append(program.Memories, store)
+			} else {
+				program.Boards = append(program.Boards, store)
+			}
 		case keyword == "tool":
 			program.Tools = append(program.Tools, p.parseTool())
 		case keyword == "agent":
@@ -905,7 +914,7 @@ func (p *Parser) parseProgram() *Program {
 			if keyword == "import" || keyword == "export" {
 				article = "an"
 			}
-			parseFail("kosika-native cannot read %s %s yet (at %d:%d); it has models, records, functions, tools, agents, workflows and tests", article, keyword, token.Line, token.Column)
+			parseFail("kosika-native cannot read %s %s yet (at %d:%d); it has models, records, functions, tools, agents, workflows, memories, boards and tests", article, keyword, token.Line, token.Column)
 		default:
 			parseFail("Unexpected declaration %s at %d:%d", quoted(token.Value), token.Line, token.Column)
 		}
