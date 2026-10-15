@@ -1163,7 +1163,7 @@ workflow help(msg: Msg) -> Result {
 }
 
 workflow main(msg: Msg) -> Said {
-  budget 22 model calls, 1800 seconds
+  budget 22 model calls, 3600 seconds
   kind   = kind_of(msg)
   result = match kind {
     case "help" { call help(msg) }
