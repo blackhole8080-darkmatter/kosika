@@ -134,10 +134,11 @@ def main() -> int:
     parser.add_argument("--limit-seconds", type=float, default=3600.0, help="Seconds a task may take.")
     parser.add_argument("--only", help="Run only the task with this id.")
     parser.add_argument("--keep", action="store_true", help="Keep each task's folder to look at.")
+    parser.add_argument("--tasks", default="tasks.json", help="The task file in this folder: tasks.json, or hard.json.")
     args = parser.parse_args()
     if args.url and args.protocol == "ollama":
         args.protocol = "openai"
-    tasks = json.loads((HERE / "tasks.json").read_text(encoding="utf-8"))
+    tasks = json.loads((HERE / args.tasks).read_text(encoding="utf-8"))
     if args.only:
         tasks = [task for task in tasks if task["id"] == args.only]
     results = []

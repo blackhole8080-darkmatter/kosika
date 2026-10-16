@@ -1,0 +1,69 @@
+[
+ {
+  "id": "py-lru-cache",
+  "folder": "py",
+  "task": "write lru.py with a class LRUCache(capacity) that has get(key) returning the value or -1 and put(key, value), both O(1), evicting the least recently used key when full; and test_lru.py with pytest tests covering eviction order, updating an existing key, and capacity 1",
+  "checks": [
+   [
+    "python",
+    "-m",
+    "pytest",
+    "-q",
+    "test_lru.py"
+   ],
+   [
+    "python",
+    "-c",
+    "from lru import LRUCache\nc=LRUCache(2); c.put(1,1); c.put(2,2); assert c.get(1)==1; c.put(3,3); assert c.get(2)==-1; c.put(1,9); assert c.get(1)==9; c.put(4,4); assert c.get(3)==-1 and c.get(4)==4\nd=LRUCache(1); d.put(1,1); d.put(2,2); assert d.get(1)==-1 and d.get(2)==2"
+   ]
+  ]
+ },
+ {
+  "id": "py-expression-parser",
+  "folder": "py",
+  "task": "write calc_parser.py with a function evaluate(text) that parses and evaluates arithmetic expressions with + - * / and parentheses, unary minus and decimal numbers, respecting precedence, without using eval or exec; raise ValueError for malformed input; and test_calc_parser.py with pytest tests",
+  "checks": [
+   [
+    "python",
+    "-m",
+    "pytest",
+    "-q",
+    "test_calc_parser.py"
+   ],
+   [
+    "python",
+    "-c",
+    "import calc_parser as m, inspect\nsrc=inspect.getsource(m); assert 'eval(' not in src.replace('def evaluate(','') and 'exec(' not in src\ne=m.evaluate\nassert e('1 + 2 * 3')==7 and e('(1 + 2) * 3')==9 and e('-4 + 10 / 4')==-1.5 and e('2*(3+(4-1))*-1')==-12\nfor bad in ['1 +', '(2', '3 4', '']:\n    try:\n        e(bad)\n    except ValueError:\n        pass\n    else:\n        raise AssertionError(bad)"
+   ]
+  ]
+ },
+ {
+  "id": "kosika-agent",
+  "folder": "agents",
+  "task": "create a Kosika agent in triage/main.kos that sorts a support ticket (a record with text) into billing, bug or account using classify with learn, falls back to account when the model fails, keeps a count of tickets per category in memory, and has at least two tests that use answers for the model",
+  "checks": [
+   [
+    "python",
+    "-c",
+    "import sys; sys.path.insert(0, r'C:\\Users\\Aryan\\Aryan_Private\\projects\\kosika')\nfrom kosika.modules import load_program\nfrom kosika.testing import run_tests\nr=run_tests(load_program('triage/main.kos'))\nassert len(r)>=2 and all(x.passed for x in r), [(x.name, x.passed) for x in r]\ns=open('triage/main.kos', encoding='utf-8').read()\nassert 'classify' in s and 'learn' in s and 'memory' in s"
+   ]
+  ]
+ },
+ {
+  "id": "motion-portfolio",
+  "folder": "site",
+  "task": "create a professional dark-themed motion-graphics portfolio website for a designer named Aryan: an animated hero with layered shapes that move with the mouse, a projects grid of six cards with hover reveals, a skills section with bars that fill when scrolled into view, a contact form that checks its fields before sending, smooth scroll-triggered animations, and a layout that works on phones",
+  "checks": [
+   [
+    "python",
+    "-c",
+    "import pathlib; h=pathlib.Path('index.html').read_text(encoding='utf-8'); c=pathlib.Path('styles.css').read_text(encoding='utf-8'); j=pathlib.Path('script.js').read_text(encoding='utf-8')\nassert '</html>' in h and h.count('<section')>=4 and 'styles.css' in h and 'script.js' in h and '<form' in h\nassert c.count('{')==c.count('}') and '@media' in c and ('@keyframes' in c or 'transition' in c) and len(c)>4000\nassert 'IntersectionObserver' in j and 'mousemove' in j and ('submit' in j) and len(j)>1200"
+   ],
+   [
+    "node",
+    "--check",
+    "script.js"
+   ]
+  ]
+ }
+]
