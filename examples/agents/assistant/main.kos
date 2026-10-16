@@ -1087,8 +1087,21 @@ workflow answer_here(msg: Msg) -> Turn {
   past   = recall talks under "me"
   first  = ask_prompt(msg, known, moment)
   prompt = with_talk(first, past)
-  reply  = use_model voice(prompt.text) retry 1 otherwise {text: "Sorry, I could not think of an answer just now. Please ask again."}
+  reply  = use_model voice(prompt.text) retry 1 learn by standalone(msg) otherwise {text: "Sorry, I could not think of an answer just now. Please ask again."}
   turn   = spoken(known, reply)
+}
+
+// A question that means the same whenever it is asked, said plainly, so a
+// good answer can be given again at once, with no model. A question that
+// points back at the talk, or is about the person, means something else
+// each time and is never learned: for it this is "".
+fn standalone(msg: Msg) -> Text {
+  let words = msg.text.lower().trim_marks("?!.").words()
+  if words.length() < 3 { return "" }
+  for word in words {
+    if ["it", "that", "this", "these", "those", "them", "he", "she", "they", "his", "her", "their", "my", "me", "i", "i'm", "mine", "we", "our", "us", "again", "earlier", "before", "above", "today", "tomorrow", "yesterday", "now", "latest", "news", "weather", "time", "date"].contains(word) { return "" }
+  }
+  return words.join(" ")
 }
 
 // A request for another agent is passed to it, and its answer passed back.
@@ -1572,4 +1585,12 @@ test "a reminder whose time has come goes to the phone" {
   expect d.text == "Nothing is due."
   expect e.text.contains("1. call Sam, at 18:00")
   expect not e.text.contains("stretch")
+}
+
+test "a plain question can be learned; one that points back cannot" {
+  expect standalone({text: "Why is the sky blue?"}) == "why is the sky blue"
+  expect standalone({text: "what about that one"}) == ""
+  expect standalone({text: "what is my locker number"}) == ""
+  expect standalone({text: "hi"}) == ""
+  expect standalone({text: "what is the weather like"}) == ""
 }

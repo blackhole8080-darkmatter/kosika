@@ -827,8 +827,8 @@ function runStage(agent) {
   const svg = s("svg", {viewBox: "0 0 " + W + " " + H, class: "stage-svg", role: "img"});
   const lines = s("g"), lights = s("g"), nodes = s("g");
   svg.append(lines, nodes, lights);
-  const still = stillness.matches, places = {}, counts = {}, queue = [];
-  let busy = false, token = 0;
+  const still = stillness.matches, places = {}, counts = {};
+  let token = 0;
   function node(key, x, y, w, label, word, kind) {
     const count = s("text", {x: x + w / 2 - 12, y: y + 4, class: "stage-count", "text-anchor": "end"}, "");
     const box = s("rect", {x: x - w / 2, y: y - 18, width: w, height: 36, rx: 11, class: "stage-box k-" + kind});
@@ -847,50 +847,101 @@ function runStage(agent) {
   const end = key => { const place = places[key]; return key === "you" ? [place.x + place.w / 2, place.y] : key === "program" ? null : [place.x - place.w / 2, place.y]; };
   function glow(key, on) { const place = places[key]; if (place) place.group.classList.toggle("lit", on); }
   function bump(key) { counts[key] += 1; places[key].count.textContent = counts[key] > 0 ? "×" + counts[key] : ""; }
-  // One light, from one part to another, along a straight path.
-  function travel(from, to, kind, done) {
+  // Speeds in pixels a second: thought travels slowly, code quickly, and a
+  // large answer is a larger light that moves a little slower than a small one.
+  const PACE = {think: 300, mem: 520, warn: 420, code: 900, accent: 480, ok: 480, bad: 480};
+  const radius = size => size ? Math.max(3, Math.min(9, 2.5 + Math.log10(size + 1) * 1.4)) : 4.5;
+  function points(from, to) {
     const a = from === "program" ? [to === "you" ? cx - half : cx + half, cy] : end(from), b = to === "program" ? [from === "you" ? cx - half : cx + half, cy] : end(to);
-    if (still) { done(); return; }
-    const light = s("circle", {r: 5, cx: a[0], cy: a[1], class: "stage-light k-" + kind}); lights.append(light);
-    const began = performance.now(), length = 420, mine = token;
+    return [a, b];
+  }
+  // One light, from one part to another. Lights do not wait for each other:
+  // what happens at once in the run is seen at once.
+  function travel(from, to, kind, size, done) {
+    if (still) { if (done) done(); return; }
+    const [a, b] = points(from, to);
+    const r = radius(size), length = Math.hypot(b[0] - a[0], b[1] - a[1]) / (PACE[kind] || 480) * 1000 * (1 + (r - 4.5) / 12);
+    const light = s("circle", {r, cx: a[0], cy: a[1], class: "stage-light k-" + kind}); lights.append(light);
+    const began = performance.now(), mine = token;
     let over = false;
-    // The light is moved when the page is drawn, but the run's story does not
-    // wait for that: a page that is not being drawn (behind another window)
-    // must still count every call and end in the right state.
-    setTimeout(() => { over = true; light.remove(); if (mine === token) done(); }, length + 20);
+    // The light is moved when the page is drawn, but the story does not wait
+    // for that: a page behind another window still ends in the right state.
+    setTimeout(() => { over = true; light.remove(); if (mine === token && done) done(); }, length + 20);
     (function step(now) {
       if (over || mine !== token || !svg.isConnected) { light.remove(); return; }
-      const at = Math.min(1, (now - began) / length), eased = 1 - Math.pow(1 - at, 3);
-      // A gentle arc, so that lights going out and coming back do not overlap.
+      const at = Math.min(1, (now - began) / length), eased = at < .5 ? 2 * at * at : 1 - Math.pow(-2 * at + 2, 2) / 2;
       const lift = Math.sin(eased * Math.PI) * (b[0] > a[0] ? -14 : 14);
       light.setAttribute("cx", a[0] + (b[0] - a[0]) * eased); light.setAttribute("cy", a[1] + (b[1] - a[1]) * eased + lift);
       if (at < 1) requestAnimationFrame(step);
     })(began);
   }
-  function next() {
-    if (busy) return; const job = queue.shift(); if (!job) return; busy = true;
-    travel(job.from, job.to, job.kind, () => { job.then(); busy = false; next(); });
+  // While a call is out, a thin stream keeps flowing to the part that is
+  // working, and its box counts the seconds: a long wait looks long.
+  const busy = {};
+  function hold(key, kind) {
+    const place = places[key]; if (!place) return;
+    const open = busy[key] || (busy[key] = {count: 0, since: 0, timer: null, label: null});
+    open.count += 1; if (open.count > 1) return;
+    open.since = performance.now();
+    if (open.label) open.label.remove();
+    open.label = s("text", {x: place.x + place.w / 2 - 12, y: place.y + 15, class: "stage-word", "text-anchor": "end"}, "");
+    place.group.append(open.label);
+    const mine = token, label = open.label;
+    open.timer = setInterval(() => {
+      if (mine !== token || !svg.isConnected) { clearInterval(open.timer); return; }
+      const seconds = (performance.now() - open.since) / 1000;
+      label.textContent = seconds >= 1 ? seconds.toFixed(seconds < 10 ? 1 : 0) + " s" : "";
+      if (still || document.hidden) return;
+      const [a, b] = points("program", key), dot = s("circle", {r: 1.8, cx: a[0], cy: a[1], class: "stage-light k-" + kind, opacity: .7});
+      lights.append(dot);
+      const began = performance.now(), length = Math.hypot(b[0] - a[0], b[1] - a[1]) / 160 * 1000;
+      setTimeout(() => dot.remove(), length + 40);
+      (function drift(now) {
+        if (mine !== token || !svg.isConnected) { dot.remove(); return; }
+        const at = Math.min(1, (now - began) / length);
+        dot.setAttribute("cx", a[0] + (b[0] - a[0]) * at); dot.setAttribute("cy", a[1] + (b[1] - a[1]) * at); dot.setAttribute("opacity", .7 * (1 - at));
+        if (at < 1) requestAnimationFrame(drift); else dot.remove();
+      })(began);
+    }, 180);
   }
-  function send(from, to, kind, then) { queue.push({from, to, kind, then: then || (() => {})}); if (queue.length > 40) queue.splice(0, queue.length - 40); next(); }
-  function reach(key, kind) { if (!places[key]) key = "code"; send("program", key, kind, () => { glow(key, true); bump(key); }); return key; }
-  function back(key, kind) { if (!places[key]) key = "code"; send(key, "program", kind, () => glow(key, false)); }
+  function release(key) {
+    const open = busy[key]; if (!open || open.count === 0) return;
+    open.count -= 1; if (open.count > 0) return;
+    clearInterval(open.timer);
+    const seconds = (performance.now() - open.since) / 1000, label = open.label;
+    if (label) { label.textContent = seconds >= .1 ? seconds.toFixed(1) + " s" : ""; setTimeout(() => { if (open.label !== label || !open.count) label.remove(); }, 2400); }
+  }
+  function reach(key, kind, size) { if (!places[key]) key = "code"; travel("program", key, kind, size, () => { glow(key, true); bump(key); }); hold(key, kind); return key; }
+  function back(key, kind, size) { if (!places[key]) key = "code"; release(key); travel(key, "program", kind, size, () => { if (!busy[key] || !busy[key].count) glow(key, false); }); }
   const modelKey = name => places["model:" + name] ? "model:" + name : Object.keys(places).find(key => key.startsWith("model:")) || "code";
-  let lastTool = "code", lastModel = "code";
+  const models = [], tools = [];
   return {
     el: h("div", {class: "stage-wrap"}, svg),
-    reset(starting) { token += 1; queue.length = 0; busy = false; fill(lights); for (const key of Object.keys(places)) { counts[key] = 0; places[key].count.textContent = ""; glow(key, false); } places.program.group.classList.remove("done", "failed", "asking"); if (starting) { glow("program", true); send("you", "program", "accent"); } },
+    reset(starting) {
+      token += 1; fill(lights);
+      for (const open of Object.values(busy)) { clearInterval(open.timer); if (open.label) open.label.remove(); }
+      for (const key of Object.keys(busy)) delete busy[key];
+      models.length = 0; tools.length = 0;
+      for (const key of Object.keys(places)) { counts[key] = 0; places[key].count.textContent = ""; glow(key, false); }
+      places.program.group.classList.remove("done", "failed", "asking");
+      if (starting) { glow("program", true); travel("you", "program", "accent"); }
+    },
     apply(event) {
       const kind = event.event;
-      if (kind === "model_call" || kind === "agent_call") lastModel = reach(modelKey(event.model || ""), "think");
-      else if (kind === "model_return" || kind === "agent_return") back(lastModel, "think");
-      else if (kind === "tool_call" || kind === "agent_tool") { const part = toolKind(event.source); lastTool = reach(part === "memory" || part === "board" || part === "code" ? part : "tool:" + part, part === "shell" || part === "outside" ? "warn" : "mem"); }
-      else if (kind === "tool_return") back(lastTool, "mem");
-      else if (kind === "code_step") { reach("code", "code"); back("code", "code"); }
-      else if (kind === "run_paused") { places.program.group.classList.add("asking"); send("program", "you", "warn", () => glow("you", true)); }
-      else if (kind === "resumed" || kind === "session_allowed") { places.program.group.classList.remove("asking"); send("you", "program", "ok", () => glow("you", false)); }
+      if (kind === "model_call" || kind === "agent_call") models.push(reach(modelKey(event.model || ""), "think", event.size));
+      else if (kind === "model_return" || kind === "agent_return") back(models.pop() || modelKey(""), "think", event.size);
+      else if (kind === "tool_call") { const part = toolKind(event.source); tools.push(reach(part === "memory" || part === "board" || part === "code" ? part : "tool:" + part, part === "shell" || part === "outside" ? "warn" : "mem", event.size)); }
+      else if (kind === "agent_tool") { const part = toolKind(event.source); const key = part === "memory" || part === "board" || part === "code" ? part : "tool:" + part; travel("program", places[key] ? key : "code", part === "shell" || part === "outside" ? "warn" : "mem", event.size, () => bump(places[key] ? key : "code")); }
+      else if (kind === "tool_return") back(tools.pop() || "code", "mem", event.size);
+      else if (kind === "code_step") travel("program", "code", "code", 0, () => { glow("code", true); bump("code"); travel("code", "program", "code", 0, () => glow("code", false)); });
+      else if (kind === "run_paused") { places.program.group.classList.add("asking"); travel("program", "you", "warn", 0, () => glow("you", true)); }
+      else if (kind === "resumed" || kind === "session_allowed") { places.program.group.classList.remove("asking"); travel("you", "program", "ok", 0, () => glow("you", false)); }
       else if (kind === "run_failed" || kind === "run_cancelled") places.program.group.classList.add("failed");
     },
-    finish(failed) { send("program", "you", failed ? "bad" : "ok", () => { glow("program", false); places.program.group.classList.add(failed ? "failed" : "done"); glow("you", false); }); },
+    finish(failed) {
+      for (const key of Object.keys(busy)) while (busy[key].count) release(key);
+      travel("program", "you", failed ? "bad" : "ok", 0, () => { glow("program", false); places.program.group.classList.add(failed ? "failed" : "done"); glow("you", false); });
+    },
     counts,
   };
 }
@@ -962,7 +1013,7 @@ function liveView(agent, entry) {
     else if (event.event === "agent_return") { if (event.tokens) counts.tokens += event.tokens; say(depth, "agent " + (event.agent || "") + " answered" + (picked.length ? " after choosing " + picked.join(" → ") : "")); }
     else if (event.event === "model_return") {
       if (event.tokens) counts.tokens += event.tokens;
-      const bits = [event.escalated ? "model " + event.escalated + " answered, after the first model's answer was refused" : "the model answered"]; if (event.rejected) bits.push(event.rejected + " answer(s) rejected first");
+      const bits = [event.learned ? "answered from what it learned, with no model (" + (event.learned === "same" ? "asked before" : event.learned === "close" ? "asked nearly the same before" : "its examples agree") + ")" : event.escalated ? "model " + event.escalated + " answered, after the first model's answer was refused" : "the model answered"]; if (event.rejected) bits.push(event.rejected + " answer(s) rejected first");
       if (event.votes && event.votes.asked) bits.push(event.votes.agreed + " of " + event.votes.asked + " agreed"); say(depth, bits.join(", "));
     } else if (event.event === "tool_call") {
       counts.tools += 1; const source = String(event.source || "");
@@ -996,18 +1047,26 @@ function liveView(agent, entry) {
 async function follow(agent, body, live, onAsk, onWrite, path) {
   const started = await api((path || "/api/start") + "?id=" + encodeURIComponent(agent.id), {method: "POST", body: JSON.stringify(body)});
   const run = encodeURIComponent(started.run);
-  live.reset(true); let since = 0, asked = false, raw = "";
+  live.reset(true); let since = 0, asked = false, raw = "", clock = null, shown = 0;
   for (;;) {
     const view = await api("/api/poll?run=" + run + "&since=" + since);
     since = view.next;
-    const steps = view.events.filter(event => event.event !== "model_text").length;
     for (const event of view.events) {
+      // Each event is shown when it really happened, counted from the start
+      // of the run. Events that arrive late (the page asks every so often)
+      // are caught up quickly but keep their order and their spacing, a
+      // little squeezed, so a slow step still looks slow and a fast one fast.
+      if (typeof event.at === "number") {
+        if (clock === null) clock = performance.now() - event.at * 1000;
+        const wait = clock + event.at * 1000 - performance.now();
+        if (wait > 0) await sleep(Math.min(wait, 4000));
+        else if (wait < -1500) clock += Math.min(-wait - 1500, 400);
+        if (event.event !== "model_text" && performance.now() - shown < 28) await sleep(28);
+        shown = performance.now();
+      }
       live.apply(event);
       if (event.event === "model_call") raw = "";
-      // Words are shown the moment they arrive; steps a beat apart, so
-      // quick ones can still be seen.
       if (event.event === "model_text") { raw += event.text; if (onWrite) onWrite(partial(raw)); continue; }
-      await sleep(steps > 12 ? 45 : 110);
     }
     if (view.state === "waiting" && !asked) {
       asked = true;

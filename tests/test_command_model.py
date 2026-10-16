@@ -112,7 +112,7 @@ class CommandModelProviderTests(unittest.TestCase):
         provider = CommandModelProvider(
             self.script("import sys\nsys.stderr.write('quota used up')\nsys.exit(3)")
         )
-        with self.assertRaisesRegex(ModelProviderError, "exited 3.*quota used up"):
+        with self.assertRaisesRegex(ModelProviderError, "(?s)exited 3.*quota used up"):
             provider.complete(request())
 
     def test_a_slow_command_is_stopped(self) -> None:

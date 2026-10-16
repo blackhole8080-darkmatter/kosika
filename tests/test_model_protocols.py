@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
+from kosika import model as model_module
 from kosika.model import (
     MODEL_PROTOCOLS,
     ChatMessage,
@@ -160,6 +161,34 @@ class OllamaRequestTests(unittest.TestCase):
         huge = ModelRequest(messages=(ChatMessage(role="user", content="x" * 400_000),))
         self.assertEqual(ollama_context(huge), 32768)
 
+    def test_a_window_too_large_for_the_computer_is_halved(self) -> None:
+        sent: list[int] = []
+
+        def transport(request: Any, timeout: float) -> bytes:
+            size = json.loads(request.data.decode("utf-8"))["options"]["num_ctx"]
+            sent.append(size)
+            if size > 16384:
+                raise urllib.error.HTTPError(
+                    request.full_url,
+                    500,
+                    "error",
+                    None,  # type: ignore[arg-type]
+                    io.BytesIO(
+                        b'{"error":"llama-server reported out-of-memory during '
+                        b'startup: failed to allocate buffer for kv cache"}'
+                    ),
+                )
+            return ollama_reply()
+
+        provider = OpenAICompatibleProvider(
+            OLLAMA_HOST, "m", protocol="ollama", transport=transport
+        )
+        huge = ModelRequest(messages=(ChatMessage(role="user", content="x" * 60_000),))
+        self.assertEqual(provider.complete(huge).content, "OK")
+        self.assertEqual(provider.complete(huge).content, "OK")
+        # Halved once, and remembered: the second request asks for less at once.
+        self.assertEqual(sent, [32768, 16384, 16384])
+
     def test_think_false_reaches_the_wire(self) -> None:
         capture = Capture(ollama_reply())
         self.complete(capture, think=False)
@@ -296,7 +325,20 @@ class OllamaResponseTests(unittest.TestCase):
 class RestartingServerTests(unittest.TestCase):
     """A model server that is restarting is waited for, not given up on."""
 
-    def tries(self, url: str, failures: list[BaseException]) -> tuple[list[float], Any]:
+    def setUp(self) -> None:
+        answered = set(model_module._ANSWERED)
+        self.addCleanup(
+            lambda: (
+                model_module._ANSWERED.clear()
+                or model_module._ANSWERED.update(answered)
+            )
+        )
+
+    def tries(
+        self, url: str, failures: list[BaseException], *, answered_before: bool = True
+    ) -> tuple[list[float], Any]:
+        if answered_before:
+            model_module._ANSWERED.add(model_module._server_of(url))
         slept: list[float] = []
         calls = iter(failures)
 
@@ -338,6 +380,14 @@ class RestartingServerTests(unittest.TestCase):
         slept, got = self.tries("http://localhost:11434/api/chat", [refused] * 20)
         self.assertIsInstance(got, urllib.error.URLError)
         self.assertEqual(sum(slept), 315)
+
+    def test_a_server_never_reached_is_reported_at_once(self) -> None:
+        refused = urllib.error.URLError(ConnectionRefusedError(10061, "refused"))
+        slept, got = self.tries(
+            "http://localhost:9/api/chat", [refused], answered_before=False
+        )
+        self.assertEqual(slept, [])
+        self.assertIsInstance(got, urllib.error.URLError)
 
     def test_other_failures_are_not_waited_on(self) -> None:
         slept, got = self.tries(

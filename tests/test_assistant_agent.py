@@ -26,15 +26,16 @@ class AssistantTests(unittest.TestCase):
     def test_what_it_reaches_is_listed_and_none_of_it_changes_the_world(self) -> None:
         program = load_program(ASSISTANT)
         sources = sorted({tool.source for tool in program.tools})
-        # A clock, its two memories, the other agents here, and an outside
-        # agent to put a question to, which is bound only if the owner
-        # allowed one.
+        # A clock, its two memories, the other agents here, an outside agent
+        # to put a question to, which is bound only if the owner allowed one,
+        # and the phone, reached only at the one address the owner names.
         self.assertEqual(
             sources,
             [
                 "memory:books",
                 "memory:talks",
                 "system:agents",
+                "system:notify",
                 "system:outside",
                 "world:clock",
             ],

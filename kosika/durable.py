@@ -61,6 +61,7 @@ class ExecutionSession:
         self.plan_hash = ""
         self.active = False
         self.owner: int | None = None
+        self._held: sqlite3.Connection | None = None
         self.ledger = ApprovalLedger(str(self.path) + ".approvals.sqlite")
 
     @contextlib.contextmanager
@@ -80,19 +81,35 @@ class ExecutionSession:
         finally:
             self.active = False
             self.owner = None
+            held, self._held = self._held, None
+            if held is not None:
+                held.close()
             lock.close()
+
+    def _connect(self) -> sqlite3.Connection:
+        db = sqlite3.connect(self.path)
+        db.execute("PRAGMA synchronous=FULL")
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS plan (id INTEGER PRIMARY KEY CHECK(id=1), hash TEXT NOT NULL)"
+        )
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS steps (name TEXT PRIMARY KEY, state TEXT NOT NULL, payload TEXT NOT NULL)"
+        )
+        return db
 
     @contextlib.contextmanager
     def _db(self) -> Iterator[sqlite3.Connection]:
-        db = sqlite3.connect(self.path)
+        # While the run that owns the journal works, one connection serves
+        # all its steps: opening one for each step cost more than the step.
+        # Every step still commits before the next begins.
+        if self.active and self.owner == threading.get_ident():
+            if self._held is None:
+                self._held = self._connect()
+            with self._held:
+                yield self._held
+            return
+        db = self._connect()
         try:
-            db.execute("PRAGMA synchronous=FULL")
-            db.execute(
-                "CREATE TABLE IF NOT EXISTS plan (id INTEGER PRIMARY KEY CHECK(id=1), hash TEXT NOT NULL)"
-            )
-            db.execute(
-                "CREATE TABLE IF NOT EXISTS steps (name TEXT PRIMARY KEY, state TEXT NOT NULL, payload TEXT NOT NULL)"
-            )
             with db:
                 yield db
         finally:

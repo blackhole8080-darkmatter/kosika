@@ -59,6 +59,7 @@ from .language_adapters import (
     LanguageAdapterError,
     adapter_for_suffix,
 )
+from .lessons import Lessons
 from .manifest import (
     ManifestError,
     MCPManifest,
@@ -3446,6 +3447,8 @@ def main() -> int:
                     args.workflow,
                     args.trace,
                     skills=load_skill_notes(Path(args.source).parent / SKILLS_FOLDER),
+                    # Learning steps learn where the program remembers.
+                    lessons=Lessons(args.memory) if args.memory else None,
                     mcp_commands=mcp_commands,
                     manifest=run_manifest,
                     inputs=inputs,

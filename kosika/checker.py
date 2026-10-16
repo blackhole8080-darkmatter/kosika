@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import re
+import weakref
 from dataclasses import fields, is_dataclass, replace
 from typing import Any
 
@@ -1115,6 +1116,35 @@ def _check_arguments(
             )
 
 
+def _check_learn(program: Program, step: Step, bindings: _Env) -> None:
+    """`learn` keeps a model's answers; only a model step has them."""
+
+    asked = (
+        next((m for m in program.models if m.name == step.call.model_name), None)
+        if isinstance(step.call, ModelCall) and not step.branches
+        else None
+    )
+    if asked is None:
+        raise CheckError(
+            f"Step {step.name!r} cannot learn: only a model step "
+            "(use_model or a thinking step) has answers to keep"
+        )
+    if asked.evidence is not None:
+        raise CheckError(
+            f"Step {step.name!r} cannot learn: an answer given again from what "
+            "was learned has no quotes from the new text to check"
+        )
+    if step.learn_by is not None:
+        known_by = _expression_type(
+            step.learn_by, _Env(bindings), program, step_name=step.name
+        )
+        if known_by != "Text":
+            raise CheckError(
+                f"Step {step.name!r} learns by {known_by!r}; what a question is "
+                "known by must be Text"
+            )
+
+
 def _check_fallbacks(program: Program) -> None:
     """Check `otherwise` by checking the program each fallback would make.
 
@@ -1160,6 +1190,8 @@ def _check_fallbacks(program: Program) -> None:
                         retries=step.retries if step.fallback is None else 0,
                         votes=step.votes if step.fallback is None else 0,
                         escalate=step.escalate if step.fallback is None else None,
+                        learns=step.learns if step.fallback is None else False,
+                        learn_by=step.learn_by if step.fallback is None else None,
                     )
                     for step in workflow.steps
                 ),
@@ -1525,9 +1557,19 @@ def plain_names(message: str) -> str:
     return _MADE_NAME_RE.sub(said, message)
 
 
+#: Programs already found sound, by identity, with the shapes they set. A
+#: program is never changed once made, so one that passed passes again;
+#: checking it again on every run is what made a short request slow.
+_CHECKED: dict[int, tuple[weakref.ref[Program], dict[str, frozenset[str]]]] = {}
+
+
 def check(program: Program) -> None:
     """Check a program, saying any fault in the words its writer used."""
 
+    known = _CHECKED.get(id(program))
+    if known is not None and known[0]() is program:
+        SHAPES.set(known[1])
+        return
     try:
         _check(program)
     except CheckError as exc:
@@ -1535,6 +1577,8 @@ def check(program: Program) -> None:
         if plain == str(exc):
             raise
         raise CheckError(plain) from exc
+    key = id(program)
+    _CHECKED[key] = (weakref.ref(program, lambda _ref: _CHECKED.pop(key, None)), SHAPES.get())
 
 
 def _check(program: Program) -> None:
@@ -2073,6 +2117,8 @@ def _check(program: Program) -> None:
         call_input: str | None
         for step in workflow.steps:
             expected_fields = None
+            if step.learns:
+                _check_learn(program, step, bindings)
             if step.subject is not None:
                 subject_type = _expression_type(
                     step.subject, _Env(bindings), program, step_name=step.name

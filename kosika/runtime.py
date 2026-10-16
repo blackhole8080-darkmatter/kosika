@@ -71,6 +71,7 @@ from .evidence import EvidenceError, answer_schema, split, verify
 from .execution import ExecutionControl, ExecutionLimits, within_budget
 from .function_types import public_type
 from .intelligence_runtime import FunctionResultCache, IntelligenceRecorder
+from .lessons import Lessons
 from .manifest import ManifestError, MCPManifest, verify_server
 from .mcp_stdio import MCPStdioClient
 from .model import ChatMessage, ModelProvider, ModelProviderError, ModelRequest
@@ -1266,6 +1267,36 @@ def _ask_with_votes(
     }
 
 
+def _question_of(arguments: Mapping[str, Any]) -> str:
+    """What a model step is asked, as words: the text it is given, without
+    field names, and without lists such as the choices of a `classify`,
+    which are the same every time."""
+
+    found: list[str] = []
+
+    def collect(value: Any) -> None:
+        if isinstance(value, str):
+            found.append(value)
+        elif isinstance(value, dict):
+            for key in sorted(value):
+                collect(value[key])
+
+    for name in sorted(arguments):
+        collect(arguments[name])
+    return "\n".join(found)
+
+
+def _lesson_name(workflow: str, step: str, model: ModelDecl) -> str:
+    """The lessons of one step, kept apart from those of any other step
+    and of an earlier version of its model: a model told something new
+    starts learning again."""
+
+    declared = hashlib.sha256(
+        json.dumps(asdict(model), sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()[:10]
+    return f"{workflow}.{step}.{model.name}.{declared}"
+
+
 def run(
     program: Program,
     workflow_name: str,
@@ -1283,6 +1314,7 @@ def run(
     function_cache: FunctionResultCache | None = None,
     on_event: Callable[[dict[str, Any], int], None] | None = None,
     skills: SkillCatalog | None = None,
+    lessons: Lessons | None = None,
     _events_out: list[dict[str, Any]] | None = None,
     _scope: tuple[str, ...] = (),
     _control: ExecutionControl | None = None,
@@ -1297,6 +1329,9 @@ def run(
         _control = ExecutionControl(
             within_budget(limits or ExecutionLimits(), declared), cancel
         )
+        # What the program's learning steps have learned, for the whole
+        # run, including the workflows it calls.
+        _control.lessons = lessons
         # The clock and chance need no grant; see kosika.ambient. A caller
         # may still supply its own, as a test does with scripted answers.
         ambient = bind_ambient_tools(program)
@@ -1583,7 +1618,9 @@ def _run_workflow(
             # declared model it names; it has none of its own.
             asked = models[step.call.model_name]
             bound_name = asked.provider or asked.name
-            if bound_name not in providers:
+            # A step that learns may run without its model: it answers what
+            # it has learned, and for anything else its `otherwise` runs.
+            if bound_name not in providers and not step.learns:
                 raise PermissionError(
                     f"Model {bound_name!r} has no authorized host binding"
                 )
@@ -1705,6 +1742,9 @@ def _run_workflow(
                 # Its arguments fail: let the step say so when its turn comes.
                 continue
             if isinstance(call, ModelCall):
+                if member.learns:
+                    # What it has learned may answer it, with no model.
+                    continue
                 asked = [
                     providers.get(models[name].provider or name)
                     for name in (member.voters or (call.model_name,))
@@ -2314,11 +2354,52 @@ def _run_workflow(
                     )
                 )
                 early = ahead.pop(step.name, None)
-                result, response = (
-                    early.result()
-                    if early is not None
-                    else model_answer(step, arguments)
-                )
+                book = getattr(_control, "lessons", None) if step.learns else None
+                known = None
+                if step.learns:
+                    question = (
+                        str(
+                            _evaluate_expression(
+                                step.learn_by, environment, program, functions, [], depth=-1
+                            )
+                        )
+                        if step.learn_by is not None
+                        else _question_of(arguments)
+                    )
+                    lesson = _lesson_name(workflow.name, step.name, model)
+                    if book is not None:
+                        known = book.recall(
+                            lesson, question, voting=model.verb in ("classify", "decide")
+                        )
+                    if known is not None:
+                        try:
+                            validate(known["answer"], output_schema)
+                        except ValueError:
+                            known = None
+                if known is not None:
+                    result = known["answer"]
+                    # Recorded as the model's answer would be, so the run
+                    # replays the same; `learned` says where it came from.
+                    response = {
+                        "content": json.dumps(result, ensure_ascii=False),
+                        "finish_reason": "stop",
+                        "learned": {
+                            key: known[key] for key in ("how", "likeness", "lessons")
+                        }
+                    }
+                else:
+                    if step.learns and (model.provider or model.name) not in providers:
+                        raise ModelProviderError(
+                            f"Model {model.name!r} is not connected, and nothing "
+                            "like this has been learned yet"
+                        )
+                    result, response = (
+                        early.result()
+                        if early is not None
+                        else model_answer(step, arguments)
+                    )
+                    if book is not None:
+                        book.keep(lesson, question, result)
                 events.append(
                     _event("model_return", model=model.name, result=result, **response)
                 )

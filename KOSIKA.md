@@ -666,6 +666,30 @@ think = "classify"  expression "into" expression [ "using" identifier ]
   that is not a model step MUST NOT have `escalate`. The model bound to
   NAME must be granted before the run starts.
 
+- A model step MAY be followed by `learn`, or `learn by EXPRESSION`, written
+  after any `escalate` and before any `otherwise`:
+  `reply = use_model voice(p.text) retry 1 learn by msg.text otherwise f(msg)`.
+  The step keeps every answer its model gave and the program accepted, with
+  the question it answered: the Text of `EXPRESSION` (which MUST be Text),
+  or else the text the model was given. Before asking the model, the step
+  answers from what it kept when:
+  - the same question was asked before, ignoring case and punctuation;
+  - nearly all the words of the question are those of one asked before;
+  - it is a `classify` or `decide` step with at least six kept answers, and
+    the ones whose questions are most like this one agree on one answer.
+    That answer's `confidence` is how much they agree.
+  Otherwise the model is asked, and its accepted answer is kept. A step that
+  learns MAY run with its model not granted: it answers what it has learned,
+  and anything else fails as an unreachable model fails, so its `otherwise`
+  runs. Lessons are kept only where the host keeps memory (`--memory FOLDER`,
+  or the agent's memory folder in Studio), one readable JSON file per step,
+  and they start again when the step's model declaration changes. Without a
+  memory folder the step is an ordinary model step. An answer given from a
+  lesson is recorded in the trace as the model's answer, with `learned`
+  saying how it was found, so the run replays the same. A step that is not
+  a model step, or whose answers carry `with evidence`, MUST NOT learn.
+  `kosika-native` does not run steps that learn yet.
+
 - A program MAY contain `eval "name" { ... }` blocks, written exactly like
   `test` blocks. An eval's models are not scripted: it MUST NOT give
   `answers` for a declared model, and MAY give them for read-only tools.

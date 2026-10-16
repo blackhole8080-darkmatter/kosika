@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import weakref
 from dataclasses import asdict, dataclass, field
 from typing import Any, Iterable
 
@@ -593,6 +594,12 @@ class Step:
     # results, so their slow calls can be made at the same time. 0
     # for every step written outside such a block.
     group: int = 0
+    # `step = use_model m(x) learn by key`: the model's accepted answers are
+    # kept, and a question asked before is answered without the model; see
+    # kosika.lessons. `learn_by` is what the question is known by, when it
+    # is not the whole of what the model is given.
+    learns: bool = False
+    learn_by: Any = None
 
 
 @dataclass(frozen=True)
@@ -677,10 +684,33 @@ def function_calls(
     )
 
 
+#: References already found, by function identity. A function is never
+#: changed once made, and the checker asks for the same ones many times.
+_REFERENCES: dict[
+    int,
+    tuple[weakref.ref[FunctionDecl], tuple[FunctionCallExpr | FunctionRefExpr, ...]],
+] = {}
+
+
 def static_function_references(
     function: FunctionDecl,
 ) -> tuple[FunctionCallExpr | FunctionRefExpr, ...]:
     """Resolve local call shadowing in declaration order, never for explicit refs."""
+    known = _REFERENCES.get(id(function))
+    if known is not None and known[0]() is function:
+        return known[1]
+    found = _static_function_references(function)
+    key = id(function)
+    _REFERENCES[key] = (
+        weakref.ref(function, lambda _ref: _REFERENCES.pop(key, None)),
+        found,
+    )
+    return found
+
+
+def _static_function_references(
+    function: FunctionDecl,
+) -> tuple[FunctionCallExpr | FunctionRefExpr, ...]:
     bound = {parameter.name for parameter in function.parameters}
     references: list[FunctionCallExpr | FunctionRefExpr] = []
     for name, expression in (
@@ -821,11 +851,33 @@ _ABSENT_DEFAULTS: dict[str, tuple[Any, ...]] = {
     "boards": ((), []),
     "enums": ((), []),
     "shapes": ((), []),
+    "learns": (False,),
+    "learn_by": (None,),
 }
 
 
+#: Payloads already made, by program identity. A program is not changed once
+#: made, and a run asks for its payload more than once.
+_PAYLOADS: dict[int, tuple[weakref.ref[Program], dict[str, Any]]] = {}
+
+
 def program_payload(program: Program) -> dict[str, Any]:
-    """The JSON-ready form of a program that every program hash is taken over."""
+    """The JSON-ready form of a program that every program hash is taken over.
+    It is shared between callers, so it must not be changed."""
+
+    known = _PAYLOADS.get(id(program))
+    if known is not None and known[0]() is program:
+        return known[1]
+    payload = _program_payload(program)
+    key = id(program)
+    _PAYLOADS[key] = (
+        weakref.ref(program, lambda _ref: _PAYLOADS.pop(key, None)),
+        payload,
+    )
+    return payload
+
+
+def _program_payload(program: Program) -> dict[str, Any]:
 
     def prune(value: Any) -> Any:
         if isinstance(value, dict):

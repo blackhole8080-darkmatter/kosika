@@ -1389,6 +1389,7 @@ class Parser:
         votes = self.parse_step_count("vote")
         retries = self.parse_step_count("retry")
         escalate = self.identifier() if self.accept("escalate") else None
+        learns, learn_by = self.parse_learn()
         fallback = self.parse_step_call() if self.accept("otherwise") else None
         return Step(
             name,
@@ -1401,7 +1402,18 @@ class Parser:
             votes,
             verify=verify,
             escalate=escalate,
+            learns=learns,
+            learn_by=learn_by,
         )
+
+    def parse_learn(self) -> tuple[bool, Expression | None]:
+        """An optional `learn` or `learn by EXPRESSION` after a step's call.
+        `learn` followed by `=` or `:` is the name of the next step."""
+
+        if not self.check("learn") or self.peek().value in ("=", ":"):
+            return False, None
+        self.advance()
+        return True, (self.expression() if self.accept("by") else None)
 
     def parse_step_count(self, word: str) -> int:
         """Parse an optional `vote N` or `retry N` after a step's call."""
@@ -1429,6 +1441,7 @@ class Parser:
         votes = self.parse_step_count("vote")
         retries = self.parse_step_count("retry")
         escalate = self.identifier() if self.accept("escalate") else None
+        learns, learn_by = self.parse_learn()
         fallback = self.parse_step_call() if self.accept("otherwise") else None
         self.expect("return")
         return_name = self.identifier()
@@ -1444,6 +1457,8 @@ class Parser:
             votes,
             verify=verify,
             escalate=escalate,
+            learns=learns,
+            learn_by=learn_by,
         )
 
     def parse_think_call(self) -> ThinkCall:

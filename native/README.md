@@ -79,7 +79,7 @@ print what the reference engine prints, word for word. See
 
 ## What it does not have yet
 
-- Steps with `verify`, `vote`, `escalate` or `with evidence`, and
+- Steps with `verify`, `vote`, `escalate`, `learn` or `with evidence`, and
   `parallel` blocks.
 - An agent's plan that writes files, or an agent with its own `check`:
   the reference checks such a plan before showing it, and those checks are

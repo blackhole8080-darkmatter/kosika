@@ -164,6 +164,20 @@ class NativeTests(unittest.TestCase):
             "kosika-native cannot run a step with vote yet",
             ran.stderr.decode("utf-8", "replace"),
         )
+        with tempfile.TemporaryDirectory() as scratch:
+            learning = Path(scratch) / "learning.kos"
+            learning.write_text(
+                "record A { text: Text }\nmodel assistant\n"
+                "workflow main(a: A) -> Summary {\n"
+                "  s = summarize a.text learn by a.text\n}\n",
+                encoding="utf-8",
+            )
+            ran = self.run_engine("test", str(learning))
+        self.assertEqual(ran.returncode, 1)
+        self.assertIn(
+            "kosika-native cannot run a step that learns yet",
+            ran.stderr.decode("utf-8", "replace"),
+        )
 
     def test_a_text_that_is_not_kosika_is_refused_with_its_place(self) -> None:
         with tempfile.TemporaryDirectory() as scratch:

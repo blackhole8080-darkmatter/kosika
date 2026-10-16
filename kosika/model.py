@@ -14,13 +14,25 @@ from typing import Any, Callable, Iterator, Protocol
 #: five minutes in all.
 RECONNECT_WAITS = (5, 10, 20, 40, 60, 60, 60, 60)
 
+#: Model servers that have answered at least once while this program runs.
+#: Only one of these is waited for: a server that was never reached is more
+#: likely a wrong address than a restart, and is reported at once.
+_ANSWERED: set[str] = set()
+
+
+def _server_of(url: str) -> str:
+    parts = urllib.parse.urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc}"
+
 
 def _server_restarting(exc: BaseException, url: str) -> bool:
-    """Whether a failed request found the model server down rather than
-    wrong. A refused connection reached nobody, so trying again is safe
-    anywhere; a dropped one may have been answered, so it is tried again
-    only on this computer, where a repeat costs nothing."""
+    """Whether a failed request found a model server that had been working
+    gone for now, rather than wrong. A refused connection reached nobody, so
+    trying again is safe anywhere; a dropped one may have been answered, so
+    it is tried again only on this computer, where a repeat costs nothing."""
 
+    if _server_of(url) not in _ANSWERED:
+        return False
     reason = exc.reason if isinstance(exc, urllib.error.URLError) else exc
     if isinstance(reason, ConnectionRefusedError):
         return True
@@ -215,6 +227,9 @@ class OpenAICompatibleProvider:
         self.api_key = api_key
         self.timeout = timeout
         self._transport = transport
+        # The largest context window this computer has room for, learned
+        # when a larger one did not fit. See OLLAMA_CONTEXTS.
+        self._context_limit = OLLAMA_CONTEXTS[-1]
         #: Reasoning models such as qwen3 emit a separate reasoning trace that
         #: consumes the output budget before any answer is produced. Set this
         #: to False when the caller needs a direct answer, for example a
@@ -447,7 +462,7 @@ class OpenAICompatibleProvider:
             ):
                 raise ModelProviderError("max_output_tokens must be a positive integer")
             options["num_predict"] = request.max_output_tokens
-        options["num_ctx"] = ollama_context(request)
+        options["num_ctx"] = min(ollama_context(request), self._context_limit)
 
         payload: dict[str, Any] = {
             "model": request.model or self.model,
@@ -469,11 +484,26 @@ class OpenAICompatibleProvider:
             payload["format"] = "json"
         if self.think is not None:
             payload["think"] = self.think
-        if self._streams(request):
-            raw = self._exchange_stream({**payload, "stream": True}, sse=False)
-        else:
-            raw = self._exchange(payload)
-        return self._parse_response(raw, "ollama")
+        while True:
+            try:
+                if self._streams(request):
+                    raw = self._exchange_stream({**payload, "stream": True}, sse=False)
+                else:
+                    raw = self._exchange(payload)
+                return self._parse_response(raw, "ollama")
+            except ModelProviderError as exc:
+                # A computer without the memory for a large window says so;
+                # the same request is asked again with half the window, and
+                # this provider asks for no more than that from then on.
+                said = str(exc).lower()
+                if options["num_ctx"] <= OLLAMA_CONTEXTS[0] or not (
+                    "out-of-memory" in said
+                    or "out of memory" in said
+                    or "failed to allocate" in said
+                ):
+                    raise
+                options["num_ctx"] //= 2
+                self._context_limit = options["num_ctx"]
 
     def _exchange(self, payload: dict[str, Any]) -> Any:
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
@@ -515,7 +545,9 @@ class OpenAICompatibleProvider:
         waits = list(RECONNECT_WAITS)
         while True:
             try:
-                return urllib.request.urlopen(request, timeout=self.timeout)
+                response = urllib.request.urlopen(request, timeout=self.timeout)
+                _ANSWERED.add(_server_of(request.full_url))
+                return response
             except (
                 urllib.error.URLError,
                 http.client.RemoteDisconnected,

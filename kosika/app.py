@@ -59,6 +59,7 @@ from .diagnostics import anchors_for, diagnostic_from_exception
 from .direct import AGENT as DIRECT_AGENT
 from .durable import PLAN_TOOL, ApprovalPending, ExecutionSession
 from .grants import native_folder_window, too_wide
+from .lessons import Lessons
 from .lexer import lex
 from .mcp_tools import MCPHub, bind_mcp_tools, declaration
 from .memory import AGENT as MEMORY_AGENT
@@ -269,7 +270,7 @@ def describe(agent: Agent, *, detail: bool) -> dict[str, Any]:
         return {**view, "error": f"Cannot read the file: {exc}"}
     view["about"] = _about(source)
     try:
-        program = load_program(agent.path)
+        program = _loaded(agent.path)
     except ValueError as exc:
         return {**view, "error": str(exc), **({"source": source} if detail else {})}
     declared = [model for model in program.models if model.provider is None]
@@ -473,6 +474,10 @@ _DECLARED = re.compile(
     re.MULTILINE,
 )
 _FIELD = re.compile(r"\b([A-Za-z_]\w{2,})\s*:")
+_CARRYING = frozenset(
+    {"model_call", "model_return", "agent_call", "agent_return", "tool_call", "tool_return"}
+)
+
 _EVENT_KEYS = (
     "event",
     "step",
@@ -494,6 +499,14 @@ def _slim(event: dict[str, Any], depth: int) -> dict[str, Any]:
 
     slim: dict[str, Any] = {key: event[key] for key in _EVENT_KEYS if key in event}
     slim["depth"] = depth
+    # How much went out or came back, so the page can draw a large answer
+    # as a larger light than a short one.
+    carried = event.get("result", event.get("arguments"))
+    if carried is not None and slim.get("event") in _CARRYING:
+        try:
+            slim["size"] = min(len(json.dumps(carried, default=str)), 1_000_000)
+        except (TypeError, ValueError):
+            pass
     if isinstance(event.get("recovered_from"), dict):
         slim["recovered"] = str(event["recovered_from"].get("message", ""))[:200]
     if "rejected" in event:
@@ -508,6 +521,8 @@ def _slim(event: dict[str, Any], depth: int) -> dict[str, Any]:
         }
     if isinstance(event.get("usage"), dict):
         slim["tokens"] = event["usage"].get("total_tokens")
+    if isinstance(event.get("learned"), dict):
+        slim["learned"] = str(event["learned"].get("how", ""))
     if isinstance(event.get("escalated"), dict):
         slim["escalated"] = str(event["escalated"].get("to", ""))
     # What agents say to each other on a board is the conversation the swarm
@@ -534,6 +549,19 @@ class _Refused(Exception):
     """The person said no, or did not answer, to something a run asked."""
 
 
+class _Timed(list):  # type: ignore[type-arg]
+    """A run's events, each stamped with when it happened: seconds since the
+    run began. The page plays them back at the pace they really had."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.began = time.monotonic()
+
+    def append(self, event: dict[str, Any]) -> None:  # type: ignore[override]
+        event.setdefault("at", round(time.monotonic() - self.began, 3))
+        super().append(event)
+
+
 class Job:
     """One run started from the app, followed while it works."""
 
@@ -545,7 +573,7 @@ class Job:
             folder,
         )
         self.state = "running"  # running, waiting, done, failed, refused
-        self.events: list[dict[str, Any]] = []
+        self.events: list[dict[str, Any]] = _Timed()
         self.request: dict[str, Any] | None = None
         self.allow: bool | None = None
         self.decision = threading.Event()
@@ -554,6 +582,43 @@ class Job:
         self.story: dict[str, Any] | None = None
         self.error = ""
         self.seconds = 0.0
+
+
+#: Programs already loaded, by entry file, with the files they were read
+#: from as they were then. Loading and checking a large agent takes about a
+#: second; most requests run an agent nobody has changed since the last one.
+_LOADED: dict[Path, tuple[tuple[tuple[str, int, int], ...], Program]] = {}
+_LOADED_LOCK = threading.Lock()
+
+
+def _sources_of(entry: Path) -> tuple[tuple[str, int, int], ...]:
+    """Every program file an entry may import, with when it last changed:
+    imports never reach outside the entry's own folder."""
+
+    found = []
+    for path in sorted(entry.parent.rglob("*.kos")):
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        found.append((str(path), stat.st_mtime_ns, stat.st_size))
+    return tuple(found)
+
+
+def _loaded(path: Path) -> Program:
+    """The agent at `path`, loaded and checked, or the same program as last
+    time when none of its files has changed."""
+
+    entry = Path(path).absolute()
+    sources = _sources_of(entry)
+    with _LOADED_LOCK:
+        known = _LOADED.get(entry)
+    if known is not None and known[0] == sources:
+        return known[1]
+    program = load_program(entry)
+    with _LOADED_LOCK:
+        _LOADED[entry] = (sources, program)
+    return program
 
 
 def plain_refusal(program: Program, message: str) -> str:
@@ -677,7 +742,7 @@ class App:
         if self.bind_models is not None:
             system_words, question = route_question(candidates, text)
             try:
-                program = load_program(self.agent(candidates[0].agent_id).path)
+                program = _loaded(self.agent(candidates[0].agent_id).path)
                 provider = next(iter(self.bind_models(program).values()), None)
                 if provider is not None:
                     said = provider.complete(
@@ -829,7 +894,7 @@ class App:
     def tests(self, agent_id: str) -> dict[str, Any]:
         agent = self.agent(agent_id)
         try:
-            results = run_tests(load_program(agent.path))
+            results = run_tests(_loaded(agent.path))
         except ValueError as exc:
             raise AppError(str(exc)) from exc
         return {"results": [result.to_dict() for result in results]}
@@ -859,7 +924,7 @@ class App:
             )
         agent = self.agent(agent_id)
         try:
-            program = load_program(agent.path)
+            program = _loaded(agent.path)
             if isinstance(body.get("text"), str):
                 parameter, _ = message_parameter(program, "main")
                 inputs: dict[str, Any] = {parameter: {"text": body["text"]}}
@@ -1333,7 +1398,7 @@ class App:
             raise AppError("A swarm runs only after you allow it", 403)
         agent = self.agent(agent_id)
         try:
-            program = load_program(agent.path)
+            program = _loaded(agent.path)
             name = str(body.get("swarm", ""))
             if name not in [swarm.name for swarm in program.swarms]:
                 raise AppError("No such swarm in this program", 404)
@@ -1541,7 +1606,7 @@ class App:
 
         agent = self.agent(agent_id)
         try:
-            program = load_program(agent.path)
+            program = _loaded(agent.path)
             with tempfile.TemporaryDirectory(prefix="kosika-scene-") as scratch:
                 made = run(program, "main", Path(scratch) / "run.jsonl", inputs=inputs)
         except (ValueError, RuntimeError, OSError) as exc:
@@ -1572,7 +1637,7 @@ class App:
         agent = self.agent(agent_id)
         try:
             source = agent.path.read_text(encoding="utf-8")
-            program = load_program(agent.path)
+            program = _loaded(agent.path)
         except (OSError, UnicodeDecodeError, ValueError) as exc:
             raise AppError(f"No map: the program does not check. {exc}", 422) from exc
         return beginner_map(
@@ -1692,6 +1757,9 @@ class App:
                     "main",
                     trace,
                     skills=load_skill_notes(folder / SKILLS_FOLDER),
+                    # An agent learns in its own memory folder, beside what
+                    # it remembers.
+                    lessons=Lessons(folder / "memory"),
                     inputs=inputs,
                     model_bindings=models,
                     tool_bindings=tools,
@@ -1844,7 +1912,7 @@ class App:
             job.events.append({"event": "handed", "agent": name, "depth": 0})
             program: Program | None = None
             try:
-                program = load_program(chosen.path)
+                program = _loaded(chosen.path)
                 parameter, _ = message_parameter(program, "main")
                 folder = chosen.path.parent
                 runs = folder / "runs"
@@ -1937,7 +2005,7 @@ class App:
         """What the agent remembers right now, read from its memory folder."""
 
         agent = self.agent(agent_id)
-        program = load_program(agent.path)
+        program = _loaded(agent.path)
         folder = agent.path.parent / "memory"
         memories = []
         for declared in program.memories:

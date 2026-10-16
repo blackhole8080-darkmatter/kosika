@@ -68,6 +68,8 @@ class ExecutionControl:
         self.limits = limits
         self.cancel = cancel if cancel is not None else threading.Event()
         self.started = time.monotonic()
+        # The lessons of learning steps, when the host keeps any.
+        self.lessons: Any = None
         self.counts = dict.fromkeys(
             (
                 "function_calls",
