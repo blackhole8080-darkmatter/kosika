@@ -93,8 +93,26 @@ def call_model(
     stop: tuple[str, ...] = (),
     instruction: str | None = None,
     rejected: tuple[tuple[str, str], ...] = (),
+    plain: str | None = None,
 ):
-    """Ask once. `rejected` holds earlier (answer, reason) pairs of this step."""
+    """Ask once. `rejected` holds earlier (answer, reason) pairs of this step.
+    `plain` names the one Text field of a model that answers in plain text."""
+
+    if plain is not None:
+        return _call_plain(
+            provider,
+            arguments,
+            plain,
+            model=model,
+            temperature=temperature,
+            max_output_tokens=max_output_tokens,
+            top_p=top_p,
+            frequency_penalty=frequency_penalty,
+            presence_penalty=presence_penalty,
+            stop=stop,
+            instruction=instruction,
+            rejected=rejected,
+        )
 
     task = f" Task: {instruction}" if instruction else ""
     earlier: list[ChatMessage] = []
@@ -152,5 +170,84 @@ def call_model(
     return result, {
         "content": response.content,
         "finish_reason": response.finish_reason,
+        "usage": asdict(response.usage) if response.usage is not None else None,
+    }
+
+
+def unfenced(text: str) -> str:
+    """A plain answer as the text it gives: the lines inside the one fenced
+    block it holds, or else all of it, without the blank lines around."""
+
+    lines = text.strip().splitlines()
+    fences = [index for index, line in enumerate(lines) if line.lstrip().startswith("```")]
+    if len(fences) == 2:
+        return "\n".join(lines[fences[0] + 1 : fences[1]])
+    return text.strip()
+
+
+def _call_plain(
+    provider: ModelProvider,
+    arguments: dict[str, Any],
+    field: str,
+    *,
+    model: str | None,
+    temperature: float | None,
+    max_output_tokens: int | None,
+    top_p: float | None,
+    frequency_penalty: float | None,
+    presence_penalty: float | None,
+    stop: tuple[str, ...],
+    instruction: str | None,
+    rejected: tuple[tuple[str, str], ...],
+):
+    """Ask for plain text, and put it in the record's one Text field."""
+
+    task = f" Task: {instruction}" if instruction else ""
+    earlier: list[ChatMessage] = []
+    for answer, reason in rejected:
+        earlier.append(ChatMessage(role="assistant", content=answer))
+        earlier.append(
+            ChatMessage(
+                role="user",
+                content="That answer was rejected: " + reason + " Answer again, corrected.",
+            )
+        )
+    asked = arguments.get("text") if len(arguments) == 1 else None
+    response = provider.complete(
+        ModelRequest(
+            messages=(
+                ChatMessage(
+                    role="system",
+                    content="Answer with only the text asked for, in plain text: no JSON "
+                    "and nothing before or after it. When the answer is a file, give "
+                    "the whole file, every line, in one fenced code block." + task,
+                ),
+                ChatMessage(
+                    role="user",
+                    content=asked
+                    if isinstance(asked, str)
+                    else json.dumps(arguments, sort_keys=True, allow_nan=False),
+                ),
+                *earlier,
+            ),
+            model=model,
+            temperature=temperature,
+            max_output_tokens=max_output_tokens,
+            top_p=top_p,
+            frequency_penalty=frequency_penalty,
+            presence_penalty=presence_penalty,
+            stop=stop,
+        )
+    )
+    if response.tool_calls or response.finish_reason != "stop":
+        raise ModelProviderError(
+            "Model step requires a completed response without tool calls"
+        )
+    if not isinstance(response.content, str) or not response.content.strip():
+        raise RejectedAnswer("The model gave no text", response.content or "")
+    return {field: unfenced(response.content)}, {
+        "content": response.content,
+        "finish_reason": response.finish_reason,
+        "plain": field,
         "usage": asdict(response.usage) if response.usage is not None else None,
     }

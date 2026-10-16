@@ -501,6 +501,10 @@ class ModelDecl:
     # `default model NAME`: the model a thinking step uses when it names none
     # and the program declares several.
     default: bool = False
+    # `output: Code as text`: the model answers in plain words, not JSON,
+    # and the answer fills the output record's one Text field. A small model
+    # writes a file far better as itself than escaped inside a JSON string.
+    plain: bool = False
 
 
 @dataclass(frozen=True)
@@ -852,6 +856,7 @@ _ABSENT_DEFAULTS: dict[str, tuple[Any, ...]] = {
     "enums": ((), []),
     "shapes": ((), []),
     "learns": (False,),
+    "plain": (False,),
     "learn_by": (None,),
 }
 

@@ -1155,6 +1155,7 @@ def _ask_model(
                 presence_penalty=model.parameters.presence_penalty,
                 stop=model.parameters.stop,
                 rejected=tuple(rejected),
+                plain=_plain_field(model, asked_schema),
             )
             answered = response["content"]
             if model.evidence is not None:
@@ -1284,6 +1285,14 @@ def _question_of(arguments: Mapping[str, Any]) -> str:
     for name in sorted(arguments):
         collect(arguments[name])
     return "\n".join(found)
+
+
+def _plain_field(model: ModelDecl, schema: dict[str, Any]) -> str | None:
+    """The one Text field a plain answer fills, for a model `as text`."""
+
+    if not model.plain:
+        return None
+    return next(iter(schema.get("properties", {})), None)
 
 
 def _lesson_name(workflow: str, step: str, model: ModelDecl) -> str:

@@ -102,6 +102,15 @@ record Note { text: Text }
 record Engine { problems: Text[] }
 record Faults { items: Text[] }
 record Saved { count: Number }
+// The files a task names, in the order they are written: what is tested
+// first, its tests after.
+record Plan { files: Text[] }
+// The files written so far for one task, not yet saved.
+record Drafted { files: Planned[] }
+// The nth file of a plan to write, and one file to write: what a step of
+// writing file by file is given.
+record Nth { task: Task plan: Plan n: Number drafted: Drafted }
+record One { task: Task path: Text drafted: Drafted failure: Text }
 
 // Reads what a reviewer wrote and says only whether it reports a problem.
 model reader
@@ -112,6 +121,17 @@ model engineer {
   output: Work
   parameters: {
     max_output_tokens: 6000
+  }
+}
+
+// Writes one whole file as itself, not inside JSON: the way a small model
+// writes code best. Used when a task names the files it is about.
+model scribe {
+  input: Task
+  output: FileText as text
+  parameters: {
+    max_output_tokens: 4000
+    temperature: 0.2
   }
 }
 
@@ -723,6 +743,101 @@ fn tested(last: Last, ran: Ran) -> Result {
   }
 }
 
+// The files a task names: words such as calc.py or src/text.ts. A test
+// file that goes with a named file is added when the task asks for tests
+// and one is there. Tests come last, so they are written knowing the code.
+fn file_plan(task: Task, folder: Listing) -> Plan {
+  let kinds = [".py", ".ts", ".js", ".mjs", ".kos", ".json", ".md", ".txt", ".html", ".css"]
+  var named: Text[] = []
+  for word in task.text.replace(",", " ").replace(";", " ").replace("(", " ").replace(")", " ").replace("`", " ").words() {
+    let clean = word.trim_marks(".:!?'\"")
+    for kind in kinds {
+      if clean.lower().ends_with(kind) and clean.length() > kind.length() and not named.contains(clean) { named = named.append(clean) }
+    }
+  }
+  if named.is_empty() or named.length() > 3 { return {files: []} }
+  let wants_tests = task.text.lower().contains("test")
+  var code: Text[] = []
+  var tests: Text[] = []
+  for path in named {
+    if is_test_file(path) or is_script_test(path) { tests = tests.append(path) } else { code = code.append(path) }
+  }
+  if wants_tests and tests.is_empty() {
+    for path in code {
+      let pair = "test_" + file_name(path)
+      if path.ends_with(".py") and folder.names.contains(pair) and not tests.contains(pair) { tests = tests.append(pair) }
+    }
+  }
+  let all = code.concat(tests)
+  return {files: if all.length() > 3 { [] } else { all }}
+}
+
+// What a model that has never seen Kosika needs to write it: the rules
+// and one whole program that checks and passes its tests.
+fn kosika_example() -> Text {
+  return "Kosika is its own language, not Python. Rules: no semicolons; record fields have no commas between them; every fn ends with return; a workflow is a list of steps, one per line, each `name = call`; a thinking step (classify, extract, summarize, decide, use_model) is only ever a workflow line such as `x = classify TEXT into [\"a\", \"b\"]`, never inside a fn, and gives a Choice {label, confidence}; `learn` and then `otherwise f(...)` may follow it; `memory NAME of Record` keeps records, read with `recall NAME under KEY` (a NAMERecalled with found and value.value()) and written with `remember VALUE in NAME under KEY`; a test is `test \"words\" { ... }` with `answers MODEL: [...]` for each model answer in order and `expect` lines. This complete program checks and its tests pass; follow its shape:\n\n// Sorts a piece of feedback and counts each kind.\nrecord Feedback { text: Text }\nrecord Tally { count: Number }\nrecord Sorted { kind: Text count: Number }\n\nmodel assistant\n\nmemory tallies of Tally\n\nfn unsure(f: Feedback) -> Choice {\n  return {label: \"idea\", confidence: 0}\n}\n\nfn next_count(known: TalliesRecalled) -> Tally {\n  let before = if known.found { known.value.value().count } else { 0 }\n  return {count: before + 1}\n}\n\nfn sorted(label: Choice, tally: Tally) -> Sorted {\n  return {kind: label.label, count: tally.count}\n}\n\nworkflow main(f: Feedback) -> Sorted {\n  budget 3 model calls, 120 seconds\n  label  = classify f.text into [\"praise\", \"complaint\", \"idea\"] learn otherwise unsure(f)\n  known  = recall tallies under label.label\n  tally  = next_count(known)\n  saved  = remember tally in tallies under label.label\n  result = sorted(label, tally)\n}\n\ntest \"a complaint is sorted and counted\" {\n  answers assistant: [{label: \"complaint\", confidence: 0.9}]\n  r = main({text: \"The app keeps crashing.\"})\n  expect r.kind == \"complaint\"\n  expect r.count == 1\n}\n\ntest \"each kind is counted on its own\" {\n  answers assistant: [{label: \"idea\", confidence: 0.8}, {label: \"idea\", confidence: 0.7}, {label: \"praise\", confidence: 0.9}]\n  a = main({text: \"Add a dark mode.\"})\n  b = main({text: \"Could it export to PDF?\"})\n  c = main({text: \"I love it.\"})\n  expect b.count == 2\n  expect c.count == 1\n}\n"
+}
+
+fn nth_one(job: Nth) -> One {
+  return {task: job.task, path: job.plan.files[job.n], drafted: job.drafted, failure: ""}
+}
+
+fn no_drafts() -> Drafted {
+  return {files: []}
+}
+
+fn kept_drafts(drafted: Drafted) -> Drafted {
+  return drafted
+}
+
+// What the scribe is asked for one file: the task, the file as it is, and
+// every file already written for this task, so names and imports agree.
+fn scribe_task(task: Task, path: Text, old: Text, drafted: Drafted, failure: Text) -> Task {
+  var shown = ""
+  for file in drafted.files {
+    if file.path != path { shown = shown + "\n--- " + file.path + " (already written) ---\n" + file.text.take(6000) + "\n" }
+  }
+  let now = if old.trim().is_empty() { path + " does not exist yet: write it new." } else { "This is " + path + " now. Keep everything in it that should stay:\n```\n" + old.take(8000) + "\n```" }
+  let tests = if is_test_file(path) or is_script_test(path) { " It is a test file: import what it tests from the files above by their names, keep the tests that are there, and add tests for what the task asks." } else { "" }
+  let broken = if failure.trim().is_empty() { "" } else { "\nThe tests failed with this output. Find the cause in " + path + " and fix it:\n" + failure.take(2000) + "\n" }
+  let language = if is_kosika(path) { kosika_example() + "\n" } else { "" }
+  return {text: language + "Task: " + task.text + "\n" + shown + "\n" + now + broken + "\nWrite the complete new " + path + "." + tests + " Give only the file."}
+}
+
+// The drafts with one file written, or as they were when nothing came back.
+fn with_draft(drafted: Drafted, path: Text, old: Text, text: Text) -> Drafted {
+  if text.trim().is_empty() { return drafted }
+  var files: Planned[] = []
+  for file in drafted.files {
+    if file.path != path { files = files.append(file) }
+  }
+  let body = if text.ends_with("\n") { text } else { text + "\n" }
+  return {files: files.append({path: path, text: body, before: old, exists: not old.is_empty()})}
+}
+
+fn drafted_work(drafted: Drafted) -> Work {
+  let did = for file in drafted.files { "save_all " + file.path }
+  let names = for file in drafted.files { file.path }
+  return {summary: if names.is_empty() { "" } else { "Wrote " + names.join(", ") + ", one whole file at a time." }, did: did}
+}
+
+// Which file to write again: the one named last in the failure's own
+// lines, as `lru.py:12:`, which is where it went wrong; a test that
+// expects the wrong thing is put right as readily as the code. Without
+// such a line, the first file written.
+fn to_mend(drafted: Drafted, output: Text) -> Text {
+  var chosen = ""
+  for file in drafted.files {
+    if chosen.is_empty() { chosen = file.path }
+  }
+  for line in output.lines() {
+    for file in drafted.files {
+      if line.contains(file_name(file.path) + ":") { chosen = file.path }
+    }
+  }
+  return chosen
+}
+
 fn as_is(result: Result) -> Result {
   return result
 }
@@ -970,8 +1085,83 @@ workflow do_task(task: Task) -> Result {
   result = match verdict_on(got, faults.items, false) {
     case "use" { call reviewed_write(task, got) }
     case "again" { call second_helper(task, outside_again(task, faults.items)) }
-    case _ { call do_it_myself(task) }
+    case _ { call on_my_own(task) }
   }
+  require approval
+}
+
+// A task that names its files is written file by file, each whole, by the
+// scribe; one that does not goes to the coder agent, which finds them.
+workflow on_my_own(task: Task) -> Result {
+  folder = execute coder.list_folder(".") otherwise {names: []}
+  plan   = file_plan(task, folder)
+  result = match plan.files.is_empty() {
+    case true { call do_it_myself(task) }
+    case _ { call do_directly(task, plan) }
+  }
+  require approval
+}
+
+// ---------------------------------------------------------------- file by file
+//
+// A small model asked to drive tools, read files and send each new file as
+// a JSON string will often answer without writing anything. Asked for one
+// whole file at a time, in plain text, with what it needs to see put in
+// front of it, the same model writes it in a minute or two. The program
+// does the rest: it reads the files, keeps what was written, saves it all
+// at once, runs the tests, and puts the failing file right once.
+
+workflow do_directly(task: Task, plan: Plan) -> Result {
+  a      = call draft_nth({task: task, plan: plan, n: 0, drafted: no_drafts()})
+  b      = call draft_nth({task: task, plan: plan, n: 1, drafted: a})
+  c      = call draft_nth({task: task, plan: plan, n: 2, drafted: b})
+  saved  = execute writer.save_all(c.files, "Written file by file for: " + task.text.take(200))
+  work   = drafted_work(c)
+  tested = call run_tests(work)
+  report = worked_on(task, work, tested)
+  result = match needs_mending(work, tested) {
+    case true { call mend_directly(task, c, report) }
+    case _ { as_is(report) }
+  }
+  require approval
+}
+
+workflow draft_nth(job: Nth) -> Drafted {
+  more = match job.plan.files.length() > job.n {
+    case true { call draft_one(nth_one(job)) }
+    case _ { kept_drafts(job.drafted) }
+  }
+}
+
+workflow draft_one(one: One) -> Drafted {
+  old   = execute coder.read_file(one.path) otherwise {text: ""}
+  asked = scribe_task(one.task, one.path, old.text, one.drafted, one.failure)
+  code  = use_model scribe(asked.text) retry 1 learn by asked.text otherwise {text: ""}
+  more  = with_draft(one.drafted, one.path, old.text, code.text)
+}
+
+// The tests fail: the file they point at is written again, shown what they
+// printed, and everything is tested once more.
+workflow mend_directly(task: Task, drafted: Drafted, before: Result) -> Result {
+  fixed  = call draft_one({task: task, path: to_mend(drafted, before.last.output), drafted: drafted, failure: before.last.output})
+  saved  = execute writer.save_all(fixed.files, "Put right after the tests failed: " + task.text.take(200))
+  work   = drafted_work(fixed)
+  tested = call run_tests(work)
+  first  = mended(before, worked_on(task, work, tested), work)
+  // A second try, shown what the first one's tests printed.
+  result = match needs_mending(work, tested) {
+    case true { call mend_last(task, fixed, first) }
+    case _ { as_is(first) }
+  }
+  require approval
+}
+
+workflow mend_last(task: Task, drafted: Drafted, before: Result) -> Result {
+  fixed  = call draft_one({task: task, path: to_mend(drafted, before.last.output), drafted: drafted, failure: before.last.output})
+  saved  = execute writer.save_all(fixed.files, "Put right a second time: " + task.text.take(200))
+  work   = drafted_work(fixed)
+  tested = call run_tests(work)
+  result = mended(before, worked_on(task, work, tested), work)
   require approval
 }
 
@@ -1131,11 +1321,14 @@ workflow read_scripts(work: Work) -> Tested {
 }
 
 // The site built in rounds by the coder's own model, one file each.
+// One file a round, each written whole by the scribe and shown the files
+// before it, then all three saved at once and checked.
 workflow build_site(task: Task) -> Result {
-  page   = ask builder(round_task(task, "page").text) otherwise no_work()
-  style  = ask builder(round_task(task, "style").text) otherwise no_work()
-  motion = ask builder(round_task(task, "motion").text) otherwise no_work()
-  work   = rounds_work(page, style, motion)
+  page   = call draft_one({task: round_task(task, "page"), path: "index.html", drafted: no_drafts(), failure: ""})
+  style  = call draft_one({task: round_task(task, "style"), path: "styles.css", drafted: page, failure: ""})
+  motion = call draft_one({task: round_task(task, "motion"), path: "script.js", drafted: style, failure: ""})
+  saved  = execute writer.save_all(motion.files, "A website, file by file: " + task.text.take(200))
+  work   = drafted_work(motion)
   tested = call run_tests(work)
   result = worked_on(task, work, tested)
   require approval
@@ -1563,4 +1756,29 @@ test "its own change that fails the tests is put right once" {
   after: Result = {text: "The tests pass.", last: {task: "t", output: "ok", passed: true, known: true}}
   expect mended(before, after, wrote).text.starts_with("My first try failed its tests, so I read")
   expect mended(before, after, {summary: "", did: []}).text == "failed"
+}
+
+test "a task that names its files is written file by file, tests last" {
+  plan = file_plan({text: "write lru.py with an LRUCache class, and test_lru.py with tests"}, {names: []})
+  expect plan.files == ["lru.py", "test_lru.py"]
+  added = file_plan({text: "add a function is_even to calc.py that says whether a number is even, with a test"}, {names: ["calc.py", "test_calc.py"]})
+  expect added.files == ["calc.py", "test_calc.py"]
+  script = file_plan({text: "add a function whisper to text.ts, with a test in text.test.ts"}, {names: []})
+  expect script.files == ["text.ts", "text.test.ts"]
+  expect file_plan({text: "make the code faster"}, {names: []}).files == []
+}
+
+test "a file is asked for whole, with what was written before it" {
+  first = with_draft(no_drafts(), "lru.py", "", "class LRUCache:\n    pass")
+  expect first.files[0].text == "class LRUCache:\n    pass\n"
+  asked = scribe_task({text: "write tests"}, "test_lru.py", "", first, "")
+  expect asked.text.contains("--- lru.py (already written) ---")
+  expect asked.text.contains("test_lru.py does not exist yet")
+  expect with_draft(first, "x.py", "", "  ").files.length() == 1
+  expect to_mend(first, "lru.py:3: TypeError") == "lru.py"
+  both = with_draft(first, "test_lru.py", "", "def test_a(): pass")
+  expect to_mend(both, "lru.py:8: in get
+test_lru.py:19: AssertionError") == "test_lru.py"
+  expect to_mend(both, "test_lru.py:5: in test_a
+lru.py:8: KeyError") == "lru.py"
 }

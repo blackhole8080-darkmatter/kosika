@@ -9,7 +9,7 @@ from .agent_trace import replay_agent_events
 from .evidence import EvidenceError
 from .evidence import split as split_evidence
 from .evidence import verify as verify_evidence
-from .model_steps import fill_absent, strict_json
+from .model_steps import fill_absent, strict_json, unfenced
 from .schema import validate
 
 
@@ -162,8 +162,12 @@ def replay_events(events: list[Any], *, depth: int = 0) -> dict[str, Any]:
                 raise ValueError("Model trace contains an incomplete response")
             # A field the model left out reads as null where null is allowed,
             # exactly as it did when the run was made.
-            answered = fill_absent(
-                strict_json(returned["content"]), call["output_schema"]
+            answered = (
+                {returned["plain"]: unfenced(returned["content"])}
+                if isinstance(returned.get("plain"), str)
+                else fill_absent(
+                    strict_json(returned["content"]), call["output_schema"]
+                )
             )
             if "evidence" in call:
                 # The model answered with the record plus its quotes. Replay

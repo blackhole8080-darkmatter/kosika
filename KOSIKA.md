@@ -480,6 +480,15 @@ workflow before execution. A direct `use_model` call sends the input record to
 that provider and accepts only a complete, strict JSON result matching the
 declared output record.
 
+`output: NAME as text` declares a model that answers in plain text. NAME
+MUST be a record with exactly one field, of type Text. The model is asked
+for the text alone, not JSON; when the answer holds one fenced code block,
+the lines inside it are the text, and otherwise the whole answer, trimmed.
+That text is the field's value. A small model writes a whole file far
+better as itself than escaped inside a JSON string. The trace keeps the
+answer as the model gave it, marked `plain`, and replay reads it the same
+way. `kosika-native` does not read such a model yet.
+
 ### General models and thinking steps
 
 `model name`, with no body or with only `deployment` and `parameters`, declares

@@ -1726,6 +1726,13 @@ def _check(program: Program) -> None:
             )
         if model.deployment is not None and not model.deployment:
             raise CheckError(f"Model {model.name!r} deployment must not be empty")
+        if model.plain:
+            written = next(r for r in program.records if r.name == model.output)
+            if len(written.fields) != 1 or written.fields[0].type_name != "Text":
+                raise CheckError(
+                    f"Model {model.name!r} answers as text, so its output "
+                    f"{model.output!r} must have exactly one field, of type Text"
+                )
         temperature = model.parameters.temperature
         if temperature is not None and (
             type(temperature) not in (int, float)

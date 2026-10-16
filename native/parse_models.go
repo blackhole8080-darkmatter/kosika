@@ -37,6 +37,9 @@ func (p *Parser) parseModel() *ModelDecl {
 			model.Deployment = &deployment
 		} else {
 			values[key] = p.identifier()
+			if key == "output" && p.check("as") && p.peek().Value == "text" {
+				parseFail("kosika-native cannot read a model that answers as text yet (at %d:%d)", p.current().Line, p.current().Column)
+			}
 		}
 	}
 	if len(values) == 0 {

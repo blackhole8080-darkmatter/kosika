@@ -90,7 +90,11 @@ def run_task(args: argparse.Namespace, task: dict[str, Any]) -> dict[str, Any]:
         shutil.copytree(source, folder)
     else:
         folder.mkdir()
-    app = App(AGENTS, bind_models=binder_for(args), model_label=args.model,
+    # A fresh copy of the agent each time: nothing it learned or remembered
+    # in one task, or with another model, may help it in the next.
+    agents = scratch / "_kosika"
+    shutil.copytree(AGENTS / "coder", agents / "coder", ignore=shutil.ignore_patterns("memory", "runs"))
+    app = App(agents, bind_models=binder_for(args), model_label=args.model,
               allow_folder=folder, allow_shell=True)
     agent = next(key for key in app.agents() if key.startswith("coder/"))
     started = time.monotonic()

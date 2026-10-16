@@ -73,6 +73,13 @@ _COMPOUND = ("+=", "-=", "*=", "/=")
 WHILE_PASSES = 1_000_000_000
 
 
+#: Words that begin a workflow step. Written where a value is expected, they
+#: are reported as such; see `parse_primary_expression`.
+_STEP_WORDS = frozenset(
+    {"classify", "extract", "summarize", "decide", "use_model", "ask", "execute", "recall", "remember", "call"}
+)
+
+
 class Parser:
     def __init__(self, tokens: list[Token]):
         self.tokens = tokens
@@ -460,6 +467,19 @@ class Parser:
                 value = LiteralExpr(number)
             elif token.kind == "IDENT":
                 self.advance()
+                if (
+                    token.value in _STEP_WORDS
+                    and self.current.kind in ("IDENT", "STRING", "NUMBER")
+                    and self.current.line == token.line
+                ):
+                    # `return classify t.text into [...]` inside a function:
+                    # said plainly, because "expected }" helps nobody.
+                    raise ParseError(
+                        f"'{token.value}' at {token.line}:{token.column} is a workflow "
+                        "step, not a value: write it in a workflow as its own line, "
+                        f"such as `answer = {token.value} ...`, and pass the answer "
+                        "to the function"
+                    )
                 if token.value in {"true", "false", "null"}:
                     literal = {"true": True, "false": False, "null": None}
                     value = LiteralExpr(literal[token.value])
@@ -753,6 +773,7 @@ class Parser:
         deployment: str | None = None
         parameters = ModelParameters()
         seen: set[str] = set()
+        plain = False
         while not self.accept("}"):
             key = self.identifier()
             if key in seen:
@@ -769,13 +790,17 @@ class Parser:
                 deployment = self.string_or_identifier()
             else:
                 values[key] = self.identifier()
+                if key == "output" and self.check("as") and self.peek().value == "text":
+                    self.advance()
+                    self.advance()
+                    plain = True
         if not values:
             # Only a deployment or parameters: still a general text model.
             values = {"input": GENERAL_INPUT, "output": GENERAL_OUTPUT}
         if set(values) != {"input", "output"}:
             raise ParseError(f"Model {name!r} requires input and output records")
         return ModelDecl(
-            name, values["input"], values["output"], deployment, parameters
+            name, values["input"], values["output"], deployment, parameters, plain=plain
         )
 
     def parse_model_parameters(self) -> ModelParameters:

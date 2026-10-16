@@ -381,6 +381,28 @@ class RestartingServerTests(unittest.TestCase):
         self.assertIsInstance(got, urllib.error.URLError)
         self.assertEqual(sum(slept), 315)
 
+    def test_a_busy_service_is_asked_again_later(self) -> None:
+        def busy(code: int) -> urllib.error.HTTPError:
+            return urllib.error.HTTPError(
+                "https://models.example.com/v1/chat",
+                code,
+                "busy",
+                None,
+                io.BytesIO(b""),  # type: ignore[arg-type]
+            )
+
+        slept, got = self.tries(
+            "https://models.example.com/v1/chat",
+            [busy(503), busy(429)],
+            answered_before=False,
+        )
+        self.assertEqual((slept, got), ([5, 15], b"ok"))
+        slept, got = self.tries(
+            "https://models.example.com/v1/chat", [busy(400)], answered_before=False
+        )
+        self.assertEqual(slept, [])
+        self.assertIsInstance(got, urllib.error.HTTPError)
+
     def test_a_server_never_reached_is_reported_at_once(self) -> None:
         refused = urllib.error.URLError(ConnectionRefusedError(10061, "refused"))
         slept, got = self.tries(

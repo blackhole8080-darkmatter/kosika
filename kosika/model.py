@@ -14,6 +14,10 @@ from typing import Any, Callable, Iterator, Protocol
 #: five minutes in all.
 RECONNECT_WAITS = (5, 10, 20, 40, 60, 60, 60, 60)
 
+#: Seconds to wait between tries while a model service says it is too busy
+#: (HTTP 429 or 503): a little over three minutes in all.
+BUSY_WAITS = (5, 15, 30, 60, 90)
+
 #: Model servers that have answered at least once while this program runs.
 #: Only one of these is waited for: a server that was never reached is more
 #: likely a wrong address than a restart, and is reported at once.
@@ -543,11 +547,24 @@ class OpenAICompatibleProvider:
 
     def _open(self, request: urllib.request.Request) -> Any:
         waits = list(RECONNECT_WAITS)
+        busy = list(BUSY_WAITS)
         while True:
             try:
                 response = urllib.request.urlopen(request, timeout=self.timeout)
                 _ANSWERED.add(_server_of(request.full_url))
                 return response
+            except urllib.error.HTTPError as exc:
+                # A service that says it is too busy, or that the rate is
+                # used up for the moment, is asked again after a while; it
+                # did not take the request, so asking again costs nothing.
+                if exc.code not in (429, 502, 503, 504) or not busy:
+                    raise
+                pause = busy.pop(0)
+                said = exc.headers.get("Retry-After") if exc.headers else None
+                if said and said.strip().isdigit():
+                    pause = min(int(said.strip()), 120)
+                exc.close()
+                time.sleep(pause)
             except (
                 urllib.error.URLError,
                 http.client.RemoteDisconnected,
