@@ -60,6 +60,33 @@ COMMANDS: Mapping[str, Callable[[Path, str], list[str]]] = {
         str(folder),
         request,
     ],
+    # Cline in act mode, approving its own steps, stopped after eight
+    # minutes. It works in the copy only; nothing reaches the person's
+    # folder unless the program writes it after its checks.
+    "cline": lambda folder, request: [
+        "cline",
+        "--cwd",
+        str(folder),
+        "--auto-approve",
+        "true",
+        "--timeout",
+        "480",
+        request,
+    ],
+    "kilo": lambda folder, request: [
+        "kilo",
+        "run",
+        "--dir",
+        str(folder),
+        request,
+    ],
+    # Letta in one headless turn, in a conversation it does not keep.
+    "letta": lambda folder, request: [
+        "letta",
+        "-p",
+        "--ephemeral",
+        request,
+    ],
 }
 #: Folders never copied: other tools' own stores, not the person's writing.
 SKIPPED = frozenset(

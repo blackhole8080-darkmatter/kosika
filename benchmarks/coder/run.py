@@ -83,7 +83,9 @@ def checked(folder: Path, checks: list[list[str]]) -> list[str]:
 
 
 def run_task(args: argparse.Namespace, task: dict[str, Any]) -> dict[str, Any]:
-    scratch = Path(tempfile.mkdtemp(prefix="kosika-coder-bench-"))
+    # An outside agent may only be shown a folder inside the one root the
+    # owner named, so with one allowed the work happens there.
+    scratch = Path(tempfile.mkdtemp(prefix="kosika-coder-bench-", dir=args.within if args.outside else None))
     folder = scratch / task["folder"]
     source = HERE / "project" / task["folder"]
     if source.is_dir():
@@ -95,7 +97,8 @@ def run_task(args: argparse.Namespace, task: dict[str, Any]) -> dict[str, Any]:
     agents = scratch / "_kosika"
     shutil.copytree(AGENTS / "coder", agents / "coder", ignore=shutil.ignore_patterns("memory", "runs"))
     app = App(agents, bind_models=binder_for(args), model_label=args.model,
-              allow_folder=folder, allow_shell=True)
+              allow_folder=folder, allow_shell=True,
+              outside=tuple(args.outside), outside_within=Path(args.within) if args.outside else None)
     agent = next(key for key in app.agents() if key.startswith("coder/"))
     started = time.monotonic()
     job = app.start(agent, {"text": task["task"]})
@@ -138,10 +141,14 @@ def main() -> int:
     parser.add_argument("--limit-seconds", type=float, default=3600.0, help="Seconds a task may take.")
     parser.add_argument("--only", help="Run only the task with this id.")
     parser.add_argument("--keep", action="store_true", help="Keep each task's folder to look at.")
+    parser.add_argument("--outside", action="append", default=[], help="An outside agent the coder may ask first, such as cline. May be repeated.")
+    parser.add_argument("--within", default=str(Path.home() / "Aryan_Private" / "kosika-bench"), help="The only folder outside agents may be shown; the tasks run inside it.")
     parser.add_argument("--tasks", default="tasks.json", help="The task file in this folder: tasks.json, or hard.json.")
     args = parser.parse_args()
     if args.url and args.protocol == "ollama":
         args.protocol = "openai"
+    if args.outside:
+        Path(args.within).mkdir(parents=True, exist_ok=True)
     tasks = json.loads((HERE / args.tasks).read_text(encoding="utf-8"))
     if args.only:
         tasks = [task for task in tasks if task["id"] == args.only]

@@ -1934,7 +1934,7 @@ def build_parser() -> argparse.ArgumentParser:
     outside_parser = subparsers.add_parser(
         "outside",
         help=(
-            "Say which outside command-line agents (devin, omp) Kosika's agents "
+            "Say which outside command-line agents (devin, omp, cline, kilo, letta) Kosika's agents "
             "may ask for help, and the one folder they may be shown."
         ),
     )

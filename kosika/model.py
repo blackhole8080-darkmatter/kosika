@@ -18,6 +18,10 @@ RECONNECT_WAITS = (5, 10, 20, 40, 60, 60, 60, 60)
 #: (HTTP 429 or 503): a little over three minutes in all.
 BUSY_WAITS = (5, 15, 30, 60, 90)
 
+#: How Kosika names itself to a model service. Some services, behind
+#: Cloudflare, turn away a request that names no program (HTTP 403, 1010).
+USER_AGENT = "Kosika/1.0"
+
 #: Model servers that have answered at least once while this program runs.
 #: Only one of these is waited for: a server that was never reached is more
 #: likely a wrong address than a restart, and is reported at once.
@@ -265,7 +269,7 @@ class OpenAICompatibleProvider:
         """Ask for a streamed reply and put it back together as one reply."""
 
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-        headers = {"Content-Type": "application/json"}
+        headers = {"Content-Type": "application/json", "User-Agent": USER_AGENT}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         request_object = urllib.request.Request(
@@ -399,7 +403,7 @@ class OpenAICompatibleProvider:
                 )
             )
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-        headers = {"Content-Type": "application/json"}
+        headers = {"Content-Type": "application/json", "User-Agent": USER_AGENT}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         request_object = urllib.request.Request(
@@ -511,7 +515,7 @@ class OpenAICompatibleProvider:
 
     def _exchange(self, payload: dict[str, Any]) -> Any:
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-        headers = {"Content-Type": "application/json"}
+        headers = {"Content-Type": "application/json", "User-Agent": USER_AGENT}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         request_object = urllib.request.Request(
