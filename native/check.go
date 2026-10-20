@@ -1291,10 +1291,72 @@ func Check(program *Program) (err error) {
 			panic(caught)
 		}
 	}()
+	if verified := withChecksAsSteps(program); verified != nil {
+		program = verified
+	}
 	c := newChecker(program)
 	c.checkDeclarations()
 	c.checkTests()
 	return nil
+}
+
+// withChecksAsSteps checks `verify` as _check_verify in kosika/checker.py
+// does: a verified step is valid when the program is valid with the check
+// written as an ordinary step straight after it, where the answer is in
+// scope under the step's own name. It gives that program, or nil when no
+// step verifies.
+func withChecksAsSteps(program *Program) *Program {
+	functions := map[string]*FuncDecl{}
+	for _, decl := range program.Functions {
+		if functions[decl.Name] == nil {
+			functions[decl.Name] = decl
+		}
+	}
+	verifies := false
+	rewritten := *program
+	rewritten.Workflows = nil
+	for _, workflow := range program.Workflows {
+		copied := *workflow
+		copied.Steps = nil
+		for index, step := range workflow.Steps {
+			if step.Verify == nil {
+				copied.Steps = append(copied.Steps, step)
+				continue
+			}
+			verifies = true
+			if step.Call.Kind != "model" {
+				checkFail("Step %s cannot verify: only a model step (use_model or a thinking step) gives an answer to check", pyRepr(step.Name))
+			}
+			if len(step.Branches) > 0 {
+				checkFail("Step %s cannot verify: a match step makes one of several calls", pyRepr(step.Name))
+			}
+			decl := functions[step.Verify.Name]
+			if step.Verify.Kind != "function" || decl == nil {
+				checkFail("Step %s cannot verify: the check must be a function declared in the program", pyRepr(step.Name))
+			}
+			if decl.Out != "Text" {
+				checkFail("Step %s cannot verify: function %s must return Text, the reason the answer is refused or \"\" when it is fine, but returns %s", pyRepr(step.Name), pyRepr(decl.Name), pyRepr(decl.Out))
+			}
+			plain := *step
+			plain.Verify = nil
+			copied.Steps = append(copied.Steps, &plain)
+			checkName := step.Name + "__verified"
+			copied.Steps = append(copied.Steps, &Step{Name: checkName, Call: step.Verify, Binding: checkName, Return: checkName})
+			if index == len(workflow.Steps)-1 {
+				// The workflow's value is its last step's. Put the answer
+				// back in that place so the workflow's own type still holds.
+				again := plain
+				again.Name, again.Binding, again.Return = step.Name+"__answer", step.Name+"__answer", step.Name+"__answer"
+				again.Fallback, again.Retries = nil, 0
+				copied.Steps = append(copied.Steps, &again)
+			}
+		}
+		rewritten.Workflows = append(rewritten.Workflows, &copied)
+	}
+	if !verifies {
+		return nil
+	}
+	return &rewritten
 }
 
 func (c *checker) checkDeclarations() {

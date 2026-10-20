@@ -201,6 +201,10 @@ type Step struct {
 	// Retries is how many more times a model is asked when its answer is
 	// refused: `retry N`.
 	Retries int
+	// Verify is the program's own check of a model's answer: `verify
+	// CHECK(...)`, a function returning the reason it refuses the answer,
+	// or "" when the answer is fine. Nil when there is none.
+	Verify *StepCall
 	// Fallback is the call made instead when Call fails: `otherwise`.
 	Fallback *StepCall
 	// A match step makes one of its Branches' calls, chosen by Subject.

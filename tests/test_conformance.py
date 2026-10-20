@@ -413,6 +413,10 @@ class NativeTests(unittest.TestCase):
             "  fn grown(self, by: Number) -> Box { return {..self, size: self.size + by} }\n}\n"
             "model writer {\n  input: Ask\n  output: Said\n}\n"
             "model helper {\n  input: Ask\n  output: Answer\n}\n"
+            "model editor {\n  input: Ask\n  output: Said\n}\n"
+            "fn short(said: Said, ask: Ask) -> Text {\n"
+            '  if said.text.length() > ask.text.length() { return "Too long." }\n'
+            '  return ""\n}\n'
             "default model assistant\n"
             'agent plain {\n  model: helper\n  can: []\n  instructions: "Help."\n}\n'
             "fn scaled(base: Number, factor: Number) -> Number {\n"
@@ -429,6 +433,7 @@ class NativeTests(unittest.TestCase):
             "  nested = call inner(ask)\n"
             "  third = bad(ask) otherwise quiet(ask)\n"
             "  retried = use_model writer(text: first.text, kind: ask.kind) retry 2\n"
+            "  edited = use_model editor(text: ask.text, kind: ask.kind) verify short(edited, ask) retry 1\n"
             '  kind = classify ask.text into ["a", "b"]\n'
             "  brief = summarize ask.text\n"
             "  helped = ask plain(text: ask.text, kind: ask.kind)\n"
@@ -439,6 +444,7 @@ class NativeTests(unittest.TestCase):
             "writer": [{"text": "x"}, {"text": "y", "n": "bad"}, {"text": "ok", "n": 2}],
             "assistant": [{"label": "a", "confidence": 1}, {"text": "short"}],
             "helper": [{"words": 1}, {"text": "fine", "did": ["claimed"]}],
+            "editor": [{"text": "far too long", "n": 1}, {"text": "ok", "n": 1}],
         }
         with tempfile.TemporaryDirectory() as scratch:
             folder = Path(scratch)

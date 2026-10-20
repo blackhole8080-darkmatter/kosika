@@ -1,0 +1,16 @@
+// Refused: a check gives the reason it refuses the answer, as Text.
+
+record Msg { text: Text }
+
+model writer {
+  input: Msg
+  output: Msg
+}
+
+fn fine(m: Msg) -> Bool {
+  return true
+}
+
+workflow main(m: Msg) -> Msg {
+  said = use_model writer(m.text) verify fine(said)
+}

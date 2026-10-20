@@ -1,0 +1,15 @@
+// Refused: only a model's answer can be checked with verify.
+
+record Msg { text: Text }
+
+fn echo(m: Msg) -> Msg {
+  return m
+}
+
+fn fine(m: Msg) -> Text {
+  return ""
+}
+
+workflow main(m: Msg) -> Msg {
+  said = echo(m) verify fine(said)
+}

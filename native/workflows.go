@@ -60,6 +60,18 @@ type run struct {
 	// may be started in it.
 	folder     string
 	allowShell bool
+	// check is the step's own `verify`, for the model asked now; nil when
+	// there is none.
+	check *answerCheck
+}
+
+// An answerCheck is a step's `verify`: the call of the program's function,
+// and where it sees the answer under the step's name.
+type answerCheck struct {
+	call        *StepCall
+	binding     string
+	environment *Scope
+	at          frame
 }
 
 // checkpoint stops a run that is past its deadline.
@@ -285,8 +297,54 @@ func (r *run) attempt(step *Step, call *StepCall, environment *Scope, at frame, 
 			}
 		}
 	}
+	if step.Verify != nil {
+		r.check = &answerCheck{step.Verify, step.Binding, environment, at}
+		defer func() { r.check = nil }()
+	}
 	value, events = r.call(call, environment, at, depth, step.Retries)
 	return value, events, nil
+}
+
+// judge gives an answer to the step's check, as _verify_check in
+// kosika/runtime.py does, and gives back the reason it is refused ("" when
+// it is fine) and the check's call as trace events.
+func (r *run) judge(answer Value) (string, []Value) {
+	check := r.check
+	saved, had := check.environment.vars[check.binding]
+	check.environment.vars[check.binding] = answer
+	defer func() {
+		if had {
+			check.environment.vars[check.binding] = saved
+		} else {
+			delete(check.environment.vars, check.binding)
+		}
+	}()
+	args := resolveUnnamed(check.call.Args, r.checker.stepParams(check.call))
+	arguments := map[string]Value{}
+	expressionEvents := r.machine.collect(func() {
+		for _, arg := range args {
+			arguments[arg.Name] = r.machine.eval(arg.Value, check.at)
+		}
+	})
+	decl, captured, funcs := r.machine.functions[check.call.Name], map[string]Value(nil), map[string]*FuncDecl(nil)
+	if value, bound := check.environment.lookup(check.call.Name); bound {
+		if closure, ok := value.(*Closure); ok {
+			decl, captured, funcs = closure.Decl, closure.Captured, closure.Funcs
+		}
+	}
+	var verdict Value
+	var gathered []Value
+	if r.traced {
+		gathered = []Value{}
+		saved := r.machine.tracing.events
+		r.machine.tracing.events = &gathered
+		verdict = r.machine.callTraced(decl, arguments, captured, funcs, 0, expressionEvents)
+		r.machine.tracing.events = saved
+	} else {
+		verdict = r.machine.invoke(decl, arguments, captured, funcs, 0)
+	}
+	text, _ := verdict.(string)
+	return text, gathered
 }
 
 // A stepNote is what a call says about itself beyond its result, for its
@@ -296,6 +354,7 @@ type stepNote struct {
 	content     string
 	usage       Value
 	rejected    []Value
+	verified    []Value // the step's check of the answer, when it has one
 	messages    []Value
 	modelSteps  int
 	reformatted *string
@@ -366,6 +425,9 @@ func (r *run) call(call *StepCall, environment *Scope, at frame, depth, retries 
 		result := r.model(model, arguments, retries)
 		returned := event("model_return", "model", model.Name, "result", result, "content", r.note.content,
 			"finish_reason", "stop", "usage", r.note.usage)
+		if r.note.verified != nil {
+			returned.set("verified", eventList(r.note.verified))
+		}
 		if len(r.note.rejected) > 0 {
 			returned.set("rejected", r.note.rejected)
 		}
@@ -494,6 +556,16 @@ func (r *run) model(model *ModelDecl, arguments map[string]Value, retries int) V
 				problem = "Invalid structured model output: " + shape
 			} else {
 				problem = brokenPromise(model, arguments, answer.(*Record))
+			}
+		}
+		if problem == "" && r.check != nil {
+			// The program's own check: a complaint refuses the answer like
+			// any other fault, so `retry` shows it back to the model.
+			complaint, checked := r.judge(answer)
+			if complaint = strings.TrimSpace(complaint); complaint != "" {
+				problem = "The answer was checked and refused: " + complaint
+			} else if r.traced {
+				r.note.verified = checked
 			}
 		}
 		if problem == "" {

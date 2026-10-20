@@ -187,13 +187,15 @@ func (p *Parser) parseBudget() []Budget {
 	}
 }
 
-// stepEnding reads what may follow a step's call: asking a model again,
-// and a fallback. A check, votes and a stronger model are refused.
+// stepEnding reads what may follow a step's call: the program's check of
+// a model's answer, asking a model again, and a fallback. Votes and a
+// stronger model are refused.
 func (p *Parser) stepEnding(step *Step) {
-	for _, word := range []string{"verify", "vote"} {
-		if p.check(word) {
-			notYetStep(p.current(), "a step with "+word)
-		}
+	if p.accept("verify") {
+		step.Verify = p.parseStepCall()
+	}
+	if p.check("vote") {
+		notYetStep(p.current(), "a step with vote")
 	}
 	if p.accept("retry") {
 		token := p.advance()

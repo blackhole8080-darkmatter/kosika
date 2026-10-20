@@ -3506,6 +3506,21 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   programs with workflows, agents and tools; the guide does not teach
   those yet.
 
+### The native engine checks a model's answer with `verify`
+
+- `reply = use_model writer(msg.text) verify short_enough(reply, msg)
+  retry 2` runs in native/ as in the reference: the program's function is
+  given each otherwise acceptable answer under the step's name, a reason
+  it gives refuses the answer like any fault so `retry` shows it back to
+  the model, and the accepted answer's check is kept in the trace as
+  `verified`, which each engine's replay holds to having found nothing
+  wrong. Checked as the reference checks it, by checking the program with
+  the check written as a step after it (native/check.go
+  `withChecksAsSteps`).
+- Held by `refused/verify_model.kos`, `refused/verify_text.kos`, and a
+  verified step in the run whose trace both engines must write alike and
+  replay from each other.
+
 ### Plain values as workflow steps, in both engines
 
 - A step may be a value worked out by code (kosika/parser.py

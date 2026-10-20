@@ -406,7 +406,7 @@ func replayEvents(events []Value, depth int) Value {
 			}
 		}
 		if key == "model" || key == "agent" {
-			replayAnswer(key, call, returned, result)
+			replayAnswer(key, call, returned, result, version)
 		}
 		if key == "tool" && version >= 3 {
 			_, hasInput := entry(call, "input_schema").(*Record)
@@ -451,7 +451,7 @@ func replayEvents(events []Value, depth int) Value {
 
 // replayAnswer reads a model's or an agent's answer again: it must be the
 // outcome recorded.
-func replayAnswer(key string, call, returned *Record, result Value) {
+func replayAnswer(key string, call, returned *Record, result Value, version int) {
 	_, hasInput := entry(call, "input_schema").(*Record)
 	_, hasOutput := entry(call, "output_schema").(*Record)
 	if !hasInput || !hasOutput {
@@ -486,8 +486,18 @@ func replayAnswer(key string, call, returned *Record, result Value) {
 	if !sameJSON(answered, result) {
 		replayFail("Model response and recorded outcome differ")
 	}
-	if _, verified := returned.Fields["verified"]; verified {
-		replayFail("kosika-native cannot replay a verified answer yet")
+	if recorded, verified := returned.Fields["verified"]; verified {
+		// The program's own check of this answer was recorded as the
+		// function call it was. It must be well formed and must have found
+		// nothing wrong, or the answer would not be here.
+		checked, ok := recorded.([]Value)
+		if !ok || len(checked) != 2 {
+			replayFail("Verified answer requires its recorded check")
+		}
+		validateFunctionEvents(checked, version, 0)
+		if returnedCheck, ok := checked[1].(*Record); !ok || returnedCheck.Fields["result"] != "" {
+			replayFail("Trace keeps an answer its own check refused")
+		}
 	}
 	if key == "agent" {
 		validateAgentTranscript(call, returned)
