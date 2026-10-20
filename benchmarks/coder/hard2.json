@@ -1,0 +1,69 @@
+[
+ {
+  "id": "py-bpe",
+  "folder": "py",
+  "task": "write bpe.py with train(text, n) that learns n byte-pair-encoding merges over the characters of text and returns them as a list of (left, right) pairs, and encode(text, merges) that applies the merges in order and returns the list of tokens. When merging, replace pairs left to right without overlap. When two pairs are equally frequent, take the one that first occurs earlier in the text. Also write test_bpe.py with pytest tests",
+  "checks": [
+   [
+    "python",
+    "-m",
+    "pytest",
+    "-q",
+    "test_bpe.py"
+   ],
+   [
+    "python",
+    "-c",
+    "from bpe import train, encode\nm=train('aaabdaaabac', 3)\nassert [tuple(x) for x in m]==[('a','a'),('aa','a'),('aaa','b')], m\nassert encode('aaabdaaabac', m)==['aaab','d','aaab','a','c'], encode('aaabdaaabac', m)\nassert encode('xyz', m)==['x','y','z']"
+   ]
+  ]
+ },
+ {
+  "id": "py-astar",
+  "folder": "py",
+  "task": "write astar.py with shortest_path(grid, start, goal) using A* search on a grid given as a list of strings where '#' is a wall and every other character is open; moves are up, down, left and right; start and goal are (row, col) tuples; return the shortest path as a list of (row, col) from start to goal inclusive, or None when there is no path or start or goal is a wall. Also write test_astar.py with pytest tests",
+  "checks": [
+   [
+    "python",
+    "-m",
+    "pytest",
+    "-q",
+    "test_astar.py"
+   ],
+   [
+    "python",
+    "-c",
+    "from astar import shortest_path as s\ng=['....#...','.##.#.#.','.#..#.#.','.#.##.#.','...#..#.','.#...#..']\np=s(g,(0,0),(5,7))\nassert p is not None and tuple(p[0])==(0,0) and tuple(p[-1])==(5,7)\nfor a,b in zip(p,p[1:]): assert abs(a[0]-b[0])+abs(a[1]-b[1])==1\nfor r,c in p: assert g[r][c]!='#'\nimport collections\ndef bfs(g,a,b):\n  q=collections.deque([(a,0)]); seen={a}\n  while q:\n    (r,c),d=q.popleft()\n    if (r,c)==b: return d\n    for dr,dc in ((1,0),(-1,0),(0,1),(0,-1)):\n      n=(r+dr,c+dc)\n      if 0<=n[0]<len(g) and 0<=n[1]<len(g[0]) and g[n[0]][n[1]]!='#' and n not in seen: seen.add(n); q.append((n,d+1))\nassert len(p)-1==bfs(g,(0,0),(5,7))\nassert s(['.#.','###','...'],(0,0),(2,2)) is None\nassert s(g,(0,4),(0,0)) is None"
+   ]
+  ]
+ },
+ {
+  "id": "kosika-paper-agent",
+  "folder": "agents",
+  "task": "create a Kosika agent in papers/main.kos that is given a record with the text of a paper abstract; uses extract to pull a record Paper with a title and a field out of it; uses decide to answer whether the paper is about machine learning; remembers in memory how many machine learning papers it has seen; returns a record with the title, the field, whether it is about machine learning, and the count; and has at least two tests that give answers for the model",
+  "checks": [
+   [
+    "python",
+    "-c",
+    "import sys; sys.path.insert(0, r'C:\\Users\\Aryan\\Aryan_Private\\projects\\kosika')\nfrom kosika.modules import load_program\nfrom kosika.testing import run_tests\nr=run_tests(load_program('papers/main.kos'))\nassert len(r)>=2 and all(x.passed for x in r), [(x.name, x.passed, getattr(x,'message','')) for x in r]\ns=open('papers/main.kos', encoding='utf-8').read()\nassert 'extract' in s and 'decide' in s and 'memory' in s"
+   ]
+  ]
+ },
+ {
+  "id": "dashboard",
+  "folder": "site",
+  "task": "create a one-page analytics dashboard with plain HTML, CSS and JavaScript in index.html, styles.css and script.js: a header with a theme toggle button that switches between dark and light and remembers the choice in localStorage; three summary cards laid out with CSS grid; a line chart of twelve monthly numbers drawn with the canvas 2D API and no library; a table of eight products with name, units and revenue where clicking a column header sorts by that column; every button has an aria-label; and the layout works on a phone",
+  "checks": [
+   [
+    "python",
+    "-c",
+    "import pathlib,re; h=pathlib.Path('index.html').read_text(encoding='utf-8'); c=pathlib.Path('styles.css').read_text(encoding='utf-8'); j=pathlib.Path('script.js').read_text(encoding='utf-8')\nassert '<canvas' in h and '<table' in h and 'aria-label' in h and 'styles.css' in h and 'script.js' in h\nrows=len(re.findall(r'<tr', h)); assert rows>=9 or ('<tbody' in h and 'createElement' in j), rows\nassert 'grid-template' in c and '@media' in c and ('data-theme' in c or '.light' in c or '.dark' in c)\nassert 'getContext' in j and 'localStorage' in j and 'sort' in j and ('lineTo' in j)"
+   ],
+   [
+    "node",
+    "--check",
+    "script.js"
+   ]
+  ]
+ }
+]
