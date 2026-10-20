@@ -1,0 +1,13 @@
+// Refused: a model that answers as text fills one Text field.
+
+record Ask { text: Text }
+record Code { text: Text lines: Number }
+
+model writer {
+  input: Ask
+  output: Code as text
+}
+
+workflow main(a: Ask) -> Code {
+  code = use_model writer(a.text)
+}

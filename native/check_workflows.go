@@ -224,6 +224,11 @@ func (c *checker) checkModels() {
 		if model.Deployment != nil && *model.Deployment == "" {
 			checkFail("Model %s deployment must not be empty", name)
 		}
+		if model.Plain {
+			if fields := c.recordFields(model.Output); len(fields) != 1 || fields[0].Type != "Text" {
+				checkFail("Model %s answers as text, so its output %s must have exactly one field, of type Text", name, pyRepr(model.Output))
+			}
+		}
 		if !finiteBetween(model.Temperature, 0, 2) {
 			checkFail("Model %s temperature must be between 0 and 2", name)
 		}

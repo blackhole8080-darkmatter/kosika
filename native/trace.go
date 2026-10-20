@@ -182,7 +182,7 @@ func failureType(message string) string {
 	switch {
 	case strings.HasPrefix(message, "$") || strings.Contains(message, " is a required property"):
 		return "SchemaValidationError"
-	case strings.HasPrefix(message, "Invalid structured model output"), strings.HasPrefix(message, "The answer was checked and refused"):
+	case strings.HasPrefix(message, "Invalid structured model output"), strings.HasPrefix(message, "The answer was checked and refused"), message == "The model gave no text":
 		return "RejectedAnswer"
 	case strings.HasPrefix(message, "Scripted model provider"), strings.HasPrefix(message, "Model "):
 		return "ModelProviderError"

@@ -261,6 +261,9 @@ type ModelDecl struct {
 	// Evidence is the rule a model made for `with evidence` follows
 	// (fields, quotes or quotes_if_true), "" for one without.
 	Evidence string
+	// Plain is `output: NAME as text`: the model answers in plain text,
+	// which fills NAME's one Text field.
+	Plain bool
 }
 
 type Program struct {

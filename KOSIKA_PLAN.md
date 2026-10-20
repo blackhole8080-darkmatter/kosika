@@ -3506,6 +3506,20 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   programs with workflows, agents and tools; the guide does not teach
   those yet.
 
+### Models that answer as text, in the native engine and in tests
+
+- `output: NAME as text` reads, checks and runs in native/: the model is
+  asked for plain text, one fenced block is unwrapped, an empty answer is
+  refused, and the trace marks the answer `plain` for either engine's
+  replay.
+- In both engines a test now scripts such a model with its record,
+  `answers writer: [{text: "..."}]`, and the model is taken to have said
+  that text. Before, the scripted model said the record as JSON, which a
+  real model answering as text never does, so its tests could not say
+  what it wrote.
+- Held by `cases/plain.kos`, `refused/plain_fields.kos`, and a plain step
+  in the run whose trace both engines write alike.
+
 ### The native engine reads `parallel` blocks
 
 - `parallel { a = ...  b = ... }` parses and is checked in native/ as in

@@ -190,6 +190,8 @@ func LowerThinking(program *Program) (lowered *Program, refused string) {
 			made.Name, made.Input, made.Output = name, input, output
 			made.Provider, made.Verb, made.Default = base.Name, call.Verb, false
 			made.Evidence = kind
+			// What a thinking step gives is a record, whatever its model.
+			made.Plain = false
 			generated[name] = &made
 			order = append(order, name)
 		}

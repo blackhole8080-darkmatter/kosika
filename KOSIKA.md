@@ -487,7 +487,8 @@ the lines inside it are the text, and otherwise the whole answer, trimmed.
 That text is the field's value. A small model writes a whole file far
 better as itself than escaped inside a JSON string. The trace keeps the
 answer as the model gave it, marked `plain`, and replay reads it the same
-way. `kosika-native` does not read such a model yet.
+way. A test scripts such a model with its record, `answers writer:
+[{text: "..."}]`, and the model is taken to have said that field's text.
 
 ### General models and thinking steps
 

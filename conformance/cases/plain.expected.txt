@@ -1,0 +1,5 @@
+PASS  a fenced file is taken as itself
+PASS  text without a fence is taken whole, trimmed
+PASS  a refused answer is asked again
+PASS  no text at all is refused
+4 passed, 0 failed

@@ -219,6 +219,17 @@ class _Counted:
         return self.provider.complete(request)
 
 
+def _scripted_content(answer: Any, plain: bool) -> str:
+    """What a scripted model says. A model `as text` says the text of its
+    record's one field, as a real one would; any other says the record."""
+
+    if plain and isinstance(answer, dict) and len(answer) == 1:
+        (text,) = answer.values()
+        if isinstance(text, str):
+            return text
+    return json.dumps(answer)
+
+
 def _run_one(
     program: Program,
     test: TestDecl,
@@ -268,9 +279,13 @@ def _run_one(
         **bind_kosika_tools(program),
         **bind_memory_tools(program, None, store=MemoryStore()),
     }
+    plain = {model.name for model in program.models if model.plain}
     providers: dict[str, Any] = dict(live or {}) or {
         name: ScriptedModelProvider(
-            [ModelResponse(content=json.dumps(answer)) for answer in answers]
+            [
+                ModelResponse(content=_scripted_content(answer, name in plain))
+                for answer in answers
+            ]
         )
         for name, answers in scripts.items()
     }

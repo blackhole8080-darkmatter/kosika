@@ -463,11 +463,19 @@ func replayAnswer(key string, call, returned *Record, result Value, version int)
 	if entry(returned, "finish_reason") != "stop" || !hasContent {
 		replayFail("Model trace contains an incomplete response")
 	}
-	parsed, unreadable := parseStrictJSON(content)
-	if unreadable != "" {
-		replayFail("%s", unreadable)
+	var answered Value
+	if field, plain := returned.Fields["plain"].(string); plain {
+		// A model `as text` answered in plain text, read the same way.
+		record := newRecord()
+		record.set(field, unfenced(content))
+		answered = record
+	} else {
+		parsed, unreadable := parseStrictJSON(content)
+		if unreadable != "" {
+			replayFail("%s", unreadable)
+		}
+		answered = fillAbsentSchema(parsed, entry(call, "output_schema"))
 	}
-	answered := fillAbsentSchema(parsed, entry(call, "output_schema"))
 	if kind, quoted := call.Fields["evidence"]; quoted {
 		// The model answered with the record plus its quotes. Replay proves
 		// the quotes again from the recorded input.

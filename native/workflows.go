@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // A scriptedTool gives a test's answers for a tool, in order.
@@ -454,6 +455,10 @@ func (r *run) call(call *StepCall, environment *Scope, at frame, depth, retries 
 		result := r.model(model, arguments, retries)
 		returned := event("model_return", "model", model.Name, "result", result, "content", r.note.content,
 			"finish_reason", "stop", "usage", r.note.usage)
+		if model.Plain {
+			returned = event("model_return", "model", model.Name, "result", result, "content", r.note.content,
+				"finish_reason", "stop", "plain", r.checker.recordFields(model.Output)[0].Name, "usage", r.note.usage)
+		}
 		if r.note.evidence != nil {
 			returned.set("evidence", r.note.evidence.quotes)
 		}
@@ -752,6 +757,22 @@ func (r *run) askOnce(model *ModelDecl, bound string, arguments map[string]Value
 		{Role: "system", Content: "Return only one JSON object matching this JSON Schema. Do not invoke tools or include Markdown. Schema: " + pyJSON(asked, true) + task},
 		{Role: "user", Content: pyJSON(input, true)},
 	}
+	again := " Return one corrected JSON object."
+	field := ""
+	if model.Plain {
+		// `as text`: asked for the text alone, which fills the record's
+		// one Text field.
+		field = r.checker.recordFields(model.Output)[0].Name
+		asked := pyJSON(input, true)
+		if text, ok := arguments["text"].(string); ok && len(arguments) == 1 {
+			asked = text
+		}
+		messages = []chatMessage{
+			{Role: "system", Content: "Answer with only the text asked for, in plain text: no JSON and nothing before or after it. When the answer is a file, give the whole file, every line, in one fenced code block." + task},
+			{Role: "user", Content: asked},
+		}
+		again = " Answer again, corrected."
+	}
 	var note answerNote
 	rejected := 0
 	for {
@@ -760,9 +781,24 @@ func (r *run) askOnce(model *ModelDecl, bound string, arguments map[string]Value
 			runFail("Model step requires a completed response without tool calls")
 		}
 		problem := ""
-		answer, unreadable := parseStrictJSON(response.Content)
+		var answer Value
+		unreadable := ""
+		if model.Plain {
+			answer = newRecord()
+			if strings.TrimSpace(response.Content) == "" {
+				unreadable = "no text"
+			} else {
+				answer.(*Record).set(field, unfenced(response.Content))
+			}
+		} else {
+			answer, unreadable = parseStrictJSON(response.Content)
+		}
 		note.evidence = nil
-		if unreadable != "" {
+		if model.Plain && unreadable != "" {
+			problem = "The model gave no text"
+		} else if model.Plain {
+			problem = brokenPromise(model, arguments, answer.(*Record))
+		} else if unreadable != "" {
 			problem = "Invalid structured model output: " + unreadable
 		} else if model.Evidence != "" {
 			answer = fillAbsentSchema(answer, asked)
@@ -812,8 +848,62 @@ func (r *run) askOnce(model *ModelDecl, bound string, arguments map[string]Value
 		note.rejected = append(note.rejected, refusal)
 		messages = append(messages,
 			chatMessage{Role: "assistant", Content: response.Content},
-			chatMessage{Role: "user", Content: "That answer was rejected: " + problem + " Return one corrected JSON object."})
+			chatMessage{Role: "user", Content: "That answer was rejected: " + problem + again})
 	}
+}
+
+// unfenced is a plain answer as the text it gives, as unfenced in
+// kosika/model_steps.py: the lines inside the one fenced block it holds,
+// or else all of it, without the blank space around.
+func unfenced(text string) string {
+	lines := pySplitLines(pyStrip(text))
+	var fences []int
+	for index, line := range lines {
+		if strings.HasPrefix(strings.TrimLeftFunc(line, unicode.IsSpace), "```") {
+			fences = append(fences, index)
+		}
+	}
+	if len(fences) == 2 {
+		return strings.Join(lines[fences[0]+1:fences[1]], "\n")
+	}
+	return pyStrip(text)
+}
+
+// pyStrip is Python's str.strip(): whitespace off both ends.
+func pyStrip(text string) string {
+	return strings.TrimFunc(text, pyWhitespace)
+}
+
+func pyWhitespace(r rune) bool {
+	return unicode.IsSpace(r) || (r >= 0x1c && r <= 0x1f)
+}
+
+// pySplitLines is Python's str.splitlines(): the line breaks it knows,
+// \r\n as one, and no empty line after a last break.
+func pySplitLines(text string) []string {
+	var lines []string
+	start := 0
+	runes := []rune(text)
+	for i := 0; i < len(runes); i++ {
+		switch runes[i] {
+		case '\n', '\v', '\f', 0x1c, 0x1d, 0x1e, 0x85, 0x2028, 0x2029:
+		case '\r':
+			lines = append(lines, string(runes[start:i]))
+			if i+1 < len(runes) && runes[i+1] == '\n' {
+				i++
+			}
+			start = i + 1
+			continue
+		default:
+			continue
+		}
+		lines = append(lines, string(runes[start:i]))
+		start = i + 1
+	}
+	if start < len(runes) {
+		lines = append(lines, string(runes[start:]))
+	}
+	return lines
 }
 
 func deployment(model *ModelDecl) string {

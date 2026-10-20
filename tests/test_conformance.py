@@ -419,6 +419,8 @@ class NativeTests(unittest.TestCase):
             "model stronger {\n  input: Ask\n  output: Said\n}\n"
             "model judge {\n  input: Ask\n  output: Said\n}\n"
             "model reader {\n  input: Ask\n  output: Said\n}\n"
+            "record Note { text: Text }\n"
+            "model scribe {\n  input: Ask\n  output: Note as text\n}\n"
             "fn short(said: Said, ask: Ask) -> Text {\n"
             '  if said.text.length() > ask.text.length() { return "Too long." }\n'
             '  return ""\n}\n'
@@ -443,6 +445,7 @@ class NativeTests(unittest.TestCase):
             "  lifted = use_model editor(text: ask.text, kind: ask.kind) escalate stronger\n"
             '  quoted = classify ask.text into ["a", "b"] with evidence using reader retry 1\n'
             "  parallel {\n    together = sized(ask)\n    apart = quiet(ask)\n  }\n"
+            "  written = use_model scribe(text: ask.text, kind: ask.kind)\n"
             '  kind = classify ask.text into ["a", "b"]\n'
             "  brief = summarize ask.text\n"
             "  helped = ask plain(text: ask.text, kind: ask.kind)\n"
@@ -455,6 +458,7 @@ class NativeTests(unittest.TestCase):
             "helper": [{"words": 1}, {"text": "fine", "did": ["claimed"]}],
             "editor": [{"text": "far too long", "n": 1}, {"text": "ok", "n": 1}, {"text": 1, "n": 1}],
             "stronger": [{"text": "up", "n": 3}],
+            "scribe": [{"text": "a note"}],
             "reader": [
                 {"label": "a", "confidence": 1, "evidence": ["nope"]},
                 {"label": "b", "confidence": 1, "evidence": ["HI"]},

@@ -44,8 +44,8 @@ depth), `if`, `match`, `for`, `while`, `repeat`, `try`, `fail`, text with
 values written in (`f"..."`), and the built-in methods on text, numbers,
 lists, maps and optional values. Whole numbers are exact at any size.
 
-Models, with the records they take and give, and general ones that take
-and give text. Workflows, whose steps call
+Models, with the records they take and give, general ones that take
+and give text, and ones that answer `as text`. Workflows, whose steps call
 a function, run another workflow, use a tool through an agent, or ask a
 model (its answer checked by a function of the program with `verify`,
 asked again on a refused answer with `retry`, asked several times with
@@ -88,7 +88,7 @@ print what the reference engine prints, word for word. See
 
 ## What it does not have yet
 
-- Models that answer `as text`, and steps with `learn`.
+- Steps with `learn`.
 - An agent's plan that writes files, or an agent with its own `check`:
   the reference checks such a plan before showing it, and those checks are
   not here yet, so such a plan is refused by name. Replaying an agent

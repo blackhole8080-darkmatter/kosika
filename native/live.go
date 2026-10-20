@@ -66,14 +66,25 @@ type modelProvider interface {
 
 // scriptedProvider gives a test's answers in order, as JSON text, as the
 // reference's ScriptedModelProvider does.
-type scriptedProvider struct{ script *scriptedTool }
+type scriptedProvider struct {
+	script *scriptedTool
+	// plain is a model `as text`, which says the text of its record's one
+	// field, as a real one would.
+	plain bool
+}
 
 func (s *scriptedProvider) complete(*modelRequest) *modelResponse {
 	s.script.asked++
 	if s.script.asked > len(s.script.answers) {
 		runFail("Scripted model provider has no response left")
 	}
-	return &modelResponse{Content: pyJSON(s.script.answers[s.script.asked-1], false), Finish: "stop"}
+	answer := s.script.answers[s.script.asked-1]
+	if record, ok := answer.(*Record); ok && s.plain && len(record.Keys) == 1 {
+		if text, ok := record.Fields[record.Keys[0]].(string); ok {
+			return &modelResponse{Content: text, Finish: "stop"}
+		}
+	}
+	return &modelResponse{Content: pyJSON(answer, false), Finish: "stop"}
 }
 
 // httpProvider speaks to a model server. Every request is capped at

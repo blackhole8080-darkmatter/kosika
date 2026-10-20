@@ -103,7 +103,7 @@ func runStep(machine *Machine, step TestStep, at frame, tools, models map[string
 			for _, arg := range args {
 				inputs[arg.Name] = machine.eval(arg.Value, at)
 			}
-			running := newRun(machine.program, tools, scripted(models), workflow)
+			running := newRun(machine.program, tools, scripted(models, machine.program), workflow)
 			// A test's memories are its own, kept only for that test.
 			running.memory = machine.testMemory
 			at.scope.vars[step.Target] = running.workflow(workflow, inputs, 0)
@@ -135,10 +135,14 @@ func RunTests(program *Program) []TestResult {
 }
 
 // scripted binds each declared model to the answers its test scripts.
-func scripted(models map[string]*scriptedTool) map[string]modelProvider {
+func scripted(models map[string]*scriptedTool, program *Program) map[string]modelProvider {
+	plain := map[string]bool{}
+	for _, model := range program.Models {
+		plain[model.Name] = model.Plain
+	}
 	providers := map[string]modelProvider{}
 	for name, script := range models {
-		providers[name] = &scriptedProvider{script}
+		providers[name] = &scriptedProvider{script, plain[name]}
 	}
 	return providers
 }

@@ -369,7 +369,7 @@ func fixtureBindings(path string) (map[string]modelProvider, string) {
 		if !allRecords {
 			return nil, fmt.Sprintf("Model fixture %s requires a nonempty list of records", pyRepr(name))
 		}
-		providers[name] = &scriptedProvider{&scriptedTool{name: name, answers: answers}}
+		providers[name] = &scriptedProvider{script: &scriptedTool{name: name, answers: answers}}
 	}
 	return providers, ""
 }
