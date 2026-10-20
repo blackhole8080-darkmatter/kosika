@@ -1347,7 +1347,7 @@ func withChecksAsSteps(program *Program) *Program {
 				// back in that place so the workflow's own type still holds.
 				again := plain
 				again.Name, again.Binding, again.Return = step.Name+"__answer", step.Name+"__answer", step.Name+"__answer"
-				again.Fallback, again.Retries = nil, 0
+				again.Fallback, again.Retries, again.Votes = nil, 0, 0
 				copied.Steps = append(copied.Steps, &again)
 			}
 		}

@@ -1,0 +1,12 @@
+// Refused: a step escalates only to a model the program declares.
+
+record Msg { text: Text }
+
+model fast {
+  input: Msg
+  output: Msg
+}
+
+workflow main(m: Msg) -> Msg {
+  said = use_model fast(m.text) escalate strong
+}

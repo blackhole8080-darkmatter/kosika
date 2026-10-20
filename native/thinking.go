@@ -184,9 +184,21 @@ func LowerThinking(program *Program) (lowered *Program, refused string) {
 			changed.Call = lower(step, step.Call, "")
 			changed.Fallback = lower(step, step.Fallback, "")
 			if step.Call.Kind == "think" && len(step.Call.More) > 0 {
-				// `using a, b` is only for a step that votes, which this
-				// engine does not run yet; the reference refuses it alike.
-				thinkFail("Step %s needs a model for %s: it lists several, which is only for a step that ends `vote N`", pyRepr(step.Name), step.Call.Verb)
+				// `using a, b`: each listed model gets its own generated
+				// model of the same shape, and they take turns in the vote.
+				if step.Votes == 0 {
+					thinkFail("Step %s needs a model for %s: it lists several, which is only for a step that ends `vote N`", pyRepr(step.Name), step.Call.Verb)
+				}
+				changed.Voters = []string{changed.Call.Name}
+				seen := map[string]bool{changed.Call.Name: true}
+				for _, name := range step.Call.More {
+					voter := lower(step, step.Call, name).Name
+					if seen[voter] {
+						thinkFail("Step %s needs a model for %s: it lists the same model twice", pyRepr(step.Name), step.Call.Verb)
+					}
+					seen[voter] = true
+					changed.Voters = append(changed.Voters, voter)
+				}
 			}
 			if step.Fallback != nil && step.Fallback.Kind == "think" && len(step.Fallback.More) > 0 {
 				thinkFail("Step %s needs a model for %s: its fallback lists several models", pyRepr(step.Name), step.Fallback.Verb)

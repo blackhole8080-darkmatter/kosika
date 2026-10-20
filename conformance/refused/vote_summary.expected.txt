@@ -1,0 +1,1 @@
+Check failed: Step 'brief' cannot vote: two summaries are never word for word the same, so they cannot agree

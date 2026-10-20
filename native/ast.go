@@ -205,6 +205,14 @@ type Step struct {
 	// CHECK(...)`, a function returning the reason it refuses the answer,
 	// or "" when the answer is fine. Nil when there is none.
 	Verify *StepCall
+	// Votes is how many times a model is asked, the answer more than half
+	// agree on being kept: `vote N`, 0 when it is asked once. Voters are
+	// the models that take turns, from a thinking step's `using a, b`.
+	Votes  int
+	Voters []string
+	// Escalate is the model asked when every answer of the step's own was
+	// refused: `escalate NAME`, "" when there is none.
+	Escalate string
 	// Fallback is the call made instead when Call fails: `otherwise`.
 	Fallback *StepCall
 	// A match step makes one of its Branches' calls, chosen by Subject.

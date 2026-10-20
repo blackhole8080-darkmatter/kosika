@@ -182,7 +182,7 @@ func failureType(message string) string {
 	switch {
 	case strings.HasPrefix(message, "$") || strings.Contains(message, " is a required property"):
 		return "SchemaValidationError"
-	case strings.HasPrefix(message, "Invalid structured model output"):
+	case strings.HasPrefix(message, "Invalid structured model output"), strings.HasPrefix(message, "The answer was checked and refused"):
 		return "RejectedAnswer"
 	case strings.HasPrefix(message, "Scripted model provider"), strings.HasPrefix(message, "Model "):
 		return "ModelProviderError"
@@ -194,7 +194,7 @@ func failureType(message string) string {
 		return "MCPProtocolError"
 	case strings.HasPrefix(message, "Mock MCP") || strings.HasPrefix(message, "Scripted tool"):
 		return "RuntimeError"
-	case strings.Contains(message, "answered"):
+	case strings.Contains(message, "answered"), strings.Contains(message, " answers did not agree: "):
 		return "ThinkingAnswerError"
 	}
 	return "Failure"

@@ -46,7 +46,9 @@ Models, with the records they take and give, and general ones that take
 and give text. Workflows, whose steps call
 a function, run another workflow, use a tool through an agent, or ask a
 model (its answer checked by a function of the program with `verify`,
-and asked again on a refused answer with `retry`), ask an agent, or
+asked again on a refused answer with `retry`, asked several times with
+`vote N`, the models listed with `using` taking turns, or handed to a
+stronger model with `escalate`), ask an agent, or
 think (`classify`, `extract`, `summarize`, `decide`), with a fallback
 (`otherwise`) or a choice of call (`match`), or are a plain value worked
 out by code (`count = before + 1`); tools and agents as they are
@@ -81,8 +83,8 @@ print what the reference engine prints, word for word. See
 
 ## What it does not have yet
 
-- Models that answer `as text`, and steps with `vote`, `escalate`,
-  `learn` or `with evidence`, and `parallel` blocks.
+- Models that answer `as text`, and steps with `learn` or `with
+  evidence`, and `parallel` blocks.
 - An agent's plan that writes files, or an agent with its own `check`:
   the reference checks such a plan before showing it, and those checks are
   not here yet, so such a plan is refused by name. Replaying an agent

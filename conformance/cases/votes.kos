@@ -1,0 +1,73 @@
+// A model step may be asked several times, keeping what more than half
+// agree on (`vote N`), with listed models taking turns, or may hand a
+// refused question to a stronger model (`escalate`).
+
+record Msg { text: Text }
+record Draft { text: Text }
+record Said { text: Text kind: Text }
+
+model fast {
+  input: Msg
+  output: Draft
+}
+
+model strong {
+  input: Msg
+  output: Draft
+}
+
+model other {
+  input: Msg
+  output: Draft
+}
+
+fn short(d: Draft) -> Text {
+  if d.text.length() > 5 { return "Too long." }
+  return ""
+}
+
+workflow sort_it(m: Msg) -> Said {
+  kind = classify m.text into ["bug", "idea"] using fast vote 3
+  said = {text: m.text kind: kind.label}
+}
+
+workflow turns(m: Msg) -> Said {
+  kind = classify m.text into ["bug", "idea"] using fast, other vote 3
+  said = {text: m.text kind: kind.label}
+}
+
+workflow unsure(m: Msg) -> Said {
+  kind = classify m.text into ["bug", "idea"] using fast vote 3 otherwise {label: "?" confidence: 0}
+  said = {text: m.text kind: kind.label}
+}
+
+workflow lifted(m: Msg) -> Said {
+  draft = use_model fast(m.text) verify short(draft) escalate strong
+  said = {text: draft.text kind: "draft"}
+}
+
+test "most answers win" {
+  answers fast: [{label: "bug", confidence: 0.9}, {label: "idea", confidence: 0.5}, {label: "bug", confidence: 0.7}]
+  s = sort_it({text: "it crashes"})
+  expect s.kind == "bug"
+}
+
+test "listed models take turns" {
+  answers fast: [{label: "idea", confidence: 0.9}, {label: "idea", confidence: 0.8}]
+  answers other: [{label: "idea", confidence: 0.6}]
+  s = turns({text: "what if"})
+  expect s.kind == "idea"
+}
+
+test "answers that do not agree fall to otherwise" {
+  answers fast: [{label: "bug", confidence: 0.9}, {label: "idea", confidence: 0.5}, {text: "no"}]
+  s = unsure({text: "hm"})
+  expect s.kind == "?"
+}
+
+test "a refused answer goes to the stronger model" {
+  answers fast: [{text: "much too long"}]
+  answers strong: [{text: "ok"}]
+  s = lifted({text: "hi"})
+  expect s.text == "ok"
+}

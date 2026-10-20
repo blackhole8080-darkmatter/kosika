@@ -188,24 +188,16 @@ func (p *Parser) parseBudget() []Budget {
 }
 
 // stepEnding reads what may follow a step's call: the program's check of
-// a model's answer, asking a model again, and a fallback. Votes and a
-// stronger model are refused.
+// a model's answer, votes, asking a model again, a stronger model, and a
+// fallback.
 func (p *Parser) stepEnding(step *Step) {
 	if p.accept("verify") {
 		step.Verify = p.parseStepCall()
 	}
-	if p.check("vote") {
-		notYetStep(p.current(), "a step with vote")
-	}
-	if p.accept("retry") {
-		token := p.advance()
-		if token.Kind != "NUMBER" || !isDigits(token.Value) {
-			parseFail("Expected 'count' at %d:%d, got %s", token.Line, token.Column, quoted(token.Value))
-		}
-		step.Retries, _ = strconv.Atoi(token.Value)
-	}
-	if p.check("escalate") {
-		notYetStep(p.current(), "a step with escalate")
+	step.Votes = p.stepCount("vote")
+	step.Retries = p.stepCount("retry")
+	if p.accept("escalate") {
+		step.Escalate = p.identifier()
 	}
 	if p.check("learn") && p.peek().Value != "=" && p.peek().Value != ":" {
 		notYetStep(p.current(), "a step that learns")
@@ -213,6 +205,19 @@ func (p *Parser) stepEnding(step *Step) {
 	if p.accept("otherwise") {
 		step.Fallback = p.parseStepCall()
 	}
+}
+
+// stepCount reads an optional `vote N` or `retry N`.
+func (p *Parser) stepCount(word string) int {
+	if !p.accept(word) {
+		return 0
+	}
+	token := p.advance()
+	if token.Kind != "NUMBER" || !isDigits(token.Value) {
+		parseFail("Expected 'count' at %d:%d, got %s", token.Line, token.Column, quoted(token.Value))
+	}
+	count, _ := strconv.Atoi(token.Value)
+	return count
 }
 
 func (p *Parser) parseShortStep() *Step {

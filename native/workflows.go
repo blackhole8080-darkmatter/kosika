@@ -63,6 +63,15 @@ type run struct {
 	// check is the step's own `verify`, for the model asked now; nil when
 	// there is none.
 	check *answerCheck
+	// plan is how the model step now running is asked: its votes, the
+	// models that take turns, and a stronger model; nil for a fallback.
+	plan *modelPlan
+}
+
+type modelPlan struct {
+	votes    int
+	voters   []string
+	escalate string
 }
 
 // An answerCheck is a step's `verify`: the call of the program's function,
@@ -136,6 +145,16 @@ func (r *run) preflight(workflow *WorkflowDecl) {
 			}
 			if r.providers[bound] == nil {
 				panic(&permissionError{fmt.Sprintf("Model %s has no authorized host binding", pyRepr(bound))})
+			}
+			if item.step != nil {
+				for _, voter := range item.step.Voters {
+					if name := boundName(r.checker.models[voter]); r.providers[name] == nil {
+						panic(&permissionError{fmt.Sprintf("Model %s has no authorized host binding", pyRepr(name))})
+					}
+				}
+				if escalate := item.step.Escalate; escalate != "" && r.providers[escalate] == nil {
+					panic(&permissionError{fmt.Sprintf("Model %s has no authorized host binding", pyRepr(escalate))})
+				}
 			}
 		case "workflow":
 			name := item.call.Name
@@ -301,6 +320,10 @@ func (r *run) attempt(step *Step, call *StepCall, environment *Scope, at frame, 
 		r.check = &answerCheck{step.Verify, step.Binding, environment, at}
 		defer func() { r.check = nil }()
 	}
+	if step.Votes > 0 || step.Escalate != "" {
+		r.plan = &modelPlan{step.Votes, step.Voters, step.Escalate}
+		defer func() { r.plan = nil }()
+	}
 	value, events = r.call(call, environment, at, depth, step.Retries)
 	return value, events, nil
 }
@@ -355,6 +378,8 @@ type stepNote struct {
 	usage       Value
 	rejected    []Value
 	verified    []Value // the step's check of the answer, when it has one
+	votes       *Record // how a voting step's answers fell
+	escalated   *Record // why a stronger model was asked, when it was
 	messages    []Value
 	modelSteps  int
 	reformatted *string
@@ -430,6 +455,12 @@ func (r *run) call(call *StepCall, environment *Scope, at frame, depth, retries 
 		}
 		if len(r.note.rejected) > 0 {
 			returned.set("rejected", r.note.rejected)
+		}
+		if r.note.votes != nil {
+			returned.set("votes", r.note.votes)
+		}
+		if r.note.escalated != nil {
+			returned.set("escalated", r.note.escalated)
 		}
 		return result, []Value{first, returned}
 	case "agent":
@@ -517,21 +548,186 @@ func (r *run) tool(tool *ToolDecl, arguments map[string]Value) Value {
 	return outcome
 }
 
-// model asks a model for one answer it accepts, as _ask_model in
-// kosika/runtime.py does: the answer is completed, held to the model's
-// output record and to what a thinking step promises, and a refused one is
-// shown back to the model with the reason, up to `retries` more times.
+// model asks a model step's model, with its votes and escalation, as
+// model_answer in kosika/runtime.py does.
 func (r *run) model(model *ModelDecl, arguments map[string]Value, retries int) Value {
 	input := newRecord()
 	for name, value := range arguments {
 		input.set(name, value)
 	}
 	r.validate(input, model.Input, "$")
-	// A model made for a thinking step is answered by its declared model.
-	asked := model
-	if model.Provider != "" {
-		asked = r.checker.models[model.Provider]
+	plan := r.plan
+	if plan != nil && plan.votes > 0 {
+		return r.vote(model, arguments, input, retries, plan)
 	}
+	if plan == nil || plan.escalate == "" {
+		answer, note := r.askOnce(model, boundName(model), arguments, input, retries)
+		r.keep(note)
+		return answer
+	}
+	answer, note, refused := r.tryAsk(model, boundName(model), arguments, input, retries)
+	if refused == nil {
+		r.keep(note)
+		return answer
+	}
+	// `escalate`: every answer of the step's own model was refused, so the
+	// same question, with the same checks, goes to the model bound to the
+	// named one.
+	answer, note = r.askOnce(model, plan.escalate, arguments, input, retries)
+	r.keep(note)
+	because := []rune(refused.Message)
+	if len(because) > 500 {
+		because = because[:500]
+	}
+	escalated := newRecord()
+	escalated.set("to", plan.escalate)
+	escalated.set("because", string(because))
+	r.note.escalated = escalated
+	return answer
+}
+
+// boundName is the name a model's host binding goes by: a model made for a
+// thinking step is answered by its declared model.
+func boundName(model *ModelDecl) string {
+	if model.Provider != "" {
+		return model.Provider
+	}
+	return model.Name
+}
+
+// An answerNote is what one model's accepted answer says of itself, for
+// the trace.
+type answerNote struct {
+	content  string
+	rejected []Value
+	verified []Value
+}
+
+func (r *run) keep(note answerNote) {
+	r.note.content, r.note.rejected, r.note.verified = note.content, note.rejected, note.verified
+}
+
+// refusedAnswer is true of the failures another ballot or a stronger model
+// may answer for: a refused answer, and one that broke a thinking step's
+// promise. A spent budget or a model that could not be reached is not one.
+func refusedAnswer(failure *RunError) bool {
+	kind := failureType(failure.Message)
+	return kind == "RejectedAnswer" || kind == "ThinkingAnswerError"
+}
+
+// tryAsk is askOnce, giving back a refused answer's failure instead of
+// failing with it.
+func (r *run) tryAsk(model *ModelDecl, bound string, arguments map[string]Value, input *Record, retries int) (answer Value, note answerNote, refused *RunError) {
+	defer func() {
+		if caught := recover(); caught != nil {
+			if failure, ok := caught.(*RunError); ok && refusedAnswer(failure) {
+				refused = failure
+				return
+			}
+			panic(caught)
+		}
+	}()
+	answer, note = r.askOnce(model, bound, arguments, input, retries)
+	return answer, note, nil
+}
+
+// vote asks `vote N` times and keeps only what more than half agree on, as
+// _ask_with_votes in kosika/runtime.py does. Two answers agree when they
+// give the same label (classify), the same answer (decide), or the same
+// record. When the step lists several models, they take turns.
+func (r *run) vote(model *ModelDecl, arguments map[string]Value, input *Record, retries int, plan *modelPlan) Value {
+	voters := []*ModelDecl{model}
+	if len(plan.voters) > 0 {
+		voters = nil
+		for _, name := range plan.voters {
+			voters = append(voters, r.checker.models[name])
+		}
+	}
+	field := map[string]string{"classify": "label", "decide": "answer"}[model.Verb]
+	type ballot struct {
+		key    string
+		answer Value
+		note   answerNote
+	}
+	var ballots []ballot
+	var failed []Value
+	var asked []Value
+	for turn := 0; turn < plan.votes; turn++ {
+		voter := voters[turn%len(voters)]
+		asked = append(asked, boundName(voter))
+		answer, note, refused := r.tryAsk(voter, boundName(voter), arguments, input, retries)
+		if refused != nil {
+			failed = append(failed, refused.Message)
+			continue
+		}
+		choice := answer
+		if field != "" {
+			choice = answer.(*Record).Fields[field]
+		}
+		ballots = append(ballots, ballot{pyJSON(choice, true), answer, note})
+	}
+	counts := map[string]int{}
+	var order []string
+	for _, item := range ballots {
+		if counts[item.key] == 0 {
+			order = append(order, item.key)
+		}
+		counts[item.key]++
+	}
+	winner := ""
+	for _, key := range order {
+		if winner == "" || counts[key] > counts[winner] {
+			winner = key
+		}
+	}
+	keys := append([]string{}, order...)
+	sort.Strings(keys)
+	if winner == "" || counts[winner]*2 <= plan.votes {
+		var parts []string
+		for _, key := range keys {
+			parts = append(parts, fmt.Sprintf("%d for %s", counts[key], key))
+		}
+		tally := strings.Join(parts, ", ")
+		if tally == "" {
+			tally = "none were accepted"
+		}
+		verb := model.Verb
+		if verb == "" {
+			verb = "model"
+		}
+		message := fmt.Sprintf("%s answers did not agree: of %d asked, %s", verb, plan.votes, tally)
+		if len(failed) > 0 && len(counts) > 0 {
+			message += fmt.Sprintf(", %d rejected", len(failed))
+		}
+		runFail(message)
+	}
+	for _, item := range ballots {
+		if item.key != winner {
+			continue
+		}
+		r.keep(item.note)
+		tally := newRecord()
+		for _, key := range keys {
+			tally.set(key, bigInt(counts[key]))
+		}
+		votes := newRecord()
+		votes.set("asked", bigInt(plan.votes))
+		votes.set("agreed", bigInt(counts[winner]))
+		votes.set("tally", tally)
+		votes.set("rejected", eventList(failed))
+		votes.set("models", eventList(asked))
+		r.note.votes = votes
+		return item.answer
+	}
+	panic("unreachable")
+}
+
+// askOnce asks one model for one answer it accepts, as _ask_model in
+// kosika/runtime.py does: the answer is completed, held to the model's
+// output record, to what a thinking step promises and to the step's own
+// check, and a refused one is shown back to the model with the reason, up
+// to `retries` more times. bound names the host binding that answers.
+func (r *run) askOnce(model *ModelDecl, bound string, arguments map[string]Value, input *Record, retries int) (Value, answerNote) {
 	task := ""
 	if instruction := thinkingInstructions[model.Verb]; instruction != "" {
 		task = " Task: " + instruction
@@ -540,9 +736,10 @@ func (r *run) model(model *ModelDecl, arguments map[string]Value, retries int) V
 		{Role: "system", Content: "Return only one JSON object matching this JSON Schema. Do not invoke tools or include Markdown. Schema: " + pyJSON(r.checker.schemaFor(model.Output), true) + task},
 		{Role: "user", Content: pyJSON(input, true)},
 	}
+	var note answerNote
 	rejected := 0
 	for {
-		response := r.ask(asked, &modelRequest{Messages: messages, Model: deployment(model), Decl: model, JSONObject: true})
+		response := r.askBound(bound, &modelRequest{Messages: messages, Model: deployment(model), Decl: model, JSONObject: true})
 		if len(response.ToolCalls) > 0 || response.Finish != "stop" {
 			runFail("Model step requires a completed response without tool calls")
 		}
@@ -565,12 +762,12 @@ func (r *run) model(model *ModelDecl, arguments map[string]Value, retries int) V
 			if complaint = strings.TrimSpace(complaint); complaint != "" {
 				problem = "The answer was checked and refused: " + complaint
 			} else if r.traced {
-				r.note.verified = checked
+				note.verified = checked
 			}
 		}
 		if problem == "" {
-			r.note.content = response.Content
-			return answer
+			note.content = response.Content
+			return answer, note
 		}
 		if rejected >= retries {
 			runFail(problem)
@@ -579,7 +776,7 @@ func (r *run) model(model *ModelDecl, arguments map[string]Value, retries int) V
 		refusal := newRecord()
 		refusal.set("content", response.Content)
 		refusal.set("reason", problem)
-		r.note.rejected = append(r.note.rejected, refusal)
+		note.rejected = append(note.rejected, refusal)
 		messages = append(messages,
 			chatMessage{Role: "assistant", Content: response.Content},
 			chatMessage{Role: "user", Content: "That answer was rejected: " + problem + " Return one corrected JSON object."})
@@ -602,6 +799,16 @@ func (r *run) ask(model *ModelDecl, request *modelRequest) *modelResponse {
 	}
 	r.modelCalls++
 	return r.providers[model.Name].complete(request)
+}
+
+// askBound is ask, put to the host binding of that name.
+func (r *run) askBound(bound string, request *modelRequest) *modelResponse {
+	r.checkpoint()
+	if r.modelCalls >= r.maxModels {
+		panic(&budgetError{Message: fmt.Sprintf("model calls budget exceeds %d", r.maxModels)})
+	}
+	r.modelCalls++
+	return r.providers[bound].complete(request)
 }
 
 // agent asks an agent, as AgentLoop in kosika/agent.py runs one for a

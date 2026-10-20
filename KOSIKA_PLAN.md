@@ -3506,6 +3506,22 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   programs with workflows, agents and tools; the guide does not teach
   those yet.
 
+### The native engine votes, and escalates to a stronger model
+
+- `vote N` (3, 5, 7 or 9) asks a model step N times and keeps what more
+  than half agree on: the same label, the same answer, or the same record;
+  models listed with `using a, b` take turns; answers that do not agree
+  fail the step, so its `otherwise` applies. `escalate NAME` hands the
+  question, with the same checks, to the model bound to NAME when every
+  answer of the step's own was refused. Both kept in the trace (`votes`,
+  `escalated`) as the reference keeps them (native/workflows.go `vote`,
+  `askOnce`).
+- Held by `cases/votes.kos`, four refused cases (`vote_count`,
+  `vote_summary`, `escalate_unknown`, `escalate_votes`), and a vote and an
+  escalation in the run whose trace both engines write alike.
+- A refused `verify` and a vote that does not agree now carry the
+  reference's failure names when `otherwise` takes over.
+
 ### The native engine checks a model's answer with `verify`
 
 - `reply = use_model writer(msg.text) verify short_enough(reply, msg)

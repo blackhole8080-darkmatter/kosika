@@ -1,0 +1,17 @@
+// Refused: a voting step already asks more than once.
+
+record Msg { text: Text }
+
+model fast {
+  input: Msg
+  output: Msg
+}
+
+model strong {
+  input: Msg
+  output: Msg
+}
+
+workflow main(m: Msg) -> Msg {
+  said = use_model fast(m.text) vote 3 escalate strong
+}

@@ -101,6 +101,32 @@ func (c *checker) checkBudgets() {
 			}
 		}
 		for _, step := range workflow.Steps {
+			if step.Votes != 0 {
+				asked := c.models[step.Call.Name]
+				if step.Call.Kind != "model" || asked == nil {
+					checkFail("Step %s cannot vote: only a model step (use_model or a thinking step) can be asked several times", pyRepr(step.Name))
+				}
+				if asked.Verb == "summarize" {
+					checkFail("Step %s cannot vote: two summaries are never word for word the same, so they cannot agree", pyRepr(step.Name))
+				}
+				if step.Votes != 3 && step.Votes != 5 && step.Votes != 7 && step.Votes != 9 {
+					checkFail("Step %s cannot vote: the count must be 3, 5, 7, or 9, got %d", pyRepr(step.Name), step.Votes)
+				}
+			}
+			if step.Escalate != "" {
+				if step.Call.Kind != "model" || len(step.Branches) > 0 {
+					checkFail("Step %s cannot escalate: only a model step (use_model or a thinking step) can be asked of another model", pyRepr(step.Name))
+				}
+				if step.Votes != 0 {
+					checkFail("Step %s cannot escalate: a voting step already asks more than once; name its models with using", pyRepr(step.Name))
+				}
+				if stronger := c.models[step.Escalate]; stronger == nil || stronger.Provider != "" {
+					checkFail("Step %s cannot escalate: %s is not a model declared in the program", pyRepr(step.Name), pyRepr(step.Escalate))
+				}
+				if step.Escalate == step.Call.Name {
+					checkFail("Step %s cannot escalate: %s is the model it already asks", pyRepr(step.Name), pyRepr(step.Escalate))
+				}
+			}
 			if step.Retries == 0 {
 				continue
 			}
@@ -721,7 +747,7 @@ func (c *checker) checkFallbacks() {
 		if step.Fallback != nil {
 			// The fallback is asked once: what the call is asked again
 			// with does not go with it.
-			changed.Call, changed.Retries = step.Fallback, 0
+			changed.Call, changed.Retries, changed.Votes, changed.Escalate = step.Fallback, 0, 0, ""
 		}
 		changed.Fallback = nil
 		return &changed

@@ -159,10 +159,11 @@ class NativeTests(unittest.TestCase):
                 encoding="utf-8",
             )
             ran = self.run_engine("test", str(voting))
-        self.assertEqual(ran.returncode, 1)
+        # Votes run now; this one is refused for the reference's reason.
+        self.assertEqual(ran.returncode, 2)
         self.assertIn(
-            "kosika-native cannot run a step with vote yet",
-            ran.stderr.decode("utf-8", "replace"),
+            "cannot vote: two summaries are never word for word the same",
+            ran.stdout.decode("utf-8", "replace"),
         )
         with tempfile.TemporaryDirectory() as scratch:
             learning = Path(scratch) / "learning.kos"
@@ -414,6 +415,8 @@ class NativeTests(unittest.TestCase):
             "model writer {\n  input: Ask\n  output: Said\n}\n"
             "model helper {\n  input: Ask\n  output: Answer\n}\n"
             "model editor {\n  input: Ask\n  output: Said\n}\n"
+            "model stronger {\n  input: Ask\n  output: Said\n}\n"
+            "model judge {\n  input: Ask\n  output: Said\n}\n"
             "fn short(said: Said, ask: Ask) -> Text {\n"
             '  if said.text.length() > ask.text.length() { return "Too long." }\n'
             '  return ""\n}\n'
@@ -434,6 +437,8 @@ class NativeTests(unittest.TestCase):
             "  third = bad(ask) otherwise quiet(ask)\n"
             "  retried = use_model writer(text: first.text, kind: ask.kind) retry 2\n"
             "  edited = use_model editor(text: ask.text, kind: ask.kind) verify short(edited, ask) retry 1\n"
+            '  voted = classify ask.text into ["a", "b"] using judge vote 3\n'
+            "  lifted = use_model editor(text: ask.text, kind: ask.kind) escalate stronger\n"
             '  kind = classify ask.text into ["a", "b"]\n'
             "  brief = summarize ask.text\n"
             "  helped = ask plain(text: ask.text, kind: ask.kind)\n"
@@ -444,7 +449,13 @@ class NativeTests(unittest.TestCase):
             "writer": [{"text": "x"}, {"text": "y", "n": "bad"}, {"text": "ok", "n": 2}],
             "assistant": [{"label": "a", "confidence": 1}, {"text": "short"}],
             "helper": [{"words": 1}, {"text": "fine", "did": ["claimed"]}],
-            "editor": [{"text": "far too long", "n": 1}, {"text": "ok", "n": 1}],
+            "editor": [{"text": "far too long", "n": 1}, {"text": "ok", "n": 1}, {"text": 1, "n": 1}],
+            "stronger": [{"text": "up", "n": 3}],
+            "judge": [
+                {"label": "a", "confidence": 1},
+                {"label": "b", "confidence": 1},
+                {"label": "a", "confidence": 0.5},
+            ],
         }
         with tempfile.TemporaryDirectory() as scratch:
             folder = Path(scratch)
