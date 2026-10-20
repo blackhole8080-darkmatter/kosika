@@ -55,7 +55,8 @@ think (`classify`, `extract`, `summarize`, `decide`, the first three
 quoting the text they were given when written `with evidence`), with a
 fallback
 (`otherwise`) or a choice of call (`match`), or are a plain value worked
-out by code (`count = before + 1`); tools and agents as they are
+out by code (`count = before + 1`); `parallel` blocks, whose steps it
+runs in the order written, which gives the trace the reference keeps; tools and agents as they are
 declared; and tests that run a workflow and script what its models and
 tools answer. With `run`, a model is a real one: a model server spoken to
 as the reference speaks to it, with the same requests word for word; a
@@ -87,8 +88,7 @@ print what the reference engine prints, word for word. See
 
 ## What it does not have yet
 
-- Models that answer `as text`, and steps with `learn`, and `parallel`
-  blocks.
+- Models that answer `as text`, and steps with `learn`.
 - An agent's plan that writes files, or an agent with its own `check`:
   the reference checks such a plan before showing it, and those checks are
   not here yet, so such a plan is refused by name. Replaying an agent

@@ -1365,6 +1365,7 @@ func (c *checker) checkDeclarations() {
 	c.checkShapes()
 	c.checkDefaults()
 	c.checkRecordMethods()
+	c.checkParallel()
 	c.checkBudgets()
 	for _, workflow := range c.program.Workflows {
 		for _, step := range workflow.Steps {

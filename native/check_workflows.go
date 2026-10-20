@@ -67,6 +67,73 @@ func (c *checker) valueFault(workflow *WorkflowDecl, step *Step, seen map[string
 	c.typeOf(step.Call.Args[0].Value, env, step.Name, "")
 }
 
+// checkParallel holds the steps of one `parallel` block to being able to
+// run apart, as _check_parallel in kosika/checker.py does.
+func (c *checker) checkParallel() {
+	for _, workflow := range c.program.Workflows {
+		blocks := map[int][]*Step{}
+		var order []int
+		for _, step := range workflow.Steps {
+			if step.Group == 0 {
+				continue
+			}
+			if blocks[step.Group] == nil {
+				order = append(order, step.Group)
+			}
+			blocks[step.Group] = append(blocks[step.Group], step)
+		}
+		for _, group := range order {
+			members := blocks[group]
+			names := map[string]bool{}
+			for _, member := range members {
+				names[member.Binding] = true
+			}
+			for _, member := range members {
+				reason := ""
+				call := member.Call
+				switch {
+				case len(member.Branches) > 0:
+					reason = "a match step chooses its call as the workflow runs"
+				case call.Kind == "workflow":
+					reason = "it calls a workflow"
+				case call.Kind == "agent":
+					reason = "it asks an agent, which chooses its own tools"
+				case call.Kind == "tool":
+					if tool := c.tools[call.Name]; tool != nil {
+						if tool.Access == "execute" {
+							reason = "it changes something, and changes happen in order"
+						} else if strings.HasPrefix(tool.Source, memorySource) || strings.HasPrefix(tool.Source, boardSource) {
+							reason = "memory and boards are read and written in order"
+						}
+					}
+				}
+				if reason != "" {
+					checkFail("Step %s cannot run in parallel: %s", pyRepr(member.Name), reason)
+				}
+				used := map[string]bool{}
+				for _, part := range []*StepCall{call, member.Verify, member.Fallback} {
+					if part == nil {
+						continue
+					}
+					for _, arg := range part.Args {
+						varNames(arg.Value, used)
+					}
+				}
+				var clashes []string
+				for name := range used {
+					if names[name] && name != member.Binding {
+						clashes = append(clashes, name)
+					}
+				}
+				if len(clashes) > 0 {
+					sort.Strings(clashes)
+					checkFail("Step %s cannot run in parallel: it uses %s, which is worked out in the same parallel block", pyRepr(member.Name), pyRepr(clashes[0]))
+				}
+			}
+		}
+	}
+}
+
 // pyNumber writes a budget's amount as Python's str() does.
 func pyNumber(v Value) string {
 	if f, ok := v.(float64); ok {

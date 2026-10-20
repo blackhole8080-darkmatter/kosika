@@ -215,6 +215,9 @@ type Step struct {
 	// Escalate is the model asked when every answer of the step's own was
 	// refused: `escalate NAME`, "" when there is none.
 	Escalate string
+	// Group numbers the `parallel { ... }` block the step is written in,
+	// from 1; 0 when it is in none.
+	Group int
 	// Fallback is the call made instead when Call fails: `otherwise`.
 	Fallback *StepCall
 	// A match step makes one of its Branches' calls, chosen by Subject.

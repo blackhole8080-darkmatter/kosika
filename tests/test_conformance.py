@@ -442,6 +442,7 @@ class NativeTests(unittest.TestCase):
             '  voted = classify ask.text into ["a", "b"] using judge vote 3\n'
             "  lifted = use_model editor(text: ask.text, kind: ask.kind) escalate stronger\n"
             '  quoted = classify ask.text into ["a", "b"] with evidence using reader retry 1\n'
+            "  parallel {\n    together = sized(ask)\n    apart = quiet(ask)\n  }\n"
             '  kind = classify ask.text into ["a", "b"]\n'
             "  brief = summarize ask.text\n"
             "  helped = ask plain(text: ask.text, kind: ask.kind)\n"

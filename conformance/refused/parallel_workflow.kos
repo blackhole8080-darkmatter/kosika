@@ -1,0 +1,20 @@
+// Refused: a workflow call does not run in a parallel block.
+
+record In { a: Text }
+record Out { text: Text }
+
+fn echo(t: Text) -> Out {
+  return {text: t}
+}
+
+workflow inner(input: In) -> Out {
+  out = echo(input.a)
+}
+
+workflow main(input: In) -> Out {
+  parallel {
+    first = call inner(input)
+    second = echo(input.a)
+  }
+  out = echo(second.text)
+}

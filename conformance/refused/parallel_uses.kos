@@ -1,0 +1,16 @@
+// Refused: a step in a parallel block cannot use another step of it.
+
+record In { a: Text }
+record Out { text: Text }
+
+fn echo(t: Text) -> Out {
+  return {text: t}
+}
+
+workflow main(input: In) -> Out {
+  parallel {
+    first = echo(input.a)
+    second = echo(first.text)
+  }
+  out = echo(second.text)
+}

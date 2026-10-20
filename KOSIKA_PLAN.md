@@ -3506,6 +3506,17 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   programs with workflows, agents and tools; the guide does not teach
   those yet.
 
+### The native engine reads `parallel` blocks
+
+- `parallel { a = ...  b = ... }` parses and is checked in native/ as in
+  the reference: no step of a block may use another of it, call a
+  workflow, ask an agent, change something, or reach a memory or board.
+  The native engine runs the block's steps in the order written, which
+  the language allows, so its trace is the reference's.
+- Held by `cases/parallel.kos`, `refused/parallel_uses.kos`,
+  `refused/parallel_workflow.kos`, and a block in the run whose trace both
+  engines write alike.
+
 ### The native engine checks evidence
 
 - `classify`, `extract` and `decide` written `with evidence` run in

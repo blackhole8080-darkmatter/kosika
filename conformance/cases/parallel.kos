@@ -1,0 +1,44 @@
+// Steps in a parallel block may run at the same time; each sees only the
+// steps before the block, and the run is the one written order gives.
+
+record In { a: Text b: Text }
+record Answer { text: Text }
+record Out { text: Text }
+
+model fast {
+  input: In
+  output: Answer
+}
+
+model slow {
+  input: In
+  output: Answer
+}
+
+fn both(x: Answer, y: Answer, z: Number) -> Out {
+  return {text: f"{x.text} / {y.text} / {z}"}
+}
+
+workflow main(input: In) -> Out {
+  size = input.a.length()
+  parallel {
+    x = use_model fast(a: input.a, b: input.b)
+    y = use_model slow(a: input.b, b: input.a) otherwise {text: "none"}
+    z = size * 2
+  }
+  out = both(x, y, z)
+}
+
+test "each step of the block is worked out" {
+  answers fast: [{text: "quick"}]
+  answers slow: [{text: "careful"}]
+  o = main({a: "one", b: "two"})
+  expect o.text == "quick / careful / 6"
+}
+
+test "a fallback in the block stands in as usual" {
+  answers fast: [{text: "quick"}]
+  answers slow: [{nope: 1}]
+  o = main({a: "one", b: "two"})
+  expect o.text == "quick / none / 6"
+}

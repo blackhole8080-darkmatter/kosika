@@ -141,6 +141,7 @@ func (p *Parser) parseWorkflow() *WorkflowDecl {
 	p.expect("->")
 	workflow.Out = p.identifier()
 	p.expect("{")
+	groups := 0
 	for !p.accept("}") {
 		token := p.current()
 		switch {
@@ -149,7 +150,21 @@ func (p *Parser) parseWorkflow() *WorkflowDecl {
 		case p.atAssignment() || p.atTypedStep():
 			workflow.Steps = append(workflow.Steps, p.parseShortStep())
 		case p.check("parallel") && p.peek().Value == "{":
-			notYetStep(token, "a parallel block")
+			// `parallel { a = ...  b = ... }`: steps that may run at once.
+			// This engine runs them in the order written, which gives the
+			// trace the reference keeps.
+			p.advance()
+			p.advance()
+			groups++
+			for !p.accept("}") {
+				if !p.atAssignment() && !p.atTypedStep() {
+					inner := p.current()
+					parseFail("Unexpected workflow item %s at %d:%d", quoted(inner.Value), inner.Line, inner.Column)
+				}
+				step := p.parseShortStep()
+				step.Group = groups
+				workflow.Steps = append(workflow.Steps, step)
+			}
 		case p.accept("require"):
 			p.expect("approval")
 			workflow.Approval = true
