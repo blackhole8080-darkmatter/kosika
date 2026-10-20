@@ -197,6 +197,23 @@ func LowerValues(program *Program) *Program {
 			}
 			prefix := workflow.Name + "$" + step.Name + "$"
 			changed := *step
+			if isValueCall(step.Call) && len(step.Branches) == 0 {
+				// `count = before + 1`: a step that is a value. Its type is
+				// the one written, `tally: Tally = ...`, or else the type of
+				// the value itself, or of where a later step hands it on.
+				known = step.BindingType
+				if known == "" {
+					known = valueType(program, step.Call.Args[0].Value, seen)
+				}
+				if known == "" {
+					known = typeFromUse(program, workflow, step.Name)
+				}
+				if known == "" && step == workflow.Steps[len(workflow.Steps)-1] {
+					// The last step is what the workflow returns.
+					known = workflow.Out
+				}
+				changed.Call = standIn(step.Call, prefix+"value", known)
+			}
 			if len(step.Branches) > 0 {
 				changed.Branches = make([]Branch, len(step.Branches))
 				for i, branch := range step.Branches {
@@ -220,6 +237,77 @@ func LowerValues(program *Program) *Program {
 	}
 	lowered.Functions = append(append([]*FuncDecl{}, program.Functions...), made...)
 	return &lowered
+}
+
+// valueType is the type of a value a step is, worked out as the checker
+// would, or "" when it cannot be told; the checker then says what to write.
+func valueType(program *Program, value Expr, seen map[string]string) (found string) {
+	defer func() {
+		if recover() != nil {
+			found = ""
+		}
+	}()
+	env := newEnv()
+	for name, typeName := range seen {
+		env.types[name] = typeName
+	}
+	found = newChecker(program).typeOf(value, env, "value", "")
+	if found == "Null" {
+		return ""
+	}
+	return found
+}
+
+// typeFromUse is the type a value step must have, read from where a later
+// step hands it on whole: `f(tally)`, or a tool's input field.
+func typeFromUse(program *Program, workflow *WorkflowDecl, name string) string {
+	for _, later := range workflow.Steps {
+		calls := []*StepCall{later.Call, later.Fallback}
+		for _, branch := range later.Branches {
+			calls = append(calls, branch.Call)
+		}
+		for _, call := range calls {
+			if call == nil {
+				continue
+			}
+			for _, arg := range call.Args {
+				if used, ok := arg.Value.(*VarExpr); !ok || used.Name != name {
+					continue
+				}
+				switch call.Kind {
+				case "function":
+					for _, decl := range program.Functions {
+						if decl.Name != call.Name {
+							continue
+						}
+						if len(decl.Params) == 1 && len(call.Args) == 1 {
+							// A sole argument is not yet named for its parameter.
+							return decl.Params[0].Type
+						}
+						for _, param := range decl.Params {
+							if param.Name == arg.Name {
+								return param.Type
+							}
+						}
+					}
+				case "tool":
+					for _, tool := range program.Tools {
+						if tool.Name != call.Name {
+							continue
+						}
+						for _, record := range program.Records {
+							if record.Name == tool.Input {
+								if typeName, ok := fieldType(record.Fields, arg.Name); ok {
+									return typeName
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	return ""
 }
 
 var madeName = regexp.MustCompile(`(?:Step |Function )?'(?:function )?([A-Za-z_]\w*)\$([A-Za-z_]\w*)\$(otherwise|case(\d+))'`)

@@ -598,21 +598,32 @@ think = "classify"  expression "into" expression [ "using" identifier ]
   that no `try` takes fails the workflow step, where the step's `otherwise`
   applies as for any failure.
 
-- A record value MAY be written where a step expects a call, in two
-  places: after `otherwise`, and as a branch of a step's `match`:
+- A step MAY be a plain value, worked out by code: `count = before + 1`,
+  `big = if count > 3 { true } else { false }`, `tally = {count: count}`.
+  A call followed by more of an expression on its line, as `shout =
+  base(m) + 1`, is a value too. Its type is, in this order: the type
+  written out, `typed: Tally = {count: n}`; the type of the value itself;
+  the parameter or tool input field it is handed to whole by a later step,
+  as `kept = keep(tally)`; or, for the last step, the workflow's result
+  type. A record value MAY separate its fields with spaces instead of
+  commas, as a record's declaration does: `{text: t count: n}`. A value
+  whose type none of these tells is a check error (`check/value-step`)
+  that says to write the type out. A fault inside the value, as `n + "x"`
+  or an unknown name, is reported as that fault.
+- A value MAY also be written where a step expects a call, after
+  `otherwise` and as a branch of a step's `match`:
   `hits = execute hands.search(q) otherwise {matches: []}` and
   `case _ { {answer: "", quote: ""} }`. The value has the result type of
   the step's call (for a `match`, of its first branch that is a call) and
-  is checked against it. It MAY use the workflow's parameters and the
-  steps before its own; it MUST NOT use its own step or a later one. It
-  stands for a call of a generated function named
+  is checked against it.
+- Every such value MAY use the workflow's parameters and the steps before
+  its own; it MUST NOT use its own step or a later one. It stands for a
+  call of a generated function named `WORKFLOW$STEP$value`,
   `WORKFLOW$STEP$otherwise` or `WORKFLOW$STEP$caseN`, which takes the
   names the value uses as its parameters and returns the value, so traces
-  and replay treat it as any function step. A check error about such a
-  value names the step and where the value stands, not the generated
-  name. A
-  value with no call beside it to take a type from is a check error
-  (`check/value-step`).
+  and replay treat it as any function step. A check error about a value
+  beside a call names the step and where the value stands, not the
+  generated name.
 
 - A `record` MAY contain functions: `fn NAME(self, parameters) -> Type`. The
   first parameter MUST be written `self` and has the record's type. The
@@ -734,8 +745,12 @@ said = match kind.label {
 ```
 
 - The subject MUST be `Text`, `Number`, or `Bool`. Each `case` holds a text,
-  number, or `true`/`false` literal and exactly one call of any step kind.
-  The last case MUST be `case _`, and no value may appear twice.
+  number, or `true`/`false` literal and exactly one call of any step kind,
+  or a value (see above). The last case MUST be `case _`, and no value may
+  appear twice.
+- A step `match` whose cases are all values, with no call, is not a choice
+  of calls: it is a plain value step, an ordinary `match` expression, as
+  `size = match count { case 1 { "tiny" } case _ { "some" } }`.
 - Exactly one call is made. Every branch MUST return the same type, which is
   the step's type.
 - Every branch is authorized before the run starts, as if each were its own
@@ -1159,7 +1174,8 @@ step = "step" identifier "{"
        "let" identifier [ ":" type ] "=" call
        "return" identifier
        "}"
-     | identifier "=" call [ "otherwise" call ] ;          (* one-line step *)
+     | identifier [ ":" type ] "=" ( call [ "otherwise" call ]
+                                   | expression ) ;       (* one-line step *)
 
 call = identifier "(" named-arguments ")"                 (* function *)
      | "call" identifier "(" named-arguments ")"          (* workflow *)

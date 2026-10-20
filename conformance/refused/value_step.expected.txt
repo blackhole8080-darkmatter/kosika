@@ -1,1 +1,1 @@
-Check failed: Step 'said' has a value where a call is needed; a value may stand after 'otherwise' or in a 'case', beside a call whose result type it takes
+Check failed: Step 'draft' is a value whose type cannot be told; write it out, as `draft: Type = ...`, or check the names it uses are earlier steps or the workflow's inputs

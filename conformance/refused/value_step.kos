@@ -1,7 +1,9 @@
-// Refused: a step is a call; a bare value may stand only beside one.
+// Refused: a step that is a record value needs a type from somewhere: one
+// written out, a later step it is handed to, or the workflow's result.
 
 record Said { text: Text }
 
 workflow main() -> Said {
-  said = {text: "hi"}
+  draft = {text: "hi"}
+  said = {text: "bye"}
 }

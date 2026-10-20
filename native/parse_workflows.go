@@ -146,7 +146,7 @@ func (p *Parser) parseWorkflow() *WorkflowDecl {
 		switch {
 		case p.accept("step"):
 			workflow.Steps = append(workflow.Steps, p.parseLongStep())
-		case p.atAssignment():
+		case p.atAssignment() || p.atTypedStep():
 			workflow.Steps = append(workflow.Steps, p.parseShortStep())
 		case p.check("parallel") && p.peek().Value == "{":
 			notYetStep(token, "a parallel block")
@@ -215,42 +215,127 @@ func (p *Parser) stepEnding(step *Step) {
 
 func (p *Parser) parseShortStep() *Step {
 	name := p.identifier()
-	p.expect("=")
-	if p.accept("match") {
-		// The step makes one of several calls, chosen by a value.
-		step := &Step{Name: name, Binding: name, Return: name, Subject: p.parseOr()}
-		p.expect("{")
-		for !p.accept("}") {
-			p.expect("case")
-			branch := Branch{Any: true}
-			if !p.accept("_") {
-				token := p.advance()
-				branch.Any = false
-				switch {
-				case token.Kind == "STRING":
-					branch.Pattern = token.Value
-				case token.Kind == "NUMBER":
-					branch.Pattern = numberLiteral(token.Value, false)
-				case token.Kind == "IDENT" && (token.Value == "true" || token.Value == "false"):
-					branch.Pattern = token.Value == "true"
-				default:
-					parseFail("Expected 'value' at %d:%d, got %s", token.Line, token.Column, quoted(token.Value))
-				}
-			}
-			p.expect("{")
-			branch.Call = p.parseStepCall()
-			p.expect("}")
-			step.Branches = append(step.Branches, branch)
-		}
-		if len(step.Branches) == 0 {
-			p.expect("case")
-		}
-		step.Call = step.Branches[0].Call
-		return step
+	written := ""
+	if p.accept(":") {
+		written = p.parseTypeName(0)
 	}
-	step := &Step{Name: name, Call: p.parseStepCall(), Binding: name, Return: name}
+	p.expect("=")
+	if written == "" && p.check("match") {
+		if step := p.parseMatchStep(name); step != nil {
+			return step
+		}
+	}
+	step := &Step{Name: name, Call: p.parseStepOrValue(), Binding: name, BindingType: written, Return: name}
 	p.stepEnding(step)
 	return step
+}
+
+// parseMatchStep reads a step that makes one of several calls, chosen by a
+// value. A case may give a value instead of a call, typed from the calls
+// beside it. When no case makes a call, as `size = match n { case 1 { "one" }
+// case _ { "many" } }`, the step is a plain value, an ordinary `match`: nil
+// is given back and the parser is where it was.
+func (p *Parser) parseMatchStep(name string) (found *Step) {
+	start := p.index
+	defer func() {
+		if caught := recover(); caught != nil {
+			if !isPlainParseError(caught) {
+				panic(caught)
+			}
+			found = nil
+		}
+		if found != nil {
+			for _, branch := range found.Branches {
+				if !isValueCall(branch.Call) {
+					return
+				}
+			}
+		}
+		found = nil
+		p.index = start
+	}()
+	p.expect("match")
+	step := &Step{Name: name, Binding: name, Return: name, Subject: p.parseOr()}
+	p.expect("{")
+	for !p.accept("}") {
+		p.expect("case")
+		branch := Branch{Any: true}
+		if !p.accept("_") {
+			token := p.advance()
+			branch.Any = false
+			switch {
+			case token.Kind == "STRING":
+				branch.Pattern = token.Value
+			case token.Kind == "NUMBER":
+				branch.Pattern = numberLiteral(token.Value, false)
+			case token.Kind == "IDENT" && (token.Value == "true" || token.Value == "false"):
+				branch.Pattern = token.Value == "true"
+			default:
+				parseFail("Expected 'value' at %d:%d, got %s", token.Line, token.Column, quoted(token.Value))
+			}
+		}
+		p.expect("{")
+		branch.Call = p.parseStepOrValue()
+		p.expect("}")
+		step.Branches = append(step.Branches, branch)
+	}
+	if len(step.Branches) == 0 {
+		p.expect("case")
+	}
+	step.Call = step.Branches[0].Call
+	return step
+}
+
+// callWords are words that, followed by a name, can only begin a step's
+// call.
+var callWords = map[string]bool{"classify": true, "extract": true, "summarize": true, "decide": true, "use_model": true, "ask": true, "execute": true, "recall": true, "remember": true, "call": true, "post": true, "fetch": true, "read": true, "write": true, "list": true}
+
+// afterACall is what may follow a step's call on its line: its modifiers,
+// or the end of a block.
+var afterACall = map[string]bool{"verify": true, "vote": true, "retry": true, "escalate": true, "learn": true, "otherwise": true, "}": true}
+
+// parseStepOrValue reads a step's call, or else a plain value: `count =
+// before + 1`, `size = if big { 2 } else { 1 }`. A value is worked out by
+// code, like a function the step calls; LowerValues makes it one. What
+// reads as a call followed by more of an expression on its line, as
+// `f(x) + 1`, is a value too.
+func (p *Parser) parseStepOrValue() *StepCall {
+	start := p.index
+	token := p.current()
+	following := p.peek()
+	if token.Kind == "IDENT" && callWords[token.Value] && (following.Kind == "IDENT" || following.Kind == "STRING") && following.Line == token.Line {
+		// `recall notes under k`: a call however it is written, so a
+		// mistake in it is reported as one.
+		return p.parseStepCall()
+	}
+	if call := p.tryStepCall(); call != nil {
+		after, ended := p.current(), p.tokens[p.index-1]
+		if after.Line != ended.Line || after.Kind == "EOF" || afterACall[after.Value] {
+			return call
+		}
+	}
+	p.index = start
+	return &StepCall{Kind: "function", Name: valueCall, Args: []Arg{{"value", p.expression()}}, Line: token.Line}
+}
+
+// isPlainParseError is true of a parse error that only says what was
+// expected, not of one saying this engine cannot run something yet.
+func isPlainParseError(caught any) bool {
+	failure, ok := caught.(*ParseError)
+	return ok && !strings.HasPrefix(failure.Message, "kosika-native cannot")
+}
+
+// tryStepCall is parseStepCall, or nil where what follows is not a call.
+func (p *Parser) tryStepCall() (call *StepCall) {
+	defer func() {
+		if caught := recover(); caught != nil {
+			if !isPlainParseError(caught) {
+				panic(caught)
+			}
+			call = nil
+		}
+	}()
+	return p.parseStepCall()
 }
 
 func (p *Parser) parseLongStep() *Step {

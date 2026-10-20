@@ -29,7 +29,7 @@ long form it stands for, so the checker and runtime never see it.
 from __future__ import annotations
 
 from dataclasses import fields, is_dataclass, replace
-from typing import Any
+from typing import Any, Mapping
 
 from .ast import (
     AgentCall,
@@ -313,6 +313,19 @@ def lower_values(program: Program) -> Program:
             )
             prefix = f"{workflow.name}${step.name}$"
             changes: dict[str, Any] = {}
+            if _is_value(step.call) and not step.branches:
+                # `count = before + 1`: a step that is a value. Its type is
+                # the one written, `tally: Tally = ...`, or else the type of
+                # the value itself.
+                known = step.binding_type or _value_type(
+                    program, step.call.arguments[0][1], seen
+                )
+                if known is None:
+                    known = _type_from_use(program, workflow, step.name)
+                if known is None and step is workflow.steps[-1]:
+                    # The last step is what the workflow returns.
+                    known = workflow.output_type
+                changes["call"] = stand_in(step.call, f"{prefix}value", known)
             if step.branches:
                 branches = tuple(
                     (pattern, stand_in(call, f"{prefix}case{index + 1}", known))
@@ -333,6 +346,47 @@ def lower_values(program: Program) -> Program:
     if not made:
         return program
     return replace(program, workflows=workflows, functions=[*program.functions, *made])
+
+
+def _type_from_use(program: Program, workflow: Any, name: str) -> str | None:
+    """The type a value step must have, read from where a later step hands
+    it on whole: `remember tally in counts under k` or `f(tally)`."""
+
+    functions = {item.name: item for item in program.functions}
+    tools = {item.name: item for item in program.tools}
+    records = {item.name: item for item in program.records}
+    for later in workflow.steps:
+        for call in [later.call, later.fallback, *(c for _, c in later.branches)]:
+            for argument, value in getattr(call, "arguments", ()):
+                if not (isinstance(value, VariableExpr) and value.name == name):
+                    continue
+                if isinstance(call, FunctionCall) and call.function_name in functions:
+                    parameters = functions[call.function_name].parameters
+                    # A sole argument is not yet named for its parameter.
+                    if len(parameters) == 1 and len(call.arguments) == 1:
+                        return parameters[0].type_name
+                    for parameter in parameters:
+                        if parameter.name == argument:
+                            return parameter.type_name
+                if isinstance(call, ToolCall) and call.tool_name in tools:
+                    shape = records.get(tools[call.tool_name].input)
+                    for field_ in shape.fields if shape else ():
+                        if field_.name == argument:
+                            return field_.type_name
+    return None
+
+
+def _value_type(program: Program, value: Any, seen: Mapping[str, str]) -> str | None:
+    """The type of a value a step is, worked out as the checker would; None
+    when it cannot be told, so the checker says what to write."""
+
+    from .checker import _Env, _expression_type
+
+    try:
+        found = _expression_type(value, _Env(dict(seen)), program, step_name="value")
+    except Exception:  # noqa: BLE001 - any fault is reported by the checker
+        return None
+    return found if isinstance(found, str) and found not in ("Null", "") else None
 
 
 def _calls_by_name(value: Any, found: set[str]) -> set[str]:
@@ -474,5 +528,7 @@ def lower_enums(program: Program) -> Program:
 
 def lower_sugar(program: Program) -> Program:
     return add_main_workflow(
-        fill_defaults(name_sole_arguments(lower_values(lower_enums(program))))
+        fill_defaults(
+            name_sole_arguments(lower_values(name_sole_arguments(lower_enums(program))))
+        )
     )

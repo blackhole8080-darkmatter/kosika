@@ -15,12 +15,56 @@ var allowedAccess = map[string]bool{"observe": true, "analyze": true, "prepare":
 
 func (c *checker) checkValueSteps() {
 	for _, workflow := range c.program.Workflows {
+		// What a value step may name: the inputs and the earlier steps
+		// whose type is known.
+		seen := map[string]string{}
+		for _, param := range workflow.Params {
+			seen[param.Name] = param.Type
+		}
 		for _, step := range workflow.Steps {
-			if step.Call.Kind == "function" && step.Call.Name == valueCall {
-				checkFail("Step %s has a value where a call is needed; a value may stand after 'otherwise' or in a 'case', beside a call whose result type it takes", pyRepr(step.Name))
+			if !isValueCall(step.Call) {
+				if found := step.BindingType; found != "" {
+					seen[step.Name] = found
+				} else if found := callOutput(c.program, step.Call); found != "" {
+					seen[step.Name] = found
+				}
+				continue
 			}
+			// Left as a value, its type could not be told. A fault in the
+			// value itself, as `n + "x"`, is the one to report.
+			c.valueFault(workflow, step, seen)
+			checkFail("Step %s is a value whose type cannot be told; write it out, as `%s: Type = ...`, or check the names it uses are earlier steps or the workflow's inputs", pyRepr(step.Name), step.Name)
 		}
 	}
+}
+
+func (c *checker) valueFault(workflow *WorkflowDecl, step *Step, seen map[string]string) {
+	defer func() {
+		caught := recover()
+		failure, ok := caught.(*CheckError)
+		if caught == nil {
+			return
+		}
+		if !ok {
+			panic(caught)
+		}
+		if strings.Contains(failure.Message, "cannot infer") {
+			return
+		}
+		if strings.Contains(failure.Message, "unknown variable") {
+			for _, earlier := range workflow.Steps {
+				if strings.Contains(failure.Message, "unknown variable "+pyRepr(earlier.Name)) {
+					return
+				}
+			}
+		}
+		panic(caught)
+	}()
+	env := newEnv()
+	for name, typeName := range seen {
+		env.types[name] = typeName
+	}
+	c.typeOf(step.Call.Args[0].Value, env, step.Name, "")
 }
 
 // pyNumber writes a budget's amount as Python's str() does.

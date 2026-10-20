@@ -104,6 +104,33 @@ func (p *Parser) atAssignment() bool {
 	return following.Value == "=" && (following.Kind == "SYMBOL" || following.Kind == "OP")
 }
 
+// atTypedStep is true at `tally: Tally = ...`, a workflow step whose result
+// type is written out.
+func (p *Parser) atTypedStep() bool {
+	if p.current().Kind != "IDENT" || p.index+1 >= len(p.tokens) {
+		return false
+	}
+	following := p.tokens[p.index+1]
+	if following.Value != ":" || (following.Kind != "SYMBOL" && following.Kind != "OP") {
+		return false
+	}
+	depth := 0
+	for i := p.index + 2; i < len(p.tokens) && i < p.index+12; i++ {
+		token := p.tokens[i]
+		switch {
+		case token.Value == "[" || token.Value == "(":
+			depth++
+		case token.Value == "]" || token.Value == ")":
+			depth--
+		case token.Value == "=" && depth == 0 && (token.Kind == "SYMBOL" || token.Kind == "OP"):
+			return true
+		case token.Line != following.Line || token.Value == "{" || token.Value == "}":
+			return false
+		}
+	}
+	return false
+}
+
 func (p *Parser) atUpdate() bool {
 	if p.current().Kind != "IDENT" || p.index+1 >= len(p.tokens) {
 		return false
@@ -650,6 +677,11 @@ func (p *Parser) parseRecordExpression() Expr {
 		record.Fields = append(record.Fields, RecordField{name, p.expression()})
 		if p.accept("}") {
 			return record
+		}
+		if (p.current().Kind == "IDENT" || p.current().Kind == "STRING") && p.peek().Value == ":" {
+			// `{title: t field: f}`: fields need no comma between them, as
+			// in a record's declaration.
+			continue
 		}
 		p.expect(",")
 	}

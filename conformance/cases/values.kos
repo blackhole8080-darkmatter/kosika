@@ -1,0 +1,45 @@
+// A workflow step may be a plain value, worked out by code. Its type is
+// the one written out, the value's own, the one a later step takes it as,
+// or, for the last step, the workflow's result.
+
+record Msg { text: Text }
+record Tally { count: Number }
+record Out { text: Text count: Number big: Bool size: Text }
+
+fn base(m: Msg) -> Number {
+  return m.text.length()
+}
+
+fn keep(t: Tally) -> Tally {
+  return t
+}
+
+workflow main(m: Msg) -> Out {
+  before = base(m)
+  count  = before + 1
+  big    = if count > 3 { true } else { false }
+  size   = match count {
+    case 1 { "tiny" }
+    case _ { "some" }
+  }
+  tally  = {count: count}
+  kept   = keep(tally)
+  typed: Tally = {count: kept.count * 10}
+  shout  = base(m) + 1
+  result = {text: m.text.upper() + "!" count: typed.count big: big size: size}
+}
+
+test "each value is worked out in turn" {
+  o = main({text: "hey"})
+  expect o.text == "HEY!"
+  expect o.count == 40
+  expect o.big
+  expect o.size == "some"
+}
+
+test "a short text is not big" {
+  o = main({text: ""})
+  expect o.count == 10
+  expect o.big == false
+  expect o.size == "tiny"
+}

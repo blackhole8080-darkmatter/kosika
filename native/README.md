@@ -47,7 +47,8 @@ and give text. Workflows, whose steps call
 a function, run another workflow, use a tool through an agent, or ask a
 model (asked again on a refused answer with `retry`), ask an agent, or
 think (`classify`, `extract`, `summarize`, `decide`), with a fallback
-(`otherwise`) or a choice of call (`match`); tools and agents as they are
+(`otherwise`) or a choice of call (`match`), or are a plain value worked
+out by code (`count = before + 1`); tools and agents as they are
 declared; and tests that run a workflow and script what its models and
 tools answer. With `run`, a model is a real one: a model server spoken to
 as the reference speaks to it, with the same requests word for word; a

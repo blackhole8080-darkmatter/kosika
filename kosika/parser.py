@@ -73,6 +73,22 @@ _COMPOUND = ("+=", "-=", "*=", "/=")
 WHILE_PASSES = 1_000_000_000
 
 
+#: Words that, followed by a name, can only begin a step's call.
+_CALL_WORDS = frozenset(
+    {"classify", "extract", "summarize", "decide", "use_model", "ask", "execute"}
+    | {"recall", "remember", "call", "post", "fetch", "read", "write", "list"}
+)
+
+#: What may follow a step's call on its line: its modifiers, or the end of a
+#: block.
+_AFTER_A_CALL = frozenset(
+    {"verify", "vote", "retry", "escalate", "learn", "otherwise", "}"}
+)
+
+def _is_value_call(call: object) -> bool:
+    return isinstance(call, FunctionCall) and call.function_name == VALUE_CALL
+
+
 #: Words that begin a workflow step. Written where a value is expected, they
 #: are reported as such; see `parse_primary_expression`.
 _STEP_WORDS = frozenset(
@@ -130,6 +146,19 @@ class Parser:
         if self.current.kind != "IDENT" or self.index + 1 >= len(self.tokens):
             return False
         following = self.tokens[self.index + 1]
+        if following.value == ":" and following.kind in {"SYMBOL", "OP"}:
+            # `tally: Tally = ...`: a step whose result type is written out.
+            depth = 0
+            for token in self.tokens[self.index + 2 : self.index + 12]:
+                if token.value in ("[", "("):
+                    depth += 1
+                elif token.value in ("]", ")"):
+                    depth -= 1
+                elif token.value == "=" and depth == 0 and token.kind in {"SYMBOL", "OP"}:
+                    return True
+                elif token.line != following.line or token.value in ("{", "}"):
+                    return False
+            return False
         return following.value == "=" and following.kind in {"SYMBOL", "OP"}
 
     def parse_binding(self) -> LocalBinding:
@@ -651,6 +680,13 @@ class Parser:
             fields.append((name, self.expression()))
             if self.accept("}"):
                 return RecordExpr(tuple(fields), base)
+            if (
+                self.current.kind in ("IDENT", "STRING")
+                and self.peek().value == ":"
+            ):
+                # `{title: t field: f}`: fields need no comma between them,
+                # as in a record's declaration.
+                continue
             self.expect(",")
 
     def parse(self) -> Program:
@@ -1369,47 +1405,13 @@ class Parser:
         """
 
         name = self.identifier()
+        written_type = self.parse_type_name() if self.accept(":") else None
         self.expect("=")
-        if self.accept("match"):
-            # The step makes one of several calls, chosen by a value.
-            subject = self.parse_or_expression()
-            self.expect("{")
-            branches: list[tuple[Any, Any]] = []
-            while not self.accept("}"):
-                self.expect("case")
-                pattern: Any = None
-                if not self.accept("_"):
-                    token = self.advance()
-                    if token.kind == "STRING":
-                        pattern = token.value
-                    elif token.kind == "NUMBER":
-                        pattern = (
-                            float(token.value)
-                            if "." in token.value
-                            else int(token.value)
-                        )
-                    elif token.kind == "IDENT" and token.value in ("true", "false"):
-                        pattern = token.value == "true"
-                    else:
-                        raise ParseError(
-                            f"Expected 'value' at {token.line}:{token.column}, "
-                            f"got {token.value!r}"
-                        )
-                self.expect("{")
-                branches.append((pattern, self.parse_step_call()))
-                self.expect("}")
-            if not branches:
-                self.expect("case")
-            return Step(
-                name,
-                branches[0][1],
-                name,
-                None,
-                name,
-                subject=subject,
-                branches=tuple(branches),
-            )
-        call = self.parse_step_call()
+        if written_type is None and self.check("match"):
+            step = self.parse_match_step(name)
+            if step is not None:
+                return step
+        call = self.parse_step_or_value()
         verify = self.parse_step_call() if self.accept("verify") else None
         votes = self.parse_step_count("vote")
         retries = self.parse_step_count("retry")
@@ -1420,7 +1422,7 @@ class Parser:
             name,
             call,
             name,
-            None,
+            written_type,
             name,
             fallback,
             retries,
@@ -1430,6 +1432,100 @@ class Parser:
             learns=learns,
             learn_by=learn_by,
         )
+
+    def parse_match_step(self, name: str) -> Step | None:
+        """A step that makes one of several calls, chosen by a value. A case
+        may give a value instead of a call, typed from the calls beside it.
+
+        When no case makes a call, as `size = match n { case 1 { "one" }
+        case _ { "many" } }`, the step is a plain value, an ordinary `match`;
+        None is given back and the parser is where it was."""
+
+        start = self.index
+        try:
+            step = self._match_step(name)
+        except ParseError:
+            step = None
+        if step is None or all(_is_value_call(call) for _, call in step.branches):
+            self.index = start
+            return None
+        return step
+
+    def _match_step(self, name: str) -> Step:
+        self.expect("match")
+        subject = self.parse_or_expression()
+        self.expect("{")
+        branches: list[tuple[Any, Any]] = []
+        while not self.accept("}"):
+            self.expect("case")
+            pattern: Any = None
+            if not self.accept("_"):
+                token = self.advance()
+                if token.kind == "STRING":
+                    pattern = token.value
+                elif token.kind == "NUMBER":
+                    pattern = (
+                        float(token.value)
+                        if "." in token.value
+                        else int(token.value)
+                    )
+                elif token.kind == "IDENT" and token.value in ("true", "false"):
+                    pattern = token.value == "true"
+                else:
+                    raise ParseError(
+                        f"Expected 'value' at {token.line}:{token.column}, "
+                        f"got {token.value!r}"
+                    )
+            self.expect("{")
+            branches.append((pattern, self.parse_step_or_value()))
+            self.expect("}")
+        if not branches:
+            self.expect("case")
+        return Step(
+            name,
+            branches[0][1],
+            name,
+            None,
+            name,
+            subject=subject,
+            branches=tuple(branches),
+        )
+
+    def parse_step_or_value(
+        self,
+    ) -> ToolCall | ModelCall | AgentCall | WorkflowCall | FunctionCall:
+        """A step's call, or else a plain value: `count = before + 1`,
+        `size = if big { 2 } else { 1 }`, `tally = {count: count}`.
+
+        A value is worked out by code, like a function the step calls;
+        `kosika.sugar` makes it one. What reads as a call followed by more of
+        an expression on the same line, as `f(x) + 1`, is a value too."""
+
+        start = self.index
+        first, following = self.current, self.peek()
+        if (
+            first.kind == "IDENT"
+            and first.value in _CALL_WORDS
+            and following.kind in ("IDENT", "STRING")
+            and following.line == first.line
+        ):
+            # `recall notes under k`: a call however it is written, so a
+            # mistake in it is reported as one.
+            return self.parse_step_call()
+        try:
+            call = self.parse_step_call()
+            after = self.current
+            ended = self.tokens[self.index - 1]
+            if (
+                after.line != ended.line
+                or after.kind == "EOF"
+                or after.value in _AFTER_A_CALL
+            ):
+                return call
+        except ParseError:
+            pass
+        self.index = start
+        return FunctionCall(VALUE_CALL, (("value", self.expression()),))
 
     def parse_learn(self) -> tuple[bool, Expression | None]:
         """An optional `learn` or `learn by EXPRESSION` after a step's call.

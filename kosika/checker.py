@@ -1583,7 +1583,36 @@ def check(program: Program) -> None:
 
 def _check(program: Program) -> None:
     for workflow in program.workflows:
+        # What a value step may name: the inputs and the earlier steps whose
+        # type is known.
+        seen = {field.name: field.type_name for field in workflow.parameters}
         for step in workflow.steps:
+            if (
+                isinstance(step.call, FunctionCall)
+                and step.call.function_name == VALUE_CALL
+                and not step.branches
+            ):
+                # Left as a value, its type could not be told. A fault in the
+                # value itself, as `n + "x"`, is the one to report.
+                try:
+                    _expression_type(
+                        step.call.arguments[0][1],
+                        _Env(dict(seen)),
+                        program,
+                        step_name=step.name,
+                    )
+                except CheckError as fault:
+                    if "cannot infer" in str(fault):
+                        pass
+                    elif "unknown variable" not in str(fault) or not any(
+                        f"unknown variable {earlier.name!r}" in str(fault)
+                        for earlier in workflow.steps
+                    ):
+                        raise
+            else:
+                found = step.binding_type or _call_output(program, step.call)
+                if found is not None:
+                    seen[step.name] = found
             calls = [step.call, step.fallback, *(c for _, c in step.branches)]
             # Only a value with no call beside it is reported here. Beside a
             # call that is itself wrong, that call's own fault is the one to
@@ -1594,9 +1623,9 @@ def _check(program: Program) -> None:
                 for call in calls
             ):
                 raise CheckError(
-                    f"Step {step.name!r} has a value where a call is needed; a "
-                    "value may stand after 'otherwise' or in a 'case', beside a "
-                    "call whose result type it takes"
+                    f"Step {step.name!r} is a value whose type cannot be told; "
+                    f"write it out, as `{step.name}: Type = ...`, or check the "
+                    "names it uses are earlier steps or the workflow's inputs"
                 )
     _check_enums(program)
     _check_shapes(program)

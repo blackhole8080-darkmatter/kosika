@@ -3506,6 +3506,21 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   programs with workflows, agents and tools; the guide does not teach
   those yet.
 
+### Plain values as workflow steps, in both engines
+
+- A step may be a value worked out by code (kosika/parser.py
+  `parse_step_or_value`, kosika/sugar.py `lower_values`,
+  native/parse_workflows.go, native/sugar.go): `count = before + 1`,
+  `big = if count > 3 { true } else { false }`, `shout = base(m) + 1`.
+  Its type is the one written (`typed: Tally = {...}`), the value's own,
+  the one a later step takes it as, or the workflow's result for the last
+  step. A `match` step whose cases are all values is an ordinary `match`.
+  Record values may leave out the commas between fields.
+- A fault inside the value is reported as itself (`n + "x"`, an unknown
+  name), not as a type that cannot be told.
+- Held by `cases/values.kos`, `refused/value_step.kos`,
+  `refused/value_fault.kos` and `tests/test_value_steps.py`.
+
 ### Everyday methods, in both engines
 
 - Text: `capitalize()`, `title()`, `count(part)`, `repeat(times)`,
