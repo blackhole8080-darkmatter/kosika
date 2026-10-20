@@ -463,14 +463,33 @@ func replayAnswer(key string, call, returned *Record, result Value, version int)
 	if entry(returned, "finish_reason") != "stop" || !hasContent {
 		replayFail("Model trace contains an incomplete response")
 	}
-	if _, quoted := call.Fields["evidence"]; quoted {
-		replayFail("kosika-native cannot replay an answer with evidence yet")
-	}
 	parsed, unreadable := parseStrictJSON(content)
 	if unreadable != "" {
 		replayFail("%s", unreadable)
 	}
 	answered := fillAbsentSchema(parsed, entry(call, "output_schema"))
+	if kind, quoted := call.Fields["evidence"]; quoted {
+		// The model answered with the record plus its quotes. Replay proves
+		// the quotes again from the recorded input.
+		answer, isRecord := answered.(*Record)
+		recorded, resultIsRecord := result.(*Record)
+		if !isRecord || !resultIsRecord {
+			replayFail("Evidence trace requires a record answer")
+		}
+		var quotes Value
+		answered, quotes = splitEvidence(answer)
+		if !sameJSON(statedQuotes(quotes), statedQuotes(returned.Fields["evidence"])) {
+			replayFail("Model response and recorded evidence differ")
+		}
+		given := map[string]Value{}
+		if arguments, ok := entry(call, "arguments").(*Record); ok {
+			given = arguments.Fields
+		}
+		kindName, _ := kind.(string)
+		if problem := evidenceProblem(kindName, given, recorded, quotes); problem != "" {
+			replayFail("Trace evidence does not hold: %s", problem)
+		}
+	}
 	if key == "agent" && takesDid(entry(call, "output_schema")) {
 		shown := didFrom(entry(returned, "messages"), entry(call, "changes"))
 		record, ok := result.(*Record)

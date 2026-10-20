@@ -1,0 +1,9 @@
+FAIL  a quote too short to check
+      line 23: classify answered without evidence: The answer has a quote too short to check: 'a.'
+FAIL  a filled field with no quote
+      line 29: extract answered without evidence: Field 'city' has no quote
+FAIL  a yes with nothing quoted
+      line 35: decide answered without evidence: The answer has no quote from the given text
+FAIL  a label with no quotes at all
+      line 41: classify answered without evidence: The answer has no quote from the given text
+0 passed, 4 failed

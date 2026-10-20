@@ -182,6 +182,8 @@ type StepCall struct {
 	Record string
 	Model  string
 	More   []string
+	// Evidence is `with evidence`: the answer must quote the text given.
+	Evidence bool
 }
 
 // A Branch is one case of a match step: the call made when the subject
@@ -253,6 +255,9 @@ type ModelDecl struct {
 	// A model made for a thinking step names, as Provider, the declared
 	// model whose answers it gives, and the Verb it was made for.
 	Provider, Verb string
+	// Evidence is the rule a model made for `with evidence` follows
+	// (fields, quotes or quotes_if_true), "" for one without.
+	Evidence string
 }
 
 type Program struct {

@@ -165,10 +165,31 @@ func LowerThinking(program *Program) (lowered *Program, refused string) {
 		if call.Verb == "extract" {
 			name += "/" + output
 		}
+		kind := ""
+		if call.Evidence {
+			kind = evidenceKinds[call.Verb]
+			if kind == "" {
+				thinkFail("Step %s cannot give evidence: %s writes new text, so there is nothing to quote", pyRepr(step.Name), call.Verb)
+			}
+			if call.Verb == "extract" {
+				for _, record := range program.Records {
+					if record.Name != output {
+						continue
+					}
+					for _, field := range record.Fields {
+						if field.Name == evidenceKey {
+							thinkFail("Step %s cannot give evidence: record %s has its own field named %s", pyRepr(step.Name), pyRepr(output), pyRepr(evidenceKey))
+						}
+					}
+				}
+			}
+			name += "/evidence"
+		}
 		if generated[name] == nil {
 			made := *base
 			made.Name, made.Input, made.Output = name, input, output
 			made.Provider, made.Verb, made.Default = base.Name, call.Verb, false
+			made.Evidence = kind
 			generated[name] = &made
 			order = append(order, name)
 		}

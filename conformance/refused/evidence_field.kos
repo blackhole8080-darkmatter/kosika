@@ -1,0 +1,10 @@
+// Refused: the quotes would have nowhere to go.
+
+record Note { text: Text }
+record Found { name: Text evidence: Text }
+
+model assistant
+
+workflow main(note: Note) -> Found {
+  found = extract Found from note.text with evidence
+}

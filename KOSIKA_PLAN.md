@@ -3506,6 +3506,24 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   programs with workflows, agents and tools; the guide does not teach
   those yet.
 
+### The native engine checks evidence
+
+- `classify`, `extract` and `decide` written `with evidence` run in
+  native/ (native/evidence.go): the model is asked for its answer plus
+  quotes, every quote must appear in the text the step was given
+  (ignoring case, spacing and curly quotation marks, after NFKC and
+  casefolding as the reference does), and an answer whose quote is not
+  there is refused like any other, so `retry` and `otherwise` apply. The
+  quotes are kept in the trace and proved again on replay, by either
+  engine.
+- The engine's first outside package: `golang.org/x/text`, for NFKC and
+  full case folding, which Go's standard library lacks. It is vendored
+  (3.4 MB), so the engine still builds with no network.
+- Held by `cases/evidence.kos`, `failing/evidence.kos` (the four ways
+  evidence fails, word for word), `refused/evidence_summary.kos`,
+  `refused/evidence_field.kos`, and an evidence step, refused once and
+  then accepted, in the run whose trace both engines write alike.
+
 ### The native engine votes, and escalates to a stronger model
 
 - `vote N` (3, 5, 7 or 9) asks a model step N times and keeps what more

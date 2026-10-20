@@ -145,10 +145,11 @@ class NativeTests(unittest.TestCase):
                 encoding="utf-8",
             )
             ran = self.run_engine("test", str(quoting))
-        self.assertEqual(ran.returncode, 1)
+        # Evidence runs now; this one is refused for the reference's reason.
+        self.assertEqual(ran.returncode, 2)
         self.assertIn(
-            "kosika-native cannot run a step with evidence yet",
-            ran.stderr.decode("utf-8", "replace"),
+            "cannot give evidence: summarize writes new text",
+            ran.stdout.decode("utf-8", "replace"),
         )
         with tempfile.TemporaryDirectory() as scratch:
             voting = Path(scratch) / "voting.kos"
@@ -417,6 +418,7 @@ class NativeTests(unittest.TestCase):
             "model editor {\n  input: Ask\n  output: Said\n}\n"
             "model stronger {\n  input: Ask\n  output: Said\n}\n"
             "model judge {\n  input: Ask\n  output: Said\n}\n"
+            "model reader {\n  input: Ask\n  output: Said\n}\n"
             "fn short(said: Said, ask: Ask) -> Text {\n"
             '  if said.text.length() > ask.text.length() { return "Too long." }\n'
             '  return ""\n}\n'
@@ -439,6 +441,7 @@ class NativeTests(unittest.TestCase):
             "  edited = use_model editor(text: ask.text, kind: ask.kind) verify short(edited, ask) retry 1\n"
             '  voted = classify ask.text into ["a", "b"] using judge vote 3\n'
             "  lifted = use_model editor(text: ask.text, kind: ask.kind) escalate stronger\n"
+            '  quoted = classify ask.text into ["a", "b"] with evidence using reader retry 1\n'
             '  kind = classify ask.text into ["a", "b"]\n'
             "  brief = summarize ask.text\n"
             "  helped = ask plain(text: ask.text, kind: ask.kind)\n"
@@ -451,6 +454,10 @@ class NativeTests(unittest.TestCase):
             "helper": [{"words": 1}, {"text": "fine", "did": ["claimed"]}],
             "editor": [{"text": "far too long", "n": 1}, {"text": "ok", "n": 1}, {"text": 1, "n": 1}],
             "stronger": [{"text": "up", "n": 3}],
+            "reader": [
+                {"label": "a", "confidence": 1, "evidence": ["nope"]},
+                {"label": "b", "confidence": 1, "evidence": ["HI"]},
+            ],
             "judge": [
                 {"label": "a", "confidence": 1},
                 {"label": "b", "confidence": 1},

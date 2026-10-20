@@ -1,7 +1,9 @@
 # Kosika's native engine
 
 Kosika run with no Python. It is written in Go and builds to one program
-file.
+file. Its one outside package, `golang.org/x/text` (for matching quotes
+as the reference does), is kept in `vendor/`, so it builds with no
+network.
 
     go build -o kosika-native.exe .
     kosika-native test FILE.kos      run the tests the file carries
@@ -49,7 +51,9 @@ model (its answer checked by a function of the program with `verify`,
 asked again on a refused answer with `retry`, asked several times with
 `vote N`, the models listed with `using` taking turns, or handed to a
 stronger model with `escalate`), ask an agent, or
-think (`classify`, `extract`, `summarize`, `decide`), with a fallback
+think (`classify`, `extract`, `summarize`, `decide`, the first three
+quoting the text they were given when written `with evidence`), with a
+fallback
 (`otherwise`) or a choice of call (`match`), or are a plain value worked
 out by code (`count = before + 1`); tools and agents as they are
 declared; and tests that run a workflow and script what its models and
@@ -83,12 +87,12 @@ print what the reference engine prints, word for word. See
 
 ## What it does not have yet
 
-- Models that answer `as text`, and steps with `learn` or `with
-  evidence`, and `parallel` blocks.
+- Models that answer `as text`, and steps with `learn`, and `parallel`
+  blocks.
 - An agent's plan that writes files, or an agent with its own `check`:
   the reference checks such a plan before showing it, and those checks are
   not here yet, so such a plan is refused by name. Replaying an agent
-  run's own trace, or an answer with evidence.
+  run's own trace.
 - `system` tools other than files and shell (web, kosika, meaning, agents,
   outside), and `fetch`; so an environment's `allow site` grants nothing
   here yet. Searching by meaning (`find`).

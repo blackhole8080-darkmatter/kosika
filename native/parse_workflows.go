@@ -479,8 +479,9 @@ func (p *Parser) parseThinkCall() *StepCall {
 	default:
 		call.Args = []Arg{{"text", subject}}
 	}
-	if p.check("with") {
-		notYetStep(p.current(), "a step with evidence")
+	if p.accept("with") {
+		p.expect("evidence")
+		call.Evidence = true
 	}
 	if p.accept("using") {
 		call.Model = p.identifier()

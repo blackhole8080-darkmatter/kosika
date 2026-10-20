@@ -377,9 +377,10 @@ type stepNote struct {
 	content     string
 	usage       Value
 	rejected    []Value
-	verified    []Value // the step's check of the answer, when it has one
-	votes       *Record // how a voting step's answers fell
-	escalated   *Record // why a stronger model was asked, when it was
+	verified    []Value       // the step's check of the answer, when it has one
+	evidence    *answerQuotes // the answer's quotes, for a step with evidence
+	votes       *Record       // how a voting step's answers fell
+	escalated   *Record       // why a stronger model was asked, when it was
 	messages    []Value
 	modelSteps  int
 	reformatted *string
@@ -447,9 +448,15 @@ func (r *run) call(call *StepCall, environment *Scope, at frame, depth, retries 
 		model := r.checker.models[call.Name]
 		first := r.begin(depth, event("model_call", "model", model.Name, "arguments", recorded, "expression_events", eventList(expressionEvents),
 			"input_schema", r.checker.schemaFor(model.Input), "output_schema", r.checker.schemaFor(model.Output)))
+		if model.Evidence != "" {
+			first.set("evidence", model.Evidence)
+		}
 		result := r.model(model, arguments, retries)
 		returned := event("model_return", "model", model.Name, "result", result, "content", r.note.content,
 			"finish_reason", "stop", "usage", r.note.usage)
+		if r.note.evidence != nil {
+			returned.set("evidence", r.note.evidence.quotes)
+		}
 		if r.note.verified != nil {
 			returned.set("verified", eventList(r.note.verified))
 		}
@@ -601,10 +608,14 @@ type answerNote struct {
 	content  string
 	rejected []Value
 	verified []Value
+	evidence *answerQuotes
 }
 
+// answerQuotes holds an answer's quotes; null quotes are kept as they came.
+type answerQuotes struct{ quotes Value }
+
 func (r *run) keep(note answerNote) {
-	r.note.content, r.note.rejected, r.note.verified = note.content, note.rejected, note.verified
+	r.note.content, r.note.rejected, r.note.verified, r.note.evidence = note.content, note.rejected, note.verified, note.evidence
 }
 
 // refusedAnswer is true of the failures another ballot or a stronger model
@@ -730,10 +741,15 @@ func (r *run) vote(model *ModelDecl, arguments map[string]Value, input *Record, 
 func (r *run) askOnce(model *ModelDecl, bound string, arguments map[string]Value, input *Record, retries int) (Value, answerNote) {
 	task := ""
 	if instruction := thinkingInstructions[model.Verb]; instruction != "" {
-		task = " Task: " + instruction
+		task = " Task: " + instruction + evidenceInstructions[model.Evidence]
+	}
+	asked := r.checker.schemaFor(model.Output)
+	if model.Evidence != "" {
+		// The model is asked for the record plus its quotes.
+		asked = answerSchema(model.Evidence, asked, schemaFields(asked))
 	}
 	messages := []chatMessage{
-		{Role: "system", Content: "Return only one JSON object matching this JSON Schema. Do not invoke tools or include Markdown. Schema: " + pyJSON(r.checker.schemaFor(model.Output), true) + task},
+		{Role: "system", Content: "Return only one JSON object matching this JSON Schema. Do not invoke tools or include Markdown. Schema: " + pyJSON(asked, true) + task},
 		{Role: "user", Content: pyJSON(input, true)},
 	}
 	var note answerNote
@@ -745,8 +761,25 @@ func (r *run) askOnce(model *ModelDecl, bound string, arguments map[string]Value
 		}
 		problem := ""
 		answer, unreadable := parseStrictJSON(response.Content)
+		note.evidence = nil
 		if unreadable != "" {
 			problem = "Invalid structured model output: " + unreadable
+		} else if model.Evidence != "" {
+			answer = fillAbsentSchema(answer, asked)
+			if shape := schemaProblem(answer, asked, "$", asked); shape != "" {
+				problem = "Invalid structured model output: " + shape
+			} else if _, isRecord := answer.(*Record); !isRecord {
+				problem = "Model step output must be a record"
+			} else {
+				record, quotes := splitEvidence(answer.(*Record))
+				answer = record
+				if missing := evidenceProblem(model.Evidence, arguments, record, quotes); missing != "" {
+					problem = model.Verb + " answered without evidence: " + missing
+				} else {
+					note.evidence = &answerQuotes{quotes}
+					problem = brokenPromise(model, arguments, record)
+				}
+			}
 		} else {
 			answer = r.fillAbsent(answer, model.Output)
 			if shape := r.problem(answer, model.Output, "$"); shape != "" {
