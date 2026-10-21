@@ -668,7 +668,13 @@ class App:
         pick_folder: Callable[[], str] | None = None,
         outside: Sequence[str] = (),
         outside_within: Path | None = None,
+        services: Path | None = None,
     ):
+        # The services file of agents that keep running (see
+        # kosika.services), shown on the Services page. Named by the person
+        # with --services or KOSIKA_SERVICES; without one the page says how.
+        named = services or (Path(os.environ["KOSIKA_SERVICES"]) if os.environ.get("KOSIKA_SERVICES") else None)
+        self.services_file = named.resolve() if named is not None else None
         # Outside command-line agents the owner allowed, and the one root
         # they may be shown. With either missing, none is ever asked.
         self.outside = tuple(outside)
@@ -2001,6 +2007,36 @@ class App:
             "story": job.story,
         }
 
+    def services(self) -> dict[str, Any]:
+        """Each service of the services file: what it may touch, how often it
+        runs, whether it is paused, and how it last went."""
+
+        from . import services as running
+
+        if self.services_file is None:
+            return {"file": "", "services": []}
+        try:
+            return {"file": str(self.services_file), "services": running.status(self.services_file)}
+        except (OSError, ValueError) as exc:
+            raise AppError(f"The services file could not be read: {exc}", 422) from exc
+
+    def pause_service(self, body: dict[str, Any]) -> dict[str, Any]:
+        """Pause or resume one service. Pausing stops nothing that is running;
+        the service is simply not started again until it is resumed."""
+
+        from . import services as running
+
+        if self.services_file is None:
+            raise AppError("Studio was started without a services file", 404)
+        name, paused = body.get("name"), body.get("paused")
+        if not isinstance(name, str) or not isinstance(paused, bool):
+            raise AppError("Send the service's name and paused: true or false")
+        try:
+            running.set_paused(self.services_file, name, paused)
+        except (OSError, ValueError) as exc:
+            raise AppError(str(exc), 404) from exc
+        return self.services()
+
     def memory(self, agent_id: str) -> dict[str, Any]:
         """What the agent remembers right now, read from its memory folder."""
 
@@ -2241,6 +2277,10 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                     self._json(200, app.mcp_tools())
                 elif method == "GET" and url.path == "/api/memory":
                     self._json(200, app.memory(agent_id))
+                elif method == "GET" and url.path == "/api/services":
+                    self._json(200, app.services())
+                elif method == "POST" and url.path == "/api/services/pause":
+                    self._json(200, app.pause_service(self._body()))
                 else:
                     self._json(404, {"error": "Not found"})
             except AppError as exc:

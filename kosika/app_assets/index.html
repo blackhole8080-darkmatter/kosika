@@ -610,6 +610,16 @@ body.on-mission .runner .scarf { animation: flap .2s ease-in-out infinite altern
 body.on-mission .track { opacity: .5; }
 @media (prefers-reduced-motion: reduce) { .stab, .runner { display: none !important; } .spy-marquee span { animation: none; } .tile, .stamp { animation: none; } }
 [data-skin="spy"] .untiled { display: none; }
+
+/* Services */
+.service .said { margin: 8px 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--code-soft); font-size: 12.5px; white-space: pre-wrap; }
+.service .said .asked { color: var(--faint); font: 11.5px var(--mono); margin-bottom: 4px; }
+.service .said .answer { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.service.paused { opacity: .72; }
+.service button.ghost { background: transparent !important; color: var(--ink) !important; box-shadow: inset 0 0 0 1px var(--line) !important; }
+[data-skin="spy"] .service .said { border-left-color: #d23a22; background: rgba(27, 23, 20, .06); }
+[data-skin="spy"] .grid > .service:nth-child(3n+2) .said { background: rgba(239, 228, 201, .08); }
+[data-skin="spy"] .service button.ghost { box-shadow: 4px 4px 0 #1b1714 !important; color: #1b1714 !important; background: #efe4c9 !important; }
 </style>
 </head>
 <body>
@@ -625,6 +635,7 @@ body.on-mission .track { opacity: .5; }
 <template id="icon-runs"><svg viewBox="0 0 24 24"><path d="M12 8v4l3 2"/><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/></svg></template>
 <template id="icon-tools"><svg viewBox="0 0 24 24"><path d="M14.5 6.5a4 4 0 0 0-5.300 5.300L3 18l3 3 6.200-6.200a4 4 0 0 0 5.300-5.300l-2.500 2.500-2.500-2.500 2.500-2.500z"/></svg></template>
 <template id="icon-skills"><svg viewBox="0 0 24 24"><path d="M12 3l2.600 5.400L20 9.300l-4 4 1 5.700-5-2.700L7 19l1-5.700-4-4 5.400-.900L12 3z"/></svg></template>
+<template id="icon-services"><svg viewBox="0 0 24 24"><path d="M12 3v3"/><path d="M12 18v3"/><path d="M4.2 7.5l2.6 1.5"/><path d="M17.2 15l2.6 1.5"/><path d="M4.2 16.5l2.6-1.5"/><path d="M17.2 9l2.6-1.5"/><circle cx="12" cy="12" r="4"/></svg></template>
 <template id="icon-permissions"><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.2 8-8 9-4.800-1-8-4.500-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/></svg></template>
 <script>
 "use strict";
@@ -810,7 +821,7 @@ function go(view, id) { location.hash = "#" + view + (id ? "/" + encodeURICompon
 window.addEventListener("hashchange", route);
 
 function drawRail(active) {
-  const items = [["assistant", "Assistant"], ["project", "Project"], ["agents", "Agents"], ["runs", "Runs"], ["tools", "Tools"], ["skills", "Skills"], ["permissions", "Permissions"]];
+  const items = [["assistant", "Assistant"], ["project", "Project"], ["agents", "Agents"], ["runs", "Runs"], ["tools", "Tools"], ["skills", "Skills"], ["services", "Services"], ["permissions", "Permissions"]];
   document.getElementById("nav").replaceChildren(...items.map(([key, label]) =>
     h("div", {class: "nav" + (key === active ? " on" : ""), onclick: () => go(key)}, icon(key), label)));
   document.getElementById("foot").replaceChildren(
@@ -837,6 +848,7 @@ async function route() {
     else if (active === "tools") await showTools();
     else if (active === "skills") await showSkills();
     else if (active === "permissions") showPermissions();
+    else if (active === "services") await showServices();
     else if (overview.assistant) await showAgent(overview.assistant, true);
     else showAgents();
   } catch (error) {
@@ -1025,6 +1037,49 @@ async function showSkills(open) {
 }
 
 // What agents may touch, and the place to change it without a command line.
+// The Services page: the agents of AIOs that keep running on this computer,
+// read from the services file (see kosika/services.py). Each says what it
+// may touch, how often it runs, and how it last went, and can be paused.
+function everyWords(seconds) {
+  if (!seconds) return "when asked";
+  for (const [unit, size] of [["day", 86400], ["hour", 3600], ["minute", 60]]) if (seconds % size === 0) { const n = seconds / size; return "every " + n + " " + unit + (n === 1 ? "" : "s"); }
+  return "every " + seconds + " seconds";
+}
+function sinceWords(at) {
+  const then = new Date(at); if (isNaN(then)) return at;
+  const minutes = Math.round((Date.now() - then.getTime()) / 60000);
+  return minutes < 1 ? "just now" : minutes < 60 ? minutes + " min ago" : minutes < 1440 ? Math.round(minutes / 60) + " h ago" : Math.round(minutes / 1440) + " d ago";
+}
+async function showServices() {
+  const view = await api("/api/services");
+  if (!view.file) {
+    main.replaceChildren(titled("MayaOS services"),
+      h("p", {class: "lead"}, "MayaOS services are Kosika agents that keep running on this computer: they watch, gather and tell you, each with only the grants its line in a services file gives it."),
+      h("div", {class: "banner"}, "Studio was started without a services file. Set KOSIKA_SERVICES to its path, for example setx KOSIKA_SERVICES \"C:\\Users\\you\\aios\\aios.services\", then start Studio again."));
+    return;
+  }
+  const running = view.services.filter(item => !item.paused).length;
+  async function toggle(item, button) {
+    button.disabled = true;
+    try { await api("/api/services/pause", {method: "POST", body: JSON.stringify({name: item.name, paused: !item.paused})}); await showServices(); }
+    catch (error) { button.disabled = false; alert(error.message); }
+  }
+  main.replaceChildren(titled("MayaOS services"),
+    h("p", {class: "lead"}, view.services.length + " services, " + running + " running. Each may touch only what its line in the services file grants. ", h("span", {class: "path"}, view.file)),
+    h("div", {class: "grid services"}, view.services.map(item => {
+      const last = item.last;
+      const state = item.paused ? ["paused", "warn"] : last ? (last.ok ? ["active", "ok"] : ["failed", "bad"]) : ["waiting", ""];
+      const button = h("button", {class: item.paused ? "" : "ghost", onclick: event => { event.stopPropagation(); toggle(item, button); }}, item.paused ? "Resume" : "Pause");
+      return h("div", {class: "card service" + (item.paused ? " paused" : ""), "data-state": state[0]},
+        h("h3", null, item.name),
+        h("div", {class: "about"}, (item.paused ? "Paused. " : "Runs " + everyWords(item.every) + ". ") + (last ? "Last ran " + sinceWords(last.at) + " (" + last.seconds + " s)" + (last.ok ? "." : ", and failed.") : "Has not run yet.")),
+        last ? h("div", {class: "said"}, h("div", {class: "asked"}, "asked: " + (last.said || "(nothing)")), h("div", {class: "answer"}, (last.answer || "").split("\n").slice(0, 3).join("\n"))) : null,
+        h("div", {class: "chips"}, chip(state[0], state[1]), item.touches.map(text => chip(text, /phone|model/.test(text) ? "think" : /reads|looks/.test(text) ? "mem" : ""))),
+        h("div", {class: "path"}, item.program),
+        h("div", null, button));
+    })));
+}
+
 function showPermissions() {
   let picked = "";
   const note = h("div", {class: "foot", style: "margin:8px 0"});
@@ -2404,7 +2459,9 @@ setSkin(skin());
       const care = chips.some(text => text.includes("asks before changing"));
       const cleared = chips.some(text => /\d+ tests?$/.test(text));
       card.prepend(h("div", {class: "file-strip spy-only"}, h("span", null, "File No. " + String(index + 1).padStart(3, "0")), h("span", null, "codename ", h("b", null, name))));
-      card.append(h("div", {class: "clip-mark spy-only"}), h("div", {class: "stamp spy-only" + (care ? " care" : ""), style: "--i:" + index}, care ? "Handle with care" : cleared ? "Cleared" : "Unclassified"));
+      const service = card.dataset.state;
+      const stamp = service === "paused" ? "On leave" : service === "failed" ? "Compromised" : service === "active" ? "On duty" : service === "waiting" ? "Standing by" : care ? "Handle with care" : cleared ? "Cleared" : "Unclassified";
+      card.append(h("div", {class: "clip-mark spy-only"}), h("div", {class: "stamp spy-only" + (care || service === "failed" ? " care" : ""), style: "--i:" + index}, stamp));
     });
   }
 
