@@ -294,7 +294,7 @@ textarea:focus, input[type=text]:focus { box-shadow: 0 0 0 3px var(--glow); }
   --glass: rgba(255, 255, 255, .7); --glass-edge: rgba(20, 20, 40, .08); --glow-a: #ff8a4c; --glow-b: #8f78ff; --glow-c: #2fb7e6;
   --settle: cubic-bezier(.16, 1, .3, 1); --ease: var(--settle);
 }
-body { background: var(--bg); position: relative; isolation: isolate; letter-spacing: .005em; }
+body { background: var(--bg); position: relative; isolation: isolate; letter-spacing: .005em; height: auto; min-height: 100%; }
 
 /* The light: three slow clouds of colour behind everything, and a fine grain
    over them so the dark reads as film, not flat paint. */
@@ -306,6 +306,24 @@ body::before {
     radial-gradient(40vmax 32vmax at 60% 92%, color-mix(in srgb, var(--glow-c) 18%, transparent), transparent 72%);
   filter: saturate(120%); opacity: .55; animation: aurora 48s cubic-bezier(.45, 0, .55, 1) infinite alternate;
 }
+
+/* The constellation: a core of light, an orbit, stars, and comets. */
+.stage-svg.constellation { max-height: 420px; }
+.stage-star { fill: #fff; opacity: .35; animation: twinkle 3.2s ease-in-out infinite alternate; }
+@keyframes twinkle { from { opacity: .12; } to { opacity: .7; } }
+.stage-orbit { fill: none; stroke: color-mix(in srgb, var(--glow-b) 30%, transparent); stroke-width: 1; stroke-dasharray: 2 7; transform-origin: center; transform-box: fill-box; animation: orbit 90s linear infinite; }
+.stage-orbit.inner { stroke: color-mix(in srgb, var(--glow-c) 26%, transparent); animation-duration: 60s; animation-direction: reverse; }
+@keyframes orbit { to { transform: rotate(360deg); } }
+.stage-core .core-halo { fill: color-mix(in srgb, var(--glow-a) 10%, transparent); stroke: none; filter: blur(8px); animation: breathe 4.8s ease-in-out infinite alternate; transform-origin: center; transform-box: fill-box; }
+.stage-core .core-ring { fill: none; stroke: color-mix(in srgb, var(--glow-a) 70%, transparent); stroke-width: 1.5; stroke-dasharray: 6 5; transform-origin: center; transform-box: fill-box; animation: orbit 24s linear infinite; }
+.stage-core .core-body { fill: color-mix(in srgb, var(--glow-a) 16%, #0b0c14) !important; stroke: var(--glow-a) !important; }
+.stage-core.lit .core-body, .stage-core.done .core-body { filter: drop-shadow(0 0 18px var(--glow-a)) !important; }
+.stage-core .core-label { font-size: 13px; }
+@keyframes breathe { from { transform: scale(.94); opacity: .7; } to { transform: scale(1.08); opacity: 1; } }
+.stage-tail { filter: none !important; }
+@media (prefers-reduced-motion: reduce) { .stage-star, .stage-orbit, .core-halo, .core-ring { animation: none !important; } }
+.nebula { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: -2; pointer-events: none; transition: opacity .8s; }
+body.has-nebula::before { display: none; }
 .grain { position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: .06; mix-blend-mode: overlay; width: 100vw; height: 100vh; }
 @keyframes aurora { 0% { transform: translate3d(0, 0, 0) rotate(0deg); } 50% { transform: translate3d(-3vmax, 2vmax, 0) rotate(8deg); } 100% { transform: translate3d(3vmax, -2vmax, 0) rotate(-6deg); } }
 
@@ -389,6 +407,209 @@ main > *, .grid > .card, .map > * { animation: none; }
   body::before { animation: none; } .spot { display: none; } .intro { display: none; }
   main h1 { animation: none; background: none; color: var(--ink); }
 }
+
+/* ==========================================================================
+   Skins: three looks from LemoLab's film-style library, chosen in the rail.
+   Hologram HUD: one hue of light on near-black, hairlines, corner brackets,
+   a dot grid, numbers that glow. Swiss Motion: paper, ink, one signal red,
+   a strict grid, giant type, no glow at all. Spy Titles: cut paper in four
+   inks, jaunty type, pieces that cast small paper shadows.
+   ========================================================================== */
+
+/* --- Hologram HUD ------------------------------------------------------- */
+:root[data-skin="hologram"] {
+  --hue: #4fd8ff; --hue-dim: rgba(79, 216, 255, .18); --lock: #ffb547;
+  --bg: #02060a; --panel: rgba(4, 18, 26, .72); --rail: rgba(2, 12, 18, .8); --ink: #d8f6ff; --soft: #7fb6c7; --faint: #45707e; --line: rgba(79, 216, 255, .18);
+  --accent: #4fd8ff; --accent-soft: rgba(79, 216, 255, .12); --ok: #4fd8ff; --ok-soft: rgba(79, 216, 255, .1); --think: #8fe6ff; --think-soft: rgba(143, 230, 255, .1);
+  --mem: #4fd8ff; --mem-soft: rgba(79, 216, 255, .1); --warn: #ffb547; --warn-soft: rgba(255, 181, 71, .12); --code: #9fd9e8; --code-soft: rgba(79, 216, 255, .06);
+  --glass: rgba(3, 16, 24, .58); --glass-edge: rgba(79, 216, 255, .28); --glow-a: #4fd8ff; --glow-b: #2a8fb0; --glow-c: #9ff0ff;
+}
+[data-skin="hologram"] .nebula { filter: hue-rotate(-62deg) saturate(.75) brightness(.8); }
+[data-skin="hologram"] body { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 13.5px; letter-spacing: .02em; }
+[data-skin="hologram"] body::after { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background-image: radial-gradient(circle, rgba(79, 216, 255, .22) 1px, transparent 1.4px); background-size: 28px 28px;
+  mask-image: radial-gradient(ellipse at 50% 45%, #000 30%, transparent 85%); -webkit-mask-image: radial-gradient(ellipse at 50% 45%, #000 30%, transparent 85%); }
+[data-skin="hologram"] main::before { content: ""; position: fixed; left: 0; right: 0; height: 140px; z-index: 0; pointer-events: none; top: -140px;
+  background: linear-gradient(180deg, transparent, rgba(79, 216, 255, .08) 70%, rgba(159, 240, 255, .35) 99%, transparent);
+  animation: scan 7s cubic-bezier(.45, 0, .55, 1) infinite; }
+@keyframes scan { 0% { transform: translateY(0); } 100% { transform: translateY(calc(100vh + 280px)); } }
+[data-skin="hologram"] main h1 { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-weight: 500; text-transform: uppercase; letter-spacing: .18em; font-size: clamp(26px, 2.6vw, 38px);
+  background: none; color: var(--hue); -webkit-text-fill-color: var(--hue); text-shadow: 0 0 12px rgba(79, 216, 255, .7), 0 0 34px rgba(79, 216, 255, .35); animation: decode 1.1s steps(12) both; }
+@keyframes decode { 0% { opacity: .2; letter-spacing: .6em; filter: blur(3px); } 60% { opacity: 1; filter: blur(0); } 100% { letter-spacing: .18em; } }
+[data-skin="hologram"] .card, [data-skin="hologram"] .panel, [data-skin="hologram"] .stage-wrap, [data-skin="hologram"] .chat { border-radius: 2px !important; border-color: var(--line) !important; }
+[data-skin="hologram"] .card::before { content: ""; position: absolute; inset: -1px; pointer-events: none; border-radius: 0;
+  background:
+    linear-gradient(var(--hue), var(--hue)) top left / 18px 1.5px no-repeat, linear-gradient(var(--hue), var(--hue)) top left / 1.5px 18px no-repeat,
+    linear-gradient(var(--hue), var(--hue)) top right / 18px 1.5px no-repeat, linear-gradient(var(--hue), var(--hue)) top right / 1.5px 18px no-repeat,
+    linear-gradient(var(--hue), var(--hue)) bottom left / 18px 1.5px no-repeat, linear-gradient(var(--hue), var(--hue)) bottom left / 1.5px 18px no-repeat,
+    linear-gradient(var(--hue), var(--hue)) bottom right / 18px 1.5px no-repeat, linear-gradient(var(--hue), var(--hue)) bottom right / 1.5px 18px no-repeat;
+  filter: drop-shadow(0 0 4px var(--hue)); }
+[data-skin="hologram"] .card h3 { font-weight: 500; text-transform: uppercase; letter-spacing: .12em; color: var(--hue); }
+[data-skin="hologram"] .chip { border-radius: 0 !important; background: transparent !important; border: 1px solid var(--line); color: var(--soft) !important; text-transform: uppercase; letter-spacing: .08em; font-size: 10.5px; }
+[data-skin="hologram"] .chip.ok { color: var(--lock) !important; border-color: rgba(255, 181, 71, .45); text-shadow: 0 0 8px rgba(255, 181, 71, .6); }
+[data-skin="hologram"] button, [data-skin="hologram"] .btn { border-radius: 0 !important; background: transparent !important; color: var(--hue) !important; border: 1px solid var(--hue) !important; text-transform: uppercase; letter-spacing: .14em; box-shadow: 0 0 14px rgba(79, 216, 255, .25), inset 0 0 14px rgba(79, 216, 255, .15); }
+[data-skin="hologram"] .nav { text-transform: uppercase; letter-spacing: .12em; font-size: 12px; }
+[data-skin="hologram"] .nav-pill { border-radius: 0; background: rgba(79, 216, 255, .1); box-shadow: inset 2px 0 0 var(--hue), 0 0 22px -6px var(--hue); }
+[data-skin="hologram"] .brand small { background: none; -webkit-text-fill-color: var(--hue); color: var(--hue); }
+[data-skin="hologram"] .stage-orbit { stroke: rgba(79, 216, 255, .4); }
+[data-skin="hologram"] .stage-core .core-body { fill: rgba(79, 216, 255, .1) !important; stroke: var(--hue) !important; }
+[data-skin="hologram"] .stage-core .core-ring { stroke: var(--hue); }
+[data-skin="hologram"] .stage-box { rx: 0; }
+
+/* --- Swiss Motion ------------------------------------------------------- */
+:root[data-skin="swiss"] {
+  --signal: #e30613;
+  --bg: #eae9e5; --panel: #ffffff; --rail: #ffffff; --ink: #111111; --soft: #4a4a4a; --faint: #8c8c8c; --line: #d6d4ce;
+  --accent: #e30613; --accent-soft: #fbe3e4; --ok: #111111; --ok-soft: #ecebe7; --bad: #e30613; --bad-soft: #fbe3e4; --warn: #111111; --warn-soft: #ecebe7;
+  --think: #111111; --think-soft: #ecebe7; --mem: #111111; --mem-soft: #ecebe7; --code: #111111; --code-soft: #f4f3f0;
+  --glass: #ffffff; --glass-edge: #111111; --glow-a: #e30613; --glow-b: #111111; --glow-c: #111111; --settle: cubic-bezier(.7, 0, .2, 1);
+}
+[data-skin="swiss"] body { font-family: Figtree, system-ui, sans-serif; background: var(--bg);
+  background-image: linear-gradient(90deg, rgba(17, 17, 17, .05) 1px, transparent 1px); background-size: calc((100vw - 212px) / 12) 100%; background-position: 212px 0; }
+[data-skin="swiss"] .nebula, [data-skin="swiss"] .grain, [data-skin="swiss"] .spot { display: none !important; }
+[data-skin="swiss"] body::before { display: none; }
+[data-skin="swiss"] .card, [data-skin="swiss"] .panel, [data-skin="swiss"] .stage-wrap, [data-skin="swiss"] .chat, [data-skin="swiss"] .step .body {
+  backdrop-filter: none !important; -webkit-backdrop-filter: none !important; border-radius: 0 !important; border: 0 !important; border-top: 4px solid #111 !important; box-shadow: none !important; }
+[data-skin="swiss"] .card::after { display: none; }
+[data-skin="swiss"] .card:hover { border-top-color: var(--signal) !important; }
+[data-skin="swiss"] main h1 { font-family: Figtree, sans-serif; font-weight: 900; font-size: clamp(64px, 8vw, 128px); letter-spacing: -.045em; line-height: .86; text-transform: lowercase;
+  background: none; color: #111; -webkit-text-fill-color: #111; animation: slam .55s var(--settle) both; }
+[data-skin="swiss"] main h1::after { content: "."; color: var(--signal); -webkit-text-fill-color: var(--signal); }
+@keyframes slam { from { transform: translate3d(-40px, 0, 0); clip-path: inset(0 100% 0 0); } to { transform: none; clip-path: inset(0 0 0 0); } }
+[data-skin="swiss"] .card h3 { font-weight: 800; font-size: 22px; letter-spacing: -.02em; text-transform: lowercase; }
+[data-skin="swiss"] .chip { border-radius: 0 !important; background: transparent !important; border: 1px solid #111; color: #111 !important; font-weight: 600; }
+[data-skin="swiss"] button, [data-skin="swiss"] .btn { border-radius: 0 !important; background: #111 !important; color: #fff !important; font-weight: 700; box-shadow: none !important; }
+[data-skin="swiss"] button:hover, [data-skin="swiss"] .btn:hover { background: var(--signal) !important; }
+[data-skin="swiss"] aside.rail { backdrop-filter: none; border-right: 4px solid #111; }
+[data-skin="swiss"] .nav { font-weight: 700; font-size: 15px; text-transform: lowercase; }
+[data-skin="swiss"] .nav-pill { border-radius: 0; background: var(--signal); box-shadow: none; }
+[data-skin="swiss"] .nav.on { color: #fff; }
+[data-skin="swiss"] .brand small { background: none; -webkit-text-fill-color: var(--signal); color: var(--signal); }
+[data-skin="swiss"] .stage-svg.constellation .stage-star { display: none; }
+[data-skin="swiss"] .stage-orbit { stroke: #111; stroke-dasharray: none; stroke-width: 1.5; }
+[data-skin="swiss"] .stage-line { stroke: #111 !important; }
+[data-skin="swiss"] .stage-light { fill: var(--signal) !important; filter: none !important; }
+[data-skin="swiss"] .stage-core .core-halo { display: none; }
+[data-skin="swiss"] .stage-core .core-body { fill: var(--signal) !important; stroke: #111 !important; }
+[data-skin="swiss"] .stage-core .core-label { fill: #fff; }
+[data-skin="swiss"] .stage-box { fill: #fff !important; stroke: #111 !important; rx: 0; }
+
+/* --- Spy Titles --------------------------------------------------------- */
+:root[data-skin="spy"] {
+  --hot: #d23a22; --mustard: #e2a52a; --cream: #efe4c9; --black: #1b1714;
+  --bg: #efe4c9; --panel: #f6ecd4; --rail: #1b1714; --ink: #1b1714; --soft: #5a4b3c; --faint: #8b7a64; --line: rgba(27, 23, 20, .18);
+  --accent: #d23a22; --accent-soft: rgba(210, 58, 34, .14); --ok: #1b1714; --ok-soft: rgba(226, 165, 42, .3); --warn: #b07d14; --warn-soft: rgba(226, 165, 42, .25);
+  --think: #1b1714; --think-soft: rgba(27, 23, 20, .1); --mem: #1b1714; --mem-soft: rgba(226, 165, 42, .3); --code: #1b1714; --code-soft: rgba(27, 23, 20, .06);
+  --glass: #f6ecd4; --glass-edge: rgba(27, 23, 20, .4); --glow-a: #d23a22; --glow-b: #e2a52a; --glow-c: #1b1714; --settle: cubic-bezier(.85, 0, .15, 1);
+}
+[data-skin="spy"] .nebula, [data-skin="spy"] .spot { display: none !important; }
+[data-skin="spy"] .grain { opacity: .14; mix-blend-mode: multiply; }
+[data-skin="spy"] body { background: var(--cream); }
+[data-skin="spy"] body::before { display: block !important; inset: 0; opacity: 1; filter: none; animation: none;
+  background: linear-gradient(118deg, transparent 0 58%, var(--mustard) 58% 71%, transparent 71%), linear-gradient(118deg, transparent 0 73%, var(--hot) 73% 79%, transparent 79%); }
+[data-skin="spy"] aside.rail { background: var(--black); color: var(--cream); backdrop-filter: none; border-right: 0; box-shadow: 6px 0 0 var(--hot); }
+[data-skin="spy"] aside.rail .nav, [data-skin="spy"] aside.rail .foot, [data-skin="spy"] aside.rail .brand { color: var(--cream); }
+[data-skin="spy"] .nav { font-weight: 800; text-transform: uppercase; letter-spacing: .08em; font-style: italic; }
+[data-skin="spy"] .nav-pill { border-radius: 0; background: var(--hot); box-shadow: 3px 3px 0 var(--mustard); clip-path: polygon(0 4%, 100% 0, 97% 100%, 2% 94%); }
+[data-skin="spy"] .brand small { background: none; -webkit-text-fill-color: var(--mustard); color: var(--mustard); }
+[data-skin="spy"] main h1 { font-family: Figtree, sans-serif; font-weight: 900; font-style: italic; text-transform: uppercase; letter-spacing: .02em; font-size: clamp(54px, 6.4vw, 104px); line-height: .9;
+  background: none; color: var(--black); -webkit-text-fill-color: var(--black); text-shadow: 5px 5px 0 var(--mustard); transform: rotate(-3deg); transform-origin: left; animation: stab .45s var(--settle) both; }
+@keyframes stab { from { transform: rotate(-9deg) translate3d(-70px, 0, 0) scale(1.15); opacity: 0; } to { transform: rotate(-3deg); opacity: 1; } }
+[data-skin="spy"] .card, [data-skin="spy"] .panel, [data-skin="spy"] .stage-wrap, [data-skin="spy"] .chat {
+  backdrop-filter: none !important; border-radius: 0 !important; border: 0 !important; background: var(--panel) !important; box-shadow: 4px 5px 0 rgba(27, 23, 20, .28), 0 0 0 2.4px var(--cream) !important;
+  clip-path: polygon(0 1.2%, 99.4% 0, 100% 98.8%, .6% 100%); }
+[data-skin="spy"] .grid > .card:nth-child(3n+1) { transform: rotate(-1deg); }
+[data-skin="spy"] .grid > .card:nth-child(3n+2) { transform: rotate(.8deg); background: var(--black) !important; color: var(--cream); }
+[data-skin="spy"] .grid > .card:nth-child(3n+2) h3, [data-skin="spy"] .grid > .card:nth-child(3n+2) .about { color: var(--cream); }
+[data-skin="spy"] .grid > .card:nth-child(3n) { transform: rotate(-.5deg); background: var(--mustard) !important; }
+[data-skin="spy"] .card::after { display: none; }
+[data-skin="spy"] .card h3 { font-weight: 900; font-style: italic; text-transform: uppercase; letter-spacing: .03em; font-size: 19px; }
+[data-skin="spy"] .chip { border-radius: 0 !important; background: var(--black) !important; color: var(--cream) !important; font-weight: 700; text-transform: uppercase; font-size: 10.5px; }
+[data-skin="spy"] .chip.ok, [data-skin="spy"] .chip.warn { background: var(--hot) !important; }
+[data-skin="spy"] button, [data-skin="spy"] .btn { border-radius: 0 !important; background: var(--hot) !important; color: var(--cream) !important; font-weight: 900; font-style: italic; text-transform: uppercase; box-shadow: 4px 4px 0 var(--black) !important; }
+[data-skin="spy"] .stage-svg.constellation .stage-star { fill: var(--black); }
+[data-skin="spy"] .stage-orbit { stroke: var(--black); stroke-dasharray: 10 6; }
+[data-skin="spy"] .stage-line { stroke: var(--black) !important; }
+[data-skin="spy"] .stage-light { fill: var(--hot) !important; filter: none !important; }
+[data-skin="spy"] .stage-core .core-halo { fill: var(--mustard); filter: none; }
+[data-skin="spy"] .stage-core .core-body { fill: var(--hot) !important; stroke: var(--black) !important; }
+[data-skin="spy"] .stage-core .core-label { fill: var(--cream); }
+[data-skin="spy"] .stage-box { fill: var(--cream) !important; stroke: var(--black) !important; rx: 0; }
+@media (prefers-reduced-motion: reduce) { [data-skin="hologram"] main::before { display: none; } [data-skin] main h1 { animation: none; } }
+
+/* ==========================================================================
+   The Agency: Spy Titles taken from a skin to a whole concept. Agents are
+   operatives with case files, the rail is a stack of folder tabs, every
+   change of view is a brass stab of paper slashing across the screen, the
+   credits roll along the top, and while a mission runs an agent in a hat
+   and coat runs along the bottom. Only in the Spy Titles look.
+   ========================================================================== */
+:root:not([data-skin="spy"]) .spy-only { display: none !important; }
+[data-skin="spy"] body { grid-template-columns: 236px minmax(0, 1fr); }
+
+/* Folder tabs. */
+[data-skin="spy"] #nav { display: flex; flex-direction: column; gap: 6px; padding-right: 0; }
+[data-skin="spy"] .nav { margin-right: -10px; padding: 9px 14px 9px 16px; background: #2a241f; color: #efe4c9 !important; clip-path: polygon(0 0, 88% 0, 100% 50%, 88% 100%, 0 100%);
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, .25); transition: transform .35s var(--settle), background .2s; }
+[data-skin="spy"] .nav:nth-child(3n+2) { background: #3a2f27; } [data-skin="spy"] .nav:nth-child(3n) { background: #241e1a; }
+[data-skin="spy"] .nav:hover { transform: translateX(6px); }
+[data-skin="spy"] .nav.on { background: #d23a22 !important; transform: translateX(14px); color: #efe4c9 !important; }
+[data-skin="spy"] .nav-pill { display: none; }
+[data-skin="spy"] .nav svg { stroke: currentColor; }
+
+/* The credits roll. */
+.spy-marquee { position: sticky; top: 0; z-index: 5; margin: -26px -32px 26px; height: 34px; overflow: hidden; background: #1b1714; color: #efe4c9; border-bottom: 3px solid #e2a52a; }
+.spy-marquee span { position: absolute; white-space: nowrap; top: 8px; left: 0; font: 900 italic 14px/1 Figtree, sans-serif; letter-spacing: .32em; text-transform: uppercase; animation: credits 38s linear infinite; }
+.spy-marquee b { color: #e2a52a; font-weight: 900; } .spy-marquee em { color: #d23a22; font-style: normal; }
+@keyframes credits { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(-50%, 0, 0); } }
+
+/* Titles built from paper tiles. */
+[data-skin="spy"] main h1.tiled { text-shadow: none; transform: rotate(-3deg); display: flex; flex-wrap: wrap; gap: 4px; animation: none; }
+.tile { display: inline-block; padding: .02em .1em .06em; background: #1b1714; color: #efe4c9; box-shadow: 4px 4px 0 rgba(27, 23, 20, .3); -webkit-text-fill-color: #efe4c9;
+  animation: tile .5s var(--settle) both; animation-delay: calc(var(--i) * 45ms); clip-path: polygon(2% 3%, 98% 0, 100% 96%, 0 100%); }
+.tile:nth-child(3n+1) { background: #d23a22; } .tile:nth-child(4n+2) { background: #e2a52a; color: #1b1714; -webkit-text-fill-color: #1b1714; }
+.tile:nth-child(5n) { transform: rotate(4deg); } .tile:nth-child(7n+3) { transform: translateY(-.08em) rotate(-3deg); }
+.tile.space { background: none !important; box-shadow: none; width: .25em; }
+@keyframes tile { from { opacity: 0; transform: translate3d(0, -60px, 0) rotate(-14deg) scale(1.3); } }
+
+/* Case files. */
+.file-strip { margin: -12px -14px 10px; padding: 7px 14px; background: #1b1714; color: #efe4c9; font: 700 10.5px/1 ui-monospace, "Cascadia Code", Consolas, monospace; letter-spacing: .18em; text-transform: uppercase; display: flex; justify-content: space-between; }
+.file-strip b { color: #e2a52a; }
+.stamp { position: absolute; right: 12px; bottom: 14px; padding: 6px 10px 5px; border: 3px solid currentColor; color: #d23a22; font: 900 15px/1 Figtree, sans-serif; letter-spacing: .14em; text-transform: uppercase;
+  transform: rotate(-12deg); opacity: .82; mix-blend-mode: multiply; animation: stampit .45s cubic-bezier(.2, 1.6, .4, 1) both; animation-delay: calc(.35s + var(--i, 0) * 70ms); pointer-events: none; }
+.stamp.care { color: #1b1714; border-style: double; border-width: 5px; }
+@keyframes stampit { from { opacity: 0; transform: rotate(-12deg) scale(2.4); } to { opacity: .82; transform: rotate(-12deg) scale(1); } }
+.clip-mark { position: absolute; top: -10px; right: 26px; width: 16px; height: 46px; border: 3px solid #8b8478; border-radius: 9px; border-bottom-color: transparent; transform: rotate(8deg); pointer-events: none; }
+[data-skin="spy"] .grid > .card:nth-child(3n+2) .file-strip { background: #d23a22; }
+[data-skin="spy"] .grid > .card:nth-child(3n+2) .stamp { mix-blend-mode: normal; color: #e2a52a; }
+.file-strip span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 62%; }
+[data-skin="spy"] .grid > .card { overflow: visible; padding-bottom: 46px; }
+
+/* The brass stab: three slabs of paper slash across, and the view is cut. */
+.stab { position: fixed; inset: 0; z-index: 90; pointer-events: none; overflow: hidden; }
+.stab i { position: absolute; left: -30%; width: 160%; height: 46%; transform-origin: center; transform: rotate(-24deg) translate3d(-110%, 0, 0); animation: slash .62s cubic-bezier(.85, 0, .15, 1) forwards; }
+.stab i:nth-child(1) { top: -6%; background: #d23a22; }
+.stab i:nth-child(2) { top: 28%; background: #1b1714; animation-delay: .05s; }
+.stab i:nth-child(3) { top: 62%; background: #e2a52a; animation-delay: .1s; }
+@keyframes slash { 0% { transform: rotate(-24deg) translate3d(-110%, 0, 0); } 45%, 55% { transform: rotate(-24deg) translate3d(0, 0, 0); } 100% { transform: rotate(-24deg) translate3d(110%, 0, 0); } }
+[data-skin="spy"] .arrive { animation-name: lateral; }
+@keyframes lateral { from { opacity: 0; transform: translate3d(-80px, 0, 0); } to { opacity: 1; transform: none; } }
+
+/* The agent on a mission. */
+.runner { position: fixed; bottom: 10px; left: 260px; z-index: 40; width: 98px; height: 134px; pointer-events: none; opacity: 0; transition: opacity .3s; }
+body.on-mission .runner { opacity: 1; animation: dash 6s linear infinite; }
+@keyframes dash { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(calc(100vw - 340px), 0, 0); } }
+.runner .leg, .runner .arm { transform-box: fill-box; transform-origin: 50% 0; }
+body.on-mission .runner .leg.a, body.on-mission .runner .arm.b { animation: stride .42s ease-in-out infinite alternate; }
+body.on-mission .runner .leg.b, body.on-mission .runner .arm.a { animation: stride .42s ease-in-out infinite alternate-reverse; }
+@keyframes stride { from { transform: rotate(-32deg); } to { transform: rotate(32deg); } }
+.runner .scarf { transform-box: fill-box; transform-origin: 0 50%; }
+body.on-mission .runner .scarf { animation: flap .2s ease-in-out infinite alternate; }
+@keyframes flap { from { transform: rotate(-6deg) scaleX(.9); } to { transform: rotate(8deg) scaleX(1.1); } }
+.track { position: fixed; bottom: 8px; left: 236px; right: 0; height: 3px; z-index: 39; background: repeating-linear-gradient(90deg, #1b1714 0 18px, transparent 18px 30px); opacity: 0; transition: opacity .3s; pointer-events: none; }
+body.on-mission .track { opacity: .5; }
+@media (prefers-reduced-motion: reduce) { .stab, .runner { display: none !important; } .spy-marquee span { animation: none; } .tile, .stamp { animation: none; } }
+[data-skin="spy"] .untiled { display: none; }
 </style>
 </head>
 <body>
@@ -942,28 +1163,58 @@ function toolKind(source) {
   return "outside";
 }
 function runStage(agent) {
-  const parts = stageParts(agent), W = 600, rowH = 46, H = Math.max(190, parts.length * rowH + 26), cx = 236, cy = H / 2, half = 75, right = 492;
-  const svg = s("svg", {viewBox: "0 0 " + W + " " + H, class: "stage-svg", role: "img"});
-  const lines = s("g"), lights = s("g"), nodes = s("g");
-  svg.append(lines, nodes, lights);
+  // A constellation: the agent is a core at the centre, and everything it
+  // reaches sits on an orbit around it, you among them.
+  const parts = stageParts(agent), W = 660, H = 420, cx = W / 2, cy = H / 2, rx = 238, ry = 150;
+  const svg = s("svg", {viewBox: "0 0 " + W + " " + H, class: "stage-svg constellation", role: "img"});
+  const sky = s("g", {class: "stage-sky"}), lines = s("g"), lights = s("g"), nodes = s("g");
+  svg.append(sky, lines, nodes, lights);
   const still = stillness.matches, places = {}, counts = {};
   let token = 0;
+  // Fixed stars, and two orbit rings that turn slowly the other way.
+  for (let i = 0; i < 46; i++) {
+    const sx = (i * 137.5) % W, sy = (i * 71.3 + (i % 7) * 23) % H;
+    sky.append(s("circle", {cx: sx.toFixed(1), cy: sy.toFixed(1), r: (i % 5 === 0 ? 1.4 : 0.8), class: "stage-star", style: "animation-delay:" + ((i % 9) * 0.37).toFixed(2) + "s"}));
+  }
+  sky.append(s("ellipse", {cx, cy, rx, ry, class: "stage-orbit"}), s("ellipse", {cx, cy, rx: rx * 0.62, ry: ry * 0.62, class: "stage-orbit inner"}));
   function node(key, x, y, w, label, word, kind) {
     const count = s("text", {x: x + w / 2 - 12, y: y + 4, class: "stage-count", "text-anchor": "end"}, "");
-    const box = s("rect", {x: x - w / 2, y: y - 18, width: w, height: 36, rx: 11, class: "stage-box k-" + kind});
+    const box = s("rect", {x: x - w / 2, y: y - 18, width: w, height: 36, rx: 18, class: "stage-box k-" + kind});
     const group = s("g", {class: "stage-node"}, box, s("circle", {cx: x - w / 2 + 16, cy: y, r: 4.5, class: "stage-dot k-" + kind}),
-      s("text", {x: x - w / 2 + 28, y: y - 1, class: "stage-label"}, label.length > 16 ? label.slice(0, 15) + "…" : label), word ? s("text", {x: x - w / 2 + 28, y: y + 11, class: "stage-word"}, word.length > 24 ? word.slice(0, 23) + "…" : word) : null, count);
+      s("text", {x: x - w / 2 + 28, y: y - 1, class: "stage-label"}, label.length > 16 ? label.slice(0, 15) + "…" : label), word ? s("text", {x: x - w / 2 + 28, y: y + 11, class: "stage-word"}, word.length > 22 ? word.slice(0, 21) + "…" : word) : null, count);
     nodes.append(group); places[key] = {x, y, w, group, count}; counts[key] = 0;
   }
-  node("you", 52, cy, 96, "you", "ask, allow", "accent");
-  node("program", cx, cy, half * 2, agent.title, agent.workflows.length + " workflow(s)", "accent");
-  lines.append(s("path", {d: "M100 " + cy + " L" + (cx - half) + " " + cy, class: "stage-line"}));
-  parts.forEach((part, index) => {
-    const y = H / 2 + (index - (parts.length - 1) / 2) * rowH;
-    node(part.key, right, y, 196, part.label, part.word, part.kind);
-    lines.append(s("path", {d: "M" + (cx + half) + " " + cy + " C" + (cx + half + 42) + " " + cy + " " + (right - 140) + " " + y + " " + (right - 98) + " " + y, class: "stage-line"}));
+  // The core: rings of light around the agent's name.
+  const core = s("g", {class: "stage-node stage-core"},
+    s("circle", {cx, cy, r: 62, class: "core-halo"}), s("circle", {cx, cy, r: 46, class: "core-ring"}), s("circle", {cx, cy, r: 34, class: "core-body stage-box"}),
+    s("text", {x: cx, y: cy + 1, class: "stage-label core-label", "text-anchor": "middle"}, agent.title.length > 12 ? agent.title.slice(0, 11) + "…" : agent.title),
+    s("text", {x: cx, y: cy + 14, class: "stage-word", "text-anchor": "middle"}, agent.workflows.length + " workflow(s)"));
+  nodes.append(core); places.program = {x: cx, y: cy, w: 68, group: core, count: s("text")}; counts.program = 0;
+  const around = [{key: "you", label: "you", word: "ask, allow", kind: "accent"}, ...parts];
+  around.forEach((part, index) => {
+    // You sit on the left; the rest share the orbit evenly from there.
+    const angle = Math.PI + (index / around.length) * Math.PI * 2;
+    const x = cx + rx * Math.cos(angle), y = cy + ry * Math.sin(angle);
+    node(part.key, x, y, part.key === "you" ? 104 : 150, part.label, part.word, part.kind);
+    lines.append(s("path", {d: "M" + cx + " " + cy + " L" + x.toFixed(1) + " " + y.toFixed(1), class: "stage-line"}));
   });
-  const end = key => { const place = places[key]; return key === "you" ? [place.x + place.w / 2, place.y] : key === "program" ? null : [place.x - place.w / 2, place.y]; };
+  const end = key => { const place = places[key]; return [place.x, place.y]; };
+
+  // The camera leans toward whatever is busy, and settles back when all is
+  // quiet: one view box, eased toward where it should look.
+  const camera = {x: 0, y: 0, w: W, h: H, to: {x: 0, y: 0, w: W, h: H}, moving: false};
+  function look(key) {
+    const place = key && places[key];
+    camera.to = place && !still ? {x: (place.x + cx) / 2 - W * 0.41, y: (place.y + cy) / 2 - H * 0.41, w: W * 0.82, h: H * 0.82} : {x: 0, y: 0, w: W, h: H};
+    if (!camera.moving && !still) { camera.moving = true; requestAnimationFrame(pan); }
+    if (still) svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+  }
+  function pan() {
+    const to = camera.to; let rest = 0;
+    for (const side of ["x", "y", "w", "h"]) { camera[side] += (to[side] - camera[side]) * 0.07; rest += Math.abs(to[side] - camera[side]); }
+    svg.setAttribute("viewBox", [camera.x, camera.y, camera.w, camera.h].map(v => v.toFixed(2)).join(" "));
+    if (rest > 0.5 && svg.isConnected) requestAnimationFrame(pan); else camera.moving = false;
+  }
   function glow(key, on) { const place = places[key]; if (place) place.group.classList.toggle("lit", on); }
   function bump(key) { counts[key] += 1; places[key].count.textContent = counts[key] > 0 ? "×" + counts[key] : ""; }
   // Speeds in pixels a second: thought travels slowly, code quickly, and a
@@ -971,8 +1222,7 @@ function runStage(agent) {
   const PACE = {think: 300, mem: 520, warn: 420, code: 900, accent: 480, ok: 480, bad: 480};
   const radius = size => size ? Math.max(3, Math.min(9, 2.5 + Math.log10(size + 1) * 1.4)) : 4.5;
   function points(from, to) {
-    const a = from === "program" ? [to === "you" ? cx - half : cx + half, cy] : end(from), b = to === "program" ? [from === "you" ? cx - half : cx + half, cy] : end(to);
-    return [a, b];
+    return [end(from), end(to)];
   }
   // One light, from one part to another. Lights do not wait for each other:
   // what happens at once in the run is seen at once.
@@ -980,17 +1230,24 @@ function runStage(agent) {
     if (still) { if (done) done(); return; }
     const [a, b] = points(from, to);
     const r = radius(size), length = Math.hypot(b[0] - a[0], b[1] - a[1]) / (PACE[kind] || 480) * 1000 * (1 + (r - 4.5) / 12);
-    const light = s("circle", {r, cx: a[0], cy: a[1], class: "stage-light k-" + kind}); lights.append(light);
+    const light = s("circle", {r, cx: a[0], cy: a[1], class: "stage-light k-" + kind});
+    // A comet: the light drags a tail of fainter, smaller copies behind it.
+    const tail = [0.035, 0.07, 0.11, 0.16].map((lag, i) => s("circle", {r: r * (0.8 - i * 0.16), cx: a[0], cy: a[1], class: "stage-light stage-tail k-" + kind, opacity: (0.55 - i * 0.12).toFixed(2), "data-lag": lag}));
+    lights.append(...tail, light);
     const began = performance.now(), mine = token;
     let over = false;
+    const gone = () => { light.remove(); tail.forEach(dot => dot.remove()); };
     // The light is moved when the page is drawn, but the story does not wait
     // for that: a page behind another window still ends in the right state.
-    setTimeout(() => { over = true; light.remove(); if (mine === token && done) done(); }, length + 20);
+    setTimeout(() => { over = true; gone(); if (mine === token && done) done(); }, length + 20);
+    const bend = (b[0] - a[0]) * 0.18, lean = (b[1] - a[1]) * -0.18;
+    const spot = at => { const eased = at < .5 ? 2 * at * at : 1 - Math.pow(-2 * at + 2, 2) / 2, arc = Math.sin(eased * Math.PI);
+      return [a[0] + (b[0] - a[0]) * eased + lean * arc, a[1] + (b[1] - a[1]) * eased + bend * arc]; };
     (function step(now) {
-      if (over || mine !== token || !svg.isConnected) { light.remove(); return; }
-      const at = Math.min(1, (now - began) / length), eased = at < .5 ? 2 * at * at : 1 - Math.pow(-2 * at + 2, 2) / 2;
-      const lift = Math.sin(eased * Math.PI) * (b[0] > a[0] ? -14 : 14);
-      light.setAttribute("cx", a[0] + (b[0] - a[0]) * eased); light.setAttribute("cy", a[1] + (b[1] - a[1]) * eased + lift);
+      if (over || mine !== token || !svg.isConnected) { gone(); return; }
+      const at = Math.min(1, (now - began) / length), [x, y] = spot(at);
+      light.setAttribute("cx", x); light.setAttribute("cy", y);
+      for (const dot of tail) { const [tx, ty] = spot(Math.max(0, at - Number(dot.getAttribute("data-lag")))); dot.setAttribute("cx", tx); dot.setAttribute("cy", ty); }
       if (at < 1) requestAnimationFrame(step);
     })(began);
   }
@@ -1030,8 +1287,8 @@ function runStage(agent) {
     const seconds = (performance.now() - open.since) / 1000, label = open.label;
     if (label) { label.textContent = seconds >= .1 ? seconds.toFixed(1) + " s" : ""; setTimeout(() => { if (open.label !== label || !open.count) label.remove(); }, 2400); }
   }
-  function reach(key, kind, size) { if (!places[key]) key = "code"; travel("program", key, kind, size, () => { glow(key, true); bump(key); }); hold(key, kind); return key; }
-  function back(key, kind, size) { if (!places[key]) key = "code"; release(key); travel(key, "program", kind, size, () => { if (!busy[key] || !busy[key].count) glow(key, false); }); }
+  function reach(key, kind, size) { if (!places[key]) key = "code"; travel("program", key, kind, size, () => { glow(key, true); bump(key); }); hold(key, kind); look(key); return key; }
+  function back(key, kind, size) { if (!places[key]) key = "code"; release(key); travel(key, "program", kind, size, () => { if (!busy[key] || !busy[key].count) glow(key, false); }); if (!Object.values(busy).some(open => open.count)) look(null); }
   const modelKey = name => places["model:" + name] ? "model:" + name : Object.keys(places).find(key => key.startsWith("model:")) || "code";
   const models = [], tools = [];
   return {
@@ -1043,10 +1300,12 @@ function runStage(agent) {
       models.length = 0; tools.length = 0;
       for (const key of Object.keys(places)) { counts[key] = 0; places[key].count.textContent = ""; glow(key, false); }
       places.program.group.classList.remove("done", "failed", "asking");
-      if (starting) { glow("program", true); travel("you", "program", "accent"); }
+      if (starting) { glow("program", true); travel("you", "program", "accent"); document.dispatchEvent(new CustomEvent("kosika:event", {detail: "run_start"})); }
     },
     apply(event) {
       const kind = event.event;
+      // The background hears it too; see the living universe below.
+      document.dispatchEvent(new CustomEvent("kosika:event", {detail: kind}));
       if (kind === "model_call" || kind === "agent_call") models.push(reach(modelKey(event.model || ""), "think", event.size));
       else if (kind === "model_return" || kind === "agent_return") back(models.pop() || modelKey(""), "think", event.size);
       else if (kind === "tool_call") { const part = toolKind(event.source); tools.push(reach(part === "memory" || part === "board" || part === "code" ? part : "tool:" + part, part === "shell" || part === "outside" ? "warn" : "mem", event.size)); }
@@ -1058,6 +1317,7 @@ function runStage(agent) {
       else if (kind === "run_failed" || kind === "run_cancelled") places.program.group.classList.add("failed");
     },
     finish(failed) {
+      document.dispatchEvent(new CustomEvent("kosika:event", {detail: failed ? "run_failed" : "run_done"}));
       for (const key of Object.keys(busy)) while (busy[key].count) release(key);
       travel("program", "you", failed ? "bad" : "ok", 0, () => { glow("program", false); places.program.group.classList.add(failed ? "failed" : "done"); glow("you", false); });
     },
@@ -1882,8 +2142,10 @@ loadBrand().finally(route);
       pill.style.height = on.offsetHeight + "px";
       pill.style.transform = "translate3d(0," + on.offsetTop + "px,0)";
     }
-    new MutationObserver(() => requestAnimationFrame(place)).observe(nav, {childList: true});
+    new MutationObserver(() => { requestAnimationFrame(place); setTimeout(place, 250); }).observe(nav, {childList: true});
     window.addEventListener("resize", place);
+    if (document.fonts) document.fonts.ready.then(place);
+    new MutationObserver(() => setTimeout(place, 60)).observe(document.documentElement, {attributes: true, attributeFilter: ["data-skin", "data-theme"]});
   }
 
   // Where the last click came from, so the next view can grow out of it.
@@ -1958,6 +2220,196 @@ loadBrand().finally(route);
   }
 
   intro(); spotlight(); railPill(); grain();
+})();
+
+// ------------------------------------------------- the living universe
+// Studio's background is a nebula drawn on this computer's graphics card,
+// and it answers what the agents do: a model thinking stirs it and turns
+// it violet, a tool call sends a cyan pulse from where the pointer rests,
+// a finished run blooms gold, a failed one flushes red, and idle it barely
+// drifts. Without WebGL, in the light theme, or for anyone who asked for
+// less motion, the still aurora above stands in.
+(function nebula() {
+  if (stillness.matches) return;
+  const canvas = document.createElement("canvas");
+  canvas.className = "nebula";
+  const gl = canvas.getContext("webgl", {antialias: false, alpha: false, powerPreference: "low-power"});
+  if (!gl) return;
+  const vertex = "attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}";
+  const fragment = [
+    "precision mediump float;",
+    "uniform vec2 r;uniform float t;uniform float energy;uniform vec3 tint;uniform float pulse;uniform vec2 m;",
+    "float h(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}",
+    "float n(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(h(i),h(i+vec2(1.,0.)),f.x),mix(h(i+vec2(0.,1.)),h(i+vec2(1.,1.)),f.x),f.y);}",
+    "float fbm(vec2 p){float v=0.,a=.5;for(int i=0;i<5;i++){v+=a*n(p);p=p*2.03+vec2(1.7,9.2);a*=.5;}return v;}",
+    "void main(){",
+    " vec2 uv=(gl_FragCoord.xy-.5*r)/r.y;float s=t*(.025+.11*energy);",
+    " vec2 q=vec2(fbm(uv*1.5+s),fbm(uv*1.5-s+3.1));",
+    " vec2 w=vec2(fbm(uv*2.1+q*1.9+s*1.3),fbm(uv*2.1+q*1.9-s+7.4));",
+    " float f=fbm(uv*1.3+w*2.1);",
+    " vec3 col=mix(vec3(.025,.025,.06),vec3(.36,.24,.86),clamp(f*f*1.7,0.,1.));",
+    " col=mix(col,vec3(1.,.52,.28),clamp(length(q)*.55-.18,0.,1.)*.5);",
+    " col=mix(col,vec3(.3,.82,1.),clamp(w.y*w.y*1.1,0.,1.)*.32);",
+    " col=mix(col,tint,.22*energy);",
+    " float ring=exp(-6.*abs(length(uv-m)-pulse*1.2))*pulse;",
+    " col+=tint*(exp(-3.2*length(uv-m))*(.08+.35*pulse)+ring*.9);",
+    " vec2 g=floor(gl_FragCoord.xy/2.);float st=step(.9978,h(g));col+=st*(.55+.45*sin(t*1.7+h(g)*40.))*.7;",
+    " vec2 v=gl_FragCoord.xy/r-.5;col*=1.-dot(v,v)*1.3;",
+    " gl_FragColor=vec4(col*(.62+.3*energy),1.);}"
+  ].join("\n");
+  function compile(type, source) { const shader = gl.createShader(type); gl.shaderSource(shader, source); gl.compileShader(shader); return gl.getShaderParameter(shader, gl.COMPILE_STATUS) ? shader : null; }
+  const vs = compile(gl.VERTEX_SHADER, vertex), fs = compile(gl.FRAGMENT_SHADER, fragment);
+  if (!vs || !fs) return;
+  const program = gl.createProgram(); gl.attachShader(program, vs); gl.attachShader(program, fs); gl.linkProgram(program);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) return;
+  gl.useProgram(program);
+  const buffer = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+  const where = gl.getAttribLocation(program, "p"); gl.enableVertexAttribArray(where); gl.vertexAttribPointer(where, 2, gl.FLOAT, false, 0, 0);
+  const u = name => gl.getUniformLocation(program, name);
+  const uR = u("r"), uT = u("t"), uE = u("energy"), uTint = u("tint"), uPulse = u("pulse"), uM = u("m");
+  document.body.prepend(canvas);
+  document.body.classList.add("has-nebula");
+
+  // Half resolution: a nebula is soft, and the card is spared.
+  function size() { canvas.width = Math.max(2, Math.round(innerWidth / 2)); canvas.height = Math.max(2, Math.round(innerHeight / 2)); gl.viewport(0, 0, canvas.width, canvas.height); }
+  size(); window.addEventListener("resize", size);
+
+  const TINTS = {idle: [0.66, 0.58, 1.0], think: [0.66, 0.5, 1.0], tool: [0.33, 0.84, 1.0], ok: [1.0, 0.78, 0.35], bad: [1.0, 0.36, 0.45], you: [1.0, 0.54, 0.3]};
+  let energy = 0.15, wantEnergy = 0.15, tint = TINTS.idle.slice(), wantTint = TINTS.idle, pulse = 0, mx = 0, my = 0, calmUntil = 0;
+  function stir(kind, strength) {
+    wantTint = TINTS[kind] || TINTS.idle; pulse = Math.max(pulse, strength);
+    wantEnergy = kind === "think" ? 0.95 : kind === "ok" || kind === "bad" ? 0.7 : Math.max(wantEnergy, 0.55);
+    calmUntil = performance.now() + (kind === "think" ? 6000 : 2200);
+  }
+  document.addEventListener("kosika:event", event => {
+    const kind = event.detail;
+    if (kind === "model_call" || kind === "agent_call") stir("think", 0.55);
+    else if (kind === "tool_call" || kind === "agent_tool") stir("tool", 0.8);
+    else if (kind === "run_done") stir("ok", 1);
+    else if (kind === "run_failed") stir("bad", 1);
+    else if (kind === "run_start") stir("you", 0.7);
+  });
+  window.addEventListener("pointermove", event => { mx = (event.clientX - innerWidth / 2) / innerHeight; my = (innerHeight / 2 - event.clientY) / innerHeight; }, {passive: true});
+
+  const start = performance.now(); let last = 0;
+  function frame(now) {
+    requestAnimationFrame(frame);
+    if (document.hidden || now - last < 33) return;
+    const dt = Math.min(0.1, (now - (last || now)) / 1000); last = now;
+    const look = document.documentElement.dataset.skin;
+    if (look === "swiss" || look === "spy") return;
+    TINTS.idle = look === "hologram" ? [0.31, 0.85, 1.0] : [0.66, 0.58, 1.0];
+    if (now > calmUntil) { wantEnergy = look === "hologram" ? 0.08 : 0.15; wantTint = TINTS.idle; }
+    energy += (wantEnergy - energy) * Math.min(1, dt * 1.6);
+    for (let i = 0; i < 3; i++) tint[i] += (wantTint[i] - tint[i]) * Math.min(1, dt * 2);
+    pulse *= Math.pow(0.18, dt);
+    const light = document.documentElement.getAttribute("data-theme") === "light";
+    canvas.style.opacity = light ? "0" : "1";
+    if (light) return;
+    gl.uniform2f(uR, canvas.width, canvas.height); gl.uniform1f(uT, (now - start) / 1000);
+    gl.uniform1f(uE, energy); gl.uniform3f(uTint, tint[0], tint[1], tint[2]); gl.uniform1f(uPulse, pulse); gl.uniform2f(uM, mx, my);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+  requestAnimationFrame(frame);
+})();
+
+// ------------------------------------------------- skins
+// Four looks: Cinema (the nebula), and three from LemoLab's film styles.
+// The choice is this person's and stays on this computer.
+const SKINS = [["cinema", "Cinema"], ["hologram", "Hologram HUD"], ["swiss", "Swiss Motion"], ["spy", "Spy Titles"]];
+function skin() { try { return localStorage.getItem("kosika-skin") || "spy"; } catch (error) { return "spy"; } }
+function setSkin(name) {
+  try { localStorage.setItem("kosika-skin", name); } catch (error) { /* this visit only */ }
+  if (name === "cinema") delete document.documentElement.dataset.skin; else document.documentElement.dataset.skin = name;
+}
+setSkin(skin());
+(function skinSwitch() {
+  const foot = document.getElementById("foot");
+  function add() {
+    if (foot.querySelector(".skin-switch")) return;
+    const label = SKINS.find(item => item[0] === skin()) || SKINS[0];
+    foot.append(h("div", {class: "theme skin-switch", title: "Change Studio's look", onclick: () => {
+      const next = SKINS[(SKINS.findIndex(item => item[0] === skin()) + 1) % SKINS.length][0];
+      setSkin(next); foot.querySelector(".skin-switch").remove(); add();
+    }}, h("i"), "Look: " + label[1]));
+  }
+  new MutationObserver(add).observe(foot, {childList: true});
+})();
+
+// ------------------------------------------------- the agency (Spy Titles)
+// What the look adds to the page: the credits, case files with stamps,
+// titles cut from paper, the brass-stab cut between views, and the agent
+// who runs while a mission does. It decorates what the views draw and
+// changes none of it; in any other look all of it is hidden.
+(function agency() {
+  const spy = () => document.documentElement.dataset.skin === "spy";
+  const calm = () => stillness.matches;
+
+  // An agent in a hat and coat, cut from paper, with a red scarf.
+  const runner = s("svg", {viewBox: "0 0 70 96", class: "runner spy-only", "aria-hidden": "true"},
+    s("polygon", {class: "leg a", points: "30,58 38,58 40,92 31,92", fill: "#1b1714"}),
+    s("polygon", {class: "leg b", points: "34,58 42,58 44,92 35,92", fill: "#2a241f"}),
+    s("polygon", {class: "arm a", points: "26,30 33,30 31,58 24,58", fill: "#2a241f"}),
+    s("polygon", {points: "24,26 48,26 52,64 20,64", fill: "#1b1714"}),
+    s("polygon", {class: "arm b", points: "40,30 47,30 49,58 42,58", fill: "#1b1714"}),
+    s("polygon", {class: "scarf", points: "30,25 46,24 14,34 10,30", fill: "#d23a22"}),
+    s("circle", {cx: 37, cy: 17, r: 8, fill: "#1b1714"}),
+    s("polygon", {points: "24,12 50,12 46,8 44,2 31,2 28,8", fill: "#1b1714"}),
+    s("rect", {x: 22, y: 11, width: 30, height: 2.4, fill: "#e2a52a"}));
+  document.body.append(runner, h("div", {class: "track spy-only"}));
+  document.addEventListener("kosika:event", event => {
+    if (event.detail === "run_start") document.body.classList.add("on-mission");
+    if (event.detail === "run_done" || event.detail === "run_failed") setTimeout(() => document.body.classList.remove("on-mission"), 900);
+  });
+
+  // The brass stab between views.
+  window.addEventListener("hashchange", () => {
+    if (!spy() || calm()) return;
+    const stab = h("div", {class: "stab spy-only"}, h("i"), h("i"), h("i"));
+    document.body.append(stab); setTimeout(() => stab.remove(), 800);
+  });
+
+  function credits() {
+    if (main.querySelector(".spy-marquee") || !overview) return;
+    const agents = overview.agents || [];
+    const tests = agents.reduce((sum, agent) => sum + (agent.tests || 0), 0);
+    const line = ["<b>Kosika Studio</b> presents", agents.length + " operatives", tests + " tests on file", "a mission by <em>you</em>", "model " + (overview.model || "none"), "everything asks before it changes"];
+    const span = document.createElement("span");
+    for (const round of [0, 1]) line.forEach(part => {
+      const bit = document.createElement("span"); bit.style.position = "static"; bit.style.animation = "none";
+      const bold = part.match(/^<b>(.*)<\/b>(.*)$/), red = part.match(/^(.*)<em>(.*)<\/em>$/);
+      if (bold) bit.append(h("b", null, bold[1]), bold[2]); else if (red) bit.append(red[1], h("em", null, red[2])); else bit.append(part);
+      span.append(bit, "   ·   ");
+    });
+    main.prepend(h("div", {class: "spy-marquee spy-only", "aria-hidden": "true"}, span));
+  }
+
+  function tiles() {
+    const title = main.querySelector("h1:not(.tiled)");
+    if (!title || calm()) return;
+    const text = title.textContent;
+    title.setAttribute("aria-label", text);
+    title.classList.add("tiled");
+    title.replaceChildren(...[...text].map((letter, index) => h("span", {class: "tile spy-only" + (letter === " " ? " space" : ""), style: "--i:" + index, "aria-hidden": "true"}, letter === " " ? "" : letter)));
+    // Outside the Spy look the plain words come back.
+    const plain = h("span", {class: "untiled"}, text); title.append(plain);
+  }
+
+  function files() {
+    main.querySelectorAll(".grid > .card:not(.new):not(.filed)").forEach((card, index) => {
+      card.classList.add("filed");
+      const name = (card.querySelector("h3") || {}).textContent || "unknown";
+      const chips = [...card.querySelectorAll(".chip")].map(chip => chip.textContent);
+      const care = chips.some(text => text.includes("asks before changing"));
+      const cleared = chips.some(text => /\d+ tests?$/.test(text));
+      card.prepend(h("div", {class: "file-strip spy-only"}, h("span", null, "File No. " + String(index + 1).padStart(3, "0")), h("span", null, "codename ", h("b", null, name))));
+      card.append(h("div", {class: "clip-mark spy-only"}), h("div", {class: "stamp spy-only" + (care ? " care" : ""), style: "--i:" + index}, care ? "Handle with care" : cleared ? "Cleared" : "Unclassified"));
+    });
+  }
+
+  function dress() { if (!main.children.length) return; credits(); tiles(); files(); }
+  new MutationObserver(records => { if (records.some(record => record.addedNodes.length)) requestAnimationFrame(dress); }).observe(main, {childList: true});
 })();
 </script>
 </body>
