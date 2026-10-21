@@ -81,8 +81,19 @@ class ServicesTests(unittest.TestCase):
         set_paused(self.file, "lookout", True)
         self.assertEqual(run_due(self.file, datetime.now(), self.runner), [])
         self.assertIn("lookout (paused)", status_text(self.file))
+        self.assertEqual((self.root / "aios.services.paused.txt").read_text(encoding="utf-8"), "lookout\n")
         set_paused(self.file, "lookout", False)
         self.assertEqual(run_due(self.file, datetime.now(), self.runner), ["lookout"])
+
+    def test_a_plain_list_pauses_and_a_plain_status_is_kept(self) -> None:
+        (self.root / "aios.services.paused.txt").write_text("// stopped for now\nlookout\n", encoding="utf-8")
+        self.assertEqual(run_due(self.file, datetime.now(), self.runner), [])
+        (self.root / "aios.services.paused.txt").write_text("", encoding="utf-8")
+        run_due(self.file, datetime.now(), self.runner)
+        kept = (self.root / "aios.services.status.txt").read_text(encoding="utf-8")
+        self.assertIn("lookout (every 15 minutes)", kept)
+        self.assertIn("worked: Heard: check", kept)
+        self.assertNotIn("paused", json.loads((self.root / "aios.services.state.json").read_text(encoding="utf-8")))
 
     def test_only_the_named_key_is_passed_on(self) -> None:
         import os

@@ -50,8 +50,11 @@ program other than Kosika itself, and the shell is never granted.
     python -m kosika.services pause FILE NAME / resume FILE NAME
 
 What the runner knows is kept beside the file, in `FILE.state.json`: when
-each service last ran, whether it worked, what it said, and which are
-paused. Studio and Kosi read it there.
+each service last ran, whether it worked, and what it said. The same is
+written for people, and for agents that read plain text, in
+`FILE.status.txt`. Which services are paused is the plain list in
+`FILE.paused.txt`, one name a line, so a Kosika agent that may write that
+one file can pause and resume services, with the owner's yes each time.
 """
 
 from __future__ import annotations
@@ -310,14 +313,34 @@ def read_state(path: Path) -> dict[str, Any]:
     except (OSError, ValueError):
         state = {}
     state.setdefault("last", {})
-    state.setdefault("paused", [])
+    state["paused"] = read_paused(path)
     return state
 
 
+def paused_path(path: Path) -> Path:
+    return path.with_name(path.name + ".paused.txt")
+
+
+def read_paused(path: Path) -> list[str]:
+    try:
+        text = paused_path(path).read_text(encoding="utf-8")
+    except OSError:
+        return []
+    return sorted({line.strip() for line in text.splitlines() if line.strip() and not line.strip().startswith("//")})
+
+
 def write_state(path: Path, state: dict[str, Any]) -> None:
-    target = state_path(path)
-    temporary = target.with_suffix(".tmp")
-    temporary.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
+    kept = {key: value for key, value in state.items() if key != "paused"}
+    _write(state_path(path), json.dumps(kept, indent=2, ensure_ascii=False))
+    try:
+        _write(path.with_name(path.name + ".status.txt"), status_text(path, kept) + "\n")
+    except ServicesError:
+        pass
+
+
+def _write(target: Path, text: str) -> None:
+    temporary = target.with_suffix(target.suffix + ".tmp")
+    temporary.write_text(text, encoding="utf-8")
     temporary.replace(target)
 
 
@@ -348,10 +371,10 @@ def run_due(path: Path, now: datetime | None = None, runner: Runner = _run) -> l
     return ran
 
 
-def status(path: Path) -> list[dict[str, Any]]:
+def status(path: Path, state: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """Each service: what it may touch, how often it runs, how it last went."""
 
-    state = read_state(path)
+    state = read_state(path) if state is None else {**state, "paused": read_paused(path)}
     shown = []
     for service in read_services(path).values():
         last = state["last"].get(service.name)
@@ -378,9 +401,9 @@ def _every_words(seconds: int | None) -> str:
     return f"every {seconds} seconds"
 
 
-def status_text(path: Path) -> str:
+def status_text(path: Path, state: dict[str, Any] | None = None) -> str:
     lines = []
-    for item in status(path):
+    for item in status(path, state):
         when = "paused" if item["paused"] else _every_words(item["every"])
         lines.append(f"{item['name']} ({when}): {', '.join(item['touches'])}")
         last = item["last"]
@@ -396,11 +419,10 @@ def status_text(path: Path) -> str:
 def set_paused(path: Path, name: str, paused: bool) -> None:
     if name not in read_services(path):
         raise ServicesError(f"There is no service {name!r} in {path}")
-    state = read_state(path)
-    names = set(state["paused"])
+    names = set(read_paused(path))
     names.add(name) if paused else names.discard(name)
-    state["paused"] = sorted(names)
-    write_state(path, state)
+    _write(paused_path(path), "".join(f"{each}\n" for each in sorted(names)))
+    write_state(path, read_state(path))
 
 
 def keep_running(path: Path, tick: float = 30.0) -> None:
