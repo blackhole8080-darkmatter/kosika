@@ -1,0 +1,411 @@
+// Maya: the mind of MayaOS, the AI layer over the systems on this computer.
+//
+//   kosika test maya.kos
+//   kosika run maya.kos --input say.json --computer --linux Ubuntu
+//     --services aios.services
+//
+// where say.json holds {"msg": {"text": "home", "person": "Aryan",
+// "readings": [], "studio": false}}.
+//
+// The MayaOS app is only Maya's window. It runs this program and draws
+// what Maya decides: the greeting, the line under it, what needs the
+// person's attention, the answer to what they typed, and which of
+// Kosika's apps to open. Every one of those decisions is made here.
+//
+// What Maya may touch. She reads this computer (--computer), the one
+// Linux the person let her read (--linux NAME), and the services file
+// (--services), each only when granted and each only by looking: the
+// commands are fixed in Kosika, never chosen here. Any other Linux on the
+// computer comes in with what was said, marked asleep, so she can say it
+// is there. Maya opens no program herself; she can only name one of
+// Kosika's own apps, studio or kosi, for the app to open. She needs no
+// model.
+//
+// Say: home, what needs me, how is Ubuntu, my services, open studio,
+// open kosi, help.
+
+// What one system looks like right now. memory and disk are the share in
+// use, 0 to 1, or -1 when unknown. updates is how many wait, -1 unknown.
+// awake is false for a system Maya has not been let read.
+record Reading { system: Text kind: Text memory: Number disk: Number updates: Number awake: Bool }
+
+record Msg { text: Text person: Text readings: Reading[] studio: Bool }
+
+// One thing that may need the person. level is "urgent", "watch" or "fyi".
+record Notice { system: Text level: Text text: Text }
+
+// What Maya says. title is a heading (on the desktop, the greeting), text
+// the words, notices what needs attention, suggest a few things to say
+// next, and open the app to open: "studio", "kosi" or "".
+record Said { title: Text text: Text notices: Notice[] suggest: Text[] open: Text }
+
+record Services { services: Text[] paused: Text[] text: Text }
+record Computer { name: Text system: Text cores: Number memory: Text disk: Text uptime: Text }
+record Linux { distro: Text kernel: Text uptime: Text load: Text memory: Text disk: Text upgrades: Text top: Text[] }
+
+// This computer, as Windows tells Kosika. Granted with --computer.
+tool read_computer {
+  source system "computer"
+  operation: "status"
+  access: observe
+  output: Computer
+}
+
+// The one Linux the person let Maya read. Granted with --linux NAME.
+tool read_linux {
+  source system "linux"
+  operation: "status"
+  access: observe
+  output: Linux
+}
+
+// The owner's services: their names, which are paused, and how each last
+// went. It reaches only the one services file named with --services.
+tool my_services {
+  source system "services"
+  operation: "status"
+  access: observe
+  output: Services
+}
+
+agent desk {
+  can: [my_services, read_computer, read_linux]
+  max_steps: 1
+}
+
+// ---------------------------------------------------------------- understanding
+
+fn kind_of(msg: Msg) -> Text {
+  let text = msg.text.lower().trim_marks("?!.").trim()
+  if text == "" or text == "home" or text == "hello" or text == "hi" or text == "hey" or text.starts_with("good ") { return "home" }
+  if text.starts_with("open ") or text.starts_with("start ") or text.starts_with("launch ") or text.starts_with("show me ") { return "open" }
+  if text.contains("service") or text.contains("what's running") or text.contains("what is running") or text.contains("agents running") { return "services" }
+  if text.contains("need") or text.contains("attention") or text.contains("wrong") or text.contains("problem") or text.contains("status") or text.contains("anything new") { return "attention" }
+  if not system_named(msg).is_empty() { return "system" }
+  if text.contains("linux") or text.contains("wsl") or text.contains("windows") or text.contains("computer") or text.contains("laptop") or text.contains("systems") { return "systems" }
+  if text == "help" or text.contains("what can you") { return "help" }
+  if text.starts_with("thank") { return "thanks" }
+  return "ask"
+}
+
+// The system the words name, such as Ubuntu, or "" for none.
+fn system_named(msg: Msg) -> Text {
+  let text = msg.text.lower()
+  for reading in msg.readings {
+    if text.contains(reading.system.lower()) { return reading.system }
+  }
+  return ""
+}
+
+// Which of Kosika's apps the words ask for, or "" for one Maya cannot open.
+fn app_named(text: Text) -> Text {
+  let words = text.lower()
+  if words.contains("studio") or words.contains("kosika") { return "studio" }
+  if words.contains("kosi") or words.contains("assistant") { return "kosi" }
+  return ""
+}
+
+// ---------------------------------------------------------------- reading
+
+// The share in use from words such as "629 of 7575 MB used" or
+// "4.2G of 1007G used (1%) on /", or -1 when they say no such thing.
+fn share_of(text: Text) -> Number {
+  let words = text.words()
+  var at = 0
+  for word in words {
+    if word == "of" and at > 0 and at + 1 < words.length() {
+      let used = words[at - 1].trim_marks("KMGTB").to_number().or(-1)
+      let total = words[at + 1].trim_marks("KMGTB").to_number().or(-1)
+      if used >= 0 and total > 0 { return if used >= total { 1 } else { used / total } }
+      return -1
+    }
+    at = at + 1
+  }
+  return -1
+}
+
+fn computer_reading(c: Computer) -> Reading {
+  return {system: c.name, kind: "windows", memory: share_of(c.memory), disk: share_of(c.disk), updates: -1, awake: true}
+}
+
+fn linux_reading(l: Linux) -> Reading {
+  return {system: l.distro, kind: "linux", memory: share_of(l.memory), disk: share_of(l.disk), updates: l.upgrades.to_number().or(-1), awake: true}
+}
+
+// Everything Maya can see: what she read herself, then the systems she
+// was only told about, leaving out any she read.
+fn seen(c: Computer, l: Linux, told: Reading[]) -> Reading[] {
+  var all: Reading[] = []
+  if not c.name.is_empty() { all = all.concat([computer_reading(c)]) }
+  if not l.distro.is_empty() { all = all.concat([linux_reading(l)]) }
+  for reading in told {
+    if reading.system != l.distro and reading.system != c.name { all = all.concat([reading]) }
+  }
+  return all
+}
+
+fn no_computer() -> Computer {
+  return {name: "", system: "", cores: 0, memory: "", disk: "", uptime: ""}
+}
+
+fn no_linux() -> Linux {
+  return {distro: "", kernel: "", uptime: "", load: "", memory: "", disk: "", upgrades: "", top: []}
+}
+
+fn with_readings(msg: Msg, readings: Reading[]) -> Msg {
+  return {text: msg.text, person: msg.person, readings: readings, studio: msg.studio}
+}
+
+// ---------------------------------------------------------------- noticing
+
+fn pct(share: Number) -> Text {
+  if share > 0 and share < 0.005 { return "under 1%" }
+  return f"{(share * 100 + 0.5).floor()}%"
+}
+
+// What one system may need from the person, most pressing first.
+fn noticed(reading: Reading) -> Notice[] {
+  var found: Notice[] = []
+  if not reading.awake {
+    return [{system: reading.system, level: "fyi", text: f"{reading.system} is asleep: MayaOS has not been let read it."}]
+  }
+  if reading.disk >= 0.9 { found = found.concat([{system: reading.system, level: "urgent", text: f"{reading.system}'s disk is {pct(reading.disk)} full."}]) }
+  else if reading.disk >= 0.8 { found = found.concat([{system: reading.system, level: "watch", text: f"{reading.system}'s disk is {pct(reading.disk)} full."}]) }
+  if reading.memory >= 0.9 { found = found.concat([{system: reading.system, level: "watch", text: f"{reading.system} is using {pct(reading.memory)} of its memory."}]) }
+  if reading.updates >= 50 { found = found.concat([{system: reading.system, level: "watch", text: f"{reading.updates} updates are waiting on {reading.system}."}]) }
+  else if reading.updates > 0 { found = found.concat([{system: reading.system, level: "fyi", text: f"{reading.updates} updates are waiting on {reading.system}."}]) }
+  return found
+}
+
+fn rank(level: Text) -> Number {
+  if level == "urgent" { return 0 }
+  if level == "watch" { return 1 }
+  return 2
+}
+
+// Everything that may need the person, urgent first, then to watch.
+fn all_notices(readings: Reading[]) -> Notice[] {
+  var all: Notice[] = []
+  for reading in readings { all = all.concat(noticed(reading)) }
+  var ordered: Notice[] = []
+  for level in ["urgent", "watch", "fyi"] {
+    for notice in all {
+      if notice.level == level { ordered = ordered.concat([notice]) }
+    }
+  }
+  return ordered
+}
+
+fn awake_count(readings: Reading[]) -> Number {
+  var count = 0
+  for reading in readings { if reading.awake { count = count + 1 } }
+  return count
+}
+
+fn plural(count: Number, one: Text, many: Text) -> Text {
+  return if count == 1 { f"1 {one}" } else { f"{count} {many}" }
+}
+
+// ---------------------------------------------------------------- saying
+
+fn greeting(msg: Msg, moment: Moment) -> Text {
+  let name = if msg.person.trim().is_empty() { "" } else { ", " + msg.person.trim() }
+  if moment.hour < 5 { return "Still up" + name + "." }
+  if moment.hour < 12 { return "Good morning" + name + "." }
+  if moment.hour < 17 { return "Good afternoon" + name + "." }
+  return "Good evening" + name + "."
+}
+
+// The line under the greeting: what is awake, what is on duty, and the
+// one thing most worth knowing.
+fn summary(msg: Msg, services: Services) -> Text {
+  var parts = [plural(awake_count(msg.readings), "system", "systems") + " awake"]
+  let names = services.services.length()
+  if names > 0 {
+    let duty = names - services.paused.length()
+    parts = parts.concat([plural(duty, "service", "services") + " on duty"])
+  }
+  let notices = all_notices(msg.readings)
+  if notices.length() > 0 and notices[0].level != "fyi" {
+    parts = parts.concat([notices[0].text.trim_marks(".")])
+  } else {
+    parts = parts.concat(["nothing needs you"])
+  }
+  return parts.join(" · ") + "."
+}
+
+fn said(title: Text, text: Text, notices: Notice[], suggest: Text[], open: Text) -> Said {
+  return {title: title, text: text, notices: notices, suggest: suggest, open: open}
+}
+
+fn home_said(msg: Msg, services: Services, moment: Moment) -> Said {
+  let notices = all_notices(msg.readings)
+  return said(greeting(msg, moment), summary(msg, services), notices, ["what needs me", "my services", "open studio"], "")
+}
+
+fn attention_said(msg: Msg) -> Said {
+  let notices = all_notices(msg.readings)
+  var pressing: Notice[] = []
+  for notice in notices { if notice.level != "fyi" { pressing = pressing.concat([notice]) } }
+  if pressing.length() == 0 {
+    return said("All calm", "Nothing needs you right now. Every system I can read is fine.", notices, ["my services", "how is my computer"], "")
+  }
+  var lines: Text[] = []
+  for notice in pressing { lines = lines.concat([notice.text]) }
+  return said(plural(pressing.length(), "thing needs you", "things need you"), lines.join(" "), pressing, ["my services"], "")
+}
+
+fn reading_words(reading: Reading) -> Text {
+  if not reading.awake { return f"{reading.system} is asleep. Let MayaOS read it from the desktop and I can tell you how it is." }
+  var parts: Text[] = []
+  if reading.memory >= 0 { parts = parts.concat([f"{pct(reading.memory)} of its memory in use"]) }
+  if reading.disk >= 0 { parts = parts.concat([f"its disk {pct(reading.disk)} full"]) }
+  if reading.updates == 0 { parts = parts.concat(["and it is up to date"]) }
+  else if reading.updates > 0 { parts = parts.concat([plural(reading.updates, "update", "updates") + " waiting"]) }
+  return f"{reading.system} is awake, with " + parts.join(", ") + "."
+}
+
+fn system_said(msg: Msg) -> Said {
+  let name = system_named(msg)
+  for reading in msg.readings {
+    if reading.system == name { return said(reading.system, reading_words(reading), noticed(reading), ["what needs me"], "") }
+  }
+  return said("Not found", "I cannot see that system.", [], ["how is my computer"], "")
+}
+
+fn systems_said(msg: Msg) -> Said {
+  if msg.readings.length() == 0 { return said("No systems", "I have not been shown any system yet.", [], ["help"], "") }
+  var lines: Text[] = []
+  for reading in msg.readings { lines = lines.concat([reading_words(reading)]) }
+  return said(plural(awake_count(msg.readings), "system awake", "systems awake"), lines.join(" "), all_notices(msg.readings), ["what needs me"], "")
+}
+
+fn services_said(services: Services) -> Said {
+  let names = services.services.length()
+  if names == 0 { return said("No services", "No services file was given to me, so no service runs yet. Name one with KOSIKA_SERVICES.", [], ["help"], "") }
+  let duty = names - services.paused.length()
+  let paused = if services.paused.length() == 0 { "" } else { " Paused: " + services.paused.join(", ") + "." }
+  let last = if services.text.trim().is_empty() { "" } else { "\n" + services.text.trim() }
+  return said(plural(duty, "service on duty", "services on duty"), "Running: " + services.services.join(", ") + "." + paused + last, [], ["what needs me"], "")
+}
+
+fn open_said(msg: Msg) -> Said {
+  let app = app_named(msg.text)
+  if app == "studio" {
+    let how = if msg.studio { "Bringing up Kosika Studio." } else { "Starting Kosika Studio." }
+    return said("Kosika Studio", how, [], [], "studio")
+  }
+  if app == "kosi" { return said("Kosi", "Calling Kosi.", [], [], "kosi") }
+  return said("I cannot open that", "I open only Kosika's own apps: Studio, where agents are built, and Kosi, your assistant. Programs of your own I leave to you.", [], ["open studio", "open kosi"], "")
+}
+
+fn help_said() -> Said {
+  return said("What I do", "I watch over the systems on this computer and the services that keep running on it. Ask what needs you, how a system is, or about your services, and I can open Kosika Studio or Kosi. Open questions are Kosi's to answer.", [], ["what needs me", "how is my computer", "my services", "open kosi"], "")
+}
+
+fn ask_said() -> Said {
+  return said("A question for Kosi", "Open questions are Kosi's to answer. I keep watch over the systems. Shall I call Kosi?", [], ["open kosi", "help"], "")
+}
+
+// ---------------------------------------------------------------- workflows
+
+workflow main(msg: Msg) -> Said {
+  budget 90 seconds
+  pc       = execute desk.read_computer() otherwise no_computer()
+  linux    = execute desk.read_linux() otherwise no_linux()
+  look     = with_readings(msg, seen(pc, linux, msg.readings))
+  kind     = kind_of(look)
+  services = execute desk.my_services() otherwise {services: [], paused: [], text: ""}
+  moment   = now
+  out      = match kind {
+    case "home" { home_said(look, services, moment) }
+    case "attention" { attention_said(look) }
+    case "system" { system_said(look) }
+    case "systems" { systems_said(look) }
+    case "services" { services_said(services) }
+    case "open" { open_said(look) }
+    case "help" { help_said() }
+    case "thanks" { said("", "You are welcome.", [], [], "") }
+    case _ { ask_said() }
+  }
+}
+
+// ---------------------------------------------------------------- tests
+
+fn ubuntu() -> Reading {
+  return {system: "Ubuntu", kind: "linux", memory: 0.09, disk: 0.01, updates: 149, awake: true}
+}
+
+fn laptop() -> Reading {
+  return {system: "LAPTOP", kind: "windows", memory: 0.77, disk: 0.93, updates: -1, awake: true}
+}
+
+fn debian() -> Reading {
+  return {system: "Debian", kind: "linux", memory: -1, disk: -1, updates: -1, awake: false}
+}
+
+fn ubuntu_read() -> Linux {
+  return {distro: "Ubuntu", kernel: "Linux 6.18", uptime: "up 2 hours", load: "0.1 0.2 0.3", memory: "629 of 7575 MB used", disk: "4.2G of 1007G used (1%) on /", upgrades: "149", top: []}
+}
+
+fn told(text: Text) -> Msg {
+  return {text: text, person: "Aryan", readings: [laptop(), ubuntu(), debian()], studio: false}
+}
+
+fn no_services() -> Services {
+  return {services: [], paused: [], text: ""}
+}
+
+fn two_services() -> Services {
+  return {services: ["lookout", "gatherer"], paused: ["gatherer"], text: ""}
+}
+
+fn only_asleep() -> Msg {
+  return {text: "", person: "", readings: [debian()], studio: false}
+}
+
+test "Maya reads the computer and Linux herself" {
+  expect share_of("629 of 7575 MB used") > 0.083
+  expect share_of("629 of 7575 MB used") < 0.084
+  expect share_of("363 of 476 GB used on C:") > 0.76
+  expect share_of("4.2G of 1007G used (1%) on /") < 0.005
+  expect share_of("unknown") == -1
+  expect linux_reading(ubuntu_read()).updates == 149
+  expect seen(no_computer(), ubuntu_read(), [ubuntu(), debian()]).length() == 2
+  expect seen(no_computer(), no_linux(), [debian()])[0].awake == false
+}
+
+test "what is said is understood" {
+  expect kind_of(told("")) == "home"
+  expect kind_of(told("What needs me?")) == "attention"
+  expect kind_of(told("how is ubuntu")) == "system"
+  expect kind_of(told("how is my computer")) == "systems"
+  expect kind_of(told("my services")) == "services"
+  expect kind_of(told("open studio")) == "open"
+  expect kind_of(told("why is the sky blue")) == "ask"
+}
+
+test "the most pressing thing comes first" {
+  notices = all_notices(told("").readings)
+  expect notices[0].level == "urgent"
+  expect notices[0].text == "LAPTOP's disk is 93% full."
+  expect notices[1].text == "149 updates are waiting on Ubuntu."
+  expect notices[2].text == "Debian is asleep: MayaOS has not been let read it."
+}
+
+test "the desktop line says what is awake and what matters most" {
+  expect summary(told(""), no_services()) == "2 systems awake · LAPTOP's disk is 93% full."
+  expect summary(told(""), two_services()) == "2 systems awake · 1 service on duty · LAPTOP's disk is 93% full."
+  expect summary(only_asleep(), no_services()) == "0 systems awake · nothing needs you."
+}
+
+test "a system is described in words" {
+  expect reading_words(ubuntu()) == "Ubuntu is awake, with 9% of its memory in use, its disk 1% full, 149 updates waiting."
+  expect system_said(told("how is debian")).text == "Debian is asleep. Let MayaOS read it from the desktop and I can tell you how it is."
+}
+
+test "only Kosika's own apps are opened" {
+  expect open_said(told("open studio")).open == "studio"
+  expect open_said(told("open kosi")).open == "kosi"
+  expect open_said(told("open notepad")).open == ""
+}

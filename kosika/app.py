@@ -2037,6 +2037,17 @@ class App:
             raise AppError(str(exc), 404) from exc
         return self.services()
 
+    def open_mayaos(self) -> dict[str, Any]:
+        """Open MayaOS, the app the agents live in: its window when it is
+        running, otherwise the app itself, as its shortcut starts it."""
+
+        from .mayaos import MayaError, open_app
+
+        try:
+            return {"did": open_app("mayaos")}
+        except (MayaError, OSError) as exc:
+            raise AppError(f"MayaOS could not be opened: {exc}", 500) from exc
+
     def memory(self, agent_id: str) -> dict[str, Any]:
         """What the agent remembers right now, read from its memory folder."""
 
@@ -2281,6 +2292,8 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                     self._json(200, app.services())
                 elif method == "POST" and url.path == "/api/services/pause":
                     self._json(200, app.pause_service(self._body()))
+                elif method == "POST" and url.path == "/api/open/mayaos":
+                    self._json(200, app.open_mayaos())
                 else:
                     self._json(404, {"error": "Not found"})
             except AppError as exc:
@@ -2348,16 +2361,25 @@ def open_window(url: str) -> bool:
     return False
 
 
-def open_app_window(url: str, settings: Path) -> subprocess.Popen[bytes] | None:
+def open_app_window(
+    url: str, settings: Path, announce_as: str = "studio"
+) -> subprocess.Popen[bytes] | None:
     """Open the page as an app window that can be waited for.
 
     The browser is given a settings folder of its own. Without one it hands
     the page to a browser that is already running and exits at once, and
     there would be nothing to wait for. With one, the process lasts exactly
     as long as the window does.
+
+    The app is announced beside its settings folder, so Kosika's other apps
+    (MayaOS opens Studio, and Studio MayaOS) can find it.
     """
 
     settings.mkdir(parents=True, exist_ok=True)
+    if announce_as:
+        from .desktop_app import announce
+
+        announce(announce_as, url, settings.parent)
     for browser in window_browsers():
         try:
             return subprocess.Popen(  # noqa: S603 - a fixed browser path and our own URL

@@ -14,13 +14,17 @@ file, and a failure to start is shown in a small message box.
 
 from __future__ import annotations
 
+import json
 import math
 import os
+import socket
 import struct
 import subprocess
 import sys
+import time
 import traceback
 from pathlib import Path
+from urllib.parse import urlsplit
 
 NAME = "Kosika Studio"
 #: Sizes of the icon's pictures, in pixels.
@@ -122,6 +126,15 @@ def write_icon() -> Path:
 PILL_NAME = "Kosi"
 PILL_MODULE = "kosika.pill"
 STUDIO_MODULE = "kosika.desktop_app"
+#: The third app: MayaOS, the home the agents live in.
+MAYAOS_NAME = "MayaOS"
+MAYAOS_MODULE = "kosika.mayaos"
+#: What each app's shortcut says about it.
+WORDS = {
+    STUDIO_MODULE: "Kosika Studio: build, run and watch AI agents",
+    PILL_MODULE: "Kosi: your assistant, always on the screen",
+    MAYAOS_MODULE: "MayaOS: your AI layer over the systems on this computer",
+}
 
 
 def shortcut_places(name: str = NAME) -> list[Path]:
@@ -195,9 +208,7 @@ def make_shortcuts(
             "KOSIKA_LNK": str(place),
             "KOSIKA_TARGET": str(launcher()),
             "KOSIKA_ARGS": shortcut_arguments(agents, module),
-            "KOSIKA_WORDS": "Kosi: your assistant, always on the screen"
-            if module == PILL_MODULE
-            else "Kosika Studio: build, run and watch AI agents",
+            "KOSIKA_WORDS": WORDS.get(module, WORDS[STUDIO_MODULE]),
             "KOSIKA_DIR": str(code_folder()),
             "KOSIKA_ICON": str(icon),
         }
@@ -226,6 +237,39 @@ def remove_shortcuts(name: str = NAME) -> list[Path]:
             place.unlink()
             gone.append(place)
     return gone
+
+
+# ------------------------------------------------------------------ the apps find each other
+
+
+def announce(name: str, url: str, folder: Path | None = None) -> None:
+    """Write where a running app can be reached, for Kosika's other apps to
+    read. The note holds the app's key, so it stays in this person's own
+    app folder."""
+
+    folder = (folder or home()) / "running"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / f"{name}.json").write_text(
+        json.dumps({"url": url, "pid": os.getpid(), "at": time.time()}), encoding="utf-8"
+    )
+
+
+def reachable(name: str, folder: Path | None = None) -> str:
+    """The address of a running app, or "" when it is not running."""
+
+    try:
+        note = json.loads(((folder or home()) / "running" / f"{name}.json").read_text(encoding="utf-8"))
+        url = str(note["url"])
+        port = urlsplit(url).port
+    except (OSError, ValueError, KeyError, TypeError):
+        return ""
+    if not port:
+        return ""
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=0.5):
+            return url
+    except OSError:
+        return ""
 
 
 # ------------------------------------------------------------------ starting

@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MayaOS</title>
+<style>
+@font-face { font-family: "EB Garamond"; src: url("/fonts/EBGaramond.ttf"); font-weight: 400 800; }
+@font-face { font-family: "Figtree"; src: url("/fonts/Figtree.ttf"); font-weight: 300 900; }
+:root {
+  --ink: #f3eee6; --soft: #b9b1c9; --faint: #7d7591; --line: rgba(255, 255, 255, .10);
+  --glass: rgba(22, 18, 38, .58); --glass-hi: rgba(255, 255, 255, .06);
+  --rose: #ff7a8a; --amber: #ffb35c; --violet: #a98bff; --teal: #58e0c8;
+  --ease: cubic-bezier(.2, .8, .2, 1); --spring: cubic-bezier(.34, 1.56, .64, 1);
+  --serif: "EB Garamond", Georgia, serif; --sans: "Figtree", system-ui, sans-serif; --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: #07050f; color: var(--ink); font: 14px/1.5 var(--sans); overflow: hidden; -webkit-font-smoothing: antialiased; }
+button { font: inherit; color: inherit; }
+
+/* The wallpaper: a veil of light that drifts, and stars. Maya is the veil. */
+.wall { position: fixed; inset: 0; overflow: hidden; z-index: 0; }
+.wall .veil { position: absolute; inset: -20%; filter: blur(60px) saturate(1.2); opacity: .9; }
+.wall .veil i { position: absolute; border-radius: 50%; mix-blend-mode: screen; animation: drift 26s ease-in-out infinite alternate; }
+.wall .veil i:nth-child(1) { width: 60vw; height: 60vw; left: 5%; top: 10%; background: radial-gradient(circle, #5b2bd6 0, transparent 65%); }
+.wall .veil i:nth-child(2) { width: 50vw; height: 50vw; right: 0; top: -5%; background: radial-gradient(circle, #d6336c 0, transparent 62%); animation-duration: 31s; animation-delay: -7s; }
+.wall .veil i:nth-child(3) { width: 55vw; height: 55vw; left: 30%; bottom: -15%; background: radial-gradient(circle, #0fa3a3 0, transparent 60%); animation-duration: 37s; animation-delay: -15s; opacity: .7; }
+.wall .veil i:nth-child(4) { width: 35vw; height: 35vw; left: -5%; bottom: 0; background: radial-gradient(circle, #e8813a 0, transparent 60%); animation-duration: 29s; animation-delay: -3s; opacity: .55; }
+@keyframes drift { to { transform: translate(6vw, -4vh) scale(1.15) rotate(12deg); } }
+.wall canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.wall .grain { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(7, 5, 15, .1), rgba(7, 5, 15, .65)); }
+
+/* Boot: rings draw, the name rises, the veil opens onto the desktop. */
+.boot { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: #07050f; transition: clip-path 1.1s var(--ease), opacity .6s; clip-path: circle(150% at 50% 50%); }
+.boot.open { clip-path: circle(0% at 50% 46%); pointer-events: none; }
+.boot .seal { display: grid; place-items: center; gap: 22px; }
+.boot svg { width: 168px; height: 168px; overflow: visible; }
+.boot svg circle, .boot svg path { fill: none; stroke-linecap: round; }
+.boot svg .r { stroke-dasharray: var(--len); stroke-dashoffset: var(--len); animation: draw 1.4s var(--ease) forwards; animation-delay: var(--d); }
+.boot svg .core { fill: #fff; opacity: 0; transform-origin: 84px 84px; animation: pop .7s var(--spring) 1.05s forwards; }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+@keyframes pop { from { opacity: 0; transform: scale(.2); } to { opacity: 1; transform: scale(1); } }
+.boot .word { font: 500 46px/1 var(--serif); letter-spacing: .02em; display: flex; }
+.boot .word span { display: inline-block; opacity: 0; transform: translateY(18px); filter: blur(8px); animation: rise .8s var(--ease) forwards; animation-delay: calc(1.1s + var(--i) * 70ms); }
+.boot .word span.os { color: var(--amber); font-style: italic; }
+@keyframes rise { to { opacity: 1; transform: none; filter: none; } }
+.boot .hint { color: var(--faint); font-size: 12px; letter-spacing: .2em; text-transform: uppercase; opacity: 0; animation: rise .8s var(--ease) 1.8s forwards; }
+
+/* The bar along the top. */
+.bar { position: fixed; top: 0; left: 0; right: 0; z-index: 10; height: 38px; display: flex; align-items: center; gap: 18px; padding: 0 18px; background: rgba(10, 8, 20, .45); backdrop-filter: blur(18px) saturate(1.4); border-bottom: 1px solid var(--line); font-size: 13px; }
+.bar .brand { display: flex; align-items: center; gap: 8px; font: 600 15px var(--serif); letter-spacing: .02em; }
+.bar .brand svg { width: 18px; height: 18px; }
+.bar .grow { flex: 1; }
+.bar .pip { display: flex; align-items: center; gap: 6px; color: var(--soft); }
+.bar .pip i { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+.bar .pip.on i { background: var(--teal); box-shadow: 0 0 10px var(--teal); }
+.bar .clock { font-variant-numeric: tabular-nums; color: var(--ink); }
+
+/* The desktop. */
+.desk { position: relative; z-index: 1; height: 100%; overflow: auto; padding: 74px 40px 140px; }
+.hello { max-width: 1180px; margin: 0 auto 26px; }
+.hello h1 { font: 400 clamp(34px, 4.6vw, 58px)/1.05 var(--serif); margin: 0 0 10px; letter-spacing: -.01em; }
+.hello h1 em { color: var(--amber); }
+.hello p { color: var(--soft); margin: 0; font-size: 15px; }
+.hello p b { color: var(--ink); font-weight: 600; }
+.ask { margin-top: 20px; display: flex; gap: 10px; align-items: center; max-width: 680px; padding: 6px 6px 6px 16px; border-radius: 16px; background: rgba(18, 14, 32, .55); backdrop-filter: blur(18px); border: 1px solid var(--line); transition: border-color .25s, box-shadow .25s; }
+.ask:focus-within { border-color: rgba(169, 139, 255, .6); box-shadow: 0 0 0 4px rgba(169, 139, 255, .12); }
+.ask .orb { width: 18px; height: 18px; border-radius: 50%; background: conic-gradient(from 0deg, var(--violet), var(--rose), var(--amber), var(--teal), var(--violet)); animation: spin 6s linear infinite; flex: none; }
+.ask.thinking .orb { animation-duration: .9s; }
+.ask input { flex: 1; min-width: 0; background: none; border: 0; outline: 0; color: var(--ink); font: 15px var(--sans); padding: 8px 0; }
+.ask input::placeholder { color: var(--faint); }
+.said { max-width: 680px; margin-top: 12px; padding: 14px 16px; border-radius: 14px; background: rgba(18, 14, 32, .6); border: 1px solid var(--line); backdrop-filter: blur(18px); animation: arrive .5s var(--ease) both; }
+.said b { display: block; font: 500 19px var(--serif); margin-bottom: 4px; }
+.said p { margin: 0; color: var(--soft); white-space: pre-wrap; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.chips button { cursor: pointer; font-size: 12px; padding: 4px 11px; border-radius: 99px; border: 1px solid var(--line); background: rgba(255, 255, 255, .05); color: var(--soft); transition: background .2s, color .2s; }
+.chips button:hover { background: rgba(255, 255, 255, .12); color: var(--ink); }
+.notices { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.notice { display: flex; align-items: center; gap: 8px; font-size: 12.5px; padding: 6px 12px; border-radius: 99px; background: rgba(255, 255, 255, .05); border: 1px solid var(--line); color: var(--soft); animation: arrive .5s var(--ease) both; }
+.notice i { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+.notice.urgent { color: var(--ink); border-color: rgba(255, 122, 138, .5); } .notice.urgent i { background: var(--rose); box-shadow: 0 0 8px var(--rose); }
+.notice.watch i { background: var(--amber); }
+.windows { max-width: 1180px; margin: 0 auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 18px; }
+
+.win { position: relative; background: var(--glass); backdrop-filter: blur(24px) saturate(1.5); border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 30px 60px -30px rgba(0, 0, 0, .8), inset 0 1px 0 var(--glass-hi); overflow: hidden; opacity: 0; transform: translateY(26px) scale(.97); animation: arrive .9s var(--ease) forwards; animation-delay: calc(var(--i, 0) * 90ms + .1s); transition: transform .4s var(--ease), border-color .3s; }
+.win:hover { border-color: rgba(255, 255, 255, .2); transform: translateY(-3px); }
+@keyframes arrive { to { opacity: 1; transform: none; } }
+.win .title { display: flex; align-items: center; gap: 10px; padding: 11px 14px; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--soft); letter-spacing: .04em; }
+.win .title .dots { display: flex; gap: 6px; }
+.win .title .dots i { width: 10px; height: 10px; border-radius: 50%; background: rgba(255, 255, 255, .14); }
+.win .title .dots i:first-child { background: var(--hue, var(--violet)); box-shadow: 0 0 8px var(--hue, var(--violet)); }
+.win .title .tag { margin-left: auto; font-size: 11px; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--soft); }
+.win .body { padding: 16px 18px 18px; display: flex; flex-direction: column; gap: 12px; }
+.win h2 { font: 500 26px/1.1 var(--serif); margin: 0; }
+.win .sub { color: var(--faint); font: 12px var(--mono); }
+.win.windows-pc { --hue: var(--teal); }
+.win.linux { --hue: var(--amber); }
+.win.services { --hue: var(--rose); grid-column: 1 / -1; }
+.win.asleep { opacity: .0; }
+.win.asleep.shown { opacity: .78; }
+
+.meters { display: grid; gap: 10px; }
+.meter { display: grid; grid-template-columns: 70px 1fr; gap: 10px; align-items: center; font-size: 12.5px; color: var(--soft); }
+.meter .track { height: 8px; border-radius: 99px; background: rgba(255, 255, 255, .08); overflow: hidden; }
+.meter .track i { display: block; height: 100%; width: var(--w); border-radius: 99px; background: linear-gradient(90deg, var(--hue, var(--violet)), color-mix(in srgb, var(--hue, var(--violet)) 40%, #fff)); transform-origin: left; animation: grow 1.4s var(--ease) both; animation-delay: calc(var(--i, 0) * 90ms + .5s); }
+.meter.hot .track i { background: linear-gradient(90deg, var(--rose), var(--amber)); }
+.meter small { grid-column: 2; color: var(--faint); font-size: 11.5px; margin-top: -6px; }
+@keyframes grow { from { transform: scaleX(0); } }
+.facts { display: flex; flex-wrap: wrap; gap: 6px; }
+.fact { font-size: 11.5px; padding: 3px 9px; border-radius: 99px; background: rgba(255, 255, 255, .06); color: var(--soft); }
+.fact.warn { background: rgba(255, 179, 92, .14); color: var(--amber); }
+.fact.ok { background: rgba(88, 224, 200, .12); color: var(--teal); }
+.top { font: 11.5px var(--mono); color: var(--faint); }
+.loading { display: flex; align-items: center; gap: 10px; color: var(--soft); }
+.loading i { width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .15); border-top-color: var(--amber); animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(1turn); } }
+.btn { cursor: pointer; border: 1px solid var(--line); background: rgba(255, 255, 255, .07); border-radius: 10px; padding: 7px 13px; font-size: 12.5px; transition: background .2s, transform .2s var(--spring); }
+.btn:hover { background: rgba(255, 255, 255, .14); transform: translateY(-1px); }
+.btn.main { background: var(--ink); color: #120e1f; border-color: transparent; font-weight: 600; }
+.note { color: var(--soft); font-size: 13px; }
+.error { color: var(--rose); font-size: 13px; }
+
+.list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.svc { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 12px; align-items: center; padding: 12px 14px; border-radius: 13px; background: rgba(255, 255, 255, .04); border: 1px solid var(--line); }
+.svc .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--faint); }
+.svc[data-state="active"] .dot { background: var(--teal); box-shadow: 0 0 0 0 var(--teal); animation: pulse 2.4s infinite; }
+.svc[data-state="failed"] .dot { background: var(--rose); }
+.svc[data-state="paused"] .dot { background: var(--amber); }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(88, 224, 200, .6); } 70% { box-shadow: 0 0 0 9px rgba(88, 224, 200, 0); } 100% { box-shadow: 0 0 0 0 rgba(88, 224, 200, 0); } }
+.svc b { font-weight: 600; }
+.svc .what { grid-column: 2 / -1; color: var(--faint); font-size: 12px; }
+
+/* The dock. */
+.dock { position: fixed; z-index: 20; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; align-items: flex-end; gap: 10px; padding: 10px 12px; border-radius: 22px; background: rgba(18, 14, 32, .55); backdrop-filter: blur(22px) saturate(1.6); border: 1px solid var(--line); box-shadow: 0 20px 50px -20px #000; opacity: 0; animation: arrive .9s var(--ease) .6s forwards; }
+.dock button { position: relative; width: 52px; height: 52px; border-radius: 15px; border: 1px solid var(--line); background: linear-gradient(160deg, rgba(255, 255, 255, .14), rgba(255, 255, 255, .03)); display: grid; place-items: center; cursor: pointer; transition: transform .35s var(--spring), width .35s var(--spring), height .35s var(--spring); }
+.dock button svg { width: 24px; height: 24px; fill: none; stroke: var(--ink); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.dock button:hover { transform: translateY(-10px) scale(1.18); }
+.dock button:hover + button, .dock button:has(+ button:hover) { transform: translateY(-4px) scale(1.07); }
+.dock button span { position: absolute; bottom: calc(100% + 12px); left: 50%; transform: translateX(-50%) translateY(4px); white-space: nowrap; font-size: 12px; padding: 4px 9px; border-radius: 8px; background: rgba(10, 8, 20, .9); border: 1px solid var(--line); opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; }
+.dock button:hover span { opacity: 1; transform: translateX(-50%); }
+.dock button.lit::after { content: ""; position: absolute; bottom: -7px; width: 4px; height: 4px; border-radius: 50%; background: var(--ink); }
+.dock .sep { width: 1px; align-self: stretch; background: var(--line); margin: 4px 2px; }
+.toast { position: fixed; z-index: 30; left: 50%; bottom: 96px; transform: translateX(-50%) translateY(10px); padding: 9px 16px; border-radius: 12px; background: rgba(10, 8, 20, .9); border: 1px solid var(--line); font-size: 13px; opacity: 0; transition: opacity .3s, transform .3s var(--ease); pointer-events: none; }
+.toast.on { opacity: 1; transform: translateX(-50%); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-delay: 0s !important; transition-duration: .01ms !important; }
+}
+@media (max-width: 640px) { .desk { padding: 64px 16px 130px; } .windows { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="wall" aria-hidden="true"><div class="veil"><i></i><i></i><i></i><i></i></div><canvas id="stars"></canvas><div class="grain"></div></div>
+
+<div class="boot" id="boot" aria-hidden="true">
+  <div class="seal">
+    <svg viewBox="0 0 168 168">
+      <circle class="r" cx="84" cy="84" r="78" stroke="#a98bff" stroke-width="1.2" style="--len:490;--d:0s"/>
+      <circle class="r" cx="84" cy="84" r="62" stroke="#ff7a8a" stroke-width="1.6" style="--len:390;--d:.15s"/>
+      <circle class="r" cx="84" cy="84" r="46" stroke="#ffb35c" stroke-width="2" style="--len:290;--d:.3s"/>
+      <path class="r" d="M58 104V66l26 22 26-22v38" stroke="#f3eee6" stroke-width="3" style="--len:200;--d:.5s"/>
+      <circle class="core" cx="84" cy="84" r="5"/>
+    </svg>
+    <div class="word" id="word"></div>
+    <div class="hint">waking your systems</div>
+  </div>
+</div>
+
+<header class="bar">
+  <div class="brand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="10" stroke="#a98bff"/><path d="M7.5 16V9l4.5 4 4.5-4v7" stroke-linecap="round" stroke-linejoin="round"/></svg>MayaOS</div>
+  <div class="grow"></div>
+  <div class="pip" id="pip-studio" title="Kosika Studio"><i></i>Studio</div>
+  <div class="pip on" title="Every reading is local to this computer"><i></i>Local only</div>
+  <div class="clock" id="clock"></div>
+</header>
+
+<main class="desk" id="desk">
+  <section class="hello"><h1 id="hello">Hello.</h1><p id="summary">Reaching the systems on this computer.</p>
+    <div class="notices" id="notices"></div>
+    <form class="ask" id="ask"><span class="orb" aria-hidden="true"></span><input id="ask-text" autocomplete="off" maxlength="500" placeholder="Ask Maya: what needs me, how is Ubuntu, open studio" aria-label="Ask Maya"><button class="btn main">Ask</button></form>
+    <div id="said"></div></section>
+  <section class="windows" id="windows"></section>
+</main>
+
+<nav class="dock" id="dock" aria-label="Apps"></nav>
+<div class="toast" id="toast" role="status"></div>
+
+<template id="i-home"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 15.5V9l4 3.5L16 9v6.5"/></svg></template>
+<template id="i-studio"><svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="13" rx="2.5"/><path d="M8 20.5h8"/><path d="M8 9l2.5 2.5L8 14"/><path d="M12.5 14h3.5"/></svg></template>
+<template id="i-kosi"><svg viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="8" rx="4"/><circle cx="8" cy="12" r="1.3"/><path d="M12 12h5"/></svg></template>
+<template id="i-linux"><svg viewBox="0 0 24 24"><path d="M4 6.5l5 5.5-5 5.5"/><path d="M11 18h9"/></svg></template>
+<template id="i-services"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.5"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg></template>
+
+<script>
+"use strict";
+const token = new URLSearchParams(location.search).get("token") || "";
+// Every piece of text reaches the page through textContent, never as markup.
+function h(tag, attrs, ...kids) {
+  const el = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs || {})) {
+    if (value === false || value == null) continue;
+    if (key === "class") el.className = value;
+    else if (key.startsWith("on")) el.addEventListener(key.slice(2), value);
+    else el.setAttribute(key, value);
+  }
+  for (const kid of kids.flat(3)) {
+    if (kid == null || kid === false) continue;
+    el.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+  }
+  return el;
+}
+const icon = name => document.getElementById("i-" + name).content.firstElementChild.cloneNode(true);
+async function api(path, options) {
+  const response = await fetch(path, {...(options || {}), headers: {"X-Kosika-Token": token, "Content-Type": "application/json"}});
+  const data = await response.json().catch(() => ({error: "MayaOS gave an unreadable answer."}));
+  if (!response.ok) throw new Error(data.error || "Request failed");
+  return data;
+}
+const post = (path, body) => api(path, {method: "POST", body: JSON.stringify(body)});
+let toastTimer = 0;
+function toast(text) { const el = document.getElementById("toast"); el.textContent = text; el.classList.add("on"); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove("on"), 2600); }
+
+// ---- the wallpaper's stars: seeded, so they sit in the same places each time.
+(function stars() {
+  const canvas = document.getElementById("stars"), ctx = canvas.getContext("2d");
+  let seed = 7; const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const dots = Array.from({length: 140}, () => ({x: rand(), y: rand(), r: rand() * 1.2 + .2, p: rand() * 6.28, s: .4 + rand()}));
+  const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function frame(t) {
+    const w = canvas.width = innerWidth * devicePixelRatio, hgt = canvas.height = innerHeight * devicePixelRatio;
+    ctx.clearRect(0, 0, w, hgt);
+    for (const d of dots) {
+      ctx.globalAlpha = .25 + .55 * (calm ? .6 : (Math.sin(t / 1000 * d.s + d.p) + 1) / 2);
+      ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(d.x * w, d.y * hgt, d.r * devicePixelRatio, 0, 6.29); ctx.fill();
+    }
+    if (!calm) requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+
+// ---- boot: once per window.
+(function boot() {
+  const word = document.getElementById("word");
+  [..."Maya"].forEach((letter, i) => word.append(h("span", {style: "--i:" + i}, letter)));
+  word.append(h("span", {class: "os", style: "--i:5"}, "OS"));
+  let seen = false; try { seen = sessionStorage.getItem("maya-booted") === "1"; sessionStorage.setItem("maya-booted", "1"); } catch (error) { /* boots each time */ }
+  const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  setTimeout(() => document.getElementById("boot").classList.add("open"), seen || calm ? 0 : 2500);
+})();
+
+// ---- the bar.
+function tick() {
+  const now = new Date();
+  document.getElementById("clock").textContent = now.toLocaleDateString(undefined, {weekday: "short", day: "numeric", month: "short"}) + "  " + now.toLocaleTimeString(undefined, {hour: "2-digit", minute: "2-digit"});
+}
+tick(); setInterval(tick, 15000);
+// ---- reading a "used of total" line into a share of one.
+function share(text) { const pair = /([\d.]+)\s*\w*\s+of\s+([\d.]+)/.exec(text || ""); return pair ? Math.min(1, parseFloat(pair[1]) / parseFloat(pair[2])) : 0; }
+function meter(label, text) {
+  const part = share(text);
+  return h("div", {class: "meter" + (part > .85 ? " hot" : "")}, h("span", null, label), h("div", {class: "track"}, h("i", {style: "--w:" + Math.max(2, Math.round(part * 100)) + "%"})), h("small", null, text));
+}
+function win(kind, index, title, tag, ...body) {
+  return h("article", {class: "win " + kind, style: "--i:" + index},
+    h("div", {class: "title"}, h("div", {class: "dots"}, h("i"), h("i"), h("i")), title, tag ? h("span", {class: "tag"}, tag) : null),
+    h("div", {class: "body"}, ...body));
+}
+
+// ---- the windows on the desktop.
+function windowsCard(pc, index) {
+  return win("windows-pc", index, "This computer", "Windows",
+    h("h2", null, pc.name), h("div", {class: "sub"}, pc.system + " · " + pc.cores + " cores · up " + pc.uptime),
+    h("div", {class: "meters"}, meter("memory", pc.memory), meter("disk", pc.disk)),
+    h("div", {class: "facts"}, h("span", {class: "fact ok"}, "reads only"), h("span", {class: "fact"}, "build " + pc.version)));
+}
+function linuxCard(name, named, index) {
+  const body = h("div", {class: "body"});
+  const card = h("article", {class: "win linux", id: "linux-" + name, style: "--i:" + index},
+    h("div", {class: "title"}, h("div", {class: "dots"}, h("i"), h("i"), h("i")), "Linux under WSL", h("span", {class: "tag"}, named ? "reads only" : "asleep")), body);
+  if (!named) {
+    body.append(h("h2", null, name),
+      h("p", {class: "note"}, "Installed, and left alone. MayaOS reads a Linux only after you let it. Reading never changes anything there."),
+      h("div", null, h("button", {class: "btn main", onclick: async event => { event.target.disabled = true; try { await post("/api/linux/name", {name, on: true}); await load(); toast("MayaOS now reads " + name); } catch (error) { toast(error.message); event.target.disabled = false; } }}, "Let MayaOS read " + name)));
+    return card;
+  }
+  body.append(h("h2", null, name), h("div", {class: "loading"}, h("i"), "Waking " + name));
+  api("/api/linux/status?name=" + encodeURIComponent(name)).then(found => {
+    const updates = found.upgrades === "0" ? h("span", {class: "fact ok"}, "up to date") : found.upgrades === "unknown" ? null : h("span", {class: "fact warn"}, found.upgrades + " updates waiting");
+    body.replaceChildren(h("h2", null, name),
+      h("div", {class: "sub"}, found.kernel + " · " + found.uptime + " · load " + found.load),
+      h("div", {class: "meters"}, meter("memory", found.memory), meter("disk", found.disk)),
+      h("div", {class: "facts"}, updates, h("span", {class: "fact"}, "reads only")),
+      found.top.length ? h("div", {class: "top"}, "busiest  " + found.top.slice(0, 3).join("  ·  ")) : null);
+    rethink();
+  }, error => {
+    body.replaceChildren(h("h2", null, name), h("p", {class: "error"}, error.message));
+  });
+  return card;
+}
+function servicesCard(home, index) {
+  if (!home.services_file) {
+    return win("services", index, "Services", "none yet",
+      h("p", {class: "note"}, "Services are Kosika agents that keep running here: they watch, gather and tell you, each with only the grants its line in a services file gives it. Set KOSIKA_SERVICES to that file and start MayaOS again."));
+  }
+  const rows = home.services.map(item => {
+    const last = item.last;
+    const state = item.paused ? "paused" : last ? (last.ok ? "active" : "failed") : "waiting";
+    const words = item.paused ? "paused" : last ? "last ran " + since(last.at) + (last.ok ? "" : ", failed") : "has not run yet";
+    return h("div", {class: "svc", "data-state": state},
+      h("i", {class: "dot"}), h("b", null, item.name),
+      h("button", {class: "btn", onclick: async event => { event.target.disabled = true; try { render(await post("/api/services/pause", {name: item.name, paused: !item.paused})); } catch (error) { toast(error.message); event.target.disabled = false; } }}, item.paused ? "Resume" : "Pause"),
+      h("div", {class: "what"}, words + " · " + item.touches.join(", ")));
+  });
+  return win("services", index, "Services", home.services.filter(item => !item.paused).length + " on duty", h("div", {class: "list"}, rows));
+}
+function since(at) {
+  const then = new Date(at); if (isNaN(then)) return at;
+  const minutes = Math.round((Date.now() - then.getTime()) / 60000);
+  return minutes < 1 ? "just now" : minutes < 60 ? minutes + " min ago" : minutes < 1440 ? Math.round(minutes / 60) + " h ago" : Math.round(minutes / 1440) + " d ago";
+}
+
+// ---- Maya. What she says is decided by maya.kos, a Kosika program; the
+// page only shows it, and asks her again when there is more to see.
+let current = null, thinking = 0;
+function showSaid(said, asked) {
+  if (said.open) toast(said.text);
+  const box = document.getElementById("said");
+  if (!asked) return;
+  box.replaceChildren(h("div", {class: "said"}, said.title ? h("b", null, said.title) : null, h("p", null, said.text),
+    said.suggest.length ? h("div", {class: "chips"}, said.suggest.map(words => h("button", {type: "button", onclick: () => ask(words)}, words))) : null));
+}
+function showNotices(notices) {
+  document.getElementById("notices").replaceChildren(...notices.filter(notice => notice.level !== "fyi").map((notice, i) =>
+    h("div", {class: "notice " + notice.level, style: "animation-delay:" + i * 80 + "ms"}, h("i"), notice.text)));
+}
+async function ask(text) {
+  const form = document.getElementById("ask"); form.classList.add("thinking");
+  try {
+    const said = await post("/api/ask", {text});
+    if (text === "home") {
+      document.getElementById("hello").textContent = said.title;
+      document.getElementById("summary").textContent = said.text;
+      showNotices(said.notices);
+    } else showSaid(said, true);
+  } catch (error) { if (text !== "home") showSaid({title: "", text: error.message, suggest: []}, true); }
+  finally { form.classList.remove("thinking"); }
+}
+// Linux answers one by one; Maya looks again once they have settled.
+function rethink() { clearTimeout(thinking); thinking = setTimeout(() => ask("home"), 400); }
+document.getElementById("ask").addEventListener("submit", event => {
+  event.preventDefault();
+  const input = document.getElementById("ask-text"), text = input.value.trim();
+  if (text) { ask(text); input.value = ""; }
+});
+
+// ---- the dock.
+async function openApp(app, label) {
+  try { const done = await post("/api/open", {app}); toast(done.did === "opened" ? label + " is open" : "Starting " + label); }
+  catch (error) { toast(error.message); }
+}
+function drawDock(home) {
+  const go = id => () => { const el = document.getElementById(id); if (el) el.scrollIntoView({behavior: "smooth", block: "center"}); };
+  const items = [
+    ["home", "Home", () => document.getElementById("desk").scrollTo({top: 0, behavior: "smooth"}), true],
+    ["linux", "Linux", go(home.linux.installed.length ? "linux-" + home.linux.installed[0] : "windows")],
+    ["services", "Services", go("services")],
+    null,
+    ["studio", "Kosika Studio", () => openApp("studio", "Kosika Studio"), home.studio],
+    ["kosi", "Kosi", () => openApp("kosi", "Kosi")],
+  ];
+  document.getElementById("dock").replaceChildren(...items.map(item => item ? h("button", {class: item[3] ? "lit" : null, "aria-label": item[1], onclick: item[2]}, icon(item[0]), h("span", null, item[1])) : h("div", {class: "sep"})));
+  document.getElementById("pip-studio").classList.toggle("on", home.studio);
+}
+
+function render(home) {
+  current = home;
+  let index = 0;
+  const cards = [windowsCard(home.windows, index++)];
+  for (const name of home.linux.installed) cards.push(linuxCard(name, home.linux.named.includes(name), index++));
+  const services = servicesCard(home, index++); services.id = "services"; cards.push(services);
+  document.getElementById("windows").replaceChildren(...cards);
+  drawDock(home); rethink();
+}
+async function load() {
+  try { render(await api("/api/home")); }
+  catch (error) { document.getElementById("summary").replaceChildren(h("span", {class: "error"}, error.message)); }
+}
+load();
+// Studio may open or close while MayaOS is up; the dock keeps up.
+setInterval(async () => { try { const home = await api("/api/home"); current.studio = home.studio; drawDock(current); } catch (error) { /* next time */ } }, 20000);
+</script>
+</body>
+</html>
