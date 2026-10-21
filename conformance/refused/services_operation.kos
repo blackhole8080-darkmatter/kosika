@@ -1,0 +1,12 @@
+// Refused: a services tool can only read, pause or resume.
+
+record ServiceName { name: Text }
+record ServicePaused { name: Text paused: Bool }
+
+tool stop_service {
+  source system "services"
+  operation: "stop"
+  access: execute
+  input: ServiceName
+  output: ServicePaused
+}

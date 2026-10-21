@@ -375,6 +375,9 @@ func (r *run) hostTool(tool *ToolDecl, arguments *Record) (Value, bool) {
 		if systemKind(tool) == "shell" {
 			return r.shellTool(tool, arguments), true
 		}
+		if systemKind(tool) == "services" {
+			return r.servicesTool(tool, arguments), true
+		}
 		return r.fileTool(tool, arguments), true
 	case tool.Source == "world:clock":
 		return moment(), true

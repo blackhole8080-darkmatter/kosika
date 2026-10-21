@@ -1,0 +1,10 @@
+// Refused: what a services tool gives is fixed.
+
+record Services { services: Text[] }
+
+tool my_services {
+  source system "services"
+  operation: "status"
+  access: observe
+  output: Services
+}

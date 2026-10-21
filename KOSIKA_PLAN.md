@@ -3506,6 +3506,21 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   programs with workflows, agents and tools; the guide does not teach
   those yet.
 
+### Services as a system tool, in both engines
+
+- `source system "services"` with operations `status`, `pause` and
+  `resume` (kosika/system_tools.py `bind_services_tool`,
+  native/system.go `servicesTool`), bound by the host to the one services
+  file the owner names (`--services FILE`), so Kosi can answer "my
+  services" and "pause lookout". `status` reads the file's service names,
+  the paused list and the runner's last status text; pausing and resuming
+  change only the paused list, and are `execute` tools that need the
+  owner's yes each time. Asked for by the assistants thread for AIOs.
+- Held by a test that runs status, an unapproved pause, approved pause and
+  resume, and a pause of an unknown service in both engines and compares
+  everything, and by `refused/services_pause.kos`,
+  `refused/services_operation.kos`, `refused/services_shape.kos`.
+
 ### The native engine learns, and both engines share their lessons
 
 - A step marked `learn` (or `learn by TEXT`) runs in native/

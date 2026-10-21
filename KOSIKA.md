@@ -1028,6 +1028,9 @@ tool run_tests {
 | `system "outside"` | `answer` | `{agent: Text, text: Text}` | `{ok: Bool, agent: Text, text: Text}` |
 | `system "outside"` | `review` | `{agent: Text, text: Text, files: R[]}` | `{ok: Bool, agent: Text, said: Text}` |
 | `system "kosika"` | `check_files` | `{text: Text, files: R[]}` | `{problems: Text[]}` |
+| `system "services"` | `status` | none | `{services: Text[], paused: Text[], text: Text}` |
+| `system "services"` | `pause` | `{name: Text}` | `{name: Text, paused: Bool}` |
+| `system "services"` | `resume` | `{name: Text}` | `{name: Text, paused: Bool}` |
 
 - A system tool MUST declare `access: execute`, and its records MUST have
   exactly the fields above (`check/invalid-system-tool`). A workflow that
@@ -1125,6 +1128,16 @@ tool run_tests {
 - When a host has skills for a program, the skills whose trigger words
   occur in the `text` of a `propose` call are added, as words, to what the
   outside agent is asked.
+- A `system "services"` tool reaches the owner's services (see
+  `kosika/services.py`), in the one services file the host names
+  (`--services FILE`); without it the tool is not bound. `status` takes no
+  input and MAY be `access: observe`: `services` are the names of the
+  services the file declares, in the order written; `paused` the sorted
+  names in the paused list beside it (`FILE.paused.txt`); `text` the status
+  the runner last wrote (`FILE.status.txt`), or `""`. `pause` and `resume`
+  change only the paused list, which the runner reads before each run, so
+  they MUST be `access: execute` and each needs the owner's yes. Naming a
+  service the file does not declare fails the step.
 - File paths are relative to the granted folder. A path that is absolute,
   contains `..`, or passes through a symlink is refused. Files are UTF-8 text
   of at most 1 MiB.

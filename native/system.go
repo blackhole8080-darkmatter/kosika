@@ -40,10 +40,10 @@ const (
 	maxSearchLine    = 240
 )
 
-var systemKinds = []string{"shell", "files", "web", "kosika", "meaning", "agents", "outside", "notify"}
+var systemKinds = []string{"shell", "files", "web", "kosika", "meaning", "agents", "outside", "notify", "services"}
 
 // The kinds this engine reaches; the rest are refused as the file is read.
-var systemKindsHere = map[string]bool{"files": true, "shell": true}
+var systemKindsHere = map[string]bool{"files": true, "shell": true, "services": true}
 
 var fileOperations = []string{"read", "peek", "search", "find", "write", "create", "write_all", "list"}
 var readOnlyOperations = map[string]bool{"read": true, "peek": true, "search": true, "find": true, "list": true}
@@ -69,6 +69,9 @@ var systemShapes = map[string]shape{
 	"create":    {[]Param{{"path", "Text"}, {"text", "Text"}}, []Param{{"bytes", "Number"}}},
 	"write_all": {[]Param{{"files", plannedFiles}, {"note", "Text"}}, []Param{{"count", "Number"}}},
 	"list":      {[]Param{{"path", "Text"}}, []Param{{"names", "Text[]"}}},
+	"status":    {nil, []Param{{"services", "Text[]"}, {"paused", "Text[]"}, {"text", "Text"}}},
+	"pause":     {[]Param{{"name", "Text"}}, []Param{{"name", "Text"}, {"paused", "Bool"}}},
+	"resume":    {[]Param{{"name", "Text"}}, []Param{{"name", "Text"}, {"paused", "Bool"}}},
 }
 
 func systemKind(tool *ToolDecl) string {
@@ -92,7 +95,11 @@ func fieldsOf(record *RecordDecl) map[string]string {
 // fitsShape is whether a record has exactly the wanted fields.
 func (c *checker) fitsShape(name string, wanted []Param) bool {
 	actual := fieldsOf(c.records[name])
-	if actual == nil || len(actual) != len(wanted) {
+	if actual == nil {
+		// A tool that takes nothing declares no input record.
+		return len(wanted) == 0
+	}
+	if len(actual) != len(wanted) {
 		return false
 	}
 	for _, field := range wanted {
@@ -132,7 +139,11 @@ func (c *checker) systemProblem(tool *ToolDecl) string {
 	if !hasName(systemKinds, kind) {
 		return fmt.Sprintf("Tool %s has unknown system source %s; use one of: %s", pyRepr(tool.Name), pyRepr(kind), strings.Join(systemKinds, ", "))
 	}
-	looksOnly := (kind == "files" && readOnlyOperations[tool.Operation]) || kind != "files" && kind != "shell"
+	looksOnly := (kind == "files" && readOnlyOperations[tool.Operation]) || (kind == "services" && tool.Operation == "status") ||
+		kind != "files" && kind != "shell" && kind != "services"
+	if kind == "services" && tool.Operation != "status" && tool.Operation != "pause" && tool.Operation != "resume" {
+		return fmt.Sprintf("Tool %s has unknown services operation %s; use one of: status, pause, resume", pyRepr(tool.Name), pyRepr(tool.Operation))
+	}
 	if tool.Access != "execute" && !looksOnly {
 		return fmt.Sprintf("Tool %s uses system %s and must declare access: execute, so that every call needs approval", pyRepr(tool.Name), kind)
 	}
@@ -143,7 +154,7 @@ func (c *checker) systemProblem(tool *ToolDecl) string {
 		return fmt.Sprintf("Tool %s must name exactly one program in operation, with its arguments passed in args", pyRepr(tool.Name))
 	}
 	wanted := systemShapes["shell"]
-	if kind == "files" {
+	if kind != "shell" {
 		wanted = systemShapes[tool.Operation]
 	}
 	var plannedText []string
@@ -509,6 +520,98 @@ func (r *run) systemBound(tool *ToolDecl) bool {
 		return r.folder != "" && tool.Operation != "find"
 	case "shell":
 		return r.folder != "" && r.allowShell
+	case "services":
+		return r.services != ""
 	}
 	return false
+}
+
+// pyText is a file's text read as Python reads text: every line ending,
+// \r\n or \r, made \n.
+func pyText(data []byte) string {
+	return strings.ReplaceAll(strings.ReplaceAll(string(data), "\r\n", "\n"), "\r", "\n")
+}
+
+// serviceNames are the services a services file names, in the order
+// written: each `service NAME {` outside any braces, as service_names in
+// kosika/system_tools.py reads them.
+func serviceNames(text string) []string {
+	tokens, err := Lex(text)
+	if err != nil {
+		return nil
+	}
+	var names []string
+	depth := 0
+	for index, token := range tokens {
+		switch {
+		case token.Value == "{":
+			depth++
+		case token.Value == "}":
+			depth--
+		case depth == 0 && token.Kind == "IDENT" && token.Value == "service" && index+1 < len(tokens) && tokens[index+1].Kind == "IDENT":
+			names = append(names, tokens[index+1].Value)
+		}
+	}
+	return names
+}
+
+// servicesTool reads the owner's services, or pauses or resumes one, in
+// the one services file the person running the program named
+// (`--services FILE`). Pausing and resuming change only the paused list
+// beside it, which the runner reads before each run.
+func (r *run) servicesTool(tool *ToolDecl, arguments *Record) Value {
+	source, err := os.ReadFile(r.services)
+	if err != nil {
+		runFail(fmt.Sprintf("services file %s is not an existing file", pyRepr(r.services)))
+	}
+	names := serviceNames(pyText(source))
+	pausedList := r.services + ".paused.txt"
+	paused := map[string]bool{}
+	if kept, err := os.ReadFile(pausedList); err == nil {
+		for _, line := range strings.Split(pyText(kept), "\n") {
+			if line = strings.TrimSpace(line); line != "" && !strings.HasPrefix(line, "//") {
+				paused[line] = true
+			}
+		}
+	}
+	sortedNames := func() []string {
+		var out []string
+		for name := range paused {
+			out = append(out, name)
+		}
+		sort.Strings(out)
+		return out
+	}
+	if tool.Operation == "status" {
+		text := ""
+		if kept, err := os.ReadFile(r.services + ".status.txt"); err == nil {
+			text = strings.TrimRight(pyText(kept), "\n")
+		}
+		result := newRecord()
+		result.set("services", stringValues(names))
+		result.set("paused", stringValues(sortedNames()))
+		result.set("text", text)
+		return result
+	}
+	name, _ := arguments.Fields["name"].(string)
+	if !hasName(names, name) {
+		runFail(fmt.Sprintf("There is no service %s in the services file", pyRepr(name)))
+	}
+	if tool.Operation == "pause" {
+		paused[name] = true
+	} else {
+		delete(paused, name)
+	}
+	var written strings.Builder
+	for _, each := range sortedNames() {
+		written.WriteString(each + "\n")
+	}
+	spare := pausedList + ".tmp"
+	if os.WriteFile(spare, []byte(written.String()), 0o644) != nil || os.Rename(spare, pausedList) != nil {
+		runFail(fmt.Sprintf("Could not write the paused list beside %s", pyRepr(r.services)))
+	}
+	result := newRecord()
+	result.set("name", name)
+	result.set("paused", tool.Operation == "pause")
+	return result
 }

@@ -113,6 +113,7 @@ SYSTEM_KINDS = (
     "agents",
     "outside",
     "notify",
+    "services",
 )
 #: The largest program text the `kosika` tool will look at.
 MAX_CHECKED_SOURCE = 64 * 1024
@@ -232,6 +233,12 @@ SHAPES: dict[str, tuple[dict[str, str], dict[str, str]]] = {
     "fetch": ({"url": "Text"}, {"url": "Text", "title": "Text", "text": "Text"}),
     # A note sent to the one address the person named; see kosika.notify.
     "send": ({"title": "Text", "text": "Text"}, {"sent": "Bool"}),
+    # The owner's services (see kosika.services): their names, which are
+    # paused, and how each last ran, as the runner last wrote it. Pausing
+    # and resuming change only the paused list, which the runner reads.
+    "status": ({}, {"services": "Text[]", "paused": "Text[]", "text": "Text"}),
+    "pause": ({"name": "Text"}, {"name": "Text", "paused": "Bool"}),
+    "resume": ({"name": "Text"}, {"name": "Text", "paused": "Bool"}),
     # A request handed to another agent in the same folder. `agent` may be
     # empty, which lets the host choose. `ok` is false, with the reason in
     # `text`, when nobody could be asked or the other agent did not finish.
@@ -263,7 +270,10 @@ def _fits(
     PLANNED_FILES is met by an array of any record that has exactly the
     fields of a planned file, whatever the program calls it."""
 
-    if actual is None or set(actual) != set(wanted):
+    if actual is None:
+        # A tool that takes nothing declares no input record.
+        return not wanted
+    if set(actual) != set(wanted):
         return False
     for name, kind in wanted.items():
         have = actual[name]
@@ -297,6 +307,7 @@ def declaration_problem(program: Program, tool: ToolDecl) -> str | None:
         or kind == "agents"
         or kind == "outside"
         or kind == "notify"
+        or (kind == "services" and tool.operation == "status")
     )
     if kind == "outside" and tool.operation not in ("propose", "review", "answer"):
         return (
@@ -322,6 +333,11 @@ def declaration_problem(program: Program, tool: ToolDecl) -> str | None:
         return (
             f"Tool {tool.name!r} has unknown notify operation {tool.operation!r}; "
             "the only one is send"
+        )
+    if kind == "services" and tool.operation not in ("status", "pause", "resume"):
+        return (
+            f"Tool {tool.name!r} has unknown services operation {tool.operation!r}; "
+            "use one of: status, pause, resume"
         )
     if kind == "web" and tool.operation != "fetch":
         return (
@@ -365,6 +381,85 @@ def declaration_problem(program: Program, tool: ToolDecl) -> str | None:
                 f"fields {{{shape}}}"
             )
     return None
+
+
+def service_names(text: str) -> list[str]:
+    """The services a services file names, in the order written: each
+    `service NAME {` outside any braces."""
+
+    from .lexer import LexError, lex
+
+    try:
+        tokens = lex(text)
+    except LexError:
+        return []
+    names: list[str] = []
+    depth = 0
+    for index, token in enumerate(tokens):
+        if token.value == "{":
+            depth += 1
+        elif token.value == "}":
+            depth -= 1
+        elif (
+            depth == 0
+            and token.kind == "IDENT"
+            and token.value == "service"
+            and index + 1 < len(tokens)
+            and tokens[index + 1].kind == "IDENT"
+        ):
+            names.append(tokens[index + 1].value)
+    return names
+
+
+def bind_services_tool(path: str | Path) -> Callable[[ToolDecl, dict[str, Any]], Any]:
+    """The owner's services, for a tool with a `system "services"` source,
+    bound to the one services file the person running the program named
+    (`--services FILE`). Status reads it and what the runner keeps beside
+    it; pause and resume change only the paused list beside it, which the
+    runner reads before each run. Both of those change something, so they
+    are `execute` tools and each needs the owner's yes."""
+
+    services = Path(path)
+    if not services.is_file():
+        raise SystemToolError(f"services file {str(path)!r} is not an existing file")
+    paused_list = services.with_name(services.name + ".paused.txt")
+    status_file = services.with_name(services.name + ".status.txt")
+
+    def paused() -> list[str]:
+        try:
+            text = paused_list.read_text(encoding="utf-8")
+        except OSError:
+            return []
+        return sorted(
+            {
+                line.strip()
+                for line in text.splitlines()
+                if line.strip() and not line.strip().startswith("//")
+            }
+        )
+
+    def call(tool: ToolDecl, arguments: dict[str, Any]) -> dict[str, Any]:
+        names = service_names(services.read_text(encoding="utf-8"))
+        if tool.operation == "status":
+            try:
+                text = status_file.read_text(encoding="utf-8").rstrip("\n")
+            except OSError:
+                text = ""
+            return {"services": names, "paused": paused(), "text": text}
+        name = str(arguments.get("name", ""))
+        if name not in names:
+            raise SystemToolError(f"There is no service {name!r} in the services file")
+        kept = set(paused())
+        if tool.operation == "pause":
+            kept.add(name)
+        else:
+            kept.discard(name)
+        spare = paused_list.with_name(paused_list.name + ".tmp")
+        spare.write_text("".join(f"{each}\n" for each in sorted(kept)), encoding="utf-8")
+        spare.replace(paused_list)
+        return {"name": name, "paused": tool.operation == "pause"}
+
+    return call
 
 
 def check_source(_tool: ToolDecl, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -819,6 +914,7 @@ def bind_system_tools(
     meaning: Meaning | None = None,
     session: Session | None = None,
     notify: str | None = None,
+    services: str | Path | None = None,
 ) -> dict[str, Callable[[ToolDecl, dict[str, Any]], Any]]:
     """Bind the program's system tools that the host has granted.
 
@@ -856,6 +952,11 @@ def bind_system_tools(
         except NotifyError as exc:
             raise SystemToolError(str(exc)) from exc
         web.update({tool.name: note for tool in system if system_kind(tool) == "notify"})
+    if services:
+        keeper = bind_services_tool(services)
+        web.update(
+            {tool.name: keeper for tool in system if system_kind(tool) == "services"}
+        )
     if meaning is not None:
         web.update(
             {

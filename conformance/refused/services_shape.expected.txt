@@ -1,0 +1,1 @@
+Check failed: Invalid system tool: Tool 'my_services' output record must have exactly the fields {services: Text[], paused: Text[], text: Text}

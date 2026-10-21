@@ -1,0 +1,13 @@
+// Refused: pausing a service changes something, so it needs the owner's
+// yes at every call.
+
+record ServiceName { name: Text }
+record ServicePaused { name: Text paused: Bool }
+
+tool pause_service {
+  source system "services"
+  operation: "pause"
+  access: observe
+  input: ServiceName
+  output: ServicePaused
+}

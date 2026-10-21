@@ -93,7 +93,7 @@ print what the reference engine prints, word for word. See
   the reference checks such a plan before showing it, and those checks are
   not here yet, so such a plan is refused by name. Replaying an agent
   run's own trace.
-- `system` tools other than files and shell (web, kosika, meaning, agents,
+- `system` tools other than files, shell and services (web, kosika, meaning, agents,
   outside), and `fetch`; so an environment's `allow site` grants nothing
   here yet. Searching by meaning (`find`).
 - Swarms.

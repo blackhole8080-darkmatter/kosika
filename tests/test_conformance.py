@@ -497,6 +497,85 @@ class NativeTests(unittest.TestCase):
                 )
                 self.assertEqual(ran.returncode, 0, f"{reader} replay of {written}")
 
+    def test_it_keeps_the_owners_services_as_the_reference_does(self) -> None:
+        # A services tool reads the one services file it was given, and
+        # pauses or resumes a service there only with the owner's yes.
+        program = (
+            "record Services { services: Text[] paused: Text[] text: Text }\n"
+            "record ServiceName { name: Text }\n"
+            "record ServicePaused { name: Text paused: Bool }\n"
+            "record Ask { name: Text }\n"
+            'tool my_services {\n  source system "services"\n  operation: "status"\n'
+            "  access: observe\n  output: Services\n}\n"
+            'tool pause_service {\n  source system "services"\n  operation: "pause"\n'
+            "  access: execute\n  input: ServiceName\n  output: ServicePaused\n}\n"
+            'tool resume_service {\n  source system "services"\n  operation: "resume"\n'
+            "  access: execute\n  input: ServiceName\n  output: ServicePaused\n}\n"
+            "agent desk {\n  can: [my_services, pause_service, resume_service]\n  max_steps: 1\n}\n"
+            "workflow status(a: Ask) -> Services {\n  now = execute desk.my_services()\n}\n"
+            "workflow pause(a: Ask) -> ServicePaused {\n  require approval\n"
+            "  done = execute desk.pause_service(a.name)\n}\n"
+            "workflow resume(a: Ask) -> ServicePaused {\n  require approval\n"
+            "  done = execute desk.resume_service(a.name)\n}\n"
+        )
+        services = (
+            "// The owner's services.\n"
+            'service lookout {\n  program "lookout.kos"\n  every 15 minutes\n}\n\n'
+            'service gatherer {\n  program "gatherer.kos"\n}\n'
+        )
+
+        def engine(name: str, folder: Path, *flags: str) -> tuple[int, str, str]:
+            command = ["run", str(folder / "p.kos"), "--services", str(folder / "aios.services"), *flags]
+            first = [str(self.engine)] if name == "native" else [sys.executable, "-m", "kosika.cli"]
+            done = subprocess.run(
+                [*first, *command], cwd=folder, capture_output=True, text=True,
+                env={**os.environ, "PYTHONPATH": str(ROOT)},
+            )
+            return done.returncode, done.stdout, done.stderr
+
+        seen = {}
+        for name in ("reference", "native"):
+            with self.subTest(name), tempfile.TemporaryDirectory() as scratch:
+                folder = Path(scratch)
+                (folder / "p.kos").write_text(program, encoding="utf-8")
+                (folder / "aios.services").write_text(services, encoding="utf-8")
+                (folder / "aios.services.status.txt").write_text(
+                    "lookout (every 15 minutes): nothing\n  has not run yet\n", encoding="utf-8"
+                )
+                (folder / "in.json").write_text(json.dumps({"a": {"name": "lookout"}}))
+                (folder / "nobody.json").write_text(json.dumps({"a": {"name": "nobody"}}))
+                outcome: dict[str, object] = {}
+                code, out, _ = engine(name, folder, "--workflow", "status", "--input", "in.json")
+                outcome["status"] = (code, out.splitlines()[0])
+                code, _, err = engine(name, folder, "--workflow", "pause", "--input", "in.json")
+                outcome["unapproved"] = (code, err.strip().splitlines()[-1])
+                for workflow in ("pause", "resume"):
+                    journal = ["--journal", f"{workflow}.journal", "--binding-id", "here",
+                               "--workflow", workflow, "--input", "in.json"]
+                    code, out, err = engine(name, folder, *journal)
+                    self.assertEqual(code, 3, err)
+                    request = json.loads(out)
+                    outcome[f"{workflow} asked"] = {k: request[k] for k in ("status", "tool", "arguments", "step")}
+                    approval = {k: request[k] for k in ("plan_hash", "action_hash")}
+                    (folder / "approval.json").write_text(json.dumps({**approval, "approved_by": "tester"}))
+                    code, out, err = engine(name, folder, *journal, "--approval-record", "approval.json")
+                    self.assertEqual(code, 0, err)
+                    outcome[workflow] = out.splitlines()[0]
+                    outcome[f"{workflow} list"] = (folder / "aios.services.paused.txt").read_text(encoding="utf-8")
+                journal = ["--journal", "nobody.journal", "--binding-id", "here",
+                           "--workflow", "pause", "--input", "nobody.json"]
+                code, out, _ = engine(name, folder, *journal)
+                request = json.loads(out)
+                approval = {k: request[k] for k in ("plan_hash", "action_hash")}
+                (folder / "approval.json").write_text(json.dumps({**approval, "approved_by": "tester"}))
+                code, out, err = engine(name, folder, *journal, "--approval-record", "approval.json")
+                outcome["nobody"] = (code, err.strip().splitlines()[-1])
+                seen[name] = outcome
+        self.assertEqual(seen["native"], seen["reference"])
+        self.assertIn("'services': ['lookout', 'gatherer']", seen["reference"]["status"][1])
+        self.assertEqual(seen["reference"]["pause list"], "lookout\n")
+        self.assertEqual(seen["reference"]["resume list"], "")
+
     def test_it_learns_where_the_reference_learns(self) -> None:
         # Lessons one engine keeps, the other finds and answers from, with
         # the same trace: the same question again, and a new question that

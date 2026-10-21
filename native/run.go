@@ -22,7 +22,7 @@ func runCommand(args []string) int {
 	options["--mcp-source"] = "local_stdio"
 	options["--trace"] = "run_trace.jsonl"
 	flags := map[string]bool{"--approve": true, "--allow-shell": true}
-	known := map[string]bool{"--allow-folder": true, "--memory": true, "--env": true, "--journal": true, "--binding-id": true, "--approval-record": true, "--approved-by": true, "--trace": true, "--model-fixture": true, "--mcp-server": true, "--mcp-manifest": true, "--mcp-source": true, "--workflow": true, "--input": true, "--model": true, "--model-url": true, "--model-protocol": true, "--model-timeout": true, "--model-binding": true, "--max-output-tokens": true}
+	known := map[string]bool{"--services": true, "--allow-folder": true, "--memory": true, "--env": true, "--journal": true, "--binding-id": true, "--approval-record": true, "--approved-by": true, "--trace": true, "--model-fixture": true, "--mcp-server": true, "--mcp-manifest": true, "--mcp-source": true, "--workflow": true, "--input": true, "--model": true, "--model-url": true, "--model-protocol": true, "--model-timeout": true, "--model-binding": true, "--max-output-tokens": true}
 	for i := 1; i < len(args); i++ {
 		name, value, joined := strings.Cut(args[i], "=")
 		if flags[name] && !joined {
@@ -178,6 +178,13 @@ func runCommand(args []string) int {
 		fmt.Fprintln(os.Stderr, "Workflow failed: allowing shell also needs a granted folder to run in")
 		return 2
 	}
+	services := options["--services"]
+	if services != "" {
+		if info, err := os.Stat(services); err != nil || info.IsDir() {
+			fmt.Fprintf(os.Stderr, "Workflow failed: services file %s is not an existing file\n", pyRepr(services))
+			return 2
+		}
+	}
 	if folder != "" {
 		granted := realPath(folder)
 		if granted == "" || !isDir(granted) {
@@ -214,6 +221,7 @@ func runCommand(args []string) int {
 			running.lessons = newLessonStore(memory)
 		}
 		running.folder, running.allowShell = folder, allowShell
+		running.services = services
 		if env != nil {
 			// An environment's budget only tightens the workflow's.
 			if amount, given := env.budget["model_calls"]; given && int(toFloat(amount)) < running.maxModels {

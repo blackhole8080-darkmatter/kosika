@@ -1518,6 +1518,14 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     run_parser.add_argument(
+        "--services",
+        metavar="FILE",
+        help=(
+            "The one services file a services tool reads and pauses services "
+            "in. Without it, a services tool reaches nothing."
+        ),
+    )
+    run_parser.add_argument(
         "--model-timeout",
         type=float,
         default=60.0,
@@ -3384,6 +3392,7 @@ def main() -> int:
             sites=getattr(args, "allow_site", ()),
             meaning=_meaning(args),
             notify=getattr(args, "notify", None),
+            services=getattr(args, "services", None),
         )
         system_bindings = {
             **system_bindings,

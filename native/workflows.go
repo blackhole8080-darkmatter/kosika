@@ -61,6 +61,9 @@ type run struct {
 	// may be started in it.
 	folder     string
 	allowShell bool
+	// services is the one services file a services tool reaches, when the
+	// person running the program named one.
+	services string
 	// check is the step's own `verify`, for the model asked now; nil when
 	// there is none.
 	check *answerCheck
