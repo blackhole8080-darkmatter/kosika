@@ -40,7 +40,7 @@ const (
 	maxSearchLine    = 240
 )
 
-var systemKinds = []string{"shell", "files", "web", "kosika", "meaning", "agents", "outside", "notify", "services"}
+var systemKinds = []string{"shell", "files", "web", "kosika", "meaning", "agents", "outside", "notify", "services", "linux", "computer"}
 
 // The kinds this engine reaches; the rest are refused as the file is read.
 var systemKindsHere = map[string]bool{"files": true, "shell": true, "services": true}

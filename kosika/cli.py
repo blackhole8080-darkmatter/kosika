@@ -1518,6 +1518,19 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     run_parser.add_argument(
+        "--linux",
+        metavar="NAME",
+        help=(
+            "The one Linux distribution under WSL, such as Ubuntu, that a linux "
+            "tool may look at. Without it, a linux tool reaches nothing."
+        ),
+    )
+    run_parser.add_argument(
+        "--computer",
+        action="store_true",
+        help="Let a computer tool look at how this computer is doing.",
+    )
+    run_parser.add_argument(
         "--services",
         metavar="FILE",
         help=(
@@ -3393,6 +3406,8 @@ def main() -> int:
             meaning=_meaning(args),
             notify=getattr(args, "notify", None),
             services=getattr(args, "services", None),
+            linux=getattr(args, "linux", None),
+            computer=getattr(args, "computer", False),
         )
         system_bindings = {
             **system_bindings,

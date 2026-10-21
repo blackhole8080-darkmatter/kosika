@@ -3506,6 +3506,20 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   programs with workflows, agents and tools; the guide does not teach
   those yet.
 
+### Looking at Linux and this computer
+
+- `source system "linux"` and `source system "computer"`, each with one
+  operation, `status`, that only looks (kosika/system_tools.py
+  `bind_linux_tool`, `computer_status`). The host grants the one Linux
+  distribution under WSL a program may look at (`--linux Ubuntu`) and
+  this computer (`--computer`); the readings come from kosika.wsl and
+  kosika.mayaos, by commands fixed in the host. Nothing that runs a
+  command the program chooses: Aryan has not said yes to that. For
+  MayaOS, so Maya reads both systems herself.
+- `kosika-native` refuses both by name for now. Held by
+  `tests/test_system_readers.py`, which stands in for the readers so it
+  runs anywhere.
+
 ### Services as a system tool, in both engines
 
 - `source system "services"` with operations `status`, `pause` and

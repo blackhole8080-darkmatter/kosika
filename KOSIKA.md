@@ -1031,6 +1031,8 @@ tool run_tests {
 | `system "services"` | `status` | none | `{services: Text[], paused: Text[], text: Text}` |
 | `system "services"` | `pause` | `{name: Text}` | `{name: Text, paused: Bool}` |
 | `system "services"` | `resume` | `{name: Text}` | `{name: Text, paused: Bool}` |
+| `system "linux"` | `status` | none | `{distro: Text, kernel: Text, uptime: Text, load: Text, memory: Text, disk: Text, upgrades: Text, top: Text[]}` |
+| `system "computer"` | `status` | none | `{name: Text, system: Text, cores: Number, memory: Text, disk: Text, uptime: Text}` |
 
 - A system tool MUST declare `access: execute`, and its records MUST have
   exactly the fields above (`check/invalid-system-tool`). A workflow that
@@ -1138,6 +1140,12 @@ tool run_tests {
   change only the paused list, which the runner reads before each run, so
   they MUST be `access: execute` and each needs the owner's yes. Naming a
   service the file does not declare fails the step.
+- A `system "linux"` tool reads how the one Linux distribution the host
+  names (`--linux NAME`, under WSL) is doing, and a `system "computer"`
+  tool how this computer is doing (`--computer`). Both only look, by
+  commands fixed in the host that the program does not choose; both MAY
+  be `access: observe`. Without the grant they are not bound.
+  `kosika-native` does not reach them yet.
 - File paths are relative to the granted folder. A path that is absolute,
   contains `..`, or passes through a symlink is refused. Files are UTF-8 text
   of at most 1 MiB.

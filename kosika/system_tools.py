@@ -114,6 +114,8 @@ SYSTEM_KINDS = (
     "outside",
     "notify",
     "services",
+    "linux",
+    "computer",
 )
 #: The largest program text the `kosika` tool will look at.
 MAX_CHECKED_SOURCE = 64 * 1024
@@ -239,6 +241,33 @@ SHAPES: dict[str, tuple[dict[str, str], dict[str, str]]] = {
     "status": ({}, {"services": "Text[]", "paused": "Text[]", "text": "Text"}),
     "pause": ({"name": "Text"}, {"name": "Text", "paused": "Bool"}),
     "resume": ({"name": "Text"}, {"name": "Text", "paused": "Bool"}),
+    # How the Linux the person named is doing, read by fixed commands that
+    # change nothing (see kosika.wsl). Kept by kind, as `status` is taken.
+    "linux:status": (
+        {},
+        {
+            "distro": "Text",
+            "kernel": "Text",
+            "uptime": "Text",
+            "load": "Text",
+            "memory": "Text",
+            "disk": "Text",
+            "upgrades": "Text",
+            "top": "Text[]",
+        },
+    ),
+    # How this computer is doing, as its system tells it. Only looks.
+    "computer:status": (
+        {},
+        {
+            "name": "Text",
+            "system": "Text",
+            "cores": "Number",
+            "memory": "Text",
+            "disk": "Text",
+            "uptime": "Text",
+        },
+    ),
     # A request handed to another agent in the same folder. `agent` may be
     # empty, which lets the host choose. `ok` is false, with the reason in
     # `text`, when nobody could be asked or the other agent did not finish.
@@ -308,6 +337,8 @@ def declaration_problem(program: Program, tool: ToolDecl) -> str | None:
         or kind == "outside"
         or kind == "notify"
         or (kind == "services" and tool.operation == "status")
+        or kind == "linux"
+        or kind == "computer"
     )
     if kind == "outside" and tool.operation not in ("propose", "review", "answer"):
         return (
@@ -339,6 +370,11 @@ def declaration_problem(program: Program, tool: ToolDecl) -> str | None:
             f"Tool {tool.name!r} has unknown services operation {tool.operation!r}; "
             "use one of: status, pause, resume"
         )
+    if kind in ("linux", "computer") and tool.operation != "status":
+        return (
+            f"Tool {tool.name!r} has unknown {kind} operation {tool.operation!r}; "
+            "the only one is status"
+        )
     if kind == "web" and tool.operation != "fetch":
         return (
             f"Tool {tool.name!r} has unknown web operation {tool.operation!r}; "
@@ -361,7 +397,13 @@ def declaration_problem(program: Program, tool: ToolDecl) -> str | None:
             f"Tool {tool.name!r} must name exactly one program in operation, "
             "with its arguments passed in args"
         )
-    wanted_input, wanted_output = SHAPES["shell" if kind == "shell" else tool.operation]
+    wanted_input, wanted_output = SHAPES[
+        "shell"
+        if kind == "shell"
+        else f"{kind}:{tool.operation}"
+        if f"{kind}:{tool.operation}" in SHAPES
+        else tool.operation
+    ]
     planned = ", ".join(f"{name}: {kind_}" for name, kind_ in PLAN_FILE_FIELDS.items())
     records = {
         record.name: {field.name: field.type_name for field in record.fields}
@@ -409,6 +451,49 @@ def service_names(text: str) -> list[str]:
         ):
             names.append(tokens[index + 1].value)
     return names
+
+
+def bind_linux_tool(distro: str) -> Callable[[ToolDecl, dict[str, Any]], Any]:
+    """How the one Linux distribution the person named (`--linux NAME`) is
+    doing, for a tool with a `system "linux"` source. The commands are fixed
+    in kosika.wsl and change nothing; the program chooses none of them."""
+
+    name = distro.strip()
+    if not name or any(not (c.isalnum() or c in "-_.") for c in name):
+        raise SystemToolError(f"Linux distribution {distro!r} is not a plain name")
+
+    def call(_tool: ToolDecl, _arguments: dict[str, Any]) -> dict[str, Any]:
+        from .wsl import WslError, status
+
+        try:
+            found = status(name)
+        except (WslError, OSError) as exc:
+            raise SystemToolError(str(exc)) from exc
+        return {
+            "distro": str(found.get("distro", name)),
+            **{
+                key: str(found.get(key, "unknown"))
+                for key in ("kernel", "uptime", "load", "memory", "disk", "upgrades")
+            },
+            "top": [str(item) for item in found.get("top", [])],
+        }
+
+    return call
+
+
+def computer_status(_tool: ToolDecl, _arguments: dict[str, Any]) -> dict[str, Any]:
+    """How this computer is doing, for a tool with a `system "computer"`
+    source, granted with `--computer`. Only looks."""
+
+    from .mayaos import windows
+
+    found = windows()
+    return {
+        "name": str(found.get("name", "")),
+        "system": str(found.get("system", "")),
+        "cores": int(found.get("cores", 0) or 0),
+        **{key: str(found.get(key, "unknown")) for key in ("memory", "disk", "uptime")},
+    }
 
 
 def bind_services_tool(path: str | Path) -> Callable[[ToolDecl, dict[str, Any]], Any]:
@@ -915,6 +1000,8 @@ def bind_system_tools(
     session: Session | None = None,
     notify: str | None = None,
     services: str | Path | None = None,
+    linux: str | None = None,
+    computer: bool = False,
 ) -> dict[str, Callable[[ToolDecl, dict[str, Any]], Any]]:
     """Bind the program's system tools that the host has granted.
 
@@ -956,6 +1043,13 @@ def bind_system_tools(
         keeper = bind_services_tool(services)
         web.update(
             {tool.name: keeper for tool in system if system_kind(tool) == "services"}
+        )
+    if linux:
+        reader = bind_linux_tool(linux)
+        web.update({tool.name: reader for tool in system if system_kind(tool) == "linux"})
+    if computer:
+        web.update(
+            {tool.name: computer_status for tool in system if system_kind(tool) == "computer"}
         )
     if meaning is not None:
         web.update(
