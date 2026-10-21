@@ -1,0 +1,186 @@
+// Steward: looks after the services that keep running for you, such as
+// Lookout. Ask what is running, and pause or resume one.
+//
+//   kosika test main.kos
+//   kosika run main.kos --input say.json --services SERVICES_FILE
+//
+// where say.json holds {"msg": {"text": "my services"}}.
+//
+// Say: my services, pause lookout, resume lookout.
+//
+// What it may touch. Only the one services file the person names with
+// --services (in Studio, the file the Services page shows), and of that
+// only the list of paused services beside it. It never changes what a
+// service may reach: that is written in the services file, by its owner.
+// Pausing or resuming waits for your yes each time: asking what is
+// running never does, but because the same program can pause, Studio shows
+// it as one that may ask. It needs no model.
+
+record Msg { text: Text }
+record Said { text: Text }
+
+record ServiceName { name: Text }
+record ServicePaused { name: Text paused: Bool }
+record Services { services: Text[] paused: Text[] text: Text }
+
+tool my_services {
+  source system "services"
+  operation: "status"
+  access: observe
+  output: Services
+}
+
+tool pause_service {
+  source system "services"
+  operation: "pause"
+  access: execute
+  input: ServiceName
+  output: ServicePaused
+}
+
+tool resume_service {
+  source system "services"
+  operation: "resume"
+  access: execute
+  input: ServiceName
+  output: ServicePaused
+}
+
+agent keeper {
+  can: [my_services, pause_service, resume_service]
+  max_steps: 1
+}
+
+// ---------------------------------------------------------------- what was said
+
+fn kind_of(msg: Msg) -> Text {
+  let text = msg.text.lower().trim().trim_marks("?!.")
+  var kind = "status"
+  if text.starts_with("pause ") or text.starts_with("stop service ") { kind = "pause" }
+  else if text.starts_with("resume ") or text.starts_with("restart service ") or text.starts_with("start service ") { kind = "resume" }
+  return kind
+}
+
+// The service named last: "pause lookout", "pause the lookout service".
+fn named(msg: Msg) -> ServiceName {
+  var words: Text[] = []
+  for word in msg.text.lower().trim_marks("?!.").words() {
+    if not ["pause", "resume", "stop", "start", "restart", "the", "service", "please", "my", "agent"].contains(word) { words = words.append(word) }
+  }
+  return {name: words.last().or("")}
+}
+
+fn no_services() -> Services {
+  return {services: [], paused: [], text: ""}
+}
+
+fn status_said(known: Services) -> Said {
+  if known.services.is_empty() {
+    return {text: "I cannot see any services. Start me with --services and the services file, or open the Services page in Studio."}
+  }
+  if not known.text.trim().is_empty() { return {text: known.text.trim()} }
+  let running: Text[] = for name in known.services where not known.paused.contains(name) { name }
+  let paused = if known.paused.is_empty() { "" } else { " Paused: " + known.paused.join(", ") + "." }
+  return {text: "Services: " + running.join(", ") + "." + paused}
+}
+
+// Whether a request names a service there is, said before anything is
+// asked of the person.
+fn problem(known: Services, want: ServiceName, pausing: Bool) -> Text {
+  if want.name.is_empty() { return "Say which service, such as: pause lookout" }
+  if not known.services.contains(want.name) {
+    return "There is no service called " + want.name + ". The services are: " + known.services.join(", ") + "."
+  }
+  if pausing and known.paused.contains(want.name) { return want.name + " is already paused." }
+  if not pausing and not known.paused.contains(want.name) { return want.name + " is already running." }
+  return ""
+}
+
+fn changed_said(done: ServicePaused) -> Said {
+  return if done.paused { {text: done.name + " is paused. It will not run until you say: resume " + done.name} } else { {text: done.name + " is running again. It runs at its next time."} }
+}
+
+fn told(text: Text) -> Said {
+  return {text: text}
+}
+
+// ---------------------------------------------------------------- workflows
+
+workflow status(msg: Msg) -> Said {
+  known = execute keeper.my_services() otherwise no_services()
+  out   = status_said(known)
+}
+
+workflow pause(msg: Msg) -> Said {
+  require approval
+  known = execute keeper.my_services() otherwise no_services()
+  want  = named(msg)
+  why   = problem(known, want, true)
+  out   = match why.is_empty() {
+    case true { call pause_now(want) }
+    case _ { told(why) }
+  }
+}
+
+workflow pause_now(want: ServiceName) -> Said {
+  require approval
+  done = execute keeper.pause_service(want.name)
+  out  = changed_said(done)
+}
+
+workflow resume(msg: Msg) -> Said {
+  require approval
+  known = execute keeper.my_services() otherwise no_services()
+  want  = named(msg)
+  why   = problem(known, want, false)
+  out   = match why.is_empty() {
+    case true { call resume_now(want) }
+    case _ { told(why) }
+  }
+}
+
+workflow resume_now(want: ServiceName) -> Said {
+  require approval
+  done = execute keeper.resume_service(want.name)
+  out  = changed_said(done)
+}
+
+workflow main(msg: Msg) -> Said {
+  require approval
+  kind = kind_of(msg)
+  out  = match kind {
+    case "pause" { call pause(msg) }
+    case "resume" { call resume(msg) }
+    case _ { call status(msg) }
+  }
+}
+
+// ---------------------------------------------------------------- tests
+
+test "what was said is understood" {
+  expect kind_of({text: "my services"}) == "status"
+  expect kind_of({text: "Pause Lookout."}) == "pause"
+  expect kind_of({text: "resume the lookout service"}) == "resume"
+  expect named({text: "pause the lookout service please"}).name == "lookout"
+  expect named({text: "pause"}).name == ""
+}
+
+test "it says what is running, in the runner's own words" {
+  answers my_services: [{services: ["lookout", "gatherer"], paused: [], text: "lookout (every 15 minutes): reads github.com\n  last ran 19:03, worked"}]
+  a = main({text: "my services"})
+  expect a.text.starts_with("lookout (every 15 minutes)")
+}
+
+test "a service that is not there is never asked about" {
+  answers my_services: [{services: ["lookout"], paused: ["lookout"], text: ""}, {services: ["lookout"], paused: ["lookout"], text: ""}]
+  a = main({text: "pause gatherer"})
+  b = main({text: "pause lookout"})
+  expect a.text == "There is no service called gatherer. The services are: lookout."
+  expect b.text == "lookout is already paused."
+}
+
+test "the words for a change, once it is made" {
+  expect changed_said({name: "lookout", paused: true}).text == "lookout is paused. It will not run until you say: resume lookout"
+  expect changed_said({name: "lookout", paused: false}).text.starts_with("lookout is running again.")
+  expect status_said({services: ["lookout", "gatherer"], paused: ["gatherer"], text: ""}).text == "Services: lookout. Paused: gatherer."
+}

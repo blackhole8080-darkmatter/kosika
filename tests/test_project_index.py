@@ -73,7 +73,7 @@ class ProjectIndexTests(unittest.TestCase):
 
     def test_everything_is_listed_with_its_program_and_line(self) -> None:
         view = index_of(EXAMPLES)
-        self.assertEqual(view["counts"]["agent"], 15)
+        self.assertEqual(view["counts"]["agent"], 16)
         by_name = {
             (item["kind"], item["title"], item["name"]): item for item in view["items"]
         }

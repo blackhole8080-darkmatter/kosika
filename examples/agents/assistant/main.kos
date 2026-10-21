@@ -16,7 +16,9 @@
 // lookout, which rings the phone when a page has news; "look up ...",
 // "search the web for ..." and "find out ..." go to the gatherer, which
 // reads the news and Wikipedia; anything "in my files" or "on my laptop"
-// goes to the desk, which only reads the folder it was given.
+// goes to the desk, which only reads the folder it was given; "my
+// services", "pause lookout" and "resume lookout" go to the steward, which
+// asks your yes before it pauses or resumes anything.
 //
 // Reminders can ring on your phone. Started with --notify and an address
 // of yours (such as https://ntfy.sh/your-private-topic), "check reminders"
@@ -218,6 +220,11 @@ fn hand_of(said: Text) -> Handover {
     return {agent: "lookout", text: asked}
   }
   if plain.starts_with("stop watching ") { return {agent: "lookout", text: "stop " + plain.drop(14).trim()} }
+  // The services that keep running are the steward's: "my services",
+  // "pause lookout", "resume lookout".
+  if ["my services", "services", "what services are running", "what is running"].contains(plain.trim_marks("?")) or ((plain.starts_with("pause ") or plain.starts_with("resume ")) and rest.length() <= 4) {
+    return {agent: "steward", text: asked}
+  }
   // Looking something up on the web goes to the gatherer: "search the
   // web for ...", "look up ...", "find out ...", "google ...".
   for lead in ["search the web for ", "search the internet for ", "search online for ", "look up ", "look online for ", "find out ", "google ", "search for "] {
@@ -1575,6 +1582,10 @@ test "a request for another agent is handed to it" {
   expect hand_of("where is my CV in my files?").agent == "desk"
   expect hand_of("remember that my files are in Documents").text == ""
   expect hand_of("look up").text == ""
+  expect hand_of("my services").agent == "steward"
+  expect hand_of("Kosi, pause lookout").text == "pause lookout"
+  expect hand_of("resume the lookout service").agent == "steward"
+  expect kind_of({text: "pause the music"}) == "hand"
   d = main({text: "ask the coder to write a function that reverses a list"})
   e = main({text: "ask the teacher to mark my essay"})
   f = main({text: "hand over: what do my notes say about trees"})

@@ -974,6 +974,9 @@ class App:
                 allow_shell=self.allow_shell,
                 meaning=self.meaning,
                 session=self._session_for(program, folder),
+                # The Services page's file, so an agent such as the steward
+                # can say what is running, and pause one with a yes.
+                services=self.services_file,
             ),
             **bind_memory_tools(program, folder / "memory"),
             **bind_mcp_tools(program, self.mcp),
