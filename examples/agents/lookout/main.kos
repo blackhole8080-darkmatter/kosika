@@ -1,0 +1,439 @@
+// Lookout: watches web pages for you and rings your phone when something
+// you care about happens on them.
+//
+//   kosika test main.kos
+//   kosika run main.kos --input say.json --memory memory
+//       --allow-site github.com --notify https://ntfy.sh/your-private-topic
+//
+// where say.json holds {"text": "watch https://github.com/ollama/ollama/releases"}.
+//
+// Say:
+//   watch https://SITE/PAGE              tell me when the page changes
+//   watch https://SITE/PAGE for WORDS    tell me when WORDS appear on it
+//   my watches                           what I am watching
+//   stop 2                               stop watching the second one
+//   check                                look at every page now
+//
+// "check" is what a scheduled task runs every quarter of an hour. Each
+// page is read once, compared with what it said last time, and only news
+// is sent: the lines that are new on a changed page, or the line where
+// the words you asked about first appear. Words that stay on the page are
+// told once, and told again only if they go and come back.
+//
+// What it may touch. It only reads, and only pages on the sites the person
+// starting it allowed with --allow-site: one GET, no cookies, no sign-in,
+// nothing posted (see kosika/web.py). A page on any other site is refused,
+// and Lookout says which site would have to be allowed. Notes go to the one
+// --notify address and nowhere else. It needs no model, so nothing it
+// watches is shown to one.
+//
+// A page is written by a stranger. What Lookout sends is the page's own
+// lines, cut short, and code decides what is news: nothing on a page can
+// make it do anything but report that line.
+
+record Msg { text: Text }
+record Said { text: Text }
+
+record PageRequest { url: Text }
+record Page { url: Text title: Text text: Text }
+
+record Note { title: Text text: Text }
+record Sent { sent: Bool }
+
+// One page watched. words is "" to hear of any change, or the words to
+// look for. lines is what the page said when last read, and found whether
+// the words were on it then. since is when the last news was found.
+record Watch { url: Text words: Text lines: Text[] found: Bool since: Text }
+record Book { watches: Watch[] }
+
+// One look at one page: the watch as it now stands, and what to tell, ""
+// for nothing.
+record Look { watch: Watch news: Text }
+// The book after a request, and what to say.
+record Turn { book: Book text: Text }
+// A check of every page: the book after it, the note to send, and how many
+// pages had news.
+record Checked { book: Book note: Note count: Number read: Number }
+
+tool read_page {
+  source system "web"
+  operation: "fetch"
+  access: observe
+  input: PageRequest
+  output: Page
+}
+
+tool tell_me {
+  source system "notify"
+  operation: "send"
+  access: observe
+  input: Note
+  output: Sent
+}
+
+agent eyes {
+  can: [read_page, tell_me]
+}
+
+memory books of Book
+
+// ---------------------------------------------------------------- what was said
+
+fn most() -> Number {
+  return 6
+}
+
+fn kind_of(msg: Msg) -> Text {
+  let text = msg.text.lower().trim().trim_marks("?!.")
+  var kind = "help"
+  if text.starts_with("watch ") or text.starts_with("keep an eye on ") or text.starts_with("tell me when ") { kind = "watch" }
+  else if ["check", "check now", "look", "look now", "any news"].contains(text) { kind = "check" }
+  else if ["watches", "my watches", "list", "what are you watching"].contains(text) { kind = "list" }
+  else if text.starts_with("stop ") or text.starts_with("unwatch ") { kind = "stop" }
+  return kind
+}
+
+fn nothing() -> Watch {
+  return {url: "", words: "", lines: [], found: false, since: ""}
+}
+
+// The page and words in "watch https://... for tickets": the address as it
+// was written, and the words after "for", if any. A request with no https
+// address gives a watch with no url.
+fn wanted(msg: Msg) -> Watch {
+  let words = msg.text.trim().words()
+  var at = -1
+  for i in 0 until words.length() {
+    if at < 0 and words[i].lower().starts_with("https://") { at = i }
+  }
+  if at < 0 { return nothing() }
+  let url = words[at].trim_marks(",;")
+  let rest = words.drop(at + 1)
+  var look_for = ""
+  if rest.length() > 1 and ["for", "until", "when"].contains(rest[0].lower()) {
+    look_for = rest.drop(1).join(" ").trim_marks("\"'")
+  }
+  return {url: url, words: look_for, lines: [], found: false, since: ""}
+}
+
+fn host_of(url: Text) -> Text {
+  let rest = if url.lower().starts_with("https://") { url.drop(8) } else { url }
+  return rest.split("/").first().or("").split("?").first().or("").lower()
+}
+
+// ---------------------------------------------------------------- reading a page
+
+// A page's lines, each trimmed, with blank and repeated lines left out.
+fn tidy(text: Text) -> Text[] {
+  let kept: Text[] = for line in text.lines() where not line.trim().is_empty() { line.trim() }
+  return kept.unique().take(400)
+}
+
+fn holds(lines: Text[], words: Text) -> Bool {
+  return lines.join(" ").lower().contains(words.lower())
+}
+
+fn line_with(lines: Text[], words: Text) -> Text {
+  for line in lines {
+    if line.lower().contains(words.lower()) { return line }
+  }
+  return ""
+}
+
+fn no_page() -> Page {
+  return {url: "", title: "", text: ""}
+}
+
+// What one look found. A page that could not be read changes nothing, so
+// a page that is down for a while is not news when it comes back.
+fn looked(watch: Watch, page: Page, today: Moment) -> Look {
+  if page.text.trim().is_empty() { return {watch: watch, news: ""} }
+  let lines = tidy(page.text)
+  let stamp = today.date + " " + today.time
+  if not watch.words.is_empty() {
+    let there = holds(lines, watch.words)
+    let fresh = there and not watch.found
+    let news = if fresh { "\"" + watch.words + "\" is now on " + watch.url + "\n" + line_with(lines, watch.words).take(200) } else { "" }
+    let since = if fresh { stamp } else { watch.since }
+    return {watch: {url: watch.url, words: watch.words, lines: [], found: there, since: since}, news: news}
+  }
+  if watch.lines.is_empty() {
+    return {watch: {url: watch.url, words: "", lines: lines, found: false, since: watch.since}, news: ""}
+  }
+  let added: Text[] = for line in lines where not watch.lines.contains(line) { line }
+  if added.is_empty() {
+    return {watch: {url: watch.url, words: "", lines: lines, found: false, since: watch.since}, news: ""}
+  }
+  let shown = (for line in added.take(3) { "+ " + line.take(160) }).join("\n")
+  let more = if added.length() > 3 { "\n(and " + (added.length() - 3).to_text() + " more new lines)" } else { "" }
+  return {watch: {url: watch.url, words: "", lines: lines, found: false, since: stamp}, news: watch.url + " changed:\n" + shown + more}
+}
+
+// ---------------------------------------------------------------- the book
+
+fn book_of(known: BooksRecalled) -> Book {
+  return if known.found { known.value.value() } else { {watches: []} }
+}
+
+fn slot(known: BooksRecalled, i: Number) -> Watch {
+  let all = book_of(known).watches
+  return if i < all.length() { all[i] } else { nothing() }
+}
+
+fn named(watch: Watch) -> Text {
+  return if watch.words.is_empty() { watch.url + " (any change)" } else { watch.url + " for \"" + watch.words + "\"" }
+}
+
+fn adding(known: BooksRecalled, want: Watch, page: Page, today: Moment) -> Turn {
+  let book = book_of(known)
+  if want.url.is_empty() {
+    return {book: book, text: "Give me a page to watch, starting with https://, such as: watch https://github.com/ollama/ollama/releases for v0.13"}
+  }
+  for watch in book.watches {
+    if watch.url == want.url and watch.words.lower() == want.words.lower() {
+      return {book: book, text: "I am already watching " + named(want) + "."}
+    }
+  }
+  if book.watches.length() >= most() {
+    return {book: book, text: "I can watch " + most().to_text() + " pages at once, and I am watching that many. Say \"my watches\", then \"stop\" and a number to make room."}
+  }
+  if page.text.trim().is_empty() {
+    return {book: book, text: "I could not read " + want.url + ", so I am not watching it. If " + host_of(want.url) + " is a new site, it has to be allowed first: start me with --allow-site " + host_of(want.url) + ". Otherwise check the address and that the computer is online."}
+  }
+  let first = looked(want, page, today)
+  let start: Watch = {url: first.watch.url, words: first.watch.words, lines: first.watch.lines, found: first.watch.found, since: ""}
+  let now_there = if not want.words.is_empty() and start.found { " The words are on the page already, so I will tell you only if they go and come back." } else { "" }
+  return {book: {watches: book.watches.append(start)}, text: "Watching " + named(want) + ". I will tell you on your phone when " + (if want.words.is_empty() { "it changes" } else { "the words appear" }) + "." + now_there}
+}
+
+fn listing(known: BooksRecalled) -> Said {
+  let all = book_of(known).watches
+  if all.is_empty() { return {text: "I am not watching anything yet. Say: watch https://... to start."} }
+  var lines: Text[] = []
+  for i in 0 until all.length() {
+    let last = if all[i].since.is_empty() { "nothing new yet" } else { "last news " + all[i].since }
+    lines = lines.append((i + 1).to_text() + ". " + named(all[i]) + ", " + last)
+  }
+  return {text: lines.join("\n")}
+}
+
+fn stopping(msg: Msg, known: BooksRecalled) -> Turn {
+  let book = book_of(known)
+  let n = msg.text.words().last().or("").trim_marks("#.").to_number()
+  if not n.exists() { return {book: book, text: "Say stop and the number from \"my watches\", such as: stop 2"} }
+  let at = n.value() - 1
+  if at < 0 or at >= book.watches.length() or not at.is_whole() {
+    return {book: book, text: "There is no watch " + n.value().to_text() + ". Say \"my watches\" to see the numbers."}
+  }
+  var kept: Watch[] = []
+  for i in 0 until book.watches.length() {
+    if i != at { kept = kept.append(book.watches[i]) }
+  }
+  return {book: {watches: kept}, text: "Stopped watching " + named(book.watches[at]) + "."}
+}
+
+fn checked_all(known: BooksRecalled, pages: Page[], today: Moment) -> Checked {
+  let all = book_of(known).watches
+  var kept: Watch[] = []
+  var news: Text[] = []
+  var read = 0
+  for i in 0 until all.length() {
+    let page = if i < pages.length() { pages[i] } else { no_page() }
+    if not page.text.trim().is_empty() { read += 1 }
+    let one = looked(all[i], page, today)
+    kept = kept.append(one.watch)
+    if not one.news.is_empty() { news = news.append(one.news) }
+  }
+  let title = if news.length() == 1 { "Lookout: news on " + host_of(kept_url(news[0])) } else { "Lookout: news on " + news.length().to_text() + " pages" }
+  return {book: {watches: kept}, note: {title: title, text: news.join("\n\n")}, count: news.length(), read: read}
+}
+
+// The address a piece of news begins with.
+fn kept_url(news: Text) -> Text {
+  for word in news.words() {
+    if word.starts_with("https://") { return word.trim_marks(":") }
+  }
+  return ""
+}
+
+fn not_sent() -> Sent {
+  return {sent: false}
+}
+
+fn check_said(known: BooksRecalled, checked: Checked, sent: Sent) -> Said {
+  let all = book_of(known).watches
+  if all.is_empty() { return {text: "I am not watching anything yet. Say: watch https://... to start."} }
+  let read = "Read " + checked.read.to_text() + " of " + all.length().to_text() + " pages."
+  if checked.count == 0 { return {text: read + " Nothing new."} }
+  let phone = if sent.sent { "\n\n(Sent to your phone.)" } else { "" }
+  return {text: read + "\n\n" + checked.note.text + phone}
+}
+
+fn said(turn: Turn) -> Said {
+  return {text: turn.text}
+}
+
+fn help_said(msg: Msg) -> Said {
+  return {text: "I watch web pages and tell your phone when something happens on them. Say: watch https://SITE/PAGE (any change), watch https://SITE/PAGE for WORDS, my watches, stop 2, or check. I can read only the sites you allowed when starting me."}
+}
+
+// ---------------------------------------------------------------- workflows
+
+workflow read(watch: Watch) -> Page {
+  page = execute eyes.read_page(watch.url) otherwise no_page()
+}
+
+// A slot with no watch in it reads nothing.
+workflow look(watch: Watch) -> Page {
+  page = match watch.url.is_empty() {
+    case true { no_page() }
+    case _ { call read(watch) }
+  }
+}
+
+workflow send(note: Note) -> Sent {
+  sent = execute eyes.tell_me(note.title, note.text) otherwise not_sent()
+}
+
+workflow add(msg: Msg) -> Said {
+  known = recall books under "all"
+  today = now
+  want  = wanted(msg)
+  page  = call look(want)
+  turn  = adding(known, want, page, today)
+  saved = remember turn.book in books under "all"
+  out   = said(turn)
+}
+
+workflow stop(msg: Msg) -> Said {
+  known = recall books under "all"
+  turn  = stopping(msg, known)
+  saved = remember turn.book in books under "all"
+  out   = said(turn)
+}
+
+workflow list(msg: Msg) -> Said {
+  known = recall books under "all"
+  out   = listing(known)
+}
+
+// Every watched page, read once. There are as many reads as a book can
+// hold watches; the empty ones read nothing.
+workflow check(msg: Msg) -> Said {
+  known   = recall books under "all"
+  today   = now
+  p0      = call look(slot(known, 0))
+  p1      = call look(slot(known, 1))
+  p2      = call look(slot(known, 2))
+  p3      = call look(slot(known, 3))
+  p4      = call look(slot(known, 4))
+  p5      = call look(slot(known, 5))
+  checked = checked_all(known, [p0, p1, p2, p3, p4, p5], today)
+  saved   = remember checked.book in books under "all"
+  sent    = match checked.count > 0 {
+    case true { call send(checked.note) }
+    case _ { not_sent() }
+  }
+  out     = check_said(known, checked, sent)
+}
+
+workflow main(msg: Msg) -> Said {
+  kind = kind_of(msg)
+  out  = match kind {
+    case "watch" { call add(msg) }
+    case "check" { call check(msg) }
+    case "list" { call list(msg) }
+    case "stop" { call stop(msg) }
+    case _ { help_said(msg) }
+  }
+}
+
+// ---------------------------------------------------------------- tests
+
+test "what was said is understood" {
+  expect kind_of({text: "watch https://a.org/x"}) == "watch"
+  expect kind_of({text: "Check"}) == "check"
+  expect kind_of({text: "my watches"}) == "list"
+  expect kind_of({text: "stop 2"}) == "stop"
+  expect kind_of({text: "hello"}) == "help"
+  w = wanted({text: "watch https://github.com/ollama/ollama/releases for v0.13"})
+  expect w.url == "https://github.com/ollama/ollama/releases"
+  expect w.words == "v0.13"
+  expect wanted({text: "watch the news"}).url == ""
+  expect host_of("https://www.Example.org/a/b?c=1") == "www.example.org"
+}
+
+test "a watched page that changes rings once, with its new lines" {
+  answers clock_now: [
+    {date: "2026-10-21", time: "09:00", weekday: "Wednesday", year: 2026, month: 10, day: 21, hour: 9, minute: 0, epoch: 1792573200},
+    {date: "2026-10-21", time: "09:15", weekday: "Wednesday", year: 2026, month: 10, day: 21, hour: 9, minute: 15, epoch: 1792574100},
+    {date: "2026-10-21", time: "09:30", weekday: "Wednesday", year: 2026, month: 10, day: 21, hour: 9, minute: 30, epoch: 1792575000}
+  ]
+  answers read_page: [
+    {url: "https://a.org/r", title: "Releases", text: "Releases\nv1.0 Fixes\n"},
+    {url: "https://a.org/r", title: "Releases", text: "Releases\nv1.1 Faster\nv1.0 Fixes\n"},
+    {url: "https://a.org/r", title: "Releases", text: "Releases\nv1.1 Faster\nv1.0 Fixes\n"}
+  ]
+  answers tell_me: [{sent: true}]
+  a = main({text: "watch https://a.org/r"})
+  expect a.text.starts_with("Watching https://a.org/r (any change).")
+  b = main({text: "check"})
+  expect b.text.contains("https://a.org/r changed:\n+ v1.1 Faster")
+  expect b.text.ends_with("(Sent to your phone.)")
+  c = main({text: "check"})
+  expect c.text == "Read 1 of 1 pages. Nothing new."
+  d = main({text: "my watches"})
+  expect d.text == "1. https://a.org/r (any change), last news 2026-10-21 09:15"
+}
+
+test "words are told when they first appear, and not again while they stay" {
+  answers clock_now: [
+    {date: "2026-10-21", time: "09:00", weekday: "Wednesday", year: 2026, month: 10, day: 21, hour: 9, minute: 0, epoch: 1792573200},
+    {date: "2026-10-21", time: "09:15", weekday: "Wednesday", year: 2026, month: 10, day: 21, hour: 9, minute: 15, epoch: 1792574100},
+    {date: "2026-10-21", time: "09:30", weekday: "Wednesday", year: 2026, month: 10, day: 21, hour: 9, minute: 30, epoch: 1792575000}
+  ]
+  answers read_page: [
+    {url: "https://t.org/", title: "", text: "Concert\nComing soon"},
+    {url: "https://t.org/", title: "", text: "Concert\nTickets on sale now: 10 Nov"},
+    {url: "https://t.org/", title: "", text: "Concert\nTickets on sale now: 10 Nov\nHurry"}
+  ]
+  answers tell_me: [{sent: true}]
+  a = main({text: "tell me when https://t.org/ for tickets on sale"})
+  expect a.text.starts_with("Watching https://t.org/ for \"tickets on sale\".")
+  b = main({text: "check"})
+  expect b.text.contains("\"tickets on sale\" is now on https://t.org/\nTickets on sale now: 10 Nov")
+  c = main({text: "check"})
+  expect c.text.ends_with("Nothing new.")
+}
+
+test "a page that cannot be read is not added, and says which site to allow" {
+  answers clock_now: [{date: "2026-10-21", time: "09:00", weekday: "Wednesday", year: 2026, month: 10, day: 21, hour: 9, minute: 0, epoch: 1792573200}]
+  answers read_page: [{url: "", title: "", text: ""}]
+  a = main({text: "watch https://news.example.com/today"})
+  expect a.text.contains("--allow-site news.example.com")
+  b = main({text: "my watches"})
+  expect b.text.starts_with("I am not watching anything yet.")
+}
+
+test "a watch can be stopped" {
+  answers clock_now: [
+    {date: "2026-10-21", time: "09:00", weekday: "Wednesday", year: 2026, month: 10, day: 21, hour: 9, minute: 0, epoch: 1792573200},
+    {date: "2026-10-21", time: "09:15", weekday: "Wednesday", year: 2026, month: 10, day: 21, hour: 9, minute: 15, epoch: 1792574100}
+  ]
+  answers read_page: [{url: "https://a.org/", title: "", text: "Hello"}]
+  a = main({text: "watch https://a.org/"})
+  b = main({text: "stop 3"})
+  expect b.text.starts_with("There is no watch 3.")
+  c = main({text: "stop 1"})
+  expect c.text == "Stopped watching https://a.org/ (any change)."
+  d = main({text: "check"})
+  expect d.text.starts_with("I am not watching anything yet.")
+}
+
+test "a page that is down for a while is not news" {
+  watch: Watch = {url: "https://a.org/", words: "", lines: ["Hello"], found: false, since: ""}
+  today: Moment = {date: "2026-10-21", time: "09:00", weekday: "Wednesday", year: 2026, month: 10, day: 21, hour: 9, minute: 0, epoch: 1792573200}
+  down = looked(watch, no_page(), today)
+  expect down.news == ""
+  expect down.watch.lines == ["Hello"]
+}

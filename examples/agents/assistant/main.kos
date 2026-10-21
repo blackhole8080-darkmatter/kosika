@@ -11,6 +11,13 @@
 // something, it says plainly that it cannot. For work on files, use the box
 // "Not sure which agent?" above it in Studio.
 //
+// Some requests it hands to the agent made for them, which has its own
+// tools and its own limits: "watch https://..." and "my watches" go to the
+// lookout, which rings the phone when a page has news; "look up ...",
+// "search the web for ..." and "find out ..." go to the gatherer, which
+// reads the news and Wikipedia; anything "in my files" or "on my laptop"
+// goes to the desk, which only reads the folder it was given.
+//
 // Reminders can ring on your phone. Started with --notify and an address
 // of yours (such as https://ntfy.sh/your-private-topic), "check reminders"
 // sends every reminder whose time has come to that address and nowhere
@@ -203,6 +210,23 @@ fn hand_of(said: Text) -> Handover {
   // the coder, said in any of the usual ways: "pls make a website for my
   // portfolio", "create a researcher agent", "can you build me a game".
   if makes_something(rest) { return {agent: "coder", text: tidy} }
+  let asked = rest.join(" ")
+  let plain = asked.lower().trim_marks(".!")
+  // Watching a page for news goes to the lookout, which rings the phone:
+  // "watch https://... for tickets", "my watches", "stop watching 2".
+  if plain.starts_with("watch https://") or plain.starts_with("tell me when https://") or plain.starts_with("keep an eye on https://") or plain == "my watches" {
+    return {agent: "lookout", text: asked}
+  }
+  if plain.starts_with("stop watching ") { return {agent: "lookout", text: "stop " + plain.drop(14).trim()} }
+  // Looking something up on the web goes to the gatherer: "search the
+  // web for ...", "look up ...", "find out ...", "google ...".
+  for lead in ["search the web for ", "search the internet for ", "search online for ", "look up ", "look online for ", "find out ", "google ", "search for "] {
+    if plain.starts_with(lead) and plain.length() > lead.length() + 2 { return {agent: "gatherer", text: asked.drop(lead.length()).trim()} }
+  }
+  // Something in the person's own files goes to the desk.
+  for place in ["in my files", "in my notes", "in my documents", "on my laptop", "on my computer", "in my folder"] {
+    if plain.contains(place) and not plain.starts_with("remember") { return {agent: "desk", text: asked} }
+  }
   return {agent: "", text: ""}
 }
 
@@ -234,7 +258,7 @@ fn wants_action(first: Text) -> Bool {
 
 // What it says when asked to act on the computer.
 fn cannot_text() -> Text {
-  return "I cannot do that. I have no way to open programs, play things, search the web or change settings on this computer. I can tell the time, do sums, keep reminders, remember things and answer questions."
+  return "I cannot do that. I have no way to open programs, play things or change settings on this computer. I can tell the time, do sums, keep reminders, remember things and answer questions. To search the web, say \"look up\" and what you want; to watch a page, say \"watch\" and its https address; to find something in your files, say \"in my files\"."
 }
 
 // A model will sometimes say it did something it has no way of doing. If
@@ -1494,12 +1518,14 @@ test "an open question may go to an outside agent, with nothing Kosi keeps" {
 test "it never says it did what it cannot do" {
   answers voice: [{text: "Sure, I'll open the web browser and search for cats."}, {text: "Cats sleep most of the day."}]
   a = main({text: "open my web browser and search for cats"})
-  b = main({text: "could you look up cats for me?"})
+  b = main({text: "could you show me some cats?"})
   c = main({text: "tell me something about cats"})
   expect kind_of({text: "Play some music"}) == "cannot"
   expect a.text.starts_with("I cannot do that.")
   expect b.text.starts_with("I cannot do that.")
   expect c.text == "Cats sleep most of the day."
+  // Looking something up is not done here: it is handed to the gatherer.
+  expect hand_of("could you look up cats for me?").agent == "gatherer"
 }
 
 test "a request for another agent is handed to it" {
@@ -1537,6 +1563,18 @@ test "a request for another agent is handed to it" {
   expect hand_of("make me laugh").text == ""
   expect hand_of("write a poem about rain").text == ""
   expect kind_of({text: "please create a website for my bakery"}) == "hand"
+  w = hand_of("Watch https://github.com/ollama/ollama/releases for v0.41")
+  expect w.agent == "lookout"
+  expect w.text == "Watch https://github.com/ollama/ollama/releases for v0.41"
+  expect hand_of("stop watching 2").text == "stop 2"
+  expect hand_of("my watches").agent == "lookout"
+  l = hand_of("Kosi, can you look up who won the last F1 race")
+  expect l.agent == "gatherer"
+  expect l.text == "who won the last F1 race"
+  expect hand_of("search the web for cheap flights to Goa").text == "cheap flights to Goa"
+  expect hand_of("where is my CV in my files?").agent == "desk"
+  expect hand_of("remember that my files are in Documents").text == ""
+  expect hand_of("look up").text == ""
   d = main({text: "ask the coder to write a function that reverses a list"})
   e = main({text: "ask the teacher to mark my essay"})
   f = main({text: "hand over: what do my notes say about trees"})
