@@ -175,11 +175,10 @@ class NativeTests(unittest.TestCase):
                 encoding="utf-8",
             )
             ran = self.run_engine("test", str(learning))
-        self.assertEqual(ran.returncode, 1)
-        self.assertIn(
-            "kosika-native cannot run a step that learns yet",
-            ran.stderr.decode("utf-8", "replace"),
-        )
+        # A step that learns is read and checked now; this program has no
+        # tests, and says so as the reference does.
+        self.assertEqual(ran.returncode, 0)
+        self.assertIn("No tests found", ran.stdout.decode("utf-8", "replace"))
 
     def test_a_text_that_is_not_kosika_is_refused_with_its_place(self) -> None:
         with tempfile.TemporaryDirectory() as scratch:
@@ -497,6 +496,74 @@ class NativeTests(unittest.TestCase):
                     else self.run_engine("replay", trace)
                 )
                 self.assertEqual(ran.returncode, 0, f"{reader} replay of {written}")
+
+    def test_it_learns_where_the_reference_learns(self) -> None:
+        # Lessons one engine keeps, the other finds and answers from, with
+        # the same trace: the same question again, and a new question that
+        # the examples kept answer alike.
+        program = str(ROOT / "conformance" / "cases" / "learn.kos")
+        asked = [
+            "the invoice total is wrong",
+            "my invoice shows a wrong total",
+            "wrong total on this invoice",
+            "the invoice has the wrong total again",
+            "invoice total looks wrong to me",
+            "why is my invoice total wrong",
+        ]
+        ignored = {"timestamp", "program_hash", "elapsed_seconds", "function_stack", "plan_hash"}
+
+        def clean(value: object) -> object:
+            if isinstance(value, dict):
+                return {k: clean(v) for k, v in value.items() if k not in ignored}
+            if isinstance(value, list):
+                return [clean(v) for v in value]
+            return value
+
+        def engine(name: str, folder: Path, *flags: str) -> None:
+            if name == "native":
+                ran = self.run_engine("run", program, *flags)
+                self.assertEqual(ran.returncode, 0, ran.stderr.decode())
+            else:
+                subprocess.run(
+                    [sys.executable, "-m", "kosika.cli", "run", program, *flags],
+                    cwd=ROOT, capture_output=True, text=True, check=True,
+                )
+
+        for keeper, finder in (("reference", "native"), ("native", "reference")):
+            with self.subTest(keeper=keeper), tempfile.TemporaryDirectory() as scratch:
+                folder = Path(scratch)
+                memory = str(folder / "memory")
+                for index, text in enumerate(asked):
+                    (folder / "in.json").write_text(json.dumps({"t": {"text": text}}))
+                    (folder / "kept.json").write_text(json.dumps({
+                        "assistant": [{"label": "billing", "confidence": 0.9}],
+                        "writer": [{"text": f"reply {index}"}],
+                    }))
+                    engine(keeper, folder, "--input", str(folder / "in.json"),
+                           "--model-fixture", str(folder / "kept.json"), "--memory", memory,
+                           "--trace", str(folder / "kept.jsonl"))
+                # Asked again, a model would say something else: the lessons answer.
+                (folder / "wrong.json").write_text(json.dumps({
+                    "assistant": [{"label": "bug", "confidence": 0.9}] * 2,
+                    "writer": [{"text": "asked again"}] * 2,
+                }))
+                traces = {}
+                for text, how in ((asked[0], "same"), ("is the invoice total wrong here", "examples")):
+                    (folder / "in.json").write_text(json.dumps({"t": {"text": text}}))
+                    for name in ("reference", "native"):
+                        trace = folder / f"{name}-{how}.jsonl"
+                        # Each finds lessons in a copy, as the other left them.
+                        copy = folder / f"{name}-{how}-memory"
+                        shutil.copytree(memory, copy)
+                        engine(name, folder, "--input", str(folder / "in.json"),
+                               "--model-fixture", str(folder / "wrong.json"), "--memory", str(copy),
+                               "--trace", str(trace))
+                        lines = trace.read_text(encoding="utf-8").splitlines()
+                        traces[name, how] = [clean(json.loads(line)) for line in lines]
+                    self.assertEqual(traces["native", how], traces["reference", how])
+                    returns = [e for e in traces[finder, how] if e.get("event") == "model_return"]
+                    self.assertEqual(returns[0]["learned"]["how"], how)
+                    self.assertEqual(returns[0]["result"]["label"], "billing")
 
     def test_it_reaches_a_pinned_mcp_server_as_the_reference_does(self) -> None:
         program = ROOT / "examples" / "test_host_live.kos"

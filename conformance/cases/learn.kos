@@ -1,0 +1,39 @@
+// A step marked `learn` keeps its model's accepted answers, so it can
+// answer the same question again without the model. A test keeps no
+// lessons, so its model is asked every time.
+
+record Ticket { text: Text }
+record Note { text: Text }
+record Sorted { label: Text reply: Text }
+
+model assistant
+model writer {
+  input: Note
+  output: Note
+}
+
+fn unsure(t: Ticket) -> Choice {
+  return {label: "other", confidence: 0}
+}
+
+workflow main(t: Ticket) -> Sorted {
+  label = classify t.text into ["billing", "bug", "other"] using assistant learn otherwise unsure(t)
+  said = use_model writer(t.text) learn by t.text otherwise {text: "later"}
+  out = {label: label.label reply: said.text}
+}
+
+test "a learning step asks its model when it knows nothing" {
+  answers assistant: [{label: "bug", confidence: 0.9}]
+  answers writer: [{text: "We are on it."}]
+  o = main({text: "The app crashes"})
+  expect o.label == "bug"
+  expect o.reply == "We are on it."
+}
+
+test "with no answer at all the fallback stands in" {
+  answers assistant: [{nope: 1}]
+  answers writer: [{nope: 1}]
+  o = main({text: "Hello"})
+  expect o.label == "other"
+  expect o.reply == "later"
+}

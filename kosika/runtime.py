@@ -1297,8 +1297,46 @@ def _plain_field(model: ModelDecl, schema: dict[str, Any]) -> str | None:
 
 def _lesson_name(workflow: str, step: str, model: ModelDecl) -> str:
     """The lessons of one step, kept apart from those of any other step
-    and of an earlier version of its model: a model told something new
-    starts learning again."""
+    and of an earlier version of its model: a model declared differently
+    starts learning again. Both engines make the same name, from the
+    declaration written out in one fixed form (`lessonName` in
+    native/lessons.go), so each finds the lessons the other kept."""
+
+    def number(value: float | int | None) -> float | int | None:
+        if value is None:
+            return None
+        value = float(value)
+        return int(value) if value.is_integer() and abs(value) < 1e15 else value
+
+    parameters = model.parameters
+    declared = {
+        "name": model.name,
+        "input": model.input,
+        "output": model.output,
+        "deployment": model.deployment,
+        "provider": model.provider,
+        "verb": model.verb,
+        "evidence": model.evidence,
+        "plain": model.plain,
+        "temperature": number(parameters.temperature),
+        "max_output_tokens": parameters.max_output_tokens,
+        "top_p": number(parameters.top_p),
+        "frequency_penalty": number(parameters.frequency_penalty),
+        "presence_penalty": number(parameters.presence_penalty),
+        "stop": list(parameters.stop),
+    }
+    digest = hashlib.sha256(
+        json.dumps(
+            declared, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        ).encode("utf-8")
+    ).hexdigest()[:10]
+    return f"{workflow}.{step}.{model.name}.{digest}"
+
+
+def _earlier_lesson_name(workflow: str, step: str, model: ModelDecl) -> str:
+    """The name lessons were kept under before both engines shared one,
+    made from this engine's own record of the model. Lessons found under
+    it are moved to the shared name."""
 
     declared = hashlib.sha256(
         json.dumps(asdict(model), sort_keys=True, default=str).encode("utf-8")
@@ -2377,6 +2415,9 @@ def _run_workflow(
                     )
                     lesson = _lesson_name(workflow.name, step.name, model)
                     if book is not None:
+                        book.adopt(
+                            _earlier_lesson_name(workflow.name, step.name, model), lesson
+                        )
                         known = book.recall(
                             lesson, question, voting=model.verb in ("classify", "decide")
                         )

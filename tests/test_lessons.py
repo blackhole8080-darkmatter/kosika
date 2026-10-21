@@ -90,6 +90,23 @@ class LearnTests(unittest.TestCase):
         # The trace replays the same, with no lessons and no model.
         self.assertEqual(replay(self.folder / "again.jsonl")["text"], first["text"])
 
+    def test_lessons_kept_under_the_earlier_name_are_moved_to_the_shared_one(self) -> None:
+        from kosika.runtime import _earlier_lesson_name, _lesson_name
+
+        writer = answers({"text": "Open Settings, then Billing."})
+        self.ask("reply", "How do I change my card?", {"writer": writer})
+        model = next(m for m in self.program.models if m.name == "writer")
+        book = Lessons(self.folder / "memory")
+        shared = book._path(_lesson_name("reply", "said", model))
+        earlier = book._path(_earlier_lesson_name("reply", "said", model))
+        self.assertNotEqual(shared, earlier)
+        # As an earlier version of Kosika left it.
+        shared.replace(earlier)
+        again = self.ask("reply", "how do I change my card", {})
+        self.assertEqual(again["text"], "Open Settings, then Billing.")
+        self.assertTrue(shared.is_file())
+        self.assertFalse(earlier.exists())
+
     def test_nothing_learned_and_no_model_runs_the_fallback(self) -> None:
         said = self.ask("reply", "What is your refund policy?", {})
         self.assertEqual(said["text"], "I cannot answer that yet.")

@@ -3506,6 +3506,26 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   programs with workflows, agents and tools; the guide does not teach
   those yet.
 
+### The native engine learns, and both engines share their lessons
+
+- A step marked `learn` (or `learn by TEXT`) runs in native/
+  (native/lessons.go) as in the reference: with a memory folder it keeps
+  each accepted answer, answers the same question again, a close one, or
+  (for classify and decide) one its examples agree on, without the model,
+  and with nothing learned and no model connected its `otherwise` runs.
+- Lesson files are now named in both engines from the model's declaration
+  written out in one fixed form, not from Python's own record of it, so
+  each engine finds the lessons the other kept. Lessons kept under the
+  earlier name are moved to the shared one the first time they are looked
+  up.
+- Held by `cases/learn.kos`, three refused cases (`learn_model`,
+  `learn_by`, `learn_evidence`), a test that keeps lessons in one engine
+  and answers from them in the other, both ways, with identical traces,
+  and `tests/test_lessons.py` for the move.
+- With this the native engine runs every kind of model step the
+  reference runs. Still missing there: agent plans that write files,
+  `fetch` and the other non-file `system` tools, and `find`.
+
 ### Models that answer as text, in the native engine and in tests
 
 - `output: NAME as text` reads, checks and runs in native/: the model is

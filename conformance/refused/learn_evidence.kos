@@ -1,0 +1,9 @@
+// Refused: a quote cannot be learned, since a new text needs its own.
+
+record Note { text: Text }
+
+model assistant
+
+workflow main(n: Note) -> Choice {
+  kind = classify n.text into ["a", "b"] with evidence learn
+}

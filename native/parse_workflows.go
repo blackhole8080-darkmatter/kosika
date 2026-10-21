@@ -215,7 +215,11 @@ func (p *Parser) stepEnding(step *Step) {
 		step.Escalate = p.identifier()
 	}
 	if p.check("learn") && p.peek().Value != "=" && p.peek().Value != ":" {
-		notYetStep(p.current(), "a step that learns")
+		p.advance()
+		step.Learns = true
+		if p.accept("by") {
+			step.LearnBy = p.expression()
+		}
 	}
 	if p.accept("otherwise") {
 		step.Fallback = p.parseStepCall()

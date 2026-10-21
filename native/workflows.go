@@ -67,6 +67,18 @@ type run struct {
 	// plan is how the model step now running is asked: its votes, the
 	// models that take turns, and a stronger model; nil for a fallback.
 	plan *modelPlan
+	// lessons is what the program's learning steps have learned, kept in
+	// the memory folder; nil when no folder was given, and then a step
+	// that learns asks its model every time.
+	lessons *lessonStore
+	// learning is the step now running when it learns; nil otherwise.
+	learning *learningStep
+}
+
+type learningStep struct {
+	workflow, step string
+	by             Expr
+	at             frame
 }
 
 type modelPlan struct {
@@ -144,7 +156,9 @@ func (r *run) preflight(workflow *WorkflowDecl) {
 			if model.Provider != "" {
 				bound = model.Provider
 			}
-			if r.providers[bound] == nil {
+			if r.providers[bound] == nil && (item.step == nil || !item.step.Learns) {
+				// A step that learns may run without its model: it answers
+				// what it has learned, and for anything else its fallback.
 				panic(&permissionError{fmt.Sprintf("Model %s has no authorized host binding", pyRepr(bound))})
 			}
 			if item.step != nil {
@@ -321,6 +335,10 @@ func (r *run) attempt(step *Step, call *StepCall, environment *Scope, at frame, 
 		r.check = &answerCheck{step.Verify, step.Binding, environment, at}
 		defer func() { r.check = nil }()
 	}
+	if step.Learns {
+		r.learning = &learningStep{r.stepScope[len(r.stepScope)-2], step.Name, step.LearnBy, at}
+		defer func() { r.learning = nil }()
+	}
 	if step.Votes > 0 || step.Escalate != "" {
 		r.plan = &modelPlan{step.Votes, step.Voters, step.Escalate}
 		defer func() { r.plan = nil }()
@@ -452,7 +470,14 @@ func (r *run) call(call *StepCall, environment *Scope, at frame, depth, retries 
 		if model.Evidence != "" {
 			first.set("evidence", model.Evidence)
 		}
+		if learned, how := r.learned(model, arguments); learned != nil {
+			// Recorded as the model's answer would be, so the run replays the
+			// same; `learned` says where it came from.
+			return learned, []Value{first, event("model_return", "model", model.Name, "result", learned,
+				"content", unicodeJSON(learned, false, false), "finish_reason", "stop", "learned", how)}
+		}
 		result := r.model(model, arguments, retries)
+		r.keepLesson(model, arguments, result)
 		returned := event("model_return", "model", model.Name, "result", result, "content", r.note.content,
 			"finish_reason", "stop", "usage", r.note.usage)
 		if model.Plain {
@@ -596,6 +621,57 @@ func (r *run) model(model *ModelDecl, arguments map[string]Value, retries int) V
 	escalated.set("because", string(because))
 	r.note.escalated = escalated
 	return answer
+}
+
+// learned is what a learning step has learned for the question it is asked
+// now, with how it was found; nil when its model must be asked. With
+// nothing learned and no model connected, the step fails, so its fallback
+// runs, as the reference's does.
+func (r *run) learned(model *ModelDecl, arguments map[string]Value) (Value, *Record) {
+	learning := r.learning
+	if learning == nil {
+		return nil, nil
+	}
+	input := newRecord()
+	for name, value := range arguments {
+		input.set(name, value)
+	}
+	r.validate(input, model.Input, "$")
+	if r.lessons != nil {
+		question := r.question(arguments)
+		known := r.lessons.recall(lessonName(learning.workflow, learning.step, model), question, model.Verb == "classify" || model.Verb == "decide")
+		if known != nil && schemaProblem(known.answer, r.checker.schemaFor(model.Output), "$", r.checker.schemaFor(model.Output)) == "" {
+			how := newRecord()
+			how.set("how", known.how)
+			how.set("likeness", known.likeness)
+			how.set("lessons", bigInt(known.lessons))
+			return known.answer, how
+		}
+	}
+	if r.providers[boundName(model)] == nil {
+		runFail(fmt.Sprintf("Model %s is not connected, and nothing like this has been learned yet", pyRepr(model.Name)))
+	}
+	return nil, nil
+}
+
+// question is what a learning step's question is known by: `learn by`'s
+// text, or else the text its model is given.
+func (r *run) question(arguments map[string]Value) string {
+	if r.learning.by != nil {
+		var text string
+		// Worked out apart: what it records is not the step's.
+		r.machine.collect(func() { text, _ = r.machine.eval(r.learning.by, r.learning.at).(string) })
+		return text
+	}
+	return questionOf(arguments)
+}
+
+// keepLesson keeps a learning step's accepted answer.
+func (r *run) keepLesson(model *ModelDecl, arguments map[string]Value, answer Value) {
+	if r.learning == nil || r.lessons == nil {
+		return
+	}
+	r.lessons.keep(lessonName(r.learning.workflow, r.learning.step, model), r.question(arguments), answer)
 }
 
 // boundName is the name a model's host binding goes by: a model made for a

@@ -67,6 +67,26 @@ func (c *checker) valueFault(workflow *WorkflowDecl, step *Step, seen map[string
 	c.typeOf(step.Call.Args[0].Value, env, step.Name, "")
 }
 
+// checkLearn holds a step that learns to having answers to keep, as
+// _check_learn in kosika/checker.py does.
+func (c *checker) checkLearn(step *Step, env *Env) {
+	var asked *ModelDecl
+	if step.Call.Kind == "model" && len(step.Branches) == 0 {
+		asked = c.models[step.Call.Name]
+	}
+	if asked == nil {
+		checkFail("Step %s cannot learn: only a model step (use_model or a thinking step) has answers to keep", pyRepr(step.Name))
+	}
+	if asked.Evidence != "" {
+		checkFail("Step %s cannot learn: an answer given again from what was learned has no quotes from the new text to check", pyRepr(step.Name))
+	}
+	if step.LearnBy != nil {
+		if known := c.typeOf(step.LearnBy, env.child(), step.Name, ""); known != "Text" {
+			checkFail("Step %s learns by %s; what a question is known by must be Text", pyRepr(step.Name), pyRepr(known))
+		}
+	}
+}
+
 // checkParallel holds the steps of one `parallel` block to being able to
 // run apart, as _check_parallel in kosika/checker.py does.
 func (c *checker) checkParallel() {
@@ -525,6 +545,9 @@ func (c *checker) checkWorkflows() {
 }
 
 func (c *checker) checkStep(workflow *WorkflowDecl, step *Step, env *Env) {
+	if step.Learns {
+		c.checkLearn(step, env)
+	}
 	if step.Subject != nil {
 		subject := c.typeOf(step.Subject, env.child(), step.Name, "")
 		values := c.enumValues(subject)
@@ -820,6 +843,7 @@ func (c *checker) checkFallbacks() {
 			// The fallback is asked once: what the call is asked again
 			// with does not go with it.
 			changed.Call, changed.Retries, changed.Votes, changed.Escalate = step.Fallback, 0, 0, ""
+			changed.Learns, changed.LearnBy = false, nil
 		}
 		changed.Fallback = nil
 		return &changed

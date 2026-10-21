@@ -218,6 +218,11 @@ type Step struct {
 	// Group numbers the `parallel { ... }` block the step is written in,
 	// from 1; 0 when it is in none.
 	Group int
+	// Learns is `learn`: the step keeps its model's accepted answers and
+	// answers from them when it can. LearnBy is `learn by EXPRESSION`, what
+	// a question is known by; nil when it is the text the model is given.
+	Learns  bool
+	LearnBy Expr
 	// Fallback is the call made instead when Call fails: `otherwise`.
 	Fallback *StepCall
 	// A match step makes one of its Branches' calls, chosen by Subject.

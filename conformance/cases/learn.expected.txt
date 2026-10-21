@@ -1,0 +1,3 @@
+PASS  a learning step asks its model when it knows nothing
+PASS  with no answer at all the fallback stands in
+2 passed, 0 failed

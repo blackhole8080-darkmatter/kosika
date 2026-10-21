@@ -91,6 +91,22 @@ class Lessons:
                 self._loaded[step] = []
         return self._loaded[step]
 
+    def adopt(self, earlier: str, step: str) -> None:
+        """Move lessons kept under an earlier name of a step to its name now,
+        when it has none yet."""
+
+        if earlier == step:
+            return
+        with self._lock:
+            old, new = self._path(earlier), self._path(step)
+            if old.is_file() and not new.exists():
+                try:
+                    old.replace(new)
+                except OSError:
+                    return
+                self._loaded.pop(step, None)
+                self._loaded.pop(earlier, None)
+
     def count(self, step: str) -> int:
         with self._lock:
             return len(self._book(step))

@@ -211,6 +211,7 @@ func runCommand(args []string) int {
 		running.servers = servers
 		if memory != "" {
 			running.memory = newMemoryStore(memory)
+			running.lessons = newLessonStore(memory)
 		}
 		running.folder, running.allowShell = folder, allowShell
 		if env != nil {

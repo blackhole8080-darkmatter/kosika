@@ -50,7 +50,8 @@ a function, run another workflow, use a tool through an agent, or ask a
 model (its answer checked by a function of the program with `verify`,
 asked again on a refused answer with `retry`, asked several times with
 `vote N`, the models listed with `using` taking turns, or handed to a
-stronger model with `escalate`), ask an agent, or
+stronger model with `escalate`, or answered from what it learned with
+`learn` when run with `--memory`), ask an agent, or
 think (`classify`, `extract`, `summarize`, `decide`, the first three
 quoting the text they were given when written `with evidence`), with a
 fallback
@@ -88,7 +89,6 @@ print what the reference engine prints, word for word. See
 
 ## What it does not have yet
 
-- Steps with `learn`.
 - An agent's plan that writes files, or an agent with its own `check`:
   the reference checks such a plan before showing it, and those checks are
   not here yet, so such a plan is refused by name. Replaying an agent
