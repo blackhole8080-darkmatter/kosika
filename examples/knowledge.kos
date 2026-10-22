@@ -1,0 +1,362 @@
+// Knowledge Graph and Reasoning in Kosika
+// Demonstrating knowledge representation and logical reasoning
+
+// Entity and Relationship Records
+record Entity {
+  id: Text
+  name: Text
+  type: Text
+  description: Text
+  properties: Text{}
+}
+
+record Relationship {
+  id: Text
+  source: Text
+  target: Text
+  relation_type: Text
+  weight: Number
+}
+
+record KnowledgeTriple {
+  subject: Text
+  predicate: Text
+  object: Text
+  confidence: Number
+}
+
+// Knowledge Graph
+record KnowledgeGraph {
+  entities: Entity{}
+  relationships: Relationship[]
+  triples: KnowledgeTriple[]
+}
+
+// Add entity to graph
+fn add_entity(graph: KnowledgeGraph, entity: Entity) -> KnowledgeGraph {
+  let new_entities = graph.entities
+  new_entities[entity.id] = entity
+  return {
+    entities: new_entities,
+    relationships: graph.relationships,
+    triples: graph.triples
+  }
+}
+
+// Add relationship to graph
+fn add_relationship(graph: KnowledgeGraph, rel: Relationship) -> KnowledgeGraph {
+  let new_relationships = graph.relationships.append(rel)
+  return {
+    entities: graph.entities,
+    relationships: new_relationships,
+    triples: graph.triples
+  }
+}
+
+// Find path between entities using BFS
+fn find_path(graph: KnowledgeGraph, source: Text, target: Text, max_depth: Number) -> Text[] {
+  if graph.entities.get(source) == null || graph.entities.get(target) == null {
+    return []
+  }
+
+  let queue: Text[][] = [[source]]
+  let visited: Text[] = [source]
+
+  while queue.length() > 0 {
+    let current_path = queue[0]
+    queue = queue.drop(1)
+    let current = current_path[current_path.length() - 1]
+
+    if current == target {
+      return current_path
+    }
+
+    if current_path.length() >= max_depth {
+      continue
+    }
+
+    // Get all relationships from current entity
+    let neighbors: Text[] = []
+    for rel in graph.relationships {
+      if rel.source == current {
+        neighbors = neighbors.append(rel.target)
+      }
+    }
+
+    for neighbor in neighbors {
+      if !visited.contains(neighbor) {
+        visited = visited.append(neighbor)
+        let new_path = current_path.append(neighbor)
+        queue = queue.append(new_path)
+      }
+    }
+  }
+
+  return []
+}
+
+// Infer related entities using transitive reasoning
+fn infer_related(graph: KnowledgeGraph, entity_id: Text, relation_type: Text, max_depth: Number) -> Text[] {
+  let inferred: Text[] = []
+  let queue: Text[] = [entity_id]
+  let visited: Text[] = [entity_id]
+  let depth: Text{} = {entity_id: 0}
+
+  while queue.length() > 0 {
+    let current = queue[0]
+    queue = queue.drop(1)
+
+    if depth[current] >= max_depth {
+      continue
+    }
+
+    // Get relationships of specified type
+    for rel in graph.relationships {
+      if rel.source == current && rel.relation_type == relation_type {
+        if !visited.contains(rel.target) {
+          visited = visited.append(rel.target)
+          inferred = inferred.append(rel.target)
+          queue = queue.append(rel.target)
+          depth[rel.target] = depth[current] + 1
+        }
+      }
+    }
+  }
+
+  return inferred
+}
+
+// Logical Reasoning Engine
+record ReasoningEngine {
+  facts: Text[]
+  rules: Rule[]
+}
+
+record Rule {
+  premises: Text[]
+  conclusion: Text
+}
+
+// Forward chaining: derive conclusions from facts
+fn forward_chain(engine: ReasoningEngine, query: Text) -> Bool {
+  let derived: Text[] = engine.facts
+  let changed = true
+
+  while changed {
+    changed = false
+    for rule in engine.rules {
+      let all_premises_true = true
+      for premise in rule.premises {
+        if !derived.contains(premise) {
+          all_premises_true = false
+          break
+        }
+      }
+
+      if all_premises_true && !derived.contains(rule.conclusion) {
+        derived = derived.append(rule.conclusion)
+        changed = true
+      }
+    }
+  }
+
+  return derived.contains(query)
+}
+
+// Backward chaining: work backwards from query
+fn backward_chain(engine: ReasoningEngine, query: Text, visited: Text[]) -> Bool {
+  if engine.facts.contains(query) {
+    return true
+  }
+
+  if visited.contains(query) {
+    return false
+  }
+
+  let new_visited = visited.append(query)
+
+  for rule in engine.rules {
+    if rule.conclusion == query {
+      let all_premises_proven = true
+      for premise in rule.premises {
+        if !backward_chain(engine, premise, new_visited) {
+          all_premises_proven = false
+          break
+        }
+      }
+      if all_premises_proven {
+        return true
+      }
+    }
+  }
+
+  return false
+}
+
+// Example: Building an AI Knowledge Graph
+workflow build_ai_knowledge() -> KnowledgeGraph {
+  step create_entities {
+    let python: Entity = {
+      id: "python",
+      name: "Python",
+      type: "language",
+      description: "General-purpose programming language",
+      properties: {}
+    }
+
+    let kosika: Entity = {
+      id: "kosika",
+      name: "Kosika",
+      type: "language",
+      description: "AI-native programming language",
+      properties: {}
+    }
+
+    let ai: Entity = {
+      id: "ai",
+      name: "Artificial Intelligence",
+      type: "field",
+      description: "Field of computer science",
+      properties: {}
+    }
+
+    let graph: KnowledgeGraph = {
+      entities: {},
+      relationships: [],
+      triples: []
+    }
+
+    graph = add_entity(graph, python)
+    graph = add_entity(graph, kosika)
+    graph = add_entity(graph, ai)
+
+    return graph
+  }
+
+  step add_relationships {
+    let graph = create_entities
+
+    let rel1: Relationship = {
+      id: "r1",
+      source: "kosika",
+      target: "ai",
+      relation_type: "designed_for",
+      weight: 0.9
+    }
+
+    let rel2: Relationship = {
+      id: "r2",
+      source: "python",
+      target: "ai",
+      relation_type: "used_for",
+      weight: 0.8
+    }
+
+    let rel3: Relationship = {
+      id: "r3",
+      source: "kosika",
+      target: "python",
+      relation_type: "alternative_to",
+      weight: 0.7
+    }
+
+    graph = add_relationship(graph, rel1)
+    graph = add_relationship(graph, rel2)
+    graph = add_relationship(graph, rel3)
+
+    return graph
+  }
+
+  step query_graph {
+    let graph = add_relationships
+
+    // Find related entities
+    let related = infer_related(graph, "kosika", "designed_for", 3)
+    let path = find_path(graph, "python", "kosika", 5)
+
+    return graph
+  }
+}
+
+// Example: Logical Reasoning about AI
+workflow reason_about_ai() -> Bool {
+  step setup_engine {
+    let engine: ReasoningEngine = {
+      facts: [
+        "Kosika is a programming language",
+        "Kosika is designed for AI",
+        "Python is a programming language"
+      ],
+      rules: [
+        {
+          premises: ["X is a programming language", "X is designed for AI"],
+          conclusion: "X is an AI programming language"
+        }
+      ]
+    }
+
+    return engine
+  }
+
+  step test_conclusion {
+    let engine = setup_engine
+    let can_derive = forward_chain(engine, "Kosika is an AI programming language")
+    return can_derive
+  }
+}
+
+// Example: Knowledge Inference
+workflow infer_capabilities() -> Text[] {
+  step setup_graph {
+    let graph: KnowledgeGraph = {
+      entities: {
+        "agent": {
+          id: "agent",
+          name: "AI Agent",
+          type: "system",
+          description: "Intelligent agent",
+          properties: {}
+        },
+        "planning": {
+          id: "planning",
+          name: "Planning",
+          type: "capability",
+          description: "Planning capability",
+          properties: {}
+        },
+        "reasoning": {
+          id: "reasoning",
+          name: "Reasoning",
+          type: "capability",
+          description: "Reasoning capability",
+          properties: {}
+        }
+      },
+      relationships: [
+        {
+          id: "r1",
+          source: "agent",
+          target: "planning",
+          relation_type: "has_capability",
+          weight: 1.0
+        },
+        {
+          id: "r2",
+          source: "planning",
+          target: "reasoning",
+          relation_type: "requires",
+          weight: 0.9
+        }
+      ],
+      triples: []
+    }
+
+    return graph
+  }
+
+  step infer {
+    let graph = setup_graph
+    let capabilities = infer_related(graph, "agent", "has_capability", 3)
+    return capabilities
+  }
+}
