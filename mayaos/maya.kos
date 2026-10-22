@@ -22,7 +22,7 @@
 // model.
 //
 // Say: home, what needs me, how is Ubuntu, my services, open studio,
-// open kosi, help.
+// open kosi, help. Anything else is passed to Kosi.
 
 // What one system looks like right now. memory and disk are the share in
 // use, 0 to 1, or -1 when unknown. updates is how many wait, -1 unknown.
@@ -36,8 +36,9 @@ record Notice { system: Text level: Text text: Text }
 
 // What Maya says. title is a heading (on the desktop, the greeting), text
 // the words, notices what needs attention, suggest a few things to say
-// next, and open the app to open: "studio", "kosi" or "".
-record Said { title: Text text: Text notices: Notice[] suggest: Text[] open: Text }
+// next, open the app to open: "studio", "kosi" or "", and hand what to
+// pass to Kosi, the assistant, whose answer then takes the place of text.
+record Said { title: Text text: Text notices: Notice[] suggest: Text[] open: Text hand: Text }
 
 record Services { services: Text[] paused: Text[] text: Text }
 record Computer { name: Text system: Text cores: Number memory: Text disk: Text uptime: Text }
@@ -114,14 +115,25 @@ fn share_of(text: Text) -> Number {
   var at = 0
   for word in words {
     if word == "of" and at > 0 and at + 1 < words.length() {
-      let used = words[at - 1].trim_marks("KMGTB").to_number().or(-1)
-      let total = words[at + 1].trim_marks("KMGTB").to_number().or(-1)
+      let used = sized(words[at - 1])
+      let total = sized(words[at + 1])
       if used >= 0 and total > 0 { return if used >= total { 1 } else { used / total } }
       return -1
     }
     at = at + 1
   }
   return -1
+}
+
+// A size such as 4.2G or 383M in megabytes, or a bare number as it is.
+fn sized(word: Text) -> Number {
+  let units = ["K", "M", "G", "T"]
+  let scale = [0.0009765625, 1, 1024, 1048576]
+  let last = word.drop(word.length() - 1)
+  let at = units.index_of(last).or(-1)
+  if at < 0 { return word.to_number().or(-1) }
+  let n = word.take(word.length() - 1).to_number().or(-1)
+  return if n < 0 { -1 } else { n * scale[at] }
 }
 
 fn computer_reading(c: Computer) -> Reading {
@@ -235,7 +247,7 @@ fn summary(msg: Msg, services: Services) -> Text {
 }
 
 fn said(title: Text, text: Text, notices: Notice[], suggest: Text[], open: Text) -> Said {
-  return {title: title, text: text, notices: notices, suggest: suggest, open: open}
+  return {title: title, text: text, notices: notices, suggest: suggest, open: open, hand: ""}
 }
 
 fn home_said(msg: Msg, services: Services, moment: Moment) -> Said {
@@ -300,11 +312,13 @@ fn open_said(msg: Msg) -> Said {
 }
 
 fn help_said() -> Said {
-  return said("What I do", "I watch over the systems on this computer and the services that keep running on it. Ask what needs you, how a system is, or about your services, and I can open Kosika Studio or Kosi. Open questions are Kosi's to answer.", [], ["what needs me", "how is my computer", "my services", "open kosi"], "")
+  return said("What I do", "I watch over the systems on this computer and the services that keep running on it. Ask what needs you, how a system is, or about your services, and I can open Kosika Studio or Kosi. Anything else, I pass to Kosi.", [], ["what needs me", "how is my computer", "my services", "open kosi"], "")
 }
 
-fn ask_said() -> Said {
-  return said("A question for Kosi", "Open questions are Kosi's to answer. I keep watch over the systems. Shall I call Kosi?", [], ["open kosi", "help"], "")
+// Anything that is not about the systems is Kosi's: the time, sums,
+// reminders, open questions. Maya passes the words on as they were said.
+fn ask_said(msg: Msg) -> Said {
+  return {title: "Kosi", text: "I asked Kosi.", notices: [], suggest: [], open: "", hand: msg.text.trim()}
 }
 
 // ---------------------------------------------------------------- workflows
@@ -326,7 +340,7 @@ workflow main(msg: Msg) -> Said {
     case "open" { open_said(look) }
     case "help" { help_said() }
     case "thanks" { said("", "You are welcome.", [], [], "") }
-    case _ { ask_said() }
+    case _ { ask_said(look) }
   }
 }
 
@@ -370,6 +384,7 @@ test "Maya reads the computer and Linux herself" {
   expect share_of("363 of 476 GB used on C:") > 0.76
   expect share_of("4.2G of 1007G used (1%) on /") < 0.005
   expect share_of("unknown") == -1
+  expect share_of("383M of 1007G used (1%) on /") < 0.001
   expect linux_reading(ubuntu_read()).updates == 149
   expect seen(no_computer(), ubuntu_read(), [ubuntu(), debian()]).length() == 2
   expect seen(no_computer(), no_linux(), [debian()])[0].awake == false
@@ -402,6 +417,11 @@ test "the desktop line says what is awake and what matters most" {
 test "a system is described in words" {
   expect reading_words(ubuntu()) == "Ubuntu is awake, with 9% of its memory in use, its disk 1% full, 149 updates waiting."
   expect system_said(told("how is debian")).text == "Debian is asleep. Let MayaOS read it from the desktop and I can tell you how it is."
+}
+
+test "what is not about the systems is handed to Kosi" {
+  expect ask_said(told("what is 17 times 23")).hand == "what is 17 times 23"
+  expect help_said().hand == ""
 }
 
 test "only Kosika's own apps are opened" {

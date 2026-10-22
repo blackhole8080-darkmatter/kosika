@@ -33,6 +33,10 @@ ICON_SIZES = (16, 32, 48, 256)
 _INK = (0x1D, 0x1B, 0x18)
 _ACCENT = (0xE8, 0x81, 0x3A)
 _PAPER = (0xF6, 0xF4, 0xEF)
+#: Each app's tile, ring and dot. MayaOS wears the night of its wallpaper,
+#: a violet ring and an amber core.
+KOSIKA_COLOURS = (_INK, _ACCENT, _PAPER)
+MAYAOS_COLOURS = ((0x12, 0x0E, 0x1F), (0xA9, 0x8B, 0xFF), (0xFF, 0xB3, 0x5C))
 
 
 def home() -> Path:
@@ -62,10 +66,11 @@ def _cover(x: float, y: float, size: int) -> tuple[float, float, float]:
     return inside, ring * inside, dot * inside
 
 
-def _picture(size: int) -> bytes:
+def _picture(size: int, colours: tuple = KOSIKA_COLOURS) -> bytes:
     """One square picture of the mark as the bitmap an .ico file holds:
-    a dark tile, an orange ring and a pale dot."""
+    a dark tile, an orange ring and a pale dot (or the colours given)."""
 
+    ink, accent, paper = colours
     samples = 4 if size <= 64 else 2
     rows: list[bytes] = []
     for row in range(size - 1, -1, -1):  # bitmaps are stored bottom row first
@@ -81,7 +86,7 @@ def _picture(size: int) -> bytes:
             count = samples * samples
             tile, ring, dot = tile / count, ring / count, dot / count
             colour = [
-                _INK[i] * (1 - ring - dot) + _ACCENT[i] * ring + _PAPER[i] * dot
+                ink[i] * (1 - ring - dot) + accent[i] * ring + paper[i] * dot
                 for i in range(3)
             ]
             line += bytes(
@@ -98,10 +103,10 @@ def _picture(size: int) -> bytes:
     return header + b"".join(rows) + mask_row * size
 
 
-def icon_bytes() -> bytes:
+def icon_bytes(colours: tuple = KOSIKA_COLOURS) -> bytes:
     """The whole .ico file: the mark at each size."""
 
-    pictures = [_picture(size) for size in ICON_SIZES]
+    pictures = [_picture(size, colours) for size in ICON_SIZES]
     offset = 6 + 16 * len(pictures)
     entries = b""
     for size, picture in zip(ICON_SIZES, pictures):
@@ -112,10 +117,10 @@ def icon_bytes() -> bytes:
     return struct.pack("<HHH", 0, 1, len(pictures)) + entries + b"".join(pictures)
 
 
-def write_icon() -> Path:
-    path = home() / "kosika.ico"
+def write_icon(maya: bool = False) -> Path:
+    path = home() / ("mayaos.ico" if maya else "kosika.ico")
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(icon_bytes())
+    path.write_bytes(icon_bytes(MAYAOS_COLOURS if maya else KOSIKA_COLOURS))
     return path
 
 
@@ -198,7 +203,7 @@ def make_shortcuts(
 
     if sys.platform != "win32":
         raise OSError("Desktop shortcuts are made on Windows only, for now")
-    icon = write_icon()
+    icon = write_icon(maya=module == MAYAOS_MODULE)
     made: list[Path] = []
     for place in shortcut_places(name):
         # Everything is handed over in the environment, never pasted into

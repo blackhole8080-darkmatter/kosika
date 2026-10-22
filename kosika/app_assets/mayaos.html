@@ -72,6 +72,8 @@ button { font: inherit; color: inherit; }
 .ask input::placeholder { color: var(--faint); }
 .said { max-width: 680px; margin-top: 12px; padding: 14px 16px; border-radius: 14px; background: rgba(18, 14, 32, .6); border: 1px solid var(--line); backdrop-filter: blur(18px); animation: arrive .5s var(--ease) both; }
 .said b { display: block; font: 500 19px var(--serif); margin-bottom: 4px; }
+.said.kosi { border-color: rgba(255, 179, 92, .35); }
+.said.kosi b { color: var(--amber); }
 .said p { margin: 0; color: var(--soft); white-space: pre-wrap; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .chips button { cursor: pointer; font-size: 12px; padding: 4px 11px; border-radius: 99px; border: 1px solid var(--line); background: rgba(255, 255, 255, .05); color: var(--soft); transition: background .2s, color .2s; }
@@ -256,7 +258,12 @@ function tick() {
 }
 tick(); setInterval(tick, 15000);
 // ---- reading a "used of total" line into a share of one.
-function share(text) { const pair = /([\d.]+)\s*\w*\s+of\s+([\d.]+)/.exec(text || ""); return pair ? Math.min(1, parseFloat(pair[1]) / parseFloat(pair[2])) : 0; }
+// Sizes keep their units: 383M of 1007G is a sliver, not 38%.
+const UNIT = {K: 1 / 1024, M: 1, G: 1024, T: 1048576};
+function share(text) {
+  const pair = /([\d.]+)([KMGT]?)\s*\w*\s+of\s+([\d.]+)([KMGT]?)/.exec(text || "");
+  return pair ? Math.min(1, parseFloat(pair[1]) * (UNIT[pair[2]] || 1) / (parseFloat(pair[3]) * (UNIT[pair[4]] || 1))) : 0;
+}
 function meter(label, text) {
   const part = share(text);
   return h("div", {class: "meter" + (part > .85 ? " hot" : "")}, h("span", null, label), h("div", {class: "track"}, h("i", {style: "--w:" + Math.max(2, Math.round(part * 100)) + "%"})), h("small", null, text));
@@ -295,6 +302,7 @@ function linuxCard(name, named, index) {
     rethink();
   }, error => {
     body.replaceChildren(h("h2", null, name), h("p", {class: "error"}, error.message));
+    rethink();
   });
   return card;
 }
@@ -327,7 +335,7 @@ function showSaid(said, asked) {
   if (said.open) toast(said.text);
   const box = document.getElementById("said");
   if (!asked) return;
-  box.replaceChildren(h("div", {class: "said"}, said.title ? h("b", null, said.title) : null, h("p", null, said.text),
+  box.replaceChildren(h("div", {class: "said" + (said.by === "kosi" ? " kosi" : "")}, said.title ? h("b", null, said.title) : null, h("p", null, said.text),
     said.suggest.length ? h("div", {class: "chips"}, said.suggest.map(words => h("button", {type: "button", onclick: () => ask(words)}, words))) : null));
 }
 function showNotices(notices) {
@@ -336,6 +344,8 @@ function showNotices(notices) {
 }
 async function ask(text) {
   const form = document.getElementById("ask"); form.classList.add("thinking");
+  // Kosi may need a while for an open question; say so rather than sit still.
+  const waiting = text === "home" ? 0 : setTimeout(() => showSaid({title: "", text: "Thinking. An open question goes to Kosi, which can take a minute on this computer's model.", suggest: []}, true), 1500);
   try {
     const said = await post("/api/ask", {text});
     if (text === "home") {
@@ -344,7 +354,7 @@ async function ask(text) {
       showNotices(said.notices);
     } else showSaid(said, true);
   } catch (error) { if (text !== "home") showSaid({title: "", text: error.message, suggest: []}, true); }
-  finally { form.classList.remove("thinking"); }
+  finally { clearTimeout(waiting); form.classList.remove("thinking"); }
 }
 // Linux answers one by one; Maya looks again once they have settled.
 function rethink() { clearTimeout(thinking); thinking = setTimeout(() => ask("home"), 400); }
@@ -380,7 +390,10 @@ function render(home) {
   for (const name of home.linux.installed) cards.push(linuxCard(name, home.linux.named.includes(name), index++));
   const services = servicesCard(home, index++); services.id = "services"; cards.push(services);
   document.getElementById("windows").replaceChildren(...cards);
-  drawDock(home); rethink();
+  drawDock(home);
+  // With a Linux being woken, Maya looks once it has answered (see
+  // linuxCard); waking it twice at once only slows both.
+  if (!home.linux.named.some(name => home.linux.installed.includes(name))) rethink();
 }
 async function load() {
   try { render(await api("/api/home")); }

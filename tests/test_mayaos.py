@@ -117,6 +117,24 @@ class MindTests(unittest.TestCase):
         self.assertNotIn("--allow-folder", command)
         self.assertNotIn("--allow-site", command)
 
+    def test_what_maya_hands_over_is_answered_by_kosi(self) -> None:
+        maya = mayaos.Maya(linux=[], settings=Path(tempfile.gettempdir()) / "no-such-maya.json")
+        handed = {"title": "Kosi", "text": "I asked Kosi.", "notices": [], "suggest": [], "open": "", "hand": "what is 2 plus 2"}
+        asked: list[str] = []
+
+        def kosi(text: str) -> object:
+            asked.append(text)
+            return mock.Mock(text="4", suggest=("what time is it",))
+
+        with (
+            mock.patch.object(mayaos, "think", return_value=dict(handed)),
+            mock.patch.object(wsl, "distributions", return_value=[]),
+            mock.patch.object(mayaos, "reachable", return_value=""),
+        ):
+            said = maya.ask({"text": "what is 2 plus 2"}, kosi=kosi)
+        self.assertEqual(asked, ["what is 2 plus 2"])
+        self.assertEqual((said["text"], said["by"], said["suggest"]), ("4", "kosi", ["what time is it"]))
+
     def test_the_mind_passes_its_own_tests(self) -> None:
         from kosika.cli import main
 

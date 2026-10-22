@@ -49,7 +49,11 @@ MODULE = "kosika.mayaos"
 PAGE = Path(__file__).parent / "app_assets" / "mayaos.html"
 #: Maya herself: the Kosika program that decides what MayaOS says and does.
 MIND = Path(__file__).resolve().parent.parent / "mayaos" / "maya.kos"
-MIND_SECONDS = 60
+MIND_SECONDS = 150
+#: Kosi, the assistant: the folder of agents the Kosi pill uses, whose
+#: `assistant` program answers what Maya hands over.
+KOSI_AGENTS = Path(__file__).resolve().parent.parent / "examples" / "agents"
+KOSI_SECONDS = 300
 MAX_BODY = 16 * 1024
 
 
@@ -183,7 +187,9 @@ def think(msg: dict[str, Any], services: Path | None, runner: Callable[..., Any]
     each to look: this computer, the one Linux she was let read, and the
     services file. It is run as `kosika run`, as any Kosika program is."""
 
-    with tempfile.TemporaryDirectory() as work:
+    # A Linux reading may outlive a run that timed out and keep its folder
+    # busy for a moment; that must not turn an answer into a failure.
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as work:
         inputs = Path(work) / "input.json"
         inputs.write_text(json.dumps({"msg": msg}), encoding="utf-8")
         command = [sys.executable, "-m", "kosika.cli", "run", str(MIND), "--input", str(inputs),
@@ -200,7 +206,7 @@ def think(msg: dict[str, Any], services: Path | None, runner: Callable[..., Any]
         else:
             try:
                 done = subprocess.run(  # noqa: S603 - Kosika running its own program
-                    command, cwd=work, env=env, capture_output=True, text=True, encoding="utf-8",
+                    command, cwd=MIND.parent, env=env, capture_output=True, text=True, encoding="utf-8",
                     errors="replace", timeout=MIND_SECONDS, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
                 )
             except subprocess.TimeoutExpired as exc:
@@ -223,6 +229,7 @@ class Maya:
         ]
         self.token = secrets.token_urlsafe(24)
         self._lock = threading.Lock()
+        self._kosi: Any = None
         # What Linux said when last read, so Maya can be told without
         # waking every distribution again.
         self._linux_seen: dict[str, dict[str, Any]] = {}
@@ -299,7 +306,20 @@ class Maya:
             told.append(reading(name, "linux", found.get("memory"), found.get("disk"), found.get("upgrades"), name in named))
         return told
 
-    def ask(self, body: dict[str, Any], runner: Callable[..., Any] | None = None) -> dict[str, Any]:
+    def kosi(self, text: str) -> Any:
+        """What Kosi says to a request Maya handed over. Kosi is the
+        assistant program in Kosi's folder of agents, run as the Kosi pill
+        runs it: with a model on this computer if there is one, and with
+        no to anything an agent asks to change, since no one is asked here."""
+
+        if self._kosi is None:
+            from .pill import Engine, local_binder
+
+            self._kosi = Engine(KOSI_AGENTS, local_binder()[0])
+        return self._kosi.ask(text, timeout=KOSI_SECONDS)
+
+    def ask(self, body: dict[str, Any], runner: Callable[..., Any] | None = None,
+            kosi: Callable[[str], Any] | None = None) -> dict[str, Any]:
         """Put what the person said to Maya, and do what she decides: only
         ever opening one of Kosika's own apps."""
 
@@ -313,6 +333,10 @@ class Maya:
              "studio": bool(reachable("studio"))},
             self.services_file, runner, granted,
         )
+        hand = said.get("hand")
+        if isinstance(hand, str) and hand:
+            answer = (kosi or self.kosi)(hand)
+            said.update(title="Kosi", text=answer.text, suggest=list(answer.suggest), by="kosi")
         opened = said.get("open")
         if opened in ("studio", "kosi"):
             try:
@@ -401,9 +425,9 @@ def _handler(maya: Maya, port: list[int]) -> type[BaseHTTPRequestHandler]:
                     self._send(200, font, "font/ttf")
                 return
             if method == "GET" and url.path == "/favicon.ico":
-                from .desktop_app import icon_bytes
+                from .desktop_app import MAYAOS_COLOURS, icon_bytes
 
-                self._send(200, icon_bytes(), "image/x-icon")
+                self._send(200, icon_bytes(MAYAOS_COLOURS), "image/x-icon")
                 return
             if not self._allowed(query):
                 self._json(403, {"error": "This page was not opened from MayaOS."})
@@ -429,6 +453,9 @@ def _handler(maya: Maya, port: list[int]) -> type[BaseHTTPRequestHandler]:
                 self._json(exc.status, {"error": str(exc)})
             except ValueError as exc:
                 self._json(400, {"error": str(exc)})
+            except Exception as exc:  # noqa: BLE001 - the page is told, not left hanging
+                traceback.print_exc()
+                self._json(500, {"error": f"MayaOS stumbled: {exc}"})
 
         def do_GET(self) -> None:  # noqa: N802
             self._serve("GET")
