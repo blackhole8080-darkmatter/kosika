@@ -69,6 +69,8 @@ type run struct {
 	// meaning is the granted embedding model, for searching by meaning;
 	// nil when none was granted.
 	meaning *meaning
+	// agentRequest is what the agent now asked was given, as text.
+	agentRequest string
 	// check is the step's own `verify`, for the model asked now; nil when
 	// there is none.
 	check *answerCheck
@@ -522,6 +524,15 @@ func (r *run) call(call *StepCall, environment *Scope, at frame, depth, retries 
 			"expression_events", eventList(expressionEvents), "input_schema", r.checker.schemaFor(model.Input),
 			"output_schema", r.checker.schemaFor(model.Output), "max_steps", bigInt(agent.MaxSteps),
 			"changes", stringValues(r.changes(agent)), "tools", tools))
+		// What the agent is asked, for reading its plan: its text arguments,
+		// in the order given.
+		var asked []string
+		for _, key := range recorded.Keys {
+			if text, ok := recorded.Fields[key].(string); ok {
+				asked = append(asked, text)
+			}
+		}
+		r.agentRequest = strings.Join(asked, " ")
 		result := r.agent(agent, arguments)
 		returned := event("agent_return", "agent", agent.Name, "result", result, "content", r.note.content,
 			"finish_reason", "stop", "model_steps", bigInt(r.note.modelSteps), "messages", eventList(r.note.messages),
@@ -1154,8 +1165,25 @@ func (r *run) agent(agent *AgentDecl, arguments map[string]Value) Value {
 					}
 				}
 			} else {
-				r.approvePlan(changes, planned)
-				changes.done = true
+				var wrong []string
+				if changes.sentBack < planRetries {
+					wrong = r.reviewPlan(changes, planned)
+				}
+				if len(wrong) > 0 {
+					// Nothing is shown to the person and nothing happens: the
+					// model is told what is wrong and plans again.
+					changes.sentBack++
+					told := "Not done. Your plan was not shown to the person because: " + strings.Join(wrong, "; ") +
+						". Request every change again in one reply, with this put right."
+					for i := range calls {
+						if calls[i].problem == "" && r.checker.tools[calls[i].call.Name].Access == "execute" {
+							calls[i].problem = told
+						}
+					}
+				} else {
+					r.approvePlan(changes, planned)
+					changes.done = true
+				}
 			}
 		}
 		for _, item := range calls {

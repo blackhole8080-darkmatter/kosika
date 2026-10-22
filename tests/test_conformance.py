@@ -1341,6 +1341,113 @@ class NativeTests(unittest.TestCase):
                 seen[name] = outcome
         self.assertEqual(seen["native"], seen["reference"])
 
+    def test_an_agent_plan_that_writes_files_is_read_as_the_reference_reads_it(self) -> None:
+        # A stand-in model plans a Kosika file whose test fails: the plan is
+        # sent back. Then the file put right and an empty one: sent back
+        # again. The third time the plan is shown all the same, with what is
+        # still wrong. The agent's own check is asked each time.
+        bad = 'fn add(a: Number, b: Number) -> Number { return a - b }\ntest "adds" {\n  expect add(1, 2) == 3\n}\n'
+        good = 'fn add(a: Number, b: Number) -> Number { return a + b }\ntest "adds" {\n  expect add(1, 2) == 3\n}\n'
+        plans = [
+            [{"path": "calc.kos", "text": bad}],
+            [{"path": "calc.kos", "text": good}, {"path": "empty.txt", "text": "  "}],
+            [{"path": "calc.kos", "text": good}, {"path": "empty.txt", "text": "  "}, {"path": "notes.md", "text": "Plain notes"}],
+        ]
+        asked: list[dict] = []
+
+        class Server(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:  # noqa: N802 - the http.server name
+                body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                asked.append(body)
+                told = [m for m in body["messages"] if m["role"] == "tool"]
+                turn = len([m for m in body["messages"] if m["role"] == "assistant"])
+                if turn < len(plans):
+                    calls = [
+                        {"id": f"call_{turn}_{i}", "type": "function",
+                         "function": {"name": "write_file", "arguments": json.dumps(change)}}
+                        for i, change in enumerate(plans[turn])
+                    ]
+                    answer = {"choices": [{"message": {"role": "assistant", "content": "", "tool_calls": calls},
+                                           "finish_reason": "tool_calls"}]}
+                else:
+                    reply = json.dumps({"text": "done: " + str(len(told)), "did": []})
+                    answer = {"choices": [{"message": {"role": "assistant", "content": reply},
+                                           "finish_reason": "stop"}]}
+                data = json.dumps(answer).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            def log_message(self, *_: object) -> None:
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Server)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.shutdown)
+        url = f"http://127.0.0.1:{server.server_port}/v1"
+        source = (
+            "record Ask { text: Text }\nrecord Answer { text: Text did: Text[] }\n"
+            "record ReadRequest { path: Text }\nrecord FileText { text: Text }\n"
+            "record WriteRequest { path: Text text: Text }\nrecord Written { bytes: Number }\n"
+            "record PlanFile { path: Text text: Text before: Text exists: Bool }\n"
+            'tool read_file {\n  source system "files"\n  operation: "read"\n'
+            "  access: observe\n  input: ReadRequest\n  output: FileText\n}\n"
+            'tool write_file {\n  source system "files"\n  operation: "write"\n'
+            "  access: execute\n  input: WriteRequest\n  output: Written\n}\n"
+            "fn own_check(request: Text, files: PlanFile[]) -> Text[] {\n"
+            '  return for file in files where file.path == "notes.md" and not file.exists '
+            '{ "notes.md: say what changed" }\n}\n'
+            "model thinker {\n  input: Ask\n  output: Answer\n}\n"
+            "agent coder {\n  model: thinker\n  can: [read_file, write_file]\n  check: own_check\n  max_steps: 6\n}\n"
+            "workflow main(ask: Ask) -> Answer {\n  require approval\n  answer = ask coder(ask.text)\n}\n"
+        )
+        seen: dict[str, dict[str, object]] = {}
+        for name in ("reference", "native"):
+            with self.subTest(engine=name), tempfile.TemporaryDirectory() as scratch:
+                folder = Path(scratch)
+                (folder / "work").mkdir()
+                (folder / "p.kos").write_text(source, encoding="utf-8")
+                (folder / "in.json").write_text(json.dumps({"ask": {"text": "add numbers in calc.kos"}}))
+                command = [sys.executable, "-m", "kosika.cli", "run"] if name == "reference" else [str(self.engine), "run"]
+                flags = ["p.kos", "--input", "in.json", "--model", "small", "--model-url", url,
+                         "--allow-folder", "work", "--trace", "trace.jsonl",
+                         "--journal", "run.journal", "--binding-id", "here"]
+                asked.clear()
+                ran = subprocess.run([*command, *flags], cwd=folder, capture_output=True, text=True,
+                                     env={**os.environ, "PYTHONPATH": str(ROOT)})
+                self.assertEqual(ran.returncode, 3, ran.stderr)
+                request = json.loads(ran.stdout)
+                tool_answers = [
+                    [m["content"] for m in body["messages"] if m["role"] == "tool"] for body in asked
+                ]
+                written_before = sorted(path.name for path in (folder / "work").iterdir())
+                approval = {k: request[k] for k in ("plan_hash", "action_hash")}
+                (folder / "approval.json").write_text(json.dumps({**approval, "approved_by": "tester"}))
+                done = subprocess.run([*command, *flags, "--approval-record", "approval.json"], cwd=folder,
+                                      capture_output=True, text=True, env={**os.environ, "PYTHONPATH": str(ROOT)})
+                self.assertEqual(done.returncode, 0, done.stderr)
+                seen[name] = {
+                    "asked": {k: request[k] for k in ("status", "tool", "arguments", "step")},
+                    "told": tool_answers,
+                    "written": written_before,
+                    "answer": done.stdout.splitlines()[0],
+                    "files": {path.name: path.read_text(encoding="utf-8") for path in sorted((folder / "work").iterdir())},
+                }
+        self.assertEqual(seen["native"]["answer"], seen["reference"]["answer"])
+        self.assertEqual(seen["native"]["files"], seen["reference"]["files"])
+        self.assertEqual(sorted(seen["reference"]["files"]), ["calc.kos", "empty.txt", "notes.md"])
+        self.assertEqual(seen["native"]["told"], seen["reference"]["told"])
+        self.assertEqual(seen["native"]["asked"], seen["reference"]["asked"])
+        self.assertEqual(seen["reference"]["written"], [])
+        warnings = seen["reference"]["asked"]["arguments"]["warnings"]
+        self.assertIn("empty.txt: the file would be empty", warnings)
+        self.assertIn("notes.md: say what changed", warnings)
+        told = "".join(str(answer) for answer in seen["reference"]["told"])
+        self.assertIn("calc.kos: its test", told)
+        self.assertIn("fails at line 3: expected add(1, 2) == 3", told)
+
     def test_an_agent_makes_its_approved_change_as_the_reference_does(self) -> None:
         # A stand-in model asks for a change (twice over, when `second`),
         # then answers from what the change gave back. An agent that plans

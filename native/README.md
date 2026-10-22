@@ -94,9 +94,12 @@ claim is skipped by name. See `tests/test_conformance.py`.
 
 ## What it does not have yet
 
-- An agent's plan that writes files, or an agent with its own `check`:
-  the reference checks such a plan before showing it, and those checks are
-  not here yet, so such a plan is refused by name. Replaying an agent
+- An agent's plan that writes a Python file: the reference reads such a
+  file with Python's own parser before showing the plan, which this
+  engine does not carry, so such a plan is refused by name. A plan of
+  other files is read as the reference reads it: plainly wrong files, a
+  Kosika file that does not check or whose tests fail, and the agent's
+  own `check`; skills chosen by a host are not here. Replaying an agent
   run's own trace.
 - `system` tools other than files, shell, services, web and meaning
   (kosika, agents, outside, notify, linux, computer). Its search by

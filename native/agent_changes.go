@@ -69,10 +69,14 @@ type agentChanges struct {
 	// the plan was approved is given the same answers, not asked anew.
 	said []Value
 	at   int
+	// request is what the agent was asked, its text arguments in order,
+	// and sentBack how many plans with something wrong went back.
+	request  string
+	sentBack int
 }
 
 func (r *run) newAgentChanges(agent *AgentDecl) *agentChanges {
-	changes := &agentChanges{agent: agent, plans: r.plansFirst(agent), scope: append([]string{}, r.stepScope...)}
+	changes := &agentChanges{agent: agent, plans: r.plansFirst(agent), scope: append([]string{}, r.stepScope...), request: r.agentRequest}
 	if changes.plans && r.session != nil {
 		if kept, ok := r.session.remembered(changes.saidScope()).([]Value); ok {
 			changes.said = kept
@@ -162,18 +166,6 @@ func (r *run) approvePlan(changes *agentChanges, planned []plannedChange) {
 	if r.session == nil {
 		panic(&permissionError{fmt.Sprintf("Agent %s plans changes, which requires a verified approval record", pyRepr(changes.agent.Name))})
 	}
-	// The reference checks a plan's files before it shows it: their text,
-	// and the program's own check. Neither is here yet.
-	if changes.agent.Check != "" {
-		panic(&permissionError{fmt.Sprintf("kosika-native cannot check the plan of agent %s yet: an agent's own check is not built", pyRepr(changes.agent.Name))})
-	}
-	for _, change := range planned {
-		_, hasPath := change.arguments.Fields["path"].(string)
-		_, hasText := change.arguments.Fields["text"].(string)
-		if hasPath && hasText {
-			panic(&permissionError{fmt.Sprintf("kosika-native cannot check a plan that writes files yet: %s writes one", pyRepr(change.tool.Name))})
-		}
-	}
 	actions := []Value{}
 	for _, change := range planned {
 		action := newRecord()
@@ -184,6 +176,11 @@ func (r *run) approvePlan(changes *agentChanges, planned []plannedChange) {
 	wanted := newRecord()
 	wanted.set("agent", changes.agent.Name)
 	wanted.set("actions", actions)
+	// A plan that was sent back and still has something wrong is shown all
+	// the same, with what is wrong.
+	if wrong := r.reviewPlan(changes, planned); len(wrong) > 0 {
+		wanted.set("warnings", stringValues(wrong))
+	}
 	r.session.save(changes.saidScope(), "note", append([]Value{}, changes.said...))
 	changes.action = r.claim(changes, append(append([]string{}, changes.scope...), planTool), planTool, wanted)
 	changes.planned = append(changes.planned, planned...)

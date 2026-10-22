@@ -3506,6 +3506,22 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   programs with workflows, agents and tools; the guide does not teach
   those yet.
 
+### The native engine reads an agent's plan before showing it
+
+- A planning agent's plan that writes files runs in native/
+  (native/planreview.go) as in the reference: a file written twice, an
+  empty one, `\n` written for line breaks, a file that only repeats the
+  request, a Kosika file that does not check or whose tests fail, and what
+  the agent's own `check` says, send the plan back to the model, twice at
+  most; a plan still wrong is shown with its warnings.
+- A plan that writes a Python file is still refused by name: telling
+  whether text is Python needs a Python parser. Skills a host chooses are
+  not here either.
+- Held by a test in which a stand-in model plans a Kosika file whose test
+  fails, then an empty file, then a file the agent's check objects to:
+  both engines tell the model the same, ask for the same approval with the
+  same warnings, and once approved write the same files.
+
 ### Recalling by likeness, in both engines
 
 - `recall NAME like text` (kosika/memory.py `MemoryStore.like`,
