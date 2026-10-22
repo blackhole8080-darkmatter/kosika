@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kosika — Design Sheet 01</title>
+<style>
+  :root {
+    --void: #04060A; --canvas: #070A0F; --surface: #0B1017;
+    --surface-2: #0F1620; --raised: #131C27; --editor: #080C12;
+    --cyan: #22D3EE; --violet: #A78BFA; --amber: #FBBF24;
+    --lime: #4ADE80; --rose: #FB7185; --slate: #64748B;
+    --text: #D6DEE8; --dim: #8A97A6;
+    --fast: 120ms; --slow: 240ms;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--canvas); color: var(--text);
+    font: 15px/1.6 Inter, "Segoe UI Variable", system-ui, sans-serif;
+    padding: 48px 24px 96px;
+  }
+  main { max-width: 980px; margin: 0 auto; }
+  .eyebrow {
+    font: 11px/1 "JetBrains Mono", "Cascadia Code", monospace;
+    text-transform: uppercase; letter-spacing: 0.18em; color: var(--slate);
+  }
+  h1 { font-size: 34px; letter-spacing: -0.03em; margin: 8px 0 4px; }
+  h2 { font-size: 20px; letter-spacing: -0.008em; margin: 48px 0 4px; }
+  .sub { color: var(--dim); max-width: 70ch; }
+  blockquote {
+    margin: 24px 0; padding: 16px 20px; background: var(--surface);
+    border: 1px solid rgba(34,211,238,0.10); border-left: 2px solid var(--cyan);
+    border-radius: 8px; color: var(--text);
+  }
+  blockquote b.c { color: var(--cyan); } blockquote b.v { color: var(--violet); }
+  blockquote b.a { color: var(--amber); }
+  .grid { display: grid; gap: 12px; margin-top: 20px; }
+  .two { grid-template-columns: 1fr 1fr; }
+  .panel {
+    background: var(--surface); border: 1px solid rgba(34,211,238,0.10);
+    border-radius: 10px; padding: 16px;
+  }
+  .panel h3 { font-size: 13px; margin-bottom: 2px; }
+  .panel .note { font-size: 12px; color: var(--dim); margin-bottom: 12px; }
+  .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+  .sw { border-radius: 8px; overflow: hidden; border: 1px solid rgba(255,255,255,0.06); }
+  .sw .chip { height: 44px; }
+  .sw .meta { padding: 6px 8px; background: var(--editor); }
+  .sw .name, .sw .hex {
+    font: 10px/1.5 "JetBrains Mono", "Cascadia Code", monospace; display: block;
+  }
+  .sw .name { color: var(--text); } .sw .hex { color: var(--dim); }
+  table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid rgba(34,211,238,0.08); }
+  th { font: 10px/1 "JetBrains Mono", monospace; text-transform: uppercase;
+       letter-spacing: 0.14em; color: var(--dim); }
+  td.num { font: 13px/1.4 "JetBrains Mono", monospace; font-variant-numeric: tabular-nums; }
+  .dot { display: inline-block; width: 12px; height: 12px; border-radius: 4px;
+         vertical-align: -2px; margin-right: 8px; }
+  .badge { font: 10px/1 "JetBrains Mono", monospace; padding: 3px 7px; border-radius: 99px; }
+  .aaa { color: var(--lime); border: 1px solid rgba(74,222,128,0.4); }
+  .aa  { color: var(--cyan); border: 1px solid rgba(34,211,238,0.4); }
+  .aaxl{ color: var(--amber); border: 1px solid rgba(251,191,36,0.4); }
+  .fail{ color: var(--rose); border: 1px solid rgba(251,113,133,0.4); }
+  .bridge { display: grid; grid-template-columns: 130px 1fr 1fr; gap: 8px 16px;
+            margin-top: 16px; align-items: center; }
+  .bridge .role { font: 12px/1.4 "JetBrains Mono", monospace; color: var(--text); }
+  .bridge .cell { font-size: 13px; color: var(--dim); }
+  .glowrow { display: flex; gap: 16px; margin-top: 20px; }
+  .gcard { flex: 1; background: var(--surface); border-radius: 10px; padding: 18px;
+           text-align: center; font: 12px/1.5 "JetBrains Mono", monospace; }
+  .g0 { border: 1px solid rgba(34,211,238,0.10); color: var(--dim); }
+  .g1 { border: 1px solid rgba(34,211,238,0.42); color: var(--text); }
+  .g2 { border: 1px solid rgba(34,211,238,0.42); color: var(--cyan);
+        box-shadow: 0 0 18px rgba(34,211,238,0.25); animation: pulse 2.4s infinite; }
+  @keyframes pulse { 50% { box-shadow: 0 0 30px rgba(34,211,238,0.45); } }
+  @media (prefers-reduced-motion: reduce) { .g2 { animation: none; } }
+  .verdict { margin-top: 20px; padding: 14px 18px; border-radius: 8px;
+             background: var(--surface-2); font-size: 14px; }
+  .verdict b { color: var(--amber); font-weight: 600; }
+  footer { margin-top: 56px; color: var(--dim); font-size: 13px; }
+  footer ol { margin-left: 20px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="eyebrow">Kosika · Design Sheet 01 · 2026-10-16</div>
+  <h1>One doctrine, two languages</h1>
+  <p class="sub">An audit of Kosika's visual system as it stands, with the numbers
+  computed live by this page. Nothing here restyles Studio; it shows where the
+  doctrine holds and where it is silently broken.</p>
+
+  <blockquote>
+    <b class="c">Structure is cyan</b>, <b class="v">intelligence is violet</b>,
+    <b class="a">authority is amber</b>. A colour is never decoration.
+    Glow means “now”. Numbers are monospaced. Diagrams are evidence.
+    <div class="note" style="margin-top:8px;font-size:12px;color:var(--dim)">
+    — ui/README.md, the declared doctrine</div>
+  </blockquote>
+
+  <h2>1 · The two palettes</h2>
+  <p class="sub">Left: the doctrine's “lab” tokens from <code>ui/kosika.css</code>.
+  Right: what Studio actually renders — the embedded palette extracted from
+  <code>app_assets/index.html</code>. Both are coherent. Only one is declared.</p>
+  <div class="grid two">
+    <div class="panel">
+      <h3>Lab (declared)</h3>
+      <div class="note">Cool near-black glass, neon signals with named meanings</div>
+      <div class="swatches" id="lab"></div>
+    </div>
+    <div class="panel">
+      <h3>Studio (current)</h3>
+      <div class="note">Warm earth darks, coral/ember/sage accents, no stated meanings</div>
+      <div class="swatches" id="studio"></div>
+    </div>
+  </div>
+
+  <h2>2 · Contrast, measured</h2>
+  <p class="sub">WCAG ratios of each accent on its home surfaces, computed by this
+  page. <b>AA&nbsp;≥&nbsp;4.5</b> for text, <b>≥&nbsp;3.0</b> for large text and graphics.</p>
+  <table id="contrast">
+    <thead><tr><th>Colour</th><th>On surface</th><th>Ratio</th><th>Verdict</th></tr></thead>
+    <tbody></tbody>
+  </table>
+
+  <h2>3 · The bridge: fix the meaning, free the temperature</h2>
+  <p class="sub">The doctrine only legislates <em>meaning</em>. The resolution is not to
+  repaint Studio cool — it is to give Studio's accents the same semantic roles, so a
+  model is violet and an approval is amber whether the glass underneath is cool or warm.</p>
+  <div class="bridge" id="bridge">
+    <div class="role" style="color:var(--dim)">role</div>
+    <div class="cell" style="color:var(--dim)">lab</div>
+    <div class="cell" style="color:var(--dim)">studio today → proposal</div>
+  </div>
+
+  <h2>4 · Light, disciplined</h2>
+  <p class="sub">Three levels exist. Only the third may glow, and only for live state.
+  If everything glows, nothing is live.</p>
+  <div class="glowrow">
+    <div class="gcard g0">level 0 · resting<br>hairline, flat</div>
+    <div class="gcard g1">level 1 · focus<br>42% border, flat</div>
+    <div class="gcard g2">level 2 · live<br>pulse, glow</div>
+  </div>
+
+  <div class="verdict" id="verdict"></div>
+
+  <footer>
+    <div class="eyebrow" style="margin-bottom:12px">The program</div>
+    <ol>
+      <li><b>This sheet</b> — audit, agreed before any repainting.</li>
+      <li><b>Token bridge</b> — Studio's style block consumes the semantic tokens;
+        ui/README.md stops referencing the retired design.py and workbench_assets.</li>
+      <li><b>Diagram semantics</b> — Map and run diagrams colour nodes by kind:
+        violet models, amber approvals, cyan workflows.</li>
+      <li><b>Polish</b> — close the contrast gaps this page flags, add the light theme.</li>
+    </ol>
+  </footer>
+</main>
+
+<script>
+const lab = [
+  ["void","#04060A"],["canvas","#070A0F"],["surface","#0B1017"],
+  ["surface-2","#0F1620"],["raised","#131C27"],["editor","#080C12"],
+  ["cyan · structure","#22D3EE"],["violet · intelligence","#A78BFA"],
+  ["amber · authority","#FBBF24"],["lime · verified","#4ADE80"],
+  ["rose · failure","#FB7185"],["slate · inert","#64748B"],
+];
+const studio = [
+  ["deepest","#110F0E"],["canvas","#151311"],["surface","#1A1917"],
+  ["panel","#2A2824"],["raised","#2F2B26"],["line","#33312C"],
+  ["coral","#EC8377"],["ember","#E08A5F"],["sage","#6FC191"],
+  ["text-hi","#B9B4A8"],["text-mid","#A39F96"],["text-dim","#76726A"],
+];
+function swatches(id, list) {
+  document.getElementById(id).innerHTML = list.map(([n, c]) =>
+    `<div class="sw"><div class="chip" style="background:${c}"></div>
+     <div class="meta"><span class="name">${n}</span><span class="hex">${c}</span></div></div>`
+  ).join("");
+}
+swatches("lab", lab); swatches("studio", studio);
+
+function lum(hex) {
+  const v = [1,3,5].map(i => parseInt(hex.slice(i, i+2), 16) / 255)
+    .map(c => c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+  return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2];
+}
+function ratio(a, b) {
+  const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+}
+function badge(r) {
+  if (r >= 7) return '<span class="badge aaa">AAA</span>';
+  if (r >= 4.5) return '<span class="badge aa">AA</span>';
+  if (r >= 3) return '<span class="badge aaxl">large only</span>';
+  return '<span class="badge fail">fails</span>';
+}
+const pairs = [
+  ["cyan · structure","#22D3EE","canvas","#070A0F"],
+  ["violet · intelligence","#A78BFA","canvas","#070A0F"],
+  ["amber · authority","#FBBF24","canvas","#070A0F"],
+  ["lime · verified","#4ADE80","surface","#0B1017"],
+  ["rose · failure","#FB7185","surface","#0B1017"],
+  ["slate · inert","#64748B","canvas","#070A0F"],
+  ["coral (studio)","#EC8377","studio surface","#1A1917"],
+  ["ember (studio)","#E08A5F","studio surface","#1A1917"],
+  ["sage (studio)","#6FC191","studio surface","#1A1917"],
+  ["text-hi (studio)","#B9B4A8","studio canvas","#151311"],
+  ["text-dim (studio)","#76726A","studio surface","#1A1917"],
+];
+document.querySelector("#contrast tbody").innerHTML = pairs.map(([n, c, sn, s]) => {
+  const r = ratio(c, s);
+  return `<tr><td><span class="dot" style="background:${c}"></span>${n}</td>
+    <td class="num">${sn} ${s}</td><td class="num">${r.toFixed(2)} : 1</td>
+    <td>${badge(r)}</td></tr>`;
+}).join("");
+
+const bridge = [
+  ["structure", "cyan #22D3EE", "— nothing holds this role → adopt cyan"],
+  ["intelligence", "violet #A78BFA", "coral is decoration → adopt violet"],
+  ["authority", "amber #FBBF24", "ember is close in hue → repoint to amber"],
+  ["verified", "lime #4ADE80", "sage #6FC191 already means OK → keep, brighten on dark"],
+  ["failure", "rose #FB7185", "coral #EC8377 doubles as error → reserve rose"],
+  ["inert", "slate #64748B", "text-dim #76726A → check contrast, then keep"],
+];
+document.getElementById("bridge").insertAdjacentHTML("beforeend",
+  bridge.map(([r, l, s]) =>
+    `<div class="role">${r}</div><div class="cell">${l}</div><div class="cell">${s}</div>`
+  ).join(""));
+
+const fails = pairs.filter(([, c, , s]) => ratio(c, s) < 4.5);
+document.getElementById("verdict").innerHTML =
+  `<b>Audit result:</b> ${pairs.length - fails.length} of ${pairs.length} pairs pass AA. ` +
+  (fails.length
+    ? `Watch: ${fails.map(([n]) => n).join(", ")} — dim text on dark surfaces is where
+       both palettes are weakest. That is the first fix.`
+    : `Both palettes are healthy.`);
+</script>
+</body>
+</html>
