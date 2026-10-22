@@ -146,11 +146,14 @@ fn number_text(text: Text) -> Text {
 // A figure of numbers is kept only when each number is one the paper
 // itself gives: it must be found, as written, in the text the model read.
 // A model that makes a number up, or puts a name where the number goes,
-// loses that figure.
+// loses that figure. So does a curve whose heights the paper does not
+// give, and a quote that is not copied from the paper word for word.
 fn grounded(figure: Figure, source: Text) -> Bool {
   return match figure.look {
     case "numbers" { (for item in figure.items where "0123456789x×~≈<>+-$".contains(item.label.trim().take(1).lower()) and not number_text(item.label).is_empty() and source.contains(number_text(item.label)) { item }).length() == figure.items.length() }
     case "bars" { (for item in figure.items where not number_text(item.value).is_empty() and source.contains(number_text(item.value)) { item }).length() == figure.items.length() }
+    case "curve" { (for item in figure.items where (for h in item.value.replace(",", " ").words() where not source.contains(h) { h }).is_empty() { item }).length() == figure.items.length() }
+    case "quote" { (for item in figure.items where item.value.trim().length() >= 30 and source.contains(item.value.trim()) { item }).length() == figure.items.length() }
     case _ { true }
   }
 }
@@ -225,7 +228,7 @@ fn draw_curve(figure: Figure) -> Text {
     }
     let dash = if i == 0 { "" } else { " stroke-dasharray=\"7 5\"" }
     parts = parts.append(f"<polyline points=\"{points.join(\" \")}\" fill=\"none\" stroke=\"{hue(i + 2)}\" stroke-width=\"3\" stroke-linejoin=\"round\"{dash}/>")
-    parts = parts.append(f"<rect x=\"{w - 170}\" y=\"{14 + i * 18}\" width=\"14\" height=\"4\" fill=\"{hue(i + 2)}\"/><text x=\"{w - 150}\" y=\"{20 + i * 18}\" fill=\"#dfe3ff\" font-size=\"12\">{esc(item.label)}</text>")
+    parts = parts.append(f"<rect x=\"{w - 170}\" y=\"{14 + i * 18}\" width=\"14\" height=\"4\" fill=\"{hue(i + 2)}\"/><text x=\"{w - 150}\" y=\"{20 + i * 18}\" fill=\"#dfe3ff\" font-size=\"9\">{esc(item.label)}</text>")
   }
   parts = parts.append(f"<text x=\"{n(w / 2)}\" y=\"{h + 28}\" fill=\"#8a90b8\" font-size=\"12\" text-anchor=\"middle\">{esc(figure.center)} &#8594;</text></svg>")
   return parts.join("")
@@ -332,20 +335,21 @@ fn drawn(figure: Figure) -> Text {
 
 fn box(figure: Figure) -> Text {
   let span = if wide(figure.look) { " wide" } else { "" }
-  let from = if figure.section.trim().is_empty() { f"{figure.look}" } else { f"{figure.look} · {figure.section}" }
+  let from = if figure.section.trim().is_empty() { f"{figure.look}" } else { f"{figure.look} · {figure.section.take(28)}" }
   return f"<section class=\"box{span}\"><h3>{esc(figure.title)}</h3><span class=\"kind\">{esc(from)}</span>{drawn(figure)}</section>"
 }
 
 // ---------------------------------------------------------------- the page
 
 fn style() -> Text {
-  return ":root{--ink:#eef0ff;--dim:#9aa1c4;--faint:#6b7299;--line:#252b44}*{box-sizing:border-box;margin:0}body{max-width:1200px;margin:auto;padding:34px 40px;background:#0a0c16;color:var(--ink);font:14.5px/1.5 'Segoe UI',system-ui,sans-serif}.paper{border-radius:22px;padding:26px 28px;margin-bottom:28px;border:1px solid var(--line);background:#0e1120}.meta{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}.chip{font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:3px 10px;border-radius:999px;border:1px solid var(--line);color:var(--dim)}h1{font-size:28px;font-weight:800;margin-bottom:18px}h2{font-size:25px;line-height:1.2;font-weight:800;margin-bottom:4px}h2 a{color:inherit;text-decoration:none}.by{color:var(--dim);font-size:13px;margin-bottom:16px}.q{font-size:16px;color:#dfe3ff;margin-bottom:16px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.box{background:#0a0d1a;border:1px solid var(--line);border-radius:16px;padding:16px 18px;position:relative}.wide{grid-column:1/-1}.box h3{font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);font-weight:600;margin-bottom:10px;padding-right:160px}.kind{position:absolute;top:15px;right:16px;font-size:10.5px;color:var(--faint);font-family:Consolas,monospace}.flow{display:flex;align-items:stretch}.step{flex:1;padding:12px 14px;border-radius:12px;background:#0e1222;border:1px solid;font-size:13.5px}.step b{display:block;font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px}.arrow{width:28px;display:grid;place-items:center;color:#4b5280;font-size:20px}.stats{display:flex;flex-direction:column;gap:12px}.stat{display:flex;gap:14px;align-items:center}.big{font-size:30px;font-weight:800;line-height:1.1}.stat p,.when p{color:var(--dim);font-size:13px}.bar{display:grid;grid-template-columns:150px 1fr 110px;gap:10px;align-items:center;margin:7px 0;font-size:13px}.track{height:12px;border-radius:6px;background:#1a1f35;overflow:hidden}.track div{height:100%;border-radius:6px}.bar b{font-size:12.5px;text-align:right}.line{display:flex;gap:14px;border-top:2px solid #262c45;padding-top:14px}.when{flex:1;position:relative}.when i{position:absolute;top:-21px;left:0;width:12px;height:12px;border-radius:50%}.when b{font-size:13px}.gl{display:flex;flex-direction:column;gap:8px;font-size:13.5px;color:#d6daf5}.gl b{color:#fff}.name{font-size:20px;font-weight:800;margin-bottom:8px}blockquote{font-size:17px;line-height:1.45;color:#ffd08a;border-left:3px solid #ffb547;padding-left:14px;margin:4px 0}.foot{color:var(--faint);font-size:12px}"
+  return ":root{--ink:#eef0ff;--dim:#9aa1c4;--faint:#6b7299;--line:#252b44}*{box-sizing:border-box;margin:0}body{max-width:1200px;margin:auto;padding:34px 40px;background:#0a0c16;color:var(--ink);font:14.5px/1.5 'Segoe UI',system-ui,sans-serif}.paper{border-radius:22px;padding:26px 28px;margin-bottom:28px;border:1px solid var(--line);background:#0e1120}.meta{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}.chip{font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:3px 10px;border-radius:999px;border:1px solid var(--line);color:var(--dim)}h1{font-size:28px;font-weight:800;margin-bottom:18px}h2{font-size:25px;line-height:1.2;font-weight:800;margin-bottom:4px}h2 a{color:inherit;text-decoration:none}.by{color:var(--dim);font-size:13px;margin-bottom:16px}.q{font-size:16px;color:#dfe3ff;margin-bottom:16px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.box{background:#0a0d1a;border:1px solid var(--line);border-radius:16px;padding:16px 18px;position:relative}.wide{grid-column:1/-1}.box h3{font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);font-weight:600;margin-bottom:10px;padding-right:230px}.kind{position:absolute;top:15px;right:16px;font-size:10.5px;color:var(--faint);font-family:Consolas,monospace}.flow{display:flex;align-items:stretch}.step{flex:1;padding:12px 14px;border-radius:12px;background:#0e1222;border:1px solid;font-size:13.5px}.step b{display:block;font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px}.arrow{width:28px;display:grid;place-items:center;color:#4b5280;font-size:20px}.stats{display:flex;flex-direction:column;gap:12px}.stat{display:flex;gap:14px;align-items:center}.big{font-size:30px;font-weight:800;line-height:1.1}.stat p,.when p{color:var(--dim);font-size:13px}.bar{display:grid;grid-template-columns:150px 1fr 110px;gap:10px;align-items:center;margin:7px 0;font-size:13px}.track{height:12px;border-radius:6px;background:#1a1f35;overflow:hidden}.track div{height:100%;border-radius:6px}.bar b{font-size:12.5px;text-align:right}.line{display:flex;gap:14px;border-top:2px solid #262c45;padding-top:14px}.when{flex:1;position:relative}.when i{position:absolute;top:-21px;left:0;width:12px;height:12px;border-radius:50%}.when b{font-size:13px}.gl{display:flex;flex-direction:column;gap:8px;font-size:13.5px;color:#d6daf5}.gl b{color:#fff}.name{font-size:20px;font-weight:800;margin-bottom:8px}blockquote{font-size:17px;line-height:1.45;color:#ffd08a;border-left:3px solid #ffb547;padding-left:14px;margin:4px 0}.foot{color:var(--faint);font-size:12px}"
 }
 
 fn sheet_html(sheet: Sheet, i: Number) -> Text {
   let shown = for figure in sheet.drawing.figures where drawable(figure) { box(figure) }
+  let count = if shown.length() == 1 { "1 figure" } else { f"{shown.length()} figures" }
   let when = if sheet.published.is_empty() { "" } else { " · " + esc(sheet.published) }
-  return f"<article class=\"paper\" style=\"background:radial-gradient(700px 360px at 90% 0%,{hue(i)}22 0,transparent 60%),#0e1120\"><div class=\"meta\"><span class=\"chip\" style=\"color:{hue(i)};border-color:{hue(i)}66\">{esc(sheet.field)}</span><span class=\"chip\">arXiv preprint{when}</span><span class=\"chip\">{shown.length()} figures</span></div><h2><a href=\"{esc(sheet.link)}\">{esc(sheet.title)}</a></h2><div class=\"by\">{esc(sheet.authors)}</div><p class=\"q\">{esc(sheet.drawing.question)}</p><div class=\"grid\">{shown.join(\"\")}</div></article>"
+  return f"<article class=\"paper\" style=\"background:radial-gradient(700px 360px at 90% 0%,{hue(i)}22 0,transparent 60%),#0e1120\"><div class=\"meta\"><span class=\"chip\" style=\"color:{hue(i)};border-color:{hue(i)}66\">{esc(sheet.field)}</span><span class=\"chip\">arXiv preprint{when}</span><span class=\"chip\">{count}</span></div><h2><a href=\"{esc(sheet.link)}\">{esc(sheet.title)}</a></h2><div class=\"by\">{esc(sheet.authors)}</div><p class=\"q\">{esc(sheet.drawing.question)}</p><div class=\"grid\">{shown.join(\"\")}</div></article>"
 }
 
 // A whole page: one block of figures for each paper.
@@ -397,6 +401,14 @@ test "a number the paper does not give is not drawn" {
   expect grounded(good, source)
   expect not grounded(made_up, source)
   expect not grounded(name, source)
+  shape: Figure = {look: Look.curve, title: "", section: "", center: "", items: [{label: "made up", value: "1 5 9", note: "", group: ""}]}
+  read: Figure = {look: Look.curve, title: "", section: "", center: "", items: [{label: "from paper", value: "3.1 69", note: "", group: ""}]}
+  copied: Figure = {look: Look.quote, title: "", section: "", center: "", items: [{label: "", value: "Peak flux rises by a factor of 3.1", note: "", group: ""}]}
+  short: Figure = {look: Look.quote, title: "", section: "", center: "", items: [{label: "", value: "Higher SNR", note: "", group: ""}]}
+  expect not grounded(shape, source)
+  expect grounded(read, source)
+  expect grounded(copied, source)
+  expect not grounded(short, source)
 }
 
 test "the page draws each kind" {

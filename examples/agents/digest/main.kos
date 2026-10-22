@@ -114,6 +114,8 @@ model tutor {
 
 // What the illustrator is given: how to draw, and one paper to read.
 record Study { task: Text title: Text text: Text }
+// A second try, with what the first one gave.
+record Again { study: Study first: Drawing }
 
 model illustrator {
   input: Study
@@ -385,6 +387,11 @@ fn study_of(paper: Paper, page: Page) -> Study {
   return {task: draw_task(), title: paper.title, text: paper_text(paper, page)}
 }
 
+fn again_task(first: Drawing) -> Text {
+  let kept = (for figure in first.figures { f"{figure.look}" }).join(", ")
+  return draw_task() + f" Your first answer gave only {first.figures.length()} usable figures ({kept}). Give five to seven this time, of at least four different kinds, each filled completely. A numbers or bars figure is dropped unless every number appears in the paper exactly as written, and its label must be the number itself."
+}
+
 // Only the figures whose numbers the paper really gives.
 fn checked(drawing: Drawing, text: Text) -> Drawing {
   return {question: drawing.question, figures: for figure in drawing.figures where grounded(figure, text) { figure }}
@@ -557,7 +564,23 @@ workflow read_and_draw(paper: Paper) -> Drawing {
   page    = part_page([p1, p2, p3, p4, p5])
   text    = paper_text(paper, page)
   raw     = use_model illustrator(draw_task(), paper.title, text) retry 1 otherwise no_drawing()
-  drawing = checked(raw, text)
+  first   = checked(raw, text)
+  drawing = call fuller({study: {task: again_task(first), title: paper.title, text: text}, first: first})
+}
+
+// Too few good figures, and the model is asked once more, told which
+// were kept and why some were not; the better of the two is drawn.
+workflow fuller(again: Again) -> Drawing {
+  drawing = match again.first.figures.length() >= 4 {
+    case true { again.first }
+    case _ { call redraw(again) }
+  }
+}
+
+workflow redraw(again: Again) -> Drawing {
+  raw     = use_model illustrator(again.study.task, again.study.title, again.study.text) retry 1 otherwise no_drawing()
+  second  = checked(raw, again.study.text)
+  drawing = if second.figures.length() > again.first.figures.length() { second } else { again.first }
 }
 
 // One part of a page; past the end, nothing is fetched.
