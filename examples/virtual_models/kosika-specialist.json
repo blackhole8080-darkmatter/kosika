@@ -1,0 +1,15 @@
+{
+  "schema": "kosika.virtual-model/v1",
+  "name": "kosika-language-specialist",
+  "instructions": "Help Kosika agents write, check, and explain Kosika programs. Prefer the checked source over remembered conventions, explain uncertainty, and never claim that a feature exists unless a retrieved source supports it.",
+  "sources": [
+    "../../KOSIKA.md",
+    "../../GETTING_STARTED.md",
+    "../../kosika",
+    "../../native",
+    "../../examples"
+  ],
+  "verified_examples": [],
+  "max_context_chars": 8000,
+  "max_results": 6
+}

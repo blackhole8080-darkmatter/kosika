@@ -1,0 +1,7 @@
+{
+  "request": {
+    "task": "Repair main so that it returns exactly twice the input number, including zero and negative inputs. Keep the In and Out records and the main(input: In) -> Out interface.",
+    "source": "record In { n: Number }\nrecord Out { twice: Number }\nfn solve(input: In) -> Out { return {twice: input.n + 2} }\nworkflow main(input: In) -> Out { result = solve(input) }\ntest \"original weak example\" { r = main({n: 2}) expect r.twice == 4 }\n",
+    "acceptance": "test \"caller positive input\" { r = main({n: 7}) expect r.twice == 14 }\ntest \"caller zero boundary\" { r = main({n: 0}) expect r.twice == 0 }\ntest \"caller negative input\" { r = main({n: -3}) expect r.twice == -6 }\n"
+  }
+}

@@ -95,7 +95,7 @@ from .network import (
 )
 from .project_analysis import ProjectAnalysisError, analyze_python_project
 from .runtime import MockMCP, replay, run
-from .schema import schema_for_record, schema_for_tool_input, schemas_equal
+from .schema import schema_for_tool_input, schema_for_type, schemas_equal
 from .skills import (
     SKILLS_FOLDER,
     SkillCatalog,
@@ -112,6 +112,7 @@ from .source_map import to_mermaid as render_source_map_mermaid
 from .source_map import to_text as render_source_map_text
 from .synapse_bridge import normalize_events
 from .system_tools import bind_system_tools
+from .tracing import start as start_tracing
 
 
 def command_metavar(subparsers: Any) -> str:
@@ -368,14 +369,14 @@ def _run_agent_command(
                     declaration.operation,
                     arguments,
                     input_schema=input_schema,
-                    output_schema=schema_for_record(program, declaration.output),
+                    output_schema=schema_for_type(program, declaration.output),
                 )
             if tool_fixture is not None:
                 return _agent_tool_fixture_result(tool_fixture, declaration)
             return MockMCP().call(declaration.source, declaration.operation)
 
         try:
-            provider = (
+            provider: Any = (
                 _agent_model_fixture(args.model_fixture, model_name)
                 if args.model_fixture is not None
                 else OpenAICompatibleProvider(
@@ -384,6 +385,10 @@ def _run_agent_command(
                     api_key=os.environ.get("KOSIKA_MODEL_API_KEY"),
                 )
             )
+            if args.virtual_model is not None:
+                from .virtual_model import VirtualModelProvider
+
+                provider = VirtualModelProvider(provider, args.virtual_model)
         except (OSError, TypeError, ValueError) as exc:
             print(f"Agent fixture failed safely: {exc}", file=sys.stderr)
             return 2
@@ -890,6 +895,44 @@ def _publish_run_events(
     normalized = normalize_events(raw_events)
     write_event_jsonl(args.event_trace, normalized)
     return normalized
+
+
+def lesson_census(trace: Path) -> dict[str, Any] | None:
+    """Count model answers by whether they came from kept lessons or a live model.
+
+    Reads a completed trace and returns counts of ``model_return`` events:
+    total, answered from lessons (broken down by ``how``: same / close /
+    examples), and answered by a live model. Returns None when the trace has
+    no model steps.
+    """
+    total = 0
+    from_lessons = 0
+    how_counts: dict[str, int] = {}
+    live_model = 0
+    try:
+        events = read_jsonl(trace)
+    except (OSError, ValueError):
+        return None
+    for event in events:
+        if not isinstance(event, dict) or event.get("event") != "model_return":
+            continue
+        total += 1
+        learned = event.get("learned")
+        if isinstance(learned, dict):
+            from_lessons += 1
+            how = learned.get("how", "unknown")
+            how_counts[how] = how_counts.get(how, 0) + 1
+        else:
+            live_model += 1
+    if total == 0:
+        return None
+    return {
+        "total": total,
+        "from_lessons": from_lessons,
+        "live_model": live_model,
+        "lesson_ratio": round(from_lessons / total, 4),
+        "how": how_counts,
+    }
 
 
 def _run_model_benchmark(args: argparse.Namespace, cases: list) -> int:
@@ -1693,6 +1736,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     agent_parser.add_argument("--mcp-source", default="local_stdio")
     agent_parser.add_argument(
+        "--virtual-model",
+        type=Path,
+        metavar="PROFILE",
+        help=(
+            "Answer through a virtual-model profile: the model is given the "
+            "profile's own sources and verified examples, and its tools are "
+            "unchanged."
+        ),
+    )
+    agent_parser.add_argument(
         "--approval-plan-hash",
         help="Plan hash approved for execute-capability tools.",
     )
@@ -2026,6 +2079,29 @@ def build_parser() -> argparse.ArgumentParser:
     )
     measure_parser.add_argument("--only", help="Run only the eval with this name.")
     measure_parser.add_argument("--json", action="store_true")
+    learn_eval_parser = subparsers.add_parser(
+        "learn-eval",
+        help=(
+            "Run a program's tasks once with scripted model answers, then "
+            "again from what it learned, and report both."
+        ),
+    )
+    learn_eval_parser.add_argument("source", type=Path)
+    learn_eval_parser.add_argument(
+        "--tasks", type=Path, required=True, help="The JSON task file to run."
+    )
+    learn_eval_parser.add_argument(
+        "--output",
+        type=Path,
+        required=True,
+        help="A new folder to keep the traces, the memory and the report in.",
+    )
+    learn_eval_parser.add_argument(
+        "--format",
+        choices=("text", "json"),
+        default="text",
+        help="Output format.",
+    )
     journal_parser = subparsers.add_parser(
         "journal",
         help="Inspect a durable Kosika workflow or direct-agent journal.",
@@ -2115,6 +2191,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print the structured diff as JSON instead of a human-readable summary.",
     )
 
+    virtual_model_parser = subparsers.add_parser(
+        "virtual-model",
+        help="Review and keep the verified examples of a virtual-model profile.",
+    )
+    virtual_model_commands = virtual_model_parser.add_subparsers(
+        dest="virtual_model_command", required=True
+    )
+    virtual_model_add = virtual_model_commands.add_parser(
+        "add-example",
+        help=(
+            "Check one proposed example against the profile's own sources, "
+            "show it, and save it only if you say yes."
+        ),
+    )
+    virtual_model_add.add_argument("profile", type=Path)
+    virtual_model_add.add_argument("candidate", type=Path)
     component_parser = subparsers.add_parser(
         "component",
         help="Validate a pinned cross-language component contract.",
@@ -2166,6 +2258,16 @@ def _outside_settings() -> tuple[tuple[str, ...], Path | None]:
 
 
 def main() -> int:
+    # Tracing, when RESPAN_API_KEY is set, begins before any model is asked
+    # anything; without the key this does nothing at all (kosika/tracing.py).
+    start_tracing()
+    # A console that cannot show a character (Windows' cp1252 and a test
+    # named with a typographic dash) shows a stand-in rather than crashing.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")  # type: ignore[union-attr]
+        except (AttributeError, ValueError):
+            pass
     parser = build_parser()
     args = parser.parse_args()
     if args.command == "start":
@@ -2657,6 +2759,57 @@ def main() -> int:
         except (SkillCatalogError, SkillRoutingError) as exc:
             print(f"Skill selection failed safely: {exc}", file=sys.stderr)
             return 2
+    if args.command == "virtual-model":
+        from .virtual_model import (
+            accept_verified_example,
+            read_example_candidate,
+            review_example_candidate,
+        )
+
+        try:
+            candidate = read_example_candidate(args.candidate)
+            example, digest, source_identity = review_example_candidate(
+                args.profile, candidate
+            )
+        except (OSError, TypeError, ValueError) as exc:
+            print(f"Example not reviewed: {exc}", file=sys.stderr)
+            return 2
+        if not sys.stdin.isatty():
+            print(
+                "Example not reviewed: this needs an interactive terminal, so "
+                "you can read the example before it is saved.",
+                file=sys.stderr,
+            )
+            return 2
+        print("Proposed verified example:")
+        print(f"  task   : {example.task}")
+        print(f"  answer : {example.answer}")
+        for reference in example.evidence:
+            print(f"  source : {reference.source}:{reference.line}")
+            print(f"           {reference.quote}")
+        try:
+            answer = input("Save this example to the profile? [y/N] ")
+        except EOFError:
+            answer = ""
+        if answer.strip().lower() not in ("y", "yes"):
+            print("Profile not changed.")
+            return 1
+        try:
+            kept = accept_verified_example(
+                args.profile,
+                candidate,
+                expected_profile_digest=digest,
+                expected_source_identity=source_identity,
+            )
+        except (OSError, TypeError, ValueError) as exc:
+            print(f"Example not saved: {exc}", file=sys.stderr)
+            return 2
+        print(
+            f"Accepted and saved. The profile now has {kept} verified "
+            f"example{'' if kept == 1 else 's'}."
+        )
+        return 0
+
     if args.command == "agent":
         return _run_agent_command(args, parser)
     if args.command == "component":
@@ -3111,6 +3264,31 @@ def main() -> int:
         )
         return 0
 
+    if args.command == "learn-eval":
+        from .learning_evaluation import (
+            LearningEvaluationError,
+            evaluate_learning,
+            report_to_text,
+        )
+
+        try:
+            learned = evaluate_learning(args.source, args.tasks, args.output)
+        except LearningEvaluationError as exc:
+            print(f"Learn evaluation rejected: {exc}", file=sys.stderr)
+            return 2
+        except FileExistsError as exc:
+            print(f"Learn evaluation refused: {exc}", file=sys.stderr)
+            return 2
+        except (ValueError, OSError) as exc:
+            print(f"Learn evaluation failed: {exc}", file=sys.stderr)
+            return 2
+        if args.format == "json":
+            print(json.dumps(learned, indent=2, sort_keys=True))
+        else:
+            print(report_to_text(learned))
+        passed = learned["cold_passed"] == learned["tasks"] == learned["warm_passed"]
+        return 0 if passed else 1
+
     if args.command == "test":
         from .testing import run_tests
         from .testing import to_text as tests_to_text
@@ -3545,6 +3723,19 @@ def main() -> int:
         Path(str(args.journal) + ".lock.sqlite").unlink(missing_ok=True)
     print(run_result)
     print(f"Trace: {args.trace}")
+    census = lesson_census(args.trace)
+    if census is not None:
+        print(
+            "Lesson census: "
+            f"{census['from_lessons']}/{census['total']} model answers from lessons "
+            f"({census['lesson_ratio']:.1%}); "
+            f"{census['live_model']} from live model. "
+            + (
+                "by how: " + ", ".join(f"{k}={v}" for k, v in sorted(census["how"].items()))
+                if census["how"]
+                else ""
+            )
+        )
     return 0
 
 

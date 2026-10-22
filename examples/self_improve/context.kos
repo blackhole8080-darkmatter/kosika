@@ -1,0 +1,215 @@
+// Pure lexical context selection: no models, tools, memory, or filesystem.
+// Relevance is the number of distinct significant question terms in the text,
+// not semantic similarity. Equal scores retain input order. The first passage
+// with a nonblank id and text wins each exact id, even if it is not relevant
+// or cannot fit. Original ids and text are never normalized in the result.
+// Rendering is [id]\ntext with two newlines between whole passages. The full
+// rendering must fit the nonnegative character budget; no passage is cut.
+// No candidate/token cap is added; the host's normal execution budgets apply.
+
+record Passage { id: Text text: Text }
+record ContextRequest { question: Text passages: Passage[] limit: Number }
+record Context { question: Text passages: Passage[] text: Text supplied: Number selected: Number characters: Number }
+
+record RankedContextPassage { passage: Passage rank: Number }
+
+// Explicit modest stopwords. In particular, no, not, nor, never, contractions,
+// and all numeric terms remain significant. ASCII punctuation and common
+// typographic punctuation separate terms; apostrophes are removed so don't and
+// don’t match. Scan by position rather than words()/chars(), which cap at 512.
+fn context_terms(text: Text) -> Text[] {
+  let stopwords: Text[] = ["a", "an", "the", "and", "or", "of", "to", "in", "on", "at", "by", "for", "from", "with", "as", "is", "are", "was", "were", "be", "been", "being", "it", "its", "this", "that", "these", "those", "i", "we", "you", "they", "what", "which", "who", "how", "why", "when", "where", "do", "does", "did", "please"]
+  let punctuation = ".,!?;:()[]{}<>/\\|\"`~@#$%^&*-_+=–—…“”«»，。！？：；、"
+  let normalized = text.lower().replace("'", "").replace("’", "").replace("‘", "") + " "
+  var terms: Text[] = []
+  var term = ""
+  var position = 0
+  while position < normalized.length() {
+    let character = normalized.slice(position, position + 1)
+    if character.trim().is_empty() or punctuation.contains(character) {
+      if not term.is_empty() and not stopwords.contains(term) and not terms.contains(term) {
+        terms = terms.append(term)
+      }
+      term = ""
+    } else {
+      term = term + character
+    }
+    position += 1
+  }
+  return terms
+}
+
+fn select_context(request: ContextRequest) -> Context {
+  let terms = context_terms(request.question)
+  let budget = request.limit.max(0)
+  var chosen: Passage[] = []
+  var rendered = ""
+  if budget > 0 and not terms.is_empty() {
+    var seen: Text[] = []
+    var ranked: RankedContextPassage[] = []
+    for passage in request.passages {
+      if passage.id.trim().is_empty() or passage.text.trim().is_empty() { continue }
+      if seen.contains(passage.id) { continue }
+      seen = seen.append(passage.id)
+      let evidence_terms = context_terms(passage.text)
+      var score = 0
+      for term in terms {
+        if evidence_terms.contains(term) { score += 1 }
+      }
+      if score > 0 {
+        let candidate: RankedContextPassage = {passage: passage, rank: -score}
+        ranked = ranked.append(candidate)
+      }
+    }
+    // Sorting negative scores ascending preserves original order within ties;
+    // reversing an ascending positive-score sort would reverse ties as well.
+    for candidate in ranked.sort_by(field: "rank") {
+      let passage = candidate.passage
+      let separator = if chosen.is_empty() { "" } else { "\n\n" }
+      let addition = separator + "[" + passage.id + "]\n" + passage.text
+      if rendered.length() + addition.length() <= budget {
+        chosen = chosen.append(passage)
+        rendered = rendered + addition
+      }
+    }
+  }
+  return {question: request.question, passages: chosen, text: rendered, supplied: request.passages.length(), selected: chosen.length(), characters: rendered.length()}
+}
+
+workflow compact(request: ContextRequest) -> Context {
+  result = select_context(request)
+}
+
+export [Passage, ContextRequest, Context, select_context]
+
+test "most relevant distinct-term overlap comes first" {
+  result = compact({question: "cache retry timeout", passages: [{id: "one", text: "cache cache cache cache"}, {id: "two", text: "cache retry"}, {id: "three", text: "timeout retry cache"}], limit: 200})
+  expect result.passages[0].id == "three"
+  expect result.passages[1].id == "two"
+  expect result.passages[2].id == "one"
+  expect result.selected == 3
+  expect result.supplied == 3
+  expect result.text == "[three]\ntimeout retry cache\n\n[two]\ncache retry\n\n[one]\ncache cache cache cache"
+  expect result.characters == result.text.length()
+}
+
+test "ties retain original order deterministically" {
+  first = compact({question: "cache", passages: [{id: "z", text: "cache first"}, {id: "a", text: "cache second"}, {id: "m", text: "cache third"}], limit: 100})
+  second = compact({question: "cache", passages: [{id: "z", text: "cache first"}, {id: "a", text: "cache second"}, {id: "m", text: "cache third"}], limit: 100})
+  expect first.passages[0].id == "z"
+  expect first.passages[1].id == "a"
+  expect first.passages[2].id == "m"
+  expect first == second
+}
+
+test "empty unrelated and duplicate records do not become evidence" {
+  result = compact({question: "cache", passages: [{id: "", text: "cache"}, {id: "   ", text: "cache"}, {id: "blank", text: " \n\t"}, {id: "other", text: "database only"}, {id: "same", text: "Cache: original evidence."}, {id: "same", text: "cache replacement"}, {id: "blank", text: "cache recovered"}], limit: 200})
+  expect result.supplied == 7
+  expect result.selected == 2
+  expect result.passages[0].id == "same"
+  expect result.passages[0].text == "Cache: original evidence."
+  expect result.passages[1].id == "blank"
+  expect result.passages[1].text == "cache recovered"
+  expect not result.text.contains("replacement")
+}
+
+test "the first valid exact id is authoritative even when unrelated" {
+  result = compact({question: "cache", passages: [{id: "same", text: "unrelated"}, {id: "same", text: "cache"}], limit: 100})
+  expect result.supplied == 2
+  expect result.selected == 0
+  expect result.passages == []
+  expect result.text == ""
+  expect result.characters == 0
+}
+
+test "oversized highest relevance is skipped without blocking useful evidence" {
+  result = compact({question: "cache retry", passages: [{id: "large", text: "cache retry cache retry cache retry"}, {id: "s", text: "cache"}], limit: 9})
+  expect result.selected == 1
+  expect result.passages[0].id == "s"
+  expect result.passages[0].text == "cache"
+  expect result.text == "[s]\ncache"
+  expect result.characters == 9
+}
+
+test "zero negative and tiny budgets produce no partial passages" {
+  zero = compact({question: "cache", passages: [{id: "s", text: "cache"}], limit: 0})
+  negative = compact({question: "cache", passages: [{id: "s", text: "cache"}], limit: -10})
+  tiny = compact({question: "cache", passages: [{id: "s", text: "cache"}], limit: 1})
+  expect zero.selected == 0
+  expect negative.selected == 0
+  expect tiny.selected == 0
+  expect zero.text == ""
+  expect negative.text == ""
+  expect tiny.text == ""
+  expect zero.characters == 0
+  expect negative.characters == 0
+  expect tiny.characters == 0
+  expect negative.supplied == 1
+}
+
+test "budget counts id brackets and newline rather than only passage text" {
+  short = compact({question: "cache", passages: [{id: "s", text: "cache"}], limit: 8})
+  exact = compact({question: "cache", passages: [{id: "s", text: "cache"}], limit: 9})
+  expect short.selected == 0
+  expect short.characters == 0
+  expect exact.selected == 1
+  expect exact.characters == 9
+}
+
+test "budget includes separators between selected passages" {
+  short = compact({question: "x", passages: [{id: "a", text: "x"}, {id: "b", text: "x"}], limit: 11})
+  exact = compact({question: "x", passages: [{id: "a", text: "x"}, {id: "b", text: "x"}], limit: 12})
+  expect short.selected == 1
+  expect short.text == "[a]\nx"
+  expect short.characters == 5
+  expect exact.selected == 2
+  expect exact.text == "[a]\nx\n\n[b]\nx"
+  expect exact.characters == 12
+}
+
+test "selected records retain original whitespace punctuation and case" {
+  result = compact({question: "CACHE retry", passages: [{id: " source.ts:7 ", text: "  Cache.RETRY();\n\t// Evidence!  "}], limit: 100})
+  expect result.question == "CACHE retry"
+  expect result.passages[0].id == " source.ts:7 "
+  expect result.passages[0].text == "  Cache.RETRY();\n\t// Evidence!  "
+  expect result.text == "[ source.ts:7 ]\n  Cache.RETRY();\n\t// Evidence!  "
+  expect result.characters == result.text.length()
+}
+
+test "blank punctuation and stopword-only questions supply no context" {
+  blank = compact({question: " \n\t", passages: [{id: "a", text: "cache"}], limit: 100})
+  marks = compact({question: "!?...—()", passages: [{id: "a", text: "cache"}], limit: 100})
+  stops = compact({question: "What is the and of a?", passages: [{id: "a", text: "the and is what"}], limit: 100})
+  expect blank.selected == 0
+  expect marks.selected == 0
+  expect stops.selected == 0
+  expect blank.text == ""
+  expect marks.text == ""
+  expect stops.text == ""
+  expect stops.supplied == 1
+}
+
+test "punctuation normalizes and numeric terms and negation stay significant" {
+  result = compact({question: "NOT: 404; don't RETRY?", passages: [{id: "number", text: "HTTP (404)."}, {id: "negative", text: "not"}, {id: "contraction", text: "Don’t."}, {id: "substring", text: "14040 retrying notice"}], limit: 100})
+  expect result.selected == 3
+  expect result.passages[0].id == "number"
+  expect result.passages[1].id == "negative"
+  expect result.passages[2].id == "contraction"
+}
+
+test "no passages still reports the original question and zero counts" {
+  result = compact({question: "cache", passages: [], limit: 100})
+  expect result.question == "cache"
+  expect result.supplied == 0
+  expect result.selected == 0
+  expect result.passages == []
+  expect result.text == ""
+  expect result.characters == 0
+}
+
+test "long evidence is not subject to the words or chars method caps" {
+  result = compact({question: "cache", passages: [{id: "long", text: "cache ".repeat(600)}], limit: 4000})
+  expect result.selected == 1
+  expect result.passages[0].text == "cache ".repeat(600)
+  expect result.characters == 3607
+}

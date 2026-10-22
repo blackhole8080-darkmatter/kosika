@@ -1,0 +1,332 @@
+// Returns a proposed program; never writes to the caller's project.
+// Acceptance belongs to the caller and is prepended verbatim on every check.
+// Passing these tests is evidence, not proof of the full task specification.
+// The checker reports at most 30 tests. Only reports below 30 are accepted;
+// a report at that ceiling cannot prove that every declared test was reported.
+export [DevelopmentRequest, DevelopmentResult, main]
+
+record DevelopmentRequest { task: Text source: Text acceptance: Text }
+record DevelopmentResult { source: Text accepted: Bool attempts: Number tests: Number passed: Number problem: Text }
+record RepairPrompt { text: Text }
+record RepairSource { source: Text }
+record Checked { ok: Bool problem: Text tests: Number passed: Number }
+record DevelopmentState { result: DevelopmentResult halted: Bool }
+record Candidate { source: Text attempts: Number }
+
+model repairer {
+  input: RepairPrompt
+  output: RepairSource
+  parameters: { max_output_tokens: 2000 }
+}
+
+tool check_program {
+  source system "kosika"
+  operation: "check"
+  access: observe
+  input: RepairSource
+  output: Checked
+}
+
+agent checker {
+  can: [check_program]
+  max_steps: 1
+}
+
+// Advisory lexical screening, not a replacement for Kosika's parser. Count
+// top-level test keywords followed by a quoted name, ignoring strings and //
+// comments. This also prevents a comment or quoted example from qualifying.
+fn test_declarations(text: Text) -> Number {
+  var count = 0
+  var depth = 0
+  var quoted = false
+  var escaped = false
+  var comment = false
+  var word = ""
+  var pending = false
+  for i in 0 until text.length() {
+    let char = text.slice(i, i + 1)
+    if comment {
+      if char == "\n" { comment = false }
+    } else if quoted {
+      if escaped { escaped = false }
+      else if char == "\\" { escaped = true }
+      else if char == "\"" { quoted = false }
+    } else if char == "/" and text.slice(i, i + 2) == "//" {
+      if not word.is_empty() { pending = word == "test" }
+      word = ""
+      comment = true
+    } else if char == "\"" {
+      if depth == 0 and (word == "test" or pending) { count = count + 1 }
+      quoted = true
+      word = ""
+      pending = false
+    } else if "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_".contains(char) {
+      if word.is_empty() { pending = false }
+      word = word + char
+    } else if char == " " or char == "\t" or char == "\r" or char == "\n" {
+      if not word.is_empty() { pending = word == "test" }
+      word = ""
+    } else {
+      if char == "{" { depth = depth + 1 }
+      if char == "}" { depth = depth - 1 }
+      word = ""
+      pending = false
+    }
+  }
+  return count
+}
+
+fn input_problem(request: DevelopmentRequest) -> Text {
+  if request.task.trim().is_empty() { return "A nonblank task is required; no repair was requested." }
+  if test_declarations(request.acceptance) == 0 { return "Caller-owned acceptance must contain a test declaration; model-written tests cannot replace it." }
+  return ""
+}
+
+fn initial_state(request: DevelopmentRequest) -> DevelopmentState {
+  let problem = input_problem(request)
+  return {result: {source: request.source, accepted: false, attempts: 0, tests: 0, passed: 0, problem: problem}, halted: not problem.is_empty()}
+}
+
+fn keep(state: DevelopmentState) -> DevelopmentState {
+  return state
+}
+
+fn finished(state: DevelopmentState) -> Bool {
+  return state.halted or state.result.accepted
+}
+
+fn check_unavailable() -> Checked {
+  // Negative counts are an internal sentinel, never reported as test counts.
+  return {ok: false, problem: "Checker tool failed; the candidate was not verified.", tests: -1, passed: 0}
+}
+
+fn checked_state(request: DevelopmentRequest, source: Text, attempts: Number, checked: Checked) -> DevelopmentState {
+  if checked.tests < 0 {
+    return {result: {source: source, accepted: false, attempts: attempts, tests: 0, passed: 0, problem: checked.problem}, halted: true}
+  }
+  let combined = request.acceptance + "\n" + source
+  let expected = test_declarations(source) + test_declarations(request.acceptance)
+  let acceptance_reached = test_declarations(combined) == expected and checked.tests == expected and expected > 0
+  let accepted = checked.ok and acceptance_reached and checked.tests > 0 and checked.tests < 30 and checked.passed == checked.tests
+  var problem = checked.problem
+  if checked.tests >= 30 {
+    problem = "Checker report ceiling reached (30 tests); completeness cannot be confirmed. " + checked.problem
+  }
+  if not accepted and problem.is_empty() {
+    problem = "The checker did not confirm every declared test, including the caller-owned acceptance tests, passed."
+  }
+  return {result: {source: source, accepted: accepted, attempts: attempts, tests: checked.tests, passed: checked.passed, problem: problem}, halted: false}
+}
+
+fn code_to_check(request: DevelopmentRequest, source: Text) -> RepairSource {
+  return {source: request.acceptance + "\n" + source}
+}
+
+workflow check_candidate(request: DevelopmentRequest, candidate: Candidate) -> DevelopmentState {
+  combined = code_to_check(request, candidate.source)
+  checked = execute checker.check_program(combined.source) otherwise check_unavailable()
+  result = checked_state(request, candidate.source, candidate.attempts, checked)
+}
+
+fn repair_prompt(request: DevelopmentRequest, state: DevelopmentState) -> RepairPrompt {
+  return {text: "Repair the Kosika source below to satisfy TASK. Return one JSON object with source containing only the complete corrected program. Do not copy section labels, prompts, Markdown fences or explanations into source. Keep each declaration once and change only what is needed. Caller acceptance tests are separate, immutable, and checked before your program; do not replace or bypass them. The source is your syntax example.\n\nTASK\n" + request.task + "\n\nCHECKER REJECTION\n" + state.result.problem + "\n\nBEGIN SOURCE\n" + state.result.source + "\nEND SOURCE\n\nReturn the corrected program in source."}
+}
+
+fn empty_repair(state: DevelopmentState) -> DevelopmentState {
+  return {result: {source: state.result.source, accepted: false, attempts: state.result.attempts + 1, tests: state.result.tests, passed: state.result.passed, problem: "Repairer failed or returned no source; the last candidate is retained and remains unaccepted."}, halted: true}
+}
+
+fn original_candidate(request: DevelopmentRequest) -> Candidate {
+  return {source: request.source, attempts: 0}
+}
+
+fn repaired_candidate(state: DevelopmentState, code: RepairSource) -> Candidate {
+  return {source: code.source, attempts: state.result.attempts + 1}
+}
+
+workflow propose(request: DevelopmentRequest, state: DevelopmentState) -> DevelopmentState {
+  prompt = repair_prompt(request, state)
+  code = use_model repairer(prompt.text) otherwise {source: ""}
+  candidate = repaired_candidate(state, code)
+  result = match code.source.trim().is_empty() {
+    case true { empty_repair(state) }
+    case _ { call check_candidate(request, candidate) }
+  }
+}
+
+fn development_result(state: DevelopmentState) -> DevelopmentResult {
+  return state.result
+}
+
+workflow main(request: DevelopmentRequest) -> DevelopmentResult {
+  budget 2 model calls, 180 seconds
+  initial = initial_state(request)
+  candidate = original_candidate(request)
+  original = match initial.halted {
+    case true { keep(initial) }
+    case _ { call check_candidate(request, candidate) }
+  }
+  first = match finished(original) {
+    case true { keep(original) }
+    case _ { call propose(request, original) }
+  }
+  second = match finished(first) {
+    case true { keep(first) }
+    case _ { call propose(request, first) }
+  }
+  result = development_result(second)
+}
+
+// Fixtures are complete programs. These tests use the REAL system checker
+// unless an explicit answers check_program script is present.
+fn correct_source() -> Text {
+  return "record In { n: Number }\nrecord Out { twice: Number }\nfn solve(input: In) -> Out { return {twice: input.n * 2} }\nworkflow main(input: In) -> Out { result = solve(input) }\n"
+}
+
+fn weak_source() -> Text {
+  return "record In { n: Number }\nrecord Out { twice: Number }\nfn solve(input: In) -> Out { return {twice: input.n + 2} }\nworkflow main(input: In) -> Out { result = solve(input) }\ntest \"weak own test\" { a = main({n: 2}) expect a.twice == 4 }\n"
+}
+
+fn caller_acceptance() -> Text {
+  return "\n// caller-owned; retain exactly\ntest \"caller doubles five\" { a = main({n: 5}) expect a.twice == 10 }\n"
+}
+
+test "already correct source passes caller tests with no model connected" {
+  a = main({task: "Double n", source: correct_source(), acceptance: caller_acceptance()})
+  expect a.accepted
+  expect a.source == correct_source()
+  expect a.attempts == 0
+  expect a.tests == 1
+  expect a.passed == 1
+  expect a.problem == ""
+}
+
+test "weak own tests do not overrule caller acceptance and repair is checked" {
+  answers repairer: [{source: correct_source()}]
+  a = main({task: "Double n", source: weak_source(), acceptance: caller_acceptance()})
+  expect a.accepted
+  expect a.source == correct_source()
+  expect a.attempts == 1
+  expect a.tests == 1
+  expect a.passed == 1
+}
+
+test "two bad repairs remain unaccepted against the original acceptance" {
+  answers repairer: [{source: weak_source()}, {source: weak_source()}]
+  a = main({task: "Double n", source: weak_source(), acceptance: caller_acceptance()})
+  expect not a.accepted
+  expect a.attempts == 2
+  expect a.source == weak_source()
+  expect a.tests == 2
+  expect a.passed == 1
+  expect a.problem.contains("caller doubles five")
+}
+
+test "missing acceptance cannot be replaced by model written passing tests" {
+  a = main({task: "Double n", source: weak_source(), acceptance: ""})
+  b = main({task: "Double n", source: weak_source(), acceptance: "// test \"not a declaration\" { expect true }"})
+  c = main({task: "Double n", source: weak_source(), acceptance: "record Note { text: Text }"})
+  expect not a.accepted and not b.accepted and not c.accepted
+  expect a.attempts == 0 and b.attempts == 0 and c.attempts == 0
+  expect a.source == weak_source()
+  expect a.problem.contains("Caller-owned acceptance")
+}
+
+test "blank task is an explicit result without a model" {
+  a = main({task: " \n\t", source: correct_source(), acceptance: caller_acceptance()})
+  expect not a.accepted
+  expect a.attempts == 0
+  expect a.problem.contains("nonblank task")
+}
+
+test "caller acceptance survives a bad retry followed by a correct repair" {
+  answers repairer: [{source: weak_source()}, {source: correct_source()}]
+  a = main({task: "Double n", source: weak_source(), acceptance: caller_acceptance()})
+  expect a.accepted
+  expect a.attempts == 2
+  expect a.tests == 1 and a.passed == 1
+}
+
+test "a model cannot escape acceptance with an unterminated comment" {
+  answers repairer: [{source: correct_source() + "//"}]
+  a = main({task: "Double n", source: weak_source(), acceptance: caller_acceptance()})
+  // The separator newline terminates the candidate's trailing line comment.
+  expect a.accepted
+  expect a.attempts == 1
+  expect a.tests == 1
+}
+
+test "empty model source preserves the last candidate and fails closed" {
+  answers repairer: [{source: " \n"}]
+  a = main({task: "Double n", source: weak_source(), acceptance: caller_acceptance()})
+  expect not a.accepted
+  expect a.source == weak_source()
+  expect a.attempts == 1
+  expect a.problem.contains("no source")
+}
+
+test "checker tool failure sentinel is unaccepted with no model" {
+  answers check_program: [{ok: false, problem: "Checker tool failed; unavailable", tests: -1, passed: 0}]
+  a = main({task: "Double n", source: correct_source(), acceptance: caller_acceptance()})
+  expect not a.accepted
+  expect a.attempts == 0
+  expect a.tests == 0 and a.passed == 0
+  expect a.problem.contains("Checker tool failed")
+}
+
+test "reported zero tests never count as acceptance" {
+  answers check_program: [{ok: true, problem: "", tests: 0, passed: 0}]
+  answers repairer: [{source: ""}]
+  a = main({task: "Double n", source: correct_source(), acceptance: caller_acceptance()})
+  expect not a.accepted
+}
+
+test "advisory screening ignores test text inside strings and comments" {
+  expect test_declarations("// test \"comment\" {}\nrecord Note { text: Text }\nfn note() -> Text { return \"test \\\"quoted\\\" {}\" }") == 0
+  expect test_declarations("test\n// name next\n\"real\" { expect true }") == 1
+}
+
+test "malformed caller tests are rejected by the real checker" {
+  answers repairer: [{source: ""}]
+  a = main({task: "Double n", source: correct_source(), acceptance: "test \"broken\" { expect missing_name == 1 }"})
+  expect not a.accepted
+  expect a.attempts == 1
+  expect a.source == correct_source()
+}
+
+test "fenced non Kosika repair goes through the real checker and is not accepted" {
+  answers repairer: [{source: "```kosika\n" + correct_source() + "```"}, {source: correct_source()}]
+  a = main({task: "Double n", source: weak_source(), acceptance: caller_acceptance()})
+  expect a.accepted
+  expect a.attempts == 2
+  expect a.source == correct_source()
+}
+
+fn add_passing_tests(source: Text, count: Number) -> Text {
+  var program = source
+  for i in 0 until count {
+    program = program + "\ntest \"padding " + i.to_text() + "\" { expect true }\n"
+  }
+  return program
+}
+
+test "flooding own passing tests cannot hide failing caller acceptance" {
+  answers repairer: [{source: add_passing_tests(weak_source(), 31)}, {source: add_passing_tests(weak_source(), 31)}]
+  a = main({task: "Double n", source: add_passing_tests(weak_source(), 31), acceptance: caller_acceptance()})
+  expect not a.accepted
+  expect a.attempts == 2
+  expect a.tests == 30
+  expect a.passed == 29
+  expect a.problem.contains("caller doubles five")
+  expect a.problem.contains("report ceiling")
+}
+
+test "exactly thirty passing tests still fail closed at the reporting ceiling" {
+  answers repairer: [{source: add_passing_tests(correct_source(), 29)}, {source: add_passing_tests(correct_source(), 29)}]
+  a = main({task: "Double n", source: add_passing_tests(correct_source(), 29), acceptance: caller_acceptance()})
+  expect not a.accepted
+  expect a.attempts == 2
+  expect a.tests == 30
+  expect a.passed == 30
+  expect a.problem.contains("report ceiling")
+}

@@ -135,7 +135,7 @@ class Lessons:
             return {"answer": nearest["answer"], "how": "close", "likeness": round(likeness, 3), "lessons": len(book)}
         if not voting or len(book) < VOTE_EXAMPLES or likeness < VOTE_NEAREST:
             return None
-        votes: Counter[str] = Counter()
+        votes: Counter[str] = Counter()  # type: ignore[assignment]
         answers: dict[str, Any] = {}
         weight = 0.0
         for score, _, item in ranked[:VOTE_NEIGHBOURS]:
@@ -143,13 +143,13 @@ class Lessons:
                 continue
             answer = item["answer"]
             key = _canonical(_without_confidence(answer))
-            votes[key] += score
+            votes[key] += score  # type: ignore[assignment]
             answers[key] = answer
             weight += score
         if not votes or weight == 0:
             return None
         winner, score = votes.most_common(1)[0]
-        agreement = score / weight
+        agreement = score / weight  # type: ignore[assignment]
         if agreement < VOTE_AGREEMENT:
             return None
         answer = dict(answers[winner]) if isinstance(answers[winner], dict) else answers[winner]
@@ -173,6 +173,34 @@ class Lessons:
             spare = path.with_suffix(".tmp")
             spare.write_text(json.dumps(book, ensure_ascii=False, indent=1), encoding="utf-8")
             spare.replace(path)
+
+
+def census(events: list[dict[str, Any]]) -> dict[str, Any]:
+    """Count the model answers in a trace by where each one came from.
+
+    A lesson answer is recorded as a model answer with `learned`, so the
+    trace alone says how many model steps a run had and how many of them
+    the lessons answered, and in which way.
+    """
+
+    steps = 0
+    from_lessons = 0
+    how: Counter[str] = Counter()
+    for event in events:
+        if not isinstance(event, dict) or event.get("event") != "model_return":
+            continue
+        steps += 1
+        learned = event.get("learned")
+        if isinstance(learned, dict):
+            from_lessons += 1
+            how[str(learned.get("how") or "unknown")] += 1
+    return {
+        "model_steps": steps,
+        "from_lessons": from_lessons,
+        "live_model": steps - from_lessons,
+        "lesson_ratio": round(from_lessons / steps, 4) if steps else None,
+        "how": dict(sorted(how.items())),
+    }
 
 
 def _without_confidence(answer: Any) -> Any:
