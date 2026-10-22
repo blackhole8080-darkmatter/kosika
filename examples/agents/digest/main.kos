@@ -29,6 +29,7 @@
 // from the abstract alone.
 
 import "figures.kos"
+import "std/search.kos"
 
 record Msg { text: Text }
 record Said { text: Text }
@@ -78,12 +79,17 @@ tool tell_me {
   output: Sent
 }
 
+// A paper's page, a part at a time: `next` is where the following part
+// begins, or -1 at the end.
+record PartRequest { url: Text start: Number }
+record Part { url: Text title: Text text: Text next: Number }
+
 tool read_paper {
   source system "web"
-  operation: "fetch"
+  operation: "fetch_from"
   access: observe
-  input: PageRequest
-  output: Page
+  input: PartRequest
+  output: Part
 }
 
 agent library {
@@ -329,7 +335,46 @@ fn paper_page(paper: Paper) -> Text {
 fn paper_text(paper: Paper, page: Page) -> Text {
   let at = page.text.index_of("Abstract")
   if not at.exists() { return "Abstract: " + paper.summary }
-  return page.text.drop(at.value()).take(16000)
+  return passages(page.text.drop(at.value()), 14000)
+}
+
+// What a model can read of a long paper: its opening (the abstract and
+// the start of the introduction), then the passages that best say what
+// it did, found and concluded, kept in the paper's own order. Code picks
+// them, by the words they share with those questions.
+fn passages(text: Text, most: Number) -> Text {
+  if text.length() <= most { return text }
+  let opening = text.take(3000)
+  let pieces = slices(text.drop(3000), 1500)
+  var chosen: Number[] = []
+  for question in ["results we find show our experiments demonstrate", "conclusion summary we conclude in this work limitations future work", "method approach we propose model framework algorithm", "table figure compared improves accuracy error percent"] {
+    for hit in rank(question, pieces, 6) { chosen = chosen.append(hit.index) }
+  }
+  var kept: Text[] = [opening]
+  var size = opening.length()
+  for i in chosen.unique().sort() {
+    if size + pieces[i].length() + 5 <= most {
+      kept = kept.append(pieces[i])
+      size = size + pieces[i].length() + 5
+    }
+  }
+  return kept.join("
+[...]
+")
+}
+
+// A long text cut into pieces of `size` characters. (std's chunks splits
+// into words first, and a value may hold at most 512 parts.)
+fn slices(text: Text, size: Number) -> Text[] {
+  return for i in 0 until (text.length() / size).ceil() { text.slice(i * size, ((i + 1) * size).min(text.length())) }
+}
+
+fn part_page(parts: Part[]) -> Page {
+  return {url: "", title: "", text: (for part in parts { part.text }).join("")}
+}
+
+fn no_part() -> Part {
+  return {url: "", title: "", text: "", next: -1}
 }
 
 fn draw_task() -> Text {
@@ -455,9 +500,29 @@ workflow draw(paper: Paper) -> Drawing {
   }
 }
 
+// The whole paper is read, up to five parts of 20,000 characters, and
+// its key passages are drawn.
 workflow read_and_draw(paper: Paper) -> Drawing {
-  page    = execute library.read_paper(paper_page(paper)) otherwise no_page()
+  url     = paper_page(paper)
+  p1      = call read_part({url: url, start: 0})
+  p2      = call read_part({url: url, start: p1.next})
+  p3      = call read_part({url: url, start: p2.next})
+  p4      = call read_part({url: url, start: p3.next})
+  p5      = call read_part({url: url, start: p4.next})
+  page    = part_page([p1, p2, p3, p4, p5])
   drawing = use_model illustrator(draw_task(), paper.title, paper_text(paper, page)) retry 1 otherwise no_drawing()
+}
+
+// One part of a page; past the end, nothing is fetched.
+workflow read_part(asked: PartRequest) -> Part {
+  part = match asked.start < 0 or asked.url.is_empty() {
+    case true { no_part() }
+    case _ { call fetch_part(asked) }
+  }
+}
+
+workflow fetch_part(asked: PartRequest) -> Part {
+  part = execute library.read_paper(asked.url, asked.start) otherwise no_part()
 }
 
 // "evening" gives the evening lesson; anything else, the afternoon digest.
@@ -539,8 +604,9 @@ test "the evening goes deeper into the afternoon's papers" {
   answers teacher: [{items: []}, {items: []}]
   answers tutor: [{items: [{title: "Cells talk", lesson: "Cells use molecules.", example: "Like a letter.", questions: ["What is a signal?", "Why?", "How?"], try_it: "Read about hormones."}]}]
   answers read_paper: [
-    {url: "https://arxiv.org/html/1", title: "", text: "arXiv menu Abstract: We bend light through glass. 1 Introduction ..."},
-    {url: "https://arxiv.org/html/2", title: "", text: ""}
+    {url: "https://arxiv.org/html/1", title: "", text: "arXiv menu Abstract: We bend light ", next: 35},
+    {url: "https://arxiv.org/html/1", title: "", text: "through glass. 1 Introduction ...", next: -1},
+    {url: "https://arxiv.org/html/2", title: "", text: "", next: -1}
   ]
   answers illustrator: [
     {question: "Can glass bend light more?", figures: [
@@ -566,6 +632,11 @@ test "a paper's own words start at its abstract" {
   expect paper_page(paper) == "https://arxiv.org/html/9"
   expect paper_text(paper, {url: "", title: "", text: "Menu Login Abstract: Long words."}) == "Abstract: Long words."
   expect paper_text(paper, no_page()) == "Abstract: Short."
+  long = "Abstract: " + "intro words here. ".repeat(300) + "Our results show the lens bends light by 40 percent. " + "filler text again. ".repeat(900)
+  kept = paper_text(paper, {url: "", title: "", text: long})
+  expect kept.length() <= 14000
+  expect kept.starts_with("Abstract: intro words here.")
+  expect kept.contains("bends light by 40 percent")
 }
 
 test "with nothing read there is nothing to explain" {
