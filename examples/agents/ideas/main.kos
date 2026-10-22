@@ -1,0 +1,389 @@
+// Ideas: which of the newest research papers could help your own projects.
+//
+//   kosika test main.kos
+//   kosika run main.kos --model qwen2.5:7b --model-protocol ollama
+//       --allow-folder DIGEST_FOLDER --memory memory
+//       --notify https://ntfy.sh/YOUR-PRIVATE-TOPIC
+//
+// It reads two things in the one folder you grant: projects.md, where each
+// of your projects has a line on what it is and a Watch: line of the words
+// that make a paper worth a look for it, and the research digest's last
+// few afternoons in digests/. Code, not a model, matches every paper
+// against every project by those words, and keeps the strongest few
+// pairs. A model is then asked only to say, for each pair, what the idea
+// could be and the smallest thing to try first. Without a model, or when
+// it fails, the card still shows the paper, the project and the words
+// they share.
+//
+// It only reads and suggests. It writes no file and changes no code: an
+// idea is tried only when you say yes to it, and a pair it has shown once
+// is never shown again.
+
+record Msg { text: Text }
+record Said { text: Text }
+
+record Where { path: Text }
+record Listing { names: Text[] }
+record FileText { text: Text }
+
+record Project { name: Text about: Text watch: Text[] }
+record Paper { title: Text link: Text text: Text }
+record Match { project: Project paper: Paper shared: Text[] score: Number }
+
+// What the model is asked about one match, and what it gives back.
+record Pair { task: Text project: Text about: Text paper: Text summary: Text }
+record Idea { idea: Text try_first: Text }
+
+record Card { project: Text title: Text link: Text shared: Text[] idea: Text try_first: Text }
+record Shown { keys: Text[] }
+
+record Note { title: Text text: Text }
+record Sent { sent: Bool }
+
+tool list_folder {
+  source system "files"
+  operation: "list"
+  access: observe
+  input: Where
+  output: Listing
+}
+
+tool read_file {
+  source system "files"
+  operation: "read"
+  access: observe
+  input: Where
+  output: FileText
+}
+
+tool tell_me {
+  source system "notify"
+  operation: "send"
+  access: observe
+  input: Note
+  output: Sent
+}
+
+agent reader {
+  can: [list_folder, read_file, tell_me]
+}
+
+model thinker {
+  input: Pair
+  output: Idea
+  parameters: {
+    max_output_tokens: 400
+  }
+}
+
+memory shown of Shown
+
+// ---------------------------------------------------------------- reading
+
+// The projects in projects.md: `## Name`, a line about it, `Watch: a, b`.
+fn projects_in(text: Text) -> Project[] {
+  var found: Project[] = []
+  var name = ""
+  var about = ""
+  var watch: Text[] = []
+  for line in (text + "\n## ").lines() {
+    let trimmed = line.trim()
+    if trimmed.starts_with("## ") {
+      if not name.is_empty() and not watch.is_empty() {
+        found = found.append({name: name, about: about, watch: watch})
+      }
+      name = trimmed.drop(3).trim()
+      about = ""
+      watch = []
+    } else if trimmed.lower().starts_with("watch:") {
+      watch = for word in trimmed.drop(6).split(",") where not word.trim().is_empty() { word.trim().lower() }
+    } else if not name.is_empty() and about.is_empty() and not trimmed.is_empty() {
+      about = trimmed
+    }
+  }
+  return found
+}
+
+// The papers in one afternoon digest: each begins `### Title` and has its
+// arXiv link on a line of its own.
+fn papers_in(text: Text) -> Paper[] {
+  var found: Paper[] = []
+  var title = ""
+  var link = ""
+  var body: Text[] = []
+  for line in (text + "\n### ").lines() {
+    if line.starts_with("### ") {
+      if not title.is_empty() and not link.is_empty() {
+        found = found.append({title: title, link: link, text: body.join(" ")})
+      }
+      title = line.drop(4).trim()
+      link = ""
+      body = []
+    } else if line.starts_with("https://arxiv.org/") and link.is_empty() {
+      link = line.split(" ")[0]
+    } else if not title.is_empty() and not line.trim().is_empty() {
+      body = body.append(line.trim())
+    }
+  }
+  return found
+}
+
+// The newest `count` afternoon digests, by their names (which begin with
+// the date).
+fn newest(names: Text[], count: Number) -> Text[] {
+  let afternoons = (for name in names where name.ends_with("-afternoon.md") { name }).sort()
+  return afternoons.reverse().take(count)
+}
+
+// ---------------------------------------------------------------- matching
+
+// Words with the punctuation taken off, between spaces, so a watch word
+// is found only as whole words.
+fn plain(text: Text) -> Text {
+  var kept = text.lower()
+  for mark in [".", ",", ";", ":", "!", "?", "(", ")", "[", "]", "{", "}", "\"", "'", "/", "\\", "-", "–", "—", "·", "*", "_", "#", "+", "=", "<", ">", "|", "%", "&", "$", "@", "~", "`"] {
+    kept = kept.replace(mark, " ")
+  }
+  return " " + kept.words().join(" ") + " "
+}
+
+fn shared_words(project: Project, paper: Paper) -> Text[] {
+  let words = plain(paper.title + " " + paper.text)
+  return for watch in project.watch where words.contains(plain(watch)) { watch }
+}
+
+// A watch word of two or more words says more than one word does, and a
+// word in the title more than one in the summary.
+fn score_of(project: Project, paper: Paper, shared: Text[]) -> Number {
+  let title = plain(paper.title)
+  var total = 0
+  for watch in shared {
+    let weight = if watch.contains(" ") { 2 } else { 1 }
+    total = total + (if title.contains(plain(watch)) { weight * 2 } else { weight })
+  }
+  return total
+}
+
+fn key_of(m: Match) -> Text {
+  return m.project.name + " " + m.paper.link
+}
+
+// The strongest pairs, best first, at most one per paper, none shown
+// before, and none weaker than `least`.
+fn matches(projects: Project[], papers: Paper[], seen: Text[], least: Number, most: Number) -> Match[] {
+  var all: Match[] = []
+  for paper in papers {
+    var best: Match[] = []
+    for project in projects {
+      let shared = shared_words(project, paper)
+      let m: Match = {project: project, paper: paper, shared: shared, score: score_of(project, paper, shared)}
+      if m.score >= least and not seen.contains(key_of(m)) {
+        if best.is_empty() or m.score > best[0].score { best = [m] }
+      }
+    }
+    all = all.concat(best)
+  }
+  var chosen: Match[] = []
+  for i in 0 until most {
+    var top: Match[] = []
+    for m in all {
+      if not (for c in chosen { key_of(c) }).contains(key_of(m)) {
+        if top.is_empty() or m.score > top[0].score { top = [m] }
+      }
+    }
+    chosen = chosen.concat(top)
+  }
+  return chosen
+}
+
+// ---------------------------------------------------------------- the cards
+
+fn think_task() -> Text {
+  return "A research paper has been matched by key words to one of the person's own software projects. Say in one or two plain sentences what idea from the paper could help that project, and in one sentence the smallest experiment that would show whether it does. If the match is only on words and the paper would not really help, say so plainly in idea, and leave try_first empty. Use only what the paper's summary says."
+}
+
+fn pair_of(m: Match) -> Pair {
+  return {task: think_task(), project: m.project.name, about: m.project.about, paper: m.paper.title, summary: m.paper.text.take(1500)}
+}
+
+fn no_idea() -> Idea {
+  return {idea: "", try_first: ""}
+}
+
+fn card_of(m: Match, idea: Idea) -> Card {
+  return {project: m.project.name, title: m.paper.title, link: m.paper.link, shared: m.shared, idea: idea.idea.trim(), try_first: idea.try_first.trim()}
+}
+
+fn card_text(i: Number, card: Card) -> Text {
+  let idea = if card.idea.is_empty() { "" } else { f"\nThe idea: {card.idea}" }
+  let first = if card.try_first.is_empty() { "" } else { f"\nTry first: {card.try_first}" }
+  return f"### {i + 1}. For {card.project}: {card.title}\n{card.link}\nShared words: {card.shared.join(\", \")}{idea}{first}\n"
+}
+
+fn said_of(cards: Card[], read: Number) -> Said {
+  if cards.is_empty() {
+    return {text: f"No new paper in the last {read} digests matched one of your projects closely enough."}
+  }
+  var parts: Text[] = [f"# Ideas for your projects\n\n{cards.length()} papers from the last {read} digests that may help. Nothing is changed: say yes to one to have it tried.\n"]
+  for i in 0 until cards.length() { parts = parts.append(card_text(i, cards[i])) }
+  return {text: parts.join("\n")}
+}
+
+fn phone_note(cards: Card[]) -> Note {
+  let lines = for card in cards { f"{card.project}: {card.title}" }
+  return {title: f"{cards.length()} ideas for your projects", text: lines.join("\n")}
+}
+
+fn shown_with(past: ShownRecalled, chosen: Match[]) -> Shown {
+  let before = if past.found { past.value.value().keys } else { [] }
+  return {keys: before.concat(for m in chosen { key_of(m) }).unique()}
+}
+
+fn seen_keys(past: ShownRecalled) -> Text[] {
+  return if past.found { past.value.value().keys } else { [] }
+}
+
+fn nothing() -> FileText {
+  return {text: ""}
+}
+
+fn no_listing() -> Listing {
+  return {names: []}
+}
+
+fn not_sent() -> Sent {
+  return {sent: false}
+}
+
+// The pair to think about at `i`, or an empty one when there are fewer.
+fn pair_at(chosen: Match[], i: Number) -> Pair {
+  return if i < chosen.length() { pair_of(chosen[i]) } else { {task: "", project: "", about: "", paper: "", summary: ""} }
+}
+
+fn papers_of(a: FileText, b: FileText, c: FileText) -> Paper[] {
+  return papers_in(a.text).concat(papers_in(b.text)).concat(papers_in(c.text))
+}
+
+fn path_at(names: Text[], i: Number) -> Where {
+  return {path: if i < names.length() { "digests/" + names[i] } else { "" }}
+}
+
+fn cards_of(chosen: Match[], ideas: Idea[]) -> Card[] {
+  return for i in 0 until chosen.length() { card_of(chosen[i], ideas[i]) }
+}
+
+// ---------------------------------------------------------------- workflows
+
+workflow main(msg: Msg) -> Said {
+  budget 5 model calls, 1800 seconds
+  past     = recall shown under "all"
+  about    = execute reader.read_file("projects.md") otherwise nothing()
+  listed   = execute reader.list_folder("digests") otherwise no_listing()
+  names    = newest(listed.names, 3)
+  a        = call read_one(path_at(names, 0))
+  b        = call read_one(path_at(names, 1))
+  c        = call read_one(path_at(names, 2))
+  chosen   = matches(projects_in(about.text), papers_of(a, b, c), seen_keys(past), 4, 5)
+  i0       = call think(pair_at(chosen, 0))
+  i1       = call think(pair_at(chosen, 1))
+  i2       = call think(pair_at(chosen, 2))
+  i3       = call think(pair_at(chosen, 3))
+  i4       = call think(pair_at(chosen, 4))
+  cards    = cards_of(chosen, [i0, i1, i2, i3, i4])
+  marked   = remember shown_with(past, chosen) in shown under "all"
+  said     = said_of(cards, names.length())
+  sent     = call tell(phone_note(cards))
+  shown    = said
+}
+
+workflow read_one(where: Where) -> FileText {
+  file = match where.path.is_empty() {
+    case true { nothing() }
+    case _ { call read_path(where) }
+  }
+}
+
+workflow read_path(where: Where) -> FileText {
+  file = execute reader.read_file(where.path) otherwise nothing()
+}
+
+// One match thought about; with no match, no model is asked.
+workflow think(pair: Pair) -> Idea {
+  idea = match pair.project.is_empty() {
+    case true { no_idea() }
+    case _ { call ask(pair) }
+  }
+}
+
+workflow ask(pair: Pair) -> Idea {
+  idea = use_model thinker(pair.task, pair.project, pair.about, pair.paper, pair.summary) retry 1 otherwise no_idea()
+}
+
+// A note goes to the phone only when there is an idea in it.
+workflow tell(note: Note) -> Sent {
+  sent = match note.text.is_empty() {
+    case true { not_sent() }
+    case _ { call send(note) }
+  }
+}
+
+workflow send(note: Note) -> Sent {
+  sent = execute reader.tell_me(note.title, note.text) otherwise not_sent()
+}
+
+// ---------------------------------------------------------------- tests
+
+fn projects_text() -> Text {
+  return "# Projects\n\n## Kosika\nA language for AI agents.\nWatch: type system, agents, verification, language model\n\n## Kosi\nAn assistant.\nWatch: speech, voice, assistant\n\n## Empty\nNo watch line here.\n"
+}
+
+fn digest_text() -> Text {
+  return "# Research digest\n\n### Typed agents that verify their tools\nArtificial intelligence · 2026-10-20 · A. B\nhttps://arxiv.org/abs/1 (preprint; explained from its abstract)\n\nThe idea: Agents with a type system and verification of each language model call.\n\n### Galaxies far away\nGalaxies · 2026-10-20 · C. D\nhttps://arxiv.org/abs/2 (preprint)\n\nStars and dust.\n\n### A voice assistant for speech\nLanguage and computers · 2026-10-20 · E\nhttps://arxiv.org/abs/3 (preprint)\n\nSpeech in, voice out.\n"
+}
+
+test "projects and papers are read from their files" {
+  projects = projects_in(projects_text())
+  expect projects.length() == 2
+  expect projects[0].name == "Kosika"
+  expect projects[0].about == "A language for AI agents."
+  expect projects[0].watch == ["type system", "agents", "verification", "language model"]
+  papers = papers_in(digest_text())
+  expect papers.length() == 3
+  expect papers[0].link == "https://arxiv.org/abs/1"
+  expect papers[1].text.contains("Stars and dust.")
+  expect newest(["2026-10-18-afternoon.md", "2026-10-20-afternoon.md", "2026-10-19-evening.md", "2026-10-19-afternoon.md"], 2) == ["2026-10-20-afternoon.md", "2026-10-19-afternoon.md"]
+}
+
+test "papers are matched to projects by whole words" {
+  projects = projects_in(projects_text())
+  papers = papers_in(digest_text())
+  expect shared_words(projects[0], papers[0]) == ["type system", "agents", "verification", "language model"]
+  expect shared_words(projects[0], papers[1]) == []
+  expect plain("Agents, agents!") == " agents agents "
+  chosen = matches(projects, papers, [], 4, 5)
+  expect chosen.length() == 2
+  expect chosen[0].project.name == "Kosika"
+  expect chosen[1].project.name == "Kosi"
+  expect matches(projects, papers, ["Kosika https://arxiv.org/abs/1"], 4, 5).length() == 1
+}
+
+test "the cards say what the model thought, and work without it" {
+  answers list_folder: [{names: ["2026-10-20-afternoon.md", "projects.md"]}]
+  answers read_file: [{text: projects_text()}, {text: digest_text()}]
+  answers thinker: [{idea: "Check each tool call against its type before running it.", try_first: "Add a check to one example agent."}]
+  answers tell_me: [{sent: true}]
+  said = main({text: ""})
+  expect said.text.starts_with("# Ideas for your projects")
+  expect said.text.contains("### 1. For Kosika: Typed agents that verify their tools")
+  expect said.text.contains("The idea: Check each tool call against its type before running it.")
+  expect said.text.contains("### 2. For Kosi: A voice assistant for speech")
+  expect said.text.contains("Shared words: speech, voice, assistant")
+  expect not said.text.contains("Galaxies")
+}
+
+test "with nothing to read there are no ideas" {
+  answers list_folder: [{names: []}]
+  answers read_file: [{text: ""}]
+  said = main({text: ""})
+  expect said.text.starts_with("No new paper in the last 0 digests")
+}
