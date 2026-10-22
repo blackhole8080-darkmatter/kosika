@@ -1,0 +1,174 @@
+// Notebook: tell it things, and later ask in your own words. It finds what
+// you meant, not only what you typed, and says what that reminds it of.
+//
+//   kosika test main.kos
+//   kosika chat main.kos --memory FOLDER --allow-folder FOLDER
+//       --embed-model nomic-embed-text --model-url http://127.0.0.1:11434
+//
+// Give the same FOLDER to --memory and --allow-folder. No chat model is
+// needed: only the small embedding model, which runs in Ollama on the
+// laptop, so nothing you say leaves it.
+//
+// Say: remember <something>, or ask anything. "what do I pay the landlord"
+// finds "Rent is 900 euros a month" although they share no word.
+//
+// How it works. Each note is kept in a memory, which is a plain JSON file
+// in FOLDER. Asking searches that folder by meaning (a files tool with
+// operation find), so the embedding model compares the question with every
+// note. The nearest note is the answer. Then it searches again with that
+// note as the question: what is near the answer is what it "reminds" the
+// notebook of. That second hop is how memories link to each other without
+// anyone writing the links down.
+//
+// This is a first try at recall by meaning, written without changing the
+// language. It reads the memory's file line by line, so it relies on each
+// note sitting on one line of that file, as Note's one text field does.
+
+record Msg { text: Text }
+record Said { text: Text }
+record Note { text: Text }
+record Query { path: Text query: Text }
+record Hits { matches: Text[] }
+
+memory notes of Note
+
+// The notes nearest in meaning to a question. Reachable only when the
+// person running this grants an embedding model.
+tool find_notes {
+  source system "files"
+  operation: "find"
+  access: observe
+  input: Query
+  output: Hits
+}
+
+agent hands {
+  can: [find_notes]
+  max_steps: 1
+}
+
+// ---------------------------------------------------------------- notes
+
+fn is_remember(msg: Msg) -> Bool {
+  let first = msg.text.trim().lower().words().first().or("")
+  return first == "remember"
+}
+
+fn note_of(msg: Msg) -> Note {
+  let text = msg.text.trim()
+  return {text: text.drop(8).trim()}
+}
+
+// The same note said twice is kept once.
+fn key_of(note: Note) -> Text {
+  return note.text.lower().trim().take(200)
+}
+
+// A match from the search looks like
+//   notes.json:4:     "text": "Rent is 900 euros a month"
+// Only lines of the notes memory that hold a note's text are notes.
+fn note_in(match_line: Text) -> Text {
+  let marker = "\"text\": \""
+  if not match_line.starts_with("notes.json:") { return "" }
+  let at = match_line.index_of(marker).or(-1)
+  if at < 0 { return "" }
+  var text = match_line.drop(at + marker.length()).trim()
+  if text.ends_with(",") { text = text.take(text.length() - 1) }
+  if text.ends_with("\"") { text = text.take(text.length() - 1) }
+  return text.replace("\\\"", "\"").replace("\\n", " ")
+}
+
+fn notes_in(hits: Hits) -> Text[] {
+  var found: Text[] = []
+  for line in hits.matches {
+    let text = note_in(line)
+    if text.length() > 0 and not found.contains(text) { found = found.append(text) }
+  }
+  return found
+}
+
+// ---------------------------------------------------------------- replies
+
+fn kept(note: Note) -> Said {
+  if note.text.is_empty() { return {text: "Tell me what to remember, like this: remember rent is 900 euros"} }
+  return {text: "I will remember: " + note.text}
+}
+
+fn question_of(msg: Msg) -> Text {
+  let text = msg.text.trim()
+  let first = text.lower().words().first().or("")
+  if first == "recall" { return text.drop(6).trim() }
+  return text
+}
+
+// The nearest note, or nothing when there are no notes yet.
+fn best(hits: Hits) -> Text {
+  return notes_in(hits).first().or("")
+}
+
+fn answered(near: Hits, linked: Hits) -> Said {
+  let found = notes_in(near)
+  if found.is_empty() { return {text: "I have nothing to recall yet. Tell me something with: remember ..."} }
+  let answer = found[0]
+  var reminders: Text[] = []
+  for text in notes_in(linked) {
+    if text != answer and reminders.length() < 2 { reminders = reminders.append(text) }
+  }
+  let tail = if reminders.is_empty() { "" } else { "\nThat reminds me of:\n  " + reminders.join("\n  ") }
+  return {text: answer + tail}
+}
+
+// ---------------------------------------------------------------- workflows
+
+workflow keep(msg: Msg) -> Said {
+  note  = note_of(msg)
+  saved = remember note in notes under key_of(note)
+  said  = kept(note)
+}
+
+workflow near_to(asked: Msg) -> Hits {
+  close = execute hands.find_notes(".", asked.text) otherwise {matches: []}
+}
+
+workflow ask(msg: Msg) -> Said {
+  near   = call near_to({text: question_of(msg)})
+  answer = best(near)
+  linked = match answer.is_empty() {
+    case false { call near_to({text: answer}) }
+    case _ { {matches: []} }
+  }
+  said   = answered(near, linked)
+}
+
+workflow main(msg: Msg) -> Said {
+  said = match is_remember(msg) {
+    case true { call keep(msg) }
+    case _ { call ask(msg) }
+  }
+}
+
+// ------------------------------------------------------------------ tests
+
+test "a note is read back out of the memory's file" {
+  expect note_in("notes.json:4:     \"text\": \"Rent is 900 euros a month\"") == "Rent is 900 euros a month"
+  expect note_in("notes.json:7: \"text\": \"She said \\\"hi\\\"\",") == "She said \"hi\""
+  expect note_in("other.md:2: \"text\": \"not a note\"") == ""
+  expect note_in("notes.json:3:   \"rent is 900 euros a month\": {") == ""
+}
+
+test "the nearest note answers, and the notes near it are what it reminds of" {
+  answers find_notes: [
+    {matches: ["notes.json:4: \"text\": \"Rent is 900 euros a month\"", "notes.json:10: \"text\": \"The landlord is Mr Okafor\""]},
+    {matches: ["notes.json:4: \"text\": \"Rent is 900 euros a month\"", "notes.json:10: \"text\": \"The landlord is Mr Okafor\"", "notes.json:7: \"text\": \"Electricity is with Northwind\""]}
+  ]
+  a = main({text: "what do I pay for the flat?"})
+  expect a.text == "Rent is 900 euros a month\nThat reminds me of:\n  The landlord is Mr Okafor\n  Electricity is with Northwind"
+}
+
+test "remembering keeps the note, and asking with no notes says so" {
+  a = main({text: "remember Rent is 900 euros a month"})
+  expect a.text == "I will remember: Rent is 900 euros a month"
+  answers find_notes: [{matches: []}]
+  b = main({text: "what is my rent?"})
+  expect b.text.starts_with("I have nothing to recall yet")
+}
