@@ -28,8 +28,12 @@
 // what the abstract does not say, and each explanation says it was made
 // from the abstract alone.
 
+import "figures.kos"
+
 record Msg { text: Text }
 record Said { text: Text }
+// The evening's lesson, and its two papers drawn as a page of figures.
+record Lesson { text: Text page: Text }
 
 record PageRequest { url: Text }
 record Page { url: Text title: Text text: Text }
@@ -74,8 +78,16 @@ tool tell_me {
   output: Sent
 }
 
+tool read_paper {
+  source system "web"
+  operation: "fetch"
+  access: observe
+  input: PageRequest
+  output: Page
+}
+
 agent library {
-  can: [read_feed, tell_me]
+  can: [read_feed, read_paper, tell_me]
 }
 
 model teacher {
@@ -89,6 +101,17 @@ model teacher {
 model tutor {
   input: Batch
   output: Deeper
+  parameters: {
+    max_output_tokens: 3000
+  }
+}
+
+// What the illustrator is given: how to draw, and one paper to read.
+record Study { task: Text title: Text text: Text }
+
+model illustrator {
+  input: Study
+  output: Drawing
   parameters: {
     max_output_tokens: 3000
   }
@@ -294,6 +317,61 @@ fn evening_text(batch: Batch, deeper: Deeper) -> Said {
   return {text: parts.join("\n")}
 }
 
+// ---------------------------------------------------------------- drawing a paper
+
+// arXiv shows most new papers as a web page as well as a PDF.
+fn paper_page(paper: Paper) -> Text {
+  return paper.link.replace("/abs/", "/html/")
+}
+
+// The paper's own words from its abstract on, without the site's menus.
+// When the page could not be read, the abstract is all there is.
+fn paper_text(paper: Paper, page: Page) -> Text {
+  let at = page.text.index_of("Abstract")
+  if not at.exists() { return "Abstract: " + paper.summary }
+  return page.text.drop(at.value()).take(16000)
+}
+
+fn draw_task() -> Text {
+  return "You turn one research paper into a page of figures that explain it to a curious person who is not an expert. Read the paper, then choose the four to seven figures that best explain THIS paper: what it asks, how it works, what it found and how firmly. Pick the kinds that fit what the paper is about, so a paper of proofs, a lab experiment and a survey each look different. The kinds, and what each item means: flow (label is a step, value what happens in it); numbers (label is a number written as the paper gives it, like 69% or x3.1, value what it counts); bars (label a thing, value its number, note the unit; only numbers the paper gives); curve (label a line's name, value its heights left to right like \"1 2 4 3\", center what runs along the bottom; only for a shape the paper describes or plots); tree (items with an empty group are branches, items whose group is a branch's label hang from it, note a short tag like exact or bound); mindmap (the same as tree, with center the paper's subject in two or three words, and three to six branches); timeline (label when, value what happened); glossary (label a technical word, value its meaning in plain words); card (center a name, each item one fact as label and value); quote (value one important sentence copied exactly from the paper). For every figure give a short title, and section: where in the paper it comes from, like Abstract or Section 3. Keep every label under six words and every value under twenty. Use only what the paper says: never invent a number, result or method. Also write question: the paper's question in one plain sentence."
+}
+
+fn study_of(paper: Paper, page: Page) -> Study {
+  return {task: draw_task(), title: paper.title, text: paper_text(paper, page)}
+}
+
+fn no_drawing() -> Drawing {
+  return {question: "", figures: []}
+}
+
+fn sheet_of(paper: Paper, drawing: Drawing) -> Sheet {
+  return {title: paper.title, field: paper.field, published: paper.published, authors: paper.authors, link: paper.link, drawing: drawing}
+}
+
+// The page of figures, when the model drew anything worth showing.
+fn figures_page(batch: Batch, drawings: Drawing[]) -> Text {
+  var sheets: Sheet[] = []
+  for i in 0 until batch.papers.length().min(drawings.length()) {
+    if not (for figure in drawings[i].figures where drawable(figure) { figure }).is_empty() {
+      sheets = sheets.append(sheet_of(batch.papers[i], drawings[i]))
+    }
+  }
+  return if sheets.is_empty() { "" } else { page("Tonight's papers, drawn", sheets) }
+}
+
+fn paper_at(batch: Batch, i: Number) -> Paper {
+  return if i < batch.papers.length() { batch.papers[i] } else { {title: "", link: "", published: "", authors: "", summary: "", field: ""} }
+}
+
+fn said_of(lesson: Lesson) -> Said {
+  return {text: lesson.text}
+}
+
+fn lesson_of(said: Said, page: Text) -> Lesson {
+  let told = if page.is_empty() { said.text } else { said.text + "\n\nThe two papers are drawn as figures in this evening's page, beside this digest on the laptop." }
+  return {text: told, page: page}
+}
+
 // What is sent to the phone: short enough to read there. The whole digest
 // is what the run prints.
 fn phone_note(title: Text, said: Said) -> Note {
@@ -355,24 +433,45 @@ workflow ask_teacher(batch: Batch) -> Lessons {
   lessons = use_model teacher(batch.task, batch.papers) retry 1 otherwise no_lessons()
 }
 
-workflow evening(msg: Msg) -> Said {
-  budget 2 model calls, 3600 seconds
+workflow evening(msg: Msg) -> Lesson {
+  budget 6 model calls, 7200 seconds
   past   = recall days under "last"
   batch  = evening_batch(past)
   deeper = use_model tutor(batch.task, batch.papers) retry 1 otherwise {items: []}
+  first  = call draw(paper_at(batch, 0))
+  second = call draw(paper_at(batch, 1))
+  page   = figures_page(batch, [first, second])
   said   = evening_text(batch, deeper)
   note   = phone_note("Evening lesson", said)
   sent   = execute library.tell_me(note.title, note.text) otherwise not_sent()
-  shown  = shown_with(said, sent)
+  shown  = lesson_of(shown_with(said, sent), page)
+}
+
+// One paper read in full and drawn; with no paper, nothing is asked.
+workflow draw(paper: Paper) -> Drawing {
+  drawing = match paper.link.is_empty() {
+    case true { no_drawing() }
+    case _ { call read_and_draw(paper) }
+  }
+}
+
+workflow read_and_draw(paper: Paper) -> Drawing {
+  page    = execute library.read_paper(paper_page(paper)) otherwise no_page()
+  drawing = use_model illustrator(draw_task(), paper.title, paper_text(paper, page)) retry 1 otherwise no_drawing()
 }
 
 // "evening" gives the evening lesson; anything else, the afternoon digest.
 workflow main(msg: Msg) -> Said {
   budget 12 model calls, 10800 seconds
   said = match msg.text.trim().lower() == "evening" {
-    case true { call evening(msg) }
+    case true { call evening_said(msg) }
     case _ { call afternoon(msg) }
   }
+}
+
+workflow evening_said(msg: Msg) -> Said {
+  lesson = call evening(msg)
+  said   = said_of(lesson)
 }
 
 // ---------------------------------------------------------------- tests
@@ -439,12 +538,34 @@ test "the evening goes deeper into the afternoon's papers" {
   ]
   answers teacher: [{items: []}, {items: []}]
   answers tutor: [{items: [{title: "Cells talk", lesson: "Cells use molecules.", example: "Like a letter.", questions: ["What is a signal?", "Why?", "How?"], try_it: "Read about hormones."}]}]
+  answers read_paper: [
+    {url: "https://arxiv.org/html/1", title: "", text: "arXiv menu Abstract: We bend light through glass. 1 Introduction ..."},
+    {url: "https://arxiv.org/html/2", title: "", text: ""}
+  ]
+  answers illustrator: [
+    {question: "Can glass bend light more?", figures: [
+      {look: Look.flow, title: "How it works", section: "Section 2", center: "", items: [{label: "Shine", value: "Light enters the glass.", note: "", group: ""}, {label: "Bend", value: "It turns 30 degrees.", note: "", group: ""}]},
+      {look: Look.numbers, title: "Key number", section: "Abstract", center: "", items: [{label: "30%", value: "more bending", note: "", group: ""}]}
+    ]},
+    {question: "", figures: []}
+  ]
   first = afternoon({text: ""})
   e = evening({text: ""})
   expect e.text.starts_with("# Evening lesson")
   expect e.text.contains("## Cells talk")
   expect e.text.contains("1. What is a signal?")
   expect e.text.contains("### Light in glass")
+  expect e.text.contains("drawn as figures")
+  expect e.page.contains("Can glass bend light more?")
+  expect e.page.contains("2 figures")
+  expect not e.page.contains("Cells talk")
+}
+
+test "a paper's own words start at its abstract" {
+  paper: Paper = {title: "T", link: "https://arxiv.org/abs/9", published: "", authors: "", summary: "Short.", field: "X"}
+  expect paper_page(paper) == "https://arxiv.org/html/9"
+  expect paper_text(paper, {url: "", title: "", text: "Menu Login Abstract: Long words."}) == "Abstract: Long words."
+  expect paper_text(paper, no_page()) == "Abstract: Short."
 }
 
 test "with nothing read there is nothing to explain" {

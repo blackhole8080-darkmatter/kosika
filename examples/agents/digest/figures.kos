@@ -1,0 +1,375 @@
+// Figures: a research paper drawn as a page of figures picked for it.
+//
+// The model decides, the code draws. A model reads the paper and chooses
+// which kinds of figure explain it, and fills each with short words and the
+// numbers the paper gives. Everything else, every shape, colour, position
+// and line of the page, is drawn here by code, so the page is well made
+// whatever the model chose, and a figure it filled badly is left out
+// rather than drawn wrong.
+//
+// Each kind reads only the fields it needs:
+//
+//   flow      items in order: label is the step, value says what happens
+//   numbers   label is the number as the paper writes it ("69%", "x3.1"),
+//             value says what it counts
+//   bars      label is the thing, value its number, note the unit
+//   curve     label is a line's name, value its heights left to right
+//             ("1 2 4 3"); center names what runs along the bottom
+//   tree      items with no group are branches; items whose group is a
+//             branch's label hang from it; note is a short tag ("exact")
+//   mindmap   the same as tree, drawn round the center
+//   timeline  label is when, value what happened
+//   glossary  label is the word, value its meaning in plain words
+//   card      center is the name, label and value one fact each
+//   quote     value is one sentence from the paper
+//
+// Every figure names the section of the paper it came from.
+
+export [Look, Item, Figure, Drawing, Sheet, drawable, page]
+
+enum Look { flow, numbers, bars, curve, tree, mindmap, timeline, glossary, card, quote }
+
+record Item { label: Text value: Text note: Text group: Text }
+record Figure { look: Look title: Text section: Text center: Text items: Item[] }
+// What the model gives for one paper.
+record Drawing { question: Text figures: Figure[] }
+// The paper, as the digest knows it.
+record Sheet { title: Text field: Text published: Text authors: Text link: Text drawing: Drawing }
+
+// ---------------------------------------------------------------- small helpers
+
+fn esc(text: Text) -> Text {
+  return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
+}
+
+fn hues() -> Text[] {
+  return ["#7c8cff", "#2fd3c5", "#ffb547", "#ff6b8b", "#8be36b", "#c38bff", "#5ec8ff", "#ff9a5c"]
+}
+
+fn hue(i: Number) -> Text {
+  let all = hues()
+  return all[i % all.length()]
+}
+
+// A number with at most one decimal, as text for SVG.
+fn n(x: Number) -> Text {
+  return ((x * 10).round() / 10).to_text()
+}
+
+// Words broken into lines of about `width` characters.
+fn wrapped(text: Text, width: Number) -> Text[] {
+  var lines: Text[] = []
+  var line = ""
+  for word in text.words() {
+    if line.is_empty() { line = word }
+    else if line.length() + 1 + word.length() <= width { line = line + " " + word }
+    else {
+      lines = lines.append(line)
+      line = word
+    }
+  }
+  if not line.is_empty() { lines = lines.append(line) }
+  return lines
+}
+
+// SVG text over several lines, centred on x when `middle`.
+fn svg_text(x: Number, y: Number, text: Text, width: Number, size: Number, color: Text, middle: Bool) -> Text {
+  let anchor = if middle { "middle" } else { "start" }
+  let lines = wrapped(text, width)
+  let top = y - (lines.length() - 1) * size * 0.6
+  var parts: Text[] = []
+  for i in 0 until lines.length() {
+    parts = parts.append(f"<tspan x=\"{n(x)}\" y=\"{n(top + i * size * 1.2)}\">{esc(lines[i])}</tspan>")
+  }
+  return f"<text font-size=\"{size}\" fill=\"{color}\" text-anchor=\"{anchor}\">{parts.join(\"\")}</text>"
+}
+
+fn branches(figure: Figure) -> Item[] {
+  return for item in figure.items where item.group.trim().is_empty() { item }
+}
+
+fn leaves(figure: Figure, branch: Item) -> Item[] {
+  return for item in figure.items where item.group.trim().lower() == branch.label.trim().lower() { item }
+}
+
+fn heights(value: Text) -> Number[] {
+  var found: Number[] = []
+  for word in value.replace(",", " ").words() {
+    let x = word.to_number()
+    if x.exists() { found = found.append(x.value()) }
+  }
+  return found
+}
+
+fn leading_number(text: Text) -> Number? {
+  var digits = ""
+  var started = false
+  for c in text.chars() {
+    if "0123456789.".contains(c) {
+      digits = digits + c
+      started = true
+    } else if c == "," and started { digits = digits }
+    else if started { return digits.to_number() }
+  }
+  return digits.to_number()
+}
+
+// ---------------------------------------------------------------- is a figure fit to draw
+
+fn drawable(figure: Figure) -> Bool {
+  let count = figure.items.length()
+  return match figure.look {
+    case "flow" { count >= 2 }
+    case "numbers" { count >= 1 }
+    case "bars" { count >= 2 and (for item in figure.items where leading_number(item.value).exists() { item }).length() == count }
+    case "curve" { count >= 1 and (for item in figure.items where heights(item.value).length() >= 3 { item }).length() == count }
+    case "tree" { branches(figure).length() >= 2 }
+    case "mindmap" { branches(figure).length() >= 3 }
+    case "timeline" { count >= 2 }
+    case "glossary" { count >= 1 }
+    case "card" { count >= 1 and not figure.center.trim().is_empty() }
+    case "quote" { count >= 1 }
+  }
+}
+
+// Wide figures take the whole row.
+fn wide(look: Look) -> Bool {
+  return match look {
+    case "flow" { true }
+    case "mindmap" { true }
+    case "timeline" { true }
+    case "curve" { true }
+    case "tree" { true }
+    case _ { false }
+  }
+}
+
+// ---------------------------------------------------------------- the drawers
+
+fn draw_flow(figure: Figure) -> Text {
+  var parts: Text[] = []
+  for i in 0 until figure.items.length() {
+    let item = figure.items[i]
+    if i > 0 { parts = parts.append("<div class=\"arrow\">&#8594;</div>") }
+    parts = parts.append(f"<div class=\"step\" style=\"border-color:{hue(i)}55\"><b style=\"color:{hue(i)}\">{i + 1} · {esc(item.label)}</b>{esc(item.value)}</div>")
+  }
+  return f"<div class=\"flow\">{parts.join(\"\")}</div>"
+}
+
+fn ring(percent: Number, color: Text) -> Text {
+  let whole = 188.5
+  let shown = whole * percent.min(100).max(0) / 100
+  return f"<svg width=\"74\" height=\"74\" viewBox=\"0 0 74 74\"><circle cx=\"37\" cy=\"37\" r=\"30\" stroke=\"#262c45\" stroke-width=\"9\" fill=\"none\"/><circle cx=\"37\" cy=\"37\" r=\"30\" stroke=\"{color}\" stroke-width=\"9\" fill=\"none\" stroke-linecap=\"round\" stroke-dasharray=\"{n(shown)} {whole}\" transform=\"rotate(-90 37 37)\"/></svg>"
+}
+
+fn draw_numbers(figure: Figure) -> Text {
+  var parts: Text[] = []
+  for i in 0 until figure.items.length() {
+    let item = figure.items[i]
+    let amount = leading_number(item.label)
+    let gauge = if item.label.contains("%") and amount.exists() { ring(amount.value(), hue(i + 2)) } else { "" }
+    parts = parts.append(f"<div class=\"stat\">{gauge}<div><div class=\"big\" style=\"color:{hue(i + 2)}\">{esc(item.label)}</div><p>{esc(item.value)}</p></div></div>")
+  }
+  return f"<div class=\"stats\">{parts.join(\"\")}</div>"
+}
+
+fn draw_bars(figure: Figure) -> Text {
+  let values = for item in figure.items { leading_number(item.value).or(0) }
+  let most = values.max().or(0).max(0.000001)
+  var parts: Text[] = []
+  for i in 0 until figure.items.length() {
+    let item = figure.items[i]
+    let width = 100 * values[i] / most
+    parts = parts.append(f"<div class=\"bar\"><span>{esc(item.label)}</span><div class=\"track\"><div style=\"width:{n(width)}%;background:{hue(i)}\"></div></div><b>{esc(item.value)} {esc(item.note)}</b></div>")
+  }
+  return parts.join("")
+}
+
+fn draw_curve(figure: Figure) -> Text {
+  let w = 640
+  let h = 170
+  var top = 0.000001
+  for item in figure.items { top = top.max(heights(item.value).max().or(0)) }
+  var parts: Text[] = [f"<svg viewBox=\"0 0 {w} {h + 40}\" width=\"100%\"><g stroke=\"#262c45\"><line x1=\"40\" y1=\"10\" x2=\"40\" y2=\"{h}\"/><line x1=\"40\" y1=\"{h}\" x2=\"{w - 10}\" y2=\"{h}\"/></g>"]
+  for i in 0 until figure.items.length() {
+    let item = figure.items[i]
+    let ys = heights(item.value)
+    var points: Text[] = []
+    for j in 0 until ys.length() {
+      let x = 40 + (w - 60) * j / (ys.length() - 1)
+      let y = h - (h - 30) * ys[j] / top
+      points = points.append(n(x) + "," + n(y))
+    }
+    let dash = if i == 0 { "" } else { " stroke-dasharray=\"7 5\"" }
+    parts = parts.append(f"<polyline points=\"{points.join(\" \")}\" fill=\"none\" stroke=\"{hue(i + 2)}\" stroke-width=\"3\" stroke-linejoin=\"round\"{dash}/>")
+    parts = parts.append(f"<rect x=\"{w - 170}\" y=\"{14 + i * 18}\" width=\"14\" height=\"4\" fill=\"{hue(i + 2)}\"/><text x=\"{w - 150}\" y=\"{20 + i * 18}\" fill=\"#dfe3ff\" font-size=\"12\">{esc(item.label)}</text>")
+  }
+  parts = parts.append(f"<text x=\"{n(w / 2)}\" y=\"{h + 28}\" fill=\"#8a90b8\" font-size=\"12\" text-anchor=\"middle\">{esc(figure.center)} &#8594;</text></svg>")
+  return parts.join("")
+}
+
+fn draw_tree(figure: Figure) -> Text {
+  let roots = branches(figure)
+  var rows = 0
+  for root in roots { rows = rows + leaves(figure, root).length().max(1) }
+  let h = rows * 40 + 20
+  let mid = h / 2
+  var parts: Text[] = [f"<svg viewBox=\"0 0 1000 {h}\" width=\"100%\">"]
+  parts = parts.append(f"<circle cx=\"70\" cy=\"{mid}\" r=\"52\" fill=\"#2a1a44\" stroke=\"#c38bff\" stroke-width=\"2\"/>")
+  parts = parts.append(svg_text(70, mid + 4, figure.center, 12, 12.5, "#ffffff", true))
+  var row = 0
+  for i in 0 until roots.length() {
+    let root = roots[i]
+    let below = leaves(figure, root)
+    let span = below.length().max(1)
+    let y = 30 + (row + span / 2) * 40 - 20
+    parts = parts.append(f"<path d=\"M122 {n(mid)} C 180 {n(mid)}, 180 {n(y)}, 240 {n(y)}\" fill=\"none\" stroke=\"{hue(i)}\" stroke-width=\"2.2\"/>")
+    parts = parts.append(f"<rect x=\"240\" y=\"{n(y - 17)}\" width=\"290\" height=\"34\" rx=\"10\" fill=\"#0e1222\" stroke=\"{hue(i)}\"/>")
+    parts = parts.append(f"<text x=\"254\" y=\"{n(y + 5)}\" fill=\"#eef0ff\" font-size=\"13.5\">{esc(root.label.take(32))}</text>")
+    if not root.note.is_empty() { parts = parts.append(f"<text x=\"520\" y=\"{n(y + 5)}\" fill=\"{hue(i)}\" font-size=\"11\" font-weight=\"700\" text-anchor=\"end\">{esc(root.note.upper().take(10))}</text>") }
+    for j in 0 until below.length() {
+      let leaf = below[j]
+      let ly = 30 + (row + j) * 40
+      parts = parts.append(f"<path d=\"M530 {n(y)} C 570 {n(y)}, 570 {n(ly)}, 610 {n(ly)}\" fill=\"none\" stroke=\"{hue(i)}\" stroke-width=\"1.4\" stroke-dasharray=\"4 3\"/>")
+      parts = parts.append(f"<circle cx=\"614\" cy=\"{n(ly)}\" r=\"4\" fill=\"{hue(i)}\"/><text x=\"626\" y=\"{n(ly + 4)}\" fill=\"#dfe3ff\" font-size=\"13\">{esc(leaf.label.take(48))}</text>")
+      if not leaf.note.is_empty() { parts = parts.append(f"<text x=\"990\" y=\"{n(ly + 4)}\" fill=\"{hue(i)}\" font-size=\"11\" text-anchor=\"end\">{esc(leaf.note.take(24))}</text>") }
+    }
+    row = row + span
+  }
+  parts = parts.append("</svg>")
+  return parts.join("")
+}
+
+fn draw_mindmap(figure: Figure) -> Text {
+  let cx = 500
+  let cy = 250
+  let roots = branches(figure).take(8)
+  var parts: Text[] = ["<svg viewBox=\"0 0 1000 500\" width=\"100%\">"]
+  var labels: Text[] = []
+  for i in 0 until roots.length() {
+    let root = roots[i]
+    let angle = i * 360 / roots.length() - 90
+    let bx = cx + 230 * angle.cos()
+    let by = cy + 150 * angle.sin()
+    parts = parts.append(f"<path d=\"M{cx} {cy} Q {n(cx + 120 * angle.cos())} {n(cy + 40 * angle.sin())} {n(bx)} {n(by)}\" fill=\"none\" stroke=\"{hue(i)}\" stroke-width=\"3\" stroke-linecap=\"round\"/>")
+    let below = leaves(figure, root).take(3)
+    for j in 0 until below.length() {
+      let turn = angle + (j - (below.length() - 1) / 2) * 22
+      let lx = cx + 400 * turn.cos()
+      let ly = cy + 215 * turn.sin()
+      let side = turn.cos()
+      parts = parts.append(f"<path d=\"M{n(bx)} {n(by)} L{n(lx)} {n(ly)}\" stroke=\"{hue(i)}\" stroke-width=\"1.4\" opacity=\".6\"/>")
+      labels = labels.append(svg_text(lx + (if side >= 0 { 8 } else { -8 }) * side.abs().min(1), ly + 4, below[j].label, 18, 12, "#dfe3ff", true))
+    }
+    labels = labels.append(f"<rect x=\"{n(bx - 62)}\" y=\"{n(by - 16)}\" width=\"124\" height=\"32\" rx=\"16\" fill=\"{hue(i)}\"/>")
+    labels = labels.append(f"<text x=\"{n(bx)}\" y=\"{n(by + 5)}\" fill=\"#0b0d17\" font-size=\"12.5\" font-weight=\"700\" text-anchor=\"middle\">{esc(root.label.upper().take(16))}</text>")
+  }
+  parts = parts.append(f"<circle cx=\"{cx}\" cy=\"{cy}\" r=\"72\" fill=\"#232a7a\" stroke=\"#7c8cff\" stroke-width=\"2\"/>")
+  parts = parts.append(svg_text(cx, cy + 4, figure.center, 14, 15, "#ffffff", true))
+  parts = parts.append(labels.join(""))
+  parts = parts.append("</svg>")
+  return parts.join("")
+}
+
+fn draw_timeline(figure: Figure) -> Text {
+  var parts: Text[] = []
+  for i in 0 until figure.items.length() {
+    let item = figure.items[i]
+    parts = parts.append(f"<div class=\"when\"><i style=\"background:{hue(i)}\"></i><b style=\"color:{hue(i)}\">{esc(item.label)}</b><p>{esc(item.value)}</p></div>")
+  }
+  return f"<div class=\"line\">{parts.join(\"\")}</div>"
+}
+
+fn draw_glossary(figure: Figure) -> Text {
+  return "<div class=\"gl\">" + (for item in figure.items { f"<div><b>{esc(item.label)}</b> · {esc(item.value)}</div>" }).join("") + "</div>"
+}
+
+fn draw_card(figure: Figure) -> Text {
+  return f"<div class=\"name\">{esc(figure.center)}</div><div class=\"gl\">" + (for item in figure.items { f"<div>{esc(item.label)} <b>{esc(item.value)}</b></div>" }).join("") + "</div>"
+}
+
+fn draw_quote(figure: Figure) -> Text {
+  return (for item in figure.items { f"<blockquote>&#8220;{esc(item.value)}&#8221;</blockquote>" }).join("")
+}
+
+fn drawn(figure: Figure) -> Text {
+  return match figure.look {
+    case "flow" { draw_flow(figure) }
+    case "numbers" { draw_numbers(figure) }
+    case "bars" { draw_bars(figure) }
+    case "curve" { draw_curve(figure) }
+    case "tree" { draw_tree(figure) }
+    case "mindmap" { draw_mindmap(figure) }
+    case "timeline" { draw_timeline(figure) }
+    case "glossary" { draw_glossary(figure) }
+    case "card" { draw_card(figure) }
+    case "quote" { draw_quote(figure) }
+  }
+}
+
+fn box(figure: Figure) -> Text {
+  let span = if wide(figure.look) { " wide" } else { "" }
+  let from = if figure.section.trim().is_empty() { f"{figure.look}" } else { f"{figure.look} · {figure.section}" }
+  return f"<section class=\"box{span}\"><h3>{esc(figure.title)}</h3><span class=\"kind\">{esc(from)}</span>{drawn(figure)}</section>"
+}
+
+// ---------------------------------------------------------------- the page
+
+fn style() -> Text {
+  return ":root{--ink:#eef0ff;--dim:#9aa1c4;--faint:#6b7299;--line:#252b44}*{box-sizing:border-box;margin:0}body{max-width:1200px;margin:auto;padding:34px 40px;background:#0a0c16;color:var(--ink);font:14.5px/1.5 'Segoe UI',system-ui,sans-serif}.paper{border-radius:22px;padding:26px 28px;margin-bottom:28px;border:1px solid var(--line);background:#0e1120}.meta{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}.chip{font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:3px 10px;border-radius:999px;border:1px solid var(--line);color:var(--dim)}h1{font-size:28px;font-weight:800;margin-bottom:18px}h2{font-size:25px;line-height:1.2;font-weight:800;margin-bottom:4px}h2 a{color:inherit;text-decoration:none}.by{color:var(--dim);font-size:13px;margin-bottom:16px}.q{font-size:16px;color:#dfe3ff;margin-bottom:16px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.box{background:#0a0d1a;border:1px solid var(--line);border-radius:16px;padding:16px 18px;position:relative}.wide{grid-column:1/-1}.box h3{font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);font-weight:600;margin-bottom:10px;padding-right:160px}.kind{position:absolute;top:15px;right:16px;font-size:10.5px;color:var(--faint);font-family:Consolas,monospace}.flow{display:flex;align-items:stretch}.step{flex:1;padding:12px 14px;border-radius:12px;background:#0e1222;border:1px solid;font-size:13.5px}.step b{display:block;font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px}.arrow{width:28px;display:grid;place-items:center;color:#4b5280;font-size:20px}.stats{display:flex;flex-direction:column;gap:12px}.stat{display:flex;gap:14px;align-items:center}.big{font-size:30px;font-weight:800;line-height:1.1}.stat p,.when p{color:var(--dim);font-size:13px}.bar{display:grid;grid-template-columns:150px 1fr 110px;gap:10px;align-items:center;margin:7px 0;font-size:13px}.track{height:12px;border-radius:6px;background:#1a1f35;overflow:hidden}.track div{height:100%;border-radius:6px}.bar b{font-size:12.5px;text-align:right}.line{display:flex;gap:14px;border-top:2px solid #262c45;padding-top:14px}.when{flex:1;position:relative}.when i{position:absolute;top:-21px;left:0;width:12px;height:12px;border-radius:50%}.when b{font-size:13px}.gl{display:flex;flex-direction:column;gap:8px;font-size:13.5px;color:#d6daf5}.gl b{color:#fff}.name{font-size:20px;font-weight:800;margin-bottom:8px}blockquote{font-size:17px;line-height:1.45;color:#ffd08a;border-left:3px solid #ffb547;padding-left:14px;margin:4px 0}.foot{color:var(--faint);font-size:12px}"
+}
+
+fn sheet_html(sheet: Sheet, i: Number) -> Text {
+  let shown = for figure in sheet.drawing.figures where drawable(figure) { box(figure) }
+  return f"<article class=\"paper\" style=\"background:radial-gradient(700px 360px at 90% 0%,{hue(i)}22 0,transparent 60%),#0e1120\"><div class=\"meta\"><span class=\"chip\" style=\"color:{hue(i)};border-color:{hue(i)}66\">{esc(sheet.field)}</span><span class=\"chip\">arXiv preprint · {esc(sheet.published)}</span><span class=\"chip\">{shown.length()} figures</span></div><h2><a href=\"{esc(sheet.link)}\">{esc(sheet.title)}</a></h2><div class=\"by\">{esc(sheet.authors)}</div><p class=\"q\">{esc(sheet.drawing.question)}</p><div class=\"grid\">{shown.join(\"\")}</div></article>"
+}
+
+// A whole page: one block of figures for each paper.
+fn page(title: Text, sheets: Sheet[]) -> Text {
+  var parts: Text[] = []
+  for i in 0 until sheets.length() { parts = parts.append(sheet_html(sheets[i], i)) }
+  return f"<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{esc(title)}</title><style>{style()}</style></head><body><h1>{esc(title)}</h1>{parts.join(\"\")}<p class=\"foot\">Each paper is a preprint on arXiv. A model chose and filled these figures from the paper; code drew them. Check a figure against its section before relying on it.</p></body></html>"
+}
+
+// ---------------------------------------------------------------- tests
+
+fn sample() -> Sheet {
+  return {title: "Rings around far planets", field: "Planets", published: "2026-10-16", authors: "Hasler et al.", link: "https://arxiv.org/abs/2610.23850", drawing: {question: "Can a telescope tell a planet has rings from its brightness?", figures: [
+    {look: Look.numbers, title: "How much brighter", section: "Abstract", center: "", items: [{label: "x3.1", value: "peak brightness with Saturn-sized rings", note: "", group: ""}, {label: "69%", value: "a share", note: "", group: ""}]},
+    {look: Look.curve, title: "Around one orbit", section: "§III", center: "position along the orbit", items: [{label: "with rings", value: "2 5 9 3 2", note: "", group: ""}, {label: "without", value: "2 3 4 3 2", note: "", group: ""}]},
+    {look: Look.tree, title: "What was proved", section: "§4", center: "KSD certificate", items: [{label: "Gaussian", value: "", note: "exact", group: ""}, {label: "Exponential", value: "", note: "bound", group: ""}, {label: "Quartic family", value: "", note: "", group: "Exponential"}]},
+    {look: Look.bars, title: "Broken", section: "", center: "", items: [{label: "a", value: "lots", note: "", group: ""}, {label: "b", value: "2", note: "", group: ""}]}
+  ]}}
+}
+
+test "words wrap into short lines" {
+  expect wrapped("one two three four", 9) == ["one two", "three", "four"]
+  expect esc("a < b & \"c\"") == "a &lt; b &amp; &quot;c&quot;"
+}
+
+test "numbers are read from the way a paper writes them" {
+  expect leading_number("69.15%").or(0) == 69.15
+  expect leading_number("x3.1").or(0) == 3.1
+  expect leading_number("10,000+ apps").or(0) == 10000
+  expect not leading_number("many").exists()
+  expect heights("1, 2 4 x 3") == [1, 2, 4, 3]
+}
+
+test "a figure the model filled badly is left out" {
+  figures = sample().drawing.figures
+  expect drawable(figures[0])
+  expect drawable(figures[1])
+  expect drawable(figures[2])
+  expect not drawable(figures[3])
+}
+
+test "the page draws each kind" {
+  html = page("Digest", [sample()])
+  expect html.starts_with("<!doctype html>")
+  expect html.contains("3 figures")
+  expect html.contains("stroke-dasharray=\"130.1 188.5\"")
+  expect html.contains("<polyline")
+  expect html.contains("QUARTIC") == false
+  expect html.contains("Quartic family")
+  expect not html.contains("Broken")
+}
