@@ -707,6 +707,12 @@ class NativeTests(unittest.TestCase):
             '  found = execute desk.find_notes(path: ".", query: a.text)\n}\n'
             "workflow near(a: Ask) -> Near {\n"
             '  n = execute desk.how_near(a: a.text, b: "monthly rent for the flat")\n}\n'
+            "record Note { text: Text }\n"
+            "memory notes of Note\n"
+            "workflow like(a: Ask) -> NotesLike {\n"
+            '  one = remember {text: "Rent is 900 euros a month"} in notes under "rent"\n'
+            '  two = remember {text: "The cat needs its vaccine"} in notes under "cat"\n'
+            "  found = recall notes like a.text\n}\n"
         )
         with tempfile.TemporaryDirectory() as scratch:
             folder = Path(scratch)
@@ -723,12 +729,14 @@ class NativeTests(unittest.TestCase):
                 home.mkdir()
                 environment = {**os.environ, "USERPROFILE": str(home), "HOME": str(home), "PYTHONPATH": str(ROOT)}
                 for workflow, question in (("find", "what do I pay for the flat"), ("find", "when does my train go"),
-                                           ("find", "what do I pay for the flat"), ("near", "rent of the flat")):
+                                           ("find", "what do I pay for the flat"), ("near", "rent of the flat"),
+                                           ("like", "what do I pay for the flat")):
                     (folder / "in.json").write_text(json.dumps({"a": {"text": question}}))
                     first = [str(self.engine)] if name == "native" else [sys.executable, "-m", "kosika.cli"]
                     ran = subprocess.run(
                         [*first, "run", str(folder / "p.kos"), "--workflow", workflow, "--input", str(folder / "in.json"),
                          "--allow-folder", str(notes), "--embed-model", "stand-in", "--embed-url", address,
+                         "--memory", str(home / "memory"),
                          "--trace", str(folder / "t.jsonl")],
                         cwd=folder, capture_output=True, text=True, env=environment,
                     )
@@ -738,6 +746,7 @@ class NativeTests(unittest.TestCase):
         self.assertIn("home.txt:1: Rent is 900 euros", said["reference"][0])
         self.assertNotIn("hidden", "".join(said["reference"]))
         self.assertNotIn("short", "".join(said["reference"]))
+        self.assertIn("'by': 'meaning'", said["reference"][-1])
 
     def test_it_reads_a_page_as_the_reference_does(self) -> None:
         # The web tool's reading of a page, a text and a feed: the same

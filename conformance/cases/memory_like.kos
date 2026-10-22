@@ -1,0 +1,43 @@
+// `recall NAME like TEXT`: the entries of a memory nearest to a text,
+// nearest first, each with how near it is. With no embedding model, as in a
+// test, nearness is the share of words they have in common.
+
+record Note { text: Text topic: Text }
+record Ask { text: Text }
+record Seen { keys: Text[] scores: Number[] by: Text first: Text }
+
+memory notes of Note
+
+fn seen(found: NotesLike) -> Seen {
+  let first = if found.matches.is_empty() { "" } else { found.matches[0].value.topic }
+  return {keys: for m in found.matches { m.key } scores: for m in found.matches { m.score } by: found.by first: first}
+}
+
+workflow ask(a: Ask) -> Seen {
+  one = remember {text: "Rent is 900 euros a month" topic: "home"} in notes under "rent"
+  two = remember {text: "The rent for the garage is 50 euros" topic: "home"} in notes under "garage"
+  three = remember {text: "The cat needs its vaccine" topic: "pets"} in notes under "cat"
+  found = recall notes like a.text
+  out = seen(found)
+}
+
+test "the nearest come first, each with its score" {
+  s = ask({text: "how much is the rent"})
+  expect s.by == "words"
+  // "the" and "is" count too: garage shares three of ten words, rent two,
+  // and the cat one.
+  expect s.keys == ["garage", "rent", "cat"]
+  expect s.scores == [0.3, 0.2, 0.1]
+  expect s.first == "home"
+}
+
+test "words not kept find nothing" {
+  s = ask({text: "quantum physics"})
+  expect s.keys == []
+  expect s.first == ""
+}
+
+test "an empty question finds nothing" {
+  s = ask({text: "   "})
+  expect s.keys == []
+}

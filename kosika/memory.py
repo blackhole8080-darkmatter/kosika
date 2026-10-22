@@ -13,6 +13,15 @@ and uses it from workflow steps:
 `remember` replaces what was stored under that key and gives
 `{key: Text, entries: Number}`.
 
+    similar = recall customers like ticket.text
+
+gives the entries nearest to a text, nearest first, at most 10:
+`{matches: [{key, value, score}], by: Text}`. With an embedding model
+granted (`--embed-model`), `score` is how near in meaning, -1 to 1, and `by`
+is "meaning"; without one it is the share of their words the text and the
+entry have in common, 0 to 1, and `by` is "words". An entry is read as its
+key and the text in its record.
+
 Memory is not a second execution path. `lower_memory` turns each declaration
 into two ordinary tools and each step into an ordinary tool call, so the
 checker, traces, replay, limits, and the mind map treat memory like any other
@@ -47,6 +56,12 @@ AGENT = "memory"
 SOURCE_PREFIX = "memory:"
 KEY_RECORD = "MemoryKey"
 SAVED_RECORD = "MemorySaved"
+TEXT_RECORD = "MemoryText"
+#: The most entries `recall NAME like TEXT` gives.
+MAX_LIKE = 10
+#: The most entries a recall by meaning sends to the model at once; the
+#: rest are picked up by later recalls, which remember.
+MAX_LIKE_NEW = 400
 MAX_ENTRIES = 10_000
 MAX_KEY_LENGTH = 200
 
@@ -76,6 +91,51 @@ def tool_names(name: str) -> tuple[str, str]:
     return f"remember_{name}", f"recall_{name}"
 
 
+def like_tool(name: str) -> str:
+    return f"like_{name}"
+
+
+def match_record(name: str) -> str:
+    return f"{_title(name)}Match"
+
+
+def like_record(name: str) -> str:
+    return f"{_title(name)}Like"
+
+
+def _calls(program: Program) -> set[str]:
+    """The tools a program's workflow steps call."""
+
+    named: set[str] = set()
+    for workflow in program.workflows:
+        for step in workflow.steps:
+            for call in (step.call, step.fallback, *(c for _, c in step.branches)):
+                name = getattr(call, "tool_name", None)
+                if name:
+                    named.add(name)
+    return named
+
+
+def entry_text(key: str, value: Any) -> str:
+    """What an entry says, for finding it by likeness: its key, and the text
+    in its record, field by field in name order."""
+
+    found = [key]
+
+    def collect(part: Any) -> None:
+        if isinstance(part, str):
+            found.append(part)
+        elif isinstance(part, dict):
+            for name in sorted(part):
+                collect(part[name])
+        elif isinstance(part, list):
+            for item in part:
+                collect(item)
+
+    collect(value)
+    return "\n".join(found)
+
+
 def supplied_names(memories: list[MemoryDecl]) -> set[str]:
     """The names a module may use because it declares these memories."""
 
@@ -84,6 +144,8 @@ def supplied_names(memories: list[MemoryDecl]) -> set[str]:
         names |= {AGENT, KEY_RECORD, SAVED_RECORD}
         names |= {entry_record(memory.name), recalled_record(memory.name)}
         names |= set(tool_names(memory.name))
+        names |= {TEXT_RECORD, like_tool(memory.name)}
+        names |= {match_record(memory.name), like_record(memory.name)}
     return names
 
 
@@ -123,6 +185,7 @@ def lower_memory(program: Program) -> Program:
 
     seen: set[str] = set()
     granted: list[str] = []
+    called = _calls(program)
     for memory in program.memories:
         if memory.name in seen:
             raise MemoryError_(f"Memory {memory.name!r} is declared more than once")
@@ -170,6 +233,34 @@ def lower_memory(program: Program) -> Program:
             )
         )
         granted += [remember, recall]
+        if like_tool(memory.name) in called:
+            # Only a program that asks for likeness gets its tool, so every
+            # other keeps its tree and its hash.
+            if like_tool(memory.name) in taken:
+                raise MemoryError_(
+                    f"Memory {memory.name!r} cannot be used: the name "
+                    f"{like_tool(memory.name)!r} is already declared"
+                )
+            add_record(TEXT_RECORD, (Field("text", "Text"),))
+            add_record(
+                match_record(memory.name),
+                (Field("key", "Text"), Field("value", memory.record), Field("score", "Number")),
+            )
+            add_record(
+                like_record(memory.name),
+                (Field("matches", match_record(memory.name) + "[]"), Field("by", "Text")),
+            )
+            tools.append(
+                ToolDecl(
+                    like_tool(memory.name),
+                    source,
+                    "like",
+                    "observe",
+                    like_record(memory.name),
+                    TEXT_RECORD,
+                )
+            )
+            granted.append(like_tool(memory.name))
     return replace(
         program,
         records=records,
@@ -208,6 +299,43 @@ class MemoryStore:
         entries = self.entries(name)
         return {"found": key in entries, "value": entries.get(key)}
 
+    def like(self, name: str, text: str, meaning: Any = None) -> dict[str, Any]:
+        """The entries nearest to `text`, nearest first, at most MAX_LIKE; of
+        two as near, the one kept first."""
+
+        entries = list(self.entries(name).items())
+        if not entries or not text.strip():
+            return {"matches": [], "by": "meaning" if meaning is not None else "words"}
+        texts = [entry_text(key, value) for key, value in entries]
+        if meaning is not None:
+            from .embeddings import EmbeddingError
+
+            try:
+                ranked = meaning.nearest(text, texts, MAX_LIKE_NEW)
+            except EmbeddingError as exc:
+                raise RuntimeError(str(exc)) from exc
+            by = "meaning"
+        else:
+            from .lessons import words_of
+
+            asked = set(words_of(text))
+            scored = []
+            for position, said in enumerate(texts):
+                theirs = set(words_of(said))
+                union = asked | theirs
+                score = len(asked & theirs) / len(union) if union else 0.0
+                if score > 0:
+                    scored.append((score, position))
+            ranked = sorted(scored, key=lambda item: (-item[0], item[1]))
+            by = "words"
+        return {
+            "matches": [
+                {"key": entries[at][0], "value": entries[at][1], "score": round(score, 4)}
+                for score, at in ranked[:MAX_LIKE]
+            ],
+            "by": by,
+        }
+
     def remember(self, name: str, key: str, value: Any) -> dict[str, Any]:
         entries = self.entries(name)
         if not key or len(key) > MAX_KEY_LENGTH:
@@ -239,7 +367,11 @@ def declared(program: Program) -> list[MemoryDecl]:
 
 
 def bind_memory_tools(
-    program: Program, directory: str | Path | None, *, store: MemoryStore | None = None
+    program: Program,
+    directory: str | Path | None,
+    *,
+    store: MemoryStore | None = None,
+    meaning: Any = None,
 ) -> dict[str, Callable[[ToolDecl, dict[str, Any]], Any]]:
     """Executors for the program's memory tools, over one store.
 
@@ -255,12 +387,17 @@ def bind_memory_tools(
         def run(tool: ToolDecl, arguments: dict[str, Any]) -> Any:
             if tool.operation == "recall":
                 return kept.recall(name, arguments["key"])
+            if tool.operation == "like":
+                return kept.like(name, arguments["text"], meaning)
             return kept.remember(name, arguments["key"], arguments["value"])
 
         return run
 
+    declared_tools = {tool.name for tool in program.tools}
     bindings = {}
     for memory in program.memories:
-        for tool_name in tool_names(memory.name):
-            bindings[tool_name] = executor(memory.name)
+        for tool_name in (*tool_names(memory.name), like_tool(memory.name)):
+            # `like_NAME` is declared only where a program recalls by likeness.
+            if tool_name in declared_tools:
+                bindings[tool_name] = executor(memory.name)
     return bindings

@@ -1747,6 +1747,11 @@ class Parser:
         if self.check("recall") and self.peek().value != "(":
             self.advance()
             memory_name = self.identifier()
+            if self.accept("like"):
+                # `recall notes like question`: the entries nearest to it.
+                return ToolCall(
+                    "memory", f"like_{memory_name}", (("text", self.expression()),)
+                )
             self.expect("under")
             return ToolCall(
                 "memory", f"recall_{memory_name}", (("key", self.expression()),)

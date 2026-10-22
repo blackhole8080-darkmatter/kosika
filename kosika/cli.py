@@ -3601,7 +3601,7 @@ def main() -> int:
         )
         system_bindings = {
             **system_bindings,
-            **bind_memory_tools(program, getattr(args, "memory", None)),
+            **bind_memory_tools(program, getattr(args, "memory", None), meaning=_meaning(args)),
         }
         if args.approve and not args.journal:
             # Approval needs a journal to remember what was approved between

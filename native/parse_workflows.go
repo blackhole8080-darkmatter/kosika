@@ -443,6 +443,10 @@ func (p *Parser) parseStepCall() *StepCall {
 		case token.Value == "recall" && following != "(":
 			p.advance()
 			name := p.identifier()
+			if p.accept("like") {
+				// `recall notes like question`: the entries nearest to it.
+				return &StepCall{Kind: "tool", Agent: memoryAgent, Name: "like_" + name, Args: []Arg{{"text", p.expression()}}, Line: token.Line}
+			}
 			p.expect("under")
 			return &StepCall{Kind: "tool", Agent: memoryAgent, Name: "recall_" + name, Args: []Arg{{"key", p.expression()}}, Line: token.Line}
 		}

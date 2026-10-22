@@ -3506,6 +3506,20 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   programs with workflows, agents and tools; the guide does not teach
   those yet.
 
+### Recalling by likeness, in both engines
+
+- `recall NAME like text` (kosika/memory.py `MemoryStore.like`,
+  native/stores.go `like`) gives a memory's entries nearest to a text,
+  nearest first, at most 10, each with a score, so a program can drop weak
+  links and keep strong ones. Nearness is of meaning with an embedding
+  model and of shared words without one (`by` says which), so tests and
+  programs with no model still find things.
+- Only a program that uses it gets the third tool, so every other memory
+  program is lowered as before and keeps its hash.
+- Asked for by the neural memory thread (its Notebook example). Held by
+  `cases/memory_like.kos` (scores to four places) and by `recall … like`
+  against a stand-in embedding model in both engines.
+
 ### The native engine searches by meaning
 
 - A files tool's `find` and a `system "meaning"` tool's `near` run in

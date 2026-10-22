@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -54,7 +55,8 @@ func storeNames(program *Program) map[string]bool {
 	for _, memory := range program.Memories {
 		for _, name := range []string{memoryAgent, memoryKeyRecord, memorySavedRecord,
 			titled(memory.Name) + "Entry", titled(memory.Name) + "Recalled",
-			"remember_" + memory.Name, "recall_" + memory.Name} {
+			"remember_" + memory.Name, "recall_" + memory.Name,
+			memoryTextRecord, "like_" + memory.Name, titled(memory.Name) + "Match", titled(memory.Name) + "Like"} {
 			names[name] = true
 		}
 	}
@@ -189,6 +191,19 @@ func lowerOne(program *Program, memories bool) {
 		}
 		program.Tools = append(program.Tools, tools...)
 		granted = append(granted, tools[0].Name, tools[1].Name)
+		if memories && calledTools(program)["like_"+store.Name] {
+			// Only a program that asks for likeness gets its tool, so every
+			// other is lowered as before.
+			like := "like_" + store.Name
+			if l.taken[like] {
+				panic(&storeRefusal{fmt.Sprintf("%s %s cannot be used: the name %s is already declared", l.what, pyRepr(store.Name), pyRepr(like))})
+			}
+			l.addRecord(memoryTextRecord, []Param{{"text", "Text"}})
+			l.addRecord(title+"Match", []Param{{"key", "Text"}, {"value", store.Record}, {"score", "Number"}})
+			l.addRecord(title+"Like", []Param{{"matches", title + "Match[]"}, {"by", "Text"}})
+			program.Tools = append(program.Tools, &ToolDecl{Name: like, Source: memorySource + store.Name, Operation: "like", Access: "observe", Output: title + "Like", Input: memoryTextRecord})
+			granted = append(granted, like)
+		}
 	}
 	if !memories {
 		// A post is signed with the name of a declared agent.
@@ -263,6 +278,127 @@ func (m *memoryStore) entries(name string) *Record {
 		m.data[name] = loaded
 	}
 	return m.data[name]
+}
+
+// memoryTextRecord is what `recall NAME like TEXT` is given.
+const memoryTextRecord = "MemoryText"
+
+const (
+	maxLike    = 10
+	maxLikeNew = 400
+)
+
+// calledTools are the tools a program's workflow steps call.
+func calledTools(program *Program) map[string]bool {
+	called := map[string]bool{}
+	for _, workflow := range program.Workflows {
+		for _, step := range workflow.Steps {
+			calls := []*StepCall{step.Call, step.Fallback}
+			for _, branch := range step.Branches {
+				calls = append(calls, branch.Call)
+			}
+			for _, call := range calls {
+				if call != nil && call.Kind == "tool" {
+					called[call.Name] = true
+				}
+			}
+		}
+	}
+	return called
+}
+
+// entryText is what an entry says, for finding it by likeness: its key,
+// and the text in its record, field by field in name order.
+func entryText(key string, value Value) string {
+	found := []string{key}
+	var collect func(Value)
+	collect = func(part Value) {
+		switch v := part.(type) {
+		case string:
+			found = append(found, v)
+		case *Record:
+			keys := append([]string{}, v.Keys...)
+			sort.Strings(keys)
+			for _, name := range keys {
+				collect(v.Fields[name])
+			}
+		case []Value:
+			for _, item := range v {
+				collect(item)
+			}
+		}
+	}
+	collect(value)
+	return strings.Join(found, "\n")
+}
+
+// like is `recall NAME like TEXT`: the entries nearest to the text,
+// nearest first, at most ten; of two as near, the one kept first. Nearness
+// is of meaning with an embedding model, and of words without one.
+func (m *memoryStore) like(name, text string, by *meaning) Value {
+	entries := m.entries(name)
+	result := newRecord()
+	how := "words"
+	if by != nil {
+		how = "meaning"
+	}
+	matches := []Value{}
+	if len(entries.Keys) == 0 || pyStrip(text) == "" {
+		result.set("matches", matches)
+		result.set("by", how)
+		return result
+	}
+	texts := make([]string, len(entries.Keys))
+	for i, key := range entries.Keys {
+		texts[i] = entryText(key, entries.Fields[key])
+	}
+	var ranked []nearness
+	if by != nil {
+		ranked = by.nearest(text, texts, maxLikeNew)
+	} else {
+		asked := map[string]bool{}
+		for _, word := range wordsOf(text) {
+			asked[word] = true
+		}
+		for position, said := range texts {
+			theirs := map[string]bool{}
+			for _, word := range wordsOf(said) {
+				theirs[word] = true
+			}
+			shared, union := 0, len(theirs)
+			for word := range asked {
+				if theirs[word] {
+					shared++
+				} else {
+					union++
+				}
+			}
+			if union > 0 && shared > 0 {
+				ranked = append(ranked, nearness{float64(shared) / float64(union), position})
+			}
+		}
+		sort.SliceStable(ranked, func(i, j int) bool {
+			if ranked[i].score != ranked[j].score {
+				return ranked[i].score > ranked[j].score
+			}
+			return ranked[i].position < ranked[j].position
+		})
+	}
+	for i, found := range ranked {
+		if i >= maxLike {
+			break
+		}
+		key := entries.Keys[found.position]
+		score, _ := strconv.ParseFloat(strconv.FormatFloat(found.score, 'f', 4, 64), 64)
+		match := newRecord()
+		match.set("key", key)
+		match.set("value", entries.Fields[key])
+		match.set("score", score)
+		matches = append(matches, match)
+	}
+	result.set("matches", matches)
+	result.set("by", how)
+	return result
 }
 
 func (m *memoryStore) recall(name, key string) Value {
@@ -369,6 +505,10 @@ func (r *run) hostTool(tool *ToolDecl, arguments *Record) (Value, bool) {
 		key, _ := arguments.Fields["key"].(string)
 		if tool.Operation == "recall" {
 			return r.memory.recall(name, key), true
+		}
+		if tool.Operation == "like" {
+			text, _ := arguments.Fields["text"].(string)
+			return r.memory.like(name, text, r.meaning), true
 		}
 		return r.memory.remember(name, key, arguments.Fields["value"]), true
 	case systemKind(tool) != "" && r.systemBound(tool):

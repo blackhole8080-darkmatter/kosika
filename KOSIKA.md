@@ -880,10 +880,22 @@ workflow main(ticket: Ticket) -> Reply {
   under that key, and gives `MemorySaved {key: Text, entries: Number}`. The
   value MUST be the memory's record. A key has 1 to 200 characters and a
   memory holds at most 10,000 entries.
-- Both are workflow steps. A memory MUST be declared in the module that uses
-  it.
+- `recall NAME like text` gives `<Name>Like {matches: <Name>Match[], by:
+  Text}`, the entries nearest to the text, nearest first, at most 10, each
+  `<Name>Match {key: Text, value: Record, score: Number}`; of two as near,
+  the one kept first. An entry is read as its key and the text in its
+  record, field by field in name order. With an embedding model granted
+  (`--embed-model`), `score` is nearness of meaning, -1 to 1, rounded to
+  four places, and `by` is `"meaning"`; at most 400 entries not seen before
+  are sent to the model in one recall. Without one, as in a test, `score`
+  is the share of their words in common, 0 to 1, entries sharing none are
+  left out, and `by` is `"words"`. The two scales differ, so a program
+  that keeps a threshold reads `by`.
+- All three are workflow steps. A memory MUST be declared in the module
+  that uses it.
 - A memory is lowered to two read-only tools, `remember_NAME` and
-  `recall_NAME`, used through a generated agent named `memory`, so traces,
+  `recall_NAME`, and a third, `like_NAME`, only in a program that recalls
+  by likeness, used through a generated agent named `memory`, so traces,
   replay, limits, and the mind map treat it like any other tool. Replay uses
   what the trace recorded and never the store.
 - Declaring a memory grants nothing. Whoever runs the program names the
