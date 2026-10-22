@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import html.parser
 import ipaddress
+import zlib
 import re
 import urllib.error
 import urllib.request
@@ -323,6 +324,13 @@ def _whole(url: str, sites: Sequence[str], opener: Opener) -> dict[str, str]:
         kind = headers.get("content-type", "").split(";")[0].strip().lower()
         if kind not in ("text/html", "text/plain", "application/xhtml+xml", *FEED_TYPES):
             raise WebError(f"{current} is {kind or 'of unknown type'}, not a text page")
+        if headers.get("content-encoding", "").strip().lower() in ("gzip", "x-gzip"):
+            # Sent packed although nothing asked for it, as some sites do.
+            unpacker = zlib.decompressobj(16 + zlib.MAX_WBITS)
+            try:
+                body = unpacker.decompress(body, MAX_BYTES + 1)
+            except zlib.error as exc:
+                raise WebError(f"{current} sent a packed page that cannot be read") from exc
         if len(body) > MAX_BYTES:
             raise WebError(f"{current} is larger than 2 MiB")
         match = re.search(r"charset=([\w-]+)", headers.get("content-type", ""))

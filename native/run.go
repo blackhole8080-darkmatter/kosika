@@ -22,7 +22,8 @@ func runCommand(args []string) int {
 	options["--mcp-source"] = "local_stdio"
 	options["--trace"] = "run_trace.jsonl"
 	flags := map[string]bool{"--approve": true, "--allow-shell": true}
-	known := map[string]bool{"--services": true, "--allow-folder": true, "--memory": true, "--env": true, "--journal": true, "--binding-id": true, "--approval-record": true, "--approved-by": true, "--trace": true, "--model-fixture": true, "--mcp-server": true, "--mcp-manifest": true, "--mcp-source": true, "--workflow": true, "--input": true, "--model": true, "--model-url": true, "--model-protocol": true, "--model-timeout": true, "--model-binding": true, "--max-output-tokens": true}
+	var givenSites []string
+	known := map[string]bool{"--allow-site": true, "--services": true, "--allow-folder": true, "--memory": true, "--env": true, "--journal": true, "--binding-id": true, "--approval-record": true, "--approved-by": true, "--trace": true, "--model-fixture": true, "--mcp-server": true, "--mcp-manifest": true, "--mcp-source": true, "--workflow": true, "--input": true, "--model": true, "--model-url": true, "--model-protocol": true, "--model-timeout": true, "--model-binding": true, "--max-output-tokens": true}
 	for i := 1; i < len(args); i++ {
 		name, value, joined := strings.Cut(args[i], "=")
 		if flags[name] && !joined {
@@ -40,6 +41,11 @@ func runCommand(args []string) int {
 			}
 			i++
 			value = args[i]
+		}
+		if name == "--allow-site" {
+			// May be given again, once for each site.
+			givenSites = append(givenSites, value)
+			continue
 		}
 		options[name] = value
 	}
@@ -173,6 +179,17 @@ func runCommand(args []string) int {
 	folder, allowShell := options["--allow-folder"], options["--allow-shell"] != ""
 	if env != nil {
 		folder, allowShell = env.allowFolder, env.allowShell
+		givenSites = env.sites
+	}
+	// The sites a web tool may read, as bare host names.
+	var sites []string
+	for _, site := range givenSites {
+		host, problem := cleanSite(site)
+		if problem != "" {
+			fmt.Fprintf(os.Stderr, "Workflow failed: %s\n", problem)
+			return 2
+		}
+		sites = append(sites, host)
 	}
 	if folder == "" && allowShell {
 		fmt.Fprintln(os.Stderr, "Workflow failed: allowing shell also needs a granted folder to run in")
@@ -222,6 +239,7 @@ func runCommand(args []string) int {
 		}
 		running.folder, running.allowShell = folder, allowShell
 		running.services = services
+		running.sites = sites
 		if env != nil {
 			// An environment's budget only tightens the workflow's.
 			if amount, given := env.budget["model_calls"]; given && int(toFloat(amount)) < running.maxModels {

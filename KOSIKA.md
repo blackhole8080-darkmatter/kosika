@@ -351,7 +351,7 @@ the receiver's type, and every method is pure and deterministic.
 | `Text` | `length()` | `Number` of characters |
 | `Text` | `upper()`, `lower()`, `trim()` | `Text` |
 | `Text` | `contains(part: Text)`, `starts_with(prefix: Text)`, `ends_with(suffix: Text)` | `Bool` |
-| `Text` | `split(separator: Text)` | `Text[]`; the separator MUST be non-empty and a result over 512 parts fails the run |
+| `Text` | `split(separator: Text)` | `Text[]`; the separator MUST be non-empty and a result over 100,000 parts fails the run |
 | `Text[]` | `join(separator: Text)` | `Text` |
 | `Text` | `capitalize()`, `title()`, `reverse()` | `Text`: the first letter of the text, or of each word, upper case and the rest lower; the characters backwards |
 | `Text` | `count(part: Text)`, `repeat(times: Number)` | `Number` of times a non-empty part appears, not overlapping; `Text` repeated a whole number of times |
@@ -383,12 +383,12 @@ the receiver's type, and every method is pure and deterministic.
 | `Number` | `is_whole()` | `Bool`, true when there is nothing after the decimal point |
 | any array | `index_of(item: T)` | `Number?`: the position of the first element equal to `item`, counted from `0`, else `null` |
 | `Text` | `index_of(part: Text)` | `Number?`: where `part` first begins, counted from `0`, else `null`; `part` MUST be non-empty |
-| `Text` | `chars()` | `Text[]` of its characters, one each; over 512 fails the run |
+| `Text` | `chars()` | `Text[]` of its characters, one each; over 100,000 fails the run |
 | `Text` | `lines()` | `Text[]` of its lines, without their line ends, however each ends; an empty text has none. A whole file may be read this way |
 | `Text` | `pad_left(width: Number, fill: Text)`, `pad_right(width: Number, fill: Text)` | `Text` made at least `width` long by adding `fill`, which MUST be one character, before or after; a text already that long is unchanged |
 | `Text`, any array | `is_empty()` | `Bool`, true when the length is `0` |
 | `Text`, any array | `take(count: Number)`, `drop(count: Number)` | the first `count` characters or elements, or all but those. A count beyond the length gives everything, or nothing; a negative or fractional count fails the run |
-| `Text` | `words()` | `Text[]`: the parts between runs of spaces, tabs and line ends, with no empty parts; over 512 parts fails the run |
+| `Text` | `words()` | `Text[]`: the parts between runs of spaces, tabs and line ends, with no empty parts; over 100,000 parts fails the run |
 | `Text` | `replace(old: Text, new: Text)` | `Text` with every `old` replaced; `old` MUST be non-empty |
 | `Text` | `trim_marks(marks: Text)` | `Text` without spaces or any character of `marks` at its two ends; the middle is untouched |
 | `Number[]` | `plus(other)`, `minus(other)`, `scaled(by: Number)`, `cross(other)` | `Number[]`; lengths MUST agree, and `cross` needs two vectors of 3 |
@@ -1215,8 +1215,9 @@ tool run_tests {
   first 20,000 characters of the page's text. `fetch_from` gives the
   20,000 from character `start`, a whole number from 0, and `next`, where
   the part after it begins, or -1 when this part ends the page, so a
-  program reads a long page, such as a paper, part by part. `kosika-native`
-  does not reach web tools yet.
+  program reads a long page, such as a paper, part by part. A page sent
+  gzip-packed, although nothing asked for that, is unpacked first; the
+  2 MiB limit is of the unpacked page.
 - A `system "linux"` tool reads how the one Linux distribution the host
   names (`--linux NAME`, under WSL) is doing, and a `system "computer"`
   tool how this computer is doing (`--computer`). Both only look, by

@@ -82,6 +82,24 @@ func main() {
 	if len(args) == 2 && args[0] == "replay" {
 		os.Exit(replayCommand(args[1]))
 	}
+	if len(args) == 3 && args[0] == "readable" {
+		// What the web tool reads from a saved page, as one JSON object:
+		// for tests that hold it to the reference's reading.
+		body := string([]byte(read(args[2])))
+		result := map[string]string{}
+		switch args[1] {
+		case "html", "text":
+			result["title"], result["text"] = readablePage(body, args[1] == "html")
+		case "feed":
+			result["text"] = readableFeed(body)
+		default:
+			fail("usage: kosika-native readable html|text|feed FILE")
+		}
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetEscapeHTML(false)
+		_ = encoder.Encode(result)
+		return
+	}
 	asJSON := false
 	if len(args) == 3 && args[1] == "--json" {
 		asJSON, args = true, []string{args[0], args[2]}

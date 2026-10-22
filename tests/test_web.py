@@ -201,6 +201,23 @@ class FetchTests(unittest.TestCase):
         )
         self.assertEqual(len(page["text"]), MAX_CHARACTERS)
 
+    def test_a_page_sent_packed_unasked_is_unpacked(self) -> None:
+        import gzip
+
+        packed = gzip.compress(b"<title>Packed</title><p>Unpacked text</p>")
+        page = fetch(
+            "https://example.org/x",
+            SITES,
+            opener({"https://example.org/x": (200, {"content-type": "text/html", "content-encoding": "gzip"}, packed)}),
+        )
+        self.assertEqual((page["title"], page["text"]), ("Packed", "Unpacked text"))
+        with self.assertRaisesRegex(WebError, "cannot be read"):
+            fetch(
+                "https://example.org/x",
+                SITES,
+                opener({"https://example.org/x": (200, {"content-type": "text/html", "content-encoding": "gzip"}, b"not packed")}),
+            )
+
     def test_a_long_page_is_read_a_part_at_a_time(self) -> None:
         body = b"<main><p>" + b"word " * 20000 + b"</p></main>"
         pages = opener({"https://example.org/x": html(body)})

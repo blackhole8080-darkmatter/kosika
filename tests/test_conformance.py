@@ -658,6 +658,96 @@ class NativeTests(unittest.TestCase):
                 )
                 self.assertEqual(ran.returncode, 0, f"{reader} replay of {written}")
 
+    def test_it_reads_a_page_as_the_reference_does(self) -> None:
+        # The web tool's reading of a page, a text and a feed: the same
+        # title and text, whatever the markup does.
+        from kosika.web import readable, readable_feed
+
+        long = "Kosika keeps what it reads as data. " * 8
+        pages = {
+            "html": [
+                "<!DOCTYPE html><HTML><Head><TITLE>Tea &amp; Light</TITLE>"
+                "<script>if (a < b) { document.write('<p>no</p>') }</script>"
+                "<style>p { color: red }</style></head><body>"
+                "<nav><a href='/'>Home</a></nav><header>Site</header>"
+                "<main><h1>Tea</h1><p>Hot&nbsp;water, it&#8217;s caf&eacute; time.</p>"
+                f"<p>{long}</p><br/>a < b and c > d<!-- hidden --></main>"
+                "<footer>Copyright</footer></body></html>",
+                "<p>Short page<br>two lines</p><div class=\"a>b\">attr with &gt;</div>"
+                "<ul><li>one<li>two</ul><form><button>Go</button></form>tail",
+                f"<article><p>{long}</p><svg><text>drawn</text></svg></article><p>outside</p><p",
+                "<?xml version='1.0'?><![CDATA[gone]]><table><tr><td>a</td><td>b</td></tr></table>",
+            ],
+            "text": ["  plain text\n\nwith  lines  \n"],
+            "feed": [
+                "<?xml version='1.0'?><feed><title>Feed</title><entry><title>A &amp; B</title>"
+                "<published>2026-10-14T10:00:00Z</published><link rel='alternate' href='https://x.org/1'/>"
+                "<link rel='related' href='https://x.org/no'/><author><name>Ann Lee</name></author>"
+                "<summary>  Tea\n  and light. </summary></entry><entry><title>Second</title></entry></feed>",
+                "<rss><channel><item><title>A</title><description><![CDATA[<p>B</p>]]></description>"
+                "<pubDate>Mon, 20 Oct 2026</pubDate><link>https://x.org/2</link></item></channel></rss>",
+            ],
+        }
+        with tempfile.TemporaryDirectory() as scratch:
+            for kind, bodies in pages.items():
+                for index, body in enumerate(bodies):
+                    with self.subTest(kind=kind, index=index):
+                        page = Path(scratch) / f"{kind}{index}.txt"
+                        page.write_bytes(body.encode("utf-8"))
+                        ran = self.run_engine("readable", kind, str(page))
+                        self.assertEqual(ran.returncode, 0, ran.stderr.decode())
+                        native = json.loads(ran.stdout.decode("utf-8"))
+                        if kind == "feed":
+                            reference = {"text": readable_feed(body)}
+                        else:
+                            title, text = readable(body, kind == "html")
+                            reference = {"title": title, "text": text}
+                        self.assertEqual(native, reference)
+
+    def test_it_refuses_the_addresses_the_reference_refuses(self) -> None:
+        # Before anything is asked of the network: the same refusals, in the
+        # same words, for sites and addresses that may not be read.
+        program = (
+            "record PageRequest { url: Text }\n"
+            "record Page { url: Text title: Text text: Text }\n"
+            'tool read_page {\n  source system "web"\n  operation: "fetch"\n'
+            "  access: observe\n  input: PageRequest\n  output: Page\n}\n"
+            "agent reader {\n  can: [read_page]\n  max_steps: 1\n}\n"
+            "workflow main(request: PageRequest) -> Page {\n"
+            "  page = execute reader.read_page(request.url)\n}\n"
+        )
+        cases = [
+            ("http://example.org/a", ["example.org"]),
+            ("https://user@example.org/a", ["example.org"]),
+            ("https://example.org:8443/a", ["example.org"]),
+            ("https://93.184.216.34/a", ["example.org"]),
+            ("https://evil.com/a", ["example.org", "en.wikipedia.org"]),
+            ("https://example.org/a", ["not a site"]),
+            ("https://example.org/a", ["127.0.0.1"]),
+            ("https://example.org/a", ["https://Example.ORG/path"]),
+        ]
+        with tempfile.TemporaryDirectory() as scratch:
+            folder = Path(scratch)
+            (folder / "p.kos").write_text(program, encoding="utf-8")
+            for address, sites in cases:
+                with self.subTest(address=address, sites=sites):
+                    (folder / "in.json").write_text(json.dumps({"request": {"url": address}}))
+                    flags = ["--input", str(folder / "in.json"), "--trace", str(folder / "t.jsonl")]
+                    for site in sites:
+                        flags += ["--allow-site", site]
+                    reference = subprocess.run(
+                        [sys.executable, "-m", "kosika.cli", "run", str(folder / "p.kos"), *flags],
+                        cwd=ROOT, capture_output=True, text=True,
+                    )
+                    native = self.run_engine("run", str(folder / "p.kos"), *flags)
+                    said = reference.stderr.strip().splitlines()[-1]
+                    if sites == ["https://Example.ORG/path"]:
+                        # A site written as an address is the bare host; the
+                        # page is then asked for, so only the start is compared.
+                        self.assertNotIn("is not a site name", said)
+                        continue
+                    self.assertEqual(native.stderr.decode("utf-8").strip().splitlines()[-1], said)
+
     def test_it_carries_the_same_standard_library(self) -> None:
         # The native engine keeps a copy of kosika/std inside itself; it
         # must be the same library, file for file.

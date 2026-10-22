@@ -15,7 +15,7 @@ import (
 
 const (
 	maxArrayLength = 1_000_000
-	maxSplitParts  = 512
+	maxSplitParts  = 100_000
 	maxTextLength  = 10_000_000
 	maxMapEntries  = 100_000
 	maxRangeLength = 1_000_000

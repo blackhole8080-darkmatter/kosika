@@ -3506,6 +3506,28 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   programs with workflows, agents and tools; the guide does not teach
   those yet.
 
+### The native engine reads web pages
+
+- `source system "web"` (`fetch`, `fetch_from`) and the `fetch URL` step
+  run in native/ (native/web.go), with the sites granted by
+  `--allow-site` (repeatable) or an environment's `allow site`: the same
+  address rules and refusals in the same words, redirects only to allowed
+  addresses, 2 MiB, and a page reduced to the same title and text, by a
+  reader written to match Python's html.parser where the reference relies
+  on it (tags, entities, comments, script and style content, `<x/>`,
+  CDATA dropped).
+- Found on the way, in the reference: python.org sends its pages
+  gzip-packed though nothing asks for that, and the reference read the
+  packed bytes as text. Both engines now unpack such a page, and neither
+  asks for packing.
+- `split`, `words` and `chars` give up to 100,000 parts, not 512, so
+  `std/text`'s `chunks` splits a whole paper (the digest found it could
+  not).
+- Held by tests that read seven pages, texts and feeds with odd markup in
+  both engines and compare, compare eight refused addresses and sites,
+  and three real pages fetched by both (Wikipedia, arXiv's feed,
+  python.org) gave the same text.
+
 ### Reading a long page a part at a time
 
 - `operation: "fetch_from"` on a `system "web"` tool takes `{url, start}`

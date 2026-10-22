@@ -43,7 +43,9 @@ _NUMBER_TEXT = re.compile(r"-?[0-9]+(\.[0-9]+)?\Z")
 #: Building an array longer than this fails the run instead.
 MAX_ARRAY_LENGTH = 1_000_000
 #: Splitting cannot produce more parts than this; it fails instead.
-MAX_SPLIT_PARTS = 512
+#: The most parts `split`, `words` and `chars` give: room for a whole
+#: paper, still a bound.
+MAX_SPLIT_PARTS = 100_000
 #: A replace that would make a text longer than this fails instead.
 MAX_TEXT_LENGTH = 10_000_000
 _SCALARS = ("Text", "Number", "Bool", "Null")

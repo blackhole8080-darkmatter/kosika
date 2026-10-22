@@ -52,3 +52,11 @@ test "a ranking keeps the earlier of two equal texts first" {
   expect hits[1].index == 1
   expect hits[0].text == "a cat"
 }
+
+test "a long text, such as a paper, splits whole" {
+  long = "word ".repeat(3000).trim()
+  pieces = chunks(long, 1000, 100)
+  expect pieces.length() == 4
+  expect words_of(long).length() == 3000
+  expect pieces[3].words().length() == 300
+}
