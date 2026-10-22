@@ -613,13 +613,26 @@ workflow draw_one(msg: Msg) -> Lesson {
   shown   = one_drawn(one, drawing)
 }
 
-// "evening" gives the evening lesson; anything else, the afternoon digest.
+// "evening" gives the evening lesson; an arXiv link or number, that one
+// paper drawn; anything else, the afternoon digest.
 workflow main(msg: Msg) -> Said {
   budget 12 model calls, 10800 seconds
   said = match msg.text.trim().lower() == "evening" {
     case true { call evening_said(msg) }
-    case _ { call afternoon(msg) }
+    case _ { call not_evening(msg) }
   }
+}
+
+workflow not_evening(msg: Msg) -> Said {
+  said = match arxiv_link(msg.text).is_empty() {
+    case true { call afternoon(msg) }
+    case _ { call paper_said(msg) }
+  }
+}
+
+workflow paper_said(msg: Msg) -> Said {
+  lesson = call paper(msg)
+  said   = said_of(lesson)
 }
 
 workflow evening_said(msg: Msg) -> Said {
