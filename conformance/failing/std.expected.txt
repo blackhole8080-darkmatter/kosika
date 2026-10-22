@@ -1,0 +1,9 @@
+FAIL  chunks of no size
+      line 8: chunks needs a size of at least 1 and an overlap below it
+FAIL  an overlap as big as the chunk
+      line 12: chunks needs a size of at least 1 and an overlap below it
+FAIL  a percentile past 100
+      line 16: percentile needs p from 0 to 100
+FAIL  lists of different lengths
+      line 20: correlation needs two lists of the same length
+0 passed, 4 failed

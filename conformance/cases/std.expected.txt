@@ -1,0 +1,5 @@
+PASS  the standard library
+PASS  text that does not fit the rules
+PASS  numbers that do not fit the rules
+PASS  a ranking keeps the earlier of two equal texts first
+4 passed, 0 failed

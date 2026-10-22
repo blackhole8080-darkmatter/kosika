@@ -34,6 +34,11 @@ from .parser import ParseError, parse
 from .sugar import VALUE_CALL, lower_sugar
 from .thinking import BUILT_IN_RECORDS, ThinkingError, lower_thinking
 
+#: The standard library: Kosika modules shipped with the engine, imported
+#: as `import "std/NAME.kos"` from any program. They are read only.
+STD_ROOT = Path(__file__).resolve().parent / "std"
+STD_PREFIX = "std/"
+
 CATEGORIES = (
     "records",
     "enums",
@@ -200,7 +205,7 @@ def load_program(
             raise
         if (
             candidate.is_symlink()
-            or not resolved.is_relative_to(boundary)
+            or not (resolved.is_relative_to(boundary) or resolved.is_relative_to(STD_ROOT))
             or resolved.suffix != ".kos"
         ):
             mark_error(resolved)
@@ -256,11 +261,21 @@ def load_program(
             if relative.is_absolute() or relative.drive:
                 mark_error(resolved)
                 raise CheckError("Import paths must be relative")
-            dependency_path = resolved.parent / relative
+            dependency_path = (
+                # `std/NAME.kos` is the standard library, wherever it is
+                # written; a program's own folder named std is not reached
+                # this way.
+                STD_ROOT / name[len(STD_PREFIX) :]
+                if name.startswith(STD_PREFIX)
+                else resolved.parent / relative
+            )
             dependency = load(dependency_path)
             visible.update(dependency.exports)
+            found = dependency_path.resolve(strict=True)
             direct_imports.append(
-                dependency_path.resolve(strict=True).relative_to(boundary).as_posix()
+                STD_PREFIX + found.relative_to(STD_ROOT).as_posix()
+                if found.is_relative_to(STD_ROOT)
+                else found.relative_to(boundary).as_posix()
             )
         local = {
             item.name for category in CATEGORIES for item in getattr(module, category)
@@ -305,7 +320,11 @@ def load_program(
             for workflow in module.workflows:
                 for step in workflow.steps:
                     _diagnostic_context.steps.setdefault(step.name, set()).add(resolved)
-        module_key = resolved.relative_to(boundary).as_posix()
+        module_key = (
+            STD_PREFIX + resolved.relative_to(STD_ROOT).as_posix()
+            if resolved.is_relative_to(STD_ROOT)
+            else resolved.relative_to(boundary).as_posix()
+        )
         merged.module_declarations[module_key] = tuple(sorted(local))
         merged.module_imports[module_key] = tuple(sorted(direct_imports))
         for category in CATEGORIES:

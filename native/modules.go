@@ -5,8 +5,10 @@ package main
 // its own declarations and what each file it imports exports; nothing else.
 
 import (
+	"embed"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 )
@@ -83,6 +85,16 @@ func localNames(module *Program) []string {
 
 // loadModules reads a program and every file it imports, checks that each
 // uses only what it may see, and gives back them all as one program.
+// stdFiles are the standard library: Kosika modules shipped inside this
+// program, imported as `import "std/NAME.kos"`. They are a copy of
+// kosika/std, which tests/test_conformance.py holds them to.
+//
+//go:embed std/*.kos
+var stdFiles embed.FS
+
+// stdMarker begins the name of a module of the standard library.
+const stdMarker = "std/"
+
 func loadModules(entry string) (merged *Program, failure *moduleError) {
 	boundary := realPath(filepath.Dir(entry))
 	merged = &Program{}
@@ -103,12 +115,16 @@ func loadModules(entry string) (merged *Program, failure *moduleError) {
 	}
 	var load func(candidate string) *Program
 	load = func(candidate string) *Program {
-		resolved := realPath(candidate)
-		if resolved == "" {
-			refuse("No such module: %s", candidate)
-		}
-		if info, err := os.Lstat(candidate); err == nil && info.Mode()&os.ModeSymlink != 0 || !inside(resolved, boundary) || filepath.Ext(resolved) != ".kos" {
-			refuse("Import outside the granted .kos module root: %s", candidate)
+		standard := strings.HasPrefix(candidate, stdMarker)
+		resolved := candidate
+		if !standard {
+			resolved = realPath(candidate)
+			if resolved == "" {
+				refuse("No such module: %s", candidate)
+			}
+			if info, err := os.Lstat(candidate); err == nil && info.Mode()&os.ModeSymlink != 0 || !inside(resolved, boundary) || filepath.Ext(resolved) != ".kos" {
+				refuse("Import outside the granted .kos module root: %s", candidate)
+			}
 		}
 		if active[resolved] {
 			refuse("Import cycle at %s", resolved)
@@ -119,8 +135,13 @@ func loadModules(entry string) (merged *Program, failure *moduleError) {
 		if len(loaded)+len(active) >= 64 || len(active) >= 16 {
 			refuse("Module graph exceeds file/depth limit")
 		}
-		raw, err := os.ReadFile(resolved)
-		if err != nil {
+		var raw []byte
+		var err error
+		if standard {
+			if raw, err = stdFiles.ReadFile(resolved); err != nil {
+				refuse("No such module: %s", resolved)
+			}
+		} else if raw, err = os.ReadFile(resolved); err != nil {
 			refuse("Cannot read %s: %v", resolved, err)
 		}
 		if len(raw) > 262144 {
@@ -142,7 +163,19 @@ func loadModules(entry string) (merged *Program, failure *moduleError) {
 				// without its drive: it is read from the drive's root.
 				at = filepath.VolumeName(resolved)
 			}
-			dependency := load(pyPath(at, name))
+			next := ""
+			switch {
+			case strings.HasPrefix(name, stdMarker):
+				// `std/NAME.kos` is the standard library, wherever it is
+				// written.
+				next = stdMarker + path.Clean(strings.TrimPrefix(name, stdMarker))
+			case standard:
+				// A module of the library imports others of it.
+				next = stdMarker + path.Clean(path.Join(path.Dir(strings.TrimPrefix(resolved, stdMarker)), name))
+			default:
+				next = pyPath(at, name)
+			}
+			dependency := load(next)
 			for _, exported := range dependency.Exports {
 				visible[exported] = true
 			}

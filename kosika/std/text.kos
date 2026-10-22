@@ -1,0 +1,109 @@
+// std/text.kos: working with text for programs that talk to models.
+//
+//   import "std/text.kos"
+//
+// words_of(text)            the words, in lower case, without punctuation
+// chunks(text, size, over)  pieces of at most `size` words, each starting
+//                           `over` words before the last one ended
+// keywords(text, count)     the words that say most what the text is about
+// likeness(a, b)            how many of their words two texts share, 0 to 1
+// sentences(text)           the text's sentences
+// shorten(text, most)       at most `most` characters, ending in "…"
+// clean_answer(text)        a model's answer without code fences around it
+
+export [words_of, chunks, keywords, likeness, sentences, shorten, clean_answer]
+
+record StdWordCount { word: Text count: Number first: Number }
+
+// Words read a line at a time, so a long text is not one long split.
+fn std_raw_words(text: Text) -> Text[] {
+  var found: Text[] = []
+  for line in text.lines() {
+    found = found.concat(line.words())
+  }
+  return found
+}
+
+fn words_of(text: Text) -> Text[] {
+  return for word in std_raw_words(text)
+    where word.trim_marks(".,;:!?\"'()[]{}<>-_*`").length() > 0 {
+    word.trim_marks(".,;:!?\"'()[]{}<>-_*`").lower()
+  }
+}
+
+fn chunks(text: Text, size: Number, over: Number) -> Text[] {
+  if size < 1 or over < 0 or over >= size {
+    fail "chunks needs a size of at least 1 and an overlap below it"
+  }
+  let words = std_raw_words(text)
+  var pieces: Text[] = []
+  var start = 0
+  while start < words.length() {
+    let end = (start + size).min(words.length())
+    pieces = pieces.append(words.slice(start, end).join(" "))
+    if end == words.length() { break }
+    start = end - over
+  }
+  return pieces
+}
+
+fn std_is_common(word: Text) -> Bool {
+  return [
+    "the", "and", "for", "are", "but", "not", "you", "all", "any", "can",
+    "her", "was", "one", "our", "out", "has", "had", "his", "how", "its",
+    "may", "who", "did", "get", "him", "she", "too", "use", "that", "with",
+    "have", "this", "will", "your", "from", "they", "been", "were", "what",
+    "when", "them", "than", "then", "there", "their", "which", "would",
+    "about", "into", "more", "some", "could", "other", "only", "also",
+    "just", "over", "such", "very", "most", "much", "where", "these",
+    "those", "here", "each", "does", "being", "while", "should", "after"
+  ].contains(word)
+}
+
+fn keywords(text: Text, count: Number) -> Text[] {
+  var seen: Number{} = {}
+  var firsts: Number{} = {}
+  var order: Text[] = []
+  var position = 0
+  for word in words_of(text) {
+    if word.length() > 2 and not std_is_common(word) and not word.to_number().exists() {
+      if not seen.has(word) {
+        order = order.append(word)
+        firsts = firsts.set(word, position)
+      }
+      seen = seen.set(word, seen.get(word).or(0) + 1)
+    }
+    position += 1
+  }
+  // Most often first; of two as often, the one that came first.
+  let counted = for word in order {
+    StdWordCount(word: word, count: seen.get(word).or(0), first: firsts.get(word).or(0))
+  }
+  let ranked = counted.sort_by("first").reverse().sort_by("count").reverse()
+  return for item in ranked.take(count) { item.word }
+}
+
+fn likeness(a: Text, b: Text) -> Number {
+  let mine = words_of(a).unique()
+  let theirs = words_of(b).unique()
+  if mine.is_empty() and theirs.is_empty() { return 1 }
+  let shared = for word in mine where theirs.contains(word) { word }
+  let all = mine.concat(theirs).unique()
+  return (shared.length() / all.length() * 1000).round() / 1000
+}
+
+fn sentences(text: Text) -> Text[] {
+  let marked = text.replace(". ", ".\n").replace("! ", "!\n").replace("? ", "?\n")
+  return for line in marked.lines() where line.trim().length() > 0 { line.trim() }
+}
+
+fn shorten(text: Text, most: Number) -> Text {
+  if most < 1 { fail "shorten needs room for at least one character" }
+  if text.length() <= most { return text }
+  return text.slice(0, most - 1).trim() + "…"
+}
+
+fn clean_answer(text: Text) -> Text {
+  let kept = for line in text.lines() where not line.trim().starts_with("```") { line }
+  return kept.join("\n").trim()
+}

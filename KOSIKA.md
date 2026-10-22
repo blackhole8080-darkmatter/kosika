@@ -73,6 +73,22 @@ Imports have these semantics:
 - The graph is limited to 64 files, nesting depth 16, and 256 KiB per file.
 - Loading declarations never grants model providers, tool executors, MCP
   servers, files, sockets, or any other host authority.
+- An import path that begins `std/` names a module of the standard
+  library, which every engine carries and which any program may import:
+  `import "std/text.kos"`. It is not read from the program's folder. Its
+  modules are ordinary Kosika and follow every rule above; a name they
+  declare, exported or not, conflicts with the same name in the program,
+  so their private names begin `std_` or `Std`.
+
+The standard library:
+
+| Module | Exports |
+| --- | --- |
+| `std/text.kos` | `words_of(text)`, `chunks(text, size, over)`, `keywords(text, count)`, `likeness(a, b)`, `sentences(text)`, `shorten(text, most)`, `clean_answer(text)` |
+| `std/stats.kos` | `median(xs)`, `variance(xs)`, `deviation(xs)`, `percentile(xs, p)`, `normalized(xs)`, `zscores(xs)`, `correlation(xs, ys)` |
+| `std/search.kos` | `Hit {index, score, text}`, `rank(question, texts, count)`, `best(question, texts)`: texts ranked by the words they share with a question, rare words counting for more (BM25), with no model |
+
+Each module's first lines say what each export does.
 
 `parse(source)` is supported for single-file programs without imports.
 `load_program(path)` resolves imports, lowers named nested functions, and

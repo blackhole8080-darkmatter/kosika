@@ -1,0 +1,21 @@
+// Fails on purpose: the standard library refuses what it cannot do, and
+// says why.
+
+import "std/text.kos"
+import "std/stats.kos"
+
+test "chunks of no size" {
+  expect chunks("a b c", 0, 0) == []
+}
+
+test "an overlap as big as the chunk" {
+  expect chunks("a b c", 2, 2) == []
+}
+
+test "a percentile past 100" {
+  expect percentile([1, 2], 120).or(0) == 2
+}
+
+test "lists of different lengths" {
+  expect correlation([1, 2], [1]).or(0) == 1
+}

@@ -3506,6 +3506,19 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   programs with workflows, agents and tools; the guide does not teach
   those yet.
 
+### A standard library, in both engines
+
+- `import "std/NAME.kos"` reaches Kosika modules shipped with the engine
+  (kosika/std, embedded in native/ as native/std): `std/text` (words,
+  chunks of a text for a model's prompt, keywords, likeness, sentences,
+  shorten, a model's answer without fences), `std/stats` (median,
+  variance, deviation, percentile, normalized, z-scores, correlation) and
+  `std/search` (BM25 ranking of texts against a question, with no model,
+  for finding the passages of a paper or a folder that answer it). Written
+  in Kosika itself, so both engines run the same code.
+- Held by `cases/std.kos`, `failing/std.kos`, and a test that the native
+  engine's copy is the library, file for file.
+
 ### Looking at Linux and this computer
 
 - `source system "linux"` and `source system "computer"`, each with one

@@ -1,0 +1,84 @@
+// std/stats.kos: describing numbers.
+//
+//   import "std/stats.kos"
+//
+// median(xs)              the middle value, null for none
+// variance(xs)            how far values spread, squared (population)
+// deviation(xs)           the standard deviation (population)
+// percentile(xs, p)       the value p percent of the way up, 0 to 100
+// normalized(xs)          each value scaled to 0 to 1
+// zscores(xs)             how many deviations each is from the mean
+// correlation(xs, ys)     how two lists move together, -1 to 1
+//
+// Every result is rounded to nine places, as the built-in methods are.
+
+export [median, variance, deviation, percentile, normalized, zscores, correlation]
+
+fn std_round9(x: Number) -> Number {
+  return (x * 1000000000).round() / 1000000000
+}
+
+fn median(xs: Number[]) -> Number? {
+  if xs.is_empty() { return null }
+  let sorted = xs.sort()
+  let middle = (sorted.length() / 2).floor()
+  if sorted.length() % 2 == 1 { return sorted[middle] }
+  return std_round9((sorted[middle - 1] + sorted[middle]) / 2)
+}
+
+fn variance(xs: Number[]) -> Number? {
+  if xs.is_empty() { return null }
+  let mean = xs.sum() / xs.length()
+  var total = 0
+  for x in xs { total += (x - mean) * (x - mean) }
+  return std_round9(total / xs.length())
+}
+
+fn deviation(xs: Number[]) -> Number? {
+  let spread = variance(xs)
+  if not spread.exists() { return null }
+  return spread.value().sqrt()
+}
+
+fn percentile(xs: Number[], p: Number) -> Number? {
+  if p < 0 or p > 100 { fail "percentile needs p from 0 to 100" }
+  if xs.is_empty() { return null }
+  let sorted = xs.sort()
+  let place = p / 100 * (sorted.length() - 1)
+  let low = place.floor()
+  let high = place.ceil()
+  return std_round9(sorted[low] + (sorted[high] - sorted[low]) * (place - low))
+}
+
+fn normalized(xs: Number[]) -> Number[] {
+  if xs.is_empty() { return [] }
+  let low = xs.min().value()
+  let high = xs.max().value()
+  if high == low { return for x in xs { 0 } }
+  return for x in xs { std_round9((x - low) / (high - low)) }
+}
+
+fn zscores(xs: Number[]) -> Number[] {
+  let spread = deviation(xs)
+  if not spread.exists() { return [] }
+  if spread.value() == 0 { return for x in xs { 0 } }
+  let mean = xs.sum() / xs.length()
+  return for x in xs { std_round9((x - mean) / spread.value()) }
+}
+
+fn correlation(xs: Number[], ys: Number[]) -> Number? {
+  if xs.length() != ys.length() { fail "correlation needs two lists of the same length" }
+  if xs.length() < 2 { return null }
+  let mx = xs.sum() / xs.length()
+  let my = ys.sum() / ys.length()
+  var both = 0
+  var sx = 0
+  var sy = 0
+  for i in 0.until(xs.length()) {
+    both += (xs[i] - mx) * (ys[i] - my)
+    sx += (xs[i] - mx) * (xs[i] - mx)
+    sy += (ys[i] - my) * (ys[i] - my)
+  }
+  if sx == 0 or sy == 0 { return null }
+  return std_round9(both / (sx * sy).sqrt())
+}

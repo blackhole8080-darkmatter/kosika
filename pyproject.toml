@@ -27,6 +27,7 @@ kosika = [
     "app_assets/*.kos",
     "app_assets/fonts/*",
     "app_assets/*.md",
+    "std/*.kos",
 ]
 
 [project.scripts]

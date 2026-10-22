@@ -497,6 +497,21 @@ class NativeTests(unittest.TestCase):
                 )
                 self.assertEqual(ran.returncode, 0, f"{reader} replay of {written}")
 
+    def test_it_carries_the_same_standard_library(self) -> None:
+        # The native engine keeps a copy of kosika/std inside itself; it
+        # must be the same library, file for file.
+        canonical = ROOT / "kosika" / "std"
+        copy = ROOT / "native" / "std"
+
+        def files(folder: Path) -> dict[str, str]:
+            return {
+                path.name: path.read_text(encoding="utf-8").replace("\r\n", "\n")
+                for path in sorted(folder.glob("*.kos"))
+            }
+
+        self.assertTrue(files(canonical))
+        self.assertEqual(files(copy), files(canonical), "copy kosika/std/*.kos to native/std/")
+
     def test_it_keeps_the_owners_services_as_the_reference_does(self) -> None:
         # A services tool reads the one services file it was given, and
         # pauses or resumes a service there only with the owner's yes.
