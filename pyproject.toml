@@ -35,6 +35,13 @@ kosika = "kosika.cli:main"
 kosika-lsp = "kosika_lsp.server:main"
 kosika-mcp = "kosika.mcp_server:main"
 
+# Tracing of model calls, off unless RESPAN_API_KEY is set (kosika/tracing.py).
+# An extra rather than a dependency: respan-ai needs Python 3.11+, while the
+# runtime still installs and runs on 3.10, and a run without a key wants no
+# tracing stack at all.
+[project.optional-dependencies]
+tracing = ["respan-ai==4.2.4; python_version >= '3.11'"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 cache_dir = ".cache/pytest"
@@ -67,6 +74,7 @@ module = [
     "requests", "requests.*",
     "openai", "openai.*",
     "anthropic", "anthropic.*",
+    "respan", "respan.*",
     "pytest", "pytest.*",
 ]
 ignore_missing_imports = true
