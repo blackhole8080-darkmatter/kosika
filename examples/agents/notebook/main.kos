@@ -17,12 +17,31 @@
 // the question: the notes near the answer are what it "reminds" the
 // notebook of. That second hop is how memories link to each other without
 // anyone writing the links down, and only notes that stand out are linked.
+//
+// Links also grow with use. Two notes that answer questions asked one
+// after the other are linked, and the link gets stronger each time it
+// happens again. Once a link has been used twice, recalling one note brings
+// up the other, even when their meanings are far apart: the notebook learns
+// that your maths exam goes with your physics revision because you keep
+// asking about them together.
 
 record Msg { text: Text }
 record Said { text: Text }
 record Note { text: Text }
 
+// What a note has been asked about together with, and how many times.
+record Links { notes: Text[] counts: Number[] }
+
 memory notes of Note
+// For each note, the notes asked about just before or after it.
+memory links of Links
+// The note that answered the last question, under the key "last".
+memory recent of Note
+
+// A link is shown once it has been used this many times.
+fn learned() -> Number {
+  return 2
+}
 
 // How near is near enough. With meaning, every note scores about 0.4 even
 // against an unrelated question, so a fixed line does not work: a note
@@ -67,7 +86,11 @@ fn note_of(msg: Msg) -> Note {
 
 // The same note said twice is kept once.
 fn key_of(note: Note) -> Text {
-  return note.text.lower().trim().take(200)
+  return key_text(note.text)
+}
+
+fn key_text(text: Text) -> Text {
+  return text.lower().trim().take(200)
 }
 
 fn question_of(msg: Msg) -> Msg {
@@ -90,8 +113,44 @@ fn kept(note: Note) -> Said {
   return {text: "I will remember: " + note.text}
 }
 
-fn answered(answer: Msg, linked: NotesLike) -> Said {
-  if answer.text.is_empty() { return {text: "I don't remember anything about that. Tell me with: remember ..."} }
+// ---------------------------------------------------------------- links
+
+fn last_of(last: RecentRecalled) -> Msg {
+  if not last.found { return {text: ""} }
+  return {text: last.value.or({text: ""}).text}
+}
+
+// `known` with the link to `other` one stronger, or new.
+fn grown(known: LinksRecalled, other: Text, me: Text) -> Links {
+  let links = known.value.or({notes: [], counts: []})
+  if other.is_empty() or other == me { return links }
+  var counts: Number[] = []
+  var found = false
+  for i in 0 until links.notes.length() {
+    if links.notes[i] == other {
+      counts = counts.append(links.counts[i] + 1)
+      found = true
+    } else {
+      counts = counts.append(links.counts[i])
+    }
+  }
+  if found { return {notes: links.notes, counts: counts} }
+  return {notes: links.notes.append(other), counts: counts.append(1)}
+}
+
+// The note the link goes back to: the last answer, or, when there is no
+// other note to link, this one again, so the second write changes nothing.
+fn back_key(before: Msg, answer: Msg) -> Text {
+  if before.text.is_empty() or before.text == answer.text { return key_text(answer.text) }
+  return key_text(before.text)
+}
+
+fn back_value(theirs: LinksRecalled, ours: Links, before: Msg, answer: Msg) -> Links {
+  if before.text.is_empty() or before.text == answer.text { return ours }
+  return grown(theirs, answer.text, before.text)
+}
+
+fn answered(answer: Msg, linked: NotesLike, links: Links) -> Said {
   var reminders: Text[] = []
   for i in 0 until linked.matches.length() {
     let found = linked.matches[i]
@@ -99,8 +158,16 @@ fn answered(answer: Msg, linked: NotesLike) -> Said {
       reminders = reminders.append(found.value.text)
     }
   }
-  let tail = if reminders.is_empty() { "" } else { "\nThat reminds me of:\n  " + reminders.join("\n  ") }
-  return {text: answer.text + tail}
+  var together: Text[] = []
+  for i in 0 until links.notes.length() {
+    let other = links.notes[i]
+    if links.counts[i] >= learned() and together.length() < 2 and not reminders.contains(other) {
+      together = together.append(other)
+    }
+  }
+  let near = if reminders.is_empty() { "" } else { "\nThat reminds me of:\n  " + reminders.join("\n  ") }
+  let used = if together.is_empty() { "" } else { "\nYou often ask about this with:\n  " + together.join("\n  ") }
+  return {text: answer.text + near + used}
 }
 
 // ---------------------------------------------------------------- workflows
@@ -111,12 +178,35 @@ workflow keep(msg: Msg) -> Said {
   said  = kept(note)
 }
 
+// A note that answered: what it is near in meaning, and the links to the
+// last answer, made one stronger in both directions.
+workflow answer_with(answer: Msg) -> Said {
+  linked = recall notes like answer.text
+  last   = recall recent under "last"
+  before = last_of(last)
+  mine   = recall links under key_text(answer.text)
+  ours   = grown(mine, before.text, answer.text)
+  theirs = recall links under back_key(before, answer)
+  back   = back_value(theirs, ours, before, answer)
+  one    = remember ours in links under key_text(answer.text)
+  two    = remember back in links under back_key(before, answer)
+  note   = as_note(answer)
+  now    = remember note in recent under "last"
+  said   = answered(answer, linked, ours)
+}
+
+fn as_note(answer: Msg) -> Note {
+  return {text: answer.text}
+}
+
 workflow ask(msg: Msg) -> Said {
   asked  = question_of(msg)
   near   = recall notes like asked.text
   answer = best(near)
-  linked = recall notes like answer.text
-  said   = answered(answer, linked)
+  said   = match answer.text.is_empty() {
+    case true { {text: "I don't remember anything about that. Tell me with: remember ..."} }
+    case _ { call answer_with(answer) }
+  }
 }
 
 fn kind_of(msg: Msg) -> Text {
@@ -155,6 +245,20 @@ test "a question near nothing kept is not answered" {
   a = main({text: "remember Rent is 900 euros a month"})
   b = main({text: "quantum physics homework"})
   expect b.text.starts_with("I don't remember anything about that")
+}
+
+test "notes asked about one after the other become linked" {
+  a = main({text: "remember Maths exam is on 3 November"})
+  b = main({text: "remember Physics revision covers chapters 4 to 6"})
+  c = main({text: "remember Rent is 900 euros a month"})
+  d = main({text: "when is the maths exam"})
+  e = main({text: "what is in the physics revision"})
+  f = main({text: "when is the maths exam"})
+  g = main({text: "what is the rent"})
+  // Asked once together, exam and physics are not linked yet; twice, they are.
+  expect e.text == "Physics revision covers chapters 4 to 6"
+  expect f.text == "Maths exam is on 3 November\nYou often ask about this with:\n  Physics revision covers chapters 4 to 6"
+  expect g.text == "Rent is 900 euros a month"
 }
 
 test "remember with nothing after it asks for the note" {
