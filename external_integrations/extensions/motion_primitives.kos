@@ -1,0 +1,221 @@
+// Motion primitives extension
+// Adds OneTake's measured moves to Kosika's motion system
+
+// Move types from OneTake catalog
+enum MoveType {
+  spring, entrance, carry, contact, sim, camera, fluid_ground
+}
+
+// Ease functions
+enum EaseFunction {
+  linear, in, out, both, bounce, back
+}
+
+// Move primitive
+record Move {
+  type: MoveType
+  duration: Number
+  ease: EaseFunction
+  target: Text  // element id
+  parameters: Text{}  // move-specific parameters
+}
+
+// Camera move
+record CameraMove {
+  type: CameraMoveType
+  from_x: Number
+  from_y: Number
+  from_z: Number
+  to_x: Number
+  to_y: Number
+  to_z: Number
+  duration: Number
+  ease: EaseFunction
+}
+
+enum CameraMoveType {
+  pan, tilt, dolly, truck, pedestal, zoom, whip
+}
+
+// Motion rule: vector law
+// How you exit determines how you enter
+record VectorLaw {
+  exit_velocity: Text  // "left", "right", "up", "down", "in", "out"
+  entry_velocity: Text
+  carrier_element: Text?
+}
+
+// Apply vector law to a scene
+workflow apply_vector_law(scene: SceneDescription) -> SceneDescription {
+  var updated_scenes: Scene[] = []
+
+  for i in 0 until scene.scenes.length() - 1 {
+    current_scene = scene.scenes[i]
+    next_scene = scene.scenes[i + 1]
+
+    // Determine exit velocity from current scene
+    exit_velocity = determine_exit_velocity(current_scene)
+
+    // Set entry velocity for next scene
+    next_scene = set_entry_velocity(next_scene, exit_velocity)
+
+    updated_scenes = updated_scenes.append(current_scene)
+  }
+
+  updated_scenes = updated_scenes.append(scene.scenes[scene.scenes.length() - 1])
+
+  return {..scene, scenes: updated_scenes}
+}
+
+// Determine exit velocity from a scene
+workflow determine_exit_velocity(scene: Scene) -> Text {
+  // Look at the last animation in the scene
+  if scene.animations.length() == 0 {
+    return "none"
+  }
+
+  last_anim = scene.animations[scene.animations.length() - 1]
+
+  match last_anim.property {
+    case "x" {
+      if last_anim.to > last_anim.from {
+        return "right"
+      } else {
+        return "left"
+      }
+    }
+    case "y" {
+      if last_anim.to > last_anim.from {
+        return "down"
+      } else {
+        return "up"
+      }
+    }
+    case "scale" {
+      if last_anim.to > last_anim.from {
+        return "in"
+      } else {
+        return "out"
+      }
+    }
+    case _ {
+      return "none"
+    }
+  }
+}
+
+// Set entry velocity for a scene
+workflow set_entry_velocity(scene: Scene, velocity: Text) -> Scene {
+  // Modify the first animation to match the entry velocity
+  if scene.animations.length() == 0 {
+    return scene
+  }
+
+  first_anim = scene.animations[0]
+
+  match velocity {
+    case "right" {
+      first_anim = {..first_anim, from: first_anim.to - 100}
+    }
+    case "left" {
+      first_anim = {..first_anim, from: first_anim.to + 100}
+    }
+    case "down" {
+      first_anim = {..first_anim, from: first_anim.to - 100}
+    }
+    case "up" {
+      first_anim = {..first_anim, from: first_anim.to + 100}
+    }
+    case "in" {
+      first_anim = {..first_anim, from: first_anim.to - 0.5}
+    }
+    case "out" {
+      first_anim = {..first_anim, from: first_anim.to + 0.5}
+    }
+    case _ {
+      // No change
+    }
+  }
+
+  var updated_animations: Animation[] = []
+  updated_animations = updated_animations.append(first_anim)
+  for i in 1 until scene.animations.length() {
+    updated_animations = updated_animations.append(scene.animations[i])
+  }
+
+  return {..scene, animations: updated_animations}
+}
+
+// Z scale-sign rule
+// Positive Z moves toward camera, negative Z moves away
+workflow apply_z_scale_sign_rule(scene: SceneDescription) -> SceneDescription {
+  // Ensure all Z scale animations follow the sign rule
+  var updated_scenes: Scene[] = []
+
+  for scene in scene.scenes {
+    var updated_animations: Animation[] = []
+
+    for anim in scene.animations {
+      if anim.property == "scale" or anim.property == "z" {
+        // Ensure proper sign
+        if anim.to > anim.from {
+          // Moving toward camera - positive
+          anim = {..anim, ease: "out"}
+        } else {
+          // Moving away from camera - negative
+          anim = {..anim, ease: "in"}
+        }
+      }
+      updated_animations = updated_animations.append(anim)
+    }
+
+    updated_scenes = updated_scenes.append({..scene, animations: updated_animations})
+  }
+
+  return {..scene, scenes: updated_scenes}
+}
+
+// Create a spring move
+workflow create_spring_move(target: Text, property: Text, from: Number, to: Number, duration: Number) -> Move {
+  return {
+    type: "spring",
+    duration: duration,
+    ease: "bounce",
+    target: target,
+    parameters: {
+      "property": property,
+      "from": f"{from}",
+      "to": f"{to}"
+    }
+  }
+}
+
+// Create an entrance move
+workflow create_entrance_move(target: Text, from_x: Number, from_y: Number, to_x: Number, to_y: Number, duration: Number) -> Move {
+  return {
+    type: "entrance",
+    duration: duration,
+    ease: "out",
+    target: target,
+    parameters: {
+      "from_x": f"{from_x}",
+      "from_y": f"{from_y}",
+      "to_x": f"{to_x}",
+      "to_y": f"{to_y}"
+    }
+  }
+}
+
+// Create a carry move
+workflow create_carry_move(target: Text, dx: Number, dy: Number, duration: Number) -> Move {
+  return {
+    type: "carry",
+    duration: duration,
+    ease: "both",
+    target: target,
+    parameters: {
+      "dx": f"{dx}",
+      "dy": f"{dy}"
+    }
+  }
+}

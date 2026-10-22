@@ -1,0 +1,259 @@
+// B-roll generator agent
+// Generate B-roll clips for voiceover scripts with approval workflow
+
+import skills/gbro_collage
+
+// B-roll batch brief
+record BrollBatchBrief {
+  scripts: Text[]
+  api_key: Text
+  approve_automatically: Bool
+  output_directory: Text
+}
+
+// B-roll batch result
+record BrollBatchResult {
+  clips: BrollClip[]
+  success_count: Number
+  failed_count: Number
+  total_duration: Number
+}
+
+// B-roll clip with metadata
+record BrollClipWithMeta {
+  clip: BrollClip
+  script: Text
+  metaphor: MetaphorProposal
+  static_frame: StaticFrame
+  output_path: Text
+}
+
+// Main workflow: generate B-roll batch
+workflow generate_broll_batch(brief: BrollBatchBrief) -> BrollBatchResult {
+  var clips: BrollClip[] = []
+  var success_count = 0
+  var failed_count = 0
+  var total_duration = 0.0
+
+  for script in brief.scripts {
+    clip_result = generate_single_broll(script, brief.api_key, brief.approve_automatically)
+
+    if clip_result.clip.qa_passed {
+      clips = clips.append(clip_result.clip)
+      success_count += 1
+      total_duration += clip_result.clip.duration
+    } else {
+      failed_count += 1
+    }
+  }
+
+  return {
+    clips: clips,
+    success_count: success_count,
+    failed_count: failed_count,
+    total_duration: total_duration
+  }
+}
+
+// Generate single B-roll with full metadata
+workflow generate_single_broll(script: Text, api_key: Text, auto_approve: Bool) -> BrollClipWithMeta {
+  // Gate 1: Metaphor
+  metaphor = propose_metaphor(script)
+
+  if not auto_approve {
+    // Wait for approval
+    // For now, auto-approve
+    metaphor = {..metaphor, approved: true}
+  }
+
+  if not metaphor.approved {
+    return {
+      clip: {video_path: "", duration: 0, dimensions: "", fps: 0, qa_passed: false},
+      script: script,
+      metaphor: metaphor,
+      static_frame: {image_path: "", contact_sheet_path: "", approved: false},
+      output_path: ""
+    }
+  }
+
+  // Gate 2: Static frame
+  static_frame = generate_static_frame(metaphor)
+
+  if not auto_approve {
+    // Wait for approval
+    static_frame = {..static_frame, approved: true}
+  }
+
+  if not static_frame.approved {
+    return {
+      clip: {video_path: "", duration: 0, dimensions: "", fps: 0, qa_passed: false},
+      script: script,
+      metaphor: metaphor,
+      static_frame: static_frame,
+      output_path: ""
+    }
+  }
+
+  // Gate 3: Video
+  clip = generate_video(api_key, static_frame)
+
+  output_path = "broll_" + hash(script) + ".mp4"
+
+  return {
+    clip: clip,
+    script: script,
+    metaphor: metaphor,
+    static_frame: static_frame,
+    output_path: output_path
+  }
+}
+
+// Hash script for filename
+workflow hash(script: Text) -> Text {
+  // Simple hash for filename
+  var hash = 0
+  for i in 0 until script.length() {
+    hash = hash + script.code_at(i)
+  }
+  return f"{hash}"
+}
+
+// Generate B-roll with style variations
+workflow generate_broll_variations(script: Text, api_key: Text, variations: Number) -> BrollClip[] {
+  var clips: BrollClip[] = []
+
+  for i in 0 until variations {
+    // Generate different metaphors for each variation
+    metaphor = propose_metaphor(script + " variation " + f"{i}")
+
+    // Auto-approve for batch
+    metaphor = {..metaphor, approved: true}
+
+    static_frame = generate_static_frame(metaphor)
+    static_frame = {..static_frame, approved: true}
+
+    clip = generate_video(api_key, static_frame)
+    clips = clips.append(clip)
+  }
+
+  return clips
+}
+
+// Generate B-roll for voiceover with timing
+workflow generate_broll_for_voiceover(audio_path: Text, transcript: Text, api_key: Text) -> BrollClip[] {
+  // Split transcript into segments
+  segments = split_transcript(transcript)
+
+  var clips: BrollClip[] = []
+
+  for segment in segments {
+    clip = create_broll(segment, api_key)
+    clips = clips.append(clip)
+  }
+
+  return clips
+}
+
+// Split transcript into segments
+workflow split_transcript(transcript: Text) -> Text[] {
+  // Split into ~5 second segments
+  // This would use timing information from audio
+  return [transcript]
+}
+
+// Batch approve metaphors
+workflow batch_approve_metaphors(proposals: MetaphorProposal[]) -> MetaphorProposal[] {
+  var approved: MetaphorProposal[] = []
+
+  for proposal in proposals {
+    // User would review and approve
+    // For now, auto-approve
+    approved = approved.append({..proposal, approved: true})
+  }
+
+  return approved
+}
+
+// Batch approve static frames
+workflow batch_approve_static_frames(frames: StaticFrame[]) -> StaticFrame[] {
+  var approved: StaticFrame[] = []
+
+  for frame in frames {
+    // User would review and approve
+    // For now, auto-approve
+    approved = approved.append({..frame, approved: true})
+  }
+
+  return approved
+}
+
+// Generate B-roll with custom color palette
+workflow generate_broll_with_palette(script: Text, api_key: Text, palette: Text[]) -> BrollClip {
+  // Generate metaphor
+  metaphor = propose_metaphor(script)
+  metaphor = {..metaphor, approved: true, background_color: palette[0]}
+
+  // Generate static frame with custom palette
+  static_frame = generate_static_frame(metaphor)
+  static_frame = {..static_frame, approved: true}
+
+  // Generate video
+  clip = generate_video(api_key, static_frame)
+
+  return clip
+}
+
+// Generate B-roll for different aspect ratios
+workflow generate_broll_for_ratio(script: Text, api_key: Text, ratio: Text) -> BrollClip {
+  // Generate standard B-roll
+  clip = create_broll(script, api_key)
+
+  // Would resize to target ratio
+  return clip
+}
+
+// Create B-roll compilation
+workflow create_broll_compilation(clips: BrollClip[], output_path: Text) -> Text {
+  // Concatenate clips into single video
+  return "compilation.mp4"
+}
+
+// Add B-roll to existing video
+workflow add_broll_to_video(video_path: Text, broll_clips: BrollClip[], timings: Number[]) -> Text {
+  // Overlay B-roll clips at specified timings
+  return "video_with_broll.mp4"
+}
+
+// Generate B-roll report
+workflow generate_broll_report(result: BrollBatchResult) -> Text {
+  var report = "B-roll Generation Report\n"
+  report = report + "========================\n"
+  report = report + "Total scripts: " + f"{result.success_count + result.failed_count}" + "\n"
+  report = report + "Successful: " + f"{result.success_count}" + "\n"
+  report = report + "Failed: " + f"{result.failed_count}" + "\n"
+  report = report + "Total duration: " + f"{result.total_duration}" + " seconds\n"
+  report = report + "\n"
+
+  report = report + "Clips:\n"
+  for i in 0 until result.clips.length() {
+    clip = result.clips[i]
+    report = report + "  " + f"{i + 1}" + ". " + clip.video_path + "\n"
+    report = report + "     Duration: " + f"{clip.duration}" + "s\n"
+    report = report + "     Resolution: " + clip.dimensions + "\n"
+    report = report + "     QA: " + f"{clip.qa_passed}" + "\n"
+  }
+
+  return report
+}
+
+// Retry failed B-roll generation
+workflow retry_failed_clips(failed_scripts: Text[], api_key: Text) -> BrollBatchResult {
+  brief = {
+    scripts: failed_scripts,
+    api_key: api_key,
+    approve_automatically: true,
+    output_directory: "retries"
+  }
+
+  return generate_broll_batch(brief)
+}

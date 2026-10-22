@@ -1,0 +1,388 @@
+// Continuity measurement extension
+// Adds continuity verification to Kosika's checker
+
+// Frame representation
+record Frame {
+  frame_number: Number
+  elements: FrameElement[]
+  camera: CameraState
+}
+
+record FrameElement {
+  id: Text
+  visible: Bool
+  x: Number
+  y: Number
+  scale: Number
+  rotation: Number
+  opacity: Number
+  color: Text
+}
+
+// Boundary between scenes
+record Boundary {
+  before_frame: Number
+  after_frame: Number
+  carrier_elements: Text[]
+  new_elements: Text[]
+  removed_elements: Text[]
+  carry_score: Number
+  exit_velocity: Text
+  entry_velocity: Text
+  velocity_match: Bool
+}
+
+// Continuity report
+record ContinuityReport {
+  overall_score: Number
+  boundaries: Boundary[]
+  passed: Bool
+  threshold: Number
+  issues: Text[]
+}
+
+// Frame data
+record FrameData {
+  frames: Frame[]
+  fps: Number
+  duration: Number
+}
+
+// Probe tool for frame analysis
+tool frame_probe {
+  source system "shell"
+  operation: "execute"
+  input: FrameProbeRequest
+  output: FrameProbeResult
+  access: execute
+}
+
+record FrameProbeRequest {
+  video_path: Text
+  output_format: Text  // "json", "csv"
+  probe_every: Number  // frames
+}
+
+record FrameProbeResult {
+  success: Bool
+  frame_data: FrameData
+  error: Text?
+}
+
+// Main workflow: measure continuity
+workflow measure_continuity(video_path: Text, threshold: Number) -> ContinuityReport {
+  // Probe video to get frame data
+  probe_result = execute frame_probe({
+    video_path: video_path,
+    output_format: "json",
+    probe_every: 1
+  })
+
+  if not probe_result.success {
+    return {
+      overall_score: 0.0,
+      boundaries: [],
+      passed: false,
+      threshold: threshold,
+      issues: ["Failed to probe video: " + probe_result.error]
+    }
+  }
+
+  // Find boundaries
+  boundaries = find_boundaries(probe_result.frame_data)
+
+  // Calculate scores
+  scored_boundaries = score_boundaries(boundaries)
+
+  // Calculate overall score
+  overall_score = calculate_overall_score(scored_boundaries)
+
+  // Check for issues
+  issues = detect_issues(scored_boundaries)
+
+  return {
+    overall_score: overall_score,
+    boundaries: scored_boundaries,
+    passed: overall_score >= threshold,
+    threshold: threshold,
+    issues: issues
+  }
+}
+
+// Find scene boundaries
+workflow find_boundaries(data: FrameData) -> Boundary[] {
+  var boundaries: Boundary[] = []
+
+  // Detect boundaries by looking for significant changes
+  for i in 1 until data.frames.length() {
+    before = data.frames[i - 1]
+    after = data.frames[i]
+
+    if is_boundary(before, after) {
+      boundary = {
+        before_frame: before.frame_number,
+        after_frame: after.frame_number,
+        carrier_elements: [],
+        new_elements: [],
+        removed_elements: [],
+        carry_score: 0.0,
+        exit_velocity: "",
+        entry_velocity: "",
+        velocity_match: false
+      }
+
+      boundaries = boundaries.append(boundary)
+    }
+  }
+
+  return boundaries
+}
+
+// Check if two frames form a boundary
+workflow is_boundary(before: Frame, after: Frame) -> Bool {
+  // A boundary is detected when:
+  // - Significant change in element set
+  // - Camera moves abruptly
+  // - Major scene change
+
+  // Check for element changes
+  element_change = detect_element_change(before, after)
+
+  // Check for camera change
+  camera_change = detect_camera_change(before.camera, after.camera)
+
+  return element_change or camera_change
+}
+
+// Detect element change
+workflow detect_element_change(before: Frame, after: Frame) -> Bool {
+  var before_ids: Text[] = []
+  var after_ids: Text[] = []
+
+  for elem in before.elements {
+    before_ids = before_ids.append(elem.id)
+  }
+
+  for elem in after.elements {
+    after_ids = after_ids.append(elem.id)
+  }
+
+  // If element sets differ significantly, it's a boundary
+  if before_ids.length() != after_ids.length() {
+    return true
+  }
+
+  var different = 0
+  for id in before_ids {
+    if not after_ids.contains(id) {
+      different += 1
+    }
+  }
+
+  return different > before_ids.length() / 2
+}
+
+// Detect camera change
+workflow detect_camera_change(before: CameraState, after: CameraState) -> Bool {
+  // Check for significant camera movement
+  dx = before.x - after.x
+  dy = before.y - after.y
+  dzoom = before.zoom - after.zoom
+
+  // Thresholds for what constitutes a boundary
+  return dx.abs() > 100 or dy.abs() > 100 or dzoom.abs() > 0.5
+}
+
+// Score boundaries
+workflow score_boundaries(boundaries: Boundary[]) -> Boundary[] {
+  var scored: Boundary[] = []
+
+  for boundary in boundaries {
+    // Identify carriers
+    carriers = identify_carriers(boundary.before_frame, boundary.after_frame)
+
+    // Identify new and removed elements
+    new_elems = identify_new_elements(boundary.before_frame, boundary.after_frame)
+    removed_elems = identify_removed_elements(boundary.before_frame, boundary.after_frame)
+
+    // Calculate carry score
+    carry_score = calculate_carry_score(carriers, new_elems, removed_elems)
+
+    // Determine velocities
+    exit_vel = determine_exit_velocity(boundary.before_frame)
+    entry_vel = determine_entry_velocity(boundary.after_frame)
+
+    // Check velocity match
+    velocity_match = match_velocities(exit_vel, entry_vel)
+
+    scored_boundary = {
+      ..boundary,
+      carrier_elements: carriers,
+      new_elements: new_elems,
+      removed_elements: removed_elems,
+      carry_score: carry_score,
+      exit_velocity: exit_vel,
+      entry_velocity: entry_vel,
+      velocity_match: velocity_match
+    }
+
+    scored = scored.append(scored_boundary)
+  }
+
+  return scored
+}
+
+// Identify carrier elements between frames
+workflow identify_carriers(before_frame: Number, after_frame: Number) -> Text[] {
+  // This would compare the two frames and find elements that exist in both
+  // and have similar positions (indicating they carried across)
+  return []
+}
+
+// Identify new elements
+workflow identify_new_elements(before_frame: Number, after_frame: Number) -> Text[] {
+  // Elements that appear in after but not in before
+  return []
+}
+
+// Identify removed elements
+workflow identify_removed_elements(before_frame: Number, after_frame: Number) -> Text[] {
+  // Elements that appear in before but not in after
+  return []
+}
+
+// Calculate carry score
+workflow calculate_carry_score(carriers: Text[], new: Text[], removed: Text[]) -> Number {
+  // Score based on:
+  // - Number of carriers (higher is better)
+  // - Ratio of carriers to total changes
+  // - Visual prominence of carriers
+
+  if carriers.length() == 0 {
+    return 0.0
+  }
+
+  total_changes = new.length() + removed.length()
+  if total_changes == 0 {
+    return 1.0  // No changes, perfect continuity
+  }
+
+  // Simple score: carriers / (carriers + new + removed)
+  return carriers.length() / (carriers.length() + total_changes)
+}
+
+// Determine exit velocity from frame
+workflow determine_exit_velocity(frame_number: Number) -> Text {
+  // Analyze motion in the frames leading up to this boundary
+  // Return "left", "right", "up", "down", "in", "out", or "none"
+  return "none"
+}
+
+// Determine entry velocity from frame
+workflow determine_entry_velocity(frame_number: Number) -> Text {
+  // Analyze motion in the frames after this boundary
+  return "none"
+}
+
+// Match velocities (vector law)
+workflow match_velocities(exit: Text, entry: Text) -> Bool {
+  // Vector law: how you exit determines how you enter
+  // If exit is "right", entry should be "right" (continuing the motion)
+  // or "left" (reversing for a carry)
+
+  match exit {
+    case "right" {
+      return entry == "right" or entry == "left"
+    }
+    case "left" {
+      return entry == "left" or entry == "right"
+    }
+    case "up" {
+      return entry == "up" or entry == "down"
+    }
+    case "down" {
+      return entry == "down" or entry == "up"
+    }
+    case "in" {
+      return entry == "in" or entry == "out"
+    }
+    case "out" {
+      return entry == "out" or entry == "in"
+    }
+    case "none" {
+      return entry == "none"
+    }
+  }
+}
+
+// Calculate overall score
+workflow calculate_overall_score(boundaries: Boundary[]) -> Number {
+  if boundaries.length() == 0 {
+    return 1.0  // No boundaries means perfect continuity
+  }
+
+  var total = 0.0
+  for boundary in boundaries {
+    total = total + boundary.carry_score
+  }
+
+  return total / boundaries.length()
+}
+
+// Detect continuity issues
+workflow detect_issues(boundaries: Boundary[]) -> Text[] {
+  var issues: Text[] = []
+
+  for boundary in boundaries {
+    // Check for zero carry
+    if boundary.carry_score == 0.0 {
+      issues = issues.append("Boundary at frame " + f"{boundary.before_frame}" + " has zero carry")
+    }
+
+    // Check for velocity mismatch
+    if not boundary.velocity_match {
+      issues = issues.append("Boundary at frame " + f"{boundary.before_frame}" + " has velocity mismatch: " + boundary.exit_velocity + " -> " + boundary.entry_velocity)
+    }
+
+    // Check for too many new elements
+    if boundary.new_elements.length() > 5 {
+      issues = issues.append("Boundary at frame " + f"{boundary.before_frame}" + " has too many new elements: " + f"{boundary.new_elements.length()}")
+    }
+  }
+
+  return issues
+}
+
+// Verify continuity meets threshold
+workflow verify_continuity(video_path: Text, threshold: Number) -> Bool {
+  report = measure_continuity(video_path, threshold)
+  return report.passed
+}
+
+// Print continuity report
+workflow print_report(report: ContinuityReport) -> Text {
+  var output = "Continuity Report\n"
+  output = output + "================\n"
+  output = output + "Overall Score: " + f"{report.overall_score * 100}" + "%\n"
+  output = output + "Threshold: " + f"{report.threshold * 100}" + "%\n"
+  output = output + "Passed: " + f"{report.passed}" + "\n"
+  output = output + "\n"
+
+  output = output + "Boundaries:\n"
+  for boundary in report.boundaries {
+    output = output + "  Frame " + f"{boundary.before_frame}" + " -> " + f"{boundary.after_frame}" + "\n"
+    output = output + "    Carry Score: " + f"{boundary.carry_score * 100}" + "%\n"
+    output = output + "    Carriers: " + f"{boundary.carrier_elements.length()}" + "\n"
+    output = output + "    Velocity: " + boundary.exit_velocity + " -> " + boundary.entry_velocity + "\n"
+    output = output + "    Match: " + f"{boundary.velocity_match}" + "\n"
+  }
+
+  if report.issues.length() > 0 {
+    output = output + "\nIssues:\n"
+    for issue in report.issues {
+      output = output + "  - " + issue + "\n"
+    }
+  }
+
+  return output
+}

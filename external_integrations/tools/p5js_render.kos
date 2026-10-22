@@ -1,0 +1,55 @@
+// Claude Animation Base -- a p5.js / p5.brush character-animation kit.
+//
+// The vendored repository lives at external-integrations/ClaudeAnimationBase.
+// Its headless renderer is a Node script that drives Chrome and ffmpeg:
+//
+//   node external-integrations/ClaudeAnimationBase/render.mjs --clip
+//        --range=0:11 --out=out/video.mp4
+//
+// Extras worth billing a client for: contact sheets (--sheet), motion
+// strips (--strip) and stills (--stills) -- the QA loop that catches a
+// mistake seconds before a full render would have cost minutes.
+
+record Launch { args: Text[] }
+record Run { exit_code: Number stdout: Text stderr: Text }
+
+tool animation_render {
+  source system "shell"
+  operation: "node"
+  access: execute
+  input: Launch
+  output: Run
+}
+
+agent animator {
+  can: [animation_render]
+  cannot: []
+  max_steps: 8
+}
+
+// Prepared launches, ready to pass to the workflows below.
+fn abase_clip(range: Text, out: Text) -> Launch {
+  return {args: ["external-integrations/ClaudeAnimationBase/render.mjs", "--clip", "--range=" + range, "--out=" + out]}
+}
+
+fn abase_sheet(when: Text, out: Text) -> Launch {
+  return {args: ["external-integrations/ClaudeAnimationBase/render.mjs", "--sheet=" + when, "--out=" + out]}
+}
+
+// The film. `plan.args` comes from abase_clip("0:11", "out/video.mp4").
+workflow abase_render(plan: Launch) -> Run {
+  require approval
+  step clip {
+    let ran: Run = execute animator.animation_render(args: plan.args)
+    return ran
+  }
+}
+
+// The cheap look: seconds of cost, minutes of mistakes avoided.
+workflow abase_contact_sheet(plan: Launch) -> Run {
+  require approval
+  step sheet {
+    let ran: Run = execute animator.animation_render(args: plan.args)
+    return ran
+  }
+}

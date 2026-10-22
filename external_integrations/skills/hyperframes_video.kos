@@ -1,0 +1,148 @@
+// Kosika Studios -- HyperFrames.
+// HTML in, deterministic MP4 out. The pencil of the studio, actually.
+//
+//   kosika run external_integrations/skills/hyperframes_video.kos \
+//     --input brief.json
+//
+// A brief becomes one checkable scene; the scene becomes the launch of the
+// vendored CLI, which renders it. What is odd here is checked before a
+// render is paid for: ids repeated, moves that name no shape, fades past 1,
+// easings that are not easings.
+
+record Move { shape: Text what: Text to: Number start: Number seconds: Number ease: Text repeat: Number color: Text }
+record Shape { id: Text kind: Text x: Number y: Number size: Number color: Text text: Text }
+record Scene { width: Number height: Number seconds: Number background: Text shapes: Shape[] moves: Move[] }
+record Brief { title: Text seconds: Number background: Text }
+record Launch { args: Text[] }
+record Run { exit_code: Number stdout: Text stderr: Text }
+
+tool frame_lint {
+  source system "shell"
+  operation: "node"
+  access: execute
+  input: Launch
+  output: Run
+}
+
+agent renderer {
+  can: [frame_lint]
+  cannot: []
+  max_steps: 4
+}
+
+fn is_color(c: Text) -> Bool {
+  return c.starts_with("#") and c.length() == 7
+}
+
+fn move(shape: Text, what: Text, to: Number, start: Number, seconds: Number, ease: Text) -> Move {
+  return {shape: shape, what: what, to: to, start: start, seconds: seconds, ease: ease, repeat: 1, color: ""}
+}
+
+fn hidden(shape: Text) -> Move {
+  return {shape: shape, what: "fade", to: 0, start: 0, seconds: 0, ease: "linear", repeat: 1, color: ""}
+}
+
+// The mark builds itself: a dot ring closes in from the centre, the tile
+// drops with a bounce, the name slides up, the ring keeps turning.
+fn build(brief: Brief) -> Scene {
+  let cx = 320
+  let cy = 190
+  var shapes: Shape[] = []
+  var moves: Move[] = []
+  for i in 0 until 12 {
+    let angle = 360 * i / 12
+    let color = if i % 3 == 0 { "#e8813a" } else if i % 3 == 1 { "#f2b880" } else { "#8a4b22" }
+    shapes = shapes.append({id: "dot" + i.to_text(), kind: "circle", x: cx, y: cy, size: 16, color: color, text: ""})
+    let leave = 0.2 + i * 0.07
+    moves = moves.concat([
+      hidden("dot" + i.to_text()),
+      move("dot" + i.to_text(), "fade", 1, leave, 0.2, "out"),
+      move("dot" + i.to_text(), "x", cx + 110 * angle.cos(), leave, 0.9, "out"),
+      move("dot" + i.to_text(), "y", cy + 110 * angle.sin(), leave, 0.9, "out")
+    ])
+  }
+  // The name lands late, but never after the scene's end: a short sting
+  // pulls the whole build earlier instead of clipping a move.
+  let name_at = if brief.seconds < 2.4 { (brief.seconds - 0.8).max(0.2) } else { 1.6 }
+  shapes = shapes.concat([
+    {id: "halo", kind: "ring", x: cx, y: cy, size: 240, color: "#3a2a20", text: ""},
+    {id: "name", kind: "text", x: cx, y: 420, size: 34, color: "#f4e9df", text: brief.title}
+  ])
+  moves = moves.concat([
+    hidden("halo"),
+    move("halo", "fade", 1, 1.0.min(name_at), 0.8.max(0.2), "out"),
+    move("name", "y", 340, name_at, 0.7, "back")
+  ])
+  return {width: 640, height: 380, seconds: brief.seconds, background: brief.background, shapes: shapes, moves: moves}
+}
+
+// What is wrong with a scene, said in words that can fix it. "" when nothing.
+fn scene_problem(scene: Scene) -> Text {
+  if scene.shapes.is_empty() { return "The scene has no shapes. Give at least one." }
+  if not is_color(scene.background) { return "background must be a colour like #1a1410." }
+  if scene.seconds < 1 { return "seconds must be at least 1." }
+  var ids: Text[] = []
+  for shape in scene.shapes {
+    if ids.contains(shape.id) { return f"Two shapes are both called {shape.id}." }
+    if not is_color(shape.color) { return f"Shape {shape.id} needs a colour like #e8813a." }
+    if shape.kind == "text" and shape.text.is_empty() { return f"Shape {shape.id} says nothing." }
+    ids = ids.append(shape.id)
+  }
+  for m in scene.moves {
+    if not ids.contains(m.shape) { return f"A move names {m.shape}, and no shape has that id." }
+    if not ["x", "y", "size", "turn", "fade", "color"].contains(m.what) { return f"A move of {m.shape} changes {m.what}." }
+    if not ["linear", "in", "out", "both", "bounce", "back"].contains(m.ease) { return f"A move of {m.shape} eases {m.ease}." }
+    if m.repeat == 1 and m.start + m.seconds > scene.seconds { return f"A move of {m.shape} ends after the scene's {scene.seconds} seconds." }
+  }
+  return ""
+}
+
+fn lint_launch() -> Launch {
+  return {args: ["external-integrations/hyperframes/packages/cli/bin/hyperframes.mjs", "lint", "--json", "index.html"]}
+}
+
+workflow main(brief: Brief) -> Scene {
+  budget 4 model calls, 600 seconds
+  scene = build(brief)
+  problem = scene_problem(scene)
+  verdict = if problem.is_empty() { scene } else { build({title: brief.title, seconds: brief.seconds.max(2), background: "#1a1410"}) }}
+
+workflow lint(plan: Launch) -> Run {
+  require approval
+  step lint {
+    let ran: Run = execute renderer.frame_lint(args: plan.args)
+    return ran
+  }
+}
+
+// ------------------------------------------------------------------ tests
+
+test "the mark builds and checks" {
+  scene = build({title: "Kosika", seconds: 6, background: "#1a1410"})
+  expect scene_problem(scene) == ""
+  expect scene.shapes.length() == 14
+}
+
+test "a repeated id is refused out loud" {
+  expect scene_problem({width: 640, height: 380, seconds: 5, background: "#1a1410",
+    shapes: [{id: "a", kind: "circle", x: 0, y: 0, size: 5, color: "#e8813a", text: ""}, {id: "a", kind: "circle", x: 4, y: 0, size: 5, color: "#e8813a", text: ""}],
+    moves: []}).starts_with("Two shapes are both called a")
+}
+
+test "a move that names no shape is refused out loud" {
+  expect scene_problem({width: 640, height: 380, seconds: 5, background: "#1a1410",
+    shapes: [{id: "a", kind: "circle", x: 0, y: 0, size: 5, color: "#e8813a", text: ""}],
+    moves: [{shape: "b", what: "x", to: 10, start: 0, seconds: 1, ease: "out", repeat: 1, color: ""}]}).starts_with("A move names b")
+}
+
+test "the scene is never tighter than its own moves" {
+  expect scene_problem({width: 640, height: 380, seconds: 2, background: "#1a1410",
+    shapes: [{id: "a", kind: "circle", x: 0, y: 0, size: 5, color: "#e8813a", text: ""}],
+    moves: [{shape: "a", what: "x", to: 10, start: 0, seconds: 3, ease: "out", repeat: 1, color: ""}]}).starts_with("A move of a ends after")
+}
+
+test "the mark falls back rather than failing" {
+  a = main({title: "Sting", seconds: 0, background: "red"})
+  expect a.seconds >= 2
+  expect scene_problem(a) == ""
+}

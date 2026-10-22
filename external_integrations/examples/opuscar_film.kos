@@ -1,0 +1,136 @@
+// Example: Opuscar film in different styles
+// Demonstrates creating films in various Lemo Opuscar styles
+
+import skills/opuscar_film
+import extensions/style_system
+
+workflow main() -> Film {
+  // Create film in watercolor style
+  brief = {
+    style: watercolor_brush,
+    topic: "The coffee farm my family runs in the mountains of Colombia",
+    duration: 45,
+    narrator_gender: "female",
+    custom_voice: null,
+    custom_music: null,
+    storyboard_first: false
+  }
+
+  return create_film(brief)
+}
+
+// Example: Create film in data storytelling style
+workflow data_storytelling_example() -> Film {
+  brief = {
+    style: data_storytelling,
+    topic: "The growth of renewable energy over the last decade",
+    duration: 60,
+    narrator_gender: "neutral",
+    custom_voice: null,
+    custom_music: null,
+    storyboard_first: false
+  }
+
+  return create_film(brief)
+}
+
+// Example: Create film with storyboard approval
+workflow with_storyboard_example() -> Film {
+  brief = {
+    style: watercolor_brush,
+    topic: "A day in the life of a beekeeper",
+    duration: 30,
+    narrator_gender: "male",
+    custom_voice: null,
+    custom_music: null,
+    storyboard_first: true
+  }
+
+  return create_film_with_storyboard(brief)
+}
+
+// Example: Style selection
+workflow style_selection_example() -> FilmStyle {
+  topic = "The history of coffee"
+
+  return select_style(topic)
+}
+
+// Example: Compare styles
+workflow compare_styles_example() -> Text {
+  return compare_styles(watercolor_brush, data_storytelling)
+}
+
+// Example: List all styles
+workflow list_all_styles_example() -> FilmStyle[] {
+  return list_all_styles()
+}
+
+// Example: List styles by category
+workflow list_by_category_example() -> FilmStyle[] {
+  return list_styles_by_category(hand_drawn_painting)
+}
+
+// Example: Validate style for topic
+workflow validate_style_example() -> Bool {
+  return validate_style_for_topic(watercolor_brush, "A coffee farm story")
+}
+
+// Example: Apply style invariants to scene
+workflow apply_style_example() -> SceneDescription {
+  scene = {
+    title: "Test Scene",
+    duration: 10,
+    scenes: [],
+    background_color: "#FFFFFF",
+    width: 1920,
+    height: 1080
+  }
+
+  return apply_style_invariants(scene, watercolor_brush)
+}
+
+// Example: Create film in evidence style
+workflow evidence_film_example() -> Film {
+  brief = {
+    style: lidar_survey,
+    topic: "The old quarry in the hills behind our town",
+    duration: 50,
+    narrator_gender: "male",
+    custom_voice: null,
+    custom_music: null,
+    storyboard_first: false
+  }
+
+  return create_film(brief)
+}
+
+// Example: Create film with custom voice
+workflow custom_voice_example() -> Film {
+  brief = {
+    style: watercolor_brush,
+    topic: "My grandmother's recipes",
+    duration: 40,
+    narrator_gender: null,
+    custom_voice: "custom_voice.mp3",
+    custom_music: null,
+    storyboard_first: false
+  }
+
+  return create_film(brief)
+}
+
+// Example: Create film with custom music
+workflow custom_music_example() -> Film {
+  brief = {
+    style: watercolor_brush,
+    topic: "Summer memories",
+    duration: 35,
+    narrator_gender: "female",
+    custom_voice: null,
+    custom_music: "custom_music.mp3",
+    storyboard_first: false
+  }
+
+  return create_film(brief)
+}

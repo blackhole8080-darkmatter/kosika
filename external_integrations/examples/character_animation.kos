@@ -1,0 +1,144 @@
+// Example: Character animation using Claude Animation Base
+// Demonstrates creating a character animation with p5.js
+
+import skills/claude_animation
+
+workflow main() -> Animation {
+  // Define character
+  character = {
+    name: "Clawd",
+    views: [
+      {name: "front", description: "Front view of character"},
+      {name: "side", description: "Side view of character"},
+      {name: "back", description: "Back view of character"}
+    ],
+    emotions: [
+      {name: "happy", description: "Smiling, eyes bright"},
+      {name: "sad", description: "Frowning, eyes downcast"},
+      {name: "angry", description: "Frowning, eyebrows furrowed"},
+      {name: "surprised", description: "Eyes wide, mouth open"}
+    ],
+    eyes: [
+      {type: "round", size: 20, expression: "open"},
+      {type: "round", size: 20, expression: "closed"}
+    ],
+    mouths: [
+      {type: "smile", size: 30, expression: "happy"},
+      {type: "frown", size: 30, expression: "sad"},
+      {type: "open", size: 25, expression: "surprised"}
+    ],
+    hats: []
+  }
+
+  // Define animation brief
+  brief = {
+    character: character,
+    story: "Clawd tries to catch a butterfly. He sees it, chases it around, almost catches it, but it flies away at the end.",
+    duration: 15,
+    fps: 24,
+    width: 1920,
+    height: 1080,
+    use_watercolor: false
+  }
+
+  // Create animation
+  return create_animation(brief)
+}
+
+// Example: Generate model sheet
+workflow generate_model_sheet_example() -> ModelSheet {
+  character = {
+    name: "Clawd",
+    views: [
+      {name: "front", description: "Front view"},
+      {name: "side", description: "Side view"}
+    ],
+    emotions: [
+      {name: "happy", description: "Smiling"},
+      {name: "sad", description: "Frowning"}
+    ],
+    eyes: [
+      {type: "round", size: 20, expression: "open"}
+    ],
+    mouths: [
+      {type: "smile", size: 30, expression: "happy"}
+    ],
+    hats: []
+  }
+
+  return generate_model_sheet(character)
+}
+
+// Example: Create animation with contact sheet
+workflow create_animation_with_contact_sheet_example() -> Animation {
+  character = {
+    name: "Clawd",
+    views: [],
+    emotions: [],
+    eyes: [],
+    mouths: [],
+    hats: []
+  }
+
+  brief = {
+    character: character,
+    story: "Character walks across screen",
+    duration: 5,
+    fps: 24,
+    width: 1080,
+    height: 1080,
+    use_watercolor: false
+  }
+
+  return create_animation_with_contact_sheet(brief)
+}
+
+// Example: Swap character
+workflow swap_character_example() -> Animation {
+  original_character = {
+    name: "Clawd",
+    views: [],
+    emotions: [],
+    eyes: [],
+    mouths: [],
+    hats: []
+  }
+
+  new_character = {
+    name: "NewCharacter",
+    views: [],
+    emotions: [],
+    eyes: [],
+    mouths: [],
+    hats: []
+  }
+
+  brief = {
+    character: original_character,
+    story: "Character walks",
+    duration: 5,
+    fps: 24,
+    width: 1080,
+    height: 1080,
+    use_watercolor: false
+  }
+
+  return swap_character(brief, new_character)
+}
+
+// Example: Add custom emotion
+workflow add_custom_emotion_example() -> Character {
+  character = {
+    name: "Clawd",
+    views: [],
+    emotions: [
+      {name: "happy", description: "Smiling"},
+      {name: "sad", description: "Frowning"}
+    ],
+    eyes: [],
+    mouths: [],
+    hats: []
+  }
+
+  return add_emotion(character, "excited", "Eyes wide open, big smile, bouncing slightly")
+}

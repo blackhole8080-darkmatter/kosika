@@ -1,0 +1,278 @@
+// Animation studio agent
+// Combines character animation with style-based films
+
+import skills/claude_animation
+import skills/opuscar_film
+import extensions/style_system
+
+// Animation project brief
+record AnimationProjectBrief {
+  character: Character
+  style: FilmStyle
+  story: Text
+  duration: Number
+  narrator_gender: Text?
+  custom_voice: Text?
+  custom_music: Text?
+  output_resolution: Text
+}
+
+// Animation project result
+record AnimationProject {
+  character_animation: Animation
+  styled_film: Film
+  mixed_video: Text
+  duration: Number
+}
+
+// Main workflow: create character film with style
+workflow create_character_film(brief: AnimationProjectBrief) -> AnimationProject {
+  // Generate model sheet for character
+  model_sheet = generate_model_sheet(brief.character)
+
+  // Create character animation following rules
+  char_anim = create_animation({
+    character: brief.character,
+    story: brief.story,
+    duration: brief.duration,
+    fps: 24,
+    width: 1920,
+    height: 1080,
+    use_watercolor: false
+  })
+
+  // Load style invariants
+  style_invariants = load_style_invariants(brief.style)
+
+  // Create film in selected style
+  film_brief = {
+    style: brief.style,
+    topic: brief.story,
+    duration: brief.duration,
+    narrator_gender: brief.narrator_gender,
+    custom_voice: brief.custom_voice,
+    custom_music: brief.custom_music,
+    storyboard_first: false
+  }
+
+  styled_film = create_film(film_brief)
+
+  // Mix character animation with styled film
+  mixed_video = mix_character_with_film(char_anim, styled_film, style_invariants)
+
+  return {
+    character_animation: char_anim,
+    styled_film: styled_film,
+    mixed_video: mixed_video,
+    duration: brief.duration
+  }
+}
+
+// Generate model sheet
+workflow generate_model_sheet(character: Character) -> ModelSheet {
+  return {
+    emotions_path: "emotions.png",
+    views_path: "views.png",
+    motions_path: "motions.png",
+    hats_path: "hats.png"
+  }
+}
+
+// Mix character animation with styled film
+workflow mix_character_with_film(char_anim: Animation, film: Film, invariants: StyleInvariants) -> Text {
+  // Composite character animation onto styled film
+  // Apply style-specific blending and effects
+  return "mixed_video.mp4"
+}
+
+// Create multi-character scene
+workflow create_multi_character_scene(characters: Character[], style: FilmStyle, story: Text) -> AnimationProject {
+  // Create brief for first character as primary
+  brief = {
+    character: characters[0],
+    style: style,
+    story: story,
+    duration: 60,
+    narrator_gender: "neutral",
+    custom_voice: null,
+    custom_music: null,
+    output_resolution: "1920x1080"
+  }
+
+  project = create_character_film(brief)
+
+  // Add other characters as overlays
+  for i in 1 until characters.length() {
+    project = add_character_overlay(project, characters[i])
+  }
+
+  return project
+}
+
+// Add character overlay
+workflow add_character_overlay(project: AnimationProject, character: Character) -> AnimationProject {
+  // Render character animation
+  char_anim = create_animation({
+    character: character,
+    story: "",
+    duration: project.duration,
+    fps: 24,
+    width: 1920,
+    height: 1080,
+    use_watercolor: false
+  })
+
+  // Composite onto existing video
+  new_mixed = composite_char_to_video(project.mixed_video, char_anim.video_path)
+
+  return {..project, mixed_video: new_mixed}
+}
+
+// Composite character to video
+workflow composite_char_to_video(video_path: Text, char_path: Text) -> Text {
+  // Composite character animation onto video
+  return "composited.mp4"
+}
+
+// Create character with custom emotion
+workflow create_character_with_emotion(base_character: Character, emotion_name: Text, prompt: Text) -> Character {
+  return create_custom_emotion(base_character, prompt)
+}
+
+// Style selector workflow
+workflow select_style_for_character(character: Character, story: Text) -> FilmStyle {
+  // Suggest styles based on character and story
+  suggestions = suggest_styles(story)
+
+  // Filter by character compatibility
+  var compatible: FilmStyle[] = []
+  for style in suggestions {
+    if is_style_compatible_with_character(style, character) {
+      compatible = compatible.append(style)
+    }
+  }
+
+  if compatible.length() == 0 {
+    return data_storytelling  // default
+  }
+
+  return compatible[0]
+}
+
+// Check style compatibility with character
+workflow is_style_compatible_with_character(style: FilmStyle, character: Character) -> Bool {
+  invariants = load_style_invariants(style)
+
+  // Some styles may not work well with certain character types
+  // This would have more sophisticated logic
+  return true
+}
+
+// Create lip-sync animation
+workflow create_lip_sync_animation(character: Character, audio_path: Text) -> Animation {
+  // Analyze audio for phonemes
+  phonemes = analyze_audio_phonemes(audio_path)
+
+  // Generate mouth shapes
+  mouth_shapes = generate_mouth_shapes(character, phonemes)
+
+  // Create animation with lip sync
+  // This would integrate with the animation workflow
+  return {
+    video_path: "lip_sync.mp4",
+    frame_count: 0,
+    duration: 0,
+    model_sheet_path: ""
+  }
+}
+
+// Analyze audio phonemes
+workflow analyze_audio_phonemes(audio_path: Text) -> Text[] {
+  // This would use an audio analysis tool
+  return []
+}
+
+// Generate mouth shapes
+workflow generate_mouth_shapes(character: Character, phonemes: Text[]) -> Text {
+  // Map phonemes to mouth shapes from character's mouth definitions
+  return ""
+}
+
+// Create character animation library
+workflow create_animation_library(character: Character) -> Text {
+  // Generate standard animations: walk, run, jump, idle, etc.
+  var animations: Text[] = []
+
+  animations = animations.append(create_walk_cycle(character))
+  animations = animations.append(create_run_cycle(character))
+  animations = animations.append(create_idle_animation(character))
+  animations = animations.append(create_jump_animation(character))
+
+  // Package as library
+  library_path = "character_library/" + character.name + "/"
+  return library_path
+}
+
+// Create walk cycle
+workflow create_walk_cycle(character: Character) -> Text {
+  brief = {
+    character: character,
+    story: "Character walking",
+    duration: 2,
+    fps: 24,
+    width: 512,
+    height: 512,
+    use_watercolor: false
+  }
+
+  anim = create_animation(brief)
+  return anim.video_path
+}
+
+// Create run cycle
+workflow create_run_cycle(character: Character) -> Text {
+  brief = {
+    character: character,
+    story: "Character running",
+    duration: 1,
+    fps: 24,
+    width: 512,
+    height: 512,
+    use_watercolor: false
+  }
+
+  anim = create_animation(brief)
+  return anim.video_path
+}
+
+// Create idle animation
+workflow create_idle_animation(character: Character) -> Text {
+  brief = {
+    character: character,
+    story: "Character idle",
+    duration: 3,
+    fps: 24,
+    width: 512,
+    height: 512,
+    use_watercolor: false
+  }
+
+  anim = create_animation(brief)
+  return anim.video_path
+}
+
+// Create jump animation
+workflow create_jump_animation(character: Character) -> Text {
+  brief = {
+    character: character,
+    story: "Character jumping",
+    duration: 1.5,
+    fps: 24,
+    width: 512,
+    height: 512,
+    use_watercolor: false
+  }
+
+  anim = create_animation(brief)
+  return anim.video_path
+}

@@ -1,0 +1,138 @@
+// Multi-style video producer agent
+// Routes video production requests to appropriate workflows
+
+import skills/hyperframes_video
+import skills/opuscar_film
+import skills/gbro_collage
+
+// Video brief
+record VideoBrief {
+  type: VideoType
+  topic: Text
+  style: Text?  // for opuscar
+  script: Text?  // for b-roll
+  scene: SceneDescription?  // for hyperframes
+  duration: Number
+  output_path: Text
+}
+
+enum VideoType {
+  hyperframes_composition, opuscar_film, gbro_broll
+}
+
+// Video result
+record Video {
+  path: Text
+  type: VideoType
+  duration: Number
+  success: Bool
+}
+
+// Main workflow: produce video
+workflow produce_video(brief: VideoBrief) -> Video {
+  match brief.type {
+    case "hyperframes_composition" {
+      return produce_hyperframes_video(brief)
+    }
+    case "opuscar_film" {
+      return produce_opuscar_film(brief)
+    }
+    case "gbro_broll" {
+      return produce_gbro_broll(brief)
+    }
+  }
+}
+
+// Produce HyperFrames video
+workflow produce_hyperframes_video(brief: VideoBrief) -> Video {
+  if brief.scene == null {
+    return {path: "", type: "hyperframes_composition", duration: 0, success: false}
+  }
+
+  // Create composition
+  comp = create_composition(brief.scene, ".")
+
+  if not comp.valid {
+    return {path: "", type: "hyperframes_composition", duration: 0, success: false}
+  }
+
+  // Render
+  result = render(comp, brief.output_path)
+
+  return {
+    path: result.video_path,
+    type: "hyperframes_composition",
+    duration: result.duration,
+    success: result.success
+  }
+}
+
+// Produce Opuscar film
+workflow produce_opuscar_film(brief: VideoBrief) -> Video {
+  var style: FilmStyle = data_storytelling  // default
+
+  if brief.style != null {
+    style = parse_style(brief.style)
+  }
+
+  film_brief = {
+    style: style,
+    topic: brief.topic,
+    duration: brief.duration,
+    narrator_gender: "neutral",
+    custom_voice: null,
+    custom_music: null,
+    storyboard_first: false
+  }
+
+  film = create_film(film_brief)
+
+  return {
+    path: film.video_path,
+    type: "opuscar_film",
+    duration: film.duration,
+    success: true
+  }
+}
+
+// Produce GBRO B-roll
+workflow produce_gbro_broll(brief: VideoBrief) -> Video {
+  if brief.script == null {
+    return {path: "", type: "gbro_broll", duration: 0, success: false}
+  }
+
+  // This would need an API key - would come from environment or config
+  api_key = get_api_key("GEMINI_API_KEY")
+
+  clip = create_broll(brief.script, api_key)
+
+  return {
+    path: clip.video_path,
+    type: "gbro_broll",
+    duration: clip.duration,
+    success: clip.qa_passed
+  }
+}
+
+// Parse style string to enum
+workflow parse_style(style_str: Text) -> FilmStyle {
+  // Convert string to FilmStyle enum
+  // This is a placeholder - actual implementation would map all 51 styles
+  match style_str {
+    case "data_storytelling" {
+      return data_storytelling
+    }
+    case "watercolor_brush" {
+      return watercolor_brush
+    }
+    case _ {
+      return data_storytelling  // default
+    }
+  }
+}
+
+// Get API key from environment
+workflow get_api_key(key_name: Text) -> Text {
+  // This would read from environment variables or a config file
+  return "placeholder_api_key"
+}

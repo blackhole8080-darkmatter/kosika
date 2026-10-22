@@ -1,0 +1,82 @@
+// Kosika Studios -- gbro Collage B-roll.
+// One spoken line becomes a halftone paper-collage metaphor, then a 5s clip.
+//
+//   kosika run external_integrations/skills/gbro_collage.kos --input line.json
+//
+// The vendored skill keeps the human in charge with two gates. This program
+// holds the gates as checks, so nothing is generated that did not pass:
+// Gate 1 wants a metaphor that can actually be assembled, Gate 2 wants the
+// still-frame prompt that the video will be built from. The clip itself is
+// made by the vendored script through tools/gemini_video.kos.
+
+record Metaphor { line: Text objects: Text[] bottom: Text accent: Text order: Text[] }
+record Frame { prompt: Text }
+record Verdict { ok: Bool gate: Text note: Text }
+
+fn is_color(c: Text) -> Bool {
+  return c.starts_with("#") and c.length() == 7
+}
+
+// Gate 1: can this metaphor be assembled at all? Refused in words that can
+// be acted on, exactly as the vendored skill asks.
+fn metaphor_problem(m: Metaphor) -> Text {
+  if m.line.trim().is_empty() { return "The spoken line is empty." }
+  if m.objects.length() < 3 { return "A metaphor needs at least 3 key objects." }
+  if m.objects.length() > 6 { return "A metaphor holds at most 6 key objects." }
+  if not is_color(m.bottom) { return "The bottom colour must be written like #f4e9df." }
+  if not is_color(m.accent) { return "The accent colour must be written like #e8813a." }
+  if m.order.length() != m.objects.length() { return f"The assembly order names {m.order.length()} objects, and the metaphor holds {m.objects.length()}." }
+  for given in m.order {
+    if not m.objects.contains(given) { return f"{given} is set to be assembled, and is not one of the objects." }
+  }
+  return ""
+}
+
+// Gate 2: the still-frame prompt. Halftone paper collage, one spotlight
+// accent, nothing photographic.
+fn frame_prompt(m: Metaphor) -> Frame {
+  let listing = m.objects.join(", ")
+  let prompt = "A flat editorial halftone paper collage on " + m.bottom
+    + ": the objects " + listing + " assembled mid-air, cut edges visible, "
+    + "in " + m.accent + " placed as the single spotlight accent. "
+    + "Assembly order: " + m.order.join(" then ") + ". The line: " + m.line
+  return {prompt: prompt}
+}
+
+record Brief { metaphor: Metaphor }
+
+workflow main(brief: Brief) -> Verdict {
+  budget 2 model calls, 300 seconds
+  problem = metaphor_problem(brief.metaphor)
+  verdict: Verdict = match problem.is_empty() {
+    case true { {ok: true, gate: "2", note: frame_prompt(brief.metaphor).prompt} }
+    case _ { {ok: false, gate: "1", note: problem} }
+  }
+}
+
+// ------------------------------------------------------------------ tests
+
+test "a workable metaphor reaches the frame gate" {
+  a = main({metaphor: {line: "the promise falls apart before payment", objects: ["clock", "ribbon", "ledger"], bottom: "#f2b880", accent: "#e8813a", order: ["clock", "ribbon", "ledger"]}})
+  expect a.ok
+  expect a.gate == "2"
+  expect a.note.contains("halftone paper collage")
+}
+
+test "a metaphor that cannot be assembled is stopped at gate one" {
+  a = main({metaphor: {line: "pricing that holds the room", objects: ["scale"], bottom: "#f2b880", accent: "#e8813a", order: ["scale"]}})
+  expect not a.ok
+  expect a.gate == "1"
+  expect a.note.starts_with("A metaphor needs at least 3 key objects")
+}
+
+test "the assembly order must name real objects" {
+  a = main({metaphor: {line: "hiring one more hand", objects: ["scissors", "glue", "paper"], bottom: "#f2b880", accent: "#e8813a", order: ["scissors", "glue", "stapler"]}})
+  expect a.note.starts_with("stapler is set to be assembled")
+}
+
+test "the frame prompt carries the one spotlight accent" {
+  frame = frame_prompt({line: "a quiet launch", objects: ["envelope", "stamp", "seal"], bottom: "#f4e9df", accent: "#e8813a", order: ["envelope", "stamp", "seal"]})
+  expect frame.prompt.contains("envelope then stamp then seal")
+  expect frame.prompt.contains("#e8813a placed as the single spotlight accent")
+}

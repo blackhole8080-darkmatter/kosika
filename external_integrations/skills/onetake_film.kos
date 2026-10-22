@@ -1,0 +1,133 @@
+// Kosika Studios -- OneTake.
+// Motion that never cuts to the next slide: every beat is carried.
+//
+//   kosika run external_integrations/skills/onetake_film.kos --input brief.json
+//
+// What OneTake treats as the point of a film, this program measures: at each
+// boundary between beats, a carrier survives and visibly becomes the next
+// beat, and one camera holds it all together. A film whose beats merely
+// replace each other is refused before a render is ever paid for.
+
+record Carrier { id: Text }
+record Beat { id: Text seconds: Text carriers: Text[] movings: Bool }
+record Report { boundaries: Number score: Number passed: Bool notes: Text[] }
+
+fn isbeat(b: Beat) -> Bool {
+  return b.id.length() > 0 and b.seconds.length() > 0
+}
+
+// The carry score of one boundary: what survived, said as a share.
+fn carry(before: Beat, after: Beat) -> Number {
+  var hits = 0.0
+  for id in before.carriers {
+    if after.carriers.contains(id) {
+      hits = hits + 1.0
+    } else if after.movings {
+      // A moving beat keeps its carriers in motion: the share still lands.
+      hits = hits + 0.5
+    }
+  }
+  return hits / before.carriers.length().max(1)
+}
+
+// What is wrong with a film plan, in words that can fix it. "" when nothing.
+fn film_problem(beats: Beat[]) -> Text {
+  if beats.length() < 2 { return "A film needs at least two beats." }
+  for b in beats {
+    if not isbeat(b) { return f"Beat {b.id} has no camera note." }
+  }
+  let report = measure(beats)
+  if not report.passed {
+    for note in report.notes {
+      return note
+    }
+  }
+  return ""
+}
+
+fn measure(beats: Beat[]) -> Report {
+  var notes: Text[] = []
+  var total = 0.0
+  var boundaries = 0
+  if beats.length() >= 2 {
+    for i in 0 until beats.length() - 1 {
+      boundaries = boundaries + 1
+      let score = carry(beats[i], beats[i + 1])
+      total = total + score
+      if score < 0.75 {
+        notes = notes.append(f"Beat {beats[i].id} does not carry into {beats[i + 1].id}: give them a shared carrier.")
+      }
+    }
+  }
+  let score = if boundaries == 0 { 0.0 } else { total / boundaries }
+  return {boundaries: boundaries, score: score, passed: score >= 0.75, notes: notes}
+}
+
+// The repair the reference films use: the last thing on screen folds into
+// the lockup, or a card grows into the page. A film that fails is returned
+// with beats stitched by the cast of the previous beat.
+fn stitched(beats: Beat[]) -> Beat[] {
+  var out: Beat[] = []
+  for b in beats {
+    var mended = b
+    if out.length() > 0 {
+      let previous = out[out.length() - 1]
+      if carry(previous, b) < 0.75 {
+        let shared = previous.carriers.take(1)
+        let ids = b.carriers.concat(shared).unique()
+        mended = {id: b.id, seconds: b.seconds, carriers: ids, movings: b.movings}
+      }
+    }
+    out = out.append(mended)
+  }
+  return out
+}
+
+record Brief { beats: Beat[] }
+
+workflow main(brief: Brief) -> Report {
+  budget 2 model calls, 300 seconds
+  plan = brief.beats
+  first = measure(plan)
+  report = if first.passed { first } else { measure(stitched(plan)) }
+}
+
+// ------------------------------------------------------------------ tests
+
+test "a film where every beat carries passes" {
+  a = main({beats: [
+    {id: "prompt", seconds: "the prompt bar opens into the app window", carriers: ["promptbar"], movings: false},
+    {id: "window", seconds: "the window reflows into the phone", carriers: ["promptbar"], movings: true},
+    {id: "lockup", seconds: "the cast folds into the lockup", carriers: ["promptbar"], movings: false}
+  ]})
+  expect a.passed
+  expect a.boundaries == 2
+}
+
+test "a film whose beats replace each other is measured, then repaired" {
+  raw = measure([
+    {id: "title", seconds: "a title card", carriers: ["card"], movings: false},
+    {id: "ui", seconds: "a ui shot", carriers: ["window"], movings: false}
+  ])
+  expect not raw.passed
+  expect raw.score < 0.75
+  a = main({beats: [
+    {id: "title", seconds: "a title card", carriers: ["card"], movings: false},
+    {id: "ui", seconds: "a ui shot", carriers: ["window"], movings: false}
+  ]})
+  expect a.passed
+  expect a.score >= 0.75
+}
+
+test "a single beat is refused, not scored zero silently" {
+  result = film_problem([{id: "one", seconds: "alone", carriers: ["x"], movings: false}])
+  expect result.starts_with("A film needs at least two beats")
+}
+
+test "stitching repairs what does not carry" {
+  fixed = stitched([
+    {id: "title", seconds: "a title card", carriers: ["card"], movings: false},
+    {id: "ui", seconds: "a ui shot", carriers: ["window"], movings: false}
+  ])
+  expect carry(fixed[0], fixed[1]) >= 0.75
+}

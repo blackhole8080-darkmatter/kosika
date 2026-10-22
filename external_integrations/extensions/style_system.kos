@@ -1,0 +1,303 @@
+// Style system extension
+// Adds style-based creative direction to Kosika
+
+// Style enum (all 51 styles from Lemo Opuscar)
+enum FilmStyle {
+  // Evidence Films
+  satellite_briefing, engineering_briefing_board, lidar_survey,
+  white_model, data_physicalization, exploded_teardown,
+  microscope_story, archive_lighttable,
+
+  // Hand-drawn & Painting
+  crayon_picture_book, watercolor_brush, chinese_ink_wash,
+  impasto_oil_painting, one_line_drawing, whiteboard_explainer,
+  urban_sketch_pen_wash,
+
+  // East Asian Traditions
+  shadow_puppetry, ukiyo_e, red_paper_cut, paper_cut_lightbox,
+
+  // Print & Printmaking
+  risograph_print, halftone_dossier, woodcut_print,
+  copperplate_engraving, silkscreen_travel_poster,
+
+  // Graphic & Type
+  swiss_motion_graphics, spy_title_sequence, art_deco,
+  blueprint, stained_glass, pictogram_motion, ascii_crt_terminal,
+
+  // Information & Keynote
+  data_storytelling, isometric_infographic, dark_tech_keynote,
+  living_screencast, sci_fi_hologram_hud,
+
+  // Cartoon & Anime
+  rubber_hose_cartoon, cel_anime, sci_fi_sitcom_toon,
+  mid_century_cartoon,
+
+  // Games
+  pixel_rpg, hd_2d, microgame_frenzy, game_show_flat,
+
+  // Cinema & Eras
+  silent_film, liminal_found_footage,
+
+  // Materials & 3D
+  brick_toy, paper_pop_up_book, tilt_shift_miniature,
+  low_poly_isometric_island, glass_product_render
+}
+
+// Style category
+enum StyleCategory {
+  evidence_films, hand_drawn_painting, east_asian_traditions,
+  print_printmaking, graphic_type, information_keynote,
+  cartoon_anime, games, cinema_eras, materials_3d
+}
+
+// Style invariants (from STYLE.md)
+record StyleInvariants {
+  look: Text
+  color_palette: Text[]
+  type: Text
+  typography: Text
+  motion_rules: Text[]
+  camera_grammar: Text[]
+  sound_palette: Text[]
+  native_moves: Text[]
+  pitfalls: Text[]
+  category: StyleCategory
+}
+
+// Style metadata
+record StyleMetadata {
+  slug: Text
+  name: Text
+  name_zh: Text
+  category: StyleCategory
+  demo_path: Text
+  invariants: StyleInvariants
+}
+
+// Load style invariants
+workflow load_style_invariants(style: FilmStyle) -> StyleInvariants {
+  // This would read from styles/<style>/STYLE.md
+  // For now, return placeholder invariants
+
+  match style {
+    case "watercolor_brush" {
+      return {
+        look: "Watercolor brush strokes with organic edges",
+        color_palette: ["#E8D5C4", "#C4A484", "#A67C52", "#7A5A3A", "#4A3728"],
+        type: "Hand-painted with visible brush texture",
+        typography: "Serif, slightly organic",
+        motion_rules: [
+          "Brush strokes flow naturally",
+          "Colors blend organically",
+          "Edges are soft and irregular"
+        ],
+        camera_grammar: [
+          "Gentle pans",
+          "Subtle zooms",
+          "Focus on brush texture"
+        ],
+        sound_palette: [
+          "Acoustic guitar",
+          "Soft piano",
+          "Nature sounds"
+        ],
+        native_moves: [
+          "Brush stroke reveals",
+          "Color blend",
+          "Water spread"
+        ],
+        pitfalls: [
+          "Avoid sharp edges",
+          "Don't use flat colors",
+          "Avoid mechanical motion"
+        ],
+        category: hand_drawn_painting
+      }
+    }
+    case "data_storytelling" {
+      return {
+        look: "Clean data visualization with animated charts",
+        color_palette: ["#2563EB", "#10B981", "#F59E0B", "#EF4444", "#6B7280"],
+        type: "Flat design with smooth animations",
+        typography: "Sans-serif, geometric",
+        motion_rules: [
+          "Charts animate in sequence",
+          "Data points appear clearly",
+          "Transitions are smooth"
+        ],
+        camera_grammar: [
+          "Static framing",
+          "Subtle zoom on key data",
+          "Pan across large charts"
+        ],
+        sound_palette: [
+          "Electronic tones",
+          "Data ping sounds",
+          "Ambient tech sounds"
+        ],
+        native_moves: [
+          "Chart bar grow",
+          "Line draw",
+          "Data point pop"
+        ],
+        pitfalls: [
+          "Don't clutter with too much data",
+          "Avoid jarring transitions",
+          "Don't use complex 3D"
+        ],
+        category: information_keynote
+      }
+    }
+    case _ {
+      return {
+        look: "Generic style",
+        color_palette: ["#000000", "#FFFFFF"],
+        type: "Standard",
+        typography: "Default",
+        motion_rules: [],
+        camera_grammar: [],
+        sound_palette: [],
+        native_moves: [],
+        pitfalls: [],
+        category: hand_drawn_painting
+      }
+    }
+  }
+}
+
+// Get style category
+workflow get_style_category(style: FilmStyle) -> StyleCategory {
+  invariants = load_style_invariants(style)
+  return invariants.category
+}
+
+// List styles by category
+workflow list_styles_by_category(category: StyleCategory) -> FilmStyle[] {
+  // Return all styles in the given category
+  // This would iterate through all styles and filter
+  return []
+}
+
+// Suggest styles for topic
+workflow suggest_styles(topic: Text) -> FilmStyle[] {
+  // Analyze topic and suggest matching styles
+  // This would use a model or heuristics
+
+  var suggestions: FilmStyle[] = []
+
+  // Example heuristics
+  if topic.contains("data") or topic.contains("chart") or topic.contains("graph") {
+    suggestions = suggestions.append(data_storytelling)
+    suggestions = suggestions.append(isometric_infographic)
+  }
+
+  if topic.contains("story") or topic.contains("tale") {
+    suggestions = suggestions.append(watercolor_brush)
+    suggestions = suggestions.append(crayon_picture_book)
+  }
+
+  if topic.contains("tech") or topic.contains("future") {
+    suggestions = suggestions.append(sci_fi_hologram_hud)
+    suggestions = suggestions.append(dark_tech_keynote)
+  }
+
+  if suggestions.length() == 0 {
+    suggestions = suggestions.append(data_storytelling)  // default
+  }
+
+  return suggestions
+}
+
+// Get style metadata
+workflow get_style_metadata(style: FilmStyle) -> StyleMetadata {
+  invariants = load_style_invariants(style)
+
+  return {
+    slug: f"{style}",
+    name: f"{style}",  // Would map to human-readable name
+    name_zh: "",  // Chinese name
+    category: invariants.category,
+    demo_path: "styles/" + f"{style}" + "/demo.mp4",
+    invariants: invariants
+  }
+}
+
+// List all styles
+workflow list_all_styles() -> FilmStyle[] {
+  return [
+    satellite_briefing, engineering_briefing_board, lidar_survey,
+    white_model, data_physicalization, exploded_teardown,
+    microscope_story, archive_lighttable,
+    crayon_picture_book, watercolor_brush, chinese_ink_wash,
+    impasto_oil_painting, one_line_drawing, whiteboard_explainer,
+    urban_sketch_pen_wash,
+    shadow_puppetry, ukiyo_e, red_paper_cut, paper_cut_lightbox,
+    risograph_print, halftone_dossier, woodcut_print,
+    copperplate_engraving, silkscreen_travel_poster,
+    swiss_motion_graphics, spy_title_sequence, art_deco,
+    blueprint, stained_glass, pictogram_motion, ascii_crt_terminal,
+    data_storytelling, isometric_infographic, dark_tech_keynote,
+    living_screencast, sci_fi_hologram_hud,
+    rubber_hose_cartoon, cel_anime, sci_fi_sitcom_toon,
+    mid_century_cartoon,
+    pixel_rpg, hd_2d, microgame_frenzy, game_show_flat,
+    silent_film, liminal_found_footage,
+    brick_toy, paper_pop_up_book, tilt_shift_miniature,
+    low_poly_isometric_island, glass_product_render
+  ]
+}
+
+// Check if style is appropriate for topic
+workflow validate_style_for_topic(style: FilmStyle, topic: Text) -> Bool {
+  invariants = load_style_invariants(style)
+
+  // Check if topic matches style category
+  // This would be more sophisticated in practice
+  return true
+}
+
+// Apply style invariants to scene
+workflow apply_style_invariants(scene: SceneDescription, style: FilmStyle) -> SceneDescription {
+  invariants = load_style_invariants(style)
+
+  // Apply color palette
+  updated_scene = apply_color_palette(scene, invariants.color_palette)
+
+  // Apply typography
+  updated_scene = apply_typography(updated_scene, invariants.typography)
+
+  // Apply motion rules
+  updated_scene = apply_motion_rules(updated_scene, invariants.motion_rules)
+
+  return updated_scene
+}
+
+// Apply color palette
+workflow apply_color_palette(scene: SceneDescription, palette: Text[]) -> SceneDescription {
+  // Map scene colors to palette
+  return scene
+}
+
+// Apply typography
+workflow apply_typography(scene: SceneDescription, typography: Text) -> SceneDescription {
+  // Apply typography rules to text elements
+  return scene
+}
+
+// Apply motion rules
+workflow apply_motion_rules(scene: SceneDescription, rules: Text[]) -> SceneDescription {
+  // Apply motion rules to animations
+  return scene
+}
+
+// Style comparison
+workflow compare_styles(style1: FilmStyle, style2: FilmStyle) -> Text {
+  inv1 = load_style_invariants(style1)
+  inv2 = load_style_invariants(style2)
+
+  var comparison = "Comparing " + f"{style1}" + " and " + f"{style2}" + "\n"
+  comparison = comparison + "Categories: " + f"{inv1.category}" + " vs " + f"{inv2.category}" + "\n"
+  comparison = comparison + "Looks: " + inv1.look + " vs " + inv2.look + "\n"
+
+  return comparison
+}

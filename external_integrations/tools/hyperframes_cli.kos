@@ -1,0 +1,44 @@
+// HyperFrames -- HTML in, deterministic MP4 out.
+//
+// The vendored repository lives at external-integrations/hyperframes. Its
+// CLI is a Node script, so the tool runs `node` against the entry point:
+//
+//   node external-integrations/hyperframes/packages/cli/bin/hyperframes.mjs
+//        <frame-name> lint|render ...
+//
+// Every call lands in the granted folder, so all paths stay relative.
+
+record Launch { args: Text[] }
+record Run { exit_code: Number stdout: Text stderr: Text }
+
+tool node_run {
+  source system "shell"
+  operation: "npx"
+  access: execute
+  input: Launch
+  output: Run
+}
+
+agent renderer {
+  can: [node_run]
+  cannot: []
+  max_steps: 4
+}
+
+// Call-launch, ready to pass to a workflow below (the bin path is the
+// first argument; importers usually get it from hyperframes_launch).
+fn hyperframes_launch(then: Text) -> Launch {
+  return {args: ["--yes", "hyperframes@0.8.179"].concat(then.split(" "))}
+}
+
+// One HyperFrames CLI run. The caller decides what the CLI does, either
+// straight through the composition projects' own pinned package --
+// `npx --yes hyperframes@0.8.179 lint` -- or through hyperframes_launch if
+// the vendored repository is ever built.
+workflow hyperframes_run(plan: Launch) -> Run {
+  require approval
+  step run {
+    let ran: Run = execute renderer.node_run(args: plan.args)
+    return ran
+  }
+}

@@ -1,0 +1,114 @@
+// Kosika Studios -- Lemo-Opuscar.
+// Film styles in which every frame is written in code: canvas and WebGL
+// pages, scores from sample libraries, narration from speech synthesis.
+// No video generation, no stock footage.
+//
+//   kosika run external_integrations/skills/opuscar_film.kos --input ask.json
+//
+// The vendored project holds 51 such styles, from hand-drawn 2D to 3D. This
+// program keeps its one hard rule first -- every frame must be code -- then
+// picks the style out of the ask, and shapes a shot plan in it.
+
+record Style { id: Text name: Text dims: Text mood: Text cues: Text[] }
+record Shot { name: Text seconds: Text[] idea: Text }
+	record Plan { style: Text shots: Shot[] }
+record Answer { style: Text shots: Number mode: Text note: Text }
+
+// A corner of the catalogue; the vendored styleboard holds the rest.
+fn styles() -> Style[] {
+  return [
+    {id: "linocut", name: "Linocut", dims: "2d", mood: "stark black cuts on paper", cues: ["black", "paper", "wood", "print"]},
+    {id: "risograph", name: "Risograph", dims: "2d", mood: "two inks, misregistered", cues: ["poster", "ink", "zine", "grain"]},
+    {id: "diorama", name: "Diorama", dims: "2.5d", mood: "flat layers in a shadow box", cues: ["box", "layer", "depth", "dollhouse"]},
+    {id: "terminal", name: "Terminal", dims: "2d", mood: "phosphor green on glass", cues: ["computer", "code", "hacker", "green"]},
+    {id: "cel", name: "Cel", dims: "2d", mood: "hand-painted frames on twos", cues: ["anime", "cartoon", "hand", "paint"]},
+    {id: "voxel", name: "Voxel", dims: "3d", mood: "small cubes, big heart", cues: ["blocks", "pixel", "3d", "toy"]}
+  ]
+}
+
+// The one hard rule: every frame of the film is code. A plan that asks a
+// model to generate video, or slips stock in, is refused out loud.
+fn plan_problem(p: Plan) -> Text {
+  var known: Text[] = []
+  for s in styles() {
+    known = known.append(s.id)
+  }
+  if not known.contains(p.style) { return f"{p.style} is not a style of the catalogue." }
+  if p.shots.is_empty() { return "The film has no shots." }
+  for s in p.shots {
+    let said = s.idea.lower().trim()
+    if said.contains("generate a video") or said.contains("video generation") { return f"Shot {s.name} asks for video generation. Opuscar films are written in code." }
+    if said.contains("stock") { return f"Shot {s.name} reaches for stock footage. Opuscar films are written in code." }
+  }
+  return ""
+}
+
+// A short ask picks a style by its cue words, counting matches: more cues
+// beat fewer, and a plain ask falls back to a two-ink poster.
+fn pick(ask: Text) -> Style {
+  let said = ask.lower().trim()
+  var best = styles()[1]
+  var most = 0
+  for s in styles() {
+    var hits = 0
+    for cue in s.cues {
+      if said.contains(cue) {
+        hits = hits + 1
+      }
+    }
+    if hits > most {
+      most = hits
+      best = s
+    }
+  }
+  return best
+}
+
+record Ask { ask: Text style: Text shots: Shot[] }
+
+workflow main(key: Ask) -> Answer {
+  budget 2 model calls, 300 seconds
+  chosen = pick(key.ask)
+  problem = plan_problem({style: chosen.id, shots: key.shots})
+  answer = if problem.is_empty() {
+    {style: chosen.name, shots: key.shots.length(), mode: chosen.dims, note: chosen.mood}
+  } else {
+    {style: "", shots: 0, mode: "", note: problem}
+  }
+}
+
+// ------------------------------------------------------------------ tests
+
+test "cue words choose the style" {
+  expect pick("a printer poster zine about tariff costs").name == "Risograph"
+  expect pick("someone types green code on glass").name == "Terminal"
+}
+
+test "a working plan is answered in the style's own words" {
+  a = main({ask: "hand-painted frames about an afternoon", style: "ignored", shots: [
+    {name: "open", seconds: [], idea: "the blinds open, light floods the room"},
+    {name: "pour", seconds: [], idea: "tea pours into a cup, steam circles"}
+  ]})
+  expect a.style == "Cel"
+  expect a.mode == "2d"
+  expect a.note.starts_with("hand-painted frames")
+}
+
+test "video generation is refused out loud" {
+  a = main({ask: "anything", style: "ignored", shots: [
+    {name: "cheat", seconds: [], idea: "generate a video of a castle"}
+  ]})
+  expect a.style == ""
+  expect a.note.starts_with("Shot cheat asks for video generation")
+}
+
+test "stock footage is refused out loud" {
+  a = main({ask: "anything", style: "ignored", shots: [
+    {name: "lazy", seconds: [], idea: "drop in stock footage of the sea"}
+  ]})
+  expect a.note.starts_with("Shot lazy reaches for stock")
+}
+
+test "an unknown style is named, not silently swapped" {
+  expect plan_problem({style: "liveaction", shots: [{name: "a", seconds: [], idea: ""}]}).starts_with("liveaction is not a style")
+}

@@ -1,0 +1,125 @@
+// Example: Animation studio combining character animation with styles
+// Demonstrates the animation studio agent
+
+import agents/animation_studio
+
+workflow main() -> AnimationProject {
+  // Define character
+  character = {
+    name: "Clawd",
+    views: [
+      {name: "front", description: "Front view"},
+      {name: "side", description: "Side view"}
+    ],
+    emotions: [
+      {name: "happy", description: "Smiling"},
+      {name: "curious", description: "Eyes wide, head tilted"}
+    ],
+    eyes: [
+      {type: "round", size: 20, expression: "open"}
+    ],
+    mouths: [
+      {type: "smile", size: 30, expression: "happy"}
+    ],
+    hats: []
+  }
+
+  // Create animation project with style
+  brief = {
+    character: character,
+    style: watercolor_brush,
+    story: "Clawd discovers a magical paintbrush and creates beautiful art",
+    duration: 60,
+    narrator_gender: "female",
+    custom_voice: null,
+    custom_music: null,
+    output_resolution: "1920x1080"
+  }
+
+  return create_character_film(brief)
+}
+
+// Example: Multi-character scene
+workflow multi_character_example() -> AnimationProject {
+  characters = [
+    {
+      name: "Clawd",
+      views: [],
+      emotions: [],
+      eyes: [],
+      mouths: [],
+      hats: []
+    },
+    {
+      name: "Friend",
+      views: [],
+      emotions: [],
+      eyes: [],
+      mouths: [],
+      hats: []
+    }
+  ]
+
+  return create_multi_character_scene(characters, watercolor_brush, "Two friends explore a magical forest")
+}
+
+// Example: Select style for character
+workflow select_style_example() -> FilmStyle {
+  character = {
+    name: "Clawd",
+    views: [],
+    emotions: [],
+    eyes: [],
+    mouths: [],
+    hats: []
+  }
+
+  return select_style_for_character(character, "Clawd goes on an adventure")
+}
+
+// Example: Create character with custom emotion
+workflow custom_emotion_example() -> Character {
+  character = {
+    name: "Clawd",
+    views: [],
+    emotions: [
+      {name: "happy", description: "Smiling"},
+      {name: "sad", description: "Frowning"}
+    ],
+    eyes: [],
+    mouths: [],
+    hats: []
+  }
+
+  return create_character_with_emotion(character, "determined", "Eyes focused, jaw set, ready for action")
+}
+
+// Example: Create animation library
+workflow animation_library_example() -> Text {
+  character = {
+    name: "Clawd",
+    views: [],
+    emotions: [],
+    eyes: [],
+    mouths: [],
+    hats: []
+  }
+
+  return create_animation_library(character)
+}
+
+// Example: Lip-sync animation
+workflow lip_sync_example() -> Animation {
+  character = {
+    name: "Clawd",
+    views: [],
+    emotions: [],
+    eyes: [],
+    mouths: [],
+    hats: []
+  }
+
+  audio_path = "speech.mp3"
+
+  return create_lip_sync_animation(character, audio_path)
+}

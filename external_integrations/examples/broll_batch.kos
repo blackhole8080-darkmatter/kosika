@@ -1,0 +1,107 @@
+// Example: Batch B-roll generation
+// Demonstrates generating multiple B-roll clips for voiceover scripts
+
+import skills/gbro_collage
+import agents/broll_generator
+
+workflow main() -> BrollBatchResult {
+  // Define scripts for B-roll
+  scripts = [
+    "很多人以为 AI 是来替你思考的，其实它更像一面镜子，会把你问题里的漏洞照出来。",
+    "真正的创新不是追逐热点，而是解决那些别人看不见的问题。",
+    "技术的价值不在于它能做什么，而在于它让人类能做什么。",
+    "最好的设计是用户感觉不到的设计，一切都自然而然。",
+    "数据驱动决策，但最终还是要相信直觉和经验。"
+  ]
+
+  // Generate B-roll batch
+  brief = {
+    scripts: scripts,
+    api_key: "your-gemini-api-key",
+    approve_automatically: true,
+    output_directory: "./broll_output"
+  }
+
+  return generate_broll_batch(brief)
+}
+
+// Example: Generate B-roll with manual approval
+workflow generate_with_manual_approval() -> BrollBatchResult {
+  scripts = [
+    "第一个脚本内容",
+    "第二个脚本内容"
+  ]
+
+  brief = {
+    scripts: scripts,
+    api_key: "your-gemini-api-key",
+    approve_automatically: false,  // Require manual approval at each gate
+    output_directory: "./broll_output"
+  }
+
+  return generate_broll_batch(brief)
+}
+
+// Example: Generate B-roll variations
+workflow generate_variations_example() -> BrollClip[] {
+  script = "AI 像一面镜子，照出问题里的漏洞。"
+  api_key = "your-gemini-api-key"
+
+  return generate_broll_variations(script, api_key, 3)
+}
+
+// Example: Generate B-roll for voiceover
+workflow generate_for_voiceover_example() -> BrollClip[] {
+  audio_path = "voiceover.mp3"
+  transcript = "很多人以为 AI 是来替你思考的，其实它更像一面镜子，会把你问题里的漏洞照出来。真正的创新不是追逐热点，而是解决那些别人看不见的问题。"
+  api_key = "your-gemini-api-key"
+
+  return generate_broll_for_voiceover(audio_path, transcript, api_key)
+}
+
+// Example: Generate B-roll with custom palette
+workflow generate_with_palette_example() -> BrollClip {
+  script = "AI 像一面镜子。"
+  api_key = "your-gemini-api-key"
+  palette = ["#8B5CF6", "#EC4899", "#F59E0B", "#10B981"]
+
+  return generate_broll_with_palette(script, api_key, palette)
+}
+
+// Example: Create B-roll compilation
+workflow create_compilation_example() -> Text {
+  clips = [
+    {video_path: "clip1.mp4", duration: 5, dimensions: "720x1280", fps: 24, qa_passed: true},
+    {video_path: "clip2.mp4", duration: 5, dimensions: "720x1280", fps: 24, qa_passed: true},
+    {video_path: "clip3.mp4", duration: 5, dimensions: "720x1280", fps: 24, qa_passed: true}
+  ]
+
+  return create_broll_compilation(clips, "compilation.mp4")
+}
+
+// Example: Add B-roll to existing video
+workflow add_to_video_example() -> Text {
+  video_path = "main_video.mp4"
+  broll_clips = [
+    {video_path: "broll1.mp4", duration: 5, dimensions: "720x1280", fps: 24, qa_passed: true},
+    {video_path: "broll2.mp4", duration: 5, dimensions: "720x1280", fps: 24, qa_passed: true}
+  ]
+  timings = [10, 30]  // Insert B-roll at 10s and 30s
+
+  return add_broll_to_video(video_path, broll_clips, timings)
+}
+
+// Example: Generate report
+workflow generate_report_example() -> Text {
+  result = {
+    clips: [
+      {video_path: "clip1.mp4", duration: 5, dimensions: "720x1280", fps: 24, qa_passed: true},
+      {video_path: "clip2.mp4", duration: 5, dimensions: "720x1280", fps: 24, qa_passed: true}
+    ],
+    success_count: 2,
+    failed_count: 0,
+    total_duration: 10
+  }
+
+  return generate_broll_report(result)
+}

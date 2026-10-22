@@ -1,0 +1,197 @@
+// Example: Product launch video using HyperFrames
+// Demonstrates creating a product launch video from a website URL
+
+import skills/hyperframes_video
+import extensions/motion_primitives
+
+workflow main() -> RenderResult {
+  // Define scene description for product launch
+  scene = {
+    title: "Product Launch",
+    duration: 60,
+    scenes: [
+      {
+        id: "intro",
+        start_time: 0,
+        duration: 5,
+        elements: [
+          {
+            id: "logo",
+            type: "text",
+            content: "Amazing Product",
+            x: 960,
+            y: 540,
+            width: 400,
+            height: 100,
+            animations: [
+              {
+                property: "opacity",
+                from: 0,
+                to: 1,
+                duration: 1,
+                ease: "out",
+                delay: 0
+              },
+              {
+                property: "y",
+                from: 440,
+                to: 540,
+                duration: 1,
+                ease: "bounce",
+                delay: 0
+              }
+            ]
+          }
+        ],
+        transitions: []
+      },
+      {
+        id: "feature1",
+        start_time: 5,
+        duration: 10,
+        elements: [
+          {
+            id: "feature_title",
+            type: "text",
+            content: "Feature 1",
+            x: 200,
+            y: 200,
+            width: 300,
+            height: 80,
+            animations: [
+              {
+                property: "x",
+                from: -100,
+                to: 200,
+                duration: 0.8,
+                ease: "out",
+                delay: 0
+              }
+            ]
+          },
+          {
+            id: "feature_desc",
+            type: "text",
+            content: "Amazing feature description",
+            x: 200,
+            y: 300,
+            width: 500,
+            height: 60,
+            animations: [
+              {
+                property: "opacity",
+                from: 0,
+                to: 1,
+                duration: 0.5,
+                ease: "in",
+                delay: 0.3
+              }
+            ]
+          }
+        ],
+        transitions: [
+          {
+            type: "fade",
+            duration: 0.5,
+            ease: "in"
+          }
+        ]
+      },
+      {
+        id: "feature2",
+        start_time: 15,
+        duration: 10,
+        elements: [
+          {
+            id: "feature2_title",
+            type: "text",
+            content: "Feature 2",
+            x: 200,
+            y: 200,
+            width: 300,
+            height: 80,
+            animations: [
+              {
+                property: "x",
+                from: 1920,
+                to: 200,
+                duration: 0.8,
+                ease: "out",
+                delay: 0
+              }
+            ]
+          }
+        ],
+        transitions: [
+          {
+            type: "fade",
+            duration: 0.5,
+            ease: "in"
+          }
+        ]
+      },
+      {
+        id: "cta",
+        start_time: 55,
+        duration: 5,
+        elements: [
+          {
+            id: "cta_button",
+            type: "shape",
+            content: "#2563EB",
+            x: 960,
+            y: 540,
+            width: 200,
+            height: 60,
+            animations: [
+              {
+                property: "scale",
+                from: 0.8,
+                to: 1,
+                duration: 0.5,
+                ease: "bounce",
+                delay: 0
+              }
+            ]
+          },
+          {
+            id: "cta_text",
+            type: "text",
+            content: "Get Started",
+            x: 960,
+            y: 540,
+            width: 180,
+            height: 40,
+            animations: [
+              {
+                property: "opacity",
+                from: 0,
+                to: 1,
+                duration: 0.3,
+                ease: "in",
+                delay: 0.2
+              }
+            ]
+          }
+        ],
+        transitions: [
+          {
+            type: "fade",
+            duration: 0.5,
+            ease: "in"
+          }
+        ]
+      }
+    ],
+    background_color: "#0F172A",
+    width: 1920,
+    height: 1080
+  }
+
+  // Apply motion primitives for continuity
+  scene_with_motion = apply_vector_law(scene)
+  scene_with_motion = apply_z_scale_sign_rule(scene_with_motion)
+
+  // Create and render video
+  return create_and_render_video(scene_with_motion, "./product-launch", "product-launch.mp4")
+}

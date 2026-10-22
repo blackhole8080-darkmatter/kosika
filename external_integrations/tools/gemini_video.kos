@@ -1,0 +1,50 @@
+// gbro collage B-roll -- Gemini Omni Flash video from one static frame.
+//
+// The vendored skill's own script does the API work; Kosika calls it. The
+// environment must first pass the skill's self-check:
+//
+//   bash external-integrations/gbro-collage-broll/scripts/check_setup.sh
+//
+// That needs GEMINI_API_KEY, python >= 3.10 with google-genai, and ffmpeg.
+// The gates before this tool are tasteful ones: metaphor, then still frame,
+// then this clip.
+
+record Launch { args: Text[] }
+record Run { exit_code: Number stdout: Text stderr: Text }
+
+tool broll_generator {
+  source system "shell"
+  operation: "python"
+  access: execute
+  input: Launch
+  output: Run
+}
+
+agent collagist {
+  can: [broll_generator]
+  cannot: []
+  max_steps: 8
+}
+
+// One confirmed still frame -> one 5-second collage clip, via the vendored
+// script `external-integrations/gbro-collage-broll/scripts/generate_video.py`.
+fn broll_launch(script: Text, frame: Text, out: Text, prompt: Text) -> Launch {
+  return {args: [script, "--first-frame", frame, "--output", out, "--prompt", prompt]}
+}
+
+// The environment self-check, so a missing key is learned before Gate 2.
+workflow collage_setup_check() -> Run {
+  require approval
+  step check {
+    let ran: Run = execute collagist.broll_generator(args: ["-c", "import subprocess,sys;sys.exit(subprocess.call(['bash','external-integrations/gbro-collage-broll/scripts/check_setup.sh']))"])
+    return ran
+  }
+}
+
+workflow broll_from_frame(plan: Launch) -> Run {
+  require approval
+  step generate {
+    let ran: Run = execute collagist.broll_generator(args: plan.args)
+    return ran
+  }
+}
