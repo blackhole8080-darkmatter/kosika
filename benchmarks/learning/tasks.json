@@ -1,0 +1,24 @@
+{
+  "schema": "kosika.learning-tasks/v1",
+  "workflow": "reply",
+  "tasks": [
+    {
+      "id": "card_billing",
+      "inputs": {"ticket": {"text": "How do I change my card?"}},
+      "expected": {"text": "Open Settings, then Billing."},
+      "responses": {"writer": [{"text": "Open Settings, then Billing."}]}
+    },
+    {
+      "id": "reset_password",
+      "inputs": {"ticket": {"text": "How can I reset my password?"}},
+      "expected": {"text": "Choose Forgot password on the sign-in page."},
+      "responses": {"writer": [{"text": "Choose Forgot password on the sign-in page."}]}
+    },
+    {
+      "id": "download_invoice",
+      "inputs": {"ticket": {"text": "Where can I download an invoice?"}},
+      "expected": {"text": "Open Settings, then Billing, and select Invoices."},
+      "responses": {"writer": [{"text": "Open Settings, then Billing, and select Invoices."}]}
+    }
+  ]
+}

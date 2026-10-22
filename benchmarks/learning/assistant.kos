@@ -1,0 +1,16 @@
+record Ticket { text: Text }
+record Note { text: Text }
+record Said { text: Text }
+
+model writer {
+  input: Note
+  output: Said
+}
+
+fn no_reply(ticket: Ticket) -> Said {
+  return {text: "No accepted lesson is available."}
+}
+
+workflow reply(ticket: Ticket) -> Said {
+  said = use_model writer(text: "Answer briefly: " + ticket.text) learn by ticket.text otherwise no_reply(ticket)
+}

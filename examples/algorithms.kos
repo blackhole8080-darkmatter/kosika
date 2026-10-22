@@ -1,0 +1,315 @@
+// Algorithmic Primitives in Kosika
+// Demonstrating planning, search, and optimization algorithms
+
+// Planning Problem Definition
+record State {
+  data: Text
+  cost: Number
+  parent: Text?
+  action: Text?
+}
+
+record Action {
+  name: Text
+  cost: Number
+}
+
+record PlanningProblem {
+  initial_state: Text
+  goal_state: Text
+  actions: Action[]
+}
+
+// BFS Search Algorithm
+fn bfs_search(problem: PlanningProblem) -> Text[] {
+  let queue: Text[][] = [[problem.initial_state]]
+  let visited: Text[] = [problem.initial_state]
+  let path: Text[] = []
+
+  while queue.length() > 0 {
+    let current_path = queue[0]
+    queue = queue.drop(1)
+    let current = current_path[current_path.length() - 1]
+
+    if current == problem.goal_state {
+      return current_path
+    }
+
+    for action in problem.actions {
+      let next_state = apply_action(current, action)
+      if !visited.contains(next_state) {
+        visited = visited.append(next_state)
+        let new_path = current_path.append(next_state)
+        queue = queue.append(new_path)
+      }
+    }
+  }
+
+  return []
+}
+
+// A* Search with Heuristic
+fn a_star_search(problem: PlanningProblem, heuristic: fn(Text) -> Number) -> Text[] {
+  let open_set: State[] = [{
+    data: problem.initial_state,
+    cost: 0,
+    parent: null,
+    action: null
+  }]
+  let came_from: Text{} = {}
+  let cost_so_far: Text{} = {problem.initial_state: 0}
+
+  while open_set.length() > 0 {
+    // Find state with lowest f = g + h
+    let current = open_set[0]
+    let min_f = current.cost + heuristic(current.data)
+
+    for state in open_set {
+      let f = state.cost + heuristic(state.data)
+      if f < min_f {
+        min_f = f
+        current = state
+      }
+    }
+
+    if current.data == problem.goal_state {
+      return reconstruct_path(came_from, current.data)
+    }
+
+    // Remove current from open_set
+    let new_open: State[] = []
+    for state in open_set {
+      if state.data != current.data {
+        new_open = new_open.append(state)
+      }
+    }
+    open_set = new_open
+
+    // Explore neighbors
+    for action in problem.actions {
+      let next_state = apply_action(current.data, action)
+      let new_cost = cost_so_far[current.data] + action.cost
+
+      if cost_so_far.get(next_state) == null || new_cost < cost_so_far[next_state] {
+        cost_so_far[next_state] = new_cost
+        came_from[next_state] = current.data
+        open_set = open_set.append({
+          data: next_state,
+          cost: new_cost,
+          parent: current.data,
+          action: action.name
+        })
+      }
+    }
+  }
+
+  return []
+}
+
+fn reconstruct_path(came_from: Text{}, current: Text) -> Text[] {
+  let path: Text[] = [current]
+  let node = current
+
+  while came_from.get(node) != null {
+    node = came_from[node]
+    path = path.append(node)
+  }
+
+  return path.reverse()
+}
+
+// Constraint Satisfaction Problem
+record CSPVariable {
+  name: Text
+  domain: Text[]
+}
+
+record CSPConstraint {
+  variables: Text[]
+  check: fn(Text{}) -> Bool
+}
+
+record CSP {
+  variables: CSPVariable[]
+  constraints: CSPConstraint[]
+}
+
+fn csp_backtracking(csp: CSP, assignment: Text{}) -> Text? {
+  if assignment.keys().length() == csp.variables.length() {
+    return assignment
+  }
+
+  let var = select_unassigned_variable(csp, assignment)
+  for value in var.domain {
+    assignment[var.name] = value
+    if is_consistent(csp, assignment) {
+      let result = csp_backtracking(csp, assignment)
+      if result != null {
+        return result
+    }
+    assignment.remove(var.name)
+  }
+
+  return null
+}
+
+fn select_unassigned_variable(csp: CSP, assignment: Text{}) -> CSPVariable {
+  // MRV heuristic: choose variable with smallest domain
+  let unassigned: CSPVariable[] = []
+  for var in csp.variables {
+    if assignment.get(var.name) == null {
+      unassigned = unassigned.append(var)
+    }
+  }
+
+  let min_var = unassigned[0]
+  for var in unassigned {
+    if var.domain.length() < min_var.domain.length() {
+      min_var = var
+    }
+  }
+
+  return min_var
+}
+
+fn is_consistent(csp: CSP, assignment: Text{}) -> Bool {
+  for constraint in csp.constraints {
+    if !constraint.check(assignment) {
+      return false
+    }
+  }
+  return true
+}
+
+// Example: Map Coloring Problem
+workflow solve_map_coloring() -> Text? {
+  step setup {
+    let variables: CSPVariable[] = [
+      {name: "WA", domain: ["red", "green", "blue"]},
+      {name: "NT", domain: ["red", "green", "blue"]},
+      {name: "SA", domain: ["red", "green", "blue"]},
+      {name: "Q", domain: ["red", "green", "blue"]},
+      {name: "NSW", domain: ["red", "green", "blue"]},
+      {name: "V", domain: ["red", "green", "blue"]}
+    ]
+
+    let constraints: CSPConstraint[] = [
+      {
+        variables: ["WA", "NT"],
+        check: fn(a: Text{}) { a["WA"] != a["NT"] }
+      },
+      {
+        variables: ["WA", "SA"],
+        check: fn(a: Text{}) { a["WA"] != a["SA"] }
+      },
+      {
+        variables: ["NT", "SA"],
+        check: fn(a: Text{}) { a["NT"] != a["SA"] }
+      },
+      {
+        variables: ["NT", "Q"],
+        check: fn(a: Text{}) { a["NT"] != a["Q"] }
+      },
+      {
+        variables: ["SA", "Q"],
+        check: fn(a: Text{}) { a["SA"] != a["Q"] }
+      },
+      {
+        variables: ["SA", "NSW"],
+        check: fn(a: Text{}) { a["SA"] != a["NSW"] }
+      },
+      {
+        variables: ["Q", "NSW"],
+        check: fn(a: Text{}) { a["Q"] != a["NSW"] }
+      },
+      {
+        variables: ["SA", "V"],
+        check: fn(a: Text{}) { a["SA"] != a["V"] }
+      }
+    ]
+
+    let csp: CSP = {
+      variables: variables,
+      constraints: constraints
+    }
+
+    let assignment: Text{} = {}
+    let solution = csp_backtracking(csp, assignment)
+    return solution
+  }
+}
+
+// Optimization: Gradient Descent
+record OptimizationResult {
+  solution: Number[]
+  value: Number
+  iterations: Number
+}
+
+fn gradient_descent(
+  initial: Number[],
+  gradient: fn(Number[]) -> Number[],
+  learning_rate: Number,
+  max_iterations: Number
+) -> OptimizationResult {
+  let x = initial
+  let best_value = objective_function(x)
+
+  for i in 0..max_iterations {
+    let grad = gradient(x)
+
+    // Update: x = x - learning_rate * gradient
+    let new_x: Number[] = []
+    for j in 0..x.length() {
+      new_x = new_x.append(x[j] - learning_rate * grad[j])
+    }
+    x = new_x
+
+    let current_value = objective_function(x)
+
+    // Check convergence
+    if (current_value - best_value).abs() < 0.000001 {
+      return {
+        solution: x,
+        value: current_value,
+        iterations: i
+      }
+    }
+
+    best_value = current_value
+  }
+
+  return {
+    solution: x,
+    value: best_value,
+    iterations: max_iterations
+  }
+}
+
+fn objective_function(x: Number[]) -> Number {
+  // Example: f(x) = x^2 + y^2
+  return x[0] * x[0] + x[1] * x[1]
+}
+
+fn gradient_of_objective(x: Number[]) -> Number[] {
+  // Gradient of f(x) = x^2 + y^2 is [2x, 2y]
+  return [2 * x[0], 2 * x[1]]
+}
+
+workflow optimize_function() -> OptimizationResult {
+  step run_optimization {
+    let initial: Number[] = [5.0, 3.0]
+    let result = gradient_descent(
+      initial: initial,
+      gradient: gradient_of_objective,
+      learning_rate: 0.1,
+      max_iterations: 100
+    )
+    return result
+  }
+}
+
+// Helper function (placeholder)
+fn apply_action(state: Text, action: Action) -> Text {
+  return state  // Placeholder: implement actual state transition
+}

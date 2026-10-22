@@ -1,0 +1,356 @@
+// Self-Learning and Adaptive Agent in Kosika
+// Demonstrating agents that learn from experience
+
+// Experience Record
+record Experience {
+  id: Text
+  context: Text{}
+  action: Text
+  result: Text{}
+  reward: Number
+  timestamp: Text
+}
+
+// Pattern Record
+record Pattern {
+  id: Text
+  kind: Text
+  pattern: Text{}
+  confidence: Number
+  support: Number
+}
+
+// Strategy Record
+record Strategy {
+  id: Text
+  name: Text
+  conditions: Text[]
+  performance: Text{}
+  usage_count: Number
+}
+
+// Learning Agent
+record LearningAgent {
+  id: Text
+  experiences: Experience[]
+  patterns: Pattern[]
+  strategies: Strategy[]
+  performance_metrics: Text{}
+}
+
+// Add experience to agent
+fn add_experience(agent: LearningAgent, context: Text{}, action: Text, result: Text{}, reward: Number) -> LearningAgent {
+  let new_exp: Experience = {
+    id: agent.id + "_" + agent.experiences.length().to_text(),
+    context: context,
+    action: action,
+    result: result,
+    reward: reward,
+    timestamp: "now"
+  }
+
+  let new_experiences = agent.experiences.append(new_exp)
+  return {
+    id: agent.id,
+    experiences: new_experiences,
+    patterns: agent.patterns,
+    strategies: agent.strategies,
+    performance_metrics: agent.performance_metrics
+  }
+}
+
+// Extract sequence patterns from experiences
+fn extract_sequence_patterns(agent: LearningAgent, min_support: Number, min_confidence: Number) -> Pattern[] {
+  let patterns: Pattern[] = []
+  let context_groups: Text{}{} = {}
+
+  // Group experiences by context
+  for exp in agent.experiences {
+    let context_key = exp.context.keys().join(",")
+    if context_groups.get(context_key) == null {
+      context_groups[context_key] = []
+    }
+    let group = context_groups[context_key]
+    context_groups[context_key] = group.append(exp)
+  }
+
+  // Find patterns in each group
+  for context_key in context_groups.keys() {
+    let group = context_groups[context_key]
+    if group.length() < min_support {
+      continue
+    }
+
+    // Count actions
+    let action_counts: Text{} = {}
+    for exp in group {
+      let count = action_counts.get(exp.action)
+      if count == null {
+        action_counts[exp.action] = 1
+      } else {
+        action_counts[exp.action] = count + 1
+      }
+    }
+
+    // Find most common action
+    let max_count = 0
+    let most_common_action = ""
+    for action in action_counts.keys() {
+      let count = action_counts[action]
+      if count > max_count {
+        max_count = count
+        most_common_action = action
+      }
+    }
+
+    let confidence = max_count / group.length()
+    if confidence >= min_confidence {
+      let pattern: Pattern = {
+        id: "seq_" + patterns.length().to_text(),
+        kind: "sequence",
+        pattern: {
+          "context": context_key,
+          "action": most_common_action
+        },
+        confidence: confidence,
+        support: max_count
+      }
+      patterns = patterns.append(pattern)
+    }
+  }
+
+  return patterns
+}
+
+// Select action based on learned strategies
+fn select_action(agent: LearningAgent, context: Text{}) -> Text? {
+  for strategy in agent.strategies {
+    let conditions_met = true
+    for condition in strategy.conditions {
+      // Simplified: check if context contains condition
+      if !context.keys().contains(condition) {
+        conditions_met = false
+        break
+      }
+    }
+
+    if conditions_met {
+      // Update usage count
+      let new_strategies: Strategy[] = []
+      for s in agent.strategies {
+        if s.id == strategy.id {
+          new_strategies = new_strategies.append({
+            id: s.id,
+            name: s.name,
+            conditions: s.conditions,
+            performance: s.performance,
+            usage_count: s.usage_count + 1
+          })
+        } else {
+          new_strategies = new_strategies.append(s)
+        }
+      }
+
+      // Return strategy name as action
+      return strategy.name
+    }
+  }
+
+  return null
+}
+
+// Update performance metrics
+fn update_performance(agent: LearningAgent, metric_name: Text, value: Number) -> LearningAgent {
+  let metrics = agent.performance_metrics
+  let values = metrics.get(metric_name)
+
+  if values == null {
+    metrics[metric_name] = [value]
+  } else {
+    metrics[metric_name] = values.append(value)
+  }
+
+  return {
+    id: agent.id,
+    experiences: agent.experiences,
+    patterns: agent.patterns,
+    strategies: agent.strategies,
+    performance_metrics: metrics
+  }
+}
+
+// Get performance summary
+fn get_performance_summary(agent: LearningAgent) -> Text{} {
+  let summary: Text{} = {}
+
+  for metric_name in agent.performance_metrics.keys() {
+    let values = agent.performance_metrics[metric_name]
+    if values.length() > 0 {
+      let sum = 0.0
+      for v in values {
+        sum = sum + v
+      }
+      let mean = sum / values.length()
+
+      let min_val = values[0]
+      let max_val = values[0]
+      for v in values {
+        if v < min_val {
+          min_val = v
+        }
+        if v > max_val {
+          max_val = v
+        }
+      }
+
+      summary[metric_name] = {
+        "mean": mean,
+        "min": min_val,
+        "max": max_val,
+        "count": values.length()
+      }
+    }
+  }
+
+  return summary
+}
+
+// Adapt and learn from experiences
+fn adapt(agent: LearningAgent) -> Text{} {
+  let patterns = extract_sequence_patterns(agent, 3, 0.7)
+  let performance = get_performance_summary(agent)
+
+  let new_patterns = agent.patterns
+  for p in patterns {
+    new_patterns = new_patterns.append(p)
+  }
+
+  return {
+    "patterns_learned": patterns.length(),
+    "patterns": patterns,
+    "performance": performance,
+    "experience_count": agent.experiences.length()
+  }
+}
+
+// Example: Agent learning from code review tasks
+workflow learning_code_review_agent() -> Text{} {
+  step initialize {
+    let agent: LearningAgent = {
+      id: "code_review_agent",
+      experiences: [],
+      patterns: [],
+      strategies: [],
+      performance_metrics: {}
+    }
+
+    return agent
+  }
+
+  step add_experiences {
+    let agent = initialize
+
+    // Add experiences from code review tasks
+    agent = add_experience(
+      agent,
+      context: {"task": "code_review", "language": "python"},
+      action: "use_linter",
+      result: {"bugs_found": 3, "time_taken": 5},
+      reward: 0.8
+    )
+
+    agent = add_experience(
+      agent,
+      context: {"task": "code_review", "language": "python"},
+      action: "manual_review",
+      result: {"bugs_found": 5, "time_taken": 15},
+      reward: 0.6
+    )
+
+    agent = add_experience(
+      agent,
+      context: {"task": "code_review", "language": "python"},
+      action: "use_linter",
+      result: {"bugs_found": 2, "time_taken": 4},
+      reward: 0.7
+    )
+
+    return agent
+  }
+
+  step learn_patterns {
+    let agent = add_experiences
+    let adaptation = adapt(agent)
+    return adaptation
+  }
+
+  step update_metrics {
+    let agent = add_experiences
+    agent = update_performance(agent, "efficiency", 0.85)
+    agent = update_performance(agent, "accuracy", 0.92)
+
+    let summary = get_performance_summary(agent)
+    return summary
+  }
+
+  step combine {
+    let patterns = learn_patterns
+    let performance = update_metrics
+
+    return {
+      "patterns_learned": patterns["patterns_learned"],
+      "performance": performance
+    }
+  }
+}
+
+// Example: Strategy Selection for Different Contexts
+workflow strategy_selection_example() -> Text {
+  step setup_strategies {
+    let agent: LearningAgent = {
+      id: "adaptive_agent",
+      experiences: [],
+      patterns: [],
+      strategies: [
+        {
+          id: "quick",
+          name: "quick_search",
+          conditions: ["time_constraint", "low_accuracy"],
+          performance: {"success_rate": 0.7, "avg_time": 2.0},
+          usage_count: 0
+        },
+        {
+          id: "thorough",
+          name: "thorough_search",
+          conditions: ["high_accuracy"],
+          performance: {"success_rate": 0.95, "avg_time": 8.0},
+          usage_count: 0
+        }
+      ],
+      performance_metrics: {}
+    }
+
+    return agent
+  }
+
+  step select_for_tight_deadline {
+    let agent = setup_strategies
+    let context: Text{} = {
+      "time_constraint": "tight",
+      "low_accuracy": "true"
+    }
+
+    let action = select_action(agent, context)
+    return action
+  }
+
+  step select_for_high_quality {
+    let agent = setup_strategies
+    let context: Text{} = {
+      "high_accuracy": "true"
+    }
+
+    let action = select_action(agent, context)
+    return action
+  }
+}

@@ -1,0 +1,107 @@
+// Tensor operations demonstration for Kosika
+// This shows how tensors could be used in Kosika for AI workloads
+
+// Note: This is a design document showing intended syntax.
+// The tensor type and operations are not yet implemented in the language.
+
+record Matrix {
+  data: Number[][]
+}
+
+record TensorResult {
+  sum: Number
+  mean: Number
+  shape: Number[]
+}
+
+// Matrix multiplication using current array methods
+fn matrix_multiply(a: Number[][], b: Number[][]) -> Number[][] {
+  return a.times(b)
+}
+
+// Element-wise operations
+fn element_wise_add(a: Number[][], b: Number[][]) -> Number[][] {
+  return a.plus(b)
+}
+
+fn element_wise_multiply(a: Number[][], b: Number[][]) -> Number[][] {
+  let result: Number[][] = []
+  for i in 0..a.length() {
+    let row: Number[] = []
+    for j in 0..a[0].length() {
+      row = row.append(a[i][j] * b[i][j])
+    }
+    result = result.append(row)
+  }
+  return result
+}
+
+// Statistics on a matrix
+fn matrix_stats(matrix: Number[][]) -> TensorResult {
+  let flat: Number[] = []
+  for row in matrix {
+    for val in row {
+      flat = flat.append(val)
+    }
+  }
+
+  let sum_val = flat.sum()
+  let mean_val = flat.average()
+  let shape_val: Number[] = [matrix.length(), matrix[0].length()]
+
+  return {sum: sum_val, mean: mean_val, shape: shape_val}
+}
+
+// Demonstrating the current matrix capabilities
+workflow main() -> TensorResult {
+  step create_matrices {
+    // Create a 2x3 matrix
+    let a: Number[][] = [[1, 2, 3], [4, 5, 6]]
+    // Create a 3x2 matrix
+    let b: Number[][] = [[7, 8], [9, 10], [11, 12]]
+
+    // Matrix multiplication: (2x3) @ (3x2) = (2x2)
+    let product = matrix_multiply(a, b)
+
+    // Element-wise operations
+    let c: Number[][] = [[1, 2], [3, 4]]
+    let d: Number[][] = [[5, 6], [7, 8]]
+    let sum_elem = element_wise_add(c, d)
+    let mul_elem = element_wise_multiply(c, d)
+
+    // Compute statistics
+    let stats = matrix_stats(product)
+
+    return stats
+  }
+}
+
+/*
+Future tensor syntax (not yet implemented):
+
+// Tensor type with shape annotation
+tensor weights: Number[128, 768]
+
+// Tensor operations
+let a: tensor Number[2, 3] = [[1, 2, 3], [4, 5, 6]]
+let b: tensor Number[3, 2] = [[7, 8], [9, 10], [11, 12]]
+let product = a @ b  // matrix multiplication
+
+// Broadcasting
+let bias: tensor Number[2] = [1, 2]
+let result = product + bias  // broadcast bias across columns
+
+// Activation functions
+let activated = result.relu()
+let probabilities = result.softmax(axis: -1)
+
+// Reshaping
+let flat = result.flatten()
+let reshaped = flat.reshape([4, 1])
+
+// Slicing
+let sliced = result.slice([0:1, :])  // first row
+
+// Concatenation
+let stacked = tensor.stack([a, b], axis: 0)
+*/
