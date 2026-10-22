@@ -1,0 +1,94 @@
+// A small assistant for Kosika Studio, backed by explicitly granted MCP tools.
+//
+// Start Studio with grants for the "desktop" and "tasks" servers. App opening,
+// adding tasks, and completing tasks are execute actions and require approval.
+
+record Request { text: Text }
+record Reply { text: Text }
+
+record ListAppsIn { }
+record ListAppsOut { text: Text }
+record OpenAppIn { app: Text }
+record OpenAppOut { text: Text }
+record ListTasksIn { }
+record ListTasksOut { text: Text }
+record SearchTasksIn { query: Text }
+record SearchTasksOut { text: Text }
+record AddTaskIn { title: Text due: Text? }
+record AddTaskOut { text: Text }
+record CompleteTaskIn { task_id: Text }
+record CompleteTaskOut { text: Text }
+
+tool list_apps {
+  source mcp "desktop"
+  operation: "list_apps"
+  access: observe
+  input: ListAppsIn
+  output: ListAppsOut
+}
+
+tool open_app {
+  source mcp "desktop"
+  operation: "open_app"
+  access: execute
+  input: OpenAppIn
+  output: OpenAppOut
+}
+
+tool list_tasks {
+  source mcp "tasks"
+  operation: "list_tasks"
+  access: observe
+  input: ListTasksIn
+  output: ListTasksOut
+}
+
+tool search_tasks {
+  source mcp "tasks"
+  operation: "search_tasks"
+  access: observe
+  input: SearchTasksIn
+  output: SearchTasksOut
+}
+
+tool add_task {
+  source mcp "tasks"
+  operation: "add_task"
+  access: execute
+  input: AddTaskIn
+  output: AddTaskOut
+}
+
+tool complete_task {
+  source mcp "tasks"
+  operation: "complete_task"
+  access: execute
+  input: CompleteTaskIn
+  output: CompleteTaskOut
+}
+
+model helper_model {
+  input: Request
+  output: Reply
+  parameters: {
+    max_output_tokens: 250
+  }
+}
+
+agent studio_helper {
+  model: helper_model
+  can: [list_apps, open_app, list_tasks, search_tasks, add_task, complete_task]
+  max_steps: 6
+  instructions: "Help with the user's desktop app list and saved tasks. Use only the available tools; never claim an action succeeded unless a tool confirms it. Open an app only when explicitly asked. For tasks, search or list before answering when useful. Ask for missing task details rather than inventing them. Keep answers brief."
+}
+
+fn clean(reply: Reply) -> Reply {
+  return {text: reply.text.trim()}
+}
+
+workflow main(request: Request) -> Reply {
+  budget 8 model calls, 300 seconds
+  response = ask studio_helper(request.text)
+  cleaned = clean(response)
+  require approval
+}

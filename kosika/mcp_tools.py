@@ -43,7 +43,7 @@ from typing import Any, Callable, Mapping, Sequence
 
 from .ast import Program, ToolDecl
 from .mcp_stdio import MCPProtocolError, MCPStdioClient, MCPToolError
-from .schema import SchemaValidationError, schema_for_record, validate
+from .schema import SchemaValidationError, schema_for_type, validate
 
 MAX_TEXT_CHARACTERS = 20_000
 MAX_SERVERS = 16
@@ -252,7 +252,7 @@ class MCPToolCall:
 
     def __init__(self, hub: MCPHub, program: Program, tool: ToolDecl) -> None:
         self.hub, self.tool = hub, tool
-        self.output_schema = schema_for_record(program, tool.output)
+        self.output_schema = schema_for_type(program, tool.output)
 
     def describe(self) -> str:
         """The server's own words for the tool, for a model that chooses."""
