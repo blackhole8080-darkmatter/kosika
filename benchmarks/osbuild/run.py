@@ -21,8 +21,9 @@ Limits, so that nothing runs for ever:
 * it stops at the first failed stage, since each stage builds on the last.
 
 The workspace is copied from Aryan_Private/kosika-bench/osbuild (lessons,
-tutorial, tools), and each run's files, transcript and results are kept in
-results/. The model key is read from KOSIKA_MODEL_API_KEY and never written.
+tutorial, tools, and toolchain: nasm and QEMU unpacked from Ubuntu's
+packages; see workspace/README.txt), and each run's files and results are
+kept in results/. The model key is read from KOSIKA_MODEL_API_KEY and never written.
 """
 
 from __future__ import annotations
@@ -142,7 +143,7 @@ def main() -> int:
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     run_dir = HERE / "results" / stamp
     folder = run_dir / "workspace"
-    for part in ("lessons", "tutorial", "tools"):
+    for part in ("lessons", "tutorial", "tools", "toolchain"):
         shutil.copytree(WORKSPACE / part, folder / part)
     agents = run_dir / "agents"
     shutil.copytree(AGENT, agents / "osbuilder", ignore=shutil.ignore_patterns("memory", "runs"))

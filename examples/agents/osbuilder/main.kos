@@ -266,8 +266,11 @@ fn nothing_written() -> Written {
   return {text: ""}
 }
 
+// nasm and QEMU may be unpacked into the workspace (toolchain/) rather
+// than installed, so make looks there first. Inside a session the
+// workspace is /work.
 fn make_args(spec: Spec) -> Command {
-  return {args: ["-C", "stages/" + spec.stage, "os-image.bin"]}
+  return {args: ["-C", "stages/" + spec.stage, "os-image.bin", "PATH=/work/toolchain/root/usr/bin:/usr/bin:/bin"]}
 }
 
 fn screen_args(spec: Spec) -> Command {
