@@ -1,6 +1,16 @@
 # What overlaps in Kosika, and what could be retired
 
-Nothing here has been removed. This is a list for you to choose from.
+The four recommended groups have since been retired, one commit each:
+
+- `9ffc6f5` the city pictures, with the `city` and `design` commands
+- `8cc3b47` the Python authoring loop, with `author` and `author-eval`
+- `0b70411` the older maps, with `audience-map`, `unified`, `explain` and
+  `assistant`
+- `296e7f0` the first desktop app
+
+As noted below, `repair`, `corpus`, `benchmark`, `mindmap` and
+`synapse_bridge` stayed. Groups 3, 6 and 7 are still open questions. What
+follows is the list as it was written, before any of that happened.
 
 ## The measurement
 

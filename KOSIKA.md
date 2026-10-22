@@ -1497,7 +1497,6 @@ explicitly promotes them into the supported contract.
 - **Kosika Core:** parser, checker, runtime, and trace validator.
 - **Kosika Bridge:** MCP and host capability adapters.
 - **Kosika Agent Loop:** bounded provider-neutral model/tool interaction.
-- **Kosika Design:** deterministic structural and observed-execution views.
 - **Kosipack:** planned package manager.
 
 The current implementation is Python-hosted. Cross-language local process

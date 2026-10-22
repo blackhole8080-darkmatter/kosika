@@ -11,10 +11,8 @@
   "activationEvents": [
     "onLanguage:kosika",
     "onCommand:kosika.check",
-    "onCommand:kosika.explain",
     "onCommand:kosika.mindmap",
-    "onCommand:kosika.skills",
-    "onCommand:kosika.unifiedMindmap"
+    "onCommand:kosika.skills"
   ],
   "contributes": {
     "languages": [
@@ -43,20 +41,12 @@
         "title": "Kosika: Check File"
       },
       {
-        "command": "kosika.explain",
-        "title": "Kosika: Explain File"
-      },
-      {
         "command": "kosika.mindmap",
         "title": "Kosika: Generate Mindmap"
       },
       {
         "command": "kosika.skills",
         "title": "Kosika: Inspect Selected Skills"
-      },
-      {
-        "command": "kosika.unifiedMindmap",
-        "title": "Kosika: Generate Unified Mindmap"
       }
     ],
     "configuration": {
@@ -74,16 +64,6 @@
           },
           "default": [],
           "description": "Local directories containing skill.json manifests."
-        },
-        "kosika.modelUrl": {
-          "type": "string",
-          "default": "http://localhost:11434/v1",
-          "description": "OpenAI-compatible local model endpoint."
-        },
-        "kosika.modelName": {
-          "type": "string",
-          "default": "",
-          "description": "Optional local model name; empty keeps explanations static."
         }
       }
     }

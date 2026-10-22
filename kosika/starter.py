@@ -69,7 +69,7 @@ Replay the last run without calling any model:
 
 See what the program contains:
 
-    kosika audience-map main.kos --audience outsider --format text
+    kosika mindmap main.kos --format text
 
 Edit the question in `input.json`, or add fields to `Answer` in `main.kos`
 and to `responses.json`, then run `kosika check main.kos` again.
