@@ -13,8 +13,8 @@ from .ast import Program, ToolDecl
 from .model_steps import strict_json
 from .schema import (
     SchemaValidationError,
-    schema_for_record,
     schema_for_tool_input,
+    schema_for_type,
     schemas_equal,
     validate,
 )
@@ -622,7 +622,7 @@ def bind_component(
     if tool.access != contract.access:
         raise ComponentContractError("Component access does not match the Kosika tool")
     input_schema = schema_for_tool_input(program, tool.input)
-    output_schema = schema_for_record(program, tool.output)
+    output_schema = schema_for_type(program, tool.output)
     if not schemas_equal(input_schema, contract.input_schema):
         raise ComponentContractError(
             "Component input schema does not match the Kosika tool input record"

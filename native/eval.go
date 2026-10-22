@@ -90,15 +90,21 @@ type Machine struct {
 	functions  map[string]*FuncDecl
 	records    []*RecordDecl
 	enums      map[string]bool // the program's enums, by name
+	cases      map[string]*ChoiceAlternative
 	active     []string
 	calls      int
 	loops      int
 }
 
 func newMachine(program *Program) *Machine {
-	machine := &Machine{program: program, functions: map[string]*FuncDecl{}, records: program.Records, enums: map[string]bool{}}
+	machine := &Machine{program: program, functions: map[string]*FuncDecl{}, records: program.Records, enums: map[string]bool{}, cases: map[string]*ChoiceAlternative{}}
 	for _, enum := range program.Enums {
 		machine.enums[enum.Name] = true
+	}
+	for _, choice := range program.Choices {
+		for _, alternative := range choice.Alternatives {
+			machine.cases[alternative.Name] = alternative
+		}
 	}
 	for _, function := range program.Functions {
 		machine.functions[function.Name] = function
@@ -130,6 +136,12 @@ func (m *Machine) eval(expression Expr, at frame) Value {
 	case *VarExpr:
 		value, has := at.scope.lookup(e.Name)
 		if !has {
+			// A nullary choice alternative is written as its own name.
+			if m.cases[e.Name] != nil && len(m.cases[e.Name].Fields) == 0 {
+				record := newRecord()
+				record.set("$case", e.Name)
+				return record
+			}
 			runFail(fmt.Sprintf("Workflow variable %s is unavailable", quoted(e.Name)))
 		}
 		return value
@@ -216,6 +228,21 @@ func (m *Machine) eval(expression Expr, at frame) Value {
 	case *MatchExpr:
 		subject := m.eval(e.Subject, at)
 		for _, arm := range e.Arms {
+			if arm.Alternative != "" {
+				record, ok := subject.(*Record)
+				if !ok || record.Fields["$case"] != arm.Alternative {
+					continue
+				}
+				alternative := m.cases[arm.Alternative]
+				if alternative == nil {
+					continue
+				}
+				inner := at.with(newScope(at.scope))
+				for i, binding := range arm.Bindings {
+					inner.scope.vars[binding] = record.Fields[alternative.Fields[i].Name]
+				}
+				return m.eval(arm.Value, inner)
+			}
 			if arm.Any || valueEqual(subject, arm.Pattern) {
 				return m.eval(arm.Value, at)
 			}
@@ -571,6 +598,13 @@ func (m *Machine) call(e *CallExpr, at frame) Value {
 			runFail("Invalid function value")
 		}
 		decl, captured, funcs = closure.Decl, closure.Captured, closure.Funcs
+	} else if alternative := m.cases[e.Name]; alternative != nil {
+		record := newRecord()
+		record.set("$case", alternative.Name)
+		for _, argument := range resolveUnnamed(e.Args, fieldNames(alternative.Fields)) {
+			record.set(argument.Name, m.eval(argument.Value, at))
+		}
+		return record
 	} else if nested := at.funcs[e.Name]; nested != nil {
 		// A function declared inside the one running sees what it sees now.
 		decl, captured = nested, at.scope.flat()

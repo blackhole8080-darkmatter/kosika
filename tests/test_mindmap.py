@@ -31,6 +31,31 @@ class MindmapAssistantTests(unittest.TestCase):
         self.assertTrue(any(node["kind"] == "field" for node in first["nodes"]))
         self.assertTrue(any(edge["relation"] == "tool_call" for edge in first["edges"]))
 
+    def test_a_choice_is_a_type_with_its_alternatives(self) -> None:
+        program = load_program(ROOT / "conformance" / "cases" / "choice_outputs.kos")
+        mindmap = build_mindmap(program)
+        nodes = {(node["kind"], node["label"]): node for node in mindmap["nodes"]}
+        self.assertEqual(
+            nodes[("choice", "Verdict")]["attributes"]["alternatives"],
+            ["accepted", "refused"],
+        )
+        self.assertEqual(
+            nodes[("constructor", "accepted")]["attributes"]["choice"], "Verdict"
+        )
+        by_id = {node["id"]: node for node in mindmap["nodes"]}
+        edges = {
+            (
+                by_id[edge["source"]]["label"],
+                edge["relation"],
+                by_id[edge["target"]]["label"],
+            )
+            for edge in mindmap["edges"]
+        }
+        # A model or tool answers with the choice itself, not a record.
+        self.assertIn(("judge", "output", "Verdict"), edges)
+        self.assertIn(("notes", "output", "Lookup"), edges)
+        self.assertIn(("Verdict", "alternative", "accepted"), edges)
+
     def test_imported_modules_and_declarations_keep_boundaries(self) -> None:
         program = load_program(COMPOSED)
         mindmap = build_mindmap(program)

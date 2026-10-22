@@ -81,6 +81,8 @@ func (e *Env) names() []string {
 type checker struct {
 	program   *Program
 	records   map[string]*RecordDecl
+	choices   map[string]*ChoiceDecl
+	cases     map[string]*ChoiceAlternative
 	functions map[string]*FuncDecl // by the reference's name: outer/inner
 	order     []string
 	locals    map[*FuncDecl]map[string]string
@@ -240,7 +242,7 @@ func (c *checker) validateType(t string) {
 			checkFail("Unknown field type %s", pyRepr(t))
 		}
 		c.validateType(t[:len(t)-1])
-	case c.records[t] == nil && c.enumValues(t) == nil && c.shape(t) == nil:
+	case c.records[t] == nil && c.enumValues(t) == nil && c.shape(t) == nil && c.choices[t] == nil:
 		checkFail("Unknown field type %s", pyRepr(t))
 	}
 }
@@ -250,6 +252,19 @@ func absentHint(t string) string {
 		return "a map is read with .get(key: ...), .has(key: ...), or .keys()"
 	}
 	return "the value may be absent; use .or(default: ...) to supply a fallback, .exists() to test it, or .value() to require it"
+}
+
+// alternativeNamed is the choice alternative a constructor name names, and
+// the choice it belongs to, or nil when no choice has it.
+func (c *checker) alternativeNamed(name string) (*ChoiceDecl, *ChoiceAlternative) {
+	for _, choice := range c.program.Choices {
+		for _, alternative := range choice.Alternatives {
+			if alternative.Name == name {
+				return choice, alternative
+			}
+		}
+	}
+	return nil, nil
 }
 
 // functionNamed finds the function a call names where it is written: one
@@ -320,37 +335,82 @@ func (c *checker) typeOf(expression Expr, env *Env, step, expected string) strin
 	case *MatchExpr:
 		subject := c.typeOf(e.Subject, env, step, "")
 		values := c.enumValues(subject)
-		if !primitiveTypes[subject] && values == nil {
-			checkFail("Match subjects must be scalar values")
+		choice := c.choices[subject]
+		if !primitiveTypes[subject] && values == nil && choice == nil {
+			checkFail("Match subjects must be scalar values or a choice")
 		}
 		var seen []Value
+		seenAlternatives := map[string]bool{}
 		exhaustive := false
 		result := expected
 		for _, arm := range e.Arms {
 			if exhaustive {
 				checkFail("Unreachable match arm")
 			}
-			if arm.Any {
-				exhaustive = true
+			armEnv := env
+			if arm.Alternative != "" {
+				if choice == nil {
+					checkFail("Match alternative %s needs a choice subject", pyRepr(arm.Alternative))
+				}
+				var alternative *ChoiceAlternative
+				for _, item := range choice.Alternatives {
+					if item.Name == arm.Alternative {
+						alternative = item
+						break
+					}
+				}
+				if alternative == nil {
+					var names []string
+					for _, item := range choice.Alternatives {
+						names = append(names, item.Name)
+					}
+					checkFail("Choice %s has no alternative %s; it has: %s", pyRepr(choice.Name), pyRepr(arm.Alternative), strings.Join(names, ", "))
+				}
+				if seenAlternatives[arm.Alternative] {
+					checkFail("Duplicate match alternative")
+				}
+				if len(arm.Bindings) != len(alternative.Fields) {
+					checkFail("Alternative %s carries %d values, so its case binds that many names, got %d", pyRepr(arm.Alternative), len(alternative.Fields), len(arm.Bindings))
+				}
+				unique := map[string]bool{}
+				for _, binding := range arm.Bindings {
+					if unique[binding] {
+						checkFail("Match alternative binds a name twice")
+					}
+					unique[binding] = true
+				}
+				seenAlternatives[arm.Alternative] = true
+				armEnv = env.child()
+				for i, field := range alternative.Fields {
+					armEnv.types[arm.Bindings[i]] = field.Type
+				}
+				exhaustive = len(seenAlternatives) == len(choice.Alternatives)
 			} else {
-				if values != nil {
-					// An enum is matched by the text of its values.
-					text, isText := arm.Pattern.(string)
-					if !isText || !hasName(values, text) {
-						checkFail("Enum %s has no value %s; it has: %s", pyRepr(subject), pyReprAny(arm.Pattern), strings.Join(values, ", "))
-					}
-				} else if literalType(arm.Pattern) != subject {
-					checkFail("Match pattern type differs from subject")
+				if choice != nil {
+					checkFail("Match on choice %s must name its alternatives, not a literal", pyRepr(choice.Name))
 				}
-				for _, earlier := range seen {
-					if valueEqual(earlier, arm.Pattern) {
-						checkFail("Duplicate match pattern")
+				if arm.Any {
+					exhaustive = true
+				} else {
+					if values != nil {
+						// An enum is matched by the text of its values.
+						text, isText := arm.Pattern.(string)
+						if !isText || !hasName(values, text) {
+							checkFail("Enum %s has no value %s; it has: %s", pyRepr(subject), pyReprAny(arm.Pattern), strings.Join(values, ", "))
+						}
+					} else if literalType(arm.Pattern) != subject {
+						checkFail("Match pattern type differs from subject")
 					}
+					for _, earlier := range seen {
+						if valueEqual(earlier, arm.Pattern) {
+							checkFail("Duplicate match pattern")
+						}
+					}
+					seen = append(seen, arm.Pattern)
+					exhaustive = subject == "Null" || (subject == "Bool" && len(seen) == 2) || (values != nil && len(seen) == len(values))
 				}
-				seen = append(seen, arm.Pattern)
-				exhaustive = subject == "Null" || (subject == "Bool" && len(seen) == 2) || (values != nil && len(seen) == len(values))
 			}
-			armType := c.typeOf(arm.Value, env, step, result)
+			armType := c.typeOf(arm.Value, armEnv, step, result)
 			merged := armType
 			if result != "" {
 				merged = unify(result, armType)
@@ -360,7 +420,19 @@ func (c *checker) typeOf(expression Expr, env *Env, step, expected string) strin
 			}
 			result = merged
 		}
-		if !exhaustive || result == "" {
+		if !exhaustive {
+			if choice != nil {
+				var missing []string
+				for _, alternative := range choice.Alternatives {
+					if !seenAlternatives[alternative.Name] {
+						missing = append(missing, "case "+alternative.Name)
+					}
+				}
+				checkFail("Non-exhaustive match: add %s", strings.Join(missing, ", "))
+			}
+			checkFail("Non-exhaustive match: add a final case _")
+		}
+		if result == "" {
 			checkFail("Non-exhaustive match: add a final case _")
 		}
 		return result
@@ -369,6 +441,12 @@ func (c *checker) typeOf(expression Expr, env *Env, step, expected string) strin
 	case *VarExpr:
 		t, known := env.types[e.Name]
 		if !known {
+			if choice, alternative := c.alternativeNamed(e.Name); alternative != nil {
+				if len(alternative.Fields) == 0 {
+					return choice.Name
+				}
+				checkFail("Choice alternative %s carries %d values; write %s(...)", pyRepr(e.Name), len(alternative.Fields), e.Name)
+			}
 			checkFail("Step %s references unknown variable %s.%s", pyRepr(step), pyRepr(e.Name), didYouMean(e.Name, env.names()))
 		}
 		return t
@@ -595,6 +673,11 @@ func (c *checker) typeOf(expression Expr, env *Env, step, expected string) strin
 				}
 				c.checkArguments(args, params, env, step)
 				return out
+			}
+			if choice, alternative := c.alternativeNamed(e.Name); alternative != nil {
+				args = resolveUnnamed(e.Args, fieldNames(alternative.Fields))
+				c.checkArguments(args, alternative.Fields, env, step)
+				return choice.Name
 			}
 		}
 		if decl == nil {
@@ -1008,7 +1091,9 @@ func (c *checker) staticCalls(decl *FuncDecl, locals map[string]string) []string
 			case *FuncRefExpr:
 				found = append(found, name(e.Name))
 			case *CallExpr:
-				if !bound[name(e.Name)] {
+				// A constructor is written like a call but is not a
+				// function to recurse into or reach.
+				if !bound[name(e.Name)] && c.cases[name(e.Name)] == nil {
 					found = append(found, name(e.Name))
 				}
 			}
@@ -1024,7 +1109,7 @@ func (c *checker) staticCalls(decl *FuncDecl, locals map[string]string) []string
 					case *FuncRefExpr:
 						found = append(found, name(e.Name))
 					case *CallExpr:
-						if !own[name(e.Name)] {
+						if !own[name(e.Name)] && c.cases[name(e.Name)] == nil {
 							found = append(found, name(e.Name))
 						}
 					}
@@ -1135,6 +1220,15 @@ func ModuleProblem(program *Program, path string, visible map[string]bool) strin
 	for _, enum := range program.Enums {
 		local[enum.Name] = true
 	}
+	for _, choice := range program.Choices {
+		local[choice.Name] = true
+		// Constructors are written unqualified, so a module's own
+		// alternatives are names it may use even though they are not
+		// declarations.
+		for _, alternative := range choice.Alternatives {
+			local[alternative.Name] = true
+		}
+	}
 	for _, shape := range program.Shapes {
 		local[shape.Name] = true
 	}
@@ -1198,6 +1292,13 @@ func ModuleProblem(program *Program, path string, visible map[string]bool) strin
 			used[baseType(field.Type)] = true
 		}
 	}
+	for _, choice := range program.Choices {
+		for _, alternative := range choice.Alternatives {
+			for _, field := range alternative.Fields {
+				used[baseType(field.Type)] = true
+			}
+		}
+	}
 	for _, name := range c.order {
 		decl := c.functions[name]
 		referencedTypes(decl.Out, used)
@@ -1248,9 +1349,21 @@ func newChecker(program *Program) *checker {
 		locals:    map[*FuncDecl]map[string]string{},
 		captures:  map[*FuncDecl][]capture{},
 	}
+	c.choices = map[string]*ChoiceDecl{}
+	c.cases = map[string]*ChoiceAlternative{}
 	for _, record := range program.Records {
 		if c.records[record.Name] == nil {
 			c.records[record.Name] = record
+		}
+	}
+	for _, choice := range program.Choices {
+		if c.choices[choice.Name] == nil {
+			c.choices[choice.Name] = choice
+		}
+		for _, alternative := range choice.Alternatives {
+			if c.cases[alternative.Name] == nil {
+				c.cases[alternative.Name] = alternative
+			}
 		}
 	}
 	c.tools, c.agents, c.workflows = map[string]*ToolDecl{}, map[string]*AgentDecl{}, map[string]*WorkflowDecl{}
@@ -1362,6 +1475,7 @@ func withChecksAsSteps(program *Program) *Program {
 func (c *checker) checkDeclarations() {
 	c.checkValueSteps()
 	c.checkEnums()
+	c.checkChoices()
 	c.checkShapes()
 	c.checkDefaults()
 	c.checkRecordMethods()

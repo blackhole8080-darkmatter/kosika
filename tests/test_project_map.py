@@ -100,6 +100,18 @@ class MapTests(unittest.TestCase):
             ],
         )
 
+    def test_a_model_that_answers_with_a_choice_says_what_it_may_answer(self) -> None:
+        view = map_of(
+            Path(__file__).resolve().parent.parent
+            / "conformance"
+            / "cases"
+            / "choice_outputs.kos"
+        )
+        self.assertEqual(
+            [model["does"] for model in view["models"]],
+            ["answers with one of: accepted, refused"],
+        )
+
     def test_purpose_is_never_guessed(self) -> None:
         path = EXAMPLES / "agents" / "scout" / "main.kos"
         self.assertEqual(map_of(path)["purpose"], {"text": "", "source": "none"})

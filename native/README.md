@@ -11,6 +11,7 @@ network.
     kosika-native run FILE.kos --input IN.json --model qwen2.5:7b
                                      run a workflow, asking a real model
     kosika-native replay TRACE.jsonl check a run's trace, running nothing
+    kosika-native capabilities       the conformance surfaces it reads
 
 `run` takes the reference's flags for models: `--model NAME` (or
 `fast,strong=big`), `--model-url`, `--model-protocol openai|ollama`,
@@ -39,13 +40,16 @@ so an approval given to one engine does not serve the other.
 ## What it has
 
 The core of the language, which reaches nothing outside the program:
-records, functions (nested ones, closures, recursion within a stated
-depth), `if`, `match`, `for`, `while`, `repeat`, `try`, `fail`, text with
-values written in (`f"..."`), and the built-in methods on text, numbers,
-lists, maps and optional values. Whole numbers are exact at any size.
+records, choices (tagged unions, constructed unqualified and matched by
+alternative with its fields bound), functions (nested ones, closures,
+recursion within a stated depth), `if`, `match`, `for`, `while`, `repeat`,
+`try`, `fail`, text with values written in (`f"..."`), and the built-in
+methods on text, numbers, lists, maps and optional values. Whole numbers
+are exact at any size.
 
-Models, with the records they take and give, general ones that take
-and give text, and ones that answer `as text`. Workflows, whose steps call
+Models, with the records they take and the records or choices they give,
+general ones that take and give text, and ones that answer `as text`.
+Workflows, whose steps call
 a function, run another workflow, use a tool through an agent, or ask a
 model (its answer checked by a function of the program with `verify`,
 asked again on a refused answer with `retry`, asked several times with
@@ -84,8 +88,9 @@ refused beside it, and a broken file is refused with the reference's
 words and place.
 
 It is held to the conformance suite in `../conformance`, where it must
-print what the reference engine prints, word for word. See
-`tests/test_conformance.py`.
+print what the reference engine prints, word for word. `capabilities`
+names the surfaces it reads; a suite program that needs one it does not
+claim is skipped by name. See `tests/test_conformance.py`.
 
 ## What it does not have yet
 
@@ -117,6 +122,7 @@ print what the reference engine prints, word for word. See
     env.go       environments: reading kosika.env
     stores.go    memories and boards, made tools, and where they are kept
     modules.go   a program in several files: import and export
+    choices.go   tagged unions: choices, their constructor names, and matching
     ambient.go   the clock and chance: `now` and `random`
     system.go    files in the granted folder, and programs started there
     direct.go    `read file`, `list files`, `write file` in one line

@@ -187,6 +187,32 @@ def _schema_for_type(
                     if implements(program, record.name, shape.name)
                 ]
             }
+    for choice in program.choices:
+        if choice.name == type_name:
+            # A choice is one of its alternatives. `$case` names which, and
+            # the alternative's fields sit beside it.
+            return {
+                "anyOf": [
+                    {
+                        "type": "object",
+                        "properties": {
+                            "$case": {"const": alternative.name},
+                            **{
+                                field.name: _schema_for_type(
+                                    program, field.type_name, (*stack, type_name)
+                                )
+                                for field in alternative.fields
+                            },
+                        },
+                        "required": [
+                            "$case",
+                            *(field.name for field in alternative.fields),
+                        ],
+                        "additionalProperties": False,
+                    }
+                    for alternative in choice.alternatives
+                ]
+            }
     if type_name.endswith("?"):
         return {
             "anyOf": [

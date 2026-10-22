@@ -151,8 +151,8 @@ def read_services(path: Path) -> dict[str, Service]:
                     unit = reader.name()
                     if unit not in UNITS or not (type(amount) is int and amount >= 1):
                         reader.fail(f"Service {name!r}: every needs a whole number of minutes, hours or days")
-                    service.every = amount * UNITS[unit]
-                    if service.every < 60:
+                    service.every = amount * UNITS[unit]  # type: ignore[assignment]
+                    if service.every is not None and service.every < 60:  # type: ignore[operator]
                         reader.fail(f"Service {name!r} may run at most once a minute")
                 elif reader.accept("allow"):
                     if reader.accept("site"):
@@ -180,7 +180,7 @@ def read_services(path: Path) -> dict[str, Service]:
                     )
             if program is None:
                 reader.fail(f"Service {name!r} names no program")
-            service.program = program
+            service.program = program  # type: ignore[assignment]
             found[name] = service
     except ValueError as exc:
         raise ServicesError(str(exc)) from exc

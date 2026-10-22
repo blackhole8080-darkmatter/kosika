@@ -44,7 +44,11 @@ type CondExpr struct{ Cond, Then, Else Expr }
 type MatchArm struct {
 	Any     bool
 	Pattern Value
-	Value   Expr
+	// A choice alternative named by the case: `case filed(invoice)`.
+	// Alternative is "" for a literal or `_` arm.
+	Alternative string
+	Bindings    []string
+	Value       Expr
 }
 type MatchExpr struct {
 	Subject Expr
@@ -113,6 +117,16 @@ type FuncDecl struct {
 	Line    int
 	// Defaults are the parameters' values when left out: see defaults.go.
 	Defaults map[string]Expr
+}
+
+type ChoiceAlternative struct {
+	Name   string
+	Fields []Param
+}
+
+type ChoiceDecl struct {
+	Name         string
+	Alternatives []*ChoiceAlternative
 }
 
 type RecordDecl struct {
@@ -274,6 +288,7 @@ type ModelDecl struct {
 type Program struct {
 	Models    []*ModelDecl
 	Records   []*RecordDecl
+	Choices   []*ChoiceDecl
 	Tools     []*ToolDecl
 	Agents    []*AgentDecl
 	Workflows []*WorkflowDecl

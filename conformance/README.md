@@ -32,6 +32,12 @@ An engine must also split every `.kos` file in this repository into the
 same tokens as the reference: `ENGINE tokens FILE` prints one JSON object
 a line, `{"kind", "value", "line", "column"}`.
 
+A program whose first line is `// requires: NAME` is checked only on an
+engine that claims `NAME`. Both engines print what they read with
+`ENGINE capabilities`, one a line. `tests/test_conformance.py` holds the
+native engine to the reference's list: a capability it claims must pass
+the suite's cases, and one it does not claim is skipped by name.
+
 `tests/test_conformance.py` holds both engines to this.
 
 ## How a case is added
@@ -46,7 +52,7 @@ it must be what Kosika should do, not merely what one engine happens to do.
 ## What the suite does not cover yet
 
 - An agent calling its tools, `verify`, `vote`, `escalate`, `with
-  evidence` and `parallel`. Memories, boards, swarms and imports.
+  evidence` and `parallel`. Memories, boards and swarms.
 - Vectors and matrices.
-- 10 passing programs, 6 failing ones and 48 refused ones are a beginning. A method or rule
+- 27 passing programs, 10 failing ones and 79 refused ones are a beginning. A method or rule
   that no case uses is not held to anything.

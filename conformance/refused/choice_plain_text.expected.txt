@@ -1,0 +1,1 @@
+Check failed: Model 'judge' answers as text, so its output 'Verdict' must be a record with exactly one field, of type Text

@@ -1,0 +1,71 @@
+// requires: choice
+// A model or tool may answer with a choice directly: the answer is exactly
+// one alternative, with that alternative's fields.
+
+choice Verdict {
+  accepted(note: Text)
+  refused(reason: Text)
+}
+
+choice Lookup {
+  found(text: Text)
+  missing
+}
+
+record Question { text: Text }
+record Answer { text: Text }
+
+model judge {
+  input: Question
+  output: Verdict
+}
+
+tool notes {
+  source mcp "notes"
+  operation: "search"
+  access: observe
+  input: Question
+  output: Lookup
+}
+
+agent helper {
+  model: judge
+  can: [notes]
+  max_steps: 3
+}
+
+fn describe(verdict: Verdict) -> Text {
+  return match verdict {
+    case accepted(note) { "accepted " + note }
+    case refused(reason) { "refused " + reason }
+  }
+}
+
+fn show(lookup: Lookup) -> Text {
+  return match lookup {
+    case found(text) { "found " + text }
+    case missing { "missing" }
+  }
+}
+
+workflow main(question: Question) -> Answer {
+  verdict = use_model judge(text: question.text)
+  out = {text: describe(verdict)}
+}
+
+workflow lookup(question: Question) -> Answer {
+  found = execute helper.notes(question.text)
+  out = {text: show(found)}
+}
+
+test "a model's answer is one alternative" {
+  answers judge: [accepted(note: "ok")]
+  r = main({text: "x"})
+  expect r.text == "accepted ok"
+}
+
+test "a tool's answer is one alternative" {
+  answers notes: [found(text: "the note")]
+  r = lookup({text: "q"})
+  expect r.text == "found the note"
+}

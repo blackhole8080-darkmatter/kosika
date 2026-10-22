@@ -1523,9 +1523,7 @@ Added subtract and its test.", files: files}
   expect work.did == ["save_all calc.py", "save_all test_calc.py"]
   done = worked({text: "add subtract"}, work, {exit_code: 0, stdout: "3 passed in 0.01s
 ", stderr: ""})
-  expect done.text == "Asked devin. It said: Added subtract and its test.
-Wrote: calc.py, test_calc.py
-The tests pass."
+  expect done.text == "Asked devin. It said: Added subtract and its test.\nWrote: calc.py, test_calc.py\nThe tests pass."
 }
 
 test "an outside agent that loses a function is asked again, told why" {

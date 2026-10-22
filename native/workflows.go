@@ -1418,6 +1418,19 @@ func (r *run) problem(value Value, typeName, path string) string {
 		}
 		return ""
 	}
+	if choice := r.checker.choices[typeName]; choice != nil {
+		// Each alternative is a form the value may take; the reference
+		// reports every form's reason for refusing it.
+		var failures []string
+		for _, alternative := range choice.Alternatives {
+			failure := choiceFormProblem(value, alternative, path, r)
+			if failure == "" {
+				return ""
+			}
+			failures = append(failures, failure)
+		}
+		return fmt.Sprintf("%s: matches no allowed form (%s)", path, strings.Join(failures, "; "))
+	}
 	expected := map[string]string{"Text": "string", "Number": "number", "Bool": "boolean", "Null": "null"}
 	if kind, primitive := expected[typeName]; primitive {
 		matches := false
@@ -1491,6 +1504,48 @@ func (r *run) problem(value Value, typeName, path string) string {
 	var unknown []string
 	for _, key := range record.Keys {
 		if _, known := fieldType(declared.Fields, key); !known {
+			unknown = append(unknown, key)
+		}
+	}
+	if len(unknown) > 0 {
+		sort.Strings(unknown)
+		return fmt.Sprintf("%s: unknown properties %s", path, pyList(unknown))
+	}
+	return ""
+}
+
+// choiceFormProblem is one alternative's reason for refusing a value, as
+// validating that form would give it: the constant `$case`, then the
+// required fields, then the fields' own types.
+func choiceFormProblem(value Value, alternative *ChoiceAlternative, path string, r *run) string {
+	record, ok := value.(*Record)
+	if !ok {
+		return fmt.Sprintf("%s: expected object, got %s", path, pyTypeName(value))
+	}
+	// The schema lists `$case` first among the required names, and the
+	// reference checks what is present before what it holds.
+	if _, has := record.Fields["$case"]; !has {
+		return fmt.Sprintf("%s: missing required property %s", path, pyRepr("$case"))
+	}
+	for _, field := range alternative.Fields {
+		if _, has := record.Fields[field.Name]; !has {
+			return fmt.Sprintf("%s: missing required property %s", path, pyRepr(field.Name))
+		}
+	}
+	if !valueEqual(record.Fields["$case"], alternative.Name) {
+		return fmt.Sprintf("%s.$case: expected constant %s, got %s", path, pyRepr(alternative.Name), pyReprAny(record.Fields["$case"]))
+	}
+	for _, field := range alternative.Fields {
+		if problem := r.problem(record.Fields[field.Name], field.Type, path+"."+field.Name); problem != "" {
+			return problem
+		}
+	}
+	var unknown []string
+	for _, key := range record.Keys {
+		if key == "$case" {
+			continue
+		}
+		if _, known := fieldType(alternative.Fields, key); !known {
 			unknown = append(unknown, key)
 		}
 	}

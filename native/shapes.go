@@ -100,7 +100,7 @@ func (c *checker) checkShapes() {
 		if seen[shape.Name] {
 			checkFail("Shape %s is declared more than once", pyRepr(shape.Name))
 		}
-		if c.records[shape.Name] != nil || c.enumValues(shape.Name) != nil || primitiveTypes[shape.Name] {
+		if c.records[shape.Name] != nil || c.enumValues(shape.Name) != nil || c.choices[shape.Name] != nil || primitiveTypes[shape.Name] {
 			checkFail("Shape %s has the name of a record, an enum or a type", pyRepr(shape.Name))
 		}
 		seen[shape.Name] = true

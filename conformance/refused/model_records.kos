@@ -1,4 +1,5 @@
-// Refused: a model takes and gives declared records.
+// Refused: a model takes a declared record and gives a record or choice;
+// this one gives Text.
 
 record Question { text: Text }
 

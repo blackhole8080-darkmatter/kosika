@@ -149,6 +149,7 @@ def _project_inventory(program: Program) -> dict[str, Any]:
         "workflows": "workflow",
         "enums": "enum",
         "shapes": "shape",
+        "choices": "choice",
     }
     return {
         "language_contract": LANGUAGE_CONTRACT,
@@ -168,7 +169,8 @@ def _project_inventory(program: Program) -> dict[str, Any]:
             for category in CATEGORIES
             # Kinds added later are listed only when a program has some, so
             # the inventory of every other program is as it was.
-            if category not in ("enums", "shapes") or getattr(program, category)
+            if category not in ("enums", "shapes", "choices")
+            or getattr(program, category)
         },
         "workflows": [
             {

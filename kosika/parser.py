@@ -13,6 +13,9 @@ from .ast import (
     Block,
     BoardDecl,
     BreakExpr,
+    ChoiceAlternative,
+    ChoiceDecl,
+    ChoiceField,
     ConditionalExpr,
     ContinueExpr,
     EnumDecl,
@@ -352,8 +355,31 @@ class Parser:
                         pattern = LiteralExpr(
                             {"true": True, "false": False, "null": None}[token.value]
                         )
+                    elif token.kind == "IDENT" and not negative:
+                        # `case filed(invoice) { ... }`: one alternative of a
+                        # choice, carrying its fields by position. A nullary
+                        # alternative is `case pending { ... }`.
+                        self.advance()
+                        bindings: list[str] = []
+                        if self.accept("("):
+                            if not self.accept(")"):
+                                while True:
+                                    bindings.append(self.identifier())
+                                    if self.accept(")"):
+                                        break
+                                    self.expect(",")
+                        self.expect("{")
+                        value = self.expression()
+                        self.expect("}")
+                        arms.append(
+                            MatchArm(None, value, token.value, tuple(bindings))
+                        )
+                        continue
                     else:
-                        raise ParseError("Match patterns must be scalar literals or _")
+                        raise ParseError(
+                            "Match patterns must be scalar literals, a choice "
+                            "alternative, or _"
+                        )
                 self.expect("{")
                 value = self.expression()
                 self.expect("}")
@@ -721,6 +747,8 @@ class Parser:
                 program.models.append(replace(self.parse_model(), default=True))
             elif keyword == "shape" and self.peek().kind == "IDENT":
                 program.shapes.append(self.parse_shape())
+            elif keyword == "choice" and self.peek().kind == "IDENT":
+                program.choices.append(self.parse_choice())
             elif keyword == "enum" and self.peek().kind == "IDENT":
                 self.advance()
                 enum_name = self.identifier()
@@ -1219,6 +1247,34 @@ class Parser:
                 items.append(("seconds", amount))
             if not self.accept(","):
                 return items
+
+    def parse_choice(self) -> ChoiceDecl:
+        """`choice Filing { filed(invoice: Invoice) refused(reason: Text) }`:
+        a value that is exactly one of these alternatives."""
+
+        self.expect("choice")
+        name = self.identifier()
+        self.expect("{")
+        alternatives: list[ChoiceAlternative] = []
+        while not self.accept("}"):
+            alternative_name = self.identifier()
+            fields: list[ChoiceField] = []
+            if self.accept("("):
+                if not self.accept(")"):
+                    while True:
+                        field_name = self.identifier()
+                        self.expect(":")
+                        fields.append(
+                            ChoiceField(field_name, self.parse_type_name())
+                        )
+                        if self.accept(")"):
+                            break
+                        self.expect(",")
+            alternatives.append(
+                ChoiceAlternative(alternative_name, tuple(fields))
+            )
+            self.accept(",")
+        return ChoiceDecl(name, tuple(alternatives))
 
     def parse_shape(self) -> ShapeDecl:
         """`shape Priced { fn price(self) -> Number ... }`: functions

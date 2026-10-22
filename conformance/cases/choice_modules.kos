@@ -1,0 +1,30 @@
+// requires: choice
+// A choice crosses a module boundary: importing the choice also brings its
+// constructors, which are written unqualified.
+
+import "lib/filings.kos"
+
+record Ticket { filing: Filing }
+record Report { text: Text }
+
+fn describe(filing: Filing) -> Text {
+  return match filing {
+    case filed(invoice) { "filed " + invoice }
+    case pending { "waiting" }
+  }
+}
+
+workflow main(ticket: Ticket) -> Report {
+  said = describe(ticket.filing)
+  out = {text: said}
+}
+
+test "an imported choice brings its constructors" {
+  expect describe(filed("A-1")) == "filed A-1"
+  expect describe(pending) == "waiting"
+}
+
+test "a workflow takes an imported choice" {
+  report = main({filing: filed("B-2")})
+  expect report.text == "filed B-2"
+}

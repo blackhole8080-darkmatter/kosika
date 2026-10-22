@@ -38,6 +38,7 @@ from .ast import (
     FunctionCall,
     FunctionCallExpr,
     FunctionDecl,
+    FunctionExpr,
     FunctionRefExpr,
     IndexExpr,
     LiteralExpr,
@@ -69,7 +70,7 @@ from .controls import ExecutionError
 from .durable import PLAN_TOOL, ApprovalPending, ExecutionSession
 from .evidence import EvidenceError, answer_schema, split, verify
 from .execution import ExecutionControl, ExecutionLimits, within_budget
-from .function_types import public_type
+from .function_types import function_type, public_type
 from .intelligence_runtime import FunctionResultCache, IntelligenceRecorder
 from .lessons import Lessons
 from .manifest import ManifestError, MCPManifest, verify_server
@@ -197,6 +198,23 @@ class MockMCP:
         )
 
 
+def _next_inline_name(functions: dict[str, Any]) -> str:
+    """A name for an anonymous function literal, counted within this run.
+
+    The name reaches the trace, so it must depend only on the program and the
+    order it is reached: the same program run twice must trace the same twice.
+    A counter kept for the process would name the same literal `__inline_1`
+    and then `__inline_2`, and two identical runs would stop being identical.
+    """
+
+    taken = sum(1 for name in functions if name.startswith("__inline_"))
+    name = f"__inline_{taken + 1}"
+    while name in functions:
+        taken += 1
+        name = f"__inline_{taken + 1}"
+    return name
+
+
 def _event(event: str, **data: object) -> dict:
     return {
         "event": event,
@@ -304,6 +322,16 @@ def _child_scope(environment: Any) -> _Scope:
     )
 
 
+def _choice_alternative(program: Program, name: str):
+    """The alternative a constructor name names, or None."""
+
+    for choice in program.choices:
+        for alternative in choice.alternatives:
+            if alternative.name == name:
+                return alternative
+    return None
+
+
 def _evaluate_expression(
     expression: Expression | Assignment,
     environment: dict[str, Any],
@@ -325,6 +353,26 @@ def _evaluate_expression(
             depth=depth,
         )
         for arm in expression.arms:
+            if arm.alternative is not None:
+                if not (
+                    isinstance(subject, dict)
+                    and subject.get("$case") == arm.alternative
+                ):
+                    continue
+                alternative = _choice_alternative(program, arm.alternative)
+                if alternative is None:
+                    continue
+                scope = _child_scope(environment)
+                for field, binding in zip(alternative.fields, arm.bindings):
+                    scope[binding] = subject[field.name]
+                return _evaluate_expression(
+                    arm.value,
+                    scope,
+                    program,
+                    functions,
+                    function_events,
+                    depth=depth,
+                )
             if arm.pattern is None or _value_equal(subject, arm.pattern.value):
                 return _evaluate_expression(
                     arm.value,
@@ -388,8 +436,38 @@ def _evaluate_expression(
         )
     if isinstance(expression, LiteralExpr):
         return expression.value
+    if isinstance(expression, FunctionExpr):
+        # Anonymous function literal: evaluate to a closure value. The body
+        # may only reference its own parameters and global functions (the
+        # checker rejects captures for ``FunctionExpr``), so no environment
+        # capture is needed at runtime.
+        output_type = expression.output_type or "Text"
+        synthetic_name = _next_inline_name(functions)
+        inline_fn = FunctionDecl(
+            name=synthetic_name,
+            parameters=expression.parameters,
+            output_type=output_type,
+            return_value=expression.body,
+            bindings=(),
+            nested=(),
+            recursion_limit=1,
+            statements=(),
+            order=(),
+        )
+        functions[synthetic_name] = inline_fn  # type: ignore[index]
+        return {
+            "$function": synthetic_name,
+            "$type": function_type(
+                tuple(Field(p.name, p.type_name) for p in expression.parameters),
+                output_type,
+            ),
+            "$captures": {},
+        }
     if isinstance(expression, VariableExpr):
         if expression.name not in environment:
+            alternative = _choice_alternative(program, expression.name)
+            if alternative is not None and not alternative.fields:
+                return {"$case": alternative.name}
             raise RuntimeError(f"Workflow variable {expression.name!r} is unavailable")
         return environment[expression.name]
     if isinstance(expression, FieldExpr):
@@ -643,6 +721,28 @@ def _evaluate_expression(
         }
     if isinstance(expression, FunctionCallExpr):
         argument_events: list[dict[str, Any]] = []
+        alternative = (
+            None
+            if expression.function_name in environment
+            else _choice_alternative(program, expression.function_name)
+        )
+        if alternative is not None:
+            named = resolve_unnamed(
+                expression.arguments,
+                [field.name for field in alternative.fields],
+            )
+            fields = {
+                name: _evaluate_expression(
+                    value,
+                    environment,
+                    program,
+                    functions,
+                    argument_events,
+                    depth=depth,
+                )
+                for name, value in named
+            }
+            return {"$case": alternative.name, **fields}
         arguments = {
             name: _evaluate_expression(
                 value,
@@ -1718,7 +1818,7 @@ def _run_workflow(
 
         assert isinstance(member.call, ModelCall)
         asked_model = models[member.call.model_name]
-        schema = schema_for_record(program, asked_model.output)
+        schema = schema_for_type(program, asked_model.output)
         if asked_model.evidence is not None:
             schema = answer_schema(
                 asked_model.evidence, schema, list(schema.get("properties", {}))
@@ -1979,7 +2079,7 @@ def _run_workflow(
                 assert asked_agent.model is not None
                 model = models[asked_agent.model]
                 input_schema = schema_for_record(program, model.input)
-                output_schema = schema_for_record(program, model.output)
+                output_schema = schema_for_type(program, model.output)
                 validate(arguments, input_schema)
                 # Skills are chosen before the agent begins, from the words
                 # it was given. They are advice: they add no tool.
@@ -2061,7 +2161,7 @@ def _run_workflow(
                             "input_schema": schema_for_tool_input(
                                 program, tools[name].input
                             ),
-                            "output_schema": schema_for_record(
+                            "output_schema": schema_for_type(
                                 program, tools[name].output
                             ),
                         }
@@ -2255,7 +2355,7 @@ def _run_workflow(
                             outcome = _agent_tool_outcome(declaration, values)
                             validate(
                                 outcome,
-                                schema_for_record(program, declaration.output),
+                                schema_for_type(program, declaration.output),
                             )
                             plan_results.append(
                                 {"tool": declaration.name, "result": outcome}
@@ -2296,7 +2396,7 @@ def _run_workflow(
                         agent_changed.append(declaration.name)
                         outcome = _agent_tool_outcome(declaration, values)
                         validate(
-                            outcome, schema_for_record(program, declaration.output)
+                            outcome, schema_for_type(program, declaration.output)
                         )
                         session.complete(
                             inner,
@@ -2323,7 +2423,7 @@ def _run_workflow(
                         declaration,
                         values,
                         schema_for_tool_input(program, declaration.input),
-                        schema_for_record(program, declaration.output),
+                        schema_for_type(program, declaration.output),
                         mcp_commands,
                         manifest,
                     )
@@ -2381,7 +2481,7 @@ def _run_workflow(
             elif isinstance(step.call, ModelCall):
                 model = models[step.call.model_name]
                 input_schema = schema_for_record(program, model.input)
-                output_schema = schema_for_record(program, model.output)
+                output_schema = schema_for_type(program, model.output)
                 validate(arguments, input_schema)
                 # A step `with evidence` asks the model for the record plus
                 # its quotes. The quotes are checked and kept in the trace;
@@ -2464,7 +2564,7 @@ def _run_workflow(
                     )
                 agent = agents[step.call.agent_name]
                 input_schema = schema_for_tool_input(program, tool.input)
-                output_schema = schema_for_record(program, tool.output)
+                output_schema = schema_for_type(program, tool.output)
                 validate(arguments, input_schema)
                 events.append(
                     _event(

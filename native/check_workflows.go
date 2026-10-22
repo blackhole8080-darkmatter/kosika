@@ -238,16 +238,20 @@ func (c *checker) checkModels() {
 	}
 	for _, model := range c.program.Models {
 		name := pyRepr(model.Name)
-		if c.records[model.Input] == nil || c.records[model.Output] == nil {
-			checkFail("Model %s requires known input and output records", name)
+		if c.records[model.Input] == nil || (c.records[model.Output] == nil && c.choices[model.Output] == nil) {
+			checkFail("Model %s requires a known input record and an output record or choice", name)
 		}
 		if model.Deployment != nil && *model.Deployment == "" {
 			checkFail("Model %s deployment must not be empty", name)
 		}
 		if model.Plain {
-			if fields := c.recordFields(model.Output); len(fields) != 1 || fields[0].Type != "Text" {
-				checkFail("Model %s answers as text, so its output %s must have exactly one field, of type Text", name, pyRepr(model.Output))
+			record := c.records[model.Output]
+			if record == nil || len(record.Fields) != 1 || record.Fields[0].Type != "Text" {
+				checkFail("Model %s answers as text, so its output %s must be a record with exactly one field, of type Text", name, pyRepr(model.Output))
 			}
+		}
+		if model.Evidence != "" && c.records[model.Output] == nil {
+			checkFail("Model %s answers with a choice, so it cannot give evidence", name)
 		}
 		if !finiteBetween(model.Temperature, 0, 2) {
 			checkFail("Model %s temperature must be between 0 and 2", name)
@@ -319,8 +323,8 @@ func (c *checker) checkTools() {
 		if !allowedAccess[tool.Access] {
 			checkFail("Tool %s has invalid access level %s", pyRepr(tool.Name), pyRepr(tool.Access))
 		}
-		if c.records[tool.Output] == nil {
-			checkFail("Tool %s returns unknown record %s", pyRepr(tool.Name), pyRepr(tool.Output))
+		if c.records[tool.Output] == nil && c.choices[tool.Output] == nil {
+			checkFail("Tool %s returns unknown record or choice %s", pyRepr(tool.Name), pyRepr(tool.Output))
 		}
 		if tool.Input != "" && c.records[tool.Input] == nil {
 			checkFail("Tool %s accepts unknown record %s", pyRepr(tool.Name), pyRepr(tool.Input))

@@ -507,6 +507,22 @@ func (c *checker) schemaFor(typeName string) Value {
 		}
 		return object("anyOf", forms)
 	}
+	if choice := c.choices[typeName]; choice != nil {
+		// A choice is one of its alternatives. `$case` names which, and
+		// the alternative's fields sit beside it.
+		forms := []Value{}
+		for _, alternative := range choice.Alternatives {
+			properties := newRecord()
+			properties.set("$case", object("const", alternative.Name))
+			required := []Value{"$case"}
+			for _, field := range alternative.Fields {
+				properties.set(field.Name, c.schemaFor(field.Type))
+				required = append(required, field.Name)
+			}
+			forms = append(forms, object("type", "object", "properties", properties, "required", required, "additionalProperties", false))
+		}
+		return object("anyOf", forms)
+	}
 	switch {
 	case strings.HasSuffix(typeName, "?"):
 		return object("anyOf", []Value{c.schemaFor(typeName[:len(typeName)-1]), object("type", "null")})

@@ -1,1 +1,1 @@
-Check failed: Model 'writer' requires known input and output records
+Check failed: Model 'writer' requires a known input record and an output record or choice

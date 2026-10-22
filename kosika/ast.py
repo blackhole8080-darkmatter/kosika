@@ -233,6 +233,31 @@ class EnumDecl:
 
 
 @dataclass(frozen=True)
+class ChoiceField:
+    """One value an alternative of a `choice` carries."""
+
+    name: str
+    type_name: str
+
+
+@dataclass(frozen=True)
+class ChoiceAlternative:
+    """One alternative of a `choice`: `filed(invoice: Invoice)`."""
+
+    name: str
+    fields: tuple[ChoiceField, ...] = ()
+
+
+@dataclass(frozen=True)
+class ChoiceDecl:
+    """`choice Filing { filed(invoice: Invoice) refused(reason: Text) }`:
+    a value that is exactly one of these alternatives, carrying its fields."""
+
+    name: str
+    alternatives: tuple[ChoiceAlternative, ...]
+
+
+@dataclass(frozen=True)
 class ShapeMethod:
     """One function a shape asks for: `fn price(self) -> Number`."""
 
@@ -316,6 +341,11 @@ class ConditionalExpr:
 class MatchArm:
     pattern: LiteralExpr | None
     value: "Expression"
+    # An arm may name a `choice` alternative instead of a literal:
+    # `case filed(invoice) { ... }`. `bindings` names the values it carries,
+    # in the alternative's field order.
+    alternative: str | None = None
+    bindings: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -800,6 +830,7 @@ class TestDecl:
 @dataclass
 class Program:
     records: list[RecordDecl] = field(default_factory=list)
+    choices: list[ChoiceDecl] = field(default_factory=list)
     tools: list[ToolDecl] = field(default_factory=list)
     agents: list[AgentDecl] = field(default_factory=list)
     swarms: list[SwarmDecl] = field(default_factory=list)
@@ -831,6 +862,9 @@ class Program:
 #: did before the field existed.
 _ABSENT_DEFAULTS: dict[str, tuple[Any, ...]] = {
     "order": ((), []),
+    "choices": ((), []),
+    "alternative": (None,),
+    "bindings": ((), []),
     "condition": (None,),
     "provider": (None,),
     "instruction": (None,),

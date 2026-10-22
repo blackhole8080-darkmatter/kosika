@@ -369,7 +369,7 @@ def _type_from_use(program: Program, workflow: Any, name: str) -> str | None:
                         if parameter.name == argument:
                             return parameter.type_name
                 if isinstance(call, ToolCall) and call.tool_name in tools:
-                    shape = records.get(tools[call.tool_name].input)
+                    shape = records.get(tools[call.tool_name].input)  # type: ignore[arg-type]
                     for field_ in shape.fields if shape else ():
                         if field_.name == argument:
                             return field_.type_name

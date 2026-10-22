@@ -53,8 +53,8 @@ A checked entry point is loaded with `load_program(path)`, not by parsing the
 entry file in isolation when imports are present.
 
 ```ebnf
-program     = { import | export | record | function | model | tool | agent |
-                workflow } ;
+program     = { import | export | record | choice | function | model | tool |
+                agent | workflow } ;
 import      = "import" string ;
 export      = "export" "[" [ identifier { [","] identifier } ] "]" ;
 ```
@@ -182,6 +182,50 @@ fn price(size: Size) -> Number {
   `{"type": "string", "enum": [...]}`, so a model is told the values too.
 - Enums may be exported and imported like records.
 
+### Choices
+
+```kosika
+choice Filing {
+  filed(invoice: Invoice)
+  refused(reason: Text)
+  pending
+}
+
+fn describe(filing: Filing) -> Text {
+  return match filing {
+    case filed(invoice) { "filed " + invoice.id }
+    case refused(reason) { "refused: " + reason }
+    case pending { "waiting" }
+  }
+}
+```
+
+- `choice NAME { alternative(field: Type, ...) ... }` declares a type whose
+  value is exactly one of its alternatives, carrying that alternative's
+  fields. An alternative needs no parentheses when it carries nothing.
+- A name listed by a choice is written where a value is expected:
+  `filed(invoice)` or `pending`. Alternatives are used unqualified, so their
+  names MUST be unique across the program and MUST NOT be the name of a
+  record, function, enum, shape or type.
+- A `match` on a choice names alternatives, not literals: a case binds the
+  alternative's fields in order, `case filed(invoice) { ... }`. Every
+  alternative MUST be named; a wildcard cannot stand for the rest. Naming one
+  twice is refused. The bound names have the fields' declared types inside
+  that arm.
+- The JSON value of a choice is an object whose `$case` names the
+  alternative, with the alternative's fields beside it:
+  `{"$case": "filed", "invoice": {...}}`. Its schema is `anyOf` one closed
+  object per alternative, so an outside value (a workflow input, a tool
+  result, or a model's answer) MUST name an alternative the program declares.
+  An unknown alternative, a missing field, or an extra field is refused
+  before the value reaches the program.
+- Choices may be exported and imported like records; exporting a choice also
+  makes its alternatives visible to the importing file.
+- Both engines parse, check, execute, trace and replay choices. The
+  conformance suite's `conformance/cases/unions.kos` holds them to the same
+  results, and `conformance/refused/choice_not_exhaustive.kos` to the same
+  refusal.
+
 ### Shapes
 
 ```kosika
@@ -284,9 +328,11 @@ The supported expression surface is:
 - `if condition { value } else { value }`. The condition MUST be `Bool` and
   both branches MUST have the same type.
 - `match value { case literal { value } ... case _ { value } }`. The subject
-  MUST be scalar, patterns MUST match its type, and branches MUST return one
-  type. A final wildcard is required unless all `Bool` values or the single
-  `Null` value are covered.
+  MUST be scalar or a declared choice, patterns MUST match its type, and
+  branches MUST return one type. A scalar match needs a final wildcard unless
+  all `Bool` values or the single `Null` value are covered. A choice is
+  matched by naming every alternative, binding its fields in order:
+  `case filed(invoice) { ... }`; a choice match cannot use a wildcard.
 - Lexical blocks with local bindings and an optional final value.
 - Bounded loops described below.
 
@@ -494,10 +540,15 @@ A model declaration describes a typed call; it does not create a provider.
 The host MUST supply a binding for each model reachable from the selected
 workflow before execution. A direct `use_model` call sends the input record to
 that provider and accepts only a complete, strict JSON result matching the
-declared output record.
+declared output. The output MAY be a record or a declared `choice`; a choice
+answer MUST name exactly one alternative and carry exactly that alternative's
+fields, and the step's type is the choice. A model that answers with a choice
+cannot be asked `with evidence`, because the evidence field would sit beside
+an alternative rather than in a record.
 
 `output: NAME as text` declares a model that answers in plain text. NAME
-MUST be a record with exactly one field, of type Text. The model is asked
+MUST be a record with exactly one field, of type Text, so a choice cannot be
+asked for as plain text. The model is asked
 for the text alone, not JSON; when the answer holds one fenced code block,
 the lines inside it are the text, and otherwise the whole answer, trimmed.
 That text is the field's value. A small model writes a whole file far
@@ -932,8 +983,9 @@ agent reviewer {
 }
 ```
 
-Tools require `source`, `operation`, `access`, and an output record. Input is
-optional; an omitted input is an empty closed record. Supported access labels
+Tools require `source`, `operation`, `access`, and an output record or
+declared `choice`. Input is optional and is a record; an omitted input is an
+empty closed record. Supported access labels
 are `observe`, `analyze`, `prepare`, and `execute`. Only `execute` has special
 runtime approval semantics in `0.1.0`; the host remains responsible for making
 its bound operation match the declared effect class.
@@ -1363,6 +1415,7 @@ These examples are part of the supported contract:
 | `examples/typed_input_output.kos` | typed input, arithmetic, comparison; returns `{"score": 0.87, "accepted": true}` for `examples/typed_input.json` |
 | `examples/closures.kos` | nested closures, `ref`, higher-order calls; returns `{"value": 115}` |
 | `examples/recursion_match.kos` | bounded direct/mutual recursion and exhaustive match; returns factorial 120, parity `odd`, classification `zero` |
+| `examples/choices.kos` | a `choice` carried through a workflow, matched exhaustively, with its fields bound |
 | `examples/composed/main.kos` | explicit local modules plus a fixture-bound model; returns the first `reader` record in `responses.json` |
 
 Run the contract suite:
@@ -1412,8 +1465,8 @@ implemented by an explicit host policy rather than `.kos` syntax.
 Also unsupported:
 
 - Exceptions and `try`/`catch` (a step's `otherwise` is the only recovery
-  form), user-defined generics, unions other than `T?`, and implicit
-  numeric/text coercions other than `Text + Number`.
+  form), user-defined generics, unions other than a declared `choice` or
+  `T?`, and implicit numeric/text coercions other than `Text + Number`.
 - Import aliases, package registries, remote imports, and dynamic loading.
 - Language-level parallel workflow steps or executable multi-agent consensus.
 - A language guarantee that any live model endpoint is available.

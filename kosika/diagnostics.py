@@ -103,9 +103,11 @@ CODES: Mapping[str, str] = {
     "check/memory": "A memory is declared in a way that cannot be honoured.",
     "check/board": "A board is declared or signed in a way that cannot be honoured.",
     "check/enum": "An enum is declared or used with a value it does not have.",
+    "check/choice": "A choice, its alternatives, or a match on it is declared or used in a way it does not allow.",
     "check/shape": "A shape is declared or used in a way it does not allow.",
     "check/default": "A default value is not written out or does not fit its type.",
     "check/plain-model": "A model that answers as text does not return a record of one Text field.",
+    "check/choice-evidence": "A model that answers with a choice has no record to quote evidence from.",
     "check/learn": "A step that learns is not a model step, or is known by a value that is not Text.",
     "check/step-match": "A step that chooses between calls is not well formed.",
     "check/invalid-system-tool": "A shell or files tool is declared incorrectly.",
@@ -368,6 +370,13 @@ _RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("check/board", re.compile(r"^Board ")),
     ("check/enum", re.compile(r"^Enum '")),
     (
+        "check/choice",
+        re.compile(
+            r"^Choice '|^Choice alternatives |^Choice alternative '|^Match alternative "
+            r"|^Duplicate match alternative|^Match on choice |^Alternative '"
+        ),
+    ),
+    (
         "check/shape",
         re.compile(r"^Shape '|shape '[^']+' has no function |of shape '[^']+'; a shape"),
     ),
@@ -376,6 +385,10 @@ _RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
         re.compile(r"so its default cannot be |default value at \d+:\d+ must be written|cannot give a parameter a default value"),
     ),
     ("check/plain-model", re.compile(r"answers as text, so its output")),
+    (
+        "check/choice-evidence",
+        re.compile(r"answers with a choice, so it cannot give evidence"),
+    ),
     ("check/learn", re.compile(r"^Step '[^']+' (cannot learn: |learns by )")),
     ("check/step-match", re.compile(r"^Step '[^']+' match ")),
     ("check/test", re.compile(r"^Test '.*' line \d+: ")),
@@ -471,6 +484,7 @@ _RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
         "check/invalid-model",
         re.compile(
             r"^Model .* deployment must not be empty|^Model .* stop must contain"
+            r"|^Model .* requires a known input record and an output record or choice"
         ),
     ),
     (

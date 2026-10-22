@@ -2,6 +2,7 @@ import argparse
 import contextlib
 import io
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -247,7 +248,9 @@ class CliCoverageTests(unittest.TestCase):
         factory.assert_called_once_with(
             "http://localhost:11434/v1",
             "declared-model",
-            api_key=None,
+            # A key set on this computer is passed on, so the test asks for the
+            # same key the command would have found rather than for none.
+            api_key=os.environ.get("KOSIKA_MODEL_API_KEY"),
         )
         self.assertEqual(provider.requests[0].temperature, 0.1)
 

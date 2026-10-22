@@ -62,6 +62,9 @@ func localNames(module *Program) []string {
 	for _, enum := range module.Enums {
 		names = append(names, enum.Name)
 	}
+	for _, choice := range module.Choices {
+		names = append(names, choice.Name)
+	}
 	for _, shape := range module.Shapes {
 		names = append(names, shape.Name)
 	}
@@ -179,6 +182,16 @@ func loadModules(entry string) (merged *Program, failure *moduleError) {
 			for _, exported := range dependency.Exports {
 				visible[exported] = true
 			}
+			for _, choice := range dependency.Choices {
+				if !hasName(dependency.Exports, choice.Name) {
+					continue
+				}
+				// A choice is used through its constructors, so exporting
+				// the choice exports them too.
+				for _, alternative := range choice.Alternatives {
+					visible[alternative.Name] = true
+				}
+			}
 		}
 		local := map[string]bool{}
 		for _, name := range localNames(module) {
@@ -202,6 +215,7 @@ func loadModules(entry string) (merged *Program, failure *moduleError) {
 		}
 		merged.Records = append(merged.Records, module.Records...)
 		merged.Enums = append(merged.Enums, module.Enums...)
+		merged.Choices = append(merged.Choices, module.Choices...)
 		merged.Shapes = append(merged.Shapes, module.Shapes...)
 		merged.Tools = append(merged.Tools, module.Tools...)
 		merged.Agents = append(merged.Agents, module.Agents...)

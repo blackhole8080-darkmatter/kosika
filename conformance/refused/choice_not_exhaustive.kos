@@ -1,0 +1,13 @@
+// requires: choice
+// A match on a choice must name every alternative.
+
+choice Shape {
+  circle(radius: Number)
+  square(side: Number)
+}
+
+fn area(shape: Shape) -> Number {
+  return match shape {
+    case circle(radius) { radius * radius }
+  }
+}

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import tempfile
 import unittest
@@ -73,7 +74,12 @@ class ProjectIndexTests(unittest.TestCase):
 
     def test_everything_is_listed_with_its_program_and_line(self) -> None:
         view = index_of(EXAMPLES)
-        self.assertEqual(view["counts"]["agent"], 16)
+        # Counted from the folder, so a new example does not break the test.
+        folders = [
+            folder for folder in EXAMPLES.iterdir() if (folder / "main.kos").is_file()
+        ]
+        self.assertEqual(view["counts"]["agent"], len(folders))
+        self.assertGreaterEqual(len(folders), 16)
         by_name = {
             (item["kind"], item["title"], item["name"]): item for item in view["items"]
         }
@@ -145,6 +151,17 @@ class ProjectIndexTests(unittest.TestCase):
         self.assertTrue(only["must"])
         self.assertEqual(only["rule"], "does-not-check")
 
+    def test_a_choice_is_listed_with_its_alternatives(self) -> None:
+        self.write(
+            "chosen",
+            "choice Verdict {\n  accepted\n  refused\n}\n",
+        )
+        items = index_of(self.root)["items"]
+        choice = next(item for item in items if item["kind"] == "choice")
+        self.assertEqual(choice["name"], "Verdict")
+        self.assertEqual(choice["detail"], "accepted, refused")
+        self.assertEqual(choice["line"], 1)
+
     def test_a_model_named_by_a_thinking_step_is_not_called_unused(self) -> None:
         self.write(
             "judged",
@@ -166,6 +183,21 @@ class ProjectIndexTests(unittest.TestCase):
     def test_the_examples_are_clean_apart_from_missing_evals(self) -> None:
         rules = {s["rule"] for s in index_of(EXAMPLES)["suggestions"]}
         self.assertEqual(rules, {"no-evals"})
+
+    def test_the_page_labels_every_kind_the_index_can_emit(self) -> None:
+        page = studio.PAGE.read_text(encoding="utf-8")
+        label = re.search(r"const KIND_LABEL = \{(.*?)\};\n", page)
+        order = re.search(r"const KIND_ORDER = \[(.*?)\];\n", page)
+        self.assertIsNotNone(label)
+        self.assertIsNotNone(order)
+        labels = set(re.findall(r"(\w+):", label.group(1)))
+        ordered = set(re.findall(r'"(\w+)"', order.group(1)))
+        # Every kind the index emits, including the ones only choice
+        # programs use, has a heading and a filter chip.
+        self.assertEqual(
+            labels, {"agent", "workflow", "model", "tool", "memory", "board", "swarm", "record", "choice"}
+        )
+        self.assertEqual(labels, ordered)
 
     def test_studio_serves_it_and_the_page_shows_it(self) -> None:
         shutil.copytree(EXAMPLES / "scout", self.root / "scout")

@@ -325,8 +325,29 @@ func (p *Parser) expression() Expr {
 				case token.Kind == "IDENT" && !negative && (token.Value == "true" || token.Value == "false" || token.Value == "null"):
 					p.advance()
 					arm.Pattern = wordLiteral(token.Value)
+				case token.Kind == "IDENT" && !negative:
+					// `case filed(invoice) { ... }`: one alternative of a
+					// choice, carrying its fields by position.
+					p.advance()
+					arm.Alternative = token.Value
+					if p.accept("(") {
+						if !p.accept(")") {
+							for {
+								arm.Bindings = append(arm.Bindings, p.identifier())
+								if p.accept(")") {
+									break
+								}
+								p.expect(",")
+							}
+						}
+					}
+					p.expect("{")
+					arm.Value = p.expression()
+					p.expect("}")
+					arms = append(arms, arm)
+					continue
 				default:
-					parseFail("Match patterns must be scalar literals or _")
+					parseFail("Match patterns must be scalar literals, a choice alternative, or _")
 				}
 			}
 			p.expect("{")
@@ -791,6 +812,31 @@ func (p *Parser) parseTypeName(depth int) string {
 	}
 }
 
+func (p *Parser) parseChoice() *ChoiceDecl {
+	p.expect("choice")
+	choice := &ChoiceDecl{Name: p.identifier()}
+	p.expect("{")
+	for !p.accept("}") {
+		alternative := &ChoiceAlternative{Name: p.identifier()}
+		if p.accept("(") {
+			if !p.accept(")") {
+				for {
+					field := p.identifier()
+					p.expect(":")
+					alternative.Fields = append(alternative.Fields, Param{field, p.parseTypeName(0)})
+					if p.accept(")") {
+						break
+					}
+					p.expect(",")
+				}
+			}
+		}
+		choice.Alternatives = append(choice.Alternatives, alternative)
+		p.accept(",")
+	}
+	return choice
+}
+
 func (p *Parser) parseRecord() *RecordDecl {
 	p.expect("record")
 	record := &RecordDecl{Name: p.identifier()}
@@ -920,6 +966,8 @@ func (p *Parser) parseProgram() *Program {
 		switch {
 		case keyword == "record":
 			program.Records = append(program.Records, p.parseRecord())
+		case keyword == "choice" && p.peek().Kind == "IDENT":
+			program.Choices = append(program.Choices, p.parseChoice())
 		case keyword == "fn":
 			program.Functions = append(program.Functions, p.parseFunction(0, ""))
 		case keyword == "model":

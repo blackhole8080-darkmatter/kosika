@@ -35,7 +35,7 @@ func (c *checker) checkEnums() {
 		if seen[enum.Name] {
 			checkFail("Enum %s is declared more than once", pyRepr(enum.Name))
 		}
-		if c.records[enum.Name] != nil || primitiveTypes[enum.Name] {
+		if c.records[enum.Name] != nil || c.choices[enum.Name] != nil || primitiveTypes[enum.Name] {
 			checkFail("Enum %s has the name of a record or a type", pyRepr(enum.Name))
 		}
 		seen[enum.Name] = true

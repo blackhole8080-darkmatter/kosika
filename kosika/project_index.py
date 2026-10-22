@@ -1,7 +1,7 @@
 """Everything in a folder of Kosika programs, in one list, with suggestions.
 
 Studio shows one agent at a time. This is the view across all of them:
-every agent, workflow, model, tool, memory, board and record, each with the
+every agent, workflow, model, tool, memory, board, record and choice, each with the
 program it belongs to and its line, so a name can be searched for in one
 place.
 
@@ -77,6 +77,12 @@ def _items(program: Program, source: str) -> list[dict[str, Any]]:
         fields = ", ".join(f"{f.name}: {f.type_name}" for f in record.fields)
         if (("record", record.name)) in lines:
             add("record", record.name, fields)
+    for choice in program.choices:
+        alternatives = ", ".join(
+            alternative.name for alternative in choice.alternatives
+        )
+        if (("choice", choice.name)) in lines:
+            add("choice", choice.name, alternatives)
     for swarm in program.swarms:
         add("swarm", swarm.name, "agents: " + ", ".join(swarm.agents))
     return items

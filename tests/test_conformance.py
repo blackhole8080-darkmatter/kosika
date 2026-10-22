@@ -34,6 +34,13 @@ class ReferenceTests(unittest.TestCase):
             with self.subTest(program.name):
                 self.assertTrue(conformance.expected_path(program).is_file())
 
+    def test_every_case_asks_only_for_capabilities_the_reference_has(self) -> None:
+        for program in conformance.programs():
+            with self.subTest(program.name):
+                self.assertLessEqual(
+                    conformance.required(program), conformance.CAPABILITIES
+                )
+
     def test_the_reference_engine_prints_what_is_expected(self) -> None:
         for program in conformance.programs():
             with self.subTest(program.name):
@@ -85,9 +92,27 @@ class NativeTests(unittest.TestCase):
     def run_engine(self, *arguments: str) -> subprocess.CompletedProcess[bytes]:
         return subprocess.run([str(self.engine), *arguments], capture_output=True)
 
+    def test_it_names_the_capabilities_it_reads(self) -> None:
+        ran = self.run_engine("capabilities")
+        self.assertEqual(ran.returncode, 0, ran.stderr.decode("utf-8", "replace"))
+        named = {
+            line for line in ran.stdout.decode("utf-8").splitlines() if line.strip()
+        }
+        self.assertEqual(named, set(conformance.CAPABILITIES))
+
     def test_it_prints_what_the_suite_expects(self) -> None:
+        ran = self.run_engine("capabilities")
+        supported = {
+            line for line in ran.stdout.decode("utf-8").splitlines() if line.strip()
+        }
         for program in conformance.programs():
             with self.subTest(program.name):
+                missing = conformance.required(program) - supported
+                if missing:
+                    self.skipTest(
+                        "the native engine does not claim "
+                        + ", ".join(sorted(missing))
+                    )
                 ran = self.run_engine("test", str(program))
                 printed = ran.stdout.decode("utf-8").replace("\r\n", "\n")
                 wanted = conformance.expected_path(program).read_text(encoding="utf-8")
@@ -95,6 +120,142 @@ class NativeTests(unittest.TestCase):
                 self.assertEqual(
                     ran.returncode, conformance.EXIT_CODES[program.parent.name]
                 )
+
+    def test_a_choice_traces_replays_and_refuses_as_the_reference(self) -> None:
+        # A choice is checked at the boundary and written into a trace as
+        # the reference writes it; each engine replays the other's trace.
+        ignored = {"timestamp", "program_hash", "elapsed_seconds", "function_stack", "plan_hash"}
+
+        def clean(value: object) -> object:
+            if isinstance(value, dict):
+                return {k: clean(v) for k, v in value.items() if k not in ignored}
+            if isinstance(value, list):
+                return [clean(v) for v in value]
+            return value
+
+        def events(path: Path) -> list:
+            return [
+                clean(json.loads(line))
+                for line in path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+
+        program = ROOT / "conformance" / "cases" / "unions.kos"
+        good = {
+            "parcel": {
+                "status": {
+                    "$case": "delivered",
+                    "delivery": {"$case": "left_at", "place": "the desk"},
+                }
+            }
+        }
+        bad = {
+            "parcel": {"status": {"$case": "delivered"}},
+            "extra": {"parcel": {"status": {"$case": "lost", "reason": 4}}},
+        }
+        with tempfile.TemporaryDirectory() as scratch:
+            folder = Path(scratch)
+            (folder / "good.json").write_text(json.dumps(good), encoding="utf-8")
+            reference = subprocess.run(
+                [sys.executable, "-m", "kosika.cli", "run", str(program),
+                 "--input", str(folder / "good.json"),
+                 "--trace", str(folder / "reference.jsonl")],
+                cwd=ROOT, capture_output=True, text=True,
+            )
+            self.assertEqual(reference.returncode, 0, reference.stderr)
+            native = self.run_engine(
+                "run", str(program), "--input", str(folder / "good.json"),
+                "--trace", str(folder / "native.jsonl"),
+            )
+            self.assertEqual(native.returncode, 0, native.stderr.decode())
+            self.assertEqual(
+                native.stdout.decode("utf-8").splitlines()[0],
+                reference.stdout.splitlines()[0],
+            )
+            self.assertEqual(events(folder / "native.jsonl"), events(folder / "reference.jsonl"))
+            for written, reader in (("native.jsonl", "reference"), ("reference.jsonl", "native")):
+                trace = str(folder / written)
+                ran = (
+                    subprocess.run([sys.executable, "-m", "kosika.cli", "replay", trace],
+                                   cwd=ROOT, capture_output=True, text=True)
+                    if reader == "reference"
+                    else self.run_engine("replay", trace)
+                )
+                self.assertEqual(ran.returncode, 0, f"{reader} replay of {written}")
+            for name, value in bad.items():
+                (folder / f"{name}.json").write_text(json.dumps(value), encoding="utf-8")
+                reference = subprocess.run(
+                    [sys.executable, "-m", "kosika.cli", "run", str(program),
+                     "--input", str(folder / f"{name}.json")],
+                    cwd=ROOT, capture_output=True, text=True,
+                )
+                native = self.run_engine(
+                    "run", str(program), "--input", str(folder / f"{name}.json")
+                )
+                self.assertEqual(native.returncode, 2)
+                self.assertEqual(
+                    native.stderr.decode("utf-8").strip().splitlines()[-1],
+                    reference.stderr.strip().splitlines()[-1],
+                )
+
+    def test_a_choice_model_answer_traces_and_replays_as_the_reference(self) -> None:
+        # A model whose output is a choice has that choice's schema in its
+        # trace, and the answer is one alternative.
+        ignored = {"timestamp", "program_hash", "elapsed_seconds", "function_stack", "plan_hash"}
+
+        def clean(value: object) -> object:
+            if isinstance(value, dict):
+                return {k: clean(v) for k, v in value.items() if k not in ignored}
+            if isinstance(value, list):
+                return [clean(v) for v in value]
+            return value
+
+        def events(path: Path) -> list:
+            return [
+                clean(json.loads(line))
+                for line in path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+
+        program = ROOT / "conformance" / "cases" / "choice_outputs.kos"
+        with tempfile.TemporaryDirectory() as scratch:
+            folder = Path(scratch)
+            (folder / "input.json").write_text(
+                json.dumps({"question": {"text": "x"}}), encoding="utf-8"
+            )
+            (folder / "fixture.json").write_text(
+                json.dumps({"judge": [{"$case": "accepted", "note": "ok"}]}),
+                encoding="utf-8",
+            )
+            flags = [
+                "--workflow", "main",
+                "--input", str(folder / "input.json"),
+                "--model-fixture", str(folder / "fixture.json"),
+            ]
+            reference = subprocess.run(
+                [sys.executable, "-m", "kosika.cli", "run", str(program),
+                 *flags, "--trace", str(folder / "reference.jsonl")],
+                cwd=ROOT, capture_output=True, text=True,
+            )
+            self.assertEqual(reference.returncode, 0, reference.stderr)
+            native = self.run_engine(
+                "run", str(program), *flags, "--trace", str(folder / "native.jsonl")
+            )
+            self.assertEqual(native.returncode, 0, native.stderr.decode())
+            self.assertEqual(
+                native.stdout.decode("utf-8").splitlines()[0],
+                reference.stdout.splitlines()[0],
+            )
+            self.assertEqual(events(folder / "native.jsonl"), events(folder / "reference.jsonl"))
+            for written, reader in (("native.jsonl", "reference"), ("reference.jsonl", "native")):
+                trace = str(folder / written)
+                ran = (
+                    subprocess.run([sys.executable, "-m", "kosika.cli", "replay", trace],
+                                   cwd=ROOT, capture_output=True, text=True)
+                    if reader == "reference"
+                    else self.run_engine("replay", trace)
+                )
+                self.assertEqual(ran.returncode, 0, f"{reader} replay of {written}")
 
     def test_it_splits_every_kosika_file_into_the_reference_tokens(self) -> None:
         listed = subprocess.run(

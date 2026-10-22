@@ -1,0 +1,39 @@
+// A choice is a value that is exactly one of its alternatives. It is how a
+// program says "one of these, and each carries what it needs": a filing that
+// was filed, refused, or is still pending. A match must name every
+// alternative, so a case cannot be forgotten.
+//
+//   kosika test examples/choices.kos
+
+choice Filing {
+  filed(invoice: Text)
+  refused(reason: Text)
+  pending
+}
+
+record Ticket { filing: Filing }
+record Report { text: Text }
+
+fn describe(filing: Filing) -> Text {
+  return match filing {
+    case filed(invoice) { "filed " + invoice }
+    case refused(reason) { "refused: " + reason }
+    case pending { "waiting" }
+  }
+}
+
+workflow main(ticket: Ticket) -> Report {
+  said = describe(ticket.filing)
+  out = {text: said}
+}
+
+test "every alternative is matched and its fields bound" {
+  expect describe(filed("A-1")) == "filed A-1"
+  expect describe(refused("no stamp")) == "refused: no stamp"
+  expect describe(pending) == "waiting"
+}
+
+test "a workflow carries a choice in and out" {
+  result = main({filing: refused("not ours")})
+  expect result.text == "refused: not ours"
+}

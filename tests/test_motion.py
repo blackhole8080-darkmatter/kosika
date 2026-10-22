@@ -436,9 +436,12 @@ class StudioSceneTests(unittest.TestCase):
             'event.key.toLowerCase() === "k"',
         ):
             self.assertIn(needed, page)
-        # Each set of dark colours is written for both cases.
-        self.assertEqual(page.count(':root[data-theme="dark"] {'), 2)
-        self.assertEqual(page.count(':root:not([data-theme="light"]) {'), 2)
+        # Each set of dark colours is written for both cases: once for the
+        # computer's setting, once for a theme the person chose. The Cinema
+        # look brought its own pair, so this asks for both cases, not a
+        # particular number of them.
+        self.assertGreaterEqual(page.count(':root[data-theme="dark"] {'), 2)
+        self.assertGreaterEqual(page.count(':root:not([data-theme="light"]) {'), 2)
 
     def test_a_scene_a_model_took_part_in_is_checked_and_drawn_the_same(self) -> None:
         drawn = self.app.draw_scene("logo.kos", SCENE)

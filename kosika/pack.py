@@ -65,6 +65,13 @@ def make_pack(entry: str | Path) -> dict[str, Any]:
     """Build a pack from the program whose entry module is `entry`."""
 
     path = Path(entry).absolute()
+    if path.is_dir():
+        raise PackError(
+            f"A pack is made from one program file, not a folder: {path}. "
+            "Name the program inside it, such as main.kos."
+        )
+    if path.suffix != ".kos":
+        raise PackError(f"A pack is made from a .kos program file, not {path.name}")
     program = load_program(path)
     root = path.parent
     modules: dict[str, str] = {}

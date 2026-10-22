@@ -1,7 +1,8 @@
 """The conformance suite: what any Kosika engine must print.
 
-    python -m kosika.conformance write    let the reference say what it prints
-    python -m kosika.conformance check    is the reference still saying that?
+    python -m kosika.conformance write         let the reference say what it prints
+    python -m kosika.conformance check         is the reference still saying that?
+    python -m kosika.conformance capabilities  what this engine reads
 
 The suite is in `conformance/`. See its README.
 """
@@ -19,6 +20,20 @@ FOLDERS = ("cases", "failing", "refused")
 #: The exit code an engine must end with, by folder: every test passed, one
 #: failed, or the program was refused before it ran.
 EXIT_CODES = {"cases": 0, "failing": 1, "refused": 2}
+#: Language surfaces an engine may lack while it is being built. A program
+#: says what it needs on its first line, `// requires: choice`, so that an
+#: engine can be held to the cases it claims, not to the ones it does not
+#: read yet. `ENGINE capabilities` prints these, one a line.
+CAPABILITIES = frozenset({"choice"})
+
+
+def required(program: Path) -> frozenset[str]:
+    """The capabilities a suite program says it needs."""
+
+    first = program.read_text(encoding="utf-8").splitlines()[:1]
+    if not first or not first[0].startswith("// requires:"):
+        return frozenset()
+    return frozenset(first[0].removeprefix("// requires:").split())
 
 
 def programs(root: Path = ROOT) -> list[Path]:
@@ -47,6 +62,10 @@ def report(program: Path) -> tuple[str, int]:
 
 def main(argv: list[str] | None = None) -> int:
     command = (argv if argv is not None else sys.argv[1:]) or ["check"]
+    if command[0] == "capabilities":
+        for capability in sorted(CAPABILITIES):
+            print(capability)
+        return 0
     if command[0] not in ("write", "check"):
         print(__doc__)
         return 2

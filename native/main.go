@@ -7,6 +7,7 @@
 //	    [--model NAME] [--model-url URL] [--model-protocol openai|ollama]
 //	    [--model-timeout SECONDS]    run a workflow, asking a real model
 //	kosika-native replay TRACE.jsonl  check a run's trace, running nothing
+//	kosika-native capabilities      the conformance capabilities it reads
 //
 // It is built up stage by stage against the conformance suite; what it
 // cannot do yet it refuses by name. See README.md.
@@ -63,8 +64,18 @@ func load(path string) *Program {
 	return program
 }
 
+// capabilities are the conformance surfaces this engine reads, as the
+// suite's programs name them on their first line.
+var capabilities = []string{"choice"}
+
 func main() {
 	args := os.Args[1:]
+	if len(args) == 1 && args[0] == "capabilities" {
+		for _, capability := range capabilities {
+			fmt.Println(capability)
+		}
+		return
+	}
 	if len(args) >= 2 && args[0] == "run" {
 		os.Exit(runCommand(args[1:]))
 	}
@@ -76,7 +87,7 @@ func main() {
 		asJSON, args = true, []string{args[0], args[2]}
 	}
 	if len(args) != 2 {
-		fail("usage: kosika-native tokens FILE.kos | kosika-native test [--json] FILE.kos | kosika-native run FILE.kos [options]")
+		fail("usage: kosika-native tokens FILE.kos | kosika-native test [--json] FILE.kos | kosika-native run FILE.kos [options] | kosika-native capabilities")
 	}
 	switch args[0] {
 	case "tokens":

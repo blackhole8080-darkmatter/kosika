@@ -1,0 +1,3 @@
+PASS  an imported choice brings its constructors
+PASS  a workflow takes an imported choice
+2 passed, 0 failed
