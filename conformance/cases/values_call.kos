@@ -1,0 +1,28 @@
+// A step that is a plain record value takes its type from where a later
+// step hands it on, here a workflow of two record inputs, matched by name
+// or by place as the checker matches them.
+
+record Study { text: Text }
+record Drawing { title: Text }
+record Out { text: Text }
+
+workflow fuller(study: Study, first: Drawing) -> Out {
+  out = {text: study.text + ": " + first.title}
+}
+
+workflow by_name(study: Study) -> Out {
+  first = {title: "one"}
+  out = call fuller(study, first)
+}
+
+workflow by_place(study: Study) -> Out {
+  picture = {title: "two"}
+  out = call fuller(study, picture)
+}
+
+test "a value is typed from the workflow it is handed to" {
+  named = by_name({text: "a"})
+  placed = by_place({text: "b"})
+  expect named.text == "a: one"
+  expect placed.text == "b: two"
+}

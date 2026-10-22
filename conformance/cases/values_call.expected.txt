@@ -1,0 +1,2 @@
+PASS  a value is typed from the workflow it is handed to
+1 passed, 0 failed

@@ -348,26 +348,47 @@ def lower_values(program: Program) -> Program:
     return replace(program, workflows=workflows, functions=[*program.functions, *made])
 
 
+def _parameter_for(parameters: Any, arguments: Any, index: int) -> str | None:
+    """The type of the parameter an argument stands for, as the checker
+    matches them: by the argument's name, else by its variable's name, else
+    by its place when as many arguments as parameters are given."""
+
+    argument, value = arguments[index]
+    if len(parameters) == 1 and len(arguments) == 1:
+        # A sole argument is not yet named for its parameter.
+        return parameters[0].type_name
+    for wanted in (argument, getattr(value, "name", None)):
+        for parameter in parameters:
+            if wanted and parameter.name == wanted:
+                return parameter.type_name
+    if not argument and len(arguments) == len(parameters):
+        return parameters[index].type_name
+    return None
+
+
 def _type_from_use(program: Program, workflow: Any, name: str) -> str | None:
     """The type a value step must have, read from where a later step hands
-    it on whole: `remember tally in counts under k` or `f(tally)`."""
+    it on whole: `remember tally in counts under k`, `f(tally)` or
+    `call w(tally)`."""
 
     functions = {item.name: item for item in program.functions}
+    workflows = {item.name: item for item in program.workflows}
     tools = {item.name: item for item in program.tools}
     records = {item.name: item for item in program.records}
     for later in workflow.steps:
         for call in [later.call, later.fallback, *(c for _, c in later.branches)]:
-            for argument, value in getattr(call, "arguments", ()):
+            arguments = tuple(getattr(call, "arguments", ()))
+            for index, (argument, value) in enumerate(arguments):
                 if not (isinstance(value, VariableExpr) and value.name == name):
                     continue
                 if isinstance(call, FunctionCall) and call.function_name in functions:
-                    parameters = functions[call.function_name].parameters
-                    # A sole argument is not yet named for its parameter.
-                    if len(parameters) == 1 and len(call.arguments) == 1:
-                        return parameters[0].type_name
-                    for parameter in parameters:
-                        if parameter.name == argument:
-                            return parameter.type_name
+                    found = _parameter_for(functions[call.function_name].parameters, arguments, index)
+                    if found:
+                        return found
+                if isinstance(call, WorkflowCall) and call.workflow_name in workflows:
+                    found = _parameter_for(workflows[call.workflow_name].parameters, arguments, index)
+                    if found:
+                        return found
                 if isinstance(call, ToolCall) and call.tool_name in tools:
                     shape = records.get(tools[call.tool_name].input)  # type: ignore[arg-type]
                     for field_ in shape.fields if shape else ():

@@ -260,6 +260,31 @@ func valueType(program *Program, value Expr, seen map[string]string) (found stri
 
 // typeFromUse is the type a value step must have, read from where a later
 // step hands it on whole: `f(tally)`, or a tool's input field.
+// parameterFor is the type of the parameter an argument stands for, as the
+// checker matches them: by the argument's name, else by its variable's
+// name, else by its place when as many arguments as parameters are given.
+func parameterFor(params []Param, args []Arg, index int) string {
+	if len(params) == 1 && len(args) == 1 {
+		// A sole argument is not yet named for its parameter.
+		return params[0].Type
+	}
+	variable := ""
+	if used, ok := args[index].Value.(*VarExpr); ok {
+		variable = used.Name
+	}
+	for _, wanted := range []string{args[index].Name, variable} {
+		for _, param := range params {
+			if wanted != "" && param.Name == wanted {
+				return param.Type
+			}
+		}
+	}
+	if args[index].Name == "" && len(args) == len(params) {
+		return params[index].Type
+	}
+	return ""
+}
+
 func typeFromUse(program *Program, workflow *WorkflowDecl, name string) string {
 	for _, later := range workflow.Steps {
 		calls := []*StepCall{later.Call, later.Fallback}
@@ -270,23 +295,24 @@ func typeFromUse(program *Program, workflow *WorkflowDecl, name string) string {
 			if call == nil {
 				continue
 			}
-			for _, arg := range call.Args {
+			for index, arg := range call.Args {
 				if used, ok := arg.Value.(*VarExpr); !ok || used.Name != name {
 					continue
 				}
 				switch call.Kind {
 				case "function":
 					for _, decl := range program.Functions {
-						if decl.Name != call.Name {
-							continue
+						if decl.Name == call.Name {
+							if found := parameterFor(decl.Params, call.Args, index); found != "" {
+								return found
+							}
 						}
-						if len(decl.Params) == 1 && len(call.Args) == 1 {
-							// A sole argument is not yet named for its parameter.
-							return decl.Params[0].Type
-						}
-						for _, param := range decl.Params {
-							if param.Name == arg.Name {
-								return param.Type
+					}
+				case "workflow":
+					for _, decl := range program.Workflows {
+						if decl.Name == call.Name {
+							if found := parameterFor(decl.Params, call.Args, index); found != "" {
+								return found
 							}
 						}
 					}

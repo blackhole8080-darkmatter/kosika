@@ -671,8 +671,9 @@ think = "classify"  expression "into" expression [ "using" identifier ]
   A call followed by more of an expression on its line, as `shout =
   base(m) + 1`, is a value too. Its type is, in this order: the type
   written out, `typed: Tally = {count: n}`; the type of the value itself;
-  the parameter or tool input field it is handed to whole by a later step,
-  as `kept = keep(tally)`; or, for the last step, the workflow's result
+  the parameter (of a function or a workflow) or tool input field it is
+  handed to whole by a later step, as `kept = keep(tally)` or `call
+  fuller(study, first)`, matched as the checker matches arguments; or, for the last step, the workflow's result
   type. A record value MAY separate its fields with spaces instead of
   commas, as a record's declaration does: `{text: t count: n}`. A value
   whose type none of these tells is a check error (`check/value-step`)
