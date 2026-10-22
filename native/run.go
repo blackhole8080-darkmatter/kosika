@@ -23,7 +23,7 @@ func runCommand(args []string) int {
 	options["--trace"] = "run_trace.jsonl"
 	flags := map[string]bool{"--approve": true, "--allow-shell": true}
 	var givenSites []string
-	known := map[string]bool{"--allow-site": true, "--services": true, "--allow-folder": true, "--memory": true, "--env": true, "--journal": true, "--binding-id": true, "--approval-record": true, "--approved-by": true, "--trace": true, "--model-fixture": true, "--mcp-server": true, "--mcp-manifest": true, "--mcp-source": true, "--workflow": true, "--input": true, "--model": true, "--model-url": true, "--model-protocol": true, "--model-timeout": true, "--model-binding": true, "--max-output-tokens": true}
+	known := map[string]bool{"--embed-url": true, "--embed-model": true, "--allow-site": true, "--services": true, "--allow-folder": true, "--memory": true, "--env": true, "--journal": true, "--binding-id": true, "--approval-record": true, "--approved-by": true, "--trace": true, "--model-fixture": true, "--mcp-server": true, "--mcp-manifest": true, "--mcp-source": true, "--workflow": true, "--input": true, "--model": true, "--model-url": true, "--model-protocol": true, "--model-timeout": true, "--model-binding": true, "--max-output-tokens": true}
 	for i := 1; i < len(args); i++ {
 		name, value, joined := strings.Cut(args[i], "=")
 		if flags[name] && !joined {
@@ -240,6 +240,16 @@ func runCommand(args []string) int {
 		running.folder, running.allowShell = folder, allowShell
 		running.services = services
 		running.sites = sites
+		if model := options["--embed-model"]; model != "" {
+			address := options["--embed-url"]
+			if address == "" {
+				address = options["--model-url"]
+			}
+			if address == "" {
+				address = defaultLocalModelURL
+			}
+			running.meaning = newMeaning(model, address)
+		}
 		if env != nil {
 			// An environment's budget only tightens the workflow's.
 			if amount, given := env.budget["model_calls"]; given && int(toFloat(amount)) < running.maxModels {

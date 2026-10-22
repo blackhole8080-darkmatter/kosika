@@ -98,9 +98,11 @@ claim is skipped by name. See `tests/test_conformance.py`.
   the reference checks such a plan before showing it, and those checks are
   not here yet, so such a plan is refused by name. Replaying an agent
   run's own trace.
-- `system` tools other than files, shell, services and web (kosika, meaning, agents,
-  outside), and `fetch`; so an environment's `allow site` grants nothing
-  here yet. Searching by meaning (`find`).
+- `system` tools other than files, shell, services, web and meaning
+  (kosika, agents, outside, notify, linux, computer). Its search by
+  meaning remembers vectors in a store of its own
+  (`~/.kosika/embeddings-native.bin`), not the reference's SQLite one, so
+  each engine embeds a line once for itself.
 - Swarms.
 - A file that has any of these is refused, and the refusal names it.
 - Vectors and matrices.

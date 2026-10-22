@@ -43,7 +43,7 @@ const (
 var systemKinds = []string{"shell", "files", "web", "kosika", "meaning", "agents", "outside", "notify", "services", "linux", "computer"}
 
 // The kinds this engine reaches; the rest are refused as the file is read.
-var systemKindsHere = map[string]bool{"files": true, "shell": true, "services": true, "web": true}
+var systemKindsHere = map[string]bool{"files": true, "shell": true, "services": true, "web": true, "meaning": true}
 
 var fileOperations = []string{"read", "peek", "search", "find", "write", "create", "write_all", "list"}
 var readOnlyOperations = map[string]bool{"read": true, "peek": true, "search": true, "find": true, "list": true}
@@ -71,6 +71,7 @@ var systemShapes = map[string]shape{
 	"list":       {[]Param{{"path", "Text"}}, []Param{{"names", "Text[]"}}},
 	"status":     {nil, []Param{{"services", "Text[]"}, {"paused", "Text[]"}, {"text", "Text"}}},
 	"fetch":      {[]Param{{"url", "Text"}}, []Param{{"url", "Text"}, {"title", "Text"}, {"text", "Text"}}},
+	"near":       {[]Param{{"a", "Text"}, {"b", "Text"}}, []Param{{"score", "Number"}}},
 	"fetch_from": {[]Param{{"url", "Text"}, {"start", "Number"}}, []Param{{"url", "Text"}, {"title", "Text"}, {"text", "Text"}, {"next", "Number"}}},
 	"pause":      {[]Param{{"name", "Text"}}, []Param{{"name", "Text"}, {"paused", "Bool"}}},
 	"resume":     {[]Param{{"name", "Text"}}, []Param{{"name", "Text"}, {"paused", "Bool"}}},
@@ -143,6 +144,9 @@ func (c *checker) systemProblem(tool *ToolDecl) string {
 	}
 	looksOnly := (kind == "files" && readOnlyOperations[tool.Operation]) || (kind == "services" && tool.Operation == "status") ||
 		kind != "files" && kind != "shell" && kind != "services"
+	if kind == "meaning" && tool.Operation != "near" {
+		return fmt.Sprintf("Tool %s has unknown meaning operation %s; the only one is near", pyRepr(tool.Name), pyRepr(tool.Operation))
+	}
 	if kind == "web" && tool.Operation != "fetch" && tool.Operation != "fetch_from" {
 		return fmt.Sprintf("Tool %s has unknown web operation %s; use one of: fetch, fetch_from", pyRepr(tool.Name), pyRepr(tool.Operation))
 	}
@@ -303,6 +307,8 @@ func (r *run) fileTool(tool *ToolDecl, arguments *Record) Value {
 		result.set("names", values)
 	case "search":
 		result.set("matches", r.search(text("path"), text("query")))
+	case "find":
+		result.set("matches", r.find(text("path"), text("query")))
 	case "write", "create":
 		data := []byte(text("text"))
 		if len(data) > maxFileBytes {
@@ -522,7 +528,9 @@ func (r *run) shellTool(tool *ToolDecl, arguments *Record) Value {
 func (r *run) systemBound(tool *ToolDecl) bool {
 	switch systemKind(tool) {
 	case "files":
-		return r.folder != "" && tool.Operation != "find"
+		return r.folder != "" && (tool.Operation != "find" || r.meaning != nil)
+	case "meaning":
+		return r.meaning != nil
 	case "shell":
 		return r.folder != "" && r.allowShell
 	case "services":

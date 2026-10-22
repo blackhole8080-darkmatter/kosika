@@ -1122,7 +1122,8 @@ tool run_tests {
   only read and MAY be declared `access: observe`. `find` gives at most
   12 lines, compares at most 4,000 lines of at least 12 characters, and
   is bound only when the host also grants an embedding model
-  (`--embed-model NAME`); otherwise it is unreachable like any ungranted
+  (`--embed-model NAME`, asked at `--embed-url`, else `--model-url`, else
+  the local Ollama); otherwise it is unreachable like any ungranted
   tool. The host keeps what the embedding model returns for each line
   outside the granted folder, so searching never writes to the folder. At
   most 400 lines not seen before are sent to the embedding model in one

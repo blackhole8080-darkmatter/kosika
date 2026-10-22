@@ -658,6 +658,87 @@ class NativeTests(unittest.TestCase):
                 )
                 self.assertEqual(ran.returncode, 0, f"{reader} replay of {written}")
 
+    def test_it_searches_by_meaning_as_the_reference_does(self) -> None:
+        # With the same embedding model and nothing remembered, and again
+        # with what each remembered: the same lines, nearest first, and the
+        # same nearness of two texts.
+        import math
+
+        def vector(text: str) -> list[float]:
+            # A stand-in model: how often each letter and a few word ends
+            # appear, so texts that share words are near.
+            counts = [0.0] * 30
+            for word in text.lower().split():
+                for letter in word:
+                    if "a" <= letter <= "z":
+                        counts[ord(letter) - 97] += 1
+                counts[26 + len(word) % 4] += 0.5
+            return [round(count / math.sqrt(1 + len(text)), 6) for count in counts]
+
+        class Server(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:  # noqa: N802
+                asked = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                body = json.dumps({"embeddings": [vector(text) for text in asked["input"]]}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *_args: object) -> None:
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Server)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.shutdown)
+        address = f"http://127.0.0.1:{server.server_address[1]}/v1"
+        program = (
+            "record Search { path: Text query: Text }\n"
+            "record Found { matches: Text[] }\n"
+            "record Pair { a: Text b: Text }\n"
+            "record Near { score: Number }\n"
+            "record Ask { text: Text }\n"
+            'tool find_notes {\n  source system "files"\n  operation: "find"\n'
+            "  access: observe\n  input: Search\n  output: Found\n}\n"
+            'tool how_near {\n  source system "meaning"\n  operation: "near"\n'
+            "  access: observe\n  input: Pair\n  output: Near\n}\n"
+            "agent desk {\n  can: [find_notes, how_near]\n  max_steps: 1\n}\n"
+            "workflow find(a: Ask) -> Found {\n"
+            '  found = execute desk.find_notes(path: ".", query: a.text)\n}\n'
+            "workflow near(a: Ask) -> Near {\n"
+            '  n = execute desk.how_near(a: a.text, b: "monthly rent for the flat")\n}\n'
+        )
+        with tempfile.TemporaryDirectory() as scratch:
+            folder = Path(scratch)
+            notes = folder / "notes"
+            (notes / "sub").mkdir(parents=True)
+            (notes / "home.txt").write_text("Rent is 900 euros a month, paid on the first.\nThe landlord lives upstairs.\nshort\n")
+            (notes / "travel.md").write_text("Train to Delhi leaves at 6 in the morning.\nPack the blue suitcase.\n")
+            (notes / "sub" / "pets.txt").write_text("The cat needs its vaccine in March.\nBuy cat food on Friday.\n")
+            (notes / ".hidden").write_text("A hidden line that is never searched.\n")
+            (folder / "p.kos").write_text(program, encoding="utf-8")
+            said: dict[str, list[str]] = {"reference": [], "native": []}
+            for name in said:
+                home = folder / f"home-{name}"
+                home.mkdir()
+                environment = {**os.environ, "USERPROFILE": str(home), "HOME": str(home), "PYTHONPATH": str(ROOT)}
+                for workflow, question in (("find", "what do I pay for the flat"), ("find", "when does my train go"),
+                                           ("find", "what do I pay for the flat"), ("near", "rent of the flat")):
+                    (folder / "in.json").write_text(json.dumps({"a": {"text": question}}))
+                    first = [str(self.engine)] if name == "native" else [sys.executable, "-m", "kosika.cli"]
+                    ran = subprocess.run(
+                        [*first, "run", str(folder / "p.kos"), "--workflow", workflow, "--input", str(folder / "in.json"),
+                         "--allow-folder", str(notes), "--embed-model", "stand-in", "--embed-url", address,
+                         "--trace", str(folder / "t.jsonl")],
+                        cwd=folder, capture_output=True, text=True, env=environment,
+                    )
+                    self.assertEqual(ran.returncode, 0, ran.stderr)
+                    said[name].append(ran.stdout.splitlines()[0])
+        self.assertEqual(said["native"], said["reference"])
+        self.assertIn("home.txt:1: Rent is 900 euros", said["reference"][0])
+        self.assertNotIn("hidden", "".join(said["reference"]))
+        self.assertNotIn("short", "".join(said["reference"]))
+
     def test_it_reads_a_page_as_the_reference_does(self) -> None:
         # The web tool's reading of a page, a text and a feed: the same
         # title and text, whatever the markup does.

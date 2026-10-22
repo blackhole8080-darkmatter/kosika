@@ -522,7 +522,11 @@ def _meaning(args: argparse.Namespace) -> Any:
         return None
     from .embeddings import Meaning, default_store, ollama_embedder
 
-    url = getattr(args, "model_url", None) or DEFAULT_LOCAL_MODEL_URL
+    url = (
+        getattr(args, "embed_url", None)
+        or getattr(args, "model_url", None)
+        or DEFAULT_LOCAL_MODEL_URL
+    )
     # Embeddings are asked of Ollama's own address, without the /v1 that
     # its OpenAI-compatible chat address ends in.
     base = url.rstrip("/")
@@ -1444,6 +1448,14 @@ def build_parser() -> argparse.ArgumentParser:
             "An embedding model, such as nomic-embed-text, for file tools that "
             "search by meaning (operation find). Asked at the same address as "
             "--model-url. Without it those tools cannot be reached."
+        ),
+    )
+    run_parser.add_argument(
+        "--embed-url",
+        metavar="URL",
+        help=(
+            "Where the embedding model is asked, when not at --model-url or the "
+            "local Ollama."
         ),
     )
     run_parser.add_argument(

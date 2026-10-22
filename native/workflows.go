@@ -66,6 +66,9 @@ type run struct {
 	services string
 	// sites are the sites a web tool may read, when any were allowed.
 	sites []string
+	// meaning is the granted embedding model, for searching by meaning;
+	// nil when none was granted.
+	meaning *meaning
 	// check is the step's own `verify`, for the model asked now; nil when
 	// there is none.
 	check *answerCheck

@@ -381,6 +381,9 @@ func (r *run) hostTool(tool *ToolDecl, arguments *Record) (Value, bool) {
 		if systemKind(tool) == "web" {
 			return r.webTool(tool, arguments), true
 		}
+		if systemKind(tool) == "meaning" {
+			return r.nearTool(arguments), true
+		}
 		return r.fileTool(tool, arguments), true
 	case tool.Source == "world:clock":
 		return moment(), true

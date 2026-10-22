@@ -3506,6 +3506,23 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   programs with workflows, agents and tools; the guide does not teach
   those yet.
 
+### The native engine searches by meaning
+
+- A files tool's `find` and a `system "meaning"` tool's `near` run in
+  native/ (native/meaning.go) with the embedding model the host grants
+  (`--embed-model NAME`): the same lines compared, the same labels for
+  nomic-embed-text, at most 400 new vectors a call, and the same order,
+  nearest first. Vectors are kept outside the granted folder as 32-bit
+  numbers, as the reference keeps them, in a store of the native engine's
+  own, since Go cannot read SQLite without an outside package.
+- `--embed-url` (both engines) says where the embedding model is asked,
+  apart from `--model-url`, which also grants a chat model.
+- Held by a test that runs `find` three times and `near` once in both
+  engines against a stand-in embedding model, fresh and from what each
+  remembered, and compares every answer; and by hand against
+  nomic-embed-text on this computer, where both gave the same lines and
+  the same score.
+
 ### The native engine reads web pages
 
 - `source system "web"` (`fetch`, `fetch_from`) and the `fetch URL` step
