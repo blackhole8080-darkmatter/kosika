@@ -1049,6 +1049,8 @@ tool run_tests {
 | `system "services"` | `resume` | `{name: Text}` | `{name: Text, paused: Bool}` |
 | `system "linux"` | `status` | none | `{distro: Text, kernel: Text, uptime: Text, load: Text, memory: Text, disk: Text, upgrades: Text, top: Text[]}` |
 | `system "computer"` | `status` | none | `{name: Text, system: Text, cores: Number, memory: Text, disk: Text, uptime: Text}` |
+| `system "web"` | `fetch` | `{url: Text}` | `{url: Text, title: Text, text: Text}` |
+| `system "web"` | `fetch_from` | `{url: Text, start: Number}` | `{url: Text, title: Text, text: Text, next: Number}` |
 
 - A system tool MUST declare `access: execute`, and its records MUST have
   exactly the fields above (`check/invalid-system-tool`). A workflow that
@@ -1156,6 +1158,13 @@ tool run_tests {
   change only the paused list, which the runner reads before each run, so
   they MUST be `access: execute` and each needs the owner's yes. Naming a
   service the file does not declare fails the step.
+- A `system "web"` tool reads one page from a site the host allows
+  (`--allow-site HOST`) and MAY be `access: observe`. `fetch` gives the
+  first 20,000 characters of the page's text. `fetch_from` gives the
+  20,000 from character `start`, a whole number from 0, and `next`, where
+  the part after it begins, or -1 when this part ends the page, so a
+  program reads a long page, such as a paper, part by part. `kosika-native`
+  does not reach web tools yet.
 - A `system "linux"` tool reads how the one Linux distribution the host
   names (`--linux NAME`, under WSL) is doing, and a `system "computer"`
   tool how this computer is doing (`--computer`). Both only look, by

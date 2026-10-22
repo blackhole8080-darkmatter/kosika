@@ -225,7 +225,7 @@ def readable_feed(body: str) -> str:
 
     parser = _Feed()
     parser.feed(body)
-    return "\n".join(parser.lines)[:MAX_CHARACTERS]
+    return "\n".join(parser.lines)
 
 
 def _tidy(parts: list[str]) -> str:
@@ -237,13 +237,13 @@ def readable(body: str, is_html: bool) -> tuple[str, str]:
     """(title, text) of a page body."""
 
     if not is_html:
-        return "", body.strip()[:MAX_CHARACTERS]
+        return "", body.strip()
     parser = _Text()
     parser.feed(body)
     main = _tidy(parser.main)
     # A page that marks its content gets just that; others get everything.
     text = main if len(main) >= 200 else _tidy(parser.parts)
-    return " ".join("".join(parser.title).split()), text[:MAX_CHARACTERS]
+    return " ".join("".join(parser.title).split()), text
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -278,7 +278,36 @@ def _open(url: str) -> tuple[int, dict[str, str], bytes]:
 
 
 def fetch(url: str, sites: Sequence[str], opener: Opener = _open) -> dict[str, str]:
-    """Read one page from an allowed site as `{url, title, text}`."""
+    """Read one page from an allowed site as `{url, title, text}`: the first
+    MAX_CHARACTERS of its text."""
+
+    page = _whole(url, sites, opener)
+    return {**page, "text": page["text"][:MAX_CHARACTERS]}
+
+
+def fetch_from(
+    url: str, start: Any, sites: Sequence[str], opener: Opener = _open
+) -> dict[str, Any]:
+    """One part of a long page, as `{url, title, text, next}`: at most
+    MAX_CHARACTERS of its text from character `start`, and where the part
+    after it begins, or -1 when this one ends the page. A paper of 80,000
+    characters is read in four calls."""
+
+    if isinstance(start, bool) or not isinstance(start, (int, float)) or start < 0 or start != int(start):
+        raise WebError(f"start must be a whole number from 0, got {start!r}")
+    page = _whole(url, sites, opener)
+    begin = int(start)
+    end = begin + MAX_CHARACTERS
+    return {
+        "url": page["url"],
+        "title": page["title"],
+        "text": page["text"][begin:end],
+        "next": end if end < len(page["text"]) else -1,
+    }
+
+
+def _whole(url: str, sites: Sequence[str], opener: Opener) -> dict[str, str]:
+    """The whole readable text of one page from an allowed site."""
 
     current = allowed_address(url, sites)
     for _ in range(MAX_REDIRECTS + 1):
@@ -316,7 +345,9 @@ def bind_web_tool(
 ) -> Callable[[ToolDecl, dict[str, Any]], Any]:
     allowed = tuple(clean_site(site) for site in sites)
 
-    def run(_tool: ToolDecl, arguments: dict[str, Any]) -> Any:
+    def run(tool: ToolDecl, arguments: dict[str, Any]) -> Any:
+        if tool.operation == "fetch_from":
+            return fetch_from(arguments["url"], arguments["start"], allowed, opener)
         return fetch(arguments["url"], allowed, opener)
 
     return run

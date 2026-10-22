@@ -233,6 +233,12 @@ SHAPES: dict[str, tuple[dict[str, str], dict[str, str]]] = {
     "near": ({"a": "Text", "b": "Text"}, {"score": "Number"}),
     # A web tool reads one page from a site the runner allowed; see kosika.web.
     "fetch": ({"url": "Text"}, {"url": "Text", "title": "Text", "text": "Text"}),
+    # The rest of a long page, a part at a time: `next` is where the part
+    # after this one begins, or -1 when this one ends the page.
+    "fetch_from": (
+        {"url": "Text", "start": "Number"},
+        {"url": "Text", "title": "Text", "text": "Text", "next": "Number"},
+    ),
     # A note sent to the one address the person named; see kosika.notify.
     "send": ({"title": "Text", "text": "Text"}, {"sent": "Bool"}),
     # The owner's services (see kosika.services): their names, which are
@@ -375,10 +381,10 @@ def declaration_problem(program: Program, tool: ToolDecl) -> str | None:
             f"Tool {tool.name!r} has unknown {kind} operation {tool.operation!r}; "
             "the only one is status"
         )
-    if kind == "web" and tool.operation != "fetch":
+    if kind == "web" and tool.operation not in ("fetch", "fetch_from"):
         return (
             f"Tool {tool.name!r} has unknown web operation {tool.operation!r}; "
-            "the only one is fetch"
+            "use one of: fetch, fetch_from"
         )
     if tool.access != "execute" and not looks_only:
         return (

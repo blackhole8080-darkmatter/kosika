@@ -12,6 +12,7 @@ from kosika.system_tools import SystemToolError, bind_system_tools
 from kosika.web import (
     MAX_BYTES,
     MAX_CHARACTERS,
+    fetch_from,
     WebError,
     allowed_address,
     clean_site,
@@ -200,6 +201,25 @@ class FetchTests(unittest.TestCase):
         )
         self.assertEqual(len(page["text"]), MAX_CHARACTERS)
 
+    def test_a_long_page_is_read_a_part_at_a_time(self) -> None:
+        body = b"<main><p>" + b"word " * 20000 + b"</p></main>"
+        pages = opener({"https://example.org/x": html(body)})
+        whole = fetch("https://example.org/x", SITES, pages)["text"]
+        parts, start = [], 0
+        while start != -1:
+            part = fetch_from("https://example.org/x", start, SITES, pages)
+            parts.append(part["text"])
+            start = part["next"]
+        self.assertEqual(len(parts), 5)
+        self.assertTrue(all(len(part) == MAX_CHARACTERS for part in parts[:-1]))
+        self.assertEqual(parts[0], whole)
+        self.assertEqual("".join(parts), "word " * 19999 + "word")
+        past = fetch_from("https://example.org/x", 10**6, SITES, pages)
+        self.assertEqual((past["text"], past["next"]), ("", -1))
+        for bad in (-1, 1.5, True):
+            with self.subTest(start=bad), self.assertRaisesRegex(WebError, "whole number"):
+                fetch_from("https://example.org/x", bad, SITES, pages)
+
     def test_an_address_that_is_not_allowed_is_never_requested(self) -> None:
         open_ = opener({})
         with self.assertRaises(WebError):
@@ -279,7 +299,7 @@ class ToolTests(unittest.TestCase):
             bind_system_tools(checked(), folder=None, sites=("not a site",))
 
     def test_the_declaration_is_checked(self) -> None:
-        with self.assertRaisesRegex(CheckError, "the only one is fetch"):
+        with self.assertRaisesRegex(CheckError, "use one of: fetch, fetch_from"):
             checked(SOURCE.replace('operation: "fetch"', 'operation: "post"'))
         with self.assertRaisesRegex(CheckError, "must have exactly the fields"):
             checked(

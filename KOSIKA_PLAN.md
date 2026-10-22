@@ -3506,6 +3506,15 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   programs with workflows, agents and tools; the guide does not teach
   those yet.
 
+### Reading a long page a part at a time
+
+- `operation: "fetch_from"` on a `system "web"` tool takes `{url, start}`
+  and gives `{url, title, text, next}`: 20,000 characters from `start`,
+  and where the next part begins, or -1 at the end (kosika/web.py
+  `fetch_from`). `fetch` is unchanged. Asked for by the digest, whose
+  arXiv papers run to about 80,000 characters. Python only: the native
+  engine has no web tool yet and refuses it by name.
+
 ### A standard library, in both engines
 
 - `import "std/NAME.kos"` reaches Kosika modules shipped with the engine
