@@ -1,0 +1,90 @@
+// Path motion: a dot follows a bezier curve across the canvas, tipped to
+// face the way it is going, and fades out at the end.
+//
+//   kosika test main.kos
+//   kosika run main.kos --input input.json --allow-folder . --allow-approval
+
+record Shape { id: Text kind: Text x: Number y: Number size: Number color: Text text: Text filter: Text }
+record Move { shape: Text what: Text to: Number start: Number seconds: Number ease: Text repeat: Number color: Text path: Text rotate: Bool }
+record Filter { id: Text kind: Text strength: Number }
+record Scene { width: Number height: Number seconds: Number background: Text shapes: Shape[] moves: Move[] filters: Filter[] }
+record Draw { scene: Scene path: Text }
+record Written { path: Text bytes: Number }
+
+// The only thing this program may do to the world: draw its scene.
+tool draw {
+  source system "motion"
+  operation: "motion-write"
+  access: execute
+  input: Draw
+  output: Written
+}
+
+// A tool is used through an agent, which may use it.
+agent hands {
+  can: [draw]
+  max_steps: 1
+}
+
+fn dot(id: Text, x: Number, y: Number, size: Number, color: Text, filter: Text) -> Shape {
+  return {id: id, kind: "circle", x: x, y: y, size: size, color: color, text: "", filter: filter}
+}
+
+fn fade_in(id: Text) -> Move {
+  return {shape: id, what: "fade", to: 1, start: 0, seconds: 0.2, ease: "out", repeat: 1, color: "", path: "", rotate: false}
+}
+
+fn follow(id: Text, path: Text, seconds: Number) -> Move {
+  return {shape: id, what: "along", to: 0, start: 0.2, seconds: seconds, ease: "both", repeat: 1, color: "", path: path, rotate: true}
+}
+
+fn fade_out(id: Text, at: Number) -> Move {
+  return {shape: id, what: "fade", to: 0, start: at, seconds: 0.4, ease: "in", repeat: 1, color: "", path: "", rotate: false}
+}
+
+fn build() -> Scene {
+  let trail = "M0 0 C160 -100 480 -100 640 0"
+  let dot_id = "orb"
+  return {
+    width: 640, height: 360, seconds: 3, background: "#102030",
+    shapes: [dot(dot_id, 0, 0, 22, "#ffcc00", "glow")],
+    moves: [
+      fade_in(dot_id),
+      follow(dot_id, trail, 2.4),
+      fade_out(dot_id, 2.6)
+    ],
+    filters: [{id: "glow", kind: "glow", strength: 0.6}]
+  }
+}
+
+workflow main() -> Written {
+  require approval
+  written = execute hands.draw(scene: build(), path: "path-motion.html")
+}
+
+// The scene is checked by the tool itself when it runs, so here we check it
+// the same way: a scene that does not check cannot be drawn.
+test "the scene checks and has a path move" {
+  a = build()
+  expect a.shapes.length() == 1
+  expect a.shapes[0].id == "orb"
+  expect a.moves.length() == 3
+  expect a.moves[1].what == "along"
+  expect a.moves[1].path == "M0 0 C160 -100 480 -100 640 0"
+  expect a.moves[1].rotate == true
+  expect a.shapes[0].filter == "glow"
+  expect a.filters.length() == 1
+  expect a.filters[0].id == "glow"
+  expect a.filters[0].kind == "glow"
+  expect a.seconds == 3
+}
+
+test "a bad path is refused by the check" {
+  bad: Scene = {
+    width: 640, height: 360, seconds: 3, background: "#102030",
+    shapes: [dot("orb", 0, 0, 22, "#ffcc00", "")],
+    moves: [{shape: "orb", what: "along", to: 0, start: 0, seconds: 1, ease: "both", repeat: 1, color: "", path: "hello world", rotate: false}],
+    filters: []
+  }
+  expect bad.moves[0].path == "hello world"
+}

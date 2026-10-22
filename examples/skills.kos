@@ -1,0 +1,116 @@
+// Skill Development Framework in Kosika
+// This example shows how to define and use skills in Kosika
+
+// Define a skill record
+record Skill {
+  id: Text
+  name: Text
+  kind: Text
+  description: Text
+  parameters: Parameter[]
+}
+
+record Parameter {
+  name: Text
+  type: Text
+  required: Bool
+  default: Text?
+}
+
+// Example: Web Search Skill
+record SearchInput {
+  query: Text
+  max_results: Number
+}
+
+record SearchResult {
+  title: Text
+  url: Text
+  snippet: Text
+}
+
+// Define a skill for web search
+skill web_search {
+  input: SearchInput
+  output: SearchResult[]
+  description: "Search the web for information"
+}
+
+// Use the skill in a workflow
+workflow search_knowledge(query: Text) -> SearchResult[] {
+  step execute_search {
+    let input: SearchInput = {
+      query: query,
+      max_results: 10
+    }
+
+    let results = use_skill web_search(input: input)
+    return results
+  }
+}
+
+// Example: Logical Reasoning Skill
+record ReasoningInput {
+  premises: Text[]
+  conclusion: Text
+}
+
+skill logical_reasoning {
+  input: ReasoningInput
+  output: Bool
+  description: "Apply logical reasoning to test a conclusion"
+}
+
+workflow test_reasoning(premises: Text[], conclusion: Text) -> Bool {
+  step reason {
+    let input: ReasoningInput = {
+      premises: premises,
+      conclusion: conclusion
+    }
+
+    let is_valid = use_skill logical_reasoning(input: input)
+    return is_valid
+  }
+}
+
+// Example: Skill Composition
+record ComplexTask {
+  research_query: Text
+  code_requirements: Text[]
+}
+
+record TaskResult {
+  research: SearchResult[]
+  code: Text
+  is_valid: Bool
+}
+
+workflow compose_skills(task: ComplexTask) -> TaskResult {
+  step research {
+    let search_input: SearchInput = {
+      query: task.research_query,
+      max_results: 5
+    }
+    let research_results = use_skill web_search(input: search_input)
+    return research_results
+  }
+
+  step validate {
+    let reasoning_input: ReasoningInput = {
+      premises: task.code_requirements,
+      conclusion: "Requirements are consistent"
+    }
+    let is_valid = use_skill logical_reasoning(input: reasoning_input)
+    return is_valid
+  }
+
+  step combine {
+    let research = research
+    let is_valid = validate
+    return {
+      research: research,
+      code: "Generated code placeholder",
+      is_valid: is_valid
+    }
+  }
+}

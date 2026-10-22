@@ -1,0 +1,497 @@
+// OS builder: builds MayaOS's tiny operating system one stage at a time,
+// from a boot sector to a kernel with a keyboard shell, and proves each
+// stage by booting it and reading its screen.
+//
+//   kosika test main.kos
+//   kosika studio FOLDER --model qwen/qwen3.8-27b --model-url https://api.groq.com/openai/v1
+//       --allow-folder OSBUILD --allow-shell --in-session
+//
+// Say: stage 1 (up to stage 8).
+//
+// The granted folder holds the guide and the tests, which the builder
+// reads and never writes:
+//   lessons/N.md   what stage N must do, and what its screen must show
+//   tutorial/      the os-tutorial lessons (Carlos Fenollosa, BSD licence)
+//   tools/screen.py  boots an image in QEMU with no window and prints the
+//                    text on its screen
+// and it writes each stage in stages/N/: its assembly, C and Makefile.
+//
+// What one stage is:
+//   1. Code reads the stage's spec and the tutorial lessons it names, and
+//      recalls the files of the stage before, which this one builds on.
+//   2. The model writes every file of the stage.
+//   3. They are written, `make` builds os-image.bin, and the image is
+//      booted in QEMU and its screen read.
+//   4. Code, not the model, checks the screen against the spec: text that
+//      must be there, text that must not, and a number that must grow.
+//   5. If it failed, the model is shown what make and the screen said, and
+//      tries again. Three tries at most, within the budget's time, and then
+//      it stops and says what failed. It never keeps going on its own.
+//
+// What it may touch. The granted folder only, and run with --in-session it
+// works in a walled copy of it inside Linux: make, nasm, gcc and QEMU run
+// there with no network and a read-only system, and nothing reaches the
+// real folder until you bring the files back. It starts only make and
+// python3.
+
+record Msg { text: Text }
+record Said { text: Text }
+
+record Where { path: Text }
+record FileText { text: Text }
+record Command { args: Text[] }
+record Ran { exit_code: Number stdout: Text stderr: Text }
+record Planned { path: Text text: Text before: Text exists: Bool }
+record Batch { files: Planned[] note: Text }
+record Saved { count: Number }
+
+// A stage's spec, read from lessons/N.md.
+record Spec {
+  stage: Text
+  title: Text
+  guides: Text[]
+  keys: Text
+  snapshots: Text
+  expect: Text[]
+  absent: Text[]
+  rising: Text[]
+  task: Text
+}
+
+// What the model is shown, and what it writes back: every file, each
+// between "=== FILE: path ===" and "=== END ===".
+record Asked { rules: Text spec: Text guides: Text before: Text feedback: Text }
+record Written { text: Text }
+
+// One try, ready to run.
+record Job { spec: Spec asked: Asked try_no: Number }
+// What one try came to.
+record Outcome { passed: Bool stage: Text tries: Number files: Text[] written: Text failed: Text[] build: Text screen: Text spec: Spec asked: Asked }
+
+// The files of a stage that passed, for the next stage to build on.
+record Stage { files: Text }
+
+tool read_file {
+  source system "files"
+  operation: "read"
+  access: observe
+  input: Where
+  output: FileText
+}
+
+tool save_all {
+  source system "files"
+  operation: "write_all"
+  access: execute
+  input: Batch
+  output: Saved
+}
+
+tool run_make {
+  source system "shell"
+  operation: "make"
+  access: execute
+  input: Command
+  output: Ran
+}
+
+tool run_screen {
+  source system "shell"
+  operation: "python3"
+  access: execute
+  input: Command
+  output: Ran
+}
+
+agent bench {
+  can: [read_file, save_all, run_make, run_screen]
+  max_steps: 1
+}
+
+model builder {
+  input: Asked
+  output: Written as text
+  parameters: {
+    temperature: 0.2
+    max_output_tokens: 16000
+  }
+}
+
+memory built of Stage
+
+// ---------------------------------------------------------------- the spec
+
+fn stage_of(msg: Msg) -> Text {
+  for word in msg.text.lower().words() {
+    let n = word.trim_marks(".,:#").to_number()
+    if n.exists() and n.value() >= 1 and n.value() <= 8 and n.value().is_whole() { return n.value().to_text() }
+  }
+  return "1"
+}
+
+fn no_text() -> FileText {
+  return {text: ""}
+}
+
+fn spec_of(stage: Text, file: FileText) -> Spec {
+  var title = ""
+  var guides: Text[] = []
+  var keys = ""
+  var snapshots = "1"
+  var expect: Text[] = []
+  var absent: Text[] = []
+  var rising: Text[] = []
+  var body: Text[] = []
+  var in_body = false
+  for line in file.text.lines() {
+    if in_body { body = body.append(line) }
+    else if line.trim() == "---" { in_body = true }
+    else if line.starts_with("Title:") { title = line.drop(6).trim() }
+    else if line.starts_with("Guide:") { guides = for g in line.drop(6).split(",") where not g.trim().is_empty() { g.trim() } }
+    else if line.starts_with("Keys:") { keys = line.drop(5).trim() }
+    else if line.starts_with("Snapshots:") { snapshots = line.drop(10).trim() }
+    else if line.starts_with("Expect:") { expect = expect.append(line.drop(7).trim()) }
+    else if line.starts_with("Absent:") { absent = absent.append(line.drop(7).trim()) }
+    else if line.starts_with("Rising:") { rising = rising.append(line.drop(7).trim()) }
+  }
+  return {stage: stage, title: title, guides: guides.take(4), keys: keys, snapshots: snapshots, expect: expect, absent: absent, rising: rising, task: body.join("\n").trim()}
+}
+
+fn guide_path(spec: Spec, i: Number) -> Where {
+  return if i < spec.guides.length() { {path: "tutorial/" + spec.guides[i] + "/README.md"} } else { {path: ""} }
+}
+
+fn previous(stage: Text) -> Text {
+  let n = stage.to_number().or(1)
+  return (n - 1).to_text()
+}
+
+// ---------------------------------------------------------------- asking
+
+fn rules() -> Text {
+  return "You build a tiny x86 operating system, one stage at a time, following the os-tutorial lessons given as a guide. Write every file this stage needs, complete, each one as:\n=== FILE: relative/path ===\n<the whole file>\n=== END ===\nPaths are relative to this stage's own folder. Always write a Makefile whose target os-image.bin builds the bootable image from nothing, and nothing else. Makefile recipe lines start with a real tab character. Tools there are: nasm, gcc, ld, make, objcopy, cat, dd. There is no cross-compiler: compile C with gcc -m32 -ffreestanding -fno-pie -fno-pic -fno-stack-protector -nostdlib -fno-builtin -O0 -c, and link the kernel with ld -m elf_i386 -Ttext 0x1000 --oformat binary, kernel_entry.o first. Assemble boot sectors with nasm -f bin and kernel entry stubs with nasm -f elf. Use only C you write yourself: no standard headers except stdint.h. The image is booted by QEMU as a floppy disk (qemu-system-i386 -fda os-image.bin), so the BIOS boot drive is in dl; pad the image so every sector the boot sector reads exists. The guide's own Makefiles use i386-elf-gcc and i386-elf-ld; use the commands above instead. Write no explanation outside the files: any text outside them is ignored."
+}
+
+fn spec_text(spec: Spec) -> Text {
+  var checks: Text[] = []
+  for e in spec.expect { checks = checks.append("The screen must show: " + e) }
+  for a in spec.absent { checks = checks.append("The screen must not show: " + a) }
+  for r in spec.rising { checks = checks.append("The number after \"" + r + "\" must be larger in the second reading of the screen than in the first") }
+  let typed = if spec.keys.is_empty() { "" } else { "\nAfter the first reading, these keys are typed (QEMU key names): " + spec.keys + ", and the screen is read again." }
+  return "Stage " + spec.stage + ": " + spec.title + "\n\n" + spec.task + "\n\nThe test boots os-image.bin and reads the 80x25 text screen after 3 seconds." + typed + "\n" + checks.join("\n")
+}
+
+fn guides_text(texts: FileText[], spec: Spec) -> Text {
+  var parts: Text[] = []
+  for i in 0 until texts.length() {
+    if i < spec.guides.length() and not texts[i].text.trim().is_empty() {
+      parts = parts.append("--- Lesson " + spec.guides[i] + " ---\n" + texts[i].text.take(9000))
+    }
+  }
+  return parts.join("\n\n")
+}
+
+fn before_text(past: BuiltRecalled, spec: Spec) -> Text {
+  if spec.stage == "1" or not past.found { return "This is the first stage: there are no earlier files." }
+  return "The files of stage " + previous(spec.stage) + ", which passed its test. Build on them: keep what still applies and change what this stage needs.\n" + past.value.value().files
+}
+
+fn asked_of(spec: Spec, texts: FileText[], past: BuiltRecalled) -> Asked {
+  return {rules: rules(), spec: spec_text(spec), guides: guides_text(texts, spec), before: before_text(past, spec), feedback: ""}
+}
+
+fn first_job(spec: Spec, asked: Asked) -> Job {
+  return {spec: spec, asked: asked, try_no: 1}
+}
+
+// The next try is shown what went wrong with this one.
+fn next_job(last: Outcome) -> Job {
+  let shown = "Your try " + last.tries.to_text() + " failed.\n" + last.failed.join("\n") + "\n\nThe build said:\n" + last.build.take(2500) + "\n\nThe screen showed:\n" + last.screen.take(2500) + "\n\nYou wrote these files:\n" + last.written.take(12000) + "\n\nWrite every file again, whole, with the problem fixed."
+  let asked = last.asked
+  return {spec: last.spec, asked: {rules: asked.rules, spec: asked.spec, guides: asked.guides, before: asked.before, feedback: shown}, try_no: last.tries + 1}
+}
+
+// ---------------------------------------------------------------- files
+
+// A path the model gave, made safe and put in the stage's folder: no
+// absolute path, no way up.
+fn safe_path(stage: Text, path: Text) -> Text {
+  let tidy = path.trim().trim_marks("`'\"").replace("\\", "/")
+  var parts: Text[] = []
+  for part in tidy.split("/") {
+    if not part.is_empty() and part != "." and part != ".." and not part.contains(":") { parts = parts.append(part) }
+  }
+  if parts.is_empty() { return "" }
+  if parts.length() > 2 and parts[0] == "stages" and parts[1] == stage { parts = parts.drop(2) }
+  return "stages/" + stage + "/" + parts.join("/")
+}
+
+fn files_of(stage: Text, written: Written) -> Planned[] {
+  var found: Planned[] = []
+  var path = ""
+  var lines: Text[] = []
+  var open = false
+  for line in written.text.lines() {
+    let bare = line.trim()
+    if bare.starts_with("=== FILE:") {
+      path = safe_path(stage, bare.drop(9).trim_marks("= "))
+      lines = []
+      open = true
+    } else if open and bare.starts_with("=== END") {
+      if not path.is_empty() { found = found.append({path: path, text: lines.join("\n") + "\n", before: "", exists: false}) }
+      open = false
+    } else if open {
+      lines = lines.append(line)
+    }
+  }
+  var kept: Planned[] = []
+  var seen: Text[] = []
+  for file in found.reverse() {
+    if not seen.contains(file.path) {
+      kept = kept.append(file)
+      seen = seen.append(file.path)
+    }
+  }
+  return kept.reverse()
+}
+
+fn batch_of(job: Job, written: Written) -> Batch {
+  let files = files_of(job.spec.stage, written)
+  // A try that wrote no file still leaves its words, so they can be read.
+  let all: Planned[] = if files.is_empty() { [{path: "stages/" + job.spec.stage + "/NO-FILES.txt", text: written.text.take(20000), before: "", exists: false}] } else { files }
+  return {files: all, note: "Stage " + job.spec.stage + ", try " + job.try_no.to_text()}
+}
+
+fn nothing_written() -> Written {
+  return {text: ""}
+}
+
+fn make_args(spec: Spec) -> Command {
+  return {args: ["-C", "stages/" + spec.stage, "os-image.bin"]}
+}
+
+fn screen_args(spec: Spec) -> Command {
+  var args = ["tools/screen.py", "stages/" + spec.stage + "/os-image.bin", "--snapshots", spec.snapshots]
+  if not spec.keys.is_empty() { args = args.concat(["--keys", spec.keys]) }
+  return {args: args}
+}
+
+fn not_run() -> Ran {
+  return {exit_code: -1, stdout: "", stderr: "Not booted: the build failed."}
+}
+
+// ---------------------------------------------------------------- judging
+
+// The screens the checker printed, in order.
+fn screens(ran: Ran) -> Text[] {
+  var found: Text[] = []
+  var lines: Text[] = []
+  var open = false
+  for line in ran.stdout.lines() {
+    if line.starts_with("=== screen ") {
+      if open { found = found.append(lines.join("\n")) }
+      lines = []
+      open = true
+    } else if open {
+      lines = lines.append(line)
+    }
+  }
+  if open { found = found.append(lines.join("\n")) }
+  return found
+}
+
+// The number written just after a label on a screen, if there is one.
+fn number_after(screen: Text, label: Text) -> Number? {
+  for line in screen.lines() {
+    let at = line.index_of(label)
+    if at.exists() {
+      let rest = line.drop(at.value() + label.length()).trim().words()
+      if not rest.is_empty() { return rest[0].trim_marks(".,;").to_number() }
+    }
+  }
+  return null
+}
+
+fn failures(spec: Spec, ran: Ran) -> Text[] {
+  let shown = screens(ran)
+  if shown.is_empty() { return ["The screen could not be read: " + (ran.stdout + ran.stderr).trim().take(300)] }
+  let last = shown.last().or("")
+  var failed: Text[] = []
+  for e in spec.expect {
+    if not last.contains(e) { failed = failed.append("Missing from the screen: " + e) }
+  }
+  for a in spec.absent {
+    if last.contains(a) { failed = failed.append("On the screen but must not be: " + a) }
+  }
+  for r in spec.rising {
+    let first = number_after(shown[0], r)
+    let second = number_after(shown.last().or(""), r)
+    if not first.exists() or not second.exists() { failed = failed.append("No number after \"" + r + "\" on the screen") }
+    else if second.value() <= first.value() { failed = failed.append("The number after \"" + r + "\" did not grow: " + first.value().to_text() + " then " + second.value().to_text()) }
+  }
+  return failed
+}
+
+fn judged(job: Job, written: Written, batch: Batch, built: Ran, screen: Ran) -> Outcome {
+  let build = (built.stdout + "\n" + built.stderr).trim()
+  let failed = if built.exit_code != 0 { ["The build failed (make exited " + built.exit_code.to_text() + ")"] } else { failures(job.spec, screen) }
+  let files = for f in batch.files { f.path }
+  return {passed: failed.is_empty(), stage: job.spec.stage, tries: job.try_no, files: files, written: written.text, failed: failed, build: build, screen: screens(screen).join("\n--- next reading ---\n"), spec: job.spec, asked: job.asked}
+}
+
+fn report(out: Outcome, budget_left: Bool) -> Said {
+  let head = if out.passed { "Stage " + out.stage + " passed on try " + out.tries.to_text() + ": " + out.spec.title + "." } else { "Stage " + out.stage + " failed after " + out.tries.to_text() + " tries, so I stopped: " + out.spec.title + "." }
+  let what = if out.passed { "\nFiles: " + out.files.join(", ") } else { "\nWhat failed:\n" + out.failed.join("\n") }
+  let screen = if out.screen.trim().is_empty() { "" } else { "\nThe screen:\n" + out.screen.take(1200) }
+  return {text: head + what + screen}
+}
+
+fn stage_files(out: Outcome) -> Stage {
+  return {files: out.written.take(30000)}
+}
+
+// ---------------------------------------------------------------- workflows
+
+workflow guide(where: Where) -> FileText {
+  text = match where.path.is_empty() {
+    case true { no_text() }
+    case _ { call read(where) }
+  }
+}
+
+workflow read(where: Where) -> FileText {
+  text = execute bench.read_file(where.path) otherwise no_text()
+}
+
+workflow boot(job: Job) -> Ran {
+  require approval
+  ran = execute bench.run_screen(screen_args(job.spec).args)
+}
+
+// One try: the model writes the files, they are built, booted and checked.
+workflow attempt(job: Job) -> Outcome {
+  require approval
+  written = use_model builder(job.asked.rules, job.asked.spec, job.asked.guides, job.asked.before, job.asked.feedback) retry 1 otherwise nothing_written()
+  batch   = batch_of(job, written)
+  saved   = execute bench.save_all(batch.files, batch.note)
+  built   = execute bench.run_make(make_args(job.spec).args)
+  screen  = match built.exit_code == 0 {
+    case true { call boot(job) }
+    case _ { not_run() }
+  }
+  out     = judged(job, written, batch, built, screen)
+}
+
+workflow again(last: Outcome) -> Outcome {
+  require approval
+  out = match last.passed {
+    case true { last }
+    case _ { call attempt(next_job(last)) }
+  }
+}
+
+workflow keep(out: Outcome) -> Outcome {
+  saved = remember stage_files(out) in built under out.stage
+  same  = out
+}
+
+workflow kept(out: Outcome) -> Outcome {
+  done = match out.passed {
+    case true { call keep(out) }
+    case _ { out }
+  }
+}
+
+workflow main(msg: Msg) -> Said {
+  require approval
+  // Three tries at most, each a model call with one retry, and a time limit
+  // for the whole stage. When either runs out, the run stops.
+  budget 6 model calls, 1500 seconds
+  stage = stage_of(msg)
+  file  = execute bench.read_file("lessons/" + stage + ".md") otherwise no_text()
+  spec  = spec_of(stage, file)
+  g0    = call guide(guide_path(spec, 0))
+  g1    = call guide(guide_path(spec, 1))
+  g2    = call guide(guide_path(spec, 2))
+  g3    = call guide(guide_path(spec, 3))
+  past  = recall built under previous(stage)
+  asked = asked_of(spec, [g0, g1, g2, g3], past)
+  one   = call attempt(first_job(spec, asked))
+  two   = call again(one)
+  three = call again(two)
+  done  = call kept(three)
+  said  = report(done, true)
+}
+
+// ---------------------------------------------------------------- tests
+
+test "a spec is read from its lesson file" {
+  file: FileText = {text: "Stage: 7\nTitle: Timer\nGuide: 18-interrupts, 20-interrupts-timer\nKeys: a ret\nSnapshots: 2\nExpect: MayaOS timer\nAbsent: Error\nRising: Ticks:\n---\nDo the timer.\nWell."}
+  s = spec_of("7", file)
+  expect s.title == "Timer"
+  expect s.guides == ["18-interrupts", "20-interrupts-timer"]
+  expect s.keys == "a ret"
+  expect s.expect == ["MayaOS timer"]
+  expect s.rising == ["Ticks:"]
+  expect s.task == "Do the timer.\nWell."
+  expect guide_path(s, 1).path == "tutorial/20-interrupts-timer/README.md"
+  expect guide_path(s, 2).path == ""
+  expect stage_of({text: "build stage 3 please"}) == "3"
+  expect stage_of({text: "stage 9"}) == "1"
+}
+
+test "files come out of the model's text, safely inside the stage" {
+  w: Written = {text: "Here you go.\n=== FILE: boot.asm ===\nmov ah, 0x0e\n=== END ===\n=== FILE: ../../escape.txt ===\nno\n=== END ===\n=== FILE: stages/2/Makefile ===\nos-image.bin: boot.asm\n\tnasm -f bin boot.asm -o os-image.bin\n=== END ===\n=== FILE: boot.asm ===\nmov ah, 0x0e\nint 0x10\n=== END ==="}
+  files = files_of("2", w)
+  expect (for f in files { f.path }) == ["stages/2/escape.txt", "stages/2/Makefile", "stages/2/boot.asm"]
+  expect files[2].text == "mov ah, 0x0e\nint 0x10\n"
+  expect files[1].text.contains("\tnasm")
+  expect safe_path("2", "C:/x/y.c") == "stages/2/x/y.c"
+}
+
+test "the screen is checked by code" {
+  spec = spec_of("7", {text: "Expect: MayaOS timer\nAbsent: Panic\nRising: Ticks:\n---\n"})
+  good: Ran = {exit_code: 0, stdout: "=== screen 1 ===\nMayaOS timer\n\nTicks: 12\n=== screen 2 ===\nMayaOS timer\n\nTicks: 61\n", stderr: ""}
+  stuck: Ran = {exit_code: 0, stdout: "=== screen 1 ===\nMayaOS timer\nTicks: 5\n=== screen 2 ===\nPanic\nTicks: 5\n", stderr: ""}
+  expect failures(spec, good) == []
+  expect failures(spec, stuck) == ["Missing from the screen: MayaOS timer", "On the screen but must not be: Panic", "The number after \"Ticks:\" did not grow: 5 then 5"]
+  expect failures(spec, {exit_code: 1, stdout: "No image", stderr: ""})[0].starts_with("The screen could not be read")
+}
+
+test "a failed try is judged by code, and the next try is shown why" {
+  spec = spec_of("2", {text: "Title: Strings
+Expect: Hello from MayaOS
+---
+Print."})
+  job = first_job(spec, asked_of(spec, [], {found: false, value: null}))
+  w: Written = {text: "=== FILE: boot.asm ===
+x
+=== END ==="}
+  broke = judged(job, w, batch_of(job, w), {exit_code: 2, stdout: "", stderr: "boot.asm:1: error: parser"}, not_run())
+  expect not broke.passed
+  expect broke.failed == ["The build failed (make exited 2)"]
+  next = next_job(broke)
+  expect next.try_no == 2
+  expect next.asked.feedback.contains("boot.asm:1: error: parser")
+  expect next.asked.feedback.contains("=== FILE: boot.asm ===")
+  seen = judged(next, w, batch_of(next, w), {exit_code: 0, stdout: "", stderr: ""}, {exit_code: 0, stdout: "=== screen 1 ===
+Hello from MayaOS
+", stderr: ""})
+  expect seen.passed
+  expect report(seen, true).text.starts_with("Stage 2 passed on try 2: Strings.")
+  expect report(broke, true).text.contains("Missing") == false
+  expect report(broke, true).text.starts_with("Stage 2 failed after 1 tries, so I stopped")
+}
+
+test "a try that wrote no files still leaves its words to read" {
+  spec = spec_of("1", {text: "Title: Greet
+---
+"})
+  job = first_job(spec, asked_of(spec, [], {found: false, value: null}))
+  b = batch_of(job, {text: "I cannot do that."})
+  expect b.files[0].path == "stages/1/NO-FILES.txt"
+  expect screen_args(spec_of("8", {text: "Keys: a ret
+Snapshots: 1
+---
+"})).args == ["tools/screen.py", "stages/8/os-image.bin", "--snapshots", "1", "--keys", "a ret"]
+}
