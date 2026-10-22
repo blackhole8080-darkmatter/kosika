@@ -25,7 +25,7 @@
 //
 // Every figure names the section of the paper it came from.
 
-export [Look, Item, Figure, Drawing, Sheet, drawable, page]
+export [Look, Item, Figure, Drawing, Sheet, drawable, grounded, page]
 
 enum Look { flow, numbers, bars, curve, tree, mindmap, timeline, glossary, card, quote }
 
@@ -129,6 +129,29 @@ fn drawable(figure: Figure) -> Bool {
     case "glossary" { count >= 1 }
     case "card" { count >= 1 and not figure.center.trim().is_empty() }
     case "quote" { count >= 1 }
+  }
+}
+
+// The number as it is written in a label or value, such as "69.15" in
+// "69.15%" or "3.1" in "x3.1"; empty when there is none.
+fn number_text(text: Text) -> Text {
+  var digits = ""
+  for c in text.take(40).chars() {
+    if "0123456789.,".contains(c) and not (digits.is_empty() and ".,".contains(c)) { digits = digits + c }
+    else if not digits.is_empty() { return digits.trim_marks(".,") }
+  }
+  return digits.trim_marks(".,")
+}
+
+// A figure of numbers is kept only when each number is one the paper
+// itself gives: it must be found, as written, in the text the model read.
+// A model that makes a number up, or puts a name where the number goes,
+// loses that figure.
+fn grounded(figure: Figure, source: Text) -> Bool {
+  return match figure.look {
+    case "numbers" { (for item in figure.items where "0123456789x×~≈<>+-$".contains(item.label.trim().take(1).lower()) and not number_text(item.label).is_empty() and source.contains(number_text(item.label)) { item }).length() == figure.items.length() }
+    case "bars" { (for item in figure.items where not number_text(item.value).is_empty() and source.contains(number_text(item.value)) { item }).length() == figure.items.length() }
+    case _ { true }
   }
 }
 
@@ -321,7 +344,8 @@ fn style() -> Text {
 
 fn sheet_html(sheet: Sheet, i: Number) -> Text {
   let shown = for figure in sheet.drawing.figures where drawable(figure) { box(figure) }
-  return f"<article class=\"paper\" style=\"background:radial-gradient(700px 360px at 90% 0%,{hue(i)}22 0,transparent 60%),#0e1120\"><div class=\"meta\"><span class=\"chip\" style=\"color:{hue(i)};border-color:{hue(i)}66\">{esc(sheet.field)}</span><span class=\"chip\">arXiv preprint · {esc(sheet.published)}</span><span class=\"chip\">{shown.length()} figures</span></div><h2><a href=\"{esc(sheet.link)}\">{esc(sheet.title)}</a></h2><div class=\"by\">{esc(sheet.authors)}</div><p class=\"q\">{esc(sheet.drawing.question)}</p><div class=\"grid\">{shown.join(\"\")}</div></article>"
+  let when = if sheet.published.is_empty() { "" } else { " · " + esc(sheet.published) }
+  return f"<article class=\"paper\" style=\"background:radial-gradient(700px 360px at 90% 0%,{hue(i)}22 0,transparent 60%),#0e1120\"><div class=\"meta\"><span class=\"chip\" style=\"color:{hue(i)};border-color:{hue(i)}66\">{esc(sheet.field)}</span><span class=\"chip\">arXiv preprint{when}</span><span class=\"chip\">{shown.length()} figures</span></div><h2><a href=\"{esc(sheet.link)}\">{esc(sheet.title)}</a></h2><div class=\"by\">{esc(sheet.authors)}</div><p class=\"q\">{esc(sheet.drawing.question)}</p><div class=\"grid\">{shown.join(\"\")}</div></article>"
 }
 
 // A whole page: one block of figures for each paper.
@@ -361,6 +385,18 @@ test "a figure the model filled badly is left out" {
   expect drawable(figures[1])
   expect drawable(figures[2])
   expect not drawable(figures[3])
+}
+
+test "a number the paper does not give is not drawn" {
+  source = "Peak flux rises by a factor of 3.1 and 69% of apps over-ask."
+  good: Figure = {look: Look.numbers, title: "", section: "", center: "", items: [{label: "x3.1", value: "", note: "", group: ""}, {label: "69%", value: "", note: "", group: ""}]}
+  made_up: Figure = {look: Look.numbers, title: "", section: "", center: "", items: [{label: "42%", value: "", note: "", group: ""}]}
+  name: Figure = {look: Look.numbers, title: "", section: "", center: "", items: [{label: "Qwen3-4B", value: "65.49", note: "", group: ""}]}
+  expect number_text("69.15% of apps") == "69.15"
+  expect number_text("10,000+") == "10,000"
+  expect grounded(good, source)
+  expect not grounded(made_up, source)
+  expect not grounded(name, source)
 }
 
 test "the page draws each kind" {

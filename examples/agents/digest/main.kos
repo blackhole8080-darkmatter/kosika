@@ -385,6 +385,11 @@ fn study_of(paper: Paper, page: Page) -> Study {
   return {task: draw_task(), title: paper.title, text: paper_text(paper, page)}
 }
 
+// Only the figures whose numbers the paper really gives.
+fn checked(drawing: Drawing, text: Text) -> Drawing {
+  return {question: drawing.question, figures: for figure in drawing.figures where grounded(figure, text) { figure }}
+}
+
 fn no_drawing() -> Drawing {
   return {question: "", figures: []}
 }
@@ -402,6 +407,46 @@ fn figures_page(batch: Batch, drawings: Drawing[]) -> Text {
     }
   }
   return if sheets.is_empty() { "" } else { page("Tonight's papers, drawn", sheets) }
+}
+
+// The arXiv link in a message, written the one way the site uses for
+// a paper's page; empty when there is none.
+fn arxiv_link(text: Text) -> Text {
+  for word in text.replace("/pdf/", "/abs/").replace(".pdf", "").words() {
+    var id = word.trim()
+    let at = id.index_of("arxiv.org/abs/")
+    if at.exists() { id = id.drop(at.value() + 14) }
+    if is_arxiv_id(id) { return "https://arxiv.org/abs/" + id }
+  }
+  return ""
+}
+
+// An arXiv number: four digits, a dot, four or five digits, and perhaps
+// a version such as v2.
+fn is_arxiv_id(id: Text) -> Bool {
+  let parts = id.split(".")
+  if parts.length() != 2 or parts[0].length() != 4 or not parts[0].to_number().exists() { return false }
+  let rest = parts[1].split("v")
+  return rest.length() <= 2 and (rest[0].length() == 4 or rest[0].length() == 5) and rest[0].to_number().exists() and (rest.length() == 1 or rest[1].to_number().exists())
+}
+
+fn paper_named(link: Text, first: Part) -> Paper {
+  let title = if first.title.trim().is_empty() { link } else { first.title.trim() }
+  return {title: title, link: link, published: "", authors: "", summary: "", field: "arXiv"}
+}
+
+fn no_lesson(text: Text) -> Lesson {
+  return {text: text, page: ""}
+}
+
+fn one_drawn(one: Paper, drawing: Drawing) -> Lesson {
+  let shown = for figure in drawing.figures where drawable(figure) { figure }
+  if shown.is_empty() {
+    return no_lesson(f"I could not draw {one.title}: the page could not be read, or no figure came out right. Try again, or try another paper.")
+  }
+  let kind = if shown.length() == 1 { "figure" } else { "figures" }
+  return {text: f"Drew {one.title} as {shown.length()} {kind}.
+{one.link}", page: page(one.title, [sheet_of(one, drawing)])}
 }
 
 fn paper_at(batch: Batch, i: Number) -> Paper {
@@ -510,7 +555,9 @@ workflow read_and_draw(paper: Paper) -> Drawing {
   p4      = call read_part({url: url, start: p3.next})
   p5      = call read_part({url: url, start: p4.next})
   page    = part_page([p1, p2, p3, p4, p5])
-  drawing = use_model illustrator(draw_task(), paper.title, paper_text(paper, page)) retry 1 otherwise no_drawing()
+  text    = paper_text(paper, page)
+  raw     = use_model illustrator(draw_task(), paper.title, text) retry 1 otherwise no_drawing()
+  drawing = checked(raw, text)
 }
 
 // One part of a page; past the end, nothing is fetched.
@@ -523,6 +570,24 @@ workflow read_part(asked: PartRequest) -> Part {
 
 workflow fetch_part(asked: PartRequest) -> Part {
   part = execute library.read_paper(asked.url, asked.start) otherwise no_part()
+}
+
+// Any one paper, drawn on request: the message holds its arXiv link or
+// number, like https://arxiv.org/abs/2610.23850 or 2610.23850v1.
+workflow paper(msg: Msg) -> Lesson {
+  budget 2 model calls, 3600 seconds
+  link    = arxiv_link(msg.text)
+  drawn   = match link.is_empty() {
+    case true { no_lesson("Send an arXiv link or number, like https://arxiv.org/abs/2610.23850, and I will draw that paper.") }
+    case _ { call draw_one({text: link}) }
+  }
+}
+
+workflow draw_one(msg: Msg) -> Lesson {
+  first   = call read_part({url: msg.text.replace("/abs/", "/html/"), start: 0})
+  one     = paper_named(msg.text, first)
+  drawing = call read_and_draw(one)
+  shown   = one_drawn(one, drawing)
 }
 
 // "evening" gives the evening lesson; anything else, the afternoon digest.
@@ -604,7 +669,7 @@ test "the evening goes deeper into the afternoon's papers" {
   answers teacher: [{items: []}, {items: []}]
   answers tutor: [{items: [{title: "Cells talk", lesson: "Cells use molecules.", example: "Like a letter.", questions: ["What is a signal?", "Why?", "How?"], try_it: "Read about hormones."}]}]
   answers read_paper: [
-    {url: "https://arxiv.org/html/1", title: "", text: "arXiv menu Abstract: We bend light ", next: 35},
+    {url: "https://arxiv.org/html/1", title: "", text: "arXiv menu Abstract: We bend light 30% more ", next: 35},
     {url: "https://arxiv.org/html/1", title: "", text: "through glass. 1 Introduction ...", next: -1},
     {url: "https://arxiv.org/html/2", title: "", text: "", next: -1}
   ]
@@ -625,6 +690,27 @@ test "the evening goes deeper into the afternoon's papers" {
   expect e.page.contains("Can glass bend light more?")
   expect e.page.contains("2 figures")
   expect not e.page.contains("Cells talk")
+}
+
+test "a paper is found from its link or number" {
+  expect arxiv_link("draw https://arxiv.org/abs/2610.23850v1 please") == "https://arxiv.org/abs/2610.23850v1"
+  expect arxiv_link("arxiv.org/pdf/2610.23798.pdf") == "https://arxiv.org/abs/2610.23798"
+  expect arxiv_link("2610.23850") == "https://arxiv.org/abs/2610.23850"
+  expect arxiv_link("version 1.2 of my notes") == ""
+}
+
+test "one paper is drawn on request" {
+  answers read_paper: [
+    {url: "https://arxiv.org/html/2610.1", title: "Light in glass", text: "menu Abstract: We bend light 30% more.", next: -1},
+    {url: "https://arxiv.org/html/2610.1", title: "Light in glass", text: "menu Abstract: We bend light 30% more.", next: -1}
+  ]
+  answers illustrator: [{question: "Can glass bend light?", figures: [{look: Look.numbers, title: "Key number", section: "Abstract", center: "", items: [{label: "30%", value: "more bending", note: "", group: ""}]}]}]
+  drawn = paper({text: "please draw arxiv.org/abs/2610.12345"})
+  expect drawn.text.starts_with("Drew Light in glass as 1 figure.")
+  expect drawn.page.contains("Can glass bend light?")
+  none = paper({text: "hello"})
+  expect none.text.starts_with("Send an arXiv link")
+  expect none.page == ""
 }
 
 test "a paper's own words start at its abstract" {
