@@ -28,14 +28,14 @@
 // And it learns what you mean. After an answer, say "wrong" and it offers
 // the next most likely note; say "right" when it has it. A right answer is
 // kept as a lesson: this question, this note. Each time, it also teaches a
-// small neural network (nn.kos, written in Kosika) about the note it
+// small neural network (std/nn.kos, written in Kosika) about the note it
 // showed: how near it was, how much it stood out, whether it is linked to
 // what you asked before, and how like the question is to one this note
 // was the right answer to. Once the network has a few right and wrong
 // answers to go on, it is the network that chooses among the notes that
 // could answer, so the notebook comes to answer the way you mean.
 
-import "nn.kos"
+import "std/nn.kos"
 
 record Msg { text: Text }
 record Said { text: Text }
