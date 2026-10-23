@@ -52,8 +52,11 @@ WORKSPACE = Path(os.environ.get("OSBUILD_WORKSPACE", r"C:\Users\Aryan\Aryan_Priv
 def binder_for(args: argparse.Namespace) -> Any:
     def binder(program: Any) -> dict[str, Any]:
         return {
+            # The teacher may be another model: one that finds causes well
+            # need not be the one that writes assembly well.
             model.name: OpenAICompatibleProvider(
-                args.url, args.model, api_key=os.environ.get("KOSIKA_MODEL_API_KEY"),
+                args.url, args.teacher_model if model.name == "teacher" and args.teacher_model else args.model,
+                api_key=os.environ.get("KOSIKA_MODEL_API_KEY"),
                 protocol="openai", timeout=args.timeout,
             )
             for model in program.models
@@ -136,6 +139,7 @@ def main() -> int:
     parser.add_argument("--timeout", type=float, default=300)
     parser.add_argument("--stages", default="1-8")
     parser.add_argument("--limit-seconds", type=float, default=1600)
+    parser.add_argument("--teacher-model", help="The model that names the cause of each failure (default: --model).")
     parser.add_argument("--without-rules", action="store_true",
                         help="Run each stage as if nothing had been learned, and learn nothing.")
     parser.add_argument("--rules-file", type=Path,
@@ -147,7 +151,7 @@ def main() -> int:
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     run_dir = HERE / "results" / stamp
     folder = run_dir / "workspace"
-    for part in ("lessons", "tutorial", "tools", "toolchain"):
+    for part in ("lessons", "tutorial", "examples", "tools", "toolchain"):
         shutil.copytree(WORKSPACE / part, folder / part)
     agents = run_dir / "agents"
     shutil.copytree(AGENT, agents / "osbuilder", ignore=shutil.ignore_patterns("memory", "runs"))
@@ -204,7 +208,7 @@ def main() -> int:
             args.rules_file.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(kept_rules, args.rules_file)
     summary = {
-        "rules": "off" if args.without_rules else "on", "learned": rules,
+        "rules": "off" if args.without_rules else "on", "teacher": args.teacher_model or args.model, "learned": rules,
         "model": args.model, "when": stamp, "stages": args.stages,
         "passed": sum(r["passed"] for r in results), "tried": len(results), "results": results,
     }

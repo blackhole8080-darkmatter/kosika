@@ -43,6 +43,8 @@ def main() -> int:
     parser.add_argument("--keys", default="")
     parser.add_argument("--wait", type=float, default=4.0)
     parser.add_argument("--snapshots", type=int, default=1)
+    parser.add_argument("--bios-calls", action="store_true",
+                        help="After the screen, list the BIOS calls the boot code made, from a trace.")
     args = parser.parse_args()
     if not os.path.isfile(args.image):
         print(f"No image at {args.image}: the build did not make it.")
@@ -73,7 +75,85 @@ def main() -> int:
     for n, text in enumerate(reads, 1):
         print(f"=== screen {n} ===")
         print(text)
+    if args.bios_calls:
+        print("=== bios calls ===")
+        print(bios_calls(program, extra, env, folder, args.image))
     return 0
+
+
+# What a BIOS call is asked, and how it answered: the vectors a boot sector uses.
+VECTORS = {0x10: "video", 0x13: "disk", 0x15: "system", 0x16: "keyboard"}
+
+
+def bios_calls(program, extra, env, folder, image, seconds=3.0, most=16):
+    """Boot again, one instruction at a time inside the boot sector and the
+    sectors it loads (0x7c00 to 0x9fff), and list each `int` it ran with the
+    registers it was given, and the carry flag and AH it got back. This is
+    what a debugger would show; a model can read it."""
+
+    log = os.path.join(folder, ".trace.log")
+    if os.path.exists(log):
+        os.remove(log)
+    qemu = subprocess.Popen(
+        [program, *extra, "-drive", f"format=raw,if=floppy,file={image}", "-boot", "a",
+         "-display", "none", "-monitor", "stdio", "-no-reboot", "-net", "none", "-m", "32",
+         "-accel", "tcg,one-insn-per-tb=on", "-d", "cpu,in_asm", "-dfilter", "0x7c00..0x9fff",
+         "-D", log],
+        stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True, env=env,
+    )
+    try:
+        time.sleep(seconds)
+        qemu.communicate("quit\n", timeout=10)
+    except Exception:
+        qemu.kill()
+    try:
+        with open(log, encoding="utf-8", errors="replace") as handle:
+            text = handle.read(40_000_000)
+    except OSError:
+        return "(no trace could be made)"
+    finally:
+        if os.path.exists(log):
+            os.remove(log)
+    steps = []
+    for block in text.split("----------------"):
+        at = code = None
+        regs = {}
+        for line in block.splitlines():
+            line = line.strip()
+            if line.startswith("0x") and line.endswith(":") and at is None:
+                at = int(line[:-1], 16)
+            elif line.startswith("OBJD-T:"):
+                code = line[7:].strip()
+            elif line.startswith(("EAX=", "ESI=", "EIP=")):
+                for part in line.split():
+                    if "=" in part:
+                        name, _, value = part.partition("=")
+                        regs[name] = value
+            elif line[:3] in ("ES ", "CS ", "SS ", "DS "):
+                regs[line[:2]] = line.split()[1] if "=" not in line[:4] else line.split("=")[1].split()[0]
+        if at is not None and code and regs:
+            steps.append((at, code, regs))
+    found = []
+    for i, (at, code, regs) in enumerate(steps):
+        if not code.lower().startswith("cd") or len(code) < 4:
+            continue
+        vector = int(code[2:4], 16)
+        eax = int(regs.get("EAX", "0"), 16)
+        ebx, ecx, edx = (int(regs.get(r, "0"), 16) for r in ("EBX", "ECX", "EDX"))
+        line = (f"0x{at:04x} int 0x{vector:02x} ({VECTORS.get(vector, '?')}): "
+                f"AH=0x{(eax >> 8) & 0xff:02x} AL=0x{eax & 0xff:02x} BX=0x{ebx & 0xffff:04x} "
+                f"CX=0x{ecx & 0xffff:04x} DX=0x{edx & 0xffff:04x} ES=0x{regs.get('ES', '0000')[-4:]}")
+        back = next((r for a, _, r in steps[i + 1:i + 400] if a == at + 2), None)
+        if back is not None:
+            flags = int(back.get("EFL", "0"), 16)
+            line += f" -> carry={'1 (failed)' if flags & 1 else '0'} AH=0x{(int(back.get('EAX', '0'), 16) >> 8) & 0xff:02x}"
+        else:
+            line += " -> did not come back to the next instruction"
+        if not found or found[-1] != line:
+            found.append(line)
+        if len(found) >= most:
+            break
+    return "\n".join(found) if found else "(the boot code made no BIOS call that was seen)"
 
 
 def boot(program, extra, env, folder, args):

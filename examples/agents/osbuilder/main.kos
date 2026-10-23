@@ -24,11 +24,16 @@
 //   3. They are written, `make` builds os-image.bin, and the image is
 //      booted in QEMU and its screen read.
 //   4. Code, not the model, checks the screen against the spec: text that
-//      must be there, text that must not, and a number that must grow.
+//      must be there, text that must not, and a number that must grow. The
+//      checker also traces the boot code instruction by instruction and
+//      lists every BIOS call it made, with its registers and whether it
+//      failed, so a failed try comes with evidence, not only a symptom.
 //   5. If it failed, a teacher model writes one rule that would have
 //      prevented it. The rule is kept in memory, and every later try and
 //      stage is told all the rules learned so far. Then the model is shown
-//      what make and the screen said, and tries again. Three tries at most, within the budget's time, and then
+//      what make and the screen said, and tries again. Before the third
+//      try it is also shown the tutorial's own code for the lesson
+//      (examples/), as a worked example: it must still write its own. Three tries at most, within the budget's time, and then
 //      it stops and says what failed. It never keeps going on its own.
 //
 // What it may touch. The granted folder only, and run with --in-session it
@@ -64,7 +69,7 @@ record Spec {
 
 // What the model is shown, and what it writes back: every file, each
 // between "=== FILE: path ===" and "=== END ===".
-record Asked { rules: Text learned: Text spec: Text guides: Text before: Text feedback: Text }
+record Asked { rules: Text learned: Text spec: Text guides: Text example: Text before: Text feedback: Text }
 record Written { text: Text }
 
 // One try, ready to run.
@@ -238,7 +243,23 @@ fn learned_text(known: RulesRecalled, spec: Spec) -> Text {
 }
 
 fn asked_of(spec: Spec, texts: FileText[], past: BuiltRecalled, known: RulesRecalled) -> Asked {
-  return {rules: rules(), learned: learned_text(known, spec), spec: spec_text(spec), guides: guides_text(texts, spec), before: before_text(past, spec), feedback: ""}
+  return {rules: rules(), learned: learned_text(known, spec), spec: spec_text(spec), guides: guides_text(texts, spec), example: "", before: before_text(past, spec), feedback: ""}
+}
+
+// ---------------------------------------------------------------- a worked example
+
+// After two failed tries, the builder is shown the tutorial's own code for
+// the stage's last guide lesson (examples/LESSON.txt), as a person would
+// open the textbook's answer to see how it is done. It still has to write
+// the MayaOS stage itself, to MayaOS's spec, and pass the same test.
+fn example_path(spec: Spec) -> Where {
+  return if spec.guides.is_empty() { {path: ""} } else { {path: "examples/" + spec.guides.last().or("") + ".txt"} }
+}
+
+fn with_example(last: Outcome, code: FileText) -> Outcome {
+  let a = last.asked
+  let shown = if code.text.trim().is_empty() { a.example } else { "A worked example: how the tutorial itself wrote this lesson. Learn from how it is done, but write this stage to its own spec, which differs (other text, other checks), and use the build commands in your rules.\n" + code.text.take(24000) }
+  return {passed: last.passed, stage: last.stage, tries: last.tries, files: last.files, written: last.written, failed: last.failed, build: last.build, screen: last.screen, spec: last.spec, asked: {rules: a.rules, learned: a.learned, spec: a.spec, guides: a.guides, example: shown, before: a.before, feedback: a.feedback}}
 }
 
 // ---------------------------------------------------------------- learning
@@ -290,7 +311,7 @@ fn with_learned(last: Outcome, now: Rules) -> Outcome {
   let a = last.asked
   let all = now.trial.concat(now.items)
   let learned = if all.is_empty() { a.learned } else { learned_words(all) }
-  return {passed: last.passed, stage: last.stage, tries: last.tries, files: last.files, written: last.written, failed: last.failed, build: last.build, screen: last.screen, spec: last.spec, asked: {rules: a.rules, learned: learned, spec: a.spec, guides: a.guides, before: a.before, feedback: a.feedback}}
+  return {passed: last.passed, stage: last.stage, tries: last.tries, files: last.files, written: last.written, failed: last.failed, build: last.build, screen: last.screen, spec: last.spec, asked: {rules: a.rules, learned: learned, spec: a.spec, guides: a.guides, example: a.example, before: a.before, feedback: a.feedback}}
 }
 
 fn first_job(spec: Spec, asked: Asked) -> Job {
@@ -301,7 +322,7 @@ fn first_job(spec: Spec, asked: Asked) -> Job {
 fn next_job(last: Outcome) -> Job {
   let shown = "Your try " + last.tries.to_text() + " failed.\n" + last.failed.join("\n") + "\n\nThe build said:\n" + last.build.take(2500) + "\n\nThe screen showed:\n" + last.screen.take(2500) + "\n\nYou wrote these files:\n" + last.written.take(12000) + "\n\nWrite every file again, whole, with the problem fixed."
   let asked = last.asked
-  return {spec: last.spec, asked: {rules: asked.rules, learned: asked.learned, spec: asked.spec, guides: asked.guides, before: asked.before, feedback: shown}, try_no: last.tries + 1}
+  return {spec: last.spec, asked: {rules: asked.rules, learned: asked.learned, spec: asked.spec, guides: asked.guides, example: asked.example, before: asked.before, feedback: shown}, try_no: last.tries + 1}
 }
 
 // ---------------------------------------------------------------- files
@@ -367,7 +388,7 @@ fn make_args(spec: Spec) -> Command {
 }
 
 fn screen_args(spec: Spec) -> Command {
-  var args = ["tools/screen.py", "stages/" + spec.stage + "/os-image.bin", "--snapshots", spec.snapshots]
+  var args = ["tools/screen.py", "stages/" + spec.stage + "/os-image.bin", "--snapshots", spec.snapshots, "--bios-calls"]
   if not spec.keys.is_empty() { args = args.concat(["--keys", spec.keys]) }
   return {args: args}
 }
@@ -388,12 +409,30 @@ fn screens(ran: Ran) -> Text[] {
       if open { found = found.append(lines.join("\n")) }
       lines = []
       open = true
+    } else if line.starts_with("=== ") {
+      if open { found = found.append(lines.join("\n")) }
+      lines = []
+      open = false
     } else if open {
       lines = lines.append(line)
     }
   }
   if open { found = found.append(lines.join("\n")) }
   return found
+}
+
+// The BIOS calls the boot code made, as the checker's CPU trace saw them:
+// each `int` with the registers it was given, and whether it failed. This
+// is the evidence a person would get from a debugger.
+fn bios_calls(ran: Ran) -> Text {
+  var lines: Text[] = []
+  var open = false
+  for line in ran.stdout.lines() {
+    if line.starts_with("=== bios calls ===") { open = true }
+    else if line.starts_with("=== ") { open = false }
+    else if open and not line.trim().is_empty() { lines = lines.append(line) }
+  }
+  return lines.join("\n")
 }
 
 // The number written just after a label on a screen, if there is one.
@@ -432,7 +471,9 @@ fn judged(job: Job, written: Written, batch: Batch, built: Ran, screen: Ran) -> 
   let build = (built.stdout + "\n" + built.stderr).trim()
   let failed = if built.exit_code != 0 { ["The build failed (make exited " + built.exit_code.to_text() + ")"] } else { failures(job.spec, screen) }
   let files = for f in batch.files { f.path }
-  return {passed: failed.is_empty(), stage: job.spec.stage, tries: job.try_no, files: files, written: written.text, failed: failed, build: build, screen: screens(screen).join("\n--- next reading ---\n"), spec: job.spec, asked: job.asked}
+  let calls = bios_calls(screen)
+  let traced = if calls.is_empty() { "" } else { "\n\nThe BIOS calls your boot code made, from a CPU trace (registers as each int was called, then the carry flag and AH it returned; carry 1 means the call failed):\n" + calls }
+  return {passed: failed.is_empty(), stage: job.spec.stage, tries: job.try_no, files: files, written: written.text, failed: failed, build: build, screen: screens(screen).join("\n--- next reading ---\n") + traced, spec: job.spec, asked: job.asked}
 }
 
 fn report(out: Outcome, budget_left: Bool) -> Said {
@@ -467,7 +508,7 @@ workflow boot(job: Job) -> Ran {
 // One try: the model writes the files, they are built, booted and checked.
 workflow attempt(job: Job) -> Outcome {
   require approval
-  written = use_model builder(job.asked.rules, job.asked.learned, job.asked.spec, job.asked.guides, job.asked.before, job.asked.feedback) retry 1 otherwise nothing_written()
+  written = use_model builder(job.asked.rules, job.asked.learned, job.asked.spec, job.asked.guides, job.asked.example, job.asked.before, job.asked.feedback) retry 1 otherwise nothing_written()
   batch   = batch_of(job, written)
   saved   = execute bench.save_all(batch.files, batch.note)
   built   = execute bench.run_make(make_args(job.spec).args)
@@ -493,7 +534,16 @@ workflow retry(last: Outcome) -> Outcome {
     case true { call learn_from(last) }
     case _ { last }
   }
-  out    = call attempt(next_job(taught))
+  shown  = match taught.tries >= 2 {
+    case true { call example_for(taught) }
+    case _ { taught }
+  }
+  out    = call attempt(next_job(shown))
+}
+
+workflow example_for(last: Outcome) -> Outcome {
+  code = call guide(example_path(last.spec))
+  out  = with_example(last, code)
 }
 
 workflow learn_from(last: Outcome) -> Outcome {
@@ -578,6 +628,10 @@ test "the screen is checked by code" {
   good: Ran = {exit_code: 0, stdout: "=== screen 1 ===\nMayaOS timer\n\nTicks: 12\n=== screen 2 ===\nMayaOS timer\n\nTicks: 61\n", stderr: ""}
   stuck: Ran = {exit_code: 0, stdout: "=== screen 1 ===\nMayaOS timer\nTicks: 5\n=== screen 2 ===\nPanic\nTicks: 5\n", stderr: ""}
   expect failures(spec, good) == []
+  traced: Ran = {exit_code: 0, stdout: "=== screen 1 ===\nDisk read error\n=== bios calls ===\n0x7c1a int 0x13 (disk): AH=0x90 AL=0x00 -> carry=1 (failed) AH=0x01\n", stderr: ""}
+  expect screens(traced) == ["Disk read error"]
+  expect bios_calls(traced) == "0x7c1a int 0x13 (disk): AH=0x90 AL=0x00 -> carry=1 (failed) AH=0x01"
+  expect bios_calls(good) == ""
   expect failures(spec, stuck) == ["Missing from the screen: MayaOS timer", "On the screen but must not be: Panic", "The number after \"Ticks:\" did not grow: 5 then 5"]
   expect failures(spec, {exit_code: 1, stdout: "No image", stderr: ""})[0].starts_with("The screen could not be read")
 }
@@ -617,7 +671,7 @@ test "a try that wrote no files still leaves its words to read" {
   expect screen_args(spec_of("8", {text: "Keys: a ret
 Snapshots: 1
 ---
-"})).args == ["tools/screen.py", "stages/8/os-image.bin", "--snapshots", "1", "--keys", "a ret"]
+"})).args == ["tools/screen.py", "stages/8/os-image.bin", "--snapshots", "1", "--bios-calls", "--keys", "a ret"]
 }
 
 test "a failure becomes a rule on trial, kept only if the stage then passes" {
@@ -641,4 +695,18 @@ test "a failure becomes a rule on trial, kept only if the stage then passes" {
   expect not learning_of(spec, {text: "stage 3 without rules"}).learning
   expect learned_text({found: true, value: two}, spec).contains("- Pad the image")
   expect learned_text({found: true, value: two}, learning_of(spec, {text: "stage 3 without rules"})) == ""
+}
+
+test "after two failed tries, the tutorial's own code is shown as an example" {
+  spec = spec_of("3", {text: "Title: Disk\nGuide: 06-bootsector-segmentation, 07-bootsector-disk\n---\n"})
+  expect example_path(spec).path == "examples/07-bootsector-disk.txt"
+  expect example_path(spec_of("1", {text: "---\n"})).path == ""
+  job = first_job(spec, asked_of(spec, [], {found: false, value: null}, {found: false, value: null}))
+  w: Written = {text: "=== FILE: boot.asm ===\nx\n=== END ==="}
+  out = judged(job, w, batch_of(job, w), {exit_code: 0, stdout: "", stderr: ""}, {exit_code: 0, stdout: "=== screen 1 ===\nDisk read error\n", stderr: ""})
+  shown = with_example(out, {text: "=== boot_sect_disk.asm ===\nmov ah, 0x02"})
+  expect shown.asked.example.starts_with("A worked example")
+  expect shown.asked.example.contains("mov ah, 0x02")
+  expect next_job(shown).asked.example == shown.asked.example
+  expect with_example(out, {text: ""}).asked.example == ""
 }

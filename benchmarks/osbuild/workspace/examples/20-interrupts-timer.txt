@@ -1,0 +1,618 @@
+The os-tutorial's own code for lesson 20-interrupts-timer (Carlos Fenollosa, BSD 3-Clause).
+It uses i386-elf-gcc and i386-elf-ld; use the commands in your rules instead.
+
+=== Makefile ===
+C_SOURCES = $(wildcard kernel/*.c drivers/*.c cpu/*.c libc/*.c)
+HEADERS = $(wildcard kernel/*.h drivers/*.h cpu/*.h libc/*.h)
+# Nice syntax for file extension replacement
+OBJ = ${C_SOURCES:.c=.o cpu/interrupt.o} 
+
+# Change this if your cross-compiler is somewhere else
+CC = /usr/local/i386elfgcc/bin/i386-elf-gcc
+GDB = /usr/local/i386elfgcc/bin/i386-elf-gdb
+# -g: Use debugging symbols in gcc
+CFLAGS = -g 
+
+# First rule is run by default
+os-image.bin: boot/bootsect.bin kernel.bin
+	cat $^ > os-image.bin
+
+# '--oformat binary' deletes all symbols as a collateral, so we don't need
+# to 'strip' them manually on this case
+kernel.bin: boot/kernel_entry.o ${OBJ}
+	i386-elf-ld -o $@ -Ttext 0x1000 $^ --oformat binary
+
+# Used for debugging purposes
+kernel.elf: boot/kernel_entry.o ${OBJ}
+	i386-elf-ld -o $@ -Ttext 0x1000 $^ 
+
+run: os-image.bin
+	qemu-system-i386 -fda os-image.bin
+
+# Open the connection to qemu and load our kernel-object file with symbols
+debug: os-image.bin kernel.elf
+	qemu-system-i386 -s -fda os-image.bin -d guest_errors,int &
+	${GDB} -ex "target remote localhost:1234" -ex "symbol-file kernel.elf"
+
+# Generic rules for wildcards
+# To make an object, always compile from its .c
+%.o: %.c ${HEADERS}
+	${CC} ${CFLAGS} -ffreestanding -c $< -o $@
+
+%.o: %.asm
+	nasm $< -f elf -o $@
+
+%.bin: %.asm
+	nasm $< -f bin -o $@
+
+clean:
+	rm -rf *.bin *.dis *.o os-image.bin *.elf
+	rm -rf kernel/*.o boot/*.bin drivers/*.o boot/*.o cpu/*.o
+
+=== cpu/idt.c ===
+../../19-interrupts-irqs/cpu/idt.c
+
+=== cpu/idt.h ===
+../../19-interrupts-irqs/cpu/idt.h
+
+=== cpu/interrupt.asm ===
+../../19-interrupts-irqs/cpu/interrupt.asm
+
+=== cpu/isr.c ===
+../../19-interrupts-irqs/cpu/isr.c
+
+=== cpu/isr.h ===
+../../19-interrupts-irqs/cpu/isr.h
+
+=== cpu/timer.c ===
+#include "timer.h"
+#include "../drivers/screen.h"
+#include "../kernel/util.h"
+#include "isr.h"
+
+u32 tick = 0;
+
+static void timer_callback(registers_t regs) {
+    tick++;
+    kprint("Tick: ");
+    
+    char tick_ascii[256];
+    int_to_ascii(tick, tick_ascii);
+    kprint(tick_ascii);
+    kprint("\n");
+}
+
+void init_timer(u32 freq) {
+    /* Install the function we just wrote */
+    register_interrupt_handler(IRQ0, timer_callback);
+
+    /* Get the PIT value: hardware clock at 1193180 Hz */
+    u32 divisor = 1193180 / freq;
+    u8 low  = (u8)(divisor & 0xFF);
+    u8 high = (u8)( (divisor >> 8) & 0xFF);
+    /* Send the command */
+    port_byte_out(0x43, 0x36); /* Command port */
+    port_byte_out(0x40, low);
+    port_byte_out(0x40, high);
+}
+
+=== cpu/timer.h ===
+#ifndef TIMER_H
+#define TIMER_H
+
+#include "../kernel/util.h"
+
+void init_timer(u32 freq);
+
+#endif
+
+=== cpu/types.h ===
+../../19-interrupts-irqs/cpu/types.h
+
+=== drivers/keyboard.c ===
+#include "keyboard.h"
+#include "ports.h"
+#include "../cpu/isr.h"
+#include "screen.h"
+
+static void keyboard_callback(registers_t regs) {
+    /* The PIC leaves us the scancode in port 0x60 */
+    u8 scancode = port_byte_in(0x60);
+    char *sc_ascii;
+    int_to_ascii(scancode, sc_ascii);
+    kprint("Keyboard scancode: ");
+    kprint(sc_ascii);
+    kprint(", ");
+    print_letter(scancode);
+    kprint("\n");
+}
+
+void init_keyboard() {
+   register_interrupt_handler(IRQ1, keyboard_callback); 
+}
+
+void print_letter(u8 scancode) {
+    switch (scancode) {
+        case 0x0:
+            kprint("ERROR");
+            break;
+        case 0x1:
+            kprint("ESC");
+            break;
+        case 0x2:
+            kprint("1");
+            break;
+        case 0x3:
+            kprint("2");
+            break;
+        case 0x4:
+            kprint("3");
+            break;
+        case 0x5:
+            kprint("4");
+            break;
+        case 0x6:
+            kprint("5");
+            break;
+        case 0x7:
+            kprint("6");
+            break;
+        case 0x8:
+            kprint("7");
+            break;
+        case 0x9:
+            kprint("8");
+            break;
+        case 0x0A:
+            kprint("9");
+            break;
+        case 0x0B:
+            kprint("0");
+            break;
+        case 0x0C:
+            kprint("-");
+            break;
+        case 0x0D:
+            kprint("+");
+            break;
+        case 0x0E:
+            kprint("Backspace");
+            break;
+        case 0x0F:
+            kprint("Tab");
+            break;
+        case 0x10:
+            kprint("Q");
+            break;
+        case 0x11:
+            kprint("W");
+            break;
+        case 0x12:
+            kprint("E");
+            break;
+        case 0x13:
+            kprint("R");
+            break;
+        case 0x14:
+            kprint("T");
+            break;
+        case 0x15:
+            kprint("Y");
+            break;
+        case 0x16:
+            kprint("U");
+            break;
+        case 0x17:
+            kprint("I");
+            break;
+        case 0x18:
+            kprint("O");
+            break;
+        case 0x19:
+            kprint("P");
+            break;
+		case 0x1A:
+			kprint("[");
+			break;
+		case 0x1B:
+			kprint("]");
+			break;
+		case 0x1C:
+			kprint("ENTER");
+			break;
+		case 0x1D:
+			kprint("LCtrl");
+			break;
+		case 0x1E:
+			kprint("A");
+			break;
+		case 0x1F:
+			kprint("S");
+			break;
+        case 0x20:
+            kprint("D");
+            break;
+        case 0x21:
+            kprint("F");
+            break;
+        case 0x22:
+            kprint("G");
+            break;
+        case 0x23:
+            kprint("H");
+            break;
+        case 0x24:
+            kprint("J");
+            break;
+        case 0x25:
+            kprint("K");
+            break;
+        case 0x26:
+            kprint("L");
+            break;
+        case 0x27:
+            kprint(";");
+            break;
+        case 0x28:
+            kprint("'");
+            break;
+        case 0x29:
+            kprint("`");
+            break;
+		case 0x2A:
+			kprint("LShift");
+			break;
+		case 0x2B:
+			kprint("\\");
+			break;
+		case 0x2C:
+			kprint("Z");
+			break;
+		case 0x2D:
+			kprint("X");
+			break;
+		case 0x2E:
+			kprint("C");
+			break;
+		case 0x2F:
+			kprint("V");
+			break;
+        case 0x30:
+            kprint("B");
+            break;
+        case 0x31:
+            kprint("N");
+            break;
+        case 0x32:
+            kprint("M");
+            break;
+        case 0x33:
+            kprint(",");
+            break;
+        case 0x34:
+            kprint(".");
+            break;
+        case 0x35:
+            kprint("/");
+            break;
+        case 0x36:
+            kprint("Rshift");
+            break;
+        case 0x37:
+            kprint("Keypad *");
+            break;
+        case 0x38:
+            kprint("LAlt");
+            break;
+        case 0x39:
+            kprint("Spc");
+            break;
+        default:
+            /* 'keuyp' event corresponds to the 'keydown' + 0x80 
+             * it may still be a scancode we haven't implemented yet, or
+             * maybe a control/escape sequence */
+            if (scancode <= 0x7f) {
+                kprint("Unknown key down");
+            } else if (scancode <= 0x39 + 0x80) {
+                kprint("key up ");
+                print_letter(scancode - 0x80);
+            } else kprint("Unknown key up");
+            break;
+    }
+}
+
+=== drivers/keyboard.h ===
+#include "../cpu/types.h"
+
+void init_keyboard();
+
+=== drivers/ports.c ===
+#include "ports.h"
+
+/**
+ * Read a byte from the specified port
+ */
+u8 port_byte_in (u16 port) {
+    u8 result;
+    /* Inline assembler syntax
+     * !! Notice how the source and destination registers are switched from NASM !!
+     *
+     * '"=a" (result)'; set '=' the C variable '(result)' to the value of register e'a'x
+     * '"d" (port)': map the C variable '(port)' into e'd'x register
+     *
+     * Inputs and outputs are separated by colons
+     */
+    __asm__("in %%dx, %%al" : "=a" (result) : "d" (port));
+    return result;
+}
+
+void port_byte_out (u16 port, u8 data) {
+    /* Notice how here both registers are mapped to C variables and
+     * nothing is returned, thus, no equals '=' in the asm syntax 
+     * However we see a comma since there are two variables in the input area
+     * and none in the 'return' area
+     */
+    __asm__ __volatile__("out %%al, %%dx" : : "a" (data), "d" (port));
+}
+
+u16 port_word_in (u16 port) {
+    u16 result;
+    __asm__("in %%dx, %%ax" : "=a" (result) : "d" (port));
+    return result;
+}
+
+void port_word_out (u16 port, u16 data) {
+    __asm__ __volatile__("out %%ax, %%dx" : : "a" (data), "d" (port));
+}
+
+=== drivers/ports.h ===
+#ifndef PORTS_H
+#define PORTS_H
+
+#include "../cpu/types.h"
+
+unsigned char port_byte_in (u16 port);
+void port_byte_out (u16 port, u8 data);
+unsigned short port_word_in (u16 port);
+void port_word_out (u16 port, u16 data);
+
+#endif
+
+=== drivers/screen.c ===
+#include "screen.h"
+#include "../drivers/ports.h"
+
+/* Declaration of private functions */
+int get_cursor_offset();
+void set_cursor_offset(int offset);
+int print_char(char c, int col, int row, char attr);
+int get_offset(int col, int row);
+int get_offset_row(int offset);
+int get_offset_col(int offset);
+
+/**********************************************************
+ * Public Kernel API functions                            *
+ **********************************************************/
+
+/**
+ * Print a message on the specified location
+ * If col, row, are negative, we will use the current offset
+ */
+void kprint_at(char *message, int col, int row) {
+    /* Set cursor if col/row are negative */
+    int offset;
+    if (col >= 0 && row >= 0)
+        offset = get_offset(col, row);
+    else {
+        offset = get_cursor_offset();
+        row = get_offset_row(offset);
+        col = get_offset_col(offset);
+    }
+
+    /* Loop through message and print it */
+    int i = 0;
+    while (message[i] != 0) {
+        offset = print_char(message[i++], col, row, WHITE_ON_BLACK);
+        /* Compute row/col for next iteration */
+        row = get_offset_row(offset);
+        col = get_offset_col(offset);
+    }
+}
+
+void kprint(char *message) {
+    kprint_at(message, -1, -1);
+}
+
+
+/**********************************************************
+ * Private kernel functions                               *
+ **********************************************************/
+
+
+/**
+ * Innermost print function for our kernel, directly accesses the video memory 
+ *
+ * If 'col' and 'row' are negative, we will print at current cursor location
+ * If 'attr' is zero it will use 'white on black' as default
+ * Returns the offset of the next character
+ * Sets the video cursor to the returned offset
+ */
+int print_char(char c, int col, int row, char attr) {
+    unsigned char *vidmem = (unsigned char*) VIDEO_ADDRESS;
+    if (!attr) attr = WHITE_ON_BLACK;
+
+    /* Error control: print a red 'E' if the coords aren't right */
+    if (col >= MAX_COLS || row >= MAX_ROWS) {
+        vidmem[2*(MAX_COLS)*(MAX_ROWS)-2] = 'E';
+        vidmem[2*(MAX_COLS)*(MAX_ROWS)-1] = RED_ON_WHITE;
+        return get_offset(col, row);
+    }
+
+    int offset;
+    if (col >= 0 && row >= 0) offset = get_offset(col, row);
+    else offset = get_cursor_offset();
+
+    if (c == '\n') {
+        row = get_offset_row(offset);
+        offset = get_offset(0, row+1);
+    } else {
+        vidmem[offset] = c;
+        vidmem[offset+1] = attr;
+        offset += 2;
+    }
+
+    /* Check if the offset is over screen size and scroll */
+    if (offset >= MAX_ROWS * MAX_COLS * 2) {
+        int i;
+        for (i = 1; i < MAX_ROWS; i++) 
+            memory_copy(get_offset(0, i) + VIDEO_ADDRESS,
+                        get_offset(0, i-1) + VIDEO_ADDRESS,
+                        MAX_COLS * 2);
+
+        /* Blank last line */
+        char *last_line = get_offset(0, MAX_ROWS-1) + VIDEO_ADDRESS;
+        for (i = 0; i < MAX_COLS * 2; i++) last_line[i] = 0;
+
+        offset -= 2 * MAX_COLS;
+    }
+
+    set_cursor_offset(offset);
+    return offset;
+}
+
+int get_cursor_offset() {
+    /* Use the VGA ports to get the current cursor position
+     * 1. Ask for high byte of the cursor offset (data 14)
+     * 2. Ask for low byte (data 15)
+     */
+    port_byte_out(REG_SCREEN_CTRL, 14);
+    int offset = port_byte_in(REG_SCREEN_DATA) << 8; /* High byte: << 8 */
+    port_byte_out(REG_SCREEN_CTRL, 15);
+    offset += port_byte_in(REG_SCREEN_DATA);
+    return offset * 2; /* Position * size of character cell */
+}
+
+void set_cursor_offset(int offset) {
+    /* Similar to get_cursor_offset, but instead of reading we write data */
+    offset /= 2;
+    port_byte_out(REG_SCREEN_CTRL, 14);
+    port_byte_out(REG_SCREEN_DATA, (unsigned char)(offset >> 8));
+    port_byte_out(REG_SCREEN_CTRL, 15);
+    port_byte_out(REG_SCREEN_DATA, (unsigned char)(offset & 0xff));
+}
+
+void clear_screen() {
+    int screen_size = MAX_COLS * MAX_ROWS;
+    int i;
+    char *screen = VIDEO_ADDRESS;
+
+    for (i = 0; i < screen_size; i++) {
+        screen[i*2] = ' ';
+        screen[i*2+1] = WHITE_ON_BLACK;
+    }
+    set_cursor_offset(get_offset(0, 0));
+}
+
+
+int get_offset(int col, int row) { return 2 * (row * MAX_COLS + col); }
+int get_offset_row(int offset) { return offset / (2 * MAX_COLS); }
+int get_offset_col(int offset) { return (offset - (get_offset_row(offset)*2*MAX_COLS))/2; }
+
+=== drivers/screen.h ===
+#ifndef SCREEN_H
+#define SCREEN_H
+
+#define VIDEO_ADDRESS 0xb8000
+#define MAX_ROWS 25
+#define MAX_COLS 80
+#define WHITE_ON_BLACK 0x0f
+#define RED_ON_WHITE 0xf4
+
+/* Screen i/o ports */
+#define REG_SCREEN_CTRL 0x3d4
+#define REG_SCREEN_DATA 0x3d5
+
+/* Public kernel API */
+void clear_screen();
+void kprint_at(char *message, int col, int row);
+void kprint(char *message);
+
+#endif
+
+=== kernel/kernel.c ===
+#include "../cpu/isr.h"
+#include "../cpu/timer.h"
+#include "../drivers/keyboard.h"
+
+void main() {
+    isr_install();
+
+    asm volatile("sti");
+    init_timer(50);
+    /* Comment out the timer IRQ handler to read
+     * the keyboard IRQs easier */
+    init_keyboard();
+}
+
+=== kernel/util.c ===
+#include "util.h"
+
+void memory_copy(char *source, char *dest, int nbytes) {
+    int i;
+    for (i = 0; i < nbytes; i++) {
+        *(dest + i) = *(source + i);
+    }
+}
+
+void memory_set(u8 *dest, u8 val, u32 len) {
+    u8 *temp = (u8 *)dest;
+    for ( ; len != 0; len--) *temp++ = val;
+}
+
+/**
+ * K&R implementation
+ */
+void int_to_ascii(int n, char str[]) {
+    int i, sign;
+    if ((sign = n) < 0) n = -n;
+    i = 0;
+    do {
+        str[i++] = n % 10 + '0';
+    } while ((n /= 10) > 0);
+
+    if (sign < 0) str[i++] = '-';
+    str[i] = '\0';
+
+    reverse(str);
+}
+
+/* K&R */
+void reverse(char s[]) {
+    int c, i, j;
+    for (i = 0, j = strlen(s)-1; i < j; i++, j--) {
+        c = s[i];
+        s[i] = s[j];
+        s[j] = c;
+    }
+}
+
+/* K&R */
+int strlen(char s[]) {
+    int i = 0;
+    while (s[i] != '\0') ++i;
+    return i;
+}
+
+=== kernel/util.h ===
+#ifndef UTIL_H
+#define UTIL_H
+
+#include "../cpu/types.h"
+
+void memory_copy(char *source, char *dest, int nbytes);
+void memory_set(u8 *dest, u8 val, u32 len);
+void int_to_ascii(int n, char str[]);
+void reverse(char s[]);
+int strlen(char s[]);
+
+#endif

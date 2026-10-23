@@ -1,0 +1,125 @@
+The os-tutorial's own code for lesson 05-bootsector-functions-strings (Carlos Fenollosa, BSD 3-Clause).
+It uses i386-elf-gcc and i386-elf-ld; use the commands in your rules instead.
+
+=== boot_sect_main.asm ===
+[org 0x7c00] ; tell the assembler that our offset is bootsector code
+
+; The main routine makes sure the parameters are ready and then calls the function
+mov bx, HELLO
+call print
+
+call print_nl
+
+mov bx, GOODBYE
+call print
+
+call print_nl
+
+mov dx, 0x12fe
+call print_hex
+
+; that's it! we can hang now
+jmp $
+
+; remember to include subroutines below the hang
+%include "boot_sect_print.asm"
+%include "boot_sect_print_hex.asm"
+
+
+; data
+HELLO:
+    db 'Hello, World', 0
+
+GOODBYE:
+    db 'Goodbye', 0
+
+; padding and magic number
+times 510-($-$$) db 0
+dw 0xaa55
+
+=== boot_sect_print.asm ===
+print:
+    pusha
+
+; keep this in mind:
+; while (string[i] != 0) { print string[i]; i++ }
+
+; the comparison for string end (null byte)
+start:
+    mov al, [bx] ; 'bx' is the base address for the string
+    cmp al, 0 
+    je done
+
+    ; the part where we print with the BIOS help
+    mov ah, 0x0e
+    int 0x10 ; 'al' already contains the char
+
+    ; increment pointer and do next loop
+    add bx, 1
+    jmp start
+
+done:
+    popa
+    ret
+
+
+
+print_nl:
+    pusha
+    
+    mov ah, 0x0e
+    mov al, 0x0a ; newline char
+    int 0x10
+    mov al, 0x0d ; carriage return
+    int 0x10
+    
+    popa
+    ret
+
+=== boot_sect_print_hex.asm ===
+; receiving the data in 'dx'
+; For the examples we'll assume that we're called with dx=0x1234
+print_hex:
+    pusha
+
+    mov cx, 0 ; our index variable
+
+; Strategy: get the last char of 'dx', then convert to ASCII
+; Numeric ASCII values: '0' (ASCII 0x30) to '9' (0x39), so just add 0x30 to byte N.
+; For alphabetic characters A-F: 'A' (ASCII 0x41) to 'F' (0x46) we'll add 0x40
+; Then, move the ASCII byte to the correct position on the resulting string
+hex_loop:
+    cmp cx, 4 ; loop 4 times
+    je end
+    
+    ; 1. convert last char of 'dx' to ascii
+    mov ax, dx ; we will use 'ax' as our working register
+    and ax, 0x000f ; 0x1234 -> 0x0004 by masking first three to zeros
+    add al, 0x30 ; add 0x30 to N to convert it to ASCII "N"
+    cmp al, 0x39 ; if > 9, add extra 8 to represent 'A' to 'F'
+    jle step2
+    add al, 7 ; 'A' is ASCII 65 instead of 58, so 65-58=7
+
+step2:
+    ; 2. get the correct position of the string to place our ASCII char
+    ; bx <- base address + string length - index of char
+    mov bx, HEX_OUT + 5 ; base + length
+    sub bx, cx  ; our index variable
+    mov [bx], al ; copy the ASCII char on 'al' to the position pointed by 'bx'
+    ror dx, 4 ; 0x1234 -> 0x4123 -> 0x3412 -> 0x2341 -> 0x1234
+
+    ; increment index and loop
+    add cx, 1
+    jmp hex_loop
+
+end:
+    ; prepare the parameter and call the function
+    ; remember that print receives parameters in 'bx'
+    mov bx, HEX_OUT
+    call print
+
+    popa
+    ret
+
+HEX_OUT:
+    db '0x0000',0 ; reserve memory for our new string

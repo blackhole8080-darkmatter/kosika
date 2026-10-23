@@ -1,0 +1,1564 @@
+The os-tutorial's own code for lesson 23-fixes (Carlos Fenollosa, BSD 3-Clause).
+It uses i386-elf-gcc and i386-elf-ld; use the commands in your rules instead.
+
+=== Makefile ===
+C_SOURCES = $(wildcard kernel/*.c drivers/*.c cpu/*.c libc/*.c)
+HEADERS = $(wildcard kernel/*.h drivers/*.h cpu/*.h libc/*.h)
+# Nice syntax for file extension replacement
+OBJ = ${C_SOURCES:.c=.o cpu/interrupt.o} 
+
+# Change this if your cross-compiler is somewhere else
+CC = /usr/local/i386elfgcc/bin/i386-elf-gcc
+GDB = /usr/local/i386elfgcc/bin/i386-elf-gdb
+# -g: Use debugging symbols in gcc
+CFLAGS = -g -ffreestanding -Wall -Wextra -fno-exceptions -m32
+
+# First rule is run by default
+os-image.bin: boot/bootsect.bin kernel.bin
+	cat $^ > os-image.bin
+
+# '--oformat binary' deletes all symbols as a collateral, so we don't need
+# to 'strip' them manually on this case
+kernel.bin: boot/kernel_entry.o ${OBJ}
+	i386-elf-ld -o $@ -Ttext 0x1000 $^ --oformat binary
+
+# Used for debugging purposes
+kernel.elf: boot/kernel_entry.o ${OBJ}
+	i386-elf-ld -o $@ -Ttext 0x1000 $^ 
+
+run: os-image.bin
+	qemu-system-i386 -fda os-image.bin
+
+# Open the connection to qemu and load our kernel-object file with symbols
+debug: os-image.bin kernel.elf
+	qemu-system-i386 -s -fda os-image.bin -d guest_errors,int &
+	${GDB} -ex "target remote localhost:1234" -ex "symbol-file kernel.elf"
+
+# Generic rules for wildcards
+# To make an object, always compile from its .c
+%.o: %.c ${HEADERS}
+	${CC} ${CFLAGS} -c $< -o $@
+
+%.o: %.asm
+	nasm $< -f elf -o $@
+
+%.bin: %.asm
+	nasm $< -f bin -o $@
+
+clean:
+	rm -rf *.bin *.dis *.o os-image.bin *.elf
+	rm -rf kernel/*.o boot/*.bin drivers/*.o boot/*.o cpu/*.o libc/*.o
+
+=== boot/32bit_print.asm ===
+[bits 32] ; using 32-bit protected mode
+
+; this is how constants are defined
+VIDEO_MEMORY equ 0xb8000
+WHITE_OB_BLACK equ 0x0f ; the color byte for each character
+
+print_string_pm:
+    pusha
+    mov edx, VIDEO_MEMORY
+
+print_string_pm_loop:
+    mov al, [ebx] ; [ebx] is the address of our character
+    mov ah, WHITE_OB_BLACK
+
+    cmp al, 0 ; check if end of string
+    je print_string_pm_done
+
+    mov [edx], ax ; store character + attribute in video memory
+    add ebx, 1 ; next char
+    add edx, 2 ; next video memory position
+
+    jmp print_string_pm_loop
+
+print_string_pm_done:
+    popa
+    ret
+
+=== boot/bootsect.asm ===
+; Identical to lesson 13's boot sector, but the %included files have new paths
+[org 0x7c00]
+KERNEL_OFFSET equ 0x1000 ; The same one we used when linking the kernel
+
+    mov [BOOT_DRIVE], dl ; Remember that the BIOS sets us the boot drive in 'dl' on boot
+    mov bp, 0x9000
+    mov sp, bp
+
+    mov bx, MSG_REAL_MODE 
+    call print
+    call print_nl
+
+    call load_kernel ; read the kernel from disk
+    call switch_to_pm ; disable interrupts, load GDT,  etc. Finally jumps to 'BEGIN_PM'
+    jmp $ ; Never executed
+
+%include "boot/print.asm"
+%include "boot/print_hex.asm"
+%include "boot/disk.asm"
+%include "boot/gdt.asm"
+%include "boot/32bit_print.asm"
+%include "boot/switch_pm.asm"
+
+[bits 16]
+load_kernel:
+    mov bx, MSG_LOAD_KERNEL
+    call print
+    call print_nl
+
+    mov bx, KERNEL_OFFSET ; Read from disk and store in 0x1000
+    mov dh, 31 ; Our future kernel will be larger, make this big
+    mov dl, [BOOT_DRIVE]
+    call disk_load
+    ret
+
+[bits 32]
+BEGIN_PM:
+    mov ebx, MSG_PROT_MODE
+    call print_string_pm
+    call KERNEL_OFFSET ; Give control to the kernel
+    jmp $ ; Stay here when the kernel returns control to us (if ever)
+
+
+BOOT_DRIVE db 0 ; It is a good idea to store it in memory because 'dl' may get overwritten
+MSG_REAL_MODE db "Started in 16-bit Real Mode", 0
+MSG_PROT_MODE db "Landed in 32-bit Protected Mode", 0
+MSG_LOAD_KERNEL db "Loading kernel into memory", 0
+MSG_RETURNED_KERNEL db "Returned from kernel. Error?", 0
+
+; padding
+times 510 - ($-$$) db 0
+dw 0xaa55
+
+=== boot/disk.asm ===
+; load 'dh' sectors from drive 'dl' into ES:BX
+disk_load:
+    pusha
+    ; reading from disk requires setting specific values in all registers
+    ; so we will overwrite our input parameters from 'dx'. Let's save it
+    ; to the stack for later use.
+    push dx
+
+    mov ah, 0x02 ; ah <- int 0x13 function. 0x02 = 'read'
+    mov al, dh   ; al <- number of sectors to read (0x01 .. 0x80)
+    mov cl, 0x02 ; cl <- sector (0x01 .. 0x11)
+                 ; 0x01 is our boot sector, 0x02 is the first 'available' sector
+    mov ch, 0x00 ; ch <- cylinder (0x0 .. 0x3FF, upper 2 bits in 'cl')
+    ; dl <- drive number. Our caller sets it as a parameter and gets it from BIOS
+    ; (0 = floppy, 1 = floppy2, 0x80 = hdd, 0x81 = hdd2)
+    mov dh, 0x00 ; dh <- head number (0x0 .. 0xF)
+
+    ; [es:bx] <- pointer to buffer where the data will be stored
+    ; caller sets it up for us, and it is actually the standard location for int 13h
+    int 0x13      ; BIOS interrupt
+    jc disk_error ; if error (stored in the carry bit)
+
+    pop dx
+    cmp al, dh    ; BIOS also sets 'al' to the # of sectors read. Compare it.
+    jne sectors_error
+    popa
+    ret
+
+
+disk_error:
+    mov bx, DISK_ERROR
+    call print
+    call print_nl
+    mov dh, ah ; ah = error code, dl = disk drive that dropped the error
+    call print_hex ; check out the code at http://stanislavs.org/helppc/int_13-1.html
+    jmp disk_loop
+
+sectors_error:
+    mov bx, SECTORS_ERROR
+    call print
+
+disk_loop:
+    jmp $
+
+DISK_ERROR: db "Disk read error", 0
+SECTORS_ERROR: db "Incorrect number of sectors read", 0
+
+=== boot/gdt.asm ===
+gdt_start: ; don't remove the labels, they're needed to compute sizes and jumps
+    ; the GDT starts with a null 8-byte
+    dd 0x0 ; 4 byte
+    dd 0x0 ; 4 byte
+
+; GDT for code segment. base = 0x00000000, length = 0xfffff
+; for flags, refer to os-dev.pdf document, page 36
+gdt_code: 
+    dw 0xffff    ; segment length, bits 0-15
+    dw 0x0       ; segment base, bits 0-15
+    db 0x0       ; segment base, bits 16-23
+    db 10011010b ; flags (8 bits)
+    db 11001111b ; flags (4 bits) + segment length, bits 16-19
+    db 0x0       ; segment base, bits 24-31
+
+; GDT for data segment. base and length identical to code segment
+; some flags changed, again, refer to os-dev.pdf
+gdt_data:
+    dw 0xffff
+    dw 0x0
+    db 0x0
+    db 10010010b
+    db 11001111b
+    db 0x0
+
+gdt_end:
+
+; GDT descriptor
+gdt_descriptor:
+    dw gdt_end - gdt_start - 1 ; size (16 bit), always one less of its true size
+    dd gdt_start ; address (32 bit)
+
+; define some constants for later use
+CODE_SEG equ gdt_code - gdt_start
+DATA_SEG equ gdt_data - gdt_start
+
+=== boot/kernel_entry.asm ===
+global _start;
+[bits 32]
+
+_start:
+    [extern kernel_main] ; Define calling point. Must have same name as kernel.c 'main' function
+    call kernel_main ; Calls the C function. The linker will know where it is placed in memory
+    jmp $
+
+=== boot/print.asm ===
+print:
+    pusha
+
+; keep this in mind:
+; while (string[i] != 0) { print string[i]; i++ }
+
+; the comparison for string end (null byte)
+start:
+    mov al, [bx] ; 'bx' is the base address for the string
+    cmp al, 0 
+    je done
+
+    ; the part where we print with the BIOS help
+    mov ah, 0x0e
+    int 0x10 ; 'al' already contains the char
+
+    ; increment pointer and do next loop
+    add bx, 1
+    jmp start
+
+done:
+    popa
+    ret
+
+
+
+print_nl:
+    pusha
+    
+    mov ah, 0x0e
+    mov al, 0x0a ; newline char
+    int 0x10
+    mov al, 0x0d ; carriage return
+    int 0x10
+    
+    popa
+    ret
+
+=== boot/print_hex.asm ===
+; receiving the data in 'dx'
+; For the examples we'll assume that we're called with dx=0x1234
+print_hex:
+    pusha
+
+    mov cx, 0 ; our index variable
+
+; Strategy: get the last char of 'dx', then convert to ASCII
+; Numeric ASCII values: '0' (ASCII 0x30) to '9' (0x39), so just add 0x30 to byte N.
+; For alphabetic characters A-F: 'A' (ASCII 0x41) to 'F' (0x46) we'll add 0x40
+; Then, move the ASCII byte to the correct position on the resulting string
+hex_loop:
+    cmp cx, 4 ; loop 4 times
+    je end
+    
+    ; 1. convert last char of 'dx' to ascii
+    mov ax, dx ; we will use 'ax' as our working register
+    and ax, 0x000f ; 0x1234 -> 0x0004 by masking first three to zeros
+    add al, 0x30 ; add 0x30 to N to convert it to ASCII "N"
+    cmp al, 0x39 ; if > 9, add extra 8 to represent 'A' to 'F'
+    jle step2
+    add al, 7 ; 'A' is ASCII 65 instead of 58, so 65-58=7
+
+step2:
+    ; 2. get the correct position of the string to place our ASCII char
+    ; bx <- base address + string length - index of char
+    mov bx, HEX_OUT + 5 ; base + length
+    sub bx, cx  ; our index variable
+    mov [bx], al ; copy the ASCII char on 'al' to the position pointed by 'bx'
+    ror dx, 4 ; 0x1234 -> 0x4123 -> 0x3412 -> 0x2341 -> 0x1234
+
+    ; increment index and loop
+    add cx, 1
+    jmp hex_loop
+
+end:
+    ; prepare the parameter and call the function
+    ; remember that print receives parameters in 'bx'
+    mov bx, HEX_OUT
+    call print
+
+    popa
+    ret
+
+HEX_OUT:
+    db '0x0000',0 ; reserve memory for our new string
+
+=== boot/switch_pm.asm ===
+[bits 16]
+switch_to_pm:
+    cli ; 1. disable interrupts
+    lgdt [gdt_descriptor] ; 2. load the GDT descriptor
+    mov eax, cr0
+    or eax, 0x1 ; 3. set 32-bit mode bit in cr0
+    mov cr0, eax
+    jmp CODE_SEG:init_pm ; 4. far jump by using a different segment
+
+[bits 32]
+init_pm: ; we are now using 32-bit instructions
+    mov ax, DATA_SEG ; 5. update the segment registers
+    mov ds, ax
+    mov ss, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+
+    mov ebp, 0x90000 ; 6. update the stack right at the top of the free space
+    mov esp, ebp
+
+    call BEGIN_PM ; 7. Call a well-known label with useful code
+
+=== cpu/idt.c ===
+#include "idt.h"
+#include "type.h"
+
+void set_idt_gate(int n, uint32_t handler) {
+    idt[n].low_offset = low_16(handler);
+    idt[n].sel = KERNEL_CS;
+    idt[n].always0 = 0;
+    idt[n].flags = 0x8E; 
+    idt[n].high_offset = high_16(handler);
+}
+
+void set_idt() {
+    idt_reg.base = (uint32_t) &idt;
+    idt_reg.limit = IDT_ENTRIES * sizeof(idt_gate_t) - 1;
+    /* Don't make the mistake of loading &idt -- always load &idt_reg */
+    asm volatile("lidtl (%0)" : : "r" (&idt_reg));
+}
+
+=== cpu/idt.h ===
+#ifndef IDT_H
+#define IDT_H
+
+#include <stdint.h>
+
+/* Segment selectors */
+#define KERNEL_CS 0x08
+
+/* How every interrupt gate (handler) is defined */
+typedef struct {
+    uint16_t low_offset; /* Lower 16 bits of handler function address */
+    uint16_t sel; /* Kernel segment selector */
+    uint8_t always0;
+    /* First byte
+     * Bit 7: "Interrupt is present"
+     * Bits 6-5: Privilege level of caller (0=kernel..3=user)
+     * Bit 4: Set to 0 for interrupt gates
+     * Bits 3-0: bits 1110 = decimal 14 = "32 bit interrupt gate" */
+    uint8_t flags; 
+    uint16_t high_offset; /* Higher 16 bits of handler function address */
+} __attribute__((packed)) idt_gate_t ;
+
+/* A pointer to the array of interrupt handlers.
+ * Assembly instruction 'lidt' will read it */
+typedef struct {
+    uint16_t limit;
+    uint32_t base;
+} __attribute__((packed)) idt_register_t;
+
+#define IDT_ENTRIES 256
+idt_gate_t idt[IDT_ENTRIES];
+idt_register_t idt_reg;
+
+
+/* Functions implemented in idt.c */
+void set_idt_gate(int n, uint32_t handler);
+void set_idt();
+
+#endif
+
+=== cpu/interrupt.asm ===
+; Defined in isr.c
+[extern isr_handler]
+[extern irq_handler]
+
+; Common ISR code
+isr_common_stub:
+    ; 1. Save CPU state
+	pusha ; Pushes edi,esi,ebp,esp,ebx,edx,ecx,eax
+	mov ax, ds ; Lower 16-bits of eax = ds.
+	push eax ; save the data segment descriptor
+	mov ax, 0x10  ; kernel data segment descriptor
+	mov ds, ax
+	mov es, ax
+	mov fs, ax
+	mov gs, ax
+	push esp ; registers_t *r
+    ; 2. Call C handler
+    cld ; C code following the sysV ABI requires DF to be clear on function entry
+	call isr_handler
+	
+    ; 3. Restore state
+	pop eax 
+    pop eax
+	mov ds, ax
+	mov es, ax
+	mov fs, ax
+	mov gs, ax
+	popa
+	add esp, 8 ; Cleans up the pushed error code and pushed ISR number
+	iret ; pops 5 things at once: CS, EIP, EFLAGS, SS, and ESP
+
+; Common IRQ code. Identical to ISR code except for the 'call' 
+; and the 'pop ebx'
+irq_common_stub:
+    pusha 
+    mov ax, ds
+    push eax
+    mov ax, 0x10
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    push esp
+    cld
+    call irq_handler ; Different than the ISR code
+    pop ebx  ; Different than the ISR code
+    pop ebx
+    mov ds, bx
+    mov es, bx
+    mov fs, bx
+    mov gs, bx
+    popa
+    add esp, 8
+    iret 
+	
+; We don't get information about which interrupt was caller
+; when the handler is run, so we will need to have a different handler
+; for every interrupt.
+; Furthermore, some interrupts push an error code onto the stack but others
+; don't, so we will push a dummy error code for those which don't, so that
+; we have a consistent stack for all of them.
+
+; First make the ISRs global
+global isr0
+global isr1
+global isr2
+global isr3
+global isr4
+global isr5
+global isr6
+global isr7
+global isr8
+global isr9
+global isr10
+global isr11
+global isr12
+global isr13
+global isr14
+global isr15
+global isr16
+global isr17
+global isr18
+global isr19
+global isr20
+global isr21
+global isr22
+global isr23
+global isr24
+global isr25
+global isr26
+global isr27
+global isr28
+global isr29
+global isr30
+global isr31
+; IRQs
+global irq0
+global irq1
+global irq2
+global irq3
+global irq4
+global irq5
+global irq6
+global irq7
+global irq8
+global irq9
+global irq10
+global irq11
+global irq12
+global irq13
+global irq14
+global irq15
+
+; 0: Divide By Zero Exception
+isr0:
+    push byte 0
+    push byte 0
+    jmp isr_common_stub
+
+; 1: Debug Exception
+isr1:
+    push byte 0
+    push byte 1
+    jmp isr_common_stub
+
+; 2: Non Maskable Interrupt Exception
+isr2:
+    push byte 0
+    push byte 2
+    jmp isr_common_stub
+
+; 3: Int 3 Exception
+isr3:
+    push byte 0
+    push byte 3
+    jmp isr_common_stub
+
+; 4: INTO Exception
+isr4:
+    push byte 0
+    push byte 4
+    jmp isr_common_stub
+
+; 5: Out of Bounds Exception
+isr5:
+    push byte 0
+    push byte 5
+    jmp isr_common_stub
+
+; 6: Invalid Opcode Exception
+isr6:
+    push byte 0
+    push byte 6
+    jmp isr_common_stub
+
+; 7: Coprocessor Not Available Exception
+isr7:
+    push byte 0
+    push byte 7
+    jmp isr_common_stub
+
+; 8: Double Fault Exception (With Error Code!)
+isr8:
+    push byte 8
+    jmp isr_common_stub
+
+; 9: Coprocessor Segment Overrun Exception
+isr9:
+    push byte 0
+    push byte 9
+    jmp isr_common_stub
+
+; 10: Bad TSS Exception (With Error Code!)
+isr10:
+    push byte 10
+    jmp isr_common_stub
+
+; 11: Segment Not Present Exception (With Error Code!)
+isr11:
+    push byte 11
+    jmp isr_common_stub
+
+; 12: Stack Fault Exception (With Error Code!)
+isr12:
+    push byte 12
+    jmp isr_common_stub
+
+; 13: General Protection Fault Exception (With Error Code!)
+isr13:
+    push byte 13
+    jmp isr_common_stub
+
+; 14: Page Fault Exception (With Error Code!)
+isr14:
+    push byte 14
+    jmp isr_common_stub
+
+; 15: Reserved Exception
+isr15:
+    push byte 0
+    push byte 15
+    jmp isr_common_stub
+
+; 16: Floating Point Exception
+isr16:
+    push byte 0
+    push byte 16
+    jmp isr_common_stub
+
+; 17: Alignment Check Exception
+isr17:
+    push byte 0
+    push byte 17
+    jmp isr_common_stub
+
+; 18: Machine Check Exception
+isr18:
+    push byte 0
+    push byte 18
+    jmp isr_common_stub
+
+; 19: Reserved
+isr19:
+    push byte 0
+    push byte 19
+    jmp isr_common_stub
+
+; 20: Reserved
+isr20:
+    push byte 0
+    push byte 20
+    jmp isr_common_stub
+
+; 21: Reserved
+isr21:
+    push byte 0
+    push byte 21
+    jmp isr_common_stub
+
+; 22: Reserved
+isr22:
+    push byte 0
+    push byte 22
+    jmp isr_common_stub
+
+; 23: Reserved
+isr23:
+    push byte 0
+    push byte 23
+    jmp isr_common_stub
+
+; 24: Reserved
+isr24:
+    push byte 0
+    push byte 24
+    jmp isr_common_stub
+
+; 25: Reserved
+isr25:
+    push byte 0
+    push byte 25
+    jmp isr_common_stub
+
+; 26: Reserved
+isr26:
+    push byte 0
+    push byte 26
+    jmp isr_common_stub
+
+; 27: Reserved
+isr27:
+    push byte 0
+    push byte 27
+    jmp isr_common_stub
+
+; 28: Reserved
+isr28:
+    push byte 0
+    push byte 28
+    jmp isr_common_stub
+
+; 29: Reserved
+isr29:
+    push byte 0
+    push byte 29
+    jmp isr_common_stub
+
+; 30: Reserved
+isr30:
+    push byte 0
+    push byte 30
+    jmp isr_common_stub
+
+; 31: Reserved
+isr31:
+    push byte 0
+    push byte 31
+    jmp isr_common_stub
+
+; IRQ handlers
+irq0:
+	push byte 0
+	push byte 32
+	jmp irq_common_stub
+
+irq1:
+	push byte 1
+	push byte 33
+	jmp irq_common_stub
+
+irq2:
+	push byte 2
+	push byte 34
+	jmp irq_common_stub
+
+irq3:
+	push byte 3
+	push byte 35
+	jmp irq_common_stub
+
+irq4:
+	push byte 4
+	push byte 36
+	jmp irq_common_stub
+
+irq5:
+	push byte 5
+	push byte 37
+	jmp irq_common_stub
+
+irq6:
+	push byte 6
+	push byte 38
+	jmp irq_common_stub
+
+irq7:
+	push byte 7
+	push byte 39
+	jmp irq_common_stub
+
+irq8:
+	push byte 8
+	push byte 40
+	jmp irq_common_stub
+
+irq9:
+	push byte 9
+	push byte 41
+	jmp irq_common_stub
+
+irq10:
+	push byte 10
+	push byte 42
+	jmp irq_common_stub
+
+irq11:
+	push byte 11
+	push byte 43
+	jmp irq_common_stub
+
+irq12:
+	push byte 12
+	push byte 44
+	jmp irq_common_stub
+
+irq13:
+	push byte 13
+	push byte 45
+	jmp irq_common_stub
+
+irq14:
+	push byte 14
+	push byte 46
+	jmp irq_common_stub
+
+irq15:
+	push byte 15
+	push byte 47
+	jmp irq_common_stub
+
+=== cpu/isr.c ===
+#include "isr.h"
+#include "idt.h"
+#include "../drivers/screen.h"
+#include "../drivers/keyboard.h"
+#include "../libc/string.h"
+#include "timer.h"
+#include "ports.h"
+
+isr_t interrupt_handlers[256];
+
+/* Can't do this with a loop because we need the address
+ * of the function names */
+void isr_install() {
+    set_idt_gate(0, (uint32_t)isr0);
+    set_idt_gate(1, (uint32_t)isr1);
+    set_idt_gate(2, (uint32_t)isr2);
+    set_idt_gate(3, (uint32_t)isr3);
+    set_idt_gate(4, (uint32_t)isr4);
+    set_idt_gate(5, (uint32_t)isr5);
+    set_idt_gate(6, (uint32_t)isr6);
+    set_idt_gate(7, (uint32_t)isr7);
+    set_idt_gate(8, (uint32_t)isr8);
+    set_idt_gate(9, (uint32_t)isr9);
+    set_idt_gate(10, (uint32_t)isr10);
+    set_idt_gate(11, (uint32_t)isr11);
+    set_idt_gate(12, (uint32_t)isr12);
+    set_idt_gate(13, (uint32_t)isr13);
+    set_idt_gate(14, (uint32_t)isr14);
+    set_idt_gate(15, (uint32_t)isr15);
+    set_idt_gate(16, (uint32_t)isr16);
+    set_idt_gate(17, (uint32_t)isr17);
+    set_idt_gate(18, (uint32_t)isr18);
+    set_idt_gate(19, (uint32_t)isr19);
+    set_idt_gate(20, (uint32_t)isr20);
+    set_idt_gate(21, (uint32_t)isr21);
+    set_idt_gate(22, (uint32_t)isr22);
+    set_idt_gate(23, (uint32_t)isr23);
+    set_idt_gate(24, (uint32_t)isr24);
+    set_idt_gate(25, (uint32_t)isr25);
+    set_idt_gate(26, (uint32_t)isr26);
+    set_idt_gate(27, (uint32_t)isr27);
+    set_idt_gate(28, (uint32_t)isr28);
+    set_idt_gate(29, (uint32_t)isr29);
+    set_idt_gate(30, (uint32_t)isr30);
+    set_idt_gate(31, (uint32_t)isr31);
+
+    // Remap the PIC
+    port_byte_out(0x20, 0x11);
+    port_byte_out(0xA0, 0x11);
+    port_byte_out(0x21, 0x20);
+    port_byte_out(0xA1, 0x28);
+    port_byte_out(0x21, 0x04);
+    port_byte_out(0xA1, 0x02);
+    port_byte_out(0x21, 0x01);
+    port_byte_out(0xA1, 0x01);
+    port_byte_out(0x21, 0x0);
+    port_byte_out(0xA1, 0x0); 
+
+    // Install the IRQs
+    set_idt_gate(32, (uint32_t)irq0);
+    set_idt_gate(33, (uint32_t)irq1);
+    set_idt_gate(34, (uint32_t)irq2);
+    set_idt_gate(35, (uint32_t)irq3);
+    set_idt_gate(36, (uint32_t)irq4);
+    set_idt_gate(37, (uint32_t)irq5);
+    set_idt_gate(38, (uint32_t)irq6);
+    set_idt_gate(39, (uint32_t)irq7);
+    set_idt_gate(40, (uint32_t)irq8);
+    set_idt_gate(41, (uint32_t)irq9);
+    set_idt_gate(42, (uint32_t)irq10);
+    set_idt_gate(43, (uint32_t)irq11);
+    set_idt_gate(44, (uint32_t)irq12);
+    set_idt_gate(45, (uint32_t)irq13);
+    set_idt_gate(46, (uint32_t)irq14);
+    set_idt_gate(47, (uint32_t)irq15);
+
+    set_idt(); // Load with ASM
+}
+
+/* To print the message which defines every exception */
+char *exception_messages[] = {
+    "Division By Zero",
+    "Debug",
+    "Non Maskable Interrupt",
+    "Breakpoint",
+    "Into Detected Overflow",
+    "Out of Bounds",
+    "Invalid Opcode",
+    "No Coprocessor",
+
+    "Double Fault",
+    "Coprocessor Segment Overrun",
+    "Bad TSS",
+    "Segment Not Present",
+    "Stack Fault",
+    "General Protection Fault",
+    "Page Fault",
+    "Unknown Interrupt",
+
+    "Coprocessor Fault",
+    "Alignment Check",
+    "Machine Check",
+    "Reserved",
+    "Reserved",
+    "Reserved",
+    "Reserved",
+    "Reserved",
+
+    "Reserved",
+    "Reserved",
+    "Reserved",
+    "Reserved",
+    "Reserved",
+    "Reserved",
+    "Reserved",
+    "Reserved"
+};
+
+void isr_handler(registers_t *r) {
+    kprint("received interrupt: ");
+    char s[3];
+    int_to_ascii(r->int_no, s);
+    kprint(s);
+    kprint("\n");
+    kprint(exception_messages[r->int_no]);
+    kprint("\n");
+}
+
+void register_interrupt_handler(uint8_t n, isr_t handler) {
+    interrupt_handlers[n] = handler;
+}
+
+void irq_handler(registers_t *r) {
+    /* After every interrupt we need to send an EOI to the PICs
+     * or they will not send another interrupt again */
+    if (r->int_no >= 40) port_byte_out(0xA0, 0x20); /* slave */
+    port_byte_out(0x20, 0x20); /* master */
+
+    /* Handle the interrupt in a more modular way */
+    if (interrupt_handlers[r->int_no] != 0) {
+        isr_t handler = interrupt_handlers[r->int_no];
+        handler(r);
+    }
+}
+
+void irq_install() {
+    /* Enable interruptions */
+    asm volatile("sti");
+    /* IRQ0: timer */
+    init_timer(50);
+    /* IRQ1: keyboard */
+    init_keyboard();
+}
+
+=== cpu/isr.h ===
+#ifndef ISR_H
+#define ISR_H
+
+#include <stdint.h>
+
+/* ISRs reserved for CPU exceptions */
+extern void isr0();
+extern void isr1();
+extern void isr2();
+extern void isr3();
+extern void isr4();
+extern void isr5();
+extern void isr6();
+extern void isr7();
+extern void isr8();
+extern void isr9();
+extern void isr10();
+extern void isr11();
+extern void isr12();
+extern void isr13();
+extern void isr14();
+extern void isr15();
+extern void isr16();
+extern void isr17();
+extern void isr18();
+extern void isr19();
+extern void isr20();
+extern void isr21();
+extern void isr22();
+extern void isr23();
+extern void isr24();
+extern void isr25();
+extern void isr26();
+extern void isr27();
+extern void isr28();
+extern void isr29();
+extern void isr30();
+extern void isr31();
+/* IRQ definitions */
+extern void irq0();
+extern void irq1();
+extern void irq2();
+extern void irq3();
+extern void irq4();
+extern void irq5();
+extern void irq6();
+extern void irq7();
+extern void irq8();
+extern void irq9();
+extern void irq10();
+extern void irq11();
+extern void irq12();
+extern void irq13();
+extern void irq14();
+extern void irq15();
+
+#define IRQ0 32
+#define IRQ1 33
+#define IRQ2 34
+#define IRQ3 35
+#define IRQ4 36
+#define IRQ5 37
+#define IRQ6 38
+#define IRQ7 39
+#define IRQ8 40
+#define IRQ9 41
+#define IRQ10 42
+#define IRQ11 43
+#define IRQ12 44
+#define IRQ13 45
+#define IRQ14 46
+#define IRQ15 47
+
+/* Struct which aggregates many registers.
+ * It matches exactly the pushes on interrupt.asm. From the bottom:
+ * - Pushed by the processor automatically
+ * - `push byte`s on the isr-specific code: error code, then int number
+ * - All the registers by pusha
+ * - `push eax` whose lower 16-bits contain DS
+ */
+typedef struct {
+   uint32_t ds; /* Data segment selector */
+   uint32_t edi, esi, ebp, useless, ebx, edx, ecx, eax; /* Pushed by pusha. */
+   uint32_t int_no, err_code; /* Interrupt number and error code (if applicable) */
+   uint32_t eip, cs, eflags, esp, ss; /* Pushed by the processor automatically */
+} registers_t;
+
+void isr_install();
+void isr_handler(registers_t *r);
+void irq_install();
+
+typedef void (*isr_t)(registers_t*);
+void register_interrupt_handler(uint8_t n, isr_t handler);
+
+#endif
+
+=== cpu/ports.c ===
+#include "ports.h"
+
+/**
+ * Read a byte from the specified port
+ */
+uint8_t port_byte_in (uint16_t port) {
+    uint8_t result;
+    /* Inline assembler syntax
+     * !! Notice how the source and destination registers are switched from NASM !!
+     *
+     * '"=a" (result)'; set '=' the C variable '(result)' to the value of register e'a'x
+     * '"d" (port)': map the C variable '(port)' into e'd'x register
+     *
+     * Inputs and outputs are separated by colons
+     */
+    asm("in %%dx, %%al" : "=a" (result) : "d" (port));
+    return result;
+}
+
+void port_byte_out (uint16_t port, uint8_t data) {
+    /* Notice how here both registers are mapped to C variables and
+     * nothing is returned, thus, no equals '=' in the asm syntax 
+     * However we see a comma since there are two variables in the input area
+     * and none in the 'return' area
+     */
+    asm volatile("out %%al, %%dx" : : "a" (data), "d" (port));
+}
+
+uint16_t port_word_in (uint16_t port) {
+    uint16_t result;
+    asm("in %%dx, %%ax" : "=a" (result) : "d" (port));
+    return result;
+}
+
+void port_word_out (uint16_t port, uint16_t data) {
+    asm volatile("out %%ax, %%dx" : : "a" (data), "d" (port));
+}
+
+=== cpu/ports.h ===
+#ifndef PORTS_H
+#define PORTS_H
+
+#include <stdint.h>
+
+unsigned char port_byte_in (uint16_t port);
+void port_byte_out (uint16_t port, uint8_t data);
+unsigned short port_word_in (uint16_t port);
+void port_word_out (uint16_t port, uint16_t data);
+
+#endif
+
+=== cpu/timer.c ===
+#include "timer.h"
+#include "isr.h"
+#include "ports.h"
+#include "../libc/function.h"
+
+uint32_t tick = 0;
+
+static void timer_callback(registers_t *regs) {
+    tick++;
+    UNUSED(regs);
+}
+
+void init_timer(uint32_t freq) {
+    /* Install the function we just wrote */
+    register_interrupt_handler(IRQ0, timer_callback);
+
+    /* Get the PIT value: hardware clock at 1193180 Hz */
+    uint32_t divisor = 1193180 / freq;
+    uint8_t low  = (uint8_t)(divisor & 0xFF);
+    uint8_t high = (uint8_t)( (divisor >> 8) & 0xFF);
+    /* Send the command */
+    port_byte_out(0x43, 0x36); /* Command port */
+    port_byte_out(0x40, low);
+    port_byte_out(0x40, high);
+}
+
+=== cpu/timer.h ===
+#ifndef TIMER_H
+#define TIMER_H
+
+#include <stdint.h>
+
+void init_timer(uint32_t freq);
+
+#endif
+
+=== cpu/type.h ===
+#ifndef TYPE_H
+#define TYPE_H
+
+#include <stdint.h>
+
+#define low_16(address) (uint16_t)((address) & 0xFFFF)
+#define high_16(address) (uint16_t)(((address) >> 16) & 0xFFFF)
+
+#endif
+
+=== drivers/keyboard.c ===
+#include "keyboard.h"
+#include "../cpu/ports.h"
+#include "../cpu/isr.h"
+#include "screen.h"
+#include "../libc/string.h"
+#include "../libc/function.h"
+#include "../kernel/kernel.h"
+#include <stdint.h>
+
+#define BACKSPACE 0x0E
+#define ENTER 0x1C
+
+static char key_buffer[256];
+
+#define SC_MAX 57
+const char *sc_name[] = { "ERROR", "Esc", "1", "2", "3", "4", "5", "6", 
+    "7", "8", "9", "0", "-", "=", "Backspace", "Tab", "Q", "W", "E", 
+        "R", "T", "Y", "U", "I", "O", "P", "[", "]", "Enter", "Lctrl", 
+        "A", "S", "D", "F", "G", "H", "J", "K", "L", ";", "'", "`", 
+        "LShift", "\\", "Z", "X", "C", "V", "B", "N", "M", ",", ".", 
+        "/", "RShift", "Keypad *", "LAlt", "Spacebar"};
+const char sc_ascii[] = { '?', '?', '1', '2', '3', '4', '5', '6',     
+    '7', '8', '9', '0', '-', '=', '?', '?', 'Q', 'W', 'E', 'R', 'T', 'Y', 
+        'U', 'I', 'O', 'P', '[', ']', '?', '?', 'A', 'S', 'D', 'F', 'G', 
+        'H', 'J', 'K', 'L', ';', '\'', '`', '?', '\\', 'Z', 'X', 'C', 'V', 
+        'B', 'N', 'M', ',', '.', '/', '?', '?', '?', ' '};
+
+static void keyboard_callback(registers_t *regs) {
+    /* The PIC leaves us the scancode in port 0x60 */
+    uint8_t scancode = port_byte_in(0x60);
+    
+    if (scancode > SC_MAX) return;
+    if (scancode == BACKSPACE) {
+        backspace(key_buffer);
+        kprint_backspace();
+    } else if (scancode == ENTER) {
+        kprint("\n");
+        user_input(key_buffer); /* kernel-controlled function */
+        key_buffer[0] = '\0';
+    } else {
+        char letter = sc_ascii[(int)scancode];
+        /* Remember that kprint only accepts char[] */
+        char str[2] = {letter, '\0'};
+        append(key_buffer, letter);
+        kprint(str);
+    }
+    UNUSED(regs);
+}
+
+void init_keyboard() {
+   register_interrupt_handler(IRQ1, keyboard_callback); 
+}
+
+=== drivers/keyboard.h ===
+void init_keyboard();
+
+=== drivers/screen.c ===
+#include "screen.h"
+#include "../cpu/ports.h"
+#include "../libc/mem.h"
+#include <stdint.h>
+
+/* Declaration of private functions */
+int get_cursor_offset();
+void set_cursor_offset(int offset);
+int print_char(char c, int col, int row, char attr);
+int get_offset(int col, int row);
+int get_offset_row(int offset);
+int get_offset_col(int offset);
+
+/**********************************************************
+ * Public Kernel API functions                            *
+ **********************************************************/
+
+/**
+ * Print a message on the specified location
+ * If col, row, are negative, we will use the current offset
+ */
+void kprint_at(char *message, int col, int row) {
+    /* Set cursor if col/row are negative */
+    int offset;
+    if (col >= 0 && row >= 0)
+        offset = get_offset(col, row);
+    else {
+        offset = get_cursor_offset();
+        row = get_offset_row(offset);
+        col = get_offset_col(offset);
+    }
+
+    /* Loop through message and print it */
+    int i = 0;
+    while (message[i] != 0) {
+        offset = print_char(message[i++], col, row, WHITE_ON_BLACK);
+        /* Compute row/col for next iteration */
+        row = get_offset_row(offset);
+        col = get_offset_col(offset);
+    }
+}
+
+void kprint(char *message) {
+    kprint_at(message, -1, -1);
+}
+
+void kprint_backspace() {
+    int offset = get_cursor_offset()-2;
+    int row = get_offset_row(offset);
+    int col = get_offset_col(offset);
+    print_char(0x08, col, row, WHITE_ON_BLACK);
+}
+
+
+/**********************************************************
+ * Private kernel functions                               *
+ **********************************************************/
+
+
+/**
+ * Innermost print function for our kernel, directly accesses the video memory 
+ *
+ * If 'col' and 'row' are negative, we will print at current cursor location
+ * If 'attr' is zero it will use 'white on black' as default
+ * Returns the offset of the next character
+ * Sets the video cursor to the returned offset
+ */
+int print_char(char c, int col, int row, char attr) {
+    uint8_t *vidmem = (uint8_t*) VIDEO_ADDRESS;
+    if (!attr) attr = WHITE_ON_BLACK;
+
+    /* Error control: print a red 'E' if the coords aren't right */
+    if (col >= MAX_COLS || row >= MAX_ROWS) {
+        vidmem[2*(MAX_COLS)*(MAX_ROWS)-2] = 'E';
+        vidmem[2*(MAX_COLS)*(MAX_ROWS)-1] = RED_ON_WHITE;
+        return get_offset(col, row);
+    }
+
+    int offset;
+    if (col >= 0 && row >= 0) offset = get_offset(col, row);
+    else offset = get_cursor_offset();
+
+    if (c == '\n') {
+        row = get_offset_row(offset);
+        offset = get_offset(0, row+1);
+    } else if (c == 0x08) { /* Backspace */
+        vidmem[offset] = ' ';
+        vidmem[offset+1] = attr;
+    } else {
+        vidmem[offset] = c;
+        vidmem[offset+1] = attr;
+        offset += 2;
+    }
+
+    /* Check if the offset is over screen size and scroll */
+    if (offset >= MAX_ROWS * MAX_COLS * 2) {
+        int i;
+        for (i = 1; i < MAX_ROWS; i++) 
+            memory_copy((uint8_t*)(get_offset(0, i) + VIDEO_ADDRESS),
+                        (uint8_t*)(get_offset(0, i-1) + VIDEO_ADDRESS),
+                        MAX_COLS * 2);
+
+        /* Blank last line */
+        char *last_line = (char*) (get_offset(0, MAX_ROWS-1) + (uint8_t*) VIDEO_ADDRESS);
+        for (i = 0; i < MAX_COLS * 2; i++) last_line[i] = 0;
+
+        offset -= 2 * MAX_COLS;
+    }
+
+    set_cursor_offset(offset);
+    return offset;
+}
+
+int get_cursor_offset() {
+    /* Use the VGA ports to get the current cursor position
+     * 1. Ask for high byte of the cursor offset (data 14)
+     * 2. Ask for low byte (data 15)
+     */
+    port_byte_out(REG_SCREEN_CTRL, 14);
+    int offset = port_byte_in(REG_SCREEN_DATA) << 8; /* High byte: << 8 */
+    port_byte_out(REG_SCREEN_CTRL, 15);
+    offset += port_byte_in(REG_SCREEN_DATA);
+    return offset * 2; /* Position * size of character cell */
+}
+
+void set_cursor_offset(int offset) {
+    /* Similar to get_cursor_offset, but instead of reading we write data */
+    offset /= 2;
+    port_byte_out(REG_SCREEN_CTRL, 14);
+    port_byte_out(REG_SCREEN_DATA, (uint8_t)(offset >> 8));
+    port_byte_out(REG_SCREEN_CTRL, 15);
+    port_byte_out(REG_SCREEN_DATA, (uint8_t)(offset & 0xff));
+}
+
+void clear_screen() {
+    int screen_size = MAX_COLS * MAX_ROWS;
+    int i;
+    uint8_t *screen = (uint8_t*) VIDEO_ADDRESS;
+
+    for (i = 0; i < screen_size; i++) {
+        screen[i*2] = ' ';
+        screen[i*2+1] = WHITE_ON_BLACK;
+    }
+    set_cursor_offset(get_offset(0, 0));
+}
+
+
+int get_offset(int col, int row) { return 2 * (row * MAX_COLS + col); }
+int get_offset_row(int offset) { return offset / (2 * MAX_COLS); }
+int get_offset_col(int offset) { return (offset - (get_offset_row(offset)*2*MAX_COLS))/2; }
+
+=== drivers/screen.h ===
+#ifndef SCREEN_H
+#define SCREEN_H
+
+#define VIDEO_ADDRESS 0xb8000
+#define MAX_ROWS 25
+#define MAX_COLS 80
+#define WHITE_ON_BLACK 0x0f
+#define RED_ON_WHITE 0xf4
+
+/* Screen i/o ports */
+#define REG_SCREEN_CTRL 0x3d4
+#define REG_SCREEN_DATA 0x3d5
+
+/* Public kernel API */
+void clear_screen();
+void kprint_at(char *message, int col, int row);
+void kprint(char *message);
+void kprint_backspace();
+
+#endif
+
+=== kernel/kernel.c ===
+#include "../cpu/isr.h"
+#include "../drivers/screen.h"
+#include "kernel.h"
+#include "../libc/string.h"
+#include "../libc/mem.h"
+#include <stdint.h>
+
+void kernel_main() {
+    isr_install();
+    irq_install();
+
+    asm("int $2");
+    asm("int $3");
+
+    kprint("Type something, it will go through the kernel\n"
+        "Type END to halt the CPU or PAGE to request a kmalloc()\n> ");
+}
+
+void user_input(char *input) {
+    if (strcmp(input, "END") == 0) {
+        kprint("Stopping the CPU. Bye!\n");
+        asm volatile("hlt");
+    } else if (strcmp(input, "PAGE") == 0) {
+        /* Lesson 22: Code to test kmalloc, the rest is unchanged */
+        uint32_t phys_addr;
+        uint32_t page = kmalloc(1000, 1, &phys_addr);
+        char page_str[16] = "";
+        hex_to_ascii(page, page_str);
+        char phys_str[16] = "";
+        hex_to_ascii(phys_addr, phys_str);
+        kprint("Page: ");
+        kprint(page_str);
+        kprint(", physical address: ");
+        kprint(phys_str);
+        kprint("\n");
+    }
+    kprint("You said: ");
+    kprint(input);
+    kprint("\n> ");
+}
+
+=== kernel/kernel.h ===
+#ifndef KERNEL_H
+#define KERNEL_H
+
+void user_input(char *input);
+
+#endif
+
+=== libc/function.h ===
+#ifndef FUNCTION_H
+#define FUNCTION_H
+
+/* Sometimes we want to keep parameters to a function for later use
+ * and this is a solution to avoid the 'unused parameter' compiler warning */
+#define UNUSED(x) (void)(x)
+
+#endif
+
+=== libc/mem.c ===
+#include "mem.h"
+
+void memory_copy(uint8_t *source, uint8_t *dest, int nbytes) {
+    int i;
+    for (i = 0; i < nbytes; i++) {
+        *(dest + i) = *(source + i);
+    }
+}
+
+void memory_set(uint8_t *dest, uint8_t val, uint32_t len) {
+    uint8_t *temp = (uint8_t *)dest;
+    for ( ; len != 0; len--) *temp++ = val;
+}
+
+/* This should be computed at link time, but a hardcoded
+ * value is fine for now. Remember that our kernel starts
+ * at 0x1000 as defined on the Makefile */
+uint32_t free_mem_addr = 0x10000;
+/* Implementation is just a pointer to some free memory which
+ * keeps growing */
+uint32_t kmalloc(size_t size, int align, uint32_t *phys_addr) {
+    /* Pages are aligned to 4K, or 0x1000 */
+    if (align == 1 && (free_mem_addr & 0xFFFFF000)) {
+        free_mem_addr &= 0xFFFFF000;
+        free_mem_addr += 0x1000;
+    }
+    /* Save also the physical address */
+    if (phys_addr) *phys_addr = free_mem_addr;
+
+    uint32_t ret = free_mem_addr;
+    free_mem_addr += size; /* Remember to increment the pointer */
+    return ret;
+}
+
+=== libc/mem.h ===
+#ifndef MEM_H
+#define MEM_H
+
+#include <stdint.h>
+#include <stddef.h>
+
+void memory_copy(uint8_t *source, uint8_t *dest, int nbytes);
+void memory_set(uint8_t *dest, uint8_t val, uint32_t len);
+
+/* At this stage there is no 'free' implemented. */
+uint32_t kmalloc(size_t size, int align, uint32_t *phys_addr);
+
+#endif
+
+=== libc/string.c ===
+#include "string.h"
+#include <stdint.h>
+
+/**
+ * K&R implementation
+ */
+void int_to_ascii(int n, char str[]) {
+    int i, sign;
+    if ((sign = n) < 0) n = -n;
+    i = 0;
+    do {
+        str[i++] = n % 10 + '0';
+    } while ((n /= 10) > 0);
+
+    if (sign < 0) str[i++] = '-';
+    str[i] = '\0';
+
+    reverse(str);
+}
+
+void hex_to_ascii(int n, char str[]) {
+    append(str, '0');
+    append(str, 'x');
+    char zeros = 0;
+
+    int32_t tmp;
+    int i;
+    for (i = 28; i > 0; i -= 4) {
+        tmp = (n >> i) & 0xF;
+        if (tmp == 0 && zeros == 0) continue;
+        zeros = 1;
+        if (tmp > 0xA) append(str, tmp - 0xA + 'a');
+        else append(str, tmp + '0');
+    }
+
+    tmp = n & 0xF;
+    if (tmp >= 0xA) append(str, tmp - 0xA + 'a');
+    else append(str, tmp + '0');
+}
+
+/* K&R */
+void reverse(char s[]) {
+    int c, i, j;
+    for (i = 0, j = strlen(s)-1; i < j; i++, j--) {
+        c = s[i];
+        s[i] = s[j];
+        s[j] = c;
+    }
+}
+
+/* K&R */
+int strlen(char s[]) {
+    int i = 0;
+    while (s[i] != '\0') ++i;
+    return i;
+}
+
+void append(char s[], char n) {
+    int len = strlen(s);
+    s[len] = n;
+    s[len+1] = '\0';
+}
+
+void backspace(char s[]) {
+    int len = strlen(s);
+    s[len-1] = '\0';
+}
+
+/* K&R 
+ * Returns <0 if s1<s2, 0 if s1==s2, >0 if s1>s2 */
+int strcmp(char s1[], char s2[]) {
+    int i;
+    for (i = 0; s1[i] == s2[i]; i++) {
+        if (s1[i] == '\0') return 0;
+    }
+    return s1[i] - s2[i];
+}
+
+=== libc/string.h ===
+#ifndef STRINGS_H
+#define STRINGS_H
+
+void int_to_ascii(int n, char str[]);
+void hex_to_ascii(int n, char str[]);
+void reverse(char s[]);
+int strlen(char s[]);
+void backspace(char s[]);
+void append(char s[], char n);
+int strcmp(char s1[], char s2[]);
+
+#endif
