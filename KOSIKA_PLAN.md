@@ -3506,6 +3506,24 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   programs with workflows, agents and tools; the guide does not teach
   those yet.
 
+### The native engine looks at the machine
+
+- `system "computer"` (with `--computer`) and `system "linux"` (with
+  `--linux NAME`, the one Linux under WSL) run in native/
+  (native/machine.go, machine_windows.go, machine_other.go) and read the
+  same as the reference: the computer's name, system, cores, memory, disk
+  and uptime; the Linux's kernel, uptime, load, memory, disk, upgrades and
+  busiest programs, by the reference's own fixed script. So MayaOS's
+  reading of the machine no longer needs Python.
+- `system "agents"` and `system "outside"` tools are read and checked as
+  in the reference, and, as in its command line, left unbound.
+- `kosika-native run` says why the checker refused a program on the
+  error output, as the reference does; it does not yet say the line and
+  column the reference adds.
+- Held by a test in which both engines refuse the same wrong
+  declarations and ungranted calls, read the same computer, and refuse
+  the same Linux names.
+
 ### The native engine checks programs and sends notes
 
 - `system "kosika"` tools run in native/ (native/kosikatools.go) as in

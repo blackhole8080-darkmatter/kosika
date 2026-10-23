@@ -21,9 +21,9 @@ func runCommand(args []string) int {
 	options := map[string]string{"--workflow": "main", "--model-protocol": "openai", "--model-timeout": "60", "--max-output-tokens": "1024"}
 	options["--mcp-source"] = "local_stdio"
 	options["--trace"] = "run_trace.jsonl"
-	flags := map[string]bool{"--approve": true, "--allow-shell": true}
+	flags := map[string]bool{"--approve": true, "--allow-shell": true, "--computer": true}
 	var givenSites []string
-	known := map[string]bool{"--notify": true, "--embed-url": true, "--embed-model": true, "--allow-site": true, "--services": true, "--allow-folder": true, "--memory": true, "--env": true, "--journal": true, "--binding-id": true, "--approval-record": true, "--approved-by": true, "--trace": true, "--model-fixture": true, "--mcp-server": true, "--mcp-manifest": true, "--mcp-source": true, "--workflow": true, "--input": true, "--model": true, "--model-url": true, "--model-protocol": true, "--model-timeout": true, "--model-binding": true, "--max-output-tokens": true}
+	known := map[string]bool{"--linux": true, "--notify": true, "--embed-url": true, "--embed-model": true, "--allow-site": true, "--services": true, "--allow-folder": true, "--memory": true, "--env": true, "--journal": true, "--binding-id": true, "--approval-record": true, "--approved-by": true, "--trace": true, "--model-fixture": true, "--mcp-server": true, "--mcp-manifest": true, "--mcp-source": true, "--workflow": true, "--input": true, "--model": true, "--model-url": true, "--model-protocol": true, "--model-timeout": true, "--model-binding": true, "--max-output-tokens": true}
 	for i := 1; i < len(args); i++ {
 		name, value, joined := strings.Cut(args[i], "=")
 		if flags[name] && !joined {
@@ -66,7 +66,7 @@ func runCommand(args []string) int {
 	}
 	// The program is checked first, as the reference checks it, before
 	// anything it would reach is looked at.
-	program := load(path)
+	program := loadTo(path, os.Stderr)
 	var env *environment
 	if name := options["--env"]; name != "" {
 		for _, flag := range environmentDecided {
@@ -191,6 +191,16 @@ func runCommand(args []string) int {
 		}
 		notify = address
 	}
+	// The one Linux a linux tool may look at.
+	linux := ""
+	if given := options["--linux"]; given != "" {
+		name, problem := plainDistro(given)
+		if problem != "" {
+			fmt.Fprintf(os.Stderr, "Workflow failed: %s\n", problem)
+			return 2
+		}
+		linux = name
+	}
 	// The sites a web tool may read, as bare host names.
 	var sites []string
 	for _, site := range givenSites {
@@ -251,6 +261,7 @@ func runCommand(args []string) int {
 		running.services = services
 		running.sites = sites
 		running.notify = notify
+		running.linux, running.computer = linux, options["--computer"] != ""
 		if model := options["--embed-model"]; model != "" {
 			address := options["--embed-url"]
 			if address == "" {

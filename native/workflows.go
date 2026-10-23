@@ -73,6 +73,10 @@ type run struct {
 	agentRequest string
 	// notify is the one address notes go to, when one was given.
 	notify string
+	// linux is the one Linux under WSL a linux tool may look at, and
+	// computer whether a computer tool may look at this computer.
+	linux    string
+	computer bool
 	// check is the step's own `verify`, for the model asked now; nil when
 	// there is none.
 	check *answerCheck

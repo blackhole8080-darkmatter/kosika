@@ -8,8 +8,10 @@ without Go, and says so.
 
 from __future__ import annotations
 
+import ast
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -1013,6 +1015,80 @@ class NativeTests(unittest.TestCase):
         self.assertIn("'tests': 2, 'passed': 1", seen["reference"]["failing"][1])
         self.assertIn("larger than 64 KiB", seen["reference"]["large"][1])
         self.assertIn("bad.kos: its test", seen["reference"]["plan"][1])
+
+    def test_it_looks_at_the_machine_as_the_reference_does(self) -> None:
+        # A computer tool reads this computer and a linux tool the one Linux
+        # named, each only when the person allows it; agents and outside
+        # tools are read and left to a host that has agents.
+        program = (
+            "record Linux { distro: Text kernel: Text uptime: Text load: Text memory: Text"
+            " disk: Text upgrades: Text top: Text[] }\n"
+            "record Computer { name: Text system: Text cores: Number memory: Text disk: Text uptime: Text }\n"
+            "record Handover { agent: Text text: Text }\n"
+            "record Handed { ok: Bool agent: Text text: Text }\n"
+            "record Ask { text: Text }\n"
+            'tool my_linux {\n  source system "linux"\n  operation: "status"\n'
+            "  access: observe\n  output: Linux\n}\n"
+            'tool my_computer {\n  source system "computer"\n  operation: "status"\n'
+            "  access: observe\n  output: Computer\n}\n"
+            'tool hand_over {\n  source system "agents"\n  operation: "ask"\n'
+            "  access: observe\n  input: Handover\n  output: Handed\n}\n"
+            'tool ask_outside {\n  source system "outside"\n  operation: "answer"\n'
+            "  access: observe\n  input: Handover\n  output: Handed\n}\n"
+            "agent desk {\n  can: [my_linux, my_computer, hand_over, ask_outside]\n  max_steps: 1\n}\n"
+            "workflow linux(a: Ask) -> Linux {\n  l = execute desk.my_linux()\n}\n"
+            "workflow computer(a: Ask) -> Computer {\n  c = execute desk.my_computer()\n}\n"
+            'workflow hand(a: Ask) -> Handed {\n  h = execute desk.hand_over("", a.text)\n}\n'
+            'workflow outside(a: Ask) -> Handed {\n  h = execute desk.ask_outside("devin", a.text)\n}\n'
+        )
+        wrong = {
+            "linux operation": program.replace('"linux"\n  operation: "status"', '"linux"\n  operation: "reboot"'),
+            "agents operation": program.replace('operation: "ask"', 'operation: "tell"'),
+            "outside operation": program.replace('operation: "answer"', 'operation: "write"'),
+            "computer shape": program.replace("cores: Number memory", "cores: Text memory"),
+        }
+
+        def engine(name: str, folder: Path, *flags: str) -> tuple[int, str, list[str]]:
+            first = [str(self.engine)] if name == "native" else [sys.executable, "-m", "kosika.cli"]
+            done = subprocess.run(
+                [*first, "run", str(folder / "p.kos"), "--input", "in.json", *flags], cwd=folder,
+                capture_output=True, text=True, env={**os.environ, "PYTHONPATH": str(ROOT)},
+            )
+            # The reference also says where in the file a refusal points;
+            # this engine does not place it yet.
+            said = [re.sub(r" \(line \d+, column \d+\)$", "", line) for line in done.stderr.strip().splitlines()[-1:]]
+            return done.returncode, done.stdout.splitlines()[:1], said
+
+        def kept(said: tuple[int, str, list[str]], *fields: str) -> object:
+            # What changes from one moment to the next is left out.
+            if said[0] != 0:
+                return said
+            record = ast.literal_eval(said[1][0])
+            return {field: record[field] for field in fields}
+
+        seen = {}
+        for name in ("reference", "native"):
+            with self.subTest(name), tempfile.TemporaryDirectory() as scratch:
+                folder = Path(scratch)
+                (folder / "in.json").write_text(json.dumps({"a": {"text": "hello"}}))
+                outcome: dict[str, object] = {}
+                for label, source in wrong.items():
+                    (folder / "p.kos").write_text(source, encoding="utf-8")
+                    outcome[label] = engine(name, folder, "--workflow", "computer")[0::2]
+                (folder / "p.kos").write_text(program, encoding="utf-8")
+                for workflow in ("computer", "linux", "hand", "outside"):
+                    outcome[f"{workflow} ungranted"] = engine(name, folder, "--workflow", workflow)
+                outcome["computer"] = kept(
+                    engine(name, folder, "--workflow", "computer", "--computer"), "name", "system", "cores"
+                )
+                outcome["bad name"] = engine(name, folder, "--workflow", "linux", "--linux", "Ubuntu; rm")
+                if shutil.which("wsl.exe"):
+                    outcome["no such linux"] = engine(name, folder, "--workflow", "linux", "--linux", "NoSuchLinux")
+                seen[name] = outcome
+        self.maxDiff = None
+        self.assertEqual(seen["native"], seen["reference"])
+        self.assertEqual(seen["reference"]["computer"]["cores"], os.cpu_count())
+        self.assertIn("is not a plain name", seen["reference"]["bad name"][2][0])
 
     def test_it_learns_where_the_reference_learns(self) -> None:
         # Lessons one engine keeps, the other finds and answers from, with

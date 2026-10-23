@@ -534,6 +534,12 @@ func (r *run) hostTool(tool *ToolDecl, arguments *Record) (Value, bool) {
 		if systemKind(tool) == "notify" {
 			return r.noteTool(arguments), true
 		}
+		if systemKind(tool) == "linux" {
+			return r.linuxTool(), true
+		}
+		if systemKind(tool) == "computer" {
+			return computerTool(), true
+		}
 		return r.fileTool(tool, arguments), true
 	case tool.Source == "world:clock":
 		return moment(), true

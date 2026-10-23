@@ -34,31 +34,38 @@ func read(path string) string {
 }
 
 // load reads, lowers and checks a program, as the reference's load_program
-// does, and ends the command when it cannot be run.
+// does, and ends the command when it cannot be run. Why the checker refused
+// it is said on the output, as the conformance suite reports it.
 func load(path string) *Program {
+	return loadTo(path, os.Stdout)
+}
+
+// loadTo is load, saying why the checker refused a program on refusals:
+// `run` says it on the error output, as the reference's command line does.
+func loadTo(path string, refusals *os.File) *Program {
 	program, failure := loadModules(path)
 	if failure != nil && failure.parse {
 		fail("Check failed: %s", failure.message)
 	}
 	if failure != nil {
-		fmt.Printf("Check failed: %s\n", failure.message)
+		fmt.Fprintf(refusals, "Check failed: %s\n", failure.message)
 		os.Exit(2)
 	}
 	stored, refused := LowerStores(LowerDirect(LowerAmbient(program)))
 	if refused != "" {
-		fmt.Printf("Check failed: %s\n", refused)
+		fmt.Fprintf(refusals, "Check failed: %s\n", refused)
 		os.Exit(2)
 	}
 	lowered, refused := LowerThinking(stored)
 	if refused != "" {
-		fmt.Printf("Check failed: %s\n", refused)
+		fmt.Fprintf(refusals, "Check failed: %s\n", refused)
 		os.Exit(2)
 	}
 	program = FillDefaults(LowerValues(lowered))
-	// A program the checker refuses is not run, and says why as the
-	// reference does: on the output, with exit code 2.
+	// A program the checker refuses is not run, and says why, with exit
+	// code 2.
 	if refused := Check(program); refused != nil {
-		fmt.Printf("Check failed: %s\n", refused)
+		fmt.Fprintf(refusals, "Check failed: %s\n", refused)
 		os.Exit(2)
 	}
 	return program

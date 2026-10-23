@@ -10,8 +10,10 @@ package main
 // folder (--allow-folder) and allows programs to be started (--allow-shell);
 // a path that leaves the folder is refused; writing a file or starting a
 // program changes something, so it must be `access: execute` and waits for
-// an approval of exactly that call. The other kinds the reference has (web,
-// kosika, meaning, agents, outside) are refused by name as the file is read.
+// an approval of exactly that call. The other kinds are in their own files
+// (web.go, meaning.go, kosikatools.go, machine.go); agents and outside
+// tools are read and checked, and, as in the reference's command line, only
+// a host with agents of its own could bind them.
 
 import (
 	"bytes"
@@ -42,8 +44,9 @@ const (
 
 var systemKinds = []string{"shell", "files", "web", "kosika", "meaning", "agents", "outside", "notify", "services", "linux", "computer"}
 
-// The kinds this engine reaches; the rest are refused as the file is read.
-var systemKindsHere = map[string]bool{"files": true, "shell": true, "services": true, "web": true, "meaning": true, "kosika": true, "notify": true}
+// The kinds this engine reads; the rest are refused as the file is read.
+var systemKindsHere = map[string]bool{"files": true, "shell": true, "services": true, "web": true, "meaning": true, "kosika": true, "notify": true,
+	"linux": true, "computer": true, "agents": true, "outside": true}
 
 var fileOperations = []string{"read", "peek", "search", "find", "write", "create", "write_all", "list"}
 var readOnlyOperations = map[string]bool{"read": true, "peek": true, "search": true, "find": true, "list": true}
@@ -75,9 +78,17 @@ var systemShapes = map[string]shape{
 	"check":       {[]Param{{"source", "Text"}}, []Param{{"ok", "Bool"}, {"problem", "Text"}, {"tests", "Number"}, {"passed", "Number"}}},
 	"check_files": {[]Param{{"text", "Text"}, {"files", plannedFiles}}, []Param{{"problems", "Text[]"}}},
 	"send":        {[]Param{{"title", "Text"}, {"text", "Text"}}, []Param{{"sent", "Bool"}}},
-	"fetch_from":  {[]Param{{"url", "Text"}, {"start", "Number"}}, []Param{{"url", "Text"}, {"title", "Text"}, {"text", "Text"}, {"next", "Number"}}},
-	"pause":       {[]Param{{"name", "Text"}}, []Param{{"name", "Text"}, {"paused", "Bool"}}},
-	"resume":      {[]Param{{"name", "Text"}}, []Param{{"name", "Text"}, {"paused", "Bool"}}},
+	"linux:status": {nil, []Param{{"distro", "Text"}, {"kernel", "Text"}, {"uptime", "Text"}, {"load", "Text"},
+		{"memory", "Text"}, {"disk", "Text"}, {"upgrades", "Text"}, {"top", "Text[]"}}},
+	"computer:status": {nil, []Param{{"name", "Text"}, {"system", "Text"}, {"cores", "Number"},
+		{"memory", "Text"}, {"disk", "Text"}, {"uptime", "Text"}}},
+	"ask":        {[]Param{{"agent", "Text"}, {"text", "Text"}}, []Param{{"ok", "Bool"}, {"agent", "Text"}, {"text", "Text"}}},
+	"propose":    {[]Param{{"agent", "Text"}, {"text", "Text"}}, []Param{{"ok", "Bool"}, {"agent", "Text"}, {"said", "Text"}, {"files", plannedFiles}}},
+	"review":     {[]Param{{"agent", "Text"}, {"text", "Text"}, {"files", plannedFiles}}, []Param{{"ok", "Bool"}, {"agent", "Text"}, {"said", "Text"}}},
+	"answer":     {[]Param{{"agent", "Text"}, {"text", "Text"}}, []Param{{"ok", "Bool"}, {"agent", "Text"}, {"text", "Text"}}},
+	"fetch_from": {[]Param{{"url", "Text"}, {"start", "Number"}}, []Param{{"url", "Text"}, {"title", "Text"}, {"text", "Text"}, {"next", "Number"}}},
+	"pause":      {[]Param{{"name", "Text"}}, []Param{{"name", "Text"}, {"paused", "Bool"}}},
+	"resume":     {[]Param{{"name", "Text"}}, []Param{{"name", "Text"}, {"paused", "Bool"}}},
 }
 
 func systemKind(tool *ToolDecl) string {
@@ -147,6 +158,12 @@ func (c *checker) systemProblem(tool *ToolDecl) string {
 	}
 	looksOnly := (kind == "files" && readOnlyOperations[tool.Operation]) || (kind == "services" && tool.Operation == "status") ||
 		kind != "files" && kind != "shell" && kind != "services"
+	if kind == "outside" && tool.Operation != "propose" && tool.Operation != "review" && tool.Operation != "answer" {
+		return fmt.Sprintf("Tool %s has unknown outside operation %s; use one of: propose, review, answer", pyRepr(tool.Name), pyRepr(tool.Operation))
+	}
+	if kind == "agents" && tool.Operation != "ask" {
+		return fmt.Sprintf("Tool %s has unknown agents operation %s; the only one is ask", pyRepr(tool.Name), pyRepr(tool.Operation))
+	}
 	if kind == "kosika" && tool.Operation != "check" && tool.Operation != "check_files" {
 		return fmt.Sprintf("Tool %s has unknown kosika operation %s; use one of: check, check_files", pyRepr(tool.Name), pyRepr(tool.Operation))
 	}
@@ -155,6 +172,9 @@ func (c *checker) systemProblem(tool *ToolDecl) string {
 	}
 	if kind == "meaning" && tool.Operation != "near" {
 		return fmt.Sprintf("Tool %s has unknown meaning operation %s; the only one is near", pyRepr(tool.Name), pyRepr(tool.Operation))
+	}
+	if (kind == "linux" || kind == "computer") && tool.Operation != "status" {
+		return fmt.Sprintf("Tool %s has unknown %s operation %s; the only one is status", pyRepr(tool.Name), kind, pyRepr(tool.Operation))
 	}
 	if kind == "web" && tool.Operation != "fetch" && tool.Operation != "fetch_from" {
 		return fmt.Sprintf("Tool %s has unknown web operation %s; use one of: fetch, fetch_from", pyRepr(tool.Name), pyRepr(tool.Operation))
@@ -172,7 +192,9 @@ func (c *checker) systemProblem(tool *ToolDecl) string {
 		return fmt.Sprintf("Tool %s must name exactly one program in operation, with its arguments passed in args", pyRepr(tool.Name))
 	}
 	wanted := systemShapes["shell"]
-	if kind != "shell" {
+	if byKind, ok := systemShapes[kind+":"+tool.Operation]; ok && kind != "shell" {
+		wanted = byKind
+	} else if kind != "shell" {
 		wanted = systemShapes[tool.Operation]
 	}
 	var plannedText []string
@@ -545,6 +567,10 @@ func (r *run) systemBound(tool *ToolDecl) bool {
 		return true
 	case "notify":
 		return r.notify != ""
+	case "linux":
+		return r.linux != ""
+	case "computer":
+		return r.computer
 	case "shell":
 		return r.folder != "" && r.allowShell
 	case "services":
