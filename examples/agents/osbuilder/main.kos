@@ -75,11 +75,13 @@ record Outcome { passed: Bool stage: Text tries: Number files: Text[] written: T
 // The files of a stage that passed, for the next stage to build on.
 record Stage { files: Text }
 
-// Rules the builder has taught itself from its failures, newest first. Every
-// try of every stage reads them, so a mistake made once is named for good.
-record Rules { items: Text[] }
+// Rules the builder has taught itself from its failures, newest first. A
+// new rule is on trial: it is kept (moved to items) only when the stage it
+// was learned in then passes, and dropped when that stage fails anyway, so a
+// wrong rule does not stay to mislead later stages. Every try reads both.
+record Rules { items: Text[] trial: Text[] }
 // What the teacher is shown about a failed try, and the rule it writes.
-record Failure { task: Text stage: Text failed: Text build: Text screen: Text files: Text known: Text }
+record Failure { task: Text stage: Text spec: Text failed: Text build: Text screen: Text files: Text known: Text }
 record Rule { text: Text }
 
 tool read_file {
@@ -231,7 +233,8 @@ fn learned_words(items: Text[]) -> Text {
 
 fn learned_text(known: RulesRecalled, spec: Spec) -> Text {
   if not spec.learning or not known.found { return "" }
-  return learned_words(known.value.value().items)
+  let r = known.value.value()
+  return learned_words(r.trial.concat(r.items))
 }
 
 fn asked_of(spec: Spec, texts: FileText[], past: BuiltRecalled, known: RulesRecalled) -> Asked {
@@ -241,12 +244,12 @@ fn asked_of(spec: Spec, texts: FileText[], past: BuiltRecalled, known: RulesReca
 // ---------------------------------------------------------------- learning
 
 fn teach_task() -> Text {
-  return "You review a failed try at building a tiny x86 operating system with nasm, gcc -m32 and QEMU. Find the cause of the failure in the files, and write ONE rule, a single sentence under 35 words, that would have prevented it and that is true in general, not only for this stage: name the instruction, register, address, flag or file involved. Do not repeat a rule that is already known. Write only the rule."
+  return "You review a failed try at building a tiny x86 operating system with nasm, gcc -m32 and QEMU. Find the cause of the failure in the files, and write ONE rule, a single sentence under 35 words, that would have prevented it and that is true in general, not only for this stage: name the instruction, register, address, flag or file involved. The rule must never contradict the stage's spec, which is given: what the spec asks for is required. Do not repeat a rule that is already known. Write only the rule."
 }
 
 fn failure_of(last: Outcome, known: RulesRecalled) -> Failure {
-  let have = if known.found { known.value.value().items.join("\n") } else { "" }
-  return {task: teach_task(), stage: last.spec.stage + ": " + last.spec.title, failed: last.failed.join("\n"), build: last.build.take(2000), screen: last.screen.take(1500), files: last.written.take(12000), known: have}
+  let have = if known.found { known.value.value().trial.concat(known.value.value().items).join("\n") } else { "" }
+  return {task: teach_task(), stage: last.spec.stage + ": " + last.spec.title, spec: last.asked.spec.take(3000), failed: last.failed.join("\n"), build: last.build.take(2000), screen: last.screen.take(1500), files: last.written.take(12000), known: have}
 }
 
 fn no_rule() -> Rule {
@@ -259,17 +262,34 @@ fn clean_rule(rule: Rule) -> Text {
   return if line.length() < 12 or line.length() > 300 { "" } else { line }
 }
 
+fn rules_of(known: RulesRecalled) -> Rules {
+  return if known.found { known.value.value() } else { {items: [], trial: []} }
+}
+
+// A new rule goes on trial.
 fn rules_with(known: RulesRecalled, rule: Rule) -> Rules {
-  let before = if known.found { known.value.value().items } else { [] }
+  let r = rules_of(known)
   let line = clean_rule(rule)
-  if line.is_empty() or before.contains(line) { return {items: before} }
-  return {items: [line].concat(before).take(15)}
+  if line.is_empty() or r.items.contains(line) or r.trial.contains(line) { return r }
+  return {items: r.items, trial: [line].concat(r.trial).take(5)}
+}
+
+// The stage passed: its rules on trial helped, and are kept.
+fn rules_kept(known: RulesRecalled) -> Rules {
+  let r = rules_of(known)
+  return {items: r.trial.concat(r.items).unique().take(20), trial: []}
+}
+
+// The stage failed anyway: its rules on trial did not help, and go.
+fn rules_dropped(known: RulesRecalled) -> Rules {
+  return {items: rules_of(known).items, trial: []}
 }
 
 // The next try reads the newest rules too.
 fn with_learned(last: Outcome, now: Rules) -> Outcome {
   let a = last.asked
-  let learned = if now.items.is_empty() { a.learned } else { learned_words(now.items) }
+  let all = now.trial.concat(now.items)
+  let learned = if all.is_empty() { a.learned } else { learned_words(all) }
   return {passed: last.passed, stage: last.stage, tries: last.tries, files: last.files, written: last.written, failed: last.failed, build: last.build, screen: last.screen, spec: last.spec, asked: {rules: a.rules, learned: learned, spec: a.spec, guides: a.guides, before: a.before, feedback: a.feedback}}
 }
 
@@ -479,7 +499,7 @@ workflow retry(last: Outcome) -> Outcome {
 workflow learn_from(last: Outcome) -> Outcome {
   known = recall rules under "all"
   fail  = failure_of(last, known)
-  rule  = use_model teacher(fail.task, fail.stage, fail.failed, fail.build, fail.screen, fail.files, fail.known) retry 1 otherwise no_rule()
+  rule  = use_model teacher(fail.task, fail.stage, fail.spec, fail.failed, fail.build, fail.screen, fail.files, fail.known) retry 1 otherwise no_rule()
   now   = rules_with(known, rule)
   saved = remember now in rules under "all"
   out   = with_learned(last, now)
@@ -487,13 +507,21 @@ workflow learn_from(last: Outcome) -> Outcome {
 
 workflow keep(out: Outcome) -> Outcome {
   saved = remember stage_files(out) in built under out.stage
+  known = recall rules under "all"
+  sure  = remember rules_kept(known) in rules under "all"
+  same  = out
+}
+
+workflow drop(out: Outcome) -> Outcome {
+  known = recall rules under "all"
+  gone  = remember rules_dropped(known) in rules under "all"
   same  = out
 }
 
 workflow kept(out: Outcome) -> Outcome {
   done = match out.passed {
     case true { call keep(out) }
-    case _ { out }
+    case _ { call drop(out) }
   }
 }
 
@@ -592,15 +620,22 @@ Snapshots: 1
 "})).args == ["tools/screen.py", "stages/8/os-image.bin", "--snapshots", "1", "--keys", "a ret"]
 }
 
-test "a failure becomes a rule, kept once, newest first" {
+test "a failure becomes a rule on trial, kept only if the stage then passes" {
   none: RulesRecalled = {found: false, value: null}
   one = rules_with(none, {text: "  - Set es before ah and al for int 0x13, because mov ax overwrites ah.\nmore words"})
-  expect one.items == ["Set es before ah and al for int 0x13, because mov ax overwrites ah."]
+  expect one.trial == ["Set es before ah and al for int 0x13, because mov ax overwrites ah."]
+  expect one.items == []
   had: RulesRecalled = {found: true, value: one}
-  expect rules_with(had, {text: "Set es before ah and al for int 0x13, because mov ax overwrites ah."}).items.length() == 1
-  expect rules_with(had, {text: "ok"}).items.length() == 1
+  expect rules_with(had, {text: "Set es before ah and al for int 0x13, because mov ax overwrites ah."}).trial.length() == 1
+  expect rules_with(had, {text: "ok"}).trial.length() == 1
   two = rules_with(had, {text: "Pad the image so every sector the boot sector reads exists."})
-  expect two.items[0] == "Pad the image so every sector the boot sector reads exists."
+  expect two.trial[0] == "Pad the image so every sector the boot sector reads exists."
+  passed = rules_kept({found: true, value: two})
+  expect passed.items.length() == 2
+  expect passed.trial == []
+  failed = rules_dropped({found: true, value: two})
+  expect failed.items == []
+  expect failed.trial == []
   spec = learning_of(spec_of("3", {text: "Title: Disk\n---\n"}), {text: "stage 3"})
   expect spec.learning
   expect not learning_of(spec, {text: "stage 3 without rules"}).learning
