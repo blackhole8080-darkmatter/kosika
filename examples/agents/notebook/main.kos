@@ -24,10 +24,31 @@
 // up the other, even when their meanings are far apart: the notebook learns
 // that your maths exam goes with your physics revision because you keep
 // asking about them together.
+//
+// And it learns what you mean. After an answer, say "wrong" and it offers
+// the next most likely note; say "right" when it has it. A right answer is
+// kept as a lesson: this question, this note. Each time, it also teaches a
+// small neural network (nn.kos, written in Kosika) about the note it
+// showed: how near it was, how much it stood out, whether it is linked to
+// what you asked before, and how like the question is to one this note
+// was the right answer to. Once the network has a few right and wrong
+// answers to go on, it is the network that chooses among the notes that
+// could answer, so the notebook comes to answer the way you mean.
+
+import "nn.kos"
 
 record Msg { text: Text }
 record Said { text: Text }
 record Note { text: Text }
+
+// The notes that could answer a question, with what the network is told
+// about each, and the ones tried so far, the last one shown.
+record Pick { question: Text text: Text rows: Number[][] texts: Text[] tried: Number[] }
+// A question and the note that was the right answer to it.
+record Lesson { question: Text note: Text }
+// The network, and every answer it has learned from: what it was told
+// about a note, and 1 if that note was right, 0 if wrong.
+record Brain { net: Net xs: Number[][] ys: Number[][] }
 
 // What a note has been asked about together with, and how many times.
 record Links { notes: Text[] counts: Number[] }
@@ -35,8 +56,13 @@ record Links { notes: Text[] counts: Number[] }
 memory notes of Note
 // For each note, the notes asked about just before or after it.
 memory links of Links
-// The note that answered the last question, under the key "last".
-memory recent of Note
+// The last question's answer and what else could have answered it,
+// under the key "last".
+memory recent of Pick
+// What the notebook has learned, under the key "me".
+memory brain of Brain
+// Questions and their right answers, under the question.
+memory lessons of Lesson
 
 // A link is shown once it has been used this many times.
 fn learned() -> Number {
@@ -99,11 +125,155 @@ fn question_of(msg: Msg) -> Msg {
   return {text: text}
 }
 
-// The nearest note when it is near enough, else nothing.
-fn best(found: NotesLike) -> Msg {
-  if found.matches.is_empty() { return {text: ""} }
-  if not near_enough(found, 0, "") { return {text: ""} }
-  return {text: found.matches[0].value.text}
+// ---------------------------------------------------------------- learning
+
+// At most this many notes are weighed for one question.
+fn candidates() -> Number {
+  return 5
+}
+
+fn no_pick() -> Pick {
+  return {question: "", text: "", rows: [], texts: [], tried: []}
+}
+
+fn new_brain() -> Brain {
+  return {net: net([4, 6, 1], 11), xs: [], ys: []}
+}
+
+// Whether the lesson at `at` is about this question. By meaning, the same
+// question asked again scores about 0.8 and one put another way about
+// 0.65, while lessons about other things score about 0.4, so a lesson
+// counts when it is near and stands out from the other lessons.
+fn lesson_fits(lessons: LessonsLike, at: Number) -> Bool {
+  let score = lessons.matches[at].score
+  if lessons.by != "meaning" { return score >= 0.3 }
+  if score < 0.62 { return false }
+  var total = 0
+  var count = 0
+  for i in 0 until lessons.matches.length() {
+    if i != at {
+      total += lessons.matches[i].score
+      count = count + 1
+    }
+  }
+  return count == 0 or score - total / count >= 0.2
+}
+
+// How like this question is to one that `text` was the right answer to,
+// 0 when no lesson that fits says so.
+fn taught_for(lessons: LessonsLike, text: Text) -> Number {
+  var high = 0
+  for i in 0 until lessons.matches.length() {
+    let found = lessons.matches[i]
+    if found.value.note == text and lesson_fits(lessons, i) { high = high.max(found.score) }
+  }
+  return high
+}
+
+// A note a fitting lesson points to may answer by itself.
+fn taught_enough(lessons: LessonsLike) -> Number {
+  return 0.01
+}
+
+// What the network is told about the note at `at`: how near it is, how much
+// it stands out, how often it followed the last answer, and how like the
+// question is to one it was the right answer to.
+fn row_of(found: NotesLike, at: Number, before: LinksRecalled, lessons: LessonsLike) -> Number[] {
+  let links = before.value.or({notes: [], counts: []})
+  let text = found.matches[at].value.text
+  var used = 0
+  for i in 0 until links.notes.length() {
+    if links.notes[i] == text { used = links.counts[i].min(5) }
+  }
+  return [found.matches[at].score, lead(found, at, ""), used / 5, taught_for(lessons, text)]
+}
+
+// The network chooses once it has seen at least four answers, some right
+// and some wrong.
+fn ready(brain: Brain) -> Bool {
+  let labels = for y in brain.ys { y[0] }
+  return brain.xs.length() >= 4 and labels.contains(1) and labels.contains(0)
+}
+
+// The untried note the network thinks most likely, or, before it is
+// ready, the first untried one. -1 when there is none.
+fn likeliest(brain: Brain, rows: Number[][], tried: Number[]) -> Number {
+  var found = -1
+  var high = -1
+  for i in 0 until rows.length() {
+    if not tried.contains(i) {
+      let p = if ready(brain) { predict(brain.net, rows[i])[0] } else { 1 - i / 10 }
+      if p > high {
+        high = p
+        found = i
+      }
+    }
+  }
+  return found
+}
+
+fn choose(asked: Msg, found: NotesLike, before: LinksRecalled, known: BrainRecalled, lessons: LessonsLike) -> Pick {
+  let brain = known.value.or(new_brain())
+  let count = found.matches.length().min(candidates())
+  if count == 0 { return no_pick() }
+  let rows = for i in 0 until count { row_of(found, i, before, lessons) }
+  let texts = for i in 0 until count { found.matches[i].value.text }
+  // Only a note that stands out, or that was the right answer to a question
+  // much like this one, may answer: the network chooses among those, and
+  // never answers a question nothing kept is about.
+  var could: Number[] = []
+  for i in 0 until count {
+    if near_enough(found, i, "") or rows[i][3] >= taught_enough(lessons) { could = could.append(i) }
+  }
+  if could.is_empty() { return no_pick() }
+  // What you said was right for a question like this one comes first;
+  // only without such a lesson does the network choose.
+  var at = could[0]
+  var lessoned = false
+  for i in could {
+    if rows[i][3] >= taught_enough(lessons) and rows[i][3] > rows[at][3] {
+      at = i
+      lessoned = true
+    }
+  }
+  if rows[at][3] >= taught_enough(lessons) { lessoned = true }
+  if ready(brain) and not lessoned {
+    var high = -1
+    for i in could {
+      let p = predict(brain.net, rows[i])[0]
+      if p > high {
+        high = p
+        at = i
+      }
+    }
+  }
+  return {question: asked.text, text: texts[at], rows: rows, texts: texts, tried: [at]}
+}
+
+// The brain after learning that the last note shown was right (1) or
+// wrong (0). It keeps the last 200 answers.
+fn taught(known: BrainRecalled, last: RecentRecalled, label: Number) -> Brain {
+  let brain = known.value.or(new_brain())
+  let pick = last.value.or(no_pick())
+  if pick.text.is_empty() { return brain }
+  let row = pick.rows[pick.tried[pick.tried.length() - 1]]
+  let full = brain.xs.length() >= 200
+  let xs = (if full { brain.xs.drop(1) } else { brain.xs }).append(row)
+  let ys = (if full { brain.ys.drop(1) } else { brain.ys }).append([label])
+  return {net: train(brain.net, xs, ys, 0.3, 40), xs: xs, ys: ys}
+}
+
+fn next_pick(last: RecentRecalled, brain: Brain) -> Pick {
+  let pick = last.value.or(no_pick())
+  if pick.text.is_empty() { return no_pick() }
+  let at = likeliest(brain, pick.rows, pick.tried)
+  if at < 0 { return no_pick() }
+  return {question: pick.question, text: pick.texts[at], rows: pick.rows, texts: pick.texts, tried: pick.tried.append(at)}
+}
+
+fn lesson_of(last: RecentRecalled) -> Lesson {
+  let pick = last.value.or(no_pick())
+  return {question: pick.question, note: pick.text}
 }
 
 // ---------------------------------------------------------------- replies
@@ -116,8 +286,13 @@ fn kept(note: Note) -> Said {
 // ---------------------------------------------------------------- links
 
 fn last_of(last: RecentRecalled) -> Msg {
-  if not last.found { return {text: ""} }
-  return {text: last.value.or({text: ""}).text}
+  return {text: last.value.or(no_pick()).text}
+}
+
+// Where the links of the last answer are kept; a key nothing is kept
+// under when there was no last answer.
+fn link_key(before: Msg) -> Text {
+  return if before.text.is_empty() { "-" } else { key_text(before.text) }
 }
 
 // `known` with the link to `other` one stronger, or new.
@@ -180,7 +355,8 @@ workflow keep(msg: Msg) -> Said {
 
 // A note that answered: what it is near in meaning, and the links to the
 // last answer, made one stronger in both directions.
-workflow answer_with(answer: Msg) -> Said {
+workflow answer_with(pick: Pick) -> Said {
+  answer = picked(pick)
   linked = recall notes like answer.text
   last   = recall recent under "last"
   before = last_of(last)
@@ -190,26 +366,80 @@ workflow answer_with(answer: Msg) -> Said {
   back   = back_value(theirs, ours, before, answer)
   one    = remember ours in links under key_text(answer.text)
   two    = remember back in links under back_key(before, answer)
-  note   = as_note(answer)
-  now    = remember note in recent under "last"
+  now    = remember pick in recent under "last"
   said   = answered(answer, linked, ours)
 }
 
-fn as_note(answer: Msg) -> Note {
-  return {text: answer.text}
+fn picked(pick: Pick) -> Msg {
+  return {text: pick.text}
 }
 
 workflow ask(msg: Msg) -> Said {
   asked  = question_of(msg)
   near   = recall notes like asked.text
-  answer = best(near)
-  said   = match answer.text.is_empty() {
+  last   = recall recent under "last"
+  before = last_of(last)
+  prev   = recall links under link_key(before)
+  known  = recall brain under "me"
+  taught = recall lessons like asked.text
+  pick   = choose(asked, near, prev, known, taught)
+  said   = match pick.text.is_empty() {
     case true { {text: "I don't remember anything about that. Tell me with: remember ..."} }
-    case _ { call answer_with(answer) }
+    case _ { call answer_with(pick) }
   }
 }
 
+workflow offer(pick: Pick) -> Said {
+  now  = remember pick in recent under "last"
+  said = perhaps(pick)
+}
+
+fn perhaps(pick: Pick) -> Said {
+  return {text: "Then perhaps: " + pick.text}
+}
+
+workflow wrong(msg: Msg) -> Said {
+  last  = recall recent under "last"
+  known = recall brain under "me"
+  brain = taught(known, last, 0)
+  saved = remember brain in brain under "me"
+  pick  = next_pick(last, brain)
+  said  = match pick.text.is_empty() {
+    case true { {text: "Sorry, I have nothing else that fits. Tell me with: remember ..."} }
+    case _ { call offer(pick) }
+  }
+}
+
+workflow learn_right(last: RecentRecalled) -> Said {
+  known  = recall brain under "me"
+  brain  = taught(known, last, 1)
+  saved  = remember brain in brain under "me"
+  lesson = lesson_of(last)
+  kept   = remember lesson in lessons under key_text(lesson.question)
+  said   = thanked(lesson)
+}
+
+workflow right(msg: Msg) -> Said {
+  last   = recall recent under "last"
+  before = last_of(last)
+  said   = match before.text.is_empty() {
+    case true { {text: "Ask me something first."} }
+    case _ { call learn_right(last) }
+  }
+}
+
+fn thanked(lesson: Lesson) -> Said {
+  return {text: "Good, I will remember that this answers \"" + lesson.question + "\"."}
+}
+
+fn bare_word(msg: Msg) -> Text {
+  return first_word(msg).replace("!", "").replace(".", "")
+}
+
 fn kind_of(msg: Msg) -> Text {
+  let short = msg.text.trim().words().length() <= 3
+  if short and ["right", "yes", "correct", "thanks", "good"].contains(bare_word(msg)) { return "right" }
+  if short and ["wrong", "no", "nope"].contains(bare_word(msg)) { return "wrong" }
   if first_word(msg) != "remember" { return "ask" }
   if note_of(msg).text.is_empty() { return "empty" }
   return "keep"
@@ -219,6 +449,8 @@ workflow main(msg: Msg) -> Said {
   said = match kind_of(msg) {
     case "keep" { call keep(msg) }
     case "empty" { kept(note_of(msg)) }
+    case "right" { call right(msg) }
+    case "wrong" { call wrong(msg) }
     case _ { call ask(msg) }
   }
 }
@@ -259,6 +491,58 @@ test "notes asked about one after the other become linked" {
   expect e.text == "Physics revision covers chapters 4 to 6"
   expect f.text == "Maths exam is on 3 November\nYou often ask about this with:\n  Physics revision covers chapters 4 to 6"
   expect g.text == "Rent is 900 euros a month"
+}
+
+record XorCheck { before: Number after: Number one: Number both: Number }
+
+fn xor_check() -> XorCheck {
+  let xs = [[0, 0], [0, 1], [1, 0], [1, 1]]
+  let ys = [[0], [1], [1], [0]]
+  let start = net([2, 4, 1], 1)
+  let done = train(start, xs, ys, 0.3, 400)
+  return {before: loss(start, xs, ys), after: loss(done, xs, ys), one: predict(done, [0, 1])[0], both: predict(done, [1, 1])[0]}
+}
+
+test "the network learns XOR, so it can learn what is not a straight line" {
+  x = xor_check()
+  expect x.before > 0.5
+  expect x.after < 0.05
+  expect x.one > 0.9
+  expect x.both < 0.1
+}
+
+test "wrong offers the next note, and right is learned from" {
+  a = main({text: "remember Rent is 900 euros a month"})
+  b = main({text: "remember The rent goes to the landlord on the 1st"})
+  c = main({text: "what is the rent"})
+  d = main({text: "wrong"})
+  e = main({text: "right"})
+  expect c.text.starts_with("Rent is 900 euros a month")
+  expect d.text == "Then perhaps: The rent goes to the landlord on the 1st"
+  expect e.text == "Good, I will remember that this answers \"what is the rent\"."
+}
+
+test "after a few corrections, the network answers the way you mean" {
+  a = main({text: "remember Rent is 900 euros a month"})
+  b = main({text: "remember The rent goes to the landlord on the 1st"})
+  c = main({text: "what is the rent"})
+  d = main({text: "wrong"})
+  e = main({text: "right"})
+  f = main({text: "what is the rent"})
+  g = main({text: "what is the cat called"})
+  h = main({text: "wrong"})
+  i = main({text: "what is the rent"})
+  // The nearest note by words is the first, but the second was meant.
+  expect c.text.starts_with("Rent is 900 euros a month")
+  expect f.text.starts_with("The rent goes to the landlord on the 1st")
+  expect i.text.starts_with("The rent goes to the landlord on the 1st")
+}
+
+test "right or wrong before any question" {
+  a = main({text: "right"})
+  b = main({text: "wrong"})
+  expect a.text == "Ask me something first."
+  expect b.text.starts_with("Sorry, I have nothing else")
 }
 
 test "remember with nothing after it asks for the note" {
