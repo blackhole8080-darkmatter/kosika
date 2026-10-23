@@ -318,14 +318,29 @@ fn draw_quote(figure: Figure) -> Text {
   return (for item in figure.items { f"<blockquote>&#8220;{esc(item.value)}&#8221;</blockquote>" }).join("")
 }
 
+// A mind map or tree as a plain outline: what a phone shows instead of
+// the drawing, whose words would be too small there.
+fn outline(figure: Figure) -> Text {
+  var parts: Text[] = [f"<div class=\"outline\"><b class=\"root\">{esc(figure.center)}</b>"]
+  let roots = branches(figure)
+  for i in 0 until roots.length() {
+    let root = roots[i]
+    let tag = if root.note.is_empty() { "" } else { f" <i>{esc(root.note)}</i>" }
+    let below = (for leaf in leaves(figure, root) { f"<li>{esc(leaf.label)}</li>" }).join("")
+    parts = parts.append(f"<div class=\"branch\" style=\"border-color:{hue(i)}\"><span style=\"color:{hue(i)}\">{esc(root.label)}</span>{tag}<ul>{below}</ul></div>")
+  }
+  parts = parts.append("</div>")
+  return parts.join("")
+}
+
 fn drawn(figure: Figure) -> Text {
   return match figure.look {
     case "flow" { draw_flow(figure) }
     case "numbers" { draw_numbers(figure) }
     case "bars" { draw_bars(figure) }
     case "curve" { draw_curve(figure) }
-    case "tree" { draw_tree(figure) }
-    case "mindmap" { draw_mindmap(figure) }
+    case "tree" { f"<div class=\"pic\">{draw_tree(figure)}</div>{outline(figure)}" }
+    case "mindmap" { f"<div class=\"pic\">{draw_mindmap(figure)}</div>{outline(figure)}" }
     case "timeline" { draw_timeline(figure) }
     case "glossary" { draw_glossary(figure) }
     case "card" { draw_card(figure) }
@@ -342,7 +357,7 @@ fn box(figure: Figure) -> Text {
 // ---------------------------------------------------------------- the page
 
 fn style() -> Text {
-  return ":root{--ink:#eef0ff;--dim:#9aa1c4;--faint:#6b7299;--line:#252b44}*{box-sizing:border-box;margin:0}body{max-width:1200px;margin:auto;padding:34px 40px;background:#0a0c16;color:var(--ink);font:14.5px/1.5 'Segoe UI',system-ui,sans-serif}.paper{border-radius:22px;padding:26px 28px;margin-bottom:28px;border:1px solid var(--line);background:#0e1120}.meta{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}.chip{font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:3px 10px;border-radius:999px;border:1px solid var(--line);color:var(--dim)}h1{font-size:28px;font-weight:800;margin-bottom:18px}h2{font-size:25px;line-height:1.2;font-weight:800;margin-bottom:4px}h2 a{color:inherit;text-decoration:none}.by{color:var(--dim);font-size:13px;margin-bottom:16px}.q{font-size:16px;color:#dfe3ff;margin-bottom:16px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.box{background:#0a0d1a;border:1px solid var(--line);border-radius:16px;padding:16px 18px;position:relative}.wide{grid-column:1/-1}.box h3{font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);font-weight:600;margin-bottom:10px;padding-right:230px}.kind{position:absolute;top:15px;right:16px;font-size:10.5px;color:var(--faint);font-family:Consolas,monospace}.flow{display:flex;align-items:stretch}.step{flex:1;padding:12px 14px;border-radius:12px;background:#0e1222;border:1px solid;font-size:13.5px}.step b{display:block;font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px}.arrow{width:28px;display:grid;place-items:center;color:#4b5280;font-size:20px}.stats{display:flex;flex-direction:column;gap:12px}.stat{display:flex;gap:14px;align-items:center}.big{font-size:30px;font-weight:800;line-height:1.1}.stat p,.when p{color:var(--dim);font-size:13px}.bar{display:grid;grid-template-columns:150px 1fr 110px;gap:10px;align-items:center;margin:7px 0;font-size:13px}.track{height:12px;border-radius:6px;background:#1a1f35;overflow:hidden}.track div{height:100%;border-radius:6px}.bar b{font-size:12.5px;text-align:right}.line{display:flex;gap:14px;border-top:2px solid #262c45;padding-top:14px}.when{flex:1;position:relative}.when i{position:absolute;top:-21px;left:0;width:12px;height:12px;border-radius:50%}.when b{font-size:13px}.gl{display:flex;flex-direction:column;gap:8px;font-size:13.5px;color:#d6daf5}.gl b{color:#fff}.name{font-size:20px;font-weight:800;margin-bottom:8px}blockquote{font-size:17px;line-height:1.45;color:#ffd08a;border-left:3px solid #ffb547;padding-left:14px;margin:4px 0}.foot{color:var(--faint);font-size:12px}@media (max-width:700px){body{padding:18px 14px;overflow-x:hidden}svg{max-width:100%}.grid>*{min-width:0}.paper{padding:18px 16px;border-radius:18px}.grid{grid-template-columns:minmax(0,1fr)}.flow{flex-direction:column}.arrow{height:22px;width:auto;transform:rotate(90deg)}.box h3{padding-right:0}.kind{position:static;display:block;margin:-4px 0 10px}h1{font-size:22px}h2{font-size:20px}.bar{grid-template-columns:96px 1fr 76px}.line{flex-direction:column;border-top:none;border-left:2px solid #262c45;padding:0 0 0 16px}.when i{top:4px;left:-23px}}"
+  return ":root{--ink:#eef0ff;--dim:#9aa1c4;--faint:#6b7299;--line:#252b44}*{box-sizing:border-box;margin:0}body{max-width:1200px;margin:auto;padding:34px 40px;background:#0a0c16;color:var(--ink);font:14.5px/1.5 'Segoe UI',system-ui,sans-serif}.paper{border-radius:22px;padding:26px 28px;margin-bottom:28px;border:1px solid var(--line);background:#0e1120}.meta{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}.chip{font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:3px 10px;border-radius:999px;border:1px solid var(--line);color:var(--dim)}h1{font-size:28px;font-weight:800;margin-bottom:18px}h2{font-size:25px;line-height:1.2;font-weight:800;margin-bottom:4px}h2 a{color:inherit;text-decoration:none}.by{color:var(--dim);font-size:13px;margin-bottom:16px}.q{font-size:16px;color:#dfe3ff;margin-bottom:16px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.box{background:#0a0d1a;border:1px solid var(--line);border-radius:16px;padding:16px 18px;position:relative}.wide{grid-column:1/-1}.box h3{font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);font-weight:600;margin-bottom:10px;padding-right:230px}.kind{position:absolute;top:15px;right:16px;font-size:10.5px;color:var(--faint);font-family:Consolas,monospace}.flow{display:flex;align-items:stretch}.step{flex:1;padding:12px 14px;border-radius:12px;background:#0e1222;border:1px solid;font-size:13.5px}.step b{display:block;font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px}.arrow{width:28px;display:grid;place-items:center;color:#4b5280;font-size:20px}.stats{display:flex;flex-direction:column;gap:12px}.stat{display:flex;gap:14px;align-items:center}.big{font-size:30px;font-weight:800;line-height:1.1}.stat p,.when p{color:var(--dim);font-size:13px}.bar{display:grid;grid-template-columns:150px 1fr 110px;gap:10px;align-items:center;margin:7px 0;font-size:13px}.track{height:12px;border-radius:6px;background:#1a1f35;overflow:hidden}.track div{height:100%;border-radius:6px}.bar b{font-size:12.5px;text-align:right}.line{display:flex;gap:14px;border-top:2px solid #262c45;padding-top:14px}.when{flex:1;position:relative}.when i{position:absolute;top:-21px;left:0;width:12px;height:12px;border-radius:50%}.when b{font-size:13px}.gl{display:flex;flex-direction:column;gap:8px;font-size:13.5px;color:#d6daf5}.gl b{color:#fff}.name{font-size:20px;font-weight:800;margin-bottom:8px}blockquote{font-size:17px;line-height:1.45;color:#ffd08a;border-left:3px solid #ffb547;padding-left:14px;margin:4px 0}.foot{color:var(--faint);font-size:12px}.outline{display:none}.outline .root{display:block;font-size:17px;margin-bottom:10px}.branch{border-left:3px solid;padding:2px 0 2px 12px;margin:8px 0}.branch span{font-weight:700;font-size:14px}.branch i{font-style:normal;font-size:11px;color:var(--dim);margin-left:6px;text-transform:uppercase}.branch ul{margin:4px 0 0 18px;padding:0;color:#d6daf5;font-size:13.5px}@media (max-width:700px){.pic{display:none}.outline{display:block}body{padding:18px 14px;overflow-x:hidden}svg{max-width:100%}.grid>*{min-width:0}.paper{padding:18px 16px;border-radius:18px}.grid{grid-template-columns:minmax(0,1fr)}.flow{flex-direction:column}.arrow{height:22px;width:auto;transform:rotate(90deg)}.box h3{padding-right:0}.kind{position:static;display:block;margin:-4px 0 10px}h1{font-size:22px}h2{font-size:20px}.bar{grid-template-columns:96px 1fr 76px}.line{flex-direction:column;border-top:none;border-left:2px solid #262c45;padding:0 0 0 16px}.when i{top:4px;left:-23px}}"
 }
 
 fn sheet_html(sheet: Sheet, i: Number) -> Text {
@@ -420,4 +435,6 @@ test "the page draws each kind" {
   expect html.contains("QUARTIC") == false
   expect html.contains("Quartic family")
   expect not html.contains("Broken")
+  expect html.contains("<div class=\"outline\"><b class=\"root\">KSD certificate</b>")
+  expect html.contains("<li>Quartic family</li>")
 }
