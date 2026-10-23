@@ -1,0 +1,3 @@
+PASS  the network learns XOR
+PASS  the same seed makes the same network
+2 passed, 0 failed

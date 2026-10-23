@@ -87,6 +87,7 @@ The standard library:
 | `std/text.kos` | `words_of(text)`, `chunks(text, size, over)`, `keywords(text, count)`, `likeness(a, b)`, `sentences(text)`, `shorten(text, most)`, `clean_answer(text)` |
 | `std/stats.kos` | `median(xs)`, `variance(xs)`, `deviation(xs)`, `percentile(xs, p)`, `normalized(xs)`, `zscores(xs)`, `correlation(xs, ys)` |
 | `std/search.kos` | `Hit {index, score, text}`, `rank(question, texts, count)`, `best(question, texts)`: texts ranked by the words they share with a question, rare words counting for more (BM25), with no model |
+| `std/nn.kos` | `Layer {weights, biases}`, `Net {layers}`, `net(sizes, seed)`, `predict(n, x)`, `train(n, xs, ys, rate, rounds)`, `loss(n, xs, ys)`: a small neural network, tanh hidden layers and a sigmoid output, learned by gradient descent on the processor |
 
 Each module's first lines say what each export does.
 
