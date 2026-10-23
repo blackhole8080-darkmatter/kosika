@@ -136,6 +136,10 @@ def main() -> int:
     parser.add_argument("--timeout", type=float, default=300)
     parser.add_argument("--stages", default="1-8")
     parser.add_argument("--limit-seconds", type=float, default=1600)
+    parser.add_argument("--without-rules", action="store_true",
+                        help="Run each stage as if nothing had been learned, and learn nothing.")
+    parser.add_argument("--rules-file", type=Path,
+                        help="Rules learned in earlier runs: read before, and written back after.")
     args = parser.parse_args()
     first, _, last = args.stages.partition("-")
     stages = list(range(int(first), int(last or first) + 1))
@@ -147,6 +151,11 @@ def main() -> int:
         shutil.copytree(WORKSPACE / part, folder / part)
     agents = run_dir / "agents"
     shutil.copytree(AGENT, agents / "osbuilder", ignore=shutil.ignore_patterns("memory", "runs"))
+    # The rules the builder taught itself, carried from run to run when asked.
+    kept_rules = agents / "osbuilder" / "memory" / "rules.json"
+    if args.rules_file and args.rules_file.is_file() and not args.without_rules:
+        kept_rules.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(args.rules_file, kept_rules)
     app = App(agents, bind_models=binder_for(args), model_label=args.model, allow_folder=folder,
               allow_shell=True, in_session=True, session_home=run_dir / "sessions")
     agent = next(key for key in app.agents() if key.startswith("osbuilder/"))
@@ -156,7 +165,7 @@ def main() -> int:
         spec = spec_of((folder / "lessons" / f"{stage}.md").read_text(encoding="utf-8"))
         print(f"Stage {stage}: {spec['title']} ...", flush=True)
         started = time.monotonic()
-        job = app.start(agent, {"text": f"stage {stage}"})
+        job = app.start(agent, {"text": f"stage {stage}" + (" without rules" if args.without_rules else "")})
         allowed = 0
         while job.state in ("running", "waiting") and time.monotonic() - started < args.limit_seconds:
             if job.state == "waiting":
@@ -184,7 +193,18 @@ def main() -> int:
             print("Stopping: each stage builds on the one before.", flush=True)
             break
 
+    rules: list[str] = []
+    if kept_rules.is_file():
+        try:
+            stored = json.loads(kept_rules.read_text(encoding="utf-8"))
+            rules = next(iter(stored.values()), {}).get("items", []) if isinstance(stored, dict) else []
+        except (ValueError, AttributeError):
+            rules = []
+        if args.rules_file and not args.without_rules:
+            args.rules_file.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(kept_rules, args.rules_file)
     summary = {
+        "rules": "off" if args.without_rules else "on", "learned": rules,
         "model": args.model, "when": stamp, "stages": args.stages,
         "passed": sum(r["passed"] for r in results), "tried": len(results), "results": results,
     }
