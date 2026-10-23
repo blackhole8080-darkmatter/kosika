@@ -101,8 +101,10 @@ claim is skipped by name. See `tests/test_conformance.py`.
   Kosika file that does not check or whose tests fail, and the agent's
   own `check`; skills chosen by a host are not here. Replaying an agent
   run's own trace.
-- `system` tools other than files, shell, services, web and meaning
-  (kosika, agents, outside, notify, linux, computer). Its search by
+- `system` tools other than files, shell, services, web, meaning,
+  kosika and notify (agents, outside, linux, computer). A kosika
+  `check_files` tool given a Python file is refused by name, as a plan
+  that writes one is. Its search by
   meaning remembers vectors in a store of its own
   (`~/.kosika/embeddings-native.bin`), not the reference's SQLite one, so
   each engine embeds a line once for itself.

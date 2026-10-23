@@ -43,7 +43,7 @@ const (
 var systemKinds = []string{"shell", "files", "web", "kosika", "meaning", "agents", "outside", "notify", "services", "linux", "computer"}
 
 // The kinds this engine reaches; the rest are refused as the file is read.
-var systemKindsHere = map[string]bool{"files": true, "shell": true, "services": true, "web": true, "meaning": true}
+var systemKindsHere = map[string]bool{"files": true, "shell": true, "services": true, "web": true, "meaning": true, "kosika": true, "notify": true}
 
 var fileOperations = []string{"read", "peek", "search", "find", "write", "create", "write_all", "list"}
 var readOnlyOperations = map[string]bool{"read": true, "peek": true, "search": true, "find": true, "list": true}
@@ -60,21 +60,24 @@ type shape struct{ input, output []Param }
 // systemShapes are the record fields each kind of system tool must take
 // and give: SHAPES in kosika/system_tools.py, in its order.
 var systemShapes = map[string]shape{
-	"shell":      {[]Param{{"args", "Text[]"}}, []Param{{"exit_code", "Number"}, {"stdout", "Text"}, {"stderr", "Text"}}},
-	"read":       {[]Param{{"path", "Text"}}, []Param{{"text", "Text"}}},
-	"peek":       {[]Param{{"path", "Text"}}, []Param{{"text", "Text"}}},
-	"search":     {[]Param{{"path", "Text"}, {"query", "Text"}}, []Param{{"matches", "Text[]"}}},
-	"find":       {[]Param{{"path", "Text"}, {"query", "Text"}}, []Param{{"matches", "Text[]"}}},
-	"write":      {[]Param{{"path", "Text"}, {"text", "Text"}}, []Param{{"bytes", "Number"}}},
-	"create":     {[]Param{{"path", "Text"}, {"text", "Text"}}, []Param{{"bytes", "Number"}}},
-	"write_all":  {[]Param{{"files", plannedFiles}, {"note", "Text"}}, []Param{{"count", "Number"}}},
-	"list":       {[]Param{{"path", "Text"}}, []Param{{"names", "Text[]"}}},
-	"status":     {nil, []Param{{"services", "Text[]"}, {"paused", "Text[]"}, {"text", "Text"}}},
-	"fetch":      {[]Param{{"url", "Text"}}, []Param{{"url", "Text"}, {"title", "Text"}, {"text", "Text"}}},
-	"near":       {[]Param{{"a", "Text"}, {"b", "Text"}}, []Param{{"score", "Number"}}},
-	"fetch_from": {[]Param{{"url", "Text"}, {"start", "Number"}}, []Param{{"url", "Text"}, {"title", "Text"}, {"text", "Text"}, {"next", "Number"}}},
-	"pause":      {[]Param{{"name", "Text"}}, []Param{{"name", "Text"}, {"paused", "Bool"}}},
-	"resume":     {[]Param{{"name", "Text"}}, []Param{{"name", "Text"}, {"paused", "Bool"}}},
+	"shell":       {[]Param{{"args", "Text[]"}}, []Param{{"exit_code", "Number"}, {"stdout", "Text"}, {"stderr", "Text"}}},
+	"read":        {[]Param{{"path", "Text"}}, []Param{{"text", "Text"}}},
+	"peek":        {[]Param{{"path", "Text"}}, []Param{{"text", "Text"}}},
+	"search":      {[]Param{{"path", "Text"}, {"query", "Text"}}, []Param{{"matches", "Text[]"}}},
+	"find":        {[]Param{{"path", "Text"}, {"query", "Text"}}, []Param{{"matches", "Text[]"}}},
+	"write":       {[]Param{{"path", "Text"}, {"text", "Text"}}, []Param{{"bytes", "Number"}}},
+	"create":      {[]Param{{"path", "Text"}, {"text", "Text"}}, []Param{{"bytes", "Number"}}},
+	"write_all":   {[]Param{{"files", plannedFiles}, {"note", "Text"}}, []Param{{"count", "Number"}}},
+	"list":        {[]Param{{"path", "Text"}}, []Param{{"names", "Text[]"}}},
+	"status":      {nil, []Param{{"services", "Text[]"}, {"paused", "Text[]"}, {"text", "Text"}}},
+	"fetch":       {[]Param{{"url", "Text"}}, []Param{{"url", "Text"}, {"title", "Text"}, {"text", "Text"}}},
+	"near":        {[]Param{{"a", "Text"}, {"b", "Text"}}, []Param{{"score", "Number"}}},
+	"check":       {[]Param{{"source", "Text"}}, []Param{{"ok", "Bool"}, {"problem", "Text"}, {"tests", "Number"}, {"passed", "Number"}}},
+	"check_files": {[]Param{{"text", "Text"}, {"files", plannedFiles}}, []Param{{"problems", "Text[]"}}},
+	"send":        {[]Param{{"title", "Text"}, {"text", "Text"}}, []Param{{"sent", "Bool"}}},
+	"fetch_from":  {[]Param{{"url", "Text"}, {"start", "Number"}}, []Param{{"url", "Text"}, {"title", "Text"}, {"text", "Text"}, {"next", "Number"}}},
+	"pause":       {[]Param{{"name", "Text"}}, []Param{{"name", "Text"}, {"paused", "Bool"}}},
+	"resume":      {[]Param{{"name", "Text"}}, []Param{{"name", "Text"}, {"paused", "Bool"}}},
 }
 
 func systemKind(tool *ToolDecl) string {
@@ -144,6 +147,12 @@ func (c *checker) systemProblem(tool *ToolDecl) string {
 	}
 	looksOnly := (kind == "files" && readOnlyOperations[tool.Operation]) || (kind == "services" && tool.Operation == "status") ||
 		kind != "files" && kind != "shell" && kind != "services"
+	if kind == "kosika" && tool.Operation != "check" && tool.Operation != "check_files" {
+		return fmt.Sprintf("Tool %s has unknown kosika operation %s; use one of: check, check_files", pyRepr(tool.Name), pyRepr(tool.Operation))
+	}
+	if kind == "notify" && tool.Operation != "send" {
+		return fmt.Sprintf("Tool %s has unknown notify operation %s; the only one is send", pyRepr(tool.Name), pyRepr(tool.Operation))
+	}
 	if kind == "meaning" && tool.Operation != "near" {
 		return fmt.Sprintf("Tool %s has unknown meaning operation %s; the only one is near", pyRepr(tool.Name), pyRepr(tool.Operation))
 	}
@@ -531,6 +540,11 @@ func (r *run) systemBound(tool *ToolDecl) bool {
 		return r.folder != "" && (tool.Operation != "find" || r.meaning != nil)
 	case "meaning":
 		return r.meaning != nil
+	case "kosika":
+		// It reaches nothing, so it needs no grant.
+		return true
+	case "notify":
+		return r.notify != ""
 	case "shell":
 		return r.folder != "" && r.allowShell
 	case "services":

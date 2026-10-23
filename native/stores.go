@@ -524,6 +524,16 @@ func (r *run) hostTool(tool *ToolDecl, arguments *Record) (Value, bool) {
 		if systemKind(tool) == "meaning" {
 			return r.nearTool(arguments), true
 		}
+		if systemKind(tool) == "kosika" {
+			if tool.Operation == "check_files" {
+				return checkFiles(arguments), true
+			}
+			source, _ := arguments.Fields["source"].(string)
+			return checkSource(source), true
+		}
+		if systemKind(tool) == "notify" {
+			return r.noteTool(arguments), true
+		}
 		return r.fileTool(tool, arguments), true
 	case tool.Source == "world:clock":
 		return moment(), true

@@ -71,6 +71,8 @@ type run struct {
 	meaning *meaning
 	// agentRequest is what the agent now asked was given, as text.
 	agentRequest string
+	// notify is the one address notes go to, when one was given.
+	notify string
 	// check is the step's own `verify`, for the model asked now; nil when
 	// there is none.
 	check *answerCheck

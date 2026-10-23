@@ -932,6 +932,88 @@ class NativeTests(unittest.TestCase):
         self.assertEqual(seen["reference"]["pause list"], "lookout\n")
         self.assertEqual(seen["reference"]["resume list"], "")
 
+    def test_it_checks_programs_and_notes_as_the_reference_does(self) -> None:
+        # A kosika tool checks a program given as text, or files a program
+        # means to write; a notify tool sends only to the address given.
+        program = (
+            "record Code { source: Text }\n"
+            "record Checked { ok: Bool problem: Text tests: Number passed: Number }\n"
+            "record Planned { path: Text text: Text before: Text exists: Bool }\n"
+            "record Reading { text: Text files: Planned[] }\n"
+            "record Engine { problems: Text[] }\n"
+            "record Note { title: Text text: Text }\n"
+            "record Sent { sent: Bool }\n"
+            'tool check_program {\n  source system "kosika"\n  operation: "check"\n'
+            "  access: observe\n  input: Code\n  output: Checked\n}\n"
+            'tool check_plan {\n  source system "kosika"\n  operation: "check_files"\n'
+            "  access: observe\n  input: Reading\n  output: Engine\n}\n"
+            'tool tell_me {\n  source system "notify"\n  operation: "send"\n'
+            "  access: execute\n  input: Note\n  output: Sent\n}\n"
+            "agent desk {\n  can: [check_program, check_plan, tell_me]\n  max_steps: 1\n}\n"
+            "workflow check(c: Code) -> Checked {\n  r = execute desk.check_program(c.source)\n}\n"
+            "workflow plan(r: Reading) -> Engine {\n  e = execute desk.check_plan(r.text, r.files)\n}\n"
+            "workflow note(n: Note) -> Sent {\n  require approval\n  s = execute desk.tell_me(n.title, n.text)\n}\n"
+        )
+        good = (
+            "record In { n: Number }\nrecord Out { twice: Number }\n"
+            "fn solve(input: In) -> Out {\n  return {twice: input.n * 2}\n}\n"
+            "workflow main(input: In) -> Out {\n  result = solve(input)\n}\n"
+            'test "doubles" {\n  a = main({n: 4})\n  expect a.twice == 8\n}\n'
+            'test "zero" {\n  a = main({n: 0})\n  expect a.twice == 0\n}\n'
+        )
+        sources = {
+            "good": good,
+            "failing": good.replace("a.twice == 8", "a.twice == 9"),
+            "invalid": good.replace("input.n * 2", "input.m * 2"),
+            "garbled": "workflow {",
+            "large": "// " + "x" * 70_000 + "\n",
+        }
+        planned = [
+            {"path": "notes.txt", "text": "A plain note that says something new.", "before": "", "exists": False},
+            {"path": "empty.txt", "text": "  ", "before": "", "exists": False},
+            {"path": "same.txt", "text": "please write the tests for the doubler", "before": "", "exists": False},
+            {"path": "notes.txt", "text": "again", "before": "", "exists": False},
+            {"path": "lines.txt", "text": "one\\ntwo", "before": "", "exists": False},
+            {"path": "good.kos", "text": good, "before": "", "exists": False},
+            {"path": "bad.kos", "text": sources["failing"], "before": "old", "exists": True},
+        ]
+
+        def engine(name: str, folder: Path, *flags: str) -> tuple[int, str, str]:
+            first = [str(self.engine)] if name == "native" else [sys.executable, "-m", "kosika.cli"]
+            done = subprocess.run(
+                [*first, "run", str(folder / "p.kos"), *flags], cwd=folder,
+                capture_output=True, text=True, env={**os.environ, "PYTHONPATH": str(ROOT)},
+            )
+            return done.returncode, done.stdout, done.stderr.strip().splitlines()[-1:]
+
+        seen = {}
+        for name in ("reference", "native"):
+            with self.subTest(name), tempfile.TemporaryDirectory() as scratch:
+                folder = Path(scratch)
+                (folder / "p.kos").write_text(program, encoding="utf-8")
+                outcome: dict[str, object] = {}
+                for label, source in sources.items():
+                    (folder / "in.json").write_text(json.dumps({"c": {"source": source}}))
+                    outcome[label] = engine(name, folder, "--workflow", "check", "--input", "in.json")
+                (folder / "in.json").write_text(json.dumps(
+                    {"r": {"text": "Please write the tests for the doubler.", "files": planned}}
+                ))
+                outcome["plan"] = engine(name, folder, "--workflow", "plan", "--input", "in.json")
+                (folder / "in.json").write_text(json.dumps({"n": {"title": "Done", "text": "All good."}}))
+                outcome["unbound note"] = engine(name, folder, "--workflow", "note", "--input", "in.json")
+                for address in ("http://ntfy.sh/topic", "https://ntfy.sh/", "https://ntfy.sh/t?x=1",
+                                "https://me:pw@ntfy.sh/t", "https://ntfy.sh:8443/t"):
+                    outcome[address] = engine(
+                        name, folder, "--notify", address, "--workflow", "note", "--input", "in.json"
+                    )[0::2]
+                seen[name] = outcome
+        self.maxDiff = None
+        self.assertEqual(seen["native"], seen["reference"])
+        self.assertIn("'ok': True", seen["reference"]["good"][1])
+        self.assertIn("'tests': 2, 'passed': 1", seen["reference"]["failing"][1])
+        self.assertIn("larger than 64 KiB", seen["reference"]["large"][1])
+        self.assertIn("bad.kos: its test", seen["reference"]["plan"][1])
+
     def test_it_learns_where_the_reference_learns(self) -> None:
         # Lessons one engine keeps, the other finds and answers from, with
         # the same trace: the same question again, and a new question that

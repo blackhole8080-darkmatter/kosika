@@ -23,7 +23,7 @@ func runCommand(args []string) int {
 	options["--trace"] = "run_trace.jsonl"
 	flags := map[string]bool{"--approve": true, "--allow-shell": true}
 	var givenSites []string
-	known := map[string]bool{"--embed-url": true, "--embed-model": true, "--allow-site": true, "--services": true, "--allow-folder": true, "--memory": true, "--env": true, "--journal": true, "--binding-id": true, "--approval-record": true, "--approved-by": true, "--trace": true, "--model-fixture": true, "--mcp-server": true, "--mcp-manifest": true, "--mcp-source": true, "--workflow": true, "--input": true, "--model": true, "--model-url": true, "--model-protocol": true, "--model-timeout": true, "--model-binding": true, "--max-output-tokens": true}
+	known := map[string]bool{"--notify": true, "--embed-url": true, "--embed-model": true, "--allow-site": true, "--services": true, "--allow-folder": true, "--memory": true, "--env": true, "--journal": true, "--binding-id": true, "--approval-record": true, "--approved-by": true, "--trace": true, "--model-fixture": true, "--mcp-server": true, "--mcp-manifest": true, "--mcp-source": true, "--workflow": true, "--input": true, "--model": true, "--model-url": true, "--model-protocol": true, "--model-timeout": true, "--model-binding": true, "--max-output-tokens": true}
 	for i := 1; i < len(args); i++ {
 		name, value, joined := strings.Cut(args[i], "=")
 		if flags[name] && !joined {
@@ -181,6 +181,16 @@ func runCommand(args []string) int {
 		folder, allowShell = env.allowFolder, env.allowShell
 		givenSites = env.sites
 	}
+	// The one address notes go to.
+	notify := ""
+	if given := options["--notify"]; given != "" {
+		address, problem := cleanNoteAddress(given)
+		if problem != "" {
+			fmt.Fprintf(os.Stderr, "Workflow failed: %s\n", problem)
+			return 2
+		}
+		notify = address
+	}
 	// The sites a web tool may read, as bare host names.
 	var sites []string
 	for _, site := range givenSites {
@@ -240,6 +250,7 @@ func runCommand(args []string) int {
 		running.folder, running.allowShell = folder, allowShell
 		running.services = services
 		running.sites = sites
+		running.notify = notify
 		if model := options["--embed-model"]; model != "" {
 			address := options["--embed-url"]
 			if address == "" {

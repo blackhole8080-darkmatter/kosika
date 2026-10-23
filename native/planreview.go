@@ -76,17 +76,34 @@ func (r *run) fileBefore(changes *agentChanges, path string) Value {
 // reviewPlan is what is wrong with a plan, in plain words; nothing when
 // nothing is.
 func (r *run) reviewPlan(changes *agentChanges, planned []plannedChange) []string {
-	var problems []string
-	asked := strings.Join(planTokens(changes.request), " ")
-	seen := map[string]bool{}
-	files := map[string]string{}
-	var order []string
+	var writes []planWrite
 	for _, change := range planned {
 		path, isPath := change.arguments.Fields["path"].(string)
 		text, isText := change.arguments.Fields["text"].(string)
-		if !isPath || !isText {
-			continue
+		if isPath && isText {
+			writes = append(writes, planWrite{path, text})
 		}
+	}
+	problems, python := planFileProblems(changes.request, writes)
+	if python != "" {
+		panic(&permissionError{fmt.Sprintf("kosika-native cannot check a plan that writes Python files yet: %s is one", pyRepr(python))})
+	}
+	return r.withOwnCheck(changes, planned, problems)
+}
+
+// A planWrite is one file a plan, or a check_files tool, would write.
+type planWrite struct{ path, text string }
+
+// planFileProblems is what is plainly wrong with files a plan would write,
+// as plan_problems in kosika/skills.py says it with no skills, and the
+// first Python file among them, which this engine cannot read.
+func planFileProblems(request string, writes []planWrite) (problems []string, python string) {
+	asked := strings.Join(planTokens(request), " ")
+	seen := map[string]bool{}
+	files := map[string]string{}
+	var order []string
+	for _, write := range writes {
+		path, text := write.path, write.text
 		where := strings.ToLower(strings.TrimPrefix(strings.ReplaceAll(path, `\`, "/"), "./"))
 		if seen[where] {
 			problems = append(problems, path+": the plan writes this file twice; write it once")
@@ -106,13 +123,17 @@ func (r *run) reviewPlan(changes *agentChanges, planned []plannedChange) []strin
 			problems = append(problems, path+": the file only repeats the request; write what was asked for")
 			continue
 		}
-		if strings.HasSuffix(strings.ToLower(path), ".py") {
-			panic(&permissionError{fmt.Sprintf("kosika-native cannot check a plan that writes Python files yet: %s is one", pyRepr(path))})
+		if strings.HasSuffix(strings.ToLower(path), ".py") && python == "" {
+			python = path
 		}
 		files[path] = text
 		order = append(order, path)
 	}
-	problems = append(problems, kosikaProblems(order, files)...)
+	return append(problems, kosikaProblems(order, files)...), python
+}
+
+// withOwnCheck adds what the agent's own check says about a plan.
+func (r *run) withOwnCheck(changes *agentChanges, planned []plannedChange, problems []string) []string {
 	if changes.agent.Check == "" {
 		return problems
 	}

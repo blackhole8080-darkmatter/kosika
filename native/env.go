@@ -322,7 +322,7 @@ func (e *environment) journalPath(program, workflow string, inputs map[string]Va
 
 // environmentDecided are the run options an environment decides; given
 // with --env, they are refused.
-var environmentDecided = []string{"--model", "--model-url", "--model-binding", "--model-fixture", "--mcp-server", "--mcp-manifest", "--journal", "--binding-id", "--memory", "--allow-folder", "--allow-shell", "--allow-site"}
+var environmentDecided = []string{"--model", "--model-url", "--model-binding", "--model-fixture", "--mcp-server", "--mcp-manifest", "--journal", "--binding-id", "--memory", "--allow-folder", "--allow-shell", "--allow-site", "--notify"}
 
 // environmentBindings are the models an environment names, for the models
 // a program declares.

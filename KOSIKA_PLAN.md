@@ -3506,6 +3506,18 @@ hand in `my_examples`, then check an eigenvalue with `apply` and `scaled`.
   programs with workflows, agents and tools; the guide does not teach
   those yet.
 
+### The native engine checks programs and sends notes
+
+- `system "kosika"` tools run in native/ (native/kosikatools.go) as in
+  the reference: `check` checks a program given as text and runs its
+  tests, `check_files` reads files a program means to write as a plan's
+  files are read. They reach nothing, so they need no grant. Python
+  files given to `check_files` are refused by name, as in a plan.
+- `system "notify"` sends a note only to the one https address given
+  with `--notify`, which is refused as the reference refuses it.
+- Held by a test in which both engines check five programs and a set of
+  planned files, and refuse the same notify addresses, word for word.
+
 ### The native engine reads an agent's plan before showing it
 
 - A planning agent's plan that writes files runs in native/
