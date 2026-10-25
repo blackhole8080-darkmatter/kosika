@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="Kosika">
+  <title>Kosika</title>
+  <!-- The mark is the film's motif: one ring, one dot resting on it, and the
+       letter at the centre of the record. The K is Figtree's own outline
+       (SIL Open Font License, see ../fonts/Figtree-OFL.txt), centred on the
+       core by its bounding box, so the mark needs no font to render. -->
+  <circle cx="60" cy="60" r="54" fill="none" stroke="#2b2350" stroke-width="8"/>
+  <circle cx="60" cy="60" r="42" fill="none" stroke="#f5b45c" stroke-width="7"/>
+  <circle cx="60" cy="60" r="29" fill="#05060b"/>
+  <path fill="#f2f4ff" d="M39.79 83.50V37.50H50.31V54.23L65.75 37.50H79.55L60.27 58.25L80.21 83.50H67.10L53.32 65.74L50.31 69.00V83.50Z"/>
+  <circle cx="60" cy="18" r="7.5" fill="#fff4e2" stroke="#05060b" stroke-width="3.5"/>
+</svg>

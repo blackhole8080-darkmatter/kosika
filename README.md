@@ -1,3 +1,21 @@
+<p align="center">
+  <img src="site/media/kosika-logo.png" alt="Kosika Studio" width="540">
+</p>
+
+<p align="center">
+  <b>Agents that can prove what they did.</b><br>
+  A language for AI agents: checked before it runs, granted tool by tool,
+  recorded second by second — and replayed without asking a model anything.
+</p>
+
+<p align="center">
+  <a href="https://blackhole8080-darkmatter.github.io/kosika/"><b>Website</b></a> ·
+  <a href="site/film/index.html">The film</a> ·
+  <a href="GETTING_STARTED.md">Getting started</a> ·
+  <a href="TUTORIAL.md">Tutorial</a> ·
+  <a href="KOSIKA.md">Language contract</a>
+</p>
+
 A dependency-light first vertical slice of the Kosika AI systems language. Synapse was the earlier working codename.
 
 **New here? Read [GETTING_STARTED.md](GETTING_STARTED.md).** Install, type
@@ -6,11 +24,30 @@ tested it, run it and changed it.
 
 ## The website
 
-[`site/`](site/) holds a one-page website that introduces Kosika and Kosika
-Studio — including a recorded run of a real agent replayed by the reader's
-scroll, with no server and no model. Screenshots of Studio are in
-[`site/shots/`](site/shots/); [`site/README.md`](site/README.md) says how to
-serve and publish it.
+**Live at <https://blackhole8080-darkmatter.github.io/kosika/>.**
+
+[`site/`](site/) holds the Kosika Studio page — an eighteen-second film, a
+recorded run of a real agent replayed by the reader's scroll, the Studio it
+was recorded in, and one halftone case file that stamps what the language
+promises. One HTML file, no build step, no dependencies, no network calls —
+and no server and no model involved in reading it.
+
+| | |
+| --- | --- |
+| ![The hero](site/shots/site-hero.jpg) | ![The film](site/shots/site-film.jpg) |
+| **The hero.** The headline rises, an orbit draws itself, a dot travels it. | **The film.** *One Run, On Paper* — 18 seconds, drawn frame by frame as a function of time. |
+| ![The run, scrubbed by the reader's scroll](site/shots/site-run.jpg) | ![The paper file](site/shots/site-paper.jpg) |
+| **The run.** A real recording replayed by scroll; replay asks no model. | **The paper file.** The film's second half as a dossier, stamped. |
+| ![Kosika Studio, showing a recorded run](site/shots/site-studio.jpg) | ![The page on a phone](site/shots/site-mobile.jpg) |
+| **Studio.** Every run is a file you can open, read and replay. | **On a phone.** The same page, one column. |
+
+The film is code: one HTML file whose every frame is a function of time,
+rendered by a headless browser and scored by a Python script over the same
+timeline. Its source is in [`site/film/`](site/film/), the encoder is
+`site/film/render.mjs`, and [`site/README.md`](site/README.md) covers the
+render, the beats, the tools and how to serve or publish the page. The logo
+and these screenshots are regenerated from source (`site/tools/`), and more
+screenshots of Studio itself are in [`site/shots/`](site/shots/).
 
 ## Status: prototype, not a released language
 
@@ -61,6 +98,7 @@ verification record, and prioritized K01–K12 backlog.
 | `examples/` | Example `.kos` programs and their fixtures |
 | `benchmarks/` | The write-from-spec benchmark and its results |
 | `tests/` | The test suite |
+| `site/` | The website: one HTML page, the film's source, its renderer, and the screenshots |
 | `network/`, `ui/`, `hive/` | Network manifests, UI styles, and agent notes |
 | `archive/` | Historical documents, not used by the code |
 | `TUTORIAL.md`, `AGENT_GUIDE.md`, `KOSIKA.md`, `KOSIKA_PLAN.md` | Tutorial, guide for AI authors, language contract, and plan |

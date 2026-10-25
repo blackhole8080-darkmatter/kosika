@@ -3,642 +3,364 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Kosika — the agent language that shows its work</title>
-<meta name="description" content="Kosika is a programming language for AI agents. Every program is checked before it runs, every power is a grant, every run is recorded. Studio is where you watch it happen.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230a0c16'/%3E%3Ccircle cx='32' cy='32' r='18' fill='none' stroke='%23f5b45c' stroke-width='5'/%3E%3Ccircle cx='32' cy='32' r='8' fill='%2306070d'/%3E%3C/svg%3E">
-<style>
-@font-face { font-family: "Figtree"; src: url("./fonts/Figtree.ttf") format("truetype"); font-weight: 300 900; font-display: swap; }
-
-:root {
-  --bg: #06070d; --panel: rgba(15, 17, 30, .66); --ink: #e9ecf8; --soft: #a3aac8; --faint: #6d7496; --line: rgba(148, 160, 220, .13);
-  --accent: #f5b45c; --ok: #5ad1a0; --bad: #f26d7e; --think: #9a8cff; --mem: #5ec8e6; --code: #8b96b8;
-  --glass: rgba(18, 20, 36, .58); --glass-edge: rgba(160, 175, 255, .16);
-  --glow-a: #f5b45c; --glow-b: #8b7cf6; --glow-c: #5ec8e6;
-  --display: "Figtree", system-ui, sans-serif;
-  --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
-  --settle: cubic-bezier(.16, 1, .3, 1);
-  color-scheme: dark;
-}
-* { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
-body { margin: 0; background: var(--bg); color: var(--ink); font: 15.5px/1.6 var(--display), system-ui, sans-serif; -webkit-font-smoothing: antialiased; overflow-x: hidden; }
-::selection { background: rgba(154, 140, 255, .4); }
-::-webkit-scrollbar { width: 10px; } ::-webkit-scrollbar-thumb { background: rgba(148,160,220,.18); border-radius: 99px; border: 3px solid transparent; background-clip: content-box; }
-
-/* The horizon, arcing in from the corner, over an indigo aurora. */
-body::before { content: ""; position: fixed; inset: -20vmax; z-index: -2; pointer-events: none;
-  background:
-    radial-gradient(38vmax 30vmax at 18% 18%, rgba(139, 124, 246, .16), transparent 70%),
-    radial-gradient(34vmax 26vmax at 85% 10%, rgba(245, 180, 92, .08), transparent 70%),
-    radial-gradient(40vmax 32vmax at 60% 95%, rgba(94, 200, 230, .07), transparent 72%);
-}
-body::after { content: ""; position: fixed; z-index: -1; pointer-events: none;
-  right: -16vmax; top: -24vmax; width: 62vmax; height: 62vmax; border-radius: 50%;
-  background: radial-gradient(closest-side, transparent 52%, rgba(139, 124, 246, .22) 55.5%, rgba(245, 180, 92, .17) 63%, transparent 71%);
-  filter: blur(4px); opacity: .85;
-}
-
-a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; text-underline-offset: 3px; }
-.overline { font: 700 11px/1 var(--mono); letter-spacing: .34em; text-transform: uppercase; color: var(--accent); display: flex; align-items: center; gap: 12px; }
-.overline::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, rgba(245,180,92,.4), transparent); }
-h2 { font: 800 clamp(30px, 4.4vw, 52px)/1.05 var(--display); letter-spacing: -.03em; margin: 18px 0 14px; }
-h2 .dim { color: var(--faint); }
-.lead { color: var(--soft); max-width: 62ch; font-size: 17px; }
-.lead b { color: var(--ink); font-weight: 650; }
-section { position: relative; padding: 15vh 7vw; }
-.rise { opacity: .001; transform: translateY(42px); transition: opacity .9s var(--settle), transform .9s var(--settle); }
-.rise.in { opacity: 1; transform: none; }
-
-/* ── The bar ─────────────────────────────────────────────────────── */
-.bar { position: fixed; inset: 0 0 auto; z-index: 50; display: flex; align-items: center; gap: 26px; padding: 14px 4vw;
-  background: rgba(6, 7, 13, 0); border-bottom: 1px solid transparent; transition: background .5s, border-color .5s, padding .5s; }
-.bar.scrolled { background: rgba(6, 7, 13, .72); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); border-color: var(--line); padding: 10px 4vw; }
-.bar .wordmark { display: flex; align-items: center; gap: 11px; font-weight: 750; font-size: 17px; letter-spacing: -.01em; color: var(--ink); }
-.bar .wordmark small { font: 700 8.5px/1 var(--mono); letter-spacing: .3em; text-transform: uppercase; color: var(--faint); margin-left: 4px; }
-.bar nav { display: flex; gap: 22px; margin-left: auto; font-size: 13.5px; font-weight: 550; }
-.bar nav a { color: var(--soft); } .bar nav a:hover { color: var(--ink); text-decoration: none; }
-.bar .cta { font: 650 13px var(--display); color: #0a0c16; background: var(--accent); padding: 9px 18px; border-radius: 10px; box-shadow: 0 10px 30px -12px rgba(245, 180, 92, .55); }
-.bar .cta:hover { text-decoration: none; filter: brightness(1.07); }
-.mark { width: 30px; height: 30px; border-radius: 9px; background: #0a0c16; display: grid; place-items: center; box-shadow: inset 0 0 0 1px var(--glass-edge), 0 0 26px -6px rgba(139, 124, 246, .6); }
-.mark svg { width: 100%; height: 100%; }
-@media (max-width: 860px) { .bar nav { display: none; } }
-
-/* ── The hero ────────────────────────────────────────────────────── */
-.hero { min-height: 100vh; display: grid; place-items: center; overflow: clip; padding: 16vh 7vw 12vh; }
-.hero-inner { position: relative; z-index: 1; text-align: center; max-width: 1100px; will-change: transform, opacity; }
-.kicker { display: inline-flex; align-items: center; gap: 10px; font: 650 11px/1 var(--mono); letter-spacing: .3em; text-transform: uppercase; color: var(--faint); margin-bottom: 30px; opacity: 0; transition: opacity 1s var(--settle) 1.1s; }
-.kicker::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: pulse 2.4s ease-in-out infinite; }
-.live .kicker { opacity: 1; }
-@keyframes pulse { 0%, 100% { opacity: .5; } 50% { opacity: 1; } }
-.h1 { margin: 0; font-weight: 800; font-size: clamp(46px, 8.4vw, 118px); line-height: .97; letter-spacing: -.035em; color: var(--ink); text-shadow: 0 0 80px rgba(139, 124, 246, .3); }
-.h1 .w { display: inline-block; overflow: clip; padding-bottom: .08em; margin-bottom: -.08em; vertical-align: bottom; }
-.h1 .l { display: inline-block; transform: translateY(115%) rotate(6deg); transition: transform 1.05s var(--settle); will-change: transform; }
-.live .h1 .l { transform: none; }
-.h1 .gold { color: var(--accent); }
-.h1 .gold .l { text-shadow: 0 0 60px rgba(245, 180, 92, .45); }
-.hrule { width: min(420px, 52vw); height: 1px; margin: 36px auto 0; background: linear-gradient(90deg, transparent, rgba(245, 180, 92, .7), transparent); transform: scaleX(0); transition: transform 1.3s var(--settle) 1.3s; }
-.live .hrule { transform: scaleX(1); }
-.hero .lead { margin: 30px auto 0; opacity: 0; transform: translateY(14px); transition: opacity 1s var(--settle) 1.55s, transform 1s var(--settle) 1.55s; }
-.live .hero .lead { opacity: 1; transform: none; }
-.hero-ctas { display: flex; gap: 16px; justify-content: center; margin-top: 38px; opacity: 0; transform: translateY(12px); transition: opacity 1s var(--settle) 1.8s, transform 1s var(--settle) 1.8s; }
-.live .hero-ctas { opacity: 1; transform: none; }
-.btn { display: inline-flex; align-items: center; gap: 9px; font: 650 14.5px var(--display); padding: 13px 26px; border-radius: 12px; }
-.btn.primary { color: #0a0c16; background: var(--accent); box-shadow: 0 16px 44px -16px rgba(245, 180, 92, .6); }
-.btn.primary:hover { text-decoration: none; filter: brightness(1.07); transform: translateY(-1px); transition: transform .3s var(--settle); }
-.btn.ghost { color: var(--ink); background: var(--glass); box-shadow: inset 0 0 0 1px var(--glass-edge); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
-.btn.ghost:hover { text-decoration: none; box-shadow: inset 0 0 0 1px rgba(245, 180, 92, .5); }
-.cue { position: absolute; left: 50%; bottom: 4.5vh; transform: translateX(-50%); display: grid; justify-items: center; gap: 10px; font: 700 10px/1 var(--mono); letter-spacing: .42em; text-transform: uppercase; color: var(--faint); }
-.cue i { width: 1px; height: 56px; background: linear-gradient(180deg, transparent, rgba(245, 180, 92, .7)); position: relative; overflow: hidden; }
-.cue i::after { content: ""; position: absolute; left: 0; top: -45%; width: 100%; height: 42%; background: var(--ink); animation: cue 2.2s cubic-bezier(.65,0,.35,1) infinite; }
-@keyframes cue { to { top: 112%; } }
-.field { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
-.fx { position: absolute; will-change: transform; }
-.fx > i { display: grid; place-items: center; width: 100%; height: 100%; font: 650 10.5px/1 var(--mono); letter-spacing: .16em; text-transform: uppercase; font-style: normal; color: rgba(233, 236, 248, .74); background: var(--glass); border: 1px solid var(--glass-edge); border-radius: 10px; box-shadow: 0 22px 60px -26px rgba(0,0,0,.8); backdrop-filter: blur(7px); -webkit-backdrop-filter: blur(7px); animation: drift var(--drift, 9s) ease-in-out var(--delay, 0s) infinite alternate; }
-.fx.ring > i { border-radius: 50%; background: none; box-shadow: none; border-color: rgba(245, 180, 92, .28); }
-@keyframes drift { from { transform: translate3d(0, -9px, 0) rotate(-1.4deg); } to { transform: translate3d(0, 9px, 0) rotate(1.4deg); } }
-
-/* ── Feature cards ───────────────────────────────────────────────── */
-.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px; margin-top: 44px; }
-.card { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 26px 24px; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); transition: transform .5s var(--settle), border-color .5s, box-shadow .5s; }
-.card:hover { transform: translateY(-4px); border-color: rgba(245, 180, 92, .4); box-shadow: 0 24px 60px -30px rgba(245, 180, 92, .35); }
-.card .glyph { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; background: rgba(245, 180, 92, .1); box-shadow: inset 0 0 0 1px rgba(245, 180, 92, .3); margin-bottom: 18px; }
-.card .glyph svg { width: 22px; height: 22px; fill: none; stroke: var(--accent); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
-.card h3 { margin: 0 0 8px; font-size: 19px; font-weight: 700; letter-spacing: -.015em; }
-.card p { margin: 0; color: var(--soft); font-size: 14.5px; line-height: 1.65; }
-.card p b { color: var(--ink); font-weight: 600; }
-
-/* ── The film: one run, scrolled ─────────────────────────────────── */
-.film { height: 340vh; padding: 0; }
-.film-sticky { position: sticky; top: 0; height: 100vh; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 2.5vh; padding: 11vh 7vw 7vh; }
-.orbit { min-height: 0; display: grid; place-items: center; }
-.orbit svg { width: min(680px, 100%); max-height: 42vh; }
-.o-node circle { fill: #0d0f1c; stroke: var(--line); stroke-width: 1; }
-.o-node text { fill: var(--soft); font: 600 11px var(--mono); letter-spacing: .08em; }
-.o-node .sub { fill: var(--faint); font-size: 9px; }
-.o-node.seen circle { stroke: rgba(148, 160, 220, .4); }
-.o-node.now circle { fill: rgba(245, 180, 92, .14); stroke: var(--accent); filter: drop-shadow(0 0 12px rgba(245, 180, 92, .5)); }
-.o-node.now text { fill: var(--ink); }
-.o-core circle { fill: #05060b; stroke: rgba(139, 124, 246, .55); stroke-width: 1.4; }
-.o-core.now circle { stroke: var(--accent); filter: drop-shadow(0 0 16px rgba(245, 180, 92, .6)); }
-.o-core text { fill: var(--ink); font: 750 14px var(--display); text-anchor: middle; }
-.o-core .sub { fill: var(--faint); font: 600 9px var(--mono); }
-.o-orbit { fill: none; stroke: rgba(139, 124, 246, .25); stroke-dasharray: 2 7; }
-.read { display: flex; align-items: baseline; gap: 26px; flex-wrap: wrap; }
-.time { font: 700 clamp(36px, 5.6vw, 70px)/1 var(--mono); letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
-.time b { color: var(--accent); }
-.step { flex: 1; min-width: 220px; color: var(--faint); font-size: 14px; line-height: 1.55; }
-.step b { color: var(--ink); font-weight: 600; }
-.strip { position: relative; padding-bottom: 10px; }
-.tl { position: relative; }
-.tl-ruler { position: relative; height: 16px; font: 600 9px/1 var(--mono); color: var(--faint); }
-.tl-ruler span { position: absolute; top: 0; transform: translateX(-50%); }
-.tl-ruler span:first-child { transform: none; }
-.tl-body { position: relative; display: grid; gap: 5px; padding: 4px 0 6px; cursor: crosshair; }
-.tl-lane { position: relative; height: 26px; border-radius: 7px; background: rgba(148, 160, 220, .06); }
-.tl-lane::before { content: attr(data-name); position: absolute; left: 6px; top: 50%; transform: translateY(-50%); font: 700 8.5px/1 var(--mono); letter-spacing: .18em; text-transform: uppercase; color: var(--faint); pointer-events: none; z-index: 3; background: rgba(6, 7, 13, .8); padding: 3px 8px; border-radius: 6px; }
-.tl-clip { position: absolute; top: 3px; bottom: 3px; border-radius: 5px; border-left: 2px solid; padding: 3px 6px; overflow: hidden; transition: filter .4s; }
-.tl-clip span { font: 600 9px/1 var(--mono); letter-spacing: .04em; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: .75; display: block; margin-top: 4px; }
-.tl-clip.k0 { background: rgba(154, 140, 255, .22); border-left-color: var(--think); }
-.tl-clip.k1 { background: rgba(94, 200, 230, .2); border-left-color: var(--mem); }
-.tl-clip.k2 { background: rgba(245, 180, 92, .16); border-left-color: var(--accent); }
-.tl-clip.k3 { background: rgba(139, 150, 184, .2); border-left-color: var(--code); }
-.tl-clip.seen { filter: saturate(1.2) brightness(1.1); } .tl-clip.seen span { opacity: 1; }
-.tl-playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--bad); box-shadow: 0 0 10px rgba(242, 109, 126, .7); z-index: 2; }
-.tl-playhead::before { content: ""; position: absolute; top: -1px; left: -4px; border: 5px solid transparent; border-top-color: var(--bad); }
-.perf { position: absolute; left: 0; right: 0; bottom: 0; height: 12px; background: repeating-linear-gradient(90deg, rgba(245, 180, 92, .24) 0 12px, transparent 12px 26px); opacity: .5; }
-.progress { position: absolute; left: 0; bottom: 0; height: 3px; width: 100%; transform-origin: left; background: var(--accent); transform: scaleX(0); }
-.film-note { text-align: center; color: var(--faint); font: 550 12.5px var(--mono); padding: 0 7vw 9vh; }
-
-/* ── The window ──────────────────────────────────────────────────── */
-.window { max-width: 1080px; margin: 48px auto 0; border-radius: 18px; border: 1px solid var(--glass-edge); background: rgba(10, 12, 22, .8); box-shadow: 0 60px 140px -50px rgba(0, 0, 0, .9), 0 0 0 1px rgba(139, 124, 246, .08); overflow: hidden; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
-.window-bar { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
-.window-bar i { width: 10px; height: 10px; border-radius: 50%; background: rgba(148, 160, 220, .25); }
-.window-bar i:first-child { background: rgba(242, 109, 126, .6); } .window-bar i:nth-child(2) { background: rgba(245, 201, 107, .6); } .window-bar i:nth-child(3) { background: rgba(90, 209, 160, .6); }
-.window-bar .addr { margin-left: 12px; flex: 1; font: 550 11px var(--mono); color: var(--faint); background: rgba(148, 160, 220, .07); border-radius: 8px; padding: 6px 12px; }
-.window-body { display: grid; grid-template-columns: 170px 1fr; min-height: 380px; }
-.window-rail { border-right: 1px solid var(--line); padding: 16px 12px; display: flex; flex-direction: column; gap: 4px; }
-.window-rail .wbrand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 13px; padding: 0 8px 14px; }
-.window-rail .wbrand .mark { width: 22px; height: 22px; border-radius: 7px; }
-.window-rail .wnav { font-size: 12px; color: var(--soft); padding: 7px 10px; border-radius: 8px; }
-.window-rail .wnav.on { color: var(--ink); background: rgba(245, 180, 92, .09); box-shadow: inset 0 0 0 1px rgba(245, 180, 92, .28); }
-.window-main { padding: 22px 24px; }
-.window-main .wtitle { font: 700 15px var(--display); letter-spacing: -.01em; margin: 0 0 4px; }
-.window-main .wsub { color: var(--faint); font-size: 12px; margin: 0 0 18px; }
-.window-main .tl-body .tl-lane { height: 22px; }
-.window-main .tl-ruler { height: 14px; }
-.mock-orbit { margin: 4px 0 16px; }
-.mock-orbit svg { width: 100%; max-height: 190px; }
-.wchips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
-.wchip { font: 650 9.5px/1.9 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--soft); background: rgba(148, 160, 220, .08); border: 1px solid var(--line); padding: 3px 10px; border-radius: 99px; }
-
-/* ── Steps ───────────────────────────────────────────────────────── */
-.steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 26px; margin-top: 46px; counter-reset: step; }
-.stepcard { position: relative; padding-top: 30px; }
-.stepcard::before { counter-increment: step; content: "0" counter(step); font: 800 56px/1 var(--display); letter-spacing: -.04em; color: transparent; -webkit-text-stroke: 1.3px rgba(154, 140, 255, .5); }
-.stepcard h3 { font-size: 19px; margin: 14px 0 8px; letter-spacing: -.015em; }
-.stepcard p { color: var(--soft); font-size: 14.5px; margin: 0; line-height: 1.65; }
-.stepcard p b { color: var(--ink); font-weight: 600; }
-.stepcard code { font: 600 12px var(--mono); color: var(--mem); background: rgba(94, 200, 230, .1); padding: 2px 7px; border-radius: 6px; }
-
-/* ── The language ────────────────────────────────────────────────── */
-.whycode { height: 200vh; padding: 0; }
-.whycode .film-sticky { grid-template-rows: auto minmax(0, 1fr); }
-.codebox { position: relative; align-self: center; width: min(860px, 100%); margin: 0 auto; }
-.codebox pre { margin: 0; padding: 28px 32px; font: 500 13.5px/1.9 var(--mono); color: rgba(233, 236, 248, .82); background: rgba(15, 17, 30, .85); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: 0 46px 110px -50px rgba(0, 0, 0, .8); }
-.cl { display: block; opacity: .07; transform: translateX(-16px); transition: opacity .45s var(--settle), transform .45s var(--settle); border-left: 2px solid transparent; padding-left: 12px; margin-left: -13px; white-space: pre-wrap; }
-.cl.on { opacity: 1; transform: none; }
-.cl.hot { border-left-color: var(--accent); color: var(--ink); }
-
-/* ── Start ───────────────────────────────────────────────────────── */
-.startgrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 5vw; align-items: start; margin-top: 40px; }
-@media (max-width: 900px) { .startgrid { grid-template-columns: 1fr; } }
-.cmd { display: flex; align-items: center; gap: 14px; background: rgba(10, 12, 22, .7); border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; margin: 12px 0; cursor: pointer; transition: border-color .3s; }
-.cmd:hover { border-color: rgba(245, 180, 92, .45); }
-.cmd code { font: 650 13px var(--mono); color: var(--ink); flex: 1; }
-.cmd .tip { font: 650 10px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--faint); }
-.cmd.copied .tip { color: var(--ok); }
-.startnotes { color: var(--soft); font-size: 14.5px; line-height: 1.75; }
-.startnotes b { color: var(--ink); font-weight: 600; }
-.startnotes .quiet { margin-top: 22px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 12px; color: var(--faint); font-size: 13.5px; }
-.startnotes .quiet b { color: var(--mem); }
-
-/* ── FAQ ─────────────────────────────────────────────────────────── */
-.faq { max-width: 780px; }
-.faq details { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); margin-bottom: 12px; overflow: hidden; }
-.faq summary { cursor: pointer; list-style: none; padding: 18px 22px; font-weight: 650; font-size: 15.5px; letter-spacing: -.01em; display: flex; align-items: center; gap: 14px; }
-.faq summary::-webkit-details-marker { display: none; }
-.faq summary::before { content: "+"; font: 700 17px var(--mono); color: var(--accent); transition: transform .35s var(--settle); }
-.faq details[open] summary::before { transform: rotate(45deg); }
-.faq details p { margin: 0; padding: 0 22px 20px; color: var(--soft); font-size: 14.5px; line-height: 1.7; }
-.faq details p b { color: var(--ink); font-weight: 600; }
-
-/* ── CTA + footer ────────────────────────────────────────────────── */
-.ctaband { text-align: center; padding: 18vh 7vw; }
-.ctaband .bigmark { width: 88px; height: 88px; border-radius: 24px; margin: 0 auto 30px; box-shadow: inset 0 0 0 1px var(--glass-edge), 0 0 80px -10px rgba(139, 124, 246, .5); }
-.ctaband h2 { font-size: clamp(34px, 5.4vw, 64px); }
-footer { border-top: 1px solid var(--line); padding: 40px 7vw 46px; display: flex; flex-wrap: wrap; gap: 26px; align-items: center; color: var(--faint); font-size: 13px; }
-footer .fbrand { display: flex; align-items: center; gap: 10px; color: var(--soft); font-weight: 650; }
-footer nav { display: flex; gap: 18px; margin-left: auto; }
-footer nav a { color: var(--faint); } footer nav a:hover { color: var(--ink); }
-
-@media (max-width: 760px) {
-  .window-body { grid-template-columns: 1fr; } .window-rail { display: none; }
-  .film { height: 300vh; } .whycode { height: 160vh; }
-  .read { gap: 14px; }
-}
-@media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto; }
-  .fx > i, .cue i::after, .kicker::before { animation: none !important; }
-  .h1 .l { transform: none !important; transition: none !important; }
-  .rise { opacity: 1 !important; transform: none !important; }
-  .film, .whycode { height: auto !important; } .film-sticky { position: static !important; height: auto !important; }
-  .cl { opacity: 1 !important; transform: none !important; }
-  body::after { display: none; }
-}
-</style>
+<title>Kosika Studio — agents that can prove what they did</title>
+<meta name="description" content="Kosika is a programming language for AI agents, and Studio is where you watch them work. Checked before it runs, granted tool by tool, recorded second by second — and replayed without asking a model anything.">
+<meta name="theme-color" content="#06070d">
+<meta property="og:title" content="Kosika Studio — agents that can prove what they did">
+<meta property="og:description" content="A language for AI agents that shows its work. An 18-second film, a real recorded run, and the Studio that replays it.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://blackhole8080-darkmatter.github.io/kosika/">
+<meta property="og:image" content="https://blackhole8080-darkmatter.github.io/kosika/media/kosika-film-poster.jpg">
+<meta property="og:image:width" content="1920">
+<meta property="og:image:height" content="1080">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="canonical" href="https://blackhole8080-darkmatter.github.io/kosika/">
+<link rel="icon" href="assets/mark.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="media/kosika-mark.png">
+<link rel="preload" href="fonts/Figtree.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="stylesheet" href="assets/site.css">
+<noscript><style>
+  .rise, .exhibit { opacity: 1 !important; transform: none !important; }
+  .h1 .l { transform: none !important; }
+  .hero .lead, .hero-ctas, .hero-meta, .hero-meta span { opacity: 1 !important; transform: none !important; }
+  .exhibit .stamp { transform: rotate(-7deg) scale(1) !important; opacity: .95 !important; }
+  .cue, .progressbar { display: none; }
+</style></noscript>
 </head>
 <body>
+<a class="skip" href="#what">Skip to content</a>
+<div class="grain" aria-hidden="true"></div>
+
+<!-- shared print textures and icons -->
+<svg width="0" height="0" aria-hidden="true" style="position:absolute">
+  <defs>
+    <pattern id="ht" width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(22)">
+      <circle cx="4.5" cy="4.5" r="2.05" fill="#101426" opacity=".55"/>
+    </pattern>
+    <pattern id="ht-coarse" width="15" height="15" patternUnits="userSpaceOnUse" patternTransform="rotate(-16)">
+      <circle cx="7.5" cy="7.5" r="2.6" fill="#101426" opacity=".3"/>
+    </pattern>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.2 8-8 9-4.8-1-8-4.5-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/></symbol>
+    <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="14" r="4.5"/><path d="M11.5 10.5L20 2"/><path d="M16 6l3 3"/><path d="M13 13h8"/><path d="M13 17h5"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/><path d="M12 7v5l3.5 2"/></symbol>
+    <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4 18a8 8 0 0 1 16 0"/><path d="M12 18l4-6"/><circle cx="12" cy="18" r="1.6"/></symbol>
+  </defs>
+</svg>
 
 <header class="bar" id="bar">
   <a class="wordmark" href="#top" aria-label="Kosika home">
-    <span class="mark"><svg viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="54" fill="none" stroke="#241d45" stroke-width="9"/><circle cx="60" cy="60" r="42" fill="none" stroke="#f5b45c" stroke-width="7"/><circle cx="60" cy="60" r="29" fill="#05060b"/><text x="60" y="62" font-family="system-ui, sans-serif" font-weight="700" font-size="30" text-anchor="middle" dominant-baseline="central" fill="#f2f4ff">K</text></svg></span>
+    <img class="mark" src="assets/mark.svg" alt="" width="30" height="30">
     Kosika <small>Studio</small>
   </a>
   <nav>
-    <a href="#what">What it is</a>
     <a href="#film">The film</a>
-    <a href="#how">How it works</a>
+    <a href="#what">What it is</a>
+    <a href="#run">The run</a>
+    <a href="#studio">Studio</a>
     <a href="#start">Start</a>
-    <a href="#faq">FAQ</a>
   </nav>
   <a class="cta" href="#start">Get started</a>
 </header>
+<div class="progressbar" id="progressbar" aria-hidden="true"></div>
 
-<!-- ── the hero ── -->
-<section class="hero" id="top">
-  <div class="field" id="field"></div>
-  <div class="hero-inner" id="heroInner">
-    <div class="kicker">A language for AI agents · local-first · open about everything</div>
-    <h1 class="h1" id="headline">Agents that can prove</h1>
-    <h1 class="h1" id="headline2"><span class="gold">what they did.</span></h1>
-    <div class="hrule"></div>
-    <p class="lead">Kosika is a programming language for AI agents, and <b>Studio</b> is where you watch them work. Every program is <b>checked before it runs</b>, every power is <b>a grant you gave</b>, and every run is <b>recorded</b> — replayable to any moment, without asking a model anything.</p>
-    <div class="hero-ctas">
-      <a class="btn primary" href="#film">Watch a real run</a>
-      <a class="btn ghost" href="#start">Start in minutes</a>
-    </div>
-  </div>
-  <div class="cue" id="cue"><i></i>scroll</div>
-</section>
-
-<!-- ── what it is ── -->
-<section id="what">
-  <div class="overline rise">What it is</div>
-  <h2 class="rise">A program you can <span class="dim">interrogate.</span></h2>
-  <p class="lead rise">Most agent tools ask for trust. Kosika is built to be checked: the language, the runtime, and Studio all carry the same rule — <b>show the work</b>. Four things make that real:</p>
-  <div class="cards">
-    <div class="card rise">
-      <div class="glyph"><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.2 8-8 9-4.8-1-8-4.5-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/></svg></div>
-      <h3>Checked, not trusted</h3>
-      <p>Every program is read by <b>the checker</b> before it runs. A program that does not check does not start. A model can propose; only a checked program executes.</p>
-    </div>
-    <div class="card rise">
-      <div class="glyph"><svg viewBox="0 0 24 24"><circle cx="8" cy="14" r="4.5"/><path d="M11.5 10.5L20 2"/><path d="M16 6l3 3"/><path d="M13 13h8"/><path d="M13 17h5"/></svg></div>
-      <h3>Granted, never ambient</h3>
-      <p>Files, web, other programs — <b>every tool is a grant</b> you gave, and agents ask your yes before anything changes. Nothing is assumed.</p>
-    </div>
-    <div class="card rise">
-      <div class="glyph"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/><path d="M12 7v5l3.5 2"/></svg></div>
-      <h3>Recorded, always replayable</h3>
-      <p>Every run leaves a <b>trace</b>: each model call, each tool, each second. Replay is free and asks no model — press play on the past.</p>
-    </div>
-    <div class="card rise">
-      <div class="glyph"><svg viewBox="0 0 24 24"><path d="M4 18a8 8 0 0 1 16 0"/><path d="M12 18l4-6"/><circle cx="12" cy="18" r="1.6"/></svg></div>
-      <h3>Bounded by real numbers</h3>
-      <p>Runs carry <b>budgets</b> — steps, seconds, money. When the budget ends, the run ends. No surprises on the bill.</p>
-    </div>
-  </div>
-</section>
-
-<!-- ── the film ── -->
-<section class="film" id="film">
-  <div class="film-sticky">
-    <div class="overline">The film · one real run, scrolled</div>
-    <div class="orbit">
-      <svg viewBox="0 0 680 300" role="img" aria-label="An agent on its orbit: you, the model, memory, tools and files around a program">
-        <ellipse class="o-orbit" cx="340" cy="150" rx="250" ry="108"/>
-        <g class="o-node" id="n-you"><circle cx="90" cy="150" r="26"/><text x="90" y="147" text-anchor="middle">you</text><text class="sub" x="90" y="160" text-anchor="middle">ask · allow</text></g>
-        <g class="o-node" id="n-model"><circle cx="340" cy="42" r="26"/><text x="340" y="39" text-anchor="middle">model</text><text class="sub" x="340" y="52" text-anchor="middle">proposes</text></g>
-        <g class="o-node" id="n-tools"><circle cx="530" cy="82" r="26"/><text x="530" y="79" text-anchor="middle">tools</text><text class="sub" x="530" y="92" text-anchor="middle">granted</text></g>
-        <g class="o-node" id="n-memory"><circle cx="560" cy="205" r="26"/><text x="560" y="202" text-anchor="middle">memory</text><text class="sub" x="560" y="215" text-anchor="middle">kept</text></g>
-        <g class="o-node" id="n-files"><circle cx="230" cy="245" r="26"/><text x="230" y="242" text-anchor="middle">files</text><text class="sub" x="230" y="255" text-anchor="middle">read only</text></g>
-        <g class="o-core" id="n-core"><circle cx="340" cy="160" r="44"/><text x="340" y="157">program</text><text class="sub" x="340" y="171" text-anchor="middle">checked · exact</text></g>
-      </svg>
-    </div>
-    <div>
-      <div class="read">
-        <div class="time" id="time">00:00<b>.0</b></div>
-        <div class="step" id="step">Scroll to move through the run. Nothing runs; this is the recording.</div>
+<main>
+  <!-- ── the hero ───────────────────────────────────────────────── -->
+  <section class="hero" id="top">
+    <canvas class="orbit-cv" id="orbitcv" aria-hidden="true"></canvas>
+    <div class="field" id="field" aria-hidden="true"></div>
+    <div class="hero-inner" id="heroinner">
+      <div class="kicker">A language for AI agents · local-first · open about everything</div>
+      <h1 class="h1" id="hl1">Agents that can prove</h1>
+      <h1 class="h1 gold" id="hl2">what they did.</h1>
+      <div class="hrule"></div>
+      <p class="lead">Kosika is a programming language for AI agents, and <b>Studio</b> is where you watch them work. Every program is <b>checked before it runs</b>, every power is <b>a grant you gave</b>, and every run is <b>recorded</b> — replayable to any moment, without asking a model anything.</p>
+      <div class="hero-ctas">
+        <a class="btn primary" href="#film">Watch the film</a>
+        <a class="btn ghost" href="#start">Start in minutes</a>
       </div>
-      <div class="strip">
-        <div class="tl"><div class="tl-ruler" id="ruler"></div><div class="tl-body" id="lanes"></div></div>
-        <div class="perf"></div><div class="progress" id="progress"></div>
+      <div class="hero-meta">
+        <span><i></i>18-second film, all code</span>
+        <span><i></i>1,700+ tests</span>
+        <span><i></i>no account, no cloud</span>
       </div>
     </div>
-  </div>
-</section>
-<p class="film-note">A real recorded run of a real agent — replayed by your scroll, to the tenth of a second. Replay never asks a model; that is the product.</p>
+    <div class="cue" aria-hidden="true"><i></i>scroll</div>
+  </section>
 
-<!-- ── the window ── -->
-<section id="window">
-  <div class="overline rise">The studio</div>
-  <h2 class="rise">One window. <span class="dim">Every answer.</span></h2>
-  <p class="lead rise">Studio runs on your machine and shows everything: the agents in your folder, what each is made of, what it did, and exactly <b>what the model was asked</b> — the words, not a summary.</p>
-  <div class="window rise">
-    <div class="window-bar"><i></i><i></i><i></i><div class="addr">kosika studio — assistant · a recorded run</div></div>
-    <div class="window-body">
-      <div class="window-rail">
-        <div class="wbrand"><span class="mark"><svg viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="54" fill="none" stroke="#241d45" stroke-width="9"/><circle cx="60" cy="60" r="42" fill="none" stroke="#f5b45c" stroke-width="7"/><circle cx="60" cy="60" r="29" fill="#05060b"/></svg></span>Kosika</div>
-        <div class="wnav">Showcase</div>
-        <div class="wnav">Assistant</div>
-        <div class="wnav">Project</div>
-        <div class="wnav on">Runs</div>
-        <div class="wnav">Tools</div>
-        <div class="wnav">Skills</div>
-        <div class="wnav">Permissions</div>
-      </div>
-      <div class="window-main">
-        <p class="wtitle">Runs — assistant</p>
-        <p class="wsub">Recorded runs of every agent, newest first. Each can be read step by step.</p>
-        <div class="mock-orbit">
-          <svg viewBox="0 0 680 210" role="img" aria-label="A run drawn as a diagram: the agent core with tools and memory in orbit">
-            <ellipse class="o-orbit" cx="340" cy="105" rx="240" ry="80"/>
-            <g class="o-node"><circle cx="120" cy="105" r="20"/><text x="120" y="109" text-anchor="middle">you</text></g>
-            <g class="o-node seen"><circle cx="340" cy="25" r="20"/><text x="340" y="29" text-anchor="middle">model</text></g>
-            <g class="o-node seen"><circle cx="500" cy="60" r="20"/><text x="500" y="64" text-anchor="middle">tools</text></g>
-            <g class="o-node seen"><circle cx="520" cy="160" r="20"/><text x="520" y="164" text-anchor="middle">memory</text></g>
-            <g class="o-node"><circle cx="220" cy="180" r="20"/><text x="220" y="184" text-anchor="middle">files</text></g>
-            <g class="o-core"><circle cx="340" cy="112" r="36"/><text x="340" y="109">assistant</text><text class="sub" x="340" y="123" text-anchor="middle">8 steps · 88.6 s</text></g>
-          </svg>
+  <!-- ── the film ───────────────────────────────────────────────── -->
+  <section class="film-sec" id="film">
+    <div class="wrap">
+      <div class="overline rise">The film</div>
+      <h2 class="rise">Eighteen seconds. <span class="dim">Every frame a function of time.</span></h2>
+      <p class="lead rise">One gold dot opens the film, becomes the playhead of a real run, then the stamp on a case file, then the period at the end of the sentence. No stock footage, no video model: a canvas drawn by a script, rendered frame by frame, scored from the same timeline.</p>
+
+      <div class="reel rise d1">
+        <div class="reel-bar">
+          <span class="rec">REC</span>
+          <span class="title">one run, on paper · 1920×1080 · 30 fps</span>
+          <span class="tc" id="tc"><b>0:00.0</b> / 0:18.0</span>
         </div>
-        <div class="tl"><div class="tl-ruler" id="mruler"></div><div class="tl-body" id="mlanes" style="cursor:default"></div></div>
-        <div class="wchips"><span class="wchip">1,700+ tests</span><span class="wchip">one file · no cloud</span><span class="wchip">works with no model</span><span class="wchip">replay is free</span></div>
+        <video id="reel" muted loop playsinline preload="metadata" poster="media/kosika-film-poster.jpg"
+               aria-label="Kosika Studio — One Run, On Paper, an eighteen second film">
+          <source src="media/kosika-film.mp4" type="video/mp4">
+        </video>
+        <div class="reel-foot">
+          <button class="iconbtn" id="playbtn" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5l11 7-11 7z"/></svg><span>Pause</span>
+          </button>
+          <button class="iconbtn" id="soundbtn" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h3l5 4V5L7 9z"/><path d="M16 9a4 4 0 0 1 0 6"/></svg><span>Sound on</span>
+          </button>
+          <span class="note">the score is synthesised too — one room, three stamps, one bell</span>
+          <a class="iconbtn" href="media/kosika-film.mp4" download style="margin-left:auto">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11"/><path d="M7 11l5 5 5-5"/><path d="M5 20h14"/></svg><span>Download</span>
+          </a>
+        </div>
+      </div>
+
+      <div class="shots">
+        <div class="shot rise"><div class="n">01 · 0:00</div><h3>The dot, and its orbit</h3><p>A point of light draws the ring it will live in. The ring is the run's timeline a second later — nothing is replaced, everything carries.</p></div>
+        <div class="shot rise d1"><div class="n">02 · 0:05</div><h3>One run, scrolled</h3><p>Model, tools, memory, code — the trace of a real assistant run, played by a gold playhead. 1 model call, 22 steps, 88.6 seconds.</p></div>
+        <div class="shot rise d2"><div class="n">03 · 0:08</div><h3>The case file</h3><p>A halftone dot-wipe turns the screen into paper, and three promises get stamped: checked, granted, recorded. Kosi the clerk does the stamping.</p></div>
       </div>
     </div>
-  </div>
-</section>
+  </section>
 
-<!-- ── how it works ── -->
-<section id="how">
-  <div class="overline rise">How it works</div>
-  <h2 class="rise">Fifteen minutes, <span class="dim">no programming required.</span></h2>
-  <p class="lead rise">You do not need to know how to program to use Kosika, and you do not need the internet once it is installed.</p>
-  <div class="steps">
-    <div class="stepcard rise"><h3>Write it — or take one</h3><p>Agents are short programs in the Kosika language, and three starter agents come with the install. In Studio, every part of a program is a card you can open and read.</p></div>
-    <div class="stepcard rise"><h3>The checker reads it first</h3><p>Before anything runs, the <b>checker</b> reads the whole program: names, types, grants. If something is wrong it says so in words — <code>it cannot run, and here is why</code>.</p></div>
-    <div class="stepcard rise"><h3>Run it, and watch</h3><p>Run with the model you already have — or with none at all. Every step lands in the trace: what was asked, what was used, what it cost, <b>what it changed</b>.</p></div>
-  </div>
-</section>
-
-<!-- ── the language ── -->
-<section class="whycode" id="language">
-  <div class="film-sticky">
-    <div class="overline">The language · what a program looks like</div>
-    <div class="codebox">
-      <pre id="code"></pre>
+  <!-- ── what it is ─────────────────────────────────────────────── -->
+  <section id="what">
+    <div class="wrap">
+      <div class="overline rise">What it is</div>
+      <h2 class="rise">A program you can <span class="dim">interrogate.</span></h2>
+      <p class="lead rise">Most agent tools ask for trust. Kosika is built to be checked: the language, the runtime, and Studio all carry the same rule — <b>show the work</b>. Four things make that real:</p>
+      <div class="cards">
+        <div class="card rise">
+          <div class="glyph"><svg viewBox="0 0 24 24"><use href="#i-shield" width="24" height="24"/></svg></div>
+          <h3>Checked, not trusted</h3>
+          <p>Every program is read by <b>the checker</b> before it runs. A program that does not check does not start. A model can propose; only a checked program executes.</p>
+        </div>
+        <div class="card rise d1">
+          <div class="glyph"><svg viewBox="0 0 24 24"><use href="#i-key" width="24" height="24"/></svg></div>
+          <h3>Granted, never ambient</h3>
+          <p>Files, web, other programs — <b>every tool is a grant</b> you gave, and agents ask your yes before anything changes. Nothing is assumed.</p>
+        </div>
+        <div class="card rise d2">
+          <div class="glyph"><svg viewBox="0 0 24 24"><use href="#i-clock" width="24" height="24"/></svg></div>
+          <h3>Recorded, always replayable</h3>
+          <p>Every run leaves a <b>trace</b>: each model call, each tool, each second. Replay is free and asks no model — press play on the past.</p>
+        </div>
+        <div class="card rise d3">
+          <div class="glyph"><svg viewBox="0 0 24 24"><use href="#i-gauge"/></svg></div>
+          <h3>Bounded by real numbers</h3>
+          <p>Runs carry <b>budgets</b> — steps, seconds, money. When the budget ends, the run ends. No surprises on the bill.</p>
+        </div>
+      </div>
     </div>
-  </div>
-</section>
+  </section>
 
-<!-- ── start ── -->
-<section id="start">
-  <div class="overline rise">Start</div>
-  <h2 class="rise">Three commands.</h2>
-  <div class="startgrid">
-    <div class="rise">
-      <div class="cmd" data-copy="python -m pip install ."><code>python -m pip install .</code><span class="tip">click to copy</span></div>
-      <div class="cmd" data-copy="kosika start"><code>kosika start</code><span class="tip">click to copy</span></div>
-      <div class="cmd" data-copy="ollama pull qwen2.5:7b"><code>ollama pull qwen2.5:7b</code><span class="tip">click to copy</span></div>
+  <!-- ── the run, scrolled ──────────────────────────────────────── -->
+  <section class="run" id="run">
+    <div class="run-sticky">
+      <div class="wrap" style="width:100%">
+        <div class="overline">The recording · one real run, scrolled by you</div>
+      </div>
+      <div class="orbit">
+        <svg viewBox="0 0 680 300" role="img" aria-label="An agent on its orbit: you, the model, memory, tools and files around a checked program">
+          <ellipse class="o-orbit" cx="340" cy="150" rx="250" ry="108"/>
+          <g class="o-node" id="n-you"><circle cx="90" cy="150" r="26"/><text x="90" y="147" text-anchor="middle">you</text><text class="sub" x="90" y="160" text-anchor="middle">ask · allow</text></g>
+          <g class="o-node" id="n-model"><circle cx="340" cy="42" r="26"/><text x="340" y="39" text-anchor="middle">model</text><text class="sub" x="340" y="52" text-anchor="middle">proposes</text></g>
+          <g class="o-node" id="n-tools"><circle cx="530" cy="82" r="26"/><text x="530" y="79" text-anchor="middle">tools</text><text class="sub" x="530" y="92" text-anchor="middle">granted</text></g>
+          <g class="o-node" id="n-memory"><circle cx="560" cy="205" r="26"/><text x="560" y="202" text-anchor="middle">memory</text><text class="sub" x="560" y="215" text-anchor="middle">kept</text></g>
+          <g class="o-node" id="n-files"><circle cx="230" cy="245" r="26"/><text x="230" y="242" text-anchor="middle">files</text><text class="sub" x="230" y="255" text-anchor="middle">read only</text></g>
+          <g class="o-core" id="n-core"><circle cx="340" cy="160" r="44"/><text x="340" y="157">program</text><text class="sub" x="340" y="171" text-anchor="middle">checked · exact</text></g>
+        </svg>
+      </div>
+      <div class="wrap" style="width:100%">
+        <div class="read">
+          <div class="time" id="time">0:00<b>.0</b></div>
+          <div class="step" id="step">Scroll to move through the run. Nothing runs; this is the recording.</div>
+        </div>
+        <div class="strip">
+          <div class="tl"><div class="tl-ruler" id="ruler"></div><div class="tl-body" id="lanes"></div></div>
+          <div class="perf"></div><div class="progress" id="progress"></div>
+        </div>
+      </div>
     </div>
-    <div class="startnotes rise">
-      <p><b>One command does the work.</b> <b>kosika start</b> makes an agents folder in your home directory with three starter agents, looks for a model already on your computer, and opens Studio.</p>
-      <p style="margin-top:14px">It tells you what it found — and it <b>grants nothing</b>: no agent can read your files, start programs or reach the web until you say so.</p>
-      <div class="quiet"><b>No model yet?</b> Studio still opens, every agent can be read and tested, and runs can be replayed. The simplest model is a local one: install Ollama and pull <b>qwen2.5:7b</b> — about 5 GB of disk, nothing leaves the machine.</div>
+  </section>
+  <p class="run-note">A real recorded run of a real agent — replayed by your scroll, to the tenth of a second. Replay never asks a model; that is the product.</p>
+
+  <!-- ── studio ─────────────────────────────────────────────────── -->
+  <section id="studio">
+    <div class="wrap">
+      <div class="overline rise">The studio</div>
+      <h2 class="rise">One window. <span class="dim">Every answer.</span></h2>
+      <p class="lead rise">Studio runs on your machine and shows everything: the agents in your folder, what each is made of, what it did, and exactly <b>what the model was asked</b> — the words, not a summary.</p>
     </div>
-  </div>
-</section>
+    <div class="window rise d1">
+      <div class="window-bar"><i></i><i></i><i></i><div class="addr">kosika studio — assistant · a recorded run</div></div>
+      <div class="window-body">
+        <div class="window-rail">
+          <div class="wbrand"><img class="mark" src="assets/mark.svg" alt="">Kosika</div>
+          <div class="wnav">Showcase</div>
+          <div class="wnav">Assistant</div>
+          <div class="wnav">Project</div>
+          <div class="wnav on">Runs</div>
+          <div class="wnav">Tools</div>
+          <div class="wnav">Skills</div>
+          <div class="wnav">Permissions</div>
+        </div>
+        <div class="window-main">
+          <p class="wtitle">Runs — assistant</p>
+          <p class="wsub">Recorded runs of every agent, newest first. Each can be read step by step.</p>
+          <div class="mock-orbit">
+            <svg viewBox="0 0 680 210" role="img" aria-label="A run drawn as a diagram: the agent core with tools and memory in orbit">
+              <ellipse class="o-orbit" cx="340" cy="105" rx="240" ry="80"/>
+              <g class="o-node"><circle cx="120" cy="105" r="26"/><text x="120" y="109" text-anchor="middle">you</text></g>
+              <g class="o-node seen"><circle cx="340" cy="22" r="26"/><text x="340" y="26" text-anchor="middle">model</text></g>
+              <g class="o-node seen"><circle cx="512" cy="58" r="26"/><text x="512" y="62" text-anchor="middle">tools</text></g>
+              <g class="o-node seen"><circle cx="524" cy="158" r="26"/><text x="524" y="162" text-anchor="middle">memory</text></g>
+              <g class="o-node"><circle cx="212" cy="176" r="26"/><text x="212" y="180" text-anchor="middle">files</text></g>
+              <g class="o-core"><circle cx="340" cy="104" r="46"/><text x="340" y="99">assistant</text><text class="sub" x="340" y="115" text-anchor="middle">22 steps · 88.6s</text></g>
+            </svg>
+          </div>
+          <div class="tl" id="mocktl"><div class="tl-ruler" id="mruler"></div><div class="tl-body" id="mlanes" style="cursor:default"></div></div>
+          <div class="wchips"><span class="wchip">1,700+ tests</span><span class="wchip">one file · no cloud</span><span class="wchip">works with no model</span><span class="wchip">replay is free</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="shots-strip rise d2">
+      <img src="shots/studio-run-timeline.png" alt="Kosika Studio showing a recorded run on its timeline" loading="lazy">
+      <img src="shots/studio-agents.png" alt="Kosika Studio's agent gallery" loading="lazy">
+    </div>
+  </section>
 
-<!-- ── faq ── -->
-<section id="faq">
-  <div class="overline rise">Questions</div>
-  <h2 class="rise">Asked honestly.</h2>
-  <div class="faq rise">
-    <details><summary>Is it calling a model right now?</summary><p>Only if you granted one, and you can see every call: the exact words sent and returned are in the trace. <b>Replay never calls a model</b> — the film above is a recording, played by your scroll.</p></details>
-    <details><summary>Where does my data go?</summary><p>Nowhere. Kosika and Studio run on your machine; agents, traces and memories are files in your folder. There is no account, no telemetry, no cloud.</p></details>
-    <details><summary>Why a language, and not another framework?</summary><p>Frameworks hide the machine under abstractions. A small language can be <b>checked</b>: the program you read is the program that runs, and the checker can prove things about it before a single step happens. That is what makes "show the work" a guarantee rather than a promise.</p></details>
-    <details><summary>What if the model makes a mistake?</summary><p>Then the mistake is visible, bounded and recorded — and precise work is done by exact code, not by the model. The model proposes; checked programs execute; budgets cap the damage.</p></details>
-    <details><summary>Can I use it without programming?</summary><p>Yes. The getting-started tour takes about fifteen minutes, needs no programming knowledge, and the starter agents already do useful things — reading, reminding, answering.</p></details>
-  </div>
-</section>
+  <!-- ── the paper world ────────────────────────────────────────── -->
+  <section class="paper" id="paper">
+    <div class="wrap">
+      <div class="chips">
+        <span class="pchip">Case 001</span>
+        <span class="pchip red">A real run</span>
+        <span class="pchip" style="margin-left:auto;background:none">File 001 / 007</span>
+      </div>
+      <div class="overline">Filed, not promised</div>
+      <h2>One run, <span style="color:rgba(16,20,38,.42)">on paper.</span></h2>
+      <p class="lead">The film's second half is a dossier, because that is the claim: an agent's work should be <b>something you can hold and read</b>. Three stamps, and each one is a mechanism in the language — not a slogan.</p>
 
-<!-- ── cta ── -->
-<section class="ctaband">
-  <div class="mark bigmark"><svg viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="54" fill="none" stroke="#241d45" stroke-width="9"/><circle cx="60" cy="60" r="42" fill="none" stroke="#f5b45c" stroke-width="7"/><circle cx="60" cy="60" r="29" fill="#05060b"/><text x="60" y="62" font-family="system-ui, sans-serif" font-weight="700" font-size="30" text-anchor="middle" dominant-baseline="central" fill="#f2f4ff">K</text></svg></div>
-  <h2 class="rise">See for yourself.</h2>
-  <p class="lead rise" style="margin: 0 auto 34px">Fifteen minutes, one command, and agents that can prove what they did.</p>
-  <div class="hero-ctas rise" style="opacity: 1; transform: none; transition: none">
-    <a class="btn primary" href="#start">Get started</a>
-    <a class="btn ghost" href="#film">Replay the film</a>
-  </div>
-</section>
+      <div class="paper-grid">
+        <article class="exhibit" style="--rot:-1.2deg">
+          <div class="art">
+            <svg viewBox="0 0 300 112" aria-hidden="true" preserveAspectRatio="xMidYMid slice">
+              <rect width="300" height="112" fill="#e7dcc4"/>
+              <circle cx="230" cy="56" r="66" fill="url(#ht)"/>
+              <circle cx="230" cy="56" r="66" fill="url(#ht-coarse)"/>
+              <g transform="translate(74 34) scale(1.75)" stroke="#101426" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><use href="#i-shield" width="24" height="24"/></g>
+            </svg>
+          </div>
+          <h3>The checker</h3>
+          <p class="sub">reads the program before it runs</p>
+          <div class="exbar">no check, no run</div>
+          <span class="stamp">CHECKED</span>
+        </article>
+        <article class="exhibit" style="--rot:.8deg">
+          <div class="art">
+            <svg viewBox="0 0 300 112" aria-hidden="true" preserveAspectRatio="xMidYMid slice">
+              <rect width="300" height="112" fill="#e7dcc4"/>
+              <circle cx="70" cy="56" r="60" fill="url(#ht)"/>
+              <circle cx="70" cy="56" r="60" fill="url(#ht-coarse)"/>
+              <g transform="translate(214 34) scale(1.75)" stroke="#101426" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><use href="#i-key" width="24" height="24"/></g>
+            </svg>
+          </div>
+          <h3>The grant</h3>
+          <p class="sub">one grant per tool, asked each time</p>
+          <div class="exbar">nothing ambient</div>
+          <span class="stamp green">GRANTED</span>
+        </article>
+        <article class="exhibit" style="--rot:-.6deg">
+          <div class="art">
+            <svg viewBox="0 0 300 112" aria-hidden="true" preserveAspectRatio="xMidYMid slice">
+              <rect width="300" height="112" fill="#e7dcc4"/>
+              <circle cx="150" cy="56" r="48" fill="url(#ht)"/>
+              <circle cx="230" cy="56" r="42" fill="url(#ht-coarse)"/>
+              <circle cx="70" cy="56" r="42" fill="url(#ht-coarse)"/>
+              <g transform="translate(150 34) scale(1.75)" stroke="#101426" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><use href="#i-clock" width="24" height="24"/></g>
+            </svg>
+          </div>
+          <h3>The trace</h3>
+          <p class="sub">kept, second by second</p>
+          <div class="exbar">replay asks no model</div>
+          <span class="stamp indigo">RECORDED</span>
+        </article>
+      </div>
+
+      <div class="kosi-wrap rise">
+        <canvas id="kosi" width="296" height="296" aria-hidden="true"></canvas>
+        <div class="bubble">Every stamp is in the trace. Hand me a run and I will read it back to you — no model, no bill, no waiting.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── numbers ────────────────────────────────────────────────── -->
+  <section class="numbers" id="numbers">
+    <div class="wrap">
+      <div class="overline rise">Measured, not claimed</div>
+      <h2 class="rise">One run. <span class="dim">Its real numbers.</span></h2>
+      <p class="lead rise">These are not marketing figures — they are the counters the runtime kept while the assistant above answered “why is the sky blue”.</p>
+      <div class="stats" id="stats">
+        <div class="stat rise"><div class="v" data-to="22">0</div><div class="k">steps recorded</div></div>
+        <div class="stat rise d1"><div class="v" data-to="88.6" data-dec="1">0</div><div class="k">seconds, wall clock</div></div>
+        <div class="stat rise d2"><div class="v" data-to="1">0</div><div class="k">model call</div></div>
+        <div class="stat rise d3"><div class="v" data-to="485">0</div><div class="k">tokens spent</div></div>
+        <div class="stat rise d4"><div class="v" data-to="0" data-prefix="$" data-dec="2">0</div><div class="k">replay cost</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── start ──────────────────────────────────────────────────── -->
+  <section id="start">
+    <div class="wrap">
+      <div class="overline rise">Start</div>
+      <h2 class="rise">Three commands.</h2>
+      <div class="startgrid">
+        <div class="rise">
+          <div class="cmd" data-copy="python -m pip install ."><code>python -m pip install .</code><span class="tip">click to copy</span></div>
+          <div class="cmd" data-copy="kosika start"><code>kosika start</code><span class="tip">click to copy</span></div>
+          <div class="cmd" data-copy="ollama pull qwen2.5:7b"><code>ollama pull qwen2.5:7b</code><span class="tip">click to copy</span></div>
+        </div>
+        <div class="startnotes rise d1">
+          <p><b>One command does the work.</b> <b>kosika start</b> makes an agents folder in your home directory with three starter agents, looks for a model already on your computer, and opens Studio.</p>
+          <p style="margin-top:14px">It tells you what it found — and it <b>grants nothing</b>: no agent can read your files, start programs or reach the web until you say so.</p>
+          <div class="quiet"><b>No model yet?</b> Studio still opens, every agent can be read and tested, and runs can be replayed. The simplest model is a local one: install Ollama and pull <b>qwen2.5:7b</b> — about 5 GB of disk, nothing leaves the machine.</div>
+        </div>
+      </div>
+
+      <div class="faq">
+        <details><summary>Is it calling a model right now?</summary><p>Only if you granted one, and you can see every call: the exact words sent and returned are in the trace. <b>Replay never calls a model</b> — the run above is a recording, played by your scroll, and the film is a recording too.</p></details>
+        <details><summary>Where does my data go?</summary><p>Nowhere. Kosika and Studio run on your machine; agents, traces and memories are files in your folder. There is no account, no telemetry, no cloud.</p></details>
+        <details><summary>Why a language, and not another framework?</summary><p>Frameworks hide the machine under abstractions. A small language can be <b>checked</b>: the program you read is the program that runs, and the checker can prove things about it before a single step happens. That is what makes “show the work” a guarantee rather than a promise.</p></details>
+        <details><summary>What if the model makes a mistake?</summary><p>Then the mistake is visible, bounded and recorded — and precise work is done by exact code, not by the model. The model proposes; checked programs execute; budgets cap the damage.</p></details>
+        <details><summary>How was the film made?</summary><p>One HTML file with a <b>render(t)</b> function: every frame is a pure function of time, including the paper grain, the halftone dots and the mascot's boiling ink line. It is rendered by a headless browser and encoded with ffmpeg, and the score is synthesised in Python from the same timeline. The source ships with this site, in <span class="mono">film/</span>.</p></details>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── cta ────────────────────────────────────────────────────── -->
+  <section class="ctaband">
+    <img class="mark bigmark" src="assets/mark.svg" alt="Kosika">
+    <h2 class="rise">See for yourself.</h2>
+    <p class="lead rise">Fifteen minutes, one command, and agents that can prove what they did.</p>
+    <div class="hero-ctas rise" style="opacity:1;transform:none;transition:none">
+      <a class="btn primary" href="#start">Get started</a>
+      <a class="btn ghost" href="https://github.com/blackhole8080-darkmatter/kosika">Read the source</a>
+    </div>
+  </section>
+</main>
 
 <footer>
-  <div class="fbrand"><span class="mark" style="width:24px;height:24px;border-radius:7px"><svg viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="42" fill="none" stroke="#f5b45c" stroke-width="9"/><circle cx="60" cy="60" r="24" fill="#05060b"/></svg></span>Kosika</div>
-  <div>Studio is a file on your computer, not a tab of ours.</div>
-  <nav><a href="#what">What it is</a><a href="#how">How it works</a><a href="#start">Start</a><a href="#top">Top</a></nav>
+  <div class="fbrand"><img class="mark" src="assets/mark.svg" alt="" style="width:24px;height:24px;border-radius:7px">Kosika</div>
+  <div class="fwords">Studio is a file on your computer, not a tab of ours. The site is one page and four files; the film is code.</div>
+  <nav><a href="#film">Film</a><a href="#what">What it is</a><a href="#run">The run</a><a href="#start">Start</a><a href="#top">Top</a></nav>
 </footer>
 
-<script>
-// ── the recorded run, baked in. This is the same story the Studio's
-// replay reads from the trace; here it is static, so the page needs
-// no server and asks nothing of anyone.
-const STORY = {"workflow":"main","program_hash":"3fb3169b9da2eba1021e31740e26500d1612f1d3509ec77cffc0f15245d77896","inputs":{"msg":{"text":"why is the sky blue"}},"steps":[{"name":"kind","kind":"code","did":"computed kind_of in code","answer":"ask","seconds":0.0},{"name":"turn","kind":"workflow","did":"ran workflow answer","answer":"{\"book\": {\"facts\": [], \"name\": \"Kosi\", \"reminders\": [{\"at\": \"2:49\", \"due\": 1791766140, \"what\": \"stretch\"}, ...","inside":[{"name":"turn","kind":"workflow","did":"ran workflow answer_outside","answer":"{\"book\": {\"facts\": [], \"name\": \"Kosi\", \"reminders\": [{\"at\": \"2:49\", \"due\": 1791766140, \"what\": \"stretch\"}, ...","inside":[{"name":"known","kind":"memory","did":"looked up 'me' in memory books","answer":"{\"facts\": [], \"name\": \"Kosi\", \"reminders\": [{\"at\": \"2:49\", \"due\": 1791766140, \"what\": \"stretch\"}, {\"at\": \"1...","seconds":0.0},{"name":"past","kind":"memory","did":"looked up 'me' in memory talks","answer":"{\"lines\": [\"You: pause lookout\", \"Kosi: That was refused, so nothing was changed.\", \"You: what is 17 times ...","seconds":0.0},{"name":"ask","kind":"code","did":"computed outside_question in code","answer":"{\"agent\": \"omp\", \"text\": \"Questions that ask for ideas, advice, an explanation or a plan are to be answered...","seconds":0.0},{"name":"got","kind":"code","did":"computed no_help in code","answer":"{\"agent\": \"\", \"ok\": false, \"text\": \"\"}","fallback":"Mock MCP operation is not allowlisted: system:outside/answer","seconds":0.0},{"name":"turn","kind":"workflow","did":"ran workflow answer_here","answer":"{\"book\": {\"facts\": [], \"name\": \"Kosi\", \"reminders\": [{\"at\": \"2:49\", \"due\": 1791766140, \"what\": \"stretch\"}, ...","inside":[{"name":"known","kind":"memory","did":"looked up 'me' in memory books","answer":"{\"facts\": [], \"name\": \"Kosi\", \"reminders\": [{\"at\": \"2:49\", \"due\": 1791766140, \"what\": \"stretch\"}, {\"at\": \"1...","seconds":0.0},{"name":"moment","kind":"code","did":"looked at the clock","answer":"Thursday 2026-10-22, 18:05","seconds":0.0},{"name":"past","kind":"memory","did":"looked up 'me' in memory talks","answer":"{\"lines\": [\"You: pause lookout\", \"Kosi: That was refused, so nothing was changed.\", \"You: what is 17 times ...","seconds":0.0},{"name":"first","kind":"code","did":"computed ask_prompt in code","answer":"{\"text\": \"You are Kosi, a voice assistant on a person's laptop. Answer in sentences that sound natural when...","seconds":0.0},{"name":"prompt","kind":"code","did":"computed with_talk in code","answer":"{\"text\": \"You are Kosi, a voice assistant on a person's laptop. Answer in sentences that sound natural when...","seconds":0.0},{"name":"reply","kind":"model","did":"asked model voice","answer":"{\"text\": \"The sky appears blue because of a process called Rayleigh scattering. When the sun's light enters...","asked":"{\"text\": \"You are Kosi, a voice assistant on a person's laptop. Answer in sentences that sound natural when read aloud: one or two for a simple question, and up to six for a question that asks for ideas, reasons, advice or a plan. Give real substance: name the things, and say why. Use plain words. No lists, no headings, no symbols. If you are not sure, say so instead of guessing. Answer what the person says now. When their words point back at something, such as these, that, it, or I meant, they mean the conversation so far. Do not mention their reminders or what they asked you to remember unless they ask about them. You cannot open programs, browse the web or see files, so never say you did.\\nThe person's name is Aryan.\\nIt is Thursday, 2026-10-22, 18:05.\\nThings the person asked you to remember: nothing yet.\\nTheir reminders: stretch, at 2:49; stretch, at 18:15.\\n\\nThe conversation so far, oldest first:\\nYou: pause lookout\\nKosi: That was refused, so nothing was changed.\\nYou: what is 17 times 23\\nKosi: 391\\nYou: what time is it\\nKosi: It is 18:05.\\nYou: remind me in 10 minutes to stretch\\nKosi: I will remind you to stretch at 18:15. You have 2 on the list.\\n\\nThe person says: why is the sky blue\"}","raw":"{\"text\": \"The sky appears blue because of a process called Rayleigh scattering. When the sun's light enters the Earth's atmosphere, it collides with molecules and small particles. These collisions scatter the shorter, violet wavelengths more than the longer, red wavelengths. However, our eyes are more sensitive to blue light, so we perceive the sky as blue.\"}","model":"voice","tokens":485,"seconds":88.0},{"name":"turn","kind":"code","did":"computed spoken in code","answer":"{\"book\": {\"facts\": [], \"name\": \"Kosi\", \"reminders\": [{\"at\": \"2:49\", \"due\": 1791766140, \"what\": \"stretch\"}, ...","seconds":0.0}],"seconds":88.2}],"seconds":88.3}],"seconds":88.3},{"name":"book","kind":"code","did":"computed book_of in code","answer":"{\"facts\": [], \"name\": \"Kosi\", \"reminders\": [{\"at\": \"2:49\", \"due\": 1791766140, \"what\": \"stretch\"}, {\"at\": \"1...","seconds":0.0},{"name":"saved","kind":"memory","did":"remembered {\"facts\": [], \"name\": \"Kosi\", \"reminders\": [{\"at\": \"2:49\", \"due\": 1... under 'me' in memory books","answer":"memory books now holds 1 entry","seconds":0.0},{"name":"past","kind":"memory","did":"looked up 'me' in memory talks","answer":"{\"lines\": [\"You: pause lookout\", \"Kosi: That was refused, so nothing was changed.\", \"You: what is 17 times ...","seconds":0.0},{"name":"talk","kind":"code","did":"computed heard in code","answer":"{\"lines\": [\"You: what is 17 times 23\", \"Kosi: 391\", \"You: what time is it\", \"Kosi: It is 18:05.\", \"You: rem...","seconds":0.1},{"name":"kept","kind":"memory","did":"remembered {\"lines\": [\"You: what is 17 times 23\", \"Kosi: 391\", \"You: what time... under 'me' in memory talks","answer":"memory talks now holds 1 entry","seconds":0.0},{"name":"said","kind":"code","did":"computed say in code","answer":"{\"suggest\": [], \"text\": \"The sky appears blue because of a process called Rayleigh scattering. When the sun...","seconds":0.0}],"finished":true,"result":{"suggest":[],"text":"The sky appears blue because of a process called Rayleigh scattering. When the sun's light enters the Earth's atmosphere, it collides with molecules and small particles. These collisions scatter the shorter, violet wavelengths more than the longer, red wavelengths. However, our eyes are more sensitive to blue light, so we perceive the sky as blue."},"error":null,"replays":true,"replay_problem":"","seconds":88.625,"used":{"function_calls":45,"loop_iterations":161,"model_calls":1,"steps":22,"tool_calls":9},"limits":{"deadline_seconds":900.0,"max_function_calls":10000,"max_loop_iterations":1000000,"max_model_calls":2,"max_steps":10000,"max_tool_calls":256},"tokens":485};
-
-const $ = id => document.getElementById(id);
-const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-// ── the hero: split the headlines into letters that rise.
-(function split() {
-  let n = 0;
-  for (const el of [$("headline"), $("headline2")]) {
-    const kids = [...el.childNodes];
-    el.textContent = "";
-    for (const kid of kids) {
-      const cls = kid.nodeType === 1 ? kid.className : "";
-      const text = kid.nodeType === 1 ? kid.textContent : kid.nodeValue;
-      let w = null;
-      for (const ch of text) {
-        if (ch === " ") {
-          if (w) el.appendChild(w);
-          el.appendChild(document.createTextNode(" "));
-          w = document.createElement("span"); w.className = "w" + (cls ? " " + cls : "");
-          continue;
-        }
-        if (!w) { w = document.createElement("span"); w.className = "w" + (cls ? " " + cls : ""); }
-        const l = document.createElement("span"); l.className = "l"; l.textContent = ch;
-        l.style.transitionDelay = (0.3 + n * 0.03).toFixed(2) + "s";
-        w.appendChild(l); n++;
-      }
-      if (w) el.appendChild(w);
-    }
-  }
-})();
-
-// ── the floating field.
-(function floats() {
-  const field = $("field");
-  const bits = [["checked", 11, 16, 118, 1.4], ["granted", 79, 13, 96, .8], ["recorded", 7, 66, 92, 1.1], ["replay", 83, 62, 130, 1.7], ["budgets", 19, 88, 80, .6], ["traces", 64, 90, 92, 1.25], ["local", 88, 36, 82, .9], ["private", 4, 38, 100, 1.55]];
-  for (const [word, left, top, size, depth] of bits) {
-    const fx = document.createElement("div"); fx.className = "fx"; fx.dataset.depth = depth;
-    fx.style.cssText = "left:" + left + "%;top:" + top + "%;width:" + size + "px;height:" + Math.round(size * .48) + "px;--drift:" + (7 + depth * 3).toFixed(1) + "s;--delay:-" + (depth * 1.7).toFixed(1) + "s";
-    const i = document.createElement("i"); i.textContent = word; fx.appendChild(i); field.appendChild(fx);
-  }
-  for (const [left, top, size, depth, drift] of [[42, 6, 200, 2.2, "12.5s"], [69, 48, 128, .45, "10s"]]) {
-    const fx = document.createElement("div"); fx.className = "fx ring"; fx.dataset.depth = depth;
-    fx.style.cssText = "left:" + left + "%;top:" + top + "%;width:" + size + "px;height:" + size + "px;--drift:" + drift;
-    fx.appendChild(document.createElement("i")); field.appendChild(fx);
-  }
-})();
-const layers = [...document.querySelectorAll(".fx")];
-
-// ── the run as a flat clock (leaf steps take time; a workflow holds
-// the moment its children begin).
-const beats = [];
-let total = 0;
-if (STORY && STORY.steps) {
-  (function walk(steps) { for (const step of steps || []) { walk(step.inside); beats.push({step, at: 0, end: 0, leaf: !(step.inside && step.inside.length)}); } })(STORY.steps);
-  for (const beat of beats) { beat.at = total; if (beat.leaf) total += Math.max(0.1, beat.step.seconds || 0.1); beat.end = total; }
-}
-const laneOf = kind => kind === "model" || kind === "think" || kind === "agent" ? 0
-  : kind === "tool" || kind === "memory" || kind === "board" || kind === "files" || kind === "web" ? 1
-  : kind === "code" ? 3 : 2;
-const nodeOf = kind => kind === "model" || kind === "think" || kind === "agent" ? "n-model"
-  : kind === "tool" || kind === "web" ? "n-tools" : kind === "memory" || kind === "board" ? "n-memory"
-  : kind === "files" ? "n-files" : kind === "code" ? "n-core" : null;
-const pct = t => Math.min(100, t / (total || 1) * 100);
-
-function buildTimeline(rulerEl, lanesEl, withPlayhead) {
-  const names = ["Model", "Tools", "Steps", "Code"];
-  const laneEls = names.map(name => { const d = document.createElement("div"); d.className = "tl-lane"; d.dataset.name = name; lanesEl.appendChild(d); return d; });
-  let playhead = null;
-  if (withPlayhead) { playhead = document.createElement("div"); playhead.className = "tl-playhead"; lanesEl.appendChild(playhead); }
-  if (beats.length) {
-    const major = [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600].find(s => total / s <= 9) || 900;
-    for (let t = 0; t <= total + 0.0001; t += major) { const s = document.createElement("span"); s.style.left = pct(t) + "%"; s.textContent = t >= 60 ? Math.round(t / 60) + "m" : (major < 1 ? t : Math.round(t)) + "s"; rulerEl.appendChild(s); }
-    for (const beat of beats) {
-      if (!beat.leaf) continue;
-      const clip = document.createElement("div"); clip.className = "tl-clip k" + laneOf(beat.step.kind);
-      clip.style.left = pct(beat.at).toFixed(2) + "%"; clip.style.width = Math.max(0.8, pct(beat.end - beat.at)).toFixed(2) + "%";
-      clip.title = beat.step.name;
-      const label = document.createElement("span"); label.textContent = beat.step.name; clip.appendChild(label);
-      laneEls[laneOf(beat.step.kind)].appendChild(clip); beat.clip = clip;
-    }
-  }
-  return playhead;
-}
-const playhead = buildTimeline($("ruler"), $("lanes"), true);
-buildTimeline($("mruler"), $("mlanes"), false);
-
-// ── the code excerpt: a real piece of a real program.
-(function excerpt() {
-  const lines = [
-    "record Msg { text: Text }",
-    "record Said { text: Text suggest: Text[] }",
-    "",
-    "// due is the moment it falls due, in seconds since 1970,",
-    "// or 0 for no time. at is that moment in words: \"18:00\".",
-    "record Reminder { what: Text due: Number at: Text }",
-    "",
-    "// What it keeps between conversations.",
-    "record Book { name: Text you: Text reminders: Reminder[] facts: Text[] }",
-    "",
-    "// A sum worked out, or the reason it could not be.",
-    "record Sum { ok: Bool value: Number problem: Text }",
-  ];
-  const pre = $("code");
-  const els = lines.map(text => { const s = document.createElement("span"); s.className = "cl"; s.textContent = text === "" ? "\u00A0" : text; pre.appendChild(s); return s; });
-  window.__codeLines = els;
-})();
-
-// ── the engine.
-const time = $("time"), step = $("step"), progress = $("progress");
-const heroInner = $("heroInner"), cue = $("cue"), bar = $("bar");
-let lastIdx = -1;
-function scrub(p) {
-  if (!beats.length) { progress.style.transform = "scaleX(" + p.toFixed(3) + ")"; return; }
-  const t = p * total;
-  let idx = 0;
-  for (let i = 0; i < beats.length; i++) if (beats[i].at <= t + 0.0001) idx = i;
-  if (idx !== lastIdx) {
-    const lit = new Set();
-    for (let i = 0; i <= idx; i++) { const n = nodeOf(beats[i].step.kind); if (n) lit.add(n); }
-    const now = nodeOf(beats[idx].step.kind);
-    for (const el of document.querySelectorAll(".o-node, .o-core")) el.classList.remove("now", "seen");
-    for (const n of lit) { const el = $(n); if (el) el.classList.add("seen"); }
-    if (now && $(now)) $(now).classList.add("now");
-    const s = beats[idx].step;
-    step.textContent = "";
-    const b = document.createElement("b"); b.textContent = s.name + " ";
-    step.appendChild(b); step.appendChild(document.createTextNode(s.did.slice(0, 96) + (s.seconds >= 0.1 ? "  ·  " + s.seconds + " s" : "")));
-    lastIdx = idx;
-  }
-  time.firstChild.textContent = String(Math.floor(t / 60)).padStart(2, "0") + ":" + String(Math.floor(t % 60)).padStart(2, "0");
-  time.lastChild.textContent = "." + Math.floor((t % 1) * 10);
-  if (playhead) playhead.style.left = Math.min(99.4, pct(t)) + "%";
-  for (const beat of beats) if (beat.clip) beat.clip.classList.toggle("seen", beat.end <= t + 0.0001);
-  progress.style.transform = "scaleX(" + p.toFixed(3) + ")";
-}
-function revealCode(q) {
-  const els = window.__codeLines || [];
-  const on = Math.round(q * (els.length + 1.2));
-  els.forEach((el, i) => { el.classList.toggle("on", i < on); el.classList.toggle("hot", i === on - 1); });
-}
-const chapters = [
-  { el: $("film"), kind: "pin", apply: scrub },
-  { el: $("language"), kind: "pin", apply: revealCode },
-];
-function measure() { for (const c of chapters) { const r = c.el.getBoundingClientRect(); c.top = r.top + scrollY; c.h = r.height; } }
-let px = 0, py = 0, tx = 0, ty = 0;
-addEventListener("pointermove", e => { tx = (e.clientX / innerWidth - .5) * 2; ty = (e.clientY / innerHeight - .5) * 2; }, { passive: true });
-addEventListener("resize", () => requestAnimationFrame(measure));
-const seen = new Set();
-function tick() {
-  const y = scrollY;
-  bar.classList.toggle("scrolled", y > 40);
-  px += (tx - px) * .08; py += (ty - py) * .08;
-  const hp = Math.min(1, y / Math.max(1, innerHeight * .9));
-  const hy = Math.min(y, innerHeight * 1.25);
-  heroInner.style.transform = "translate3d(0," + (-hp * 110).toFixed(1) + "px,0)";
-  heroInner.style.opacity = String(Math.max(0, 1 - hp * 1.25));
-  cue.style.opacity = String(Math.max(0, 1 - hp * 4));
-  for (const layer of layers) {
-    const d = parseFloat(layer.dataset.depth) || 1;
-    layer.style.transform = "translate3d(" + (px * d * 17).toFixed(1) + "px," + (py * d * 11 - hy * d * .17).toFixed(1) + "px,0)";
-  }
-  for (const c of chapters) {
-    let p = (y - c.top) / Math.max(1, c.h - innerHeight);
-    p = Math.min(1, Math.max(0, p));
-    if (Math.abs(p - (c.last || -1)) > 0.0004) { c.apply(p); c.last = p; }
-  }
-  for (const el of document.querySelectorAll(".rise")) {
-    if (seen.has(el)) continue;
-    if (el.getBoundingClientRect().top < innerHeight * .82) { seen.add(el); el.classList.add("in"); }
-  }
-  requestAnimationFrame(tick);
-}
-
-// ── copy-to-clipboard for the commands.
-for (const cmd of document.querySelectorAll(".cmd")) {
-  cmd.addEventListener("click", async () => {
-    const tip = cmd.querySelector(".tip");
-    try { await navigator.clipboard.writeText(cmd.dataset.copy || ""); } catch (e) {}
-    cmd.classList.add("copied"); tip.textContent = "copied";
-    setTimeout(() => { cmd.classList.remove("copied"); tip.textContent = "click to copy"; }, 1300);
-  });
-}
-
-// ── go.
-document.body.classList.add("live");
-if (calm) {
-  document.querySelector(".hero").classList.add("live");
-  for (const el of document.querySelectorAll(".rise")) el.classList.add("in");
-  revealCode(1); scrub(1);
-} else {
-  requestAnimationFrame(() => document.body.classList.add("live"));
-  setTimeout(measure, 500);
-  scrub(0); revealCode(0);
-  requestAnimationFrame(tick);
-}
-</script>
+<canvas class="wipe" id="wipe" aria-hidden="true"></canvas>
+<script src="assets/site.js" defer></script>
 </body>
 </html>
