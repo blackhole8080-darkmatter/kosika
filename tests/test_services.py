@@ -1,17 +1,24 @@
 import json
 import subprocess
+import sys
 import tempfile
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import kosika.services
 from kosika.services import (
+    Service,
     ServicesError,
+    binding_id,
     command_for,
+    prune_runs,
     read_services,
     read_state,
     run_due,
+    run_once,
     set_paused,
+    status,
     status_text,
 )
 
@@ -84,6 +91,105 @@ class ServicesTests(unittest.TestCase):
         self.assertEqual((self.root / "aios.services.paused.txt").read_text(encoding="utf-8"), "lookout\n")
         set_paused(self.file, "lookout", False)
         self.assertEqual(run_due(self.file, datetime.now(), self.runner), ["lookout"])
+
+    def tracing_runner(self, command, env, cwd):
+        """A run that leaves the trace and journal the command named."""
+
+        self.calls.append((command, env))
+        Path(command[command.index("--trace") + 1]).write_text('{"step": "greet"}\n', encoding="utf-8")
+        Path(command[command.index("--journal") + 1]).write_text("", encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, "{'text': 'Heard: check'}\n", "")
+
+    def test_a_run_keeps_a_trace_and_journal_the_status_names(self) -> None:
+        self.assertEqual(run_due(self.file, datetime(2026, 10, 21, 9, 0), self.tracing_runner), ["lookout"])
+        service = read_services(self.file)["lookout"]
+        command = self.calls[0][0]
+        self.assertEqual(command[command.index("--binding-id") + 1], binding_id(service))
+        trace = Path(read_state(self.file)["last"]["lookout"]["trace"])
+        self.assertEqual(trace.suffix, ".jsonl")
+        self.assertEqual(trace.parent, self.root / "aios.services.runs" / "lookout")
+        self.assertTrue(trace.is_file())
+        self.assertTrue(trace.with_suffix(".journal").is_file())
+        shown = status_text(self.file)
+        self.assertIn(f"  trace aios.services.runs/lookout/{trace.name}", shown)
+        self.assertEqual(status(self.file)[0]["trace"], str(trace))
+
+    def test_a_scheduled_trace_can_be_replayed_without_a_model(self) -> None:
+        program = self.root / "hello.kos"
+        program.write_text(
+            "record Msg { text: Text }\n"
+            "record Greeting { text: Text }\n"
+            "workflow main(msg: Msg) -> Greeting {\n"
+            "  step greet {\n"
+            '    let result: Greeting = {text: "Hello, world!"}\n'
+            "    return result\n"
+            "  }\n"
+            "}\n",
+            encoding="utf-8",
+        )
+        self.file.write_text(f'service hello {{\n  program "{program.as_posix()}"\n  every 1 hour\n}}\n', encoding="utf-8")
+        result = run_once(read_services(self.file)["hello"], folder=self.root / "aios.services.runs" / "hello")
+        self.assertTrue(result["ok"], result["answer"])
+        trace = Path(result["trace"])
+        self.assertTrue(trace.is_file())
+        replay = subprocess.run(
+            [sys.executable, "-m", "kosika.cli", "replay", str(trace)],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            cwd=self.root,
+        )
+        self.assertEqual(replay.returncode, 0, replay.stderr)
+        self.assertIn("Hello, world!", replay.stdout)
+
+    def test_a_run_that_never_started_keeps_no_trace_to_point_at(self) -> None:
+        def broken(command, env, cwd):
+            Path(command[command.index("--journal") + 1]).write_text("", encoding="utf-8")
+            Path(command[command.index("--journal") + 1] + ".lock.sqlite").write_text("", encoding="utf-8")
+            return subprocess.CompletedProcess(command, 1, "", "the program would not check\n")
+
+        folder = self.root / "runs"
+        result = run_once(read_services(self.file)["lookout"], runner=broken, folder=folder)
+        self.assertIsNone(result["trace"])
+        self.assertEqual(list(folder.iterdir()), [])
+
+    def test_debris_never_costs_a_kept_trace(self) -> None:
+        folder = self.root / "runs"
+        folder.mkdir()
+        (folder / "20261020T090000.jsonl").write_text("{}\n", encoding="utf-8")
+        (folder / "20261021T090000.jsonl").write_text("{}\n", encoding="utf-8")
+        (folder / "20261022T090000.journal").write_text("", encoding="utf-8")
+        (folder / "20261022T090000.journal.lock.sqlite").write_text("", encoding="utf-8")
+        self.assertEqual(prune_runs(folder, keep=1), ["20261022T090000", "20261020T090000"])
+        self.assertEqual(sorted(file.name for file in folder.iterdir()), ["20261021T090000.jsonl"])
+
+    def test_only_the_newest_runs_are_kept(self) -> None:
+        folder = self.root / "aios.services.runs" / "lookout"
+        folder.mkdir(parents=True)
+        for stem in ("20261020T090000", "20261021T090000", "20261022T090000"):
+            (folder / f"{stem}.jsonl").write_text("{}\n", encoding="utf-8")
+            (folder / f"{stem}.journal").write_text("", encoding="utf-8")
+        self.assertEqual(prune_runs(folder, keep=2), ["20261020T090000"])
+        self.assertEqual(sorted(file.name for file in folder.iterdir()), [
+            "20261021T090000.journal", "20261021T090000.jsonl",
+            "20261022T090000.journal", "20261022T090000.jsonl",
+        ])
+
+    def test_a_long_lived_service_stops_adding_runs(self) -> None:
+        kept = kosika.services.KEPT_RUNS
+        kosika.services.KEPT_RUNS = 2
+        self.addCleanup(setattr, kosika.services, "KEPT_RUNS", kept)
+        folder = self.root / "aios.services.runs" / "lookout"
+        service = read_services(self.file)["lookout"]
+        for _ in range(5):
+            run_once(service, runner=self.tracing_runner, folder=folder)
+        self.assertEqual(len(list(folder.glob("*.jsonl"))), 2)
+        self.assertEqual(len(list(folder.glob("*.journal"))), 2)
+        self.assertEqual(len(list(folder.iterdir())), 4)
+
+    def test_the_binding_changes_when_a_service_does(self) -> None:
+        service = Service("tool", Path("main.kos"), sites=["github.com"])
+        self.assertEqual(binding_id(service), binding_id(Service("tool", Path("main.kos"), sites=["github.com"])))
+        self.assertNotEqual(binding_id(service), binding_id(Service("tool", Path("main.kos"), sites=["gitlab.com"])))
+        self.assertNotEqual(binding_id(service), binding_id(Service("other", Path("main.kos"), sites=["github.com"])))
 
     def test_a_plain_list_pauses_and_a_plain_status_is_kept(self) -> None:
         (self.root / "aios.services.paused.txt").write_text("// stopped for now\nlookout\n", encoding="utf-8")
