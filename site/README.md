@@ -1,5 +1,8 @@
 # The Kosika website
 
+**Live at <https://blackhole8080-darkmatter.github.io/kosika/>** — served
+by GitHub Pages from this folder, on every push that touches it.
+
 One self-contained page that tells what Kosika and Kosika Studio are: a
 language for agents whose programs are checked before they run, granted
 power by power, and recorded run by run.
