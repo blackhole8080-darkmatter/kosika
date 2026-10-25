@@ -4,6 +4,14 @@ A dependency-light first vertical slice of the Kosika AI systems language. Synap
 `kosika start`, and in fifteen minutes you will have looked at an agent,
 tested it, run it and changed it.
 
+## The website
+
+[`site/`](site/) holds a one-page website that introduces Kosika and Kosika
+Studio — including a recorded run of a real agent replayed by the reader's
+scroll, with no server and no model. Screenshots of Studio are in
+[`site/shots/`](site/shots/); [`site/README.md`](site/README.md) says how to
+serve and publish it.
+
 ## Status: prototype, not a released language
 
 Read this before evaluating anything below.
