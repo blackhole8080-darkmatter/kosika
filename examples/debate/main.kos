@@ -8,6 +8,8 @@
 //   kosika run main.kos --input debate_input.json --model-fixture debate_responses.json
 //   kosika run main.kos --input debate_input.json --model YOUR_MODEL
 
+import "std/text.kos"
+
 // Input: the question to debate, context, and limits
 record DebateInput {
   question: Text
@@ -53,19 +55,19 @@ model reasoner {
 
 // The proposer presents an initial solution
 agent proposer {
-  can: [reasoner]
+  model: reasoner
   max_steps: 1
 }
 
 // The critic challenges the proposal
 agent critic {
-  can: [reasoner]
+  model: reasoner
   max_steps: 1
 }
 
 // Judges evaluate the arguments
 agent judge {
-  can: [reasoner]
+  model: reasoner
   max_steps: 1
 }
 
@@ -77,8 +79,13 @@ fn check_groundedness(arg: Argument) -> Bool {
 }
 
 fn check_relevance(arg: Argument, question: Text) -> Bool {
-  // Rule 2: Arguments must address the core question
-  return arg.claim.lower().contains(question.words()[0].lower())
+  // Rule 2: Arguments must address the core question: the claim names
+  // something the question is about.
+  let claim = arg.claim.lower()
+  for word in keywords(question, 3) {
+    if claim.contains(word) { return true }
+  }
+  return false
 }
 
 fn check_coherence(arg: Argument) -> Bool {
@@ -89,8 +96,12 @@ fn check_coherence(arg: Argument) -> Bool {
 
 fn check_charity(critique: Argument, proposal: Argument) -> Bool {
   // Rule 4: Interpret opposing arguments fairly
-  // Simplified: critique acknowledges the proposal
-  return critique.reasoning.lower().contains(proposal.claim.lower().slice(0, 20))
+  // Simplified: the critique names something the proposal said
+  let reasoning = critique.reasoning.lower()
+  for word in keywords(proposal.claim, 3) {
+    if reasoning.contains(word) { return true }
+  }
+  return false
 }
 
 fn check_transparency(arg: Argument) -> Bool {
@@ -100,25 +111,14 @@ fn check_transparency(arg: Argument) -> Bool {
 
 // ---------------------------------------------------------------- Debate workflow
 
-// Simplified single-step version demonstrating multi-agent structure
-// Full multi-step debate with critic/judge requires Kosika workflow
-// syntax enhancements for complex step chaining
+// NOTE: This is a simplified single-step version demonstrating multi-agent structure.
+// One model call stands in for the whole round: the critic and judge agents are
+// declared above but not yet exercised, so the answer is the proposer's own.
 
 workflow main(input: DebateInput) -> Consensus {
   budget 120 seconds
-  
-  step propose {
-    let proposal: Argument = execute proposer.use_model(reasoner, input)
-    return {
-      answer: proposal.claim,
-      confidence: proposal.confidence,
-      reasoning: proposal.reasoning,
-      evidence: proposal.evidence,
-      rounds: 1,
-      total_cost: 0.05,
-      agreement_score: proposal.confidence
-    }
-  }
+  proposal = use_model reasoner(input.question, input.context, input.max_rounds, input.max_cost)
+  result = compute_full_consensus(input, proposal)
 }
 
 fn compute_full_consensus(input: DebateInput, proposal: Argument) -> Consensus {
@@ -196,7 +196,7 @@ fn compute_consensus(rounds: Round[], input: DebateInput) -> Consensus {
 // ---------------------------------------------------------------- Tests
 
 test "constitution rules are enforced" {
-  let valid_arg = {
+  valid_arg: Argument = {
     agent: "test",
     role: "proposer",
     claim: "The answer is X",
@@ -206,13 +206,14 @@ test "constitution rules are enforced" {
   }
   
   expect check_groundedness(valid_arg) == true
-  expect check_relevance(valid_arg, "What is X?") == true
+  expect check_relevance(valid_arg, "What is the answer?") == true
+  expect check_relevance(valid_arg, "How tall is the tower?") == false
   expect check_coherence(valid_arg) == true
   expect check_transparency(valid_arg) == true
 }
 
 test "charity rule requires acknowledgment" {
-  let proposal = {
+  proposal: Argument = {
     agent: "proposer",
     role: "proposer",
     claim: "The solution is X",
@@ -221,7 +222,7 @@ test "charity rule requires acknowledgment" {
     confidence: 0.9
   }
   
-  let charitable_critique = {
+  charitable_critique: Argument = {
     agent: "critic",
     role: "critic",
     claim: "However, X has issues",
@@ -230,7 +231,7 @@ test "charity rule requires acknowledgment" {
     confidence: 0.7
   }
   
-  let uncharitable_critique = {
+  uncharitable_critique: Argument = {
     agent: "critic",
     role: "critic",
     claim: "This is wrong",
@@ -244,7 +245,7 @@ test "charity rule requires acknowledgment" {
 }
 
 test "consensus computation aggregates judgments" {
-  let round = {
+  round: Round = {
     number: 1,
     proposal: {
       agent: "proposer",
@@ -290,14 +291,14 @@ test "consensus computation aggregates judgments" {
     ]
   }
   
-  let input = {
+  input: DebateInput = {
     question: "Test question",
     context: "Test context",
     max_rounds: 3,
     max_cost: 1.0
   }
   
-  let consensus = compute_consensus([round], input)
+  consensus = compute_consensus([round], input)
   expect consensus.answer == "Answer X"
   expect consensus.confidence > 0.8
   expect consensus.confidence < 0.9

@@ -10,11 +10,15 @@ A multi-agent knowledge engine that debates problems to grounded answers through
 - **Constitution**: Five-part rule system governing debate behavior
 - **Bounded Execution**: Hard round and cost ceilings, step limits per agent
 
+The workflow is a single step: one model call answers the debate, and the
+critic and judge agents are declared but not yet asked, so the answer is the
+proposer's own.
+
 ## Running
 
 ```bash
 # With scripted answers (fast demonstration)
-kosika run main.kos --input debate_input.json --model-fixture debate_responses.json
+kosika run main.kos --input debate_input.json --model-fixture debate_responses.json --trace debate_trace.jsonl
 
 # With a live model
 kosika run main.kos --input debate_input.json --model YOUR_MODEL
@@ -33,12 +37,16 @@ kosika replay debate_trace.jsonl
 
 ## Input Format
 
+The fields sit under the workflow's parameter name, `input`:
+
 ```json
 {
-  "question": "What is the best approach to X?",
-  "context": "Additional background information...",
-  "max_rounds": 3,
-  "max_cost": 0.50
+  "input": {
+    "question": "What is the best approach to X?",
+    "context": "Additional background information...",
+    "max_rounds": 3,
+    "max_cost": 0.50
+  }
 }
 ```
 
@@ -51,6 +59,7 @@ kosika replay debate_trace.jsonl
   "reasoning": "Summary of the debate...",
   "evidence": ["key evidence citations..."],
   "rounds": 3,
-  "total_cost": 0.42
+  "total_cost": 0.42,
+  "agreement_score": 0.85
 }
 ```

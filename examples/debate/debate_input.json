@@ -1,6 +1,8 @@
 {
-  "question": "What is the most effective approach to reducing carbon emissions in urban areas?",
-  "context": "Urban areas account for 70% of global CO2 emissions. Considerations include transportation, building efficiency, energy sources, and urban planning.",
-  "max_rounds": 2,
-  "max_cost": 0.30
+  "input": {
+    "question": "What is the most effective approach to reducing carbon emissions in urban areas?",
+    "context": "Urban areas account for 70% of global CO2 emissions. Considerations include transportation, building efficiency, energy sources, and urban planning.",
+    "max_rounds": 2,
+    "max_cost": 0.30
+  }
 }

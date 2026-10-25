@@ -1,104 +1,16 @@
 {
   "reasoner": [
     {
-      "input": {
-        "question": "What is the most effective approach to reducing carbon emissions in urban areas?",
-        "context": "Urban areas account for 70% of global CO2 emissions. Considerations include transportation, building efficiency, energy sources, and urban planning.",
-        "max_rounds": 2,
-        "max_cost": 0.30
-      },
-      "output": {
-        "agent": "proposer",
-        "role": "proposer",
-        "claim": "Integrated public transit and active transportation infrastructure is the most effective approach.",
-        "evidence": [
-          "IEA 2023 report: Transit systems can reduce urban transport emissions by 40%",
-          "C40 Cities: Cities with comprehensive transit systems have 30% lower per capita emissions",
-          "Lancet study: Active transport reduces emissions and improves public health"
-        ],
-        "reasoning": "Public transit and active transport address both emissions and livability. While renewable energy and building efficiency are important, transportation is the largest single source of urban emissions. Integrated systems that combine rail, bus, cycling, and walking create modal shifts that are difficult to reverse.",
-        "confidence": 0.85
-      }
-    },
-    {
-      "input": {
-        "question": "What is the most effective approach to reducing carbon emissions in urban areas?",
-        "context": "Urban areas account for 70% of global CO2 emissions. Considerations include transportation, building efficiency, energy sources, and urban planning.\n\nProposal: Integrated public transit and active transportation infrastructure is the most effective approach.\n\nReasoning: Public transit and active transport address both emissions and livability. While renewable energy and building efficiency are important, transportation is the largest single source of urban emissions. Integrated systems that combine rail, bus, cycling, and walking create modal shifts that are difficult to reverse.",
-        "max_rounds": 2,
-        "max_cost": 0.30
-      },
-      "output": {
-        "agent": "critic",
-        "role": "critic",
-        "claim": "The proposal overlooks the foundational role of building decarbonization and renewable energy.",
-        "evidence": [
-          "UNEP 2024: Buildings account for 40% of urban energy use and 30% of emissions",
-          "IPCC AR6: Without building retrofits, transit gains are partially offset by inefficient buildings",
-          "Case study: Copenhagen achieved 40% emission cuts primarily through district heating retrofits"
-        ],
-        "reasoning": "While the proposal correctly identifies transportation as a major source, building decarbonization and renewable energy are prerequisites. Even with perfect transit, cities cannot reach net zero without addressing building efficiency and clean energy supply. The proposal risks prioritizing visible infrastructure over foundational systems.",
-        "confidence": 0.78
-      }
-    },
-    {
-      "input": {
-        "question": "What is the most effective approach to reducing carbon emissions in urban areas?",
-        "context": "Urban areas account for 70% of global CO2 emissions. Considerations include transportation, building efficiency, energy sources, and urban planning.\n\nProposal: Integrated public transit and active transportation infrastructure is the most effective approach.\n\nReasoning: Public transit and active transport address both emissions and livability. While renewable energy and building efficiency are important, transportation is the largest single source of urban emissions. Integrated systems that combine rail, bus, cycling, and walking create modal shifts that are difficult to reverse.\n\nCritique: The proposal overlooks the foundational role of building decarbonization and renewable energy.",
-        "max_rounds": 2,
-        "max_cost": 0.30
-      },
-      "output": {
-        "agent": "judge1",
-        "role": "judge",
-        "claim": "A balanced portfolio approach is necessary, not a single solution.",
-        "evidence": [
-          "World Bank 2023: Multi-sector approaches show 2.5x greater emission reductions",
-          "IEA Net Zero: Integrated action across transport, buildings, and energy is required",
-          "Best practice: Barcelona achieved 35% cuts through simultaneous transit, building, and energy measures"
-        ],
-        "reasoning": "Both arguments contain valid points. The critic correctly identifies that building decarbonization is foundational, but the proposer is right that transportation is the largest single source. The most effective approach is not choosing one but implementing a coordinated portfolio that addresses all major sectors simultaneously.",
-        "confidence": 0.82
-      }
-    },
-    {
-      "input": {
-        "question": "What is the most effective approach to reducing carbon emissions in urban areas?",
-        "context": "Urban areas account for 70% of global CO2 emissions. Considerations include transportation, building efficiency, energy sources, and urban planning.\n\nProposal: Integrated public transit and active transportation infrastructure is the most effective approach.\n\nReasoning: Public transit and active transport address both emissions and livability. While renewable energy and building efficiency are important, transportation is the largest single source of urban emissions. Integrated systems that combine rail, bus, cycling, and walking create modal shifts that are difficult to reverse.\n\nCritique: The proposal overlooks the foundational role of building decarbonization and renewable energy.",
-        "max_rounds": 2,
-        "max_cost": 0.30
-      },
-      "output": {
-        "agent": "judge2",
-        "role": "judge",
-        "claim": "Transportation should be the initial priority, with buildings and energy as parallel tracks.",
-        "evidence": [
-          "WRI 2024: Transportation interventions show faster initial emission reductions",
-          "Case study: Oslo prioritized transport first, then buildings, achieving 45% total cuts",
-          "Implementation: Transport projects have shorter construction timelines than building retrofits"
-        ],
-        "reasoning": "The critic's point about foundational systems is valid, but implementation sequencing matters. Transportation infrastructure can be deployed faster and shows immediate results. Cities should start with transport while building retrofits proceed in parallel. This phased approach maintains momentum while addressing foundational needs.",
-        "confidence": 0.75
-      }
-    },
-    {
-      "input": {
-        "question": "What is the most effective approach to reducing carbon emissions in urban areas?",
-        "context": "Urban areas account for 70% of global CO2 emissions. Considerations include transportation, building efficiency, energy sources, and urban planning.\n\nProposal: Integrated public transit and active transportation infrastructure is the most effective approach.\n\nReasoning: Public transit and active transport address both emissions and livability. While renewable energy and building efficiency are important, transportation is the largest single source of urban emissions. Integrated systems that combine rail, bus, cycling, and walking create modal shifts that are difficult to reverse.\n\nCritique: The proposal overlooks the foundational role of building decarbonization and renewable energy.",
-        "max_rounds": 2,
-        "max_cost": 0.30
-      },
-      "output": {
-        "agent": "judge3",
-        "role": "judge",
-        "claim": "Grid decarbonization is the true priority, enabling both transport and building solutions.",
-        "evidence": [
-          "IEA 2024: Clean electricity supply is the prerequisite for electrification",
-          "Case study: Costa Rica achieved 98% clean electricity, enabling transport/building electrification",
-          "Physics: Without clean generation, electrification merely shifts emissions"
-        ],
-        "reasoning": "Both the proposal and critique assume solutions can be implemented independently. In reality, both transit expansion and building retrofits depend on clean electricity. Grid decarbonization should be the first priority, as it enables all other solutions. Without it, electric transit and heat pumps shift rather than eliminate emissions.",
-        "confidence": 0.80
-      }
+      "agent": "proposer",
+      "role": "proposer",
+      "claim": "Integrated public transit and active transportation infrastructure is the most effective approach.",
+      "evidence": [
+        "IEA 2023 report: Transit systems can reduce urban transport emissions by 40%",
+        "C40 Cities: Cities with comprehensive transit systems have 30% lower per capita emissions",
+        "Lancet study: Active transport reduces emissions and improves public health"
+      ],
+      "reasoning": "Public transit and active transport address both emissions and livability. While renewable energy and building efficiency are important, transportation is the largest single source of urban emissions. Integrated systems that combine rail, bus, cycling, and walking create modal shifts that are difficult to reverse.",
+      "confidence": 0.85
     }
   ]
 }
