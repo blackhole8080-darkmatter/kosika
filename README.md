@@ -2022,6 +2022,61 @@ Imported modules retain their relative paths, content hashes, declarations, and 
 The map is read-only and is generated only after static checking succeeds. It is an explanation of
 Kosika's checked structure, not an execution trace or a model-generated claim about intent.
 
+## Code in other languages
+
+The same reader works on Python, JavaScript, TypeScript, and Rust, so a folder that mixes them can be
+explained without a model and without running anything. Three commands answer three questions:
+
+| Command | Answers |
+| --- | --- |
+| `kosika analyze FILE` | What does this one file declare, and what does it reach? |
+| `kosika sourcemap DIR` | What is in this folder in every supported language, and what connects it? |
+| `kosika project DIR` | What is this project made of, including the imports between its Python files? |
+
+```text
+python -m kosika.cli analyze kosika/source_map.py
+python -m kosika.cli sourcemap kosika --format text
+python -m kosika.cli sourcemap kosika_lsp --format mermaid > code-map.mmd
+python -m kosika.cli sourcemap kosika_lsp --output code-map.json
+python -m kosika.cli project kosika_lsp --output project.json
+```
+
+`--output` always writes the JSON report; `--format text` and `--format mermaid` are what appear on
+the screen or in a redirect.
+
+`sourcemap --format text` leads with what a reader needs to know first. For a folder holding one
+JavaScript file and one Python file:
+
+```text
+Source map for smdemo
+Files: 2  declarations: 6  connections: 0
+Languages: javascript (1), python (1)
+
+load.js
+  function  load (line 1)
+
+store.py
+  class     Store (line 3)
+  function  put (line 4)
+  function  load (line 7)
+
+Structure only: this map reports what is declared, not what runs.
+```
+
+All three are syntax-backed and bounded: nothing is imported, executed, or transpiled. A call is
+linked only when a single declaration shares its name; imports link only when they resolve to one
+discovered file, and everything else is reported as ambiguous or unresolved rather than guessed.
+`sourcemap` stops at 2,000 files, 20,000 nodes, and 32 MiB of source, and `project` analyzes at most
+40 files with import edges for Python only. A map describes structure, not behavior or intent.
+
+Studio's **Project** page runs the same reading over the folder it was opened in and draws it: a
+box for each file, placed in the column the reading reaches it in, an arrow for every import and a
+brighter one for every call between two files, with the declarations listed beside the drawing and
+the three commands to go further. Clicking a box opens that file beside the map, read-only, without
+leaving the page: the text is exactly what the reading read, and nothing there can be changed. A
+folder with more files than fit is counted, not crowded: the boxes are chosen by how much they
+connect, and the rest are reported as not drawn.
+
 ## Networks
 
 Kosika also includes a declarative network directory for agent workflows,

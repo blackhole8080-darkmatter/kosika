@@ -82,6 +82,7 @@ from .skills import (
     pick_skills,
     skills_text,
 )
+from .source_map import SourceMapError, readable_source, scout_sources
 from .starter import KINDS, StarterError, create_starter
 from .story import StoryError, build_story, read_trace
 from .swarm import SwarmApproval, run_swarm, swarm_plan_hash
@@ -1639,6 +1640,32 @@ class App:
             "moves": len(made["moves"]),
         }
 
+    def outside_sources(self) -> dict[str, Any]:
+        """What code in this folder Kosika can read but did not write.
+
+        Python, JavaScript, TypeScript and Rust are read as structure only:
+        nothing is imported, run, or judged. A folder too large for a full
+        source map is not an error here; the answer says it stopped early.
+        """
+
+        try:
+            return scout_sources(self.root)
+        except SourceMapError as exc:
+            raise AppError(str(exc), 422) from exc
+
+    def other_source(self, relative: str) -> dict[str, Any]:
+        """The text of one other-language file, to read beside the map.
+
+        Read-only, and only a file the map itself could have read: see
+        :func:`source_map.readable_source`. Nothing is written, run, or
+        judged, so this is a reading pane and nothing more.
+        """
+
+        try:
+            return readable_source(self.root, relative)
+        except SourceMapError as exc:
+            raise AppError(str(exc), 422) from exc
+
     def map(self, agent_id: str) -> dict[str, Any]:
         """What this agent is for, what it may touch and what it does, from
         the checked program and a person's own note. No model is asked."""
@@ -2249,6 +2276,10 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                     self._json(200, app.brand())
                 elif method == "GET" and url.path == "/api/project":
                     self._json(200, app.project())
+                elif method == "GET" and url.path == "/api/outside":
+                    self._json(200, app.outside_sources())
+                elif method == "GET" and url.path == "/api/other":
+                    self._json(200, app.other_source((query.get("path") or [""])[0]))
                 elif method == "GET" and url.path == "/api/map":
                     self._json(200, app.map(agent_id))
                 elif method == "POST" and url.path == "/api/purpose":
