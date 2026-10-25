@@ -1,0 +1,217 @@
+// std/scene.kos: describe motion as records, and prove a scene can be
+// played before it runs. The vocabulary matches the player exactly, so a
+// scene built and checked here plays unchanged.
+//
+//   import "std/scene.kos"
+//
+// The type checker carries the structure — a Shape is a Shape, a Move
+// moves a shape by name. What it cannot carry, scene_problems carries:
+// colours are colours, ids are unique, every move ends inside the film.
+//
+// shape(id, kind, x, y, size, color)   one shape, no text
+// words_shape(id, x, y, size, color, text)  a shape of kind text
+// move(id, what, to, start, seconds, ease)  one move of a shape
+// color_move(id, color, start, seconds, ease)  a move that recolours
+// hidden(id)                           a shape that appears later
+// forever(m)                           the same move, without end
+// scene(width, height, seconds, background, shapes, moves)  the film
+// scene_problems(scene)                everything wrong with it, in words
+// is_color(text) / is_id(text)         the two formats, checked
+// lerp(a, b, part)                     a + (b - a) * part
+// sample(keys, t)                      a keyed curve, read at a moment
+//
+// A keyed curve is the new part: instead of one `to`, a property can be
+// given as points in time — Key {at, to} — and sample reads the value at
+// any moment, between the points in straight lines. Deterministic, so a
+// program can reason about where anything is, exactly.
+
+record Key { at: Number to: Number }
+record Shape { id: Text kind: Text x: Number y: Number size: Number color: Text text: Text }
+record Move { shape: Text what: Text to: Number start: Number seconds: Number ease: Text repeat: Number color: Text }
+record Scene { width: Number height: Number seconds: Number background: Text shapes: Shape[] moves: Move[] }
+
+export [Key, Shape, Move, Scene, key, shape, words_shape, move, color_move, hidden, forever, scene, scene_problems, is_color, is_id, lerp, sample]
+
+fn kinds() -> Text[] { return ["circle", "square", "ring", "text"] }
+fn whats() -> Text[] { return ["x", "y", "size", "turn", "fade", "color"] }
+fn eases() -> Text[] { return ["linear", "in", "out", "both", "bounce", "back"] }
+fn letters() -> Text { return "abcdefghijklmnopqrstuvwxyz" }
+fn digits() -> Text { return "0123456789" }
+fn hexes() -> Text { return "0123456789abcdef" }
+
+fn key(at: Number, to: Number) -> Key {
+  return {at: at, to: to}
+}
+
+fn shape(id: Text, kind: Text, x: Number, y: Number, size: Number, color: Text) -> Shape {
+  return {id: id, kind: kind, x: x, y: y, size: size, color: color, text: ""}
+}
+
+fn words_shape(id: Text, x: Number, y: Number, size: Number, color: Text, text: Text) -> Shape {
+  return {id: id, kind: "text", x: x, y: y, size: size, color: color, text: text}
+}
+
+fn move(shape_id: Text, what: Text, to: Number, start: Number, seconds: Number, ease: Text) -> Move {
+  return {shape: shape_id, what: what, to: to, start: start, seconds: seconds, ease: ease, repeat: 1, color: ""}
+}
+
+fn color_move(shape_id: Text, color: Text, start: Number, seconds: Number, ease: Text) -> Move {
+  return {shape: shape_id, what: "color", to: 0, start: start, seconds: seconds, ease: ease, repeat: 1, color: color}
+}
+
+fn hidden(shape_id: Text) -> Move {
+  return move(shape_id, "fade", 0, 0, 0, "linear")
+}
+
+fn forever(m: Move) -> Move {
+  return {..m, repeat: 0}
+}
+
+fn scene(width: Number, height: Number, seconds: Number, background: Text, shapes: Shape[], moves: Move[]) -> Scene {
+  return {width: width, height: height, seconds: seconds, background: background, shapes: shapes, moves: moves}
+}
+
+fn is_color(text: Text) -> Bool {
+  if not text.starts_with("#") { return false }
+  let body = text.slice(1, text.length()).lower()
+  if body.length() != 3 and body.length() != 6 { return false }
+  for i in 0 until body.length() {
+    if not hexes().contains(body.slice(i, i + 1)) { return false }
+  }
+  return true
+}
+
+fn is_id(text: Text) -> Bool {
+  if text.length() < 1 or text.length() > 41 { return false }
+  if not letters().contains(text.slice(0, 1).lower()) { return false }
+  let rest = text.slice(1, text.length()).lower()
+  for i in 0 until rest.length() {
+    let ch = rest.slice(i, i + 1)
+    if not letters().contains(ch) and not digits().contains(ch) and ch != "_" { return false }
+  }
+  return true
+}
+
+fn lerp(a: Number, b: Number, part: Number) -> Number {
+  return a + (b - a) * part
+}
+
+fn sample(keys: Key[], t: Number) -> Number {
+  if keys.length() == 0 { return 0 }
+  if t <= keys[0].at { return keys[0].to }
+  let last = keys[keys.length() - 1]
+  if t >= last.at { return last.to }
+  for i in 0 until keys.length() - 1 {
+    let a = keys[i]
+    let b = keys[i + 1]
+    if t >= a.at and t <= b.at {
+      let span = b.at - a.at
+      if span <= 0 { return b.to }
+      return lerp(a.to, b.to, (t - a.at) / span)
+    }
+  }
+  return last.to
+}
+
+fn shape_problems(item: Shape, number: Number, seen: Text[]) -> Text[] {
+  let label = "Shape " + number + " (" + item.id + ")"
+  var out: Text[] = []
+  if not is_id(item.id) {
+    out = out.append(label + " needs an id of letters, digits and _, starting with a letter.")
+  } else {
+    if seen.contains(item.id) { out = out.append("Two shapes are both called " + item.id + ".") }
+  }
+  if not kinds().contains(item.kind) {
+    out = out.append(label + " has kind " + item.kind + "; use circle, square, ring or text.")
+  }
+  if item.x > 8000 or item.x < -8000 or item.y > 8000 or item.y < -8000 { out = out.append(label + " sits too far from the middle to be seen.") }
+  if item.size < 0 { out = out.append(label + " has a size below 0.") }
+  if not is_color(item.color) { out = out.append(label + " needs a colour written like #e8813a.") }
+  if item.text.length() > 200 { out = out.append(label + " has text longer than 200 characters.") }
+  if item.kind == "text" and item.text.is_empty() { out = out.append(label + " is of kind text and has no text.") }
+  return out
+}
+
+fn move_problems(item: Move, number: Number, ids: Text[], length: Number) -> Text[] {
+  let label = "Move " + number + " (of " + item.shape + ")"
+  var out: Text[] = []
+  if not ids.contains(item.shape) {
+    out = out.append(label + " moves " + item.shape + ", and no shape has that id.")
+  }
+  if not whats().contains(item.what) {
+    out = out.append(label + " changes " + item.what + "; use x, y, size, turn, fade or color.")
+  }
+  if item.what == "color" {
+    if not is_color(item.color) { out = out.append(label + " changes colour and needs a color written like #e8813a.") }
+  } else {
+    if item.what == "fade" and (item.to < 0 or item.to > 1) {
+      out = out.append(label + " fades to " + item.to.to_text() + "; a fade is from 0 to 1.")
+    }
+    if item.what == "size" and item.to < 0 { out = out.append(label + " shrinks below 0.") }
+  }
+  if item.repeat != (item.repeat * 1000000).round() / 1000000 or item.repeat < 0 or item.repeat > 1000 {
+    out = out.append(label + " repeats " + item.repeat.to_text() + " times; use a whole number from 1 to 1000, or 0 for without end.")
+  }
+  if item.start < 0 or item.seconds < 0 {
+    out = out.append(label + " needs a start and a number of seconds, neither below 0.")
+  } else {
+    if item.repeat > 0 and item.start + item.seconds * item.repeat > length + 0.000000001 {
+      out = out.append(label + " ends at " + (item.start + item.seconds * item.repeat).to_text() + " s, after the scene's " + length.to_text() + " s.")
+    }
+    if item.repeat == 0 and item.seconds == 0 { out = out.append(label + " repeats without end and lasts no time at all.") }
+  }
+  if not eases().contains(item.ease) {
+    out = out.append(label + " eases " + item.ease + "; use linear, in, out, both, bounce or back.")
+  }
+  return out
+}
+
+fn scene_problems(film: Scene) -> Text[] {
+  var out: Text[] = []
+  if film.width <= 0 or film.width > 4000 or film.height <= 0 or film.height > 4000 {
+    out = out.append("A scene is at most 4000 wide and tall, and larger than nothing.")
+  }
+  if film.seconds <= 0 or film.seconds > 120 {
+    out = out.append("A scene lasts more than 0 s and at most 120 s.")
+  }
+  if not is_color(film.background) {
+    out = out.append("background must be a colour written like #1a1a1a.")
+  }
+  if film.shapes.length() == 0 { out = out.append("A scene needs at least one shape.") }
+  if film.shapes.length() > 400 { out = out.append("A scene may have at most 400 shapes.") }
+  if film.moves.length() > 2000 { out = out.append("A scene may have at most 2000 moves.") }
+  var seen: Text[] = []
+  for number in 0 until film.shapes.length() {
+    out = out.concat(shape_problems(film.shapes[number], number + 1, seen))
+    if not seen.contains(film.shapes[number].id) { seen = seen.append(film.shapes[number].id) }
+  }
+  let ids = seen
+  for number in 0 until film.moves.length() {
+    out = out.concat(move_problems(film.moves[number], number + 1, ids, film.seconds))
+  }
+  return out
+}
+
+test "a scene built of these records has nothing wrong with it" {
+  dots = [shape("dot0", "circle", 60, 60, 9, "#f5b45c"), shape("dot1", "circle", 60, 60, 9, "#9a8cff")]
+  moves = [hidden("dot0"), move("dot0", "x", 80, 0.1, 0.7, "bounce"), forever(move("dot1", "size", 14, 2, 3, "back"))]
+  film = scene(120, 120, 2.2, "#0a0c16", dots, moves)
+  expect scene_problems(film).length() == 0
+}
+
+test "the problems name the exact wrong things" {
+  bad = scene(0, 120, 2.2, "blue", [shape("two words", "blob", 60, 60, -5, "red"), words_shape("", 10, 10, 30, "#fff", "")], [move("ghost", "spin", 1, 0, 1, "warp"), move("two words", "fade", 9, 0, 99, "linear")])
+  said = scene_problems(bad)
+  expect said.length() >= 8
+}
+
+test "a keyed curve is read exactly at any moment" {
+  curve = [key(0, 10), key(2, 30), key(4, 20)]
+  expect sample(curve, -1) == 10
+  expect sample(curve, 0) == 10
+  expect sample(curve, 1) == 20
+  expect sample(curve, 2) == 30
+  expect sample(curve, 3) == 25
+  expect sample(curve, 9) == 20
+  expect sample([], 5) == 0
+}
