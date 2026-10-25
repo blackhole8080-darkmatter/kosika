@@ -34,6 +34,8 @@ kosika = [
 kosika = "kosika.cli:main"
 kosika-lsp = "kosika_lsp.server:main"
 kosika-mcp = "kosika.mcp_server:main"
+kosika-langflow = "kosika.langflow:main"
+kosika-langflow-mcp = "kosika.langflow_mcp:main"
 
 # Tracing of model calls, off unless RESPAN_API_KEY is set (kosika/tracing.py).
 # An extra rather than a dependency: respan-ai needs Python 3.11+, while the

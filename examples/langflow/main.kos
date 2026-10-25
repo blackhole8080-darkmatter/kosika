@@ -1,0 +1,26 @@
+// One model step answered by a Langflow flow instead of a model endpoint.
+//
+//     kosika run examples/langflow/main.kos --input examples/langflow/input.json \
+//       --models examples/langflow/models.json
+//
+// The flow is `examples/langflow/kosika-model.flow.json`: Chat Input, Ollama,
+// Chat Output. Everything Kosika needs travels in the prompt, so the flow
+// needs no Kosika-specific component.
+
+record Question {
+  text: Text
+}
+
+record Answer {
+  text: Text
+  confidence: Number
+}
+
+model writer {
+  input: Question
+  output: Answer
+}
+
+workflow main(question: Question) -> Answer {
+  reply = use_model writer(text: question.text) retry 1 otherwise {text: "", confidence: 0}
+}

@@ -178,5 +178,102 @@ class RunWithModelCommandTests(unittest.TestCase):
         self.assertIn("--model-command on its own", err)
 
 
+AGENT_PROGRAM = """
+model flow
+
+agent narrator {
+  model: flow
+  max_steps: 1
+  instructions: "Answer with one JSON object holding a single field named text."
+}
+
+workflow main(prompt: Prompt) -> Reply {
+  reply = ask narrator(prompt.text)
+}
+"""
+
+# Stand-in for the Langflow bridge: the conversation in, one JSON record out.
+ANSWERING_AGENT = """
+import sys
+request = sys.stdin.read()
+assert "[system]" in request, request
+assert "what is a flow" in request, request
+print(json.dumps({"text": "A flow is a graph of nodes that answer together."}))
+"""
+
+
+class AgentWithModelRouteTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._dir.cleanup)
+        self.root = Path(self._dir.name)
+        self.source = self.root / "agent.kos"
+        self.source.write_text(AGENT_PROGRAM, encoding="utf-8")
+        self.input = self.root / "input.json"
+        self.input.write_text(json.dumps({"text": "what is a flow"}), encoding="utf-8")
+        self.model = self.root / "bridge.py"
+        self.routes = self.root / "models.json"
+        self.trace = self.root / "trace.jsonl"
+
+    def prepare(self, body: str, *extra: str, model: str = "flow") -> list[str]:
+        self.model.write_text("import json\n" + body, encoding="utf-8")
+        self.routes.write_text(
+            json.dumps({model: {"command": [sys.executable, str(self.model)]}}),
+            encoding="utf-8",
+        )
+        return [
+            "agent",
+            str(self.source),
+            "--agent",
+            "narrator",
+            "--task",
+            "explain flows",
+            "--input",
+            str(self.input),
+            "--trace",
+            str(self.trace),
+            *extra,
+            "--models",
+            str(self.routes),
+        ]
+
+    def run_agent(
+        self, body: str, *extra: str, model: str = "flow"
+    ) -> tuple[int, str, str]:
+        return invoke(*self.prepare(body, *extra, model=model))
+
+    def test_the_agent_runs_on_the_route_and_replays(self) -> None:
+        code, out, err = self.run_agent(ANSWERING_AGENT)
+        self.assertEqual(code, 0, err)
+        self.assertIn("flow: command", err)
+        self.assertIn("A flow is a graph of nodes", out)
+        self.assertEqual(
+            replay(self.trace),
+            {"text": "A flow is a graph of nodes that answer together."},
+        )
+
+    def test_an_answer_outside_the_record_fails_the_run(self) -> None:
+        code, _, err = self.run_agent("print('a flow is a graph')")
+        self.assertNotEqual(code, 0)
+        self.assertIn("Invalid structured agent output", err)
+
+    def test_the_route_must_name_the_agents_model(self) -> None:
+        code, _, err = self.run_agent(ANSWERING_AGENT, model="other")
+        self.assertNotEqual(code, 0)
+        self.assertIn("names 'other'", err)
+
+    def test_it_cannot_be_mixed_with_another_model_option(self) -> None:
+        arguments = self.prepare(ANSWERING_AGENT, "--model", "local")
+        error = io.StringIO()
+        with (
+            patch.object(sys, "argv", ["kosika", *arguments]),
+            contextlib.redirect_stderr(error),
+            self.assertRaises(SystemExit) as caught,
+        ):
+            cli.main()
+        self.assertEqual(caught.exception.code, 2)
+        self.assertIn("--models on its own", error.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1326,9 +1326,15 @@ that needs it is refused before anything runs.
 Kosika writes each request to the program's standard input and reads the reply
 from its output. The program runs without a shell in an empty temporary
 folder, and it answers for every declared model. It cannot be used by an agent
-that calls tools. If the reply wraps its JSON in one Markdown code fence, the
+that calls tools. `kosika agent` takes the same `--models` file, so an agent's
+own model can be a command such as a Langflow flow; that agent then declares no
+tools, and `kosika replay` still reproduces its answer with the program off.
+If the reply wraps its JSON in one Markdown code fence, the
 fence is removed; nothing else is repaired.
 The Python API accepts `run(..., inputs={...}, model_bindings={"writer": provider})`.
+A flow drawn in Langflow can be the command, and a project's flows can be MCP tools
+an agent calls: [`examples/langflow`](examples/langflow) has both bridges, the flows,
+the routes file, and the pinned manifest.
 
 Missing bindings or invalid inputs are rejected before any workflow call. Model
 steps expose no tools, reject tool-call responses, and fail on malformed, truncated,

@@ -1,0 +1,65 @@
+// A Langflow flow as an agent's tool.
+//
+// The flow is drawn in Langflow; the tool below asks for it by the name
+// Langflow gives it. Neither half knows about the other: the bridge
+// (kosika/langflow_mcp.py) turns the flow into an MCP server Kosika can
+// start, and the pinned manifest is what the flow promised when it was
+// pinned.
+//
+//   LANGFLOW_MCP_PROJECT=<project id> LANGFLOW_API_KEY=<key> \
+//   kosika agent examples/langflow/brief.kos --agent briefer \
+//     --task "brief the note" --input examples/langflow/brief.input.json \
+//     --model qwen2.5:3b \
+//     --mcp-server kosika/langflow_mcp.py \
+//     --mcp-manifest examples/langflow/flows.manifest.json \
+//     --mcp-source flows
+//
+// `kosika check examples/langflow/brief.kos` needs no Langflow at all.
+//
+// The flow runs a model, so it answers in seconds and the answer is not
+// always the same twice. Kosika waits ten seconds for each MCP request when
+// it runs a bare agent, and sixty inside a workflow, which is why this flow
+// is asked to reply with one short sentence.
+
+record Asked { text: Text }
+record Answer { text: Text }
+
+// What the flow takes. Langflow names the field itself: every flow's tool
+// asks for `input_value`, and for `session_id` when it keeps a conversation.
+// This one starts a fresh session per call, so it asks for the text only.
+record BriefIn {
+  input_value: Text
+}
+
+record BriefOut { text: Text }
+
+tool brief_flow {
+  source mcp "flows"
+  operation: "kosika_brief"
+  access: execute
+  input: BriefIn
+  output: BriefOut
+}
+
+model writer {
+  input: Asked
+  output: Answer
+  parameters: {
+    max_output_tokens: 250
+  }
+}
+
+// Every call changes something outside this program (it spends a model's
+// time), so the tool is `access: execute` and each use waits for your yes.
+agent briefer {
+  model: writer
+  can: [brief_flow]
+  max_steps: 3
+  instructions: "You write one-line briefs. Send the text you were given to brief_flow once. Then reply with one JSON object and nothing else, like {\"text\": \"...\"}, holding the brief it returned shortened to one sentence of at most twenty words. Never invent facts that are not in the text."
+}
+
+workflow main(asked: Asked) -> Answer {
+  budget 4 model calls, 300 seconds
+  answer = ask briefer(asked.text)
+  require approval
+}

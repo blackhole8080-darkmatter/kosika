@@ -284,6 +284,13 @@ def _run_agent_command(
         parser.error("--resume requires --journal")
     if args.journal is not None and not args.binding_id:
         parser.error("--binding-id is required with --journal")
+    if args.models is not None and (
+        args.model or args.model_fixture is not None or args.virtual_model is not None
+    ):
+        parser.error(
+            "Use --models on its own, without --model, --model-fixture, "
+            "or --virtual-model"
+        )
 
     program = load_program(args.source)
     check(program)
@@ -302,7 +309,9 @@ def _run_agent_command(
     )
     if args.model_fixture is not None and not model_name and declared_model is not None:
         model_name = declared_model.name
-    if not model_name:
+    if args.models is not None and declared_model is None:
+        parser.error("--models requires an agent that declares a model")
+    if not model_name and args.models is None:
         parser.error(
             "--model is required unless the selected agent references a model "
             "with a deployment (or set KOSIKA_MODEL), or --model-fixture is used"
@@ -376,15 +385,35 @@ def _run_agent_command(
             return MockMCP().call(declaration.source, declaration.operation)
 
         try:
-            provider: Any = (
-                _agent_model_fixture(args.model_fixture, model_name)
-                if args.model_fixture is not None
-                else OpenAICompatibleProvider(
+            provider: Any
+            if args.models is not None:
+                # The agent's declared model is answered by whatever route the
+                # person named: an endpoint, or a command such as the Langflow
+                # bridge. A command is given no tools, so such an agent cannot
+                # declare any.
+                try:
+                    agent_routes = _model_route_bindings(
+                        args.models, program, "openai", 300.0
+                    )
+                except ValueError as exc:
+                    print(f"Agent models failed safely: {exc}", file=sys.stderr)
+                    return 2
+                if agent_decl.model not in agent_routes:
+                    print(
+                        f"Agent models failed safely: {args.models} names no "
+                        f"route for the agent's model {agent_decl.model!r}",
+                        file=sys.stderr,
+                    )
+                    return 2
+                provider = agent_routes[agent_decl.model]
+            elif args.model_fixture is not None:
+                provider = _agent_model_fixture(args.model_fixture, model_name)
+            else:
+                provider = OpenAICompatibleProvider(
                     args.model_url,
                     model_name,
                     api_key=os.environ.get("KOSIKA_MODEL_API_KEY"),
                 )
-            )
             if args.virtual_model is not None:
                 from .virtual_model import VirtualModelProvider
 
@@ -1669,6 +1698,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--model-fixture",
         type=Path,
         help="Offline JSON agent responses grouped by model identifier.",
+    )
+    agent_parser.add_argument(
+        "--models",
+        type=Path,
+        help=(
+            "JSON file giving each declared model its own route, such as the "
+            "command that runs a Langflow flow; the agent's model must be "
+            "named there, and an agent with a command route cannot call tools."
+        ),
     )
     agent_parser.add_argument(
         "--tool-fixture",

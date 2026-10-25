@@ -1,0 +1,65 @@
+{
+  "manifestVersion": 1,
+  "server": {
+    "source": "flows",
+    "protocolVersion": "2025-11-25",
+    "name": "langflow-mcp-project-728c03d0-e362-4d89-bc14-4e1a1890c320",
+    "version": "1.30.0"
+  },
+  "tools": {
+    "kosika_brief": {
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "input_value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "input_value"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "5088309d8e777b3953adceda39eddd57b0a2a0ef0820a2f87ae7cd1d1b84749f"
+    },
+    "kosika_model": {
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "input_value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "input_value"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "5088309d8e777b3953adceda39eddd57b0a2a0ef0820a2f87ae7cd1d1b84749f"
+    }
+  }
+}
