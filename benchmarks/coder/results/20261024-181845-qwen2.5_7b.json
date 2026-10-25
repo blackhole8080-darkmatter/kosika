@@ -1,0 +1,146 @@
+{
+  "model": "qwen2.5:7b",
+  "url": null,
+  "mode": "repair",
+  "best_of": 4,
+  "summary": {
+    "1": {
+      "passed": 0,
+      "tasks": 1,
+      "seconds": 166.5,
+      "attempts": 1
+    },
+    "4": {
+      "passed": 0,
+      "tasks": 1,
+      "seconds": 711.5,
+      "attempts": 4
+    }
+  },
+  "languages": {
+    "kosika": {
+      "passed": 0,
+      "tasks": 1
+    }
+  },
+  "results": [
+    {
+      "id": "kosika-notes",
+      "language": "kosika",
+      "passed": false,
+      "state": "done",
+      "seconds": 711.5,
+      "approvals": 24,
+      "failures": [
+        "python -c import sys; sys.path.insert(0, r'C:\\Users\\Aryan\\Aryan_Private\\projects\\kosika')\nfrom kosika.modules import load_program\nfrom kosika.testing import run_tests\nr=run_tests(load_program('notes/main.kos'))\nassert len(r)>=2 and all(x.passed for x in r), [(x.name, x.passed) for x in r]: kosika.checker.CheckError: Invalid system tool: Tool 'read_first_line' input record must have exactly the fields {path: Text, query: Text}"
+      ],
+      "error": "",
+      "said": "My first try failed its tests and a second try did not fix them.\r\nWrote notes/main.kos, one whole file at a time.\nWrote: notes/main.kos\nThe tests failed.\nCheck failed: Invalid system tool: Tool 'read_first_line' input record must have exactly the fields {path: Text, query: Text}\nSay \"fix\" and I will try to put it right.",
+      "files": [
+        "notes\\main.kos"
+      ],
+      "attempts": [
+        {
+          "id": "kosika-notes",
+          "attempt": 1,
+          "asked": "create a Kosika program in notes/main.kos with a read-only tool that searches the granted folder, an agent allowed to use only that tool, and a workflow that returns the first line found or says that nothing was found; give it at least two tests that script the tool with answers",
+          "passed": false,
+          "state": "done",
+          "abandoned": false,
+          "seconds": 166.5,
+          "approvals": 6,
+          "failures": [
+            "python -c import sys; sys.path.insert(0, r'C:\\Users\\Aryan\\Aryan_Private\\projects\\kosika')\nfrom kosika.modules import load_program\nfrom kosika.testing import run_tests\nr=run_tests(load_program('notes/main.kos'))\nassert len(r)>=2 and all(x.passed for x in r), [(x.name, x.passed) for x in r]: kosika.checker.CheckError: Invalid system tool: Tool 'read_first_line' has unknown files operation 'read_first_line'; use one of: read, peek, search, find, write, create, write_all, list",
+            "python -c import pathlib; s=pathlib.Path('notes/main.kos').read_text(encoding='utf-8')\nassert s.count('tool ') == 1 and 'observe' in s and 'agent ' in s and 'can:' in s and s.count('answers')>=2: AssertionError"
+          ],
+          "excerpts": [
+            "python -c said:\n  Traceback (most recent call last):\n    File \"<string>\", line 4, in <module>\n      _check(program)",
+            "python -c said:\n  Traceback (most recent call last):\n    File \"<string>\", line 2, in <module>\n  AssertionError"
+          ],
+          "error": "",
+          "said": "My first try failed its tests and a second try did not fix them.\r\nWrote notes/main.kos, one whole file at a time.\nWrote: notes/main.kos\nThe tests failed.\nCheck failed: Invalid system tool: Tool 'read_first_line' has unknown files operation 'read_first_line'; use one of: read, peek, search, find, write, create, write_all, list\nSay \"fix\" and I will try to put it right.",
+          "files": [
+            "notes\\main.kos"
+          ]
+        },
+        {
+          "id": "kosika-notes",
+          "attempt": 2,
+          "asked": "create a Kosika program in notes/main.kos with a read-only tool that searches the granted folder, an agent allowed to use only that tool, and a workflow that returns the first line found or says that nothing was found; give it at least two tests that script the tool with answers\n\nThis is attempt 2 at the same task. The attempt before it did not pass its checks. This is what they said:\n\npython -c said:\n  Traceback (most recent call last):\n    File \"<string>\", line 4, in <module>\n      _check(program)\n\npython -c said:\n  Traceback (most recent call last):\n    File \"<string>\", line 2, in <module>\n  AssertionError\n\nThe folder still holds that attempt's files. Make the checks pass, and keep whatever already works.",
+          "passed": false,
+          "state": "done",
+          "abandoned": false,
+          "seconds": 183.1,
+          "approvals": 6,
+          "failures": [
+            "python -c import sys; sys.path.insert(0, r'C:\\Users\\Aryan\\Aryan_Private\\projects\\kosika')\nfrom kosika.modules import load_program\nfrom kosika.testing import run_tests\nr=run_tests(load_program('notes/main.kos'))\nassert len(r)>=2 and all(x.passed for x in r), [(x.name, x.passed) for x in r]: kosika.checker.CheckError: Invalid system tool: Tool 'read_first_line' input record must have exactly the fields {path: Text, query: Text}",
+            "python -c import pathlib; s=pathlib.Path('notes/main.kos').read_text(encoding='utf-8')\nassert s.count('tool ') == 1 and 'observe' in s and 'agent ' in s and 'can:' in s and s.count('answers')>=2: AssertionError"
+          ],
+          "excerpts": [
+            "python -c said:\n  Traceback (most recent call last):\n    File \"<string>\", line 4, in <module>\n      _check(program)",
+            "python -c said:\n  Traceback (most recent call last):\n    File \"<string>\", line 2, in <module>\n  AssertionError"
+          ],
+          "error": "",
+          "said": "My first try failed its tests and a second try did not fix them.\r\nWrote notes/main.kos, one whole file at a time.\nWrote: notes/main.kos\nThe tests failed.\nCheck failed: Invalid system tool: Tool 'read_first_line' input record must have exactly the fields {path: Text, query: Text}\nSay \"fix\" and I will try to put it right.",
+          "files": [
+            "notes\\main.kos"
+          ]
+        },
+        {
+          "id": "kosika-notes",
+          "attempt": 3,
+          "asked": "create a Kosika program in notes/main.kos with a read-only tool that searches the granted folder, an agent allowed to use only that tool, and a workflow that returns the first line found or says that nothing was found; give it at least two tests that script the tool with answers\n\nThis is attempt 3 at the same task. The attempt before it did not pass its checks. This is what they said:\n\npython -c said:\n  Traceback (most recent call last):\n    File \"<string>\", line 4, in <module>\n      _check(program)\n\npython -c said:\n  Traceback (most recent call last):\n    File \"<string>\", line 2, in <module>\n  AssertionError\n\nThe folder still holds that attempt's files. Make the checks pass, and keep whatever already works.",
+          "passed": false,
+          "state": "done",
+          "abandoned": false,
+          "seconds": 180.2,
+          "approvals": 6,
+          "failures": [
+            "python -c import sys; sys.path.insert(0, r'C:\\Users\\Aryan\\Aryan_Private\\projects\\kosika')\nfrom kosika.modules import load_program\nfrom kosika.testing import run_tests\nr=run_tests(load_program('notes/main.kos'))\nassert len(r)>=2 and all(x.passed for x in r), [(x.name, x.passed) for x in r]: kosika.checker.CheckError: Invalid system tool: Tool 'read_first_line' input record must have exactly the fields {path: Text, query: Text}"
+          ],
+          "excerpts": [
+            "python -c said:\n  Traceback (most recent call last):\n    File \"<string>\", line 4, in <module>\n      _check(program)\n      check(without)\n      raise CheckError(f\"Invalid system tool: {system_problem}\")\n  kosika.checker.CheckError: Invalid system tool: Tool 'read_first_line' input record must have exactly the fields {path: Text, query: Text}"
+          ],
+          "error": "",
+          "said": "My first try failed its tests and a second try did not fix them.\r\nWrote notes/main.kos, one whole file at a time.\nWrote: notes/main.kos\nThe tests failed.\nCheck failed: Invalid system tool: Tool 'read_first_line' input record must have exactly the fields {path: Text, query: Text}\nSay \"fix\" and I will try to put it right.",
+          "files": [
+            "notes\\main.kos"
+          ]
+        },
+        {
+          "id": "kosika-notes",
+          "attempt": 4,
+          "asked": "create a Kosika program in notes/main.kos with a read-only tool that searches the granted folder, an agent allowed to use only that tool, and a workflow that returns the first line found or says that nothing was found; give it at least two tests that script the tool with answers\n\nThis is attempt 4 at the same task. The attempt before it did not pass its checks. This is what they said:\n\npython -c said:\n  Traceback (most recent call last):\n    File \"<string>\", line 4, in <module>\n      _check(program)\n      check(without)\n      raise CheckError(f\"Invalid system tool: {system_problem}\")\n  kosika.checker.CheckError: Invalid system tool: Tool 'read_first_line' input record must have exactly the fields {path: Text, query: Text}\n\nThe folder still holds that attempt's files. Make the checks pass, and keep whatever already works.",
+          "passed": false,
+          "state": "done",
+          "abandoned": false,
+          "seconds": 181.7,
+          "approvals": 6,
+          "failures": [
+            "python -c import sys; sys.path.insert(0, r'C:\\Users\\Aryan\\Aryan_Private\\projects\\kosika')\nfrom kosika.modules import load_program\nfrom kosika.testing import run_tests\nr=run_tests(load_program('notes/main.kos'))\nassert len(r)>=2 and all(x.passed for x in r), [(x.name, x.passed) for x in r]: kosika.checker.CheckError: Invalid system tool: Tool 'read_first_line' input record must have exactly the fields {path: Text, query: Text}"
+          ],
+          "excerpts": [
+            "python -c said:\n  Traceback (most recent call last):\n    File \"<string>\", line 4, in <module>\n      _check(program)\n      check(without)\n      raise CheckError(f\"Invalid system tool: {system_problem}\")\n  kosika.checker.CheckError: Invalid system tool: Tool 'read_first_line' input record must have exactly the fields {path: Text, query: Text}"
+          ],
+          "error": "",
+          "said": "My first try failed its tests and a second try did not fix them.\r\nWrote notes/main.kos, one whole file at a time.\nWrote: notes/main.kos\nThe tests failed.\nCheck failed: Invalid system tool: Tool 'read_first_line' input record must have exactly the fields {path: Text, query: Text}\nSay \"fix\" and I will try to put it right.",
+          "files": [
+            "notes\\main.kos"
+          ]
+        }
+      ],
+      "summary": {
+        "1": {
+          "passed": false,
+          "attempts": 1,
+          "seconds": 166.5
+        },
+        "4": {
+          "passed": false,
+          "attempts": 4,
+          "seconds": 711.5
+        }
+      }
+    }
+  ]
+}

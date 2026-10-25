@@ -1,0 +1,62 @@
+{
+  "model": "qwen2.5:7b",
+  "url": null,
+  "mode": "best-of",
+  "best_of": 1,
+  "summary": {
+    "1": {
+      "passed": 1,
+      "tasks": 1,
+      "seconds": 178.5,
+      "attempts": 1
+    }
+  },
+  "languages": {
+    "kosika": {
+      "passed": 1,
+      "tasks": 1
+    }
+  },
+  "results": [
+    {
+      "id": "kosika-route",
+      "language": "kosika",
+      "passed": true,
+      "state": "done",
+      "seconds": 178.5,
+      "approvals": 4,
+      "failures": [],
+      "error": "",
+      "said": "My first try failed its tests, so I read what they printed and put it right.\r\nWrote route/main.kos, one whole file at a time.\nWrote: route/main.kos\nThe tests for route/main.kos pass. Only those were run; say \"test\" to run them all.",
+      "files": [
+        "route\\main.kos"
+      ],
+      "attempts": [
+        {
+          "id": "kosika-route",
+          "attempt": 1,
+          "asked": "create a Kosika program in route/main.kos that sorts a support ticket's text into billing, bug or account with classify, falls back to account when the model's answer is not one of those, and has at least two tests that script the model with answers",
+          "passed": true,
+          "state": "done",
+          "abandoned": false,
+          "seconds": 178.5,
+          "approvals": 4,
+          "failures": [],
+          "excerpts": [],
+          "error": "",
+          "said": "My first try failed its tests, so I read what they printed and put it right.\r\nWrote route/main.kos, one whole file at a time.\nWrote: route/main.kos\nThe tests for route/main.kos pass. Only those were run; say \"test\" to run them all.",
+          "files": [
+            "route\\main.kos"
+          ]
+        }
+      ],
+      "summary": {
+        "1": {
+          "passed": true,
+          "attempts": 1,
+          "seconds": 178.5
+        }
+      }
+    }
+  ]
+}

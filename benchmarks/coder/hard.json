@@ -16,7 +16,8 @@
     "-c",
     "from lru import LRUCache\nc=LRUCache(2); c.put(1,1); c.put(2,2); assert c.get(1)==1; c.put(3,3); assert c.get(2)==-1; c.put(1,9); assert c.get(1)==9; c.put(4,4); assert c.get(3)==-1 and c.get(4)==4\nd=LRUCache(1); d.put(1,1); d.put(2,2); assert d.get(1)==-1 and d.get(2)==2"
    ]
-  ]
+  ],
+  "language": "python"
  },
  {
   "id": "py-expression-parser",
@@ -35,7 +36,8 @@
     "-c",
     "import calc_parser as m, inspect\nsrc=inspect.getsource(m); assert 'eval(' not in src.replace('def evaluate(','') and 'exec(' not in src\ne=m.evaluate\nassert e('1 + 2 * 3')==7 and e('(1 + 2) * 3')==9 and e('-4 + 10 / 4')==-1.5 and e('2*(3+(4-1))*-1')==-12\nfor bad in ['1 +', '(2', '3 4', '']:\n    try:\n        e(bad)\n    except ValueError:\n        pass\n    else:\n        raise AssertionError(bad)"
    ]
-  ]
+  ],
+  "language": "python"
  },
  {
   "id": "kosika-agent",
@@ -45,9 +47,10 @@
    [
     "python",
     "-c",
-    "import sys; sys.path.insert(0, r'C:\\Users\\Aryan\\Aryan_Private\\projects\\kosika')\nfrom kosika.modules import load_program\nfrom kosika.testing import run_tests\nr=run_tests(load_program('triage/main.kos'))\nassert len(r)>=2 and all(x.passed for x in r), [(x.name, x.passed) for x in r]\ns=open('triage/main.kos', encoding='utf-8').read()\nassert 'classify' in s and 'learn' in s and 'memory' in s"
+    "import sys; sys.path.insert(0, r'{repo}')\nfrom kosika.modules import load_program\nfrom kosika.testing import run_tests\nr=run_tests(load_program('triage/main.kos'))\nassert len(r)>=2 and all(x.passed for x in r), [(x.name, x.passed) for x in r]\ns=open('triage/main.kos', encoding='utf-8').read()\nassert 'classify' in s and 'learn' in s and 'memory' in s"
    ]
-  ]
+  ],
+  "language": "kosika"
  },
  {
   "id": "motion-portfolio",
@@ -64,6 +67,7 @@
     "--check",
     "script.js"
    ]
-  ]
+  ],
+  "language": "html"
  }
 ]

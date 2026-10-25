@@ -1,0 +1,72 @@
+{
+  "model": "qwen2.5-coder:7b",
+  "url": null,
+  "results": [
+    {
+      "id": "py-lru-cache",
+      "passed": true,
+      "state": "done",
+      "seconds": 147.5,
+      "approvals": 2,
+      "failures": [],
+      "error": "",
+      "said": "Asked devin. It said: The tests now correctly verify that updating a key refreshes its recency by checking eviction immediately after the update, without intermediate get calls that would overwrite the order.\nWrote: lru.py, test_lru.py\nThe tests for lru pass. Only those were run; say \"test\" to run them all.",
+      "files": [
+        "calc.py",
+        "lru.py",
+        "test_calc.py",
+        "test_lru.py"
+      ],
+      "folder": "C:\\Users\\Aryan\\Aryan_Private\\kosika-bench\\kosika-coder-bench-56_2wbsr\\py"
+    },
+    {
+      "id": "py-expression-parser",
+      "passed": true,
+      "state": "done",
+      "seconds": 67.6,
+      "approvals": 2,
+      "failures": [],
+      "error": "",
+      "said": "Asked devin. It said: - **test_calc_parser.py** - Contains 19 pytest tests covering normal cases (addition, subtraction, multiplication, division, precedence, parentheses, nested parentheses, unary minus/plus, decimals, complex expressions) and edge cases (zero, empty string, invalid characters, missing closing parenthes\nWrote: calc_parser.py, test_calc_parser.py\nThe tests for calc_parser pass. Only those were run; say \"test\" to run them all.",
+      "files": [
+        "calc.py",
+        "calc_parser.py",
+        "test_calc.py",
+        "test_calc_parser.py"
+      ],
+      "folder": "C:\\Users\\Aryan\\Aryan_Private\\kosika-bench\\kosika-coder-bench-we4dc2y_\\py"
+    },
+    {
+      "id": "kosika-agent",
+      "passed": false,
+      "state": "done",
+      "seconds": 207.2,
+      "approvals": 1,
+      "failures": [
+        "python -c import sys; sys.path.insert(0, r'C:\\Users\\Aryan\\Aryan_Private\\projects\\kosika')\nfrom kosika.modules import load_program\nfrom kosika.testing import run_tests\nr=run_tests(load_program('triage/main.kos'))\nassert len(r)>=2 and all(x.passed for x in r), [(x.name, x.passed) for x in r]\ns=open('triage/main.kos', encoding='utf-8').read()\nassert 'classify' in s and 'learn' in s and 'memory' in s: FileNotFoundError: [WinError 2] The system cannot find the file specified: 'C:\\\\Users\\\\Aryan\\\\Aryan_Private\\\\kosika-bench\\\\kosika-coder-bench-gbvp8bv5\\\\agents\\\\triage'"
+      ],
+      "error": "",
+      "said": "No file was written. The coder said: List the folder contents and read the files to understand the current project state before proceeding with any changes.\nNo tests were found to run.\nno tests ran in 0.00s\nSay \"fix\" and I will try to put it right.",
+      "files": [],
+      "folder": "C:\\Users\\Aryan\\Aryan_Private\\kosika-bench\\kosika-coder-bench-gbvp8bv5\\agents"
+    },
+    {
+      "id": "motion-portfolio",
+      "passed": false,
+      "state": "done",
+      "seconds": 768.9,
+      "approvals": 2,
+      "failures": [
+        "python -c import pathlib; h=pathlib.Path('index.html').read_text(encoding='utf-8'); c=pathlib.Path('styles.css').read_text(encoding='utf-8'); j=pathlib.Path('script.js').read_text(encoding='utf-8')\nassert '</html>' in h and h.count('<section')>=4 and 'styles.css' in h and 'script.js' in h and '<form' in h\nassert c.count('{')==c.count('}') and '@media' in c and ('@keyframes' in c or 'transition' in c) and len(c)>4000\nassert 'IntersectionObserver' in j and 'mousemove' in j and ('submit' in j) and len(j)>1200: AssertionError"
+      ],
+      "error": "",
+      "said": "Wrote index.html, styles.css, script.js, one whole file at a time.\nWrote: index.html, styles.css, script.js\nOpen index.html from the project folder in your browser to see it.",
+      "files": [
+        "index.html",
+        "script.js",
+        "styles.css"
+      ],
+      "folder": "C:\\Users\\Aryan\\Aryan_Private\\kosika-bench\\kosika-coder-bench-fetey967\\site"
+    }
+  ]
+}

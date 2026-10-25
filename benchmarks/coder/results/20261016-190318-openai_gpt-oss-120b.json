@@ -1,0 +1,71 @@
+{
+  "model": "openai/gpt-oss-120b",
+  "url": "https://api.groq.com/openai/v1",
+  "results": [
+    {
+      "id": "py-lru-cache",
+      "passed": false,
+      "state": "done",
+      "seconds": 19.3,
+      "approvals": 2,
+      "failures": [
+        "python -m pytest: ERROR: file or directory not found: test_lru.py",
+        "python -c from lru import LRUCache\nc=LRUCache(2); c.put(1,1); c.put(2,2); assert c.get(1)==1; c.put(3,3); assert c.get(2)==-1; c.put(1,9); assert c.get(1)==9; c.put(4,4); assert c.get(3)==-1 and c.get(4)==4\nd=LRUCache(1); d.put(1,1); d.put(2,2); assert d.get(1)==-1 and d.get(2)==2: ModuleNotFoundError: No module named 'lru'"
+      ],
+      "error": "",
+      "said": "No file was written.\nNothing was changed, so the task is not done. The tests as they were still pass.",
+      "files": [
+        "calc.py",
+        "test_calc.py"
+      ],
+      "folder": "C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-fkhj8h1a\\py"
+    },
+    {
+      "id": "py-expression-parser",
+      "passed": false,
+      "state": "done",
+      "seconds": 10.4,
+      "approvals": 2,
+      "failures": [
+        "python -m pytest: ERROR: file or directory not found: test_calc_parser.py",
+        "python -c import calc_parser as m, inspect\nsrc=inspect.getsource(m); assert 'eval(' not in src.replace('def evaluate(','') and 'exec(' not in src\ne=m.evaluate\nassert e('1 + 2 * 3')==7 and e('(1 + 2) * 3')==9 and e('-4 + 10 / 4')==-1.5 and e('2*(3+(4-1))*-1')==-12\nfor bad in ['1 +', '(2', '3 4', '']:\n    try:\n        e(bad)\n    except ValueError:\n        pass\n    else:\n        raise AssertionError(bad): ModuleNotFoundError: No module named 'calc_parser'"
+      ],
+      "error": "",
+      "said": "No file was written.\nNothing was changed, so the task is not done. The tests as they were still pass.",
+      "files": [
+        "calc.py",
+        "test_calc.py"
+      ],
+      "folder": "C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-al38wsnc\\py"
+    },
+    {
+      "id": "kosika-agent",
+      "passed": false,
+      "state": "done",
+      "seconds": 11.9,
+      "approvals": 2,
+      "failures": [
+        "python -c import sys; sys.path.insert(0, r'C:\\Users\\Aryan\\Aryan_Private\\projects\\kosika')\nfrom kosika.modules import load_program\nfrom kosika.testing import run_tests\nr=run_tests(load_program('triage/main.kos'))\nassert len(r)>=2 and all(x.passed for x in r), [(x.name, x.passed) for x in r]\ns=open('triage/main.kos', encoding='utf-8').read()\nassert 'classify' in s and 'learn' in s and 'memory' in s: FileNotFoundError: [WinError 2] The system cannot find the file specified: 'C:\\\\Users\\\\Aryan\\\\AppData\\\\Local\\\\Temp\\\\kosika-coder-bench-5fflyz14\\\\agents\\\\triage'"
+      ],
+      "error": "",
+      "said": "No file was written.\nNo tests were found to run.\nno tests ran in 0.00s\nSay \"fix\" and I will try to put it right.",
+      "files": [],
+      "folder": "C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-5fflyz14\\agents"
+    },
+    {
+      "id": "motion-portfolio",
+      "passed": false,
+      "state": "done",
+      "seconds": 10.0,
+      "approvals": 2,
+      "failures": [
+        "python -c import pathlib; h=pathlib.Path('index.html').read_text(encoding='utf-8'); c=pathlib.Path('styles.css').read_text(encoding='utf-8'); j=pathlib.Path('script.js').read_text(encoding='utf-8')\nassert '</html>' in h and h.count('<section')>=4 and 'styles.css' in h and 'script.js' in h and '<form' in h\nassert c.count('{')==c.count('}') and '@media' in c and ('@keyframes' in c or 'transition' in c) and len(c)>4000\nassert 'IntersectionObserver' in j and 'mousemove' in j and ('submit' in j) and len(j)>1200: FileNotFoundError: [Errno 2] No such file or directory: 'index.html'",
+        "node --check script.js: Node.js v26.4.0"
+      ],
+      "error": "",
+      "said": "No file was written.\nNo tests were found to run.\nno tests ran in 0.00s\nSay \"fix\" and I will try to put it right.",
+      "files": [],
+      "folder": "C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-7ow7n4u9\\site"
+    }
+  ]
+}

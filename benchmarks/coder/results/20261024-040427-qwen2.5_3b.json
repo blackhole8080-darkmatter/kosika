@@ -1,0 +1,68 @@
+{
+  "model": "qwen2.5:3b",
+  "url": null,
+  "mode": "repair",
+  "best_of": 2,
+  "summary": {
+    "1": {
+      "passed": 1,
+      "tasks": 1,
+      "seconds": 62.6,
+      "attempts": 1
+    },
+    "2": {
+      "passed": 1,
+      "tasks": 1,
+      "seconds": 62.6,
+      "attempts": 1
+    }
+  },
+  "results": [
+    {
+      "id": "py-add-function",
+      "passed": true,
+      "state": "done",
+      "seconds": 62.6,
+      "approvals": 2,
+      "failures": [],
+      "error": "",
+      "said": "Wrote calc.py, test_calc.py, one whole file at a time.\nWrote: calc.py, test_calc.py\nThe tests for calc pass. Only those were run; say \"test\" to run them all.",
+      "files": [
+        "calc.py",
+        "test_calc.py"
+      ],
+      "attempts": [
+        {
+          "id": "py-add-function",
+          "attempt": 1,
+          "asked": "add a function is_even to calc.py that says whether a number is even, with a test",
+          "passed": true,
+          "state": "done",
+          "abandoned": false,
+          "seconds": 62.6,
+          "approvals": 2,
+          "failures": [],
+          "excerpts": [],
+          "error": "",
+          "said": "Wrote calc.py, test_calc.py, one whole file at a time.\nWrote: calc.py, test_calc.py\nThe tests for calc pass. Only those were run; say \"test\" to run them all.",
+          "files": [
+            "calc.py",
+            "test_calc.py"
+          ]
+        }
+      ],
+      "summary": {
+        "1": {
+          "passed": true,
+          "attempts": 1,
+          "seconds": 62.6
+        },
+        "2": {
+          "passed": true,
+          "attempts": 1,
+          "seconds": 62.6
+        }
+      }
+    }
+  ]
+}

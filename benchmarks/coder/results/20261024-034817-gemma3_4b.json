@@ -1,0 +1,77 @@
+{
+  "model": "gemma3:4b",
+  "url": null,
+  "mode": "best-of",
+  "best_of": 2,
+  "summary": {
+    "1": {
+      "passed": 0,
+      "tasks": 1,
+      "seconds": 210.5,
+      "attempts": 1
+    },
+    "2": {
+      "passed": 0,
+      "tasks": 1,
+      "seconds": 210.5,
+      "attempts": 1
+    }
+  },
+  "results": [
+    {
+      "id": "py-expression-parser",
+      "passed": false,
+      "state": "out of time",
+      "seconds": 210.5,
+      "approvals": 0,
+      "failures": [
+        "python -m pytest: ERROR: file or directory not found: test_calc_parser.py",
+        "python -c import calc_parser as m, inspect\nsrc=inspect.getsource(m); assert 'eval(' not in src.replace('def evaluate(','') and 'exec(' not in src\ne=m.evaluate\nassert e('1 + 2 * 3')==7 and e('(1 + 2) * 3')==9 and e('-4 + 10 / 4')==-1.5 and e('2*(3+(4-1))*-1')==-12\nfor bad in ['1 +', '(2', '3 4', '']:\n    try:\n        e(bad)\n    except ValueError:\n        pass\n    else:\n        raise AssertionError(bad): ModuleNotFoundError: No module named 'calc_parser'"
+      ],
+      "error": "",
+      "said": "",
+      "files": [
+        "calc.py",
+        "test_calc.py"
+      ],
+      "attempts": [
+        {
+          "id": "py-expression-parser",
+          "attempt": 1,
+          "asked": "write calc_parser.py with a function evaluate(text) that parses and evaluates arithmetic expressions with + - * / and parentheses, unary minus and decimal numbers, respecting precedence, without using eval or exec; raise ValueError for malformed input; and test_calc_parser.py with pytest tests",
+          "passed": false,
+          "state": "out of time",
+          "abandoned": true,
+          "seconds": 210.5,
+          "approvals": 0,
+          "failures": [
+            "python -m pytest: ERROR: file or directory not found: test_calc_parser.py",
+            "python -c import calc_parser as m, inspect\nsrc=inspect.getsource(m); assert 'eval(' not in src.replace('def evaluate(','') and 'exec(' not in src\ne=m.evaluate\nassert e('1 + 2 * 3')==7 and e('(1 + 2) * 3')==9 and e('-4 + 10 / 4')==-1.5 and e('2*(3+(4-1))*-1')==-12\nfor bad in ['1 +', '(2', '3 4', '']:\n    try:\n        e(bad)\n    except ValueError:\n        pass\n    else:\n        raise AssertionError(bad): ModuleNotFoundError: No module named 'calc_parser'"
+          ],
+          "excerpts": [
+            "python -m said:\n  no tests ran in 0.03s\n  ERROR: file or directory not found: test_calc_parser.py",
+            "python -c said:\n  Traceback (most recent call last):\n    File \"<string>\", line 1, in <module>\n  ModuleNotFoundError: No module named 'calc_parser'"
+          ],
+          "error": "",
+          "said": "",
+          "files": [
+            "calc.py",
+            "test_calc.py"
+          ]
+        }
+      ],
+      "summary": {
+        "1": {
+          "passed": false,
+          "attempts": 1,
+          "seconds": 210.5
+        },
+        "2": {
+          "passed": false,
+          "attempts": 1,
+          "seconds": 210.5
+        }
+      }
+    }
+  ]
+}

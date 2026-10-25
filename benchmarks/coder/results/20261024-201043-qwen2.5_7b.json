@@ -1,0 +1,70 @@
+{
+  "model": "qwen2.5:7b",
+  "url": null,
+  "mode": "best-of",
+  "best_of": 1,
+  "summary": {
+    "1": {
+      "passed": 0,
+      "tasks": 1,
+      "seconds": 309.8,
+      "attempts": 1
+    }
+  },
+  "languages": {
+    "kosika": {
+      "passed": 0,
+      "tasks": 1
+    }
+  },
+  "results": [
+    {
+      "id": "kosika-notes",
+      "language": "kosika",
+      "passed": false,
+      "state": "done",
+      "seconds": 309.8,
+      "approvals": 6,
+      "failures": [
+        "python -c import sys; sys.path.insert(0, r'C:\\Users\\Aryan\\Aryan_Private\\projects\\kosika')\nfrom kosika.modules import load_program\nfrom kosika.testing import run_tests\nr=run_tests(load_program('notes/main.kos'))\nassert len(r)>=2 and all(x.passed for x in r), [(x.name, x.passed) for x in r]: kosika.checker.CheckError: Step 'found' has unknown tool arguments ['l']."
+      ],
+      "error": "",
+      "said": "My first try failed its tests and a second try did not fix them.\nWrote notes/main.kos, one whole file at a time.\nWrote: notes/main.kos\nThe tests failed.\nCheck failed: Step 'found' has unknown tool arguments ['l'].\nSay \"fix\" and I will try to put it right.",
+      "files": [
+        "notes\\main.kos"
+      ],
+      "attempts": [
+        {
+          "id": "kosika-notes",
+          "attempt": 1,
+          "asked": "create a Kosika program in notes/main.kos with a read-only tool that searches the granted folder, an agent allowed to use only that tool, and a workflow that returns the first line found or says that nothing was found; give it at least two tests that script the tool with answers",
+          "passed": false,
+          "state": "done",
+          "abandoned": false,
+          "seconds": 309.8,
+          "approvals": 6,
+          "failures": [
+            "python -c import sys; sys.path.insert(0, r'C:\\Users\\Aryan\\Aryan_Private\\projects\\kosika')\nfrom kosika.modules import load_program\nfrom kosika.testing import run_tests\nr=run_tests(load_program('notes/main.kos'))\nassert len(r)>=2 and all(x.passed for x in r), [(x.name, x.passed) for x in r]: kosika.checker.CheckError: Step 'found' has unknown tool arguments ['l']."
+          ],
+          "excerpts": [
+            "python -c said:\n  Traceback (most recent call last):\n    File \"<string>\", line 4, in <module>\n      _check(program)\n      check(without)\n      _check_arguments("
+          ],
+          "error": "",
+          "said": "My first try failed its tests and a second try did not fix them.\nWrote notes/main.kos, one whole file at a time.\nWrote: notes/main.kos\nThe tests failed.\nCheck failed: Step 'found' has unknown tool arguments ['l'].\nSay \"fix\" and I will try to put it right.",
+          "files": [
+            "notes\\main.kos"
+          ],
+          "folder": "C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-8bvdwbzl\\kosika"
+        }
+      ],
+      "summary": {
+        "1": {
+          "passed": false,
+          "attempts": 1,
+          "seconds": 309.8
+        }
+      },
+      "folder": "C:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-8bvdwbzl\\kosika"
+    }
+  ]
+}
