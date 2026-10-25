@@ -4,6 +4,7 @@
 import "std/text.kos"
 import "std/stats.kos"
 import "std/search.kos"
+import "std/evidence.kos"
 
 test "the standard library" {
   expect words_of("Hello, World! It's me.") == ["hello", "world", "it's", "me"]
@@ -51,6 +52,23 @@ test "a ranking keeps the earlier of two equal texts first" {
   expect hits[0].index == 0
   expect hits[1].index == 1
   expect hits[0].text == "a cat"
+}
+
+test "a quote is proved only by a line that holds it" {
+  lines = ["a.md:3: The rent is 900 euros a month", "b.md:9: Rent is due on the 1st"]
+  expect found_in(lines, "rent is due on the 1st") == "b.md:9: Rent is due on the 1st"
+  expect found_in(lines, "The rent is 950 euros") == ""
+  expect found_in(lines, "rent") == ""
+  expect found_in(["h.md:3: Rent is 900 euros a month, due on the 1st."], "\"Rent is 900 euros a month.\"") == "h.md:3: Rent is 900 euros a month, due on the 1st."
+  expect plain_quote(" ...\"Due on the 1st!\" ") == "due on the 1st"
+  expect hit_source("a.md:3: The rent is 900 euros a month") == "a.md, line 3"
+  expect hit_text("notes/a.md:3: Due: the 1st.") == "Due: the 1st."
+  expect search_words("When is the demo with Ravi?", false) == "demo ravi"
+  expect search_words("find invoice 2026", true) == "invoice 2026"
+  expect search_words("What does calc.py do?", false) == "calc.py"
+  expect search_words("what is it?", false) == ""
+  expect says_in("Tom", "Which friend cannot eat nuts?", "Tom is allergic to peanuts.")
+  expect not says_in("the friend", "Which friend cannot eat nuts?", "Tom is allergic to peanuts.")
 }
 
 test "a long text, such as a paper, splits whole" {

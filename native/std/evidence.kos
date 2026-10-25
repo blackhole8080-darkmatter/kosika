@@ -1,0 +1,77 @@
+// std/evidence.kos: prove a model's quote is really in the text it was
+// given, and pick search words from a question. No model.
+//
+//   import "std/evidence.kos"
+//
+// plain_quote(quote)                 the quote without the marks around it
+// plain_word(word)                   one word without punctuation, lower case
+// found_in(lines, quote)             the first line that holds the quote, or ""
+// hit_source(hit)                    "file, line N" from a "file:N: text" hit
+// hit_text(hit)                      the text of that hit, without file and line
+// search_words(text, skip_first)     the words worth searching for, joined
+// says_in(answer, question, line)    whether the answer's own words are in the line
+
+export [plain_quote, plain_word, found_in, hit_source, hit_text, search_words, says_in]
+
+fn plain_quote(quote: Text) -> Text {
+  return quote.lower().trim_marks(".,;:!?\"'")
+}
+
+fn plain_word(word: Text) -> Text {
+  var out = word.lower()
+  for mark in ["?", "!", ",", ";", "\"", "'", "(", ")", ":"] {
+    out = out.replace(mark, "")
+  }
+  if out.ends_with(".") { out = out.slice(0, out.length() - 1) }
+  return out.trim()
+}
+
+fn found_in(lines: Text[], quote: Text) -> Text {
+  let wanted = plain_quote(quote)
+  if wanted.length() < 6 { return "" }
+  for line in lines {
+    if line.lower().contains(wanted) { return line }
+  }
+  return ""
+}
+
+fn hit_source(hit: Text) -> Text {
+  let parts = hit.split(":")
+  if parts.length() < 3 { return hit }
+  return parts[0] + ", line " + parts[1]
+}
+
+fn hit_text(hit: Text) -> Text {
+  return hit.split(":").drop(2).join(":").trim()
+}
+
+fn std_evidence_small() -> Text[] {
+  return ["a", "an", "the", "is", "are", "was", "were", "be", "do", "does", "did", "i", "me", "my", "we", "our", "you", "your", "it", "its", "of", "in", "on", "at", "to", "for", "from", "by", "with", "about", "and", "or", "what", "when", "where", "which", "who", "whom", "why", "how", "tell", "say", "says", "said", "there", "that", "this", "these", "those", "have", "has", "had", "can", "could", "should", "would", "will", "please", "any", "all", "much", "many", "need", "find", "search", "show", "am", "not", "no", "yes", "answer", "question", "line", "lines", "text"]
+}
+
+fn search_words(text: Text, skip_first: Bool) -> Text {
+  let small = std_evidence_small()
+  var words: Text[] = []
+  var seen = false
+  for word in text.words() {
+    let item = plain_word(word)
+    if not item.is_empty() {
+      if (seen or not skip_first) and item.length() > 1 and not small.contains(item) and not words.contains(item) {
+        words = words.append(item)
+      }
+      seen = true
+    }
+  }
+  return words.take(6).join(" ")
+}
+
+fn says_in(answer: Text, question: Text, line: Text) -> Bool {
+  let asked = for word in question.words() { plain_word(word) }
+  let lower = line.lower()
+  var found = 0
+  for word in answer.words() {
+    let item = plain_word(word)
+    if item.length() > 1 and not std_evidence_small().contains(item) and not asked.contains(item) and lower.contains(item) { found += 1 }
+  }
+  return found > 0
+}
