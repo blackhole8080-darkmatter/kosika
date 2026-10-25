@@ -28,7 +28,7 @@ what happened without asking a model anything.
 
 | Section | What it does |
 | --- | --- |
-| The hero | The headline rises letter by letter while an orbit draws itself and a dot travels it. The floating chips are the language's words. |
+| The hero | The headline rises letter by letter while an orbit draws itself and a dot travels it. Behind it, the film's own run moves — silent, soft, four seconds mirrored. The floating chips are the language's words. |
 | The film | *One Run, On Paper*, 18 seconds, with sound. |
 | What it is | Four claims: checked, granted, recorded, replayable. |
 | The run | A real recorded run, replayed by your scroll: the diagram lights up, the timeline scrubs, the clock ticks. |
@@ -41,6 +41,27 @@ what happened without asking a model anything.
 ![The run, scrubbed](shots/site-run.jpg)
 
 ![The paper file](shots/site-paper.jpg)
+
+## The loop in the hero
+
+The hero plays the film itself, not a second animation: a two-second slice of the
+running timeline (5.15s–7.15s), cropped past the recording's clock, soft-focused
+and masked, at 30% over the ink. It is mirrored into a four-second loop, so the
+clips fill the lanes and then empty them — no cut, no jump back.
+
+```text
+# 1. the slice, from the composition
+node film/render.mjs --from 5.15 --to 7.15 --fps 30 --crf 24 --out /tmp/hero-run.mp4
+
+# 2. crop the clock out, mirror it into a loop
+ffmpeg -i /tmp/hero-run.mp4 -filter_complex \
+  "[0:v]crop=1380:520:530:295,scale=1280:482,split[a][b];[b]reverse[r];[a][r]concat=n=2:v=1[o]" \
+  -map "[o]" -c:v libx264 -preset slow -crf 24 -pix_fmt yuv420p -movflags +faststart -an \
+  media/kosika-hero-loop.mp4
+```
+
+140 KB, no audio track at all. It pauses when the hero leaves the viewport, is
+hidden under `prefers-reduced-motion`, and is not served to phones at all.
 
 ## The film in the middle
 

@@ -35,7 +35,7 @@ and no server and no model involved in reading it.
 | | |
 | --- | --- |
 | ![The hero](site/shots/site-hero.jpg) | ![The film](site/shots/site-film.jpg) |
-| **The hero.** The headline rises, an orbit draws itself, a dot travels it. | **The film.** *One Run, On Paper* — 18 seconds, drawn frame by frame as a function of time. |
+| **The hero.** The headline rises, an orbit draws itself — and the film's run moves behind it, silent and soft. | **The film.** *One Run, On Paper* — 18 seconds, drawn frame by frame as a function of time. |
 | ![The run, scrubbed by the reader's scroll](site/shots/site-run.jpg) | ![The paper file](site/shots/site-paper.jpg) |
 | **The run.** A real recording replayed by scroll; replay asks no model. | **The paper file.** The film's second half as a dossier, stamped. |
 | ![Kosika Studio, showing a recorded run](site/shots/site-studio.jpg) | ![The page on a phone](site/shots/site-mobile.jpg) |

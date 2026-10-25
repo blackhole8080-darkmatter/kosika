@@ -119,6 +119,20 @@ h3 { letter-spacing: -.015em; }
 /* ── hero ───────────────────────────────────────────────────────── */
 .hero { min-height: 100vh; display: grid; place-items: center; overflow: clip; padding: 13vh 7vw 8vh; }
 .orbit-cv { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
+/* The film, far back and far down: a short loop of the run's clock and lanes.
+   Soft focus, low opacity, and a mask that lets it fall away at the edges so
+   the type never has to fight it. */
+.hero-film {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+  z-index: 0; pointer-events: none; opacity: .3;
+  /* cropped past the recording's clock when the loop was made: we want its
+     lanes and its light, not another set of numbers over the headline */
+  filter: blur(3.5px) saturate(1.15) brightness(.92) contrast(1.02);
+  -webkit-mask-image: radial-gradient(120% 104% at 50% 46%, #000 34%, rgba(0, 0, 0, .55) 72%, transparent 94%);
+  mask-image: radial-gradient(120% 104% at 50% 46%, #000 34%, rgba(0, 0, 0, .55) 72%, transparent 94%);
+  transform: translate3d(var(--fx, 0px), var(--fy, 0px), 0) scale(1.12);
+  transition: transform 1.2s var(--settle);
+}
 .hero-inner { position: relative; z-index: 2; text-align: center; max-width: 1100px; will-change: transform, opacity; }
 /* the light the headline gives off — a soft field, not a per-letter shadow:
    the letters are clipped word by word as they rise, and a clipped shadow
@@ -402,6 +416,8 @@ footer nav a:hover { color: var(--ink); }
      chips land on the headline and get clipped at the edge, so the hero keeps
      its ring and loses its confetti. */
   .field { display: none; }
+  /* a phone has no room for a film behind the type (and no data to spare) */
+  .hero-film { display: none; }
   .hero { padding: 12vh 6vw 9vh; }
   .kicker { font-size: 9.5px; letter-spacing: .22em; margin-bottom: 24px; }
   .hero-inner::before { left: -8%; right: -8%; }
@@ -418,6 +434,7 @@ footer nav a:hover { color: var(--ink); }
   .fx > i, .cue i::after, .kicker::before, .reel-bar .rec::before { animation: none !important; }
   .h1 .l { transform: none !important; }
   .rise, .exhibit { opacity: 1 !important; transform: none !important; }
+  .hero-film { display: none; }
   .stamp { transition: none; }
   .run { height: auto !important; }
   .run-sticky { position: static !important; height: auto !important; }

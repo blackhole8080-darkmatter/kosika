@@ -2,7 +2,8 @@
 /**
  * Capture the site's own screenshots for the README.
  *
- *   node tools/capture-shots.mjs                # writes ../shots/*.png
+ *   node tools/capture-shots.mjs                # writes ../shots/site-*.jpg
+ *   node tools/capture-shots.mjs --only hero    # just one, while working on it
  *   node tools/capture-shots.mjs --base http://127.0.0.1:8099/
  *
  * Needs puppeteer-core and Chrome, like the film renderer. Serve `site/`
@@ -86,13 +87,17 @@ const y = {
 await probe.close();
 console.log(y);
 
-await shot({ file: "site-hero.jpg", scroll: 0, wait: 1200 });
-await shot({ file: "site-film.jpg", scroll: y.film, wait: 1200, seek: 11.9 });
-await shot({ file: "site-run.jpg", scroll: y.run, wait: 1800 });
-await shot({ file: "site-studio.jpg", scroll: y.studio, wait: 1600 });
-await shot({ file: "site-paper.jpg", scroll: y.paper, wait: 2400 });
-await shot({ file: "site-start.jpg", scroll: y.start, wait: 1500 });
-await shot({ file: "site-mobile.jpg", width: 390, height: 844, scroll: 0, wait: 1400 });
+// --only hero,film,... re-shoots just those; handy while working on one
+const only = opt("--only", null)?.split(",");
+const want = (name) => !only || only.includes(name);
+
+if (want("hero")) await shot({ file: "site-hero.jpg", scroll: 0, wait: 1200 });
+if (want("film")) await shot({ file: "site-film.jpg", scroll: y.film, wait: 1200, seek: 11.9 });
+if (want("run")) await shot({ file: "site-run.jpg", scroll: y.run, wait: 1800 });
+if (want("studio")) await shot({ file: "site-studio.jpg", scroll: y.studio, wait: 1600 });
+if (want("paper")) await shot({ file: "site-paper.jpg", scroll: y.paper, wait: 2400 });
+if (want("start")) await shot({ file: "site-start.jpg", scroll: y.start, wait: 1500 });
+if (want("mobile")) await shot({ file: "site-mobile.jpg", width: 390, height: 844, scroll: 0, wait: 1400 });
 
 await browser.close();
 console.log("done");

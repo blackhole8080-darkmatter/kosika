@@ -122,14 +122,32 @@
     };
   })();
 
+  /* the film behind the headline: silent, and only while the hero is on
+     screen — a hero that keeps decoding video under the case file is a waste */
+  const heroFilm = (() => {
+    const v = $("#herofilm");
+    if (!v) return { play() {}, pause() {} };
+    v.muted = true;
+    if (CALM) { v.autoplay = false; v.pause(); }
+    return {
+      play() { if (!CALM && v.paused) v.play().catch(() => {}); },
+      pause() { if (!v.paused) v.pause(); }
+    };
+  })();
+
   addEventListener("pointermove", (e) => {
     orbit.look((e.clientX / innerWidth - .5) * 2, (e.clientY / innerHeight - .5) * 2);
+    const x = (e.clientX / innerWidth - .5), y = (e.clientY / innerHeight - .5);
     const f = $("#field");
-    if (f) f.style.transform = `translate3d(${(e.clientX / innerWidth - .5) * -26}px, ${(e.clientY / innerHeight - .5) * -18}px, 0)`;
+    if (f) f.style.transform = `translate3d(${x * -26}px, ${y * -18}px, 0)`;
+    // the film drifts the other way, a little: depth without movement
+    const fl = $("#herofilm");
+    if (fl) { fl.style.setProperty("--fx", `${x * 9}px`); fl.style.setProperty("--fy", `${y * 6}px`); }
   }, { passive: true });
 
   new IntersectionObserver(([e]) => {
-    if (e.isIntersecting) orbit.start(); else orbit.pause();
+    if (e.isIntersecting) { orbit.start(); heroFilm.play(); }
+    else { orbit.pause(); heroFilm.pause(); }
   }, { threshold: 0 }).observe($("#top"));
 
   /* the floating words */
@@ -538,7 +556,7 @@
 
   /* pause the page's own rAF work when it is hidden */
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) orbit.pause();
-    else if ($("#top").getBoundingClientRect().bottom > 0) orbit.start();
+    if (document.hidden) { orbit.pause(); heroFilm.pause(); }
+    else if ($("#top").getBoundingClientRect().bottom > 0) { orbit.start(); heroFilm.play(); }
   });
 })();

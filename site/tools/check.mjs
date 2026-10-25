@@ -104,6 +104,25 @@ async function open(width, height) {
   run[1].now > 0 ? ok("a node is lit at both ends: " + run.map((r) => r.now).join(",")) : fail("no node lit");
   ok(`lanes shown: ${run.map((r) => r.lanes).join(",")}`);
 
+  // the hero's film: silent, playing, and not asking for a user gesture
+  const hero = await page.evaluate(async () => {
+    const v = document.querySelector("#herofilm");
+    if (!v) return { missing: true };
+    // the run and paper checks left us down the page, where the hero is paused
+    document.documentElement.style.scrollBehavior = "auto";
+    scrollTo(0, 0);
+    window.dispatchEvent(new Event("scroll"));
+    await new Promise((r) => setTimeout(r, 600));
+    const before = v.currentTime;
+    await new Promise((r) => setTimeout(r, 700));
+    return { muted: v.muted, paused: v.paused, moved: +(v.currentTime - before).toFixed(2),
+      dur: v.duration, w: v.videoWidth, file: v.currentSrc.split("/").pop() };
+  });
+  hero.missing ? fail("no hero film") :
+    hero.muted && !hero.paused && hero.moved > 0 && hero.w
+      ? ok(`hero film plays (${hero.file}, ${hero.w}px wide, muted)`) :
+      fail("hero film not playing: " + JSON.stringify(hero));
+
   // the reel seeks (byte ranges)
   const seek = await page.evaluate(async () => {
     const v = document.querySelector(".reel video");
@@ -126,6 +145,8 @@ async function open(width, height) {
 
   const chips = await page.evaluate(() => getComputedStyle(document.querySelector(".field")).display);
   chips === "none" ? ok("floating chips hidden on a phone") : fail("chips still showing on a phone");
+  const filmOnPhone = await page.evaluate(() => getComputedStyle(document.querySelector(".hero-film")).display);
+  filmOnPhone === "none" ? ok("hero film hidden on a phone") : fail("hero film still showing on a phone");
 
   const fits = await page.evaluate(() => {
     const out = [];
