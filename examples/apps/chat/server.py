@@ -132,11 +132,11 @@ class Chat:
     def kosi_job(self, ask: str, agent: str, text: str) -> dict:
         if agent == "lookout":
             plan = f"I can ask Lookout to {text[:1].lower() + text[1:]}. It will read that page every 15 minutes and tell your phone when there is news. Press Approve if you want that."
-            out = {"text": plan, "approve": {"agent": agent, "text": text}}
+            out = {"text": plan, "approve": {"agent": agent, "text": text}, "card": True, "who": "Kosi \u00b7 a plan"}
             out.update(self.drawn_job(ask, agent, text, "", True))
             return out
         said = self.helper(agent, text)
-        out = {"text": said}
+        out = {"text": said, "card": True, "who": f"Kosi \u00b7 asked {agent.title()}"}
         out.update(self.drawn_job(ask, agent, text, said, False))
         return out
 
@@ -155,7 +155,9 @@ class Chat:
     def canvas(self, ask: str) -> dict:
         described = self.kosika.run(DESIGNS / "main.kos", "describe", {"ask": {"text": ask}}, model=True)
         s = described["structure"]
-        words = s.get("photo") or ("sunflower head close-up" if s.get("figure") == "golden_spiral" else "")
+        # The golden spiral's real example is a sunflower head, whose seed
+        # counts really are Fibonacci numbers (a nautilus shell is not one).
+        words = "sunflower head close-up" if s.get("figure") == "golden_spiral" else s.get("photo", "")
         described["picture"] = photo_for(words)
         drawn = self.kosika.run(DESIGNS / "draw.kos", "draw", {"r": described}, model=False)
         return {"page": drawn["page"], "problems": drawn["problems"], "title": s.get("title", "")}
@@ -167,18 +169,19 @@ class Chat:
                 return self.kosi_job(ask, hand["agent"], hand["text"])
             except Exception as error:
                 return {"text": f"Kosi handed this to {hand['agent'].title()}, and it could not finish: {str(error)[:200]}", "page": "", "problems": [], "title": ""}
-        reply = self.pool.submit(self.words, history, ask)
-        picture = self.pool.submit(self.canvas, ask)
-        out = {}
+        # The drawing is the answer, its explanation written inside it. Words
+        # alone are asked for only when no drawing could be made.
         try:
-            out["text"] = reply.result()["text"]
-        except Exception as error:  # the canvas may still come
-            out["text"] = f"I could not write an answer: {error}"
-        try:
-            out.update(picture.result())
+            out = self.canvas(ask)
         except Exception as error:
-            out.update({"page": "", "problems": [str(error)[:300]], "title": ""})
-        return out
+            out = {"page": "", "problems": [str(error)[:300]], "title": ""}
+        if out["page"]:
+            return {**out, "text": "", "card": False}
+        try:
+            text = self.words(history, ask)["text"]
+        except Exception as error:
+            text = f"I could not answer that just now: {str(error)[:200]}"
+        return {**out, "text": text, "card": True, "who": "Kosika"}
 
 
 def handler(chat: Chat):

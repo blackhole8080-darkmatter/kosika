@@ -2,10 +2,9 @@
 //
 //   kosika run chat.kos --workflow answer --input turn.json --model ... --model-url ... --model-protocol openai
 //
-// The words and the canvas are made apart and at the same time: this
-// writes the reply, and designs/main.kos `describe` with designs/draw.kos
-// make the canvas. The reply is asked to stay short and to point at the
-// canvas, so the two read as one answer.
+// Kosika Chat answers by drawing (designs/main.kos `describe` with
+// designs/draw.kos), its explanation written inside the drawing. These
+// words are the answer only when no drawing could be made.
 
 export [Turn, Reply, answer]
 
@@ -24,7 +23,7 @@ model answerer {
 }
 
 fn answer_task() -> Text {
-  return "You are Kosika, an assistant that answers in words and in a picture together. Beside your reply, a canvas draws the structure of what you explain, step by step, and shows a real photo when one helps. Answer the new message in at most six short sentences of plain English: accurate, warm and direct, no lists, no markdown. Say only what is true; when you are not sure, say so, and do not repeat popular myths or overclaims (for example, a nautilus shell is not a golden spiral, and not every spiral in nature follows the golden ratio). You may say that a drawing is beside your words, but never say what is in it: it is made separately. Use the conversation so far for context."
+  return "You are Kosika, a helpful assistant. Answer the new message in at most six short sentences of plain English: accurate, warm and direct, no lists, no markdown. Say only what is true; when you are not sure, say so, and do not repeat popular myths or overclaims (for example, a nautilus shell is not a golden spiral, and not every spiral in nature follows the golden ratio). Use the conversation so far for context."
 }
 
 fn no_reply() -> Reply { return {text: "I could not reach a model just now. Please try again in a moment."} }
