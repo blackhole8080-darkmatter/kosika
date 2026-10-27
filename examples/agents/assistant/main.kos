@@ -1198,6 +1198,12 @@ workflow keep(msg: Msg) -> Turn {
   }
 }
 
+// Where a message goes, for Kosika Chat: the helper agent and what to tell it,
+// or no agent when Kosi answers itself.
+workflow route(msg: Msg) -> Handover {
+  out = hand_of(msg.text)
+}
+
 workflow main(msg: Msg) -> Said {
   // The time is long because a request handed to another agent takes as
   // long as that agent takes.

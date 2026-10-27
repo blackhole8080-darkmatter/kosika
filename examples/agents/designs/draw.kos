@@ -1,0 +1,993 @@
+// Kosika Designs: draw any structure clearly.
+//
+//   kosika run draw.kos --workflow draw --input request.json
+//
+// A model describes WHAT is there, as data: the parts, how they connect,
+// and the few sentences that explain it, each naming the parts it is
+// about. Kosika decides HOW it looks: it checks the description, lays the
+// parts out, draws every line, arrow and label, and makes each sentence
+// light up its parts and run a small animation along their links when it
+// is hovered. However the model words it, the drawing is laid out by the
+// same rules, so it is clean.
+//
+// Some things Kosika can draw exactly, from their own maths, instead of
+// from a description: a figure names one ("golden_spiral"), and Kosika
+// draws it and writes its sentences itself.
+//
+// Shapes of structure:
+//   flow    parts in order, left to right, by the links between them
+//   cycle   parts round a ring, for a process that comes back to the start
+//   layers  parts stacked top to bottom, the first on top
+//   hub     the first part in the middle, the others round it
+//   nested  rings inside rings, the first part at the centre: an atom,
+//           the Earth, a cell
+
+import "std/math.kos"
+
+export [Part, Link, Step, Mark, Structure, Picture, Request, Design, problems, draw, golden_squares, escaped, f1, kinds]
+
+// parent: the part this one hangs from, for a tree, mind map or comparison.
+record Part { id: Text label: Text note: Text parent: Text = "" }
+record Link { from: Text to: Text label: Text }
+record Step { text: Text parts: Text[] }
+// A free mark for a sketch: its points as x, y, x, y ... on a 100 by 100 grid.
+record Mark { id: Text kind: Text points: Number[] label: Text = "" }
+// photo: a few words to find one real photo of the thing, or empty.
+record Structure { title: Text summary: Text shape: Text figure: Text photo: Text parts: Part[] links: Link[] steps: Step[] marks: Mark[] = [] }
+// A real photo of the thing, shown beside the drawing as a reference.
+record Picture { title: Text author: Text license: Text license_url: Text page_url: Text image: Text }
+record Request { ask: Text structure: Structure picture: Picture }
+record Design { page: Text problems: Text[] }
+
+// ---------------------------------------------------------------- checking
+
+fn letters() -> Text { return "abcdefghijklmnopqrstuvwxyz" }
+
+fn is_id(text: Text) -> Bool {
+  if text.length() < 1 or text.length() > 30 { return false }
+  let low = text.lower()
+  if not letters().contains(low.slice(0, 1)) { return false }
+  for i in 0 until low.length() {
+    let ch = low.slice(i, i + 1)
+    if not letters().contains(ch) and not "0123456789_".contains(ch) { return false }
+  }
+  return true
+}
+
+fn ids(s: Structure) -> Text[] { return for p in s.parts { p.id } }
+
+// Everything wrong with a description, in words. A drawing is made only
+// from a description with nothing wrong with it.
+fn problems(s: Structure) -> Text[] {
+  var out: Text[] = []
+  // A figure Kosika draws itself needs no shape.
+  if s.figure.is_empty() and not kinds().contains(s.shape) { out = out.append(f"shape {s.shape} is not one of {kinds().join(\", \")}") }
+  let most = if ["graph", "tree", "mindmap", "compare"].contains(s.shape) { 24 } else { 16 }
+  let least = if s.shape == "sketch" { 0 } else { 2 }
+  if s.figure.is_empty() {
+    if s.parts.length() < least or s.parts.length() > most { out = out.append(f"{s.parts.length()} parts; draw {least} to {most}") }
+    if s.steps.length() < 2 or s.steps.length() > 7 { out = out.append(f"{s.steps.length()} sentences; write 2 to 7") }
+  } else if s.figure != "golden_spiral" {
+    out = out.append(f"Kosika cannot draw the figure {s.figure} yet")
+  }
+  var seen: Text[] = []
+  for p in s.parts {
+    if not is_id(p.id) { out = out.append(f"part id {p.id} must be letters, digits and _") }
+    if seen.contains(p.id) { out = out.append(f"two parts are called {p.id}") }
+    seen = seen.append(p.id)
+    if p.label.is_empty() or p.label.length() > 28 { out = out.append(f"part {p.id} needs a label of 1 to 28 characters") }
+    if p.note.length() > 60 { out = out.append(f"part {p.id} has a note over 60 characters") }
+  }
+  for l in s.links {
+    if not seen.contains(l.from) { out = out.append(f"a link starts at {l.from}, and no part has that id") }
+    if not seen.contains(l.to) { out = out.append(f"a link ends at {l.to}, and no part has that id") }
+    if l.from == l.to { out = out.append(f"a link joins {l.from} to itself") }
+    if l.label.length() > 24 { out = out.append(f"the link from {l.from} to {l.to} has a label over 24 characters") }
+  }
+  let marked = for m in s.marks { m.id }
+  for st in s.steps {
+    if st.text.length() > 220 { out = out.append("a sentence is over 220 characters; keep each short") }
+    for id in st.parts {
+      if not seen.contains(id) and not marked.contains(id) { out = out.append(f"a sentence points at {id}, and no part has that id") }
+    }
+  }
+  return out.concat(kind_problems(s))
+}
+
+// ---------------------------------------------------------------- layout
+
+fn place(s: Structure, id: Text) -> Number {
+  for i in 0 until s.parts.length() {
+    if s.parts[i].id == id { return i }
+  }
+  return -1
+}
+
+// For a flow: each part's column is one more than the furthest part that
+// links into it from earlier in the list. A link back to an earlier part
+// is a loop, drawn round, and does not move anything.
+fn columns(s: Structure) -> Number[] {
+  var col: Number[] = for p in s.parts { 0 }
+  for round in 0 until s.parts.length() {
+    for l in s.links {
+      let a = place(s, l.from)
+      let b = place(s, l.to)
+      if a < b and col[b] < col[a] + 1 { col = col.set(b, col[a] + 1) }
+    }
+  }
+  return col
+}
+
+fn widest(s: Structure) -> Number { return (for p in s.parts { box_width(p) }).max().or(90) }
+
+// How many columns of a flow fit side by side in a drawing w wide.
+fn per_row(s: Structure, w: Number) -> Number {
+  let fit = (w / (widest(s) + 60)).floor().max(1)
+  return fit.min(columns(s).max().or(0) + 1)
+}
+
+// The height of one row of a flow: room for its tallest column.
+fn band_height(s: Structure) -> Number {
+  let col = columns(s)
+  var tallest = 1
+  for c in col { tallest = tallest.max((for x in col where x == c { x }).length()) }
+  return tallest * 96 + 84
+}
+
+fn height(s: Structure, w: Number) -> Number {
+  if s.shape == "flow" { return ((columns(s).max().or(0) + 1) / per_row(s, w)).ceil() * band_height(s) }
+  if s.shape == "layers" { return s.parts.length() * 76 + 40 }
+  if ["tree", "mindmap", "graph", "timeline", "compare", "sketch"].contains(s.shape) { return kind_height(s) }
+  return 480
+}
+
+// Where each part sits: its centre, as [xs, ys], in a drawing w by h.
+fn layout(s: Structure, w: Number, h: Number) -> Number[][] {
+  if s.shape == "tree" { return tree_layout(s, w, h) }
+  if s.shape == "mindmap" { return mindmap_layout(s, w, h) }
+  if s.shape == "graph" { return graph_layout(s, w, h) }
+  if s.shape == "timeline" { return timeline_layout(s, w, h) }
+  if s.shape == "compare" { return compare_layout(s, w, h) }
+  if s.shape == "sketch" { return [[], []] }
+  let n = s.parts.length()
+  var xs: Number[] = []
+  var ys: Number[] = []
+  if s.shape == "flow" {
+    // Columns wrap into rows when they would not fit side by side, and
+    // every other row runs right to left, so the flow snakes down the
+    // page and each link stays short.
+    let col = columns(s)
+    let per = per_row(s, w)
+    let band = band_height(s)
+    for i in 0 until n {
+      let same = for j in 0 until n where col[j] == col[i] { j }
+      let stack = same.index_of(i).or(0)
+      let row = (col[i] / per).floor()
+      let along = col[i] % per
+      let spot = if row % 2 == 1 { per - 1 - along } else { along }
+      xs = xs.append((spot + 0.5) * w / per)
+      ys = ys.append(row * band + band / 2 + (stack - (same.length() - 1) / 2) * 96)
+    }
+  } else if s.shape == "layers" {
+    for i in 0 until n {
+      xs = xs.append(w / 2)
+      ys = ys.append(58 + i * 76)
+    }
+  } else {
+    // A ring: cycle puts every part on it, hub puts the first in the middle.
+    let ring = if s.shape == "hub" { n - 1 } else { n }
+    for i in 0 until n {
+      if s.shape == "hub" and i == 0 {
+        xs = xs.append(w / 2)
+        ys = ys.append(h / 2)
+      } else {
+        let k = if s.shape == "hub" { i - 1 } else { i }
+        let a = -90 + k * 360 / ring
+        xs = xs.append(w / 2 + (w / 2 - 120) * a.cos())
+        ys = ys.append(h / 2 + (h / 2 - 60) * a.sin())
+      }
+    }
+  }
+  return [xs, ys]
+}
+
+// ---------------------------------------------------------------- drawing
+
+fn escaped(text: Text) -> Text {
+  return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
+}
+
+fn f1(x: Number) -> Text { return x.to_fixed(1) }
+
+// Words broken into lines of about `width` characters.
+fn wrap(text: Text, width: Number) -> Text[] {
+  var out: Text[] = []
+  var line = ""
+  for word in text.words() {
+    if line.is_empty() { line = word }
+    else if line.length() + 1 + word.length() > width {
+      out = out.append(line)
+      line = word
+    } else { line = line + " " + word }
+  }
+  if not line.is_empty() { out = out.append(line) }
+  return out
+}
+
+fn box_width(p: Part) -> Number { return (p.label.length() * 8.4 + 28).max(90).min(220) }
+
+// A layer is a wide bar, so a stack reads as one thing in slices.
+fn layer_svg(p: Part, x: Number, y: Number) -> Text {
+  return f"<g class=\"part bit\" id=\"p-{p.id}\"><rect pathLength=\"1\" x=\"{f1(x - 300)}\" y=\"{f1(y - 26)}\" width=\"600\" height=\"52\" rx=\"10\"/><text class=\"label\" x=\"{f1(x - 280)}\" y=\"{f1(y + 5)}\" style=\"text-anchor:start\">{escaped(p.label)}</text><text class=\"note\" x=\"{f1(x + 280)}\" y=\"{f1(y + 5)}\" style=\"text-anchor:end\">{escaped(p.note)}</text></g>"
+}
+
+// Rings inside rings: part i is the ring of radius r(i), labelled on its
+// right edge, with a leader line out to its note.
+fn nested_svg(s: Structure, w: Number, h: Number) -> Text {
+  let n = s.parts.length()
+  let cx = w * 0.36
+  let cy = h / 2
+  let most = h / 2 - 24
+  var rings: Text[] = []
+  for k in 0 until n {
+    let i = n - 1 - k
+    let p = s.parts[i]
+    let r = most * (i + 1) / n
+    let inner = if i == 0 { 0 } else { most * i / n }
+    let mid = (r + inner) / 2
+    // Labels are listed outermost first, top to bottom, and each leader
+    // leaves its ring pointing at its own label, so leaders never cross.
+    let ly = 40 + (n - 1 - i) * (h - 80) / (n - 1).max(1)
+    let lx = w - 260
+    let dx = lx - cx
+    let dy = ly - cy
+    let len = (dx * dx + dy * dy).sqrt().max(1)
+    let px = cx + mid * dx / len
+    let py = cy + mid * dy / len
+    rings = rings.append(f"<g class=\"part ring bit\" id=\"p-{p.id}\"><circle pathLength=\"1\" cx=\"{f1(cx)}\" cy=\"{f1(cy)}\" r=\"{f1(r)}\"/><path class=\"leader\" d=\"M{f1(px)} {f1(py)} L{f1(lx)} {f1(ly)}\"/><circle class=\"dot\" cx=\"{f1(px)}\" cy=\"{f1(py)}\" r=\"3\"/><text class=\"label\" x=\"{f1(w - 250)}\" y=\"{f1(ly + 5)}\" style=\"text-anchor:start\">{escaped(p.label)}</text><text class=\"note\" x=\"{f1(w - 250)}\" y=\"{f1(ly + 21)}\" style=\"text-anchor:start\">{escaped(p.note)}</text></g>")
+  }
+  return rings.join("")
+}
+
+// A part: a rounded box, its label, and its note beneath in small type.
+fn part_svg(p: Part, x: Number, y: Number) -> Text {
+  let bw = box_width(p)
+  let lines = wrap(p.note, 24)
+  let note = (for k in 0 until lines.length().min(2) { f"<text class=\"note\" x=\"{f1(x)}\" y=\"{f1(y + 38 + k * 14)}\">{escaped(lines[k])}</text>" }).join("")
+  return f"<g class=\"part bit\" id=\"p-{p.id}\"><rect pathLength=\"1\" x=\"{f1(x - bw / 2)}\" y=\"{f1(y - 22)}\" width=\"{f1(bw)}\" height=\"44\" rx=\"12\"/><text class=\"label\" x=\"{f1(x)}\" y=\"{f1(y + 5)}\">{escaped(p.label)}</text>{note}</g>"
+}
+
+// A link: a curve from the edge of one box to the edge of the next, with
+// an arrowhead, its label at the middle, and a dash that runs along it
+// when one of its sentences is hovered.
+fn link_svg(s: Structure, l: Link, at: Number[][]) -> Text {
+  let a = place(s, l.from)
+  let b = place(s, l.to)
+  let ax = at[0][a]
+  let ay = at[1][a]
+  let bx = at[0][b]
+  let by = at[1][b]
+  let dx = bx - ax
+  let dy = by - ay
+  let len = (dx * dx + dy * dy).sqrt().max(1)
+  // Leave each box by its side when the link runs sideways, else by its top or bottom.
+  let side = dx.abs() > dy.abs()
+  let wa = box_width(s.parts[a]) / 2 + 6
+  let wb = box_width(s.parts[b]) / 2 + 10
+  let sx = if side { ax + wa * (if dx > 0 { 1 } else { -1 }) } else { ax }
+  let sy = if side { ay } else { ay + 28 * (if dy > 0 { 1 } else { -1 }) }
+  let ex = if side { bx - wb * (if dx > 0 { 1 } else { -1 }) } else { bx }
+  let ey = if side { by } else { by - 32 * (if dy > 0 { 1 } else { -1 }) }
+  // A link back to an earlier part bows out, so it never hides a forward one.
+  let back = s.shape == "flow" and b < a
+  let bow = if back { 90 } else { 0 }
+  let c1x = if side { sx + (ex - sx) * 0.5 } else { sx + bow }
+  let c1y = if side { sy - bow } else { sy + (ey - sy) * 0.5 }
+  let c2x = if side { sx + (ex - sx) * 0.5 } else { ex + bow }
+  let c2y = if side { ey - bow } else { sy + (ey - sy) * 0.5 }
+  let mx = (sx + 3 * c1x + 3 * c2x + ex) / 8
+  let my = (sy + 3 * c1y + 3 * c2y + ey) / 8
+  let label = if l.label.is_empty() { "" } else { f"<text class=\"linklabel\" x=\"{f1(mx)}\" y=\"{f1(my - 7)}\">{escaped(l.label)}</text>" }
+  let path = f"M{f1(sx)} {f1(sy)} C{f1(c1x)} {f1(c1y)} {f1(c2x)} {f1(c2y)} {f1(ex)} {f1(ey)}"
+  return f"<g class=\"link bit\" id=\"l-{l.from}-{l.to}\" data-a=\"p-{l.from}\" data-b=\"p-{l.to}\"><path class=\"wire\" d=\"{path}\" marker-end=\"url(#arrow)\"/><path class=\"pulse\" d=\"{path}\"/>{label}</g>"
+}
+
+fn structure_svg(s: Structure) -> Text {
+  let w = 860
+  let h = height(s, w)
+  let at = layout(s, w, h)
+  let special = s.shape == "nested" or s.shape == "graph" or s.shape == "tree" or s.shape == "mindmap" or s.shape == "timeline" or s.shape == "compare" or s.shape == "sketch"
+  let links = if special { "" } else { (for l in s.links { link_svg(s, l, at) }).join("") }
+  let parts = if s.shape == "graph" { graph_svg(s, at) } else if s.shape == "tree" or s.shape == "mindmap" { hierarchy_svg(s, at) } else if s.shape == "timeline" { timeline_svg(s, at, w, h) } else if s.shape == "compare" { compare_svg(s, at, w, h) } else if s.shape == "sketch" { sketch_svg(s, w, h) } else if s.shape == "nested" { nested_svg(s, w, h) } else if s.shape == "layers" { (for i in 0 until s.parts.length() { layer_svg(s.parts[i], at[0][i], at[1][i]) }).join("") } else { (for i in 0 until s.parts.length() { part_svg(s.parts[i], at[0][i], at[1][i]) }).join("") }
+  return f"<svg viewBox=\"0 0 {w} {h}\" role=\"img\" aria-label=\"{escaped(s.title)}\"><defs><marker id=\"arrow\" viewBox=\"0 0 10 10\" refX=\"8\" refY=\"5\" markerWidth=\"7\" markerHeight=\"7\" orient=\"auto-start-reverse\"><path d=\"M0 0L10 5L0 10z\" class=\"head\"/></marker></defs>{links}{parts}</svg>"
+}
+
+// ---------------------------------------------------------------- more kinds of picture
+//
+//   tree      a hierarchy: each part names its parent; the root on top
+//   mindmap   one idea in the middle, branches round it, each a colour
+//   graph     vertices and edges, as in discrete mathematics: placed by a
+//             force layout worked out here, edges without direction
+//   timeline  parts in order along a line, notes as their dates
+//   compare   columns side by side: parts with no parent are the columns,
+//             parts whose parent is a column are its rows
+//   sketch    free shapes: marks of points on a 100 by 100 grid, smoothed
+//             here into curves, closed shapes, arrows, dots and words
+
+fn avg(xs: Number[], none: Number) -> Number {
+  if xs.is_empty() { return none }
+  return xs.sum() / xs.length()
+}
+
+fn kinds() -> Text[] { return ["flow", "cycle", "layers", "hub", "nested", "tree", "mindmap", "graph", "timeline", "compare", "sketch"] }
+fn mark_kinds() -> Text[] { return ["curve", "shape", "arrow", "dot", "text"] }
+
+// Branch colours: Studio's lights.
+fn hue(i: Number) -> Text {
+  let all = ["#ff8a4c", "#a993ff", "#55d6ff", "#f5b45c", "#4fe0a6", "#ff6b81"]
+  return all[i % all.length()]
+}
+
+// How deep each part sits under its root (0 for a root), or -1 for a
+// part whose parents go round in a loop.
+fn depths(s: Structure) -> Number[] {
+  var out: Number[] = []
+  for i in 0 until s.parts.length() {
+    var d = 0
+    var at = i
+    while at >= 0 and not s.parts[at].parent.is_empty() and d <= s.parts.length() {
+      at = place(s, s.parts[at].parent)
+      d += 1
+    }
+    out = out.append(if d > s.parts.length() { -1 } else { d })
+  }
+  return out
+}
+
+fn children(s: Structure, id: Text) -> Number[] {
+  return for i in 0 until s.parts.length() where s.parts[i].parent == id { i }
+}
+
+fn kind_problems(s: Structure) -> Text[] {
+  var out: Text[] = []
+  let all = ids(s)
+  for p in s.parts {
+    if not p.parent.is_empty() {
+      if not all.contains(p.parent) { out = out.append(f"part {p.id} has parent {p.parent}, and no part has that id") }
+      if p.parent == p.id { out = out.append(f"part {p.id} is its own parent") }
+    }
+  }
+  if ["tree", "mindmap"].contains(s.shape) {
+    let roots = for p in s.parts where p.parent.is_empty() { p }
+    if roots.length() != 1 { out = out.append(f"a {s.shape} needs exactly one part with no parent; it has {roots.length()}") }
+    if depths(s).contains(-1) { out = out.append("the parents go round in a loop") }
+  }
+  if s.shape == "compare" {
+    let columns_now = for p in s.parts where p.parent.is_empty() { p }
+    if columns_now.length() < 2 or columns_now.length() > 4 { out = out.append(f"a comparison needs 2 to 4 columns; it has {columns_now.length()}") }
+  }
+  var seen: Text[] = []
+  for m in s.marks {
+    if not is_id(m.id) { out = out.append(f"mark id {m.id} must be letters, digits and _") }
+    if seen.contains(m.id) or all.contains(m.id) { out = out.append(f"the id {m.id} is used twice") }
+    seen = seen.append(m.id)
+    if not mark_kinds().contains(m.kind) { out = out.append(f"mark {m.id} is a {m.kind}; use curve, shape, arrow, dot or text") }
+    if m.points.length() % 2 == 1 { out = out.append(f"mark {m.id} has an odd number of coordinates") }
+    let pairs = (m.points.length() / 2).floor()
+    let least = if m.kind == "shape" { 3 } else if m.kind == "curve" or m.kind == "arrow" { 2 } else { 1 }
+    if pairs < least { out = out.append(f"mark {m.id} needs at least {least} points") }
+    if pairs > 40 { out = out.append(f"mark {m.id} has more than 40 points") }
+    for v in m.points {
+      if v < -5 or v > 105 { out = out.append(f"mark {m.id} has a point off the 0 to 100 grid") }
+    }
+    if m.label.length() > 40 { out = out.append(f"mark {m.id} has a label over 40 characters") }
+  }
+  if s.shape == "sketch" and (s.marks.length() < 2 or s.marks.length() > 30) { out = out.append(f"{s.marks.length()} marks; a sketch draws 2 to 30") }
+  return out
+}
+
+// ---------------------------------------------------------------- layouts
+
+// A tree, top down: leaves spaced evenly in the order they are met, each
+// parent centred over its children, each level one row lower.
+fn tree_layout(s: Structure, w: Number, h: Number) -> Number[][] {
+  let n = s.parts.length()
+  let d = depths(s)
+  let deepest = d.max().or(0)
+  // Leaves in depth-first order, by walking a stack.
+  var order: Number[] = []
+  var stack: Number[] = for i in 0 until n where s.parts[i].parent.is_empty() { i }
+  stack = stack.reverse()
+  while stack.length() > 0 {
+    let top = stack[stack.length() - 1]
+    stack = stack.slice(0, stack.length() - 1)
+    order = order.append(top)
+    stack = stack.concat(children(s, s.parts[top].id).reverse())
+  }
+  let leaves = for i in order where children(s, s.parts[i].id).is_empty() { i }
+  var xs: Number[] = for i in 0 until n { 0 }
+  for k in 0 until leaves.length() { xs = xs.set(leaves[k], (k + 0.5) * w / leaves.length()) }
+  var level = deepest
+  while level >= 0 {
+    for i in 0 until n {
+      let kids = children(s, s.parts[i].id)
+      if d[i] == level and kids.length() > 0 { xs = xs.set(i, avg(for c in kids { xs[c] }, w / 2)) }
+    }
+    level -= 1
+  }
+  // Leaves too close to sit side by side take turns a little lower.
+  let crowded = w / leaves.length().max(1) < 150
+  var ys = for i in 0 until n { 50 + d[i] * (h - 140) / deepest.max(1) }
+  if crowded {
+    for k in 0 until leaves.length() {
+      if k % 2 == 1 { ys = ys.set(leaves[k], ys[leaves[k]] + 70) }
+    }
+  }
+  return [xs, ys]
+}
+
+// A mind map: the root in the middle; every leaf gets an equal share of
+// the circle, in order, and each idea sits at the middle of its leaves'
+// angles, one ring further out per level.
+fn mindmap_layout(s: Structure, w: Number, h: Number) -> Number[][] {
+  let n = s.parts.length()
+  let d = depths(s)
+  let deepest = d.max().or(1).max(1)
+  var order: Number[] = []
+  var stack: Number[] = for i in 0 until n where s.parts[i].parent.is_empty() { i }
+  while stack.length() > 0 {
+    let top = stack[stack.length() - 1]
+    stack = stack.slice(0, stack.length() - 1)
+    order = order.append(top)
+    stack = stack.concat(children(s, s.parts[top].id).reverse())
+  }
+  let leaves = for i in order where children(s, s.parts[i].id).is_empty() { i }
+  var angle: Number[] = for i in 0 until n { 0 }
+  for k in 0 until leaves.length() { angle = angle.set(leaves[k], -90 + (k + 0.5) * 360 / leaves.length()) }
+  var level = deepest
+  while level >= 0 {
+    for i in 0 until n {
+      let kids = children(s, s.parts[i].id)
+      if d[i] == level and kids.length() > 0 { angle = angle.set(i, avg(for c in kids { angle[c] }, 0)) }
+    }
+    level -= 1
+  }
+  let xs = for i in 0 until n { w / 2 + (w / 2 - 110) * d[i] / deepest * angle[i].cos() }
+  let ys = for i in 0 until n { h / 2 + (h / 2 - 50) * d[i] / deepest * angle[i].sin() }
+  return [xs, ys]
+}
+
+// A graph: vertices start evenly round a circle and then push each other
+// apart while edges pull their ends together, cooling step by step
+// (Fruchterman and Reingold). The same graph always lands the same way.
+fn graph_layout(s: Structure, w: Number, h: Number) -> Number[][] {
+  let n = s.parts.length()
+  var xs = for i in 0 until n { 0.5 + 0.35 * (i * 360 / n).cos() }
+  var ys = for i in 0 until n { 0.5 + 0.35 * (i * 360 / n).sin() }
+  let k = (1 / n).sqrt() * 0.9
+  let ends = for l in s.links { [place(s, l.from), place(s, l.to)] }
+  var heat = 0.1
+  for round in 0 until 160 {
+    var fx: Number[] = for i in 0 until n { 0 }
+    var fy: Number[] = for i in 0 until n { 0 }
+    for i in 0 until n {
+      for j in i + 1 until n {
+        let dx = xs[i] - xs[j]
+        let dy = ys[i] - ys[j]
+        let dd = (dx * dx + dy * dy).sqrt().max(0.001)
+        let push = k * k / dd
+        fx = fx.set(i, fx[i] + dx / dd * push)
+        fy = fy.set(i, fy[i] + dy / dd * push)
+        fx = fx.set(j, fx[j] - dx / dd * push)
+        fy = fy.set(j, fy[j] - dy / dd * push)
+      }
+    }
+    for e in ends {
+      let a = e[0]
+      let b = e[1]
+      let dx = xs[a] - xs[b]
+      let dy = ys[a] - ys[b]
+      let dd = (dx * dx + dy * dy).sqrt().max(0.001)
+      let pull = dd * dd / k
+      fx = fx.set(a, fx[a] - dx / dd * pull)
+      fy = fy.set(a, fy[a] - dy / dd * pull)
+      fx = fx.set(b, fx[b] + dx / dd * pull)
+      fy = fy.set(b, fy[b] + dy / dd * pull)
+    }
+    for i in 0 until n {
+      let f = (fx[i] * fx[i] + fy[i] * fy[i]).sqrt().max(0.000001)
+      let step = f.min(heat)
+      xs = xs.set(i, (xs[i] + fx[i] / f * step).clamp(0.05, 0.95))
+      ys = ys.set(i, (ys[i] + fy[i] / f * step).clamp(0.05, 0.95))
+    }
+    heat = heat * 0.97
+  }
+  // Fill the drawing: stretch what the layout used to the whole frame.
+  let lx = xs.min().or(0)
+  let hx = xs.max().or(1)
+  let ly = ys.min().or(0)
+  let hy = ys.max().or(1)
+  let px = for x in xs { 80 + (w - 160) * (x - lx) / (hx - lx).max(0.001) }
+  let py = for y in ys { 50 + (h - 100) * (y - ly) / (hy - ly).max(0.001) }
+  return [px, py]
+}
+
+fn timeline_layout(s: Structure, w: Number, h: Number) -> Number[][] {
+  let n = s.parts.length()
+  let xs = for i in 0 until n { 70 + (w - 140) * (if n == 1 { 0.5 } else { i / (n - 1) }) }
+  let ys = for i in 0 until n { h / 2 }
+  return [xs, ys]
+}
+
+// Columns side by side; each row under its column.
+fn compare_layout(s: Structure, w: Number, h: Number) -> Number[][] {
+  let n = s.parts.length()
+  let cols = for i in 0 until n where s.parts[i].parent.is_empty() { i }
+  var xs: Number[] = for i in 0 until n { 0 }
+  var ys: Number[] = for i in 0 until n { 0 }
+  for c in 0 until cols.length() {
+    let x = (c + 0.5) * w / cols.length()
+    xs = xs.set(cols[c], x)
+    ys = ys.set(cols[c], 40)
+    let rows = children(s, s.parts[cols[c]].id)
+    for r in 0 until rows.length() {
+      xs = xs.set(rows[r], x)
+      ys = ys.set(rows[r], 110 + r * 62)
+    }
+  }
+  return [xs, ys]
+}
+
+fn kind_height(s: Structure) -> Number {
+  if s.shape == "tree" { return (depths(s).max().or(0) + 1) * 110 + 90 }
+  if s.shape == "compare" {
+    var most = 0
+    for p in s.parts {
+      if p.parent.is_empty() { most = most.max(children(s, p.id).length()) }
+    }
+    return 130 + most * 62
+  }
+  if s.shape == "timeline" { return 260 }
+  if s.shape == "graph" or s.shape == "mindmap" { return 520 }
+  return 500
+}
+
+// ---------------------------------------------------------------- drawing the kinds
+
+// An edge between two parts, given as its two ends: a straight line for a
+// graph, a soft curve for a tree or mind map. It shows when both of its
+// parts have been drawn, and runs a pulse when a sentence marks them.
+fn edge_svg(id: Text, a: Text, b: Text, path: Text, label: Text, lx: Number, ly: Number, colour: Text) -> Text {
+  let tag = if label.is_empty() { "" } else { f"<text class=\"linklabel\" x=\"{f1(lx)}\" y=\"{f1(ly - 6)}\">{escaped(label)}</text>" }
+  let paint = if colour.is_empty() { "" } else { f" style=\"stroke:{colour}\"" }
+  return f"<g class=\"link bit\" id=\"{id}\" data-a=\"p-{a}\" data-b=\"p-{b}\"><path class=\"wire\" d=\"{path}\"{paint}/><path class=\"pulse\" d=\"{path}\"/>{tag}</g>"
+}
+
+fn vertex_svg(p: Part, x: Number, y: Number, degree: Number) -> Text {
+  // A short name goes inside the vertex; a long one under it.
+  let note = if p.note.is_empty() { f"degree {degree}" } else { p.note }
+  let short = p.label.length() <= 4
+  let inside = if short { p.label } else { p.label.slice(0, 1) }
+  let under = if short { note } else { p.label }
+  return f"<g class=\"part vertex bit\" id=\"p-{p.id}\"><circle pathLength=\"1\" cx=\"{f1(x)}\" cy=\"{f1(y)}\" r=\"22\"/><text class=\"vlabel\" x=\"{f1(x)}\" y=\"{f1(y + 5)}\">{escaped(inside)}</text><text class=\"note\" x=\"{f1(x)}\" y=\"{f1(y + 40)}\">{escaped(under)}</text></g>"
+}
+
+fn graph_svg(s: Structure, at: Number[][]) -> Text {
+  // Several edges between the same two vertices (a multigraph, like the
+  // bridges of Konigsberg) bow apart, each its own curve.
+  var edges: Text[] = []
+  for k in 0 until s.links.length() {
+    let l = s.links[k]
+    let a = place(s, l.from)
+    let b = place(s, l.to)
+    let same = for j in 0 until s.links.length() where (s.links[j].from == l.from and s.links[j].to == l.to) or (s.links[j].from == l.to and s.links[j].to == l.from) { j }
+    let nth = same.index_of(k).or(0)
+    let bow = (nth - (same.length() - 1) / 2) * 46
+    let dx = at[0][b] - at[0][a]
+    let dy = at[1][b] - at[1][a]
+    let len = (dx * dx + dy * dy).sqrt().max(1)
+    let mx = (at[0][a] + at[0][b]) / 2 - dy / len * bow
+    let my = (at[1][a] + at[1][b]) / 2 + dx / len * bow
+    let path = f"M{f1(at[0][a])} {f1(at[1][a])} Q{f1(2 * mx - (at[0][a] + at[0][b]) / 2)} {f1(2 * my - (at[1][a] + at[1][b]) / 2)} {f1(at[0][b])} {f1(at[1][b])}"
+    edges = edges.append(edge_svg(f"l-{l.from}-{l.to}-{nth}", l.from, l.to, path, l.label, mx, my, ""))
+  }
+  var nodes: Text[] = []
+  for i in 0 until s.parts.length() {
+    let id = s.parts[i].id
+    let degree = (for l in s.links where l.from == id or l.to == id { 1 }).length()
+    nodes = nodes.append(vertex_svg(s.parts[i], at[0][i], at[1][i], degree))
+  }
+  return edges.join("") + nodes.join("")
+}
+
+// Which top branch a part belongs to, for its colour.
+fn branch_of(s: Structure, i: Number) -> Number {
+  var at = i
+  var steps = 0
+  while not s.parts[at].parent.is_empty() and steps < 40 {
+    let up = place(s, s.parts[at].parent)
+    if s.parts[up].parent.is_empty() { return place(s, s.parts[at].id) }
+    at = up
+    steps += 1
+  }
+  return -1
+}
+
+fn hierarchy_svg(s: Structure, at: Number[][]) -> Text {
+  let mind = s.shape == "mindmap"
+  let tops = for i in 0 until s.parts.length() where not s.parts[i].parent.is_empty() and s.parts[place(s, s.parts[i].parent)].parent.is_empty() { i }
+  var edges: Text[] = []
+  for i in 0 until s.parts.length() {
+    let p = s.parts[i]
+    if not p.parent.is_empty() {
+      let a = place(s, p.parent)
+      let ax = at[0][a]
+      let ay = at[1][a]
+      let bx = at[0][i]
+      let by = at[1][i]
+      let path = if mind { f"M{f1(ax)} {f1(ay)} Q{f1(ax + (bx - ax) * 0.15)} {f1(ay + (by - ay) * 0.85)} {f1(bx)} {f1(by)}" } else { f"M{f1(ax)} {f1(ay + 22)} C{f1(ax)} {f1((ay + by) / 2)} {f1(bx)} {f1((ay + by) / 2)} {f1(bx)} {f1(by - 22)}" }
+      let colour = if mind { hue(tops.index_of(branch_of(s, i)).or(0)) } else { "" }
+      edges = edges.append(edge_svg(f"l-{p.parent}-{p.id}", p.parent, p.id, path, "", 0, 0, colour))
+    }
+  }
+  let nodes = for i in 0 until s.parts.length() { part_svg(s.parts[i], at[0][i], at[1][i]) }
+  return edges.join("") + nodes.join("")
+}
+
+fn timeline_svg(s: Structure, at: Number[][], w: Number, h: Number) -> Text {
+  var bits: Text[] = [f"<path class=\"axis\" d=\"M30 {f1(h / 2)} H{f1(w - 30)}\" marker-end=\"url(#arrow)\"/>"]
+  for i in 0 until s.parts.length() {
+    let p = s.parts[i]
+    let x = at[0][i]
+    let y = at[1][i]
+    let up = i % 2 == 0
+    let ty = if up { y - 58 } else { y + 62 }
+    let lines = wrap(p.label, 16)
+    let label = (for k in 0 until lines.length().min(2) { f"<text class=\"label\" x=\"{f1(x)}\" y=\"{f1(ty + k * 17)}\">{escaped(lines[k])}</text>" }).join("")
+    let from_y = if up { y - 10 } else { y + 10 }
+    let to_y = if up { ty + 26 } else { ty - 18 }
+    let date_y = if up { y + 26 } else { y - 18 }
+    bits = bits.append(f"<g class=\"part tick bit\" id=\"p-{p.id}\"><circle pathLength=\"1\" cx=\"{f1(x)}\" cy=\"{f1(y)}\" r=\"8\"/><path class=\"leader\" d=\"M{f1(x)} {f1(from_y)} V{f1(to_y)}\"/>{label}<text class=\"note date\" x=\"{f1(x)}\" y=\"{f1(date_y)}\">{escaped(p.note)}</text></g>")
+  }
+  return bits.join("")
+}
+
+fn compare_svg(s: Structure, at: Number[][], w: Number, h: Number) -> Text {
+  let cols = for i in 0 until s.parts.length() where s.parts[i].parent.is_empty() { i }
+  let cw = w / cols.length() - 24
+  var bits: Text[] = []
+  for c in 0 until cols.length() {
+    let i = cols[c]
+    let x = at[0][i]
+    bits = bits.append(f"<g class=\"part column bit\" id=\"p-{s.parts[i].id}\"><rect pathLength=\"1\" x=\"{f1(x - cw / 2)}\" y=\"14\" width=\"{f1(cw)}\" height=\"{f1(h - 28)}\" rx=\"14\" style=\"stroke:{hue(c)}\"/><text class=\"label colhead\" x=\"{f1(x)}\" y=\"48\" style=\"fill:{hue(c)}\">{escaped(s.parts[i].label)}</text><text class=\"note\" x=\"{f1(x)}\" y=\"68\">{escaped(s.parts[i].note)}</text></g>")
+    for r in children(s, s.parts[i].id) {
+      let said = if s.parts[r].note.is_empty() { s.parts[r].label } else { s.parts[r].label + ": " + s.parts[r].note }
+      let lines = wrap(said, (cw / 7.4).floor())
+      let text = (for k in 0 until lines.length().min(3) { f"<text class=\"cell\" x=\"{f1(x - cw / 2 + 16)}\" y=\"{f1(at[1][r] - 6 + k * 16)}\">{escaped(lines[k])}</text>" }).join("")
+      bits = bits.append(f"<g class=\"part row bit\" id=\"p-{s.parts[r].id}\"><rect pathLength=\"1\" x=\"{f1(x - cw / 2 + 8)}\" y=\"{f1(at[1][r] - 26)}\" width=\"{f1(cw - 16)}\" height=\"54\" rx=\"9\"/>{text}</g>")
+    }
+  }
+  return bits.join("")
+}
+
+// A smooth line through points (Catmull-Rom, as cubic curves): open, or
+// closed back to its start. Points are on the 100 by 100 grid.
+fn smooth(points: Number[], closed: Bool, w: Number, h: Number) -> Text {
+  let n = (points.length() / 2).floor()
+  let xs = for k in 0 until n { points[2 * k] * w / 100 }
+  let ys = for k in 0 until n { points[2 * k + 1] * h / 100 }
+  if n == 1 { return f"M{f1(xs[0])} {f1(ys[0])}" }
+  var d = f"M{f1(xs[0])} {f1(ys[0])}"
+  let last = if closed { n } else { n - 1 }
+  for k in 0 until last {
+    let a = if closed { (k - 1 + n) % n } else { (k - 1).max(0) }
+    let b = k
+    let c = if closed { (k + 1) % n } else { (k + 1).min(n - 1) }
+    let e = if closed { (k + 2) % n } else { (k + 2).min(n - 1) }
+    d = d + f" C{f1(xs[b] + (xs[c] - xs[a]) / 6)} {f1(ys[b] + (ys[c] - ys[a]) / 6)} {f1(xs[c] - (xs[e] - xs[b]) / 6)} {f1(ys[c] - (ys[e] - ys[b]) / 6)} {f1(xs[c])} {f1(ys[c])}"
+  }
+  return if closed { d + " Z" } else { d }
+}
+
+fn sketch_svg(s: Structure, w: Number, h: Number) -> Text {
+  var bits: Text[] = []
+  for k in 0 until s.marks.length() {
+    let m = s.marks[k]
+    let n = (m.points.length() / 2).floor()
+    let cx = avg(for i in 0 until n { m.points[2 * i] }, 50) * w / 100
+    let cy = avg(for i in 0 until n { m.points[2 * i + 1] }, 50) * h / 100
+    let tag = if m.label.is_empty() { "" } else { f"<text class=\"label\" x=\"{f1(cx)}\" y=\"{f1(cy + 5)}\">{escaped(m.label)}</text>" }
+    var body = ""
+    if m.kind == "shape" { body = f"<path class=\"blob\" pathLength=\"1\" d=\"{smooth(m.points, true, w, h)}\" style=\"fill:{hue(k)};stroke:{hue(k)}\"/>" }
+    else if m.kind == "curve" { body = f"<path class=\"stroke\" pathLength=\"1\" d=\"{smooth(m.points, false, w, h)}\"/>" }
+    else if m.kind == "arrow" { body = f"<path class=\"stroke\" pathLength=\"1\" d=\"{smooth(m.points, false, w, h)}\" marker-end=\"url(#arrow)\"/>" }
+    else if m.kind == "dot" { body = f"<circle class=\"spot\" cx=\"{f1(cx)}\" cy=\"{f1(cy)}\" r=\"7\"/>" }
+    let words = if m.kind == "text" { f"<text class=\"label free\" x=\"{f1(cx)}\" y=\"{f1(cy)}\">{escaped(m.label)}</text>" } else { tag }
+    bits = bits.append(f"<g class=\"mark bit\" id=\"m-{m.id}\">{body}{words}</g>")
+  }
+  return bits.join("")
+}
+
+// The closest two vertices come, for the layout test.
+fn closest(at: Number[][]) -> Number {
+  var best = 1000000
+  for i in 0 until at[0].length() {
+    for j in i + 1 until at[0].length() {
+      let dx = at[0][i] - at[0][j]
+      let dy = at[1][i] - at[1][j]
+      best = best.min((dx * dx + dy * dy).sqrt())
+    }
+  }
+  return best
+}
+
+fn kinds_style() -> Text {
+  return ".vertex circle{fill:var(--halo);stroke:var(--line);stroke-width:1.6}.vlabel{fill:var(--ink);font:700 13px ui-monospace,Consolas,monospace;text-anchor:middle}.on.vertex circle{stroke:var(--amber);stroke-width:3}.axis{fill:none;stroke:var(--line2);stroke-width:1.6}.tick circle{fill:var(--halo);stroke:var(--gold);stroke-width:2}.on.tick circle{fill:var(--amber)}.date{fill:var(--gold);font:600 11px ui-monospace,Consolas,monospace}.column rect{fill:none;stroke-width:1.4}.colhead{font:800 16px Figtree,system-ui,sans-serif}.row rect{fill:rgba(255,255,255,.03);stroke:var(--line2);stroke-width:1}.cell{fill:var(--ink);font:13px Figtree,system-ui,sans-serif}.on.row rect,.on.column rect{stroke:var(--amber)!important;stroke-width:2.4}.blob{fill-opacity:.14;stroke-width:2}.stroke{fill:none;stroke:var(--line);stroke-width:2.4;stroke-linecap:round}.spot{fill:var(--amber)}.free{font:600 15px Figtree,system-ui,sans-serif}.mark.shown path{stroke-dasharray:1;animation:pen .9s ease-out both}.on.mark .stroke,.on.mark .blob{stroke:var(--amber)!important;stroke-width:3.4;filter:drop-shadow(0 0 8px color-mix(in srgb,var(--amber) 70%,transparent))}.on.mark .label{fill:var(--amber)}"
+}
+
+// ---------------------------------------------------------------- the golden spiral, exactly
+
+// Squares of Fibonacci sides, each added to the right, below, left and
+// above the ones before, in turn: each side is the length of the edge it
+// is laid against, which is the sum of the two squares before it. In each
+// square a quarter circle runs between opposite corners, and together they
+// make the golden spiral. Returned as [x0, y0, x1, y1, ax, ay, bx, by] per
+// square: its corners, and where its arc starts and ends.
+fn golden_squares(count: Number) -> Number[][] {
+  var out: Number[][] = [[0, 0, 1, 1, 0, 1, 1, 0]]
+  var bx0 = 0
+  var by0 = 0
+  var bx1 = 1
+  var by1 = 1
+  var px = 1
+  var py = 0
+  for k in 1 until count {
+    let way = (k - 1) % 4
+    var x0 = 0
+    var y0 = 0
+    var size = 0
+    if way == 0 {
+      size = by1 - by0
+      x0 = bx1
+      y0 = by0
+    } else if way == 1 {
+      size = bx1 - bx0
+      x0 = bx0
+      y0 = by1
+    } else if way == 2 {
+      size = by1 - by0
+      x0 = bx0 - size
+      y0 = by0
+    } else {
+      size = bx1 - bx0
+      x0 = bx0
+      y0 = by0 - size
+    }
+    let x1 = x0 + size
+    let y1 = y0 + size
+    let qx = x0 + x1 - px
+    let qy = y0 + y1 - py
+    out = out.append([x0, y0, x1, y1, px, py, qx, qy])
+    px = qx
+    py = qy
+    bx0 = bx0.min(x0)
+    by0 = by0.min(y0)
+    bx1 = bx1.max(x1)
+    by1 = by1.max(y1)
+  }
+  return out
+}
+
+// Each arc starts where the one before ended: an unbroken spiral.
+fn joined(sq: Number[][]) -> Bool {
+  for k in 1 until sq.length() {
+    if sq[k][4] != sq[k - 1][6] or sq[k][5] != sq[k - 1][7] { return false }
+  }
+  return true
+}
+
+fn golden_svg(count: Number) -> Text {
+  var sq = golden_squares(count)
+  var lo_x = 0
+  var lo_y = 0
+  var hi_x = 1
+  var hi_y = 1
+  for q in sq {
+    lo_x = lo_x.min(q[0])
+    lo_y = lo_y.min(q[1])
+    hi_x = hi_x.max(q[2])
+    hi_y = hi_y.max(q[3])
+  }
+  // Laid on its side when it grew taller than wide: the same figure,
+  // mirrored, fits the page better.
+  let turn = hi_y - lo_y > hi_x - lo_x
+  if turn {
+    sq = for q in sq { [q[1], q[0], q[3], q[2], q[5], q[4], q[7], q[6]] }
+    let a = lo_x
+    let b = hi_x
+    lo_x = lo_y
+    hi_x = hi_y
+    lo_y = a
+    hi_y = b
+  }
+  let scale = (780 / (hi_x - lo_x)).min(440 / (hi_y - lo_y))
+  let sweep = if turn { 0 } else { 1 }
+  let ox = 40 - lo_x * scale
+  let oy = 30 - lo_y * scale
+  var boxes: Text[] = []
+  var arcs: Text[] = []
+  var path = ""
+  for k in 0 until sq.length() {
+    let q = sq[k]
+    let side = q[2] - q[0]
+    let x = ox + q[0] * scale
+    let y = oy + q[1] * scale
+    let s = side * scale
+    let tx = x + s / 2
+    let ty = y + s / 2 + (s / 6).min(18) / 3
+    let font = (s / 4).min(30)
+    let shown = if font < 9 { "" } else { side.to_text() }
+    boxes = boxes.append(f"<g class=\"sq bit\" id=\"sq{k}\"><rect pathLength=\"1\" x=\"{f1(x)}\" y=\"{f1(y)}\" width=\"{f1(s)}\" height=\"{f1(s)}\"/><text class=\"side\" x=\"{f1(tx)}\" y=\"{f1(ty)}\" style=\"font-size:{f1(font)}px\">{shown}</text></g>")
+    let ax = ox + q[4] * scale
+    let ay = oy + q[5] * scale
+    let bx = ox + q[6] * scale
+    let by = oy + q[7] * scale
+    path = if k == 0 { f"M{f1(ax)} {f1(ay)}" } else { path }
+    // A mirrored figure turns the other way round.
+    path = path + f" A{f1(s)} {f1(s)} 0 0 {sweep} {f1(bx)} {f1(by)}"
+  }
+  let corner = f"<g id=\"origin\"><circle cx=\"{f1(ox)}\" cy=\"{f1(oy)}\" r=\"3\"/></g>"
+  return f"<svg viewBox=\"0 0 860 500\" role=\"img\" aria-label=\"Fibonacci squares and the golden spiral\"><g id=\"squares\">{boxes.join(\"\")}</g><path id=\"spiral\" class=\"bit\" pathLength=\"1\" d=\"{path}\"/>{corner}</svg>"
+}
+
+// The sentences of the golden spiral, with their numbers worked here.
+fn golden_steps(count: Number) -> Text[] {
+  var fs: Number[] = [1, 1]
+  while fs.length() < count { fs = fs.append(fs[fs.length() - 1] + fs[fs.length() - 2]) }
+  let phi = at(div(add(num(1), pow(num(5), num(0.5))), num(2)), [], [])
+  let last = fs[fs.length() - 1] / fs[fs.length() - 2]
+  var sums: Text[] = []
+  for i in 2 until 6 { sums = sums.append(f"{fs[i - 2]} + {fs[i - 1]} = {fs[i]}") }
+  let listed = (for f in fs { f.to_text() }).join(", ")
+  var ratios: Text[] = []
+  for i in 2 until fs.length() { ratios = ratios.append((fs[i] / fs[i - 1]).to_fixed(3)) }
+  return [
+    step_line(0, "sq0 sq1 sq2 sq3 sq4", f"{sums.join(\"   \")}", f"Each number is the sum of the two before it: {listed}."),
+    step_line(1, "sq5 sq6 sq7 sq8", "", "Draw a square for each number, every one laid against the edge of the ones before, turning a quarter each time."),
+    step_line(2, "spiral", "", "A quarter circle through each square, corner to corner, joins into one smooth spiral: the golden spiral."),
+    step_line(3, "sq7 sq8", f"{ratios.join(\"  &#8594;  \")}", f"Divide each number by the one before and the answer settles on &#966; = {phi.to_fixed(3)}: here {fs[fs.length() - 1]} / {fs[fs.length() - 2]} = {last.to_fixed(3)}."),
+    step_line(4, "photo", "", "Sunflowers, pinecones and pineapples grow their seeds and scales one golden angle (137.5&#176;) apart, so their spirals come in neighbouring Fibonacci numbers, like 21 and 34.")
+  ]
+}
+
+// ---------------------------------------------------------------- page
+
+// One step of the explanation. `show` names the drawn elements the step
+// is about: they are drawn in when the step is reached and marked while
+// it is read or hovered. `hud` is a line of numbers shown with it.
+fn step_line(i: Number, show: Text, hud: Text, text: Text) -> Text {
+  return f"<li class=\"say\" tabindex=\"0\" data-show=\"{show}\" data-hud=\"{hud}\"><b>{i + 1}</b><span data-text=\"{text}\"></span></li>"
+}
+
+// What Kosika is doing, said while it builds: true of this drawing, in
+// the order it does it.
+fn thinking(s: Structure) -> Text[] {
+  if s.figure == "golden_spiral" {
+    return ["Working out the Fibonacci numbers.", "Laying a square for each, edge to edge.", "Drawing the spiral through them."]
+  }
+  let what = if s.shape == "sketch" { f"{s.marks.length()} shapes" } else { f"{s.parts.length()} parts and {s.links.length()} links" }
+  return ["Reading the request.", f"Choosing a {s.shape} for {what}.", "Drawing it, one step at a time."]
+}
+
+// The drawn elements a sentence is about: parts are p-..., marks m-....
+fn shown_ids(s: Structure, st: Step) -> Text {
+  let parts = ids(s)
+  return (for id in st.parts { if parts.contains(id) { "p-" + id } else { "m-" + id } }).join(" ")
+}
+
+fn quoted(lines: Text[]) -> Text {
+  return "[" + (for l in lines { "&quot;" + l + "&quot;" }).join(",") + "]"
+}
+
+fn draw_style() -> Text {
+  return "@font-face{font-family:Figtree;src:url(/fonts/Figtree.ttf) format('truetype');font-weight:300 900;font-display:swap}:root{--bg:#07080d;--halo:#0e0f18;--ink:#eef0f7;--soft:#a3a8bd;--amber:#ff8a4c;--gold:#f5b45c;--think:#a993ff;--line:#fff;--line2:rgba(255,255,255,.5)}@media (prefers-color-scheme: light){:root{--bg:#f4f2ee;--halo:#f4f2ee;--ink:#16141f;--soft:#5b5870;--amber:#d4621f;--gold:#b8761c;--think:#6f58e0;--line:#000;--line2:rgba(0,0,0,.45)}}*{box-sizing:border-box}body{margin:0;background:transparent;color:var(--ink);font:16px/1.55 Figtree,system-ui,-apple-system,'Segoe UI',sans-serif;letter-spacing:.005em}main{max-width:980px;margin:0 auto;padding:28px 16px 48px}.brand{color:var(--gold);font:600 10px ui-monospace,Consolas,monospace;letter-spacing:.32em;text-transform:uppercase;display:flex;align-items:center;gap:12px}.brand:after{content:'';flex:1;height:1px;background:linear-gradient(90deg,color-mix(in srgb,var(--gold) 45%,transparent),transparent)}.ask{color:var(--soft);font-size:14px;margin:2px 0 14px}h1{font-size:30px;font-weight:850;letter-spacing:-.03em;line-height:1.08;margin:6px 0 8px}.think{font:13px ui-monospace,Consolas,monospace;color:var(--amber);min-height:20px;margin:0 0 10px}.think:before{content:'\\25CF  ';animation:blink 1s infinite}body.done .think:before{content:'\\2713  ';animation:none}svg{width:100%;height:auto;display:block}.hud{font:600 12px ui-monospace,Consolas,monospace;color:var(--amber);min-height:20px;margin:4px 0 10px}ol{list-style:none;margin:0;padding:0}.say{display:none;gap:12px;padding:6px 8px;border-radius:8px;cursor:default}.say.shown{display:flex}.say b{flex:none;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font:600 11px ui-monospace,Consolas,monospace;color:var(--think);border:1.5px solid color-mix(in srgb,var(--think) 70%,transparent)}.say.now b,.say:hover b,.say:focus b{background:var(--amber);border-color:var(--amber);color:#1a0f08;box-shadow:0 0 18px -2px var(--amber)}.say:hover,.say:focus{outline:none;background:rgba(255,181,71,.08)}.bar{display:flex;justify-content:space-between;align-items:center;margin-top:14px}button{font:600 10px ui-monospace,Consolas,monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--soft);background:none;border:1px solid var(--line2);border-radius:999px;padding:6px 12px;cursor:pointer}.bit{opacity:0;transition:opacity .35s}.bit.shown{opacity:1}.part rect,.ring>circle:first-child{fill:none;stroke:var(--line);stroke-width:1.4;transition:stroke .2s,stroke-width .2s}.part.shown rect,.part.shown>circle:first-child,.sq.shown rect,#spiral.shown{stroke-dasharray:1;animation:pen .7s ease-out both}.label{fill:var(--ink);font:600 14px system-ui,sans-serif;text-anchor:middle}.note{fill:var(--soft);font:12px system-ui,sans-serif;text-anchor:middle}.leader{fill:none;stroke:var(--line2);stroke-width:1}.dot{fill:var(--line)}.wire{fill:none;stroke:var(--line2);stroke-width:1.3}.head{fill:var(--line2)}.pulse{fill:none;stroke:var(--amber);stroke-width:2.6;stroke-dasharray:5 17;opacity:0}.linklabel{fill:var(--soft);font:12px system-ui,sans-serif;text-anchor:middle;paint-order:stroke;stroke:var(--halo);stroke-width:4px}.sq rect{fill:none;stroke:var(--line);stroke-width:1.2}.side{fill:var(--soft);font-weight:600;text-anchor:middle;font-family:system-ui,sans-serif}#spiral{fill:none;stroke:var(--line);stroke-width:2.4}#origin circle{fill:var(--amber)}.on rect,.on>circle:first-child,.sq.on rect{stroke:var(--amber);stroke-width:2.6;filter:drop-shadow(0 0 8px color-mix(in srgb,var(--amber) 70%,transparent))}.on .label{fill:var(--amber)}#spiral.on{stroke:var(--amber);stroke-width:3.4}.link.on .wire{stroke:var(--amber)}.link.on .pulse{opacity:1;animation:run 1s linear infinite}.ref{margin:16px 0 0}.ref img{width:100%;max-height:240px;object-fit:cover;border-radius:10px;transition:outline .2s}.ref.on img{outline:3px solid var(--amber)}.credit{color:var(--soft);font-size:12px;margin-top:6px}.credit a{color:var(--amber)}@keyframes pen{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}@keyframes run{to{stroke-dashoffset:-22}}@keyframes blink{50%{opacity:.25}}@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}"
+}
+
+// The build: Kosika's own steps are typed out, then each explanation
+// step draws in what it is about, marks it, and types its sentence,
+// before the next begins. Afterwards hovering a step marks it again.
+fn draw_script() -> Text {
+  return "if(window.top===window)document.documentElement.style.background=getComputedStyle(document.documentElement).getPropertyValue('--bg');var steps=[].slice.call(document.querySelectorAll('.say')),think=document.getElementById('think'),hud=document.getElementById('hud'),slow=!matchMedia('(prefers-reduced-motion: reduce)').matches,running=false;function wait(ms){return new Promise(function(r){setTimeout(r,slow?ms:0)})}function plain(t){var d=document.createElement('textarea');d.innerHTML=t;return d.value}function els(s){return (s.dataset.show||'').split(' ').filter(Boolean).map(function(id){return document.getElementById(id)}).filter(Boolean)}function links(){document.querySelectorAll('.link').forEach(function(l){var a=document.getElementById(l.dataset.a),b=document.getElementById(l.dataset.b);if(a&&b&&a.classList.contains('shown')&&b.classList.contains('shown'))l.classList.add('shown')})}function mark(s){document.querySelectorAll('.on').forEach(function(e){e.classList.remove('on')});hud.innerHTML='';if(!s)return;var es=els(s),ids=es.map(function(e){return e.id});es.forEach(function(e){e.classList.add('on')});document.querySelectorAll('.link').forEach(function(l){if(ids.indexOf(l.dataset.a)>=0&&ids.indexOf(l.dataset.b)>=0)l.classList.add('on')});hud.innerHTML=s.dataset.hud||''}async function type(el,text){text=plain(text);if(!slow){el.textContent=text;return}for(var i=1;i<=text.length;i+=2){el.textContent=text.slice(0,i+1);await wait(16)}}async function build(){if(running)return;running=true;document.body.classList.remove('done');document.querySelectorAll('.bit').forEach(function(e){e.classList.remove('shown')});steps.forEach(function(s){s.classList.remove('shown','now');s.querySelector('span').textContent=''});mark(null);var lines=JSON.parse(think.dataset.lines);for(var k=0;k<lines.length;k++){await type(think,lines[k]);await wait(450)}for(var i=0;i<steps.length;i++){var s=steps[i];s.classList.add('shown','now');var es=els(s);for(var j=0;j<es.length;j++){es[j].classList.add('shown');links();mark(s);await wait(240)}mark(s);await type(s.querySelector('span'),s.querySelector('span').dataset.text);await wait(800);s.classList.remove('now')}document.querySelectorAll('.bit').forEach(function(e){e.classList.add('shown')});mark(null);think.textContent=think.dataset.done;document.body.classList.add('done');running=false}steps.forEach(function(s){s.addEventListener('mouseenter',function(){if(!running)mark(s)});s.addEventListener('focus',function(){if(!running)mark(s)});s.addEventListener('mouseleave',function(){if(!running)mark(null)});s.addEventListener('blur',function(){if(!running)mark(null)})});document.getElementById('replay').addEventListener('click',build);build();"
+}
+
+fn reference_photo(p: Picture) -> Text {
+  if p.image.is_empty() { return "" }
+  return f"<figure class=\"ref bit\" id=\"photo\"><img src=\"{p.image}\" alt=\"{escaped(p.title)}\"><figcaption class=\"credit\">Real example: <a href=\"{p.page_url}\">{escaped(p.title)}</a> by {escaped(p.author)}, <a href=\"{p.license_url}\">{escaped(p.license)}</a>, Wikimedia Commons.</figcaption></figure>"
+}
+
+fn draw_page(r: Request) -> Text {
+  let s = r.structure
+  let golden = s.figure == "golden_spiral"
+  let drawing = if golden { golden_svg(9) } else { structure_svg(s) }
+  let sentences = if golden { golden_steps(9).join("") } else { (for i in 0 until s.steps.length() { step_line(i, shown_ids(s, s.steps[i]), "", escaped(s.steps[i].text)) }).join("") }
+  let think = f"<div class=\"think\" id=\"think\" data-lines=\"{quoted(thinking(s))}\" data-done=\"Done. Hover a step to mark it again.\"></div>"
+  return f"<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Kosika Designs</title><style>{draw_style()}{kinds_style()}</style></head><body><main><div class=\"brand\">Kosika Designs</div><div class=\"ask\">&#8220;{escaped(r.ask)}&#8221;</div><h1>{escaped(s.title)}</h1>{think}{drawing}<div class=\"hud\" id=\"hud\"></div><ol>{sentences}</ol>{reference_photo(r.picture)}<div class=\"bar\"><span class=\"credit\">{escaped(s.summary)}</span><button id=\"replay\" type=\"button\">Replay</button></div></main><script>{draw_script()}</script></body></html>"
+}
+
+workflow draw(r: Request) -> Design {
+  wrong = problems(r.structure)
+  out = {page: if wrong.is_empty() { draw_page(r) } else { "" }, problems: wrong}
+}
+
+// ---------------------------------------------------------------- tests
+
+fn sample() -> Structure {
+  return {title: "t", summary: "s", shape: "flow", figure: "", photo: "", parts: [
+    {id: "a", label: "Tokenizer", note: "text to ids", parent: ""},
+    {id: "b", label: "Embeddings", note: "", parent: ""},
+    {id: "c", label: "Attention", note: "", parent: ""},
+    {id: "d", label: "Next token", note: "", parent: ""}
+  ], links: [{from: "a", to: "b", label: ""}, {from: "b", to: "c", label: ""}, {from: "c", to: "d", label: ""}, {from: "d", to: "a", label: "repeat"}],
+  steps: [{text: "one", parts: ["a", "b"]}, {text: "two", parts: ["c", "d"]}], marks: []}
+}
+
+test "a good description has nothing wrong with it" {
+  expect problems(sample()).length() == 0
+}
+
+test "the problems name what is wrong" {
+  bad = {..sample(), shape: "blob", links: [{from: "a", to: "zz", label: ""}], steps: [{text: "x", parts: ["q"]}]}
+  said = problems(bad)
+  expect said.contains("shape blob is not one of flow, cycle, layers, hub, nested, tree, mindmap, graph, timeline, compare, sketch")
+  expect said.contains("a link ends at zz, and no part has that id")
+  expect said.contains("a sentence points at q, and no part has that id")
+}
+
+test "a flow puts each part one column after what feeds it" {
+  expect columns(sample()) == [0, 1, 2, 3]
+}
+
+test "Fibonacci squares have Fibonacci sides and a joined spiral" {
+  sq = golden_squares(8)
+  sides = for q in sq { q[2] - q[0] }
+  expect sides == [1, 1, 2, 3, 5, 8, 13, 21]
+  expect joined(sq)
+}
+
+fn family() -> Structure {
+  return {title: "t", summary: "s", shape: "tree", figure: "", photo: "", parts: [
+    {id: "root", label: "Animals", note: "", parent: ""},
+    {id: "a", label: "Birds", note: "", parent: "root"},
+    {id: "b", label: "Mammals", note: "", parent: "root"},
+    {id: "c", label: "Owls", note: "", parent: "a"},
+    {id: "d", label: "Whales", note: "", parent: "b"},
+    {id: "e", label: "Bats", note: "", parent: "b"}
+  ], links: [], steps: [{text: "one", parts: ["root"]}, {text: "two", parts: ["a", "b"]}], marks: []}
+}
+
+test "a tree puts each parent over its children, one level per row" {
+  at = tree_layout(family(), 800, 400)
+  expect problems(family()).length() == 0
+  expect at[1][0] < at[1][1] and at[1][1] < at[1][3]
+  expect at[0][2] == (at[0][4] + at[0][5]) / 2
+}
+
+test "a loop of parents is refused" {
+  looped = {..family(), parts: [{id: "x", label: "X", note: "", parent: "y"}, {id: "y", label: "Y", note: "", parent: "x"}], steps: [{text: "a", parts: ["x"]}, {text: "b", parts: ["y"]}]}
+  expect problems(looped).contains("the parents go round in a loop")
+}
+
+test "a graph's force layout keeps every vertex apart" {
+  g = {..family(), shape: "graph", parts: for id in ["a", "b", "c", "d", "e", "f"] { {id: id, label: id.upper(), note: "", parent: ""} }, links: [{from: "a", to: "b", label: ""}, {from: "b", to: "c", label: ""}, {from: "c", to: "a", label: ""}, {from: "d", to: "e", label: ""}, {from: "e", to: "f", label: ""}, {from: "f", to: "d", label: ""}, {from: "a", to: "d", label: ""}], steps: [{text: "a", parts: ["a"]}, {text: "b", parts: ["d"]}]}
+  expect problems(g).length() == 0
+  at = graph_layout(g, 800, 500)
+  expect closest(at) > 60
+}
+
+test "a sketch's marks are checked and smoothed" {
+  sk = {..family(), shape: "sketch", parts: [], marks: [{id: "cell", kind: "shape", points: [20, 20, 80, 25, 70, 80, 25, 70], label: "Cell"}, {id: "flow", kind: "arrow", points: [10, 90, 50, 60, 90, 90], label: ""}], steps: [{text: "a", parts: ["cell"]}, {text: "b", parts: ["flow"]}]}
+  expect problems(sk).length() == 0
+  expect smooth([0, 0, 50, 50, 100, 0], false, 100, 100).starts_with("M0.0 0.0 C")
+  bad = {..sk, marks: [{id: "cell", kind: "blob", points: [20, 20, 300], label: ""}]}
+  expect problems(bad).length() >= 3
+}

@@ -1,0 +1,251 @@
+// Kosika Designs, step one: think of the best real-world example.
+//
+//   kosika run main.kos --workflow think --input ask.json
+//       --model openai/gpt-oss-120b --model-url https://api.groq.com/openai/v1
+//       --model-protocol openai
+//
+// where ask.json holds {"ask": {"text": "create a visual representation
+// of the Fibonacci sequence"}}. make.ps1 runs every step in order.
+//
+// A model proposes real things that show the idea, best first, each with
+// the words to search a library of free photos for (after Kosika's own words
+// for the photo its tracer needs, separated by |). Kosika keeps only the
+// ones it can trace and measure on a photo today, and says which others
+// were suggested, so a proposal never becomes a drawing Kosika cannot
+// check. The model only suggests; what is drawn is decided and measured
+// by code (eyes.py finds and reads the photo, sunflower.kos draws it).
+
+import "draw.kos"
+
+export [Ask, Plan, Job, think, describe, automation, kinds_guide]
+
+record Ask { text: Text }
+record Brief { task: Text ask: Text }
+record Idea { example: Text kind: Text why: Text search: Text }
+record Ideas { items: Idea[] }
+// What the next steps are given: the example chosen, why, and what to
+// search for; the rest of the model's ideas, for the page to mention.
+record Plan { ask: Text example: Text kind: Text why: Text search: Text needs: Text[] others: Text[] }
+
+model curator {
+  input: Brief
+  output: Ideas
+  parameters: {
+    max_output_tokens: 1200
+  }
+}
+
+// The kinds of thing Kosika can trace on a real photo, and measure.
+fn traceable() -> Text[] { return ["sunflower_head"] }
+
+// The photo each tracer needs, in words a photo library knows: the
+// model's own search words come after these, so a vague search ("seeds
+// close-up") cannot pick a photo the tracer cannot read.
+fn photo_words(kind: Text) -> Text {
+  if kind == "sunflower_head" { return "sunflower head close-up florets" }
+  return ""
+}
+
+// A photo is only used when its title names the thing: a search for
+// sunflowers also finds gerberas, which the tracer would misread.
+fn title_words(kind: Text) -> Text[] {
+  if kind == "sunflower_head" { return ["sunflower", "helianthus"] }
+  return []
+}
+
+fn curator_task() -> Text {
+  return "Someone asked for a visual representation of an idea. Think of the three best real-world things a camera can photograph that show this idea clearly, best first. For each give: example, the thing in two or three plain words, like sunflower head; kind, one of sunflower_head, pinecone, nautilus_shell, romanesco, succulent_rosette, pineapple, galaxy, other; why, one plain sentence on how it shows the idea; search, three to five words to find a clear, close-up photo of it in a library of free photos. Only name things that really show the idea."
+}
+
+fn no_ideas() -> Ideas { return {items: []} }
+
+fn fallback() -> Idea {
+  return {example: "sunflower head", kind: "sunflower_head", why: "Its seeds sit in spirals whose counts are neighbouring Fibonacci numbers.", search: "sunflower head close-up florets"}
+}
+
+fn choose(ask: Text, ideas: Ideas) -> Plan {
+  let usable = for idea in ideas.items where traceable().contains(idea.kind) { idea }
+  let pick = if usable.is_empty() { fallback() } else { usable[0] }
+  let others = for idea in ideas.items where idea.example != pick.example { idea.example.trim() }
+  let words = photo_words(pick.kind)
+  let search = if words.is_empty() { pick.search.trim() } else { words + "|" + pick.search.trim() }
+  return {ask: ask, example: pick.example.trim(), kind: pick.kind, why: pick.why.trim(), search: search, needs: title_words(pick.kind), others: others}
+}
+
+workflow think(ask: Ask) -> Plan {
+  budget 2 model calls, 300 seconds
+  ideas = use_model curator(curator_task(), ask.text) retry 1 otherwise no_ideas()
+  out   = choose(ask.text, ideas)
+}
+
+test "Kosika keeps the first idea it can trace" {
+  ideas: Ideas = {items: [
+    {example: "nautilus shell", kind: "nautilus_shell", why: "w", search: "s"},
+    {example: "sunflower", kind: "sunflower_head", why: "Spirals.", search: "sunflower head"}
+  ]}
+  plan = choose("fibonacci", ideas)
+  expect plan.example == "sunflower"
+  expect plan.search == "sunflower head close-up florets|sunflower head"
+  expect plan.needs == ["sunflower", "helianthus"]
+  expect plan.others == ["nautilus shell"]
+}
+
+test "with nothing traceable it falls back to a sunflower head" {
+  plan = choose("fibonacci", {items: [{example: "galaxy", kind: "galaxy", why: "w", search: "s"}]})
+  expect plan.kind == "sunflower_head"
+  expect plan.others == ["galaxy"]
+}
+
+// ---------------------------------------------------------------- any request
+
+// First the kind of picture is chosen, then it is described: a model that
+// knows it is drawing a graph describes vertices and edges, not boxes.
+record Pick { task: Text ask: Text }
+record Choice { shape: Text figure: Text why: Text }
+
+// What the designer is given: how to describe, what was asked, the kind
+// of picture chosen and why, and, on a second try, what was wrong with
+// the first description.
+record DesignBrief { task: Text ask: Text plan: Text problems: Text }
+
+model planner {
+  input: Pick
+  output: Choice
+  parameters: {
+    max_output_tokens: 4000
+  }
+}
+
+model designer {
+  input: DesignBrief
+  output: Structure
+  parameters: {
+    max_output_tokens: 8000
+  }
+}
+
+fn kinds_guide() -> Text {
+  return "flow: steps or stages in order, a process, a pipeline, a workflow, an algorithm. cycle: a process that comes back to where it started. layers: a stack from top to bottom, like a network stack or the layers of a system. hub: one centre with things around it that each connect to it. nested: things inside things, like an atom or the Earth's layers. tree: a hierarchy or classification, like a family tree, an org chart, a taxonomy or a decision tree. mindmap: one idea in the middle with branches of related ideas, for brainstorming or an overview of a topic. graph: vertices joined by edges, as in discrete mathematics, networks, maps of connections, social networks, state machines with no single order. timeline: events in time order, history, a schedule. compare: two to four things side by side, row by row. sketch: anything that is a physical shape or picture rather than boxes and lines, like an organ, a cell, a landscape, a machine part or a diagram of forces."
+}
+
+fn planner_task() -> Text {
+  return "Choose the one kind of picture that would explain the request most clearly. The kinds: " + kinds_guide() + " Give shape (one of flow, cycle, layers, hub, nested, tree, mindmap, graph, timeline, compare, sketch), figure (golden_spiral only if the request is about the Fibonacci sequence, the golden ratio or the golden spiral, otherwise empty) and why (one sentence)."
+}
+
+fn designer_task() -> Text {
+  return "You describe the structure of what someone asked to see, so that it can be drawn as a clear diagram of the kind given in plan. Do not draw: describe. Give title (a short heading), summary (one plain sentence), shape (the kind in plan), figure (as in plan; when it is golden_spiral leave parts, links, steps and marks empty), photo (two to five words to find one real, clear photo of the thing in a library of free photos, or empty when a photo would not help, as for an abstract process), parts (each with id: a short lowercase word, label: 1 to 3 words, note: up to 6 words, parent: empty or the id of the part it hangs from), links (from and to are part ids, label up to 3 words or empty), steps (3 to 6 sentences that explain it in order, each under 25 words, plain and exact, each with parts: the ids of the parts or marks it is about) and marks (empty unless the kind is sketch). By kind: flow, cycle, layers, hub: 4 to 10 parts, parent empty, links in order. nested: parts from the very centre outward, no links. tree: 5 to 16 parts, exactly one root with parent empty, every other part names its parent, no links. mindmap: the central idea is the root with parent empty, 4 to 6 main branches, each with 1 to 3 sub-ideas, 10 to 20 parts, no links. graph: 4 to 12 vertices, each label 1 to 4 characters when it is a mathematical vertex like A or v1, otherwise a short name, edges as links, label as the weight or empty; when two vertices are joined more than once (a multigraph), list every edge separately; in the sentences, state degrees and paths exactly as the edges you listed give them. timeline: 4 to 10 parts in time order, note is the date or time. compare: 2 to 4 column parts with parent empty, each with 2 to 6 row parts whose parent is that column, rows matched across columns. sketch: no parts and no links; 3 to 14 marks, each with id, kind (shape for a closed outline, curve for a line, arrow for a direction, dot for a point, text for a word), points as x, y, x, y on a 0 to 100 grid with y down (shapes 5 to 12 points round the outline in order, curves and arrows 2 to 6 points), and label (1 to 3 words or empty); draw the real outline of the thing in proportion. Use only true, standard facts. If problems are given, they are what was wrong with your last description: fix every one."
+}
+
+fn no_choice() -> Choice { return {shape: "flow", figure: "", why: "a flow suits most explanations"} }
+
+fn chosen_shape(c: Choice) -> Text { return if kinds().contains(c.shape) { c.shape } else { "flow" } }
+fn chosen_figure(c: Choice) -> Text { return if c.figure == "golden_spiral" { "golden_spiral" } else { "" } }
+
+fn plan_of(c: Choice) -> Text {
+  let figure = if chosen_figure(c).is_empty() { "none, so leave figure empty" } else { chosen_figure(c) }
+  return f"Draw it as a {chosen_shape(c)}. Figure: {figure}. Why: {c.why}"
+}
+
+// The kind is Kosika's decision once chosen: whatever the designer wrote
+// in shape and figure, the chosen ones are used.
+fn steered(s: Structure, c: Choice) -> Structure {
+  return {..s, shape: chosen_shape(c), figure: chosen_figure(c)}
+}
+
+fn no_structure() -> Structure {
+  return {title: "", summary: "", shape: "", figure: "", photo: "", parts: [], links: [], steps: [], marks: []}
+}
+
+fn no_picture() -> Picture {
+  return {title: "", author: "", license: "", license_url: "", page_url: "", image: ""}
+}
+
+fn kept(s: Structure) -> Structure { return s }
+
+fn again(s: Structure) -> Text {
+  return problems(s).join("; ")
+}
+
+// A model describes; Kosika checks; a description with problems goes back
+// once, with the problems named. What reaches the drawing has none, or the
+// drawing step refuses it and says why.
+workflow describe(ask: Ask) -> Request {
+  budget 6 model calls, 600 seconds
+  choice = use_model planner(planner_task(), ask.text) retry 1 otherwise no_choice()
+  plan   = plan_of(choice)
+  said   = use_model designer(designer_task(), ask.text, plan, "") retry 1 otherwise no_structure()
+  first  = steered(said, choice)
+  wrong  = again(first)
+  better = match wrong.is_empty() {
+    case true { first }
+    case _ { call redescribe(ask, {text: plan}, {text: wrong}, first, choice) }
+  }
+  out = {ask: ask.text, structure: better, picture: no_picture()}
+}
+
+// The second try, told what was wrong with the first.
+workflow redescribe(ask: Ask, plan: Ask, wrong: Ask, first: Structure, choice: Choice) -> Structure {
+  answer = use_model designer(designer_task(), ask.text, plan.text, wrong.text) retry 1 otherwise kept(first)
+  out    = steered(answer, choice)
+}
+
+test "an unknown kind from the planner becomes a flow" {
+  expect plan_of({shape: "spaghetti", figure: "", why: "w"}).starts_with("Draw it as a flow.")
+  expect steered(no_structure(), {shape: "graph", figure: "It shows weights", why: "w"}).figure == ""
+  expect steered(no_structure(), {shape: "graph", figure: "", why: "w"}).shape == "graph"
+}
+
+// ---------------------------------------------------------------- automations
+
+// What Kosi handed to a helper, drawn so it can be seen: who it went to,
+// what the helper may touch, and what came back, or, for a job that would
+// change something, the plan waiting for a yes. Drawn by code from what
+// really happened; no model is asked.
+record Job { ask: Text agent: Text text: Text touches: Text[] result: Text waiting: Bool }
+
+fn helper_note(agent: Text) -> Text {
+  if agent == "gatherer" { return "reads the news and Wikipedia" }
+  if agent == "steward" { return "reads your services' status" }
+  if agent == "lookout" { return "watches a page, rings your phone" }
+  if agent == "desk" { return "reads one folder you choose" }
+  return "a Kosika agent"
+}
+
+fn job_structure(j: Job) -> Structure {
+  let helper = j.agent.slice(0, 1).upper() + j.agent.slice(1, j.agent.length())
+  var parts: Part[] = [
+    {id: "you", label: "You", note: j.ask.slice(0, j.ask.length().min(40)), parent: ""},
+    {id: "kosi", label: "Kosi", note: "decides who should do it", parent: ""},
+    {id: "helper", label: helper, note: helper_note(j.agent), parent: ""}
+  ]
+  var links: Link[] = [{from: "you", to: "kosi", label: "asks"}, {from: "kosi", to: "helper", label: "hands over"}]
+  var touched: Text[] = []
+  for k in 0 until j.touches.length().min(3) {
+    let id = f"t{k}"
+    parts = parts.append({id: id, label: j.touches[k].slice(0, j.touches[k].length().min(26)), note: "read only", parent: ""})
+    links = links.append({from: "helper", to: id, label: "reads"})
+    touched = touched.append(id)
+  }
+  let last = if j.waiting { "yes" } else { "answer" }
+  parts = parts.append({id: last, label: if j.waiting { "Your yes" } else { "Answer" }, note: if j.waiting { "nothing runs before it" } else { "back to you" }, parent: ""})
+  links = links.append({from: if touched.is_empty() { "helper" } else { touched[touched.length() - 1] }, to: last, label: ""})
+  let steps: Step[] = [
+    {text: f"Kosi read your message and handed it to {helper}, which {helper_note(j.agent)}.", parts: ["you", "kosi", "helper"]},
+    {text: if touched.is_empty() { f"{helper} works only with what it is allowed to touch." } else { f"It may read only {j.touches.join(\", \")}, and nothing else." }, parts: ["helper"].concat(touched)},
+    {text: if j.waiting { f"This would change something, so it waits: say yes with Approve and {helper} does it." } else { f"{helper} answered, and the answer came back to you." }, parts: [last]}
+  ]
+  let title = if j.waiting { f"Kosi's plan: {j.text}" } else { f"Kosi asked {helper}" }
+  return {title: title.slice(0, title.length().min(70)), summary: if j.waiting { "A plan, waiting for your yes." } else { "What Kosi did to answer." }, shape: "flow", figure: "", photo: "", parts: parts, links: links, steps: steps, marks: []}
+}
+
+workflow automation(j: Job) -> Request {
+  out = {ask: j.ask, structure: job_structure(j), picture: no_picture()}
+}
+
+test "an automation is drawn as a checked flow" {
+  done = job_structure({ask: "look up F1", agent: "gatherer", text: "F1", touches: ["news.google.com", "en.wikipedia.org"], result: "r", waiting: false})
+  expect problems(done).length() == 0
+  waiting = job_structure({ask: "watch it", agent: "lookout", text: "watch https://github.com/x", touches: ["github.com"], result: "", waiting: true})
+  expect problems(waiting).length() == 0
+  expect waiting.parts[waiting.parts.length() - 1].id == "yes"
+}

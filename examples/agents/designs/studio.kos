@@ -1,0 +1,106 @@
+// Kosika Designs, the screen: a real photo with the structure drawn on it,
+// and the explanation beside it, built step by step.
+//
+//   kosika-native run studio.kos --workflow screen --input screen.json
+//
+// where screen.json holds {"s": {"ask": ..., "m": <eyes.py's measured
+// record>, "examples": [<Picture>, ...], "names": ["Sunflower", ...]}}. design.ps1 -Screen makes it.
+//
+// What is measured and what is drawn are kept apart, and the page says
+// which is which: the seed-head centre and the spiral counts are measured
+// on this photo by sunflower.kos; the golden squares and spiral are drawn
+// exactly by draw.kos, to scale, from that measured centre.
+
+import "draw.kos"
+import "sunflower.kos"
+
+export [Screen, Shown, screen]
+
+record Screen { ask: Text m: Measured examples: Picture[] names: Text[] }
+record Shown { page: Text verdict: Text }
+
+// The golden squares and spiral in the photo's own pixels: the spiral
+// starts at the measured centre, and the largest square spans the head.
+fn golden_on(cx: Number, cy: Number, disc: Number, w: Number, h: Number) -> Text {
+  let sq = golden_squares(9)
+  // As large as spans the head, but never past the photo's edges: the
+  // spiral must start at the measured centre, so it shrinks to fit.
+  var lo_x = 0
+  var lo_y = 0
+  var hi_x = 1
+  var hi_y = 1
+  for q in sq {
+    lo_x = lo_x.min(q[0])
+    lo_y = lo_y.min(q[1])
+    hi_x = hi_x.max(q[2])
+    hi_y = hi_y.max(q[3])
+  }
+  let ex = sq[0][4]
+  let ey = sq[0][5]
+  let fit = [cx / (ex - lo_x), (w - cx) / (hi_x - ex), cy / (ey - lo_y), (h - cy) / (hi_y - ey)].min().or(1) * 0.97
+  let unit = (disc * 3.2 / 55).min(fit)
+  let ox = cx - sq[0][4] * unit
+  let oy = cy - sq[0][5] * unit
+  var boxes: Text[] = []
+  var path = ""
+  for k in 0 until sq.length() {
+    let q = sq[k]
+    let side = q[2] - q[0]
+    let s = side * unit
+    let x = ox + q[0] * unit
+    let y = oy + q[1] * unit
+    let label = if s < 26 { "" } else { side.to_text() }
+    boxes = boxes.append(f"<g class=\"sq bit\" id=\"sq{k}\"><rect pathLength=\"1\" x=\"{f1(x)}\" y=\"{f1(y)}\" width=\"{f1(s)}\" height=\"{f1(s)}\"/><text class=\"side\" x=\"{f1(x + 8)}\" y=\"{f1(y + 18)}\">{label}</text></g>")
+    path = if k == 0 { f"M{f1(ox + q[4] * unit)} {f1(oy + q[5] * unit)}" } else { path }
+    path = path + f" A{f1(s)} {f1(s)} 0 0 1 {f1(ox + q[6] * unit)} {f1(oy + q[7] * unit)}"
+  }
+  return f"<g id=\"squares\">{boxes.join(\"\")}</g><path id=\"spiral\" class=\"bit\" pathLength=\"1\" d=\"{path}\"/>"
+}
+
+fn screen_step(i: Number, show: Text, text: Text) -> Text {
+  return f"<li class=\"say\" tabindex=\"0\" data-show=\"{show}\"><b>{i + 1}</b><span data-text=\"{text}\"></span></li>"
+}
+
+fn example(p: Picture, name: Text, first: Bool) -> Text {
+  let cls = if first { "ex now" } else { "ex" }
+  return f"<a class=\"{cls}\" href=\"{p.page_url}\" title=\"{escaped(p.title)} by {escaped(p.author)}, {escaped(p.license)}\"><img src=\"{p.image}\" alt=\"\"><span>{escaped(name)}</span></a>"
+}
+
+fn screen_style() -> Text {
+  return ":root{--bg:#0a0920;--side:#0d0c26;--panel:#111030;--ink:#ecebff;--soft:#9c98c9;--amber:#ffb547;--violet:#8b7dff;--edge:#211f4a;--line:#fff;--line2:rgba(255,255,255,.55)}@media (prefers-color-scheme: light){:root{--bg:#f7f6fd;--side:#efedfb;--panel:#fff;--ink:#17143b;--soft:#5d5888;--amber:#b56a00;--violet:#5b4bd6;--edge:#dedaf3;--line:#000;--line2:rgba(0,0,0,.5)}}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 system-ui,-apple-system,'Segoe UI',sans-serif}.app{display:grid;grid-template-columns:200px minmax(0,1fr) 340px;grid-template-rows:64px 1fr;min-height:100vh}header{grid-column:1/4;display:flex;align-items:center;gap:28px;padding:0 20px;border-bottom:1px solid var(--edge)}.logo{display:flex;align-items:center;gap:10px;font-weight:650;width:180px}.logo i{width:26px;height:26px;border-radius:8px;background:conic-gradient(from 200deg,var(--violet),var(--amber),var(--violet))}.ask{flex:1;max-width:640px;border:1px solid var(--edge);border-radius:10px;padding:9px 14px;color:var(--soft);background:var(--panel)}.ask b{color:var(--amber);font-weight:600;margin-right:8px}nav{padding:18px 12px;background:var(--side);border-right:1px solid var(--edge)}nav a{display:flex;justify-content:space-between;padding:9px 12px;border-radius:9px;color:var(--soft);text-decoration:none;margin-bottom:4px}nav a.on{background:rgba(139,125,255,.16);color:var(--ink)}nav small{font-size:11px;opacity:.7}main{padding:22px 24px;min-width:0}h1{font-size:24px;margin:0 0 2px}.sub{color:var(--soft);margin:0 0 14px}.think{font:12px ui-monospace,Consolas,monospace;color:var(--amber);min-height:18px;margin-bottom:8px}.think:before{content:'\\25CF  ';animation:blink 1s infinite}body.done .think:before{content:'\\2713  ';animation:none}.stage{position:relative;border-radius:14px;overflow:hidden;border:1px solid var(--edge);line-height:0}.stage svg{width:100%;height:auto;display:block}.photo{opacity:.55;transition:opacity .3s}.raw .photo{opacity:1}.raw .over{opacity:0}.chip{position:absolute;line-height:1.4;font:12px ui-monospace,Consolas,monospace;background:rgba(10,9,32,.75);color:#ecebff;border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:6px 10px}.chip.at{left:12px;bottom:12px}.chip.btn{right:12px;top:12px;cursor:pointer;font-family:system-ui}.row{display:grid;grid-template-columns:minmax(0,1fr) 240px;gap:18px;margin-top:16px;align-items:start}.label{font-size:13px;color:var(--soft);margin:0 0 8px}.exs{display:flex;flex-wrap:wrap;gap:10px}.ex{width:72px;text-decoration:none;color:var(--soft);font-size:11px;text-align:center}.ex img{width:72px;height:72px;object-fit:cover;border-radius:10px;border:2px solid transparent;display:block;margin-bottom:4px}.ex.now img{border-color:var(--violet)}.card{border:1px solid var(--edge);border-radius:12px;padding:12px 14px;background:var(--panel)}.card p{margin:0 0 4px;display:flex;justify-content:space-between;font-size:13px;color:var(--soft)}.card p b{color:var(--ink)}.card .note{display:block;font-size:11px;margin-top:6px}aside{border-left:1px solid var(--edge);padding:22px 20px;background:var(--side)}aside h2{font-size:16px;margin:0 0 6px}aside p{color:var(--soft);margin:0 0 12px}.seq{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:18px}.seq span{font:600 15px ui-monospace,Consolas,monospace;padding:3px 7px;border-radius:6px;background:var(--panel);border:1px solid var(--edge)}ol{list-style:none;margin:0;padding:0}.say{display:none;gap:12px;padding:8px;border-radius:9px;cursor:default}.say.shown{display:flex}.say b{flex:none;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:12px;color:var(--violet);border:1.5px solid var(--violet)}.say.now b,.say:hover b,.say:focus b{background:var(--amber);border-color:var(--amber);color:#0a0920}.say:hover,.say:focus{outline:none;background:rgba(255,181,71,.08)}.credit{font-size:11px;color:var(--soft);margin-top:14px}.credit a{color:var(--violet)}button.replay{margin-top:12px;font:600 12px system-ui;color:var(--ink);background:none;border:1px solid var(--edge);border-radius:999px;padding:6px 12px;cursor:pointer}.bit{opacity:0;transition:opacity .35s}.bit.shown{opacity:1}.sq rect{fill:none;stroke:var(--line);stroke-width:1.6}.side{fill:var(--line);font:600 15px system-ui;paint-order:stroke;stroke:rgba(0,0,0,.45);stroke-width:3px}#spiral{fill:none;stroke:var(--line);stroke-width:3}.sq.shown rect,#spiral.shown{stroke-dasharray:1;animation:pen .8s ease-out both}polyline{fill:none;stroke-linecap:round;stroke-linejoin:round}.cw{stroke:var(--line);stroke-width:1.4}.ccw{stroke:var(--line2);stroke-width:1.1;stroke-dasharray:4 3}#traced{opacity:0!important;transition:opacity .3s}#traced.on{opacity:1!important}#traced.on .cw,#traced.on .ccw{stroke:var(--amber)}.hub{fill:var(--amber)}.sq.on rect{stroke:var(--amber);stroke-width:3}#spiral.on{stroke:var(--amber);stroke-width:4.5}.seq span.on{border-color:var(--amber);color:var(--amber)}.card.on{border-color:var(--amber)}@keyframes pen{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}@keyframes blink{50%{opacity:.25}}@media (max-width:1100px){.app{grid-template-columns:1fr}header,nav,aside{grid-column:auto}nav{display:none}.row{grid-template-columns:1fr}}@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}"
+}
+
+fn screen_script() -> Text {
+  return "var steps=[].slice.call(document.querySelectorAll('.say')),think=document.getElementById('think'),slow=!matchMedia('(prefers-reduced-motion: reduce)').matches,running=false;function wait(ms){return new Promise(function(r){setTimeout(r,slow?ms:0)})}function plain(t){var d=document.createElement('textarea');d.innerHTML=t;return d.value}function els(s){return (s.dataset.show||'').split(' ').filter(Boolean).map(function(id){return document.getElementById(id)}).filter(Boolean)}function mark(s){document.querySelectorAll('.on').forEach(function(e){if(!e.classList.contains('ex'))e.classList.remove('on')});if(s)els(s).forEach(function(e){e.classList.add('on')})}async function type(el,text){text=plain(text);if(!slow){el.textContent=text;return}for(var i=1;i<=text.length;i+=2){el.textContent=text.slice(0,i+1);await wait(15)}}async function build(){if(running)return;running=true;document.body.classList.remove('done');document.querySelectorAll('.bit').forEach(function(e){e.classList.remove('shown')});steps.forEach(function(s){s.classList.remove('shown','now');s.querySelector('span').textContent=''});mark(null);var lines=JSON.parse(think.dataset.lines);for(var k=0;k<lines.length;k++){await type(think,lines[k]);await wait(400)}for(var i=0;i<steps.length;i++){var s=steps[i];s.classList.add('shown','now');var es=els(s);for(var j=0;j<es.length;j++){es[j].classList.add('shown');mark(s);await wait(220)}mark(s);await type(s.querySelector('span'),s.querySelector('span').dataset.text);await wait(800);s.classList.remove('now')}document.querySelectorAll('.bit').forEach(function(e){e.classList.add('shown')});mark(null);think.textContent=think.dataset.done;document.body.classList.add('done');running=false}steps.forEach(function(s){s.addEventListener('mouseenter',function(){if(!running)mark(s)});s.addEventListener('focus',function(){if(!running)mark(s)});s.addEventListener('mouseleave',function(){if(!running)mark(null)});s.addEventListener('blur',function(){if(!running)mark(null)})});document.getElementById('replay').addEventListener('click',build);var st=document.getElementById('stage'),rb=document.getElementById('raw');rb.addEventListener('click',function(){st.classList.toggle('raw');rb.textContent=st.classList.contains('raw')?'Show drawing':'Show original'});build();"
+}
+
+fn screen_page(sc: Screen, found: Found, verdict: Verdict) -> Text {
+  let m = sc.m
+  let src = m.source
+  let w = src.width
+  let h = src.height
+  let fs = [1, 1, 2, 3, 5, 8, 13, 21, 34]
+  let seq = (for i in 0 until fs.length() { f"<span id=\"n{i}\">{fs[i]}</span>" }).join("")
+  let traced = f"<g id=\"traced\" class=\"bit\">{chains(found, found.ccw, \"ccw\")}{chains(found, found.cw, \"cw\")}</g>"
+  let svg = f"<svg viewBox=\"0 0 {w} {h}\" role=\"img\" aria-label=\"{escaped(src.title)}, with the golden spiral drawn on it\"><image class=\"photo\" href=\"{src.image}\" width=\"{w}\" height=\"{h}\"/><g class=\"over\">{traced}{golden_on(found.cx, found.cy, found.disc, w, h)}<circle class=\"hub bit\" id=\"hub\" cx=\"{f1(found.cx)}\" cy=\"{f1(found.cy)}\" r=\"4\"/></g></svg>"
+  let counted = if verdict.measured { f"Measured: neighbours {verdict.cw_fib} and {verdict.ccw_fib} in the sequence" } else { "Not a measurement: the counts are not Fibonacci neighbours" }
+  let card = f"<div class=\"card\" id=\"card\"><div class=\"label\">In this image</div><p>Spirals one way <b>{found.cw_count}</b></p><p>Spirals the other way <b>{found.ccw_count}</b></p><span class=\"note\">{counted}. The squares and spiral are drawn to scale from the measured centre.</span></div>"
+  let examples = (for i in 0 until sc.examples.length() { example(sc.examples[i], if i < sc.names.length() { sc.names[i] } else { "" }, i == 0) }).join("")
+  let fib_now = if verdict.measured { f"about {verdict.cw_fib} turn one way and {verdict.ccw_fib} the other" } else { f"Kosika counted {found.cw_count} and {found.ccw_count}" }
+  let steps = [
+    screen_step(0, "n0 n1 n2 n3 n4 n5 n6 n7 n8", "Each number is the sum of the two before it."),
+    screen_step(1, "sq0 sq1 sq2 sq3 sq4 sq5 sq6 sq7 sq8", "Squares with those sides fit edge to edge, turning a quarter each time."),
+    screen_step(2, "spiral hub", f"A quarter circle in each square makes the golden spiral, drawn here from the head's centre at ({found.cx.round()}, {found.cy.round()})."),
+    screen_step(3, "traced card", f"The seeds really do sit in spirals: {fib_now}, traced seed to seed on this photo."),
+    screen_step(4, "n7 n8", f"Each seed grows {golden_angle().to_fixed(1)}&#176; round from the last, so none shades another: that angle is what makes the counts Fibonacci numbers.")
+  ]
+  let think = "<div class=\"think\" id=\"think\" data-lines=\"[&quot;Finding the centre of the seed head.&quot;,&quot;Counting its spirals both ways.&quot;,&quot;Drawing the Fibonacci squares to scale.&quot;]\" data-done=\"Done. Hover a step to mark it again.\"></div>"
+  let credit = f"<div class=\"credit\">Photo: <a href=\"{src.page_url}\">{escaped(src.title)}</a> by {escaped(src.author)}, <a href=\"{src.license_url}\">{escaped(src.license)}</a>, Wikimedia Commons. Lines drawn on it under the same licence.</div>"
+  return f"<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Kosika Designs</title><style>{screen_style()}</style></head><body><div class=\"app\"><header><div class=\"logo\"><i></i>Kosika Designs</div><div class=\"ask\"><b>&#10022;</b>{escaped(sc.ask)}</div></header><nav><a class=\"on\" href=\"#\">Designs</a><a href=\"#\">Maths <small>soon</small></a><a href=\"#\">Voice <small>soon</small></a><a href=\"#\">Text <small>soon</small></a></nav><main><h1>The Fibonacci sequence in nature</h1><p class=\"sub\">{escaped(m.plan.why)}</p>{think}<div class=\"stage\" id=\"stage\">{svg}<div class=\"chip at\">centre ({found.cx.round()}, {found.cy.round()}) &#183; disc r {found.disc.round()} px</div><button class=\"chip btn\" id=\"raw\" type=\"button\">Show original</button></div><div class=\"row\"><div><div class=\"label\">Real-world examples</div><div class=\"exs\">{examples}</div></div>{card}</div></main><aside><h2>What is the Fibonacci sequence?</h2><p>A list of numbers where each is the sum of the two before it.</p><div class=\"seq\">{seq}<span>&#8230;</span></div><h2>How it appears in this image</h2><ol>{steps.join(\"\")}</ol><button class=\"replay\" id=\"replay\" type=\"button\">Replay</button>{credit}</aside></div><script>{screen_script()}</script></body></html>"
+}
+
+workflow screen(s: Screen) -> Shown {
+  found   = measure(s.m)
+  verdict = judge(found, 0.12)
+  out = {page: screen_page(s, found, verdict), verdict: verdict.words}
+}

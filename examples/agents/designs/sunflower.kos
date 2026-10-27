@@ -1,0 +1,569 @@
+// Kosika Designs: why a sunflower counts in Fibonacci numbers.
+//
+//   kosika run main.kos --workflow think ...      (see main.kos; make.ps1 runs it all)
+//   python eyes.py plan.json measured.json --model qwen/qwen3.8-27b
+//   kosika run sunflower.kos --workflow design --input measured.json
+//
+// A real photograph, and a translucent copy of it with lines drawn
+// through its florets: not a textbook spiral laid on top, but the spirals
+// the florets in this photo actually make, followed floret to floret.
+//
+// The eyes (eyes.py) find a free photo for the plan, and only report where the floret tips are, and a free
+// vision model's first guess at the head. Everything else is decided here,
+// by Kosika's own maths:
+//
+//   1. the centre: florets grow larger away from the centre, so the true
+//      centre is where floret size rises most evenly with distance; a
+//      model's guess is only where the search starts
+//   2. the edge of the disc: where floret spacing stops following that
+//      even rise, the regular disc has ended and the petals begin
+//   3. the spirals: each floret links to its nearest outward neighbour on
+//      each side, and the links chain into the two families of spirals
+//   4. the count: how many spirals of each family cross circles inside
+//      the disc
+//   5. the check: both counts must be near Fibonacci numbers, and the two
+//      numbers must be neighbours in the sequence. If not, the page says
+//      the overlay is an illustration, not a measurement.
+//
+// The golden angle and the ratio of the counts are worked by std/math.
+
+import "std/math.kos"
+import "std/stats.kos"
+import "main.kos"
+
+export [Source, Guess, Measured, Found, Verdict, measure, judge, chains, golden_angle]
+
+record Source { title: Text author: Text license: Text license_url: Text page_url: Text width: Number height: Number image: Text }
+record Guess { model: Text center_x: Number center_y: Number disc_radius: Number spirals_clockwise: Number spirals_counterclockwise: Number }
+record Measured { plan: Plan source: Source xs: Number[] ys: Number[] guess: Guess }
+
+// What the maths found, before any drawing.
+record Found {
+  cx: Number
+  cy: Number
+  disc: Number
+  xs: Number[]
+  ys: Number[]
+  cw: Number[]          // the next floret clockwise and outward, or -1
+  ccw: Number[]         // the next floret counter-clockwise and outward, or -1
+  radii: Number[]       // the circles the spirals were counted on
+  cw_counts: Number[]
+  ccw_counts: Number[]
+  cw_count: Number      // the median count of each family
+  ccw_count: Number
+}
+record Verdict { measured: Bool cw_fib: Number ccw_fib: Number words: Text }
+record Traced { page: Text summary: Text verdict: Text }
+
+// ---------------------------------------------------------------- numbers
+
+fn listed(xs: Number[]) -> Text { return (for x in xs { x.to_text() }).join(" ") }
+fn n1(x: Number) -> Text { return ((x * 10).round() / 10).to_text() }
+fn n3(x: Number) -> Text { return ((x * 1000).round() / 1000).to_text() }
+
+fn phi() -> Number {
+  // (1 + sqrt 5) / 2, read by std/math from the formula itself.
+  return at(golden_ratio(), [], [])
+}
+
+fn golden_ratio() -> Text[] { return div(add(num(1), pow(num(5), num(0.5))), num(2)) }
+
+// The golden angle, 360 degrees times (2 - phi): the turn between one
+// floret and the next.
+fn golden_angle() -> Number { return at(mul(num(360), sub(num(2), golden_ratio())), [], []) }
+
+fn fibonacci(most: Number) -> Number[] {
+  var out: Number[] = [1, 2]
+  while out[out.length() - 1] < most {
+    out = out.append(out[out.length() - 1] + out[out.length() - 2])
+  }
+  return out
+}
+
+// The place in the sequence of the Fibonacci number nearest to n.
+fn nearest_fib_place(n: Number) -> Number {
+  let fs = fibonacci(n * 2 + 2)
+  var best = 0
+  for i in 0 until fs.length() {
+    if (fs[i] - n).abs() < (fs[best] - n).abs() { best = i }
+  }
+  return best
+}
+
+fn fib_at(place: Number) -> Number { return fibonacci(1000000)[place] }
+
+fn judge(found: Found, tolerance: Number) -> Verdict {
+  let a = nearest_fib_place(found.cw_count)
+  let b = nearest_fib_place(found.ccw_count)
+  let fa = fib_at(a)
+  let fb = fib_at(b)
+  let off_a = (found.cw_count - fa).abs() / fa
+  let off_b = (found.ccw_count - fb).abs() / fb
+  let neighbours = (a - b).abs() == 1
+  let near = off_a <= tolerance and off_b <= tolerance
+  // A real head shows at least 8 spirals each way; fewer is a photo
+  // the tracer could not read, however Fibonacci the small numbers are.
+  let enough = found.cw_count >= 8 and found.ccw_count >= 8
+  let ok = neighbours and near and enough
+  var words = ""
+  if ok {
+    words = f"Measured: {found.cw_count} clockwise and {found.ccw_count} counter-clockwise spirals, within {(tolerance * 100).round()}% of {fa} and {fb}, neighbours in the Fibonacci sequence."
+  } else if not enough {
+    words = f"Illustration: only {found.cw_count} and {found.ccw_count} spirals could be traced on this photo, too few to be a measurement."
+  } else if not neighbours {
+    words = f"Illustration: the counts {found.cw_count} and {found.ccw_count} are nearest {fa} and {fb}, which are not neighbours in the Fibonacci sequence, so these lines are not shown as a measurement."
+  } else {
+    words = f"Illustration: the counts {found.cw_count} and {found.ccw_count} are more than {(tolerance * 100).round()}% from {fa} and {fb}, so these lines are not shown as a measurement."
+  }
+  return {measured: ok, cw_fib: fa, ccw_fib: fb, words: words}
+}
+
+// ---------------------------------------------------------------- geometry
+
+fn dist(ax: Number, ay: Number, bx: Number, by: Number) -> Number {
+  return ((ax - bx) * (ax - bx) + (ay - by) * (ay - by)).sqrt()
+}
+
+// Every pair of florets closer than `reach`, as a list per floret. The
+// florets are first dropped into square cells `reach` wide, so each one is
+// compared only with the nine cells around it, not with every other.
+fn neighbours(xs: Number[], ys: Number[], reach: Number) -> Number[][] {
+  let left = xs.min().or(0)
+  let top = ys.min().or(0)
+  let cols = ((xs.max().or(0) - left) / reach).floor() + 1
+  let rows = ((ys.max().or(0) - top) / reach).floor() + 1
+  var cells: Number[][] = for c in 0 until cols * rows { [] }
+  var home: Number[] = []
+  for i in 0 until xs.length() {
+    let c = ((xs[i] - left) / reach).floor() + ((ys[i] - top) / reach).floor() * cols
+    cells = cells.set(c, cells[c].append(i))
+    home = home.append(c)
+  }
+  var out: Number[][] = []
+  for i in 0 until xs.length() {
+    var near: Number[] = []
+    let col = home[i] % cols
+    let row = (home[i] / cols).floor()
+    for dr in [-1, 0, 1] {
+      for dc in [-1, 0, 1] {
+        if col + dc >= 0 and col + dc < cols and row + dr >= 0 and row + dr < rows {
+          for j in cells[(row + dr) * cols + col + dc] {
+            let dx = xs[i] - xs[j]
+            let dy = ys[i] - ys[j]
+            if j != i and dx * dx + dy * dy < reach * reach { near = near.append(j) }
+          }
+        }
+      }
+    }
+    out = out.append(near)
+  }
+  return out
+}
+
+// How far apart florets sit: the mean of the two nearest neighbours.
+fn spacings(xs: Number[], ys: Number[], near: Number[][]) -> Number[] {
+  var out: Number[] = []
+  for i in 0 until xs.length() {
+    var first = 1000000
+    var second = 1000000
+    for j in near[i] {
+      let d = ((xs[i] - xs[j]) * (xs[i] - xs[j]) + (ys[i] - ys[j]) * (ys[i] - ys[j])).sqrt()
+      if d < first {
+        second = first
+        first = d
+      } else if d < second {
+        second = d
+      }
+    }
+    out = out.append(if second < 1000000 { (first + second) / 2 } else { 0 })
+  }
+  return out
+}
+
+// How unevenly floret spacing rises with distance from (cx, cy), up to
+// `within`: the mean miss of the best straight line. Smallest at the
+// true centre.
+fn unevenness(cx: Number, cy: Number, xs: Number[], ys: Number[], sp: Number[], within: Number, every: Number) -> Number {
+  var count = 0
+  var sr = 0
+  var ss = 0
+  var srr = 0
+  var srs = 0
+  var rs: Number[] = []
+  var ys2: Number[] = []
+  var i = 0
+  while i < xs.length() {
+    let r = ((xs[i] - cx) * (xs[i] - cx) + (ys[i] - cy) * (ys[i] - cy)).sqrt()
+    if r < within and sp[i] > 0 {
+      count += 1
+      sr += r
+      ss += sp[i]
+      srr += r * r
+      srs += r * sp[i]
+      rs = rs.append(r)
+      ys2 = ys2.append(sp[i])
+    }
+    i += every
+  }
+  if count < 12 { return 1000000 }
+  let slope = (count * srs - sr * ss) / (count * srr - sr * sr)
+  let base = (ss - slope * sr) / count
+  var miss = 0
+  for k in 0 until rs.length() { miss += (ys2[k] - (base + slope * rs[k])).abs() }
+  return miss / count
+}
+
+// The centre, searched coarse to fine from a starting guess, up to 60 px
+// away. A wider search finds false centres where few florets agree, so a
+// guess far off is a photo Kosika labels an illustration.
+fn centre(start_x: Number, start_y: Number, all_xs: Number[], all_ys: Number[], all_sp: Number[], within: Number) -> Number[] {
+  var bx = start_x
+  var by = start_y
+  var xs = all_xs
+  var ys = all_ys
+  var sp = all_sp
+  for step in [12, 4, 1] {
+    if step < 12 {
+      // After the coarse pass, only florets that can matter are read.
+      let rs = radii_from(bx, by, all_xs, all_ys)
+      let near = for i in 0 until rs.length() where rs[i] < within + 30 { i }
+      xs = for i in near { all_xs[i] }
+      ys = for i in near { all_ys[i] }
+      sp = for i in near { all_sp[i] }
+    }
+    let ax = bx
+    let ay = by
+    var best = 1000000
+    let reach = step * 5
+    var dx = -reach
+    while dx <= reach {
+      var dy = -reach
+      while dy <= reach {
+        let u = unevenness(ax + dx, ay + dy, xs, ys, sp, within, if step == 12 { 2 } else { 1 })
+        if u < best {
+          best = u
+          bx = ax + dx
+          by = ay + dy
+        }
+        dy += step
+      }
+      dx += step
+    }
+  }
+  return [bx, by]
+}
+
+// Where the regular disc ends: the first ring, past the inner few, whose
+// florets miss the even rise of spacing by twice what the inner rings do.
+fn disc_edge(cx: Number, cy: Number, xs: Number[], ys: Number[], sp: Number[], fit_within: Number, most: Number) -> Number {
+  var count = 0
+  var sr = 0
+  var ss = 0
+  var srr = 0
+  var srs = 0
+  let rs = radii_from(cx, cy, xs, ys)
+  for i in 0 until xs.length() {
+    let r = rs[i]
+    if r < fit_within and sp[i] > 0 {
+      count += 1
+      sr += r
+      ss += sp[i]
+      srr += r * r
+      srs += r * sp[i]
+    }
+  }
+  if count < 12 { return 0 }
+  let slope = (count * srs - sr * ss) / (count * srr - sr * sr)
+  let base = (ss - slope * sr) / count
+  var rings: Number[] = []
+  var lo = 20
+  while lo < most {
+    var miss = 0
+    var k = 0
+    for i in 0 until xs.length() {
+      let r = rs[i]
+      if r >= lo and r < lo + 10 and sp[i] > 0 {
+        miss += (sp[i] - (base + slope * r)).abs() / sp[i]
+        k += 1
+      }
+    }
+    rings = rings.append(if k > 0 { miss / k } else { 1 })
+    lo += 10
+  }
+  let inner = median(rings.slice(0, 8)).or(0.05)
+  for i in 3 until rings.length() {
+    if rings[i] > inner * 2 { return 20 + i * 10 }
+  }
+  return most
+}
+
+// The nearest outward neighbour of each floret on one side: clockwise
+// when side is 1 (on screen, where y runs down), counter-clockwise when -1.
+fn outward(cx: Number, cy: Number, xs: Number[], ys: Number[], near: Number[][], side: Number, disc: Number) -> Number[] {
+  var out: Number[] = []
+  let rs = radii_from(cx, cy, xs, ys)
+  for i in 0 until xs.length() {
+    let ri = rs[i]
+    var nearest = 1000000
+    for j in near[i] {
+      let d = ((xs[i] - xs[j]) * (xs[i] - xs[j]) + (ys[i] - ys[j]) * (ys[i] - ys[j])).sqrt()
+      if d < nearest { nearest = d }
+    }
+    var pick = -1
+    var pick_d = 1000000
+    if ri > 4 and ri < disc {
+      for j in near[i] {
+        let rj = rs[j]
+        let d = ((xs[i] - xs[j]) * (xs[i] - xs[j]) + (ys[i] - ys[j]) * (ys[i] - ys[j])).sqrt()
+        let turn = (xs[i] - cx) * (ys[j] - cy) - (ys[i] - cy) * (xs[j] - cx)
+        if rj < disc and rj > ri + 0.25 * nearest and d <= 1.8 * nearest and turn * side > 0 and d < pick_d {
+          pick = j
+          pick_d = d
+        }
+      }
+    }
+    out = out.append(pick)
+  }
+  return out
+}
+
+// How many spirals of one family cross the circle of radius r: links
+// that start inside it and end outside.
+fn crossings(rs: Number[], next: Number[], r: Number) -> Number {
+  var count = 0
+  for i in 0 until rs.length() {
+    let j = next[i]
+    if j >= 0 {
+      if rs[i] < r and rs[j] >= r { count += 1 }
+    }
+  }
+  return count
+}
+
+// Each floret's distance from (cx, cy).
+fn radii_from(cx: Number, cy: Number, xs: Number[], ys: Number[]) -> Number[] {
+  return for i in 0 until xs.length() { ((xs[i] - cx) * (xs[i] - cx) + (ys[i] - cy) * (ys[i] - cy)).sqrt() }
+}
+
+fn measure(m: Measured) -> Found {
+  let g = m.guess
+  let reach = g.disc_radius.max(80) * 1.3
+  // Only the florets near the guessed head are read at all.
+  let from_guess = radii_from(g.center_x, g.center_y, m.xs, m.ys)
+  let keep = for i in 0 until m.xs.length() where from_guess[i] < reach { i }
+  let xs = for i in keep { m.xs[i] }
+  let ys = for i in keep { m.ys[i] }
+  let near = neighbours(xs, ys, 24)
+  let sp = spacings(xs, ys, near)
+  let fit_within = g.disc_radius.max(80) * 0.55
+  let c = centre(g.center_x, g.center_y, xs, ys, sp, fit_within)
+  let disc = disc_edge(c[0], c[1], xs, ys, sp, fit_within, reach)
+  let cw = outward(c[0], c[1], xs, ys, near, 1, disc)
+  let ccw = outward(c[0], c[1], xs, ys, near, -1, disc)
+  var radii: Number[] = []
+  var r = (disc * 0.35 / 10).round() * 10
+  while r <= disc * 0.75 and disc > 0 {
+    radii = radii.append(r)
+    r += 10
+  }
+  if radii.is_empty() { radii = [20] }
+  let rs = radii_from(c[0], c[1], xs, ys)
+  let cw_counts = for r2 in radii { crossings(rs, cw, r2) }
+  let ccw_counts = for r2 in radii { crossings(rs, ccw, r2) }
+  return {cx: c[0], cy: c[1], disc: disc, xs: xs, ys: ys, cw: cw, ccw: ccw, radii: radii, cw_counts: cw_counts, ccw_counts: ccw_counts, cw_count: median(cw_counts).or(0).round(), ccw_count: median(ccw_counts).or(0).round()}
+}
+
+// ---------------------------------------------------------------- drawing
+
+fn esc(text: Text) -> Text {
+  return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
+}
+
+// The spirals of one family as SVG polylines: each chain starts at a
+// floret nothing links into, and follows the links outward.
+fn chains(found: Found, next: Number[], cls: Text) -> Text {
+  var into: Number[] = for i in 0 until found.xs.length() { 0 }
+  for i in 0 until next.length() {
+    if next[i] >= 0 { into = into.set(next[i], 1) }
+  }
+  var parts: Text[] = []
+  for i in 0 until next.length() {
+    if into[i] == 0 and next[i] >= 0 {
+      var pts: Text[] = []
+      var k = i
+      var steps = 0
+      while k >= 0 and steps < 80 {
+        pts = pts.append(found.xs[k].to_fixed(1) + "," + found.ys[k].to_fixed(1))
+        k = next[k]
+        steps += 1
+      }
+      if pts.length() >= 3 {
+        parts = parts.append(f"<polyline class=\"{cls}\" points=\"{pts.join(\" \")}\"/>")
+      }
+    }
+  }
+  return parts.join("")
+}
+
+// Where each spiral of one family crosses the circle of radius r, as
+// marks that appear one after another round the circle when counted.
+// The delay follows the angle, worked without trigonometry: a point's
+// place round the square of side |dx| + |dy|.
+fn ticks(found: Found, next: Number[], r: Number, cls: Text) -> Text {
+  let rs = radii_from(found.cx, found.cy, found.xs, found.ys)
+  var parts: Text[] = []
+  for i in 0 until next.length() {
+    let j = next[i]
+    if j >= 0 {
+      if rs[i] < r and rs[j] >= r {
+        let t = (r - rs[i]) / (rs[j] - rs[i])
+        let x = found.xs[i] + t * (found.xs[j] - found.xs[i])
+        let y = found.ys[i] + t * (found.ys[j] - found.ys[i])
+        let dx = x - found.cx
+        let dy = y - found.cy
+        let p = dy / (dx.abs() + dy.abs()).max(0.000001)
+        let around = if dx >= 0 and dy >= 0 { p } else if dx < 0 { 2 - p } else { 4 + p }
+        parts = parts.append(f"<circle class=\"tick {cls}\" style=\"--d:{(around * 0.4).to_fixed(2)}s\" cx=\"{x.to_fixed(1)}\" cy=\"{y.to_fixed(1)}\" r=\"3.2\"/>")
+      }
+    }
+  }
+  return parts.join("")
+}
+
+// Pixel coordinates along the top and left edges.
+fn ruler(w: Number, h: Number) -> Text {
+  var parts: Text[] = []
+  var x = 100
+  while x < w {
+    parts = parts.append(f"<line class=\"rule\" x1=\"{x}\" y1=\"0\" x2=\"{x}\" y2=\"7\"/><text class=\"coord\" x=\"{x + 3}\" y=\"16\">{x}</text>")
+    x += 100
+  }
+  var y = 100
+  while y < h {
+    parts = parts.append(f"<line class=\"rule\" x1=\"0\" y1=\"{y}\" x2=\"7\" y2=\"{y}\"/><text class=\"coord\" x=\"10\" y=\"{y + 4}\">{y}</text>")
+    y += 100
+  }
+  return parts.join("")
+}
+
+// The rule itself, played over the photo: seeds placed one golden angle
+// apart, each a little further out, filling the disc as a head grows.
+// Kosika's sin and cos take degrees.
+fn growth(found: Found, count: Number) -> Text {
+  let angle = golden_angle()
+  var dots: Text[] = []
+  for k in 1 until count + 1 {
+    let r = found.disc * 0.95 * (k / count).sqrt()
+    let x = found.cx + r * (k * angle).cos()
+    let y = found.cy + r * (k * angle).sin()
+    dots = dots.append(f"<circle class=\"seed\" style=\"--d:{(k * 0.008).to_fixed(3)}s\" cx=\"{x.to_fixed(1)}\" cy=\"{y.to_fixed(1)}\" r=\"2.6\"/>")
+  }
+  let arm = f"<g class=\"arm\" style=\"transform-origin:{found.cx.to_fixed(1)}px {found.cy.to_fixed(1)}px\"><line x1=\"{found.cx.to_fixed(1)}\" y1=\"{found.cy.to_fixed(1)}\" x2=\"{(found.cx + found.disc * 0.9).to_fixed(1)}\" y2=\"{found.cy.to_fixed(1)}\"/></g>"
+  return f"<g id=\"grow\">{dots.join(\"\")}{arm}</g>"
+}
+
+// Corner brackets that close in on a point, with a label: the pointer a
+// sentence uses to say "this, here".
+fn target(id: Text, x: Number, y: Number, label: Text) -> Text {
+  let s = 16
+  let a = (x - s).to_fixed(1)
+  let b = (y - s).to_fixed(1)
+  let c = (x + s).to_fixed(1)
+  let d = (y + s).to_fixed(1)
+  let path = f"M{a} {(y - s + 7).to_fixed(1)}V{b}H{(x - s + 7).to_fixed(1)}M{(x + s - 7).to_fixed(1)} {b}H{c}V{(y - s + 7).to_fixed(1)}M{c} {(y + s - 7).to_fixed(1)}V{d}H{(x + s - 7).to_fixed(1)}M{(x - s + 7).to_fixed(1)} {d}H{a}V{(y + s - 7).to_fixed(1)}"
+  return f"<g class=\"target\" id=\"{id}\" style=\"transform-origin:{x.to_fixed(1)}px {y.to_fixed(1)}px\"><path d=\"{path}\"/><text class=\"tag\" x=\"{(x + s + 6).to_fixed(1)}\" y=\"{(y + 4).to_fixed(1)}\">{label}</text></g>"
+}
+
+fn style() -> Text {
+  return ":root{--bg:#0b0a1f;--panel:#13112e;--ink:#ece9ff;--soft:#a39ed0;--amber:#ffb547;--line:#fff;--line2:rgba(255,255,255,.6);--edge:#28245a;--dim:.5}@media (prefers-color-scheme: light){:root{--bg:#f6f4ff;--panel:#fff;--ink:#16133a;--soft:#555083;--amber:#b56a00;--line:#000;--line2:rgba(0,0,0,.6);--edge:#dcd7f4;--dim:.45}}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,'Segoe UI',sans-serif}main{max-width:1200px;margin:0 auto;padding:24px 16px 40px}.top{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:14px}.brand{color:var(--amber);font-weight:700;letter-spacing:.16em;text-transform:uppercase;font-size:12px}.ask{color:var(--soft);font-size:14px}h1{font-size:28px;line-height:1.2;margin:0 0 4px}.why{color:var(--soft);margin:0 0 18px}.grid{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:22px;align-items:start}@media (max-width:860px){.grid{grid-template-columns:1fr}}.stage{position:relative;line-height:0;border-radius:14px;overflow:hidden;border:1px solid var(--edge);background:#000}.stage img{width:100%;height:auto;opacity:var(--dim);transition:opacity .3s}.stage svg{position:absolute;inset:0;width:100%;height:100%}.stage.raw img{opacity:1}.stage.raw svg{opacity:0}.hud{position:absolute;left:12px;bottom:10px;font:600 12px/1.4 ui-monospace,Consolas,monospace;color:var(--amber);background:rgba(11,10,31,.72);padding:5px 9px;border-radius:6px;line-height:1.4;pointer-events:none}.raw-btn{position:absolute;right:10px;top:10px;font:600 12px system-ui;color:var(--ink);background:rgba(11,10,31,.7);border:1px solid var(--edge);border-radius:999px;padding:5px 11px;cursor:pointer;line-height:1.2}polyline{fill:none;stroke-linecap:round;stroke-linejoin:round;transition:stroke .25s,stroke-width .25s,opacity .25s}.cw{stroke:var(--line);stroke-width:1.5}.ccw{stroke:var(--line2);stroke-width:1.1;stroke-dasharray:4 3}.coord,.tag,.mark{fill:var(--line);font:600 12px system-ui,sans-serif;paint-order:stroke;stroke:#000;stroke-width:3px;stroke-opacity:.55}.rule{stroke:var(--line2)}.hub line{stroke:var(--line);stroke-width:1.4}.ring,.disc{fill:none;stroke:var(--line2);stroke-dasharray:2 5;opacity:0;transition:opacity .3s}.tick{fill:var(--amber);opacity:0}.seed{fill:var(--amber);opacity:0}.arm line{stroke:var(--amber);stroke-width:2;opacity:0}.target path{fill:none;stroke:var(--amber);stroke-width:2.2}.target{opacity:0}.tag{fill:var(--amber)}.guess{fill:none;stroke:var(--line2);stroke-width:1.4;stroke-dasharray:3 2;opacity:0}.say{display:flex;gap:12px;margin:0 0 6px;padding:9px 10px;border-radius:10px;cursor:default;transition:background .2s}.say b{flex:none;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:12px;color:var(--bg);background:var(--amber)}.say:hover,.say:focus{background:rgba(255,181,71,.12);outline:none}.note{color:var(--soft);font-size:13px;margin:14px 2px 0}.note a{color:var(--amber)}.check{border-left:3px solid var(--amber);padding-left:10px}.check.illus{border-left-style:dashed}body.hl-grow .cw,body.hl-grow .ccw,body.hl-check .cw,body.hl-check .ccw{opacity:.12}body.hl-grow .seed{animation:pop .3s ease-out var(--d) both}body.hl-grow .arm line{opacity:1}body.hl-grow .arm{animation:turn 2.4s steps(1) infinite}body.hl-cw .cw,body.hl-ccw .ccw{stroke:var(--amber);stroke-width:2.6;stroke-dasharray:500;animation:draw 1.6s ease-out}body.hl-cw .ccw,body.hl-ccw .cw{opacity:.12}body.hl-cw .ring,body.hl-ccw .ring,body.hl-fib .ring{opacity:1}body.hl-cw .tick.cw,body.hl-ccw .tick.ccw{animation:pop .25s ease-out var(--d) both}body.hl-fib .cw,body.hl-fib .ccw{stroke:var(--amber)}body.hl-check .disc,body.hl-check .guess{opacity:1}body.hl-grow #t-hub,body.hl-check #t-hub,body.hl-check #t-guess,body.hl-cw #t-cw,body.hl-ccw #t-ccw,body.hl-fib #t-ring{animation:lock .45s ease-out both}@keyframes draw{from{stroke-dashoffset:500}to{stroke-dashoffset:0}}@keyframes pop{0%{opacity:0;transform:scale(0)}70%{opacity:1;transform:scale(1.6)}100%{opacity:1;transform:scale(1)}}.tick,.seed{transform-box:fill-box;transform-origin:center}@keyframes lock{0%{opacity:0;transform:scale(2.4)}100%{opacity:1;transform:scale(1)}}@keyframes turn{0%{transform:rotate(0)}12.5%{transform:rotate(137.5deg)}25%{transform:rotate(275deg)}37.5%{transform:rotate(412.5deg)}50%{transform:rotate(550deg)}62.5%{transform:rotate(687.5deg)}75%{transform:rotate(825deg)}87.5%{transform:rotate(962.5deg)}}@media (prefers-reduced-motion: reduce){*{animation-duration:.01s!important;animation-delay:0s!important}}"
+}
+
+// Hovering a sentence sets a class on the page, which lights its part of
+// the picture, and writes its readout in the corner, counting where it
+// counts.
+fn script() -> Text {
+  return "var hud=document.getElementById('hud'),rest=hud.textContent,timer=null;function show(el){clearInterval(timer);document.body.classList.add('hl-'+el.dataset.hl);var text=el.dataset.hud||rest,n=+(el.dataset.count||0);if(!n){hud.textContent=text;return}var i=0;timer=setInterval(function(){i++;hud.textContent=text.replace('#',i);if(i>=n)clearInterval(timer)},1600/n)}function hide(el){clearInterval(timer);document.body.classList.remove('hl-'+el.dataset.hl);hud.textContent=rest}document.querySelectorAll('[data-hl]').forEach(function(el){el.addEventListener('mouseenter',function(){show(el)});el.addEventListener('mouseleave',function(){hide(el)});el.addEventListener('focus',function(){show(el)});el.addEventListener('blur',function(){hide(el)})});var st=document.getElementById('stage'),b=document.getElementById('raw');b.addEventListener('click',function(){st.classList.toggle('raw');b.textContent=st.classList.contains('raw')?'Show lines':'Show photo'});"
+}
+
+fn say(i: Number, target: Text, hud: Text, count: Number, text: Text) -> Text {
+  return f"<p class=\"say\" tabindex=\"0\" data-hl=\"{target}\" data-hud=\"{esc(hud)}\" data-count=\"{count}\"><b>{i}</b><span>{text}</span></p>"
+}
+
+fn page(m: Measured, found: Found, verdict: Verdict) -> Text {
+  let s = m.source
+  let g = m.guess
+  let plan = m.plan
+  let w = s.width
+  let h = s.height
+  let ring_r = found.radii[(found.radii.length() / 2).floor()]
+  let cw_at = found.cx + ring_r * 0.7
+  let cw_y = found.cy - ring_r * 0.7
+  let ccw_x = found.cx - ring_r * 0.7
+  let ccw_y = found.cy + ring_r * 0.7
+  let hub_text = f"centre ({found.cx.round()}, {found.cy.round()})"
+  let marks = target("t-hub", found.cx, found.cy, hub_text) + target("t-cw", cw_at, cw_y, f"{found.cw_count} clockwise") + target("t-ccw", ccw_x, ccw_y, f"{found.ccw_count} counter-clockwise") + target("t-ring", found.cx, found.cy - ring_r, f"counted at r = {ring_r} px") + target("t-guess", g.center_x, g.center_y, "the vision model's guess")
+  let hub = f"<g class=\"hub\"><line x1=\"{(found.cx - 7).to_fixed(1)}\" y1=\"{found.cy.to_fixed(1)}\" x2=\"{(found.cx + 7).to_fixed(1)}\" y2=\"{found.cy.to_fixed(1)}\"/><line x1=\"{found.cx.to_fixed(1)}\" y1=\"{(found.cy - 7).to_fixed(1)}\" x2=\"{found.cx.to_fixed(1)}\" y2=\"{(found.cy + 7).to_fixed(1)}\"/></g>"
+  let svg = f"<svg viewBox=\"0 0 {w} {h}\" role=\"img\" aria-label=\"Spirals traced through the florets of the photo\">{ruler(w, h)}<circle class=\"disc\" cx=\"{found.cx.to_fixed(1)}\" cy=\"{found.cy.to_fixed(1)}\" r=\"{found.disc.to_fixed(1)}\"/><g>{chains(found, found.ccw, \"ccw\")}</g><g>{chains(found, found.cw, \"cw\")}</g><circle class=\"ring\" cx=\"{found.cx.to_fixed(1)}\" cy=\"{found.cy.to_fixed(1)}\" r=\"{ring_r}\"/>{ticks(found, found.cw, ring_r, \"cw\")}{ticks(found, found.ccw, ring_r, \"ccw\")}{growth(found, 240)}<circle class=\"guess\" cx=\"{g.center_x.to_fixed(1)}\" cy=\"{g.center_y.to_fixed(1)}\" r=\"6\"/>{hub}{marks}</svg>"
+  let readout = f"centre x {found.cx.round()}  y {found.cy.round()}   disc r {found.disc.round()} px"
+  let stage = f"<div class=\"stage\" id=\"stage\"><img src=\"{s.image}\" alt=\"{esc(s.title)}\">{svg}<div class=\"hud\" id=\"hud\">{readout}</div><button class=\"raw-btn\" id=\"raw\" type=\"button\">Show photo</button></div>"
+  let model_note = if g.model.is_empty() { "" } else { f" A vision model ({esc(g.model)}) first guessed the centre at ({g.center_x.round()}, {g.center_y.round()}) and {g.spirals_clockwise} / {g.spirals_counterclockwise} spirals; Kosika measured its own." }
+  // Only a photo that passed the check is spoken of in its own numbers.
+  let two = if verdict.measured { f"No seed sits behind another, so they pack tight and line up in spirals: about {verdict.cw_fib} turn clockwise..." } else { "No seed sits behind another, so they pack tight and line up in spirals that turn clockwise..." }
+  let three = if verdict.measured { f"...and {verdict.ccw_fib} turn the other way." } else { "...and spirals that turn the other way." }
+  let four = if verdict.measured { f"{verdict.cw_fib} and {verdict.ccw_fib} are neighbours in the Fibonacci sequence, where each number is the sum of the two before it." } else { "In a sunflower the two counts are usually neighbouring Fibonacci numbers, like 21 and 34, or 34 and 55: each the sum of the two before it." }
+  let five = if verdict.measured { f"Kosika counted {found.cw_count} and {found.ccw_count} on this very photo, from its centre at ({found.cx.round()}, {found.cy.round()})." } else { f"On this photo Kosika counted {found.cw_count} and {found.ccw_count}, which did not pass its check, so the lines here are an illustration." }
+  let fib_hud = if verdict.measured { f"{verdict.ccw_fib - verdict.cw_fib} + {verdict.cw_fib} = {verdict.ccw_fib}" } else { "13 + 21 = 34   21 + 34 = 55" }
+  let lines = [
+    say(1, "grow", f"golden angle {n1(golden_angle())}&#176; per seed", 0, f"Each new seed grows at the centre, turned {n1(golden_angle())}&#176; from the last: the golden angle."),
+    say(2, "cw", f"clockwise spirals  # / {found.cw_count}", found.cw_count, two),
+    say(3, "ccw", f"counter-clockwise spirals  # / {found.ccw_count}", found.ccw_count, three),
+    say(4, "fib", fib_hud, 0, four),
+    say(5, "check", f"counted {found.cw_count} and {found.ccw_count} at r {found.radii[0]}-{found.radii[found.radii.length() - 1]} px", 0, five)
+  ]
+  let check_kind = if verdict.measured { "note check" } else { "note check illus" }
+  let check = f"<p class=\"{check_kind}\">{esc(verdict.words)}{model_note}</p>"
+  let others = if plan.others.is_empty() { "" } else { f"<p class=\"note\">Also suggested: {esc(plan.others.join(\", \"))}. Kosika can measure only sunflower heads on a photo so far.</p>" }
+  let credit = f"<p class=\"note\">Photo: <a href=\"{s.page_url}\">{esc(s.title)}</a> by {esc(s.author)}, <a href=\"{s.license_url}\">{esc(s.license)}</a>, Wikimedia Commons. The lines are drawn on it under the same licence.</p>"
+  let side = f"<div>{lines.join(\"\")}{check}{others}{credit}</div>"
+  return f"<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Kosika Designs</title><style>{style()}</style></head><body><main><div class=\"top\"><span class=\"brand\">Kosika Designs</span><span class=\"ask\">&#8220;{esc(plan.ask)}&#8221;</span></div><h1>The Fibonacci sequence, in a real {esc(plan.example.lower())}</h1><p class=\"why\">{esc(plan.why)} Hover a sentence to see it on the photo.</p><div class=\"grid\">{stage}{side}</div></main><script>{script()}</script></body></html>"
+}
+
+workflow design(m: Measured) -> Traced {
+  found   = measure(m)
+  verdict = judge(found, 0.12)
+  page_out = page(m, found, verdict)
+  out = {page: page_out, summary: f"centre ({found.cx}, {found.cy}), disc {found.disc} px, counts {found.cw_count} and {found.ccw_count}; by ring {listed(found.radii)} px: clockwise {listed(found.cw_counts)}, counter-clockwise {listed(found.ccw_counts)}", verdict: verdict.words}
+}
+
+test "the golden angle is 360 times 2 minus phi" {
+  expect (phi() * 1000).round() == 1618
+  expect (golden_angle() * 1000).round() == 137508
+}
+
+test "Fibonacci neighbours pass and strangers do not" {
+  ok: Found = {cx: 0, cy: 0, disc: 0, xs: [], ys: [], cw: [], ccw: [], radii: [], cw_counts: [], ccw_counts: [], cw_count: 22, ccw_count: 32}
+  expect judge(ok, 0.12).measured
+  expect judge(ok, 0.12).cw_fib == 21
+  expect judge(ok, 0.12).ccw_fib == 34
+  far: Found = {..ok, ccw_count: 55}
+  expect not judge(far, 0.12).measured
+  off: Found = {..ok, cw_count: 27}
+  expect not judge(off, 0.12).measured
+  few: Found = {..ok, cw_count: 2, ccw_count: 1}
+  expect not judge(few, 0.12).measured
+}
+
+test "a Vogel head is traced into Fibonacci spirals" {
+  // 400 florets placed by the rule itself, growing larger outward as a
+  // real head's do: the tracer must find neighbouring Fibonacci numbers
+  // in it, from a guess 15 px off.
+  angle = golden_angle()
+  xs = for k in 1 until 401 { 200 + 3 * k.power(0.62) * (k * angle).cos() }
+  ys = for k in 1 until 401 { 200 + 3 * k.power(0.62) * (k * angle).sin() }
+  src: Source = {title: "t", author: "a", license: "l", license_url: "", page_url: "", width: 400, height: 400, image: ""}
+  plan: Plan = {ask: "a", example: "sunflower head", kind: "sunflower_head", why: "w", search: "s", needs: [], others: []}
+  m: Measured = {plan: plan, source: src, xs: xs, ys: ys, guess: {model: "", center_x: 212, center_y: 191, disc_radius: 120, spirals_clockwise: 0, spirals_counterclockwise: 0}}
+  found = measure(m)
+  expect dist(found.cx, found.cy, 200, 200) < 6
+  expect judge(found, 0.12).measured
+}

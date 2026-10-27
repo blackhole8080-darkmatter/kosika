@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kosika Chat</title>
+<style>
+/* Kosika Studio's Dark Matter look: a near-black stage lit by slow indigo
+   and amber light, glass panels with a fine edge, Figtree and a mono for
+   labels, one amber accent. The tokens are Studio's own. */
+@font-face { font-family: Figtree; src: url(/fonts/Figtree.ttf) format("truetype"); font-weight: 300 900; font-display: swap; }
+:root {
+  --bg: #07080d; --panel: rgba(20, 22, 32, .72); --rail: rgba(14, 15, 23, .66); --ink: #eef0f7; --soft: #a3a8bd; --faint: #6c7189;
+  --line: rgba(255, 255, 255, .08); --glass: rgba(22, 24, 36, .62); --glass-edge: rgba(255, 255, 255, .09);
+  --accent: #ff8a4c; --gold: #f5b45c; --accent-soft: rgba(255, 138, 76, .14); --think: #a993ff; --think-soft: rgba(169, 147, 255, .14); --mem: #55d6ff;
+  --mono: ui-monospace, "Cascadia Code", Consolas, monospace; --settle: cubic-bezier(.16, 1, .3, 1);
+}
+@media (prefers-color-scheme: light) {
+  :root { --bg: #f4f2ee; --panel: rgba(255, 255, 255, .78); --rail: rgba(255, 255, 255, .7); --ink: #16141f; --soft: #5b5870; --faint: #8a879c;
+    --line: rgba(20, 20, 40, .09); --glass: rgba(255, 255, 255, .72); --glass-edge: rgba(20, 20, 40, .08); --accent: #d4621f; --gold: #b8761c; --think: #6f58e0; }
+}
+* { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+html, body { height: 100%; }
+body { margin: 0; color: var(--ink); background: var(--bg); font: 15px/1.55 Figtree, system-ui, "Segoe UI", sans-serif; letter-spacing: .005em;
+  display: grid; grid-template-columns: 210px minmax(340px, 430px) minmax(0, 1fr); position: relative; isolation: isolate; overflow: hidden; }
+body::before { content: ""; position: fixed; inset: -20vmax; z-index: -2; pointer-events: none; opacity: .55;
+  background: radial-gradient(38vmax 30vmax at 18% 22%, color-mix(in srgb, var(--think) 30%, transparent), transparent 70%),
+              radial-gradient(34vmax 26vmax at 86% 14%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 70%),
+              radial-gradient(40vmax 32vmax at 62% 96%, color-mix(in srgb, var(--mem) 14%, transparent), transparent 72%);
+  animation: aurora 48s cubic-bezier(.45, 0, .55, 1) infinite alternate; }
+body::after { content: ""; position: fixed; right: -18vmax; top: -22vmax; width: 60vmax; height: 60vmax; border-radius: 50%; z-index: -1; pointer-events: none;
+  border: 3vmax solid transparent; background: conic-gradient(from 140deg, transparent 0 40%, color-mix(in srgb, var(--think) 35%, transparent), color-mix(in srgb, var(--gold) 30%, transparent), transparent 75%) border-box;
+  -webkit-mask: linear-gradient(#000 0 0) padding-box exclude, linear-gradient(#000 0 0); mask: linear-gradient(#000 0 0) padding-box exclude, linear-gradient(#000 0 0); filter: blur(18px); opacity: .5; }
+@keyframes aurora { to { transform: translate3d(3vmax, -2vmax, 0) rotate(-6deg); } }
+
+/* The rail, as in Studio: the mark, the name, and a lit pill on the open view. */
+aside { background: var(--rail); backdrop-filter: blur(22px) saturate(140%); border-right: 1px solid var(--glass-edge); padding: 18px 14px; display: flex; flex-direction: column; gap: 4px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 19px; letter-spacing: -.01em; margin: 2px 6px 22px; }
+.brand svg { width: 28px; height: 28px; }
+.brand small { font: 600 10px var(--mono); letter-spacing: .32em; text-transform: uppercase; background: linear-gradient(90deg, var(--accent), var(--think)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.nav { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-radius: 12px; color: var(--soft); text-decoration: none; font-size: 14px; border: 1px solid transparent; transition: transform .35s var(--settle), color .25s; }
+.nav:hover { transform: translateX(3px); color: var(--ink); }
+.nav.on { color: var(--ink); border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 18%, transparent), color-mix(in srgb, var(--think) 14%, transparent)); box-shadow: 0 8px 30px -14px var(--accent); }
+.nav small { font: 10px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--faint); }
+.rule { font: 600 10px var(--mono); letter-spacing: .32em; text-transform: uppercase; color: var(--gold); margin: 18px 12px 6px; }
+aside .foot { margin-top: auto; font-size: 12px; color: var(--faint); padding: 0 8px; }
+aside .foot b { display: block; font: 600 10px var(--mono); letter-spacing: .2em; text-transform: uppercase; color: var(--soft); margin-bottom: 3px; }
+
+/* The conversation. */
+.chat { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--glass-edge); }
+.chat header { padding: 22px 22px 10px; }
+.label { font: 600 10px var(--mono); letter-spacing: .32em; text-transform: uppercase; color: var(--gold); display: flex; align-items: center; gap: 12px; }
+.label:after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, color-mix(in srgb, var(--gold) 45%, transparent), transparent); }
+.log { flex: 1; overflow-y: auto; padding: 8px 22px 18px; }
+.hello h1 { font-weight: 850; font-size: 34px; line-height: 1.04; letter-spacing: -.035em; margin: 10px 0 10px; }
+.hello h1 span { color: color-mix(in srgb, var(--think) 70%, var(--soft)); }
+.hello p { color: var(--soft); margin: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+.chips button { font: 600 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--soft); background: var(--glass); border: 1px solid var(--glass-edge); border-radius: 999px; padding: 7px 12px; cursor: pointer; transition: color .2s, border-color .2s, transform .35s var(--settle); }
+.chips button:hover { color: var(--ink); border-color: color-mix(in srgb, var(--accent) 55%, transparent); transform: translateY(-1px); }
+.msg { margin: 0 0 16px; animation: arrive .6s var(--settle) both; }
+.msg.you { margin-left: auto; max-width: 88%; width: fit-content; background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent); border-radius: 16px 16px 4px 16px; padding: 9px 14px; }
+.msg.k .who { font: 600 10px var(--mono); letter-spacing: .28em; text-transform: uppercase; margin-bottom: 4px; background: linear-gradient(90deg, var(--accent), var(--think)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.msg.k .text { color: var(--ink); }
+.msg.k.wait .text { color: var(--soft); font: 13px var(--mono); }
+@keyframes arrive { from { opacity: 0; transform: translate3d(0, 14px, 0); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
+form { display: flex; gap: 10px; padding: 14px 18px 18px; }
+textarea { flex: 1; resize: none; height: 48px; font: 15px/1.4 Figtree, system-ui, sans-serif; color: var(--ink); background: var(--glass); border: 1px solid var(--glass-edge); border-radius: 14px; padding: 12px 14px; backdrop-filter: blur(16px); transition: border-color .15s, box-shadow .15s; }
+textarea:focus { outline: none; border-color: color-mix(in srgb, var(--accent) 55%, transparent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent); }
+form button { font: 700 14px Figtree, system-ui, sans-serif; color: #1a0f08; border: 0; border-radius: 14px; padding: 0 18px; cursor: pointer;
+  background: linear-gradient(180deg, color-mix(in srgb, #fff 18%, var(--gold)), var(--gold)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .3), 0 10px 26px -12px var(--accent); transition: transform .35s var(--settle), filter .2s; }
+form button:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.06); }
+form button:disabled { opacity: .45; cursor: default; }
+.approve { display: flex; gap: 8px; margin-top: 10px; color: var(--soft); font: 12px var(--mono); align-items: center; }
+.approve button { font: 700 13px Figtree, system-ui, sans-serif; color: #1a0f08; border: 0; border-radius: 10px; padding: 7px 14px; cursor: pointer;
+  background: linear-gradient(180deg, color-mix(in srgb, #fff 18%, var(--gold)), var(--gold)); box-shadow: 0 8px 22px -12px var(--accent); }
+.approve button.quiet { background: var(--glass); color: var(--soft); border: 1px solid var(--glass-edge); box-shadow: none; }
+
+/* The canvas: a glass window, like Studio's run view. */
+.canvas { padding: 18px 20px 20px; min-width: 0; display: flex; }
+.window { flex: 1; display: flex; flex-direction: column; border-radius: 18px; overflow: hidden; background: var(--glass); border: 1px solid var(--glass-edge); backdrop-filter: blur(16px) saturate(130%); box-shadow: 0 30px 60px -30px rgba(0, 0, 0, .7); }
+.bar { display: flex; align-items: center; gap: 8px; padding: 11px 14px; border-bottom: 1px solid var(--line); }
+.bar i { width: 10px; height: 10px; border-radius: 50%; background: #e0605a; } .bar i:nth-child(2) { background: #e8b04a; } .bar i:nth-child(3) { background: #4fbf72; }
+.bar span { margin-left: 8px; flex: 1; font: 12px var(--mono); color: var(--faint); background: rgba(255, 255, 255, .03); border-radius: 8px; padding: 4px 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.view { flex: 1; position: relative; min-height: 0; }
+.view iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: transparent; }
+.empty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; color: var(--soft); padding: 24px; }
+.empty b { display: block; color: var(--ink); font-weight: 800; font-size: 18px; letter-spacing: -.01em; margin-bottom: 4px; }
+/* While Kosika thinks: Studio's constellation, a core and the parts of
+   the answer lighting in turn as they are made. */
+.orbit { width: 420px; max-width: 90%; }
+.orbit .ring { fill: none; stroke: color-mix(in srgb, var(--think) 40%, transparent); stroke-dasharray: 2 7; }
+.orbit .core { fill: #0b0c14; stroke: var(--think); stroke-width: 1.5; }
+.orbit .node circle { fill: #0b0c14; stroke: var(--line); stroke-width: 1.2; transition: stroke .4s, filter .4s; }
+.orbit text { fill: var(--soft); font: 600 12px var(--mono); text-anchor: middle; }
+.orbit .core-t { fill: var(--ink); font: 800 14px Figtree, system-ui, sans-serif; }
+.orbit .node.lit circle { stroke: var(--accent); filter: drop-shadow(0 0 10px var(--accent)); }
+.orbit .node.lit text { fill: var(--ink); }
+.orbit .spin { transform-origin: 210px 120px; animation: spin 14s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (max-width: 1100px) { body { grid-template-columns: 1fr; overflow: auto; } aside { display: none; } .chat { min-height: 60vh; } .canvas { min-height: 80vh; } }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<aside>
+  <div class="brand"><svg viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="54" fill="none" stroke="#241d45" stroke-width="9"/><circle cx="60" cy="60" r="42" fill="none" stroke="#f5b45c" stroke-width="7"/><circle cx="60" cy="60" r="29" fill="#05060b"/><text x="60" y="62" font-family="system-ui, sans-serif" font-weight="700" font-size="30" text-anchor="middle" dominant-baseline="central" fill="#f2f4ff">K</text></svg><span>Kosika <small>Chat</small></span></div>
+  <a class="nav on" href="/">Chat</a>
+  <a class="nav" href="/">Designs <small>canvas</small></a>
+  <a class="nav" href="http://127.0.0.1:8770/" title="Kosika Studio, if it is running">Studio <small>&#8599;</small></a>
+  <div class="rule">Soon</div>
+  <a class="nav" href="#">Maths <small>soon</small></a>
+  <a class="nav" href="#">Voice <small>soon</small></a>
+  <a class="nav" href="#">Text <small>soon</small></a>
+  <div class="foot"><b>Free models</b>Open models through the Kosika virtual model. Nothing leaves this computer but the question.</div>
+</aside>
+<section class="chat">
+  <header><div class="label">The conversation</div></header>
+  <div class="log" id="log">
+    <div class="hello" id="hello">
+      <h1>Ask anything. <span>See the answer.</span></h1>
+      <p>Kosika answers in words here, and draws its thinking on the canvas step by step, with a real photo when one helps.</p>
+      <div class="chips">
+        <button type="button">Show me the Fibonacci sequence in nature</button>
+        <button type="button">How does an LLM work?</button>
+        <button type="button">Explain the water cycle</button>
+        <button type="button">How does a web page reach my browser?</button>
+        <button type="button">Look up the latest Ollama release</button>
+        <button type="button">My services</button>
+        <button type="button">Watch https://github.com/ollama/ollama/releases</button>
+      </div>
+    </div>
+  </div>
+  <form id="form"><textarea id="ask" placeholder="Message Kosika" aria-label="Message Kosika"></textarea><button id="send">Send</button></form>
+</section>
+<section class="canvas">
+  <div class="window">
+    <div class="bar"><i></i><i></i><i></i><span id="where">kosika canvas &#183; waiting for a question</span></div>
+    <div class="view" id="view"><div class="empty"><div><b>The canvas</b>Kosika's drawing of its answer appears here.</div></div></div>
+  </div>
+</section>
+<script>
+var log = document.getElementById('log'), box = document.getElementById('ask'), send = document.getElementById('send');
+var view = document.getElementById('view'), where = document.getElementById('where'), turns = [], timers = [];
+function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+function add(cls, text) {
+  var hello = document.getElementById('hello'); if (hello) hello.remove();
+  var m = document.createElement('div'); m.className = 'msg ' + cls;
+  if (cls.indexOf('k') === 0) { m.innerHTML = '<div class="who">Kosika</div><div class="text"></div>'; m.querySelector('.text').textContent = text; }
+  else m.textContent = text;
+  log.appendChild(m); log.scrollTop = log.scrollHeight; return m;
+}
+async function type(el, text) { for (var i = 1; i <= text.length; i += 3) { el.textContent = text.slice(0, i + 2); log.scrollTop = log.scrollHeight; await wait(12); } }
+// The parts of an answer, lit in turn while they are being made.
+function thinking() {
+  var parts = [['words', 70, 60], ['structure', 350, 60], ['photo', 350, 185], ['check', 70, 185]];
+  var nodes = parts.map(function (p, i) { return '<g class="node" id="o' + i + '"><circle cx="' + p[1] + '" cy="' + p[2] + '" r="34"/><text x="' + p[1] + '" y="' + (p[2] + 4) + '">' + p[0] + '</text></g>'; }).join('');
+  view.innerHTML = '<div class="empty"><svg class="orbit" viewBox="0 0 420 245"><ellipse class="ring spin" cx="210" cy="120" rx="160" ry="70"/>' + nodes +
+    '<circle class="core" cx="210" cy="120" r="46"/><text class="core-t" x="210" y="125">kosika</text></svg></div>';
+  timers.forEach(clearTimeout); timers = [];
+  [0, 900, 2400, 4200].forEach(function (t, i) { timers.push(setTimeout(function () { var n = document.getElementById('o' + i); if (n) n.classList.add('lit'); }, t)); });
+}
+function showCanvas(d) {
+  timers.forEach(clearTimeout);
+  if (!d.page) { view.innerHTML = '<div class="empty"><div><b>No drawing this time</b>' + (d.problems || []).join('; ') + '</div></div>'; where.textContent = 'kosika canvas'; return; }
+  var f = document.createElement('iframe'); f.title = 'Kosika canvas'; f.srcdoc = d.page;
+  view.innerHTML = ''; view.appendChild(f); where.textContent = 'kosika canvas · ' + (d.title || 'drawing');
+}
+async function ask(text) {
+  text = text.trim(); if (!text) return;
+  add('you', text); box.value = ''; send.disabled = true;
+  var reply = add('k wait', 'thinking…'); thinking(); where.textContent = 'kosika canvas · imagining';
+  try {
+    var r = await fetch('/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ask: text, history: turns.join('\n') }) });
+    var d = await r.json();
+    reply.className = 'msg k'; showCanvas(d);
+    await type(reply.querySelector('.text'), d.text);
+    if (d.approve) offer(reply, d.approve);
+    turns.push('You: ' + text, 'Kosika: ' + d.text);
+  } catch (e) { reply.className = 'msg k'; reply.querySelector('.text').textContent = 'Kosika could not be reached: ' + e; }
+  send.disabled = false; box.focus();
+}
+// A plan that would change something: nothing runs until Approve is pressed.
+function offer(msg, job) {
+  var row = document.createElement('div'); row.className = 'approve';
+  var yes = document.createElement('button'); yes.type = 'button'; yes.textContent = 'Approve';
+  var no = document.createElement('button'); no.type = 'button'; no.className = 'quiet'; no.textContent = 'Not now';
+  row.appendChild(yes); row.appendChild(no); msg.appendChild(row);
+  no.addEventListener('click', function () { row.textContent = 'Not done.'; });
+  yes.addEventListener('click', async function () {
+    row.textContent = 'Approved. Working\u2026';
+    try {
+      var r = await fetch('/approve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(job) });
+      var d = await r.json(); row.remove(); var m = add('k', ''); await type(m.querySelector('.text'), d.text);
+    } catch (e) { row.textContent = 'It could not be done: ' + e; }
+  });
+}
+document.getElementById('form').addEventListener('submit', function (e) { e.preventDefault(); ask(box.value); });
+box.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(box.value); } });
+document.querySelectorAll('.chips button').forEach(function (b) { b.addEventListener('click', function () { ask(b.textContent); }); });
+</script>
+</body>
+</html>
