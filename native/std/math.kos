@@ -15,6 +15,7 @@
 // simplify(e)                            constants folded, identities gone
 // to_text(e)                             the expression in plain words
 // to_latex(e)                            the expression as LaTeX
+// to_mathml(e)                           the expression as MathML, for a page
 //
 // An expression is its own prefix encoding: a list of words. "+ a b" is
 // a plus of two parts, "~ a" a negation, "sin a" a sine, "n:2" a number
@@ -27,7 +28,7 @@
 // paper whose formulas went through here carries math the language has
 // already read.
 
-export [num, neg, x, add, sub, mul, div, pow, sin, cos, exp, ln, at, deriv, simplify, to_text, to_latex]
+export [num, neg, x, add, sub, mul, div, pow, sin, cos, exp, ln, at, deriv, simplify, to_text, to_latex, to_mathml]
 
 fn num(v: Number) -> Text[] { return ["n:" + v.to_text()] }
 fn neg(e: Text[]) -> Text[] { return ["~"].concat(e) }
@@ -226,6 +227,55 @@ fn latex_of(e: Text[], parent: Number) -> Text recurse 64 {
 }
 
 fn to_latex(e: Text[]) -> Text { return latex_of(e, 0) }
+
+// MathML, the notation a browser draws as a paper would print it: names
+// in italic, numbers upright, fractions stacked, roots over their radicand.
+// A name with an underscore is subscripted (F_n, F_n-1), and phi, psi and
+// pi are written as their Greek letters.
+fn mathml_name(name: Text) -> Text recurse 4 {
+  let greek = if name == "phi" { "&#966;" } else if name == "psi" { "&#968;" } else if name == "pi" { "&#960;" } else { name }
+  let cut = name.index_of("_").or(-1)
+  if cut < 1 { return f"<mi>{greek}</mi>" }
+  let base = name.slice(0, cut)
+  let sub = name.slice(cut + 1, name.length())
+  let parts = sub.replace("-", " - ").replace("+", " + ").words()
+  let inner = (for p in parts { if p == "-" { "<mo>&#8722;</mo>" } else if p == "+" { "<mo>+</mo>" } else if "0123456789".contains(p.slice(0, 1)) { f"<mn>{p}</mn>" } else { f"<mi>{p}</mi>" } }).join("")
+  return f"<msub>{mathml_name(base)}<mrow>{inner}</mrow></msub>"
+}
+
+fn mathml_of(e: Text[], parent: Number) -> Text recurse 64 {
+  var body = ""
+  if is_const(e) { body = f"<mn>{num_text(cval(e))}</mn>" }
+  else if e.length() == 1 { body = mathml_name(e[0]) }
+  else {
+    let op = e[0]
+    if op == "~" { body = "<mo>&#8722;</mo>" + mathml_of(child(e, 1), 5) }
+    else if op == "sin" or op == "cos" or op == "ln" { body = f"<mi>{op}</mi><mo>&#8289;</mo>" + mathml_of(child(e, 1), 3) }
+    else if op == "exp" { body = "<msup><mi>e</mi><mrow>" + mathml_of(child(e, 1), 0) + "</mrow></msup>" }
+    else if op == "/" { body = "<mfrac><mrow>" + mathml_of(child(e, 1), 0) + "</mrow><mrow>" + mathml_of(child(e, 2), 0) + "</mrow></mfrac>" }
+    else if op == "^" and is_const(child(e, 2)) and cval(child(e, 2)) == 0.5 { body = "<msqrt>" + mathml_of(child(e, 1), 0) + "</msqrt>" }
+    else if op == "^" { body = "<msup><mrow>" + mathml_of(child(e, 1), 4) + "</mrow><mrow>" + mathml_of(child(e, 2), 0) + "</mrow></msup>" }
+    else {
+      let mark = if op == "+" { "<mo>+</mo>" } else if op == "-" { "<mo>&#8722;</mo>" } else if is_const(child(e, 2)) { "<mo>&#183;</mo>" } else { "<mo>&#8290;</mo>" }
+      let own = prec(op)
+      body = mathml_of(child(e, 1), own) + mark + mathml_of(child(e, 2), if op == "-" { own + 1 } else { own })
+    }
+  }
+  let ownPrec = if e.length() == 1 { 5 } else { prec(e[0]) }
+  if ownPrec < parent { return "<mrow><mo>(</mo>" + body + "<mo>)</mo></mrow>" }
+  return body
+}
+
+fn to_mathml(e: Text[]) -> Text { return "<mrow>" + mathml_of(e, 0) + "</mrow>" }
+
+test "MathML writes fractions, roots, powers and subscripts" {
+  binet = div(sub(pow(x("phi"), x("n")), pow(x("psi"), x("n"))), pow(num(5), num(0.5)))
+  m = to_mathml(binet)
+  expect m.contains("<mfrac>")
+  expect m.contains("<msqrt><mn>5</mn></msqrt>")
+  expect m.contains("<msup><mrow><mi>&#966;</mi></mrow><mrow><mi>n</mi></mrow></msup>")
+  expect to_mathml(x("F_n-1")) == "<mrow><msub><mi>F</mi><mrow><mi>n</mi><mo>&#8722;</mo><mn>1</mn></mrow></msub></mrow>"
+}
 
 test "an expression evaluates exactly" {
   // t^2 + 3t - 5 at t = 2 is 5.

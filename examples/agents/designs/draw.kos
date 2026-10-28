@@ -727,6 +727,260 @@ fn kinds_style() -> Text {
   return ".vertex circle{fill:var(--halo);stroke:var(--line);stroke-width:1.6}.vlabel{fill:var(--ink);font:700 13px ui-monospace,Consolas,monospace;text-anchor:middle}.on.vertex circle{stroke:var(--amber);stroke-width:3}.axis{fill:none;stroke:var(--line2);stroke-width:1.6}.tick circle{fill:var(--halo);stroke:var(--gold);stroke-width:2}.on.tick circle{fill:var(--amber)}.date{fill:var(--gold);font:600 11px ui-monospace,Consolas,monospace}.column rect{fill:none;stroke-width:1.4}.colhead{font:800 16px Figtree,system-ui,sans-serif}.row rect{fill:rgba(255,255,255,.03);stroke:var(--line2);stroke-width:1}.cell{fill:var(--ink);font:13px Figtree,system-ui,sans-serif}.on.row rect,.on.column rect{stroke:var(--amber)!important;stroke-width:2.4}.blob{fill-opacity:.14;stroke-width:2}.stroke{fill:none;stroke:var(--line);stroke-width:2.4;stroke-linecap:round}.spot{fill:var(--amber)}.free{font:600 15px Figtree,system-ui,sans-serif}.mark.shown path{stroke-dasharray:1;animation:pen .9s ease-out both}.on.mark .stroke,.on.mark .blob{stroke:var(--amber)!important;stroke-width:3.4;filter:drop-shadow(0 0 8px color-mix(in srgb,var(--amber) 70%,transparent))}.on.mark .label{fill:var(--amber)}"
 }
 
+// ---------------------------------------------------------------- the mathematics, worked by Kosika
+//
+// Where a drawing has mathematics in it, Kosika works it out itself and
+// writes it as a paper would: numbered equations in mathematical notation,
+// the real numbers put in line by line, and the data structures the
+// symbols stand for. Every symbol is tied to what it names in the drawing:
+// hovering w(u,v) lights that edge, F_9 lights its square. A result is
+// stamped checked only when Kosika's own working agrees with itself.
+
+record Proof { html: Text checked: Text[] }
+
+fn no_proof() -> Proof { return {html: "", checked: []} }
+
+// A piece of notation tied to elements of the drawing.
+fn sym(ids: Text, body: Text) -> Text { return f"<mrow class=\"sym\" data-show=\"{ids}\">{body}</mrow>" }
+fn mi(t: Text) -> Text { return f"<mi>{t}</mi>" }
+fn mn(v: Number) -> Text { return f"<mn>{proof_num(v)}</mn>" }
+fn mo(t: Text) -> Text { return f"<mo>{t}</mo>" }
+fn msub(a: Text, b: Text) -> Text { return f"<msub>{a}<mrow>{b}</mrow></msub>" }
+fn paren(t: Text) -> Text { return "<mo stretchy=\"false\">(</mo>" + t + "<mo stretchy=\"false\">)</mo>" }
+
+fn proof_num(v: Number) -> Text {
+  if v >= 1000000000 { return "&#8734;" }
+  let r = (v * 1000).round() / 1000
+  return r.to_text()
+}
+
+// One numbered equation, with a line saying what it shows.
+fn equation(k: Number, math: Text, note: Text) -> Text {
+  return f"<div class=\"eq\"><math display=\"block\">{math}</math><span class=\"eqno\">({k})</span></div><p class=\"eqnote\">{note}</p>"
+}
+
+fn proof_panel(title: Text, body: Text, checked: Text[]) -> Text {
+  let ticks = (for c in checked { f"<li>{c}</li>" }).join("")
+  return f"<section class=\"proof bit\" id=\"proof\"><div class=\"plab\">{title}</div>{body}<ul class=\"checked\">{ticks}</ul></section>"
+}
+
+// ---- Fibonacci
+
+fn fib_list(count: Number) -> Number[] {
+  var fs: Number[] = [1, 1]
+  while fs.length() < count { fs = fs.append(fs[fs.length() - 1] + fs[fs.length() - 2]) }
+  return fs
+}
+
+// F_k names the square of side F_k: the k-th square drawn, sq(k-1).
+fn fsym(k: Number) -> Text { return sym(f"sq{k - 1}", msub(mi("F"), f"<mn>{k}</mn>")) }
+
+fn fib_proof(count: Number) -> Proof {
+  let fs = fib_list(count)
+  let n = count
+  let a = fs[n - 1]
+  let b = fs[n - 2]
+  let c = fs[n - 3]
+  // Binet's formula, read by std/math from the formula itself.
+  let binet = div(sub(pow(x("phi"), x("n")), pow(x("psi"), x("n"))), pow(num(5), num(0.5)))
+  let phi = at(div(add(num(1), pow(num(5), num(0.5))), num(2)), [], [])
+  let psi = at(div(sub(num(1), pow(num(5), num(0.5))), num(2)), [], [])
+  let by_formula = for k in 1 until n + 1 { at(binet, ["phi", "psi", "n"], [phi, psi, k]) }
+  let formula_holds = (for k in 0 until n where (by_formula[k] - fs[k]).abs() < 0.000001 { k }).length() == n
+  let rule_holds = (for k in 2 until n where fs[k] == fs[k - 1] + fs[k - 2] { k }).length() == n - 2
+  let sides = for q in golden_squares(n) { q[2] - q[0] }
+  let sides_hold = sides == fs
+  let ratio = a / b
+  let generic = msub(mi("F"), mi("n")) + mo("=") + msub(mi("F"), "<mi>n</mi><mo>&#8722;</mo><mn>1</mn>") + mo("+") + msub(mi("F"), "<mi>n</mi><mo>&#8722;</mo><mn>2</mn>") + mo(",") + mo("&#8195;") + msub(mi("F"), "<mn>1</mn>") + mo("=") + msub(mi("F"), "<mn>2</mn>") + mo("=") + "<mn>1</mn>"
+  let worked = fsym(n) + mo("=") + fsym(n - 1) + mo("+") + fsym(n - 2) + mo("=") + sym(f"sq{n - 2}", mn(b)) + mo("+") + sym(f"sq{n - 3}", mn(c)) + mo("=") + sym(f"sq{n - 1}", mn(a))
+  let binet_math = msub(mi("F"), mi("n")) + mo("=") + to_mathml(binet) + mo(",") + mo("&#8195;") + mi("&#966;") + mo("=") + to_mathml(div(add(num(1), pow(num(5), num(0.5))), num(2))) + mo(",") + mo("&#8195;") + mi("&#968;") + mo("=") + to_mathml(div(sub(num(1), pow(num(5), num(0.5))), num(2)))
+  let binet_worked = fsym(n) + mo("=") + to_mathml(div(sub(pow(x("phi"), num(n)), pow(x("psi"), num(n))), pow(num(5), num(0.5)))) + mo("=") + mn(by_formula[n - 1])
+  let ratio_math = "<munder><mi>lim</mi><mrow><mi>n</mi><mo>&#8594;</mo><mi>&#8734;</mi></mrow></munder>" + "<mfrac>" + msub(mi("F"), "<mi>n</mi><mo>+</mo><mn>1</mn>") + msub(mi("F"), mi("n")) + "</mfrac>" + mo("=") + mi("&#966;") + mo("&#8776;") + mn(phi) + mo(",") + mo("&#8195;") + "<mfrac>" + fsym(n) + fsym(n - 1) + "</mfrac>" + mo("=") + "<mfrac>" + mn(a) + mn(b) + "</mfrac>" + mo("&#8776;") + mn(ratio)
+  let cells = (for k in 1 until n + 1 { f"<td class=\"sym\" data-show=\"sq{k - 1}\">{fs[k - 1]}</td>" }).join("")
+  let heads = (for k in 1 until n + 1 { f"<th>{k}</th>" }).join("")
+  let table = f"<div class=\"ds\"><div class=\"dsl\">The data: the array F, one cell a square</div><table><tr><th>n</th>{heads}</tr><tr><th>F<sub>n</sub></th>{cells}</tr></table></div>"
+  let body = equation(1, generic, "The rule: each number is the sum of the two before it.") + equation(2, worked, f"The rule at n = {n}: the two smaller squares, side by side, give the side of the next.") + equation(3, binet_math, "Binet's formula gives any term directly; &#968; is the other root of x&#178; = x + 1.") + equation(4, binet_worked, f"Kosika computed it: the formula gives {proof_num(by_formula[n - 1])} for n = {n}.") + equation(5, ratio_math, "Neighbours divide to the golden ratio &#966;.") + table
+  var checked: Text[] = []
+  if rule_holds { checked = checked.append(f"Every term from F<sub>3</sub> to F<sub>{n}</sub> is the sum of the two before it.") }
+  if formula_holds { checked = checked.append(f"Binet's formula gives the same {n} numbers, computed by Kosika's std/math.") }
+  if sides_hold { checked = checked.append("Each square drawn has the side of its Fibonacci number.") }
+  if (ratio - phi).abs() < 0.01 { checked = checked.append(f"{a} / {b} = {proof_num(ratio)} is within 0.01 of &#966; = {proof_num(phi)}.") }
+  return {html: proof_panel("The mathematics &#183; worked by Kosika", body, checked), checked: checked}
+}
+
+// ---- graphs
+
+fn weight_of(l: Link) -> Number? {
+  let t = l.label.trim()
+  if t.is_empty() { return null }
+  let w = t.words()[0].to_number()
+  return w
+}
+
+// The id graph_svg gives the k-th link: l-from-to-n, n counting the
+// earlier links between the same two vertices.
+fn edge_id(s: Structure, k: Number) -> Text {
+  let l = s.links[k]
+  let same = for j in 0 until s.links.length() where (s.links[j].from == l.from and s.links[j].to == l.to) or (s.links[j].from == l.to and s.links[j].to == l.from) { j }
+  return f"l-{l.from}-{l.to}-{same.index_of(k).or(0)}"
+}
+
+fn vname(s: Structure, i: Number) -> Text { return escaped(s.parts[i].label) }
+
+fn pick_vertex(s: Structure, words: Text[], fallback: Number) -> Number {
+  for i in 0 until s.parts.length() {
+    let said = (s.parts[i].label + " " + s.parts[i].note).lower()
+    for w in words {
+      if said.contains(w) { return i }
+    }
+  }
+  return fallback
+}
+
+// The last number the explanation gives for a vertex, as in "the shortest
+// path to F is 5" or "F becomes 5", or -1 when it gives none.
+fn claimed(s: Structure, name: Text) -> Number {
+  var found = -1
+  for st in s.steps {
+    for lead in [f"to {name} is ", f"{name} is ", f"{name} becomes ", f"{name} = ", f"{name} to "] {
+      let at = st.text.index_of(lead).or(-1)
+      if at >= 0 {
+        let rest = st.text.slice(at + lead.length(), st.text.length()).words()
+        if not rest.is_empty() {
+          let v = rest[0].trim_marks(".,;:").to_number()
+          if v.exists() { found = v.value() }
+        }
+      }
+    }
+  }
+  return found
+}
+
+// How many edges join vertices i and j.
+fn joins(ends: Number[][], i: Number, j: Number) -> Number {
+  return (for e in ends where (e[0] == i and e[1] == j) or (e[0] == j and e[1] == i) { 1 }).length()
+}
+
+fn graph_proof(s: Structure) -> Proof {
+  let n = s.parts.length()
+  let m = s.links.length()
+  if n == 0 { return no_proof() }
+  let ends = for l in s.links { [place(s, l.from), place(s, l.to)] }
+  let deg = for i in 0 until n { (for e in ends where e[0] == i or e[1] == i { 1 }).length() + (for e in ends where e[0] == i and e[1] == i { 1 }).length() }
+  let total = deg.sum()
+  let odd = for i in 0 until n where deg[i] % 2 == 1 { i }
+  var body = ""
+  var checked: Text[] = []
+  var k = 1
+  // Degrees and the handshake: every edge has two ends.
+  let deg_terms = (for i in 0 until n { sym(f"p-{s.parts[i].id}", mi("deg") + paren(mi(vname(s, i)))) }).join(mo("+"))
+  let deg_nums = (for i in 0 until n { sym(f"p-{s.parts[i].id}", mn(deg[i])) }).join(mo("+"))
+  body = body + equation(k, "<munder><mo>&#8721;</mo><mrow><mi>v</mi><mo>&#8712;</mo><mi>V</mi></mrow></munder>" + mi("deg") + paren(mi("v")) + mo("=") + mn(2) + mo("&#8290;") + "<mo stretchy=\"false\">|</mo>" + mi("E") + "<mo stretchy=\"false\">|</mo>", "The handshake lemma: every edge has two ends, so the degrees add up to twice the edges.")
+  k += 1
+  body = body + equation(k, deg_terms + mo("=") + deg_nums + mo("=") + mn(total) + mo("=") + mn(2) + mo("&#183;") + mn(m), f"Kosika counted each vertex's edges: {n} vertices, {m} edges.")
+  k += 1
+  if total == 2 * m { checked = checked.append(f"The degrees add to {total} = 2 &#183; {m}, as they must.") }
+  // Euler: a walk over every edge once needs 0 or 2 vertices of odd degree.
+  let odd_ids = (for i in odd { "p-" + s.parts[i].id }).join(" ")
+  let odd_names = (for i in odd { vname(s, i) }).join(", ")
+  let odd_note = if odd.is_empty() { "" } else { f" Odd vertices: {odd_names}." }
+  let euler = if odd.length() == 0 { "an Euler circuit exists: a walk over every edge once that ends where it began" } else if odd.length() == 2 { f"an Euler path exists, from {vname(s, odd[0])} to {vname(s, odd[1])}" } else { "no walk crosses every edge exactly once" }
+  body = body + equation(k, "<mo stretchy=\"false\">|</mo>" + "<mo stretchy=\"false\">{</mo>" + mi("v") + mo(":") + mi("deg") + paren(mi("v")) + "<mtext>&#160;odd</mtext>" + "<mo stretchy=\"false\">}</mo>" + "<mo stretchy=\"false\">|</mo>" + mo("=") + sym(odd_ids, mn(odd.length())), f"Euler's theorem: {euler}." + odd_note)
+  k += 1
+  checked = checked.append(f"Euler's test, worked by Kosika: {odd.length()} vertices of odd degree, so {euler}.")
+  // Shortest paths, when every edge has a numeric weight.
+  let weights = for l in s.links { weight_of(l).or(-1) }
+  let weighted = m > 0 and (for w in weights where w < 0 { w }).is_empty()
+  var table = ""
+  if weighted {
+    let src = pick_vertex(s, ["start", "source", "origin"], 0)
+    let dst = pick_vertex(s, ["target", "goal", "end", "destination"], n - 1)
+    let inf = 1000000000
+    var dist: Number[] = for i in 0 until n { if i == src { 0 } else { inf } }
+    var prev: Number[] = for i in 0 until n { -1 }
+    var done: Number[] = for i in 0 until n { 0 }
+    var lines: Text[] = []
+    for round in 0 until n {
+      var u = -1
+      for i in 0 until n {
+        if done[i] == 0 and dist[i] < inf and (u < 0 or dist[i] < dist[u]) { u = i }
+      }
+      if u >= 0 {
+        done = done.set(u, 1)
+        for e in 0 until m {
+          let a = ends[e][0]
+          let b = ends[e][1]
+          let v = if a == u { b } else if b == u { a } else { -1 }
+          if v >= 0 and done[v] == 0 and dist[u] + weights[e] < dist[v] {
+            let old = dist[v]
+            let new = dist[u] + weights[e]
+            if lines.length() < 7 {
+              let dv = sym(f"p-{s.parts[v].id}", mi("d") + paren(mi(vname(s, v))))
+              let du = sym(f"p-{s.parts[u].id}", mi("d") + paren(mi(vname(s, u))))
+              let w = sym(edge_id(s, e), mi("w") + paren(mi(vname(s, u)) + mo(",") + mi(vname(s, v))))
+              lines = lines.append(dv + mo("=") + mi("min") + paren(mn(old) + mo(",") + du + mo("+") + w) + mo("=") + mi("min") + paren(mn(old) + mo(",") + mn(dist[u]) + mo("+") + mn(weights[e])) + mo("=") + sym(f"p-{s.parts[v].id}", mn(new)))
+            }
+            dist = dist.set(v, new)
+            prev = prev.set(v, u)
+          }
+        }
+      }
+    }
+    body = body + equation(k, mi("d") + paren(mi("v")) + mo("&#8592;") + mi("min") + "<mo stretchy=\"false\">{</mo>" + mi("d") + paren(mi("v")) + mo(",") + mi("d") + paren(mi("u")) + mo("+") + mi("w") + paren(mi("u") + mo(",") + mi("v")) + "<mo stretchy=\"false\">}</mo>", f"Dijkstra's rule from {vname(s, src)}: take the nearest vertex u not yet done, and lower each neighbour's distance if going through u is shorter.")
+    k += 1
+    for line in lines {
+      body = body + equation(k, line, "")
+      k += 1
+    }
+    // The path, walked back from the target.
+    var path: Number[] = [dst]
+    var at_v = dst
+    var guard = 0
+    while prev[at_v] >= 0 and guard < n {
+      at_v = prev[at_v]
+      path = [at_v].concat(path)
+      guard += 1
+    }
+    let reached = dist[dst] < inf
+    var path_ids: Text[] = for i in path { "p-" + s.parts[i].id }
+    for j in 0 until path.length() - 1 {
+      for e in 0 until m {
+        if (ends[e][0] == path[j] and ends[e][1] == path[j + 1]) or (ends[e][1] == path[j] and ends[e][0] == path[j + 1]) {
+          if weights[e] == dist[path[j + 1]] - dist[path[j]] { path_ids = path_ids.append(edge_id(s, e)) }
+        }
+      }
+    }
+    let path_text = (for i in path { vname(s, i) }).join(" &#8594; ")
+    let claim = claimed(s, vname(s, dst))
+    if reached and claim >= 0 {
+      if claim == dist[dst] { checked = checked.append(f"The explanation says {proof_num(claim)} for {vname(s, dst)}, and Kosika's working agrees.") }
+      else { checked = checked.append(f"Corrected: the explanation says {proof_num(claim)} for {vname(s, dst)}, but Kosika's working gives {proof_num(dist[dst])}.") }
+    }
+    if reached {
+      body = body + equation(k, sym(path_ids.join(" "), mi("d") + paren(mi(vname(s, dst))) + mo("=") + mn(dist[dst])), f"The shortest path from {vname(s, src)} to {vname(s, dst)} is {path_text}, of length {proof_num(dist[dst])}.")
+      checked = checked.append(f"Kosika ran Dijkstra itself: {path_text}, length {proof_num(dist[dst])}.")
+    }
+    let froms = for i in 0 until n { if prev[i] >= 0 { vname(s, prev[i]) } else { "&#8212;" } }
+    let rows = (for i in 0 until n { f"<tr class=\"sym\" data-show=\"p-{s.parts[i].id}\"><td>{vname(s, i)}</td><td>{proof_num(dist[i])}</td><td>{froms[i]}</td><td>{deg[i]}</td></tr>" }).join("")
+    table = f"<div class=\"ds\"><div class=\"dsl\">The data: distances from {vname(s, src)}, the vertex each was reached from, and degrees</div><table><tr><th>v</th><th>d(v)</th><th>from</th><th>deg</th></tr>{rows}</table></div>"
+  }
+  // The adjacency matrix: how many edges join each pair.
+  let headers = (for i in 0 until n { f"<th>{vname(s, i)}</th>" }).join("")
+  let matrix = (for i in 0 until n { f"<tr><th class=\"sym\" data-show=\"p-{s.parts[i].id}\">{vname(s, i)}</th>" + (for j in 0 until n { "<td>" + joins(ends, i, j).to_text() + "</td>" }).join("") + "</tr>" }).join("")
+  let adjacency = f"<div class=\"ds\"><div class=\"dsl\">The data: the adjacency matrix A, A<sub>uv</sub> = edges between u and v</div><table><tr><th></th>{headers}</tr>{matrix}</table></div>"
+  return {html: proof_panel("The mathematics &#183; worked by Kosika", body + "<div class=\"dsrow\">" + table + adjacency + "</div>", checked), checked: checked}
+}
+
+fn proof_of(s: Structure) -> Proof {
+  if s.figure == "golden_spiral" { return fib_proof(9) }
+  if s.shape == "graph" { return graph_proof(s) }
+  return no_proof()
+}
+
+fn proof_style() -> Text {
+  return ".proof{margin:26px 0 8px;padding:18px 20px;border-radius:16px;background:rgba(22,24,36,.55);border:1px solid rgba(255,255,255,.09)}.plab{font:600 10px ui-monospace,Consolas,monospace;letter-spacing:.32em;text-transform:uppercase;color:var(--gold);margin-bottom:10px}.eq{display:flex;align-items:center;gap:12px}.eq math{flex:1;font-size:1.22em;color:var(--ink);overflow-x:auto;padding:4px 0}.eqno{font:13px ui-monospace,Consolas,monospace;color:var(--soft)}.eqnote{margin:-2px 0 10px;color:var(--soft);font-size:13.5px}.eqnote:empty{display:none}.sym{cursor:default;border-radius:4px;transition:color .15s,background .15s}.sym:hover,.sym.on{color:var(--amber);background:rgba(255,138,76,.12)}mrow.sym:hover mi,mrow.sym:hover mn,mrow.sym.on mi,mrow.sym.on mn{color:var(--amber)}.ds{margin-top:14px;overflow-x:auto}.dsl{font-size:12.5px;color:var(--soft);margin-bottom:6px}.ds table{border-collapse:collapse;font:13px ui-monospace,Consolas,monospace}.ds th,.ds td{border:1px solid rgba(255,255,255,.1);padding:4px 9px;text-align:center}.ds th{color:var(--soft);font-weight:600}.dsrow{display:flex;gap:22px;flex-wrap:wrap}.checked{list-style:none;margin:16px 0 0;padding:0}.checked li{color:var(--ink);font-size:13.5px;margin:4px 0;padding-left:24px;position:relative}.checked li:before{content:'\\2713';position:absolute;left:4px;color:#4fe0a6;font-weight:700}.stamp{display:inline-block;margin-left:10px;font:600 10px ui-monospace,Consolas,monospace;letter-spacing:.2em;text-transform:uppercase;color:#4fe0a6;border:1px solid rgba(79,224,166,.45);border-radius:999px;padding:3px 9px;vertical-align:middle}@media (prefers-color-scheme: light){.proof{background:rgba(255,255,255,.75);border-color:rgba(20,20,40,.1)}.ds th,.ds td{border-color:rgba(20,20,40,.12)}}"
+}
+
 // ---------------------------------------------------------------- the golden spiral, exactly
 
 // Squares of Fibonacci sides, each added to the right, below, left and
@@ -899,7 +1153,7 @@ fn draw_style() -> Text {
 // step draws in what it is about, marks it, and types its sentence,
 // before the next begins. Afterwards hovering a step marks it again.
 fn draw_script() -> Text {
-  return "if(window.top===window)document.documentElement.style.background=getComputedStyle(document.documentElement).getPropertyValue('--bg');var steps=[].slice.call(document.querySelectorAll('.say')),think=document.getElementById('think'),hud=document.getElementById('hud'),slow=!matchMedia('(prefers-reduced-motion: reduce)').matches,running=false;function wait(ms){return new Promise(function(r){setTimeout(r,slow?ms:0)})}function plain(t){var d=document.createElement('textarea');d.innerHTML=t;return d.value}function els(s){return (s.dataset.show||'').split(' ').filter(Boolean).map(function(id){return document.getElementById(id)}).filter(Boolean)}function links(){document.querySelectorAll('.link').forEach(function(l){var a=document.getElementById(l.dataset.a),b=document.getElementById(l.dataset.b);if(a&&b&&a.classList.contains('shown')&&b.classList.contains('shown'))l.classList.add('shown')})}function mark(s){document.querySelectorAll('.on').forEach(function(e){e.classList.remove('on')});hud.innerHTML='';if(!s)return;s.classList.add('on');var ld=document.getElementById('lead'+steps.indexOf(s));if(ld)ld.classList.add('on');var es=els(s),ids=es.map(function(e){return e.id});es.forEach(function(e){e.classList.add('on')});document.querySelectorAll('.link').forEach(function(l){if(ids.indexOf(l.dataset.a)>=0&&ids.indexOf(l.dataset.b)>=0)l.classList.add('on')});hud.innerHTML=s.dataset.hud||''}async function type(el,text){text=plain(text);if(!slow){el.textContent=text;return}for(var i=1;i<=text.length;i+=2){el.textContent=text.slice(0,i+1);await wait(16)}}async function build(){if(running)return;running=true;if(window.placeNotes)placeNotes();document.body.classList.remove('done');document.querySelectorAll('.bit').forEach(function(e){e.classList.remove('shown')});steps.forEach(function(s){s.classList.remove('shown','now');s.querySelector('span').textContent=''});document.querySelectorAll('.leaders path').forEach(function(p){p.classList.remove('shown')});mark(null);var lines=JSON.parse(think.dataset.lines);for(var k=0;k<lines.length;k++){await type(think,lines[k]);await wait(450)}for(var i=0;i<steps.length;i++){var s=steps[i];s.classList.add('shown','now');var lead=document.getElementById('lead'+steps.indexOf(s));if(lead)lead.classList.add('shown');var es=els(s);for(var j=0;j<es.length;j++){es[j].classList.add('shown');links();mark(s);await wait(240)}mark(s);await type(s.querySelector('span'),s.querySelector('span').dataset.text);await wait(800);s.classList.remove('now')}document.querySelectorAll('.bit').forEach(function(e){e.classList.add('shown')});document.querySelectorAll('.leaders path').forEach(function(p){p.classList.add('shown')});mark(null);think.textContent=think.dataset.done;document.body.classList.add('done');running=false}steps.forEach(function(s){s.addEventListener('mouseenter',function(){if(!running)mark(s)});s.addEventListener('focus',function(){if(!running)mark(s)});s.addEventListener('mouseleave',function(){if(!running)mark(null)});s.addEventListener('blur',function(){if(!running)mark(null)})});document.getElementById('replay').addEventListener('click',build);build();"
+  return "if(window.top===window)document.documentElement.style.background=getComputedStyle(document.documentElement).getPropertyValue('--bg');var steps=[].slice.call(document.querySelectorAll('.say')),think=document.getElementById('think'),hud=document.getElementById('hud'),slow=!matchMedia('(prefers-reduced-motion: reduce)').matches,running=false;function wait(ms){return new Promise(function(r){setTimeout(r,slow?ms:0)})}function plain(t){var d=document.createElement('textarea');d.innerHTML=t;return d.value}function els(s){return (s.dataset.show||'').split(' ').filter(Boolean).map(function(id){return document.getElementById(id)}).filter(Boolean)}function links(){document.querySelectorAll('.link').forEach(function(l){var a=document.getElementById(l.dataset.a),b=document.getElementById(l.dataset.b);if(a&&b&&a.classList.contains('shown')&&b.classList.contains('shown'))l.classList.add('shown')})}function mark(s){document.querySelectorAll('.on').forEach(function(e){e.classList.remove('on')});hud.innerHTML='';if(!s)return;s.classList.add('on');var ld=document.getElementById('lead'+steps.indexOf(s));if(ld)ld.classList.add('on');var es=els(s),ids=es.map(function(e){return e.id});es.forEach(function(e){e.classList.add('on')});document.querySelectorAll('.link').forEach(function(l){if(ids.indexOf(l.dataset.a)>=0&&ids.indexOf(l.dataset.b)>=0)l.classList.add('on')});hud.innerHTML=s.dataset.hud||''}async function type(el,text){text=plain(text);if(!slow){el.textContent=text;return}for(var i=1;i<=text.length;i+=2){el.textContent=text.slice(0,i+1);await wait(16)}}async function build(){if(running)return;running=true;if(window.placeNotes)placeNotes();document.body.classList.remove('done');document.querySelectorAll('.bit').forEach(function(e){e.classList.remove('shown')});steps.forEach(function(s){s.classList.remove('shown','now');s.querySelector('span').textContent=''});document.querySelectorAll('.leaders path').forEach(function(p){p.classList.remove('shown')});mark(null);var lines=JSON.parse(think.dataset.lines);for(var k=0;k<lines.length;k++){await type(think,lines[k]);await wait(450)}for(var i=0;i<steps.length;i++){var s=steps[i];s.classList.add('shown','now');var lead=document.getElementById('lead'+steps.indexOf(s));if(lead)lead.classList.add('shown');var es=els(s);for(var j=0;j<es.length;j++){es[j].classList.add('shown');links();mark(s);await wait(240)}mark(s);await type(s.querySelector('span'),s.querySelector('span').dataset.text);await wait(800);s.classList.remove('now')}document.querySelectorAll('.bit').forEach(function(e){e.classList.add('shown')});document.querySelectorAll('.leaders path').forEach(function(p){p.classList.add('shown')});mark(null);think.textContent=think.dataset.done;document.body.classList.add('done');running=false}steps.forEach(function(s){s.addEventListener('mouseenter',function(){if(!running)mark(s)});s.addEventListener('focus',function(){if(!running)mark(s)});s.addEventListener('mouseleave',function(){if(!running)mark(null)});s.addEventListener('blur',function(){if(!running)mark(null)})});document.querySelectorAll('.sym').forEach(function(m){m.addEventListener('mouseenter',function(){if(!running)mark(m)});m.addEventListener('mouseleave',function(){if(!running)mark(null)})});document.getElementById('replay').addEventListener('click',build);build();"
 }
 
 // The explanation sits in the drawing: each step a short note in the
@@ -926,9 +1180,11 @@ fn draw_page(r: Request) -> Text {
   let title = if golden { "The Fibonacci sequence, drawn" } else { s.title }
   let summary = if golden { "Squares whose sides are Fibonacci numbers, and the golden spiral that runs through them." } else { s.summary }
   let drawing = if golden { golden_svg(9) } else { structure_svg(s) }
+  let proof = proof_of(s)
+  let stamp = if proof.checked.is_empty() { "" } else { "<span class=\"stamp\">checked</span>" }
   let sentences = if golden { golden_steps(9).join("") } else { (for i in 0 until s.steps.length() { step_line(i, shown_ids(s, s.steps[i]), "", escaped(s.steps[i].text)) }).join("") }
   let think = f"<div class=\"think\" id=\"think\" data-lines=\"{quoted(thinking(s))}\" data-done=\"Done. Hover a step to mark it again.\"></div>"
-  return f"<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Kosika Designs</title><style>{draw_style()}{kinds_style()}{notes_style()}</style></head><body><main><div class=\"brand\">Kosika Designs</div><div class=\"ask\">&#8220;{escaped(r.ask)}&#8221;</div><h1>{escaped(title)}</h1><p class=\"lede\">{escaped(summary)}</p>{think}<div class=\"board\" id=\"board\">{drawing}<svg class=\"leaders\" id=\"leaders\" aria-hidden=\"true\"></svg><ol class=\"notes\">{sentences}</ol></div><div class=\"hud\" id=\"hud\"></div>{reference_photo(r.picture)}<div class=\"bar\"><span></span><button id=\"replay\" type=\"button\">Replay</button></div></main><script>{notes_script()}{draw_script()}</script></body></html>"
+  return f"<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Kosika Designs</title><style>{draw_style()}{kinds_style()}{notes_style()}{proof_style()}</style></head><body><main><div class=\"brand\">Kosika Designs</div><div class=\"ask\">&#8220;{escaped(r.ask)}&#8221;</div><h1>{escaped(title)}{stamp}</h1><p class=\"lede\">{escaped(summary)}</p>{think}<div class=\"board\" id=\"board\">{drawing}<svg class=\"leaders\" id=\"leaders\" aria-hidden=\"true\"></svg><ol class=\"notes\">{sentences}</ol></div>{proof.html}<div class=\"hud\" id=\"hud\"></div>{reference_photo(r.picture)}<div class=\"bar\"><span></span><button id=\"replay\" type=\"button\">Replay</button></div></main><script>{notes_script()}{draw_script()}</script></body></html>"
 }
 
 workflow draw(r: Request) -> Design {
@@ -1007,4 +1263,29 @@ test "a sketch's marks are checked and smoothed" {
   expect smooth([0, 0, 50, 50, 100, 0], false, 100, 100).starts_with("M0.0 0.0 C")
   bad = {..sk, marks: [{id: "cell", kind: "blob", points: [20, 20, 300], label: ""}]}
   expect problems(bad).length() >= 3
+}
+
+test "Kosika works the Fibonacci mathematics and checks it" {
+  p = fib_proof(9)
+  expect p.checked.length() == 4
+  expect p.html.contains("<mfrac>")
+  expect p.html.contains("data-show=\"sq8\"")
+}
+
+test "Kosika proves graph facts itself" {
+  bridges = {..family(), shape: "graph", parts: [
+    {id: "n", label: "N", note: "", parent: ""}, {id: "s", label: "S", note: "", parent: ""},
+    {id: "i", label: "I", note: "", parent: ""}, {id: "e", label: "E", note: "", parent: ""}
+  ], links: [{from: "n", to: "i", label: ""}, {from: "n", to: "i", label: ""}, {from: "s", to: "i", label: ""}, {from: "s", to: "i", label: ""}, {from: "n", to: "e", label: ""}, {from: "s", to: "e", label: ""}, {from: "i", to: "e", label: ""}], steps: [{text: "a", parts: ["n"]}, {text: "b", parts: ["i"]}]}
+  k = graph_proof(bridges)
+  expect k.checked.contains("Euler's test, worked by Kosika: 4 vertices of odd degree, so no walk crosses every edge exactly once.")
+  expect k.checked.contains("The degrees add to 14 = 2 &#183; 7, as they must.")
+  roads = {..bridges, parts: [
+    {id: "a", label: "A", note: "start", parent: ""}, {id: "b", label: "B", note: "", parent: ""},
+    {id: "c", label: "C", note: "", parent: ""}, {id: "d", label: "D", note: "target", parent: ""}
+  ], links: [{from: "a", to: "b", label: "4"}, {from: "a", to: "c", label: "1"}, {from: "c", to: "b", label: "2"}, {from: "b", to: "d", label: "5"}, {from: "c", to: "d", label: "9"}]}
+  r = graph_proof(roads)
+  expect r.checked.contains("Kosika ran Dijkstra itself: A &#8594; C &#8594; B &#8594; D, length 8.")
+  wrong = graph_proof({..roads, steps: [{text: "The shortest path to D is 9.", parts: ["d"]}, {text: "b", parts: ["a"]}]})
+  expect wrong.checked.contains("Corrected: the explanation says 9 for D, but Kosika's working gives 8.")
 }
