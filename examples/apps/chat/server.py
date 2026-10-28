@@ -169,6 +169,14 @@ class Chat:
                 return self.kosi_job(ask, hand["agent"], hand["text"])
             except Exception as error:
                 return {"text": f"Kosi handed this to {hand['agent'].title()}, and it could not finish: {str(error)[:200]}", "page": "", "problems": [], "title": ""}
+        # Mathematics to work comes back as a paper, every line checked by
+        # Kosika (designs/paper.kos).
+        try:
+            if self.kosika.run(DESIGNS / "paper.kos", "is_maths", {"ask": {"text": ask}}, model=False)["yes"]:
+                paper = self.kosika.run(DESIGNS / "paper.kos", "derive", {"ask": {"text": ask}}, model=True)
+                return {"page": paper["page"], "problems": [], "title": "Checked working" if paper["checked"] else "Working, corrected by Kosika", "text": "", "card": False}
+        except Exception:
+            pass  # a drawing is still tried
         # The drawing is the answer, its explanation written inside it. Words
         # alone are asked for only when no drawing could be made.
         try:

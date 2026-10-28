@@ -16,6 +16,8 @@
 // to_text(e)                             the expression in plain words
 // to_latex(e)                            the expression as LaTeX
 // to_mathml(e)                           the expression as MathML, for a page
+// parse(text)                           plain typed maths read into an expression
+// same(a, b)                             whether two expressions are the same function
 //
 // An expression is its own prefix encoding: a list of words. "+ a b" is
 // a plus of two parts, "~ a" a negation, "sin a" a sine, "n:2" a number
@@ -28,7 +30,7 @@
 // paper whose formulas went through here carries math the language has
 // already read.
 
-export [num, neg, x, add, sub, mul, div, pow, sin, cos, exp, ln, at, deriv, simplify, to_text, to_latex, to_mathml]
+export [num, neg, x, add, sub, mul, div, pow, sin, cos, exp, ln, at, deriv, simplify, to_text, to_latex, to_mathml, Parsed, parse, same, names_in]
 
 fn num(v: Number) -> Text[] { return ["n:" + v.to_text()] }
 fn neg(e: Text[]) -> Text[] { return ["~"].concat(e) }
@@ -69,26 +71,36 @@ fn child(e: Text[], which: Number) -> Text[] recurse 64 {
 fn is_const(e: Text[]) -> Bool { return e.length() == 1 and e[0].starts_with("n:") }
 fn cval(e: Text[]) -> Number { return e[0].slice(2, e[0].length()).to_number().or(0) }
 
-fn value_of(names: Text[], values: Number[], name: Text, at: Number) -> Number recurse 8 {
-  if at >= names.length() { return 0 }
-  if names[at] == name { return values[at] }
-  return value_of(names, values, name, at + 1)
-}
-
-fn at(e: Text[], names: Text[], values: Number[]) -> Number recurse 64 {
-  if is_const(e) { return cval(e) }
-  if e.length() == 1 { return value_of(names, values, e[0], 0) }
-  let op = e[0]
-  if op == "~" { return -at(child(e, 1), names, values) }
-  if op == "+" { return at(child(e, 1), names, values) + at(child(e, 2), names, values) }
-  if op == "-" { return at(child(e, 1), names, values) - at(child(e, 2), names, values) }
-  if op == "*" { return at(child(e, 1), names, values) * at(child(e, 2), names, values) }
-  if op == "/" { return at(child(e, 1), names, values) / at(child(e, 2), names, values) }
-  if op == "^" { return at(child(e, 1), names, values).power(at(child(e, 2), names, values)) }
-  if op == "sin" { return at(child(e, 1), names, values).sin() }
-  if op == "cos" { return at(child(e, 1), names, values).cos() }
-  if op == "exp" { return at(child(e, 1), names, values).exp() }
-  return at(child(e, 1), names, values).log()
+// The value of an expression, read once from its last word to its first:
+// numbers and names go on a stack, and each operator takes its operands
+// from the top. One pass, no recursion, however deep the expression.
+fn at(e: Text[], names: Text[], values: Number[]) -> Number {
+  var stack: Number[] = []
+  var i = e.length() - 1
+  while i >= 0 {
+    let t = e[i]
+    let take = arity(t)
+    if take == 0 {
+      if t.starts_with("n:") { stack = stack.append(t.slice(2, t.length()).to_number().or(0)) }
+      else {
+        let k = names.index_of(t).or(-1)
+        stack = stack.append(if k >= 0 { values[k] } else { 0 })
+      }
+    } else if take == 1 {
+      let a = stack[stack.length() - 1]
+      stack = stack.slice(0, stack.length() - 1)
+      let v = if t == "~" { -a } else if t == "sin" { a.sin() } else if t == "cos" { a.cos() } else if t == "exp" { a.exp() } else { a.log() }
+      stack = stack.append(v)
+    } else {
+      let a = stack[stack.length() - 1]
+      let b = stack[stack.length() - 2]
+      stack = stack.slice(0, stack.length() - 2)
+      let v = if t == "+" { a + b } else if t == "-" { a - b } else if t == "*" { a * b } else if t == "/" { a / b } else { a.power(b) }
+      stack = stack.append(v)
+    }
+    i -= 1
+  }
+  return if stack.is_empty() { 0 } else { stack[0] }
 }
 
 // The derivative, by rule. Constants die, variables are recognised, the
@@ -119,10 +131,10 @@ fn deriv(e: Text[], name: Text) -> Text[] recurse 64 {
     return mul(pow(u, c), deriv(mul(c, ln(u)), name))
   }
   let u = child(e, 1)
-  if op == "sin" { return mul(cos(u), deriv(u, name)) }
-  if op == "cos" { return neg(mul(sin(u), deriv(u, name))) }
-  if op == "exp" { return mul(exp(u), deriv(u, name)) }
-  return mul(div(num(1), u), deriv(u, name))
+  if op == "sin" { return mul(deriv(u, name), cos(u)) }
+  if op == "cos" { return neg(mul(deriv(u, name), sin(u))) }
+  if op == "exp" { return mul(deriv(u, name), exp(u)) }
+  return div(deriv(u, name), u)
 }
 
 fn is_cval(e: Text[], v: Number) -> Bool { return is_const(e) and cval(e) == v }
@@ -250,7 +262,11 @@ fn mathml_of(e: Text[], parent: Number) -> Text recurse 64 {
   else {
     let op = e[0]
     if op == "~" { body = "<mo>&#8722;</mo>" + mathml_of(child(e, 1), 5) }
-    else if op == "sin" or op == "cos" or op == "ln" { body = f"<mi>{op}</mi><mo>&#8289;</mo>" + mathml_of(child(e, 1), 3) }
+    else if op == "sin" or op == "cos" or op == "ln" {
+      let arg = child(e, 1)
+      let inner = mathml_of(arg, 0)
+      body = f"<mi>{op}</mi><mo>&#8289;</mo>" + (if arg.length() == 1 { inner } else { "<mo stretchy=\"false\">(</mo>" + inner + "<mo stretchy=\"false\">)</mo>" })
+    }
     else if op == "exp" { body = "<msup><mi>e</mi><mrow>" + mathml_of(child(e, 1), 0) + "</mrow></msup>" }
     else if op == "/" { body = "<mfrac><mrow>" + mathml_of(child(e, 1), 0) + "</mrow><mrow>" + mathml_of(child(e, 2), 0) + "</mrow></mfrac>" }
     else if op == "^" and is_const(child(e, 2)) and cval(child(e, 2)) == 0.5 { body = "<msqrt>" + mathml_of(child(e, 1), 0) + "</msqrt>" }
@@ -275,6 +291,176 @@ test "MathML writes fractions, roots, powers and subscripts" {
   expect m.contains("<msqrt><mn>5</mn></msqrt>")
   expect m.contains("<msup><mrow><mi>&#966;</mi></mrow><mrow><mi>n</mi></mrow></msup>")
   expect to_mathml(x("F_n-1")) == "<mrow><msub><mi>F</mi><mrow><mi>n</mi><mo>&#8722;</mo><mn>1</mn></mrow></msub></mrow>"
+}
+
+// ---------------------------------------------------------------- reading plain maths
+//
+// parse("x^2 sin(x) + 3x") reads maths as people type it into an
+// expression: + - * / ^, brackets, numbers, names, the functions sin, cos,
+// exp, ln and sqrt, and multiplication written by putting things side by
+// side (2x, x sin(x), (x+1)(x-1)). A parse that fails says why.
+//
+// same(a, b) says whether two expressions are the same function: both are
+// evaluated at several points for every name in them.
+
+record Parsed { expr: Text[] error: Text }
+record ParseStep { e: Text[] at: Number error: Text }
+
+fn std_letter(ch: Text) -> Bool { return ch != "" and "abcdefghijklmnopqrstuvwxyz_".contains(ch.lower()) }
+fn std_digit(ch: Text) -> Bool { return ch != "" and "0123456789.".contains(ch) }
+
+// The text as tokens: numbers, names, and one-character signs.
+fn tokens(text: Text) -> Text[] {
+  var out: Text[] = []
+  var i = 0
+  let n = text.length()
+  while i < n {
+    let ch = text.slice(i, i + 1)
+    if ch == " " { i += 1 }
+    else if std_digit(ch) {
+      var j = i
+      while j < n and std_digit(text.slice(j, j + 1)) { j += 1 }
+      out = out.append(text.slice(i, j))
+      i = j
+    } else if std_letter(ch) {
+      var j = i
+      while j < n and (std_letter(text.slice(j, j + 1)) or std_digit(text.slice(j, j + 1))) { j += 1 }
+      out = out.append(text.slice(i, j))
+      i = j
+    } else {
+      out = out.append(ch)
+      i += 1
+    }
+  }
+  return out
+}
+
+fn std_functions() -> Text[] { return ["sin", "cos", "exp", "ln", "sqrt"] }
+
+fn is_number_token(t: Text) -> Bool { return t.length() > 0 and std_digit(t.slice(0, 1)) }
+fn is_name_token(t: Text) -> Bool { return t.length() > 0 and std_letter(t.slice(0, 1)) }
+
+// Where an atom can start: a number, a name or an opening bracket.
+fn starts_atom(t: Text) -> Bool { return is_number_token(t) or is_name_token(t) or t == "(" }
+
+fn sum_of(ts: Text[], pos: Number) -> ParseStep recurse 64 {
+  var left = product_of(ts, pos)
+  if not left.error.is_empty() { return left }
+  while left.at < ts.length() and (ts[left.at] == "+" or ts[left.at] == "-") {
+    let op = ts[left.at]
+    let right = product_of(ts, left.at + 1)
+    if not right.error.is_empty() { return right }
+    left = {e: if op == "+" { add(left.e, right.e) } else { sub(left.e, right.e) }, at: right.at, error: ""}
+  }
+  return left
+}
+
+fn product_of(ts: Text[], pos: Number) -> ParseStep recurse 64 {
+  var left = signed_of(ts, pos)
+  if not left.error.is_empty() { return left }
+  while left.at < ts.length() and (ts[left.at] == "*" or ts[left.at] == "/" or starts_atom(ts[left.at])) {
+    let op = ts[left.at]
+    let from = if op == "*" or op == "/" { left.at + 1 } else { left.at }
+    let right = signed_of(ts, from)
+    if not right.error.is_empty() { return right }
+    left = {e: if op == "/" { div(left.e, right.e) } else { mul(left.e, right.e) }, at: right.at, error: ""}
+  }
+  return left
+}
+
+fn signed_of(ts: Text[], pos: Number) -> ParseStep recurse 64 {
+  if pos < ts.length() and ts[pos] == "-" {
+    let inner = signed_of(ts, pos + 1)
+    if not inner.error.is_empty() { return inner }
+    return {e: neg(inner.e), at: inner.at, error: ""}
+  }
+  return power_of(ts, pos)
+}
+
+fn power_of(ts: Text[], pos: Number) -> ParseStep recurse 64 {
+  let base = atom_of(ts, pos)
+  if not base.error.is_empty() { return base }
+  if base.at < ts.length() and ts[base.at] == "^" {
+    let top = signed_of(ts, base.at + 1)
+    if not top.error.is_empty() { return top }
+    return {e: pow(base.e, top.e), at: top.at, error: ""}
+  }
+  return base
+}
+
+fn atom_of(ts: Text[], pos: Number) -> ParseStep recurse 64 {
+  if pos >= ts.length() { return {e: [], at: pos, error: "the expression ends too soon"} }
+  let t = ts[pos]
+  if is_number_token(t) {
+    let v = t.to_number()
+    if not v.exists() { return {e: [], at: pos, error: f"{t} is not a number"} }
+    return {e: num(v.value()), at: pos + 1, error: ""}
+  }
+  if t == "(" {
+    let inner = sum_of(ts, pos + 1)
+    if not inner.error.is_empty() { return inner }
+    if inner.at >= ts.length() or ts[inner.at] != ")" { return {e: [], at: inner.at, error: "a bracket is not closed"} }
+    return {e: inner.e, at: inner.at + 1, error: ""}
+  }
+  if is_name_token(t) {
+    if std_functions().contains(t) {
+      if pos + 1 >= ts.length() or ts[pos + 1] != "(" { return {e: [], at: pos + 1, error: f"{t} needs its argument in brackets"} }
+      let arg = sum_of(ts, pos + 2)
+      if not arg.error.is_empty() { return arg }
+      if arg.at >= ts.length() or ts[arg.at] != ")" { return {e: [], at: arg.at, error: f"the bracket after {t} is not closed"} }
+      let e = if t == "sqrt" { pow(arg.e, num(0.5)) } else { [t].concat(arg.e) }
+      return {e: e, at: arg.at + 1, error: ""}
+    }
+    return {e: x(t), at: pos + 1, error: ""}
+  }
+  return {e: [], at: pos, error: f"unexpected {t}"}
+}
+
+fn parse(text: Text) -> Parsed {
+  let ts = tokens(text)
+  if ts.is_empty() { return {expr: [], error: "there is nothing to read"} }
+  let got = sum_of(ts, 0)
+  if not got.error.is_empty() { return {expr: [], error: got.error} }
+  if got.at < ts.length() { return {expr: [], error: f"unexpected {ts[got.at]} after the end"} }
+  return {expr: got.e, error: ""}
+}
+
+// The names an expression uses, other than numbers and operators.
+fn names_in(e: Text[]) -> Text[] {
+  var out: Text[] = []
+  for t in e {
+    if is_name_token(t) and arity(t) == 0 and not out.contains(t) { out = out.append(t) }
+  }
+  return out
+}
+
+// Two expressions are the same function when they agree, to six places,
+// at five points chosen away from the edges of ln and sqrt.
+fn same(a: Text[], b: Text[]) -> Bool {
+  let names = names_in(a).concat(names_in(b))
+  let points = [0.37, 0.81, 1.29, 1.93, 2.71]
+  for k in 0 until points.length() {
+    let values = for j in 0 until names.length() { points[(k + j) % points.length()] + j * 0.13 }
+    let va = at(a, names, values)
+    let vb = at(b, names, values)
+    if (va - vb).abs() > 0.000001 * (1 + va.abs()) { return false }
+  }
+  return true
+}
+
+test "plain maths is read as people type it" {
+  expect parse("x^2 sin(x) + 3x").expr.join(" ") == "+ * ^ x n:2 sin x * n:3 x"
+  expect at(parse("(x+1)(x-1)").expr, ["x"], [3]) == 8
+  expect at(parse("-2^2").expr, [], []) == -4
+  expect at(parse("sqrt(16)/2").expr, [], []) == 2
+  expect parse("sin x").error == "sin needs its argument in brackets"
+  expect parse("(x+1").error == "a bracket is not closed"
+}
+
+test "same tells equal functions from different ones" {
+  expect same(parse("(x+1)^2").expr, parse("x^2 + 2x + 1").expr)
+  expect not same(parse("(x+1)^2").expr, parse("x^2 + 1").expr)
+  expect same(deriv(parse("x^2 sin(x)").expr, "x"), parse("2x sin(x) + x^2 cos(x)").expr)
 }
 
 test "an expression evaluates exactly" {

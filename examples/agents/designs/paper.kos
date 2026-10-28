@@ -1,0 +1,205 @@
+// Kosika maths, written like a paper and checked line by line.
+//
+//   kosika run paper.kos --workflow derive --input ask.json --model ... --model-url ... --model-protocol openai
+//
+// where ask.json holds {"ask": {"text": "differentiate x^2 sin(x)"}}.
+//
+// A model works the problem the way a person writes it on paper: the
+// expression it starts from, what is done to it, and each line of working
+// with the rule that gives it. Kosika then reads every line with std/math's
+// parser and checks it: for a derivative, each line must equal the
+// derivative Kosika works out itself by rule; for expanding, simplifying or
+// factoring, each line must equal the expression it began from. A line
+// that is wrong is marked, and Kosika writes the line it should have been.
+// The page is set as a paper: a title, an abstract, the problem, numbered
+// equations, and the whole working as LaTeX to copy into a real paper.
+
+import "std/math.kos"
+
+export [Working, Line, Paper, derive, check, checked_paper, is_maths]
+
+record Ask { text: Text }
+record Line { says: Text why: Text }
+record Working { title: Text abstract: Text given: Text operation: Text variable: Text lines: Line[] }
+record Paper { page: Text latex: Text verdict: Text checked: Bool }
+record Brief { task: Text ask: Text problems: Text }
+record Yes { yes: Bool }
+
+model mathematician {
+  input: Brief
+  output: Working
+  parameters: {
+    max_output_tokens: 6000
+  }
+}
+
+fn working_task() -> Text {
+  return "Work the maths problem the way a careful mathematician writes it on paper. Give title (a short heading), abstract (one or two plain sentences saying what is shown), given (the expression worked on, in plain typed maths), operation (differentiate, expand, simplify or factor), variable (the variable, usually x), and lines: three to seven lines of working in order, each with says (an expression in plain typed maths, equal to the result at that stage) and why (the rule or step that gives it, a few words, like product rule or collect like terms). Plain typed maths means: + - * / ^, brackets, numbers, single-letter variables, and sin(), cos(), exp(), ln(), sqrt() with brackets; write 2x for 2*x and x^2 for x squared. No LaTeX, no words inside expressions, no equals signs inside says. For differentiate, every line is the derivative written a little more simply each time; for expand, simplify and factor, every line equals the given expression. If problems are given, they are what was wrong with your last working: fix every one."
+}
+
+// ---------------------------------------------------------------- checking
+
+record Mark { ok: Bool note: Text }
+
+// What every line must equal: the derivative, worked by Kosika's own
+// rules, or the given expression itself.
+fn goal(w: Working, given: Text[]) -> Text[] {
+  if w.operation == "differentiate" { return simplify(deriv(given, w.variable)) }
+  return given
+}
+
+fn line_marks(w: Working) -> Mark[] {
+  let g = parse(w.given)
+  if not g.error.is_empty() { return for l in w.lines { {ok: false, note: "the starting expression could not be read"} } }
+  let target = goal(w, g.expr)
+  return for l in w.lines { mark_line(l, target) }
+}
+
+fn mark_line(l: Line, target: Text[]) -> Mark {
+  let p = parse(l.says)
+  if not p.error.is_empty() { return {ok: false, note: f"Kosika could not read this line: {p.error}"} }
+  if same(p.expr, target) { return {ok: true, note: ""} }
+  return {ok: false, note: "This line is not equal to the result."}
+}
+
+fn working_problems(w: Working) -> Text[] {
+  var out: Text[] = []
+  if not ["differentiate", "expand", "simplify", "factor"].contains(w.operation) { out = out.append(f"operation {w.operation} is not differentiate, expand, simplify or factor") }
+  let g = parse(w.given)
+  if not g.error.is_empty() { out = out.append(f"given could not be read: {g.error}") }
+  if w.lines.length() < 1 or w.lines.length() > 9 { out = out.append(f"{w.lines.length()} lines; write 1 to 9") }
+  let marks = line_marks(w)
+  for k in 0 until marks.length() {
+    if not marks[k].ok { out = out.append(f"line {k + 1} ({w.lines[k].says}): {marks[k].note}") }
+  }
+  return out
+}
+
+// ---------------------------------------------------------------- the page
+
+fn tex_of(text: Text) -> Text {
+  let p = parse(text)
+  return if p.error.is_empty() { to_latex(p.expr) } else { text }
+}
+
+fn math_of(text: Text) -> Text {
+  let p = parse(text)
+  return if p.error.is_empty() { to_mathml(p.expr) } else { f"<mtext>{text}</mtext>" }
+}
+
+fn operator_math(w: Working) -> Text {
+  if w.operation == "differentiate" { return f"<mfrac><mi>d</mi><mrow><mi>d</mi><mi>{w.variable}</mi></mrow></mfrac><mo stretchy=\"false\">[</mo>{math_of(w.given)}<mo stretchy=\"false\">]</mo>" }
+  return math_of(w.given)
+}
+
+fn operator_tex(w: Working) -> Text {
+  if w.operation == "differentiate" { return f"\\frac{{d}}{{d{w.variable}}}\\left[{tex_of(w.given)}\\right]" }
+  return tex_of(w.given)
+}
+
+fn esc_text(t: Text) -> Text { return t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;") }
+
+fn paper_style() -> Text {
+  return "@font-face{font-family:'EB Garamond';src:url(/fonts/EBGaramond.ttf) format('truetype');font-display:swap}:root{--bg:#07080d;--ink:#eef0f7;--soft:#a3a8bd;--amber:#ff8a4c;--gold:#f5b45c;--ok:#4fe0a6;--bad:#ff6b81;--paper:#111428;--rule:rgba(255,255,255,.12)}@media (prefers-color-scheme: light){:root{--bg:#f7f4ec;--ink:#1f1b16;--soft:#5f574b;--amber:#c2410c;--gold:#a16207;--ok:#047857;--bad:#be123c;--paper:#fffdf7;--rule:rgba(0,0,0,.14)}}*{box-sizing:border-box}body{margin:0;background:transparent;color:var(--ink);font:17px/1.6 'EB Garamond',Georgia,'Times New Roman',serif}main{max-width:860px;margin:0 auto;padding:36px 22px 130px}.lab{font:600 10px ui-monospace,Consolas,monospace;letter-spacing:.32em;text-transform:uppercase;color:var(--gold)}h1{font-size:34px;line-height:1.15;margin:8px 0 6px;font-weight:600}.stamp{font:600 10px ui-monospace,Consolas,monospace;letter-spacing:.2em;text-transform:uppercase;border-radius:999px;padding:3px 9px;vertical-align:middle;margin-left:10px;border:1px solid}.stamp.ok{color:var(--ok)}.stamp.bad{color:var(--bad)}.abstract{border-left:2px solid var(--rule);padding:4px 0 4px 16px;color:var(--soft);font-style:italic;margin:14px 0 22px}h2{font-size:15px;font-variant:small-caps;letter-spacing:.06em;color:var(--soft);font-weight:600;margin:26px 0 6px}.eq{display:grid;grid-template-columns:28px 1fr auto 46px;align-items:center;gap:8px;padding:3px 0}.eq math{font-size:1.18em;overflow-x:auto}.eq .why{color:var(--soft);font-size:15px;font-style:italic;white-space:nowrap}.eq .no{font:13px ui-monospace,Consolas,monospace;color:var(--soft);text-align:right}.tick{font-weight:700;text-align:center}.tick.ok{color:var(--ok)}.tick.bad{color:var(--bad)}.fix{margin:2px 0 10px 36px;padding:8px 12px;border-radius:10px;border:1px solid color-mix(in srgb,var(--bad) 45%,transparent);background:color-mix(in srgb,var(--bad) 8%,transparent);font-size:15px}.fix math{font-size:1.1em}.verdict{margin-top:22px;padding:12px 14px;border-radius:12px;background:var(--paper);border:1px solid var(--rule);font-size:15.5px}.tex{margin-top:18px}.tex button{font:600 10px ui-monospace,Consolas,monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--soft);background:none;border:1px solid var(--rule);border-radius:999px;padding:6px 12px;cursor:pointer}.tex pre{white-space:pre-wrap;font:12.5px/1.5 ui-monospace,Consolas,monospace;color:var(--soft);background:var(--paper);border:1px solid var(--rule);border-radius:10px;padding:12px;display:none}.tex.open pre{display:block}.eq{opacity:0;transform:translateY(6px);animation:in .5s cubic-bezier(.16,1,.3,1) forwards}@keyframes in{to{opacity:1;transform:none}}@media (prefers-reduced-motion: reduce){.eq{animation:none;opacity:1;transform:none}}"
+}
+
+fn checked_paper(w: Working) -> Paper {
+  let g = parse(w.given)
+  let marks = line_marks(w)
+  let good = (for m in marks where m.ok { m }).length()
+  let all_good = good == marks.length() and marks.length() > 0 and g.error.is_empty()
+  let target = if g.error.is_empty() { goal(w, g.expr) } else { [] }
+  var rows: Text[] = []
+  var tex_lines: Text[] = []
+  for k in 0 until w.lines.length() {
+    let l = w.lines[k]
+    let lead = if k == 0 { operator_math(w) + "<mo>=</mo>" } else { "<mo>=</mo>" }
+    let tick = if marks[k].ok { "<span class=\"tick ok\" title=\"Checked by Kosika\">&#10003;</span>" } else { "<span class=\"tick bad\" title=\"Kosika found this line wrong\">&#10007;</span>" }
+    rows = rows.append(f"<div class=\"eq\" style=\"animation-delay:{(k * 0.35).to_fixed(2)}s\">{tick}<math display=\"block\"><mrow>{lead}{math_of(l.says)}</mrow></math><span class=\"why\">{esc_text(l.why)}</span><span class=\"no\">({k + 1})</span></div>")
+    if not marks[k].ok and not target.is_empty() {
+      rows = rows.append(f"<div class=\"fix\">{esc_text(marks[k].note)} Kosika works it out as <math><mrow>{to_mathml(target)}</mrow></math>.</div>")
+    }
+    let lead_tex = if k == 0 { operator_tex(w) + " &= " } else { " &= " }
+    tex_lines = tex_lines.append(lead_tex + tex_of(l.says) + f" && \\text{{{l.why}}}")
+  }
+  let latex = "\\begin{align}\n" + tex_lines.join(" \\\\\n") + "\n\\end{align}"
+  let verdict = if all_good { f"Every line of the working is equal to the result Kosika works out itself: checked at {good} of {marks.length()} lines." } else { f"Kosika checked {marks.length()} lines and found {marks.length() - good} wrong; the right result is shown under each." }
+  let stamp = if all_good { "<span class=\"stamp ok\">checked</span>" } else { "<span class=\"stamp bad\">corrected</span>" }
+  let problem = f"<div class=\"eq\" style=\"animation-delay:0s\"><span></span><math display=\"block\"><mrow>{operator_math(w)}</mrow></math><span class=\"why\">{esc_text(w.operation)}</span><span class=\"no\"></span></div>"
+  let script = "document.getElementById('texbtn').addEventListener('click',function(){var t=document.getElementById('tex');t.classList.toggle('open');try{navigator.clipboard.writeText(t.querySelector('pre').textContent)}catch(e){}});"
+  let page = f"<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Kosika paper</title><style>{paper_style()}</style></head><body><main><div class=\"lab\">Kosika &#183; mathematics</div><h1>{esc_text(w.title)}{stamp}</h1><p class=\"abstract\">{esc_text(w.abstract)}</p><h2>Problem</h2>{problem}<h2>Working</h2>{rows.join(\"\")}<div class=\"verdict\">{verdict}</div><div class=\"tex\" id=\"tex\"><button id=\"texbtn\" type=\"button\">LaTeX</button><pre>{esc_text(latex)}</pre></div></main><script>if(window.top===window)document.documentElement.style.background=getComputedStyle(document.documentElement).getPropertyValue('--bg');{script}</script></body></html>"
+  return {page: page, latex: latex, verdict: verdict, checked: all_good}
+}
+
+// ---------------------------------------------------------------- the workflow
+
+fn no_working() -> Working { return {title: "", abstract: "", given: "", operation: "", variable: "x", lines: []} }
+fn kept(w: Working) -> Working { return w }
+fn wrong_of(w: Working) -> Text { return working_problems(w).join("; ") }
+
+// Whether a question asks for worked mathematics, by its words.
+fn maths_words(text: Text) -> Bool {
+  let t = text.lower()
+  for w in ["differentiate", "derivative", "d/dx", "expand", "simplify", "factorise", "factorize", "factor "] {
+    if t.contains(w) { return true }
+  }
+  return false
+}
+
+workflow is_maths(ask: Ask) -> Yes {
+  out = {yes: maths_words(ask.text)}
+}
+
+// The model works it; Kosika checks it; working with a wrong line goes
+// back once, with the lines named. What reaches the page is checked, or
+// is shown corrected.
+workflow derive(ask: Ask) -> Paper {
+  budget 4 model calls, 600 seconds
+  first  = use_model mathematician(working_task(), ask.text, "") retry 1 otherwise no_working()
+  wrong  = wrong_of(first)
+  better = match wrong.is_empty() {
+    case true { first }
+    case _ { call rework(ask, {text: wrong}, first) }
+  }
+  out = checked_paper(better)
+}
+
+// Checks working someone wrote, with no model: a student's, a paper's.
+workflow check(w: Working) -> Paper {
+  out = checked_paper(w)
+}
+
+workflow rework(ask: Ask, wrong: Ask, first: Working) -> Working {
+  answer = use_model mathematician(working_task(), ask.text, wrong.text) retry 1 otherwise kept(first)
+  out    = answer
+}
+
+// ---------------------------------------------------------------- tests
+
+fn product_rule() -> Working {
+  return {title: "The derivative of x squared sine x", abstract: "By the product rule.", given: "x^2 sin(x)", operation: "differentiate", variable: "x", lines: [
+    {says: "2x sin(x) + x^2 cos(x)", why: "product rule"},
+    {says: "x(2 sin(x) + x cos(x))", why: "take out x"}
+  ]}
+}
+
+test "a right derivation is checked at every line" {
+  p = checked_paper(product_rule())
+  expect p.checked
+  expect p.latex.contains("\\frac{d}{dx}")
+  expect working_problems(product_rule()).length() == 0
+}
+
+test "a wrong line is caught and named" {
+  wrong = {..product_rule(), lines: [{says: "2x cos(x)", why: "product rule"}]}
+  p = checked_paper(wrong)
+  expect not p.checked
+  expect working_problems(wrong) == ["line 1 (2x cos(x)): This line is not equal to the result."]
+}
+
+test "expanding is checked against what it began from" {
+  e = {..product_rule(), given: "(x+1)^3", operation: "expand", lines: [{says: "(x+1)(x^2+2x+1)", why: "square first"}, {says: "x^3 + 3x^2 + 3x + 1", why: "multiply out"}]}
+  expect checked_paper(e).checked
+  expect maths_words("Differentiate x^2 sin(x)")
+  expect not maths_words("How does an LLM work?")
+}
