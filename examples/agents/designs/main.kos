@@ -149,7 +149,7 @@ fn chosen_palette(ask: Text, c: Choice) -> Text {
 }
 
 fn designer_task() -> Text {
-  return "You describe the structure of what someone asked to see, so that it can be drawn as a clear diagram of the kind given in plan. Do not draw: describe. Give title (a short heading), summary (one plain sentence), shape (the kind in plan), figure (as in plan; when it is golden_spiral leave parts, links, steps and marks empty), photo (two to five words to find one real, clear photo of the thing in a library of free photos, or empty when a photo would not help, as for an abstract process), parts (each with id: a short lowercase word, label: 1 to 3 words, note: up to 6 words, parent: empty or the id of the part it hangs from), links (from and to are part ids, label up to 3 words or empty), steps (3 to 6 sentences that explain it in order, each under 25 words, plain and exact, each with parts: the ids of the parts or marks it is about) and marks (empty unless the kind is sketch). By kind: flow, cycle, layers, hub: 4 to 10 parts, parent empty, links in order. nested: parts from the very centre outward, no links. tree: 5 to 16 parts, exactly one root with parent empty, every other part names its parent, no links. mindmap: the central idea is the root with parent empty, 4 to 6 main branches, each with 1 to 3 sub-ideas, 10 to 20 parts, no links. graph: 4 to 12 vertices, each label 1 to 4 characters when it is a mathematical vertex like A or v1, otherwise a short name, edges as links, label as the weight or empty; when two vertices are joined more than once (a multigraph), list every edge separately; in the sentences, state degrees and paths exactly as the edges you listed give them. timeline: 4 to 10 parts in time order, note is the date or time. compare: 2 to 4 column parts with parent empty, each with 2 to 6 row parts whose parent is that column, rows matched across columns. sketch: no parts and no links; 3 to 14 marks, each with id, kind (shape for a closed outline, curve for a line, arrow for a direction, dot for a point, text for a word), points as x, y, x, y on a 0 to 100 grid with y down (shapes 5 to 12 points round the outline in order, curves and arrows 2 to 6 points), and label (1 to 3 words or empty); draw the real outline of the thing in proportion. Use only true, standard facts. If problems are given, they are what was wrong with your last description: fix every one."
+  return "You describe the structure of what someone asked to see, so that it can be drawn as a clear diagram of the kind given in plan. Do not draw: describe. Give title (a short heading), summary (one plain sentence), shape (the kind in plan), figure (as in plan; when it is golden_spiral leave parts, links, steps and marks empty), photo (two to five words to find one real, clear photo of the thing in a library of free photos, or empty when a photo would not help, as for an abstract process), parts (each with id: a short lowercase word, label: 1 to 3 words, note: up to 6 words, parent: empty or the id of the part it hangs from), links (from and to are part ids, label up to 3 words or empty), steps (3 to 6 sentences that explain it in order, each under 25 words, plain and exact, each with parts: the ids of the parts or marks it is about) marks (empty unless the kind is sketch), and looks: one for each part, with its part id, icon (one emoji a reader recognises at a glance and that means that part, like a sun for evaporation, a cloud for condensation, a leaf for a plant; give one to every part a familiar emoji fits, and leave it empty for mathematical vertices, numbers and ideas no emoji shows) and photo (the name of a real, visible thing a camera can photograph that shows this part, as the title of its Wikipedia article would be, like Cumulus cloud or Chloroplast; at most four photos in all, only where seeing the real thing helps; empty for processes, chemicals, molecules, energy, ideas, mathematics and anything a camera cannot show). By kind: flow, cycle, layers, hub: 4 to 10 parts, parent empty, links in order. nested: parts from the very centre outward, no links. tree: 5 to 16 parts, exactly one root with parent empty, every other part names its parent, no links. mindmap: the central idea is the root with parent empty, 4 to 6 main branches, each with 1 to 3 sub-ideas, 10 to 20 parts, no links. graph: 4 to 12 vertices, each label 1 to 4 characters when it is a mathematical vertex like A or v1, otherwise a short name, edges as links, label as the weight or empty; when two vertices are joined more than once (a multigraph), list every edge separately; in the sentences, state degrees and paths exactly as the edges you listed give them. timeline: 4 to 10 parts in time order, note is the date or time. compare: 2 to 4 column parts with parent empty, each with 2 to 6 row parts whose parent is that column, rows matched across columns. sketch: no parts and no links; 3 to 14 marks, each with id, kind (shape for a closed outline, curve for a line, arrow for a direction, dot for a point, text for a word), points as x, y, x, y on a 0 to 100 grid with y down (shapes 5 to 12 points round the outline in order, curves and arrows 2 to 6 points), and label (1 to 3 words or empty); draw the real outline of the thing in proportion. Use only true, standard facts. If problems are given, they are what was wrong with your last description: fix every one."
 }
 
 fn no_choice() -> Choice { return {shape: "flow", figure: "", palette: "dark_matter", why: "a flow suits most explanations"} }
@@ -169,7 +169,7 @@ fn steered(s: Structure, c: Choice) -> Structure {
 }
 
 fn no_structure() -> Structure {
-  return {title: "", summary: "", shape: "", figure: "", photo: "", parts: [], links: [], steps: [], marks: []}
+  return {title: "", summary: "", shape: "", figure: "", photo: "", parts: [], links: [], steps: [], marks: [], looks: []}
 }
 
 fn no_picture() -> Picture {
@@ -196,7 +196,7 @@ workflow describe(ask: Ask) -> Request {
     case true { first }
     case _ { call redescribe(ask, {text: plan}, {text: wrong}, first, choice) }
   }
-  out = {ask: ask.text, structure: better, picture: no_picture(), palette: chosen_palette(ask.text, choice)}
+  out = {ask: ask.text, structure: better, picture: no_picture(), palette: chosen_palette(ask.text, choice), photos: []}
 }
 
 // The second try, told what was wrong with the first.
@@ -258,11 +258,11 @@ fn job_structure(j: Job) -> Structure {
     {text: if j.waiting { f"This would change something, so it waits: say yes with Approve and {helper} does it." } else { f"{helper} answered, and the answer came back to you." }, parts: [last]}
   ]
   let title = if j.waiting { f"Kosi's plan: {j.text}" } else { f"Kosi asked {helper}" }
-  return {title: title.slice(0, title.length().min(70)), summary: if j.waiting { "A plan, waiting for your yes." } else { "What Kosi did to answer." }, shape: "flow", figure: "", photo: "", parts: parts, links: links, steps: steps, marks: []}
+  return {title: title.slice(0, title.length().min(70)), summary: if j.waiting { "A plan, waiting for your yes." } else { "What Kosi did to answer." }, shape: "flow", figure: "", photo: "", parts: parts, links: links, steps: steps, marks: [], looks: []}
 }
 
 workflow automation(j: Job) -> Request {
-  out = {ask: j.ask, structure: job_structure(j), picture: no_picture(), palette: "dark_matter"}
+  out = {ask: j.ask, structure: job_structure(j), picture: no_picture(), palette: "dark_matter", photos: []}
 }
 
 test "an automation is drawn as a checked flow" {

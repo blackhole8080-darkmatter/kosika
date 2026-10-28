@@ -77,15 +77,71 @@ def candidates(words, most=12, width=640):
     return found
 
 
+def lead_photo(words, width=480):
+    """The lead image of the Wikipedia article that best matches the words,
+    when it is a photo under a free licence on Commons, else None.
+
+    An article's lead image is chosen by people to show its subject, so it
+    is far more often the right picture than a search of file names is."""
+    query = urllib.parse.urlencode({
+        "action": "query", "format": "json", "generator": "search", "gsrsearch": words, "gsrlimit": 3,
+        "prop": "pageimages", "piprop": "name", "redirects": 1,
+    })
+    pages = json.loads(get("https://en.wikipedia.org/w/api.php?" + query)).get("query", {}).get("pages", {}).values()
+    # Only the best-matching article counts. When its own lead picture is a
+    # drawing or there is none, the subject is not something a camera shows
+    # (glucose is a molecule), and a lower result would show something else
+    # (a glucose meter), so there is no photo at all.
+    for page in sorted(pages, key=lambda p: p.get("index", 0))[:1]:
+        name = page.get("pageimage")
+        if not name or not name.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
+            return None
+        info_query = urllib.parse.urlencode({
+            "action": "query", "format": "json", "titles": "File:" + name, "prop": "imageinfo",
+            "iiprop": "url|size|extmetadata", "iiurlwidth": width,
+            "iiextmetadatafilter": "LicenseShortName|LicenseUrl|Artist",
+        })
+        files = json.loads(get("https://commons.wikimedia.org/w/api.php?" + info_query)).get("query", {}).get("pages", {})
+        for f in files.values():
+            if "imageinfo" not in f:
+                continue  # not on Commons: possibly not free
+            info = f["imageinfo"][0]
+            meta = info.get("extmetadata", {})
+            licence = plain(meta.get("LicenseShortName", {}).get("value"))
+            if not FREE.match(licence):
+                continue
+            return {
+                "title": f"{page['title']} (Wikipedia)",
+                "author": (plain(meta.get("Artist", {}).get("value")).splitlines() or ["unknown"])[0][:80],
+                "license": licence,
+                "license_url": meta.get("LicenseUrl", {}).get("value", "https://commons.wikimedia.org/wiki/Commons:Licensing"),
+                "page_url": info["descriptionurl"],
+                "file_url": info.get("thumburl") or info["url"],
+            }
+    return None
+
+
 def thumbs(searches):
-    """One small free photo for each search, as draw.kos's Picture, for a row of examples."""
+    """One free photo for each search, as draw.kos's Picture: the matching
+    Wikipedia article's lead photo, none when that article shows no photo,
+    and only when Wikipedia cannot be reached, the first Commons file whose
+    title names the search's main word."""
     out = []
     for words in searches:
-        found = candidates(words, most=6, width=200)
-        if found:
-            photo = found[0]
+        photo = None
+        try:
+            photo = lead_photo(words)
+            looked = True
+        except (OSError, ValueError):
+            looked = False
+        if not looked:
+            main = max(words.split(), key=len).lower() if words.split() else ""
+            found = [c for c in candidates(words, most=8, width=480) if main and main in c["title"].lower()]
+            photo = found[0] if found else None
+        if photo:
             raw = get(photo.pop("file_url"))
-            photo["image"] = "data:image/jpeg;base64," + base64.b64encode(raw).decode()
+            kind = "png" if raw[:4] == b"\x89PNG" else "jpeg"
+            photo["image"] = f"data:image/{kind};base64," + base64.b64encode(raw).decode()
             out.append(photo)
     return out
 

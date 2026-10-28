@@ -25,7 +25,7 @@
 import "std/math.kos"
 import "palette.kos"
 
-export [Part, Link, Step, Mark, Structure, Picture, Request, Design, problems, draw, golden_squares, escaped, f1, kinds]
+export [Part, Link, Step, Mark, Look, PartPhoto, Wanted, photos_wanted, Structure, Picture, Request, Design, problems, draw, golden_squares, escaped, f1, kinds]
 
 // parent: the part this one hangs from, for a tree, mind map or comparison.
 record Part { id: Text label: Text note: Text parent: Text = "" }
@@ -34,11 +34,16 @@ record Step { text: Text parts: Text[] }
 // A free mark for a sketch: its points as x, y, x, y ... on a 100 by 100 grid.
 record Mark { id: Text kind: Text points: Number[] label: Text = "" }
 // photo: a few words to find one real photo of the thing, or empty.
-record Structure { title: Text summary: Text shape: Text figure: Text photo: Text parts: Part[] links: Link[] steps: Step[] marks: Mark[] = [] }
+// A part's look: an icon (one emoji) shown in its box, and words to find a
+// real photo of it, each empty when it would not help.
+record Look { part: Text icon: Text photo: Text }
+record Structure { title: Text summary: Text shape: Text figure: Text photo: Text parts: Part[] links: Link[] steps: Step[] marks: Mark[] = [] looks: Look[] = [] }
 // A real photo of the thing, shown beside the drawing as a reference.
 record Picture { title: Text author: Text license: Text license_url: Text page_url: Text image: Text }
 // palette: the name of the colours to draw in (palette.kos); Dark Matter when unknown.
-record Request { ask: Text structure: Structure picture: Picture palette: Text }
+// A real photo of one part, found for its look's words.
+record PartPhoto { part: Text picture: Picture }
+record Request { ask: Text structure: Structure picture: Picture palette: Text photos: PartPhoto[] }
 record Design { page: Text problems: Text[] }
 
 // ---------------------------------------------------------------- checking
@@ -95,7 +100,7 @@ fn problems(s: Structure) -> Text[] {
   }
   // A figure Kosika draws itself brings its own parts; only a description is checked by kind.
   let by_kind = if s.figure.is_empty() { kind_problems(s) } else { [] }
-  return out.concat(by_kind)
+  return out.concat(by_kind).concat(look_problems(s))
 }
 
 // ---------------------------------------------------------------- layout
@@ -1160,7 +1165,7 @@ fn draw_style() -> Text {
 // step draws in what it is about, marks it, and types its sentence,
 // before the next begins. Afterwards hovering a step marks it again.
 fn draw_script() -> Text {
-  return "if(window.top===window)document.documentElement.style.background=getComputedStyle(document.documentElement).getPropertyValue('--bg');var steps=[].slice.call(document.querySelectorAll('.say')),think=document.getElementById('think'),hud=document.getElementById('hud'),slow=!matchMedia('(prefers-reduced-motion: reduce)').matches,running=false;function wait(ms){return new Promise(function(r){setTimeout(r,slow?ms:0)})}function plain(t){var d=document.createElement('textarea');d.innerHTML=t;return d.value}function els(s){return (s.dataset.show||'').split(' ').filter(Boolean).map(function(id){return document.getElementById(id)}).filter(Boolean)}function links(){document.querySelectorAll('.link').forEach(function(l){var a=document.getElementById(l.dataset.a),b=document.getElementById(l.dataset.b);if(a&&b&&a.classList.contains('shown')&&b.classList.contains('shown'))l.classList.add('shown')})}function mark(s){document.querySelectorAll('.on').forEach(function(e){e.classList.remove('on')});hud.innerHTML='';if(!s)return;s.classList.add('on');var ld=document.getElementById('lead'+steps.indexOf(s));if(ld)ld.classList.add('on');var es=els(s),ids=es.map(function(e){return e.id});es.forEach(function(e){e.classList.add('on')});document.querySelectorAll('.link').forEach(function(l){if(ids.indexOf(l.dataset.a)>=0&&ids.indexOf(l.dataset.b)>=0)l.classList.add('on')});hud.innerHTML=s.dataset.hud||''}async function type(el,text){text=plain(text);if(!slow){el.textContent=text;return}for(var i=1;i<=text.length;i+=2){el.textContent=text.slice(0,i+1);await wait(16)}}async function build(){if(running)return;running=true;if(window.placeNotes)placeNotes();document.body.classList.remove('done');document.querySelectorAll('.bit').forEach(function(e){e.classList.remove('shown')});steps.forEach(function(s){s.classList.remove('shown','now');s.querySelector('span').textContent=''});document.querySelectorAll('.leaders path').forEach(function(p){p.classList.remove('shown')});mark(null);var lines=JSON.parse(think.dataset.lines);for(var k=0;k<lines.length;k++){await type(think,lines[k]);await wait(450)}for(var i=0;i<steps.length;i++){var s=steps[i];s.classList.add('shown','now');var lead=document.getElementById('lead'+steps.indexOf(s));if(lead)lead.classList.add('shown');var es=els(s);for(var j=0;j<es.length;j++){es[j].classList.add('shown');links();mark(s);await wait(240)}mark(s);await type(s.querySelector('span'),s.querySelector('span').dataset.text);await wait(800);s.classList.remove('now')}document.querySelectorAll('.bit').forEach(function(e){e.classList.add('shown')});document.querySelectorAll('.leaders path').forEach(function(p){p.classList.add('shown')});mark(null);think.textContent=think.dataset.done;document.body.classList.add('done');running=false}steps.forEach(function(s){s.addEventListener('mouseenter',function(){if(!running)mark(s)});s.addEventListener('focus',function(){if(!running)mark(s)});s.addEventListener('mouseleave',function(){if(!running)mark(null)});s.addEventListener('blur',function(){if(!running)mark(null)})});document.querySelectorAll('.sym').forEach(function(m){m.addEventListener('mouseenter',function(){if(!running)mark(m)});m.addEventListener('mouseleave',function(){if(!running)mark(null)})});document.querySelectorAll('.sw').forEach(function(b){b.addEventListener('click',function(){document.documentElement.dataset.palette=b.dataset.p;document.querySelectorAll('.sw').forEach(function(o){o.setAttribute('aria-pressed',o===b)})})});document.getElementById('replay').addEventListener('click',build);build();"
+  return "if(window.top===window)document.documentElement.style.background=getComputedStyle(document.documentElement).getPropertyValue('--bg');var steps=[].slice.call(document.querySelectorAll('.say')),think=document.getElementById('think'),hud=document.getElementById('hud'),slow=!matchMedia('(prefers-reduced-motion: reduce)').matches,running=false;function wait(ms){return new Promise(function(r){setTimeout(r,slow?ms:0)})}function plain(t){var d=document.createElement('textarea');d.innerHTML=t;return d.value}function els(s){return (s.dataset.show||'').split(' ').filter(Boolean).map(function(id){return document.getElementById(id)}).filter(Boolean)}function links(){document.querySelectorAll('.link').forEach(function(l){var a=document.getElementById(l.dataset.a),b=document.getElementById(l.dataset.b);if(a&&b&&a.classList.contains('shown')&&b.classList.contains('shown'))l.classList.add('shown')})}function mark(s){document.querySelectorAll('.on').forEach(function(e){e.classList.remove('on')});hud.innerHTML='';if(!s)return;s.classList.add('on');var ld=document.getElementById('lead'+steps.indexOf(s));if(ld)ld.classList.add('on');var es=els(s),ids=es.map(function(e){return e.id});es.forEach(function(e){e.classList.add('on')});document.querySelectorAll('.pp').forEach(function(f){if(ids.indexOf(f.dataset.show)>=0)f.classList.add('on')});document.querySelectorAll('.link').forEach(function(l){if(ids.indexOf(l.dataset.a)>=0&&ids.indexOf(l.dataset.b)>=0)l.classList.add('on')});hud.innerHTML=s.dataset.hud||''}async function type(el,text){text=plain(text);if(!slow){el.textContent=text;return}for(var i=1;i<=text.length;i+=2){el.textContent=text.slice(0,i+1);await wait(16)}}async function build(){if(running)return;running=true;if(window.placeNotes)placeNotes();document.body.classList.remove('done');document.querySelectorAll('.bit').forEach(function(e){e.classList.remove('shown')});steps.forEach(function(s){s.classList.remove('shown','now');s.querySelector('span').textContent=''});document.querySelectorAll('.leaders path').forEach(function(p){p.classList.remove('shown')});mark(null);var lines=JSON.parse(think.dataset.lines);for(var k=0;k<lines.length;k++){await type(think,lines[k]);await wait(450)}for(var i=0;i<steps.length;i++){var s=steps[i];s.classList.add('shown','now');var lead=document.getElementById('lead'+steps.indexOf(s));if(lead)lead.classList.add('shown');var es=els(s);for(var j=0;j<es.length;j++){es[j].classList.add('shown');links();mark(s);await wait(240)}mark(s);await type(s.querySelector('span'),s.querySelector('span').dataset.text);await wait(800);s.classList.remove('now')}document.querySelectorAll('.bit').forEach(function(e){e.classList.add('shown')});document.querySelectorAll('.leaders path').forEach(function(p){p.classList.add('shown')});mark(null);think.textContent=think.dataset.done;document.body.classList.add('done');running=false}steps.forEach(function(s){s.addEventListener('mouseenter',function(){if(!running)mark(s)});s.addEventListener('focus',function(){if(!running)mark(s)});s.addEventListener('mouseleave',function(){if(!running)mark(null)});s.addEventListener('blur',function(){if(!running)mark(null)})});document.querySelectorAll('.sym').forEach(function(m){m.addEventListener('mouseenter',function(){if(!running)mark(m)});m.addEventListener('mouseleave',function(){if(!running)mark(null)})});document.querySelectorAll('.sw').forEach(function(b){b.addEventListener('click',function(){document.documentElement.dataset.palette=b.dataset.p;document.querySelectorAll('.sw').forEach(function(o){o.setAttribute('aria-pressed',o===b)})})});document.getElementById('replay').addEventListener('click',build);build();"
 }
 
 // The explanation sits in the drawing: each step a short note in the
@@ -1188,25 +1193,138 @@ fn swatch_style() -> Text {
   return ".bar{gap:14px;flex-wrap:wrap}.swatches{display:flex;flex-wrap:wrap;gap:6px}.sw{display:flex;align-items:center;gap:3px;padding:4px 9px 4px 6px;letter-spacing:.08em}.sw i{width:11px;height:11px;border-radius:50%;border:1px solid color-mix(in srgb,var(--line) 30%,transparent)}.sw span{margin-left:4px}.sw[aria-pressed=true]{border-color:var(--amber);color:var(--ink)}"
 }
 
-fn reference_photo(p: Picture) -> Text {
-  if p.image.is_empty() { return "" }
+// ---------------------------------------------------------------- icons and photos
+//
+// An icon is one emoji, put before a part's label so the eye finds the
+// part at once: a sun by Evaporation, a cloud by Condensation. A photo is
+// a real picture of a part, shown under the drawing and tied to its part.
+// Kosika keeps them only where they help: an icon has no letters or
+// digits; there are at most four photos, one a part; and a graph, a
+// comparison, a timeline or a figure of mathematics shows none, because
+// a picture there would only stand between the reader and the idea.
+
+fn photo_kinds() -> Text[] { return ["flow", "cycle", "layers", "hub", "nested", "tree", "mindmap", "sketch"] }
+
+fn is_icon(t: Text) -> Bool {
+  if t.is_empty() or t.length() > 8 { return false }
+  let low = t.lower()
+  for ch in ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", " "] {
+    if low.contains(ch) { return false }
+  }
+  return true
+}
+
+// The photos Kosika will look for: those the description asks for, where
+// a photo can help, at most four.
+fn wanted_photos(s: Structure) -> Look[] {
+  if not photo_kinds().contains(s.shape) or not s.figure.is_empty() { return [] }
+  let asked = for l in s.looks where not l.photo.trim().is_empty() and ids(s).contains(l.part) and not unseen(s, l) { l }
+  return asked.take(4)
+}
+
+// A part no camera can show: a chemical written as a formula (CO2, O₂,
+// H2O) or named as a substance, or energy, light or a particle. A photo
+// of "oxygen" is a flask of something blue; of "glucose", a sugar meter.
+// The icon says enough, so Kosika shows no photo for these.
+fn unseen(s: Structure, l: Look) -> Bool {
+  let label = s.parts[place(s, l.part)].label
+  if is_formula(label) { return true }
+  let said = (" " + label + " " + l.photo + " ").lower()
+  for w in [" oxygen", " carbon dioxide", " glucose", " sugar ", " energy", " electron", " proton", " photon", " molecule", " atom", " ion ", " ions ", " gas ", " heat ", " nitrogen", " hydrogen", " atp", " nadph", " enzyme", " dna", " protein"] {
+    if said.contains(w) { return true }
+  }
+  return false
+}
+
+// A chemical formula: short, no spaces, and written with digits or
+// subscripts (CO2, H₂O, O₂).
+fn is_formula(t: Text) -> Bool {
+  let w = t.trim()
+  if w.is_empty() or w.length() > 8 or w.contains(" ") { return false }
+  for d in ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "₀", "₁", "₂", "₃", "₄", "₅", "₆", "₇", "₈", "₉"] {
+    if w.contains(d) { return true }
+  }
+  return false
+}
+
+fn look_problems(s: Structure) -> Text[] {
+  var out: Text[] = []
+  let all = ids(s)
+  var seen: Text[] = []
+  for l in s.looks {
+    if not all.contains(l.part) { out = out.append(f"a look is for {l.part}, and no part has that id") }
+    if seen.contains(l.part) { out = out.append(f"part {l.part} has two looks") }
+    seen = seen.append(l.part)
+    if not l.icon.is_empty() and not is_icon(l.icon) { out = out.append(f"the icon for {l.part} must be one emoji, with no letters or digits") }
+    if l.photo.words().length() > 6 { out = out.append(f"the photo words for {l.part} are over six words") }
+  }
+  return out
+}
+
+// The structure with each part's icon before its label.
+fn with_icons(s: Structure) -> Structure {
+  let parts = for p in s.parts { {..p, label: icon_label(s, p)} }
+  return {..s, parts: parts}
+}
+
+fn icon_label(s: Structure, p: Part) -> Text {
+  for l in s.looks {
+    if l.part == p.id and is_icon(l.icon) { return l.icon + " " + p.label }
+  }
+  return p.label
+}
+
+// The parts' photos, the photo of the whole first. With part photos the
+// whole is one card among them, not a banner that outweighs the drawing.
+fn photo_strip(s: Structure, photos: PartPhoto[], whole: Picture) -> Text {
+  let shown = for ph in photos where not ph.picture.image.is_empty() and ids(s).contains(ph.part) { ph }
+  if shown.is_empty() { return "" }
+  let whole_name = whole.title.replace(" (Wikipedia)", "")
+  let lead = if whole.image.is_empty() { "" } else { f"<figure class=\"pp whole\"><img src=\"{whole.image}\" alt=\"{escaped(whole.title)}\"><figcaption>{escaped(whole_name)}</figcaption></figure>" }
+  let lead_credit = if whole.image.is_empty() { "" } else { f"<a href=\"{whole.page_url}\">{escaped(whole.title)}</a> by {escaped(whole.author)}, {escaped(whole.license)}; " }
+  let cards = lead + (for ph in shown { f"<figure class=\"pp sym\" data-show=\"p-{ph.part}\"><img src=\"{ph.picture.image}\" alt=\"{escaped(ph.picture.title)}\"><figcaption>{escaped(s.parts[place(s, ph.part)].label)}</figcaption></figure>" }).join("")
+  let credits = (for ph in shown { f"<a href=\"{ph.picture.page_url}\">{escaped(ph.picture.title)}</a> by {escaped(ph.picture.author)}, {escaped(ph.picture.license)}" }).join("; ")
+  return f"<section class=\"strip bit\" id=\"strip\"><div class=\"plab\">Seen for real</div><div class=\"pps\">{cards}</div><p class=\"credit\">Photos from Wikimedia Commons: {lead_credit}{credits}.</p></section>"
+}
+
+fn look_style() -> Text {
+  return ".ico{transform-box:fill-box;transform-origin:center;font-family:'Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji',sans-serif}.ico.spin{animation:ico-spin 14s linear infinite}.ico.drip{animation:ico-drip 2.4s ease-in-out infinite}.ico.drift{animation:ico-drift 4s ease-in-out infinite}.ico.sway{animation:ico-sway 3s ease-in-out infinite}.ico.flick{animation:ico-flick 1.6s ease-in-out infinite}.ico.beat{animation:ico-beat 2.8s ease-in-out infinite}.part.on .ico{animation-duration:.9s}@keyframes ico-spin{to{transform:rotate(360deg)}}@keyframes ico-drip{0%,100%{transform:translateY(-1.5px)}50%{transform:translateY(2px)}}@keyframes ico-drift{0%,100%{transform:translateX(-2px)}50%{transform:translateX(2px)}}@keyframes ico-sway{0%,100%{transform:rotate(-9deg)}50%{transform:rotate(9deg)}}@keyframes ico-flick{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.65;transform:scale(1.12)}}@keyframes ico-beat{0%,100%{transform:scale(1)}50%{transform:scale(1.15)}}@media (prefers-reduced-motion:reduce){.ico{animation:none!important}}" + ".strip{margin:22px 0 4px}.pps{display:flex;gap:14px;flex-wrap:wrap}.pp{margin:0;width:170px;border-radius:14px;overflow:hidden;background:color-mix(in srgb,var(--halo) 80%,transparent);border:1px solid color-mix(in srgb,var(--line) 14%,transparent);transition:transform .3s cubic-bezier(.16,1,.3,1),border-color .2s}.pp img{width:100%;height:120px;object-fit:cover;display:block}.pp figcaption{padding:7px 10px;font-size:13px;color:var(--ink)}.pp:hover,.pp.on{transform:translateY(-3px);border-color:var(--amber)}.strip .credit{font-size:11.5px}.part text.label{font-family:Figtree,system-ui,'Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji',sans-serif}"
+}
+
+// Each icon moves a little, the way its thing does: the sun turns, a drop
+// drips, a cloud drifts, a leaf sways, fire and lightning flicker, and
+// anything else breathes. Marking a part plays its icon faster.
+fn look_script() -> Text {
+  return "(function(){var moves=[['spin','☀🌞⚙🌀♻'],['drip','💧🌧☔🌊🚿'],['drift','☁🌬💨⛅🌫🚀✈'],['sway','🌱🌿🍃🌳🌲🌾🌻🌷'],['flick','⚡🔥💡✨']];function kind(e){for(var i=0;i<moves.length;i++){if(moves[i][1].indexOf(e)>=0)return moves[i][0]}return 'beat'}document.querySelectorAll('.part text.label').forEach(function(t){var all=t.textContent,cut=all.indexOf(' ');if(cut<1)return;var icon=all.slice(0,cut);if(/[A-Za-z0-9]/.test(icon)||icon.length>8)return;var rest=all.slice(cut+1);t.textContent='';var gap=document.createElementNS('http://www.w3.org/2000/svg','tspan');gap.textContent=icon+' ';gap.setAttribute('fill-opacity','0');t.appendChild(gap);t.appendChild(document.createTextNode(rest));var b;try{b=gap.getBBox()}catch(x){return}if(!b||!b.width)return;var ico=document.createElementNS('http://www.w3.org/2000/svg','text');var w=b.width*icon.length/(icon.length+1);ico.setAttribute('x',b.x+w/2);ico.setAttribute('y',b.y+b.height/2);ico.setAttribute('text-anchor','middle');ico.setAttribute('dominant-baseline','central');ico.setAttribute('style','font-size:'+getComputedStyle(t).fontSize);ico.setAttribute('class','ico '+kind(Array.from(icon)[0]));ico.textContent=icon;t.parentNode.insertBefore(ico,t.nextSibling)})})();"
+}
+
+fn reference_photo(p: Picture, photos: PartPhoto[]) -> Text {
+  if p.image.is_empty() or photos.length() > 0 { return "" }
   return f"<figure class=\"ref bit\" id=\"photo\"><img src=\"{p.image}\" alt=\"{escaped(p.title)}\"><figcaption class=\"credit\">Real example: <a href=\"{p.page_url}\">{escaped(p.title)}</a> by {escaped(p.author)}, <a href=\"{p.license_url}\">{escaped(p.license)}</a>, Wikimedia Commons.</figcaption></figure>"
 }
 
 fn draw_page(r: Request) -> Text {
-  let s = r.structure
+  let s = with_icons(r.structure)
   let golden = s.figure == "golden_spiral"
   // An exact figure keeps its own title, whatever the description said.
   let title = if golden { "The Fibonacci sequence, drawn" } else { s.title }
   let summary = if golden { "Squares whose sides are Fibonacci numbers, and the golden spiral that runs through them." } else { s.summary }
   let drawing = if golden { golden_svg(9) } else { structure_svg(s) }
   let proof = proof_of(s)
+  let shown_photos = for ph in r.photos where not ph.picture.image.is_empty() and ids(s).contains(ph.part) { ph }
   let colours = palette_named(r.palette)
   let palette_attr = if colours.name == "dark_matter" { "" } else { f" data-palette=\"{colours.name}\"" }
   let stamp = if proof.checked.is_empty() { "" } else { "<span class=\"stamp\">checked</span>" }
   let sentences = if golden { golden_steps(9).join("") } else { (for i in 0 until s.steps.length() { step_line(i, shown_ids(s, s.steps[i]), "", escaped(s.steps[i].text)) }).join("") }
   let think = f"<div class=\"think\" id=\"think\" data-lines=\"{quoted(thinking(s))}\" data-done=\"Done. Hover a step to mark it again.\"></div>"
-  return f"<!doctype html><html lang=\"en\"{palette_attr}><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Kosika Designs</title><style>{draw_style()}{kinds_style()}{notes_style()}{proof_style()}{palettes_css()}{swatch_style()}</style></head><body><main><div class=\"brand\">Kosika Designs</div><div class=\"ask\">&#8220;{escaped(r.ask)}&#8221;</div><h1>{escaped(title)}{stamp}</h1><p class=\"lede\">{escaped(summary)}</p>{think}<div class=\"board\" id=\"board\">{drawing}<svg class=\"leaders\" id=\"leaders\" aria-hidden=\"true\"></svg><ol class=\"notes\">{sentences}</ol></div>{proof.html}<div class=\"hud\" id=\"hud\"></div>{reference_photo(r.picture)}<div class=\"bar\">{swatches(colours.name)}<button id=\"replay\" type=\"button\">Replay</button></div></main><script>{notes_script()}{draw_script()}</script></body></html>"
+  return f"<!doctype html><html lang=\"en\"{palette_attr}><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Kosika Designs</title><style>{draw_style()}{kinds_style()}{notes_style()}{proof_style()}{palettes_css()}{swatch_style()}{look_style()}</style></head><body><main><div class=\"brand\">Kosika Designs</div><div class=\"ask\">&#8220;{escaped(r.ask)}&#8221;</div><h1>{escaped(title)}{stamp}</h1><p class=\"lede\">{escaped(summary)}</p>{think}<div class=\"board\" id=\"board\">{drawing}<svg class=\"leaders\" id=\"leaders\" aria-hidden=\"true\"></svg><ol class=\"notes\">{sentences}</ol></div>{photo_strip(s, r.photos, r.picture)}{proof.html}<div class=\"hud\" id=\"hud\"></div>{reference_photo(r.picture, shown_photos)}<div class=\"bar\">{swatches(colours.name)}<button id=\"replay\" type=\"button\">Replay</button></div></main><script>{notes_script()}{draw_script()}{look_script()}</script></body></html>"
+}
+
+record Wanted { looks: Look[] }
+
+// The photos a drawing should show, for the host to find before drawing.
+workflow photos_wanted(r: Request) -> Wanted {
+  out = {looks: wanted_photos(r.structure)}
 }
 
 workflow draw(r: Request) -> Design {
@@ -1223,7 +1341,7 @@ fn sample() -> Structure {
     {id: "c", label: "Attention", note: "", parent: ""},
     {id: "d", label: "Next token", note: "", parent: ""}
   ], links: [{from: "a", to: "b", label: ""}, {from: "b", to: "c", label: ""}, {from: "c", to: "d", label: ""}, {from: "d", to: "a", label: "repeat"}],
-  steps: [{text: "one", parts: ["a", "b"]}, {text: "two", parts: ["c", "d"]}], marks: []}
+  steps: [{text: "one", parts: ["a", "b"]}, {text: "two", parts: ["c", "d"]}], marks: [], looks: []}
 }
 
 test "a good description has nothing wrong with it" {
@@ -1257,7 +1375,7 @@ fn family() -> Structure {
     {id: "c", label: "Owls", note: "", parent: "a"},
     {id: "d", label: "Whales", note: "", parent: "b"},
     {id: "e", label: "Bats", note: "", parent: "b"}
-  ], links: [], steps: [{text: "one", parts: ["root"]}, {text: "two", parts: ["a", "b"]}], marks: []}
+  ], links: [], steps: [{text: "one", parts: ["root"]}, {text: "two", parts: ["a", "b"]}], marks: [], looks: []}
 }
 
 test "a tree puts each parent over its children, one level per row" {
@@ -1310,4 +1428,18 @@ test "Kosika proves graph facts itself" {
   expect r.checked.contains("Kosika ran Dijkstra itself: A &#8594; C &#8594; B &#8594; D, length 8.")
   wrong = graph_proof({..roads, steps: [{text: "The shortest path to D is 9.", parts: ["d"]}, {text: "b", parts: ["a"]}]})
   expect wrong.checked.contains("Corrected: the explanation says 9 for D, but Kosika's working gives 8.")
+}
+
+test "icons are emoji, photos are few and only where they help" {
+  expect is_icon("☀")
+  expect not is_icon("sun")
+  expect not is_icon("")
+  water = {..family(), shape: "cycle", looks: [{part: "a", icon: "", photo: "a bird in flight"}, {part: "b", icon: "", photo: "whale breaching"}, {part: "c", icon: "", photo: ""}]}
+  expect wanted_photos(water).length() == 2
+  expect wanted_photos({..water, shape: "graph"}).length() == 0
+  expect look_problems({..water, looks: [{part: "zz", icon: "sun", photo: ""}]}).length() == 2
+  // no camera shows a gas, a sugar or a formula
+  leaf = {..family(), shape: "flow", parts: [{id: "a", label: "O₂", note: "", parent: ""}, {id: "b", label: "Glucose", note: "", parent: ""}, {id: "c", label: "Leaf", note: "", parent: ""}, {id: "d", label: "CO2", note: "", parent: ""}], looks: [{part: "a", icon: "", photo: "Oxygen"}, {part: "b", icon: "", photo: "Glucose"}, {part: "c", icon: "", photo: "Leaf"}, {part: "d", icon: "", photo: "Carbon dioxide"}]}
+  expect wanted_photos(leaf).length() == 1
+  expect is_formula("H₂O") and is_formula("CO2") and not is_formula("Rain")
 }

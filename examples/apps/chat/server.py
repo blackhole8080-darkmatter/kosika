@@ -159,6 +159,10 @@ class Chat:
         # counts really are Fibonacci numbers (a nautilus shell is not one).
         words = "sunflower head close-up" if s.get("figure") == "golden_spiral" else s.get("photo", "")
         described["picture"] = photo_for(words)
+        # The parts Kosika judged a real photo would help with, found on Commons.
+        wanted = self.kosika.run(DESIGNS / "draw.kos", "photos_wanted", {"r": described}, model=False)["looks"]
+        found = list(self.pool.map(lambda look: {"part": look["part"], "picture": photo_for(look["photo"])}, wanted))
+        described["photos"] = [f for f in found if f["picture"]["image"]]
         drawn = self.kosika.run(DESIGNS / "draw.kos", "draw", {"r": described}, model=False)
         return {"page": drawn["page"], "problems": drawn["problems"], "title": s.get("title", "")}
 
