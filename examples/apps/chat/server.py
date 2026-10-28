@@ -162,7 +162,14 @@ class Chat:
         # The parts Kosika judged a real photo would help with, found on Commons.
         wanted = self.kosika.run(DESIGNS / "draw.kos", "photos_wanted", {"r": described}, model=False)["looks"]
         found = list(self.pool.map(lambda look: {"part": look["part"], "picture": photo_for(look["photo"])}, wanted))
-        described["photos"] = [f for f in found if f["picture"]["image"]]
+        # One photo is shown once: two parts whose searches land on the same
+        # article (a jet engine and its turbine) keep only the first.
+        seen = {described["picture"]["page_url"]} if described["picture"]["image"] else set()
+        described["photos"] = []
+        for f in found:
+            if f["picture"]["image"] and f["picture"]["page_url"] not in seen:
+                seen.add(f["picture"]["page_url"])
+                described["photos"].append(f)
         drawn = self.kosika.run(DESIGNS / "draw.kos", "draw", {"r": described}, model=False)
         return {"page": drawn["page"], "problems": drawn["problems"], "title": s.get("title", "")}
 
