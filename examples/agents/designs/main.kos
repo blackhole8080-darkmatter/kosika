@@ -16,6 +16,7 @@
 // by code (eyes.py finds and reads the photo, sunflower.kos draws it).
 
 import "draw.kos"
+import "palette.kos"
 
 export [Ask, Plan, Job, think, describe, automation, kinds_guide]
 
@@ -101,7 +102,7 @@ test "with nothing traceable it falls back to a sunflower head" {
 // First the kind of picture is chosen, then it is described: a model that
 // knows it is drawing a graph describes vertices and edges, not boxes.
 record Pick { task: Text ask: Text }
-record Choice { shape: Text figure: Text why: Text }
+record Choice { shape: Text figure: Text palette: Text why: Text }
 
 // What the designer is given: how to describe, what was asked, the kind
 // of picture chosen and why, and, on a second try, what was wrong with
@@ -128,15 +129,30 @@ fn kinds_guide() -> Text {
   return "flow: steps or stages in order, a process, a pipeline, a workflow, an algorithm. cycle: a process that comes back to where it started. layers: a stack from top to bottom, like a network stack or the layers of a system. hub: one centre with things around it that each connect to it. nested: things inside things, like an atom or the Earth's layers. tree: a hierarchy or classification, like a family tree, an org chart, a taxonomy or a decision tree. mindmap: one idea in the middle with branches of related ideas, for brainstorming or an overview of a topic. graph: vertices joined by edges, as in discrete mathematics, networks, maps of connections, social networks, state machines with no single order. timeline: events in time order, history, a schedule. compare: two to four things side by side, row by row. sketch: anything that is a physical shape or picture rather than boxes and lines, like an organ, a cell, a landscape, a machine part or a diagram of forces."
 }
 
+fn palettes_guide() -> Text {
+  return (for p in palettes() { f"{p.name}: {p.mood}" }).join(". ")
+}
+
 fn planner_task() -> Text {
-  return "Choose the one kind of picture that would explain the request most clearly. The kinds: " + kinds_guide() + " Give shape (one of flow, cycle, layers, hub, nested, tree, mindmap, graph, timeline, compare, sketch), figure (golden_spiral only if the request is about the Fibonacci sequence, the golden ratio or the golden spiral, otherwise empty) and why (one sentence)."
+  return "Choose the one kind of picture that would explain the request most clearly, and the colours that suit its subject. The kinds: " + kinds_guide() + " The palettes: " + palettes_guide() + ". Give shape (one of flow, cycle, layers, hub, nested, tree, mindmap, graph, timeline, compare, sketch), figure (golden_spiral only if the request is about the Fibonacci sequence, the golden ratio or the golden spiral, otherwise empty), palette (one palette name; dark_matter unless another clearly suits the subject better) and why (one sentence)."
+}
+
+// The colours to draw in: the palette the person names in their words
+// wins; otherwise the planner's, when it is a real palette; else Dark Matter.
+fn chosen_palette(ask: Text, c: Choice) -> Text {
+  let said = ask.lower()
+  for p in palettes() {
+    if said.contains(p.label.lower() + " colour") or said.contains(p.label.lower() + " color") or said.contains(p.label.lower() + " palette") or said.contains("in " + p.label.lower()) { return p.name }
+  }
+  if palette_names().contains(c.palette) { return c.palette }
+  return "dark_matter"
 }
 
 fn designer_task() -> Text {
   return "You describe the structure of what someone asked to see, so that it can be drawn as a clear diagram of the kind given in plan. Do not draw: describe. Give title (a short heading), summary (one plain sentence), shape (the kind in plan), figure (as in plan; when it is golden_spiral leave parts, links, steps and marks empty), photo (two to five words to find one real, clear photo of the thing in a library of free photos, or empty when a photo would not help, as for an abstract process), parts (each with id: a short lowercase word, label: 1 to 3 words, note: up to 6 words, parent: empty or the id of the part it hangs from), links (from and to are part ids, label up to 3 words or empty), steps (3 to 6 sentences that explain it in order, each under 25 words, plain and exact, each with parts: the ids of the parts or marks it is about) and marks (empty unless the kind is sketch). By kind: flow, cycle, layers, hub: 4 to 10 parts, parent empty, links in order. nested: parts from the very centre outward, no links. tree: 5 to 16 parts, exactly one root with parent empty, every other part names its parent, no links. mindmap: the central idea is the root with parent empty, 4 to 6 main branches, each with 1 to 3 sub-ideas, 10 to 20 parts, no links. graph: 4 to 12 vertices, each label 1 to 4 characters when it is a mathematical vertex like A or v1, otherwise a short name, edges as links, label as the weight or empty; when two vertices are joined more than once (a multigraph), list every edge separately; in the sentences, state degrees and paths exactly as the edges you listed give them. timeline: 4 to 10 parts in time order, note is the date or time. compare: 2 to 4 column parts with parent empty, each with 2 to 6 row parts whose parent is that column, rows matched across columns. sketch: no parts and no links; 3 to 14 marks, each with id, kind (shape for a closed outline, curve for a line, arrow for a direction, dot for a point, text for a word), points as x, y, x, y on a 0 to 100 grid with y down (shapes 5 to 12 points round the outline in order, curves and arrows 2 to 6 points), and label (1 to 3 words or empty); draw the real outline of the thing in proportion. Use only true, standard facts. If problems are given, they are what was wrong with your last description: fix every one."
 }
 
-fn no_choice() -> Choice { return {shape: "flow", figure: "", why: "a flow suits most explanations"} }
+fn no_choice() -> Choice { return {shape: "flow", figure: "", palette: "dark_matter", why: "a flow suits most explanations"} }
 
 fn chosen_shape(c: Choice) -> Text { return if kinds().contains(c.shape) { c.shape } else { "flow" } }
 fn chosen_figure(c: Choice) -> Text { return if c.figure == "golden_spiral" { "golden_spiral" } else { "" } }
@@ -180,7 +196,7 @@ workflow describe(ask: Ask) -> Request {
     case true { first }
     case _ { call redescribe(ask, {text: plan}, {text: wrong}, first, choice) }
   }
-  out = {ask: ask.text, structure: better, picture: no_picture()}
+  out = {ask: ask.text, structure: better, picture: no_picture(), palette: chosen_palette(ask.text, choice)}
 }
 
 // The second try, told what was wrong with the first.
@@ -190,9 +206,16 @@ workflow redescribe(ask: Ask, plan: Ask, wrong: Ask, first: Structure, choice: C
 }
 
 test "an unknown kind from the planner becomes a flow" {
-  expect plan_of({shape: "spaghetti", figure: "", why: "w"}).starts_with("Draw it as a flow.")
-  expect steered(no_structure(), {shape: "graph", figure: "It shows weights", why: "w"}).figure == ""
-  expect steered(no_structure(), {shape: "graph", figure: "", why: "w"}).shape == "graph"
+  expect plan_of({shape: "spaghetti", figure: "", palette: "", why: "w"}).starts_with("Draw it as a flow.")
+  expect steered(no_structure(), {shape: "graph", figure: "It shows weights", palette: "", why: "w"}).figure == ""
+  expect steered(no_structure(), {shape: "graph", figure: "", palette: "", why: "w"}).shape == "graph"
+}
+
+test "the colours you name win, then the planner's, then Dark Matter" {
+  c: Choice = {shape: "cycle", figure: "", palette: "ocean", why: "w"}
+  expect chosen_palette("explain the water cycle", c) == "ocean"
+  expect chosen_palette("explain the water cycle in ember colours", c) == "ember"
+  expect chosen_palette("draw it", {..c, palette: "neon"}) == "dark_matter"
 }
 
 // ---------------------------------------------------------------- automations
@@ -239,7 +262,7 @@ fn job_structure(j: Job) -> Structure {
 }
 
 workflow automation(j: Job) -> Request {
-  out = {ask: j.ask, structure: job_structure(j), picture: no_picture()}
+  out = {ask: j.ask, structure: job_structure(j), picture: no_picture(), palette: "dark_matter"}
 }
 
 test "an automation is drawn as a checked flow" {

@@ -1,0 +1,133 @@
+// Kosika Designs' colours: named palettes, each checked for contrast by
+// Kosika's own arithmetic before a drawing may use it.
+//
+//   import "palette.kos"
+//
+// palettes()               every palette, Dark Matter first
+// palette_named(name)      the palette of that name, or Dark Matter
+// contrast(a, b)           the WCAG contrast ratio of two #rrggbb colours
+// palette_problems(p)      what in a palette is too faint to read, in words
+// palettes_css()           every palette as CSS, one [data-palette] rule each
+//
+// A palette is a background, a panel, ink for text, a softer ink, the
+// colour of lines, an accent for what is being explained, a gold and a
+// violet for labels and numbers, and six colours for groups: the branches
+// of a mind map, the columns of a comparison, the shapes of a sketch.
+//
+// What readable means here is the Web Content Accessibility Guidelines'
+// contrast ratio, worked out from each colour's relative luminance: text
+// at least 7 to 1 against its background, softer text 4.5, and lines,
+// accents and group colours 3, the least for shapes to be told apart.
+
+export [Palette, palettes, palette_named, palette_names, contrast, palette_problems, palettes_css]
+
+record Palette {
+  name: Text
+  label: Text
+  mood: Text
+  bg: Text
+  panel: Text
+  ink: Text
+  soft: Text
+  line: Text
+  accent: Text
+  gold: Text
+  think: Text
+  hues: Text[]
+}
+
+fn palettes() -> Palette[] {
+  return [
+    {name: "dark_matter", label: "Dark Matter", mood: "Kosika's own: deep indigo night, amber light; for anything", bg: "#07080d", panel: "#111428", ink: "#eef0f7", soft: "#a3a8bd", line: "#eef0f7", accent: "#ff8a4c", gold: "#f5b45c", think: "#a993ff", hues: ["#ff8a4c", "#a993ff", "#55d6ff", "#f5b45c", "#4fe0a6", "#ff6b81"]},
+    {name: "aurora", label: "Aurora", mood: "cold light on a night sky; for space, physics, technology", bg: "#050b14", panel: "#0c1726", ink: "#e8f4f8", soft: "#9db4c4", line: "#e8f4f8", accent: "#5ef2c8", gold: "#b9f26b", think: "#8fb2ff", hues: ["#5ef2c8", "#8fb2ff", "#c49bff", "#6be0ff", "#b9f26b", "#ff9fd2"]},
+    {name: "ocean", label: "Ocean", mood: "deep water and sunlit shallows; for water, weather, the sea, flows", bg: "#04121c", panel: "#0a2030", ink: "#e6f3f8", soft: "#93b6c6", line: "#e6f3f8", accent: "#3ec7f0", gold: "#ffd27a", think: "#7fa8ff", hues: ["#3ec7f0", "#2fd8b8", "#7fa8ff", "#ffd27a", "#a7e3ff", "#ff9e80"]},
+    {name: "ember", label: "Ember", mood: "fire and warm metal; for energy, chemistry, history, the body", bg: "#120806", panel: "#1f0f0b", ink: "#fbeee6", soft: "#c9a596", line: "#fbeee6", accent: "#ff7a3d", gold: "#ffc15e", think: "#ff9a8b", hues: ["#ff7a3d", "#ffc15e", "#ff5d73", "#ffb199", "#e8d27a", "#c98bff"]},
+    {name: "forest", label: "Forest", mood: "leaves and moss; for plants, animals, ecology, growth", bg: "#07110b", panel: "#0f1f15", ink: "#eef6ee", soft: "#a5bfa9", line: "#eef6ee", accent: "#7ddc6f", gold: "#e9c46a", think: "#9fd8cb", hues: ["#7ddc6f", "#e9c46a", "#4fc3a1", "#c7e36b", "#f4a261", "#9fd8cb"]},
+    {name: "paper", label: "Paper", mood: "ink on warm paper, light; for reading, mathematics, print-like notes", bg: "#f7f4ec", panel: "#fffdf7", ink: "#1f1b16", soft: "#5f574b", line: "#2b2620", accent: "#c2410c", gold: "#a16207", think: "#5b4bb5", hues: ["#c2410c", "#1d4ed8", "#047857", "#a16207", "#7c3aed", "#be123c"]},
+    {name: "print", label: "Print", mood: "black on white only; for printing and the plainest reading", bg: "#ffffff", panel: "#ffffff", ink: "#000000", soft: "#404040", line: "#000000", accent: "#000000", gold: "#000000", think: "#000000", hues: ["#000000", "#333333", "#555555", "#000000", "#333333", "#555555"]},
+    {name: "clear", label: "Clear", mood: "the Okabe-Ito colours, told apart with colour-blindness; for anyone", bg: "#0b0b0f", panel: "#15151c", ink: "#f2f2f2", soft: "#b3b3b3", line: "#f2f2f2", accent: "#e69f00", gold: "#f0e442", think: "#56b4e9", hues: ["#e69f00", "#56b4e9", "#009e73", "#f0e442", "#0072b2", "#d55e00"]}
+  ]
+}
+
+fn palette_names() -> Text[] { return for p in palettes() { p.name } }
+
+fn palette_named(name: Text) -> Palette {
+  let all = palettes()
+  for p in all {
+    if p.name == name.lower().trim().replace(" ", "_") { return p }
+  }
+  return all[0]
+}
+
+// ---------------------------------------------------------------- contrast
+
+fn hex_digit(ch: Text) -> Number { return "0123456789abcdef".index_of(ch.lower()).or(0) }
+
+fn channel(hex: Text, at: Number) -> Number {
+  return hex_digit(hex.slice(at, at + 1)) * 16 + hex_digit(hex.slice(at + 1, at + 2))
+}
+
+// A channel's light as the eye adds it: sRGB undone to linear light.
+fn linear(c: Number) -> Number {
+  let v = c / 255
+  if v <= 0.03928 { return v / 12.92 }
+  return ((v + 0.055) / 1.055).power(2.4)
+}
+
+fn luminance(hex: Text) -> Number {
+  return 0.2126 * linear(channel(hex, 1)) + 0.7152 * linear(channel(hex, 3)) + 0.0722 * linear(channel(hex, 5))
+}
+
+fn contrast(a: Text, b: Text) -> Number {
+  let la = luminance(a)
+  let lb = luminance(b)
+  let hi = la.max(lb)
+  let lo = la.min(lb)
+  return (hi + 0.05) / (lo + 0.05)
+}
+
+fn too_faint(p: Palette, what: Text, colour: Text, least: Number) -> Text[] {
+  let c = contrast(colour, p.bg)
+  if c >= least { return [] }
+  return [f"{p.label}: {what} {colour} has contrast {(c * 100).round() / 100} on {p.bg}; it needs {least}"]
+}
+
+fn palette_problems(p: Palette) -> Text[] {
+  var out: Text[] = []
+  out = out.concat(too_faint(p, "ink", p.ink, 7)).concat(too_faint(p, "soft ink", p.soft, 4.5))
+  out = out.concat(too_faint(p, "lines", p.line, 3)).concat(too_faint(p, "accent", p.accent, 3))
+  for k in 0 until p.hues.length() { out = out.concat(too_faint(p, f"group colour {k + 1}", p.hues[k], 3)) }
+  if p.hues.length() != 6 { out = out.append(f"{p.label} needs six group colours") }
+  return out
+}
+
+// ---------------------------------------------------------------- CSS
+
+fn palette_rule(p: Palette) -> Text {
+  let hues = (for k in 0 until p.hues.length() { f"--h{k}:{p.hues[k]}" }).join(";")
+  let scheme = if luminance(p.bg) > 0.5 { "light" } else { "dark" }
+  return f"html[data-palette=\"{p.name}\"]{{--bg:{p.bg};--halo:{p.panel};--ink:{p.ink};--soft:{p.soft};--amber:{p.accent};--gold:{p.gold};--think:{p.think};--line:{p.line};--line2:color-mix(in srgb,{p.line} 55%,transparent);{hues};background:{p.bg};color-scheme:{scheme}}}"
+}
+
+fn palettes_css() -> Text {
+  let base = palettes()[0]
+  let hues = (for k in 0 until base.hues.length() { f"--h{k}:{base.hues[k]}" }).join(";")
+  return f":root{{{hues}}}" + (for p in palettes() { palette_rule(p) }).join("")
+}
+
+test "every palette is readable, by Kosika's own contrast arithmetic" {
+  expect (for p in palettes() where not palette_problems(p).is_empty() { p.name }) == []
+}
+
+test "contrast is computed as WCAG defines it" {
+  expect (contrast("#000000", "#ffffff") * 100).round() == 2100
+  expect (contrast("#777777", "#ffffff") * 100).round() == 448
+  expect contrast("#ffffff", "#ffffff") == 1
+}
+
+test "a faint palette is refused, and the name is found loosely" {
+  faint = {..palette_named("paper"), soft: "#d8d2c4"}
+  expect palette_problems(faint).length() == 1
+  expect palette_named("Dark Matter").name == "dark_matter"
+  expect palette_named("no such").name == "dark_matter"
+}
