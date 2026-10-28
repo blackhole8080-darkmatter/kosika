@@ -94,8 +94,8 @@ def lead_photo(words, width=480):
     # (a glucose meter), so there is no photo at all.
     for page in sorted(pages, key=lambda p: p.get("index", 0))[:1]:
         name = page.get("pageimage")
-        if not name or not name.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
-            return None
+        if not name or not name.lower().endswith((".jpg", ".jpeg")):
+            return None  # a drawing (svg, and most png) rather than a photo
         info_query = urllib.parse.urlencode({
             "action": "query", "format": "json", "titles": "File:" + name, "prop": "imageinfo",
             "iiprop": "url|size|extmetadata", "iiurlwidth": width,

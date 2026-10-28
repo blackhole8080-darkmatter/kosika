@@ -149,7 +149,7 @@ fn chosen_palette(ask: Text, c: Choice) -> Text {
 }
 
 fn designer_task() -> Text {
-  return "You describe the structure of what someone asked to see, so that it can be drawn as a clear diagram of the kind given in plan. Do not draw: describe. Give title (a short heading), summary (one plain sentence), shape (the kind in plan), figure (as in plan; when it is golden_spiral leave parts, links, steps and marks empty), photo (two to five words to find one real, clear photo of the thing in a library of free photos, or empty when a photo would not help, as for an abstract process), parts (each with id: a short lowercase word, label: 1 to 3 words, note: up to 6 words, parent: empty or the id of the part it hangs from), links (from and to are part ids, label up to 3 words or empty), steps (3 to 6 sentences that explain it in order, each under 25 words, plain and exact, each with parts: the ids of the parts or marks it is about) marks (empty unless the kind is sketch), and looks: one for each part, with its part id, icon (one emoji a reader recognises at a glance and that means that part, like a sun for evaporation, a cloud for condensation, a leaf for a plant; give one to every part a familiar emoji fits, and leave it empty for mathematical vertices, numbers and ideas no emoji shows) and photo (the name of a real, visible thing a camera can photograph that shows this part, as the title of its Wikipedia article would be, like Cumulus cloud or Chloroplast; at most four photos in all, only where seeing the real thing helps; empty for processes, chemicals, molecules, energy, ideas, mathematics and anything a camera cannot show). By kind: flow, cycle, layers, hub: 4 to 10 parts, parent empty, links in order. nested: parts from the very centre outward, no links. tree: 5 to 16 parts, exactly one root with parent empty, every other part names its parent, no links. mindmap: the central idea is the root with parent empty, 4 to 6 main branches, each with 1 to 3 sub-ideas, 10 to 20 parts, no links. graph: 4 to 12 vertices, each label 1 to 4 characters when it is a mathematical vertex like A or v1, otherwise a short name, edges as links, label as the weight or empty; when two vertices are joined more than once (a multigraph), list every edge separately; in the sentences, state degrees and paths exactly as the edges you listed give them. timeline: 4 to 10 parts in time order, note is the date or time. compare: 2 to 4 column parts with parent empty, each with 2 to 6 row parts whose parent is that column, rows matched across columns. sketch: no parts and no links; 3 to 14 marks, each with id, kind (shape for a closed outline, curve for a line, arrow for a direction, dot for a point, text for a word), points as x, y, x, y on a 0 to 100 grid with y down (shapes 5 to 12 points round the outline in order, curves and arrows 2 to 6 points), and label (1 to 3 words or empty); draw the real outline of the thing in proportion. Use only true, standard facts. If problems are given, they are what was wrong with your last description: fix every one."
+  return "You describe the structure of what someone asked to see, so that it can be drawn as a clear diagram of the kind given in plan. Do not draw: describe. Give title (a short heading), summary (one plain sentence), shape (the kind in plan), figure (as in plan; when it is golden_spiral leave parts, links, steps and marks empty), photo (two to five words to find one real, clear photo of the thing in a library of free photos, or empty when a photo would not help, as for an abstract process), parts (each with id: a short lowercase word, label: 1 to 3 words, note: up to 6 words, parent: empty or the id of the part it hangs from), links (from and to are part ids, label up to 3 words or empty), steps (3 to 6 sentences that explain it in order, each under 25 words, plain and exact, each with parts: the ids of the parts or marks it is about; every step states something true about the subject, never an instruction about the drawing like 'compare the two' or 'identify the parts'; the steps together answer the question asked, and when it asks which to choose or whether to do something, the last step gives a clear recommendation and the reason for it) marks (empty unless the kind is sketch), and looks: one for each part, with its part id, icon (one emoji a reader recognises at a glance and that means that part, like a sun for evaporation, a cloud for condensation, a leaf for a plant; give one to every part a familiar emoji fits, and leave it empty for mathematical vertices, numbers and ideas no emoji shows) and photo (the name of a real, visible thing a camera can photograph that shows this part, as the title of its Wikipedia article would be, like Cumulus cloud or Chloroplast; at most four photos in all, only where seeing the real thing helps; empty for processes, chemicals, molecules, energy, ideas, mathematics and anything a camera cannot show). By kind: flow, cycle, layers, hub: 4 to 10 parts, parent empty, links in order. nested: parts from the very centre outward, no links. tree: 5 to 16 parts, exactly one root with parent empty, every other part names its parent, no links. mindmap: the central idea is the root with parent empty, 4 to 6 main branches, each with 1 to 3 sub-ideas, 10 to 20 parts, no links. graph: 4 to 12 vertices, each label 1 to 4 characters when it is a mathematical vertex like A or v1, otherwise a short name, edges as links, label as the weight or empty; when two vertices are joined more than once (a multigraph), list every edge separately; in the sentences, state degrees and paths exactly as the edges you listed give them. timeline: 4 to 10 parts in time order, note is the date or time. compare: a table. 2 to 4 column parts with parent empty (the things compared), each with 2 to 6 row parts whose parent is that column, rows matched across columns in the same order; give aspects, the name of each row in order (like Speed, Safety, Learning curve), and give each row part a label that is that column's answer for the aspect in two to five words and a note of one short phrase saying why. For every other kind leave aspects empty. sketch: no parts and no links; 3 to 14 marks, each with id, kind (shape for a closed outline, curve for a line, arrow for a direction, dot for a point, text for a word), points as x, y, x, y on a 0 to 100 grid with y down (shapes 5 to 12 points round the outline in order, curves and arrows 2 to 6 points), and label (1 to 3 words or empty); draw the real outline of the thing in proportion. Use only true, standard facts. If problems are given, they are what was wrong with your last description: fix every one."
 }
 
 fn no_choice() -> Choice { return {shape: "flow", figure: "", palette: "dark_matter", why: "a flow suits most explanations"} }
@@ -169,7 +169,7 @@ fn steered(s: Structure, c: Choice) -> Structure {
 }
 
 fn no_structure() -> Structure {
-  return {title: "", summary: "", shape: "", figure: "", photo: "", parts: [], links: [], steps: [], marks: [], looks: []}
+  return {title: "", summary: "", shape: "", figure: "", photo: "", parts: [], links: [], steps: [], marks: [], looks: [], aspects: []}
 }
 
 fn no_picture() -> Picture {
@@ -177,6 +177,52 @@ fn no_picture() -> Picture {
 }
 
 fn kept(s: Structure) -> Structure { return s }
+
+// A question that sets things against each other is drawn as a table,
+// whatever the planner chose: "compare", "vs", "difference between",
+// "should I learn Rust or Go".
+fn asks_to_compare(text: Text) -> Bool {
+  let t = " " + text.lower().trim() + " "
+  if t.starts_with(" compare ") { return true }
+  for w in [" vs ", " vs. ", " versus ", "difference between", "differences between", "pros and cons", "which is better", "which should i"] {
+    if t.contains(w) { return true }
+  }
+  return t.contains(" or ") and (t.starts_with(" should i ") or t.starts_with(" which "))
+}
+
+fn picked(text: Text, c: Choice) -> Choice {
+  if asks_to_compare(text) { return {..c, shape: "compare", figure: ""} }
+  return c
+}
+
+// Some asks are answered best in words, not a drawing: something to write
+// (a poem, an email), a greeting, or a short fact (the capital of a country).
+record Answer { words: Bool }
+
+fn wants_words(text: Text) -> Bool {
+  let t = " " + text.lower().trim().trim_marks("?!.") + " "
+  for w in [" draw", "diagram", " map ", "mind map", "chart", "visual", "picture", "graph", "flow", "timeline", "compare"] {
+    if t.contains(w) { return false }
+  }
+  for w in [" write ", " compose ", " draft ", " translate ", " rewrite ", " summarise ", " summarize "] {
+    if t.starts_with(w) { return true }
+  }
+  for w in [" poem ", " haiku ", " limerick ", " joke ", " email ", " letter ", " essay ", " story "] {
+    if t.contains(w) { return true }
+  }
+  for w in [" hi ", " hello ", " hey ", " thanks ", " thank you "] {
+    if t == w { return true }
+  }
+  let short = t.words().length() <= 9
+  for w in [" what is the capital", " who is ", " who was ", " when was ", " when did ", " how many ", " how old ", " what year ", " how tall ", " how far "] {
+    if short and t.starts_with(w) { return true }
+  }
+  return false
+}
+
+workflow answer_kind(ask: Ask) -> Answer {
+  out = {words: wants_words(ask.text)}
+}
 
 fn again(s: Structure) -> Text {
   return problems(s).join("; ")
@@ -187,7 +233,8 @@ fn again(s: Structure) -> Text {
 // drawing step refuses it and says why.
 workflow describe(ask: Ask) -> Request {
   budget 6 model calls, 600 seconds
-  choice = use_model planner(planner_task(), ask.text) retry 1 otherwise no_choice()
+  asked  = use_model planner(planner_task(), ask.text) retry 1 otherwise no_choice()
+  choice = picked(ask.text, asked)
   plan   = plan_of(choice)
   said   = use_model designer(designer_task(), ask.text, plan, "") retry 1 otherwise no_structure()
   first  = steered(said, choice)
@@ -203,6 +250,17 @@ workflow describe(ask: Ask) -> Request {
 workflow redescribe(ask: Ask, plan: Ask, wrong: Ask, first: Structure, choice: Choice) -> Structure {
   answer = use_model designer(designer_task(), ask.text, plan.text, wrong.text) retry 1 otherwise kept(first)
   out    = steered(answer, choice)
+}
+
+test "comparisons are drawn as tables, and some asks are answered in words" {
+  c: Choice = {shape: "layers", figure: "", palette: "", why: "w"}
+  expect picked("Compare TCP, UDP and QUIC", c).shape == "compare"
+  expect picked("Should I learn Rust or Go first?", c).shape == "compare"
+  expect picked("Explain the network stack", c).shape == "layers"
+  expect wants_words("Write a haiku about rain")
+  expect wants_words("What is the capital of Australia?")
+  expect not wants_words("Explain the water cycle")
+  expect not wants_words("Write a mind map of renewable energy")
 }
 
 test "an unknown kind from the planner becomes a flow" {
@@ -258,7 +316,7 @@ fn job_structure(j: Job) -> Structure {
     {text: if j.waiting { f"This would change something, so it waits: say yes with Approve and {helper} does it." } else { f"{helper} answered, and the answer came back to you." }, parts: [last]}
   ]
   let title = if j.waiting { f"Kosi's plan: {j.text}" } else { f"Kosi asked {helper}" }
-  return {title: title.slice(0, title.length().min(70)), summary: if j.waiting { "A plan, waiting for your yes." } else { "What Kosi did to answer." }, shape: "flow", figure: "", photo: "", parts: parts, links: links, steps: steps, marks: [], looks: []}
+  return {title: title.slice(0, title.length().min(70)), summary: if j.waiting { "A plan, waiting for your yes." } else { "What Kosi did to answer." }, shape: "flow", figure: "", photo: "", parts: parts, links: links, steps: steps, marks: [], looks: [], aspects: []}
 }
 
 workflow automation(j: Job) -> Request {

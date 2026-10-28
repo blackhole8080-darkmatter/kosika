@@ -37,7 +37,8 @@ record Mark { id: Text kind: Text points: Number[] label: Text = "" }
 // A part's look: an icon (one emoji) shown in its box, and words to find a
 // real photo of it, each empty when it would not help.
 record Look { part: Text icon: Text photo: Text }
-record Structure { title: Text summary: Text shape: Text figure: Text photo: Text parts: Part[] links: Link[] steps: Step[] marks: Mark[] = [] looks: Look[] = [] }
+// aspects: for a comparison, the name of each row (Speed, Cost), in order.
+record Structure { title: Text summary: Text shape: Text figure: Text photo: Text parts: Part[] links: Link[] steps: Step[] marks: Mark[] = [] looks: Look[] = [] aspects: Text[] = [] }
 // A real photo of the thing, shown beside the drawing as a reference.
 record Picture { title: Text author: Text license: Text license_url: Text page_url: Text image: Text }
 // palette: the name of the colours to draw in (palette.kos); Dark Matter when unknown.
@@ -373,6 +374,8 @@ fn kind_problems(s: Structure) -> Text[] {
   if s.shape == "compare" {
     let columns_now = for p in s.parts where p.parent.is_empty() { p }
     if columns_now.length() < 2 or columns_now.length() > 4 { out = out.append(f"a comparison needs 2 to 4 columns; it has {columns_now.length()}") }
+    let deepest = cmp_rows(s)
+    if not s.aspects.is_empty() and s.aspects.length() != deepest { out = out.append(f"a comparison names {s.aspects.length()} aspects for {deepest} rows") }
   }
   var seen: Text[] = []
   for m in s.marks {
@@ -528,19 +531,67 @@ fn timeline_layout(s: Structure, w: Number, h: Number) -> Number[][] {
 }
 
 // Columns side by side; each row under its column.
+// A comparison is a table: a header row of the things compared, then one
+// row for each aspect, its name on the left when the description gives
+// it. Each row is as tall as its longest cell, so nothing is cut off.
+fn cmp_columns(s: Structure) -> Number[] { return for i in 0 until s.parts.length() where s.parts[i].parent.is_empty() { i } }
+fn cmp_side(s: Structure) -> Number { return if s.aspects.is_empty() { 0 } else { 150 } }
+fn cmp_width(s: Structure) -> Number { return (860 - cmp_side(s)) / cmp_columns(s).length().max(1) }
+fn cmp_head() -> Number { return 76 }
+
+fn cmp_rows(s: Structure) -> Number {
+  var most = 0
+  for c in cmp_columns(s) { most = most.max(children(s, s.parts[c].id).length()) }
+  return most
+}
+
+fn cmp_lines(s: Structure, i: Number) -> Number {
+  let chars = ((cmp_width(s) - 30) / 7.3).floor()
+  let p = s.parts[i]
+  let notes = if p.note.is_empty() { 0 } else { wrap(p.note, chars).length().min(4) }
+  return wrap(p.label, chars).length().min(2) + notes
+}
+
+fn cmp_heights(s: Structure) -> Number[] {
+  let cols = cmp_columns(s)
+  return for k in 0 until cmp_rows(s) { cmp_row_lines(s, cols, k) * 17 + 28 }
+}
+
+fn cmp_row_lines(s: Structure, cols: Number[], k: Number) -> Number {
+  var lines = if k < s.aspects.length() { wrap(s.aspects[k], 18).length().min(2) } else { 1 }
+  for c in cols {
+    let rows = children(s, s.parts[c].id)
+    if k < rows.length() { lines = lines.max(cmp_lines(s, rows[k])) }
+  }
+  return lines
+}
+
+fn cmp_tops(s: Structure) -> Number[] {
+  var y = cmp_head()
+  var out: Number[] = []
+  for v in cmp_heights(s) {
+    out = out.append(y)
+    y = y + v
+  }
+  return out
+}
+
 fn compare_layout(s: Structure, w: Number, h: Number) -> Number[][] {
   let n = s.parts.length()
-  let cols = for i in 0 until n where s.parts[i].parent.is_empty() { i }
+  let cols = cmp_columns(s)
+  let cw = cmp_width(s)
+  let tops = cmp_tops(s)
+  let hs = cmp_heights(s)
   var xs: Number[] = for i in 0 until n { 0 }
   var ys: Number[] = for i in 0 until n { 0 }
   for c in 0 until cols.length() {
-    let x = (c + 0.5) * w / cols.length()
+    let x = cmp_side(s) + (c + 0.5) * cw
     xs = xs.set(cols[c], x)
     ys = ys.set(cols[c], 40)
     let rows = children(s, s.parts[cols[c]].id)
     for r in 0 until rows.length() {
       xs = xs.set(rows[r], x)
-      ys = ys.set(rows[r], 110 + r * 62)
+      ys = ys.set(rows[r], tops[r] + hs[r] / 2)
     }
   }
   return [xs, ys]
@@ -548,13 +599,7 @@ fn compare_layout(s: Structure, w: Number, h: Number) -> Number[][] {
 
 fn kind_height(s: Structure) -> Number {
   if s.shape == "tree" { return (depths(s).max().or(0) + 1) * 110 + 160 }
-  if s.shape == "compare" {
-    var most = 0
-    for p in s.parts {
-      if p.parent.is_empty() { most = most.max(children(s, p.id).length()) }
-    }
-    return 130 + most * 62
-  }
+  if s.shape == "compare" { return cmp_head() + cmp_heights(s).sum() + 12 }
   if s.shape == "timeline" { return 260 }
   if s.shape == "graph" or s.shape == "mindmap" { return 520 }
   return 500
@@ -667,18 +712,38 @@ fn timeline_svg(s: Structure, at: Number[][], w: Number, h: Number) -> Text {
 }
 
 fn compare_svg(s: Structure, at: Number[][], w: Number, h: Number) -> Text {
-  let cols = for i in 0 until s.parts.length() where s.parts[i].parent.is_empty() { i }
-  let cw = w / cols.length() - 24
-  var bits: Text[] = []
+  let cols = cmp_columns(s)
+  let cw = cmp_width(s)
+  let side = cmp_side(s)
+  let tops = cmp_tops(s)
+  let hs = cmp_heights(s)
+  let chars = ((cw - 30) / 7.3).floor()
+  // The table's frame: alternate rows shaded, a rule above each row, and
+  // the aspect of each row named on the left.
+  var bits: Text[] = [f"<rect class=\"tframe\" x=\"1\" y=\"1\" width=\"{f1(w - 2)}\" height=\"{f1(h - 2)}\" rx=\"14\"/>"]
+  for k in 0 until hs.length() {
+    if k % 2 == 0 { bits = bits.append(f"<rect class=\"band\" x=\"2\" y=\"{f1(tops[k])}\" width=\"{f1(w - 4)}\" height=\"{f1(hs[k])}\"/>") }
+    bits = bits.append(f"<path class=\"rule\" d=\"M2 {f1(tops[k])} H{f1(w - 2)}\"/>")
+    if k < s.aspects.length() {
+      let names = wrap(s.aspects[k], 18).take(2)
+      let first = tops[k] + hs[k] / 2 - (names.length() - 1) * 8.5 + 4
+      bits = bits.append((for j in 0 until names.length() { f"<text class=\"aspect\" x=\"18\" y=\"{f1(first + j * 17)}\">{escaped(names[j])}</text>" }).join(""))
+    }
+  }
   for c in 0 until cols.length() {
     let i = cols[c]
     let x = at[0][i]
-    bits = bits.append(f"<g class=\"part column bit\" id=\"p-{s.parts[i].id}\"><rect pathLength=\"1\" x=\"{f1(x - cw / 2)}\" y=\"14\" width=\"{f1(cw)}\" height=\"{f1(h - 28)}\" rx=\"14\" style=\"stroke:{hue(c)}\"/><text class=\"label colhead\" x=\"{f1(x)}\" y=\"48\" style=\"fill:{hue(c)}\">{escaped(s.parts[i].label)}</text><text class=\"note\" x=\"{f1(x)}\" y=\"68\">{escaped(s.parts[i].note)}</text></g>")
-    for r in children(s, s.parts[i].id) {
-      let said = if s.parts[r].note.is_empty() { s.parts[r].label } else { s.parts[r].label + ": " + s.parts[r].note }
-      let lines = wrap(said, (cw / 7.4).floor())
-      let text = (for k in 0 until lines.length().min(3) { f"<text class=\"cell\" x=\"{f1(x - cw / 2 + 16)}\" y=\"{f1(at[1][r] - 6 + k * 16)}\">{escaped(lines[k])}</text>" }).join("")
-      bits = bits.append(f"<g class=\"part row bit\" id=\"p-{s.parts[r].id}\"><rect pathLength=\"1\" x=\"{f1(x - cw / 2 + 8)}\" y=\"{f1(at[1][r] - 26)}\" width=\"{f1(cw - 16)}\" height=\"54\" rx=\"9\"/>{text}</g>")
+    let left = side + c * cw
+    bits = bits.append(f"<g class=\"part column bit\" id=\"p-{s.parts[i].id}\"><rect pathLength=\"1\" x=\"{f1(left + 4)}\" y=\"6\" width=\"{f1(cw - 8)}\" height=\"{f1(h - 12)}\" rx=\"12\" style=\"stroke:{hue(c)}\"/><text class=\"label colhead\" x=\"{f1(x)}\" y=\"38\" style=\"fill:{hue(c)}\">{escaped(s.parts[i].label)}</text><text class=\"note\" x=\"{f1(x)}\" y=\"58\">{escaped(s.parts[i].note)}</text></g>")
+    let rows = children(s, s.parts[i].id)
+    for r in 0 until rows.length() {
+      let p = s.parts[rows[r]]
+      let heads = wrap(p.label, chars).take(2)
+      let notes = wrap(p.note, chars).take(4)
+      let top = tops[r] + 27
+      let strong = (for k in 0 until heads.length() { f"<text class=\"cell strong\" x=\"{f1(left + 16)}\" y=\"{f1(top + k * 17)}\">{escaped(heads[k])}</text>" }).join("")
+      let soft = (for k in 0 until notes.length() { f"<text class=\"cell\" x=\"{f1(left + 16)}\" y=\"{f1(top + (heads.length() + k) * 17)}\">{escaped(notes[k])}</text>" }).join("")
+      bits = bits.append(f"<g class=\"part row bit\" id=\"p-{p.id}\"><rect pathLength=\"1\" x=\"{f1(left + 8)}\" y=\"{f1(tops[r] + 4)}\" width=\"{f1(cw - 16)}\" height=\"{f1(hs[r] - 8)}\" rx=\"8\"/>{strong}{soft}</g>")
     }
   }
   return bits.join("")
@@ -736,7 +801,7 @@ fn closest(at: Number[][]) -> Number {
 }
 
 fn kinds_style() -> Text {
-  return ".vertex circle{fill:var(--halo);stroke:var(--line);stroke-width:1.6}.vlabel{fill:var(--ink);font:700 13px ui-monospace,Consolas,monospace;text-anchor:middle}.on.vertex circle{stroke:var(--amber);stroke-width:3}.axis{fill:none;stroke:var(--line2);stroke-width:1.6}.tick circle{fill:var(--halo);stroke:var(--gold);stroke-width:2}.on.tick circle{fill:var(--amber)}.date{fill:var(--gold);font:600 11px ui-monospace,Consolas,monospace}.column rect{fill:none;stroke-width:1.4}.colhead{font:800 16px Figtree,system-ui,sans-serif}.row rect{fill:color-mix(in srgb,var(--line) 4%,transparent);stroke:var(--line2);stroke-width:1}.cell{fill:var(--ink);font:13px Figtree,system-ui,sans-serif}.on.row rect,.on.column rect{stroke:var(--amber)!important;stroke-width:2.4}.blob{fill-opacity:.14;stroke-width:2}.stroke{fill:none;stroke:var(--line);stroke-width:2.4;stroke-linecap:round}.spot{fill:var(--amber)}.free{font:600 15px Figtree,system-ui,sans-serif}.mark.shown path{stroke-dasharray:1;animation:pen .9s ease-out both}.on.mark .stroke,.on.mark .blob{stroke:var(--amber)!important;stroke-width:3.4;filter:drop-shadow(0 0 8px color-mix(in srgb,var(--amber) 70%,transparent))}.on.mark .label{fill:var(--amber)}"
+  return ".vertex circle{fill:var(--halo);stroke:var(--line);stroke-width:1.6}.vlabel{fill:var(--ink);font:700 13px ui-monospace,Consolas,monospace;text-anchor:middle}.on.vertex circle{stroke:var(--amber);stroke-width:3}.axis{fill:none;stroke:var(--line2);stroke-width:1.6}.tick circle{fill:var(--halo);stroke:var(--gold);stroke-width:2}.on.tick circle{fill:var(--amber)}.date{fill:var(--gold);font:600 11px ui-monospace,Consolas,monospace}.column rect{fill:none;stroke-width:1.4}.colhead{font:800 16px Figtree,system-ui,sans-serif}.row rect{fill:transparent;stroke:transparent;stroke-width:1}.tframe{fill:color-mix(in srgb,var(--halo) 60%,transparent);stroke:color-mix(in srgb,var(--line) 16%,transparent)}.band{fill:color-mix(in srgb,var(--line) 4%,transparent)}.rule{stroke:color-mix(in srgb,var(--line) 12%,transparent);stroke-width:1}.aspect{fill:var(--gold);font:700 11px ui-monospace,Consolas,monospace;letter-spacing:.08em;text-transform:uppercase}.cell{fill:var(--soft);font:13px Figtree,system-ui,sans-serif}.cell.strong{fill:var(--ink);font-weight:700}.on.row rect,.on.column rect{stroke:var(--amber)!important;stroke-width:2.4}.blob{fill-opacity:.14;stroke-width:2}.stroke{fill:none;stroke:var(--line);stroke-width:2.4;stroke-linecap:round}.spot{fill:var(--amber)}.free{font:600 15px Figtree,system-ui,sans-serif}.mark.shown path{stroke-dasharray:1;animation:pen .9s ease-out both}.on.mark .stroke,.on.mark .blob{stroke:var(--amber)!important;stroke-width:3.4;filter:drop-shadow(0 0 8px color-mix(in srgb,var(--amber) 70%,transparent))}.on.mark .label{fill:var(--amber)}"
 }
 
 // ---------------------------------------------------------------- the mathematics, worked by Kosika
@@ -985,12 +1050,27 @@ fn graph_proof(s: Structure) -> Proof {
 
 fn proof_of(s: Structure) -> Proof {
   if s.figure == "golden_spiral" { return fib_proof(9) }
-  if s.shape == "graph" { return graph_proof(s) }
+  if s.shape == "graph" and graph_maths(s) { return graph_proof(s) }
   return no_proof()
 }
 
+// Whether a graph is mathematics to work: its edges carry weights, or it
+// is about graphs themselves. Two particles joined by "entangled" is a
+// graph only in its drawing, and degrees and Euler paths would mean
+// nothing to the reader.
+fn graph_maths(s: Structure) -> Bool {
+  for l in s.links {
+    if weight_of(l).or(-1) >= 0 { return true }
+  }
+  let said = (" " + s.title + " " + s.summary + " ").lower()
+  for w in ["graph", "vertex", "vertices", "edges", "euler", "dijkstra", "shortest path", "spanning tree", "degree", "adjacency", "network flow", "bipartite", "hamilton"] {
+    if said.contains(w) { return true }
+  }
+  return false
+}
+
 fn proof_style() -> Text {
-  return ".proof{margin:26px 0 8px;padding:18px 20px;border-radius:16px;background:color-mix(in srgb,var(--halo) 75%,transparent);border:1px solid color-mix(in srgb,var(--line) 14%,transparent)}.plab{font:600 10px ui-monospace,Consolas,monospace;letter-spacing:.32em;text-transform:uppercase;color:var(--gold);margin-bottom:10px}.eq{display:flex;align-items:center;gap:12px}.eq math{flex:1;font-size:1.22em;color:var(--ink);overflow-x:auto;padding:4px 0}.eqno{font:13px ui-monospace,Consolas,monospace;color:var(--soft)}.eqnote{margin:-2px 0 10px;color:var(--soft);font-size:13.5px}.eqnote:empty{display:none}.sym{cursor:default;border-radius:4px;transition:color .15s,background .15s}.sym:hover,.sym.on{color:var(--amber);background:rgba(255,138,76,.12)}mrow.sym:hover mi,mrow.sym:hover mn,mrow.sym.on mi,mrow.sym.on mn{color:var(--amber)}.ds{margin-top:14px;overflow-x:auto}.dsl{font-size:12.5px;color:var(--soft);margin-bottom:6px}.ds table{border-collapse:collapse;font:13px ui-monospace,Consolas,monospace}.ds th,.ds td{border:1px solid color-mix(in srgb,var(--line) 16%,transparent);padding:4px 9px;text-align:center}.ds th{color:var(--soft);font-weight:600}.dsrow{display:flex;gap:22px;flex-wrap:wrap}.checked{list-style:none;margin:16px 0 0;padding:0}.checked li{color:var(--ink);font-size:13.5px;margin:4px 0;padding-left:24px;position:relative}.checked li:before{content:'\\2713';position:absolute;left:4px;color:#4fe0a6;font-weight:700}.stamp{display:inline-block;margin-left:10px;font:600 10px ui-monospace,Consolas,monospace;letter-spacing:.2em;text-transform:uppercase;color:#4fe0a6;border:1px solid rgba(79,224,166,.45);border-radius:999px;padding:3px 9px;vertical-align:middle}"
+  return ".proof{margin:26px 0 8px;padding:18px 20px;border-radius:16px;background:color-mix(in srgb,var(--halo) 75%,transparent);border:1px solid color-mix(in srgb,var(--line) 14%,transparent)}.plab{font:600 10px ui-monospace,Consolas,monospace;letter-spacing:.32em;text-transform:uppercase;color:var(--gold);margin-bottom:10px}.eq{display:flex;align-items:center;gap:12px}.eq math{flex:1;font-size:1.22em;color:var(--ink);overflow-x:auto;padding:4px 0}.eqno{font:13px ui-monospace,Consolas,monospace;color:var(--soft)}.eqnote{margin:-2px 0 10px;color:var(--soft);font-size:13.5px}.eqnote:empty{display:none}.sym{cursor:default;border-radius:4px;transition:color .15s,background .15s}.sym:hover,.sym.on{color:var(--amber);background:rgba(255,138,76,.12)}mrow.sym:hover mi,mrow.sym:hover mn,mrow.sym.on mi,mrow.sym.on mn{color:var(--amber)}.ds{margin-top:14px;overflow-x:auto}.dsl{font-size:12.5px;color:var(--soft);margin-bottom:6px}.ds table{border-collapse:separate;border-spacing:0;font:13px ui-monospace,Consolas,monospace;border:1px solid color-mix(in srgb,var(--line) 16%,transparent);border-radius:10px;overflow:hidden;font-variant-numeric:tabular-nums}.ds th,.ds td{padding:6px 14px;text-align:right;border-bottom:1px solid color-mix(in srgb,var(--line) 8%,transparent)}.ds tr:last-child td,.ds tr:last-child th{border-bottom:0}.ds tr:first-child th{color:var(--soft);font-weight:600;font-size:11.5px;letter-spacing:.06em;background:color-mix(in srgb,var(--line) 7%,transparent);border-bottom:1px solid color-mix(in srgb,var(--line) 18%,transparent)}.ds td:first-child,.ds tr th:first-child{text-align:left;color:var(--gold);font-weight:700}.ds tr:nth-child(odd) td{background:color-mix(in srgb,var(--line) 3%,transparent)}.ds tr.sym:hover td,.ds tr.sym.on td{background:rgba(255,138,76,.12);color:var(--amber)}.dsrow{display:flex;gap:22px;flex-wrap:wrap}.checked{list-style:none;margin:16px 0 0;padding:0}.checked li{color:var(--ink);font-size:13.5px;margin:4px 0;padding-left:24px;position:relative}.checked li:before{content:'\\2713';position:absolute;left:4px;color:#4fe0a6;font-weight:700}.stamp{display:inline-block;margin-left:10px;font:600 10px ui-monospace,Consolas,monospace;letter-spacing:.2em;text-transform:uppercase;color:#4fe0a6;border:1px solid rgba(79,224,166,.45);border-radius:999px;padding:3px 9px;vertical-align:middle}"
 }
 
 // ---------------------------------------------------------------- the golden spiral, exactly
@@ -1263,6 +1343,9 @@ fn look_problems(s: Structure) -> Text[] {
 
 // The structure with each part's icon before its label.
 fn with_icons(s: Structure) -> Structure {
+  // A graph's vertices are named in its mathematics, d(A), deg(B), so an
+  // icon there would sit inside every formula.
+  if s.shape == "graph" { return s }
   let parts = for p in s.parts { {..p, label: icon_label(s, p)} }
   return {..s, parts: parts}
 }
@@ -1341,7 +1424,7 @@ fn sample() -> Structure {
     {id: "c", label: "Attention", note: "", parent: ""},
     {id: "d", label: "Next token", note: "", parent: ""}
   ], links: [{from: "a", to: "b", label: ""}, {from: "b", to: "c", label: ""}, {from: "c", to: "d", label: ""}, {from: "d", to: "a", label: "repeat"}],
-  steps: [{text: "one", parts: ["a", "b"]}, {text: "two", parts: ["c", "d"]}], marks: [], looks: []}
+  steps: [{text: "one", parts: ["a", "b"]}, {text: "two", parts: ["c", "d"]}], marks: [], looks: [], aspects: []}
 }
 
 test "a good description has nothing wrong with it" {
@@ -1375,7 +1458,7 @@ fn family() -> Structure {
     {id: "c", label: "Owls", note: "", parent: "a"},
     {id: "d", label: "Whales", note: "", parent: "b"},
     {id: "e", label: "Bats", note: "", parent: "b"}
-  ], links: [], steps: [{text: "one", parts: ["root"]}, {text: "two", parts: ["a", "b"]}], marks: [], looks: []}
+  ], links: [], steps: [{text: "one", parts: ["root"]}, {text: "two", parts: ["a", "b"]}], marks: [], looks: [], aspects: []}
 }
 
 test "a tree puts each parent over its children, one level per row" {
@@ -1428,6 +1511,21 @@ test "Kosika proves graph facts itself" {
   expect r.checked.contains("Kosika ran Dijkstra itself: A &#8594; C &#8594; B &#8594; D, length 8.")
   wrong = graph_proof({..roads, steps: [{text: "The shortest path to D is 9.", parts: ["d"]}, {text: "b", parts: ["a"]}]})
   expect wrong.checked.contains("Corrected: the explanation says 9 for D, but Kosika's working gives 8.")
+}
+
+test "a graph's mathematics is worked only when the graph is mathematics" {
+  quantum = {..family(), shape: "graph", title: "Quantum entanglement", summary: "Two particles share a state.", links: [{from: "a", to: "b", label: "entangled"}]}
+  expect not graph_maths(quantum)
+  expect graph_maths({..quantum, links: [{from: "a", to: "b", label: "4"}]})
+  expect graph_maths({..quantum, title: "An Euler path"})
+  expect with_icons({..quantum, looks: [{part: "a", icon: "🚀", photo: ""}]}).parts[1].label == "Birds"
+}
+
+test "a comparison is a table whose rows fit their words" {
+  table = {..family(), shape: "compare", parts: [{id: "x", label: "Rust", note: "", parent: ""}, {id: "y", label: "Go", note: "", parent: ""}, {id: "x1", label: "Steep", note: "ownership and lifetimes take weeks to learn well", parent: "x"}, {id: "y1", label: "Gentle", note: "small", parent: "y"}], links: [], steps: [], aspects: ["Learning curve"]}
+  expect cmp_rows(table) == 1
+  expect cmp_heights(table)[0] > 45
+  expect problems({..table, aspects: ["a", "b"]}).length() > 0
 }
 
 test "icons are emoji, photos are few and only where they help" {

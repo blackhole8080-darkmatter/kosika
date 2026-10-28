@@ -182,9 +182,14 @@ class Chat:
         except Exception:
             pass  # a drawing is still tried
         # The drawing is the answer, its explanation written inside it. Words
-        # alone are asked for only when no drawing could be made.
+        # alone are given when Kosika judges the ask wants words (a poem, a
+        # short fact) or when no drawing could be made.
         try:
-            out = self.canvas(ask)
+            wants_words = self.kosika.run(DESIGNS / "main.kos", "answer_kind", {"ask": {"text": ask}}, model=False)["words"]
+        except Exception:
+            wants_words = False
+        try:
+            out = {"page": "", "problems": [], "title": ""} if wants_words else self.canvas(ask)
         except Exception as error:
             out = {"page": "", "problems": [str(error)[:300]], "title": ""}
         if out["page"]:

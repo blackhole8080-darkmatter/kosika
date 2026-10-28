@@ -24,6 +24,16 @@ cloud drifts and rain drips. When a step is marked, its icon moves faster.
 
 ![A mind map of renewable energy](shots/renewable-energy-mind-map.png)
 
+### A comparison, as a table
+
+![TCP, UDP and QUIC compared](shots/comparison-table.png)
+
+Any question that sets things against each other is drawn as a table,
+whatever the planner first chose. That covers "compare", "vs", "difference
+between" and "should I learn Rust or Go". Each row is named on the left and
+sized to fit its longest cell. When the question asks which to choose, the
+last step gives a recommendation and the reason for it.
+
 ### A flow, and when Kosika shows no photo
 
 ![Photosynthesis](shots/photosynthesis.png)
@@ -54,6 +64,12 @@ Kosika writes the correction next to it.
 The model writes the working. Kosika checks every line against its own
 result (`std/math.kos`) and corrects any line that is wrong. The page can
 be exported as LaTeX.
+
+### When the answer is words
+
+Some questions are better answered in words than with a drawing. Kosika
+answers these in words: something to write (a poem, an email), a greeting,
+or a short fact such as the capital of a country.
 
 ### A real photo, measured
 
