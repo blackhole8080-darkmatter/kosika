@@ -224,7 +224,8 @@ fn wrap(text: Text, width: Number) -> Text[] {
   return out
 }
 
-fn box_width(p: Part) -> Number { return (p.label.length() * 8.4 + 28).max(90).min(220) }
+// A card is as wide as its label, or its header when that is longer.
+fn box_width(p: Part) -> Number { return (p.label.length() * 8.4 + 30).max((p.note.length() * 7.2 + 26).min(260)).max(100).min(260) }
 
 // A layer is a wide bar, so a stack reads as one thing in slices.
 fn layer_svg(p: Part, x: Number, y: Number) -> Text {
@@ -260,11 +261,17 @@ fn nested_svg(s: Structure, w: Number, h: Number) -> Text {
 }
 
 // A part: a rounded box, its label, and its note beneath in small type.
+// A part is a card, as in a node editor: a small header in capitals (its
+// note), a rule, and its name below. With no note it is a single band.
 fn part_svg(p: Part, x: Number, y: Number) -> Text {
   let bw = box_width(p)
-  let lines = wrap(p.note, 24)
-  let note = (for k in 0 until lines.length().min(2) { f"<text class=\"note\" x=\"{f1(x)}\" y=\"{f1(y + 38 + k * 14)}\">{escaped(lines[k])}</text>" }).join("")
-  return f"<g class=\"part bit\" id=\"p-{p.id}\"><rect pathLength=\"1\" x=\"{f1(x - bw / 2)}\" y=\"{f1(y - 22)}\" width=\"{f1(bw)}\" height=\"44\" rx=\"12\"/><text class=\"label\" x=\"{f1(x)}\" y=\"{f1(y + 5)}\">{escaped(p.label)}</text>{note}</g>"
+  let card = f"<rect class=\"card\" pathLength=\"1\" x=\"{f1(x - bw / 2)}\" y=\"{f1(y - 26)}\" width=\"{f1(bw)}\" height=\"52\" rx=\"10\"/>"
+  if p.note.is_empty() {
+    return f"<g class=\"part bit\" id=\"p-{p.id}\">{card}<text class=\"label\" x=\"{f1(x)}\" y=\"{f1(y + 5)}\">{escaped(p.label)}</text></g>"
+  }
+  let room = ((bw - 22) / 7.2).floor()
+  let head = if p.note.length() > room { p.note.slice(0, (room - 1).max(1)).trim() + "…" } else { p.note }
+  return f"<g class=\"part bit\" id=\"p-{p.id}\">{card}<text class=\"cardhead\" x=\"{f1(x)}\" y=\"{f1(y - 12)}\"><title>{escaped(p.note)}</title>{escaped(head)}</text><path class=\"carddiv\" d=\"M{f1(x - bw / 2 + 1)} {f1(y - 5)} H{f1(x + bw / 2 - 1)}\"/><text class=\"label\" x=\"{f1(x)}\" y=\"{f1(y + 13)}\">{escaped(p.label)}</text></g>"
 }
 
 // A link: a curve from the edge of one box to the edge of the next, with
@@ -282,12 +289,12 @@ fn link_svg(s: Structure, l: Link, at: Number[][]) -> Text {
   let len = (dx * dx + dy * dy).sqrt().max(1)
   // Leave each box by its side when the link runs sideways, else by its top or bottom.
   let side = dx.abs() > dy.abs()
-  let wa = box_width(s.parts[a]) / 2 + 6
-  let wb = box_width(s.parts[b]) / 2 + 10
+  let wa = box_width(s.parts[a]) / 2
+  let wb = box_width(s.parts[b]) / 2
   let sx = if side { ax + wa * (if dx > 0 { 1 } else { -1 }) } else { ax }
-  let sy = if side { ay } else { ay + 28 * (if dy > 0 { 1 } else { -1 }) }
+  let sy = if side { ay } else { ay + 26 * (if dy > 0 { 1 } else { -1 }) }
   let ex = if side { bx - wb * (if dx > 0 { 1 } else { -1 }) } else { bx }
-  let ey = if side { by } else { by - 32 * (if dy > 0 { 1 } else { -1 }) }
+  let ey = if side { by } else { by - 26 * (if dy > 0 { 1 } else { -1 }) }
   // A link back to an earlier part bows out, so it never hides a forward one.
   let back = s.shape == "flow" and b < a
   let bow = if back { 90 } else { 0 }
@@ -299,7 +306,9 @@ fn link_svg(s: Structure, l: Link, at: Number[][]) -> Text {
   let my = (sy + 3 * c1y + 3 * c2y + ey) / 8
   let label = if l.label.is_empty() { "" } else { f"<text class=\"linklabel\" x=\"{f1(mx)}\" y=\"{f1(my - 7)}\">{escaped(l.label)}</text>" }
   let path = f"M{f1(sx)} {f1(sy)} C{f1(c1x)} {f1(c1y)} {f1(c2x)} {f1(c2y)} {f1(ex)} {f1(ey)}"
-  return f"<g class=\"link bit\" id=\"l-{l.from}-{l.to}\" data-a=\"p-{l.from}\" data-b=\"p-{l.to}\"><path class=\"wire\" d=\"{path}\" marker-end=\"url(#arrow)\"/><path class=\"pulse\" d=\"{path}\"/>{label}</g>"
+  let grad = f"<linearGradient id=\"g-{l.from}-{l.to}\" gradientUnits=\"userSpaceOnUse\" x1=\"{f1(sx)}\" y1=\"{f1(sy)}\" x2=\"{f1(ex)}\" y2=\"{f1(ey)}\"><stop offset=\"0\" stop-color=\"var(--gold)\"/><stop offset=\"1\" stop-color=\"var(--think)\"/></linearGradient>"
+  let ports = f"<circle class=\"port out\" cx=\"{f1(sx)}\" cy=\"{f1(sy)}\" r=\"4.5\"/><circle class=\"port in\" cx=\"{f1(ex)}\" cy=\"{f1(ey)}\" r=\"4.5\"/>"
+  return f"<g class=\"link bit\" id=\"l-{l.from}-{l.to}\" data-a=\"p-{l.from}\" data-b=\"p-{l.to}\">{grad}<path class=\"wire\" d=\"{path}\" style=\"stroke:url(#g-{l.from}-{l.to})\"/><path class=\"pulse\" d=\"{path}\"/>{label}{ports}</g>"
 }
 
 fn structure_svg(s: Structure) -> Text {
@@ -427,14 +436,65 @@ fn tree_layout(s: Structure, w: Number, h: Number) -> Number[][] {
     level -= 1
   }
   // Leaves too close to sit side by side take turns a little lower.
-  let crowded = w / leaves.length().max(1) < 150
-  var ys = for i in 0 until n { 50 + d[i] * (h - 140) / deepest.max(1) }
+  let crowded = tree_crowded(s, w)
+  var ys = for i in 0 until n { 50 + d[i] * (h - 190) / deepest.max(1) }
   if crowded {
     for k in 0 until leaves.length() {
       if k % 2 == 1 { ys = ys.set(leaves[k], ys[leaves[k]] + 70) }
     }
   }
-  return [xs, ys]
+  // Cards on one row are pushed apart until none overlaps, and the row is
+  // drawn in to fit the width.
+  let widths = for p in s.parts { card_width(s, p) }
+  var rows: Number[] = []
+  for y in ys {
+    if not rows.contains(y) { rows = rows.append(y) }
+  }
+  var out = xs
+  for y in rows { out = row_spread(out, for i in 0 until n where ys[i] == y { i }, widths, w) }
+  return [out, ys]
+}
+
+// A tree with many leaves draws its cards compact: the name alone, the
+// note kept as the card's tooltip.
+fn tree_crowded(s: Structure, w: Number) -> Bool {
+  if s.shape != "tree" { return false }
+  let leaves = for p in s.parts where children(s, p.id).is_empty() { p }
+  return w / leaves.length().max(1) < 170
+}
+
+fn compact(p: Part) -> Part { return {..p, note: ""} }
+
+fn card_width(s: Structure, p: Part) -> Number { return if tree_crowded(s, 860) { box_width(compact(p)) } else { box_width(p) } }
+
+fn row_spread(xs: Number[], members: Number[], widths: Number[], w: Number) -> Number[] {
+  if members.is_empty() { return xs }
+  var order = members
+  for a in 0 until order.length() {
+    for b in 0 until order.length() - 1 - a {
+      if xs[order[b]] > xs[order[b + 1]] {
+        let t = order[b]
+        order = order.set(b, order[b + 1]).set(b + 1, t)
+      }
+    }
+  }
+  var out = xs
+  for k in 1 until order.length() {
+    let need = out[order[k - 1]] + (widths[order[k - 1]] + widths[order[k]]) / 2 + 14
+    if out[order[k]] < need { out = out.set(order[k], need) }
+  }
+  let first = order[0]
+  let last = order[order.length() - 1]
+  let left = out[first] - widths[first] / 2
+  let right = out[last] + widths[last] / 2
+  if left >= 6 and right <= w - 6 { return out }
+  // Too wide or off the edge: map the row onto the drawing, keeping order.
+  let span = (right - left).max(1)
+  let room = w - 12
+  let scale = if span > room { room / span } else { 1 }
+  let shift = if span > room { 6 - left * scale } else if left < 6 { 6 - left } else { (w - 6) - right }
+  for i in members { out = out.set(i, out[i] * scale + shift) }
+  return out
 }
 
 // A mind map: the root in the middle; every leaf gets an equal share of
@@ -598,7 +658,7 @@ fn compare_layout(s: Structure, w: Number, h: Number) -> Number[][] {
 }
 
 fn kind_height(s: Structure) -> Number {
-  if s.shape == "tree" { return (depths(s).max().or(0) + 1) * 110 + 160 }
+  if s.shape == "tree" { return (depths(s).max().or(0) + 1) * 110 + 210 }
   if s.shape == "compare" { return cmp_head() + cmp_heights(s).sum() + 12 }
   if s.shape == "timeline" { return 260 }
   if s.shape == "graph" or s.shape == "mindmap" { return 520 }
@@ -678,13 +738,14 @@ fn hierarchy_svg(s: Structure, at: Number[][]) -> Text {
       let ay = at[1][a]
       let bx = at[0][i]
       let by = at[1][i]
-      let path = if mind { f"M{f1(ax)} {f1(ay)} Q{f1(ax + (bx - ax) * 0.15)} {f1(ay + (by - ay) * 0.85)} {f1(bx)} {f1(by)}" } else { f"M{f1(ax)} {f1(ay + 22)} C{f1(ax)} {f1((ay + by) / 2)} {f1(bx)} {f1((ay + by) / 2)} {f1(bx)} {f1(by - 22)}" }
+      let path = if mind { f"M{f1(ax)} {f1(ay)} Q{f1(ax + (bx - ax) * 0.15)} {f1(ay + (by - ay) * 0.85)} {f1(bx)} {f1(by)}" } else { f"M{f1(ax)} {f1(ay + 26)} C{f1(ax)} {f1((ay + by) / 2)} {f1(bx)} {f1((ay + by) / 2)} {f1(bx)} {f1(by - 26)}" }
       let colour = if mind { hue(tops.index_of(branch_of(s, i)).or(0)) } else { "" }
       edges = edges.append(edge_svg(f"l-{p.parent}-{p.id}", p.parent, p.id, path, "", 0, 0, colour))
     }
   }
   // In a mind map each idea's box takes its branch's colour.
-  let nodes = for i in 0 until s.parts.length() { tinted(part_svg(s.parts[i], at[0][i], at[1][i]), if mind and not s.parts[i].parent.is_empty() { hue(tops.index_of(branch_of(s, i)).or(0)) } else { "" }) }
+  let tight = tree_crowded(s, 860)
+  let nodes = for i in 0 until s.parts.length() { tinted(part_svg(if tight { compact(s.parts[i]) } else { s.parts[i] }, at[0][i], at[1][i]), if mind and not s.parts[i].parent.is_empty() { hue(tops.index_of(branch_of(s, i)).or(0)) } else { "" }) }
   return edges.join("") + nodes.join("")
 }
 
@@ -1238,7 +1299,7 @@ fn quoted(lines: Text[]) -> Text {
 }
 
 fn draw_style() -> Text {
-  return "@font-face{font-family:Figtree;src:url(/fonts/Figtree.ttf) format('truetype');font-weight:300 900;font-display:swap}:root{--bg:#07080d;--halo:#0e0f18;--ink:#eef0f7;--soft:#a3a8bd;--amber:#ff8a4c;--gold:#f5b45c;--think:#a993ff;--line:#fff;--line2:rgba(255,255,255,.5)}@media (prefers-color-scheme: light){:root{--bg:#f4f2ee;--halo:#f4f2ee;--ink:#16141f;--soft:#5b5870;--amber:#d4621f;--gold:#b8761c;--think:#6f58e0;--line:#000;--line2:rgba(0,0,0,.45)}}*{box-sizing:border-box}body{margin:0;background:transparent;color:var(--ink);font:16px/1.55 Figtree,system-ui,-apple-system,'Segoe UI',sans-serif;letter-spacing:.005em}main{max-width:980px;margin:0 auto;padding:28px 16px 48px}.brand{color:var(--gold);font:600 10px ui-monospace,Consolas,monospace;letter-spacing:.32em;text-transform:uppercase;display:flex;align-items:center;gap:12px}.brand:after{content:'';flex:1;height:1px;background:linear-gradient(90deg,color-mix(in srgb,var(--gold) 45%,transparent),transparent)}.ask{color:var(--soft);font-size:14px;margin:2px 0 14px}h1{font-size:30px;font-weight:850;letter-spacing:-.03em;line-height:1.08;margin:6px 0 8px}.think{font:13px ui-monospace,Consolas,monospace;color:var(--amber);min-height:20px;margin:0 0 10px}.think:before{content:'\\25CF  ';animation:blink 1s infinite}body.done .think:before{content:'\\2713  ';animation:none}svg{width:100%;height:auto;display:block}.hud{font:600 12px ui-monospace,Consolas,monospace;color:var(--amber);min-height:20px;margin:4px 0 10px}ol{list-style:none;margin:0;padding:0}.say{display:none;gap:12px;padding:6px 8px;border-radius:8px;cursor:default}.say.shown{display:flex}.say b{flex:none;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font:600 11px ui-monospace,Consolas,monospace;color:var(--think);border:1.5px solid color-mix(in srgb,var(--think) 70%,transparent)}.say.now b,.say:hover b,.say:focus b{background:var(--amber);border-color:var(--amber);color:#1a0f08;box-shadow:0 0 18px -2px var(--amber)}.say:hover,.say:focus{outline:none;background:rgba(255,181,71,.08)}.bar{display:flex;justify-content:space-between;align-items:center;margin-top:14px}button{font:600 10px ui-monospace,Consolas,monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--soft);background:none;border:1px solid var(--line2);border-radius:999px;padding:6px 12px;cursor:pointer}.bit{opacity:0;transition:opacity .35s}.bit.shown{opacity:1}.part rect{fill:var(--halo)}.ring>circle:first-child{fill:none}.part rect,.ring>circle:first-child{stroke:var(--line);stroke-width:1.4;transition:stroke .2s,stroke-width .2s}.part.shown rect,.part.shown>circle:first-child,.sq.shown rect,#spiral.shown{stroke-dasharray:1;animation:pen .7s ease-out both}.label{fill:var(--ink);font:600 14px system-ui,sans-serif;text-anchor:middle}.note{fill:var(--soft);font:12px system-ui,sans-serif;text-anchor:middle}.leader{fill:none;stroke:var(--line2);stroke-width:1}.dot{fill:var(--line)}.wire{fill:none;stroke:var(--line2);stroke-width:1.3}.head{fill:var(--line2)}.pulse{fill:none;stroke:var(--amber);stroke-width:2.6;stroke-dasharray:5 17;opacity:0}.linklabel{fill:var(--soft);font:12px system-ui,sans-serif;text-anchor:middle;paint-order:stroke;stroke:var(--halo);stroke-width:4px}.sq rect{fill:none;stroke:var(--line);stroke-width:1.2}.side{fill:var(--soft);font-weight:600;text-anchor:middle;font-family:system-ui,sans-serif}#spiral{fill:none;stroke:var(--line);stroke-width:2.4}#origin circle{fill:var(--amber)}.on rect,.on>circle:first-child,.sq.on rect{stroke:var(--amber);stroke-width:2.6;filter:drop-shadow(0 0 8px color-mix(in srgb,var(--amber) 70%,transparent))}.on .label{fill:var(--amber)}#spiral.on{stroke:var(--amber);stroke-width:3.4}.link.on .wire{stroke:var(--amber)}.link.on .pulse{opacity:1;animation:run 1s linear infinite}.ref{margin:16px 0 0}.ref img{width:100%;max-height:240px;object-fit:cover;border-radius:10px;transition:outline .2s}.ref.on img{outline:3px solid var(--amber)}.credit{color:var(--soft);font-size:12px;margin-top:6px}.credit a{color:var(--amber)}@keyframes pen{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}@keyframes run{to{stroke-dashoffset:-22}}@keyframes blink{50%{opacity:.25}}@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}"
+  return "@font-face{font-family:Figtree;src:url(/fonts/Figtree.ttf) format('truetype');font-weight:300 900;font-display:swap}:root{--bg:#07080d;--halo:#0e0f18;--ink:#eef0f7;--soft:#a3a8bd;--amber:#ff8a4c;--gold:#f5b45c;--think:#a993ff;--line:#fff;--line2:rgba(255,255,255,.5)}@media (prefers-color-scheme: light){:root{--bg:#f4f2ee;--halo:#f4f2ee;--ink:#16141f;--soft:#5b5870;--amber:#d4621f;--gold:#b8761c;--think:#6f58e0;--line:#000;--line2:rgba(0,0,0,.45)}}*{box-sizing:border-box}body{margin:0;background:transparent;color:var(--ink);font:16px/1.55 Figtree,system-ui,-apple-system,'Segoe UI',sans-serif;letter-spacing:.005em}main{max-width:980px;margin:0 auto;padding:28px 16px 48px}.brand{color:var(--gold);font:600 10px ui-monospace,Consolas,monospace;letter-spacing:.32em;text-transform:uppercase;display:flex;align-items:center;gap:12px}.brand:after{content:'';flex:1;height:1px;background:linear-gradient(90deg,color-mix(in srgb,var(--gold) 45%,transparent),transparent)}.ask{color:var(--soft);font-size:14px;margin:2px 0 14px}h1{font-size:30px;font-weight:850;letter-spacing:-.03em;line-height:1.08;margin:6px 0 8px}.think{font:13px ui-monospace,Consolas,monospace;color:var(--amber);min-height:20px;margin:0 0 10px}.think:before{content:'\\25CF  ';animation:blink 1s infinite}body.done .think:before{content:'\\2713  ';animation:none}svg{width:100%;height:auto;display:block}.hud{font:600 12px ui-monospace,Consolas,monospace;color:var(--amber);min-height:20px;margin:4px 0 10px}ol{list-style:none;margin:0;padding:0}.say{display:none;gap:12px;padding:6px 8px;border-radius:8px;cursor:default}.say.shown{display:flex}.say b{flex:none;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font:600 11px ui-monospace,Consolas,monospace;color:var(--think);border:1.5px solid color-mix(in srgb,var(--think) 70%,transparent)}.say.now b,.say:hover b,.say:focus b{background:var(--amber);border-color:var(--amber);color:#1a0f08;box-shadow:0 0 18px -2px var(--amber)}.say:hover,.say:focus{outline:none;background:rgba(255,181,71,.08)}.bar{display:flex;justify-content:space-between;align-items:center;margin-top:14px}button{font:600 10px ui-monospace,Consolas,monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--soft);background:none;border:1px solid var(--line2);border-radius:999px;padding:6px 12px;cursor:pointer}.bit{opacity:0;transition:opacity .35s}.bit.shown{opacity:1}.part rect{fill:var(--halo)}.ring>circle:first-child{fill:none}.part rect,.ring>circle:first-child{stroke:var(--line);stroke-width:1.4;transition:stroke .2s,stroke-width .2s}.part.shown rect,.part.shown>circle:first-child,.sq.shown rect,#spiral.shown{stroke-dasharray:1;animation:pen .7s ease-out both}.label{fill:var(--ink);font:600 14px system-ui,sans-serif;text-anchor:middle}.note{fill:var(--soft);font:12px system-ui,sans-serif;text-anchor:middle}.leader{fill:none;stroke:var(--line2);stroke-width:1}.dot{fill:var(--line)}.wire{fill:none;stroke:var(--line2);stroke-width:1.3}.head{fill:var(--line2)}.pulse{fill:none;stroke:var(--amber);stroke-width:2.6;stroke-dasharray:5 17;opacity:0}.linklabel{fill:var(--soft);font:12px system-ui,sans-serif;text-anchor:middle;paint-order:stroke;stroke:var(--halo);stroke-width:4px}.sq rect{fill:none;stroke:var(--line);stroke-width:1.2}.side{fill:var(--soft);font-weight:600;text-anchor:middle;font-family:system-ui,sans-serif}#spiral{fill:none;stroke:var(--line);stroke-width:2.4}#origin circle{fill:var(--amber)}.on rect,.on>circle:first-child,.sq.on rect{stroke:var(--amber);stroke-width:2.6;filter:drop-shadow(0 0 8px color-mix(in srgb,var(--amber) 70%,transparent))}.on .label{fill:var(--amber)}#spiral.on{stroke:var(--amber);stroke-width:3.4}.link.on .wire{stroke:var(--amber)!important}.link.on .pulse{opacity:1;animation:run 1s linear infinite}.ref{margin:16px 0 0}.ref img{width:100%;max-height:240px;object-fit:cover;border-radius:10px;transition:outline .2s}.ref.on img{outline:3px solid var(--amber)}.credit{color:var(--soft);font-size:12px;margin-top:6px}.credit a{color:var(--amber)}@keyframes pen{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}@keyframes run{to{stroke-dashoffset:-22}}@keyframes blink{50%{opacity:.25}}@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}"
 }
 
 // The build: Kosika's own steps are typed out, then each explanation
@@ -1299,7 +1360,7 @@ fn is_icon(t: Text) -> Bool {
 fn wanted_photos(s: Structure) -> Look[] {
   if not photo_kinds().contains(s.shape) or not s.figure.is_empty() { return [] }
   let asked = for l in s.looks where not l.photo.trim().is_empty() and ids(s).contains(l.part) and not unseen(s, l) { l }
-  return asked.take(4)
+  return asked.take(3)
 }
 
 // A part no camera can show: a chemical written as a formula (CO2, O₂,
@@ -1371,14 +1432,14 @@ fn photo_strip(s: Structure, photos: PartPhoto[], whole: Picture) -> Text {
 }
 
 fn look_style() -> Text {
-  return ".ico{transform-box:fill-box;transform-origin:center;font-family:'Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji',sans-serif}.ico.spin{animation:ico-spin 14s linear infinite}.ico.drip{animation:ico-drip 2.4s ease-in-out infinite}.ico.drift{animation:ico-drift 4s ease-in-out infinite}.ico.sway{animation:ico-sway 3s ease-in-out infinite}.ico.flick{animation:ico-flick 1.6s ease-in-out infinite}.ico.beat{animation:ico-beat 2.8s ease-in-out infinite}.part.on .ico{animation-duration:.9s}@keyframes ico-spin{to{transform:rotate(360deg)}}@keyframes ico-drip{0%,100%{transform:translateY(-1.5px)}50%{transform:translateY(2px)}}@keyframes ico-drift{0%,100%{transform:translateX(-2px)}50%{transform:translateX(2px)}}@keyframes ico-sway{0%,100%{transform:rotate(-9deg)}50%{transform:rotate(9deg)}}@keyframes ico-flick{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.65;transform:scale(1.12)}}@keyframes ico-beat{0%,100%{transform:scale(1)}50%{transform:scale(1.15)}}@media (prefers-reduced-motion:reduce){.ico{animation:none!important}}" + ".strip{margin:22px 0 4px}.pps{display:flex;gap:14px;flex-wrap:wrap}.pp{margin:0;width:170px;border-radius:14px;overflow:hidden;background:color-mix(in srgb,var(--halo) 80%,transparent);border:1px solid color-mix(in srgb,var(--line) 14%,transparent);transition:transform .3s cubic-bezier(.16,1,.3,1),border-color .2s}.pp img{width:100%;height:120px;object-fit:cover;display:block}.pp figcaption{padding:7px 10px;font-size:13px;color:var(--ink)}.pp:hover,.pp.on{transform:translateY(-3px);border-color:var(--amber)}.strip .credit{font-size:11.5px}.part text.label{font-family:Figtree,system-ui,'Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji',sans-serif}"
+  return ".board{background-image:radial-gradient(color-mix(in srgb,var(--line) 16%,transparent) 1.1px,transparent 1.4px);background-size:22px 22px;border-radius:18px}.part rect.card{fill:color-mix(in srgb,var(--halo) 88%,var(--line) 6%);stroke:color-mix(in srgb,var(--line) 22%,transparent);stroke-width:1.2}.cardhead{fill:var(--soft);font:600 9.5px ui-monospace,Consolas,monospace;letter-spacing:.14em;text-transform:uppercase;text-anchor:middle}.carddiv{stroke:color-mix(in srgb,var(--line) 12%,transparent);stroke-width:1}.wire{stroke-width:1.8!important}.port{fill:var(--halo);stroke-width:1.8}.port.out{stroke:var(--gold)}.port.in{fill:var(--think);stroke:var(--think)}.link.on .port{stroke:var(--amber);fill:var(--amber)}.badge circle.ring{fill:none;stroke:var(--halo);stroke-width:3}.badge circle.edge{fill:none;stroke:var(--gold);stroke-width:1.4}.on .badge circle.edge{stroke:var(--amber)}" + ".ico{transform-box:fill-box;transform-origin:center;font-family:'Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji',sans-serif}.ico.spin{animation:ico-spin 14s linear infinite}.ico.drip{animation:ico-drip 2.4s ease-in-out infinite}.ico.drift{animation:ico-drift 4s ease-in-out infinite}.ico.sway{animation:ico-sway 3s ease-in-out infinite}.ico.flick{animation:ico-flick 1.6s ease-in-out infinite}.ico.beat{animation:ico-beat 2.8s ease-in-out infinite}.part.on .ico{animation-duration:.9s}@keyframes ico-spin{to{transform:rotate(360deg)}}@keyframes ico-drip{0%,100%{transform:translateY(-1.5px)}50%{transform:translateY(2px)}}@keyframes ico-drift{0%,100%{transform:translateX(-2px)}50%{transform:translateX(2px)}}@keyframes ico-sway{0%,100%{transform:rotate(-9deg)}50%{transform:rotate(9deg)}}@keyframes ico-flick{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.65;transform:scale(1.12)}}@keyframes ico-beat{0%,100%{transform:scale(1)}50%{transform:scale(1.15)}}@media (prefers-reduced-motion:reduce){.ico{animation:none!important}}" + ".strip{margin:22px 0 4px}.pps{display:flex;gap:14px;flex-wrap:wrap}.pp{margin:0;width:170px;border-radius:14px;overflow:hidden;background:color-mix(in srgb,var(--halo) 80%,transparent);border:1px solid color-mix(in srgb,var(--line) 14%,transparent);transition:transform .3s cubic-bezier(.16,1,.3,1),border-color .2s}.pp img{width:100%;height:120px;object-fit:cover;display:block}.pp figcaption{padding:7px 10px;font-size:13px;color:var(--ink)}.pp:hover,.pp.on{transform:translateY(-3px);border-color:var(--amber)}.strip .credit{font-size:11.5px}.part text.label{font-family:Figtree,system-ui,'Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji',sans-serif}"
 }
 
 // Each icon moves a little, the way its thing does: the sun turns, a drop
 // drips, a cloud drifts, a leaf sways, fire and lightning flicker, and
 // anything else breathes. Marking a part plays its icon faster.
 fn look_script() -> Text {
-  return "(function(){var moves=[['spin','☀🌞⚙🌀♻'],['drip','💧🌧☔🌊🚿'],['drift','☁🌬💨⛅🌫🚀✈'],['sway','🌱🌿🍃🌳🌲🌾🌻🌷'],['flick','⚡🔥💡✨']];function kind(e){for(var i=0;i<moves.length;i++){if(moves[i][1].indexOf(e)>=0)return moves[i][0]}return 'beat'}document.querySelectorAll('.part text.label').forEach(function(t){var all=t.textContent,cut=all.indexOf(' ');if(cut<1)return;var icon=all.slice(0,cut);if(/[A-Za-z0-9]/.test(icon)||icon.length>8)return;var rest=all.slice(cut+1);t.textContent='';var gap=document.createElementNS('http://www.w3.org/2000/svg','tspan');gap.textContent=icon+' ';gap.setAttribute('fill-opacity','0');t.appendChild(gap);t.appendChild(document.createTextNode(rest));var b;try{b=gap.getBBox()}catch(x){return}if(!b||!b.width)return;var ico=document.createElementNS('http://www.w3.org/2000/svg','text');var w=b.width*icon.length/(icon.length+1);ico.setAttribute('x',b.x+w/2);ico.setAttribute('y',b.y+b.height/2);ico.setAttribute('text-anchor','middle');ico.setAttribute('dominant-baseline','central');ico.setAttribute('style','font-size:'+getComputedStyle(t).fontSize);ico.setAttribute('class','ico '+kind(Array.from(icon)[0]));ico.textContent=icon;t.parentNode.insertBefore(ico,t.nextSibling)})})();"
+  return "(function(){var ns='http://www.w3.org/2000/svg';document.querySelectorAll('.pp[data-show]').forEach(function(f,i){var g=document.getElementById(f.dataset.show),img=f.querySelector('img');if(!g||!img)return;var r=g.querySelector('rect.card');if(!r)return;var x=+r.getAttribute('x')+(+r.getAttribute('width'))-4,y=+r.getAttribute('y')+2,R=15,svg=g.ownerSVGElement,defs=svg.querySelector('defs')||svg.insertBefore(document.createElementNS(ns,'defs'),svg.firstChild),cp=document.createElementNS(ns,'clipPath');cp.id='badge'+i;var c=document.createElementNS(ns,'circle');c.setAttribute('cx',x);c.setAttribute('cy',y);c.setAttribute('r',R);cp.appendChild(c);defs.appendChild(cp);var b=document.createElementNS(ns,'g');b.setAttribute('class','badge');var ring=document.createElementNS(ns,'circle');ring.setAttribute('class','ring');ring.setAttribute('cx',x);ring.setAttribute('cy',y);ring.setAttribute('r',R+1.5);var im=document.createElementNS(ns,'image');im.setAttribute('href',img.src);im.setAttribute('x',x-R);im.setAttribute('y',y-R);im.setAttribute('width',2*R);im.setAttribute('height',2*R);im.setAttribute('preserveAspectRatio','xMidYMid slice');im.setAttribute('clip-path','url(#badge'+i+')');var e=document.createElementNS(ns,'circle');e.setAttribute('class','edge');e.setAttribute('cx',x);e.setAttribute('cy',y);e.setAttribute('r',R);b.appendChild(ring);b.appendChild(im);b.appendChild(e);g.appendChild(b)})})();(function(){var moves=[['spin','☀🌞⚙🌀♻'],['drip','💧🌧☔🌊🚿'],['drift','☁🌬💨⛅🌫🚀✈'],['sway','🌱🌿🍃🌳🌲🌾🌻🌷'],['flick','⚡🔥💡✨']];function kind(e){for(var i=0;i<moves.length;i++){if(moves[i][1].indexOf(e)>=0)return moves[i][0]}return 'beat'}document.querySelectorAll('.part text.label').forEach(function(t){var all=t.textContent,cut=all.indexOf(' ');if(cut<1)return;var icon=all.slice(0,cut);if(/[A-Za-z0-9]/.test(icon)||icon.length>8)return;var rest=all.slice(cut+1);t.textContent='';var gap=document.createElementNS('http://www.w3.org/2000/svg','tspan');gap.textContent=icon+' ';gap.setAttribute('fill-opacity','0');t.appendChild(gap);t.appendChild(document.createTextNode(rest));var b;try{b=gap.getBBox()}catch(x){return}if(!b||!b.width)return;var ico=document.createElementNS('http://www.w3.org/2000/svg','text');var w=b.width*icon.length/(icon.length+1);ico.setAttribute('x',b.x+w/2);ico.setAttribute('y',b.y+b.height/2);ico.setAttribute('text-anchor','middle');ico.setAttribute('dominant-baseline','central');ico.setAttribute('style','font-size:'+getComputedStyle(t).fontSize);ico.setAttribute('class','ico '+kind(Array.from(icon)[0]));ico.textContent=icon;t.parentNode.insertBefore(ico,t.nextSibling)})})();"
 }
 
 fn reference_photo(p: Picture, photos: PartPhoto[]) -> Text {
@@ -1526,6 +1587,18 @@ test "a comparison is a table whose rows fit their words" {
   expect cmp_rows(table) == 1
   expect cmp_heights(table)[0] > 45
   expect problems({..table, aspects: ["a", "b"]}).length() > 0
+}
+
+test "cards on one row of a tree never overlap" {
+  wide = {..family(), parts: [
+    {id: "root", label: "Root", note: "", parent: ""},
+    {id: "a", label: "A long name for a card", note: "", parent: "root"},
+    {id: "b", label: "Another long card name", note: "", parent: "root"},
+    {id: "c", label: "And a third long name", note: "", parent: "root"}
+  ], links: [], steps: [{text: "one", parts: ["root"]}, {text: "two", parts: ["a"]}]}
+  at = tree_layout(wide, 860, 400)
+  expect at[0][2] - at[0][1] >= (box_width(wide.parts[1]) + box_width(wide.parts[2])) / 2
+  expect at[0][3] + box_width(wide.parts[3]) / 2 <= 860
 }
 
 test "icons are emoji, photos are few and only where they help" {

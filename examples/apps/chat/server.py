@@ -154,6 +154,12 @@ class Chat:
 
     def canvas(self, ask: str) -> dict:
         described = self.kosika.run(DESIGNS / "main.kos", "describe", {"ask": {"text": ask}}, model=True)
+        # A second model reads the drawing as an expert teacher would; what
+        # it finds missing or wrong is drawn again once (designs/main.kos).
+        try:
+            described = self.kosika.run(DESIGNS / "main.kos", "critique", {"r": described}, model=True)["request"]
+        except Exception:
+            pass  # the first drawing stands
         s = described["structure"]
         # The golden spiral's real example is a sunflower head, whose seed
         # counts really are Fibonacci numbers (a nautilus shell is not one).
