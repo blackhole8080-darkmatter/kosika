@@ -23,7 +23,7 @@
 //           the Earth, a cell
 
 import "std/math.kos"
-import "palette.kos"
+import "designs_palette.kos"
 
 export [Part, Link, Step, Mark, Look, PartPhoto, Wanted, photos_wanted, Structure, Picture, Request, Design, problems, draw, golden_squares, escaped, f1, kinds]
 

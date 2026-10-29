@@ -1,9 +1,10 @@
 # Kosika Designs: illustrations
 
 Small, calm, animated illustrations that sit beside an explanation. They are
-one of the three ways Kosika Designs draws. [`../design.kos`](../design.kos) is
-the front door every part of Kosika uses (Chat, Studio, the website,
-agents): it chooses a diagram, an illustration or moving art for each ask.
+one of the three ways Kosika Designs draws. Kosika Designs lives in the
+standard library: any program writes `import "std/designs.kos"` and calls
+`design`, which chooses a diagram, an illustration, moving art, or a canvas
+of all three. Chat, Studio, the website and every agent use it the same way.
 
 ![Gears trading speed for force](shots/gears.gif)
 
@@ -12,7 +13,7 @@ A model says **what** is in the picture: a few flat figures on a grid
 short sentences that each name the figures they are about. It sends this
 as data, never as drawing code.
 
-Kosika ([`../art.kos`](../art.kos)) decides **how** it looks:
+Kosika ([`kosika/std/designs_art.kos`](../../../../kosika/std/designs_art.kos)) decides **how** it looks:
 
 - It checks every figure, motion and sentence, and sends any mistakes back
   to the model once, each one named.
@@ -25,7 +26,7 @@ Kosika ([`../art.kos`](../art.kos)) decides **how** it looks:
 - It works out the motion. Orbits round the same body are timed by
   Kepler's third law. Gears whose teeth touch turn each other the other
   way, at the ratio of their teeth.
-- It draws the picture in one of the checked palettes (`../palette.kos`),
+- It draws the picture in one of the checked palettes (`std/designs_palette.kos`),
   with soft light and shade and a backdrop (night, sky, sea, land, grid).
   The night's stars are spread evenly by the R2 sequence.
 
@@ -45,13 +46,13 @@ or click a figure to jump to its sentence.
 Draw one of the samples here, with no model:
 
 ```
-kosika run ../art.kos --workflow render --input planets.json
+kosika run ../../../../kosika/std/designs_art.kos --workflow render --input planets.json
 ```
 
 Draw from a prompt with a free model:
 
 ```
-kosika run ../art.kos --workflow illustrate --input ask.json \
+kosika run ../../../../kosika/std/designs_art.kos --workflow illustrate --input ask.json \
     --model openai/gpt-oss-120b --model-url https://api.groq.com/openai/v1 \
     --model-protocol openai --max-output-tokens 8000
 ```

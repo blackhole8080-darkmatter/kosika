@@ -11,7 +11,7 @@
 // draws the canvas (a diagram, a moving picture and art together), and the
 // agent hands back both. Nothing here draws: Designs decides how it looks.
 
-import "design.kos"
+import "std/designs.kos"
 
 export [ExQuestion, Explained, explain]
 

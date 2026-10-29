@@ -15,8 +15,8 @@
 // check. The model only suggests; what is drawn is decided and measured
 // by code (eyes.py finds and reads the photo, sunflower.kos draws it).
 
-import "draw.kos"
-import "palette.kos"
+import "designs_draw.kos"
+import "designs_palette.kos"
 
 export [Ask, Plan, Job, Review, Reviewed, think, describe, critique, automation, kinds_guide]
 

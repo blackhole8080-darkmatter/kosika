@@ -2,7 +2,7 @@
 
 Each picture on the page is asked for through the same front door Chat,
 Studio and the agents use (kosika/designs.py, which runs
-examples/agents/designs/design.kos), with place "site". Kosika chooses
+std/designs.kos), with place "site". Kosika chooses
 for each ask whether it is a diagram, an animated illustration or moving
 art. The page is static: run this again to draw it again.
 
@@ -110,7 +110,7 @@ def main() -> int:
 </div>
 {"".join(sections)}
 </main>
-<footer>Drawn by site/tools/build-designs.py through examples/agents/designs/design.kos.</footer>
+<footer>Drawn by site/tools/build-designs.py through std/designs.kos.</footer>
 </body>
 </html>
 """

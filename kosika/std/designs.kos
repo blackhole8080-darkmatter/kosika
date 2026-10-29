@@ -1,6 +1,16 @@
 // Kosika Designs: one front door for every part of Kosika.
 //
-//   kosika run design.kos --workflow design --input ask.json
+// Any program imports it from the standard library and calls it as a step:
+//
+//   import "std/designs.kos"
+//
+//   workflow show(q: Question) -> DzResult {
+//     out = call design({text: q.text, palette: "", place: "agent", kind: ""})
+//   }
+//
+// or runs it alone:
+//
+//   kosika run kosika/std/designs.kos --workflow design --input ask.json
 //       --model openai/gpt-oss-120b --model-url https://api.groq.com/openai/v1
 //       --model-protocol openai --max-output-tokens 8000
 //
@@ -8,15 +18,19 @@
 //   {"ask": {"text": "how does the heart pump blood", "palette": "",
 //            "place": "chat", "kind": ""}}
 //
+// Every Kosika module shares one namespace, so a program that imports this
+// must not declare names of its own that Designs uses: Designs' own start
+// with dz_, art_, gen_, or are its records (Structure, Request, Part, ...).
+//
 // Chat, Studio, the website and every agent ask Designs the same way and
 // get the same answer back. Kosika decides which of its three ways of
 // drawing suits the ask:
 //
 //   diagram       the structure of a thing: parts, steps, links, a
-//                 comparison, a timeline (main.kos describes it, draw.kos
-//                 draws it)
+//                 comparison, a timeline (designs_main.kos describes it,
+//                 designs_draw.kos draws it)
 //   illustration  how something works or happens, as a small animated
-//                 picture beside a few sentences (art.kos)
+//                 picture beside a few sentences (designs_art.kos)
 //   art           a moving, abstract piece for a mood, a background or a
 //                 cover (generative.kos)
 //
@@ -30,11 +44,11 @@
 // HTML, its styles and script scoped inside it, that any page can drop in
 // as it is. A diagram's embed is its page in a frame.
 
-import "palette.kos"
-import "draw.kos"
-import "main.kos"
-import "art.kos"
-import "generative.kos"
+import "designs_palette.kos"
+import "designs_draw.kos"
+import "designs_main.kos"
+import "designs_art.kos"
+import "designs_generative.kos"
 
 export [DzAsk, DzResult, DzKind, dz_kinds, dz_places, dz_kind, dz_why, design, design_kind]
 

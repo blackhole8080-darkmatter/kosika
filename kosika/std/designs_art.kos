@@ -1,6 +1,6 @@
 // Kosika Designs, illustrations: small animated pictures beside an explanation.
 //
-// One of the three ways Kosika Designs draws (design.kos chooses): this one
+// One of the three ways Kosika Designs draws (std/designs.kos chooses): this one
 // shows how something works or happens, moving.
 //
 //   kosika run art.kos --workflow render --input art.json
@@ -46,7 +46,7 @@
 // running along a line) and draw (a line drawing itself, again and again).
 // seconds 0 lets Kosika choose; delay sets one figure apart from another.
 
-import "palette.kos"
+import "designs_palette.kos"
 
 export [Figure, Motion, Beat, Art, ArtAsk, ArtPage, art_esc, art_problems, art_tidy, art_svg, art_style, art_script, art_page, art_kinds, art_moves, art_wave, art_orbit_seconds, render, illustrate]
 

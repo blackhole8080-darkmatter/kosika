@@ -2,7 +2,7 @@
 
 Studio, the website's tools and any Python glue ask Kosika Designs the
 same way Chat and the agents do: they run the front door,
-examples/agents/designs/design.kos, and get back what it decided (a
+std/designs.kos in Kosika's standard library, and get back what it decided (a
 diagram, an animated illustration or moving art), a whole page, the SVG,
 and an embed that any page can drop in as it is.
 
@@ -23,13 +23,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-FRONT_DOOR = (
-    Path(__file__).resolve().parent.parent
-    / "examples"
-    / "agents"
-    / "designs"
-    / "design.kos"
-)
+FRONT_DOOR = Path(__file__).resolve().parent / "std" / "designs.kos"
 KINDS = ("", "diagram", "illustration", "art")
 PLACES = ("chat", "studio", "site", "agent")
 DEFAULT_MODEL = "openai/gpt-oss-120b"
@@ -68,7 +62,7 @@ def design(
     """Ask Kosika Designs for a picture of `text`.
 
     The answer holds kind, why, title, page, svg, embed, problems and
-    fixed, as design.kos returns them."""
+    fixed, as std/designs.kos returns them."""
 
     text = text.strip()
     if not text:
