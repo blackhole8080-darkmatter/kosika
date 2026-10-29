@@ -176,6 +176,13 @@ class Chat:
             if f["picture"]["image"] and f["picture"]["page_url"] not in seen:
                 seen.add(f["picture"]["page_url"])
                 described["photos"].append(f)
+        # A faint, moving piece of generative art behind the cards, chosen by
+        # Kosika to echo the kind of drawing (designs/generative.kos).
+        try:
+            look = {"shape": s.get("shape", ""), "palette": described.get("palette", ""), "title": s.get("title", "")}
+            described["backdrop"] = self.kosika.run(DESIGNS / "generative.kos", "gen_backdrop", {"f": look}, model=False)["svg"]
+        except Exception:
+            described["backdrop"] = ""
         drawn = self.kosika.run(DESIGNS / "draw.kos", "draw", {"r": described}, model=False)
         return {"page": drawn["page"], "problems": drawn["problems"], "title": s.get("title", "")}
 
