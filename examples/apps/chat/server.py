@@ -152,6 +152,25 @@ class Chat:
     def words(self, history: str, ask: str) -> dict:
         return self.kosika.run(HERE / "chat.kos", "answer", {"turn": {"history": history, "ask": ask}}, model=True)
 
+    def designed(self, ask: str) -> dict | None:
+        """Kosika Designs' front door (designs/design.kos) says which kind of
+        picture fits: a diagram keeps the canvas below; an illustration that
+        moves beside its explanation, or a piece of art, comes from design."""
+        want = {"text": ask, "palette": "", "place": "chat", "kind": ""}
+        try:
+            kind = self.kosika.run(DESIGNS / "design.kos", "design_kind", {"ask": want}, model=False)["kind"]
+        except Exception:
+            return None
+        if kind not in ("illustration", "art"):
+            return None
+        try:
+            made = self.kosika.run(DESIGNS / "design.kos", "design", {"ask": {**want, "kind": kind}}, model=True)
+        except Exception:
+            return None
+        if not made.get("page"):
+            return None
+        return {"page": made["page"], "problems": made.get("problems", []), "title": made.get("title", "")}
+
     def canvas(self, ask: str) -> dict:
         described = self.kosika.run(DESIGNS / "main.kos", "describe", {"ask": {"text": ask}}, model=True)
         # A second model reads the drawing as an expert teacher would; what
@@ -209,7 +228,7 @@ class Chat:
         except Exception:
             wants_words = False
         try:
-            out = {"page": "", "problems": [], "title": ""} if wants_words else self.canvas(ask)
+            out = {"page": "", "problems": [], "title": ""} if wants_words else self.designed(ask) or self.canvas(ask)
         except Exception as error:
             out = {"page": "", "problems": [str(error)[:300]], "title": ""}
         if out["page"]:
