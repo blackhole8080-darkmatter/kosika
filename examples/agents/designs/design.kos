@@ -131,7 +131,9 @@ fn dz_from_art(ask: DzAsk, g: GenArt) -> DzResult {
 
 fn dz_from_diagram(ask: DzAsk, r: Request, d: Design) -> DzResult {
   let place = dz_place(ask)
-  let frame = f"<iframe class=\"kd-frame\" title=\"{art_esc(r.structure.title)}\" srcdoc=\"{art_esc(d.page)}\"></iframe>"
+  // framed, the page paints its own background, so no white shows below it
+  let page = d.page.replace("</head>", "<style>html{background:var(--bg)}</style></head>")
+  let frame = f"<iframe class=\"kd-frame\" title=\"{art_esc(r.structure.title)}\" srcdoc=\"{art_esc(page)}\"></iframe>"
   let embed = if d.problems.is_empty() { dz_wrap("diagram", place, dz_palette(ask.palette, r.palette), "", frame, "") } else { "" }
   return {kind: "diagram", why: dz_why(ask), title: r.structure.title, page: d.page, svg: "", embed: embed, problems: d.problems, fixed: []}
 }

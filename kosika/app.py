@@ -2272,6 +2272,15 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                         self._json(200, app.scene(agent_id, body["inputs"]))
                     else:
                         raise AppError("Send inputs to run, or a scene to draw")
+                elif method == "POST" and url.path == "/api/design":
+                    # Kosika Designs: the same front door Chat and the agents use.
+                    from .designs import DesignsError, design
+
+                    body = self._body()
+                    try:
+                        self._json(200, design(str(body.get("text", "")), palette=str(body.get("palette", "")), place="studio", kind=str(body.get("kind", ""))))
+                    except DesignsError as exc:
+                        raise AppError(str(exc)) from exc
                 elif method == "GET" and url.path == "/api/brand":
                     self._json(200, app.brand())
                 elif method == "GET" and url.path == "/api/project":

@@ -121,7 +121,7 @@ fn art_centre(f: Figure) -> Number[] {
 // wraps round, a count of 0 becomes a good one, a time below 0 becomes 0.
 fn art_tidy(a: Art) -> Art {
   let named = for f in a.figures { {..f, id: f.id.trim().lower(), kind: f.kind.trim().lower(), hue: f.hue.abs().floor() % 7} }
-  let figures = for f in named { art_fit({..f, count: art_count(f)}) }
+  let figures = art_mesh(for f in named { art_fit({..f, count: art_count(f)}) })
   let motions = for m in a.motions { {..m, what: m.what.trim().lower(), kind: m.kind.trim().lower(), around: m.around.trim().lower(), seconds: m.seconds.max(0), delay: m.delay.max(0)} }
   let kept = art_one_path(motions)
   let beats = for b in a.beats { {..b, text: b.text.trim(), shows: for s in b.shows { s.trim().lower() }} }
@@ -168,7 +168,8 @@ fn art_reach(kind: Text) -> Number {
 // Anything further out is left for the problems to name.
 fn art_fit(f: Figure) -> Figure recurse 2 {
   if art_round().contains(f.kind) and art_inside(f.x, f.y) and f.w > 0 {
-    let room = [f.x, art_width() - f.x, f.y, art_height() - f.y].min().or(0) / art_reach(f.kind)
+    let below = if f.kind == "rainbow" { 1000 } else { art_height() - f.y }
+    let room = [f.x, art_width() - f.x, f.y, below].min().or(0) / art_reach(f.kind)
     if f.w > room and room >= f.w * 0.6 { return {..f, w: (room * 10).floor() / 10} }
   }
   if art_paths().contains(f.kind) and f.kind != "wave" and f.kind != "spiral" and f.points.is_empty() and (f.w != 0 or f.h != 0) {
@@ -187,9 +188,43 @@ fn art_near(v: Number, top: Number) -> Number {
   return v
 }
 
+// Gears placed near each other are set to mesh: each later gear is moved
+// along the line between the centres until the two pitch circles (0.9 of
+// each radius, halfway up the teeth) touch, so its teeth sit in the
+// other's gaps instead of cutting into its disc.
+fn art_mesh(figures: Figure[]) -> Figure[] {
+  var out: Figure[] = []
+  for f in figures {
+    var g = f
+    if f.kind == "gear" {
+      for h in out {
+        if h.kind == "gear" { g = art_meshed(h, g) }
+      }
+    }
+    out = out.append(g)
+  }
+  return out
+}
+
+fn art_meshed(h: Figure, g: Figure) -> Figure {
+  let dx = g.x - h.x
+  let dy = g.y - h.y
+  let d = (dx * dx + dy * dy).sqrt()
+  let want = (h.w + g.w) * 0.9
+  if d >= (h.w + g.w) * 1.1 or (d - want).abs() < 0.05 { return g }
+  let ux = if d < 0.01 { 1 } else { dx / d }
+  let uy = if d < 0.01 { 0 } else { dy / d }
+  return {..g, x: (( h.x + ux * want) * 10).round() / 10, y: ((h.y + uy * want) * 10).round() / 10}
+}
+
 // What art_fit changed, in words, for the page to say.
 fn art_fixes(raw: Art) -> Text[] {
   var out: Text[] = []
+  let tidied = art_tidy(raw).figures
+  for k in 0 until raw.figures.length() {
+    let f = raw.figures[k]
+    if f.kind.trim().lower() == "gear" and k < tidied.length() and (tidied[k].x != f.x or tidied[k].y != f.y) { out = out.append(f"moved gear {f.id} so its teeth mesh with its neighbour's") }
+  }
   for f in raw.figures {
     let t = art_fit({..f, kind: f.kind.trim().lower(), count: art_count({..f, kind: f.kind.trim().lower()})})
     if t.w != f.w { out = out.append(f"made {f.id} a little smaller (w {art_n(f.w)} to {art_n(t.w)}) so it stays in the picture") }
@@ -220,8 +255,9 @@ fn art_figure_problems(f: Figure) -> Text[] {
   } else if not art_inside(f.x, f.y) {
     out = out.append(f"{name}: x {f.x}, y {f.y} is off the grid (x 0 to 100, y 0 to 60)")
   }
-  if art_round().contains(f.kind) and (f.w <= 0 or f.w > 30) { out = out.append(f"{name}: a {f.kind}'s w is its radius, 1 to 30") }
-  else if art_round().contains(f.kind) and not (art_inside(f.x - f.w * art_reach(f.kind), f.y - f.w * art_reach(f.kind)) and art_inside(f.x + f.w * art_reach(f.kind), f.y + f.w * art_reach(f.kind))) { out = out.append(f"{name}: at radius {f.w} it runs off the grid; make it smaller or move it in") }
+  let widest = if f.kind == "rainbow" { 48 } else { 30 }
+  if art_round().contains(f.kind) and (f.w <= 0 or f.w > widest) { out = out.append(f"{name}: a {f.kind}'s w is its radius, 1 to {widest}") }
+  else if art_round().contains(f.kind) and not (art_inside(f.x - f.w * art_reach(f.kind), f.y - f.w * art_reach(f.kind)) and art_inside(f.x + f.w * art_reach(f.kind), if f.kind == "rainbow" { f.y } else { f.y + f.w * art_reach(f.kind) })) { out = out.append(f"{name}: at radius {f.w} it runs off the grid; make it smaller or move it in") }
   if f.kind == "rect" and (f.w <= 0 or f.h <= 0) { out = out.append(f"{name}: a rect needs a w and h above 0") }
   if f.kind == "wave" and (f.w <= 0 or f.h <= 0 or not art_inside(f.x + f.w, f.y)) { out = out.append(f"{name}: a wave needs a length w and height h above 0, and must end on the grid") }
   if f.kind == "text" and f.label.trim().is_empty() { out = out.append(f"{name}: a text figure needs words in label") }
@@ -244,7 +280,7 @@ fn art_motion_problems(a: Art, m: Motion) -> Text[] {
     let path = art_index(a, m.around)
     if path < 0 or not art_paths().contains(a.figures[path].kind) { out = out.append(f"{m.what} travels along '{m.around}': name a line, curve, arrow or wave") }
   }
-  if (m.kind == "flow" or m.kind == "draw") and not art_paths().contains(kind) and kind != "ring" { out = out.append(f"{m.what}: {m.kind} needs a line, curve, arrow, wave or ring") }
+  if (m.kind == "flow" or m.kind == "draw") and not art_paths().contains(kind) and kind != "ring" and kind != "rainbow" { out = out.append(f"{m.what}: {m.kind} needs a line, curve, arrow, wave, ring or rainbow") }
   if m.seconds > 60 or m.delay > 60 { out = out.append(f"{m.what}: keep seconds and delay to 60 or less") }
   return out
 }
@@ -701,7 +737,7 @@ fn art_svg(raw: Art) -> Text {
 }
 
 fn art_style() -> Text {
-  return ".art{width:100%;height:auto;display:block;overflow:hidden;border-radius:22px}.art .ground{fill:var(--halo);stroke:color-mix(in srgb,var(--line) 10%,transparent)}.art .fill{fill:var(--g,var(--c));stroke:none}.art .hole{fill:var(--halo)}.art .band{fill:none;stroke-linecap:butt;opacity:.92}.art .shine{fill:#fff;opacity:.16}.art .stroke{fill:none;stroke:var(--c);stroke-width:4;stroke-linecap:round;stroke-linejoin:round}.art .rays{fill:none;stroke:var(--c);stroke-width:4;stroke-linecap:round}.art .track{fill:none;stroke:color-mix(in srgb,var(--line) 22%,transparent);stroke-width:1.2;stroke-dasharray:2 7}.art .word{fill:var(--ink);font-weight:800;text-anchor:middle;dominant-baseline:middle;letter-spacing:-.01em}.art .name{fill:var(--soft);font:600 12px ui-monospace,Consolas,monospace;letter-spacing:.14em;text-transform:uppercase;text-anchor:middle;paint-order:stroke;stroke:var(--halo);stroke-width:5px}.art .own{transition:opacity .45s,filter .45s,transform .8s cubic-bezier(.2,1.5,.4,1);transform-box:fill-box;transform-origin:center;filter:drop-shadow(0 6px 8px rgb(0 0 0/.28))}.art .own.dim{opacity:.22}.art .own.lit{filter:drop-shadow(0 6px 8px rgb(0 0 0/.28)) drop-shadow(0 0 10px color-mix(in srgb,var(--amber) 80%,transparent))}.art .own.wait{opacity:0;transform:scale(.35)}.art .tag{filter:none}.art .tag.wait{transform:none}.art .bd .st{fill:var(--ink);opacity:.55}.art .bd .st.tw{animation:art-blink 3.2s ease-in-out infinite}.art .bd.sky{fill:url(#art-sky)}.art .bd .swell{fill:color-mix(in srgb,var(--h2) 22%,transparent);animation:art-drift 7s ease-in-out infinite alternate}.art .bd .swell.slow{fill:color-mix(in srgb,var(--h2) 12%,transparent);animation-duration:11s;animation-direction:alternate-reverse}.art .bd .hill{fill:color-mix(in srgb,var(--h4) 20%,var(--halo))}.art .bd .hill.far{fill:color-mix(in srgb,var(--h4) 10%,var(--halo))}.art .bd .rule{stroke:color-mix(in srgb,var(--line) 6%,transparent);stroke-width:1}.art .bd .rule.strong{stroke:color-mix(in srgb,var(--line) 13%,transparent)}.art .mv-spin-back{animation-name:art-spin;animation-timing-function:linear;animation-direction:reverse}@keyframes art-drift{from{transform:translateX(-18px)}to{transform:translateX(18px)}}.art .tag.lit .name{fill:var(--amber)}.art .mv{transform-box:fill-box;transform-origin:center;animation-iteration-count:infinite}.art .mv-spin{animation-name:art-spin;animation-timing-function:linear}.art .mv-pulse{animation-name:art-pulse;animation-timing-function:ease-in-out}.art .mv-float{animation-name:art-float;animation-timing-function:ease-in-out}.art .mv-sway{animation-name:art-sway;animation-timing-function:ease-in-out;transform-origin:50% 100%}.art .mv-blink{animation-name:art-blink;animation-timing-function:ease-in-out}.art .mv-rise{animation-name:art-rise;animation-timing-function:ease-out}.art .mv-fall{animation-name:art-fall;animation-timing-function:ease-in}.art .mv-flow .stroke{stroke-dasharray:3 6;animation:art-flow 1.4s linear infinite;animation-duration:inherit}.art .mv-flow{animation:none}.art .mv-draw .stroke{stroke-dasharray:100;animation:art-draw 3s ease-in-out infinite;animation-duration:inherit}.art .mv-draw{animation:none}.art.paused *{animation-play-state:paused!important}@keyframes art-spin{to{transform:rotate(360deg)}}@keyframes art-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}@keyframes art-float{0%,100%{transform:translateY(-5px)}50%{transform:translateY(5px)}}@keyframes art-sway{0%,100%{transform:rotate(-7deg)}50%{transform:rotate(7deg)}}@keyframes art-blink{0%,100%{opacity:1}50%{opacity:.3}}@keyframes art-rise{0%{transform:translateY(0);opacity:0}15%{opacity:1}100%{transform:translateY(-70px);opacity:0}}@keyframes art-fall{0%{transform:translateY(0);opacity:0}15%{opacity:1}100%{transform:translateY(70px);opacity:0}}@keyframes art-flow{to{stroke-dashoffset:-9}}@keyframes art-draw{0%{stroke-dashoffset:100}55%,80%{stroke-dashoffset:0}100%{stroke-dashoffset:-100}}@media (prefers-reduced-motion:reduce){.art *{animation:none!important}}"
+  return ".art{width:100%;height:auto;display:block;overflow:hidden;border-radius:22px}.art .ground{fill:var(--halo);stroke:color-mix(in srgb,var(--line) 10%,transparent)}.art .fill{fill:var(--g,var(--c));stroke:none}.art .hole{fill:var(--halo)}.art .band{fill:none;stroke-linecap:butt;opacity:.92}.art .shine{fill:#fff;opacity:.16}.art .stroke{fill:none;stroke:var(--c);stroke-width:4;stroke-linecap:round;stroke-linejoin:round}.art .rays{fill:none;stroke:var(--c);stroke-width:4;stroke-linecap:round}.art .track{fill:none;stroke:color-mix(in srgb,var(--line) 22%,transparent);stroke-width:1.2;stroke-dasharray:2 7}.art .word{fill:var(--ink);font-weight:800;text-anchor:middle;dominant-baseline:middle;letter-spacing:-.01em}.art .name{fill:var(--soft);font:600 12px ui-monospace,Consolas,monospace;letter-spacing:.14em;text-transform:uppercase;text-anchor:middle;paint-order:stroke;stroke:var(--halo);stroke-width:5px}.art .own{transition:opacity .45s,filter .45s,transform .8s cubic-bezier(.2,1.5,.4,1);transform-box:fill-box;transform-origin:center;filter:drop-shadow(0 6px 8px rgb(0 0 0/.28))}.art .own.dim{opacity:.22}.art .own.lit{filter:drop-shadow(0 6px 8px rgb(0 0 0/.28)) drop-shadow(0 0 10px color-mix(in srgb,var(--amber) 80%,transparent))}.art .own.wait{opacity:0;transform:scale(.35)}.art .tag{filter:none}.art .tag.wait{transform:none}.art .bd .st{fill:var(--ink);opacity:.55}.art .bd .st.tw{animation:art-blink 3.2s ease-in-out infinite}.art .bd.sky{fill:url(#art-sky)}.art .bd .swell{fill:color-mix(in srgb,var(--h2) 22%,transparent);animation:art-drift 7s ease-in-out infinite alternate}.art .bd .swell.slow{fill:color-mix(in srgb,var(--h2) 12%,transparent);animation-duration:11s;animation-direction:alternate-reverse}.art .bd .hill{fill:color-mix(in srgb,var(--h4) 20%,var(--halo))}.art .bd .hill.far{fill:color-mix(in srgb,var(--h4) 10%,var(--halo))}.art .bd .rule{stroke:color-mix(in srgb,var(--line) 6%,transparent);stroke-width:1}.art .bd .rule.strong{stroke:color-mix(in srgb,var(--line) 13%,transparent)}.art .mv-spin-back{animation-name:art-spin;animation-timing-function:linear;animation-direction:reverse}@keyframes art-drift{from{transform:translateX(-18px)}to{transform:translateX(18px)}}.art .tag.lit .name{fill:var(--amber)}.art .mv{transform-box:fill-box;transform-origin:center;animation-iteration-count:infinite}.art .mv-spin{animation-name:art-spin;animation-timing-function:linear}.art .mv-pulse{animation-name:art-pulse;animation-timing-function:ease-in-out}.art .mv-float{animation-name:art-float;animation-timing-function:ease-in-out}.art .mv-sway{animation-name:art-sway;animation-timing-function:ease-in-out;transform-origin:50% 100%}.art .mv-blink{animation-name:art-blink;animation-timing-function:ease-in-out}.art .mv-rise{animation-name:art-rise;animation-timing-function:ease-out}.art .mv-fall{animation-name:art-fall;animation-timing-function:ease-in}.art .mv-flow .stroke{stroke-dasharray:3 6;animation:art-flow 1.4s linear infinite;animation-duration:inherit}.art .mv-flow{animation:none}.art .mv-draw :is(.stroke,.band){stroke-dasharray:100;animation:art-draw 3s ease-in-out infinite;animation-duration:inherit}.art .mv-draw{animation:none}.art.paused *{animation-play-state:paused!important}@keyframes art-spin{to{transform:rotate(360deg)}}@keyframes art-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}@keyframes art-float{0%,100%{transform:translateY(-5px)}50%{transform:translateY(5px)}}@keyframes art-sway{0%,100%{transform:rotate(-7deg)}50%{transform:rotate(7deg)}}@keyframes art-blink{0%,100%{opacity:1}50%{opacity:.3}}@keyframes art-rise{0%{transform:translateY(0);opacity:0}15%{opacity:1}100%{transform:translateY(-70px);opacity:0}}@keyframes art-fall{0%{transform:translateY(0);opacity:0}15%{opacity:1}100%{transform:translateY(70px);opacity:0}}@keyframes art-flow{to{stroke-dashoffset:-9}}@keyframes art-draw{0%{stroke-dashoffset:100}55%,80%{stroke-dashoffset:0}100%{stroke-dashoffset:-100}}@media (prefers-reduced-motion:reduce){.art *{animation:none!important}}"
 }
 
 // The sentences play in turn; each lights its figures and dims the rest.
@@ -935,4 +971,18 @@ test "a rainbow has seven bands, red outside and violet inside" {
   bow = art_rainbow(400, 300, 100)
   expect bow.split("class=\"band\"").length() == 8
   expect bow.index_of("#ff4d4d").or(-1) < bow.index_of("#a46bff").or(-1)
+}
+
+test "gears put too close are moved to mesh, and then turn each other" {
+  pair = {..art_sample(), figures: [{..art_fig("a", "gear", 40, 30, 12), count: 20}, {..art_fig("b", "gear", 50, 30, 10), count: 18}], motions: [{what: "a", kind: "spin", around: "", seconds: 3, delay: 0}, {what: "b", kind: "spin", around: "", seconds: 3, delay: 0}], beats: [{text: "a", shows: ["a"]}, {text: "b", shows: ["b"]}]}
+  t = art_tidy(pair)
+  expect t.figures[1].x == 59.8
+  expect art_gear_turns(t) == [3, -2.7]
+  expect art_fixes(pair).contains("moved gear b so its teeth mesh with its neighbour's")
+}
+
+test "a rainbow only needs room above its base" {
+  bow = {..art_fig("bow", "rainbow", 50, 50, 20), label: ""}
+  expect art_figure_problems(bow) == []
+  expect art_fit(bow).w == 20
 }
