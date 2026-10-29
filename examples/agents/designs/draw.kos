@@ -147,7 +147,7 @@ fn band_height(s: Structure) -> Number {
 fn height(s: Structure, w: Number) -> Number {
   if s.shape == "flow" { return ((columns(s).max().or(0) + 1) / per_row(s, w)).ceil() * band_height(s) }
   if s.shape == "layers" { return s.parts.length() * 76 + 40 }
-  if ["tree", "mindmap", "graph", "timeline", "compare", "sketch"].contains(s.shape) { return kind_height(s) }
+  if ["tree", "mindmap", "graph", "timeline", "compare", "sketch", "sequence", "orbit", "containers"].contains(s.shape) { return kind_height(s) }
   return 480
 }
 
@@ -157,6 +157,9 @@ fn layout(s: Structure, w: Number, h: Number) -> Number[][] {
   if s.shape == "mindmap" { return mindmap_layout(s, w, h) }
   if s.shape == "graph" { return graph_layout(s, w, h) }
   if s.shape == "timeline" { return timeline_layout(s, w, h) }
+  if s.shape == "sequence" { return sequence_layout(s, w, h) }
+  if s.shape == "orbit" { return orbit_layout(s, w, h) }
+  if s.shape == "containers" { return containers_layout(s, w, h) }
   if s.shape == "compare" { return compare_layout(s, w, h) }
   if s.shape == "sketch" { return [[], []] }
   let n = s.parts.length()
@@ -315,9 +318,9 @@ fn structure_svg(s: Structure) -> Text {
   let w = 860
   let h = height(s, w)
   let at = layout(s, w, h)
-  let special = s.shape == "nested" or s.shape == "graph" or s.shape == "tree" or s.shape == "mindmap" or s.shape == "timeline" or s.shape == "compare" or s.shape == "sketch"
+  let special = ["nested", "graph", "tree", "mindmap", "timeline", "compare", "sketch", "sequence", "orbit", "containers"].contains(s.shape)
   let links = if special { "" } else { (for l in s.links { link_svg(s, l, at) }).join("") }
-  let parts = if s.shape == "graph" { graph_svg(s, at) } else if s.shape == "tree" or s.shape == "mindmap" { hierarchy_svg(s, at) } else if s.shape == "timeline" { timeline_svg(s, at, w, h) } else if s.shape == "compare" { compare_svg(s, at, w, h) } else if s.shape == "sketch" { sketch_svg(s, w, h) } else if s.shape == "nested" { nested_svg(s, w, h) } else if s.shape == "layers" { (for i in 0 until s.parts.length() { layer_svg(s.parts[i], at[0][i], at[1][i]) }).join("") } else { (for i in 0 until s.parts.length() { part_svg(s.parts[i], at[0][i], at[1][i]) }).join("") }
+  let parts = if s.shape == "sequence" { sequence_svg(s, at, w, h) } else if s.shape == "orbit" { orbit_svg(s, at, w, h) } else if s.shape == "containers" { containers_svg(s, at, w, h) } else if s.shape == "graph" { graph_svg(s, at) } else if s.shape == "tree" or s.shape == "mindmap" { hierarchy_svg(s, at) } else if s.shape == "timeline" { timeline_svg(s, at, w, h) } else if s.shape == "compare" { compare_svg(s, at, w, h) } else if s.shape == "sketch" { sketch_svg(s, w, h) } else if s.shape == "nested" { nested_svg(s, w, h) } else if s.shape == "layers" { (for i in 0 until s.parts.length() { layer_svg(s.parts[i], at[0][i], at[1][i]) }).join("") } else { (for i in 0 until s.parts.length() { part_svg(s.parts[i], at[0][i], at[1][i]) }).join("") }
   return f"<svg viewBox=\"0 0 {w} {h}\" role=\"img\" aria-label=\"{escaped(s.title)}\"><defs><marker id=\"arrow\" viewBox=\"0 0 10 10\" refX=\"8\" refY=\"5\" markerWidth=\"7\" markerHeight=\"7\" orient=\"auto-start-reverse\"><path d=\"M0 0L10 5L0 10z\" class=\"head\"/></marker></defs>{links}{parts}</svg>"
 }
 
@@ -338,7 +341,7 @@ fn avg(xs: Number[], none: Number) -> Number {
   return xs.sum() / xs.length()
 }
 
-fn kinds() -> Text[] { return ["flow", "cycle", "layers", "hub", "nested", "tree", "mindmap", "graph", "timeline", "compare", "sketch"] }
+fn kinds() -> Text[] { return ["flow", "cycle", "layers", "hub", "nested", "tree", "mindmap", "graph", "timeline", "compare", "sketch", "sequence", "orbit", "containers"] }
 fn mark_kinds() -> Text[] { return ["curve", "shape", "arrow", "dot", "text"] }
 
 // Branch colours: the palette's six group colours.
@@ -378,6 +381,26 @@ fn kind_problems(s: Structure) -> Text[] {
   if ["tree", "mindmap"].contains(s.shape) {
     let roots = for p in s.parts where p.parent.is_empty() { p }
     if roots.length() != 1 { out = out.append(f"a {s.shape} needs exactly one part with no parent; it has {roots.length()}") }
+    if depths(s).contains(-1) { out = out.append("the parents go round in a loop") }
+  }
+  if s.shape == "sequence" {
+    let actors = for p in s.parts where p.parent.is_empty() { p }
+    if actors.length() < 2 or actors.length() > 6 { out = out.append(f"a sequence needs 2 to 6 actors with no parent; it has {actors.length()}") }
+    if actors.length() != s.parts.length() { out = out.append("in a sequence every part is an actor, with no parent") }
+    if s.links.length() < 2 or s.links.length() > 14 { out = out.append(f"a sequence needs 2 to 14 messages as links; it has {s.links.length()}") }
+  }
+  if s.shape == "orbit" {
+    let centres = for p in s.parts where p.parent.is_empty() { p }
+    if centres.length() != 1 { out = out.append(f"an orbit needs exactly one centre with no parent; it has {centres.length()}") }
+    if centres.length() == 1 {
+      let off = for p in s.parts where not p.parent.is_empty() and p.parent != centres[0].id { p }
+      if not off.is_empty() { out = out.append("in an orbit every other part names the centre as its parent") }
+    }
+    if s.parts.length() < 3 or s.parts.length() > 11 { out = out.append(f"an orbit draws 2 to 10 rings round its centre; it has {s.parts.length() - 1}") }
+  }
+  if s.shape == "containers" {
+    let tops = for p in s.parts where p.parent.is_empty() { p }
+    if tops.length() < 2 or tops.length() > 6 { out = out.append(f"containers need 2 to 6 boxes with no parent; there are {tops.length()}") }
     if depths(s).contains(-1) { out = out.append("the parents go round in a loop") }
   }
   if s.shape == "compare" {
@@ -661,6 +684,9 @@ fn kind_height(s: Structure) -> Number {
   if s.shape == "tree" { return (depths(s).max().or(0) + 1) * 110 + 210 }
   if s.shape == "compare" { return cmp_head() + cmp_heights(s).sum() + 12 }
   if s.shape == "timeline" { return 260 }
+  if s.shape == "sequence" { return seq_top() + s.links.length() * seq_row() + 10 }
+  if s.shape == "orbit" { return 560 }
+  if s.shape == "containers" { return containers_height(s) }
   if s.shape == "graph" or s.shape == "mindmap" { return 520 }
   return 500
 }
@@ -1344,7 +1370,7 @@ fn swatch_style() -> Text {
 // comparison, a timeline or a figure of mathematics shows none, because
 // a picture there would only stand between the reader and the idea.
 
-fn photo_kinds() -> Text[] { return ["flow", "cycle", "layers", "hub", "nested", "tree", "mindmap", "sketch"] }
+fn photo_kinds() -> Text[] { return ["flow", "cycle", "layers", "hub", "nested", "tree", "mindmap", "sketch", "orbit", "containers"] }
 
 fn is_icon(t: Text) -> Bool {
   if t.is_empty() or t.length() > 8 { return false }
@@ -1442,6 +1468,160 @@ fn look_script() -> Text {
   return "(function(){var ns='http://www.w3.org/2000/svg';document.querySelectorAll('.pp[data-show]').forEach(function(f,i){var g=document.getElementById(f.dataset.show),img=f.querySelector('img');if(!g||!img)return;var r=g.querySelector('rect.card');if(!r)return;var x=+r.getAttribute('x')+(+r.getAttribute('width'))-4,y=+r.getAttribute('y')+2,R=15,svg=g.ownerSVGElement,defs=svg.querySelector('defs')||svg.insertBefore(document.createElementNS(ns,'defs'),svg.firstChild),cp=document.createElementNS(ns,'clipPath');cp.id='badge'+i;var c=document.createElementNS(ns,'circle');c.setAttribute('cx',x);c.setAttribute('cy',y);c.setAttribute('r',R);cp.appendChild(c);defs.appendChild(cp);var b=document.createElementNS(ns,'g');b.setAttribute('class','badge');var ring=document.createElementNS(ns,'circle');ring.setAttribute('class','ring');ring.setAttribute('cx',x);ring.setAttribute('cy',y);ring.setAttribute('r',R+1.5);var im=document.createElementNS(ns,'image');im.setAttribute('href',img.src);im.setAttribute('x',x-R);im.setAttribute('y',y-R);im.setAttribute('width',2*R);im.setAttribute('height',2*R);im.setAttribute('preserveAspectRatio','xMidYMid slice');im.setAttribute('clip-path','url(#badge'+i+')');var e=document.createElementNS(ns,'circle');e.setAttribute('class','edge');e.setAttribute('cx',x);e.setAttribute('cy',y);e.setAttribute('r',R);b.appendChild(ring);b.appendChild(im);b.appendChild(e);g.appendChild(b)})})();(function(){var moves=[['spin','☀🌞⚙🌀♻'],['drip','💧🌧☔🌊🚿'],['drift','☁🌬💨⛅🌫🚀✈'],['sway','🌱🌿🍃🌳🌲🌾🌻🌷'],['flick','⚡🔥💡✨']];function kind(e){for(var i=0;i<moves.length;i++){if(moves[i][1].indexOf(e)>=0)return moves[i][0]}return 'beat'}document.querySelectorAll('.part text.label').forEach(function(t){var all=t.textContent,cut=all.indexOf(' ');if(cut<1)return;var icon=all.slice(0,cut);if(/[A-Za-z0-9]/.test(icon)||icon.length>8)return;var rest=all.slice(cut+1);t.textContent='';var gap=document.createElementNS('http://www.w3.org/2000/svg','tspan');gap.textContent=icon+' ';gap.setAttribute('fill-opacity','0');t.appendChild(gap);t.appendChild(document.createTextNode(rest));var b;try{b=gap.getBBox()}catch(x){return}if(!b||!b.width)return;var ico=document.createElementNS('http://www.w3.org/2000/svg','text');var w=b.width*icon.length/(icon.length+1);ico.setAttribute('x',b.x+w/2);ico.setAttribute('y',b.y+b.height/2);ico.setAttribute('text-anchor','middle');ico.setAttribute('dominant-baseline','central');ico.setAttribute('style','font-size:'+getComputedStyle(t).fontSize);ico.setAttribute('class','ico '+kind(Array.from(icon)[0]));ico.textContent=icon;t.parentNode.insertBefore(ico,t.nextSibling)})})();"
 }
 
+
+// ---------------------------------------------------------------- sequence, orbit, containers
+//
+//   sequence    actors along the top, each with a lifeline down the page;
+//               the links are messages between them, in time order, one
+//               row each, so a request and its reply read top to bottom
+//   orbit       one centre and rings outward from it in order, each part
+//               on its own ring, placed round by the golden angle so no
+//               two land on the same side
+//   containers  boxes inside boxes: parts with no parent are the
+//               containers, the rest sit inside the one they belong to,
+//               and links run between any two of them
+
+fn seq_row() -> Number { return 50 }
+fn seq_top() -> Number { return 118 }
+
+fn sequence_layout(s: Structure, w: Number, h: Number) -> Number[][] {
+  let n = s.parts.length()
+  return [for i in 0 until n { (i + 0.5) * w / n.max(1) }, for i in 0 until n { 40 }]
+}
+
+fn sequence_svg(s: Structure, at: Number[][], w: Number, h: Number) -> Text {
+  var bits: Text[] = []
+  for i in 0 until s.parts.length() {
+    bits = bits.append(f"<path class=\"lifeline\" d=\"M{f1(at[0][i])} 66 V{f1(h - 8)}\"/>")
+  }
+  for k in 0 until s.links.length() {
+    let l = s.links[k]
+    let a = place(s, l.from)
+    let b = place(s, l.to)
+    let y = seq_top() + k * seq_row()
+    let x1 = at[0][a]
+    let x2 = at[0][b]
+    let loop_back = a == b
+    let end = if x2 > x1 { x2 - 6 } else { x2 + 6 }
+    let path = if loop_back { f"M{f1(x1)} {f1(y - 8)} h46 v18 h-40" } else { f"M{f1(x1)} {f1(y)} H{f1(end)}" }
+    let mid = if loop_back { x1 + 54 } else { (x1 + x2) / 2 }
+    let anchor = if loop_back { "start" } else { "middle" }
+    let said = (k + 1).to_text() + ". " + l.label
+    bits = bits.append(f"<g class=\"link message bit\" id=\"l-{l.from}-{l.to}-{k}\" data-a=\"p-{l.from}\" data-b=\"p-{l.to}\"><path class=\"wire\" d=\"{path}\" marker-end=\"url(#arrow)\"/><path class=\"pulse\" d=\"{path}\"/><text class=\"linklabel\" x=\"{f1(mid)}\" y=\"{f1(y - 8)}\" style=\"text-anchor:{anchor}\">{escaped(said)}</text><circle class=\"port out\" cx=\"{f1(x1)}\" cy=\"{f1(y)}\" r=\"4\"/></g>")
+  }
+  let cards = (for i in 0 until s.parts.length() { part_svg(s.parts[i], at[0][i], at[1][i]) }).join("")
+  return bits.join("") + cards
+}
+
+fn orbit_centre(s: Structure) -> Number {
+  for i in 0 until s.parts.length() {
+    if s.parts[i].parent.is_empty() { return i }
+  }
+  return 0
+}
+
+// How far out ring k of m sits, as a share of the room: the first ring
+// clears the centre card, the last reaches the edge.
+fn orbit_reach(k: Number, m: Number) -> Number { return if m <= 1 { 1 } else { 0.42 + 0.58 * k / (m - 1) } }
+
+fn orbit_layout(s: Structure, w: Number, h: Number) -> Number[][] {
+  let n = s.parts.length()
+  let c = orbit_centre(s)
+  let rings = (for i in 0 until n where i != c { i })
+  let m = rings.length().max(1)
+  var xs: Number[] = for i in 0 until n { w / 2 }
+  var ys: Number[] = for i in 0 until n { h / 2 }
+  for k in 0 until rings.length() {
+    let f = orbit_reach(k, m)
+    let angle = 180 + k * 137.5
+    xs = xs.set(rings[k], w / 2 + f * (w / 2 - 70) * angle.cos())
+    ys = ys.set(rings[k], h / 2 + f * (h / 2 - 34) * angle.sin())
+  }
+  return [xs, ys]
+}
+
+fn orbit_svg(s: Structure, at: Number[][], w: Number, h: Number) -> Text {
+  let c = orbit_centre(s)
+  let rings = (for i in 0 until s.parts.length() where i != c { i })
+  let m = rings.length().max(1)
+  let paths = (for k in 0 until rings.length() { f"<ellipse class=\"orbitring\" cx=\"{f1(w / 2)}\" cy=\"{f1(h / 2)}\" rx=\"{f1(orbit_reach(k, m) * (w / 2 - 70))}\" ry=\"{f1(orbit_reach(k, m) * (h / 2 - 34))}\"/>" }).join("")
+  // Cards on rings are compact, the note kept as the tooltip, so the
+  // inner rings stay clear.
+  let cards = (for i in 0 until s.parts.length() { part_svg(if i == c { s.parts[i] } else { compact(s.parts[i]) }, at[0][i], at[1][i]) }).join("")
+  return paths + cards
+}
+
+// The container a part belongs to: the top of its line of parents.
+fn holder(s: Structure, i: Number) -> Number {
+  var at = i
+  for hop in 0 until 8 {
+    let up = s.parts[at].parent
+    if up.is_empty() { return at }
+    at = place(s, up)
+  }
+  return at
+}
+
+fn boxes(s: Structure) -> Number[] { return for i in 0 until s.parts.length() where s.parts[i].parent.is_empty() { i } }
+fn inside(s: Structure, b: Number) -> Number[] { return for i in 0 until s.parts.length() where i != b and holder(s, i) == b { i } }
+fn box_cols(s: Structure) -> Number { return boxes(s).length().min(3).max(1) }
+fn box_item() -> Number { return 82 }
+
+fn box_rows_heights(s: Structure) -> Number[] {
+  let bs = boxes(s)
+  let cols = box_cols(s)
+  let rows = (bs.length() / cols).ceil()
+  return for r in 0 until rows { (for k in 0 until bs.length() where (k / cols).floor() == r { inside(s, bs[k]).length() }).max().or(0) * box_item() + 74 }
+}
+
+fn containers_height(s: Structure) -> Number { return box_rows_heights(s).sum() + 24 * box_rows_heights(s).length() + 12 }
+
+fn containers_layout(s: Structure, w: Number, h: Number) -> Number[][] {
+  let n = s.parts.length()
+  let bs = boxes(s)
+  let cols = box_cols(s)
+  let rh = box_rows_heights(s)
+  var xs: Number[] = for i in 0 until n { 0 }
+  var ys: Number[] = for i in 0 until n { 0 }
+  for k in 0 until bs.length() {
+    let r = (k / cols).floor()
+    let c = k % cols
+    let top = 12 + (for q in 0 until r { rh[q] + 24 }).sum()
+    let x = (c + 0.5) * w / cols
+    xs = xs.set(bs[k], x)
+    ys = ys.set(bs[k], top + 24)
+    let items = inside(s, bs[k])
+    for j in 0 until items.length() {
+      xs = xs.set(items[j], x)
+      ys = ys.set(items[j], top + 86 + j * box_item())
+    }
+  }
+  return [xs, ys]
+}
+
+fn containers_svg(s: Structure, at: Number[][], w: Number, h: Number) -> Text {
+  let bs = boxes(s)
+  let cols = box_cols(s)
+  let rh = box_rows_heights(s)
+  let bw = w / cols - 24
+  var bits: Text[] = []
+  for k in 0 until bs.length() {
+    let i = bs[k]
+    let p = s.parts[i]
+    let r = (k / cols).floor()
+    let top = 12 + (for q in 0 until r { rh[q] + 24 }).sum()
+    let x = at[0][i]
+    bits = bits.append(f"<g class=\"part container bit\" id=\"p-{p.id}\"><rect pathLength=\"1\" x=\"{f1(x - bw / 2)}\" y=\"{f1(top)}\" width=\"{f1(bw)}\" height=\"{f1(rh[r])}\" rx=\"16\" style=\"stroke:{hue(k)}\"/><text class=\"label boxhead\" x=\"{f1(x - bw / 2 + 18)}\" y=\"{f1(top + 28)}\" style=\"fill:{hue(k)};text-anchor:start\">{escaped(p.label)}</text><text class=\"note\" x=\"{f1(x - bw / 2 + 18)}\" y=\"{f1(top + 46)}\" style=\"text-anchor:start\">{escaped(p.note)}</text></g>")
+  }
+  let links = (for l in s.links { link_svg(s, l, at) }).join("")
+  let items = (for i in 0 until s.parts.length() where not s.parts[i].parent.is_empty() { part_svg(s.parts[i], at[0][i], at[1][i]) }).join("")
+  return bits.join("") + links + items
+}
+
+fn containers_style() -> Text {
+  return ".lifeline{stroke:color-mix(in srgb,var(--line) 22%,transparent);stroke-width:1.2;stroke-dasharray:4 6}.message .wire{stroke:var(--gold)}.message.on .wire{stroke:var(--amber)}.orbitring{fill:none;stroke:color-mix(in srgb,var(--line) 16%,transparent);stroke-width:1.1;stroke-dasharray:3 7}.container rect{fill:color-mix(in srgb,var(--halo) 55%,transparent);stroke-width:1.4}.boxhead{font:800 15px Figtree,system-ui,sans-serif}"
+}
+
 fn reference_photo(p: Picture, photos: PartPhoto[]) -> Text {
   if p.image.is_empty() or photos.length() > 0 { return "" }
   return f"<figure class=\"ref bit\" id=\"photo\"><img src=\"{p.image}\" alt=\"{escaped(p.title)}\"><figcaption class=\"credit\">Real example: <a href=\"{p.page_url}\">{escaped(p.title)}</a> by {escaped(p.author)}, <a href=\"{p.license_url}\">{escaped(p.license)}</a>, Wikimedia Commons.</figcaption></figure>"
@@ -1461,7 +1641,7 @@ fn draw_page(r: Request) -> Text {
   let stamp = if proof.checked.is_empty() { "" } else { "<span class=\"stamp\">checked</span>" }
   let sentences = if golden { golden_steps(9).join("") } else { (for i in 0 until s.steps.length() { step_line(i, shown_ids(s, s.steps[i]), "", escaped(s.steps[i].text)) }).join("") }
   let think = f"<div class=\"think\" id=\"think\" data-lines=\"{quoted(thinking(s))}\" data-done=\"Done. Hover a step to mark it again.\"></div>"
-  return f"<!doctype html><html lang=\"en\"{palette_attr}><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Kosika Designs</title><style>{draw_style()}{kinds_style()}{notes_style()}{proof_style()}{palettes_css()}{swatch_style()}{look_style()}</style></head><body><main><div class=\"brand\">Kosika Designs</div><div class=\"ask\">&#8220;{escaped(r.ask)}&#8221;</div><h1>{escaped(title)}{stamp}</h1><p class=\"lede\">{escaped(summary)}</p>{think}<div class=\"board\" id=\"board\">{drawing}<svg class=\"leaders\" id=\"leaders\" aria-hidden=\"true\"></svg><ol class=\"notes\">{sentences}</ol></div>{photo_strip(s, r.photos, r.picture)}{proof.html}<div class=\"hud\" id=\"hud\"></div>{reference_photo(r.picture, shown_photos)}<div class=\"bar\">{swatches(colours.name)}<button id=\"replay\" type=\"button\">Replay</button></div></main><script>{notes_script()}{draw_script()}{look_script()}</script></body></html>"
+  return f"<!doctype html><html lang=\"en\"{palette_attr}><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Kosika Designs</title><style>{draw_style()}{kinds_style()}{notes_style()}{proof_style()}{palettes_css()}{swatch_style()}{look_style()}{containers_style()}</style></head><body><main><div class=\"brand\">Kosika Designs</div><div class=\"ask\">&#8220;{escaped(r.ask)}&#8221;</div><h1>{escaped(title)}{stamp}</h1><p class=\"lede\">{escaped(summary)}</p>{think}<div class=\"board\" id=\"board\">{drawing}<svg class=\"leaders\" id=\"leaders\" aria-hidden=\"true\"></svg><ol class=\"notes\">{sentences}</ol></div>{photo_strip(s, r.photos, r.picture)}{proof.html}<div class=\"hud\" id=\"hud\"></div>{reference_photo(r.picture, shown_photos)}<div class=\"bar\">{swatches(colours.name)}<button id=\"replay\" type=\"button\">Replay</button></div></main><script>{notes_script()}{draw_script()}{look_script()}</script></body></html>"
 }
 
 record Wanted { looks: Look[] }
@@ -1495,7 +1675,7 @@ test "a good description has nothing wrong with it" {
 test "the problems name what is wrong" {
   bad = {..sample(), shape: "blob", links: [{from: "a", to: "zz", label: ""}], steps: [{text: "x", parts: ["q"]}]}
   said = problems(bad)
-  expect said.contains("shape blob is not one of flow, cycle, layers, hub, nested, tree, mindmap, graph, timeline, compare, sketch")
+  expect said.contains("shape blob is not one of flow, cycle, layers, hub, nested, tree, mindmap, graph, timeline, compare, sketch, sequence, orbit, containers")
   expect said.contains("a link ends at zz, and no part has that id")
   expect said.contains("a sentence points at q, and no part has that id")
 }
@@ -1599,6 +1779,22 @@ test "cards on one row of a tree never overlap" {
   at = tree_layout(wide, 860, 400)
   expect at[0][2] - at[0][1] >= (box_width(wide.parts[1]) + box_width(wide.parts[2])) / 2
   expect at[0][3] + box_width(wide.parts[3]) / 2 <= 860
+}
+
+test "a sequence, an orbit and containers are drawn and checked" {
+  hello = {..family(), shape: "sequence", parts: [{id: "b", label: "Browser", note: "", parent: ""}, {id: "s", label: "Server", note: "", parent: ""}], links: [{from: "b", to: "s", label: "GET /"}, {from: "s", to: "b", label: "200 OK"}], steps: [{text: "one", parts: ["b"]}, {text: "two", parts: ["s"]}]}
+  expect problems(hello).is_empty()
+  expect structure_svg(hello).contains("l-b-s-0")
+  expect structure_svg(hello).contains("lifeline")
+  expect problems({..hello, links: [{from: "b", to: "s", label: "only one"}]}).length() > 0
+  sky = {..family(), shape: "orbit", parts: [{id: "sun", label: "Sun", note: "", parent: ""}, {id: "me", label: "Mercury", note: "", parent: "sun"}, {id: "ve", label: "Venus", note: "", parent: "sun"}, {id: "ea", label: "Earth", note: "", parent: "sun"}], links: [], steps: [{text: "one", parts: ["sun"]}, {text: "two", parts: ["ea"]}]}
+  expect problems(sky).is_empty()
+  expect structure_svg(sky).contains("orbitring")
+  expect problems({..sky, parts: sky.parts.append({id: "mo", label: "Moon", note: "", parent: "ea"})}).length() > 0
+  cluster = {..family(), shape: "containers", parts: [{id: "cp", label: "Control plane", note: "", parent: ""}, {id: "api", label: "API server", note: "", parent: "cp"}, {id: "wn", label: "Worker node", note: "", parent: ""}, {id: "kl", label: "Kubelet", note: "", parent: "wn"}], links: [{from: "kl", to: "api", label: "reports"}], steps: [{text: "one", parts: ["cp"]}, {text: "two", parts: ["wn"]}]}
+  expect problems(cluster).is_empty()
+  expect containers_layout(cluster, 860, 300)[1][1] > containers_layout(cluster, 860, 300)[1][0]
+  expect structure_svg(cluster).contains("p-api")
 }
 
 test "icons are emoji, photos are few and only where they help" {

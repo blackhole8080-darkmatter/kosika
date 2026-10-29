@@ -24,6 +24,30 @@ cloud drifts and rain drips. When a step is marked, its icon moves faster.
 
 ![A mind map of renewable energy](shots/renewable-energy-mind-map.png)
 
+### A sequence, an orbit and containers
+
+![What happens when you type a URL](shots/sequence-url.png)
+
+A **sequence** puts the actors along the top, each with a dashed lifeline.
+Their messages run between the lifelines in time order, one numbered row
+each, so a request and its reply read from top to bottom.
+
+![The solar system in order](shots/orbit-solar-system.png)
+
+An **orbit** puts one thing at the centre and the rest on rings, in order
+outward from it. Each card is placed round its ring by the golden angle,
+so no two land on the same side.
+
+![The architecture of a Kubernetes cluster](shots/containers-kubernetes.png)
+
+**Containers** are boxes holding cards, with links between any two cards.
+They suit a system's architecture, a cluster or a cell's organelles.
+
+Kosika also picks these kinds from the question itself. "When I type",
+"handshake" or "sequence diagram" gives a sequence. "Solar system",
+"planets" or "electron shell" gives an orbit. "Architecture", "cluster" or
+"organelles" gives containers.
+
 ### A comparison, as a table
 
 ![TCP, UDP and QUIC compared](shots/comparison-table.png)
