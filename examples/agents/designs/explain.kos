@@ -1,0 +1,54 @@
+// Explainer, an agent inside Kosika Designs: answers a question in plain words, and draws it.
+//
+//   kosika run main.kos --workflow explain --input question.json
+//       --model openai/gpt-oss-120b --model-url https://api.groq.com/openai/v1
+//       --model-protocol openai --max-output-tokens 8000
+//
+// where question.json holds {"q": {"text": "how does the heart pump blood"}}.
+//
+// It shows how any Kosika agent uses Kosika Designs: import the front door
+// and call it as a step. The teacher model writes a short answer; Designs
+// draws the canvas (a diagram, a moving picture and art together), and the
+// agent hands back both. Nothing here draws: Designs decides how it looks.
+
+import "design.kos"
+
+export [ExQuestion, Explained, explain]
+
+record ExQuestion { text: Text }
+record ExBrief { task: Text question: Text }
+record ExAnswer { text: Text }
+record Explained { question: Text words: Text kind: Text title: Text why: Text page: Text problems: Text[] }
+
+model teacher {
+  input: ExBrief
+  output: ExAnswer
+  parameters: {
+    max_output_tokens: 2000
+  }
+}
+
+fn ex_task() -> Text {
+  return "ExAnswer the question for a curious person in plain words: three to five short sentences, the most important idea first, no jargon left unexplained. A picture will be drawn beside your answer, so do not describe a picture."
+}
+
+fn ex_no_answer() -> ExAnswer { return {text: ""} }
+
+fn ex_ask(q: ExQuestion) -> DzAsk { return {text: q.text, palette: "", place: "agent", kind: "canvas"} }
+
+fn ex_explained(q: ExQuestion, a: ExAnswer, d: DzResult) -> Explained {
+  return {question: q.text, words: a.text.trim(), kind: d.kind, title: d.title, why: d.why, page: d.page, problems: d.problems}
+}
+
+workflow explain(q: ExQuestion) -> Explained {
+  budget 12 model calls, 900 seconds
+  said  = use_model teacher(ex_task(), q.text) retry 1 otherwise ex_no_answer()
+  drawn = call design(ex_ask(q))
+  out   = ex_explained(q, said, drawn)
+}
+
+test "the explainer asks Designs for a whole canvas" {
+  ask = ex_ask({text: "why is the sky blue"})
+  expect ask.kind == "canvas"
+  expect ask.place == "agent"
+}
