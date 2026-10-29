@@ -247,7 +247,7 @@ workflow describe(ask: Ask) -> Request {
     case true { first }
     case _ { call redescribe(ask, {text: plan}, {text: wrong}, first, choice) }
   }
-  out = {ask: ask.text, structure: better, picture: no_picture(), palette: chosen_palette(ask.text, choice), photos: []}
+  out = {ask: ask.text, structure: better, picture: no_picture(), palette: chosen_palette(ask.text, choice), photos: [], backdrop: ""}
 }
 
 // The second try, told what was wrong with the first.
@@ -432,7 +432,7 @@ fn job_structure(j: Job) -> Structure {
 }
 
 workflow automation(j: Job) -> Request {
-  out = {ask: j.ask, structure: job_structure(j), picture: no_picture(), palette: "dark_matter", photos: []}
+  out = {ask: j.ask, structure: job_structure(j), picture: no_picture(), palette: "dark_matter", photos: [], backdrop: ""}
 }
 
 test "an automation is drawn as a checked flow" {

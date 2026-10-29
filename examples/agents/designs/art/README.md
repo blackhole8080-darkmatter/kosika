@@ -1,6 +1,9 @@
-# Kosika Art
+# Kosika Designs: illustrations
 
-Small, calm, animated illustrations that sit beside an explanation.
+Small, calm, animated illustrations that sit beside an explanation. They are
+one of the three ways Kosika Designs draws. [`../design.kos`](../design.kos) is
+the front door every part of Kosika uses (Chat, Studio, the website,
+agents): it chooses a diagram, an illustration or moving art for each ask.
 
 ![Gears trading speed for force](shots/gears.gif)
 

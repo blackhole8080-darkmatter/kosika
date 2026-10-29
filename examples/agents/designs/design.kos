@@ -1,0 +1,209 @@
+// Kosika Designs: one front door for every part of Kosika.
+//
+//   kosika run design.kos --workflow design --input ask.json
+//       --model openai/gpt-oss-120b --model-url https://api.groq.com/openai/v1
+//       --model-protocol openai --max-output-tokens 8000
+//
+// where ask.json holds
+//   {"ask": {"text": "how does the heart pump blood", "palette": "",
+//            "place": "chat", "kind": ""}}
+//
+// Chat, Studio, the website and every agent ask Designs the same way and
+// get the same answer back. Kosika decides which of its three ways of
+// drawing suits the ask:
+//
+//   diagram       the structure of a thing: parts, steps, links, a
+//                 comparison, a timeline (main.kos describes it, draw.kos
+//                 draws it)
+//   illustration  how something works or happens, as a small animated
+//                 picture beside a few sentences (art.kos)
+//   art           a moving, abstract piece for a mood, a background or a
+//                 cover (generative.kos)
+//
+// kind may name one of them; empty lets Kosika choose by the words of the
+// ask, with no model. palette names the colours (palette.kos) to match the
+// place it will sit; empty lets the drawing choose. place is chat, studio,
+// site or agent, and sets how the embed is framed.
+//
+// Whatever is drawn, the answer has the same shape: a whole page, the
+// picture alone as SVG where there is one, and an embed: one fragment of
+// HTML, its styles and script scoped inside it, that any page can drop in
+// as it is. A diagram's embed is its page in a frame.
+
+import "palette.kos"
+import "draw.kos"
+import "main.kos"
+import "art.kos"
+import "generative.kos"
+
+export [DzAsk, DzResult, DzKind, dz_kinds, dz_places, dz_kind, dz_why, design, design_kind]
+
+record DzAsk { text: Text palette: Text place: Text kind: Text }
+record DzKind { kind: Text why: Text }
+record DzResult { kind: Text why: Text title: Text page: Text svg: Text embed: Text problems: Text[] fixed: Text[] }
+
+fn dz_kinds() -> Text[] { return ["diagram", "illustration", "art"] }
+fn dz_places() -> Text[] { return ["chat", "studio", "site", "agent"] }
+
+fn dz_place(ask: DzAsk) -> Text {
+  let p = ask.place.trim().lower()
+  return if dz_places().contains(p) { p } else { "chat" }
+}
+
+// ---------------------------------------------------------------- choosing
+
+fn dz_padded(text: Text) -> Text { return " " + text.lower().trim().trim_marks("?!.") + " " }
+
+fn dz_has(t: Text, words: Text[]) -> Bool {
+  for w in words {
+    if t.contains(w) { return true }
+  }
+  return false
+}
+
+fn dz_art_words() -> Text[] { return [" art ", " artwork", " wallpaper", " background", " backdrop", " abstract", " generative", " pattern", " screensaver", " cover image", " mood ", " aesthetic", " something beautiful", " ambient"] }
+fn dz_diagram_words() -> Text[] { return [" diagram", " flowchart", " flow chart", " mind map", " mindmap", " map of ", " timeline", " compare ", " comparison", " vs ", " vs. ", " versus ", " difference between", " hierarchy", " family tree", " org chart", " architecture", " structure of", " steps ", " step by step", " pipeline", " workflow", " table ", " graph ", " layers of", " types of", " kinds of", " parts of"] }
+fn dz_illustration_words() -> Text[] { return [" animate", " animation", " animated", " illustrate", " illustration", " show me how", " what happens when", " what happens if", " what is inside", " how does ", " how do ", " why does ", " why do ", " why is ", " why are "] }
+
+// Which way of drawing suits the ask, by its words: a named kind first;
+// then asking for a diagram's shape (a timeline, a comparison, the steps);
+// then asking for art; then asking how or why something happens, which
+// moves, so it is illustrated; anything else is drawn as a diagram.
+fn dz_kind(ask: DzAsk) -> Text {
+  let named = ask.kind.trim().lower()
+  if dz_kinds().contains(named) { return named }
+  let t = dz_padded(ask.text)
+  if dz_has(t, dz_diagram_words()) { return "diagram" }
+  if dz_has(t, dz_art_words()) { return "art" }
+  if dz_has(t, dz_illustration_words()) { return "illustration" }
+  return "diagram"
+}
+
+fn dz_why(ask: DzAsk) -> Text {
+  let kind = dz_kind(ask)
+  if dz_kinds().contains(ask.kind.trim().lower()) { return f"asked for {kind}" }
+  if kind == "art" { return "asks for a mood or a background, so it is drawn as moving art" }
+  if kind == "illustration" { return "asks how or why something happens, so it is drawn moving, beside its explanation" }
+  return "asks about the parts and structure of something, so it is drawn as a diagram"
+}
+
+// ---------------------------------------------------------------- one shape of answer
+
+// The palettes' CSS, scoped to the embed instead of the whole page, so
+// one page can hold embeds in different colours.
+fn dz_scoped_palettes() -> Text {
+  return palettes_css().replace(":root{", ".kd{").replace("html[data-palette=", ".kd[data-palette=")
+}
+
+fn dz_embed_style() -> Text {
+  return ".kd{display:block;color:var(--ink);background:var(--bg);border-radius:22px;padding:14px;font:15px/1.5 Figtree,system-ui,-apple-system,'Segoe UI',sans-serif}.kd[data-place=agent]{padding:0;background:none}.kd .kd-title{font-weight:800;font-size:18px;letter-spacing:-.01em;margin:2px 4px 10px}.kd .kd-frame{width:100%;height:640px;border:0;border-radius:16px;background:var(--bg)}.kd .beats{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:6px}.kd .beat{display:flex;gap:10px;padding:8px 10px;border-radius:12px;color:var(--soft);border:1px solid color-mix(in srgb,var(--line) 10%,transparent);outline:none}.kd .beat b{flex:none;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font:600 11px ui-monospace,Consolas,monospace;color:var(--think);border:1.5px solid color-mix(in srgb,var(--think) 70%,transparent)}.kd .beat.on{color:var(--ink);border-color:color-mix(in srgb,var(--amber) 55%,transparent)}.kd .beat.on b{background:var(--amber);border-color:var(--amber);color:#1a0f08}"
+}
+
+fn dz_wrap(kind: Text, place: Text, palette: Text, title: Text, inner: Text, style: Text) -> Text {
+  let head = if place == "agent" or title.is_empty() { "" } else { f"<div class=\"kd-title\">{art_esc(title)}</div>" }
+  return f"<div class=\"kd kd-{kind}\" data-palette=\"{palette}\" data-place=\"{place}\"><style>{dz_scoped_palettes()}{dz_embed_style()}{style}</style>{head}{inner}</div>"
+}
+
+fn dz_beats(a: Art) -> Text {
+  return "<ol class=\"beats\">" + (for k in 0 until a.beats.length() { f"<li class=\"beat\" tabindex=\"0\" data-shows=\"{a.beats[k].shows.join(\" \")}\"><b>{k + 1}</b><span>{art_esc(a.beats[k].text)}</span></li>" }).join("") + "</ol>"
+}
+
+fn dz_palette(asked: Text, chosen: Text) -> Text {
+  if palette_names().contains(asked.trim().lower()) { return asked.trim().lower() }
+  return if palette_names().contains(chosen) { chosen } else { "dark_matter" }
+}
+
+fn dz_from_illustration(ask: DzAsk, r: ArtPage) -> DzResult {
+  let place = dz_place(ask)
+  let palette = dz_palette(ask.palette, r.art.palette)
+  let words = if place == "agent" { "" } else { dz_beats(r.art) }
+  let inner = r.svg + words + f"<script>{art_script()}</script>"
+  let embed = if r.problems.is_empty() { dz_wrap("illustration", place, palette, r.art.title, inner, art_style()) } else { "" }
+  return {kind: "illustration", why: dz_why(ask), title: r.art.title, page: r.page, svg: r.svg, embed: embed, problems: r.problems, fixed: r.fixed}
+}
+
+fn dz_from_art(ask: DzAsk, g: GenArt) -> DzResult {
+  let place = dz_place(ask)
+  let palette = dz_palette(ask.palette, g.recipe.palette)
+  let embed = if g.problems.is_empty() { dz_wrap("art", place, palette, g.recipe.title, g.svg, gen_style()) } else { "" }
+  return {kind: "art", why: dz_why(ask), title: g.recipe.title, page: g.page, svg: g.svg, embed: embed, problems: g.problems, fixed: []}
+}
+
+fn dz_from_diagram(ask: DzAsk, r: Request, d: Design) -> DzResult {
+  let place = dz_place(ask)
+  let frame = f"<iframe class=\"kd-frame\" title=\"{art_esc(r.structure.title)}\" srcdoc=\"{art_esc(d.page)}\"></iframe>"
+  let embed = if d.problems.is_empty() { dz_wrap("diagram", place, dz_palette(ask.palette, r.palette), "", frame, "") } else { "" }
+  return {kind: "diagram", why: dz_why(ask), title: r.structure.title, page: d.page, svg: "", embed: embed, problems: d.problems, fixed: []}
+}
+
+fn dz_with_palette(r: Request, palette: Text) -> Request {
+  return if palette_names().contains(palette.trim().lower()) { {..r, palette: palette.trim().lower()} } else { r }
+}
+
+// ---------------------------------------------------------------- the front door
+
+workflow design(ask: DzAsk) -> DzResult {
+  budget 8 model calls, 900 seconds
+  kind = dz_kind(ask)
+  out  = match kind {
+    case "art" { call dz_art(ask) }
+    case "illustration" { call dz_illustration(ask) }
+    case _ { call dz_diagram(ask) }
+  }
+}
+
+// Only the choice, with no drawing and no model: for a place that draws a
+// kind its own way (Chat keeps its own diagram pipeline, with its critic
+// and photos) and asks Designs for the rest.
+workflow design_kind(ask: DzAsk) -> DzKind {
+  out = {kind: dz_kind(ask), why: dz_why(ask)}
+}
+
+workflow dz_illustration(ask: DzAsk) -> DzResult {
+  drawn = call illustrate({text: ask.text, palette: ask.palette})
+  out   = dz_from_illustration(ask, drawn)
+}
+
+workflow dz_art(ask: DzAsk) -> DzResult {
+  made = call gen_make({text: ask.text})
+  out  = dz_from_art(ask, made)
+}
+
+workflow dz_diagram(ask: DzAsk) -> DzResult {
+  said  = call describe({text: ask.text})
+  asked = dz_with_palette(said, ask.palette)
+  drawn = call draw(asked)
+  out   = dz_from_diagram(ask, asked, drawn)
+}
+
+// ---------------------------------------------------------------- tests
+
+fn dz_ask(text: Text) -> DzAsk { return {text: text, palette: "", place: "chat", kind: ""} }
+
+test "Kosika chooses the way of drawing by the words of the ask" {
+  expect dz_kind(dz_ask("How does the heart pump blood?")) == "illustration"
+  expect dz_kind(dz_ask("why do we have seasons")) == "illustration"
+  expect dz_kind(dz_ask("make me an abstract background for my studio")) == "art"
+  expect dz_kind(dz_ask("a calm generative piece about the sea")) == "art"
+  expect dz_kind(dz_ask("draw a timeline of the space race")) == "diagram"
+  expect dz_kind(dz_ask("compare Rust and Go")) == "diagram"
+  expect dz_kind(dz_ask("how does a compiler pipeline work, step by step")) == "diagram"
+  expect dz_kind(dz_ask("the Krebs cycle")) == "diagram"
+  expect dz_kind({..dz_ask("the Krebs cycle"), kind: "Illustration"}) == "illustration"
+}
+
+test "an embed carries its own colours and stays inside itself" {
+  css = dz_scoped_palettes()
+  expect css.contains(".kd[data-palette=\"ocean\"]")
+  expect not css.contains("html[")
+  e = dz_wrap("art", "site", "ocean", "Sea <calm>", "<svg></svg>", "")
+  expect e.starts_with("<div class=\"kd kd-art\" data-palette=\"ocean\" data-place=\"site\">")
+  expect e.contains("Sea &lt;calm&gt;")
+  expect not dz_wrap("art", "agent", "ocean", "Sea", "<svg></svg>", "").contains("class=\"kd-title\"")
+}
+
+test "an asked palette wins, then the drawing's own, then Dark Matter" {
+  expect dz_palette("Forest", "ocean") == "forest"
+  expect dz_palette("", "ocean") == "ocean"
+  expect dz_palette("neon", "neon") == "dark_matter"
+}
