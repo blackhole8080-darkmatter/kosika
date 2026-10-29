@@ -1,0 +1,227 @@
+{
+ "a": {
+  "title": "How a bulb lights up",
+  "summary": "A battery drives charge round a closed loop of wire, and the bulb turns it into light.",
+  "palette": "dark_matter",
+  "figures": [
+   {
+    "id": "wire",
+    "kind": "line",
+    "x": 0,
+    "y": 0,
+    "w": 0,
+    "h": 0,
+    "count": 0,
+    "hue": 6,
+    "label": "",
+    "points": [
+     22,
+     22,
+     22,
+     10,
+     80,
+     10,
+     80,
+     50,
+     22,
+     50,
+     22,
+     38
+    ]
+   },
+   {
+    "id": "battery",
+    "kind": "rect",
+    "x": 22,
+    "y": 30,
+    "w": 7,
+    "h": 16,
+    "count": 0,
+    "hue": 1,
+    "label": "Battery",
+    "points": []
+   },
+   {
+    "id": "plus",
+    "kind": "text",
+    "x": 22,
+    "y": 25,
+    "w": 2.4,
+    "h": 0,
+    "count": 0,
+    "hue": 0,
+    "label": "+",
+    "points": []
+   },
+   {
+    "id": "bulb",
+    "kind": "circle",
+    "x": 80,
+    "y": 30,
+    "w": 5.5,
+    "h": 0,
+    "count": 0,
+    "hue": 3,
+    "label": "",
+    "points": []
+   },
+   {
+    "id": "glow",
+    "kind": "ring",
+    "x": 80,
+    "y": 30,
+    "w": 8,
+    "h": 0,
+    "count": 0,
+    "hue": 3,
+    "label": "Bulb",
+    "points": []
+   },
+   {
+    "id": "e1",
+    "kind": "circle",
+    "x": 22,
+    "y": 10,
+    "w": 0.9,
+    "h": 0,
+    "count": 0,
+    "hue": 2,
+    "label": "",
+    "points": []
+   },
+   {
+    "id": "e2",
+    "kind": "circle",
+    "x": 22,
+    "y": 10,
+    "w": 0.9,
+    "h": 0,
+    "count": 0,
+    "hue": 2,
+    "label": "",
+    "points": []
+   },
+   {
+    "id": "e3",
+    "kind": "circle",
+    "x": 22,
+    "y": 10,
+    "w": 0.9,
+    "h": 0,
+    "count": 0,
+    "hue": 2,
+    "label": "",
+    "points": []
+   },
+   {
+    "id": "e4",
+    "kind": "circle",
+    "x": 22,
+    "y": 10,
+    "w": 0.9,
+    "h": 0,
+    "count": 0,
+    "hue": 2,
+    "label": "",
+    "points": []
+   },
+   {
+    "id": "e5",
+    "kind": "circle",
+    "x": 22,
+    "y": 10,
+    "w": 0.9,
+    "h": 0,
+    "count": 0,
+    "hue": 2,
+    "label": "",
+    "points": []
+   }
+  ],
+  "motions": [
+   {
+    "what": "e1",
+    "kind": "travel",
+    "around": "wire",
+    "seconds": 8,
+    "delay": 0
+   },
+   {
+    "what": "e2",
+    "kind": "travel",
+    "around": "wire",
+    "seconds": 8,
+    "delay": 1.6
+   },
+   {
+    "what": "e3",
+    "kind": "travel",
+    "around": "wire",
+    "seconds": 8,
+    "delay": 3.2
+   },
+   {
+    "what": "e4",
+    "kind": "travel",
+    "around": "wire",
+    "seconds": 8,
+    "delay": 4.8
+   },
+   {
+    "what": "e5",
+    "kind": "travel",
+    "around": "wire",
+    "seconds": 8,
+    "delay": 6.4
+   },
+   {
+    "what": "bulb",
+    "kind": "pulse",
+    "around": "",
+    "seconds": 1.6,
+    "delay": 0
+   },
+   {
+    "what": "glow",
+    "kind": "blink",
+    "around": "",
+    "seconds": 1.6,
+    "delay": 0
+   },
+   {
+    "what": "battery",
+    "kind": "blink",
+    "around": "",
+    "seconds": 3,
+    "delay": 0
+   }
+  ],
+  "beats": [
+   {
+    "text": "A battery pushes charge out of one end and pulls it in at the other.",
+    "shows": [
+     "battery",
+     "plus"
+    ]
+   },
+   {
+    "text": "Electrons drift round the closed loop of wire, all moving at once, like beads on a string.",
+    "shows": [
+     "e1",
+     "e2",
+     "e3",
+     "e4",
+     "e5",
+     "wire"
+    ]
+   },
+   {
+    "text": "In the bulb's thin filament they jostle atoms, which heat up and glow.",
+    "shows": [
+     "bulb",
+     "glow"
+    ]
+   }
+  ]
+ }
+}

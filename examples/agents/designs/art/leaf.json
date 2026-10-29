@@ -1,0 +1,280 @@
+{
+ "a": {
+  "title": "How a leaf makes food",
+  "summary": "Photosynthesis: light, water and carbon dioxide in; sugar and oxygen out.",
+  "palette": "forest",
+  "figures": [
+   {
+    "id": "sun",
+    "kind": "sun",
+    "x": 13,
+    "y": 13,
+    "w": 5.5,
+    "h": 0,
+    "count": 12,
+    "hue": 1,
+    "label": "Sunlight",
+    "points": []
+   },
+   {
+    "id": "light",
+    "kind": "arrow",
+    "x": 0,
+    "y": 0,
+    "w": 0,
+    "h": 0,
+    "count": 0,
+    "hue": 1,
+    "label": "",
+    "points": [
+     22,
+     20,
+     32,
+     26,
+     40,
+     30
+    ]
+   },
+   {
+    "id": "leaf",
+    "kind": "blob",
+    "x": 0,
+    "y": 0,
+    "w": 0,
+    "h": 0,
+    "count": 0,
+    "hue": 0,
+    "label": "",
+    "points": [
+     38,
+     36,
+     50,
+     22,
+     72,
+     18,
+     80,
+     24,
+     70,
+     40,
+     52,
+     46
+    ]
+   },
+   {
+    "id": "vein",
+    "kind": "curve",
+    "x": 0,
+    "y": 0,
+    "w": 0,
+    "h": 0,
+    "count": 0,
+    "hue": 6,
+    "label": "",
+    "points": [
+     42,
+     40,
+     56,
+     32,
+     76,
+     22
+    ]
+   },
+   {
+    "id": "sugar",
+    "kind": "circle",
+    "x": 60,
+    "y": 33,
+    "w": 2.2,
+    "h": 0,
+    "count": 0,
+    "hue": 4,
+    "label": "Sugar",
+    "points": []
+   },
+   {
+    "id": "co2",
+    "kind": "arrow",
+    "x": 0,
+    "y": 0,
+    "w": 0,
+    "h": 0,
+    "count": 0,
+    "hue": 6,
+    "label": "CO₂ in",
+    "points": [
+     94,
+     52,
+     84,
+     44,
+     74,
+     38
+    ]
+   },
+   {
+    "id": "water",
+    "kind": "arrow",
+    "x": 0,
+    "y": 0,
+    "w": 0,
+    "h": 0,
+    "count": 0,
+    "hue": 2,
+    "label": "Water",
+    "points": [
+     46,
+     58,
+     46,
+     52,
+     46,
+     46
+    ]
+   },
+   {
+    "id": "o1",
+    "kind": "circle",
+    "x": 62,
+    "y": 14,
+    "w": 1.1,
+    "h": 0,
+    "count": 0,
+    "hue": 2,
+    "label": "",
+    "points": []
+   },
+   {
+    "id": "o2",
+    "kind": "circle",
+    "x": 68,
+    "y": 16,
+    "w": 1.1,
+    "h": 0,
+    "count": 0,
+    "hue": 2,
+    "label": "",
+    "points": []
+   },
+   {
+    "id": "o3",
+    "kind": "circle",
+    "x": 56,
+    "y": 13,
+    "w": 1.1,
+    "h": 0,
+    "count": 0,
+    "hue": 2,
+    "label": "",
+    "points": []
+   },
+   {
+    "id": "out",
+    "kind": "text",
+    "x": 84,
+    "y": 7,
+    "w": 2.2,
+    "h": 0,
+    "count": 0,
+    "hue": 0,
+    "label": "O₂ out",
+    "points": []
+   }
+  ],
+  "motions": [
+   {
+    "what": "sun",
+    "kind": "spin",
+    "around": "",
+    "seconds": 30,
+    "delay": 0
+   },
+   {
+    "what": "light",
+    "kind": "flow",
+    "around": "",
+    "seconds": 0,
+    "delay": 0
+   },
+   {
+    "what": "leaf",
+    "kind": "sway",
+    "around": "",
+    "seconds": 6,
+    "delay": 0
+   },
+   {
+    "what": "co2",
+    "kind": "flow",
+    "around": "",
+    "seconds": 0,
+    "delay": 0
+   },
+   {
+    "what": "water",
+    "kind": "flow",
+    "around": "",
+    "seconds": 0,
+    "delay": 0
+   },
+   {
+    "what": "sugar",
+    "kind": "pulse",
+    "around": "",
+    "seconds": 0,
+    "delay": 0
+   },
+   {
+    "what": "o1",
+    "kind": "rise",
+    "around": "",
+    "seconds": 0,
+    "delay": 0
+   },
+   {
+    "what": "o2",
+    "kind": "rise",
+    "around": "",
+    "seconds": 0,
+    "delay": 0.9
+   },
+   {
+    "what": "o3",
+    "kind": "rise",
+    "around": "",
+    "seconds": 0,
+    "delay": 1.8
+   }
+  ],
+  "beats": [
+   {
+    "text": "Sunlight falls on the leaf, and its chlorophyll catches the light's energy.",
+    "shows": [
+     "sun",
+     "light",
+     "leaf"
+    ]
+   },
+   {
+    "text": "The leaf takes in carbon dioxide from the air and water from the roots.",
+    "shows": [
+     "co2",
+     "water"
+    ]
+   },
+   {
+    "text": "With that energy it builds sugar from them: food for the whole plant.",
+    "shows": [
+     "sugar",
+     "vein"
+    ]
+   },
+   {
+    "text": "Oxygen is left over, and drifts out into the air.",
+    "shows": [
+     "o1",
+     "o2",
+     "o3",
+     "out"
+    ]
+   }
+  ]
+ }
+}

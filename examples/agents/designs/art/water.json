@@ -1,0 +1,303 @@
+{
+ "a": {
+  "title": "The water cycle",
+  "summary": "Water rises from the sea, travels as cloud, falls as rain and runs back.",
+  "palette": "ocean",
+  "figures": [
+   {
+    "id": "sun",
+    "kind": "sun",
+    "x": 88,
+    "y": 11,
+    "w": 4.5,
+    "h": 0,
+    "count": 12,
+    "hue": 3,
+    "label": "",
+    "points": []
+   },
+   {
+    "id": "mountain",
+    "kind": "blob",
+    "x": 0,
+    "y": 0,
+    "w": 0,
+    "h": 0,
+    "count": 0,
+    "hue": 1,
+    "label": "Mountains",
+    "points": [
+     4,
+     55,
+     12,
+     36,
+     19,
+     41,
+     30,
+     20,
+     44,
+     55,
+     24,
+     57
+    ]
+   },
+   {
+    "id": "sea",
+    "kind": "rect",
+    "x": 76,
+    "y": 53,
+    "w": 48,
+    "h": 10,
+    "count": 0,
+    "hue": 0,
+    "label": "",
+    "points": []
+   },
+   {
+    "id": "seaname",
+    "kind": "text",
+    "x": 80,
+    "y": 53,
+    "w": 1.8,
+    "h": 0,
+    "count": 0,
+    "hue": 6,
+    "label": "SEA",
+    "points": []
+   },
+   {
+    "id": "v1",
+    "kind": "drop",
+    "x": 64,
+    "y": 44,
+    "w": 1.1,
+    "h": 0,
+    "count": 0,
+    "hue": 0,
+    "label": "",
+    "points": []
+   },
+   {
+    "id": "v2",
+    "kind": "drop",
+    "x": 72,
+    "y": 46,
+    "w": 1.1,
+    "h": 0,
+    "count": 0,
+    "hue": 0,
+    "label": "",
+    "points": []
+   },
+   {
+    "id": "v3",
+    "kind": "drop",
+    "x": 80,
+    "y": 44,
+    "w": 1.1,
+    "h": 0,
+    "count": 0,
+    "hue": 0,
+    "label": "",
+    "points": []
+   },
+   {
+    "id": "wind",
+    "kind": "arrow",
+    "x": 0,
+    "y": 0,
+    "w": 0,
+    "h": 0,
+    "count": 0,
+    "hue": 6,
+    "label": "Wind",
+    "points": [
+     72,
+     34,
+     60,
+     24,
+     48,
+     19
+    ]
+   },
+   {
+    "id": "cloud",
+    "kind": "cloud",
+    "x": 34,
+    "y": 12,
+    "w": 7,
+    "h": 0,
+    "count": 0,
+    "hue": 6,
+    "label": "Cloud",
+    "points": []
+   },
+   {
+    "id": "r1",
+    "kind": "drop",
+    "x": 28,
+    "y": 24,
+    "w": 0.9,
+    "h": 0,
+    "count": 0,
+    "hue": 2,
+    "label": "",
+    "points": []
+   },
+   {
+    "id": "r2",
+    "kind": "drop",
+    "x": 34,
+    "y": 25,
+    "w": 0.9,
+    "h": 0,
+    "count": 0,
+    "hue": 2,
+    "label": "",
+    "points": []
+   },
+   {
+    "id": "r3",
+    "kind": "drop",
+    "x": 40,
+    "y": 24,
+    "w": 0.9,
+    "h": 0,
+    "count": 0,
+    "hue": 2,
+    "label": "",
+    "points": []
+   },
+   {
+    "id": "river",
+    "kind": "curve",
+    "x": 0,
+    "y": 0,
+    "w": 0,
+    "h": 0,
+    "count": 0,
+    "hue": 0,
+    "label": "River",
+    "points": [
+     30,
+     46,
+     38,
+     50,
+     48,
+     50,
+     56,
+     52,
+     62,
+     51
+    ]
+   }
+  ],
+  "motions": [
+   {
+    "what": "sun",
+    "kind": "spin",
+    "around": "",
+    "seconds": 40,
+    "delay": 0
+   },
+   {
+    "what": "v1",
+    "kind": "rise",
+    "around": "",
+    "seconds": 0,
+    "delay": 0
+   },
+   {
+    "what": "v2",
+    "kind": "rise",
+    "around": "",
+    "seconds": 0,
+    "delay": 1
+   },
+   {
+    "what": "v3",
+    "kind": "rise",
+    "around": "",
+    "seconds": 0,
+    "delay": 2
+   },
+   {
+    "what": "wind",
+    "kind": "flow",
+    "around": "",
+    "seconds": 0,
+    "delay": 0
+   },
+   {
+    "what": "cloud",
+    "kind": "float",
+    "around": "",
+    "seconds": 5,
+    "delay": 0
+   },
+   {
+    "what": "r1",
+    "kind": "fall",
+    "around": "",
+    "seconds": 0,
+    "delay": 0
+   },
+   {
+    "what": "r2",
+    "kind": "fall",
+    "around": "",
+    "seconds": 0,
+    "delay": 0.9
+   },
+   {
+    "what": "r3",
+    "kind": "fall",
+    "around": "",
+    "seconds": 0,
+    "delay": 1.8
+   },
+   {
+    "what": "river",
+    "kind": "flow",
+    "around": "",
+    "seconds": 0,
+    "delay": 0
+   }
+  ],
+  "beats": [
+   {
+    "text": "The Sun warms the sea, and water rises as invisible vapour.",
+    "shows": [
+     "sun",
+     "sea",
+     "v1",
+     "v2",
+     "v3"
+    ]
+   },
+   {
+    "text": "Wind carries the moist air inland, where it cools into a cloud.",
+    "shows": [
+     "wind",
+     "cloud"
+    ]
+   },
+   {
+    "text": "Droplets in the cloud grow heavy and fall as rain on the mountains.",
+    "shows": [
+     "r1",
+     "r2",
+     "r3",
+     "mountain"
+    ]
+   },
+   {
+    "text": "Rivers carry the water back down to the sea, and it all begins again.",
+    "shows": [
+     "river",
+     "sea"
+    ]
+   }
+  ]
+ }
+}
