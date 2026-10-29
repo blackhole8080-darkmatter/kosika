@@ -1,7 +1,7 @@
 // Kosika Designs' colours: named palettes, each checked for contrast by
 // Kosika's own arithmetic before a drawing may use it.
 //
-//   import "palette.kos"
+//   import "designs_palette.kos"
 //
 // palettes()               every palette, Dark Matter first
 // palette_named(name)      the palette of that name, or Dark Matter

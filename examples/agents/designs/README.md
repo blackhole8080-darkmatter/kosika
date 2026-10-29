@@ -108,18 +108,27 @@ count is called Fibonacci only when it is close to Fibonacci numbers.
 
 There are eight palettes. Dark Matter is the default, and Clear is safe for
 colour-blind readers (Okabe–Ito). Kosika checks every palette's contrast
-against WCAG before using it (`palette.kos`).
+against WCAG before using it (`std/designs_palette.kos`).
 
 ## The files
 
+Kosika Designs is part of Kosika's standard library, so any program can use
+it: `import "std/designs.kos"` and call `design`. Kosika then draws a
+diagram, an animated illustration, moving art, or one canvas of all three.
+
 | File | What it does |
 | --- | --- |
-| `main.kos` | Reads the question, plans the drawing and describes it |
-| `draw.kos` | Lays out and draws every kind of drawing, checks it, and writes the page |
-| `palette.kos` | Holds the palettes and checks their contrast |
-| `paper.kos` | Writes mathematics as a paper and checks each line |
-| `sunflower.kos` | Traces and measures a real sunflower photo |
-| `eyes.py` | Finds freely licensed photos on Wikipedia and Wikimedia Commons |
+| `kosika/std/designs.kos` | The front door: chooses how to draw, and answers every place in one shape |
+| `kosika/std/designs_main.kos` | Reads the question, plans the diagram and describes it |
+| `kosika/std/designs_draw.kos` | Lays out and draws every kind of diagram, checks it, and writes the page |
+| `kosika/std/designs_art.kos` | Animated illustrations, with their geometry and motion worked by Kosika |
+| `kosika/std/designs_generative.kos` | Moving generative art |
+| `kosika/std/designs_palette.kos` | Holds the palettes and checks their contrast |
+| `kosika/std/designs_paper.kos` | Writes mathematics as a paper and checks each line |
+| `explain.kos` (here) | An agent that answers in words and draws a canvas beside them |
+| `sunflower.kos`, `studio.kos` (here) | Traces and measures a real sunflower photo |
+| `eyes.py` (here) | Finds freely licensed photos on Wikipedia and Wikimedia Commons |
+| `art/` (here) | Hand-made illustrations and their README |
 
 Kosika AI Chat (`examples/apps/chat`) shows these drawings as its answers.
 

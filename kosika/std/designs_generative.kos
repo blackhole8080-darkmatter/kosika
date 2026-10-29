@@ -15,7 +15,7 @@
 // Every name here starts with gen_ or Gen, because all Kosika modules share
 // one namespace.
 
-import "palette.kos"
+import "designs_palette.kos"
 
 export [GenRecipe, GenAsk, GenArt, GenFor, gen_pieces, gen_problems, gen_svg, gen_style, gen_page, gen_render, gen_make, gen_for, gen_backdrop]
 

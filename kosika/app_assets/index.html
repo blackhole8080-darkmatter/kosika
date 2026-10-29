@@ -1048,6 +1048,7 @@ body.on-mission .track { opacity: .5; }
 <template id="icon-runs"><svg viewBox="0 0 24 24"><path d="M12 8v4l3 2"/><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/></svg></template>
 <template id="icon-tools"><svg viewBox="0 0 24 24"><path d="M14.5 6.5a4 4 0 0 0-5.300 5.300L3 18l3 3 6.200-6.200a4 4 0 0 0 5.300-5.300l-2.500 2.500-2.500-2.500 2.500-2.500z"/></svg></template>
 <template id="icon-skills"><svg viewBox="0 0 24 24"><path d="M12 3l2.600 5.400L20 9.300l-4 4 1 5.700-5-2.700L7 19l1-5.700-4-4 5.400-.900L12 3z"/></svg></template>
+<template id="icon-designs"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.300-.3-.4-.5-.8-.5-1.300 0-1.100.9-2 2-2h2.400A4.600 4.600 0 0 0 22 9.800C22 6 17.500 3 12 3z"/><circle cx="7.500" cy="11" r="1.200"/><circle cx="10.500" cy="7" r="1.200"/><circle cx="15.500" cy="7.500" r="1.200"/></svg></template>
 <template id="icon-mayaos"><svg viewBox="0 0 24 24"><path d="M12 2.8l8 4.6v9.2l-8 4.6-8-4.6V7.4z"/><path d="M8 15V9.5l4 3 4-3V15"/></svg></template>
 <template id="icon-services"><svg viewBox="0 0 24 24"><path d="M12 3v3"/><path d="M12 18v3"/><path d="M4.2 7.5l2.6 1.5"/><path d="M17.2 15l2.6 1.5"/><path d="M4.2 16.5l2.6-1.5"/><path d="M17.2 9l2.6-1.5"/><circle cx="12" cy="12" r="4"/></svg></template>
 <template id="icon-permissions"><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.2 8-8 9-4.800-1-8-4.500-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/></svg></template>
@@ -1182,7 +1183,7 @@ setTheme(theme());
 let jumpItems = null;
 async function openJump() {
   if (document.querySelector(".veil")) return;
-  const pages = [["assistant", "Assistant"], ["project", "Project"], ["agents", "Agents"], ["runs", "Runs"], ["tools", "Tools"], ["skills", "Skills"], ["permissions", "Permissions"]].map(([view, name]) => ({kind: "page", name, detail: "", title: "Studio", view}));
+  const pages = [["assistant", "Assistant"], ["project", "Project"], ["agents", "Agents"], ["runs", "Runs"], ["tools", "Tools"], ["skills", "Skills"], ["designs", "Designs"], ["permissions", "Permissions"]].map(([view, name]) => ({kind: "page", name, detail: "", title: "Studio", view}));
   const box = h("input", {type: "text", placeholder: "Jump to an agent, workflow, model, tool, memory or record"}), found = h("div", {class: "found"});
   const veil = h("div", {class: "veil", onclick: event => { if (event.target === veil) close(); }}, h("div", {class: "jump"}, box, found, h("div", {class: "keys"}, "↑ ↓ to move · Enter to open · Esc to close")));
   let hits = [], at = 0;
@@ -1235,7 +1236,7 @@ function go(view, id) { location.hash = "#" + view + (id ? "/" + encodeURICompon
 window.addEventListener("hashchange", route);
 
 function drawRail(active) {
-  const items = [["assistant", "Assistant"], ["mayaos", "MayaOS"], ["project", "Project"], ["agents", "Agents"], ["runs", "Runs"], ["tools", "Tools"], ["skills", "Skills"], ["services", "Services"], ["permissions", "Permissions"]];
+  const items = [["assistant", "Assistant"], ["mayaos", "MayaOS"], ["project", "Project"], ["agents", "Agents"], ["runs", "Runs"], ["tools", "Tools"], ["skills", "Skills"], ["designs", "Designs"], ["services", "Services"], ["permissions", "Permissions"]];
   document.getElementById("nav").replaceChildren(...items.map(([key, label]) =>
     h("div", {class: "nav" + (key === active ? " on" : "") + (key === "mayaos" ? " door" : ""), title: key === "mayaos" ? "Open MayaOS, the app your agents live in" : null, onclick: () => key === "mayaos" ? openMaya() : go(key)}, icon(key), label, key === "mayaos" ? h("span", {class: "out"}, "\u2197") : null)));
   document.getElementById("foot").replaceChildren(
@@ -1261,6 +1262,7 @@ async function route() {
     else if (active === "runs") await showRuns();
     else if (active === "tools") await showTools();
     else if (active === "skills") await showSkills();
+    else if (active === "designs") showDesigns();
     else if (active === "permissions") showPermissions();
     else if (active === "services") await showServices();
     else if (overview.assistant) await showAgent(overview.assistant, true);
@@ -1625,6 +1627,48 @@ async function showServices() {
 async function openMaya() {
   try { await api("/api/open/mayaos", {method: "POST", body: "{}"}); }
   catch (error) { alert(error.message); }
+}
+
+// Kosika Designs: ask for a picture and Kosika chooses a diagram, an
+// animated illustration or moving art, through the same front door Chat
+// and the agents use (std/designs.kos). The answer's
+// embed is shown in a frame of its own, so its script runs and its colours
+// stay inside it.
+function showDesigns() {
+  const ask = h("input", {type: "text", placeholder: "how does a rainbow form, compare solar and wind power, a calm background about the sea…", style: "flex:1;min-width:220px"});
+  const kind = h("select", null, [["", "Kosika chooses"], ["diagram", "Diagram"], ["illustration", "Illustration"], ["art", "Moving art"]].map(([value, label]) => h("option", {value}, label)));
+  const out = h("div", {class: "designs-out"});
+  const draw = h("button", {onclick: run}, "Draw");
+  async function run() {
+    const text = ask.value.trim();
+    if (!text) { ask.focus(); return; }
+    draw.disabled = true;
+    out.replaceChildren(h("p", {class: "lead"}, "Kosika is choosing how to draw it, and drawing…"));
+    try {
+      const made = await api("/api/design", {method: "POST", body: JSON.stringify({text, kind: kind.value, palette: ""})});
+      if (made.problems && made.problems.length) {
+        out.replaceChildren(h("div", {class: "banner bad"}, "Kosika would not draw it: " + made.problems.join("; ")));
+        return;
+      }
+      const frame = h("iframe", {title: made.title, style: "width:100%;height:" + (made.kind === "diagram" ? 720 : 860) + "px;border:0;border-radius:18px;background:transparent"});
+      frame.srcdoc = "<!doctype html><html><head><meta charset=\"utf-8\"><style>html,body{margin:0;background:transparent}</style></head><body>" + made.embed + "</body></html>";
+      const open = h("button", {class: "ghost", onclick: () => { const url = URL.createObjectURL(new Blob([made.page], {type: "text/html"})); window.open(url, "_blank"); }}, "Open as a page");
+      out.replaceChildren(
+        h("div", {class: "chips"}, chip(made.kind, "accent"), (made.fixed || []).length ? chip("Kosika fixed " + made.fixed.length, "ok") : null),
+        h("p", {class: "lead"}, "Kosika " + made.why + "."),
+        frame, h("div", null, open));
+    } catch (error) {
+      out.replaceChildren(h("div", {class: "banner bad"}, String(error.message || error)));
+    } finally { draw.disabled = false; }
+  }
+  ask.addEventListener("keydown", event => { if (event.key === "Enter") run(); });
+  const tries = ["how does a rainbow form", "how do bicycle gears make climbing easier", "compare solar and wind power", "a calm abstract background about the ocean"];
+  main.replaceChildren(titled("Designs"),
+    h("p", {class: "lead"}, "Ask for a picture. Kosika chooses a diagram for structure, an animated illustration for how something works, or moving art for a mood, and draws it itself; a free model only says what is in it."),
+    h("div", {style: "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0 10px"}, ask, kind, draw),
+    h("div", {class: "chips"}, tries.map(text => h("span", {class: "chip", style: "cursor:pointer", onclick: () => { ask.value = text; run(); }}, text))),
+    out);
+  ask.focus();
 }
 
 function showPermissions() {

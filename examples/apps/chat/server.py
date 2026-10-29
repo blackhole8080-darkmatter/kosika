@@ -6,11 +6,11 @@
 This file only connects things; the thinking is in Kosika:
 
 - chat.kos `answer` writes the reply in words
-- designs/main.kos `describe` describes the structure to draw, checked by
+- std/designs_main.kos `describe` describes the structure to draw, checked by
   Kosika and sent back once to the model if anything is wrong
-- designs/draw.kos `draw` lays it out and draws it, building itself step by
+- std/designs_draw.kos `draw` lays it out and draws it, building itself step by
   step on the canvas, each sentence marking its part
-- designs/eyes.py finds one freely licensed real photo on Wikimedia Commons
+- agents/designs/eyes.py finds one freely licensed real photo on Wikimedia Commons
   when the structure asks for one, shown with its source
 - Kosi (agents/assistant) reads every message first and decides whether it
   answers itself or hands it to a helper: Gatherer looks things up, Steward
@@ -39,9 +39,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-DESIGNS = HERE.parent.parent / "agents" / "designs"
+# Kosika Designs lives in the standard library (kosika/std/designs*.kos);
+# its photo finder, eyes.py, stays beside the Designs examples.
+DESIGNS = HERE.parent.parent.parent / "kosika" / "std"
+EYES = HERE.parent.parent / "agents" / "designs"
 FONTS = HERE.parent.parent.parent / "kosika" / "app_assets" / "fonts"
-sys.path.insert(0, str(DESIGNS))
+sys.path.insert(0, str(EYES))
 import eyes  # noqa: E402  the photo finder lives beside the Designs programs
 
 
@@ -113,8 +116,8 @@ class Chat:
 
     def drawn_job(self, ask: str, agent: str, text: str, result: str, waiting: bool) -> dict:
         job = {"ask": ask, "agent": agent, "text": text, "touches": TOUCHES.get(agent, []), "result": result, "waiting": waiting}
-        request = self.kosika.run(DESIGNS / "main.kos", "automation", {"j": job}, model=False)
-        drawn = self.kosika.run(DESIGNS / "draw.kos", "draw", {"r": request}, model=False)
+        request = self.kosika.run(DESIGNS / "designs_main.kos", "automation", {"j": job}, model=False)
+        drawn = self.kosika.run(DESIGNS / "designs_draw.kos", "draw", {"r": request}, model=False)
         return {"page": drawn["page"], "problems": drawn["problems"], "title": request["structure"]["title"]}
 
     def helper(self, agent: str, text: str) -> str:
@@ -153,18 +156,18 @@ class Chat:
         return self.kosika.run(HERE / "chat.kos", "answer", {"turn": {"history": history, "ask": ask}}, model=True)
 
     def designed(self, ask: str) -> dict | None:
-        """Kosika Designs' front door (designs/design.kos) says which kind of
+        """Kosika Designs' front door (std/designs.kos) says which kind of
         picture fits: a diagram keeps the canvas below; an illustration that
         moves beside its explanation, or a piece of art, comes from design."""
         want = {"text": ask, "palette": "", "place": "chat", "kind": ""}
         try:
-            kind = self.kosika.run(DESIGNS / "design.kos", "design_kind", {"ask": want}, model=False)["kind"]
+            kind = self.kosika.run(DESIGNS / "designs.kos", "design_kind", {"ask": want}, model=False)["kind"]
         except Exception:
             return None
         if kind not in ("illustration", "art"):
             return None
         try:
-            made = self.kosika.run(DESIGNS / "design.kos", "design", {"ask": {**want, "kind": kind}}, model=True)
+            made = self.kosika.run(DESIGNS / "designs.kos", "design", {"ask": {**want, "kind": kind}}, model=True)
         except Exception:
             return None
         if not made.get("page"):
@@ -172,11 +175,11 @@ class Chat:
         return {"page": made["page"], "problems": made.get("problems", []), "title": made.get("title", "")}
 
     def canvas(self, ask: str) -> dict:
-        described = self.kosika.run(DESIGNS / "main.kos", "describe", {"ask": {"text": ask}}, model=True)
+        described = self.kosika.run(DESIGNS / "designs_main.kos", "describe", {"ask": {"text": ask}}, model=True)
         # A second model reads the drawing as an expert teacher would; what
-        # it finds missing or wrong is drawn again once (designs/main.kos).
+        # it finds missing or wrong is drawn again once (std/designs_main.kos).
         try:
-            described = self.kosika.run(DESIGNS / "main.kos", "critique", {"r": described}, model=True)["request"]
+            described = self.kosika.run(DESIGNS / "designs_main.kos", "critique", {"r": described}, model=True)["request"]
         except Exception:
             pass  # the first drawing stands
         s = described["structure"]
@@ -185,7 +188,7 @@ class Chat:
         words = "sunflower head close-up" if s.get("figure") == "golden_spiral" else s.get("photo", "")
         described["picture"] = photo_for(words)
         # The parts Kosika judged a real photo would help with, found on Commons.
-        wanted = self.kosika.run(DESIGNS / "draw.kos", "photos_wanted", {"r": described}, model=False)["looks"]
+        wanted = self.kosika.run(DESIGNS / "designs_draw.kos", "photos_wanted", {"r": described}, model=False)["looks"]
         found = list(self.pool.map(lambda look: {"part": look["part"], "picture": photo_for(look["photo"])}, wanted))
         # One photo is shown once: two parts whose searches land on the same
         # article (a jet engine and its turbine) keep only the first.
@@ -196,13 +199,13 @@ class Chat:
                 seen.add(f["picture"]["page_url"])
                 described["photos"].append(f)
         # A faint, moving piece of generative art behind the cards, chosen by
-        # Kosika to echo the kind of drawing (designs/generative.kos).
+        # Kosika to echo the kind of drawing (std/designs_generative.kos).
         try:
             look = {"shape": s.get("shape", ""), "palette": described.get("palette", ""), "title": s.get("title", "")}
-            described["backdrop"] = self.kosika.run(DESIGNS / "generative.kos", "gen_backdrop", {"f": look}, model=False)["svg"]
+            described["backdrop"] = self.kosika.run(DESIGNS / "designs_generative.kos", "gen_backdrop", {"f": look}, model=False)["svg"]
         except Exception:
             described["backdrop"] = ""
-        drawn = self.kosika.run(DESIGNS / "draw.kos", "draw", {"r": described}, model=False)
+        drawn = self.kosika.run(DESIGNS / "designs_draw.kos", "draw", {"r": described}, model=False)
         return {"page": drawn["page"], "problems": drawn["problems"], "title": s.get("title", "")}
 
     def ask(self, history: str, ask: str) -> dict:
@@ -213,10 +216,10 @@ class Chat:
             except Exception as error:
                 return {"text": f"Kosi handed this to {hand['agent'].title()}, and it could not finish: {str(error)[:200]}", "page": "", "problems": [], "title": ""}
         # Mathematics to work comes back as a paper, every line checked by
-        # Kosika (designs/paper.kos).
+        # Kosika (std/designs_paper.kos).
         try:
-            if self.kosika.run(DESIGNS / "paper.kos", "is_maths", {"ask": {"text": ask}}, model=False)["yes"]:
-                paper = self.kosika.run(DESIGNS / "paper.kos", "derive", {"ask": {"text": ask}}, model=True)
+            if self.kosika.run(DESIGNS / "designs_paper.kos", "is_maths", {"ask": {"text": ask}}, model=False)["yes"]:
+                paper = self.kosika.run(DESIGNS / "designs_paper.kos", "derive", {"ask": {"text": ask}}, model=True)
                 return {"page": paper["page"], "problems": [], "title": "Checked working" if paper["checked"] else "Working, corrected by Kosika", "text": "", "card": False}
         except Exception:
             pass  # a drawing is still tried
@@ -224,7 +227,7 @@ class Chat:
         # alone are given when Kosika judges the ask wants words (a poem, a
         # short fact) or when no drawing could be made.
         try:
-            wants_words = self.kosika.run(DESIGNS / "main.kos", "answer_kind", {"ask": {"text": ask}}, model=False)["words"]
+            wants_words = self.kosika.run(DESIGNS / "designs_main.kos", "answer_kind", {"ask": {"text": ask}}, model=False)["words"]
         except Exception:
             wants_words = False
         try:
