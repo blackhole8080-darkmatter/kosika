@@ -3,6 +3,7 @@
   "title": "The water cycle",
   "summary": "Water rises from the sea, travels as cloud, falls as rain and runs back.",
   "palette": "ocean",
+  "backdrop": "sky",
   "figures": [
    {
     "id": "sun",

@@ -3,6 +3,7 @@
   "title": "How a leaf makes food",
   "summary": "Photosynthesis: light, water and carbon dioxide in; sugar and oxygen out.",
   "palette": "forest",
+  "backdrop": "land",
   "figures": [
    {
     "id": "sun",

@@ -21,13 +21,22 @@
 // checked palette. The sentences play in turn beside it; each lights its
 // figures and dims the rest, and hovering one holds it.
 //
-// Figures: circle ring rect blob drop sun cloud line curve arrow wave text
+// Figures: circle ring rect blob drop sun cloud polygon star gear spiral
+//          line curve arrow wave text
 //   x, y   the centre (for a wave, where it starts), in grid units
 //   w, h   size: a radius for round things, width and height for a rect,
-//          length and height for a wave, the letter size for text
-//   count  rays of a sun, crests of a wave; 0 lets Kosika choose
+//          length and height for a wave, the letter size for text; a
+//          spiral's h is its turn in degrees
+//   count  rays of a sun, crests of a wave, corners of a polygon, points
+//          of a star, teeth of a gear, turns of a spiral; 0 lets Kosika choose
 //   hue    0 to 5, the palette's six colours; 6 is the quiet line colour
 //   points x, y, x, y ... for line, curve, arrow and blob
+//
+// Backdrops, drawn by Kosika behind the figures: plain, night (stars spread
+// by the R2 sequence), sky, sea (swells from the sine), land, grid.
+// Gears that touch turn each other, the other way, at the ratio of their
+// teeth. Small slips are fixed, not refused: a shape a little too big is
+// made smaller, a name with no room under its figure goes above it.
 //
 // Motions: orbit (round another figure), travel (along a line, curve,
 // arrow or wave), spin, pulse, float, sway, blink, rise, fall, flow (dashes
@@ -42,17 +51,20 @@ record Figure { id: Text kind: Text x: Number y: Number w: Number h: Number coun
 // around: the figure an orbit circles, or the path a travel runs along.
 record Motion { what: Text kind: Text around: Text seconds: Number delay: Number }
 record Beat { text: Text shows: Text[] }
-record Art { title: Text summary: Text palette: Text figures: Figure[] motions: Motion[] beats: Beat[] }
+// backdrop: plain, night, sky, sea, land or grid, drawn by Kosika behind the figures.
+record Art { title: Text summary: Text palette: Text backdrop: Text figures: Figure[] motions: Motion[] beats: Beat[] }
 // palette: the colours to draw in, to match a canvas; empty lets the model choose.
 record ArtAsk { text: Text palette: Text }
-record ArtPage { page: Text svg: Text problems: Text[] art: Art }
+// fixed: what Kosika changed itself rather than send back, in words.
+record ArtPage { page: Text svg: Text problems: Text[] fixed: Text[] art: Art }
 
 // ---------------------------------------------------------------- the vocabulary
 
-fn art_kinds() -> Text[] { return ["circle", "ring", "rect", "blob", "drop", "sun", "cloud", "line", "curve", "arrow", "wave", "text"] }
-fn art_round() -> Text[] { return ["circle", "ring", "drop", "sun", "cloud"] }
+fn art_kinds() -> Text[] { return ["circle", "ring", "rect", "blob", "drop", "sun", "cloud", "polygon", "star", "gear", "spiral", "line", "curve", "arrow", "wave", "text"] }
+fn art_round() -> Text[] { return ["circle", "ring", "drop", "sun", "cloud", "polygon", "star", "gear", "spiral"] }
+fn art_backdrops() -> Text[] { return ["plain", "night", "sky", "sea", "land", "grid"] }
 fn art_pointed() -> Text[] { return ["line", "curve", "arrow", "blob"] }
-fn art_paths() -> Text[] { return ["line", "curve", "arrow", "wave"] }
+fn art_paths() -> Text[] { return ["line", "curve", "arrow", "wave", "spiral"] }
 fn art_moves() -> Text[] { return ["orbit", "travel", "spin", "pulse", "float", "sway", "blink", "rise", "fall", "flow", "draw"] }
 fn art_movers() -> Text[] { return ["orbit", "travel"] }
 fn art_width() -> Number { return 100 }
@@ -105,12 +117,14 @@ fn art_centre(f: Figure) -> Number[] {
 // What Kosika settles itself rather than send back: a colour out of range
 // wraps round, a count of 0 becomes a good one, a time below 0 becomes 0.
 fn art_tidy(a: Art) -> Art {
-  let figures = for f in a.figures { {..f, id: f.id.trim().lower(), kind: f.kind.trim().lower(), hue: f.hue.abs().floor() % 7, count: art_count({..f, kind: f.kind.trim().lower()})} }
+  let named = for f in a.figures { {..f, id: f.id.trim().lower(), kind: f.kind.trim().lower(), hue: f.hue.abs().floor() % 7} }
+  let figures = for f in named { art_fit({..f, count: art_count(f)}) }
   let motions = for m in a.motions { {..m, what: m.what.trim().lower(), kind: m.kind.trim().lower(), around: m.around.trim().lower(), seconds: m.seconds.max(0), delay: m.delay.max(0)} }
   let kept = art_one_path(motions)
   let beats = for b in a.beats { {..b, text: b.text.trim(), shows: for s in b.shows { s.trim().lower() }} }
   let palette = if palette_names().contains(a.palette) { a.palette } else { "dark_matter" }
-  return {..a, palette: palette, figures: figures, motions: kept, beats: beats}
+  let backdrop = if art_backdrops().contains(a.backdrop.trim().lower()) { a.backdrop.trim().lower() } else { "plain" }
+  return {..a, palette: palette, backdrop: backdrop, figures: figures, motions: kept, beats: beats}
 }
 
 // A figure moves on one path: a second orbit or travel for it is dropped.
@@ -126,10 +140,60 @@ fn art_one_path(motions: Motion[]) -> Motion[] {
 }
 
 fn art_count(f: Figure) -> Number {
-  if f.count >= 1 { return f.count.floor().min(24) }
+  let least = if f.kind == "polygon" { 3 } else if f.kind == "star" { 4 } else if f.kind == "gear" { 6 } else { 1 }
+  let most = if f.kind == "spiral" { 6 } else { 24 }
+  if f.count >= 1 { return f.count.floor().max(least).min(most) }
   if f.kind == "sun" { return 12 }
   if f.kind == "wave" { return 2 }
+  if f.kind == "polygon" { return 6 }
+  if f.kind == "star" { return 5 }
+  if f.kind == "gear" { return 10 }
+  if f.kind == "spiral" { return 3 }
   return 0
+}
+
+// How far a round figure reaches from its centre, as a share of w.
+fn art_reach(kind: Text) -> Number {
+  if kind == "sun" { return 1.65 }
+  if kind == "drop" { return 1.7 }
+  if kind == "cloud" { return 1.15 }
+  return 1
+}
+
+// Kosika's small repairs: a round figure that runs a little off the grid
+// is made smaller to fit, and points just off it are brought onto its edge.
+// Anything further out is left for the problems to name.
+fn art_fit(f: Figure) -> Figure recurse 2 {
+  if art_round().contains(f.kind) and art_inside(f.x, f.y) and f.w > 0 {
+    let room = [f.x, art_width() - f.x, f.y, art_height() - f.y].min().or(0) / art_reach(f.kind)
+    if f.w > room and room >= f.w * 0.6 { return {..f, w: (room * 10).floor() / 10} }
+  }
+  if art_paths().contains(f.kind) and f.kind != "wave" and f.kind != "spiral" and f.points.is_empty() and (f.w != 0 or f.h != 0) {
+    return art_fit({..f, points: [f.x, f.y, f.x + f.w, f.y + f.h]})
+  }
+  if art_pointed().contains(f.kind) {
+    let near = for k in 0 until f.points.length() { art_near(f.points[k], if k % 2 == 0 { art_width() } else { art_height() }) }
+    return {..f, points: near}
+  }
+  return f
+}
+
+fn art_near(v: Number, top: Number) -> Number {
+  if v < 0 and v >= -6 { return 0 }
+  if v > top and v <= top + 6 { return top }
+  return v
+}
+
+// What art_fit changed, in words, for the page to say.
+fn art_fixes(raw: Art) -> Text[] {
+  var out: Text[] = []
+  for f in raw.figures {
+    let t = art_fit({..f, kind: f.kind.trim().lower(), count: art_count({..f, kind: f.kind.trim().lower()})})
+    if t.w != f.w { out = out.append(f"made {f.id} a little smaller (w {art_n(f.w)} to {art_n(t.w)}) so it stays in the picture") }
+    if f.points.is_empty() and not t.points.is_empty() { out = out.append(f"drew {f.id} from its x, y, w and h, as it had no points") }
+    else if t.points != f.points { out = out.append(f"brought {f.id}'s points onto the edge of the picture") }
+  }
+  return out
 }
 
 fn art_inside(x: Number, y: Number) -> Bool {
@@ -154,7 +218,7 @@ fn art_figure_problems(f: Figure) -> Text[] {
     out = out.append(f"{name}: x {f.x}, y {f.y} is off the grid (x 0 to 100, y 0 to 60)")
   }
   if art_round().contains(f.kind) and (f.w <= 0 or f.w > 30) { out = out.append(f"{name}: a {f.kind}'s w is its radius, 1 to 30") }
-  else if art_round().contains(f.kind) and not (art_inside(f.x - f.w, f.y - f.w) and art_inside(f.x + f.w, f.y + f.w)) { out = out.append(f"{name}: at radius {f.w} it runs off the grid; make it smaller or move it in") }
+  else if art_round().contains(f.kind) and not (art_inside(f.x - f.w * art_reach(f.kind), f.y - f.w * art_reach(f.kind)) and art_inside(f.x + f.w * art_reach(f.kind), f.y + f.w * art_reach(f.kind))) { out = out.append(f"{name}: at radius {f.w} it runs off the grid; make it smaller or move it in") }
   if f.kind == "rect" and (f.w <= 0 or f.h <= 0) { out = out.append(f"{name}: a rect needs a w and h above 0") }
   if f.kind == "wave" and (f.w <= 0 or f.h <= 0 or not art_inside(f.x + f.w, f.y)) { out = out.append(f"{name}: a wave needs a length w and height h above 0, and must end on the grid") }
   if f.kind == "text" and f.label.trim().is_empty() { out = out.append(f"{name}: a text figure needs words in label") }
@@ -306,6 +370,47 @@ fn art_ray(cx: Number, cy: Number, r: Number, deg: Number) -> Text {
   return f"M{art_n(cx + deg.cos() * r * 1.3)} {art_n(cy + deg.sin() * r * 1.3)} L{art_n(cx + deg.cos() * r * 1.65)} {art_n(cy + deg.sin() * r * 1.65)}"
 }
 
+// A regular polygon with n corners, one at the top; with inner above 0, a
+// star: every other corner pulled in to that share of the radius.
+fn art_polygon(cx: Number, cy: Number, r: Number, n: Number, inner: Number) -> Text {
+  let corners = if inner > 0 { n * 2 } else { n }
+  let pts = for k in 0 until corners { art_corner(cx, cy, art_star_radius(r, inner, k), 360 * k / corners - 90) }
+  return "M" + pts.join(" L") + " Z"
+}
+
+fn art_star_radius(r: Number, inner: Number, k: Number) -> Number {
+  return if inner > 0 and k % 2 == 1 { r * inner } else { r }
+}
+
+fn art_corner(cx: Number, cy: Number, r: Number, deg: Number) -> Text {
+  return art_n(cx + deg.cos() * r) + " " + art_n(cy + deg.sin() * r)
+}
+
+// A gear of n teeth: each tooth takes half its pitch, rising from the root
+// circle (0.8 of the radius) to the tip.
+fn art_gear(cx: Number, cy: Number, r: Number, n: Number) -> Text {
+  let pitch = 360 / n
+  var pts: Text[] = []
+  for k in 0 until n {
+    let a = pitch * k
+    pts = pts.append(art_corner(cx, cy, r * 0.8, a)).append(art_corner(cx, cy, r, a + pitch * 0.12)).append(art_corner(cx, cy, r, a + pitch * 0.38)).append(art_corner(cx, cy, r * 0.8, a + pitch * 0.5))
+  }
+  return "M" + pts.join(" L") + " Z"
+}
+
+// The golden ratio, (1 + sqrt 5) / 2.
+fn art_phi() -> Number { return (1 + (5).sqrt()) / 2 }
+
+// A golden spiral: it grows by the golden ratio every quarter turn, and
+// ends at radius w after `count` turns, turned h degrees.
+fn art_spiral(f: Figure) -> Text {
+  let s = art_px()
+  let turns = art_count(f)
+  let steps = turns * 24
+  let pts = for k in 0 until steps + 1 { art_corner(f.x * s, f.y * s, f.w * s * art_phi().power((360 * turns * k / steps - 360 * turns) / 90), 360 * turns * k / steps + f.h) }
+  return "M" + pts.join(" L")
+}
+
 // The circle an orbit runs on, starting where the figure was placed.
 fn art_circle_path(cx: Number, cy: Number, px: Number, py: Number) -> Text {
   let dx = px - cx
@@ -342,6 +447,10 @@ fn art_shape(f: Figure) -> Text {
   if f.kind == "drop" { return f"<path class=\"fill\" d=\"{art_drop(cx, cy, r)}\"/>" }
   if f.kind == "sun" { return f"<path class=\"rays\" d=\"{art_rays(f)}\"/><circle class=\"fill\" cx=\"{art_n(cx)}\" cy=\"{art_n(cy)}\" r=\"{art_n(r)}\"/>" }
   if f.kind == "cloud" { return art_cloud(cx, cy, r) }
+  if f.kind == "polygon" { return f"<path class=\"fill\" d=\"{art_polygon(cx, cy, r, art_count(f), 0)}\"/>" }
+  if f.kind == "star" { return f"<path class=\"fill\" d=\"{art_polygon(cx, cy, r, art_count(f), 0.45)}\"/>" }
+  if f.kind == "gear" { return f"<path class=\"fill\" d=\"{art_gear(cx, cy, r, art_count(f))}\"/><circle class=\"hole\" cx=\"{art_n(cx)}\" cy=\"{art_n(cy)}\" r=\"{art_n(r * 0.22)}\"/>" }
+  if f.kind == "spiral" { return f"<path id=\"{pid}\" class=\"stroke\" d=\"{art_spiral(f)}\" pathLength=\"100\"/>" }
   if f.kind == "line" { return f"<path id=\"{pid}\" class=\"stroke\" d=\"{art_straight(f.points)}\" pathLength=\"100\"/>" }
   if f.kind == "curve" { return f"<path id=\"{pid}\" class=\"stroke\" d=\"{art_smooth(f.points, false)}\" pathLength=\"100\"/>" }
   if f.kind == "arrow" { return f"<path id=\"{pid}\" class=\"stroke\" d=\"{art_smooth(f.points, false)}\" pathLength=\"100\" marker-end=\"url(#art-head)\"/>" }
@@ -351,9 +460,10 @@ fn art_shape(f: Figure) -> Text {
 }
 
 // Where a figure's name goes: under round things and rects, over lines.
-fn art_label(f: Figure) -> Text {
+fn art_label(a: Art, i: Number) -> Text {
+  let f = a.figures[i]
   if f.label.trim().is_empty() or f.kind == "text" { return "" }
-  let at = art_label_at(f)
+  let at = art_label_spot(a, i)
   return f"<text class=\"name\" x=\"{art_n(at[0])}\" y=\"{art_n(at[1])}\">{art_esc(f.label)}</text>"
 }
 
@@ -363,6 +473,7 @@ fn art_label_at(f: Figure) -> Number[] {
   var y = c[1] * s
   if f.kind == "sun" { y = y + f.w * s * 1.65 + 17 }
   else if f.kind == "cloud" { y = y + f.w * s * 0.6 + 17 }
+  else if f.kind == "drop" { y = y + f.w * s + 17 }
   else if art_round().contains(f.kind) { y = y + f.w * s + 17 }
   else if f.kind == "rect" { y = y + f.h * s / 2 + 17 }
   else if f.kind == "blob" { y = y + 5 }
@@ -371,16 +482,43 @@ fn art_label_at(f: Figure) -> Number[] {
   return [c[0] * s, y]
 }
 
+// Over a figure, for when the place under it is taken.
+fn art_label_above(f: Figure) -> Number[] {
+  let below = art_label_at(f)
+  let c = art_centre(f)
+  let s = art_px()
+  return [below[0], c[1] * s - (below[1] - c[1] * s) + 10]
+}
+
+fn art_labelled(a: Art, i: Number) -> Bool {
+  let f = a.figures[i]
+  return not f.label.trim().is_empty() and f.kind != "text" and art_movement(a, f.id) < 0
+}
+
+fn art_clash(a: Art, i: Number, p: Number[], j: Number, q: Number[]) -> Bool {
+  let room = (a.figures[i].label.length() + a.figures[j].label.length()) * 4.6 + 10
+  return (p[0] - q[0]).abs() < room and (p[1] - q[1]).abs() < 16
+}
+
+// Where a figure's name goes: under it, or over it when an earlier name
+// already sits there. Kosika moves it rather than send the picture back.
+fn art_label_spot(a: Art, i: Number) -> Number[] {
+  let f = a.figures[i]
+  let below = art_label_at(f)
+  if not art_labelled(a, i) { return below }
+  for j in 0 until i {
+    if art_labelled(a, j) and art_clash(a, i, below, j, art_label_at(a.figures[j])) { return art_label_above(f) }
+  }
+  return below
+}
+
 // Two names that would print over each other, for figures that stay put.
 fn art_crowded(a: Art) -> Text[] {
   var out: Text[] = []
-  let still = for f in a.figures where not f.label.trim().is_empty() and f.kind != "text" and art_movement(a, f.id) < 0 { f }
-  for i in 0 until still.length() {
-    for j in i + 1 until still.length() {
-      let p = art_label_at(still[i])
-      let q = art_label_at(still[j])
-      let room = (still[i].label.length() + still[j].label.length()) * 4.6 + 10
-      if (p[0] - q[0]).abs() < room and (p[1] - q[1]).abs() < 16 { out = out.append(f"the names of {still[i].id} and {still[j].id} print over each other: move one figure") }
+  let spots = for i in 0 until a.figures.length() { art_label_spot(a, i) }
+  for i in 0 until a.figures.length() {
+    for j in i + 1 until a.figures.length() {
+      if art_labelled(a, i) and art_labelled(a, j) and art_clash(a, i, spots[i], j, spots[j]) { out = out.append(f"the names of {a.figures[i].id} and {a.figures[j].id} print over each other: move one figure") }
     }
   }
   return out
@@ -403,10 +541,15 @@ fn art_figure(a: Art, i: Number, depth: Number) -> Text recurse 4 {
   let f = a.figures[i]
   let s = art_px()
   var body = f"<g class=\"own\" data-of=\"{f.id}\">{art_shape(f)}</g>"
+  let turns = art_gear_turns(a)
   for m in a.motions {
-    if m.what == f.id and not art_movers().contains(m.kind) { body = art_wrap(body, m, art_seconds(a, m)) }
+    if m.what == f.id and not art_movers().contains(m.kind) {
+      let geared = m.kind == "spin" and turns[i] != 0
+      let kind = if geared and turns[i] < 0 { "spin-back" } else { m.kind }
+      body = art_wrap(body, {..m, kind: kind}, if geared { turns[i].abs() } else { art_seconds(a, m) })
+    }
   }
-  body = body + f"<g class=\"own tag\" data-of=\"{f.id}\">{art_label(f)}</g>"
+  body = body + f"<g class=\"own tag\" data-of=\"{f.id}\">{art_label(a, i)}</g>"
   // what orbits this figure is drawn inside it, so it follows it about
   if depth < 3 {
     for k in 0 until a.figures.length() {
@@ -429,7 +572,44 @@ fn art_figure(a: Art, i: Number, depth: Number) -> Text recurse 4 {
     let ride = if m.kind == "orbit" { f"<animateMotion dur=\"{art_n(seconds)}s\" begin=\"-{art_n(m.delay)}s\" repeatCount=\"indefinite\" {how}/>" } else { f"<animateMotion dur=\"{art_n(seconds)}s\" begin=\"-{art_n(m.delay)}s\" repeatCount=\"indefinite\"><mpath href=\"#path-{m.around}\"/></animateMotion>" }
     body = f"<g class=\"ride\">{ride}<g transform=\"translate({art_n(0 - c[0] * s)} {art_n(0 - c[1] * s)})\">{body}</g></g>"
   }
-  return f"<g class=\"fig k-{f.kind}\" id=\"f-{f.id}\" style=\"--c:{art_colour(f)}\">{track}{body}</g>"
+  return f"<g class=\"fig k-{f.kind}\" id=\"f-{f.id}\" style=\"--c:{art_colour(f)};--g:url(#art-g{f.hue})\">{track}{body}</g>"
+}
+
+// Gears that touch turn each other: Kosika finds every spinning gear whose
+// teeth meet an earlier one's, turns it the other way, and times it by the
+// ratio of their teeth (a gear with twice the teeth turns half as fast).
+// Seconds per turn for each figure; below 0 turns backwards; 0 for none.
+fn art_gear_turns(a: Art) -> Number[] {
+  var out: Number[] = []
+  for i in 0 until a.figures.length() {
+    let f = a.figures[i]
+    var turn = 0
+    if f.kind == "gear" and art_spins(a, f.id) >= 0 {
+      turn = art_seconds(a, a.motions[art_spins(a, f.id)])
+      for j in 0 until i {
+        if out[j] != 0 and art_meshes(a.figures[j], f) { turn = 0 - out[j] * f.count / a.figures[j].count }
+      }
+    }
+    out = out.append(turn)
+  }
+  return out
+}
+
+fn art_spins(a: Art, id: Text) -> Number {
+  for k in 0 until a.motions.length() {
+    if a.motions[k].what == id and a.motions[k].kind == "spin" { return k }
+  }
+  return -1
+}
+
+// Two gears mesh when their centres are about a tooth's depth less than
+// the sum of their radii apart.
+fn art_meshes(g: Figure, h: Figure) -> Bool {
+  if g.kind != "gear" or h.kind != "gear" { return false }
+  let dx = g.x - h.x
+  let dy = g.y - h.y
+  let d = (dx * dx + dy * dy).sqrt()
+  return d >= (g.w + h.w) * 0.75 and d <= (g.w + h.w) * 1.05
 }
 
 // The figure that one orbits, when that figure moves too, so it is drawn
@@ -442,25 +622,72 @@ fn art_rides_on(a: Art, k: Number) -> Number {
   return centre
 }
 
+// Light from the upper left on every filled shape: a lighter spot, the
+// colour itself, and a darker rim, one gradient for each palette colour.
+fn art_gradients() -> Text {
+  let sky = "<linearGradient id=\"art-sky\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" style=\"stop-color:color-mix(in srgb,var(--h2) 26%,var(--halo))\"/><stop offset=\"1\" style=\"stop-color:var(--halo)\"/></linearGradient>"
+  return sky + (for k in 0 until 7 { art_gradient(k) }).join("")
+}
+
+fn art_gradient(k: Number) -> Text {
+  let c = if k == 6 { "var(--line)" } else { f"var(--h{k})" }
+  return f"<radialGradient id=\"art-g{k}\" cx=\"34%\" cy=\"28%\" r=\"78%\"><stop offset=\"0\" style=\"stop-color:color-mix(in srgb,{c} 62%,#fff)\"/><stop offset=\".55\" style=\"stop-color:{c}\"/><stop offset=\"1\" style=\"stop-color:color-mix(in srgb,{c} 68%,#000)\"/></radialGradient>"
+}
+
+// What sits behind the figures. The night's stars are placed by the R2
+// sequence (steps of 1/g and 1/g squared, g = 1.3247, the plastic number),
+// which spreads points evenly without a grid: none clump, none leave a hole.
+fn art_backdrop(kind: Text) -> Text {
+  let s = art_px()
+  let w = art_width() * s
+  let h = art_height() * s
+  if kind == "night" { return "<g class=\"bd night\">" + (for k in 1 until 58 { art_star_dot(k) }).join("") + "</g>" }
+  if kind == "sky" { return f"<rect class=\"bd sky\" width=\"{w}\" height=\"{h}\" rx=\"22\"/>" }
+  if kind == "grid" { return "<g class=\"bd grid\">" + (for k in 1 until 20 { art_rule(k * 5, true) }).join("") + (for k in 1 until 12 { art_rule(k * 5, false) }).join("") + "</g>" }
+  if kind == "sea" { return f"<g class=\"bd sea\"><path class=\"swell slow\" d=\"{art_wave(art_swell(44, 1.2, 3))} L{w} {h} L0 {h} Z\"/><path class=\"swell\" d=\"{art_wave(art_swell(48, 1.6, 2))} L{w} {h} L0 {h} Z\"/></g>" }
+  if kind == "land" { return f"<g class=\"bd land\"><path class=\"hill far\" d=\"{art_smooth([0, 47, 22, 42, 48, 46, 74, 41, 100, 45], false)} L{w} {h} L0 {h} Z\"/><path class=\"hill\" d=\"{art_smooth([0, 52, 30, 49, 62, 53, 100, 50], false)} L{w} {h} L0 {h} Z\"/></g>" }
+  return ""
+}
+
+fn art_swell(y: Number, h: Number, crests: Number) -> Figure {
+  return {id: "swell", kind: "wave", x: 0, y: y, w: 100, h: h, count: crests, hue: 0, label: "", points: []}
+}
+
+fn art_star_dot(k: Number) -> Text {
+  let g = 1.32471795724
+  let x = ((0.5 + k / g) % 1) * art_width() * art_px()
+  let y = ((0.5 + k / (g * g)) % 1) * art_height() * art_px()
+  let r = 0.7 + (k % 3) * 0.45
+  let twinkle = if k % 4 == 0 { " tw" } else { "" }
+  return f"<circle class=\"st{twinkle}\" style=\"animation-delay:-{art_n(k * 0.37)}s\" cx=\"{art_n(x)}\" cy=\"{art_n(y)}\" r=\"{art_n(r)}\"/>"
+}
+
+fn art_rule(at: Number, upright: Bool) -> Text {
+  let s = art_px()
+  let strong = if at % 25 == 0 { " strong" } else { "" }
+  if upright { return f"<path class=\"rule{strong}\" d=\"M{art_n(at * s)} 0 V{art_n(art_height() * s)}\"/>" }
+  return f"<path class=\"rule{strong}\" d=\"M0 {art_n(at * s)} H{art_n(art_width() * s)}\"/>"
+}
+
 // The picture, as one SVG, ready to sit beside any explanation.
 fn art_svg(raw: Art) -> Text {
   let a = art_tidy(raw)
   let w = art_width() * art_px()
   let h = art_height() * art_px()
   let figures = (for i in 0 until a.figures.length() where art_rides_on(a, i) < 0 { art_figure(a, i, 0) }).join("")
-  let defs = "<defs><marker id=\"art-head\" viewBox=\"0 0 10 10\" refX=\"7\" refY=\"5\" markerWidth=\"5\" markerHeight=\"5\" orient=\"auto-start-reverse\"><path d=\"M0 0 L10 5 L0 10 z\" fill=\"context-stroke\"/></marker><radialGradient id=\"art-glow\" cx=\"50%\" cy=\"42%\" r=\"70%\"><stop offset=\"0\" stop-color=\"var(--amber)\" stop-opacity=\".10\"/><stop offset=\"1\" stop-color=\"var(--amber)\" stop-opacity=\"0\"/></radialGradient></defs>"
-  return f"<svg class=\"art\" viewBox=\"0 0 {w} {h}\" role=\"img\" aria-label=\"{art_esc(a.title)}\">{defs}<rect class=\"ground\" width=\"{w}\" height=\"{h}\" rx=\"22\"/><rect width=\"{w}\" height=\"{h}\" rx=\"22\" fill=\"url(#art-glow)\"/>{figures}</svg>"
+  let defs = "<defs>" + art_gradients() + "<marker id=\"art-head\" viewBox=\"0 0 10 10\" refX=\"7\" refY=\"5\" markerWidth=\"5\" markerHeight=\"5\" orient=\"auto-start-reverse\"><path d=\"M0 0 L10 5 L0 10 z\" fill=\"context-stroke\"/></marker><radialGradient id=\"art-glow\" cx=\"50%\" cy=\"42%\" r=\"70%\"><stop offset=\"0\" stop-color=\"var(--amber)\" stop-opacity=\".10\"/><stop offset=\"1\" stop-color=\"var(--amber)\" stop-opacity=\"0\"/></radialGradient></defs>"
+  return f"<svg class=\"art\" viewBox=\"0 0 {w} {h}\" role=\"img\" aria-label=\"{art_esc(a.title)}\">{defs}<rect class=\"ground\" width=\"{w}\" height=\"{h}\" rx=\"22\"/><rect width=\"{w}\" height=\"{h}\" rx=\"22\" fill=\"url(#art-glow)\"/>{art_backdrop(a.backdrop)}{figures}</svg>"
 }
 
 fn art_style() -> Text {
-  return ".art{width:100%;height:auto;display:block;overflow:hidden;border-radius:22px}.art .ground{fill:var(--halo);stroke:color-mix(in srgb,var(--line) 10%,transparent)}.art .fill{fill:var(--c);stroke:none}.art .shine{fill:#fff;opacity:.16}.art .stroke{fill:none;stroke:var(--c);stroke-width:4;stroke-linecap:round;stroke-linejoin:round}.art .rays{fill:none;stroke:var(--c);stroke-width:4;stroke-linecap:round}.art .track{fill:none;stroke:color-mix(in srgb,var(--line) 22%,transparent);stroke-width:1.2;stroke-dasharray:2 7}.art .word{fill:var(--ink);font-weight:800;text-anchor:middle;dominant-baseline:middle;letter-spacing:-.01em}.art .name{fill:var(--soft);font:600 12px ui-monospace,Consolas,monospace;letter-spacing:.14em;text-transform:uppercase;text-anchor:middle;paint-order:stroke;stroke:var(--halo);stroke-width:5px}.art .own{transition:opacity .45s,filter .45s}.art .own.dim{opacity:.22}.art .own.lit{filter:drop-shadow(0 0 9px color-mix(in srgb,var(--amber) 80%,transparent))}.art .tag.lit .name{fill:var(--amber)}.art .mv{transform-box:fill-box;transform-origin:center;animation-iteration-count:infinite}.art .mv-spin{animation-name:art-spin;animation-timing-function:linear}.art .mv-pulse{animation-name:art-pulse;animation-timing-function:ease-in-out}.art .mv-float{animation-name:art-float;animation-timing-function:ease-in-out}.art .mv-sway{animation-name:art-sway;animation-timing-function:ease-in-out;transform-origin:50% 100%}.art .mv-blink{animation-name:art-blink;animation-timing-function:ease-in-out}.art .mv-rise{animation-name:art-rise;animation-timing-function:ease-out}.art .mv-fall{animation-name:art-fall;animation-timing-function:ease-in}.art .mv-flow .stroke{stroke-dasharray:3 6;animation:art-flow 1.4s linear infinite;animation-duration:inherit}.art .mv-flow{animation:none}.art .mv-draw .stroke{stroke-dasharray:100;animation:art-draw 3s ease-in-out infinite;animation-duration:inherit}.art .mv-draw{animation:none}.art.paused *{animation-play-state:paused!important}@keyframes art-spin{to{transform:rotate(360deg)}}@keyframes art-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}@keyframes art-float{0%,100%{transform:translateY(-5px)}50%{transform:translateY(5px)}}@keyframes art-sway{0%,100%{transform:rotate(-7deg)}50%{transform:rotate(7deg)}}@keyframes art-blink{0%,100%{opacity:1}50%{opacity:.3}}@keyframes art-rise{0%{transform:translateY(0);opacity:0}15%{opacity:1}100%{transform:translateY(-70px);opacity:0}}@keyframes art-fall{0%{transform:translateY(0);opacity:0}15%{opacity:1}100%{transform:translateY(70px);opacity:0}}@keyframes art-flow{to{stroke-dashoffset:-9}}@keyframes art-draw{0%{stroke-dashoffset:100}55%,80%{stroke-dashoffset:0}100%{stroke-dashoffset:-100}}@media (prefers-reduced-motion:reduce){.art *{animation:none!important}}"
+  return ".art{width:100%;height:auto;display:block;overflow:hidden;border-radius:22px}.art .ground{fill:var(--halo);stroke:color-mix(in srgb,var(--line) 10%,transparent)}.art .fill{fill:var(--g,var(--c));stroke:none}.art .hole{fill:var(--halo)}.art .shine{fill:#fff;opacity:.16}.art .stroke{fill:none;stroke:var(--c);stroke-width:4;stroke-linecap:round;stroke-linejoin:round}.art .rays{fill:none;stroke:var(--c);stroke-width:4;stroke-linecap:round}.art .track{fill:none;stroke:color-mix(in srgb,var(--line) 22%,transparent);stroke-width:1.2;stroke-dasharray:2 7}.art .word{fill:var(--ink);font-weight:800;text-anchor:middle;dominant-baseline:middle;letter-spacing:-.01em}.art .name{fill:var(--soft);font:600 12px ui-monospace,Consolas,monospace;letter-spacing:.14em;text-transform:uppercase;text-anchor:middle;paint-order:stroke;stroke:var(--halo);stroke-width:5px}.art .own{transition:opacity .45s,filter .45s,transform .8s cubic-bezier(.2,1.5,.4,1);transform-box:fill-box;transform-origin:center;filter:drop-shadow(0 6px 8px rgb(0 0 0/.28))}.art .own.dim{opacity:.22}.art .own.lit{filter:drop-shadow(0 6px 8px rgb(0 0 0/.28)) drop-shadow(0 0 10px color-mix(in srgb,var(--amber) 80%,transparent))}.art .own.wait{opacity:0;transform:scale(.35)}.art .tag{filter:none}.art .tag.wait{transform:none}.art .bd .st{fill:var(--ink);opacity:.55}.art .bd .st.tw{animation:art-blink 3.2s ease-in-out infinite}.art .bd.sky{fill:url(#art-sky)}.art .bd .swell{fill:color-mix(in srgb,var(--h2) 22%,transparent);animation:art-drift 7s ease-in-out infinite alternate}.art .bd .swell.slow{fill:color-mix(in srgb,var(--h2) 12%,transparent);animation-duration:11s;animation-direction:alternate-reverse}.art .bd .hill{fill:color-mix(in srgb,var(--h4) 20%,var(--halo))}.art .bd .hill.far{fill:color-mix(in srgb,var(--h4) 10%,var(--halo))}.art .bd .rule{stroke:color-mix(in srgb,var(--line) 6%,transparent);stroke-width:1}.art .bd .rule.strong{stroke:color-mix(in srgb,var(--line) 13%,transparent)}.art .mv-spin-back{animation-name:art-spin;animation-timing-function:linear;animation-direction:reverse}@keyframes art-drift{from{transform:translateX(-18px)}to{transform:translateX(18px)}}.art .tag.lit .name{fill:var(--amber)}.art .mv{transform-box:fill-box;transform-origin:center;animation-iteration-count:infinite}.art .mv-spin{animation-name:art-spin;animation-timing-function:linear}.art .mv-pulse{animation-name:art-pulse;animation-timing-function:ease-in-out}.art .mv-float{animation-name:art-float;animation-timing-function:ease-in-out}.art .mv-sway{animation-name:art-sway;animation-timing-function:ease-in-out;transform-origin:50% 100%}.art .mv-blink{animation-name:art-blink;animation-timing-function:ease-in-out}.art .mv-rise{animation-name:art-rise;animation-timing-function:ease-out}.art .mv-fall{animation-name:art-fall;animation-timing-function:ease-in}.art .mv-flow .stroke{stroke-dasharray:3 6;animation:art-flow 1.4s linear infinite;animation-duration:inherit}.art .mv-flow{animation:none}.art .mv-draw .stroke{stroke-dasharray:100;animation:art-draw 3s ease-in-out infinite;animation-duration:inherit}.art .mv-draw{animation:none}.art.paused *{animation-play-state:paused!important}@keyframes art-spin{to{transform:rotate(360deg)}}@keyframes art-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}@keyframes art-float{0%,100%{transform:translateY(-5px)}50%{transform:translateY(5px)}}@keyframes art-sway{0%,100%{transform:rotate(-7deg)}50%{transform:rotate(7deg)}}@keyframes art-blink{0%,100%{opacity:1}50%{opacity:.3}}@keyframes art-rise{0%{transform:translateY(0);opacity:0}15%{opacity:1}100%{transform:translateY(-70px);opacity:0}}@keyframes art-fall{0%{transform:translateY(0);opacity:0}15%{opacity:1}100%{transform:translateY(70px);opacity:0}}@keyframes art-flow{to{stroke-dashoffset:-9}}@keyframes art-draw{0%{stroke-dashoffset:100}55%,80%{stroke-dashoffset:0}100%{stroke-dashoffset:-100}}@media (prefers-reduced-motion:reduce){.art *{animation:none!important}}"
 }
 
 // The sentences play in turn; each lights its figures and dims the rest.
 // Hovering or focusing a sentence holds it; a figure clicked finds its
 // sentence; the pause button stops every motion.
 fn art_script() -> Text {
-  return "(function(){var svg=document.querySelector('svg.art'),beats=[].slice.call(document.querySelectorAll('.beat')),own=[].slice.call(document.querySelectorAll('.art .own')),i=-1,held=false,paused=false,bar=document.getElementById('bar');function show(k){i=k;beats.forEach(function(b,j){b.classList.toggle('on',j===k)});var ids=k>=0?beats[k].dataset.shows.split(' '):[];own.forEach(function(e){var on=ids.indexOf(e.dataset.of)>=0;e.classList.toggle('lit',k>=0&&on);e.classList.toggle('dim',k>=0&&!on)});if(bar){bar.classList.remove('run');void bar.offsetWidth;if(k>=0&&!held&&!paused)bar.classList.add('run')}}function next(){if(held||paused)return;show(i+1<beats.length?i+1:-1)}beats.forEach(function(b,j){b.addEventListener('mouseenter',function(){held=true;show(j)});b.addEventListener('focus',function(){held=true;show(j)});b.addEventListener('mouseleave',function(){held=false});b.addEventListener('blur',function(){held=false})});own.forEach(function(e){e.style.cursor='pointer';e.addEventListener('click',function(){var id=e.dataset.of;for(var j=0;j<beats.length;j++){if(beats[j].dataset.shows.split(' ').indexOf(id)>=0){held=false;show(j);return}}})});var pb=document.getElementById('pause');if(pb)pb.addEventListener('click',function(){paused=!paused;svg.classList.toggle('paused',paused);if(paused)svg.pauseAnimations();else svg.unpauseAnimations();pb.textContent=paused?'Play':'Pause';show(i)});document.querySelectorAll('.sw').forEach(function(b){b.addEventListener('click',function(){document.documentElement.dataset.palette=b.dataset.p;document.querySelectorAll('.sw').forEach(function(x){x.setAttribute('aria-pressed',x===b?'true':'false')})})});setTimeout(function(){show(0)},900);setInterval(next,4600)})();"
+  return "(function(){var svg=document.querySelector('svg.art'),beats=[].slice.call(document.querySelectorAll('.beat')),own=[].slice.call(document.querySelectorAll('.art .own')),i=-1,held=false,paused=false,bar=document.getElementById('bar'),still=matchMedia('(prefers-reduced-motion: reduce)').matches,named={},seen={};beats.forEach(function(b){b.dataset.shows.split(' ').forEach(function(id){named[id]=1})});function hide(){seen={};if(still)return;own.forEach(function(e){if(named[e.dataset.of])e.classList.add('wait')})}function show(k){i=k;beats.forEach(function(b,j){b.classList.toggle('on',j===k)});var ids=k>=0?beats[k].dataset.shows.split(' '):[];ids.forEach(function(id){seen[id]=1});own.forEach(function(e){var on=ids.indexOf(e.dataset.of)>=0;if(k<0||seen[e.dataset.of])e.classList.remove('wait');e.classList.toggle('lit',k>=0&&on);e.classList.toggle('dim',k>=0&&!on)});if(bar){bar.classList.remove('run');void bar.offsetWidth;if(k>=0&&!held&&!paused)bar.classList.add('run')}}function next(){if(held||paused)return;show(i+1<beats.length?i+1:-1)}beats.forEach(function(b,j){b.addEventListener('mouseenter',function(){held=true;show(j)});b.addEventListener('focus',function(){held=true;show(j)});b.addEventListener('mouseleave',function(){held=false});b.addEventListener('blur',function(){held=false})});own.forEach(function(e){e.style.cursor='pointer';e.addEventListener('click',function(){var id=e.dataset.of;for(var j=0;j<beats.length;j++){if(beats[j].dataset.shows.split(' ').indexOf(id)>=0){held=false;show(j);return}}})});var pb=document.getElementById('pause');if(pb)pb.addEventListener('click',function(){paused=!paused;svg.classList.toggle('paused',paused);if(paused)svg.pauseAnimations();else svg.unpauseAnimations();pb.textContent=paused?'Play':'Pause';show(i)});var rb=document.getElementById('replay');if(rb)rb.addEventListener('click',function(){held=false;paused=false;svg.classList.remove('paused');svg.unpauseAnimations();if(pb)pb.textContent='Pause';hide();show(-1);own.forEach(function(e){if(named[e.dataset.of])e.classList.add('wait')});setTimeout(function(){show(0)},500)});document.querySelectorAll('.sw').forEach(function(b){b.addEventListener('click',function(){document.documentElement.dataset.palette=b.dataset.p;document.querySelectorAll('.sw').forEach(function(x){x.setAttribute('aria-pressed',x===b?'true':'false')})})});hide();setTimeout(function(){show(0)},700);setInterval(next,4600)})();"
 }
 
 fn art_page_style() -> Text {
@@ -479,6 +706,16 @@ fn art_called(a: Art, id: Text) -> Text {
   return if f.label.trim().is_empty() { id } else { f.label.trim() }
 }
 
+fn art_way(turn: Number) -> Text { return if turn < 0 { "backwards" } else { "forwards" } }
+
+// The gear train Kosika worked out, in words.
+fn art_gears_said(a: Art) -> Text {
+  let turns = art_gear_turns(a)
+  let said = for i in 0 until a.figures.length() where turns[i] != 0 { f"{art_called(a, a.figures[i].id)} ({a.figures[i].count} teeth) turns {art_way(turns[i])} once in {art_n(turns[i].abs())} s" }
+  if said.length() < 2 { return "" }
+  return "Gear train worked by Kosika from the teeth: " + art_esc(said.join("; ")) + "."
+}
+
 // What Kosika worked out itself, said under the picture.
 fn art_worked(a: Art) -> Text {
   var said: Text[] = []
@@ -489,20 +726,28 @@ fn art_worked(a: Art) -> Text {
   return "Orbit times worked by Kosika from Kepler's third law (T² ∝ r³): " + art_esc(said.join("; ")) + "."
 }
 
-fn art_page(ask: Text, raw: Art) -> Text {
+fn art_page(ask: Text, raw: Art, fixed: Text[]) -> Text {
   let a = art_tidy(raw)
   let beats = (for k in 0 until a.beats.length() { f"<li class=\"beat\" tabindex=\"0\" data-shows=\"{a.beats[k].shows.join(\" \")}\"><b>{k + 1}</b><span>{art_esc(a.beats[k].text)}</span></li>" }).join("")
   let asked = if ask.trim().is_empty() { "" } else { f"<p class=\"ask\">{art_esc(ask)}</p>" }
   let worked = art_worked(a)
-  let note = if worked.is_empty() { "" } else { f"<p class=\"how\">{worked}</p>" }
-  return f"<!doctype html><html lang=\"en\" data-palette=\"{a.palette}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{art_esc(a.title)}</title><style>{palettes_css()}{art_page_style()}{art_style()}</style></head><body><main><div class=\"brand\">Kosika Designs · Art</div>{asked}<h1>{art_esc(a.title)}</h1><p class=\"lede\">{art_esc(a.summary)}</p><div class=\"duo\"><div class=\"stage\">{art_svg(a)}</div><div><ol class=\"beats\" id=\"bar\">{beats}</ol><div class=\"bar\"><button type=\"button\" id=\"pause\">Pause</button></div>{note}</div></div><div class=\"bar\">{art_swatches(a.palette)}</div></main><script>{art_script()}</script></body></html>"
+  let gears = art_gears_said(a)
+  let repairs = if fixed.is_empty() { "" } else { "Kosika fixed: " + art_esc(fixed.join("; ")) + "." }
+  let said = for t in [worked, gears, repairs] where not t.is_empty() { f"<p class=\"how\">{t}</p>" }
+  let note = said.join("")
+  return f"<!doctype html><html lang=\"en\" data-palette=\"{a.palette}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{art_esc(a.title)}</title><style>{palettes_css()}{art_page_style()}{art_style()}</style></head><body><main><div class=\"brand\">Kosika Designs · Art</div>{asked}<h1>{art_esc(a.title)}</h1><p class=\"lede\">{art_esc(a.summary)}</p><div class=\"duo\"><div class=\"stage\">{art_svg(a)}</div><div><ol class=\"beats\" id=\"bar\">{beats}</ol><div class=\"bar\"><button type=\"button\" id=\"pause\">Pause</button><button type=\"button\" id=\"replay\">Replay</button></div>{note}</div></div><div class=\"bar\">{art_swatches(a.palette)}</div></main><script>{art_script()}</script></body></html>"
+}
+
+fn art_moved_names(a: Art) -> Text[] {
+  return for i in 0 until a.figures.length() where art_labelled(a, i) and art_label_spot(a, i) != art_label_at(a.figures[i]) { f"put the name of {a.figures[i].id} above it, where it has room" }
 }
 
 fn art_result(ask: Text, a: Art) -> ArtPage {
   let wrong = art_problems(a)
   let tidy = art_tidy(a)
-  if wrong.is_empty() { return {page: art_page(ask, tidy), svg: art_svg(tidy), problems: [], art: tidy} }
-  return {page: "", svg: "", problems: wrong, art: tidy}
+  let fixed = art_fixes(a).concat(art_moved_names(tidy))
+  if wrong.is_empty() { return {page: art_page(ask, tidy, fixed), svg: art_svg(tidy), problems: [], fixed: fixed, art: tidy} }
+  return {page: "", svg: "", problems: wrong, fixed: fixed, art: tidy}
 }
 
 // ---------------------------------------------------------------- the workflows
@@ -524,14 +769,14 @@ model illustrator {
 
 fn art_task() -> Text {
   let names = palette_names().join(", ")
-  return "You plan a small, calm, animated illustration that explains what was asked, in the flat, minimal style of a good science explainer: few shapes, big and clear, lots of space. Do not draw: describe it as data. The picture is a grid 100 wide and 60 tall; x runs right, y runs down; keep everything 4 units from the edges and the main subject near the middle. Give title (a short heading), summary (one plain sentence), palette (one of " + names + "; dark_matter unless another suits the subject: ocean for water, forest for plants, ember for fire or heat, aurora for space), figures, motions and beats. Each figure has id (a short lowercase word), kind, x, y, w, h, count, hue, label and points; give every field, using 0, empty text or [] where a field does not apply. Kinds: circle (x, y centre, w radius), ring (an outline circle, x, y, w radius), rect (x, y centre, w width, h height), blob (a soft closed shape through points), drop (a water drop, x, y, w size), sun (x, y, w radius, count rays), cloud (x, y, w size), line, curve and arrow (through points: x1, y1, x2, y2 ...), wave (starts at x, y; w long; h tall; count crests), text (label at x, y; w letter size about 2.5). hue: 0 to 5 picks one of the palette's six colours, 6 the quiet line colour; give related things the same hue. label: one to three words naming the figure, or empty. Motions, each with what (a figure id), kind, around, seconds and delay: orbit (goes round the figure named in around; seconds 0 lets Kosika time it by Kepler's law), travel (moves along the line, curve, arrow or wave named in around), spin, pulse, float, sway, blink, rise (drifts up and fades, like vapour), fall (drops and fades, like rain), flow (dashes run along a line, curve, arrow, wave or ring: a current, a signal), draw (a line drawing itself). Use 2 to 10 motions, only where motion explains something; give several copies of a small figure different delays so they do not move together. beats: 3 to 5 short sentences, each under 22 words, in the order to read them, each with shows: the ids of the figures it is about. Make it true: positions, sizes and motions should match the real thing."
+  return "You plan a small, calm, animated illustration that explains what was asked, in the flat, minimal style of a good science explainer: few shapes, big and clear, lots of space. Do not draw: describe it as data. The picture is a grid 100 wide and 60 tall; x runs right, y runs down; keep everything 4 units from the edges and the main subject near the middle. Give title (a short heading), summary (one plain sentence), palette (one of " + names + "; dark_matter unless another suits the subject: ocean for water, forest for plants, ember for fire or heat, aurora for space), backdrop (what Kosika draws behind: night for space or the night sky, sky for weather and the outdoors by day, sea for the ocean, land for landscapes and plants, grid for machines, circuits and mathematics, plain otherwise), figures, motions and beats. Each figure has id (a short lowercase word), kind, x, y, w, h, count, hue, label and points; give every field, using 0, empty text or [] where a field does not apply. Kinds: circle (x, y centre, w radius), ring (an outline circle, x, y, w radius), rect (x, y centre, w width, h height), blob (a soft closed shape through points), drop (a water drop, x, y, w size), sun (x, y, w radius, count rays), cloud (x, y, w size), polygon (x, y, w radius, count corners), star (x, y, w radius, count points), gear (x, y, w radius, count teeth; gears whose teeth touch, centres about 0.9 times the sum of their radii apart, are turned by each other), spiral (a golden spiral: x, y centre, w outer radius, count turns, h its turn in degrees: two spirals with h 0 and 180 make a two-armed galaxy), line, curve and arrow (through points: x1, y1, x2, y2 ...), wave (starts at x, y; w long; h tall; count crests), text (label at x, y; w letter size about 2.5). Size things generously but keep each round figure, its rays included, inside the grid. hue: 0 to 5 picks one of the palette's six colours, 6 the quiet line colour; give related things the same hue. label: one to three words naming the figure, or empty. Motions, each with what (a figure id), kind, around, seconds and delay: orbit (goes round the figure named in around; seconds 0 lets Kosika time it by Kepler's law), travel (moves along the line, curve, arrow or wave named in around), spin, pulse, float, sway, blink, rise (drifts up and fades, like vapour), fall (drops and fades, like rain), flow (dashes run along a line, curve, arrow, wave or ring: a current, a signal), draw (a line drawing itself). Use 2 to 10 motions, only where motion explains something; give several copies of a small figure different delays so they do not move together. beats: 3 to 5 short sentences, each under 22 words, in the order to read them, each with shows: the ids of the figures it is about. Make it true: positions, sizes and motions should match the real thing."
 }
 
 fn art_in(a: Art, palette: Text) -> Art {
   return if palette_names().contains(palette) { {..a, palette: palette} } else { a }
 }
 
-fn art_none() -> Art { return {title: "", summary: "", palette: "dark_matter", figures: [], motions: [], beats: []} }
+fn art_none() -> Art { return {title: "", summary: "", palette: "dark_matter", backdrop: "plain", figures: [], motions: [], beats: []} }
 fn art_kept(a: Art) -> Art { return a }
 fn art_wrong(a: Art) -> Text { return art_problems(a).join("; ") }
 
@@ -560,7 +805,7 @@ fn art_fig(id: Text, kind: Text, x: Number, y: Number, w: Number) -> Figure {
 }
 
 fn art_sample() -> Art {
-  return {title: "The Moon goes round the Earth", summary: "s", palette: "aurora", figures: [
+  return {title: "The Moon goes round the Earth", summary: "s", palette: "aurora", backdrop: "night", figures: [
     art_fig("sun", "sun", 50, 30, 7), art_fig("earth", "circle", 66, 30, 3), art_fig("moon", "circle", 71, 30, 1.2)
   ], motions: [
     {what: "earth", kind: "orbit", around: "sun", seconds: 0, delay: 0},
@@ -574,17 +819,21 @@ test "a good illustration has nothing wrong with it" {
 }
 
 test "the problems name what is wrong" {
-  bad = {..art_sample(), figures: [art_fig("sun", "star", 140, 30, 7), art_fig("earth", "circle", 54, 30, 0)], motions: [{what: "moon", kind: "orbit", around: "earth", seconds: 0, delay: 0}, {what: "earth", kind: "travel", around: "sun", seconds: 0, delay: 0}], beats: [{text: "x", shows: ["q"]}]}
+  bad = {..art_sample(), figures: [art_fig("sun", "comet", 140, 30, 7), art_fig("earth", "circle", 54, 30, 0)], motions: [{what: "moon", kind: "orbit", around: "earth", seconds: 0, delay: 0}, {what: "earth", kind: "travel", around: "sun", seconds: 0, delay: 0}], beats: [{text: "x", shows: ["q"]}]}
   said = art_problems(bad)
-  expect said.contains("figure sun: kind star is not one of circle, ring, rect, blob, drop, sun, cloud, line, curve, arrow, wave, text")
+  expect said.contains("figure sun: kind comet is not one of circle, ring, rect, blob, drop, sun, cloud, polygon, star, gear, spiral, line, curve, arrow, wave, text")
   expect said.contains("figure sun: x 140, y 30 is off the grid (x 0 to 100, y 0 to 60)")
   expect said.contains("figure earth: a circle's w is its radius, 1 to 30")
   expect said.contains("a motion moves moon, and no figure has that id")
   expect said.contains("earth travels along 'sun': name a line, curve, arrow or wave")
   expect said.contains("a sentence points at q, and no figure has that id")
   stacked = {..art_sample(), figures: [{..art_fig("a", "circle", 50, 30, 3), label: "Left atrium"}, {..art_fig("b", "circle", 52, 31, 3), label: "Right atrium"}], motions: [], beats: [{text: "x", shows: ["a"]}, {text: "y", shows: ["b"]}]}
-  expect art_problems({..art_sample(), figures: [art_fig("sun", "sun", 50, 30, 7), {..art_fig("earth", "ring", 80, 30, 25)}, art_fig("moon", "circle", 71, 30, 1.2)]}).contains("figure earth: at radius 25 it runs off the grid; make it smaller or move it in")
-  expect art_problems(stacked) == ["the names of a and b print over each other: move one figure"]
+  expect art_problems({..art_sample(), figures: [art_fig("sun", "sun", 50, 30, 7), {..art_fig("earth", "ring", 90, 30, 25)}, art_fig("moon", "circle", 71, 30, 1.2)]}).contains("figure earth: at radius 25 it runs off the grid; make it smaller or move it in")
+  // two names in one place: Kosika puts the second above its figure
+  expect art_problems(stacked) == []
+  expect art_moved_names(art_tidy(stacked)) == ["put the name of b above it, where it has room"]
+  third = {..stacked, figures: stacked.figures.append({..art_fig("c", "circle", 51, 30, 3), label: "Left ventricle"})}
+  expect art_problems(third).length() > 0
 }
 
 test "Kosika tidies what it can settle itself" {
@@ -623,4 +872,40 @@ test "a wave is worked from its sine and ends where it should" {
   expect d.starts_with("M80.0 240.0 L")
   expect d.ends_with("L720.0 240.0")
   expect d.contains("L160.0 200.0")
+}
+
+test "Kosika fixes small slips itself and says so" {
+  near = {..art_sample(), figures: [art_fig("sun", "sun", 50, 30, 7), art_fig("earth", "circle", 66, 30, 3), {..art_fig("moon", "circle", 96, 30, 5)}], motions: []}
+  t = art_tidy(near)
+  expect t.figures[2].w == 4
+  expect art_problems(near) == []
+  expect art_fixes(near) == ["made moon a little smaller (w 5.0 to 4.0) so it stays in the picture"]
+  slip = {..near, figures: [art_fig("sun", "sun", 50, 30, 7), {..art_fig("path", "line", 0, 0, 0), points: [-3, 10, 104, 62]}]}
+  expect art_tidy(slip).figures[1].points == [0, 10, 100, 60]
+  expect art_tidy({..near, backdrop: "jungle"}).backdrop == "plain"
+  stick = {..art_fig("axis", "line", 40, 20, 6), h: 20}
+  expect art_fit(stick).points == [40, 20, 46, 40]
+}
+
+test "polygons, stars, gears and golden spirals are worked from their maths" {
+  expect art_polygon(0, 0, 10, 4, 0) == "M0.0 -10.0 L10.0 0.0 L0.0 10.0 L-10.0 0.0 Z"
+  expect art_polygon(0, 0, 10, 5, 0.5).split(" L").length() == 10
+  expect art_gear(0, 0, 10, 8).split(" L").length() == 32
+  sp = {..art_fig("s", "spiral", 50, 30, 10), count: 2}
+  // it ends at its full radius, w, pointing along h
+  expect art_spiral(sp).ends_with("L480.0 240.0")
+  expect (art_phi() * 1000).round() == 1618
+}
+
+test "gears that touch turn each other, the bigger one slower" {
+  pair = {..art_sample(), figures: [{..art_fig("big", "gear", 40, 30, 12), count: 20}, {..art_fig("small", "gear", 59, 30, 7), count: 10}], motions: [{what: "big", kind: "spin", around: "", seconds: 8, delay: 0}, {what: "small", kind: "spin", around: "", seconds: 0, delay: 0}], beats: [{text: "a", shows: ["big"]}, {text: "b", shows: ["small"]}]}
+  turns = art_gear_turns(art_tidy(pair))
+  expect turns == [8, -4]
+  expect art_svg(pair).contains("mv-spin-back")
+}
+
+test "the night's stars stay in the picture" {
+  night = art_backdrop("night")
+  expect night.contains("class=\"st")
+  expect art_backdrop("plain") == ""
 }

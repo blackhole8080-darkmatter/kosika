@@ -3,6 +3,7 @@
   "title": "How a bulb lights up",
   "summary": "A battery drives charge round a closed loop of wire, and the bulb turns it into light.",
   "palette": "dark_matter",
+  "backdrop": "grid",
   "figures": [
    {
     "id": "wire",

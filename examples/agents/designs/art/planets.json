@@ -3,6 +3,7 @@
   "title": "Why the inner planets lap the outer ones",
   "summary": "The four rocky planets circle the Sun, each slower than the one inside it.",
   "palette": "dark_matter",
+  "backdrop": "night",
   "figures": [
    {
     "id": "sun",
