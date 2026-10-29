@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 
 FRONT_DOOR = Path(__file__).resolve().parent / "std" / "designs.kos"
-KINDS = ("", "diagram", "illustration", "art")
+KINDS = ("", "diagram", "illustration", "art", "canvas")
 PLACES = ("chat", "studio", "site", "agent")
 DEFAULT_MODEL = "openai/gpt-oss-120b"
 DEFAULT_MODEL_URL = "https://api.groq.com/openai/v1"
@@ -68,7 +68,7 @@ def design(
     if not text:
         raise DesignsError("Say what to draw.")
     if kind not in KINDS:
-        raise DesignsError("kind is diagram, illustration, art, or empty to let Kosika choose.")
+        raise DesignsError("kind is diagram, illustration, art, canvas, or empty to let Kosika choose.")
     if place not in PLACES:
         raise DesignsError("place is chat, studio, site or agent.")
     if not FRONT_DOOR.is_file():

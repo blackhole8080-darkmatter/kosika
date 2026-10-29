@@ -77,6 +77,10 @@ fn dz_has(t: Text, words: Text[]) -> Bool {
 
 fn dz_art_words() -> Text[] { return [" art ", " artwork", " wallpaper", " background", " backdrop", " abstract", " generative", " pattern", " screensaver", " cover image", " mood ", " aesthetic", " something beautiful", " ambient"] }
 fn dz_diagram_words() -> Text[] { return [" diagram", " flowchart", " flow chart", " mind map", " mindmap", " map of ", " timeline", " compare ", " comparison", " vs ", " vs. ", " versus ", " difference between", " hierarchy", " family tree", " org chart", " architecture", " structure of", " steps ", " step by step", " pipeline", " workflow", " table ", " graph ", " layers of", " types of", " kinds of", " parts of"] }
+// Systems with no body to watch move: how they work is a structure of
+// parts and steps, so even a "how does" about them is drawn as a diagram.
+fn dz_abstract_words() -> Text[] { return [" neural network", " transformer", " llm", " language model", " machine learning", " algorithm", " protocol", " internet", " http", " tcp", " dns", " blockchain", " database", " api ", " compiler", " software", " program ", " encryption", " search engine", " operating system", " git ", " kubernetes", " cloud computing", " recursion", " sorting"] }
+
 fn dz_illustration_words() -> Text[] { return [" animate", " animation", " animated", " illustrate", " illustration", " show me how", " what happens when", " what happens if", " what is inside", " how does ", " how do ", " why does ", " why do ", " why is ", " why are "] }
 
 // Which way of drawing suits the ask, by its words: a named kind first;
@@ -89,6 +93,7 @@ fn dz_kind(ask: DzAsk) -> Text {
   let t = dz_padded(ask.text)
   if dz_has(t, dz_diagram_words()) { return "diagram" }
   if dz_has(t, dz_art_words()) { return "art" }
+  if dz_has(t, dz_abstract_words()) { return "diagram" }
   if dz_has(t, dz_illustration_words()) { return "illustration" }
   return "diagram"
 }
@@ -321,6 +326,9 @@ test "Kosika chooses the way of drawing by the words of the ask" {
   expect dz_kind(dz_ask("compare Rust and Go")) == "diagram"
   expect dz_kind(dz_ask("how does a compiler pipeline work, step by step")) == "diagram"
   expect dz_kind(dz_ask("the Krebs cycle")) == "diagram"
+  // a "how does" about a system with no body to watch move is a diagram
+  expect dz_kind(dz_ask("How does a transformer neural network process a sentence?")) == "diagram"
+  expect dz_kind(dz_ask("how does a pendulum swing")) == "illustration"
   expect dz_kind({..dz_ask("the Krebs cycle"), kind: "Illustration"}) == "illustration"
 }
 
