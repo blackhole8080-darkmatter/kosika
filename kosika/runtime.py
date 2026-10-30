@@ -1560,9 +1560,13 @@ def run(
             try:
                 _write_trace(trace_path, events)
             except (OSError, ValueError, TypeError):
+                note = "Could not persist the execution failure trace"
                 add_note = getattr(exc, "add_note", None)
                 if callable(add_note):
-                    add_note("Could not persist the execution failure trace")
+                    add_note(note)
+                else:
+                    # Python 3.10 has no add_note; keep the note where 3.11 puts it.
+                    exc.__notes__ = [*getattr(exc, "__notes__", []), note]
         if interrupted:
             control.cancel.set()
             raise ExecutionError("cancelled", "Execution was cancelled") from exc
