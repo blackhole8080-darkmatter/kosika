@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import unittest
 from pathlib import Path
+from typing import Any
 
 from kosika.benchmark import (
     BENCHMARK_SCHEMA,
@@ -39,18 +40,37 @@ def repairable() -> list[CorpusCase]:
     return [case for case in corpus() if case.is_repairable]
 
 
+# Scoring the whole corpus takes the better part of a minute, and the answer
+# never changes within a run, so each reference score is worked out once.
+_SCORED: dict[str, BenchmarkReport] = {}
+_VALIDATED: dict[str, Any] = {}
+
+
+def scored(name: str) -> BenchmarkReport:
+    if name not in _SCORED:
+        solver = {"identity": identity_solver, "oracle": oracle_solver}[name]
+        _SCORED[name] = score(repairable(), solver, name=name)
+    return _SCORED[name]
+
+
+def validated() -> dict[str, Any]:
+    if not _VALIDATED:
+        _VALIDATED.update(validate(corpus()))
+    return _VALIDATED
+
+
 class DiscriminationTests(unittest.TestCase):
     def test_harness_is_valid(self) -> None:
-        result = validate(corpus())
+        result = validated()
         self.assertTrue(result["ok"], result["problems"])
 
     def test_identity_solver_scores_zero(self) -> None:
-        report = score(repairable(), identity_solver, name="identity")
+        report = scored("identity")
         self.assertEqual(report.score, 0.0)
         self.assertEqual(report.unchanged, report.total)
 
     def test_oracle_solver_scores_one(self) -> None:
-        report = score(repairable(), oracle_solver, name="oracle")
+        report = scored("oracle")
         self.assertEqual(report.score, 1.0)
         self.assertEqual(report.unchanged, 0)
 
@@ -97,7 +117,7 @@ class ScoringTests(unittest.TestCase):
         self.assertLess(report.score, 1.0)
 
     def test_by_code_breakdown(self) -> None:
-        report = score(repairable(), identity_solver, name="identity")
+        report = scored("identity")
         breakdown = report.by_code()
         self.assertIn("check/capability-denied", breakdown)
         value = breakdown["check/capability-denied"]
@@ -105,7 +125,7 @@ class ScoringTests(unittest.TestCase):
         self.assertEqual(value["rate"], 0.0)
 
     def test_by_mutation_counts_only_solves(self) -> None:
-        report = score(repairable(), oracle_solver, name="oracle")
+        report = scored("oracle")
         solved = report.by_mutation()
         self.assertTrue(all(count > 0 for count in solved.values()))
 
@@ -119,7 +139,7 @@ class SerializationTests(unittest.TestCase):
         self.assertEqual(payload["solved"], payload["total"])
 
     def test_validation_report_is_serialisable(self) -> None:
-        json.dumps(validate(corpus()))
+        json.dumps(validated())
 
     def test_empty_report_serialises(self) -> None:
         json.dumps(BenchmarkReport(name="empty").to_dict())

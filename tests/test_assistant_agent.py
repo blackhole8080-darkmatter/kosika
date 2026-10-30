@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import tempfile
 import unittest
@@ -205,9 +206,15 @@ class OrbTests(unittest.TestCase):
         for word in ("http://", "https://", "innerHTML", "<img"):
             self.assertNotIn(word, self.page)
         # The only things the page fetches by address are Kosika's own two
-        # typefaces, from this computer.
-        self.assertEqual(self.page.count("url("), 2)
-        self.assertEqual(self.page.count('url("/fonts/'), 2)
+        # typefaces, from this computer. A drawing written into the page
+        # (data:) or a mark it points at (#) fetches nothing.
+        addresses = [
+            address
+            for address in re.findall(r"url\(['\"]?([^'\")]*)", self.page)
+            if not address.startswith(("data:", "#", "%23"))
+        ]
+        self.assertEqual(len(addresses), 2)
+        self.assertTrue(all(a.startswith("/fonts/") for a in addresses), addresses)
 
 
 if __name__ == "__main__":

@@ -48,7 +48,7 @@ class WritingHelpTests(unittest.TestCase):
     def test_a_problem_points_at_the_word_at_fault(self) -> None:
         for old, new, wrong in (
             ("hits.matches.take(5)", "hits.matchs.take(5)", "matchs"),
-            ("return parts[0] +", "return part[0] +", "part"),
+            ("return rows.join(", "return row.join(", "row"),
             ("query.is_empty()", "query.is_emty()", "is_emty"),
         ):
             with self.subTest(wrong=wrong):
