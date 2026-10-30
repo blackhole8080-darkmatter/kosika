@@ -78,14 +78,24 @@ def _approval_problem(
     required = ("plan_hash", "action_hash", "approved_by")
     if (
         not isinstance(approval, dict)
-        or set(approval) - set(required)
+        or set(approval) - {*required, "step"}
         or any(not isinstance(approval.get(key), str) for key in required)
     ):
         return "it is not a plan hash, an action hash and who approved it"
     if not approval["approved_by"].strip():
         return "it names no one who approved it"
+    # The step path the approval was given for. A trace made inside a parent
+    # run records the whole path; replayed on its own, a nested trace knows
+    # only its own end of it, so the recorded path must end with that end.
+    step = approval.get("step", scope)
+    if (
+        not isinstance(step, list)
+        or not all(isinstance(part, str) for part in step)
+        or step[len(step) - len(scope):] != scope
+    ):
+        return "it was given for another step"
     if action_hash(
-        approval["plan_hash"], json.dumps([*scope, tool]), arguments
+        approval["plan_hash"], json.dumps([*step, tool]), arguments
     ) != approval["action_hash"]:
         return "its action hash is over other arguments"
     return None

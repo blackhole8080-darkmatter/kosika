@@ -49,6 +49,8 @@ import "designs_draw.kos"
 import "designs_main.kos"
 import "designs_art.kos"
 import "designs_generative.kos"
+import "designs_quiz.kos"
+import "designs_paper.kos"
 
 export [DzAsk, DzResult, DzKind, dz_kinds, dz_places, dz_kind, dz_why, design, design_kind]
 
@@ -56,7 +58,7 @@ record DzAsk { text: Text palette: Text place: Text kind: Text }
 record DzKind { kind: Text why: Text }
 record DzResult { kind: Text why: Text title: Text page: Text svg: Text embed: Text problems: Text[] fixed: Text[] }
 
-fn dz_kinds() -> Text[] { return ["diagram", "illustration", "art", "canvas"] }
+fn dz_kinds() -> Text[] { return ["diagram", "illustration", "art", "canvas", "quiz", "worked"] }
 fn dz_places() -> Text[] { return ["chat", "studio", "site", "agent"] }
 
 fn dz_place(ask: DzAsk) -> Text {
@@ -81,6 +83,9 @@ fn dz_diagram_words() -> Text[] { return [" diagram", " flowchart", " flow chart
 // parts and steps, so even a "how does" about them is drawn as a diagram.
 fn dz_abstract_words() -> Text[] { return [" neural network", " transformer", " llm", " language model", " machine learning", " algorithm", " protocol", " internet", " http", " tcp", " dns", " blockchain", " database", " api ", " compiler", " software", " program ", " encryption", " search engine", " operating system", " git ", " kubernetes", " cloud computing", " recursion", " sorting"] }
 
+// Asking to be tested, not taught: a quiz.
+fn dz_quiz_words() -> Text[] { return [" quiz", " test me", " flashcard", " flash card", " practice question", " check my understanding", " mcq", " multiple choice"] }
+
 fn dz_illustration_words() -> Text[] { return [" animate", " animation", " animated", " illustrate", " illustration", " show me how", " what happens when", " what happens if", " what is inside", " how does ", " how do ", " why does ", " why do ", " why is ", " why are "] }
 
 // Which way of drawing suits the ask, by its words: a named kind first;
@@ -91,6 +96,8 @@ fn dz_kind(ask: DzAsk) -> Text {
   let named = ask.kind.trim().lower()
   if dz_kinds().contains(named) { return named }
   let t = dz_padded(ask.text)
+  if dz_has(t, dz_quiz_words()) { return "quiz" }
+  if maths_words(ask.text) { return "worked" }
   if dz_has(t, dz_diagram_words()) { return "diagram" }
   if dz_has(t, dz_art_words()) { return "art" }
   if dz_has(t, dz_abstract_words()) { return "diagram" }
@@ -101,6 +108,8 @@ fn dz_kind(ask: DzAsk) -> Text {
 fn dz_why(ask: DzAsk) -> Text {
   let kind = dz_kind(ask)
   if dz_kinds().contains(ask.kind.trim().lower()) { return f"asked for {kind}" }
+  if kind == "quiz" { return "asks to be tested, so it is a quiz Kosika checked, with each answer's reason" }
+  if kind == "worked" { return "asks for mathematics worked out, so each line is worked and checked by Kosika" }
   if kind == "art" { return "asks for a mood or a background, so it is drawn as moving art" }
   if kind == "illustration" { return "asks how or why something happens, so it is drawn moving, beside its explanation" }
   return "asks about the parts and structure of something, so it is drawn as a diagram"
@@ -210,7 +219,7 @@ fn dz_step_shown(s: Structure, a: Art) -> Number {
 }
 
 fn dz_canvas_style() -> Text {
-  return ".kd-canvas{position:relative;overflow:hidden;padding:18px}.kd-canvas>.kc-art{position:absolute;inset:0;opacity:.32;pointer-events:none}.kd-canvas>.kc-art svg{width:100%;height:100%;display:block}.kd-canvas>.kc-head,.kd-canvas>.kc-grid,.kd-canvas>div:not(.kc-art),.kd-canvas>.kc-note{position:relative}.kc-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 14px;margin:2px 4px 14px}.kc-head h2{margin:0;font-size:22px;font-weight:850;letter-spacing:-.02em}.kc-head p{margin:0;color:var(--soft);font-size:14px}.kc-grid{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:16px;align-items:start}.kc-card{background:color-mix(in srgb,var(--halo) 82%,transparent);border:1px solid color-mix(in srgb,var(--line) 12%,transparent);border-radius:18px;padding:12px;backdrop-filter:blur(6px)}.kc-label{font:600 10.5px ui-monospace,Consolas,monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);margin:2px 4px 10px}.kc-label b{color:var(--amber);font-weight:600}.kc-card .kd-frame{height:620px}.kc-note{color:var(--soft);font-size:12.5px;margin:12px 4px 0}@media (max-width:900px){.kc-grid{grid-template-columns:1fr}}"
+  return ".kd-canvas{position:relative;overflow:hidden;padding:18px}.kd-canvas>.kc-art{position:absolute;inset:0;opacity:.32;pointer-events:none}.kd-canvas>.kc-art svg{width:100%;height:100%;display:block}.kd-canvas>.kc-head,.kd-canvas>.kc-grid,.kd-canvas>div:not(.kc-art),.kd-canvas>.kc-note{position:relative}.kc-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 14px;margin:2px 4px 14px}.kc-head h2{margin:0;font-size:22px;font-weight:850;letter-spacing:-.02em}.kc-head p{margin:0;color:var(--soft);font-size:14px}.kc-grid{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:16px;align-items:start}.kc-card{background:color-mix(in srgb,var(--halo) 82%,transparent);border:1px solid color-mix(in srgb,var(--line) 12%,transparent);border-radius:18px;padding:12px;backdrop-filter:blur(6px)}.kc-label{font:600 10.5px ui-monospace,Consolas,monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);margin:2px 4px 10px}.kc-label b{color:var(--amber);font-weight:600}.kc-card .kd-frame{height:620px}.kc-note{color:var(--soft);font-size:12.5px;margin:12px 4px 0}.kc-quiz{margin-top:16px}@media (max-width:900px){.kc-grid{grid-template-columns:1fr}}"
 }
 
 fn dz_card(label: Text, inner: Text) -> Text { return f"<div class=\"kc-card\"><div class=\"kc-label\">{label}</div>{inner}</div>" }
@@ -222,7 +231,7 @@ fn dz_diagram_frame(r: Request, d: Design) -> Text {
 
 fn dz_canvas_lead(ask: DzAsk) -> Text { return dz_kind({..ask, kind: ""}) }
 
-fn dz_from_canvas(ask: DzAsk, palette: Text, r: Request, d: Design, m: ArtPage, g: GenArt) -> DzResult {
+fn dz_from_canvas(ask: DzAsk, palette: Text, r: Request, d: Design, m: ArtPage, g: GenArt, z: QzPage) -> DzResult {
   let place = dz_place(ask)
   let has_diagram = d.problems.is_empty() and not d.page.is_empty()
   let has_moving = m.problems.is_empty() and not m.svg.is_empty()
@@ -241,9 +250,10 @@ fn dz_from_canvas(ask: DzAsk, palette: Text, r: Request, d: Design, m: ArtPage, 
   let note = if left.is_empty() { "" } else { "<p class=\"kc-note\">Left out: " + art_esc(left.join("; ")) + ".</p>" }
   let both = not first.is_empty() and not second.is_empty()
   let grid = if both { "<div class=\"kc-grid\">" + first + second + "</div>" } else { "<div>" + first + second + "</div>" }
-  let inner = "<div class=\"kc-art\" aria-hidden=\"true\">" + g.svg + "</div><div class=\"kc-head\"><h2>" + art_esc(title) + "</h2><p>" + art_esc(summary) + "</p></div>" + grid + note
+  let check = if z.problems.is_empty() and not z.card.is_empty() { "<div class=\"kc-card kc-quiz\">" + z.card + "<script>" + qz_script() + "</script></div>" } else { "" }
+  let inner = "<div class=\"kc-art\" aria-hidden=\"true\">" + g.svg + "</div><div class=\"kc-head\"><h2>" + art_esc(title) + "</h2><p>" + art_esc(summary) + "</p></div>" + grid + check + note
   let drawn = has_diagram or has_moving
-  let embed = if drawn { dz_wrap("canvas", place, palette, "", inner, art_style() + gen_style() + dz_canvas_style()) } else { "" }
+  let embed = if drawn { dz_wrap("canvas", place, palette, "", inner, art_style() + gen_style() + qz_style() + dz_canvas_style()) } else { "" }
   let page = if drawn { dz_canvas_page(title, palette, embed) } else { "" }
   let none: Text[] = []
   let wrong = if drawn { none } else { d.problems.concat(m.problems) }
@@ -266,6 +276,38 @@ fn dz_canvas_palette(ask: DzAsk, r: Request) -> Text { return dz_palette(ask.pal
 fn dz_gen_for(r: Request, palette: Text) -> GenFor { return {shape: r.structure.shape, palette: palette, title: r.structure.title} }
 fn dz_moving_ask(ask: DzAsk, palette: Text) -> ArtAsk { return {text: ask.text, palette: palette} }
 
+fn dz_quiz_ask(ask: DzAsk, palette: Text) -> QzAsk { return {text: ask.text, palette: palette} }
+
+fn dz_from_quiz(ask: DzAsk, z: QzPage) -> DzResult {
+  let place = dz_place(ask)
+  let palette = dz_palette(ask.palette, z.quiz.palette)
+  let embed = if z.problems.is_empty() { dz_wrap("quiz", place, palette, "", z.card + "<script>" + qz_script() + "</script>", qz_style()) } else { "" }
+  return {kind: "quiz", why: dz_why(ask), title: z.quiz.title, page: z.page, svg: "", embed: embed, problems: z.problems, fixed: []}
+}
+
+fn dz_paper_ask(ask: DzAsk) -> PaperAsk { return {text: ask.text} }
+
+fn dz_from_worked(ask: DzAsk, p: Paper) -> DzResult {
+  let place = dz_place(ask)
+  let drawn = not p.page.is_empty()
+  let page = p.page.replace("</head>", "<style>html{background:var(--bg)}</style></head>")
+  let frame = "<iframe class=\"kd-frame\" title=\"Worked mathematics\" srcdoc=\"" + art_esc(page) + "\"></iframe>"
+  let embed = if drawn { dz_wrap("worked", place, dz_palette(ask.palette, "paper"), "", frame, "") } else { "" }
+  let none: Text[] = []
+  let wrong = if drawn { none } else { ["the mathematics could not be worked: " + p.verdict] }
+  return {kind: "worked", why: dz_why(ask) + "; " + p.verdict, title: "Worked mathematics", page: p.page, svg: "", embed: embed, problems: wrong, fixed: []}
+}
+
+workflow dz_quiz(ask: DzAsk) -> DzResult {
+  made = call quiz(dz_quiz_ask(ask, ask.palette))
+  out  = dz_from_quiz(ask, made)
+}
+
+workflow dz_worked(ask: DzAsk) -> DzResult {
+  worked = call derive(dz_paper_ask(ask))
+  out    = dz_from_worked(ask, worked)
+}
+
 workflow dz_canvas(ask: DzAsk) -> DzResult {
   said    = call describe({text: ask.text})
   palette = dz_canvas_palette(ask, said)
@@ -273,7 +315,8 @@ workflow dz_canvas(ask: DzAsk) -> DzResult {
   drawn   = call draw(asked)
   moving  = call illustrate(dz_moving_ask(ask, palette))
   behind  = call gen_backdrop(dz_gen_for(asked, palette))
-  out     = dz_from_canvas(ask, palette, asked, drawn, moving, behind)
+  checks  = call quiz(dz_quiz_ask(ask, palette))
+  out     = dz_from_canvas(ask, palette, asked, drawn, moving, behind, checks)
 }
 
 // ---------------------------------------------------------------- the front door
@@ -283,6 +326,8 @@ workflow design(ask: DzAsk) -> DzResult {
   kind = dz_kind(ask)
   out  = match kind {
     case "canvas" { call dz_canvas(ask) }
+    case "quiz" { call dz_quiz(ask) }
+    case "worked" { call dz_worked(ask) }
     case "art" { call dz_art(ask) }
     case "illustration" { call dz_illustration(ask) }
     case _ { call dz_diagram(ask) }
@@ -329,6 +374,9 @@ test "Kosika chooses the way of drawing by the words of the ask" {
   // a "how does" about a system with no body to watch move is a diagram
   expect dz_kind(dz_ask("How does a transformer neural network process a sentence?")) == "diagram"
   expect dz_kind(dz_ask("how does a pendulum swing")) == "illustration"
+  expect dz_kind(dz_ask("quiz me on photosynthesis")) == "quiz"
+  expect dz_kind(dz_ask("test me on the French revolution")) == "quiz"
+  expect dz_kind(dz_ask("differentiate x^2 sin(x)")) == "worked"
   expect dz_kind({..dz_ask("the Krebs cycle"), kind: "Illustration"}) == "illustration"
 }
 

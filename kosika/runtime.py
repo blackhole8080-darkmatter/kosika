@@ -2609,6 +2609,10 @@ def _run_workflow(
                                     "plan_hash": claimed.plan_hash,
                                     "action_hash": claimed.action,
                                     "approved_by": claimed.approved_by,
+                                    # The whole step path the hash is over,
+                                    # so a nested trace replayed on its own
+                                    # can still be checked.
+                                    "step": list(scope),
                                 }
                             }
                             if claimed is not None

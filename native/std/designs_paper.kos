@@ -16,17 +16,17 @@
 
 import "std/math.kos"
 
-export [Working, Line, Paper, derive, check, checked_paper, is_maths]
+export [Working, Line, Paper, PaperAsk, derive, check, checked_paper, is_maths, maths_words]
 
-record Ask { text: Text }
+record PaperAsk { text: Text }
 record Line { says: Text why: Text }
 record Working { title: Text abstract: Text given: Text operation: Text variable: Text lines: Line[] }
 record Paper { page: Text latex: Text verdict: Text checked: Bool }
-record Brief { task: Text ask: Text problems: Text }
+record PaperBrief { task: Text ask: Text problems: Text }
 record Yes { yes: Bool }
 
 model mathematician {
-  input: Brief
+  input: PaperBrief
   output: Working
   parameters: {
     max_output_tokens: 6000
@@ -39,7 +39,7 @@ fn working_task() -> Text {
 
 // ---------------------------------------------------------------- checking
 
-record Mark { ok: Bool note: Text }
+record PaperMark { ok: Bool note: Text }
 
 // What every line must equal: the derivative, worked by Kosika's own
 // rules, or the given expression itself.
@@ -48,14 +48,14 @@ fn goal(w: Working, given: Text[]) -> Text[] {
   return given
 }
 
-fn line_marks(w: Working) -> Mark[] {
+fn line_marks(w: Working) -> PaperMark[] {
   let g = parse(w.given)
   if not g.error.is_empty() { return for l in w.lines { {ok: false, note: "the starting expression could not be read"} } }
   let target = goal(w, g.expr)
   return for l in w.lines { mark_line(l, target) }
 }
 
-fn mark_line(l: Line, target: Text[]) -> Mark {
+fn mark_line(l: Line, target: Text[]) -> PaperMark {
   let p = parse(l.says)
   if not p.error.is_empty() { return {ok: false, note: f"Kosika could not read this line: {p.error}"} }
   if same(p.expr, target) { return {ok: true, note: ""} }
@@ -134,7 +134,7 @@ fn checked_paper(w: Working) -> Paper {
 // ---------------------------------------------------------------- the workflow
 
 fn no_working() -> Working { return {title: "", abstract: "", given: "", operation: "", variable: "x", lines: []} }
-fn kept(w: Working) -> Working { return w }
+fn paper_kept(w: Working) -> Working { return w }
 fn wrong_of(w: Working) -> Text { return working_problems(w).join("; ") }
 
 // Whether a question asks for worked mathematics, by its words.
@@ -146,14 +146,14 @@ fn maths_words(text: Text) -> Bool {
   return false
 }
 
-workflow is_maths(ask: Ask) -> Yes {
+workflow is_maths(ask: PaperAsk) -> Yes {
   out = {yes: maths_words(ask.text)}
 }
 
 // The model works it; Kosika checks it; working with a wrong line goes
 // back once, with the lines named. What reaches the page is checked, or
 // is shown corrected.
-workflow derive(ask: Ask) -> Paper {
+workflow derive(ask: PaperAsk) -> Paper {
   budget 4 model calls, 600 seconds
   first  = use_model mathematician(working_task(), ask.text, "") retry 1 otherwise no_working()
   wrong  = wrong_of(first)
@@ -169,8 +169,8 @@ workflow check(w: Working) -> Paper {
   out = checked_paper(w)
 }
 
-workflow rework(ask: Ask, wrong: Ask, first: Working) -> Working {
-  answer = use_model mathematician(working_task(), ask.text, wrong.text) retry 1 otherwise kept(first)
+workflow rework(ask: PaperAsk, wrong: PaperAsk, first: Working) -> Working {
+  answer = use_model mathematician(working_task(), ask.text, wrong.text) retry 1 otherwise paper_kept(first)
   out    = answer
 }
 

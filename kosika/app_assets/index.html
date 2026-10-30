@@ -1065,6 +1065,7 @@ body.on-mission .track { opacity: .5; }
 <template id="icon-runs"><svg viewBox="0 0 24 24"><path d="M12 8v4l3 2"/><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/></svg></template>
 <template id="icon-tools"><svg viewBox="0 0 24 24"><path d="M14.5 6.5a4 4 0 0 0-5.300 5.300L3 18l3 3 6.200-6.200a4 4 0 0 0 5.300-5.300l-2.500 2.500-2.500-2.500 2.500-2.500z"/></svg></template>
 <template id="icon-skills"><svg viewBox="0 0 24 24"><path d="M12 3l2.600 5.400L20 9.300l-4 4 1 5.700-5-2.700L7 19l1-5.700-4-4 5.400-.900L12 3z"/></svg></template>
+<template id="icon-study"><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M7 9.500v5c0 1.400 2.200 3 5 3s5-1.600 5-3v-5"/><path d="M21 7v6"/></svg></template>
 <template id="icon-designs"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.300-.3-.4-.5-.8-.5-1.300 0-1.100.9-2 2-2h2.400A4.600 4.600 0 0 0 22 9.800C22 6 17.500 3 12 3z"/><circle cx="7.500" cy="11" r="1.200"/><circle cx="10.500" cy="7" r="1.200"/><circle cx="15.500" cy="7.500" r="1.200"/></svg></template>
 <template id="icon-mayaos"><svg viewBox="0 0 24 24"><path d="M12 2.8l8 4.6v9.2l-8 4.6-8-4.6V7.4z"/><path d="M8 15V9.5l4 3 4-3V15"/></svg></template>
 <template id="icon-services"><svg viewBox="0 0 24 24"><path d="M12 3v3"/><path d="M12 18v3"/><path d="M4.2 7.5l2.6 1.5"/><path d="M17.2 15l2.6 1.5"/><path d="M4.2 16.5l2.6-1.5"/><path d="M17.2 9l2.6-1.5"/><circle cx="12" cy="12" r="4"/></svg></template>
@@ -1200,7 +1201,7 @@ setTheme(theme());
 let jumpItems = null;
 async function openJump() {
   if (document.querySelector(".veil")) return;
-  const pages = [["assistant", "Assistant"], ["project", "Project"], ["agents", "Agents"], ["runs", "Runs"], ["tools", "Tools"], ["skills", "Skills"], ["designs", "Designs"], ["permissions", "Permissions"]].map(([view, name]) => ({kind: "page", name, detail: "", title: "Studio", view}));
+  const pages = [["assistant", "Assistant"], ["project", "Project"], ["agents", "Agents"], ["runs", "Runs"], ["tools", "Tools"], ["skills", "Skills"], ["study", "Study"], ["designs", "Designs"], ["permissions", "Permissions"]].map(([view, name]) => ({kind: "page", name, detail: "", title: "Studio", view}));
   const box = h("input", {type: "text", placeholder: "Jump to an agent, workflow, model, tool, memory or record"}), found = h("div", {class: "found"});
   const veil = h("div", {class: "veil", onclick: event => { if (event.target === veil) close(); }}, h("div", {class: "jump"}, box, found, h("div", {class: "keys"}, "↑ ↓ to move · Enter to open · Esc to close")));
   let hits = [], at = 0;
@@ -1253,7 +1254,7 @@ function go(view, id) { location.hash = "#" + view + (id ? "/" + encodeURICompon
 window.addEventListener("hashchange", route);
 
 function drawRail(active) {
-  const items = [["assistant", "Assistant"], ["mayaos", "MayaOS"], ["project", "Project"], ["agents", "Agents"], ["runs", "Runs"], ["tools", "Tools"], ["skills", "Skills"], ["designs", "Designs"], ["services", "Services"], ["permissions", "Permissions"]];
+  const items = [["assistant", "Assistant"], ["mayaos", "MayaOS"], ["project", "Project"], ["agents", "Agents"], ["runs", "Runs"], ["tools", "Tools"], ["skills", "Skills"], ["study", "Study"], ["designs", "Designs"], ["services", "Services"], ["permissions", "Permissions"]];
   document.getElementById("nav").replaceChildren(...items.map(([key, label]) =>
     h("div", {class: "nav" + (key === active ? " on" : "") + (key === "mayaos" ? " door" : ""), title: key === "mayaos" ? "Open MayaOS, the app your agents live in" : null, onclick: () => key === "mayaos" ? openMaya() : go(key)}, icon(key), label, key === "mayaos" ? h("span", {class: "out"}, "\u2197") : null)));
   document.getElementById("foot").replaceChildren(
@@ -1280,6 +1281,7 @@ async function route() {
     else if (active === "tools") await showTools();
     else if (active === "skills") await showSkills();
     else if (active === "designs") showDesigns();
+    else if (active === "study") showStudy();
     else if (active === "permissions") showPermissions();
     else if (active === "services") await showServices();
     else if (overview.assistant) await showAgent(overview.assistant, true);
@@ -1685,6 +1687,52 @@ function showDesigns() {
     h("div", {style: "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0 10px"}, ask, kind, draw),
     h("div", {class: "chips"}, tries.map(text => h("span", {class: "chip", style: "cursor:pointer", onclick: () => { ask.value = text; run(); }}, text))),
     out);
+  ask.focus();
+}
+
+// The study companion (examples/agents/study): ask anything and get an
+// answer in plain words, from your own study notes where they help, with a
+// Kosika Designs canvas beside it that ends in a short quiz. "remember: ..."
+// keeps a note on this computer. Answers stay on the page, newest first.
+const studyLog = [];
+function showStudy() {
+  const ask = h("input", {type: "text", placeholder: "explain how a transistor works · quiz me on optics · remember: Physics 2 exam on 12 December", style: "flex:1;min-width:240px"});
+  const go = h("button", {onclick: run}, "Ask");
+  const out = h("div", {class: "study-out", style: "display:grid;gap:18px;margin-top:14px"});
+  function card(entry) {
+    const r = entry.r;
+    const parts = [h("div", {style: "font-weight:700;font-size:17px;margin-bottom:6px"}, entry.q)];
+    if (r.error) { parts.push(h("div", {class: "banner bad"}, r.error)); return h("div", {class: "card"}, parts); }
+    parts.push(h("p", {style: "white-space:pre-wrap;line-height:1.6;margin:6px 0 10px"}, r.text));
+    if (r.notes && r.notes.length) parts.push(h("div", {class: "chips"}, chip("from your notes", "mem"), r.notes.map(n => chip(n.length > 70 ? n.slice(0, 70) + "\u2026" : n, ""))));
+    if (r.embed) {
+      const frame = h("iframe", {title: r.title, style: "width:100%;height:" + (r.kind === "canvas" ? 1500 : r.kind === "quiz" ? 900 : 760) + "px;border:0;border-radius:18px;background:transparent;margin-top:10px"});
+      frame.srcdoc = "<!doctype html><html><head><meta charset=\"utf-8\"><style>html,body{margin:0;background:transparent}</style></head><body>" + r.embed + "</body></html>";
+      parts.push(h("div", {class: "chips", style: "margin-top:8px"}, chip(r.kind, "accent"), r.why ? h("span", {style: "color:var(--soft);font-size:13px"}, "Kosika " + r.why + ".") : null), frame);
+    } else if (r.problems && r.problems.length) {
+      parts.push(h("div", {class: "banner"}, "No picture this time: " + r.problems.slice(0, 2).join("; ")));
+    }
+    return h("div", {class: "card", style: "display:block"}, parts);
+  }
+  function draw() { out.replaceChildren(...studyLog.map(card)); }
+  async function run() {
+    const text = ask.value.trim();
+    if (!text) { ask.focus(); return; }
+    go.disabled = true; ask.value = "";
+    const waiting = h("p", {class: "lead"}, "Thinking about \u201c" + text + "\u201d, and drawing it\u2026 (about half a minute)");
+    out.prepend(waiting);
+    try { studyLog.unshift({q: text, r: await api("/api/study", {method: "POST", body: JSON.stringify({text})})}); }
+    catch (error) { studyLog.unshift({q: text, r: {error: String(error.message || error)}}); }
+    finally { go.disabled = false; draw(); ask.focus(); }
+  }
+  ask.addEventListener("keydown", event => { if (event.key === "Enter") run(); });
+  const tries = ["remember: Physics 2 exam on 12 December covers waves and optics", "how does interference of light work", "quiz me on interference", "differentiate x^2 sin(x)"];
+  main.replaceChildren(titled("Study"),
+    h("p", {class: "lead"}, "Your study companion. Ask anything: it answers in plain words, uses your notes where they help, and draws it with Kosika Designs, ending in a short quiz. Say \u201cremember: \u2026\u201d to keep a note; notes stay on this computer."),
+    h("div", {style: "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0 10px"}, ask, go),
+    h("div", {class: "chips"}, tries.map(text => h("span", {class: "chip", style: "cursor:pointer", onclick: () => { ask.value = text; run(); }}, text))),
+    out);
+  draw();
   ask.focus();
 }
 

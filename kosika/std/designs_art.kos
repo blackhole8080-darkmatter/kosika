@@ -563,10 +563,36 @@ fn art_label_spot(a: Art, i: Number) -> Number[] {
   let f = a.figures[i]
   let below = art_label_at(f)
   if not art_labelled(a, i) { return below }
-  for j in 0 until i {
-    if art_labelled(a, j) and art_clash(a, i, below, j, art_label_at(a.figures[j])) { return art_label_above(f) }
+  // under it, then over it, then to its right, then to its left: the first
+  // place no earlier name has taken
+  let tries = [below, art_label_above(f), art_label_beside(f, 1), art_label_beside(f, -1)]
+  for spot in tries {
+    var free = true
+    for j in 0 until i {
+      if art_labelled(a, j) and art_clash(a, i, spot, j, art_label_spot_first(a, j)) { free = false }
+    }
+    if free { return spot }
   }
   return below
+}
+
+// An earlier name's place, worked out the simple way (under or over), so
+// placing one name never has to place every name before it again.
+fn art_label_spot_first(a: Art, j: Number) -> Number[] {
+  let f = a.figures[j]
+  let below = art_label_at(f)
+  for k in 0 until j {
+    if art_labelled(a, k) and art_clash(a, j, below, k, art_label_at(a.figures[k])) { return art_label_above(f) }
+  }
+  return below
+}
+
+// Beside a figure, on the right (1) or the left (-1), level with its middle.
+fn art_label_beside(f: Figure, side: Number) -> Number[] {
+  let s = art_px()
+  let c = art_centre(f)
+  let reach = if art_round().contains(f.kind) { f.w * art_reach(f.kind) * s } else if f.kind == "rect" { f.w * s / 2 } else { 12 }
+  return [c[0] * s + side * (reach + 14 + f.label.length() * 4.6), c[1] * s + 4]
 }
 
 // Two names that would print over each other, for figures that stay put.
@@ -890,7 +916,10 @@ test "the problems name what is wrong" {
   expect art_problems(stacked) == []
   expect art_moved_names(art_tidy(stacked)) == ["put the name of b above it, where it has room"]
   third = {..stacked, figures: stacked.figures.append({..art_fig("c", "circle", 51, 30, 3), label: "Left ventricle"})}
-  expect art_problems(third).length() > 0
+  // a third goes beside, to the right
+  expect art_problems(third) == []
+  five = {..third, figures: third.figures.append({..art_fig("d", "circle", 50, 31, 3), label: "Right ventricle"}).append({..art_fig("e", "circle", 51, 31, 3), label: "Aorta"})}
+  expect art_problems(five).length() > 0
 }
 
 test "Kosika tidies what it can settle itself" {

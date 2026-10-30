@@ -105,8 +105,14 @@ workflow hand(door: Door) -> Said {
   // itself not being bound, which is a different thing to say.
   said   = match handed.ok {
     case true { from_handed(handed) }
-    case _ { if handed.text.is_empty() { unreachable(door.name) } else { from_handed(handed) } }
+    case _ { refused(door.name, handed) }
   }
+}
+
+// A refusal, or no tool at all to hand it to.
+fn refused(name: Text, handed: Handed) -> Said {
+  if handed.text.is_empty() { return unreachable(name) }
+  return from_handed(handed)
 }
 
 // ------------------------------------------------------------------ the door
