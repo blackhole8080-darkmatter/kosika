@@ -112,6 +112,15 @@ jobs:
       - name: Keep line endings as committed
         run: git config --global core.autocrlf false
 
+      # Windows runners give TEMP as a short 8.3 path (C:\Users\RUNNER~1),
+      # so a temporary folder's name differs from the same folder resolved,
+      # which no person's computer does. Use the runner's own long-named one.
+      - name: Use a temporary folder with a long name
+        if: runner.os == 'Windows'
+        run: |
+          "TEMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
+          "TMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
+
       - name: Check out repository
         uses: actions/checkout@v4
 
