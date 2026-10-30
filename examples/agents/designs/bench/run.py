@@ -38,16 +38,32 @@ sys.path.insert(0, str(ROOT))
 from kosika.designs import DesignsError, design  # noqa: E402
 
 
-def score(ask: dict) -> dict:
+def limited(problems: list[str]) -> bool:
+    """The free models said 'too many requests': not Kosika's doing."""
+    said = " ".join(problems).lower()
+    return "429" in said or "rate limit" in said or "rate_limit" in said
+
+
+def score(ask: dict, keep: Path | None = None) -> dict:
     named = "canvas" if ask["want"] == "canvas" else ""
-    started = time.monotonic()
-    try:
-        made = design(ask["text"], place="agent", kind=named)
-        problems = made["problems"]
-    except DesignsError as exc:
-        made, problems = {"kind": "", "title": "", "fixed": [], "embed": ""}, [str(exc)]
-    seconds = round(time.monotonic() - started, 1)
+    # A rate limit is waited out, twice, before the ask is set aside as
+    # not scored: it says nothing about Designs.
+    for wait in (60, 180, 0):
+        started = time.monotonic()
+        try:
+            made = design(ask["text"], place="agent", kind=named)
+            problems = made["problems"]
+        except DesignsError as exc:
+            made, problems = {"kind": "", "title": "", "fixed": [], "embed": ""}, [str(exc)]
+        seconds = round(time.monotonic() - started, 1)
+        if not limited(problems) or not wait:
+            break
+        print(f"  {ask['id']}: the free models are rate-limited; waiting {wait} s", flush=True)
+        time.sleep(wait)
     drawn = not problems and bool(made.get("embed"))
+    if keep is not None and drawn:
+        (keep / f"{ask['id']}.html").write_text(made["page"], encoding="utf-8")
+        (keep / f"{ask['id']}.embed.html").write_text(made["embed"], encoding="utf-8")
     whole = None
     if ask["want"] == "canvas":
         embed = made.get("embed", "")
@@ -64,10 +80,12 @@ def score(ask: dict) -> dict:
         "seconds": seconds,
         "title": made.get("title", ""),
         "problems": problems[:3],
+        "limited": limited(problems),
     }
 
 
-def totals(rows: list[dict]) -> dict:
+def totals(every: list[dict]) -> dict:
+    rows = [r for r in every if not r.get("limited")]
     canvases = [r for r in rows if r["want"] == "canvas"]
     return {
         "asks": len(rows),
@@ -77,6 +95,7 @@ def totals(rows: list[dict]) -> dict:
         "canvases": len(canvases),
         "fixed": sum(r["fixed"] for r in rows),
         "median_seconds": sorted(r["seconds"] for r in rows)[len(rows) // 2] if rows else 0,
+        "rate_limited": len(every) - len(rows),
     }
 
 
@@ -100,6 +119,7 @@ def card(latest: dict, before: dict | None) -> str:
         line("Canvases with all their parts", "whole_canvases", "canvases"),
         line("Slips Kosika fixed itself", "fixed", ""),
         line("Median seconds per ask", "median_seconds", ""),
+        f"| Not scored (free models rate-limited) | {t.get('rate_limited', 0)} |",
         "",
         "| Ask | Wanted | Got | Drawn | Seconds | What went wrong |",
         "| --- | --- | --- | --- | --- | --- |",
@@ -114,23 +134,30 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--only", default="", help="comma-separated ask ids")
     parser.add_argument("--label", default="", help="a note for this run, such as what changed")
+    parser.add_argument("--keep", default="", help="a folder to keep each drawing in, as a page and an embed")
     args = parser.parse_args()
     asks = json.loads((HERE / "asks.json").read_text(encoding="utf-8"))["asks"]
     if args.only:
         wanted = set(args.only.split(","))
         asks = [a for a in asks if a["id"] in wanted]
+    keep = Path(args.keep) if args.keep else None
+    if keep is not None:
+        keep.mkdir(parents=True, exist_ok=True)
     rows = []
     for ask in asks:
-        row = score(ask)
+        row = score(ask, keep)
         rows.append(row)
-        mark = "drawn" if row["drawn"] else "refused"
+        mark = "drawn" if row["drawn"] else "limited" if row["limited"] else "refused"
         print(f"{row['id']} {mark:7} {row['got'] or '-':12} {row['seconds']:6}s  {ask['text']}", flush=True)
+    if all(r.get("limited") for r in rows):
+        print("Every ask was rate-limited: nothing was scored, and the history is left as it was.")
+        return 1
     history = HERE / "history.jsonl"
     before = None
     if history.exists():
         lines = [line for line in history.read_text(encoding="utf-8").splitlines() if line.strip()]
         full = [json.loads(line) for line in lines]
-        full = [run for run in full if run["totals"]["asks"] == len(rows)]
+        full = [run for run in full if run["totals"]["asks"] + run["totals"].get("rate_limited", 0) == len(rows)]
         before = full[-1] if full else None
     latest = {"at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"), "label": args.label, "totals": totals(rows), "rows": rows}
     with history.open("a", encoding="utf-8") as f:

@@ -232,6 +232,94 @@ def _step_view(program: Program, step: Step) -> dict[str, Any]:
     return view
 
 
+def _first_words(payload: Any) -> str:
+    """The first piece of text inside a run's inputs: what it was asked."""
+
+    if isinstance(payload, str):
+        return payload.strip()
+    if isinstance(payload, dict):
+        for value in payload.values():
+            found = _first_words(value)
+            if found:
+                return found
+    elif isinstance(payload, (list, tuple)):
+        for value in payload:
+            found = _first_words(value)
+            if found:
+                return found
+    return ""
+
+
+def _last_record(path: Path) -> Any:
+    """The last line of a trace, read from the end so a long run costs one
+    seek rather than a whole file."""
+
+    try:
+        with path.open("rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            size = handle.tell()
+            block = min(size, 16384)
+            handle.seek(size - block)
+            tail = handle.read().decode("utf-8", "replace")
+    except (OSError, ValueError):
+        return None
+    for line in reversed(tail.splitlines()):
+        if line.strip():
+            try:
+                return json.loads(line)
+            except ValueError:
+                return None
+    return None
+
+
+#: What a run's last event says about how it ended, in a word.
+RUN_STATES = {
+    "run_complete": "done",
+    "run_failed": "failed",
+    "run_cancelled": "stopped",
+    "run_paused": "paused",
+}
+
+
+def _run_facts(path: Path) -> dict[str, Any]:
+    """What a trace says at both ends: the ask it started with, how it ended,
+    how long it took and how many steps it used. Each is left out when the
+    trace does not record it, so the page never invents a number."""
+
+    facts: dict[str, Any] = {}
+    try:
+        with path.open("rb") as handle:
+            head = handle.readline(65536)
+    except OSError:
+        return facts
+    try:
+        started = json.loads(head.decode("utf-8", "replace"))
+    except (ValueError, UnicodeDecodeError):
+        started = None
+    if isinstance(started, dict):
+        ask = " ".join(_first_words(started.get("inputs")).split())
+        if ask:
+            facts["ask"] = ask[:160]
+    last = _last_record(path)
+    if isinstance(last, dict):
+        facts["state"] = RUN_STATES.get(str(last.get("event", "")), "unfinished")
+        execution = last.get("execution")
+        if isinstance(execution, dict):
+            seconds = execution.get("elapsed_seconds")
+            if isinstance(seconds, (int, float)) and not isinstance(seconds, bool):
+                facts["seconds"] = round(float(seconds), 2)
+            used = execution.get("used")
+            steps = used.get("steps") if isinstance(used, dict) else None
+            if isinstance(steps, int) and not isinstance(steps, bool):
+                facts["steps"] = steps
+        error = last.get("error")
+        if isinstance(error, dict) and facts.get("state") in ("failed", "paused"):
+            because = str(error.get("code") or error.get("type") or "").strip()
+            if because:
+                facts["because"] = because
+    return facts
+
+
 def _traces(folder: Path) -> list[dict[str, Any]]:
     found: list[dict[str, Any]] = []
     for directory in (folder, folder / "runs"):
@@ -243,6 +331,7 @@ def _traces(folder: Path) -> list[dict[str, Any]]:
                     {
                         "name": path.relative_to(folder).as_posix(),
                         "modified": path.stat().st_mtime,
+                        **_run_facts(path),
                     }
                 )
             except OSError:
@@ -270,6 +359,9 @@ def describe(agent: Agent, *, detail: bool) -> dict[str, Any]:
     except (OSError, UnicodeDecodeError) as exc:
         return {**view, "error": f"Cannot read the file: {exc}"}
     view["about"] = _about(source)
+    # The first paragraph alone, for a card: what the program is for, in the
+    # author's own words, without the running instructions that follow it.
+    view["purpose"] = _about(source, first_only=True) or view["about"]
     try:
         program = _loaded(agent.path)
     except ValueError as exc:

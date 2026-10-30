@@ -1,0 +1,76 @@
+// A writer and a critic improve one line together.
+// They talk through a shared board: the writer posts a draft, the critic
+// posts a remark, and in the next round the writer reads that remark.
+//
+//   kosika test main.kos
+//   kosika run main.kos --workflow refine --input input.json --model qwen2.5:7b --trace run.jsonl
+//   kosika story run.jsonl
+
+record Brief { topic: Text }
+record Remark { text: Text }
+record Outcome { draft: Text posts: Number heard: Text }
+
+model writer_model
+model critic_model
+
+agent writer {
+  model: writer_model
+  max_steps: 1
+}
+
+agent critic {
+  model: critic_model
+  max_steps: 1
+}
+
+board desk of Remark
+
+fn writer_prompt(brief: Brief, seen: DeskBoard) -> Prompt {
+  var last = ""
+  for post in seen.posts where post.author == "critic" {
+    last = post.body.text
+  }
+  let advice = if last.length() > 0 { " The critic said: " + last } else { "" }
+  return {text: "Write one line about " + brief.topic + "." + advice}
+}
+
+fn critic_prompt(draft: Reply) -> Prompt {
+  return {text: "Criticise briefly: " + draft.text}
+}
+
+fn remark(reply: Reply) -> Remark {
+  return {text: reply.text}
+}
+
+fn outcome(draft: Reply, seen: DeskBoard, ask: Prompt) -> Outcome {
+  return {draft: draft.text, posts: seen.posts.length(), heard: ask.text}
+}
+
+workflow refine(brief: Brief) -> Outcome {
+  before  = read desk
+  ask     = writer_prompt(brief, before)
+  draft   = ask writer(ask.text)
+  said    = remark(draft)
+  posted  = post said to desk as writer
+  query   = critic_prompt(draft)
+  verdict = ask critic(query.text)
+  noted   = remark(verdict)
+  replied = post noted to desk as critic
+  after   = read desk
+  result  = outcome(draft, after, ask)
+}
+
+swarm Studio {
+  agents: [writer, critic]
+  workflow: refine
+  max_rounds: 3
+  require approval
+}
+
+test "the critic's remark reaches the board" {
+  answers writer_model: [{text: "Tea is calm."}]
+  answers critic_model: [{text: "Too plain."}]
+  result = refine({topic: "tea"})
+  expect result.draft == "Tea is calm."
+  expect result.posts == 2
+}

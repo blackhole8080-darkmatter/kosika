@@ -4,13 +4,16 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .agent import action_hash
 from .agent_steps import DID_FIELD, did_from, takes_did, validate_agent_transcript
 from .agent_trace import replay_agent_events
+from .database import sent_problem
 from .evidence import EvidenceError
 from .evidence import split as split_evidence
 from .evidence import verify as verify_evidence
 from .model_steps import fill_absent, strict_json, unfenced
 from .schema import validate
+from .system_tools import DB_SOURCE
 
 
 def _same_json(left: Any, right: Any) -> bool:
@@ -31,6 +34,61 @@ def replay_trace(trace_path: str | Path) -> Any:
     ):
         return replay_agent_events(events)
     return replay_events(events)
+
+
+def _recorded_tables(start: dict[str, Any]) -> dict[str, dict[str, str]] | None:
+    """The tables of the database a run was given, as its trace recorded them.
+
+    A trace that records none -- one made by a host that named no file, or by
+    an older Kosika -- leaves a recorded statement with nothing to be judged
+    against, and it is left alone.
+    """
+
+    recorded = start.get("database")
+    if not isinstance(recorded, dict):
+        return None
+    tables: dict[str, dict[str, str]] = {}
+    for name, columns in recorded.items():
+        if (
+            not isinstance(name, str)
+            or not isinstance(columns, dict)
+            or not columns
+            or any(
+                not isinstance(column, str) or not isinstance(kind, str)
+                for column, kind in columns.items()
+            )
+        ):
+            return None
+        tables[name] = dict(columns)
+    return tables or None
+
+
+def _approval_problem(
+    approval: Any, scope: list[str], tool: str, arguments: dict[str, Any]
+) -> str | None:
+    """Why a recorded approval does not cover the call it is recorded on.
+
+    A run records the approval a call was made under: who said yes, the plan
+    it was given for, and the hash the approval ledger claimed. That hash
+    covers the plan, the step path, the tool and the exact arguments, so a
+    replay recomputes it and refuses a call whose statement or values were
+    edited after the approval was given.
+    """
+
+    required = ("plan_hash", "action_hash", "approved_by")
+    if (
+        not isinstance(approval, dict)
+        or set(approval) - set(required)
+        or any(not isinstance(approval.get(key), str) for key in required)
+    ):
+        return "it is not a plan hash, an action hash and who approved it"
+    if not approval["approved_by"].strip():
+        return "it names no one who approved it"
+    if action_hash(
+        approval["plan_hash"], json.dumps([*scope, tool]), arguments
+    ) != approval["action_hash"]:
+        return "its action hash is over other arguments"
+    return None
 
 
 def _stated(quotes: Any) -> Any:
@@ -73,7 +131,9 @@ def _validate_function_events(events: list[Any], *, version: int, depth: int) ->
             _validate_function_events(body_events, version=version, depth=depth + 1)
 
 
-def replay_events(events: list[Any], *, depth: int = 0) -> dict[str, Any]:
+def replay_events(
+    events: list[Any], *, depth: int = 0, path: tuple[str, ...] = ()
+) -> dict[str, Any]:
     if depth > 32:
         raise ValueError("Nested replay exceeds workflow depth limit")
     if len(events) < 6 or any(not isinstance(event, dict) for event in events):
@@ -88,7 +148,9 @@ def replay_events(events: list[Any], *, depth: int = 0) -> dict[str, Any]:
     version = start.get("trace_version", 1)
     if type(version) is not int or version not in {1, 2, 3, 4, 5}:
         raise ValueError("Unsupported trace version")
+    tables = _recorded_tables(start)
     middle = events[1:-1]
+    workflow_name = start["workflow"]
     if len(middle) % 4:
         raise ValueError("Trace contains an incomplete step")
     seen: set[str] = set()
@@ -139,7 +201,9 @@ def replay_events(events: list[Any], *, depth: int = 0) -> dict[str, Any]:
             nested = returned.get("events")
             if not isinstance(nested, list):
                 raise ValueError("Workflow trace requires child events")
-            child_result = replay_events(nested, depth=depth + 1)
+            child_result = replay_events(
+                nested, depth=depth + 1, path=(*path, workflow_name, step["step"])
+            )
             if (
                 nested[0].get("workflow") != call["workflow"]
                 or not _same_json(nested[0].get("inputs"), call["arguments"])
@@ -210,6 +274,35 @@ def replay_events(events: list[Any], *, depth: int = 0) -> dict[str, Any]:
                 raise ValueError("Tool trace requires input and output schemas")
             validate(call["arguments"], call["input_schema"])
             validate(result, call["output_schema"])
+            if "approval" in call:
+                # A call that needed a person's yes records it, and the
+                # approval's hash covers the arguments as they were. A replay
+                # recomputes it, so an edited statement is not one that was
+                # approved (see kosika.agent.action_hash).
+                problem = _approval_problem(
+                    call["approval"],
+                    [*path, workflow_name, step["step"]],
+                    call["tool"],
+                    call["arguments"],
+                )
+                if problem is not None:
+                    raise ValueError(
+                        f"Trace call to {call['tool']!r} was not approved as "
+                        f"recorded: {problem}"
+                    )
+            if call.get("source") == DB_SOURCE and version >= 5:
+                # A database call is judged as well as read: the statement the
+                # run recorded is put to SQLite itself, against the tables the
+                # run recorded, so a trace whose statement is not one the tool
+                # could have sent is refused (see kosika.database.sent_problem).
+                problem = sent_problem(
+                    call.get("operation"), call["arguments"], tables
+                )
+                if problem is not None:
+                    raise ValueError(
+                        f"Trace database call to {call['tool']!r} could not have "
+                        f"been sent: {problem}"
+                    )
         if key == "function":
             if version < 4:
                 raise ValueError("Function traces require trace version 4")

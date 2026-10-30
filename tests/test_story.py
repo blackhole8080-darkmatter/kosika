@@ -232,13 +232,17 @@ class MindmapAndStarterTests(unittest.TestCase):
         from kosika.starter import KINDS, StarterError, create_starter
         from kosika.testing import run_tests
 
-        self.assertEqual(KINDS, ("hello", "support", "expense", "notes"))
+        self.assertEqual(KINDS, ("hello", "support", "expense", "notes", "researcher"))
         with tempfile.TemporaryDirectory() as directory:
             for kind in KINDS[1:]:
                 with self.subTest(kind=kind):
                     project = Path(directory) / kind
                     names = sorted(p.name for p in create_starter(project, kind))
-                    self.assertEqual(names, ["README.md", "input.json", "main.kos"])
+                    expected = ["README.md", "input.json", "main.kos"]
+                    if (project / "responses.json").exists():
+                        json.loads((project / "responses.json").read_text("utf-8"))
+                        expected.append("responses.json")
+                    self.assertEqual(names, expected)
                     results = run_tests(load_program(project / "main.kos"))
                     self.assertTrue(results)
                     self.assertTrue(all(r.passed for r in results), results)

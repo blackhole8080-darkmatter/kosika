@@ -1,7 +1,14 @@
 /* Kosika Studio — the site.
    Two worlds in one document: the screen (ink, gold, indigo) and the paper
    (cream, halftone, stamps). Everything moves on a spring, and the reader's
-   scroll is the timeline. */
+   scroll is the timeline.
+
+   Motion system, after the motion-showreel craft notes: one main movement at
+   a time, entrances 0.4–0.6s, exits always quicker (0.2–0.3s), siblings
+   60ms apart, overshoot on anything that lands, nothing animated but
+   transform and opacity. The tracked-caps labels and the hairline overline
+   are this site's own editorial system (kept on purpose); everything else
+   follows the floor. */
 
 @font-face {
   font-family: "Figtree";
@@ -31,22 +38,32 @@
   --navy: #101426;
   --red: #e2543c;
 
+  /* one accent tint, so the gold is mixed in one place */
+  --accent-soft: rgba(245, 180, 92, .34);
+  --accent-line: rgba(245, 180, 92, .55);
+
   --display: "Figtree", system-ui, -apple-system, sans-serif;
   --mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, monospace;
+  /* the motion character: settle = no rebound, spring = lands with a little,
+     snap = hard start and a long glide */
   --settle: cubic-bezier(.16, 1, .3, 1);
   --snap: cubic-bezier(.23, 1, .32, 1);
+  --spring: cubic-bezier(.18, 1.16, .34, 1);
+  --in: .55s;
+  --out: .22s;
+  --stag: 60ms;
   color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
+html, body { overflow-x: clip; }
 body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font: 15.5px/1.6 var(--display), system-ui, sans-serif;
+  font: 16px/1.6 var(--display), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
-  overflow-x: hidden;
 }
 ::selection { background: rgba(154, 140, 255, .38); }
 ::-webkit-scrollbar { width: 10px; }
@@ -55,6 +72,13 @@ img, video { max-width: 100%; display: block; }
 
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; text-underline-offset: 3px; }
+/* focus is a state, not a fade: it arrives at once, on every control */
+:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px;
+  transition: none;
+}
+.paper :focus-visible { outline-color: #8a3f2c; }
+.btn.primary:focus-visible, .bar .cta:focus-visible { outline-color: var(--ink); }
 .skip { position: absolute; left: -999px; }
 .skip:focus { left: 16px; top: 16px; z-index: 99; background: var(--accent); color: #0a0c16; padding: 10px 16px; border-radius: 8px; }
 
@@ -105,16 +129,26 @@ body::after {
 section { position: relative; padding: 14vh 7vw; scroll-margin-top: 72px; }
 .wrap { max-width: 1220px; margin: 0 auto; }
 .overline { font: 700 11px/1 var(--mono); letter-spacing: .34em; text-transform: uppercase; color: var(--accent); display: flex; align-items: center; gap: 12px; }
-.overline::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, rgba(245, 180, 92, .4), transparent); }
-h2 { font: 800 clamp(32px, 4.6vw, 56px)/1.03 var(--display); letter-spacing: -.032em; margin: 18px 0 14px; }
+.overline::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, rgba(245, 180, 92, .4), transparent); transform: scaleX(0); transform-origin: left; transition: transform .75s var(--settle) .1s; }
+.overline.in::after, .overline:not(.rise)::after { transform: scaleX(1); }
+h2 { font: 800 clamp(32px, 4.6vw, 56px)/1.03 var(--display); letter-spacing: -.032em; margin: 18px 0 14px; text-wrap: balance; }
 h2 .dim { color: var(--faint); }
 h3 { letter-spacing: -.015em; }
-.lead { color: var(--soft); max-width: 64ch; font-size: 17px; }
+.lead { color: var(--soft); max-width: 64ch; font-size: 17px; text-wrap: pretty; }
 .lead b { color: var(--ink); font-weight: 650; }
 .mono { font-family: var(--mono); }
-.rise { opacity: .001; transform: translateY(38px); transition: opacity .9s var(--settle), transform .9s var(--settle); }
+.rise { opacity: 0; transform: translateY(22px); transition: opacity var(--in) var(--settle), transform var(--in) var(--settle); }
 .rise.in { opacity: 1; transform: none; }
-.rise.d1 { transition-delay: .08s; } .rise.d2 { transition-delay: .16s; } .rise.d3 { transition-delay: .24s; } .rise.d4 { transition-delay: .32s; }
+.rise.d1 { transition-delay: var(--stag); } .rise.d2 { transition-delay: calc(var(--stag) * 2); }
+.rise.d3 { transition-delay: calc(var(--stag) * 3); } .rise.d4 { transition-delay: calc(var(--stag) * 4); }
+.rise.d5 { transition-delay: calc(var(--stag) * 5); }
+
+/* a section headline hands its entrance to its own words: each one rises out
+   of a mask, in reading order. The parent does not fade too — one movement. */
+h2.kinetic { opacity: 1 !important; transform: none !important; transition: none !important; }
+.hw { display: inline-block; overflow: clip; vertical-align: bottom; padding-bottom: .1em; margin-bottom: -.1em; }
+.hi { display: inline-block; transform: translateY(103%); opacity: 0; transition: transform .66s var(--settle), opacity .42s linear; }
+h2.kinetic.in .hi { transform: none; opacity: 1; transition-delay: var(--d, 0s); }
 
 /* ── hero ───────────────────────────────────────────────────────── */
 .hero { min-height: 100vh; display: grid; place-items: center; overflow: clip; padding: 13vh 7vw 8vh; }
@@ -124,16 +158,16 @@ h3 { letter-spacing: -.015em; }
    the type never has to fight it. */
 .hero-film {
   position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
-  z-index: 0; pointer-events: none; opacity: .3;
+  z-index: 0; pointer-events: none;  opacity: .22;
   /* cropped past the recording's clock when the loop was made: we want its
      lanes and its light, not another set of numbers over the headline */
-  filter: blur(3.5px) saturate(1.15) brightness(.92) contrast(1.02);
+  filter: blur(9px) saturate(1.1) brightness(.9) contrast(1.02);
   -webkit-mask-image: radial-gradient(120% 104% at 50% 46%, #000 34%, rgba(0, 0, 0, .55) 72%, transparent 94%);
   mask-image: radial-gradient(120% 104% at 50% 46%, #000 34%, rgba(0, 0, 0, .55) 72%, transparent 94%);
   transform: translate3d(var(--fx, 0px), var(--fy, 0px), 0) scale(1.12);
   transition: transform 1.2s var(--settle);
 }
-.hero-inner { position: relative; z-index: 2; text-align: center; max-width: 1100px; will-change: transform, opacity; }
+.hero-inner { position: relative; z-index: 2; text-align: center; max-width: min(1100px, 100%); min-width: 0; }
 /* the light the headline gives off — a soft field, not a per-letter shadow:
    the letters are clipped word by word as they rise, and a clipped shadow
    leaves visible rectangles behind the type. */
@@ -144,37 +178,55 @@ h3 { letter-spacing: -.015em; }
     radial-gradient(44% 34% at 50% 72%, rgba(245, 180, 92, .15), transparent 72%);
   pointer-events: none;
 }
-.kicker { display: inline-flex; align-items: center; gap: 10px; font: 650 11px/1 var(--mono); letter-spacing: .3em; text-transform: uppercase; color: var(--faint); margin-bottom: 30px; }
+/* the one label above the headline: a sentence in the body face, not an
+   eyebrow in tracked capitals, with a gold rule for the eye to enter on */
+.kicker { display: inline-flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 10px; max-width: 100%; font: 550 13px/1.3 var(--display); letter-spacing: .005em; color: var(--soft); margin-bottom: 26px; text-wrap: balance; }
 /* a halo in the page colour: the orbit's hairline passes behind the type, and
    inside a letter this thin a line reads as a smudge — push it back a little. */
 .kicker, .hero .lead, .hero-meta { text-shadow: 0 0 9px var(--bg), 0 0 18px var(--bg), 0 0 30px var(--bg); }
-.kicker::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: pulse 2.4s ease-in-out infinite; }
+.kicker::before { content: ""; width: 20px; height: 1px; background: var(--accent-line); }
 @keyframes pulse { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
-.h1 { margin: 0; font-weight: 800; font-size: clamp(44px, 8.2vw, 116px); line-height: .97; letter-spacing: -.035em; color: var(--ink); }
+.h1 { margin: 0; font-weight: 800; font-size: clamp(44px, 8.2vw, 116px); line-height: .97; letter-spacing: -.035em; color: var(--ink); text-wrap: balance; }
 .h1.gold { color: var(--accent); }
 .h1 .w { display: inline-block; overflow: clip; padding-bottom: .09em; margin-bottom: -.09em; vertical-align: bottom; }
 .h1 .l { display: inline-block; transform: translateY(115%) rotate(5deg); will-change: transform; }
-.live .h1 .l { animation: letterUp 1.05s var(--settle) forwards; animation-delay: var(--d, .3s); }
+.live .h1 .l { animation: letterUp .78s var(--settle) forwards; animation-delay: var(--d, .18s); }
 @keyframes letterUp { to { transform: none; } }
-.hrule { width: min(420px, 52vw); height: 1px; margin: 34px auto 0; background: linear-gradient(90deg, transparent, rgba(245, 180, 92, .7), transparent); transform: scaleX(0); transition: transform 1.3s var(--settle) 1.35s; }
+.hrule { width: min(420px, 52vw); height: 1px; margin: 30px auto 0; background: linear-gradient(90deg, transparent, rgba(245, 180, 92, .7), transparent); transform: scaleX(0); transition: transform .9s var(--settle) .68s; }
 .live .hrule { transform: scaleX(1); }
-.hero .lead { margin: 28px auto 0; opacity: 0; transform: translateY(14px); transition: opacity 1s var(--settle) 1.55s, transform 1s var(--settle) 1.55s; }
+.hero .lead { margin: 26px auto 0; max-width: 52ch; font-size: 16.5px; opacity: 0; transform: translateY(12px); transition: opacity var(--in) var(--settle) .8s, transform var(--in) var(--settle) .8s; }
 .live .hero .lead { opacity: 1; transform: none; }
-.hero-ctas { display: flex; gap: 14px; justify-content: center; align-items: center; margin-top: 36px; flex-wrap: wrap; opacity: 0; transform: translateY(12px); transition: opacity 1s var(--settle) 1.8s, transform 1s var(--settle) 1.8s; }
+.hero-ctas { display: flex; gap: 14px; justify-content: center; align-items: center; margin-top: 32px; flex-wrap: wrap; opacity: 0; transform: translateY(10px); transition: opacity var(--in) var(--settle) .95s, transform var(--in) var(--settle) .95s; }
 .live .hero-ctas { opacity: 1; transform: none; }
 .btn { display: inline-flex; align-items: center; gap: 9px; font: 650 14.5px var(--display); padding: 13px 25px; border-radius: 12px; border: 0; cursor: pointer; }
-.btn.primary { color: #0a0c16; background: var(--accent); box-shadow: 0 16px 44px -16px rgba(245, 180, 92, .6); transition: transform .35s var(--snap), filter .3s; }
+.btn.primary { color: #0a0c16; background: var(--accent); box-shadow: 0 16px 44px -16px rgba(245, 180, 92, .6); transition: transform .35s var(--spring), filter .3s; }
 .btn.primary:hover { text-decoration: none; filter: brightness(1.07); transform: translateY(-2px); }
-.btn.ghost { color: var(--ink); background: var(--glass); box-shadow: inset 0 0 0 1px var(--glass-edge); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); transition: box-shadow .3s, transform .35s var(--snap); }
+.btn.primary:active { transform: translateY(0) scale(.985); transition-duration: 90ms; }
+.btn.ghost { color: var(--ink); background: var(--glass); box-shadow: inset 0 0 0 1px var(--glass-edge); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); transition: box-shadow .3s, transform .35s var(--spring); }
+.btn.ghost:active { transform: translateY(0) scale(.985); transition-duration: 90ms; }
 .btn.ghost:hover { text-decoration: none; box-shadow: inset 0 0 0 1px rgba(245, 180, 92, .5); transform: translateY(-2px); }
-.hero-meta { display: flex; gap: 22px; justify-content: center; margin-top: 34px; font: 600 11.5px/1 var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--faint); flex-wrap: wrap; opacity: 0; transition: opacity 1s var(--settle) 2.05s; }
+/* the buttons lean a few pixels toward the pointer. One transform, already on a
+   spring; the hover lift rides on top of it rather than replacing it. */
+.hero-ctas .btn, .bar .cta { transform: translate3d(var(--mx, 0px), var(--my, 0px), 0); }
+.hero-ctas .btn:hover, .bar .cta:hover { transform: translate3d(var(--mx, 0px), calc(var(--my, 0px) - 2px), 0); }
+.hero-ctas .btn:active { transform: translate3d(var(--mx, 0px), var(--my, 0px), 0) scale(.985); }
+.bar .cta { transition: transform .32s var(--spring), filter .3s; }
+.hero-meta { display: flex; gap: 30px; justify-content: center; margin-top: 30px; font: 550 12px/1 var(--mono); letter-spacing: .1em; color: var(--faint); flex-wrap: wrap; opacity: 0; transition: opacity var(--in) var(--settle) 1.12s; }
 .live .hero-meta { opacity: 1; }
-.hero-meta span { display: inline-flex; align-items: center; gap: 8px; }
-.hero-meta i { width: 4px; height: 4px; border-radius: 50%; background: var(--accent); opacity: .8; }
+.hero-meta span { display: inline-flex; align-items: center; }
 .cue { position: absolute; left: 50%; bottom: 1.6vh; transform: translateX(-50%); display: grid; justify-items: center; gap: 8px; font: 700 10px/1 var(--mono); letter-spacing: .42em; text-transform: uppercase; color: var(--faint); z-index: 2; }
 .cue i { width: 1px; height: 36px; background: linear-gradient(180deg, transparent, rgba(245, 180, 92, .7)); position: relative; overflow: hidden; }
 .cue i::after { content: ""; position: absolute; left: 0; top: -45%; width: 100%; height: 42%; background: var(--ink); animation: cue 2.2s cubic-bezier(.65, 0, .35, 1) infinite; }
 @keyframes cue { to { top: 112%; } }
+/* two fields of light, drifting at 30-odd seconds. Transform only, on their
+   own compositor layers, so the headline never waits on them. */
+.aurora { position: absolute; inset: -12% -8%; z-index: 0; pointer-events: none; filter: blur(64px) saturate(1.15); opacity: .55; }
+.aurora i { position: absolute; display: block; border-radius: 50%; mix-blend-mode: screen; will-change: transform; }
+.aurora i:nth-child(1) { left: -6%; top: -10%; width: 58vmax; height: 40vmax; background: radial-gradient(closest-side, rgba(139, 124, 246, .3), rgba(139, 124, 246, .06) 62%, transparent 78%); animation: driftA 34s ease-in-out infinite alternate; }
+.aurora i:nth-child(2) { right: -8%; bottom: -12%; width: 52vmax; height: 36vmax; background: radial-gradient(closest-side, rgba(245, 180, 92, .2), rgba(245, 180, 92, .05) 60%, transparent 78%); animation: driftB 44s ease-in-out infinite alternate; }
+@keyframes driftA { from { transform: translate3d(0, 0, 0) scale(1); } to { transform: translate3d(7vw, 5vh, 0) scale(1.14); } }
+@keyframes driftB { from { transform: translate3d(0, 0, 0) scale(1.08); } to { transform: translate3d(-6vw, -4vh, 0) scale(.94); } }
+
 .field { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
 .fx { position: absolute; will-change: transform; }
 .fx > i { display: grid; place-items: center; width: 100%; height: 100%; font: 650 10.5px/1 var(--mono); letter-spacing: .16em; text-transform: uppercase; font-style: normal; color: rgba(233, 236, 248, .72); background: var(--glass); border: 1px solid var(--glass-edge); border-radius: 10px; box-shadow: 0 22px 60px -26px rgba(0, 0, 0, .8); backdrop-filter: blur(7px); -webkit-backdrop-filter: blur(7px); animation: drift var(--drift, 9s) ease-in-out var(--delay, 0s) infinite alternate; }
@@ -193,12 +245,17 @@ h3 { letter-spacing: -.015em; }
 .reel-bar .rec { display: inline-flex; align-items: center; gap: 7px; font: 700 10px/1 var(--mono); letter-spacing: .2em; color: var(--bad); }
 .reel-bar .rec::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--bad); animation: pulse 1.6s infinite; }
 .reel-bar .title { font: 600 11.5px/1 var(--mono); color: var(--soft); letter-spacing: .06em; }
-.reel-bar .tc { margin-left: auto; font: 600 11.5px/1 var(--mono); color: var(--faint); font-variant-numeric: tabular-nums; }
+/* the score, as it plays: 48 bars of the film's own audio */
+.spectrum { margin-left: auto; width: 132px; height: 18px; opacity: .9; }
+@media (max-width: 760px) { .spectrum { display: none; } }
+.reel-bar .tc { margin-left: 4px; font: 600 11.5px/1 var(--mono); color: var(--faint); font-variant-numeric: tabular-nums; }
 .reel-bar .tc b { color: var(--accent); font-weight: 600; }
-.reel video { width: 100%; aspect-ratio: 16 / 9; background: #05060b; display: block; }
+/* the camera: a slow push in over the length of the film, driven by its own
+   clock so pausing holds the frame still */
+.reel video { width: 100%; aspect-ratio: 16 / 9; background: #05060b; display: block; transform-origin: 50% 42%; will-change: transform; }
 .reel-foot { display: flex; align-items: center; gap: 14px; padding: 14px 18px; border-top: 1px solid var(--line); flex-wrap: wrap; }
 .reel-foot .note { font: 550 12.5px/1.5 var(--mono); color: var(--faint); }
-.iconbtn { display: inline-flex; align-items: center; gap: 8px; font: 650 12px var(--display); color: var(--ink); background: rgba(148, 160, 220, .1); border: 1px solid var(--line); padding: 9px 14px; border-radius: 9px; cursor: pointer; transition: background .3s, box-shadow .3s; }
+.iconbtn { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; gap: 8px; font: 650 12px var(--display); color: var(--ink); background: rgba(148, 160, 220, .1); border: 1px solid var(--line); padding: 9px 14px; border-radius: 9px; cursor: pointer; transition: background .3s, box-shadow .3s; }
 .iconbtn:hover { background: rgba(148, 160, 220, .18); box-shadow: inset 0 0 0 1px rgba(245, 180, 92, .35); }
 .iconbtn svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
 .shots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 30px; }
@@ -215,7 +272,11 @@ h3 { letter-spacing: -.015em; }
 .card:hover { transform: translateY(-4px); border-color: rgba(245, 180, 92, .4); box-shadow: 0 24px 60px -30px rgba(245, 180, 92, .35); }
 .card:hover::after { opacity: 1; }
 .card .glyph { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; background: rgba(245, 180, 92, .1); box-shadow: inset 0 0 0 1px rgba(245, 180, 92, .3); margin-bottom: 18px; }
-.card .glyph svg { width: 22px; height: 22px; fill: none; stroke: var(--accent); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.card .glyph svg { width: 22px; height: 22px; fill: none; stroke: var(--accent); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; transition: transform .5s var(--spring); }
+.card .glyph::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 1px var(--accent-line); opacity: 0; transition: opacity .3s, transform .5s var(--spring); transform: scale(.82); }
+.card .glyph { position: relative; }
+.card:hover .glyph svg, .card:focus-within .glyph svg { transform: scale(1.08) rotate(-4deg); }
+.card:hover .glyph::after, .card:focus-within .glyph::after { opacity: 1; transform: scale(1); }
 .card h3 { margin: 0 0 8px; font-size: 19px; font-weight: 700; }
 .card p { margin: 0; color: var(--soft); font-size: 14.5px; line-height: 1.65; }
 .card p b { color: var(--ink); font-weight: 600; }
@@ -223,19 +284,45 @@ h3 { letter-spacing: -.015em; }
 /* ── the run, scrolled ──────────────────────────────────────────── */
 .run { height: 320vh; padding: 0; }
 .run-sticky { position: sticky; top: 0; height: 100vh; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 1.4vh; padding: 9vh 7vw 5vh; }
-.orbit { min-height: 0; display: grid; place-items: center; }
-.orbit svg { width: min(1120px, 100%); max-height: 56vh; }
+/* the margins of the stage, where the trace's own lines drift past */
+.drifters { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
+.drifter { position: absolute; font: 600 10.5px/1 var(--mono); letter-spacing: .1em; color: rgba(163, 170, 200, .5); white-space: nowrap; animation: drift var(--dd, 14s) ease-in-out infinite alternate; }
+.drifter::before { content: ""; display: inline-block; width: 4px; height: 4px; border-radius: 50%; background: var(--accent-soft); margin-right: 8px; vertical-align: middle; }
+.drifter.d1 { left: 2.4vw; top: 30%; --dd: 16s; }
+.drifter.d2 { left: 1.6vw; bottom: 30%; --dd: 19s; animation-delay: -4s; }
+.drifter.d3 { right: 2vw; top: 22%; --dd: 17s; animation-delay: -8s; }
+@media (max-width: 1180px) { .drifters { display: none; } }
+.orbit { min-height: 0; display: grid; place-items: center; transition: transform .6s var(--spring); }
+/* the one expensive moment in a run: the stage leans in while the model is
+   being asked, and eases back when the answer lands */
+.run.asking .orbit { transform: scale(1.035); }
+.orbit svg { width: min(1120px, 100%); max-height: 56vh; will-change: transform; }
 .o-node circle { fill: #0d0f1c; stroke: var(--line); stroke-width: 1; transition: stroke .4s, fill .4s, filter .4s; }
 .o-node text { fill: var(--soft); font: 600 11px var(--mono); letter-spacing: .08em; }
 .o-node .sub { fill: var(--faint); font-size: 9px; }
 .o-node.seen circle { stroke: rgba(148, 160, 220, .45); }
 .o-node.now circle { fill: rgba(245, 180, 92, .14); stroke: var(--accent); filter: drop-shadow(0 0 12px rgba(245, 180, 92, .5)); }
+.o-node.ask circle { stroke: var(--accent); animation: askBreath 1.9s ease-in-out infinite alternate; }
+/* a beat landing sends one ring out from the node that took it.
+   The descendant selectors beat `.o-node circle`, which paints every circle. */
+.o-node .o-wave, .o-core .o-wave { fill: none; stroke: var(--accent); stroke-width: 1.1; transform-box: fill-box; transform-origin: center; pointer-events: none; animation: wave .85s var(--settle) forwards; }
+@keyframes wave { from { transform: scale(1); opacity: .85; } to { transform: scale(2.6); opacity: 0; } }
+@keyframes askBreath { from { filter: drop-shadow(0 0 8px rgba(245, 180, 92, .35)); } to { filter: drop-shadow(0 0 20px rgba(245, 180, 92, .7)); } }
 .o-node.now text { fill: var(--ink); }
 .o-core circle { fill: #05060b; stroke: rgba(139, 124, 246, .55); stroke-width: 1.4; transition: stroke .4s, filter .4s; }
 .o-core.now circle { stroke: var(--accent); filter: drop-shadow(0 0 16px rgba(245, 180, 92, .6)); }
 .o-core text { fill: var(--ink); font: 750 14px var(--display); text-anchor: middle; }
 .o-core .sub { fill: var(--faint); font: 600 9px var(--mono); }
+/* the run's progress, drawn where the film draws it: one gold arc round the
+   orbit, its head the same dot. The dash length is the ellipse's perimeter
+   (~1169.2 user units, Ramanujan) so the arc is proportional to the scroll. */
 .o-orbit { fill: none; stroke: rgba(139, 124, 246, .22); stroke-dasharray: 2 7; }
+.o-trace {
+  fill: none; stroke: var(--accent); stroke-width: 1.7; stroke-linecap: round;
+  stroke-dasharray: 1169.2; stroke-dashoffset: 1169.2;
+  filter: drop-shadow(0 0 5px rgba(245, 180, 92, .45));
+}
+.o-head { fill: #fff4e2; opacity: 0; transition: opacity .35s var(--settle); filter: drop-shadow(0 0 7px rgba(245, 180, 92, .85)); }
 .read { display: flex; align-items: baseline; gap: 26px; flex-wrap: wrap; }
 .time { font: 700 clamp(34px, 5.4vw, 66px)/1 var(--mono); letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
 .time b { color: var(--accent); }
@@ -258,13 +345,16 @@ h3 { letter-spacing: -.015em; }
 .tl-clip { box-shadow: inset 0 0 0 1px rgba(233, 236, 248, .07); }
 .tl-clip.seen { filter: saturate(1.2) brightness(1.12); }
 .tl-clip.seen span { opacity: 1; }
-.tl-playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--bad); box-shadow: 0 0 10px rgba(242, 109, 126, .65); z-index: 2; }
+.tl-playhead { position: absolute; top: 0; bottom: 0; left: 0; width: 2px; background: var(--bad); box-shadow: 0 0 10px rgba(242, 109, 126, .65); z-index: 2; transform: translate3d(0, 0, 0); will-change: transform; }
 .tl-playhead::before { content: ""; position: absolute; top: -1px; left: -4px; border: 5px solid transparent; border-top-color: var(--bad); }
 .perf { position: absolute; left: 0; right: 0; bottom: 0; height: 12px; background: repeating-linear-gradient(90deg, rgba(245, 180, 92, .24) 0 12px, transparent 12px 26px); opacity: .5; }
 .progress { position: absolute; left: 0; bottom: 0; height: 3px; width: 100%; transform-origin: left; background: var(--accent); transform: scaleX(0); }
 .run-note { text-align: center; color: var(--faint); font: 550 12.5px var(--mono); padding: 2vh 7vw 8vh; }
 
 /* ── studio window ──────────────────────────────────────────────── */
+/* it arrives as a product shot does: tipped back, then squared up */
+.window.tilt { opacity: 0; transform: perspective(1500px) rotateX(9deg) translateY(26px) scale(.985); transform-origin: 50% 6%; transition: opacity .55s linear, transform 1s var(--spring); }
+.window.tilt.in { opacity: 1; transform: none; }
 .window { max-width: 1080px; margin: 44px auto 0; border-radius: 18px; border: 1px solid var(--glass-edge); background: rgba(10, 12, 22, .82); box-shadow: 0 60px 140px -50px rgba(0, 0, 0, .9), 0 0 0 1px rgba(139, 124, 246, .08); overflow: hidden; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
 .window-bar { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
 .window-bar i { width: 10px; height: 10px; border-radius: 50%; background: rgba(148, 160, 220, .25); }
@@ -317,6 +407,7 @@ h3 { letter-spacing: -.015em; }
 .paper .overline { color: #8a3f2c; }
 .paper .overline::after { background: linear-gradient(90deg, rgba(138, 63, 44, .4), transparent); }
 .paper h2 { color: var(--navy); }
+.paper h2 .dim { color: rgba(16, 20, 38, .42); }
 .paper .lead { color: rgba(16, 20, 38, .74); }
 .paper .lead b { color: var(--navy); }
 .chips { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
@@ -327,8 +418,8 @@ h3 { letter-spacing: -.015em; }
 .exhibit {
   position: relative; overflow: hidden; background: #f6eeda; border: 3px solid var(--navy); border-radius: 14px;
   padding: 22px 22px 20px; box-shadow: 0 18px 40px -18px rgba(46, 34, 14, .5);
-  transform: translateY(60px) rotate(var(--rot, -1.2deg)); opacity: 0;
-  transition: transform .95s var(--snap), opacity .7s ease;
+  transform: translateY(44px) rotate(var(--rot, -1.2deg)); opacity: 0;
+  transition: transform .7s var(--snap), opacity .45s ease;
   filter: drop-shadow(0 2px 0 rgba(255, 250, 238, .5));
 }
 .exhibit.in { transform: translateY(0) rotate(var(--rot, -1.2deg)); opacity: 1; }
@@ -340,12 +431,15 @@ h3 { letter-spacing: -.015em; }
 .exhibit h3 { margin: 0 0 6px; font-size: 27px; font-weight: 800; letter-spacing: -.03em; }
 .exhibit .sub { font: 600 14px/1.5 var(--mono); color: rgba(16, 20, 38, .72); margin: 0 0 16px; padding-right: 78px; }
 .exhibit .exbar { background: var(--navy); color: var(--red); font: 600 13px/1.2 var(--mono); padding: 14px; border-radius: 8px; }
+/* the stamp lands on the exhibit's artwork, the way a stamp lands on a page:
+   never across the note that says what the stamp means */
 .stamp {
-  position: absolute; right: 14px; bottom: 66px; padding: 9px 16px 8px;
+  position: absolute; right: 16px; top: 26px; padding: 9px 16px 8px;
   font: 900 20px/1 var(--mono); letter-spacing: .04em; color: var(--red);
   border: 3.5px solid currentColor; border-radius: 8px; background: rgba(246, 238, 218, .55);
   transform: rotate(-7deg) scale(2.4); opacity: 0;
-  transition: transform .12s cubic-bezier(.2, .9, .3, 1), opacity .1s;
+  /* it lands: overshoot, then hold. 0.3s in, nothing on the way out */
+  transition: transform .3s var(--spring), opacity .1s linear;
   box-shadow: inset 0 0 0 1.5px rgba(246, 238, 218, .9);
 }
 .stamp.green { color: #1f6f63; } .stamp.indigo { color: #3b3a8f; }
@@ -365,15 +459,19 @@ h3 { letter-spacing: -.015em; }
 /* ── numbers ────────────────────────────────────────────────────── */
 .numbers { padding-top: 12vh; padding-bottom: 12vh; }
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 28px; margin-top: 44px; border-top: 1px solid var(--line); padding-top: 32px; }
-.stat .v { font: 800 clamp(34px, 4.2vw, 54px)/1 var(--display); letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
+.stat .v { font: 800 clamp(34px, 4.2vw, 54px)/1 var(--display); letter-spacing: -.04em; font-variant-numeric: tabular-nums; position: relative; padding-bottom: 10px; }
+/* the number's own rule draws after it settles: follow-through, not another fade */
+.stat .v::after { content: ""; position: absolute; left: 0; bottom: 2px; height: 1px; width: 100%; background: linear-gradient(90deg, var(--accent-soft), transparent 78%); transform: scaleX(0); transform-origin: left; transition: transform .7s var(--settle) .1s; }
+.stat.counted .v::after { transform: scaleX(1); }
 .stat .v small { font-size: .42em; font-weight: 700; letter-spacing: 0; color: var(--faint); margin-left: 4px; }
 .stat .k { margin-top: 8px; font: 650 11px/1.4 var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--faint); }
 
 /* ── start ──────────────────────────────────────────────────────── */
 .startgrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 5vw; align-items: start; margin-top: 38px; }
 @media (max-width: 900px) { .startgrid { grid-template-columns: 1fr; } }
-.cmd { display: flex; align-items: center; gap: 14px; background: rgba(10, 12, 22, .72); border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; margin: 12px 0; cursor: pointer; transition: border-color .3s, transform .3s var(--snap); }
+.cmd { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; font: inherit; color: inherit; background: rgba(10, 12, 22, .72); border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; margin: 12px 0; cursor: pointer; transition: border-color .3s, transform .3s var(--spring); }
 .cmd:hover { border-color: rgba(245, 180, 92, .45); transform: translateX(3px); }
+.cmd:active { transform: translateX(1px) scale(.995); transition-duration: 90ms; }
 .cmd code { font: 650 13px var(--mono); color: var(--ink); flex: 1; }
 .cmd .tip { font: 650 10px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--faint); }
 .cmd.copied .tip { color: var(--ok); }
@@ -419,9 +517,9 @@ footer nav a:hover { color: var(--ink); }
   /* a phone has no room for a film behind the type (and no data to spare) */
   .hero-film { display: none; }
   .hero { padding: 12vh 6vw 9vh; }
-  .kicker { font-size: 9.5px; letter-spacing: .22em; margin-bottom: 24px; }
+  .kicker { font-size: 12px; gap: 8px; margin-bottom: 22px; padding-inline: 4vw; }
   .hero-inner::before { left: -8%; right: -8%; }
-  .hero .lead { font-size: 15.5px; }
+  .hero .lead { font-size: 15.5px; max-width: 100%; }
 }
 @media (max-height: 840px) {
   .cue { display: none; }
@@ -432,10 +530,22 @@ footer nav a:hover { color: var(--ink); }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   .fx > i, .cue i::after, .kicker::before, .reel-bar .rec::before { animation: none !important; }
+  .aurora { display: none; }
+  .spectrum { display: none; }
+  .o-wave { display: none; }
+  .drifters { display: none; }
+  .window.tilt { opacity: 1; transform: none; transition: none; }
   .h1 .l { transform: none !important; }
   .rise, .exhibit { opacity: 1 !important; transform: none !important; }
   .hero-film { display: none; }
   .stamp { transition: none; }
+  .reel video { transform: none !important; }
+  .orbit, .run.asking .orbit { transform: none !important; transition: none; }
+  .stat .v::after { transform: scaleX(1); transition: none; }
+  .o-node.ask circle { animation: none; }
+  /* the ring still says how far along the run got: full, and still */
+  .o-trace { stroke-dashoffset: 0 !important; }
+  .o-head { opacity: 0 !important; }
   .run { height: auto !important; }
   .run-sticky { position: static !important; height: auto !important; }
   .grain, .wipe { display: none; }

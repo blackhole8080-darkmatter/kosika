@@ -72,22 +72,25 @@
     <video class="hero-film" id="herofilm" src="media/kosika-hero-loop.mp4"
            poster="media/kosika-hero-loop-poster.jpg" muted loop playsinline
            autoplay preload="metadata" aria-hidden="true" tabindex="-1"></video>
+    <!-- two slow fields of colour under everything: the room the page sits
+         in, moving at a pace you notice only if you stop -->
+    <div class="aurora" aria-hidden="true"><i></i><i></i></div>
     <canvas class="orbit-cv" id="orbitcv" aria-hidden="true"></canvas>
     <div class="field" id="field" aria-hidden="true"></div>
     <div class="hero-inner" id="heroinner">
-      <div class="kicker">A language for AI agents · local-first · open about everything</div>
+      <div class="kicker">A language for agents that show their work</div>
       <h1 class="h1" id="hl1">Agents that can prove</h1>
       <h1 class="h1 gold" id="hl2">what they did.</h1>
       <div class="hrule"></div>
-      <p class="lead">Kosika is a programming language for AI agents, and <b>Studio</b> is where you watch them work. Every program is <b>checked before it runs</b>, every power is <b>a grant you gave</b>, and every run is <b>recorded</b> — replayable to any moment, without asking a model anything.</p>
+      <p class="lead">Every program is <b>checked before it runs</b>, every power is <b>a grant you gave</b>, and every run <b>replays without a model</b>.</p>
       <div class="hero-ctas">
         <a class="btn primary" href="#film">Watch the film</a>
         <a class="btn ghost" href="#start">Start in minutes</a>
       </div>
       <div class="hero-meta">
-        <span><i></i>18-second film, all code</span>
-        <span><i></i>1,700+ tests</span>
-        <span><i></i>no account, no cloud</span>
+        <span>18-second film, all code</span>
+        <span>1,700+ tests</span>
+        <span>no account, no cloud</span>
       </div>
     </div>
     <div class="cue" aria-hidden="true"><i></i>scroll</div>
@@ -103,7 +106,10 @@
       <div class="reel rise d1">
         <div class="reel-bar">
           <span class="rec">REC</span>
-          <span class="title">one run, on paper · 1920×1080 · 30 fps</span>
+          <span class="title">one run, on paper — 1920 × 1080, 30 fps</span>
+          <!-- the film's own score, measured: this draws the audio that is
+               actually playing, not a decoration in the shape of one -->
+          <canvas class="spectrum" id="spectrum" width="300" height="36" aria-hidden="true"></canvas>
           <span class="tc" id="tc"><b>0:00.0</b> / 0:18.0</span>
         </div>
         <video id="reel" muted loop playsinline preload="metadata" poster="media/kosika-film-poster.jpg"
@@ -125,9 +131,9 @@
       </div>
 
       <div class="shots">
-        <div class="shot rise"><div class="n">01 · 0:00</div><h3>The dot, and its orbit</h3><p>A point of light draws the ring it will live in. The ring is the run's timeline a second later — nothing is replaced, everything carries.</p></div>
-        <div class="shot rise d1"><div class="n">02 · 0:05</div><h3>One run, scrolled</h3><p>Model, tools, memory, code — the trace of a real assistant run, played by a gold playhead. 1 model call, 22 steps, 88.6 seconds.</p></div>
-        <div class="shot rise d2"><div class="n">03 · 0:08</div><h3>The case file</h3><p>A halftone dot-wipe turns the screen into paper, and three promises get stamped: checked, granted, recorded. Kosi the clerk does the stamping.</p></div>
+        <div class="shot rise"><div class="n">01 / 0:00</div><h3>The dot, and its orbit</h3><p>A point of light draws the ring it will live in. The ring is the run's timeline a second later — nothing is replaced, everything carries.</p></div>
+        <div class="shot rise d1"><div class="n">02 / 0:05</div><h3>One run, scrolled</h3><p>Model, tools, memory, code — the trace of a real assistant run, played by a gold playhead. 1 model call, 22 steps, 88.6 seconds.</p></div>
+        <div class="shot rise d2"><div class="n">03 / 0:08</div><h3>The case file</h3><p>A halftone dot-wipe turns the screen into paper, and three promises get stamped: checked, granted, recorded. Kosi the clerk does the stamping.</p></div>
       </div>
     </div>
   </section>
@@ -155,7 +161,7 @@
           <p>Every run leaves a <b>trace</b>: each model call, each tool, each second. Replay is free and asks no model — press play on the past.</p>
         </div>
         <div class="card rise d3">
-          <div class="glyph"><svg viewBox="0 0 24 24"><use href="#i-gauge"/></svg></div>
+          <div class="glyph"><svg viewBox="0 0 24 24"><use href="#i-gauge" width="24" height="24"/></svg></div>
           <h3>Bounded by real numbers</h3>
           <p>Runs carry <b>budgets</b> — steps, seconds, money. When the budget ends, the run ends. No surprises on the bill.</p>
         </div>
@@ -166,12 +172,23 @@
   <!-- ── the run, scrolled ──────────────────────────────────────── -->
   <section class="run" id="run">
     <div class="run-sticky">
+      <!-- events drifting past the stage, the way they drift past in a trace:
+           small, slow, and gone from a narrow screen and a still page -->
+      <div class="drifters" aria-hidden="true">
+        <span class="drifter d1">step 07 · files.read · 412ms</span>
+        <span class="drifter d2">memory.put · 1 entry</span>
+        <span class="drifter d3">check.ok · 6 nodes</span>
+      </div>
       <div class="wrap" style="width:100%">
         <div class="overline">The recording · one real run, scrolled by you</div>
       </div>
       <div class="orbit">
         <svg viewBox="0 0 680 300" role="img" aria-label="An agent on its orbit: you, the model, memory, tools and files around a checked program">
           <ellipse class="o-orbit" cx="340" cy="150" rx="250" ry="108"/>
+          <!-- the ring is the run's own timeline: the gold arc is how far it has
+               got, and its head is the dot the film travels on -->
+          <path class="o-trace" d="M340 42A250 108 0 0 1 340 258A250 108 0 0 1 340 42"/>
+          <circle class="o-head" id="ohead" cx="340" cy="42" r="3.6"/>
           <g class="o-node" id="n-you"><circle cx="90" cy="150" r="26"/><text x="90" y="147" text-anchor="middle">you</text><text class="sub" x="90" y="160" text-anchor="middle">ask · allow</text></g>
           <g class="o-node" id="n-model"><circle cx="340" cy="42" r="26"/><text x="340" y="39" text-anchor="middle">model</text><text class="sub" x="340" y="52" text-anchor="middle">proposes</text></g>
           <g class="o-node" id="n-tools"><circle cx="530" cy="82" r="26"/><text x="530" y="79" text-anchor="middle">tools</text><text class="sub" x="530" y="92" text-anchor="middle">granted</text></g>
@@ -201,7 +218,7 @@
       <h2 class="rise">One window. <span class="dim">Every answer.</span></h2>
       <p class="lead rise">Studio runs on your machine and shows everything: the agents in your folder, what each is made of, what it did, and exactly <b>what the model was asked</b> — the words, not a summary.</p>
     </div>
-    <div class="window rise d1">
+    <div class="window rise d1 tilt">
       <div class="window-bar"><i></i><i></i><i></i><div class="addr">kosika studio — assistant · a recorded run</div></div>
       <div class="window-body">
         <div class="window-rail">
@@ -229,7 +246,7 @@
             </svg>
           </div>
           <div class="tl" id="mocktl"><div class="tl-ruler" id="mruler"></div><div class="tl-body" id="mlanes" style="cursor:default"></div></div>
-          <div class="wchips"><span class="wchip">1,700+ tests</span><span class="wchip">one file · no cloud</span><span class="wchip">works with no model</span><span class="wchip">replay is free</span></div>
+          <div class="wchips"><span class="wchip">1,700+ tests</span><span class="wchip">one file, no cloud</span><span class="wchip">works with no model</span><span class="wchip">replay is free</span></div>
         </div>
       </div>
     </div>
@@ -248,7 +265,7 @@
         <span class="pchip" style="margin-left:auto;background:none">File 001 / 007</span>
       </div>
       <div class="overline">Filed, not promised</div>
-      <h2>One run, <span style="color:rgba(16,20,38,.42)">on paper.</span></h2>
+      <h2>One run, <span class="dim">on paper.</span></h2>
       <p class="lead">The film's second half is a dossier, because that is the claim: an agent's work should be <b>something you can hold and read</b>. Three stamps, and each one is a mechanism in the language — not a slogan.</p>
 
       <div class="paper-grid">
@@ -327,9 +344,9 @@
       <h2 class="rise">Three commands.</h2>
       <div class="startgrid">
         <div class="rise">
-          <div class="cmd" data-copy="python -m pip install ."><code>python -m pip install .</code><span class="tip">click to copy</span></div>
-          <div class="cmd" data-copy="kosika start"><code>kosika start</code><span class="tip">click to copy</span></div>
-          <div class="cmd" data-copy="ollama pull qwen2.5:7b"><code>ollama pull qwen2.5:7b</code><span class="tip">click to copy</span></div>
+          <button class="cmd" type="button" data-copy="python -m pip install ."><code>python -m pip install .</code><span class="tip" aria-live="polite">copy</span></button>
+          <button class="cmd" type="button" data-copy="kosika start"><code>kosika start</code><span class="tip" aria-live="polite">copy</span></button>
+          <button class="cmd" type="button" data-copy="ollama pull qwen2.5:7b"><code>ollama pull qwen2.5:7b</code><span class="tip" aria-live="polite">copy</span></button>
         </div>
         <div class="startnotes rise d1">
           <p><b>One command does the work.</b> <b>kosika start</b> makes an agents folder in your home directory with three starter agents, looks for a model already on your computer, and opens Studio.</p>

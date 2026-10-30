@@ -87,6 +87,8 @@ The standard library:
 | `std/text.kos` | `words_of(text)`, `chunks(text, size, over)`, `keywords(text, count)`, `likeness(a, b)`, `sentences(text)`, `shorten(text, most)`, `clean_answer(text)` |
 | `std/stats.kos` | `median(xs)`, `variance(xs)`, `deviation(xs)`, `percentile(xs, p)`, `normalized(xs)`, `zscores(xs)`, `correlation(xs, ys)` |
 | `std/search.kos` | `Hit {index, score, text}`, `rank(question, texts, count)`, `best(question, texts)`: texts ranked by the words they share with a question, rare words counting for more (BM25), with no model |
+| `std/paths.kos` | `Link {from, to, cost}`, `Route {found, places, cost}`, `shortest(start, goal, links, estimates)`, `hops(start, goal, links)`: the cheapest way through a network of links, by A* search, `hops` counting links instead of distance; `estimates` says what each place still costs to the goal and must never overestimate, and an empty table is Dijkstra's |
+| `std/db.kos` | `column(columns, name)`, `cell(row, columns, name)`, `as_number(text)`, `grid_rows(columns, rows)`: reading a database answer's grid of text by column name, since a grid cannot say which cell is a number and which is absent |
 | `std/evidence.kos` | `plain_quote(quote)`, `plain_word(word)`, `found_in(lines, quote)`, `hit_source(hit)`, `hit_text(hit)`, `search_words(text, skip_first)`, `says_in(answer, question, line)`: a quote is proved only by a line that holds it, and a question is reduced to the words worth searching for |
 | `std/nn.kos` | `Layer {weights, biases}`, `Net {layers}`, `net(sizes, seed)`, `predict(n, x)`, `train(n, xs, ys, rate, rounds)`, `loss(n, xs, ys)`: a small neural network, tanh hidden layers and a sigmoid output, learned by gradient descent on the processor |
 
@@ -1116,6 +1118,9 @@ tool run_tests {
 | `system "services"` | `resume` | `{name: Text}` | `{name: Text, paused: Bool}` |
 | `system "linux"` | `status` | none | `{distro: Text, kernel: Text, uptime: Text, load: Text, memory: Text, disk: Text, upgrades: Text, top: Text[]}` |
 | `system "computer"` | `status` | none | `{name: Text, system: Text, cores: Number, memory: Text, disk: Text, uptime: Text}` |
+| `system "db"` | `query` | `{sql: Text, values: Text[]}` | `{columns: Text[], rows: Text[][], more: Bool}` |
+| `system "db"` | `rows` | `{sql: Text, values: Text[]}` | `{rows: R[], more: Bool}`, where every field of R is `Text`, `Number` or `Bool` |
+| `system "db"` | `run` | `{sql: Text, values: Text[]}` | `{changed: Number}` |
 | `system "web"` | `fetch` | `{url: Text}` | `{url: Text, title: Text, text: Text}` |
 | `system "web"` | `fetch_from` | `{url: Text, start: Number}` | `{url: Text, title: Text, text: Text, next: Number}` |
 
@@ -1123,7 +1128,8 @@ tool run_tests {
   exactly the fields above (`check/invalid-system-tool`). A workflow that
   executes one therefore MUST state `require approval`.
 - Declaring a system tool grants nothing. The host binds files tools only when
-  it grants a folder, and shell tools only when it also allows shell. An
+  it grants a folder, shell tools only when it also allows shell, and db tools
+  only when it names a database file (`--database FILE`). An
   unbound system tool fails the run before its first step.
 - Every call needs its own approval for that exact tool and arguments, through
   the same session and ledger as any other `execute` tool.
@@ -1216,6 +1222,43 @@ tool run_tests {
 - When a host has skills for a program, the skills whose trigger words
   occur in the `text` of a `propose` call are added, as words, to what the
   outside agent is asked.
+- A `system "db"` tool reaches the one database file the host names
+  (`--database FILE`, see `kosika/database.py`); without it the tool is not
+  bound. Every operation takes `sql`, one statement, and `values`, the values
+  bound to its `?` placeholders in order; nothing else is ever part of the
+  statement. `query` and `rows` open the file read-only and MAY be `access:
+  observe`; neither creates the file, and a statement that would change the
+  database is refused. `query` gives rows back as a grid of text (`columns`,
+  then `rows`, one text per cell). `rows` gives the same answer as the
+  program's own records: each column is mapped by name onto the field of that
+  name in the row record the output declares, and a row that does not fit is
+  refused, naming the row and the column — a cell the field cannot hold, or an
+  absent value, because a field is never absent (say what to put there in the
+  statement, with `coalesce`). Only `Text`, `Number` and `Bool` fields can be a
+  row, so a grid that reads as text and a record that reads as a number are
+  both available and a program states which it means. `run` opens the file
+  read-write, creates it when it is not there, commits what it did, and gives
+  `changed`, the rows changed (0 when the database does not count them, as for
+  a table it created); it MUST be `access: execute`, so every call waits for
+  the person's yes. In a grid each cell is text: a number is written as Kosika
+  writes numbers, an absent value (`NULL`) is the empty text, and a blob is
+  `<N bytes>`. `more` is true when the row limit cut the answer short, in
+  either answer. At most 8 KiB of SQL, 100 values, 500 rows, 100 columns and
+  4,000 characters per cell are taken, and one statement is stopped after 5
+  seconds.  What a call returns is in the trace, so a replay needs no database:
+  a run records the tables the granted file had when it began, and a replay
+  puts the recorded statement back to SQLite against them with `explain`, which
+  reads a statement without running it. A recorded statement that binds other
+  values than were sent, or that changes the database under an operation that
+  only looks, is refused; so is one that is more than one statement, and one
+  SQLite cannot read at all. A statement naming a table or column the run did
+  not record is left alone, since a run may have made one. A `run` records the
+  approval it was given as well, so a replay can recompute that approval's hash
+  and refuse a statement or values that are not the ones the person approved.
+  A `store` (below) is what says which tables and columns the program means,
+  and it is checked against the file before the first step.
+  `kosika-native` does not read a `db` tool yet: it refuses the declaration by
+  name rather than checking it. It refuses a `store` the same way.
 - A `system "services"` tool reaches the owner's services (see
   `kosika/services.py`), in the one services file the host names
   (`--services FILE`); without it the tool is not bound. `status` takes no
@@ -1245,6 +1288,63 @@ tool run_tests {
   of at most 1 MiB.
 - This is not an operating-system sandbox. An approved program runs with the
   authority of the person who approved it.
+
+### Stores: the tables a program means
+
+```ebnf
+store       = "store" identifier "at" string "{" { table } "}" ;
+table       = "table" identifier "{" [ column { [","] column } ] "}" ;
+column      = identifier ":" column-type ;
+column-type = "Text" | "Number" | "Bool" ;
+```
+
+A store writes down the tables and columns a program means to use in one
+database file, where a person and the checker can read them:
+
+```kosika
+store Ledger at "./notes.db" {
+  table notes {
+    id: Number
+    title: Text
+    done: Bool
+  }
+}
+```
+
+- The file is a quoted path beside the program: it MUST be relative, and two
+  stores MUST NOT name the same file. A store grants nothing and reaches
+  nothing; it does not create the file, and a program with no store still
+  reaches a granted database through its `db` tools.
+- A column is `Text`, `Number` or `Bool`, the same three a row record may
+  hold. Nothing is declared twice, a table declares at least one column, and a
+  column carries no default value: a store says what a column holds, not what
+  happens when nothing is given, which belongs where the column is created.
+- These words are checked with no file at all, by `kosika check`. Whether the
+  file agrees is a preflight, before the first step of a run: the file MUST be
+  the one the runner named with `--database`, and every declared table and
+  column MUST be there.
+  - A missing table or column is refused, naming the file, the table and the
+    column, and saying what the file does have.
+  - A column whose SQLite affinity is not what the declaration means is
+    refused the same way. `Text` is `TEXT`. `Bool` is `INTEGER`, since a
+    boolean is 0 or 1. `Number` may be `INTEGER`, `NUMERIC` or `REAL`, since
+    all three give back a number.
+  - A table or column the file has and the store does not mention is left
+    alone: a store says what a program means, not everything a file holds.
+- A run that declares a store and names no database is refused, rather than
+  run with its promise unchecked. So `kosika check` passes a program whose
+  tables are not there yet, and `kosika run` does not.
+- `kosika db init FILE --from PROGRAM` writes the tables the program declares,
+  printing what it will do first. A table that is not there is created, with
+  `Text` columns as `TEXT`, `Number` as `INTEGER` and `Bool` as `INTEGER`. A
+  table that is there is only read, so a missing column or one of another
+  affinity is a refusal and nothing is written. `kosika db inspect FILE` says
+  what is in a file — each table, its row count, each column's declared type
+  and affinity — and, given `--from PROGRAM`, whether the store agrees.
+- A store says nothing about keys, defaults, constraints or indexes, and
+  `kosika db init` writes none of them. A column that needs one is made by
+  hand, in a statement whose approval the trace holds. Migrations are not part
+  of the language, and nothing here changes a column that holds rows.
 
 ### Host component contracts
 
@@ -1405,6 +1505,9 @@ Version 5 records:
 - Function call/return events, including function calls evaluated inside
   arguments and function bodies.
 - Model, agent, and tool input/output schemas and recorded outcomes.
+- The tables of the granted database, for a run that reaches one.
+- The approval each call that needed one was made under: who said yes, the
+  plan hash it was given for, and the action hash the approval ledger claimed.
 - Final result and cooperative execution counters.
 
 `replay(trace)` is **validated outcome replay**:
@@ -1415,12 +1518,22 @@ Version 5 records:
 - It validates recorded arguments and results against recorded schemas.
 - It validates model content against its recorded JSON result and validates
   agent transcripts.
+- It puts a recorded database statement back to SQLite, against the tables the
+  run recorded, and refuses a statement the tool could not have sent. That call
+  reads a statement, never runs one, and needs no database.
+- It recomputes the action hash of every call that records an approval, over
+  the step path, the tool and the arguments as recorded, and refuses a call
+  whose action hash is over other arguments: the statement and values an
+  approval covers cannot be edited after the yes without the replay saying so.
 - It returns the final recorded result only after those checks pass.
 
 Replay does not prove that a trace came from trusted source, that the program
 hash identifies approved code, or that events were not rewritten consistently.
-Traces are not signed or cryptographically chained in `0.1.0`. Authenticity
-and storage integrity are host responsibilities.
+A trace that records no approval for a call is judged on the call alone, as a
+trace made before that record is, and an approval hash recomputed from the same
+trace is tamper-evident rather than a signature. Traces are not signed or
+cryptographically chained in `0.1.0`. Authenticity and storage integrity are
+host responsibilities.
 
 ## Executable conformance examples
 

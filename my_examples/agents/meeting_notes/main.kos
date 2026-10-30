@@ -1,0 +1,67 @@
+// A meeting notes agent. The model pulls out the tasks; code organises them.
+//
+//   kosika test main.kos
+//   kosika run main.kos --input input.json --model qwen2.5:7b
+
+record Notes { text: Text }
+record Task { owner: Text what: Text days: Number }
+record TaskList { tasks: Task[] }
+record OwnerLoad { owner: Text count: Number soonest: Number }
+record Plan { summary: Text first: Text? total: Number busiest: Text? loads: OwnerLoad[] }
+
+model assistant
+
+fn none(notes: Notes) -> TaskList {
+  return {tasks: []}
+}
+
+fn plan(found: TaskList, brief: Summary) -> Plan {
+  let ordered = found.tasks.sort_by(field: "days")
+  let by_owner = found.tasks.group_by(field: "owner")
+  var loads: OwnerLoad[] = []
+  for owner in by_owner.keys().sort() {
+    let mine = by_owner.get(owner).or([])
+    let soonest = (for task in mine { task.days }).min().or(0)
+    loads = loads.append({owner: owner, count: mine.length(), soonest: soonest})
+  }
+  let busiest = loads.max_by(field: "count")
+  let first = ordered.first()
+  return {
+    summary: brief.text,
+    first: if first.exists() { first.owner + ": " + first.what } else { null },
+    total: found.tasks.length(),
+    busiest: if busiest.exists() { busiest.owner } else { null },
+    loads: loads
+  }
+}
+
+workflow main(notes: Notes) -> Plan {
+  budget 6 model calls, 300 seconds
+  found  = extract TaskList from notes.text retry 2 otherwise none(notes)
+  brief  = summarize notes.text
+  result = plan(found, brief)
+}
+
+test "tasks are grouped by owner and ordered by deadline" {
+  answers assistant: [
+    {tasks: [
+      {owner: "Mira", what: "Send the budget", days: 5},
+      {owner: "Leo", what: "Fix the login bug", days: 1},
+      {owner: "Mira", what: "Book the venue", days: 3}
+    ]},
+    {text: "Budget, a bug, and a venue."}
+  ]
+  result = main({text: "notes"})
+  expect result.total == 3
+  expect result.first.or("") == "Leo: Fix the login bug"
+  expect result.busiest.or("") == "Mira"
+  expect result.loads.length() == 2
+  expect result.loads[1].soonest == 3
+}
+
+test "no tasks is a valid answer" {
+  answers assistant: [{tasks: []}, {text: "Nothing to do."}]
+  result = main({text: "We just chatted."})
+  expect result.total == 0
+  expect result.first.exists() == false
+}

@@ -1,9 +1,13 @@
 FAIL  chunks of no size
-      line 8: chunks needs a size of at least 1 and an overlap below it
+      line 9: chunks needs a size of at least 1 and an overlap below it
 FAIL  an overlap as big as the chunk
-      line 12: chunks needs a size of at least 1 and an overlap below it
+      line 13: chunks needs a size of at least 1 and an overlap below it
+FAIL  a column the answer does not have
+      line 17: the answer has no column named title
+FAIL  a cell that is not a number
+      line 21: the cell later does not hold a number
 FAIL  a percentile past 100
-      line 16: percentile needs p from 0 to 100
+      line 25: percentile needs p from 0 to 100
 FAIL  lists of different lengths
-      line 20: correlation needs two lists of the same length
-0 passed, 4 failed
+      line 29: correlation needs two lists of the same length
+0 passed, 6 failed

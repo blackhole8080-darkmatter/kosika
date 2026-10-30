@@ -1,0 +1,25 @@
+record Ticket { text: Text }
+record Order { customer: Text? order_id: Text? amount: Number? }
+record Result { customer: Text order_id: Text amount: Number refund: Bool }
+
+model assistant
+
+fn nothing_found(ticket: Ticket) -> Order {
+  return {customer: null, order_id: null, amount: null}
+}
+
+fn build(order: Order, refund: Decision) -> Result {
+  return {
+    customer: order.customer.or("unknown"),
+    order_id: order.order_id.or("unknown"),
+    amount: order.amount.or(0),
+    refund: refund.answer
+  }
+}
+
+workflow main(ticket: Ticket) -> Result {
+  budget 6 model calls, 120 seconds
+  order  = extract Order from ticket.text with evidence retry 1 otherwise nothing_found(ticket)
+  refund = decide "Does the customer ask for a refund?" given ticket.text with evidence retry 1
+  result = build(order, refund)
+}

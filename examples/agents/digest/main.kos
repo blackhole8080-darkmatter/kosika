@@ -3,26 +3,36 @@
 //   kosika test main.kos
 //   kosika run main.kos --workflow afternoon --model qwen2.5:7b --model-protocol ollama
 //       --model-timeout 1800 --max-output-tokens 4000
-//       --allow-site export.arxiv.org --memory memory
+//       --allow-site export.arxiv.org --allow-site connect.biorxiv.org
+//       --allow-site www.biorxiv.org --memory memory
 //   kosika run main.kos --workflow evening ...the same...
+//   kosika run main.kos --input ask.json ...the same sites...
+//       where ask.json holds a paper's link to draw, like
+//       {"msg": {"text": "https://arxiv.org/abs/2610.23850"}} or a
+//       bioRxiv content link, or a topic to survey, like
+//       {"msg": {"text": "survey cost-aware abstention"}}.
 //
 // In the afternoon it reads arXiv's newest papers in five fields, a
 // different five each day from twenty across the sciences, AI, maths and
-// computing, and explains each paper in plain words: the question it asks,
-// what it found, how strong the evidence is, and what it leaves open. In
-// the evening it takes two of the afternoon's papers further, with an
-// example worked through and questions to check you understood.
+// computing, and one bioRxiv subject a day from four in biology, and
+// explains each paper in plain words: the question it asks, what it found,
+// how strong the evidence is, and what it leaves open. In the evening it
+// takes two of the afternoon's papers further, with an example worked
+// through and questions to check you understood.
 //
-// It only reads. It reaches nothing but the arXiv site you allow, every
-// paper is shown with its link so you can read it yourself, and a paper is
+// It only reads. It reaches nothing but the sites you allow, every paper
+// is shown with its link so you can read it yourself, and a paper is
 // never explained twice: the links it has shown are kept in its memory.
-// An arXiv paper is a preprint, not yet reviewed by other scientists, and
-// it says so.
+// An arXiv or bioRxiv paper is a preprint, not yet reviewed by other
+// scientists, and it says so.
 //
 // It can send each digest to your phone as a notification. Install the
 // free ntfy app (iOS or Android), subscribe to a topic name only you know,
 // and run with --notify https://ntfy.sh/THAT-NAME. Notes go to that one
-// address and nowhere else. Without --notify nothing is sent.
+// address and nowhere else. Without --notify nothing is sent. A note about
+// one paper taps open that paper's link, carries the figures written as an
+// outline in its own words, and has the page of figures attached to it, so
+// the mind maps, statistics and diagrams reach the phone with the paper.
 //
 // The models explain from each paper's abstract. They are told not to add
 // what the abstract does not say, and each explanation says it was made
@@ -30,6 +40,7 @@
 
 import "figures.kos"
 import "std/search.kos"
+import "std/evidence.kos"
 
 record Msg { text: Text }
 record Said { text: Text }
@@ -68,7 +79,9 @@ tool read_feed {
   output: Page
 }
 
-record Note { title: Text text: Text }
+// A note to the phone: its words, the link tapping it opens, and one
+// attached page (file_name and file empty for a plain note).
+record Note { title: Text text: Text link: Text file_name: Text file: Text }
 record Sent { sent: Bool }
 
 tool tell_me {
@@ -125,6 +138,29 @@ model illustrator {
   }
 }
 
+// One thing several papers say, and which of them say it (their places in
+// the survey's list of papers, from 1).
+record Claim { text: Text sources: Number[] }
+// What reading several papers on one topic together says: where they
+// agree, where they differ, what none of them settles, and two figures
+// drawn for the whole topic: themes, a mind map of the area (items with
+// an empty group are branches, a leaf's group is its branch's label, a
+// leaf's note is the number of the paper it comes from), and numbers, a
+// bar chart of one number per paper (label the paper in a few words,
+// value the number as that paper's abstract writes it, note what it
+// counts, group the paper's number).
+record Survey { question: Text agreed: Claim[] differed: Claim[] open: Text[] themes: Item[] numbers: Item[] }
+// What the synthesiser is asked.
+record Ask { text: Text }
+
+model synthesiser {
+  input: Ask
+  output: Survey
+  parameters: {
+    max_output_tokens: 2000
+  }
+}
+
 memory days of Day
 memory seen of Seen
 
@@ -159,14 +195,34 @@ fn feed_url(field: Field) -> Text {
   return "https://export.arxiv.org/api/query?search_query=cat:" + field.code + "&sortBy=submittedDate&sortOrder=descending&max_results=6"
 }
 
-// The five fields of a day: a different five each day, all twenty in four
+// The bioRxiv subjects followed, one a day: biology's own preprints, in
+// fields arXiv does not cover. The feed is RSS 1.0, read by the same
+// feed-to-lines step as arXiv's.
+fn biorxiv_fields() -> Field[] {
+  return [
+    {code: "bioinformatics", name: "Bioinformatics (bioRxiv)"},
+    {code: "genetics", name: "Genetics (bioRxiv)"},
+    {code: "neuroscience", name: "Neuroscience (bioRxiv)"},
+    {code: "microbiology", name: "Microbiology (bioRxiv)"}
+  ]
+}
+
+fn biorxiv_url(field: Field) -> Text {
+  return "https://connect.biorxiv.org/biorxiv_xml.php?subject=" + field.code
+}
+
+// The six fields of a day: a different five arXiv fields each day, all
+// twenty in four days, and one bioRxiv subject a day, all four in four
 // days, so every subject comes round again.
 fn plan_for(day: Number) -> Plan {
   let all = fields()
   let start = (day * 5) % all.length()
   var chosen: Field[] = []
   for i in 0 until 5 { chosen = chosen.append(all[(start + i) % all.length()]) }
-  return {fields: chosen, urls: for field in chosen { feed_url(field) }}
+  let life = biorxiv_fields()
+  let pick = life[day % life.length()]
+  chosen = chosen.append(pick)
+  return {fields: chosen, urls: for field in chosen { if field.name.contains("bioRxiv") { biorxiv_url(field) } else { feed_url(field) }}}
 }
 
 // ---------------------------------------------------------------- reading a feed
@@ -226,7 +282,7 @@ fn no_page() -> Page {
 // ---------------------------------------------------------------- asking the models
 
 fn teach_task() -> Text {
-  return "You are a patient teacher who explains new research to a curious person who is not an expert in the field. For each paper, in the same order, write: idea, the question the paper asks and why it matters, in two or three sentences; found, what it found or built, with its key numbers if the abstract gives them; evidence, how strong the evidence is and what kind (an experiment, a proof, a simulation, a survey), remembering that an arXiv paper is a preprint not yet reviewed by other scientists; open, what is still uncertain or limited; use, one practical way the idea could be used or tested. Define any technical term in plain words the first time you use it. Use only what the abstract says: do not invent results, numbers or methods it does not state. Keep the paper's title exactly."
+  return "You are a patient teacher who explains new research to a curious person who is not an expert in the field. For each paper, in the same order, write: idea, the question the paper asks and why it matters, in two or three sentences; found, what it found or built, with its key numbers if the abstract gives them; evidence, how strong the evidence is and what kind (an experiment, a proof, a simulation, a survey), remembering that an arXiv or bioRxiv paper is a preprint not yet reviewed by other scientists; open, what is still uncertain or limited; use, one practical way the idea could be used or tested. Define any technical term in plain words the first time you use it. Use only what the abstract says: do not invent results, numbers or methods it does not state. Keep the paper's title exactly."
 }
 
 fn tutor_task() -> Text {
@@ -329,7 +385,7 @@ fn evening_text(batch: Batch, deeper: Deeper) -> Said {
 
 // arXiv shows most new papers as a web page as well as a PDF.
 fn paper_page(paper: Paper) -> Text {
-  return paper.link.replace("/abs/", "/html/")
+  return source_of(paper.link).page
 }
 
 // The paper's own words from its abstract on, without the site's menus.
@@ -380,7 +436,7 @@ fn no_part() -> Part {
 }
 
 fn draw_task() -> Text {
-  return "You turn one research paper into a page of figures that explain it to a curious person who is not an expert. Read the paper, then choose the four to seven figures that best explain THIS paper: what it asks, how it works, what it found and how firmly. Pick the kinds that fit what the paper is about, so a paper of proofs, a lab experiment and a survey each look different. The kinds, and what each item means: flow (label is a step, value what happens in it); numbers (label is a number written as the paper gives it, like 69% or x3.1, value what it counts); bars (label a thing, value its number, note the unit; only numbers the paper gives); curve (label a line's name, value its heights left to right like \"1 2 4 3\", center what runs along the bottom; only for a shape the paper describes or plots); tree (items with an empty group are branches, items whose group is a branch's label hang from it, note a short tag like exact or bound); mindmap (the same as tree, with center the paper's subject in two or three words, and three to six branches); timeline (label when, value what happened); glossary (label a technical word, value its meaning in plain words); card (center a name, each item one fact as label and value); quote (value one important sentence copied exactly from the paper). For every figure give a short title, and section: where in the paper it comes from, like Abstract or Section 3. Keep every label under six words and every value under twenty. Use only what the paper says: never invent a number, result or method. Also write question: the paper's question in one plain sentence."
+  return "You turn one research paper into a page of figures that explain it to a curious person who is not an expert. Read the paper, then choose the four to seven figures that best explain THIS paper: what it asks, how it works, what it found and how firmly. Pick the kinds that fit what the paper is about, so a paper of proofs, a lab experiment and a survey each look different. The kinds, and what each item means: flow (label is a step, value what happens in it); numbers (label is a number written as the paper gives it, like 69% or x3.1, value what it counts); bars (label a thing, value its number, note the unit; only numbers the paper gives); curve (label a line's name, value its heights left to right like \"1 2 4 3\", center what runs along the bottom; only for a shape the paper describes or plots); tree (items with an empty group are branches, items whose group is a branch's label hang from it, note a short tag like exact or bound); mindmap (the same as tree, with center the paper's subject in two or three words, and three to six branches); timeline (label when, value what happened); glossary (label a technical word, value its meaning in plain words); card (center a name, each item one fact as label and value); quote (value one important sentence copied exactly from the paper); scatter (label names the point, value its two numbers as \"x y\", center the two axes in a few words; only for pairs the paper itself lists); box (label a group's name, value that group's numbers as \"12 14 9 11\" exactly as the paper gives them; for comparing how several groups spread); forest (label the study or condition, value three numbers as \"estimate low high\": the finding and its confidence interval; for differences where no effect is 0; every row shares one axis); compare (items with an empty group name the columns, two to four of them; items whose group is a column's name are its rows, label the point in a few words, note a short tag; center says what is being compared; for putting two paradigms or approaches side by side); cycle (label a stage, value what happens in it, three to eight stages in order round the loop; center names the loop; for a process that feeds back on itself). For a scatter, a box or a forest you give only the paper's raw numbers: the correlation r, the medians, the quartiles and the whiskers are worked out by code and marked computed, and a number the paper does not give loses the figure. For every figure give a short title, and section: where in the paper it comes from, like Abstract or Section 3. Keep every label under six words and every value under twenty. Use only what the paper says: never invent a number, result or method. Also write question: the paper's question in one plain sentence."
 }
 
 fn study_of(paper: Paper, page: Page) -> Study {
@@ -437,9 +493,34 @@ fn is_arxiv_id(id: Text) -> Bool {
   return rest.length() <= 2 and (rest[0].length() == 4 or rest[0].length() == 5) and rest[0].to_number().exists() and (rest.length() == 1 or rest[1].to_number().exists())
 }
 
-fn paper_named(link: Text, first: Part) -> Paper {
+// The bioRxiv content link a message holds, without the feed's ?rss=1, or
+// "" when it holds none: https://www.biorxiv.org/content/10.1101/...v1
+fn biorxiv_link(text: Text) -> Text {
+  for word in text.words() {
+    let clean = word.trim().trim_marks(".,;:!?)(\"'")
+    if clean.contains("biorxiv.org/content/") { return clean.split("?")[0] }
+  }
+  return ""
+}
+
+// Where a paper link is read from, and the preprint server it is on: the
+// arXiv reading of an abs page, or a bioRxiv paper's full text.
+record Source { page: Text server: Text }
+
+fn source_of(link: Text) -> Source {
+  let life = biorxiv_link(link)
+  if not life.is_empty() {
+    let full = if life.ends_with("full") { life } else { life + "/full" }
+    return {page: full, server: "bioRxiv"}
+  }
+  return {page: link.replace("/abs/", "/html/"), server: "arXiv"}
+}
+
+// The paper of a link, once its page's opening has been read: its title,
+// the link itself, and the server it is on.
+fn paper_from(link: Text, source: Source, first: Part) -> Paper {
   let title = if first.title.trim().is_empty() { link } else { first.title.trim() }
-  return {title: title, link: link, published: "", authors: "", summary: "", field: "arXiv"}
+  return {title: title, link: link, published: "", authors: "", summary: "", field: source.server}
 }
 
 fn no_lesson(text: Text) -> Lesson {
@@ -465,7 +546,7 @@ fn said_of(lesson: Lesson) -> Said {
 }
 
 fn lesson_of(said: Said, page: Text) -> Lesson {
-  let told = if page.is_empty() { said.text } else { said.text + "\n\nThe two papers are drawn as figures in this evening's page, beside this digest on the laptop." }
+  let told = if page.is_empty() { said.text } else { said.text + "\n\nThe two papers are drawn as figures in this evening's page, attached to the note and beside this digest on the laptop." }
   return {text: told, page: page}
 }
 
@@ -484,17 +565,392 @@ fn phone_note(title: Text, said: Said) -> Note {
   }
   let body = if kept.is_empty() { said.text } else { kept.join("
 ").trim() }
-  return {title: title, text: body}
+  return {title: title, text: body, link: "", file_name: "", file: ""}
+}
+
+// A title as a file name for an attached page: lower case, letters and
+// digits, a dash between words, .html at the end.
+fn page_name(title: Text) -> Text {
+  var words: Text[] = []
+  var word = ""
+  for c in title.lower().chars() {
+    if "abcdefghijklmnopqrstuvwxyz0123456789".contains(c) {
+      word = word + c
+    } else if not word.is_empty() {
+      words = words.append(word)
+      word = ""
+    }
+  }
+  if not word.is_empty() { words = words.append(word) }
+  let slug = words.join("-").take(40).trim_marks("-")
+  let name = if slug.is_empty() { "paper" } else { slug }
+  return name + ".html"
+}
+
+// The evening's note: the lesson's words, the first paper's link to tap,
+// and the page of figures attached.
+fn evening_note(said: Said, page: Text, link: Text) -> Note {
+  let plain = phone_note("Evening lesson", said)
+  let name = if page.is_empty() { "" } else { page_name("Evening lesson") }
+  return {title: plain.title, text: plain.text, link: link, file_name: name, file: page}
+}
+
+// What the phone gets for one drawn paper: the words, the figures as an
+// outline, the paper's link to tap, and the page itself attached.
+fn drawn_note(one: Paper, drawing: Drawing, lesson: Lesson) -> Note {
+  let said = if lesson.page.is_empty() { lesson.text } else { lesson.text + "\n\n" + outline_text(drawing, 1200) }
+  let name = if lesson.page.is_empty() { "" } else { page_name(one.title) }
+  return {title: "A paper, drawn", text: said, link: one.link, file_name: name, file: lesson.page}
 }
 
 fn not_sent() -> Sent {
   return {sent: false}
 }
 
+// ---------------------------------------------------------------- the survey
+
+// Reading several papers on one topic together: code finds them on arXiv
+// (the same relevance search the site itself offers), each paper's figures
+// are drawn from its own abstract and grounded against it, and the
+// synthesiser says where they agree, where they differ and what is still
+// open — every claim carrying the numbers of the papers that say it.
+
+// How many papers one survey reads.
+fn survey_most() -> Number {
+  return 3
+}
+
+// The topic a message asks a survey of: the words after "survey".
+fn topic_of(text: Text) -> Text {
+  let lower = text.trim().lower()
+  if lower == "survey" or lower.starts_with("survey ") { return text.trim().drop(7).trim() }
+  return text.trim()
+}
+
+// arXiv's own relevance search for the topic, as a feed the reader reads.
+// Every word of the topic must be there, all of them ANDed.
+fn survey_url(topic: Text) -> Text {
+  var query: Text[] = []
+  for word in topic.trim().words() { query = query.append("all:" + word) }
+  return "https://export.arxiv.org/api/query?search_query=" + query.join("+AND+") + "&sortBy=relevance&max_results=8"
+}
+
+// The first `most` distinct papers of a search: one link each, every link
+// and title real.
+fn distinct_papers(papers: Paper[], most: Number) -> Paper[] {
+  var kept: Paper[] = []
+  for paper in papers {
+    if kept.length() < most and not paper.title.is_empty() and not paper.link.is_empty() and (for k in kept where k.link == paper.link { k }).is_empty() {
+      kept = kept.append(paper)
+    }
+  }
+  return kept
+}
+
+// The survey's fill task: figures from the abstract alone, so every paper
+// of the survey can be drawn without reading it in full.
+fn survey_draw_task() -> Text {
+  return "You turn one research paper's abstract into two to four figures that explain it to a curious person who is not an expert. Work from the abstract only. The kinds, and what each item means: numbers (label is a number written as the paper gives it, like 69% or x3.1, value what it counts); bars (label a thing, value its number, note the unit; only numbers the abstract gives); glossary (label a technical word, value its meaning in plain words); card (center a name, each item one fact as label and value); mindmap (the same as tree, with center the paper's subject in two or three words and three to six branches; items with an empty group are branches, items whose group is a branch's label hang from it); flow (label is a step, value what happens in it); compare (items with an empty group name the columns, two to four of them; items whose group is a column's name are its rows). A numbers or bars figure is dropped unless every number appears in the abstract exactly as written, and its label must be the number itself. For every figure give a short title and section: Abstract. Keep every label under six words and every value under twenty. Use only what the abstract says: never invent a number, result or method. Also write question: the paper's question in one plain sentence."
+}
+
+fn paper_pick(papers: Paper[], i: Number) -> Paper {
+  return if i < papers.length() { papers[i] } else { {title: "", link: "", published: "", authors: "", summary: "", field: ""} }
+}
+
+// What the synthesiser reads: the topic, then each paper numbered, with
+// its title, its place, and its abstract.
+fn survey_prompt(topic: Text, papers: Paper[]) -> Ask {
+  var parts: Text[] = []
+  for i in 0 until papers.length() {
+    let paper = papers[i]
+    parts = parts.append(f"[{i + 1}] {paper.title}\nAbstract: {paper.summary}")
+  }
+  return {text: "You have read " + papers.length().to_text() + " research papers (preprints) on one topic. The topic: " + topic.trim() + "\n\n" + parts.join("\n\n") + "\n\nSay what reading them together shows. In question, the topic restated as one plain question.\nIn agreed, at most three short claims that more than one paper supports, each with sources: the numbers of the papers that support it, like [1, 3].\nIn differed, at most three short claims where papers disagree or differ in their findings or their setting, each with sources like [1, 2].\nIn open, at most three things none of the abstracts settles.\nEvery claim must come only from the abstracts above: never add what they do not say, and never give a paper number whose abstract does not back the claim. Keep each claim to one short sentence."}
+}
+
+// A claim is kept only when every source it names is a paper of the survey.
+fn cited(claim: Claim, count: Number) -> Bool {
+  if claim.sources.is_empty() { return false }
+  return (for s in claim.sources where s < 1 or s > count { s }).is_empty()
+}
+
+fn clean_survey(survey: Survey, count: Number) -> Survey {
+  return {
+    question: survey.question,
+    agreed: for claim in survey.agreed where cited(claim, count) { claim },
+    differed: for claim in survey.differed where cited(claim, count) { claim },
+    open: survey.open.take(3),
+    themes: survey.themes,
+    numbers: survey.numbers
+  }
+}
+
+// Whether every paper a claim cites shares a content word with it: each
+// cited abstract says something in the claim's own words. A claim no
+// cited abstract shares a word with is the synthesiser's comparison, not
+// the papers' words, and is marked as such rather than shown as fact.
+fn claim_backed(claim: Claim, papers: Paper[]) -> Bool {
+  let keys = search_words(claim.text, false).words()
+  if keys.is_empty() { return false }
+  for s in claim.sources {
+    let paper = paper_pick(papers, s - 1)
+    let words = paper.summary.lower()
+    if (for key in keys where words.contains(key) { key }).is_empty() { return false }
+  }
+  return true
+}
+
+// The claims and their citations, as words for the reader and the phone.
+// A claim that survived the citation check but shares no word with every
+// abstract it cites is shown with a star, and the star is explained once.
+fn survey_text(topic: Text, survey: Survey, papers: Paper[]) -> Text {
+  var parts: Text[] = ["Survey: " + topic.trim()]
+  if not survey.question.is_empty() { parts = parts.append("Question: " + survey.question) }
+  var marked = false
+  if not survey.agreed.is_empty() {
+    parts = parts.append("Where they agree:")
+    for claim in survey.agreed.take(3) {
+      let backed = claim_backed(claim, papers)
+      if not backed { marked = true }
+      parts = parts.append("- " + claim.text + " [" + (for s in claim.sources { s.to_text() }).join(", ") + "]" + (if backed { "" } else { " *" }))
+    }
+  }
+  if not survey.differed.is_empty() {
+    parts = parts.append("Where they differ:")
+    for claim in survey.differed.take(3) {
+      let backed = claim_backed(claim, papers)
+      if not backed { marked = true }
+      parts = parts.append("- " + claim.text + " [" + (for s in claim.sources { s.to_text() }).join(", ") + "]" + (if backed { "" } else { " *" }))
+    }
+  }
+  if not survey.open.is_empty() {
+    parts = parts.append("Still open:")
+    for line in survey.open.take(3) { parts = parts.append("- " + line) }
+  }
+  parts = parts.append("The papers:")
+  for i in 0 until papers.length() {
+    parts = parts.append("[" + (i + 1).to_text() + "] " + papers[i].title + "\n" + papers[i].link)
+  }
+  if marked {
+    parts = parts.append("* marks a claim one of its cited papers shares no word with: part of it is the comparison across the papers, not what any one of them says.")
+  }
+  return parts.join("\n")
+}
+
+// One paper of the survey, drawn from its own abstract and grounded
+// against it. A paper with no title is skipped without asking a model.
+workflow survey_draw(paper: Paper) -> Drawing {
+  drawing = match paper.title.is_empty() {
+    case true { no_drawing() }
+    case _ { call survey_drawn(paper) }
+  }
+}
+
+workflow survey_drawn(paper: Paper) -> Drawing {
+  raw     = use_model illustrator(survey_draw_task(), paper.title, paper.summary) retry 1 otherwise no_drawing()
+  drawing = checked(raw, paper.summary)
+}
+
+fn no_survey() -> Survey {
+  return {question: "", agreed: [], differed: [], open: [], themes: [], numbers: []}
+}
+
+// ------------------------------------------------- the survey's own figures
+
+// Whether one bar of the papers' numbers is real: its number, as written,
+// must be in the abstract of the paper it cites. The model may arrange the
+// pair either way — the paper's number in group and the metric in value,
+// or the paper's number in value and the metric in note — and whichever
+// field holds a whole number in range is read as the citation, so a bar
+// citing paper 1 is kept only when paper 1's own abstract holds its number.
+record Bar { paper: Number metric: Text }
+
+fn cited_paper(n: Number?, papers: Paper[]) -> Number {
+  if not n.exists() { return 0 }
+  if n.value() < 1 or n.value() > papers.length() { return 0 }
+  if n.value() != n.value().floor() { return 0 }
+  return n.value()
+}
+
+fn bar_parts(item: Item, papers: Paper[]) -> Bar {
+  let from_group = cited_paper(item.group.trim().to_number(), papers)
+  if from_group > 0 { return {paper: from_group, metric: item.value} }
+  let from_value = cited_paper(item.value.trim().to_number(), papers)
+  if from_value > 0 { return {paper: from_value, metric: item.note} }
+  let by_name = cited_paper(named_paper(item, papers), papers)
+  if by_name > 0 { return {paper: by_name, metric: item.value} }
+  return {paper: 0, metric: ""}
+}
+
+// The paper a figure item cites by NAME: the one paper whose title holds a
+// distinctive word of the item's own words, as a reader resolves
+// "PrefixQuant" to its place in the list. Several or none is no citation.
+fn named_paper(item: Item, papers: Paper[]) -> Number {
+  var words: Text[] = []
+  for word in (item.label + " " + item.note + " " + item.group).lower().words() {
+    if word.length() >= 4 and not words.contains(word) { words = words.append(word) }
+  }
+  var found = 0
+  for word in words {
+    var matches = 0
+    var which = 0
+    for i in 0 until papers.length() {
+      if papers[i].title.lower().contains(word) {
+        matches += 1
+        which = i + 1
+      }
+    }
+    if matches == 1 {
+      if found == 0 { found = which }
+      if found != which { return 0 }
+    }
+  }
+  return found
+}
+
+fn grounded_number(item: Item, papers: Paper[]) -> Bool {
+  let parts = bar_parts(item, papers)
+  if parts.paper == 0 { return false }
+  let want = number_text(parts.metric)
+  if want.is_empty() { return false }
+  return paper_pick(papers, parts.paper - 1).summary.contains(want)
+}
+
+// The papers' numbers, grounded per citation: a bar citing paper 1 is kept
+// only when paper 1's own abstract holds its number.
+fn grounded_numbers(items: Item[], papers: Paper[]) -> Item[] {
+  return for item in items where grounded_number(item, papers) { item }
+}
+
+// The topic's map from the synthesiser's themes. When the themes come as
+// branches with leaves (an item's group empty names a branch, a leaf's
+// group is its branch) they are used as they are; when every item names
+// its theme in group, code builds the branches itself and hangs each item
+// under its theme, the paper's number riding as the leaf's note.
+fn theme_items(themes: Item[]) -> Item[] {
+  if not (for item in themes where item.group.trim().is_empty() { item }).is_empty() { return themes }
+  var seen: Text[] = []
+  for item in themes {
+    if not item.group.trim().is_empty() and not seen.contains(item.group) { seen = seen.append(item.group) }
+  }
+  if seen.length() >= 3 {
+    var out: Item[] = []
+    for name in seen { out = out.append({label: name, value: "", note: "", group: ""}) }
+    for item in themes {
+      if not item.group.trim().is_empty() {
+        out = out.append({label: item.label, value: "", note: item.value, group: item.group})
+      }
+    }
+    return out
+  }
+  // Fewer than three themes named: each item is its own branch, the paper
+  // it names riding as the leaf under it.
+  var out: Item[] = []
+  for item in themes {
+    out = out.append({label: item.label, value: "", note: "", group: ""})
+    if not item.value.trim().is_empty() {
+      out = out.append({label: item.value.trim().take(24), value: "", note: "", group: item.label})
+    }
+  }
+  return out
+}
+
+// The papers on one line of time, oldest first, straight from their own
+// dates: drawn by code from the papers' data, no model asked. Sorting the
+// "date|title" lines sorts the dates, ISO dates being written so.
+fn survey_timeline(papers: Paper[]) -> Figure {
+  var lines: Text[] = []
+  for paper in papers {
+    let when = if paper.published.is_empty() { "9999-12-31" } else { paper.published }
+    lines = lines.append(when + "|" + paper.title.replace("|", " "))
+  }
+  var rows: Item[] = []
+  for line in lines.sort() {
+    let at = line.index_of("|")
+    let when = if at.exists() { line.take(at.value()) } else { "" }
+    let what = if at.exists() { line.drop(at.value() + 1) } else { line }
+    rows = rows.append({label: if when == "9999-12-31" { "preprint" } else { when }, value: what, note: "", group: ""})
+  }
+  return {look: Look.timeline, title: "The papers on one line of time", section: "Across the papers", center: "", items: rows}
+}
+
+// The topic's map: the synthesiser's themes, drawn as a mind map whose
+// leaves name the papers under each theme.
+fn survey_map(topic: Text, survey: Survey) -> Figure {
+  return {look: Look.mindmap, title: "The topic's map", section: "Across the papers", center: topic.trim().take(28), items: theme_items(survey.themes)}
+}
+
+// The papers' numbers side by side: one bar per paper, every bar's number
+// grounded against the paper its group names.
+fn survey_graph(survey: Survey, papers: Paper[]) -> Figure {
+  return {look: Look.bars, title: "The papers' numbers", section: "Across the papers", center: "", items: grounded_numbers(survey.numbers, papers)}
+}
+
+// The page: the survey's own figures first — the papers on one line of
+// time, the topic's map, the papers' numbers — then one block per paper,
+// each block's title linking to the paper itself.
+fn survey_page(topic: Text, papers: Paper[], survey: Survey, drawings: Drawing[]) -> Text {
+  var overview: Figure[] = []
+  let time = survey_timeline(papers)
+  if time.items.length() >= 2 { overview = overview.append(time) }
+  let map = survey_map(topic, survey)
+  if drawable(map) { overview = overview.append(map) }
+  let graph = survey_graph(survey, papers)
+  if drawable(graph) { overview = overview.append(graph) }
+  var sheets: Sheet[] = []
+  if not overview.is_empty() {
+    sheets = sheets.append({title: "Survey: " + topic.trim(), field: "Survey", published: "", authors: "", link: "", drawing: {question: survey.question, figures: overview}})
+  }
+  for i in 0 until papers.length().min(drawings.length()) {
+    let shown: Drawing = {question: drawings[i].question, figures: for figure in drawings[i].figures where drawable(figure) { figure }}
+    if not shown.figures.is_empty() {
+      sheets = sheets.append(sheet_of(papers[i], shown))
+    }
+  }
+  return if sheets.is_empty() { "" } else { page("Survey: " + topic.trim(), sheets) }
+}
+
+fn survey_note(topic: Text, said: Said, page: Text, papers: Paper[]) -> Note {
+  let link = if papers.is_empty() { survey_url(topic) } else { papers[0].link }
+  let name = if page.is_empty() { "" } else { page_name("Survey " + topic) }
+  return {title: "Survey: " + topic.trim().take(60), text: said.text, link: link, file_name: name, file: page}
+}
+
+// One survey of a topic: found by code, drawn per paper, synthesised with
+// citations, sent to the phone.
+workflow survey_of(msg: Msg) -> Lesson {
+  budget 6 model calls, 7200 seconds
+  topic   = topic_of(msg.text)
+  found_p = execute library.read_feed(survey_url(topic)) otherwise no_page()
+  found   = distinct_papers(papers_in(found_p.text, "arXiv"), survey_most())
+  said0   = match found.is_empty() {
+    case true { no_lesson("I found no papers on \"" + topic.trim() + "\" on arXiv. Try other words, or name the topic after \"survey\".") }
+    case _ { call survey_full({text: topic}, {papers: found}) }
+  }
+}
+
+// The papers a survey reads, as one record: a workflow takes records.
+record Found { papers: Paper[] }
+
+workflow survey_full(asked: Msg, found: Found) -> Lesson {
+  papers = found.papers
+  d1 = call survey_draw(paper_pick(papers, 0))
+  d2 = call survey_draw(paper_pick(papers, 1))
+  d3 = call survey_draw(paper_pick(papers, 2))
+  ask  = survey_prompt(asked.text, papers)
+  raw  = use_model synthesiser(ask.text) retry 1 otherwise no_survey()
+  neat = clean_survey(raw, papers.length())
+  said = {text: survey_text(asked.text, neat, papers)}
+  page = survey_page(asked.text, papers, neat, [d1, d2, d3])
+  note = survey_note(asked.text, said, page, papers)
+  sent = execute library.tell_me(note.title, note.text, note.link, note.file_name, note.file) otherwise not_sent()
+  shown = lesson_told({text: said.text, page: page}, sent)
+}
+
 // ---------------------------------------------------------------- workflows
 
 workflow afternoon(msg: Msg) -> Said {
-  budget 10 model calls, 7200 seconds
+  budget 12 model calls, 7200 seconds
   today  = now
   plan   = plan_for(today.day)
   past   = recall seen under "all"
@@ -503,18 +959,20 @@ workflow afternoon(msg: Msg) -> Said {
   c      = execute library.read_feed(plan.urls[2]) otherwise no_page()
   d      = execute library.read_feed(plan.urls[3]) otherwise no_page()
   e      = execute library.read_feed(plan.urls[4]) otherwise no_page()
-  papers = gathered(plan, [a, b, c, d, e], past)
+  f      = execute library.read_feed(plan.urls[5]) otherwise no_page()
+  papers = gathered(plan, [a, b, c, d, e, f], past)
   ta     = call teach(field_batch(papers, plan, 0))
   tb     = call teach(field_batch(papers, plan, 1))
   tc     = call teach(field_batch(papers, plan, 2))
   td     = call teach(field_batch(papers, plan, 3))
   te     = call teach(field_batch(papers, plan, 4))
+  tf     = call teach(field_batch(papers, plan, 5))
   day    = day_of(today, papers)
   kept   = remember day in days under "last"
   marked = remember seen_with(past, papers) in seen under "all"
-  said   = digest(today, papers, [ta, tb, tc, td, te])
+  said   = digest(today, papers, [ta, tb, tc, td, te, tf])
   note   = phone_note("Research digest " + today.date, said)
-  sent   = execute library.tell_me(note.title, note.text) otherwise not_sent()
+  sent   = execute library.tell_me(note.title, note.text, note.link, note.file_name, note.file) otherwise not_sent()
   shown  = shown_with(said, sent)
 }
 
@@ -539,8 +997,8 @@ workflow evening(msg: Msg) -> Lesson {
   second = call draw(paper_at(batch, 1))
   page   = figures_page(batch, [first, second])
   said   = evening_text(batch, deeper)
-  note   = phone_note("Evening lesson", said)
-  sent   = execute library.tell_me(note.title, note.text) otherwise not_sent()
+  note   = evening_note(said, page, paper_at(batch, 0).link)
+  sent   = execute library.tell_me(note.title, note.text, note.link, note.file_name, note.file) otherwise not_sent()
   shown  = lesson_of(shown_with(said, sent), page)
 }
 
@@ -595,26 +1053,49 @@ workflow fetch_part(asked: PartRequest) -> Part {
   part = execute library.read_paper(asked.url, asked.start) otherwise no_part()
 }
 
+// The paper link a message holds: an arXiv link or number, or a bioRxiv
+// content link; "" when it holds neither.
+fn paper_link(text: Text) -> Text {
+  let arxiv = arxiv_link(text)
+  if not arxiv.is_empty() { return arxiv }
+  return biorxiv_link(text)
+}
+
 // Any one paper, drawn on request: the message holds its arXiv link or
-// number, like https://arxiv.org/abs/2610.23850 or 2610.23850v1.
+// number (like https://arxiv.org/abs/2610.23850 or 2610.23850v1) or its
+// bioRxiv content link. What it draws is also told to the phone: the
+// words, the figures as an outline, the paper's link to tap, and the page
+// attached.
 workflow paper(msg: Msg) -> Lesson {
   budget 2 model calls, 3600 seconds
-  link    = arxiv_link(msg.text)
-  drawn   = match link.is_empty() {
-    case true { no_lesson("Send an arXiv link or number, like https://arxiv.org/abs/2610.23850, and I will draw that paper.") }
-    case _ { call draw_one({text: link}) }
+  link  = paper_link(msg.text)
+  said  = match link.is_empty() {
+    case true { no_lesson("Send a paper's link — arXiv, like https://arxiv.org/abs/2610.23850 or 2610.23850v1, or bioRxiv, like https://www.biorxiv.org/content/10.1101/2026.10.22.1v1 — and I will draw that paper.") }
+    case _ { call drawn_told({text: link}) }
   }
 }
 
-workflow draw_one(msg: Msg) -> Lesson {
-  first   = call read_part({url: msg.text.replace("/abs/", "/html/"), start: 0})
-  one     = paper_named(msg.text, first)
+// One paper: read, drawn, then told to the phone with its link and page.
+workflow drawn_told(asked: Msg) -> Lesson {
+  link    = asked.text
+  source  = source_of(link)
+  first   = call read_part({url: source.page, start: 0})
+  one     = paper_from(link, source, first)
   drawing = call read_and_draw(one)
-  shown   = one_drawn(one, drawing)
+  lesson  = one_drawn(one, drawing)
+  note    = drawn_note(one, drawing, lesson)
+  sent    = execute library.tell_me(note.title, note.text, note.link, note.file_name, note.file) otherwise not_sent()
+  shown   = lesson_told(lesson, sent)
 }
 
-// "evening" gives the evening lesson; an arXiv link or number, that one
-// paper drawn; anything else, the afternoon digest.
+// The lesson as shown, with a line when it reached the phone.
+fn lesson_told(lesson: Lesson, sent: Sent) -> Lesson {
+  return if sent.sent { {text: lesson.text + "\n\n(Sent to your phone, with the paper's link and its page attached.)", page: lesson.page} } else { lesson }
+}
+
+// "evening" gives the evening lesson; a paper's link (arXiv or bioRxiv),
+// that one paper drawn; "survey TOPIC", several papers on the topic read
+// together; anything else, the afternoon digest.
 workflow main(msg: Msg) -> Said {
   budget 12 model calls, 10800 seconds
   said = match msg.text.trim().lower() == "evening" {
@@ -624,10 +1105,22 @@ workflow main(msg: Msg) -> Said {
 }
 
 workflow not_evening(msg: Msg) -> Said {
-  said = match arxiv_link(msg.text).is_empty() {
+  said = match msg.text.trim().lower().starts_with("survey ") or msg.text.trim().lower() == "survey" {
+    case true { call survey_said(msg) }
+    case _ { call by_link(msg) }
+  }
+}
+
+workflow by_link(msg: Msg) -> Said {
+  said = match paper_link(msg.text).is_empty() {
     case true { call afternoon(msg) }
     case _ { call paper_said(msg) }
   }
+}
+
+workflow survey_said(msg: Msg) -> Said {
+  lesson = call survey_of(msg)
+  said   = said_of(lesson)
 }
 
 workflow paper_said(msg: Msg) -> Said {
@@ -642,17 +1135,229 @@ workflow evening_said(msg: Msg) -> Said {
 
 // ---------------------------------------------------------------- tests
 
-test "five fields a day, all twenty in four days" {
+test "five arXiv fields and one bioRxiv a day, all in four days" {
   one = plan_for(1)
-  expect one.fields.length() == 5
+  expect one.fields.length() == 6
   expect one.urls[0].starts_with("https://export.arxiv.org/api/query?search_query=cat:")
+  expect one.urls[5].starts_with("https://connect.biorxiv.org/biorxiv_xml.php?subject=")
+  expect one.fields[5].name.contains("bioRxiv")
   expect four_days().unique().length() == 20
+  expect four_lives().unique().length() == 4
 }
 
 fn four_days() -> Text[] {
   var all: Text[] = []
-  for day in 0 until 4 { all = all.concat(for field in plan_for(day).fields { field.code }) }
+  for day in 0 until 4 { all = all.concat(for field in plan_for(day).fields where not field.name.contains("bioRxiv") { field.code }) }
   return all
+}
+
+fn four_lives() -> Text[] {
+  var all: Text[] = []
+  for day in 0 until 4 { all = all.concat(for field in plan_for(day).fields where field.name.contains("bioRxiv") { field.code }) }
+  return all
+}
+
+test "a bioRxiv link is seen, cleaned and read from its full text" {
+  expect biorxiv_link("draw https://www.biorxiv.org/content/10.1101/2026.10.22.1v1?rss=1 please") == "https://www.biorxiv.org/content/10.1101/2026.10.22.1v1"
+  expect biorxiv_link("https://biorxiv.org/content/10.64898/x") == "https://biorxiv.org/content/10.64898/x"
+  expect biorxiv_link("read https://arxiv.org/abs/2610.1") == ""
+  expect paper_link("https://www.biorxiv.org/content/10.1101/2026.10.22.1v1") == "https://www.biorxiv.org/content/10.1101/2026.10.22.1v1"
+  expect paper_link("2610.23850") == "https://arxiv.org/abs/2610.23850"
+  feed: Paper = {title: "T", link: "https://www.biorxiv.org/content/10.1101/xv1?rss=1", published: "", authors: "", summary: "", field: "bioRxiv"}
+  expect paper_page(feed) == "https://www.biorxiv.org/content/10.1101/xv1/full"
+  arxiv: Paper = {title: "T", link: "https://arxiv.org/abs/9", published: "", authors: "", summary: "", field: "arXiv"}
+  expect paper_page(arxiv) == "https://arxiv.org/html/9"
+}
+
+test "a bioRxiv feed's lines become papers" {
+  text = "---\nLink: https://www.biorxiv.org/content/10.64898/2026.10.22.1v1\nTitle: Light in cells\nSummary: Cells send signals.\nAuthor: Lee, A.\nAuthor: Kim, B.\nPublished: 2026-10-25\n---\nTitle: No link here"
+  papers = papers_in(text, "Bioinformatics (bioRxiv)")
+  expect papers.length() == 1
+  expect papers[0].title == "Light in cells"
+  expect papers[0].link == "https://www.biorxiv.org/content/10.64898/2026.10.22.1v1"
+  expect papers[0].published == "2026-10-25"
+  expect papers[0].authors == "Lee, A., Kim, B."
+  expect papers[0].field == "Bioinformatics (bioRxiv)"
+}
+
+test "a bioRxiv paper is drawn on request and told to the phone" {
+  answers read_paper: [
+    {url: "https://www.biorxiv.org/content/10.1101/2026.10.22.1v1/full", title: "Light in cells", text: "Abstract: Cells send signals 30% faster.", next: -1},
+    {url: "https://www.biorxiv.org/content/10.1101/2026.10.22.1v1/full", title: "Light in cells", text: "Abstract: Cells send signals 30% faster.", next: -1}
+  ]
+  answers illustrator: [{question: "How do cells talk?", figures: [{look: Look.numbers, title: "Key number", section: "Abstract", center: "", items: [{label: "30%", value: "faster signals", note: "", group: ""}]}]}]
+  answers tell_me: [{sent: true}]
+  drawn = paper({text: "draw https://www.biorxiv.org/content/10.1101/2026.10.22.1v1"})
+  expect drawn.text.starts_with("Drew Light in cells as 1 figure.")
+  expect drawn.text.contains("https://www.biorxiv.org/content/10.1101/2026.10.22.1v1")
+  expect drawn.page.contains("bioRxiv preprint")
+}
+
+test "the survey's search finds, picks and cites its papers" {
+  expect survey_url("cost aware abstention").contains("search_query=all:cost+AND+all:aware+AND+all:abstention")
+  expect topic_of("Survey cost-aware abstention") == "cost-aware abstention"
+  expect topic_of("plain words") == "plain words"
+  papers: Paper[] = [
+    {title: "First", link: "https://arxiv.org/abs/1", published: "", authors: "", summary: "s", field: "arXiv"},
+    {title: "Again first", link: "https://arxiv.org/abs/1", published: "", authors: "", summary: "s", field: "arXiv"},
+    {title: "Second", link: "https://arxiv.org/abs/2", published: "", authors: "", summary: "s", field: "arXiv"},
+    {title: "", link: "https://arxiv.org/abs/3", published: "", authors: "", summary: "s", field: "arXiv"}
+  ]
+  picked = distinct_papers(papers, 3)
+  expect picked.length() == 2
+  expect picked[0].title == "First"
+  expect picked[1].title == "Second"
+  expect cited({text: "c", sources: [1, 2]}, 2)
+  expect not cited({text: "c", sources: [3]}, 2)
+  expect not cited({text: "c", sources: []}, 2)
+  neat = clean_survey({question: "q", agreed: [{text: "a", sources: [1, 2]}, {text: "bad", sources: [4]}], differed: [{text: "d", sources: [2]}], open: ["o1", "o2", "o3", "o4"], themes: [], numbers: []}, 2)
+  expect neat.agreed.length() == 1
+  expect neat.differed.length() == 1
+  expect neat.open.length() == 3
+}
+
+test "the survey is told in words with its citations" {
+  papers: Paper[] = [
+    {title: "First paper", link: "https://arxiv.org/abs/1", published: "", authors: "", summary: "Abstention cuts the cost of deployment when the model is unsure.", field: "arXiv"},
+    {title: "Second paper", link: "https://arxiv.org/abs/2", published: "", authors: "", summary: "Thresholds decide when the system abstains and what it costs.", field: "arXiv"}
+  ]
+  survey: Survey = {question: "Does abstention save cost?", agreed: [{text: "Abstention cuts cost.", sources: [1, 2]}], differed: [{text: "They disagree on thresholds.", sources: [2]}], open: ["No one tests on audio."], themes: [], numbers: []}
+  text = survey_text("abstention", survey, papers)
+  expect text.contains("Survey: abstention")
+  expect text.contains("- Abstention cuts cost. [1, 2]")
+  expect text.contains("- They disagree on thresholds. [2]")
+  expect not text.contains(" *")
+  expect text.contains("Still open:")
+  expect text.contains("[1] First paper\nhttps://arxiv.org/abs/1")
+  expect text.contains("[2] Second paper")
+  note = survey_note("abstention", {text: text}, "<html>page</html>", papers)
+  expect note.title == "Survey: abstention"
+  expect note.link == "https://arxiv.org/abs/1"
+  expect note.file_name == "survey-abstention.html"
+  expect note.file == "<html>page</html>"
+}
+
+test "a claim no cited abstract shares a word with is marked as the comparison" {
+  papers: Paper[] = [
+    {title: "First paper", link: "https://arxiv.org/abs/1", published: "", authors: "", summary: "Abstention cuts the cost of deployment when the model is unsure.", field: "arXiv"},
+    {title: "Second paper", link: "https://arxiv.org/abs/2", published: "", authors: "", summary: "Thresholds decide when the system abstains and what it costs.", field: "arXiv"}
+  ]
+  expect claim_backed({text: "Abstention reduces cost.", sources: [1]}, papers)
+  expect claim_backed({text: "Thresholds decide abstention.", sources: [1, 2]}, papers)
+  expect not claim_backed({text: "The evaluation metrics and benchmarks are not aligned.", sources: [1]}, papers)
+  expect not claim_backed({text: "The evaluation metrics and benchmarks are not aligned.", sources: [1, 2]}, papers)
+  expect not claim_backed({text: "What is it?", sources: [1]}, papers)
+  marked: Survey = {question: "q", agreed: [{text: "The evaluation metrics and benchmarks are not aligned.", sources: [1, 2]}], differed: [], open: [], themes: [], numbers: []}
+  text = survey_text("abstention", marked, papers)
+  expect text.contains("- The evaluation metrics and benchmarks are not aligned. [1, 2] *")
+  expect text.contains("* marks a claim")
+  clean: Survey = {question: "q", agreed: [{text: "Abstention reduces cost.", sources: [1]}], differed: [], open: [], themes: [], numbers: []}
+  tidy = survey_text("abstention", clean, papers)
+  expect not tidy.contains(" *")
+  expect not tidy.contains("* marks a claim")
+}
+
+test "a survey reads several papers and cites what they share" {
+  answers read_feed: [{url: "u", title: "", text: "---\nTitle: First on abstention\nLink: https://arxiv.org/abs/1\nSummary: Abstaining when unsure cut test cost by 12% with accuracy 0.88.\nAuthor: Ann Lee\nPublished: 2026-10-25\n---\nTitle: Second on abstention\nLink: https://arxiv.org/abs/2\nSummary: Deferring 12% of tickets kept accuracy at 0.90 and cut cost.\nAuthor: Bo Kim\nPublished: 2026-10-24\n---\nTitle: Third, the same link again\nLink: https://arxiv.org/abs/1\nSummary: duplicate."}]
+  answers illustrator: [
+    {question: "When should a model abstain?", figures: [{look: Look.numbers, title: "Key numbers", section: "Abstract", center: "", items: [{label: "12%", value: "test cost cut when unsure", note: "", group: ""}, {label: "0.88", value: "accuracy kept", note: "", group: ""}]}]},
+    {question: "How much deferring is safe?", figures: [{look: Look.numbers, title: "Cost and accuracy", section: "Abstract", center: "", items: [{label: "0.90", value: "accuracy with deferring", note: "", group: ""}]}]}
+  ]
+  answers synthesiser: [{question: "When should a ticket router abstain?", agreed: [{text: "Abstaining on unsure tickets cuts cost without hurting accuracy.", sources: [1, 2]}], differed: [], open: ["Neither abstract tests on audio tickets."], themes: [
+    {label: "When to abstain", value: "", note: "", group: ""},
+    {label: "cut cost when unsure", value: "", note: "1", group: "When to abstain"},
+    {label: "defer some tickets", value: "", note: "2", group: "When to abstain"},
+    {label: "What it costs", value: "", note: "", group: ""},
+    {label: "cheaper routing", value: "", note: "2", group: "What it costs"},
+    {label: "Where it fails", value: "", note: "", group: ""},
+    {label: "no audio tickets", value: "", note: "1", group: "Where it fails"}
+  ], numbers: [
+    {label: "First on abstention", value: "12%", note: "test cost cut", group: "1"},
+    {label: "Second on abstention", value: "0.90", note: "accuracy kept", group: "2"},
+    {label: "Misattributed", value: "0.88", note: "that is paper 1's", group: "2"}
+  ]}]
+  answers tell_me: [{sent: true}]
+  lesson = survey_of({text: "survey cost-aware abstention for tickets"})
+  expect lesson.text.contains("Survey: cost-aware abstention for tickets")
+  expect lesson.text.contains("- Abstaining on unsure tickets cuts cost without hurting accuracy. [1, 2]")
+  expect lesson.text.contains("[1] First on abstention")
+  expect lesson.text.contains("[2] Second on abstention")
+  expect not lesson.text.contains("duplicate")
+  expect lesson.page.contains("First on abstention")
+  expect lesson.page.contains("Second on abstention")
+  expect lesson.page.contains("12%")
+  expect lesson.page.contains("The topic&#39;s map") or lesson.page.contains("The topic")
+  expect lesson.page.contains("The papers on one line of time")
+  expect lesson.page.contains("The papers&#39; numbers") or lesson.page.contains("The papers")
+  expect lesson.page.contains("When to abstain")
+  expect lesson.page.contains("defer some tickets")
+  expect not lesson.page.contains("Misattributed")
+  expect lesson.page.contains("2026-10-24")
+  expect lesson.page.contains("Survey: cost-aware abstention for tickets")
+  expect lesson.text.contains("(Sent to your phone")
+}
+
+test "the overview figures take the fills however the model arranges them" {
+  papers: Paper[] = [
+    {title: "First", link: "u1", published: "2026-10-25", authors: "", summary: "Abstaining cut test cost by 12% and prefilling sped up 2.74x.", field: "arXiv"},
+    {title: "Second", link: "u2", published: "2026-10-20", authors: "", summary: "Deferring 12% of tickets kept accuracy at 0.90 and cut cost.", field: "arXiv"},
+    {title: "Third", link: "u3", published: "2026-10-15", authors: "", summary: "Static quantization keeps accuracy within one point.", field: "arXiv"}
+  ]
+  expect grounded_number({label: "a", value: "12%", note: "", group: "1"}, papers)
+  expect grounded_number({label: "b", value: "1", note: "2.74x", group: "Speedup"}, papers)
+  expect not grounded_number({label: "c", value: "3", note: "2.74x", group: "Speedup"}, papers)
+  expect not grounded_number({label: "d", value: "0.90", note: "", group: "1"}, papers)
+  kept = grounded_numbers([
+    {label: "a", value: "12%", note: "", group: "1"},
+    {label: "b", value: "1", note: "2.74x", group: "Speedup"},
+    {label: "c", value: "3", note: "2.74x", group: "Speedup"}
+  ], papers)
+  expect kept.length() == 2
+  flat = theme_items([
+    {label: "Cost of deployment", value: "1", note: "detail", group: "Challenges"},
+    {label: "Quantization methods", value: "2", note: "", group: "Methods"},
+    {label: "Accuracy kept", value: "3", note: "", group: "Performance"}
+  ])
+  expect flat.length() == 6
+  expect (for item in flat where item.group.trim().is_empty() { item }).length() == 3
+  map: Figure = {look: Look.mindmap, title: "map", section: "", center: "topic", items: flat}
+  expect drawable(map)
+  shaped = theme_items([{label: "root", value: "", note: "", group: ""}, {label: "leaf", value: "", note: "1", group: "root"}])
+  expect shaped.length() == 2
+  time = survey_timeline(papers)
+  expect time.items.length() == 3
+  expect time.items[0].label == "2026-10-15"
+  expect time.items[0].value == "Third"
+  expect time.items[2].label == "2026-10-25"
+}
+
+test "a bar may cite its paper by name, as a reader resolves it" {
+  papers: Paper[] = [
+    {title: "WKVQuant: Quantizing Weight and Key Value Cache", link: "u1", published: "", authors: "", summary: "attention computation improves 2.16x with W4A4.", field: "arXiv"},
+    {title: "PrefixQuant: Eliminating Outliers by Prefixed Tokens", link: "u2", published: "", authors: "", summary: "prefilling sped up 2.74x for LLMs on W4A4.", field: "arXiv"},
+    {title: "MQuant: Full Static Quantization", link: "u3", published: "", authors: "", summary: "static scales for visual and textual tokens.", field: "arXiv"}
+  ]
+  expect named_paper({label: "Prefilling", value: "2.74x", note: "For LLMs using W4A4 PrefixQuant", group: "Speedup"}, papers) == 2
+  expect named_paper({label: "Decoding", value: "2.16x", note: "as WKVQuant reports", group: "Speedup"}, papers) == 1
+  expect named_paper({label: "quant", value: "x", note: "", group: ""}, papers) == 0
+  expect grounded_number({label: "Prefilling", value: "2.74x", note: "For LLMs using W4A4 PrefixQuant", group: "Speedup"}, papers)
+  expect not grounded_number({label: "Prefilling", value: "2.74x", note: "For LLMs using W4A4 MQuant", group: "Speedup"}, papers)
+  flat = theme_items([
+    {label: "Past-only Quantization", value: "WKVQuant", note: "attention", group: "Techniques"},
+    {label: "Token-wise Outlier Elimination", value: "PrefixQuant", note: "outliers", group: "Techniques"},
+    {label: "Full Static Quantization", value: "MQuant", note: "multimodal", group: "Techniques"}
+  ])
+  expect flat.length() == 6
+  expect (for item in flat where item.group.trim().is_empty() { item }).length() == 3
+  map: Figure = {look: Look.mindmap, title: "m", section: "", center: "t", items: flat}
+  expect drawable(map)
+}
+
+test "a survey with no found papers says so" {
+  answers read_feed: [{url: "u", title: "", text: ""}]
+  lesson = survey_of({text: "survey xylophone zzzqqq"})
+  expect lesson.text.starts_with("I found no papers on")
+  expect lesson.page == ""
 }
 
 test "a feed's text becomes papers" {
@@ -741,12 +1446,48 @@ test "one paper is drawn on request" {
     {url: "https://arxiv.org/html/2610.1", title: "Light in glass", text: "menu Abstract: We bend light 30% more.", next: -1}
   ]
   answers illustrator: [{question: "Can glass bend light?", figures: [{look: Look.numbers, title: "Key number", section: "Abstract", center: "", items: [{label: "30%", value: "more bending", note: "", group: ""}]}]}]
+  answers tell_me: [{sent: true}]
   drawn = paper({text: "please draw arxiv.org/abs/2610.12345"})
   expect drawn.text.starts_with("Drew Light in glass as 1 figure.")
+  expect drawn.text.contains("(Sent to your phone, with the paper's link and its page attached.)")
   expect drawn.page.contains("Can glass bend light?")
   none = paper({text: "hello"})
-  expect none.text.starts_with("Send an arXiv link")
+  expect none.text.starts_with("Send a paper's link")
   expect none.page == ""
+}
+
+test "a drawn paper's note carries its link, its outline and its page" {
+  lesson: Lesson = {text: "Drew Light in glass as 1 figure.\nhttps://arxiv.org/abs/9", page: "<html>the page</html>"}
+  one: Paper = {title: "Light in glass", link: "https://arxiv.org/abs/9", published: "", authors: "", summary: "", field: "Optics"}
+  drawing: Drawing = {question: "Can glass bend light?", figures: [{look: Look.numbers, title: "Key number", section: "Abstract", center: "", items: [{label: "30%", value: "more bending", note: "", group: ""}]}]}
+  note = drawn_note(one, drawing, lesson)
+  expect note.link == "https://arxiv.org/abs/9"
+  expect note.file_name == "light-in-glass.html"
+  expect note.file == "<html>the page</html>"
+  expect note.text.contains("30% — more bending")
+  bare: Lesson = {text: "I could not draw it.", page: ""}
+  plain = drawn_note(one, drawing, bare)
+  expect plain.text == "I could not draw it."
+  expect plain.file_name == ""
+  expect plain.file == ""
+}
+
+test "the evening's note taps the first paper and carries the page" {
+  said: Said = {text: "## Cells talk\nThe idea: signals."}
+  note = evening_note(said, "<html>page</html>", "https://arxiv.org/abs/2")
+  expect note.link == "https://arxiv.org/abs/2"
+  expect note.file_name == "evening-lesson.html"
+  expect note.file == "<html>page</html>"
+  expect note.text.contains("Cells talk")
+  no_page = evening_note(said, "", "")
+  expect no_page.file_name == ""
+  expect no_page.file == ""
+}
+
+test "a title becomes a file name for the attached page" {
+  expect page_name("Rings around far planets") == "rings-around-far-planets.html"
+  expect page_name("KSD certificates: exact bounds?") == "ksd-certificates-exact-bounds.html"
+  expect page_name("???") == "paper.html"
 }
 
 test "a paper's own words start at its abstract" {

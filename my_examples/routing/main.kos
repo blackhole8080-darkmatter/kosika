@@ -1,0 +1,34 @@
+record Ticket { text: Text }
+record Out { queue: Text brief: Text refund: Bool }
+
+model cheap
+default model careful
+model strict
+
+fn build(label: Choice, brief: Summary, refund: Decision) -> Out {
+  return {queue: label.label, brief: brief.text, refund: refund.answer}
+}
+
+workflow main(ticket: Ticket) -> Out {
+  label  = classify ticket.text into ["billing", "bug", "other"] using cheap
+  brief  = summarize ticket.text
+  refund = decide "Does the customer ask for a refund?" given ticket.text using cheap, careful, strict vote 3
+  out    = build(label, brief, refund)
+}
+
+test "two models can outvote the third" {
+  answers cheap: [
+    {label: "billing", confidence: 0.9},
+    {answer: false, confidence: 0.6, reason: "No refund is mentioned."}
+  ]
+  answers careful: [
+    {text: "Charged twice, wants a refund."},
+    {answer: true, confidence: 0.9, reason: "They say please refund me."}
+  ]
+  answers strict: [
+    {answer: true, confidence: 0.8, reason: "A refund is requested."}
+  ]
+  result = main({text: "My card was charged twice. Please refund me."})
+  expect result.queue == "billing"
+  expect result.refund == true
+}

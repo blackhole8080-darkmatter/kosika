@@ -1,0 +1,512 @@
+// Workbench: a helper for working on code on this laptop. It starts real
+// programs (git and python) in the folder you grant, reads what they print,
+// and tells you what it means. It keeps a journal of what it ran, so "why"
+// can explain the last thing that went wrong.
+//
+//   kosika test main.kos
+//   kosika studio FOLDER --model qwen2.5:3b --model-protocol ollama --allow-folder YOUR_PROJECT --allow-shell
+//
+// Every program start waits for your yes, and the card shows the exact
+// command. It starts only git and python, only inside the granted folder,
+// and each run is stopped after 60 seconds.
+//
+// Say: status, log, changes, test tests/test_app.py, run tools/report.py,
+// check main.kos, py: 2 ** 10, why, history, or ask a coding question.
+
+record Msg { text: Text }
+record Said { text: Text }
+record Kind { label: Text }
+record Clip { text: Text ok: Bool }
+
+// What a program is started with, and what it gave back. These two shapes
+// are fixed by the shell tool.
+record Command { args: Text[] }
+record Ran { exit_code: Number stdout: Text stderr: Text }
+
+// A command worked out from what you typed, or the reason it cannot be run.
+record Plan { args: Text[] what: Text problem: Text }
+// What one request came to: the answer, and what to write in the journal.
+record Done { text: Text what: Text code: Number output: Text ran: Bool }
+
+record Entry { what: Text code: Number }
+record History { runs: Entry[] last_what: Text last_code: Number last_output: Text }
+
+model helper {
+  input: Prompt
+  output: Reply
+  parameters: {
+    max_output_tokens: 220
+  }
+}
+
+memory journal of History
+
+tool run_git {
+  source system "shell"
+  operation: "git"
+  access: execute
+  input: Command
+  output: Ran
+}
+
+tool run_python {
+  source system "shell"
+  operation: "python"
+  access: execute
+  input: Command
+  output: Ran
+}
+
+agent runner {
+  can: [run_git, run_python]
+  max_steps: 1
+}
+
+// ---------------------------------------------------------------- routing
+
+fn kind_of(msg: Msg) -> Kind {
+  let text = msg.text.lower().trim()
+  let first = text.split(" ").first().or("")
+  var kind = "ask"
+  if text == "help" or text.contains("what can you do") { kind = "help" }
+  else if text == "status" or text == "git status" or text.contains("what changed") { kind = "status" }
+  else if text == "log" or text == "git log" or text.contains("commits") { kind = "log" }
+  else if text == "changes" or text == "diff" or text.starts_with("explain changes") or text.contains("what did i change") { kind = "changes" }
+  else if first == "test" or first == "tests" { kind = "test" }
+  else if first == "run" { kind = "run" }
+  else if first == "check" { kind = "check" }
+  else if text.starts_with("py:") or first == "calc" { kind = "calc" }
+  else if text == "why" or text.starts_with("why did") or text.starts_with("explain the error") { kind = "why" }
+  else if text == "history" { kind = "history" }
+  return {label: kind}
+}
+
+// ------------------------------------------------------------ small tools
+
+fn tail(text: Text, most: Number) -> Text {
+  let n = text.length()
+  return text.slice((n - most).max(0), n)
+}
+
+fn head(text: Text, most: Number) -> Text {
+  return text.slice(0, text.length().min(most))
+}
+
+// The lines of some output that have anything on them. Long output is cut
+// first, because a text can be split into a limited number of parts.
+fn lines_of(text: Text) -> Text[] {
+  var out: Text[] = []
+  for row in head(text, 3500).split("\n") {
+    if row.trim().length() > 0 { out = out.append(row) }
+  }
+  return out
+}
+
+// Every word you typed after the first one.
+fn rest_words(msg: Msg) -> Text[] {
+  var out: Text[] = []
+  var seen = false
+  for word in msg.text.trim().split(" ") {
+    let clean = word.trim()
+    if clean.length() > 0 {
+      if seen { out = out.append(clean) }
+      seen = true
+    }
+  }
+  return out
+}
+
+// A path that stays inside the granted folder and cannot be mistaken for an
+// option. The folder is the only place a program is allowed to work in.
+fn stays_inside(path: Text) -> Bool {
+  return not (path.contains("..") or path.contains(":") or path.starts_with("/") or path.starts_with("\\") or path.starts_with("-"))
+}
+
+fn cannot(what: Text, problem: Text) -> Plan {
+  return {args: [], what: what, problem: problem}
+}
+
+// ------------------------------------------------------------- the plans
+
+fn plan_status(msg: Msg) -> Plan {
+  return {args: ["status", "--short", "--branch"], what: "git status", problem: ""}
+}
+
+fn plan_log(msg: Msg) -> Plan {
+  return {args: ["log", "--oneline", "-n", "12"], what: "git log", problem: ""}
+}
+
+fn plan_diff(msg: Msg) -> Plan {
+  return {args: ["diff", "--stat", "--patch", "--unified=1"], what: "git diff", problem: ""}
+}
+
+fn plan_test(msg: Msg) -> Plan {
+  let words = rest_words(msg)
+  for word in words {
+    if not stays_inside(word) {
+      return cannot("pytest", "I only test paths inside the granted folder, like this: test tests/test_app.py")
+    }
+  }
+  let base = ["-m", "pytest", "-q", "-x", "--no-header", "-p", "no:cacheprovider"]
+  return {args: base.concat(words), what: ("pytest " + words.join(" ")).trim(), problem: ""}
+}
+
+fn plan_run(msg: Msg) -> Plan {
+  let words = rest_words(msg)
+  let file = words.first().or("")
+  if file.length() == 0 {
+    return cannot("python", "Tell me which file, like this: run tools/report.py")
+  }
+  if not file.lower().ends_with(".py") {
+    return cannot("python", "I only run Python files, like this: run tools/report.py")
+  }
+  if not stays_inside(file) {
+    return cannot("python", "I only run files inside the granted folder.")
+  }
+  return {args: words, what: "python " + words.join(" "), problem: ""}
+}
+
+fn plan_check(msg: Msg) -> Plan {
+  let words = rest_words(msg)
+  let file = words.first().or("")
+  if not file.lower().ends_with(".kos") or not stays_inside(file) {
+    return cannot("kosika check", "Tell me which Kosika file, like this: check agents/planner/main.kos")
+  }
+  return {args: ["-m", "kosika.cli", "check", file], what: "kosika check " + file, problem: ""}
+}
+
+// "py: 2 ** 10" or "calc 19 * 23": one Python expression, printed.
+fn plan_calc(msg: Msg) -> Plan {
+  let text = msg.text.trim()
+  let cut = if text.lower().starts_with("py:") { 3 } else { 4 }
+  let sum = text.slice(cut.min(text.length()), text.length()).trim()
+  if sum.length() == 0 {
+    return cannot("python", "Give me something to work out, like this: py: 2 ** 10")
+  }
+  return {args: ["-c", "print(" + sum + ")"], what: "python -c print(" + sum + ")", problem: ""}
+}
+
+// ------------------------------------------------------ reading the output
+
+fn refused(plan: Plan) -> Done {
+  return {text: plan.problem, what: plan.what, code: 0, output: "", ran: false}
+}
+
+fn kept(ran: Ran) -> Text {
+  let both = tail(ran.stdout, 1800) + (if ran.stderr.trim().length() > 0 { "\n" + tail(ran.stderr, 1200) } else { "" })
+  return both.trim()
+}
+
+fn output_done(plan: Plan, ran: Ran) -> Done {
+  let shown = (tail(ran.stdout, 1500).trim() + (if ran.stderr.trim().length() > 0 { "\n" + tail(ran.stderr, 800).trim() } else { "" })).trim()
+  let ending = if ran.exit_code == 0 { " finished." } else { " stopped with exit code " + ran.exit_code + ". Say \"why\" and I will explain." }
+  let body = if shown.length() > 0 { shown } else { "(it printed nothing)" }
+  return {text: plan.what + ending + "\n" + body, what: plan.what, code: ran.exit_code, output: kept(ran), ran: true}
+}
+
+fn status_done(plan: Plan, ran: Ran) -> Done {
+  if ran.exit_code != 0 { return output_done(plan, ran) }
+  var branch = "an unnamed branch"
+  var changed: Text[] = []
+  var fresh: Text[] = []
+  for row in lines_of(ran.stdout) {
+    if row.starts_with("## ") { branch = row.slice(3, row.length()).split("...").first().or("").trim() }
+    else if row.starts_with("??") { fresh = fresh.append(row.slice(3, row.length()).trim()) }
+    else { changed = changed.append(row.trim()) }
+  }
+  var text = "On " + branch + ": " + changed.length() + " changed, " + fresh.length() + " new."
+  if changed.length() + fresh.length() == 0 { text = "On " + branch + ": nothing has changed since the last commit." }
+  if changed.length() > 0 { text += "\nChanged:\n" + changed.slice(0, changed.length().min(15)).join("\n") }
+  if fresh.length() > 0 { text += "\nNew:\n" + fresh.slice(0, fresh.length().min(15)).join("\n") }
+  return {text: text, what: plan.what, code: 0, output: kept(ran), ran: true}
+}
+
+fn test_done(plan: Plan, ran: Ran) -> Done {
+  var summary = ""
+  var failed: Text[] = []
+  for row in lines_of(tail(ran.stdout, 3500)) {
+    if row.starts_with("FAILED ") { failed = failed.append(row.slice(7, row.length())) }
+    if row.contains(" passed") or row.contains(" failed") or row.contains(" error") or row.contains("no tests ran") {
+      summary = row.split("=").join("").trim()
+    }
+  }
+  if summary.length() == 0 { return output_done(plan, ran) }
+  var text = if ran.exit_code == 0 { "All tests passed: " + summary } else { "Tests did not pass: " + summary }
+  if failed.length() > 0 { text += "\nFailed:\n" + failed.slice(0, failed.length().min(10)).join("\n") }
+  if ran.exit_code != 0 { text += "\nSay \"why\" and I will explain the failure." }
+  return {text: text, what: plan.what, code: ran.exit_code, output: kept(ran), ran: true}
+}
+
+// --------------------------------------------------------------- the model
+
+fn diff_part(ran: Ran) -> Clip {
+  return {text: head(ran.stdout, 3500), ok: ran.exit_code == 0 and ran.stdout.trim().length() > 0}
+}
+
+fn changes_prompt(part: Clip) -> Prompt {
+  return {text: "These are the uncommitted changes in a code project. In at most four short sentences say in plain words what was changed and why it might matter. Then, on its own last line, suggest a commit message that starts with \"Commit: \".\n\n" + part.text}
+}
+
+fn no_reply(msg: Msg) -> Reply {
+  return {text: ""}
+}
+
+fn sorry(msg: Msg) -> Reply {
+  return {text: "Sorry, I could not get an answer just now. Please try again."}
+}
+
+fn changes_done(plan: Plan, ran: Ran, reply: Reply) -> Done {
+  if ran.exit_code != 0 { return output_done(plan, ran) }
+  if reply.text.trim().length() == 0 {
+    return {text: "There are no uncommitted changes to explain.", what: plan.what, code: 0, output: "", ran: true}
+  }
+  return {text: reply.text.trim(), what: plan.what, code: 0, output: head(ran.stdout, 1800), ran: true}
+}
+
+fn last_trouble(past: JournalRecalled) -> Clip {
+  if not past.found { return {text: "", ok: false} }
+  let book = past.value.value()
+  return {text: "Command: " + book.last_what + "\nExit code: " + book.last_code + "\nOutput:\n" + book.last_output, ok: book.last_code != 0 and book.last_output.length() > 0}
+}
+
+fn why_prompt(part: Clip) -> Prompt {
+  return {text: "A command failed on a developer's laptop. In at most four short sentences say what went wrong and the most likely fix. Quote the one line of output that shows the problem.\n\n" + part.text}
+}
+
+fn why_done(part: Clip, reply: Reply) -> Done {
+  let text = if part.ok { reply.text.trim() } else { "Nothing I ran has failed, so there is nothing to explain yet." }
+  return {text: text, what: "why", code: 0, output: "", ran: false}
+}
+
+fn ask_prompt(msg: Msg, past: JournalRecalled) -> Prompt {
+  var text = "You are a careful programming helper on the user's own laptop. Answer in a few short, clear sentences. If you are unsure, say so. You cannot see files; you only know the output below, if any.\n"
+  if past.found and past.value.value().last_output.length() > 0 {
+    text += "\nThe last command was: " + past.value.value().last_what + "\nIt printed:\n" + head(past.value.value().last_output, 1500) + "\n"
+  }
+  return {text: text + "\nUser: " + msg.text + "\nHelper:"}
+}
+
+fn talk_done(reply: Reply) -> Done {
+  return {text: reply.text.trim(), what: "ask", code: 0, output: "", ran: false}
+}
+
+// ------------------------------------------------------------- the journal
+
+fn journal_done(past: JournalRecalled) -> Done {
+  if not past.found or past.value.value().runs.length() == 0 {
+    return {text: "I have not run anything yet.", what: "history", code: 0, output: "", ran: false}
+  }
+  var rows: Text[] = []
+  for entry in past.value.value().runs {
+    rows = rows.append((if entry.code == 0 { "ok    " } else { "exit " + entry.code + " " }) + entry.what)
+  }
+  return {text: "What I ran, oldest first:\n" + rows.join("\n"), what: "history", code: 0, output: "", ran: false}
+}
+
+fn noted(past: JournalRecalled, done: Done) -> History {
+  let empty: History = {runs: [], last_what: "", last_code: 0, last_output: ""}
+  let book = if past.found { past.value.value() } else { empty }
+  if not done.ran { return book }
+  let all = book.runs.append({what: done.what, code: done.code})
+  return {runs: all.slice((all.length() - 12).max(0), all.length()), last_what: done.what, last_code: done.code, last_output: done.output}
+}
+
+fn help(msg: Msg) -> Done {
+  return {text: "I start git and python for you in the granted folder, after you allow each start.\nstatus: what has changed\nlog: the latest commits\nchanges: explain the uncommitted changes and suggest a commit message\ntest tests/test_app.py: run tests and report\nrun tools/report.py: run a Python file\ncheck main.kos: check a Kosika program\npy: 2 ** 10: work something out\nwhy: explain the last failure\nhistory: what I ran\nOr ask me a coding question.", what: "help", code: 0, output: "", ran: false}
+}
+
+fn say(done: Done) -> Said {
+  return {text: done.text}
+}
+
+// ------------------------------------------------------------ the requests
+
+workflow git_status(msg: Msg) -> Done {
+  plan = plan_status(msg)
+  ran  = execute runner.run_git(plan.args)
+  done = status_done(plan, ran)
+  require approval
+}
+
+workflow git_log(msg: Msg) -> Done {
+  plan = plan_log(msg)
+  ran  = execute runner.run_git(plan.args)
+  done = output_done(plan, ran)
+  require approval
+}
+
+workflow explain_changes(msg: Msg) -> Done {
+  plan   = plan_diff(msg)
+  ran    = execute runner.run_git(plan.args)
+  part   = diff_part(ran)
+  prompt = changes_prompt(part)
+  reply  = match part.ok {
+    case true { use_model helper(prompt.text) }
+    case _ { no_reply(msg) }
+  }
+  done   = changes_done(plan, ran, reply)
+  require approval
+}
+
+workflow start_python(plan: Plan) -> Done {
+  ran  = execute runner.run_python(plan.args)
+  done = output_done(plan, ran)
+  require approval
+}
+
+workflow start_tests(plan: Plan) -> Done {
+  ran  = execute runner.run_python(plan.args)
+  done = test_done(plan, ran)
+  require approval
+}
+
+workflow run_tests(msg: Msg) -> Done {
+  plan = plan_test(msg)
+  done = match plan.problem {
+    case "" { call start_tests(plan) }
+    case _ { refused(plan) }
+  }
+  require approval
+}
+
+workflow run_file(msg: Msg) -> Done {
+  plan = plan_run(msg)
+  done = match plan.problem {
+    case "" { call start_python(plan) }
+    case _ { refused(plan) }
+  }
+  require approval
+}
+
+workflow check_file(msg: Msg) -> Done {
+  plan = plan_check(msg)
+  done = match plan.problem {
+    case "" { call start_python(plan) }
+    case _ { refused(plan) }
+  }
+  require approval
+}
+
+workflow work_out(msg: Msg) -> Done {
+  plan = plan_calc(msg)
+  done = match plan.problem {
+    case "" { call start_python(plan) }
+    case _ { refused(plan) }
+  }
+  require approval
+}
+
+workflow explain_failure(msg: Msg) -> Done {
+  past   = recall journal under "me"
+  part   = last_trouble(past)
+  prompt = why_prompt(part)
+  reply  = match part.ok {
+    case true { use_model helper(prompt.text) }
+    case _ { no_reply(msg) }
+  }
+  done   = why_done(part, reply)
+}
+
+workflow show_history(msg: Msg) -> Done {
+  past = recall journal under "me"
+  done = journal_done(past)
+}
+
+workflow answer(msg: Msg) -> Done {
+  past   = recall journal under "me"
+  prompt = ask_prompt(msg, past)
+  reply  = use_model helper(prompt.text) retry 1 otherwise sorry(msg)
+  done   = talk_done(reply)
+}
+
+workflow main(msg: Msg) -> Said {
+  budget 3 model calls, 240 seconds
+  kind  = kind_of(msg)
+  done  = match kind.label {
+    case "status" { call git_status(msg) }
+    case "log" { call git_log(msg) }
+    case "changes" { call explain_changes(msg) }
+    case "test" { call run_tests(msg) }
+    case "run" { call run_file(msg) }
+    case "check" { call check_file(msg) }
+    case "calc" { call work_out(msg) }
+    case "why" { call explain_failure(msg) }
+    case "history" { call show_history(msg) }
+    case "help" { help(msg) }
+    case _ { call answer(msg) }
+  }
+  past  = recall journal under "me"
+  book  = noted(past, done)
+  saved = remember book in journal under "me"
+  out   = say(done)
+  require approval
+}
+
+// ------------------------------------------------------------------ tests
+// Starting a program needs a real approval, so the tests cover everything
+// around it: understanding the request, and reading what a program printed.
+
+test "requests are understood from plain words" {
+  expect kind_of({text: "status"}).label == "status"
+  expect kind_of({text: "Test tests/test_app.py"}).label == "test"
+  expect kind_of({text: "run tools/report.py --fast"}).label == "run"
+  expect kind_of({text: "py: 2 ** 10"}).label == "calc"
+  expect kind_of({text: "why"}).label == "why"
+  expect kind_of({text: "how do I reverse a list in python?"}).label == "ask"
+}
+
+test "a command is built exactly, and only inside the folder" {
+  a = plan_test({text: "test tests/test_app.py"})
+  b = plan_run({text: "run tools/report.py --fast"})
+  c = plan_run({text: "run ../secret.py"})
+  d = plan_run({text: "run notes.txt"})
+  e = plan_calc({text: "py: 2 ** 10"})
+  f = plan_test({text: "test C:/Windows"})
+  expect a.args == ["-m", "pytest", "-q", "-x", "--no-header", "-p", "no:cacheprovider", "tests/test_app.py"]
+  expect b.args == ["tools/report.py", "--fast"]
+  expect b.problem == ""
+  expect c.problem.contains("inside the granted folder")
+  expect d.problem.contains("Python files")
+  expect e.args == ["-c", "print(2 ** 10)"]
+  expect f.problem.contains("inside the granted folder")
+}
+
+test "git status is told in plain words" {
+  plan = plan_status({text: "status"})
+  a = status_done(plan, {exit_code: 0, stdout: "## studio...origin/studio\n M kosika/app.py\n?? notes.txt\n", stderr: ""})
+  b = status_done(plan, {exit_code: 0, stdout: "## main\n", stderr: ""})
+  expect a.text == "On studio: 1 changed, 1 new.\nChanged:\nM kosika/app.py\nNew:\nnotes.txt"
+  expect b.text == "On main: nothing has changed since the last commit."
+}
+
+test "a test run is summed up, with what failed" {
+  plan = plan_test({text: "test"})
+  good = test_done(plan, {exit_code: 0, stdout: "....\n4 passed in 0.31s\n", stderr: ""})
+  bad = test_done(plan, {exit_code: 1, stdout: "F.\nFAILED tests/test_a.py::test_one - assert 1 == 2\n1 failed, 1 passed in 0.20s\n", stderr: ""})
+  expect good.text == "All tests passed: 4 passed in 0.31s"
+  expect bad.text.contains("Tests did not pass: 1 failed, 1 passed in 0.20s")
+  expect bad.text.contains("tests/test_a.py::test_one")
+  expect bad.code == 1
+}
+
+test "the journal remembers a failure so that why can explain it" {
+  none: JournalRecalled = {found: false, value: null}
+  plan = plan_run({text: "run report.py"})
+  done = output_done(plan, {exit_code: 1, stdout: "", stderr: "NameError: name 'repot' is not defined"})
+  book = noted(none, done)
+  expect book.runs.length() == 1
+  expect book.last_code == 1
+  expect done.text.contains("stopped with exit code 1")
+  a = main({text: "why"})
+  expect a.text == "Nothing I ran has failed, so there is nothing to explain yet."
+}
+
+test "a question goes to the model, and a bad request needs no program" {
+  answers helper: [{text: "Use reversed(items) or items[::-1]."}]
+  a = main({text: "how do I reverse a list in python?"})
+  b = main({text: "run"})
+  c = main({text: "history"})
+  expect a.text == "Use reversed(items) or items[::-1]."
+  expect b.text.contains("like this")
+  expect c.text == "I have not run anything yet."
+}

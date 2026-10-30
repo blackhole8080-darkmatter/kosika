@@ -1,0 +1,73 @@
+record In { values: Number[] target: Number n: Number }
+record Out { index: Number sorted: Number[] gcd: Number fib: Number primes: Number[] }
+
+fn binary_search(values: Number[], target: Number) -> Number {
+  var low = 0
+  var high = values.length() - 1
+  var found = -1
+  while low <= high and found < 0 {
+    let mid = ((low + high) / 2).floor()
+    if values[mid] == target { found = mid }
+    else if values[mid] < target { low = mid + 1 }
+    else { high = mid - 1 }
+  }
+  return found
+}
+
+fn gcd(a: Number, b: Number) -> Number {
+  var x = a
+  var y = b
+  while y != 0 {
+    let t = y
+    y = x % y
+    x = t
+  }
+  return x
+}
+
+fn fib(n: Number) -> Number {
+  var a = 0
+  var b = 1
+  for i in 0 until n {
+    let t = a + b
+    a = b
+    b = t
+  }
+  return a
+}
+
+fn primes(n: Number) -> Number[] {
+  var found: Number[] = []
+  for candidate in 2 to n {
+    var prime = true
+    for p in found {
+      if candidate % p == 0 { prime = false }
+    }
+    if prime { found = found.append(candidate) }
+  }
+  return found
+}
+
+fn bubble(values: Number[]) -> Number[] {
+  var items = values
+  for i in 0 until items.length() {
+    for j in 0 until items.length() - 1 - i {
+      if items[j] > items[j + 1] {
+        let t = items[j]
+        items[j] = items[j + 1]
+        items[j + 1] = t
+      }
+    }
+  }
+  return items
+}
+
+fn main(input: In) -> Out {
+  return {
+    index: binary_search(input.values.sort(), input.target),
+    sorted: bubble(input.values),
+    gcd: gcd(48, 18),
+    fib: fib(input.n),
+    primes: primes(input.n)
+  }
+}
