@@ -193,6 +193,38 @@ Studio does only what its command allowed: it listens on 127.0.0.1, requires a
 token on every request, and without `--model` it shows and tests but runs
 nothing. A recording replays at one, two or four times speed.
 
+## Kosika Chat and Kosika Designs
+
+Two apps built on Kosika. Both use free and open models only (Groq or
+OpenRouter, keys read from the environment).
+
+**Kosika Chat** ([`examples/apps/chat`](examples/apps/chat/)) answers in words
+on the left and draws the answer on a live canvas on the right. Each sentence
+marks the part of the drawing it talks about, and Kosi decides whether to answer
+itself or hand the message to a helper agent.
+
+```text
+python examples/apps/chat/server.py      # http://127.0.0.1:8793
+```
+
+![Kosika Chat drawing how a language model works](docs/images/chat-llm.gif)
+
+| Fibonacci, worked and drawn | While it thinks, the canvas shows which parts are working |
+| --- | --- |
+| ![Kosika Chat on the Fibonacci sequence](docs/images/chat-fibonacci.png) | ![Kosika Chat thinking, with words, structure and photo at work](docs/images/chat-thinking.png) |
+
+**Kosika Designs** ([`examples/agents/designs`](examples/agents/designs/)) turns
+a question into an explanatory drawing: cycles, mind maps, comparison tables,
+flows and papers. Kosika checks the drawing's mathematics and the palette's
+contrast before it is shown. Its [README](examples/agents/designs/README.md) has
+more examples.
+
+| A cycle with moving icons | A comparison as a table |
+| --- | --- |
+| ![The water cycle](examples/agents/designs/shots/water-cycle-icons.gif) | ![TCP, UDP and QUIC compared](examples/agents/designs/shots/comparison-table.png) |
+
+![A sunflower drawn from the Fibonacci angle](examples/agents/designs/shots/sunflower-fibonacci.jpg)
+
 ## Use it from an AI assistant
 
 `kosika-mcp` is a Model Context Protocol server: an assistant can read the guide,

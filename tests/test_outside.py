@@ -447,8 +447,9 @@ class FailureTests(Base):
 
         with (
             mock.patch.object(outside.sys, "platform", "win32"),
+            # Forward slashes, so the name reads the same on every system.
             mock.patch.object(
-                outside.shutil, "which", return_value=r"C:\tools\agent.cmd"
+                outside.shutil, "which", return_value="C:/tools/agent.cmd"
             ),
         ):
             with self.assertRaises(OutsideError) as caught:

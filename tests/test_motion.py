@@ -396,8 +396,9 @@ class StudioSceneTests(unittest.TestCase):
         self.assertTrue(brand["ok"], brand)
         root = ET.fromstring(brand["svg"])
         ids = [g.get("id") for g in root.iter(f"{SVG}g") if g.get("id")]
-        self.assertEqual(len(ids), 12)
-        self.assertEqual(ids[-2:], ["tile", "letter"])
+        # Halo, photon ring, twelve particles, the core, then the K.
+        self.assertEqual(len(ids), 16)
+        self.assertEqual(ids[-2:], ["core", "letter"])
         # It sits on Studio's own background, so it brings none of its own.
         self.assertEqual(list(root.findall(f"{SVG}rect")), [])
         self.assertIn("<rect", to_svg(SCENE).split("\n")[1])
