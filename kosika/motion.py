@@ -702,7 +702,7 @@ def to_svg(scene: dict[str, Any], *, backdrop: bool = True) -> str:
     if camera:
         cam_open = (
             f'<g transform="translate({_n(float(scene["width"]) / 2)} {_n(float(scene["height"]) / 2)})">'
-            f"{_camera_xml(camera, float(scene["width"]), float(scene["height"]))}"
+            f"{_camera_xml(camera, float(scene['width']), float(scene['height']))}"
         )
         cam_close = "</g>"
     if cam_open:
