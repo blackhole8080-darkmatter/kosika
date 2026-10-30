@@ -33,7 +33,7 @@
         for (const ch of word) {
           const l = document.createElement("span");
           l.className = "l"; l.textContent = ch;
-          l.style.setProperty("--d", (0.35 + n * 0.028).toFixed(2) + "s");
+          l.style.setProperty("--d", (0.18 + n * 0.022).toFixed(2) + "s");
           w.appendChild(l); n++;
         }
         el.appendChild(w);
@@ -95,8 +95,29 @@
 
       // the dot travels the orbit; it slows to rest at each quarter
       const a = -Math.PI / 2 + Math.PI * 2 * (CALM ? .12 : (t * .045) % 1);
-      const dx = cx + Math.cos(a) * rx * Math.cos(Math.sin(t * .18) * .04) - Math.sin(a) * ry * Math.sin(Math.sin(t * .18) * .04);
-      const dy = cy + Math.sin(a) * ry;
+      // the ring leans with the pointer, so the dot has to lean with it: one
+      // rotation, applied to the point itself, or the dot sits off its own arc
+      const rot = Math.sin(t * .18) * .04;
+      const ex = Math.cos(a) * rx, ey = Math.sin(a) * ry;
+      const dx = cx + ex * Math.cos(rot) - ey * Math.sin(rot);
+      const dy = cy + ex * Math.sin(rot) + ey * Math.cos(rot);
+
+      // the comet: the dot's own path, thinning behind it. Six short arcs of
+      // falling alpha — a smear, not a second animation.
+      if (!CALM) {
+        const span = .30, seg = 6;
+        ctx.save(); ctx.translate(cx, cy); ctx.rotate(rot); ctx.lineCap = "round";
+        for (let i = 0; i < seg; i++) {
+          const a1 = a - span * (i / seg), a0 = a - span * ((i + 1) / seg);
+          // the dot's own light, not the ring's gold: a smear of the head reads
+          // as travel, where a second gold arc would read as ring thickness
+          ctx.strokeStyle = `rgba(255,244,226,${(.4 * (1 - i / seg) + .05).toFixed(3)})`;
+          ctx.lineWidth = 3.2 * (1 - i / seg) + .6;
+          ctx.beginPath(); ctx.ellipse(0, 0, rx, ry, 0, a0, a1); ctx.stroke();
+        }
+        ctx.restore();
+      }
+
       const g = ctx.createRadialGradient(dx, dy, 0, dx, dy, 60);
       g.addColorStop(0, "rgba(245,180,92,.55)"); g.addColorStop(1, "rgba(245,180,92,0)");
       ctx.fillStyle = g; ctx.beginPath(); ctx.arc(dx, dy, 60, 0, 7); ctx.fill();
@@ -117,6 +138,8 @@
       // paint one frame synchronously: a throttled tab or a covered window may
       // never run rAF, and a blank hero is worse than a still one
       start() { if (running) return; running = true; t0 = performance.now() - 2600; draw(performance.now()); },
+      /* one frame, no loop: what a reader who asked for less motion gets */
+      still() { running = false; cancelAnimationFrame(raf); t0 = performance.now() - 2600; draw(performance.now()); },
       pause() { running = false; cancelAnimationFrame(raf); },
       look(x, y) { tx = x; ty = y; }
     };
@@ -136,6 +159,7 @@
   })();
 
   addEventListener("pointermove", (e) => {
+    if (CALM) return;
     orbit.look((e.clientX / innerWidth - .5) * 2, (e.clientY / innerHeight - .5) * 2);
     const x = (e.clientX / innerWidth - .5), y = (e.clientY / innerHeight - .5);
     const f = $("#field");
@@ -146,7 +170,7 @@
   }, { passive: true });
 
   new IntersectionObserver(([e]) => {
-    if (e.isIntersecting) { orbit.start(); heroFilm.play(); }
+    if (e.isIntersecting) { CALM ? orbit.still() : orbit.start(); heroFilm.play(); }
     else { orbit.pause(); heroFilm.pause(); }
   }, { threshold: 0 }).observe($("#top"));
 
@@ -163,6 +187,7 @@
       const fx = document.createElement("div");
       fx.className = "fx";
       fx.style.cssText = `left:${left}%;top:${top}%;width:${size}px;height:${Math.round(size * .42)}px;--drift:${(7 + depth * 3).toFixed(1)}s;--delay:-${(depth * 1.7).toFixed(1)}s`;
+      fx.dataset.d = depth; // how far the chip travels as the page moves
       const i = document.createElement("i"); i.textContent = word; fx.appendChild(i);
       field.appendChild(fx);
     }
@@ -178,21 +203,79 @@
 
   /* ── chrome ───────────────────────────────────────────────────── */
   const bar = $("#bar"), pbar = $("#progressbar");
+  const fxBits = $$(".field .fx");
   const onScrollChrome = () => {
     const y = scrollY;
     bar.classList.toggle("scrolled", y > 40);
     const max = document.documentElement.scrollHeight - innerHeight;
     pbar.style.transform = `scaleX(${max > 0 ? clamp(y / max) : 0})`;
+    // the chips are at different depths, so the page moving lifts them apart:
+    // the ones meant to be further away travel less
+    if (!CALM && y < innerHeight * 1.2) {
+      const k = clamp(y / innerHeight, 0, 1.2);
+      for (const fx of fxBits) {
+        const d = parseFloat(fx.dataset.d || "1");
+        fx.style.transform = `translate3d(0, ${(-k * d * 44).toFixed(1)}px, 0)`;
+      }
+    }
   };
   addEventListener("scroll", onScrollChrome, { passive: true });
   onScrollChrome();
 
+  /* ── the buttons lean toward the pointer ──────────────────────── */
+  (function magnet() {
+    if (CALM || !matchMedia("(hover: hover) and (pointer: fine)").matches) return;
+    for (const el of $$(".hero-ctas .btn, .bar .cta")) {
+      const move = (e) => {
+        const r = el.getBoundingClientRect();
+        const x = clamp((e.clientX - (r.left + r.width / 2)) / r.width, -1, 1);
+        const y = clamp((e.clientY - (r.top + r.height / 2)) / r.height, -1, 1);
+        el.style.setProperty("--mx", (x * 5).toFixed(1) + "px");
+        el.style.setProperty("--my", (y * 4).toFixed(1) + "px");
+      };
+      const rest = () => { el.style.setProperty("--mx", "0px"); el.style.setProperty("--my", "0px"); };
+      el.addEventListener("pointermove", move, { passive: true });
+      el.addEventListener("pointerleave", rest, { passive: true });
+      el.addEventListener("blur", rest);
+    }
+  })();
+
   /* ── reveal, counters, stamps ─────────────────────────────────── */
+  /* Section headlines are the largest type on the page, so they get the one
+     kinetic moment: each word rises out of its own mask, 55ms after the last.
+     Words, not letters — a headline has to stay readable while it moves. A
+     reader who asked for less motion keeps the plain line, and the <noscript>
+     rule already covers the rest. */
+  if (!CALM) {
+    for (const h of $$("h2.rise")) {
+      const inner = [];
+      const walk = (node) => {
+        for (const child of [...node.childNodes]) {
+          if (child.nodeType === 3) {
+            const frag = document.createDocumentFragment();
+            for (const part of child.textContent.split(/(\s+)/)) {
+              if (!part) continue;
+              if (/^\s+$/.test(part)) { frag.appendChild(document.createTextNode(part)); continue; }
+              const w = document.createElement("span"); w.className = "hw";
+              const i = document.createElement("span"); i.className = "hi"; i.textContent = part;
+              w.appendChild(i); frag.appendChild(w); inner.push(i);
+            }
+            child.replaceWith(frag);
+          } else if (child.nodeType === 1) walk(child);
+        }
+      };
+      walk(h);
+      inner.forEach((i, n) => i.style.setProperty("--d", (n * .055).toFixed(3) + "s"));
+      h.classList.add("kinetic");
+    }
+  }
+
   const revealIO = new IntersectionObserver((entries) => {
     for (const e of entries) {
       if (!e.isIntersecting) continue;
       e.target.classList.add("in");
       revealIO.unobserve(e.target);
+      if (e.target.classList.contains("stat")) e.target.classList.add("counted");
     }
   }, { threshold: .16, rootMargin: "0px 0px -8% 0px" });
   $$(".rise").forEach(el => revealIO.observe(el));
@@ -203,6 +286,7 @@
     const pre = el.dataset.prefix || "";
     if (CALM) { el.textContent = pre + to.toFixed(dec); return; }
     const finish = () => { el.textContent = pre + to.toFixed(dec); };
+    el.closest(".stat")?.classList.add("counted");
     // a background tab may never tick rAF; never leave a counter at zero
     setTimeout(finish, 1600);
     const start = performance.now(), dur = 1100;
@@ -230,7 +314,7 @@
         if (CALM) { card.classList.add("stamped"); return; }
         card.classList.add("stamped");
         if (i === 2) kosiStamp = performance.now();
-      }, 620 + i * 120);
+      }, 420 + i * 140);
       stampIO.unobserve(card);
     }
   }, { threshold: .45 });
@@ -335,17 +419,83 @@
 
   const runEl = $("#run");
   const timeEl = $("#time"), stepEl = $("#step"), progressEl = $("#progress");
+  const orbitSvg = $(".orbit svg");
+  // the playhead moves by transform, not by left: a scroll-driven move should
+  // never ask the browser for layout. Its track's width is measured on resize.
+  const track = playhead && playhead.parentElement;
+  let trackW = (track && track.clientWidth) || 1, lastP = 0;
+  if (track && "ResizeObserver" in window) {
+    new ResizeObserver(() => { trackW = track.clientWidth || 1; setRun(lastP); }).observe(track);
+  } else addEventListener("resize", () => { trackW = (track && track.clientWidth) || 1; setRun(lastP); });
   const nodes = ["n-you", "n-model", "n-tools", "n-memory", "n-files", "n-core"].reduce((acc, id) => {
     acc[id] = document.getElementById(id); return acc;
   }, {});
+  // the orbit's arc and head: the same geometry the svg is drawn in, so no
+  // measurement and no layout — two attributes per frame of scroll
+  const trace = document.querySelector(".o-trace"), head = document.getElementById("ohead");
+  // measured off the path itself, so the arc is a true fraction of the ring
+  const ARC = (trace && trace.getTotalLength && trace.getTotalLength()) || 1169.2;
+  if (trace) { trace.style.strokeDasharray = ARC + " " + ARC; trace.style.strokeDashoffset = ARC; }
+  /* The dash is measured in arc length, so the head has to be too: on an
+     ellipse of rx 250 / ry 108 a fifth of the *angle* is not a fifth of the
+     *path*, and the dot would run ahead of its own arc. This table maps arc
+     length back to the angle that produces it. */
+  const ANGLE_AT = (() => {
+    const N = 720, RX = 250, RY = 108, at = new Float64Array(N + 1);
+    let run = 0, px = RX, py = 0;
+    at[0] = 0;
+    for (let i = 1; i <= N; i++) {
+      const a = (i / N) * Math.PI * 2, x = Math.cos(a) * RX, y = Math.sin(a) * RY;
+      run += Math.hypot(x - px, y - py); px = x; py = y;
+      at[i] = run;
+    }
+    return (f) => { // f: 0..1 of the perimeter -> angle, radians from the right
+      const want = clamp(f) * run;
+      let lo = 0, hi = N;
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (at[mid] < want) lo = mid + 1; else hi = mid; }
+      const i = Math.max(1, lo);
+      const span = at[i] - at[i - 1] || 1;
+      return ((i - 1 + (want - at[i - 1]) / span) / N) * Math.PI * 2;
+    };
+  })();
+
+  /* one ring out from the node that just took a beat: the only reward the
+     diagram gives, and it is spent on the moment a step lands */
+  const SVGNS = "http://www.w3.org/2000/svg";
+  function waveAt(id) {
+    const g = document.getElementById(id);
+    const c = g && g.querySelector("circle");
+    if (!c) return;
+    const ring = document.createElementNS(SVGNS, "circle");
+    ring.setAttribute("cx", c.getAttribute("cx"));
+    ring.setAttribute("cy", c.getAttribute("cy"));
+    ring.setAttribute("r", c.getAttribute("r"));
+    ring.setAttribute("class", "o-wave");
+    g.appendChild(ring);
+    setTimeout(() => ring.remove(), 900);
+  }
+  let lastBeat = null;
 
   function setRun(p) {
     if (!playhead) return;
+    const forward = p > lastP + .0005;
+    lastP = p;
     const t = p * RUN.seconds;
     const mm = Math.floor(t / 60), ss = Math.floor(t % 60);
     timeEl.innerHTML = `${mm}:${String(ss).padStart(2, "0")}<b>.${Math.floor((t % 1) * 10)}</b>`;
-    playhead.style.left = (p * 100).toFixed(3) + "%";
+    playhead.style.transform = `translate3d(${(p * trackW).toFixed(2)}px, 0, 0)`;
     progressEl.style.transform = `scaleX(${p.toFixed(4)})`;
+    // a slow push through the whole recording: the camera is the scroll
+    if (orbitSvg && !CALM) orbitSvg.style.transform = `scale(${(1 + p * 0.022).toFixed(4)})`;
+    // the gold arc is the run's progress, and its head rides the ring; under
+    // reduced motion the css holds the ring full and the head hidden
+    if (trace && head && !CALM) {
+      trace.style.strokeDashoffset = (ARC * (1 - p)).toFixed(1);
+      const a = -Math.PI / 2 + ANGLE_AT(p);
+      head.setAttribute("cx", (340 + Math.cos(a) * 250).toFixed(2));
+      head.setAttribute("cy", (150 + Math.sin(a) * 108).toFixed(2));
+      head.style.opacity = p > .002 ? 1 : 0;
+    }
     let current = null;
     for (const b of beats) {
       const seen = p >= b.at / RUN.seconds;
@@ -353,10 +503,20 @@
       if (seen) current = b;
     }
     for (const id in nodes) if (nodes[id]) nodes[id].classList.remove("now", "seen");
+    const model = document.getElementById("n-model");
+    if (model) model.classList.remove("ask");
+    if (runEl) runEl.classList.remove("asking");
     if (current) {
       stepEl.innerHTML = `<b>${current.name}</b> — ${current.did} <span style="color:var(--faint)">→ ${current.answer}</span>`;
       const n = document.getElementById(nodeOf(current.kind));
       if (n) n.classList.add("now");
+      if (forward && !CALM && current !== lastBeat) waveAt(nodeOf(current.kind));
+      lastBeat = current;
+      // the model call is the one costly step: the stage leans in for it
+      if (current.kind === "model" && !CALM) {
+        if (model) model.classList.add("ask");
+        if (runEl) runEl.classList.add("asking");
+      }
     }
     const lit = new Set();
     for (const b of beats) if (p >= b.at / RUN.seconds) lit.add(nodeOf(b.kind));
@@ -389,6 +549,13 @@
       tc.innerHTML = `<b>${fmt(v.currentTime || 0)}</b> / ${fmt(v.duration || 18)}`;
       const label = $("span", playbtn);
       if (label) label.textContent = v.paused ? "Play" : "Pause";
+      // A slow push in and back, on the film's own clock: the camera move a
+      // recording of a screen would not otherwise have. It is a there-and-back
+      // curve, not a one-way climb, so the loop point has nothing to jump.
+      if (!CALM && v.duration) {
+        const tri = 1 - Math.abs(1 - 2 * (v.currentTime / v.duration));
+        v.style.transform = `scale(${(1 + sineInOut(clamp(tri)) * 0.035).toFixed(4)})`;
+      }
     };
     v.addEventListener("timeupdate", paint);
     v.addEventListener("loadedmetadata", paint);
@@ -399,9 +566,65 @@
       if (v.paused) { userPaused = false; v.play().catch(() => {}); }
       else { userPaused = true; v.pause(); }
     });
+    /* the meter in the bar: an analyser on the film's own audio, drawn as bars.
+       It is silent until someone asks for sound, and it says what the score is
+       doing rather than moving on a timer. */
+    const spec = $("#spectrum");
+    const sctx = spec && !CALM ? spec.getContext("2d") : null;
+    const BARS = 40;
+    let ac = null, analyser = null, bins = null, specRaf = 0;
+    function drawSpectrum(live) {
+      if (!sctx) return;
+      const w = spec.width, h = spec.height;
+      sctx.clearRect(0, 0, w, h);
+      if (!live) {
+        // at rest: a row of ticks, so the meter reads as a meter that is
+        // waiting rather than a gap in the bar
+        sctx.fillStyle = "rgba(148,160,220,.26)";
+        const gap0 = 2, bw0 = (w - gap0 * (BARS - 1)) / BARS;
+        for (let i = 0; i < BARS; i++) sctx.fillRect(i * (bw0 + gap0), h - 2, bw0, 2);
+        return;
+      }
+      analyser.getByteFrequencyData(bins);
+      const gap = 2, bw = (w - gap * (BARS - 1)) / BARS;
+      for (let i = 0; i < BARS; i++) {
+        const v2 = bins[Math.floor(i * bins.length / BARS)] / 255;
+        const bh = Math.max(1, v2 * h);
+        sctx.fillStyle = `rgba(245,180,92,${(.32 + v2 * .62).toFixed(2)})`;
+        sctx.fillRect(i * (bw + gap), h - bh, bw, bh);
+      }
+    }
+    function specLoop() {
+      const live = !!(analyser && !v.muted && !v.paused);
+      drawSpectrum(live);
+      if (live) specRaf = requestAnimationFrame(specLoop);
+      else { specRaf = 0; drawSpectrum(false); }
+    }
+    function startAudio() {
+      if (!spec || CALM) return;
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      if (!ac) {
+        try {
+          ac = new AC();
+          const src = ac.createMediaElementSource(v);
+          analyser = ac.createAnalyser();
+          analyser.fftSize = 256; analyser.smoothingTimeConstant = .8;
+          bins = new Uint8Array(analyser.frequencyBinCount);
+          src.connect(analyser); analyser.connect(ac.destination);
+        } catch { ac = null; analyser = null; return; }
+      }
+      ac.resume();
+      if (!specRaf) specLoop();
+    }
+    v.addEventListener("pause", () => { cancelAnimationFrame(specRaf); specRaf = 0; drawSpectrum(false); });
+    v.addEventListener("play", () => { if (!v.muted && analyser && !specRaf) specLoop(); });
+    drawSpectrum(false);
+
     soundbtn.addEventListener("click", () => {
       v.muted = !v.muted;
-      if (!v.muted) { v.volume = .9; v.play().catch(() => {}); }
+      if (!v.muted) { v.volume = .9; startAudio(); v.play().catch(() => {}); }
+      else { cancelAnimationFrame(specRaf); specRaf = 0; drawSpectrum(false); }
       $("span", soundbtn).textContent = v.muted ? "Sound on" : "Sound off";
     });
     v.muted = true;

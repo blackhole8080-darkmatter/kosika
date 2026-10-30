@@ -192,6 +192,54 @@ class FetchTests(unittest.TestCase):
             "---\nTitle: A\nSummary: B",
         )
 
+    def test_an_rdf_feed_is_read_too_links_authors_dates_and_all(self) -> None:
+        # The shape bioRxiv and other RSS 1.0 feeds use: the link as the
+        # item's about and again as the link tag's own words, authors and
+        # dates behind a dc: prefix, and the long fields in CDATA.
+        rdf = (
+            "<rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#'>"
+            "<channel><title>Channel</title><link>https://x.org</link></channel>"
+            "<item rdf:about='https://x.org/content/10.1/2026.10.22.1v1'>"
+            "<title><![CDATA[ Tea and light ]]></title>"
+            "<link>https://x.org/content/10.1/2026.10.22.1v1</link>"
+            "<description><![CDATA[What the paper found.]]></description>"
+            "<dc:creator><![CDATA[ Lee, A. ]]></dc:creator>"
+            "<dc:date>2026-10-25</dc:date>"
+            "</item></rdf:RDF>"
+        )
+        self.assertEqual(
+            readable_feed(rdf),
+            "---\n"
+            "Link: https://x.org/content/10.1/2026.10.22.1v1\n"
+            "Title: Tea and light\n"
+            "Summary: What the paper found.\n"
+            "Author: Lee, A.\n"
+            "Published: 2026-10-25",
+        )
+
+    def test_the_same_line_is_not_said_twice_in_one_entry(self) -> None:
+        # A link said three ways, and a title said as a title and a dc:title.
+        self.assertEqual(
+            readable_feed(
+                "<item rdf:about='https://x.org/1'><link>https://x.org/1</link>"
+                "<link href='https://x.org/1'/><title>Tea</title><dc:title>Tea</dc:title></item>"
+            ),
+            "---\nLink: https://x.org/1\nTitle: Tea",
+        )
+        # Two different authors are two lines.
+        self.assertEqual(
+            readable_feed("<item><creator>Ann</creator><creator>Bo</creator></item>"),
+            "---\nAuthor: Ann\nAuthor: Bo",
+        )
+
+    def test_cdata_is_words_in_a_feed_and_stays_dropped_in_a_page(self) -> None:
+        self.assertEqual(
+            readable_feed("<item><description><![CDATA[<p>Bold words</p>]]></description></item>"),
+            "---\nSummary: <p>Bold words</p>",
+        )
+        _title, text = readable("<p>before<![CDATA[hidden]]>after</p>", True)
+        self.assertNotIn("hidden", text)
+
     def test_text_is_clipped(self) -> None:
         body = b"<main><p>" + b"word " * 20000 + b"</p></main>"
         page = fetch(

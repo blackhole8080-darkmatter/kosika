@@ -1,0 +1,71 @@
+{
+  "models": {
+    "quick": {
+      "id": "openai/gpt-oss-20b",
+      "url": "https://api.groq.com/openai/v1/chat/completions",
+      "key": "GROQ_API_KEY",
+      "extra": {
+        "reasoning_effort": "low"
+      }
+    },
+    "strong": {
+      "id": "openai/gpt-oss-120b",
+      "url": "https://api.groq.com/openai/v1/chat/completions",
+      "key": "GROQ_API_KEY",
+      "extra": {
+        "reasoning_effort": "low"
+      }
+    },
+    "other": {
+      "id": "qwen/qwen3.8-27b",
+      "url": "https://api.groq.com/openai/v1/chat/completions",
+      "key": "GROQ_API_KEY"
+    },
+    "spare": {
+      "id": "google/gemma-4-31b-it:free",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "key": "OPENROUTER_API_KEY"
+    },
+    "spare2": {
+      "id": "nvidia/nemotron-3.5-super-vl:free",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "key": "OPENROUTER_API_KEY"
+    },
+    "local": {
+      "id": "qwen2.5:7b",
+      "url": "http://127.0.0.1:11434/v1/chat/completions",
+      "key": ""
+    }
+  },
+  "routes": {
+    "quick": [
+      "quick",
+      "strong",
+      "other",
+      "spare",
+      "spare2",
+      "local"
+    ],
+    "strong": [
+      "strong",
+      "other",
+      "spare",
+      "spare2",
+      "local"
+    ]
+  },
+  "quick_when": {
+    "max_chars": 2500
+  },
+  "failure_words": [
+    "Traceback",
+    "FAILED",
+    "Error:",
+    "failed",
+    "AssertionError",
+    "not found"
+  ],
+  "cool_seconds": 20,
+  "timeout_seconds": 180,
+  "patience_seconds": 20
+}

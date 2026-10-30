@@ -106,8 +106,9 @@ var htmlAttribute = regexp.MustCompile(`([^\s/>"'=]+)(?:\s*=\s*("[^"]*"|'[^']*'|
 // htmlEvents reads a page as Python's html.parser reads it, for what the
 // readers below need: tags in lower case, character references made
 // characters, comments, declarations and CDATA sections dropped, script
-// and style content kept whole, and `<x/>` as a start and an end.
-func htmlEvents(body string) []htmlEvent {
+// and style content kept whole, and `<x/>` as a start and an end. A feed
+// keeps the words a CDATA section holds, as one of its field's own words.
+func htmlEvents(body string, keepCdata bool) []htmlEvent {
 	var events []htmlEvent
 	text := func(data string) {
 		if data != "" {
@@ -136,6 +137,9 @@ func htmlEvents(body string) []htmlEvent {
 			end := strings.Index(rest, "]]>")
 			if end < 0 {
 				return events
+			}
+			if keepCdata {
+				text(rest[len("<![CDATA["):end])
 			}
 			i += end + 3
 			start = i
@@ -268,7 +272,7 @@ func readablePage(body string, isHTML bool) (string, string) {
 			main = append(main, text)
 		}
 	}
-	for _, e := range htmlEvents(body) {
+	for _, e := range htmlEvents(body, false) {
 		switch e.kind {
 		case "start":
 			switch {
@@ -308,40 +312,75 @@ func readablePage(body string, isHTML bool) (string, string) {
 	return strings.Join(strings.Fields(strings.Join(title, "")), " "), text
 }
 
-var feedLabels = map[string]string{"title": "Title", "published": "Published", "pubdate": "Published", "updated": "Updated", "name": "Author", "summary": "Summary", "description": "Summary"}
+var feedLabels = map[string]string{"title": "Title", "published": "Published", "pubdate": "Published", "date": "Published", "updated": "Updated", "name": "Author", "creator": "Author", "summary": "Summary", "description": "Summary", "link": "Link"}
+
+// bareTag is a tag without its namespace prefix: dc:date reads as date, as
+// RDF feeds such as bioRxiv's write their authors and dates.
+func bareTag(tag string) string {
+	if at := strings.LastIndex(tag, ":"); at >= 0 {
+		return tag[at+1:]
+	}
+	return tag
+}
 
 // readableFeed is a feed as plain lines: each entry begins with `---`, then
-// a line for each of its title, date, authors, link and summary.
+// a line for each of its title, date, authors, link and summary. Atom gives
+// the link as an attribute, RSS as the link tag's own words, and an RDF
+// feed as the item's about attribute; all three are read, and the same
+// line is not said twice in one entry, as feeds that say a field two ways
+// (a title and a dc:title) are read once.
 func readableFeed(body string) string {
 	var lines []string
 	entry := 0
 	label := ""
 	var said []string
-	for _, e := range htmlEvents(body) {
+	var saidLines []string
+	knows := func(line string) bool {
+		for _, known := range saidLines {
+			if known == line {
+				return true
+			}
+		}
+		return false
+	}
+	say := func(line string) {
+		if !knows(line) {
+			saidLines = append(saidLines, line)
+			lines = append(lines, line)
+		}
+	}
+	for _, e := range htmlEvents(body, true) {
+		tag := bareTag(e.tag)
 		switch e.kind {
 		case "start":
 			switch {
-			case e.tag == "entry" || e.tag == "item":
+			case tag == "entry" || tag == "item":
 				entry++
 				lines = append(lines, "---")
-			case entry > 0 && feedLabels[e.tag] != "":
-				label, said = feedLabels[e.tag], nil
-			case entry > 0 && e.tag == "link":
+				saidLines = nil
+				if about := e.attrs["rdf:about"]; about != "" {
+					say("Link: " + about)
+				}
+			case entry > 0 && tag == "link":
 				rel, has := e.attrs["rel"]
 				if !has {
 					rel = "alternate"
 				}
 				if e.attrs["href"] != "" && rel == "alternate" {
-					lines = append(lines, "Link: "+e.attrs["href"])
+					say("Link: " + e.attrs["href"])
+				} else if e.attrs["href"] == "" {
+					label, said = "Link", nil
 				}
+			case entry > 0 && feedLabels[tag] != "":
+				label, said = feedLabels[tag], nil
 			}
 		case "end":
 			switch {
-			case (e.tag == "entry" || e.tag == "item") && entry > 0:
+			case (tag == "entry" || tag == "item") && entry > 0:
 				entry--
-			case label != "" && feedLabels[e.tag] == label:
+			case label != "" && feedLabels[tag] == label:
 				if text := strings.Join(strings.Fields(strings.Join(said, "")), " "); text != "" {
-					lines = append(lines, label+": "+text)
+					say(label + ": " + text)
 				}
 				label = ""
 			}

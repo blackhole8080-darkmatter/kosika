@@ -92,7 +92,7 @@ pre.source { background: var(--bg); border: 1px solid var(--line); border-radius
 @keyframes bob { 0%, 60%, 100% { transform: none; opacity: .5; } 30% { transform: translateY(-4px); opacity: 1; } }
 .ask { border: 1px solid var(--warn); background: var(--warn-soft); border-radius: 13px; padding: 12px 14px; animation: rise .28s var(--ease); max-width: 92%; }
 .ask b { color: var(--warn); } .ask pre { color: var(--ink); margin: 7px 0 10px; background: var(--panel); border-radius: 8px; padding: 8px 10px; max-height: 180px; overflow: auto; }
-.quick { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 9px; } .quick span { border: 1px solid var(--line); border-radius: 999px; padding: 3px 11px; font-size: 12.5px; color: var(--soft); cursor: pointer; transition: border-color .15s, color .15s; } .quick span:hover { border-color: var(--accent); color: var(--accent); }
+.quick { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 9px; } .quick span { border: 1px solid var(--line); border-radius: 999px; padding: 3px 11px; font-size: 12.5px; color: var(--soft); cursor: pointer; transition: border-color .15s, color .15s, background .15s; } .quick span:hover { border-color: var(--accent); color: var(--accent); } .quick span.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 
 /* the flow: still and live */
 .wf + .wf { margin-top: 22px; padding-top: 18px; border-top: 1px dashed var(--line); }
@@ -242,8 +242,25 @@ select { font: inherit; background: var(--bg); color: var(--ink); border: 1px so
 .memroot { background: var(--mem-soft); color: var(--mem); border-radius: 11px; padding: 10px 12px; font-weight: 600; } .memroot small { display: block; font-weight: 400; opacity: .85; }
 .ment { position: relative; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 11px; margin-bottom: 8px; animation: rise .3s var(--ease); }
 .ment::before { content: ""; position: absolute; left: -18px; top: 18px; width: 18px; height: 2px; background: var(--mem); opacity: .5; } .ment .k { font: 600 12.5px var(--mono); color: var(--mem); }
-.runs { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 15px; } @media (max-width: 820px) { .runs { grid-template-columns: 1fr; } }
-.runlist { max-height: 70vh; overflow: auto; } .runlist div { padding: 7px 10px; border-radius: 8px; cursor: pointer; font: 12px var(--mono); transition: background .15s; } .runlist div:hover, .runlist div.on { background: var(--code-soft); } .runlist small { color: var(--faint); display: block; }
+.runs { display: grid; grid-template-columns: 288px minmax(0, 1fr); gap: 15px; } @media (max-width: 820px) { .runs { grid-template-columns: 1fr; } }
+.runlist { max-height: 70vh; overflow: auto; padding-right: 3px; }
+.runlist .run { padding: 9px 11px; border: 1px solid transparent; border-radius: 10px; cursor: pointer; transition: background .15s, border-color .15s; outline: none; }
+.runlist .run + .run { margin-top: 3px; }
+.runlist .run:hover { background: var(--code-soft); }
+.runlist .run:focus-visible { border-color: var(--accent); }
+.runlist .run.on { background: var(--code-soft); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.run-top { display: flex; align-items: baseline; gap: 8px; }
+.run-top b { font-size: 13px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.run-top b.empty { font-weight: 400; font-style: italic; color: var(--faint); }
+.run-top .chip { margin-left: auto; flex: none; font-size: 10.5px; padding: 1px 8px; letter-spacing: .02em; }
+.run-when { font: 11px var(--mono); color: var(--faint); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.run-because { font: 11px var(--mono); color: var(--bad); margin-top: 2px; }
+.run-tally { font-size: 12.5px; color: var(--soft); }
+.run-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 10px; flex-wrap: wrap; }
+.run-head .quick { margin: 0; }
+.run-wait { border: 1px dashed var(--line); border-radius: 12px; padding: 22px 18px; text-align: center; color: var(--soft); }
+.run-wait b { display: block; color: var(--ink); font-size: 14px; margin-bottom: 5px; }
+.run-wait p { margin: 0 auto; max-width: 52ch; font-size: 13px; }
 .test { display: flex; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--line); align-items: baseline; } .test:last-child { border: 0; } .test .why { color: var(--bad); font: 12.5px var(--mono); margin-top: 2px; }
 .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 11px; margin-top: 12px; } .fact { background: var(--panel); border: 1px solid var(--line); border-radius: 11px; padding: 11px 13px; }
 .fact b { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--faint); margin-bottom: 5px; font-weight: 600; } .fact .line { font-size: 13px; word-break: break-word; }
@@ -1048,6 +1065,7 @@ body.on-mission .track { opacity: .5; }
 <template id="icon-runs"><svg viewBox="0 0 24 24"><path d="M12 8v4l3 2"/><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/></svg></template>
 <template id="icon-tools"><svg viewBox="0 0 24 24"><path d="M14.5 6.5a4 4 0 0 0-5.300 5.300L3 18l3 3 6.200-6.200a4 4 0 0 0 5.300-5.300l-2.500 2.500-2.500-2.500 2.500-2.500z"/></svg></template>
 <template id="icon-skills"><svg viewBox="0 0 24 24"><path d="M12 3l2.600 5.400L20 9.300l-4 4 1 5.700-5-2.700L7 19l1-5.700-4-4 5.400-.900L12 3z"/></svg></template>
+<template id="icon-designs"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.300-.3-.4-.5-.8-.5-1.300 0-1.100.9-2 2-2h2.400A4.600 4.600 0 0 0 22 9.800C22 6 17.500 3 12 3z"/><circle cx="7.500" cy="11" r="1.200"/><circle cx="10.500" cy="7" r="1.200"/><circle cx="15.500" cy="7.500" r="1.200"/></svg></template>
 <template id="icon-mayaos"><svg viewBox="0 0 24 24"><path d="M12 2.8l8 4.6v9.2l-8 4.6-8-4.6V7.4z"/><path d="M8 15V9.5l4 3 4-3V15"/></svg></template>
 <template id="icon-services"><svg viewBox="0 0 24 24"><path d="M12 3v3"/><path d="M12 18v3"/><path d="M4.2 7.5l2.6 1.5"/><path d="M17.2 15l2.6 1.5"/><path d="M4.2 16.5l2.6-1.5"/><path d="M17.2 9l2.6-1.5"/><circle cx="12" cy="12" r="4"/></svg></template>
 <template id="icon-permissions"><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.2 8-8 9-4.800-1-8-4.500-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/></svg></template>
@@ -1182,7 +1200,7 @@ setTheme(theme());
 let jumpItems = null;
 async function openJump() {
   if (document.querySelector(".veil")) return;
-  const pages = [["assistant", "Assistant"], ["project", "Project"], ["agents", "Agents"], ["runs", "Runs"], ["tools", "Tools"], ["skills", "Skills"], ["permissions", "Permissions"]].map(([view, name]) => ({kind: "page", name, detail: "", title: "Studio", view}));
+  const pages = [["assistant", "Assistant"], ["project", "Project"], ["agents", "Agents"], ["runs", "Runs"], ["tools", "Tools"], ["skills", "Skills"], ["designs", "Designs"], ["permissions", "Permissions"]].map(([view, name]) => ({kind: "page", name, detail: "", title: "Studio", view}));
   const box = h("input", {type: "text", placeholder: "Jump to an agent, workflow, model, tool, memory or record"}), found = h("div", {class: "found"});
   const veil = h("div", {class: "veil", onclick: event => { if (event.target === veil) close(); }}, h("div", {class: "jump"}, box, found, h("div", {class: "keys"}, "↑ ↓ to move · Enter to open · Esc to close")));
   let hits = [], at = 0;
@@ -1235,7 +1253,7 @@ function go(view, id) { location.hash = "#" + view + (id ? "/" + encodeURICompon
 window.addEventListener("hashchange", route);
 
 function drawRail(active) {
-  const items = [["assistant", "Assistant"], ["mayaos", "MayaOS"], ["project", "Project"], ["agents", "Agents"], ["runs", "Runs"], ["tools", "Tools"], ["skills", "Skills"], ["services", "Services"], ["permissions", "Permissions"]];
+  const items = [["assistant", "Assistant"], ["mayaos", "MayaOS"], ["project", "Project"], ["agents", "Agents"], ["runs", "Runs"], ["tools", "Tools"], ["skills", "Skills"], ["designs", "Designs"], ["services", "Services"], ["permissions", "Permissions"]];
   document.getElementById("nav").replaceChildren(...items.map(([key, label]) =>
     h("div", {class: "nav" + (key === active ? " on" : "") + (key === "mayaos" ? " door" : ""), title: key === "mayaos" ? "Open MayaOS, the app your agents live in" : null, onclick: () => key === "mayaos" ? openMaya() : go(key)}, icon(key), label, key === "mayaos" ? h("span", {class: "out"}, "\u2197") : null)));
   document.getElementById("foot").replaceChildren(
@@ -1261,6 +1279,7 @@ async function route() {
     else if (active === "runs") await showRuns();
     else if (active === "tools") await showTools();
     else if (active === "skills") await showSkills();
+    else if (active === "designs") showDesigns();
     else if (active === "permissions") showPermissions();
     else if (active === "services") await showServices();
     else if (overview.assistant) await showAgent(overview.assistant, true);
@@ -1452,7 +1471,7 @@ function showAgents() {
     h("p", {class: "lead"}, agents.length ? agents.length + " programs in this folder. Open one to watch it work, test it, and see what it is made of." : "No Kosika programs with a main workflow were found in this folder."),
     h("div", {class: "grid"}, agents.map(agent => h("div", {class: "card", onclick: () => go("agent", agent.id)},
       h("h3", null, agent.title),
-      h("div", {class: "about"}, agent.error ? agent.error : (agent.about || "No description. Add a // comment at the top of the file.")),
+      h("div", {class: "about", title: agent.about || ""}, agent.error ? agent.error : (agent.purpose || agent.about || "No description. Add a // comment at the top of the file.")),
       h("div", {class: "chips"}, badges(agent)), h("div", {class: "path"}, agent.path))), newAgentCard()));
 }
 
@@ -1625,6 +1644,48 @@ async function showServices() {
 async function openMaya() {
   try { await api("/api/open/mayaos", {method: "POST", body: "{}"}); }
   catch (error) { alert(error.message); }
+}
+
+// Kosika Designs: ask for a picture and Kosika chooses a diagram, an
+// animated illustration or moving art, through the same front door Chat
+// and the agents use (std/designs.kos). The answer's
+// embed is shown in a frame of its own, so its script runs and its colours
+// stay inside it.
+function showDesigns() {
+  const ask = h("input", {type: "text", placeholder: "how does a rainbow form, compare solar and wind power, a calm background about the sea…", style: "flex:1;min-width:220px"});
+  const kind = h("select", null, [["", "Kosika chooses"], ["diagram", "Diagram"], ["illustration", "Illustration"], ["art", "Moving art"]].map(([value, label]) => h("option", {value}, label)));
+  const out = h("div", {class: "designs-out"});
+  const draw = h("button", {onclick: run}, "Draw");
+  async function run() {
+    const text = ask.value.trim();
+    if (!text) { ask.focus(); return; }
+    draw.disabled = true;
+    out.replaceChildren(h("p", {class: "lead"}, "Kosika is choosing how to draw it, and drawing…"));
+    try {
+      const made = await api("/api/design", {method: "POST", body: JSON.stringify({text, kind: kind.value, palette: ""})});
+      if (made.problems && made.problems.length) {
+        out.replaceChildren(h("div", {class: "banner bad"}, "Kosika would not draw it: " + made.problems.join("; ")));
+        return;
+      }
+      const frame = h("iframe", {title: made.title, style: "width:100%;height:" + (made.kind === "diagram" ? 720 : 860) + "px;border:0;border-radius:18px;background:transparent"});
+      frame.srcdoc = "<!doctype html><html><head><meta charset=\"utf-8\"><style>html,body{margin:0;background:transparent}</style></head><body>" + made.embed + "</body></html>";
+      const open = h("button", {class: "ghost", onclick: () => { const url = URL.createObjectURL(new Blob([made.page], {type: "text/html"})); window.open(url, "_blank"); }}, "Open as a page");
+      out.replaceChildren(
+        h("div", {class: "chips"}, chip(made.kind, "accent"), (made.fixed || []).length ? chip("Kosika fixed " + made.fixed.length, "ok") : null),
+        h("p", {class: "lead"}, "Kosika " + made.why + "."),
+        frame, h("div", null, open));
+    } catch (error) {
+      out.replaceChildren(h("div", {class: "banner bad"}, String(error.message || error)));
+    } finally { draw.disabled = false; }
+  }
+  ask.addEventListener("keydown", event => { if (event.key === "Enter") run(); });
+  const tries = ["how does a rainbow form", "how do bicycle gears make climbing easier", "compare solar and wind power", "a calm abstract background about the ocean"];
+  main.replaceChildren(titled("Designs"),
+    h("p", {class: "lead"}, "Ask for a picture. Kosika chooses a diagram for structure, an animated illustration for how something works, or moving art for a mood, and draws it itself; a free model only says what is in it."),
+    h("div", {style: "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0 10px"}, ask, kind, draw),
+    h("div", {class: "chips"}, tries.map(text => h("span", {class: "chip", style: "cursor:pointer", onclick: () => { ask.value = text; run(); }}, text))),
+    out);
+  ask.focus();
 }
 
 function showPermissions() {
@@ -2274,26 +2335,74 @@ function replayPanel(agent, story) {
 }
 
 
+// How a run ended, in one word, and the colour that word is written in.
+const RUN_WORDS = {done: ["finished", "ok"], failed: ["failed", "bad"], paused: ["waited for you", "warn"], stopped: ["stopped", "warn"], unfinished: ["unfinished", ""]};
+function runWords(trace) { return RUN_WORDS[trace.state] || ["run", ""]; }
+function runWhen(trace) {
+  const bits = [];
+  if (trace.agentTitle) bits.push(trace.agentTitle);
+  bits.push(sinceWords(trace.modified * 1000));
+  if (typeof trace.seconds === "number") bits.push(trace.seconds < 1 ? Math.round(trace.seconds * 1000) + " ms" : trace.seconds.toFixed(trace.seconds < 10 ? 1 : 0) + " s");
+  if (trace.steps) bits.push(trace.steps + (trace.steps === 1 ? " step" : " steps"));
+  return bits.join(" \u00b7 ");
+}
+function runRow(trace, open) {
+  const [word, tone] = runWords(trace);
+  const row = h("div", {class: "run", role: "button", tabindex: "0", title: trace.name, onclick: () => open(row, trace)},
+    h("div", {class: "run-top"}, h("b", {class: trace.ask ? "" : "empty"}, trace.ask || "no words recorded"), chip(word, tone)),
+    h("div", {class: "run-when"}, runWhen(trace)),
+    trace.because ? h("div", {class: "run-because"}, "stopped at " + trace.because.replace(/_/g, " ")) : null);
+  row.addEventListener("keydown", event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(row, trace); } });
+  return row;
+}
+
 function runsPanel(agentId, traces) {
-  if (!traces.length) return h("div", {class: "panel"}, h("p", {class: "empty"}, "No runs recorded yet."));
-  const view = h("div", null, h("p", {class: "empty"}, "Choose a run to read what it did."));
+  if (!traces.length) {
+    return h("div", {class: "panel"}, h("div", {class: "run-wait"}, h("b", null, "No runs recorded yet."),
+      h("p", null, "Every run of an agent in this folder is written down here afterwards: each step, how long it took, and exactly what the model was asked.")));
+  }
+  const view = h("div", null, h("div", {class: "run-wait"}, h("b", null, "Choose a run."),
+    h("p", null, "A run is read step by step: what each step did, what the model was asked, and what came back.")));
   const list = h("div", {class: "runlist"});
-  for (const trace of traces) {
-    const row = h("div", {onclick: async () => {
-      for (const item of list.children) item.className = "";
-      row.className = "on";
-      view.replaceChildren(h("p", {class: "lead"}, h("span", {class: "spin"}), "Reading the run"));
+  const filters = h("div", {class: "quick"});
+  const tally = h("div", {class: "run-tally"});
+  const owners = [...new Set(traces.map(trace => trace.agent).filter(Boolean))];
+  let only = "";
+  function open(row, trace) {
+    for (const item of list.children) item.classList.remove("on");
+    row.classList.add("on");
+    view.replaceChildren(h("p", {class: "lead"}, h("span", {class: "spin"}), "Reading the run"));
+    const owner = trace.agent || agentId;
+    const mine = view;
+    (async () => {
       try {
-        const owner = trace.agent || agentId;
         const story = await api("/api/story?id=" + encodeURIComponent(owner) + "&trace=" + encodeURIComponent(trace.name));
         // The diagram needs to know what the agent is made of; a program that no longer checks has no diagram.
         let detail = null; try { detail = await api("/api/agent?id=" + encodeURIComponent(owner)); } catch (error) { detail = null; }
-        fill(view, detail && !detail.error ? replayPanel(detail, story) : null, storyView(story), h("h2", null, "What the model was asked"), requestsView(story));
-      } catch (error) { view.replaceChildren(h("div", {class: "banner bad"}, error.message)); }
-    }}, trace.label || trace.name, h("small", null, new Date(trace.modified * 1000).toLocaleString()));
-    list.append(row);
+        const [word, tone] = runWords(trace);
+        mine.replaceChildren(
+          h("div", {class: "row", style: "gap:8px;margin-bottom:10px;flex-wrap:wrap"}, chip("run " + trace.name, ""), chip(word, tone),
+            typeof trace.seconds === "number" ? chip(trace.seconds + " s", "") : null,
+            trace.ask ? chip("asked: " + trace.ask, "accent") : null),
+          detail && !detail.error ? replayPanel(detail, story) : null, storyView(story), h("h2", null, "What the model was asked"), requestsView(story));
+      } catch (error) { mine.replaceChildren(h("div", {class: "banner bad"}, error.message)); }
+    })();
   }
-  return h("div", {class: "panel runs"}, list, view);
+  function say() {
+    const shown = traces.filter(trace => !only || trace.agent === only);
+    const failed = shown.filter(trace => trace.state === "failed").length;
+    tally.textContent = shown.length + (shown.length === 1 ? " run" : " runs") + (only ? " by " + only : "") + ", newest first" + (failed ? " \u00b7 " + failed + " failed" : "");
+    fill(list, shown.map(trace => runRow(trace, open)));
+  }
+  function drawFilters() {
+    if (owners.length < 2) return;
+    fill(filters, ["", ...owners].map(name => h("span", {class: only === name ? "on" : "", onclick: () => { only = name; drawFilters(); say(); }}, name || "all")));
+  }
+  drawFilters();
+  say();
+  return h("div", null,
+    h("div", {class: "run-head"}, tally, owners.length > 1 ? filters : null),
+    h("div", {class: "panel runs"}, list, view));
 }
 
 async function showRuns() {
@@ -2303,11 +2412,15 @@ async function showRuns() {
     if (card.error) continue;
     try {
       const detail = await api("/api/agent?id=" + encodeURIComponent(card.id));
-      for (const trace of detail.traces) all.push({...trace, agent: card.id, label: card.title + " · " + trace.name});
+      for (const trace of detail.traces) all.push({...trace, agent: card.id, agentTitle: card.title});
     } catch (error) { continue; }
   }
   all.sort((a, b) => b.modified - a.modified);
-  main.replaceChildren(h("h1", null, "Runs"), h("p", {class: "lead"}, "Recorded runs of every agent, newest first. Each can be read step by step, with exactly what the model was asked."), runsPanel("", all.slice(0, 80)));
+  const agents = new Set(all.map(trace => trace.agent)).size;
+  const failed = all.filter(trace => trace.state === "failed").length;
+  main.replaceChildren(h("h1", null, "Runs"),
+    h("p", {class: "lead"}, all.length ? all.length + (all.length === 1 ? " run" : " runs") + " written down by " + agents + (agents === 1 ? " agent" : " agents") + ", newest first" + (failed ? ", " + failed + " of them failed" : "") + ". Open one to read what it did, step by step." : "No agent in this folder has run yet. The first run is written down here, step by step."),
+    runsPanel("", all.slice(0, 80)));
 }
 
 // ------------------------------------------------------ a swarm, live
@@ -2721,8 +2834,10 @@ function anyoneBox() {
 async function showAgent(id, isAssistant) {
   main.replaceChildren(h("p", {class: "lead"}, h("span", {class: "spin"}), "Loading"));
   const agent = await api("/api/agent?id=" + encodeURIComponent(id));
-  const head = [isAssistant ? anyoneBox() : h("span", {class: "back", onclick: () => go("agents")}, "← All agents"), h("h1", null, isAssistant ? "Assistant" : agent.title),
-    h("p", {class: "lead clamp", title: "Click to read all of it", onclick: event => event.currentTarget.classList.toggle("open")}, agent.about || "No description. Add a // comment at the top of the file.")];
+  const head = [isAssistant ? anyoneBox() : h("span", {class: "back", onclick: () => go("agents")}, "← All agents"),
+    h("h1", null, isAssistant ? "Assistant" : agent.title),
+    isAssistant ? h("div", {class: "path", style: "margin:-2px 0 8px"}, "answers as " + agent.title + " · " + agent.path) : null,
+    h("p", {class: "lead clamp", title: "Click to read all of it", onclick: event => event.currentTarget.classList.toggle("open")}, agent.purpose || agent.about || "No description. Add a // comment at the top of the file.")];
   if (agent.error) { fill(main, head, h("div", {class: "banner bad"}, "This program does not check: " + agent.error), agent.source != null ? codeTab(agent) : null); return; }
   const parts = () => h("div", {class: "facts", style: "margin-top:0"},
     fact("Models it asks", agent.models.map(m => m + (m === agent.default_model ? " (default)" : "")), "none: this agent is plain code"),

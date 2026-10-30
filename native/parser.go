@@ -952,7 +952,7 @@ func (p *Parser) parseTest() *TestDecl {
 
 // notYet are the declarations this engine does not read yet.
 var notYet = map[string]bool{
-	"swarm": true, "default": true,
+	"swarm": true, "default": true, "store": true,
 }
 
 func (p *Parser) parseProgram() *Program {

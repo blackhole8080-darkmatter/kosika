@@ -332,6 +332,86 @@ artifact digest proves which bytes ran, not what those bytes do. The process
 inherits host OS authority; v1 is not a sandbox, remote transport, native ABI,
 signature system, or package manager.
 
+A Python tool can generate its own contract instead of hand-writing one. The
+`kosika.component_sdk` decorator derives the input record from the function's
+parameters and the output record from its return annotation:
+
+```python
+from dataclasses import dataclass
+
+from kosika.component_sdk import ErrorSpec, ToolFailure, component, serve
+
+
+@dataclass(frozen=True)
+class TransformOutput:
+    text: str
+
+
+@component(
+    id="example.uppercase-python",
+    version="1.0.0",
+    access="analyze",
+    effects=("cpu:compute",),
+    capabilities=("text:transform",),
+    errors=(ErrorSpec("input:invalid"),),
+)
+def uppercase_python(text: str) -> TransformOutput:
+    if not text.strip():
+        raise ToolFailure("input:invalid", "Text must not be blank")
+    return TransformOutput(text=text.upper())
+
+
+if __name__ == "__main__":
+    serve()
+```
+
+`serve()` accepts one `kosika.component-call/v1` request on stdin and returns
+one result, checking both shapes against the generated records. Dataclasses,
+TypedDicts, string enums, optionals, lists, `dict[str, T]`, and nested records
+map to the same JSON schemas as Kosika's own checker; an unsupported or
+recursive annotation fails when the tool is imported, not when a model calls it.
+`python tool.py --describe` prints the pinned contract, including the artifact
+name and SHA-256. `kosika component describe` does the same in a bounded
+subprocess, re-hashes the artifact, and validates the contract before writing it:
+
+```text
+python -m kosika.cli component describe examples/components/uppercase_python.py \
+  --output examples/components/uppercase_python.component.json
+python -m kosika.cli component check examples/components/uppercase_python.component.json
+python -m kosika.cli run examples/component_uppercase_python.kos \
+  --input examples/component_uppercase_input.json \
+  --component-manifest examples/components/uppercase_python.component.json \
+  --component-runtime python \
+  --allow-component-effect cpu:compute \
+  --allow-component-capability text:transform
+```
+
+The same pinned contract also determines the declarations the checker needs.
+`component declaration` renders enums, closed records, and the `tool` block from
+the contract, exports them so a workflow can import the file, and then parses,
+checks, and compares the rendered schemas back to the contract before printing
+anything. It fails closed when Kosika cannot express the contract: `integer`
+(Kosika's `Number` is `number`), open or partially required records, map or array
+roots, enum values that are not identifiers, and unknown schema keywords. Shapes
+only: the host still grants the manifest, effects, and capabilities at run time.
+
+```text
+python -m kosika.cli component declaration \
+  examples/components/uppercase_python.component.json \
+  --output uppercase_python.kos
+```
+
+A generated file begins with the component identity and pinned digest, so it is
+possible to see which artifact a set of shapes came from without opening the
+manifest.
+
+The SDK module uses only the standard library. Copy `kosika/component_sdk.py`
+beside a tool and import `component_sdk` directly when the tool's Python
+environment does not install Kosika; a sibling module is importable because the
+artifact's own folder is on `sys.path`. Like every v1 artifact, the tool runs
+with the authority of the host process, and the digest pins bytes rather than
+proving their behaviour.
+
 Evaluation fixtures declare named inputs, exact expected records and/or required
 text in output fields. Assertions are data, never Python/code expressions. Each
 case executes afresh with a new provider supplied by the host, writes its own trace,

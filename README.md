@@ -23,11 +23,16 @@ An early prototype (earlier codename: Synapse). Not ready to depend on — see
 
 ```text
 python -m pip install .
-kosika new hello && cd hello          # a complete agent, with its own tests
+kosika new hello && cd hello          # a complete agent, with its own test
+kosika test main.kos                  # the test supplies the model's answers
 kosika run main.kos --input input.json --model-fixture responses.json
 kosika replay run_trace.jsonl         # no model, no bill, the same answer
 kosika studio . --model qwen2.5:7b    # watch a run, then read what it did
 ```
+
+`kosika new lab --kind researcher` starts the fuller example: the model extracts
+claims from sources, code verifies every quote, and four tests plus a recorded
+`responses.json` run it without a model.
 
 A run needs the model *granted*: `--model` names one, `--model-fixture` answers
 from a file. [GETTING_STARTED.md](GETTING_STARTED.md) is the fifteen-minute
@@ -80,6 +85,58 @@ a model, so a bug report can carry its own reproduction.
 kosika run main.kos --trace run.jsonl
 kosika replay run.jsonl
 ```
+
+## Bring your Python tools
+
+Existing Python code does not have to be rewritten. Decorate a function; the SDK
+turns its parameters and return annotation into the same closed records the
+checker uses, and `component describe` pins the artifact:
+
+```python
+from dataclasses import dataclass
+from kosika.component_sdk import ErrorSpec, ToolFailure, component, serve
+
+@dataclass(frozen=True)
+class Answer:
+    text: str
+
+@component(
+    id="example.uppercase-python",
+    version="1.0.0",
+    access="analyze",
+    effects=("cpu:compute",),
+    errors=(ErrorSpec("input:invalid"),),
+)
+def uppercase(text: str) -> Answer:
+    if not text.strip():
+        raise ToolFailure("input:invalid", "Text must not be blank")
+    return Answer(text.upper())
+
+if __name__ == "__main__":
+    serve()
+```
+
+```text
+kosika component describe uppercase.py --output uppercase.component.json
+kosika component declaration uppercase.component.json --output tools/uppercase.kos
+kosika run main.kos --component-manifest uppercase.component.json \
+  --component-runtime python --allow-component-effect cpu:compute
+```
+
+`component declaration` writes the enums, closed records, and `tool` block the
+checker needs from that same contract, and exports them, so the workflow only
+needs `import "tools/uppercase.kos"`. It parses and re-checks its own output and
+refuses a shape Kosika cannot express — an `integer` field, an open record, an
+enum value that is not an identifier — instead of guessing.
+
+The contract pins the file's SHA-256; the host re-hashes it before every call,
+checks both schemas against the declared Kosika tool, and accepts only the
+error codes it declares. Generated declarations grant nothing on their own: the
+host still grants the manifest, effects, and capabilities at run time. The SDK
+is standard-library only, so it can be vendored beside a tool whose Python
+environment does not install Kosika. See
+[DEVELOPMENT.md](DEVELOPMENT.md#cross-language-component-contracts) and the
+[Python uppercase example](examples/components/uppercase_python.py).
 
 ## Evidence, and its limits
 
@@ -139,23 +196,27 @@ nothing. A recording replays at one, two or four times speed.
 ## Use it from an AI assistant
 
 `kosika-mcp` is a Model Context Protocol server: an assistant can read the guide,
-then write, check, run, replay and map Kosika programs itself.
+then write, check, repair, test, run, replay, map and declare Kosika programs
+itself.
 
 | Tool | What it does |
 | --- | --- |
 | `kosika_guide` | Returns `AGENT_GUIDE.md` |
 | `kosika_check` | Checks a program; returns codes, messages and lines |
+| `kosika_repair` | Names the token to change for a typo, and returns a patch that checks clean |
+| `kosika_test` | Runs the program's own `test` blocks and reports each by name |
 | `kosika_run` | Runs a workflow with the inputs and scripted answers supplied |
 | `kosika_replay` | Validates a trace from `kosika_run` and returns its result |
 | `kosika_map` | Describes what a checked program declares |
+| `kosika_declare` | Turns a pinned component contract into Kosika declarations |
 
 ```text
 claude mcp add kosika -- kosika-mcp
 ```
 
 No power of its own: programs arrive as text and are checked in a temporary
-folder, no tool takes a file path, address or command, and `kosika_run` never
-calls a real model or tool.
+folder, no tool takes a file path, address or command, and `kosika_run`,
+`kosika_test` and `kosika_repair` never call a real model or tool.
 
 ## The website
 

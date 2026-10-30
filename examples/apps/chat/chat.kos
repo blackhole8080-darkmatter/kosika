@@ -1,0 +1,42 @@
+// Kosika AI Chat: the answer in words.
+//
+//   kosika run chat.kos --workflow answer --input turn.json --model ... --model-url ... --model-protocol openai
+//
+// Kosika Chat answers by drawing (designs/main.kos `describe` with
+// designs/draw.kos), its explanation written inside the drawing. These
+// words are the answer only when no drawing could be made.
+
+export [Turn, Reply, answer]
+
+// The conversation so far as plain lines ("You: ..." / "Kosika: ..."),
+// and the new message.
+record Turn { history: Text ask: Text }
+record Reply { text: Text }
+record Brief { task: Text history: Text ask: Text }
+
+model answerer {
+  input: Brief
+  output: Reply
+  parameters: {
+    max_output_tokens: 4000
+  }
+}
+
+fn answer_task() -> Text {
+  return "You are Kosika, a helpful assistant. Answer the new message in at most six short sentences of plain English: accurate, warm and direct, no lists, no markdown. When asked to write something (a poem, a haiku, an email, a story), write exactly that thing in its proper form, a haiku in three lines of five, seven and five syllables, with each line on its own line, and nothing else around it. Say only what is true; when you are not sure, say so, and do not repeat popular myths or overclaims (for example, a nautilus shell is not a golden spiral, and not every spiral in nature follows the golden ratio). Use the conversation so far for context."
+}
+
+fn no_reply() -> Reply { return {text: "I could not reach a model just now. Please try again in a moment."} }
+
+fn trimmed(r: Reply) -> Reply { return {text: r.text.trim()} }
+
+workflow answer(turn: Turn) -> Reply {
+  budget 2 model calls, 300 seconds
+  said = use_model answerer(answer_task(), turn.history, turn.ask) retry 1 otherwise no_reply()
+  out  = trimmed(said)
+}
+
+test "an empty reply is never sent" {
+  expect trimmed({text: "  Hi.  "}).text == "Hi."
+  expect no_reply().text.length() > 0
+}

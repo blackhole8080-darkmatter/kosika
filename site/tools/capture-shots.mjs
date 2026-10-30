@@ -54,11 +54,21 @@ async function shot({ file, width = 1440, height = 900, scroll = 0, wait = 1400,
       const v = document.querySelector(".reel video");
       if (!v) return;
       v.pause();
-      if (v.readyState < 1) await new Promise(r => v.addEventListener("loadedmetadata", r, { once: true }));
+      if (v.readyState < 2) await new Promise(r => v.addEventListener("loadeddata", r, { once: true }));
+      // wait for a frame to have actually been painted, not just for `seeked`:
+      // the reel is composited under a transform, and a screenshot taken too
+      // early catches the black canvas instead of the paper at 11.9s
+      const painted = () => new Promise(r => {
+        if (!v.requestVideoFrameCallback) { setTimeout(r, 1200); return; }
+        let done = false;
+        const id = v.requestVideoFrameCallback(() => { done = true; r(); });
+        setTimeout(() => { if (!done) { try { v.cancelVideoFrameCallback(id); } catch {} r(); } }, 2500);
+      });
       v.currentTime = t;
-      await new Promise(r => { v.addEventListener("seeked", r, { once: true }); setTimeout(r, 800); });
+      await new Promise(r => { v.addEventListener("seeked", r, { once: true }); setTimeout(r, 2000); });
+      await painted();
     }, seek);
-    await new Promise(r => setTimeout(r, 350));
+    await new Promise(r => setTimeout(r, 500));
   }
   await page.screenshot({ path: path.join(OUT, file), type: "jpeg", quality: 88 });
   console.log("wrote shots/" + file);

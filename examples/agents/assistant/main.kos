@@ -82,7 +82,7 @@ record Handover { agent: Text text: Text }
 record Handed { ok: Bool agent: Text text: Text }
 
 // A note to the person's phone, and whether it went.
-record Note { title: Text text: Text }
+record Note { title: Text text: Text link: Text file_name: Text file: Text }
 record Sent { sent: Bool }
 // The reminders that have fallen due: the book without them, and the note
 // that tells of them.
@@ -920,7 +920,7 @@ fn due_now(known: BooksRecalled, moment: Moment) -> Ringing {
   return {
     book: {name: book.name, you: book.you, reminders: left, facts: book.facts},
     note: {title: title, text: rung.join("
-")},
+"), link: "", file_name: "", file: ""},
     count: rung.length()
   }
 }
@@ -1174,7 +1174,7 @@ workflow ring(msg: Msg) -> Turn {
 }
 
 workflow send_note(note: Note) -> Sent {
-  sent = execute desk.tell_phone(note.title, note.text) otherwise not_sent()
+  sent = execute desk.tell_phone(title: note.title, text: note.text, link: "", file_name: "", file: "") otherwise not_sent()
 }
 
 // Everything that needs neither the clock nor a model.
@@ -1196,6 +1196,12 @@ workflow keep(msg: Msg) -> Turn {
     case "cannot" { same(known, cannot_text()) }
     case _ { help_said(known) }
   }
+}
+
+// Where a message goes, for Kosika Chat: the helper agent and what to tell it,
+// or no agent when Kosi answers itself.
+workflow route(msg: Msg) -> Handover {
+  out = hand_of(msg.text)
 }
 
 workflow main(msg: Msg) -> Said {

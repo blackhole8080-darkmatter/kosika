@@ -1,0 +1,105 @@
+// std/paths.kos: the cheapest way from one place to another through a
+// network of links, by A* search. No model.
+//
+//   import "std/paths.kos"
+//
+// Link(from, to, cost)               a one-way link that costs `cost`
+// Route(found, places, cost)         a way through, and what it costs
+// shortest(start, goal, links, estimates)
+//                                    the cheapest way, as a Route
+// hops(start, goal, links)           the way with the fewest links
+//
+// `estimates` is a table saying roughly what each place costs to reach the
+// goal from it: a straight-line distance, say. It decides which place is
+// tried first, and it must never overestimate -- a place said to be nearer
+// than it is stops the search early on a dearer way. Leave the table empty
+// and the search is Dijkstra's: still the cheapest way, merely trying more
+// places on the way. Costs must be 0 or more.
+//
+// A Route says whether a way was found, the places in order (start and
+// goal included), and what the whole way costs. Nothing found leaves an
+// empty Route with cost 0.
+
+export [Link, Route, shortest, hops]
+
+record Link { from: Text to: Text cost: Number }
+record Route { found: Bool places: Text[] cost: Number }
+
+fn std_costs_are_whole(links: Link[]) -> Bool {
+  for link in links {
+    if link.cost < 0 { return false }
+  }
+  return true
+}
+
+// What a place has cost so far, plus what is still estimated of it.
+fn std_worth(place: Text, cost: Number{}, estimates: Number{}) -> Number {
+  return cost.get(place).or(0) + estimates.get(place).or(0)
+}
+
+fn shortest(
+  start: Text,
+  goal: Text,
+  links: Link[],
+  estimates: Number{}
+) -> Route {
+  if not std_costs_are_whole(links) {
+    fail "shortest needs links that cost 0 or more"
+  }
+  if start == goal { return {found: true, places: [start], cost: 0} }
+  var open: Text[] = [start]
+  var cost: Number{} = {}
+  cost = cost.set(start, 0)
+  var came: Text{} = {}
+  var done: Number{} = {}
+  var found = false
+  while open.length() > 0 and not found {
+    // The place worth trying first: the cheapest so far plus its estimate.
+    var best = open[0]
+    var best_worth = std_worth(best, cost, estimates)
+    var at = 0
+    var seen = 0
+    for place in open {
+      let worth = std_worth(place, cost, estimates)
+      if worth < best_worth {
+        best = place
+        best_worth = worth
+        at = seen
+      }
+      seen += 1
+    }
+    open = open.slice(0, at).concat(open.slice(at + 1, open.length()))
+    if best == goal {
+      found = true
+    } else if not done.has(best) {
+      done = done.set(best, 1)
+      let base = cost.get(best).or(0)
+      for link in links {
+        if link.from == best {
+          let through = base + link.cost
+          let known = cost.get(link.to).or(-1)
+          if not done.has(link.to) and (known < 0 or through < known) {
+            cost = cost.set(link.to, through)
+            came = came.set(link.to, best)
+            open = open.append(link.to)
+          }
+        }
+      }
+    }
+  }
+  if not found { return {found: false, places: [], cost: 0} }
+  // Walk back from the goal, adding each place that led here.
+  var places: Text[] = [goal]
+  var walk = goal
+  while walk != start and came.has(walk) {
+    walk = came.get(walk).or(start)
+    places = places.append(walk)
+  }
+  return {found: true, places: places.reverse(), cost: cost.get(goal).or(0)}
+}
+
+fn hops(start: Text, goal: Text, links: Link[]) -> Route {
+  let one = for link in links { Link(from: link.from, to: link.to, cost: 1) }
+  var none: Number{} = {}
+  return shortest(start, goal, one, none)
+}

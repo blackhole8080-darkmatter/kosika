@@ -1,0 +1,64 @@
+{
+  "model": "qwen2.5-coder:7b",
+  "url": null,
+  "mode": "best-of",
+  "best_of": 1,
+  "summary": {
+    "1": {
+      "passed": 0,
+      "tasks": 1,
+      "seconds": 660.6,
+      "attempts": 1
+    }
+  },
+  "languages": {
+    "html": {
+      "passed": 0,
+      "tasks": 1
+    }
+  },
+  "results": [
+    {
+      "id": "website-rendered",
+      "language": "html",
+      "passed": false,
+      "state": "out of time",
+      "seconds": 660.6,
+      "approvals": 0,
+      "failures": [
+        "node C:\\Users\\Aryan\\Aryan_Private\\projects\\kosika/benchmarks/coder/render_check.mjs: exit 3221225794"
+      ],
+      "error": "",
+      "said": "",
+      "files": [],
+      "attempts": [
+        {
+          "id": "website-rendered",
+          "attempt": 1,
+          "asked": "create a modern one-page website for a bakery called Crumb in index.html, with whatever stylesheets and scripts you want beside it: a hero with the bakery's name as a heading of 40px or more, a menu of six items each with a price, opening hours with times in them, and an animation that runs as the reader scrolls. it has to hold together on a phone: no sideways scrolling at 390px, and every link and button at least 44px tall. all the text has to be readable against whatever is behind it",
+          "passed": false,
+          "state": "out of time",
+          "abandoned": true,
+          "seconds": 660.6,
+          "approvals": 0,
+          "failures": [
+            "node C:\\Users\\Aryan\\Aryan_Private\\projects\\kosika/benchmarks/coder/render_check.mjs: exit 3221225794"
+          ],
+          "excerpts": [
+            "node C:\\Users\\Aryan\\Aryan_Private\\projects\\kosika/benchmarks/coder/render_check.mjs said:\n  exit 3221225794"
+          ],
+          "error": "",
+          "said": "",
+          "files": []
+        }
+      ],
+      "summary": {
+        "1": {
+          "passed": false,
+          "attempts": 1,
+          "seconds": 660.6
+        }
+      }
+    }
+  ]
+}

@@ -15,7 +15,9 @@ from .ast import (
     BreakExpr,
     ChoiceAlternative,
     ChoiceDecl,
+    ChoiceExpr,
     ChoiceField,
+    ColumnDecl,
     ConditionalExpr,
     ContinueExpr,
     EnumDecl,
@@ -47,7 +49,9 @@ from .ast import (
     ShapeDecl,
     ShapeMethod,
     Step,
+    StoreDecl,
     SwarmDecl,
+    TableDecl,
     TestDecl,
     TestStep,
     ThinkCall,
@@ -763,6 +767,8 @@ class Parser:
                 board_name = self.identifier()
                 self.expect("of")
                 program.boards.append(BoardDecl(board_name, self.identifier()))
+            elif keyword == "store" and self.peek().kind == "IDENT":
+                program.stores.append(self.parse_store())
             elif keyword == "memory" and self.peek().kind == "IDENT":
                 self.advance()
                 memory_name = self.identifier()
@@ -1041,6 +1047,52 @@ class Parser:
             values["output"],
             values.get("input"),
         )
+
+    def parse_store(self) -> StoreDecl:
+        """Parse `store NAME at "FILE" { table notes { id: Number } }`.
+
+        A store says which tables and columns a program means to use in one
+        database file. The file is a quoted path relative to the program, and
+        each column is a name and one of `Text`, `Number` and `Bool`; the
+        checker says so (see `kosika.checker._check_stores`), and the file
+        itself is checked before a run starts.
+        """
+
+        self.expect("store")
+        name = self.identifier()
+        self.expect("at")
+        if self.current.kind != "STRING":
+            token = self.current
+            raise ParseError(
+                f"A store needs a quoted file, as `store {name} at './notes.db'` "
+                f"at {token.line}:{token.column}"
+            )
+        file = self.advance().value
+        self.expect("{")
+        tables: list[TableDecl] = []
+        while not self.accept("}"):
+            self.expect("table")
+            table_name = self.identifier()
+            self.expect("{")
+            columns: list[ColumnDecl] = []
+            while not self.accept("}"):
+                column_name = self.identifier()
+                self.expect(":")
+                columns.append(ColumnDecl(column_name, self.parse_type_name()))
+                if self.check("="):
+                    # A store says which column a program means, and the file
+                    # is where a default lives; a column that carried one here
+                    # would be a promise nothing checks.
+                    token = self.current
+                    raise ParseError(
+                        f"Column {column_name!r} has a default value at "
+                        f"{token.line}:{token.column}; a store declares the "
+                        "columns it means, and a default belongs in the "
+                        "database, so write it where the column is created"
+                    )
+                self.accept(",")
+            tables.append(TableDecl(table_name, tuple(columns)))
+        return StoreDecl(name, file, tuple(tables))
 
     def parse_name_list(self) -> tuple[str, ...]:
         self.expect("[")

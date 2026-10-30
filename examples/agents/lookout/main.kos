@@ -37,7 +37,7 @@ record Said { text: Text }
 record PageRequest { url: Text }
 record Page { url: Text title: Text text: Text }
 
-record Note { title: Text text: Text }
+record Note { title: Text text: Text link: Text file_name: Text file: Text }
 record Sent { sent: Bool }
 
 // One page watched. words is "" to hear of any change, or the words to
@@ -245,7 +245,7 @@ fn checked_all(known: BooksRecalled, pages: Page[], today: Moment) -> Checked {
     if not one.news.is_empty() { news = news.append(one.news) }
   }
   let title = if news.length() == 1 { "Lookout: news on " + host_of(kept_url(news[0])) } else { "Lookout: news on " + news.length().to_text() + " pages" }
-  return {book: {watches: kept}, note: {title: title, text: news.join("\n\n")}, count: news.length(), read: read}
+  return {book: {watches: kept}, note: {title: title, text: news.join("\n\n"), link: "", file_name: "", file: ""}, count: news.length(), read: read}
 }
 
 // The address a piece of news begins with.
@@ -292,7 +292,7 @@ workflow look(watch: Watch) -> Page {
 }
 
 workflow send(note: Note) -> Sent {
-  sent = execute eyes.tell_me(note.title, note.text) otherwise not_sent()
+  sent = execute eyes.tell_me(title: note.title, text: note.text, link: "", file_name: "", file: "") otherwise not_sent()
 }
 
 workflow add(msg: Msg) -> Said {

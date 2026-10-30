@@ -67,7 +67,7 @@ from .builtin_methods import call as call_method
 from .builtin_methods import resolve_for_value as resolve_method_for_value
 from .checker import check
 from .controls import ExecutionError
-from .durable import PLAN_TOOL, ApprovalPending, ExecutionSession
+from .durable import PLAN_TOOL, ApprovalPending, Claimed, ExecutionSession
 from .evidence import EvidenceError, answer_schema, split, verify
 from .execution import ExecutionControl, ExecutionLimits, within_budget
 from .function_types import function_type, public_type
@@ -1454,6 +1454,7 @@ def run(
     inputs: dict[str, Any] | None = None,
     model_bindings: Mapping[str, ModelProvider] | None = None,
     tool_bindings: Mapping[str, ToolExecutor] | None = None,
+    database_tables: Mapping[str, Mapping[str, str]] | None = None,
     session: ExecutionSession | None = None,
     limits: ExecutionLimits | None = None,
     cancel: threading.Event | None = None,
@@ -1510,6 +1511,7 @@ def run(
             inputs=inputs,
             model_bindings=model_bindings,
             tool_bindings=tool_bindings,
+            database_tables=database_tables,
             session=session,
             _events_out=events,
             _scope=_scope,
@@ -1612,6 +1614,7 @@ def _run_workflow(
     inputs: dict[str, Any] | None = None,
     model_bindings: Mapping[str, ModelProvider] | None = None,
     tool_bindings: Mapping[str, ToolExecutor] | None = None,
+    database_tables: Mapping[str, Mapping[str, str]] | None = None,
     _events_out: list[dict[str, Any]] | None = None,
     session: ExecutionSession | None = None,
     _scope: tuple[str, ...] = (),
@@ -1639,6 +1642,7 @@ def _run_workflow(
                 inputs=inputs,
                 model_bindings=model_bindings,
                 tool_bindings=tool_bindings,
+                database_tables=database_tables,
                 session=session,
                 _events_out=_events_out,
                 _scope=_scope,
@@ -1793,18 +1797,24 @@ def _run_workflow(
                 f"Workflow tool {tool.name!r} requires a verified approval record"
             )
     events = _events_out if _events_out is not None else []
-    events.append(
-        _event(
-            "run_start",
-            workflow=workflow.name,
-            trace_version=5,
-            program_hash=hashlib.sha256(
-                json.dumps(program_payload(program), sort_keys=True).encode()
-            ).hexdigest(),
-            inputs=environment.copy(),
-            output_schema=schema_for_record(program, workflow.output_type),
-        )
+    start_event = _event(
+        "run_start",
+        workflow=workflow.name,
+        trace_version=5,
+        program_hash=hashlib.sha256(
+            json.dumps(program_payload(program), sort_keys=True).encode()
+        ).hexdigest(),
+        inputs=environment.copy(),
+        output_schema=schema_for_record(program, workflow.output_type),
     )
+    if database_tables is not None:
+        # The tables the granted file had when the run began, so that a replay
+        # can put a recorded statement back to SQLite with no database present
+        # (see kosika.database.sent_problem).
+        start_event["database"] = {
+            name: dict(columns) for name, columns in database_tables.items()
+        }
+    events.append(start_event)
     result: Any = {}
     queue = list(workflow.steps)
     recovered: dict[str, dict[str, str]] = {}
@@ -1958,6 +1968,7 @@ def _run_workflow(
             }
             scope = (*_scope, workflow.name, step.name)
             action = None
+            claimed: Claimed | None = None
             if isinstance(step.call, WorkflowCall):
                 step_output = workflows[step.call.workflow_name].output_type
             elif isinstance(step.call, FunctionCall):
@@ -2001,7 +2012,8 @@ def _run_workflow(
                             program, tools[step.call.tool_name].input
                         ),
                     )
-                action = session.start(scope, mutation, arguments)
+                claimed = session.start(scope, mutation, arguments)
+                action = claimed.action if claimed is not None else None
             step_offset = len(events)
             events.append(
                 _event(
@@ -2045,6 +2057,7 @@ def _run_workflow(
                         inputs=arguments,
                         model_bindings=providers,
                         tool_bindings=host_tools,
+                        database_tables=database_tables,
                         mcp_commands=mcp_commands,
                         manifest=manifest,
                         _events_out=child_events,
@@ -2297,7 +2310,10 @@ def _run_workflow(
                     # begin again with the same plan once a person answers.
                     session.remember((*scope, PLAN_TOOL + ":said"), said.said)
                     try:
-                        plan_action.append(session.start(plan_scope, PLAN_TOOL, wanted))
+                        claimed_plan = session.start(plan_scope, PLAN_TOOL, wanted)
+                        plan_action.append(
+                            claimed_plan.action if claimed_plan is not None else None
+                        )
                     except ApprovalPending:
                         session.recover(scope)
                         raise
@@ -2387,7 +2403,7 @@ def _run_workflow(
                                 "needs a step of its own"
                             )
                         try:
-                            action = session.start(inner, declaration.name, values)
+                            made = session.start(inner, declaration.name, values)
                         except ApprovalPending:
                             # Nothing has changed yet, so this step can be
                             # begun again once a person has answered.
@@ -2409,7 +2425,7 @@ def _run_workflow(
                                     result=outcome,
                                 )
                             ],
-                            action,
+                            made.action if made is not None else None,
                         )
                         return outcome
                     return _agent_tool_outcome(declaration, values)
@@ -2578,6 +2594,22 @@ def _run_workflow(
                         expression_events=expression_events,
                         input_schema=input_schema,
                         output_schema=output_schema,
+                        # The approval this call was made under, when it
+                        # needed one: who said yes, and the hash over the
+                        # plan, this step, this tool and these arguments. A
+                        # replay recomputes it, so an edited statement is not
+                        # one the approval covers.
+                        **(
+                            {
+                                "approval": {
+                                    "plan_hash": claimed.plan_hash,
+                                    "action_hash": claimed.action,
+                                    "approved_by": claimed.approved_by,
+                                }
+                            }
+                            if claimed is not None
+                            else {}
+                        ),
                     )
                 )
                 early = ahead.pop(step.name, None)
