@@ -471,7 +471,9 @@ fn dz_formula_card(f: DzFormula) -> Text {
   let given = (for k in 0 until f.symbols.length() { f"<math>{to_mathml(x(f.symbols[k]))}<mo>=</mo>{dz_number_mathml(f.values[k])}<mspace width=\"0.2em\"/>{dz_unit_mathml(f.units[k])}</math>" }).join("<span class=\"kf-sep\">,</span> ")
   let latex = to_latex(x(f.name)) + " = " + to_latex(e)
   let copy = "<button class=\"kf-copy\" type=\"button\" data-tex=\"" + art_esc(latex) + "\" onclick=\"var b=this;navigator.clipboard&&navigator.clipboard.writeText(b.dataset.tex).then(function(){b.textContent='Copied'},function(){})\">Copy LaTeX</button>"
-  return f"<div class=\"kc-card kc-formula\"><div class=\"kc-label\">The formula &#183; <b>worked by Kosika</b></div>{big}<table class=\"kf-legend\">{head}{legend}</table><p class=\"kf-given\">For example, with {given}:</p>{worked}{check}{copy}</div>"
+  let graph = dz_graph(f)
+  let plotted = if graph.svg.is_empty() { "" } else { "<div class=\"kf-plot\">" + graph.svg + "<ul class=\"kf-marks\">" + (for m in graph.marks { "<li>" + m + "</li>" }).join("") + "</ul></div>" }
+  return f"<div class=\"kc-card kc-formula\"><div class=\"kc-label\">The formula &#183; <b>worked by Kosika</b></div>{big}<table class=\"kf-legend\">{head}{legend}</table><div class=\"kf-work\"><div><p class=\"kf-given\">For example, with {given}:</p>{worked}{check}</div>{plotted}</div>{copy}</div>"
 }
 
 fn dz_number_mathml(v: Number) -> Text {
@@ -481,8 +483,119 @@ fn dz_number_mathml(v: Number) -> Text {
   return f"<mn>{(lead * 10000).round() / 10000}</mn><mo>&#215;</mo><msup><mn>10</mn><mn>{size}</mn></msup>"
 }
 
+// ---------------------------------------------------------------- graphs
+//
+// A formula's graph, plotted by Kosika: the answer against the first
+// thing it depends on, from 0 to three times the example's value, the
+// others held at their example values. The axes get round ticks (1, 2 or
+// 5 times a power of ten), the example is marked on the curve with its
+// numbers, and any place the curve crosses zero or turns is found and
+// marked too: crossings by Newton's method, turns where the derivative,
+// worked by rule, is zero.
+
+fn dz_nice_step(span: Number) -> Number {
+  if span <= 0 { return 1 }
+  let raw = span / 5
+  let size = (raw.log() / (10).log()).floor()
+  let base = if size >= 0 { (10).power(size) } else { 1 / (10).power(0 - size) }
+  let f = raw / base
+  let pick = if f <= 1 { 1 } else if f <= 2 { 2 } else if f <= 5 { 5 } else { 10 }
+  return pick * base
+}
+
+fn dz_tick_text(v: Number) -> Text {
+  let r = (v * 1000000).round() / 1000000
+  if r.abs() >= 100000 or (r != 0 and r.abs() < 0.001) { return exact(r) }
+  return f"{r}"
+}
+
+record DzGraph { svg: Text marks: Text[] }
+
+fn dz_graph(f: DzFormula) -> DzGraph {
+  let none: DzGraph = {svg: "", marks: []}
+  if f.key.is_empty() or f.symbols.is_empty() { return none }
+  let read = parse(f.formula)
+  if not read.error.is_empty() { return none }
+  let e = read.expr
+  let name = f.symbols[0]
+  let xname = name.replace("_", "")
+  let yname = f.name.replace("_", "")
+  let at_x = f.values[0]
+  let hi = if at_x > 0 { at_x * 3 } else { 10 }
+  // From just above 0: many formulas cannot be worked at 0 itself (V / R,
+  // or the slope of a square root), so the curve starts a step later.
+  let lo = hi / 240
+  let n = 48
+  // the others held at their example values
+  var held = e
+  for k in 1 until f.symbols.length() { held = subst(held, f.symbols[k], f.values[k]) }
+  let slope = simplify(deriv(held, name))
+  var xs: Number[] = []
+  var ys: Number[] = []
+  var ds: Number[] = []
+  for k in 0 until n + 1 {
+    let xv = lo + (hi - lo) * k / n
+    xs = xs.append(xv)
+    ys = ys.append(at(held, [name], [xv]))
+    ds = ds.append(at(slope, [name], [xv]))
+  }
+  let ex_y = at(held, [name], [at_x])
+  let top = ys.max().or(1).max(ex_y)
+  let bottom = ys.min().or(0).min(0)
+  let w = 560
+  let h = 300
+  let left = 64
+  let right = 24
+  let up = 18
+  let down = 44
+  let sx = (w - left - right) / (hi - lo)
+  let span = if top - bottom > 0 { top - bottom } else { 1 }
+  let sy = (h - up - down) / span
+  let px = for v in xs { left + (v - lo) * sx }
+  let py = for v in ys { h - down - (v - bottom) * sy }
+  let path = "M" + (for k in 0 until px.length() { f"{(px[k] * 10).round() / 10} {(py[k] * 10).round() / 10}" }).join(" L")
+  let xstep = dz_nice_step(hi - lo)
+  let ystep = dz_nice_step(span)
+  let xstart = (lo / xstep).ceil() * xstep
+  let xticks = for k in 0 until ((hi - xstart) / xstep).floor() + 1 { xstart + k * xstep }
+  let ystart = (bottom / ystep).ceil() * ystep
+  let yticks = for k in 0 until ((top - ystart) / ystep).floor() + 1 { ystart + k * ystep }
+  let xgrid = (for t in xticks { f"<line class=\"g-grid\" x1=\"{left + (t - lo) * sx}\" y1=\"{up}\" x2=\"{left + (t - lo) * sx}\" y2=\"{h - down}\"/><text class=\"g-tick\" x=\"{left + (t - lo) * sx}\" y=\"{h - down + 16}\" text-anchor=\"middle\">{dz_tick_text(t)}</text>" }).join("")
+  let ygrid = (for t in yticks { f"<line class=\"g-grid\" x1=\"{left}\" y1=\"{h - down - (t - bottom) * sy}\" x2=\"{w - right}\" y2=\"{h - down - (t - bottom) * sy}\"/><text class=\"g-tick\" x=\"{left - 8}\" y=\"{h - down - (t - bottom) * sy + 4}\" text-anchor=\"end\">{dz_tick_text(t)}</text>" }).join("")
+  let ex_px = left + (at_x - lo) * sx
+  let ex_py = h - down - (ex_y - bottom) * sy
+  let example = f"<line class=\"g-guide\" x1=\"{ex_px}\" y1=\"{h - down}\" x2=\"{ex_px}\" y2=\"{ex_py}\"/><line class=\"g-guide\" x1=\"{left}\" y1=\"{ex_py}\" x2=\"{ex_px}\" y2=\"{ex_py}\"/><circle class=\"g-dot\" cx=\"{ex_px}\" cy=\"{ex_py}\" r=\"6\"/>"
+  // where it crosses zero and where it turns, inside the range
+  var marks: Text[] = [f"the example: {xname} = {dz_tick_text(at_x)} gives {yname} = {dz_tick_text((ex_y * 10000).round() / 10000)}"]
+  var found = ""
+  for k in 1 until n {
+    if (ys[k - 1] < 0 and ys[k] >= 0) or (ys[k - 1] > 0 and ys[k] <= 0) {
+      let r = solve(held, name, xs[k])
+      if r.ok and r.value > lo and r.value < hi {
+        found = found + f"<circle class=\"g-root\" cx=\"{left + (r.value - lo) * sx}\" cy=\"{h - down - (0 - bottom) * sy}\" r=\"5\"/>"
+        marks = marks.append(f"crosses zero at {xname} = {exact(r.value)}")
+      }
+    }
+    let d0 = ds[k - 1]
+    let d1 = ds[k]
+    if (d0 < 0 and d1 > 0) or (d0 > 0 and d1 < 0) {
+      let t = solve(slope, name, xs[k])
+      if t.ok and t.value > lo and t.value < hi {
+        let ty = at(held, [name], [t.value])
+        found = found + f"<circle class=\"g-turn\" cx=\"{left + (t.value - lo) * sx}\" cy=\"{h - down - (ty - bottom) * sy}\" r=\"5\"/>"
+        marks = marks.append(f"turns at {xname} = {exact(t.value)}, where {yname} = {dz_tick_text((ty * 10000).round() / 10000)}")
+      }
+    }
+  }
+  let unit_x = f.units[0].replace("^2", "&#178;").replace("^3", "&#179;").replace("ohm", "&#937;")
+  let unit_y = f.unit.replace("^2", "&#178;").replace("^3", "&#179;").replace("ohm", "&#937;")
+  let axes = f"<line class=\"g-axis\" x1=\"{left}\" y1=\"{h - down}\" x2=\"{w - right}\" y2=\"{h - down}\"/><line class=\"g-axis\" x1=\"{left}\" y1=\"{up}\" x2=\"{left}\" y2=\"{h - down}\"/><text class=\"g-name\" x=\"{(left + w - right) / 2}\" y=\"{h - 6}\" text-anchor=\"middle\">{art_esc(f.meanings[0])} ({xname}, {unit_x})</text><text class=\"g-name\" x=\"14\" y=\"{(up + h - down) / 2}\" text-anchor=\"middle\" transform=\"rotate(-90 14 {(up + h - down) / 2})\">{yname}, {unit_y}</text>"
+  let svg = f"<svg class=\"kf-graph\" viewBox=\"0 0 {w} {h}\" role=\"img\" aria-label=\"{art_esc(f.name)} against {art_esc(name)}\">{xgrid}{ygrid}{axes}<path class=\"g-line\" d=\"{path}\" pathLength=\"1\"/>{example}{found}</svg>"
+  return {svg: svg, marks: marks}
+}
+
 fn dz_formula_style() -> Text {
-  return ".kc-formula{margin-top:16px}.kc-formula math{font-family:'Cambria Math','STIX Two Math','Latin Modern Math',math;color:var(--ink)}.kc-formula mn{color:var(--gold)}.kc-formula .unit{color:var(--soft);font-style:normal}.kf-big{font-size:2.1em;margin:10px 0 14px}.kf-legend{border-collapse:collapse;margin:0 auto 12px;font-size:14.5px}.kf-legend td{padding:4px 12px;border-top:1px solid color-mix(in srgb,var(--line) 14%,transparent);color:var(--soft)}.kf-legend tr:first-child td{border-top:none;color:var(--ink)}.kf-legend math{font-size:1.15em}.kf-given{color:var(--soft);font-size:14px;margin:6px 4px}.kc-formula .calc{font-size:1.25em;margin:4px 12px 8px}.kf-ok{color:var(--ok,#4fe0a6);font-size:14px;margin:8px 4px}.kf-bad{color:var(--bad,#ff6b81);font-size:14px;margin:8px 4px}.kf-sep{color:var(--soft)}.kf-copy{font:600 10px ui-monospace,Consolas,monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--soft);background:none;border:1px solid color-mix(in srgb,var(--line) 20%,transparent);border-radius:999px;padding:6px 12px;cursor:pointer}.kf-copy:focus-visible{outline:2px solid var(--amber)}"
+  return ".kc-formula{margin-top:16px}.kc-formula math{font-family:'Cambria Math','STIX Two Math','Latin Modern Math',math;color:var(--ink)}.kc-formula mn{color:var(--gold)}.kc-formula .unit{color:var(--soft);font-style:normal}.kf-big{font-size:2.1em;margin:10px 0 14px}.kf-legend{border-collapse:collapse;margin:0 auto 12px;font-size:14.5px}.kf-legend td{padding:4px 12px;border-top:1px solid color-mix(in srgb,var(--line) 14%,transparent);color:var(--soft)}.kf-legend tr:first-child td{border-top:none;color:var(--ink)}.kf-legend math{font-size:1.15em}.kf-given{color:var(--soft);font-size:14px;margin:6px 4px}.kc-formula .calc{font-size:1.25em;margin:4px 12px 8px}.kf-ok{color:var(--ok,#4fe0a6);font-size:14px;margin:8px 4px}.kf-bad{color:var(--bad,#ff6b81);font-size:14px;margin:8px 4px}.kf-sep{color:var(--soft)}.kf-copy{font:600 10px ui-monospace,Consolas,monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--soft);background:none;border:1px solid color-mix(in srgb,var(--line) 20%,transparent);border-radius:999px;padding:6px 12px;cursor:pointer}.kf-copy:focus-visible{outline:2px solid var(--amber)}.kf-work{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:18px;align-items:start}.kf-graph{width:100%;height:auto;display:block}.kf-graph .g-grid{stroke:color-mix(in srgb,var(--line) 10%,transparent)}.kf-graph .g-axis{stroke:color-mix(in srgb,var(--ink) 55%,transparent);stroke-width:1.5}.kf-graph .g-tick{fill:var(--soft);font:11px ui-monospace,Consolas,monospace}.kf-graph .g-name{fill:var(--soft);font:12px Figtree,system-ui,sans-serif}.kf-graph .g-line{fill:none;stroke:var(--amber);stroke-width:3;stroke-linecap:round;stroke-dasharray:1;stroke-dashoffset:1;animation:g-draw 1.6s ease-out forwards}@keyframes g-draw{to{stroke-dashoffset:0}}.kf-graph .g-guide{stroke:var(--gold);stroke-dasharray:4 5;stroke-width:1.2}.kf-graph .g-dot{fill:var(--gold);stroke:var(--bg);stroke-width:2}.kf-graph .g-root{fill:var(--ok,#4fe0a6)}.kf-graph .g-turn{fill:var(--h1,#a993ff)}.kf-marks{margin:6px 0 0;padding-left:18px;color:var(--soft);font-size:13px}@media (prefers-reduced-motion:reduce){.kf-graph .g-line{animation:none;stroke-dashoffset:0}}@media (max-width:760px){.kf-work{grid-template-columns:1fr}}"
 }
 
 // A diagram has to be about what was asked: it shares at least one
@@ -759,4 +872,12 @@ fn dz_test_structure(title: Text) -> Structure {
 test "a diagram about something else is left off the canvas" {
   expect not dz_on_subject("why does a pendulum swing back and forth", dz_test_structure("The Fibonacci sequence, drawn"))
   expect dz_on_subject("why does a pendulum swing back and forth", dz_test_structure("Why a pendulum swings"))
+}
+
+test "a formula's graph is plotted by Kosika, with the example and any turns marked" {
+  pend = dz_graph(dz_formula_for("why does a pendulum swing"))
+  expect pend.svg.contains("class=\"g-line\"")
+  expect pend.marks[0] == "the example: L = 1 gives T = 2.0061"
+  expect dz_nice_step(7) == 2
+  expect dz_nice_step(0.3) == 0.1
 }
