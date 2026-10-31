@@ -726,7 +726,9 @@ fn dz_from_element(ask: DzAsk, e: SePage, atom: ArtPage, z: QzPage) -> DzResult 
   let below = if both { "<div class=\"kc-grid\">" + art_card + quiz_card + "</div>" } else { "<div>" + art_card + quiz_card + "</div>" }
   let head = "<div class=\"kc-head\">" + dz_field_label("chemistry") + "<h2>" + art_esc(e.element.name) + "</h2><p>" + art_esc(e.element.category) + ", atomic number " + f"{e.element.z}" + "</p></div>"
   let embed = dz_wrap("element", place, palette, "", head + frame + "<div style=\"margin-top:16px\">" + below + "</div>", art_style() + qz_style() + dz_canvas_style())
-  return {kind: "element", why: dz_why(ask), title: e.element.name, page: e.page, svg: atom.svg, embed: embed, problems: e.problems, fixed: atom.fixed}
+  // The page is the whole canvas, not the table alone, so Chat and the
+  // website show the atom and the quiz too.
+  return {kind: "element", why: dz_why(ask), title: e.element.name, page: dz_canvas_page(e.element.name, palette, embed), svg: atom.svg, embed: embed, problems: e.problems, fixed: atom.fixed}
 }
 
 workflow dz_element(ask: DzAsk) -> DzResult {

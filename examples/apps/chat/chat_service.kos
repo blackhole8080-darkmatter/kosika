@@ -1,0 +1,64 @@
+// Kosika AI Chat's answer, as one Kosika workflow: what server.py did in
+// Python for each message, done by Kosika itself, so Chat can be served
+// by Kosika's own engine.
+//
+//   kosika-native serve chat_service.kos --page index.html
+//       --files /fonts/=../../../kosika/app_assets/fonts --route /ask=turn
+//       --model openai/gpt-oss-20b --model-url https://api.groq.com/openai/v1
+//       --model-protocol openai --max-output-tokens 8000
+//
+// A message that wants words (a poem, a short fact) is answered in words.
+// Anything else goes to Kosika Designs' front door (std/designs.kos), which
+// chooses a diagram, a moving picture, a canvas, worked mathematics,
+// chemistry, units or an element; its page is the answer, its explanation
+// written inside it. Words are the answer when no page could be made.
+//
+// Still in server.py for now: handing a message to Kosi's assistant
+// agents, approving what they ask to do, and finding real photos.
+
+import "chat.kos"
+import "std/designs.kos"
+import "std/designs_main.kos"
+
+export [ChatTurn, ChatOut, turn]
+
+record ChatTurn { ask: Text history: Text }
+record ChatOut { page: Text problems: Text[] title: Text text: Text card: Bool who: Text }
+
+fn cs_wants(t: ChatTurn) -> Ask { return {text: t.ask} }
+
+fn cs_design_ask(t: ChatTurn) -> DzAsk { return {text: t.ask, palette: "", place: "chat", kind: ""} }
+
+fn cs_words_turn(t: ChatTurn) -> Turn { return {history: t.history, ask: t.ask} }
+
+fn cs_no_design() -> DzResult { return {kind: "", why: "", title: "", page: "", svg: "", embed: "", problems: [], fixed: []} }
+
+fn cs_drawn(d: DzResult) -> Bool { return not d.page.is_empty() and d.problems.is_empty() }
+
+fn cs_out(d: DzResult, words: Reply) -> ChatOut {
+  if cs_drawn(d) { return {page: d.page, problems: [], title: d.title, text: "", card: false, who: "Kosika"} }
+  return {page: "", problems: d.problems, title: "", text: words.text, card: true, who: "Kosika"}
+}
+
+fn cs_no_words() -> Reply { return {text: ""} }
+
+workflow turn(t: ChatTurn) -> ChatOut {
+  budget 16 model calls, 900 seconds
+  kind  = call answer_kind(cs_wants(t))
+  drawn = match kind.words {
+    case true { cs_no_design() }
+    case _ { call design(cs_design_ask(t)) }
+  }
+  words = match cs_drawn(drawn) {
+    case true { cs_no_words() }
+    case _ { call answer(cs_words_turn(t)) }
+  }
+  out   = cs_out(drawn, words)
+}
+
+test "a drawn page is the answer, and words only when nothing was drawn" {
+  page = cs_out({..cs_no_design(), page: "<html>drawn</html>", title: "Gears"}, cs_no_words())
+  expect page.page == "<html>drawn</html>" and not page.card
+  words = cs_out(cs_no_design(), {text: "A haiku."})
+  expect words.text == "A haiku." and words.card
+}
