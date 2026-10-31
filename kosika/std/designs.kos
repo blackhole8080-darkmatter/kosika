@@ -270,7 +270,12 @@ fn dz_diagram_frame(r: Request, d: Design) -> Text {
   return f"<iframe class=\"kd-frame\" title=\"{art_esc(r.structure.title)}\" srcdoc=\"{art_esc(page)}\"></iframe>"
 }
 
-fn dz_canvas_lead(ask: DzAsk) -> Text { return dz_kind({..ask, kind: ""}) }
+// A science ask comes to the canvas because it asks how or why, so the
+// moving picture leads.
+fn dz_canvas_lead(ask: DzAsk) -> Text {
+  let kind = dz_kind({..ask, kind: ""})
+  return if kind == "canvas" { "illustration" } else { kind }
+}
 
 fn dz_from_canvas(ask: DzAsk, palette: Text, r: Request, d: Design, m: ArtPage, g: GenArt, z: QzPage) -> DzResult {
   let place = dz_place(ask)
@@ -527,4 +532,5 @@ test "a science canvas finds its field and its reaction" {
   leaf = sc_balance(dz_reaction("how does photosynthesis work"))
   expect leaf.coefficients == [6, 6, 1, 6]
   expect dz_reaction("how does the moon orbit the earth") == ""
+  expect dz_canvas_lead(dz_ask("how does photosynthesis work")) == "illustration"
 }
