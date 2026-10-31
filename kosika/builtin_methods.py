@@ -399,6 +399,8 @@ METHODS: tuple[Method, ...] = (
     Method("Text", "upper", (), "Text", lambda text: text.upper()),
     Method("Text", "lower", (), "Text", lambda text: text.lower()),
     Method("Text", "trim", (), "Text", lambda text: text.strip()),
+    Method("Text", "trim_start", (), "Text", lambda text: text.lstrip()),
+    Method("Text", "trim_end", (), "Text", lambda text: text.rstrip()),
     Method(
         "Text", "contains", (("part", "Text"),), "Bool", lambda text, part: part in text
     ),

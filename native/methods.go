@@ -236,10 +236,12 @@ func runeIndex(text, part string) int {
 }
 
 var textMethods = map[string]method{
-	"length": {nil, func(r Value, a []Value) Value { return bigInt(len([]rune(textOf(r)))) }},
-	"upper":  {nil, func(r Value, a []Value) Value { return strings.ToUpper(textOf(r)) }},
-	"lower":  {nil, func(r Value, a []Value) Value { return strings.ToLower(textOf(r)) }},
-	"trim":   {nil, func(r Value, a []Value) Value { return strings.TrimFunc(textOf(r), isSpace) }},
+	"length":     {nil, func(r Value, a []Value) Value { return bigInt(len([]rune(textOf(r)))) }},
+	"upper":      {nil, func(r Value, a []Value) Value { return strings.ToUpper(textOf(r)) }},
+	"lower":      {nil, func(r Value, a []Value) Value { return strings.ToLower(textOf(r)) }},
+	"trim":       {nil, func(r Value, a []Value) Value { return strings.TrimFunc(textOf(r), isSpace) }},
+	"trim_start": {nil, func(r Value, a []Value) Value { return strings.TrimLeftFunc(textOf(r), isSpace) }},
+	"trim_end":   {nil, func(r Value, a []Value) Value { return strings.TrimRightFunc(textOf(r), isSpace) }},
 	"contains": {[]string{"part"}, func(r Value, a []Value) Value {
 		return strings.Contains(textOf(r), textOf(a[0]))
 	}},

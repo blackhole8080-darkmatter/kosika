@@ -305,6 +305,8 @@ var methodTypes = []methodType{
 	m("Text", "upper", "Text"),
 	m("Text", "lower", "Text"),
 	m("Text", "trim", "Text"),
+	m("Text", "trim_start", "Text"),
+	m("Text", "trim_end", "Text"),
 	m("Text", "contains", "Bool", "part", "Text"),
 	m("Text", "starts_with", "Bool", "prefix", "Text"),
 	m("Text", "ends_with", "Bool", "suffix", "Text"),

@@ -393,6 +393,7 @@ the receiver's type, and every method is pure and deterministic.
 | `Text` | `words()` | `Text[]`: the parts between runs of spaces, tabs and line ends, with no empty parts; over 100,000 parts fails the run |
 | `Text` | `replace(old: Text, new: Text)` | `Text` with every `old` replaced; `old` MUST be non-empty |
 | `Text` | `trim_marks(marks: Text)` | `Text` without spaces or any character of `marks` at its two ends; the middle is untouched |
+| `Text` | `trim_start()`, `trim_end()` | `Text` without white space at its start, or at its end; the other end is untouched |
 | `Number[]` | `plus(other)`, `minus(other)`, `scaled(by: Number)`, `cross(other)` | `Number[]`; lengths MUST agree, and `cross` needs two vectors of 3 |
 | `Number[]` | `dot(other)`, `norm()`, `mean()` | `Number` |
 | `Number` | `identity()`, `zeros(columns: Number)` | `Number[][]`: the identity matrix of that size, or a matrix of zeros with that many rows |
