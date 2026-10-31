@@ -1,0 +1,213 @@
+{
+  "model": "openai/gpt-oss-120b",
+  "url": "https://api.groq.com/openai/v1",
+  "mode": "best-of",
+  "best_of": 1,
+  "summary": {
+    "1": {
+      "passed": 3,
+      "tasks": 4,
+      "seconds": 107.7,
+      "attempts": 4
+    }
+  },
+  "languages": {
+    "html": {
+      "passed": 0,
+      "tasks": 1
+    },
+    "kosika": {
+      "passed": 1,
+      "tasks": 1
+    },
+    "python": {
+      "passed": 2,
+      "tasks": 2
+    }
+  },
+  "results": [
+    {
+      "id": "py-lru-cache",
+      "language": "python",
+      "passed": true,
+      "state": "done",
+      "seconds": 11.4,
+      "approvals": 2,
+      "failures": [],
+      "error": "",
+      "said": "Wrote lru.py, test_lru.py, one whole file at a time.\nWrote: lru.py, test_lru.py\nThe tests for test_lru.py pass. Only those were run; say \"test\" to run them all.",
+      "files": [
+        "calc.py",
+        "lru.py",
+        "test_calc.py",
+        "test_lru.py"
+      ],
+      "attempts": [
+        {
+          "id": "py-lru-cache",
+          "attempt": 1,
+          "asked": "write lru.py with a class LRUCache(capacity) that has get(key) returning the value or -1 and put(key, value), both O(1), evicting the least recently used key when full; and test_lru.py with pytest tests covering eviction order, updating an existing key, and capacity 1",
+          "passed": true,
+          "state": "done",
+          "abandoned": false,
+          "seconds": 11.4,
+          "approvals": 2,
+          "failures": [],
+          "excerpts": [],
+          "error": "",
+          "said": "Wrote lru.py, test_lru.py, one whole file at a time.\nWrote: lru.py, test_lru.py\nThe tests for test_lru.py pass. Only those were run; say \"test\" to run them all.",
+          "files": [
+            "calc.py",
+            "lru.py",
+            "test_calc.py",
+            "test_lru.py"
+          ]
+        }
+      ],
+      "summary": {
+        "1": {
+          "passed": true,
+          "attempts": 1,
+          "seconds": 11.4
+        }
+      }
+    },
+    {
+      "id": "py-expression-parser",
+      "language": "python",
+      "passed": true,
+      "state": "done",
+      "seconds": 21.4,
+      "approvals": 2,
+      "failures": [],
+      "error": "",
+      "said": "Wrote calc_parser.py, test_calc_parser.py, one whole file at a time.\nWrote: calc_parser.py, test_calc_parser.py\nThe tests for test_calc_parser.py pass. Only those were run; say \"test\" to run them all.",
+      "files": [
+        "calc.py",
+        "calc_parser.py",
+        "test_calc.py",
+        "test_calc_parser.py"
+      ],
+      "attempts": [
+        {
+          "id": "py-expression-parser",
+          "attempt": 1,
+          "asked": "write calc_parser.py with a function evaluate(text) that parses and evaluates arithmetic expressions with + - * / and parentheses, unary minus and decimal numbers, respecting precedence, without using eval or exec; raise ValueError for malformed input; and test_calc_parser.py with pytest tests",
+          "passed": true,
+          "state": "done",
+          "abandoned": false,
+          "seconds": 21.4,
+          "approvals": 2,
+          "failures": [],
+          "excerpts": [],
+          "error": "",
+          "said": "Wrote calc_parser.py, test_calc_parser.py, one whole file at a time.\nWrote: calc_parser.py, test_calc_parser.py\nThe tests for test_calc_parser.py pass. Only those were run; say \"test\" to run them all.",
+          "files": [
+            "calc.py",
+            "calc_parser.py",
+            "test_calc.py",
+            "test_calc_parser.py"
+          ]
+        }
+      ],
+      "summary": {
+        "1": {
+          "passed": true,
+          "attempts": 1,
+          "seconds": 21.4
+        }
+      }
+    },
+    {
+      "id": "kosika-agent",
+      "language": "kosika",
+      "passed": true,
+      "state": "done",
+      "seconds": 5.9,
+      "approvals": 2,
+      "failures": [],
+      "error": "",
+      "said": "Wrote triage/main.kos, one whole file at a time.\nWrote: triage/main.kos\nThe tests for triage/main.kos pass. Only those were run; say \"test\" to run them all.",
+      "files": [
+        "triage\\main.kos"
+      ],
+      "attempts": [
+        {
+          "id": "kosika-agent",
+          "attempt": 1,
+          "asked": "create a Kosika agent in triage/main.kos that sorts a support ticket (a record with text) into billing, bug or account using classify with learn, falls back to account when the model fails, keeps a count of tickets per category in memory, and has at least two tests that use answers for the model",
+          "passed": true,
+          "state": "done",
+          "abandoned": false,
+          "seconds": 5.9,
+          "approvals": 2,
+          "failures": [],
+          "excerpts": [],
+          "error": "",
+          "said": "Wrote triage/main.kos, one whole file at a time.\nWrote: triage/main.kos\nThe tests for triage/main.kos pass. Only those were run; say \"test\" to run them all.",
+          "files": [
+            "triage\\main.kos"
+          ]
+        }
+      ],
+      "summary": {
+        "1": {
+          "passed": true,
+          "attempts": 1,
+          "seconds": 5.9
+        }
+      }
+    },
+    {
+      "id": "motion-portfolio",
+      "language": "html",
+      "passed": false,
+      "state": "done",
+      "seconds": 69.0,
+      "approvals": 2,
+      "failures": [
+        "python -c import pathlib; h=pathlib.Path('index.html').read_text(encoding='utf-8'); c=pathlib.Path('styles.css').read_text(encoding='utf-8'); j=pathlib.Path('script.js').read_text(encoding='utf-8')\nassert '</html>' in h and h.count('<section')>=4 and 'styles.css' in h and 'script.js' in h and '<form' in h\nassert c.count('{')==c.count('}') and '@media' in c and ('@keyframes' in c or 'transition' in c) and len(c)>4000\nassert 'IntersectionObserver' in j and 'mousemove' in j and ('submit' in j) and len(j)>1200: FileNotFoundError: [Errno 2] No such file or directory: 'styles.css'",
+        "node --check script.js: Node.js v26.4.0"
+      ],
+      "error": "",
+      "said": "Wrote index.html, script.js, one whole file at a time.\nWrote: index.html, script.js\nThe script does not read cleanly, so the page's motion will not run:\nC:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-_flt2ns_\\site\\script.js:43\n            mouseY = (e.clientY / window.innerHeight) .- 0.5;\n                                                       ^\n\nSyntaxError: Unexpected token '-'\n    at wrapSafe (node:internal/modules/cjs/loader:1876:18)\n    at checkSyntax (node:internal/main/check_syntax:76:3)\n\nNode.js v26.4.0\nSay \"fix\" and I will try to put it right.",
+      "files": [
+        "index.html",
+        "script.js"
+      ],
+      "attempts": [
+        {
+          "id": "motion-portfolio",
+          "attempt": 1,
+          "asked": "create a professional dark-themed motion-graphics portfolio website for a designer named Aryan: an animated hero with layered shapes that move with the mouse, a projects grid of six cards with hover reveals, a skills section with bars that fill when scrolled into view, a contact form that checks its fields before sending, smooth scroll-triggered animations, and a layout that works on phones",
+          "passed": false,
+          "state": "done",
+          "abandoned": false,
+          "seconds": 69.0,
+          "approvals": 2,
+          "failures": [
+            "python -c import pathlib; h=pathlib.Path('index.html').read_text(encoding='utf-8'); c=pathlib.Path('styles.css').read_text(encoding='utf-8'); j=pathlib.Path('script.js').read_text(encoding='utf-8')\nassert '</html>' in h and h.count('<section')>=4 and 'styles.css' in h and 'script.js' in h and '<form' in h\nassert c.count('{')==c.count('}') and '@media' in c and ('@keyframes' in c or 'transition' in c) and len(c)>4000\nassert 'IntersectionObserver' in j and 'mousemove' in j and ('submit' in j) and len(j)>1200: FileNotFoundError: [Errno 2] No such file or directory: 'styles.css'",
+            "node --check script.js: Node.js v26.4.0"
+          ],
+          "excerpts": [
+            "python -c said:\n  Traceback (most recent call last):\n    File \"<string>\", line 1, in <module>\n  FileNotFoundError: [Errno 2] No such file or directory: 'styles.css'",
+            "node --check said:\n              mouseY = (e.clientY / window.innerHeight) .- 0.5;\n                                                         ^\n  SyntaxError: Unexpected token '-'\n      at wrapSafe (node:internal/modules/cjs/loader:1876:18)\n      at checkSyntax (node:internal/main/check_syntax:76:3)\n  Node.js v26.4.0"
+          ],
+          "error": "",
+          "said": "Wrote index.html, script.js, one whole file at a time.\nWrote: index.html, script.js\nThe script does not read cleanly, so the page's motion will not run:\nC:\\Users\\Aryan\\AppData\\Local\\Temp\\kosika-coder-bench-_flt2ns_\\site\\script.js:43\n            mouseY = (e.clientY / window.innerHeight) .- 0.5;\n                                                       ^\n\nSyntaxError: Unexpected token '-'\n    at wrapSafe (node:internal/modules/cjs/loader:1876:18)\n    at checkSyntax (node:internal/main/check_syntax:76:3)\n\nNode.js v26.4.0\nSay \"fix\" and I will try to put it right.",
+          "files": [
+            "index.html",
+            "script.js"
+          ]
+        }
+      ],
+      "summary": {
+        "1": {
+          "passed": false,
+          "attempts": 1,
+          "seconds": 69.0
+        }
+      }
+    }
+  ]
+}

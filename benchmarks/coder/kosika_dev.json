@@ -1,0 +1,34 @@
+[
+ {
+  "id": "kd-trim-ends",
+  "language": "python",
+  "folder": "kosika_dev",
+  "copy": ["kosika", "tests/test_short_methods.py"],
+  "task": "add two Text methods to kosika/builtin_methods.py: trim_start(), which takes spaces, tabs and line breaks off the start of a text only, and trim_end(), which takes them off the end only. Register them beside trim in the same table. Write tests for both in tests/test_trim_ends.py in the style of tests/test_short_methods.py, running small Kosika programs that call them",
+  "checks": [
+   ["python", "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests/test_trim_ends.py"],
+   ["python", "{repo}/benchmarks/coder/kosika_dev_checks.py", "trim-ends"]
+  ]
+ },
+ {
+  "id": "kd-last-index-of",
+  "language": "python",
+  "folder": "kosika_dev",
+  "copy": ["kosika", "tests/test_short_methods.py"],
+  "task": "add a Text method last_index_of(part: Text) to kosika/builtin_methods.py. It gives a Number?: where part last begins in the text, counted from 0, or null when part is not in it, as index_of does for the first place; part must not be empty, as for index_of. Register it beside index_of. Write tests in tests/test_last_index_of.py in the style of tests/test_short_methods.py, running small Kosika programs that call it",
+  "checks": [
+   ["python", "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests/test_last_index_of.py"],
+   ["python", "{repo}/benchmarks/coder/kosika_dev_checks.py", "last-index-of"]
+  ]
+ },
+ {
+  "id": "kd-scene-fade-in",
+  "language": "kosika",
+  "folder": "kosika_dev",
+  "copy": ["kosika"],
+  "task": "add a function fade_in(shape_id: Text, start: Number, seconds: Number) -> Move to the Kosika standard library file kosika/std/scene.kos, beside hidden, and export it. It gives the move that fades a shape up to fully seen: what \"fade\", to 1, from start for seconds, with the ease \"out\". Add it to the list of functions in the comment at the top, and add a test to scene.kos that builds a scene with a hidden shape faded in by it and expects scene_problems to find nothing",
+  "checks": [
+   ["python", "{repo}/benchmarks/coder/kosika_dev_checks.py", "scene-fade-in"]
+  ]
+ }
+]

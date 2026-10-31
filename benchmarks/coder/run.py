@@ -54,12 +54,14 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import io
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import time
 from pathlib import Path
@@ -228,6 +230,22 @@ def checked(folder: Path, checks: list[list[str]]) -> tuple[list[str], list[str]
     return failed, why
 
 
+def copy_committed(paths: list[str], folder: Path) -> None:
+    """Kosika's own files at its last commit, put into the task's folder.
+
+    A task in kosika_dev.json works on Kosika itself, so its project is
+    these files as they were committed: work in progress in the checkout
+    never reaches a measurement, and two runs a week apart start alike.
+    """
+
+    archive = subprocess.run(
+        ["git", "archive", "--format=tar", "HEAD", *paths],
+        cwd=REPO, capture_output=True, check=True,
+    ).stdout
+    with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
+        tar.extractall(folder, filter="data")
+
+
 def prepare(args: argparse.Namespace, task: dict[str, Any]) -> tuple[Path, Path, App]:
     """A fresh copy of the project and of the agent, ready to work in."""
 
@@ -240,6 +258,8 @@ def prepare(args: argparse.Namespace, task: dict[str, Any]) -> tuple[Path, Path,
         shutil.copytree(source, folder)
     else:
         folder.mkdir()
+    if task.get("copy"):
+        copy_committed(task["copy"], folder)
     # A fresh copy of the agent each time: nothing it learned or remembered
     # in one task, or with another model, may help it in the next.
     agents = scratch / "_kosika"
@@ -392,7 +412,7 @@ def main() -> int:
     parser.add_argument("--keep", action="store_true", help="Keep each task's folder to look at.")
     parser.add_argument("--outside", action="append", default=[], help="An outside agent the coder may ask first, such as cline. May be repeated.")
     parser.add_argument("--within", default=str(Path.home() / "Aryan_Private" / "kosika-bench"), help="The only folder outside agents may be shown; the tasks run inside it.")
-    parser.add_argument("--tasks", default="tasks.json", help="The task file in this folder: tasks.json, or hard.json.")
+    parser.add_argument("--tasks", default="tasks.json", help="The task file in this folder: tasks.json, hard.json, hard2.json, or kosika_dev.json.")
     parser.add_argument("--best-of", type=int, default=1, metavar="N",
                         help="Give each task up to N independent attempts, stopping at the first that passes.")
     parser.add_argument("--repair", action="store_true",

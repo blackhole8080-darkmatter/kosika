@@ -19,7 +19,15 @@
 // Say "fix" after a failing run and it tries again, shown what the tests
 // printed. It keeps only the last run in memory.
 //
-// It replaces whole files, so it suits small files. It starts only python
+// A short file is written again whole. A long one, such as one of Kosika's
+// own, is changed by edits: the model is shown the parts of the file the
+// task speaks of, and answers with the exact lines to find and what to put
+// in their place. Kosika applies an answer only when every one of its edits
+// is found in exactly one place; otherwise nothing changes, and the model is
+// told which edit was wrong and why, once. A file a task names as a pattern
+// ("in the style of tests/test_x.py") is shown to the model and never
+// written. When a change writes test files, only those are run, since a
+// large project's whole suite can take many minutes. It starts only python
 // and node.
 //
 // JavaScript and TypeScript (.js, .ts and their kin) are read as Python
@@ -104,7 +112,7 @@ record Faults { items: Text[] }
 record Saved { count: Number }
 // The files a task names, in the order they are written: what is tested
 // first, its tests after.
-record Plan { files: Text[] }
+record Plan { files: Text[] seen: Text[] }
 // The files written so far for one task, not yet saved.
 record Drafted { files: Planned[] }
 // The nth file of a plan to write, and one file to write: what a step of
@@ -172,6 +180,16 @@ tool write_file {
 tool run_python {
   source system "shell"
   operation: "python"
+  access: execute
+  input: Command
+  output: Ran
+}
+
+// Go, to vet a Go package after a change to it: vet compiles the package
+// and writes nothing.
+tool run_go {
+  source system "shell"
+  operation: "go"
   access: execute
   input: Command
   output: Ran
@@ -247,7 +265,7 @@ agent coder {
 }
 
 agent runner {
-  can: [run_python, run_node]
+  can: [run_python, run_node, run_go]
   max_steps: 1
 }
 
@@ -680,6 +698,19 @@ fn script_tests(work: Work) -> Text[] {
   return files.take(8)
 }
 
+// The folder of the first Go file a change wrote: "." for one at the top,
+// "" when it wrote none.
+fn go_dir(work: Work) -> Text {
+  for line in work.did {
+    let path = line.words().drop(1).join(" ").replace("\\", "/")
+    if path.lower().ends_with(".go") {
+      let parts = path.split("/")
+      return if parts.length() < 2 { "." } else { parts.take(parts.length() - 1).join("/") }
+    }
+  }
+  return ""
+}
+
 fn node_args(files: Text[]) -> Text[] {
   return ["--test"].concat(files)
 }
@@ -695,6 +726,7 @@ fn runner_of(work: Work) -> Text {
     if path.lower().ends_with(".py") { return "python" }
     if is_script(path) { scripts += 1 }
   }
+  if not go_dir(work).is_empty() { return "go" }
   if not kosika_file(work).is_empty() { return "kosika" }
   return if scripts > 0 { "node" } else { "python" }
 }
@@ -713,6 +745,28 @@ fn runner_in(folder: Listing) -> Text {
 fn test_args(names: Text[]) -> Text[] {
   let all = ["-m", "pytest", "-q", "-x", "--no-header", "-p", "no:cacheprovider"]
   return if names.is_empty() { all } else { all.concat(["-k", names.join(" or ")]) }
+}
+
+// The Python test files a change wrote. A large project's tests take
+// minutes to gather, let alone run, so when a change wrote test files only
+// those files are run.
+fn test_files(work: Work) -> Text[] {
+  var files: Text[] = []
+  for line in work.did {
+    let path = line.words().drop(1).join(" ").replace("\\", "/")
+    if path.lower().ends_with(".py") and is_test_file(path) and not files.contains(path) { files = files.append(path) }
+  }
+  return files.take(8)
+}
+
+fn narrowed_to(work: Work) -> Text[] {
+  let files = test_files(work)
+  return if files.is_empty() { test_names(work) } else { files }
+}
+
+fn python_args(work: Work) -> Text[] {
+  let files = test_files(work)
+  return if files.is_empty() { test_args(test_names(work)) } else { test_args([]).concat(files) }
 }
 
 fn as_tested(ran: Ran, names: Text[]) -> Tested {
@@ -746,16 +800,26 @@ fn tested(last: Last, ran: Ran) -> Result {
 // The files a task names: words such as calc.py or src/text.ts. A test
 // file that goes with a named file is added when the task asks for tests
 // and one is there. Tests come last, so they are written knowing the code.
+// A file named as a pattern to follow, "like x.py" or "in the style of
+// x.py", is not written: it is shown, so what is written can follow it.
 fn file_plan(task: Task, folder: Listing) -> Plan {
-  let kinds = [".py", ".ts", ".js", ".mjs", ".kos", ".json", ".md", ".txt", ".html", ".css"]
+  let kinds = [".py", ".ts", ".js", ".mjs", ".kos", ".go", ".json", ".md", ".txt", ".html", ".css"]
   var named: Text[] = []
+  var seen: Text[] = []
+  var before = ""
+  var before_that = ""
   for word in task.text.replace(",", " ").replace(";", " ").replace("(", " ").replace(")", " ").replace("`", " ").words() {
     let clean = word.trim_marks(".:!?'\"")
+    let pattern = before == "like" or (before == "of" and ["style", "shape", "pattern", "way", "example", "manner"].contains(before_that))
     for kind in kinds {
-      if clean.lower().ends_with(kind) and clean.length() > kind.length() and not named.contains(clean) { named = named.append(clean) }
+      if clean.lower().ends_with(kind) and clean.length() > kind.length() and not named.contains(clean) and not seen.contains(clean) {
+        if pattern { seen = seen.append(clean) } else { named = named.append(clean) }
+      }
     }
+    before_that = before
+    before = clean.lower()
   }
-  if named.is_empty() or named.length() > 3 { return {files: []} }
+  if named.is_empty() or named.length() > 3 { return {files: [], seen: []} }
   let wants_tests = task.text.lower().contains("test")
   var code: Text[] = []
   var tests: Text[] = []
@@ -769,7 +833,7 @@ fn file_plan(task: Task, folder: Listing) -> Plan {
     }
   }
   let all = code.concat(tests)
-  return {files: if all.length() > 3 { [] } else { all }}
+  return {files: if all.length() > 3 { [] } else { all }, seen: seen.take(1)}
 }
 
 // What a model that has never seen Kosika needs to write it: the rules
@@ -783,6 +847,39 @@ fn kosika_example() -> Text {
 // model has one program to follow and not two to join.
 fn kosika_tool_example() -> Text {
   return "A program that uses a tool, which is a file of its own. A tool is declared with source, operation, access, input and output, has no body and no -> return type; an agent lists it in can: [...]; a workflow calls it as `x = execute AGENT.TOOL(field, field)`; a test scripts it with `answers TOOL: [record]`. This complete program checks and its tests pass; follow its shape. Its tool searches the files under a folder for a word and gives back the lines that hold it:\n\nrecord Look { path: Text query: Text }\nrecord Hits { matches: Text[] }\nrecord Line { text: Text }\n\ntool find_lines {\n  source system \"files\"\n  operation: \"search\"\n  access: observe\n  input: Look\n  output: Hits\n}\n\nagent reader {\n  can: [find_lines]\n  max_steps: 2\n}\n\nworkflow main(l: Look) -> Line {\n  found  = execute reader.find_lines(l.path, l.query) otherwise {matches: []}\n  result = if found.matches.is_empty() { {text: \"nothing found\"} } else { {text: found.matches[0]} }\n}\n\ntest \"the first line that holds the word is the answer\" {\n  answers find_lines: [{matches: [\"the sky is blue\", \"the sea is blue\"]}]\n  r = main({path: \".\", query: \"blue\"})\n  expect r.text == \"the sky is blue\"\n}\n\ntest \"a word that is nowhere says nothing was found\" {\n  answers find_lines: [{matches: []}]\n  r = main({path: \"notes\", query: \"zebra\"})\n  expect r.text == \"nothing found\"\n}\n\nThe operations of a system tool are fixed names, never your tool's own name and never an invented one. source system \"files\" has exactly \"read\", \"peek\", \"search\", \"find\", \"list\", \"write\", \"create\" and \"write_all\"; source system \"shell\" has the name of the one program it may start, such as \"python\", with input {args: Text[]} and output {exit_code: Number, stdout: Text, stderr: Text}. search and find take an input record of exactly {path: Text, query: Text} and give {matches: Text[]}; read, peek and list take an input record of exactly {path: Text}; write and create take {path: Text, text: Text}. A call hands over the input record's field values in order, never the record itself: it is `execute reader.find_lines(l.path, l.query)`, not `execute reader.find_lines(l)`. A tool's output is never its input: search gives matches, not the line.\n"
+}
+
+// The place in the plan of the first file not drafted, or -1.
+fn missing_at(plan: Plan, drafted: Drafted) -> Number {
+  let paths = for file in drafted.files { file.path }
+  for i in 0 until plan.files.length() {
+    if not paths.contains(plan.files[i]) { return i }
+  }
+  return -1
+}
+
+fn same_task(task: Task) -> Task {
+  return task
+}
+
+// Where the words of a task end and a pattern shown with it begins.
+fn pattern_mark() -> Text {
+  return "
+
+To follow, not to change, "
+}
+
+fn with_pattern(task: Task, path: Text, text: Text) -> Task {
+  if text.trim().is_empty() { return task }
+  return {text: task.text + pattern_mark() + path + " begins:
+```
+" + text.take(2000) + "
+```"}
+}
+
+// The task's own words, without a pattern shown with them.
+fn own_words(task: Task) -> Text {
+  return task.text.split(pattern_mark())[0]
 }
 
 fn nth_one(job: Nth) -> One {
@@ -802,7 +899,7 @@ fn kept_drafts(drafted: Drafted) -> Drafted {
 fn scribe_task(task: Task, path: Text, old: Text, drafted: Drafted, failure: Text) -> Task {
   var shown = ""
   for file in drafted.files {
-    if file.path != path { shown = shown + "\n--- " + file.path + " (already written) ---\n" + file.text.take(6000) + "\n" }
+    if file.path != path { shown = shown + "\n--- " + file.path + " (already written) ---\n" + shown_draft(file) + "\n" }
   }
   let now = if old.trim().is_empty() { path + " does not exist yet: write it new." } else { "This is " + path + " now. Keep everything in it that should stay:\n```\n" + old.take(8000) + "\n```" }
   let tests = if is_test_file(path) or is_script_test(path) { " It is a test file: import what it tests from the files above by their names, keep the tests that are there, and add tests for what the task asks." } else { "" }
@@ -821,6 +918,214 @@ fn with_draft(drafted: Drafted, path: Text, old: Text, text: Text) -> Drafted {
   }
   let body = if text.ends_with("\n") { text } else { text + "\n" }
   return {files: files.append({path: path, text: body, before: old, exists: not old.is_empty()})}
+}
+
+// ---------------------------------------------------------------- long files
+//
+// A file too long to be written again in one answer, such as one of
+// Kosika's own, is changed by edits instead. The model is shown the parts
+// of the file the task speaks of and answers with blocks, each the exact
+// lines to find and the lines to put in their place. The program applies
+// them, and only when each is found in exactly one place: an edit the model
+// misremembers changes nothing, and is sent back saying what was wrong.
+
+// What edits made of a file, and what was wrong with them. The text is ""
+// unless every edit was applied.
+record Patched { text: Text problems: Text[] }
+// A file to write: the job, the file as it is, and what was wrong with the
+// edits asked for before.
+record Editing { one: One old: Text wrong: Text[] }
+
+// Longer than this, a file is changed by edits, not written again whole.
+fn is_big(text: Text) -> Bool {
+  return text.length() > 6000
+}
+
+// The words of a text that could be names in code.
+fn identifiers(text: Text) -> Text[] {
+  var clean = ""
+  for letter in text.take(3000).chars() {
+    clean = clean + (if "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_".contains(letter) { letter } else { " " })
+  }
+  return clean.words()
+}
+
+// The words of what was said that pick out places in the file: names it
+// defines, names with an underscore, and words it holds only a few times.
+fn keys_in(old: Text, said: Text) -> Text[] {
+  let names = defined(old)
+  var keys: Text[] = []
+  for word in identifiers(said) {
+    // A name in quotes is where a table registers it, as "trim" is, and
+    // is found there before anywhere it is only spoken of.
+    let quoted = "\"" + word + "\""
+    if word.length() >= 4 and old.contains(quoted) and not keys.contains(quoted) { keys = keys.append(quoted) }
+    let times = old.count(word)
+    let picks = names.contains(word) or (word.contains("_") and times <= 40) or times <= 6
+    if word.length() >= 4 and times > 0 and picks and not keys.contains(word) { keys = keys.append(word) }
+  }
+  return keys.take(14)
+}
+
+// The lines a word is on, counted from 0: at most `most` of them.
+fn lines_with(old: Text, word: Text, most: Number) -> Number[] {
+  var found: Number[] = []
+  var rest = old
+  var gone = 0
+  while found.length() < most {
+    let at = rest.index_of(word).or(default: -1)
+    if at < 0 { break }
+    found = found.append(old.take(gone + at).count("\n"))
+    gone = gone + at + word.length()
+    rest = rest.drop(at + word.length())
+  }
+  return found
+}
+
+fn left_out() -> Text {
+  return "... (lines left out) ..."
+}
+
+// The parts of a long file the keys are in: its first lines, and the lines
+// around each place a key is, in order, with a line saying where lines are
+// left out. Short enough to fit in one question: a free service's limit on
+// what one question may hold counts the room kept for the answer.
+fn excerpt(old: Text, keys: Text[]) -> Text {
+  let lines = old.lines()
+  var starts: Number[] = [0]
+  for key in keys {
+    for at in lines_with(old, key, 3) { starts = starts.append(at) }
+  }
+  var shown = ""
+  var upto = 0
+  for at in starts.unique().sort() {
+    let from = (at - 12).max(upto)
+    let end = (at + 24).min(lines.length())
+    if from >= end { continue }
+    if from > upto { shown = shown + left_out() + "\n" }
+    shown = shown + lines.drop(from).take(end - from).join("\n") + "\n"
+    upto = end
+    if shown.length() > 7000 { break }
+  }
+  if upto < lines.length() { shown = shown + left_out() + "\n" }
+  return shown
+}
+
+// A file written for this task, as another file's question shows it: whole
+// when it is short, and only its new lines when it is long.
+fn shown_draft(file: Planned) -> Text {
+  if not is_big(file.text) { return file.text.take(6000) }
+  let was = file.before.replace("\r\n", "\n").lines()
+  var added: Text[] = []
+  for line in file.text.replace("\r\n", "\n").lines() {
+    if not line.trim().is_empty() and not was.contains(line) { added = added.append(line) }
+  }
+  return "(it is long; only its new lines are shown)\n" + added.take(150).join("\n")
+}
+
+// What the scribe is asked for edits to one long file.
+fn edit_task(task: Task, path: Text, old: Text, drafted: Drafted, failure: Text, wrong: Text[]) -> Task {
+  var shown = ""
+  for file in drafted.files {
+    if file.path != path { shown = shown + "\n--- " + file.path + " (already written) ---\n" + shown_draft(file) + "\n" }
+  }
+  let plain = old.replace("\r\n", "\n")
+  let whole = plain.length() <= 10000
+  let part = if whole { plain } else { excerpt(plain, keys_in(plain, own_words(task) + " " + failure.take(2000))) }
+  let what = if whole { "This is all of " + path + " now:" } else { path + " is long, so these are the parts of it the task speaks of. A line \"" + left_out() + "\" stands for lines not shown. Everything it defines: " + defined(plain).take(80).join(", ") }
+  let broken = if failure.trim().is_empty() { "" } else { "\nThe tests failed with this output. Find the cause in " + path + " and fix it:\n" + failure.take(2000) + "\n" }
+  let again = if wrong.is_empty() { "" } else { "\nYour last edits were not applied, and nothing was changed:\n- " + wrong.join("\n- ") + "\nWrite all of them again, each FIND copied exactly from the file above.\n" }
+  let guide = if is_kosika(path) { (if task.text.lower().contains("tool") { kosika_tool_example() } else { kosika_example() }) + "\n" } else { "" }
+  return {text: guide + "Task: " + task.text + "\n" + shown + "\n" + what + "\n```\n" + part + "```\n" + broken + again + "\n" + edit_rules(path)}
+}
+
+fn edit_rules(path: Text) -> Text {
+  return "Change " + path + " with edits; do not write it again. Answer with one or more blocks of exactly this shape, and nothing else:\n<<<<<<< FIND\nwhole lines copied exactly from the file, enough of them to be found in one place only\n=======\nthe lines to put in their place\n>>>>>>> REPLACE\nTo add something new, FIND the lines beside where it goes and REPLACE them with those same lines and the new ones. Keep the file's indentation. Never put the line \"" + left_out() + "\" in a FIND."
+}
+
+// Where a FIND that is not in the file went wrong, to tell the model: its
+// line found in the fewest places, and the file's real lines around it,
+// so the next try can copy them instead of remembering them.
+fn near(text: Text, find: Text[]) -> Text {
+  var first = ""
+  var best = ""
+  var fewest = 0
+  for line in find {
+    let part = line.trim()
+    if first.is_empty() and not part.is_empty() { first = part }
+    let times = if part.length() < 4 { 0 } else { text.count(part) }
+    if times > 0 and (fewest == 0 or times < fewest) {
+      best = part
+      fewest = times
+    }
+  }
+  if first.is_empty() { return "it is empty" }
+  if best.is_empty() { return "no line of it is in the file; its first line `" + first.take(120) + "` is nowhere in it" }
+  let at = lines_with(text, best, 1)[0]
+  let lines = text.lines()
+  let from = (at - 3).max(0)
+  let real = lines.drop(from).take(8).join("\n")
+  return "its line `" + best.take(120) + "` is in the file, but the lines with it are not as you wrote them. In the file they are:\n```\n" + real + "\n```"
+}
+
+// One edit applied to the text, or a problem saying why it was not.
+fn apply_one(text: Text, find: Text[], put: Text[], n: Number) -> Patched {
+  let seek = find.join("\n")
+  let label = "edit " + n.to_text()
+  if seek.trim().is_empty() { return {text: text, problems: [label + " has nothing in its FIND"]} }
+  let times = text.count(seek)
+  if times == 0 { return {text: text, problems: [label + "'s FIND is not in the file: " + near(text, find)]} }
+  if times > 1 { return {text: text, problems: [label + "'s FIND is in " + times.to_text() + " places; give it more lines, so it is in one"]} }
+  return {text: text.replace(seek, put.join("\n")), problems: []}
+}
+
+// The file with every edit in an answer applied, in order. The text is ""
+// when any edit could not be, so a half-applied change is never written.
+fn patched(old: Text, answer: Text) -> Patched {
+  let crlf = old.contains("\r\n")
+  var text = old.replace("\r\n", "\n")
+  var problems: Text[] = []
+  var state = "out"
+  var find: Text[] = []
+  var put: Text[] = []
+  var n = 0
+  for line in answer.replace("\r\n", "\n").split("\n") {
+    let mark = line.trim()
+    if mark.starts_with("<<<<<<<") {
+      state = "find"
+      find = []
+      put = []
+      continue
+    }
+    if state == "find" and mark.starts_with("=======") {
+      state = "put"
+      continue
+    }
+    if state == "put" and mark.starts_with(">>>>>>>") {
+      n += 1
+      let one = apply_one(text, find, put, n)
+      text = one.text
+      problems = problems.concat(one.problems)
+      state = "out"
+      continue
+    }
+    if state == "find" { find = find.append(line) }
+    if state == "put" { put = put.append(line) }
+  }
+  // An answer cut short after its last REPLACE lines is still that edit.
+  if state == "put" {
+    n += 1
+    let last = apply_one(text, find, put, n)
+    text = last.text
+    problems = problems.concat(last.problems)
+  }
+  if n == 0 { problems = problems.append("there was no <<<<<<< FIND block in the answer") }
+  if not problems.is_empty() { return {text: "", problems: problems} }
+  return {text: if crlf { text.replace("\n", "\r\n") } else { text }, problems: []}
+}
+
+fn kept_patch(patch: Patched) -> Patched {
+  return patch
 }
 
 fn drafted_work(drafted: Drafted) -> Work {
@@ -948,10 +1253,10 @@ workflow run_all() -> Tested {
 }
 
 workflow test_python(work: Work) -> Tested {
-  first  = execute runner.run_python(test_args(test_names(work)))
-  tested = match found_none(first, test_names(work)) {
+  first  = execute runner.run_python(python_args(work))
+  tested = match found_none(first, narrowed_to(work)) {
     case true { call run_all() }
-    case _ { as_tested(first, test_names(work)) }
+    case _ { as_tested(first, narrowed_to(work)) }
   }
   require approval
 }
@@ -980,10 +1285,18 @@ workflow test_script(work: Work) -> Tested {
   require approval
 }
 
+// A Go change is vetted in the folder of the first Go file it wrote.
+workflow test_go(work: Work) -> Tested {
+  ran    = execute runner.run_go(["-C", go_dir(work), "vet", "."])
+  tested = as_tested(ran, [go_dir(work)])
+  require approval
+}
+
 workflow run_tests(work: Work) -> Tested {
   tested = match runner_of(work) {
     case "kosika" { call test_kosika(noted(kosika_file(work))) }
     case "node" { call test_script(work) }
+    case "go" { call test_go(work) }
     case "web" { call check_site(work) }
     case _ { call test_python(work) }
   }
@@ -1120,18 +1433,38 @@ workflow on_my_own(task: Task) -> Result {
 // at once, runs the tests, and puts the failing file right once.
 
 workflow do_directly(task: Task, plan: Plan) -> Result {
-  a      = call draft_nth({task: task, plan: plan, n: 0, drafted: no_drafts()})
-  b      = call draft_nth({task: task, plan: plan, n: 1, drafted: a})
-  c      = call draft_nth({task: task, plan: plan, n: 2, drafted: b})
-  saved  = execute writer.save_all(c.files, "Written file by file for: " + task.text.take(200))
-  work   = drafted_work(c)
+  shown  = match plan.seen.is_empty() {
+    case true { same_task(task) }
+    case _ { call show_pattern(task, plan) }
+  }
+  a      = call draft_nth({task: shown, plan: plan, n: 0, drafted: no_drafts()})
+  b      = call draft_nth({task: shown, plan: plan, n: 1, drafted: a})
+  c      = call draft_nth({task: shown, plan: plan, n: 2, drafted: b})
+  // A file whose draft came to nothing is asked for once more, before any
+  // test is run without it.
+  d      = call draft_missing({task: shown, plan: plan, n: 0, drafted: c})
+  saved  = execute writer.save_all(d.files, "Written file by file for: " + task.text.take(200))
+  work   = drafted_work(d)
   tested = call run_tests(work)
   report = worked_on(task, work, tested)
   result = match needs_mending(work, tested) {
-    case true { call mend_directly(task, c, report) }
+    case true { call mend_directly(task, d, report) }
     case _ { as_is(report) }
   }
   require approval
+}
+
+// The task, with the file it names as a pattern put after it.
+workflow show_pattern(task: Task, plan: Plan) -> Task {
+  read  = execute coder.read_file(plan.seen[0]) otherwise {text: ""}
+  shown = with_pattern(task, plan.seen[0], read.text)
+}
+
+workflow draft_missing(job: Nth) -> Drafted {
+  more = match missing_at(job.plan, job.drafted) >= 0 {
+    case true { call draft_one({task: job.task, path: job.plan.files[missing_at(job.plan, job.drafted)], drafted: job.drafted, failure: ""}) }
+    case _ { kept_drafts(job.drafted) }
+  }
 }
 
 workflow draft_nth(job: Nth) -> Drafted {
@@ -1141,11 +1474,38 @@ workflow draft_nth(job: Nth) -> Drafted {
   }
 }
 
+// A short file is written again whole; a long one is changed by edits.
 workflow draft_one(one: One) -> Drafted {
-  old   = execute coder.read_file(one.path) otherwise {text: ""}
-  asked = scribe_task(one.task, one.path, old.text, one.drafted, one.failure)
+  old  = execute coder.read_file(one.path) otherwise {text: ""}
+  more = match is_big(old.text) {
+    case true { call edit_one({one: one, old: old.text, wrong: []}) }
+    case _ { call write_one({one: one, old: old.text, wrong: []}) }
+  }
+}
+
+workflow write_one(job: Editing) -> Drafted {
+  asked = scribe_task(job.one.task, job.one.path, job.old, job.one.drafted, job.one.failure)
   code  = use_model scribe(asked.text) retry 1 learn by asked.text otherwise {text: ""}
-  more  = with_draft(one.drafted, one.path, old.text, code.text)
+  more  = with_draft(job.one.drafted, job.one.path, job.old, code.text)
+}
+
+// The edits are asked for, and applied only if every one is found once.
+// Edits that are not are sent back once, with what was wrong with them.
+workflow edit_one(job: Editing) -> Drafted {
+  asked  = edit_task(job.one.task, job.one.path, job.old, job.one.drafted, job.one.failure, [])
+  answer = use_model scribe(asked.text) retry 1 otherwise {text: ""}
+  first  = patched(job.old, answer.text)
+  fixed  = match first.problems.is_empty() {
+    case true { kept_patch(first) }
+    case _ { call edit_again({one: job.one, old: job.old, wrong: first.problems}) }
+  }
+  more   = with_draft(job.one.drafted, job.one.path, job.old, fixed.text)
+}
+
+workflow edit_again(job: Editing) -> Patched {
+  asked  = edit_task(job.one.task, job.one.path, job.old, job.one.drafted, job.one.failure, job.wrong)
+  answer = use_model scribe(asked.text) retry 1 otherwise {text: ""}
+  result = patched(job.old, answer.text)
 }
 
 // The tests fail: the file they point at is written again, shown what they
@@ -1787,4 +2147,106 @@ test "a file is asked for whole, with what was written before it" {
 test_lru.py:19: AssertionError") == "test_lru.py"
   expect to_mend(both, "test_lru.py:5: in test_a
 lru.py:8: KeyError") == "lru.py"
+}
+
+// Lines "PREFIX0" to "PREFIXn-1", for tests that need a long file.
+fn numbered_lines(prefix: Text, count: Number) -> Text {
+  var lines: Text[] = []
+  for i in 0 until count { lines = lines.append(prefix + i.to_text()) }
+  return lines.join("\n") + "\n"
+}
+
+test "a long file is changed by edits, each found in one place" {
+  old = "def a():\n    return 1\n\ndef b():\n    return 2\n"
+  one = patched(old, "<<<<<<< FIND\ndef b():\n    return 2\n=======\ndef b():\n    return 3\n>>>>>>> REPLACE")
+  expect one.problems == []
+  expect one.text == "def a():\n    return 1\n\ndef b():\n    return 3\n"
+  two = patched(old, "Here you go:\n```\n<<<<<<< FIND\ndef a():\n=======\ndef first():\n>>>>>>> REPLACE\n<<<<<<< FIND\n    return 2\n=======\n    return 2\n\ndef c():\n    return 4\n>>>>>>> REPLACE\n```")
+  expect two.text == "def first():\n    return 1\n\ndef b():\n    return 2\n\ndef c():\n    return 4\n"
+  cut = patched(old, "<<<<<<< FIND\n    return 1\n=======\n    return 10")
+  expect cut.text.contains("return 10")
+  expect patched("x\r\ny\r\n", "<<<<<<< FIND\ny\n=======\nz\n>>>>>>> REPLACE").text == "x\r\nz\r\n"
+}
+
+test "an edit that is not found once changes nothing, and says why" {
+  old = "def a():\n    return 1\n\ndef b():\n    return 1\n"
+  twice = patched(old, "<<<<<<< FIND\n    return 1\n=======\n    return 0\n>>>>>>> REPLACE")
+  expect twice.text == ""
+  expect twice.problems[0].contains("is in 2 places")
+  missing = patched(old, "<<<<<<< FIND\ndef a():\n  return 1\n=======\nx\n>>>>>>> REPLACE\n<<<<<<< FIND\ndef b():\n=======\ndef bee():\n>>>>>>> REPLACE")
+  expect missing.text == ""
+  expect missing.problems.length() == 1
+  expect missing.problems[0].contains("`def a():` is in the file, but the lines with it are not as you wrote them")
+  expect patched(old, "<<<<<<< FIND\ndef zed():\n=======\nx\n>>>>>>> REPLACE").problems[0].contains("is nowhere in it")
+  expect patched(old, "def a(): pass").problems == ["there was no <<<<<<< FIND block in the answer"]
+}
+
+test "a long file is shown by the parts the task speaks of" {
+  old = numbered_lines("line ", 800).replace("line 200\n", "def pad_left(text):\n")
+  expect is_big(old)
+  keys = keys_in(old, "make pad_left accept a fill, like line 3 does")
+  expect keys.contains("pad_left")
+  shown = excerpt(old, ["pad_left"])
+  expect shown.contains("def pad_left(text):")
+  expect shown.contains("line 0\n")
+  expect shown.contains("line 220\n")
+  expect not shown.contains("line 100\n")
+  expect shown.contains("... (lines left out) ...")
+  asked = edit_task({text: "make pad_left accept a fill"}, "big.py", old, no_drafts(), "", ["edit 1's FIND is not in the file"])
+  expect asked.text.contains("<<<<<<< FIND")
+  expect asked.text.contains("pad_left")
+  expect asked.text.contains("Your last edits were not applied")
+}
+
+test "a long file already written is shown to the next by its new lines" {
+  old = numbered_lines("x", 1600)
+  drafted = with_draft(no_drafts(), "big.py", old, old + "def added():\n    return 1\n")
+  shown = shown_draft(drafted.files[0])
+  expect shown.contains("def added():")
+  expect not shown.contains("x5\n")
+}
+
+test "when a change wrote test files, only those files are run" {
+  work: Work = {summary: "s", did: ["save_all kosika/builtin_methods.py", "save_all tests/test_trim.py"]}
+  expect test_files(work) == ["tests/test_trim.py"]
+  expect python_args(work) == ["-m", "pytest", "-q", "-x", "--no-header", "-p", "no:cacheprovider", "tests/test_trim.py"]
+  only: Work = {summary: "s", did: ["save_all calc.py"]}
+  expect python_args(only) == test_args(["calc"])
+  expect narrowed_to(only) == ["calc"]
+}
+
+test "a file named as a pattern to follow is shown, not written" {
+  plan = file_plan({text: "add trim_end to kosika/builtin_methods.py, with tests in tests/test_trim.py in the style of tests/test_short_methods.py"}, {names: []})
+  expect plan.files == ["kosika/builtin_methods.py", "tests/test_trim.py"]
+  expect plan.seen == ["tests/test_short_methods.py"]
+  expect file_plan({text: "write b.py like a.py"}, {names: []}).files == ["b.py"]
+  shown = with_pattern({text: "add trim_end"}, "tests/test_short_methods.py", "import unittest")
+  expect shown.text.contains("To follow, not to change, tests/test_short_methods.py begins:")
+  expect own_words(shown) == "add trim_end"
+  expect own_words({text: "add trim_end"}) == "add trim_end"
+  expect with_pattern({text: "t"}, "a.py", "  ").text == "t"
+}
+
+test "a name registered in quotes is looked for in quotes, and a wrong edit is shown the real lines" {
+  old = "# trim is spoken of here\n# and trim here\ndef trim(x): pass\nTABLE = [\n    (\"trim\", strip),\n]\n"
+  expect keys_in(old, "add trim_start beside trim").contains("\"trim\"")
+  wrong = patched(old, "<<<<<<< FIND\nTABLE = [\n    (\n        \"trim\",\n=======\nx\n>>>>>>> REPLACE")
+  expect wrong.problems[0].contains("In the file they are:")
+  expect wrong.problems[0].contains("    (\"trim\", strip),")
+}
+
+test "a planned file whose draft came to nothing is found" {
+  plan: Plan = {files: ["a.py", "test_a.py"], seen: []}
+  one = with_draft(no_drafts(), "test_a.py", "", "def test_x(): pass")
+  expect missing_at(plan, one) == 0
+  expect missing_at(plan, with_draft(one, "a.py", "", "x = 1")) == -1
+}
+
+test "a change to Go is vetted in its own folder" {
+  work: Work = {summary: "s", did: ["save_all native/methods.go", "save_all native/types.go"]}
+  expect go_dir(work) == "native"
+  expect runner_of(work) == "go"
+  expect go_dir({summary: "s", did: ["save_all main.go"]}) == "."
+  expect go_dir({summary: "s", did: ["save_all calc.py"]}) == ""
+  expect file_plan({text: "add trim_start to native/methods.go and native/types.go"}, {names: []}).files == ["native/methods.go", "native/types.go"]
 }
