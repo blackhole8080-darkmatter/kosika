@@ -15,7 +15,7 @@
 //   su_same("J", "kg*m^2/s^2")      true: the same dimensions
 //   su_dims_text(u)            the dimensions in words: length^2 mass / time^2
 
-export [SuUnit, SuResult, SuAsk, SuPage, su_unit, su_convert, su_same, su_times, su_over, su_dims_text, su_card, su_style, convert]
+export [SuUnit, SuResult, SuAsk, SuPage, su_one, su_power, su_unit, su_convert, su_same, su_times, su_over, su_dims_text, su_card, su_style, convert]
 
 record SuUnit { ok: Bool scale: Number dims: Number[] text: Text problem: Text }
 record SuResult { ok: Bool value: Number from: Text to: Text given: Number problem: Text dims: Text }

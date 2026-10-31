@@ -55,8 +55,9 @@ import "science_chem.kos"
 import "science_units.kos"
 import "science_elements.kos"
 import "science_molecules.kos"
+import "std/math.kos"
 
-export [DzAsk, DzResult, DzKind, dz_kinds, dz_places, dz_kind, dz_why, design, design_kind, dz_lab, dz_lab_style]
+export [DzAsk, DzResult, DzKind, dz_kinds, dz_places, dz_kind, dz_why, design, design_kind, dz_lab, dz_lab_style, DzFormula, dz_formula_for, dz_formula_card, dz_formula_style]
 
 record DzAsk { text: Text palette: Text place: Text kind: Text }
 record DzKind { kind: Text why: Text }
@@ -301,10 +302,11 @@ fn dz_from_canvas(ask: DzAsk, palette: Text, r: Request, d: Design, m: ArtPage, 
   let balanced = sc_balance(equation)
   let reaction = if equation.is_empty() or not balanced.ok { "" } else { "<div class=\"kc-card kc-reaction\">" + sc_card(balanced, dz_reaction_name(ask.text)) + sm_reaction_svg(balanced) + "</div>" }
   let lab = dz_lab(ask.text)
+  let formula = dz_formula_card(dz_formula_for(ask.text))
   let check = if z.problems.is_empty() and not z.card.is_empty() { "<div class=\"kc-card kc-quiz\">" + z.card + "<script>" + qz_script() + "</script></div>" } else { "" }
-  let inner = "<div class=\"kc-art\" aria-hidden=\"true\">" + g.svg + "</div><div class=\"kc-head\">" + dz_field_label(field) + "<h2>" + art_esc(title) + "</h2><p>" + art_esc(summary) + "</p></div>" + grid + reaction + lab + check + note
+  let inner = "<div class=\"kc-art\" aria-hidden=\"true\">" + g.svg + "</div><div class=\"kc-head\">" + dz_field_label(field) + "<h2>" + art_esc(title) + "</h2><p>" + art_esc(summary) + "</p></div>" + grid + formula + reaction + lab + check + note
   let drawn = has_diagram or has_moving
-  let embed = if drawn { dz_wrap("canvas", place, palette, "", inner, art_style() + gen_style() + qz_style() + sc_style() + sm_style() + dz_lab_style() + dz_canvas_style()) } else { "" }
+  let embed = if drawn { dz_wrap("canvas", place, palette, "", inner, art_style() + gen_style() + qz_style() + sc_style() + sm_style() + dz_lab_style() + dz_formula_style() + dz_canvas_style()) } else { "" }
   let page = if drawn { dz_canvas_page(title, palette, embed) } else { "" }
   let none: Text[] = []
   let wrong = if drawn { none } else { d.problems.concat(m.problems) }
@@ -364,6 +366,119 @@ fn dz_lab(text: Text) -> Text {
 
 fn dz_lab_style() -> Text {
   return ".kc-lab{margin-top:16px}.lab-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:center}.lab-svg{width:100%;max-height:260px}.lab-bar,.lab-arm line,.lab-wire{stroke:var(--ink);stroke-width:3;stroke-linecap:round;fill:none}.lab-arm{transform-origin:150px 16px;animation:lab-swing 2s ease-in-out infinite alternate}.lab-arm circle{fill:var(--amber)}@keyframes lab-swing{from{transform:rotate(20deg)}to{transform:rotate(-20deg)}}.lab-q{fill:var(--amber)}.lab-side label{display:block;margin:0 0 14px;color:var(--soft);font-size:14px}.lab-side b{color:var(--ink)}.lab-side input,.lab-side select{display:block;width:100%;margin-top:6px;accent-color:var(--amber)}.lab-out{font-size:16px;margin:6px 0 0}.lab-note{color:var(--soft);font-size:12.5px;margin:12px 4px 6px}.lab-t{border-collapse:collapse;font:13px ui-monospace,Consolas,monospace;width:100%}.lab-t td{padding:5px 8px;border-top:1px solid color-mix(in srgb,var(--line) 14%,transparent)}.lab-t tr:first-child td{color:var(--gold);border-top:none}@media (max-width:700px){.lab-grid{grid-template-columns:1fr}}"
+}
+
+// ---------------------------------------------------------------- formulas
+//
+// When the ask is about something a formula governs, the canvas shows the
+// formula: typeset, each symbol named with its unit, a worked example with
+// the numbers put in, and a check that the units on the right come out as
+// the unit on the left. Kosika does all of it: std/math reads and works
+// the formula, std/science_units carries the units.
+
+record DzFormula { key: Text words: Text[] name: Text formula: Text unit: Text meaning: Text symbols: Text[] meanings: Text[] units: Text[] values: Number[] }
+
+fn dz_formulas() -> DzFormula[] {
+  return [
+    {key: "pendulum", words: [" pendulum", " period of"], name: "T", formula: "2 pi sqrt(L/g)", unit: "s", meaning: "the time of one full swing", symbols: ["L", "g"], meanings: ["the length of the string", "the pull of gravity"], units: ["m", "m/s^2"], values: [1, 9.81]},
+    {key: "ohm", words: [" ohm", " current", " resistor", " resistance", " circuit"], name: "I", formula: "V/R", unit: "A", meaning: "the current", symbols: ["V", "R"], meanings: ["the voltage across it", "the resistance"], units: ["V", "ohm"], values: [9, 3]},
+    {key: "energy", words: [" e=mc", " mc^2", " mc2", " mass-energy", " mass energy", " relativity"], name: "E", formula: "m c^2", unit: "J", meaning: "the energy locked in the mass", symbols: ["m", "c"], meanings: ["the mass", "the speed of light"], units: ["kg", "m/s"], values: [0.001, 299792458]},
+    {key: "kinetic", words: [" kinetic energy", " energy of motion"], name: "E_k", formula: "1/2 m v^2", unit: "J", meaning: "the energy of motion", symbols: ["m", "v"], meanings: ["the mass", "the speed"], units: ["kg", "m/s"], values: [2, 3]},
+    {key: "force", words: [" newton's second", " f=ma", " f = ma", " force and acceleration"], name: "F", formula: "m a", unit: "N", meaning: "the force", symbols: ["m", "a"], meanings: ["the mass", "the acceleration"], units: ["kg", "m/s^2"], values: [5, 2]},
+    {key: "gravity", words: [" law of gravitation", " gravitational force", " universal gravitation"], name: "F", formula: "G m_1 m_2 / r^2", unit: "N", meaning: "the pull between two masses", symbols: ["G", "m_1", "m_2", "r"], meanings: ["the gravitational constant", "the first mass", "the second mass", "the distance between their centres"], units: ["N m^2/kg^2", "kg", "kg", "m"], values: [0.0000000000667430, 5972000000000000000000000, 73480000000000000000000, 384400000]},
+    {key: "speed", words: [" speed", " velocity", " distance over time"], name: "v", formula: "d/t", unit: "m/s", meaning: "the speed", symbols: ["d", "t"], meanings: ["the distance", "the time taken"], units: ["m", "s"], values: [100, 9.58]},
+    {key: "density", words: [" density"], name: "rho", formula: "m/V", unit: "kg/m^3", meaning: "the density", symbols: ["m", "V"], meanings: ["the mass", "the volume"], units: ["kg", "m^3"], values: [7.874, 0.001]},
+    {key: "wave", words: [" wavelength", " frequency", " wave speed"], name: "v", formula: "f lambda", unit: "m/s", meaning: "the speed of the wave", symbols: ["f", "lambda"], meanings: ["the frequency", "the wavelength"], units: ["Hz", "m"], values: [440, 0.78]},
+    {key: "power", words: [" electrical power", " power in a circuit", " watts"], name: "P", formula: "V I", unit: "W", meaning: "the power", symbols: ["V", "I"], meanings: ["the voltage", "the current"], units: ["V", "A"], values: [230, 4]}
+  ]
+}
+
+fn dz_formula_for(text: Text) -> DzFormula {
+  let t = dz_padded(text)
+  let all = dz_formulas()
+  for f in all {
+    if dz_has(t, f.words) { return f }
+  }
+  return {key: "", words: [], name: "", formula: "", unit: "", meaning: "", symbols: [], meanings: [], units: [], values: []}
+}
+
+// The unit an expression comes out in, worked through it the way std/math
+// works its value: from the last word to the first, units on a stack.
+// Adding needs the same unit on both sides; a function needs none.
+fn dz_arity(t: Text) -> Number {
+  if ["+", "-", "*", "/", "^"].contains(t) { return 2 }
+  if ["~", "sin", "cos", "tan", "abs", "exp", "ln"].contains(t) { return 1 }
+  return 0
+}
+
+record DzUnitWalk { unit: SuUnit problem: Text }
+
+fn dz_units_of(e: Text[], names: Text[], units: Text[]) -> DzUnitWalk {
+  var stack: SuUnit[] = []
+  var numbers: Number[] = []
+  var problem = ""
+  var i = e.length() - 1
+  while i >= 0 {
+    let t = e[i]
+    let take = dz_arity(t)
+    if take == 0 {
+      let k = names.index_of(t).or(-1)
+      stack = stack.append(if k >= 0 { su_unit(units[k]) } else { su_one() })
+      numbers = numbers.append(if t.starts_with("n:") { t.slice(2, t.length()).to_number().or(0) } else { 0 })
+    } else if take == 1 {
+      let a = stack[stack.length() - 1]
+      if t != "~" and t != "abs" and a.dims != su_one().dims { problem = f"{t} needs a number with no unit" }
+      if t != "~" and t != "abs" { stack = stack.slice(0, stack.length() - 1).append(su_one()) }
+    } else {
+      let a = stack[stack.length() - 1]
+      let b = stack[stack.length() - 2]
+      let power = numbers[numbers.length() - 2]
+      stack = stack.slice(0, stack.length() - 2)
+      numbers = numbers.slice(0, numbers.length() - 2)
+      if (t == "+" or t == "-") and a.dims != b.dims { problem = "two things added have different units" }
+      let joined = if t == "*" { su_times(a, b) } else if t == "/" { su_over(a, b) } else if t == "^" { su_power(a, power) } else { a }
+      stack = stack.append(joined)
+      numbers = numbers.append(0)
+    }
+    i -= 1
+  }
+  return {unit: if stack.is_empty() { su_one() } else { stack[0] }, problem: problem}
+}
+
+fn dz_unit_mathml(unit: Text) -> Text {
+  let u = unit.replace("^2", "&#178;").replace("^3", "&#179;").replace("ohm", "&#937;").replace(" ", "&#183;")
+  return f"<mtext class=\"unit\">{u}</mtext>"
+}
+
+fn dz_formula_card(f: DzFormula) -> Text {
+  if f.key.is_empty() { return "" }
+  let read = parse(f.formula)
+  if not read.error.is_empty() { return "" }
+  let e = read.expr
+  let big = f"<math display=\"block\" class=\"kf-big\"><mrow>{to_mathml(x(f.name))}<mo>=</mo>{to_mathml(e)}</mrow></math>"
+  let legend = (for k in 0 until f.symbols.length() { f"<tr><td><math>{to_mathml(x(f.symbols[k]))}</math></td><td>{f.meanings[k]}</td><td><math>{dz_unit_mathml(f.units[k])}</math></td></tr>" }).join("")
+  let head = f"<tr><td><math>{to_mathml(x(f.name))}</math></td><td>{f.meaning}</td><td><math>{dz_unit_mathml(f.unit)}</math></td></tr>"
+  let walk = dz_units_of(e, f.symbols, f.units)
+  let wanted = su_unit(f.unit)
+  let fits = walk.problem.is_empty() and walk.unit.dims == wanted.dims
+  let unit_text = f.unit.replace("^2", "&#178;").replace("^3", "&#179;").replace("ohm", "&#937;")
+  let check = if fits { f"<p class=\"kf-ok\">&#10003; Units check: the right side comes out in {unit_text}, as it should.</p>" } else { f"<p class=\"kf-bad\">The units do not agree: {walk.problem}</p>" }
+  let worked = calc_mathml(f.name, e, f.symbols, f.values, f.unit.replace("^2", "&#178;").replace("^3", "&#179;").replace("ohm", "&#937;"))
+  let given = (for k in 0 until f.symbols.length() { f"<math>{to_mathml(x(f.symbols[k]))}<mo>=</mo>{dz_number_mathml(f.values[k])}<mspace width=\"0.2em\"/>{dz_unit_mathml(f.units[k])}</math>" }).join("<span class=\"kf-sep\">,</span> ")
+  let latex = to_latex(x(f.name)) + " = " + to_latex(e)
+  let copy = "<button class=\"kf-copy\" type=\"button\" data-tex=\"" + art_esc(latex) + "\" onclick=\"var b=this;navigator.clipboard&&navigator.clipboard.writeText(b.dataset.tex).then(function(){b.textContent='Copied'},function(){})\">Copy LaTeX</button>"
+  return f"<div class=\"kc-card kc-formula\"><div class=\"kc-label\">The formula &#183; <b>worked by Kosika</b></div>{big}<table class=\"kf-legend\">{head}{legend}</table><p class=\"kf-given\">For example, with {given}:</p>{worked}{check}{copy}</div>"
+}
+
+fn dz_number_mathml(v: Number) -> Text {
+  if v.abs() >= 0.001 and v.abs() < 1000000 { return f"<mn>{v}</mn>" }
+  let size = (v.abs().log() / (10).log()).floor()
+  let lead = if size >= 0 { v / (10).power(size) } else { v * (10).power(0 - size) }
+  return f"<mn>{(lead * 10000).round() / 10000}</mn><mo>&#215;</mo><msup><mn>10</mn><mn>{size}</mn></msup>"
+}
+
+fn dz_formula_style() -> Text {
+  return ".kc-formula{margin-top:16px}.kc-formula math{font-family:'Cambria Math','STIX Two Math','Latin Modern Math',math;color:var(--ink)}.kc-formula mn{color:var(--gold)}.kc-formula .unit{color:var(--soft);font-style:normal}.kf-big{font-size:2.1em;margin:10px 0 14px}.kf-legend{border-collapse:collapse;margin:0 auto 12px;font-size:14.5px}.kf-legend td{padding:4px 12px;border-top:1px solid color-mix(in srgb,var(--line) 14%,transparent);color:var(--soft)}.kf-legend tr:first-child td{border-top:none;color:var(--ink)}.kf-legend math{font-size:1.15em}.kf-given{color:var(--soft);font-size:14px;margin:6px 4px}.kc-formula .calc{font-size:1.25em;margin:4px 12px 8px}.kf-ok{color:var(--ok,#4fe0a6);font-size:14px;margin:8px 4px}.kf-bad{color:var(--bad,#ff6b81);font-size:14px;margin:8px 4px}.kf-sep{color:var(--soft)}.kf-copy{font:600 10px ui-monospace,Consolas,monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--soft);background:none;border:1px solid color-mix(in srgb,var(--line) 20%,transparent);border-radius:999px;padding:6px 12px;cursor:pointer}.kf-copy:focus-visible{outline:2px solid var(--amber)}"
 }
 
 fn dz_field_label(field: Text) -> Text {
@@ -600,4 +715,19 @@ test "a canvas adds a lab when the ask can be tried" {
   expect dz_amps(9, 3) == 3
   expect dz_lab("how does a pendulum swing").contains("2.01 s")
   expect dz_lab("how does a circuit work").contains("0.15 A")
+}
+
+test "a canvas shows the formula, worked, with its units checked" {
+  pend = dz_formula_for("why does a pendulum swing back")
+  expect pend.key == "pendulum"
+  card = dz_formula_card(pend)
+  expect card.contains("Units check: the right side comes out in s")
+  expect card.contains("&#8776;")
+  expect dz_formula_for("how does photosynthesis work").key == ""
+  energy = dz_formula_card(dz_formula_for("what does E=mc^2 mean"))
+  expect energy.contains("comes out in J")
+  gravity = dz_units_of(parse("G m_1 m_2 / r^2").expr, ["G", "m_1", "m_2", "r"], ["N m^2/kg^2", "kg", "kg", "m"])
+  expect gravity.unit.dims == su_unit("N").dims
+  wrong = dz_units_of(parse("m + t").expr, ["m", "t"], ["kg", "s"])
+  expect wrong.problem == "two things added have different units"
 }

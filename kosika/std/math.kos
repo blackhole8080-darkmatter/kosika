@@ -82,7 +82,16 @@ fn child(e: Text[], which: Number) -> Text[] recurse 64 {
 }
 
 fn is_const(e: Text[]) -> Bool { return e.length() == 1 and e[0].starts_with("n:") }
-fn cval(e: Text[]) -> Number { return e[0].slice(2, e[0].length()).to_number().or(0) }
+fn cval(e: Text[]) -> Number { return std_read_number(e[0].slice(2, e[0].length())) }
+
+// A number as num() wrote it, which may be in e-notation (6.6743e-11).
+fn std_read_number(t: Text) -> Number {
+  let cut = t.lower().index_of("e").or(-1)
+  if cut < 0 { return t.to_number().or(0) }
+  let mantissa = t.slice(0, cut).to_number().or(0)
+  let power = t.slice(cut + 1, t.length()).to_number().or(0)
+  return if power >= 0 { mantissa * (10).power(power) } else { mantissa / (10).power(0 - power) }
+}
 
 // The value of an expression, read once from its last word to its first:
 // numbers and names go on a stack, and each operator takes its operands
@@ -94,7 +103,7 @@ fn at(e: Text[], names: Text[], values: Number[]) -> Number {
     let t = e[i]
     let take = arity(t)
     if take == 0 {
-      if t.starts_with("n:") { stack = stack.append(t.slice(2, t.length()).to_number().or(0)) }
+      if t.starts_with("n:") { stack = stack.append(std_read_number(t.slice(2, t.length()))) }
       else {
         let k = names.index_of(t).or(-1)
         stack = stack.append(if k >= 0 { values[k] } else { std_constant(t) })
@@ -261,8 +270,16 @@ fn to_latex(e: Text[]) -> Text { return latex_of(e, 0) }
 // in italic, numbers upright, fractions stacked, roots over their radicand.
 // A name with an underscore is subscripted (F_n, F_n-1), and phi, psi and
 // pi are written as their Greek letters.
+// Greek letters written by name: rho, lambda, theta and the rest.
+fn std_greek(name: Text) -> Text {
+  let names = ["alpha", "beta", "gamma", "delta", "Delta", "epsilon", "theta", "lambda", "mu", "nu", "pi", "rho", "sigma", "tau", "phi", "psi", "omega", "Omega"]
+  let letters = ["&#945;", "&#946;", "&#947;", "&#948;", "&#916;", "&#949;", "&#952;", "&#955;", "&#956;", "&#957;", "&#960;", "&#961;", "&#963;", "&#964;", "&#966;", "&#968;", "&#969;", "&#937;"]
+  let k = names.index_of(name).or(-1)
+  return if k >= 0 { letters[k] } else { name }
+}
+
 fn mathml_name(name: Text) -> Text recurse 4 {
-  let greek = if name == "phi" { "&#966;" } else if name == "psi" { "&#968;" } else if name == "pi" { "&#960;" } else { name }
+  let greek = std_greek(name)
   let cut = name.index_of("_").or(-1)
   if cut < 1 { return f"<mi>{greek}</mi>" }
   let base = name.slice(0, cut)
@@ -274,7 +291,7 @@ fn mathml_name(name: Text) -> Text recurse 4 {
 
 fn mathml_of(e: Text[], parent: Number) -> Text recurse 64 {
   var body = ""
-  if is_const(e) { body = f"<mn>{num_text(cval(e))}</mn>" }
+  if is_const(e) { body = number_mathml(cval(e)) }
   else if e.length() == 1 { body = mathml_name(e[0]) }
   else {
     let op = e[0]
@@ -288,7 +305,7 @@ fn mathml_of(e: Text[], parent: Number) -> Text recurse 64 {
     else if op == "exp" { body = "<msup><mi>e</mi><mrow>" + mathml_of(child(e, 1), 0) + "</mrow></msup>" }
     else if op == "/" { body = "<mfrac><mrow>" + mathml_of(child(e, 1), 0) + "</mrow><mrow>" + mathml_of(child(e, 2), 0) + "</mrow></mfrac>" }
     else if op == "^" and is_const(child(e, 2)) and cval(child(e, 2)) == 0.5 { body = "<msqrt>" + mathml_of(child(e, 1), 0) + "</msqrt>" }
-    else if op == "^" { body = "<msup><mrow>" + mathml_of(child(e, 1), 4) + "</mrow><mrow>" + mathml_of(child(e, 2), 0) + "</mrow></msup>" }
+    else if op == "^" { body = "<msup><mrow>" + std_power_base(child(e, 1)) + "</mrow><mrow>" + mathml_of(child(e, 2), 0) + "</mrow></msup>" }
     else {
       let mark = if op == "+" { "<mo>+</mo>" } else if op == "-" { "<mo>&#8722;</mo>" } else if starts_with_number(child(e, 2)) { "<mo>&#215;</mo>" } else { "<mo>&#8290;</mo>" }
       let own = prec(op)
@@ -307,6 +324,13 @@ fn starts_with_number(e: Text[]) -> Bool recurse 64 {
   if e.length() == 1 { return false }
   if e[0] == "^" or e[0] == "*" { return starts_with_number(child(e, 1)) }
   return false
+}
+
+// A number written a x 10^n is bracketed before it is raised to a power.
+fn std_power_base(base: Text[]) -> Text recurse 64 {
+  let inner = mathml_of(base, 4)
+  if is_const(base) and inner.contains("&#215;") { return "<mo>(</mo>" + inner + "<mo>)</mo>" }
+  return inner
 }
 
 fn to_mathml(e: Text[]) -> Text { return "<mrow>" + mathml_of(e, 0) + "</mrow>" }
@@ -597,8 +621,8 @@ fn exact_places(error: Number) -> Number {
 
 // A fraction p / q, with q at most 1000, within 1e-9 of v; [0, 0] if none.
 fn exact_ratio(v: Number) -> Number[] {
-  if v == v.round() { return [v, 1] }
   if v.abs() >= 1000000 { return [0, 0] }
+  if v == v.round() { return [v, 1] }
   for q in 1 until 1001 {
     let p = (v * q).round()
     if (p / q - v).abs() < 0.000000001 { return [p, q] }
@@ -674,9 +698,12 @@ fn number_mathml(v: Number) -> Text {
 fn calc_mathml(name: Text, e: Text[], names: Text[], values: Number[], unit: Text) -> Text {
   let c = calc(e, names, values)
   let unit_mml = if unit.is_empty() { "" } else { f"<mspace width=\"0.3em\"/><mtext>{unit}</mtext>" }
-  let close = exact_ratio(c.value)[1] == 0 and exact(c.value) == num_text(c.value)
+  // A short decimal stays a decimal (343.2, not 1716/5); otherwise the
+  // exact form is shown where there is one, with the rounded value beside.
+  let short = c.value.abs() < 1000000 and ((c.value * 10000).round() / 10000 - c.value).abs() < 0.000000001 and c.value != c.value.round()
+  let close = short or (exact_ratio(c.value)[1] == 0 and exact(c.value) == num_text(c.value))
   let rounded = number_mathml(round_sig(c.value, 4))
-  let answer = if close { "<mo>&#8776;</mo>" + rounded + unit_mml } else { "<mo>=</mo>" + exact_mathml(c.value) + unit_mml + (if exact_ratio(c.value)[1] == 1 { "" } else { "<mo>&#8776;</mo>" + rounded }) }
+  let answer = if short { "<mo>=</mo>" + number_mathml(c.value) + unit_mml } else if close { "<mo>&#8776;</mo>" + rounded + unit_mml } else { "<mo>=</mo>" + exact_mathml(c.value) + unit_mml + (if exact_ratio(c.value)[1] == 1 { "" } else { "<mo>&#8776;</mo>" + rounded }) }
   // Each line its own row of a grid, so the equals signs line up in any
   // browser: the name on the first line, the working under it.
   let cell = "style=\"display:block\""
@@ -717,6 +744,10 @@ test "numbers are written exactly when they can be" {
   expect exact(4) == "4"
   expect exact_mathml(0.75) == "<mfrac><mn>3</mn><mn>4</mn></mfrac>"
   expect exact(89875517873681.77) == "89875517873681.77"
+  expect to_mathml(num(0.0000000000667430)) == "<mrow><mn>6.674</mn><mo>&#215;</mo><msup><mn>10</mn><mn>-11</mn></msup></mrow>"
+  expect to_mathml(pow(num(384400000), num(2))).contains("<mo>(</mo><mn>3.844</mn>")
+  wave = calc_mathml("v", parse("f lambda").expr, ["f", "lambda"], [440, 0.78], "m/s")
+  expect wave.contains("<mo>=</mo><mn>343.2</mn>")
   expect round_sig(89875517873681.77, 4) == 89880000000000
 }
 
