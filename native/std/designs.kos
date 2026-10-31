@@ -51,6 +51,8 @@ import "designs_art.kos"
 import "designs_generative.kos"
 import "designs_quiz.kos"
 import "designs_paper.kos"
+import "science_chem.kos"
+import "science_units.kos"
 
 export [DzAsk, DzResult, DzKind, dz_kinds, dz_places, dz_kind, dz_why, design, design_kind]
 
@@ -58,7 +60,7 @@ record DzAsk { text: Text palette: Text place: Text kind: Text }
 record DzKind { kind: Text why: Text }
 record DzResult { kind: Text why: Text title: Text page: Text svg: Text embed: Text problems: Text[] fixed: Text[] }
 
-fn dz_kinds() -> Text[] { return ["diagram", "illustration", "art", "canvas", "quiz", "worked"] }
+fn dz_kinds() -> Text[] { return ["diagram", "illustration", "art", "canvas", "quiz", "worked", "chemistry", "units"] }
 fn dz_places() -> Text[] { return ["chat", "studio", "site", "agent"] }
 
 fn dz_place(ask: DzAsk) -> Text {
@@ -97,6 +99,8 @@ fn dz_kind(ask: DzAsk) -> Text {
   if dz_kinds().contains(named) { return named }
   let t = dz_padded(ask.text)
   if dz_has(t, dz_quiz_words()) { return "quiz" }
+  if t.starts_with(" convert ") { return "units" }
+  if dz_has(t, [" balance ", " balancing ", "->", "→", " chemical equation", " reaction for ", " reaction of "]) { return "chemistry" }
   if maths_words(ask.text) { return "worked" }
   if dz_has(t, dz_diagram_words()) { return "diagram" }
   if dz_has(t, dz_art_words()) { return "art" }
@@ -108,6 +112,8 @@ fn dz_kind(ask: DzAsk) -> Text {
 fn dz_why(ask: DzAsk) -> Text {
   let kind = dz_kind(ask)
   if dz_kinds().contains(ask.kind.trim().lower()) { return f"asked for {kind}" }
+  if kind == "chemistry" { return "asks about a reaction, so Kosika balanced it itself and checked the atoms and the mass" }
+  if kind == "units" { return "asks to convert units, so Kosika read both units into SI and checked they measure the same thing" }
   if kind == "quiz" { return "asks to be tested, so it is a quiz Kosika checked, with each answer's reason" }
   if kind == "worked" { return "asks for mathematics worked out, so each line is worked and checked by Kosika" }
   if kind == "art" { return "asks for a mood or a background, so it is drawn as moving art" }
@@ -298,6 +304,33 @@ fn dz_from_worked(ask: DzAsk, p: Paper) -> DzResult {
   return {kind: "worked", why: dz_why(ask) + "; " + p.verdict, title: "Worked mathematics", page: p.page, svg: "", embed: embed, problems: wrong, fixed: []}
 }
 
+fn dz_from_chemistry(ask: DzAsk, c: ScPage) -> DzResult {
+  let place = dz_place(ask)
+  let embed = if c.problems.is_empty() { dz_wrap("chemistry", place, dz_palette(ask.palette, "dark_matter"), "", c.card, sc_style()) } else { "" }
+  return {kind: "chemistry", why: dz_why(ask), title: "Balanced by Kosika", page: c.page, svg: "", embed: embed, problems: c.problems, fixed: []}
+}
+
+fn dz_from_units(ask: DzAsk, u: SuPage) -> DzResult {
+  let place = dz_place(ask)
+  let none: Text[] = []
+  let wrong = if u.result.ok { none } else { [u.result.problem] }
+  let embed = dz_wrap("units", place, dz_palette(ask.palette, "dark_matter"), "", u.card, su_style())
+  return {kind: "units", why: dz_why(ask), title: "Units", page: "", svg: "", embed: embed, problems: wrong, fixed: []}
+}
+
+fn dz_sc_ask(ask: DzAsk) -> ScAsk { return {text: ask.text.trim().replace("balance ", "").replace("Balance ", ""), palette: ask.palette} }
+fn dz_su_ask(ask: DzAsk) -> SuAsk { return {text: ask.text} }
+
+workflow dz_chemistry(ask: DzAsk) -> DzResult {
+  balanced = call balance(dz_sc_ask(ask))
+  out      = dz_from_chemistry(ask, balanced)
+}
+
+workflow dz_units(ask: DzAsk) -> DzResult {
+  converted = call convert(dz_su_ask(ask))
+  out       = dz_from_units(ask, converted)
+}
+
 workflow dz_quiz(ask: DzAsk) -> DzResult {
   made = call quiz(dz_quiz_ask(ask, ask.palette))
   out  = dz_from_quiz(ask, made)
@@ -327,6 +360,8 @@ workflow design(ask: DzAsk) -> DzResult {
   out  = match kind {
     case "canvas" { call dz_canvas(ask) }
     case "quiz" { call dz_quiz(ask) }
+    case "chemistry" { call dz_chemistry(ask) }
+    case "units" { call dz_units(ask) }
     case "worked" { call dz_worked(ask) }
     case "art" { call dz_art(ask) }
     case "illustration" { call dz_illustration(ask) }
@@ -377,6 +412,8 @@ test "Kosika chooses the way of drawing by the words of the ask" {
   expect dz_kind(dz_ask("quiz me on photosynthesis")) == "quiz"
   expect dz_kind(dz_ask("test me on the French revolution")) == "quiz"
   expect dz_kind(dz_ask("differentiate x^2 sin(x)")) == "worked"
+  expect dz_kind(dz_ask("balance C3H8 + O2 -> CO2 + H2O")) == "chemistry"
+  expect dz_kind(dz_ask("convert 60 km/h to m/s")) == "units"
   expect dz_kind({..dz_ask("the Krebs cycle"), kind: "Illustration"}) == "illustration"
 }
 

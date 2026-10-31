@@ -109,7 +109,7 @@ fn sd_drawing(m: StudyMsg) -> DzAsk {
   let asked: DzAsk = {text: m.text, palette: "", place: "studio", kind: ""}
   let chosen = dz_kind(asked)
   // left to Kosika when it is a quiz, worked mathematics or art, so it can say why
-  let kind = if chosen == "quiz" or chosen == "worked" or chosen == "art" { "" } else { "canvas" }
+  let kind = if ["quiz", "worked", "art", "chemistry", "units"].contains(chosen) { "" } else { "canvas" }
   return {..asked, kind: kind}
 }
 

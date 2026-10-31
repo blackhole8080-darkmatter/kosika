@@ -1,0 +1,387 @@
+// Kosika Science, chemistry: reactions balanced exactly, by Kosika.
+//
+//   import "std/science_chem.kos"
+//
+//   kosika run science_chem.kos --workflow balance --input ask.json
+//
+// where ask.json holds {"ask": {"text": "C3H8 + O2 -> CO2 + H2O", "palette": ""}}.
+// A reaction in words ("burning methane") is first written as an equation
+// by a model; everything after that is Kosika's own arithmetic:
+//
+//   - each formula is read into its atoms, brackets included: Ca(OH)2 is
+//     one calcium, two oxygens, two hydrogens;
+//   - the reaction is balanced as linear algebra: the counts of each
+//     element on both sides make a set of equations whose smallest whole
+//     solution is the coefficients;
+//   - the answer is checked twice before it is shown: every element has
+//     the same count on both sides, and the masses on both sides, from the
+//     periodic table, are equal (mass is conserved).
+
+import "designs_palette.kos"
+
+export [ScAsk, ScAtoms, ScBalanced, ScPage, sc_atoms, sc_balance, sc_mass, sc_card, sc_style, sc_page, balance]
+
+record ScAsk { text: Text palette: Text }
+// The atoms of one formula: each element once, with how many.
+record ScAtoms { ok: Bool els: Text[] ns: Number[] }
+// A balanced reaction: its species, which side each is on (1 left, -1
+// right), the whole-number coefficients, and what was checked.
+record ScBalanced { ok: Bool equation: Text species: Text[] sides: Number[] coefficients: Number[] elements: Text[] left: Number[] right: Number[] mass_left: Number mass_right: Number problem: Text }
+record ScPage { page: Text card: Text problems: Text[] balanced: ScBalanced }
+record ScBrief { task: Text ask: Text }
+record ScEquation { equation: Text name: Text }
+
+// ---------------------------------------------------------------- the periodic table
+
+fn sc_symbols() -> Text[] { return ["H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne", "Na", "Mg", "Al", "Si", "P", "S", "Cl", "Ar", "K", "Ca", "Ti", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn", "Br", "Ag", "Sn", "I", "Ba", "Pt", "Au", "Hg", "Pb", "U"] }
+// Standard atomic weights, g/mol, in the same order.
+fn sc_weights() -> Number[] { return [1.008, 4.0026, 6.94, 9.0122, 10.81, 12.011, 14.007, 15.999, 18.998, 20.18, 22.99, 24.305, 26.982, 28.085, 30.974, 32.06, 35.45, 39.948, 39.098, 40.078, 47.867, 51.996, 54.938, 55.845, 58.933, 58.693, 63.546, 65.38, 79.904, 107.87, 118.71, 126.9, 137.33, 195.08, 196.97, 200.59, 207.2, 238.03] }
+
+fn sc_weight(symbol: Text) -> Number {
+  let at = sc_symbols().index_of(symbol).or(-1)
+  return if at < 0 { -1 } else { sc_weights()[at] }
+}
+
+// ---------------------------------------------------------------- reading a formula
+
+fn sc_upper() -> Text { return "ABCDEFGHIJKLMNOPQRSTUVWXYZ" }
+fn sc_lower() -> Text { return "abcdefghijklmnopqrstuvwxyz" }
+fn sc_digits() -> Text { return "0123456789" }
+
+// The atoms in a formula such as Ca(OH)2 or Fe2(SO4)3. Groups in round or
+// square brackets multiply by the number after them. An unknown element,
+// an unclosed bracket or a stray mark makes it not ok.
+fn sc_atoms(formula: Text) -> ScAtoms {
+  let text = formula.trim().replace("[", "(").replace("]", ")")
+  let n = text.length()
+  var stack_els: Text[][] = [[]]
+  var stack_ns: Number[][] = [[]]
+  var next = 0
+  var ok = n > 0
+  for k in 0 until n {
+    if k >= next and ok {
+      let ch = text.slice(k, k + 1)
+      if sc_upper().contains(ch) {
+        var name = ch
+        var at = k + 1
+        var reading = true
+        for j in k + 1 until n {
+          if reading and sc_lower().contains(text.slice(j, j + 1)) {
+            name = name + text.slice(j, j + 1)
+            at = j + 1
+          } else { reading = false }
+        }
+        var digits = ""
+        reading = true
+        for j in at until n {
+          if reading and sc_digits().contains(text.slice(j, j + 1)) {
+            digits = digits + text.slice(j, j + 1)
+            at = j + 1
+          } else { reading = false }
+        }
+        if sc_weight(name) < 0 { ok = false }
+        let count = if digits.is_empty() { 1 } else { digits.to_number().or(1) }
+        let top = stack_els.length() - 1
+        let found = stack_els[top].index_of(name).or(-1)
+        if found < 0 {
+          stack_els = for i in 0 until stack_els.length() { if i == top { stack_els[i].append(name) } else { stack_els[i] } }
+          stack_ns = for i in 0 until stack_ns.length() { if i == top { stack_ns[i].append(count) } else { stack_ns[i] } }
+        } else {
+          stack_ns = for i in 0 until stack_ns.length() { if i == top { for q in 0 until stack_ns[i].length() { if q == found { stack_ns[i][q] + count } else { stack_ns[i][q] } } } else { stack_ns[i] } }
+        }
+        next = at
+      } else if ch == "(" {
+        stack_els = stack_els.append([])
+        stack_ns = stack_ns.append([])
+        next = k + 1
+      } else if ch == ")" {
+        var digits = ""
+        var at = k + 1
+        var reading = true
+        for j in k + 1 until n {
+          if reading and sc_digits().contains(text.slice(j, j + 1)) {
+            digits = digits + text.slice(j, j + 1)
+            at = j + 1
+          } else { reading = false }
+        }
+        let times = if digits.is_empty() { 1 } else { digits.to_number().or(1) }
+        if stack_els.length() < 2 { ok = false }
+        else {
+          let top = stack_els.length() - 1
+          let inner_els = stack_els[top]
+          let inner_ns = stack_ns[top]
+          stack_els = for i in 0 until top { stack_els[i] }
+          stack_ns = for i in 0 until top { stack_ns[i] }
+          let under = top - 1
+          var els = stack_els[under]
+          var ns = stack_ns[under]
+          for q in 0 until inner_els.length() {
+            let found = els.index_of(inner_els[q]).or(-1)
+            if found < 0 {
+              els = els.append(inner_els[q])
+              ns = ns.append(inner_ns[q] * times)
+            } else {
+              ns = for r in 0 until ns.length() { if r == found { ns[r] + inner_ns[q] * times } else { ns[r] } }
+            }
+          }
+          stack_els = for i in 0 until stack_els.length() { if i == under { els } else { stack_els[i] } }
+          stack_ns = for i in 0 until stack_ns.length() { if i == under { ns } else { stack_ns[i] } }
+        }
+        next = at
+      } else if ch != " " {
+        ok = false
+      }
+    }
+  }
+  if stack_els.length() != 1 { ok = false }
+  return {ok: ok and not stack_els[0].is_empty(), els: stack_els[0], ns: stack_ns[0]}
+}
+
+// The mass of one mole of a formula, g/mol, from the periodic table.
+fn sc_mass(formula: Text) -> Number {
+  let a = sc_atoms(formula)
+  if not a.ok { return -1 }
+  var total = 0
+  for i in 0 until a.els.length() { total = total + sc_weight(a.els[i]) * a.ns[i] }
+  return (total * 1000).round() / 1000
+}
+
+// ---------------------------------------------------------------- balancing
+
+fn sc_failed(equation: Text, problem: Text) -> ScBalanced {
+  return {ok: false, equation: equation, species: [], sides: [], coefficients: [], elements: [], left: [], right: [], mass_left: 0, mass_right: 0, problem: problem}
+}
+
+// A species written with a number in front ("2H2O") is read without it:
+// the coefficients are Kosika's to find.
+fn sc_bare(term: Text) -> Text {
+  let t = term.trim()
+  var start = 0
+  var counting = true
+  for k in 0 until t.length() {
+    if counting and sc_digits().contains(t.slice(k, k + 1)) { start = k + 1 } else { counting = false }
+  }
+  return t.slice(start, t.length()).trim()
+}
+
+// Balance a reaction written as "A + B -> C + D" (or with = or a unicode
+// arrow). The element counts make a matrix, one row for each element and
+// one column for each species, products counted negative; the coefficients
+// are its null space. Kosika sets the last coefficient to 1, solves for the
+// rest by Gaussian elimination, scales to the smallest whole numbers, and
+// then checks the atoms and the masses on both sides.
+fn sc_balance(equation: Text) -> ScBalanced {
+  let unified = equation.replace("→", "->").replace("=>", "->").replace("=", "->")
+  let halves = unified.split("->")
+  if halves.length() != 2 { return sc_failed(equation, "write it with one arrow, like C3H8 + O2 -> CO2 + H2O") }
+  let lefts = for t in halves[0].split(" + ") where not t.trim().is_empty() { sc_bare(t) }
+  let rights = for t in halves[1].split(" + ") where not t.trim().is_empty() { sc_bare(t) }
+  let species = lefts.concat(rights)
+  let sides = (for t in lefts { 1 }).concat(for t in rights { -1 })
+  if lefts.is_empty() or rights.is_empty() { return sc_failed(equation, "it needs something on each side of the arrow") }
+  let atoms = for s in species { sc_atoms(s) }
+  for k in 0 until atoms.length() {
+    if not atoms[k].ok { return sc_failed(equation, f"{species[k]} is not a formula Kosika can read") }
+  }
+  var elements: Text[] = []
+  for a in atoms {
+    for e in a.els {
+      if not elements.contains(e) { elements = elements.append(e) }
+    }
+  }
+  let n = species.length()
+  let unknowns = n - 1
+  // rows: element counts times side, the last species moved to the right
+  var rows: Number[][] = []
+  for e in elements {
+    let row = for j in 0 until n { sides[j] * sc_count(atoms[j], e) }
+    rows = rows.append(row)
+  }
+  // Gaussian elimination with partial pivoting on the first n-1 columns
+  var m = rows
+  var pivots: Number[] = []
+  var r = 0
+  for c in 0 until unknowns {
+    var best = -1
+    var size = 0.000000001
+    for i in r until m.length() {
+      if m[i][c].abs() > size {
+        size = m[i][c].abs()
+        best = i
+      }
+    }
+    if best >= 0 {
+      let swapped = for i in 0 until m.length() { if i == r { m[best] } else if i == best { m[r] } else { m[i] } }
+      let lead = swapped[r]
+      m = for i in 0 until swapped.length() { if i == r { swapped[i] } else { sc_minus(swapped[i], lead, swapped[i][c] / lead[c]) } }
+      pivots = pivots.append(c)
+      r = r + 1
+    }
+  }
+  if pivots.length() < unknowns { return sc_failed(equation, "it can be balanced in more than one way: write the reactions apart") }
+  // back substitution: x_last = 1
+  var x: Number[] = for j in 0 until n { if j == n - 1 { 1 } else { 0 } }
+  for step in 0 until unknowns {
+    let i = unknowns - 1 - step
+    let c = pivots[i]
+    var rest = m[i][n - 1]
+    for j in c + 1 until n - 1 { rest = rest + m[i][j] * x[j] }
+    x = for q in 0 until n { if q == c { 0 - rest / m[i][c] } else { x[q] } }
+  }
+  // the smallest whole numbers in the same proportion
+  var scale = -1
+  for k in 1 until 121 {
+    if scale < 0 {
+      var whole = true
+      for v in x {
+        if ((v * k) - (v * k).round()).abs() > 0.000001 { whole = false }
+      }
+      if whole { scale = k }
+    }
+  }
+  if scale < 0 { return sc_failed(equation, "its coefficients are not small whole numbers") }
+  let coefficients = for v in x { (v * scale).round() }
+  for v in coefficients {
+    if v <= 0 { return sc_failed(equation, "it does not balance: check that the same elements are on both sides") }
+  }
+  // check: every element the same on both sides
+  let left = for e in elements { sc_side(atoms, coefficients, sides, e, 1) }
+  let right = for e in elements { sc_side(atoms, coefficients, sides, e, -1) }
+  for k in 0 until elements.length() {
+    if left[k] != right[k] { return sc_failed(equation, f"{elements[k]} does not match: {left[k]} on the left, {right[k]} on the right") }
+  }
+  // check: mass is conserved
+  var mass_left = 0
+  var mass_right = 0
+  for k in 0 until n {
+    if sides[k] > 0 { mass_left = mass_left + coefficients[k] * sc_mass(species[k]) } else { mass_right = mass_right + coefficients[k] * sc_mass(species[k]) }
+  }
+  return {ok: true, equation: equation, species: species, sides: sides, coefficients: coefficients, elements: elements, left: left, right: right, mass_left: (mass_left * 1000).round() / 1000, mass_right: (mass_right * 1000).round() / 1000, problem: ""}
+}
+
+fn sc_count(a: ScAtoms, element: Text) -> Number {
+  let at = a.els.index_of(element).or(-1)
+  return if at < 0 { 0 } else { a.ns[at] }
+}
+
+fn sc_minus(row: Number[], lead: Number[], times: Number) -> Number[] {
+  return for j in 0 until row.length() { row[j] - lead[j] * times }
+}
+
+fn sc_side(atoms: ScAtoms[], coefficients: Number[], sides: Number[], element: Text, side: Number) -> Number {
+  var total = 0
+  for k in 0 until atoms.length() {
+    if sides[k] == side { total = total + coefficients[k] * sc_count(atoms[k], element) }
+  }
+  return total
+}
+
+// ---------------------------------------------------------------- drawing
+
+fn sc_esc(text: Text) -> Text {
+  return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
+}
+
+// A formula with its numbers set low: H2O as H&#8322;O.
+fn sc_pretty(formula: Text) -> Text {
+  var out = ""
+  for k in 0 until formula.length() {
+    let ch = formula.slice(k, k + 1)
+    let piece = if sc_digits().contains(ch) { "<sub>" + ch + "</sub>" } else { sc_esc(ch) }
+    out = out + piece
+  }
+  return out
+}
+
+fn sc_term(b: ScBalanced, k: Number) -> Text {
+  let c = b.coefficients[k]
+  let lead = if c == 1 { "" } else { f"<b class=\"sc-co\">{c}</b>" }
+  return f"<span class=\"sc-sp\">{lead}{sc_pretty(b.species[k])}</span>"
+}
+
+fn sc_card(b: ScBalanced, title: Text) -> Text {
+  if not b.ok { return f"<div class=\"sc\"><div class=\"sc-head\"><span>Chemistry</span><h3>{sc_esc(title)}</h3></div><p class=\"sc-bad\">Kosika could not balance it: {sc_esc(b.problem)}.</p></div>" }
+  let lefts = (for k in 0 until b.species.length() where b.sides[k] > 0 { sc_term(b, k) }).join("<i>+</i>")
+  let rights = (for k in 0 until b.species.length() where b.sides[k] < 0 { sc_term(b, k) }).join("<i>+</i>")
+  let rows = (for k in 0 until b.elements.length() { f"<tr><th>{b.elements[k]}</th><td>{b.left[k]}</td><td>{b.right[k]}</td><td class=\"sc-ok\">&#10003;</td></tr>" }).join("")
+  let masses = (for k in 0 until b.species.length() { f"<li>{sc_pretty(b.species[k])} <span>{sc_mass(b.species[k])} g/mol</span></li>" }).join("")
+  return f"<div class=\"sc\"><div class=\"sc-head\"><span>Chemistry &#183; balanced by Kosika</span><h3>{sc_esc(title)}</h3></div><div class=\"sc-eq\">{lefts}<i class=\"sc-arrow\">&#8594;</i>{rights}</div><div class=\"sc-grid\"><div><div class=\"sc-label\">Atoms on each side</div><table class=\"sc-table\"><tr><th></th><th>left</th><th>right</th><th></th></tr>{rows}</table></div><div><div class=\"sc-label\">Mass is conserved</div><p class=\"sc-mass\"><b>{b.mass_left} g</b> in, <b>{b.mass_right} g</b> out<span class=\"sc-ok\"> &#10003;</span></p><ul class=\"sc-masses\">{masses}</ul></div></div><p class=\"sc-how\">The coefficients are the smallest whole-number solution of the element-count equations, found by Gaussian elimination; both checks are Kosika's own arithmetic.</p></div>"
+}
+
+fn sc_style() -> Text {
+  return ".sc{color:var(--ink);font:15px/1.5 Figtree,system-ui,-apple-system,'Segoe UI',sans-serif}.sc-head span{font:600 10.5px ui-monospace,Consolas,monospace;letter-spacing:.22em;text-transform:uppercase;color:var(--gold)}.sc-head h3{margin:4px 0 14px;font-size:22px;font-weight:850;letter-spacing:-.02em}.sc-eq{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px 14px;font-size:clamp(24px,4vw,38px);font-weight:700;padding:18px 20px;border-radius:18px;background:color-mix(in srgb,var(--halo) 88%,transparent);border:1px solid color-mix(in srgb,var(--line) 12%,transparent)}.sc-eq i{font-style:normal;color:var(--soft);font-weight:400}.sc-eq .sc-arrow{color:var(--amber)}.sc-co{color:var(--amber);margin-right:4px}.sc-eq sub{font-size:.6em}.sc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;margin-top:16px}.sc-label{font:600 10.5px ui-monospace,Consolas,monospace;letter-spacing:.18em;text-transform:uppercase;color:var(--soft);margin-bottom:6px}.sc-table{border-collapse:collapse;font-variant-numeric:tabular-nums}.sc-table th,.sc-table td{padding:5px 14px 5px 0;text-align:left}.sc-table th{color:var(--soft);font-weight:600}.sc-ok{color:var(--h4,#4fe0a6);font-weight:700}.sc-mass{font-size:18px;margin:4px 0 8px}.sc-masses{list-style:none;margin:0;padding:0;display:grid;gap:3px;color:var(--soft);font-size:14px}.sc-masses span{color:var(--ink);font-variant-numeric:tabular-nums;margin-left:6px}.sc-how{color:var(--soft);font-size:13px;margin-top:14px}.sc-bad{color:var(--h5,#ff6b81)}"
+}
+
+fn sc_page(ask: Text, b: ScBalanced, title: Text, palette: Text) -> Text {
+  let p = if palette_names().contains(palette) { palette } else { "dark_matter" }
+  return f"<!doctype html><html lang=\"en\" data-palette=\"{p}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{sc_esc(title)}</title><style>{palettes_css()}body{{margin:0;background:var(--bg)}}main{{max-width:900px;margin:0 auto;padding:28px 16px 48px}}.ask{{color:var(--soft);font:14px system-ui,sans-serif;margin:0 0 6px}}{sc_style()}</style></head><body><main><p class=\"ask\">{sc_esc(ask)}</p>{sc_card(b, title)}</main></body></html>"
+}
+
+// ---------------------------------------------------------------- the workflows
+
+fn sc_has_equation(text: Text) -> Bool { return text.contains("->") or text.contains("→") or text.contains("=") }
+
+model chemist {
+  input: ScBrief
+  output: ScEquation
+  parameters: {
+    max_output_tokens: 800
+  }
+}
+
+fn sc_task() -> Text {
+  return "Write the chemical reaction that was asked about as an unbalanced equation, with formulas only (no states, no coefficients), reactants and products separated by ->, species separated by ' + ', for example: CH4 + O2 -> CO2 + H2O. Give equation and name (a short name for the reaction)."
+}
+
+fn sc_none() -> ScEquation { return {equation: "", name: ""} }
+fn sc_given(text: Text) -> ScEquation { return {equation: text, name: "Balanced by Kosika"} }
+
+fn sc_result(ask: ScAsk, e: ScEquation) -> ScPage {
+  let b = sc_balance(e.equation)
+  let title = if e.name.trim().is_empty() { "Balanced by Kosika" } else { e.name.trim() }
+  let none: Text[] = []
+  return {page: sc_page(ask.text, b, title, ask.palette), card: sc_card(b, title), problems: if b.ok { none } else { [b.problem] }, balanced: b}
+}
+
+// An equation is balanced at once, with no model; a reaction in words is
+// first written as an equation by the chemist model.
+workflow balance(ask: ScAsk) -> ScPage {
+  budget 2 model calls, 120 seconds
+  written = match sc_has_equation(ask.text) {
+    case true { sc_given(ask.text) }
+    case _ { call sc_write(ask) }
+  }
+  out = sc_result(ask, written)
+}
+
+workflow sc_write(ask: ScAsk) -> ScEquation {
+  said = use_model chemist(sc_task(), ask.text) retry 1 otherwise sc_none()
+  out  = said
+}
+
+// ---------------------------------------------------------------- tests
+
+test "formulas are read into their atoms, brackets and all" {
+  w = sc_atoms("H2O")
+  expect w.els == ["H", "O"] and w.ns == [2, 1]
+  lime = sc_atoms("Ca(OH)2")
+  expect lime.els == ["Ca", "O", "H"] and lime.ns == [1, 2, 2]
+  iron = sc_atoms("Fe2(SO4)3")
+  expect iron.ns == [2, 3, 12]
+  expect not sc_atoms("Xx2").ok
+  expect not sc_atoms("Ca(OH2").ok
+  expect sc_mass("H2O") == 18.015
+}
+
+test "reactions are balanced exactly and checked" {
+  water = sc_balance("H2 + O2 -> H2O")
+  expect water.ok and water.coefficients == [2, 1, 2]
+  propane = sc_balance("C3H8 + O2 -> CO2 + H2O")
+  expect propane.coefficients == [1, 5, 3, 4]
+  expect propane.mass_left == propane.mass_right
+  rust = sc_balance("Fe + O2 → Fe2O3")
+  expect rust.coefficients == [4, 3, 2]
+  lime = sc_balance("Ca(OH)2 + H3PO4 = Ca3(PO4)2 + H2O")
+  expect lime.coefficients == [3, 2, 1, 6]
+  expect not sc_balance("H2O -> CO2").ok
+}
