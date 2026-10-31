@@ -280,7 +280,8 @@ fn dz_canvas_lead(ask: DzAsk) -> Text {
 
 fn dz_from_canvas(ask: DzAsk, palette: Text, r: Request, d: Design, m: ArtPage, g: GenArt, z: QzPage) -> DzResult {
   let place = dz_place(ask)
-  let has_diagram = d.problems.is_empty() and not d.page.is_empty()
+  let on_subject = dz_on_subject(ask.text, r.structure)
+  let has_diagram = d.problems.is_empty() and not d.page.is_empty() and on_subject
   let has_moving = m.problems.is_empty() and not m.svg.is_empty()
   let lead = dz_canvas_lead(ask)
   let step = if has_diagram and has_moving { dz_step_shown(r.structure, m.art) } else { -1 }
@@ -289,10 +290,12 @@ fn dz_from_canvas(ask: DzAsk, palette: Text, r: Request, d: Design, m: ArtPage, 
   let moving_card = if has_moving { dz_card(moving_label, m.svg + dz_beats(m.art) + "<script>" + art_script() + "</script>") } else { "" }
   let first = if lead == "illustration" { moving_card } else { diagram_card }
   let second = if lead == "illustration" { diagram_card } else { moving_card }
-  let title = if has_diagram { r.structure.title } else { m.art.title }
-  let summary = if has_diagram { r.structure.summary } else { m.art.summary }
+  // When the models drew nothing, the canvas still has what Kosika works
+  // out itself (a formula, a reaction, a lab), titled by the ask.
+  let title = if has_diagram { r.structure.title } else if has_moving { m.art.title } else { dz_ask_title(ask.text) }
+  let summary = if has_diagram { r.structure.summary } else if has_moving { m.art.summary } else { "Worked out by Kosika; the drawings could not be made this time." }
   var left: Text[] = []
-  if not has_diagram { left = left.append("the diagram (" + d.problems.join("; ") + ")") }
+  if not has_diagram { left = left.append("the diagram (" + (if on_subject { d.problems.join("; ") } else { "it was about something else" }) + ")") }
   if not has_moving { left = left.append("the moving picture (" + m.problems.join("; ") + ")") }
   let note = if left.is_empty() { "" } else { "<p class=\"kc-note\">Left out: " + art_esc(left.join("; ")) + ".</p>" }
   let both = not first.is_empty() and not second.is_empty()
@@ -305,7 +308,8 @@ fn dz_from_canvas(ask: DzAsk, palette: Text, r: Request, d: Design, m: ArtPage, 
   let formula = dz_formula_card(dz_formula_for(ask.text))
   let check = if z.problems.is_empty() and not z.card.is_empty() { "<div class=\"kc-card kc-quiz\">" + z.card + "<script>" + qz_script() + "</script></div>" } else { "" }
   let inner = "<div class=\"kc-art\" aria-hidden=\"true\">" + g.svg + "</div><div class=\"kc-head\">" + dz_field_label(field) + "<h2>" + art_esc(title) + "</h2><p>" + art_esc(summary) + "</p></div>" + grid + formula + reaction + lab + check + note
-  let drawn = has_diagram or has_moving
+  let own = not (formula.is_empty() and reaction.is_empty() and lab.is_empty())
+  let drawn = has_diagram or has_moving or own
   let embed = if drawn { dz_wrap("canvas", place, palette, "", inner, art_style() + gen_style() + qz_style() + sc_style() + sm_style() + dz_lab_style() + dz_formula_style() + dz_canvas_style()) } else { "" }
   let page = if drawn { dz_canvas_page(title, palette, embed) } else { "" }
   let none: Text[] = []
@@ -479,6 +483,22 @@ fn dz_number_mathml(v: Number) -> Text {
 
 fn dz_formula_style() -> Text {
   return ".kc-formula{margin-top:16px}.kc-formula math{font-family:'Cambria Math','STIX Two Math','Latin Modern Math',math;color:var(--ink)}.kc-formula mn{color:var(--gold)}.kc-formula .unit{color:var(--soft);font-style:normal}.kf-big{font-size:2.1em;margin:10px 0 14px}.kf-legend{border-collapse:collapse;margin:0 auto 12px;font-size:14.5px}.kf-legend td{padding:4px 12px;border-top:1px solid color-mix(in srgb,var(--line) 14%,transparent);color:var(--soft)}.kf-legend tr:first-child td{border-top:none;color:var(--ink)}.kf-legend math{font-size:1.15em}.kf-given{color:var(--soft);font-size:14px;margin:6px 4px}.kc-formula .calc{font-size:1.25em;margin:4px 12px 8px}.kf-ok{color:var(--ok,#4fe0a6);font-size:14px;margin:8px 4px}.kf-bad{color:var(--bad,#ff6b81);font-size:14px;margin:8px 4px}.kf-sep{color:var(--soft)}.kf-copy{font:600 10px ui-monospace,Consolas,monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--soft);background:none;border:1px solid color-mix(in srgb,var(--line) 20%,transparent);border-radius:999px;padding:6px 12px;cursor:pointer}.kf-copy:focus-visible{outline:2px solid var(--amber)}"
+}
+
+// A diagram has to be about what was asked: it shares at least one
+// meaningful word with the ask, or the canvas leaves it out.
+fn dz_on_subject(ask: Text, s: Structure) -> Bool {
+  let asked = dz_words(ask)
+  let drawn = dz_words(s.title + " " + s.summary + " " + (for st in s.steps { st.text }).join(" ") + " " + (for p in s.parts { p.label }).join(" "))
+  return asked.is_empty() or dz_shared(asked, drawn) > 0 or dz_shared(dz_stems(asked), dz_stems(drawn)) > 0
+}
+
+fn dz_stems(words: Text[]) -> Text[] { return for w in words { if w.length() > 5 { w.slice(0, 5) } else { w } } }
+
+fn dz_ask_title(text: Text) -> Text {
+  let t = text.trim()
+  if t.is_empty() { return "Kosika" }
+  return t.slice(0, 1).upper() + t.slice(1, t.length())
 }
 
 fn dz_field_label(field: Text) -> Text {
@@ -730,4 +750,13 @@ test "a canvas shows the formula, worked, with its units checked" {
   expect gravity.unit.dims == su_unit("N").dims
   wrong = dz_units_of(parse("m + t").expr, ["m", "t"], ["kg", "s"])
   expect wrong.problem == "two things added have different units"
+}
+
+fn dz_test_structure(title: Text) -> Structure {
+  return {title: title, summary: "Squares whose sides are numbers of a sequence", shape: "", figure: "", photo: "", parts: [], links: [], steps: [{text: "Each number is the sum of the two before it", parts: []}], marks: [], looks: [], aspects: []}
+}
+
+test "a diagram about something else is left off the canvas" {
+  expect not dz_on_subject("why does a pendulum swing back and forth", dz_test_structure("The Fibonacci sequence, drawn"))
+  expect dz_on_subject("why does a pendulum swing back and forth", dz_test_structure("Why a pendulum swings"))
 }
