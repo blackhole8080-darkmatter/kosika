@@ -54,6 +54,7 @@ import "designs_paper.kos"
 import "science_chem.kos"
 import "science_units.kos"
 import "science_elements.kos"
+import "science_molecules.kos"
 
 export [DzAsk, DzResult, DzKind, dz_kinds, dz_places, dz_kind, dz_why, design, design_kind]
 
@@ -102,7 +103,7 @@ fn dz_kind(ask: DzAsk) -> Text {
   if dz_has(t, dz_quiz_words()) { return "quiz" }
   if t.starts_with(" convert ") { return "units" }
   if dz_has(t, [" periodic table", " periodic "]) or (se_find(ask.text) > 0 and dz_has(t, [" element", " atom", " electron", " tell me about ", " what is ", " shells"])) { return "element" }
-  if dz_has(t, [" balance ", " balancing ", "->", "→", " chemical equation", " reaction for ", " reaction of "]) { return "chemistry" }
+  if dz_has(t, [" balance ", " balancing ", "->", "→", " chemical equation", " reaction for ", " reaction of ", " burning ", " combustion ", " as a reaction", " react with ", " reacts with "]) { return "chemistry" }
   if maths_words(ask.text) { return "worked" }
   if dz_has(t, dz_diagram_words()) { return "diagram" }
   if dz_has(t, dz_art_words()) { return "art" }
@@ -309,7 +310,7 @@ fn dz_from_worked(ask: DzAsk, p: Paper) -> DzResult {
 
 fn dz_from_chemistry(ask: DzAsk, c: ScPage) -> DzResult {
   let place = dz_place(ask)
-  let embed = if c.problems.is_empty() { dz_wrap("chemistry", place, dz_palette(ask.palette, "dark_matter"), "", c.card, sc_style()) } else { "" }
+  let embed = if c.problems.is_empty() { dz_wrap("chemistry", place, dz_palette(ask.palette, "dark_matter"), "", c.card + sm_reaction_svg(c.balanced), sc_style() + sm_style()) } else { "" }
   return {kind: "chemistry", why: dz_why(ask), title: "Balanced by Kosika", page: c.page, svg: "", embed: embed, problems: c.problems, fixed: []}
 }
 
@@ -432,6 +433,7 @@ test "Kosika chooses the way of drawing by the words of the ask" {
   expect dz_kind(dz_ask("test me on the French revolution")) == "quiz"
   expect dz_kind(dz_ask("differentiate x^2 sin(x)")) == "worked"
   expect dz_kind(dz_ask("balance C3H8 + O2 -> CO2 + H2O")) == "chemistry"
+  expect dz_kind(dz_ask("how does burning methane work as a reaction")) == "chemistry"
   expect dz_kind(dz_ask("convert 60 km/h to m/s")) == "units"
   expect dz_kind(dz_ask("tell me about sodium")) == "element"
   expect dz_kind(dz_ask("show me the periodic table")) == "element"
