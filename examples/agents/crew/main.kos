@@ -35,8 +35,19 @@ record Notes { points: Text[] summary: Text }
 record ExamBrief { task: Text topic: Text points: Text science: Text }
 record Verdict { point: Number ok: Bool why: Text }
 record Exam { verdicts: Verdict[] }
+record CrewNote { text: Text }
 
-model conductor {
+// The crew's shared board: each member posts what it did, under its own
+// name, and the Examiner reads the Tutor's notes from here, as posted.
+board crew of CrewNote
+
+agent conductor { can: [] max_steps: 1 }
+agent scientist { can: [] max_steps: 1 }
+agent artist { can: [] max_steps: 1 }
+agent tutor { can: [] max_steps: 1 }
+agent examiner { can: [] max_steps: 1 }
+
+model conductor_model {
   input: PlanBrief
   output: CrewPlan
   parameters: {
@@ -44,7 +55,7 @@ model conductor {
   }
 }
 
-model tutor {
+model tutor_model {
   input: NotesBrief
   output: Notes
   parameters: {
@@ -52,7 +63,7 @@ model tutor {
   }
 }
 
-model examiner {
+model examiner_model {
   input: ExamBrief
   output: Exam
   parameters: {
@@ -206,16 +217,61 @@ fn cr_pack(ask: PackAsk, raw: CrewPlan, plan: CrewPlan, canvas: DzResult, notes:
   return {title: plan.title, page: cr_page(plan, board, canvas, notes, exam, cr_science_card(ask.topic)), board: board, problems: problems}
 }
 
+fn cr_plan_note(p: CrewPlan) -> CrewNote { return {text: "Planned \"" + p.title + "\": the canvas asks " + p.question + "; the notes cover " + p.ideas.join(", ") + "."} }
+
+fn cr_science_note(topic: Text) -> CrewNote { return {text: if cr_has_reaction(topic) { "Worked out exactly: " + cr_equation(cr_reaction(topic)) + ", atoms and mass checked." } else { "Nothing in this topic to work out exactly." }} }
+
+fn cr_canvas_note(d: DzResult) -> CrewNote { return {text: if d.problems.is_empty() and not d.embed.is_empty() { "Drew \"" + d.title + "\" as a " + d.kind + "." } else { "Could not draw it: " + d.problems.join("; ") }} }
+
+fn cr_notes_note(n: Notes) -> CrewNote { return {text: cr_numbered(n) + "
+In one line: " + n.summary} }
+
+fn cr_exam_note(e: Exam) -> CrewNote {
+  let wrong = cr_wrong(e)
+  return {text: if e.verdicts.is_empty() { "Gave no verdicts." } else if wrong.is_empty() { f"Marked all {e.verdicts.length()} points correct." } else { f"Marked {wrong.length()} of {e.verdicts.length()} points wrong: " + (for v in wrong { f"point {v.point}, " + v.why }).join("; ") }}
+}
+
+// The Tutor's notes as the Examiner reads them: from the board, as posted.
+fn cr_posted_notes(b: CrewBoard) -> Text {
+  for post in b.posts {
+    if post.author == "tutor" { return post.body.text }
+  }
+  return ""
+}
+
+// The board as a conversation on the page: who posted what, in order.
+fn cr_role(author: Text) -> Text { return if author == "artist" { "Designer" } else { author.slice(0, 1).upper() + author.slice(1, author.length()) } }
+
+fn cr_talk_html(b: CrewBoard) -> Text {
+  let rows = (for post in b.posts { "<div class=\"post\"><b>" + cr_role(post.author) + "</b><p>" + cr_esc(post.body.text).replace("
+", "<br>") + "</p></div>" }).join("")
+  return "<h2>The crew's board, as they posted to it</h2><div class=\"card talk\">" + rows + "</div><style>.talk .post{display:grid;grid-template-columns:120px 1fr;gap:12px;padding:8px 0;border-top:1px solid var(--line)}.talk .post:first-child{border-top:none}.talk b{color:var(--gold)}.talk p{margin:0;color:var(--soft);font-size:14.5px}</style>"
+}
+
+fn cr_with_board(p: Pack, b: CrewBoard) -> Pack { return {..p, page: p.page.replace("<h2>The Tutor's notes", cr_talk_html(b) + "<h2>The Tutor's notes")} }
+
 fn cr_canvas_ask(ask: PackAsk, plan: CrewPlan) -> DzAsk { return {text: plan.question, palette: ask.palette, place: "studio", kind: "canvas"} }
 
 workflow pack(ask: PackAsk) -> Pack {
   budget 24 model calls, 900 seconds
-  raw    = use_model conductor(cr_plan_task(), ask.topic) retry 1 otherwise cr_default_plan(ask)
+  raw    = use_model conductor_model(cr_plan_task(), ask.topic) retry 1 otherwise cr_default_plan(ask)
   plan   = cr_plan(ask, raw)
+  n1     = cr_plan_note(plan)
+  p1     = post n1 to crew as conductor
+  n2     = cr_science_note(ask.topic)
+  p2     = post n2 to crew as scientist
   canvas = call design(cr_canvas_ask(ask, plan))
-  notes  = use_model tutor(cr_notes_task(), ask.topic, plan.ideas.join("; "), cr_science_text(ask.topic)) retry 1 otherwise cr_no_notes()
-  exam   = use_model examiner(cr_exam_task(), ask.topic, cr_numbered(notes), cr_science_text(ask.topic)) retry 1 otherwise cr_no_exam()
-  out    = cr_pack(ask, raw, plan, canvas, notes, exam)
+  n3     = cr_canvas_note(canvas)
+  p3     = post n3 to crew as artist
+  notes  = use_model tutor_model(cr_notes_task(), ask.topic, plan.ideas.join("; "), cr_science_text(ask.topic)) retry 1 otherwise cr_no_notes()
+  n4     = cr_notes_note(notes)
+  p4     = post n4 to crew as tutor
+  board  = read crew
+  exam   = use_model examiner_model(cr_exam_task(), ask.topic, cr_posted_notes(board), cr_science_text(ask.topic)) retry 1 otherwise cr_no_exam()
+  n5     = cr_exam_note(exam)
+  p5     = post n5 to crew as examiner
+  talk   = read crew
+  out    = cr_with_board(cr_pack(ask, raw, plan, canvas, notes, exam), talk)
 }
 
 // ---------------------------------------------------------------- tests
@@ -256,4 +312,10 @@ test "the board says who passed and the page leaves out what the Examiner marked
   expect made.page.split("Plants breathe in oxygen").length() == 2
   expect made.page.contains("<em>(they take in carbon dioxide)</em>")
   expect made.problems == ["Tutor: the examiner marked 1 point(s) wrong"]
+}
+
+test "each member's post says what it did" {
+  expect cr_science_note("photosynthesis").text == "Worked out exactly: 6CO2 + 6H2O -> C6H12O6 + 6O2, atoms and mass checked."
+  expect cr_exam_note(cr_sample_exam()).text == "Marked 1 of 4 points wrong: point 2, they take in carbon dioxide"
+  expect cr_plan_note(cr_sample_plan()).text.contains("the notes cover light, sugar")
 }
