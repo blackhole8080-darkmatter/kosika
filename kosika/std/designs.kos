@@ -148,7 +148,7 @@ fn dz_why(ask: DzAsk) -> Text {
   if dz_kinds().contains(ask.kind.trim().lower()) { return f"asked for {kind}" }
   if kind == "canvas" { return "asks how something in " + dz_science_field(ask.text) + " happens, so Kosika drew it on one canvas: the structure, the moving picture and, for a reaction, the reaction itself" }
   if kind == "chemistry" { return "asks about a reaction, so Kosika balanced it itself and checked the atoms and the mass" }
-  if kind == "element" { return "asks about an element, so Kosika opened the periodic table at it and worked out its electrons itself" }
+  if kind == "element" { return "asks about an element, so Kosika opened the periodic table at it, worked out its electrons itself, drew its atom with Designs' art and set a checked quiz on it" }
   if kind == "units" { return "asks to convert units, so Kosika read both units into SI and checked they measure the same thing" }
   if kind == "quiz" { return "asks to be tested, so it is a quiz Kosika checked, with each answer's reason" }
   if kind == "worked" { return "asks for mathematics worked out, so each line is worked and checked by Kosika" }
@@ -690,17 +690,50 @@ workflow dz_chemistry(ask: DzAsk) -> DzResult {
 
 fn dz_se_ask(ask: DzAsk) -> SeAsk { return {text: ask.text, palette: ask.palette} }
 
-fn dz_from_element(ask: DzAsk, e: SePage) -> DzResult {
+// An element on the canvas: the periodic table opened at it, its atom
+// drawn by Designs' own art (the atom part, its shells filled by Kosika)
+// with sentences Kosika writes from its own numbers, and a quiz on it that
+// a model writes and a second model checks blind.
+fn dz_atom_sentences(e: SeElement) -> Text[] {
+  let shells = (for n in e.shells { f"{n}" }).join(", ")
+  let outer = e.shells[e.shells.length() - 1]
+  let first = f"{e.name} has {e.z} electrons around a nucleus of {e.z} protons."
+  let second = f"They fill the shells {shells}, from the inside out: {e.short}."
+  let third = if e.category == "noble gas" { "Its outer shell is full, so it hardly reacts with anything." } else if e.category == "alkali metal" { f"Its outer shell holds just {outer}, which it gives away easily: that is why it reacts so readily." } else if e.category == "halogen" { "Its outer shell is one electron short of full, so it takes one eagerly." } else if e.category == "alkaline earth metal" { "It gives away its two outer electrons to react." } else { f"Its outer shell holds {outer}, and those decide how it bonds." }
+  return [first, second, third]
+}
+
+fn dz_atom_beat(t: Text) -> Beat { return {text: t, shows: ["atom"]} }
+
+fn dz_atom_art(e: SeElement, palette: Text) -> Art {
+  let atom: Figure = {id: "atom", kind: "atom", x: 50, y: 30, w: 22, h: 0, count: e.z, hue: 1, label: "", points: []}
+  let beats = for t in dz_atom_sentences(e) { dz_atom_beat(t) }
+  let name: Figure = {id: "name", kind: "text", x: 50, y: 6, w: 2.5, h: 0, count: 0, hue: 6, label: e.name + ", " + e.symbol, points: []}
+  return {title: e.name, summary: f"The atom of {e.name.lower()}, its electrons in shells.", palette: palette, backdrop: "plain", figures: [atom, name], motions: [], beats: beats}
+}
+
+fn dz_element_quiz(ask: DzAsk, e: SeElement) -> QzAsk { return {text: f"a quiz on the element {e.name}: its electrons, its place in the periodic table and how it reacts", palette: ask.palette} }
+
+fn dz_from_element(ask: DzAsk, e: SePage, atom: ArtPage, z: QzPage) -> DzResult {
   let place = dz_place(ask)
+  let palette = dz_palette(ask.palette, "dark_matter")
   let page = e.page.replace("</head>", "<style>html{background:var(--bg)}</style></head>")
   let frame = "<iframe class=\"kd-frame\" style=\"height:760px\" title=\"The periodic table\" srcdoc=\"" + art_esc(page) + "\"></iframe>"
-  let embed = dz_wrap("element", place, dz_palette(ask.palette, "dark_matter"), "", frame, "")
-  return {kind: "element", why: dz_why(ask), title: e.element.name, page: e.page, svg: "", embed: embed, problems: e.problems, fixed: []}
+  let drawn = atom.problems.is_empty() and not atom.svg.is_empty()
+  let art_card = if drawn { dz_card("The atom &#183; <b>drawn by Kosika Designs</b>", atom.svg + dz_beats(atom.art) + "<script>" + art_script() + "</script>") } else { "" }
+  let quiz_card = if z.problems.is_empty() and not z.card.is_empty() { "<div class=\"kc-card\">" + z.card + "<script>" + qz_script() + "</script></div>" } else { "" }
+  let both = not art_card.is_empty() and not quiz_card.is_empty()
+  let below = if both { "<div class=\"kc-grid\">" + art_card + quiz_card + "</div>" } else { "<div>" + art_card + quiz_card + "</div>" }
+  let head = "<div class=\"kc-head\">" + dz_field_label("chemistry") + "<h2>" + art_esc(e.element.name) + "</h2><p>" + art_esc(e.element.category) + ", atomic number " + f"{e.element.z}" + "</p></div>"
+  let embed = dz_wrap("element", place, palette, "", head + frame + "<div style=\"margin-top:16px\">" + below + "</div>", art_style() + qz_style() + dz_canvas_style())
+  return {kind: "element", why: dz_why(ask), title: e.element.name, page: e.page, svg: atom.svg, embed: embed, problems: e.problems, fixed: atom.fixed}
 }
 
 workflow dz_element(ask: DzAsk) -> DzResult {
-  table = call periodic(dz_se_ask(ask))
-  out   = dz_from_element(ask, table)
+  table  = call periodic(dz_se_ask(ask))
+  atom   = call render(dz_atom_art(table.element, dz_palette(ask.palette, "dark_matter")))
+  checks = call quiz(dz_element_quiz(ask, table.element))
+  out    = dz_from_element(ask, table, atom, checks)
 }
 
 workflow dz_units(ask: DzAsk) -> DzResult {
@@ -880,4 +913,13 @@ test "a formula's graph is plotted by Kosika, with the example and any turns mar
   expect pend.marks[0] == "the example: L = 1 gives T = 2.0061"
   expect dz_nice_step(7) == 2
   expect dz_nice_step(0.3) == 0.1
+}
+
+test "an element's atom is drawn by Designs' art, with Kosika's own sentences" {
+  na = dz_atom_art(se_element(11), "dark_matter")
+  expect na.figures[0].kind == "atom" and na.figures[0].count == 11
+  expect na.beats[1].text == "They fill the shells 2, 8, 1, from the inside out: [Ne] 3s¹."
+  expect na.beats[2].text.contains("reacts so readily")
+  expect art_problems(na) == []
+  expect dz_atom_sentences(se_element(10))[2].contains("hardly reacts")
 }
