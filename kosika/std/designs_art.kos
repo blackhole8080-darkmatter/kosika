@@ -1036,6 +1036,19 @@ fn art_in(a: Art, palette: Text) -> Art {
   return if palette_names().contains(palette) { {..a, palette: palette} } else { a }
 }
 
+// Kosika's own steer: when the ask is about one of the real parts it can
+// draw, the model is told so plainly, so the picture is the real thing.
+fn art_hint(ask: Text) -> Text {
+  let t = " " + ask.lower() + " "
+  var said: Text[] = []
+  if t.contains(" heart") { said = said.append("heart") }
+  if t.contains(" cell") and not t.contains(" cell phone") and not t.contains(" solar cell") { said = said.append("cell") }
+  if t.contains(" transistor") { said = said.append("transistor") }
+  if t.contains(" engine") or t.contains(" piston") { said = said.append("engine") }
+  if said.is_empty() { return "" }
+  return " This ask is about " + said.join(" and ") + ": draw it with the figure kind " + said.join(" and the kind ") + ", large and near the middle, and point your sentences at it and at the parts around it."
+}
+
 fn art_none() -> Art { return {title: "", summary: "", palette: "dark_matter", backdrop: "plain", figures: [], motions: [], beats: []} }
 fn art_kept(a: Art) -> Art { return a }
 fn art_wrong(a: Art) -> Text { return art_problems(a).join("; ") }
@@ -1044,7 +1057,7 @@ fn art_wrong(a: Art) -> Text { return art_problems(a).join("; ") }
 // goes back once, with the problems named.
 workflow illustrate(ask: ArtAsk) -> ArtPage {
   budget 4 model calls, 600 seconds
-  first  = use_model illustrator(art_task(), ask.text, "") retry 1 otherwise art_none()
+  first  = use_model illustrator(art_task() + art_hint(ask.text), ask.text, "") retry 1 otherwise art_none()
   wrong  = art_wrong(first)
   better = match wrong.is_empty() {
     case true { first }
@@ -1054,7 +1067,7 @@ workflow illustrate(ask: ArtAsk) -> ArtPage {
 }
 
 workflow reillustrate(ask: ArtAsk, wrong: ArtAsk, first: Art) -> Art {
-  answer = use_model illustrator(art_task(), ask.text, wrong.text) retry 1 otherwise art_kept(first)
+  answer = use_model illustrator(art_task() + art_hint(ask.text), ask.text, wrong.text) retry 1 otherwise art_kept(first)
   out    = answer
 }
 
@@ -1230,4 +1243,11 @@ test "real parts are drawn with their own parts named" {
   expect art_shape(art_fig("t", "transistor", 50, 30, 8)).contains(">E<")
   expect art_shape(art_fig("e", "engine", 50, 30, 10)).contains("class=\"piston\"")
   expect art_parts().length() == 4
+}
+
+test "Kosika steers the model to the real part an ask is about" {
+  expect art_hint("How does the heart pump blood?").contains("figure kind heart")
+  expect art_hint("how does a car engine work").contains("kind engine")
+  expect art_hint("what is a solar cell") == ""
+  expect art_hint("why is the sky blue") == ""
 }
