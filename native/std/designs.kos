@@ -56,7 +56,7 @@ import "science_units.kos"
 import "science_elements.kos"
 import "science_molecules.kos"
 
-export [DzAsk, DzResult, DzKind, dz_kinds, dz_places, dz_kind, dz_why, design, design_kind]
+export [DzAsk, DzResult, DzKind, dz_kinds, dz_places, dz_kind, dz_why, design, design_kind, dz_lab, dz_lab_style]
 
 record DzAsk { text: Text palette: Text place: Text kind: Text }
 record DzKind { kind: Text why: Text }
@@ -300,14 +300,70 @@ fn dz_from_canvas(ask: DzAsk, palette: Text, r: Request, d: Design, m: ArtPage, 
   let equation = dz_reaction(ask.text)
   let balanced = sc_balance(equation)
   let reaction = if equation.is_empty() or not balanced.ok { "" } else { "<div class=\"kc-card kc-reaction\">" + sc_card(balanced, dz_reaction_name(ask.text)) + sm_reaction_svg(balanced) + "</div>" }
+  let lab = dz_lab(ask.text)
   let check = if z.problems.is_empty() and not z.card.is_empty() { "<div class=\"kc-card kc-quiz\">" + z.card + "<script>" + qz_script() + "</script></div>" } else { "" }
-  let inner = "<div class=\"kc-art\" aria-hidden=\"true\">" + g.svg + "</div><div class=\"kc-head\">" + dz_field_label(field) + "<h2>" + art_esc(title) + "</h2><p>" + art_esc(summary) + "</p></div>" + grid + reaction + check + note
+  let inner = "<div class=\"kc-art\" aria-hidden=\"true\">" + g.svg + "</div><div class=\"kc-head\">" + dz_field_label(field) + "<h2>" + art_esc(title) + "</h2><p>" + art_esc(summary) + "</p></div>" + grid + reaction + lab + check + note
   let drawn = has_diagram or has_moving
-  let embed = if drawn { dz_wrap("canvas", place, palette, "", inner, art_style() + gen_style() + qz_style() + sc_style() + sm_style() + dz_canvas_style()) } else { "" }
+  let embed = if drawn { dz_wrap("canvas", place, palette, "", inner, art_style() + gen_style() + qz_style() + sc_style() + sm_style() + dz_lab_style() + dz_canvas_style()) } else { "" }
   let page = if drawn { dz_canvas_page(title, palette, embed) } else { "" }
   let none: Text[] = []
   let wrong = if drawn { none } else { d.problems.concat(m.problems) }
   return {kind: "canvas", why: dz_canvas_why(lead, step), title: title, page: page, svg: m.svg, embed: embed, problems: wrong, fixed: m.fixed}
+}
+
+// ---------------------------------------------------------------- labs
+//
+// When the ask is about something a learner can try, the canvas adds a
+// small lab: change what the real thing would let you change, and watch
+// what follows. Kosika works the numbers out first (the table under each
+// lab), and the sliders use the same formula, so what moves on the page
+// is what Kosika worked out.
+
+fn dz_lab_kind(text: Text) -> Text {
+  let t = dz_padded(text)
+  if dz_has(t, [" pendulum", " swing", " period of"]) { return "pendulum" }
+  if dz_has(t, [" circuit", " ohm", " current", " resistor", " resistance", " voltage"]) { return "circuit" }
+  return ""
+}
+
+// T = 2 pi sqrt(L / g), to two places.
+fn dz_period(metres: Number, g: Number) -> Number { return (2 * 3.14159265 * (metres / g).sqrt() * 100).round() / 100 }
+
+fn dz_amps(volts: Number, ohms: Number) -> Number { return (volts / ohms * 1000).round() / 1000 }
+
+fn dz_lab_rows(cells: Text[][]) -> Text {
+  return "<table class=\"lab-t\">" + (for row in cells { "<tr>" + (for c in row { "<td>" + c + "</td>" }).join("") + "</tr>" }).join("") + "</table>"
+}
+
+fn dz_pendulum_lab() -> Text {
+  let lengths = [0.25, 0.5, 1, 2]
+  let rows = [["length", "on Earth", "on the Moon", "on Mars"]].concat(for l in lengths { [f"{l} m", f"{dz_period(l, 9.81)} s", f"{dz_period(l, 1.62)} s", f"{dz_period(l, 3.71)} s"] })
+  let svg = "<svg class=\"lab-svg\" viewBox=\"0 0 300 230\"><line x1=\"110\" y1=\"16\" x2=\"190\" y2=\"16\" class=\"lab-bar\"/><g id=\"lab-arm\" class=\"lab-arm\"><line x1=\"150\" y1=\"16\" x2=\"150\" y2=\"150\" id=\"lab-rod\"/><circle cx=\"150\" cy=\"150\" r=\"13\" id=\"lab-bob\"/></g></svg>"
+  let controls = "<label>Length <b id=\"lab-lv\">1 m</b><input id=\"lab-l\" type=\"range\" min=\"0.1\" max=\"3\" step=\"0.05\" value=\"1\"></label><label>Where <select id=\"lab-g\"><option value=\"9.81\">Earth, 9.81 m/s&#178;</option><option value=\"1.62\">Moon, 1.62 m/s&#178;</option><option value=\"3.71\">Mars, 3.71 m/s&#178;</option><option value=\"24.79\">Jupiter, 24.79 m/s&#178;</option></select></label><p class=\"lab-out\">T = 2&#960;&#8730;(L / g) = <b id=\"lab-t\">2.01 s</b></p>"
+  let script = "<script>(function(){var L=document.getElementById('lab-l'),G=document.getElementById('lab-g'),arm=document.getElementById('lab-arm'),rod=document.getElementById('lab-rod'),bob=document.getElementById('lab-bob');function go(){var l=+L.value,g=+G.value,T=2*Math.PI*Math.sqrt(l/g),y=16+40+l*45;rod.setAttribute('y2',y);bob.setAttribute('cy',y);arm.style.animationDuration=T+'s';document.getElementById('lab-lv').textContent=l+' m';document.getElementById('lab-t').textContent=T.toFixed(2)+' s';}L.oninput=go;G.onchange=go;go();})();</script>"
+  return "<div class=\"kc-card kc-lab\"><div class=\"kc-label\">Pendulum lab &#183; <b>try it</b></div><div class=\"lab-grid\">" + svg + "<div class=\"lab-side\">" + controls + "</div></div><p class=\"lab-note\">Worked out by Kosika first, the period of one full swing:</p>" + dz_lab_rows(rows) + script + "</div>"
+}
+
+fn dz_circuit_lab() -> Text {
+  let pairs = [[1.5, 10], [9, 3], [12, 4], [230, 50]]
+  let rows = [["battery", "resistor", "current", "power"]].concat(for q in pairs { [f"{q[0]} V", f"{q[1]} ohm", f"{dz_amps(q[0], q[1])} A", f"{(q[0] * dz_amps(q[0], q[1]) * 100).round() / 100} W"] })
+  let loop = "M40 110 L40 30 L260 30 L260 190 L40 190 L40 130"
+  let charges = (for k in 0 until 8 { "<circle r=\"5\" class=\"lab-q\" cx=\"-20\" cy=\"-20\"/>" }).join("") + f"<path id=\"lab-loop\" d=\"{loop}\" fill=\"none\" stroke=\"none\"/>"
+  let svg = "<svg class=\"lab-svg\" viewBox=\"0 0 300 220\"><path class=\"lab-wire\" d=\"M40 110 L40 30 L120 30 M180 30 L260 30 L260 190 L40 190 L40 130\"/><path class=\"lab-wire\" d=\"M120 30 L127 20 L135 40 L142 20 L150 40 L157 20 L165 40 L172 20 L180 30\"/><line x1=\"24\" y1=\"110\" x2=\"56\" y2=\"110\" class=\"lab-wire\"/><line x1=\"32\" y1=\"130\" x2=\"48\" y2=\"130\" class=\"lab-wire\" style=\"stroke-width:7\"/>" + charges + "</svg>"
+  let controls = "<label>Battery <b id=\"lab-vv\">9 V</b><input id=\"lab-v\" type=\"range\" min=\"1\" max=\"24\" step=\"0.5\" value=\"9\"></label><label>Resistor <b id=\"lab-rv\">3 ohm</b><input id=\"lab-r\" type=\"range\" min=\"1\" max=\"100\" step=\"1\" value=\"3\"></label><p class=\"lab-out\">I = V / R = <b id=\"lab-i\">3 A</b>, P = V &#215; I = <b id=\"lab-p\">27 W</b></p>"
+  let script = "<script>(function(){var V=document.getElementById('lab-v'),R=document.getElementById('lab-r');function go(){var v=+V.value,r=+R.value,i=v/r;document.getElementById('lab-vv').textContent=v+' V';document.getElementById('lab-rv').textContent=r+' ohm';document.getElementById('lab-i').textContent=(+i.toFixed(3))+' A';document.getElementById('lab-p').textContent=(+(v*i).toFixed(2))+' W';speed=Math.min(400,Math.max(4,i*30));}var speed=90,at=0,last=0,path=document.getElementById('lab-loop'),len=path.getTotalLength(),qs=document.querySelectorAll('.lab-q');function tick(now){at=(at+speed*Math.min(0.05,(now-(last||now))/1000))%len;last=now;qs.forEach(function(q,k){var pt=path.getPointAtLength((at+k*len/qs.length)%len);q.setAttribute('cx',pt.x);q.setAttribute('cy',pt.y);});requestAnimationFrame(tick);}V.oninput=go;R.oninput=go;go();requestAnimationFrame(tick);})();</script>"
+  return "<div class=\"kc-card kc-lab\"><div class=\"kc-label\">Circuit bench &#183; <b>try it</b></div><div class=\"lab-grid\">" + svg + "<div class=\"lab-side\">" + controls + "</div></div><p class=\"lab-note\">Worked out by Kosika first, by Ohm's law:</p>" + dz_lab_rows(rows) + script + "</div>"
+}
+
+fn dz_lab(text: Text) -> Text {
+  let kind = dz_lab_kind(text)
+  if kind == "pendulum" { return dz_pendulum_lab() }
+  if kind == "circuit" { return dz_circuit_lab() }
+  return ""
+}
+
+fn dz_lab_style() -> Text {
+  return ".kc-lab{margin-top:16px}.lab-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:center}.lab-svg{width:100%;max-height:260px}.lab-bar,.lab-arm line,.lab-wire{stroke:var(--ink);stroke-width:3;stroke-linecap:round;fill:none}.lab-arm{transform-origin:150px 16px;animation:lab-swing 2s ease-in-out infinite alternate}.lab-arm circle{fill:var(--amber)}@keyframes lab-swing{from{transform:rotate(20deg)}to{transform:rotate(-20deg)}}.lab-q{fill:var(--amber)}.lab-side label{display:block;margin:0 0 14px;color:var(--soft);font-size:14px}.lab-side b{color:var(--ink)}.lab-side input,.lab-side select{display:block;width:100%;margin-top:6px;accent-color:var(--amber)}.lab-out{font-size:16px;margin:6px 0 0}.lab-note{color:var(--soft);font-size:12.5px;margin:12px 4px 6px}.lab-t{border-collapse:collapse;font:13px ui-monospace,Consolas,monospace;width:100%}.lab-t td{padding:5px 8px;border-top:1px solid color-mix(in srgb,var(--line) 14%,transparent)}.lab-t tr:first-child td{color:var(--gold);border-top:none}@media (max-width:700px){.lab-grid{grid-template-columns:1fr}}"
 }
 
 fn dz_field_label(field: Text) -> Text {
@@ -533,4 +589,15 @@ test "a science canvas finds its field and its reaction" {
   expect leaf.coefficients == [6, 6, 1, 6]
   expect dz_reaction("how does the moon orbit the earth") == ""
   expect dz_canvas_lead(dz_ask("how does photosynthesis work")) == "illustration"
+}
+
+test "a canvas adds a lab when the ask can be tried" {
+  expect dz_lab_kind("why does a pendulum swing back") == "pendulum"
+  expect dz_lab_kind("how does current flow in a circuit") == "circuit"
+  expect dz_lab_kind("how does photosynthesis work") == ""
+  expect dz_period(1, 9.81) == 2.01
+  expect dz_period(1, 1.62) == 4.94
+  expect dz_amps(9, 3) == 3
+  expect dz_lab("how does a pendulum swing").contains("2.01 s")
+  expect dz_lab("how does a circuit work").contains("0.15 A")
 }
