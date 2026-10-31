@@ -1045,8 +1045,18 @@ fn art_hint(ask: Text) -> Text {
   if t.contains(" cell") and not t.contains(" cell phone") and not t.contains(" solar cell") { said = said.append("cell") }
   if t.contains(" transistor") { said = said.append("transistor") }
   if t.contains(" engine") or t.contains(" piston") { said = said.append("engine") }
-  if said.is_empty() { return "" }
-  return " This ask is about " + said.join(" and ") + ": draw it with the figure kind " + said.join(" and the kind ") + ", large and near the middle, and point your sentences at it and at the parts around it."
+  let parts = if said.is_empty() { "" } else { " This ask is about " + said.join(" and ") + ": draw it with the figure kind " + said.join(" and the kind ") + ", large and near the middle, and point your sentences at it and at the parts around it." }
+  return parts + art_motion_hint(t)
+}
+
+// Physics asks get the motion that Kosika times itself, so the picture
+// moves as the real thing does.
+fn art_motion_hint(t: Text) -> Text {
+  if t.contains(" pendulum") or t.contains(" swing") { return " Show the pendulum with a swing motion: the bob hangs from a pivot figure named in around, seconds 0, so Kosika times it from its length." }
+  if t.contains(" projectile") or t.contains(" thrown") or t.contains(" throw ") or t.contains(" kicked") { return " Show the flight with a throw motion from where it starts to a figure named in around where it lands, so Kosika works out the arc." }
+  if t.contains(" orbit") or t.contains(" planet") or t.contains(" moon ") or t.contains(" satellite") { return " Show the path with an orbit motion around the body named in around, seconds 0, so Kosika times it by Kepler's law." }
+  if t.contains(" gear") { return " Show the gears with figure kind gear, teeth touching, so Kosika turns each by the one beside it." }
+  return ""
 }
 
 fn art_none() -> Art { return {title: "", summary: "", palette: "dark_matter", backdrop: "plain", figures: [], motions: [], beats: []} }

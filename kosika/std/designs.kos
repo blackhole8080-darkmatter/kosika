@@ -92,6 +92,35 @@ fn dz_quiz_words() -> Text[] { return [" quiz", " test me", " flashcard", " flas
 
 fn dz_illustration_words() -> Text[] { return [" animate", " animation", " animated", " illustrate", " illustration", " show me how", " what happens when", " what happens if", " what is inside", " how does ", " how do ", " why does ", " why do ", " why is ", " why are "] }
 
+// Science asks: which field the ask belongs to, by its words, and the
+// reaction it names, if any, as an equation for science_chem to balance.
+fn dz_biology_words() -> Text[] { return [" photosynthesis", " respiration", " cell ", " cells ", " mitosis", " dna", " gene", " enzyme", " heart", " blood", " lungs", " neuron", " plant", " leaf", " leaves", " bacteria", " virus", " digestion", " evolution", " ecosystem", " food chain", " protein"] }
+fn dz_chemistry_words() -> Text[] { return [" reaction", " molecule", " molecules", " acid", " base ", " rust", " rusting", " burn", " burns", " combustion", " oxidation", " neutralis", " neutraliz", " electrolysis", " bond", " compound", " haber", " ammonia", " baking soda", " vinegar"] }
+fn dz_physics_words() -> Text[] { return [" pendulum", " swing", " projectile", " thrown", " throw ", " orbit", " planet", " moon", " gravity", " force", " momentum", " energy", " wave", " waves", " light", " sound", " electric", " circuit", " magnet", " gear", " gears", " engine", " friction", " velocity", " acceleration"] }
+
+fn dz_science_field(text: Text) -> Text {
+  let t = dz_padded(text)
+  if dz_has(t, dz_chemistry_words()) { return "chemistry" }
+  if dz_has(t, dz_biology_words()) { return "biology" }
+  if dz_has(t, dz_physics_words()) { return "physics" }
+  return ""
+}
+
+// The reactions people ask about by name, unbalanced: Kosika balances them.
+fn dz_named_reactions() -> Text[] { return [" photosynthesis", " respiration", " methane", " propane", " burning hydrogen", " rust", " neutralis", " neutraliz", " baking soda", " haber", " ammonia", " electrolysis of water", " splitting water", " glucose"] }
+fn dz_named_equations() -> Text[] { return ["CO2 + H2O -> C6H12O6 + O2", "C6H12O6 + O2 -> CO2 + H2O", "CH4 + O2 -> CO2 + H2O", "C3H8 + O2 -> CO2 + H2O", "H2 + O2 -> H2O", "Fe + O2 -> Fe2O3", "HCl + NaOH -> NaCl + H2O", "HCl + NaOH -> NaCl + H2O", "NaHCO3 + CH3COOH -> NaCH3COO + H2O + CO2", "N2 + H2 -> NH3", "N2 + H2 -> NH3", "H2O -> H2 + O2", "H2O -> H2 + O2", "C6H12O6 + O2 -> CO2 + H2O"] }
+
+fn dz_reaction(text: Text) -> Text {
+  if text.contains("->") or text.contains("→") { return text }
+  let t = dz_padded(text)
+  let names = dz_named_reactions()
+  let equations = dz_named_equations()
+  for k in 0 until names.length() {
+    if t.contains(names[k]) { return equations[k] }
+  }
+  return ""
+}
+
 // Which way of drawing suits the ask, by its words: a named kind first;
 // then asking for a diagram's shape (a timeline, a comparison, the steps);
 // then asking for art; then asking how or why something happens, which
@@ -108,6 +137,7 @@ fn dz_kind(ask: DzAsk) -> Text {
   if dz_has(t, dz_diagram_words()) { return "diagram" }
   if dz_has(t, dz_art_words()) { return "art" }
   if dz_has(t, dz_abstract_words()) { return "diagram" }
+  if dz_has(t, dz_illustration_words()) and not dz_science_field(ask.text).is_empty() { return "canvas" }
   if dz_has(t, dz_illustration_words()) { return "illustration" }
   return "diagram"
 }
@@ -115,6 +145,7 @@ fn dz_kind(ask: DzAsk) -> Text {
 fn dz_why(ask: DzAsk) -> Text {
   let kind = dz_kind(ask)
   if dz_kinds().contains(ask.kind.trim().lower()) { return f"asked for {kind}" }
+  if kind == "canvas" { return "asks how something in " + dz_science_field(ask.text) + " happens, so Kosika drew it on one canvas: the structure, the moving picture and, for a reaction, the reaction itself" }
   if kind == "chemistry" { return "asks about a reaction, so Kosika balanced it itself and checked the atoms and the mass" }
   if kind == "element" { return "asks about an element, so Kosika opened the periodic table at it and worked out its electrons itself" }
   if kind == "units" { return "asks to convert units, so Kosika read both units into SI and checked they measure the same thing" }
@@ -229,7 +260,7 @@ fn dz_step_shown(s: Structure, a: Art) -> Number {
 }
 
 fn dz_canvas_style() -> Text {
-  return ".kd-canvas{position:relative;overflow:hidden;padding:18px}.kd-canvas>.kc-art{position:absolute;inset:0;opacity:.32;pointer-events:none}.kd-canvas>.kc-art svg{width:100%;height:100%;display:block}.kd-canvas>.kc-head,.kd-canvas>.kc-grid,.kd-canvas>div:not(.kc-art),.kd-canvas>.kc-note{position:relative}.kc-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 14px;margin:2px 4px 14px}.kc-head h2{margin:0;font-size:22px;font-weight:850;letter-spacing:-.02em}.kc-head p{margin:0;color:var(--soft);font-size:14px}.kc-grid{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:16px;align-items:start}.kc-card{background:color-mix(in srgb,var(--halo) 82%,transparent);border:1px solid color-mix(in srgb,var(--line) 12%,transparent);border-radius:18px;padding:12px;backdrop-filter:blur(6px)}.kc-label{font:600 10.5px ui-monospace,Consolas,monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);margin:2px 4px 10px}.kc-label b{color:var(--amber);font-weight:600}.kc-card .kd-frame{height:620px}.kc-note{color:var(--soft);font-size:12.5px;margin:12px 4px 0}.kc-quiz{margin-top:16px}@media (max-width:900px){.kc-grid{grid-template-columns:1fr}}"
+  return ".kd-canvas{position:relative;overflow:hidden;padding:18px}.kd-canvas>.kc-art{position:absolute;inset:0;opacity:.32;pointer-events:none}.kd-canvas>.kc-art svg{width:100%;height:100%;display:block}.kd-canvas>.kc-head,.kd-canvas>.kc-grid,.kd-canvas>div:not(.kc-art),.kd-canvas>.kc-note{position:relative}.kc-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 14px;margin:2px 4px 14px}.kc-head h2{margin:0;font-size:22px;font-weight:850;letter-spacing:-.02em}.kc-head p{margin:0;color:var(--soft);font-size:14px}.kc-grid{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:16px;align-items:start}.kc-card{background:color-mix(in srgb,var(--halo) 82%,transparent);border:1px solid color-mix(in srgb,var(--line) 12%,transparent);border-radius:18px;padding:12px;backdrop-filter:blur(6px)}.kc-label{font:600 10.5px ui-monospace,Consolas,monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);margin:2px 4px 10px}.kc-label b{color:var(--amber);font-weight:600}.kc-card .kd-frame{height:620px}.kc-note{color:var(--soft);font-size:12.5px;margin:12px 4px 0}.kc-quiz{margin-top:16px}.kc-reaction{margin-top:16px}.kc-field{font:600 10.5px ui-monospace,Consolas,monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--amber);border:1px solid color-mix(in srgb,var(--amber) 45%,transparent);border-radius:999px;padding:3px 9px;align-self:center}@media (max-width:900px){.kc-grid{grid-template-columns:1fr}}"
 }
 
 fn dz_card(label: Text, inner: Text) -> Text { return f"<div class=\"kc-card\"><div class=\"kc-label\">{label}</div>{inner}</div>" }
@@ -260,14 +291,32 @@ fn dz_from_canvas(ask: DzAsk, palette: Text, r: Request, d: Design, m: ArtPage, 
   let note = if left.is_empty() { "" } else { "<p class=\"kc-note\">Left out: " + art_esc(left.join("; ")) + ".</p>" }
   let both = not first.is_empty() and not second.is_empty()
   let grid = if both { "<div class=\"kc-grid\">" + first + second + "</div>" } else { "<div>" + first + second + "</div>" }
+  let field = dz_science_field(ask.text)
+  let equation = dz_reaction(ask.text)
+  let balanced = sc_balance(equation)
+  let reaction = if equation.is_empty() or not balanced.ok { "" } else { "<div class=\"kc-card kc-reaction\">" + sc_card(balanced, dz_reaction_name(ask.text)) + sm_reaction_svg(balanced) + "</div>" }
   let check = if z.problems.is_empty() and not z.card.is_empty() { "<div class=\"kc-card kc-quiz\">" + z.card + "<script>" + qz_script() + "</script></div>" } else { "" }
-  let inner = "<div class=\"kc-art\" aria-hidden=\"true\">" + g.svg + "</div><div class=\"kc-head\"><h2>" + art_esc(title) + "</h2><p>" + art_esc(summary) + "</p></div>" + grid + check + note
+  let inner = "<div class=\"kc-art\" aria-hidden=\"true\">" + g.svg + "</div><div class=\"kc-head\">" + dz_field_label(field) + "<h2>" + art_esc(title) + "</h2><p>" + art_esc(summary) + "</p></div>" + grid + reaction + check + note
   let drawn = has_diagram or has_moving
-  let embed = if drawn { dz_wrap("canvas", place, palette, "", inner, art_style() + gen_style() + qz_style() + dz_canvas_style()) } else { "" }
+  let embed = if drawn { dz_wrap("canvas", place, palette, "", inner, art_style() + gen_style() + qz_style() + sc_style() + sm_style() + dz_canvas_style()) } else { "" }
   let page = if drawn { dz_canvas_page(title, palette, embed) } else { "" }
   let none: Text[] = []
   let wrong = if drawn { none } else { d.problems.concat(m.problems) }
   return {kind: "canvas", why: dz_canvas_why(lead, step), title: title, page: page, svg: m.svg, embed: embed, problems: wrong, fixed: m.fixed}
+}
+
+fn dz_field_label(field: Text) -> Text {
+  if field.is_empty() { return "" }
+  return "<span class=\"kc-field\">" + field + "</span>"
+}
+
+fn dz_reaction_name(text: Text) -> Text {
+  let t = dz_padded(text)
+  if t.contains(" photosynthesis") { return "Photosynthesis" }
+  if t.contains(" respiration") or t.contains(" glucose") { return "Respiration" }
+  if t.contains(" rust") { return "Rusting" }
+  if t.contains(" haber") or t.contains(" ammonia") { return "Making ammonia" }
+  return "The reaction"
 }
 
 fn dz_canvas_why(lead: Text, step: Number) -> Text {
@@ -418,7 +467,7 @@ workflow dz_diagram(ask: DzAsk) -> DzResult {
 fn dz_ask(text: Text) -> DzAsk { return {text: text, palette: "", place: "chat", kind: ""} }
 
 test "Kosika chooses the way of drawing by the words of the ask" {
-  expect dz_kind(dz_ask("How does the heart pump blood?")) == "illustration"
+  expect dz_kind(dz_ask("How does the heart pump blood?")) == "canvas"
   expect dz_kind(dz_ask("why do we have seasons")) == "illustration"
   expect dz_kind(dz_ask("make me an abstract background for my studio")) == "art"
   expect dz_kind(dz_ask("a calm generative piece about the sea")) == "art"
@@ -428,12 +477,15 @@ test "Kosika chooses the way of drawing by the words of the ask" {
   expect dz_kind(dz_ask("the Krebs cycle")) == "diagram"
   // a "how does" about a system with no body to watch move is a diagram
   expect dz_kind(dz_ask("How does a transformer neural network process a sentence?")) == "diagram"
-  expect dz_kind(dz_ask("how does a pendulum swing")) == "illustration"
+  expect dz_kind(dz_ask("how does a pendulum swing")) == "canvas"
   expect dz_kind(dz_ask("quiz me on photosynthesis")) == "quiz"
   expect dz_kind(dz_ask("test me on the French revolution")) == "quiz"
   expect dz_kind(dz_ask("differentiate x^2 sin(x)")) == "worked"
   expect dz_kind(dz_ask("balance C3H8 + O2 -> CO2 + H2O")) == "chemistry"
   expect dz_kind(dz_ask("how does burning methane work as a reaction")) == "chemistry"
+  expect dz_kind(dz_ask("how does photosynthesis work")) == "canvas"
+  expect dz_kind(dz_ask("why does a pendulum swing back")) == "canvas"
+  expect dz_kind(dz_ask("how does a rainbow form")) == "illustration"
   expect dz_kind(dz_ask("convert 60 km/h to m/s")) == "units"
   expect dz_kind(dz_ask("tell me about sodium")) == "element"
   expect dz_kind(dz_ask("show me the periodic table")) == "element"
@@ -466,4 +518,13 @@ test "the moving picture is tied to the diagram step it shows" {
 
 test "a canvas is asked for by name" {
   expect dz_kind({text: "how does the heart pump blood", palette: "", place: "agent", kind: "canvas"}) == "canvas"
+}
+
+test "a science canvas finds its field and its reaction" {
+  expect dz_science_field("how does photosynthesis work") == "biology"
+  expect dz_science_field("why does iron rust") == "chemistry"
+  expect dz_science_field("how does the moon orbit the earth") == "physics"
+  leaf = sc_balance(dz_reaction("how does photosynthesis work"))
+  expect leaf.coefficients == [6, 6, 1, 6]
+  expect dz_reaction("how does the moon orbit the earth") == ""
 }
