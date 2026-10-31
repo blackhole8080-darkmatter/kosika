@@ -21,7 +21,7 @@ func runCommand(args []string) int {
 	options := map[string]string{"--workflow": "main", "--model-protocol": "openai", "--model-timeout": "60", "--max-output-tokens": "1024"}
 	options["--mcp-source"] = "local_stdio"
 	options["--trace"] = "run_trace.jsonl"
-	flags := map[string]bool{"--approve": true, "--allow-shell": true, "--computer": true}
+	flags := map[string]bool{"--approve": true, "--allow-shell": true, "--computer": true, "--json": true}
 	var givenSites []string
 	known := map[string]bool{"--linux": true, "--notify": true, "--embed-url": true, "--embed-model": true, "--allow-site": true, "--services": true, "--allow-folder": true, "--memory": true, "--env": true, "--journal": true, "--binding-id": true, "--approval-record": true, "--approved-by": true, "--trace": true, "--model-fixture": true, "--mcp-server": true, "--mcp-manifest": true, "--mcp-source": true, "--workflow": true, "--input": true, "--model": true, "--model-url": true, "--model-protocol": true, "--model-timeout": true, "--model-binding": true, "--max-output-tokens": true}
 	for i := 1; i < len(args); i++ {
@@ -402,6 +402,13 @@ func runCommand(args []string) int {
 		// The run is finished: there is nothing to begin again. Its
 		// approvals' ledger stays, so an approval is never used twice.
 		os.Remove(journalPath)
+	}
+	if options["--json"] != "" {
+		// The answer as JSON, for a program that reads it (as `serve`
+		// does); where the trace went goes to the error output.
+		fmt.Println(pyJSON(result, false))
+		fmt.Fprintf(os.Stderr, "Trace: %s\n", options["--trace"])
+		return 0
 	}
 	fmt.Println(pyReprAny(result))
 	fmt.Printf("Trace: %s\n", options["--trace"])
