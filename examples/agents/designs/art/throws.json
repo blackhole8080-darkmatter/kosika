@@ -1,0 +1,149 @@
+{
+ "a": {
+  "title": "How far a ball flies at 45 degrees",
+  "summary": "Kosika works out each throw from the laws of motion: the speed that lands it, and the time in the air.",
+  "palette": "ember",
+  "backdrop": "land",
+  "figures": [
+   {
+    "id": "hand",
+    "kind": "circle",
+    "x": 8,
+    "y": 46,
+    "w": 1.4,
+    "h": 0,
+    "count": 0,
+    "hue": 1,
+    "label": "Start",
+    "points": []
+   },
+   {
+    "id": "ball1",
+    "kind": "circle",
+    "x": 8,
+    "y": 46,
+    "w": 1.2,
+    "h": 0,
+    "count": 0,
+    "hue": 0,
+    "label": "",
+    "points": []
+   },
+   {
+    "id": "ball2",
+    "kind": "circle",
+    "x": 8,
+    "y": 46,
+    "w": 1.2,
+    "h": 0,
+    "count": 0,
+    "hue": 2,
+    "label": "",
+    "points": []
+   },
+   {
+    "id": "ball3",
+    "kind": "circle",
+    "x": 8,
+    "y": 46,
+    "w": 1.2,
+    "h": 0,
+    "count": 0,
+    "hue": 3,
+    "label": "",
+    "points": []
+   },
+   {
+    "id": "near",
+    "kind": "rect",
+    "x": 34,
+    "y": 47,
+    "w": 5,
+    "h": 1.2,
+    "count": 0,
+    "hue": 6,
+    "label": "2.6 m",
+    "points": []
+   },
+   {
+    "id": "mid",
+    "kind": "rect",
+    "x": 60,
+    "y": 47,
+    "w": 5,
+    "h": 1.2,
+    "count": 0,
+    "hue": 6,
+    "label": "5.2 m",
+    "points": []
+   },
+   {
+    "id": "far",
+    "kind": "rect",
+    "x": 88,
+    "y": 47,
+    "w": 5,
+    "h": 1.2,
+    "count": 0,
+    "hue": 6,
+    "label": "8 m",
+    "points": []
+   }
+  ],
+  "motions": [
+   {
+    "what": "ball1",
+    "kind": "throw",
+    "around": "near",
+    "seconds": 0,
+    "delay": 0
+   },
+   {
+    "what": "ball2",
+    "kind": "throw",
+    "around": "mid",
+    "seconds": 0,
+    "delay": 0.4
+   },
+   {
+    "what": "ball3",
+    "kind": "throw",
+    "around": "far",
+    "seconds": 0,
+    "delay": 0.8
+   }
+  ],
+  "beats": [
+   {
+    "text": "Three balls are thrown at the same angle, 45 degrees, each to land further away.",
+    "shows": [
+     "hand",
+     "ball1",
+     "ball2",
+     "ball3"
+    ]
+   },
+   {
+    "text": "To land three times as far, a ball needs only about 1.7 times the speed.",
+    "shows": [
+     "ball1",
+     "ball3"
+    ]
+   },
+   {
+    "text": "Each one rises slowly, hangs at the top, and speeds up as it falls: gravity at work.",
+    "shows": [
+     "ball2"
+    ]
+   },
+   {
+    "text": "Kosika works out every speed and time itself, from v² = g·d for a flat throw at 45 degrees.",
+    "shows": [
+     "near",
+     "mid",
+     "far"
+    ]
+   }
+  ]
+ }
+}

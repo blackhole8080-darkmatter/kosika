@@ -22,14 +22,15 @@ import "std/designs.kos"
 export [StudyMsg, Studied, StudyNote, main]
 
 record StudyMsg { text: Text }
-record StudyNote { text: Text course: Text }
+// words: the note's words in their plain form, so "transistors" finds "transistor".
+record StudyNote { text: Text course: Text words: Text }
 // text: the answer in words; notes: what it used from your notes;
 // kind, title, why, embed, page: the picture, as Kosika Designs drew it.
 record Studied { text: Text notes: Text[] kind: Text title: Text why: Text embed: Text page: Text problems: Text[] }
 record TutorBrief { task: Text question: Text notes: Text }
 record TutorAnswer { text: Text }
 
-memory studies of StudyNote
+memory jottings of StudyNote
 
 model tutor {
   input: TutorBrief
@@ -56,8 +57,20 @@ fn sd_note(m: StudyMsg) -> StudyNote {
   let rest = m.text.trim().drop(sd_first(m.text).length()).trim().trim_marks(":,. ")
   let colon = rest.index_of(":").or(-1)
   let course = if colon > 0 and colon < 30 { rest.slice(0, colon).trim() } else { "" }
-  return {text: rest, course: course}
+  return {text: rest, course: course, words: sd_stems(rest)}
 }
+
+// A word's plain form: lower case, without the marks around it, and a
+// plural's s taken off ("transistors", "waves" -> "transistor", "wave"), so
+// a question finds a note however each was worded.
+fn sd_stem(word: Text) -> Text {
+  let w = word.lower().trim_marks(".,:;!?()\"'")
+  if w.length() > 4 and w.ends_with("ies") { return w.slice(0, w.length() - 3) + "y" }
+  if w.length() > 4 and w.ends_with("s") and not w.ends_with("ss") and not w.ends_with("us") and not w.ends_with("is") { return w.slice(0, w.length() - 1) }
+  return w
+}
+
+fn sd_stems(text: Text) -> Text { return (for w in text.words() { sd_stem(w) }).join(" ") }
 
 fn sd_key(n: StudyNote) -> Text {
   let k = n.text.lower().trim()
@@ -71,7 +84,7 @@ fn sd_kept(n: StudyNote) -> Studied {
 
 // The notes near enough to the question to help: by meaning, those that
 // stand out; by words, those sharing at least a tenth of them.
-fn sd_useful(found: StudiesLike) -> Text[] {
+fn sd_useful(found: JottingsLike) -> Text[] {
   var out: Text[] = []
   let top = if found.matches.is_empty() { 0 } else { found.matches[0].score }
   for m in found.matches {
@@ -111,12 +124,12 @@ fn sd_notes_text(notes: Text[]) -> Text {
 
 workflow keep_note(m: StudyMsg) -> Studied {
   note  = sd_note(m)
-  saved = remember note in studies under sd_key(note)
+  saved = remember note in jottings under sd_key(note)
   out   = sd_kept(note)
 }
 
 workflow teach(m: StudyMsg) -> Studied {
-  found  = recall studies like m.text
+  found  = recall jottings like sd_stems(m.text)
   notes  = sd_useful(found)
   said   = use_model tutor(sd_task(), m.text, sd_notes_text(notes)) retry 1 otherwise sd_no_answer()
   drawn  = call design(sd_drawing(m))
@@ -145,4 +158,12 @@ test "explanations get the whole canvas; quizzes and maths their own kind" {
   expect sd_drawing({text: "how does a transistor work"}).kind == "canvas"
   expect dz_kind(sd_drawing({text: "quiz me on optics"})) == "quiz"
   expect dz_kind(sd_drawing({text: "differentiate x^3 cos(x)"})) == "worked"
+}
+
+test "a note and a question meet however their words are inflected" {
+  expect sd_stems("Lab report on Transistors, due soon") == "lab report on transistor due soon"
+  expect sd_stem("studies") == "study"
+  expect sd_stem("class") == "class"
+  expect sd_stem("optics") == "optic"
+  expect sd_note({text: "remember: Electronics 1: lab report on transistors due 7 November"}).words.contains("transistor")
 }

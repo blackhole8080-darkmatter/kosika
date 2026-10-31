@@ -68,8 +68,8 @@ fn art_round() -> Text[] { return ["circle", "ring", "drop", "sun", "cloud", "po
 fn art_backdrops() -> Text[] { return ["plain", "night", "sky", "sea", "land", "grid"] }
 fn art_pointed() -> Text[] { return ["line", "curve", "arrow", "blob"] }
 fn art_paths() -> Text[] { return ["line", "curve", "arrow", "wave", "spiral"] }
-fn art_moves() -> Text[] { return ["orbit", "travel", "swing", "spin", "pulse", "float", "sway", "blink", "rise", "fall", "flow", "draw"] }
-fn art_movers() -> Text[] { return ["orbit", "travel", "swing"] }
+fn art_moves() -> Text[] { return ["orbit", "travel", "swing", "throw", "spin", "pulse", "float", "sway", "blink", "rise", "fall", "flow", "draw"] }
+fn art_movers() -> Text[] { return ["orbit", "travel", "swing", "throw"] }
 fn art_width() -> Number { return 100 }
 fn art_height() -> Number { return 60 }
 // Pixels to a grid unit.
@@ -276,6 +276,11 @@ fn art_motion_problems(a: Art, m: Motion) -> Text[] {
     else if art_radius(a, m) < 2 { out = out.append(f"{m.what} sits on {m.around}: an orbit needs it placed away from the centre") }
     else if not art_orbit_fits(a, m) { out = out.append(f"{m.what}'s orbit round {m.around} runs off the grid: bring it closer") }
   }
+  if m.kind == "throw" {
+    let land = art_index(a, m.around)
+    if land < 0 or m.around == m.what { out = out.append(f"{m.what} is thrown to '{m.around}': name the figure where it lands") }
+    else if not art_throw(a, m).ok { out = out.append(f"{m.what} cannot reach {m.around} at 45 degrees: put the landing place further away or lower") }
+  }
   if m.kind == "swing" {
     let pivot = art_index(a, m.around)
     if pivot < 0 or m.around == m.what { out = out.append(f"{m.what} swings from '{m.around}': name the figure it hangs from") }
@@ -350,6 +355,49 @@ fn art_orbit_seconds(radius: Number) -> Number {
   return (4 * (radius / 10).power(1.5) * 10).round() / 10
 }
 
+// A throw at 45 degrees from where a figure is to where another is, worked
+// from the laws of motion with g = 9.81 m/s^2 and ten grid units to a metre:
+// the launch speed that lands it there, v^2 = g d^2 / (2 cos^2 a (d tan a + h))
+// for a run d and a drop h, the time in the air, d / (v cos a), and its
+// path, sampled at equal times so it slows at the top and speeds up falling.
+record ArtThrow { ok: Bool speed: Number seconds: Number path: Text points: Text times: Text }
+
+fn art_throw(a: Art, m: Motion) -> ArtThrow {
+  let none: ArtThrow = {ok: false, speed: 0, seconds: 0, path: "", points: "", times: ""}
+  let start = art_centre(a.figures[art_index(a, m.what)])
+  let land = art_centre(a.figures[art_index(a, m.around)])
+  let run = (land[0] - start[0]) / 10
+  let drop = (land[1] - start[1]) / 10
+  let d = run.abs()
+  let side = if run < 0 { -1 } else { 1 }
+  let g = 9.81
+  let angle = 45
+  let below = 2 * angle.cos() * angle.cos() * (d * angle.sin() / angle.cos() + drop)
+  if d < 0.2 or below <= 0 { return none }
+  let speed = (g * d * d / below).sqrt()
+  let seconds = d / (speed * angle.cos())
+  let s = art_px()
+  let n = 24
+  var xs: Number[] = []
+  var ys: Number[] = []
+  for k in 0 until n + 1 {
+    let t = seconds * k / n
+    xs = xs.append((start[0] + side * speed * angle.cos() * t * 10) * s)
+    ys = ys.append((start[1] - (speed * angle.sin() * t - g * t * t / 2) * 10) * s)
+  }
+  var lengths: Number[] = [0]
+  for k in 1 until n + 1 {
+    let dx = xs[k] - xs[k - 1]
+    let dy = ys[k] - ys[k - 1]
+    lengths = lengths.append(lengths[k - 1] + (dx * dx + dy * dy).sqrt())
+  }
+  let total = lengths[n].max(0.001)
+  let path = "M" + (for k in 0 until n + 1 { art_n(xs[k]) + " " + art_n(ys[k]) }).join(" L")
+  let points = (for k in 0 until n + 1 { (lengths[k] / total).to_fixed(4) }).join(";")
+  let times = (for k in 0 until n + 1 { (k / n).to_fixed(4) }).join(";")
+  return {ok: true, speed: (speed * 100).round() / 100, seconds: (seconds * 100).round() / 100, path: path, points: points, times: times}
+}
+
 // How far a pendulum swings either side, in degrees: small, as the formula
 // for its time holds for small swings.
 fn art_swing_angle(m: Motion) -> Number { return 22 }
@@ -366,6 +414,7 @@ fn art_seconds(a: Art, m: Motion) -> Number {
   if m.seconds > 0 { return m.seconds }
   if m.kind == "orbit" { return art_orbit_seconds(art_radius(a, m)) }
   if m.kind == "swing" { return art_swing_seconds(art_radius(a, m)) }
+  if m.kind == "throw" { return art_throw(a, m).seconds + 1.2 }
   if m.kind == "travel" { return 5 }
   if m.kind == "spin" { return 12 }
   if m.kind == "sway" or m.kind == "float" { return 3.6 }
@@ -670,6 +719,16 @@ fn art_figure(a: Art, i: Number, depth: Number) -> Text recurse 4 {
       track = f"<path class=\"track\" d=\"{ring}\"/>"
       how = f"path=\"{ring}\""
     }
+    if m.kind == "throw" {
+      let arc = art_throw(a, m)
+      let flight = arc.seconds / seconds
+      let keys = (for k in 0 until 25 { (k / 24 * flight).to_fixed(4) }).join(";") + ";1"
+      let points = arc.points + ";1"
+      track = f"<path class=\"track\" d=\"{arc.path}\"/>"
+      let ride = f"<animateMotion dur=\"{art_n(seconds)}s\" begin=\"-{art_n(m.delay)}s\" repeatCount=\"indefinite\" calcMode=\"linear\" keyPoints=\"{points}\" keyTimes=\"{keys}\" path=\"{arc.path}\"/>"
+      body = f"<g class=\"ride\">{ride}<g transform=\"translate({art_n(0 - c[0] * s)} {art_n(0 - c[1] * s)})\">{body}</g></g>"
+      return f"<g class=\"fig k-{f.kind}\" id=\"f-{f.id}\" style=\"--c:{art_colour(f)};--g:url(#art-g{f.hue})\">{track}{body}</g>"
+    }
     if m.kind == "swing" {
       let o = art_centre(a.figures[art_index(a, m.around)])
       let px = o[0] * s
@@ -837,8 +896,13 @@ fn art_worked(a: Art) -> Text {
   for m in a.motions {
     if m.kind == "swing" and m.seconds == 0 { swung = swung.append(f"{art_called(a, m.what)} ({art_n(art_radius(a, m) / 10)} m) swings there and back in {art_swing_seconds(art_radius(a, m))} s") }
   }
+  var thrown: Text[] = []
+  for m in a.motions {
+    if m.kind == "throw" and art_throw(a, m).ok { thrown = thrown.append(f"{art_called(a, m.what)} leaves at {art_throw(a, m).speed} m/s and lands after {art_throw(a, m).seconds} s") }
+  }
+  let throws = if thrown.is_empty() { "" } else { "Throws worked by Kosika from the laws of motion, launched at 45 degrees with g = 9.81 m/s²: " + art_esc(thrown.join("; ")) + "." }
   let swings = if swung.is_empty() { "" } else { "Pendulum times worked by Kosika from T = 2π√(L/g), with g = 9.81 m/s²: " + art_esc(swung.join("; ")) + "." }
-  return (for t in [orbits, swings] where not t.is_empty() { t }).join(" ")
+  return (for t in [orbits, swings, throws] where not t.is_empty() { t }).join(" ")
 }
 
 fn art_page(ask: Text, raw: Art, fixed: Text[]) -> Text {
@@ -884,7 +948,7 @@ model illustrator {
 
 fn art_task() -> Text {
   let names = palette_names().join(", ")
-  return "You plan a small, calm, animated illustration that explains what was asked, in the flat, minimal style of a good science explainer: few shapes, big and clear, lots of space. Do not draw: describe it as data. The picture is a grid 100 wide and 60 tall; x runs right, y runs down; keep everything 4 units from the edges and the main subject near the middle. Give title (a short heading), summary (one plain sentence), palette (one of " + names + "; dark_matter unless another suits the subject: ocean for water, forest for plants, ember for fire or heat, aurora for space), backdrop (what Kosika draws behind: night for space or the night sky, sky for weather and the outdoors by day, sea for the ocean, land for landscapes and plants, grid for machines, circuits and mathematics, plain otherwise), figures, motions and beats. Each figure has id (a short lowercase word), kind, x, y, w, h, count, hue, label and points; give every field, using 0, empty text or [] where a field does not apply. Kinds: circle (x, y centre, w radius), ring (an outline circle, x, y, w radius), rect (x, y centre, w width, h height), blob (a soft closed shape through points), drop (a water drop, x, y, w size), sun (x, y, w radius, count rays), cloud (x, y, w size), polygon (x, y, w radius, count corners), star (x, y, w radius, count points), gear (x, y, w radius, count teeth; gears whose teeth touch, centres about 0.9 times the sum of their radii apart, are turned by each other), rainbow (x, y the middle of its base, w its radius: seven spectral bands in the right order, red outside; put the sun behind the viewer, on the other side from the rainbow), spiral (a golden spiral: x, y centre, w outer radius, count turns, h its turn in degrees: two spirals with h 0 and 180 make a two-armed galaxy), line, curve and arrow (through points: x1, y1, x2, y2 ...), wave (starts at x, y; w long; h tall; count crests), text (label at x, y; w letter size about 2.5). Size things generously but keep each round figure, its rays included, inside the grid. hue: 0 to 5 picks one of the palette's six colours, 6 the quiet line colour; give related things the same hue. label: one to three words naming the figure, or empty. Motions, each with what (a figure id), kind, around, seconds and delay: orbit (goes round the figure named in around; seconds 0 lets Kosika time it by Kepler's law), swing (a pendulum: hangs from the figure named in around, placed straight below it, and swings; seconds 0 lets Kosika time it from its length by T = 2 pi sqrt(L/g)), travel (moves along the line, curve, arrow or wave named in around), spin, pulse, float, sway, blink, rise (drifts up and fades, like vapour), fall (drops and fades, like rain), flow (dashes run along a line, curve, arrow, wave or ring: a current, a signal), draw (a line drawing itself). Use 2 to 10 motions, only where motion explains something; give several copies of a small figure different delays so they do not move together. beats: 3 to 5 short sentences, each under 22 words, in the order to read them, each with shows: the ids of the figures it is about. Make it true: positions, sizes and motions should match the real thing."
+  return "You plan a small, calm, animated illustration that explains what was asked, in the flat, minimal style of a good science explainer: few shapes, big and clear, lots of space. Do not draw: describe it as data. The picture is a grid 100 wide and 60 tall; x runs right, y runs down; keep everything 4 units from the edges and the main subject near the middle. Give title (a short heading), summary (one plain sentence), palette (one of " + names + "; dark_matter unless another suits the subject: ocean for water, forest for plants, ember for fire or heat, aurora for space), backdrop (what Kosika draws behind: night for space or the night sky, sky for weather and the outdoors by day, sea for the ocean, land for landscapes and plants, grid for machines, circuits and mathematics, plain otherwise), figures, motions and beats. Each figure has id (a short lowercase word), kind, x, y, w, h, count, hue, label and points; give every field, using 0, empty text or [] where a field does not apply. Kinds: circle (x, y centre, w radius), ring (an outline circle, x, y, w radius), rect (x, y centre, w width, h height), blob (a soft closed shape through points), drop (a water drop, x, y, w size), sun (x, y, w radius, count rays), cloud (x, y, w size), polygon (x, y, w radius, count corners), star (x, y, w radius, count points), gear (x, y, w radius, count teeth; gears whose teeth touch, centres about 0.9 times the sum of their radii apart, are turned by each other), rainbow (x, y the middle of its base, w its radius: seven spectral bands in the right order, red outside; put the sun behind the viewer, on the other side from the rainbow), spiral (a golden spiral: x, y centre, w outer radius, count turns, h its turn in degrees: two spirals with h 0 and 180 make a two-armed galaxy), line, curve and arrow (through points: x1, y1, x2, y2 ...), wave (starts at x, y; w long; h tall; count crests), text (label at x, y; w letter size about 2.5). Size things generously but keep each round figure, its rays included, inside the grid. hue: 0 to 5 picks one of the palette's six colours, 6 the quiet line colour; give related things the same hue. label: one to three words naming the figure, or empty. Motions, each with what (a figure id), kind, around, seconds and delay: orbit (goes round the figure named in around; seconds 0 lets Kosika time it by Kepler's law), throw (flies in a real arc, launched at 45 degrees, from where it is to the figure named in around, where it lands; Kosika works out the speed and time), swing (a pendulum: hangs from the figure named in around, placed straight below it, and swings; seconds 0 lets Kosika time it from its length by T = 2 pi sqrt(L/g)), travel (moves along the line, curve, arrow or wave named in around), spin, pulse, float, sway, blink, rise (drifts up and fades, like vapour), fall (drops and fades, like rain), flow (dashes run along a line, curve, arrow, wave or ring: a current, a signal), draw (a line drawing itself). Use 2 to 10 motions, only where motion explains something; give several copies of a small figure different delays so they do not move together. beats: 3 to 5 short sentences, each under 22 words, in the order to read them, each with shows: the ids of the figures it is about. Make it true: positions, sizes and motions should match the real thing."
 }
 
 fn art_in(a: Art, palette: Text) -> Art {
@@ -1059,4 +1123,20 @@ test "a pendulum swings in the time its length gives it" {
   svg = art_svg(pend)
   expect svg.contains("type=\"rotate\"")
   expect svg.contains("class=\"string\"")
+}
+
+test "a throw follows the laws of motion" {
+  // four metres along the flat at 45 degrees: v = sqrt(g d) = 6.26 m/s, 0.9 s in the air
+  shot = {..art_sample(), figures: [art_fig("ball", "circle", 10, 50, 1.5), {..art_fig("cup", "rect", 50, 50, 4), h: 2}], motions: [{what: "ball", kind: "throw", around: "cup", seconds: 0, delay: 0}], beats: [{text: "a", shows: ["ball"]}, {text: "b", shows: ["cup"]}]}
+  t = art_throw(shot, shot.motions[0])
+  expect t.ok
+  expect t.speed == 6.26
+  expect t.seconds == 0.9
+  expect art_problems(shot) == []
+  // it rises to d/4, one metre, at the middle
+  expect t.path.contains(" L240.0 320.0")
+  expect art_svg(shot).contains("keyPoints=")
+  // too high to reach at 45 degrees
+  up = {..shot, figures: [art_fig("ball", "circle", 10, 50, 1.5), {..art_fig("cup", "rect", 14, 8, 4), h: 2}]}
+  expect art_problems(up).contains("ball cannot reach cup at 45 degrees: put the landing place further away or lower")
 }
