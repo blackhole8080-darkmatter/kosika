@@ -42,6 +42,10 @@ def _items(program: Program, source: str) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
 
     def add(kind: str, name: str, detail: str, declared: str | None = None) -> None:
+        if (declared or kind, name) not in lines:
+            # Imported from another file, such as the standard library:
+            # that file lists it.
+            return
         items.append(
             {
                 "kind": kind,

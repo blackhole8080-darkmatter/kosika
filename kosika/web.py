@@ -181,6 +181,9 @@ def _bare(tag: str) -> str:
     return tag.split(":")[-1]
 
 
+_CDATA = re.compile(r"<!\[CDATA\[(.*?)\]\]>", re.S)
+
+
 class _Feed(html.parser.HTMLParser):
     """A feed as plain lines: each entry begins with `---`, then one line for
     each of its title, date, authors, link and summary that it has. Atom
@@ -248,7 +251,9 @@ class _Feed(html.parser.HTMLParser):
 
     def handle_data(self, data: str) -> None:
         if self._label is not None:
-            self._text.append(data)
+            # Newer Pythons (3.13.4, 3.12.11 and on) hand a CDATA section to
+            # handle_data whole, its wrapper included; the words are inside.
+            self._text.append(_CDATA.sub(lambda found: found.group(1), data))
 
     def unknown_decl(self, data: str) -> None:
         # A feed may wrap a field's words in <![CDATA[...]]>; the words are
@@ -256,6 +261,11 @@ class _Feed(html.parser.HTMLParser):
         # browsers treat it as nothing.
         if data.startswith("CDATA["):
             self.handle_data(data[len("CDATA[") :])
+
+    def handle_comment(self, data: str) -> None:
+        # ... and some read it as a bogus comment, "[CDATA[ words ]]".
+        if data.startswith("[CDATA[") and data.endswith("]]"):
+            self.handle_data(data[len("[CDATA[") : -2])
 
 
 def readable_feed(body: str) -> str:

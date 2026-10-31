@@ -1145,6 +1145,8 @@ class RecordedApprovalTests(unittest.TestCase):
                 "plan_hash": self.request["plan_hash"],
                 "action_hash": self.request["action_hash"],
                 "approved_by": "reviewer",
+                # the whole step path the hash is over
+                "step": ["main", "done"],
             },
         )
         # The hash the ledger claimed is over this step, this tool and the

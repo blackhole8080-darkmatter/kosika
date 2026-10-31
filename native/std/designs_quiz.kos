@@ -6,6 +6,11 @@
 // they never all sit first, and draws a quiz card: pick a choice, see at
 // once whether it was right and why, and the score at the end.
 //
+// Then every answer is checked a second time, blind: an examiner model is
+// shown the questions and choices without the answers, and works each one
+// out itself. Kosika keeps the questions where both agree and leaves out
+// the ones they dispute, and the card says how many were checked.
+//
 //   kosika run designs_quiz.kos --workflow quiz --input ask.json ...
 //
 // where ask.json holds {"ask": {"text": "photosynthesis", "palette": ""}}.
@@ -13,14 +18,20 @@
 
 import "designs_palette.kos"
 
-export [QzQuestion, Quiz, QzAsk, QzPage, qz_problems, qz_tidy, qz_card, qz_style, qz_script, qz_page, quiz, qz_render]
+export [QzQuestion, Quiz, QzAsk, QzPage, QzVerdict, QzReview, qz_exam_text, qz_checked, qz_problems, qz_tidy, qz_card, qz_style, qz_script, qz_page, quiz, qz_render]
 
 // answer: which choice is right, counting from 0. why: one sentence that
 // says why it is right, shown once a choice is picked.
 record QzQuestion { ask: Text choices: Text[] answer: Number why: Text }
 record Quiz { title: Text topic: Text palette: Text questions: QzQuestion[] }
 record QzAsk { text: Text palette: Text }
-record QzPage { page: Text card: Text problems: Text[] quiz: Quiz }
+// checked: what the second, blind check found, in words.
+record QzPage { page: Text card: Text problems: Text[] quiz: Quiz checked: Text }
+// The examiner's own answer to question `question` (counting from 1), as a
+// letter, and whether it is sure.
+record QzVerdict { question: Number answer: Text sure: Bool }
+record QzReview { verdicts: QzVerdict[] }
+record QzExamBrief { task: Text questions: Text }
 record QzBrief { task: Text ask: Text problems: Text }
 
 fn qz_esc(text: Text) -> Text {
@@ -95,14 +106,20 @@ fn qz_question(q: QzQuestion, k: Number) -> Text {
 }
 
 // The quiz alone, to sit inside any page that carries qz_style and qz_script.
-fn qz_card(raw: Quiz) -> Text {
+fn qz_card(raw: Quiz) -> Text { return qz_card_noted(raw, "") }
+
+fn qz_card_noted(raw: Quiz, checked: Text) -> Text {
   let z = qz_tidy(raw)
   let questions = (for k in 0 until z.questions.length() { qz_question(z.questions[k], k) }).join("")
-  return f"<div class=\"qz\"><div class=\"qz-head\"><span>Quiz</span><h3>{qz_esc(z.title)}</h3></div><ol class=\"qz-list\">{questions}</ol><div class=\"qz-score\" aria-live=\"polite\">Pick an answer for each question.</div><button type=\"button\" class=\"qz-again\" hidden>Try again</button></div>"
+  return f"<div class=\"qz\"><div class=\"qz-head\"><span>Quiz</span><h3>{qz_esc(z.title)}</h3></div>{qz_check_line(checked)}<ol class=\"qz-list\">{questions}</ol><div class=\"qz-score\" aria-live=\"polite\">Pick an answer for each question.</div><button type=\"button\" class=\"qz-again\" hidden>Try again</button></div>"
+}
+
+fn qz_check_line(checked: Text) -> Text {
+  return if checked.is_empty() { "" } else { "<p class=\"qz-checked\">&#10003; " + qz_esc(checked) + "</p>" }
 }
 
 fn qz_style() -> Text {
-  return ".qz{color:var(--ink);font:15px/1.5 Figtree,system-ui,-apple-system,'Segoe UI',sans-serif}.qz-head span{font:600 10.5px ui-monospace,Consolas,monospace;letter-spacing:.24em;text-transform:uppercase;color:var(--gold)}.qz-head h3{margin:4px 0 14px;font-size:22px;font-weight:850;letter-spacing:-.02em}.qz-list{list-style:none;margin:0;padding:0;display:grid;gap:12px}.qz-q{background:color-mix(in srgb,var(--halo) 88%,transparent);border:1px solid color-mix(in srgb,var(--line) 12%,transparent);border-radius:16px;padding:14px}.qz-ask{display:flex;gap:10px;font-weight:600;margin-bottom:10px}.qz-ask i{font:normal 600 11px ui-monospace,Consolas,monospace;flex:none;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;color:var(--think);border:1.5px solid color-mix(in srgb,var(--think) 70%,transparent)}.qz-choices{display:grid;gap:6px}.qz-choice{display:flex;gap:10px;align-items:center;text-align:left;font:inherit;color:var(--ink);background:transparent;border:1px solid color-mix(in srgb,var(--line) 16%,transparent);border-radius:12px;padding:8px 10px;cursor:pointer;transition:border-color .2s,background .2s}.qz-choice b{flex:none;width:22px;height:22px;border-radius:6px;display:grid;place-items:center;font:600 11px ui-monospace,Consolas,monospace;color:var(--soft);border:1px solid color-mix(in srgb,var(--line) 22%,transparent)}.qz-choice:hover:not([disabled]),.qz-choice:focus-visible{border-color:var(--amber);outline:none}.qz-choice[disabled]{cursor:default}.qz-choice.right{border-color:var(--h4,#4fe0a6);background:color-mix(in srgb,var(--h4,#4fe0a6) 14%,transparent)}.qz-choice.right b{background:var(--h4,#4fe0a6);color:#0b0a1f;border-color:transparent}.qz-choice.wrong{border-color:var(--h5,#ff6b81);background:color-mix(in srgb,var(--h5,#ff6b81) 12%,transparent)}.qz-choice.wrong b{background:var(--h5,#ff6b81);color:#0b0a1f;border-color:transparent}.qz-why{margin:10px 2px 0;color:var(--soft);font-size:14px}.qz-score{margin:14px 2px 6px;font-weight:600}.qz-again{font:600 10px ui-monospace,Consolas,monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--soft);background:none;border:1px solid var(--line2);border-radius:999px;padding:7px 13px;cursor:pointer}"
+  return ".qz{color:var(--ink);font:15px/1.5 Figtree,system-ui,-apple-system,'Segoe UI',sans-serif}.qz-head span{font:600 10.5px ui-monospace,Consolas,monospace;letter-spacing:.24em;text-transform:uppercase;color:var(--gold)}.qz-checked{margin:-6px 0 14px;color:var(--soft);font-size:13.5px}.qz-head h3{margin:4px 0 14px;font-size:22px;font-weight:850;letter-spacing:-.02em}.qz-list{list-style:none;margin:0;padding:0;display:grid;gap:12px}.qz-q{background:color-mix(in srgb,var(--halo) 88%,transparent);border:1px solid color-mix(in srgb,var(--line) 12%,transparent);border-radius:16px;padding:14px}.qz-ask{display:flex;gap:10px;font-weight:600;margin-bottom:10px}.qz-ask i{font:normal 600 11px ui-monospace,Consolas,monospace;flex:none;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;color:var(--think);border:1.5px solid color-mix(in srgb,var(--think) 70%,transparent)}.qz-choices{display:grid;gap:6px}.qz-choice{display:flex;gap:10px;align-items:center;text-align:left;font:inherit;color:var(--ink);background:transparent;border:1px solid color-mix(in srgb,var(--line) 16%,transparent);border-radius:12px;padding:8px 10px;cursor:pointer;transition:border-color .2s,background .2s}.qz-choice b{flex:none;width:22px;height:22px;border-radius:6px;display:grid;place-items:center;font:600 11px ui-monospace,Consolas,monospace;color:var(--soft);border:1px solid color-mix(in srgb,var(--line) 22%,transparent)}.qz-choice:hover:not([disabled]),.qz-choice:focus-visible{border-color:var(--amber);outline:none}.qz-choice[disabled]{cursor:default}.qz-choice.right{border-color:var(--h4,#4fe0a6);background:color-mix(in srgb,var(--h4,#4fe0a6) 14%,transparent)}.qz-choice.right b{background:var(--h4,#4fe0a6);color:#0b0a1f;border-color:transparent}.qz-choice.wrong{border-color:var(--h5,#ff6b81);background:color-mix(in srgb,var(--h5,#ff6b81) 12%,transparent)}.qz-choice.wrong b{background:var(--h5,#ff6b81);color:#0b0a1f;border-color:transparent}.qz-why{margin:10px 2px 0;color:var(--soft);font-size:14px}.qz-score{margin:14px 2px 6px;font-weight:600}.qz-again{font:600 10px ui-monospace,Consolas,monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--soft);background:none;border:1px solid var(--line2);border-radius:999px;padding:7px 13px;cursor:pointer}"
 }
 
 // Each question takes one pick: the right choice turns green, a wrong pick
@@ -111,18 +128,73 @@ fn qz_script() -> Text {
   return "(function(){document.querySelectorAll('.qz').forEach(function(z){var qs=[].slice.call(z.querySelectorAll('.qz-q')),score=z.querySelector('.qz-score'),again=z.querySelector('.qz-again');function tally(){var done=qs.filter(function(q){return q.dataset.done}).length,right=qs.filter(function(q){return q.dataset.done==='right'}).length;if(done<qs.length){score.textContent=right+' right so far, '+(qs.length-done)+' to go.';return}score.textContent='You got '+right+' of '+qs.length+(right===qs.length?'. All right!':'. Read the reasons, then try again.');again.hidden=false}qs.forEach(function(q){var cs=[].slice.call(q.querySelectorAll('.qz-choice'));cs.forEach(function(c){c.addEventListener('click',function(){if(q.dataset.done)return;var ok=c.dataset.i===q.dataset.answer;q.dataset.done=ok?'right':'wrong';cs.forEach(function(x){x.disabled=true;if(x.dataset.i===q.dataset.answer)x.classList.add('right')});if(!ok)c.classList.add('wrong');q.querySelector('.qz-why').hidden=false;tally()})})});again.addEventListener('click',function(){qs.forEach(function(q){delete q.dataset.done;q.querySelector('.qz-why').hidden=true;q.querySelectorAll('.qz-choice').forEach(function(x){x.disabled=false;x.classList.remove('right','wrong')})});again.hidden=true;score.textContent='Pick an answer for each question.'})})})();"
 }
 
-fn qz_page(ask: Text, raw: Quiz) -> Text {
+fn qz_page(ask: Text, raw: Quiz) -> Text { return qz_page_noted(ask, raw, "") }
+
+fn qz_page_noted(ask: Text, raw: Quiz, checked: Text) -> Text {
   let z = qz_tidy(raw)
   let asked = if ask.trim().is_empty() { "" } else { f"<p class=\"ask\">{qz_esc(ask)}</p>" }
-  return f"<!doctype html><html lang=\"en\" data-palette=\"{z.palette}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{qz_esc(z.title)}</title><style>{palettes_css()}body{{margin:0;background:var(--bg)}}main{{max-width:760px;margin:0 auto;padding:28px 16px 48px}}.ask{{color:var(--soft);font:14px system-ui,sans-serif;margin:0 0 6px}}{qz_style()}</style></head><body><main>{asked}{qz_card(z)}</main><script>{qz_script()}</script></body></html>"
+  return f"<!doctype html><html lang=\"en\" data-palette=\"{z.palette}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{qz_esc(z.title)}</title><style>{palettes_css()}body{{margin:0;background:var(--bg)}}main{{max-width:760px;margin:0 auto;padding:28px 16px 48px}}.ask{{color:var(--soft);font:14px system-ui,sans-serif;margin:0 0 6px}}{qz_style()}</style></head><body><main>{asked}{qz_card_noted(z, checked)}</main><script>{qz_script()}</script></body></html>"
 }
 
-fn qz_result(ask: Text, z: Quiz) -> QzPage {
+fn qz_result(ask: Text, z: Quiz) -> QzPage { return qz_result_noted(ask, z, "") }
+
+fn qz_result_noted(ask: Text, z: Quiz, checked: Text) -> QzPage {
   let wrong = qz_problems(z)
   let tidy = qz_tidy(z)
-  if wrong.is_empty() { return {page: qz_page(ask, tidy), card: qz_card(tidy), problems: [], quiz: tidy} }
-  return {page: "", card: "", problems: wrong, quiz: tidy}
+  if wrong.is_empty() { return {page: qz_page_noted(ask, tidy, checked), card: qz_card_noted(tidy, checked), problems: [], quiz: tidy, checked: checked} }
+  return {page: "", card: "", problems: wrong, quiz: tidy, checked: checked}
 }
+
+// ---------------------------------------------------------------- the second, blind check
+
+// The quiz as the examiner sees it: questions and lettered choices, and no
+// answers.
+fn qz_exam_text(z: Quiz) -> Text {
+  return (for k in 0 until z.questions.length() { f"Q{k + 1}. {z.questions[k].ask}\n" + (for i in 0 until z.questions[k].choices.length() { qz_letter(i) + ") " + z.questions[k].choices[i] }).join("\n") }).join("\n\n")
+}
+
+// The examiner's answer to question k, counting from 0, or -1.
+fn qz_verdict_for(r: QzReview, k: Number) -> Number {
+  for v in r.verdicts {
+    if v.question == k + 1 { return "ABCDE".index_of(v.answer.trim().upper().slice(0, 1)).or(-1) }
+  }
+  return -1
+}
+
+// The quiz after the check, and what to say about it. Questions both
+// models answer the same way are kept; disputed ones are left out, as long
+// as three remain; otherwise all stay, and the card says to take care.
+fn qz_checked(z: Quiz, r: QzReview) -> Quiz {
+  if r.verdicts.is_empty() { return z }
+  let agreed = for k in 0 until z.questions.length() where qz_verdict_for(r, k) == z.questions[k].answer { z.questions[k] }
+  return if agreed.length() >= 3 { {..z, questions: agreed} } else { z }
+}
+
+fn qz_check_said(z: Quiz, r: QzReview) -> Text {
+  let n = z.questions.length()
+  if r.verdicts.is_empty() { return "" }
+  let agreed = (for k in 0 until n where qz_verdict_for(r, k) == z.questions[k].answer { k }).length()
+  let disputed = n - agreed
+  if disputed == 0 { return f"Every answer was worked out again, blind, by a second model, and all {n} agreed." }
+  if agreed >= 3 { return f"Every answer was worked out again, blind, by a second model: {agreed} of {n} agreed, and the {disputed} disputed " + qz_were(disputed) + " left out." }
+  return f"A second, blind check disagreed on {disputed} of {n} answers: take these with care."
+}
+
+model qz_examiner {
+  input: QzExamBrief
+  output: QzReview
+  parameters: {
+    max_output_tokens: 2000
+  }
+}
+
+fn qz_exam_task() -> Text {
+  return "You are an examiner checking a quiz for a university student. For each question, work out the correct choice yourself, carefully and from first principles; do not guess. Give verdicts: one per question, each with question (its number), answer (the letter of the correct choice) and sure (true only if you are confident)."
+}
+
+fn qz_no_review() -> QzReview { return {verdicts: []} }
+
+fn qz_were(n: Number) -> Text { return if n == 1 { "question was" } else { "questions were" } }
 
 // ---------------------------------------------------------------- the workflows
 
@@ -148,14 +220,16 @@ fn qz_wrong(z: Quiz) -> Text { return qz_problems(z).join("; ") }
 fn qz_in(z: Quiz, palette: Text) -> Quiz { return if palette_names().contains(palette) { {..z, palette: palette} } else { z } }
 
 workflow quiz(ask: QzAsk) -> QzPage {
-  budget 4 model calls, 400 seconds
+  budget 6 model calls, 500 seconds
   first  = use_model quizmaster(qz_task(), ask.text, "") retry 1 otherwise qz_none()
   wrong  = qz_wrong(first)
   better = match wrong.is_empty() {
     case true { first }
     case _ { call qz_again(ask, {text: wrong, palette: ""}, first) }
   }
-  out = qz_result(ask.text, qz_in(better, ask.palette))
+  tidy   = qz_tidy(qz_in(better, ask.palette))
+  exam   = use_model qz_examiner(qz_exam_task(), qz_exam_text(tidy)) retry 1 otherwise qz_no_review()
+  out    = qz_result_noted(ask.text, qz_checked(tidy, exam), qz_check_said(tidy, exam))
 }
 
 workflow qz_again(ask: QzAsk, wrong: QzAsk, first: Quiz) -> Quiz {
@@ -197,4 +271,20 @@ test "the card marks the right answer for its script" {
   card = qz_card(qz_sample())
   expect card.contains("data-answer=\"1\"")
   expect card.contains("Try again")
+}
+
+test "a second, blind check keeps the questions both agree on" {
+  t = qz_tidy({..qz_sample(), questions: qz_sample().questions.append({ask: "What colour is chlorophyll?", choices: ["Green", "Red", "Blue"], answer: 0, why: "It reflects green light."})})
+  expect qz_exam_text(t).contains("Q1. What gas do leaves take in?")
+  expect not qz_exam_text(t).contains("Carbon is built")
+  // the examiner agrees on 1, 2 and 4, and disputes 3
+  r: QzReview = {verdicts: [{question: 1, answer: "B", sure: true}, {question: 2, answer: "c", sure: true}, {question: 3, answer: "B", sure: false}, {question: 4, answer: "B", sure: true}]}
+  kept = qz_checked(t, r)
+  expect kept.questions.length() == 3
+  expect qz_check_said(t, r) == "Every answer was worked out again, blind, by a second model: 3 of 4 agreed, and the 1 disputed question was left out."
+  // too few agreed: all stay, with a warning
+  few: QzReview = {verdicts: [{question: 1, answer: "A", sure: true}]}
+  expect qz_checked(t, few).questions.length() == 4
+  expect qz_check_said(t, few) == "A second, blind check disagreed on 4 of 4 answers: take these with care."
+  expect qz_card_noted(kept, qz_check_said(t, r)).contains("qz-checked")
 }

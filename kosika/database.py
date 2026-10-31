@@ -231,7 +231,7 @@ def stored_schema(path: Path) -> dict[str, dict[str, str]]:
     try:
         try:
             return _table_columns(connection)
-        except sqlite3.Error as exc:
+        except (sqlite3.Error, sqlite3.Warning) as exc:
             raise _refused(exc, path, writable=False) from exc
     finally:
         connection.close()
@@ -471,7 +471,9 @@ def sent_problem(
                 del actions[:]
             try:
                 connection.execute(candidate, values)
-            except sqlite3.ProgrammingError as exc:
+            # Some SQLite builds say "one statement at a time" as a Warning,
+            # not a ProgrammingError.
+            except (sqlite3.ProgrammingError, sqlite3.Warning) as exc:
                 said = str(exc)
                 if "one statement" in said:
                     return "it is more than one statement, and a db call runs one"
@@ -569,7 +571,7 @@ def apply_init(plan: StorePlan) -> list[str]:
             for _name, statement in plan.creates:
                 connection.execute(statement)
             connection.commit()
-        except sqlite3.Error as exc:
+        except (sqlite3.Error, sqlite3.Warning) as exc:
             connection.rollback()
             raise _refused(exc, plan.path, writable=True) from exc
     finally:
@@ -592,7 +594,7 @@ def describe(path: Path) -> dict[str, Any]:
                         f'select count(*) from "{quoted}"'
                     ).fetchone()
                     rows = int(counted[0]) if counted is not None else None
-                except sqlite3.Error:
+                except (sqlite3.Error, sqlite3.Warning):
                     rows = None
                 tables.append(
                     {
@@ -608,7 +610,7 @@ def describe(path: Path) -> dict[str, Any]:
                         ],
                     }
                 )
-        except sqlite3.Error as exc:
+        except (sqlite3.Error, sqlite3.Warning) as exc:
             raise _refused(exc, path, writable=False) from exc
     finally:
         connection.close()
@@ -698,7 +700,7 @@ def _opened(path: Path, writable: bool) -> sqlite3.Connection:
             if writable
             else sqlite3.connect(_read_only_uri(path), uri=True)
         )
-    except sqlite3.Error as exc:
+    except (sqlite3.Error, sqlite3.Warning) as exc:
         raise DatabaseError(f"database {str(path)!r} cannot be opened: {exc}") from exc
     deadline = time.monotonic() + STATEMENT_SECONDS
     connection.set_progress_handler(
@@ -754,7 +756,7 @@ def _answer(
                     f"at most {MAX_COLUMNS} are given back"
                 )
             taken = cursor.fetchmany(MAX_ROWS + 1)
-        except sqlite3.Error as exc:
+        except (sqlite3.Error, sqlite3.Warning) as exc:
             raise _refused(exc, path, writable=False) from exc
     finally:
         connection.close()
@@ -876,7 +878,7 @@ def _run(path: Path, sql: str, values: tuple[str, ...]) -> dict[str, Any]:
             cursor = connection.execute(sql, values)
             changed = cursor.rowcount if cursor.rowcount > 0 else 0
             connection.commit()
-        except sqlite3.Error as exc:
+        except (sqlite3.Error, sqlite3.Warning) as exc:
             connection.rollback()
             raise _refused(exc, path, writable=True) from exc
     finally:
