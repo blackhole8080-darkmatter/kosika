@@ -68,8 +68,8 @@ fn art_round() -> Text[] { return ["circle", "ring", "drop", "sun", "cloud", "po
 fn art_backdrops() -> Text[] { return ["plain", "night", "sky", "sea", "land", "grid"] }
 fn art_pointed() -> Text[] { return ["line", "curve", "arrow", "blob"] }
 fn art_paths() -> Text[] { return ["line", "curve", "arrow", "wave", "spiral"] }
-fn art_moves() -> Text[] { return ["orbit", "travel", "spin", "pulse", "float", "sway", "blink", "rise", "fall", "flow", "draw"] }
-fn art_movers() -> Text[] { return ["orbit", "travel"] }
+fn art_moves() -> Text[] { return ["orbit", "travel", "swing", "spin", "pulse", "float", "sway", "blink", "rise", "fall", "flow", "draw"] }
+fn art_movers() -> Text[] { return ["orbit", "travel", "swing"] }
 fn art_width() -> Number { return 100 }
 fn art_height() -> Number { return 60 }
 // Pixels to a grid unit.
@@ -276,6 +276,11 @@ fn art_motion_problems(a: Art, m: Motion) -> Text[] {
     else if art_radius(a, m) < 2 { out = out.append(f"{m.what} sits on {m.around}: an orbit needs it placed away from the centre") }
     else if not art_orbit_fits(a, m) { out = out.append(f"{m.what}'s orbit round {m.around} runs off the grid: bring it closer") }
   }
+  if m.kind == "swing" {
+    let pivot = art_index(a, m.around)
+    if pivot < 0 or m.around == m.what { out = out.append(f"{m.what} swings from '{m.around}': name the figure it hangs from") }
+    else if art_radius(a, m) < 2 { out = out.append(f"{m.what} sits on {m.around}: hang it below its pivot to swing") }
+  }
   if m.kind == "travel" {
     let path = art_index(a, m.around)
     if path < 0 or not art_paths().contains(a.figures[path].kind) { out = out.append(f"{m.what} travels along '{m.around}': name a line, curve, arrow or wave") }
@@ -345,9 +350,22 @@ fn art_orbit_seconds(radius: Number) -> Number {
   return (4 * (radius / 10).power(1.5) * 10).round() / 10
 }
 
+// How far a pendulum swings either side, in degrees: small, as the formula
+// for its time holds for small swings.
+fn art_swing_angle(m: Motion) -> Number { return 22 }
+
+// A pendulum's time for one swing there and back, T = 2 pi sqrt(L / g),
+// with ten grid units to a metre and g = 9.81 m/s^2: a string twice as long
+// swings sqrt 2, 1.41 times, as slowly, whatever the bob weighs.
+fn art_swing_seconds(length: Number) -> Number {
+  let metres = length / 10
+  return (2 * 3.14159265 * (metres / 9.81).sqrt() * 100).round() / 100
+}
+
 fn art_seconds(a: Art, m: Motion) -> Number {
   if m.seconds > 0 { return m.seconds }
   if m.kind == "orbit" { return art_orbit_seconds(art_radius(a, m)) }
+  if m.kind == "swing" { return art_swing_seconds(art_radius(a, m)) }
   if m.kind == "travel" { return 5 }
   if m.kind == "spin" { return 12 }
   if m.kind == "sway" or m.kind == "float" { return 3.6 }
@@ -652,6 +670,15 @@ fn art_figure(a: Art, i: Number, depth: Number) -> Text recurse 4 {
       track = f"<path class=\"track\" d=\"{ring}\"/>"
       how = f"path=\"{ring}\""
     }
+    if m.kind == "swing" {
+      let o = art_centre(a.figures[art_index(a, m.around)])
+      let px = o[0] * s
+      let py = o[1] * s
+      let swing = art_n(art_swing_angle(m))
+      let string = f"<line class=\"string\" x1=\"{art_n(px)}\" y1=\"{art_n(py)}\" x2=\"{art_n(c[0] * s)}\" y2=\"{art_n(c[1] * s)}\"/>"
+      let turn = f"<animateTransform attributeName=\"transform\" type=\"rotate\" values=\"-{swing} {art_n(px)} {art_n(py)};{swing} {art_n(px)} {art_n(py)};-{swing} {art_n(px)} {art_n(py)}\" keyTimes=\"0;0.5;1\" calcMode=\"spline\" keySplines=\".37 0 .63 1;.37 0 .63 1\" dur=\"{art_n(seconds)}s\" begin=\"-{art_n(m.delay)}s\" repeatCount=\"indefinite\"/>"
+      return f"<g class=\"fig k-{f.kind}\" id=\"f-{f.id}\" style=\"--c:{art_colour(f)};--g:url(#art-g{f.hue})\"><g class=\"swing\">{turn}{string}{body}</g></g>"
+    }
     let ride = if m.kind == "orbit" { f"<animateMotion dur=\"{art_n(seconds)}s\" begin=\"-{art_n(m.delay)}s\" repeatCount=\"indefinite\" {how}/>" } else { f"<animateMotion dur=\"{art_n(seconds)}s\" begin=\"-{art_n(m.delay)}s\" repeatCount=\"indefinite\"><mpath href=\"#path-{m.around}\"/></animateMotion>" }
     body = f"<g class=\"ride\">{ride}<g transform=\"translate({art_n(0 - c[0] * s)} {art_n(0 - c[1] * s)})\">{body}</g></g>"
   }
@@ -763,7 +790,7 @@ fn art_svg(raw: Art) -> Text {
 }
 
 fn art_style() -> Text {
-  return ".art{width:100%;height:auto;display:block;overflow:hidden;border-radius:22px}.art .ground{fill:var(--halo);stroke:color-mix(in srgb,var(--line) 10%,transparent)}.art .fill{fill:var(--g,var(--c));stroke:none}.art .hole{fill:var(--halo)}.art .band{fill:none;stroke-linecap:butt;opacity:.92}.art .shine{fill:#fff;opacity:.16}.art .stroke{fill:none;stroke:var(--c);stroke-width:4;stroke-linecap:round;stroke-linejoin:round}.art .rays{fill:none;stroke:var(--c);stroke-width:4;stroke-linecap:round}.art .track{fill:none;stroke:color-mix(in srgb,var(--line) 22%,transparent);stroke-width:1.2;stroke-dasharray:2 7}.art .word{fill:var(--ink);font-weight:800;text-anchor:middle;dominant-baseline:middle;letter-spacing:-.01em}.art .name{fill:var(--soft);font:600 12px ui-monospace,Consolas,monospace;letter-spacing:.14em;text-transform:uppercase;text-anchor:middle;paint-order:stroke;stroke:var(--halo);stroke-width:5px}.art .own{transition:opacity .45s,filter .45s,transform .8s cubic-bezier(.2,1.5,.4,1);transform-box:fill-box;transform-origin:center;filter:drop-shadow(0 6px 8px rgb(0 0 0/.28))}.art .own.dim{opacity:.22}.art .own.lit{filter:drop-shadow(0 6px 8px rgb(0 0 0/.28)) drop-shadow(0 0 10px color-mix(in srgb,var(--amber) 80%,transparent))}.art .own.wait{opacity:0;transform:scale(.35)}.art .tag{filter:none}.art .tag.wait{transform:none}.art .bd .st{fill:var(--ink);opacity:.55}.art .bd .st.tw{animation:art-blink 3.2s ease-in-out infinite}.art .bd.sky{fill:url(#art-sky)}.art .bd .swell{fill:color-mix(in srgb,var(--h2) 22%,transparent);animation:art-drift 7s ease-in-out infinite alternate}.art .bd .swell.slow{fill:color-mix(in srgb,var(--h2) 12%,transparent);animation-duration:11s;animation-direction:alternate-reverse}.art .bd .hill{fill:color-mix(in srgb,var(--h4) 20%,var(--halo))}.art .bd .hill.far{fill:color-mix(in srgb,var(--h4) 10%,var(--halo))}.art .bd .rule{stroke:color-mix(in srgb,var(--line) 6%,transparent);stroke-width:1}.art .bd .rule.strong{stroke:color-mix(in srgb,var(--line) 13%,transparent)}.art .mv-spin-back{animation-name:art-spin;animation-timing-function:linear;animation-direction:reverse}@keyframes art-drift{from{transform:translateX(-18px)}to{transform:translateX(18px)}}.art .tag.lit .name{fill:var(--amber)}.art .mv{transform-box:fill-box;transform-origin:center;animation-iteration-count:infinite}.art .mv-spin{animation-name:art-spin;animation-timing-function:linear}.art .mv-pulse{animation-name:art-pulse;animation-timing-function:ease-in-out}.art .mv-float{animation-name:art-float;animation-timing-function:ease-in-out}.art .mv-sway{animation-name:art-sway;animation-timing-function:ease-in-out;transform-origin:50% 100%}.art .mv-blink{animation-name:art-blink;animation-timing-function:ease-in-out}.art .mv-rise{animation-name:art-rise;animation-timing-function:ease-out}.art .mv-fall{animation-name:art-fall;animation-timing-function:ease-in}.art .mv-flow .stroke{stroke-dasharray:3 6;animation:art-flow 1.4s linear infinite;animation-duration:inherit}.art .mv-flow{animation:none}.art .mv-draw :is(.stroke,.band){stroke-dasharray:100;animation:art-draw 3s ease-in-out infinite;animation-duration:inherit}.art .mv-draw{animation:none}.art.paused *{animation-play-state:paused!important}@keyframes art-spin{to{transform:rotate(360deg)}}@keyframes art-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}@keyframes art-float{0%,100%{transform:translateY(-5px)}50%{transform:translateY(5px)}}@keyframes art-sway{0%,100%{transform:rotate(-7deg)}50%{transform:rotate(7deg)}}@keyframes art-blink{0%,100%{opacity:1}50%{opacity:.3}}@keyframes art-rise{0%{transform:translateY(0);opacity:0}15%{opacity:1}100%{transform:translateY(-70px);opacity:0}}@keyframes art-fall{0%{transform:translateY(0);opacity:0}15%{opacity:1}100%{transform:translateY(70px);opacity:0}}@keyframes art-flow{to{stroke-dashoffset:-9}}@keyframes art-draw{0%{stroke-dashoffset:100}55%,80%{stroke-dashoffset:0}100%{stroke-dashoffset:-100}}@media (prefers-reduced-motion:reduce){.art *{animation:none!important}}"
+  return ".art{width:100%;height:auto;display:block;overflow:hidden;border-radius:22px}.art .ground{fill:var(--halo);stroke:color-mix(in srgb,var(--line) 10%,transparent)}.art .fill{fill:var(--g,var(--c));stroke:none}.art .hole{fill:var(--halo)}.art .string{stroke:var(--line2);stroke-width:2.2;stroke-linecap:round}.art .band{fill:none;stroke-linecap:butt;opacity:.92}.art .shine{fill:#fff;opacity:.16}.art .stroke{fill:none;stroke:var(--c);stroke-width:4;stroke-linecap:round;stroke-linejoin:round}.art .rays{fill:none;stroke:var(--c);stroke-width:4;stroke-linecap:round}.art .track{fill:none;stroke:color-mix(in srgb,var(--line) 22%,transparent);stroke-width:1.2;stroke-dasharray:2 7}.art .word{fill:var(--ink);font-weight:800;text-anchor:middle;dominant-baseline:middle;letter-spacing:-.01em}.art .name{fill:var(--soft);font:600 12px ui-monospace,Consolas,monospace;letter-spacing:.14em;text-transform:uppercase;text-anchor:middle;paint-order:stroke;stroke:var(--halo);stroke-width:5px}.art .own{transition:opacity .45s,filter .45s,transform .8s cubic-bezier(.2,1.5,.4,1);transform-box:fill-box;transform-origin:center;filter:drop-shadow(0 6px 8px rgb(0 0 0/.28))}.art .own.dim{opacity:.22}.art .own.lit{filter:drop-shadow(0 6px 8px rgb(0 0 0/.28)) drop-shadow(0 0 10px color-mix(in srgb,var(--amber) 80%,transparent))}.art .own.wait{opacity:0;transform:scale(.35)}.art .tag{filter:none}.art .tag.wait{transform:none}.art .bd .st{fill:var(--ink);opacity:.55}.art .bd .st.tw{animation:art-blink 3.2s ease-in-out infinite}.art .bd.sky{fill:url(#art-sky)}.art .bd .swell{fill:color-mix(in srgb,var(--h2) 22%,transparent);animation:art-drift 7s ease-in-out infinite alternate}.art .bd .swell.slow{fill:color-mix(in srgb,var(--h2) 12%,transparent);animation-duration:11s;animation-direction:alternate-reverse}.art .bd .hill{fill:color-mix(in srgb,var(--h4) 20%,var(--halo))}.art .bd .hill.far{fill:color-mix(in srgb,var(--h4) 10%,var(--halo))}.art .bd .rule{stroke:color-mix(in srgb,var(--line) 6%,transparent);stroke-width:1}.art .bd .rule.strong{stroke:color-mix(in srgb,var(--line) 13%,transparent)}.art .mv-spin-back{animation-name:art-spin;animation-timing-function:linear;animation-direction:reverse}@keyframes art-drift{from{transform:translateX(-18px)}to{transform:translateX(18px)}}.art .tag.lit .name{fill:var(--amber)}.art .mv{transform-box:fill-box;transform-origin:center;animation-iteration-count:infinite}.art .mv-spin{animation-name:art-spin;animation-timing-function:linear}.art .mv-pulse{animation-name:art-pulse;animation-timing-function:ease-in-out}.art .mv-float{animation-name:art-float;animation-timing-function:ease-in-out}.art .mv-sway{animation-name:art-sway;animation-timing-function:ease-in-out;transform-origin:50% 100%}.art .mv-blink{animation-name:art-blink;animation-timing-function:ease-in-out}.art .mv-rise{animation-name:art-rise;animation-timing-function:ease-out}.art .mv-fall{animation-name:art-fall;animation-timing-function:ease-in}.art .mv-flow .stroke{stroke-dasharray:3 6;animation:art-flow 1.4s linear infinite;animation-duration:inherit}.art .mv-flow{animation:none}.art .mv-draw :is(.stroke,.band){stroke-dasharray:100;animation:art-draw 3s ease-in-out infinite;animation-duration:inherit}.art .mv-draw{animation:none}.art.paused *{animation-play-state:paused!important}@keyframes art-spin{to{transform:rotate(360deg)}}@keyframes art-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}@keyframes art-float{0%,100%{transform:translateY(-5px)}50%{transform:translateY(5px)}}@keyframes art-sway{0%,100%{transform:rotate(-7deg)}50%{transform:rotate(7deg)}}@keyframes art-blink{0%,100%{opacity:1}50%{opacity:.3}}@keyframes art-rise{0%{transform:translateY(0);opacity:0}15%{opacity:1}100%{transform:translateY(-70px);opacity:0}}@keyframes art-fall{0%{transform:translateY(0);opacity:0}15%{opacity:1}100%{transform:translateY(70px);opacity:0}}@keyframes art-flow{to{stroke-dashoffset:-9}}@keyframes art-draw{0%{stroke-dashoffset:100}55%,80%{stroke-dashoffset:0}100%{stroke-dashoffset:-100}}@media (prefers-reduced-motion:reduce){.art *{animation:none!important}}"
 }
 
 // The sentences play in turn; each lights its figures and dims the rest.
@@ -805,8 +832,13 @@ fn art_worked(a: Art) -> Text {
   for m in a.motions {
     if m.kind == "orbit" and m.seconds == 0 { said = said.append(f"{art_called(a, m.what)} goes round in {art_n(art_orbit_seconds(art_radius(a, m)))} s at radius {art_n(art_radius(a, m))}") }
   }
-  if said.is_empty() { return "" }
-  return "Orbit times worked by Kosika from Kepler's third law (T² ∝ r³): " + art_esc(said.join("; ")) + "."
+  let orbits = if said.is_empty() { "" } else { "Orbit times worked by Kosika from Kepler's third law (T² ∝ r³): " + art_esc(said.join("; ")) + "." }
+  var swung: Text[] = []
+  for m in a.motions {
+    if m.kind == "swing" and m.seconds == 0 { swung = swung.append(f"{art_called(a, m.what)} ({art_n(art_radius(a, m) / 10)} m) swings there and back in {art_swing_seconds(art_radius(a, m))} s") }
+  }
+  let swings = if swung.is_empty() { "" } else { "Pendulum times worked by Kosika from T = 2π√(L/g), with g = 9.81 m/s²: " + art_esc(swung.join("; ")) + "." }
+  return (for t in [orbits, swings] where not t.is_empty() { t }).join(" ")
 }
 
 fn art_page(ask: Text, raw: Art, fixed: Text[]) -> Text {
@@ -852,7 +884,7 @@ model illustrator {
 
 fn art_task() -> Text {
   let names = palette_names().join(", ")
-  return "You plan a small, calm, animated illustration that explains what was asked, in the flat, minimal style of a good science explainer: few shapes, big and clear, lots of space. Do not draw: describe it as data. The picture is a grid 100 wide and 60 tall; x runs right, y runs down; keep everything 4 units from the edges and the main subject near the middle. Give title (a short heading), summary (one plain sentence), palette (one of " + names + "; dark_matter unless another suits the subject: ocean for water, forest for plants, ember for fire or heat, aurora for space), backdrop (what Kosika draws behind: night for space or the night sky, sky for weather and the outdoors by day, sea for the ocean, land for landscapes and plants, grid for machines, circuits and mathematics, plain otherwise), figures, motions and beats. Each figure has id (a short lowercase word), kind, x, y, w, h, count, hue, label and points; give every field, using 0, empty text or [] where a field does not apply. Kinds: circle (x, y centre, w radius), ring (an outline circle, x, y, w radius), rect (x, y centre, w width, h height), blob (a soft closed shape through points), drop (a water drop, x, y, w size), sun (x, y, w radius, count rays), cloud (x, y, w size), polygon (x, y, w radius, count corners), star (x, y, w radius, count points), gear (x, y, w radius, count teeth; gears whose teeth touch, centres about 0.9 times the sum of their radii apart, are turned by each other), rainbow (x, y the middle of its base, w its radius: seven spectral bands in the right order, red outside; put the sun behind the viewer, on the other side from the rainbow), spiral (a golden spiral: x, y centre, w outer radius, count turns, h its turn in degrees: two spirals with h 0 and 180 make a two-armed galaxy), line, curve and arrow (through points: x1, y1, x2, y2 ...), wave (starts at x, y; w long; h tall; count crests), text (label at x, y; w letter size about 2.5). Size things generously but keep each round figure, its rays included, inside the grid. hue: 0 to 5 picks one of the palette's six colours, 6 the quiet line colour; give related things the same hue. label: one to three words naming the figure, or empty. Motions, each with what (a figure id), kind, around, seconds and delay: orbit (goes round the figure named in around; seconds 0 lets Kosika time it by Kepler's law), travel (moves along the line, curve, arrow or wave named in around), spin, pulse, float, sway, blink, rise (drifts up and fades, like vapour), fall (drops and fades, like rain), flow (dashes run along a line, curve, arrow, wave or ring: a current, a signal), draw (a line drawing itself). Use 2 to 10 motions, only where motion explains something; give several copies of a small figure different delays so they do not move together. beats: 3 to 5 short sentences, each under 22 words, in the order to read them, each with shows: the ids of the figures it is about. Make it true: positions, sizes and motions should match the real thing."
+  return "You plan a small, calm, animated illustration that explains what was asked, in the flat, minimal style of a good science explainer: few shapes, big and clear, lots of space. Do not draw: describe it as data. The picture is a grid 100 wide and 60 tall; x runs right, y runs down; keep everything 4 units from the edges and the main subject near the middle. Give title (a short heading), summary (one plain sentence), palette (one of " + names + "; dark_matter unless another suits the subject: ocean for water, forest for plants, ember for fire or heat, aurora for space), backdrop (what Kosika draws behind: night for space or the night sky, sky for weather and the outdoors by day, sea for the ocean, land for landscapes and plants, grid for machines, circuits and mathematics, plain otherwise), figures, motions and beats. Each figure has id (a short lowercase word), kind, x, y, w, h, count, hue, label and points; give every field, using 0, empty text or [] where a field does not apply. Kinds: circle (x, y centre, w radius), ring (an outline circle, x, y, w radius), rect (x, y centre, w width, h height), blob (a soft closed shape through points), drop (a water drop, x, y, w size), sun (x, y, w radius, count rays), cloud (x, y, w size), polygon (x, y, w radius, count corners), star (x, y, w radius, count points), gear (x, y, w radius, count teeth; gears whose teeth touch, centres about 0.9 times the sum of their radii apart, are turned by each other), rainbow (x, y the middle of its base, w its radius: seven spectral bands in the right order, red outside; put the sun behind the viewer, on the other side from the rainbow), spiral (a golden spiral: x, y centre, w outer radius, count turns, h its turn in degrees: two spirals with h 0 and 180 make a two-armed galaxy), line, curve and arrow (through points: x1, y1, x2, y2 ...), wave (starts at x, y; w long; h tall; count crests), text (label at x, y; w letter size about 2.5). Size things generously but keep each round figure, its rays included, inside the grid. hue: 0 to 5 picks one of the palette's six colours, 6 the quiet line colour; give related things the same hue. label: one to three words naming the figure, or empty. Motions, each with what (a figure id), kind, around, seconds and delay: orbit (goes round the figure named in around; seconds 0 lets Kosika time it by Kepler's law), swing (a pendulum: hangs from the figure named in around, placed straight below it, and swings; seconds 0 lets Kosika time it from its length by T = 2 pi sqrt(L/g)), travel (moves along the line, curve, arrow or wave named in around), spin, pulse, float, sway, blink, rise (drifts up and fades, like vapour), fall (drops and fades, like rain), flow (dashes run along a line, curve, arrow, wave or ring: a current, a signal), draw (a line drawing itself). Use 2 to 10 motions, only where motion explains something; give several copies of a small figure different delays so they do not move together. beats: 3 to 5 short sentences, each under 22 words, in the order to read them, each with shows: the ids of the figures it is about. Make it true: positions, sizes and motions should match the real thing."
 }
 
 fn art_in(a: Art, palette: Text) -> Art {
@@ -1014,4 +1046,17 @@ test "a rainbow only needs room above its base" {
   bow = {..art_fig("bow", "rainbow", 50, 50, 20), label: ""}
   expect art_figure_problems(bow) == []
   expect art_fit(bow).w == 20
+}
+
+test "a pendulum swings in the time its length gives it" {
+  // one metre of string: about two seconds there and back
+  expect art_swing_seconds(10) == 2.01
+  // four times as long: twice as slow
+  expect art_swing_seconds(40) == 4.01
+  pend = {..art_sample(), figures: [art_fig("pivot", "circle", 50, 8, 1), art_fig("bob", "circle", 50, 38, 3)], motions: [{what: "bob", kind: "swing", around: "pivot", seconds: 0, delay: 0}], beats: [{text: "a", shows: ["bob"]}, {text: "b", shows: ["pivot"]}]}
+  expect art_problems(pend) == []
+  expect art_seconds(pend, pend.motions[0]) == 3.47
+  svg = art_svg(pend)
+  expect svg.contains("type=\"rotate\"")
+  expect svg.contains("class=\"string\"")
 }
