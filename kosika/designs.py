@@ -97,7 +97,23 @@ def _run(source: Path, workflow: str, given_input: dict, *, extra: list[str] | N
             )
         except subprocess.TimeoutExpired as exc:
             raise DesignsError("Designs took too long; try a shorter ask.") from exc
+    if done.returncode:
+        _keep_failure(done.stdout + "\n" + done.stderr)
     return _result(done.stdout + ("\n" + done.stderr if done.returncode else ""), first)
+
+
+def _keep_failure(printed: str) -> None:
+    # The engine's whole output, kept where a person can read it: a crash
+    # names its cause in its first lines, which the error message cuts.
+    try:
+        kept = Path.home() / ".kosika" / "designs-last-failure.txt"
+        kept.parent.mkdir(parents=True, exist_ok=True)
+        kept.write_text(printed, encoding="utf-8")
+    except OSError:
+        pass
+    crash = next((line for line in printed.splitlines() if line.startswith("panic:")), "")
+    if crash:
+        raise DesignsError(f"The engine crashed: {crash} (the whole output is in ~/.kosika/designs-last-failure.txt)")
 
 
 STUDY = Path(__file__).resolve().parent.parent / "examples" / "agents" / "study" / "main.kos"
