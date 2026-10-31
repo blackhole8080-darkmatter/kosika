@@ -269,8 +269,10 @@ var textMethods = map[string]method{
 	"to_number": {nil, func(r Value, a []Value) Value {
 		trimmed := strings.TrimFunc(textOf(r), isSpace)
 		digits := strings.TrimPrefix(trimmed, "-")
-		wholePart, decimals, hasPoint := strings.Cut(digits, ".")
-		if !isDigits(wholePart) || (hasPoint && !isDigits(decimals)) {
+		mantissa, power, hasPower := strings.Cut(strings.ReplaceAll(digits, "E", "e"), "e")
+		power = strings.TrimPrefix(strings.TrimPrefix(power, "+"), "-")
+		wholePart, decimals, hasPoint := strings.Cut(mantissa, ".")
+		if !isDigits(wholePart) || (hasPoint && !isDigits(decimals)) || (hasPower && !isDigits(power)) {
 			return nil
 		}
 		return numberLiteral(digits, strings.HasPrefix(trimmed, "-"))

@@ -522,7 +522,7 @@ class Parser:
                 value = LiteralExpr(token.value)
             elif token.kind == "NUMBER":
                 self.advance()
-                number = float(token.value) if "." in token.value else int(token.value)
+                number = float(token.value) if any(ch in token.value for ch in ".eE") else int(token.value)
                 value = LiteralExpr(number)
             elif token.kind == "IDENT":
                 self.advance()

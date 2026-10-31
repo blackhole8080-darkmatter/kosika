@@ -39,7 +39,7 @@ FIELD_NUMBER = "$field:Number"
 FIELD_TEXT = "$field:Text"
 #: Building a map with more entries than this fails the run instead.
 MAX_MAP_ENTRIES = 100_000
-_NUMBER_TEXT = re.compile(r"-?[0-9]+(\.[0-9]+)?\Z")
+_NUMBER_TEXT = re.compile(r"-?[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?\Z")
 #: Building an array longer than this fails the run instead.
 MAX_ARRAY_LENGTH = 1_000_000
 #: Splitting cannot produce more parts than this; it fails instead.
@@ -163,7 +163,7 @@ def _to_number(text: str) -> int | float | None:
     trimmed = text.strip()
     if not _NUMBER_TEXT.match(trimmed):
         return None
-    return float(trimmed) if "." in trimmed else int(trimmed)
+    return float(trimmed) if any(ch in trimmed for ch in ".eE") else int(trimmed)
 
 
 def _require(value: Any) -> Any:

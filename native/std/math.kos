@@ -749,6 +749,8 @@ test "numbers are written exactly when they can be" {
   expect exact(4) == "4"
   expect exact_mathml(0.75) == "<mfrac><mn>3</mn><mn>4</mn></mfrac>"
   expect exact(89875517873681.77) == "89875517873681.77"
+  expect "2.5e3".to_number().or(0) == 2500
+  expect 6.674e-11 * 1e11 > 6.67 and 6.674e-11 * 1e11 < 6.68
   expect to_mathml(num(0.0000000000667430)) == "<mrow><mn>6.674</mn><mo>&#215;</mo><msup><mn>10</mn><mn>-11</mn></msup></mrow>"
   expect to_mathml(pow(num(384400000), num(2))).contains("<mo>(</mo><mn>3.844</mn>")
   wave = calc_mathml("v", parse("f lambda").expr, ["f", "lambda"], [440, 0.78], "m/s")

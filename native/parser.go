@@ -259,7 +259,7 @@ func boundedCount(token Token, low, high int) int {
 }
 
 func numberLiteral(text string, negative bool) Value {
-	if strings.Contains(text, ".") {
+	if strings.ContainsAny(text, ".eE") {
 		f, _ := strconv.ParseFloat(text, 64)
 		if negative {
 			f = -f
