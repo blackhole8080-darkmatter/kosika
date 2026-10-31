@@ -1,0 +1,61 @@
+{
+ "a": {
+  "title": "A leaf and an atom, drawn by Kosika",
+  "summary": "A leaf turning light, water and carbon dioxide into food, and a sodium atom with its electrons in shells.",
+  "palette": "forest",
+  "backdrop": "plain",
+  "figures": [
+   {
+    "id": "leaf",
+    "kind": "leaf",
+    "x": 30,
+    "y": 30,
+    "w": 22,
+    "h": 0,
+    "count": 0,
+    "hue": 2,
+    "label": "",
+    "points": []
+   },
+   {
+    "id": "atom",
+    "kind": "atom",
+    "x": 76,
+    "y": 28,
+    "w": 17,
+    "h": 0,
+    "count": 11,
+    "hue": 4,
+    "label": "",
+    "points": []
+   }
+  ],
+  "motions": [],
+  "beats": [
+   {
+    "text": "Light falls on the leaf and its chloroplasts catch it.",
+    "shows": [
+     "leaf"
+    ]
+   },
+   {
+    "text": "Carbon dioxide goes in, and oxygen bubbles out as the leaf makes sugar.",
+    "shows": [
+     "leaf"
+    ]
+   },
+   {
+    "text": "Sodium has 11 electrons: 2 in the first shell, 8 in the second, 1 in the third.",
+    "shows": [
+     "atom"
+    ]
+   },
+   {
+    "text": "That lone outer electron is why sodium reacts so readily.",
+    "shows": [
+     "atom"
+    ]
+   }
+  ]
+ }
+}
