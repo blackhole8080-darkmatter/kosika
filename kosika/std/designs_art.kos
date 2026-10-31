@@ -63,8 +63,10 @@ record ArtPage { page: Text svg: Text problems: Text[] fixed: Text[] art: Art }
 
 // ---------------------------------------------------------------- the vocabulary
 
-fn art_kinds() -> Text[] { return ["circle", "ring", "rect", "blob", "drop", "sun", "cloud", "polygon", "star", "gear", "spiral", "rainbow", "line", "curve", "arrow", "wave", "text"] }
-fn art_round() -> Text[] { return ["circle", "ring", "drop", "sun", "cloud", "polygon", "star", "gear", "spiral", "rainbow"] }
+fn art_kinds() -> Text[] { return ["circle", "ring", "rect", "blob", "drop", "sun", "cloud", "polygon", "star", "gear", "spiral", "rainbow", "heart", "cell", "transistor", "engine", "line", "curve", "arrow", "wave", "text"] }
+fn art_round() -> Text[] { return ["circle", "ring", "drop", "sun", "cloud", "polygon", "star", "gear", "spiral", "rainbow", "heart", "cell", "transistor", "engine"] }
+// Real things Kosika draws in detail, with their own parts named on them.
+fn art_parts() -> Text[] { return ["heart", "cell", "transistor", "engine"] }
 fn art_backdrops() -> Text[] { return ["plain", "night", "sky", "sea", "land", "grid"] }
 fn art_pointed() -> Text[] { return ["line", "curve", "arrow", "blob"] }
 fn art_paths() -> Text[] { return ["line", "curve", "arrow", "wave", "spiral"] }
@@ -520,6 +522,81 @@ fn art_band(cx: Number, cy: Number, r: Number, width: Number, colour: Text) -> T
   return f"<path class=\"band\" pathLength=\"100\" d=\"M{art_n(cx - r)} {art_n(cy)} A{art_n(r)} {art_n(r)} 0 0 1 {art_n(cx + r)} {art_n(cy)}\" style=\"stroke:{colour};stroke-width:{art_n(width + 0.6)}\"/>"
 }
 
+// ---------------------------------------------------------------- real parts
+//
+// Some things are drawn the same way every time, from what they are made
+// of, so a picture of one looks like the thing and not like a blob: the
+// model names the kind and where it goes, and Kosika draws its parts and
+// names them. Each is drawn in a box w across either side of x, y.
+
+fn art_sub(x: Number, y: Number, text: Text) -> Text {
+  return f"<text class=\"sub\" x=\"{art_n(x)}\" y=\"{art_n(y)}\">{text}</text>"
+}
+
+// A heart, as from the front: the right side on the left of the picture.
+// Two atria above two ventricles, the wall between them, the valves, and
+// the great vessels leaving the top.
+fn art_heart(cx: Number, cy: Number, r: Number) -> Text {
+  let outline = f"M{art_n(cx)} {art_n(cy + r)} C{art_n(cx - r * 0.55)} {art_n(cy + r * 0.62)} {art_n(cx - r)} {art_n(cy + r * 0.1)} {art_n(cx - r * 0.92)} {art_n(cy - r * 0.38)} C{art_n(cx - r * 0.82)} {art_n(cy - r * 0.86)} {art_n(cx - r * 0.2)} {art_n(cy - r * 0.92)} {art_n(cx)} {art_n(cy - r * 0.55)} C{art_n(cx + r * 0.2)} {art_n(cy - r * 0.92)} {art_n(cx + r * 0.82)} {art_n(cy - r * 0.86)} {art_n(cx + r * 0.92)} {art_n(cy - r * 0.38)} C{art_n(cx + r)} {art_n(cy + r * 0.1)} {art_n(cx + r * 0.55)} {art_n(cy + r * 0.62)} {art_n(cx)} {art_n(cy + r)} Z"
+  let vessels = f"<path class=\"vessel\" d=\"M{art_n(cx - r * 0.12)} {art_n(cy - r * 0.6)} C{art_n(cx - r * 0.12)} {art_n(cy - r * 1.25)} {art_n(cx + r * 0.55)} {art_n(cy - r * 1.25)} {art_n(cx + r * 0.55)} {art_n(cy - r * 0.8)}\"/><path class=\"vessel\" d=\"M{art_n(cx - r * 0.45)} {art_n(cy - r * 0.72)} L{art_n(cx - r * 0.45)} {art_n(cy - r * 1.1)}\"/>"
+  let walls = f"<path class=\"wall\" d=\"M{art_n(cx)} {art_n(cy - r * 0.55)} L{art_n(cx)} {art_n(cy + r * 0.92)} M{art_n(cx - r * 0.9)} {art_n(cy - r * 0.12)} L{art_n(cx + r * 0.9)} {art_n(cy - r * 0.12)}\"/>"
+  let valves = f"<circle class=\"valve\" cx=\"{art_n(cx - r * 0.42)}\" cy=\"{art_n(cy - r * 0.12)}\" r=\"{art_n(r * 0.07)}\"/><circle class=\"valve\" cx=\"{art_n(cx + r * 0.42)}\" cy=\"{art_n(cy - r * 0.12)}\" r=\"{art_n(r * 0.07)}\"/>"
+  let names = art_sub(cx - r * 0.45, cy - r * 0.32, "RA") + art_sub(cx + r * 0.45, cy - r * 0.32, "LA") + art_sub(cx - r * 0.4, cy + r * 0.3, "RV") + art_sub(cx + r * 0.4, cy + r * 0.3, "LV")
+  return vessels + f"<path class=\"fill\" d=\"{outline}\"/>" + walls + valves + names
+}
+
+// A cell: its membrane, the nucleus with its nucleolus, mitochondria with
+// their folded inner walls, and ribosomes scattered between.
+fn art_cell(cx: Number, cy: Number, r: Number) -> Text {
+  let membrane = f"<ellipse class=\"fill\" cx=\"{art_n(cx)}\" cy=\"{art_n(cy)}\" rx=\"{art_n(r)}\" ry=\"{art_n(r * 0.78)}\"/><ellipse class=\"membrane\" cx=\"{art_n(cx)}\" cy=\"{art_n(cy)}\" rx=\"{art_n(r)}\" ry=\"{art_n(r * 0.78)}\"/>"
+  let nucleus = f"<circle class=\"nucleus\" cx=\"{art_n(cx - r * 0.12)}\" cy=\"{art_n(cy - r * 0.05)}\" r=\"{art_n(r * 0.3)}\"/><circle class=\"nucleolus\" cx=\"{art_n(cx - r * 0.05)}\" cy=\"{art_n(cy - r * 0.1)}\" r=\"{art_n(r * 0.09)}\"/>"
+  let mito = art_mito(cx + r * 0.5, cy + r * 0.25, r * 0.22, 20) + art_mito(cx + r * 0.45, cy - r * 0.38, r * 0.18, -25) + art_mito(cx - r * 0.55, cy + r * 0.38, r * 0.2, 10)
+  let dots = (for k in 1 until 19 { art_ribosome(cx, cy, r, k) }).join("")
+  let names = art_sub(cx - r * 0.12, cy + r * 0.38, "nucleus") + art_sub(cx + r * 0.5, cy + r * 0.52, "mitochondrion")
+  return membrane + dots + nucleus + mito + names
+}
+
+fn art_mito(x: Number, y: Number, len: Number, turn: Number) -> Text {
+  let folds = "M" + (for k in 0 until 5 { art_fold(x, y, len, k) }).join(" L")
+  return f"<g transform=\"rotate({art_n(turn)} {art_n(x)} {art_n(y)})\"><rect class=\"mito\" x=\"{art_n(x - len)}\" y=\"{art_n(y - len * 0.42)}\" width=\"{art_n(len * 2)}\" height=\"{art_n(len * 0.84)}\" rx=\"{art_n(len * 0.42)}\"/><path class=\"fold\" d=\"{folds}\"/></g>"
+}
+
+fn art_fold(x: Number, y: Number, len: Number, k: Number) -> Text {
+  let side = if k % 2 == 0 { -1 } else { 1 }
+  return art_n(x - len * 0.7 + len * 0.35 * k) + " " + art_n(y + side * len * 0.22)
+}
+
+// Ribosomes spread by the golden angle, so they never clump.
+fn art_ribosome(cx: Number, cy: Number, r: Number, k: Number) -> Text {
+  let deg = k * 137.508
+  let d = r * (0.42 + 0.48 * ((k * 0.618034) % 1))
+  return f"<circle class=\"ribo\" cx=\"{art_n(cx + deg.cos() * d)}\" cy=\"{art_n(cy + deg.sin() * d * 0.78)}\" r=\"{art_n(r * 0.025 + 1)}\"/>"
+}
+
+// An NPN transistor as its circuit symbol: the base bar, the collector and
+// the emitter leaving it at an angle, the emitter's arrow pointing out the
+// way current flows, and the three legs named.
+fn art_transistor(cx: Number, cy: Number, r: Number) -> Text {
+  let bar = f"<path class=\"lead\" d=\"M{art_n(cx - r * 0.25)} {art_n(cy - r * 0.45)} L{art_n(cx - r * 0.25)} {art_n(cy + r * 0.45)}\"/>"
+  let legs = f"<path class=\"lead\" d=\"M{art_n(cx - r)} {art_n(cy)} L{art_n(cx - r * 0.25)} {art_n(cy)} M{art_n(cx - r * 0.25)} {art_n(cy - r * 0.2)} L{art_n(cx + r * 0.35)} {art_n(cy - r * 0.6)} L{art_n(cx + r * 0.35)} {art_n(cy - r)} M{art_n(cx - r * 0.25)} {art_n(cy + r * 0.2)} L{art_n(cx + r * 0.35)} {art_n(cy + r * 0.6)} L{art_n(cx + r * 0.35)} {art_n(cy + r)}\"/>"
+  let arrow = f"<path class=\"head\" d=\"M{art_n(cx + r * 0.33)} {art_n(cy + r * 0.58)} L{art_n(cx + r * 0.1)} {art_n(cy + r * 0.56)} L{art_n(cx + r * 0.22)} {art_n(cy + r * 0.38)} Z \"/>"
+  let ring = f"<circle class=\"body\" cx=\"{art_n(cx)}\" cy=\"{art_n(cy)}\" r=\"{art_n(r * 0.72)}\"/>"
+  let names = art_sub(cx - r * 0.9, cy - r * 0.1, "B") + art_sub(cx + r * 0.55, cy - r * 0.85, "C") + art_sub(cx + r * 0.55, cy + r * 0.95, "E")
+  return ring + bar + legs + arrow + names
+}
+
+// One cylinder of an engine: the cylinder walls, the spark plug, the
+// piston, its rod and the crank it turns. The piston rises and falls and
+// the crank turns as long as the picture is shown.
+fn art_engine(cx: Number, cy: Number, r: Number) -> Text {
+  let walls = f"<path class=\"wall\" d=\"M{art_n(cx - r * 0.42)} {art_n(cy - r)} L{art_n(cx - r * 0.42)} {art_n(cy + r * 0.15)} M{art_n(cx + r * 0.42)} {art_n(cy - r)} L{art_n(cx + r * 0.42)} {art_n(cy + r * 0.15)} M{art_n(cx - r * 0.42)} {art_n(cy - r)} L{art_n(cx + r * 0.42)} {art_n(cy - r)}\"/>"
+  let plug = f"<path class=\"lead\" d=\"M{art_n(cx)} {art_n(cy - r * 1.15)} L{art_n(cx)} {art_n(cy - r * 0.9)}\"/>"
+  let piston = f"<g class=\"piston\"><rect class=\"fill\" x=\"{art_n(cx - r * 0.38)}\" y=\"{art_n(cy - r * 0.6)}\" width=\"{art_n(r * 0.76)}\" height=\"{art_n(r * 0.3)}\" rx=\"3\"/><path class=\"lead\" d=\"M{art_n(cx)} {art_n(cy - r * 0.3)} L{art_n(cx)} {art_n(cy + r * 0.45)}\"/></g>"
+  let crank = f"<g class=\"crank\" style=\"transform-origin:{art_n(cx)}px {art_n(cy + r * 0.62)}px\"><circle class=\"body\" cx=\"{art_n(cx)}\" cy=\"{art_n(cy + r * 0.62)}\" r=\"{art_n(r * 0.3)}\"/><circle class=\"valve\" cx=\"{art_n(cx)}\" cy=\"{art_n(cy + r * 0.38)}\" r=\"{art_n(r * 0.05)}\"/></g>"
+  let names = art_sub(cx + r * 0.62, cy - r * 0.45, "piston") + art_sub(cx + r * 0.62, cy + r * 0.66, "crank") + art_sub(cx + r * 0.3, cy - r * 1.05, "spark")
+  return walls + plug + piston + crank + names
+}
+
 // The golden ratio, (1 + sqrt 5) / 2.
 fn art_phi() -> Number { return (1 + (5).sqrt()) / 2 }
 
@@ -573,6 +650,10 @@ fn art_shape(f: Figure) -> Text {
   if f.kind == "star" { return f"<path class=\"fill\" d=\"{art_polygon(cx, cy, r, art_count(f), 0.45)}\"/>" }
   if f.kind == "gear" { return f"<path class=\"fill\" d=\"{art_gear(cx, cy, r, art_count(f))}\"/><circle class=\"hole\" cx=\"{art_n(cx)}\" cy=\"{art_n(cy)}\" r=\"{art_n(r * 0.22)}\"/>" }
   if f.kind == "rainbow" { return art_rainbow(cx, cy, r) }
+  if f.kind == "heart" { return art_heart(cx, cy, r) }
+  if f.kind == "cell" { return art_cell(cx, cy, r) }
+  if f.kind == "transistor" { return art_transistor(cx, cy, r) }
+  if f.kind == "engine" { return art_engine(cx, cy, r) }
   if f.kind == "spiral" { return f"<path id=\"{pid}\" class=\"stroke\" d=\"{art_spiral(f)}\" pathLength=\"100\"/>" }
   if f.kind == "line" { return f"<path id=\"{pid}\" class=\"stroke\" d=\"{art_straight(f.points)}\" pathLength=\"100\"/>" }
   if f.kind == "curve" { return f"<path id=\"{pid}\" class=\"stroke\" d=\"{art_smooth(f.points, false)}\" pathLength=\"100\"/>" }
@@ -849,7 +930,7 @@ fn art_svg(raw: Art) -> Text {
 }
 
 fn art_style() -> Text {
-  return ".art{width:100%;height:auto;display:block;overflow:hidden;border-radius:22px}.art .ground{fill:var(--halo);stroke:color-mix(in srgb,var(--line) 10%,transparent)}.art .fill{fill:var(--g,var(--c));stroke:none}.art .hole{fill:var(--halo)}.art .string{stroke:var(--line2);stroke-width:2.2;stroke-linecap:round}.art .band{fill:none;stroke-linecap:butt;opacity:.92}.art .shine{fill:#fff;opacity:.16}.art .stroke{fill:none;stroke:var(--c);stroke-width:4;stroke-linecap:round;stroke-linejoin:round}.art .rays{fill:none;stroke:var(--c);stroke-width:4;stroke-linecap:round}.art .track{fill:none;stroke:color-mix(in srgb,var(--line) 22%,transparent);stroke-width:1.2;stroke-dasharray:2 7}.art .word{fill:var(--ink);font-weight:800;text-anchor:middle;dominant-baseline:middle;letter-spacing:-.01em}.art .name{fill:var(--soft);font:600 12px ui-monospace,Consolas,monospace;letter-spacing:.14em;text-transform:uppercase;text-anchor:middle;paint-order:stroke;stroke:var(--halo);stroke-width:5px}.art .own{transition:opacity .45s,filter .45s,transform .8s cubic-bezier(.2,1.5,.4,1);transform-box:fill-box;transform-origin:center;filter:drop-shadow(0 6px 8px rgb(0 0 0/.28))}.art .own.dim{opacity:.22}.art .own.lit{filter:drop-shadow(0 6px 8px rgb(0 0 0/.28)) drop-shadow(0 0 10px color-mix(in srgb,var(--amber) 80%,transparent))}.art .own.wait{opacity:0;transform:scale(.35)}.art .tag{filter:none}.art .tag.wait{transform:none}.art .bd .st{fill:var(--ink);opacity:.55}.art .bd .st.tw{animation:art-blink 3.2s ease-in-out infinite}.art .bd.sky{fill:url(#art-sky)}.art .bd .swell{fill:color-mix(in srgb,var(--h2) 22%,transparent);animation:art-drift 7s ease-in-out infinite alternate}.art .bd .swell.slow{fill:color-mix(in srgb,var(--h2) 12%,transparent);animation-duration:11s;animation-direction:alternate-reverse}.art .bd .hill{fill:color-mix(in srgb,var(--h4) 20%,var(--halo))}.art .bd .hill.far{fill:color-mix(in srgb,var(--h4) 10%,var(--halo))}.art .bd .rule{stroke:color-mix(in srgb,var(--line) 6%,transparent);stroke-width:1}.art .bd .rule.strong{stroke:color-mix(in srgb,var(--line) 13%,transparent)}.art .mv-spin-back{animation-name:art-spin;animation-timing-function:linear;animation-direction:reverse}@keyframes art-drift{from{transform:translateX(-18px)}to{transform:translateX(18px)}}.art .tag.lit .name{fill:var(--amber)}.art .mv{transform-box:fill-box;transform-origin:center;animation-iteration-count:infinite}.art .mv-spin{animation-name:art-spin;animation-timing-function:linear}.art .mv-pulse{animation-name:art-pulse;animation-timing-function:ease-in-out}.art .mv-float{animation-name:art-float;animation-timing-function:ease-in-out}.art .mv-sway{animation-name:art-sway;animation-timing-function:ease-in-out;transform-origin:50% 100%}.art .mv-blink{animation-name:art-blink;animation-timing-function:ease-in-out}.art .mv-rise{animation-name:art-rise;animation-timing-function:ease-out}.art .mv-fall{animation-name:art-fall;animation-timing-function:ease-in}.art .mv-flow .stroke{stroke-dasharray:3 6;animation:art-flow 1.4s linear infinite;animation-duration:inherit}.art .mv-flow{animation:none}.art .mv-draw :is(.stroke,.band){stroke-dasharray:100;animation:art-draw 3s ease-in-out infinite;animation-duration:inherit}.art .mv-draw{animation:none}.art.paused *{animation-play-state:paused!important}@keyframes art-spin{to{transform:rotate(360deg)}}@keyframes art-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}@keyframes art-float{0%,100%{transform:translateY(-5px)}50%{transform:translateY(5px)}}@keyframes art-sway{0%,100%{transform:rotate(-7deg)}50%{transform:rotate(7deg)}}@keyframes art-blink{0%,100%{opacity:1}50%{opacity:.3}}@keyframes art-rise{0%{transform:translateY(0);opacity:0}15%{opacity:1}100%{transform:translateY(-70px);opacity:0}}@keyframes art-fall{0%{transform:translateY(0);opacity:0}15%{opacity:1}100%{transform:translateY(70px);opacity:0}}@keyframes art-flow{to{stroke-dashoffset:-9}}@keyframes art-draw{0%{stroke-dashoffset:100}55%,80%{stroke-dashoffset:0}100%{stroke-dashoffset:-100}}@media (prefers-reduced-motion:reduce){.art *{animation:none!important}}"
+  return ".art{width:100%;height:auto;display:block;overflow:hidden;border-radius:22px}.art .ground{fill:var(--halo);stroke:color-mix(in srgb,var(--line) 10%,transparent)}.art .fill{fill:var(--g,var(--c));stroke:none}.art .hole{fill:var(--halo)}.art .sub{fill:var(--ink);font:700 11px ui-monospace,Consolas,monospace;text-anchor:middle;letter-spacing:.06em;paint-order:stroke;stroke:color-mix(in srgb,var(--c) 70%,#000);stroke-width:3px}.art .vessel{fill:none;stroke:color-mix(in srgb,var(--c) 80%,#000);stroke-width:12;stroke-linecap:round}.art .wall{fill:none;stroke:color-mix(in srgb,var(--c) 45%,#000);stroke-width:3;stroke-linecap:round}.art .valve{fill:var(--ink);opacity:.85}.art .membrane{fill:none;stroke:color-mix(in srgb,var(--c) 70%,#fff);stroke-width:3}.art .nucleus{fill:color-mix(in srgb,var(--c) 45%,#000);stroke:color-mix(in srgb,var(--c) 70%,#fff);stroke-width:1.5}.art .nucleolus{fill:color-mix(in srgb,var(--c) 30%,#000)}.art .mito{fill:var(--h0);stroke:color-mix(in srgb,var(--h0) 60%,#000);stroke-width:1.2}.art .fold{fill:none;stroke:color-mix(in srgb,var(--h0) 50%,#000);stroke-width:1.4}.art .ribo{fill:color-mix(in srgb,var(--c) 40%,#000)}.art .lead{fill:none;stroke:var(--c);stroke-width:3.5;stroke-linecap:round;stroke-linejoin:round}.art .body{fill:none;stroke:color-mix(in srgb,var(--c) 60%,transparent);stroke-width:2}.art .k-transistor .head{fill:var(--c)}.art .piston{animation:art-pump 1.1s ease-in-out infinite}.art .crank{animation:art-spin 1.1s linear infinite}@keyframes art-pump{0%,100%{transform:translateY(0)}50%{transform:translateY(18px)}}.art .string{stroke:var(--line2);stroke-width:2.2;stroke-linecap:round}.art .band{fill:none;stroke-linecap:butt;opacity:.92}.art .shine{fill:#fff;opacity:.16}.art .stroke{fill:none;stroke:var(--c);stroke-width:4;stroke-linecap:round;stroke-linejoin:round}.art .rays{fill:none;stroke:var(--c);stroke-width:4;stroke-linecap:round}.art .track{fill:none;stroke:color-mix(in srgb,var(--line) 22%,transparent);stroke-width:1.2;stroke-dasharray:2 7}.art .word{fill:var(--ink);font-weight:800;text-anchor:middle;dominant-baseline:middle;letter-spacing:-.01em}.art .name{fill:var(--soft);font:600 12px ui-monospace,Consolas,monospace;letter-spacing:.14em;text-transform:uppercase;text-anchor:middle;paint-order:stroke;stroke:var(--halo);stroke-width:5px}.art .own{transition:opacity .45s,filter .45s,transform .8s cubic-bezier(.2,1.5,.4,1);transform-box:fill-box;transform-origin:center;filter:drop-shadow(0 6px 8px rgb(0 0 0/.28))}.art .own.dim{opacity:.22}.art .own.lit{filter:drop-shadow(0 6px 8px rgb(0 0 0/.28)) drop-shadow(0 0 10px color-mix(in srgb,var(--amber) 80%,transparent))}.art .own.wait{opacity:0;transform:scale(.35)}.art .tag{filter:none}.art .tag.wait{transform:none}.art .bd .st{fill:var(--ink);opacity:.55}.art .bd .st.tw{animation:art-blink 3.2s ease-in-out infinite}.art .bd.sky{fill:url(#art-sky)}.art .bd .swell{fill:color-mix(in srgb,var(--h2) 22%,transparent);animation:art-drift 7s ease-in-out infinite alternate}.art .bd .swell.slow{fill:color-mix(in srgb,var(--h2) 12%,transparent);animation-duration:11s;animation-direction:alternate-reverse}.art .bd .hill{fill:color-mix(in srgb,var(--h4) 20%,var(--halo))}.art .bd .hill.far{fill:color-mix(in srgb,var(--h4) 10%,var(--halo))}.art .bd .rule{stroke:color-mix(in srgb,var(--line) 6%,transparent);stroke-width:1}.art .bd .rule.strong{stroke:color-mix(in srgb,var(--line) 13%,transparent)}.art .mv-spin-back{animation-name:art-spin;animation-timing-function:linear;animation-direction:reverse}@keyframes art-drift{from{transform:translateX(-18px)}to{transform:translateX(18px)}}.art .tag.lit .name{fill:var(--amber)}.art .mv{transform-box:fill-box;transform-origin:center;animation-iteration-count:infinite}.art .mv-spin{animation-name:art-spin;animation-timing-function:linear}.art .mv-pulse{animation-name:art-pulse;animation-timing-function:ease-in-out}.art .mv-float{animation-name:art-float;animation-timing-function:ease-in-out}.art .mv-sway{animation-name:art-sway;animation-timing-function:ease-in-out;transform-origin:50% 100%}.art .mv-blink{animation-name:art-blink;animation-timing-function:ease-in-out}.art .mv-rise{animation-name:art-rise;animation-timing-function:ease-out}.art .mv-fall{animation-name:art-fall;animation-timing-function:ease-in}.art .mv-flow .stroke{stroke-dasharray:3 6;animation:art-flow 1.4s linear infinite;animation-duration:inherit}.art .mv-flow{animation:none}.art .mv-draw :is(.stroke,.band){stroke-dasharray:100;animation:art-draw 3s ease-in-out infinite;animation-duration:inherit}.art .mv-draw{animation:none}.art.paused *{animation-play-state:paused!important}@keyframes art-spin{to{transform:rotate(360deg)}}@keyframes art-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}@keyframes art-float{0%,100%{transform:translateY(-5px)}50%{transform:translateY(5px)}}@keyframes art-sway{0%,100%{transform:rotate(-7deg)}50%{transform:rotate(7deg)}}@keyframes art-blink{0%,100%{opacity:1}50%{opacity:.3}}@keyframes art-rise{0%{transform:translateY(0);opacity:0}15%{opacity:1}100%{transform:translateY(-70px);opacity:0}}@keyframes art-fall{0%{transform:translateY(0);opacity:0}15%{opacity:1}100%{transform:translateY(70px);opacity:0}}@keyframes art-flow{to{stroke-dashoffset:-9}}@keyframes art-draw{0%{stroke-dashoffset:100}55%,80%{stroke-dashoffset:0}100%{stroke-dashoffset:-100}}@media (prefers-reduced-motion:reduce){.art *{animation:none!important}}"
 }
 
 // The sentences play in turn; each lights its figures and dims the rest.
@@ -948,7 +1029,7 @@ model illustrator {
 
 fn art_task() -> Text {
   let names = palette_names().join(", ")
-  return "You plan a small, calm, animated illustration that explains what was asked, in the flat, minimal style of a good science explainer: few shapes, big and clear, lots of space. Do not draw: describe it as data. The picture is a grid 100 wide and 60 tall; x runs right, y runs down; keep everything 4 units from the edges and the main subject near the middle. Give title (a short heading), summary (one plain sentence), palette (one of " + names + "; dark_matter unless another suits the subject: ocean for water, forest for plants, ember for fire or heat, aurora for space), backdrop (what Kosika draws behind: night for space or the night sky, sky for weather and the outdoors by day, sea for the ocean, land for landscapes and plants, grid for machines, circuits and mathematics, plain otherwise), figures, motions and beats. Each figure has id (a short lowercase word), kind, x, y, w, h, count, hue, label and points; give every field, using 0, empty text or [] where a field does not apply. Kinds: circle (x, y centre, w radius), ring (an outline circle, x, y, w radius), rect (x, y centre, w width, h height), blob (a soft closed shape through points), drop (a water drop, x, y, w size), sun (x, y, w radius, count rays), cloud (x, y, w size), polygon (x, y, w radius, count corners), star (x, y, w radius, count points), gear (x, y, w radius, count teeth; gears whose teeth touch, centres about 0.9 times the sum of their radii apart, are turned by each other), rainbow (x, y the middle of its base, w its radius: seven spectral bands in the right order, red outside; put the sun behind the viewer, on the other side from the rainbow), spiral (a golden spiral: x, y centre, w outer radius, count turns, h its turn in degrees: two spirals with h 0 and 180 make a two-armed galaxy), line, curve and arrow (through points: x1, y1, x2, y2 ...), wave (starts at x, y; w long; h tall; count crests), text (label at x, y; w letter size about 2.5). Size things generously but keep each round figure, its rays included, inside the grid. hue: 0 to 5 picks one of the palette's six colours, 6 the quiet line colour; give related things the same hue. label: one to three words naming the figure, or empty. Motions, each with what (a figure id), kind, around, seconds and delay: orbit (goes round the figure named in around; seconds 0 lets Kosika time it by Kepler's law), throw (flies in a real arc, launched at 45 degrees, from where it is to the figure named in around, where it lands; Kosika works out the speed and time), swing (a pendulum: hangs from the figure named in around, placed straight below it, and swings; seconds 0 lets Kosika time it from its length by T = 2 pi sqrt(L/g)), travel (moves along the line, curve, arrow or wave named in around), spin, pulse, float, sway, blink, rise (drifts up and fades, like vapour), fall (drops and fades, like rain), flow (dashes run along a line, curve, arrow, wave or ring: a current, a signal), draw (a line drawing itself). Use 2 to 10 motions, only where motion explains something; give several copies of a small figure different delays so they do not move together. beats: 3 to 5 short sentences, each under 22 words, in the order to read them, each with shows: the ids of the figures it is about. Make it true: positions, sizes and motions should match the real thing."
+  return "You plan a small, calm, animated illustration that explains what was asked, in the flat, minimal style of a good science explainer: few shapes, big and clear, lots of space. Do not draw: describe it as data. The picture is a grid 100 wide and 60 tall; x runs right, y runs down; keep everything 4 units from the edges and the main subject near the middle. Give title (a short heading), summary (one plain sentence), palette (one of " + names + "; dark_matter unless another suits the subject: ocean for water, forest for plants, ember for fire or heat, aurora for space), backdrop (what Kosika draws behind: night for space or the night sky, sky for weather and the outdoors by day, sea for the ocean, land for landscapes and plants, grid for machines, circuits and mathematics, plain otherwise), figures, motions and beats. Each figure has id (a short lowercase word), kind, x, y, w, h, count, hue, label and points; give every field, using 0, empty text or [] where a field does not apply. Kinds: circle (x, y centre, w radius), ring (an outline circle, x, y, w radius), rect (x, y centre, w width, h height), blob (a soft closed shape through points), drop (a water drop, x, y, w size), sun (x, y, w radius, count rays), cloud (x, y, w size), polygon (x, y, w radius, count corners), star (x, y, w radius, count points), gear (x, y, w radius, count teeth; gears whose teeth touch, centres about 0.9 times the sum of their radii apart, are turned by each other), heart (a real heart from the front, its four chambers named: x, y centre, w size), cell (a living cell with nucleus, mitochondria and ribosomes: x, y centre, w size), transistor (an NPN transistor symbol, its legs named B, C and E: x, y centre, w size), engine (one engine cylinder with piston, rod and crank, running: x, y centre, w size); prefer these real parts to plain shapes whenever the subject is one of them, rainbow (x, y the middle of its base, w its radius: seven spectral bands in the right order, red outside; put the sun behind the viewer, on the other side from the rainbow), spiral (a golden spiral: x, y centre, w outer radius, count turns, h its turn in degrees: two spirals with h 0 and 180 make a two-armed galaxy), line, curve and arrow (through points: x1, y1, x2, y2 ...), wave (starts at x, y; w long; h tall; count crests), text (label at x, y; w letter size about 2.5). Size things generously but keep each round figure, its rays included, inside the grid. hue: 0 to 5 picks one of the palette's six colours, 6 the quiet line colour; give related things the same hue. label: one to three words naming the figure, or empty. Motions, each with what (a figure id), kind, around, seconds and delay: orbit (goes round the figure named in around; seconds 0 lets Kosika time it by Kepler's law), throw (flies in a real arc, launched at 45 degrees, from where it is to the figure named in around, where it lands; Kosika works out the speed and time), swing (a pendulum: hangs from the figure named in around, placed straight below it, and swings; seconds 0 lets Kosika time it from its length by T = 2 pi sqrt(L/g)), travel (moves along the line, curve, arrow or wave named in around), spin, pulse, float, sway, blink, rise (drifts up and fades, like vapour), fall (drops and fades, like rain), flow (dashes run along a line, curve, arrow, wave or ring: a current, a signal), draw (a line drawing itself). Use 2 to 10 motions, only where motion explains something; give several copies of a small figure different delays so they do not move together. beats: 3 to 5 short sentences, each under 22 words, in the order to read them, each with shows: the ids of the figures it is about. Make it true: positions, sizes and motions should match the real thing."
 }
 
 fn art_in(a: Art, palette: Text) -> Art {
@@ -1000,7 +1081,7 @@ test "a good illustration has nothing wrong with it" {
 test "the problems name what is wrong" {
   bad = {..art_sample(), figures: [art_fig("sun", "comet", 140, 30, 7), art_fig("earth", "circle", 54, 30, 0)], motions: [{what: "moon", kind: "orbit", around: "earth", seconds: 0, delay: 0}, {what: "earth", kind: "travel", around: "sun", seconds: 0, delay: 0}], beats: [{text: "x", shows: ["q"]}]}
   said = art_problems(bad)
-  expect said.contains("figure sun: kind comet is not one of circle, ring, rect, blob, drop, sun, cloud, polygon, star, gear, spiral, rainbow, line, curve, arrow, wave, text")
+  expect said.contains("figure sun: kind comet is not one of circle, ring, rect, blob, drop, sun, cloud, polygon, star, gear, spiral, rainbow, heart, cell, transistor, engine, line, curve, arrow, wave, text")
   expect said.contains("figure sun: x 140, y 30 is off the grid (x 0 to 100, y 0 to 60)")
   expect said.contains("figure earth: a circle's w is its radius, 1 to 30")
   expect said.contains("a motion moves moon, and no figure has that id")
@@ -1139,4 +1220,14 @@ test "a throw follows the laws of motion" {
   // too high to reach at 45 degrees
   up = {..shot, figures: [art_fig("ball", "circle", 10, 50, 1.5), {..art_fig("cup", "rect", 14, 8, 4), h: 2}]}
   expect art_problems(up).contains("ball cannot reach cup at 45 degrees: put the landing place further away or lower")
+}
+
+test "real parts are drawn with their own parts named" {
+  heart = art_shape({..art_fig("h", "heart", 50, 30, 10)})
+  expect heart.contains(">LV<") and heart.contains(">RA<")
+  cell = art_shape(art_fig("c", "cell", 50, 30, 12))
+  expect cell.contains(">nucleus<") and cell.contains("class=\"mito\"")
+  expect art_shape(art_fig("t", "transistor", 50, 30, 8)).contains(">E<")
+  expect art_shape(art_fig("e", "engine", 50, 30, 10)).contains("class=\"piston\"")
+  expect art_parts().length() == 4
 }
