@@ -57,7 +57,7 @@ import "science_elements.kos"
 import "science_molecules.kos"
 import "std/math.kos"
 
-export [DzAsk, DzResult, DzKind, dz_kinds, dz_places, dz_kind, dz_why, design, design_kind, dz_lab, dz_lab_style, DzFormula, dz_formula_for, dz_formula_card, dz_formula_style]
+export [DzAsk, DzResult, DzKind, dz_kinds, dz_places, dz_kind, dz_why, design, design_kind, dz_lab, dz_lab_style, DzFormula, dz_formula_for, dz_formula_card, dz_formula_style, dz_reaction, dz_science_field]
 
 record DzAsk { text: Text palette: Text place: Text kind: Text }
 record DzKind { kind: Text why: Text }

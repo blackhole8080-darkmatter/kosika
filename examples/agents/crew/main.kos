@@ -1,0 +1,259 @@
+// Crew: a team of agents that makes a study pack, each member's work
+// checked before it counts.
+//
+//   kosika run main.kos --workflow pack --input topic.json
+//       --model openai/gpt-oss-20b --model-url https://api.groq.com/openai/v1
+//       --model-protocol openai --max-output-tokens 8000
+//
+// where topic.json holds {"ask": {"topic": "photosynthesis", "palette": ""}}.
+//
+// The Conductor plans the pack: a title, the question the canvas answers
+// and the ideas the notes must cover. The Scientist works out what can be
+// worked out exactly (a balanced reaction, a formula), with no model. The
+// Designer draws the canvas through Kosika Designs. The Tutor writes the
+// notes. The Examiner reads the notes blind, beside the Scientist's
+// numbers, and says which points are wrong. Kosika checks every member's
+// work itself (sizes, shapes, that the pack agrees with the Scientist)
+// and keeps a board: who did what, and whether it passed. A member whose
+// work fails its check is shown as failed on the board; the pack is made
+// from what passed.
+
+import "std/designs.kos"
+import "std/science_chem.kos"
+import "std/science_molecules.kos"
+
+export [PackAsk, Pack, CrewTask, pack]
+
+record PackAsk { topic: Text palette: Text }
+record CrewTask { who: Text job: Text passed: Bool check: Text }
+record Pack { title: Text page: Text board: CrewTask[] problems: Text[] }
+
+record CrewPlan { title: Text question: Text ideas: Text[] }
+record PlanBrief { task: Text topic: Text }
+record NotesBrief { task: Text topic: Text ideas: Text science: Text }
+record Notes { points: Text[] summary: Text }
+record ExamBrief { task: Text topic: Text points: Text science: Text }
+record Verdict { point: Number ok: Bool why: Text }
+record Exam { verdicts: Verdict[] }
+
+model conductor {
+  input: PlanBrief
+  output: CrewPlan
+  parameters: {
+    max_output_tokens: 1200
+  }
+}
+
+model tutor {
+  input: NotesBrief
+  output: Notes
+  parameters: {
+    max_output_tokens: 2000
+  }
+}
+
+model examiner {
+  input: ExamBrief
+  output: Exam
+  parameters: {
+    max_output_tokens: 1500
+  }
+}
+
+// ---------------------------------------------------------------- the Conductor
+
+fn cr_plan_task() -> Text {
+  return "You lead a small team making a one-page study pack for a university student. Plan it: title (a few words), question (the one how-or-why question a picture should answer, in plain words, starting with how or why) and ideas (3 to 5 short phrases: the ideas the notes must cover, most important first)."
+}
+
+fn cr_default_plan(ask: PackAsk) -> CrewPlan {
+  return {title: ask.topic, question: "how does " + ask.topic + " work", ideas: [ask.topic]}
+}
+
+fn cr_plan_ok(p: CrewPlan) -> Text {
+  if p.title.trim().is_empty() { return "the plan has no title" }
+  if not p.question.lower().contains("how") and not p.question.lower().contains("why") { return "the canvas question does not ask how or why" }
+  if p.ideas.length() < 2 or p.ideas.length() > 6 { return f"the plan has {p.ideas.length()} ideas; 2 to 6 were asked for" }
+  return ""
+}
+
+fn cr_plan(ask: PackAsk, p: CrewPlan) -> CrewPlan { return if cr_plan_ok(p).is_empty() { p } else { cr_default_plan(ask) } }
+
+// ---------------------------------------------------------------- the Scientist
+
+// What can be worked out exactly, with no model: a balanced reaction the
+// topic names. Empty when there is none.
+fn cr_reaction(topic: Text) -> ScBalanced { return sc_balance(dz_reaction(topic)) }
+
+fn cr_has_reaction(topic: Text) -> Bool {
+  let e = dz_reaction(topic)
+  return not e.is_empty() and sc_balance(e).ok
+}
+
+// The balanced equation as text: 6CO2 + 6H2O -> C6H12O6 + 6O2.
+fn cr_term(b: ScBalanced, k: Number) -> Text { return (if b.coefficients[k] == 1 { "" } else { f"{b.coefficients[k]}" }) + b.species[k] }
+
+fn cr_equation(b: ScBalanced) -> Text {
+  let left = (for k in 0 until b.species.length() where b.sides[k] > 0 { cr_term(b, k) }).join(" + ")
+  let right = (for k in 0 until b.species.length() where b.sides[k] < 0 { cr_term(b, k) }).join(" + ")
+  return left + " -> " + right
+}
+
+fn cr_science_text(topic: Text) -> Text {
+  if not cr_has_reaction(topic) { return "" }
+  let b = cr_reaction(topic)
+  return "The balanced equation, worked out exactly: " + cr_equation(b) + "."
+}
+
+fn cr_science_card(topic: Text) -> Text {
+  if not cr_has_reaction(topic) { return "" }
+  let b = cr_reaction(topic)
+  return "<style>" + sc_style() + sm_style() + "</style>" + sc_card(b, "The reaction") + sm_reaction_svg(b)
+}
+
+// ---------------------------------------------------------------- the Tutor
+
+fn cr_notes_task() -> Text {
+  return "You are a tutor writing the notes of a one-page study pack. Write points: 4 to 7 points, each one or two plain sentences (under 45 words), covering the ideas given, in a sensible order; and summary: one sentence a student could remember. If a balanced equation is given, use it exactly as given and do not change its numbers."
+}
+
+fn cr_no_notes() -> Notes { return {points: [], summary: ""} }
+
+fn cr_notes_ok(n: Notes) -> Text {
+  if n.points.length() < 3 or n.points.length() > 8 { return f"{n.points.length()} points; 4 to 7 were asked for" }
+  for p in n.points {
+    if p.words().length() > 60 { return "a point runs past 60 words" }
+  }
+  if n.summary.trim().is_empty() { return "no summary" }
+  return ""
+}
+
+// The notes must not contradict the Scientist: an equation in them must
+// be the balanced one, letter for letter once spaces are taken out.
+fn cr_agrees(n: Notes, topic: Text) -> Text {
+  if not cr_has_reaction(topic) { return "" }
+  let b = cr_reaction(topic)
+  let all = (n.points.join(" ") + " " + n.summary).replace(" ", "").replace("→", "->")
+  let said = cr_equation(b).replace(" ", "")
+  if all.contains("->") and not all.contains(said) { return "the notes write an equation that is not the balanced one (" + cr_equation(b) + ")" }
+  return ""
+}
+
+// ---------------------------------------------------------------- the Examiner
+
+fn cr_exam_task() -> Text {
+  return "You are an examiner. Read each numbered point of a student's notes and decide, from what you know, whether it is correct. Give verdicts: one per point, each with point (its number), ok (true or false) and why (a short reason, needed when it is not ok). Where a balanced equation is given, it was worked out exactly: trust its numbers."
+}
+
+fn cr_numbered(n: Notes) -> Text { return (for k in 0 until n.points.length() { f"{k + 1}. {n.points[k]}" }).join("\n") }
+
+fn cr_no_exam() -> Exam { return {verdicts: []} }
+
+fn cr_wrong(e: Exam) -> Verdict[] { return for v in e.verdicts where not v.ok { v } }
+
+// ---------------------------------------------------------------- the board and the page
+
+fn cr_esc(t: Text) -> Text { return t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;") }
+
+fn cr_task(who: Text, job: Text, problem: Text) -> CrewTask {
+  return {who: who, job: job, passed: problem.is_empty(), check: if problem.is_empty() { "passed" } else { problem }}
+}
+
+fn cr_board(ask: PackAsk, raw: CrewPlan, canvas: DzResult, notes: Notes, exam: Exam) -> CrewTask[] {
+  let science_check = if cr_has_reaction(ask.topic) { "" } else { "nothing in this topic to work out exactly" }
+  let examined = if exam.verdicts.is_empty() { "the examiner gave no verdicts" } else { "" }
+  let wrong = cr_wrong(exam)
+  let notes_problem = if not cr_notes_ok(notes).is_empty() { cr_notes_ok(notes) } else if not cr_agrees(notes, ask.topic).is_empty() { cr_agrees(notes, ask.topic) } else if not wrong.is_empty() { f"the examiner marked {wrong.length()} point(s) wrong" } else { "" }
+  let canvas_problem = if canvas.problems.is_empty() and not canvas.embed.is_empty() { "" } else { canvas.problems.join("; ") }
+  return [
+    cr_task("Conductor", "planned the pack", cr_plan_ok(raw)),
+    cr_task("Scientist", "worked out what can be worked out exactly", science_check),
+    cr_task("Designer", "drew the canvas through Kosika Designs", canvas_problem),
+    cr_task("Tutor", "wrote the notes", notes_problem),
+    cr_task("Examiner", "read the notes blind and marked each point", examined)
+  ]
+}
+
+fn cr_mark_class(t: CrewTask) -> Text { return if t.passed { "ok" } else { "bad" } }
+
+fn cr_mark(t: CrewTask) -> Text { return if t.passed { "&#10003; passed" } else { "&#10007; " + cr_esc(t.check) } }
+
+fn cr_point(n: Notes, k: Number) -> Text { return if k >= 1 and k <= n.points.length() { n.points[k - 1] } else { "?" } }
+
+fn cr_board_html(board: CrewTask[]) -> Text {
+  let rows = (for t in board { f"<tr><td class=\"who\">{t.who}</td><td>{cr_esc(t.job)}</td><td class=\"{cr_mark_class(t)}\">{cr_mark(t)}</td></tr>" }).join("")
+  return f"<table class=\"board\">{rows}</table>"
+}
+
+fn cr_notes_html(n: Notes, e: Exam) -> Text {
+  let wrong = for v in cr_wrong(e) { v.point }
+  let items = (for k in 0 until n.points.length() where not wrong.contains(k + 1) { "<li>" + cr_esc(n.points[k]) + "</li>" }).join("")
+  let dropped = (for v in cr_wrong(e) { "<li>" + cr_esc(cr_point(n, v.point)) + " <em>(" + cr_esc(v.why) + ")</em></li>" }).join("")
+  let left = if dropped.is_empty() { "" } else { "<p class=\"left\">Left out by the Examiner:</p><ul class=\"dropped\">" + dropped + "</ul>" }
+  return "<ul class=\"notes\">" + items + "</ul><p class=\"summary\">" + cr_esc(n.summary) + "</p>" + left
+}
+
+fn cr_page(plan: CrewPlan, board: CrewTask[], canvas: DzResult, notes: Notes, exam: Exam, science: Text) -> Text {
+  let style = ":root{--bg:#07080d;--panel:#0d1118;--ink:#eef0f7;--soft:#a3a8bd;--gold:#f5b45c;--amber:#ff8a4c;--ok:#4fe0a6;--bad:#ff6b81;--line:rgba(238,240,247,.1);color-scheme:dark}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 Figtree,system-ui,sans-serif}main{max-width:1180px;margin:0 auto;padding:28px max(16px,env(safe-area-inset-left,0px)) 60px}.eyebrow{font:600 11px ui-monospace,Consolas,monospace;letter-spacing:.3em;text-transform:uppercase;color:var(--gold)}h1{font-size:clamp(30px,4.5vw,46px);margin:8px 0 18px;letter-spacing:-.02em}h2{font-size:15px;letter-spacing:.14em;text-transform:uppercase;color:var(--soft);margin:30px 0 10px}.card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:16px 18px}.board{width:100%;border-collapse:collapse;font-size:14.5px}.board td{padding:8px 10px;border-top:1px solid var(--line)}.board tr:first-child td{border-top:none}.board .who{font-weight:700;color:var(--gold);width:120px}.board .ok{color:var(--ok)}.board .bad{color:var(--bad)}.notes li{margin:6px 0}.summary{color:var(--gold);font-style:italic}.left{color:var(--soft);font-size:14px}.dropped{color:var(--soft);font-size:14px}iframe{width:100%;border:0;border-radius:18px;height:1700px;background:transparent}"
+  let frame = if canvas.page.is_empty() { "<p>The canvas could not be drawn.</p>" } else { "<iframe title=\"Canvas\" srcdoc=\"" + cr_esc(canvas.page) + "\"></iframe>" }
+  let sci = if science.is_empty() { "" } else { "<h2>The Scientist: worked out exactly</h2><div class=\"card\">" + science + "</div>" }
+  return "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>" + cr_esc(plan.title) + "</title><style>" + style + "</style></head><body><main><div class=\"eyebrow\">Study pack &#183; made by a Kosika crew</div><h1>" + cr_esc(plan.title) + "</h1><h2>The crew</h2><div class=\"card\">" + cr_board_html(board) + "</div><h2>The Tutor's notes, marked by the Examiner</h2><div class=\"card\">" + cr_notes_html(notes, exam) + "</div>" + sci + "<h2>The Designer: " + cr_esc(plan.question) + "</h2>" + frame + "</main></body></html>"
+}
+
+fn cr_pack(ask: PackAsk, raw: CrewPlan, plan: CrewPlan, canvas: DzResult, notes: Notes, exam: Exam) -> Pack {
+  let board = cr_board(ask, raw, canvas, notes, exam)
+  let problems = for t in board where not t.passed and t.who != "Scientist" { t.who + ": " + t.check }
+  return {title: plan.title, page: cr_page(plan, board, canvas, notes, exam, cr_science_card(ask.topic)), board: board, problems: problems}
+}
+
+fn cr_canvas_ask(ask: PackAsk, plan: CrewPlan) -> DzAsk { return {text: plan.question, palette: ask.palette, place: "studio", kind: "canvas"} }
+
+workflow pack(ask: PackAsk) -> Pack {
+  budget 24 model calls, 900 seconds
+  raw    = use_model conductor(cr_plan_task(), ask.topic) retry 1 otherwise cr_default_plan(ask)
+  plan   = cr_plan(ask, raw)
+  canvas = call design(cr_canvas_ask(ask, plan))
+  notes  = use_model tutor(cr_notes_task(), ask.topic, plan.ideas.join("; "), cr_science_text(ask.topic)) retry 1 otherwise cr_no_notes()
+  exam   = use_model examiner(cr_exam_task(), ask.topic, cr_numbered(notes), cr_science_text(ask.topic)) retry 1 otherwise cr_no_exam()
+  out    = cr_pack(ask, raw, plan, canvas, notes, exam)
+}
+
+// ---------------------------------------------------------------- tests
+
+fn cr_sample_notes(points: Text[]) -> Notes { return {points: points, summary: "Plants turn light into sugar."} }
+
+fn cr_sample_canvas() -> DzResult { return {kind: "canvas", why: "", title: "Leaf", page: "<p>leaf</p>", svg: "", embed: "<div>leaf</div>", problems: [], fixed: []} }
+
+fn cr_sample_exam() -> Exam { return {verdicts: [{point: 1, ok: true, why: ""}, {point: 2, ok: false, why: "they take in carbon dioxide"}, {point: 3, ok: true, why: ""}, {point: 4, ok: true, why: ""}]} }
+
+fn cr_sample_plan() -> CrewPlan { return {title: "Photosynthesis", question: "how does photosynthesis work", ideas: ["light", "sugar"]} }
+
+fn cr_sample_ask() -> PackAsk { return {topic: "photosynthesis", palette: ""} }
+
+test "the Scientist works out photosynthesis exactly, with no model" {
+  expect cr_has_reaction("photosynthesis")
+  expect cr_reaction("photosynthesis").coefficients == [6, 6, 1, 6]
+  expect cr_science_text("photosynthesis").contains("6CO2 + 6H2O")
+  expect not cr_has_reaction("the french revolution")
+}
+
+test "notes that contradict the Scientist fail their check" {
+  good = cr_sample_notes(["Light is caught by chlorophyll.", "6CO2 + 6H2O -> C6H12O6 + 6O2 is the overall reaction.", "Oxygen is released.", "Sugar is stored as starch."])
+  expect cr_agrees(good, "photosynthesis") == ""
+  bad = cr_sample_notes(["Light is caught.", "CO2 + H2O -> C6H12O6 + O2 is the reaction.", "Oxygen is released.", "Sugar is stored."])
+  expect cr_agrees(bad, "photosynthesis").contains("not the balanced one")
+  expect cr_notes_ok(cr_sample_notes(["one"])) == "1 points; 4 to 7 were asked for"
+}
+
+test "the board says who passed and the page leaves out what the Examiner marked wrong" {
+  notes = cr_sample_notes(["Light is caught by chlorophyll.", "Plants breathe in oxygen to make sugar.", "Oxygen is released.", "Sugar is stored as starch."])
+  exam = cr_sample_exam()
+  plan = cr_sample_plan()
+  made = cr_pack(cr_sample_ask(), plan, plan, cr_sample_canvas(), notes, exam)
+  expect made.board[3].check == "the examiner marked 1 point(s) wrong"
+  expect made.board[2].passed
+  expect made.page.contains("Left out by the Examiner")
+  expect made.page.split("Plants breathe in oxygen").length() == 2
+  expect made.page.contains("<em>(they take in carbon dioxide)</em>")
+  expect made.problems == ["Tutor: the examiner marked 1 point(s) wrong"]
+}
