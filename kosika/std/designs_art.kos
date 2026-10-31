@@ -49,7 +49,7 @@
 import "designs_palette.kos"
 import "science_elements.kos"
 
-export [Figure, Motion, Beat, Art, ArtAsk, ArtPage, art_esc, art_problems, art_tidy, art_svg, art_style, art_script, art_page, art_kinds, art_moves, art_wave, art_orbit_seconds, render, illustrate]
+export [Figure, Motion, Beat, Art, ArtAsk, ArtPage, art_ball, art_ball_style, art_esc, art_problems, art_tidy, art_svg, art_style, art_script, art_page, art_kinds, art_moves, art_wave, art_orbit_seconds, render, illustrate]
 
 record Figure { id: Text kind: Text x: Number y: Number w: Number h: Number count: Number hue: Number label: Text points: Number[] }
 // around: the figure an orbit circles, or the path a travel runs along.
@@ -805,6 +805,22 @@ fn art_atom(cx: Number, cy: Number, r: Number, z: Number) -> Text {
   }
   let symbol = se_element(number).symbol
   return out + art_sub(cx, cy + 4, symbol) + art_sub(cx, cy + r + 16, (for s in shells { f"{s}" }).join(", "))
+}
+
+// A ball in the art's own manner, in a colour given rather than the
+// palette's: a lit sphere with its highlight, a soft rim and a name on it.
+// The atoms of a molecule are drawn with it (std/science_molecules), so
+// a reaction looks like the rest of Kosika's art.
+fn art_ball(cx: Number, cy: Number, r: Number, colour: Text, label: Text, ink: Text) -> Text {
+  let body = f"<circle class=\"ab\" cx=\"{art_n(cx)}\" cy=\"{art_n(cy)}\" r=\"{art_n(r)}\" style=\"fill:{colour}\"/>"
+  let shade = f"<circle class=\"ab-shade\" cx=\"{art_n(cx + r * 0.18)}\" cy=\"{art_n(cy + r * 0.2)}\" r=\"{art_n(r * 0.8)}\"/>"
+  let shine = f"<circle class=\"ab-shine\" cx=\"{art_n(cx - r * 0.32)}\" cy=\"{art_n(cy - r * 0.34)}\" r=\"{art_n(r * 0.3)}\"/>"
+  let name = if label.is_empty() { "" } else { f"<text class=\"ab-t\" x=\"{art_n(cx)}\" y=\"{art_n(cy + r * 0.34)}\" style=\"fill:{ink};font-size:{art_n(r * 0.95)}px\">{label}</text>" }
+  return "<g class=\"ab-g\">" + body + shade + shine + name + "</g>"
+}
+
+fn art_ball_style() -> Text {
+  return ".ab{stroke:rgba(0,0,0,.35);stroke-width:1;filter:drop-shadow(0 2px 3px rgba(0,0,0,.35))}.ab-shade{fill:#000;opacity:.12;pointer-events:none}.ab-shine{fill:#fff;opacity:.45;pointer-events:none}.ab-t{font-family:ui-monospace,Consolas,monospace;font-weight:700;text-anchor:middle}"
 }
 
 // The golden ratio, (1 + sqrt 5) / 2.

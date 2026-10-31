@@ -16,6 +16,7 @@
 // is lost.
 
 import "science_chem.kos"
+import "designs_art.kos"
 
 export [sm_reaction_svg, sm_style, sm_molecule_svg]
 
@@ -105,7 +106,8 @@ fn sm_shape(formula: Text) -> SmShape {
 fn sm_atom(e: Text, x: Number, y: Number) -> Text {
   let r = sm_radius(e)
   let ink = if e == "H" or e == "S" or e == "Cl" or e == "F" { "#111" } else { "#fff" }
-  return f"<g><circle class=\"sm-a\" cx=\"{sm_n(x)}\" cy=\"{sm_n(y)}\" r=\"{r}\" style=\"fill:{sm_colour(e)}\"/><text class=\"sm-t\" x=\"{sm_n(x)}\" y=\"{sm_n(y + 4)}\" style=\"fill:{ink}\">{e}</text></g>"
+  // Drawn as Designs' art draws a ball, in the element's own colour.
+  return art_ball(x, y, r, sm_colour(e), e, ink)
 }
 
 fn sm_n(x: Number) -> Text { return x.to_fixed(1) }
@@ -219,7 +221,7 @@ fn sm_reaction_svg(b: ScBalanced) -> Text {
 }
 
 fn sm_style() -> Text {
-  return ".sm{width:100%;height:auto;display:block;margin-top:14px;border-radius:18px;background:color-mix(in srgb,var(--halo) 88%,transparent);border:1px solid color-mix(in srgb,var(--line) 12%,transparent)}.sm-a{stroke:rgba(0,0,0,.35);stroke-width:1}.sm-t{font:700 12px ui-monospace,Consolas,monospace;text-anchor:middle}.sm-b{stroke:color-mix(in srgb,var(--ink) 70%,transparent);stroke-width:2.4;stroke-linecap:round}.sm-side{fill:var(--soft);font:600 11px ui-monospace,Consolas,monospace;letter-spacing:.2em;text-transform:uppercase;text-anchor:middle}.sm-arrow{fill:var(--amber);font-size:34px;text-anchor:middle;dominant-baseline:middle}.sm-count{fill:var(--soft);font:13px Figtree,system-ui,sans-serif;text-anchor:middle}.sm-fly{animation:sm-fly 7s ease-in-out infinite}.sm-lb{animation:sm-lb 7s ease-in-out infinite}.sm-rb{animation:sm-rb 7s ease-in-out infinite}@keyframes sm-fly{0%,22%{transform:translate(0,0)}62%,92%{transform:translate(var(--dx),var(--dy))}100%{transform:translate(0,0)}}@keyframes sm-lb{0%,18%{opacity:1}28%,94%{opacity:0}100%{opacity:1}}@keyframes sm-rb{0%,62%{opacity:0}72%,90%{opacity:1}96%,100%{opacity:0}}@media (prefers-reduced-motion:reduce){.sm-fly,.sm-lb,.sm-rb{animation:none}.sm-rb{opacity:0}}"
+  return "" + art_ball_style() + ".sm{width:100%;height:auto;display:block;margin-top:14px;border-radius:18px;background:color-mix(in srgb,var(--halo) 88%,transparent);border:1px solid color-mix(in srgb,var(--line) 12%,transparent)}.sm-a{stroke:rgba(0,0,0,.35);stroke-width:1}.sm-t{font:700 12px ui-monospace,Consolas,monospace;text-anchor:middle}.sm-b{stroke:color-mix(in srgb,var(--ink) 70%,transparent);stroke-width:2.4;stroke-linecap:round}.sm-side{fill:var(--soft);font:600 11px ui-monospace,Consolas,monospace;letter-spacing:.2em;text-transform:uppercase;text-anchor:middle}.sm-arrow{fill:var(--amber);font-size:34px;text-anchor:middle;dominant-baseline:middle}.sm-count{fill:var(--soft);font:13px Figtree,system-ui,sans-serif;text-anchor:middle}.sm-fly{animation:sm-fly 7s ease-in-out infinite}.sm-lb{animation:sm-lb 7s ease-in-out infinite}.sm-rb{animation:sm-rb 7s ease-in-out infinite}@keyframes sm-fly{0%,22%{transform:translate(0,0)}62%,92%{transform:translate(var(--dx),var(--dy))}100%{transform:translate(0,0)}}@keyframes sm-lb{0%,18%{opacity:1}28%,94%{opacity:0}100%{opacity:1}}@keyframes sm-rb{0%,62%{opacity:0}72%,90%{opacity:1}96%,100%{opacity:0}}@media (prefers-reduced-motion:reduce){.sm-fly,.sm-lb,.sm-rb{animation:none}.sm-rb{opacity:0}}"
 }
 
 // ---------------------------------------------------------------- tests
