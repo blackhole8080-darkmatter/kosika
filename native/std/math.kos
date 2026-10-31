@@ -30,7 +30,7 @@
 // paper whose formulas went through here carries math the language has
 // already read.
 
-export [num, neg, x, add, sub, mul, div, pow, sin, cos, exp, ln, at, deriv, simplify, to_text, to_latex, to_mathml, Parsed, parse, same, names_in]
+export [num, neg, x, add, sub, mul, div, pow, sin, cos, tan, exp, ln, at, subst, Root, solve, Integral, integrate, exact, exact_mathml, Calc, calc, calc_mathml, eq_mathml, deriv, simplify, to_text, to_latex, to_mathml, Parsed, parse, same, names_in]
 
 fn num(v: Number) -> Text[] { return ["n:" + v.to_text()] }
 fn neg(e: Text[]) -> Text[] { return ["~"].concat(e) }
@@ -44,12 +44,25 @@ fn sin(e: Text[]) -> Text[] { return ["sin"].concat(e) }
 fn cos(e: Text[]) -> Text[] { return ["cos"].concat(e) }
 fn exp(e: Text[]) -> Text[] { return ["exp"].concat(e) }
 fn ln(e: Text[]) -> Text[] { return ["ln"].concat(e) }
+fn tan(e: Text[]) -> Text[] { return ["tan"].concat(e) }
+
+// Angles inside the maths are radians, as in any calculus book; the
+// language's own sin and cos take degrees.
+fn std_sin(a: Number) -> Number { return (a * 180 / 3.141592653589793).sin() }
+fn std_cos(a: Number) -> Number { return (a * 180 / 3.141592653589793).cos() }
+
+// The names every formula may use without being given them.
+fn std_constant(name: Text) -> Number {
+  if name == "pi" { return 3.141592653589793 }
+  if name == "e" { return 2.718281828459045 }
+  return 0
+}
 
 // The shape of the list: how many parts an operator takes, how far a
 // part starting at a place reaches, and the part itself.
 fn arity(op: Text) -> Number {
   if op == "+" or op == "-" or op == "*" or op == "/" or op == "^" { return 2 }
-  if op == "~" or op == "sin" or op == "cos" or op == "exp" or op == "ln" { return 1 }
+  if op == "~" or op == "sin" or op == "cos" or op == "tan" or op == "abs" or op == "exp" or op == "ln" { return 1 }
   return 0
 }
 
@@ -84,12 +97,12 @@ fn at(e: Text[], names: Text[], values: Number[]) -> Number {
       if t.starts_with("n:") { stack = stack.append(t.slice(2, t.length()).to_number().or(0)) }
       else {
         let k = names.index_of(t).or(-1)
-        stack = stack.append(if k >= 0 { values[k] } else { 0 })
+        stack = stack.append(if k >= 0 { values[k] } else { std_constant(t) })
       }
     } else if take == 1 {
       let a = stack[stack.length() - 1]
       stack = stack.slice(0, stack.length() - 1)
-      let v = if t == "~" { -a } else if t == "sin" { a.sin() } else if t == "cos" { a.cos() } else if t == "exp" { a.exp() } else { a.log() }
+      let v = if t == "~" { -a } else if t == "sin" { std_sin(a) } else if t == "cos" { std_cos(a) } else if t == "tan" { std_sin(a) / std_cos(a) } else if t == "abs" { a.abs() } else if t == "exp" { a.exp() } else { a.log() }
       stack = stack.append(v)
     } else {
       let a = stack[stack.length() - 1]
@@ -134,6 +147,8 @@ fn deriv(e: Text[], name: Text) -> Text[] recurse 64 {
   if op == "sin" { return mul(deriv(u, name), cos(u)) }
   if op == "cos" { return neg(mul(deriv(u, name), sin(u))) }
   if op == "exp" { return mul(deriv(u, name), exp(u)) }
+  if op == "tan" { return div(deriv(u, name), pow(cos(u), num(2))) }
+  if op == "abs" { return mul(deriv(u, name), div(u, ["abs"].concat(u))) }
   return div(deriv(u, name), u)
 }
 
@@ -193,7 +208,7 @@ fn prec(op: Text) -> Number {
   if op == "+" or op == "-" { return 1 }
   if op == "*" or op == "/" { return 2 }
   if op == "^" { return 3 }
-  if op == "~" or op == "sin" or op == "cos" or op == "exp" or op == "ln" { return 4 }
+  if op == "~" or op == "sin" or op == "cos" or op == "tan" or op == "abs" or op == "exp" or op == "ln" { return 4 }
   return 5
 }
 
@@ -223,6 +238,8 @@ fn latex_of(e: Text[], parent: Number) -> Text recurse 64 {
     else if op == "cos" { body = "\\cos " + latex_of(child(e, 1), 3) }
     else if op == "exp" { body = "e^{" + latex_of(child(e, 1), 0) + "}" }
     else if op == "ln" { body = "\\ln " + latex_of(child(e, 1), 3) }
+    else if op == "tan" { body = "\\tan " + latex_of(child(e, 1), 3) }
+    else if op == "abs" { body = "\\left|" + latex_of(child(e, 1), 0) + "\\right|" }
     else if op == "/" { body = "\\frac{" + latex_of(child(e, 1), 0) + "}{" + latex_of(child(e, 2), 0) + "}" }
     else {
       let mark = if op == "+" { " + " } else if op == "-" { " - " } else if op == "*" { " \\cdot " } else { "^{" }
@@ -262,17 +279,18 @@ fn mathml_of(e: Text[], parent: Number) -> Text recurse 64 {
   else {
     let op = e[0]
     if op == "~" { body = "<mo>&#8722;</mo>" + mathml_of(child(e, 1), 5) }
-    else if op == "sin" or op == "cos" or op == "ln" {
+    else if op == "abs" { body = "<mo>|</mo>" + mathml_of(child(e, 1), 0) + "<mo>|</mo>" }
+    else if op == "sin" or op == "cos" or op == "tan" or op == "ln" {
       let arg = child(e, 1)
       let inner = mathml_of(arg, 0)
-      body = f"<mi>{op}</mi><mo>&#8289;</mo>" + (if arg.length() == 1 { inner } else { "<mo stretchy=\"false\">(</mo>" + inner + "<mo stretchy=\"false\">)</mo>" })
+      body = f"<mspace width=\"0.17em\"/><mi>{op}</mi><mo>&#8289;</mo><mspace width=\"0.1em\"/>" + (if arg.length() == 1 { inner } else { "<mo stretchy=\"false\">(</mo>" + inner + "<mo stretchy=\"false\">)</mo>" })
     }
     else if op == "exp" { body = "<msup><mi>e</mi><mrow>" + mathml_of(child(e, 1), 0) + "</mrow></msup>" }
     else if op == "/" { body = "<mfrac><mrow>" + mathml_of(child(e, 1), 0) + "</mrow><mrow>" + mathml_of(child(e, 2), 0) + "</mrow></mfrac>" }
     else if op == "^" and is_const(child(e, 2)) and cval(child(e, 2)) == 0.5 { body = "<msqrt>" + mathml_of(child(e, 1), 0) + "</msqrt>" }
     else if op == "^" { body = "<msup><mrow>" + mathml_of(child(e, 1), 4) + "</mrow><mrow>" + mathml_of(child(e, 2), 0) + "</mrow></msup>" }
     else {
-      let mark = if op == "+" { "<mo>+</mo>" } else if op == "-" { "<mo>&#8722;</mo>" } else if is_const(child(e, 2)) { "<mo>&#183;</mo>" } else { "<mo>&#8290;</mo>" }
+      let mark = if op == "+" { "<mo>+</mo>" } else if op == "-" { "<mo>&#8722;</mo>" } else if starts_with_number(child(e, 2)) { "<mo>&#215;</mo>" } else { "<mo>&#8290;</mo>" }
       let own = prec(op)
       body = mathml_of(child(e, 1), own) + mark + mathml_of(child(e, 2), if op == "-" { own + 1 } else { own })
     }
@@ -280,6 +298,15 @@ fn mathml_of(e: Text[], parent: Number) -> Text recurse 64 {
   let ownPrec = if e.length() == 1 { 5 } else { prec(e[0]) }
   if ownPrec < parent { return "<mrow><mo>(</mo>" + body + "<mo>)</mo></mrow>" }
   return body
+}
+
+// Whether an expression is written starting with a digit: then a product
+// needs its times sign, or 2 and 3 would read as 23.
+fn starts_with_number(e: Text[]) -> Bool recurse 64 {
+  if is_const(e) { return true }
+  if e.length() == 1 { return false }
+  if e[0] == "^" or e[0] == "*" { return starts_with_number(child(e, 1)) }
+  return false
 }
 
 fn to_mathml(e: Text[]) -> Text { return "<mrow>" + mathml_of(e, 0) + "</mrow>" }
@@ -335,7 +362,7 @@ fn tokens(text: Text) -> Text[] {
   return out
 }
 
-fn std_functions() -> Text[] { return ["sin", "cos", "exp", "ln", "sqrt"] }
+fn std_functions() -> Text[] { return ["sin", "cos", "tan", "abs", "exp", "ln", "sqrt"] }
 
 fn is_number_token(t: Text) -> Bool { return t.length() > 0 and std_digit(t.slice(0, 1)) }
 fn is_name_token(t: Text) -> Bool { return t.length() > 0 and std_letter(t.slice(0, 1)) }
@@ -500,4 +527,205 @@ test "the simplifier folds and removes identities" {
   expect simplify(mul(x("t"), num(0))).join(" ") == "n:0"
   expect simplify(add(num(2), num(3))).join(" ") == "n:5"
   expect simplify(pow(x("t"), num(1))).join(" ") == "t"
+}
+
+// ---------------------------------------------------------------- calculating
+//
+// subst puts a number in for a name. solve finds where an expression is
+// zero by Newton's method, stepping with the derivative Kosika works out
+// by rule, and says how many steps it took and whether it settled.
+// integrate finds a definite integral by Simpson's rule, twice, at two
+// step sizes, and says how far apart the two were. exact writes a number
+// the way a person would: 1/3, 2/3 pi, sqrt 2, when the number is one of
+// those to nine places, and as a decimal otherwise.
+
+fn subst(e: Text[], name: Text, value: Number) -> Text[] {
+  return for t in e { if t == name { "n:" + value.to_text() } else { t } }
+}
+
+record Root { value: Number steps: Number ok: Bool note: Text }
+
+fn solve(e: Text[], name: Text, guess: Number) -> Root {
+  let slope = simplify(deriv(e, name))
+  var v = guess
+  var steps = 0
+  var settled = false
+  var stuck = false
+  for k in 0 until 60 {
+    if not settled and not stuck {
+      let f = at(e, [name], [v])
+      let d = at(slope, [name], [v])
+      if d == 0 { stuck = true } else {
+        let next = v - f / d
+        steps = steps + 1
+        if (next - v).abs() < 0.000000000001 * (1 + next.abs()) { settled = true }
+        v = next
+      }
+    }
+  }
+  let left = at(e, [name], [v]).abs()
+  let ok = settled and left < 0.000001
+  let note = if ok { f"settled after {steps} steps of Newton's method" } else if stuck { "the slope is flat there; try another starting guess" } else { "it did not settle; try another starting guess" }
+  return {value: (v * 1000000000000).round() / 1000000000000, steps: steps, ok: ok, note: note}
+}
+
+record Integral { value: Number error: Number note: Text }
+
+fn simpson(e: Text[], name: Text, a: Number, b: Number, n: Number) -> Number {
+  let h = (b - a) / n
+  var total = at(e, [name], [a]) + at(e, [name], [b])
+  for k in 1 until n {
+    total = total + (if k % 2 == 1 { 4 } else { 2 }) * at(e, [name], [a + k * h])
+  }
+  return total * h / 3
+}
+
+fn integrate(e: Text[], name: Text, a: Number, b: Number) -> Integral {
+  let coarse = simpson(e, name, a, b, 64)
+  let fine = simpson(e, name, a, b, 128)
+  let error = (fine - coarse).abs() / 15
+  // Richardson's step: Simpson's error falls sixteenfold when the step
+  // halves, so the two answers together give a better one than either.
+  let better = fine + (fine - coarse) / 15
+  return {value: (better * 1000000000).round() / 1000000000, error: error, note: f"Simpson's rule at 64 and 128 steps, then Richardson's step; the two agreed to {exact_places(error)} places"}
+}
+
+fn exact_places(error: Number) -> Number {
+  if error <= 0 { return 12 }
+  return (0 - error.log() / (10).log()).floor().max(0).min(12)
+}
+
+// A fraction p / q, with q at most 1000, within 1e-9 of v; [0, 0] if none.
+fn exact_ratio(v: Number) -> Number[] {
+  if v == v.round() { return [v, 1] }
+  if v.abs() >= 1000000 { return [0, 0] }
+  for q in 1 until 1001 {
+    let p = (v * q).round()
+    if (p / q - v).abs() < 0.000000001 { return [p, q] }
+  }
+  return [0, 0]
+}
+
+fn ratio_text(p: Number, q: Number) -> Text { return if q == 1 { f"{p}" } else { f"{p}/{q}" } }
+
+fn exact(v: Number) -> Text {
+  let r = exact_ratio(v)
+  if r[1] > 0 { return ratio_text(r[0], r[1]) }
+  let pi = exact_ratio(v / 3.141592653589793)
+  if pi[1] > 0 and pi[1] <= 12 { return (if pi[0] == 1 { "" } else if pi[0] == -1 { "-" } else { f"{pi[0]}" }) + "pi" + (if pi[1] == 1 { "" } else { f"/{pi[1]}" }) }
+  let square = exact_ratio(v * v)
+  if square[1] == 1 and square[0] < 10000 { return (if v < 0 { "-" } else { "" }) + f"sqrt {square[0]}" }
+  return num_text(v)
+}
+
+fn exact_mathml(v: Number) -> Text {
+  let r = exact_ratio(v)
+  if r[1] > 1 { return (if r[0] < 0 { "<mo>&#8722;</mo>" } else { "" }) + f"<mfrac><mn>{r[0].abs()}</mn><mn>{r[1]}</mn></mfrac>" }
+  if r[1] == 1 { return f"<mn>{r[0]}</mn>" }
+  let pi = exact_ratio(v / 3.141592653589793)
+  if pi[1] > 0 and pi[1] <= 12 {
+    let top = (if pi[0].abs() == 1 { "" } else { f"<mn>{pi[0].abs()}</mn>" }) + "<mi>&#960;</mi>"
+    let sign = if pi[0] < 0 { "<mo>&#8722;</mo>" } else { "" }
+    return sign + (if pi[1] == 1 { top } else { f"<mfrac><mrow>{top}</mrow><mn>{pi[1]}</mn></mfrac>" })
+  }
+  let square = exact_ratio(v * v)
+  if square[1] == 1 and square[0] < 10000 { return (if v < 0 { "<mo>&#8722;</mo>" } else { "" }) + f"<msqrt><mn>{square[0]}</mn></msqrt>" }
+  return f"<mn>{num_text(v)}</mn>"
+}
+
+// A calculation as a person writes it out: the formula, the same formula
+// with the numbers put in, and the answer, exact where it can be and
+// rounded to four significant places beside it.
+record Calc { formula: Text substituted: Text value: Number exact: Text rounded: Text }
+
+fn round_sig(v: Number, places: Number) -> Number {
+  if v == 0 { return 0 }
+  let size = (v.abs().log() / (10).log()).floor()
+  let shift = places - 1 - size
+  if shift >= 0 {
+    let up = (10).power(shift)
+    return (v * up).round() / up
+  }
+  let down = (10).power(0 - shift)
+  return (v / down).round() * down
+}
+
+fn calc(e: Text[], names: Text[], values: Number[]) -> Calc {
+  var put = e
+  for k in 0 until names.length() { put = subst(put, names[k], values[k]) }
+  let v = at(e, names, values)
+  return {formula: to_mathml(e), substituted: to_mathml(put), value: v, exact: exact(v), rounded: num_text(round_sig(v, 4))}
+}
+
+fn eq_mathml(left: Text, right: Text) -> Text {
+  return f"<math display=\"block\"><mrow>{left}<mo>=</mo>{right}</mrow></math>"
+}
+
+// The whole calculation, lined up on its equals signs.
+// A number too big or too small to read is written a x 10^n.
+fn number_mathml(v: Number) -> Text {
+  if v == 0 or (v.abs() >= 0.001 and v.abs() < 1000000) { return f"<mn>{num_text(v)}</mn>" }
+  let size = (v.abs().log() / (10).log()).floor()
+  let shift = 0 - size
+  let lead = if shift >= 0 { v * (10).power(shift) } else { v / (10).power(size) }
+  return f"<mn>{num_text(round_sig(lead, 4))}</mn><mo>&#215;</mo><msup><mn>10</mn><mn>{size}</mn></msup>"
+}
+
+fn calc_mathml(name: Text, e: Text[], names: Text[], values: Number[], unit: Text) -> Text {
+  let c = calc(e, names, values)
+  let unit_mml = if unit.is_empty() { "" } else { f"<mspace width=\"0.3em\"/><mtext>{unit}</mtext>" }
+  let close = exact_ratio(c.value)[1] == 0 and exact(c.value) == num_text(c.value)
+  let rounded = number_mathml(round_sig(c.value, 4))
+  let answer = if close { "<mo>&#8776;</mo>" + rounded + unit_mml } else { "<mo>=</mo>" + exact_mathml(c.value) + unit_mml + (if exact_ratio(c.value)[1] == 1 { "" } else { "<mo>&#8776;</mo>" + rounded }) }
+  // Each line its own row of a grid, so the equals signs line up in any
+  // browser: the name on the first line, the working under it.
+  let cell = "style=\"display:block\""
+  let row1 = f"<math {cell}><mrow>{mathml_name(name)}</mrow></math><math {cell}><mrow><mo>=</mo>{c.formula}</mrow></math>"
+  let row2 = f"<span></span><math {cell}><mrow><mo>=</mo>{c.substituted}</mrow></math>"
+  let row3 = f"<span></span><math {cell}><mrow>{answer}</mrow></math>"
+  return f"<div class=\"calc\" style=\"display:grid;grid-template-columns:auto 1fr;gap:6px 6px;align-items:center\">{row1}{row2}{row3}</div>"
+}
+
+test "tan, abs and the constants pi and e are understood" {
+  expect (at(parse("tan(pi/4)").expr, [], []) * 1000000).round() == 1000000
+  expect at(parse("abs(3 - 5)").expr, [], []) == 2
+  expect (at(parse("e").expr, [], []) * 1000).round() == 2718
+  expect to_latex(parse("tan(x)").expr) == "\\tan x"
+}
+
+test "Newton's method finds roots with the derivative worked by rule" {
+  two = solve(parse("x^2 - 2").expr, "x", 1)
+  expect two.ok
+  expect (two.value * 1000000).round() == 1414214
+  cosine = solve(parse("cos(x) - x").expr, "x", 1)
+  expect (cosine.value * 10000).round() == 7391
+  flat = solve(parse("x^2 + 1").expr, "x", 0)
+  expect not flat.ok
+}
+
+test "integrals are found by Simpson's rule and checked at two step sizes" {
+  area = integrate(parse("x^2").expr, "x", 0, 3)
+  expect area.value == 9
+  half = integrate(parse("sin(x)").expr, "x", 0, 3.141592653589793)
+  expect half.value == 2
+}
+
+test "numbers are written exactly when they can be" {
+  expect exact(0.3333333333333333) == "1/3"
+  expect exact(2.0943951023931953) == "2pi/3"
+  expect exact(1.4142135623730951) == "sqrt 2"
+  expect exact(4) == "4"
+  expect exact_mathml(0.75) == "<mfrac><mn>3</mn><mn>4</mn></mfrac>"
+  expect exact(89875517873681.77) == "89875517873681.77"
+  expect round_sig(89875517873681.77, 4) == 89880000000000
+}
+
+test "a calculation is written out with the numbers put in" {
+  period = calc(parse("2 pi sqrt(L/g)").expr, ["L", "g"], [1, 9.81])
+  expect period.rounded == "2.006"
+  expect period.substituted.contains("<mn>9.81</mn>")
+  expect calc_mathml("T", parse("2 pi sqrt(L/g)").expr, ["L", "g"], [1, 9.81], "s").contains("&#8776;")
+  energy = calc_mathml("E", parse("m c^2").expr, ["m", "c"], [0.001, 299792458], "J")
+  expect energy.contains("<mn>0.001</mn><mo>&#215;</mo>")
+  expect energy.contains("<mn>8.988</mn><mo>&#215;</mo><msup><mn>10</mn><mn>13</mn></msup>")
 }
