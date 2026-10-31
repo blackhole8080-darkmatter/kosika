@@ -1,0 +1,182 @@
+// Research: one front door for the two research agents. A question about
+// your own files goes to the researcher, who answers with an exact quote
+// and the line it came from; anything about papers on arXiv goes to the
+// digest, which explains them, draws them as a page of figures, and sends
+// the page to your phone with the paper's link.
+//
+//   kosika test main.kos
+//   kosika studio examples/agents --model qwen2.5:7b --model-protocol ollama
+//       --allow-folder YOUR_NOTES --embed-model nomic-embed-text
+//       --allow-site export.arxiv.org --allow-site arxiv.org
+//       --notify https://ntfy.sh/your-private-topic
+//
+// The routing is code, not a model: an arXiv link or number in your
+// message, or the words evening and digest, go to the digest; everything
+// else goes to the researcher, who already knows find, read, summarize and
+// plain questions. No model is asked by this door itself, and the one who
+// answers is named in the run's record.
+//
+// Handing over grants nothing: the other agent runs as if you had opened
+// it, with its own tools and the grants you gave, and it cannot hand the
+// request on. From the command line the hand-over tool is not bound, so
+// this door says so and points at the two agents instead; in Studio,
+// where the agents live in one folder, it passes your words straight
+// through and gives back the answer unchanged.
+
+record Msg { text: Text }
+record Said { text: Text }
+
+// A request handed to another agent in this folder, and what came back.
+record Handover { agent: Text text: Text }
+record Handed { ok: Bool agent: Text text: Text }
+
+tool ask_agent {
+  source system "agents"
+  operation: "ask"
+  access: observe
+  input: Handover
+  output: Handed
+}
+
+agent front {
+  can: [ask_agent]
+  max_steps: 1
+}
+
+// ---------------------------------------------------------------- routing
+
+// An arXiv number: four digits, a dot, four or five digits, and perhaps
+// a version such as v2. (The digest's own way of reading one.)
+fn is_arxiv_id(id: Text) -> Bool {
+  let parts = id.split(".")
+  if parts.length() != 2 or parts[0].length() != 4 or not parts[0].to_number().exists() { return false }
+  let rest = parts[1].split("v")
+  return rest.length() <= 2 and (rest[0].length() == 4 or rest[0].length() == 5) and rest[0].to_number().exists() and (rest.length() == 1 or rest[1].to_number().exists())
+}
+
+// The arXiv link a message holds, or "" when it holds none.
+fn arxiv_link(text: Text) -> Text {
+  for word in text.replace("/pdf/", "/abs/").replace(".pdf", "").words() {
+    var id = word.trim()
+    let at = id.index_of("arxiv.org/abs/")
+    if at.exists() { id = id.drop(at.value() + 14) }
+    if is_arxiv_id(id) { return "https://arxiv.org/abs/" + id }
+  }
+  return ""
+}
+
+// Which door a message takes: "help" written here, "paper", "survey" and
+// "digest" for the digest, anything else for the researcher.
+fn kind_of(text: Text) -> Text {
+  let lower = text.lower().trim()
+  if lower == "help" or lower.contains("what can you do") { return "help" }
+  if not arxiv_link(text).is_empty() { return "paper" }
+  if lower.contains("biorxiv.org/content/") { return "paper" }
+  if lower == "survey" or lower.starts_with("survey ") { return "survey" }
+  if lower == "evening" or lower == "digest" or lower.starts_with("digest ") { return "digest" }
+  return "ask"
+}
+
+fn help_text() -> Text {
+  return "I am the front door to the research agents. Say:\nany question, find WORDS, read FILE or summarize FILE: answered from your folder by the researcher, with an exact quote and its line\na paper's link — arXiv, like https://arxiv.org/abs/2610.23850, or bioRxiv: the paper explained and drawn as a page of figures, sent to your phone with its link\nsurvey TOPIC: several papers on the topic found on arXiv, each drawn from its own abstract, and read together — where they agree, where they differ, what is open, with citations\nevening: tonight's lesson from today's papers\ndigest: today's round of new papers\nhelp: this\nThe routing is code, not a model, and the one who answers is named in the run's record."
+}
+
+// ---------------------------------------------------------------- handing over
+
+// What to say when a hand-over cannot be made at all: the door only works
+// where the agents live in one folder, such as Studio.
+fn unreachable(name: Text) -> Said {
+  return {text: "I could not hand your words to the " + name + " agent here: this door needs the agents to live in one folder, as they do in Kosika Studio. From the command line, run the agent you want directly:\nkosika run examples/agents/" + name + "/main.kos --input ask.json ..."}
+}
+
+// The answer as this door gives it: unchanged when it came, and the reason
+// it did not when it did not.
+fn from_handed(handed: Handed) -> Said {
+  if handed.ok { return {text: handed.text} }
+  return {text: "The " + (if handed.agent.is_empty() { "other" } else { handed.agent }) + " agent would not take it: " + handed.text}
+}
+
+// The agent a message goes to, with the words themselves.
+record Door { name: Text msg: Msg }
+
+workflow hand(door: Door) -> Said {
+  handed = execute front.ask_agent(agent: door.name, text: door.msg.text) otherwise {ok: false, agent: "", text: ""}
+  // A refusal carries its reason in text; the empty fallback is the tool
+  // itself not being bound, which is a different thing to say.
+  said   = match handed.ok {
+    case true { from_handed(handed) }
+    case _ { refused(door.name, handed) }
+  }
+}
+
+// A refusal, or no tool at all to hand it to.
+fn refused(name: Text, handed: Handed) -> Said {
+  if handed.text.is_empty() { return unreachable(name) }
+  return from_handed(handed)
+}
+
+// ------------------------------------------------------------------ the door
+
+workflow main(msg: Msg) -> Said {
+  budget 1 tool calls, 300 seconds
+  said = match kind_of(msg.text) {
+    case "help" { {text: help_text()} }
+    case "paper" { call hand({name: "digest", msg: msg}) }
+    case "digest" { call hand({name: "digest", msg: msg}) }
+    case "survey" { call hand({name: "digest", msg: msg}) }
+    case _ { call hand({name: "researcher", msg: msg}) }
+  }
+}
+
+// ------------------------------------------------------------------ tests
+
+test "an arXiv link or number is seen wherever it sits" {
+  expect arxiv_link("please draw https://arxiv.org/abs/2610.23850v1") == "https://arxiv.org/abs/2610.23850v1"
+  expect arxiv_link("arxiv.org/pdf/2610.23798.pdf") == "https://arxiv.org/abs/2610.23798"
+  expect arxiv_link("what does 2610.23850 say?") == "https://arxiv.org/abs/2610.23850"
+  expect arxiv_link("what does my notes folder say about rent?") == ""
+  expect arxiv_link("version 1.2 of my notes") == ""
+}
+
+test "each message takes the door meant for it" {
+  expect kind_of("help") == "help"
+  expect kind_of("draw https://arxiv.org/abs/2610.23850 please") == "paper"
+  expect kind_of("2610.23850") == "paper"
+  expect kind_of("draw https://www.biorxiv.org/content/10.1101/2026.10.22.1v1") == "paper"
+  expect kind_of("survey cost-aware abstention") == "survey"
+  expect kind_of("survey") == "survey"
+  expect kind_of("evening") == "digest"
+  expect kind_of("digest") == "digest"
+  expect kind_of("digest please") == "digest"
+  expect kind_of("when is the demo with Ravi?") == "ask"
+  expect kind_of("find invoice 2026") == "ask"
+  expect kind_of("summarize notes/plan.md") == "ask"
+}
+
+test "a question is handed to the researcher and answered unchanged" {
+  answers ask_agent: [{ok: true, agent: "researcher", text: "The demo is next Tuesday at 3pm.\nQuote: \"Kosika demo for Ravi is next Tuesday at 3pm\"\nFrom: notes/work.md, line 12"}]
+  a = main({text: "When is the demo with Ravi?"})
+  expect a.text == "The demo is next Tuesday at 3pm.\nQuote: \"Kosika demo for Ravi is next Tuesday at 3pm\"\nFrom: notes/work.md, line 12"
+}
+
+test "a paper is handed to the digest, its answer unchanged too" {
+  answers ask_agent: [{ok: true, agent: "digest", text: "Drew Light in glass as 3 figures.\nhttps://arxiv.org/abs/2610.1\n\n(Sent to your phone, with the paper's link and its page attached.)"}]
+  a = main({text: "draw https://arxiv.org/abs/2610.1"} )
+  expect a.text.starts_with("Drew Light in glass as 3 figures.")
+  expect a.text.contains("Sent to your phone")
+}
+
+test "a refusal from the other agent is passed on with its reason" {
+  answers ask_agent: [{ok: false, agent: "", text: "There is no agent called digest."}]
+  a = main({text: "digest"})
+  expect a.text.starts_with("The other agent would not take it")
+}
+
+test "when no agent can be reached the door says so honestly" {
+  a = main({text: "When is the demo with Ravi?"})
+  expect a.text.starts_with("I could not hand your words to the researcher agent here")
+  expect a.text.contains("kosika run examples/agents/researcher/main.kos")
+  helped = main({text: "help"})
+  expect helped.text.contains("front door to the research agents")
+  expect helped.text.contains("an exact quote and its line")
+}

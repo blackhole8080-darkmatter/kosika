@@ -42,7 +42,7 @@ const (
 	maxSearchLine    = 240
 )
 
-var systemKinds = []string{"shell", "files", "web", "kosika", "meaning", "agents", "outside", "notify", "services", "linux", "computer"}
+var systemKinds = []string{"shell", "files", "db", "web", "kosika", "meaning", "agents", "outside", "notify", "services", "linux", "computer"}
 
 // The kinds this engine reads; the rest are refused as the file is read.
 var systemKindsHere = map[string]bool{"files": true, "shell": true, "services": true, "web": true, "meaning": true, "kosika": true, "notify": true,
@@ -77,11 +77,13 @@ var systemShapes = map[string]shape{
 	"near":        {[]Param{{"a", "Text"}, {"b", "Text"}}, []Param{{"score", "Number"}}},
 	"check":       {[]Param{{"source", "Text"}}, []Param{{"ok", "Bool"}, {"problem", "Text"}, {"tests", "Number"}, {"passed", "Number"}}},
 	"check_files": {[]Param{{"text", "Text"}, {"files", plannedFiles}}, []Param{{"problems", "Text[]"}}},
-	"send":        {[]Param{{"title", "Text"}, {"text", "Text"}}, []Param{{"sent", "Bool"}}},
+	"send":        {[]Param{{"title", "Text"}, {"text", "Text"}, {"link", "Text"}, {"file_name", "Text"}, {"file", "Text"}}, []Param{{"sent", "Bool"}}},
 	"linux:status": {nil, []Param{{"distro", "Text"}, {"kernel", "Text"}, {"uptime", "Text"}, {"load", "Text"},
 		{"memory", "Text"}, {"disk", "Text"}, {"upgrades", "Text"}, {"top", "Text[]"}}},
 	"computer:status": {nil, []Param{{"name", "Text"}, {"system", "Text"}, {"cores", "Number"},
 		{"memory", "Text"}, {"disk", "Text"}, {"uptime", "Text"}}},
+	"db:query":   {[]Param{{"sql", "Text"}, {"values", "Text[]"}}, []Param{{"columns", "Text[]"}, {"rows", "Text[][]"}, {"more", "Bool"}}},
+	"db:run":     {[]Param{{"sql", "Text"}, {"values", "Text[]"}}, []Param{{"changed", "Number"}}},
 	"ask":        {[]Param{{"agent", "Text"}, {"text", "Text"}}, []Param{{"ok", "Bool"}, {"agent", "Text"}, {"text", "Text"}}},
 	"propose":    {[]Param{{"agent", "Text"}, {"text", "Text"}}, []Param{{"ok", "Bool"}, {"agent", "Text"}, {"said", "Text"}, {"files", plannedFiles}}},
 	"review":     {[]Param{{"agent", "Text"}, {"text", "Text"}, {"files", plannedFiles}}, []Param{{"ok", "Bool"}, {"agent", "Text"}, {"said", "Text"}}},
@@ -156,8 +158,13 @@ func (c *checker) systemProblem(tool *ToolDecl) string {
 	if !hasName(systemKinds, kind) {
 		return fmt.Sprintf("Tool %s has unknown system source %s; use one of: %s", pyRepr(tool.Name), pyRepr(kind), strings.Join(systemKinds, ", "))
 	}
-	looksOnly := (kind == "files" && readOnlyOperations[tool.Operation]) || (kind == "services" && tool.Operation == "status") ||
-		kind != "files" && kind != "shell" && kind != "services"
+	looksOnly := (kind == "files" && readOnlyOperations[tool.Operation]) ||
+		(kind == "db" && tool.Operation == "query") ||
+		(kind == "services" && tool.Operation == "status") ||
+		kind != "files" && kind != "shell" && kind != "services" && kind != "db"
+	if kind == "db" && tool.Operation != "query" && tool.Operation != "run" {
+		return fmt.Sprintf("Tool %s has unknown db operation %s; use one of: query (only looks), run (changes the database)", pyRepr(tool.Name), pyRepr(tool.Operation))
+	}
 	if kind == "outside" && tool.Operation != "propose" && tool.Operation != "review" && tool.Operation != "answer" {
 		return fmt.Sprintf("Tool %s has unknown outside operation %s; use one of: propose, review, answer", pyRepr(tool.Name), pyRepr(tool.Operation))
 	}

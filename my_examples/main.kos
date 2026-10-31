@@ -1,0 +1,32 @@
+record Order {
+    customer: Text
+    items: Text
+    total: Number
+}
+
+record Summary {
+    greeting: Text
+    item_count: Number
+    size: Text
+    odd_total: Bool
+}
+
+fn summarize(order:Order) ->
+Summary {
+    let names: Text[] = order.items.split(separator: ",")
+    let count: Number = names.length()
+    let size: Text = if count >= 5 {"large"} else if count >= 2 {"medium"} else {"small"}
+    return {
+        greeting: "Hello, " + order.customer.trim().upper() + "!",
+        item_count: count,
+        size: size,
+        odd_total: order.total % 2 == 1
+    }
+}
+
+workflow main(order:Order) -> Summary {
+    step build {
+        let summary: Summary = summarize(order: order)
+        return summary
+    }
+}

@@ -86,6 +86,9 @@ func main() {
 	if len(args) >= 2 && args[0] == "run" {
 		os.Exit(runCommand(args[1:]))
 	}
+	if len(args) >= 2 && args[0] == "serve" {
+		os.Exit(serveCommand(args[1:]))
+	}
 	if len(args) == 2 && args[0] == "replay" {
 		os.Exit(replayCommand(args[1]))
 	}
@@ -112,7 +115,7 @@ func main() {
 		asJSON, args = true, []string{args[0], args[2]}
 	}
 	if len(args) != 2 {
-		fail("usage: kosika-native tokens FILE.kos | kosika-native test [--json] FILE.kos | kosika-native run FILE.kos [options] | kosika-native capabilities")
+		fail("usage: kosika-native tokens FILE.kos | kosika-native test [--json] FILE.kos | kosika-native run FILE.kos [options] | kosika-native serve FILE.kos [--port N] [run options] | kosika-native capabilities")
 	}
 	switch args[0] {
 	case "tokens":

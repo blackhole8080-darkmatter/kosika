@@ -167,7 +167,14 @@ func loadModules(entry string) (merged *Program, failure *moduleError) {
 				at = filepath.VolumeName(resolved)
 			}
 			next := ""
+			sibling := filepath.Join(at, filepath.FromSlash(strings.TrimPrefix(name, stdMarker)))
 			switch {
+			case strings.HasPrefix(name, stdMarker) && !standard && filepath.Base(at) == "std" && fileExists(sibling):
+				// A library file read from its own folder, as its tests
+				// are, reaches the others in that folder the same way
+				// whether it writes `std/math.kos` or `math.kos`; one
+				// file, not two copies of it that would clash.
+				next = sibling
 			case strings.HasPrefix(name, stdMarker):
 				// `std/NAME.kos` is the standard library, wherever it is
 				// written.
@@ -231,4 +238,9 @@ func loadModules(entry string) (merged *Program, failure *moduleError) {
 	}
 	load(entry)
 	return merged, nil
+}
+
+func fileExists(name string) bool {
+	info, err := os.Stat(name)
+	return err == nil && !info.IsDir()
 }

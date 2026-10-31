@@ -20,10 +20,17 @@ from .approval_ledger import ApprovalLedger
 from .ast import Program, ToolDecl
 from .checker import check
 from .command_model import CommandModelProvider
+from .component_declaration import (
+    ComponentDeclarationError,
+    declaration_for_contract,
+)
 from .components import (
+    MAX_MESSAGE_BYTES,
     ComponentContractError,
     bind_component,
+    component_contract_to_dict,
     load_component_contract,
+    parse_component_contract,
     verify_component_artifact,
 )
 from .controls import ControlledProvider, ExecutionError, ModelLimits
@@ -111,7 +118,7 @@ from .source_map import (
 from .source_map import to_mermaid as render_source_map_mermaid
 from .source_map import to_text as render_source_map_text
 from .synapse_bridge import normalize_events
-from .system_tools import bind_system_tools
+from .system_tools import bind_system_tools, system_kind
 from .tracing import start as start_tracing
 
 
@@ -1623,6 +1630,16 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     run_parser.add_argument(
+        "--database",
+        type=Path,
+        metavar="FILE",
+        help=(
+            "The one database file a db tool may reach. A query only reads it; "
+            "a run changes it, and needs your yes for each call. Without it, a "
+            "db tool reaches nothing."
+        ),
+    )
+    run_parser.add_argument(
         "--model-timeout",
         type=float,
         default=60.0,
@@ -1663,9 +1680,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--kind",
         default="hello",
         help=(
-            "What to start from: hello (default), support (an agent with "
-            "memory), expense (a model reads, code decides), or notes (a model "
-            "extracts, code organises)."
+            "What to start from: hello (default), researcher (a model extracts "
+            "claims, code checks every quote), support (an agent with memory), "
+            "expense (a model reads, code decides), or notes (a model extracts, "
+            "code organises)."
         ),
     )
 
@@ -1813,6 +1831,41 @@ def build_parser() -> argparse.ArgumentParser:
         default="cli-user",
         help="Approval actor recorded with --approval-plan-hash.",
     )
+
+    db_parser = subparsers.add_parser(
+        "db",
+        help=(
+            "Read a database file, and write the tables a program declares in "
+            "its stores."
+        ),
+    )
+    db_commands = db_parser.add_subparsers(dest="db_command", required=True)
+    db_init = db_commands.add_parser(
+        "init", help="Write the tables a program declares into a database file."
+    )
+    db_init.add_argument("file", type=Path)
+    db_init.add_argument(
+        "--from",
+        dest="from_program",
+        type=Path,
+        required=True,
+        help=(
+            "The program whose `store` declares the tables. A table that is "
+            "already there is only read: nothing it holds is ever changed."
+        ),
+    )
+    db_init.add_argument("--json", action="store_true")
+    db_inspect = db_commands.add_parser(
+        "inspect", help="Say what is in a database file."
+    )
+    db_inspect.add_argument("file", type=Path)
+    db_inspect.add_argument(
+        "--from",
+        dest="from_program",
+        type=Path,
+        help="A program whose `store` is compared with the file.",
+    )
+    db_inspect.add_argument("--json", action="store_true")
 
     replay_parser = subparsers.add_parser("replay")
     replay_parser.add_argument("trace", type=Path)
@@ -2000,7 +2053,11 @@ def build_parser() -> argparse.ArgumentParser:
     test_parser = subparsers.add_parser(
         "test", help="Run the tests written in a Kosika program."
     )
-    test_parser.add_argument("source", type=Path)
+    test_parser.add_argument(
+        "source",
+        type=Path,
+        help="A .kos file, or a folder containing main.kos.",
+    )
     test_parser.add_argument("--only", help="Run only the test with this name.")
     test_parser.add_argument("--json", action="store_true")
     measure_parser = subparsers.add_parser(
@@ -2259,7 +2316,7 @@ def build_parser() -> argparse.ArgumentParser:
     virtual_model_add.add_argument("candidate", type=Path)
     component_parser = subparsers.add_parser(
         "component",
-        help="Validate a pinned cross-language component contract.",
+        help="Validate, describe, or declare a pinned cross-language component contract.",
     )
     component_subparsers = component_parser.add_subparsers(
         dest="component_command", required=True
@@ -2273,6 +2330,45 @@ def build_parser() -> argparse.ArgumentParser:
         "--json",
         action="store_true",
         help="Print the validated component identity as JSON.",
+    )
+    component_describe_parser = component_subparsers.add_parser(
+        "describe",
+        help="Generate a contract from a Python component's --describe output.",
+        description=(
+            "Run the script's own --describe in a bounded subprocess, then "
+            "validate the contract and re-hash the pinned artifact. The "
+            "script is executed, but no tool call is served."
+        ),
+    )
+    component_describe_parser.add_argument("source", type=Path)
+    component_describe_parser.add_argument(
+        "--tool",
+        help="Tool name when the artifact defines more than one.",
+    )
+    component_describe_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Write the contract here instead of standard output.",
+    )
+    component_describe_parser.add_argument(
+        "--python",
+        type=Path,
+        help="Interpreter used to run the artifact (default: this Python).",
+    )
+    component_declaration_parser = component_subparsers.add_parser(
+        "declaration",
+        help="Write Kosika declarations for a pinned component contract.",
+        description=(
+            "Read a validated contract and emit the Kosika enums, records and "
+            "tool declaration its schemas describe. Shapes only: the host still "
+            "grants the manifest, its effects and capabilities."
+        ),
+    )
+    component_declaration_parser.add_argument("manifest", type=Path)
+    component_declaration_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Write the declarations here instead of standard output.",
     )
 
     extension_parser = subparsers.add_parser(
@@ -2299,12 +2395,235 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _run_component_describe(args: argparse.Namespace) -> int:
+    source = args.source
+    if not source.is_file():
+        print(f"Component describe failed: not a file: {source}", file=sys.stderr)
+        return 2
+    python = str(args.python) if args.python is not None else sys.executable
+    command = [python, str(source.absolute()), "--describe"]
+    if args.tool:
+        command.extend(["--tool", args.tool])
+    environment = dict(os.environ)
+    package_root = str(Path(__file__).resolve().parent.parent)
+    existing = environment.get("PYTHONPATH")
+    environment["PYTHONPATH"] = (
+        package_root + os.pathsep + existing if existing else package_root
+    )
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=source.parent,
+            env=environment,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        print(f"Component describe failed: {exc}", file=sys.stderr)
+        return 2
+    if completed.returncode != 0:
+        detail = (
+            completed.stderr.strip()
+            or completed.stdout.strip()
+            or f"exit status {completed.returncode}"
+        )
+        print(f"Component describe failed: {detail}", file=sys.stderr)
+        return 2
+    if len(completed.stdout.encode("utf-8")) > MAX_MESSAGE_BYTES:
+        print(
+            "Component describe failed: contract exceeds 1 MiB",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        contract = parse_component_contract(strict_json(completed.stdout))
+        if contract.implementation.artifact != source.name:
+            raise ComponentContractError(
+                "The generated contract pins "
+                f"{contract.implementation.artifact!r}, not {source.name!r}"
+            )
+        artifact = verify_component_artifact(contract, source.parent)
+    except (ComponentContractError, ValueError) as exc:
+        print(f"Component describe failed: {exc}", file=sys.stderr)
+        return 2
+    text = json.dumps(component_contract_to_dict(contract), indent=2) + "\n"
+    if args.output is not None:
+        try:
+            args.output.write_text(text, encoding="utf-8")
+        except OSError as exc:
+            print(f"Component describe failed: {exc}", file=sys.stderr)
+            return 2
+        print(f"Wrote component contract: {args.output}")
+        print(f"Component: {contract.component_id} {contract.version}")
+        print(f"Tool: {contract.tool_name} ({contract.operation})")
+        print(f"Artifact: {artifact.name} {contract.implementation.sha256}")
+    else:
+        sys.stdout.write(text)
+    return 0
+
+
+def _run_component_declaration(args: argparse.Namespace) -> int:
+    try:
+        contract = load_component_contract(args.manifest)
+        artifact = verify_component_artifact(contract, args.manifest.parent)
+        text = declaration_for_contract(contract)
+    except (ComponentContractError, ComponentDeclarationError, OSError) as exc:
+        print(f"Component declaration failed: {exc}", file=sys.stderr)
+        return 2
+    if args.output is not None:
+        try:
+            args.output.write_text(text, encoding="utf-8")
+        except OSError as exc:
+            print(f"Component declaration failed: {exc}", file=sys.stderr)
+            return 2
+        print(f"Wrote Kosika declarations: {args.output}")
+        print(f"Tool: {contract.tool_name} ({contract.operation})")
+        print(f"Artifact: {artifact.name} {contract.implementation.sha256}")
+    else:
+        sys.stdout.write(text)
+    return 0
+
+
 def _outside_settings() -> tuple[tuple[str, ...], Path | None]:
     """The outside agents the owner allowed, and the root they may see."""
 
     from .outside import load_settings
 
     return load_settings()
+
+
+def _db_command(args: argparse.Namespace) -> int:
+    """`kosika db inspect` says what is in a file; `kosika db init` writes the
+    tables a program's stores declare. Neither alters a column silently: a
+    table that is there is only read, and a column that disagrees is a refusal
+    naming it."""
+
+    from .database import (
+        DatabaseError,
+        apply_init,
+        describe,
+        named_file,
+        plan_init,
+        store_for,
+        store_problems,
+    )
+
+    try:
+        where = named_file(args.file)
+        program = load_program(args.from_program) if args.from_program else None
+        store = (
+            store_for(program, where, Path(args.from_program).resolve().parent)
+            if program is not None
+            else None
+        )
+    except (ValueError, OSError) as exc:
+        print(f"Database refused: {exc}", file=sys.stderr)
+        return 2
+    if args.db_command == "init":
+        if store is None:
+            print(
+                "Database refused: --from needs a program that declares a "
+                "store, since a store says which tables to write",
+                file=sys.stderr,
+            )
+            return 2
+        plan = plan_init(where, store)
+        written: list[str] = []
+        if not plan.problems:
+            try:
+                written = apply_init(plan)
+            except DatabaseError as exc:
+                print(f"Database refused: {exc}", file=sys.stderr)
+                return 2
+        if args.json:
+            print(
+                json.dumps(
+                    {
+                        "database": str(where),
+                        "store": store.name,
+                        "creates": [
+                            {"table": name, "statement": statement}
+                            for name, statement in plan.creates
+                        ],
+                        "keeps": plan.keeps,
+                        "problems": plan.problems,
+                        "written": written,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 2 if plan.problems else 0
+        print(f"Plan for {where}:")
+        for name, statement in plan.creates:
+            print(f"  write table {name}: {statement}")
+        for name in plan.keeps:
+            print(f"  keep table {name}: it is there and agrees")
+        for problem in plan.problems:
+            print(f"  cannot: {problem}")
+        if plan.problems:
+            print(
+                "Nothing was written: a column that is there is never changed "
+                "by this command, so change the column, or the store",
+                file=sys.stderr,
+            )
+            return 2
+        if not written:
+            print("Nothing to write: every table the store declares is there.")
+            return 0
+        print(
+            f"Wrote {len(written)} table"
+            f"{'s' if len(written) != 1 else ''}: {', '.join(written)}"
+        )
+        return 0
+    if not where.is_file():
+        print(
+            f"Database refused: there is no database at {str(where)!r}",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        payload = describe(where)
+        problems = store_problems(where, store) if store is not None else []
+    except DatabaseError as exc:
+        print(f"Database refused: {exc}", file=sys.stderr)
+        return 2
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    **payload,
+                    "store": (
+                        {"name": store.name, "problems": problems}
+                        if store is not None
+                        else None
+                    ),
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 2 if problems else 0
+    print(str(where))
+    for table in payload["tables"]:
+        print(f"  table {table['name']} ({table['rows']} rows)")
+        for column in table["columns"]:
+            print(
+                f"    {column['name']:20} {column['declared']:12} "
+                f"{column['affinity']}"
+            )
+    if store is None:
+        return 0
+    if problems:
+        print(f"store {store.name}: the database does not agree")
+        for problem in problems:
+            print(f"  {problem}")
+        return 2
+    print(f"store {store.name}: the database agrees")
+    return 0
 
 
 def main() -> int:
@@ -2863,6 +3182,10 @@ def main() -> int:
     if args.command == "agent":
         return _run_agent_command(args, parser)
     if args.command == "component":
+        if args.component_command == "describe":
+            return _run_component_describe(args)
+        if args.component_command == "declaration":
+            return _run_component_declaration(args)
         try:
             component_contract = load_component_contract(args.manifest)
             artifact = verify_component_artifact(
@@ -3343,8 +3666,17 @@ def main() -> int:
         from .testing import run_tests
         from .testing import to_text as tests_to_text
 
+        source = args.source
+        if source.is_dir():
+            source = source / "main.kos"
+            if not source.is_file():
+                print(
+                    f"Check failed: {args.source} is a folder without a main.kos file",
+                    file=sys.stderr,
+                )
+                return 2
         try:
-            results = run_tests(load_program(args.source), only=args.only)
+            results = run_tests(load_program(source), only=args.only)
         except (ValueError, OSError) as exc:
             print(f"Check failed: {exc}", file=sys.stderr)
             return 2
@@ -3491,6 +3823,8 @@ def main() -> int:
     if args.command == "analyze":
         return 0
 
+    if args.command == "db":
+        return _db_command(args)
     json_check = args.command == "check" and getattr(args, "format", None) == "json"
     if json_check:
         response = check_project(args.source)
@@ -3576,6 +3910,24 @@ def main() -> int:
         if args.trace == Path("run_trace.jsonl") and environment.keep is not None:
             args.trace = environment.trace_path()
 
+    if program.stores and args.command == "run":
+        # A store is a promise about a file, so the file is asked whether it
+        # keeps it before the first step runs. Only the host knows the file,
+        # so this is a preflight rather than a check (see
+        # kosika.database.check_stores); `kosika check` still passes a program
+        # whose tables are not there yet, since no file is named there.
+        from .database import check_stores
+
+        try:
+            check_stores(
+                program,
+                getattr(args, "database", None),
+                Path(args.source).resolve().parent,
+            )
+        except ValueError as exc:
+            print(f"Workflow failed: {exc}", file=sys.stderr)
+            return 2
+
     mcp_commands: dict[str, Sequence[str]] | None = None
     run_manifest: MCPManifest | dict[str, MCPManifest] | None = None
     if environment is not None and environment.mcp:
@@ -3636,11 +3988,25 @@ def main() -> int:
             services=getattr(args, "services", None),
             linux=getattr(args, "linux", None),
             computer=getattr(args, "computer", False),
+            database=getattr(args, "database", None),
         )
         system_bindings = {
             **system_bindings,
             **bind_memory_tools(program, getattr(args, "memory", None), meaning=_meaning(args)),
         }
+        # What the run records about the database it was given: the tables the
+        # file has, so that a replay can put a recorded statement back to
+        # SQLite with no database present (see kosika.database.sent_problem).
+        # Only a program that reaches a database is asked.
+        from .database import granted_tables
+
+        granted_database = getattr(args, "database", None)
+        database_tables = (
+            granted_tables(granted_database)
+            if granted_database is not None
+            and any(system_kind(tool) == "db" for tool in program.tools)
+            else None
+        )
         if args.approve and not args.journal:
             # Approval needs a journal to remember what was approved between
             # the pause and the resume; an asked-for run keeps one for itself.
@@ -3706,6 +4072,7 @@ def main() -> int:
                     inputs=inputs,
                     model_bindings=bindings,
                     tool_bindings=host_tool_bindings or None,
+                    database_tables=database_tables,
                     session=session,
                     limits=ExecutionLimits(
                         max_function_calls=args.max_function_calls,

@@ -1,0 +1,203 @@
+// Kosika Science, units: every quantity carries its unit, and Kosika
+// refuses what does not add up.
+//
+//   import "std/science_units.kos"
+//
+// A unit is read into its size in SI and its dimensions: how many times
+// it holds a metre, a kilogram, a second, an ampere, a kelvin, a mole and
+// a candela. "km/h" is 0.2778 m/s with dimensions length / time; "N" is
+// kg m / s^2. Two units can be compared, converted between, or multiplied,
+// and a conversion between units of different dimensions (metres to
+// seconds) is refused and says why, because it is always a mistake.
+//
+//   su_unit("kN*m")            the unit, read
+//   su_convert(60, "km/h", "m/s")   16.667, checked
+//   su_same("J", "kg*m^2/s^2")      true: the same dimensions
+//   su_dims_text(u)            the dimensions in words: length^2 mass / time^2
+
+export [SuUnit, SuResult, SuAsk, SuPage, su_one, su_power, su_unit, su_convert, su_same, su_times, su_over, su_dims_text, su_card, su_style, convert]
+
+record SuUnit { ok: Bool scale: Number dims: Number[] text: Text problem: Text }
+record SuResult { ok: Bool value: Number from: Text to: Text given: Number problem: Text dims: Text }
+record SuAsk { text: Text }
+record SuPage { card: Text result: SuResult }
+
+fn su_base() -> Text[] { return ["length", "mass", "time", "current", "temperature", "amount", "light"] }
+
+// Every unit Kosika knows, as its symbol, its size in SI, and its
+// dimensions [m, kg, s, A, K, mol, cd].
+fn su_names() -> Text[] { return ["m", "g", "s", "A", "K", "mol", "cd", "N", "J", "W", "Pa", "Hz", "C", "V", "ohm", "Ω", "L", "min", "h", "day", "eV", "atm", "cal", "bar", "T", "F", "Wb", "in", "ft", "mi", "lb"] }
+fn su_sizes() -> Number[] { return [1, 0.001, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0.001, 60, 3600, 86400, 0.0000000000000000001602176634, 101325, 4.184, 100000, 1, 1, 1, 0.0254, 0.3048, 1609.344, 0.45359237] }
+fn su_table() -> Number[][] {
+  return [
+    [1, 0, 0, 0, 0, 0, 0], [0, 1, 0, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0, 0], [0, 0, 0, 1, 0, 0, 0], [0, 0, 0, 0, 1, 0, 0], [0, 0, 0, 0, 0, 1, 0], [0, 0, 0, 0, 0, 0, 1],
+    [1, 1, -2, 0, 0, 0, 0], [2, 1, -2, 0, 0, 0, 0], [2, 1, -3, 0, 0, 0, 0], [-1, 1, -2, 0, 0, 0, 0], [0, 0, -1, 0, 0, 0, 0], [0, 0, 1, 1, 0, 0, 0],
+    [2, 1, -3, -1, 0, 0, 0], [2, 1, -3, -2, 0, 0, 0], [2, 1, -3, -2, 0, 0, 0], [3, 0, 0, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0, 0],
+    [2, 1, -2, 0, 0, 0, 0], [-1, 1, -2, 0, 0, 0, 0], [2, 1, -2, 0, 0, 0, 0], [-1, 1, -2, 0, 0, 0, 0], [0, 1, -2, -1, 0, 0, 0], [-2, -1, 4, 2, 0, 0, 0], [2, 1, -2, -1, 0, 0, 0],
+    [1, 0, 0, 0, 0, 0, 0], [1, 0, 0, 0, 0, 0, 0], [1, 0, 0, 0, 0, 0, 0], [0, 1, 0, 0, 0, 0, 0]
+  ]
+}
+
+fn su_prefixes() -> Text[] { return ["k", "M", "G", "c", "m", "u", "μ", "n", "p", "d"] }
+fn su_prefix_sizes() -> Number[] { return [1000, 1000000, 1000000000, 0.01, 0.001, 0.000001, 0.000001, 0.000000001, 0.000000000001, 0.1] }
+
+fn su_none(text: Text, problem: Text) -> SuUnit { return {ok: false, scale: 0, dims: [0, 0, 0, 0, 0, 0, 0], text: text, problem: problem} }
+fn su_one() -> SuUnit { return {ok: true, scale: 1, dims: [0, 0, 0, 0, 0, 0, 0], text: "", problem: ""} }
+
+// One symbol, with or without a prefix: "km" is a kilo-metre, "min" a
+// minute (the whole symbol is tried first), "mm" a milli-metre.
+fn su_symbol(symbol: Text) -> SuUnit {
+  let at = su_names().index_of(symbol).or(-1)
+  if at >= 0 { return {ok: true, scale: su_sizes()[at], dims: su_table()[at], text: symbol, problem: ""} }
+  for p in 0 until su_prefixes().length() {
+    let pre = su_prefixes()[p]
+    if symbol.starts_with(pre) and symbol.length() > pre.length() {
+      let rest = symbol.slice(pre.length(), symbol.length())
+      let base = su_names().index_of(rest).or(-1)
+      if base >= 0 { return {ok: true, scale: su_prefix_sizes()[p] * su_sizes()[base], dims: su_table()[base], text: symbol, problem: ""} }
+    }
+  }
+  return su_none(symbol, f"{symbol} is not a unit Kosika knows")
+}
+
+fn su_power(u: SuUnit, power: Number) -> SuUnit {
+  return {ok: u.ok, scale: u.scale.power(power), dims: for d in u.dims { d * power }, text: u.text, problem: u.problem}
+}
+
+fn su_times(a: SuUnit, b: SuUnit) -> SuUnit {
+  if not a.ok { return a }
+  if not b.ok { return b }
+  return {ok: true, scale: a.scale * b.scale, dims: for i in 0 until 7 { a.dims[i] + b.dims[i] }, text: a.text + "*" + b.text, problem: ""}
+}
+
+fn su_over(a: SuUnit, b: SuUnit) -> SuUnit { return su_times(a, su_power(b, -1)) }
+
+// A unit as written: symbols joined by *, · or spaces, divided by /, each
+// with an optional power after ^ ("m/s^2", "kg*m^2/s^2", "kN m", "mol/L").
+// Each / divides by the one symbol after it, so m/s/s is m / s^2.
+fn su_unit(text: Text) -> SuUnit {
+  let t = text.trim().replace("·", "*").replace(" ", "*").replace("**", "^").replace("²", "^2").replace("³", "^3")
+  if t.is_empty() or t == "1" { return {..su_one(), text: text} }
+  var out = su_one()
+  var term = ""
+  var dividing = false
+  var next_divides = false
+  for k in 0 until t.length() + 1 {
+    let ch = if k < t.length() { t.slice(k, k + 1) } else { "*" }
+    if ch == "*" or ch == "/" {
+      if not term.is_empty() {
+        let hat = term.index_of("^").or(-1)
+        let symbol = if hat < 0 { term } else { term.slice(0, hat) }
+        let power = if hat < 0 { 1 } else { term.slice(hat + 1, term.length()).to_number().or(0) }
+        let one = su_power(su_symbol(symbol), power)
+        out = if dividing { su_over(out, one) } else { su_times(out, one) }
+      }
+      term = ""
+      dividing = ch == "/"
+    } else {
+      term = term + ch
+    }
+  }
+  return {..out, text: text}
+}
+
+fn su_same(a: Text, b: Text) -> Bool {
+  let x = su_unit(a)
+  let y = su_unit(b)
+  return x.ok and y.ok and x.dims == y.dims
+}
+
+// The dimensions in words: length^2 mass / time^2.
+fn su_dims_text(u: SuUnit) -> Text {
+  let up = for i in 0 until 7 where u.dims[i] > 0 { if u.dims[i] == 1 { su_base()[i] } else { su_base()[i] + "^" + u.dims[i].to_text() } }
+  let down = for i in 0 until 7 where u.dims[i] < 0 { if u.dims[i] == -1 { su_base()[i] } else { su_base()[i] + "^" + (0 - u.dims[i]).to_text() } }
+  let top = if up.is_empty() { "1" } else { up.join(" ") }
+  return if down.is_empty() { top } else { top + " / " + down.join(" ") }
+}
+
+// A value in one unit, said in another: refused unless both measure the
+// same thing.
+fn su_convert(value: Number, from: Text, to: Text) -> SuResult {
+  let a = su_unit(from)
+  let b = su_unit(to)
+  let failed: SuResult = {ok: false, value: 0, from: from, to: to, given: value, problem: "", dims: ""}
+  if not a.ok { return {..failed, problem: a.problem} }
+  if not b.ok { return {..failed, problem: b.problem} }
+  if a.dims != b.dims { return {..failed, problem: f"{from} measures {su_dims_text(a)} but {to} measures {su_dims_text(b)}, so one cannot become the other"} }
+  let exact = value * a.scale / b.scale
+  return {ok: true, value: exact, from: from, to: to, given: value, problem: "", dims: su_dims_text(a)}
+}
+
+// ---------------------------------------------------------------- drawing
+
+fn su_esc(text: Text) -> Text { return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") }
+
+fn su_round(v: Number) -> Text {
+  let a = v.abs()
+  if a >= 1000000 or (a < 0.001 and a > 0) { return v.to_text() }
+  return ((v * 10000).round() / 10000).to_text()
+}
+
+fn su_card(r: SuResult) -> Text {
+  if not r.ok { return f"<div class=\"su\"><div class=\"su-head\">Units &#183; checked by Kosika</div><p class=\"su-bad\">Refused: {su_esc(r.problem)}.</p></div>" }
+  return f"<div class=\"su\"><div class=\"su-head\">Units &#183; checked by Kosika</div><div class=\"su-eq\"><span>{su_round(r.given)} {su_esc(r.from)}</span><i>=</i><b>{su_round(r.value)} {su_esc(r.to)}</b></div><p class=\"su-how\">Both measure {su_esc(r.dims)}: Kosika read each unit into SI and its dimensions, and only then converted.</p></div>"
+}
+
+fn su_style() -> Text {
+  return ".su{color:var(--ink);font:15px/1.5 Figtree,system-ui,sans-serif}.su-head{font:600 10.5px ui-monospace,Consolas,monospace;letter-spacing:.22em;text-transform:uppercase;color:var(--gold);margin-bottom:10px}.su-eq{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:baseline;font-size:clamp(22px,3.6vw,34px);font-weight:700;padding:16px 20px;border-radius:18px;background:color-mix(in srgb,var(--halo) 88%,transparent);border:1px solid color-mix(in srgb,var(--line) 12%,transparent)}.su-eq i{font-style:normal;color:var(--soft);font-weight:400}.su-eq b{color:var(--amber)}.su-how{color:var(--soft);font-size:13.5px}.su-bad{color:var(--h5,#ff6b81);font-weight:600}"
+}
+
+// ---------------------------------------------------------------- the workflow
+
+// "convert 60 km/h to m/s": the number, the unit it is in, and the unit
+// to say it in, read from the words with no model.
+fn su_read(text: Text) -> SuResult {
+  let t = text.trim().lower().replace("convert ", "").replace(" into ", " to ").replace(" in ", " to ")
+  let parts = t.split(" to ")
+  let failed: SuResult = {ok: false, value: 0, from: "", to: "", given: 0, problem: "write it as: convert 60 km/h to m/s", dims: ""}
+  if parts.length() != 2 { return failed }
+  let left = parts[0].trim()
+  let space = left.index_of(" ").or(-1)
+  if space < 0 { return failed }
+  let value = left.slice(0, space).to_number()
+  if value == null { return failed }
+  return su_convert(value.or(0), su_keep_case(text, left.slice(space + 1, left.length()).trim()), su_keep_case(text, parts[1].trim()))
+}
+
+// Units are case-sensitive (mm is not Mm): the words are read lower-cased
+// to find their parts, then each unit is taken from the text as written.
+fn su_keep_case(text: Text, lowered: Text) -> Text {
+  let at = text.lower().index_of(lowered).or(-1)
+  return if at < 0 { lowered } else { text.slice(at, at + lowered.length()) }
+}
+
+workflow convert(ask: SuAsk) -> SuPage {
+  result = su_read(ask.text)
+  out    = {card: su_card(result), result: result}
+}
+
+// ---------------------------------------------------------------- tests
+
+test "units are read into their size and dimensions" {
+  expect su_unit("N").dims == [1, 1, -2, 0, 0, 0, 0]
+  expect su_unit("km/h").scale > 0.2777 and su_unit("km/h").scale < 0.2778
+  expect su_unit("m/s/s").dims == [1, 0, -2, 0, 0, 0, 0]
+  expect su_unit("kg*m^2/s^2").dims == su_unit("J").dims
+  expect su_unit("mol/L").scale == 1000
+  expect su_unit("min").scale == 60
+  expect su_unit("mm").scale == 0.001
+  expect not su_unit("parsec").ok
+  expect su_dims_text(su_unit("J")) == "length^2 mass / time^2"
+}
+
+test "conversions are made only between units of the same thing" {
+  r = su_convert(60, "km/h", "m/s")
+  expect r.ok and (r.value * 1000).round() == 16667
+  expect su_convert(1, "atm", "Pa").value == 101325
+  expect su_same("V", "W/A")
+  bad = su_convert(5, "m", "s")
+  expect not bad.ok
+  expect bad.problem == "m measures length but s measures time, so one cannot become the other"
+  expect su_read("convert 60 km/h to m/s").ok
+  expect su_read("Convert 3 MPa to atm").ok
+}

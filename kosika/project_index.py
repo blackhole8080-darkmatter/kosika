@@ -17,6 +17,7 @@ from typing import Any
 
 from .ast import AgentCall, ModelCall, Program, ToolCall, WorkflowCall
 from .modules import load_program
+from .parser import parse
 from .project_map import NOTE_FILE, _lines, _step_lines, _tool_item
 
 #: Declarations the language adds for itself, which nobody wrote.
@@ -41,6 +42,10 @@ def _items(program: Program, source: str) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
 
     def add(kind: str, name: str, detail: str, declared: str | None = None) -> None:
+        if (declared or kind, name) not in lines:
+            # Imported from another file, such as the standard library:
+            # that file lists it.
+            return
         items.append(
             {
                 "kind": kind,
@@ -51,6 +56,9 @@ def _items(program: Program, source: str) -> list[dict[str, Any]]:
         )
 
     for workflow in program.workflows:
+        if ("workflow", workflow.name) not in lines:
+            # Imported from another file: that file lists it.
+            continue
         given = ", ".join(f"{p.name}: {p.type_name}" for p in workflow.parameters)
         add(
             "workflow",
@@ -172,8 +180,18 @@ def _suggestions(program: Program, source: str, folder: Path) -> list[dict[str, 
         call.workflow_name for _, _, call in calls if isinstance(call, WorkflowCall)
     }
     called.update(swarm.workflow for swarm in program.swarms)
+    # The loaded program is the whole import tree; what this file exports is
+    # read from the file itself.
+    exported = set(parse(source).exports)
     for workflow in program.workflows:
-        if workflow.name != "main" and workflow.name not in called:
+        # An exported workflow is there for others to run, and an imported one
+        # is its own file's business.
+        if (
+            workflow.name != "main"
+            and workflow.name not in called
+            and workflow.name not in exported
+            and ("workflow", workflow.name) in lines
+        ):
             say(
                 "unused-workflow",
                 f"Workflow {workflow.name} is never run by another workflow.",

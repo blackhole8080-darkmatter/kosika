@@ -3,11 +3,11 @@
 #   .\design.ps1 "how does an LLM work"
 #   .\design.ps1 "create a visual representation of the Fibonacci sequence" -Kosika path\to\kosika-native.exe
 #
-# 1. main.kos `describe`: a free Groq model describes the structure as data;
+# 1. std/designs_main.kos `describe`: a free Groq model describes the structure as data;
 #    Kosika checks it and sends any problems back to the model once.
 # 2. For a figure Kosika draws from its own maths (the golden spiral), eyes.py
 #    finds a freely licensed real photo of it to show beside the drawing.
-# 3. draw.kos lays it out and draws it, with the hover sentences.
+# 3. std/designs_draw.kos lays it out and draws it, with the hover sentences.
 #
 # Needs GROQ_API_KEY as a user environment variable. Writes design.html.
 # With -Model kosika-virtual -ModelUrl http://127.0.0.1:8791/v1 it asks through
@@ -22,6 +22,7 @@ param(
 )
 $ErrorActionPreference = "Stop"
 $here = $PSScriptRoot
+$std = Join-Path $here "..\..\..\kosika\std"
 $work = Join-Path ([IO.Path]::GetTempPath()) "kosika-designs"
 New-Item -ItemType Directory -Force $work | Out-Null
 $env:KOSIKA_MODEL_API_KEY = [Environment]::GetEnvironmentVariable("GROQ_API_KEY", "User")
@@ -34,7 +35,7 @@ function Read-Result($text) {
 }
 
 @{ ask = @{ text = $Prompt } } | ConvertTo-Json | Set-Content -Encoding utf8 (Join-Path $work "ask.json")
-$said = & $Kosika run (Join-Path $here "main.kos") --workflow describe --input (Join-Path $work "ask.json") `
+$said = & $Kosika run (Join-Path $std "designs_main.kos") --workflow describe --input (Join-Path $work "ask.json") `
   --model $Model --model-url $ModelUrl --model-protocol openai --model-timeout 400 --max-output-tokens 8000 | Out-String
 $request = Read-Result $said
 Write-Host "Described: $($request.structure.title) ($($request.structure.shape), $($request.structure.parts.Count) parts)"
@@ -47,7 +48,7 @@ if ($request.structure.figure -eq "golden_spiral") {
 }
 
 @{ r = $request } | ConvertTo-Json -Depth 20 | Set-Content -Encoding utf8 (Join-Path $work "request.json")
-$drawn = Read-Result (& $Kosika run (Join-Path $here "draw.kos") --workflow draw --input (Join-Path $work "request.json") | Out-String)
+$drawn = Read-Result (& $Kosika run (Join-Path $std "designs_draw.kos") --workflow draw --input (Join-Path $work "request.json") | Out-String)
 if ($drawn.problems.Count -gt 0) { throw "Kosika would not draw it: $($drawn.problems -join '; ')" }
 [IO.File]::WriteAllText((Join-Path (Get-Location) $Out), $drawn.page)
 Write-Host "Wrote $Out"

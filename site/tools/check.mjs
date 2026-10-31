@@ -82,6 +82,15 @@ async function open(width, height) {
   paper.wipeOpacity === "0" ? ok("paper section clear of the wipe canvas") : fail("wipe canvas still on: " + paper.wipeOpacity);
   paper.exhibits === 3 ? ok("three exhibits stamped in") : fail("exhibits in: " + paper.exhibits);
 
+  // a stamp lands on the artwork, never across the note it is stamping
+  const stamps = await page.evaluate(() => [...document.querySelectorAll(".exhibit")].map((card) => {
+    const s = card.querySelector(".stamp").getBoundingClientRect();
+    const t = card.querySelector(".sub").getBoundingClientRect();
+    const crossed = !(s.right < t.left || s.left > t.right || s.bottom < t.top || s.top > t.bottom);
+    return { crossed, art: card.querySelector(".art").getBoundingClientRect().height };
+  }));
+  stamps.some((s) => s.crossed) ? fail("a stamp covers its exhibit's note") : ok("stamps sit clear of the exhibit notes");
+
   // the run scrubs
   const run = await page.evaluate(async () => {
     const el = document.querySelector("#run");
@@ -92,17 +101,50 @@ async function open(width, height) {
       scrollTo(0, top + (el.offsetHeight - innerHeight) * f);
       window.dispatchEvent(new Event("scroll"));
       await new Promise((r) => setTimeout(r, 400));
+      const lanes = document.querySelector("#lanes");
       out.push({ time: document.querySelector("#time").textContent,
         first: document.querySelector("#step").textContent.slice(0, 40),
-        playhead: document.querySelector(".tl-playhead").style.left,
+        playhead: Math.round(document.querySelector(".tl-playhead").getBoundingClientRect().left - lanes.getBoundingClientRect().left),
+        transform: getComputedStyle(document.querySelector(".tl-playhead")).transform,
         lanes: [...document.querySelectorAll("#lanes .tl-lane")].filter((l) => !l.hidden).length,
-        now: [...document.querySelectorAll(".o-node.now, .o-core.now")].length });
+        now: [...document.querySelectorAll(".o-node.now, .o-core.now")].length,
+        asking: document.querySelector("#run").classList.contains("asking"),
+        arc: parseFloat(getComputedStyle(document.querySelector(".o-trace")).strokeDashoffset),
+        head: [Math.round(+document.querySelector("#ohead").getAttribute("cx")),
+          Math.round(+document.querySelector("#ohead").getAttribute("cy"))],
+        headOn: getComputedStyle(document.querySelector("#ohead")).opacity });
     }
     return out;
   });
   run[0].time !== run[1].time ? ok(`run scrubs ${run[0].time} -> ${run[1].time}`) : fail("run did not advance: " + run[0].time);
   run[1].now > 0 ? ok("a node is lit at both ends: " + run.map((r) => r.now).join(",")) : fail("no node lit");
-  ok(`lanes shown: ${run.map((r) => r.lanes).join(",")}`);
+  run[1].playhead > run[0].playhead ? ok(`playhead moves by transform (${run[0].playhead}px -> ${run[1].playhead}px)`) : fail("playhead did not move: " + JSON.stringify(run.map((r) => r.playhead)));
+  ok(`lanes shown: ${run.map((r) => r.lanes).join(",")}, model asked at 85%: ${run[1].asking}`);
+
+  // a new step landing sends one ring out from the node that took it. Note the
+  // beats are not evenly spread: the model call is most of the run, so the
+  // pulses cluster where the steps are — which is why this walks the opening
+  // of the recording rather than the middle.
+  const wave = await page.evaluate(async () => {
+    const el = document.querySelector("#run");
+    document.documentElement.style.scrollBehavior = "auto";
+    const top = el.getBoundingClientRect().top + scrollY;
+    scrollTo(0, top); window.dispatchEvent(new Event("scroll"));
+    await new Promise((r) => setTimeout(r, 500));
+    const before = document.querySelectorAll(".o-wave").length;
+    scrollTo(0, top + 90); window.dispatchEvent(new Event("scroll"));
+    await new Promise((r) => setTimeout(r, 260));
+    return { before, after: document.querySelectorAll(".o-wave").length };
+  });
+  wave.after > 0
+    ? ok(`a step landing sends a ring out (${wave.before} -> ${wave.after})`)
+    : fail("no wave when a step lands: " + JSON.stringify(wave));
+  run[1].arc < run[0].arc - 100
+    ? ok(`the orbit's arc follows the run (dashoffset ${Math.round(run[0].arc)} -> ${Math.round(run[1].arc)})`)
+    : fail("orbit arc did not advance: " + JSON.stringify(run.map((r) => r.arc)));
+  run[0].head.join() !== run[1].head.join() && run[1].headOn === "1"
+    ? ok(`the dot rides the ring (${run[0].head.join()} -> ${run[1].head.join()})`)
+    : fail("dot did not travel: " + JSON.stringify({ h: run.map((r) => r.head), o: run[1].headOn }));
 
   // the hero's film: silent, playing, and not asking for a user gesture
   const hero = await page.evaluate(async () => {
@@ -113,6 +155,10 @@ async function open(width, height) {
     scrollTo(0, 0);
     window.dispatchEvent(new Event("scroll"));
     await new Promise((r) => setTimeout(r, 600));
+    // start from the top of the loop: sampling near the end measures a wrap,
+    // not a paused video
+    if (v.duration) v.currentTime = 1;
+    await new Promise((r) => setTimeout(r, 300));
     const before = v.currentTime;
     await new Promise((r) => setTimeout(r, 700));
     return { muted: v.muted, paused: v.paused, moved: +(v.currentTime - before).toFixed(2),
@@ -132,8 +178,113 @@ async function open(width, height) {
   });
   Math.abs(seek.t - 11.9) < 0.4 ? ok(`reel seeks to ${seek.t}s of ${seek.dur}s`) : fail(`reel stuck at ${seek.t}s`);
 
+  // the hero is one screen: headline, one sentence and an action at 1280x800
+  const fold = await page.evaluate(async () => {
+    document.documentElement.style.scrollBehavior = "auto";
+    scrollTo(0, 0);
+    await new Promise((r) => setTimeout(r, 300));
+    const boxes = [".h1", ".hero .lead", ".hero-ctas .btn.primary"].map((s) => {
+      const r = document.querySelector(s).getBoundingClientRect();
+      return [s, Math.round(r.top), Math.round(r.bottom), Math.round(getComputedStyle(document.querySelector(s)).opacity * 100)];
+    });
+    return { boxes, vh: innerHeight, words: document.querySelector(".hero .lead").textContent.trim().split(/\s+/).length };
+  });
+  const below = fold.boxes.filter(([, , bottom]) => bottom > fold.vh - 8);
+  below.length ? fail("hero not above the fold: " + JSON.stringify(below)) : ok("hero headline, sentence and action above the fold (" + fold.vh + "px tall)");
+  fold.words <= 24 ? ok(`hero sentence is ${fold.words} words`) : fail(`hero sentence too long: ${fold.words} words`);
+  fold.boxes.every(([, , , o]) => o === 100) ? ok("hero copy is visible, not waiting on an animation") : fail("hero copy still faded: " + JSON.stringify(fold.boxes));
+
+  // focus is visible, and arrives without a fade
+  const focus = await page.evaluate(async () => {
+    const first = document.querySelector(".hero-ctas .btn.primary");
+    first.focus();
+    await new Promise((r) => setTimeout(r, 40));
+    const s = getComputedStyle(first);
+    return { outline: s.outlineWidth + " " + s.outlineStyle + " " + s.outlineColor, transition: s.transitionDuration };
+  });
+  /^2px solid/.test(focus.outline) ? ok("focus ring: " + focus.outline) : fail("no focus ring: " + focus.outline);
+
+  // every control a thumb has to hit is at least 44px tall
+  const taps = await page.evaluate(() => [...document.querySelectorAll(".reel-foot .iconbtn, .hero-ctas .btn, .cmd, .faq summary")]
+    .map((el) => [el.className.split(" ")[0], Math.round(el.getBoundingClientRect().height)]));
+  const small = taps.filter(([, h]) => h < 44);
+  small.length ? fail("tap targets under 44px: " + JSON.stringify(small)) : ok(`every tap target is 44px+ (${taps.length} of them)`);
+
+  // the atmosphere and the pointer: two light fields, chips at depth, and
+  // buttons that lean the few pixels toward the cursor
+  const extras = await page.evaluate(async () => {
+    document.documentElement.style.scrollBehavior = "auto";
+    scrollTo(0, 0); window.dispatchEvent(new Event("scroll"));
+    await new Promise((r) => setTimeout(r, 400));
+    const aurora = getComputedStyle(document.querySelector(".aurora")).display;
+    const chip = document.querySelector(".field .fx");
+    const before = getComputedStyle(chip).transform;
+    const btn = document.querySelector(".hero-ctas .btn.primary");
+    const r = btn.getBoundingClientRect();
+    btn.dispatchEvent(new PointerEvent("pointermove", { clientX: r.right - 2, clientY: r.top + 3, bubbles: true }));
+    await new Promise((r2) => setTimeout(r2, 90));
+    const magnet = getComputedStyle(btn).transform;
+    scrollTo(0, 420); window.dispatchEvent(new Event("scroll"));
+    await new Promise((r2) => setTimeout(r2, 320));
+    return { aurora, before, after: getComputedStyle(chip).transform, magnet };
+  });
+  extras.aurora !== "none" ? ok("the aurora fields are running") : fail("aurora hidden: " + extras.aurora);
+  extras.before !== extras.after ? ok(`the chips move at depth (${extras.before} -> ${extras.after})`) : fail("chips did not move: " + extras.before);
+  extras.magnet !== "none" ? ok("buttons lean toward the pointer") : fail("no magnetic offset: " + extras.magnet);
+
+  // the meter in the reel bar draws the film's own audio
+  const meter = await page.evaluate(async () => {
+    const v = document.querySelector("#reel");
+    document.querySelector(".reel").scrollIntoView({ block: "center" });
+    await new Promise((r) => setTimeout(r, 600));
+    document.querySelector("#soundbtn").click();
+    await new Promise((r) => setTimeout(r, 1500));
+    const cv = document.querySelector("#spectrum");
+    const d = cv.getContext("2d").getImageData(0, 0, cv.width, cv.height).data;
+    const alphas = new Set();
+    for (let i = 3; i < d.length; i += 4) if (d[i] > 10) alphas.add(d[i]);
+    const out = { muted: v.muted, levels: alphas.size, playing: !v.paused };
+    v.muted = true;
+    return out;
+  });
+  meter.levels > 3
+    ? ok(`the meter draws the score (${meter.levels} levels, playing: ${meter.playing})`)
+    : fail("spectrum flat or missing: " + JSON.stringify(meter));
+
+  // the command blocks are buttons: reachable and copyable by keyboard
+  const cmds = await page.evaluate(() => [...document.querySelectorAll(".cmd")].map((b) => b.tagName + "/" + b.getAttribute("type")));
+  cmds.every((c) => c === "BUTTON/button") ? ok(`${cmds.length} command blocks are buttons`) : fail("command blocks: " + JSON.stringify(cmds));
+
   errors.length ? fail("console errors: " + errors.join(" | ")) : ok("console clean");
   failed.length ? fail("failed requests: " + failed.join(" | ")) : ok("every request 2xx/3xx");
+  await page.close();
+}
+
+/* ── reduced motion ──────────────────────────────────────────────── */
+{
+  const page = await browser.newPage();
+  await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
+  await page.setViewport({ width: 1280, height: 800, deviceScaleFactor: 1 });
+  await page.goto(BASE, { waitUntil: "networkidle2" });
+  await new Promise((r) => setTimeout(r, 600));
+  const calm = await page.evaluate(() => ({
+    film: getComputedStyle(document.querySelector("#herofilm")).display,
+    lead: getComputedStyle(document.querySelector(".hero .lead")).opacity,
+    letters: getComputedStyle(document.querySelector(".h1 .l")).transform,
+    reel: getComputedStyle(document.querySelector(".reel video")).transform,
+    arc: getComputedStyle(document.querySelector(".o-trace")).strokeDashoffset,
+    head: getComputedStyle(document.querySelector("#ohead")).opacity,
+    aurora: getComputedStyle(document.querySelector(".aurora")).display,
+    meter: getComputedStyle(document.querySelector("#spectrum")).display
+  }));
+  calm.film === "none" ? ok("reduced motion: hero film not loaded") : fail("reduced motion: film " + calm.film);
+  calm.lead === "1" ? ok("reduced motion: hero copy visible") : fail("reduced motion: lead opacity " + calm.lead);
+  calm.letters === "none" ? ok("reduced motion: headline unshifted") : fail("reduced motion: letters " + calm.letters);
+  calm.reel === "none" ? ok("reduced motion: film not dollied") : fail("reduced motion: reel " + calm.reel);
+  parseFloat(calm.arc) === 0 ? ok("reduced motion: the ring is drawn whole") : fail("reduced motion: arc " + calm.arc);
+  calm.head === "0" ? ok("reduced motion: no travelling dot") : fail("reduced motion: dot opacity " + calm.head);
+  calm.aurora === "none" ? ok("reduced motion: the aurora is still") : fail("reduced motion: aurora " + calm.aurora);
+  calm.meter === "none" ? ok("reduced motion: no meter drawing") : fail("reduced motion: meter " + calm.meter);
   await page.close();
 }
 
@@ -158,6 +309,16 @@ async function open(width, height) {
   });
   const bad = fits.filter(([, l, r]) => l < 0 || r > 390);
   bad.length ? fail("phone: content outside the viewport " + JSON.stringify(bad)) : ok("phone hero inside the viewport");
+
+  // boxes inside the viewport can still hold text wider than they are, and
+  // overflow-x: clip then eats the words instead of letting them wrap
+  const clipped = await page.evaluate(() => [".kicker", ".hero .lead", "#hl1", "#hl2", ".hero-meta"]
+    .map((sel) => {
+      const el = document.querySelector(sel);
+      return [sel, el.scrollWidth - el.clientWidth];
+    })
+    .filter(([, over]) => over > 1));
+  clipped.length ? fail("phone: clipped text " + JSON.stringify(clipped)) : ok("phone: no hero text is clipped");
 
   // the paper section on a phone
   const paper = await page.evaluate(async () => {

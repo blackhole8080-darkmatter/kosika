@@ -13,6 +13,7 @@ import unittest
 from pathlib import Path
 
 from kosika.checker import CheckError, check
+from kosika.modules import load_program
 from kosika.parser import ParseError, parse
 from kosika.runtime import run
 
@@ -153,6 +154,70 @@ class MethodCallGapTests(unittest.TestCase):
             "}\n"
         )
         self.assertEqual(run(parse(source), "main", None), {"value": 1})
+
+
+class TheFailureNamesTheRepairTests(unittest.TestCase):
+    """A refusal is only useful if it says what to write instead.
+
+    Each of these was a wrong first line a model wrote while following the
+    coder's guide; the message it got back sent it one more step away from the
+    right program, so the hint is the fix and is pinned here.
+    """
+
+    def error_of(self, source: str) -> str:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "main.kos"
+            path.write_text(source, encoding="utf-8")
+            with self.assertRaises(CheckError) as caught:
+                load_program(path)
+        return str(caught.exception)
+
+    def test_a_call_on_a_recalled_value_names_the_field_to_read(self) -> None:
+        said = self.error_of(
+            "record Note { visits: Number }\n"
+            "memory people of Note\n"
+            "fn next(known: PeopleRecalled) -> Note {\n"
+            "  return {visits: known.value().visits}\n"
+            "}\n"
+        )
+        self.assertIn("'value' is a field of 'PeopleRecalled'", said)
+        self.assertIn("record has no methods", said)
+        self.assertIn("known.value.value()", said)
+        self.assertIn("known.value.or(default: ...)", said)
+
+    def test_a_missing_declaration_says_to_declare_it(self) -> None:
+        said = self.error_of(
+            'tool find {\n'
+            '  source system "files"\n'
+            "  operation: \"search\"\n"
+            "  access: observe\n"
+            "  input: Look\n"
+            "  output: Hits\n"
+            "}\n"
+        )
+        self.assertIn("declare it first", said)
+        self.assertIn("record Hits { ... }", said)
+
+    def test_a_duplicate_declaration_names_the_name(self) -> None:
+        said = self.error_of(
+            "record Q { path: Text }\n"
+            "workflow main(q: Q) -> Q {\n  result = q\n}\n"
+            "workflow main(q: Q) -> Q {\n  result = q\n}\n"
+        )
+        self.assertEqual(
+            said,
+            "Duplicate workflow declaration: 'main' is declared twice; a file "
+            "declares each workflow once, so merge the two declarations or "
+            "rename one",
+        )
+
+    def test_a_choice_field_says_what_choice_is(self) -> None:
+        said = self.error_of(
+            "record Answer { kind: Choice text: Text }\n"
+            "workflow main(t: Text) -> Answer {\n  result = {kind: t, text: t}\n}\n"
+        )
+        self.assertIn("Unknown field type 'Choice'", said)
+        self.assertIn("what a thinking step", said)
 
 
 class ParseErrorIsNotACheckErrorTests(unittest.TestCase):

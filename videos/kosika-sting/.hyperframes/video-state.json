@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "historyId": "956cf709-8ef3-4d5a-ae19-b4a892d80b0e",
+  "currentRevision": null,
+  "pendingChanges": false,
+  "files": {
+    "AGENTS.md": {
+      "hash": "1d4f0c8ca2507b94fd7c9df709fff01416adbd51a0f922b9d6ed2f40129147d5",
+      "content": "C:\\Users\\Aryan\\.cache\\hyperframes\\history\\956cf709-8ef3-4d5a-ae19-b4a892d80b0e\\blobs\\1d\\1d4f0c8ca2507b94fd7c9df709fff01416adbd51a0f922b9d6ed2f40129147d5"
+    },
+    "CLAUDE.md": {
+      "hash": "1d4f0c8ca2507b94fd7c9df709fff01416adbd51a0f922b9d6ed2f40129147d5",
+      "content": "C:\\Users\\Aryan\\.cache\\hyperframes\\history\\956cf709-8ef3-4d5a-ae19-b4a892d80b0e\\blobs\\1d\\1d4f0c8ca2507b94fd7c9df709fff01416adbd51a0f922b9d6ed2f40129147d5"
+    },
+    "hyperframes.json": {
+      "hash": "e5da816b77f863aa4798d974bc68d65805329ca4d39ebcf353967c5b47e677a6",
+      "content": "C:\\Users\\Aryan\\.cache\\hyperframes\\history\\956cf709-8ef3-4d5a-ae19-b4a892d80b0e\\blobs\\e5\\e5da816b77f863aa4798d974bc68d65805329ca4d39ebcf353967c5b47e677a6"
+    },
+    "index.html": {
+      "hash": "1b8a7122c4208d02b152b6767bef6cac78f54e86f04895f00326e0e94cbfda17",
+      "content": "C:\\Users\\Aryan\\.cache\\hyperframes\\history\\956cf709-8ef3-4d5a-ae19-b4a892d80b0e\\blobs\\1b\\1b8a7122c4208d02b152b6767bef6cac78f54e86f04895f00326e0e94cbfda17"
+    },
+    "meta.json": {
+      "hash": "56c89814b3a67d3df26b5623d3649dd0b6cf7919e77434f67a075f26faf3c487",
+      "content": "C:\\Users\\Aryan\\.cache\\hyperframes\\history\\956cf709-8ef3-4d5a-ae19-b4a892d80b0e\\blobs\\56\\56c89814b3a67d3df26b5623d3649dd0b6cf7919e77434f67a075f26faf3c487"
+    },
+    "package.json": {
+      "hash": "a8bc364395f3a8fac1670cb626b498d775fa987317696578e1ca2f7339f98c2b",
+      "content": "C:\\Users\\Aryan\\.cache\\hyperframes\\history\\956cf709-8ef3-4d5a-ae19-b4a892d80b0e\\blobs\\a8\\a8bc364395f3a8fac1670cb626b498d775fa987317696578e1ca2f7339f98c2b"
+    }
+  },
+  "revisions": {},
+  "checks": {
+    "latest": {
+      "revision": null,
+      "id": "ac9e9524-5d4c-4afd-b8aa-42821a265ed0"
+    },
+    "revisions": {},
+    "unversioned": [
+      {
+        "id": "ac9e9524-5d4c-4afd-b8aa-42821a265ed0",
+        "scope": "project",
+        "report": "C:\\Users\\Aryan\\Aryan_Private\\projects\\kosika\\videos\\kosika-sting\\.hyperframes\\artifacts\\checks\\ac9e9524-5d4c-4afd-b8aa-42821a265ed0.json",
+        "metadata": {
+          "ok": true,
+          "browserSkipped": false,
+          "options": {
+            "samples": 9,
+            "atTransitions": false,
+            "maxIssues": 80,
+            "collapseStatic": true,
+            "tolerance": 2,
+            "timeout": 3000,
+            "contrast": true,
+            "strict": false,
+            "snapshots": false,
+            "browserGpuMode": "auto"
+          }
+        },
+        "createdAt": 1792494703909,
+        "contentHash": "a451d9efe4356c73baf24f47d7168e3a070beb2dcbc2d4fa9ddb85a7ddf5207e",
+        "revision": null,
+        "inputFingerprint": "29e7f99a6a5dd40cbc54a895d8d02e5acd82845db511eb731f84a728a7951ee2",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      }
+    ]
+  },
+  "snapshots": {
+    "latest": null,
+    "revisions": {},
+    "unversioned": []
+  },
+  "renders": {
+    "latest": {
+      "id": "0b9c94cc-fa25-48bf-a515-128d7e71aec4",
+      "completedAt": 1792494819327,
+      "output": "C:\\Users\\Aryan\\Aryan_Private\\projects\\kosika\\videos\\kosika-sting\\renders\\kosika-sting.mp4",
+      "status": "completed",
+      "revision": null
+    },
+    "retainedRevisions": []
+  },
+  "pendingArtifactCleanup": []
+}

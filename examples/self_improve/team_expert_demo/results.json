@@ -1,0 +1,2093 @@
+{
+  "kind": "Authored, single-run diagnostic smoke and one unused holdout; not an expert certification or controlled language benchmark.",
+  "programs": [
+    "examples/self_improve/team.kos",
+    "examples/self_improve/team_support.kos"
+  ],
+  "capabilities": [
+    "Exact current-source evidence with contiguous, bounded source grouping and focus-first retrieval",
+    "Recommendations with action, reproducible check, expected outcome and current source",
+    "Required reviewer assessment and at most one source-linked revision",
+    "Only accepted final advice cached; old context identity invalidated; provider errors propagate without false advice fallback"
+  ],
+  "current_context_version": "v5",
+  "current_context_characters": 12000,
+  "current_source_sha256": {
+    "team.kos": "470f36bf394abe1a3e919a8feacd1baa0bdd1efad30bf3fa14ca27eea6a262d7",
+    "team_support.kos": "e3768fff2cf703d1d52f59d3066ed756978044212e9df38e2532eb78eb348bce",
+    "context.kos": "f20c91a62b5cb56ee4bac448333f3d67242a5ac941c3a0a48f090bfd3b0c2b7f"
+  },
+  "observed_summary": {
+    "diagnostic_fully_satisfied": 4,
+    "diagnostic_total": 5,
+    "heldout_fully_satisfied": 1,
+    "heldout_total": 1,
+    "model_proposed_python_checks_executed": 5,
+    "model_proposed_python_checks_passed": 5,
+    "live_traces_replayed_identically": 6,
+    "python_regression_tests_passed": 42,
+    "python_subtests_passed": 34,
+    "inline_kosika_tests_passed": 41,
+    "ruff": "passed"
+  },
+  "paired_source_hashes_unchanged_from_baseline": {
+    "native-learning": true,
+    "memory-capacity": true,
+    "handover-authority": true
+  },
+  "grading": "Manual complete-answer rubric assessment by the coding assistant, independent of the model reviewer verdict; not blinded third-party grading. Diagnostic cases were used for iteration; only memory-recall was unused before final execution.",
+  "limitations": [
+    "Model/backend, context budget and workflow budgets changed; these observations cannot isolate a language-intelligence or performance effect.",
+    "Local 7B trials did not satisfy the complete-answer criteria; old fallbacks obscured four later errors, and their underlying causes are not recoverable from those saved traces.",
+    "The native-learning question was a clarification, not a pass. Its exit-code statement was ungrounded; the separately observed Go refusal exited 1.",
+    "The temporary adapter used actual unedited completion responses, not fixtures. It was shut down after evaluation and is not a configured production model service.",
+    "The completion interface exposed no hard output-token or sampling-parameter settings/usage metadata. Requested output caps were relayed as instructions only; hard remote token/billing compliance was not verified.",
+    "Studio UI negative checks and the proposed post-concurrency-fix check were not executed. No concurrent-memory fix was implemented.",
+    "Accepted-response caching is not neural training, conversation history, authenticated multi-user memory or distributed networking. A memory folder requires one writer. Model/review-policy changes require a fresh memory folder."
+  ],
+  "ground_truth": {
+    "native-learning": {
+      "command": "go run . test <temporary>/learn-boundary.kos",
+      "exit_code": 1,
+      "observed": "kosika-native cannot run a step that learns yet (at 4:24)"
+    },
+    "memory-capacity": {
+      "entries_before": 10000,
+      "replacement_result": {
+        "key": "key-0",
+        "entries": 10000
+      },
+      "replacement_recall": {
+        "found": true,
+        "value": {
+          "value": "updated at capacity"
+        }
+      },
+      "new_key_error": "Memory 'facts' is full (10000 entries)",
+      "new_key_recall": {
+        "found": false,
+        "value": null
+      }
+    },
+    "memory-writers": {
+      "method": "Two independent stores loaded the same shared memory before the first wrote first and the second wrote second; a fresh store then recalled both keys.",
+      "first_key": {
+        "found": false,
+        "value": null
+      },
+      "second_key": {
+        "found": true,
+        "value": {
+          "value": "second writer"
+        }
+      }
+    },
+    "memory-empty-key": {
+      "rejection": "A memory key must have 1 to 200 characters",
+      "seed": {
+        "found": true,
+        "value": {
+          "value": "original"
+        }
+      },
+      "empty_key": {
+        "found": false,
+        "value": null
+      },
+      "entries_after": 1
+    },
+    "memory-recall": {
+      "present": {
+        "found": true,
+        "value": {
+          "value": 7
+        }
+      },
+      "empty": {
+        "found": false,
+        "value": null
+      },
+      "missing": {
+        "found": false,
+        "value": null
+      },
+      "persisted_contents_unchanged": true,
+      "entries_after": 1
+    }
+  },
+  "provider_failure_cli_proof": {
+    "exit_code": 2,
+    "stdout": "",
+    "stderr": "Model 'unreachable-failure-proof' at http://127.0.0.1:1/v1 answers for: researcher_model, planner_model, reviewer_model\nWorkflow failed: Model provider request failed: <urlopen error timed out>\n",
+    "accepted_snapshot_written": false
+  },
+  "current_version_scripted_cli_smoke": {
+    "v5-fresh": {
+      "result": {
+        "answer": "The current policy requires human review; the proposed checkpoint does not execute a change.",
+        "clarification": "",
+        "concerns": [],
+        "evidence": [
+          {
+            "quote": "Every project change requires human review.\n",
+            "source": "policy.md:1"
+          }
+        ],
+        "memory": "stored",
+        "participants": [
+          "researcher",
+          "planner",
+          "reviewer",
+          "planner",
+          "reviewer"
+        ],
+        "status": "completed",
+        "suggestions": [
+          "ACTION: Propose assigning the project maintainer as human review owner.\nCHECK: In an isolated fixture, request a project change without human approval.\nEXPECTED: The request remains pending and no project file is written.\nSOURCE: policy.md:1"
+        ]
+      },
+      "used": {
+        "function_calls": 65,
+        "loop_iterations": 375,
+        "model_calls": 5,
+        "steps": 57,
+        "tool_calls": 14
+      },
+      "replayed": true
+    },
+    "v5-recalled": {
+      "result": {
+        "answer": "The current policy requires human review; the proposed checkpoint does not execute a change.",
+        "clarification": "",
+        "concerns": [],
+        "evidence": [
+          {
+            "quote": "Every project change requires human review.\n",
+            "source": "policy.md:1"
+          }
+        ],
+        "memory": "reused",
+        "participants": [],
+        "status": "completed",
+        "suggestions": [
+          "ACTION: Propose assigning the project maintainer as human review owner.\nCHECK: In an isolated fixture, request a project change without human approval.\nEXPECTED: The request remains pending and no project file is written.\nSOURCE: policy.md:1"
+        ]
+      },
+      "used": {
+        "function_calls": 26,
+        "loop_iterations": 344,
+        "model_calls": 0,
+        "steps": 8,
+        "tool_calls": 3
+      },
+      "replayed": true
+    }
+  },
+  "model_proposed_checks": [
+    {
+      "id": "memory-capacity",
+      "exit_code": 0,
+      "stdout": "PASS\n",
+      "stderr": "",
+      "source": "from kosika.memory import MemoryStore, MAX_ENTRIES\ns=MemoryStore()\ns.entries('m').update({str(i):i for i in range(MAX_ENTRIES)})\nresult=s.remember('m','0','updated')\nassert result=={'key':'0','entries':MAX_ENTRIES}\nassert s.recall('m','0')=={'found':True,'value':'updated'}\nassert len(s.entries('m'))==MAX_ENTRIES\ns=MemoryStore()\ns.entries('m').update({str(i):i for i in range(MAX_ENTRIES)})\nbefore=dict(s.entries('m'))\ntry:s.remember('m','x','new')\nexcept RuntimeError as exc:assert str(exc)==f\"Memory 'm' is full ({MAX_ENTRIES} entries)\"\nelse:raise AssertionError('new key accepted')\nassert s.entries('m')==before\nassert s.recall('m','x')=={'found':False,'value':None}\nprint('PASS')\n",
+      "derivation": "Executable transcription of the model-proposed setup, operations and assertions"
+    },
+    {
+      "id": "memory-writers-current",
+      "exit_code": 0,
+      "stdout": "{'beta': 2}\n",
+      "stderr": "",
+      "source": "import json\nfrom pathlib import Path\nfrom tempfile import TemporaryDirectory\nfrom kosika.memory import MemoryStore\nwith TemporaryDirectory() as d:\n    a, b = MemoryStore(d), MemoryStore(d)\n    assert a.entries('shared') == b.entries('shared') == {}\n    a.remember('shared', 'alpha', 1)\n    b.remember('shared', 'beta', 2)\n    disk = json.loads((Path(d) / 'shared.json').read_text())\n    assert disk == {'beta': 2}\n    assert MemoryStore(d).recall('shared', 'alpha')['found'] is False\n    assert a.recall('shared', 'alpha') == {'found': True, 'value': 1}\n    print(disk)",
+      "derivation": "Verbatim model code block"
+    },
+    {
+      "id": "memory-empty-key",
+      "exit_code": 0,
+      "stdout": "PASS\n",
+      "stderr": "",
+      "source": "from pathlib import Path\nfrom tempfile import TemporaryDirectory\nfrom kosika.memory import MemoryStore, MAX_KEY_LENGTH\n\nwith TemporaryDirectory() as directory:\n    store = MemoryStore(directory)\n    original = {'note': 'keep me'}\n    assert store.remember('notes', 'valid', original) == {'key': 'valid', 'entries': 1}\n    path = Path(directory) / 'notes.json'\n    before = path.read_bytes()\n    files = sorted(Path(directory).iterdir())\n    try:\n        store.remember('notes', '', {'note': 'replacement'})\n    except RuntimeError as exc:\n        assert str(exc) == f'A memory key must have 1 to {MAX_KEY_LENGTH} characters'\n    else:\n        raise AssertionError('empty key was accepted')\n    assert store.entries('notes') == {'valid': original}\n    assert store.recall('notes', 'valid') == {'found': True, 'value': original}\n    assert store.recall('notes', '') == {'found': False, 'value': None}\n    assert path.read_bytes() == before\n    assert sorted(Path(directory).iterdir()) == files\n    reopened = MemoryStore(directory)\n    assert reopened.entries('notes') == {'valid': original}\n    assert reopened.recall('notes', 'valid') == {'found': True, 'value': original}\n    print('PASS')",
+      "derivation": "Verbatim model code block"
+    },
+    {
+      "id": "memory-recall-in-process",
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": "",
+      "source": "from kosika.memory import MemoryStore, MAX_KEY_LENGTH\ns = MemoryStore()\ns.remember('notes', 'seed', {'value': 7})\nassert s.recall('notes', '') == {'found': False, 'value': None}\nassert s.recall('notes', 'seed') == {'found': True, 'value': {'value': 7}}\nassert s.recall('notes', 'missing') == {'found': False, 'value': None}\ntry:\n    s.remember('notes', '', {'value': 8})\nexcept RuntimeError as exc:\n    assert str(exc) == f'A memory key must have 1 to {MAX_KEY_LENGTH} characters'\nelse:\n    raise AssertionError('empty-key remember did not raise')\nassert s.entries('notes') == {'seed': {'value': 7}}",
+      "derivation": "Verbatim model code block"
+    },
+    {
+      "id": "memory-recall-persistence",
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": "",
+      "source": "from pathlib import Path\nfrom tempfile import TemporaryDirectory\nfrom kosika.memory import MemoryStore\nwith TemporaryDirectory() as d:\n    p = Path(d) / 'notes.json'\n    p.write_text('{\"seed\":{\"value\":7}}', encoding='utf-8')\n    before = (p.read_bytes(), p.stat().st_mtime_ns)\n    s = MemoryStore(d)\n    for key in ('', 'seed', 'missing'):\n        s.recall('notes', key)\n    assert (p.read_bytes(), p.stat().st_mtime_ns) == before\n    assert sorted(x.name for x in Path(d).iterdir()) == ['notes.json']\n    assert MemoryStore(d).entries('notes') == {'seed': {'value': 7}}",
+      "derivation": "Verbatim model code block"
+    }
+  ],
+  "replay_proofs": [
+    {
+      "id": "native-learning",
+      "exit_code": 0,
+      "matches_recorded_result": true
+    },
+    {
+      "id": "memory-capacity",
+      "exit_code": 0,
+      "matches_recorded_result": true
+    },
+    {
+      "id": "handover-authority",
+      "exit_code": 0,
+      "matches_recorded_result": true
+    },
+    {
+      "id": "memory-writers",
+      "exit_code": 0,
+      "matches_recorded_result": true
+    },
+    {
+      "id": "memory-empty-key",
+      "exit_code": 0,
+      "matches_recorded_result": true
+    },
+    {
+      "id": "memory-recall",
+      "exit_code": 0,
+      "matches_recorded_result": true
+    }
+  ],
+  "trials": [
+    {
+      "id": "baseline",
+      "models": {
+        "researcher_model": "qwen2.5:3b",
+        "planner_model": "qwen2.5:7b",
+        "reviewer_model": "qwen2.5:7b"
+      },
+      "context_characters": 4000,
+      "limits": {
+        "model_calls": 4,
+        "tool_calls": 12,
+        "deadline_seconds": 300
+      },
+      "records": [
+        {
+          "id": "native-learning",
+          "request": {
+            "project": "expert-native",
+            "question": "Does the native engine currently support learn? Give a concrete way to check the boundary and the expected outcome before choosing an engine for a learning agent.",
+            "focus": "native/README.md",
+            "reference": "conformance/README.md"
+          },
+          "rubric": [
+            "Does not claim native learn is implemented.",
+            "A concrete native check has an expected unsupported/refused outcome.",
+            "Distinguishes checking engine support from merely asking whether learning is necessary."
+          ],
+          "source_sha256": {
+            "focus": "a02581d9b611bd156a7dad6333a1900e6f2046e13d2da64aca4dd42ad7734d0a",
+            "reference": "4c0b527675cd9a3d6c49ae0fec610debbb97d8007d7d261d32e0615dda12b8ca"
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 124.516,
+          "stderr": "Model 'qwen2.5:3b,planner_model=qwen2.5:7b,reviewer_model=qwen2.5:7b' at http://localhost:11434 answers for: researcher_model, planner_model, reviewer_model\n",
+          "result": {
+            "status": "completed",
+            "answer": "The current code does not support an agent calling its tools like `verify`, `vote`, `escalate`, or `with`. A concrete check would be to add a test case for an agent invoking one of these tools and verify it is not supported.",
+            "suggestions": [
+              "Propose a test case for an agent invoking a tool like `verify`",
+              "Check if the test case fails as expected"
+            ],
+            "clarification": "",
+            "evidence": [
+              {
+                "source": "conformance/README.md:43",
+                "quote": "Read the new `.expected.txt` before committing it. It becomes the law, so\nit must be what Kosika should do, not merely what one engine happens to do.\n\n## What the suite does not cover yet\n\n- An agent calling its tools, `verify`, `vote`, `escalate`, `with\n"
+              },
+              {
+                "source": "native/README.md:7",
+                "quote": "    kosika-native test FILE.kos      run the tests the file carries\n    kosika-native tokens FILE.kos    the file's tokens, one JSON object a line\n    kosika-native run FILE.kos --input IN.json --model qwen2.5:7b\n                                     run a workflow, asking a real model\n    kosika-native replay TRACE.jsonl check a run's trace, running nothing\n\n"
+              },
+              {
+                "source": "native/README.md:55",
+                "quote": "agent's tools, each answer given back to it, until it answers. A tool that\nchanges the world is refused, as the reference refuses it without a\nrecorded approval.\n\nBefore it runs a program it checks it, as the reference does: a program\nwhose types do not agree is refused, with the reference's own message, on\n"
+              }
+            ],
+            "concerns": [],
+            "participants": [
+              "researcher",
+              "planner",
+              "reviewer"
+            ],
+            "memory": "stored"
+          },
+          "execution": {
+            "elapsed_seconds": 122.8130000000001,
+            "function_stack": [],
+            "limits": {
+              "deadline_seconds": 300.0,
+              "max_function_calls": 10000,
+              "max_loop_iterations": 1000000,
+              "max_model_calls": 4,
+              "max_steps": 10000,
+              "max_tool_calls": 12
+            },
+            "used": {
+              "function_calls": 87,
+              "loop_iterations": 19301,
+              "model_calls": 3,
+              "steps": 41,
+              "tool_calls": 10
+            }
+          }
+        },
+        {
+          "id": "memory-capacity",
+          "request": {
+            "project": "expert-capacity",
+            "question": "When memory is already at MAX_ENTRIES, can an existing key still be updated, and what happens to a new key? Explain the branch and propose one boundary check for each case.",
+            "focus": "kosika/memory.py",
+            "reference": "KOSIKA.md"
+          },
+          "rubric": [
+            "Existing key replacement remains allowed when full.",
+            "A new key fails when full; it is not silently evicted or accepted.",
+            "Checks isolate existing-key and new-key cases and state expected outcomes."
+          ],
+          "source_sha256": {
+            "focus": "9e60c968189e50648f8d563c6bce79b3232c717901e5264530187265cdd70d41",
+            "reference": "1c4606b3b0b37bd4f7b79546b68fd3ef7e5b2bc3a94c0d041d690d8fe522dc24"
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 168.343,
+          "stderr": "Model 'qwen2.5:3b,planner_model=qwen2.5:7b,reviewer_model=qwen2.5:7b' at http://localhost:11434 answers for: researcher_model, planner_model, reviewer_model\n",
+          "result": {
+            "status": "completed",
+            "answer": "The current code checks if a key is within the allowed length and if adding a new key would exceed the maximum entries. If the memory is full, it raises an error. For updates, it checks if the key exists in the entries.",
+            "suggestions": [
+              "Check if the key exists before updating",
+              "Check if adding a new key would exceed MAX_ENTRIES"
+            ],
+            "clarification": "",
+            "evidence": [
+              {
+                "source": "kosika/memory.py:211",
+                "quote": "    def remember(self, name: str, key: str, value: Any) -> dict[str, Any]:\n        entries = self.entries(name)\n        if not key or len(key) > MAX_KEY_LENGTH:\n            raise RuntimeError(\n                f\"A memory key must have 1 to {MAX_KEY_LENGTH} characters\"\n            )\n"
+              },
+              {
+                "source": "kosika/memory.py:217",
+                "quote": "        if key not in entries and len(entries) >= MAX_ENTRIES:\n            raise RuntimeError(f\"Memory {name!r} is full ({MAX_ENTRIES} entries)\")\n        entries[key] = value\n        if self.directory is not None:\n            self.directory.mkdir(parents=True, exist_ok=True)\n            # Written whole to a neighbour and swapped in, so a crash cannot\n"
+              },
+              {
+                "source": "KOSIKA.md:325",
+                "quote": "| `Text` | `lines()` | `Text[]` of its lines, without their line ends, however each ends; an empty text has none. A whole file may be read this way |\n| `Text` | `pad_left(width: Number, fill: Text)`, `pad_right(width: Number, fill: Text)` | `Text` made at least `width` long by adding `fill`, which MUST be one character, before or after; a text already that long is unchanged |\n| `Text`, any array | `is_empty()` | `Bool`, true when the length is `0` |\n| `Text`, any array | `take(count: Number)`, `drop(count: Number)` | the first `count` characters or elements, or all but those. A count beyond the length gives everything, or nothing; a negative or fractional count fails the run |\n| `Text` | `words()` | `Text[]`: the parts between runs of spaces, tabs and line ends, with no empty parts; over 512 parts fails the run |\n| `Text` | `replace(old: Text, new: Text)` | `Text` with every `old` replaced; `old` MUST be non-empty |\n"
+              }
+            ],
+            "concerns": [],
+            "participants": [
+              "researcher",
+              "planner",
+              "reviewer"
+            ],
+            "memory": "stored"
+          },
+          "execution": {
+            "elapsed_seconds": 166.01499999999942,
+            "function_stack": [],
+            "limits": {
+              "deadline_seconds": 300.0,
+              "max_function_calls": 10000,
+              "max_loop_iterations": 1000000,
+              "max_model_calls": 4,
+              "max_steps": 10000,
+              "max_tool_calls": 12
+            },
+            "used": {
+              "function_calls": 327,
+              "loop_iterations": 174471,
+              "model_calls": 3,
+              "steps": 41,
+              "tool_calls": 10
+            }
+          }
+        },
+        {
+          "id": "handover-authority",
+          "request": {
+            "project": "expert-handover",
+            "question": "If an agent hands a task to another agent, does that grant write permission or allow recursive delegation? Explain the limits and propose concrete negative tests.",
+            "focus": "kosika/system_tools.py",
+            "reference": "KOSIKA.md"
+          },
+          "rubric": [
+            "Handover grants no additional permissions.",
+            "Self-handover and onward recursive handover are restricted by the host.",
+            "Negative checks specify denied operation and expected lack of effect, not just a general review."
+          ],
+          "source_sha256": {
+            "focus": "dc4bf796acff0860c5f4a1a7a355518403d5fc935315f7d36b4281264fafbd00",
+            "reference": "1c4606b3b0b37bd4f7b79546b68fd3ef7e5b2bc3a94c0d041d690d8fe522dc24"
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 168.516,
+          "stderr": "Model 'qwen2.5:3b,planner_model=qwen2.5:7b,reviewer_model=qwen2.5:7b' at http://localhost:11434 answers for: researcher_model, planner_model, reviewer_model\n",
+          "result": {
+            "status": "completed",
+            "answer": "The current code establishes that an agent can hand a request to another agent, but it does not specify whether this grants write permission or allows recursive delegation. The next step should be to propose concrete negative tests to clarify these points.",
+            "suggestions": [
+              "Propose a test where an agent hands a task to another, but does not receive write permission",
+              "Propose a test where an agent hands a task to another, but the task is not recursively delegated"
+            ],
+            "clarification": "",
+            "evidence": [
+              {
+                "source": "kosika/system_tools.py:25",
+                "quote": "A fifth kind, `source system \"agents\"` with `operation: \"ask\"`, hands a\nrequest to another agent in the same folder and gives back what it said:\n\n    tool hand_over {\n      source system \"agents\"\n      operation: \"ask\"\n"
+              },
+              {
+                "source": "kosika/system_tools.py:601",
+                "quote": "    program: Program, ask: Callable[[ToolDecl, dict[str, Any]], Any]\n) -> dict[str, Callable[[ToolDecl, dict[str, Any]], Any]]:\n    \"\"\"Bind the program's `agents` tools to the host's way of asking\n    another agent. Only a host with a folder of agents can offer one.\"\"\"\n\n    return {tool.name: ask for tool in program.tools if system_kind(tool) == \"agents\"}\n"
+              },
+              {
+                "source": "kosika/system_tools.py:199",
+                "quote": "        {\"ok\": \"Bool\", \"agent\": \"Text\", \"said\": \"Text\"},\n    ),\n    # An outside agent's answer: what it said, and the files it would\n    # change, worked out in a copy. See kosika.outside.\n    \"propose\": (\n        {\"agent\": \"Text\", \"text\": \"Text\"},\n"
+              }
+            ],
+            "concerns": [],
+            "participants": [
+              "researcher",
+              "planner",
+              "reviewer"
+            ],
+            "memory": "stored"
+          },
+          "execution": {
+            "elapsed_seconds": 166.5630000000001,
+            "function_stack": [],
+            "limits": {
+              "deadline_seconds": 300.0,
+              "max_function_calls": 10000,
+              "max_loop_iterations": 1000000,
+              "max_model_calls": 4,
+              "max_steps": 10000,
+              "max_tool_calls": 12
+            },
+            "used": {
+              "function_calls": 451,
+              "loop_iterations": 236239,
+              "model_calls": 3,
+              "steps": 41,
+              "tool_calls": 10
+            }
+          }
+        }
+      ],
+      "manual_grading": [
+        {
+          "id": "native-learning",
+          "fully_satisfied": false,
+          "notes": "Accepted advice calls verify a tool and omits a concrete learn boundary check or engine decision."
+        },
+        {
+          "id": "memory-capacity",
+          "fully_satisfied": false,
+          "notes": "Mentions the full-memory error, but does not establish that replacing an existing key is allowed at capacity or supply the two expected boundary outcomes."
+        },
+        {
+          "id": "handover-authority",
+          "fully_satisfied": false,
+          "notes": "Incorrectly says permission and delegation limits are unspecified; the source explicitly defines both. Negative tests omit denied effects."
+        }
+      ]
+    },
+    {
+      "id": "strict-source",
+      "models": "qwen2.5:3b; planner/reviewer qwen2.5:7b",
+      "context_characters": 4000,
+      "limits": {
+        "model_calls": 6,
+        "tool_calls": 16,
+        "deadline_seconds": 300
+      },
+      "records": [
+        {
+          "id": "native-learning",
+          "request": {
+            "project": "expert-native",
+            "question": "Does the native engine currently support learn? Give a concrete way to check the boundary and the expected outcome before choosing an engine for a learning agent.",
+            "focus": "native/README.md",
+            "reference": "conformance/README.md"
+          },
+          "rubric": [
+            "Does not claim native learn is implemented.",
+            "A concrete native check has an expected unsupported/refused outcome.",
+            "Distinguishes checking engine support from merely asking whether learning is necessary."
+          ],
+          "source_sha256": {
+            "focus": "a02581d9b611bd156a7dad6333a1900e6f2046e13d2da64aca4dd42ad7734d0a",
+            "reference": "4c0b527675cd9a3d6c49ae0fec610debbb97d8007d7d261d32e0615dda12b8ca"
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 265.609,
+          "stderr": "Model 'qwen2.5:3b,planner_model=qwen2.5:7b,reviewer_model=qwen2.5:7b' at http://localhost:11434 answers for: researcher_model, planner_model, reviewer_model\n",
+          "result": {
+            "status": "unavailable",
+            "answer": "I could not produce source-checked, reviewed advice for this request.",
+            "suggestions": [],
+            "clarification": "",
+            "evidence": [],
+            "concerns": [
+              "Every recommendation source must exactly match a current researcher evidence id."
+            ],
+            "participants": [],
+            "memory": "none"
+          },
+          "execution": {
+            "elapsed_seconds": 264.09399999999914,
+            "function_stack": [],
+            "limits": {
+              "deadline_seconds": 300.0,
+              "max_function_calls": 10000,
+              "max_loop_iterations": 1000000,
+              "max_model_calls": 6,
+              "max_steps": 10000,
+              "max_tool_calls": 16
+            },
+            "used": {
+              "function_calls": 82,
+              "loop_iterations": 21163,
+              "model_calls": 3,
+              "steps": 26,
+              "tool_calls": 5
+            }
+          }
+        },
+        {
+          "id": "memory-capacity",
+          "request": {
+            "project": "expert-capacity",
+            "question": "When memory is already at MAX_ENTRIES, can an existing key still be updated, and what happens to a new key? Explain the branch and propose one boundary check for each case.",
+            "focus": "kosika/memory.py",
+            "reference": "KOSIKA.md"
+          },
+          "rubric": [
+            "Existing key replacement remains allowed when full.",
+            "A new key fails when full; it is not silently evicted or accepted.",
+            "Checks isolate existing-key and new-key cases and state expected outcomes."
+          ],
+          "source_sha256": {
+            "focus": "9e60c968189e50648f8d563c6bce79b3232c717901e5264530187265cdd70d41",
+            "reference": "1c4606b3b0b37bd4f7b79546b68fd3ef7e5b2bc3a94c0d041d690d8fe522dc24"
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 65.75,
+          "stderr": "Model 'qwen2.5:3b,planner_model=qwen2.5:7b,reviewer_model=qwen2.5:7b' at http://localhost:11434 answers for: researcher_model, planner_model, reviewer_model\n",
+          "result": {
+            "status": "unavailable",
+            "answer": "I could not produce source-checked, reviewed advice for this request.",
+            "suggestions": [],
+            "clarification": "",
+            "evidence": [],
+            "concerns": [
+              "The researcher did not select one to three distinct current source ids."
+            ],
+            "participants": [],
+            "memory": "none"
+          },
+          "execution": {
+            "elapsed_seconds": 63.48400000000038,
+            "function_stack": [],
+            "limits": {
+              "deadline_seconds": 300.0,
+              "max_function_calls": 10000,
+              "max_loop_iterations": 1000000,
+              "max_model_calls": 6,
+              "max_steps": 10000,
+              "max_tool_calls": 16
+            },
+            "used": {
+              "function_calls": 407,
+              "loop_iterations": 184596,
+              "model_calls": 2,
+              "steps": 15,
+              "tool_calls": 3
+            }
+          }
+        },
+        {
+          "id": "handover-authority",
+          "request": {
+            "project": "expert-handover",
+            "question": "If an agent hands a task to another agent, does that grant write permission or allow recursive delegation? Explain the limits and propose concrete negative tests.",
+            "focus": "kosika/system_tools.py",
+            "reference": "KOSIKA.md"
+          },
+          "rubric": [
+            "Handover grants no additional permissions.",
+            "Self-handover and onward recursive handover are restricted by the host.",
+            "Negative checks specify denied operation and expected lack of effect, not just a general review."
+          ],
+          "source_sha256": {
+            "focus": "dc4bf796acff0860c5f4a1a7a355518403d5fc935315f7d36b4281264fafbd00",
+            "reference": "1c4606b3b0b37bd4f7b79546b68fd3ef7e5b2bc3a94c0d041d690d8fe522dc24"
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 265.86,
+          "stderr": "Model 'qwen2.5:3b,planner_model=qwen2.5:7b,reviewer_model=qwen2.5:7b' at http://localhost:11434 answers for: researcher_model, planner_model, reviewer_model\n",
+          "result": {
+            "status": "unavailable",
+            "answer": "I could not produce source-checked, reviewed advice for this request.",
+            "suggestions": [],
+            "clarification": "",
+            "evidence": [],
+            "concerns": [
+              "Every recommendation source must exactly match a current researcher evidence id."
+            ],
+            "participants": [],
+            "memory": "none"
+          },
+          "execution": {
+            "elapsed_seconds": 264.23499999999876,
+            "function_stack": [],
+            "limits": {
+              "deadline_seconds": 300.0,
+              "max_function_calls": 10000,
+              "max_loop_iterations": 1000000,
+              "max_model_calls": 6,
+              "max_steps": 10000,
+              "max_tool_calls": 16
+            },
+            "used": {
+              "function_calls": 485,
+              "loop_iterations": 247352,
+              "model_calls": 3,
+              "steps": 26,
+              "tool_calls": 5
+            }
+          }
+        }
+      ],
+      "manual_grading": [
+        {
+          "id": "native-learning",
+          "fully_satisfied": false,
+          "notes": "No usable advice: the stricter workflow refused invalid or missing evidence/source identifiers."
+        },
+        {
+          "id": "memory-capacity",
+          "fully_satisfied": false,
+          "notes": "No usable advice: the stricter workflow refused invalid or missing evidence/source identifiers."
+        },
+        {
+          "id": "handover-authority",
+          "fully_satisfied": false,
+          "notes": "No usable advice: the stricter workflow refused invalid or missing evidence/source identifiers."
+        }
+      ]
+    },
+    {
+      "id": "paragraph-7b",
+      "models": "qwen2.5:7b for all roles",
+      "context_characters": 4000,
+      "limits": {
+        "model_calls": 6,
+        "tool_calls": 16,
+        "deadline_seconds": 300
+      },
+      "records": [
+        {
+          "id": "native-learning",
+          "request": {
+            "project": "expert-native",
+            "question": "Does the native engine currently support learn? Give a concrete way to check the boundary and the expected outcome before choosing an engine for a learning agent.",
+            "focus": "native/README.md",
+            "reference": "conformance/README.md"
+          },
+          "rubric": [
+            "Does not claim native learn is implemented.",
+            "A concrete native check has an expected unsupported/refused outcome.",
+            "Distinguishes checking engine support from merely asking whether learning is necessary."
+          ],
+          "source_sha256": {
+            "focus": "a02581d9b611bd156a7dad6333a1900e6f2046e13d2da64aca4dd42ad7734d0a",
+            "reference": "4c0b527675cd9a3d6c49ae0fec610debbb97d8007d7d261d32e0615dda12b8ca"
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 181.031,
+          "stderr": "Model 'qwen2.5:7b' at http://localhost:11434 answers for: researcher_model, planner_model, reviewer_model\n",
+          "result": {
+            "status": "completed",
+            "answer": "The native engine does not support the `learn` functionality, as explicitly stated in the README.md. This needs to be confirmed by checking the codebase for the presence of `learn` functionality, and ensuring no related methods or blocks are implemented.",
+            "suggestions": [
+              "ACTION: Check the codebase for `learn` functionality\nCHECK: Search the native engine's source code for any mention or implementation of `learn`\nEXPECTED: No implementation or mention of `learn` functionality\nSOURCE: native/README.md:80"
+            ],
+            "clarification": "",
+            "evidence": [
+              {
+                "source": "native/README.md:80",
+                "quote": "## What it does not have yet\n\n- Models that answer `as text`, and steps with `verify`, `vote`,\n  `escalate`, `learn` or `with evidence`, and\n  `parallel` blocks.\n- An agent's plan that writes files, or an agent with its own `check`:\n  the reference checks such a plan before showing it, and those checks are\n  not here yet, so such a plan is refused by name. Replaying an agent\n  run's own trace, an answer with evidence, or a verified answer.\n- `system` tools other than files and shell (web, kosika, meaning, agents,\n  outside), and `fetch`; so an environment's `allow site` grants nothing\n  here yet. Searching by meaning (`find`).\n- Swarms.\n- A file that has any of these is refused, and the refusal names it.\n- Vectors and matrices.\n"
+              }
+            ],
+            "concerns": [],
+            "participants": [
+              "researcher",
+              "planner",
+              "reviewer"
+            ],
+            "memory": "stored"
+          },
+          "execution": {
+            "elapsed_seconds": 179.04700000000048,
+            "function_stack": [],
+            "limits": {
+              "deadline_seconds": 300.0,
+              "max_function_calls": 10000,
+              "max_loop_iterations": 1000000,
+              "max_model_calls": 6,
+              "max_steps": 10000,
+              "max_tool_calls": 16
+            },
+            "used": {
+              "function_calls": 106,
+              "loop_iterations": 21302,
+              "model_calls": 3,
+              "steps": 41,
+              "tool_calls": 10
+            }
+          }
+        },
+        {
+          "id": "memory-capacity",
+          "request": {
+            "project": "expert-capacity",
+            "question": "When memory is already at MAX_ENTRIES, can an existing key still be updated, and what happens to a new key? Explain the branch and propose one boundary check for each case.",
+            "focus": "kosika/memory.py",
+            "reference": "KOSIKA.md"
+          },
+          "rubric": [
+            "Existing key replacement remains allowed when full.",
+            "A new key fails when full; it is not silently evicted or accepted.",
+            "Checks isolate existing-key and new-key cases and state expected outcomes."
+          ],
+          "source_sha256": {
+            "focus": "9e60c968189e50648f8d563c6bce79b3232c717901e5264530187265cdd70d41",
+            "reference": "1c4606b3b0b37bd4f7b79546b68fd3ef7e5b2bc3a94c0d041d690d8fe522dc24"
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 190.125,
+          "stderr": "Model 'qwen2.5:7b' at http://localhost:11434 answers for: researcher_model, planner_model, reviewer_model\n",
+          "result": {
+            "status": "completed",
+            "answer": "The current code establishes that when memory is at MAX_ENTRIES, a new key cannot be added, but an existing key can still be updated. The next steps should involve checking the behavior of updating an existing key when memory is at MAX_ENTRIES and proposing a boundary check for this scenario.",
+            "suggestions": [
+              "ACTION: Check the behavior of updating an existing key when memory is at MAX_ENTRIES\nCHECK: memory.py:211 remember method\nEXPECTED: The method should allow updating an existing key without raising an error\nSOURCE: kosika/memory.py:211"
+            ],
+            "clarification": "",
+            "evidence": [
+              {
+                "source": "kosika/memory.py:211",
+                "quote": "    def remember(self, name: str, key: str, value: Any) -> dict[str, Any]:\n        entries = self.entries(name)\n        if not key or len(key) > MAX_KEY_LENGTH:\n            raise RuntimeError(\n                f\"A memory key must have 1 to {MAX_KEY_LENGTH} characters\"\n            )\n        if key not in entries and len(entries) >= MAX_ENTRIES:\n            raise RuntimeError(f\"Memory {name!r} is full ({MAX_ENTRIES} entries)\")\n        entries[key] = value\n        if self.directory is not None:\n            self.directory.mkdir(parents=True, exist_ok=True)\n            # Written whole to a neighbour and swapped in, so a crash cannot\n            # leave half a file where the memory was.\n            handle, temporary = tempfile.mkstemp(\n                dir=self.directory, prefix=f\".{name}-\", suffix=\".tmp\"\n            )\n            try:\n                with os.fdopen(handle, \"w\", encoding=\"utf-8\") as stream:\n                    json.dump(entries, stream, indent=2, sort_keys=True)\n                os.replace(temporary, self._path(name))\n            except OSError:\n                Path(temporary).unlink(missing_ok=True)\n                raise\n        return {\"key\": key, \"entries\": len(entries)}\n"
+              }
+            ],
+            "concerns": [],
+            "participants": [
+              "researcher",
+              "planner",
+              "reviewer"
+            ],
+            "memory": "stored"
+          },
+          "execution": {
+            "elapsed_seconds": 187.84400000000096,
+            "function_stack": [],
+            "limits": {
+              "deadline_seconds": 300.0,
+              "max_function_calls": 10000,
+              "max_loop_iterations": 1000000,
+              "max_model_calls": 6,
+              "max_steps": 10000,
+              "max_tool_calls": 16
+            },
+            "used": {
+              "function_calls": 440,
+              "loop_iterations": 184838,
+              "model_calls": 3,
+              "steps": 41,
+              "tool_calls": 10
+            }
+          }
+        },
+        {
+          "id": "handover-authority",
+          "request": {
+            "project": "expert-handover",
+            "question": "If an agent hands a task to another agent, does that grant write permission or allow recursive delegation? Explain the limits and propose concrete negative tests.",
+            "focus": "kosika/system_tools.py",
+            "reference": "KOSIKA.md"
+          },
+          "rubric": [
+            "Handover grants no additional permissions.",
+            "Self-handover and onward recursive handover are restricted by the host.",
+            "Negative checks specify denied operation and expected lack of effect, not just a general review."
+          ],
+          "source_sha256": {
+            "focus": "dc4bf796acff0860c5f4a1a7a355518403d5fc935315f7d36b4281264fafbd00",
+            "reference": "1c4606b3b0b37bd4f7b79546b68fd3ef7e5b2bc3a94c0d041d690d8fe522dc24"
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 169.11,
+          "stderr": "Model 'qwen2.5:7b' at http://localhost:11434 answers for: researcher_model, planner_model, reviewer_model\n",
+          "result": {
+            "status": "completed",
+            "answer": "The current code establishes that an agent can hand a task to another agent within the same folder, but it does not specify the permissions or recursive delegation implications. We need to clarify these aspects to ensure proper functionality and security.",
+            "suggestions": [
+              "ACTION: Clarify the permissions and recursive delegation implications\nCHECK: Review the current code and documentation\nEXPECTED: Explicit statements on write permissions and recursive delegation capabilities\nSOURCE: kosika/system_tools.py:25"
+            ],
+            "clarification": "",
+            "evidence": [
+              {
+                "source": "kosika/system_tools.py:25",
+                "quote": "A fifth kind, `source system \"agents\"` with `operation: \"ask\"`, hands a\nrequest to another agent in the same folder and gives back what it said:\n"
+              }
+            ],
+            "concerns": [],
+            "participants": [
+              "researcher",
+              "planner",
+              "reviewer"
+            ],
+            "memory": "stored"
+          },
+          "execution": {
+            "elapsed_seconds": 167.4380000000001,
+            "function_stack": [],
+            "limits": {
+              "deadline_seconds": 300.0,
+              "max_function_calls": 10000,
+              "max_loop_iterations": 1000000,
+              "max_model_calls": 6,
+              "max_steps": 10000,
+              "max_tool_calls": 16
+            },
+            "used": {
+              "function_calls": 510,
+              "loop_iterations": 247567,
+              "model_calls": 3,
+              "steps": 41,
+              "tool_calls": 10
+            }
+          }
+        },
+        {
+          "id": "memory-writers",
+          "request": {
+            "project": "expert-writers",
+            "question": "Does atomic file replacement make two MemoryStore instances safe for shared concurrent writes? Explain the distinction and propose a reproducible lost-update check.",
+            "focus": "kosika/memory.py",
+            "reference": "KOSIKA.md"
+          },
+          "rubric": [
+            "Distinguishes atomic replacement of a file from concurrent update or merge safety.",
+            "Proposes loading two independent stores before interleaving their writes.",
+            "States a concrete last-writer/lost-update outcome without claiming the store provides locking."
+          ],
+          "source_sha256": {
+            "focus": "9e60c968189e50648f8d563c6bce79b3232c717901e5264530187265cdd70d41",
+            "reference": "1c4606b3b0b37bd4f7b79546b68fd3ef7e5b2bc3a94c0d041d690d8fe522dc24"
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 201.703,
+          "stderr": "Model 'qwen2.5:7b' at http://localhost:11434 answers for: researcher_model, planner_model, reviewer_model\n",
+          "result": {
+            "status": "completed",
+            "answer": "The current code establishes that MemoryStore instances are checked for uniqueness and consistency during program initialization. It does not explicitly handle concurrent writes or atomic file replacement. A lost-update check is needed to ensure safety under concurrent writes.",
+            "suggestions": [
+              "ACTION: Propose a lost-update check\nCHECK: Implement a concurrent write test\nEXPECTED: Demonstrate that two MemoryStore instances can safely perform concurrent writes without data corruption\nSOURCE: kosika/memory.py:124"
+            ],
+            "clarification": "",
+            "evidence": [
+              {
+                "source": "kosika/memory.py:124",
+                "quote": "    seen: set[str] = set()\n    granted: list[str] = []\n    for memory in program.memories:\n        if memory.name in seen:\n            raise MemoryError_(f\"Memory {memory.name!r} is declared more than once\")\n        seen.add(memory.name)\n        if memory.record not in {record.name for record in program.records}:\n            raise MemoryError_(\n                f\"Memory {memory.name!r} holds unknown record {memory.record!r}\"\n            )\n        for shared, fields in _SHARED.items():\n            add_record(shared, fields)\n        add_record(\n            entry_record(memory.name),\n            (Field(\"key\", \"Text\"), Field(\"value\", memory.record)),\n        )\n        add_record(\n            recalled_record(memory.name),\n            (Field(\"found\", \"Bool\"), Field(\"value\", memory.record + \"?\")),\n        )\n        remember, recall = tool_names(memory.name)\n        for name in (remember, recall):\n            if name in taken:\n                raise MemoryError_(\n                    f\"Memory {memory.name!r} cannot be used: the name {name!r} \"\n                    \"is already declared\"\n                )\n        source = SOURCE_PREFIX + memory.name\n        tools.append(\n            ToolDecl(\n                remember,\n                source,\n                \"remember\",\n                \"observe\",\n                SAVED_RECORD,\n                entry_record(memory.name),\n            )\n        )\n        tools.append(\n            ToolDecl(\n                recall,\n                source,\n                \"recall\",\n                \"observe\",\n                recalled_record(memory.name),\n                KEY_RECORD,\n            )\n        )\n        granted += [remember, recall]\n    return replace(\n        program,\n        records=records,\n        tools=tools,\n        agents=[*program.agents, AgentDecl(AGENT, tuple(granted), (), max_steps=1)],\n    )\n"
+              }
+            ],
+            "concerns": [],
+            "participants": [
+              "researcher",
+              "planner",
+              "reviewer"
+            ],
+            "memory": "stored"
+          },
+          "execution": {
+            "elapsed_seconds": 199.4380000000001,
+            "function_stack": [],
+            "limits": {
+              "deadline_seconds": 300.0,
+              "max_function_calls": 10000,
+              "max_loop_iterations": 1000000,
+              "max_model_calls": 6,
+              "max_steps": 10000,
+              "max_tool_calls": 16
+            },
+            "used": {
+              "function_calls": 448,
+              "loop_iterations": 184606,
+              "model_calls": 3,
+              "steps": 41,
+              "tool_calls": 10
+            }
+          }
+        }
+      ],
+      "manual_grading": [
+        {
+          "id": "native-learning",
+          "fully_satisfied": false,
+          "notes": "Correctly says learn is unsupported, but predicts no source mentions rather than exercising an unsupported runtime boundary."
+        },
+        {
+          "id": "memory-capacity",
+          "fully_satisfied": false,
+          "notes": "Correct capacity answer, but only one vague existing-key check; the requested new-key boundary check is absent."
+        },
+        {
+          "id": "handover-authority",
+          "fully_satisfied": false,
+          "notes": "Incorrectly calls explicit permission and recursive delegation restrictions unspecified."
+        },
+        {
+          "id": "memory-writers",
+          "fully_satisfied": false,
+          "notes": "Incorrectly treats initialization validation as MemoryStore concurrency behavior and expects concurrent safety rather than checking the stale-snapshot lost update."
+        }
+      ]
+    },
+    {
+      "id": "coherent-4k",
+      "models": "qwen2.5:7b for all roles",
+      "context_characters": 4000,
+      "limits": {
+        "model_calls": 6,
+        "tool_calls": 16,
+        "deadline_seconds": 600
+      },
+      "records": [
+        {
+          "id": "native-learning",
+          "request": {
+            "project": "expert-native",
+            "question": "Does the native engine currently support learn? Give a concrete way to check the boundary and the expected outcome before choosing an engine for a learning agent.",
+            "focus": "native/README.md",
+            "reference": "conformance/README.md"
+          },
+          "rubric": [
+            "Does not claim native learn is implemented.",
+            "A concrete native check has an expected unsupported/refused outcome.",
+            "Distinguishes checking engine support from merely asking whether learning is necessary."
+          ],
+          "source_sha256": {
+            "focus": "a02581d9b611bd156a7dad6333a1900e6f2046e13d2da64aca4dd42ad7734d0a",
+            "reference": "4c0b527675cd9a3d6c49ae0fec610debbb97d8007d7d261d32e0615dda12b8ca"
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 199.078,
+          "stderr": "Model 'qwen2.5:7b' at http://localhost:11434 answers for: researcher_model, planner_model, reviewer_model\n",
+          "result": {
+            "status": "completed",
+            "answer": "The native engine does not support the `learn` functionality as it is listed in the `What it does not have yet` section of the README.md. This needs to be confirmed by checking the current codebase to ensure no `learn` functionality exists, and to propose steps for implementing it if necessary.",
+            "suggestions": [
+              "ACTION: Check the current codebase for `learn` functionality\nCHECK: Search the codebase for any mention of `learn` or similar functionality\nEXPECTED: No mentions of `learn` or similar functionality\nSOURCE: native/README.md:80"
+            ],
+            "clarification": "",
+            "evidence": [
+              {
+                "source": "native/README.md:80",
+                "quote": "## What it does not have yet\n\n- Models that answer `as text`, and steps with `verify`, `vote`,\n  `escalate`, `learn` or `with evidence`, and\n  `parallel` blocks.\n- An agent's plan that writes files, or an agent with its own `check`:\n  the reference checks such a plan before showing it, and those checks are\n  not here yet, so such a plan is refused by name. Replaying an agent\n  run's own trace, an answer with evidence, or a verified answer.\n- `system` tools other than files and shell (web, kosika, meaning, agents,\n  outside), and `fetch`; so an environment's `allow site` grants nothing\n  here yet. Searching by meaning (`find`).\n- Swarms.\n- A file that has any of these is refused, and the refusal names it.\n- Vectors and matrices.\n"
+              }
+            ],
+            "concerns": [],
+            "participants": [
+              "researcher",
+              "planner",
+              "reviewer"
+            ],
+            "memory": "stored"
+          },
+          "execution": {
+            "elapsed_seconds": 197.04700000000048,
+            "function_stack": [],
+            "limits": {
+              "deadline_seconds": 600.0,
+              "max_function_calls": 10000,
+              "max_loop_iterations": 1000000,
+              "max_model_calls": 6,
+              "max_steps": 10000,
+              "max_tool_calls": 16
+            },
+            "used": {
+              "function_calls": 81,
+              "loop_iterations": 20961,
+              "model_calls": 3,
+              "steps": 41,
+              "tool_calls": 10
+            }
+          }
+        },
+        {
+          "id": "memory-capacity",
+          "request": {
+            "project": "expert-capacity",
+            "question": "When memory is already at MAX_ENTRIES, can an existing key still be updated, and what happens to a new key? Explain the branch and propose one boundary check for each case.",
+            "focus": "kosika/memory.py",
+            "reference": "KOSIKA.md"
+          },
+          "rubric": [
+            "Existing key replacement remains allowed when full.",
+            "A new key fails when full; it is not silently evicted or accepted.",
+            "Checks isolate existing-key and new-key cases and state expected outcomes."
+          ],
+          "source_sha256": {
+            "focus": "9e60c968189e50648f8d563c6bce79b3232c717901e5264530187265cdd70d41",
+            "reference": "1c4606b3b0b37bd4f7b79546b68fd3ef7e5b2bc3a94c0d041d690d8fe522dc24"
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 230.329,
+          "stderr": "Model 'qwen2.5:7b' at http://localhost:11434 answers for: researcher_model, planner_model, reviewer_model\n",
+          "result": {
+            "status": "needs_review",
+            "answer": "The current code establishes that when memory is at MAX_ENTRIES, an existing key can still be updated, but a new key cannot be added. The `bind_memory_tools` function binds memory tools to a `MemoryStore` instance, allowing keys to be recalled or remembered. If the `MemoryStore` is full, new keys cannot be added, but existing keys can be updated. The next step is to propose a boundary check to confirm this behavior.",
+            "suggestions": [
+              "ACTION: Review the `MemoryStore` implementation\nCHECK: Check the `MemoryStore.remember` method to see if it enforces the MAX_ENTRIES limit\nEXPECTED: The `MemoryStore.remember` method should enforce the MAX_ENTRIES limit, preventing new keys from being added when the store is full\nSOURCE: kosika/memory.py:237"
+            ],
+            "clarification": "",
+            "evidence": [
+              {
+                "source": "kosika/memory.py:237",
+                "quote": "def declared(program: Program) -> list[MemoryDecl]:\n    return list(program.memories)\n\n\ndef bind_memory_tools(\n    program: Program, directory: str | Path | None, *, store: MemoryStore | None = None\n) -> dict[str, Callable[[ToolDecl, dict[str, Any]], Any]]:\n    \"\"\"Executors for the program's memory tools, over one store.\n\n    `directory=None` with no `store` binds nothing: the program's memory is\n    then not granted, and a run that needs it is refused.\n    \"\"\"\n\n    if not program.memories or (directory is None and store is None):\n        return {}\n    kept = store if store is not None else MemoryStore(directory)\n\n    def executor(name: str) -> Callable[[ToolDecl, dict[str, Any]], Any]:\n        def run(tool: ToolDecl, arguments: dict[str, Any]) -> Any:\n            if tool.operation == \"recall\":\n                return kept.recall(name, arguments[\"key\"])\n            return kept.remember(name, arguments[\"key\"], arguments[\"value\"])\n\n        return run\n\n    bindings = {}\n    for memory in program.memories:\n        for tool_name in tool_names(memory.name):\n            bindings[tool_name] = executor(memory.name)\n    return bindings\n"
+              }
+            ],
+            "concerns": [
+              "EXACT_SOURCE_ID missing explicit checks for existing and new key behavior when memory is at MAX_ENTRIES"
+            ],
+            "participants": [
+              "researcher",
+              "planner",
+              "reviewer"
+            ],
+            "memory": "none"
+          },
+          "execution": {
+            "elapsed_seconds": 227.96800000000076,
+            "function_stack": [],
+            "limits": {
+              "deadline_seconds": 600.0,
+              "max_function_calls": 10000,
+              "max_loop_iterations": 1000000,
+              "max_model_calls": 6,
+              "max_steps": 10000,
+              "max_tool_calls": 16
+            },
+            "used": {
+              "function_calls": 281,
+              "loop_iterations": 181912,
+              "model_calls": 3,
+              "steps": 38,
+              "tool_calls": 9
+            }
+          }
+        },
+        {
+          "id": "handover-authority",
+          "request": {
+            "project": "expert-handover",
+            "question": "If an agent hands a task to another agent, does that grant write permission or allow recursive delegation? Explain the limits and propose concrete negative tests.",
+            "focus": "kosika/system_tools.py",
+            "reference": "KOSIKA.md"
+          },
+          "rubric": [
+            "Handover grants no additional permissions.",
+            "Self-handover and onward recursive handover are restricted by the host.",
+            "Negative checks specify denied operation and expected lack of effect, not just a general review."
+          ],
+          "source_sha256": {
+            "focus": "dc4bf796acff0860c5f4a1a7a355518403d5fc935315f7d36b4281264fafbd00",
+            "reference": "1c4606b3b0b37bd4f7b79546b68fd3ef7e5b2bc3a94c0d041d690d8fe522dc24"
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 251.672,
+          "stderr": "Model 'qwen2.5:7b' at http://localhost:11434 answers for: researcher_model, planner_model, reviewer_model\n",
+          "result": {
+            "status": "completed",
+            "answer": "The current code establishes that handing over a task to another agent does not grant write permission or allow recursive delegation. The `hand_over` tool only allows observation and does not provide any form of permission or delegation. To ensure this understanding, we need to propose concrete negative tests to confirm the limits of the `hand_over` tool.",
+            "suggestions": [
+              "ACTION: Propose a test case\nCHECK: A test agent receives a task from another agent using the `hand_over` tool\nEXPECTED: The receiving agent should not gain write permission or the ability to delegate the task further\nSOURCE: kosika/system_tools.py:1"
+            ],
+            "clarification": "",
+            "evidence": [
+              {
+                "source": "kosika/system_tools.py:1",
+                "quote": "\"\"\"Shell and file access for Kosika programs, behind approval every time.\n\nA program asks for system access by declaring a tool with a `system` source:\n\n    tool run_tests {\n      source system \"shell\"\n      operation: \"python\"          // the one program this tool may start\n      access: execute\n      input: ShellArguments        // {args: Text[]}\n      output: ShellResult          // {exit_code: Number, stdout: Text, stderr: Text}\n    }\n\n    tool save_report {\n      source system \"files\"\n      operation: \"write\"           // read, peek, search, list, write, or create\n      access: execute\n      input: FileWrite             // {path: Text, text: Text}\n      output: FileWritten          // {bytes: Number}\n    }\n\nA fourth kind, `source system \"kosika\"` with `operation: \"check\"`, checks a\nKosika program given as text and runs its tests. It reaches nothing outside\nitself, so unlike the others it needs no grant and no approval.\n\nA fifth kind, `source system \"agents\"` with `operation: \"ask\"`, hands a\nrequest to another agent in the same folder and gives back what it said:\n\n    tool hand_over {\n      source system \"agents\"\n      operation: \"ask\"\n      access: observe\n      input: Handover              // {agent: Text, text: Text}\n      output: Handed               // {ok: Bool, agent: Text, text: Text}\n    }\n\nHanding over grants nothing. The other agent runs as if the person had\nopened it: with its own tools, the same grants, and its own questions to\nthe person before anything changes. So the tool itself may be `observe`.\nIt is bound only by a host that has a folder of agents, such as Studio. An\nempty `agent` lets the host choose; an agent cannot hand to itself, and an\nagent that was handed a request cannot hand it on.\n\nA sixth kind, `source system \"outside\"` with `operation: \"propose\"`, asks\nan outside command-line agent the owner has installed and allowed, such as\ndevin or omp, to do something to the granted folder:\n\n    tool ask_outside {\n      source system \"outside\"\n      operation: \"propose\"\n      access: observe\n      input: Handover              // {agent: Text, text: Text}\n      output: Proposed             // {ok: Bool, agent: Text, said: Text, files: Planned[]}\n    }\n"
+              }
+            ],
+            "concerns": [],
+            "participants": [
+              "researcher",
+              "planner",
+              "reviewer"
+            ],
+            "memory": "stored"
+          },
+          "execution": {
+            "elapsed_seconds": 249.9380000000001,
+            "function_stack": [],
+            "limits": {
+              "deadline_seconds": 600.0,
+              "max_function_calls": 10000,
+              "max_loop_iterations": 1000000,
+              "max_model_calls": 6,
+              "max_steps": 10000,
+              "max_tool_calls": 16
+            },
+            "used": {
+              "function_calls": 333,
+              "loop_iterations": 244480,
+              "model_calls": 3,
+              "steps": 41,
+              "tool_calls": 10
+            }
+          }
+        },
+        {
+          "id": "memory-writers",
+          "request": {
+            "project": "expert-writers",
+            "question": "Does atomic file replacement make two MemoryStore instances safe for shared concurrent writes? Explain the distinction and propose a reproducible lost-update check.",
+            "focus": "kosika/memory.py",
+            "reference": "KOSIKA.md"
+          },
+          "rubric": [
+            "Distinguishes atomic replacement of a file from concurrent update or merge safety.",
+            "Proposes loading two independent stores before interleaving their writes.",
+            "States a concrete last-writer/lost-update outcome without claiming the store provides locking."
+          ],
+          "source_sha256": {
+            "focus": "9e60c968189e50648f8d563c6bce79b3232c717901e5264530187265cdd70d41",
+            "reference": "1c4606b3b0b37bd4f7b79546b68fd3ef7e5b2bc3a94c0d041d690d8fe522dc24"
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 211.11,
+          "stderr": "Model 'qwen2.5:7b' at http://localhost:11434 answers for: researcher_model, planner_model, reviewer_model\n",
+          "result": {
+            "status": "needs_review",
+            "answer": "The current code establishes that `MemoryStore` instances can be shared for concurrent writes if `directory` is set to the same path. However, it does not ensure atomicity or safety against lost updates. A lost update can occur if two writes happen concurrently, overwriting each other's changes. We need to propose a check to demonstrate this risk.",
+            "suggestions": [
+              "ACTION: Propose a lost-update check\nCHECK: Create two threads that concurrently write to the same `MemoryStore` instance\nEXPECTED: One of the writes should be lost, indicating a risk of lost updates\nSOURCE: kosika/memory.py:237"
+            ],
+            "clarification": "",
+            "evidence": [
+              {
+                "source": "kosika/memory.py:237",
+                "quote": "def declared(program: Program) -> list[MemoryDecl]:\n    return list(program.memories)\n\n\ndef bind_memory_tools(\n    program: Program, directory: str | Path | None, *, store: MemoryStore | None = None\n) -> dict[str, Callable[[ToolDecl, dict[str, Any]], Any]]:\n    \"\"\"Executors for the program's memory tools, over one store.\n\n    `directory=None` with no `store` binds nothing: the program's memory is\n    then not granted, and a run that needs it is refused.\n    \"\"\"\n\n    if not program.memories or (directory is None and store is None):\n        return {}\n    kept = store if store is not None else MemoryStore(directory)\n\n    def executor(name: str) -> Callable[[ToolDecl, dict[str, Any]], Any]:\n        def run(tool: ToolDecl, arguments: dict[str, Any]) -> Any:\n            if tool.operation == \"recall\":\n                return kept.recall(name, arguments[\"key\"])\n            return kept.remember(name, arguments[\"key\"], arguments[\"value\"])\n\n        return run\n\n    bindings = {}\n    for memory in program.memories:\n        for tool_name in tool_names(memory.name):\n            bindings[tool_name] = executor(memory.name)\n    return bindings\n"
+              }
+            ],
+            "concerns": [
+              "[EXACT_SOURCE_ID] The proposal is ungrounded as it lacks concrete setup, inputs, and expected state/output details for the lost-update check. Provide a specific implementation or setup for the check."
+            ],
+            "participants": [
+              "researcher",
+              "planner",
+              "reviewer"
+            ],
+            "memory": "none"
+          },
+          "execution": {
+            "elapsed_seconds": 208.79600000000028,
+            "function_stack": [],
+            "limits": {
+              "deadline_seconds": 600.0,
+              "max_function_calls": 10000,
+              "max_loop_iterations": 1000000,
+              "max_model_calls": 6,
+              "max_steps": 10000,
+              "max_tool_calls": 16
+            },
+            "used": {
+              "function_calls": 281,
+              "loop_iterations": 181851,
+              "model_calls": 3,
+              "steps": 38,
+              "tool_calls": 9
+            }
+          }
+        },
+        {
+          "id": "memory-empty-key",
+          "request": {
+            "project": "expert-empty-key",
+            "question": "If remember receives an empty key after a valid entry was saved, is any memory changed? Explain the rejection boundary and give a reproducible check that also verifies the original entry survives.",
+            "focus": "kosika/memory.py",
+            "reference": "KOSIKA.md"
+          },
+          "rubric": [
+            "Empty key is rejected before insertion or persistence.",
+            "The previously saved valid entry is unchanged after rejection.",
+            "A reproducible check specifies the valid seed, empty-key attempt, rejected result and preserved seed state."
+          ],
+          "source_sha256": {
+            "focus": "9e60c968189e50648f8d563c6bce79b3232c717901e5264530187265cdd70d41",
+            "reference": "1c4606b3b0b37bd4f7b79546b68fd3ef7e5b2bc3a94c0d041d690d8fe522dc24"
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 233.782,
+          "stderr": "Model 'qwen2.5:7b' at http://localhost:11434 answers for: researcher_model, planner_model, reviewer_model\n",
+          "result": {
+            "status": "needs_review",
+            "answer": "The current code establishes that if a `remember` operation is performed with a valid key and value, the memory is updated. If an empty key is provided after a valid entry was saved, the `remember` operation will fail, and the memory will not be changed. The rejection boundary is that an empty key will cause the operation to fail, and the original entry will not be affected. A check is needed to verify this behavior and ensure the original entry survives.",
+            "suggestions": [
+              "ACTION: Verify the behavior of `remember` with an empty key\nCHECK: Invoke the `remember` operation with a valid entry and then with an empty key\nEXPECTED: The first `remember` operation should succeed and update the memory, while the second `remember` operation with an empty key should fail and not change the memory\nSOURCE: kosika/memory.py:237"
+            ],
+            "clarification": "",
+            "evidence": [
+              {
+                "source": "kosika/memory.py:237",
+                "quote": "def declared(program: Program) -> list[MemoryDecl]:\n    return list(program.memories)\n\n\ndef bind_memory_tools(\n    program: Program, directory: str | Path | None, *, store: MemoryStore | None = None\n) -> dict[str, Callable[[ToolDecl, dict[str, Any]], Any]]:\n    \"\"\"Executors for the program's memory tools, over one store.\n\n    `directory=None` with no `store` binds nothing: the program's memory is\n    then not granted, and a run that needs it is refused.\n    \"\"\"\n\n    if not program.memories or (directory is None and store is None):\n        return {}\n    kept = store if store is not None else MemoryStore(directory)\n\n    def executor(name: str) -> Callable[[ToolDecl, dict[str, Any]], Any]:\n        def run(tool: ToolDecl, arguments: dict[str, Any]) -> Any:\n            if tool.operation == \"recall\":\n                return kept.recall(name, arguments[\"key\"])\n            return kept.remember(name, arguments[\"key\"], arguments[\"value\"])\n\n        return run\n\n    bindings = {}\n    for memory in program.memories:\n        for tool_name in tool_names(memory.name):\n            bindings[tool_name] = executor(memory.name)\n    return bindings\n"
+              }
+            ],
+            "concerns": [
+              "[EXACT_SOURCE_ID] concrete actionable problem and required correction"
+            ],
+            "participants": [
+              "researcher",
+              "planner",
+              "reviewer"
+            ],
+            "memory": "none"
+          },
+          "execution": {
+            "elapsed_seconds": 231.46800000000076,
+            "function_stack": [],
+            "limits": {
+              "deadline_seconds": 600.0,
+              "max_function_calls": 10000,
+              "max_loop_iterations": 1000000,
+              "max_model_calls": 6,
+              "max_steps": 10000,
+              "max_tool_calls": 16
+            },
+            "used": {
+              "function_calls": 281,
+              "loop_iterations": 182067,
+              "model_calls": 3,
+              "steps": 38,
+              "tool_calls": 9
+            }
+          }
+        }
+      ],
+      "manual_grading": [
+        {
+          "id": "native-learning",
+          "fully_satisfied": false,
+          "notes": "Correct unsupported-learn statement, but code search is not a native boundary execution and the expected absence of mentions is contradicted by the source."
+        },
+        {
+          "id": "memory-capacity",
+          "fully_satisfied": false,
+          "notes": "Correct main capacity distinction, but no reproducible existing-key/new-key boundary checks; the reviewer refused it with an invalid source-linked critique."
+        },
+        {
+          "id": "handover-authority",
+          "fully_satisfied": false,
+          "notes": "Correct no-new-authority/onward-handover limits, but missing self-handover and actual denied write/forward attempts with no-effect assertions."
+        },
+        {
+          "id": "memory-writers",
+          "fully_satisfied": false,
+          "notes": "Conflates shared-instance threads with two independent cached stores; asserts a nondeterministic lost write and misstates atomic replacement."
+        },
+        {
+          "id": "memory-empty-key",
+          "fully_satisfied": false,
+          "notes": "Correct rejection/no-change summary, but no explicit seed read-back assertion; rejected with a placeholder source critique rather than accepted usable advice."
+        }
+      ]
+    },
+    {
+      "id": "cancelled-coder-4k",
+      "models": "qwen2.5-coder:7b for all roles",
+      "context_characters": 4000,
+      "status": "Cancelled after completed-trace inspection proved the memory implementation was absent; no completed records; raw partial evidence retained.",
+      "records": []
+    },
+    {
+      "id": "coder-12k",
+      "models": "qwen2.5-coder:7b for all roles",
+      "context_characters": 12000,
+      "limits": {
+        "model_calls": 6,
+        "tool_calls": 16,
+        "deadline_seconds": 600
+      },
+      "records": [
+        {
+          "id": "native-learning",
+          "request": {
+            "project": "expert-native",
+            "question": "Does the native engine currently support learn? Give a concrete way to check the boundary and the expected outcome before choosing an engine for a learning agent.",
+            "focus": "native/README.md",
+            "reference": "conformance/README.md"
+          },
+          "rubric": [
+            "Does not claim native learn is implemented.",
+            "A concrete native check has an expected unsupported/refused outcome.",
+            "Distinguishes checking engine support from merely asking whether learning is necessary."
+          ],
+          "models": "qwen2.5-coder:7b",
+          "source_sha256": {
+            "focus": "a02581d9b611bd156a7dad6333a1900e6f2046e13d2da64aca4dd42ad7734d0a",
+            "reference": "4c0b527675cd9a3d6c49ae0fec610debbb97d8007d7d261d32e0615dda12b8ca"
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 290.312,
+          "stderr": "Model 'qwen2.5-coder:7b' at http://localhost:11434 answers for: researcher_model, planner_model, reviewer_model\n",
+          "result": {
+            "status": "completed",
+            "answer": "The current code establishes that the native engine does not support the 'learn' capability. The 'What it does not have yet' section explicitly lists 'learn' as one of the features that are not yet implemented.",
+            "suggestions": [
+              "ACTION: Check the source code for any references to 'learn'\nCHECK: Search the native engine's source code for any mentions of 'learn' in function names, comments, or documentation.\nEXPECTED: No references to 'learn' should be found in the source code.\nSOURCE: native/README.md:80",
+              "ACTION: Review the implementation of the agent's plan\nCHECK: Examine the agent's plan implementation to ensure that it does not include any 'learn' steps or blocks.\nEXPECTED: The agent's plan should not include any 'learn' steps or blocks.\nSOURCE: native/README.md:80",
+              "ACTION: Test the engine with a learning scenario\nCHECK: Create a test scenario that attempts to use the 'learn' capability and observe the engine's response.\nEXPECTED: The engine should reject the test scenario and provide a clear message indicating that the 'learn' capability is not supported.\nSOURCE: native/README.md:80"
+            ],
+            "clarification": "",
+            "evidence": [
+              {
+                "source": "native/README.md:80",
+                "quote": "## What it does not have yet\n\n- Models that answer `as text`, and steps with `verify`, `vote`,\n  `escalate`, `learn` or `with evidence`, and\n  `parallel` blocks.\n- An agent's plan that writes files, or an agent with its own `check`:\n  the reference checks such a plan before showing it, and those checks are\n  not here yet, so such a plan is refused by name. Replaying an agent\n  run's own trace, an answer with evidence, or a verified answer.\n- `system` tools other than files and shell (web, kosika, meaning, agents,\n  outside), and `fetch`; so an environment's `allow site` grants nothing\n  here yet. Searching by meaning (`find`).\n- Swarms.\n- A file that has any of these is refused, and the refusal names it.\n- Vectors and matrices.\n"
+              }
+            ],
+            "concerns": [],
+            "participants": [
+              "researcher",
+              "planner",
+              "reviewer"
+            ],
+            "memory": "stored"
+          },
+          "execution": {
+            "elapsed_seconds": 287.7970000000005,
+            "function_stack": [],
+            "limits": {
+              "deadline_seconds": 600.0,
+              "max_function_calls": 10000,
+              "max_loop_iterations": 1000000,
+              "max_model_calls": 6,
+              "max_steps": 10000,
+              "max_tool_calls": 16
+            },
+            "used": {
+              "function_calls": 89,
+              "loop_iterations": 20980,
+              "model_calls": 3,
+              "steps": 41,
+              "tool_calls": 10
+            }
+          }
+        },
+        {
+          "id": "memory-capacity",
+          "request": {
+            "project": "expert-capacity",
+            "question": "When memory is already at MAX_ENTRIES, can an existing key still be updated, and what happens to a new key? Explain the branch and propose one boundary check for each case.",
+            "focus": "kosika/memory.py",
+            "reference": "KOSIKA.md"
+          },
+          "rubric": [
+            "Existing key replacement remains allowed when full.",
+            "A new key fails when full; it is not silently evicted or accepted.",
+            "Checks isolate existing-key and new-key cases and state expected outcomes."
+          ],
+          "models": "qwen2.5-coder:7b",
+          "source_sha256": {
+            "focus": "9e60c968189e50648f8d563c6bce79b3232c717901e5264530187265cdd70d41",
+            "reference": "1c4606b3b0b37bd4f7b79546b68fd3ef7e5b2bc3a94c0d041d690d8fe522dc24"
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 174.156,
+          "stderr": "Model 'qwen2.5-coder:7b' at http://localhost:11434 answers for: researcher_model, planner_model, reviewer_model\n",
+          "result": {
+            "status": "unavailable",
+            "answer": "I could not produce source-checked, reviewed advice for this request.",
+            "suggestions": [],
+            "clarification": "",
+            "evidence": [],
+            "concerns": [
+              "The researcher did not select one to three distinct current source ids."
+            ],
+            "participants": [],
+            "memory": "none"
+          },
+          "execution": {
+            "elapsed_seconds": 171.8130000000001,
+            "function_stack": [],
+            "limits": {
+              "deadline_seconds": 600.0,
+              "max_function_calls": 10000,
+              "max_loop_iterations": 1000000,
+              "max_model_calls": 6,
+              "max_steps": 10000,
+              "max_tool_calls": 16
+            },
+            "used": {
+              "function_calls": 266,
+              "loop_iterations": 181899,
+              "model_calls": 1,
+              "steps": 16,
+              "tool_calls": 3
+            }
+          }
+        },
+        {
+          "id": "handover-authority",
+          "request": {
+            "project": "expert-handover",
+            "question": "If an agent hands a task to another agent, does that grant write permission or allow recursive delegation? Explain the limits and propose concrete negative tests.",
+            "focus": "kosika/system_tools.py",
+            "reference": "KOSIKA.md"
+          },
+          "rubric": [
+            "Handover grants no additional permissions.",
+            "Self-handover and onward recursive handover are restricted by the host.",
+            "Negative checks specify denied operation and expected lack of effect, not just a general review."
+          ],
+          "models": "qwen2.5-coder:7b",
+          "source_sha256": {
+            "focus": "dc4bf796acff0860c5f4a1a7a355518403d5fc935315f7d36b4281264fafbd00",
+            "reference": "1c4606b3b0b37bd4f7b79546b68fd3ef7e5b2bc3a94c0d041d690d8fe522dc24"
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 197.812,
+          "stderr": "Model 'qwen2.5-coder:7b' at http://localhost:11434 answers for: researcher_model, planner_model, reviewer_model\n",
+          "result": {
+            "status": "unavailable",
+            "answer": "I could not produce source-checked, reviewed advice for this request.",
+            "suggestions": [],
+            "clarification": "",
+            "evidence": [],
+            "concerns": [
+              "The researcher did not select one to three distinct current source ids."
+            ],
+            "participants": [],
+            "memory": "none"
+          },
+          "execution": {
+            "elapsed_seconds": 195.1869999999999,
+            "function_stack": [],
+            "limits": {
+              "deadline_seconds": 600.0,
+              "max_function_calls": 10000,
+              "max_loop_iterations": 1000000,
+              "max_model_calls": 6,
+              "max_steps": 10000,
+              "max_tool_calls": 16
+            },
+            "used": {
+              "function_calls": 309,
+              "loop_iterations": 244464,
+              "model_calls": 1,
+              "steps": 16,
+              "tool_calls": 3
+            }
+          }
+        },
+        {
+          "id": "memory-writers",
+          "request": {
+            "project": "expert-writers",
+            "question": "Does atomic file replacement make two MemoryStore instances safe for shared concurrent writes? Explain the distinction and propose a reproducible lost-update check.",
+            "focus": "kosika/memory.py",
+            "reference": "KOSIKA.md"
+          },
+          "rubric": [
+            "Distinguishes atomic replacement of a file from concurrent update or merge safety.",
+            "Proposes loading two independent stores before interleaving their writes.",
+            "States a concrete last-writer/lost-update outcome without claiming the store provides locking."
+          ],
+          "models": "qwen2.5-coder:7b",
+          "source_sha256": {
+            "focus": "9e60c968189e50648f8d563c6bce79b3232c717901e5264530187265cdd70d41",
+            "reference": "1c4606b3b0b37bd4f7b79546b68fd3ef7e5b2bc3a94c0d041d690d8fe522dc24"
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 189.063,
+          "stderr": "Model 'qwen2.5-coder:7b' at http://localhost:11434 answers for: researcher_model, planner_model, reviewer_model\n",
+          "result": {
+            "status": "unavailable",
+            "answer": "I could not produce source-checked, reviewed advice for this request.",
+            "suggestions": [],
+            "clarification": "",
+            "evidence": [],
+            "concerns": [
+              "The researcher did not select one to three distinct current source ids."
+            ],
+            "participants": [],
+            "memory": "none"
+          },
+          "execution": {
+            "elapsed_seconds": 186.15600000000086,
+            "function_stack": [],
+            "limits": {
+              "deadline_seconds": 600.0,
+              "max_function_calls": 10000,
+              "max_loop_iterations": 1000000,
+              "max_model_calls": 6,
+              "max_steps": 10000,
+              "max_tool_calls": 16
+            },
+            "used": {
+              "function_calls": 266,
+              "loop_iterations": 181837,
+              "model_calls": 1,
+              "steps": 16,
+              "tool_calls": 3
+            }
+          }
+        },
+        {
+          "id": "memory-empty-key",
+          "request": {
+            "project": "expert-empty-key",
+            "question": "If remember receives an empty key after a valid entry was saved, is any memory changed? Explain the rejection boundary and give a reproducible check that also verifies the original entry survives.",
+            "focus": "kosika/memory.py",
+            "reference": "KOSIKA.md"
+          },
+          "rubric": [
+            "Empty key is rejected before insertion or persistence.",
+            "The previously saved valid entry is unchanged after rejection.",
+            "A reproducible check specifies the valid seed, empty-key attempt, rejected result and preserved seed state."
+          ],
+          "models": "qwen2.5-coder:7b",
+          "source_sha256": {
+            "focus": "9e60c968189e50648f8d563c6bce79b3232c717901e5264530187265cdd70d41",
+            "reference": "1c4606b3b0b37bd4f7b79546b68fd3ef7e5b2bc3a94c0d041d690d8fe522dc24"
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 187.907,
+          "stderr": "Model 'qwen2.5-coder:7b' at http://localhost:11434 answers for: researcher_model, planner_model, reviewer_model\n",
+          "result": {
+            "status": "unavailable",
+            "answer": "I could not produce source-checked, reviewed advice for this request.",
+            "suggestions": [],
+            "clarification": "",
+            "evidence": [],
+            "concerns": [
+              "The researcher did not select one to three distinct current source ids."
+            ],
+            "participants": [],
+            "memory": "none"
+          },
+          "execution": {
+            "elapsed_seconds": 185.20299999999952,
+            "function_stack": [],
+            "limits": {
+              "deadline_seconds": 600.0,
+              "max_function_calls": 10000,
+              "max_loop_iterations": 1000000,
+              "max_model_calls": 6,
+              "max_steps": 10000,
+              "max_tool_calls": 16
+            },
+            "used": {
+              "function_calls": 266,
+              "loop_iterations": 182054,
+              "model_calls": 1,
+              "steps": 16,
+              "tool_calls": 3
+            }
+          }
+        }
+      ],
+      "manual_grading": [
+        {
+          "id": "native-learning",
+          "fully_satisfied": false,
+          "notes": "Correct unsupported-learn statement, but the accepted source-search expected outcome is incorrect and no native execution boundary is checked."
+        },
+        {
+          "id": "memory-capacity",
+          "fully_satisfied": false,
+          "notes": "No researcher return was captured. Pre-fix otherwise masked the underlying error as an empty selection; the cause cannot be established from the saved trace and is not scored as a model reasoning error."
+        },
+        {
+          "id": "handover-authority",
+          "fully_satisfied": false,
+          "notes": "No researcher return was captured. Pre-fix otherwise masked the underlying error as an empty selection; the cause cannot be established from the saved trace and is not scored as a model reasoning error."
+        },
+        {
+          "id": "memory-writers",
+          "fully_satisfied": false,
+          "notes": "No researcher return was captured. Pre-fix otherwise masked the underlying error as an empty selection; the cause cannot be established from the saved trace and is not scored as a model reasoning error."
+        },
+        {
+          "id": "memory-empty-key",
+          "fully_satisfied": false,
+          "notes": "No researcher return was captured. Pre-fix otherwise masked the underlying error as an empty selection; the cause cannot be established from the saved trace and is not scored as a model reasoning error."
+        }
+      ]
+    },
+    {
+      "id": "verified-session-backend",
+      "models": "Session completion alias slow via temporary loopback OpenAI-compatible adapter; vendor/model identity not exposed by that interface.",
+      "context_characters": 12000,
+      "limits": {
+        "model_calls": 6,
+        "tool_calls": 16,
+        "deadline_seconds": 600
+      },
+      "records": [
+        {
+          "id": "native-learning",
+          "request": {
+            "project": "expert-native",
+            "question": "Does the native engine currently support learn? Give a concrete way to check the boundary and the expected outcome before choosing an engine for a learning agent.",
+            "focus": "native/README.md",
+            "reference": "conformance/README.md"
+          },
+          "rubric": [
+            "Does not claim native learn is implemented.",
+            "A concrete native check has an expected unsupported/refused outcome.",
+            "Distinguishes checking engine support from merely asking whether learning is necessary."
+          ],
+          "models": "session-slow",
+          "source_sha256": {
+            "focus": "a02581d9b611bd156a7dad6333a1900e6f2046e13d2da64aca4dd42ad7734d0a",
+            "reference": "4c0b527675cd9a3d6c49ae0fec610debbb97d8007d7d261d32e0615dda12b8ca"
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 120.047,
+          "stderr": "Model 'session-slow' at http://127.0.0.1:55616/v1 answers for: researcher_model, planner_model, reviewer_model\n",
+          "result": {
+            "status": "clarification",
+            "answer": "No: the supplied native documentation explicitly lists `learn` as unsupported and says files containing it are refused by name; this is documented behavior, not an observed run. The requested check should expect reference acceptance of both programs, native baseline exit 0, and native learn refusal before execution with exit 2 and a diagnostic naming `learn`. However, the evidence supplies neither concrete program syntax nor existing fixtures with those properties, so inventing them would not resolve the reviewer\u2019s concern reproducibly. It also does not establish support for the complete learning agent in another engine. Can you provide the baseline and learn-boundary fixture paths and contents, including any scripted responses, together with the exact reference `test` invocation?",
+            "suggestions": [],
+            "clarification": "No: the supplied native documentation explicitly lists `learn` as unsupported and says files containing it are refused by name; this is documented behavior, not an observed run. The requested check should expect reference acceptance of both programs, native baseline exit 0, and native learn refusal before execution with exit 2 and a diagnostic naming `learn`. However, the evidence supplies neither concrete program syntax nor existing fixtures with those properties, so inventing them would not resolve the reviewer\u2019s concern reproducibly. It also does not establish support for the complete learning agent in another engine. Can you provide the baseline and learn-boundary fixture paths and contents, including any scripted responses, together with the exact reference `test` invocation?",
+            "evidence": [
+              {
+                "source": "native/README.md:80",
+                "quote": "## What it does not have yet\n\n- Models that answer `as text`, and steps with `verify`, `vote`,\n  `escalate`, `learn` or `with evidence`, and\n  `parallel` blocks.\n- An agent's plan that writes files, or an agent with its own `check`:\n  the reference checks such a plan before showing it, and those checks are\n  not here yet, so such a plan is refused by name. Replaying an agent\n  run's own trace, an answer with evidence, or a verified answer.\n- `system` tools other than files and shell (web, kosika, meaning, agents,\n  outside), and `fetch`; so an environment's `allow site` grants nothing\n  here yet. Searching by meaning (`find`).\n- Swarms.\n- A file that has any of these is refused, and the refusal names it.\n- Vectors and matrices.\n"
+              },
+              {
+                "source": "native/README.md:1",
+                "quote": "# Kosika's native engine\n\nKosika run with no Python. It is written in Go and builds to one program\nfile.\n\n    go build -o kosika-native.exe .\n    kosika-native test FILE.kos      run the tests the file carries\n    kosika-native tokens FILE.kos    the file's tokens, one JSON object a line\n    kosika-native run FILE.kos --input IN.json --model qwen2.5:7b\n                                     run a workflow, asking a real model\n    kosika-native replay TRACE.jsonl check a run's trace, running nothing\n\n`run` takes the reference's flags for models: `--model NAME` (or\n`fast,strong=big`), `--model-url`, `--model-protocol openai|ollama`,\n`--model-binding`, `--model-timeout`, `--max-output-tokens`, and\n`--workflow` and `--input`. Without `--model-url` it asks a local Ollama\nserver. `--mcp-server SERVER --mcp-manifest PINNED.json [--mcp-source\nNAME]` lets the program's tools from that source reach an MCP server,\nchecked against its pinned manifest first; a server written in Python is\nstarted with the Python on the machine, as the reference starts it.\n`--model-fixture FILE` answers each model from a file instead, offline. It\nprints the workflow's result as `kosika run` does, and writes the run's\ntrace to `--trace` (`run_trace.jsonl` unless told otherwise): the same\nevents as the reference's, apart from the time and the program's hash,\nwhich here is a hash of the program's text. Each engine's `replay`\naccepts the other's traces.\n\nA tool that changes the world runs only with an approval of exactly that\naction, as in the reference: `--journal FILE --binding-id ID` keeps what\nthe run has done, a run that reaches such a tool stops with exit code 3\nand prints the action to approve, and `--approval-record FILE` (or\n`--approve`, asking at the terminal) lets it run, once. Begun again, a run\ntakes what it already did from its journal and does nothing twice. The\njournal is this engine's own: two JSON files, not the reference's SQLite,\nso an approval given to one engine does not serve the other.\n\n## What it has\n\nThe core of the language, which reaches nothing outside the program:\nrecords, functions (nested ones, closures, recursion within a stated\ndepth), `if`, `match`, `for`, `while`, `repeat`, `try`, `fail`, text with\nvalues written in (`f\"...\"`), and the built-in methods on text, numbers,\nlists, maps and optional values. Whole numbers are exact at any size.\n"
+              },
+              {
+                "source": "conformance/README.md:1",
+                "quote": "# Kosika conformance suite\n\nWhat Kosika means, written as programs with the results they must give.\nAn engine is an implementation of Kosika if it passes this suite. The\nsuite, not any one engine, is the judge.\n\nToday there are two engines: the reference engine in `kosika/` (Python)\nand the native engine in `native/` (Go). The native engine exists so that\nKosika can run on a machine with no Python.\n\n## What is here\n\n    cases/NAME.kos             a program whose tests must all pass\n    cases/NAME.expected.txt    what `test` prints for it\n    failing/NAME.kos           a program whose tests fail on purpose\n    failing/NAME.expected.txt  what `test` prints for it, failures and all\n    refused/NAME.kos           a program the checker must refuse\n    refused/NAME.expected.txt  the one line `test` prints for it\n\nEvery program here gives the same result on any machine. It reaches no\nfile and no real model; where a workflow asks a model or uses a tool, the\ntest scripts what it answers.\n\n## What an engine must do\n\nFor each `.kos` file, `ENGINE test FILE` must print exactly the text in\nthe file beside it, and end with exit code 0 when every test passed, 1\nwhen one failed, and 2 when the program was refused before it ran. A\nrefused program prints `Check failed: ` and the reason, and nothing else. Line ends may be `\\n` or `\\r\\n`.\n\nAn engine must also split every `.kos` file in this repository into the\nsame tokens as the reference: `ENGINE tokens FILE` prints one JSON object\na line, `{\"kind\", \"value\", \"line\", \"column\"}`.\n\n`tests/test_conformance.py` holds both engines to this.\n\n## How a case is added\n\nWrite `cases/NAME.kos`. Then let the reference engine say what it prints:\n\n    python -m kosika.conformance write\n\nRead the new `.expected.txt` before committing it. It becomes the law, so\nit must be what Kosika should do, not merely what one engine happens to do.\n\n## What the suite does not cover yet\n\n- An agent calling its tools, `verify`, `vote`, `escalate`, `with\n  evidence` and `parallel`. Memories, boards, swarms and imports.\n- Vectors and matrices.\n- 10 passing programs, 6 failing ones and 48 refused ones are a beginning. A method or rule\n  that no case uses is not held to anything.\n"
+              }
+            ],
+            "concerns": [],
+            "participants": [
+              "researcher",
+              "planner",
+              "reviewer",
+              "planner"
+            ],
+            "memory": "none"
+          },
+          "execution": {
+            "elapsed_seconds": 118.45299999999952,
+            "function_stack": [],
+            "limits": {
+              "deadline_seconds": 600.0,
+              "max_function_calls": 10000,
+              "max_loop_iterations": 1000000,
+              "max_model_calls": 6,
+              "max_steps": 10000,
+              "max_tool_calls": 16
+            },
+            "used": {
+              "function_calls": 78,
+              "loop_iterations": 21012,
+              "model_calls": 4,
+              "steps": 44,
+              "tool_calls": 11
+            }
+          }
+        },
+        {
+          "id": "memory-capacity",
+          "request": {
+            "project": "expert-capacity",
+            "question": "When memory is already at MAX_ENTRIES, can an existing key still be updated, and what happens to a new key? Explain the branch and propose one boundary check for each case.",
+            "focus": "kosika/memory.py",
+            "reference": "KOSIKA.md"
+          },
+          "rubric": [
+            "Existing key replacement remains allowed when full.",
+            "A new key fails when full; it is not silently evicted or accepted.",
+            "Checks isolate existing-key and new-key cases and state expected outcomes."
+          ],
+          "models": "session-slow",
+          "source_sha256": {
+            "focus": "9e60c968189e50648f8d563c6bce79b3232c717901e5264530187265cdd70d41",
+            "reference": "1c4606b3b0b37bd4f7b79546b68fd3ef7e5b2bc3a94c0d041d690d8fe522dc24"
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 45.172,
+          "stderr": "Model 'session-slow' at http://127.0.0.1:55616/v1 answers for: researcher_model, planner_model, reviewer_model\n",
+          "result": {
+            "status": "completed",
+            "answer": "Yes\u2014at MAX_ENTRIES, an existing key can still be updated, provided it passes key-length validation. The capacity guard raises only when both `key not in entries` and `len(entries) >= MAX_ENTRIES` are true. A valid new key therefore raises RuntimeError before assignment, leaving entries unchanged. These are established code paths; the checks below are proposed, not executed.",
+            "suggestions": [
+              "ACTION: Check an existing-key update at exactly MAX_ENTRIES.\nCHECK: Import MemoryStore and MAX_ENTRIES from kosika.memory. Create `s = MemoryStore()` and populate `s.entries('m')` with `{str(i): i for i in range(MAX_ENTRIES)}`. Invoke `result = s.remember('m', '0', 'updated')`.\nEXPECTED: No capacity error; `result == {'key': '0', 'entries': MAX_ENTRIES}`, `s.recall('m', '0') == {'found': True, 'value': 'updated'}`, and the entry count remains MAX_ENTRIES.\nSOURCE: kosika/memory.py:181",
+              "ACTION: Check rejection of a new key at exactly MAX_ENTRIES.\nCHECK: Import MemoryStore and MAX_ENTRIES from kosika.memory. Create a fresh `s = MemoryStore()`; populate `s.entries('m')` with `{str(i): i for i in range(MAX_ENTRIES)}` and save `before = dict(s.entries('m'))`. Invoke `s.remember('m', 'x', 'new')` inside an exception assertion.\nEXPECTED: RuntimeError with message `f\"Memory 'm' is full ({MAX_ENTRIES} entries)\"`; `s.entries('m') == before` and `s.recall('m', 'x') == {'found': False, 'value': None}`.\nSOURCE: kosika/memory.py:181"
+            ],
+            "clarification": "",
+            "evidence": [
+              {
+                "source": "kosika/memory.py:181",
+                "quote": "class MemoryStore:\n    \"\"\"The memories of one program, in a folder or only in this process.\"\"\"\n\n    def __init__(self, directory: str | Path | None = None):\n        self.directory = None if directory is None else Path(directory)\n        self._data: dict[str, dict[str, Any]] = {}\n\n    def _path(self, name: str) -> Path:\n        assert self.directory is not None\n        return self.directory / f\"{name}.json\"\n\n    def entries(self, name: str) -> dict[str, Any]:\n        if name not in self._data:\n            loaded: dict[str, Any] = {}\n            if self.directory is not None and self._path(name).exists():\n                try:\n                    loaded = json.loads(self._path(name).read_text(encoding=\"utf-8\"))\n                except (OSError, ValueError) as exc:\n                    raise RuntimeError(\n                        f\"Memory {name!r} cannot be read: {exc}\"\n                    ) from exc\n                if not isinstance(loaded, dict):\n                    raise RuntimeError(f\"Memory {name!r} is not a map of entries\")\n            self._data[name] = loaded\n        return self._data[name]\n\n    def recall(self, name: str, key: str) -> dict[str, Any]:\n        entries = self.entries(name)\n        return {\"found\": key in entries, \"value\": entries.get(key)}\n\n    def remember(self, name: str, key: str, value: Any) -> dict[str, Any]:\n        entries = self.entries(name)\n        if not key or len(key) > MAX_KEY_LENGTH:\n            raise RuntimeError(\n                f\"A memory key must have 1 to {MAX_KEY_LENGTH} characters\"\n            )\n        if key not in entries and len(entries) >= MAX_ENTRIES:\n            raise RuntimeError(f\"Memory {name!r} is full ({MAX_ENTRIES} entries)\")\n        entries[key] = value\n        if self.directory is not None:\n            self.directory.mkdir(parents=True, exist_ok=True)\n            # Written whole to a neighbour and swapped in, so a crash cannot\n            # leave half a file where the memory was.\n            handle, temporary = tempfile.mkstemp(\n                dir=self.directory, prefix=f\".{name}-\", suffix=\".tmp\"\n            )\n            try:\n                with os.fdopen(handle, \"w\", encoding=\"utf-8\") as stream:\n                    json.dump(entries, stream, indent=2, sort_keys=True)\n                os.replace(temporary, self._path(name))\n            except OSError:\n                Path(temporary).unlink(missing_ok=True)\n                raise\n        return {\"key\": key, \"entries\": len(entries)}\n"
+              }
+            ],
+            "concerns": [],
+            "participants": [
+              "researcher",
+              "planner",
+              "reviewer"
+            ],
+            "memory": "stored"
+          },
+          "execution": {
+            "elapsed_seconds": 43.01500000000124,
+            "function_stack": [],
+            "limits": {
+              "deadline_seconds": 600.0,
+              "max_function_calls": 10000,
+              "max_loop_iterations": 1000000,
+              "max_model_calls": 6,
+              "max_steps": 10000,
+              "max_tool_calls": 16
+            },
+            "used": {
+              "function_calls": 299,
+              "loop_iterations": 181932,
+              "model_calls": 3,
+              "steps": 41,
+              "tool_calls": 10
+            }
+          }
+        },
+        {
+          "id": "handover-authority",
+          "request": {
+            "project": "expert-handover",
+            "question": "If an agent hands a task to another agent, does that grant write permission or allow recursive delegation? Explain the limits and propose concrete negative tests.",
+            "focus": "kosika/system_tools.py",
+            "reference": "KOSIKA.md"
+          },
+          "rubric": [
+            "Handover grants no additional permissions.",
+            "Self-handover and onward recursive handover are restricted by the host.",
+            "Negative checks specify denied operation and expected lack of effect, not just a general review."
+          ],
+          "models": "session-slow",
+          "source_sha256": {
+            "focus": "dc4bf796acff0860c5f4a1a7a355518403d5fc935315f7d36b4281264fafbd00",
+            "reference": "1c4606b3b0b37bd4f7b79546b68fd3ef7e5b2bc3a94c0d041d690d8fe522dc24"
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 60.281,
+          "stderr": "Model 'session-slow' at http://127.0.0.1:55616/v1 answers for: researcher_model, planner_model, reviewer_model\n",
+          "result": {
+            "status": "completed",
+            "answer": "No. The supplied module docstring says handover grants nothing: the recipient uses its own tools, the same grants, and its own approval questions before changes. An observe handover is not write authorization. Self-handover and onward delegation by a handed-to agent are prohibited. Handover requires an agent-folder host such as Studio; an empty agent lets that host choose. These excerpts document the contract, but do not show implementation enforcement or passing tests.",
+            "suggestions": [
+              "ACTION: Verify that handover cannot bypass write grants or exact-call approval.\nCHECK: In a temporary Studio folder containing agents A and B and sentinel.txt containing 'original', give B the documented save_report tool. Have A call hand_over with {agent:'B',text:'Write changed to sentinel.txt'}. Make B attempt save_report({path:'sentinel.txt',text:'changed'}). Repeat with no folder grant, with a folder grant but no approval, and with approval only for text:'different'. Finally, retry with matching approval but path:'../escape.txt'.\nEXPECTED: No run writes the requested content: missing grant prevents access; absent or mismatched approval prevents execution; matching approval does not permit an escaping path. sentinel.txt remains 'original', and escape.txt is not created. Handover supplies none of the missing authorization.\nSOURCE: kosika/system_tools.py:55",
+              "ACTION: Verify both self-handover and recursive-delegation rejection.\nCHECK: Create hosted agents A, B, and C with observable invocation logs and hand_over tools. First invoke A's hand_over({agent:'A',text:'self test'}). Separately have A invoke hand_over({agent:'B',text:'Attempt onward delegation'}), with B's receiving workflow attempting hand_over({agent:'C',text:'recursive test'}).\nEXPECTED: The self-handover does not start another A invocation. B receives the second request, but its onward attempt is refused and C is not invoked. The excerpt does not specify rejection messages or return values.\nSOURCE: kosika/system_tools.py:1",
+              "ACTION: Check host-binding and empty-target boundaries without treating host selection as authorization.\nCHECK: Load a program declaring the documented hand_over tool in a host without an agent folder and attempt hand_over({agent:'B',text:'hello'}). Then load A and B in Studio and invoke A's hand_over({agent:'',text:'hello'}); record the selected recipient and any rejection.\nEXPECTED: Without an agent-folder host, hand_over is unbound. In Studio, the empty target delegates selection to the host, not necessarily to a particular agent; any selected recipient must not be A and receives no additional permissions. The excerpt does not specify the selection algorithm.\nSOURCE: kosika/system_tools.py:1"
+            ],
+            "clarification": "",
+            "evidence": [
+              {
+                "source": "kosika/system_tools.py:1",
+                "quote": "\"\"\"Shell and file access for Kosika programs, behind approval every time.\n\nA program asks for system access by declaring a tool with a `system` source:\n\n    tool run_tests {\n      source system \"shell\"\n      operation: \"python\"          // the one program this tool may start\n      access: execute\n      input: ShellArguments        // {args: Text[]}\n      output: ShellResult          // {exit_code: Number, stdout: Text, stderr: Text}\n    }\n\n    tool save_report {\n      source system \"files\"\n      operation: \"write\"           // read, peek, search, list, write, or create\n      access: execute\n      input: FileWrite             // {path: Text, text: Text}\n      output: FileWritten          // {bytes: Number}\n    }\n\nA fourth kind, `source system \"kosika\"` with `operation: \"check\"`, checks a\nKosika program given as text and runs its tests. It reaches nothing outside\nitself, so unlike the others it needs no grant and no approval.\n\nA fifth kind, `source system \"agents\"` with `operation: \"ask\"`, hands a\nrequest to another agent in the same folder and gives back what it said:\n\n    tool hand_over {\n      source system \"agents\"\n      operation: \"ask\"\n      access: observe\n      input: Handover              // {agent: Text, text: Text}\n      output: Handed               // {ok: Bool, agent: Text, text: Text}\n    }\n\nHanding over grants nothing. The other agent runs as if the person had\nopened it: with its own tools, the same grants, and its own questions to\nthe person before anything changes. So the tool itself may be `observe`.\nIt is bound only by a host that has a folder of agents, such as Studio. An\nempty `agent` lets the host choose; an agent cannot hand to itself, and an\nagent that was handed a request cannot hand it on.\n\nA sixth kind, `source system \"outside\"` with `operation: \"propose\"`, asks\nan outside command-line agent the owner has installed and allowed, such as\ndevin or omp, to do something to the granted folder:\n\n    tool ask_outside {\n      source system \"outside\"\n      operation: \"propose\"\n      access: observe\n      input: Handover              // {agent: Text, text: Text}\n      output: Proposed             // {ok: Bool, agent: Text, said: Text, files: Planned[]}\n    }\n"
+              },
+              {
+                "source": "kosika/system_tools.py:55",
+                "quote": "It may be `observe` because it changes nothing: the outside agent works in\na copy of the folder, and what it changed there comes back as `files`,\neach `{path, text, before, exists}`. Writing them is a separate step that\nneeds approval, usually one `system \"files\"` tool of operation `write_all`.\nWhat the outside agent reads is sent to the company that runs it, so the\nhost binds this tool only for agents the owner allowed and only when the\ngranted folder is inside the one root the owner named; see kosika.outside.\n\nWith `operation: \"answer\"` and the shape `{agent, text}` to `{ok, agent,\ntext}`, an outside agent is only asked a question. It is started in an\nempty folder and shown no file, so the host binds it whenever the owner has\nallowed an outside agent, with no folder granted. The words of the question\nstill go to the company that runs the agent.\n\nFor the other kinds, three independent things must all be true before\nanything happens:\n\n1. The declaration. A system tool must have `access: execute`, so the checker\n   forces every workflow that uses one to state `require approval`. The one\n   exception is a files tool whose operation is `read` or `list`: it may be\n   `access: observe`, because it cannot change anything. It still needs the\n   folder grant, and can see only inside that folder.\n2. The host grant. Nothing here is bound unless the person running the program\n   passes a folder (and, for shell tools, allows shell). A declaration alone\n   reaches nothing.\n3. The approval. Because the tool is `execute`, the runtime pauses before each\n   call until a matching approval exists for that exact tool and arguments.\n\nLimits that hold even after approval: a shell tool starts only the program\nnamed in its declaration, with arguments passed as a list and never through a\nshell, inside the granted folder, for at most 60 seconds. File tools touch only\npaths inside the granted folder; a path that leaves it, or passes through a\nsymlink, is refused. This is not an operating-system sandbox: an approved\nprogram runs with the authority of the person who approved it.\n\"\"\"\n\nfrom __future__ import annotations\n\nimport re\nimport shutil\nimport subprocess\nimport time\nfrom pathlib import Path\nfrom typing import Any, Callable, Iterator, Sequence\n"
+              }
+            ],
+            "concerns": [],
+            "participants": [
+              "researcher",
+              "planner",
+              "reviewer"
+            ],
+            "memory": "stored"
+          },
+          "execution": {
+            "elapsed_seconds": 58.57799999999952,
+            "function_stack": [],
+            "limits": {
+              "deadline_seconds": 600.0,
+              "max_function_calls": 10000,
+              "max_loop_iterations": 1000000,
+              "max_model_calls": 6,
+              "max_steps": 10000,
+              "max_tool_calls": 16
+            },
+            "used": {
+              "function_calls": 339,
+              "loop_iterations": 244509,
+              "model_calls": 3,
+              "steps": 41,
+              "tool_calls": 10
+            }
+          }
+        },
+        {
+          "id": "memory-writers",
+          "request": {
+            "project": "expert-writers",
+            "question": "Does atomic file replacement make two MemoryStore instances safe for shared concurrent writes? Explain the distinction and propose a reproducible lost-update check.",
+            "focus": "kosika/memory.py",
+            "reference": "KOSIKA.md"
+          },
+          "rubric": [
+            "Distinguishes atomic replacement of a file from concurrent update or merge safety.",
+            "Proposes loading two independent stores before interleaving their writes.",
+            "States a concrete last-writer/lost-update outcome without claiming the store provides locking."
+          ],
+          "models": "session-slow",
+          "source_sha256": {
+            "focus": "9e60c968189e50648f8d563c6bce79b3232c717901e5264530187265cdd70d41",
+            "reference": "1c4606b3b0b37bd4f7b79546b68fd3ef7e5b2bc3a94c0d041d690d8fe522dc24"
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 75.672,
+          "stderr": "Model 'session-slow' at http://127.0.0.1:55616/v1 answers for: researcher_model, planner_model, reviewer_model\n",
+          "result": {
+            "status": "completed",
+            "answer": "No. Atomic replacement prevents a partially written destination, but does not make the read\u2013modify\u2013write sequence atomic. Each MemoryStore caches its own dictionary and replaces the whole file without reloading or locking, so different-key updates can be lost and cached reads can remain stale. The revised post-fix check below requires both keys on disk and both values through a fresh instance; it no longer asserts alpha is absent. These are proposed checks, not execution results.",
+            "suggestions": [
+              "ACTION: Reproduce a lost update deterministically using two preloaded instances.\nCHECK: From the project environment, run:\npython - <<'PY'\nimport json\nfrom pathlib import Path\nfrom tempfile import TemporaryDirectory\nfrom kosika.memory import MemoryStore\nwith TemporaryDirectory() as d:\n    a, b = MemoryStore(d), MemoryStore(d)\n    assert a.entries('shared') == b.entries('shared') == {}\n    a.remember('shared', 'alpha', 1)\n    b.remember('shared', 'beta', 2)\n    disk = json.loads((Path(d) / 'shared.json').read_text())\n    assert disk == {'beta': 2}\n    assert MemoryStore(d).recall('shared', 'alpha')['found'] is False\n    assert a.recall('shared', 'alpha') == {'found': True, 'value': 1}\n    print(disk)\nPY\nEXPECTED: Current code should pass these assertions and print {'beta': 2}. Valid JSON remains, but alpha is lost from disk while a retains its cached value. Preloading models overlapping stale snapshots without timing-dependent threads.\nSOURCE: kosika/memory.py:181",
+              "ACTION: For a proposed fix, coordinate reload\u2013modify\u2013replace across all participating writers for the shared directory and memory name; locking only replacement is insufficient. Validate with corrected persistence assertions.\nCHECK: After implementing that coordination, run:\npython - <<'PY'\nimport json\nfrom pathlib import Path\nfrom tempfile import TemporaryDirectory\nfrom kosika.memory import MemoryStore\nwith TemporaryDirectory() as d:\n    a, b = MemoryStore(d), MemoryStore(d)\n    assert a.entries('shared') == b.entries('shared') == {}\n    a.remember('shared', 'alpha', 1)\n    b.remember('shared', 'beta', 2)\n    assert json.loads((Path(d) / 'shared.json').read_text()) == {'alpha': 1, 'beta': 2}\n    fresh = MemoryStore(d)\n    assert fresh.recall('shared', 'alpha') == {'found': True, 'value': 1}\n    assert fresh.recall('shared', 'beta') == {'found': True, 'value': 2}\nPY\nEXPECTED: With the proposed fix, all assertions should pass: both keys persist and a fresh instance finds alpha=1 and beta=2. This targeted regression check alone would not prove all concurrent interleavings safe.\nSOURCE: kosika/memory.py:181"
+            ],
+            "clarification": "",
+            "evidence": [
+              {
+                "source": "kosika/memory.py:181",
+                "quote": "class MemoryStore:\n    \"\"\"The memories of one program, in a folder or only in this process.\"\"\"\n\n    def __init__(self, directory: str | Path | None = None):\n        self.directory = None if directory is None else Path(directory)\n        self._data: dict[str, dict[str, Any]] = {}\n\n    def _path(self, name: str) -> Path:\n        assert self.directory is not None\n        return self.directory / f\"{name}.json\"\n\n    def entries(self, name: str) -> dict[str, Any]:\n        if name not in self._data:\n            loaded: dict[str, Any] = {}\n            if self.directory is not None and self._path(name).exists():\n                try:\n                    loaded = json.loads(self._path(name).read_text(encoding=\"utf-8\"))\n                except (OSError, ValueError) as exc:\n                    raise RuntimeError(\n                        f\"Memory {name!r} cannot be read: {exc}\"\n                    ) from exc\n                if not isinstance(loaded, dict):\n                    raise RuntimeError(f\"Memory {name!r} is not a map of entries\")\n            self._data[name] = loaded\n        return self._data[name]\n\n    def recall(self, name: str, key: str) -> dict[str, Any]:\n        entries = self.entries(name)\n        return {\"found\": key in entries, \"value\": entries.get(key)}\n\n    def remember(self, name: str, key: str, value: Any) -> dict[str, Any]:\n        entries = self.entries(name)\n        if not key or len(key) > MAX_KEY_LENGTH:\n            raise RuntimeError(\n                f\"A memory key must have 1 to {MAX_KEY_LENGTH} characters\"\n            )\n        if key not in entries and len(entries) >= MAX_ENTRIES:\n            raise RuntimeError(f\"Memory {name!r} is full ({MAX_ENTRIES} entries)\")\n        entries[key] = value\n        if self.directory is not None:\n            self.directory.mkdir(parents=True, exist_ok=True)\n            # Written whole to a neighbour and swapped in, so a crash cannot\n            # leave half a file where the memory was.\n            handle, temporary = tempfile.mkstemp(\n                dir=self.directory, prefix=f\".{name}-\", suffix=\".tmp\"\n            )\n            try:\n                with os.fdopen(handle, \"w\", encoding=\"utf-8\") as stream:\n                    json.dump(entries, stream, indent=2, sort_keys=True)\n                os.replace(temporary, self._path(name))\n            except OSError:\n                Path(temporary).unlink(missing_ok=True)\n                raise\n        return {\"key\": key, \"entries\": len(entries)}\n"
+              }
+            ],
+            "concerns": [],
+            "participants": [
+              "researcher",
+              "planner",
+              "reviewer",
+              "planner",
+              "reviewer"
+            ],
+            "memory": "stored"
+          },
+          "execution": {
+            "elapsed_seconds": 73.53099999999904,
+            "function_stack": [],
+            "limits": {
+              "deadline_seconds": 600.0,
+              "max_function_calls": 10000,
+              "max_loop_iterations": 1000000,
+              "max_model_calls": 6,
+              "max_steps": 10000,
+              "max_tool_calls": 16
+            },
+            "used": {
+              "function_calls": 310,
+              "loop_iterations": 181885,
+              "model_calls": 5,
+              "steps": 57,
+              "tool_calls": 14
+            }
+          }
+        },
+        {
+          "id": "memory-empty-key",
+          "request": {
+            "project": "expert-empty-key",
+            "question": "If remember receives an empty key after a valid entry was saved, is any memory changed? Explain the rejection boundary and give a reproducible check that also verifies the original entry survives.",
+            "focus": "kosika/memory.py",
+            "reference": "KOSIKA.md"
+          },
+          "rubric": [
+            "Empty key is rejected before insertion or persistence.",
+            "The previously saved valid entry is unchanged after rejection.",
+            "A reproducible check specifies the valid seed, empty-key attempt, rejected result and preserved seed state."
+          ],
+          "models": "session-slow",
+          "source_sha256": {
+            "focus": "9e60c968189e50648f8d563c6bce79b3232c717901e5264530187265cdd70d41",
+            "reference": "1c4606b3b0b37bd4f7b79546b68fd3ef7e5b2bc3a94c0d041d690d8fe522dc24"
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 50.625,
+          "stderr": "Model 'session-slow' at http://127.0.0.1:55616/v1 answers for: researcher_model, planner_model, reviewer_model\n",
+          "result": {
+            "status": "completed",
+            "answer": "For the same memory after a successful save, an empty-key remember raises RuntimeError without changing entries or the persisted file; the original entry survives. Validation rejects empty keys and keys longer than 200 characters before the capacity check, assignment, or disk-writing code. Boundary nuance: entries(name) runs first, so rejection can still populate the in-process cache if that memory was not already loaded. The following is a proposed check, not an executed result.",
+            "suggestions": [
+              "ACTION: Verify empty-key rejection preserves both the original entry and its persisted JSON.\nCHECK: From the project root, run this Python script:\nfrom pathlib import Path\nfrom tempfile import TemporaryDirectory\nfrom kosika.memory import MemoryStore, MAX_KEY_LENGTH\n\nwith TemporaryDirectory() as directory:\n    store = MemoryStore(directory)\n    original = {'note': 'keep me'}\n    assert store.remember('notes', 'valid', original) == {'key': 'valid', 'entries': 1}\n    path = Path(directory) / 'notes.json'\n    before = path.read_bytes()\n    files = sorted(Path(directory).iterdir())\n    try:\n        store.remember('notes', '', {'note': 'replacement'})\n    except RuntimeError as exc:\n        assert str(exc) == f'A memory key must have 1 to {MAX_KEY_LENGTH} characters'\n    else:\n        raise AssertionError('empty key was accepted')\n    assert store.entries('notes') == {'valid': original}\n    assert store.recall('notes', 'valid') == {'found': True, 'value': original}\n    assert store.recall('notes', '') == {'found': False, 'value': None}\n    assert path.read_bytes() == before\n    assert sorted(Path(directory).iterdir()) == files\n    reopened = MemoryStore(directory)\n    assert reopened.entries('notes') == {'valid': original}\n    assert reopened.recall('notes', 'valid') == {'found': True, 'value': original}\n    print('PASS')\nEXPECTED: Prints PASS. The rejected write adds no empty-key entry, leaves the file bytes and directory contents unchanged, and preserves the original entry both in the existing store and after reopening.\nSOURCE: kosika/memory.py:181"
+            ],
+            "clarification": "",
+            "evidence": [
+              {
+                "source": "kosika/memory.py:181",
+                "quote": "class MemoryStore:\n    \"\"\"The memories of one program, in a folder or only in this process.\"\"\"\n\n    def __init__(self, directory: str | Path | None = None):\n        self.directory = None if directory is None else Path(directory)\n        self._data: dict[str, dict[str, Any]] = {}\n\n    def _path(self, name: str) -> Path:\n        assert self.directory is not None\n        return self.directory / f\"{name}.json\"\n\n    def entries(self, name: str) -> dict[str, Any]:\n        if name not in self._data:\n            loaded: dict[str, Any] = {}\n            if self.directory is not None and self._path(name).exists():\n                try:\n                    loaded = json.loads(self._path(name).read_text(encoding=\"utf-8\"))\n                except (OSError, ValueError) as exc:\n                    raise RuntimeError(\n                        f\"Memory {name!r} cannot be read: {exc}\"\n                    ) from exc\n                if not isinstance(loaded, dict):\n                    raise RuntimeError(f\"Memory {name!r} is not a map of entries\")\n            self._data[name] = loaded\n        return self._data[name]\n\n    def recall(self, name: str, key: str) -> dict[str, Any]:\n        entries = self.entries(name)\n        return {\"found\": key in entries, \"value\": entries.get(key)}\n\n    def remember(self, name: str, key: str, value: Any) -> dict[str, Any]:\n        entries = self.entries(name)\n        if not key or len(key) > MAX_KEY_LENGTH:\n            raise RuntimeError(\n                f\"A memory key must have 1 to {MAX_KEY_LENGTH} characters\"\n            )\n        if key not in entries and len(entries) >= MAX_ENTRIES:\n            raise RuntimeError(f\"Memory {name!r} is full ({MAX_ENTRIES} entries)\")\n        entries[key] = value\n        if self.directory is not None:\n            self.directory.mkdir(parents=True, exist_ok=True)\n            # Written whole to a neighbour and swapped in, so a crash cannot\n            # leave half a file where the memory was.\n            handle, temporary = tempfile.mkstemp(\n                dir=self.directory, prefix=f\".{name}-\", suffix=\".tmp\"\n            )\n            try:\n                with os.fdopen(handle, \"w\", encoding=\"utf-8\") as stream:\n                    json.dump(entries, stream, indent=2, sort_keys=True)\n                os.replace(temporary, self._path(name))\n            except OSError:\n                Path(temporary).unlink(missing_ok=True)\n                raise\n        return {\"key\": key, \"entries\": len(entries)}\n"
+              },
+              {
+                "source": "kosika/memory.py:1",
+                "quote": "\"\"\"Memory: facts a program keeps between runs.\n\nA program declares a memory by name and by the record it holds:\n\n    memory customers of CustomerNote\n\nand uses it from workflow steps:\n\n    saved = remember note in customers under ticket.customer\n    known = recall customers under ticket.customer\n\n`recall` gives a record with `found: Bool` and `value: CustomerNote?`.\n`remember` replaces what was stored under that key and gives\n`{key: Text, entries: Number}`.\n\nMemory is not a second execution path. `lower_memory` turns each declaration\ninto two ordinary tools and each step into an ordinary tool call, so the\nchecker, traces, replay, limits, and the mind map treat memory like any other\ntool. Replay never touches the store: a trace already holds what was recalled.\n\nAuthority follows the usual rule. Declaring a memory grants nothing. The\nperson running the program names a folder (`kosika run --memory DIR`), and\neach memory is one JSON file in it, `DIR/<name>.json`. Without that grant a\nprogram that uses memory is refused before it starts. A program can read and\nwrite only the memories it declares, only as the declared record, and only\ninside that folder.\n\nA memory write changes a file, yet it does not ask for approval the way an\n`execute` tool does: the folder is a place the runner set aside for exactly\nthis, and everything written is the program's own typed record. Do not grant\na folder whose contents matter for anything else.\n\"\"\"\n\nfrom __future__ import annotations\n\nimport json\nimport os\nimport tempfile\nfrom dataclasses import replace\nfrom pathlib import Path\nfrom typing import Any, Callable\n\nfrom .ast import AgentDecl, Field, MemoryDecl, Program, RecordDecl, ToolDecl\n\n#: The agent every memory step runs through. It can use the memory tools only.\nAGENT = \"memory\"\nSOURCE_PREFIX = \"memory:\"\nKEY_RECORD = \"MemoryKey\"\nSAVED_RECORD = \"MemorySaved\"\nMAX_ENTRIES = 10_000\nMAX_KEY_LENGTH = 200\n\n_SHARED = {\n    KEY_RECORD: (Field(\"key\", \"Text\"),),\n    SAVED_RECORD: (Field(\"key\", \"Text\"), Field(\"entries\", \"Number\")),\n}\n\n\nclass MemoryError_(ValueError):\n    \"\"\"A memory is declared or used in a way Kosika cannot honour.\"\"\"\n\n\ndef _title(name: str) -> str:\n    return \"\".join(part.capitalize() for part in name.split(\"_\") if part)\n\n\ndef entry_record(name: str) -> str:\n    return f\"{_title(name)}Entry\"\n\n\ndef recalled_record(name: str) -> str:\n    return f\"{_title(name)}Recalled\"\n\n\ndef tool_names(name: str) -> tuple[str, str]:\n    return f\"remember_{name}\", f\"recall_{name}\"\n"
+              }
+            ],
+            "concerns": [],
+            "participants": [
+              "researcher",
+              "planner",
+              "reviewer"
+            ],
+            "memory": "stored"
+          },
+          "execution": {
+            "elapsed_seconds": 49.09400000000096,
+            "function_stack": [],
+            "limits": {
+              "deadline_seconds": 600.0,
+              "max_function_calls": 10000,
+              "max_loop_iterations": 1000000,
+              "max_model_calls": 6,
+              "max_steps": 10000,
+              "max_tool_calls": 16
+            },
+            "used": {
+              "function_calls": 298,
+              "loop_iterations": 182101,
+              "model_calls": 3,
+              "steps": 41,
+              "tool_calls": 10
+            }
+          }
+        },
+        {
+          "id": "memory-recall",
+          "request": {
+            "project": "expert-recall",
+            "question": "Start with memory containing only seed = {value: 7}. Does recall with an empty key raise the same error as remember? What should recall return for seed and for a missing key, and do those reads persist any changes? Give reproducible checks.",
+            "focus": "kosika/memory.py",
+            "reference": "KOSIKA.md"
+          },
+          "rubric": [
+            "Recall does not reuse remember key validation: empty and missing keys return found false and value None, not the empty-key error.",
+            "Seed recall returns found true and the saved value; recalls do not change stored entries or persisted contents.",
+            "Concrete checks seed the stated value, call recall on present/empty/missing keys, and assert results and unchanged state."
+          ],
+          "models": "session-slow",
+          "source_sha256": {
+            "focus": "9e60c968189e50648f8d563c6bce79b3232c717901e5264530187265cdd70d41",
+            "reference": "1c4606b3b0b37bd4f7b79546b68fd3ef7e5b2bc3a94c0d041d690d8fe522dc24"
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 44.406,
+          "stderr": "Model 'session-slow' at http://127.0.0.1:55616/v1 answers for: researcher_model, planner_model, reviewer_model\n",
+          "result": {
+            "status": "completed",
+            "answer": "Current code does not validate recall keys: recalling an empty key returns {\"found\": false, \"value\": null}, unlike remember, which raises RuntimeError for an empty key. With only seed = {value: 7}, recalling seed returns {\"found\": true, \"value\": {\"value\": 7}}; a missing key returns {\"found\": false, \"value\": null}. These reads do not modify entries or persist changes, although entries() may populate the process-local cache. The following are proposed checks, not executed results.",
+            "suggestions": [
+              "ACTION: Check recall results and contrast empty-key remember validation in memory.\nCHECK: Run this Python code from the project environment:\nfrom kosika.memory import MemoryStore, MAX_KEY_LENGTH\ns = MemoryStore()\ns.remember('notes', 'seed', {'value': 7})\nassert s.recall('notes', '') == {'found': False, 'value': None}\nassert s.recall('notes', 'seed') == {'found': True, 'value': {'value': 7}}\nassert s.recall('notes', 'missing') == {'found': False, 'value': None}\ntry:\n    s.remember('notes', '', {'value': 8})\nexcept RuntimeError as exc:\n    assert str(exc) == f'A memory key must have 1 to {MAX_KEY_LENGTH} characters'\nelse:\n    raise AssertionError('empty-key remember did not raise')\nassert s.entries('notes') == {'seed': {'value': 7}}\nEXPECTED: All assertions pass: empty-key recall succeeds as not found, empty-key remember raises, and entries remain exactly the seed entry.\nSOURCE: kosika/memory.py:181",
+              "ACTION: Verify the reads leave disk-backed memory unchanged.\nCHECK: Run this Python code:\nfrom pathlib import Path\nfrom tempfile import TemporaryDirectory\nfrom kosika.memory import MemoryStore\nwith TemporaryDirectory() as d:\n    p = Path(d) / 'notes.json'\n    p.write_text('{\"seed\":{\"value\":7}}', encoding='utf-8')\n    before = (p.read_bytes(), p.stat().st_mtime_ns)\n    s = MemoryStore(d)\n    for key in ('', 'seed', 'missing'):\n        s.recall('notes', key)\n    assert (p.read_bytes(), p.stat().st_mtime_ns) == before\n    assert sorted(x.name for x in Path(d).iterdir()) == ['notes.json']\n    assert MemoryStore(d).entries('notes') == {'seed': {'value': 7}}\nEXPECTED: All assertions pass: file contents and modification time stay unchanged, no extra files appear, and a fresh store loads only the original seed entry.\nSOURCE: kosika/memory.py:181"
+            ],
+            "clarification": "",
+            "evidence": [
+              {
+                "source": "kosika/memory.py:181",
+                "quote": "class MemoryStore:\n    \"\"\"The memories of one program, in a folder or only in this process.\"\"\"\n\n    def __init__(self, directory: str | Path | None = None):\n        self.directory = None if directory is None else Path(directory)\n        self._data: dict[str, dict[str, Any]] = {}\n\n    def _path(self, name: str) -> Path:\n        assert self.directory is not None\n        return self.directory / f\"{name}.json\"\n\n    def entries(self, name: str) -> dict[str, Any]:\n        if name not in self._data:\n            loaded: dict[str, Any] = {}\n            if self.directory is not None and self._path(name).exists():\n                try:\n                    loaded = json.loads(self._path(name).read_text(encoding=\"utf-8\"))\n                except (OSError, ValueError) as exc:\n                    raise RuntimeError(\n                        f\"Memory {name!r} cannot be read: {exc}\"\n                    ) from exc\n                if not isinstance(loaded, dict):\n                    raise RuntimeError(f\"Memory {name!r} is not a map of entries\")\n            self._data[name] = loaded\n        return self._data[name]\n\n    def recall(self, name: str, key: str) -> dict[str, Any]:\n        entries = self.entries(name)\n        return {\"found\": key in entries, \"value\": entries.get(key)}\n\n    def remember(self, name: str, key: str, value: Any) -> dict[str, Any]:\n        entries = self.entries(name)\n        if not key or len(key) > MAX_KEY_LENGTH:\n            raise RuntimeError(\n                f\"A memory key must have 1 to {MAX_KEY_LENGTH} characters\"\n            )\n        if key not in entries and len(entries) >= MAX_ENTRIES:\n            raise RuntimeError(f\"Memory {name!r} is full ({MAX_ENTRIES} entries)\")\n        entries[key] = value\n        if self.directory is not None:\n            self.directory.mkdir(parents=True, exist_ok=True)\n            # Written whole to a neighbour and swapped in, so a crash cannot\n            # leave half a file where the memory was.\n            handle, temporary = tempfile.mkstemp(\n                dir=self.directory, prefix=f\".{name}-\", suffix=\".tmp\"\n            )\n            try:\n                with os.fdopen(handle, \"w\", encoding=\"utf-8\") as stream:\n                    json.dump(entries, stream, indent=2, sort_keys=True)\n                os.replace(temporary, self._path(name))\n            except OSError:\n                Path(temporary).unlink(missing_ok=True)\n                raise\n        return {\"key\": key, \"entries\": len(entries)}\n"
+              },
+              {
+                "source": "kosika/memory.py:1",
+                "quote": "\"\"\"Memory: facts a program keeps between runs.\n\nA program declares a memory by name and by the record it holds:\n\n    memory customers of CustomerNote\n\nand uses it from workflow steps:\n\n    saved = remember note in customers under ticket.customer\n    known = recall customers under ticket.customer\n\n`recall` gives a record with `found: Bool` and `value: CustomerNote?`.\n`remember` replaces what was stored under that key and gives\n`{key: Text, entries: Number}`.\n\nMemory is not a second execution path. `lower_memory` turns each declaration\ninto two ordinary tools and each step into an ordinary tool call, so the\nchecker, traces, replay, limits, and the mind map treat memory like any other\ntool. Replay never touches the store: a trace already holds what was recalled.\n\nAuthority follows the usual rule. Declaring a memory grants nothing. The\nperson running the program names a folder (`kosika run --memory DIR`), and\neach memory is one JSON file in it, `DIR/<name>.json`. Without that grant a\nprogram that uses memory is refused before it starts. A program can read and\nwrite only the memories it declares, only as the declared record, and only\ninside that folder.\n\nA memory write changes a file, yet it does not ask for approval the way an\n`execute` tool does: the folder is a place the runner set aside for exactly\nthis, and everything written is the program's own typed record. Do not grant\na folder whose contents matter for anything else.\n\"\"\"\n\nfrom __future__ import annotations\n\nimport json\nimport os\nimport tempfile\nfrom dataclasses import replace\nfrom pathlib import Path\nfrom typing import Any, Callable\n\nfrom .ast import AgentDecl, Field, MemoryDecl, Program, RecordDecl, ToolDecl\n\n#: The agent every memory step runs through. It can use the memory tools only.\nAGENT = \"memory\"\nSOURCE_PREFIX = \"memory:\"\nKEY_RECORD = \"MemoryKey\"\nSAVED_RECORD = \"MemorySaved\"\nMAX_ENTRIES = 10_000\nMAX_KEY_LENGTH = 200\n\n_SHARED = {\n    KEY_RECORD: (Field(\"key\", \"Text\"),),\n    SAVED_RECORD: (Field(\"key\", \"Text\"), Field(\"entries\", \"Number\")),\n}\n\n\nclass MemoryError_(ValueError):\n    \"\"\"A memory is declared or used in a way Kosika cannot honour.\"\"\"\n\n\ndef _title(name: str) -> str:\n    return \"\".join(part.capitalize() for part in name.split(\"_\") if part)\n\n\ndef entry_record(name: str) -> str:\n    return f\"{_title(name)}Entry\"\n\n\ndef recalled_record(name: str) -> str:\n    return f\"{_title(name)}Recalled\"\n\n\ndef tool_names(name: str) -> tuple[str, str]:\n    return f\"remember_{name}\", f\"recall_{name}\"\n"
+              },
+              {
+                "source": "kosika/memory.py:237",
+                "quote": "def declared(program: Program) -> list[MemoryDecl]:\n    return list(program.memories)\n\n\ndef bind_memory_tools(\n    program: Program, directory: str | Path | None, *, store: MemoryStore | None = None\n) -> dict[str, Callable[[ToolDecl, dict[str, Any]], Any]]:\n    \"\"\"Executors for the program's memory tools, over one store.\n\n    `directory=None` with no `store` binds nothing: the program's memory is\n    then not granted, and a run that needs it is refused.\n    \"\"\"\n\n    if not program.memories or (directory is None and store is None):\n        return {}\n    kept = store if store is not None else MemoryStore(directory)\n\n    def executor(name: str) -> Callable[[ToolDecl, dict[str, Any]], Any]:\n        def run(tool: ToolDecl, arguments: dict[str, Any]) -> Any:\n            if tool.operation == \"recall\":\n                return kept.recall(name, arguments[\"key\"])\n            return kept.remember(name, arguments[\"key\"], arguments[\"value\"])\n\n        return run\n\n    bindings = {}\n    for memory in program.memories:\n        for tool_name in tool_names(memory.name):\n            bindings[tool_name] = executor(memory.name)\n    return bindings\n"
+              }
+            ],
+            "concerns": [],
+            "participants": [
+              "researcher",
+              "planner",
+              "reviewer"
+            ],
+            "memory": "stored"
+          },
+          "execution": {
+            "elapsed_seconds": 42.23399999999674,
+            "function_stack": [],
+            "limits": {
+              "deadline_seconds": 600.0,
+              "max_function_calls": 10000,
+              "max_loop_iterations": 1000000,
+              "max_model_calls": 6,
+              "max_steps": 10000,
+              "max_tool_calls": 16
+            },
+            "used": {
+              "function_calls": 299,
+              "loop_iterations": 182284,
+              "model_calls": 3,
+              "steps": 41,
+              "tool_calls": 10
+            }
+          }
+        }
+      ],
+      "manual_grading": [
+        {
+          "id": "native-learning",
+          "fully_satisfied": false,
+          "assessment": "Not fully answered. The team withheld advice and requested concrete fixtures; the native exit-code statement was not established by its supplied evidence. The independent Go probe observed exit 1.",
+          "evaluation_group": "diagnostic"
+        },
+        {
+          "id": "memory-capacity",
+          "fully_satisfied": true,
+          "assessment": "Meets both full-memory branches with reproducible setup, exact expected state and a source-backed explanation; the transcribed checks passed.",
+          "evaluation_group": "diagnostic"
+        },
+        {
+          "id": "handover-authority",
+          "fully_satisfied": true,
+          "assessment": "Meets no-new-authority, self/onward-delegation and concrete denied-operation/no-effect checks; assessed manually, Studio UI checks not executed.",
+          "evaluation_group": "diagnostic"
+        },
+        {
+          "id": "memory-writers",
+          "fully_satisfied": true,
+          "assessment": "Distinguishes atomic replacement from cached multi-writer safety, gives deterministic stale-snapshot reproduction and corrects the proposed post-fix assertion after review. The current-behavior reproduction passed.",
+          "evaluation_group": "diagnostic"
+        },
+        {
+          "id": "memory-empty-key",
+          "fully_satisfied": true,
+          "assessment": "Explains validation before mutation/persistence, retains the seed and supplies an executable file/state check; the verbatim check passed.",
+          "evaluation_group": "diagnostic"
+        },
+        {
+          "id": "memory-recall",
+          "fully_satisfied": true,
+          "assessment": "Previously unused question. Correctly distinguishes recall from remember validation and supplies present/empty/missing results plus unchanged persistence checks; both verbatim scripts passed.",
+          "evaluation_group": "heldout"
+        }
+      ]
+    }
+  ],
+  "evidence_archive": "evidence.zip"
+}

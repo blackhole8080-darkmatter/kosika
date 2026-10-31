@@ -1,0 +1,479 @@
+// Author: an agent that writes Kosika programs. Kosika, writing Kosika.
+//
+//   kosika test main.kos
+//   kosika studio FOLDER --model-protocol ollama --model qwen2.5:7b --allow-folder WHERE_TO_SAVE
+//
+// You say what you want. The model writes a program with its own tests.
+// Then Kosika itself checks the program and runs those tests, and whatever
+// is wrong goes back to the model, up to two more times. You are shown the
+// program only together with the truth about it: whether it checks, and how
+// many of its tests pass.
+//
+// The check reaches nothing: the program is text, checked and tested in a
+// folder made for the purpose, with no model, file or network. Saving the
+// program to a file is the one thing that changes anything, and it waits
+// for your yes.
+//
+// A caution. No model was trained on Kosika, so the model learns it from
+// the short guide below each time. The guide always teaches records,
+// functions and loops. When your request needs a model to understand text,
+// or needs to remember something between runs, the lesson for that is added.
+// It does not yet know tools or agents. The check tells you honestly when it
+// did not manage.
+//
+// Say: write: WHAT YOU WANT, show, test: A KOSIKA TEST, fix: WHAT TO
+// CHANGE, save NAME, or help.
+
+record Msg { text: Text }
+record Said { text: Text }
+record Kind { label: Text }
+
+// What the model writes.
+record Code { source: Text }
+record Ask { text: Text }
+// What Kosika's own check says about a program.
+record Checked { ok: Bool problem: Text tests: Number passed: Number }
+// A piece of work: what was asked, the program so far, and the truth
+// about it.
+record Job { spec: Text source: Text ok: Bool problem: Text tests: Number passed: Number tries: Number }
+record NewFile { path: Text text: Text }
+record Written { bytes: Number }
+record Draft { path: Text text: Text problem: Text }
+
+default model coder {
+  input: Ask
+  output: Code
+  parameters: {
+    max_output_tokens: 700
+  }
+}
+
+// Asked when the first model's program is not even shaped like one.
+model strong {
+  input: Ask
+  output: Code
+  parameters: {
+    max_output_tokens: 700
+  }
+}
+
+memory desks of Job
+
+tool check_program {
+  source system "kosika"
+  operation: "check"
+  access: observe
+  input: Code
+  output: Checked
+}
+
+tool create_file {
+  source system "files"
+  operation: "create"
+  access: execute
+  input: NewFile
+  output: Written
+}
+
+agent hands {
+  can: [check_program, create_file]
+  max_steps: 1
+}
+
+// ---------------------------------------------------------------- routing
+
+fn kind_of(msg: Msg) -> Kind {
+  let text = msg.text.lower().trim()
+  let first = text.split(" ").first().or("")
+  var kind = "write"
+  if text == "help" or text.contains("what can you do") { kind = "help" }
+  else if text == "show" or text == "code" { kind = "show" }
+  else if text.starts_with("test:") { kind = "test" }
+  else if text.starts_with("fix:") or first == "fix" { kind = "fix" }
+  else if first == "save" { kind = "save" }
+  return {label: kind}
+}
+
+// Everything after the first colon, or the whole message when there is none.
+fn after_colon(msg: Msg) -> Text {
+  let text = msg.text.trim()
+  let head = text.split(":").first().or("")
+  if head.length() < text.length() and head.length() < 12 { return text.slice(head.length() + 1, text.length()).trim() }
+  return text
+}
+
+// ---------------------------------------------------------- the short guide
+// All the model knows about Kosika is what is written here.
+
+fn guide() -> Text {
+  return "You write programs in Kosika, a small programming language. Kosika is NOT Python, JavaScript or Rust. Use only what is shown here.\n\nRULES\n- Types are Text, Number and Bool. A list is written Number[] or Text[].\n- Data is a record. Fields are separated by spaces, never commas: record Order { item: Text price: Number }\n- A record value is written {item: \"tea\", price: 3}. Read a field with order.price.\n- A function: fn area(box: Box) -> Number { return box.w * box.h }\n- let x = 1 cannot change. var total = 0 can change: total = total + 1\n- if a > b { ... } else if a == b { ... } else { ... }\n- Operators: + - * / == != < > <= >= and or not\n- Loops: for item in list { ... }   for i in 0 until n { ... }   while count < 10 { ... }\n- Lists: [1, 2, 3]   list.length()   list[0]   list.contains(x)   list.reverse()\n- Adding to a list makes a new list: items = items.append(x)\n- An empty list needs its type: var items: Number[] = []\n- Text: a + b joins two texts, text.length(), text.upper(), text.lower(), text.trim(), text.contains(\"x\"), text.split(\" \"), parts.join(\" \"), number.to_text()\n- To put values into a text, write f before it: f\"Total is {total} for {order.item}\". Only Text and Numbers go inside the braces.\n- No semicolons. No classes. No print. No null. No imports. A comment starts with //\n- The entry is always: workflow main(input: In) -> Out { result = solve(input) }\n- In and Out are records. solve is a function you write that takes In and returns Out.\n- End with two or three tests. A test calls main with one record and checks fields of the answer.\n\nEXAMPLE PROGRAM\nrecord In { numbers: Number[] }\nrecord Out { total: Number biggest: Number }\n\nfn solve(input: In) -> Out {\n  var total = 0\n  var biggest = 0\n  for n in input.numbers {\n    total = total + n\n    if n > biggest { biggest = n }\n  }\n  return {total: total, biggest: biggest}\n}\n\nworkflow main(input: In) -> Out {\n  result = solve(input)\n}\n\ntest \"adds and finds the biggest\" {\n  a = main({numbers: [1, 5, 3]})\n  expect a.total == 9\n  expect a.biggest == 5\n}\n\ntest \"an empty list\" {\n  a = main({numbers: []})\n  expect a.total == 0\n}\n"
+}
+
+// The example a lesson teaches from. Each is a whole program that checks
+// and passes its tests; a test below proves that.
+fn model_example() -> Text {
+  return "record In { text: Text }\nrecord Out { queue: Text reason: Text }\n\nmodel helper\n\nfn route(input: In, kind: Choice) -> Out {\n  let queue = if kind.label == \"complaint\" { \"support\" } else { \"general\" }\n  return {queue: queue, reason: \"It looks like a \" + kind.label}\n}\n\nworkflow main(input: In) -> Out {\n  kind   = classify input.text into [\"question\", \"complaint\", \"praise\"]\n  result = route(input, kind)\n}\n\ntest \"a complaint goes to support\" {\n  answers helper: [{label: \"complaint\", confidence: 1}]\n  a = main({text: \"My order arrived broken.\"})\n  expect a.queue == \"support\"\n}\n\ntest \"praise goes to general\" {\n  answers helper: [{label: \"praise\", confidence: 1}]\n  a = main({text: \"Great service!\"})\n  expect a.queue == \"general\"\n}\n"
+}
+
+fn memory_example() -> Text {
+  return "record In { name: Text }\nrecord Out { count: Number }\nrecord Seen { count: Number }\n\nmemory seen of Seen\n\nfn bump(known: SeenRecalled) -> Seen {\n  return {count: if known.found { known.value.value().count + 1 } else { 1 }}\n}\n\nfn result(now: Seen) -> Out {\n  return {count: now.count}\n}\n\nworkflow main(input: In) -> Out {\n  known = recall seen under input.name\n  now   = bump(known)\n  saved = remember now in seen under input.name\n  out   = result(now)\n}\n\ntest \"counts each name on its own\" {\n  a = main({name: \"ada\"})\n  b = main({name: \"ada\"})\n  c = main({name: \"bob\"})\n  expect b.count == 2\n  expect c.count == 1\n}\n"
+}
+
+// Does the request need a model to read or judge text?
+fn wants_model(spec: Text) -> Bool {
+  let text = spec.lower()
+  for word in ["classif", "categor", "summar", "decide", "sentiment", "model", "label ", "judge", "is it about", "what kind of"] {
+    if text.contains(word) { return true }
+  }
+  return false
+}
+
+// Does the request need to keep something from one run to the next?
+fn wants_memory(spec: Text) -> Bool {
+  let text = spec.lower()
+  for word in ["remember", "memory", "between runs", "keep track", "how many times", "so far", "each time", "history"] {
+    if text.contains(word) { return true }
+  }
+  return false
+}
+
+// The guide for one request: the basics, plus only the lessons it needs,
+// so a small model is not given more to read than it can hold.
+fn guide_for(spec: Text) -> Text {
+  var text = guide()
+  if wants_model(spec) { text += "\n" + "MODEL STEPS. Use these because the task needs a model to understand text.\n- Declare one model by name only, on its own line: model helper\n- A model step is a line in the workflow. It is never inside a fn.\n    kind = classify input.text into [\"a\", \"b\", \"c\"]     gives a Choice: kind.label is one of the choices\n    brief = summarize input.text                           gives a Summary: brief.text\n    urgent = decide \"Is this urgent?\" given input.text     gives a Decision: urgent.answer is true or false, urgent.reason is Text\n- Choice, Summary and Decision are built in. Do NOT declare them. Use them as parameter types of your functions.\n- The workflow has the model steps first, then one function step that builds Out from their results.\n- Every test must give the model's answers, in the order of the steps:\n    answers helper: [{label: \"a\", confidence: 1}]                      for classify\n    answers helper: [{text: \"A short summary.\"}]                       for summarize\n    answers helper: [{answer: true, confidence: 1, reason: \"why\"}]     for decide\n\nEXAMPLE WITH A MODEL STEP\n" + model_example() }
+  if wants_memory(spec) { text += "\n" + "MEMORY. Use this because the task must remember something from one run to the next.\n- Declare a record for what is kept, and the memory: memory seen of Seen\n- Reading and writing memory are workflow steps. They are never inside a fn.\n    known = recall seen under input.name          gives SeenRecalled: known.found is true or false\n    saved = remember now in seen under input.name   where now is a Seen record\n- The type of a recall is the memory's name with a capital letter plus Recalled: memory seen gives SeenRecalled.\n- Read the stored record only after checking found: if known.found { known.value.value().count } else { 0 }\n- Each test starts with an empty memory, so call main several times in one test.\n\nEXAMPLE WITH MEMORY\n" + memory_example() }
+  if wants_model(spec) or wants_memory(spec) { text += "\nFor this task the workflow main has several steps, as in the last example, not only result = solve(input).\n" }
+  return text
+}
+
+fn first_prompt(spec: Text) -> Ask {
+  return {text: guide_for(spec) + "\nTASK\nWrite a complete Kosika program for this: " + spec + "\nKeep it short and plain. Put the whole program in source."}
+}
+
+fn repair_prompt(job: Job) -> Ask {
+  return {text: guide_for(job.spec) + "\nTASK\nThis Kosika program was written for: " + job.spec + "\n\nPROGRAM\n" + job.source + "\n\nKosika checked it and found this problem:\n" + job.problem + "\n\nWrite the whole program again with the problem fixed. Change only what is needed. Put the whole program in source."}
+}
+
+// A quick look before the real check: something that is plainly not a
+// Kosika program is sent straight back, or on to the stronger model.
+fn shaped(code: Code) -> Text {
+  let text = code.source
+  if text.trim().length() < 40 { return "That is not a whole program. Write the complete Kosika program in source." }
+  if not text.contains("workflow main") { return "The program has no workflow main. It must contain: workflow main(input: In) -> Out { result = solve(input) }" }
+  if not text.contains("test \"") { return "The program has no tests. End it with two or three tests." }
+  if text.contains("def ") or text.contains("print(") or text.contains("function ") or text.contains("```") { return "That is Python, JavaScript or Markdown, not Kosika. Use only the Kosika shown in the rules, with no code fences." }
+  return ""
+}
+
+fn blank(spec: Text) -> Code {
+  return {source: ""}
+}
+
+fn unchecked(spec: Text) -> Checked {
+  return {ok: false, problem: "The model did not write a program that could be checked.", tests: 0, passed: 0}
+}
+
+fn job_of(spec: Text, code: Code, checked: Checked, tries: Number) -> Job {
+  // A program with no tests has proved nothing, even if it checks.
+  let empty = checked.ok and checked.tests == 0
+  let problem = if empty { "The program has no tests. End it with two or three tests." } else { checked.problem }
+  return {spec: spec, source: code.source.trim(), ok: checked.ok and not empty, problem: problem, tests: checked.tests, passed: checked.passed, tries: tries}
+}
+
+fn again(job: Job, code: Code, checked: Checked) -> Job {
+  // Keep the earlier program if the model came back with nothing.
+  if code.source.trim().length() == 0 { return {spec: job.spec, source: job.source, ok: false, problem: job.problem, tests: job.tests, passed: job.passed, tries: job.tries + 1} }
+  return job_of(job.spec, code, checked, job.tries + 1)
+}
+
+fn keep(job: Job) -> Job {
+  return job
+}
+
+fn code_of(job: Job) -> Code {
+  return {source: job.source}
+}
+
+fn report(job: Job) -> Said {
+  if job.source.length() == 0 { return {text: "I could not write that just now. Please try again, or say it more simply."} }
+  let times = if job.tries == 1 { "first try" } else { job.tries.to_text() + " tries" }
+  if job.ok {
+    return {text: "Written and checked on the " + times + ": it is valid Kosika and " + job.passed + " of " + job.tests + " of its own tests pass.\n\n" + job.source + "\n\nSay \"save NAME\" to keep it, \"test: ...\" to try a test of your own, or \"fix: ...\" to change it."}
+  }
+  return {text: "After " + times + " it still does not pass. Kosika says: " + job.problem + "\n\nThe last attempt:\n\n" + job.source + "\n\nSay \"fix: ...\" with a hint, or ask for something simpler."}
+}
+
+// ------------------------------------------------------------ the requests
+
+// One more attempt: show the model its program and what is wrong with it.
+workflow repair(job: Job) -> Job {
+  prompt  = repair_prompt(job)
+  code    = use_model coder(prompt.text) verify shaped(code) escalate strong otherwise blank(job.spec)
+  checked = execute hands.check_program(code.source) otherwise unchecked(job.spec)
+  out     = again(job, code, checked)
+}
+
+workflow write(msg: Msg) -> Said {
+  spec    = after_colon(msg)
+  prompt  = first_prompt(spec)
+  code    = use_model coder(prompt.text) verify shaped(code) escalate strong otherwise blank(spec)
+  checked = execute hands.check_program(code.source) otherwise unchecked(spec)
+  first   = job_of(spec, code, checked, 1)
+  second  = match first.ok {
+    case true { keep(first) }
+    case _ { call repair(first) }
+  }
+  third   = match second.ok {
+    case true { keep(second) }
+    case _ { call repair(second) }
+  }
+  saved   = remember third in desks under "me"
+  said    = report(third)
+}
+
+fn last_job(known: DesksRecalled) -> Job {
+  let none: Job = {spec: "", source: "", ok: false, problem: "", tests: 0, passed: 0, tries: 0}
+  return if known.found { known.value.value() } else { none }
+}
+
+fn shown(job: Job) -> Said {
+  if job.source.length() == 0 { return {text: "There is no program yet. Say \"write:\" and what you want."} }
+  return {text: job.source}
+}
+
+workflow show(msg: Msg) -> Said {
+  known = recall desks under "me"
+  job   = last_job(known)
+  said  = shown(job)
+}
+
+// "fix: make it ignore negative numbers": your words become the problem.
+fn with_hint(job: Job, hint: Text) -> Job {
+  return {spec: job.spec + " Also: " + hint, source: job.source, ok: false, problem: "The person who asked for it wants this changed: " + hint, tests: job.tests, passed: job.passed, tries: 0}
+}
+
+fn nothing_to_fix(job: Job) -> Job {
+  return job
+}
+
+workflow fix(msg: Msg) -> Said {
+  known  = recall desks under "me"
+  job    = last_job(known)
+  hint   = after_colon(msg)
+  asked  = with_hint(job, hint)
+  first  = match job.source {
+    case "" { nothing_to_fix(job) }
+    case _ { call repair(asked) }
+  }
+  second = match first.ok {
+    case true { keep(first) }
+    case _ { call repair(first) }
+  }
+  saved  = remember second in desks under "me"
+  said   = report(second)
+}
+
+// "test: test \"mine\" { ... }": your own test, run against the program.
+fn with_test(job: Job, extra: Text) -> Code {
+  return {source: job.source + "\n\n" + extra + "\n"}
+}
+
+fn tested(job: Job, checked: Checked) -> Said {
+  if job.source.length() == 0 { return {text: "There is no program yet. Say \"write:\" and what you want."} }
+  if checked.ok { return {text: "Your test passes. All " + checked.tests + " tests pass."} }
+  return {text: "Your test does not pass. Kosika says: " + checked.problem}
+}
+
+workflow try_test(msg: Msg) -> Said {
+  known   = recall desks under "me"
+  job     = last_job(known)
+  extra   = after_colon(msg)
+  code    = with_test(job, extra)
+  checked = execute hands.check_program(code.source) otherwise unchecked(extra)
+  said    = tested(job, checked)
+}
+
+fn draft_file(msg: Msg, job: Job) -> Draft {
+  var name = ""
+  for word in msg.text.trim().split(" ") {
+    if word.trim().length() > 0 { name = word.trim() }
+  }
+  for mark in ["\"", "'", "\\", "/", ":", ".."] { name = name.split(mark).join("") }
+  if name.lower().ends_with(".kos") { name = name.slice(0, name.length() - 4) }
+  if job.source.length() == 0 { return {path: "", text: "", problem: "There is no program to save yet. Say \"write:\" and what you want."} }
+  if name.length() == 0 or name.lower() == "save" { return {path: "", text: "", problem: "Give it a name, like this: save total"} }
+  let note = if job.ok { "// Written by the author agent. It checked, and " + job.passed + " of " + job.tests + " of its tests passed.\n" } else { "// Written by the author agent. It did NOT pass its check: " + job.problem + "\n" }
+  return {path: name + ".kos", text: note + "// Asked for: " + job.spec + "\n\n" + job.source + "\n", problem: ""}
+}
+
+fn cannot_save(draft: Draft) -> Said {
+  return {text: draft.problem}
+}
+
+fn saved_said(draft: Draft, done: Written) -> Said {
+  return {text: "Saved as " + draft.path + " (" + done.bytes + " bytes). Run its tests with: kosika test " + draft.path}
+}
+
+workflow create_it(draft: Draft) -> Said {
+  done = execute hands.create_file(draft.path, draft.text)
+  said = saved_said(draft, done)
+  require approval
+}
+
+workflow save(msg: Msg) -> Said {
+  known = recall desks under "me"
+  job   = last_job(known)
+  draft = draft_file(msg, job)
+  said  = match draft.problem {
+    case "" { call create_it(draft) }
+    case _ { cannot_save(draft) }
+  }
+  require approval
+}
+
+fn help(msg: Msg) -> Said {
+  return {text: "I write Kosika programs and check them with Kosika itself.\nwrite: a program that adds up a list of prices and counts them\nshow: the last program\ntest: test \"mine\" { a = main({prices: [2, 3]}) expect a.total == 5 }\nfix: also return the average\nsave shop_total: keep it as a file, after you allow it\nI show a program only with the truth about it: whether it checks and how many tests pass."}
+}
+
+workflow main(msg: Msg) -> Said {
+  budget 12 model calls, 1500 seconds
+  kind = kind_of(msg)
+  said = match kind.label {
+    case "show" { call show(msg) }
+    case "test" { call try_test(msg) }
+    case "fix" { call fix(msg) }
+    case "save" { call save(msg) }
+    case "help" { help(msg) }
+    case _ { call write(msg) }
+  }
+  require approval
+}
+
+// ------------------------------------------------------------------ tests
+// The model's programs are scripted here. The check is the real one:
+// Kosika checking Kosika, inside these tests.
+
+test "the guide's own example is valid Kosika and its tests pass" {
+  answers coder: [{source: "record In { numbers: Number[] }\nrecord Out { total: Number biggest: Number }\n\nfn solve(input: In) -> Out {\n  var total = 0\n  var biggest = 0\n  for n in input.numbers {\n    total = total + n\n    if n > biggest { biggest = n }\n  }\n  return {total: total, biggest: biggest}\n}\n\nworkflow main(input: In) -> Out {\n  result = solve(input)\n}\n\ntest \"adds and finds the biggest\" {\n  a = main({numbers: [1, 5, 3]})\n  expect a.total == 9\n  expect a.biggest == 5\n}\n\ntest \"an empty list\" {\n  a = main({numbers: []})\n  expect a.total == 0\n}\n"}]
+  a = main({text: "write: add up a list of numbers and find the biggest"})
+  expect a.text.starts_with("Written and checked on the first try: it is valid Kosika and 2 of 2 of its own tests pass.")
+  expect guide().contains("fn solve(input: In) -> Out {")
+}
+
+test "each lesson's example is valid Kosika and passes its own tests" {
+  answers coder: [{source: model_example()}, {source: memory_example()}]
+  a = main({text: "write: classify a message"})
+  b = main({text: "write: remember how many times each name was seen"})
+  expect a.text.starts_with("Written and checked on the first try: it is valid Kosika and 2 of 2 of its own tests pass.")
+  expect b.text.starts_with("Written and checked on the first try: it is valid Kosika and 1 of 1 of its own tests pass.")
+}
+
+test "a request is given only the lessons it needs" {
+  plain = guide_for("add up a list of numbers")
+  both = guide_for("classify each message and remember how many times each label came up")
+  expect plain == guide()
+  expect guide_for("summarize a note").contains("MODEL STEPS")
+  expect not guide_for("summarize a note").contains("MEMORY. Use this")
+  expect both.contains("MODEL STEPS") and both.contains("MEMORY. Use this")
+  expect wants_memory("count how many times a name was seen")
+  expect not wants_model("double a number")
+}
+
+test "a program with a mistake goes back with what Kosika said, and is repaired" {
+  answers coder: [
+    {source: "record In { n: Number }\nrecord Out { twice: Number }\n\nfn solve(input: In) -> Out {\n  return {twice: input.m * 2}\n}\n\nworkflow main(input: In) -> Out {\n  result = solve(input)\n}\n\ntest \"doubles\" {\n  a = main({n: 4})\n  expect a.twice == 8\n}\n"},
+    {source: "record In { n: Number }\nrecord Out { twice: Number }\n\nfn solve(input: In) -> Out {\n  return {twice: input.n * 2}\n}\n\nworkflow main(input: In) -> Out {\n  result = solve(input)\n}\n\ntest \"doubles\" {\n  a = main({n: 4})\n  expect a.twice == 8\n}\n"}
+  ]
+  a = main({text: "write: double a number"})
+  b = main({text: "show"})
+  expect a.text.starts_with("Written and checked on the 2 tries: it is valid Kosika and 1 of 1 of its own tests pass.")
+  expect b.text.contains("input.n * 2")
+}
+
+test "a test that fails is a problem too, and three failures are admitted" {
+  answers coder: [
+    {source: "record In { n: Number }\nrecord Out { twice: Number }\n\nfn solve(input: In) -> Out {\n  return {twice: input.n + 2}\n}\n\nworkflow main(input: In) -> Out {\n  result = solve(input)\n}\n\ntest \"doubles\" {\n  a = main({n: 5})\n  expect a.twice == 10\n}\n"},
+    {source: "record In { n: Number }\nrecord Out { twice: Number }\n\nfn solve(input: In) -> Out {\n  return {twice: input.n + 2}\n}\n\nworkflow main(input: In) -> Out {\n  result = solve(input)\n}\n\ntest \"doubles\" {\n  a = main({n: 5})\n  expect a.twice == 10\n}\n"},
+    {source: "record In { n: Number }\nrecord Out { twice: Number }\n\nfn solve(input: In) -> Out {\n  return {twice: input.n + 2}\n}\n\nworkflow main(input: In) -> Out {\n  result = solve(input)\n}\n\ntest \"doubles\" {\n  a = main({n: 5})\n  expect a.twice == 10\n}\n"}
+  ]
+  a = main({text: "write: double a number"})
+  expect a.text.starts_with("After 3 tries it still does not pass. Kosika says: Test \"doubles\" failed")
+}
+
+test "Python is refused before the check and the strong model is asked" {
+  answers coder: [{source: "def solve(numbers):\n    return sum(numbers)\n\nprint(solve([1, 2, 3]))  # workflow main test \"x\""}]
+  answers strong: [{source: "record In { n: Number }\nrecord Out { twice: Number }\n\nfn solve(input: In) -> Out {\n  return {twice: input.n * 2}\n}\n\nworkflow main(input: In) -> Out {\n  result = solve(input)\n}\n\ntest \"doubles\" {\n  a = main({n: 4})\n  expect a.twice == 8\n}\n"}]
+  a = main({text: "write: double a number"})
+  expect a.text.starts_with("Written and checked on the first try")
+  expect shaped({source: "def f(): pass  workflow main test \"a\" and more text to be long enough"}).starts_with("That is Python")
+}
+
+test "your own test is run against the program" {
+  answers coder: [{source: "record In { n: Number }\nrecord Out { twice: Number }\n\nfn solve(input: In) -> Out {\n  return {twice: input.n * 2}\n}\n\nworkflow main(input: In) -> Out {\n  result = solve(input)\n}\n\ntest \"doubles\" {\n  a = main({n: 4})\n  expect a.twice == 8\n}\n"}]
+  a = main({text: "write: double a number"})
+  b = main({text: "test: test \"mine\" { r = main({n: 21}) expect r.twice == 42 }"})
+  c = main({text: "test: test \"wrong\" { r = main({n: 21}) expect r.twice == 43 }"})
+  expect b.text == "Your test passes. All 2 tests pass."
+  expect c.text.starts_with("Your test does not pass. Kosika says: Test \"wrong\" failed")
+}
+
+test "nothing to show, test or save before anything is written" {
+  none: DesksRecalled = {found: false, value: null}
+  a = main({text: "show"})
+  b = main({text: "test: test \"t\" { expect 1 == 1 }"})
+  c = draft_file({text: "save total"}, last_job(none))
+  expect a.text.starts_with("There is no program yet")
+  expect b.text.starts_with("There is no program yet")
+  expect c.problem.starts_with("There is no program to save yet")
+}
+
+test "a file name is made safe" {
+  job: Job = {spec: "double", source: "record In { n: Number }", ok: true, problem: "", tests: 1, passed: 1, tries: 1}
+  a = draft_file({text: "save ../../evil.kos"}, job)
+  b = draft_file({text: "save"}, job)
+  expect a.path == "evil.kos"
+  expect a.text.starts_with("// Written by the author agent. It checked, and 1 of 1 of its tests passed.")
+  expect b.problem.starts_with("Give it a name")
+}
+
+// ------------------------------------------------------------------ evals
+// Each eval asks for a program and then runs a test the model never saw
+// against what it wrote. Passing means the program does what was asked,
+// not only that it agrees with its own tests.
+
+eval "it writes a program that sums a list" {
+  a = main({text: "write: add up a list of numbers. In has one field, numbers: Number[]. Out has one field, total: Number."})
+  b = main({text: "test: test \"hidden\" { r = main({numbers: [4, 5, 6]}) expect r.total == 15 }"})
+  expect b.text.starts_with("Your test passes")
+}
+
+eval "it writes a program that counts long words" {
+  a = main({text: "write: count how many words in a list are longer than 4 letters. In has one field, words: Text[]. Out has one field, count: Number."})
+  b = main({text: "test: test \"hidden\" { r = main({words: [\"tea\", \"coffee\", \"water\", \"milk\"]}) expect r.count == 2 }"})
+  expect b.text.starts_with("Your test passes")
+}
+
+eval "it writes a program with a condition" {
+  a = main({text: "write: say whether a number is even. In has one field, n: Number. Out has one field, even: Bool."})
+  b = main({text: "test: test \"hidden\" { r = main({n: 10}) s = main({n: 7}) expect r.even == true expect s.even == false }"})
+  expect b.text.starts_with("Your test passes")
+}
+
+eval "it writes a program with a model step" {
+  a = main({text: "write: classify a message as question, complaint or praise. In has one field, text: Text. Out has one field, queue: Text, which is \"support\" for a complaint and \"general\" for anything else. Declare the model as: model helper"})
+  b = main({text: "test: test \"hidden\" { answers helper: [{label: \"complaint\", confidence: 1}, {label: \"praise\", confidence: 1}] r = main({text: \"It broke.\"}) s = main({text: \"Lovely.\"}) expect r.queue == \"support\" expect s.queue == \"general\" }"})
+  expect b.text.starts_with("Your test passes")
+}
+
+eval "it writes a program that summarizes and counts" {
+  a = main({text: "write: summarize a note. In has one field, text: Text. Out has two fields, summary: Text and words: Number, where words is how many words the summary has. Declare the model as: model helper"})
+  b = main({text: "test: test \"hidden\" { answers helper: [{text: \"Buy milk today\"}] r = main({text: \"Remember that we are out of milk and need some today.\"}) expect r.summary == \"Buy milk today\" expect r.words == 3 }"})
+  expect b.text.starts_with("Your test passes")
+}
+
+eval "it writes a program that remembers" {
+  a = main({text: "write: remember how many times each name has been seen. In has one field, name: Text. Out has one field, count: Number, which is 1 the first time a name is seen, 2 the second time, and so on."})
+  b = main({text: "test: test \"hidden\" { a = main({name: \"ada\"}) b = main({name: \"ada\"}) c = main({name: \"bob\"}) d = main({name: \"ada\"}) expect b.count == 2 expect c.count == 1 expect d.count == 3 }"})
+  expect b.text.starts_with("Your test passes")
+}

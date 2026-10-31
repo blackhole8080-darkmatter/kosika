@@ -105,12 +105,13 @@ CODES: Mapping[str, str] = {
     "check/enum": "An enum is declared or used with a value it does not have.",
     "check/choice": "A choice, its alternatives, or a match on it is declared or used in a way it does not allow.",
     "check/shape": "A shape is declared or used in a way it does not allow.",
+    "check/store": "A store is declared in a way that cannot be honoured.",
     "check/default": "A default value is not written out or does not fit its type.",
     "check/plain-model": "A model that answers as text does not return a record of one Text field.",
     "check/choice-evidence": "A model that answers with a choice has no record to quote evidence from.",
     "check/learn": "A step that learns is not a model step, or is known by a value that is not Text.",
     "check/step-match": "A step that chooses between calls is not well formed.",
-    "check/invalid-system-tool": "A shell or files tool is declared incorrectly.",
+    "check/invalid-system-tool": "A system tool is declared incorrectly.",
     "check/thinking-evidence": "A thinking step cannot be asked for evidence.",
     "check/thinking-model-required": "A thinking step has no single model to ask.",
     "check/thinking-record-clash": "A declared record clashes with a built-in one.",
@@ -368,6 +369,14 @@ _RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("check/budget", re.compile(r"^Workflow '[^']+' budget ")),
     ("check/memory", re.compile(r"^Memory ")),
     ("check/board", re.compile(r"^Board ")),
+    (
+        "check/store",
+        re.compile(
+            r"^Store "
+            r"|^Stores .* both name "
+            r"|^Table [\w.]+ (declares|has) "
+        ),
+    ),
     ("check/enum", re.compile(r"^Enum '")),
     (
         "check/choice",
@@ -543,7 +552,11 @@ _RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ),
     (
         "parse/invalid-declaration",
-        re.compile(r"^Unexpected (declaration|workflow item)"),
+        re.compile(
+            r"^Unexpected (declaration|workflow item)"
+            r"|^A store needs a quoted file"
+            r"|^Column '[^']+' has a default value at \d+:\d+"
+        ),
     ),
     # Generic fallbacks: typed mismatches that share one shape.
     ("check/type-mismatch", re.compile(r"expects .*, got ")),
@@ -605,6 +618,7 @@ def _owner_of(message: str) -> tuple[str | None, str | None]:
         ("function", "Function"),
         ("agent", "Agent"),
         ("record", "Record"),
+        ("store", "Store"),
         ("workflow", "Workflow"),
         ("model", "Model"),
         ("tool", "Tool"),

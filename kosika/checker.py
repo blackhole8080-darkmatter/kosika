@@ -85,6 +85,85 @@ def _record_fields(program: Program, record_name: str) -> dict[str, str]:
     raise CheckError(f"Unknown record type {record_name!r}")
 
 
+def _check_stores(program: Program) -> None:
+    """A store declares the tables a program means, so its words are checked.
+
+    What is checked here needs no file: a column holds one of the three
+    `Text`, `Number` and `Bool`, nothing is declared twice, and the file a
+    store names is a path beside the program rather than an absolute one.
+    Whether the file agrees is a preflight, before the first step of a run
+    (see `kosika.database.check_stores`), since only the host knows the file.
+    """
+
+    from .database import ROW_FIELD_TYPES
+
+    seen: set[str] = set()
+    files: dict[str, str] = {}
+    for store in program.stores:
+        if store.name in seen:
+            raise CheckError(f"Store {store.name!r} is declared more than once")
+        seen.add(store.name)
+        if not store.tables:
+            raise CheckError(
+                f"Store {store.name!r} declares no table; a store says which "
+                "tables a program means"
+            )
+        if not store.file.strip():
+            raise CheckError(
+                f"Store {store.name!r} names an empty file; say which database "
+                "it means, as `at \"./notes.db\"`"
+            )
+        named = store.file.replace("\\", "/")
+        if named.startswith("/") or (
+            len(named) > 1 and named[0].isalpha() and named[1] == ":"
+        ):
+            raise CheckError(
+                f"Store {store.name!r} names the file {store.file!r}; a store's "
+                "file is a path beside the program, as `at \"./notes.db\"`"
+            )
+        if store.file in files:
+            raise CheckError(
+                f"Stores {files[store.file]!r} and {store.name!r} both name "
+                f"{store.file!r}; one store says what a file holds"
+            )
+        files[store.file] = store.name
+        tables = [table.name for table in store.tables]
+        if len(set(tables)) != len(tables):
+            raise CheckError(
+                f"Store {store.name!r} declares the table "
+                f"{_repeated_name(tables)!r} twice"
+            )
+        for table in store.tables:
+            if not table.columns:
+                raise CheckError(
+                    f"Table {store.name}.{table.name} declares no column; a "
+                    "table says which columns a program means"
+                )
+            columns = [column.name for column in table.columns]
+            if len(set(columns)) != len(columns):
+                raise CheckError(
+                    f"Table {store.name}.{table.name} declares the column "
+                    f"{_repeated_name(columns)!r} twice"
+                )
+            for column in table.columns:
+                if column.type_name not in ROW_FIELD_TYPES:
+                    raise CheckError(
+                        f"Store {store.name!r} declares "
+                        f"{table.name}.{column.name} as {column.type_name!r}; a "
+                        "column of a store is one of: "
+                        f"{', '.join(ROW_FIELD_TYPES)}"
+                    )
+
+
+def _repeated_name(names: list[str]) -> str:
+    """The first name declared more than once."""
+
+    counted: dict[str, int] = {}
+    for name in names:
+        counted[name] = counted.get(name, 0) + 1
+    return min(name for name, count in counted.items() if count > 1)
+
+
 def _validate_type_name(program: Program, type_name: str) -> None:
     function_signature = signature(type_name)
     if function_signature:
@@ -110,6 +189,15 @@ def _validate_type_name(program: Program, type_name: str) -> None:
     } | {shape.name for shape in program.shapes} | {
         choice.name for choice in program.choices
     }:
+        if type_name == "Choice":
+            # Choice is the built-in a thinking step gives; it is a type in a
+            # program that has one, and no record may hold it otherwise.
+            raise CheckError(
+                f"Unknown field type {type_name!r}: Choice is what a thinking "
+                "step (classify, extract, summarize, decide) gives, and it is "
+                "a type only in a program that has one; keep the record's "
+                "fields Text, or add the step that produces it"
+            )
         raise CheckError(f"Unknown field type {type_name!r}")
 
 
@@ -828,6 +916,41 @@ def _expression_type(
             and expression.method in ("exists", "value", "or")
         ):
             receiver_type += "?"
+        field_type = next(
+            (
+                fields[expression.method]
+                for fields in (
+                    {field.name: field.type_name for field in record.fields}
+                    for record in program.records
+                    if record.name == receiver_type
+                )
+                if expression.method in fields
+            ),
+            None,
+        )
+        if field_type is not None:
+            # A record has no methods, so `known.value()` is a call on the
+            # record, not on its `value` field. Naming the field and the line
+            # that reads it saves the guess of which `.value` is missing.
+            shown = (
+                f"{expression.target.name}.{expression.method}"
+                if isinstance(expression.target, VariableExpr)
+                else "the field"
+            )
+            if field_type.endswith("?"):
+                raise CheckError(
+                    f"Step {step_name!r} unknown method: {expression.method!r} "
+                    f"is a field of {receiver_type!r}, not a method, and a "
+                    f"record has no methods; {expression.method!r} holds "
+                    f"{field_type!r}, so write {shown}.value() to require it, "
+                    f"{shown}.or(default: ...) for a fallback, or "
+                    f"{shown}.exists() to test it"
+                )
+            raise CheckError(
+                f"Step {step_name!r} unknown method: {expression.method!r} "
+                f"is a field of {receiver_type!r}, not a method, and a record "
+                f"has no methods; read it as {shown}"
+            )
         try:
             method = resolve_method(receiver_type, expression.method)
         except MethodError as exc:
@@ -1986,19 +2109,21 @@ def _check(program: Program) -> None:
                 "non-empty strings of at most 256 characters"
             )
 
-    if len(records) != len(program.records):
-        raise CheckError("Duplicate record declaration")
-    if len(tools) != len(program.tools):
-        raise CheckError("Duplicate tool declaration")
-    if len(agents) != len(program.agents):
-        raise CheckError("Duplicate agent declaration")
-    swarms = {swarm.name: swarm for swarm in program.swarms}
-    if len(swarms) != len(program.swarms):
-        raise CheckError("Duplicate swarm declaration")
-    if len(workflows) != len(program.workflows):
-        raise CheckError("Duplicate workflow declaration")
-    if len(functions) != len(program.functions):
-        raise CheckError("Duplicate function declaration")
+    for kind, named, declared in (
+        ("record", records, program.records),
+        ("tool", tools, program.tools),
+        ("agent", agents, program.agents),
+        ("swarm", {swarm.name: swarm for swarm in program.swarms}, program.swarms),
+        ("workflow", workflows, program.workflows),
+        ("function", functions, program.functions),
+    ):
+        if len(named) != len(declared):
+            repeated = _repeated_name([item.name for item in declared])
+            raise CheckError(
+                f"Duplicate {kind} declaration: {repeated!r} is declared "
+                f"twice; a file declares each {kind} once, so merge the two "
+                "declarations or rename one"
+            )
 
     def workflow_agents(name: str, seen: set[str]) -> set[str]:
         """Return agents used by a workflow, following nested workflow calls."""
@@ -2232,6 +2357,8 @@ def _check(program: Program) -> None:
         system_problem = declaration_problem(program, tool)
         if system_problem is not None:
             raise CheckError(f"Invalid system tool: {system_problem}")
+
+    _check_stores(program)
 
     for agent in program.agents:
         if agent.model is not None and agent.model not in models:

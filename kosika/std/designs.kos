@@ -1,0 +1,883 @@
+// Kosika Designs: one front door for every part of Kosika.
+//
+// Any program imports it from the standard library and calls it as a step:
+//
+//   import "std/designs.kos"
+//
+//   workflow show(q: Question) -> DzResult {
+//     out = call design({text: q.text, palette: "", place: "agent", kind: ""})
+//   }
+//
+// or runs it alone:
+//
+//   kosika run kosika/std/designs.kos --workflow design --input ask.json
+//       --model openai/gpt-oss-120b --model-url https://api.groq.com/openai/v1
+//       --model-protocol openai --max-output-tokens 8000
+//
+// where ask.json holds
+//   {"ask": {"text": "how does the heart pump blood", "palette": "",
+//            "place": "chat", "kind": ""}}
+//
+// Every Kosika module shares one namespace, so a program that imports this
+// must not declare names of its own that Designs uses: Designs' own start
+// with dz_, art_, gen_, or are its records (Structure, Request, Part, ...).
+//
+// Chat, Studio, the website and every agent ask Designs the same way and
+// get the same answer back. Kosika decides which of its three ways of
+// drawing suits the ask:
+//
+//   diagram       the structure of a thing: parts, steps, links, a
+//                 comparison, a timeline (designs_main.kos describes it,
+//                 designs_draw.kos draws it)
+//   illustration  how something works or happens, as a small animated
+//                 picture beside a few sentences (designs_art.kos)
+//   art           a moving, abstract piece for a mood, a background or a
+//                 cover (generative.kos)
+//
+// kind may name one of them; empty lets Kosika choose by the words of the
+// ask, with no model. palette names the colours (palette.kos) to match the
+// place it will sit; empty lets the drawing choose. place is chat, studio,
+// site or agent, and sets how the embed is framed.
+//
+// Whatever is drawn, the answer has the same shape: a whole page, the
+// picture alone as SVG where there is one, and an embed: one fragment of
+// HTML, its styles and script scoped inside it, that any page can drop in
+// as it is. A diagram's embed is its page in a frame.
+
+import "designs_palette.kos"
+import "designs_draw.kos"
+import "designs_main.kos"
+import "designs_art.kos"
+import "designs_generative.kos"
+import "designs_quiz.kos"
+import "designs_paper.kos"
+import "science_chem.kos"
+import "science_units.kos"
+import "science_elements.kos"
+import "science_molecules.kos"
+import "std/math.kos"
+
+export [DzAsk, DzResult, DzKind, dz_kinds, dz_places, dz_kind, dz_why, design, design_kind, dz_lab, dz_lab_style, DzFormula, dz_formula_for, dz_formula_card, dz_formula_style]
+
+record DzAsk { text: Text palette: Text place: Text kind: Text }
+record DzKind { kind: Text why: Text }
+record DzResult { kind: Text why: Text title: Text page: Text svg: Text embed: Text problems: Text[] fixed: Text[] }
+
+fn dz_kinds() -> Text[] { return ["diagram", "illustration", "art", "canvas", "quiz", "worked", "chemistry", "units", "element"] }
+fn dz_places() -> Text[] { return ["chat", "studio", "site", "agent"] }
+
+fn dz_place(ask: DzAsk) -> Text {
+  let p = ask.place.trim().lower()
+  return if dz_places().contains(p) { p } else { "chat" }
+}
+
+// ---------------------------------------------------------------- choosing
+
+fn dz_padded(text: Text) -> Text { return " " + text.lower().trim().trim_marks("?!.") + " " }
+
+fn dz_has(t: Text, words: Text[]) -> Bool {
+  for w in words {
+    if t.contains(w) { return true }
+  }
+  return false
+}
+
+fn dz_art_words() -> Text[] { return [" art ", " artwork", " wallpaper", " background", " backdrop", " abstract", " generative", " pattern", " screensaver", " cover image", " mood ", " aesthetic", " something beautiful", " ambient"] }
+fn dz_diagram_words() -> Text[] { return [" diagram", " flowchart", " flow chart", " mind map", " mindmap", " map of ", " timeline", " compare ", " comparison", " vs ", " vs. ", " versus ", " difference between", " hierarchy", " family tree", " org chart", " architecture", " structure of", " steps ", " step by step", " pipeline", " workflow", " table ", " graph ", " layers of", " types of", " kinds of", " parts of"] }
+// Systems with no body to watch move: how they work is a structure of
+// parts and steps, so even a "how does" about them is drawn as a diagram.
+fn dz_abstract_words() -> Text[] { return [" neural network", " transformer", " llm", " language model", " machine learning", " algorithm", " protocol", " internet", " http", " tcp", " dns", " blockchain", " database", " api ", " compiler", " software", " program ", " encryption", " search engine", " operating system", " git ", " kubernetes", " cloud computing", " recursion", " sorting"] }
+
+// Asking to be tested, not taught: a quiz.
+fn dz_quiz_words() -> Text[] { return [" quiz", " test me", " flashcard", " flash card", " practice question", " check my understanding", " mcq", " multiple choice"] }
+
+fn dz_illustration_words() -> Text[] { return [" animate", " animation", " animated", " illustrate", " illustration", " show me how", " what happens when", " what happens if", " what is inside", " how does ", " how do ", " why does ", " why do ", " why is ", " why are "] }
+
+// Science asks: which field the ask belongs to, by its words, and the
+// reaction it names, if any, as an equation for science_chem to balance.
+fn dz_biology_words() -> Text[] { return [" photosynthesis", " respiration", " cell ", " cells ", " mitosis", " dna", " gene", " enzyme", " heart", " blood", " lungs", " neuron", " plant", " leaf", " leaves", " bacteria", " virus", " digestion", " evolution", " ecosystem", " food chain", " protein"] }
+fn dz_chemistry_words() -> Text[] { return [" reaction", " molecule", " molecules", " acid", " base ", " rust", " rusting", " burn", " burns", " combustion", " oxidation", " neutralis", " neutraliz", " electrolysis", " bond", " compound", " haber", " ammonia", " baking soda", " vinegar"] }
+fn dz_physics_words() -> Text[] { return [" pendulum", " swing", " projectile", " thrown", " throw ", " orbit", " planet", " moon", " gravity", " force", " momentum", " energy", " wave", " waves", " light", " sound", " electric", " circuit", " magnet", " gear", " gears", " engine", " friction", " velocity", " acceleration"] }
+
+fn dz_science_field(text: Text) -> Text {
+  let t = dz_padded(text)
+  if dz_has(t, dz_chemistry_words()) { return "chemistry" }
+  if dz_has(t, dz_biology_words()) { return "biology" }
+  if dz_has(t, dz_physics_words()) { return "physics" }
+  return ""
+}
+
+// The reactions people ask about by name, unbalanced: Kosika balances them.
+fn dz_named_reactions() -> Text[] { return [" photosynthesis", " respiration", " methane", " propane", " burning hydrogen", " rust", " neutralis", " neutraliz", " baking soda", " haber", " ammonia", " electrolysis of water", " splitting water", " glucose"] }
+fn dz_named_equations() -> Text[] { return ["CO2 + H2O -> C6H12O6 + O2", "C6H12O6 + O2 -> CO2 + H2O", "CH4 + O2 -> CO2 + H2O", "C3H8 + O2 -> CO2 + H2O", "H2 + O2 -> H2O", "Fe + O2 -> Fe2O3", "HCl + NaOH -> NaCl + H2O", "HCl + NaOH -> NaCl + H2O", "NaHCO3 + CH3COOH -> NaCH3COO + H2O + CO2", "N2 + H2 -> NH3", "N2 + H2 -> NH3", "H2O -> H2 + O2", "H2O -> H2 + O2", "C6H12O6 + O2 -> CO2 + H2O"] }
+
+fn dz_reaction(text: Text) -> Text {
+  if text.contains("->") or text.contains("→") { return text }
+  let t = dz_padded(text)
+  let names = dz_named_reactions()
+  let equations = dz_named_equations()
+  for k in 0 until names.length() {
+    if t.contains(names[k]) { return equations[k] }
+  }
+  return ""
+}
+
+// Which way of drawing suits the ask, by its words: a named kind first;
+// then asking for a diagram's shape (a timeline, a comparison, the steps);
+// then asking for art; then asking how or why something happens, which
+// moves, so it is illustrated; anything else is drawn as a diagram.
+fn dz_kind(ask: DzAsk) -> Text {
+  let named = ask.kind.trim().lower()
+  if dz_kinds().contains(named) { return named }
+  let t = dz_padded(ask.text)
+  if dz_has(t, dz_quiz_words()) { return "quiz" }
+  if t.starts_with(" convert ") { return "units" }
+  if dz_has(t, [" periodic table", " periodic "]) or (se_find(ask.text) > 0 and dz_has(t, [" element", " atom", " electron", " tell me about ", " what is ", " shells"])) { return "element" }
+  if dz_has(t, [" balance ", " balancing ", "->", "→", " chemical equation", " reaction for ", " reaction of ", " burning ", " combustion ", " as a reaction", " react with ", " reacts with "]) { return "chemistry" }
+  if maths_words(ask.text) { return "worked" }
+  if dz_has(t, dz_diagram_words()) { return "diagram" }
+  if dz_has(t, dz_art_words()) { return "art" }
+  if dz_has(t, dz_abstract_words()) { return "diagram" }
+  if dz_has(t, dz_illustration_words()) and not dz_science_field(ask.text).is_empty() { return "canvas" }
+  if dz_has(t, dz_illustration_words()) { return "illustration" }
+  return "diagram"
+}
+
+fn dz_why(ask: DzAsk) -> Text {
+  let kind = dz_kind(ask)
+  if dz_kinds().contains(ask.kind.trim().lower()) { return f"asked for {kind}" }
+  if kind == "canvas" { return "asks how something in " + dz_science_field(ask.text) + " happens, so Kosika drew it on one canvas: the structure, the moving picture and, for a reaction, the reaction itself" }
+  if kind == "chemistry" { return "asks about a reaction, so Kosika balanced it itself and checked the atoms and the mass" }
+  if kind == "element" { return "asks about an element, so Kosika opened the periodic table at it and worked out its electrons itself" }
+  if kind == "units" { return "asks to convert units, so Kosika read both units into SI and checked they measure the same thing" }
+  if kind == "quiz" { return "asks to be tested, so it is a quiz Kosika checked, with each answer's reason" }
+  if kind == "worked" { return "asks for mathematics worked out, so each line is worked and checked by Kosika" }
+  if kind == "art" { return "asks for a mood or a background, so it is drawn as moving art" }
+  if kind == "illustration" { return "asks how or why something happens, so it is drawn moving, beside its explanation" }
+  return "asks about the parts and structure of something, so it is drawn as a diagram"
+}
+
+// ---------------------------------------------------------------- one shape of answer
+
+// The palettes' CSS, scoped to the embed instead of the whole page, so
+// one page can hold embeds in different colours.
+fn dz_scoped_palettes() -> Text {
+  return palettes_css().replace(":root{", ".kd{").replace("html[data-palette=", ".kd[data-palette=")
+}
+
+fn dz_embed_style() -> Text {
+  return ".kd{display:block;color:var(--ink);background:var(--bg);border-radius:22px;padding:14px;font:15px/1.5 Figtree,system-ui,-apple-system,'Segoe UI',sans-serif}.kd[data-place=agent]{padding:0;background:none}.kd .kd-title{font-weight:800;font-size:18px;letter-spacing:-.01em;margin:2px 4px 10px}.kd .kd-frame{width:100%;height:640px;border:0;border-radius:16px;background:var(--bg)}.kd .beats{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:6px}.kd .beat{display:flex;gap:10px;padding:8px 10px;border-radius:12px;color:var(--soft);border:1px solid color-mix(in srgb,var(--line) 10%,transparent);outline:none}.kd .beat b{flex:none;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font:600 11px ui-monospace,Consolas,monospace;color:var(--think);border:1.5px solid color-mix(in srgb,var(--think) 70%,transparent)}.kd .beat.on{color:var(--ink);border-color:color-mix(in srgb,var(--amber) 55%,transparent)}.kd .beat.on b{background:var(--amber);border-color:var(--amber);color:#1a0f08}"
+}
+
+fn dz_wrap(kind: Text, place: Text, palette: Text, title: Text, inner: Text, style: Text) -> Text {
+  let head = if place == "agent" or title.is_empty() { "" } else { f"<div class=\"kd-title\">{art_esc(title)}</div>" }
+  return f"<div class=\"kd kd-{kind}\" data-palette=\"{palette}\" data-place=\"{place}\"><style>{dz_scoped_palettes()}{dz_embed_style()}{style}</style>{head}{inner}</div>"
+}
+
+fn dz_beats(a: Art) -> Text {
+  return "<ol class=\"beats\">" + (for k in 0 until a.beats.length() { f"<li class=\"beat\" tabindex=\"0\" data-shows=\"{a.beats[k].shows.join(\" \")}\"><b>{k + 1}</b><span>{art_esc(a.beats[k].text)}</span></li>" }).join("") + "</ol>"
+}
+
+fn dz_palette(asked: Text, chosen: Text) -> Text {
+  if palette_names().contains(asked.trim().lower()) { return asked.trim().lower() }
+  return if palette_names().contains(chosen) { chosen } else { "dark_matter" }
+}
+
+fn dz_from_illustration(ask: DzAsk, r: ArtPage) -> DzResult {
+  let place = dz_place(ask)
+  let palette = dz_palette(ask.palette, r.art.palette)
+  let words = if place == "agent" { "" } else { dz_beats(r.art) }
+  let inner = r.svg + words + f"<script>{art_script()}</script>"
+  let embed = if r.problems.is_empty() { dz_wrap("illustration", place, palette, r.art.title, inner, art_style()) } else { "" }
+  return {kind: "illustration", why: dz_why(ask), title: r.art.title, page: r.page, svg: r.svg, embed: embed, problems: r.problems, fixed: r.fixed}
+}
+
+fn dz_from_art(ask: DzAsk, g: GenArt) -> DzResult {
+  let place = dz_place(ask)
+  let palette = dz_palette(ask.palette, g.recipe.palette)
+  let embed = if g.problems.is_empty() { dz_wrap("art", place, palette, g.recipe.title, g.svg, gen_style()) } else { "" }
+  return {kind: "art", why: dz_why(ask), title: g.recipe.title, page: g.page, svg: g.svg, embed: embed, problems: g.problems, fixed: []}
+}
+
+fn dz_from_diagram(ask: DzAsk, r: Request, d: Design) -> DzResult {
+  let place = dz_place(ask)
+  // framed, the page paints its own background, so no white shows below it
+  let page = d.page.replace("</head>", "<style>html{background:var(--bg)}</style></head>")
+  let frame = f"<iframe class=\"kd-frame\" title=\"{art_esc(r.structure.title)}\" srcdoc=\"{art_esc(page)}\"></iframe>"
+  let embed = if d.problems.is_empty() { dz_wrap("diagram", place, dz_palette(ask.palette, r.palette), "", frame, "") } else { "" }
+  return {kind: "diagram", why: dz_why(ask), title: r.structure.title, page: d.page, svg: "", embed: embed, problems: d.problems, fixed: []}
+}
+
+fn dz_with_palette(r: Request, palette: Text) -> Request {
+  return if palette_names().contains(palette.trim().lower()) { {..r, palette: palette.trim().lower()} } else { r }
+}
+
+// ---------------------------------------------------------------- one canvas, all three
+//
+// For an explanation worth the room, Kosika draws all three ways at once
+// and composes them: the diagram shows the structure, an animated
+// illustration shows the part that moves, and calm art made for the
+// diagram's own shape sits behind both, all in one palette. Which leads is
+// Kosika's choice by the words of the ask (a "how" leads with the moving
+// picture, anything else with the diagram), and Kosika finds which step
+// of the diagram the moving picture shows, by the words they share, and
+// says so on the canvas. If one way fails, the canvas is drawn from the
+// others and says what was left out.
+
+// The words that carry meaning: lower case, longer than three letters,
+// with the commonest left out.
+fn dz_words(text: Text) -> Text[] {
+  let common = ["that", "this", "with", "from", "into", "they", "their", "then", "than", "which", "what", "when", "where", "there", "each", "have", "will", "your", "about", "more", "most", "some", "show", "shows", "does", "make", "makes"]
+  var out: Text[] = []
+  for w in text.lower().replace(",", " ").replace(".", " ").replace(":", " ").replace(";", " ").replace("(", " ").replace(")", " ").words() {
+    if w.length() > 3 and not common.contains(w) and not out.contains(w) { out = out.append(w) }
+  }
+  return out
+}
+
+fn dz_shared(a: Text[], b: Text[]) -> Number {
+  var n = 0
+  for w in a {
+    if b.contains(w) { n = n + 1 }
+  }
+  return n
+}
+
+// The step of the diagram that the moving picture shows best: the one
+// sharing most words with the picture's title, summary and sentences;
+// -1 when none shares any.
+fn dz_step_shown(s: Structure, a: Art) -> Number {
+  let picture = dz_words(a.title + " " + a.summary + " " + (for b in a.beats { b.text }).join(" "))
+  var best = -1
+  var most = 0
+  for k in 0 until s.steps.length() {
+    let n = dz_shared(dz_words(s.steps[k].text), picture)
+    if n > most {
+      most = n
+      best = k
+    }
+  }
+  return best
+}
+
+fn dz_canvas_style() -> Text {
+  return ".kd-canvas{position:relative;overflow:hidden;padding:18px}.kd-canvas>.kc-art{position:absolute;inset:0;opacity:.32;pointer-events:none}.kd-canvas>.kc-art svg{width:100%;height:100%;display:block}.kd-canvas>.kc-head,.kd-canvas>.kc-grid,.kd-canvas>div:not(.kc-art),.kd-canvas>.kc-note{position:relative}.kc-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 14px;margin:2px 4px 14px}.kc-head h2{margin:0;font-size:22px;font-weight:850;letter-spacing:-.02em}.kc-head p{margin:0;color:var(--soft);font-size:14px}.kc-grid{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:16px;align-items:start}.kc-card{background:color-mix(in srgb,var(--halo) 82%,transparent);border:1px solid color-mix(in srgb,var(--line) 12%,transparent);border-radius:18px;padding:12px;backdrop-filter:blur(6px)}.kc-label{font:600 10.5px ui-monospace,Consolas,monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);margin:2px 4px 10px}.kc-label b{color:var(--amber);font-weight:600}.kc-card .kd-frame{height:620px}.kc-note{color:var(--soft);font-size:12.5px;margin:12px 4px 0}.kc-quiz{margin-top:16px}.kc-reaction{margin-top:16px}.kc-field{font:600 10.5px ui-monospace,Consolas,monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--amber);border:1px solid color-mix(in srgb,var(--amber) 45%,transparent);border-radius:999px;padding:3px 9px;align-self:center}@media (max-width:900px){.kc-grid{grid-template-columns:1fr}}"
+}
+
+fn dz_card(label: Text, inner: Text) -> Text { return f"<div class=\"kc-card\"><div class=\"kc-label\">{label}</div>{inner}</div>" }
+
+fn dz_diagram_frame(r: Request, d: Design) -> Text {
+  let page = d.page.replace("</head>", "<style>html{background:var(--bg)}</style></head>")
+  return f"<iframe class=\"kd-frame\" title=\"{art_esc(r.structure.title)}\" srcdoc=\"{art_esc(page)}\"></iframe>"
+}
+
+// A science ask comes to the canvas because it asks how or why, so the
+// moving picture leads.
+fn dz_canvas_lead(ask: DzAsk) -> Text {
+  let kind = dz_kind({..ask, kind: ""})
+  return if kind == "canvas" { "illustration" } else { kind }
+}
+
+fn dz_from_canvas(ask: DzAsk, palette: Text, r: Request, d: Design, m: ArtPage, g: GenArt, z: QzPage) -> DzResult {
+  let place = dz_place(ask)
+  let on_subject = dz_on_subject(ask.text, r.structure)
+  let has_diagram = d.problems.is_empty() and not d.page.is_empty() and on_subject
+  let has_moving = m.problems.is_empty() and not m.svg.is_empty()
+  let lead = dz_canvas_lead(ask)
+  let step = if has_diagram and has_moving { dz_step_shown(r.structure, m.art) } else { -1 }
+  let moving_label = if step >= 0 { f"Moving picture &#183; <b>step {step + 1}</b> of the diagram" } else { "Moving picture" }
+  let diagram_card = if has_diagram { dz_card("The structure", dz_diagram_frame(r, d)) } else { "" }
+  let moving_card = if has_moving { dz_card(moving_label, m.svg + dz_beats(m.art) + "<script>" + art_script() + "</script>") } else { "" }
+  let first = if lead == "illustration" { moving_card } else { diagram_card }
+  let second = if lead == "illustration" { diagram_card } else { moving_card }
+  // When the models drew nothing, the canvas still has what Kosika works
+  // out itself (a formula, a reaction, a lab), titled by the ask.
+  let title = if has_diagram { r.structure.title } else if has_moving { m.art.title } else { dz_ask_title(ask.text) }
+  let summary = if has_diagram { r.structure.summary } else if has_moving { m.art.summary } else { "Worked out by Kosika; the drawings could not be made this time." }
+  var left: Text[] = []
+  if not has_diagram { left = left.append("the diagram (" + (if on_subject { d.problems.join("; ") } else { "it was about something else" }) + ")") }
+  if not has_moving { left = left.append("the moving picture (" + m.problems.join("; ") + ")") }
+  let note = if left.is_empty() { "" } else { "<p class=\"kc-note\">Left out: " + art_esc(left.join("; ")) + ".</p>" }
+  let both = not first.is_empty() and not second.is_empty()
+  let grid = if both { "<div class=\"kc-grid\">" + first + second + "</div>" } else { "<div>" + first + second + "</div>" }
+  let field = dz_science_field(ask.text)
+  let equation = dz_reaction(ask.text)
+  let balanced = sc_balance(equation)
+  let reaction = if equation.is_empty() or not balanced.ok { "" } else { "<div class=\"kc-card kc-reaction\">" + sc_card(balanced, dz_reaction_name(ask.text)) + sm_reaction_svg(balanced) + "</div>" }
+  let lab = dz_lab(ask.text)
+  let formula = dz_formula_card(dz_formula_for(ask.text))
+  let check = if z.problems.is_empty() and not z.card.is_empty() { "<div class=\"kc-card kc-quiz\">" + z.card + "<script>" + qz_script() + "</script></div>" } else { "" }
+  let inner = "<div class=\"kc-art\" aria-hidden=\"true\">" + g.svg + "</div><div class=\"kc-head\">" + dz_field_label(field) + "<h2>" + art_esc(title) + "</h2><p>" + art_esc(summary) + "</p></div>" + grid + formula + reaction + lab + check + note
+  let own = not (formula.is_empty() and reaction.is_empty() and lab.is_empty())
+  let drawn = has_diagram or has_moving or own
+  let embed = if drawn { dz_wrap("canvas", place, palette, "", inner, art_style() + gen_style() + qz_style() + sc_style() + sm_style() + dz_lab_style() + dz_formula_style() + dz_canvas_style()) } else { "" }
+  let page = if drawn { dz_canvas_page(title, palette, embed) } else { "" }
+  let none: Text[] = []
+  let wrong = if drawn { none } else { d.problems.concat(m.problems) }
+  return {kind: "canvas", why: dz_canvas_why(lead, step), title: title, page: page, svg: m.svg, embed: embed, problems: wrong, fixed: m.fixed}
+}
+
+// ---------------------------------------------------------------- labs
+//
+// When the ask is about something a learner can try, the canvas adds a
+// small lab: change what the real thing would let you change, and watch
+// what follows. Kosika works the numbers out first (the table under each
+// lab), and the sliders use the same formula, so what moves on the page
+// is what Kosika worked out.
+
+fn dz_lab_kind(text: Text) -> Text {
+  let t = dz_padded(text)
+  if dz_has(t, [" pendulum", " swing", " period of"]) { return "pendulum" }
+  if dz_has(t, [" circuit", " ohm", " current", " resistor", " resistance", " voltage"]) { return "circuit" }
+  return ""
+}
+
+// T = 2 pi sqrt(L / g), to two places.
+fn dz_period(metres: Number, g: Number) -> Number { return (2 * 3.14159265 * (metres / g).sqrt() * 100).round() / 100 }
+
+fn dz_amps(volts: Number, ohms: Number) -> Number { return (volts / ohms * 1000).round() / 1000 }
+
+fn dz_lab_rows(cells: Text[][]) -> Text {
+  return "<table class=\"lab-t\">" + (for row in cells { "<tr>" + (for c in row { "<td>" + c + "</td>" }).join("") + "</tr>" }).join("") + "</table>"
+}
+
+fn dz_pendulum_lab() -> Text {
+  let lengths = [0.25, 0.5, 1, 2]
+  let rows = [["length", "on Earth", "on the Moon", "on Mars"]].concat(for l in lengths { [f"{l} m", f"{dz_period(l, 9.81)} s", f"{dz_period(l, 1.62)} s", f"{dz_period(l, 3.71)} s"] })
+  let svg = "<svg class=\"lab-svg\" viewBox=\"0 0 300 230\"><line x1=\"110\" y1=\"16\" x2=\"190\" y2=\"16\" class=\"lab-bar\"/><g id=\"lab-arm\" class=\"lab-arm\"><line x1=\"150\" y1=\"16\" x2=\"150\" y2=\"150\" id=\"lab-rod\"/><circle cx=\"150\" cy=\"150\" r=\"13\" id=\"lab-bob\"/></g></svg>"
+  let controls = "<label>Length <b id=\"lab-lv\">1 m</b><input id=\"lab-l\" type=\"range\" min=\"0.1\" max=\"3\" step=\"0.05\" value=\"1\"></label><label>Where <select id=\"lab-g\"><option value=\"9.81\">Earth, 9.81 m/s&#178;</option><option value=\"1.62\">Moon, 1.62 m/s&#178;</option><option value=\"3.71\">Mars, 3.71 m/s&#178;</option><option value=\"24.79\">Jupiter, 24.79 m/s&#178;</option></select></label><p class=\"lab-out\">T = 2&#960;&#8730;(L / g) = <b id=\"lab-t\">2.01 s</b></p>"
+  let script = "<script>(function(){var L=document.getElementById('lab-l'),G=document.getElementById('lab-g'),arm=document.getElementById('lab-arm'),rod=document.getElementById('lab-rod'),bob=document.getElementById('lab-bob');function go(){var l=+L.value,g=+G.value,T=2*Math.PI*Math.sqrt(l/g),y=16+40+l*45;rod.setAttribute('y2',y);bob.setAttribute('cy',y);arm.style.animationDuration=T+'s';document.getElementById('lab-lv').textContent=l+' m';document.getElementById('lab-t').textContent=T.toFixed(2)+' s';}L.oninput=go;G.onchange=go;go();})();</script>"
+  return "<div class=\"kc-card kc-lab\"><div class=\"kc-label\">Pendulum lab &#183; <b>try it</b></div><div class=\"lab-grid\">" + svg + "<div class=\"lab-side\">" + controls + "</div></div><p class=\"lab-note\">Worked out by Kosika first, the period of one full swing:</p>" + dz_lab_rows(rows) + script + "</div>"
+}
+
+fn dz_circuit_lab() -> Text {
+  let pairs = [[1.5, 10], [9, 3], [12, 4], [230, 50]]
+  let rows = [["battery", "resistor", "current", "power"]].concat(for q in pairs { [f"{q[0]} V", f"{q[1]} ohm", f"{dz_amps(q[0], q[1])} A", f"{(q[0] * dz_amps(q[0], q[1]) * 100).round() / 100} W"] })
+  let loop = "M40 110 L40 30 L260 30 L260 190 L40 190 L40 130"
+  let charges = (for k in 0 until 8 { "<circle r=\"5\" class=\"lab-q\" cx=\"-20\" cy=\"-20\"/>" }).join("") + f"<path id=\"lab-loop\" d=\"{loop}\" fill=\"none\" stroke=\"none\"/>"
+  let svg = "<svg class=\"lab-svg\" viewBox=\"0 0 300 220\"><path class=\"lab-wire\" d=\"M40 110 L40 30 L120 30 M180 30 L260 30 L260 190 L40 190 L40 130\"/><path class=\"lab-wire\" d=\"M120 30 L127 20 L135 40 L142 20 L150 40 L157 20 L165 40 L172 20 L180 30\"/><line x1=\"24\" y1=\"110\" x2=\"56\" y2=\"110\" class=\"lab-wire\"/><line x1=\"32\" y1=\"130\" x2=\"48\" y2=\"130\" class=\"lab-wire\" style=\"stroke-width:7\"/>" + charges + "</svg>"
+  let controls = "<label>Battery <b id=\"lab-vv\">9 V</b><input id=\"lab-v\" type=\"range\" min=\"1\" max=\"24\" step=\"0.5\" value=\"9\"></label><label>Resistor <b id=\"lab-rv\">3 ohm</b><input id=\"lab-r\" type=\"range\" min=\"1\" max=\"100\" step=\"1\" value=\"3\"></label><p class=\"lab-out\">I = V / R = <b id=\"lab-i\">3 A</b>, P = V &#215; I = <b id=\"lab-p\">27 W</b></p>"
+  let script = "<script>(function(){var V=document.getElementById('lab-v'),R=document.getElementById('lab-r');function go(){var v=+V.value,r=+R.value,i=v/r;document.getElementById('lab-vv').textContent=v+' V';document.getElementById('lab-rv').textContent=r+' ohm';document.getElementById('lab-i').textContent=(+i.toFixed(3))+' A';document.getElementById('lab-p').textContent=(+(v*i).toFixed(2))+' W';speed=Math.min(400,Math.max(4,i*30));}var speed=90,at=0,last=0,path=document.getElementById('lab-loop'),len=path.getTotalLength(),qs=document.querySelectorAll('.lab-q');function tick(now){at=(at+speed*Math.min(0.05,(now-(last||now))/1000))%len;last=now;qs.forEach(function(q,k){var pt=path.getPointAtLength((at+k*len/qs.length)%len);q.setAttribute('cx',pt.x);q.setAttribute('cy',pt.y);});requestAnimationFrame(tick);}V.oninput=go;R.oninput=go;go();requestAnimationFrame(tick);})();</script>"
+  return "<div class=\"kc-card kc-lab\"><div class=\"kc-label\">Circuit bench &#183; <b>try it</b></div><div class=\"lab-grid\">" + svg + "<div class=\"lab-side\">" + controls + "</div></div><p class=\"lab-note\">Worked out by Kosika first, by Ohm's law:</p>" + dz_lab_rows(rows) + script + "</div>"
+}
+
+fn dz_lab(text: Text) -> Text {
+  let kind = dz_lab_kind(text)
+  if kind == "pendulum" { return dz_pendulum_lab() }
+  if kind == "circuit" { return dz_circuit_lab() }
+  return ""
+}
+
+fn dz_lab_style() -> Text {
+  return ".kc-lab{margin-top:16px}.lab-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:center}.lab-svg{width:100%;max-height:260px}.lab-bar,.lab-arm line,.lab-wire{stroke:var(--ink);stroke-width:3;stroke-linecap:round;fill:none}.lab-arm{transform-origin:150px 16px;animation:lab-swing 2s ease-in-out infinite alternate}.lab-arm circle{fill:var(--amber)}@keyframes lab-swing{from{transform:rotate(20deg)}to{transform:rotate(-20deg)}}.lab-q{fill:var(--amber)}.lab-side label{display:block;margin:0 0 14px;color:var(--soft);font-size:14px}.lab-side b{color:var(--ink)}.lab-side input,.lab-side select{display:block;width:100%;margin-top:6px;accent-color:var(--amber)}.lab-out{font-size:16px;margin:6px 0 0}.lab-note{color:var(--soft);font-size:12.5px;margin:12px 4px 6px}.lab-t{border-collapse:collapse;font:13px ui-monospace,Consolas,monospace;width:100%}.lab-t td{padding:5px 8px;border-top:1px solid color-mix(in srgb,var(--line) 14%,transparent)}.lab-t tr:first-child td{color:var(--gold);border-top:none}@media (max-width:700px){.lab-grid{grid-template-columns:1fr}}"
+}
+
+// ---------------------------------------------------------------- formulas
+//
+// When the ask is about something a formula governs, the canvas shows the
+// formula: typeset, each symbol named with its unit, a worked example with
+// the numbers put in, and a check that the units on the right come out as
+// the unit on the left. Kosika does all of it: std/math reads and works
+// the formula, std/science_units carries the units.
+
+record DzFormula { key: Text words: Text[] name: Text formula: Text unit: Text meaning: Text symbols: Text[] meanings: Text[] units: Text[] values: Number[] }
+
+fn dz_formulas() -> DzFormula[] {
+  return [
+    {key: "pendulum", words: [" pendulum", " period of"], name: "T", formula: "2 pi sqrt(L/g)", unit: "s", meaning: "the time of one full swing", symbols: ["L", "g"], meanings: ["the length of the string", "the pull of gravity"], units: ["m", "m/s^2"], values: [1, 9.81]},
+    {key: "ohm", words: [" ohm", " current", " resistor", " resistance", " circuit"], name: "I", formula: "V/R", unit: "A", meaning: "the current", symbols: ["V", "R"], meanings: ["the voltage across it", "the resistance"], units: ["V", "ohm"], values: [9, 3]},
+    {key: "energy", words: [" e=mc", " mc^2", " mc2", " mass-energy", " mass energy", " relativity"], name: "E", formula: "m c^2", unit: "J", meaning: "the energy locked in the mass", symbols: ["m", "c"], meanings: ["the mass", "the speed of light"], units: ["kg", "m/s"], values: [0.001, 299792458]},
+    {key: "kinetic", words: [" kinetic energy", " energy of motion"], name: "E_k", formula: "1/2 m v^2", unit: "J", meaning: "the energy of motion", symbols: ["m", "v"], meanings: ["the mass", "the speed"], units: ["kg", "m/s"], values: [2, 3]},
+    {key: "force", words: [" newton's second", " f=ma", " f = ma", " force and acceleration"], name: "F", formula: "m a", unit: "N", meaning: "the force", symbols: ["m", "a"], meanings: ["the mass", "the acceleration"], units: ["kg", "m/s^2"], values: [5, 2]},
+    {key: "gravity", words: [" law of gravitation", " gravitational force", " universal gravitation"], name: "F", formula: "G m_1 m_2 / r^2", unit: "N", meaning: "the pull between two masses", symbols: ["G", "m_1", "m_2", "r"], meanings: ["the gravitational constant", "the first mass", "the second mass", "the distance between their centres"], units: ["N m^2/kg^2", "kg", "kg", "m"], values: [0.0000000000667430, 5972000000000000000000000, 73480000000000000000000, 384400000]},
+    {key: "speed", words: [" speed", " velocity", " distance over time"], name: "v", formula: "d/t", unit: "m/s", meaning: "the speed", symbols: ["d", "t"], meanings: ["the distance", "the time taken"], units: ["m", "s"], values: [100, 9.58]},
+    {key: "density", words: [" density"], name: "rho", formula: "m/V", unit: "kg/m^3", meaning: "the density", symbols: ["m", "V"], meanings: ["the mass", "the volume"], units: ["kg", "m^3"], values: [7.874, 0.001]},
+    {key: "wave", words: [" wavelength", " frequency", " wave speed"], name: "v", formula: "f lambda", unit: "m/s", meaning: "the speed of the wave", symbols: ["f", "lambda"], meanings: ["the frequency", "the wavelength"], units: ["Hz", "m"], values: [440, 0.78]},
+    {key: "power", words: [" electrical power", " power in a circuit", " watts"], name: "P", formula: "V I", unit: "W", meaning: "the power", symbols: ["V", "I"], meanings: ["the voltage", "the current"], units: ["V", "A"], values: [230, 4]}
+  ]
+}
+
+fn dz_formula_for(text: Text) -> DzFormula {
+  let t = dz_padded(text)
+  let all = dz_formulas()
+  for f in all {
+    if dz_has(t, f.words) { return f }
+  }
+  return {key: "", words: [], name: "", formula: "", unit: "", meaning: "", symbols: [], meanings: [], units: [], values: []}
+}
+
+// The unit an expression comes out in, worked through it the way std/math
+// works its value: from the last word to the first, units on a stack.
+// Adding needs the same unit on both sides; a function needs none.
+fn dz_arity(t: Text) -> Number {
+  if ["+", "-", "*", "/", "^"].contains(t) { return 2 }
+  if ["~", "sin", "cos", "tan", "abs", "exp", "ln"].contains(t) { return 1 }
+  return 0
+}
+
+record DzUnitWalk { unit: SuUnit problem: Text }
+
+fn dz_units_of(e: Text[], names: Text[], units: Text[]) -> DzUnitWalk {
+  var stack: SuUnit[] = []
+  var numbers: Number[] = []
+  var problem = ""
+  var i = e.length() - 1
+  while i >= 0 {
+    let t = e[i]
+    let take = dz_arity(t)
+    if take == 0 {
+      let k = names.index_of(t).or(-1)
+      stack = stack.append(if k >= 0 { su_unit(units[k]) } else { su_one() })
+      numbers = numbers.append(if t.starts_with("n:") { t.slice(2, t.length()).to_number().or(0) } else { 0 })
+    } else if take == 1 {
+      let a = stack[stack.length() - 1]
+      if t != "~" and t != "abs" and a.dims != su_one().dims { problem = f"{t} needs a number with no unit" }
+      if t != "~" and t != "abs" { stack = stack.slice(0, stack.length() - 1).append(su_one()) }
+    } else {
+      let a = stack[stack.length() - 1]
+      let b = stack[stack.length() - 2]
+      let power = numbers[numbers.length() - 2]
+      stack = stack.slice(0, stack.length() - 2)
+      numbers = numbers.slice(0, numbers.length() - 2)
+      if (t == "+" or t == "-") and a.dims != b.dims { problem = "two things added have different units" }
+      let joined = if t == "*" { su_times(a, b) } else if t == "/" { su_over(a, b) } else if t == "^" { su_power(a, power) } else { a }
+      stack = stack.append(joined)
+      numbers = numbers.append(0)
+    }
+    i -= 1
+  }
+  return {unit: if stack.is_empty() { su_one() } else { stack[0] }, problem: problem}
+}
+
+fn dz_unit_mathml(unit: Text) -> Text {
+  let u = unit.replace("^2", "&#178;").replace("^3", "&#179;").replace("ohm", "&#937;").replace(" ", "&#183;")
+  return f"<mtext class=\"unit\">{u}</mtext>"
+}
+
+fn dz_formula_card(f: DzFormula) -> Text {
+  if f.key.is_empty() { return "" }
+  let read = parse(f.formula)
+  if not read.error.is_empty() { return "" }
+  let e = read.expr
+  let big = f"<math display=\"block\" class=\"kf-big\"><mrow>{to_mathml(x(f.name))}<mo>=</mo>{to_mathml(e)}</mrow></math>"
+  let legend = (for k in 0 until f.symbols.length() { f"<tr><td><math>{to_mathml(x(f.symbols[k]))}</math></td><td>{f.meanings[k]}</td><td><math>{dz_unit_mathml(f.units[k])}</math></td></tr>" }).join("")
+  let head = f"<tr><td><math>{to_mathml(x(f.name))}</math></td><td>{f.meaning}</td><td><math>{dz_unit_mathml(f.unit)}</math></td></tr>"
+  let walk = dz_units_of(e, f.symbols, f.units)
+  let wanted = su_unit(f.unit)
+  let fits = walk.problem.is_empty() and walk.unit.dims == wanted.dims
+  let unit_text = f.unit.replace("^2", "&#178;").replace("^3", "&#179;").replace("ohm", "&#937;")
+  let check = if fits { f"<p class=\"kf-ok\">&#10003; Units check: the right side comes out in {unit_text}, as it should.</p>" } else { f"<p class=\"kf-bad\">The units do not agree: {walk.problem}</p>" }
+  let worked = calc_mathml(f.name, e, f.symbols, f.values, f.unit.replace("^2", "&#178;").replace("^3", "&#179;").replace("ohm", "&#937;"))
+  let given = (for k in 0 until f.symbols.length() { f"<math>{to_mathml(x(f.symbols[k]))}<mo>=</mo>{dz_number_mathml(f.values[k])}<mspace width=\"0.2em\"/>{dz_unit_mathml(f.units[k])}</math>" }).join("<span class=\"kf-sep\">,</span> ")
+  let latex = to_latex(x(f.name)) + " = " + to_latex(e)
+  let copy = "<button class=\"kf-copy\" type=\"button\" data-tex=\"" + art_esc(latex) + "\" onclick=\"var b=this;navigator.clipboard&&navigator.clipboard.writeText(b.dataset.tex).then(function(){b.textContent='Copied'},function(){})\">Copy LaTeX</button>"
+  let graph = dz_graph(f)
+  let plotted = if graph.svg.is_empty() { "" } else { "<div class=\"kf-plot\">" + graph.svg + "<ul class=\"kf-marks\">" + (for m in graph.marks { "<li>" + m + "</li>" }).join("") + "</ul></div>" }
+  return f"<div class=\"kc-card kc-formula\"><div class=\"kc-label\">The formula &#183; <b>worked by Kosika</b></div>{big}<table class=\"kf-legend\">{head}{legend}</table><div class=\"kf-work\"><div><p class=\"kf-given\">For example, with {given}:</p>{worked}{check}</div>{plotted}</div>{copy}</div>"
+}
+
+fn dz_number_mathml(v: Number) -> Text {
+  if v.abs() >= 0.001 and v.abs() < 1000000 { return f"<mn>{v}</mn>" }
+  let size = (v.abs().log() / (10).log()).floor()
+  let lead = if size >= 0 { v / (10).power(size) } else { v * (10).power(0 - size) }
+  return f"<mn>{(lead * 10000).round() / 10000}</mn><mo>&#215;</mo><msup><mn>10</mn><mn>{size}</mn></msup>"
+}
+
+// ---------------------------------------------------------------- graphs
+//
+// A formula's graph, plotted by Kosika: the answer against the first
+// thing it depends on, from 0 to three times the example's value, the
+// others held at their example values. The axes get round ticks (1, 2 or
+// 5 times a power of ten), the example is marked on the curve with its
+// numbers, and any place the curve crosses zero or turns is found and
+// marked too: crossings by Newton's method, turns where the derivative,
+// worked by rule, is zero.
+
+fn dz_nice_step(span: Number) -> Number {
+  if span <= 0 { return 1 }
+  let raw = span / 5
+  let size = (raw.log() / (10).log()).floor()
+  let base = if size >= 0 { (10).power(size) } else { 1 / (10).power(0 - size) }
+  let f = raw / base
+  let pick = if f <= 1 { 1 } else if f <= 2 { 2 } else if f <= 5 { 5 } else { 10 }
+  return pick * base
+}
+
+fn dz_tick_text(v: Number) -> Text {
+  let r = (v * 1000000).round() / 1000000
+  if r.abs() >= 100000 or (r != 0 and r.abs() < 0.001) { return exact(r) }
+  return f"{r}"
+}
+
+record DzGraph { svg: Text marks: Text[] }
+
+fn dz_graph(f: DzFormula) -> DzGraph {
+  let none: DzGraph = {svg: "", marks: []}
+  if f.key.is_empty() or f.symbols.is_empty() { return none }
+  let read = parse(f.formula)
+  if not read.error.is_empty() { return none }
+  let e = read.expr
+  let name = f.symbols[0]
+  let xname = name.replace("_", "")
+  let yname = f.name.replace("_", "")
+  let at_x = f.values[0]
+  let hi = if at_x > 0 { at_x * 3 } else { 10 }
+  // From just above 0: many formulas cannot be worked at 0 itself (V / R,
+  // or the slope of a square root), so the curve starts a step later.
+  let lo = hi / 240
+  let n = 48
+  // the others held at their example values
+  var held = e
+  for k in 1 until f.symbols.length() { held = subst(held, f.symbols[k], f.values[k]) }
+  let slope = simplify(deriv(held, name))
+  var xs: Number[] = []
+  var ys: Number[] = []
+  var ds: Number[] = []
+  for k in 0 until n + 1 {
+    let xv = lo + (hi - lo) * k / n
+    xs = xs.append(xv)
+    ys = ys.append(at(held, [name], [xv]))
+    ds = ds.append(at(slope, [name], [xv]))
+  }
+  let ex_y = at(held, [name], [at_x])
+  let top = ys.max().or(1).max(ex_y)
+  let bottom = ys.min().or(0).min(0)
+  let w = 560
+  let h = 300
+  let left = 64
+  let right = 24
+  let up = 18
+  let down = 44
+  let sx = (w - left - right) / (hi - lo)
+  let span = if top - bottom > 0 { top - bottom } else { 1 }
+  let sy = (h - up - down) / span
+  let px = for v in xs { left + (v - lo) * sx }
+  let py = for v in ys { h - down - (v - bottom) * sy }
+  let path = "M" + (for k in 0 until px.length() { f"{(px[k] * 10).round() / 10} {(py[k] * 10).round() / 10}" }).join(" L")
+  let xstep = dz_nice_step(hi - lo)
+  let ystep = dz_nice_step(span)
+  let xstart = (lo / xstep).ceil() * xstep
+  let xticks = for k in 0 until ((hi - xstart) / xstep).floor() + 1 { xstart + k * xstep }
+  let ystart = (bottom / ystep).ceil() * ystep
+  let yticks = for k in 0 until ((top - ystart) / ystep).floor() + 1 { ystart + k * ystep }
+  let xgrid = (for t in xticks { f"<line class=\"g-grid\" x1=\"{left + (t - lo) * sx}\" y1=\"{up}\" x2=\"{left + (t - lo) * sx}\" y2=\"{h - down}\"/><text class=\"g-tick\" x=\"{left + (t - lo) * sx}\" y=\"{h - down + 16}\" text-anchor=\"middle\">{dz_tick_text(t)}</text>" }).join("")
+  let ygrid = (for t in yticks { f"<line class=\"g-grid\" x1=\"{left}\" y1=\"{h - down - (t - bottom) * sy}\" x2=\"{w - right}\" y2=\"{h - down - (t - bottom) * sy}\"/><text class=\"g-tick\" x=\"{left - 8}\" y=\"{h - down - (t - bottom) * sy + 4}\" text-anchor=\"end\">{dz_tick_text(t)}</text>" }).join("")
+  let ex_px = left + (at_x - lo) * sx
+  let ex_py = h - down - (ex_y - bottom) * sy
+  let example = f"<line class=\"g-guide\" x1=\"{ex_px}\" y1=\"{h - down}\" x2=\"{ex_px}\" y2=\"{ex_py}\"/><line class=\"g-guide\" x1=\"{left}\" y1=\"{ex_py}\" x2=\"{ex_px}\" y2=\"{ex_py}\"/><circle class=\"g-dot\" cx=\"{ex_px}\" cy=\"{ex_py}\" r=\"6\"/>"
+  // where it crosses zero and where it turns, inside the range
+  var marks: Text[] = [f"the example: {xname} = {dz_tick_text(at_x)} gives {yname} = {dz_tick_text((ex_y * 10000).round() / 10000)}"]
+  var found = ""
+  for k in 1 until n {
+    if (ys[k - 1] < 0 and ys[k] >= 0) or (ys[k - 1] > 0 and ys[k] <= 0) {
+      let r = solve(held, name, xs[k])
+      if r.ok and r.value > lo and r.value < hi {
+        found = found + f"<circle class=\"g-root\" cx=\"{left + (r.value - lo) * sx}\" cy=\"{h - down - (0 - bottom) * sy}\" r=\"5\"/>"
+        marks = marks.append(f"crosses zero at {xname} = {exact(r.value)}")
+      }
+    }
+    let d0 = ds[k - 1]
+    let d1 = ds[k]
+    if (d0 < 0 and d1 > 0) or (d0 > 0 and d1 < 0) {
+      let t = solve(slope, name, xs[k])
+      if t.ok and t.value > lo and t.value < hi {
+        let ty = at(held, [name], [t.value])
+        found = found + f"<circle class=\"g-turn\" cx=\"{left + (t.value - lo) * sx}\" cy=\"{h - down - (ty - bottom) * sy}\" r=\"5\"/>"
+        marks = marks.append(f"turns at {xname} = {exact(t.value)}, where {yname} = {dz_tick_text((ty * 10000).round() / 10000)}")
+      }
+    }
+  }
+  let unit_x = f.units[0].replace("^2", "&#178;").replace("^3", "&#179;").replace("ohm", "&#937;")
+  let unit_y = f.unit.replace("^2", "&#178;").replace("^3", "&#179;").replace("ohm", "&#937;")
+  let axes = f"<line class=\"g-axis\" x1=\"{left}\" y1=\"{h - down}\" x2=\"{w - right}\" y2=\"{h - down}\"/><line class=\"g-axis\" x1=\"{left}\" y1=\"{up}\" x2=\"{left}\" y2=\"{h - down}\"/><text class=\"g-name\" x=\"{(left + w - right) / 2}\" y=\"{h - 6}\" text-anchor=\"middle\">{art_esc(f.meanings[0])} ({xname}, {unit_x})</text><text class=\"g-name\" x=\"14\" y=\"{(up + h - down) / 2}\" text-anchor=\"middle\" transform=\"rotate(-90 14 {(up + h - down) / 2})\">{yname}, {unit_y}</text>"
+  let svg = f"<svg class=\"kf-graph\" viewBox=\"0 0 {w} {h}\" role=\"img\" aria-label=\"{art_esc(f.name)} against {art_esc(name)}\">{xgrid}{ygrid}{axes}<path class=\"g-line\" d=\"{path}\" pathLength=\"1\"/>{example}{found}</svg>"
+  return {svg: svg, marks: marks}
+}
+
+fn dz_formula_style() -> Text {
+  return ".kc-formula{margin-top:16px}.kc-formula math{font-family:'Cambria Math','STIX Two Math','Latin Modern Math',math;color:var(--ink)}.kc-formula mn{color:var(--gold)}.kc-formula .unit{color:var(--soft);font-style:normal}.kf-big{font-size:2.1em;margin:10px 0 14px}.kf-legend{border-collapse:collapse;margin:0 auto 12px;font-size:14.5px}.kf-legend td{padding:4px 12px;border-top:1px solid color-mix(in srgb,var(--line) 14%,transparent);color:var(--soft)}.kf-legend tr:first-child td{border-top:none;color:var(--ink)}.kf-legend math{font-size:1.15em}.kf-given{color:var(--soft);font-size:14px;margin:6px 4px}.kc-formula .calc{font-size:1.25em;margin:4px 12px 8px}.kf-ok{color:var(--ok,#4fe0a6);font-size:14px;margin:8px 4px}.kf-bad{color:var(--bad,#ff6b81);font-size:14px;margin:8px 4px}.kf-sep{color:var(--soft)}.kf-copy{font:600 10px ui-monospace,Consolas,monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--soft);background:none;border:1px solid color-mix(in srgb,var(--line) 20%,transparent);border-radius:999px;padding:6px 12px;cursor:pointer}.kf-copy:focus-visible{outline:2px solid var(--amber)}.kf-work{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:18px;align-items:start}.kf-graph{width:100%;height:auto;display:block}.kf-graph .g-grid{stroke:color-mix(in srgb,var(--line) 10%,transparent)}.kf-graph .g-axis{stroke:color-mix(in srgb,var(--ink) 55%,transparent);stroke-width:1.5}.kf-graph .g-tick{fill:var(--soft);font:11px ui-monospace,Consolas,monospace}.kf-graph .g-name{fill:var(--soft);font:12px Figtree,system-ui,sans-serif}.kf-graph .g-line{fill:none;stroke:var(--amber);stroke-width:3;stroke-linecap:round;stroke-dasharray:1;stroke-dashoffset:1;animation:g-draw 1.6s ease-out forwards}@keyframes g-draw{to{stroke-dashoffset:0}}.kf-graph .g-guide{stroke:var(--gold);stroke-dasharray:4 5;stroke-width:1.2}.kf-graph .g-dot{fill:var(--gold);stroke:var(--bg);stroke-width:2}.kf-graph .g-root{fill:var(--ok,#4fe0a6)}.kf-graph .g-turn{fill:var(--h1,#a993ff)}.kf-marks{margin:6px 0 0;padding-left:18px;color:var(--soft);font-size:13px}@media (prefers-reduced-motion:reduce){.kf-graph .g-line{animation:none;stroke-dashoffset:0}}@media (max-width:760px){.kf-work{grid-template-columns:1fr}}"
+}
+
+// A diagram has to be about what was asked: it shares at least one
+// meaningful word with the ask, or the canvas leaves it out.
+fn dz_on_subject(ask: Text, s: Structure) -> Bool {
+  let asked = dz_words(ask)
+  let drawn = dz_words(s.title + " " + s.summary + " " + (for st in s.steps { st.text }).join(" ") + " " + (for p in s.parts { p.label }).join(" "))
+  return asked.is_empty() or dz_shared(asked, drawn) > 0 or dz_shared(dz_stems(asked), dz_stems(drawn)) > 0
+}
+
+fn dz_stems(words: Text[]) -> Text[] { return for w in words { if w.length() > 5 { w.slice(0, 5) } else { w } } }
+
+fn dz_ask_title(text: Text) -> Text {
+  let t = text.trim()
+  if t.is_empty() { return "Kosika" }
+  return t.slice(0, 1).upper() + t.slice(1, t.length())
+}
+
+fn dz_field_label(field: Text) -> Text {
+  if field.is_empty() { return "" }
+  return "<span class=\"kc-field\">" + field + "</span>"
+}
+
+fn dz_reaction_name(text: Text) -> Text {
+  let t = dz_padded(text)
+  if t.contains(" photosynthesis") { return "Photosynthesis" }
+  if t.contains(" respiration") or t.contains(" glucose") { return "Respiration" }
+  if t.contains(" rust") { return "Rusting" }
+  if t.contains(" haber") or t.contains(" ammonia") { return "Making ammonia" }
+  return "The reaction"
+}
+
+fn dz_canvas_why(lead: Text, step: Number) -> Text {
+  let first = if lead == "illustration" { "leads with the moving picture, since the ask is how or why something happens" } else { "leads with the diagram, since the ask is about structure" }
+  let tie = if step >= 0 { f", and ties the moving picture to step {step + 1}, the one it shows" } else { "" }
+  return "drew all three, diagram, moving picture and art, in one palette; it " + first + tie
+}
+
+fn dz_canvas_page(title: Text, palette: Text, embed: Text) -> Text {
+  let head = "<meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+  return "<!doctype html><html lang=\"en\" data-palette=\"" + palette + "\"><head>" + head + "<title>" + art_esc(title) + "</title><style>" + palettes_css() + "body{margin:0;padding:24px 16px;background:var(--bg)}.kd{max-width:1320px;margin:0 auto}</style></head><body>" + embed + "</body></html>"
+}
+
+fn dz_canvas_request(r: Request, palette: Text) -> Request { return {..r, palette: palette} }
+fn dz_canvas_palette(ask: DzAsk, r: Request) -> Text { return dz_palette(ask.palette, r.palette) }
+fn dz_gen_for(r: Request, palette: Text) -> GenFor { return {shape: r.structure.shape, palette: palette, title: r.structure.title} }
+fn dz_moving_ask(ask: DzAsk, palette: Text) -> ArtAsk { return {text: ask.text, palette: palette} }
+
+fn dz_quiz_ask(ask: DzAsk, palette: Text) -> QzAsk { return {text: ask.text, palette: palette} }
+
+fn dz_from_quiz(ask: DzAsk, z: QzPage) -> DzResult {
+  let place = dz_place(ask)
+  let palette = dz_palette(ask.palette, z.quiz.palette)
+  let embed = if z.problems.is_empty() { dz_wrap("quiz", place, palette, "", z.card + "<script>" + qz_script() + "</script>", qz_style()) } else { "" }
+  return {kind: "quiz", why: dz_why(ask), title: z.quiz.title, page: z.page, svg: "", embed: embed, problems: z.problems, fixed: []}
+}
+
+fn dz_paper_ask(ask: DzAsk) -> PaperAsk { return {text: ask.text} }
+
+fn dz_from_worked(ask: DzAsk, p: Paper) -> DzResult {
+  let place = dz_place(ask)
+  let drawn = not p.page.is_empty()
+  let page = p.page.replace("</head>", "<style>html{background:var(--bg)}</style></head>")
+  let frame = "<iframe class=\"kd-frame\" title=\"Worked mathematics\" srcdoc=\"" + art_esc(page) + "\"></iframe>"
+  let embed = if drawn { dz_wrap("worked", place, dz_palette(ask.palette, "paper"), "", frame, "") } else { "" }
+  let none: Text[] = []
+  let wrong = if drawn { none } else { ["the mathematics could not be worked: " + p.verdict] }
+  return {kind: "worked", why: dz_why(ask) + "; " + p.verdict, title: "Worked mathematics", page: p.page, svg: "", embed: embed, problems: wrong, fixed: []}
+}
+
+fn dz_from_chemistry(ask: DzAsk, c: ScPage) -> DzResult {
+  let place = dz_place(ask)
+  let embed = if c.problems.is_empty() { dz_wrap("chemistry", place, dz_palette(ask.palette, "dark_matter"), "", c.card + sm_reaction_svg(c.balanced), sc_style() + sm_style()) } else { "" }
+  return {kind: "chemistry", why: dz_why(ask), title: "Balanced by Kosika", page: c.page, svg: "", embed: embed, problems: c.problems, fixed: []}
+}
+
+fn dz_from_units(ask: DzAsk, u: SuPage) -> DzResult {
+  let place = dz_place(ask)
+  let none: Text[] = []
+  let wrong = if u.result.ok { none } else { [u.result.problem] }
+  let embed = dz_wrap("units", place, dz_palette(ask.palette, "dark_matter"), "", u.card, su_style())
+  return {kind: "units", why: dz_why(ask), title: "Units", page: "", svg: "", embed: embed, problems: wrong, fixed: []}
+}
+
+fn dz_sc_ask(ask: DzAsk) -> ScAsk { return {text: ask.text.trim().replace("balance ", "").replace("Balance ", ""), palette: ask.palette} }
+fn dz_su_ask(ask: DzAsk) -> SuAsk { return {text: ask.text} }
+
+workflow dz_chemistry(ask: DzAsk) -> DzResult {
+  balanced = call balance(dz_sc_ask(ask))
+  out      = dz_from_chemistry(ask, balanced)
+}
+
+fn dz_se_ask(ask: DzAsk) -> SeAsk { return {text: ask.text, palette: ask.palette} }
+
+fn dz_from_element(ask: DzAsk, e: SePage) -> DzResult {
+  let place = dz_place(ask)
+  let page = e.page.replace("</head>", "<style>html{background:var(--bg)}</style></head>")
+  let frame = "<iframe class=\"kd-frame\" style=\"height:760px\" title=\"The periodic table\" srcdoc=\"" + art_esc(page) + "\"></iframe>"
+  let embed = dz_wrap("element", place, dz_palette(ask.palette, "dark_matter"), "", frame, "")
+  return {kind: "element", why: dz_why(ask), title: e.element.name, page: e.page, svg: "", embed: embed, problems: e.problems, fixed: []}
+}
+
+workflow dz_element(ask: DzAsk) -> DzResult {
+  table = call periodic(dz_se_ask(ask))
+  out   = dz_from_element(ask, table)
+}
+
+workflow dz_units(ask: DzAsk) -> DzResult {
+  converted = call convert(dz_su_ask(ask))
+  out       = dz_from_units(ask, converted)
+}
+
+workflow dz_quiz(ask: DzAsk) -> DzResult {
+  made = call quiz(dz_quiz_ask(ask, ask.palette))
+  out  = dz_from_quiz(ask, made)
+}
+
+workflow dz_worked(ask: DzAsk) -> DzResult {
+  worked = call derive(dz_paper_ask(ask))
+  out    = dz_from_worked(ask, worked)
+}
+
+workflow dz_canvas(ask: DzAsk) -> DzResult {
+  said    = call describe({text: ask.text})
+  palette = dz_canvas_palette(ask, said)
+  asked   = dz_canvas_request(said, palette)
+  drawn   = call draw(asked)
+  moving  = call illustrate(dz_moving_ask(ask, palette))
+  behind  = call gen_backdrop(dz_gen_for(asked, palette))
+  checks  = call quiz(dz_quiz_ask(ask, palette))
+  out     = dz_from_canvas(ask, palette, asked, drawn, moving, behind, checks)
+}
+
+// ---------------------------------------------------------------- the front door
+
+workflow design(ask: DzAsk) -> DzResult {
+  budget 10 model calls, 900 seconds
+  kind = dz_kind(ask)
+  out  = match kind {
+    case "canvas" { call dz_canvas(ask) }
+    case "quiz" { call dz_quiz(ask) }
+    case "chemistry" { call dz_chemistry(ask) }
+    case "units" { call dz_units(ask) }
+    case "element" { call dz_element(ask) }
+    case "worked" { call dz_worked(ask) }
+    case "art" { call dz_art(ask) }
+    case "illustration" { call dz_illustration(ask) }
+    case _ { call dz_diagram(ask) }
+  }
+}
+
+// Only the choice, with no drawing and no model: for a place that draws a
+// kind its own way (Chat keeps its own diagram pipeline, with its critic
+// and photos) and asks Designs for the rest.
+workflow design_kind(ask: DzAsk) -> DzKind {
+  out = {kind: dz_kind(ask), why: dz_why(ask)}
+}
+
+workflow dz_illustration(ask: DzAsk) -> DzResult {
+  drawn = call illustrate({text: ask.text, palette: ask.palette})
+  out   = dz_from_illustration(ask, drawn)
+}
+
+workflow dz_art(ask: DzAsk) -> DzResult {
+  made = call gen_make({text: ask.text})
+  out  = dz_from_art(ask, made)
+}
+
+workflow dz_diagram(ask: DzAsk) -> DzResult {
+  said  = call describe({text: ask.text})
+  asked = dz_with_palette(said, ask.palette)
+  drawn = call draw(asked)
+  out   = dz_from_diagram(ask, asked, drawn)
+}
+
+// ---------------------------------------------------------------- tests
+
+fn dz_ask(text: Text) -> DzAsk { return {text: text, palette: "", place: "chat", kind: ""} }
+
+test "Kosika chooses the way of drawing by the words of the ask" {
+  expect dz_kind(dz_ask("How does the heart pump blood?")) == "canvas"
+  expect dz_kind(dz_ask("why do we have seasons")) == "illustration"
+  expect dz_kind(dz_ask("make me an abstract background for my studio")) == "art"
+  expect dz_kind(dz_ask("a calm generative piece about the sea")) == "art"
+  expect dz_kind(dz_ask("draw a timeline of the space race")) == "diagram"
+  expect dz_kind(dz_ask("compare Rust and Go")) == "diagram"
+  expect dz_kind(dz_ask("how does a compiler pipeline work, step by step")) == "diagram"
+  expect dz_kind(dz_ask("the Krebs cycle")) == "diagram"
+  // a "how does" about a system with no body to watch move is a diagram
+  expect dz_kind(dz_ask("How does a transformer neural network process a sentence?")) == "diagram"
+  expect dz_kind(dz_ask("how does a pendulum swing")) == "canvas"
+  expect dz_kind(dz_ask("quiz me on photosynthesis")) == "quiz"
+  expect dz_kind(dz_ask("test me on the French revolution")) == "quiz"
+  expect dz_kind(dz_ask("differentiate x^2 sin(x)")) == "worked"
+  expect dz_kind(dz_ask("balance C3H8 + O2 -> CO2 + H2O")) == "chemistry"
+  expect dz_kind(dz_ask("how does burning methane work as a reaction")) == "chemistry"
+  expect dz_kind(dz_ask("how does photosynthesis work")) == "canvas"
+  expect dz_kind(dz_ask("why does a pendulum swing back")) == "canvas"
+  expect dz_kind(dz_ask("how does a rainbow form")) == "illustration"
+  expect dz_kind(dz_ask("convert 60 km/h to m/s")) == "units"
+  expect dz_kind(dz_ask("tell me about sodium")) == "element"
+  expect dz_kind(dz_ask("show me the periodic table")) == "element"
+  expect dz_kind({..dz_ask("the Krebs cycle"), kind: "Illustration"}) == "illustration"
+}
+
+test "an embed carries its own colours and stays inside itself" {
+  css = dz_scoped_palettes()
+  expect css.contains(".kd[data-palette=\"ocean\"]")
+  expect not css.contains("html[")
+  e = dz_wrap("art", "site", "ocean", "Sea <calm>", "<svg></svg>", "")
+  expect e.starts_with("<div class=\"kd kd-art\" data-palette=\"ocean\" data-place=\"site\">")
+  expect e.contains("Sea &lt;calm&gt;")
+  expect not dz_wrap("art", "agent", "ocean", "Sea", "<svg></svg>", "").contains("class=\"kd-title\"")
+}
+
+test "an asked palette wins, then the drawing's own, then Dark Matter" {
+  expect dz_palette("Forest", "ocean") == "forest"
+  expect dz_palette("", "ocean") == "ocean"
+  expect dz_palette("neon", "neon") == "dark_matter"
+}
+
+test "the moving picture is tied to the diagram step it shows" {
+  s: Structure = {title: "t", summary: "s", shape: "flow", figure: "", photo: "", parts: [], links: [], steps: [{text: "The heart fills with blood from the veins.", parts: []}, {text: "The ventricles squeeze and pump blood out to the lungs.", parts: []}], marks: [], looks: [], aspects: []}
+  a: Art = {title: "How the ventricles pump", summary: "The ventricles squeeze.", palette: "", backdrop: "", figures: [], motions: [], beats: [{text: "They squeeze blood out.", shows: []}]}
+  expect dz_step_shown(s, a) == 1
+  expect dz_step_shown(s, {..a, title: "Rain", summary: "Clouds", beats: []}) == -1
+  expect dz_words("The Heart, pumps blood; the HEART") == ["heart", "pumps", "blood"]
+}
+
+test "a canvas is asked for by name" {
+  expect dz_kind({text: "how does the heart pump blood", palette: "", place: "agent", kind: "canvas"}) == "canvas"
+}
+
+test "a science canvas finds its field and its reaction" {
+  expect dz_science_field("how does photosynthesis work") == "biology"
+  expect dz_science_field("why does iron rust") == "chemistry"
+  expect dz_science_field("how does the moon orbit the earth") == "physics"
+  leaf = sc_balance(dz_reaction("how does photosynthesis work"))
+  expect leaf.coefficients == [6, 6, 1, 6]
+  expect dz_reaction("how does the moon orbit the earth") == ""
+  expect dz_canvas_lead(dz_ask("how does photosynthesis work")) == "illustration"
+}
+
+test "a canvas adds a lab when the ask can be tried" {
+  expect dz_lab_kind("why does a pendulum swing back") == "pendulum"
+  expect dz_lab_kind("how does current flow in a circuit") == "circuit"
+  expect dz_lab_kind("how does photosynthesis work") == ""
+  expect dz_period(1, 9.81) == 2.01
+  expect dz_period(1, 1.62) == 4.94
+  expect dz_amps(9, 3) == 3
+  expect dz_lab("how does a pendulum swing").contains("2.01 s")
+  expect dz_lab("how does a circuit work").contains("0.15 A")
+}
+
+test "a canvas shows the formula, worked, with its units checked" {
+  pend = dz_formula_for("why does a pendulum swing back")
+  expect pend.key == "pendulum"
+  card = dz_formula_card(pend)
+  expect card.contains("Units check: the right side comes out in s")
+  expect card.contains("&#8776;")
+  expect dz_formula_for("how does photosynthesis work").key == ""
+  energy = dz_formula_card(dz_formula_for("what does E=mc^2 mean"))
+  expect energy.contains("comes out in J")
+  gravity = dz_units_of(parse("G m_1 m_2 / r^2").expr, ["G", "m_1", "m_2", "r"], ["N m^2/kg^2", "kg", "kg", "m"])
+  expect gravity.unit.dims == su_unit("N").dims
+  wrong = dz_units_of(parse("m + t").expr, ["m", "t"], ["kg", "s"])
+  expect wrong.problem == "two things added have different units"
+}
+
+fn dz_test_structure(title: Text) -> Structure {
+  return {title: title, summary: "Squares whose sides are numbers of a sequence", shape: "", figure: "", photo: "", parts: [], links: [], steps: [{text: "Each number is the sum of the two before it", parts: []}], marks: [], looks: [], aspects: []}
+}
+
+test "a diagram about something else is left off the canvas" {
+  expect not dz_on_subject("why does a pendulum swing back and forth", dz_test_structure("The Fibonacci sequence, drawn"))
+  expect dz_on_subject("why does a pendulum swing back and forth", dz_test_structure("Why a pendulum swings"))
+}
+
+test "a formula's graph is plotted by Kosika, with the example and any turns marked" {
+  pend = dz_graph(dz_formula_for("why does a pendulum swing"))
+  expect pend.svg.contains("class=\"g-line\"")
+  expect pend.marks[0] == "the example: L = 1 gives T = 2.0061"
+  expect dz_nice_step(7) == 2
+  expect dz_nice_step(0.3) == 0.1
+}

@@ -1,0 +1,73 @@
+// The standard library's path finding: the cheapest way through a network
+// of links is A* search, and with no estimates it is Dijkstra's. A cycle
+// costs nothing, an unreachable place is said to be unreachable, and the
+// same network always gives the same way.
+
+import "std/paths.kos"
+
+// What each place is thought to cost the goal from it: never more than it does.
+fn near_table() -> Number{} {
+  var near: Number{} = {}
+  near = near.set("a", 4)
+  near = near.set("b", 2)
+  near = near.set("c", 1)
+  near = near.set("d", 0)
+  return near
+}
+
+test "the cheapest way through a network" {
+  links = [
+    Link(from: "a", to: "b", cost: 2),
+    Link(from: "b", to: "c", cost: 1),
+    Link(from: "a", to: "c", cost: 5),
+    Link(from: "c", to: "d", cost: 1),
+    Link(from: "b", to: "d", cost: 3),
+    Link(from: "c", to: "b", cost: 1),
+    Link(from: "d", to: "e", cost: 1)
+  ]
+  route = shortest("a", "d", links, {})
+  expect route.found == true
+  expect route.places == ["a", "b", "c", "d"]
+  expect route.cost == 4
+  expect shortest("a", "e", links, {}).cost == 5
+}
+
+test "fewest links is another question than cheapest" {
+  links = [
+    Link(from: "a", to: "b", cost: 1),
+    Link(from: "b", to: "c", cost: 1),
+    Link(from: "a", to: "c", cost: 9)
+  ]
+  expect hops("a", "c", links).places == ["a", "c"]
+  expect hops("a", "c", links).cost == 1
+  expect hops("a", "d", [Link(from: "a", to: "b", cost: 7), Link(from: "b", to: "d", cost: 7)]).places == ["a", "b", "d"]
+  expect hops("a", "d", [Link(from: "a", to: "b", cost: 7), Link(from: "b", to: "d", cost: 7)]).cost == 2
+  expect shortest("a", "c", links, {}).places == ["a", "b", "c"]
+  expect shortest("a", "c", links, {}).cost == 2
+}
+
+test "an estimate that never overestimates finds the same way" {
+  links = [
+    Link(from: "a", to: "b", cost: 2),
+    Link(from: "b", to: "c", cost: 1),
+    Link(from: "a", to: "c", cost: 5),
+    Link(from: "c", to: "d", cost: 1),
+    Link(from: "b", to: "d", cost: 3)
+  ]
+  near = near_table()
+  expect shortest("a", "d", links, near).places == ["a", "b", "c", "d"]
+  expect shortest("a", "d", links, near).cost == 4
+}
+
+test "nowhere to go" {
+  links = [Link(from: "a", to: "b", cost: 1)]
+  nowhere = shortest("b", "a", links, {})
+  expect nowhere.found == false
+  expect nowhere.places == []
+  expect nowhere.cost == 0
+  stay = shortest("a", "a", links, {})
+  expect stay.found == true
+  expect stay.places == ["a"]
+  expect stay.cost == 0
+  expect shortest("a", "b", [], {}).found == false
+}

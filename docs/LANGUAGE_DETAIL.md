@@ -78,15 +78,19 @@ With no terminal to ask, the run pauses instead of proceeding. See
 
 `kosika-mcp` is a Model Context Protocol server. Connected to an assistant such
 as Claude Code or the Gemini CLI, it lets the assistant read the language
-guide, then write, check, run, replay, and map Kosika programs by itself.
+guide, then write, check, repair, test, run, replay, map, and declare Kosika
+programs by itself.
 
 | Tool | What it does |
 | --- | --- |
 | `kosika_guide` | Returns `AGENT_GUIDE.md` |
 | `kosika_check` | Checks a program; returns codes, messages, and lines |
+| `kosika_repair` | Names the token to change for a typo, and returns a patch that checks clean |
+| `kosika_test` | Runs the program's own `test` blocks, each with its scripted answers |
 | `kosika_run` | Runs a workflow with the inputs and scripted answers supplied |
 | `kosika_replay` | Validates a trace from `kosika_run` and returns its result |
 | `kosika_map` | Describes what a checked program declares |
+| `kosika_declare` | Turns a pinned component contract into Kosika declarations |
 
 Connect it by adding a stdio server whose command is `kosika-mcp` (or
 `python -m kosika.mcp_server`). For Claude Code:
@@ -99,8 +103,11 @@ The server has no power of its own. Programs arrive as text and are checked in
 a temporary folder; no tool takes a file path, address, or command.
 `kosika_run` never calls a real model or tool: answers come only from the
 `model_answers` and `tool_answers` the assistant supplies, and a program that
-needs one it was not given fails. Runs are bounded to 16 model calls, 16 tool
-calls, and 10 seconds.
+needs one it was not given fails. `kosika_test` runs only the tests written in
+the program, which use their own `answers` lines. `kosika_repair` only renames a
+field or variable the checker already spelled for it, and returns a patch only
+after that patch checks clean. Runs are bounded to 16 model calls, 16 tool calls,
+and 10 seconds.
 
 ## Recovering from a failed step
 

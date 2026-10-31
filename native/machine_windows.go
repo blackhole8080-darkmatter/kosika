@@ -22,6 +22,9 @@ type memoryStatus struct {
 type versionInfo struct {
 	size, major, minor, build, platform uint32
 	servicePack                         [128]uint16
+	servicePackMajor, servicePackMinor  uint16
+	suiteMask                           uint16
+	productType, reserved               byte
 }
 
 // thisComputer is this computer as Windows tells it, as windows() in
@@ -63,6 +66,28 @@ func thisComputer() computerReading {
 func windowsRelease() string {
 	info := versionInfo{size: uint32(unsafe.Sizeof(versionInfo{}))}
 	ntdll.NewProc("RtlGetVersion").Call(uintptr(unsafe.Pointer(&info)))
+	// A server edition (any product type but a workstation's) is named
+	// by its year, as Python names it.
+	if info.productType > 1 {
+		switch {
+		case info.major == 10 && info.build >= 26100:
+			return "2025Server"
+		case info.major == 10 && info.build >= 20348:
+			return "2022Server"
+		case info.major == 10 && info.build >= 17763:
+			return "2019Server"
+		case info.major == 10:
+			return "2016Server"
+		case info.major == 6 && info.minor == 3:
+			return "2012ServerR2"
+		case info.major == 6 && info.minor == 2:
+			return "2012Server"
+		case info.major == 6 && info.minor == 1:
+			return "2008ServerR2"
+		case info.major == 6 && info.minor == 0:
+			return "2008Server"
+		}
+	}
 	switch {
 	case info.major == 10 && info.build >= 22000:
 		return "11"

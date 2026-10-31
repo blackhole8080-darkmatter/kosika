@@ -1,0 +1,169 @@
+// Study: a companion for university and for projects.
+//
+//   kosika run main.kos --workflow main --input said.json --memory FOLDER
+//       [--embed-model nomic-embed-text] --model ... --max-output-tokens 8000
+//
+// where said.json holds {"msg": {"text": "explain how a transistor works"}}.
+//
+// Tell it what you are studying and it keeps it: "remember: Physics 2 exam
+// on 12 December covers waves and optics". Ask it anything and it answers
+// in plain words, from your own notes where they help, and Kosika Designs
+// draws the picture beside the answer: one canvas (a diagram, a moving
+// picture, art behind, and a short quiz to check yourself) for something
+// to understand, a quiz when you ask to be tested, worked mathematics,
+// checked line by line, when you ask for it.
+//
+// Its notes stay in the memory folder on this computer. With an embedding
+// model (Ollama's nomic-embed-text, local) it recalls them by meaning;
+// without one, by the words they share with the question.
+
+import "std/designs.kos"
+
+export [StudyMsg, Studied, StudyNote, main]
+
+record StudyMsg { text: Text }
+// words: the note's words in their plain form, so "transistors" finds "transistor".
+record StudyNote { text: Text course: Text words: Text }
+// text: the answer in words; notes: what it used from your notes;
+// kind, title, why, embed, page: the picture, as Kosika Designs drew it.
+record Studied { text: Text notes: Text[] kind: Text title: Text why: Text embed: Text page: Text problems: Text[] }
+record TutorBrief { task: Text question: Text notes: Text }
+record TutorAnswer { text: Text }
+
+memory jottings of StudyNote
+
+model tutor {
+  input: TutorBrief
+  output: TutorAnswer
+  parameters: {
+    max_output_tokens: 2000
+  }
+}
+
+// ---------------------------------------------------------------- notes
+
+fn sd_first(text: Text) -> Text {
+  let words = text.trim().lower().words()
+  return if words.is_empty() { "" } else { words[0].trim_marks(":,.") }
+}
+
+fn sd_is_note(m: StudyMsg) -> Bool {
+  return ["remember", "note", "keep"].contains(sd_first(m.text))
+}
+
+// "remember: Physics 2 exam ..." keeps the words after the first; a course
+// is the part before a colon when one comes early ("Physics 2: exam ...").
+fn sd_note(m: StudyMsg) -> StudyNote {
+  let rest = m.text.trim().drop(sd_first(m.text).length()).trim().trim_marks(":,. ")
+  let colon = rest.index_of(":").or(-1)
+  let course = if colon > 0 and colon < 30 { rest.slice(0, colon).trim() } else { "" }
+  return {text: rest, course: course, words: sd_stems(rest)}
+}
+
+// A word's plain form: lower case, without the marks around it, and a
+// plural's s taken off ("transistors", "waves" -> "transistor", "wave"), so
+// a question finds a note however each was worded.
+fn sd_stem(word: Text) -> Text {
+  let w = word.lower().trim_marks(".,:;!?()\"'")
+  if w.length() > 4 and w.ends_with("ies") { return w.slice(0, w.length() - 3) + "y" }
+  if w.length() > 4 and w.ends_with("s") and not w.ends_with("ss") and not w.ends_with("us") and not w.ends_with("is") { return w.slice(0, w.length() - 1) }
+  return w
+}
+
+fn sd_stems(text: Text) -> Text { return (for w in text.words() { sd_stem(w) }).join(" ") }
+
+fn sd_key(n: StudyNote) -> Text {
+  let k = n.text.lower().trim()
+  return if k.length() > 120 { k.slice(0, 120) } else { k }
+}
+
+fn sd_kept(n: StudyNote) -> Studied {
+  let said = if n.text.is_empty() { "Tell me what to keep, like this: remember: Physics 2 exam on 12 December covers waves and optics." } else { "Kept in your study notes: " + n.text }
+  return {text: said, notes: [], kind: "note", title: "", why: "", embed: "", page: "", problems: []}
+}
+
+// The notes near enough to the question to help: by meaning, those that
+// stand out; by words, those sharing at least a tenth of them.
+fn sd_useful(found: JottingsLike) -> Text[] {
+  var out: Text[] = []
+  let top = if found.matches.is_empty() { 0 } else { found.matches[0].score }
+  for m in found.matches {
+    let near = if found.by == "meaning" { m.score >= 0.55 and m.score >= top - 0.08 } else { m.score >= 0.1 }
+    if near and out.length() < 4 { out = out.append(m.value.text) }
+  }
+  return out
+}
+
+// ---------------------------------------------------------------- answering
+
+fn sd_task() -> Text {
+  return "You are a patient tutor for a university student. Answer the question in plain words: four to seven short sentences, the key idea first, every technical word explained the first time it appears, and one concrete example. If notes from the student are given, use them where they help (their course, their deadlines, what they already know) and say so; never invent notes. A picture is drawn beside your answer by another tool, so do not describe a picture."
+}
+
+fn sd_no_answer() -> TutorAnswer { return {text: ""} }
+
+// How Kosika Designs should draw it: a quiz or worked mathematics when
+// asked for one; otherwise the whole canvas, which ends with a quiz.
+fn sd_drawing(m: StudyMsg) -> DzAsk {
+  // shown on a page of its own, so the picture keeps its own background
+  let asked: DzAsk = {text: m.text, palette: "", place: "studio", kind: ""}
+  let chosen = dz_kind(asked)
+  // left to Kosika when it is a quiz, worked mathematics or art, so it can say why
+  let kind = if ["quiz", "worked", "art", "chemistry", "units", "element"].contains(chosen) { "" } else { "canvas" }
+  return {..asked, kind: kind}
+}
+
+fn sd_answered(a: TutorAnswer, notes: Text[], d: DzResult) -> Studied {
+  let words = if a.text.trim().is_empty() { "I could not get an answer in words just now; the picture is below." } else { a.text.trim() }
+  return {text: words, notes: notes, kind: d.kind, title: d.title, why: d.why, embed: d.embed, page: d.page, problems: d.problems}
+}
+
+fn sd_notes_text(notes: Text[]) -> Text {
+  return if notes.is_empty() { "(no notes about this)" } else { (for n in notes { "- " + n }).join("\n") }
+}
+
+workflow keep_note(m: StudyMsg) -> Studied {
+  note  = sd_note(m)
+  saved = remember note in jottings under sd_key(note)
+  out   = sd_kept(note)
+}
+
+workflow teach(m: StudyMsg) -> Studied {
+  found  = recall jottings like sd_stems(m.text)
+  notes  = sd_useful(found)
+  said   = use_model tutor(sd_task(), m.text, sd_notes_text(notes)) retry 1 otherwise sd_no_answer()
+  drawn  = call design(sd_drawing(m))
+  out    = sd_answered(said, notes, drawn)
+}
+
+workflow main(msg: StudyMsg) -> Studied {
+  budget 14 model calls, 900 seconds
+  out = match sd_is_note(msg) {
+    case true { call keep_note(msg) }
+    case _ { call teach(msg) }
+  }
+}
+
+// ---------------------------------------------------------------- tests
+
+test "a note is kept with its course" {
+  n = sd_note({text: "remember: Physics 2: exam on 12 December covers waves and optics"})
+  expect n.course == "Physics 2"
+  expect n.text == "Physics 2: exam on 12 December covers waves and optics"
+  expect sd_is_note({text: "Remember the lab report is due Friday"})
+  expect not sd_is_note({text: "how does a transistor work"})
+}
+
+test "explanations get the whole canvas; quizzes and maths their own kind" {
+  expect sd_drawing({text: "how does a transistor work"}).kind == "canvas"
+  expect dz_kind(sd_drawing({text: "quiz me on optics"})) == "quiz"
+  expect dz_kind(sd_drawing({text: "differentiate x^3 cos(x)"})) == "worked"
+}
+
+test "a note and a question meet however their words are inflected" {
+  expect sd_stems("Lab report on Transistors, due soon") == "lab report on transistor due soon"
+  expect sd_stem("studies") == "study"
+  expect sd_stem("class") == "class"
+  expect sd_stem("optics") == "optic"
+  expect sd_note({text: "remember: Electronics 1: lab report on transistors due 7 November"}).words.contains("transistor")
+}

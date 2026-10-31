@@ -1,0 +1,32 @@
+{
+  "kosika-native-learning": {
+    "advice": {
+      "clarification": "",
+      "explanation": "The native engine does not support the `learn` feature, and developers should verify if this feature is necessary for their learning agent before choosing to use it.",
+      "steps": [
+        "Verify if the `learn` feature is essential for the learning agent's functionality.",
+        "Check if the `learn` feature can be replaced with other available features in the native engine."
+      ]
+    },
+    "context": "kosika-team-context-v1:16:native/README.md21:conformance/README.md2:1324:conformance/README.md:43255:Read the new `.expected.txt` before committing it. It becomes the law, so\nit must be what Kosika should do, not merely what one engine happens to do.\n\n## What the suite does not cover yet\n\n- An agent calling its tools, `verify`, `vote`, `escalate`, `with\n18:native/README.md:1142:# Kosika's native engine\n\nKosika run with no Python. It is written in Go and builds to one program\nfile.\n\n    go build -o kosika-native.exe .\n19:native/README.md:79163:\n## What it does not have yet\n\n- Models that answer `as text`, and steps with `verify`, `vote`,\n  `escalate`, `learn` or `with evidence`, and\n  `parallel` blocks.\n19:native/README.md:85430:- An agent's plan that writes files, or an agent with its own `check`:\n  the reference checks such a plan before showing it, and those checks are\n  not here yet, so such a plan is refused by name. Replaying an agent\n  run's own trace, an answer with evidence, or a verified answer.\n- `system` tools other than files and shell (web, kosika, meaning, agents,\n  outside), and `fetch`; so an environment's `allow site` grants nothing\n23:conformance/README.md:7208:Today there are two engines: the reference engine in `kosika/` (Python)\nand the native engine in `native/` (Go). The native engine exists so that\nKosika can run on a machine with no Python.\n\n## What is here\n\n24:conformance/README.md:25321:\nFor each `.kos` file, `ENGINE test FILE` must print exactly the text in\nthe file beside it, and end with exit code 0 when every test passed, 1\nwhen one failed, and 2 when the program was refused before it ran. A\nrefused program prints `Check failed: ` and the reason, and nothing else. Line ends may be `\\n` or `\\r\\n`.\n\n18:native/README.md:7361:    kosika-native test FILE.kos      run the tests the file carries\n    kosika-native tokens FILE.kos    the file's tokens, one JSON object a line\n    kosika-native run FILE.kos --input IN.json --model qwen2.5:7b\n                                     run a workflow, asking a real model\n    kosika-native replay TRACE.jsonl check a run's trace, running nothing\n\n19:native/README.md:31349:and prints the action to approve, and `--approval-record FILE` (or\n`--approve`, asking at the terminal) lets it run, once. Begun again, a run\ntakes what it already did from its journal and does nothing twice. The\njournal is this engine's own: two JSON files, not the reference's SQLite,\nso an approval given to one engine does not serve the other.\n\n19:native/README.md:43329:lists, maps and optional values. Whole numbers are exact at any size.\n\nModels, with the records they take and give, and general ones that take\nand give text. Workflows, whose steps call\na function, run another workflow, use a tool through an agent, or ask a\nmodel (asked again on a refused answer with `retry`), ask an agent, or\n19:native/README.md:55309:agent's tools, each answer given back to it, until it answers. A tool that\nchanges the world is refused, as the reference refuses it without a\nrecorded approval.\n\nBefore it runs a program it checks it, as the reference does: a program\nwhose types do not agree is refused, with the reference's own message, on\n19:native/README.md:61345:the output and with exit code 2. A name the file uses but never declares is\nrefused as the file is read, like a fault in the text.\n\nMemories and boards, as the reference has them: each is made two tools\nthat only look, used through a generated agent. `run --memory FOLDER`\nkeeps a program's memories there, one JSON file a memory written as the\n19:native/README.md:73246:refused beside it, and a broken file is refused with the reference's\nwords and place.\n\nIt is held to the conformance suite in `../conformance`, where it must\nprint what the reference engine prints, word for word. See\n`tests/test_conformance.py`.\n23:conformance/README.md:1212:# Kosika conformance suite\n\nWhat Kosika means, written as programs with the results they must give.\nAn engine is an implementation of Kosika if it passes this suite. The\nsuite, not any one engine, is the judge.\n\n",
+    "evidence": [
+      {
+        "quote": "Read the new `.expected.txt` before committing it. It becomes the law, so\nit must be what Kosika should do, not merely what one engine happens to do.\n\n## What the suite does not cover yet\n\n- An agent calling its tools, `verify`, `vote`, `escalate`, `with\n",
+        "source": "conformance/README.md:43"
+      },
+      {
+        "quote": "\n## What it does not have yet\n\n- Models that answer `as text`, and steps with `verify`, `vote`,\n  `escalate`, `learn` or `with evidence`, and\n  `parallel` blocks.\n",
+        "source": "native/README.md:79"
+      },
+      {
+        "quote": "- An agent's plan that writes files, or an agent with its own `check`:\n  the reference checks such a plan before showing it, and those checks are\n  not here yet, so such a plan is refused by name. Replaying an agent\n  run's own trace, an answer with evidence, or a verified answer.\n- `system` tools other than files and shell (web, kosika, meaning, agents,\n  outside), and `fetch`; so an environment's `allow site` grants nothing\n",
+        "source": "native/README.md:85"
+      }
+    ],
+    "question": "Does the native engine currently support learn? What should a developer verify before choosing it for a learning agent?",
+    "review": {
+      "approved": true,
+      "concerns": []
+    }
+  }
+}

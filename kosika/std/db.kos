@@ -1,0 +1,48 @@
+// std/db.kos: reading what a database call gives back.
+//
+//   import "std/db.kos"
+//
+// column(columns, name)          where a column is in a grid, or -1
+// cell(row, columns, name)       one cell of a grid row, by column name
+// as_number(text)                a cell as the number it holds, or a refusal
+// grid_rows(columns, rows)       each grid row as a map: column names to cells
+//
+// A grid is every cell as text, because a SQLite column is whatever each row
+// put there (see kosika.database). These read a grid by column name. What a
+// tool whose operation is `rows` gives back is already the program's own
+// records, so it needs none of this.
+
+export [column, cell, as_number, grid_rows]
+
+fn column(columns: Text[], name: Text) -> Number {
+  return columns.index_of(name).or(-1)
+}
+
+fn cell(row: Text[], columns: Text[], name: Text) -> Text {
+  let at = column(columns, name)
+  if at < 0 { fail f"the answer has no column named {name}" }
+  return row[at]
+}
+
+fn as_number(text: Text) -> Number {
+  let number = text.to_number()
+  if not number.exists() { fail f"the cell {text} does not hold a number" }
+  return number.value()
+}
+
+fn grid_rows(columns: Text[], rows: Text[][]) -> Text{}[] {
+  var keyed: Text{}[] = []
+  for row in rows {
+    if row.length() < columns.length() {
+      fail "a row has fewer cells than the answer has columns"
+    }
+    var one: Text{} = {}
+    var at = 0
+    for name in columns {
+      one = one.set(name, row[at])
+      at += 1
+    }
+    keyed = keyed.append(one)
+  }
+  return keyed
+}

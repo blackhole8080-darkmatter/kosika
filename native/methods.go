@@ -2,7 +2,8 @@ package main
 
 // The built-in methods on Text, Number, lists, maps and optional values.
 // Each does what the reference engine's method of the same name does,
-// limits and failure words included. Vectors and matrices are not here yet.
+// limits and failure words included. Vectors and matrices, which are lists
+// of numbers and lists of lists, are in matrices.go.
 
 import (
 	"fmt"
@@ -268,8 +269,10 @@ var textMethods = map[string]method{
 	"to_number": {nil, func(r Value, a []Value) Value {
 		trimmed := strings.TrimFunc(textOf(r), isSpace)
 		digits := strings.TrimPrefix(trimmed, "-")
-		wholePart, decimals, hasPoint := strings.Cut(digits, ".")
-		if !isDigits(wholePart) || (hasPoint && !isDigits(decimals)) {
+		mantissa, power, hasPower := strings.Cut(strings.ReplaceAll(digits, "E", "e"), "e")
+		power = strings.TrimPrefix(strings.TrimPrefix(power, "+"), "-")
+		wholePart, decimals, hasPoint := strings.Cut(mantissa, ".")
+		if !isDigits(wholePart) || (hasPoint && !isDigits(decimals)) || (hasPower && !isDigits(power)) {
 			return nil
 		}
 		return numberLiteral(digits, strings.HasPrefix(trimmed, "-"))
@@ -405,6 +408,32 @@ var numberMethods = map[string]method{
 	"is_whole": {nil, func(r Value, a []Value) Value {
 		_, ok := asWhole(r)
 		return ok
+	}},
+	"identity": {nil, func(r Value, a []Value) Value {
+		size, ok := asWhole(r)
+		if _, isBool := r.(bool); isBool || !ok || size.Sign() < 1 {
+			runFail("an identity matrix needs a whole size of 1 or more")
+		}
+		n := int(size.Int64())
+		if n*n > maxMatrixCells {
+			runFail(fmt.Sprintf("that identity matrix is larger than %d numbers", maxMatrixCells))
+		}
+		return identityMatrix(n)
+	}},
+	"zeros": {[]string{"columns"}, func(r Value, a []Value) Value {
+		rows, rowsOK := asWhole(r)
+		columns, columnsOK := asWhole(a[0])
+		if _, isBool := r.(bool); isBool || !rowsOK || rows.Sign() < 1 {
+			runFail("a matrix needs whole numbers of rows and columns, 1 or more")
+		}
+		if _, isBool := a[0].(bool); isBool || !columnsOK || columns.Sign() < 1 {
+			runFail("a matrix needs whole numbers of rows and columns, 1 or more")
+		}
+		tall, wide := int(rows.Int64()), int(columns.Int64())
+		if tall*wide > maxMatrixCells {
+			runFail(fmt.Sprintf("that matrix is larger than %d numbers", maxMatrixCells))
+		}
+		return zerosMatrix(tall, wide)
 	}},
 }
 
@@ -630,6 +659,9 @@ func methodFor(receiver Value, name string) (method, bool) {
 	case *big.Int, float64:
 		table = numberMethods
 	case []Value:
+		if found, has := matrixMethods[name]; has {
+			return found, true
+		}
 		table = listMethods
 	case *Record:
 		table = mapMethods
