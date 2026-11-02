@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Sequence
 
 from .knowledge_graph import KnowledgeGraph, RelationType
@@ -80,3 +83,14 @@ def make_verify(
             return "", [answer]
         return "; ".join(verdict.reasons), []
     return verify
+
+
+def propagate(delta: dict, peer_dirs: Sequence[Path]) -> tuple[str, ...]:
+    written: list[str] = []
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    for peer in peer_dirs:
+        peer.mkdir(parents=True, exist_ok=True)
+        target = peer / f"mind-delta-{stamp}-{len(written)}.json"
+        target.write_text(json.dumps(delta, sort_keys=True), encoding="utf-8")
+        written.append(peer.parent.name)
+    return tuple(written)
