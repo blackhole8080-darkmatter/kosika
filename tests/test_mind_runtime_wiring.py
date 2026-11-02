@@ -3,12 +3,14 @@
 
 import json
 
+import pytest
+
 from kosika.ast import ModelDecl
 from kosika.graph_store import load_graph, save_graph
 from kosika.knowledge_graph import Entity, EntityType, KnowledgeGraph
 from kosika.mind import mind_hooks
 from kosika.model import ModelResponse, ScriptedModelProvider
-from kosika.runtime import _ask_model
+from kosika.runtime import RejectedAnswer, _ask_model
 
 
 def _graph(tmp_path):
@@ -66,7 +68,9 @@ def test_reflect_refuses_a_bad_answer_then_takes_the_asking(tmp_path):
     assert answer["label"] == "bug"
     assert len(provider.requests) == 2
     assert "was not offered" in reply["rejected"][0]["reason"]
-    assert reply["verified"] == [{"label": "bug", "confidence": 0.4}]
+    assert reply["mind"]["label"] == "bug"
+    assert reply["mind"]["confidence"] == 0.4
+    assert "photosynthesis" in reply["mind"]["retrieved"]
 
 
 def test_no_mind_leaves_the_prompt_as_the_program_wrote_it():
@@ -78,16 +82,27 @@ def test_no_mind_leaves_the_prompt_as_the_program_wrote_it():
     assert json.loads(provider.requests[0].messages[1].content) == {"text": "triage"}
 
 
-def test_the_program_check_and_reflect_both_get_a_say(tmp_path):
+def test_the_program_check_speaks_before_reflect(tmp_path):
     provider = ScriptedModelProvider([ModelResponse(content=json.dumps({"label": "bug", "confidence": 2}))])
     schema = {"type": "object", "properties": {"label": {"type": "string"}, "confidence": {"type": "number"}}, "required": ["label", "confidence"]}
     hooks = mind_hooks(_graph(tmp_path), embed=lambda text: [1.0, 0.0])
     program_check = lambda answer: ("the program wants a shorter label", [])
 
-    try:
+    with pytest.raises(RejectedAnswer) as refused:
         _ask(provider, {"text": "triage"}, schema, retries=0, mind=hooks, verify_answer=program_check)
-    except Exception as refused:
-        assert "confidence must be a number" in str(refused)
-        assert "shorter label" in str(refused)
-    else:
-        raise AssertionError("both complaints were expected to refuse the answer")
+
+    assert "shorter label" in str(refused.value)
+    assert "confidence must be a number" not in str(refused.value)
+
+
+def test_reflect_still_gets_a_say_when_the_program_check_is_silent(tmp_path):
+    provider = ScriptedModelProvider([ModelResponse(content=json.dumps({"label": "bug", "confidence": 2}))])
+    schema = {"type": "object", "properties": {"label": {"type": "string"}, "confidence": {"type": "number"}}, "required": ["label", "confidence"]}
+    hooks = mind_hooks(_graph(tmp_path), embed=lambda text: [1.0, 0.0])
+    program_check = lambda answer: ("", ["the program signed off"])
+
+    with pytest.raises(RejectedAnswer) as refused:
+        _ask(provider, {"text": "triage"}, schema, retries=0, mind=hooks, verify_answer=program_check)
+
+    assert "reflected and refused" in str(refused.value)
+    assert "confidence must be a number" in str(refused.value)

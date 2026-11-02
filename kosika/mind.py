@@ -72,17 +72,26 @@ def reflect(
     return Verdict(not reasons, tuple(reasons))
 
 
-def make_verify(
+def make_reflect(
     *,
     choices: Sequence[str] | None = None,
     verifier: Callable[[dict], str] | None = None,
-) -> Callable[[dict], tuple[str, list]]:
-    def verify(answer: dict) -> tuple[str, list]:
+) -> Callable[[dict], tuple[str, dict]]:
+    """The reflect check, as something that judges one answer.
+
+    It gives the complaint, empty when the answer stands, and what it judged,
+    which the trace keeps under its own name. It is deliberately not the shape
+    of the program's own check: that one is a recorded function call, and a
+    replay proves it again, which the Mind layer is not.
+    """
+
+    def reflect_on(answer: dict) -> tuple[str, dict]:
         verdict = reflect(answer, choices=choices, verifier=verifier)
         if verdict.ok:
-            return "", [answer]
-        return "; ".join(verdict.reasons), []
-    return verify
+            return "", {"label": answer.get("label"), "confidence": answer.get("confidence")}
+        return "; ".join(verdict.reasons), {}
+
+    return reflect_on
 
 
 def propagate(delta: dict, peer_dirs: Sequence[Path]) -> tuple[str, ...]:
@@ -106,7 +115,7 @@ class MindHooks:
     """
 
     context: Callable[[dict], str] | None = None
-    verify: Callable[[dict], tuple[str, list]] | None = None
+    verify: Callable[[dict], tuple[str, dict]] | None = None
 
 
 def mind_hooks(
@@ -121,4 +130,4 @@ def mind_hooks(
         text = " ".join(str(value) for value in arguments.values())
         return retrieve(graph, text, embed, limit=limit).context
 
-    return MindHooks(context=context, verify=make_verify(choices=choices, verifier=verifier))
+    return MindHooks(context=context, verify=make_reflect(choices=choices, verifier=verifier))

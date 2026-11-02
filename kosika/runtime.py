@@ -1221,31 +1221,6 @@ def _verifier(
     return judge
 
 
-def _joined_checks(
-    program: Callable[[dict[str, Any]], tuple[str, list[Any]]] | None,
-    mind: Callable[[dict[str, Any]], tuple[str, list[Any]]] | None,
-) -> Callable[[dict[str, Any]], tuple[str, list[Any]]] | None:
-    """One check from the program's own and the Mind layer's.
-
-    Both are given every answer, and a complaint from either refuses it; what
-    each accepted is kept, so the trace records both verdicts. None when there
-    is nothing to check, which leaves the answer exactly as the program asked.
-    """
-
-    if program is None:
-        return mind
-    if mind is None:
-        return program
-
-    def joined(answer: dict[str, Any]) -> tuple[str, list[Any]]:
-        first, checked_first = program(answer)
-        second, checked_second = mind(answer)
-        complaints = [part for part in (first, second) if part.strip()]
-        return "; ".join(complaints), [*checked_first, *checked_second]
-
-    return joined
-
-
 def _ask_model(
     provider: ModelProvider,
     model: ModelDecl,
@@ -1267,21 +1242,28 @@ def _ask_model(
     every rejected one is kept in the trace.
 
     `mind`: what the Mind layer has to say about this call. Its `context` is
-    folded into the arguments before asking, so the model is given what it
-    resonates with; its `verify` is reflected on every answer beside the
-    program's own check, and both complaints are shown back on a retry.
+    folded into what the model is asked, so the model reasons with what it
+    resonates with; its `verify` is reflected on every answer the program's own
+    check also accepts, and a complaint refuses the answer like any other fault.
+
+    Both are kept in the trace under `mind`, beside the answer. They are not
+    kept as `verified`: that field is the program's own check, recorded as the
+    function call it was, which a replay proves again. The Mind layer is not a
+    function of the program, so it claims no such record.
     """
 
+    asked = arguments
+    retrieved = ""
     if mind is not None and mind.context is not None:
-        arguments = {**arguments, "mind_context": mind.context(arguments)}
-    verify_answer = _joined_checks(verify_answer, mind.verify if mind is not None else None)
+        retrieved = mind.context(arguments)
+        asked = {**arguments, "mind_context": retrieved}
     rejected: list[tuple[str, str]] = []
     while True:
         answered = None
         try:
             result, response = call_model(
                 provider,
-                arguments,
+                asked,
                 asked_schema,
                 instruction=model.instruction,
                 model=model.deployment,
@@ -1313,6 +1295,16 @@ def _ask_model(
                         answered,
                     )
                 response = {**response, "verified": checked}
+            if mind is not None and mind.verify is not None:
+                complaint, judged = mind.verify(result)
+                if complaint.strip():
+                    raise RejectedAnswer(
+                        f"The Mind layer reflected and refused: {complaint.strip()}",
+                        answered,
+                    )
+                response = {**response, "mind": {**judged, "retrieved": retrieved}}
+            elif retrieved:
+                response = {**response, "mind": {"retrieved": retrieved}}
             break
         except (RejectedAnswer, ThinkingAnswerError) as exc:
             if len(rejected) >= retries:
