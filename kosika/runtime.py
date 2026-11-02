@@ -9,7 +9,10 @@ from dataclasses import replace as dataclass_replace
 from datetime import datetime, timezone
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable, Mapping, Sequence, cast
+from typing import Any, Callable, Mapping, Sequence, TYPE_CHECKING, cast
+
+if TYPE_CHECKING:  # pragma: no cover - typing only; mind imports runtime's shapes
+    from .mind import MindHooks
 
 from .agent import ApprovalRequiredError, ToolExecutor
 from .agent_steps import (
@@ -67,7 +70,7 @@ from .builtin_methods import call as call_method
 from .builtin_methods import resolve_for_value as resolve_method_for_value
 from .checker import check
 from .controls import ExecutionError
-from .durable import PLAN_TOOL, ApprovalPending, ExecutionSession
+from .durable import PLAN_TOOL, ApprovalPending, Claimed, ExecutionSession
 from .evidence import EvidenceError, answer_schema, split, verify
 from .execution import ExecutionControl, ExecutionLimits, within_budget
 from .function_types import function_type, public_type
@@ -1218,6 +1221,31 @@ def _verifier(
     return judge
 
 
+def _joined_checks(
+    program: Callable[[dict[str, Any]], tuple[str, list[Any]]] | None,
+    mind: Callable[[dict[str, Any]], tuple[str, list[Any]]] | None,
+) -> Callable[[dict[str, Any]], tuple[str, list[Any]]] | None:
+    """One check from the program's own and the Mind layer's.
+
+    Both are given every answer, and a complaint from either refuses it; what
+    each accepted is kept, so the trace records both verdicts. None when there
+    is nothing to check, which leaves the answer exactly as the program asked.
+    """
+
+    if program is None:
+        return mind
+    if mind is None:
+        return program
+
+    def joined(answer: dict[str, Any]) -> tuple[str, list[Any]]:
+        first, checked_first = program(answer)
+        second, checked_second = mind(answer)
+        complaints = [part for part in (first, second) if part.strip()]
+        return "; ".join(complaints), [*checked_first, *checked_second]
+
+    return joined
+
+
 def _ask_model(
     provider: ModelProvider,
     model: ModelDecl,
@@ -1226,6 +1254,7 @@ def _ask_model(
     *,
     retries: int,
     verify_answer: Callable[[dict[str, Any]], tuple[str, list[Any]]] | None = None,
+    mind: "MindHooks | None" = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Ask a model for one accepted answer.
 
@@ -1236,8 +1265,16 @@ def _ask_model(
     `retry N`: a rejected answer is shown back to the model with the reason,
     up to N more times. Every attempt is a model call for the limits, and
     every rejected one is kept in the trace.
+
+    `mind`: what the Mind layer has to say about this call. Its `context` is
+    folded into the arguments before asking, so the model is given what it
+    resonates with; its `verify` is reflected on every answer beside the
+    program's own check, and both complaints are shown back on a retry.
     """
 
+    if mind is not None and mind.context is not None:
+        arguments = {**arguments, "mind_context": mind.context(arguments)}
+    verify_answer = _joined_checks(verify_answer, mind.verify if mind is not None else None)
     rejected: list[tuple[str, str]] = []
     while True:
         answered = None
@@ -1301,6 +1338,7 @@ def _ask_with_votes(
     retries: int,
     votes: int,
     verify_answer: Callable[[dict[str, Any]], tuple[str, list[Any]]] | None = None,
+    mind: "MindHooks | None" = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """`vote N`: ask N times and accept only what more than half agree on.
 
@@ -1320,6 +1358,7 @@ def _ask_with_votes(
             asked_schema,
             retries=retries,
             verify_answer=verify_answer,
+            mind=mind,
         )
     field = {"classify": "label", "decide": "answer"}.get(model.verb or "")
     ballots: list[tuple[str, dict[str, Any], dict[str, Any]]] = []
@@ -1336,6 +1375,7 @@ def _ask_with_votes(
                 asked_schema,
                 retries=retries,
                 verify_answer=verify_answer,
+                mind=mind,
             )
         except (RejectedAnswer, ThinkingAnswerError) as exc:
             failed.append(str(exc))
@@ -1454,6 +1494,7 @@ def run(
     inputs: dict[str, Any] | None = None,
     model_bindings: Mapping[str, ModelProvider] | None = None,
     tool_bindings: Mapping[str, ToolExecutor] | None = None,
+    database_tables: Mapping[str, Mapping[str, str]] | None = None,
     session: ExecutionSession | None = None,
     limits: ExecutionLimits | None = None,
     cancel: threading.Event | None = None,
@@ -1462,6 +1503,7 @@ def run(
     on_event: Callable[[dict[str, Any], int], None] | None = None,
     skills: SkillCatalog | None = None,
     lessons: Lessons | None = None,
+    mind: "MindHooks | None" = None,
     _events_out: list[dict[str, Any]] | None = None,
     _scope: tuple[str, ...] = (),
     _control: ExecutionControl | None = None,
@@ -1479,6 +1521,9 @@ def run(
         # What the program's learning steps have learned, for the whole
         # run, including the workflows it calls.
         _control.lessons = lessons
+        # What the Mind layer resonates and reflects, for the whole run,
+        # folded into every model call the workflow makes.
+        _control.mind = mind
         # The clock and chance need no grant; see kosika.ambient. A caller
         # may still supply its own, as a test does with scripted answers.
         ambient = bind_ambient_tools(program)
@@ -1510,6 +1555,7 @@ def run(
             inputs=inputs,
             model_bindings=model_bindings,
             tool_bindings=tool_bindings,
+            database_tables=database_tables,
             session=session,
             _events_out=events,
             _scope=_scope,
@@ -1612,6 +1658,7 @@ def _run_workflow(
     inputs: dict[str, Any] | None = None,
     model_bindings: Mapping[str, ModelProvider] | None = None,
     tool_bindings: Mapping[str, ToolExecutor] | None = None,
+    database_tables: Mapping[str, Mapping[str, str]] | None = None,
     _events_out: list[dict[str, Any]] | None = None,
     session: ExecutionSession | None = None,
     _scope: tuple[str, ...] = (),
@@ -1639,6 +1686,7 @@ def _run_workflow(
                 inputs=inputs,
                 model_bindings=model_bindings,
                 tool_bindings=tool_bindings,
+                database_tables=database_tables,
                 session=session,
                 _events_out=_events_out,
                 _scope=_scope,
@@ -1793,18 +1841,24 @@ def _run_workflow(
                 f"Workflow tool {tool.name!r} requires a verified approval record"
             )
     events = _events_out if _events_out is not None else []
-    events.append(
-        _event(
-            "run_start",
-            workflow=workflow.name,
-            trace_version=5,
-            program_hash=hashlib.sha256(
-                json.dumps(program_payload(program), sort_keys=True).encode()
-            ).hexdigest(),
-            inputs=environment.copy(),
-            output_schema=schema_for_record(program, workflow.output_type),
-        )
+    start_event = _event(
+        "run_start",
+        workflow=workflow.name,
+        trace_version=5,
+        program_hash=hashlib.sha256(
+            json.dumps(program_payload(program), sort_keys=True).encode()
+        ).hexdigest(),
+        inputs=environment.copy(),
+        output_schema=schema_for_record(program, workflow.output_type),
     )
+    if database_tables is not None:
+        # The tables the granted file had when the run began, so that a replay
+        # can put a recorded statement back to SQLite with no database present
+        # (see kosika.database.sent_problem).
+        start_event["database"] = {
+            name: dict(columns) for name, columns in database_tables.items()
+        }
+    events.append(start_event)
     result: Any = {}
     queue = list(workflow.steps)
     recovered: dict[str, dict[str, str]] = {}
@@ -1841,6 +1895,7 @@ def _run_workflow(
                 retries=member.retries,
                 votes=member.votes,
                 verify_answer=judge,
+                mind=_control.mind,
             )
         except (RejectedAnswer, ThinkingAnswerError) as refused:
             if member.escalate is None:
@@ -1855,6 +1910,7 @@ def _run_workflow(
                 retries=member.retries,
                 votes=0,
                 verify_answer=judge,
+                mind=_control.mind,
             )
             return answer, {
                 **reply,
@@ -1958,6 +2014,7 @@ def _run_workflow(
             }
             scope = (*_scope, workflow.name, step.name)
             action = None
+            claimed: Claimed | None = None
             if isinstance(step.call, WorkflowCall):
                 step_output = workflows[step.call.workflow_name].output_type
             elif isinstance(step.call, FunctionCall):
@@ -2001,7 +2058,8 @@ def _run_workflow(
                             program, tools[step.call.tool_name].input
                         ),
                     )
-                action = session.start(scope, mutation, arguments)
+                claimed = session.start(scope, mutation, arguments)
+                action = claimed.action if claimed is not None else None
             step_offset = len(events)
             events.append(
                 _event(
@@ -2045,6 +2103,7 @@ def _run_workflow(
                         inputs=arguments,
                         model_bindings=providers,
                         tool_bindings=host_tools,
+                        database_tables=database_tables,
                         mcp_commands=mcp_commands,
                         manifest=manifest,
                         _events_out=child_events,
@@ -2297,7 +2356,10 @@ def _run_workflow(
                     # begin again with the same plan once a person answers.
                     session.remember((*scope, PLAN_TOOL + ":said"), said.said)
                     try:
-                        plan_action.append(session.start(plan_scope, PLAN_TOOL, wanted))
+                        claimed_plan = session.start(plan_scope, PLAN_TOOL, wanted)
+                        plan_action.append(
+                            claimed_plan.action if claimed_plan is not None else None
+                        )
                     except ApprovalPending:
                         session.recover(scope)
                         raise
@@ -2387,7 +2449,7 @@ def _run_workflow(
                                 "needs a step of its own"
                             )
                         try:
-                            action = session.start(inner, declaration.name, values)
+                            made = session.start(inner, declaration.name, values)
                         except ApprovalPending:
                             # Nothing has changed yet, so this step can be
                             # begun again once a person has answered.
@@ -2409,7 +2471,7 @@ def _run_workflow(
                                     result=outcome,
                                 )
                             ],
-                            action,
+                            made.action if made is not None else None,
                         )
                         return outcome
                     return _agent_tool_outcome(declaration, values)
@@ -2578,6 +2640,26 @@ def _run_workflow(
                         expression_events=expression_events,
                         input_schema=input_schema,
                         output_schema=output_schema,
+                        # The approval this call was made under, when it
+                        # needed one: who said yes, and the hash over the
+                        # plan, this step, this tool and these arguments. A
+                        # replay recomputes it, so an edited statement is not
+                        # one the approval covers.
+                        **(
+                            {
+                                "approval": {
+                                    "plan_hash": claimed.plan_hash,
+                                    "action_hash": claimed.action,
+                                    "approved_by": claimed.approved_by,
+                                    # The whole step path the hash is over,
+                                    # so a nested trace replayed on its own
+                                    # can still be checked.
+                                    "step": list(scope),
+                                }
+                            }
+                            if claimed is not None
+                            else {}
+                        ),
                     )
                 )
                 early = ahead.pop(step.name, None)
@@ -2635,7 +2717,11 @@ def _run_workflow(
             if isinstance(exc, ExecutionError):
                 # On resume, a step its fallback completed earlier is stored
                 # under the fallback's arguments, so look it up that way.
-                if exc.code != "checkpoint_mismatch":
+                # A provider failure is the model's, not the program's: the
+                # step may still answer with its `otherwise`. Budgets,
+                # deadlines, cancellation and missing approvals still stop
+                # the run, because those are the limits of the whole.
+                if exc.code not in {"checkpoint_mismatch", "provider"}:
                     raise
                 del events[events_before:]
                 queue.insert(0, fallback_step)

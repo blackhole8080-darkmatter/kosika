@@ -94,3 +94,31 @@ def propagate(delta: dict, peer_dirs: Sequence[Path]) -> tuple[str, ...]:
         target.write_text(json.dumps(delta, sort_keys=True), encoding="utf-8")
         written.append(peer.parent.name)
     return tuple(written)
+
+
+@dataclass(frozen=True)
+class MindHooks:
+    """The two ways the Mind layer reaches into a model call.
+
+    `context` turns a step's arguments into memory to fold into the prompt;
+    `verify` is the reflect check the runtime runs on each answer. Either may
+    be None, so a caller can retrieve without reflecting, or the reverse.
+    """
+
+    context: Callable[[dict], str] | None = None
+    verify: Callable[[dict], tuple[str, list]] | None = None
+
+
+def mind_hooks(
+    graph: KnowledgeGraph,
+    embed: Callable[[str], Sequence[float]],
+    *,
+    choices: Sequence[str] | None = None,
+    verifier: Callable[[dict], str] | None = None,
+    limit: int = 4,
+) -> MindHooks:
+    def context(arguments: dict) -> str:
+        text = " ".join(str(value) for value in arguments.values())
+        return retrieve(graph, text, embed, limit=limit).context
+
+    return MindHooks(context=context, verify=make_verify(choices=choices, verifier=verifier))
