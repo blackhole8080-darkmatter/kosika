@@ -257,7 +257,9 @@ fn br_with_kind(ask: DzAsk, c: BrainChoice) -> DzAsk {
 
 fn br_chose(r: DzResult, ask: DzAsk, c: BrainChoice) -> DzResult {
   let used = not c.kind.is_empty() and br_with_kind(ask, c).kind == c.kind and ask.kind.trim().is_empty()
-  return if used and r.kind == c.kind { {..r, why: c.why + ". " + r.why} } else { r }
+  // Designs reads a kind it is handed as asked for; here the Brain chose it.
+  let rest = if r.why.starts_with("asked for ") { "" } else { ". " + r.why }
+  return if used and r.kind == c.kind { {..r, why: c.why + rest} } else { r }
 }
 
 // How much a drawing teaches: a checked one drawn now teaches a little, a
@@ -488,6 +490,7 @@ test "the Brain learns which kind of drawing suits asks like these" {
   expect br_with_kind({text: "how do the ocean tides move", palette: "", place: "studio", kind: "diagram"}, c).kind == "diagram"
   expect br_with_kind({text: "how do the ocean tides move", palette: "", place: "studio", kind: ""}, c).kind == "canvas"
   expect br_with_kind({text: "sort 3 1 2", palette: "", place: "studio", kind: ""}, c).kind == ""
+  expect br_chose({..br_test_result(), kind: "canvas", why: "asked for canvas"}, {text: "how do the ocean tides move", palette: "", place: "studio", kind: ""}, c).why.ends_with("so no model was asked to choose")
   expect br_features("how do ocean tides work").length() == 24
   expect br_features("sort 3 1 2") == br_features("sort 9 8 7")
 }
