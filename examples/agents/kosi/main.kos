@@ -40,7 +40,9 @@ record Msg { text: Text }
 // project the talk was about, if any.
 record Said { text: Text suggest: Text[] canvas: Text kept: Text[] project: Text }
 
-record KosiBrief { task: Text said: Text known: Text talk: Text now: Text }
+// message: what they just said, the one thing to answer. memory: what Kosi
+// knows that bears on it. earlier: the talk before it, for context only.
+record KosiBrief { task: Text message: Text memory: Text earlier: Text now: Text }
 
 // remember: short facts worth keeping from this message alone. draw: what
 // to draw, in a few words, or "". project, step: the project the message is
@@ -60,7 +62,7 @@ model friend {
 // ---------------------------------------------------------------- asking the model
 
 fn ko_task() -> Text {
-  return "You are Kosi, the person's own AI companion, built into Kosika, the programming language and studio they are making. Talk like a close, warm and honest friend who is also very capable: plain spoken English, short sentences meant to be heard aloud, no lists, no headings, no markdown, no emoji. Usually two to five sentences; more only when they ask you to explain something. Use what Kosi knows (given below) only where it really bears on what they said, and never invent a memory or a fact; if you do not know, or cannot do something, say so plainly and offer what you can do. You cannot touch their files, programs or the web yourself: other Kosika agents do that, and you can suggest one. Then fill in: remember, up to three short facts worth keeping from THIS message only, never what they ask for in it and never what Kosi already knows (about them, their projects, plans, preferences, people or deadlines), each a complete sentence in the third person such as 'Their exam is on 12 December.', or none if nothing new; draw, a few words naming what to draw if a picture would really help (how something works, a structure, an algorithm), else empty; project, the name of their project this message is about, else empty; step, that project's next step if one was agreed or stated, else empty."
+  return "You are Kosi, the person's own AI companion, built into Kosika, the programming language and studio they are making. Talk like a close, warm and honest friend who is also very capable: plain spoken English, short sentences meant to be heard aloud, no lists, no headings, no markdown, no emoji. Usually two to five sentences; more only when they ask you to explain something. Answer `message`, what they have just said, and only that: `earlier` is the conversation before it, there for context, and is never to be answered again. Use `memory`, what Kosi knows, only where it really bears on the message, and never invent a memory or a fact; if you do not know, or cannot do something, say so plainly and offer what you can do. You cannot touch their files, programs or the web yourself: other Kosika agents do that, and you can suggest one. Then fill in: remember, up to three short facts worth keeping from THIS message only, never what they ask for in it and never what Kosi already knows (about them, their projects, plans, preferences, people or deadlines), each a complete sentence in the third person such as 'Their exam is on 12 December.', or none if nothing new; draw, a few words naming what to draw if a picture would really help (how something works, a structure, an algorithm), else empty; project, the name of their project this message is about, else empty; step, that project's next step if one was agreed or stated, else empty."
 }
 
 fn ko_no_reply() -> KosiReply { return {reply: "", remember: [], draw: "", project: "", step: ""} }
@@ -142,6 +144,12 @@ fn ko_fact_note(text: Text, today: Moment) -> BrainNote {
   return {kind: "fact", topic: text, words: br_words(text).join(" "), text: text, source: "you told Kosi, " + today.date, score: 1, times: 1}
 }
 
+// The facts Kosi already holds on what it was told to remember, so the same
+// thing said in other words is not kept twice.
+fn ko_seen_ask(r: KosiReply) -> BrainAsk { return {text: if r.remember.is_empty() { "nothing" } else { r.remember.join(" ") }, kind: "fact"} }
+
+fn ko_both(a: BrainFound, b: BrainFound) -> BrainFound { return {notes: a.notes.concat(b.notes), by: a.by} }
+
 fn ko_facts(r: KosiReply, known: BrainFound, today: Moment) -> KosiFacts { return {notes: for f in ko_new_facts(r, known) { ko_fact_note(f, today) }} }
 
 // ---------------------------------------------------------------- the talk
@@ -203,7 +211,8 @@ workflow chat(msg: Msg) -> Said {
     case true { call brain_design(ko_draw_ask(reply)) }
     case _ { ko_no_canvas() }
   }
-  facts  = ko_facts(reply, known, today)
+  seen   = call brain_recall(ko_seen_ask(reply))
+  facts  = ko_facts(reply, ko_both(known, seen), today)
   kept   = match facts.notes.is_empty() {
     case true { br_not_kept_kosi() }
     case _ { call ko_keep_facts(facts) }
@@ -213,7 +222,7 @@ workflow chat(msg: Msg) -> Said {
     case _ { br_not_kept_kosi() }
   }
   heard  = call brain_keep(ko_talk_after(talk, msg.text, ko_reply_text(reply)))
-  out    = ko_said(reply, known, drawn)
+  out    = ko_said(reply, ko_both(known, seen), drawn)
 }
 
 fn br_not_kept_kosi() -> BrainKept { return {key: "", entries: 0} }

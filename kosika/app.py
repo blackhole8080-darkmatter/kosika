@@ -99,6 +99,8 @@ PAGE = Path(__file__).parent / "app_assets" / "index.html"
 BRAND = Path(__file__).parent / "app_assets" / "brand.kos"
 MAX_AGENTS = 200
 MAX_BODY = 64 * 1024
+# A recording sent to be heard is bigger than any other request; Whisper takes 25 MB.
+MAX_AUDIO = 12 * 1024 * 1024
 _SKIPPED = {"_trash", "archive", "node_modules", "__pycache__", "runs"}
 
 ModelBinder = Callable[[Program], Mapping[str, ModelProvider]]
@@ -2220,9 +2222,9 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                 "application/json; charset=utf-8",
             )
 
-        def _body(self) -> dict[str, Any]:
+        def _body(self, most: int = MAX_BODY) -> dict[str, Any]:
             length = int(self.headers.get("Content-Length") or 0)
-            if not 0 < length <= MAX_BODY:
+            if not 0 < length <= most:
                 raise AppError("The request is empty or too large")
             body = json.loads(self.rfile.read(length).decode("utf-8"))
             if not isinstance(body, dict):
@@ -2387,7 +2389,7 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
 
                     from .designs import DesignsError, hear
 
-                    body = self._body()
+                    body = self._body(MAX_AUDIO)
                     try:
                         self._json(200, {"text": hear(base64.b64decode(str(body.get("audio", ""))), str(body.get("type", "audio/webm")))})
                     except (DesignsError, ValueError) as exc:
