@@ -364,7 +364,7 @@ fn dz_canvas_lead(ask: DzAsk) -> Text {
   return if kind == "canvas" { "illustration" } else { kind }
 }
 
-fn dz_from_canvas(ask: DzAsk, palette: Text, r: Request, d: Design, m: ArtPage, g: GenArt, z: QzPage) -> DzResult {
+fn dz_from_canvas(ask: DzAsk, palette: Text, r: Request, d: Design, m: ArtPage, g: GenArt, z: QzPage, flows: DzFlows) -> DzResult {
   let place = dz_place(ask)
   let on_subject = dz_on_subject(ask.text, r.structure)
   let has_diagram = d.problems.is_empty() and not d.page.is_empty() and on_subject
@@ -386,7 +386,7 @@ fn dz_from_canvas(ask: DzAsk, palette: Text, r: Request, d: Design, m: ArtPage, 
   let note = if left.is_empty() { "" } else { "<p class=\"kc-note\">Left out: " + art_esc(left.join("; ")) + ".</p>" }
   let both = not first.is_empty() and not second.is_empty()
   // Both drawn: one picture, the art and the structure together.
-  let grid = if both { dz_stage(r, d, m, dz_graph(dz_formula_for(ask.text)).svg) } else { "<div>" + first + second + "</div>" }
+  let grid = if both { dz_stage(r, d, m, dz_graph(dz_formula_for(ask.text)).svg, flows) } else { "<div>" + first + second + "</div>" }
   let field = dz_science_field(ask.text)
   let equation = dz_reaction(ask.text)
   let balanced = sc_balance(equation)
@@ -397,7 +397,7 @@ fn dz_from_canvas(ask: DzAsk, palette: Text, r: Request, d: Design, m: ArtPage, 
   let inner = "<div class=\"kc-art\" aria-hidden=\"true\">" + g.svg + "</div><div class=\"kc-head\">" + dz_field_label(field) + "<h2>" + art_esc(title) + "</h2><p>" + art_esc(summary) + "</p></div>" + grid + formula + reaction + lab + check + note
   let own = not (formula.is_empty() and reaction.is_empty() and lab.is_empty())
   let drawn = has_diagram or has_moving or own
-  let embed = if drawn { dz_wrap("canvas", place, palette, "", inner, art_style() + gen_style() + qz_style() + sc_style() + sm_style() + dz_lab_style() + dz_formula_style() + dz_canvas_style() + dz_stage_style()) } else { "" }
+  let embed = if drawn { dz_wrap("canvas", place, palette, "", inner, art_style() + gen_style() + qz_style() + sc_style() + sm_style() + dz_lab_style() + dz_formula_style() + dz_canvas_style() + dz_stage_style() + dz_living_style()) } else { "" }
   let page = if drawn { dz_canvas_page(title, palette, embed) } else { "" }
   let none: Text[] = []
   let wrong = if drawn { none } else { d.problems.concat(m.problems) }
@@ -792,6 +792,168 @@ fn dz_parts_map(s: Structure) -> Text {
   return "<div class=\"kc-map\"><div class=\"kc-parts\">" + parts + "</div>" + (if links.is_empty() { "" } else { "<ul class=\"kc-links\">" + links + "</ul>" }) + "</div>"
 }
 
+// ---------------------------------------------------------------- living cards
+//
+// The diagram and the art as one thing. Each part of the structure is a
+// card, and the card holds its own living picture: a real part of the art
+// library when the part is one (a heart for an atrium or a ventricle, a
+// cell, an atom, a leaf...), its icon otherwise, moving as such things
+// move. Each link carries what travels along it, and the colour of what
+// travels means something: a model says what each link carries and gives
+// the same kind of thing the same colour and a change of state a new one
+// (blood before the lungs and after); Kosika keeps only flows that are
+// links of the structure, and colours the rest by their place in order.
+
+record DzFlow { from: Text to: Text carries: Text hue: Number }
+record DzFlows { flows: DzFlow[] }
+record DzFlowBrief { task: Text structure: Text }
+
+model flow_reader {
+  input: DzFlowBrief
+  output: DzFlows
+  parameters: {
+    max_output_tokens: 1200
+  }
+}
+
+fn dz_flow_task() -> Text {
+  return "You read a diagram's links and say what travels along each. Give flows: one per link, with from and to (the part ids exactly as given), carries (1 to 3 words: what moves along it, like oxygen-poor blood, water vapour, an electrical signal, money) and hue (0 to 5). Give the same kind of thing the same hue everywhere, and a new hue when it changes state, so the colours tell the story: 0 amber, 1 violet, 2 sky blue, 3 gold, 4 mint green, 5 rose red. Use sky blue for oxygen-poor blood and rose red for oxygen-rich blood, sky blue for water, gold for energy or light."
+}
+
+fn dz_flow_text(s: Structure) -> Text {
+  let parts = (for p in s.parts { p.id + " = " + p.label }).join("; ")
+  let links = (for l in s.links { l.from + " -> " + l.to + dz_link_said(l) }).join("; ")
+  return "Parts: " + parts + ". Links: " + links + "."
+}
+
+fn dz_link_said(l: Link) -> Text { return if l.label.is_empty() { "" } else { " (" + l.label + ")" } }
+
+fn dz_flow_brief(r: Request) -> DzFlowBrief { return {task: dz_flow_task(), structure: dz_flow_text(r.structure)} }
+
+fn dz_no_flows() -> DzFlows { return {flows: []} }
+
+// The flow of one link: the model's, when it named that link, else a
+// colour by its place in order.
+fn dz_flow_of(f: DzFlows, l: Link, k: Number) -> DzFlow {
+  for x in f.flows {
+    if x.from == l.from and x.to == l.to { return {..x, hue: x.hue.abs().floor() % 6} }
+  }
+  return {from: l.from, to: l.to, carries: l.label, hue: k % 6}
+}
+
+// The art kind a part is, when it is one of the art's real parts.
+fn dz_art_kinds() -> Text[] { return ["heart", "cell", "atom", "leaf", "neuron", "dna", "circuit", "magnet", "engine", "transistor"] }
+
+// Each art part's words, worked out once for a whole drawing.
+// Whole words, not stems: "collection" is not a transistor's collector.
+fn dz_art_vocab() -> Text[][] { return for kind in dz_art_kinds() { dz_name_words(dz_part_vocab(kind)) } }
+
+fn dz_part_art(label: Text) -> Text { return dz_part_art_with(label, dz_art_vocab()) }
+
+fn dz_part_art_with(label: Text, vocab: Text[][]) -> Text {
+  let said = dz_name_words(label)
+  let kinds = dz_art_kinds()
+  for k in 0 until kinds.length() {
+    if dz_shared(vocab[k], said) > 0 { return kinds[k] }
+  }
+  return ""
+}
+
+fn dz_part_icon(s: Structure, id: Text) -> Text {
+  for l in s.looks {
+    if l.part == id { return l.icon }
+  }
+  return ""
+}
+
+// Where each card sits: a ring for a cycle or anything round one centre,
+// rows that turn back on themselves (a snake) for everything else.
+fn dz_card_spots(s: Structure, w: Number) -> Number[][] {
+  let n = s.parts.length()
+  var xs: Number[] = []
+  var ys: Number[] = []
+  if ["cycle", "orbit", "hub"].contains(s.shape) {
+    for k in 0 until n {
+      let deg = 360 * k / n.max(1) - 90
+      xs = xs.append(w / 2 + deg.cos() * 330)
+      ys = ys.append(260 + deg.sin() * 190)
+    }
+    return [xs, ys]
+  }
+  let per = 3
+  for k in 0 until n {
+    let row = (k / per).floor()
+    let at = k % per
+    let col = if row % 2 == 0 { at } else { per - 1 - at }
+    xs = xs.append(w / 2 + (col - 1) * 310)
+    ys = ys.append(100 + row * 200)
+  }
+  return [xs, ys]
+}
+
+fn dz_card_art(s: Structure, p: Part, x: Number, y: Number, hue: Number, vocab: Text[][]) -> Text {
+  let kind = dz_part_art_with(p.label, vocab)
+  if not kind.is_empty() {
+    let f: Figure = {id: p.id, kind: kind, x: 0, y: 0, w: 4.2, h: 0, count: if kind == "atom" { 6 } else { 0 }, hue: hue, label: "", points: []}
+    // The place is the outer group's; the motion is the inner one's, so
+    // the animation's own transform does not undo where the art sits.
+    return f"<g transform=\"translate({(x * 10).round() / 10} {(y * 10).round() / 10 - 22})\"><g class=\"lc-art lc-move-{kind}\" style=\"--c:var(--h{hue})\">{art_shape(f)}</g></g>"
+  }
+  let icon = dz_part_icon(s, p.id)
+  if not icon.is_empty() { return f"<text class=\"lc-icon\" x=\"{(x * 10).round() / 10}\" y=\"{(y * 10).round() / 10 - 6}\">{icon}</text>" }
+  return f"<circle class=\"lc-dot\" cx=\"{(x * 10).round() / 10}\" cy=\"{(y * 10).round() / 10 - 22}\" r=\"22\" style=\"fill:var(--h{hue})\"/><text class=\"lc-letter\" x=\"{(x * 10).round() / 10}\" y=\"{(y * 10).round() / 10 - 15}\">{art_esc(p.label.slice(0, 1).upper())}</text>"
+}
+
+fn dz_living_svg(s: Structure, flows: DzFlows) -> Text {
+  let w = 1000
+  let spots = dz_card_spots(s, w)
+  let xs = spots[0]
+  let ys = spots[1]
+  let n = s.parts.length()
+  let rows = if ["cycle", "orbit", "hub"].contains(s.shape) { 3 } else { ((n + 2) / 3).floor() }
+  let h = if ["cycle", "orbit", "hub"].contains(s.shape) { 520 } else { 200 * rows + 10 }
+  let ids = for p in s.parts { p.id }
+  var links = ""
+  for k in 0 until s.links.length() {
+    let l = s.links[k]
+    let i = ids.index_of(l.from).or(-1)
+    let j = ids.index_of(l.to).or(-1)
+    if i >= 0 and j >= 0 and i != j {
+      let f = dz_flow_of(flows, l, k)
+      let dx = xs[j] - xs[i]
+      let dy = ys[j] - ys[i]
+      let len = (dx * dx + dy * dy).sqrt().max(1)
+      let x1 = xs[i] + dx / len * 112
+      let y1 = ys[i] + dy / len * 72
+      let x2 = xs[j] - dx / len * 112
+      let y2 = ys[j] - dy / len * 72
+      let mx = (x1 + x2) / 2 - dy / len * 26
+      let my = (y1 + y2) / 2 + dx / len * 26
+      let path = f"M{(x1 * 10).round() / 10} {(y1 * 10).round() / 10} Q{(mx * 10).round() / 10} {(my * 10).round() / 10} {(x2 * 10).round() / 10} {(y2 * 10).round() / 10}"
+      let dots = (for d in 0 until 3 { f"<circle class=\"lc-drop\" r=\"7\" style=\"fill:var(--h{f.hue})\"><animateMotion dur=\"2.4s\" begin=\"-{d * 0.8}s\" repeatCount=\"indefinite\" path=\"{path}\"/></circle>" }).join("")
+      let said = if f.carries.is_empty() { "" } else { f"<text class=\"lc-carries\" x=\"{(mx * 10).round() / 10}\" y=\"{(my * 10).round() / 10 - 8}\" style=\"fill:var(--h{f.hue})\">{art_esc(f.carries)}</text>" }
+      links = links + f"<g class=\"lc-link\" data-from=\"{l.from}\" data-to=\"{l.to}\"><path d=\"{path}\" style=\"stroke:var(--h{f.hue})\" marker-end=\"url(#lc-head)\"/>{dots}{said}</g>"
+    }
+  }
+  var cards = ""
+  let vocab = dz_art_vocab()
+  for k in 0 until n {
+    let p = s.parts[k]
+    let x = xs[k]
+    let y = ys[k]
+    let hue = k % 6
+    let box = f"<rect class=\"lc-box\" x=\"{(x * 10).round() / 10 - 105}\" y=\"{(y * 10).round() / 10 - 68}\" width=\"210\" height=\"136\" rx=\"20\" style=\"--c:var(--h{hue})\"/>"
+    let name = f"<text class=\"lc-name\" x=\"{(x * 10).round() / 10}\" y=\"{(y * 10).round() / 10 + 34}\">{art_esc(p.label)}</text><text class=\"lc-note\" x=\"{(x * 10).round() / 10}\" y=\"{(y * 10).round() / 10 + 52}\">{art_esc(p.note.upper())}</text>"
+    cards = cards + f"<g class=\"lc-card\" data-part=\"{p.id}\">{box}{dz_card_art(s, p, x, y, hue, vocab)}{name}</g>"
+  }
+  let head = "<defs><marker id=\"lc-head\" viewBox=\"0 0 10 10\" refX=\"8\" refY=\"5\" markerWidth=\"6\" markerHeight=\"6\" orient=\"auto\"><path d=\"M0 0 L10 5 L0 10 z\" class=\"lc-arrow\"/></marker></defs>"
+  return f"<svg class=\"art lc\" viewBox=\"0 0 {w} {h}\" role=\"img\" aria-label=\"{art_esc(s.title)}\">{head}{links}{cards}</svg>"
+}
+
+fn dz_living_style() -> Text {
+  return ".lc{width:100%;height:auto;display:block}.lc-box{fill:color-mix(in srgb,var(--c) 10%,var(--halo));stroke:color-mix(in srgb,var(--c) 55%,transparent);stroke-width:2;filter:drop-shadow(0 8px 18px rgb(0 0 0/.35))}.lc-name{fill:var(--ink);font:700 16px Figtree,system-ui,sans-serif;text-anchor:middle}.lc-note{fill:var(--soft);font:600 10px ui-monospace,Consolas,monospace;letter-spacing:.12em;text-anchor:middle}.lc-icon{font-size:44px;text-anchor:middle;animation:lc-bob 2.4s ease-in-out infinite}.lc-letter{fill:var(--bg);font:800 20px Figtree,system-ui,sans-serif;text-anchor:middle}.lc-link path{fill:none;stroke-width:3.5;opacity:.6}.lc-arrow{fill:var(--soft)}.lc-carries{font:700 12px Figtree,system-ui,sans-serif;text-anchor:middle;paint-order:stroke;stroke:var(--bg);stroke-width:4px}.lc-drop{filter:drop-shadow(0 0 6px currentColor)}.lc-art{animation:lc-beat 1.1s ease-in-out infinite;transform-box:fill-box;transform-origin:center}.lc-move-heart{animation-name:lc-beat}.lc-move-cell,.lc-move-leaf,.lc-move-atom{animation:lc-bob 3s ease-in-out infinite}@keyframes lc-beat{30%{transform:scale(.9)}60%{transform:scale(1)}}@keyframes lc-bob{50%{transform:translateY(-5px)}}.lc-card{transition:opacity .5s}.lc-card.st-dim,.lc-link.st-dim{opacity:.35}.lc-card.st-on .lc-box{stroke-width:4;filter:drop-shadow(0 0 14px var(--amber))}.lc-link.st-run path{opacity:1;stroke-width:6}@media (prefers-reduced-motion:reduce){.lc-art,.lc-icon{animation:none}}"
+}
+
 // ---------------------------------------------------------------- the stage
 //
 // The canvas as one big screen that plays the explanation scene by scene.
@@ -967,14 +1129,18 @@ fn dz_played_script() -> Text {
 fn dz_no_quiz() -> QzPage { return {page: "", card: "", problems: [], quiz: {title: "", topic: "", palette: "dark_matter", questions: []}, checked: ""} }
 
 fn dz_stage_script() -> Text {
-  return "(function(){var st=document.querySelector('.kc-stage');if(!st)return;var S=JSON.parse(st.dataset.scenes),own=[].slice.call(st.querySelectorAll('.art .own')),nodes=[].slice.call(st.querySelectorAll('.mm-node')),edges=[].slice.call(st.querySelectorAll('.mm-edge')),cap=st.querySelector('.st-caption'),num=st.querySelector('.st-num'),dots=[].slice.call(st.querySelectorAll('.st-dot')),graph=st.querySelector('.st-graph'),i=0,playing=true,timer=null,still=matchMedia('(prefers-reduced-motion: reduce)').matches;function show(k){i=k;var last=k===S.length;var sc=last?null:S[k];own.forEach(function(e){var on=sc&&sc.shows.indexOf(e.dataset.of)>=0;e.classList.remove('wait');e.classList.toggle('lit',!!on);e.classList.toggle('dim',!!sc&&!on)});nodes.forEach(function(n){var id=n.dataset.part;n.classList.toggle('known',last||(sc&&sc.known.indexOf(id)>=0));n.classList.toggle('now',!!sc&&(sc.from===id||sc.to===id))});edges.forEach(function(e){e.classList.toggle('run',!!sc&&e.dataset.from===sc.from&&e.dataset.to===sc.to)});if(graph)graph.classList.toggle('on',last);var fr=st.querySelector('iframe.st-form');if(fr&&fr.contentWindow){var msg=last?{stage:1,all:1}:{stage:1,parts:sc.parts.length?sc.parts:[sc.from,sc.to].filter(Boolean),from:sc.from,to:sc.to};fr.contentWindow.postMessage(msg,'*')}cap.textContent=last?(graph?'And the formula behind it, drawn as a graph.':'That is the whole of it.'):sc.caption;num.textContent=last?'':(k+1)+' / '+S.length;dots.forEach(function(d,j){d.classList.toggle('on',j===k)})}var total=S.length+(graph?1:0);function next(){show((i+1)%total)}addEventListener('message',function(e){var h=e.data&&e.data.stageHeight;var fr=st.querySelector('iframe.st-form');if(h&&fr&&e.source===fr.contentWindow)fr.style.height=Math.max(260,Math.min(900,h))+'px'});function play(){clearInterval(timer);if(playing&&!still)timer=setInterval(next,5200)}st.querySelector('.st-next').onclick=function(){next();play()};st.querySelector('.st-prev').onclick=function(){show((i-1+total)%total);play()};var pb=st.querySelector('.st-play');pb.onclick=function(){playing=!playing;pb.textContent=playing?'Pause':'Play';play()};dots.forEach(function(d,j){d.onclick=function(){show(j);play()}});show(0);play()})();"
+  return "(function(){var st=document.querySelector('.kc-stage');if(!st)return;var S=JSON.parse(st.dataset.scenes),own=[].slice.call(st.querySelectorAll('.art .own')),nodes=[].slice.call(st.querySelectorAll('.mm-node')),edges=[].slice.call(st.querySelectorAll('.mm-edge')),cap=st.querySelector('.st-caption'),num=st.querySelector('.st-num'),dots=[].slice.call(st.querySelectorAll('.st-dot')),graph=st.querySelector('.st-graph'),i=0,playing=true,timer=null,still=matchMedia('(prefers-reduced-motion: reduce)').matches;function show(k){i=k;var last=k===S.length;var sc=last?null:S[k];own.forEach(function(e){var on=sc&&sc.shows.indexOf(e.dataset.of)>=0;e.classList.remove('wait');e.classList.toggle('lit',!!on);e.classList.toggle('dim',!!sc&&!on)});nodes.forEach(function(n){var id=n.dataset.part;n.classList.toggle('known',last||(sc&&sc.known.indexOf(id)>=0));n.classList.toggle('now',!!sc&&(sc.from===id||sc.to===id))});edges.forEach(function(e){e.classList.toggle('run',!!sc&&e.dataset.from===sc.from&&e.dataset.to===sc.to)});if(graph)graph.classList.toggle('on',last);var lit=sc?(sc.parts.length?sc.parts:[sc.from,sc.to].filter(Boolean)):[];st.querySelectorAll('.lc-card').forEach(function(c){var on=lit.indexOf(c.dataset.part)>=0;c.classList.toggle('st-on',on);c.classList.toggle('st-dim',!!sc&&lit.length>0&&!on)});st.querySelectorAll('.lc-link').forEach(function(l){var run=!!sc&&!!sc.from&&l.dataset.from===sc.from&&l.dataset.to===sc.to;l.classList.toggle('st-run',run);l.classList.toggle('st-dim',!!sc&&lit.length>0&&!run)});var fr=st.querySelector('iframe.st-form');if(fr&&fr.contentWindow){var msg=last?{stage:1,all:1}:{stage:1,parts:sc.parts.length?sc.parts:[sc.from,sc.to].filter(Boolean),from:sc.from,to:sc.to};fr.contentWindow.postMessage(msg,'*')}cap.textContent=last?(graph?'And the formula behind it, drawn as a graph.':'That is the whole of it.'):sc.caption;num.textContent=last?'':(k+1)+' / '+S.length;dots.forEach(function(d,j){d.classList.toggle('on',j===k)})}var total=S.length+(graph?1:0);function next(){show((i+1)%total)}addEventListener('message',function(e){var h=e.data&&e.data.stageHeight;var fr=st.querySelector('iframe.st-form');if(h&&fr&&e.source===fr.contentWindow)fr.style.height=Math.max(260,Math.min(900,h))+'px'});function play(){clearInterval(timer);if(playing&&!still)timer=setInterval(next,5200)}st.querySelector('.st-next').onclick=function(){next();play()};st.querySelector('.st-prev').onclick=function(){show((i-1+total)%total);play()};var pb=st.querySelector('.st-play');pb.onclick=function(){playing=!playing;pb.textContent=playing?'Pause':'Play';play()};dots.forEach(function(d,j){d.onclick=function(){show(j);play()}});show(0);play()})();"
 }
 
 fn dz_stage_style() -> Text {
-  return ".kc-stage{padding:18px}.st-screen{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;align-items:start}.st-map .kc-full{text-align:right;margin-top:6px}.st-map .kc-full[open]{text-align:left}.st-art svg{width:100%;height:auto;display:block}.st-form{width:100%;height:520px;border:0;border-radius:14px;background:transparent}.mm{width:100%;height:auto;display:block}.mm-node circle{fill:var(--halo);stroke:color-mix(in srgb,var(--line) 30%,transparent);stroke-width:1.5;transition:all .5s}.mm-node text{fill:var(--soft);font:600 10.5px Figtree,system-ui,sans-serif;text-anchor:middle}.mm-node{opacity:.15;transition:opacity .6s}.mm-node.known{opacity:1}.mm-node.now circle{stroke:var(--amber);stroke-width:3;fill:color-mix(in srgb,var(--amber) 22%,var(--halo))}.mm-node.now text{fill:var(--ink)}.mm-edge path{stroke:color-mix(in srgb,var(--line) 35%,transparent);stroke-width:2;fill:none;transition:stroke .4s}.mm-arrow{fill:color-mix(in srgb,var(--line) 50%,transparent)}.mm-edge.run path{stroke:var(--amber);stroke-width:3}.mm-dot{fill:var(--amber);opacity:0}.mm-edge.run .mm-dot{opacity:1}.st-bar{display:flex;align-items:center;gap:14px;margin-top:14px;padding:12px 14px;border-radius:14px;background:color-mix(in srgb,var(--halo) 85%,transparent);border:1px solid color-mix(in srgb,var(--line) 14%,transparent)}.st-num{font:600 11px ui-monospace,Consolas,monospace;color:var(--gold);letter-spacing:.12em;min-width:44px}.st-caption{flex:1;font-size:17px;line-height:1.45;color:var(--ink)}.st-bar button{font:600 10.5px ui-monospace,Consolas,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--soft);background:none;border:1px solid color-mix(in srgb,var(--line) 22%,transparent);border-radius:999px;padding:7px 12px;cursor:pointer}.st-bar button:focus-visible{outline:2px solid var(--amber)}.st-dots{display:flex;gap:6px;justify-content:center;margin-top:10px}.st-dot{width:9px;height:9px;border-radius:50%;border:0;padding:0;background:color-mix(in srgb,var(--line) 30%,transparent);cursor:pointer}.st-dot.on{background:var(--amber)}.st-graph{display:none;margin:14px auto 0;max-width:640px}.st-graph.on{display:block}@media (max-width:900px){.st-screen{grid-template-columns:1fr}}"
+  return ".kc-stage{padding:18px}.st-screen{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;align-items:start}.st-map .kc-full{text-align:right;margin-top:6px}.st-map .kc-full[open]{text-align:left}.st-art svg{width:100%;height:auto;display:block}.st-living{max-width:1060px;margin:0 auto}.st-opens{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:18px;margin-top:8px}.st-opens .kc-full[open]{flex-basis:100%}.st-form{width:100%;height:520px;border:0;border-radius:14px;background:transparent}.mm{width:100%;height:auto;display:block}.mm-node circle{fill:var(--halo);stroke:color-mix(in srgb,var(--line) 30%,transparent);stroke-width:1.5;transition:all .5s}.mm-node text{fill:var(--soft);font:600 10.5px Figtree,system-ui,sans-serif;text-anchor:middle}.mm-node{opacity:.15;transition:opacity .6s}.mm-node.known{opacity:1}.mm-node.now circle{stroke:var(--amber);stroke-width:3;fill:color-mix(in srgb,var(--amber) 22%,var(--halo))}.mm-node.now text{fill:var(--ink)}.mm-edge path{stroke:color-mix(in srgb,var(--line) 35%,transparent);stroke-width:2;fill:none;transition:stroke .4s}.mm-arrow{fill:color-mix(in srgb,var(--line) 50%,transparent)}.mm-edge.run path{stroke:var(--amber);stroke-width:3}.mm-dot{fill:var(--amber);opacity:0}.mm-edge.run .mm-dot{opacity:1}.st-bar{display:flex;align-items:center;gap:14px;margin-top:14px;padding:12px 14px;border-radius:14px;background:color-mix(in srgb,var(--halo) 85%,transparent);border:1px solid color-mix(in srgb,var(--line) 14%,transparent)}.st-num{font:600 11px ui-monospace,Consolas,monospace;color:var(--gold);letter-spacing:.12em;min-width:44px}.st-caption{flex:1;font-size:17px;line-height:1.45;color:var(--ink)}.st-bar button{font:600 10.5px ui-monospace,Consolas,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--soft);background:none;border:1px solid color-mix(in srgb,var(--line) 22%,transparent);border-radius:999px;padding:7px 12px;cursor:pointer}.st-bar button:focus-visible{outline:2px solid var(--amber)}.st-dots{display:flex;gap:6px;justify-content:center;margin-top:10px}.st-dot{width:9px;height:9px;border-radius:50%;border:0;padding:0;background:color-mix(in srgb,var(--line) 30%,transparent);cursor:pointer}.st-dot.on{background:var(--amber)}.st-graph{display:none;margin:14px auto 0;max-width:640px}.st-graph.on{display:block}@media (max-width:900px){.st-screen{grid-template-columns:1fr}}"
 }
 
-fn dz_stage(r: Request, d: Design, m: ArtPage, graph: Text) -> Text {
+// Shapes the living cards read well in; a table, a timeline, a message
+// sequence or a sketch keep their own drawing.
+fn dz_living_fits(s: Structure) -> Bool { return not ["compare", "timeline", "sequence", "sketch", "tree", "mindmap", "nested", "layers", "containers"].contains(s.shape) and s.parts.length() >= 2 and s.parts.length() <= 9 }
+
+fn dz_stage(r: Request, d: Design, m: ArtPage, graph: Text, flows: DzFlows) -> Text {
   let s = r.structure
   let scenes = dz_storyboard(s, m.art)
   let data = "[" + (for sc in scenes { dz_scene_json(sc) }).join(",") + "]"
@@ -986,7 +1152,12 @@ fn dz_stage(r: Request, d: Design, m: ArtPage, graph: Text) -> Text {
   let played = d.page.replace("</head>", "<style>html{background:var(--bg)}" + dz_played_style() + "</style></head>").replace("</body>", "<script>" + dz_played_script() + "</script></body>")
   let form = if d.page.is_empty() { dz_mind_map(s) } else { "<iframe class=\"st-form\" title=\"" + art_esc(s.title) + "\" srcdoc=\"" + art_esc(played) + "\"></iframe>" }
   let open_full = "<details class=\"kc-full\"><summary>Open the full diagram</summary>" + dz_diagram_frame(r, d) + "</details>"
-  let screen = "<div class=\"st-screen\"><div class=\"st-art\">" + m.svg + "</div><div class=\"st-map\">" + form + open_full + "</div></div>"
+  // One entity when it fits: the parts are cards with living art inside
+  // and what flows between them coloured by meaning; the moving picture
+  // and the full diagram open beneath.
+  let living = dz_living_fits(s)
+  let open_art = "<details class=\"kc-full\"><summary>Open the moving picture</summary><div class=\"st-art\">" + m.svg + "</div></details>"
+  let screen = if living { "<div class=\"st-living\">" + dz_living_svg(s, flows) + "</div><div class=\"st-opens\">" + open_art + open_full + "</div>" } else { "<div class=\"st-screen\"><div class=\"st-art\">" + m.svg + "</div><div class=\"st-map\">" + form + open_full + "</div></div>" }
   let bar = "<div class=\"st-bar\"><span class=\"st-num\"></span><span class=\"st-caption\"></span><button class=\"st-prev\" type=\"button\">Back</button><button class=\"st-play\" type=\"button\">Pause</button><button class=\"st-next\" type=\"button\">Next</button></div>"
   let graph_part = if graph.is_empty() { "" } else { "<div class=\"st-graph\">" + graph + "</div>" }
   return "<div class=\"kc-card kc-stage\" data-scenes=\"" + art_esc(data) + "\"><div class=\"kc-label\">Kosika canvas &#183; <b>the explanation, played</b></div>" + screen + bar + "<div class=\"st-dots\">" + dots + "</div>" + graph_part + "<script>" + dz_stage_script() + "</script></div>"
@@ -1133,7 +1304,8 @@ workflow dz_canvas(ask: DzAsk) -> DzResult {
   drawn   = call draw(asked)
   moving  = call illustrate(dz_moving_ask(ask, palette))
   behind  = call gen_backdrop(dz_gen_for(asked, palette))
-  out     = dz_from_canvas(ask, palette, asked, drawn, moving, behind, dz_no_quiz())
+  flows   = use_model flow_reader(dz_flow_task(), dz_flow_text(asked.structure)) retry 1 otherwise dz_no_flows()
+  out     = dz_from_canvas(ask, palette, asked, drawn, moving, behind, dz_no_quiz(), flows)
 }
 
 // ---------------------------------------------------------------- the front door
@@ -1370,4 +1542,20 @@ test "the storyboard turns each step into a scene Kosika checks" {
   expect dz_concise("Deoxygenated blood from the whole body enters the right atrium, then passes through the tricuspid valve into the right ventricle") == "Deoxygenated blood from the whole body enters the right atrium …"
   expect dz_storyboard_problems(board, dz_test_heart(), dz_test_heart_art()) == []
   expect dz_mind_map(dz_test_heart()).split("class=\"mm-edge\"").length() == 3
+}
+
+fn dz_test_flows() -> DzFlows { return {flows: [{from: "ra", to: "rv", carries: "oxygen-poor blood", hue: 2}, {from: "rv", to: "lungs", carries: "oxygen-poor blood", hue: 8}]} }
+
+test "living cards: the art a part is, and what its links carry" {
+  expect dz_part_art("Right atrium") == "heart"
+  expect dz_part_art("Nucleus") == "cell"
+  expect dz_part_art("Evaporation") == ""
+  expect dz_part_art("Collection") == ""
+  heart = dz_test_heart()
+  expect dz_flow_of(dz_test_flows(), heart.links[0], 0).carries == "oxygen-poor blood"
+  expect dz_flow_of(dz_test_flows(), heart.links[1], 1).hue == 2
+  svg = dz_living_svg(heart, dz_test_flows())
+  expect svg.split("class=\"lc-card\"").length() == 4
+  expect svg.contains("lc-move-heart")
+  expect dz_flow_text(heart).contains("ra -> rv (through the valve)")
 }
