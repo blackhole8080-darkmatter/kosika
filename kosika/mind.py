@@ -15,6 +15,14 @@ _RESONATE = (
     RelationType.CAUSES, RelationType.SIMILAR_TO,
 )
 
+#: The least cosine similarity an entity needs to be worth handing to a model.
+#: Measured with nomic-embed-text on a five-entity graph: a question the graph
+#: really answers scored 0.95, a question it half-touches scored 0.53, and a
+#: question with nothing to do with it scored 0.42. Below this line the hit is
+#: noise, and noise read first is worse than silence -- it pulls the answer
+#: toward whatever the graph happens to hold.
+RELEVANCE_FLOOR = 0.6
+
 
 @dataclass(frozen=True)
 class Retrieved:
@@ -28,9 +36,10 @@ def retrieve(
     embed: Callable[[str], Sequence[float]],
     *,
     limit: int = 4,
+    floor: float = RELEVANCE_FLOOR,
 ) -> Retrieved:
     hits = graph.semantic_search(list(embed(request)), top_k=limit)
-    kept = [entity_id for entity_id, score in hits if score > 0.0]
+    kept = [entity_id for entity_id, score in hits if score >= floor]
     if not kept:
         return Retrieved("", ())
     lines: list[str] = []
@@ -125,9 +134,10 @@ def mind_hooks(
     choices: Sequence[str] | None = None,
     verifier: Callable[[dict], str] | None = None,
     limit: int = 4,
+    floor: float = RELEVANCE_FLOOR,
 ) -> MindHooks:
     def context(arguments: dict) -> str:
         text = " ".join(str(value) for value in arguments.values())
-        return retrieve(graph, text, embed, limit=limit).context
+        return retrieve(graph, text, embed, limit=limit, floor=floor).context
 
     return MindHooks(context=context, verify=make_reflect(choices=choices, verifier=verifier))

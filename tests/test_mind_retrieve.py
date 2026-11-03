@@ -4,24 +4,30 @@ from kosika.knowledge_graph import (
 )
 from kosika.mind import retrieve
 
-_VECTORS = {"light": [1.0, 0.0], "green": [0.0, 1.0]}
+_VECTORS = {
+    "light": [1.0, 0.0, 0.0],
+    "green": [0.0, 1.0, 0.0],
+    # 45 degrees off both, and out of the plane the graph lives in: close to
+    # everything, near to nothing.
+    "vague": [0.5, 0.5, 0.70710678],
+}
 
 
 def _embed(text: str) -> list[float]:
     for key, vec in _VECTORS.items():
         if key in text.lower():
             return vec
-    return [0.0, 0.0]
+    return [0.0, 0.0, 0.0]
 
 
 def _graph() -> KnowledgeGraph:
     g = KnowledgeGraph()
     g.add_entity(Entity(id="photo", name="photosynthesis", entity_type=EntityType.CONCEPT,
-                        description="plants make food from light", embedding=[1.0, 0.0]))
+                        description="plants make food from light", embedding=[1.0, 0.0, 0.0]))
     g.add_entity(Entity(id="chloro", name="chlorophyll", entity_type=EntityType.CONCEPT,
-                        description="the green pigment", embedding=[0.0, 1.0]))
+                        description="the green pigment", embedding=[0.0, 1.0, 0.0]))
     g.add_entity(Entity(id="sun", name="sunlight", entity_type=EntityType.CONCEPT,
-                        description="the energy source", embedding=[0.9, 0.1]))
+                        description="the energy source", embedding=[0.9, 0.1, 0.0]))
     g.add_relationship(Relationship(id="r1", source="photo", target="chloro",
                                     relation_type=RelationType.PART_OF))
     g.add_relationship(Relationship(id="r2", source="photo", target="sun",
@@ -40,3 +46,21 @@ def test_retrieve_names_the_hit_and_its_cross_field_neighbours():
 def test_retrieve_with_no_embedding_match_is_empty_not_error():
     got = retrieve(_graph(), "zzz nothing", _embed, limit=1)
     assert got.context == "" and got.sources == ()
+
+
+def test_a_weak_match_is_left_out_rather_than_folded_in():
+    """Memory that barely fits is worse than no memory: it is what the model
+    reads first, and it pulls the answer toward whatever the graph happens to
+    hold. Measured on nomic-embed-text, an unrelated question scores about 0.42
+    against these entities and an on-topic one about 0.95."""
+
+    got = retrieve(_graph(), "a vague remark", _embed, limit=3)
+
+    assert got.context == "" and got.sources == ()
+
+
+def test_the_floor_can_be_lowered_when_the_graph_is_known_to_be_relevant():
+    got = retrieve(_graph(), "a vague remark", _embed, limit=3, floor=0.4)
+
+    assert "photosynthesis" in got.context
+    assert set(got.sources) == {"photo", "chloro", "sun"}
