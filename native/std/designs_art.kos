@@ -49,7 +49,7 @@
 import "designs_palette.kos"
 import "science_elements.kos"
 
-export [Figure, Motion, Beat, Art, ArtAsk, ArtPage, art_ball, art_ball_style, art_shape, art_centre, art_pointed, art_width, art_height, art_px, art_reach, art_round, art_esc, art_problems, art_tidy, art_svg, art_svg_named, art_prefixed, art_style, art_script, art_script_in, art_page, art_kinds, art_moves, art_wave, art_orbit_seconds, render, illustrate]
+export [Figure, Motion, Beat, Art, ArtAsk, ArtPage, art_ball, art_ball_style, art_shape, art_centre, art_pointed, art_gradients, art_width, art_height, art_px, art_reach, art_round, art_esc, art_problems, art_tidy, art_svg, art_svg_named, art_prefixed, art_style, art_script, art_script_in, art_page, art_kinds, art_moves, art_wave, art_orbit_seconds, render, illustrate]
 
 record Figure { id: Text kind: Text x: Number y: Number w: Number h: Number count: Number hue: Number label: Text points: Number[] }
 // around: the figure an orbit circles, or the path a travel runs along.

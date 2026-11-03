@@ -9,7 +9,11 @@
 // ask, or a small example when it gives none.
 //
 // Four for a start: a binary search tree insert, a bubble sort, a binary
-// search, and Dijkstra's shortest path.
+// search, and Dijkstra's shortest path. They are drawn with Kosika Designs'
+// art: its shaded balls and gradients in the palette's colours, and a
+// glowing traveller that runs each step's edge.
+
+import "designs_art.kos"
 
 export [AlAsk, AlStep, AlNode, AlEdge, AlRun, AlPage, al_which, al_numbers, al_bst, al_sort, al_search, al_path, al_run, al_svg, al_style, al_card, algorithm]
 
@@ -419,6 +423,13 @@ fn al_at(nodes: AlNode[], id: Text) -> AlNode {
   return {id: "", label: "", x: 0, y: 0, from: 0}
 }
 
+// A node's colour: by depth in a tree, by place in a graph, so a level or
+// a place keeps its colour from step to step. The new key is green.
+fn al_hue(r: AlRun, n: AlNode, k: Number) -> Number {
+  if n.from > 0 { return 4 }
+  return if r.kind == "tree" { ((n.y - 50) / 74).round() % 6 } else { k % 6 }
+}
+
 fn al_svg(r: AlRun) -> Text {
   if r.kind == "bars" { return al_bars_svg(r) }
   var edges = ""
@@ -428,26 +439,42 @@ fn al_svg(r: AlRun) -> Text {
     let mx = (a.x + b.x) / 2
     let my = (a.y + b.y) / 2
     let tag = if e.label.is_empty() { "" } else { f"<text class=\"al-w\" x=\"{al_r(mx)}\" y=\"{al_r(my - 6)}\">{al_esc(e.label)}</text>" }
-    edges = edges + f"<g class=\"al-edge\" data-id=\"{e.id}\" data-from=\"{e.from}\"><line x1=\"{al_r(a.x)}\" y1=\"{al_r(a.y)}\" x2=\"{al_r(b.x)}\" y2=\"{al_r(b.y)}\"/>{tag}</g>"
+    let path = f"M{al_r(a.x)} {al_r(a.y)} L{al_r(b.x)} {al_r(b.y)}"
+    // The traveller: Designs' spark, running the edge while its step plays.
+    let spark = f"<circle class=\"al-spark\" r=\"6\"><animateMotion dur=\"1.4s\" repeatCount=\"indefinite\" path=\"{path}\"/></circle>"
+    edges = edges + f"<g class=\"al-edge\" data-id=\"{e.id}\" data-from=\"{e.from}\"><path class=\"al-wire\" d=\"{path}\"/>{spark}{tag}</g>"
   }
-  let nodes = (for n in r.nodes { f"<g class=\"al-node\" data-id=\"{n.id}\" data-from=\"{n.from}\"><circle cx=\"{al_r(n.x)}\" cy=\"{al_r(n.y)}\" r=\"24\"/><text x=\"{al_r(n.x)}\" y=\"{al_r(n.y + 5)}\">{al_esc(n.label)}</text></g>" }).join("")
-  // As tall as the deepest node needs, with room for its circle.
+  var nodes = ""
+  for k in 0 until r.nodes.length() {
+    let n = r.nodes[k]
+    let ball = art_ball(n.x, n.y, 24, f"url(#art-g{al_hue(r, n, k)})", al_esc(n.label), "#fff")
+    nodes = nodes + f"<g class=\"al-node\" data-id=\"{n.id}\" data-from=\"{n.from}\"><circle class=\"al-ring\" cx=\"{al_r(n.x)}\" cy=\"{al_r(n.y)}\" r=\"31\"/><g class=\"al-ball\">{ball}</g></g>"
+  }
   let h = if r.kind == "graph" { 380 } else { (for n in r.nodes { n.y }).max().or(50) + 50 }
-  return f"<svg class=\"al-svg\" viewBox=\"0 0 900 {h}\" role=\"img\" aria-label=\"{al_esc(r.title)}\">{edges}{nodes}</svg>"
+  return f"<svg class=\"al-svg art\" viewBox=\"0 0 900 {h}\" role=\"img\" aria-label=\"{al_esc(r.title)}\"><defs>{art_gradients()}</defs><rect class=\"ground\" width=\"900\" height=\"{h}\" rx=\"22\"/>{edges}{nodes}</svg>"
 }
 
-// Bars for a list: one frame per step, since a sort moves them about.
+// Bars for a list: one frame per step, since a sort moves them about. Each
+// bar is shaded like Designs' art, and keeps its colour by its value, so a
+// number is followed by eye as it moves.
 fn al_bars_svg(r: AlRun) -> Text {
+  let order: Number[] = if r.frames.is_empty() { [] } else { r.frames[0].sort() }
   var frames = ""
   for k in 0 until r.frames.length() {
     let xs = r.frames[k]
     let top = xs.max().or(1).max(1)
     let n = xs.length()
     let w = 760 / n.max(1)
-    let bars = (for i in 0 until n { f"<g class=\"al-bar\" data-id=\"{al_bar(i)}\"><rect x=\"{al_r(70 + w * i + 4)}\" y=\"{al_r(300 - 240 * xs[i] / top)}\" width=\"{al_r(w - 8)}\" height=\"{al_r(240 * xs[i] / top)}\" rx=\"6\"/><text x=\"{al_r(70 + w * i + w / 2)}\" y=\"326\">{al_n(xs[i])}</text></g>" }).join("")
+    var bars = ""
+    for i in 0 until n {
+      let hue = order.index_of(xs[i]).or(0) % 6
+      let x = 70 + w * i + 4
+      let tall = 240 * xs[i] / top
+      bars = bars + f"<g class=\"al-bar\" data-id=\"{al_bar(i)}\"><rect x=\"{al_r(x)}\" y=\"{al_r(300 - tall)}\" width=\"{al_r(w - 8)}\" height=\"{al_r(tall)}\" rx=\"8\" style=\"fill:url(#art-g{hue})\"/><rect class=\"al-shine\" x=\"{al_r(x + 6)}\" y=\"{al_r(306 - tall)}\" width=\"{al_r((w - 8) * 0.18)}\" height=\"{al_r((tall - 12).max(0))}\" rx=\"4\"/><text x=\"{al_r(70 + w * i + w / 2)}\" y=\"326\">{al_n(xs[i])}</text></g>"
+    }
     frames = frames + f"<g class=\"al-frame\" data-k=\"{k}\">{bars}</g>"
   }
-  return f"<svg class=\"al-svg\" viewBox=\"0 0 900 350\" role=\"img\" aria-label=\"{al_esc(r.title)}\">{frames}</svg>"
+  return f"<svg class=\"al-svg art\" viewBox=\"0 0 900 350\" role=\"img\" aria-label=\"{al_esc(r.title)}\"><defs>{art_gradients()}</defs><rect class=\"ground\" width=\"900\" height=\"350\" rx=\"22\"/>{frames}</svg>"
 }
 
 fn al_steps_json(r: AlRun) -> Text {
@@ -456,7 +483,7 @@ fn al_steps_json(r: AlRun) -> Text {
 }
 
 fn al_style() -> Text {
-  return ".al{display:grid;gap:12px}.al-screen{overflow-x:auto;background:color-mix(in srgb,var(--halo) 70%,transparent);border-radius:16px}.al-svg{display:block;width:100%;min-width:560px;height:auto}.al-node circle{fill:var(--halo);stroke:color-mix(in srgb,var(--line) 40%,transparent);stroke-width:2;transition:all .4s}.al-node text{fill:var(--ink);font:700 15px ui-monospace,Consolas,monospace;text-anchor:middle}.al-node.seen circle{stroke:var(--amber)}.al-node.lit circle{stroke:var(--amber);stroke-width:4;fill:color-mix(in srgb,var(--amber) 25%,var(--halo));filter:drop-shadow(0 0 8px var(--amber))}.al-edge line{stroke:color-mix(in srgb,var(--line) 35%,transparent);stroke-width:2.5;transition:all .4s}.al-edge.lit line{stroke:var(--amber);stroke-width:5}.al-w{fill:var(--soft);font:600 13px ui-monospace,Consolas,monospace;text-anchor:middle;paint-order:stroke;stroke:var(--halo);stroke-width:4px}.al-later{opacity:0}.al-bar rect{fill:color-mix(in srgb,var(--think) 55%,var(--halo));transition:all .3s}.al-bar text{fill:var(--soft);font:600 13px ui-monospace,Consolas,monospace;text-anchor:middle}.al-bar.seen rect{fill:color-mix(in srgb,var(--line) 18%,transparent)}.al-bar.lit rect{fill:var(--amber);filter:drop-shadow(0 0 8px var(--amber))}.al-frame{display:none}.al-frame.on{display:inline}.al-bar-done rect{fill:var(--h4)}.al-bar{}.al-foot{display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:14px;border:1px solid color-mix(in srgb,var(--line) 16%,transparent)}.al-num{font:600 11px ui-monospace,Consolas,monospace;color:var(--gold);letter-spacing:.12em;min-width:48px}.al-cap{flex:1;font-size:16px;line-height:1.45;color:var(--ink)}.al-foot button{font:600 10.5px ui-monospace,Consolas,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--soft);background:none;border:1px solid color-mix(in srgb,var(--line) 22%,transparent);border-radius:999px;padding:7px 12px;cursor:pointer}.al-check{font:600 11px ui-monospace,Consolas,monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--h4)}.al-check.bad{color:var(--h0)}"
+  return art_ball_style() + ".al{display:grid;gap:12px}.al-screen{overflow-x:auto;border-radius:22px}.al-svg{display:block;width:100%;min-width:560px;height:auto}.al-svg .ground{fill:var(--halo);stroke:color-mix(in srgb,var(--line) 10%,transparent)}.al-ball{transform-box:fill-box;transform-origin:center;transition:opacity .4s}.al-ring{fill:none;stroke:transparent;stroke-width:3;transition:all .4s}.al-node.seen .al-ring{stroke:color-mix(in srgb,var(--amber) 70%,transparent)}.al-node.lit .al-ring{stroke:var(--amber);stroke-width:4;filter:drop-shadow(0 0 10px var(--amber))}.al-node.lit .al-ball{animation:al-pulse 1.2s ease-in-out infinite}@keyframes al-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}.al-node .ab-t{font-size:16px!important;paint-order:stroke;stroke:rgba(0,0,0,.35);stroke-width:3px}.al-wire{fill:none;stroke:color-mix(in srgb,var(--line) 32%,transparent);stroke-width:3;stroke-linecap:round;transition:all .4s}.al-edge.lit .al-wire{stroke:var(--amber);stroke-width:5;stroke-dasharray:8 8;animation:al-run .9s linear infinite}@keyframes al-run{to{stroke-dashoffset:-16}}.al-spark{fill:#fff;opacity:0;filter:drop-shadow(0 0 6px var(--amber))}.al-edge.lit .al-spark{opacity:1}.al-w{fill:var(--soft);font:600 13px ui-monospace,Consolas,monospace;text-anchor:middle;paint-order:stroke;stroke:var(--halo);stroke-width:4px}.al-later{opacity:0}.al-bar rect{transition:all .3s}.al-shine{fill:#fff;opacity:.22}.al-bar text{fill:var(--soft);font:600 13px ui-monospace,Consolas,monospace;text-anchor:middle}.al-bar.seen rect{opacity:.28}.al-bar.lit rect:first-child{filter:drop-shadow(0 0 10px var(--amber));stroke:var(--amber);stroke-width:3}.al-bar.lit text{fill:var(--amber)}.al-frame{display:none}.al-frame.on{display:inline}.al-foot{display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:14px;border:1px solid color-mix(in srgb,var(--line) 16%,transparent)}.al-num{font:600 11px ui-monospace,Consolas,monospace;color:var(--gold);letter-spacing:.12em;min-width:48px}.al-cap{flex:1;font-size:16px;line-height:1.45;color:var(--ink)}.al-foot button{font:600 10.5px ui-monospace,Consolas,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--soft);background:none;border:1px solid color-mix(in srgb,var(--line) 22%,transparent);border-radius:999px;padding:7px 12px;cursor:pointer}.al-check{font:600 11px ui-monospace,Consolas,monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--h4)}.al-check.bad{color:var(--h0)}@media (prefers-reduced-motion:reduce){.al-svg *{animation:none!important}.al-spark{display:none}}"
 }
 
 fn al_script() -> Text {
