@@ -184,6 +184,24 @@ def gather(topic: str, *, timeout: float = 180) -> dict[str, Any]:
     return _run(BRAIN, "brain_gather", {"g": {"topic": topic}}, extra=extra, first="kept", timeout=timeout)
 
 
+CREW = Path(__file__).resolve().parent.parent / "examples" / "agents" / "crew" / "main.kos"
+
+
+def crew(topic: str, *, palette: str = "", timeout: float = 1500) -> dict[str, Any]:
+    """Have a Kosika crew, run by Kosika Brain, make a study pack on `topic`:
+    the Conductor plans, the Scientist works out what is exact, the Designer
+    draws the canvas, the Tutor writes notes and the Examiner marks them,
+    each checked by Kosika, the crew at work played on a Kosika canvas.
+    The answer holds title, page, board and problems."""
+
+    topic = topic.strip()
+    if not topic:
+        raise DesignsError("Say what the pack is about.")
+    if not CREW.is_file():
+        raise DesignsError(f"The crew is not in this copy of Kosika ({CREW}).")
+    return _run(CREW, "pack", {"ask": {"topic": topic, "palette": palette}}, extra=_brain_memory(), first="title", timeout=timeout)
+
+
 STUDY = Path(__file__).resolve().parent.parent / "examples" / "agents" / "study" / "main.kos"
 
 
