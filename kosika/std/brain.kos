@@ -21,10 +21,18 @@
 // recipe, and an ask near enough to it is answered from the recipe, with no
 // model asked. You rate a canvas up or down: up keeps it first in line, down
 // means it is never reused and the next ask draws afresh.
+//
+// The Brain also learns its own choices. A small network (std/nn.kos,
+// written in Kosika) reads an ask's topic words and says how well each kind
+// of drawing has gone for asks like it: a canvas that passed its checks
+// counts for that kind, a thumbs up counts more, a thumbs down counts
+// against it. When the words alone do not settle the kind and the network
+// is sure, the Brain draws that kind and says so, without asking a model.
 
 import "designs.kos"
+import "nn.kos"
 
-export [BrainNote, BrainAsk, BrainFound, BrainPast, BrainKept, BrainCanvas, BrainRecipe, BrainRating, BrainRated, brain_recall, brain_keep, brain_design, brain_rate, br_recipe, br_reusable, br_rated_canvas, br_words, br_near, br_floor, br_past, br_told]
+export [BrainNote, BrainAsk, BrainFound, BrainPast, BrainKept, BrainCanvas, BrainRecipe, BrainRating, BrainRated, BrainMind, BrainChoice, br_features, br_new_mind, br_learn, br_choose, brain_recall, brain_keep, brain_design, brain_rate, br_recipe, br_reusable, br_rated_canvas, br_words, br_near, br_floor, br_past, br_told]
 
 // kind: episode, fact, recipe or structure.
 // topic: what it is about, in words a person would use.
@@ -56,6 +64,17 @@ memory canvases of BrainCanvas
 record BrainRecipe { found: Bool canvas: BrainCanvas near: Number }
 
 record BrainRating { ask: Text liked: Bool }
+
+// What the Brain has learned about which kind to draw. kinds: the outputs,
+// in order. xs, ys: the latest examples, which it learns from again each
+// time, so one rating does not wipe out the rest. seen: how many examples
+// it has met in all.
+record BrainMind { kinds: Text[] net: Net xs: Number[][] ys: Number[][] seen: Number }
+
+memory minds of BrainMind
+
+// The kind the network would choose, how sure it is (0 to 1), and why.
+record BrainChoice { kind: Text sure: Number why: Text }
 record BrainRated { rated: Bool said: Text }
 
 // ---------------------------------------------------------------- sense
@@ -167,6 +186,86 @@ fn br_worth_keeping(r: DzResult, recipe: BrainRecipe, ask: DzAsk) -> Bool {
 
 fn br_not_kept() -> BrainKept { return {key: "", entries: 0} }
 
+// ---------------------------------------------------------------- learning the kind
+
+fn br_buckets() -> Number { return 24 }
+
+// An ask as numbers the network reads: each topic word is hashed into one
+// of 24 places, and the places are scaled so the fullest is 1. Numbers are
+// left out, since they change from ask to ask and say nothing of the kind.
+fn br_features(text: Text) -> Number[] {
+  let marks = "abcdefghijklmnopqrstuvwxyz"
+  var counts: Number[] = for k in 0 until br_buckets() { 0 }
+  for w in br_words(text) {
+    if not w.to_number().exists() {
+      var h = 7
+      for c in w.chars() { h = (h * 31 + marks.index_of(c).or(26) + 1) % 9973 }
+      let at = h % br_buckets()
+      counts = counts.set(at, counts[at] + 1)
+    }
+  }
+  let top = counts.max().or(0).max(1)
+  return for c in counts { c / top }
+}
+
+fn br_new_mind() -> BrainMind {
+  let kinds = dz_kinds()
+  return {kinds: kinds, net: net([br_buckets(), 8, kinds.length()], 7), xs: [], ys: [], seen: 0}
+}
+
+fn br_mind_of(had: MindsRecalled) -> BrainMind { return if had.value.exists() { had.value.value() } else { br_new_mind() } }
+
+// One example: the kind it was, and how well it went, as the network's
+// wanted outputs. That kind: 0.85 when it passed its checks, 1 when you
+// liked it, 0 when you did not; every other kind a little under even.
+fn br_wanted(kinds: Text[], kind: Text, value: Number) -> Number[] {
+  return for k in kinds { if k == kind { value } else { 0.3 } }
+}
+
+// The mind after one more example, learned again with the latest 20, so it
+// keeps what it knew. value < 0 means there is nothing to learn from.
+fn br_learn(m: BrainMind, text: Text, kind: Text, value: Number) -> BrainMind {
+  if value < 0 or not m.kinds.contains(kind) or br_words(text).is_empty() { return m }
+  let xs = m.xs.append(br_features(text))
+  let ys = m.ys.append(br_wanted(m.kinds, kind, value))
+  let keep = 20
+  let from = (xs.length() - keep).max(0)
+  let kx = xs.slice(from, xs.length())
+  let ky = ys.slice(from, ys.length())
+  return {..m, net: train(m.net, kx, ky, 0.5, 25), xs: kx, ys: ky, seen: m.seen + 1}
+}
+
+// What the network would choose for an ask. It speaks only after three
+// examples, and only for a kind it is sure of.
+fn br_choose(m: BrainMind, text: Text) -> BrainChoice {
+  if m.seen < 3 or br_words(text).is_empty() { return {kind: "", sure: 0, why: ""} }
+  let out = predict(m.net, br_features(text))
+  let sure = out.max().or(0)
+  let at = out.index_of(sure).or(0)
+  if sure < 0.75 { return {kind: "", sure: sure, why: ""} }
+  let kind = m.kinds[at]
+  let pct = (sure * 100).round()
+  return {kind: kind, sure: sure, why: f"Kosika chose {kind} itself: it has learned from {m.seen} drawings and ratings that {kind} suits asks like this ({pct}% sure), so no model was asked to choose"}
+}
+
+// The ask with the learned kind, when the words leave the kind open and
+// the person did not name one.
+fn br_with_kind(ask: DzAsk, c: BrainChoice) -> DzAsk {
+  if not ask.kind.trim().is_empty() or dz_kind_sure(ask) or c.kind.is_empty() { return ask }
+  return {..ask, kind: c.kind}
+}
+
+fn br_chose(r: DzResult, ask: DzAsk, c: BrainChoice) -> DzResult {
+  let used = not c.kind.is_empty() and br_with_kind(ask, c).kind == c.kind and ask.kind.trim().is_empty()
+  return if used and r.kind == c.kind { {..r, why: c.why + ". " + r.why} } else { r }
+}
+
+// How much a drawing teaches: a checked one drawn now teaches a little, a
+// reused one nothing new.
+fn br_drawn_value(r: DzResult, recipe: BrainRecipe, ask: DzAsk) -> Number {
+  return if br_worth_keeping(r, recipe, ask) { 0.85 } else { -1 }
+}
+
 // ---------------------------------------------------------------- rating
 
 fn br_rated_canvas(c: BrainCanvas, r: BrainRating) -> BrainCanvas { return {..c, score: if r.liked { 2 } else { -1 }} }
@@ -246,16 +345,20 @@ workflow brain_design(ask: DzAsk) -> DzResult {
   past   = br_past(found, ask.text)
   made   = recall canvases like br_words(ask.text).join(" ")
   recipe = br_recipe(made, ask.text)
+  had    = recall minds under "kind"
+  mind   = br_mind_of(had)
+  choice = br_choose(mind, ask.text)
   drawn  = match br_reusable(recipe, ask) {
     case true { br_reused(recipe) }
-    case _ { call design(ask) }
+    case _ { call design(br_with_kind(ask, choice)) }
   }
+  taught = remember br_learn(mind, ask.text, drawn.kind, br_drawn_value(drawn, recipe, ask)) in minds under "kind"
   kept   = remember br_episode(ask, drawn, past) in brain under br_key("episode", ask.text)
   stored = match br_worth_keeping(drawn, recipe, ask) {
     case true { call brain_keep_canvas(br_canvas(ask, drawn)) }
     case _ { br_not_kept() }
   }
-  out    = br_told(drawn, past)
+  out    = br_told(br_chose(drawn, ask, choice), past)
 }
 
 workflow brain_keep_canvas(c: BrainCanvas) -> BrainKept {
@@ -273,9 +376,13 @@ workflow brain_rate(r: BrainRating) -> BrainRated {
 }
 
 workflow brain_rate_kept(r: BrainRating, c: BrainCanvas) -> BrainRated {
-  saved = remember br_rated_canvas(c, r) in canvases under br_key("canvas", c.topic)
-  out   = br_rated_said(c, r)
+  saved  = remember br_rated_canvas(c, r) in canvases under br_key("canvas", c.topic)
+  had    = recall minds under "kind"
+  taught = remember br_learn(br_mind_of(had), c.topic, c.kind, br_rated_value(r)) in minds under "kind"
+  out    = br_rated_said(c, r)
 }
+
+fn br_rated_value(r: BrainRating) -> Number { return if r.liked { 1 } else { 0 } }
 
 // ---------------------------------------------------------------- tests
 
@@ -361,4 +468,26 @@ test "a thumbs up keeps a canvas first; a thumbs down stops its reuse" {
   expect br_rated_said(kept, {ask: "x", liked: false}).said == "Kosika will not reuse 'Water Cycle'; the next ask like 'how does the water cycle work' is drawn afresh."
   liked = br_recipe(br_test_made(br_rated_canvas(kept, {ask: "x", liked: true})), "explain the water cycle")
   expect br_reused(liked).why.contains(", which you liked, so no model was asked")
+}
+
+test "the Brain learns which kind of drawing suits asks like these" {
+  m0 = br_new_mind()
+  expect br_choose(m0, "how do tides work").kind == ""
+  // Liked canvases for ocean asks, a disliked diagram for one of them.
+  m1 = br_learn(m0, "how do ocean tides work", "canvas", 1)
+  m2 = br_learn(m1, "why do ocean waves break", "canvas", 1)
+  m3 = br_learn(m2, "how do ocean currents move heat", "canvas", 1)
+  m = br_learn(m3, "ocean tides and the moon", "diagram", 0)
+  expect m.seen == 4
+  c = br_choose(m, "how do the ocean tides move")
+  expect c.kind == "canvas"
+  // An ask with mostly new words: it is not sure, so it says nothing.
+  expect br_choose(m, "what makes a volcano erupt").kind == ""
+  expect c.why.starts_with("Kosika chose canvas itself: it has learned from 4 drawings and ratings")
+  // A kind named by the person, or settled by the words, is never overruled.
+  expect br_with_kind({text: "how do the ocean tides move", palette: "", place: "studio", kind: "diagram"}, c).kind == "diagram"
+  expect br_with_kind({text: "how do the ocean tides move", palette: "", place: "studio", kind: ""}, c).kind == "canvas"
+  expect br_with_kind({text: "sort 3 1 2", palette: "", place: "studio", kind: ""}, c).kind == ""
+  expect br_features("how do ocean tides work").length() == 24
+  expect br_features("sort 3 1 2") == br_features("sort 9 8 7")
 }
