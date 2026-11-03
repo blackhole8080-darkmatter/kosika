@@ -924,10 +924,8 @@ fn art_shape(f: Figure) -> Text {
 }
 
 // Where a figure's name goes: under round things and rects, over lines.
-fn art_label(a: Art, i: Number) -> Text {
-  let f = a.figures[i]
+fn art_label(f: Figure, at: Number[]) -> Text {
   if f.label.trim().is_empty() or f.kind == "text" { return "" }
-  let at = art_label_spot(a, i)
   return f"<text class=\"name\" x=\"{art_n(at[0])}\" y=\"{art_n(at[1])}\">{art_esc(f.label)}</text>"
 }
 
@@ -955,44 +953,66 @@ fn art_label_above(f: Figure) -> Number[] {
   return [below[0], c[1] * s - (below[1] - c[1] * s) + 10]
 }
 
-fn art_labelled(a: Art, i: Number) -> Bool {
-  let f = a.figures[i]
-  return not f.label.trim().is_empty() and f.kind != "text" and art_movement(a, f.id) < 0
+// Which figures carry a name: one with a label that is not text and does
+// not travel, since a moving name has no fixed place to clash in.
+fn art_named(a: Art) -> Bool[] {
+  let movers = art_movers()
+  let moving = for m in a.motions where movers.contains(m.kind) { m.what }
+  return for f in a.figures { not f.label.trim().is_empty() and f.kind != "text" and not moving.contains(f.id) }
 }
 
+// Where every figure's name goes, worked out once for the whole picture:
+// under it, or over it, then to its right, then to its left, the first
+// place no earlier name has taken. An earlier name counts at its simple
+// place, under or over, so one name never has to place all the others
+// again. Two names clash when their texts would overlap.
+fn art_spots(a: Art) -> Number[][] {
+  let n = a.figures.length()
+  let named = art_named(a)
+  let wide = for f in a.figures { f.label.length() * 4.6 }
+  let belows = for f in a.figures { art_label_at(f) }
+  var firsts: Number[][] = []
+  for k in 0 until n {
+    var taken = false
+    if named[k] {
+      for m in 0 until k {
+        let p = belows[k]
+        let q = belows[m]
+        if named[m] and (p[0] - q[0]).abs() < wide[k] + wide[m] + 10 and (p[1] - q[1]).abs() < 16 { taken = true }
+      }
+    }
+    firsts = firsts.append(if taken { art_label_above(a.figures[k]) } else { belows[k] })
+  }
+  var spots: Number[][] = []
+  for k in 0 until n {
+    let f = a.figures[k]
+    var chosen = belows[k]
+    if named[k] {
+      let tries = [belows[k], art_label_above(f), art_label_beside(f, 1), art_label_beside(f, -1)]
+      var found = false
+      for spot in tries {
+        if not found {
+          var free = true
+          for m in 0 until k {
+            let q = firsts[m]
+            if named[m] and (spot[0] - q[0]).abs() < wide[k] + wide[m] + 10 and (spot[1] - q[1]).abs() < 16 { free = false }
+          }
+          if free {
+            chosen = spot
+            found = true
+          }
+        }
+      }
+    }
+    spots = spots.append(chosen)
+  }
+  return spots
+}
+
+// Two figures' names, at these places, print over each other.
 fn art_clash(a: Art, i: Number, p: Number[], j: Number, q: Number[]) -> Bool {
   let room = (a.figures[i].label.length() + a.figures[j].label.length()) * 4.6 + 10
   return (p[0] - q[0]).abs() < room and (p[1] - q[1]).abs() < 16
-}
-
-// Where a figure's name goes: under it, or over it when an earlier name
-// already sits there. Kosika moves it rather than send the picture back.
-fn art_label_spot(a: Art, i: Number) -> Number[] {
-  let f = a.figures[i]
-  let below = art_label_at(f)
-  if not art_labelled(a, i) { return below }
-  // under it, then over it, then to its right, then to its left: the first
-  // place no earlier name has taken
-  let tries = [below, art_label_above(f), art_label_beside(f, 1), art_label_beside(f, -1)]
-  for spot in tries {
-    var free = true
-    for j in 0 until i {
-      if art_labelled(a, j) and art_clash(a, i, spot, j, art_label_spot_first(a, j)) { free = false }
-    }
-    if free { return spot }
-  }
-  return below
-}
-
-// An earlier name's place, worked out the simple way (under or over), so
-// placing one name never has to place every name before it again.
-fn art_label_spot_first(a: Art, j: Number) -> Number[] {
-  let f = a.figures[j]
-  let below = art_label_at(f)
-  for k in 0 until j {
-    if art_labelled(a, k) and art_clash(a, j, below, k, art_label_at(a.figures[k])) { return art_label_above(f) }
-  }
-  return below
 }
 
 // Beside a figure, on the right (1) or the left (-1), level with its middle.
@@ -1006,10 +1026,11 @@ fn art_label_beside(f: Figure, side: Number) -> Number[] {
 // Two names that would print over each other, for figures that stay put.
 fn art_crowded(a: Art) -> Text[] {
   var out: Text[] = []
-  let spots = for i in 0 until a.figures.length() { art_label_spot(a, i) }
+  let spots = art_spots(a)
+  let named = art_named(a)
   for i in 0 until a.figures.length() {
     for j in i + 1 until a.figures.length() {
-      if art_labelled(a, i) and art_labelled(a, j) and art_clash(a, i, spots[i], j, spots[j]) { out = out.append(f"the names of {a.figures[i].id} and {a.figures[j].id} print over each other: move one figure") }
+      if named[i] and named[j] and art_clash(a, i, spots[i], j, spots[j]) { out = out.append(f"the names of {a.figures[i].id} and {a.figures[j].id} print over each other: move one figure") }
     }
   }
   return out
@@ -1028,11 +1049,10 @@ fn art_movement(a: Art, id: Text) -> Number {
 }
 
 // One figure, with what it does, and whatever orbits it riding along.
-fn art_figure(a: Art, i: Number, depth: Number) -> Text recurse 4 {
+fn art_figure(a: Art, i: Number, depth: Number, spots: Number[][], turns: Number[]) -> Text recurse 4 {
   let f = a.figures[i]
   let s = art_px()
   var body = f"<g class=\"own\" data-of=\"{f.id}\">{art_shape(f)}</g>"
-  let turns = art_gear_turns(a)
   for m in a.motions {
     if m.what == f.id and not art_movers().contains(m.kind) {
       let geared = m.kind == "spin" and turns[i] != 0
@@ -1040,11 +1060,11 @@ fn art_figure(a: Art, i: Number, depth: Number) -> Text recurse 4 {
       body = art_wrap(body, {..m, kind: kind}, if geared { turns[i].abs() } else { art_seconds(a, m) })
     }
   }
-  body = body + f"<g class=\"own tag\" data-of=\"{f.id}\">{art_label(a, i)}</g>"
+  body = body + f"<g class=\"own tag\" data-of=\"{f.id}\">{art_label(f, spots[i])}</g>"
   // what orbits this figure is drawn inside it, so it follows it about
   if depth < 3 {
     for k in 0 until a.figures.length() {
-      if art_rides_on(a, k) == i { body = body + art_figure(a, k, depth + 1) }
+      if art_rides_on(a, k) == i { body = body + art_figure(a, k, depth + 1, spots, turns) }
     }
   }
   let at = art_movement(a, f.id)
@@ -1184,7 +1204,10 @@ fn art_svg(raw: Art) -> Text {
   let a = art_tidy(raw)
   let w = art_width() * art_px()
   let h = art_height() * art_px()
-  let figures = (for i in 0 until a.figures.length() where art_rides_on(a, i) < 0 { art_figure(a, i, 0) }).join("")
+  // Names' places and gear turns, worked out once for every figure.
+  let spots = art_spots(a)
+  let turns = art_gear_turns(a)
+  let figures = (for i in 0 until a.figures.length() where art_rides_on(a, i) < 0 { art_figure(a, i, 0, spots, turns) }).join("")
   let defs = "<defs>" + art_gradients() + "<marker id=\"art-head\" viewBox=\"0 0 10 10\" refX=\"7\" refY=\"5\" markerWidth=\"5\" markerHeight=\"5\" orient=\"auto-start-reverse\"><path d=\"M0 0 L10 5 L0 10 z\" fill=\"context-stroke\"/></marker><radialGradient id=\"art-glow\" cx=\"50%\" cy=\"42%\" r=\"70%\"><stop offset=\"0\" stop-color=\"var(--amber)\" stop-opacity=\".10\"/><stop offset=\"1\" stop-color=\"var(--amber)\" stop-opacity=\"0\"/></radialGradient></defs>"
   return f"<svg class=\"art\" viewBox=\"0 0 {w} {h}\" role=\"img\" aria-label=\"{art_esc(a.title)}\">{defs}<rect class=\"ground\" width=\"{w}\" height=\"{h}\" rx=\"22\"/><rect width=\"{w}\" height=\"{h}\" rx=\"22\" fill=\"url(#art-glow)\"/>{art_backdrop(a.backdrop)}{figures}</svg>"
 }
@@ -1286,7 +1309,9 @@ fn art_worked(a: Art) -> Text {
   return (for t in [orbits, swings, throws] where not t.is_empty() { t }).join(" ")
 }
 
-fn art_page(ask: Text, raw: Art, fixed: Text[]) -> Text {
+fn art_page(ask: Text, raw: Art, fixed: Text[]) -> Text { return art_page_with(ask, raw, fixed, art_svg(raw)) }
+
+fn art_page_with(ask: Text, raw: Art, fixed: Text[], svg: Text) -> Text {
   let a = art_tidy(raw)
   let beats = (for k in 0 until a.beats.length() { f"<li class=\"beat\" tabindex=\"0\" data-shows=\"{a.beats[k].shows.join(\" \")}\"><b>{k + 1}</b><span>{art_esc(a.beats[k].text)}</span></li>" }).join("")
   let asked = if ask.trim().is_empty() { "" } else { f"<p class=\"ask\">{art_esc(ask)}</p>" }
@@ -1295,11 +1320,13 @@ fn art_page(ask: Text, raw: Art, fixed: Text[]) -> Text {
   let repairs = if fixed.is_empty() { "" } else { "Kosika fixed: " + art_esc(fixed.join("; ")) + "." }
   let said = for t in [worked, gears, repairs] where not t.is_empty() { f"<p class=\"how\">{t}</p>" }
   let note = said.join("")
-  return f"<!doctype html><html lang=\"en\" data-palette=\"{a.palette}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{art_esc(a.title)}</title><style>{palettes_css()}{art_page_style()}{art_style()}</style></head><body><main><div class=\"brand\">Kosika Designs</div>{asked}<h1>{art_esc(a.title)}</h1><p class=\"lede\">{art_esc(a.summary)}</p><div class=\"duo\"><div class=\"stage\">{art_svg(a)}</div><div><ol class=\"beats\" id=\"bar\">{beats}</ol><div class=\"bar\"><button type=\"button\" id=\"pause\">Pause</button><button type=\"button\" id=\"replay\">Replay</button></div>{note}</div></div><div class=\"bar\">{art_swatches(a.palette)}</div></main><script>{art_script()}</script></body></html>"
+  return f"<!doctype html><html lang=\"en\" data-palette=\"{a.palette}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{art_esc(a.title)}</title><style>{palettes_css()}{art_page_style()}{art_style()}</style></head><body><main><div class=\"brand\">Kosika Designs</div>{asked}<h1>{art_esc(a.title)}</h1><p class=\"lede\">{art_esc(a.summary)}</p><div class=\"duo\"><div class=\"stage\">{svg}</div><div><ol class=\"beats\" id=\"bar\">{beats}</ol><div class=\"bar\"><button type=\"button\" id=\"pause\">Pause</button><button type=\"button\" id=\"replay\">Replay</button></div>{note}</div></div><div class=\"bar\">{art_swatches(a.palette)}</div></main><script>{art_script()}</script></body></html>"
 }
 
 fn art_moved_names(a: Art) -> Text[] {
-  return for i in 0 until a.figures.length() where art_labelled(a, i) and art_label_spot(a, i) != art_label_at(a.figures[i]) { f"put the name of {a.figures[i].id} above it, where it has room" }
+  let spots = art_spots(a)
+  let named = art_named(a)
+  return for i in 0 until a.figures.length() where named[i] and spots[i] != art_label_at(a.figures[i]) { f"put the name of {a.figures[i].id} above it, where it has room" }
 }
 
 // Two names that would print over each other: Kosika leaves the later
@@ -1314,10 +1341,11 @@ fn art_unclash_by(a: Art, crowded: Number[]) -> Art {
 
 fn art_crowded_pairs(a: Art) -> Number[] {
   var out: Number[] = []
-  let spots = for i in 0 until a.figures.length() { art_label_spot(a, i) }
+  let spots = art_spots(a)
+  let named = art_named(a)
   for i in 0 until a.figures.length() {
     for j in i + 1 until a.figures.length() {
-      if not out.contains(i) and not out.contains(j) and art_labelled(a, i) and art_labelled(a, j) and art_clash(a, i, spots[i], j, spots[j]) { out = out.append(j) }
+      if not out.contains(i) and not out.contains(j) and named[i] and named[j] and art_clash(a, i, spots[i], j, spots[j]) { out = out.append(j) }
     }
   }
   return out
@@ -1330,7 +1358,10 @@ fn art_result(ask: Text, given: Art) -> ArtPage {
   let tidy = art_tidy(a)
   let left = for i in crowded { f"left the name of {given.figures[i].id} off: it printed over another" }
   let fixed = left.concat(art_fixes(a)).concat(art_moved_names(tidy)).concat(art_settled_names(a, tidy))
-  if wrong.is_empty() { return {page: art_page(ask, tidy, fixed), svg: art_svg(tidy), problems: [], fixed: fixed, art: tidy} }
+  if wrong.is_empty() {
+    let svg = art_svg(tidy)
+    return {page: art_page_with(ask, tidy, fixed, svg), svg: svg, problems: [], fixed: fixed, art: tidy}
+  }
   return {page: "", svg: "", problems: wrong, fixed: fixed, art: tidy}
 }
 

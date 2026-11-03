@@ -1,0 +1,209 @@
+// Kosika Brain: the thinking layer behind Kosika's parts.
+//
+// The Brain keeps one memory of notes, in four kinds:
+//   episode    what happened: an ask, what was made of it, how it went
+//   fact       what is known, with the source it came from
+//   recipe     how something was done well, to do it again
+//   structure  how to think it: a graph, a tree, an algorithm's steps
+//
+// Every ask runs the same loop: sense what is asked, recall what the
+// memory holds about it (by meaning with an embedding model, by words
+// without one, and only above a floor, so a half-fitting memory is left out
+// rather than misleading the answer), think and check through the part that
+// does the work, act, and learn by keeping what happened.
+//
+// Phase 1: the memory, recall with its floor, and Designs as the first part
+// the Brain thinks through. A canvas asked about again says what it drew
+// before. Programs opt in by importing this module and running with
+// `--memory FOLDER`; Designs alone keeps working without a memory.
+
+import "designs.kos"
+
+export [BrainNote, BrainAsk, BrainFound, BrainPast, BrainKept, brain_recall, brain_keep, brain_design, br_words, br_near, br_floor, br_past, br_told]
+
+// kind: episode, fact, recipe or structure.
+// topic: what it is about, in words a person would use.
+// words: the topic's words cut to their stems, for recall by words.
+// text: the note itself. source: where it came from.
+// score: how well it went, 0 to 1. times: how often it has been met.
+record BrainNote { kind: Text topic: Text words: Text text: Text source: Text score: Number times: Number }
+
+record BrainAsk { text: Text kind: Text }
+
+// notes: what the memory holds about the ask, nearest first, above the
+// floor. by: "meaning" or "words", how they were found.
+record BrainFound { notes: BrainNote[] by: Text }
+
+// What the Brain remembers having drawn for an ask like this one.
+record BrainPast { found: Bool topic: Text text: Text times: Number near: Number }
+
+record BrainKept { key: Text entries: Number }
+
+memory brain of BrainNote
+
+// ---------------------------------------------------------------- sense
+
+fn br_common() -> Text[] { return ["the", "and", "for", "its", "are", "was", "has", "how", "why", "but", "not", "you", "can", "one", "two", "that", "this", "with", "from", "into", "they", "then", "than", "each", "when", "what", "where", "which", "does", "work", "works", "explain", "show", "tell", "about", "make", "draw", "please", "me", "a", "an", "is", "do", "of", "to", "in", "on", "it", "my", "i"] }
+
+// The ask's words that carry its topic, cut to five letters, so
+// "evaporates" and "evaporation" meet.
+fn br_words(text: Text) -> Text[] {
+  let common = br_common()
+  var out: Text[] = []
+  for w in text.lower().replace(",", " ").replace(".", " ").replace("?", " ").replace("!", " ").replace(":", " ").replace(";", " ").replace("(", " ").replace(")", " ").replace("'", " ").words() {
+    let stem = if w.length() > 5 { w.slice(0, 5) } else { w }
+    if w.length() >= 3 and not common.contains(w) and not out.contains(stem) { out = out.append(stem) }
+  }
+  return out
+}
+
+fn br_key(kind: Text, text: Text) -> Text {
+  let key = kind + ":" + br_words(text).join("-")
+  return if key.length() > 200 { key.slice(0, 200) } else { key }
+}
+
+// ---------------------------------------------------------------- recall
+
+// How near a note comes to the ask by words: the share of the ask's topic
+// words the note holds. 1 when it holds them all.
+fn br_near(asked: Text[], note: Text) -> Number {
+  if asked.is_empty() { return 0 }
+  let theirs = note.words()
+  let shared = (for w in asked where theirs.contains(w) { w }).length()
+  return shared / asked.length()
+}
+
+// The floor a memory must reach to be used. Meaning scores come from the
+// embedding model (the mind layer measured 0.95 for a real answer, 0.53 for
+// a half-fit, 0.42 for none); by words, the note must hold most of the
+// ask's topic words.
+fn br_floor(by: Text) -> Number { return 0.6 }
+
+fn br_nearness(by: Text, score: Number, asked: Text[], note: BrainNote) -> Number {
+  return if by == "meaning" { score } else { br_near(asked, note.words) }
+}
+
+fn br_kept_notes(found: BrainLike, text: Text, kind: Text) -> BrainFound {
+  let asked = br_words(text)
+  let floor = br_floor(found.by)
+  let notes = for m in found.matches where (kind.is_empty() or m.value.kind == kind) and br_nearness(found.by, m.score, asked, m.value) >= floor { m.value }
+  return {notes: notes, by: found.by}
+}
+
+// What the Brain drew before for an ask like this, if anything reaches
+// the floor.
+fn br_past(found: BrainLike, text: Text) -> BrainPast {
+  let asked = br_words(text)
+  let floor = br_floor(found.by)
+  for m in found.matches {
+    let near = br_nearness(found.by, m.score, asked, m.value)
+    if m.value.kind == "episode" and near >= floor { return {found: true, topic: m.value.topic, text: m.value.text, times: m.value.times, near: near} }
+  }
+  return {found: false, topic: "", text: "", times: 0, near: 0}
+}
+
+// ---------------------------------------------------------------- learn
+
+// What a canvas looked like, in a few words, read from what Designs made.
+fn br_style(r: DzResult) -> Text {
+  if r.embed.contains("class=\"st-journey\"") { return "a journey drawn through the picture" }
+  if r.embed.contains("class=\"art lc lc-nodes\"") { return "living nodes" }
+  if r.embed.contains("class=\"st-living\"") { return "living cards" }
+  if r.embed.contains("class=\"kc-card kc-stage\"") { return "a played diagram and picture" }
+  return "a " + r.kind
+}
+
+fn br_drawn(r: DzResult) -> Text { return f"drew '{r.title}' as {br_style(r)}" }
+
+fn br_episode(ask: DzAsk, r: DzResult, past: BrainPast) -> BrainNote {
+  // The same topic, however it was worded, is the same episode met again.
+  let times = if past.found and br_key("episode", past.topic) == br_key("episode", ask.text) { past.times + 1 } else { 1 }
+  let score = if r.problems.is_empty() and not r.page.is_empty() { 1 } else { 0 }
+  return {kind: "episode", topic: ask.text, words: br_words(ask.text).join(" "), text: br_drawn(r), source: "Kosika Designs, " + r.kind, score: score, times: times}
+}
+
+// ---------------------------------------------------------------- act
+
+// The canvas, telling what the Brain remembered: in the reasons it gives,
+// and as a line on the stage itself.
+fn br_told(r: DzResult, past: BrainPast) -> DzResult {
+  if not past.found { return r }
+  let again = if past.times > 1 { f" ({past.times} times before)" } else { "" }
+  let said = f"Kosika remembers this: for '{past.topic}' it {past.text}{again}"
+  let label = "<div class=\"kc-label\">Kosika canvas &#183; <b>the explanation, played</b></div>"
+  let badge = "<div class=\"kc-label\">Kosika canvas &#183; <b>the explanation, played</b> &#183; <span class=\"br-mem\" style=\"color:var(--amber)\">remembered: " + br_esc(past.text + again) + "</span></div>"
+  return {..r, why: said + ". " + r.why, embed: r.embed.replace(label, badge), page: r.page.replace(label, badge)}
+}
+
+// ---------------------------------------------------------------- the workflows
+
+// What the memory holds about an ask, above the floor. kind narrows it to
+// one kind of note; "" takes every kind.
+workflow brain_recall(ask: BrainAsk) -> BrainFound {
+  found = recall brain like br_words(ask.text).join(" ")
+  out   = br_kept_notes(found, ask.text, ask.kind)
+}
+
+// Keep a note: a fact with its source, a recipe, a structure, an episode.
+workflow brain_keep(note: BrainNote) -> BrainKept {
+  saved = remember note in brain under br_key(note.kind, note.topic)
+  out   = br_saved(saved)
+}
+
+fn br_esc(t: Text) -> Text { return t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;").replace("'", "&#39;") }
+
+fn br_saved(saved: MemorySaved) -> BrainKept { return {key: saved.key, entries: saved.entries} }
+
+// Designs, thought through by the Brain: recall, draw, keep what happened,
+// and say what was remembered.
+workflow brain_design(ask: DzAsk) -> DzResult {
+  budget 12 model calls, 900 seconds
+  found = recall brain like br_words(ask.text).join(" ")
+  past  = br_past(found, ask.text)
+  drawn = call design(ask)
+  kept  = remember br_episode(ask, drawn, past) in brain under br_key("episode", ask.text)
+  out   = br_told(drawn, past)
+}
+
+// ---------------------------------------------------------------- tests
+
+fn br_test_note(topic: Text, text: Text) -> BrainNote { return {kind: "episode", topic: topic, words: br_words(topic).join(" "), text: text, source: "test", score: 1, times: 1} }
+
+fn br_test_match(n: BrainNote, score: Number) -> BrainMatch { return {key: br_key(n.kind, n.topic), value: n, score: score} }
+
+fn br_test_found(matches: BrainMatch[], by: Text) -> BrainLike { return {matches: matches, by: by} }
+
+fn br_test_result() -> DzResult { return {kind: "canvas", why: "drew all three", title: "Water Cycle", page: "<div class=\"kc-label\">Kosika canvas &#183; <b>the explanation, played</b></div>", svg: "", embed: "<div class=\"kc-card kc-stage\"><div class=\"kc-label\">Kosika canvas &#183; <b>the explanation, played</b></div><svg class=\"art lc lc-nodes\"></svg></div>", problems: [], fixed: []} }
+
+test "the Brain reads an ask's topic words" {
+  expect br_words("How does the water cycle work?") == ["water", "cycle"]
+  expect br_words("Explain the water cycle") == ["water", "cycle"]
+  expect br_words("how evaporation happens") == ["evapo", "happe"]
+  expect br_key("episode", "How does the water cycle work?") == "episode:water-cycle"
+}
+
+test "a memory is used only above the floor" {
+  water = br_test_note("how does the water cycle work", "drew 'Water Cycle' as living nodes")
+  heart = br_test_note("how does the heart pump blood", "drew 'The Heart' as living cards")
+  by_words = br_test_found([br_test_match(heart, 0.2), br_test_match(water, 0.2)], "words")
+  past = br_past(by_words, "explain the water cycle")
+  expect past.found and past.topic == "how does the water cycle work"
+  expect not br_past(by_words, "the carbon cycle in oceans").found
+  // By meaning, the model's score decides: 0.53 is a half-fit and is left out.
+  by_meaning = br_test_found([br_test_match(water, 0.53)], "meaning")
+  expect not br_past(by_meaning, "explain the water cycle").found
+  expect br_kept_notes(br_test_found([br_test_match(water, 0.91)], "meaning"), "rain", "").notes.length() == 1
+}
+
+test "the canvas says what the Brain remembered" {
+  r = br_test_result()
+  expect br_style(r) == "living nodes"
+  first = br_episode({text: "how does the water cycle work", palette: "", place: "studio", kind: "canvas"}, r, br_past(br_test_found([], "words"), "x"))
+  expect first.times == 1 and first.text == "drew 'Water Cycle' as living nodes"
+  past = br_past(br_test_found([br_test_match(first, 0.5)], "words"), "explain the water cycle")
+  told = br_told(r, past)
+  expect br_episode({text: "explain the water cycle", palette: "", place: "studio", kind: "canvas"}, r, past).times == 2
+  expect told.why.starts_with("Kosika remembers this: for 'how does the water cycle work' it drew 'Water Cycle' as living nodes")
+  expect told.embed.contains("remembered: drew &#39;Water Cycle&#39; as living nodes")
+  expect br_told(r, br_past(br_test_found([], "words"), "x")).why == "drew all three"
+}
