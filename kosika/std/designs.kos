@@ -58,7 +58,7 @@ import "science_molecules.kos"
 import "algorithms.kos"
 import "std/math.kos"
 
-export [DzAsk, DzResult, DzKind, DzProbe, dz_kinds, dz_places, dz_kind, dz_kind_sure, dz_why, design, design_kind, design_kind_probe, dz_lab, dz_lab_style, DzFormula, dz_formula_for, dz_formula_card, dz_formula_style, dz_reaction, dz_science_field]
+export [DzAsk, DzResult, DzKind, DzProbe, DzScene, dz_play, dz_canvas_embed, dz_kinds, dz_places, dz_kind, dz_kind_sure, dz_why, design, design_kind, design_kind_probe, dz_lab, dz_lab_style, DzFormula, dz_formula_for, dz_formula_card, dz_formula_style, dz_reaction, dz_science_field]
 
 record DzAsk { text: Text palette: Text place: Text kind: Text }
 record DzKind { kind: Text why: Text }
@@ -1674,18 +1674,29 @@ fn dz_al_scenes(r: AlRun) -> DzScene[] {
   return scenes
 }
 
-// The Kosika canvas's stage, playing the run through Designs' drawing.
-fn dz_al_stage(r: AlRun, d: Design) -> Text {
-  let scenes = dz_al_scenes(r)
+// The Kosika canvas's stage, playing scenes through a drawing Designs made:
+// each scene lights its parts and runs its links in the drawing, with the
+// canvas's step bar and dots, a line of Kosika's check, and beside it every
+// step to open and the full drawing. Anything that plays a structure (an
+// algorithm's run, a crew at work) plays it here.
+fn dz_play(title: Text, scenes: DzScene[], d: Design, check: Text, passed: Bool) -> Text {
   let data = "[" + (for sc in scenes { dz_scene_json(sc) }).join(",") + "]"
   let dots = (for k in 0 until scenes.length() { f"<button class=\"st-dot\" aria-label=\"Step {k + 1}\"></button>" }).join("")
   let played = d.page.replace("</head>", "<style>html{background:var(--bg)}" + dz_played_style() + "</style></head>").replace("</body>", "<script>" + dz_played_script() + "</script></body>")
-  let form = "<iframe class=\"st-form\" title=\"" + art_esc(r.title) + "\" srcdoc=\"" + art_esc(played) + "\"></iframe>"
+  let form = "<iframe class=\"st-form\" title=\"" + art_esc(title) + "\" srcdoc=\"" + art_esc(played) + "\"></iframe>"
   let bar = "<div class=\"st-bar\"><span class=\"st-num\"></span><span class=\"st-caption\"></span><button class=\"st-prev\" type=\"button\">Back</button><button class=\"st-play\" type=\"button\">Pause</button><button class=\"st-next\" type=\"button\">Next</button></div>"
-  let check = if r.problems.is_empty() { "<span class=\"al-check\">Checked by Kosika: " + art_esc(r.answer) + "</span>" } else { "<span class=\"al-check bad\">Check failed: " + art_esc(r.problems.join("; ")) + "</span>" }
-  let every = (for st in r.steps { "<li>" + art_esc(st.text) + "</li>" }).join("")
-  let opens = "<div class=\"st-opens\"><details class=\"kc-full\"><summary>Open every step</summary><ol class=\"al-steps\">" + every + "</ol></details><details class=\"kc-full\"><summary>Open the full diagram</summary><iframe class=\"kd-frame\" title=\"" + art_esc(r.title) + "\" srcdoc=\"" + art_esc(d.page) + "\"></iframe></details></div>"
-  return "<div class=\"kc-card kc-stage\" data-scenes=\"" + art_esc(data) + "\"><div class=\"kc-label\">Kosika canvas &#183; <b>the explanation, played</b></div>" + form + bar + "<div class=\"st-dots\">" + dots + "</div><div class=\"al-checked\">" + check + "</div>" + opens + "<script>" + dz_stage_script() + "</script></div>"
+  let mark = if passed { "<span class=\"al-check\">" + art_esc(check) + "</span>" } else { "<span class=\"al-check bad\">" + art_esc(check) + "</span>" }
+  let every = (for sc in scenes { "<li>" + art_esc(sc.caption) + "</li>" }).join("")
+  let opens = "<div class=\"st-opens\"><details class=\"kc-full\"><summary>Open every step</summary><ol class=\"al-steps\">" + every + "</ol></details><details class=\"kc-full\"><summary>Open the full diagram</summary><iframe class=\"kd-frame\" title=\"" + art_esc(title) + "\" srcdoc=\"" + art_esc(d.page) + "\"></iframe></details></div>"
+  return "<div class=\"kc-card kc-stage\" data-scenes=\"" + art_esc(data) + "\"><div class=\"kc-label\">Kosika canvas &#183; <b>the explanation, played</b></div>" + form + bar + "<div class=\"st-dots\">" + dots + "</div><div class=\"al-checked\">" + mark + "</div>" + opens + "<script>" + dz_stage_script() + "</script></div>"
+}
+
+// What a played stage needs around it, as an embed of its own.
+fn dz_canvas_embed(title: Text, inner: Text, palette: Text) -> Text { return dz_wrap("canvas", "studio", dz_palette(palette, "dark_matter"), title, inner, al_style() + dz_canvas_style() + dz_stage_style()) }
+
+fn dz_al_stage(r: AlRun, d: Design) -> Text {
+  let check = if r.problems.is_empty() { "Checked by Kosika: " + r.answer } else { "Check failed: " + r.problems.join("; ") }
+  return dz_play(r.title, dz_al_scenes(r), d, check, r.problems.is_empty())
 }
 
 // An algorithm Kosika ran and checked, played step by step.

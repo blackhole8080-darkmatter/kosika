@@ -4,6 +4,7 @@
 //   kosika run main.kos --workflow pack --input topic.json
 //       --model openai/gpt-oss-20b --model-url https://api.groq.com/openai/v1
 //       --model-protocol openai --max-output-tokens 8000
+//       --memory FOLDER --max-function-calls 100000
 //
 // where topic.json holds {"ask": {"topic": "photosynthesis", "palette": ""}}.
 //
@@ -17,8 +18,21 @@
 // and keeps a board: who did what, and whether it passed. A member whose
 // work fails its check is shown as failed on the board; the pack is made
 // from what passed.
+//
+// Kosika Brain runs the crew. Before work, the crew recalls what the Brain
+// already knows on the topic (facts gathered from research, with their
+// sources) and hands it to the Tutor. The Designer draws through the Brain,
+// so a canvas kept before is given again and what it knows is shown. When
+// the Examiner marks points wrong, the Tutor rewrites the notes once with
+// those marks and the Examiner reads them again; the better of the two is
+// kept. Each member's record (how often its work passed) and the pack
+// itself are kept in the Brain's memory, so the next crew knows them. And
+// the crew at work is drawn by Kosika Designs and played post by post on
+// a Kosika canvas.
 
 import "std/designs.kos"
+import "std/designs_draw.kos"
+import "std/brain.kos"
 import "std/science_chem.kos"
 import "std/science_molecules.kos"
 
@@ -36,6 +50,10 @@ record ExamBrief { task: Text topic: Text points: Text science: Text }
 record Verdict { point: Number ok: Bool why: Text }
 record Exam { verdicts: Verdict[] }
 record CrewNote { text: Text }
+// The Tutor's notes and the Examiner's marks on them; tries is 2 when the
+// notes were written again after the marks.
+record CrewDraft { notes: Notes exam: Exam tries: Number }
+record CrewSecondAsk { task: Text topic: Text ideas: Text science: Text }
 
 // The crew's shared board: each member posts what it did, under its own
 // name, and the Examiner reads the Tutor's notes from here, as posted.
@@ -176,7 +194,7 @@ fn cr_scientist_task(said: Text) -> CrewTask {
   return {who: "Scientist", job: "worked out what can be worked out exactly", passed: true, check: if said.is_empty() { "passed" } else { said }}
 }
 
-fn cr_board(ask: PackAsk, raw: CrewPlan, canvas: DzResult, notes: Notes, exam: Exam) -> CrewTask[] {
+fn cr_board(ask: PackAsk, raw: CrewPlan, canvas: DzResult, notes: Notes, exam: Exam, tries: Number) -> CrewTask[] {
   let science_check = if cr_has_reaction(ask.topic) { "" } else { "nothing in this topic to work out exactly" }
   let examined = if exam.verdicts.is_empty() { "the examiner gave no verdicts" } else { "" }
   let wrong = cr_wrong(exam)
@@ -186,7 +204,7 @@ fn cr_board(ask: PackAsk, raw: CrewPlan, canvas: DzResult, notes: Notes, exam: E
     cr_task("Conductor", "planned the pack", cr_plan_ok(raw)),
     cr_scientist_task(science_check),
     cr_task("Designer", "drew the canvas through Kosika Designs", canvas_problem),
-    cr_task("Tutor", "wrote the notes", notes_problem),
+    cr_task("Tutor", if tries > 1 { "wrote the notes, and again after the Examiner's marks" } else { "wrote the notes" }, notes_problem),
     cr_task("Examiner", "read the notes blind and marked each point", examined)
   ]
 }
@@ -217,8 +235,8 @@ fn cr_page(plan: CrewPlan, board: CrewTask[], canvas: DzResult, notes: Notes, ex
   return "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>" + cr_esc(plan.title) + "</title><style>" + style + "</style></head><body><main><div class=\"eyebrow\">Study pack &#183; made by a Kosika crew</div><h1>" + cr_esc(plan.title) + "</h1><h2>The crew</h2><div class=\"card\">" + cr_board_html(board) + "</div><h2>The Tutor's notes, marked by the Examiner</h2><div class=\"card\">" + cr_notes_html(notes, exam) + "</div>" + sci + "<h2>The Designer: " + cr_esc(plan.question) + "</h2>" + frame + "</main></body></html>"
 }
 
-fn cr_pack(ask: PackAsk, raw: CrewPlan, plan: CrewPlan, canvas: DzResult, notes: Notes, exam: Exam) -> Pack {
-  let board = cr_board(ask, raw, canvas, notes, exam)
+fn cr_pack(ask: PackAsk, raw: CrewPlan, plan: CrewPlan, canvas: DzResult, notes: Notes, exam: Exam, tries: Number) -> Pack {
+  let board = cr_board(ask, raw, canvas, notes, exam, tries)
   let problems = for t in board where not t.passed { t.who + ": " + t.check }
   return {title: plan.title, page: cr_page(plan, board, canvas, notes, exam, cr_science_card(ask.topic)), board: board, problems: problems}
 }
@@ -258,26 +276,204 @@ fn cr_with_board(p: Pack, b: CrewBoard) -> Pack { return {..p, page: p.page.repl
 
 fn cr_canvas_ask(ask: PackAsk, plan: CrewPlan) -> DzAsk { return {text: plan.question, palette: ask.palette, place: "studio", kind: "canvas"} }
 
+// ---------------------------------------------------------------- the Brain and the crew
+
+fn cr_members() -> Text[] { return ["Conductor", "Scientist", "Designer", "Tutor", "Examiner"] }
+
+// Each member's board author, which is its part in the crew's drawing.
+fn cr_author(member: Text) -> Text { return if member == "Designer" { "artist" } else { member.lower() } }
+
+// What the Brain knows on the topic, for the Tutor to use where it fits.
+fn cr_known_text(known: BrainFound) -> Text {
+  if known.notes.is_empty() { return "" }
+  let lines = (for n in known.notes.take(4) { "- " + n.topic + ": " + n.text + " (" + n.source.split(" · ")[0] + ")" }).join("\n")
+  return "\nWhat Kosika already knows on this, gathered from research; use it only where it fits and is right:\n" + lines
+}
+
+fn cr_recall_ask(ask: PackAsk) -> BrainAsk { return {text: ask.topic, kind: "fact"} }
+fn cr_record_ask() -> BrainAsk { return {text: "the crew's record", kind: "crew"} }
+
+// Each member's record as [done, passed], from the Brain's note of it:
+// "Conductor 3 3; Scientist 3 3; ...".
+fn cr_counts(found: BrainFound) -> Number[][] {
+  let said = if found.notes.is_empty() { "" } else { found.notes[0].text }
+  var out: Number[][] = []
+  for m in cr_members() {
+    var done = 0
+    var passed = 0
+    for part in said.split("; ") {
+      let w = part.words()
+      if w.length() == 3 and w[0] == m {
+        done = w[1].to_number().or(0)
+        passed = w[2].to_number().or(0)
+      }
+    }
+    out = out.append([done, passed])
+  }
+  return out
+}
+
+fn cr_counts_after(before: Number[][], board: CrewTask[]) -> Number[][] {
+  let gained = for t in board { if t.passed { 1 } else { 0 } }
+  return for k in 0 until cr_members().length() { [before[k][0] + 1, before[k][1] + gained[k]] }
+}
+
+fn cr_record_note(counts: Number[][]) -> BrainNote {
+  let text = (for k in 0 until cr_members().length() { cr_members()[k] + " " + f"{counts[k][0]} {counts[k][1]}" }).join("; ")
+  return {kind: "crew", topic: "the crew's record", words: "crew recor", text: text, source: "Kosika crew", score: 1, times: 1}
+}
+
+fn cr_record_line(counts: Number[][], k: Number) -> Text {
+  let c = counts[k]
+  return if c[0] == 0 { "first time" } else { f"{c[1]} of {c[0]} passed" }
+}
+
+fn cr_episode(ask: PackAsk, plan: CrewPlan, board: CrewTask[]) -> BrainNote {
+  let passed = (for t in board where t.passed { t }).length()
+  return {kind: "episode", topic: ask.topic, words: br_words(ask.topic).join(" "), text: f"the crew made the pack '{plan.title}': {passed} of {board.length()} members passed", source: "Kosika crew", score: passed / board.length(), times: 1}
+}
+
+// ---------------------------------------------------------------- a second try
+
+fn cr_draft(notes: Notes, exam: Exam) -> CrewDraft { return {notes: notes, exam: exam, tries: 1} }
+
+// Notes need no second try when they pass Kosika's own checks (their size,
+// and agreeing with the Scientist) and the Examiner marked nothing wrong.
+fn cr_fine(n: Notes, e: Exam, topic: Text) -> Bool { return cr_notes_ok(n).is_empty() and cr_agrees(n, topic).is_empty() and cr_wrong(e).is_empty() }
+
+// What to put right: Kosika's own checks first, then the Examiner's marks.
+fn cr_fix_task(n: Notes, e: Exam, topic: Text) -> Text {
+  let own = (for problem in [cr_notes_ok(n), cr_agrees(n, topic)] where not problem.is_empty() { problem }).join("; ")
+  let marks = (for v in cr_wrong(e) { f"point {v.point} (" + cr_point(n, v.point) + "): " + v.why }).join("; ")
+  let checked = if own.is_empty() { "" } else { " Kosika's own check found: " + own + "." }
+  let marked = if marks.is_empty() { "" } else { " The Examiner marked these points wrong: " + marks + "." }
+  return cr_notes_task() + " Write the notes again, putting right what was found in your first notes." + checked + marked
+}
+
+fn cr_second_ask(ask: PackAsk, plan: CrewPlan, notes: Notes, exam: Exam, science: Text) -> CrewSecondAsk {
+  return {task: cr_fix_task(notes, exam, ask.topic), topic: ask.topic, ideas: plan.ideas.join("; "), science: science}
+}
+
+// The better of two drafts: fewer points marked wrong, and notes that pass
+// their own checks.
+fn cr_better(first: CrewDraft, second: CrewDraft, topic: Text) -> CrewDraft {
+  if second.tries == first.tries { return first }
+  // How much is wrong with a draft: each failed check of Kosika's own
+  // counts as much as all the Examiner's marks together.
+  let ok = not second.exam.verdicts.is_empty()
+  return if ok and cr_faults(second, topic) < cr_faults(first, topic) { second } else { first }
+}
+
+fn cr_faults(d: CrewDraft, topic: Text) -> Number {
+  let own = (for problem in [cr_notes_ok(d.notes), cr_agrees(d.notes, topic)] where not problem.is_empty() { problem }).length()
+  return own * 100 + cr_wrong(d.exam).length()
+}
+
+fn cr_second_note(d: CrewDraft) -> CrewNote {
+  let wrong = cr_wrong(d.exam)
+  let read = if wrong.is_empty() { "every point passed." } else { f"{wrong.length()} point(s) still marked wrong." }
+  return {text: if d.tries < 2 { "Kept the first notes." } else { "Rewrote the notes after the Examiner's marks; read again, " + read }}
+}
+
+// ---------------------------------------------------------------- the crew on the canvas
+
+fn cr_part_id(author: Text) -> Text { return author }
+
+// The crew as Designs draws it: the Conductor at the hub, each member
+// around it with its record, and the Tutor's notes going to the Examiner.
+fn cr_crew_structure(plan: CrewPlan, board: CrewTask[], counts: Number[][]) -> Structure {
+  let members = cr_members()
+  let parts: Part[] = for k in 0 until members.length() { {id: cr_author(members[k]), label: members[k], note: cr_record_line(counts, k), parent: ""} }
+  let jobs = ["plans", "works out", "draws", "writes", "reads blind"]
+  var links: Link[] = []
+  for k in 1 until members.length() { links = links.append({from: "conductor", to: cr_author(members[k]), label: jobs[k]}) }
+  links = links.append({from: "tutor", to: "examiner", label: "notes"})
+  let steps: Step[] = for k in 0 until board.length() { {text: board[k].who + ": " + board[k].check, parts: [cr_author(members[k])]} }
+  return {title: "The crew making " + plan.title, summary: "Each member's work, checked by Kosika before it counts.", shape: "hub", figure: "", photo: "", parts: parts, links: links, steps: steps, marks: [], looks: [], aspects: []}
+}
+
+fn cr_crew_request(ask: PackAsk, plan: CrewPlan, board: CrewTask[], counts: Number[][]) -> Request {
+  return {ask: ask.topic, structure: cr_crew_structure(plan, board, counts), picture: {title: "", author: "", license: "", license_url: "", page_url: "", image: ""}, palette: ask.palette, photos: [], backdrop: ""}
+}
+
+fn cr_first_line(text: Text) -> Text {
+  let line = text.lines()[0]
+  return if line.length() > 170 { line.take(167) + "…" } else { line }
+}
+
+// Each post on the board as a scene: the member who posted lights, and the
+// link it works by runs.
+fn cr_scenes(talk: CrewBoard, board: CrewTask[]) -> DzScene[] {
+  var known: Text[] = []
+  var out: DzScene[] = []
+  for post in talk.posts {
+    let who = post.author
+    if not known.contains(who) { known = known.append(who) }
+    let from = if who == "conductor" { "" } else { if who == "examiner" { "tutor" } else { "conductor" } }
+    let to = if who == "conductor" { "" } else { who }
+    out = out.append({caption: cr_role(who) + ": " + cr_first_line(post.body.text), shows: [], from: from, to: to, label: "", known: known, parts: [who], runs: []})
+  }
+  let passed = (for t in board where t.passed { t }).length()
+  out = out.append({caption: f"The pack: {passed} of {board.length()} members' work passed Kosika's checks.", shows: [], from: "", to: "", label: "", known: known, parts: for t in board where t.passed { cr_author(t.who) }, runs: []})
+  return out
+}
+
+fn cr_crew_canvas(ask: PackAsk, plan: CrewPlan, board: CrewTask[], talk: CrewBoard, drawn: Design) -> Text {
+  if not drawn.problems.is_empty() or drawn.page.is_empty() { return "" }
+  let passed = (for t in board where t.passed { t }).length()
+  let check = f"Checked by Kosika: {passed} of {board.length()} members' work passed"
+  return dz_canvas_embed("The crew at work", dz_play("The crew at work", cr_scenes(talk, board), drawn, check, passed == board.length()), ask.palette)
+}
+
+fn cr_with_canvas(p: Pack, canvas: Text) -> Pack {
+  if canvas.is_empty() { return p }
+  return {..p, page: p.page.replace("<h2>The crew</h2>", "<h2>The crew at work, on the Kosika canvas</h2><div class=\"crew-canvas\">" + canvas + "</div><h2>The crew</h2>")}
+}
+
 workflow pack(ask: PackAsk) -> Pack {
-  budget 24 model calls, 900 seconds
-  raw    = use_model conductor_model(cr_plan_task(), ask.topic) retry 1 otherwise cr_default_plan(ask)
-  plan   = cr_plan(ask, raw)
-  n1     = cr_plan_note(plan)
-  p1     = post n1 to crew as conductor
-  n2     = cr_science_note(ask.topic)
-  p2     = post n2 to crew as scientist
-  canvas = call design(cr_canvas_ask(ask, plan))
-  n3     = cr_canvas_note(canvas)
-  p3     = post n3 to crew as artist
-  notes  = use_model tutor_model(cr_notes_task(), ask.topic, plan.ideas.join("; "), cr_science_text(ask.topic)) retry 1 otherwise cr_no_notes()
-  n4     = cr_notes_note(notes)
-  p4     = post n4 to crew as tutor
-  board  = read crew
-  exam   = use_model examiner_model(cr_exam_task(), ask.topic, cr_posted_notes(board), cr_science_text(ask.topic)) retry 1 otherwise cr_no_exam()
-  n5     = cr_exam_note(exam)
-  p5     = post n5 to crew as examiner
-  talk   = read crew
-  out    = cr_with_board(cr_pack(ask, raw, plan, canvas, notes, exam), talk)
+  budget 24 model calls, 1200 seconds
+  known   = call brain_recall(cr_recall_ask(ask))
+  science = cr_science_text(ask.topic) + cr_known_text(known)
+  raw     = use_model conductor_model(cr_plan_task(), ask.topic) retry 1 otherwise cr_default_plan(ask)
+  plan    = cr_plan(ask, raw)
+  n1      = cr_plan_note(plan)
+  p1      = post n1 to crew as conductor
+  n2      = cr_science_note(ask.topic)
+  p2      = post n2 to crew as scientist
+  canvas  = call brain_design(cr_canvas_ask(ask, plan))
+  n3      = cr_canvas_note(canvas)
+  p3      = post n3 to crew as artist
+  notes   = use_model tutor_model(cr_notes_task(), ask.topic, plan.ideas.join("; "), science) retry 1 otherwise cr_no_notes()
+  n4      = cr_notes_note(notes)
+  p4      = post n4 to crew as tutor
+  board   = read crew
+  exam    = use_model examiner_model(cr_exam_task(), ask.topic, cr_posted_notes(board), science) retry 1 otherwise cr_no_exam()
+  n5      = cr_exam_note(exam)
+  p5      = post n5 to crew as examiner
+  first   = cr_draft(notes, exam)
+  again   = match cr_fine(notes, exam, ask.topic) {
+    case true { first }
+    case _ { call cr_second(cr_second_ask(ask, plan, notes, exam, science)) }
+  }
+  kept    = cr_better(first, again, ask.topic)
+  n6      = cr_second_note(kept)
+  p6      = post n6 to crew as tutor
+  talk    = read crew
+  made    = cr_pack(ask, raw, plan, canvas, kept.notes, kept.exam, kept.tries)
+  record  = call brain_recall(cr_record_ask())
+  counts  = cr_counts_after(cr_counts(record), made.board)
+  drawn   = call draw(cr_crew_request(ask, plan, made.board, counts))
+  noted   = call brain_keep(cr_record_note(counts))
+  ended   = call brain_keep(cr_episode(ask, plan, made.board))
+  out     = cr_with_canvas(cr_with_board(made, talk), cr_crew_canvas(ask, plan, made.board, talk, drawn))
+}
+
+// The Tutor's second try, with the Examiner's marks, read again blind.
+workflow cr_second(a: CrewSecondAsk) -> CrewDraft {
+  budget 6 model calls, 600 seconds
+  notes = use_model tutor_model(a.task, a.topic, a.ideas, a.science) retry 1 otherwise cr_no_notes()
+  exam  = use_model examiner_model(cr_exam_task(), a.topic, cr_numbered(notes), a.science) retry 1 otherwise cr_no_exam()
+  out   = {notes: notes, exam: exam, tries: 2}
 }
 
 // ---------------------------------------------------------------- tests
@@ -311,7 +507,7 @@ test "the board says who passed and the page leaves out what the Examiner marked
   notes = cr_sample_notes(["Light is caught by chlorophyll.", "Plants breathe in oxygen to make sugar.", "Oxygen is released.", "Sugar is stored as starch."])
   exam = cr_sample_exam()
   plan = cr_sample_plan()
-  made = cr_pack(cr_sample_ask(), plan, plan, cr_sample_canvas(), notes, exam)
+  made = cr_pack(cr_sample_ask(), plan, plan, cr_sample_canvas(), notes, exam, 1)
   expect made.board[3].check == "the examiner marked 1 point(s) wrong"
   expect made.board[2].passed
   expect made.page.contains("Left out by the Examiner")
@@ -324,4 +520,48 @@ test "each member's post says what it did" {
   expect cr_science_note("photosynthesis").text == "Worked out exactly: 6CO2 + 6H2O -> C6H12O6 + 6O2, atoms and mass checked."
   expect cr_exam_note(cr_sample_exam()).text == "Marked 1 of 4 points wrong: point 2, they take in carbon dioxide"
   expect cr_plan_note(cr_sample_plan()).text.contains("the notes cover light, sugar")
+}
+
+fn cr_sample_board() -> CrewTask[] {
+  return [cr_task("Conductor", "planned", ""), cr_scientist_task(""), cr_task("Designer", "drew", ""), cr_task("Tutor", "wrote", "the examiner marked 1 point(s) wrong"), cr_task("Examiner", "read", "")]
+}
+
+fn cr_no_record() -> BrainFound { return {notes: [], by: "words"} }
+
+fn cr_sample_record() -> BrainFound { return {notes: [{kind: "crew", topic: "the crew's record", words: "crew recor", text: "Conductor 2 2; Scientist 2 2; Designer 2 1; Tutor 2 1; Examiner 2 2", source: "Kosika crew", score: 1, times: 1}], by: "words"} }
+
+test "the Brain keeps each member's record, run after run" {
+  counts = cr_counts(cr_sample_record())
+  expect counts[2] == [2, 1]
+  after = cr_counts_after(counts, cr_sample_board())
+  expect after[3] == [3, 1] and after[0] == [3, 3]
+  expect cr_record_note(after).text == "Conductor 3 3; Scientist 3 3; Designer 3 2; Tutor 3 1; Examiner 3 3"
+  expect cr_record_line(after, 3) == "1 of 3 passed"
+  expect cr_counts(cr_no_record())[0] == [0, 0]
+  expect cr_record_line(cr_counts(cr_no_record()), 0) == "first time"
+}
+
+fn cr_sample_second() -> CrewDraft {
+  let all: Exam = {verdicts: [{point: 1, ok: true, why: ""}, {point: 2, ok: true, why: ""}, {point: 3, ok: true, why: ""}, {point: 4, ok: true, why: ""}]}
+  return {notes: cr_sample_notes(["Light is caught by chlorophyll.", "Plants take in carbon dioxide to make sugar.", "Oxygen is released.", "Sugar is stored as starch."]), exam: all, tries: 2}
+}
+
+test "a second try is kept only when the Examiner marks fewer points wrong" {
+  first = cr_draft(cr_sample_notes(["Light is caught by chlorophyll.", "Plants breathe in oxygen to make sugar.", "Oxygen is released.", "Sugar is stored as starch."]), cr_sample_exam())
+  better = cr_sample_second()
+  expect cr_better(first, better, "the french revolution").tries == 2
+  expect cr_better(first, {..better, exam: cr_sample_exam()}, "the french revolution").tries == 1
+  expect cr_fix_task(first.notes, first.exam, "the french revolution").contains("point 2 (Plants breathe in oxygen to make sugar.): they take in carbon dioxide")
+  // Kosika's own check failing is a reason for a second try too.
+  unbalanced = cr_sample_notes(["Light is caught.", "CO2 + H2O -> C6H12O6 + O2 is the reaction.", "Oxygen is released.", "Sugar is stored."])
+  expect not cr_fine(unbalanced, cr_sample_second().exam, "photosynthesis")
+  expect cr_fix_task(unbalanced, cr_sample_second().exam, "photosynthesis").contains("Kosika's own check found: the notes write an equation that is not the balanced one")
+}
+
+test "the crew is drawn by Designs and its posts become the canvas's scenes" {
+  s = cr_crew_structure(cr_sample_plan(), cr_sample_board(), cr_counts(cr_sample_record()))
+  expect s.shape == "hub"
+  expect problems(s) == []
+  expect s.parts[0].id == "conductor" and s.parts[2].id == "artist"
+  expect s.parts[3].note == "1 of 2 passed"
 }
