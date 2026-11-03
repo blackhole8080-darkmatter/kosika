@@ -218,6 +218,12 @@ func (h *httpProvider) complete(request *modelRequest) *modelResponse {
 		}
 		time.Sleep(pause)
 	}
+	if answer.StatusCode == 400 && bytes.Contains(raw, []byte("json_validate_failed")) {
+		// The service was reached and the model answered, but its answer
+		// was not the JSON asked for: a bad answer, which the step's
+		// `retry` and `otherwise` handle, not a broken service.
+		runFail("The model's answer was not valid JSON (the service said: json_validate_failed)")
+	}
 	if answer.StatusCode >= 400 {
 		stopProvider("Model provider returned HTTP %d: %s", answer.StatusCode, raw)
 	}

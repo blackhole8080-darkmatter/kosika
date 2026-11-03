@@ -1,0 +1,1 @@
+{"rules": [{"tool": "write_file", "path_prefix": "notes/", "note": "the note agent may write in its notes folder"}]}

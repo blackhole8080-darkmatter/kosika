@@ -1,0 +1,11 @@
+{"log": "keeper.runs",
+ "jobs": [
+  {"name": "notes", "program": "note.kos", "workflow": "note",
+   "input": {"a": {"name": "notes/heartbeat.txt", "text": "the keeper ran me"}},
+   "every_minutes": 1, "times": 3,
+   "options": ["--allow-folder", "out", "--standing", "rules.json"]},
+  {"name": "study-pack", "program": "../crew/main.kos", "workflow": "pack",
+   "input": {"ask": {"topic": "the water cycle", "palette": ""}},
+   "every_minutes": 60, "times": 0,
+   "options": ["--model", "openai/gpt-oss-20b", "--model-url", "https://api.groq.com/openai/v1", "--model-protocol", "openai", "--max-output-tokens", "8000"]}
+ ]}

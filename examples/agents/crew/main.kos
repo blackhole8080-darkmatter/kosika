@@ -170,6 +170,12 @@ fn cr_task(who: Text, job: Text, problem: Text) -> CrewTask {
   return {who: who, job: job, passed: problem.is_empty(), check: if problem.is_empty() { "passed" } else { problem }}
 }
 
+// Nothing to work out exactly is not a failure: the Scientist says so
+// and passes.
+fn cr_scientist_task(said: Text) -> CrewTask {
+  return {who: "Scientist", job: "worked out what can be worked out exactly", passed: true, check: if said.is_empty() { "passed" } else { said }}
+}
+
 fn cr_board(ask: PackAsk, raw: CrewPlan, canvas: DzResult, notes: Notes, exam: Exam) -> CrewTask[] {
   let science_check = if cr_has_reaction(ask.topic) { "" } else { "nothing in this topic to work out exactly" }
   let examined = if exam.verdicts.is_empty() { "the examiner gave no verdicts" } else { "" }
@@ -178,7 +184,7 @@ fn cr_board(ask: PackAsk, raw: CrewPlan, canvas: DzResult, notes: Notes, exam: E
   let canvas_problem = if canvas.problems.is_empty() and not canvas.embed.is_empty() { "" } else { canvas.problems.join("; ") }
   return [
     cr_task("Conductor", "planned the pack", cr_plan_ok(raw)),
-    cr_task("Scientist", "worked out what can be worked out exactly", science_check),
+    cr_scientist_task(science_check),
     cr_task("Designer", "drew the canvas through Kosika Designs", canvas_problem),
     cr_task("Tutor", "wrote the notes", notes_problem),
     cr_task("Examiner", "read the notes blind and marked each point", examined)
@@ -187,7 +193,7 @@ fn cr_board(ask: PackAsk, raw: CrewPlan, canvas: DzResult, notes: Notes, exam: E
 
 fn cr_mark_class(t: CrewTask) -> Text { return if t.passed { "ok" } else { "bad" } }
 
-fn cr_mark(t: CrewTask) -> Text { return if t.passed { "&#10003; passed" } else { "&#10007; " + cr_esc(t.check) } }
+fn cr_mark(t: CrewTask) -> Text { return if t.passed { "&#10003; " + cr_esc(t.check) } else { "&#10007; " + cr_esc(t.check) } }
 
 fn cr_point(n: Notes, k: Number) -> Text { return if k >= 1 and k <= n.points.length() { n.points[k - 1] } else { "?" } }
 
@@ -213,7 +219,7 @@ fn cr_page(plan: CrewPlan, board: CrewTask[], canvas: DzResult, notes: Notes, ex
 
 fn cr_pack(ask: PackAsk, raw: CrewPlan, plan: CrewPlan, canvas: DzResult, notes: Notes, exam: Exam) -> Pack {
   let board = cr_board(ask, raw, canvas, notes, exam)
-  let problems = for t in board where not t.passed and t.who != "Scientist" { t.who + ": " + t.check }
+  let problems = for t in board where not t.passed { t.who + ": " + t.check }
   return {title: plan.title, page: cr_page(plan, board, canvas, notes, exam, cr_science_card(ask.topic)), board: board, problems: problems}
 }
 
