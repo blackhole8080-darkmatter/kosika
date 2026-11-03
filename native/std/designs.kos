@@ -397,7 +397,7 @@ fn dz_from_canvas(ask: DzAsk, palette: Text, r: Request, d: Design, m: ArtPage, 
   let inner = "<div class=\"kc-art\" aria-hidden=\"true\">" + g.svg + "</div><div class=\"kc-head\">" + dz_field_label(field) + "<h2>" + art_esc(title) + "</h2><p>" + art_esc(summary) + "</p></div>" + grid + formula + reaction + lab + check + note
   let own = not (formula.is_empty() and reaction.is_empty() and lab.is_empty())
   let drawn = has_diagram or has_moving or own
-  let embed = if drawn { dz_wrap("canvas", place, palette, "", inner, art_style() + gen_style() + qz_style() + sc_style() + sm_style() + dz_lab_style() + dz_formula_style() + dz_canvas_style() + dz_stage_style() + dz_living_style()) } else { "" }
+  let embed = if drawn { dz_wrap("canvas", place, palette, "", inner, art_style() + gen_style() + qz_style() + sc_style() + sm_style() + dz_lab_style() + dz_formula_style() + dz_canvas_style() + dz_stage_style() + dz_living_style() + dz_journey_style()) } else { "" }
   let page = if drawn { dz_canvas_page(title, palette, embed) } else { "" }
   let none: Text[] = []
   let wrong = if drawn { none } else { d.problems.concat(m.problems) }
@@ -1160,11 +1160,142 @@ fn dz_played_script() -> Text {
 fn dz_no_quiz() -> QzPage { return {page: "", card: "", problems: [], quiz: {title: "", topic: "", palette: "dark_matter", questions: []}, checked: ""} }
 
 fn dz_stage_script() -> Text {
-  return "(function(){var st=document.querySelector('.kc-stage');if(!st)return;var S=JSON.parse(st.dataset.scenes),own=[].slice.call(st.querySelectorAll('.art .own')),nodes=[].slice.call(st.querySelectorAll('.mm-node')),edges=[].slice.call(st.querySelectorAll('.mm-edge')),cap=st.querySelector('.st-caption'),num=st.querySelector('.st-num'),dots=[].slice.call(st.querySelectorAll('.st-dot')),graph=st.querySelector('.st-graph'),i=0,playing=true,timer=null,still=matchMedia('(prefers-reduced-motion: reduce)').matches;function show(k){i=k;var last=k===S.length;var sc=last?null:S[k];own.forEach(function(e){var on=sc&&sc.shows.indexOf(e.dataset.of)>=0;e.classList.remove('wait');e.classList.toggle('lit',!!on);e.classList.toggle('dim',!!sc&&!on)});nodes.forEach(function(n){var id=n.dataset.part;n.classList.toggle('known',last||(sc&&sc.known.indexOf(id)>=0));n.classList.toggle('now',!!sc&&(sc.from===id||sc.to===id))});edges.forEach(function(e){e.classList.toggle('run',!!sc&&e.dataset.from===sc.from&&e.dataset.to===sc.to)});if(graph)graph.classList.toggle('on',last);var lit=sc?(sc.parts.length?sc.parts:[sc.from,sc.to].filter(Boolean)):[];st.querySelectorAll('.lc-card').forEach(function(c){var on=lit.indexOf(c.dataset.part)>=0;c.classList.toggle('st-on',on);c.classList.toggle('st-dim',!!sc&&lit.length>0&&!on)});st.querySelectorAll('.lc-link').forEach(function(l){var run=!!sc&&!!sc.from&&l.dataset.from===sc.from&&l.dataset.to===sc.to;l.classList.toggle('st-run',run);l.classList.toggle('st-dim',!!sc&&lit.length>0&&!run)});var fr=st.querySelector('iframe.st-form');if(fr&&fr.contentWindow){var msg=last?{stage:1,all:1}:{stage:1,parts:sc.parts.length?sc.parts:[sc.from,sc.to].filter(Boolean),from:sc.from,to:sc.to};fr.contentWindow.postMessage(msg,'*')}cap.textContent=last?(graph?'And the formula behind it, drawn as a graph.':'That is the whole of it.'):sc.caption;num.textContent=last?'':(k+1)+' / '+S.length;dots.forEach(function(d,j){d.classList.toggle('on',j===k)})}var total=S.length+(graph?1:0);function next(){show((i+1)%total)}addEventListener('message',function(e){var h=e.data&&e.data.stageHeight;var fr=st.querySelector('iframe.st-form');if(h&&fr&&e.source===fr.contentWindow)fr.style.height=Math.max(260,Math.min(900,h))+'px'});function play(){clearInterval(timer);if(playing&&!still)timer=setInterval(next,5200)}st.querySelector('.st-next').onclick=function(){next();play()};st.querySelector('.st-prev').onclick=function(){show((i-1+total)%total);play()};var pb=st.querySelector('.st-play');pb.onclick=function(){playing=!playing;pb.textContent=playing?'Pause':'Play';play()};dots.forEach(function(d,j){d.onclick=function(){show(j);play()}});show(0);play()})();"
+  return "(function(){var st=document.querySelector('.kc-stage');if(!st)return;var S=JSON.parse(st.dataset.scenes),own=[].slice.call(st.querySelectorAll('.art .own')),nodes=[].slice.call(st.querySelectorAll('.mm-node')),edges=[].slice.call(st.querySelectorAll('.mm-edge')),cap=st.querySelector('.st-caption'),num=st.querySelector('.st-num'),dots=[].slice.call(st.querySelectorAll('.st-dot')),graph=st.querySelector('.st-graph'),i=0,playing=true,timer=null,still=matchMedia('(prefers-reduced-motion: reduce)').matches;function show(k){i=k;var last=k===S.length;var sc=last?null:S[k];own.forEach(function(e){var on=sc&&sc.shows.indexOf(e.dataset.of)>=0;e.classList.remove('wait');e.classList.toggle('lit',!!on);e.classList.toggle('dim',!!sc&&!on)});nodes.forEach(function(n){var id=n.dataset.part;n.classList.toggle('known',last||(sc&&sc.known.indexOf(id)>=0));n.classList.toggle('now',!!sc&&(sc.from===id||sc.to===id))});edges.forEach(function(e){e.classList.toggle('run',!!sc&&e.dataset.from===sc.from&&e.dataset.to===sc.to)});if(graph)graph.classList.toggle('on',last);var lit=sc?(sc.parts.length?sc.parts:[sc.from,sc.to].filter(Boolean)):[];st.querySelectorAll('.lc-card').forEach(function(c){var on=lit.indexOf(c.dataset.part)>=0;c.classList.toggle('st-on',on);c.classList.toggle('st-dim',!!sc&&lit.length>0&&!on)});st.querySelectorAll('.lc-link').forEach(function(l){var run=!!sc&&!!sc.from&&l.dataset.from===sc.from&&l.dataset.to===sc.to;l.classList.toggle('st-run',run);l.classList.toggle('st-dim',!!sc&&lit.length>0&&!run)});st.querySelectorAll('.jr-pin,.jr-leg').forEach(function(p){var j=+p.dataset.k;p.classList.toggle('done',last||j<k);p.classList.toggle('now',!last&&j===k)});var fr=st.querySelector('iframe.st-form');if(fr&&fr.contentWindow){var msg=last?{stage:1,all:1}:{stage:1,parts:sc.parts.length?sc.parts:[sc.from,sc.to].filter(Boolean),from:sc.from,to:sc.to};fr.contentWindow.postMessage(msg,'*')}cap.textContent=last?(graph?'And the formula behind it, drawn as a graph.':'That is the whole of it.'):sc.caption;num.textContent=last?'':(k+1)+' / '+S.length;dots.forEach(function(d,j){d.classList.toggle('on',j===k)})}var total=S.length+(graph?1:0);function next(){show((i+1)%total)}addEventListener('message',function(e){var h=e.data&&e.data.stageHeight;var fr=st.querySelector('iframe.st-form');if(h&&fr&&e.source===fr.contentWindow)fr.style.height=Math.max(260,Math.min(900,h))+'px'});function play(){clearInterval(timer);if(playing&&!still)timer=setInterval(next,5200)}st.querySelector('.st-next').onclick=function(){next();play()};st.querySelector('.st-prev').onclick=function(){show((i-1+total)%total);play()};var pb=st.querySelector('.st-play');pb.onclick=function(){playing=!playing;pb.textContent=playing?'Pause':'Play';play()};dots.forEach(function(d,j){d.onclick=function(){show(j);play()}});show(0);play()})();"
 }
 
 fn dz_stage_style() -> Text {
   return ".kc-stage{padding:18px}.st-screen{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;align-items:start}.st-map .kc-full{text-align:right;margin-top:6px}.st-map .kc-full[open]{text-align:left}.st-art svg{width:100%;height:auto;display:block}.st-living{max-width:1060px;margin:0 auto}.st-opens{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:18px;margin-top:8px}.st-opens .kc-full[open]{flex-basis:100%}.st-form{width:100%;height:520px;border:0;border-radius:14px;background:transparent}.mm{width:100%;height:auto;display:block}.mm-node circle{fill:var(--halo);stroke:color-mix(in srgb,var(--line) 30%,transparent);stroke-width:1.5;transition:all .5s}.mm-node text{fill:var(--soft);font:600 10.5px Figtree,system-ui,sans-serif;text-anchor:middle}.mm-node{opacity:.15;transition:opacity .6s}.mm-node.known{opacity:1}.mm-node.now circle{stroke:var(--amber);stroke-width:3;fill:color-mix(in srgb,var(--amber) 22%,var(--halo))}.mm-node.now text{fill:var(--ink)}.mm-edge path{stroke:color-mix(in srgb,var(--line) 35%,transparent);stroke-width:2;fill:none;transition:stroke .4s}.mm-arrow{fill:color-mix(in srgb,var(--line) 50%,transparent)}.mm-edge.run path{stroke:var(--amber);stroke-width:3}.mm-dot{fill:var(--amber);opacity:0}.mm-edge.run .mm-dot{opacity:1}.st-bar{display:flex;align-items:center;gap:14px;margin-top:14px;padding:12px 14px;border-radius:14px;background:color-mix(in srgb,var(--halo) 85%,transparent);border:1px solid color-mix(in srgb,var(--line) 14%,transparent)}.st-num{font:600 11px ui-monospace,Consolas,monospace;color:var(--gold);letter-spacing:.12em;min-width:44px}.st-caption{flex:1;font-size:17px;line-height:1.45;color:var(--ink)}.st-bar button{font:600 10.5px ui-monospace,Consolas,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--soft);background:none;border:1px solid color-mix(in srgb,var(--line) 22%,transparent);border-radius:999px;padding:7px 12px;cursor:pointer}.st-bar button:focus-visible{outline:2px solid var(--amber)}.st-dots{display:flex;gap:6px;justify-content:center;margin-top:10px}.st-dot{width:9px;height:9px;border-radius:50%;border:0;padding:0;background:color-mix(in srgb,var(--line) 30%,transparent);cursor:pointer}.st-dot.on{background:var(--amber)}.st-graph{display:none;margin:14px auto 0;max-width:640px}.st-graph.on{display:block}@media (max-width:900px){.st-screen{grid-template-columns:1fr}}"
+}
+
+// ---------------------------------------------------------------- the journey
+//
+// Style B: the diagram drawn through the scene. When the explanation is a
+// journey (a flow or a timeline) and the moving picture has a figure for
+// most of its steps, the steps are not drawn as boxes beside the picture:
+// they are numbered pins on the picture's own figures, joined by a road in
+// step order, and each scene runs its stretch of road.
+
+record DzPin { k: Number x: Number y: Number of: Text }
+
+// How far a figure reaches from its centre, in pixels.
+fn dz_figure_reach(f: Figure) -> Number {
+  let s = art_px()
+  if f.kind == "rect" { return f.w.max(f.h) * s / 2 }
+  if art_round().contains(f.kind) { return f.w * s * art_reach(f.kind) }
+  return 0
+}
+
+// Each step's pin sits on the figure it names best (not the one the step
+// before stood on, nor one pinned before but by the last step), up and to the left of the figure's centre so the art
+// stays seen. A step that names no figure gets no pin.
+fn dz_journey_pins(s: Structure, a: Art) -> DzPin[] {
+  let figure_stems = for f in a.figures { dz_bare_words(dz_figure_words(f)) }
+  let w = art_width() * art_px()
+  let h = art_height() * art_px()
+  var pins: DzPin[] = []
+  var last = ""
+  for k in 0 until s.steps.length() {
+    let said = dz_bare_words(dz_name_words(dz_step_text(s, s.steps[k])))
+    let heads = dz_stems(said)
+    let line = " " + said.join(" ") + " "
+    // A journey goes on: a figure pinned before is taken again only by the
+    // last step, coming home, and only when no new figure is named.
+    let end = k == s.steps.length() - 1
+    let used = for p in pins { p.of }
+    var best = -1
+    var score = 0
+    var back = -1
+    var back_score = 0
+    for j in 0 until a.figures.length() {
+      let f = a.figures[j]
+      let n = if f.kind == "text" or f.id == last { 0 } else { dz_near_count(figure_stems[j], heads, line) }
+      if used.contains(f.id) {
+        if end and n > back_score {
+          back = j
+          back_score = n
+        }
+      } else {
+        if n > score {
+          best = j
+          score = n
+        }
+      }
+    }
+    if best < 0 { best = back }
+    if best >= 0 {
+      let f = a.figures[best]
+      let c = art_centre(f)
+      let r = dz_figure_reach(f).min(70) * 0.6
+      // A figure pinned before takes the next pin beside the first.
+      let again = (for p in pins where p.of == f.id { p }).length()
+      let x = (c[0] * art_px() - r + again * 36).max(20).min(w - 20)
+      let y = (c[1] * art_px() - r).max(20).min(h - 20)
+      pins = pins.append({k: k, x: x, y: y, of: f.id})
+      last = f.id
+    }
+  }
+  return pins
+}
+
+// Words without their digits (line1 is a line), of three letters or more.
+fn dz_bare_words(words: Text[]) -> Text[] {
+  var out: Text[] = []
+  for w in words {
+    var t = w
+    for d in ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "-", "‑"] { t = t.replace(d, "") }
+    if t.length() >= 3 and not out.contains(t) { out = out.append(t) }
+  }
+  return out
+}
+
+// How near a step comes to a figure's words: two for the same first five
+// letters (home, homes), one for a word of four letters or more inside a
+// word the step says (station, substation), so the closer name wins. `heads` are the step's words cut to five
+// letters, `line` all its words between spaces: worked out once a step.
+fn dz_near_count(figure: Text[], heads: Text[], line: Text) -> Number {
+  var n = 0
+  for w in figure {
+    if heads.contains(dz_head(w)) { n = n + 2 } else { if w.length() >= 4 and line.contains(w) { n = n + 1 } }
+  }
+  return n
+}
+
+fn dz_head(w: Text) -> Text { return if w.length() > 5 { w.slice(0, 5) } else { w } }
+
+// A journey when the shape is one and the pins cover most of the steps,
+// standing on at least three different figures.
+fn dz_journey_fits(s: Structure, pins: DzPin[]) -> Bool {
+  if not ["flow", "timeline"].contains(s.shape) { return false }
+  var figures: Text[] = []
+  for p in pins {
+    if not figures.contains(p.of) { figures = figures.append(p.of) }
+  }
+  return figures.length() >= 3 and pins.length() >= (s.steps.length() * 0.6).max(3)
+}
+
+fn dz_r(x: Number) -> Number { return (x * 10).round() / 10 }
+
+// The road from pin to pin, gently bowed, and the pins over it.
+fn dz_journey_svg(pins: DzPin[]) -> Text {
+  let w = art_width() * art_px()
+  let h = art_height() * art_px()
+  var legs = ""
+  for i in 1 until pins.length() {
+    let a = pins[i - 1]
+    let b = pins[i]
+    let dx = b.x - a.x
+    let dy = b.y - a.y
+    let cx = (a.x + b.x) / 2 - dy * 0.18
+    let cy = (a.y + b.y) / 2 + dx * 0.18
+    let d = f"M{dz_r(a.x)} {dz_r(a.y)} Q{dz_r(cx)} {dz_r(cy)} {dz_r(b.x)} {dz_r(b.y)}"
+    legs = legs + f"<g class=\"jr-leg\" data-k=\"{b.k}\"><path class=\"jr-road\" d=\"{d}\"/><path class=\"jr-run\" d=\"{d}\"/><circle class=\"jr-dot\" r=\"6\"><animateMotion dur=\"1.8s\" repeatCount=\"indefinite\" path=\"{d}\"/></circle></g>"
+  }
+  let marks = (for p in pins { f"<g class=\"jr-pin\" data-k=\"{p.k}\"><circle cx=\"{dz_r(p.x)}\" cy=\"{dz_r(p.y)}\" r=\"16\"/><text x=\"{dz_r(p.x)}\" y=\"{dz_r(p.y + 5)}\">{p.k + 1}</text></g>" }).join("")
+  return f"<svg class=\"jr\" viewBox=\"0 0 {w} {h}\" aria-hidden=\"true\">{legs}{marks}</svg>"
+}
+
+fn dz_journey_style() -> Text {
+  return ".st-journey{position:relative;max-width:1060px;margin:0 auto}.st-journey .jr{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}.jr-road{fill:none;stroke:color-mix(in srgb,var(--ink) 28%,transparent);stroke-width:3;stroke-dasharray:2 9;stroke-linecap:round}.jr-run{fill:none;stroke:var(--amber);stroke-width:4;stroke-linecap:round;stroke-dasharray:7 9;opacity:0;transition:opacity .5s;animation:jr-run 1s linear infinite}.jr-leg.done .jr-run{opacity:.45;animation:none}.jr-leg.now .jr-run{opacity:1}.jr-dot{fill:var(--amber);opacity:0;filter:drop-shadow(0 0 6px var(--amber))}.jr-leg.now .jr-dot{opacity:1}@keyframes jr-run{to{stroke-dashoffset:-16}}.jr-pin circle{fill:var(--halo);stroke:color-mix(in srgb,var(--ink) 45%,transparent);stroke-width:2;transition:all .4s}.jr-pin text{fill:var(--soft);font:700 13px ui-monospace,Consolas,monospace;text-anchor:middle;transition:fill .4s}.jr-pin.done circle{stroke:var(--amber)}.jr-pin.now circle{fill:var(--amber);stroke:var(--amber);filter:drop-shadow(0 0 10px var(--amber))}.jr-pin.now text{fill:var(--halo)}@media (prefers-reduced-motion:reduce){.jr *{animation:none!important}.jr-dot{display:none}}"
 }
 
 // Shapes the living cards read well in; a table, a timeline, a message
@@ -1188,10 +1319,18 @@ fn dz_stage(r: Request, d: Design, m: ArtPage, graph: Text, flows: DzFlows) -> T
   // and the full diagram open beneath.
   let living = dz_living_fits(s)
   let open_art = "<details class=\"kc-full\"><summary>Open the moving picture</summary><div class=\"st-art\">" + m.svg + "</div></details>"
-  let screen = if living { "<div class=\"st-living\">" + dz_living_svg(s, flows) + "</div><div class=\"st-opens\">" + open_art + open_full + "</div>" } else { "<div class=\"st-screen\"><div class=\"st-art\">" + m.svg + "</div><div class=\"st-map\">" + form + open_full + "</div></div>" }
+  // A journey is drawn through the picture itself instead.
+  let pins = dz_journey_pins(s, m.art)
+  let journey = dz_journey_fits(s, pins)
+  let road = "<div class=\"st-journey\">" + m.svg + dz_journey_svg(pins) + "</div><div class=\"st-opens\">" + open_full + "</div>"
+  let screen = if journey { road } else { dz_stage_screen(s, m, flows, living, form, open_art, open_full) }
   let bar = "<div class=\"st-bar\"><span class=\"st-num\"></span><span class=\"st-caption\"></span><button class=\"st-prev\" type=\"button\">Back</button><button class=\"st-play\" type=\"button\">Pause</button><button class=\"st-next\" type=\"button\">Next</button></div>"
   let graph_part = if graph.is_empty() { "" } else { "<div class=\"st-graph\">" + graph + "</div>" }
   return "<div class=\"kc-card kc-stage\" data-scenes=\"" + art_esc(data) + "\"><div class=\"kc-label\">Kosika canvas &#183; <b>the explanation, played</b></div>" + screen + bar + "<div class=\"st-dots\">" + dots + "</div>" + graph_part + "<script>" + dz_stage_script() + "</script></div>"
+}
+
+fn dz_stage_screen(s: Structure, m: ArtPage, flows: DzFlows, living: Bool, form: Text, open_art: Text, open_full: Text) -> Text {
+  return if living { "<div class=\"st-living\">" + dz_living_svg(s, flows) + "</div><div class=\"st-opens\">" + open_art + open_full + "</div>" } else { "<div class=\"st-screen\"><div class=\"st-art\">" + m.svg + "</div><div class=\"st-map\">" + form + open_full + "</div></div>" }
 }
 
 fn dz_unified(r: Request, d: Design, m: ArtPage) -> Text {
@@ -1598,4 +1737,34 @@ test "style A: natural cycles draw their parts as living nodes, each moving as i
   expect dz_meaning_motion(dz_test_part("Precipitation", "water falls as rain")) == "lc-fall"
   expect dz_meaning_motion(dz_test_part("Sun", "")) == "lc-shine"
   expect not dz_living_nodes(dz_test_heart())
+}
+
+fn dz_test_spot(id: Text, label: Text, x: Number, y: Number) -> Figure { return {..dz_test_figure(id, label), x: x, y: y} }
+
+fn dz_test_road() -> Structure {
+  return {..dz_test_heart(), title: "A raindrop's journey", shape: "flow", steps: [{text: "The sun warms the sea", parts: []}, {text: "Vapour rises into a cloud", parts: []}, {text: "Rain falls on the mountain", parts: []}, {text: "A river carries it back to the sea", parts: []}]}
+}
+
+fn dz_test_road_art() -> Art { return {..dz_test_heart_art(), figures: [dz_test_spot("sun", "Sun", 15, 12), dz_test_spot("cloud", "Cloud", 45, 12), dz_test_spot("mountain", "Mountain", 70, 40), dz_test_spot("river", "River", 50, 50), dz_test_spot("sea", "Sea", 15, 50)]} }
+
+test "style B: a journey is drawn through the picture, one pin per step on its figures" {
+  pins = dz_journey_pins(dz_test_road(), dz_test_road_art())
+  expect pins.length() == 4
+  expect pins[0].of == "sun"
+  expect pins[1].of == "cloud"
+  expect pins[2].of == "mountain"
+  expect pins[3].of == "river"
+  expect dz_journey_fits(dz_test_road(), pins)
+  expect not dz_journey_fits(dz_test_heart(), pins)
+  svg = dz_journey_svg(pins)
+  expect svg.split("class=\"jr-pin\"").length() == 5
+  expect svg.split("class=\"jr-leg\"").length() == 4
+  expect not dz_journey_fits(dz_test_road(), dz_journey_pins(dz_test_road(), dz_test_heart_art()))
+  back = {..dz_test_road(), steps: [{text: "The sun warms the sea", parts: []}, {text: "Vapour rises into a cloud", parts: []}, {text: "The sun shines on", parts: []}, {text: "Rain falls on the mountain", parts: []}, {text: "And back to the sun", parts: []}]}
+  again = dz_journey_pins(back, dz_test_road_art())
+  expect (for p in again { p.k }) == [0, 1, 3, 4]
+  expect again[3].of == "sun"
+  expect dz_bare_words(["line1", "high‑voltage", "sea"]) == ["line", "highvoltage", "sea"]
+  expect dz_near_count(["station", "home", "tower"], ["subst", "homes"], " substation homes ") == 2
+  expect dz_near_count(["subst"], ["subst"], " substation ") > dz_near_count(["station"], ["subst"], " substation ")
 }
