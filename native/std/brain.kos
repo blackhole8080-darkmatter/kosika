@@ -28,11 +28,18 @@
 // counts for that kind, a thumbs up counts more, a thumbs down counts
 // against it. When the words alone do not settle the kind and the network
 // is sure, the Brain draws that kind and says so, without asking a model.
+//
+// Phase 4, gathering: brain_gather reads arXiv's own search for a topic and
+// keeps each paper as a fact, with its link, authors and date as its
+// source, and the abstract's first sentence as what it says. A canvas
+// drawn later shows what the Brain knows about its ask, each fact linked
+// to where it came from. Gathering reads the web, so it runs only with
+// `--allow-site export.arxiv.org`.
 
 import "designs.kos"
 import "nn.kos"
 
-export [BrainNote, BrainAsk, BrainFound, BrainPast, BrainKept, BrainCanvas, BrainRecipe, BrainRating, BrainRated, BrainMind, BrainChoice, br_features, br_new_mind, br_learn, br_choose, brain_recall, brain_keep, brain_design, brain_rate, br_recipe, br_reusable, br_rated_canvas, br_words, br_near, br_floor, br_past, br_told]
+export [BrainGatherAsk, BrainGathered, BrainPage, BrainPaper, brain_gather, br_papers_in, br_facts, br_known, br_with_known, br_search_url, BrainNote, BrainAsk, BrainFound, BrainPast, BrainKept, BrainCanvas, BrainRecipe, BrainRating, BrainRated, BrainMind, BrainChoice, br_features, br_new_mind, br_learn, br_choose, brain_recall, brain_keep, brain_design, brain_rate, br_recipe, br_reusable, br_rated_canvas, br_words, br_near, br_floor, br_past, br_told]
 
 // kind: episode, fact, recipe or structure.
 // topic: what it is about, in words a person would use.
@@ -72,6 +79,28 @@ record BrainRating { ask: Text liked: Bool }
 record BrainMind { kinds: Text[] net: Net xs: Number[][] ys: Number[][] seen: Number }
 
 memory minds of BrainMind
+
+// ---------------------------------------------------------------- gathering, the records
+
+record BrainGatherAsk { topic: Text }
+record BrainGathered { kept: Number titles: Text[] said: Text }
+
+// A page as Kosika's web tool reads it, and a paper found on it.
+record BrainPageRequest { url: Text }
+record BrainPage { url: Text title: Text text: Text }
+record BrainPaper { title: Text link: Text published: Text authors: Text summary: Text }
+
+tool brain_feed {
+  source system "web"
+  operation: "fetch"
+  access: observe
+  input: BrainPageRequest
+  output: BrainPage
+}
+
+agent brain_library {
+  can: [brain_feed]
+}
 
 // The kind the network would choose, how sure it is (0 to 1), and why.
 record BrainChoice { kind: Text sure: Number why: Text }
@@ -268,6 +297,131 @@ fn br_drawn_value(r: DzResult, recipe: BrainRecipe, ask: DzAsk) -> Number {
   return if br_worth_keeping(r, recipe, ask) { 0.85 } else { -1 }
 }
 
+// ---------------------------------------------------------------- gathering
+
+// arXiv's own relevance search for a topic: every topic word must appear.
+fn br_search_url(topic: Text) -> Text {
+  let words = for w in topic.lower().replace(",", " ").replace("?", " ").words() where w.length() >= 3 and not br_common().contains(w) { "all:" + w.trim_marks(".:;!") }
+  return "https://export.arxiv.org/api/query?search_query=" + words.join("+AND+") + "&sortBy=relevance&max_results=6"
+}
+
+fn br_no_page() -> BrainPage { return {url: "", title: "", text: ""} }
+
+// The papers in a feed as Kosika's web tool gives it: each entry begins
+// with ---, then a line for each of its parts.
+fn br_papers_in(text: Text) -> BrainPaper[] {
+  var found: BrainPaper[] = []
+  var title = ""
+  var link = ""
+  var published = ""
+  var authors: Text[] = []
+  var summary = ""
+  var open = false
+  for line in (text + "\n---").lines() {
+    if line.trim() == "---" {
+      if open and not title.is_empty() and not link.is_empty() {
+        found = found.append({title: title, link: link, published: published.take(10), authors: authors.take(3).join(", "), summary: summary})
+      }
+      title = ""
+      link = ""
+      published = ""
+      authors = []
+      summary = ""
+      open = true
+    } else if line.starts_with("Title: ") { title = line.drop(7).trim() }
+    else if line.starts_with("Link: ") { link = line.drop(6).trim() }
+    else if line.starts_with("Published: ") { published = line.drop(11).trim() }
+    else if line.starts_with("Author: ") { authors = authors.append(line.drop(8).trim()) }
+    else if line.starts_with("Summary: ") { summary = line.drop(9).trim() }
+  }
+  return found
+}
+
+// What a paper says, in its own first sentence, cut short when long.
+fn br_first_sentence(summary: Text) -> Text {
+  let words = summary.replace("\n", " ").words()
+  // A full stop ends the sentence unless it is inside brackets, as in
+  // "[Probab. Theory ...]", or ends a short form like "e.g." or "et al.".
+  let short = ["e.g.", "i.e.", "al.", "etc.", "fig.", "eq.", "vs.", "cf.", "no.", "dr.", "prof."]
+  var out: Text[] = []
+  var done = false
+  var depth = 0
+  for w in words {
+    if not done {
+      out = out.append(w)
+      depth = depth + w.count("(") + w.count("[") - w.count(")") - w.count("]")
+      if w.ends_with(".") and depth <= 0 and not short.contains(w.lower()) and out.length() >= 6 { done = true }
+      if out.length() >= 28 { done = true }
+    }
+  }
+  let said = out.join(" ")
+  return if done and not said.ends_with(".") { said + " …" } else { said }
+}
+
+// Each paper as a fact the Brain keeps: about the topic it was gathered
+// for and the paper's own title, saying its first sentence, from its link.
+fn br_facts(page: BrainPage, topic: Text) -> BrainNote[] {
+  let asked = br_words(topic)
+  return for paper in br_papers_in(page.text).take(6) {
+    {kind: "fact", topic: paper.title, words: asked.concat(for w in br_words(paper.title) where not asked.contains(w) { w }).join(" "), text: br_first_sentence(paper.summary), source: paper.link + " · " + paper.authors + " · " + paper.published, score: 1, times: 1}
+  }
+}
+
+fn br_fact_key(n: BrainNote) -> Text { return br_key("fact", n.topic) }
+
+// The facts, six of them, so each can be kept by a step of its own; fewer
+// facts repeat the last, which is kept under the same key again.
+fn br_fact_at(facts: BrainNote[], k: Number) -> BrainNote { return facts[k.min(facts.length() - 1)] }
+
+fn br_gathered(topic: Text, facts: BrainNote[]) -> BrainGathered {
+  let titles = for f in facts { f.topic }
+  let said = if facts.is_empty() { f"Kosika found no papers on '{topic}'. Check that export.arxiv.org is allowed, or try other words." } else { f"Kosika read {facts.length()} papers on '{topic}' and keeps each as a fact, with its source." }
+  return {kept: facts.length(), titles: titles, said: said}
+}
+
+// ---------------------------------------------------------------- using what it knows
+
+// The facts the Brain knows about an ask: most of the ask's topic words
+// are in the fact's words (or, by meaning, it is near), at most three.
+fn br_known(found: BrainLike, text: Text) -> BrainNote[] {
+  // The ask's numbers say nothing of its subject: "sort 7 3 9" is about sorting.
+  let asked = for w in br_words(text) where not w.to_number().exists() { w }
+  var out: BrainNote[] = []
+  for m in found.matches {
+    let theirs = m.value.words.words()
+    let shared = (for w in asked where theirs.contains(w) { w }).length()
+    let near = if found.by == "meaning" { m.score >= br_floor("meaning") } else { shared >= 2 and shared >= asked.length() * 0.5 }
+    if m.value.kind == "fact" and near and out.length() < 3 { out = out.append(m.value) }
+  }
+  return out
+}
+
+// A link in a source, if it starts with one.
+fn br_link_of(source: Text) -> Text {
+  let first = source.split(" · ")[0]
+  return if first.starts_with("https://") { first } else { "" }
+}
+
+// The canvas, with what the Brain knows about its ask beneath it: each
+// fact's title linked to its source, what it says, and who and when.
+fn br_with_known(r: DzResult, facts: BrainNote[]) -> DzResult {
+  if facts.is_empty() or not r.embed.ends_with("</div>") { return r }
+  var items = ""
+  for f in facts {
+    let link = br_link_of(f.source)
+    let title = if link.is_empty() { br_esc(f.topic) } else { "<a href=\"" + br_esc(link) + "\" target=\"_blank\" rel=\"noopener\" style=\"color:var(--ink)\">" + br_esc(f.topic) + "</a>" }
+    let rest = f.source.split(" · ").drop(1).join(" · ")
+    items = items + "<li style=\"margin:0 0 10px\"><div style=\"font-weight:700\">" + title + "</div><div style=\"color:var(--soft)\">" + br_esc(f.text) + "</div><div style=\"color:var(--soft);font:500 11px ui-monospace,Consolas,monospace;letter-spacing:.06em;margin-top:2px\">" + br_esc(rest) + "</div></li>"
+  }
+  let card = "<div class=\"br-known\" style=\"margin-top:14px;padding:14px 16px;border-radius:16px;border:1px solid color-mix(in srgb,var(--line) 18%,transparent)\"><div style=\"font:600 11px ui-monospace,Consolas,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--amber);margin-bottom:10px\">What Kosika knows &#183; gathered from research, with sources</div><ul style=\"list-style:none;margin:0;padding:0\">" + items + "</ul></div>"
+  let embed = r.embed.slice(0, r.embed.length() - 6) + card + "</div>"
+  let page = r.page.replace(r.embed, embed)
+  let n = facts.length()
+  let papers = if n == 1 { "paper" } else { "papers" }
+  let stop = if r.why.trim().ends_with(".") { " " } else { ". " }
+  return {..r, embed: embed, page: page, why: r.why.trim() + stop + f"It adds what it gathered on this from {n} research {papers}, each with its source."}
+}
+
 // ---------------------------------------------------------------- rating
 
 fn br_rated_canvas(c: BrainCanvas, r: BrainRating) -> BrainCanvas { return {..c, score: if r.liked { 2 } else { -1 }} }
@@ -360,7 +514,33 @@ workflow brain_design(ask: DzAsk) -> DzResult {
     case true { call brain_keep_canvas(br_canvas(ask, drawn)) }
     case _ { br_not_kept() }
   }
-  out    = br_told(br_chose(drawn, ask, choice), past)
+  out    = br_with_known(br_told(br_chose(drawn, ask, choice), past), br_known(found, ask.text))
+}
+
+// Gather research on a topic into the Brain's knowledge.
+workflow brain_gather(g: BrainGatherAsk) -> BrainGathered {
+  budget 1 model calls, 120 seconds
+  page  = execute brain_library.brain_feed(br_search_url(g.topic)) otherwise br_no_page()
+  facts = br_facts(page, g.topic)
+  kept  = match facts.is_empty() {
+    case true { br_not_kept() }
+    case _ { call brain_keep_facts(br_fact_batch(facts)) }
+  }
+  out   = br_gathered(g.topic, facts)
+}
+
+record BrainFacts { facts: BrainNote[] }
+
+fn br_fact_batch(facts: BrainNote[]) -> BrainFacts { return {facts: facts} }
+
+workflow brain_keep_facts(b: BrainFacts) -> BrainKept {
+  k0  = remember br_fact_at(b.facts, 0) in brain under br_fact_key(br_fact_at(b.facts, 0))
+  k1  = remember br_fact_at(b.facts, 1) in brain under br_fact_key(br_fact_at(b.facts, 1))
+  k2  = remember br_fact_at(b.facts, 2) in brain under br_fact_key(br_fact_at(b.facts, 2))
+  k3  = remember br_fact_at(b.facts, 3) in brain under br_fact_key(br_fact_at(b.facts, 3))
+  k4  = remember br_fact_at(b.facts, 4) in brain under br_fact_key(br_fact_at(b.facts, 4))
+  k5  = remember br_fact_at(b.facts, 5) in brain under br_fact_key(br_fact_at(b.facts, 5))
+  out = br_saved(k5)
 }
 
 workflow brain_keep_canvas(c: BrainCanvas) -> BrainKept {
@@ -493,4 +673,38 @@ test "the Brain learns which kind of drawing suits asks like these" {
   expect br_chose({..br_test_result(), kind: "canvas", why: "asked for canvas"}, {text: "how do the ocean tides move", palette: "", place: "studio", kind: ""}, c).why.ends_with("so no model was asked to choose")
   expect br_features("how do ocean tides work").length() == 24
   expect br_features("sort 3 1 2") == br_features("sort 9 8 7")
+}
+
+fn br_test_feed() -> Text {
+  return "---\nTitle: Tidal dissipation in shallow seas\nLink: https://arxiv.org/abs/2610.00001v1\nPublished: 2026-10-02T10:00:00Z\nAuthor: A. Wave\nAuthor: B. Moon\nSummary: We measure how ocean tides lose energy in shallow seas. The loss is larger than models predict.\n---\nTitle: Moon-driven ocean tides and climate\nLink: https://arxiv.org/abs/2610.00002v1\nPublished: 2026-10-05T10:00:00Z\nAuthor: C. Sea\nSummary: Ocean tides mix heat into the deep ocean, which shapes climate over centuries.\n"
+}
+
+fn br_test_page() -> BrainPage { return {url: "", title: "", text: br_test_feed()} }
+
+test "the Brain keeps gathered papers as facts with their sources" {
+  page = br_test_page()
+  papers = br_papers_in(page.text)
+  expect papers.length() == 2
+  expect papers[0].authors == "A. Wave, B. Moon"
+  facts = br_facts(page, "ocean tides")
+  expect facts[0].kind == "fact"
+  expect facts[0].text == "We measure how ocean tides lose energy in shallow seas."
+  expect br_first_sentence("Following the model of Aguech et al. [Probab. Theory 2009], we study depths in random trees. More follows.") == "Following the model of Aguech et al. [Probab. Theory 2009], we study depths in random trees."
+  expect facts[0].source == "https://arxiv.org/abs/2610.00001v1 · A. Wave, B. Moon · 2026-10-02"
+  expect br_search_url("how do ocean tides work") == "https://export.arxiv.org/api/query?search_query=all:ocean+AND+all:tides&sortBy=relevance&max_results=6"
+  expect br_gathered("ocean tides", facts).said == "Kosika read 2 papers on 'ocean tides' and keeps each as a fact, with its source."
+}
+
+test "a canvas shows what the Brain knows about its ask, linked to its sources" {
+  facts = br_facts(br_test_page(), "ocean tides")
+  found = br_test_found([br_test_match(facts[0], 0.3), br_test_match(facts[1], 0.3)], "words")
+  known = br_known(found, "how do ocean tides work")
+  expect known.length() == 2
+  expect br_known(found, "how does a volcano erupt").is_empty()
+  expect br_known(found, "ocean tides 1 2 3 4 5 6").length() == 2
+  told = br_with_known(br_test_result(), known)
+  expect told.embed.contains("What Kosika knows &#183; gathered from research, with sources")
+  expect told.embed.contains("<a href=\"https://arxiv.org/abs/2610.00001v1\"")
+  expect told.embed.ends_with("</div>")
+  expect told.why.ends_with("from 2 research papers, each with its source.")
 }

@@ -1698,11 +1698,30 @@ function showDesigns() {
     } finally { draw.disabled = false; }
   }
   ask.addEventListener("keydown", event => { if (event.key === "Enter") run(); });
+  // Kosika Brain reads up on a topic: arXiv papers kept as facts with their
+  // sources, shown under any canvas drawn on it later.
+  const topic = h("input", {type: "text", placeholder: "ocean tides, binary search trees, photosynthesis…", style: "flex:1;min-width:200px"});
+  const learnt = h("span", {class: "lead"});
+  const read = h("button", {class: "ghost", onclick: learn}, "Read up on it");
+  async function learn() {
+    const text = topic.value.trim();
+    if (!text) { topic.focus(); return; }
+    read.disabled = true;
+    learnt.textContent = "Kosika is reading research on it…";
+    try {
+      const got = await api("/api/brain/gather", {method: "POST", body: JSON.stringify({topic: text})});
+      learnt.replaceChildren(document.createTextNode(got.said), got.titles && got.titles.length ? h("ul", {style: "margin:6px 0 0;padding-left:18px"}, got.titles.map(t => h("li", null, t))) : "");
+    } catch (error) { learnt.textContent = String(error.message || error); }
+    finally { read.disabled = false; }
+  }
+  topic.addEventListener("keydown", event => { if (event.key === "Enter") learn(); });
   const tries = ["how does a rainbow form", "how do bicycle gears make climbing easier", "compare solar and wind power", "a calm abstract background about the ocean"];
   main.replaceChildren(titled("Designs"),
     h("p", {class: "lead"}, "Ask for a picture. Kosika chooses a diagram for structure, an animated illustration for how something works, or moving art for a mood, and draws it itself; a free model only says what is in it."),
     h("div", {style: "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0 10px"}, ask, kind, draw),
     h("div", {class: "chips"}, tries.map(text => h("span", {class: "chip", style: "cursor:pointer", onclick: () => { ask.value = text; run(); }}, text))),
+    h("details", {style: "margin:4px 0 12px"}, h("summary", {class: "lead", style: "cursor:pointer"}, "Teach Kosika Brain: have it read research on a topic first"),
+      h("div", {style: "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px"}, topic, read), learnt),
     out);
   ask.focus();
 }

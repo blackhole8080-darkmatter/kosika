@@ -2373,6 +2373,14 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                         self._json(200, design(str(body.get("text", "")), palette=str(body.get("palette", "")), place="studio", kind=str(body.get("kind", ""))))
                     except DesignsError as exc:
                         raise AppError(str(exc)) from exc
+                elif method == "POST" and url.path == "/api/brain/gather":
+                    # Kosika Brain reads research on a topic and keeps it, with sources.
+                    from .designs import DesignsError, gather
+
+                    try:
+                        self._json(200, gather(str(self._body().get("topic", ""))))
+                    except DesignsError as exc:
+                        raise AppError(str(exc)) from exc
                 elif method == "POST" and url.path == "/api/design/rate":
                     # A thumbs up or down on a canvas Kosika Brain kept.
                     from .designs import DesignsError, rate

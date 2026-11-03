@@ -147,6 +147,20 @@ def _keep_failure(printed: str) -> None:
         raise DesignsError(f"The engine crashed: {crash} (the whole output is in ~/.kosika/designs-last-failure.txt)")
 
 
+def gather(topic: str, *, timeout: float = 180) -> dict[str, Any]:
+    """Have Kosika Brain read arXiv's search for `topic` and keep each paper
+    as a fact with its source; later canvases on it show what it gathered.
+    The answer holds kept, titles and said."""
+
+    topic = topic.strip()
+    if not topic:
+        raise DesignsError("Say what to read up on.")
+    if not _brain_on():
+        raise DesignsError("Kosika Brain is off here (KOSIKA_BRAIN=0), so there is nowhere to keep what it reads.")
+    extra = _brain_memory() + ["--allow-site", "export.arxiv.org"]
+    return _run(BRAIN, "brain_gather", {"g": {"topic": topic}}, extra=extra, first="kept", timeout=timeout)
+
+
 STUDY = Path(__file__).resolve().parent.parent / "examples" / "agents" / "study" / "main.kos"
 
 
