@@ -89,10 +89,33 @@ def _brain_on() -> bool:
 
 def _brain_memory() -> list[str]:
     # The Brain's memory stays on this computer, in KOSIKA_BRAIN_MEMORY,
-    # by default ~/.kosika/brain.
+    # by default ~/.kosika/brain. A canvas thought through by the Brain
+    # needs more than the default 10,000 function calls.
     memory = Path(os.environ.get("KOSIKA_BRAIN_MEMORY", str(Path.home() / ".kosika" / "brain")))
     memory.mkdir(parents=True, exist_ok=True)
-    return ["--memory", str(memory)]
+    extra = ["--memory", str(memory), "--max-function-calls", os.environ.get("KOSIKA_BRAIN_CALLS", "100000")]
+    return extra + _brain_meaning()
+
+
+def _brain_meaning() -> list[str]:
+    # Recall by meaning, with an embedding model on this computer: Ollama's
+    # nomic-embed-text when Ollama answers, unless KOSIKA_BRAIN_EMBED names
+    # another (or is empty, to recall by words alone).
+    model = os.environ.get("KOSIKA_BRAIN_EMBED", "nomic-embed-text")
+    url = os.environ.get("KOSIKA_BRAIN_EMBED_URL", "http://127.0.0.1:11434")
+    if not model or not _answers(url):
+        return []
+    return ["--embed-model", model, "--embed-url", url]
+
+
+def _answers(url: str) -> bool:
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(url.rstrip("/") + "/api/tags", timeout=2) as reply:  # noqa: S310 - the local embedding server
+            return reply.status == 200
+    except OSError:
+        return False
 
 
 def rate(text: str, liked: bool, *, timeout: float = 120) -> dict[str, Any]:

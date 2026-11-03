@@ -38,8 +38,9 @@
 
 import "designs.kos"
 import "nn.kos"
+import "algorithms.kos"
 
-export [BrainGatherAsk, BrainGathered, BrainPage, BrainPaper, brain_gather, br_papers_in, br_facts, br_known, br_with_known, br_search_url, BrainNote, BrainAsk, BrainFound, BrainPast, BrainKept, BrainCanvas, BrainRecipe, BrainRating, BrainRated, BrainMind, BrainChoice, br_features, br_new_mind, br_learn, br_choose, brain_recall, brain_keep, brain_design, brain_rate, br_recipe, br_reusable, br_rated_canvas, br_words, br_near, br_floor, br_past, br_told]
+export [BrainGatherAsk, BrainGathered, BrainPage, BrainPaper, brain_gather, br_papers_in, br_facts, br_known, br_with_known, br_search_url, BrainNote, BrainAsk, BrainFound, BrainPast, BrainKept, BrainCanvas, BrainRecipe, BrainRating, BrainRated, BrainMind, BrainChoice, br_features, br_new_mind, br_learn, br_choose, brain_recall, brain_keep, brain_design, brain_rate, br_reusable, br_rated_canvas, br_words, br_near, br_floor, br_past, br_told]
 
 // kind: episode, fact, recipe or structure.
 // topic: what it is about, in words a person would use.
@@ -152,6 +153,14 @@ fn br_nearness(by: Text, score: Number, asked: Text[], note: BrainNote) -> Numbe
   return if by == "meaning" { score } else { br_near(asked, note.words) }
 }
 
+// Two asks are the same question only about the same algorithm, if either
+// is about one: a breadth-first search is not a binary search tree.
+fn br_same_subject(text: Text, topic: Text) -> Bool { return al_which(text) == al_which(topic) }
+
+// A canvas is given again only for the same numbers, too: a search for 11
+// is not the search for 9 it was drawn for.
+fn br_same_question(text: Text, topic: Text) -> Bool { return br_same_subject(text, topic) and al_numbers(text) == al_numbers(topic) }
+
 fn br_kept_notes(found: BrainLike, text: Text, kind: Text) -> BrainFound {
   let asked = br_words(text)
   let floor = br_floor(found.by)
@@ -166,7 +175,11 @@ fn br_past(found: BrainLike, text: Text) -> BrainPast {
   let floor = br_floor(found.by)
   for m in found.matches {
     let near = br_nearness(found.by, m.score, asked, m.value)
-    if m.value.kind == "episode" and near >= floor { return {found: true, topic: m.value.topic, text: m.value.text, times: m.value.times, near: near} }
+    // To say it has met this ask before, a meaning match must also share
+    // some of the ask's words: an embedding model puts "breadth-first
+    // search" near "binary search tree".
+    let shares = found.by != "meaning" or br_near(asked, m.value.words) >= 0.2
+    if m.value.kind == "episode" and near >= floor and shares and br_same_subject(text, m.value.topic) { return {found: true, topic: m.value.topic, text: m.value.text, times: m.value.times, near: near} }
   }
   return {found: false, topic: "", text: "", times: 0, near: 0}
 }
@@ -179,14 +192,28 @@ fn br_no_canvas() -> BrainCanvas { return {topic: "", words: "", kind: "", title
 // must nearly all be the same topic, or the meaning very close.
 fn br_reuse_floor(by: Text) -> Number { return if by == "meaning" { 0.85 } else { 0.75 } }
 
-fn br_recipe(made: CanvasesLike, text: Text) -> BrainRecipe {
+// The kept canvas to give again is found through the Brain's short note of
+// each ask, not the canvas itself, whose page would drown its topic for an
+// embedding model: the nearest episode that is the same question, near
+// enough, names the canvas, which is then fetched by its key.
+fn br_recipe_pick(found: BrainLike, text: Text) -> Text {
   let asked = br_words(text)
-  for m in made.matches {
-    let near = if made.by == "meaning" { m.score } else { br_near(asked, m.value.words) }
-    if near >= br_reuse_floor(made.by) { return {found: true, canvas: m.value, near: near} }
+  for m in found.matches {
+    // Near enough to give the same canvas: nearly all the same words, or,
+    // by meaning, very close and sharing a good part of them.
+    let words = br_near(asked, m.value.words)
+    let near = words >= br_reuse_floor("words") or (found.by == "meaning" and m.score >= br_reuse_floor("meaning") and words >= 0.4)
+    if m.value.kind == "episode" and near and br_same_question(text, m.value.topic) { return m.value.topic }
   }
-  return {found: false, canvas: br_no_canvas(), near: 0}
+  return ""
 }
+
+fn br_recipe_of(pick: Text, kept: Bool, c: BrainCanvas) -> BrainRecipe {
+  if pick.is_empty() or not kept { return {found: false, canvas: br_no_canvas(), near: 0} }
+  return {found: true, canvas: c, near: 1}
+}
+
+fn br_recipe_from(had: CanvasesRecalled, pick: Text) -> BrainRecipe { return br_recipe_of(pick, had.value.exists(), br_canvas_of(had)) }
 
 // Asking for it fresh ("draw it again", "redraw", "a new one") skips the
 // recipe; so does a canvas you rated down.
@@ -479,7 +506,7 @@ fn br_told(r: DzResult, past: BrainPast) -> DzResult {
 // What the memory holds about an ask, above the floor. kind narrows it to
 // one kind of note; "" takes every kind.
 workflow brain_recall(ask: BrainAsk) -> BrainFound {
-  found = recall brain like br_words(ask.text).join(" ")
+  found = recall brain like ask.text
   out   = br_kept_notes(found, ask.text, ask.kind)
 }
 
@@ -497,10 +524,13 @@ fn br_saved(saved: MemorySaved) -> BrainKept { return {key: saved.key, entries: 
 // and say what was remembered.
 workflow brain_design(ask: DzAsk) -> DzResult {
   budget 12 model calls, 900 seconds
-  found  = recall brain like br_words(ask.text).join(" ")
+  // Asked in the person's own words: an embedding model reads meaning from
+  // a sentence, not from stems, and recall by words finds the same words.
+  found  = recall brain like ask.text
   past   = br_past(found, ask.text)
-  made   = recall canvases like br_words(ask.text).join(" ")
-  recipe = br_recipe(made, ask.text)
+  pick   = br_recipe_pick(found, ask.text)
+  made   = recall canvases under br_key("canvas", pick)
+  recipe = br_recipe_from(made, pick)
   had    = recall minds under "kind"
   mind   = br_mind_of(had)
   choice = br_choose(mind, ask.text)
@@ -594,6 +624,12 @@ test "a memory is used only above the floor" {
   tree = br_test_note("show me how a binary search tree inserts 7", "ran a binary search tree insert")
   expect not br_past(br_test_found([br_test_match(tree, 0.5)], "words"), "binary search for 7 in 1 3 4 6 7").found
   expect br_past(br_test_found([br_test_match(tree, 0.5)], "words"), "how does a binary search tree insert 9").found
+  // By meaning: a close score is not enough without shared words, or for another algorithm.
+  expect not br_past(br_test_found([br_test_match(tree, 0.8)], "meaning"), "breadth first search from A").found
+  expect br_past(br_test_found([br_test_match(tree, 0.7)], "meaning"), "add a value to a binary search tree").found
+  nine = br_test_canvas("binary search for 9 in 2 4 6 9 11 15 20", 2)
+  expect not br_test_recipe(nine, "binary search for 11 in 2 4 6 9 11 15 20", "meaning", 0.97).found
+  expect br_test_recipe(nine, "show me a binary search for 9 in 2 4 6 9 11 15 20", "meaning", 0.97).found
   // By meaning, the model's score decides: 0.53 is a half-fit and is left out.
   by_meaning = br_test_found([br_test_match(water, 0.53)], "meaning")
   expect not br_past(by_meaning, "explain the water cycle").found
@@ -618,27 +654,32 @@ test "the canvas says what the Brain remembered" {
 
 fn br_test_canvas(topic: Text, score: Number) -> BrainCanvas { return {..br_no_canvas(), topic: topic, words: br_words(topic).join(" "), kind: "canvas", title: "Water Cycle", why: "drew all three", page: "<p>page</p>", embed: "<div class=\"kd-title\">Water Cycle</div>", score: score} }
 
-fn br_test_made(c: BrainCanvas) -> CanvasesLike { return {matches: [{key: br_key("canvas", c.topic), value: c, score: 0.5}], by: "words"} }
+fn br_test_episode(c: BrainCanvas) -> BrainNote { return {kind: "episode", topic: c.topic, words: c.words, text: "drew it", source: "test", score: 1, times: 1} }
+
+fn br_test_recipe(c: BrainCanvas, text: Text, by: Text, score: Number) -> BrainRecipe {
+  let found: BrainLike = {matches: [{key: br_key("episode", c.topic), value: br_test_episode(c), score: score}], by: by}
+  return br_recipe_of(br_recipe_pick(found, text), true, c)
+}
 
 fn br_test_ask(text: Text) -> DzAsk { return {text: text, palette: "", place: "studio", kind: ""} }
 
 test "a kept canvas is given again for a near ask, with no model" {
   kept = br_test_canvas("how does the water cycle work", 1)
-  recipe = br_recipe(br_test_made(kept), "explain the water cycle")
+  recipe = br_test_recipe(kept, "explain the water cycle", "words", 0.5)
   expect recipe.found
   expect br_reusable(recipe, br_test_ask("explain the water cycle"))
   given = br_reused(recipe)
   expect given.page == "<p>page</p>"
   expect given.why.starts_with("Kosika reused the canvas it kept for 'how does the water cycle work', so no model was asked.")
   // Too far, asked fresh, or rated down: drawn again instead.
-  expect not br_recipe(br_test_made(kept), "the water cycle and climate change").found
+  expect not br_test_recipe(kept, "the water cycle and climate change", "words", 0.5).found
   expect not br_reusable(recipe, br_test_ask("redraw the water cycle"))
-  down = br_recipe(br_test_made(br_rated_canvas(kept, {ask: "x", liked: false})), "explain the water cycle")
+  down = br_test_recipe(br_rated_canvas(kept, {ask: "x", liked: false}), "explain the water cycle", "words", 0.5)
   expect down.found and not br_reusable(down, br_test_ask("explain the water cycle"))
   // Other numbers are another question: not the same canvas.
   nine = br_test_canvas("binary search for 9 in 2 4 6 9 11 15 20", 2)
-  expect not br_recipe(br_test_made(nine), "binary search for 11 in 3 5 8 11 14 19 23").found
-  expect br_recipe(br_test_made(nine), "show me a binary search for 9 in 2 4 6 9 11 15 20").found
+  expect not br_test_recipe(nine, "binary search for 11 in 3 5 8 11 14 19 23", "words", 0.5).found
+  expect br_test_recipe(nine, "show me a binary search for 9 in 2 4 6 9 11 15 20", "words", 0.5).found
   // A canvas drawn now and checked is kept; one reused is not kept again.
   expect not br_worth_keeping(given, recipe, br_test_ask("explain the water cycle"))
 }
@@ -648,7 +689,7 @@ test "a thumbs up keeps a canvas first; a thumbs down stops its reuse" {
   expect br_rated_canvas(kept, {ask: "x", liked: true}).score == 2
   expect br_rated_canvas(kept, {ask: "x", liked: false}).score == -1
   expect br_rated_said(kept, {ask: "x", liked: false}).said == "Kosika will not reuse 'Water Cycle'; the next ask like 'how does the water cycle work' is drawn afresh."
-  liked = br_recipe(br_test_made(br_rated_canvas(kept, {ask: "x", liked: true})), "explain the water cycle")
+  liked = br_test_recipe(br_rated_canvas(kept, {ask: "x", liked: true}), "explain the water cycle", "words", 0.5)
   expect br_reused(liked).why.contains(", which you liked, so no model was asked")
 }
 

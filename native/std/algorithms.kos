@@ -15,7 +15,7 @@
 
 import "designs_art.kos"
 
-export [AlAsk, AlStep, AlNode, AlEdge, AlRun, AlPage, al_which, al_numbers, al_bst, al_sort, al_search, al_path, al_run, al_svg, al_style, al_card, algorithm]
+export [AlAsk, AlStep, AlNode, AlEdge, AlRun, AlPage, al_which, al_numbers, al_bst, al_sort, al_search, al_path, al_traverse, al_run, al_svg, al_style, al_card, algorithm]
 
 record AlAsk { text: Text palette: Text }
 
@@ -41,7 +41,9 @@ fn al_which(text: Text) -> Text {
   let t = al_padded(text)
   if t.contains(" binary search tree") or t.contains(" bst ") { return "bst" }
   if t.contains(" binary search") { return "search" }
-  if t.contains(" shortest path") or t.contains(" dijkstra") { return "path" }
+  if t.contains(" breadth first") or t.contains(" breadth-first") or t.contains(" bfs ") { return "bfs" }
+  if t.contains(" depth first") or t.contains(" depth-first") or t.contains(" dfs ") { return "dfs" }
+  if t.contains(" shortest path") or t.contains(" dijkstra") or t.contains(" shortest route") or t.contains(" cheapest route") or t.contains(" cheapest path") or t.contains(" fastest route") { return "path" }
   // "sort" alone is too common a word ("what sort of rock"): it counts
   // only beside numbers to sort, or named as an algorithm.
   if t.contains(" bubble sort") or t.contains(" sorting algorithm") { return "sort" }
@@ -400,6 +402,101 @@ fn al_shorter(dist: Number[], names: Text[], e: AlEdge) -> Bool {
   return b > a + w or a > b + w
 }
 
+// ---------------------------------------------------------------- breadth-first and depth-first search
+
+fn al_plain_example() -> AlEdge[] {
+  return [al_e("A", "B", 0), al_e("A", "C", 0), al_e("B", "D", 0), al_e("C", "D", 0), al_e("C", "E", 0), al_e("D", "F", 0), al_e("E", "F", 0)]
+}
+
+// The places next to one, in name order, so a run always goes the same way.
+fn al_neighbours(edges: AlEdge[], at: Text) -> Text[] {
+  var out: Text[] = []
+  for e in edges {
+    if e.a == at and not out.contains(e.b) { out = out.append(e.b) }
+    if e.b == at and not out.contains(e.a) { out = out.append(e.a) }
+  }
+  return out.sort()
+}
+
+fn al_edge_between(edges: AlEdge[], a: Text, b: Text) -> Text {
+  for e in edges {
+    if (e.a == a and e.b == b) or (e.a == b and e.b == a) { return e.id }
+  }
+  return ""
+}
+
+// Breadth-first ("bfs") visits a place's neighbours before going further,
+// with a queue; depth-first ("dfs") goes as far as it can down one way
+// before coming back, with a stack. Each step is one place visited, the
+// edge it was reached by, and what joins the queue or the stack.
+fn al_traverse(text: Text, how: Text) -> AlRun {
+  let given = al_edges(text)
+  let raw = if given.length() >= 2 { given } else { al_plain_example() }
+  let edges = for e in raw { {..e, label: ""} }
+  var names: Text[] = []
+  for e in edges {
+    if not names.contains(e.a) { names = names.append(e.a) }
+    if not names.contains(e.b) { names = names.append(e.b) }
+  }
+  names = names.sort()
+  let start = al_ends(text, names)[0]
+  let wide = how == "bfs"
+  let kind = if wide { "Breadth-first" } else { "Depth-first" }
+  let holder = if wide { "queue" } else { "stack" }
+  var waiting: Text[] = [start]
+  var came: Text[] = for x in names { "" }
+  var seen: Text[] = [start]
+  var visited: Text[] = []
+  var depth: Number[] = for x in names { -1 }
+  depth = depth.set(names.index_of(start).or(0), 0)
+  var steps: AlStep[] = [{text: f"{kind} search from {start}: visit a place, then put its unseen neighbours on the {holder}, and take the next from the " + (if wide { "front" } else { "top" }) + ".", lit: [start], seen: []}]
+  while not waiting.is_empty() {
+    let at = if wide { waiting[0] } else { waiting[waiting.length() - 1] }
+    waiting = if wide { waiting.slice(1, waiting.length()) } else { waiting.slice(0, waiting.length() - 1) }
+    if not visited.contains(at) {
+      visited = visited.append(at)
+      let k = names.index_of(at).or(0)
+      var fresh: Text[] = []
+      // Breadth-first takes a place on once, when first seen; depth-first
+      // takes on every neighbour not yet visited, so the newest way in wins.
+      for nb in al_neighbours(edges, at) {
+        let take = if wide { not seen.contains(nb) } else { not visited.contains(nb) }
+        if take {
+          if not seen.contains(nb) { seen = seen.append(nb) }
+          fresh = fresh.append(nb)
+          came = came.set(names.index_of(nb).or(0), at)
+          depth = depth.set(names.index_of(nb).or(0), depth[k] + 1)
+        }
+      }
+      // A stack takes the last first, so the first neighbour is pushed last.
+      waiting = if wide { waiting.concat(fresh) } else { waiting.concat(fresh.reverse()) }
+      let by = came[k]
+      let lit = if by.is_empty() { [at] } else { [at, al_edge_between(edges, by, at)] }
+      let joined = if fresh.is_empty() { "no new places join" } else { fresh.join(" and ") + " join the " + holder }
+      let from = if by.is_empty() { "" } else { f", reached from {by}" }
+      steps = steps.append({text: f"Visit {at}{from}: {joined}.", lit: lit, seen: visited})
+    }
+  }
+  let order = visited.join(" → ")
+  steps = steps.append({text: f"Every place reached once: {order}.", lit: visited, seen: visited})
+  // The check, another way: each place is visited once, every place joined
+  // to the start is reached, and each was reached from a place next to it.
+  // Breadth-first visits them nearest first.
+  var wrong: Text[] = []
+  for x in names {
+    if (for v in visited where v == x { v }).length() > 1 { wrong = wrong.append(f"{x} was visited twice") }
+  }
+  if visited.length() != seen.length() { wrong = wrong.append("a place seen was never visited") }
+  for k in 1 until visited.length() {
+    let by = came[names.index_of(visited[k]).or(0)]
+    if not al_neighbours(edges, by).contains(visited[k]) { wrong = wrong.append(f"{visited[k]} was reached from a place not next to it") }
+    if wide and depth[names.index_of(visited[k]).or(0)] < depth[names.index_of(visited[k - 1]).or(0)] { wrong = wrong.append("breadth-first went back to a nearer place") }
+  }
+  let n = names.length()
+  let nodes: AlNode[] = for k in 0 until n { {id: names[k], label: names[k], x: 450 + 300 * (360 * k / n - 90).cos(), y: 190 + 140 * (360 * k / n - 90).sin(), from: 0} }
+  return {kind: "graph", title: f"{kind} search from {start}", nodes: nodes, edges: edges, steps: steps, frames: [], answer: order, problems: wrong}
+}
+
 // ---------------------------------------------------------------- run
 
 fn al_run(text: Text) -> AlRun {
@@ -407,6 +504,7 @@ fn al_run(text: Text) -> AlRun {
   if which == "bst" { return al_bst(text) }
   if which == "search" { return al_search(text) }
   if which == "path" { return al_path(text) }
+  if which == "bfs" or which == "dfs" { return al_traverse(text, which) }
   return al_sort(text)
 }
 
@@ -549,6 +647,19 @@ test "a binary search finds 7, or says it is not there" {
   missing = al_search("binary search for 5 in 1 3 4 6 7 9")
   expect missing.answer == "5 is not in the list"
   expect missing.problems == []
+}
+
+test "breadth-first visits nearest first, depth-first goes deep first" {
+  expect al_which("show me breadth first search") == "bfs"
+  expect al_which("how does depth-first search work") == "dfs"
+  expect al_which("what is the cheapest route from A to E") == "path"
+  b = al_traverse("breadth first search from A", "bfs")
+  expect b.problems == []
+  expect b.answer == "A → B → C → D → E → F"
+  d = al_traverse("depth first search from A", "dfs")
+  expect d.problems == []
+  expect d.answer == "A → B → D → C → E → F"
+  expect d.steps[2].text == "Visit B, reached from A: D join the stack."
 }
 
 test "the shortest path beats every edge and adds up" {

@@ -1153,7 +1153,7 @@ fn dz_js(t: Text) -> Text {
 
 // Inside the drawing: a scene's parts light, the rest dim, its link runs.
 fn dz_played_style() -> Text {
-  return "main{padding:6px 4px!important;max-width:none!important}.brand,.ask,h1,.lede,.notes,.hud,.bar,.think,.photos,.photo-strip,.refphoto,.leaders{display:none!important}.board{margin:0!important}.part.st-dim,.link.st-dim{opacity:.5;transition:opacity .5s}.part.st-on{opacity:1;filter:drop-shadow(0 0 10px var(--amber));transition:all .5s}.link.st-run{opacity:1}.link.st-run .pulse{opacity:1;stroke-width:4;animation:run .8s linear infinite}.link.st-run .wire{stroke-width:3}"
+  return "main{padding:6px 4px!important;max-width:none!important}.brand,.ask,h1,.lede,.notes,.hud,.bar,.think,.photos,.photo-strip,.refphoto,.leaders{display:none!important}.board{margin:0!important;padding:0!important}.part.st-dim,.link.st-dim{opacity:.5;transition:opacity .5s}.part.st-on{opacity:1;filter:drop-shadow(0 0 10px var(--amber));transition:all .5s}.link.st-run{opacity:1}.link.st-run .pulse{opacity:1;stroke-width:4;animation:run .8s linear infinite}.link.st-run .wire{stroke-width:3}"
 }
 
 fn dz_played_script() -> Text {
