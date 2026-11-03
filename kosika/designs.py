@@ -248,7 +248,7 @@ def hear(audio: bytes, mime: str = "audio/webm") -> str:
 
 def speak(text: str, voice: str = "") -> bytes:
     """Kosi's voice for `text`, as WAV: first VoiceStudio on this computer,
-    in a voice designed for Kosi (calm, low, British by default:
+    in a voice designed for Kosi (calm, middle-aged, low, British by default:
     KOSI_VOICE_STYLE), then Groq's free Orpheus (KOSI_VOICE, "dan" by
     default), else b"" and Studio speaks with the browser's best voice.
     VoiceStudio's OmniVoice and Groq's Orpheus each ask their owner to
@@ -276,7 +276,7 @@ def _speak_voicestudio(text: str) -> bytes:
     if not url:
         return b""
     body = {"model": "tts-1", "voice": os.environ.get("KOSI_VOICESTUDIO_VOICE", "alloy"), "input": text[:1500], "response_format": "wav",
-            "instructions": os.environ.get("KOSI_VOICE_STYLE", "male, low pitch, british accent")}
+            "instructions": os.environ.get("KOSI_VOICE_STYLE", "male, middle-aged, low pitch, british accent")}
     return _post_audio(url.rstrip("/") + "/audio/speech", body, {}, 120)
 
 
