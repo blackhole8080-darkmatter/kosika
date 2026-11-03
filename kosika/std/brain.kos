@@ -16,10 +16,15 @@
 // the Brain thinks through. A canvas asked about again says what it drew
 // before. Programs opt in by importing this module and running with
 // `--memory FOLDER`; Designs alone keeps working without a memory.
+//
+// Phase 3, learning: a canvas that passed its checks is kept whole as a
+// recipe, and an ask near enough to it is answered from the recipe, with no
+// model asked. You rate a canvas up or down: up keeps it first in line, down
+// means it is never reused and the next ask draws afresh.
 
 import "designs.kos"
 
-export [BrainNote, BrainAsk, BrainFound, BrainPast, BrainKept, brain_recall, brain_keep, brain_design, br_words, br_near, br_floor, br_past, br_told]
+export [BrainNote, BrainAsk, BrainFound, BrainPast, BrainKept, BrainCanvas, BrainRecipe, BrainRating, BrainRated, brain_recall, brain_keep, brain_design, brain_rate, br_recipe, br_reusable, br_rated_canvas, br_words, br_near, br_floor, br_past, br_told]
 
 // kind: episode, fact, recipe or structure.
 // topic: what it is about, in words a person would use.
@@ -40,6 +45,18 @@ record BrainPast { found: Bool topic: Text text: Text times: Number near: Number
 record BrainKept { key: Text entries: Number }
 
 memory brain of BrainNote
+
+// A canvas kept whole, to give again. score: 1 when it passed its checks,
+// 2 when you liked it, -1 when you did not (then it is never reused).
+record BrainCanvas { topic: Text words: Text kind: Text title: Text why: Text page: Text svg: Text embed: Text score: Number }
+
+memory canvases of BrainCanvas
+
+// The kept canvas nearest the ask, and how near.
+record BrainRecipe { found: Bool canvas: BrainCanvas near: Number }
+
+record BrainRating { ask: Text liked: Bool }
+record BrainRated { rated: Bool said: Text }
 
 // ---------------------------------------------------------------- sense
 
@@ -104,6 +121,63 @@ fn br_past(found: BrainLike, text: Text) -> BrainPast {
   return {found: false, topic: "", text: "", times: 0, near: 0}
 }
 
+// ---------------------------------------------------------------- recipes
+
+fn br_no_canvas() -> BrainCanvas { return {topic: "", words: "", kind: "", title: "", why: "", page: "", svg: "", embed: "", score: 0} }
+
+// A recipe is reused only when the ask is nearer than for recall: the words
+// must nearly all be the same topic, or the meaning very close.
+fn br_reuse_floor(by: Text) -> Number { return if by == "meaning" { 0.85 } else { 0.75 } }
+
+fn br_recipe(made: CanvasesLike, text: Text) -> BrainRecipe {
+  let asked = br_words(text)
+  for m in made.matches {
+    let near = if made.by == "meaning" { m.score } else { br_near(asked, m.value.words) }
+    if near >= br_reuse_floor(made.by) { return {found: true, canvas: m.value, near: near} }
+  }
+  return {found: false, canvas: br_no_canvas(), near: 0}
+}
+
+// Asking for it fresh ("draw it again", "redraw", "a new one") skips the
+// recipe; so does a canvas you rated down.
+fn br_fresh(text: Text) -> Bool {
+  let t = " " + text.lower() + " "
+  return t.contains(" redraw") or t.contains(" draw it again") or t.contains(" fresh") or t.contains(" new one") or t.contains(" new picture")
+}
+
+fn br_reusable(recipe: BrainRecipe, ask: DzAsk) -> Bool { return recipe.found and recipe.canvas.score >= 1 and not br_fresh(ask.text) }
+
+fn br_reused(recipe: BrainRecipe) -> DzResult {
+  let c = recipe.canvas
+  let liked = if c.score >= 2 { ", which you liked" } else { "" }
+  let why = f"Kosika reused the canvas it kept for '{c.topic}'{liked}, so no model was asked. " + c.why
+  return {kind: c.kind, why: why, title: c.title, page: c.page, svg: c.svg, embed: c.embed, problems: [], fixed: ["reused a kept canvas"]}
+}
+
+fn br_canvas(ask: DzAsk, r: DzResult) -> BrainCanvas {
+  return {topic: ask.text, words: br_words(ask.text).join(" "), kind: r.kind, title: r.title, why: r.why, page: r.page, svg: r.svg, embed: r.embed, score: 1}
+}
+
+// Keep a canvas that passed its checks and was drawn now, not one reused.
+fn br_worth_keeping(r: DzResult, recipe: BrainRecipe, ask: DzAsk) -> Bool {
+  return not br_reusable(recipe, ask) and r.problems.is_empty() and not r.page.is_empty()
+}
+
+fn br_not_kept() -> BrainKept { return {key: "", entries: 0} }
+
+// ---------------------------------------------------------------- rating
+
+fn br_rated_canvas(c: BrainCanvas, r: BrainRating) -> BrainCanvas { return {..c, score: if r.liked { 2 } else { -1 }} }
+
+fn br_canvas_of(had: CanvasesRecalled) -> BrainCanvas { return if had.value.exists() { had.value.value() } else { br_no_canvas() } }
+
+fn br_unrated(r: BrainRating) -> BrainRated { return {rated: false, said: f"Kosika has no kept canvas for '{r.ask}' to rate."} }
+
+fn br_rated_said(c: BrainCanvas, r: BrainRating) -> BrainRated {
+  let said = if r.liked { f"Kosika will give '{c.title}' again for asks like '{c.topic}'." } else { f"Kosika will not reuse '{c.title}'; the next ask like '{c.topic}' is drawn afresh." }
+  return {rated: true, said: said}
+}
+
 // ---------------------------------------------------------------- learn
 
 // What a canvas looked like, in a few words, read from what Designs made.
@@ -166,11 +240,39 @@ fn br_saved(saved: MemorySaved) -> BrainKept { return {key: saved.key, entries: 
 // and say what was remembered.
 workflow brain_design(ask: DzAsk) -> DzResult {
   budget 12 model calls, 900 seconds
-  found = recall brain like br_words(ask.text).join(" ")
-  past  = br_past(found, ask.text)
-  drawn = call design(ask)
-  kept  = remember br_episode(ask, drawn, past) in brain under br_key("episode", ask.text)
-  out   = br_told(drawn, past)
+  found  = recall brain like br_words(ask.text).join(" ")
+  past   = br_past(found, ask.text)
+  made   = recall canvases like br_words(ask.text).join(" ")
+  recipe = br_recipe(made, ask.text)
+  drawn  = match br_reusable(recipe, ask) {
+    case true { br_reused(recipe) }
+    case _ { call design(ask) }
+  }
+  kept   = remember br_episode(ask, drawn, past) in brain under br_key("episode", ask.text)
+  stored = match br_worth_keeping(drawn, recipe, ask) {
+    case true { call brain_keep_canvas(br_canvas(ask, drawn)) }
+    case _ { br_not_kept() }
+  }
+  out    = br_told(drawn, past)
+}
+
+workflow brain_keep_canvas(c: BrainCanvas) -> BrainKept {
+  saved = remember c in canvases under br_key("canvas", c.topic)
+  out   = br_saved(saved)
+}
+
+// Your thumbs up or down on a canvas the Brain kept for an ask.
+workflow brain_rate(r: BrainRating) -> BrainRated {
+  had = recall canvases under br_key("canvas", r.ask)
+  out = match had.found {
+    case true { call brain_rate_kept(r, br_canvas_of(had)) }
+    case _ { br_unrated(r) }
+  }
+}
+
+workflow brain_rate_kept(r: BrainRating, c: BrainCanvas) -> BrainRated {
+  saved = remember br_rated_canvas(c, r) in canvases under br_key("canvas", c.topic)
+  out   = br_rated_said(c, r)
 }
 
 // ---------------------------------------------------------------- tests
@@ -220,4 +322,36 @@ test "the canvas says what the Brain remembered" {
   plain = {..r, embed: "<div class=\"kd\"><div class=\"kd-title\">Bubble sort</div></div>"}
   expect br_told(plain, past).embed.contains("Kosika remembers: drew &#39;Water Cycle&#39; as living nodes</div><div class=\"kd-title\">Bubble sort")
   expect br_words("Show me how a binary search tree inserts 7 again") == ["binar", "searc", "tree", "inser"]
+}
+
+fn br_test_canvas(topic: Text, score: Number) -> BrainCanvas { return {..br_no_canvas(), topic: topic, words: br_words(topic).join(" "), kind: "canvas", title: "Water Cycle", why: "drew all three", page: "<p>page</p>", embed: "<div class=\"kd-title\">Water Cycle</div>", score: score} }
+
+fn br_test_made(c: BrainCanvas) -> CanvasesLike { return {matches: [{key: br_key("canvas", c.topic), value: c, score: 0.5}], by: "words"} }
+
+fn br_test_ask(text: Text) -> DzAsk { return {text: text, palette: "", place: "studio", kind: ""} }
+
+test "a kept canvas is given again for a near ask, with no model" {
+  kept = br_test_canvas("how does the water cycle work", 1)
+  recipe = br_recipe(br_test_made(kept), "explain the water cycle")
+  expect recipe.found
+  expect br_reusable(recipe, br_test_ask("explain the water cycle"))
+  given = br_reused(recipe)
+  expect given.page == "<p>page</p>"
+  expect given.why.starts_with("Kosika reused the canvas it kept for 'how does the water cycle work', so no model was asked.")
+  // Too far, asked fresh, or rated down: drawn again instead.
+  expect not br_recipe(br_test_made(kept), "the water cycle and climate change").found
+  expect not br_reusable(recipe, br_test_ask("redraw the water cycle"))
+  down = br_recipe(br_test_made(br_rated_canvas(kept, {ask: "x", liked: false})), "explain the water cycle")
+  expect down.found and not br_reusable(down, br_test_ask("explain the water cycle"))
+  // A canvas drawn now and checked is kept; one reused is not kept again.
+  expect not br_worth_keeping(given, recipe, br_test_ask("explain the water cycle"))
+}
+
+test "a thumbs up keeps a canvas first; a thumbs down stops its reuse" {
+  kept = br_test_canvas("how does the water cycle work", 1)
+  expect br_rated_canvas(kept, {ask: "x", liked: true}).score == 2
+  expect br_rated_canvas(kept, {ask: "x", liked: false}).score == -1
+  expect br_rated_said(kept, {ask: "x", liked: false}).said == "Kosika will not reuse 'Water Cycle'; the next ask like 'how does the water cycle work' is drawn afresh."
+  liked = br_recipe(br_test_made(br_rated_canvas(kept, {ask: "x", liked: true})), "explain the water cycle")
+  expect br_reused(liked).why.contains(", which you liked, so no model was asked")
 }
