@@ -804,17 +804,20 @@ fn dz_parts_map(s: Structure) -> Text {
 // it, the scene's link runs as a moving arrow between them, and a caption
 // says what is happening. A formula's graph is the last scene, drawn in.
 
-record DzScene { caption: Text shows: Text[] from: Text to: Text label: Text known: Text[] }
+record DzScene { caption: Text shows: Text[] from: Text to: Text label: Text known: Text[] parts: Text[] }
 
 // The part ids a step names: those it lists, and those whose label its
 // words carry.
-fn dz_step_parts(s: Structure, st: Step) -> Text[] {
+fn dz_step_parts(s: Structure, st: Step) -> Text[] { return dz_step_parts_with(s, st, for p in s.parts { dz_stems(dz_name_words(p.label)) }) }
+
+fn dz_step_parts_with(s: Structure, st: Step, part_stems: Text[][]) -> Text[] {
   let said = dz_stems(dz_name_words(st.text))
   var out: Text[] = for id in st.parts where (for p in s.parts where p.id == id { p }).length() > 0 { id }
-  for p in s.parts {
+  for k in 0 until s.parts.length() {
     // Every word of the part's name, so "right atrium" is not named by
     // a step about the right ventricle.
-    let own = dz_stems(dz_name_words(p.label))
+    let own = part_stems[k]
+    let p = s.parts[k]
     if not out.contains(p.id) and not own.is_empty() and dz_shared(own, said) == own.length() { out = out.append(p.id) }
   }
   return out
@@ -835,21 +838,45 @@ fn dz_step_link(s: Structure, named: Text[], known: Text[]) -> Link {
   return dz_no_link()
 }
 
-fn dz_scene(caption: Text, shows: Text[], l: Link, known: Text[]) -> DzScene { return {caption: caption, shows: shows, from: l.from, to: l.to, label: l.label, known: known} }
+fn dz_scene(caption: Text, shows: Text[], l: Link, known: Text[], parts: Text[]) -> DzScene { return {caption: dz_concise(caption), shows: shows, from: l.from, to: l.to, label: l.label, known: known, parts: parts} }
+
+// A caption is a short line: the picture says the rest. The step's first
+// clause, at most sixteen words.
+fn dz_concise(text: Text) -> Text {
+  let words = text.trim().words()
+  if words.length() <= 14 { return text.trim() }
+  var out: Text[] = []
+  var stop = false
+  for w in words {
+    if not stop {
+      out = out.append(w)
+      if out.length() >= 8 and (w.ends_with(",") or w.ends_with(";")) { stop = true }
+      if out.length() >= 16 { stop = true }
+    }
+  }
+  let said = out.join(" ")
+  let cut = if said.ends_with(",") or said.ends_with(";") { said.slice(0, said.length() - 1) } else { said }
+  return if out.length() < words.length() { cut + " …" } else { cut }
+}
 
 fn dz_no_link() -> Link { return {from: "", to: "", label: ""} }
 
 fn dz_storyboard(s: Structure, a: Art) -> DzScene[] {
   var known: Text[] = []
   var scenes: DzScene[] = []
+  // Each figure's and each part's words, worked out once, not per step.
+  let figure_stems = for f in a.figures { dz_stems(dz_figure_words(f)) }
+  let part_stems = for p in s.parts { dz_stems(dz_name_words(p.label)) }
   for st in s.steps {
-    let named = dz_step_parts(s, st)
+    let said = dz_stems(dz_name_words(dz_step_text(s, st)))
+    let named = dz_step_parts_with(s, st, part_stems)
+    let lit = for k in 0 until a.figures.length() where a.figures[k].kind != "text" and dz_shared(figure_stems[k], said) > 0 { a.figures[k].id }
     let before = known
     for id in named {
       if not known.contains(id) { known = known.append(id) }
     }
     let l = dz_step_link(s, named, before)
-    scenes = scenes.append(dz_scene(st.text, dz_or_all(dz_step_figures(s, st, a), a), l, known))
+    scenes = scenes.append(dz_scene(st.text, dz_or_all(lit, a), l, known, named))
   }
   return scenes
 }
@@ -917,7 +944,8 @@ fn dz_short_label(label: Text) -> Text {
 fn dz_scene_json(sc: DzScene) -> Text {
   let shows = (for id in sc.shows { "\"" + id + "\"" }).join(",")
   let known = (for id in sc.known { "\"" + id + "\"" }).join(",")
-  return "{\"caption\":\"" + dz_js(sc.caption) + "\",\"shows\":[" + shows + "],\"from\":\"" + dz_js(sc.from) + "\",\"to\":\"" + dz_js(sc.to) + "\",\"label\":\"" + dz_js(sc.label) + "\",\"known\":[" + known + "]}"
+  let parts = (for id in sc.parts { "\"" + id + "\"" }).join(",")
+  return "{\"parts\":[" + parts + "],\"caption\":\"" + dz_js(sc.caption) + "\",\"shows\":[" + shows + "],\"from\":\"" + dz_js(sc.from) + "\",\"to\":\"" + dz_js(sc.to) + "\",\"label\":\"" + dz_js(sc.label) + "\",\"known\":[" + known + "]}"
 }
 
 // Text inside a JSON string: backslashes and quotes escaped, lines joined.
@@ -925,12 +953,21 @@ fn dz_js(t: Text) -> Text {
   return t.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ")
 }
 
+// Inside the drawing: a scene's parts light, the rest dim, its link runs.
+fn dz_played_style() -> Text {
+  return ".part.st-dim,.link.st-dim{opacity:.22;transition:opacity .5s}.part.st-on{opacity:1;filter:drop-shadow(0 0 10px var(--amber));transition:all .5s}.link.st-run{opacity:1}.link.st-run .pulse{opacity:1;stroke-width:4;animation:run .8s linear infinite}.link.st-run .wire{stroke-width:3}"
+}
+
+fn dz_played_script() -> Text {
+  return "addEventListener('message',function(e){var m=e.data||{};if(!m.stage)return;var parts=m.parts||[],all=m.all;document.querySelectorAll('.part').forEach(function(p){var id=p.id.replace(/^p-/,'');var on=parts.indexOf(id)>=0;p.classList.toggle('st-on',!all&&on);p.classList.toggle('st-dim',!all&&!on&&parts.length>0)});document.querySelectorAll('.link').forEach(function(l){var run=!all&&m.from&&l.dataset.a==='p-'+m.from&&l.dataset.b==='p-'+m.to;l.classList.toggle('st-run',!!run);l.classList.toggle('st-dim',!all&&!run&&parts.length>0)});var first=parts.length?document.getElementById('p-'+parts[0]):null;if(first&&first.scrollIntoView)first.scrollIntoView({block:'nearest',behavior:'smooth'})});"
+}
+
 fn dz_stage_script() -> Text {
-  return "(function(){var st=document.querySelector('.kc-stage');if(!st)return;var S=JSON.parse(st.dataset.scenes),own=[].slice.call(st.querySelectorAll('.art .own')),nodes=[].slice.call(st.querySelectorAll('.mm-node')),edges=[].slice.call(st.querySelectorAll('.mm-edge')),cap=st.querySelector('.st-caption'),num=st.querySelector('.st-num'),dots=[].slice.call(st.querySelectorAll('.st-dot')),graph=st.querySelector('.st-graph'),i=0,playing=true,timer=null,still=matchMedia('(prefers-reduced-motion: reduce)').matches;function show(k){i=k;var last=k===S.length;var sc=last?null:S[k];own.forEach(function(e){var on=sc&&sc.shows.indexOf(e.dataset.of)>=0;e.classList.remove('wait');e.classList.toggle('lit',!!on);e.classList.toggle('dim',!!sc&&!on)});nodes.forEach(function(n){var id=n.dataset.part;n.classList.toggle('known',last||(sc&&sc.known.indexOf(id)>=0));n.classList.toggle('now',!!sc&&(sc.from===id||sc.to===id))});edges.forEach(function(e){e.classList.toggle('run',!!sc&&e.dataset.from===sc.from&&e.dataset.to===sc.to)});if(graph)graph.classList.toggle('on',last);cap.textContent=last?(graph?'And the formula behind it, drawn as a graph.':'That is the whole of it.'):sc.caption;num.textContent=last?'':(k+1)+' / '+S.length;dots.forEach(function(d,j){d.classList.toggle('on',j===k)})}var total=S.length+(graph?1:0);function next(){show((i+1)%total)}function play(){clearInterval(timer);if(playing&&!still)timer=setInterval(next,5200)}st.querySelector('.st-next').onclick=function(){next();play()};st.querySelector('.st-prev').onclick=function(){show((i-1+total)%total);play()};var pb=st.querySelector('.st-play');pb.onclick=function(){playing=!playing;pb.textContent=playing?'Pause':'Play';play()};dots.forEach(function(d,j){d.onclick=function(){show(j);play()}});show(0);play()})();"
+  return "(function(){var st=document.querySelector('.kc-stage');if(!st)return;var S=JSON.parse(st.dataset.scenes),own=[].slice.call(st.querySelectorAll('.art .own')),nodes=[].slice.call(st.querySelectorAll('.mm-node')),edges=[].slice.call(st.querySelectorAll('.mm-edge')),cap=st.querySelector('.st-caption'),num=st.querySelector('.st-num'),dots=[].slice.call(st.querySelectorAll('.st-dot')),graph=st.querySelector('.st-graph'),i=0,playing=true,timer=null,still=matchMedia('(prefers-reduced-motion: reduce)').matches;function show(k){i=k;var last=k===S.length;var sc=last?null:S[k];own.forEach(function(e){var on=sc&&sc.shows.indexOf(e.dataset.of)>=0;e.classList.remove('wait');e.classList.toggle('lit',!!on);e.classList.toggle('dim',!!sc&&!on)});nodes.forEach(function(n){var id=n.dataset.part;n.classList.toggle('known',last||(sc&&sc.known.indexOf(id)>=0));n.classList.toggle('now',!!sc&&(sc.from===id||sc.to===id))});edges.forEach(function(e){e.classList.toggle('run',!!sc&&e.dataset.from===sc.from&&e.dataset.to===sc.to)});if(graph)graph.classList.toggle('on',last);var fr=st.querySelector('iframe.st-form');if(fr&&fr.contentWindow){var msg=last?{stage:1,all:1}:{stage:1,parts:sc.parts.length?sc.parts:[sc.from,sc.to].filter(Boolean),from:sc.from,to:sc.to};fr.contentWindow.postMessage(msg,'*')}cap.textContent=last?(graph?'And the formula behind it, drawn as a graph.':'That is the whole of it.'):sc.caption;num.textContent=last?'':(k+1)+' / '+S.length;dots.forEach(function(d,j){d.classList.toggle('on',j===k)})}var total=S.length+(graph?1:0);function next(){show((i+1)%total)}function play(){clearInterval(timer);if(playing&&!still)timer=setInterval(next,5200)}st.querySelector('.st-next').onclick=function(){next();play()};st.querySelector('.st-prev').onclick=function(){show((i-1+total)%total);play()};var pb=st.querySelector('.st-play');pb.onclick=function(){playing=!playing;pb.textContent=playing?'Pause':'Play';play()};dots.forEach(function(d,j){d.onclick=function(){show(j);play()}});show(0);play()})();"
 }
 
 fn dz_stage_style() -> Text {
-  return ".kc-stage{padding:18px}.st-screen{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1fr);gap:18px;align-items:center}.st-art svg{width:100%;height:auto;display:block}.mm{width:100%;height:auto;display:block}.mm-node circle{fill:var(--halo);stroke:color-mix(in srgb,var(--line) 30%,transparent);stroke-width:1.5;transition:all .5s}.mm-node text{fill:var(--soft);font:600 10.5px Figtree,system-ui,sans-serif;text-anchor:middle}.mm-node{opacity:.15;transition:opacity .6s}.mm-node.known{opacity:1}.mm-node.now circle{stroke:var(--amber);stroke-width:3;fill:color-mix(in srgb,var(--amber) 22%,var(--halo))}.mm-node.now text{fill:var(--ink)}.mm-edge path{stroke:color-mix(in srgb,var(--line) 35%,transparent);stroke-width:2;fill:none;transition:stroke .4s}.mm-arrow{fill:color-mix(in srgb,var(--line) 50%,transparent)}.mm-edge.run path{stroke:var(--amber);stroke-width:3}.mm-dot{fill:var(--amber);opacity:0}.mm-edge.run .mm-dot{opacity:1}.st-bar{display:flex;align-items:center;gap:14px;margin-top:14px;padding:12px 14px;border-radius:14px;background:color-mix(in srgb,var(--halo) 85%,transparent);border:1px solid color-mix(in srgb,var(--line) 14%,transparent)}.st-num{font:600 11px ui-monospace,Consolas,monospace;color:var(--gold);letter-spacing:.12em;min-width:44px}.st-caption{flex:1;font-size:17px;line-height:1.45;color:var(--ink)}.st-bar button{font:600 10.5px ui-monospace,Consolas,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--soft);background:none;border:1px solid color-mix(in srgb,var(--line) 22%,transparent);border-radius:999px;padding:7px 12px;cursor:pointer}.st-bar button:focus-visible{outline:2px solid var(--amber)}.st-dots{display:flex;gap:6px;justify-content:center;margin-top:10px}.st-dot{width:9px;height:9px;border-radius:50%;border:0;padding:0;background:color-mix(in srgb,var(--line) 30%,transparent);cursor:pointer}.st-dot.on{background:var(--amber)}.st-graph{display:none;margin-top:14px}.st-graph.on{display:block}@media (max-width:900px){.st-screen{grid-template-columns:1fr}}"
+  return ".kc-stage{padding:18px}.st-screen{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1fr);gap:18px;align-items:center}.st-art svg{width:100%;height:auto;display:block}.st-form{width:100%;height:560px;border:0;border-radius:14px;background:transparent}.mm{width:100%;height:auto;display:block}.mm-node circle{fill:var(--halo);stroke:color-mix(in srgb,var(--line) 30%,transparent);stroke-width:1.5;transition:all .5s}.mm-node text{fill:var(--soft);font:600 10.5px Figtree,system-ui,sans-serif;text-anchor:middle}.mm-node{opacity:.15;transition:opacity .6s}.mm-node.known{opacity:1}.mm-node.now circle{stroke:var(--amber);stroke-width:3;fill:color-mix(in srgb,var(--amber) 22%,var(--halo))}.mm-node.now text{fill:var(--ink)}.mm-edge path{stroke:color-mix(in srgb,var(--line) 35%,transparent);stroke-width:2;fill:none;transition:stroke .4s}.mm-arrow{fill:color-mix(in srgb,var(--line) 50%,transparent)}.mm-edge.run path{stroke:var(--amber);stroke-width:3}.mm-dot{fill:var(--amber);opacity:0}.mm-edge.run .mm-dot{opacity:1}.st-bar{display:flex;align-items:center;gap:14px;margin-top:14px;padding:12px 14px;border-radius:14px;background:color-mix(in srgb,var(--halo) 85%,transparent);border:1px solid color-mix(in srgb,var(--line) 14%,transparent)}.st-num{font:600 11px ui-monospace,Consolas,monospace;color:var(--gold);letter-spacing:.12em;min-width:44px}.st-caption{flex:1;font-size:17px;line-height:1.45;color:var(--ink)}.st-bar button{font:600 10.5px ui-monospace,Consolas,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--soft);background:none;border:1px solid color-mix(in srgb,var(--line) 22%,transparent);border-radius:999px;padding:7px 12px;cursor:pointer}.st-bar button:focus-visible{outline:2px solid var(--amber)}.st-dots{display:flex;gap:6px;justify-content:center;margin-top:10px}.st-dot{width:9px;height:9px;border-radius:50%;border:0;padding:0;background:color-mix(in srgb,var(--line) 30%,transparent);cursor:pointer}.st-dot.on{background:var(--amber)}.st-graph{display:none;margin:14px auto 0;max-width:640px}.st-graph.on{display:block}@media (max-width:900px){.st-screen{grid-template-columns:1fr}}"
 }
 
 fn dz_stage(r: Request, d: Design, m: ArtPage, graph: Text) -> Text {
@@ -939,7 +976,12 @@ fn dz_stage(r: Request, d: Design, m: ArtPage, graph: Text) -> Text {
   let data = "[" + (for sc in scenes { dz_scene_json(sc) }).join(",") + "]"
   let total = scenes.length() + (if graph.is_empty() { 0 } else { 1 })
   let dots = (for k in 0 until total { f"<button class=\"st-dot\" aria-label=\"Scene {k + 1}\"></button>" }).join("")
-  let screen = "<div class=\"st-screen\"><div class=\"st-art\">" + m.svg + "</div><div class=\"st-map\">" + dz_mind_map(s) + "</div></div>"
+  // The structure in its own form (a cycle, a flow, a tree, a table, a
+  // graph...), drawn by Designs with its icons, and played: each scene
+  // lights its parts and runs its link in that drawing.
+  let played = d.page.replace("</head>", "<style>html{background:var(--bg)}" + dz_played_style() + "</style></head>").replace("</body>", "<script>" + dz_played_script() + "</script></body>")
+  let form = if d.page.is_empty() { dz_mind_map(s) } else { "<iframe class=\"st-form\" title=\"" + art_esc(s.title) + "\" srcdoc=\"" + art_esc(played) + "\"></iframe>" }
+  let screen = "<div class=\"st-screen\"><div class=\"st-art\">" + m.svg + "</div><div class=\"st-map\">" + form + "</div></div>"
   let bar = "<div class=\"st-bar\"><span class=\"st-num\"></span><span class=\"st-caption\"></span><button class=\"st-prev\" type=\"button\">Back</button><button class=\"st-play\" type=\"button\">Pause</button><button class=\"st-next\" type=\"button\">Next</button></div>"
   let graph_part = if graph.is_empty() { "" } else { "<div class=\"st-graph\">" + graph + "</div>" }
   let full = "<details class=\"kc-full\"><summary>Open the full diagram</summary>" + dz_diagram_frame(r, d) + "</details>"
@@ -1322,6 +1364,8 @@ test "the storyboard turns each step into a scene Kosika checks" {
   expect board[1].from == "rv" and board[1].to == "lungs"
   expect board[1].known == ["ra", "rv", "lungs"]
   expect board[0].shows == ["heart"]
+  expect board[0].parts == ["ra", "rv"]
+  expect dz_concise("Deoxygenated blood from the whole body enters the right atrium, then passes through the tricuspid valve into the right ventricle") == "Deoxygenated blood from the whole body enters the right atrium …"
   expect dz_storyboard_problems(board, dz_test_heart(), dz_test_heart_art()) == []
   expect dz_mind_map(dz_test_heart()).split("class=\"mm-edge\"").length() == 3
 }

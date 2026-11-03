@@ -49,7 +49,7 @@
 import "designs_palette.kos"
 import "science_elements.kos"
 
-export [Figure, Motion, Beat, Art, ArtAsk, ArtPage, art_ball, art_ball_style, art_esc, art_problems, art_tidy, art_svg, art_style, art_script, art_page, art_kinds, art_moves, art_wave, art_orbit_seconds, render, illustrate]
+export [Figure, Motion, Beat, Art, ArtAsk, ArtPage, art_ball, art_ball_style, art_esc, art_problems, art_tidy, art_svg, art_svg_named, art_prefixed, art_style, art_script, art_script_in, art_page, art_kinds, art_moves, art_wave, art_orbit_seconds, render, illustrate]
 
 record Figure { id: Text kind: Text x: Number y: Number w: Number h: Number count: Number hue: Number label: Text points: Number[] }
 // around: the figure an orbit circles, or the path a travel runs along.
@@ -1172,6 +1172,46 @@ fn art_script() -> Text {
   return "(function(){var svg=document.querySelector('svg.art'),beats=[].slice.call(document.querySelectorAll('.beat')),own=[].slice.call(document.querySelectorAll('.art .own')),i=-1,held=false,paused=false,bar=document.getElementById('bar'),still=matchMedia('(prefers-reduced-motion: reduce)').matches,named={},seen={};beats.forEach(function(b){b.dataset.shows.split(' ').forEach(function(id){named[id]=1})});function hide(){seen={};if(still)return;own.forEach(function(e){if(named[e.dataset.of])e.classList.add('wait')})}function show(k){i=k;beats.forEach(function(b,j){b.classList.toggle('on',j===k)});var ids=k>=0?beats[k].dataset.shows.split(' '):[];ids.forEach(function(id){seen[id]=1});own.forEach(function(e){var on=ids.indexOf(e.dataset.of)>=0;if(k<0||seen[e.dataset.of])e.classList.remove('wait');e.classList.toggle('lit',k>=0&&on);e.classList.toggle('dim',k>=0&&!on)});if(bar){bar.classList.remove('run');void bar.offsetWidth;if(k>=0&&!held&&!paused)bar.classList.add('run')}}function next(){if(held||paused)return;show(i+1<beats.length?i+1:-1)}beats.forEach(function(b,j){b.addEventListener('mouseenter',function(){held=true;show(j)});b.addEventListener('focus',function(){held=true;show(j)});b.addEventListener('mouseleave',function(){held=false});b.addEventListener('blur',function(){held=false})});own.forEach(function(e){e.style.cursor='pointer';e.addEventListener('click',function(){var id=e.dataset.of;for(var j=0;j<beats.length;j++){if(beats[j].dataset.shows.split(' ').indexOf(id)>=0){held=false;show(j);return}}})});var pb=document.getElementById('pause');if(pb)pb.addEventListener('click',function(){paused=!paused;svg.classList.toggle('paused',paused);if(paused)svg.pauseAnimations();else svg.unpauseAnimations();pb.textContent=paused?'Play':'Pause';show(i)});var rb=document.getElementById('replay');if(rb)rb.addEventListener('click',function(){held=false;paused=false;svg.classList.remove('paused');svg.unpauseAnimations();if(pb)pb.textContent='Pause';hide();show(-1);own.forEach(function(e){if(named[e.dataset.of])e.classList.add('wait')});setTimeout(function(){show(0)},500)});document.querySelectorAll('.sw').forEach(function(b){b.addEventListener('click',function(){document.documentElement.dataset.palette=b.dataset.p;document.querySelectorAll('.sw').forEach(function(x){x.setAttribute('aria-pressed',x===b?'true':'false')})})});hide();setTimeout(function(){show(0)},700);setInterval(next,4600)})();"
 }
 
+// ---------------------------------------------------------------- many pictures on one page
+//
+// One picture can keep the names it gives its figures (f-, path-, art-).
+// Several cannot: two hearts on one page would both be f-heart, and both
+// would point at the same gradients. So a picture drawn for a place on a
+// canvas takes a prefix, and every id and every reference to it is renamed
+// with it. The sentences still work, because the script matches them on the
+// data attributes rather than on the ids.
+
+// The same picture with every id it owns renamed under `prefix`.
+fn art_prefixed(svg: Text, prefix: Text) -> Text {
+  if prefix.is_empty() { return svg }
+  return svg
+    .replace("id=\"art-", "id=\"" + prefix + "art-")
+    .replace("url(#art-", "url(#" + prefix + "art-")
+    .replace("href=\"#art-", "href=\"#" + prefix + "art-")
+    .replace("id=\"f-", "id=\"" + prefix + "f-")
+    .replace("id=\"path-", "id=\"" + prefix + "path-")
+    .replace("url(#path-", "url(#" + prefix + "path-")
+    .replace("href=\"#path-", "href=\"#" + prefix + "path-")
+}
+
+fn art_svg_named(a: Art, prefix: Text) -> Text {
+  return art_prefixed(art_svg(a), prefix)
+}
+
+// The same script, driving only the picture inside `root` (a CSS selector)
+// and the sentences that belong to it, so a page may hold several.
+fn art_script_in(root: Text) -> Text {
+  if root.is_empty() { return art_script() }
+  let at = "document.querySelector('" + root + "')"
+  return art_script()
+    .replace("var svg=document.querySelector('svg.art')", "var root=" + at + ";var svg=root.querySelector('svg.art')")
+    .replace("beats=[].slice.call(document.querySelectorAll('.beat'))", "beats=[].slice.call(root.querySelectorAll('.beat'))")
+    .replace("own=[].slice.call(document.querySelectorAll('.art .own'))", "own=[].slice.call(root.querySelectorAll('.art .own'))")
+    .replace("bar=document.getElementById('bar')", "bar=root.querySelector('#bar')")
+    .replace("var pb=document.getElementById('pause')", "var pb=root.querySelector('#pause')")
+    .replace("var rb=document.getElementById('replay')", "var rb=root.querySelector('#replay')")
+}
+
 fn art_page_style() -> Text {
   return "@font-face{font-family:Figtree;src:url(/fonts/Figtree.ttf) format('truetype');font-weight:300 900;font-display:swap}*{box-sizing:border-box}html{background:var(--bg)}body{margin:0;color:var(--ink);font:16px/1.55 Figtree,system-ui,-apple-system,'Segoe UI',sans-serif}main{max-width:1180px;margin:0 auto;padding:30px 20px 48px}.brand{color:var(--gold);font:600 10px ui-monospace,Consolas,monospace;letter-spacing:.32em;text-transform:uppercase;display:flex;align-items:center;gap:12px}.brand:after{content:'';flex:1;height:1px;background:linear-gradient(90deg,color-mix(in srgb,var(--gold) 45%,transparent),transparent)}.ask{color:var(--soft);font-size:14px;margin:4px 0 0}h1{font-size:34px;font-weight:850;letter-spacing:-.03em;line-height:1.06;margin:8px 0 6px}.lede{color:var(--soft);margin:0 0 18px;max-width:720px}.duo{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:26px;align-items:start}.stage{position:relative;border-radius:22px;box-shadow:0 30px 80px -50px #000}.beats{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}.beat{position:relative;display:flex;gap:12px;padding:12px 14px;border-radius:14px;border:1px solid color-mix(in srgb,var(--line) 10%,transparent);background:color-mix(in srgb,var(--halo) 70%,transparent);color:var(--soft);cursor:default;transition:color .3s,border-color .3s,background .3s;outline:none;overflow:hidden}.beat b{flex:none;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font:600 11px ui-monospace,Consolas,monospace;color:var(--think);border:1.5px solid color-mix(in srgb,var(--think) 70%,transparent);transition:all .3s}.beat.on{color:var(--ink);border-color:color-mix(in srgb,var(--amber) 55%,transparent);background:color-mix(in srgb,var(--amber) 7%,var(--halo))}.beat.on b{background:var(--amber);border-color:var(--amber);color:#1a0f08;box-shadow:0 0 18px -2px var(--amber)}.beat.on:after{content:'';position:absolute;left:0;bottom:0;height:2px;width:0;background:var(--amber)}.beats.run .beat.on:after{animation:art-bar 4.6s linear forwards}.bar{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-top:14px;flex-wrap:wrap}button{font:600 10px ui-monospace,Consolas,monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--soft);background:none;border:1px solid var(--line2);border-radius:999px;padding:7px 13px;cursor:pointer}.swatches{display:flex;gap:6px;flex-wrap:wrap}.sw{display:flex;align-items:center;gap:3px;padding:5px 9px;letter-spacing:.08em}.sw i{width:9px;height:9px;border-radius:50%;display:block;border:1px solid color-mix(in srgb,var(--line) 25%,transparent)}.sw span{margin-left:4px}.sw[aria-pressed=true]{border-color:var(--amber);color:var(--ink)}.how{color:var(--soft);font-size:12.5px;margin-top:10px}@keyframes art-bar{to{width:100%}}@media (max-width:900px){.duo{grid-template-columns:1fr}}"
 }
@@ -1234,10 +1274,34 @@ fn art_moved_names(a: Art) -> Text[] {
   return for i in 0 until a.figures.length() where art_labelled(a, i) and art_label_spot(a, i) != art_label_at(a.figures[i]) { f"put the name of {a.figures[i].id} above it, where it has room" }
 }
 
-fn art_result(ask: Text, a: Art) -> ArtPage {
+// Two names that would print over each other: Kosika leaves the later
+// one off rather than turning the whole picture away; its figure is still
+// drawn, and the sentences still point at it.
+fn art_unclash(a: Art) -> Art { return art_unclash_by(a, art_crowded_pairs(a)) }
+
+fn art_unclash_by(a: Art, crowded: Number[]) -> Art {
+  if crowded.is_empty() { return a }
+  return {..a, figures: for i in 0 until a.figures.length() { if crowded.contains(i) { {..a.figures[i], label: ""} } else { a.figures[i] } }}
+}
+
+fn art_crowded_pairs(a: Art) -> Number[] {
+  var out: Number[] = []
+  let spots = for i in 0 until a.figures.length() { art_label_spot(a, i) }
+  for i in 0 until a.figures.length() {
+    for j in i + 1 until a.figures.length() {
+      if not out.contains(i) and not out.contains(j) and art_labelled(a, i) and art_labelled(a, j) and art_clash(a, i, spots[i], j, spots[j]) { out = out.append(j) }
+    }
+  }
+  return out
+}
+
+fn art_result(ask: Text, given: Art) -> ArtPage {
+  let crowded = art_crowded_pairs(given)
+  let a = art_unclash_by(given, crowded)
   let wrong = art_problems(a)
   let tidy = art_tidy(a)
-  let fixed = art_fixes(a).concat(art_moved_names(tidy))
+  let left = for i in crowded { f"left the name of {given.figures[i].id} off: it printed over another" }
+  let fixed = left.concat(art_fixes(a)).concat(art_moved_names(tidy))
   if wrong.is_empty() { return {page: art_page(ask, tidy, fixed), svg: art_svg(tidy), problems: [], fixed: fixed, art: tidy} }
   return {page: "", svg: "", problems: wrong, fixed: fixed, art: tidy}
 }
@@ -1299,7 +1363,7 @@ fn art_motion_hint(t: Text) -> Text {
 
 fn art_none() -> Art { return {title: "", summary: "", palette: "dark_matter", backdrop: "plain", figures: [], motions: [], beats: []} }
 fn art_kept(a: Art) -> Art { return a }
-fn art_wrong(a: Art) -> Text { return art_problems(a).join("; ") }
+fn art_wrong(a: Art) -> Text { return art_problems(art_unclash(a)).join("; ") }
 
 // A model describes; Kosika tidies and checks; a description with problems
 // goes back once, with the problems named.
@@ -1337,6 +1401,19 @@ fn art_sample() -> Art {
 
 test "a good illustration has nothing wrong with it" {
   expect art_problems(art_sample()).length() == 0
+}
+
+test "a picture can share a page with another" {
+  plain = art_svg(art_sample())
+  expect plain.contains("id=\"f-sun\"")
+  expect plain.contains("url(#art-g0)")
+  named = art_svg_named(art_sample(), "p1-")
+  expect named.contains("id=\"p1-f-sun\"")
+  expect named.contains("url(#p1-art-g0)")
+  expect named.contains("id=\"f-sun\"") == false
+  expect art_prefixed(plain, "") == plain
+  expect art_script_in("") == art_script()
+  expect art_script_in("#one").contains("document.querySelector('#one')")
 }
 
 test "the problems name what is wrong" {
