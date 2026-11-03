@@ -55,6 +55,7 @@ import "science_chem.kos"
 import "science_units.kos"
 import "science_elements.kos"
 import "science_molecules.kos"
+import "algorithms.kos"
 import "std/math.kos"
 
 export [DzAsk, DzResult, DzKind, DzProbe, dz_kinds, dz_places, dz_kind, dz_kind_sure, dz_why, design, design_kind, design_kind_probe, dz_lab, dz_lab_style, DzFormula, dz_formula_for, dz_formula_card, dz_formula_style, dz_reaction, dz_science_field]
@@ -63,7 +64,7 @@ record DzAsk { text: Text palette: Text place: Text kind: Text }
 record DzKind { kind: Text why: Text }
 record DzResult { kind: Text why: Text title: Text page: Text svg: Text embed: Text problems: Text[] fixed: Text[] }
 
-fn dz_kinds() -> Text[] { return ["diagram", "illustration", "art", "canvas", "quiz", "worked", "chemistry", "units", "element"] }
+fn dz_kinds() -> Text[] { return ["diagram", "illustration", "art", "canvas", "quiz", "worked", "chemistry", "units", "element", "algorithm"] }
 fn dz_places() -> Text[] { return ["chat", "studio", "site", "agent"] }
 
 fn dz_place(ask: DzAsk) -> Text {
@@ -135,6 +136,7 @@ fn dz_named(ask: DzAsk) -> Text {
   if dz_kinds().contains(named) { return named }
   let t = dz_padded(ask.text)
   if dz_has(t, dz_quiz_words()) { return "quiz" }
+  if not al_which(ask.text).is_empty() { return "algorithm" }
   if t.starts_with(" convert ") { return "units" }
   if dz_has(t, [" periodic table", " periodic "]) or (se_find(ask.text) > 0 and dz_has(t, [" element", " atom", " electron", " tell me about ", " what is ", " shells"])) { return "element" }
   if dz_has(t, [" balance ", " balancing ", "->", "→", " chemical equation", " reaction for ", " reaction of ", " burning ", " combustion ", " as a reaction", " react with ", " reacts with "]) { return "chemistry" }
@@ -180,6 +182,7 @@ fn dz_why(ask: DzAsk) -> Text {
   if kind == "chemistry" { return "asks about a reaction, so Kosika balanced it itself and checked the atoms and the mass" }
   if kind == "element" { return "asks about an element, so Kosika opened the periodic table at it, worked out its electrons itself, drew its atom with Designs' art and set a checked quiz on it" }
   if kind == "units" { return "asks to convert units, so Kosika read both units into SI and checked they measure the same thing" }
+  if kind == "algorithm" { return "asks how an algorithm works, so Kosika ran it itself, step by step, checked the answer another way, and played it" }
   if kind == "quiz" { return "asks to be tested, so it is a quiz Kosika checked, with each answer's reason" }
   if kind == "worked" { return "asks for mathematics worked out, so each line is worked and checked by Kosika" }
   if kind == "art" { return "asks for a mood or a background, so it is drawn as moving art" }
@@ -207,7 +210,7 @@ model variety {
 }
 
 fn variety_task() -> Text {
-  return "Someone asked for a picture. Choose the one way of drawing that answers them best. The ways: diagram (the parts, steps or links of something, explained in order); illustration (a moving picture of how or why a real thing happens, beside its explanation); art (a mood, a background, a wallpaper, abstract moving art); canvas (a science ask answered whole, with the structure, the moving picture, a lab and a quiz); quiz (they asked to be tested); worked (mathematics worked out line by line); chemistry (a chemical reaction, balanced and checked); units (a conversion between units); element (a chemical element or the periodic table). Give kind, one of " + dz_kinds().join(", ") + ", and why, one plain sentence on why it answers the ask best."
+  return "Someone asked for a picture. Choose the one way of drawing that answers them best. The ways: diagram (the parts, steps or links of something, explained in order); illustration (a moving picture of how or why a real thing happens, beside its explanation); art (a mood, a background, a wallpaper, abstract moving art); canvas (a science ask answered whole, with the structure, the moving picture, a lab and a quiz); algorithm (a data structure or algorithm, such as a binary search tree, a sort, a binary search or a shortest path, run step by step); quiz (they asked to be tested); worked (mathematics worked out line by line); chemistry (a chemical reaction, balanced and checked); units (a conversion between units); element (a chemical element or the periodic table). Give kind, one of " + dz_kinds().join(", ") + ", and why, one plain sentence on why it answers the ask best."
 }
 
 fn no_variety() -> DzKind { return {kind: "", why: ""} }
@@ -1606,6 +1609,19 @@ fn dz_from_units(ask: DzAsk, u: SuPage) -> DzResult {
 fn dz_sc_ask(ask: DzAsk) -> ScAsk { return {text: ask.text.trim().replace("balance ", "").replace("Balance ", ""), palette: ask.palette} }
 fn dz_su_ask(ask: DzAsk) -> SuAsk { return {text: ask.text} }
 
+workflow dz_algorithm(ask: DzAsk) -> DzResult {
+  ran = call algorithm({text: ask.text, palette: ask.palette})
+  out = dz_from_algorithm(ask, ran)
+}
+
+// An algorithm Kosika ran and checked, played step by step.
+fn dz_from_algorithm(ask: DzAsk, a: AlPage) -> DzResult {
+  let place = dz_place(ask)
+  let palette = dz_palette(ask.palette, "dark_matter")
+  let embed = dz_wrap("algorithm", place, palette, a.run.title, a.card, al_style())
+  return {kind: "algorithm", why: dz_why(ask), title: a.run.title, page: dz_canvas_page(a.run.title, palette, embed), svg: al_svg(a.run), embed: embed, problems: a.problems, fixed: []}
+}
+
 workflow dz_chemistry(ask: DzAsk) -> DzResult {
   balanced = call balance(dz_sc_ask(ask))
   out      = dz_from_chemistry(ask, balanced)
@@ -1698,6 +1714,7 @@ workflow design(ask: DzAsk) -> DzResult {
     case "quiz" { call dz_quiz(ask) }
     case "chemistry" { call dz_chemistry(ask) }
     case "units" { call dz_units(ask) }
+    case "algorithm" { call dz_algorithm(ask) }
     case "element" { call dz_element(ask) }
     case "worked" { call dz_worked(ask) }
     case "art" { call dz_art(ask) }

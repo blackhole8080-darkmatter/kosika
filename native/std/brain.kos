@@ -43,7 +43,7 @@ memory brain of BrainNote
 
 // ---------------------------------------------------------------- sense
 
-fn br_common() -> Text[] { return ["the", "and", "for", "its", "are", "was", "has", "how", "why", "but", "not", "you", "can", "one", "two", "that", "this", "with", "from", "into", "they", "then", "than", "each", "when", "what", "where", "which", "does", "work", "works", "explain", "show", "tell", "about", "make", "draw", "please", "me", "a", "an", "is", "do", "of", "to", "in", "on", "it", "my", "i"] }
+fn br_common() -> Text[] { return ["the", "and", "for", "its", "are", "was", "has", "how", "why", "but", "not", "you", "can", "one", "two", "that", "this", "with", "from", "into", "they", "then", "than", "each", "when", "what", "where", "which", "does", "work", "works", "explain", "show", "tell", "about", "make", "draw", "please", "again", "me", "a", "an", "is", "do", "of", "to", "in", "on", "it", "my", "i"] }
 
 // The ask's words that carry its topic, cut to five letters, so
 // "evaporates" and "evaporation" meet.
@@ -64,13 +64,15 @@ fn br_key(kind: Text, text: Text) -> Text {
 
 // ---------------------------------------------------------------- recall
 
-// How near a note comes to the ask by words: the share of the ask's topic
-// words the note holds. 1 when it holds them all.
+// How near a note comes to the ask by words: the words they share, out of
+// all the words either uses. Counting both sides keeps "binary search" from
+// taking a memory of "binary search tree insert" for itself.
 fn br_near(asked: Text[], note: Text) -> Number {
   if asked.is_empty() { return 0 }
   let theirs = note.words()
   let shared = (for w in asked where theirs.contains(w) { w }).length()
-  return shared / asked.length()
+  let either = asked.length() + (for w in theirs where not asked.contains(w) { w }).length()
+  return shared / either
 }
 
 // The floor a memory must reach to be used. Meaning scores come from the
@@ -110,6 +112,7 @@ fn br_style(r: DzResult) -> Text {
   if r.embed.contains("class=\"art lc lc-nodes\"") { return "living nodes" }
   if r.embed.contains("class=\"st-living\"") { return "living cards" }
   if r.embed.contains("class=\"kc-card kc-stage\"") { return "a played diagram and picture" }
+  if r.kind == "algorithm" { return "an algorithm run and played step by step" }
   return "a " + r.kind
 }
 
@@ -132,7 +135,12 @@ fn br_told(r: DzResult, past: BrainPast) -> DzResult {
   let said = f"Kosika remembers this: for '{past.topic}' it {past.text}{again}"
   let label = "<div class=\"kc-label\">Kosika canvas &#183; <b>the explanation, played</b></div>"
   let badge = "<div class=\"kc-label\">Kosika canvas &#183; <b>the explanation, played</b> &#183; <span class=\"br-mem\" style=\"color:var(--amber)\">remembered: " + br_esc(past.text + again) + "</span></div>"
-  return {..r, why: said + ". " + r.why, embed: r.embed.replace(label, badge), page: r.page.replace(label, badge)}
+  // A page with no stage (an algorithm, a diagram) shows it above its title.
+  let line = "<div class=\"br-mem\" style=\"color:var(--amber);font:600 11px ui-monospace,Consolas,monospace;letter-spacing:.12em;text-transform:uppercase;margin:2px 4px 6px\">Kosika remembers: " + br_esc(past.text + again) + "</div><div class=\"kd-title\">"
+  let staged = r.embed.contains(label)
+  let embed = if staged { r.embed.replace(label, badge) } else { r.embed.replace("<div class=\"kd-title\">", line) }
+  let page = if staged { r.page.replace(label, badge) } else { r.page.replace("<div class=\"kd-title\">", line) }
+  return {..r, why: said + ". " + r.why, embed: embed, page: page}
 }
 
 // ---------------------------------------------------------------- the workflows
@@ -189,6 +197,9 @@ test "a memory is used only above the floor" {
   past = br_past(by_words, "explain the water cycle")
   expect past.found and past.topic == "how does the water cycle work"
   expect not br_past(by_words, "the carbon cycle in oceans").found
+  tree = br_test_note("show me how a binary search tree inserts 7", "ran a binary search tree insert")
+  expect not br_past(br_test_found([br_test_match(tree, 0.5)], "words"), "binary search for 7 in 1 3 4 6 7").found
+  expect br_past(br_test_found([br_test_match(tree, 0.5)], "words"), "how does a binary search tree insert 9").found
   // By meaning, the model's score decides: 0.53 is a half-fit and is left out.
   by_meaning = br_test_found([br_test_match(water, 0.53)], "meaning")
   expect not br_past(by_meaning, "explain the water cycle").found
@@ -206,4 +217,7 @@ test "the canvas says what the Brain remembered" {
   expect told.why.starts_with("Kosika remembers this: for 'how does the water cycle work' it drew 'Water Cycle' as living nodes")
   expect told.embed.contains("remembered: drew &#39;Water Cycle&#39; as living nodes")
   expect br_told(r, br_past(br_test_found([], "words"), "x")).why == "drew all three"
+  plain = {..r, embed: "<div class=\"kd\"><div class=\"kd-title\">Bubble sort</div></div>"}
+  expect br_told(plain, past).embed.contains("Kosika remembers: drew &#39;Water Cycle&#39; as living nodes</div><div class=\"kd-title\">Bubble sort")
+  expect br_words("Show me how a binary search tree inserts 7 again") == ["binar", "searc", "tree", "inser"]
 }
