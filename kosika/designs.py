@@ -247,23 +247,45 @@ def hear(audio: bytes, mime: str = "audio/webm") -> str:
 
 
 def speak(text: str, voice: str = "") -> bytes:
-    """Kosi's voice for `text`: a WAV from Groq's free Orpheus, or b"" when it
-    cannot be reached (Studio then speaks with the browser's own voice).
-    Orpheus asks the Groq account's owner to accept its terms once."""
+    """Kosi's voice for `text`, as WAV: first VoiceStudio on this computer,
+    in a voice designed for Kosi (calm, low, British by default:
+    KOSI_VOICE_STYLE), then Groq's free Orpheus (KOSI_VOICE, "dan" by
+    default), else b"" and Studio speaks with the browser's best voice.
+    VoiceStudio's OmniVoice and Groq's Orpheus each ask their owner to
+    accept a licence once before they speak."""
 
-    import urllib.error
+    if not text.strip():
+        return b""
+    said = _speak_voicestudio(text) or _speak_orpheus(text, voice)
+    return said
+
+
+def _post_audio(url: str, body: dict, headers: dict, timeout: float) -> bytes:
     import urllib.request
 
-    key = _groq_key()
-    if not key or not text.strip():
-        return b""
-    said = json.dumps({"model": "canopylabs/orpheus-v1-english", "voice": voice or os.environ.get("KOSI_VOICE", "tara"), "input": text[:1500], "response_format": "wav"}).encode()
-    asked = urllib.request.Request(GROQ_AUDIO + "/speech", data=said, headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json", "User-Agent": "Kosika"})
+    asked = urllib.request.Request(url, data=json.dumps(body).encode(), headers={"Content-Type": "application/json", "User-Agent": "Kosika", **headers})
     try:
-        with urllib.request.urlopen(asked, timeout=60) as reply:  # noqa: S310 - Groq's own API
+        with urllib.request.urlopen(asked, timeout=timeout) as reply:  # noqa: S310 - a speech server the person runs or Groq's own API
             return reply.read()
-    except (OSError, urllib.error.HTTPError):
+    except OSError:
         return b""
+
+
+def _speak_voicestudio(text: str) -> bytes:
+    url = os.environ.get("KOSI_VOICESTUDIO_URL", "http://127.0.0.1:3900/v1")
+    if not url:
+        return b""
+    body = {"model": "tts-1", "voice": os.environ.get("KOSI_VOICESTUDIO_VOICE", "alloy"), "input": text[:1500], "response_format": "wav",
+            "instructions": os.environ.get("KOSI_VOICE_STYLE", "male, low pitch, british accent")}
+    return _post_audio(url.rstrip("/") + "/audio/speech", body, {}, 120)
+
+
+def _speak_orpheus(text: str, voice: str = "") -> bytes:
+    key = _groq_key()
+    if not key:
+        return b""
+    body = {"model": "canopylabs/orpheus-v1-english", "voice": voice or os.environ.get("KOSI_VOICE", "dan"), "input": text[:1500], "response_format": "wav"}
+    return _post_audio(GROQ_AUDIO + "/speech", body, {"Authorization": f"Bearer {key}"}, 60)
 
 
 STUDY = Path(__file__).resolve().parent.parent / "examples" / "agents" / "study" / "main.kos"

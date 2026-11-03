@@ -1738,6 +1738,18 @@ function showDesigns() {
 // voice when it is allowed and the browser's own voice when it is not. A
 // picture it draws comes on the Kosika canvas under its words.
 const talkLog = [];
+// The browser's calmest voice for Kosi: Microsoft's natural British voices
+// first (Ryan, Thomas), then other natural voices, then any English one.
+// A voice picked on the Talk page is kept for next time.
+function kosiVoice() {
+  if (!window.speechSynthesis) return null;
+  const voices = speechSynthesis.getVoices().filter(v => /^en/i.test(v.lang));
+  let picked = "";
+  try { picked = localStorage.getItem("kosi-voice") || ""; } catch (error) { /* no storage */ }
+  const order = [v => v.name === picked, v => /Ryan.*Natural/i.test(v.name), v => /Thomas.*Natural/i.test(v.name), v => /(Andrew|Brian|Guy|Christopher).*Natural/i.test(v.name), v => /natural/i.test(v.name) && /en-GB/i.test(v.lang), v => /natural/i.test(v.name), v => /Google UK English Male/i.test(v.name), v => /en-GB/i.test(v.lang)];
+  for (const test of order) { const v = voices.find(test); if (v) return v; }
+  return voices[0] || null;
+}
 function showTalk() {
   const say = h("input", {type: "text", placeholder: "Say anything: your day, a project, a job, an idea…", style: "flex:1;min-width:220px"});
   const send = h("button", {onclick: () => ask(say.value)}, "Send");
@@ -1772,9 +1784,9 @@ function showTalk() {
     if (!window.speechSynthesis) return;
     speechSynthesis.cancel();
     const line = new SpeechSynthesisUtterance(text);
-    const voices = speechSynthesis.getVoices();
-    line.voice = voices.find(v => /natural/i.test(v.name) && /^en/i.test(v.lang)) || voices.find(v => /^en/i.test(v.lang)) || null;
-    line.rate = 1.03;
+    line.voice = kosiVoice();
+    line.rate = 0.96;
+    line.pitch = 0.92;
     speechSynthesis.speak(line);
   }
   async function ask(text) {
@@ -1818,10 +1830,18 @@ function showTalk() {
     } catch (error) { status.textContent = "Kosi cannot reach the microphone: " + (error.message || error); }
   };
   say.addEventListener("keydown", event => { if (event.key === "Enter") ask(say.value); });
+  const pick = h("select", {title: "Kosi's voice in this browser, used when VoiceStudio or Orpheus cannot speak"});
+  function voices() {
+    const list = window.speechSynthesis ? speechSynthesis.getVoices().filter(v => /^en/i.test(v.lang)) : [];
+    const now = kosiVoice();
+    pick.replaceChildren(...list.map(v => h("option", {value: v.name, selected: now && v.name === now.name ? "" : null}, v.name.replace(/^Microsoft /, "").replace(/ - English.*$/, "") + " (" + v.lang + ")")));
+  }
+  pick.onchange = () => { try { localStorage.setItem("kosi-voice", pick.value); } catch (error) { /* no storage */ } voice("Hello, I'm Kosi. This is how I sound now."); };
+  if (window.speechSynthesis) { voices(); speechSynthesis.onvoiceschanged = voices; }
   main.replaceChildren(titled("Talk to Kosi"),
     h("p", {class: "lead"}, "Kosi is your companion, run by Kosika Brain. It remembers you, your projects and what it has learned, and answers like a friend. Type, or press the microphone and speak."),
     h("div", {style: "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0 6px"}, mic, say, send),
-    h("div", {style: "display:flex;gap:10px;align-items:center;flex-wrap:wrap"}, h("label", {style: "display:flex;gap:6px;align-items:center"}, voiceOn, "Kosi speaks its answers"), status),
+    h("div", {style: "display:flex;gap:10px;align-items:center;flex-wrap:wrap"}, h("label", {style: "display:flex;gap:6px;align-items:center"}, voiceOn, "Kosi speaks its answers"), h("label", {style: "display:flex;gap:6px;align-items:center"}, "Voice", pick), status),
     log);
   draw();
   say.focus();
