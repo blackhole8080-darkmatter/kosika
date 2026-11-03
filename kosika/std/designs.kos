@@ -1000,7 +1000,8 @@ fn dz_living_style() -> Text {
 // it, the scene's link runs as a moving arrow between them, and a caption
 // says what is happening. A formula's graph is the last scene, drawn in.
 
-record DzScene { caption: Text shows: Text[] from: Text to: Text label: Text known: Text[] parts: Text[] }
+// runs: further links the scene runs at once, each "from>to", as a path's.
+record DzScene { caption: Text shows: Text[] from: Text to: Text label: Text known: Text[] parts: Text[] runs: Text[] }
 
 // The part ids a step names: those it lists, and those whose label its
 // words carry.
@@ -1034,7 +1035,7 @@ fn dz_step_link(s: Structure, named: Text[], known: Text[]) -> Link {
   return dz_no_link()
 }
 
-fn dz_scene(caption: Text, shows: Text[], l: Link, known: Text[], parts: Text[]) -> DzScene { return {caption: dz_concise(caption), shows: shows, from: l.from, to: l.to, label: l.label, known: known, parts: parts} }
+fn dz_scene(caption: Text, shows: Text[], l: Link, known: Text[], parts: Text[]) -> DzScene { return {caption: dz_concise(caption), shows: shows, from: l.from, to: l.to, label: l.label, known: known, parts: parts, runs: []} }
 
 // A caption is a short line: the picture says the rest. The step's first
 // clause, at most sixteen words.
@@ -1141,7 +1142,8 @@ fn dz_scene_json(sc: DzScene) -> Text {
   let shows = (for id in sc.shows { "\"" + id + "\"" }).join(",")
   let known = (for id in sc.known { "\"" + id + "\"" }).join(",")
   let parts = (for id in sc.parts { "\"" + id + "\"" }).join(",")
-  return "{\"parts\":[" + parts + "],\"caption\":\"" + dz_js(sc.caption) + "\",\"shows\":[" + shows + "],\"from\":\"" + dz_js(sc.from) + "\",\"to\":\"" + dz_js(sc.to) + "\",\"label\":\"" + dz_js(sc.label) + "\",\"known\":[" + known + "]}"
+  let runs = (for id in sc.runs { "\"" + dz_js(id) + "\"" }).join(",")
+  return "{\"parts\":[" + parts + "],\"caption\":\"" + dz_js(sc.caption) + "\",\"shows\":[" + shows + "],\"from\":\"" + dz_js(sc.from) + "\",\"to\":\"" + dz_js(sc.to) + "\",\"label\":\"" + dz_js(sc.label) + "\",\"known\":[" + known + "],\"runs\":[" + runs + "]}"
 }
 
 // Text inside a JSON string: backslashes and quotes escaped, lines joined.
@@ -1151,11 +1153,11 @@ fn dz_js(t: Text) -> Text {
 
 // Inside the drawing: a scene's parts light, the rest dim, its link runs.
 fn dz_played_style() -> Text {
-  return "main{padding:6px 4px!important;max-width:none!important}.brand,.ask,h1,.lede,.notes,.hud,.bar,.think,.photos,.photo-strip,.refphoto{display:none!important}.board{margin:0!important}.part.st-dim,.link.st-dim{opacity:.5;transition:opacity .5s}.part.st-on{opacity:1;filter:drop-shadow(0 0 10px var(--amber));transition:all .5s}.link.st-run{opacity:1}.link.st-run .pulse{opacity:1;stroke-width:4;animation:run .8s linear infinite}.link.st-run .wire{stroke-width:3}"
+  return "main{padding:6px 4px!important;max-width:none!important}.brand,.ask,h1,.lede,.notes,.hud,.bar,.think,.photos,.photo-strip,.refphoto,.leaders{display:none!important}.board{margin:0!important}.part.st-dim,.link.st-dim{opacity:.5;transition:opacity .5s}.part.st-on{opacity:1;filter:drop-shadow(0 0 10px var(--amber));transition:all .5s}.link.st-run{opacity:1}.link.st-run .pulse{opacity:1;stroke-width:4;animation:run .8s linear infinite}.link.st-run .wire{stroke-width:3}"
 }
 
 fn dz_played_script() -> Text {
-  return "function tell(){var b=document.getElementById('board');var h=Math.ceil((b?b.getBoundingClientRect().bottom:document.body.scrollHeight)+16);parent.postMessage({stageHeight:h},'*')}addEventListener('load',function(){tell();setTimeout(tell,1500);setTimeout(tell,4000)});addEventListener('resize',tell);addEventListener('message',function(e){var m=e.data||{};if(!m.stage)return;var parts=m.parts||[],all=m.all;document.querySelectorAll('.part').forEach(function(p){var id=p.id.replace(/^p-/,'');var on=parts.indexOf(id)>=0;p.classList.toggle('st-on',!all&&on);p.classList.toggle('st-dim',!all&&!on&&parts.length>0)});document.querySelectorAll('.link').forEach(function(l){var run=!all&&m.from&&l.dataset.a==='p-'+m.from&&l.dataset.b==='p-'+m.to;l.classList.toggle('st-run',!!run);l.classList.toggle('st-dim',!all&&!run&&parts.length>0)});var first=parts.length?document.getElementById('p-'+parts[0]):null;if(first&&first.scrollIntoView)first.scrollIntoView({block:'nearest',behavior:'smooth'})});"
+  return "function tell(){var b=document.getElementById('board');var h=Math.ceil((b?b.getBoundingClientRect().bottom:document.body.scrollHeight)+16);parent.postMessage({stageHeight:h},'*')}addEventListener('load',function(){tell();setTimeout(tell,1500);setTimeout(tell,4000)});addEventListener('resize',tell);addEventListener('message',function(e){var m=e.data||{};if(!m.stage)return;var parts=m.parts||[],all=m.all;document.querySelectorAll('.part').forEach(function(p){var id=p.id.replace(/^p-/,'');var on=parts.indexOf(id)>=0;p.classList.toggle('st-on',!all&&on);p.classList.toggle('st-dim',!all&&!on&&parts.length>0)});document.querySelectorAll('.link').forEach(function(l){var pair=l.dataset.a.replace(/^p-/,'')+'>'+l.dataset.b.replace(/^p-/,''),back=l.dataset.b.replace(/^p-/,'')+'>'+l.dataset.a.replace(/^p-/,'');var run=!all&&((m.from&&l.dataset.a==='p-'+m.from&&l.dataset.b==='p-'+m.to)||(m.runs||[]).indexOf(pair)>=0||(m.runs||[]).indexOf(back)>=0);l.classList.toggle('st-run',!!run);l.classList.toggle('st-dim',!all&&!run&&parts.length>0)});var first=parts.length?document.getElementById('p-'+parts[0]):null;if(first&&first.scrollIntoView)first.scrollIntoView({block:'nearest',behavior:'smooth'})});"
 }
 
 // The canvas carries no quiz: quizzes are the study agent's, asked for by
@@ -1163,7 +1165,7 @@ fn dz_played_script() -> Text {
 fn dz_no_quiz() -> QzPage { return {page: "", card: "", problems: [], quiz: {title: "", topic: "", palette: "dark_matter", questions: []}, checked: ""} }
 
 fn dz_stage_script() -> Text {
-  return "(function(){var st=document.querySelector('.kc-stage');if(!st)return;var S=JSON.parse(st.dataset.scenes),own=[].slice.call(st.querySelectorAll('.art .own')),nodes=[].slice.call(st.querySelectorAll('.mm-node')),edges=[].slice.call(st.querySelectorAll('.mm-edge')),cap=st.querySelector('.st-caption'),num=st.querySelector('.st-num'),dots=[].slice.call(st.querySelectorAll('.st-dot')),graph=st.querySelector('.st-graph'),i=0,playing=true,timer=null,still=matchMedia('(prefers-reduced-motion: reduce)').matches;function show(k){i=k;var last=k===S.length;var sc=last?null:S[k];own.forEach(function(e){var on=sc&&sc.shows.indexOf(e.dataset.of)>=0;e.classList.remove('wait');e.classList.toggle('lit',!!on);e.classList.toggle('dim',!!sc&&!on)});nodes.forEach(function(n){var id=n.dataset.part;n.classList.toggle('known',last||(sc&&sc.known.indexOf(id)>=0));n.classList.toggle('now',!!sc&&(sc.from===id||sc.to===id))});edges.forEach(function(e){e.classList.toggle('run',!!sc&&e.dataset.from===sc.from&&e.dataset.to===sc.to)});if(graph)graph.classList.toggle('on',last);var lit=sc?(sc.parts.length?sc.parts:[sc.from,sc.to].filter(Boolean)):[];st.querySelectorAll('.lc-card').forEach(function(c){var on=lit.indexOf(c.dataset.part)>=0;c.classList.toggle('st-on',on);c.classList.toggle('st-dim',!!sc&&lit.length>0&&!on)});st.querySelectorAll('.lc-link').forEach(function(l){var run=!!sc&&!!sc.from&&l.dataset.from===sc.from&&l.dataset.to===sc.to;l.classList.toggle('st-run',run);l.classList.toggle('st-dim',!!sc&&lit.length>0&&!run)});st.querySelectorAll('.jr-pin,.jr-leg').forEach(function(p){var j=+p.dataset.k;p.classList.toggle('done',last||j<k);p.classList.toggle('now',!last&&j===k)});var fr=st.querySelector('iframe.st-form');if(fr&&fr.contentWindow){var msg=last?{stage:1,all:1}:{stage:1,parts:sc.parts.length?sc.parts:[sc.from,sc.to].filter(Boolean),from:sc.from,to:sc.to};fr.contentWindow.postMessage(msg,'*')}cap.textContent=last?(graph?'And the formula behind it, drawn as a graph.':'That is the whole of it.'):sc.caption;num.textContent=last?'':(k+1)+' / '+S.length;dots.forEach(function(d,j){d.classList.toggle('on',j===k)})}var total=S.length+(graph?1:0);function next(){show((i+1)%total)}addEventListener('message',function(e){var h=e.data&&e.data.stageHeight;var fr=st.querySelector('iframe.st-form');if(h&&fr&&e.source===fr.contentWindow)fr.style.height=Math.max(260,Math.min(900,h))+'px'});function play(){clearInterval(timer);if(playing&&!still)timer=setInterval(next,5200)}st.querySelector('.st-next').onclick=function(){next();play()};st.querySelector('.st-prev').onclick=function(){show((i-1+total)%total);play()};var pb=st.querySelector('.st-play');pb.onclick=function(){playing=!playing;pb.textContent=playing?'Pause':'Play';play()};dots.forEach(function(d,j){d.onclick=function(){show(j);play()}});show(0);play()})();"
+  return "(function(){var me=document.currentScript,st=me&&me.closest?me.closest('.kc-stage'):null;if(!st)st=document.querySelector('.kc-stage');if(!st)return;var S=JSON.parse(st.dataset.scenes),own=[].slice.call(st.querySelectorAll('.art .own')),nodes=[].slice.call(st.querySelectorAll('.mm-node')),edges=[].slice.call(st.querySelectorAll('.mm-edge')),cap=st.querySelector('.st-caption'),num=st.querySelector('.st-num'),dots=[].slice.call(st.querySelectorAll('.st-dot')),graph=st.querySelector('.st-graph'),i=0,playing=true,timer=null,still=matchMedia('(prefers-reduced-motion: reduce)').matches;function show(k){i=k;var last=k===S.length;var sc=last?null:S[k];own.forEach(function(e){var on=sc&&sc.shows.indexOf(e.dataset.of)>=0;e.classList.remove('wait');e.classList.toggle('lit',!!on);e.classList.toggle('dim',!!sc&&!on)});nodes.forEach(function(n){var id=n.dataset.part;n.classList.toggle('known',last||(sc&&sc.known.indexOf(id)>=0));n.classList.toggle('now',!!sc&&(sc.from===id||sc.to===id))});edges.forEach(function(e){e.classList.toggle('run',!!sc&&e.dataset.from===sc.from&&e.dataset.to===sc.to)});if(graph)graph.classList.toggle('on',last);var lit=sc?(sc.parts.length?sc.parts:[sc.from,sc.to].filter(Boolean)):[];st.querySelectorAll('.lc-card').forEach(function(c){var on=lit.indexOf(c.dataset.part)>=0;c.classList.toggle('st-on',on);c.classList.toggle('st-dim',!!sc&&lit.length>0&&!on)});st.querySelectorAll('.lc-link').forEach(function(l){var run=!!sc&&!!sc.from&&l.dataset.from===sc.from&&l.dataset.to===sc.to;l.classList.toggle('st-run',run);l.classList.toggle('st-dim',!!sc&&lit.length>0&&!run)});st.querySelectorAll('.jr-pin,.jr-leg').forEach(function(p){var j=+p.dataset.k;p.classList.toggle('done',last||j<k);p.classList.toggle('now',!last&&j===k)});var fr=st.querySelector('iframe.st-form');if(fr&&fr.contentWindow){var msg=last?{stage:1,all:1}:{stage:1,parts:sc.parts.length?sc.parts:[sc.from,sc.to].filter(Boolean),from:sc.from,to:sc.to,runs:sc.runs||[]};fr.contentWindow.postMessage(msg,'*')}cap.textContent=last?(graph?'And the formula behind it, drawn as a graph.':'That is the whole of it.'):sc.caption;num.textContent=last?'':(k+1)+' / '+S.length;dots.forEach(function(d,j){d.classList.toggle('on',j===k)})}var total=S.length+(graph?1:0);function next(){show((i+1)%total)}addEventListener('message',function(e){var h=e.data&&e.data.stageHeight;var fr=st.querySelector('iframe.st-form');if(h&&fr&&e.source===fr.contentWindow)fr.style.height=Math.max(260,Math.min(900,h))+'px'});function play(){clearInterval(timer);if(playing&&!still)timer=setInterval(next,5200)}st.querySelector('.st-next').onclick=function(){next();play()};st.querySelector('.st-prev').onclick=function(){show((i-1+total)%total);play()};var pb=st.querySelector('.st-play');pb.onclick=function(){playing=!playing;pb.textContent=playing?'Pause':'Play';play()};dots.forEach(function(d,j){d.onclick=function(){show(j);play()}});show(0);play()})();"
 }
 
 fn dz_stage_style() -> Text {
@@ -1610,16 +1612,91 @@ fn dz_sc_ask(ask: DzAsk) -> ScAsk { return {text: ask.text.trim().replace("balan
 fn dz_su_ask(ask: DzAsk) -> SuAsk { return {text: ask.text} }
 
 workflow dz_algorithm(ask: DzAsk) -> DzResult {
-  ran = call algorithm({text: ask.text, palette: ask.palette})
-  out = dz_from_algorithm(ask, ran)
+  ran   = call algorithm({text: ask.text, palette: ask.palette})
+  drawn = call draw(dz_al_request(ask, ran.run))
+  out   = dz_from_algorithm(ask, ran, drawn)
+}
+
+// ---------------------------------------------------------------- algorithms drawn by Designs
+//
+// A tree or a graph an algorithm ran on is handed to Designs as the
+// structure it is: a tree's cards by their parents, a graph's places and
+// weighted edges. Designs draws it on its dotted board, with its cards,
+// ports and wires (and, for a weighted graph, its own checked working), and
+// the canvas plays the run through that drawing: each step lights the
+// parts it touches and runs the edge it takes.
+
+fn dz_al_drawn(r: AlRun) -> Bool { return r.kind == "tree" or r.kind == "graph" }
+
+fn dz_al_parent(r: AlRun, id: Text) -> Text {
+  if r.kind != "tree" { return "" }
+  for e in r.edges {
+    if e.b == id { return e.a }
+  }
+  return ""
+}
+
+fn dz_al_is_node(r: AlRun, id: Text) -> Bool { return (for n in r.nodes where n.id == id { n }).length() > 0 }
+
+fn dz_al_structure(r: AlRun) -> Structure {
+  let parts: Part[] = for n in r.nodes { {id: n.id, label: n.label, note: "", parent: dz_al_parent(r, n.id)} }
+  let links: Link[] = for e in r.edges { {from: e.a, to: e.b, label: e.label} }
+  // Designs writes at most seven sentences beside a drawing: the first, the
+  // last, and evenly between. The canvas still plays every step.
+  let n = r.steps.length()
+  let keys = if n <= 7 { for k in 0 until n { k } } else { for k in 0 until 7 { (k * (n - 1) / 6).round() } }
+  let steps: Step[] = for k in keys { {text: r.steps[k].text, parts: for id in r.steps[k].lit where dz_al_is_node(r, id) { id }} }
+  return {title: r.title, summary: r.answer, shape: r.kind, figure: "", photo: "", parts: parts, links: links, steps: steps, marks: [], looks: [], aspects: []}
+}
+
+fn dz_al_request(ask: DzAsk, r: AlRun) -> Request {
+  let none: Part[] = []
+  let shape = if dz_al_drawn(r) { dz_al_structure(r) } else { {..dz_al_structure(r), shape: "", parts: none} }
+  return {ask: ask.text, structure: shape, picture: {title: "", author: "", license: "", license_url: "", page_url: "", image: ""}, palette: dz_palette(ask.palette, "dark_matter"), photos: [], backdrop: ""}
+}
+
+// Each step as a scene of the canvas: the nodes it lights, and the edge it
+// takes (an edge a step lights, or the one into a node it adds).
+fn dz_al_scenes(r: AlRun) -> DzScene[] {
+  var known: Text[] = []
+  var scenes: DzScene[] = []
+  for st in r.steps {
+    let lit = for id in st.lit where dz_al_is_node(r, id) { id }
+    for id in lit.concat(st.seen) {
+      if dz_al_is_node(r, id) and not known.contains(id) { known = known.append(id) }
+    }
+    let edges = for e in r.edges where st.lit.contains(e.id) { e }
+    let from = if edges.is_empty() { "" } else { edges[0].a }
+    let to = if edges.is_empty() { "" } else { edges[0].b }
+    let label = if edges.is_empty() { "" } else { edges[0].label }
+    scenes = scenes.append({caption: st.text, shows: [], from: from, to: to, label: label, known: known, parts: lit, runs: for e in edges { e.a + ">" + e.b }})
+  }
+  return scenes
+}
+
+// The Kosika canvas's stage, playing the run through Designs' drawing.
+fn dz_al_stage(r: AlRun, d: Design) -> Text {
+  let scenes = dz_al_scenes(r)
+  let data = "[" + (for sc in scenes { dz_scene_json(sc) }).join(",") + "]"
+  let dots = (for k in 0 until scenes.length() { f"<button class=\"st-dot\" aria-label=\"Step {k + 1}\"></button>" }).join("")
+  let played = d.page.replace("</head>", "<style>html{background:var(--bg)}" + dz_played_style() + "</style></head>").replace("</body>", "<script>" + dz_played_script() + "</script></body>")
+  let form = "<iframe class=\"st-form\" title=\"" + art_esc(r.title) + "\" srcdoc=\"" + art_esc(played) + "\"></iframe>"
+  let bar = "<div class=\"st-bar\"><span class=\"st-num\"></span><span class=\"st-caption\"></span><button class=\"st-prev\" type=\"button\">Back</button><button class=\"st-play\" type=\"button\">Pause</button><button class=\"st-next\" type=\"button\">Next</button></div>"
+  let check = if r.problems.is_empty() { "<span class=\"al-check\">Checked by Kosika: " + art_esc(r.answer) + "</span>" } else { "<span class=\"al-check bad\">Check failed: " + art_esc(r.problems.join("; ")) + "</span>" }
+  let every = (for st in r.steps { "<li>" + art_esc(st.text) + "</li>" }).join("")
+  let opens = "<div class=\"st-opens\"><details class=\"kc-full\"><summary>Open every step</summary><ol class=\"al-steps\">" + every + "</ol></details><details class=\"kc-full\"><summary>Open the full diagram</summary><iframe class=\"kd-frame\" title=\"" + art_esc(r.title) + "\" srcdoc=\"" + art_esc(d.page) + "\"></iframe></details></div>"
+  return "<div class=\"kc-card kc-stage\" data-scenes=\"" + art_esc(data) + "\"><div class=\"kc-label\">Kosika canvas &#183; <b>the explanation, played</b></div>" + form + bar + "<div class=\"st-dots\">" + dots + "</div><div class=\"al-checked\">" + check + "</div>" + opens + "<script>" + dz_stage_script() + "</script></div>"
 }
 
 // An algorithm Kosika ran and checked, played step by step.
-fn dz_from_algorithm(ask: DzAsk, a: AlPage) -> DzResult {
+fn dz_from_algorithm(ask: DzAsk, a: AlPage, d: Design) -> DzResult {
   let place = dz_place(ask)
   let palette = dz_palette(ask.palette, "dark_matter")
-  // On the Kosika canvas, with the canvas's own stage, bar and panels.
-  let embed = dz_wrap("canvas", place, palette, a.run.title, a.card, al_style() + dz_canvas_style() + dz_stage_style())
+  // On the Kosika canvas, with the canvas's own stage, bar and panels: a
+  // tree or a graph drawn by Designs and played through, a list as bars.
+  let designed = dz_al_drawn(a.run) and d.problems.is_empty() and not d.page.is_empty()
+  let inner = if designed { dz_al_stage(a.run, d) } else { a.card }
+  let embed = dz_wrap("canvas", place, palette, a.run.title, inner, al_style() + dz_canvas_style() + dz_stage_style())
   return {kind: "algorithm", why: dz_why(ask), title: a.run.title, page: dz_canvas_page(a.run.title, palette, embed), svg: al_svg(a.run), embed: embed, problems: a.problems, fixed: []}
 }
 
@@ -1995,4 +2072,26 @@ test "style B: a journey is drawn through the picture, one pin per step on its f
   expect dz_bare_words(["line1", "high‑voltage", "sea"]) == ["line", "highvoltage", "sea"]
   expect dz_near_count(["station", "home", "tower"], ["stati", "home", "tower"], ["subst", "homes"], " substation homes ") == 2
   expect dz_near_count(["subst"], ["subst"], ["subst"], " substation ") > dz_near_count(["station"], ["stati"], ["subst"], " substation ")
+}
+
+test "a tree or a graph an algorithm ran on is handed to Designs as its structure" {
+  tree = al_bst("Show me how a binary search tree inserts 7")
+  t = dz_al_structure(tree)
+  expect t.shape == "tree"
+  expect problems(t) == []
+  expect (for p in t.parts where p.id == "n7" { p.parent }) == ["n6"]
+  expect (for p in t.parts where p.id == "n8" { p.parent }) == [""]
+  scenes = dz_al_scenes(tree)
+  expect scenes[1].parts == ["n8"]
+  expect scenes[4].from == "n6" and scenes[4].to == "n7"
+  path = al_path("shortest path from A to E")
+  g = dz_al_structure(path)
+  expect g.shape == "graph"
+  expect problems(g) == []
+  expect g.links[0].label == "4"
+  expect g.steps.length() == 7 and g.steps[6].text == path.steps[path.steps.length() - 1].text
+  expect dz_al_scenes(path).length() == path.steps.length()
+  // The last step runs the whole path at once.
+  expect dz_al_scenes(path)[path.steps.length() - 1].runs.length() == 4
+  expect dz_scene_json(dz_al_scenes(path)[path.steps.length() - 1]).contains("\"runs\":[\"A>C\"")
 }
