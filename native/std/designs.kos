@@ -57,7 +57,7 @@ import "science_elements.kos"
 import "science_molecules.kos"
 import "std/math.kos"
 
-export [DzAsk, DzResult, DzKind, dz_kinds, dz_places, dz_kind, dz_why, design, design_kind, dz_lab, dz_lab_style, DzFormula, dz_formula_for, dz_formula_card, dz_formula_style, dz_reaction, dz_science_field]
+export [DzAsk, DzResult, DzKind, DzProbe, dz_kinds, dz_places, dz_kind, dz_kind_sure, dz_why, design, design_kind, design_kind_probe, dz_lab, dz_lab_style, DzFormula, dz_formula_for, dz_formula_card, dz_formula_style, dz_reaction, dz_science_field]
 
 record DzAsk { text: Text palette: Text place: Text kind: Text }
 record DzKind { kind: Text why: Text }
@@ -87,17 +87,20 @@ fn dz_diagram_words() -> Text[] { return [" diagram", " flowchart", " flow chart
 // Systems with no body to watch move: how they work is a structure of
 // parts and steps, so even a "how does" about them is drawn as a diagram.
 fn dz_abstract_words() -> Text[] { return [" neural network", " transformer", " llm", " language model", " machine learning", " algorithm", " protocol", " internet", " http", " tcp", " dns", " blockchain", " database", " api ", " compiler", " software", " program ", " encryption", " search engine", " operating system", " git ", " kubernetes", " cloud computing", " recursion", " sorting"] }
+// Money and markets: an effect between things is drawn as a diagram of what
+// causes what, not as a picture that only moves.
+fn dz_economics_words() -> Text[] { return [" economy", " economic", " inflation", " interest rate", " interest rates", " compound interest", " mortgage", " loan", " loans", " gdp", " tax ", " taxes ", " market ", " markets ", " supply and demand", " invest", " price", " prices", " wage", " wages", " income", " rent ", " rents ", " tariff", " tariffs", " bank ", " banks "] }
 
 // Asking to be tested, not taught: a quiz.
 fn dz_quiz_words() -> Text[] { return [" quiz", " test me", " flashcard", " flash card", " practice question", " check my understanding", " mcq", " multiple choice"] }
 
-fn dz_illustration_words() -> Text[] { return [" animate", " animation", " animated", " illustrate", " illustration", " show me how", " what happens when", " what happens if", " what is inside", " how does ", " how do ", " why does ", " why do ", " why is ", " why are "] }
+fn dz_illustration_words() -> Text[] { return [" animate", " animation", " animated", " illustrate", " illustration", " show me how", " what happens when", " what happens if", " what is inside", " how does ", " how do ", " why does ", " why do ", " why is ", " why are ", " what happens in ", " what happens inside "] }
 
 // Science asks: which field the ask belongs to, by its words, and the
 // reaction it names, if any, as an equation for science_chem to balance.
 fn dz_biology_words() -> Text[] { return [" photosynthesis", " respiration", " cell ", " cells ", " mitosis", " dna", " gene", " enzyme", " heart", " blood", " lungs", " neuron", " plant", " leaf", " leaves", " bacteria", " virus", " digestion", " evolution", " ecosystem", " food chain", " protein"] }
 fn dz_chemistry_words() -> Text[] { return [" reaction", " molecule", " molecules", " acid", " base ", " rust", " rusting", " burn", " burns", " combustion", " oxidation", " neutralis", " neutraliz", " electrolysis", " bond", " compound", " haber", " ammonia", " baking soda", " vinegar"] }
-fn dz_physics_words() -> Text[] { return [" pendulum", " swing", " projectile", " thrown", " throw ", " orbit", " planet", " moon", " gravity", " force", " momentum", " energy", " wave", " waves", " light", " sound", " electric", " circuit", " magnet", " gear", " gears", " engine", " friction", " velocity", " acceleration"] }
+fn dz_physics_words() -> Text[] { return [" pendulum", " swing", " projectile", " thrown", " throw ", " orbit", " planet", " moon", " gravity", " force", " momentum", " energy", " wave", " waves", " light", " sound", " electric", " circuit", " magnet", " gear", " gears", " engine", " friction", " velocity", " acceleration", " nuclear", " reactor", " pressure", " voltage"] }
 
 fn dz_science_field(text: Text) -> Text {
   let t = dz_padded(text)
@@ -122,11 +125,12 @@ fn dz_reaction(text: Text) -> Text {
   return ""
 }
 
-// Which way of drawing suits the ask, by its words: a named kind first;
-// then asking for a diagram's shape (a timeline, a comparison, the steps);
-// then asking for art; then asking how or why something happens, which
-// moves, so it is illustrated; anything else is drawn as a diagram.
-fn dz_kind(ask: DzAsk) -> Text {
+// The kind the words themselves settle: a named kind first; then asking for
+// the shape of a diagram, a timeline or a comparison, the steps; then art;
+// then something about money, which causes what and so is a diagram; then
+// asking how or why something happens, which moves, so it is illustrated.
+// "" when the words settle nothing.
+fn dz_named(ask: DzAsk) -> Text {
   let named = ask.kind.trim().lower()
   if dz_kinds().contains(named) { return named }
   let t = dz_padded(ask.text)
@@ -138,9 +142,35 @@ fn dz_kind(ask: DzAsk) -> Text {
   if dz_has(t, dz_diagram_words()) { return "diagram" }
   if dz_has(t, dz_art_words()) { return "art" }
   if dz_has(t, dz_abstract_words()) { return "diagram" }
+  if dz_has(t, dz_economics_words()) { return "diagram" }
   if dz_has(t, dz_illustration_words()) and not dz_science_field(ask.text).is_empty() { return "canvas" }
+  return ""
+}
+
+// The kind to draw, by the words: when they settle it, that is the answer;
+// when they do not, this is only a guess, and dz_kind_sure says so.
+fn dz_kind(ask: DzAsk) -> Text {
+  let decided = dz_named(ask)
+  if not decided.is_empty() { return decided }
+  let t = dz_padded(ask.text)
   if dz_has(t, dz_illustration_words()) { return "illustration" }
   return "diagram"
+}
+
+// Whether the words alone settled the kind. When they did not, the last two
+// answers of dz_kind are a guess dressed as a decision, so the front door
+// asks a model instead and keeps its answer only when Kosika can draw it.
+fn dz_kind_sure(ask: DzAsk) -> Bool { return not dz_named(ask).is_empty() }
+
+
+// What the words decided, whether they decided it, and the sentence Kosika
+// would give for it: the row a grader records, and the same row a ledger
+// keeps, computed without asking a model anything.
+record DzProbe { kind: Text sure: Bool why: Text }
+
+workflow design_kind_probe(ask: DzAsk) -> DzProbe {
+  guessed = dz_kind(ask)
+  out = {kind: guessed, sure: dz_kind_sure(ask), why: dz_why(ask)}
 }
 
 fn dz_why(ask: DzAsk) -> Text {
@@ -155,6 +185,62 @@ fn dz_why(ask: DzAsk) -> Text {
   if kind == "art" { return "asks for a mood or a background, so it is drawn as moving art" }
   if kind == "illustration" { return "asks how or why something happens, so it is drawn moving, beside its explanation" }
   return "asks about the parts and structure of something, so it is drawn as a diagram"
+}
+
+// ---------------------------------------------------------------- choosing with a model
+
+// The words in dz_kind cover the asks people repeat, but a plain ask can
+// miss every list: "how do interest rates affect house prices" reads only as
+// a "how do", and a moving picture of house prices would be a guess. When
+// the words settle nothing, a model chooses the way of drawing, and Kosika
+// keeps its choice only when it is one Kosika can actually draw.
+
+record VarietyBrief { task: Text ask: Text guessed: Text }
+record VarietyGuessed { kind: Text }
+
+model variety {
+  input: VarietyBrief
+  output: DzKind
+  parameters: {
+    max_output_tokens: 400
+  }
+}
+
+fn variety_task() -> Text {
+  return "Someone asked for a picture. Choose the one way of drawing that answers them best. The ways: diagram (the parts, steps or links of something, explained in order); illustration (a moving picture of how or why a real thing happens, beside its explanation); art (a mood, a background, a wallpaper, abstract moving art); canvas (a science ask answered whole, with the structure, the moving picture, a lab and a quiz); quiz (they asked to be tested); worked (mathematics worked out line by line); chemistry (a chemical reaction, balanced and checked); units (a conversion between units); element (a chemical element or the periodic table). Give kind, one of " + dz_kinds().join(", ") + ", and why, one plain sentence on why it answers the ask best."
+}
+
+fn no_variety() -> DzKind { return {kind: "", why: ""} }
+fn dz_kind_of(kind: Text) -> DzKind { return {kind: kind, why: ""} }
+
+// What Kosika keeps from the model: a kind it can draw, else the words' guess.
+fn dz_kind_kept(guessed: Text, said: DzKind) -> Text {
+  let kind = said.kind.trim().lower()
+  return if dz_kinds().contains(kind) { kind } else { guessed }
+}
+
+// The model's reason, kept only when its choice was kept too.
+fn dz_kind_reason(said: DzKind) -> Text {
+  return if dz_kinds().contains(said.kind.trim().lower()) { said.why.trim() } else { "" }
+}
+
+fn dz_chosen_why(kept: Text, said: Text) -> Text { return if said.is_empty() { kept } else { said } }
+
+// The kind to draw, and a model's reason when a model chose it: nothing is
+// asked of a model when the words already settle the kind.
+workflow dz_kind_better(ask: DzAsk) -> DzKind {
+  budget 2 model calls, 120 seconds
+  guessed = dz_kind(ask)
+  out = match dz_kind_sure(ask) {
+    case true { dz_kind_of(guessed) }
+    case _ { call dz_kind_asked(ask, {kind: guessed}) }
+  }
+}
+
+workflow dz_kind_asked(ask: DzAsk, guessed: VarietyGuessed) -> DzKind {
+  budget 2 model calls, 120 seconds
+  said = use_model variety(variety_task(), ask.text, guessed.kind) retry 1 otherwise no_variety()
+  out  = {kind: dz_kind_kept(guessed.kind, said), why: dz_kind_reason(said)}
 }
 
 // ---------------------------------------------------------------- one shape of answer
@@ -261,7 +347,7 @@ fn dz_step_shown(s: Structure, a: Art) -> Number {
 }
 
 fn dz_canvas_style() -> Text {
-  return ".kd-canvas{position:relative;overflow:hidden;padding:18px}.kd-canvas>.kc-art{position:absolute;inset:0;opacity:.32;pointer-events:none}.kd-canvas>.kc-art svg{width:100%;height:100%;display:block}.kd-canvas>.kc-head,.kd-canvas>.kc-grid,.kd-canvas>div:not(.kc-art),.kd-canvas>.kc-note{position:relative}.kc-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 14px;margin:2px 4px 14px}.kc-head h2{margin:0;font-size:22px;font-weight:850;letter-spacing:-.02em}.kc-head p{margin:0;color:var(--soft);font-size:14px}.kc-grid{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:16px;align-items:start}.kc-card{background:color-mix(in srgb,var(--halo) 82%,transparent);border:1px solid color-mix(in srgb,var(--line) 12%,transparent);border-radius:18px;padding:12px;backdrop-filter:blur(6px)}.kc-label{font:600 10.5px ui-monospace,Consolas,monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);margin:2px 4px 10px}.kc-label b{color:var(--amber);font-weight:600}.kc-card .kd-frame{height:620px}.kc-note{color:var(--soft);font-size:12.5px;margin:12px 4px 0}.kc-quiz{margin-top:16px}.kc-reaction{margin-top:16px}.kc-field{font:600 10.5px ui-monospace,Consolas,monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--amber);border:1px solid color-mix(in srgb,var(--amber) 45%,transparent);border-radius:999px;padding:3px 9px;align-self:center}@media (max-width:900px){.kc-grid{grid-template-columns:1fr}}"
+  return ".kd-canvas{position:relative;overflow:hidden;padding:18px}.kd-canvas>.kc-art{position:absolute;inset:0;opacity:.32;pointer-events:none}.kd-canvas>.kc-art svg{width:100%;height:100%;display:block}.kd-canvas>.kc-head,.kd-canvas>.kc-grid,.kd-canvas>div:not(.kc-art),.kd-canvas>.kc-note{position:relative}.kc-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 14px;margin:2px 4px 14px}.kc-head h2{margin:0;font-size:22px;font-weight:850;letter-spacing:-.02em}.kc-head p{margin:0;color:var(--soft);font-size:14px}.kc-grid{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:16px;align-items:start}.kc-card{background:color-mix(in srgb,var(--halo) 82%,transparent);border:1px solid color-mix(in srgb,var(--line) 12%,transparent);border-radius:18px;padding:12px;backdrop-filter:blur(6px)}.kc-label{font:600 10.5px ui-monospace,Consolas,monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);margin:2px 4px 10px}.kc-label b{color:var(--amber);font-weight:600}.kc-card .kd-frame{height:620px}.kc-note{color:var(--soft);font-size:12.5px;margin:12px 4px 0}.kc-quiz{margin-top:16px}.kc-one-grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:18px;align-items:start}.kc-one-art svg{width:100%;height:auto;display:block}.kc-one-story .beats{margin:0 0 12px}.kc-map{border-top:1px solid color-mix(in srgb,var(--line) 12%,transparent);padding-top:10px}.kc-parts{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}.kc-part{font:600 11px ui-monospace,Consolas,monospace;letter-spacing:.04em;padding:4px 9px;border-radius:999px;border:1px solid color-mix(in srgb,var(--gold) 45%,transparent);color:var(--gold)}.kc-links{list-style:none;margin:0;padding:0;color:var(--soft);font-size:13.5px}.kc-links li{padding:3px 0}.kc-links b{color:var(--amber)}.kc-full{margin-top:14px}.kc-full summary{cursor:pointer;color:var(--soft);font:600 11px ui-monospace,Consolas,monospace;letter-spacing:.18em;text-transform:uppercase}.kc-full .kd-frame{height:620px;margin-top:10px}@media (max-width:900px){.kc-one-grid{grid-template-columns:1fr}}.kc-reaction{margin-top:16px}.kc-field{font:600 10.5px ui-monospace,Consolas,monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--amber);border:1px solid color-mix(in srgb,var(--amber) 45%,transparent);border-radius:999px;padding:3px 9px;align-self:center}@media (max-width:900px){.kc-grid{grid-template-columns:1fr}}"
 }
 
 fn dz_card(label: Text, inner: Text) -> Text { return f"<div class=\"kc-card\"><div class=\"kc-label\">{label}</div>{inner}</div>" }
@@ -299,7 +385,8 @@ fn dz_from_canvas(ask: DzAsk, palette: Text, r: Request, d: Design, m: ArtPage, 
   if not has_moving { left = left.append("the moving picture (" + m.problems.join("; ") + ")") }
   let note = if left.is_empty() { "" } else { "<p class=\"kc-note\">Left out: " + art_esc(left.join("; ")) + ".</p>" }
   let both = not first.is_empty() and not second.is_empty()
-  let grid = if both { "<div class=\"kc-grid\">" + first + second + "</div>" } else { "<div>" + first + second + "</div>" }
+  // Both drawn: one picture, the art and the structure together.
+  let grid = if both { dz_unified(r, d, m) } else { "<div>" + first + second + "</div>" }
   let field = dz_science_field(ask.text)
   let equation = dz_reaction(ask.text)
   let balanced = sc_balance(equation)
@@ -628,6 +715,93 @@ fn dz_reaction_name(text: Text) -> Text {
   return "The reaction"
 }
 
+// ---------------------------------------------------------------- one picture
+//
+// The structure and the art in one element. The art is the picture; the
+// structure's steps are told beside it, each tied to the figures of the
+// art it is about (by the words they share with the figures' names), so
+// pointing at a step lights its part of the picture and pointing at a
+// figure finds its step. The structure's parts and links sit under the
+// steps as a map of names. The full diagram is still a click away.
+
+// Names are short (a bob, a sun), so words of three letters count here.
+fn dz_name_words(text: Text) -> Text[] {
+  let common = ["the", "and", "for", "its", "are", "was", "has", "how", "why", "but", "not", "you", "can", "one", "two", "that", "this", "with", "from", "into", "they", "then", "than", "each", "when", "what", "where", "which"]
+  var out: Text[] = []
+  for w in text.lower().replace(",", " ").replace(".", " ").replace(":", " ").replace(";", " ").replace("(", " ").replace(")", " ").words() {
+    if w.length() >= 3 and not common.contains(w) and not out.contains(w) { out = out.append(w) }
+  }
+  return out
+}
+
+// What a real part of the art is made of, so a step that names a part of
+// it (the left ventricle) is tied to it (the heart).
+fn dz_part_vocab(kind: Text) -> Text {
+  if kind == "heart" { return "heart atrium atria ventricle ventricles valve valves aorta artery arteries vein veins chamber chambers blood pump" }
+  if kind == "cell" { return "cell nucleus nucleolus mitochondria mitochondrion ribosome ribosomes membrane cytoplasm organelle" }
+  if kind == "leaf" { return "leaf chloroplast chloroplasts chlorophyll light sunlight carbon dioxide oxygen stomata vein glucose sugar" }
+  if kind == "atom" { return "atom nucleus electron electrons shell shells proton protons orbit" }
+  if kind == "neuron" { return "neuron nerve dendrite dendrites axon myelin terminal terminals signal impulse synapse" }
+  if kind == "dna" { return "dna gene base bases pair pairs strand strands helix adenine thymine guanine cytosine" }
+  if kind == "circuit" { return "circuit battery resistor current charge charges wire voltage resistance" }
+  if kind == "magnet" { return "magnet magnetic field pole poles north south" }
+  if kind == "engine" { return "engine piston crank cylinder spark fuel stroke" }
+  if kind == "transistor" { return "transistor base collector emitter current switch" }
+  return ""
+}
+
+fn dz_figure_words(f: Figure) -> Text[] { return dz_name_words(f.id.replace("_", " ") + " " + f.label + " " + dz_part_vocab(f.kind)) }
+
+fn dz_step_text(s: Structure, st: Step) -> Text {
+  let named = for id in st.parts { dz_part_label(s, id) }
+  return st.text + " " + named.join(" ")
+}
+
+fn dz_part_label(s: Structure, id: Text) -> Text {
+  for p in s.parts {
+    if p.id == id { return p.label }
+  }
+  return id
+}
+
+// The figures of the art one step is about.
+fn dz_step_figures(s: Structure, st: Step, a: Art) -> Text[] {
+  let said = dz_stems(dz_name_words(dz_step_text(s, st)))
+  return for f in a.figures where f.kind != "text" and dz_shared(dz_stems(dz_figure_words(f)), said) > 0 { f.id }
+}
+
+fn dz_unified_beats(s: Structure, a: Art) -> Beat[] {
+  let steps = for st in s.steps { dz_unified_beat(st.text, dz_or_all(dz_step_figures(s, st, a), a)) }
+  // The art's own sentences about figures no step reached are kept, after.
+  var reached: Text[] = []
+  for b in steps { reached = reached.concat(b.shows) }
+  let extra = for b in a.beats where (for id in b.shows where not reached.contains(id) { id }).length() > 0 { b }
+  return steps.concat(extra)
+}
+
+// A step tied to no figure shows the whole picture rather than none of it.
+fn dz_unified_beat(text: Text, shows: Text[]) -> Beat { return {text: text, shows: shows} }
+
+fn dz_or_all(found: Text[], a: Art) -> Text[] { return if found.is_empty() { dz_all_figures(a) } else { found } }
+
+fn dz_all_figures(a: Art) -> Text[] { return for f in a.figures where f.kind != "text" { f.id } }
+
+fn dz_parts_map(s: Structure) -> Text {
+  let parts = (for p in s.parts { "<span class=\"kc-part\">" + art_esc(p.label) + "</span>" }).join("")
+  let links = (for l in s.links { "<li>" + art_esc(dz_part_label(s, l.from)) + " <b>&#8594;</b> " + art_esc(dz_part_label(s, l.to)) + (if l.label.is_empty() { "" } else { " <i>" + art_esc(l.label) + "</i>" }) + "</li>" }).join("")
+  return "<div class=\"kc-map\"><div class=\"kc-parts\">" + parts + "</div>" + (if links.is_empty() { "" } else { "<ul class=\"kc-links\">" + links + "</ul>" }) + "</div>"
+}
+
+fn dz_unified(r: Request, d: Design, m: ArtPage) -> Text {
+  let s = r.structure
+  let beats = dz_unified_beats(s, m.art)
+  let told = {..m.art, beats: beats}
+  let picture = "<div class=\"kc-one-art\">" + m.svg + "</div>"
+  let story = "<div class=\"kc-one-story\"><div class=\"kc-label\">The structure &#183; <b>told on the picture</b></div>" + dz_beats(told) + dz_parts_map(s) + "</div>"
+  let full = "<details class=\"kc-full\"><summary>Open the full diagram</summary>" + dz_diagram_frame(r, d) + "</details>"
+  return "<div class=\"kc-card kc-one\"><div class=\"kc-one-grid\">" + picture + story + "</div>" + full + "<script>" + art_script() + "</script></div>"
+}
+
 fn dz_canvas_why(lead: Text, step: Number) -> Text {
   let first = if lead == "illustration" { "leads with the moving picture, since the ask is how or why something happens" } else { "leads with the diagram, since the ask is about structure" }
   let tie = if step >= 0 { f", and ties the moving picture to step {step + 1}, the one it shows" } else { "" }
@@ -767,9 +941,9 @@ workflow dz_canvas(ask: DzAsk) -> DzResult {
 // ---------------------------------------------------------------- the front door
 
 workflow design(ask: DzAsk) -> DzResult {
-  budget 10 model calls, 900 seconds
-  kind = dz_kind(ask)
-  out  = match kind {
+  budget 11 model calls, 900 seconds
+  chosen = call dz_kind_better(ask)
+  drawn  = match chosen.kind {
     case "canvas" { call dz_canvas(ask) }
     case "quiz" { call dz_quiz(ask) }
     case "chemistry" { call dz_chemistry(ask) }
@@ -780,9 +954,10 @@ workflow design(ask: DzAsk) -> DzResult {
     case "illustration" { call dz_illustration(ask) }
     case _ { call dz_diagram(ask) }
   }
+  out = {..drawn, why: dz_chosen_why(drawn.why, chosen.why)}
 }
 
-// Only the choice, with no drawing and no model: for a place that draws a
+// Only the choice, by the words alone, with no drawing and no model: for a place that draws a
 // kind its own way (Chat keeps its own diagram pipeline, with its critic
 // and photos) and asks Designs for the rest.
 workflow design_kind(ask: DzAsk) -> DzKind {
@@ -834,6 +1009,48 @@ test "Kosika chooses the way of drawing by the words of the ask" {
   expect dz_kind(dz_ask("tell me about sodium")) == "element"
   expect dz_kind(dz_ask("show me the periodic table")) == "element"
   expect dz_kind({..dz_ask("the Krebs cycle"), kind: "Illustration"}) == "illustration"
+}
+
+// Every way of drawing Kosika has can be asked for by name, and each one
+// says why it was chosen: the front door accepts all of them.
+test "every way of drawing can be asked for by name" {
+  expect (for k in dz_kinds() where dz_kind({..dz_ask("anything at all"), kind: k}) != k { k }).is_empty()
+  expect (for k in dz_kinds() where dz_why({..dz_ask("anything at all"), kind: k}).is_empty() { k }).is_empty()
+}
+
+// The words settle most asks and say so; when they do not, they say that
+// too, so a guess is never passed off as a decision.
+test "the words say when they have not settled the kind" {
+  expect dz_kind_sure(dz_ask("balance C3H8 + O2 -> CO2 + H2O"))
+  expect dz_kind_sure(dz_ask("quiz me on photosynthesis"))
+  expect dz_kind_sure(dz_ask("how does photosynthesis work"))
+  expect dz_kind_sure(dz_ask("draw a timeline of the space race"))
+  expect not dz_kind_sure(dz_ask("why do cats purr"))
+  expect not dz_kind_sure(dz_ask("the Krebs cycle"))
+  // the guesses themselves are still the kinds Kosika would draw
+  expect dz_kind(dz_ask("why do cats purr")) == "illustration"
+  expect dz_kind(dz_ask("the Krebs cycle")) == "diagram"
+}
+
+// A plain ask about money or a reactor used to be read as a moving picture
+// or as a guess; the words for them now decide.
+test "plain asks about money and physics are read as what they are" {
+  expect dz_kind(dz_ask("how do interest rates affect house prices")) == "diagram"
+  expect dz_kind(dz_ask("explain compound interest over ten years")) == "diagram"
+  expect dz_kind(dz_ask("what happens inside a nuclear reactor")) == "canvas"
+  expect dz_science_field("what happens inside a nuclear reactor") == "physics"
+}
+
+// A model may choose the way of drawing, but only into a kind Kosika can
+// draw: anything else is dropped and the words' guess stands.
+test "a model chooses the kind only when Kosika can draw it" {
+  expect dz_kind_kept("illustration", {kind: "Canvas", why: "It moves."}) == "canvas"
+  expect dz_kind_reason({kind: "Canvas", why: "It moves."}) == "It moves."
+  expect dz_kind_kept("illustration", {kind: "hologram", why: "w"}) == "illustration"
+  expect dz_kind_kept("illustration", no_variety()) == "illustration"
+  expect dz_kind_reason({kind: "hologram", why: "w"}).is_empty()
+  expect dz_chosen_why("the words reason", "") == "the words reason"
+  expect dz_chosen_why("the words reason", "the model reason") == "the model reason"
 }
 
 test "an embed carries its own colours and stays inside itself" {
@@ -924,4 +1141,16 @@ test "an element's atom is drawn by Designs' art, with Kosika's own sentences" {
   expect na.beats[2].text.contains("reacts so readily")
   expect art_problems(na) == []
   expect dz_atom_sentences(se_element(10))[2].contains("hardly reacts")
+}
+
+fn dz_test_step() -> Step { return {text: "Gravity pulls the bob back toward the lowest point", parts: []} }
+
+fn dz_test_figure(id: Text, label: Text) -> Figure { return {id: id, kind: "circle", x: 50, y: 30, w: 3, h: 0, count: 0, hue: 1, label: label, points: []} }
+
+fn dz_test_art() -> Art { return {title: "Pendulum", summary: "", palette: "dark_matter", backdrop: "plain", figures: [dz_test_figure("bob", "Bob"), dz_test_figure("pivot", "Pivot")], motions: [], beats: []} }
+
+test "the structure's steps are tied to the art's figures by the words they share" {
+  expect dz_step_figures(dz_test_structure("How a pendulum swings"), dz_test_step(), dz_test_art()) == ["bob"]
+  heart: Figure = {..dz_test_figure("heart", ""), kind: "heart"}
+  expect dz_figure_words(heart).contains("ventricle")
 }
