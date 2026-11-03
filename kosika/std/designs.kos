@@ -1298,6 +1298,207 @@ fn dz_journey_style() -> Text {
   return ".st-journey{position:relative;max-width:1060px;margin:0 auto}.st-journey .jr{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}.jr-road{fill:none;stroke:color-mix(in srgb,var(--ink) 28%,transparent);stroke-width:3;stroke-dasharray:2 9;stroke-linecap:round}.jr-run{fill:none;stroke:var(--amber);stroke-width:4;stroke-linecap:round;stroke-dasharray:7 9;opacity:0;transition:opacity .5s;animation:jr-run 1s linear infinite}.jr-leg.done .jr-run{opacity:.45;animation:none}.jr-leg.now .jr-run{opacity:1}.jr-dot{fill:var(--amber);opacity:0;filter:drop-shadow(0 0 6px var(--amber))}.jr-leg.now .jr-dot{opacity:1}@keyframes jr-run{to{stroke-dashoffset:-16}}.jr-pin circle{fill:var(--halo);stroke:color-mix(in srgb,var(--ink) 45%,transparent);stroke-width:2;transition:all .4s}.jr-pin text{fill:var(--soft);font:700 13px ui-monospace,Consolas,monospace;text-anchor:middle;transition:fill .4s}.jr-pin.done circle{stroke:var(--amber)}.jr-pin.now circle{fill:var(--amber);stroke:var(--amber);filter:drop-shadow(0 0 10px var(--amber))}.jr-pin.now text{fill:var(--halo)}@media (prefers-reduced-motion:reduce){.jr *{animation:none!important}.jr-dot{display:none}}"
 }
 
+// ---------------------------------------------------------------- Kosika's own reading
+//
+// What Kosika works out itself rather than take from the model: the shape
+// of the explanation, read from its links, and where the picture's figures
+// stand, in the order the story meets them.
+
+// The shape the links make. A loop through most of the parts is a cycle;
+// one part linked to nearly all the others, which link to little else, is
+// a hub; a chain, each part leading to at most one, is a flow. Any other
+// shape the model chose (a tree, a timeline, a table...) is kept.
+fn dz_read_shape(s: Structure) -> Text {
+  if not ["flow", "cycle", "hub"].contains(s.shape) { return s.shape }
+  let ids = for p in s.parts { p.id }
+  let n = ids.length()
+  if n < 3 { return s.shape }
+  let links = for l in s.links where l.from != l.to and ids.contains(l.from) and ids.contains(l.to) { l }
+  let outs = for id in ids { (for l in links where l.from == id { l }).length() }
+  let ins = for id in ids { (for l in links where l.to == id { l }).length() }
+  let next = for id in ids { dz_first_to(links, id) }
+  // The longest loop found by following each part's first link.
+  var loop = 0
+  for start in ids {
+    let size = dz_loop_from(ids, next, start)
+    if size > loop { loop = size }
+  }
+  if loop >= 3 and loop >= n * 0.6 { return "cycle" }
+  let degrees = for k in 0 until n { outs[k] + ins[k] }
+  let most = degrees.max().or(0)
+  let hub = degrees.index_of(most).or(0)
+  let others = for k in 0 until n where k != hub and degrees[k] > 2 { k }
+  if most >= n - 1 and n >= 4 and others.is_empty() { return "hub" }
+  let forks = for k in 0 until n where outs[k] > 1 or ins[k] > 1 { k }
+  if forks.is_empty() and links.length() >= n - 1 { return "flow" }
+  return s.shape
+}
+
+fn dz_first_to(links: Link[], id: Text) -> Text {
+  for l in links {
+    if l.from == id { return l.to }
+  }
+  return ""
+}
+
+// How many parts the walk from `start` passes before it comes back to
+// `start`; 0 when it never does.
+fn dz_loop_from(ids: Text[], next: Text[], start: Text) -> Number {
+  var at = start
+  var seen: Text[] = []
+  for k in 0 until ids.length() {
+    if not at.is_empty() and not seen.contains(at) {
+      seen = seen.append(at)
+      at = next[ids.index_of(at).or(0)]
+    }
+  }
+  return if at == start { seen.length() } else { 0 }
+}
+
+fn dz_read(r: Request) -> Request { return {..r, structure: {..r.structure, shape: dz_read_shape(r.structure)}} }
+
+// Where the picture's figures stand. The story's figures go left to right
+// in the order it meets them, evenly spaced, each keeping the height the
+// model gave it (the sky above, the ground below). Smaller things standing
+// on one go with it; a line or arrow ending at one has that end moved too.
+// A picture already in story order, with nothing overlapping, is kept.
+record DzPlacing { art: Art moved: Bool note: Text }
+
+// Two steps, so each keeps within Kosika's budget: first where the figures
+// go, then (only when any moved) the picture drawn again and checked.
+fn dz_placing(m: ArtPage, s: Structure, said: Text) -> DzPlacing {
+  let read = if said == s.shape or said.is_empty() { "" } else { f"read the shape as {s.shape} from its links, where the model said {said}" }
+  let still: DzPlacing = {art: m.art, moved: false, note: read}
+  if m.svg.is_empty() or not ["flow", "timeline", "cycle"].contains(s.shape) { return still }
+  var chain: Text[] = []
+  for p in dz_journey_pins(s, m.art) {
+    if not chain.contains(p.of) { chain = chain.append(p.of) }
+  }
+  if chain.length() < 3 or dz_in_order(m.art, chain) { return still }
+  let names = chain.join(", ")
+  let placed = f"placed {names} left to right in the order the story meets them"
+  return {art: dz_compose(m.art, chain), moved: true, note: if read.is_empty() { placed } else { read + "; " + placed }}
+}
+
+fn dz_placed(m: ArtPage, p: DzPlacing) -> ArtPage {
+  let notes: Text[] = if p.note.is_empty() { [] } else { [p.note] }
+  let kept = {..m, fixed: notes.concat(m.fixed)}
+  if not p.moved { return kept }
+  let again = art_result(m.art.title, p.art)
+  if not again.problems.is_empty() { return kept }
+  return {..again, fixed: notes.concat(again.fixed)}
+}
+
+fn dz_figure_at(a: Art, id: Text) -> Number {
+  for k in 0 until a.figures.length() {
+    if a.figures[k].id == id { return k }
+  }
+  return -1
+}
+
+// In story order already: each further right than the one before, by a
+// clear gap, and no two touching.
+fn dz_in_order(a: Art, chain: Text[]) -> Bool {
+  let px = art_px()
+  for k in 1 until chain.length() {
+    let f = a.figures[dz_figure_at(a, chain[k - 1])]
+    let g = a.figures[dz_figure_at(a, chain[k])]
+    let c = art_centre(f)
+    let d = art_centre(g)
+    if d[0] - c[0] < 8 { return false }
+    let gap = ((d[0] - c[0]) * (d[0] - c[0]) + (d[1] - c[1]) * (d[1] - c[1])).sqrt()
+    if gap * px < dz_figure_reach(f) + dz_figure_reach(g) { return false }
+  }
+  return true
+}
+
+fn dz_compose(a: Art, chain: Text[]) -> Art {
+  let n = chain.length()
+  let step = 76 / (n - 1)
+  let at = for id in chain { dz_figure_at(a, id) }
+  let olds = for k in at { art_centre(a.figures[k]) }
+  // Each story figure's new place, and how much it shrinks to leave room.
+  let xs = for i in 0 until n { 12 + step * i }
+  let ys = for i in 0 until n { olds[i][1].max(8).min(52) }
+  let room = step * art_px() * 0.45
+  let reaches = for k in at { dz_figure_reach(a.figures[k]) }
+  let shrink = for r in reaches { if r > room { room / r } else { 1 } }
+  let near_by = for k in at { dz_figure_reach(a.figures[k]) / art_px() + 3 }
+  var figures: Figure[] = []
+  for k in 0 until a.figures.length() {
+    let f = a.figures[k]
+    let i = at.index_of(k).or(-1)
+    let moved = if i >= 0 { {..f, x: xs[i], y: ys[i], w: f.w * shrink[i], h: f.h * shrink[i]} } else { dz_carried(f, olds, xs, ys, near_by, reaches) }
+    figures = figures.append(moved)
+  }
+  return {..a, figures: figures}
+}
+
+// A figure that is not in the story moves with the story figure it stands
+// on (its centre within that figure's reach, and smaller than it), or, for
+// a line, each end with the figure it ends at. Anything else stays put.
+fn dz_carried(f: Figure, olds: Number[][], xs: Number[], ys: Number[], near_by: Number[], reaches: Number[]) -> Figure {
+  if art_pointed().contains(f.kind) {
+    let half = (f.points.length() / 2).floor()
+    var points: Number[] = []
+    for k in 0 until half {
+      let x = f.points[2 * k]
+      let y = f.points[2 * k + 1]
+      let near = dz_nearest(x, y, olds, near_by)
+      let dx = if near < 0 { 0 } else { xs[near] - olds[near][0] }
+      let dy = if near < 0 { 0 } else { ys[near] - olds[near][1] }
+      points = points.append(x + dx).append(y + dy)
+    }
+    return {..f, points: points}
+  }
+  let near = dz_nearest(f.x, f.y, olds, near_by)
+  if near < 0 { return f }
+  if dz_figure_reach(f) >= reaches[near] { return f }
+  return {..f, x: f.x + xs[near] - olds[near][0], y: f.y + ys[near] - olds[near][1]}
+}
+
+fn dz_nearest(x: Number, y: Number, olds: Number[][], near_by: Number[]) -> Number {
+  var best = -1
+  var close = 1000
+  for i in 0 until olds.length() {
+    let d = ((x - olds[i][0]) * (x - olds[i][0]) + (y - olds[i][1]) * (y - olds[i][1])).sqrt()
+    if d <= near_by[i] and d < close {
+      best = i
+      close = d
+    }
+  }
+  return best
+}
+
+fn dz_test_link(a: Text, b: Text) -> Link { return {from: a, to: b, label: ""} }
+
+fn dz_test_shaped(shape: Text, links: Link[]) -> Structure {
+  let ids = ["a", "b", "c", "d"]
+  return {..dz_test_heart(), shape: shape, parts: for id in ids { {..dz_test_part(id, ""), id: id} }, links: links}
+}
+
+test "Kosika reads the shape from the links, not the model's word" {
+  loop = [dz_test_link("a", "b"), dz_test_link("b", "c"), dz_test_link("c", "d"), dz_test_link("d", "a")]
+  chain = [dz_test_link("a", "b"), dz_test_link("b", "c"), dz_test_link("c", "d")]
+  star = [dz_test_link("a", "b"), dz_test_link("a", "c"), dz_test_link("a", "d")]
+  expect dz_read_shape(dz_test_shaped("flow", loop)) == "cycle"
+  expect dz_read_shape(dz_test_shaped("cycle", chain)) == "flow"
+  expect dz_read_shape(dz_test_shaped("flow", star)) == "hub"
+  expect dz_read_shape(dz_test_shaped("tree", loop)) == "tree"
+}
+
+test "Kosika places the story's figures left to right, keeping their heights" {
+  road = dz_test_road()
+  muddled = {..dz_test_road_art(), figures: [dz_test_spot("sun", "Sun", 80, 12), dz_test_spot("cloud", "Cloud", 20, 12), dz_test_spot("mountain", "Mountain", 50, 40), dz_test_spot("river", "River", 50, 50), dz_test_spot("sea", "Sea", 15, 50)]}
+  chain = ["sun", "cloud", "mountain", "river"]
+  expect not dz_in_order(muddled, chain)
+  placed = dz_compose(muddled, chain)
+  expect placed.figures[0].x < placed.figures[1].x and placed.figures[1].x < placed.figures[2].x and placed.figures[2].x < placed.figures[3].x
+  expect placed.figures[0].y == 12 and placed.figures[2].y == 40
+  expect placed.figures[4].x == 15
+  expect dz_in_order(placed, chain)
+}
+
 // Shapes the living cards read well in; a table, a timeline, a message
 // sequence or a sketch keep their own drawing.
 fn dz_living_fits(s: Structure) -> Bool { return not ["compare", "timeline", "sequence", "sketch", "tree", "mindmap", "nested", "layers", "containers"].contains(s.shape) and s.parts.length() >= 2 and s.parts.length() <= 9 }
@@ -1470,9 +1671,11 @@ workflow dz_worked(ask: DzAsk) -> DzResult {
 workflow dz_canvas(ask: DzAsk) -> DzResult {
   said    = call describe({text: ask.text})
   palette = dz_canvas_palette(ask, said)
-  asked   = dz_canvas_request(said, palette)
+  asked   = dz_read(dz_canvas_request(said, palette))
   drawn   = call draw(asked)
-  moving  = call illustrate(dz_moving_ask(ask, palette))
+  first   = call illustrate(dz_moving_ask(ask, palette))
+  placing = dz_placing(first, asked.structure, said.structure.shape)
+  moving  = dz_placed(first, placing)
   behind  = call gen_backdrop(dz_gen_for(asked, palette))
   flows   = use_model flow_reader(dz_flow_task(), dz_flow_text(asked.structure)) retry 1 otherwise dz_no_flows()
   out     = dz_from_canvas(ask, palette, asked, drawn, moving, behind, dz_no_quiz(), flows)

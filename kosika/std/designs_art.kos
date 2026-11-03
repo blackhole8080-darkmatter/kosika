@@ -49,7 +49,7 @@
 import "designs_palette.kos"
 import "science_elements.kos"
 
-export [Figure, Motion, Beat, Art, ArtAsk, ArtPage, art_ball, art_ball_style, art_shape, art_centre, art_width, art_height, art_px, art_reach, art_round, art_esc, art_problems, art_tidy, art_svg, art_svg_named, art_prefixed, art_style, art_script, art_script_in, art_page, art_kinds, art_moves, art_wave, art_orbit_seconds, render, illustrate]
+export [Figure, Motion, Beat, Art, ArtAsk, ArtPage, art_ball, art_ball_style, art_shape, art_centre, art_result, art_pointed, art_width, art_height, art_px, art_reach, art_round, art_esc, art_problems, art_tidy, art_svg, art_svg_named, art_prefixed, art_style, art_script, art_script_in, art_page, art_kinds, art_moves, art_wave, art_orbit_seconds, render, illustrate]
 
 record Figure { id: Text kind: Text x: Number y: Number w: Number h: Number count: Number hue: Number label: Text points: Number[] }
 // around: the figure an orbit circles, or the path a travel runs along.
@@ -126,11 +126,39 @@ fn art_tidy(a: Art) -> Art {
   let named = for f in a.figures { {..f, id: f.id.trim().lower(), kind: f.kind.trim().lower(), hue: f.hue.abs().floor() % 7} }
   let figures = art_mesh(for f in named { art_fit({..f, count: art_count(f)}) })
   let motions = for m in a.motions { {..m, what: m.what.trim().lower(), kind: m.kind.trim().lower(), around: m.around.trim().lower(), seconds: m.seconds.max(0), delay: m.delay.max(0)} }
-  let kept = art_one_path(motions)
+  let kept = art_one_path(art_settled(motions, figures))
   let beats = for b in a.beats { {..b, text: b.text.trim(), shows: for s in b.shows { s.trim().lower() }} }
   let palette = if palette_names().contains(a.palette) { a.palette } else { "dark_matter" }
   let backdrop = if art_backdrops().contains(a.backdrop.trim().lower()) { a.backdrop.trim().lower() } else { "plain" }
   return {..a, palette: palette, backdrop: backdrop, figures: figures, motions: kept, beats: beats}
+}
+
+// What a flow or a draw means on a figure that is not a line: a drop
+// flowing falls, anything else floats. Kosika settles this itself, as the
+// model often asks it, rather than send the picture back.
+fn art_settled(motions: Motion[], figures: Figure[]) -> Motion[] {
+  let ids = for f in figures { f.id }
+  return for m in motions { art_settle(m, art_kind_of(figures, ids, m.what)) }
+}
+
+fn art_kind_of(figures: Figure[], ids: Text[], id: Text) -> Text {
+  let at = ids.index_of(id).or(-1)
+  return if at < 0 { "" } else { figures[at].kind }
+}
+
+fn art_settle(m: Motion, kind: Text) -> Motion {
+  if kind.is_empty() or not (m.kind == "flow" or m.kind == "draw") { return m }
+  if art_paths().contains(kind) or kind == "ring" or kind == "rainbow" { return m }
+  return {..m, kind: if kind == "drop" { "fall" } else { "float" }}
+}
+
+fn art_settled_names(raw: Art, tidy: Art) -> Text[] {
+  var out: Text[] = []
+  for k in 0 until raw.motions.length().min(tidy.motions.length()) {
+    let was = raw.motions[k].kind.trim().lower()
+    if was != tidy.motions[k].kind and (was == "flow" or was == "draw") { out = out.append(f"made {tidy.motions[k].what} {tidy.motions[k].kind} rather than {was}, as only a line can {was}") }
+  }
+  return out
 }
 
 // A figure moves on one path: a second orbit or travel for it is dropped.
@@ -1301,7 +1329,7 @@ fn art_result(ask: Text, given: Art) -> ArtPage {
   let wrong = art_problems(a)
   let tidy = art_tidy(a)
   let left = for i in crowded { f"left the name of {given.figures[i].id} off: it printed over another" }
-  let fixed = left.concat(art_fixes(a)).concat(art_moved_names(tidy))
+  let fixed = left.concat(art_fixes(a)).concat(art_moved_names(tidy)).concat(art_settled_names(a, tidy))
   if wrong.is_empty() { return {page: art_page(ask, tidy, fixed), svg: art_svg(tidy), problems: [], fixed: fixed, art: tidy} }
   return {page: "", svg: "", problems: wrong, fixed: fixed, art: tidy}
 }
@@ -1591,4 +1619,13 @@ test "Kosika steers the model to the real part an ask is about" {
   expect art_hint("how does a car engine work").contains("kind engine")
   expect art_hint("what is a solar cell") == ""
   expect art_hint("why is the sky blue") == ""
+}
+
+test "a flow on a figure that is not a line is settled, not sent back" {
+  drop = {..art_sample(), figures: [art_fig("rain", "drop", 30, 20, 3), art_fig("cloud", "cloud", 60, 20, 5)], motions: [{what: "rain", kind: "flow", around: "", seconds: 2, delay: 0}, {what: "cloud", kind: "flow", around: "", seconds: 2, delay: 0}]}
+  t = art_tidy(drop)
+  expect t.motions[0].kind == "fall"
+  expect t.motions[1].kind == "float"
+  expect (for m in art_problems(drop) where m.contains("needs a line") { m }) == []
+  expect art_settled_names(drop, t)[0] == "made rain fall rather than flow, as only a line can flow"
 }
