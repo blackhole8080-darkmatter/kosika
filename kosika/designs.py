@@ -24,7 +24,11 @@ from pathlib import Path
 from typing import Any
 
 FRONT_DOOR = Path(__file__).resolve().parent / "std" / "designs.kos"
-KINDS = ("", "diagram", "illustration", "art", "canvas")
+# Kosika Brain thinks Designs through: it recalls what it drew for an ask
+# like this one, reuses a canvas it kept when it is near enough, keeps what
+# it drew, and takes a thumbs up or down. KOSIKA_BRAIN=0 draws without it.
+BRAIN = Path(__file__).resolve().parent / "std" / "brain.kos"
+KINDS = ("", "diagram", "illustration", "art", "canvas", "algorithm", "quiz", "worked", "chemistry", "units", "element")
 PLACES = ("chat", "studio", "site", "agent")
 DEFAULT_MODEL = "openai/gpt-oss-120b"
 DEFAULT_MODEL_URL = "https://api.groq.com/openai/v1"
@@ -74,7 +78,34 @@ def design(
     if not FRONT_DOOR.is_file():
         raise DesignsError(f"Kosika Designs is not in this copy of Kosika ({FRONT_DOOR}).")
     ask = {"ask": {"text": text, "palette": palette, "place": place, "kind": kind}}
+    if _brain_on():
+        return _run(BRAIN, "brain_design", ask, extra=_brain_memory(), timeout=timeout)
     return _run(FRONT_DOOR, "design", ask, timeout=timeout)
+
+
+def _brain_on() -> bool:
+    return BRAIN.is_file() and os.environ.get("KOSIKA_BRAIN", "1") != "0"
+
+
+def _brain_memory() -> list[str]:
+    # The Brain's memory stays on this computer, in KOSIKA_BRAIN_MEMORY,
+    # by default ~/.kosika/brain.
+    memory = Path(os.environ.get("KOSIKA_BRAIN_MEMORY", str(Path.home() / ".kosika" / "brain")))
+    memory.mkdir(parents=True, exist_ok=True)
+    return ["--memory", str(memory)]
+
+
+def rate(text: str, liked: bool, *, timeout: float = 120) -> dict[str, Any]:
+    """A thumbs up or down on the canvas Kosika Brain kept for `text`: up
+    keeps it to give again, down means it is never reused. The answer holds
+    rated and said."""
+
+    text = text.strip()
+    if not text:
+        raise DesignsError("Say which ask to rate.")
+    if not _brain_on():
+        raise DesignsError("Kosika Brain is off here (KOSIKA_BRAIN=0), so there is nothing kept to rate.")
+    return _run(BRAIN, "brain_rate", {"r": {"ask": text, "liked": bool(liked)}}, extra=_brain_memory(), first="rated", timeout=timeout)
 
 
 def _run(source: Path, workflow: str, given_input: dict, *, extra: list[str] | None = None, first: str = "kind", timeout: float = 600) -> dict[str, Any]:

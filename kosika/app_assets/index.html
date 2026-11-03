@@ -1655,7 +1655,7 @@ async function openMaya() {
 // stay inside it.
 function showDesigns() {
   const ask = h("input", {type: "text", placeholder: "how does a rainbow form, compare solar and wind power, a calm background about the sea…", style: "flex:1;min-width:220px"});
-  const kind = h("select", null, [["", "Kosika chooses"], ["diagram", "Diagram"], ["illustration", "Illustration"], ["art", "Moving art"]].map(([value, label]) => h("option", {value}, label)));
+  const kind = h("select", null, [["", "Kosika chooses"], ["diagram", "Diagram"], ["illustration", "Illustration"], ["art", "Moving art"], ["canvas", "Canvas"], ["algorithm", "Algorithm"]].map(([value, label]) => h("option", {value}, label)));
   const out = h("div", {class: "designs-out"});
   const draw = h("button", {onclick: run}, "Draw");
   async function run() {
@@ -1671,11 +1671,28 @@ function showDesigns() {
       }
       const frame = h("iframe", {title: made.title, style: "width:100%;height:" + (made.kind === "diagram" ? 720 : 860) + "px;border:0;border-radius:18px;background:transparent"});
       frame.srcdoc = "<!doctype html><html><head><meta charset=\"utf-8\"><style>html,body{margin:0;background:transparent}</style></head><body>" + made.embed + "</body></html>";
+      // As tall as what it holds, so a short picture leaves no empty block.
+      frame.addEventListener("load", () => {
+        const fit = () => { try { frame.style.height = (frame.contentDocument.body.scrollHeight + 4) + "px"; } catch (error) { /* keep the set height */ } };
+        fit(); setTimeout(fit, 900);
+      });
       const open = h("button", {class: "ghost", onclick: () => { const url = URL.createObjectURL(new Blob([made.page], {type: "text/html"})); window.open(url, "_blank"); }}, "Open as a page");
+      // Kosika Brain keeps what it drew: a thumbs up gives it again for
+      // asks like this one, a thumbs down means it is never reused.
+      const rated = h("span", {class: "lead"});
+      async function rate(liked) {
+        try {
+          const said = await api("/api/design/rate", {method: "POST", body: JSON.stringify({text, liked})});
+          rated.textContent = said.said;
+        } catch (error) { rated.textContent = String(error.message || error); }
+      }
+      const good = h("button", {class: "ghost", title: "Kosika keeps it and gives it again for asks like this", onclick: () => rate(true)}, "\u{1F44D} Good, keep it");
+      const bad = h("button", {class: "ghost", title: "Kosika will not reuse it, and draws the next one afresh", onclick: () => rate(false)}, "\u{1F44E} Not right");
+      const said = made.why.startsWith("Kosika ") ? made.why : "Kosika " + made.why;
       out.replaceChildren(
-        h("div", {class: "chips"}, chip(made.kind, "accent"), (made.fixed || []).length ? chip("Kosika fixed " + made.fixed.length, "ok") : null),
-        h("p", {class: "lead"}, "Kosika " + made.why + "."),
-        frame, h("div", null, open));
+        h("div", {class: "chips"}, chip(made.kind, "accent"), (made.fixed || []).length ? chip("Kosika fixed " + made.fixed.length, "ok") : null, (made.fixed || []).includes("reused a kept canvas") ? chip("from memory, no model", "ok") : null),
+        h("p", {class: "lead"}, said + (said.endsWith(".") ? "" : ".")),
+        frame, h("div", {style: "display:flex;gap:8px;flex-wrap:wrap;align-items:center"}, open, good, bad, rated));
     } catch (error) {
       out.replaceChildren(h("div", {class: "banner bad"}, String(error.message || error)));
     } finally { draw.disabled = false; }

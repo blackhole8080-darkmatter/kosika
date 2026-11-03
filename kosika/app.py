@@ -2373,6 +2373,15 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                         self._json(200, design(str(body.get("text", "")), palette=str(body.get("palette", "")), place="studio", kind=str(body.get("kind", ""))))
                     except DesignsError as exc:
                         raise AppError(str(exc)) from exc
+                elif method == "POST" and url.path == "/api/design/rate":
+                    # A thumbs up or down on a canvas Kosika Brain kept.
+                    from .designs import DesignsError, rate
+
+                    body = self._body()
+                    try:
+                        self._json(200, rate(str(body.get("text", "")), bool(body.get("liked"))))
+                    except DesignsError as exc:
+                        raise AppError(str(exc)) from exc
                 elif method == "POST" and url.path == "/api/study":
                     # The study companion: words, the person's notes, and a Designs canvas.
                     from .designs import DesignsError, study
