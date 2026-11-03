@@ -2373,6 +2373,33 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                         self._json(200, design(str(body.get("text", "")), palette=str(body.get("palette", "")), place="studio", kind=str(body.get("kind", ""))))
                     except DesignsError as exc:
                         raise AppError(str(exc)) from exc
+                elif method == "POST" and url.path == "/api/kosi":
+                    # Kosi, the companion run by Kosika Brain.
+                    from .designs import DesignsError, kosi
+
+                    try:
+                        self._json(200, kosi(str(self._body().get("text", ""))))
+                    except DesignsError as exc:
+                        raise AppError(str(exc)) from exc
+                elif method == "POST" and url.path == "/api/kosi/hear":
+                    # What was said, from a recording made in the page.
+                    import base64
+
+                    from .designs import DesignsError, hear
+
+                    body = self._body()
+                    try:
+                        self._json(200, {"text": hear(base64.b64decode(str(body.get("audio", ""))), str(body.get("type", "audio/webm")))})
+                    except (DesignsError, ValueError) as exc:
+                        raise AppError(str(exc)) from exc
+                elif method == "POST" and url.path == "/api/kosi/speak":
+                    # Kosi's voice, or nothing, and the page speaks for it.
+                    import base64
+
+                    from .designs import speak
+
+                    said = speak(str(self._body().get("text", "")))
+                    self._json(200, {"audio": base64.b64encode(said).decode() if said else ""})
                 elif method == "POST" and url.path == "/api/crew":
                     # A Kosika crew, run by Kosika Brain, makes a study pack.
                     from .designs import DesignsError, crew

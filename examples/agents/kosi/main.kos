@@ -1,0 +1,271 @@
+// Kosi: Aryan's own companion, run by Kosika Brain.
+//
+//   kosika test main.kos
+//   kosika run main.kos --workflow chat --input said.json --memory FOLDER
+//       --model openai/gpt-oss-20b --model-url https://api.groq.com/openai/v1
+//       --model-protocol openai --max-function-calls 100000
+//       [--embed-model nomic-embed-text --embed-url http://127.0.0.1:11434]
+//
+// where said.json holds {"msg": {"text": "what should I work on tonight?"}}.
+//
+// Talk to it as to a close friend: about your day, a job, a project, an idea.
+// It answers in a few warm, plain sentences, written to be heard as well as
+// read. Behind every answer is the Brain:
+//
+//   recall    what Kosi knows that bears on what you said, by meaning:
+//             things you told it, your projects and their next steps, what
+//             it has drawn and gathered, and the last of the talk
+//   answer    a free model writes the reply with that in front of it, and
+//             says what is worth remembering, which project it touches, and
+//             whether a picture would help
+//   check     Kosika tidies the reply for speaking (no lists or marks, a
+//             spoken length), and keeps only short, new things to remember
+//   act       a picture is drawn on the Kosika canvas through the Brain
+//   learn     the talk, what you said worth keeping, and each project's next
+//             step go back into the Brain for the next conversation
+//
+// It touches nothing on the computer: no files, no programs, no web. Kosika's
+// other agents (the crew, the coder, the gatherer) do that work, each asking
+// first. Kosi is the one you talk to.
+
+import "std/brain.kos"
+import "std/designs.kos"
+
+export [Msg, Said, KosiBrief, KosiReply, chat, ko_spoken, ko_known_text, ko_talk_after, ko_new_facts]
+
+record Msg { text: Text }
+
+// text: what Kosi says. canvas: a Kosika canvas when a picture helps, or "".
+// kept: what it will remember from this, in its own words. project: the
+// project the talk was about, if any.
+record Said { text: Text suggest: Text[] canvas: Text kept: Text[] project: Text }
+
+record KosiBrief { task: Text said: Text known: Text talk: Text now: Text }
+
+// remember: short facts worth keeping from this message alone. draw: what
+// to draw, in a few words, or "". project, step: the project the message is
+// about and its next step, or "".
+record KosiReply { reply: Text remember: Text[] draw: Text project: Text step: Text }
+
+record KosiFacts { notes: BrainNote[] }
+
+model friend {
+  input: KosiBrief
+  output: KosiReply
+  parameters: {
+    max_output_tokens: 1500
+  }
+}
+
+// ---------------------------------------------------------------- asking the model
+
+fn ko_task() -> Text {
+  return "You are Kosi, the person's own AI companion, built into Kosika, the programming language and studio they are making. Talk like a close, warm and honest friend who is also very capable: plain spoken English, short sentences meant to be heard aloud, no lists, no headings, no markdown, no emoji. Usually two to five sentences; more only when they ask you to explain something. Use what Kosi knows (given below) only where it really bears on what they said, and never invent a memory or a fact; if you do not know, or cannot do something, say so plainly and offer what you can do. You cannot touch their files, programs or the web yourself: other Kosika agents do that, and you can suggest one. Then fill in: remember, up to three short facts worth keeping from THIS message only, never what they ask for in it and never what Kosi already knows (about them, their projects, plans, preferences, people or deadlines), each a complete sentence in the third person such as 'Their exam is on 12 December.', or none if nothing new; draw, a few words naming what to draw if a picture would really help (how something works, a structure, an algorithm), else empty; project, the name of their project this message is about, else empty; step, that project's next step if one was agreed or stated, else empty."
+}
+
+fn ko_no_reply() -> KosiReply { return {reply: "", remember: [], draw: "", project: "", step: ""} }
+
+// What Kosi knows that bears on what was said, as lines for the model.
+fn ko_known_text(found: BrainFound) -> Text {
+  let notes = for n in found.notes where n.kind != "talk" { n }
+  if notes.is_empty() { return "(nothing yet)" }
+  return (for n in notes.take(6) { "- " + ko_note_line(n) }).join("\n")
+}
+
+fn ko_note_line(n: BrainNote) -> Text {
+  if n.kind == "fact" and n.source.starts_with("https://") { return "Research: " + n.topic + ": " + n.text }
+  if n.kind == "project" { return "Project " + n.topic + ": next step " + n.text }
+  if n.kind == "episode" { return "Earlier: for '" + n.topic + "' Kosika " + n.text }
+  return n.text
+}
+
+fn ko_talk_text(talk: BrainFound) -> Text { return if talk.notes.is_empty() { "(this is the start of the talk)" } else { talk.notes[0].text.replace(" | ", "\n") } }
+
+fn ko_now(today: Moment) -> Text { return f"{today.weekday} {today.date}, {today.time}" }
+
+// ---------------------------------------------------------------- checking the reply
+
+// The reply as it should be heard: list marks and markdown taken out, lines
+// joined, and cut at a sentence once it runs past 120 words.
+fn ko_spoken(text: Text) -> Text {
+  var lines: Text[] = []
+  for line in text.lines() {
+    var l = line.trim()
+    for mark in ["### ", "## ", "# ", "- ", "* ", "• "] {
+      if l.starts_with(mark) { l = l.drop(mark.length()) }
+    }
+    l = l.replace("**", "").replace("__", "").replace("`", "")
+    if not l.is_empty() { lines = lines.append(l) }
+  }
+  let words = lines.join(" ").words()
+  if words.length() <= 120 { return words.join(" ") }
+  var out: Text[] = []
+  var done = false
+  for w in words {
+    if not done {
+      out = out.append(w)
+      if out.length() >= 60 and (w.ends_with(".") or w.ends_with("?") or w.ends_with("!")) { done = true }
+      if out.length() >= 140 { done = true }
+    }
+  }
+  return out.join(" ")
+}
+
+fn ko_reply_text(r: KosiReply) -> Text {
+  let said = ko_spoken(r.reply)
+  return if said.is_empty() { "Sorry, I lost my words there. Could you say that again?" } else { said }
+}
+
+// What is worth remembering: short, whole sentences about the person or
+// their work, not a request of this message ("they want a drawing"), and
+// not something Kosi already knows in other words (most of the same words).
+fn ko_new_facts(r: KosiReply, known: BrainFound) -> Text[] {
+  let have = for n in known.notes where n.kind != "talk" { br_words(n.text) }
+  var out: Text[] = []
+  var taken: Text[][] = []
+  for f in r.remember.take(3) {
+    let t = f.trim()
+    let words = t.words().length()
+    let stems = br_words(t)
+    let low = " " + t.lower() + " "
+    let asking = low.contains(" wants an explanation") or low.contains(" wants a drawing") or low.contains(" wants a picture") or low.contains(" asked ") or low.contains(" is asking ")
+    let said_before = (for h in have.concat(taken) where br_near(stems, h.join(" ")) >= 0.5 { h }).length() > 0
+    if words >= 3 and words <= 30 and not asking and not said_before {
+      out = out.append(t)
+      taken = taken.append(stems)
+    }
+  }
+  return out
+}
+
+fn ko_fact_note(text: Text, today: Moment) -> BrainNote {
+  return {kind: "fact", topic: text, words: br_words(text).join(" "), text: text, source: "you told Kosi, " + today.date, score: 1, times: 1}
+}
+
+fn ko_facts(r: KosiReply, known: BrainFound, today: Moment) -> KosiFacts { return {notes: for f in ko_new_facts(r, known) { ko_fact_note(f, today) }} }
+
+// ---------------------------------------------------------------- the talk
+
+fn ko_talk_ask() -> BrainAsk { return {text: "the talk so far", kind: "talk"} }
+
+// The talk after this turn: the last ten lines, oldest first.
+fn ko_talk_after(talk: BrainFound, said: Text, reply: Text) -> BrainNote {
+  let before: Text[] = if talk.notes.is_empty() { [] } else { talk.notes[0].text.split(" | ") }
+  let lines = before.concat(["You: " + said, "Kosi: " + reply])
+  let from = (lines.length() - 10).max(0)
+  return {kind: "talk", topic: "the talk so far", words: "talk far", text: lines.slice(from, lines.length()).join(" | "), source: "Kosi", score: 1, times: 1}
+}
+
+fn ko_project_note(r: KosiReply, today: Moment) -> BrainNote {
+  return {kind: "project", topic: r.project.trim(), words: br_words(r.project).join(" "), text: r.step.trim(), source: "you told Kosi, " + today.date, score: 1, times: 1}
+}
+
+fn ko_has_project(r: KosiReply) -> Bool { return not r.project.trim().is_empty() and not r.step.trim().is_empty() }
+
+// ---------------------------------------------------------------- a picture
+
+fn ko_draw_ask(r: KosiReply) -> DzAsk { return {text: r.draw.trim(), palette: "", place: "chat", kind: ""} }
+
+// A picture only when it was asked for, or the person asks how something
+// works and the model thinks one would help: never for small talk.
+fn ko_wants_picture(msg: Msg, r: KosiReply) -> Bool {
+  if r.draw.trim().is_empty() { return false }
+  let t = " " + msg.text.lower().replace("?", " ").replace(",", " ") + " "
+  let asked = t.contains(" draw ") or t.contains(" picture") or t.contains(" diagram") or t.contains(" sketch") or t.contains(" visual") or t.contains(" show me ") or t.contains(" canvas")
+  let how = t.contains(" how does ") or t.contains(" how do ") or t.contains(" explain ") or t.contains(" how is ") or t.contains(" how are ")
+  return asked or how
+}
+
+fn ko_no_canvas() -> DzResult { return {kind: "", why: "", title: "", page: "", svg: "", embed: "", problems: [], fixed: []} }
+
+fn ko_suggest(r: KosiReply) -> Text[] {
+  var out: Text[] = []
+  if not r.project.trim().is_empty() { out = out.append("what's next on " + r.project.trim() + "?") }
+  out = out.append("what do you remember about me?")
+  if r.draw.trim().is_empty() { out = out.append("draw it for me") }
+  return out.take(3)
+}
+
+fn ko_said(r: KosiReply, known: BrainFound, drawn: DzResult) -> Said {
+  let canvas = if drawn.problems.is_empty() { drawn.embed } else { "" }
+  return {text: ko_reply_text(r), suggest: ko_suggest(r), canvas: canvas, kept: ko_new_facts(r, known), project: r.project.trim()}
+}
+
+// ---------------------------------------------------------------- the workflows
+
+workflow chat(msg: Msg) -> Said {
+  budget 10 model calls, 600 seconds
+  today  = now
+  known  = call brain_recall({text: msg.text, kind: ""})
+  talk   = call brain_get(ko_talk_ask())
+  reply  = use_model friend(ko_task(), msg.text, ko_known_text(known), ko_talk_text(talk), ko_now(today)) retry 1 otherwise ko_no_reply()
+  drawn  = match ko_wants_picture(msg, reply) {
+    case true { call brain_design(ko_draw_ask(reply)) }
+    case _ { ko_no_canvas() }
+  }
+  facts  = ko_facts(reply, known, today)
+  kept   = match facts.notes.is_empty() {
+    case true { br_not_kept_kosi() }
+    case _ { call ko_keep_facts(facts) }
+  }
+  aim    = match ko_has_project(reply) {
+    case true { call brain_keep(ko_project_note(reply, today)) }
+    case _ { br_not_kept_kosi() }
+  }
+  heard  = call brain_keep(ko_talk_after(talk, msg.text, ko_reply_text(reply)))
+  out    = ko_said(reply, known, drawn)
+}
+
+fn br_not_kept_kosi() -> BrainKept { return {key: "", entries: 0} }
+
+fn ko_fact_at(f: KosiFacts, k: Number) -> BrainNote { return f.notes[k.min(f.notes.length() - 1)] }
+
+// Up to three facts, each kept by a step of its own; fewer repeat the last,
+// which is kept under the same key again.
+workflow ko_keep_facts(f: KosiFacts) -> BrainKept {
+  a   = call brain_keep(ko_fact_at(f, 0))
+  b   = call brain_keep(ko_fact_at(f, 1))
+  c   = call brain_keep(ko_fact_at(f, 2))
+  out = c
+}
+
+// ---------------------------------------------------------------- tests
+
+fn ko_test_found(notes: BrainNote[]) -> BrainFound { return {notes: notes, by: "words"} }
+
+fn ko_test_note(kind: Text, topic: Text, text: Text, source: Text) -> BrainNote { return {kind: kind, topic: topic, words: br_words(topic).join(" "), text: text, source: source, score: 1, times: 1} }
+
+fn ko_test_reply(reply: Text, remember: Text[]) -> KosiReply { return {reply: reply, remember: remember, draw: "", project: "", step: ""} }
+
+test "a reply is tidied to be heard, and cut at a sentence when long" {
+  expect ko_spoken("**Sure!**\n- First, rest.\n- Then study.") == "Sure! First, rest. Then study."
+  long = (for k in 0 until 50 { "This is one more sentence." }).join(" ")
+  cut = ko_spoken(long)
+  expect cut.words().length() <= 140 and cut.ends_with(".")
+  expect ko_reply_text(ko_test_reply("", [])) == "Sorry, I lost my words there. Could you say that again?"
+}
+
+test "Kosi keeps only short new facts, and the last ten lines of the talk" {
+  known = ko_test_found([ko_test_note("fact", "Their exam is on 12 December.", "Their exam is on 12 December.", "you told Kosi, 2026-11-03")])
+  r = ko_test_reply("Got it.", ["Their exam is on 12 December.", "They are applying to Bosch for an internship.", "ok", "They like long walks by the river in the evening after work, especially in autumn when the leaves turn, and they like to listen to podcasts about history and science while they walk."])
+  expect ko_new_facts(r, known) == ["They are applying to Bosch for an internship."]
+  // The same fact in other words, a request, or one said twice: not kept again.
+  again = ko_test_reply("ok", ["They have an exam on 12 December.", "The user wants a drawing of the insertion process.", "They are applying to Bosch.", "They are applying to Bosch for a job."])
+  expect ko_new_facts(again, known) == ["They are applying to Bosch."]
+  expect not ko_wants_picture({text: "what do you remember about me?"}, {..ko_test_reply("", []), draw: "voice interface"})
+  expect ko_wants_picture({text: "can you draw it for me"}, {..ko_test_reply("", []), draw: "binary search tree"})
+  empty = ko_test_found([])
+  t1 = ko_talk_after(empty, "hi", "Hey!")
+  expect t1.text == "You: hi | Kosi: Hey!"
+  long = ko_test_found([{..t1, text: (for k in 0 until 10 { f"You: line {k}" }).join(" | ")}])
+  expect ko_talk_after(long, "next", "ok").text.split(" | ").length() == 10
+}
+
+test "what Kosi knows is put in front of the model, and the talk is not counted twice" {
+  known = ko_test_found([ko_test_note("project", "Kosika", "add voice to Kosi", "you told Kosi"), ko_test_note("talk", "the talk so far", "You: hi | Kosi: Hey!", "Kosi"), ko_test_note("fact", "Tidal dissipation", "We measure tides.", "https://arxiv.org/abs/1 · A · 2026")])
+  text = ko_known_text(known)
+  expect text.contains("- Project Kosika: next step add voice to Kosi")
+  expect text.contains("- Research: Tidal dissipation: We measure tides.")
+  expect not text.contains("Kosi: Hey!")
+  expect ko_known_text(ko_test_found([])) == "(nothing yet)"
+}

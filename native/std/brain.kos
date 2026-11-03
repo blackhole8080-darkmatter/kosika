@@ -40,7 +40,7 @@ import "designs.kos"
 import "nn.kos"
 import "algorithms.kos"
 
-export [BrainGatherAsk, BrainGathered, BrainPage, BrainPaper, brain_gather, br_papers_in, br_facts, br_known, br_with_known, br_search_url, BrainNote, BrainAsk, BrainFound, BrainPast, BrainKept, BrainCanvas, BrainRecipe, BrainRating, BrainRated, BrainMind, BrainChoice, br_features, br_new_mind, br_learn, br_choose, brain_recall, brain_keep, brain_design, brain_rate, br_reusable, br_rated_canvas, br_words, br_near, br_floor, br_past, br_told]
+export [BrainGatherAsk, BrainGathered, BrainPage, BrainPaper, brain_gather, br_papers_in, br_facts, br_known, br_with_known, br_search_url, BrainNote, BrainAsk, BrainFound, BrainPast, BrainKept, BrainCanvas, BrainRecipe, BrainRating, BrainRated, BrainMind, BrainChoice, br_features, br_new_mind, br_learn, br_choose, brain_recall, brain_get, brain_keep, brain_design, brain_rate, br_reusable, br_rated_canvas, br_words, br_near, br_floor, br_past, br_told]
 
 // kind: episode, fact, recipe or structure.
 // topic: what it is about, in words a person would use.
@@ -508,6 +508,18 @@ fn br_told(r: DzResult, past: BrainPast) -> DzResult {
 workflow brain_recall(ask: BrainAsk) -> BrainFound {
   found = recall brain like ask.text
   out   = br_kept_notes(found, ask.text, ask.kind)
+}
+
+// One note by its kind and topic exactly, such as the talk so far; none
+// when there is no such note.
+workflow brain_get(ask: BrainAsk) -> BrainFound {
+  had = recall brain under br_key(ask.kind, ask.text)
+  out = br_got(had)
+}
+
+fn br_got(had: BrainRecalled) -> BrainFound {
+  let none: BrainNote[] = []
+  return {notes: if had.value.exists() { [had.value.value()] } else { none }, by: "key"}
 }
 
 // Keep a note: a fact with its source, a recipe, a structure, an episode.

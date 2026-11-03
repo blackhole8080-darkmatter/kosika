@@ -202,6 +202,70 @@ def crew(topic: str, *, palette: str = "", timeout: float = 1500) -> dict[str, A
     return _run(CREW, "pack", {"ask": {"topic": topic, "palette": palette}}, extra=_brain_memory(), first="title", timeout=timeout)
 
 
+KOSI = Path(__file__).resolve().parent.parent / "examples" / "agents" / "kosi" / "main.kos"
+GROQ_AUDIO = "https://api.groq.com/openai/v1/audio"
+
+
+def kosi(text: str, *, timeout: float = 600) -> dict[str, Any]:
+    """Say something to Kosi, the companion run by Kosika Brain. The answer
+    holds text, suggest, canvas (a Kosika canvas or ""), kept and project."""
+
+    text = text.strip()
+    if not text:
+        raise DesignsError("Say something to Kosi.")
+    if not KOSI.is_file():
+        raise DesignsError(f"Kosi is not in this copy of Kosika ({KOSI}).")
+    return _run(KOSI, "chat", {"msg": {"text": text}}, extra=_brain_memory(), first="text", timeout=timeout)
+
+
+def _groq_key() -> str:
+    return os.environ.get("GROQ_API_KEY") or os.environ.get("KOSIKA_MODEL_API_KEY", "")
+
+
+def hear(audio: bytes, mime: str = "audio/webm") -> str:
+    """What was said in a recording, by Groq's free Whisper. The recording
+    goes to Groq to be transcribed and nowhere else."""
+
+    import urllib.request
+    import uuid
+
+    if not audio:
+        raise DesignsError("Nothing was recorded.")
+    key = _groq_key()
+    if not key:
+        raise DesignsError("Listening needs GROQ_API_KEY for Whisper.")
+    ending = "wav" if "wav" in mime else "ogg" if "ogg" in mime else "mp4" if "mp4" in mime else "webm"
+    edge = uuid.uuid4().hex
+    body = (f"--{edge}\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\nwhisper-large-v3-turbo\r\n"
+            f"--{edge}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"said.{ending}\"\r\nContent-Type: {mime}\r\n\r\n").encode() + audio + f"\r\n--{edge}--\r\n".encode()
+    asked = urllib.request.Request(GROQ_AUDIO + "/transcriptions", data=body, headers={"Authorization": f"Bearer {key}", "Content-Type": f"multipart/form-data; boundary={edge}", "User-Agent": "Kosika"})
+    try:
+        with urllib.request.urlopen(asked, timeout=60) as reply:  # noqa: S310 - Groq's own API
+            return str(json.loads(reply.read()).get("text", "")).strip()
+    except OSError as exc:
+        raise DesignsError(f"Kosi could not hear that: {exc}") from exc
+
+
+def speak(text: str, voice: str = "") -> bytes:
+    """Kosi's voice for `text`: a WAV from Groq's free Orpheus, or b"" when it
+    cannot be reached (Studio then speaks with the browser's own voice).
+    Orpheus asks the Groq account's owner to accept its terms once."""
+
+    import urllib.error
+    import urllib.request
+
+    key = _groq_key()
+    if not key or not text.strip():
+        return b""
+    said = json.dumps({"model": "canopylabs/orpheus-v1-english", "voice": voice or os.environ.get("KOSI_VOICE", "tara"), "input": text[:1500], "response_format": "wav"}).encode()
+    asked = urllib.request.Request(GROQ_AUDIO + "/speech", data=said, headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json", "User-Agent": "Kosika"})
+    try:
+        with urllib.request.urlopen(asked, timeout=60) as reply:  # noqa: S310 - Groq's own API
+            return reply.read()
+    except (OSError, urllib.error.HTTPError):
+        return b""
+
+
 STUDY = Path(__file__).resolve().parent.parent / "examples" / "agents" / "study" / "main.kos"
 
 

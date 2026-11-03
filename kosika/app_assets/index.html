@@ -1065,6 +1065,7 @@ body.on-mission .track { opacity: .5; }
 <template id="icon-runs"><svg viewBox="0 0 24 24"><path d="M12 8v4l3 2"/><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/></svg></template>
 <template id="icon-tools"><svg viewBox="0 0 24 24"><path d="M14.5 6.5a4 4 0 0 0-5.300 5.300L3 18l3 3 6.200-6.200a4 4 0 0 0 5.300-5.300l-2.500 2.500-2.500-2.500 2.500-2.500z"/></svg></template>
 <template id="icon-skills"><svg viewBox="0 0 24 24"><path d="M12 3l2.600 5.400L20 9.300l-4 4 1 5.700-5-2.700L7 19l1-5.700-4-4 5.400-.900L12 3z"/></svg></template>
+<template id="icon-talk"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg></template>
 <template id="icon-crew"><svg viewBox="0 0 24 24"><circle cx="12" cy="7" r="3"/><circle cx="5" cy="15" r="2.500"/><circle cx="19" cy="15" r="2.500"/><path d="M12 10v4M9.500 12.500 6.500 13.500M14.500 12.500l3 1"/><path d="M8 21c.5-2.200 2-3.500 4-3.500s3.500 1.300 4 3.500"/></svg></template>
 <template id="icon-study"><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M7 9.500v5c0 1.400 2.200 3 5 3s5-1.600 5-3v-5"/><path d="M21 7v6"/></svg></template>
 <template id="icon-designs"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.300-.3-.4-.5-.8-.5-1.300 0-1.100.9-2 2-2h2.400A4.600 4.600 0 0 0 22 9.800C22 6 17.500 3 12 3z"/><circle cx="7.500" cy="11" r="1.200"/><circle cx="10.500" cy="7" r="1.200"/><circle cx="15.500" cy="7.500" r="1.200"/></svg></template>
@@ -1202,7 +1203,7 @@ setTheme(theme());
 let jumpItems = null;
 async function openJump() {
   if (document.querySelector(".veil")) return;
-  const pages = [["assistant", "Assistant"], ["project", "Project"], ["agents", "Agents"], ["runs", "Runs"], ["tools", "Tools"], ["skills", "Skills"], ["study", "Study"], ["designs", "Designs"], ["crew", "Crew"], ["permissions", "Permissions"]].map(([view, name]) => ({kind: "page", name, detail: "", title: "Studio", view}));
+  const pages = [["assistant", "Assistant"], ["talk", "Talk to Kosi"], ["project", "Project"], ["agents", "Agents"], ["runs", "Runs"], ["tools", "Tools"], ["skills", "Skills"], ["study", "Study"], ["designs", "Designs"], ["crew", "Crew"], ["permissions", "Permissions"]].map(([view, name]) => ({kind: "page", name, detail: "", title: "Studio", view}));
   const box = h("input", {type: "text", placeholder: "Jump to an agent, workflow, model, tool, memory or record"}), found = h("div", {class: "found"});
   const veil = h("div", {class: "veil", onclick: event => { if (event.target === veil) close(); }}, h("div", {class: "jump"}, box, found, h("div", {class: "keys"}, "↑ ↓ to move · Enter to open · Esc to close")));
   let hits = [], at = 0;
@@ -1255,7 +1256,7 @@ function go(view, id) { location.hash = "#" + view + (id ? "/" + encodeURICompon
 window.addEventListener("hashchange", route);
 
 function drawRail(active) {
-  const items = [["assistant", "Assistant"], ["mayaos", "MayaOS"], ["project", "Project"], ["agents", "Agents"], ["runs", "Runs"], ["tools", "Tools"], ["skills", "Skills"], ["study", "Study"], ["designs", "Designs"], ["crew", "Crew"], ["services", "Services"], ["permissions", "Permissions"]];
+  const items = [["assistant", "Assistant"], ["talk", "Talk to Kosi"], ["mayaos", "MayaOS"], ["project", "Project"], ["agents", "Agents"], ["runs", "Runs"], ["tools", "Tools"], ["skills", "Skills"], ["study", "Study"], ["designs", "Designs"], ["crew", "Crew"], ["services", "Services"], ["permissions", "Permissions"]];
   document.getElementById("nav").replaceChildren(...items.map(([key, label]) =>
     h("div", {class: "nav" + (key === active ? " on" : "") + (key === "mayaos" ? " door" : ""), title: key === "mayaos" ? "Open MayaOS, the app your agents live in" : null, onclick: () => key === "mayaos" ? openMaya() : go(key)}, icon(key), label, key === "mayaos" ? h("span", {class: "out"}, "\u2197") : null)));
   document.getElementById("foot").replaceChildren(
@@ -1284,6 +1285,7 @@ async function route() {
     else if (active === "designs") showDesigns();
     else if (active === "study") showStudy();
     else if (active === "crew") showCrew();
+    else if (active === "talk") showTalk();
     else if (active === "permissions") showPermissions();
     else if (active === "services") await showServices();
     else if (overview.assistant) await showAgent(overview.assistant, true);
@@ -1728,6 +1730,101 @@ function showDesigns() {
       h("div", {style: "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px"}, topic, read), learnt),
     out);
   ask.focus();
+}
+
+// Talk to Kosi (examples/agents/kosi), the companion run by Kosika Brain:
+// type, or press the microphone and speak. Whisper hears you, the Brain
+// remembers you and your work, and Kosi answers aloud, in Groq's Orpheus
+// voice when it is allowed and the browser's own voice when it is not. A
+// picture it draws comes on the Kosika canvas under its words.
+const talkLog = [];
+function showTalk() {
+  const say = h("input", {type: "text", placeholder: "Say anything: your day, a project, a job, an idea…", style: "flex:1;min-width:220px"});
+  const send = h("button", {onclick: () => ask(say.value)}, "Send");
+  const mic = h("button", {class: "ghost", title: "Press to speak, press again to stop", style: "min-width:150px"}, "\u{1F3A4} Press to speak");
+  const voiceOn = h("input", {type: "checkbox", id: "kosi-voice"});
+  voiceOn.checked = true;
+  const status = h("span", {class: "lead"});
+  const log = h("div", {style: "display:grid;gap:12px;margin-top:14px"});
+  function bubble(entry) {
+    const you = h("div", {style: "justify-self:end;max-width:78%;background:color-mix(in srgb,var(--accent) 16%,transparent);border-radius:16px 16px 4px 16px;padding:10px 14px"}, entry.q);
+    if (!entry.r) return h("div", {style: "display:grid;gap:8px"}, you, h("div", {class: "lead"}, "Kosi is thinking…"));
+    const kosi = h("div", {style: "max-width:84%;background:var(--panel, rgba(255,255,255,.04));border:1px solid var(--line, rgba(255,255,255,.08));border-radius:16px 16px 16px 4px;padding:10px 14px;font-size:16px;line-height:1.55"}, entry.r.text);
+    const parts = [you, kosi];
+    if ((entry.r.kept || []).length) parts.push(h("div", {class: "chips"}, entry.r.kept.map(k => chip("will remember: " + k, "ok"))));
+    if (entry.r.canvas) {
+      const frame = h("iframe", {title: "Kosika canvas", style: "width:100%;height:720px;border:0;border-radius:18px;background:transparent"});
+      frame.srcdoc = "<!doctype html><html><head><meta charset=\"utf-8\"><style>html,body{margin:0;background:transparent}</style></head><body>" + entry.r.canvas + "</body></html>";
+      frame.addEventListener("load", () => { const fit = () => { try { frame.style.height = (frame.contentDocument.body.scrollHeight + 4) + "px"; } catch (error) { /* keep */ } }; fit(); setTimeout(fit, 1500); try { new ResizeObserver(fit).observe(frame.contentDocument.body); } catch (error) { /* keep */ } });
+      parts.push(frame);
+    }
+    if ((entry.r.suggest || []).length) parts.push(h("div", {class: "chips"}, entry.r.suggest.map(s => h("span", {class: "chip", style: "cursor:pointer", onclick: () => ask(s)}, s))));
+    return h("div", {style: "display:grid;gap:8px"}, ...parts);
+  }
+  function draw() { log.replaceChildren(...talkLog.map(bubble)); }
+  let playing = null;
+  async function voice(text) {
+    if (!voiceOn.checked || !text) return;
+    try {
+      const got = await api("/api/kosi/speak", {method: "POST", body: JSON.stringify({text})});
+      if (got.audio) { if (playing) playing.pause(); playing = new Audio("data:audio/wav;base64," + got.audio); await playing.play(); return; }
+    } catch (error) { /* the browser speaks instead */ }
+    if (!window.speechSynthesis) return;
+    speechSynthesis.cancel();
+    const line = new SpeechSynthesisUtterance(text);
+    const voices = speechSynthesis.getVoices();
+    line.voice = voices.find(v => /natural/i.test(v.name) && /^en/i.test(v.lang)) || voices.find(v => /^en/i.test(v.lang)) || null;
+    line.rate = 1.03;
+    speechSynthesis.speak(line);
+  }
+  async function ask(text) {
+    text = String(text || "").trim();
+    if (!text) { say.focus(); return; }
+    say.value = "";
+    const entry = {q: text, r: null};
+    talkLog.push(entry); draw();
+    send.disabled = true;
+    try { entry.r = await api("/api/kosi", {method: "POST", body: JSON.stringify({text})}); }
+    catch (error) { entry.r = {text: String(error.message || error), kept: [], suggest: []}; }
+    finally { send.disabled = false; }
+    draw();
+    voice(entry.r.text);
+  }
+  let recorder = null, chunks = [];
+  mic.onclick = async () => {
+    if (recorder && recorder.state === "recording") { recorder.stop(); return; }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({audio: true});
+      chunks = [];
+      recorder = new MediaRecorder(stream);
+      recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        mic.textContent = "\u{1F3A4} Press to speak";
+        status.textContent = "Kosi is listening back…";
+        const blob = new Blob(chunks, {type: recorder.mimeType || "audio/webm"});
+        const audio = await new Promise(done => { const r = new FileReader(); r.onload = () => done(String(r.result).split(",")[1] || ""); r.readAsDataURL(blob); });
+        try {
+          const heard = await api("/api/kosi/hear", {method: "POST", body: JSON.stringify({audio, type: blob.type})});
+          status.textContent = "";
+          if (heard.text) ask(heard.text); else status.textContent = "Kosi did not catch that. Try again?";
+        } catch (error) { status.textContent = String(error.message || error); }
+      };
+      recorder.start();
+      if (playing) playing.pause();
+      if (window.speechSynthesis) speechSynthesis.cancel();
+      mic.textContent = "\u25A0 Stop, I'm done";
+      status.textContent = "Listening…";
+    } catch (error) { status.textContent = "Kosi cannot reach the microphone: " + (error.message || error); }
+  };
+  say.addEventListener("keydown", event => { if (event.key === "Enter") ask(say.value); });
+  main.replaceChildren(titled("Talk to Kosi"),
+    h("p", {class: "lead"}, "Kosi is your companion, run by Kosika Brain. It remembers you, your projects and what it has learned, and answers like a friend. Type, or press the microphone and speak."),
+    h("div", {style: "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0 6px"}, mic, say, send),
+    h("div", {style: "display:flex;gap:10px;align-items:center;flex-wrap:wrap"}, h("label", {style: "display:flex;gap:6px;align-items:center"}, voiceOn, "Kosi speaks its answers"), status),
+    log);
+  draw();
+  say.focus();
 }
 
 // The crew (examples/agents/crew), run by Kosika Brain: give it a topic and
