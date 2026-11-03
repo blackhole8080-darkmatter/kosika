@@ -63,13 +63,15 @@ record BrainRated { rated: Bool said: Text }
 fn br_common() -> Text[] { return ["the", "and", "for", "its", "are", "was", "has", "how", "why", "but", "not", "you", "can", "one", "two", "that", "this", "with", "from", "into", "they", "then", "than", "each", "when", "what", "where", "which", "does", "work", "works", "explain", "show", "tell", "about", "make", "draw", "please", "again", "me", "a", "an", "is", "do", "of", "to", "in", "on", "it", "my", "i"] }
 
 // The ask's words that carry its topic, cut to five letters, so
-// "evaporates" and "evaporation" meet.
+// "evaporates" and "evaporation" meet. Numbers are kept whole, however
+// short: in "binary search for 9 in 2 4 6" the numbers are the question.
 fn br_words(text: Text) -> Text[] {
   let common = br_common()
   var out: Text[] = []
   for w in text.lower().replace(",", " ").replace(".", " ").replace("?", " ").replace("!", " ").replace(":", " ").replace(";", " ").replace("(", " ").replace(")", " ").replace("'", " ").words() {
-    let stem = if w.length() > 5 { w.slice(0, 5) } else { w }
-    if w.length() >= 3 and not common.contains(w) and not out.contains(stem) { out = out.append(stem) }
+    let number = w.to_number().exists()
+    let stem = if w.length() > 5 and not number { w.slice(0, 5) } else { w }
+    if (number or (w.length() >= 3 and not common.contains(w))) and not out.contains(stem) { out = out.append(stem) }
   }
   return out
 }
@@ -290,6 +292,7 @@ test "the Brain reads an ask's topic words" {
   expect br_words("Explain the water cycle") == ["water", "cycle"]
   expect br_words("how evaporation happens") == ["evapo", "happe"]
   expect br_key("episode", "How does the water cycle work?") == "episode:water-cycle"
+  expect br_words("binary search for 9 in 2 4 6") == ["binar", "searc", "9", "2", "4", "6"]
 }
 
 test "a memory is used only above the floor" {
@@ -321,7 +324,7 @@ test "the canvas says what the Brain remembered" {
   expect br_told(r, br_past(br_test_found([], "words"), "x")).why == "drew all three"
   plain = {..r, embed: "<div class=\"kd\"><div class=\"kd-title\">Bubble sort</div></div>"}
   expect br_told(plain, past).embed.contains("Kosika remembers: drew &#39;Water Cycle&#39; as living nodes</div><div class=\"kd-title\">Bubble sort")
-  expect br_words("Show me how a binary search tree inserts 7 again") == ["binar", "searc", "tree", "inser"]
+  expect br_words("Show me how a binary search tree inserts 7 again") == ["binar", "searc", "tree", "inser", "7"]
 }
 
 fn br_test_canvas(topic: Text, score: Number) -> BrainCanvas { return {..br_no_canvas(), topic: topic, words: br_words(topic).join(" "), kind: "canvas", title: "Water Cycle", why: "drew all three", page: "<p>page</p>", embed: "<div class=\"kd-title\">Water Cycle</div>", score: score} }
@@ -343,6 +346,10 @@ test "a kept canvas is given again for a near ask, with no model" {
   expect not br_reusable(recipe, br_test_ask("redraw the water cycle"))
   down = br_recipe(br_test_made(br_rated_canvas(kept, {ask: "x", liked: false})), "explain the water cycle")
   expect down.found and not br_reusable(down, br_test_ask("explain the water cycle"))
+  // Other numbers are another question: not the same canvas.
+  nine = br_test_canvas("binary search for 9 in 2 4 6 9 11 15 20", 2)
+  expect not br_recipe(br_test_made(nine), "binary search for 11 in 3 5 8 11 14 19 23").found
+  expect br_recipe(br_test_made(nine), "show me a binary search for 9 in 2 4 6 9 11 15 20").found
   // A canvas drawn now and checked is kept; one reused is not kept again.
   expect not br_worth_keeping(given, recipe, br_test_ask("explain the water cycle"))
 }
