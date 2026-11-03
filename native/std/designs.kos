@@ -1618,7 +1618,8 @@ workflow dz_algorithm(ask: DzAsk) -> DzResult {
 fn dz_from_algorithm(ask: DzAsk, a: AlPage) -> DzResult {
   let place = dz_place(ask)
   let palette = dz_palette(ask.palette, "dark_matter")
-  let embed = dz_wrap("algorithm", place, palette, a.run.title, a.card, al_style())
+  // On the Kosika canvas, with the canvas's own stage, bar and panels.
+  let embed = dz_wrap("canvas", place, palette, a.run.title, a.card, al_style() + dz_canvas_style() + dz_stage_style())
   return {kind: "algorithm", why: dz_why(ask), title: a.run.title, page: dz_canvas_page(a.run.title, palette, embed), svg: al_svg(a.run), embed: embed, problems: a.problems, fixed: []}
 }
 

@@ -1675,6 +1675,8 @@ function showDesigns() {
       frame.addEventListener("load", () => {
         const fit = () => { try { frame.style.height = (frame.contentDocument.body.scrollHeight + 4) + "px"; } catch (error) { /* keep the set height */ } };
         fit(); setTimeout(fit, 900);
+        // and again whenever it changes, as when a panel inside is opened
+        try { new ResizeObserver(fit).observe(frame.contentDocument.body); } catch (error) { /* the set height stays */ }
       });
       const open = h("button", {class: "ghost", onclick: () => { const url = URL.createObjectURL(new Blob([made.page], {type: "text/html"})); window.open(url, "_blank"); }}, "Open as a page");
       // Kosika Brain keeps what it drew: a thumbs up gives it again for

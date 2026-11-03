@@ -413,7 +413,7 @@ fn br_with_known(r: DzResult, facts: BrainNote[]) -> DzResult {
     let rest = f.source.split(" · ").drop(1).join(" · ")
     items = items + "<li style=\"margin:0 0 10px\"><div style=\"font-weight:700\">" + title + "</div><div style=\"color:var(--soft)\">" + br_esc(f.text) + "</div><div style=\"color:var(--soft);font:500 11px ui-monospace,Consolas,monospace;letter-spacing:.06em;margin-top:2px\">" + br_esc(rest) + "</div></li>"
   }
-  let card = "<div class=\"br-known\" style=\"margin-top:14px;padding:14px 16px;border-radius:16px;border:1px solid color-mix(in srgb,var(--line) 18%,transparent)\"><div style=\"font:600 11px ui-monospace,Consolas,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--amber);margin-bottom:10px\">What Kosika knows &#183; gathered from research, with sources</div><ul style=\"list-style:none;margin:0;padding:0\">" + items + "</ul></div>"
+  let card = "<div class=\"kc-card br-known\" style=\"margin-top:14px;padding:14px 16px\"><div class=\"kc-label\">What Kosika knows &#183; <b>gathered from research, with sources</b></div><ul style=\"list-style:none;margin:4px 4px 0;padding:0\">" + items + "</ul></div>"
   let embed = r.embed.slice(0, r.embed.length() - 6) + card + "</div>"
   let page = r.page.replace(r.embed, embed)
   let n = facts.length()
@@ -439,11 +439,11 @@ fn br_rated_said(c: BrainCanvas, r: BrainRating) -> BrainRated {
 
 // What a canvas looked like, in a few words, read from what Designs made.
 fn br_style(r: DzResult) -> Text {
+  if r.kind == "algorithm" { return "an algorithm run and played step by step" }
   if r.embed.contains("class=\"st-journey\"") { return "a journey drawn through the picture" }
   if r.embed.contains("class=\"art lc lc-nodes\"") { return "living nodes" }
   if r.embed.contains("class=\"st-living\"") { return "living cards" }
   if r.embed.contains("class=\"kc-card kc-stage\"") { return "a played diagram and picture" }
-  if r.kind == "algorithm" { return "an algorithm run and played step by step" }
   return "a " + r.kind
 }
 
@@ -703,7 +703,7 @@ test "a canvas shows what the Brain knows about its ask, linked to its sources" 
   expect br_known(found, "how does a volcano erupt").is_empty()
   expect br_known(found, "ocean tides 1 2 3 4 5 6").length() == 2
   told = br_with_known(br_test_result(), known)
-  expect told.embed.contains("What Kosika knows &#183; gathered from research, with sources")
+  expect told.embed.contains("What Kosika knows &#183; <b>gathered from research, with sources</b>")
   expect told.embed.contains("<a href=\"https://arxiv.org/abs/2610.00001v1\"")
   expect told.embed.ends_with("</div>")
   expect told.why.ends_with("from 2 research papers, each with its source.")
