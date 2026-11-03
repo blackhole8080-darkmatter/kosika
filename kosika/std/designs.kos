@@ -1190,6 +1190,7 @@ fn dz_figure_reach(f: Figure) -> Number {
 // stays seen. A step that names no figure gets no pin.
 fn dz_journey_pins(s: Structure, a: Art) -> DzPin[] {
   let figure_stems = for f in a.figures { dz_bare_words(dz_figure_words(f)) }
+  let figure_heads = for words in figure_stems { dz_stems(words) }
   let w = art_width() * art_px()
   let h = art_height() * art_px()
   var pins: DzPin[] = []
@@ -1208,7 +1209,7 @@ fn dz_journey_pins(s: Structure, a: Art) -> DzPin[] {
     var back_score = 0
     for j in 0 until a.figures.length() {
       let f = a.figures[j]
-      let n = if f.kind == "text" or f.id == last { 0 } else { dz_near_count(figure_stems[j], heads, line) }
+      let n = if f.kind == "text" or f.id == last { 0 } else { dz_near_count(figure_stems[j], figure_heads[j], heads, line) }
       if used.contains(f.id) {
         if end and n > back_score {
           back = j
@@ -1250,17 +1251,17 @@ fn dz_bare_words(words: Text[]) -> Text[] {
 
 // How near a step comes to a figure's words: two for the same first five
 // letters (home, homes), one for a word of four letters or more inside a
-// word the step says (station, substation), so the closer name wins. `heads` are the step's words cut to five
-// letters, `line` all its words between spaces: worked out once a step.
-fn dz_near_count(figure: Text[], heads: Text[], line: Text) -> Number {
+// word the step says (station, substation), so the closer name wins.
+// `figure_heads` and `heads` are the figure's and the step's words cut to
+// five letters, `line` the step's words between spaces: all worked out
+// once, as the whole run shares one budget of function calls.
+fn dz_near_count(figure: Text[], figure_heads: Text[], heads: Text[], line: Text) -> Number {
   var n = 0
-  for w in figure {
-    if heads.contains(dz_head(w)) { n = n + 2 } else { if w.length() >= 4 and line.contains(w) { n = n + 1 } }
+  for k in 0 until figure.length() {
+    if heads.contains(figure_heads[k]) { n = n + 2 } else { if figure[k].length() >= 4 and line.contains(figure[k]) { n = n + 1 } }
   }
   return n
 }
-
-fn dz_head(w: Text) -> Text { return if w.length() > 5 { w.slice(0, 5) } else { w } }
 
 // A journey when the shape is one and the pins cover most of the steps,
 // standing on at least three different figures.
@@ -1357,7 +1358,7 @@ fn dz_loop_from(ids: Text[], next: Text[], start: Text) -> Number {
 
 fn dz_read(r: Request) -> Request { return {..r, structure: {..r.structure, shape: dz_read_shape(r.structure)}} }
 
-// Where the picture's figures stand. The story's figures go left to right
+// Where a journey's figures stand. The story's figures go left to right
 // in the order it meets them, evenly spaced, each keeping the height the
 // model gave it (the sky above, the ground below). Smaller things standing
 // on one go with it; a line or arrow ending at one has that end moved too.
@@ -1369,7 +1370,9 @@ record DzPlacing { art: Art moved: Bool note: Text }
 fn dz_placing(m: ArtPage, s: Structure, said: Text) -> DzPlacing {
   let read = if said == s.shape or said.is_empty() { "" } else { f"read the shape as {s.shape} from its links, where the model said {said}" }
   let still: DzPlacing = {art: m.art, moved: false, note: read}
-  if m.svg.is_empty() or not ["flow", "timeline", "cycle"].contains(s.shape) { return still }
+  // Only a journey is laid out by Kosika: a cycle keeps the model's own
+  // scene, whose sky, sea and land already mean where things are.
+  if m.svg.is_empty() or not ["flow", "timeline"].contains(s.shape) { return still }
   var chain: Text[] = []
   for p in dz_journey_pins(s, m.art) {
     if not chain.contains(p.of) { chain = chain.append(p.of) }
@@ -1384,9 +1387,11 @@ fn dz_placed(m: ArtPage, p: DzPlacing) -> ArtPage {
   let notes: Text[] = if p.note.is_empty() { [] } else { [p.note] }
   let kept = {..m, fixed: notes.concat(m.fixed)}
   if not p.moved { return kept }
-  let again = art_result(m.art.title, p.art)
-  if not again.problems.is_empty() { return kept }
-  return {..again, fixed: notes.concat(again.fixed)}
+  // Checked and drawn again, but not the whole art page: the canvas shows
+  // the picture only, and the run shares one budget of function calls.
+  if not art_problems(p.art).is_empty() { return kept }
+  let tidy = art_tidy(p.art)
+  return {..kept, art: tidy, svg: art_svg(tidy)}
 }
 
 fn dz_figure_at(a: Art, id: Text) -> Number {
@@ -1521,7 +1526,9 @@ fn dz_stage(r: Request, d: Design, m: ArtPage, graph: Text, flows: DzFlows) -> T
   let living = dz_living_fits(s)
   let open_art = "<details class=\"kc-full\"><summary>Open the moving picture</summary><div class=\"st-art\">" + m.svg + "</div></details>"
   // A journey is drawn through the picture itself instead.
-  let pins = dz_journey_pins(s, m.art)
+  // Pins are worked out only for a shape that can be a journey: the whole
+  // run shares one budget of function calls.
+  let pins: DzPin[] = if ["flow", "timeline"].contains(s.shape) { dz_journey_pins(s, m.art) } else { [] }
   let journey = dz_journey_fits(s, pins)
   let road = "<div class=\"st-journey\">" + m.svg + dz_journey_svg(pins) + "</div><div class=\"st-opens\">" + open_full + "</div>"
   let screen = if journey { road } else { dz_stage_screen(s, m, flows, living, form, open_art, open_full) }
@@ -1968,6 +1975,6 @@ test "style B: a journey is drawn through the picture, one pin per step on its f
   expect (for p in again { p.k }) == [0, 1, 3, 4]
   expect again[3].of == "sun"
   expect dz_bare_words(["line1", "high‑voltage", "sea"]) == ["line", "highvoltage", "sea"]
-  expect dz_near_count(["station", "home", "tower"], ["subst", "homes"], " substation homes ") == 2
-  expect dz_near_count(["subst"], ["subst"], " substation ") > dz_near_count(["station"], ["subst"], " substation ")
+  expect dz_near_count(["station", "home", "tower"], ["stati", "home", "tower"], ["subst", "homes"], " substation homes ") == 2
+  expect dz_near_count(["subst"], ["subst"], ["subst"], " substation ") > dz_near_count(["station"], ["stati"], ["subst"], " substation ")
 }
