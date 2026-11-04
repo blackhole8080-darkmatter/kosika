@@ -27,7 +27,7 @@ sys.path.insert(0, str(ROOT))
 
 from kosika import designs  # noqa: E402
 
-HONEST = ["not sure", "don't know", "do not know", "can't", "cannot", "not aware", "no idea", "isn't a", "is not a", "not real", "doesn't exist", "does not exist", "no way to know", "unable", "not able", "made up", "fictional"]
+HONEST = ["not sure", "don't have any information", "no information", "hasn't happened", "has not happened", "hasn't taken place", "don't know", "do not know", "can't", "cannot", "not aware", "no idea", "isn't a", "is not a", "not real", "doesn't exist", "does not exist", "no way to know", "unable", "not able", "made up", "fictional"]
 
 
 def t(say, area, any_of=(), none_of=(), honest=False, canvas=None, kept=None):

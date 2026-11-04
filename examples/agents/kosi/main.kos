@@ -83,6 +83,41 @@ fn ko_note_line(n: BrainNote) -> Text {
 
 fn ko_talk_text(talk: BrainFound) -> Text { return if talk.notes.is_empty() { "(this is the start of the talk)" } else { talk.notes[0].text.replace(" | ", "\n") } }
 
+// What Kosika works out exactly, so the model need not guess: how often a
+// letter is in a word, and how many letters a word has. Models read words in
+// pieces and miscount them; Kosika counts.
+fn ko_worked(text: Text) -> Text {
+  let ws = text.lower().replace("?", " ").replace("'", " ").replace("\"", " ").replace(",", " ").words()
+  var out: Text[] = []
+  for k in 0 until ws.length() {
+    let w = ws[k]
+    if w == "letter" and k + 1 < ws.length() and ws[k + 1].length() == 1 {
+      let letter = ws[k + 1]
+      for j in (k + 2) until ws.length() {
+        if ws[j] == "in" and j + 1 < ws.length() {
+          let after = for x in ws.slice(j + 1, ws.length()) where x != "the" and x != "word" { x }
+          if not after.is_empty() {
+            let word = after[0].trim_marks(".,;:()!")
+            let times = word.split(letter).length() - 1
+            let spelled = (for c in 0 until word.length() { word.slice(c, c + 1) }).join("-")
+            out = out.append(f"The letter {letter} appears {times} times in {word} ({spelled}).")
+          }
+          break
+        }
+      }
+    }
+    if w == "letters" and k + 2 < ws.length() and (ws[k + 1] == "in" or ws[k + 1] == "does") {
+      let rest = for x in ws.slice(k + 2, ws.length()) where x != "the" and x != "word" { x }
+      if not rest.is_empty() {
+        let word = rest[0].trim_marks(".,;:()!")
+        out = out.append(f"The word {word} has {word.length()} letters.")
+      }
+    }
+  }
+  return if out.is_empty() { "" } else { "
+- Worked out exactly by Kosika: " + out.join(" ") }
+}
+
 fn ko_now(today: Moment) -> Text { return f"{today.weekday} {today.date}, {today.time}" }
 
 // ---------------------------------------------------------------- checking the reply
@@ -131,7 +166,8 @@ fn ko_new_facts(r: KosiReply, known: BrainFound) -> Text[] {
     let stems = br_words(t)
     let low = " " + t.lower() + " "
     let asking = low.contains(" wants an explanation") or low.contains(" wants a drawing") or low.contains(" wants a picture") or low.contains(" asked ") or low.contains(" is asking ")
-    let said_before = (for h in have.concat(taken) where br_near(stems, h.join(" ")) >= 0.5 { h }).length() > 0
+    let corrects = not ko_replaces(t, known).is_empty()
+    let said_before = not corrects and (for h in have.concat(taken) where br_near(stems, h.join(" ")) >= 0.5 { h }).length() > 0
     if words >= 3 and words <= 30 and not asking and not said_before {
       out = out.append(t)
       taken = taken.append(stems)
@@ -140,8 +176,37 @@ fn ko_new_facts(r: KosiReply, known: BrainFound) -> Text[] {
   return out
 }
 
-fn ko_fact_note(text: Text, today: Moment) -> BrainNote {
-  return {kind: "fact", topic: text, words: br_words(text).join(" "), text: text, source: "you told Kosi, " + today.date, score: 1, times: 1}
+// The numbers in a fact, a date's "19th" read as 19.
+fn ko_numbers(text: Text) -> Number[] {
+  var out: Number[] = []
+  for w in text.replace(",", " ").replace("/", " ").words() {
+    let bare = w.trim_marks(".,;:()?!'\"").lower()
+    let plain = if bare.ends_with("st") or bare.ends_with("nd") or bare.ends_with("rd") or bare.ends_with("th") { bare.slice(0, bare.length() - 2) } else { bare }
+    let v = plain.to_number()
+    if v.exists() { out = out.append(v.value()) }
+  }
+  return out
+}
+
+// A fact that changes one Kosi holds: most of the same words, other
+// numbers ("Their exam is now on 19 December." after "... on 12 December.").
+// The topic of the fact it replaces, else "".
+fn ko_replaces(text: Text, known: BrainFound) -> Text {
+  let stems = br_words(text)
+  let numbers = ko_numbers(text)
+  if numbers.is_empty() { return "" }
+  for n in known.notes where n.kind == "fact" {
+    if br_near(stems, br_words(n.text).join(" ")) >= 0.5 and ko_numbers(n.text) != numbers { return n.topic }
+  }
+  return ""
+}
+
+// A new fact is kept under its own words; a changed one under the topic of
+// the fact it replaces, so the old one is written over, not kept beside it.
+fn ko_fact_note(text: Text, today: Moment, known: BrainFound) -> BrainNote {
+  let old = ko_replaces(text, known)
+  let topic = if old.is_empty() { text } else { old }
+  return {kind: "fact", topic: topic, words: br_words(text).join(" "), text: text, source: "you told Kosi, " + today.date, score: 1, times: 1}
 }
 
 // The facts Kosi already holds on what it was told to remember, so the same
@@ -150,7 +215,7 @@ fn ko_seen_ask(r: KosiReply) -> BrainAsk { return {text: if r.remember.is_empty(
 
 fn ko_both(a: BrainFound, b: BrainFound) -> BrainFound { return {notes: a.notes.concat(b.notes), by: a.by} }
 
-fn ko_facts(r: KosiReply, known: BrainFound, today: Moment) -> KosiFacts { return {notes: for f in ko_new_facts(r, known) { ko_fact_note(f, today) }} }
+fn ko_facts(r: KosiReply, known: BrainFound, today: Moment) -> KosiFacts { return {notes: for f in ko_new_facts(r, known) { ko_fact_note(f, today, known) }} }
 
 // ---------------------------------------------------------------- the talk
 
@@ -206,7 +271,7 @@ workflow chat(msg: Msg) -> Said {
   today  = now
   known  = call brain_recall({text: msg.text, kind: ""})
   talk   = call brain_get(ko_talk_ask())
-  reply  = use_model friend(ko_task(), msg.text, ko_known_text(known), ko_talk_text(talk), ko_now(today)) retry 1 otherwise ko_no_reply()
+  reply  = use_model friend(ko_task(), msg.text, ko_known_text(known) + ko_worked(msg.text), ko_talk_text(talk), ko_now(today)) retry 1 otherwise ko_no_reply()
   drawn  = match ko_wants_picture(msg, reply) {
     case true { call brain_design(ko_draw_ask(reply)) }
     case _ { ko_no_canvas() }
@@ -277,4 +342,17 @@ test "what Kosi knows is put in front of the model, and the talk is not counted 
   expect text.contains("- Research: Tidal dissipation: We measure tides.")
   expect not text.contains("Kosi: Hey!")
   expect ko_known_text(ko_test_found([])) == "(nothing yet)"
+}
+
+test "a changed fact writes over the old one, and Kosika counts letters itself" {
+  known = ko_test_found([ko_test_note("fact", "Their exam is on 12 December.", "Their exam is on 12 December.", "you told Kosi, 2026-11-03")])
+  moved = ko_test_reply("Noted.", ["Their exam is now on 19 December."])
+  expect ko_new_facts(moved, known) == ["Their exam is now on 19 December."]
+  expect ko_replaces("Their exam is now on 19th December.", known) == "Their exam is on 12 December."
+  expect ko_replaces("Their exam is on 12 December.", known) == ""
+  expect ko_new_facts(ko_test_reply("ok", ["They have an exam on 12 December."]), known).is_empty()
+  expect ko_numbers("on the 19th, at 9:30") == [19]
+  expect ko_worked("How many times does the letter r appear in the word strawberry?").contains("appears 3 times in strawberry")
+  expect ko_worked("how many letters in the word banana?").contains("has 6 letters")
+  expect ko_worked("hi Kosi, how are you?") == ""
 }
