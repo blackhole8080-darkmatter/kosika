@@ -1367,7 +1367,7 @@ async function route() {
   const id = rawId ? decodeURIComponent(rawId) : "";
   try {
     const active = view || "talk";
-    const needs = ["agents", "agent", "project", "runs", "tools", "skills", "assistant", "permissions", "crew"].includes(active);
+    const needs = ["agents", "agent", "project", "runs", "tools", "skills", "assistant", "permissions"].includes(active);
     if (needs) { drawRail(active); if (!overview) main.replaceChildren(h("div", {style: "font:12px var(--mono);color:var(--faint)"}, "reading your agents…")); await loadOverview(); }
     else loadOverview().then(() => { if (mine === routing) drawRail(active); }).catch(() => {});
     if (mine !== routing) return;
@@ -2087,10 +2087,135 @@ function agentTabs(active) {
   return h("div", {class: "friends", role: "group", "aria-label": "Agents", style: "margin-bottom:16px"}, tab("agents", "Agents"), tab("project", "Project"), tab("skills", "Skills"), tab("tools", "Tools"));
 }
 
+// ------------------------------------------------- the swarm, live
+// Kosi and its friends working together on one task, drawn as it happens
+// on the Kosika canvas: each agent a node, a line lit while a call runs,
+// and beside it every call with its timing. Nothing is staged: each line
+// lights when its call starts and settles when the answer comes back.
+const SWARM_NODES = {
+  kosi: {x: 360, y: 230, name: "Kosi", role: "conductor", ring: "var(--accent)"},
+  iris: {x: 150, y: 100, name: "Iris", role: "researcher", ring: "#5ec4b6"},
+  sol: {x: 570, y: 100, name: "Sol", role: "scientist", ring: "#b6acf5"},
+  arxiv: {x: 80, y: 300, name: "arXiv", tool: true},
+  wiki: {x: 250, y: 28, name: "Wikipedia", tool: true},
+  check: {x: 610, y: 320, name: "Kosika checks", tool: true},
+  brief: {x: 360, y: 410, name: "The brief", role: "what you get", ring: "var(--ok)"}
+};
+const SWARM_LINKS = [["kosi", "iris"], ["kosi", "sol"], ["iris", "arxiv"], ["iris", "wiki"], ["sol", "check"], ["kosi", "check"], ["kosi", "brief"]];
+let swarmRunning = false;
+function showCrew() {
+  const task = h("input", {type: "text", "aria-label": "Task for the swarm", placeholder: "Give the swarm a task: research and explain anything", style: "flex:1;min-width:0;min-height:42px;border:0;background:transparent;font-size:15px;box-shadow:none"});
+  const start = h("button", {style: "min-height:40px;padding:0 16px"}, "Start");
+  const live = h("span", {style: "display:none;align-items:center;gap:8px;font:12px var(--mono);color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 35%,var(--line));border-radius:999px;padding:4px 10px"});
+  const board = h("div", {style: "position:relative;width:720px;height:460px;transform-origin:0 0"});
+  const wrap = h("section", {"aria-label": "The swarm, drawn on the Kosika canvas", style: "flex:999 1 560px;min-width:0;overflow:hidden;border:1px solid var(--line);border-radius:14px;padding:16px;background-color:var(--panel);background-image:radial-gradient(color-mix(in srgb,var(--ink) 14%,transparent) 1px,transparent 1px);background-size:20px 20px"}, board);
+  const calls = h("div", {style: "display:flex;flex-direction:column"});
+  const totals = h("div", {style: "display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:auto;padding-top:14px"});
+  const aside = h("aside", {"aria-label": "Calls", style: "flex:1 1 300px;max-width:420px;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:14px;padding:16px 18px;background:var(--panel)"},
+    h("div", {style: "font:600 12px var(--sans);letter-spacing:.08em;text-transform:uppercase;color:var(--soft);margin-bottom:6px"}, "Calls"), calls, totals);
+  const result = h("div", {style: "margin-top:20px;max-width:980px"});
+  const lines = {}, nodes = {};
+  for (const [a, b] of SWARM_LINKS) {
+    const p = SWARM_NODES[a], q = SWARM_NODES[b];
+    const length = Math.hypot(q.x - p.x, q.y - p.y), angle = Math.atan2(q.y - p.y, q.x - p.x) * 180 / Math.PI;
+    lines[a + ">" + b] = h("div", {"aria-hidden": "true", style: `position:absolute;left:${p.x}px;top:${p.y}px;width:${length}px;height:0;border-top:1.5px dashed var(--line);transform:rotate(${angle}deg);transform-origin:0 0;transition:border-color .3s`});
+  }
+  for (const [id, n] of Object.entries(SWARM_NODES)) {
+    nodes[id] = n.tool
+      ? h("div", {style: `position:absolute;left:${n.x}px;top:${n.y}px;transform:translate(-50%,-50%);border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:6px 10px;font:11px var(--mono);color:var(--soft);transition:all .3s`}, n.name)
+      : h("div", {style: `position:absolute;left:${n.x}px;top:${n.y}px;transform:translate(-50%,-50%);width:170px;border:1px solid var(--line);background:var(--bg);border-radius:12px;padding:10px 12px;text-align:center;transition:all .3s`},
+          h("div", {style: "font-weight:600;font-size:14px"}, n.name), h("div", {class: "state", style: "font:11px var(--mono);color:var(--faint);margin-top:2px"}, n.role + " · waiting"));
+  }
+  board.append(...Object.values(lines), ...Object.values(nodes));
+  const fitBoard = () => { const room = wrap.clientWidth - 32; const k = Math.min(1, room / 720); board.style.transform = `translateX(${Math.max(0, (room - 720 * k) / 2)}px) scale(${k})`; board.style.marginBottom = (460 * k - 460) + "px"; };
+  try { new ResizeObserver(fitBoard).observe(wrap); } catch (error) { /* drawn at full size */ }
+  function light(link, how) {
+    const line = lines[link]; if (!line) return;
+    line.style.borderTop = how === "run" ? "2px solid var(--accent)" : how === "done" ? "1.5px solid " + (SWARM_NODES[link.split(">")[1]].ring || "var(--soft)") : "1.5px dashed var(--line)";
+  }
+  function node(id, state, colour) {
+    const n = SWARM_NODES[id], el = nodes[id];
+    el.style.borderColor = state === "waiting" ? "var(--line)" : (colour || n.ring || "var(--accent)");
+    el.style.boxShadow = state === "running" ? "0 0 0 4px color-mix(in srgb," + (n.ring || "var(--accent)") + " 18%,transparent)" : "none";
+    const s = el.querySelector(".state"); if (s) s.textContent = n.role + " · " + state;
+    if (n.tool) el.style.color = state === "waiting" ? "var(--soft)" : (colour || "var(--accent)");
+  }
+  let began = 0, made = 0, sites = 0, checks = 0;
+  function clock() { const s = Math.floor((Date.now() - began) / 1000); return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0"); }
+  function row(who, what) {
+    const status = h("span", {style: "font:11px var(--mono);color:var(--accent)"}, "running");
+    calls.append(h("div", {style: "display:grid;grid-template-columns:44px minmax(0,1fr);gap:10px;align-items:baseline;padding:10px 0;border-bottom:1px solid var(--line)"},
+      h("span", {style: "font:11px var(--mono);color:var(--faint)"}, clock()), h("div", {style: "min-width:0"}, h("div", {style: "font-size:14px"}, who), h("div", {style: "font-size:12px;color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap"}, what), status)));
+    const t0 = Date.now();
+    return (ok, note) => { status.textContent = (ok ? "done " : "failed ") + ((Date.now() - t0) / 1000).toFixed(1) + " s" + (note ? " · " + note : ""); status.style.color = ok ? "var(--ok)" : "var(--bad)"; };
+  }
+  function total() {
+    const tile = (n, label, ok) => h("div", {style: `border:1px solid ${ok ? "color-mix(in srgb,var(--ok) 35%,var(--line))" : "var(--line)"};border-radius:10px;padding:10px`}, h("div", {style: `font-size:18px;font-weight:600;${ok ? "color:var(--ok)" : ""}`}, String(n)), h("div", {style: "font-size:11px;color:var(--faint)"}, label));
+    totals.replaceChildren(tile(made, "model calls"), tile(sites, "sources read"), tile(checks + "/" + made, "answers checked", made && checks === made));
+  }
+  async function ask(text) { made++; total(); const r = await api("/api/kosi", {method: "POST", body: JSON.stringify({text})}); return r; }
+  async function run() {
+    const what = task.value.trim();
+    if (!what || swarmRunning) { task.focus(); return; }
+    swarmRunning = true; start.disabled = true; calls.replaceChildren(); result.replaceChildren(); made = sites = checks = 0; total();
+    for (const id of Object.keys(SWARM_NODES)) node(id, "waiting");
+    for (const link of Object.keys(lines)) light(link);
+    began = Date.now(); live.style.display = "inline-flex";
+    const tick = setInterval(() => { live.textContent = "live · " + clock(); }, 250);
+    try {
+      node("kosi", "planning");
+      row("Kosi → plan", "Iris researches, Sol explains and draws, Kosi writes the brief")(true, "no model");
+      // Iris: papers and checked facts.
+      node("kosi", "handing on"); light("kosi>iris", "run"); light("iris>arxiv", "run"); light("iris>wiki", "run"); node("iris", "reading"); node("arxiv", "reading"); node("wiki", "reading");
+      let doneIris = row("Kosi → Iris", what);
+      const iris = await ask("Iris, " + what);
+      const found = (iris.sources || []).length; sites += found; if (iris.text && !/couldn't|could not/i.test(iris.text)) checks++;
+      doneIris(true, found + " sources"); light("kosi>iris", "done"); light("iris>arxiv", "done"); light("iris>wiki", "done"); node("iris", "done"); node("arxiv", "done", "var(--soft)"); node("wiki", "done", "var(--soft)"); total();
+      // Sol: Kosika's exact science, explained and drawn.
+      light("kosi>sol", "run"); light("sol>check", "run"); node("sol", "explaining"); node("check", "checking");
+      const doneSol = row("Kosi → Sol", "explain and draw it");
+      const sol = await ask("Sol, explain " + what);
+      if (sol.text) checks++;
+      doneSol(true, sol.canvas ? "drew it" : "explained"); light("kosi>sol", "done"); light("sol>check", "done"); node("sol", "done"); node("check", "passed", "var(--ok)"); total();
+      // Kosi: the brief from both.
+      light("kosi>check", "run"); light("kosi>brief", "run"); node("kosi", "writing the brief");
+      const doneKosi = row("Kosi → the brief", "from what Iris found and Sol explained");
+      const brief = await ask("Write me a short brief, in four sentences, on " + what + ". Use only these notes. From Iris: " + iris.text + " From Sol: " + sol.text);
+      if (brief.text) checks++;
+      doneKosi(true); light("kosi>check", "done"); light("kosi>brief", "done"); node("kosi", "done"); node("brief", "ready", "var(--ok)"); total();
+      const say = (who, r) => h("div", {class: "say-from", style: "margin-top:16px"}, h("div", {class: "say-ring", style: `--ring:${SWARM_NODES[who].ring}`, "aria-hidden": "true"}, SWARM_NODES[who].name[0]),
+        h("div", {style: "min-width:0;flex:1"}, h("span", {class: "say-name"}, SWARM_NODES[who].name), h("span", {class: "say-meta"}, SWARM_NODES[who].role), h("div", {class: "say-text"}, r.text),
+          ...((r.sources || []).length ? [h("div", {style: "display:flex;flex-wrap:wrap;gap:6px;margin-top:10px"}, r.sources.map(u => h("a", {class: "say-src", href: u, target: "_blank", rel: "noopener"}, u.replace(/^https?:\/\/(www\.|export\.)?/, "").slice(0, 42))))] : [])));
+      const parts = [h("h2", {style: "margin:0"}, "The brief"), say("kosi", brief), say("iris", iris), say("sol", sol)];
+      if (sol.canvas) {
+        const frame = h("iframe", {title: "Kosika canvas", style: "width:100%;height:720px;border:0;border-radius:12px;background:transparent;margin-top:12px"});
+        frame.srcdoc = "<!doctype html><html><head><meta charset=\"utf-8\"><style>html,body{margin:0;background:transparent}</style></head><body>" + sol.canvas + "</body></html>";
+        frame.addEventListener("load", () => { const fit = () => { try { frame.style.height = (frame.contentDocument.body.scrollHeight + 4) + "px"; } catch (error) { /* keep */ } }; fit(); setTimeout(fit, 1500); });
+        parts.push(frame);
+      }
+      result.replaceChildren(...parts);
+    } catch (error) {
+      row("The swarm", String(error.message || error))(false);
+    } finally {
+      clearInterval(tick); live.textContent = "done · " + clock(); swarmRunning = false; start.disabled = false;
+    }
+  }
+  start.onclick = run;
+  task.addEventListener("keydown", event => { if (event.key === "Enter") run(); });
+  const pack = h("button", {class: "ghost", title: "Five agents make a study pack together", onclick: () => showCrewPack()}, "Make a study pack");
+  total();
+  main.replaceChildren(
+    h("div", {style: "display:flex;flex-wrap:wrap;gap:14px;align-items:center;padding-bottom:16px;border-bottom:1px solid var(--line)"}, h("h1", {style: "margin:0"}, "Swarm"), live, h("div", {style: "margin-left:auto"}, pack)),
+    h("div", {style: "display:flex;gap:8px;align-items:center;border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:5px 5px 5px 12px;margin:18px 0;max-width:980px"}, task, start),
+    h("div", {style: "display:flex;flex-wrap:wrap;gap:16px;max-width:1180px"}, wrap, aside),
+    result);
+  task.focus();
+}
+
 // The crew (examples/agents/crew), run by Kosika Brain: give it a topic and
 // five agents make a study pack together, each one's work checked by
 // Kosika, the crew at work played on a Kosika canvas at the top.
-function showCrew() {
+function showCrewPack() {
   const topic = h("input", {type: "text", placeholder: "photosynthesis, the water cycle, how vaccines work…", style: "flex:1;min-width:220px"});
   const go = h("button", {onclick: run}, "Make a pack");
   const out = h("div", {style: "margin-top:14px"});
