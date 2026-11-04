@@ -107,7 +107,7 @@ fn iris_sources(found: BrainFound) -> Text[] {
 
 fn iris_said(r: IrisReply, found: BrainFound, gathered: BrainGathered) -> FrSaid {
   let text = if r.reply.trim().is_empty() { "I looked, but I couldn't put an answer together this time. Ask me again in other words?" } else { r.reply.trim() }
-  return {who: "iris", text: text, canvas: "", kept: gathered.titles.take(3), sources: iris_sources(found), suggest: ["Sol, explain the science", "what did you find before?"]}
+  return {who: "iris", text: text, canvas: "", kept: gathered.titles.take(3), sources: iris_sources(found), suggest: ["Sol, explain the science of this"]}
 }
 
 fn iris_papers(g: BrainGathered) -> BrainFound { return {notes: g.notes, by: "words"} }
@@ -129,7 +129,39 @@ fn iris_fewer(question: Text) -> Text { return iris_topic(question).words().take
 
 // Iris reads arXiv for the question, checks what it names on Wikipedia,
 // recalls what the Brain already holds on it, and answers from all three.
+// Whether a message is something to look up: it has at least two words of
+// its own after the asking, and is not a greeting or thanks.
+fn iris_looks_up(question: Text) -> Bool {
+  let small = ["hello", "hi", "hey", "there", "thanks", "thank", "you", "so", "much", "very", "ok", "okay", "yes", "yeah", "no", "bye", "good", "night", "morning", "how", "are", "cool", "nice", "great", "iris"]
+  let words = for w in question.lower().replace(",", " ").words() { w.trim_marks(".!?") }
+  if (for w in words where not w.is_empty() and not small.contains(w) { w }).is_empty() { return false }
+  return iris_topic(question).words().length() >= 2
+}
+
+fn iris_chat_task() -> Text {
+  return "You are Iris, the researcher among Kosi's friends: curious, precise and warm, British. The person is chatting, not asking you to look anything up. Answer in one or two short, friendly spoken sentences, and offer to look something up for them. Never mention papers or sources here."
+}
+
+fn iris_chatted(r: IrisReply) -> FrSaid {
+  let text = if r.reply.trim().is_empty() { "Hello! Ask me about anything you'd like me to read up on." } else { r.reply.trim() }
+  return {who: "iris", text: text, canvas: "", kept: [], sources: [], suggest: ["Iris, what's new in AI research?"]}
+}
+
+workflow iris_chat(m: FrMsg) -> FrSaid {
+  budget 2 model calls, 120 seconds
+  reply = use_model iris(iris_chat_task(), fr_question(m.text), "(nothing searched)") retry 1 otherwise iris_no_reply()
+  out   = iris_chatted(reply)
+}
+
 workflow iris_research(m: FrMsg) -> FrSaid {
+  budget 6 model calls, 600 seconds
+  out = match iris_looks_up(fr_question(m.text)) {
+    case true { call iris_search(m) }
+    case _ { call iris_chat(m) }
+  }
+}
+
+workflow iris_search(m: FrMsg) -> FrSaid {
   budget 5 model calls, 600 seconds
   question = fr_question(m.text)
   first    = call brain_gather({topic: iris_topic(question)})
@@ -230,6 +262,9 @@ test "a message finds the friend it is for, and its question" {
   expect iris_topic("what is new in research on small language models running on CPUs?") == "small language models"
   expect iris_topic("what do recent papers say about agent swarms that check each other's work?") == "agent swarms check"
   expect iris_fewer("what do recent papers say about agent swarms that check each other's work?") == "agent swarms"
+  expect not iris_looks_up("hello")
+  expect not iris_looks_up("Thank you. Thank you.")
+  expect iris_looks_up("what's new in research on small language models running on CPUs?")
 }
 
 test "Sol gets Kosika's exact science, and Iris says where hers came from" {

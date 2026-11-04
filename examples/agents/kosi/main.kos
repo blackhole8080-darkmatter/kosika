@@ -78,7 +78,7 @@ model buddy {
 // ---------------------------------------------------------------- asking the model
 
 fn ko_task() -> Text {
-  return "You are Kosi, the person's own AI companion, built into Kosika, the programming language and studio they are making. Talk like a close and honest friend who is also very capable, with the manner of a calm, composed British assistant: unhurried, warmly polite, quietly confident, now and then a light, dry wit, never servile and never gushing: plain spoken English, short sentences meant to be heard aloud, no lists, no headings, no markdown, no emoji. Usually two to five sentences; more only when they ask you to explain something. Answer `message`, what they have just said, and only that: `earlier` is the conversation before it, there for context, and is never to be answered again. Use `memory`, what Kosi knows, only where it really bears on the message, and never invent a memory or a fact; if you do not know, or cannot do something, say so plainly and offer what you can do; never offer to look up what no one can know, such as the future or what they did that they never told you. You cannot touch their files, programs or the web yourself: other Kosika agents do that, and you can suggest one. You have two friends in this talk, and they are real: Iris, the researcher, who reads papers and checked facts and says where they came from, and Sol, the scientist, who explains how things work with Kosika's exact formulas and reactions and draws them; the person asks them by name ('Iris, ...', 'Sol, ...'), and you may suggest it when it would help. Then fill in: remember, up to three short facts worth keeping from THIS message only, never what they ask for in it and never what Kosi already knows (about them, their projects, plans, preferences, people or deadlines), each a complete sentence in the third person such as 'Their exam is on 12 December.', or none if nothing new; draw, a few words naming what to draw if a picture would really help (how something works, a structure, an algorithm), else empty; project, the name of their project this message is about, else empty; step, that project's next step if one was agreed or stated, else empty."
+  return "You are Kosi, the person's own AI companion, built into Kosika, the programming language and studio they are making. Talk like a close and honest friend who is also very capable, with the manner of a calm, composed British assistant: unhurried, warmly polite, quietly confident, now and then a light, dry wit, never servile and never gushing: plain spoken English, short sentences meant to be heard aloud, no lists, no headings, no markdown, no emoji. Usually two to five sentences; more only when they ask you to explain something. Answer `message`, what they have just said, and only that: `earlier` is the conversation before it, there for context, and is never to be answered again. Use `memory`, what Kosi knows, only where it really bears on the message, and never invent a memory or a fact; if you do not know, or cannot do something, say so plainly and offer what you can do; never offer to look up what no one can know, such as the future or what they did that they never told you. You cannot touch their files, programs or the web yourself: other Kosika agents do that, and you can suggest one. You cannot see pictures, files or screens they show you; say so if they ask what you think of one. You never draw in words: when a picture would help or is asked for, fill `draw` and Kosika draws it on the canvas; never say you have drawn, sketched or seen something, and never agree to build or do something you cannot do yourself in this talk. You have two friends in this talk, and they are real: Iris, the researcher, who reads papers and checked facts and says where they came from, and Sol, the scientist, who explains how things work with Kosika's exact formulas and reactions and draws them; the person asks them by name ('Iris, ...', 'Sol, ...'), and you may suggest it when it would help. Then fill in: remember, up to three short facts worth keeping from THIS message only, never what they ask for in it and never what Kosi already knows (about them, their projects, plans, preferences, people or deadlines), each a complete sentence in the third person such as 'Their exam is on 12 December.', or none if nothing new; draw, a few words naming what to draw if a picture would really help (how something works, a structure, an algorithm), else empty; project, the name of their project this message is about, else empty; step, that project's next step if one was agreed or stated, else empty."
 }
 
 fn ko_small_task() -> Text {
@@ -123,7 +123,8 @@ fn ko_nothing_looked() -> BrainFound { return {notes: [], by: "words"} }
 fn ko_echoes(reply: Text, said: Text) -> Bool {
   let a = br_words(reply)
   let b = br_words(said)
-  if a.is_empty() or b.is_empty() { return true }
+  if a.is_empty() { return true }
+  if b.is_empty() { return false }
   let shared = (for w in a where b.contains(w) { w }).length()
   return shared / a.length() >= 0.75
 }
@@ -242,7 +243,8 @@ fn ko_new_facts(r: KosiReply, known: BrainFound) -> Text[] {
     let low = " " + t.lower() + " "
     // Not a fact about the person: what happened in the talk itself.
     let chatter = low.contains(" the user ") or low.contains(" kosi ") or low.contains(" greeted ") or low.contains(" asked about ")
-    let asking = chatter or low.contains(" wants an explanation") or low.contains(" wants a drawing") or low.contains(" wants a picture") or low.contains(" asked ") or low.contains(" is asking ")
+    let wanting = low.contains(" asking for") or low.contains(" asking if") or low.contains(" want a drawing") or low.contains(" want more ") or low.contains(" want another") or low.contains(" want a sketch") or low.contains(" confirmation")
+    let asking = chatter or wanting or low.contains(" wants an explanation") or low.contains(" wants a drawing") or low.contains(" wants a picture") or low.contains(" asked ") or low.contains(" is asking ")
     let corrects = not ko_replaces(t, known).is_empty()
     let said_before = not corrects and (for h in have.concat(taken) where br_near(stems, h.join(" ")) >= 0.5 { h }).length() > 0
     if words >= 2 and words <= 30 and not asking and not said_before {
@@ -328,6 +330,30 @@ fn ko_has_project(r: KosiReply) -> Bool { return not r.project.trim().is_empty()
 
 fn ko_draw_ask(r: KosiReply) -> DzAsk { return {text: r.draw.trim(), palette: "", place: "chat", kind: ""} }
 
+// The person's last message in the talk before this one, or "".
+fn ko_last_said(talk: BrainFound) -> Text {
+  if talk.notes.is_empty() { return "" }
+  let theirs = for line in talk.notes[0].text.split(" | ") where line.starts_with("You: ") { line.drop(5) }
+  return if theirs.is_empty() { "" } else { theirs.last().value() }
+}
+
+// What to draw: what the model named, else for "draw it for me" the
+// subject of the message before.
+fn ko_with_subject(r: KosiReply, msg: Msg, talk: BrainFound) -> KosiReply {
+  if not r.draw.trim().is_empty() { return r }
+  let t = " " + msg.text.lower() + " "
+  let bare = t.contains(" draw it") or t.contains(" draw that") or t.contains(" show me ") or t.contains(" picture of it") or t.trim() == "show me"
+  let before = ko_last_said(talk)
+  return if bare and not before.is_empty() { {..r, draw: before} } else { r }
+}
+
+// A reply that is the message said back is no reply.
+fn ko_not_echo(r: KosiReply, msg: Msg) -> KosiReply {
+  // A short reply with no words of its own ("Here it is.") is not an echo.
+  if br_words(r.reply).length() < 3 or not ko_echoes(r.reply, msg.text) { return r }
+  return {..r, reply: "Tell me a little more about what you have in mind, and I'll take it from there."}
+}
+
 // A picture only when it was asked for, or the person asks how something
 // works and the model thinks one would help: never for small talk.
 fn ko_wants_picture(msg: Msg, r: KosiReply) -> Bool {
@@ -348,9 +374,17 @@ fn ko_suggest(r: KosiReply) -> Text[] {
   return out.take(3)
 }
 
+// When Kosika drew the picture, a reply still asking what to draw, or
+// offering to sketch it, says what was drawn instead.
+fn ko_drawn_text(r: KosiReply, canvas: Text, title: Text) -> Text {
+  let low = r.reply.lower()
+  let hedges = r.reply.contains("?") and (low.contains("sketch") or low.contains("draw") or low.contains("tell me"))
+  return if not canvas.is_empty() and hedges and not title.trim().is_empty() { "Here it is: " + title.trim() + "." } else { ko_reply_text(r) }
+}
+
 fn ko_said(r: KosiReply, known: BrainFound, drawn: DzResult) -> Said {
   let canvas = if drawn.problems.is_empty() { drawn.embed } else { "" }
-  return {text: ko_reply_text(r), suggest: ko_suggest(r), canvas: canvas, kept: ko_new_facts(r, known), project: r.project.trim()}
+  return {text: ko_drawn_text(r, canvas, drawn.title), suggest: ko_suggest(r), canvas: canvas, kept: ko_new_facts(r, known), project: r.project.trim()}
 }
 
 // ---------------------------------------------------------------- the workflows
@@ -366,7 +400,7 @@ workflow chat(msg: Msg) -> Said {
   }
   exact  = wk_answer(msg.text, today.year)
   said   = use_model friend(ko_task(), msg.text, ko_known_text(ko_both(known, looked)) + wk_note(exact), ko_talk_text(talk), ko_now(today)) retry 1 otherwise ko_no_reply()
-  reply  = ko_checked(said, exact)
+  reply  = ko_not_echo(ko_with_subject(ko_checked(said, exact), msg, talk), msg)
   drawn  = match ko_wants_picture(msg, reply) {
     case true { call brain_design(ko_draw_ask(reply)) }
     case _ { ko_no_canvas() }
@@ -539,6 +573,18 @@ test "a reply that only says the question back gives the checked fact" {
   expect ko_known_you(mine).lines() == ["- Your exam is on 12 December.", "- You're vegetarian."]
   kept: BrainFound = {notes: [], by: "words"}
   expect ko_checked_facts(looked, kept).notes.length() == 1
+}
+
+test "draw it for me draws what the talk was about, and an echo is no reply" {
+  talk = ko_test_found([{..ko_test_note("talk", "the talk so far", "", "Kosi"), text: "You: how does a rainbow form | Kosi: Sunlight bends in raindrops."}])
+  r = ko_with_subject(ko_test_reply("Here it is.", []), {text: "draw it for me"}, talk)
+  expect r.draw == "how does a rainbow form"
+  expect ko_with_subject(ko_test_reply("Sure.", []), {text: "how are you"}, talk).draw == ""
+  expect ko_not_echo(ko_test_reply("yes, but i meant something more unique", []), {text: "yes, but i meant something more unique"}).reply.starts_with("Tell me a little more")
+  expect ko_not_echo(ko_test_reply("Here it is.", []), {text: "draw it for me"}).reply == "Here it is."
+  expect ko_not_echo(ko_test_reply("I would love to sketch the gears for you, which part first?", []), {text: "draw it for me"}).reply.starts_with("I would love")
+  expect ko_drawn_text(ko_test_reply("I would love to sketch it, which part?", []), "<div>", "Bicycle gears") == "Here it is: Bicycle gears."
+  expect ko_new_facts(ko_test_reply("ok", ["They are asking for confirmation that it matches the intended design.", "They want more unique designs."]), ko_test_found([])).is_empty()
 }
 
 test "a changed fact writes over the old one" {

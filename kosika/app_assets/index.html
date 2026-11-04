@@ -1860,7 +1860,6 @@ function showTalk() {
   // Who you are talking to: Kosi, or one of its friends. A message to a
   // friend is sent with their name in front, as Kosi reads it.
   let talkWith = "kosi";
-  try { talkWith = localStorage.getItem("kosi-talk-with") || "kosi"; } catch (error) { /* keep */ }
   const say = h("input", {type: "text", style: "flex:1;min-width:0;min-height:42px;border:0;background:transparent;font-size:15px;box-shadow:none", "aria-label": "Message"});
   const send = h("button", {onclick: () => ask(say.value), style: "min-height:40px;padding:0 16px"}, "Send");
   const micIcon = () => s("svg", {width: "16", height: "16", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "1.8", "aria-hidden": "true"}, s("rect", {x: "9", y: "3", width: "6", height: "12", rx: "3"}), s("path", {d: "M5 11a7 7 0 0 0 14 0M12 18v3"}));
@@ -1879,7 +1878,7 @@ function showTalk() {
   function placeholder() { const f = KOSI_FRIENDS[talkWith]; say.placeholder = talkWith === "kosi" ? "Message Kosi, or ask Iris or Sol by name" : `Ask ${f.name}, the ${f.role}`; }
   function drawSwitch() {
     switcher.replaceChildren(...Object.entries(KOSI_FRIENDS).map(([id, f]) => h("button", {type: "button", "aria-pressed": id === talkWith ? "true" : "false", title: `Talk to ${f.name}, the ${f.role}`, onclick: () => {
-      talkWith = id; try { localStorage.setItem("kosi-talk-with", id); } catch (error) { /* keep */ }
+      talkWith = id;
       drawSwitch(); placeholder(); say.focus();
     }}, f.name)));
   }
@@ -1905,10 +1904,22 @@ function showTalk() {
       frame.addEventListener("load", () => { const fit = () => { try { frame.style.height = (frame.contentDocument.body.scrollHeight + 4) + "px"; } catch (error) { /* keep */ } }; fit(); setTimeout(fit, 1500); try { new ResizeObserver(fit).observe(frame.contentDocument.body); } catch (error) { /* keep */ } });
       body.push(frame);
     }
-    if ((entry.r.suggest || []).length) body.push(h("div", {style: "display:flex;flex-wrap:wrap;gap:6px;margin-top:10px"}, entry.r.suggest.map(s => h("button", {type: "button", class: "ghost", style: "min-height:30px;padding:0 10px;font-size:12.5px;font-weight:500", onclick: () => ask(s)}, s))));
+    if ((entry.r.suggest || []).length) body.push(h("div", {style: "display:flex;flex-wrap:wrap;gap:6px;margin-top:10px"}, entry.r.suggest.map(s => h("button", {type: "button", class: "ghost", style: "min-height:30px;padding:0 10px;font-size:12.5px;font-weight:500", onclick: () => ask(withSubject(s, entry.q))}, s))));
     return h("div", {style: "display:grid;gap:14px"}, you, h("div", {class: "say-from"}, ring(who), h("div", {style: "min-width:0;flex:1"}, ...body)));
   }
   function draw() { log.replaceChildren(...talkLog.map(bubble)); }
+  // What a suggestion asks, with the subject of the message it answered.
+  function withSubject(suggestion, asked) {
+    const topic = String(asked || "").replace(/^\s*(hey\s+)?(iris|sol|kosi)\s*[,:]?\s*/i, "").replace(/[?.!]+$/, "").trim();
+    const s = suggestion.toLowerCase();
+    if (!topic) return suggestion;
+    if (s.startsWith("sol, explain the science")) return "Sol, explain the science of " + topic;
+    if (s.startsWith("iris, research this")) return "Iris, research " + topic;
+    if (s === "draw it for me") return "Draw " + topic;
+    if (s === "draw it another way") return "Sol, draw " + topic + " another way";
+    if (s === "what did you find before?") return "Iris, what did you find before about " + topic + "?";
+    return suggestion;
+  }
   let playing = null, saying = 0;
   // Each friend's own voice, a sentence at a time: the first sentence plays
   // while the next is being made, so it starts speaking in a few seconds.
