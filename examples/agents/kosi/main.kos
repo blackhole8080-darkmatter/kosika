@@ -81,7 +81,7 @@ fn ko_task() -> Text {
 }
 
 fn ko_small_task() -> Text {
-  return "You are Kosi, a calm, warm British companion. Reply to `message` and only to it, in two to four short spoken sentences, plain words, no lists. Never repeat their message back. Only when they tell you something about themselves, say briefly that you'll remember it. Use `memory` only if it helps; a line 'Worked out exactly by Kosika' is right, so use it. If you do not know, say so; never make up facts or the future. remember: up to two short new facts the person states about themselves in this message, in the third person ('Their ... is ...'), or none."
+  return "You are Kosi, a calm, warm British companion. Reply to `message` and only to it, in two to four short spoken sentences, plain words, no lists. Never repeat their message back, and never add anything about them that memory does not say. Talk to them as 'you'. Only when they tell you something about themselves, say briefly that you'll remember it. Use `memory` only if it helps; a line 'Worked out exactly by Kosika' is right, so use it. If you do not know, say so; never make up facts or the future. remember: up to two short new facts the person states about themselves in this message, in the third person ('Their ... is ...'), or none."
 }
 
 // What a person tells Kosi about themselves, kept by Kosika's own rule and
@@ -106,7 +106,7 @@ fn ko_told(text: Text) -> Text[] {
     }
     let lead = ["also,", "and", "actually,", "also", "actually", "oh,", "so", "well,"]
     while not words.is_empty() and lead.contains(words[0].lower()) { words = words.drop(1) }
-    let line = words.join(" ")
+    let line = words.join(" ").replace(", by the way", "").replace(" by the way", "").replace(", btw", "").replace(" btw", "")
     if words.length() >= 2 and (line.lower().starts_with("their ") or line.lower().starts_with("they")) {
       out = out.append(line.slice(0, 1).upper() + line.slice(1, line.length()) + ".")
     }
@@ -167,6 +167,19 @@ fn ko_known_text(found: BrainFound) -> Text {
   let notes = for n in found.notes where n.kind != "talk" { n }
   if notes.is_empty() { return "(nothing yet)" }
   return (for n in notes.take(6) { "- " + ko_note_line(n) }).join("\n")
+}
+
+// What Kosi knows, said to the person: a small model copies the memory's
+// "Their exam is on 12 December." into its reply as it stands, so for the
+// small brain the person's facts are written as "Your exam ...".
+fn ko_known_you(found: BrainFound) -> Text {
+  let text = ko_known_text(found)
+  return text.replace("- Their ", "- Your ").replace("- They're ", "- You're ").replace("- They are ", "- You are ").replace("- They ", "- You ").replace(" their ", " your ").replace(" they ", " you ")
+}
+
+// The checked facts Kosi has on a question, read now or kept before.
+fn ko_checked_facts(known: BrainFound, looked: BrainFound) -> BrainFound {
+  return {notes: for n in looked.notes.concat(known.notes) where n.kind == "fact" and n.source.contains("wikipedia.org") { n }, by: "words"}
 }
 
 fn ko_note_line(n: BrainNote) -> Text {
@@ -382,8 +395,8 @@ workflow chat_small(msg: Msg) -> Said {
     case _ { ko_nothing_looked() }
   }
   exact  = wk_answer(msg.text, today.year)
-  small  = use_model buddy(ko_small_task(), msg.text, ko_known_text(ko_both(known, looked)) + wk_note(exact), ko_small_earlier()) retry 1 otherwise ko_no_small()
-  reply  = ko_grounded(ko_checked(ko_from_small(small, msg.text), exact), msg.text, looked)
+  small  = use_model buddy(ko_small_task(), msg.text, ko_known_you(ko_both(known, looked)) + wk_note(exact), ko_small_earlier()) retry 1 otherwise ko_no_small()
+  reply  = ko_grounded(ko_checked(ko_from_small(small, msg.text), exact), msg.text, ko_checked_facts(known, looked))
   drawn  = match ko_wants_picture(msg, reply) {
     case true { call brain_design(ko_draw_ask(reply)) }
     case _ { ko_no_canvas() }
@@ -464,6 +477,7 @@ test "a small model's reply loses Kosika's notes, and keeps only facts about the
   expect told.remember == ["They're vegetarian.", "They are vegetarian."]
   expect ko_told("My sister Riya's birthday is on 14 March, and she loves astronomy.") == ["Their sister Riya's birthday is on 14 March, and she loves astronomy."]
   expect ko_told("Also, I'm vegetarian.") == ["They're vegetarian."]
+  expect ko_told("My exam is on 12 December, by the way.") == ["Their exam is on 12 December."]
   expect ko_told("And I get around on a scooter, I don't have a car.") == ["They get around on a scooter, they don't have a car."]
   expect ko_told("Actually, my exam has moved to 19 December.") == ["Their exam has moved to 19 December."]
   expect ko_told("Suggest a birthday present for my sister.").is_empty()
@@ -477,6 +491,10 @@ test "a reply that only says the question back gives the checked fact" {
   fine = ko_test_reply("No, the capital is Canberra; Sydney is the largest city.", [])
   expect ko_grounded(fine, "Sydney is the capital of Australia, right?", looked).reply == fine.reply
   expect ko_note_line(looked.notes[0]).starts_with("Checked fact (Wikipedia, Australia")
+  mine = ko_test_found([ko_test_note("fact", "Their exam is on 12 December.", "Their exam is on 12 December.", "you told Kosi"), ko_test_note("fact", "They're vegetarian.", "They're vegetarian.", "you told Kosi")])
+  expect ko_known_you(mine).lines() == ["- Your exam is on 12 December.", "- You're vegetarian."]
+  kept: BrainFound = {notes: [], by: "words"}
+  expect ko_checked_facts(looked, kept).notes.length() == 1
 }
 
 test "a changed fact writes over the old one" {
