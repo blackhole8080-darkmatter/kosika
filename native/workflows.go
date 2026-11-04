@@ -889,8 +889,12 @@ func (r *run) askOnce(model *ModelDecl, bound string, arguments map[string]Value
 	}
 	var note answerNote
 	rejected := 0
+	var shape Value
+	if !model.Plain {
+		shape = asked
+	}
 	for {
-		response := r.askBound(bound, &modelRequest{Messages: messages, Model: deployment(model), Decl: model, JSONObject: true})
+		response := r.askBound(bound, &modelRequest{Messages: messages, Model: deployment(model), Decl: model, JSONObject: true, Schema: shape})
 		if len(response.ToolCalls) > 0 || response.Finish != "stop" {
 			runFail("Model step requires a completed response without tool calls")
 		}

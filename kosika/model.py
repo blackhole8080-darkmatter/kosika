@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import os
 import time
 import urllib.error
 import urllib.parse
@@ -54,6 +55,18 @@ def _server_restarting(exc: BaseException, url: str) -> bool:
     )
 
 
+def _think_from_env() -> bool | None:
+    """KOSIKA_MODEL_THINK: on or off asks a reasoning model for a trace or
+    for none; unset leaves the server's default. Read by both engines."""
+
+    value = os.environ.get("KOSIKA_MODEL_THINK", "").strip().lower()
+    if value in ("on", "true", "1"):
+        return True
+    if value in ("off", "false", "0"):
+        return False
+    return None
+
+
 class ModelProviderError(RuntimeError):
     """Raised when a model provider cannot produce a valid response."""
 
@@ -104,6 +117,10 @@ class ModelRequest:
     # parsed and checked by Kosika either way. Small models often ignore a
     # written instruction to answer in JSON, and obey this.
     json_object: bool = False
+    # The JSON Schema of the record asked for. Ollama is given it as the
+    # answer's format, so even a small model on a laptop's CPU cannot leave a
+    # field out; other providers are told it in words, as before.
+    schema: Any = None
 
 
 @dataclass(frozen=True)
@@ -242,7 +259,7 @@ class OpenAICompatibleProvider:
         #: consumes the output budget before any answer is produced. Set this
         #: to False when the caller needs a direct answer, for example a
         #: machine-readable patch. Left as None the server default applies.
-        self.think = think
+        self.think = think if think is not None else _think_from_env()
         #: Set by a host that wants to show an answer while it is written.
         #: When set, the reply is asked for as a stream and each piece of
         #: text is handed over as it arrives. The response returned at the
@@ -489,7 +506,7 @@ class OpenAICompatibleProvider:
             # the server says so with an HTTP error.
             payload["tools"] = [self._tool_to_dict(tool) for tool in request.tools]
         if request.json_object:
-            payload["format"] = "json"
+            payload["format"] = request.schema if request.schema is not None else "json"
         if self.think is not None:
             payload["think"] = self.think
         while True:

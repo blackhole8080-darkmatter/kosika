@@ -141,8 +141,9 @@ def _run(source: Path, workflow: str, given_input: dict, *, extra: list[str] | N
             "run", str(source), "--workflow", workflow, "--input", str(given),
             "--model", os.environ.get("KOSIKA_DESIGNS_MODEL", DEFAULT_MODEL),
             "--model-url", os.environ.get("KOSIKA_DESIGNS_MODEL_URL", DEFAULT_MODEL_URL),
-            "--model-protocol", "openai", "--model-timeout", "400",
-            "--max-output-tokens", "8000",
+            "--model-protocol", os.environ.get("KOSIKA_DESIGNS_MODEL_PROTOCOL", "openai"),
+            "--model-timeout", os.environ.get("KOSIKA_DESIGNS_MODEL_TIMEOUT", "400"),
+            "--max-output-tokens", os.environ.get("KOSIKA_DESIGNS_MAX_TOKENS", "8000"),
         ] + (extra or [])
         try:
             done = subprocess.run(  # noqa: S603 - our own engine and our own file
