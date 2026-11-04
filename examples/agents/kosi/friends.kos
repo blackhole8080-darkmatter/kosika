@@ -110,26 +110,36 @@ fn iris_said(r: IrisReply, found: BrainFound, gathered: BrainGathered) -> FrSaid
   return {who: "iris", text: text, canvas: "", kept: gathered.titles.take(3), sources: iris_sources(found), suggest: ["Sol, explain the science", "what did you find before?"]}
 }
 
+fn iris_papers(g: BrainGathered) -> BrainFound { return {notes: g.notes, by: "words"} }
+
 fn iris_both(a: BrainFound, b: BrainFound) -> BrainFound { return {notes: a.notes.concat(b.notes), by: a.by} }
 
 // What Iris searches arXiv for: the question's own words, without the
 // asking ("what is new in research on ...") that no paper's text holds.
 // arXiv finds papers holding every word asked, so at most four are used.
 fn iris_topic(question: Text) -> Text {
-  let filler = ["what", "whats", "what's", "new", "news", "latest", "recent", "research", "papers", "paper", "about", "tell", "know", "there", "anything", "any", "find", "look", "into", "running", "work", "works", "does", "explain", "please", "could", "would", "should", "with", "from", "that", "this", "these", "those", "them", "they", "have", "been", "being", "some", "much", "more", "most", "also", "your", "find", "show", "give", "lately", "today", "currently", "happening", "going"]
+  let filler = ["what", "whats", "what's", "new", "news", "latest", "recent", "research", "papers", "paper", "about", "tell", "know", "there", "anything", "any", "find", "look", "into", "running", "work", "works", "does", "explain", "please", "could", "would", "should", "with", "from", "that", "this", "these", "those", "them", "they", "have", "been", "being", "some", "much", "more", "most", "also", "your", "find", "show", "give", "lately", "today", "currently", "happening", "going", "say", "says", "said", "each", "other", "others", "other's", "think", "thinks", "people", "someone", "anyone"]
   let words = for w in question.lower().replace(",", " ").replace("?", " ").replace("!", " ").replace("'", " ").words() where w.trim_marks(".:;").length() >= 3 and not filler.contains(w.trim_marks(".:;")) and w != "the" and w != "and" and w != "for" and w != "how" and w != "why" { w.trim_marks(".:;") }
-  return words.take(4).join(" ")
+  return words.take(3).join(" ")
 }
+
+// arXiv finds only papers holding every word, so when three find nothing
+// Iris asks again with the first two.
+fn iris_fewer(question: Text) -> Text { return iris_topic(question).words().take(2).join(" ") }
 
 // Iris reads arXiv for the question, checks what it names on Wikipedia,
 // recalls what the Brain already holds on it, and answers from all three.
 workflow iris_research(m: FrMsg) -> FrSaid {
-  budget 4 model calls, 600 seconds
+  budget 5 model calls, 600 seconds
   question = fr_question(m.text)
-  gathered = call brain_gather({topic: iris_topic(question)})
+  first    = call brain_gather({topic: iris_topic(question)})
+  gathered = match first.kept == 0 {
+    case true { call brain_gather({topic: iris_fewer(question)}) }
+    case _ { first }
+  }
   looked   = call fa_look_up({question: question, subjects: fa_subjects(question)})
   known    = call brain_recall({text: question, kind: "fact"})
-  found    = iris_both(looked, known)
+  found    = iris_both(iris_both(iris_papers(gathered), looked), known)
   reply    = use_model iris(iris_task(), question, iris_found_text(found)) retry 1 otherwise iris_no_reply()
   out      = iris_said(reply, found, gathered)
 }
@@ -217,7 +227,9 @@ test "a message finds the friend it is for, and its question" {
   expect fr_question("Iris, what's new on sparse attention?") == "what's new on sparse attention?"
   expect fr_question("Sol: why is the sky blue?") == "why is the sky blue?"
   expect fr_name("sol") == "Sol"
-  expect iris_topic("what is new in research on small language models running on CPUs?") == "small language models cpus"
+  expect iris_topic("what is new in research on small language models running on CPUs?") == "small language models"
+  expect iris_topic("what do recent papers say about agent swarms that check each other's work?") == "agent swarms check"
+  expect iris_fewer("what do recent papers say about agent swarms that check each other's work?") == "agent swarms"
 }
 
 test "Sol gets Kosika's exact science, and Iris says where hers came from" {

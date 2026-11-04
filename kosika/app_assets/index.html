@@ -1050,6 +1050,79 @@ body.on-mission .track { opacity: .5; }
 
 @media (prefers-reduced-motion: reduce) { [data-skin="dark-matter"] body::after { display: none; } }
 
+
+/* ==========================================================================
+   Graphite and Paper: the quiet looks, and Graphite is Studio's own. Flat
+   surfaces, thin borders, one amber accent (the mark's ring) for what is
+   live or chosen, a plain sans for words and a mono only for small facts.
+   No clouds, grain, glass, glow or text that shines: the Kosika canvas,
+   with its dotted board, is the one strong picture on the page. Paper is
+   the same in daylight.
+   ========================================================================== */
+:root[data-skin="graphite"] {
+  --bg: #0e0f12; --panel: #15171c; --rail: #0b0c0f; --ink: #ecedee; --soft: #a9adb6; --faint: #8e929c; --line: #23262d;
+  --accent: #f5b45c; --accent-soft: #1d1810; --ok: #6fcf97; --ok-soft: #13221a; --bad: #f2a3a3; --bad-soft: #2a1717;
+  --warn: #e9c46a; --warn-soft: #231d10; --think: #b6acf5; --think-soft: #1b1930; --mem: #7fd1c7; --mem-soft: #12201e;
+  --code: #c3c6cd; --code-soft: #1a1c22; --glass: #15171c; --glass-edge: #23262d; --glow: rgba(245, 180, 92, .18);
+  --glow-a: #f5b45c; --glow-b: #f5b45c; --glow-c: #f5b45c; --shadow: none; --lift: none;
+  --sans: Inter, "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif; --display: var(--sans);
+  --mono: "Cascadia Code", "JetBrains Mono", ui-monospace, Consolas, monospace;
+  --ease: cubic-bezier(.2, .8, .2, 1); --settle: var(--ease);
+  color-scheme: dark;
+}
+:root[data-skin="paper"] {
+  --bg: #f7f6f3; --panel: #ffffff; --rail: #fbfaf8; --ink: #16171a; --soft: #4a4d55; --faint: #5d6069; --line: #e4e2dc;
+  --accent: #9a5a0c; --accent-soft: #fbf1e3; --ok: #2e7d4f; --ok-soft: #e6f3eb; --bad: #b3382c; --bad-soft: #f8e3e0;
+  --warn: #8a6100; --warn-soft: #f8ecd0; --think: #5b4bb5; --think-soft: #ebe8fa; --mem: #1f6f8b; --mem-soft: #dff0f5;
+  --code: #3c3f46; --code-soft: #efede8; --glass: #ffffff; --glass-edge: #e4e2dc; --glow: rgba(154, 90, 12, .16);
+  --glow-a: #9a5a0c; --glow-b: #9a5a0c; --glow-c: #9a5a0c; --shadow: none; --lift: none;
+  --sans: Inter, "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif; --display: var(--sans);
+  --mono: "Cascadia Code", "JetBrains Mono", ui-monospace, Consolas, monospace;
+  --ease: cubic-bezier(.2, .8, .2, 1); --settle: var(--ease);
+  color-scheme: light;
+}
+:is([data-skin="graphite"], [data-skin="paper"]) body { font: 14.5px/1.55 var(--sans); background: var(--bg); letter-spacing: 0; grid-template-columns: 224px minmax(0, 1fr); }
+:is([data-skin="graphite"], [data-skin="paper"]) :is(.nebula, .grain, .spot, .ripple, .spy-only) { display: none !important; }
+:is([data-skin="graphite"], [data-skin="paper"]) body::before, :is([data-skin="graphite"], [data-skin="paper"]) body::after, :is([data-skin="graphite"], [data-skin="paper"]) .card::after { display: none !important; }
+:is([data-skin="graphite"], [data-skin="paper"]) aside.rail { background: var(--rail); backdrop-filter: none; -webkit-backdrop-filter: none; border-right: 1px solid var(--line); }
+:is([data-skin="graphite"], [data-skin="paper"]) .brand { font: 600 15px var(--sans); letter-spacing: -.01em; }
+:is([data-skin="graphite"], [data-skin="paper"]) .brand small { background: none; -webkit-text-fill-color: var(--faint); color: var(--faint); font: 500 11px var(--mono); letter-spacing: 0; text-transform: none; margin-left: auto; }
+:is([data-skin="graphite"], [data-skin="paper"]) .nav { border-radius: 8px; font-weight: 500; color: var(--soft); }
+:is([data-skin="graphite"], [data-skin="paper"]) .nav:hover { background: var(--code-soft); color: var(--ink); }
+:is([data-skin="graphite"], [data-skin="paper"]) .nav.on { background: var(--code-soft); color: var(--ink); }
+:is([data-skin="graphite"], [data-skin="paper"]) .nav.on::before { background: var(--accent); }
+:is([data-skin="graphite"], [data-skin="paper"]) .nav-pill { background: var(--code-soft) !important; box-shadow: none !important; }
+:is([data-skin="graphite"], [data-skin="paper"]) main h1 { font: 600 24px/1.2 var(--sans); letter-spacing: -.02em; background: none; -webkit-text-fill-color: currentColor; color: var(--ink); animation: none; text-transform: none; }
+:is([data-skin="graphite"], [data-skin="paper"]) main h1::after { content: none; }
+:is([data-skin="graphite"], [data-skin="paper"]) h2, :is([data-skin="graphite"], [data-skin="paper"]) .card h3 { font-family: var(--sans); font-weight: 600; letter-spacing: -.01em; text-transform: none; }
+:is([data-skin="graphite"], [data-skin="paper"]) :is(.card, .panel, .fact, .stage-wrap, .chat, .banner) { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
+:is([data-skin="graphite"], [data-skin="paper"]) .card:hover { transform: none; box-shadow: none; border-color: color-mix(in srgb, var(--ink) 22%, var(--line)); }
+:is([data-skin="graphite"], [data-skin="paper"]) .chip { font: 500 11px/1.6 var(--mono); letter-spacing: 0; text-transform: none; border-radius: 6px; border: 1px solid var(--line); background: transparent; color: var(--soft); padding: 3px 8px; }
+:is([data-skin="graphite"], [data-skin="paper"]) .chip.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 35%, var(--line)); }
+:is([data-skin="graphite"], [data-skin="paper"]) .chip.bad { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 35%, var(--line)); }
+:is([data-skin="graphite"], [data-skin="paper"]) .chip.accent, :is([data-skin="graphite"], [data-skin="paper"]) .chip.warn { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
+:is([data-skin="graphite"], [data-skin="paper"]) button, :is([data-skin="graphite"], [data-skin="paper"]) .btn { background: var(--ink); color: var(--bg); border: 0; border-radius: 9px; box-shadow: none; font-weight: 600; filter: none; text-transform: none; letter-spacing: 0; }
+:is([data-skin="graphite"], [data-skin="paper"]) button:hover:not(:disabled) { filter: none; box-shadow: none; background: color-mix(in srgb, var(--ink) 86%, var(--bg)); }
+:is([data-skin="graphite"], [data-skin="paper"]) :is(button.quiet, button.ghost, .ghost) { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+:is([data-skin="graphite"], [data-skin="paper"]) :is(button.quiet, button.ghost, .ghost):hover:not(:disabled) { background: var(--code-soft); }
+:is([data-skin="graphite"], [data-skin="paper"]) :is(input[type=text], textarea, select) { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 9px; }
+:is([data-skin="graphite"], [data-skin="paper"]) :is(input[type=text], textarea):focus { border-color: color-mix(in srgb, var(--accent) 60%, var(--line)); box-shadow: 0 0 0 3px var(--glow); outline: none; }
+:is([data-skin="graphite"], [data-skin="paper"]) input[type=checkbox] { accent-color: var(--accent); }
+:is([data-skin="graphite"], [data-skin="paper"]) .arrive { animation: calm-in .35s var(--ease) both; animation-delay: calc(var(--i, 0) * 30ms); }
+@keyframes calm-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+:is([data-skin="graphite"], [data-skin="paper"]) ::selection { background: color-mix(in srgb, var(--accent) 35%, transparent); }
+
+/* Talk: who is answering is a small ring and a name, not a coloured bubble. */
+.friends { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.friends button { background: transparent !important; color: var(--soft) !important; border: 0 !important; border-radius: 7px; padding: 6px 12px; min-height: 32px; font-weight: 500; box-shadow: none !important; }
+.friends button[aria-pressed="true"] { background: var(--ink) !important; color: var(--bg) !important; }
+.say-from { display: flex; gap: 12px; max-width: 760px; }
+.say-ring { flex: none; width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--ring, var(--accent)); display: grid; place-items: center; font: 600 12px var(--sans, system-ui); color: var(--ring, var(--accent)); margin-top: 1px; }
+.say-name { font-weight: 600; font-size: 14px; } .say-meta { font: 11px var(--mono); color: var(--faint); margin-left: 8px; }
+.say-text { font-size: 15.5px; line-height: 1.65; margin-top: 4px; }
+.say-you { justify-self: end; max-width: 72%; background: var(--code-soft); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; font-size: 15px; }
+.say-src { font: 11px var(--mono); color: var(--soft); text-decoration: none; border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
+.say-src:hover { color: var(--ink); border-color: color-mix(in srgb, var(--ink) 30%, var(--line)); }
 </style>
 </head>
 <body>
@@ -1752,46 +1825,68 @@ function kosiVoice() {
 }
 // Kosi's voice when it speaks for itself (Kokoro on this computer).
 const KOSI_VOICES = [["bm_george", "George (calm, deep, British)"], ["bm_lewis", "Lewis (British)"], ["bm_daniel", "Daniel (British)"], ["bm_fable", "Fable (British)"], ["bf_emma", "Emma (British)"], ["bf_isabella", "Isabella (British)"]];
-// Kosi's friends, each with a voice of its own: Iris the researcher and
-// Sol the scientist. Kosi speaks in the voice chosen below.
-const KOSI_FRIENDS = {kosi: {name: "Kosi", voice: null, colour: "var(--accent)"}, iris: {name: "Iris · researcher", voice: "bf_emma", colour: "#7fd1c7"}, sol: {name: "Sol · scientist", voice: "bm_lewis", colour: "#f5b45c"}};
+// Kosi's friends, each with a voice and a ring of its own: Iris the
+// researcher and Sol the scientist. Kosi speaks in the voice chosen below.
+const KOSI_FRIENDS = {kosi: {name: "Kosi", role: "companion", voice: null, colour: "var(--accent)"}, iris: {name: "Iris", role: "researcher", voice: "bf_emma", colour: "#5ec4b6"}, sol: {name: "Sol", role: "scientist", voice: "bm_lewis", colour: "#b6acf5"}};
 function kosiServerVoice() { try { return localStorage.getItem("kosi-own-voice") || "bm_george"; } catch (error) { return "bm_george"; } }
+// Who a message is for, read the way Kosi reads it: by name or by role.
+function kosiAddressed(text) { return /(^\s*(hey\s+)?iris\b|\bask iris\b|\bthe researcher\b)/i.test(text) ? "iris" : /(^\s*(hey\s+)?sol\b|\bask sol\b|\bthe scientist\b)/i.test(text) ? "sol" : ""; }
 function showTalk() {
-  const say = h("input", {type: "text", placeholder: "Say anything: your day, a project, a job, an idea…", style: "flex:1;min-width:220px"});
-  const send = h("button", {onclick: () => ask(say.value)}, "Send");
-  const mic = h("button", {class: "ghost", title: "Press to speak, press again to stop", style: "min-width:150px"}, "\u{1F3A4} Press to speak");
+  // Who you are talking to: Kosi, or one of its friends. A message to a
+  // friend is sent with their name in front, as Kosi reads it.
+  let talkWith = "kosi";
+  try { talkWith = localStorage.getItem("kosi-talk-with") || "kosi"; } catch (error) { /* keep */ }
+  const say = h("input", {type: "text", style: "flex:1;min-width:0;min-height:42px;border:0;background:transparent;font-size:15px;box-shadow:none", "aria-label": "Message"});
+  const send = h("button", {onclick: () => ask(say.value), style: "min-height:40px;padding:0 16px"}, "Send");
+  const micIcon = () => s("svg", {width: "16", height: "16", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "1.8", "aria-hidden": "true"}, s("rect", {x: "9", y: "3", width: "6", height: "12", rx: "3"}), s("path", {d: "M5 11a7 7 0 0 0 14 0M12 18v3"}));
+  const mic = h("button", {class: "ghost", title: "Press to speak, press again to stop", "aria-label": "Speak", style: "width:40px;min-height:40px;padding:0;display:grid;place-items:center"});
+  mic.replaceChildren(micIcon());
   const voiceOn = h("input", {type: "checkbox", id: "kosi-voice"});
   voiceOn.checked = true;
   // On this laptop: Kosi's small brain on a small model in Ollama, on the
-  // CPU alone. No cloud model, no daily limit; George's voice is made here too.
+  // CPU alone. No cloud model, no daily limit; the voices are made here too.
   const localOn = h("input", {type: "checkbox", id: "kosi-local"});
   try { localOn.checked = localStorage.getItem("kosi-local") === "1"; } catch (error) { /* keep */ }
   localOn.onchange = () => { try { localStorage.setItem("kosi-local", localOn.checked ? "1" : "0"); } catch (error) { /* keep */ } };
-  const status = h("span", {class: "lead"});
-  const log = h("div", {style: "display:grid;gap:12px;margin-top:14px"});
+  const status = h("span", {style: "font:12px var(--mono);color:var(--faint)"});
+  const log = h("div", {style: "display:grid;gap:22px;margin:22px 0 18px;max-width:860px"});
+  const switcher = h("div", {class: "friends", role: "group", "aria-label": "Who you are talking to"});
+  function placeholder() { const f = KOSI_FRIENDS[talkWith]; say.placeholder = talkWith === "kosi" ? "Message Kosi, or ask Iris or Sol by name" : `Ask ${f.name}, the ${f.role}`; }
+  function drawSwitch() {
+    switcher.replaceChildren(...Object.entries(KOSI_FRIENDS).map(([id, f]) => h("button", {type: "button", "aria-pressed": id === talkWith ? "true" : "false", title: `Talk to ${f.name}, the ${f.role}`, onclick: () => {
+      talkWith = id; try { localStorage.setItem("kosi-talk-with", id); } catch (error) { /* keep */ }
+      drawSwitch(); placeholder(); say.focus();
+    }}, f.name)));
+  }
+  function ring(who) {
+    const f = KOSI_FRIENDS[who] || KOSI_FRIENDS.kosi;
+    return h("div", {class: "say-ring", style: `--ring:${f.colour}`, "aria-hidden": "true"}, f.name[0]);
+  }
   function bubble(entry) {
-    const you = h("div", {style: "justify-self:end;max-width:78%;background:color-mix(in srgb,var(--accent) 16%,transparent);border-radius:16px 16px 4px 16px;padding:10px 14px"}, entry.q);
-    if (!entry.r) return h("div", {style: "display:grid;gap:8px"}, you, h("div", {class: "lead"}, `${(KOSI_FRIENDS[entry.who] || KOSI_FRIENDS.kosi).name.split(" ")[0]} is thinking…`));
-    const friend = KOSI_FRIENDS[entry.r.who] || KOSI_FRIENDS.kosi;
-    const name = h("div", {style: `font:700 11px ui-monospace,Consolas,monospace;letter-spacing:.12em;text-transform:uppercase;color:${friend.colour};margin-bottom:4px`}, friend.name);
-    const kosi = h("div", {style: `max-width:84%;background:var(--panel, rgba(255,255,255,.04));border:1px solid var(--line, rgba(255,255,255,.08));border-left:3px solid ${friend.colour};border-radius:16px 16px 16px 4px;padding:10px 14px;font-size:16px;line-height:1.55`}, name, entry.r.text);
-    const parts = [you, kosi];
-    if ((entry.r.sources || []).length) parts.push(h("div", {class: "chips"}, entry.r.sources.map(u => h("a", {class: "chip", href: u, target: "_blank", rel: "noopener"}, u.replace(/^https?:\/\//, "").slice(0, 48)))));
-    if (entry.r.local) parts.push(h("div", {class: "chips"}, chip("thought on this laptop", "")));
-    if ((entry.r.kept || []).length) parts.push(h("div", {class: "chips"}, entry.r.kept.map(k => chip("will remember: " + k, "ok"))));
+    const you = h("div", {class: "say-you"}, entry.q);
+    const who = entry.r ? (entry.r.who || "kosi") : entry.who;
+    const f = KOSI_FRIENDS[who] || KOSI_FRIENDS.kosi;
+    if (!entry.r) return h("div", {style: "display:grid;gap:14px"}, you, h("div", {class: "say-from"}, ring(who), h("div", {}, h("span", {class: "say-name"}, f.name), h("span", {class: "say-meta"}, f.role + " · thinking…"))));
+    const facts = [f.role];
+    if (entry.r.local) facts.push("on this laptop");
+    if ((entry.r.sources || []).length) facts.push(entry.r.sources.length + (entry.r.sources.length === 1 ? " source" : " sources"));
+    if (entry.seconds) facts.push(entry.seconds + " s");
+    const body = [h("div", {}, h("span", {class: "say-name"}, f.name), h("span", {class: "say-meta"}, facts.join(" · "))), h("div", {class: "say-text"}, entry.r.text)];
+    if ((entry.r.sources || []).length) body.push(h("div", {style: "display:flex;flex-wrap:wrap;gap:6px;margin-top:10px"}, entry.r.sources.map(u => h("a", {class: "say-src", href: u, target: "_blank", rel: "noopener"}, u.replace(/^https?:\/\/(www\.|export\.)?/, "").replace(/^arxiv\.org\/abs\//, "arxiv ").replace(/^en\.wikipedia\.org\/wiki\//, "wikipedia ").slice(0, 42)))));
+    if ((entry.r.kept || []).length) body.push(h("div", {class: "chips", style: "margin-top:10px"}, entry.r.kept.map(k => chip("will remember: " + k, "ok"))));
     if (entry.r.canvas) {
-      const frame = h("iframe", {title: "Kosika canvas", style: "width:100%;height:720px;border:0;border-radius:18px;background:transparent"});
+      const frame = h("iframe", {title: "Kosika canvas", style: "width:100%;height:720px;border:0;border-radius:12px;background:transparent;margin-top:12px"});
       frame.srcdoc = "<!doctype html><html><head><meta charset=\"utf-8\"><style>html,body{margin:0;background:transparent}</style></head><body>" + entry.r.canvas + "</body></html>";
       frame.addEventListener("load", () => { const fit = () => { try { frame.style.height = (frame.contentDocument.body.scrollHeight + 4) + "px"; } catch (error) { /* keep */ } }; fit(); setTimeout(fit, 1500); try { new ResizeObserver(fit).observe(frame.contentDocument.body); } catch (error) { /* keep */ } });
-      parts.push(frame);
+      body.push(frame);
     }
-    if ((entry.r.suggest || []).length) parts.push(h("div", {class: "chips"}, entry.r.suggest.map(s => h("span", {class: "chip", style: "cursor:pointer", onclick: () => ask(s)}, s))));
-    return h("div", {style: "display:grid;gap:8px"}, ...parts);
+    if ((entry.r.suggest || []).length) body.push(h("div", {style: "display:flex;flex-wrap:wrap;gap:6px;margin-top:10px"}, entry.r.suggest.map(s => h("button", {type: "button", class: "ghost", style: "min-height:30px;padding:0 10px;font-size:12.5px;font-weight:500", onclick: () => ask(s)}, s))));
+    return h("div", {style: "display:grid;gap:14px"}, you, h("div", {class: "say-from"}, ring(who), h("div", {style: "min-width:0;flex:1"}, ...body)));
   }
   function draw() { log.replaceChildren(...talkLog.map(bubble)); }
   let playing = null, saying = 0;
-  // Kosi's own voice, a sentence at a time: the first sentence plays while
-  // the next is being made, so it starts speaking in a few seconds.
+  // Each friend's own voice, a sentence at a time: the first sentence plays
+  // while the next is being made, so it starts speaking in a few seconds.
   async function voice(text, who) {
     if (!voiceOn.checked || !text) return;
     const speaker = (KOSI_FRIENDS[who] || {}).voice || kosiServerVoice();
@@ -1824,12 +1919,19 @@ function showTalk() {
     text = String(text || "").trim();
     if (!text) { say.focus(); return; }
     say.value = "";
-    const entry = {q: text, r: null, who: /(^\s*(hey\s+)?iris\b|\bask iris\b|\bthe researcher\b)/i.test(text) ? "iris" : /(^\s*(hey\s+)?sol\b|\bask sol\b|\bthe scientist\b)/i.test(text) ? "sol" : "kosi"};
+    // Talking to a friend: the message goes to them unless it names
+    // someone else itself.
+    const named = kosiAddressed(text);
+    const sent = !named && talkWith !== "kosi" ? KOSI_FRIENDS[talkWith].name + ", " + text : text;
+    const entry = {q: text, r: null, who: named || talkWith};
+    if (intro.isConnected) intro.replaceWith(log);
     talkLog.push(entry); draw();
     send.disabled = true;
-    try { entry.r = await api("/api/kosi", {method: "POST", body: JSON.stringify({text, local: localOn.checked})}); }
-    catch (error) { entry.r = {text: String(error.message || error), kept: [], suggest: []}; }
+    const began = Date.now();
+    try { entry.r = await api("/api/kosi", {method: "POST", body: JSON.stringify({text: sent, local: localOn.checked})}); }
+    catch (error) { entry.r = {who: entry.who, text: String(error.message || error), kept: [], suggest: []}; }
     finally { send.disabled = false; }
+    entry.seconds = Math.round((Date.now() - began) / 100) / 10;
     draw();
     voice(entry.r.text, entry.r.who);
   }
@@ -1843,25 +1945,25 @@ function showTalk() {
       recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
       recorder.onstop = async () => {
         stream.getTracks().forEach(t => t.stop());
-        mic.textContent = "\u{1F3A4} Press to speak";
-        status.textContent = "Kosi is listening back…";
+        mic.replaceChildren(micIcon()); mic.style.borderColor = "";
+        status.textContent = "listening back…";
         const blob = new Blob(chunks, {type: recorder.mimeType || "audio/webm"});
         const audio = await new Promise(done => { const r = new FileReader(); r.onload = () => done(String(r.result).split(",")[1] || ""); r.readAsDataURL(blob); });
         try {
           const heard = await api("/api/kosi/hear", {method: "POST", body: JSON.stringify({audio, type: blob.type})});
           status.textContent = "";
-          if (heard.text) ask(heard.text); else status.textContent = "Kosi did not catch that. Try again?";
+          if (heard.text) ask(heard.text); else status.textContent = "didn't catch that, try again?";
         } catch (error) { status.textContent = String(error.message || error); }
       };
       recorder.start();
       if (playing) playing.pause();
       if (window.speechSynthesis) speechSynthesis.cancel();
-      mic.textContent = "\u25A0 Stop, I'm done";
-      status.textContent = "Listening…";
-    } catch (error) { status.textContent = "Kosi cannot reach the microphone: " + (error.message || error); }
+      mic.textContent = "■"; mic.style.borderColor = "var(--accent)";
+      status.textContent = "listening… press again when you're done";
+    } catch (error) { status.textContent = "can't reach the microphone: " + (error.message || error); }
   };
   say.addEventListener("keydown", event => { if (event.key === "Enter") ask(say.value); });
-  const pick = h("select", {title: "Kosi's voice in this browser, used when VoiceStudio or Orpheus cannot speak"});
+  const pick = h("select", {title: "The browser's voice, used only when Kosi's own voice cannot speak"});
   function voices() {
     const list = window.speechSynthesis ? speechSynthesis.getVoices().filter(v => /^en/i.test(v.lang)) : [];
     const now = kosiVoice();
@@ -1871,11 +1973,24 @@ function showTalk() {
   const own = h("select", {title: "Kosi's own voice, made on this computer"}, KOSI_VOICES.map(([value, label]) => h("option", {value, selected: value === kosiServerVoice() ? "" : null}, label)));
   own.onchange = () => { try { localStorage.setItem("kosi-own-voice", own.value); } catch (error) { /* no storage */ } voice("Good evening. I'm Kosi, and this is how I sound now."); };
   if (window.speechSynthesis) { voices(); speechSynthesis.onvoiceschanged = voices; }
-  main.replaceChildren(titled("Talk to Kosi"),
-    h("p", {class: "lead"}, "Kosi is your companion, run by Kosika Brain. It remembers you, your projects and what it has learned, and answers like a friend. Type, or press the microphone and speak."),
-    h("div", {style: "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0 6px"}, mic, say, send),
-    h("div", {style: "display:flex;gap:10px;align-items:center;flex-wrap:wrap"}, h("label", {style: "display:flex;gap:6px;align-items:center"}, voiceOn, "Kosi speaks its answers"), h("label", {style: "display:flex;gap:6px;align-items:center", title: "Kosi thinks on this laptop alone, with a small model on the CPU: no internet model and no daily limit"}, localOn, "On this laptop"), h("label", {style: "display:flex;gap:6px;align-items:center"}, "Voice", own), h("label", {style: "display:flex;gap:6px;align-items:center", title: "Used only when Kosi's own voice cannot speak"}, "Browser voice", pick), status),
-    log);
+  drawSwitch(); placeholder();
+  // Before the first message: who is here. It gives way to the talk.
+  const intro = h("div", {style: "max-width:620px;margin:42px 0 24px;color:var(--soft);font-size:15px;line-height:1.7"},
+    h("div", {style: "font-size:20px;font-weight:600;color:var(--ink);margin-bottom:6px"}, "Kosi and its friends"),
+    "Talk to Kosi about anything: your day, a project, an idea. Ask Iris, the researcher, to read up on something, with sources. Ask Sol, the scientist, how something works, and he'll draw it.");
+  const option = (input, label, title) => h("label", {style: "display:flex;gap:7px;align-items:center;font-size:13px;color:var(--soft)", title: title || ""}, ...(input.tagName === "SELECT" ? [label, input] : [input, label]));
+  const more = h("details", {style: "font-size:13px;color:var(--soft)"}, h("summary", {style: "cursor:pointer"}, "More"), h("div", {style: "display:flex;gap:10px;align-items:center;margin-top:8px"}, option(pick, "Browser voice", "Used only when Kosi's own voice cannot speak")));
+  const composer = h("div", {style: "position:sticky;bottom:0;padding:12px 0 16px;background:linear-gradient(to top, var(--bg) 70%, transparent);max-width:860px"},
+    h("div", {style: "display:flex;gap:8px;align-items:center;border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:5px 5px 5px 12px"}, say, mic, send),
+    h("div", {style: "margin-top:6px;min-height:16px"}, status));
+  main.replaceChildren(
+    h("div", {style: "display:flex;flex-wrap:wrap;gap:14px;align-items:center;padding-bottom:16px;border-bottom:1px solid var(--line)"},
+      h("h1", {style: "margin:0"}, "Talk"), switcher,
+      h("div", {style: "margin-left:auto;display:flex;flex-wrap:wrap;gap:14px;align-items:center"},
+        option(voiceOn, "Speak replies"), option(localOn, "On this laptop", "Think on this laptop alone, with a small model on the CPU: no internet model and no daily limit"),
+        option(own, "Voice"), more)),
+    talkLog.length ? log : intro,
+    composer);
   draw();
   say.focus();
 }
@@ -3387,12 +3502,13 @@ loadBrand().finally(route);
 // ------------------------------------------------- skins
 // Four looks: Cinema (the nebula), and three from LemoLab's film styles.
 // The choice is this person's and stays on this computer.
-const SKINS = [["dark-matter", "Dark Matter"], ["cutting-room", "The Cutting Room"], ["cinema", "Cinema"], ["swiss", "Swiss Motion"], ["spy", "Spy Titles"]];
-function skin() { try { return localStorage.getItem("kosika-skin") || "dark-matter"; } catch (error) { return "dark-matter"; } }
+const SKINS = [["graphite", "Graphite"], ["paper", "Paper"], ["dark-matter", "Dark Matter"], ["cutting-room", "The Cutting Room"], ["cinema", "Cinema"], ["swiss", "Swiss Motion"], ["spy", "Spy Titles"]];
+function skin() { try { return localStorage.getItem("kosika-skin") || "graphite"; } catch (error) { return "graphite"; } }
 function setSkin(name) {
   try { localStorage.setItem("kosika-skin", name); } catch (error) { /* this visit only */ }
   if (name === "cinema") delete document.documentElement.dataset.skin; else document.documentElement.dataset.skin = name;
 }
+try { if (!localStorage.getItem("kosika-graphite-chosen")) { localStorage.setItem("kosika-skin", "graphite"); localStorage.setItem("kosika-graphite-chosen", "1"); } } catch (error) { /* this visit only */ }
 setSkin(skin());
 (function skinSwitch() {
   const foot = document.getElementById("foot");

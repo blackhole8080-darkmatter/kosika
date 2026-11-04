@@ -84,7 +84,8 @@ memory minds of BrainMind
 // ---------------------------------------------------------------- gathering, the records
 
 record BrainGatherAsk { topic: Text }
-record BrainGathered { kept: Number titles: Text[] said: Text }
+// notes: the papers read, each kept as a fact with its source.
+record BrainGathered { kept: Number titles: Text[] said: Text notes: BrainNote[] }
 
 // A page as Kosika's web tool reads it, and a paper found on it.
 record BrainPageRequest { url: Text }
@@ -403,7 +404,7 @@ fn br_fact_at(facts: BrainNote[], k: Number) -> BrainNote { return facts[k.min(f
 fn br_gathered(topic: Text, facts: BrainNote[]) -> BrainGathered {
   let titles = for f in facts { f.topic }
   let said = if facts.is_empty() { f"Kosika found no papers on '{topic}'. Check that export.arxiv.org is allowed, or try other words." } else { f"Kosika read {facts.length()} papers on '{topic}' and keeps each as a fact, with its source." }
-  return {kept: facts.length(), titles: titles, said: said}
+  return {kept: facts.length(), titles: titles, said: said, notes: facts}
 }
 
 // ---------------------------------------------------------------- using what it knows
