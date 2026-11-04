@@ -2560,6 +2560,25 @@ def open_window(url: str) -> bool:
     return False
 
 
+def _free_settings(settings: Path) -> Path:
+    """A settings folder no browser is using now.
+
+    A browser left running on the folder, even with no window showing,
+    takes the new page itself and the one just started exits at once: the
+    app would think its window was closed and stop before it was seen. Such
+    a folder's lock file cannot be removed, so the next free one is used.
+    """
+
+    for k in range(6):
+        folder = settings if k == 0 else settings.with_name(f"{settings.name}-{k + 1}")
+        try:
+            (folder / "lockfile").unlink(missing_ok=True)
+            return folder
+        except OSError:
+            continue
+    return settings
+
+
 def open_app_window(
     url: str, settings: Path, announce_as: str = "studio"
 ) -> subprocess.Popen[bytes] | None:
@@ -2574,6 +2593,7 @@ def open_app_window(
     (MayaOS opens Studio, and Studio MayaOS) can find it.
     """
 
+    settings = _free_settings(settings)
     settings.mkdir(parents=True, exist_ok=True)
     if announce_as:
         from .desktop_app import announce
