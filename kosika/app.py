@@ -964,8 +964,53 @@ class App:
             raise AppError("No such agent in this folder", 404)
         return found
 
+    def _cards(self) -> list[dict[str, Any]]:
+        """Every agent's card. Reading and checking every program took
+        twelve seconds and more on a big folder, on every page Studio drew;
+        a card is now kept until its folder's programs or Kosika itself
+        change, in memory and on this computer, so a restart is fast too."""
+
+        agents = list(self.agents().values())
+        here = Path(__file__).resolve().parent
+
+        def stamp(path: Path) -> list[Any]:
+            files = sorted(path.parent.glob("*.kos"))
+            return [[str(f), f.stat().st_mtime_ns, f.stat().st_size] for f in files]
+
+        try:
+            engine = max(p.stat().st_mtime_ns for p in [*here.glob("*.py"), *here.glob("std/*.kos")])
+        except ValueError:
+            engine = 0
+        store = Path.home() / ".kosika" / "studio-cards.json"
+        kept = getattr(self, "_card_cache", None)
+        if kept is None:
+            try:
+                kept = json.loads(store.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                kept = {}
+            self._card_cache = kept
+        cards, changed = [], False
+        for agent in agents:
+            key = str(agent.path)
+            mark = [engine, stamp(agent.path)]
+            entry = kept.get(key)
+            if isinstance(entry, dict) and entry.get("mark") == mark:
+                cards.append(entry["card"])
+                continue
+            card = describe(agent, detail=False)
+            kept[key] = {"mark": mark, "card": card}
+            cards.append(card)
+            changed = True
+        if changed:
+            try:
+                store.parent.mkdir(parents=True, exist_ok=True)
+                store.write_text(json.dumps(kept), encoding="utf-8")
+            except (OSError, TypeError, ValueError):
+                pass
+        return cards
+
     def overview(self) -> dict[str, Any]:
-        cards = [describe(a, detail=False) for a in self.agents().values()]
+        cards = self._cards()
         return {
             "root": str(self.root),
             "can_run": self.bind_models is not None,
@@ -1698,9 +1743,37 @@ class App:
         """Everything in this folder in one list, with suggestions that
         come from rules, never from a model."""
 
-        return project_index(
-            [(agent.id, agent.title, agent.path) for agent in self.agents().values()]
+        # Indexing every program took forty seconds and more; the index is
+        # kept until a program in the folder, or Kosika itself, changes.
+        agents = list(self.agents().values())
+        here = Path(__file__).resolve().parent
+        try:
+            engine = max(p.stat().st_mtime_ns for p in [*here.glob("*.py"), *here.glob("std/*.kos")])
+        except ValueError:
+            engine = 0
+        mark = [engine] + sorted(
+            [str(f), f.stat().st_mtime_ns, f.stat().st_size]
+            for agent in agents for f in agent.path.parent.glob("*.kos")
         )
+        store = Path.home() / ".kosika" / "studio-project.json"
+        kept = getattr(self, "_project_cache", None)
+        if kept is None:
+            try:
+                kept = json.loads(store.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                kept = {}
+        if kept.get("root") == str(self.root) and kept.get("mark") == mark:
+            self._project_cache = kept
+            return kept["index"]
+        index = project_index([(agent.id, agent.title, agent.path) for agent in agents])
+        kept = {"root": str(self.root), "mark": mark, "index": index}
+        self._project_cache = kept
+        try:
+            store.parent.mkdir(parents=True, exist_ok=True)
+            store.write_text(json.dumps(kept), encoding="utf-8")
+        except (OSError, TypeError, ValueError):
+            pass
+        return index
 
     def scene(self, agent_id: str, inputs: dict[str, Any]) -> dict[str, Any]:
         """Run a program that describes an animation, and give back the
