@@ -28,6 +28,7 @@ fn bo_flow() -> Structure {
   let parts: Part[] = [
     {id: "ask", label: "You ask", note: "how many r's in strawberry?", parent: ""},
     {id: "worked", label: "Kosika works it out", note: "counts: s-t-r-a-w-b-e-r-r-y = 3", parent: ""},
+    {id: "facts", label: "Checked facts", note: "Wikipedia, kept in memory", parent: ""},
     {id: "memory", label: "Kosi's memory", note: "what you told it, by meaning", parent: ""},
     {id: "model", label: "Small model, CPU", note: "qwen3 1.7B writes the words", parent: ""},
     {id: "check", label: "Kosika checks", note: "is the exact answer there?", parent: ""},
@@ -35,13 +36,14 @@ fn bo_flow() -> Structure {
   ]
   let links: Link[] = [
     {from: "ask", to: "worked", label: "first"},
-    {from: "worked", to: "memory", label: "with"},
+    {from: "worked", to: "facts", label: "names?"},
+    {from: "facts", to: "memory", label: "with"},
     {from: "memory", to: "model", label: "short brief"},
     {from: "model", to: "check", label: "reply"},
     {from: "check", to: "speak", label: "right"}
   ]
   let steps: Step[] = [
-    {text: "Kosika reads the question and does the exact part itself.", parts: ["ask", "worked"]},
+    {text: "Kosika reads the question, does the exact part itself and checks what it names.", parts: ["ask", "worked", "facts"]},
     {text: "The small model gets a short brief and writes the reply.", parts: ["memory", "model"]},
     {text: "Kosika checks the reply before Kosi says it.", parts: ["check", "speak"]}
   ]
@@ -52,10 +54,11 @@ fn bo_flow_scenes() -> DzScene[] {
   return [
     bo_scene("You ask: how many times does r appear in strawberry? A model reads words in pieces and often says two.", ["ask"], "", "", ["ask"]),
     bo_scene("Kosika works it out first, in Kosika: it spells s-t-r-a-w-b-e-r-r-y and counts 3.", ["worked"], "ask", "worked", ["ask", "worked"]),
-    bo_scene("Kosi's memory adds what you have told it that bears on the question.", ["memory"], "worked", "memory", ["ask", "worked", "memory"]),
-    bo_scene("The small model, on the CPU alone, gets a short brief with the exact answer in it and writes the reply.", ["model"], "memory", "model", ["ask", "worked", "memory", "model"]),
-    bo_scene("Kosika checks the reply: if the 3 is missing, or a wrong weekday or a made-up future is in it, the exact answer is said instead.", ["check"], "model", "check", ["ask", "worked", "memory", "model", "check"]),
-    bo_scene("Kosi speaks the checked answer, about 8 seconds after you asked, with no graphics card.", ["speak"], "check", "speak", ["ask", "worked", "memory", "model", "check", "speak"])
+    bo_scene("If the question names something, like Australia or Einstein, Kosi checks it on Wikipedia once and keeps the sentence that answers it.", ["facts"], "worked", "facts", ["ask", "worked", "facts"]),
+    bo_scene("Kosi's memory adds what you have told it that bears on the question.", ["memory"], "facts", "memory", ["ask", "worked", "facts", "memory"]),
+    bo_scene("The small model, on the CPU alone, gets a short brief with the exact answer and checked facts in it, and writes the reply.", ["model"], "memory", "model", ["ask", "worked", "facts", "memory", "model"]),
+    bo_scene("Kosika checks the reply: if the 3 is missing, a wrong weekday or a made-up future is in it, or it only says the question back, the exact answer or the checked fact is said instead.", ["check"], "model", "check", ["ask", "worked", "facts", "memory", "model", "check"]),
+    bo_scene("Kosi speaks the checked answer, about 8 seconds after you asked, with no graphics card.", ["speak"], "check", "speak", ["ask", "worked", "facts", "memory", "model", "check", "speak"])
   ]
 }
 
