@@ -42,7 +42,39 @@ def _engine() -> list[str]:
     native = os.environ.get("KOSIKA_NATIVE", "")
     if native and Path(native).is_file():
         return [native]
+    built = _built_native()
+    if built:
+        return [built]
     return [sys.executable, "-m", "kosika.cli"]
+
+
+def _built_native() -> str:
+    """Kosika's Go engine, built from this copy of Kosika into ~/.kosika/bin
+    when Go is installed and the build is older than the source. It runs the
+    same programs ten to seventeen times faster than the Python engine. ""
+    when there is no Go and no build, and the Python engine is used."""
+
+    import shutil
+
+    source = Path(__file__).resolve().parent.parent / "native"
+    if not (source / "main.go").is_file():
+        return ""
+    target = Path.home() / ".kosika" / "bin" / ("kosika-native.exe" if os.name == "nt" else "kosika-native")
+    try:
+        newest = max(p.stat().st_mtime for p in [*source.glob("*.go"), *source.glob("std/*.kos")])
+    except ValueError:
+        return ""
+    if target.is_file() and target.stat().st_mtime >= newest:
+        return str(target)
+    go = shutil.which("go")
+    if not go:
+        return str(target) if target.is_file() else ""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        subprocess.run([go, "build", "-o", str(target), "."], cwd=source, capture_output=True, timeout=300, check=True)  # noqa: S603 - our own source
+    except (OSError, subprocess.SubprocessError):
+        return str(target) if target.is_file() else ""
+    return str(target)
 
 
 def _result(printed: str, first: str = "kind") -> dict[str, Any]:
@@ -152,9 +184,96 @@ def _key_for(url: str, env: dict[str, str]) -> str:
     return own or env.get("KOSIKA_DESIGNS_API_KEY", "") or env.get("KOSIKA_MODEL_API_KEY", "")
 
 
+#: The models Kosika moves through when one cannot answer: Groq's large free
+#: model, Groq's small one, then the small model on this computer (made by
+#: Ollama, no graphics card needed). A person who names a model in
+#: KOSIKA_DESIGNS_MODEL gets that one alone.
+def _models(env: dict[str, str]) -> list[dict[str, str]]:
+    if env.get("KOSIKA_DESIGNS_MODEL"):
+        return [{}]
+    chain: list[dict[str, str]] = []
+    if env.get("GROQ_API_KEY") or env.get("KOSIKA_MODEL_API_KEY"):
+        chain.append({"KOSIKA_DESIGNS_MODEL": DEFAULT_MODEL, "KOSIKA_DESIGNS_MODEL_URL": DEFAULT_MODEL_URL})
+        chain.append({"KOSIKA_DESIGNS_MODEL": "openai/gpt-oss-20b", "KOSIKA_DESIGNS_MODEL_URL": DEFAULT_MODEL_URL})
+    local = env.get("KOSI_LOCAL_MODEL", "kosika-cpu-1.7b")
+    url = env.get("KOSI_LOCAL_URL", "http://127.0.0.1:11434")
+    if _local_ready(local, url) or (_start_ollama() and _local_ready(local, url)):
+        chain.append({"KOSIKA_DESIGNS_MODEL": local, "KOSIKA_DESIGNS_MODEL_URL": url, "KOSIKA_DESIGNS_MODEL_PROTOCOL": "ollama", "KOSIKA_MODEL_THINK": "off", "KOSIKA_DESIGNS_MAX_TOKENS": "1500"})
+    return chain or [{}]
+
+
+def _start_ollama(wait: float = 12.0) -> bool:
+    """Start Ollama on this computer when it is installed but not running,
+    so the model on this laptop is there when the cloud ones are not.
+    Whether it now answers."""
+
+    import shutil
+    import time
+    import urllib.request
+
+    def answers() -> bool:
+        try:
+            with urllib.request.urlopen("http://127.0.0.1:11434/api/version", timeout=2):  # noqa: S310 - this computer
+                return True
+        except OSError:
+            return False
+
+    if answers():
+        return True
+    found = shutil.which("ollama")
+    if not found and os.environ.get("LOCALAPPDATA"):
+        guess = Path(os.environ["LOCALAPPDATA"]) / "Programs" / "Ollama" / "ollama.exe"
+        found = str(guess) if guess.is_file() else None
+    if not found:
+        return False
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
+    try:
+        subprocess.Popen([found, "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags)  # noqa: S603 - the person's own Ollama
+    except OSError:
+        return False
+    end = time.time() + wait
+    while time.time() < end:
+        if answers():
+            return True
+        time.sleep(0.5)
+    return False
+
+
+# What a model that could not answer leaves behind: the service refused or
+# was out of its allowance, or every answer came back empty.
+_UNANSWERED = ("Workflow stopped (provider)", "HTTP 401", "HTTP 403", "HTTP 429", "rate limit", "Rate limit", "quota")
+
+
+def _unanswered(said: dict[str, Any] | None, error: str) -> bool:
+    if error:
+        return any(mark in error for mark in _UNANSWERED)
+    problems = (said or {}).get("problems") or []
+    return any(p == "give a title" or p.startswith("0 parts") or p.startswith("0 figures") for p in problems)
+
+
 def _run(source: Path, workflow: str, given_input: dict, *, extra: list[str] | None = None, first: str = "kind", timeout: float = 600, env_more: dict[str, str] | None = None) -> dict[str, Any]:
     env = dict(os.environ)
     env.update(env_more or {})
+    chain = _models(env)
+    said: dict[str, Any] | None = None
+    failed: DesignsError | None = None
+    for k, model in enumerate(chain):
+        error = ""
+        try:
+            said = _run_once(source, workflow, given_input, {**env, **model}, extra, first, timeout)
+            failed = None
+        except DesignsError as exc:
+            error, failed, said = str(exc), exc, None
+        if not _unanswered(said, error) or k == len(chain) - 1:
+            break
+    if failed is not None:
+        raise failed
+    assert said is not None
+    return said
+
+
+def _run_once(source: Path, workflow: str, given_input: dict, env: dict[str, str], extra: list[str] | None, first: str, timeout: float) -> dict[str, Any]:
+    env = dict(env)
     env["KOSIKA_MODEL_API_KEY"] = _key_for(env.get("KOSIKA_DESIGNS_MODEL_URL", DEFAULT_MODEL_URL), env)
     with tempfile.TemporaryDirectory() as work:
         given = Path(work) / "ask.json"
@@ -170,7 +289,7 @@ def _run(source: Path, workflow: str, given_input: dict, *, extra: list[str] | N
             # Kosika functions; the 10,000 default stops a big one partway
             # ("pure function call budget exceeds 10000"). The Brain path
             # already asks for 100,000 for the same reason.
-            "--max-function-calls", os.environ.get("KOSIKA_DESIGNS_CALLS", "100000"),
+            "--max-function-calls", env.get("KOSIKA_DESIGNS_CALLS", "100000"),
         ] + (extra or [])
         try:
             done = subprocess.run(  # noqa: S603 - our own engine and our own file
@@ -181,7 +300,9 @@ def _run(source: Path, workflow: str, given_input: dict, *, extra: list[str] | N
             raise DesignsError("Designs took too long; try a shorter ask.") from exc
     if done.returncode:
         _keep_failure(done.stdout + "\n" + done.stderr)
-    return _result(done.stdout + ("\n" + done.stderr if done.returncode else ""), first)
+    said = _result(done.stdout + ("\n" + done.stderr if done.returncode else ""), first)
+    said.setdefault("model", env.get("KOSIKA_DESIGNS_MODEL", DEFAULT_MODEL))
+    return said
 
 
 def _keep_failure(printed: str) -> None:
