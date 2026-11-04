@@ -2400,7 +2400,8 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
 
                     from .designs import speak
 
-                    said = speak(str(self._body().get("text", "")))
+                    body = self._body()
+                    said = speak(str(body.get("text", "")), str(body.get("voice", "")))
                     self._json(200, {"audio": base64.b64encode(said).decode() if said else ""})
                 elif method == "POST" and url.path == "/api/crew":
                     # A Kosika crew, run by Kosika Brain, makes a study pack.

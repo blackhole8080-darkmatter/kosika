@@ -246,8 +246,38 @@ def hear(audio: bytes, mime: str = "audio/webm") -> str:
         raise DesignsError(f"Kosi could not hear that: {exc}") from exc
 
 
+KOKORO_VOICES = ("bm_george", "bm_lewis", "bm_daniel", "bm_fable", "bf_emma", "bf_isabella")
+_kokoro = None
+
+
+def _speak_kokoro(text: str, voice: str = "") -> bytes:
+    # Kokoro (Apache 2.0) on this computer, with no app and no network: the
+    # kokoro-onnx package and its model in ~/.kosika/voice (KOSI_KOKORO_DIR).
+    global _kokoro
+    try:
+        import io
+
+        import soundfile
+        from kokoro_onnx import Kokoro
+    except ImportError:
+        return b""
+    home = Path(os.environ.get("KOSI_KOKORO_DIR", str(Path.home() / ".kosika" / "voice")))
+    model = next((home / name for name in ("kokoro-v1.0.int8.onnx", "kokoro-v1.0.onnx") if (home / name).is_file()), None)
+    if model is None or not (home / "voices-v1.0.bin").is_file():
+        return b""
+    if _kokoro is None:
+        _kokoro = Kokoro(str(model), str(home / "voices-v1.0.bin"))
+    chosen = voice if voice in KOKORO_VOICES else os.environ.get("KOSI_KOKORO_VOICE", "bm_george")
+    samples, rate = _kokoro.create(text[:1500], voice=chosen, speed=float(os.environ.get("KOSI_VOICE_SPEED", "0.95")), lang="en-gb" if chosen.startswith("b") else "en-us")
+    out = io.BytesIO()
+    soundfile.write(out, samples, rate, format="WAV")
+    return out.getvalue()
+
+
 def speak(text: str, voice: str = "") -> bytes:
-    """Kosi's voice for `text`, as WAV: first VoiceStudio on this computer,
+    """Kosi's voice for `text`, as WAV: first Kokoro on this computer, a calm
+    British voice ("bm_george" by default, KOSI_KOKORO_VOICE), free for any
+    use; then VoiceStudio on this computer,
     in a voice designed for Kosi (calm, middle-aged, low, British by default:
     KOSI_VOICE_STYLE), then Groq's free Orpheus (KOSI_VOICE, "dan" by
     default), else b"" and Studio speaks with the browser's best voice.
@@ -256,7 +286,7 @@ def speak(text: str, voice: str = "") -> bytes:
 
     if not text.strip():
         return b""
-    said = _speak_voicestudio(text) or _speak_orpheus(text, voice)
+    said = _speak_kokoro(text, voice) or _speak_voicestudio(text) or _speak_orpheus(text, "" if voice in KOKORO_VOICES else voice)
     return said
 
 

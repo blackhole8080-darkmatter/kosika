@@ -1750,6 +1750,9 @@ function kosiVoice() {
   for (const test of order) { const v = voices.find(test); if (v) return v; }
   return voices[0] || null;
 }
+// Kosi's voice when it speaks for itself (Kokoro on this computer).
+const KOSI_VOICES = [["bm_george", "George (calm, deep, British)"], ["bm_lewis", "Lewis (British)"], ["bm_daniel", "Daniel (British)"], ["bm_fable", "Fable (British)"], ["bf_emma", "Emma (British)"], ["bf_isabella", "Isabella (British)"]];
+function kosiServerVoice() { try { return localStorage.getItem("kosi-own-voice") || "bm_george"; } catch (error) { return "bm_george"; } }
 function showTalk() {
   const say = h("input", {type: "text", placeholder: "Say anything: your day, a project, a job, an idea…", style: "flex:1;min-width:220px"});
   const send = h("button", {onclick: () => ask(say.value)}, "Send");
@@ -1774,13 +1777,28 @@ function showTalk() {
     return h("div", {style: "display:grid;gap:8px"}, ...parts);
   }
   function draw() { log.replaceChildren(...talkLog.map(bubble)); }
-  let playing = null;
+  let playing = null, saying = 0;
+  // Kosi's own voice, a sentence at a time: the first sentence plays while
+  // the next is being made, so it starts speaking in a few seconds.
   async function voice(text) {
     if (!voiceOn.checked || !text) return;
-    try {
-      const got = await api("/api/kosi/speak", {method: "POST", body: JSON.stringify({text})});
-      if (got.audio) { if (playing) playing.pause(); playing = new Audio("data:audio/wav;base64," + got.audio); await playing.play(); return; }
-    } catch (error) { /* the browser speaks instead */ }
+    const turn = ++saying;
+    const sentences = text.match(/[^.!?]+[.!?]+["')\]]*|[^.!?]+$/g) || [text];
+    const make = s => api("/api/kosi/speak", {method: "POST", body: JSON.stringify({text: s.trim(), voice: kosiServerVoice()})}).then(got => got.audio || "").catch(() => "");
+    let next = make(sentences[0]);
+    let spoke = false;
+    for (let i = 0; i < sentences.length; i++) {
+      const audio = await next;
+      if (turn !== saying) return;
+      if (!audio) break;
+      if (i + 1 < sentences.length) next = make(sentences[i + 1]);
+      spoke = true;
+      if (playing) playing.pause();
+      playing = new Audio("data:audio/wav;base64," + audio);
+      await new Promise(done => { playing.onended = done; playing.onerror = done; playing.play().catch(done); });
+      if (turn !== saying) return;
+    }
+    if (spoke) return;
     if (!window.speechSynthesis) return;
     speechSynthesis.cancel();
     const line = new SpeechSynthesisUtterance(text);
@@ -1837,11 +1855,13 @@ function showTalk() {
     pick.replaceChildren(...list.map(v => h("option", {value: v.name, selected: now && v.name === now.name ? "" : null}, v.name.replace(/^Microsoft /, "").replace(/ - English.*$/, "") + " (" + v.lang + ")")));
   }
   pick.onchange = () => { try { localStorage.setItem("kosi-voice", pick.value); } catch (error) { /* no storage */ } voice("Hello, I'm Kosi. This is how I sound now."); };
+  const own = h("select", {title: "Kosi's own voice, made on this computer"}, KOSI_VOICES.map(([value, label]) => h("option", {value, selected: value === kosiServerVoice() ? "" : null}, label)));
+  own.onchange = () => { try { localStorage.setItem("kosi-own-voice", own.value); } catch (error) { /* no storage */ } voice("Good evening. I'm Kosi, and this is how I sound now."); };
   if (window.speechSynthesis) { voices(); speechSynthesis.onvoiceschanged = voices; }
   main.replaceChildren(titled("Talk to Kosi"),
     h("p", {class: "lead"}, "Kosi is your companion, run by Kosika Brain. It remembers you, your projects and what it has learned, and answers like a friend. Type, or press the microphone and speak."),
     h("div", {style: "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0 6px"}, mic, say, send),
-    h("div", {style: "display:flex;gap:10px;align-items:center;flex-wrap:wrap"}, h("label", {style: "display:flex;gap:6px;align-items:center"}, voiceOn, "Kosi speaks its answers"), h("label", {style: "display:flex;gap:6px;align-items:center"}, "Voice", pick), status),
+    h("div", {style: "display:flex;gap:10px;align-items:center;flex-wrap:wrap"}, h("label", {style: "display:flex;gap:6px;align-items:center"}, voiceOn, "Kosi speaks its answers"), h("label", {style: "display:flex;gap:6px;align-items:center"}, "Voice", own), h("label", {style: "display:flex;gap:6px;align-items:center", title: "Used only when Kosi's own voice cannot speak"}, "Browser voice", pick), status),
     log);
   draw();
   say.focus();
