@@ -180,7 +180,8 @@ fn br_past(found: BrainLike, text: Text) -> BrainPast {
     // some of the ask's words: an embedding model puts "breadth-first
     // search" near "binary search tree".
     let shares = found.by != "meaning" or br_near(asked, m.value.words) >= 0.2
-    if m.value.kind == "episode" and near >= floor and shares and br_same_subject(text, m.value.topic) { return {found: true, topic: m.value.topic, text: m.value.text, times: m.value.times, near: near} }
+    // A drawing that failed is not one to say it remembers.
+    if m.value.kind == "episode" and m.value.score > 0 and near >= floor and shares and br_same_subject(text, m.value.topic) { return {found: true, topic: m.value.topic, text: m.value.text, times: m.value.times, near: near} }
   }
   return {found: false, topic: "", text: "", times: 0, near: 0}
 }

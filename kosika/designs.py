@@ -131,10 +131,31 @@ def rate(text: str, liked: bool, *, timeout: float = 120) -> dict[str, Any]:
     return _run(BRAIN, "brain_rate", {"r": {"ask": text, "liked": bool(liked)}}, extra=_brain_memory(), first="rated", timeout=timeout)
 
 
+def _key_for(url: str, env: dict[str, str]) -> str:
+    """The key for the model service at url: the service's own key when this
+    computer has one (GROQ_API_KEY for Groq, OPENROUTER_API_KEY for
+    OpenRouter), else KOSIKA_DESIGNS_API_KEY, else KOSIKA_MODEL_API_KEY.
+
+    A general KOSIKA_MODEL_API_KEY may be another service's key (a Gemini key,
+    say); sent to Groq it is refused, and every model step comes back empty,
+    which Designs showed as a drawing with no title and no parts.
+    """
+
+    host = url.lower()
+    own = ""
+    if "groq.com" in host:
+        own = env.get("GROQ_API_KEY", "")
+    elif "openrouter.ai" in host:
+        own = env.get("OPENROUTER_API_KEY", "")
+    elif "127.0.0.1" in host or "localhost" in host:
+        own = env.get("KOSIKA_DESIGNS_API_KEY", "") or "local"
+    return own or env.get("KOSIKA_DESIGNS_API_KEY", "") or env.get("KOSIKA_MODEL_API_KEY", "")
+
+
 def _run(source: Path, workflow: str, given_input: dict, *, extra: list[str] | None = None, first: str = "kind", timeout: float = 600, env_more: dict[str, str] | None = None) -> dict[str, Any]:
     env = dict(os.environ)
-    env.setdefault("KOSIKA_MODEL_API_KEY", os.environ.get("GROQ_API_KEY", ""))
     env.update(env_more or {})
+    env["KOSIKA_MODEL_API_KEY"] = _key_for(env.get("KOSIKA_DESIGNS_MODEL_URL", DEFAULT_MODEL_URL), env)
     with tempfile.TemporaryDirectory() as work:
         given = Path(work) / "ask.json"
         given.write_text(json.dumps(given_input), encoding="utf-8")

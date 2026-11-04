@@ -1070,7 +1070,7 @@ body.on-mission .track { opacity: .5; }
   --ease: cubic-bezier(.2, .8, .2, 1); --settle: var(--ease);
   color-scheme: dark;
 }
-:root[data-skin="paper"] {
+:root[data-skin="paper"], :root[data-skin="graphite"][data-theme="light"] {
   --bg: #f7f6f3; --panel: #ffffff; --rail: #fbfaf8; --ink: #16171a; --soft: #4a4d55; --faint: #5d6069; --line: #e4e2dc;
   --accent: #9a5a0c; --accent-soft: #fbf1e3; --ok: #2e7d4f; --ok-soft: #e6f3eb; --bad: #b3382c; --bad-soft: #f8e3e0;
   --warn: #8a6100; --warn-soft: #f8ecd0; --think: #5b4bb5; --think-soft: #ebe8fa; --mem: #1f6f8b; --mem-soft: #dff0f5;
@@ -1080,6 +1080,19 @@ body.on-mission .track { opacity: .5; }
   --mono: "Cascadia Code", "JetBrains Mono", ui-monospace, Consolas, monospace;
   --ease: cubic-bezier(.2, .8, .2, 1); --settle: var(--ease);
   color-scheme: light;
+}
+@media (prefers-color-scheme: light) {
+  :root[data-skin="graphite"]:not([data-theme="dark"]) {
+  --bg: #f7f6f3; --panel: #ffffff; --rail: #fbfaf8; --ink: #16171a; --soft: #4a4d55; --faint: #5d6069; --line: #e4e2dc;
+  --accent: #9a5a0c; --accent-soft: #fbf1e3; --ok: #2e7d4f; --ok-soft: #e6f3eb; --bad: #b3382c; --bad-soft: #f8e3e0;
+  --warn: #8a6100; --warn-soft: #f8ecd0; --think: #5b4bb5; --think-soft: #ebe8fa; --mem: #1f6f8b; --mem-soft: #dff0f5;
+  --code: #3c3f46; --code-soft: #efede8; --glass: #ffffff; --glass-edge: #e4e2dc; --glow: rgba(154, 90, 12, .16);
+  --glow-a: #9a5a0c; --glow-b: #9a5a0c; --glow-c: #9a5a0c; --shadow: none; --lift: none;
+  --sans: Inter, "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif; --display: var(--sans);
+  --mono: "Cascadia Code", "JetBrains Mono", ui-monospace, Consolas, monospace;
+  --ease: cubic-bezier(.2, .8, .2, 1); --settle: var(--ease);
+  color-scheme: light;
+}
 }
 :is([data-skin="graphite"], [data-skin="paper"]) body { font: 14.5px/1.55 var(--sans); background: var(--bg); letter-spacing: 0; grid-template-columns: 224px minmax(0, 1fr); }
 :is([data-skin="graphite"], [data-skin="paper"]) :is(.nebula, .grain, .spot, .ripple, .spy-only) { display: none !important; }
@@ -3502,26 +3515,17 @@ loadBrand().finally(route);
 // ------------------------------------------------- skins
 // Four looks: Cinema (the nebula), and three from LemoLab's film styles.
 // The choice is this person's and stays on this computer.
-const SKINS = [["graphite", "Graphite"], ["paper", "Paper"], ["dark-matter", "Dark Matter"], ["cutting-room", "The Cutting Room"], ["cinema", "Cinema"], ["swiss", "Swiss Motion"], ["spy", "Spy Titles"]];
-function skin() { try { return localStorage.getItem("kosika-skin") || "graphite"; } catch (error) { return "graphite"; } }
+// One look: Graphite, which turns to its daylight twin, Paper, when the
+// Theme is light. The film looks Studio once had are no longer offered.
+const SKINS = [["graphite", "Graphite"]];
+function skin() { return "graphite"; }
 function setSkin(name) {
   try { localStorage.setItem("kosika-skin", name); } catch (error) { /* this visit only */ }
   if (name === "cinema") delete document.documentElement.dataset.skin; else document.documentElement.dataset.skin = name;
 }
 try { if (!localStorage.getItem("kosika-graphite-chosen")) { localStorage.setItem("kosika-skin", "graphite"); localStorage.setItem("kosika-graphite-chosen", "1"); } } catch (error) { /* this visit only */ }
 setSkin(skin());
-(function skinSwitch() {
-  const foot = document.getElementById("foot");
-  function add() {
-    if (foot.querySelector(".skin-switch")) return;
-    const label = SKINS.find(item => item[0] === skin()) || SKINS[0];
-    foot.append(h("div", {class: "theme skin-switch", title: "Change Studio's look", onclick: () => {
-      const next = SKINS[(SKINS.findIndex(item => item[0] === skin()) + 1) % SKINS.length][0];
-      setSkin(next); foot.querySelector(".skin-switch").remove(); add();
-    }}, h("i"), "Look: " + label[1]));
-  }
-  new MutationObserver(add).observe(foot, {childList: true});
-})();
+// The look is not switched any more: there is one.
 
 // ------------------------------------------------- the agency (Spy Titles)
 // What the look adds to the page: the credits, case files with stamps,
