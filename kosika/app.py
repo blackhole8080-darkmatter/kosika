@@ -2210,7 +2210,8 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
             self.send_header(
                 "Content-Security-Policy",
                 "default-src 'none'; style-src 'unsafe-inline'; "
-                "script-src 'unsafe-inline'; connect-src 'self'; font-src 'self'",
+                "script-src 'unsafe-inline'; connect-src 'self'; font-src 'self'; "
+                "img-src 'self'",
             )
             self.end_headers()
             self.wfile.write(body)
