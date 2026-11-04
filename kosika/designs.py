@@ -144,6 +144,11 @@ def _run(source: Path, workflow: str, given_input: dict, *, extra: list[str] | N
             "--model-protocol", os.environ.get("KOSIKA_DESIGNS_MODEL_PROTOCOL", "openai"),
             "--model-timeout", os.environ.get("KOSIKA_DESIGNS_MODEL_TIMEOUT", "400"),
             "--max-output-tokens", os.environ.get("KOSIKA_DESIGNS_MAX_TOKENS", "8000"),
+            # A canvas works out its layout, storyboard and pins in pure
+            # Kosika functions; the 10,000 default stops a big one partway
+            # ("pure function call budget exceeds 10000"). The Brain path
+            # already asks for 100,000 for the same reason.
+            "--max-function-calls", os.environ.get("KOSIKA_DESIGNS_CALLS", "100000"),
         ] + (extra or [])
         try:
             done = subprocess.run(  # noqa: S603 - our own engine and our own file
@@ -216,7 +221,10 @@ def kosi(text: str, *, timeout: float = 600) -> dict[str, Any]:
         raise DesignsError("Say something to Kosi.")
     if not KOSI.is_file():
         raise DesignsError(f"Kosi is not in this copy of Kosika ({KOSI}).")
-    return _run(KOSI, "chat", {"msg": {"text": text}}, extra=_brain_memory(), first="text", timeout=timeout)
+    # KOSI_BRAIN=small talks through the small brain, for a small model on a
+    # laptop's CPU: a shorter ask, and Kosika's own exact working all the same.
+    workflow = "chat_small" if os.environ.get("KOSI_BRAIN", "").strip().lower() == "small" else "chat"
+    return _run(KOSI, workflow, {"msg": {"text": text}}, extra=_brain_memory(), first="text", timeout=timeout)
 
 
 def _groq_key() -> str:

@@ -1,0 +1,308 @@
+// Kosi's exact working: what Kosika works out itself, so a model need not
+// guess at it.
+//
+// A language model reads words in pieces and does sums by feel, so it
+// miscounts the r's in "strawberry", slips on "the day after tomorrow" and
+// says a future match was won. A small model on a laptop's CPU does so most
+// of all. Here Kosika counts letters, works out weekdays, does the sums it
+// can read (percentages, powers, roots, a run of numbers added up, a price
+// before a discount, a time after a journey, one simple equation) and knows
+// which years have not come yet. The answer is put in front of the model,
+// and checked in what the model says before Kosi speaks: if the exact
+// answer is missing, Kosi says the exact answer instead.
+
+export [WkAnswer, wk_answer, wk_note, wk_checked]
+
+// says: the exact answer as Kosi would say it. key: the part a reply must
+// hold to be right ("3", "Thursday", "108.1"), or "" when nothing was
+// worked out. future: the message asks about a year still to come.
+record WkAnswer { says: Text key: Text future: Bool wrong: Text[] }
+
+fn wk_none() -> WkAnswer { return {says: "", key: "", future: false, wrong: []} }
+
+fn wk_num(x: Number) -> Text { return if x.is_whole() { f"{x}" } else { x.to_fixed(4).trim_end().trim_marks("0").trim_marks(".") } }
+
+// The message as words, with its marks taken off: "20%" is "20 percent".
+fn wk_words(text: Text) -> Text[] {
+  let t = " " + text.lower().replace("%", " percent").replace("?", " ").replace("!", " ").replace("\"", " ").replace(";", " ") + " "
+  return for w in t.words() { w.trim_marks(".,:()'") }
+}
+
+fn wk_value(w: Text) -> Number {
+  let v = w.to_number()
+  return if v.exists() { v.value() } else { -999999999 }
+}
+
+fn wk_is_num(w: Text) -> Bool { return w.to_number().exists() }
+
+// ---------------------------------------------------------------- letters
+
+fn wk_letters(ws: Text[]) -> WkAnswer {
+  for k in 0 until ws.length() {
+    if ws[k] == "letter" and k + 1 < ws.length() and ws[k + 1].length() == 1 {
+      let letter = ws[k + 1]
+      for j in (k + 2) until ws.length() {
+        if ws[j] == "in" and j + 1 < ws.length() {
+          let after = for x in ws.slice(j + 1, ws.length()) where x != "the" and x != "word" { x }
+          if not after.is_empty() {
+            let word = after[0]
+            let times = word.split(letter).length() - 1
+            let spelled = (for c in 0 until word.length() { word.slice(c, c + 1) }).join("-")
+            let says = if times == 1 { f"The letter {letter} appears once in {word}: {spelled}." } else { f"The letter {letter} appears {times} times in {word}: {spelled}." }
+            return {says: says, key: if times == 1 { "once" } else { f"{times}" }, future: false, wrong: []}
+          }
+        }
+      }
+    }
+    if ws[k] == "letters" and k + 2 < ws.length() and (ws[k + 1] == "in" or ws[k + 1] == "does") {
+      let rest = for x in ws.slice(k + 2, ws.length()) where x != "the" and x != "word" and x != "have" and x != "has" { x }
+      if not rest.is_empty() {
+        let word = rest[0]
+        return {says: f"The word {word} has {word.length()} letters.", key: f"{word.length()}", future: false, wrong: []}
+      }
+    }
+  }
+  return wk_none()
+}
+
+// ---------------------------------------------------------------- weekdays
+
+fn wk_days() -> Text[] { return ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] }
+
+fn wk_day_name(k: Number) -> Text { return wk_days()[((k % 7) + 7) % 7].capitalize() }
+
+// How far a phrase is from today: "the day after tomorrow" is 2. -100 when
+// it names no day.
+fn wk_offset(phrase: Text) -> Number {
+  let p = " " + phrase + " "
+  if p.contains(" day after tomorrow ") { return 2 }
+  if p.contains(" day before yesterday ") { return -2 }
+  if p.contains(" tomorrow ") { return 1 }
+  if p.contains(" yesterday ") { return -1 }
+  let ws = p.words()
+  for k in 0 until ws.length() {
+    if ws[k] == "in" and k + 2 < ws.length() and wk_is_num(ws[k + 1]) and ws[k + 2].starts_with("day") { return wk_value(ws[k + 1]) }
+    if wk_is_num(ws[k]) and k + 2 < ws.length() and ws[k + 1].starts_with("day") and ws[k + 2] == "ago" { return 0 - wk_value(ws[k]) }
+    if wk_is_num(ws[k]) and k + 2 < ws.length() and ws[k + 1].starts_with("day") and (ws[k + 2] == "later" or ws[k + 2] == "after" or ws[k + 2] == "from") { return wk_value(ws[k]) }
+  }
+  if p.contains(" today ") { return 0 }
+  return -100
+}
+
+// "If the day after tomorrow is Sunday, what day was yesterday?" and "if
+// today is Monday, what day is it in 10 days?"
+fn wk_weekday(ws: Text[]) -> WkAnswer {
+  let found = ws.index_of("if")
+  if not found.exists() { return wk_none() }
+  let k = found.value()
+  for j in (k + 1) until ws.length() {
+    let day = wk_days().index_of(ws[j])
+    if day.exists() and j > k + 1 and ws[j - 1] == "is" {
+      let d = day.value()
+      let given = wk_offset(ws.slice(k + 1, j - 1).join(" "))
+      let asked = wk_offset(ws.slice(j + 1, ws.length()).join(" "))
+      if given == -100 or asked == -100 { return wk_none() }
+      let today = d - given
+      let answer = wk_day_name(today + asked)
+      let wrong = for x in wk_days() where x.capitalize() != answer and x.capitalize() != wk_day_name(today) and x != ws[j] { x }
+      return {says: f"Then today is {wk_day_name(today)}, so the day asked about is {answer}.", key: answer, future: false, wrong: wrong}
+    }
+  }
+  return wk_none()
+}
+
+// ---------------------------------------------------------------- sums
+
+fn wk_said(sum: Text, x: Number) -> WkAnswer { return {says: f"{sum} is {wk_num(x)}.", key: wk_num(x), future: false, wrong: []} }
+
+fn wk_sums(ws: Text[]) -> WkAnswer {
+  let n = ws.length()
+  for k in 0 until n {
+    let w = ws[k]
+    let a = wk_value(w)
+    let num = wk_is_num(w)
+    // P after a D percent discount: the price before it.
+    if num and k + 5 < n and ws[k + 1] == "after" and wk_is_num(ws[k + 3]) and ws[k + 4] == "percent" and (ws[k + 5] == "discount" or ws[k + 5] == "off") {
+      let before = a / (1 - wk_value(ws[k + 3]) / 100)
+      return {says: f"The price before the discount was {wk_num(before)}, since {wk_num(a)} is {wk_num(100 - wk_value(ws[k + 3]))} percent of it.", key: wk_num(before), future: false, wrong: []}
+    }
+    if num and k + 3 < n and ws[k + 1] == "percent" and ws[k + 2] == "of" and wk_is_num(ws[k + 3]) {
+      return wk_said(f"{w} percent of {ws[k + 3]}", a * wk_value(ws[k + 3]) / 100)
+    }
+    if num and k + 4 < n and ws[k + 1] == "to" and ws[k + 2] == "the" and ws[k + 3] == "power" and k + 5 < n and wk_is_num(ws[k + 5]) {
+      let p = a.power(wk_value(ws[k + 5]))
+      if k + 7 < n and (ws[k + 6] == "minus" or ws[k + 6] == "plus") and wk_is_num(ws[k + 7]) {
+        let c = wk_value(ws[k + 7])
+        let total = if ws[k + 6] == "minus" { p - c } else { p + c }
+        return wk_said(f"{w} to the power of {ws[k + 5]}, {ws[k + 6]} {ws[k + 7]},", total)
+      }
+      return wk_said(f"{w} to the power of {ws[k + 5]}", p)
+    }
+    if w == "root" and k + 2 < n and ws[k + 1] == "of" and wk_is_num(ws[k + 2]) {
+      return wk_said(f"The square root of {ws[k + 2]}", wk_value(ws[k + 2]).sqrt())
+    }
+    if num and k + 2 < n and wk_is_num(ws[k + 2]) {
+      let b = wk_value(ws[k + 2])
+      let op = ws[k + 1]
+      if op == "times" or op == "x" or op == "*" { return wk_said(f"{w} times {ws[k + 2]}", a * b) }
+      if op == "plus" or op == "+" { return wk_said(f"{w} plus {ws[k + 2]}", a + b) }
+      if op == "minus" { return wk_said(f"{w} minus {ws[k + 2]}", a - b) }
+    }
+    if num and k + 3 < n and ws[k + 1] == "divided" and ws[k + 2] == "by" and wk_is_num(ws[k + 3]) and wk_value(ws[k + 3]) != 0 {
+      return wk_said(f"{w} divided by {ws[k + 3]}", a / wk_value(ws[k + 3]))
+    }
+    // The numbers from A to B added up.
+    if w == "from" and k + 3 < n and wk_is_num(ws[k + 1]) and ws[k + 2] == "to" and wk_is_num(ws[k + 3]) and (ws.contains("sum") or ws.contains("add") or ws.contains("total")) {
+      let lo = wk_value(ws[k + 1])
+      let hi = wk_value(ws[k + 3])
+      if lo.is_whole() and hi.is_whole() and hi >= lo {
+        return wk_said(f"The whole numbers from {ws[k + 1]} to {ws[k + 3]} added up", (lo + hi) * (hi - lo + 1) / 2)
+      }
+    }
+  }
+  return wk_none()
+}
+
+// "solve 2x + 3 = 11": one unknown, x.
+fn wk_equation(text: Text) -> WkAnswer {
+  let t = text.lower().replace(" ", "")
+  let at_found = t.index_of("x")
+  let eq_found = t.index_of("=")
+  if not at_found.exists() or not eq_found.exists() or not text.lower().contains("solve") { return wk_none() }
+  let eq = eq_found.value()
+  if eq < at_found.value() { return wk_none() }
+  let left = t.slice(0, eq)
+  let x_at = left.index_of("x").value()
+  let before = left.slice(0, x_at).trim_marks(":")
+  let start = (for c in 0 until before.length() where not (before.slice(c, c + 1).to_number().exists() or before.slice(c, c + 1) == "." or before.slice(c, c + 1) == "-") { c }).last()
+  let coef_text = if start.exists() { before.slice(start.value() + 1, before.length()) } else { before }
+  let coef = if coef_text.is_empty() { 1 } else { if coef_text == "-" { -1 } else { wk_value(coef_text) } }
+  let rest = left.slice(x_at + 1, left.length())
+  let b = if rest.is_empty() { 0 } else { wk_value(rest.replace("+", "")) }
+  let c = wk_value(t.slice(eq + 1, t.length()).trim_marks(".?"))
+  if coef == -999999999 or b == -999999999 or c == -999999999 or coef == 0 { return wk_none() }
+  let x = (c - b) / coef
+  return {says: f"x = {wk_num(x)}.", key: wk_num(x), future: false, wrong: []}
+}
+
+// "A train leaves at 9:40 and the journey takes 2 hours 35 minutes."
+fn wk_journey(ws: Text[]) -> WkAnswer {
+  var start = -1
+  for w in ws where w.contains(":") and start < 0 {
+    let parts = w.split(":")
+    if parts.length() == 2 and wk_is_num(parts[0]) and wk_is_num(parts[1]) { start = wk_value(parts[0]) * 60 + wk_value(parts[1]) }
+  }
+  if start < 0 { return wk_none() }
+  var hours = 0
+  var minutes = 0
+  for k in 1 until ws.length() {
+    if ws[k].starts_with("hour") and wk_is_num(ws[k - 1]) { hours = wk_value(ws[k - 1]) }
+    if ws[k].starts_with("minute") and wk_is_num(ws[k - 1]) { minutes = wk_value(ws[k - 1]) }
+  }
+  if hours == 0 and minutes == 0 { return wk_none() }
+  let end = (start + hours * 60 + minutes) % (24 * 60)
+  let h = (end / 60).floor()
+  let m = end % 60
+  let clock = f"{h}:" + f"{m}".pad_left(2, "0")
+  return {says: f"It arrives at {clock}.", key: clock, future: false, wrong: []}
+}
+
+// ---------------------------------------------------------------- riddles in plain English
+
+// "All but 9 run away": 9 are left. The words say so, whatever the first
+// number was.
+fn wk_all_but(ws: Text[]) -> WkAnswer {
+  for k in 0 until ws.length() {
+    if ws[k] == "all" and k + 2 < ws.length() and ws[k + 1] == "but" and wk_is_num(ws[k + 2]) and (ws.contains("left") or ws.contains("remain") or ws.contains("remaining")) {
+      return {says: f"{ws[k + 2]} are left: all but {ws[k + 2]} went, so {ws[k + 2]} stayed.", key: ws[k + 2], future: false, wrong: []}
+    }
+  }
+  return wk_none()
+}
+
+// ---------------------------------------------------------------- the future
+
+fn wk_future(ws: Text[], year: Number) -> WkAnswer {
+  for w in ws where wk_is_num(w) and w.length() == 4 {
+    let y = wk_value(w)
+    if y > year and y < 3000 {
+      return {says: f"I can't know that: {w} hasn't come yet, and no one can know what happens then.", key: "", future: true, wrong: []}
+    }
+  }
+  return wk_none()
+}
+
+// ---------------------------------------------------------------- the answer
+
+// The first thing Kosika can work out exactly in the message, if any.
+fn wk_answer(text: Text, year: Number) -> WkAnswer {
+  let ws = wk_words(text)
+  let found = [wk_all_but(ws), wk_letters(ws), wk_weekday(ws), wk_equation(text), wk_sums(ws), wk_journey(ws), wk_future(ws, year)]
+  for a in found where not a.says.is_empty() { return a }
+  return wk_none()
+}
+
+// The line put in front of the model.
+fn wk_note(a: WkAnswer) -> Text {
+  if a.says.is_empty() { return "" }
+  if a.future { return "\n- Worked out by Kosika: the message asks about a year still to come. Say plainly that no one can know it yet." }
+  return "\n- Worked out exactly by Kosika (use this, it is right): " + a.says
+}
+
+// What Kosi says: the model's reply when it holds the exact answer, else
+// the exact answer. A reply about the future that does not say it cannot
+// be known is replaced by one that does.
+fn wk_checked(reply: Text, a: WkAnswer) -> Text {
+  let low = " " + reply.lower().replace(",", "").replace("’", "'") + " "
+  if a.future {
+    let honest = low.contains("can't know") or low.contains("cannot know") or low.contains("no one can know") or low.contains("hasn't happened") or low.contains("has not happened") or low.contains("don't know") or low.contains("hasn't come") or low.contains("no way to know") or low.contains("not happened yet") or low.contains("don't have any information")
+    return if honest { reply } else { a.says }
+  }
+  if a.key.is_empty() { return reply }
+  let key = a.key.lower()
+  let holds = low.contains(" " + key + " ") or low.contains(" " + key + ".") or low.contains(" " + key + ",") or low.contains(" " + key + "!") or low.contains(" " + key + ":") or low.contains("=" + key) or low.contains("= " + key)
+  let named_wrong = (for w in a.wrong where low.contains(" " + w + " ") or low.contains(" " + w + ".") or low.contains(" " + w + ",") { w }).length() > 0
+  return if holds and not named_wrong { reply } else { a.says }
+}
+
+// ---------------------------------------------------------------- tests
+
+test "Kosika counts letters and works out weekdays" {
+  expect wk_answer("How many times does the letter r appear in the word strawberry?", 2026).key == "3"
+  expect wk_answer("how many letters in the word banana?", 2026).key == "6"
+  expect wk_answer("If the day after tomorrow is Sunday, what day was yesterday?", 2026).key == "Thursday"
+  expect wk_answer("if today is Monday, what day is it in 10 days?", 2026).key == "Thursday"
+  expect wk_answer("If yesterday was Friday... no: if yesterday is Friday, what day is tomorrow?", 2026).key == "Sunday"
+  expect wk_answer("hi Kosi, how are you?", 2026).says == ""
+  day = wk_answer("If the day after tomorrow is Sunday, what day was yesterday?", 2026)
+  expect wk_checked("Then today is Saturday, so yesterday was Friday, and before that Thursday.", day) == day.says
+  expect wk_checked("Today is Friday, so yesterday was Thursday.", day) == "Today is Friday, so yesterday was Thursday."
+  expect wk_answer("A farmer has 17 sheep. All but 9 run away. How many are left?", 2026).key == "9"
+}
+
+test "Kosika does the sums it can read" {
+  expect wk_answer("What is 23 percent of 470?", 2026).key == "108.1"
+  expect wk_answer("what's 15% of 80?", 2026).key == "12"
+  expect wk_answer("what is 17 times 23?", 2026).key == "391"
+  expect wk_answer("What is 2 to the power of 16, minus 1?", 2026).key == "65535"
+  expect wk_answer("what is the square root of 144?", 2026).key == "12"
+  expect wk_answer("What is the sum of all whole numbers from 1 to 200?", 2026).key == "20100"
+  expect wk_answer("A shirt costs 40 after a 20 percent discount. What was the price before?", 2026).key == "50"
+  expect wk_answer("solve 2x + 3 = 11", 2026).key == "4"
+  expect wk_answer("solve 3x - 6 = 9", 2026).key == "5"
+  expect wk_answer("A train leaves at 9:40 and the journey takes 2 hours 35 minutes. When does it arrive?", 2026).key == "12:15"
+}
+
+test "a year to come cannot be known, and the reply is checked" {
+  future = wk_answer("Tell me the full results of the 2031 Cricket World Cup final.", 2026)
+  expect future.future
+  expect wk_answer("what happened in 2019?", 2026).says == ""
+  expect wk_checked("India won by 126 runs.", future).starts_with("I can't know that")
+  expect wk_checked("I'm afraid no one can know that yet.", future) == "I'm afraid no one can know that yet."
+  r = wk_answer("How many times does the letter r appear in the word strawberry?", 2026)
+  expect wk_checked("The letter r appears twice in strawberry.", r) == "The letter r appears 3 times in strawberry: s-t-r-a-w-b-e-r-r-y."
+  expect wk_checked("It appears 3 times.", r) == "It appears 3 times."
+  sum = wk_answer("What is the sum of all whole numbers from 1 to 200?", 2026)
+  expect wk_checked("It is 20,100.", sum) == "It is 20,100."
+  expect wk_note(wk_none()) == ""
+}

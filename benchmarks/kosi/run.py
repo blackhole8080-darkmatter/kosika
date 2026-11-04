@@ -117,7 +117,8 @@ def check(turn: dict, said: dict) -> list[str]:
         wrong.append("kept nothing from it")
     if len(text.split()) > 140:
         wrong.append(f"{len(text.split())} words: too long to hear")
-    if re.search(r"(^|\s)(#{1,3} |\*\*|- \S)", text):
+    # A list mark starts a line: "2^16 - 1" is a sum, not a list.
+    if re.search(r"(^|\n)\s*(#{1,3} |- \S)|\*\*", text):
         wrong.append("has list or markdown marks")
     if not text.strip() or text.startswith("Sorry, I lost my words"):
         wrong.append("gave no answer")
