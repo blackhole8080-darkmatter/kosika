@@ -2376,6 +2376,16 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                         self._json(200, design(str(body.get("text", "")), palette=str(body.get("palette", "")), place="studio", kind=str(body.get("kind", ""))))
                     except DesignsError as exc:
                         raise AppError(str(exc)) from exc
+                elif method == "POST" and url.path == "/api/models":
+                    # The Models page: pin a model for a kind of work, or
+                    # give the choice back to Kosika.
+                    from .designs import DesignsError, choose_model
+
+                    body = self._body()
+                    try:
+                        self._json(200, choose_model(str(body.get("task", "")), str(body.get("model", ""))))
+                    except DesignsError as exc:
+                        raise AppError(str(exc)) from exc
                 elif method == "POST" and url.path == "/api/kosi":
                     # Kosi, the companion run by Kosika Brain.
                     from .designs import DesignsError, kosi
@@ -2440,6 +2450,12 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                         raise AppError(str(exc)) from exc
                 elif method == "GET" and url.path == "/api/brand":
                     self._json(200, app.brand())
+                elif method == "GET" and url.path == "/api/models":
+                    # Every model Kosika can reach, whether it answers now,
+                    # and the one it would use for each kind of work.
+                    from .designs import models_status
+
+                    self._json(200, models_status())
                 elif method == "GET" and url.path == "/api/project":
                     self._json(200, app.project())
                 elif method == "GET" and url.path == "/api/outside":

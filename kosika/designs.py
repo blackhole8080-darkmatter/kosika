@@ -184,21 +184,177 @@ def _key_for(url: str, env: dict[str, str]) -> str:
     return own or env.get("KOSIKA_DESIGNS_API_KEY", "") or env.get("KOSIKA_MODEL_API_KEY", "")
 
 
-#: The models Kosika moves through when one cannot answer: Groq's large free
-#: model, Groq's small one, then the small model on this computer (made by
-#: Ollama, no graphics card needed). A person who names a model in
-#: KOSIKA_DESIGNS_MODEL gets that one alone.
-def _models(env: dict[str, str]) -> list[dict[str, str]]:
+#: The models Kosika knows, and how they compare: thinking and speed are
+#: rough marks out of 100 from the hard test and its timings, for the
+#: Models page and for choosing.
+CLOUD_MODELS = (
+    {"id": "openai/gpt-oss-120b", "name": "gpt-oss 120B", "where": "Groq · cloud · free daily allowance", "url": DEFAULT_MODEL_URL, "thinking": 92, "speed": 70},
+    {"id": "openai/gpt-oss-20b", "name": "gpt-oss 20B", "where": "Groq · cloud · free daily allowance", "url": DEFAULT_MODEL_URL, "thinking": 74, "speed": 90},
+)
+LOCAL_MARKS = {"1.7b": (38, 30), "4b": (55, 15), "8b": (66, 8), "7b": (64, 9), "3b": (50, 20), "1b": (25, 40)}
+
+#: The kinds of work, what each needs, and the order Kosika tries models in
+#: when it chooses: the quick one first for talk, the strong one first for
+#: drawing and research. A model on this laptop is always the last resort.
+TASKS = (
+    {"task": "talk", "label": "Talk", "needs": "a quick reply", "prefer": ("openai/gpt-oss-20b", "openai/gpt-oss-120b")},
+    {"task": "designs", "label": "Designs", "needs": "a careful structure", "prefer": ("openai/gpt-oss-120b", "openai/gpt-oss-20b")},
+    {"task": "research", "label": "Research", "needs": "reads and weighs papers", "prefer": ("openai/gpt-oss-120b", "openai/gpt-oss-20b")},
+    {"task": "offline", "label": "Offline", "needs": "no internet, or limits used", "prefer": ()},
+)
+
+
+def _models_file() -> Path:
+    return Path.home() / ".kosika" / "models.json"
+
+
+def model_choices() -> dict[str, Any]:
+    """The person's choices on the Models page: whether Kosika chooses, and
+    any model pinned for a kind of work."""
+
+    try:
+        saved = json.loads(_models_file().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        saved = {}
+    pinned = saved.get("pinned") if isinstance(saved.get("pinned"), dict) else {}
+    return {"auto": saved.get("auto", True) is not False, "pinned": {str(k): str(v) for k, v in pinned.items() if v}}
+
+
+def choose_model(task: str, model: str) -> dict[str, Any]:
+    """Pin a model for a kind of work, or "" to let Kosika choose."""
+
+    if task not in {t["task"] for t in TASKS}:
+        raise DesignsError(f"There is no kind of work called {task}.")
+    choices = model_choices()
+    if model:
+        choices["pinned"][task] = model
+    else:
+        choices["pinned"].pop(task, None)
+    _models_file().parent.mkdir(parents=True, exist_ok=True)
+    _models_file().write_text(json.dumps(choices, indent=1), encoding="utf-8")
+    return models_status()
+
+
+def _local_models(url: str = "http://127.0.0.1:11434") -> list[str]:
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(url.rstrip("/") + "/api/tags", timeout=3) as answer:  # noqa: S310 - this computer
+            return [str(m.get("name", "")).removesuffix(":latest") for m in json.loads(answer.read().decode("utf-8")).get("models", []) if m.get("name")]
+    except (OSError, ValueError):
+        return []
+
+
+def _cloud_ready(env: dict[str, str]) -> set[str]:
+    """The Groq models that answer for this computer's key: Groq lists the
+    models a key may use, which costs nothing from the daily allowance."""
+
+    import urllib.request
+
+    key = _key_for(DEFAULT_MODEL_URL, env)
+    if not key:
+        return set()
+    request = urllib.request.Request(DEFAULT_MODEL_URL + "/models", headers={"Authorization": "Bearer " + key, "User-Agent": "Kosika/1.0"})
+    try:
+        with urllib.request.urlopen(request, timeout=5) as answer:  # noqa: S310 - Groq's own address
+            return {str(m.get("id")) for m in json.loads(answer.read().decode("utf-8")).get("data", [])}
+    except (OSError, ValueError):
+        return set()
+
+
+def _local_entry(name: str) -> dict[str, Any]:
+    size = next((mark for mark in LOCAL_MARKS if mark in name.lower()), "")
+    thinking, speed = LOCAL_MARKS.get(size, (45, 20))
+    cpu = "cpu" in name.lower()
+    return {"id": name, "name": name, "where": "Ollama · this laptop" + (" · CPU only" if cpu else "") + " · offline, no limit", "url": "http://127.0.0.1:11434", "thinking": thinking, "speed": speed, "local": True}
+
+
+def _chosen(task: dict[str, Any], ready: list[dict[str, Any]], pinned: dict[str, str], auto: bool) -> list[dict[str, Any]]:
+    """The models for a kind of work, in the order they are tried."""
+
+    by_id = {m["id"]: m for m in ready}
+    order: list[dict[str, Any]] = []
+    want = pinned.get(task["task"], "")
+    if want in by_id and (want or not auto):
+        order.append(by_id[want])
+    for model_id in task["prefer"]:
+        if model_id in by_id and by_id[model_id] not in order:
+            order.append(by_id[model_id])
+    # Then two models on this laptop, the ones that suit a CPU first.
+    for m in sorted((m for m in ready if m.get("local") and _talks(m["id"])), key=_local_rank)[:2]:
+        if m not in order:
+            order.append(m)
+    return order
+
+
+#: The laptop models that suit a CPU best, in order: the small brain was
+#: measured on kosika-cpu-1.7b (35 of 41 on the hard test).
+LOCAL_PREFER = ("kosika-cpu-1.7b", "qwen2.5:3b", "qwen2.5:1.5b", "qwen3:1.7b", "gemma3:1b", "kosika-cpu-4b", "gemma3:4b", "qwen2.5:7b")
+
+
+def _talks(name: str) -> bool:
+    """Whether a laptop model can answer in words: not one that only makes
+    embeddings, writes code, or thinks aloud for minutes before it answers."""
+
+    low = name.lower()
+    return not any(mark in low for mark in ("embed", "coder", "deepseek-r1", "3d-"))
+
+
+def _local_rank(m: dict[str, Any]) -> tuple[int, int]:
+    return (LOCAL_PREFER.index(m["id"]) if m["id"] in LOCAL_PREFER else len(LOCAL_PREFER), -m["thinking"])
+
+
+def models_status() -> dict[str, Any]:
+    """Every model Kosika can reach, whether it answers now, and the one it
+    would use for each kind of work, for the Models page."""
+
+    env = dict(os.environ)
+    cloud_ids = _cloud_ready(env)
+    models: list[dict[str, Any]] = []
+    for m in CLOUD_MODELS:
+        models.append({**m, "local": False, "ready": m["id"] in cloud_ids, "state": "ready" if m["id"] in cloud_ids else ("no key" if not _key_for(DEFAULT_MODEL_URL, env) else "not answering")})
+    local_names = _local_models()
+    for name in local_names:
+        models.append({**_local_entry(name), "ready": True, "state": "on this laptop"})
+    if not local_names:
+        models.append({**_local_entry(os.environ.get("KOSI_LOCAL_MODEL", "kosika-cpu-1.7b")), "ready": False, "state": "Ollama is not running"})
+    choices = model_choices()
+    ready = [m for m in models if m["ready"]]
+    tasks = []
+    for t in TASKS:
+        order = _chosen(t, ready, choices["pinned"], choices["auto"])
+        if t["task"] == "offline":
+            order = [m for m in order if m.get("local")]
+        tasks.append({"task": t["task"], "label": t["label"], "needs": t["needs"], "chosen": order[0]["id"] if order else "", "then": [m["id"] for m in order[1:3]], "pinned": choices["pinned"].get(t["task"], "")})
+        for m in models:
+            if order and m["id"] == order[0]["id"]:
+                m.setdefault("uses", []).append(t["label"])
+    return {"auto": choices["auto"], "models": models, "tasks": tasks}
+
+
+def _models(env: dict[str, str], task: str = "designs") -> list[dict[str, str]]:
+    """The models to try for a kind of work, in order, as engine settings:
+    the model pinned on the Models page, else Kosika's choice for the task,
+    the laptop's model last. A model named in KOSIKA_DESIGNS_MODEL is used
+    alone."""
+
     if env.get("KOSIKA_DESIGNS_MODEL"):
         return [{}]
+    plan = next((t for t in TASKS if t["task"] == task), TASKS[1])
+    ready: list[dict[str, Any]] = []
+    if _key_for(DEFAULT_MODEL_URL, env):
+        ready.extend({**m, "local": False} for m in CLOUD_MODELS)
+    local_names = _local_models()
+    if not local_names and _start_ollama():
+        local_names = _local_models()
+    ready.extend(_local_entry(n) for n in local_names)
+    choices = model_choices()
     chain: list[dict[str, str]] = []
-    if env.get("GROQ_API_KEY") or env.get("KOSIKA_MODEL_API_KEY"):
-        chain.append({"KOSIKA_DESIGNS_MODEL": DEFAULT_MODEL, "KOSIKA_DESIGNS_MODEL_URL": DEFAULT_MODEL_URL})
-        chain.append({"KOSIKA_DESIGNS_MODEL": "openai/gpt-oss-20b", "KOSIKA_DESIGNS_MODEL_URL": DEFAULT_MODEL_URL})
-    local = env.get("KOSI_LOCAL_MODEL", "kosika-cpu-1.7b")
-    url = env.get("KOSI_LOCAL_URL", "http://127.0.0.1:11434")
-    if _local_ready(local, url) or (_start_ollama() and _local_ready(local, url)):
-        chain.append({"KOSIKA_DESIGNS_MODEL": local, "KOSIKA_DESIGNS_MODEL_URL": url, "KOSIKA_DESIGNS_MODEL_PROTOCOL": "ollama", "KOSIKA_MODEL_THINK": "off", "KOSIKA_DESIGNS_MAX_TOKENS": "1500"})
+    for m in _chosen(plan, ready, choices["pinned"], choices["auto"]):
+        if m.get("local"):
+            chain.append({"KOSIKA_DESIGNS_MODEL": m["id"], "KOSIKA_DESIGNS_MODEL_URL": m["url"], "KOSIKA_DESIGNS_MODEL_PROTOCOL": "ollama", "KOSIKA_MODEL_THINK": "off", "KOSIKA_DESIGNS_MAX_TOKENS": "1500"})
+        else:
+            chain.append({"KOSIKA_DESIGNS_MODEL": m["id"], "KOSIKA_DESIGNS_MODEL_URL": m["url"]})
     return chain or [{}]
 
 
@@ -251,10 +407,10 @@ def _unanswered(said: dict[str, Any] | None, error: str) -> bool:
     return any(p == "give a title" or p.startswith("0 parts") or p.startswith("0 figures") for p in problems)
 
 
-def _run(source: Path, workflow: str, given_input: dict, *, extra: list[str] | None = None, first: str = "kind", timeout: float = 600, env_more: dict[str, str] | None = None) -> dict[str, Any]:
+def _run(source: Path, workflow: str, given_input: dict, *, extra: list[str] | None = None, first: str = "kind", timeout: float = 600, env_more: dict[str, str] | None = None, task: str = "designs") -> dict[str, Any]:
     env = dict(os.environ)
     env.update(env_more or {})
-    chain = _models(env)
+    chain = _models(env, task)
     said: dict[str, Any] | None = None
     failed: DesignsError | None = None
     for k, model in enumerate(chain):
@@ -409,7 +565,7 @@ def kosi(text: str, *, local: bool = False, timeout: float = 600) -> dict[str, A
     # Kosi and Iris read Wikipedia to check what a question names, and Iris
     # reads arXiv for papers: those two sites only.
     extra = _brain_memory() + ["--allow-site", "en.wikipedia.org", "--allow-site", "export.arxiv.org"]
-    said = _run(KOSI, workflow, {"msg": {"text": text}}, extra=extra, first="who", timeout=timeout, env_more=env_more)
+    said = _run(KOSI, workflow, {"msg": {"text": text}}, extra=extra, first="who", timeout=timeout, env_more=env_more, task="research" if text.lower().lstrip().startswith(("iris", "ask iris", "hey iris")) else "talk")
     said["local"] = local
     return said
 

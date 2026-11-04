@@ -1157,6 +1157,7 @@ body.on-mission .track { opacity: .5; }
 <template id="icon-designs"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.300-.3-.4-.5-.8-.5-1.300 0-1.100.9-2 2-2h2.400A4.600 4.600 0 0 0 22 9.800C22 6 17.500 3 12 3z"/><circle cx="7.500" cy="11" r="1.200"/><circle cx="10.500" cy="7" r="1.200"/><circle cx="15.500" cy="7.500" r="1.200"/></svg></template>
 <template id="icon-mayaos"><svg viewBox="0 0 24 24"><path d="M12 2.8l8 4.6v9.2l-8 4.6-8-4.6V7.4z"/><path d="M8 15V9.5l4 3 4-3V15"/></svg></template>
 <template id="icon-services"><svg viewBox="0 0 24 24"><path d="M12 3v3"/><path d="M12 18v3"/><path d="M4.2 7.5l2.6 1.5"/><path d="M17.2 15l2.6 1.5"/><path d="M4.2 16.5l2.6-1.5"/><path d="M17.2 9l2.6-1.5"/><circle cx="12" cy="12" r="4"/></svg></template>
+<template id="icon-models"><svg viewBox="0 0 24 24"><path d="M12 3l9 4.5-9 4.5-9-4.5z"/><path d="M3 12l9 4.5 9-4.5"/><path d="M3 16.5L12 21l9-4.5"/></svg></template>
 <template id="icon-permissions"><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.2 8-8 9-4.800-1-8-4.500-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/></svg></template>
 <script>
 "use strict";
@@ -1338,16 +1339,23 @@ async function loadBrand() {
   } catch (error) { /* the plain K stays */ }
 }
 
+let overviewLoading = null;
+function loadOverview(again) {
+  if (!overviewLoading || again) overviewLoading = api("/api/agents").then(found => { overview = found; return found; }).catch(error => { overviewLoading = null; throw error; });
+  return overviewLoading;
+}
+
 function go(view, id) { location.hash = "#" + view + (id ? "/" + encodeURIComponent(id) : ""); }
 window.addEventListener("hashchange", route);
 
 function drawRail(active) {
-  const items = [["assistant", "Assistant"], ["talk", "Talk to Kosi"], ["mayaos", "MayaOS"], ["project", "Project"], ["agents", "Agents"], ["runs", "Runs"], ["tools", "Tools"], ["skills", "Skills"], ["study", "Study"], ["designs", "Designs"], ["crew", "Crew"], ["services", "Services"], ["permissions", "Permissions"]];
+  const items = [["talk", "Talk"], ["crew", "Swarm"], ["designs", "Designs"], ["agents", "Agents"], ["models", "Models"], ["runs", "Runs"], ["permissions", "Settings"]];
+  if (["project", "skills", "tools", "agent"].includes(active)) active = "agents";
   document.getElementById("nav").replaceChildren(...items.map(([key, label]) =>
     h("div", {class: "nav" + (key === active ? " on" : "") + (key === "mayaos" ? " door" : ""), title: key === "mayaos" ? "Open MayaOS, the app your agents live in" : null, onclick: () => key === "mayaos" ? openMaya() : go(key)}, icon(key), label, key === "mayaos" ? h("span", {class: "out"}, "\u2197") : null)));
   document.getElementById("foot").replaceChildren(
-    h("div", null, h("span", {class: "dot" + (overview.can_run ? "" : " off")}), overview.can_run ? overview.model : "no model: view and test only"),
-    h("div", {class: "path", title: overview.root}, overview.root.split(/[\\/]/).slice(-2).join("/")),
+    h("div", {style: "cursor:pointer", title: "See and choose models", onclick: () => go("models")}, h("span", {class: "dot"}), "Models: Kosika chooses"),
+    ...(overview ? [h("div", {class: "path", title: overview.root}, overview.root.split(/[\\/]/).slice(-2).join("/"))] : []),
     h("div", {class: "theme", title: "Jump to any agent, workflow, tool or record", onclick: openJump}, h("span", null, "Jump to…"), h("small", {style: "margin-left:auto;color:var(--faint)"}, "Ctrl K")),
     h("div", {class: "theme", title: "Change between your computer's setting, light and dark", onclick: () => { setTheme(THEMES[(THEMES.indexOf(theme()) + 1) % THEMES.length]); drawRail(active); }}, h("i"), "Theme: " + THEME_WORDS[theme()]));
 }
@@ -1358,9 +1366,11 @@ async function route() {
   const [view, rawId] = location.hash.slice(1).split("/");
   const id = rawId ? decodeURIComponent(rawId) : "";
   try {
-    overview = await api("/api/agents");
+    const active = view || "talk";
+    const needs = ["agents", "agent", "project", "runs", "tools", "skills", "assistant", "permissions", "crew"].includes(active);
+    if (needs) { drawRail(active); if (!overview) main.replaceChildren(h("div", {style: "font:12px var(--mono);color:var(--faint)"}, "reading your agents…")); await loadOverview(); }
+    else loadOverview().then(() => { if (mine === routing) drawRail(active); }).catch(() => {});
     if (mine !== routing) return;
-    const active = view || "assistant";
     drawRail(active === "agent" ? "agents" : active);
     if (active === "agents") showAgents();
     else if (active === "agent") await showAgent(id, false);
@@ -1373,9 +1383,11 @@ async function route() {
     else if (active === "crew") showCrew();
     else if (active === "talk") showTalk();
     else if (active === "permissions") showPermissions();
+    else if (active === "models") await showModels();
     else if (active === "services") await showServices();
-    else if (overview.assistant) await showAgent(overview.assistant, true);
-    else showAgents();
+    else if (active === "assistant" && overview.assistant) await showAgent(overview.assistant, true);
+    else showTalk();
+    if (["agents", "project", "skills", "tools"].includes(active)) main.prepend(agentTabs(active));
   } catch (error) {
     main.replaceChildren(h("div", {class: "banner bad"}, String(error.message || error)));
   }
@@ -2006,6 +2018,73 @@ function showTalk() {
     composer);
   draw();
   say.focus();
+}
+
+// ------------------------------------------------- models
+// Every model Kosika can reach, whether it answers now, how it thinks and
+// how fast, and the one Kosika uses for each kind of work. A person can
+// pin a model for a kind of work, or leave the choice to Kosika.
+async function showModels() {
+  const wait = h("div", {style: "font:12px var(--mono);color:var(--faint)"}, "checking every model…");
+  main.replaceChildren(modelsHead(), wait);
+  let state;
+  try { state = await api("/api/models"); }
+  catch (error) { wait.textContent = String(error.message || error); return; }
+  drawModels(state);
+}
+function modelsHead() {
+  return h("div", {style: "display:flex;flex-wrap:wrap;align-items:center;gap:14px;padding-bottom:16px;border-bottom:1px solid var(--line)"},
+    h("div", {style: "flex:1 1 320px"}, h("h1", {style: "margin:0 0 4px"}, "Models"),
+      h("div", {style: "font-size:14px;color:var(--soft)"}, "Kosika picks the best model it can reach for each kind of work, and moves on when one cannot answer.")),
+    h("button", {class: "ghost", onclick: () => showModels()}, "Check all models"));
+}
+function drawModels(state) {
+  const bar = (label, value) => [h("span", {style: "font-size:12px;color:var(--soft)"}, label),
+    h("div", {style: "height:5px;background:var(--line);border-radius:3px"}, h("div", {style: `width:${value}%;height:5px;background:var(--ink);border-radius:3px`}))];
+  const usable = state.models.filter(m => !m.local || m.ready).filter(m => !/embed/i.test(m.id));
+  // The cloud models and the laptop models Kosika would use get cards; the
+  // rest of the laptop's models are listed below them.
+  const shown = usable.filter(m => !m.local || (m.uses || []).length || state.tasks.some(t => (t.then || []).includes(m.id)));
+  const rest = usable.filter(m => !shown.includes(m));
+  const cards = shown.map(m => {
+    const chosen = (m.uses || []).length > 0;
+    const dot = m.ready ? (m.local ? "var(--soft)" : "var(--ok)") : "var(--bad)";
+    return h("article", {style: `border:1px solid ${chosen ? "var(--accent)" : "var(--line)"};background:var(--panel);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:10px;min-width:0`},
+      h("div", {style: "display:flex;justify-content:space-between;align-items:center;gap:8px"}, h("span", {style: "font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"}, m.name),
+        h("span", {style: "display:flex;align-items:center;gap:6px;font:11px var(--mono);color:var(--soft);flex:none"}, h("span", {style: `width:7px;height:7px;border-radius:50%;background:${dot}`}), m.state)),
+      h("div", {style: "font:11px var(--mono);color:var(--faint)"}, m.where),
+      h("div", {style: "display:grid;grid-template-columns:64px minmax(0,1fr);gap:6px 10px;align-items:center"}, ...bar("Thinking", m.thinking), ...bar("Speed", m.speed)),
+      h("div", {style: "display:flex;flex-wrap:wrap;gap:6px;min-height:22px"}, ...(m.uses || []).map(u => h("span", {class: "chip accent"}, u))));
+  });
+  const options = [h("option", {value: ""}, "Kosika chooses")].concat(usable.filter(m => m.ready).map(m => h("option", {value: m.id}, m.name)));
+  const tasks = state.tasks.map(t => {
+    const pick = h("select", {"aria-label": "Model for " + t.label, style: "width:100%;margin-top:10px"}, options.map(o => o.cloneNode(true)));
+    pick.value = t.pinned || "";
+    pick.onchange = async () => { try { drawModels(await api("/api/models", {method: "POST", body: JSON.stringify({task: t.task, model: pick.value})})); } catch (error) { main.prepend(h("div", {class: "banner bad"}, String(error.message || error))); } };
+    const named = (state.models.find(m => m.id === t.chosen) || {}).name || "none can answer";
+    const then = (t.then || []).map(id => (state.models.find(m => m.id === id) || {name: id}).name);
+    return h("div", {style: "padding:16px;border-right:1px solid var(--line);min-width:0"},
+      h("div", {style: "font-weight:600;font-size:14px"}, t.label),
+      h("div", {style: "font-size:12px;color:var(--faint);margin:4px 0 10px"}, t.needs),
+      h("div", {style: "font:12px var(--mono);color:var(--accent)"}, (t.pinned ? "pinned: " : "") + named),
+      ...(then.length ? [h("div", {style: "font:11px var(--mono);color:var(--faint);margin-top:4px"}, "then " + then.join(", "))] : []),
+      pick);
+  });
+  main.replaceChildren(modelsHead(),
+    h("div", {style: "display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-top:20px"}, ...cards),
+    ...(rest.length ? [h("details", {style: "margin-top:12px;font-size:13px;color:var(--soft)"}, h("summary", {style: "cursor:pointer"}, rest.length + " more on this laptop"),
+      h("div", {style: "display:flex;flex-wrap:wrap;gap:6px;margin-top:10px"}, ...rest.map(m => h("span", {class: "chip", title: m.where}, m.name))))] : []),
+    h("section", {"aria-label": "How Kosika chooses", style: "border:1px solid var(--line);border-radius:14px;overflow:hidden;margin-top:22px"},
+      h("div", {style: "display:flex;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--line);font:11px var(--mono);color:var(--faint)"}, h("span", null, "How Kosika chooses"), h("span", null, "from what each kind of work needs")),
+      h("div", {style: "display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));background-image:radial-gradient(color-mix(in srgb,var(--ink) 14%,transparent) 1px,transparent 1px);background-size:20px 20px"}, ...tasks)),
+    h("div", {style: "font-size:13px;color:var(--faint);margin-top:16px;max-width:760px"}, "Add a model to this laptop with Ollama (ollama pull qwen2.5:3b) and it appears here. Cloud models need their own key in this computer's settings: GROQ_API_KEY for Groq."));
+}
+
+// The pages under Agents, as tabs: the agents themselves, the whole
+// project, their skills and their tools.
+function agentTabs(active) {
+  const tab = (key, label) => h("button", {type: "button", "aria-pressed": key === active ? "true" : "false", onclick: () => go(key)}, label);
+  return h("div", {class: "friends", role: "group", "aria-label": "Agents", style: "margin-bottom:16px"}, tab("agents", "Agents"), tab("project", "Project"), tab("skills", "Skills"), tab("tools", "Tools"));
 }
 
 // The crew (examples/agents/crew), run by Kosika Brain: give it a topic and
