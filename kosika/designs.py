@@ -261,10 +261,13 @@ def kosi(text: str, *, local: bool = False, timeout: float = 600) -> dict[str, A
     # and Kosika's own exact working all the same. KOSI_BRAIN=small asks for
     # it with any model.
     small = local or os.environ.get("KOSI_BRAIN", "").strip().lower() == "small"
-    workflow = "chat_small" if small else "chat"
-    # Kosi reads Wikipedia, and only Wikipedia, to check what a question names.
-    extra = _brain_memory() + ["--allow-site", "en.wikipedia.org"]
-    said = _run(KOSI, workflow, {"msg": {"text": text}}, extra=extra, first="text", timeout=timeout, env_more=env_more)
+    # The talk goes to Kosi, or to the friend it is for: Iris the researcher
+    # or Sol the scientist ("Iris, what's new on ...?"). The answer says who.
+    workflow = "talk_small" if small else "talk"
+    # Kosi and Iris read Wikipedia to check what a question names, and Iris
+    # reads arXiv for papers: those two sites only.
+    extra = _brain_memory() + ["--allow-site", "en.wikipedia.org", "--allow-site", "export.arxiv.org"]
+    said = _run(KOSI, workflow, {"msg": {"text": text}}, extra=extra, first="who", timeout=timeout, env_more=env_more)
     said["local"] = local
     return said
 

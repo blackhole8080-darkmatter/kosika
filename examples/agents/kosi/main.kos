@@ -32,6 +32,7 @@ import "std/brain.kos"
 import "std/designs.kos"
 import "worked.kos"
 import "facts.kos"
+import "friends.kos"
 
 export [Msg, Said, KosiBrief, KosiReply, chat, ko_spoken, ko_known_text, ko_talk_after, ko_new_facts]
 
@@ -239,7 +240,9 @@ fn ko_new_facts(r: KosiReply, known: BrainFound) -> Text[] {
     let words = t.words().length()
     let stems = br_words(t)
     let low = " " + t.lower() + " "
-    let asking = low.contains(" wants an explanation") or low.contains(" wants a drawing") or low.contains(" wants a picture") or low.contains(" asked ") or low.contains(" is asking ")
+    // Not a fact about the person: what happened in the talk itself.
+    let chatter = low.contains(" the user ") or low.contains(" kosi ") or low.contains(" greeted ") or low.contains(" asked about ")
+    let asking = chatter or low.contains(" wants an explanation") or low.contains(" wants a drawing") or low.contains(" wants a picture") or low.contains(" asked ") or low.contains(" is asking ")
     let corrects = not ko_replaces(t, known).is_empty()
     let said_before = not corrects and (for h in have.concat(taken) where br_near(stems, h.join(" ")) >= 0.5 { h }).length() > 0
     if words >= 2 and words <= 30 and not asking and not said_before {
@@ -413,6 +416,47 @@ workflow chat_small(msg: Msg) -> Said {
   }
   heard  = call brain_keep(ko_talk_after(talk, msg.text, ko_reply_text(reply)))
   out    = ko_said(reply, ko_both(known, seen), drawn)
+}
+
+// ---------------------------------------------------------------- the friends
+
+// Kosi's answer as one of the friends' answers, with the friends Kosi can
+// hand the question on to offered first.
+fn ko_as_friend(said: Said, asked: Text) -> FrSaid {
+  return {who: "kosi", text: said.text, canvas: said.canvas, kept: said.kept, sources: [], suggest: fr_suggest(asked).concat(said.suggest).take(4)}
+}
+
+workflow ko_chat_friend(msg: Msg) -> FrSaid {
+  said = call chat(msg)
+  out  = ko_as_friend(said, msg.text)
+}
+
+workflow ko_small_friend(msg: Msg) -> FrSaid {
+  said = call chat_small(msg)
+  out  = ko_as_friend(said, msg.text)
+}
+
+// The talk with Kosi and its friends: a message for Iris or Sol goes to
+// them, everything else to Kosi.
+workflow talk(msg: Msg) -> FrSaid {
+  budget 14 model calls, 900 seconds
+  who = fr_who(msg.text)
+  out = match who {
+    case "iris" { call iris_research({text: msg.text}) }
+    case "sol" { call sol_explain({text: msg.text}) }
+    case _ { call ko_chat_friend(msg) }
+  }
+}
+
+// The same on this laptop: Kosi through the small brain.
+workflow talk_small(msg: Msg) -> FrSaid {
+  budget 14 model calls, 900 seconds
+  who = fr_who(msg.text)
+  out = match who {
+    case "iris" { call iris_research({text: msg.text}) }
+    case "sol" { call sol_explain({text: msg.text}) }
+    case _ { call ko_small_friend(msg) }
+  }
 }
 
 fn br_not_kept_kosi() -> BrainKept { return {key: "", entries: 0} }

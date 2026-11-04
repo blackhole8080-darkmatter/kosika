@@ -1752,6 +1752,9 @@ function kosiVoice() {
 }
 // Kosi's voice when it speaks for itself (Kokoro on this computer).
 const KOSI_VOICES = [["bm_george", "George (calm, deep, British)"], ["bm_lewis", "Lewis (British)"], ["bm_daniel", "Daniel (British)"], ["bm_fable", "Fable (British)"], ["bf_emma", "Emma (British)"], ["bf_isabella", "Isabella (British)"]];
+// Kosi's friends, each with a voice of its own: Iris the researcher and
+// Sol the scientist. Kosi speaks in the voice chosen below.
+const KOSI_FRIENDS = {kosi: {name: "Kosi", voice: null, colour: "var(--accent)"}, iris: {name: "Iris · researcher", voice: "bf_emma", colour: "#7fd1c7"}, sol: {name: "Sol · scientist", voice: "bm_lewis", colour: "#f5b45c"}};
 function kosiServerVoice() { try { return localStorage.getItem("kosi-own-voice") || "bm_george"; } catch (error) { return "bm_george"; } }
 function showTalk() {
   const say = h("input", {type: "text", placeholder: "Say anything: your day, a project, a job, an idea…", style: "flex:1;min-width:220px"});
@@ -1768,9 +1771,12 @@ function showTalk() {
   const log = h("div", {style: "display:grid;gap:12px;margin-top:14px"});
   function bubble(entry) {
     const you = h("div", {style: "justify-self:end;max-width:78%;background:color-mix(in srgb,var(--accent) 16%,transparent);border-radius:16px 16px 4px 16px;padding:10px 14px"}, entry.q);
-    if (!entry.r) return h("div", {style: "display:grid;gap:8px"}, you, h("div", {class: "lead"}, "Kosi is thinking…"));
-    const kosi = h("div", {style: "max-width:84%;background:var(--panel, rgba(255,255,255,.04));border:1px solid var(--line, rgba(255,255,255,.08));border-radius:16px 16px 16px 4px;padding:10px 14px;font-size:16px;line-height:1.55"}, entry.r.text);
+    if (!entry.r) return h("div", {style: "display:grid;gap:8px"}, you, h("div", {class: "lead"}, `${(KOSI_FRIENDS[entry.who] || KOSI_FRIENDS.kosi).name.split(" ")[0]} is thinking…`));
+    const friend = KOSI_FRIENDS[entry.r.who] || KOSI_FRIENDS.kosi;
+    const name = h("div", {style: `font:700 11px ui-monospace,Consolas,monospace;letter-spacing:.12em;text-transform:uppercase;color:${friend.colour};margin-bottom:4px`}, friend.name);
+    const kosi = h("div", {style: `max-width:84%;background:var(--panel, rgba(255,255,255,.04));border:1px solid var(--line, rgba(255,255,255,.08));border-left:3px solid ${friend.colour};border-radius:16px 16px 16px 4px;padding:10px 14px;font-size:16px;line-height:1.55`}, name, entry.r.text);
     const parts = [you, kosi];
+    if ((entry.r.sources || []).length) parts.push(h("div", {class: "chips"}, entry.r.sources.map(u => h("a", {class: "chip", href: u, target: "_blank", rel: "noopener"}, u.replace(/^https?:\/\//, "").slice(0, 48)))));
     if (entry.r.local) parts.push(h("div", {class: "chips"}, chip("thought on this laptop", "")));
     if ((entry.r.kept || []).length) parts.push(h("div", {class: "chips"}, entry.r.kept.map(k => chip("will remember: " + k, "ok"))));
     if (entry.r.canvas) {
@@ -1786,11 +1792,12 @@ function showTalk() {
   let playing = null, saying = 0;
   // Kosi's own voice, a sentence at a time: the first sentence plays while
   // the next is being made, so it starts speaking in a few seconds.
-  async function voice(text) {
+  async function voice(text, who) {
     if (!voiceOn.checked || !text) return;
+    const speaker = (KOSI_FRIENDS[who] || {}).voice || kosiServerVoice();
     const turn = ++saying;
     const sentences = text.match(/[^.!?]+[.!?]+["')\]]*|[^.!?]+$/g) || [text];
-    const make = s => api("/api/kosi/speak", {method: "POST", body: JSON.stringify({text: s.trim(), voice: kosiServerVoice()})}).then(got => got.audio || "").catch(() => "");
+    const make = s => api("/api/kosi/speak", {method: "POST", body: JSON.stringify({text: s.trim(), voice: speaker})}).then(got => got.audio || "").catch(() => "");
     let next = make(sentences[0]);
     let spoke = false;
     for (let i = 0; i < sentences.length; i++) {
@@ -1817,14 +1824,14 @@ function showTalk() {
     text = String(text || "").trim();
     if (!text) { say.focus(); return; }
     say.value = "";
-    const entry = {q: text, r: null};
+    const entry = {q: text, r: null, who: /(^\s*(hey\s+)?iris\b|\bask iris\b|\bthe researcher\b)/i.test(text) ? "iris" : /(^\s*(hey\s+)?sol\b|\bask sol\b|\bthe scientist\b)/i.test(text) ? "sol" : "kosi"};
     talkLog.push(entry); draw();
     send.disabled = true;
     try { entry.r = await api("/api/kosi", {method: "POST", body: JSON.stringify({text, local: localOn.checked})}); }
     catch (error) { entry.r = {text: String(error.message || error), kept: [], suggest: []}; }
     finally { send.disabled = false; }
     draw();
-    voice(entry.r.text);
+    voice(entry.r.text, entry.r.who);
   }
   let recorder = null, chunks = [];
   mic.onclick = async () => {
