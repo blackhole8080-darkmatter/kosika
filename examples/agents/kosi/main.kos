@@ -31,6 +31,7 @@
 import "std/brain.kos"
 import "std/designs.kos"
 import "worked.kos"
+import "facts.kos"
 
 export [Msg, Said, KosiBrief, KosiReply, chat, ko_spoken, ko_known_text, ko_talk_after, ko_new_facts]
 
@@ -80,7 +81,7 @@ fn ko_task() -> Text {
 }
 
 fn ko_small_task() -> Text {
-  return "You are Kosi, a calm, warm British companion. Reply to `message` and only to it, in two to four short spoken sentences, plain words, no lists. When they tell you something about themselves, say briefly that you'll remember it and answer warmly; do not repeat it back. Use `memory` only if it helps; a line 'Worked out exactly by Kosika' is right, so use it. If you do not know, say so; never make up facts or the future. remember: up to two short new facts about the person from this message, like 'Their exam is on 12 December.', or none."
+  return "You are Kosi, a calm, warm British companion. Reply to `message` and only to it, in two to four short spoken sentences, plain words, no lists. Never repeat their message back. Only when they tell you something about themselves, say briefly that you'll remember it. Use `memory` only if it helps; a line 'Worked out exactly by Kosika' is right, so use it. If you do not know, say so; never make up facts or the future. remember: up to two short new facts the person states about themselves in this message, in the third person ('Their ... is ...'), or none."
 }
 
 // What a person tells Kosi about themselves, kept by Kosika's own rule and
@@ -113,6 +114,24 @@ fn ko_told(text: Text) -> Text[] {
   return out.take(3)
 }
 
+fn ko_nothing_looked() -> BrainFound { return {notes: [], by: "words"} }
+
+// A small model sometimes says the question back instead of answering it.
+// A reply that is mostly the message's own words, when Kosi has checked a
+// fact on it, gives the fact instead.
+fn ko_echoes(reply: Text, said: Text) -> Bool {
+  let a = br_words(reply)
+  let b = br_words(said)
+  if a.is_empty() or b.is_empty() { return true }
+  let shared = (for w in a where b.contains(w) { w }).length()
+  return shared / a.length() >= 0.75
+}
+
+fn ko_grounded(r: KosiReply, said: Text, looked: BrainFound) -> KosiReply {
+  if looked.notes.is_empty() or not ko_echoes(r.reply, said) { return r }
+  return {..r, reply: "From what I've checked: " + looked.notes[0].text}
+}
+
 fn ko_no_small() -> KosiSmallReply { return {reply: "", remember: []} }
 
 // A small model mixes its instructions into what it says and keeps: the
@@ -120,8 +139,18 @@ fn ko_no_small() -> KosiSmallReply { return {reply: "", remember: []} }
 // when it is about the person ("They ...", "Their ...").
 fn ko_from_small(r: KosiSmallReply, said: Text) -> KosiReply {
   let reply = r.reply.replace("Worked out exactly by Kosika:", "").replace("Worked out exactly by Kosika.", "").replace("Worked out exactly by Kosika", "").trim()
-  let theirs = for f in r.remember where (f.trim().starts_with("They ") or f.trim().starts_with("Their ")) and not f.contains("Kosika") and not f.lower().contains("message") { f.trim() }
+  // and only when the message says it: a small model also "remembers" what
+  // it was never told, even the example in its own brief.
+  let heard = br_words(said)
+  let theirs = for f in r.remember where (f.trim().starts_with("They ") or f.trim().starts_with("Their ")) and not f.contains("Kosika") and not f.lower().contains("message") and ko_heard(br_words(f), heard) { f.trim() }
   return {reply: reply, remember: ko_told(said).concat(theirs).take(3), draw: "", project: "", step: ""}
+}
+
+// Most of a fact's words are in what was said.
+fn ko_heard(fact: Text[], said: Text[]) -> Bool {
+  let own = for w in fact where w != "their" and w != "they" and w != "they're" { w }
+  if own.is_empty() { return false }
+  return (for w in own where said.contains(w) { w }).length() / own.length() >= 0.6
 }
 
 // A small model answers the talk before instead of the message, so it is
@@ -141,6 +170,7 @@ fn ko_known_text(found: BrainFound) -> Text {
 }
 
 fn ko_note_line(n: BrainNote) -> Text {
+  if n.kind == "fact" and n.source.contains("wikipedia.org") { return "Checked fact (Wikipedia, " + n.topic + "; this is right, so go by it): " + n.text }
   if n.kind == "fact" and n.source.starts_with("https://") { return "Research: " + n.topic + ": " + n.text }
   if n.kind == "project" { return "Project " + n.topic + ": next step " + n.text }
   if n.kind == "episode" { return "Earlier: for '" + n.topic + "' Kosika " + n.text }
@@ -314,8 +344,12 @@ workflow chat(msg: Msg) -> Said {
   today  = now
   known  = call brain_recall({text: msg.text, kind: ""})
   talk   = call brain_get(ko_talk_ask())
+  looked = match fa_asks_fact(msg.text) and not fa_missing(fa_subjects(msg.text), known).is_empty() {
+    case true { call fa_look_up({question: msg.text, subjects: fa_missing(fa_subjects(msg.text), known)}) }
+    case _ { ko_nothing_looked() }
+  }
   exact  = wk_answer(msg.text, today.year)
-  said   = use_model friend(ko_task(), msg.text, ko_known_text(known) + wk_note(exact), ko_talk_text(talk), ko_now(today)) retry 1 otherwise ko_no_reply()
+  said   = use_model friend(ko_task(), msg.text, ko_known_text(ko_both(known, looked)) + wk_note(exact), ko_talk_text(talk), ko_now(today)) retry 1 otherwise ko_no_reply()
   reply  = ko_checked(said, exact)
   drawn  = match ko_wants_picture(msg, reply) {
     case true { call brain_design(ko_draw_ask(reply)) }
@@ -343,9 +377,13 @@ workflow chat_small(msg: Msg) -> Said {
   today  = now
   known  = call brain_recall({text: msg.text, kind: ""})
   talk   = call brain_get(ko_talk_ask())
+  looked = match fa_asks_fact(msg.text) and not fa_missing(fa_subjects(msg.text), known).is_empty() {
+    case true { call fa_look_up({question: msg.text, subjects: fa_missing(fa_subjects(msg.text), known)}) }
+    case _ { ko_nothing_looked() }
+  }
   exact  = wk_answer(msg.text, today.year)
-  small  = use_model buddy(ko_small_task(), msg.text, ko_known_text(known) + wk_note(exact), ko_small_earlier()) retry 1 otherwise ko_no_small()
-  reply  = ko_checked(ko_from_small(small, msg.text), exact)
+  small  = use_model buddy(ko_small_task(), msg.text, ko_known_text(ko_both(known, looked)) + wk_note(exact), ko_small_earlier()) retry 1 otherwise ko_no_small()
+  reply  = ko_grounded(ko_checked(ko_from_small(small, msg.text), exact), msg.text, looked)
   drawn  = match ko_wants_picture(msg, reply) {
     case true { call brain_design(ko_draw_ask(reply)) }
     case _ { ko_no_canvas() }
@@ -421,13 +459,24 @@ test "what Kosi knows is put in front of the model, and the talk is not counted 
 test "a small model's reply loses Kosika's notes, and keeps only facts about the person" {
   r = ko_from_small({reply: "So 8 are left. Worked out exactly by Kosika.", remember: ["Worked out exactly by Kosika", "Today is Saturday", "Their sister is called Riya.", "Kosika is a calm companion."]}, "how many are left?")
   expect r.reply == "So 8 are left."
-  expect r.remember == ["Their sister is called Riya."]
+  expect r.remember.is_empty()
+  told = ko_from_small({reply: "Noted.", remember: ["Their exam is on 12 December.", "They are vegetarian."]}, "Also, I'm vegetarian.")
+  expect told.remember == ["They're vegetarian.", "They are vegetarian."]
   expect ko_told("My sister Riya's birthday is on 14 March, and she loves astronomy.") == ["Their sister Riya's birthday is on 14 March, and she loves astronomy."]
   expect ko_told("Also, I'm vegetarian.") == ["They're vegetarian."]
   expect ko_told("And I get around on a scooter, I don't have a car.") == ["They get around on a scooter, they don't have a car."]
   expect ko_told("Actually, my exam has moved to 19 December.") == ["Their exam has moved to 19 December."]
   expect ko_told("Suggest a birthday present for my sister.").is_empty()
   expect ko_told("when is my exam?").is_empty()
+}
+
+test "a reply that only says the question back gives the checked fact" {
+  looked: BrainFound = {notes: [ko_test_note("fact", "Australia", "Canberra is the nation's capital.", "https://en.wikipedia.org/wiki/Australia")], by: "words"}
+  r = ko_test_reply("Sydney is the capital of Australia, right?", [])
+  expect ko_grounded(r, "Sydney is the capital of Australia, right?", looked).reply == "From what I've checked: Canberra is the nation's capital."
+  fine = ko_test_reply("No, the capital is Canberra; Sydney is the largest city.", [])
+  expect ko_grounded(fine, "Sydney is the capital of Australia, right?", looked).reply == fine.reply
+  expect ko_note_line(looked.notes[0]).starts_with("Checked fact (Wikipedia, Australia")
 }
 
 test "a changed fact writes over the old one" {

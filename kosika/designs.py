@@ -224,7 +224,9 @@ def kosi(text: str, *, timeout: float = 600) -> dict[str, Any]:
     # KOSI_BRAIN=small talks through the small brain, for a small model on a
     # laptop's CPU: a shorter ask, and Kosika's own exact working all the same.
     workflow = "chat_small" if os.environ.get("KOSI_BRAIN", "").strip().lower() == "small" else "chat"
-    return _run(KOSI, workflow, {"msg": {"text": text}}, extra=_brain_memory(), first="text", timeout=timeout)
+    # Kosi reads Wikipedia, and only Wikipedia, to check what a question names.
+    extra = _brain_memory() + ["--allow-site", "en.wikipedia.org"]
+    return _run(KOSI, workflow, {"msg": {"text": text}}, extra=extra, first="text", timeout=timeout)
 
 
 def _groq_key() -> str:
