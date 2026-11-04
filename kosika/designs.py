@@ -131,19 +131,20 @@ def rate(text: str, liked: bool, *, timeout: float = 120) -> dict[str, Any]:
     return _run(BRAIN, "brain_rate", {"r": {"ask": text, "liked": bool(liked)}}, extra=_brain_memory(), first="rated", timeout=timeout)
 
 
-def _run(source: Path, workflow: str, given_input: dict, *, extra: list[str] | None = None, first: str = "kind", timeout: float = 600) -> dict[str, Any]:
+def _run(source: Path, workflow: str, given_input: dict, *, extra: list[str] | None = None, first: str = "kind", timeout: float = 600, env_more: dict[str, str] | None = None) -> dict[str, Any]:
     env = dict(os.environ)
     env.setdefault("KOSIKA_MODEL_API_KEY", os.environ.get("GROQ_API_KEY", ""))
+    env.update(env_more or {})
     with tempfile.TemporaryDirectory() as work:
         given = Path(work) / "ask.json"
         given.write_text(json.dumps(given_input), encoding="utf-8")
         command = _engine() + [
             "run", str(source), "--workflow", workflow, "--input", str(given),
-            "--model", os.environ.get("KOSIKA_DESIGNS_MODEL", DEFAULT_MODEL),
-            "--model-url", os.environ.get("KOSIKA_DESIGNS_MODEL_URL", DEFAULT_MODEL_URL),
-            "--model-protocol", os.environ.get("KOSIKA_DESIGNS_MODEL_PROTOCOL", "openai"),
-            "--model-timeout", os.environ.get("KOSIKA_DESIGNS_MODEL_TIMEOUT", "400"),
-            "--max-output-tokens", os.environ.get("KOSIKA_DESIGNS_MAX_TOKENS", "8000"),
+            "--model", env.get("KOSIKA_DESIGNS_MODEL", DEFAULT_MODEL),
+            "--model-url", env.get("KOSIKA_DESIGNS_MODEL_URL", DEFAULT_MODEL_URL),
+            "--model-protocol", env.get("KOSIKA_DESIGNS_MODEL_PROTOCOL", "openai"),
+            "--model-timeout", env.get("KOSIKA_DESIGNS_MODEL_TIMEOUT", "400"),
+            "--max-output-tokens", env.get("KOSIKA_DESIGNS_MAX_TOKENS", "8000"),
             # A canvas works out its layout, storyboard and pins in pure
             # Kosika functions; the 10,000 default stops a big one partway
             # ("pure function call budget exceeds 10000"). The Brain path
@@ -212,22 +213,60 @@ KOSI = Path(__file__).resolve().parent.parent / "examples" / "agents" / "kosi" /
 GROQ_AUDIO = "https://api.groq.com/openai/v1/audio"
 
 
-def kosi(text: str, *, timeout: float = 600) -> dict[str, Any]:
+#: The small model Kosi talks through on this laptop, made by Ollama from
+#: qwen3:1.7b with the graphics card left out (PARAMETER num_gpu 0).
+KOSI_LOCAL_MODEL = "kosika-cpu-1.7b"
+KOSI_LOCAL_URL = "http://127.0.0.1:11434"
+
+
+def _local_ready(model: str, url: str) -> bool:
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(url.rstrip("/") + "/api/tags", timeout=3) as answer:  # noqa: S310 - this computer
+            names = [m.get("name", "") for m in json.loads(answer.read().decode("utf-8")).get("models", [])]
+    except (OSError, ValueError):
+        return False
+    return any(n == model or n == model + ":latest" for n in names)
+
+
+def kosi(text: str, *, local: bool = False, timeout: float = 600) -> dict[str, Any]:
     """Say something to Kosi, the companion run by Kosika Brain. The answer
-    holds text, suggest, canvas (a Kosika canvas or ""), kept and project."""
+    holds text, suggest, canvas (a Kosika canvas or ""), kept and project.
+
+    local talks on this laptop alone: the small brain on a small model in
+    Ollama, on the CPU, with no cloud model and no daily limit."""
 
     text = text.strip()
     if not text:
         raise DesignsError("Say something to Kosi.")
     if not KOSI.is_file():
         raise DesignsError(f"Kosi is not in this copy of Kosika ({KOSI}).")
-    # KOSI_BRAIN=small talks through the small brain, for a small model on a
-    # laptop's CPU: a shorter ask, and Kosika's own exact working all the same.
-    workflow = "chat_small" if os.environ.get("KOSI_BRAIN", "").strip().lower() == "small" else "chat"
+    env_more: dict[str, str] = {}
+    if local:
+        model = os.environ.get("KOSI_LOCAL_MODEL", KOSI_LOCAL_MODEL)
+        url = os.environ.get("KOSI_LOCAL_URL", KOSI_LOCAL_URL)
+        if not _local_ready(model, url):
+            raise DesignsError(
+                f"Kosi on this laptop needs Ollama running with the model {model}. "
+                "Make it once with: ollama pull qwen3:1.7b, then ollama create "
+                f"{model} from a Modelfile holding 'FROM qwen3:1.7b' and 'PARAMETER num_gpu 0'."
+            )
+        env_more = {
+            "KOSIKA_DESIGNS_MODEL": model, "KOSIKA_DESIGNS_MODEL_URL": url,
+            "KOSIKA_DESIGNS_MODEL_PROTOCOL": "ollama", "KOSIKA_MODEL_THINK": "off",
+            "KOSIKA_DESIGNS_MAX_TOKENS": "400", "KOSIKA_MODEL_API_KEY": "ollama",
+        }
+    # The small brain, for a small model on a laptop's CPU: a shorter ask,
+    # and Kosika's own exact working all the same. KOSI_BRAIN=small asks for
+    # it with any model.
+    small = local or os.environ.get("KOSI_BRAIN", "").strip().lower() == "small"
+    workflow = "chat_small" if small else "chat"
     # Kosi reads Wikipedia, and only Wikipedia, to check what a question names.
     extra = _brain_memory() + ["--allow-site", "en.wikipedia.org"]
-    return _run(KOSI, workflow, {"msg": {"text": text}}, extra=extra, first="text", timeout=timeout)
-
+    said = _run(KOSI, workflow, {"msg": {"text": text}}, extra=extra, first="text", timeout=timeout, env_more=env_more)
+    said["local"] = local
+    return said
 
 def _groq_key() -> str:
     return os.environ.get("GROQ_API_KEY") or os.environ.get("KOSIKA_MODEL_API_KEY", "")

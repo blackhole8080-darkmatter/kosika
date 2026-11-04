@@ -1759,6 +1759,11 @@ function showTalk() {
   const mic = h("button", {class: "ghost", title: "Press to speak, press again to stop", style: "min-width:150px"}, "\u{1F3A4} Press to speak");
   const voiceOn = h("input", {type: "checkbox", id: "kosi-voice"});
   voiceOn.checked = true;
+  // On this laptop: Kosi's small brain on a small model in Ollama, on the
+  // CPU alone. No cloud model, no daily limit; George's voice is made here too.
+  const localOn = h("input", {type: "checkbox", id: "kosi-local"});
+  try { localOn.checked = localStorage.getItem("kosi-local") === "1"; } catch (error) { /* keep */ }
+  localOn.onchange = () => { try { localStorage.setItem("kosi-local", localOn.checked ? "1" : "0"); } catch (error) { /* keep */ } };
   const status = h("span", {class: "lead"});
   const log = h("div", {style: "display:grid;gap:12px;margin-top:14px"});
   function bubble(entry) {
@@ -1766,6 +1771,7 @@ function showTalk() {
     if (!entry.r) return h("div", {style: "display:grid;gap:8px"}, you, h("div", {class: "lead"}, "Kosi is thinking…"));
     const kosi = h("div", {style: "max-width:84%;background:var(--panel, rgba(255,255,255,.04));border:1px solid var(--line, rgba(255,255,255,.08));border-radius:16px 16px 16px 4px;padding:10px 14px;font-size:16px;line-height:1.55"}, entry.r.text);
     const parts = [you, kosi];
+    if (entry.r.local) parts.push(h("div", {class: "chips"}, chip("thought on this laptop", "")));
     if ((entry.r.kept || []).length) parts.push(h("div", {class: "chips"}, entry.r.kept.map(k => chip("will remember: " + k, "ok"))));
     if (entry.r.canvas) {
       const frame = h("iframe", {title: "Kosika canvas", style: "width:100%;height:720px;border:0;border-radius:18px;background:transparent"});
@@ -1814,7 +1820,7 @@ function showTalk() {
     const entry = {q: text, r: null};
     talkLog.push(entry); draw();
     send.disabled = true;
-    try { entry.r = await api("/api/kosi", {method: "POST", body: JSON.stringify({text})}); }
+    try { entry.r = await api("/api/kosi", {method: "POST", body: JSON.stringify({text, local: localOn.checked})}); }
     catch (error) { entry.r = {text: String(error.message || error), kept: [], suggest: []}; }
     finally { send.disabled = false; }
     draw();
@@ -1861,7 +1867,7 @@ function showTalk() {
   main.replaceChildren(titled("Talk to Kosi"),
     h("p", {class: "lead"}, "Kosi is your companion, run by Kosika Brain. It remembers you, your projects and what it has learned, and answers like a friend. Type, or press the microphone and speak."),
     h("div", {style: "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0 6px"}, mic, say, send),
-    h("div", {style: "display:flex;gap:10px;align-items:center;flex-wrap:wrap"}, h("label", {style: "display:flex;gap:6px;align-items:center"}, voiceOn, "Kosi speaks its answers"), h("label", {style: "display:flex;gap:6px;align-items:center"}, "Voice", own), h("label", {style: "display:flex;gap:6px;align-items:center", title: "Used only when Kosi's own voice cannot speak"}, "Browser voice", pick), status),
+    h("div", {style: "display:flex;gap:10px;align-items:center;flex-wrap:wrap"}, h("label", {style: "display:flex;gap:6px;align-items:center"}, voiceOn, "Kosi speaks its answers"), h("label", {style: "display:flex;gap:6px;align-items:center", title: "Kosi thinks on this laptop alone, with a small model on the CPU: no internet model and no daily limit"}, localOn, "On this laptop"), h("label", {style: "display:flex;gap:6px;align-items:center"}, "Voice", own), h("label", {style: "display:flex;gap:6px;align-items:center", title: "Used only when Kosi's own voice cannot speak"}, "Browser voice", pick), status),
     log);
   draw();
   say.focus();

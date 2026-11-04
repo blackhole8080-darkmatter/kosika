@@ -2380,7 +2380,8 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                     from .designs import DesignsError, kosi
 
                     try:
-                        self._json(200, kosi(str(self._body().get("text", ""))))
+                        body = self._body()
+                        self._json(200, kosi(str(body.get("text", "")), local=body.get("local") is True))
                     except DesignsError as exc:
                         raise AppError(str(exc)) from exc
                 elif method == "POST" and url.path == "/api/kosi/hear":
