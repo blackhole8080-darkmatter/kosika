@@ -66,10 +66,93 @@ def _cover(x: float, y: float, size: int) -> tuple[float, float, float]:
     return inside, ring * inside, dot * inside
 
 
+#: The Kosika mark, as site/assets/mark.svg draws it on a 120 square: an
+#: indigo ring, an amber ring, a dark core, the K in Figtree's outline and a
+#: dot resting on the rings.
+_MARK_K = (
+    (39.79, 83.50), (39.79, 37.50), (50.31, 37.50), (50.31, 54.23), (65.75, 37.50),
+    (79.55, 37.50), (60.27, 58.25), (80.21, 83.50), (67.10, 83.50), (53.32, 65.74),
+    (50.31, 69.00), (50.31, 83.50),
+)
+_MARK_TILE = (0x0B, 0x0B, 0x16)
+_MARK_OUTER = (0x2B, 0x23, 0x50)
+_MARK_AMBER = (0xF5, 0xB4, 0x5C)
+_MARK_CORE = (0x05, 0x06, 0x0B)
+_MARK_LETTER = (0xF2, 0xF4, 0xFF)
+_MARK_DOT = (0xFF, 0xF4, 0xE2)
+
+
+def _inside(x: float, y: float, polygon: tuple) -> bool:
+    """Whether a point is inside a polygon, by the even-odd rule."""
+
+    inside = False
+    j = len(polygon) - 1
+    for i, (xi, yi) in enumerate(polygon):
+        xj, yj = polygon[j]
+        if (yi > y) != (yj > y) and x < (xj - xi) * (y - yi) / (yj - yi) + xi:
+            inside = not inside
+        j = i
+    return inside
+
+
+def _mark_point(x: float, y: float) -> tuple[tuple[int, int, int], float]:
+    """The colour of the mark at one point of its 120 square, and how much
+    of it is there (0 outside the badge)."""
+
+    away = math.hypot(x - 60, y - 60)
+    dot = math.hypot(x - 60, y - 18)
+    if dot <= 7.5:
+        return _MARK_DOT, 1.0
+    if dot <= 9.25:
+        return _MARK_CORE, 1.0
+    if away > 58:
+        return _MARK_TILE, 0.0
+    if away >= 50:
+        return _MARK_OUTER, 1.0
+    if 38.5 <= away <= 45.5:
+        return _MARK_AMBER, 1.0
+    if away < 38.5 and _inside(x, y, _MARK_K):
+        return _MARK_LETTER, 1.0
+    return (_MARK_CORE if away <= 29 else _MARK_TILE), 1.0
+
+
+def _mark_picture(size: int) -> bytes:
+    """One square picture of the Kosika mark, the one on the website and in
+    Studio, as the bitmap an .ico file holds."""
+
+    samples = 3 if size <= 64 else 2
+    rows: list[bytes] = []
+    for row in range(size - 1, -1, -1):  # bitmaps are stored bottom row first
+        line = bytearray()
+        for column in range(size):
+            red = green = blue = cover = 0.0
+            for sy in range(samples):
+                for sx in range(samples):
+                    colour, there = _mark_point(
+                        (column + (sx + 0.5) / samples) * 120 / size,
+                        (row + (sy + 0.5) / samples) * 120 / size,
+                    )
+                    red += colour[0] * there
+                    green += colour[1] * there
+                    blue += colour[2] * there
+                    cover += there
+            count = samples * samples
+            if cover:
+                red, green, blue = red / cover, green / cover, blue / cover
+            line += bytes((int(round(blue)), int(round(green)), int(round(red)), int(round(255 * cover / count))))
+        rows.append(bytes(line))
+    mask_row = bytes(((size + 31) // 32) * 4)
+    header = struct.pack("<IiiHHIIiiII", 40, size, size * 2, 1, 32, 0, 0, 0, 0, 0, 0)
+    return header + b"".join(rows) + mask_row * size
+
+
 def _picture(size: int, colours: tuple = KOSIKA_COLOURS) -> bytes:
     """One square picture of the mark as the bitmap an .ico file holds:
-    a dark tile, an orange ring and a pale dot (or the colours given)."""
+    Kosika's own mark, or for another app a dark tile, a ring and a dot in
+    its colours."""
 
+    if colours == KOSIKA_COLOURS:
+        return _mark_picture(size)
     ink, accent, paper = colours
     samples = 4 if size <= 64 else 2
     rows: list[bytes] = []
