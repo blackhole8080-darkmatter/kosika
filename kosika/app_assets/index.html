@@ -1129,10 +1129,10 @@ body.on-mission .track { opacity: .5; }
 .friends { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
 .friends button { background: transparent !important; color: var(--soft) !important; border: 0 !important; border-radius: 7px; padding: 6px 12px; min-height: 32px; font-weight: 500; box-shadow: none !important; }
 .friends button[aria-pressed="true"] { background: var(--ink) !important; color: var(--bg) !important; }
-.say-from { display: flex; gap: 12px; max-width: 760px; }
+.say-from { display: flex; gap: 12px; }
 .say-ring { flex: none; width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--ring, var(--accent)); display: grid; place-items: center; font: 600 12px var(--sans, system-ui); color: var(--ring, var(--accent)); margin-top: 1px; }
 .say-name { font-weight: 600; font-size: 14px; } .say-meta { font: 11px var(--mono); color: var(--faint); margin-left: 8px; }
-.say-text { font-size: 15.5px; line-height: 1.65; margin-top: 4px; }
+.say-text { font-size: 15.5px; line-height: 1.65; margin-top: 4px; max-width: 760px; }
 .say-you { justify-self: end; max-width: 72%; background: var(--code-soft); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; font-size: 15px; }
 .say-src { font: 11px var(--mono); color: var(--soft); text-decoration: none; border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
 .say-src:hover { color: var(--ink); border-color: color-mix(in srgb, var(--ink) 30%, var(--line)); }
@@ -1939,7 +1939,7 @@ function showTalk() {
   try { localOn.checked = localStorage.getItem("kosi-local") === "1"; } catch (error) { /* keep */ }
   localOn.onchange = () => { try { localStorage.setItem("kosi-local", localOn.checked ? "1" : "0"); } catch (error) { /* keep */ } };
   const status = h("span", {style: "font:12px var(--mono);color:var(--faint)"});
-  const log = h("div", {style: "display:grid;gap:22px;margin:22px 0 18px;max-width:860px"});
+  const log = h("div", {style: "display:grid;gap:22px;margin:22px 0 18px"});
   const switcher = h("div", {class: "friends", role: "group", "aria-label": "Who you are talking to"});
   function placeholder() { const f = KOSI_FRIENDS[talkWith]; say.placeholder = talkWith === "kosi" ? "Message Kosi, or ask Iris or Sol by name" : `Ask ${f.name}, the ${f.role}`; }
   function drawSwitch() {

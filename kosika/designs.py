@@ -403,6 +403,9 @@ _UNANSWERED = ("Workflow stopped (provider)", "HTTP 401", "HTTP 403", "HTTP 429"
 def _unanswered(said: dict[str, Any] | None, error: str) -> bool:
     if error:
         return any(mark in error for mark in _UNANSWERED)
+    text = str((said or {}).get("text", ""))
+    if text.startswith(("Sorry, I lost my words", "I looked, but I couldn't put an answer together", "That one's got away from me")):
+        return True
     problems = (said or {}).get("problems") or []
     return any(p == "give a title" or p.startswith("0 parts") or p.startswith("0 figures") for p in problems)
 
