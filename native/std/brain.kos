@@ -37,6 +37,7 @@
 // `--allow-site export.arxiv.org`.
 
 import "designs.kos"
+import "designs_generative.kos"
 import "nn.kos"
 import "algorithms.kos"
 
@@ -221,10 +222,14 @@ fn br_recipe_from(had: CanvasesRecalled, pick: Text) -> BrainRecipe { return br_
 // recipe; so does a canvas you rated down.
 fn br_fresh(text: Text) -> Bool {
   let t = " " + text.lower() + " "
-  return t.contains(" redraw") or t.contains(" draw it again") or t.contains(" fresh") or t.contains(" new one") or t.contains(" new picture")
+  let words = [" redraw", " draw it again", " fresh", " new one", " new picture", " new ", " another", " different", " unique", " surprise", " something else", " original", " creative", " never seen"]
+  return (for w in words where t.contains(w) { w }).length() > 0
 }
 
-fn br_reusable(recipe: BrainRecipe, ask: DzAsk) -> Bool { return recipe.found and recipe.canvas.score >= 1 and not br_fresh(ask.text) }
+// Art is made new every time: given again it would be the same piece.
+// A kept canvas of another kind than the words now settle is not given
+// again: Designs has learned better since it was drawn.
+fn br_reusable(recipe: BrainRecipe, ask: DzAsk) -> Bool { return recipe.found and recipe.canvas.score >= 1 and recipe.canvas.kind != "art" and not br_fresh(ask.text) and (not dz_kind_sure(ask) or dz_kind(ask) == recipe.canvas.kind) }
 
 fn br_reused(recipe: BrainRecipe) -> DzResult {
   let c = recipe.canvas
@@ -436,7 +441,8 @@ fn br_link_of(source: Text) -> Text {
 fn br_with_known(r: DzResult, found: BrainNote[]) -> DzResult {
   // Research only, with its sources: not what the person told Kosi.
   let facts = for f in found where f.source.starts_with("http") { f }
-  if facts.is_empty() or not r.embed.ends_with("</div>") { return r }
+  // Art is a mood, not an explanation: research beside it is noise.
+  if facts.is_empty() or r.kind == "art" or not r.embed.ends_with("</div>") { return r }
   var items = ""
   for f in facts {
     let link = br_link_of(f.source)
@@ -475,6 +481,7 @@ fn br_style(r: DzResult) -> Text {
   if r.embed.contains("class=\"art lc lc-nodes\"") { return "living nodes" }
   if r.embed.contains("class=\"st-living\"") { return "living cards" }
   if r.embed.contains("class=\"kc-card kc-stage\"") { return "a played diagram and picture" }
+  if r.kind == "art" { return "moving art" }
   return "a " + r.kind
 }
 
@@ -493,6 +500,7 @@ fn br_episode(ask: DzAsk, r: DzResult, past: BrainPast) -> BrainNote {
 // and as a line on the stage itself.
 fn br_told(r: DzResult, past: BrainPast) -> DzResult {
   if not past.found { return r }
+  if r.kind == "art" { return br_told_art(r, past) }
   let again = if past.times > 1 { f" ({past.times} times before)" } else { "" }
   let said = f"Kosika remembers this: for '{past.topic}' it {past.text}{again}"
   let label = "<div class=\"kc-label\">Kosika canvas &#183; <b>the explanation, played</b></div>"
@@ -503,6 +511,14 @@ fn br_told(r: DzResult, past: BrainPast) -> DzResult {
   let embed = if staged { r.embed.replace(label, badge) } else { r.embed.replace("<div class=\"kd-title\">", line) }
   let page = if staged { r.page.replace(label, badge) } else { r.page.replace("<div class=\"kd-title\">", line) }
   return {..r, why: said + ". " + r.why, embed: embed, page: page}
+}
+
+// Art is never given again: the Brain says what it made before, and that
+// this piece is new, with layers it has not made.
+fn br_told_art(r: DzResult, past: BrainPast) -> DzResult {
+  let said = f"Kosika has made art for this before ({past.text}); this is a new piece, from layers it had not made yet"
+  let line = "<div class=\"br-mem\" style=\"color:var(--amber);font:600 11px ui-monospace,Consolas,monospace;letter-spacing:.12em;text-transform:uppercase;margin:2px 4px 6px\">New piece &#183; before, Kosika " + br_esc(past.text) + "</div><div class=\"kd-title\">"
+  return {..r, why: said + ". " + r.why, embed: r.embed.replace("<div class=\"kd-title\">", line), page: r.page.replace("<div class=\"kd-title\">", line)}
 }
 
 // ---------------------------------------------------------------- the workflows
@@ -607,6 +623,10 @@ workflow brain_rate_kept(r: BrainRating, c: BrainCanvas) -> BrainRated {
   saved  = remember br_rated_canvas(c, r) in canvases under br_key("canvas", c.topic)
   had    = recall minds under "kind"
   taught = remember br_learn(br_mind_of(had), c.topic, c.kind, br_rated_value(r)) in minds under "kind"
+  tasted = match c.kind == "art" {
+    case true { call gen_taste_rate({take: gen_take_of(c.svg), liked: r.liked}) }
+    case _ { gen_no_taste() }
+  }
   out    = br_rated_said(c, r)
 }
 

@@ -17,12 +17,24 @@
 
 import "designs_palette.kos"
 
-export [GenRecipe, GenAsk, GenArt, GenFor, gen_pieces, gen_problems, gen_svg, gen_style, gen_page, gen_render, gen_make, gen_for, gen_backdrop]
+export [GenRecipe, GenAsk, GenArt, GenFor, GenTake, GenTaste, GenRate, gen_pieces, gen_problems, gen_svg, gen_style, gen_page, gen_render, gen_make, gen_for, gen_backdrop, gen_takes, gen_score, gen_layered, gen_strip, gen_take_of, gen_taste_rate, gen_no_taste]
 
 record GenRecipe { piece: Text palette: Text mood: Text seed: Number density: Number title: Text }
 record GenAsk { text: Text }
 record GenBrief { task: Text ask: Text }
-record GenArt { recipe: GenRecipe svg: Text page: Text problems: Text[] }
+// One take on a piece: the layers it was built from, what the critic gave
+// it and why. key names the layers ("flow+waves+mirror+ocean"), so a take
+// can be told from those already made, and your thumbs can teach which
+// layers you like.
+record GenTake { recipe: GenRecipe under: Text symmetry: Text focal: Bool grain: Bool key: Text svg: Text score: Number why: Text[] }
+record GenArt { recipe: GenRecipe svg: Text page: Text problems: Text[] takes: GenTake[] }
+
+// What the Brain has learned about art: the takes it has made, and those
+// you liked and did not.
+record GenTaste { seen: Text[] liked: Text[] disliked: Text[] }
+record GenRate { take: Text liked: Bool }
+
+memory tastes of GenTaste
 
 model gen_artist {
   input: GenBrief
@@ -70,7 +82,7 @@ fn gen_bloom(r: GenRecipe) -> Text {
     let x = 400 + rad * angle.cos()
     let y = 240 + rad * angle.sin()
     let size = 1.6 + 4.2 * k / count
-    let hue = (k % 6).to_text()
+    let hue = ((k + r.seed) % 6).to_text()
     dots = dots.append(f"<circle class=\"gen-d\" cx=\"{x.floor()}\" cy=\"{y.floor()}\" r=\"{(size * 10).floor() / 10}\" style=\"fill:var(--h{hue});animation-delay:{(k * 6 * pace).floor()}ms\"/>")
   }
   let turn = gen_n(160 * gen_pace(r))
@@ -108,15 +120,15 @@ fn gen_waves(r: GenRecipe) -> Text {
   let layers = (4 + r.density * 6).floor()
   var bits: Text[] = []
   for k in 0 until layers {
-    let base = 120 + k * 300 / layers
-    let amp = 14 + gen_noise(r.seed, k) * 30
+    let base = 110 + k * 300 / layers + (gen_noise(r.seed, k + 40) - 0.5) * 50
+    let amp = 10 + gen_noise(r.seed, k) * 38
     let length = 160 + gen_noise(r.seed, k + 20) * 220
     // Drawn two lengths wider than the picture, so sliding by one length
     // loops without a seam.
     var d = f"M-{gen_n(length)} 480 L-{gen_n(length)} {gen_n(base)}"
     var x = 0 - length
     while x <= 800 + length {
-      d = d + f" L{x.floor()} {(base + amp * (x * 360 / length).sin()).floor()}"
+      d = d + f" L{x.floor()} {(base + amp * (x * 360 / length + k * 57).sin()).floor()}"
       x = x + 8
     }
     d = d + f" L{gen_n(800 + length)} 480 Z"
@@ -183,13 +195,270 @@ fn gen_orbits(r: GenRecipe) -> Text {
 
 // ---------------------------------------------------------------- the piece
 
+fn gen_body(r: GenRecipe) -> Text {
+  return if r.piece == "bloom" { gen_bloom(r) } else if r.piece == "flow" { gen_flow(r) } else if r.piece == "waves" { gen_waves(r) } else if r.piece == "tree" { gen_tree(r) } else { gen_orbits(r) }
+}
+
 fn gen_svg(r: GenRecipe) -> Text {
-  let body = if r.piece == "bloom" { gen_bloom(r) } else if r.piece == "flow" { gen_flow(r) } else if r.piece == "waves" { gen_waves(r) } else if r.piece == "tree" { gen_tree(r) } else { gen_orbits(r) }
-  return f"<svg class=\"gen gen-{r.piece}\" viewBox=\"0 0 800 480\" preserveAspectRatio=\"xMidYMid slice\" role=\"img\" aria-label=\"{r.title}\">{body}</svg>"
+  return f"<svg class=\"gen gen-{r.piece}\" viewBox=\"0 0 800 480\" preserveAspectRatio=\"xMidYMid slice\" role=\"img\" aria-label=\"{r.title}\">{gen_body(r)}</svg>"
+}
+
+// ---------------------------------------------------------------- layers
+//
+// A piece is built from layers, as a painter builds a canvas:
+//
+//   under     a faint field behind it: another piece, sparse and slow
+//   main      the piece itself
+//   symmetry  none; mirror, the piece and its mirror image side by side;
+//             or reflect, the piece above a horizon and its reflection
+//             below, as in still water
+//   focal     a glowing body on a third of the picture, where the eye rests
+//   grain     fine specks over everything, like paper or film
+//
+// Each layer has its own seed, so the same layers give a new piece each time.
+
+fn gen_focal(r: GenRecipe) -> Text {
+  let left = gen_noise(r.seed, 5) < 0.5
+  let x = if left { 267 } else { 533 }
+  let y = if r.piece == "waves" or r.piece == "tree" { 120 } else { 160 }
+  let size = 26 + gen_noise(r.seed, 6) * 22
+  return f"<g class=\"gen-focal\"><circle cx=\"{x}\" cy=\"{y}\" r=\"{gen_n(size * 2.2)}\" class=\"gen-glow\"/><circle cx=\"{x}\" cy=\"{y}\" r=\"{gen_n(size)}\" class=\"gen-core\"/></g>"
+}
+
+fn gen_grain(r: GenRecipe) -> Text {
+  var dots: Text[] = []
+  for k in 0 until 110 {
+    let v = (k * 12.9898 + r.seed * 39.37).sin() * 43758.5453
+    let w = (k * 78.233 + r.seed * 12.9898).sin() * 43758.5453
+    dots = dots.append(f"<circle cx=\"{((v - v.floor()) * 800).floor()}\" cy=\"{((w - w.floor()) * 480).floor()}\" r=\".9\"/>")
+  }
+  return "<g class=\"gen-grain\">" + dots.join("") + "</g>"
+}
+
+fn gen_layered(t: GenTake) -> Text {
+  let r = t.recipe
+  let body = gen_body(r)
+  let under = if t.under.is_empty() { "" } else { "<g class=\"gen-under\">" + gen_body({..r, piece: t.under, density: 0.2, seed: (r.seed * 7 + 13) % 99991}) + "</g>" }
+  let centred = r.piece == "tree" or r.piece == "bloom" or r.piece == "orbits"
+  let main = if t.symmetry == "mirror" and centred { f"<g transform=\"translate(-150 46) scale(.9)\">{body}</g><g class=\"gen-twin\" transform=\"translate(950 46) scale(-.9 .9)\">{body}</g>" } else if t.symmetry == "mirror" { f"<g>{body}</g><g class=\"gen-twin\" transform=\"translate(800 0) scale(-1 1)\">{body}</g>" } else if t.symmetry == "reflect" { f"<g transform=\"matrix(1 0 0 .62 0 0)\">{body}</g><line class=\"gen-horizon\" x1=\"0\" y1=\"298\" x2=\"800\" y2=\"298\"/><g class=\"gen-reflect\" transform=\"matrix(1 0 0 -.3 0 442)\">{body}</g>" } else { body }
+  let focal = if t.focal { gen_focal(r) } else { "" }
+  let grain = if t.grain { gen_grain(r) } else { "" }
+  return f"<svg class=\"gen gen-{r.piece}\" data-take=\"{t.key}\" viewBox=\"0 0 800 480\" preserveAspectRatio=\"xMidYMid slice\" role=\"img\" aria-label=\"{r.title}\">{under}{main}{focal}{grain}</svg>"
+}
+
+// The field that sits well behind each piece, and a second choice.
+fn gen_under(piece: Text, second: Bool) -> Text {
+  let first = if piece == "flow" { "waves" } else if piece == "bloom" { "flow" } else if piece == "waves" { "bloom" } else if piece == "tree" { "waves" } else { "bloom" }
+  let other = if piece == "flow" { "orbits" } else if piece == "bloom" { "waves" } else if piece == "waves" { "flow" } else if piece == "tree" { "flow" } else { "flow" }
+  return if second { other } else { first }
+}
+
+// A palette near in mood, for a take that tries other colours.
+fn gen_near_palette(p: Text) -> Text {
+  return if p == "dark_matter" { "aurora" } else if p == "aurora" { "dark_matter" } else if p == "ocean" { "aurora" } else if p == "ember" { "dark_matter" } else if p == "forest" { "ocean" } else if p == "paper" { "print" } else if p == "print" { "paper" } else { "dark_matter" }
+}
+
+fn gen_key(r: GenRecipe, under: Text, symmetry: Text) -> Text {
+  let u = if under.is_empty() { "plain" } else { under }
+  return f"{r.piece}+{u}+{symmetry}+{r.palette}"
+}
+
+fn gen_take(r: GenRecipe, under: Text, symmetry: Text, focal: Bool, grain: Bool) -> GenTake {
+  let t: GenTake = {recipe: r, under: under, symmetry: symmetry, focal: focal, grain: grain, key: gen_key(r, under, symmetry), svg: "", score: 0, why: []}
+  return {..t, svg: gen_layered(t)}
+}
+
+// Four takes on what the artist chose: the piece alone; over a field with
+// a focal point; with symmetry; and over another field in near colours,
+// fuller, with grain.
+// Every way to layer a piece: any other piece as its field, or none; no
+// symmetry, a mirror or a reflection; its own palette or a near one. As
+// keys, "flow+waves+mirror+ocean".
+fn gen_grammar(r: GenRecipe) -> Text[] {
+  let unders = [""].concat(for p in gen_pieces() where p != r.piece { p })
+  var out: Text[] = []
+  for pal in [r.palette, gen_near_palette(r.palette)] {
+    for sym in ["none", "reflect", "mirror"] {
+      for u in unders { out = out.append(gen_key({..r, palette: pal}, u, sym)) }
+    }
+  }
+  return out
+}
+
+fn gen_from_key(r: GenRecipe, key: Text, k: Number) -> GenTake {
+  let parts = key.split("+")
+  let under = if parts[1] == "plain" { "" } else { parts[1] }
+  let focal = gen_noise(r.seed, k + 61) < 0.5
+  let grain = gen_noise(r.seed, k + 71) < 0.5
+  let mood = if gen_noise(r.seed, k + 81) < 0.3 { (if r.mood == "calm" { "lively" } else { "calm" }) } else { r.mood }
+  return gen_take({..r, palette: parts[3], mood: mood, seed: (r.seed + k * 11) % 99991, density: (r.density + (gen_noise(r.seed, k + 91) - 0.5) * 0.4).max(0.1).min(1)}, under, parts[2], focal, grain)
+}
+
+// Four takes: the artist's piece as it chose it, when that was never made,
+// and then layerings not made before, picked by the seed; when every one
+// has been made, any four.
+fn gen_takes(r: GenRecipe, taste: GenTaste) -> GenTake[] {
+  let all = gen_grammar(r)
+  let fresh = for x in all where not taste.seen.contains(x) { x }
+  let pool = if fresh.length() >= 4 { fresh } else { all }
+  let start = (gen_noise(r.seed, 3) * pool.length()).floor()
+  let step = if pool.length() % 7 == 0 { 1 } else { 7 }
+  var keys: Text[] = []
+  if not taste.seen.contains(all[0]) { keys = [all[0]] }
+  var k = 0
+  while keys.length() < 4 and k < pool.length() {
+    let x = pool[(start + k * step) % pool.length()]
+    if not keys.contains(x) { keys = keys.append(x) }
+    k += 1
+  }
+  return for i in 0 until keys.length() { gen_score(gen_from_key(r, keys[i], i), taste) }
+}
+
+// ---------------------------------------------------------------- the critic
+//
+// The critic looks at each take as Kosika drew it and gives it a score
+// from four things, with no model:
+//
+//   contrast  how well the palette's colours stand off its background
+//   balance   how evenly the marks spread over the four quarters
+//   variety   how many of the palette's colours it uses, and its layers
+//   novelty   whether these layers were made before; never-made scores most
+//
+// and then your taste: layers you liked count for a take, layers you did
+// not count against it.
+
+fn gen_contrast(palette: Text) -> Number {
+  let p = palette_named(palette)
+  let all = for h in p.hues { contrast(h, p.bg) }
+  let mean = all.sum() / all.length().max(1)
+  return (mean / 7).min(1)
+}
+
+// Where the marks are: the first point of every circle and of every step
+// of a line, counted into the four quarters of the picture.
+fn gen_balance(t: GenTake) -> Number {
+  if t.symmetry != "none" { return 1 }
+  if t.recipe.piece == "bloom" or t.recipe.piece == "orbits" { return 0.95 }
+  var q = [0, 0, 0, 0]
+  let parts = t.svg.split(" L").concat(t.svg.split("cx=\""))
+  var k = 0
+  for part in parts {
+    k += 1
+    if k % 4 == 0 {
+      let ws = part.replace("\"", " ").replace("cy=", " ").words()
+      if ws.length() >= 2 {
+        let x = ws[0].to_number()
+        let y = ws[1].to_number()
+        if x.exists() and y.exists() {
+          let i = (if x.value() < 400 { 0 } else { 1 }) + (if y.value() < 240 { 0 } else { 2 })
+          q = for j in 0 until 4 { if j == i { q[j] + 1 } else { q[j] } }
+        }
+      }
+    }
+  }
+  let total = q.sum()
+  if total == 0 { return 0.5 }
+  return 1 - (q.max().or(0) - q.min().or(0)) / total
+}
+
+fn gen_variety(t: GenTake) -> Number {
+  let hues = (for h in 0 until 6 where t.svg.contains(f"var(--h{h})") { h }).length()
+  let layers = (if t.under.is_empty() { 0 } else { 1 }) + (if t.focal { 1 } else { 0 }) + (if t.grain { 1 } else { 0 }) + (if t.symmetry == "none" { 0 } else { 1 })
+  return (hues / 6 * 0.6 + layers / 4 * 0.4).min(1)
+}
+
+fn gen_shares(key: Text, other: Text) -> Number {
+  let a = key.split("+")
+  let b = other.split("+")
+  if a.length() != b.length() { return 0 }
+  return (for k in 0 until a.length() where a[k] == b[k] { k }).length()
+}
+
+fn gen_novelty(t: GenTake, taste: GenTaste) -> Number {
+  if taste.seen.contains(t.key) { return 0.2 }
+  let near = (for s in taste.seen where gen_shares(t.key, s) >= 3 { s }).length()
+  return if near > 0 { 0.7 } else { 1 }
+}
+
+fn gen_liking(t: GenTake, taste: GenTaste) -> Number {
+  let up = (for l in taste.liked { gen_shares(t.key, l) }).sum() * 0.05
+  let down = (for d in taste.disliked { gen_shares(t.key, d) }).sum() * 0.07
+  return (up - down).max(-0.4).min(0.4)
+}
+
+fn gen_pct(x: Number) -> Text { return (x * 100).floor().to_text() }
+
+fn gen_score(t: GenTake, taste: GenTaste) -> GenTake {
+  let c = gen_contrast(t.recipe.palette)
+  let b = gen_balance(t)
+  let v = gen_variety(t)
+  let n = gen_novelty(t, taste)
+  let like = gen_liking(t, taste)
+  let score = c * 0.2 + b * 0.25 + v * 0.25 + n * 0.3 + like
+  var why = [f"contrast {gen_pct(c)}", f"balance {gen_pct(b)}", f"variety {gen_pct(v)}", f"novelty {gen_pct(n)}"]
+  if like > 0 { why = why.append("layers you liked") }
+  if like < 0 { why = why.append("layers you did not like") }
+  return {..t, score: (score * 100).floor() / 100, why: why}
+}
+
+fn gen_best(takes: GenTake[]) -> GenTake {
+  var best = takes[0]
+  for t in takes {
+    if t.score > best.score { best = t }
+  }
+  return best
+}
+
+// The other takes, small, each with its score, under the best one.
+fn gen_card(t: GenTake, best: Text) -> Text {
+  let mark = if t.svg == best { " best" } else { "" }
+  let name = t.key.replace("+", " · ")
+  return f"<figure class=\"gen-take{mark}\" data-palette=\"{t.recipe.palette}\">{t.svg}<figcaption><b>{gen_pct(t.score)}</b> {name}</figcaption></figure>"
+}
+
+fn gen_strip(art: GenArt) -> Text {
+  if art.takes.length() < 2 { return "" }
+  let cards = for t in art.takes { gen_card(t, art.svg) }
+  return "<div class=\"gen-takes\" aria-label=\"The takes the critic compared\">" + cards.join("") + "</div>"
+}
+
+// The layers a drawing was made from, read back from it.
+fn gen_take_of(svg: Text) -> Text {
+  let parts = svg.split("data-take=\"")
+  if parts.length() < 2 { return "" }
+  return parts[1].split("\"")[0]
+}
+
+fn gen_no_taste() -> GenTaste { return {seen: [], liked: [], disliked: []} }
+
+fn gen_taste_of(had: TastesRecalled) -> GenTaste { return if had.value.exists() { had.value.value() } else { gen_no_taste() } }
+
+fn gen_saw(taste: GenTaste, takes: GenTake[]) -> GenTaste {
+  let keys = for t in takes where not taste.seen.contains(t.key) { t.key }
+  let all = taste.seen.concat(keys)
+  return {..taste, seen: all.drop((all.length() - 60).max(0))}
+}
+
+fn gen_rated(taste: GenTaste, r: GenRate) -> GenTaste {
+  if r.take.is_empty() { return taste }
+  let liked = for l in taste.liked where l != r.take { l }
+  let disliked = for d in taste.disliked where d != r.take { d }
+  return if r.liked { {..taste, liked: liked.append(r.take).drop((liked.length() - 19).max(0)), disliked: disliked} } else { {..taste, liked: liked, disliked: disliked.append(r.take).drop((disliked.length() - 19).max(0))} }
+}
+
+// A new seed each time, so asking again never gives the same piece.
+fn gen_new_seed(r: GenRecipe, taste: GenTaste) -> GenRecipe {
+  return {..r, seed: (r.seed + taste.seen.length() * 7919 + 1) % 99991}
+}
+
+workflow gen_taste_rate(r: GenRate) -> GenTaste {
+  had  = recall tastes under "art"
+  kept = remember gen_rated(gen_taste_of(had), r) in tastes under "art"
+  out  = gen_rated(gen_taste_of(had), r)
 }
 
 fn gen_style() -> Text {
-  return ".gen{display:block;width:100%;height:auto;overflow:hidden}.gen-d{opacity:0;transform-box:fill-box;transform-origin:center;animation:gen-pop .7s ease-out forwards}.gen-turn{transform-origin:400px 240px;animation:gen-turn 160s linear infinite}.gen-line{fill:none;stroke-width:1.4;stroke-linecap:round;stroke-dasharray:.4 .6;opacity:.85;animation:gen-run 8s linear infinite}.gen-slide{animation:gen-slide 12s linear infinite}.gen-slide.back{animation-direction:reverse}.gen-wave{opacity:.28}.gen-branch{fill:none;stroke:var(--soft);stroke-linecap:round;stroke-dasharray:1;stroke-dashoffset:1;animation:gen-grow .6s ease-out forwards}.gen-leaf{opacity:0;transform-box:fill-box;transform-origin:center;animation:gen-pop .6s ease-out forwards}.gen-sway{transform-origin:400px 470px;animation:gen-sway 7s ease-in-out infinite alternate}.gen-ring{fill:none;stroke:color-mix(in srgb,var(--line) 14%,transparent);stroke-width:2.2;stroke-dasharray:3 9}.gen-sun{fill:var(--gold);filter:drop-shadow(0 0 18px var(--gold))}.gen-spin{animation:gen-turn 10s linear infinite}@keyframes gen-pop{from{opacity:0;transform:scale(0)}to{opacity:.92;transform:scale(1)}}@keyframes gen-turn{to{transform:rotate(360deg)}}@keyframes gen-run{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}@keyframes gen-slide{to{transform:translateX(var(--len))}}@keyframes gen-grow{to{stroke-dashoffset:0}}@keyframes gen-sway{from{transform:rotate(-1.6deg)}to{transform:rotate(1.6deg)}}@media (prefers-reduced-motion:reduce){.gen *{animation:none!important;opacity:1!important;stroke-dashoffset:0!important}}"
+  return ".gen{display:block;width:100%;height:auto;overflow:hidden}.gen-d{opacity:0;transform-box:fill-box;transform-origin:center;animation:gen-pop .7s ease-out forwards}.gen-turn{transform-origin:400px 240px;animation:gen-turn 160s linear infinite}.gen-line{fill:none;stroke-width:1.4;stroke-linecap:round;stroke-dasharray:.4 .6;opacity:.85;animation:gen-run 8s linear infinite}.gen-slide{animation:gen-slide 12s linear infinite}.gen-slide.back{animation-direction:reverse}.gen-wave{opacity:.28}.gen-branch{fill:none;stroke:var(--soft);stroke-linecap:round;stroke-dasharray:1;stroke-dashoffset:1;animation:gen-grow .6s ease-out forwards}.gen-leaf{opacity:0;transform-box:fill-box;transform-origin:center;animation:gen-pop .6s ease-out forwards}.gen-sway{transform-origin:400px 470px;animation:gen-sway 7s ease-in-out infinite alternate}.gen-ring{fill:none;stroke:color-mix(in srgb,var(--line) 14%,transparent);stroke-width:2.2;stroke-dasharray:3 9}.gen-sun{fill:var(--gold);filter:drop-shadow(0 0 18px var(--gold))}.gen-spin{animation:gen-turn 10s linear infinite}.gen-under{opacity:.32}.gen-twin{opacity:.72}.gen-reflect{opacity:.3}.gen-horizon{stroke:color-mix(in srgb,var(--line) 22%,transparent);stroke-width:1}.gen-glow{fill:var(--gold);opacity:.14;animation:gen-breathe 6s ease-in-out infinite alternate}.gen-core{fill:var(--gold);opacity:.9;filter:drop-shadow(0 0 22px var(--gold))}.gen-focal{transform-box:fill-box;transform-origin:center}.gen-grain{fill:var(--line);opacity:.16}.gen-takes{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:10px}.gen-take{margin:0;border-radius:10px;overflow:hidden;border:1px solid color-mix(in srgb,var(--line) 12%,transparent);background:var(--bg)}.gen-take.best{outline:2px solid var(--gold)}.gen-take .gen *{animation:none!important}.gen-take .gen-d,.gen-take .gen-leaf{opacity:.9}.gen-take .gen-branch{stroke-dashoffset:0}.gen-take figcaption{font:11px ui-monospace,Consolas,monospace;color:var(--soft);padding:5px 7px}.gen-take b{color:var(--ink)}@keyframes gen-breathe{from{opacity:.08}to{opacity:.22}}@keyframes gen-pop{from{opacity:0;transform:scale(0)}to{opacity:.92;transform:scale(1)}}@keyframes gen-turn{to{transform:rotate(360deg)}}@keyframes gen-run{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}@keyframes gen-slide{to{transform:translateX(var(--len))}}@keyframes gen-grow{to{stroke-dashoffset:0}}@keyframes gen-sway{from{transform:rotate(-1.6deg)}to{transform:rotate(1.6deg)}}@media (prefers-reduced-motion:reduce){.gen *{animation:none!important;opacity:1!important;stroke-dashoffset:0!important}}"
 }
 
 fn gen_page(r: GenRecipe, svg: Text) -> Text {
@@ -198,7 +467,7 @@ fn gen_page(r: GenRecipe, svg: Text) -> Text {
 
 workflow gen_render(r: GenRecipe) -> GenArt {
   svg = gen_svg(r)
-  out = {recipe: r, svg: svg, page: gen_page(r, svg), problems: gen_problems(r)}
+  out = {recipe: r, svg: svg, page: gen_page(r, svg), problems: gen_problems(r), takes: []}
 }
 
 // ---------------------------------------------------------------- behind a drawing
@@ -221,7 +490,7 @@ fn gen_for(f: GenFor) -> GenRecipe {
 workflow gen_backdrop(f: GenFor) -> GenArt {
   r   = gen_for(f)
   svg = gen_svg(r)
-  out = {recipe: r, svg: svg, page: "", problems: gen_problems(r)}
+  out = {recipe: r, svg: svg, page: "", problems: gen_problems(r), takes: []}
 }
 
 // ---------------------------------------------------------------- the artist
@@ -245,9 +514,51 @@ fn gen_fixed(r: GenRecipe) -> GenRecipe {
 workflow gen_make(ask: GenAsk) -> GenArt {
   budget 2 model calls, 200 seconds
   chosen = use_model gen_artist(gen_task(), ask.text) retry 1 otherwise gen_fallback()
-  r      = gen_fixed(chosen)
-  svg    = gen_svg(r)
-  out    = {recipe: r, svg: svg, page: gen_page(r, svg), problems: gen_problems(r)}
+  had    = recall tastes under "art"
+  taste  = gen_taste_of(had)
+  r      = gen_new_seed(gen_fixed(chosen), taste)
+  takes  = gen_takes(r, taste)
+  best   = gen_best(takes)
+  seen   = remember gen_saw(taste, takes) in tastes under "art"
+  out    = gen_art(best, takes)
+}
+
+fn gen_art(best: GenTake, takes: GenTake[]) -> GenArt {
+  let r = best.recipe
+  let art: GenArt = {recipe: r, svg: best.svg, page: "", problems: gen_problems(r), takes: takes}
+  return {..art, page: gen_page(r, best.svg + gen_strip(art))}
+}
+
+test "four takes are made, scored, and the best is kept" {
+  takes = gen_takes(gen_fallback(), gen_no_taste())
+  expect takes.length() == 4
+  expect (for t in takes where t.score > 0 { t }).length() == 4
+  expect takes[0].key == "bloom+plain+none+dark_matter"
+  expect gen_take_of(takes[2].svg) == takes[2].key
+  expect gen_grammar(gen_fallback()).length() == 30
+  // Made before, the same ask gives four layerings never made.
+  again = gen_takes(gen_fallback(), {seen: for t in takes { t.key }, liked: [], disliked: []})
+  expect (for t in again where (for o in takes where o.key == t.key { o }).length() > 0 { t }).is_empty()
+  reflect = gen_take(gen_fallback(), "", "reflect", false, false)
+  expect reflect.svg.contains("gen-reflect")
+  best = gen_best(takes)
+  expect (for t in takes where t.score > best.score { t }).is_empty()
+  art = gen_art(best, takes)
+  expect gen_strip(art).contains("gen-take best")
+}
+
+test "the critic prefers what was never made, and your taste" {
+  r = gen_fallback()
+  t = gen_take(r, "flow", "none", true, false)
+  fresh = gen_score(t, gen_no_taste())
+  seen = gen_score(t, {seen: [t.key], liked: [], disliked: []})
+  expect fresh.score > seen.score
+  liked = gen_score(t, gen_rated(gen_no_taste(), {take: t.key, liked: true}))
+  disliked = gen_score(t, gen_rated(gen_no_taste(), {take: t.key, liked: false}))
+  expect liked.score > fresh.score and disliked.score < fresh.score
+  expect gen_new_seed(r, {seen: ["a"], liked: [], disliked: []}).seed != gen_new_seed(r, gen_no_taste()).seed
+  flow = gen_take({..r, piece: "flow"}, "", "none", false, false)
+  expect gen_balance(flow) > 0 and gen_balance(flow) <= 1
 }
 
 test "a bloom and orbits are drawn" {

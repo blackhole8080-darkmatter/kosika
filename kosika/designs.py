@@ -423,12 +423,27 @@ def _run(source: Path, workflow: str, given_input: dict, *, extra: list[str] | N
             failed = None
         except DesignsError as exc:
             error, failed, said = str(exc), exc, None
+        if _too_large(said, error):
+            # Groq's free tier counts the room asked for the answer against
+            # its tokens a minute: asked for 8,000, a call is refused outright
+            # (HTTP 413) and every ask fell to the slow laptop models. The
+            # same model again, with room for a shorter answer.
+            try:
+                said = _run_once(source, workflow, given_input, {**env, **model, "KOSIKA_DESIGNS_MAX_TOKENS": "3500"}, extra, first, timeout)
+                error, failed = "", None
+            except DesignsError as exc:
+                error, failed, said = str(exc), exc, None
         if not _unanswered(said, error) or k == len(chain) - 1:
             break
     if failed is not None:
         raise failed
     assert said is not None
     return said
+
+
+def _too_large(said: dict[str, Any] | None, error: str) -> bool:
+    text = error + (json.dumps(said)[:4000] if said else "")
+    return "HTTP 413" in text or "Request too large" in text
 
 
 def _run_once(source: Path, workflow: str, given_input: dict, env: dict[str, str], extra: list[str] | None, first: str, timeout: float) -> dict[str, Any]:

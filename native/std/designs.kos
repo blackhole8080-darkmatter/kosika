@@ -84,6 +84,7 @@ fn dz_has(t: Text, words: Text[]) -> Bool {
 }
 
 fn dz_art_words() -> Text[] { return [" art ", " artwork", " wallpaper", " background", " backdrop", " abstract", " generative", " pattern", " screensaver", " cover image", " mood ", " aesthetic", " something beautiful", " ambient"] }
+fn dz_art_asked() -> Text[] { return [" art of ", " art about ", " art piece", " piece of art", " artwork", " generative art", " abstract art", " wallpaper", " screensaver"] }
 fn dz_diagram_words() -> Text[] { return [" diagram", " flowchart", " flow chart", " mind map", " mindmap", " map of ", " timeline", " compare ", " comparison", " vs ", " vs. ", " versus ", " difference between", " hierarchy", " family tree", " org chart", " architecture", " structure of", " steps ", " step by step", " pipeline", " workflow", " table ", " graph ", " layers of", " types of", " kinds of", " parts of"] }
 // Systems with no body to watch move: how they work is a structure of
 // parts and steps, so even a "how does" about them is drawn as a diagram.
@@ -136,6 +137,9 @@ fn dz_named(ask: DzAsk) -> Text {
   if dz_kinds().contains(named) { return named }
   let t = dz_padded(ask.text)
   if dz_has(t, dz_quiz_words()) { return "quiz" }
+  // Asked for art in so many words, it is art, whatever it is of: "art of
+  // planets orbiting a burning star" is not a reaction to balance.
+  if dz_has(t, dz_art_asked()) { return "art" }
   if not al_which(ask.text).is_empty() { return "algorithm" }
   if t.starts_with(" convert ") { return "units" }
   if dz_has(t, [" periodic table", " periodic "]) or (se_find(ask.text) > 0 and dz_has(t, [" element", " atom", " electron", " tell me about ", " what is ", " shells"])) { return "element" }
@@ -284,7 +288,7 @@ fn dz_from_illustration(ask: DzAsk, r: ArtPage) -> DzResult {
 fn dz_from_art(ask: DzAsk, g: GenArt) -> DzResult {
   let place = dz_place(ask)
   let palette = dz_palette(ask.palette, g.recipe.palette)
-  let embed = if g.problems.is_empty() { dz_wrap("art", place, palette, g.recipe.title, g.svg, gen_style()) } else { "" }
+  let embed = if g.problems.is_empty() { dz_wrap("art", place, palette, g.recipe.title, g.svg + gen_strip(g), gen_style()) } else { "" }
   return {kind: "art", why: dz_why(ask), title: g.recipe.title, page: g.page, svg: g.svg, embed: embed, problems: g.problems, fixed: []}
 }
 
@@ -389,7 +393,7 @@ fn dz_from_canvas(ask: DzAsk, palette: Text, r: Request, d: Design, m: ArtPage, 
   let note = if left.is_empty() { "" } else { "<p class=\"kc-note\">Left out: " + art_esc(left.join("; ")) + ".</p>" }
   let both = not first.is_empty() and not second.is_empty()
   // Both drawn: one picture, the art and the structure together.
-  let grid = if both { dz_stage(r, d, m, dz_graph(dz_formula_for(ask.text)).svg, flows) } else { "<div>" + first + second + "</div>" }
+  let grid = if both { dz_stage(r, d, m, dz_graph(dz_formula_for(ask.text)).svg, flows, lead) } else { "<div>" + first + second + "</div>" }
   let field = dz_science_field(ask.text)
   let equation = dz_reaction(ask.text)
   let balanced = sc_balance(equation)
@@ -1513,7 +1517,7 @@ test "Kosika places the story's figures left to right, keeping their heights" {
 // sequence or a sketch keep their own drawing.
 fn dz_living_fits(s: Structure) -> Bool { return not ["compare", "timeline", "sequence", "sketch", "tree", "mindmap", "nested", "layers", "containers"].contains(s.shape) and s.parts.length() >= 2 and s.parts.length() <= 9 }
 
-fn dz_stage(r: Request, d: Design, m: ArtPage, graph: Text, flows: DzFlows) -> Text {
+fn dz_stage(r: Request, d: Design, m: ArtPage, graph: Text, flows: DzFlows, lead: Text) -> Text {
   let s = r.structure
   let scenes = dz_storyboard(s, m.art)
   let data = "[" + (for sc in scenes { dz_scene_json(sc) }).join(",") + "]"
@@ -1528,22 +1532,30 @@ fn dz_stage(r: Request, d: Design, m: ArtPage, graph: Text, flows: DzFlows) -> T
   // One entity when it fits: the parts are cards with living art inside
   // and what flows between them coloured by meaning; the moving picture
   // and the full diagram open beneath.
-  let living = dz_living_fits(s)
+  let living = lead == "illustration" and dz_living_fits(s)
   let open_art = "<details class=\"kc-full\"><summary>Open the moving picture</summary><div class=\"st-art\">" + m.svg + "</div></details>"
-  // A journey is drawn through the picture itself instead.
-  // Pins are worked out only for a shape that can be a journey: the whole
-  // run shares one budget of function calls.
-  let pins: DzPin[] = if ["flow", "timeline"].contains(s.shape) { dz_journey_pins(s, m.art) } else { [] }
-  let journey = dz_journey_fits(s, pins)
+  // A structure ask leads with the diagram, so its stage is the two-column
+  // one: the diagram played, the picture beside it. Drawing the explanation
+  // through the picture is for a how or why ask, whose canvas says it leads
+  // with the picture; its pins are worked out only then, which also keeps a
+  // big ask inside its budget of function calls.
+  let pins: DzPin[] = if lead != "illustration" { [] } else if ["flow", "timeline"].contains(s.shape) { dz_journey_pins(s, m.art) } else { [] }
+  let journey = lead == "illustration" and dz_journey_fits(s, pins)
   let road = "<div class=\"st-journey\">" + m.svg + dz_journey_svg(pins) + "</div><div class=\"st-opens\">" + open_full + "</div>"
-  let screen = if journey { road } else { dz_stage_screen(s, m, flows, living, form, open_art, open_full) }
+  let screen = if journey { road } else { dz_stage_screen(s, m, flows, living, form, open_art, open_full, lead) }
   let bar = "<div class=\"st-bar\"><span class=\"st-num\"></span><span class=\"st-caption\"></span><button class=\"st-prev\" type=\"button\">Back</button><button class=\"st-play\" type=\"button\">Pause</button><button class=\"st-next\" type=\"button\">Next</button></div>"
   let graph_part = if graph.is_empty() { "" } else { "<div class=\"st-graph\">" + graph + "</div>" }
   return "<div class=\"kc-card kc-stage\" data-scenes=\"" + art_esc(data) + "\"><div class=\"kc-label\">Kosika canvas &#183; <b>the explanation, played</b></div>" + screen + bar + "<div class=\"st-dots\">" + dots + "</div>" + graph_part + "<script>" + dz_stage_script() + "</script></div>"
 }
 
-fn dz_stage_screen(s: Structure, m: ArtPage, flows: DzFlows, living: Bool, form: Text, open_art: Text, open_full: Text) -> Text {
-  return if living { "<div class=\"st-living\">" + dz_living_svg(s, flows) + "</div><div class=\"st-opens\">" + open_art + open_full + "</div>" } else { "<div class=\"st-screen\"><div class=\"st-art\">" + m.svg + "</div><div class=\"st-map\">" + form + open_full + "</div></div>" }
+fn dz_stage_screen(s: Structure, m: ArtPage, flows: DzFlows, living: Bool, form: Text, open_art: Text, open_full: Text, lead: Text) -> Text {
+  if living { return "<div class=\"st-living\">" + dz_living_svg(s, flows) + "</div><div class=\"st-opens\">" + open_art + open_full + "</div>" }
+  let picture = "<div class=\"st-art\">" + m.svg + "</div>"
+  let structure = "<div class=\"st-map\">" + form + open_full + "</div>"
+  // Whichever the canvas says it leads with is the one on the left, so its
+  // why never describes a page the reader is not looking at: a structure ask
+  // opens with the diagram, played, and a how or why ask with the picture.
+  return if lead == "illustration" { "<div class=\"st-screen\">" + picture + structure + "</div>" } else { "<div class=\"st-screen\">" + structure + picture + "</div>" }
 }
 
 fn dz_unified(r: Request, d: Design, m: ArtPage) -> Text {
@@ -2047,6 +2059,12 @@ test "living cards: the art a part is, and what its links carry" {
 }
 
 fn dz_test_part(label: Text, note: Text) -> Part { return {id: "x", label: label, note: note, parent: ""} }
+
+test "art asked for in so many words is art, whatever it is of" {
+  expect dz_kind({text: "generative art of planets orbiting a burning star", palette: "", place: "studio", kind: ""}) == "art"
+  expect dz_kind({text: "a wallpaper of the periodic table", palette: "", place: "studio", kind: ""}) == "art"
+  expect dz_kind({text: "balance the burning of methane", palette: "", place: "studio", kind: ""}) == "chemistry"
+}
 
 test "style A: natural cycles draw their parts as living nodes, each moving as it means" {
   expect dz_meaning_motion(dz_test_part("Evaporation", "water vapor rises")) == "lc-rise"
