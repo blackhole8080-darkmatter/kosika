@@ -146,7 +146,7 @@ class Router:
             model["url"], data=json.dumps(sent).encode(), method="POST",
             headers={**({"Authorization": "Bearer " + os.environ[model["key"]]} if model.get("key") else {}),
                      "Content-Type": "application/json", "User-Agent": AGENT})
-        with urllib.request.urlopen(request, timeout=self.config["timeout_seconds"]) as answer:
+        with urllib.request.urlopen(request, timeout=model.get("timeout_seconds", self.config["timeout_seconds"])) as answer:
             return json.load(answer)
 
     def answer(self, body: dict) -> tuple[int, dict]:

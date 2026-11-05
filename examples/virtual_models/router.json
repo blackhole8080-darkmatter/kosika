@@ -32,9 +32,10 @@
       "key": "OPENROUTER_API_KEY"
     },
     "local": {
-      "id": "qwen2.5:7b",
+      "id": "qwen2.5-coder:7b",
       "url": "http://127.0.0.1:11434/v1/chat/completions",
-      "key": ""
+      "key": "",
+      "timeout_seconds": 1200
     }
   },
   "routes": {

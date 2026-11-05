@@ -803,7 +803,7 @@ fn tested(last: Last, ran: Ran) -> Result {
 // A file named as a pattern to follow, "like x.py" or "in the style of
 // x.py", is not written: it is shown, so what is written can follow it.
 fn file_plan(task: Task, folder: Listing) -> Plan {
-  let kinds = [".py", ".ts", ".js", ".mjs", ".kos", ".go", ".json", ".md", ".txt", ".html", ".css"]
+  let kinds = [".py", ".ts", ".js", ".mjs", ".kos", ".go", ".rs", ".c", ".h", ".cpp", ".java", ".json", ".md", ".txt", ".html", ".css"]
   var named: Text[] = []
   var seen: Text[] = []
   var before = ""
@@ -882,6 +882,43 @@ fn own_words(task: Task) -> Text {
   return task.text.split(pattern_mark())[0]
 }
 
+// ---------------------------------------------------------------- language packs
+//
+// What a careful programmer keeps in mind for each language, put in front
+// of the model with every file in it. Short on purpose: a free model's
+// question has little room, and what it most needs is the few rules it
+// most often breaks. Kosika's own engines have their house rules too: the
+// Python one is the reference, and the Go one must give the same answers,
+// failure words included.
+
+fn pack_for(path: Text) -> Text {
+  let name = path.lower().replace("\\", "/")
+  if name.ends_with(".py") {
+    let house = if name.starts_with("kosika/") { " This is Kosika's reference engine: a built-in method is one Method(receiver, name, ((param, Type), ...), result type, function) in the METHODS table of builtin_methods.py, and a failure is a RuntimeError whose words say what was wrong in plain language." } else { "" }
+    return "Python rules: keep the file's style, imports at the top, no print in a function that returns a value, and type hints only where the file already uses them." + house + "\n"
+  }
+  if name.ends_with(".go") {
+    let house = if name.starts_with("native/") { " This is Kosika's Go engine, which must give exactly what the Python engine gives: a method is an entry \"name\": {params, func(r Value, a []Value) Value {...}} in the map for its kind in methods.go, its type is an m(kind, name, result, param, type, ...) line in types.go, and a failure calls runFail with the same words as the Python engine." } else { "" }
+    return "Go rules: gofmt layout with tabs, every import used, no unused variables, errors returned rather than ignored, and only the standard library unless go.mod already has more." + house + "\n"
+  }
+  if name.ends_with(".rs") {
+    return "Rust rules: no unwrap on a value that can fail in normal use, Result for errors, borrow rather than clone where the borrow checker allows, and #[test] functions in a tests module at the bottom of the file.\n"
+  }
+  if name.ends_with(".c") or name.ends_with(".h") or name.ends_with(".cpp") {
+    return "C and C++ rules: check every allocation and every return code, free what you allocate, no buffer written past its size, and a header guarded against being included twice.\n"
+  }
+  if name.ends_with(".java") {
+    return "Java rules: one public class a file, named as the file, no raw types, and exceptions caught only where something can be done about them.\n"
+  }
+  if is_script(name) {
+    return "JavaScript and TypeScript rules: const unless a name is reassigned, === not ==, import what you use from a path that exists, and tests with node:test and node:assert.\n"
+  }
+  if is_kosika(name) {
+    return "Kosika rules: every fn ends with return; a thinking step is only ever a workflow line; a test can reach nothing, so every model answer and every tool answer it needs is scripted with answers.\n"
+  }
+  return ""
+}
+
 fn nth_one(job: Nth) -> One {
   return {task: job.task, path: job.plan.files[job.n], drafted: job.drafted, failure: ""}
 }
@@ -905,7 +942,7 @@ fn scribe_task(task: Task, path: Text, old: Text, drafted: Drafted, failure: Tex
   let tests = if is_test_file(path) or is_script_test(path) { " It is a test file: import what it tests from the files above by their names, keep the tests that are there, and add tests for what the task asks." } else { "" }
   let broken = if failure.trim().is_empty() { "" } else { "\nThe tests failed with this output. Find the cause in " + path + " and fix it:\n" + failure.take(2000) + "\n" }
   let guide = if task.text.lower().contains("tool") { kosika_tool_example() } else { kosika_example() }
-  let language = if is_kosika(path) { guide + "\n" } else { "" }
+  let language = (if is_kosika(path) { guide + "\n" } else { "" }) + pack_for(path)
   return {text: language + "Task: " + task.text + "\n" + shown + "\n" + now + broken + "\nWrite the complete new " + path + "." + tests + " Give only the file."}
 }
 
@@ -1035,7 +1072,7 @@ fn edit_task(task: Task, path: Text, old: Text, drafted: Drafted, failure: Text,
   let what = if whole { "This is all of " + path + " now:" } else { path + " is long, so these are the parts of it the task speaks of. A line \"" + left_out() + "\" stands for lines not shown. Everything it defines: " + defined(plain).take(80).join(", ") }
   let broken = if failure.trim().is_empty() { "" } else { "\nThe tests failed with this output. Find the cause in " + path + " and fix it:\n" + failure.take(2000) + "\n" }
   let again = if wrong.is_empty() { "" } else { "\nYour last edits were not applied, and nothing was changed:\n- " + wrong.join("\n- ") + "\nWrite all of them again, each FIND copied exactly from the file above.\n" }
-  let guide = if is_kosika(path) { (if task.text.lower().contains("tool") { kosika_tool_example() } else { kosika_example() }) + "\n" } else { "" }
+  let guide = (if is_kosika(path) { (if task.text.lower().contains("tool") { kosika_tool_example() } else { kosika_example() }) + "\n" } else { "" }) + pack_for(path)
   return {text: guide + "Task: " + task.text + "\n" + shown + "\n" + what + "\n```\n" + part + "```\n" + broken + again + "\n" + edit_rules(path)}
 }
 
@@ -1073,6 +1110,7 @@ fn apply_one(text: Text, find: Text[], put: Text[], n: Number) -> Patched {
   let seek = find.join("\n")
   let label = "edit " + n.to_text()
   if seek.trim().is_empty() { return {text: text, problems: [label + " has nothing in its FIND"]} }
+  if put.join("\n").contains(left_out()) { return {text: text, problems: [label + " puts the line \"" + left_out() + "\" into the file; that line only marks what was not shown to you, so REPLACE must hold real lines only"]} }
   let times = text.count(seek)
   if times == 0 { return {text: text, problems: [label + "'s FIND is not in the file: " + near(text, find)]} }
   if times > 1 { return {text: text, problems: [label + "'s FIND is in " + times.to_text() + " places; give it more lines, so it is in one"]} }
@@ -1124,6 +1162,17 @@ fn patched(old: Text, answer: Text) -> Patched {
   return {text: if crlf { text.replace("\n", "\r\n") } else { text }, problems: []}
 }
 
+fn no_problems() -> Engine {
+  return {problems: []}
+}
+
+// The edits, or nothing and what the engine found, when it found anything.
+fn engine_said(edits: Patched, read: Engine) -> Patched {
+  if read.problems.is_empty() { return edits }
+  let said = for problem in read.problems.take(4) { "after the edits, " + problem }
+  return {text: "", problems: said}
+}
+
 fn kept_patch(patch: Patched) -> Patched {
   return patch
 }
@@ -1139,6 +1188,13 @@ fn drafted_work(drafted: Drafted) -> Work {
 // expects the wrong thing is put right as readily as the code. Without
 // such a line, the first file written.
 fn to_mend(drafted: Drafted, output: Text) -> Text {
+  // Kosika's checker naming a method it does not know: the method was not
+  // registered, whatever line of the test the failure points at.
+  if not unknown_method(output).is_empty() {
+    for file in drafted.files {
+      if file.path.replace("\\", "/").ends_with("builtin_methods.py") { return file.path }
+    }
+  }
   var chosen = ""
   for file in drafted.files {
     if chosen.is_empty() { chosen = file.path }
@@ -1151,10 +1207,29 @@ fn to_mend(drafted: Drafted, output: Text) -> Text {
   return chosen
 }
 
+// The method a failure says Kosika has no such method as, or "".
+fn unknown_method(output: Text) -> Text {
+  let mark = "has no method '"
+  let at = output.index_of(mark).or(default: -1)
+  if at < 0 { return "" }
+  let rest = output.drop(at + mark.length())
+  return rest.take(rest.index_of("'").or(default: 0))
+}
+
+// What a failure means, said plainly before it, where the program can tell:
+// a small model reads a traceback's last lines and guesses, and a known
+// failure needs no guess.
+fn with_hint(output: Text) -> Text {
+  let name = unknown_method(output)
+  if name.is_empty() { return output }
+  return "The cause: Kosika does not know the method " + name + " at all, so it was never registered. A helper function alone is not enough: add a Method(...) line for " + name + " to the METHODS table in builtin_methods.py, beside the methods of the same kind, that calls the helper.\n\n" + output
+}
+
 // The second time a change is put right, the other file: when a test
 // keeps failing after its own file was rewritten, the fault is as likely in
 // the code it tests, and the reverse.
 fn to_mend_again(drafted: Drafted, output: Text) -> Text {
+  if not unknown_method(output).is_empty() { return to_mend(drafted, output) }
   let first = to_mend(drafted, output)
   for file in drafted.files {
     if file.path != first { return file.path }
@@ -1505,7 +1580,8 @@ workflow write_one(job: Editing) -> Drafted {
 workflow edit_one(job: Editing) -> Drafted {
   asked  = edit_task(job.one.task, job.one.path, job.old, job.one.drafted, job.one.failure, [])
   answer = use_model scribe(asked.text) retry 1 otherwise {text: ""}
-  first  = patched(job.old, answer.text)
+  edited = patched(job.old, answer.text)
+  first  = call engine_reads(job, edited)
   fixed  = match first.problems.is_empty() {
     case true { kept_patch(first) }
     case _ { call edit_again({one: job.one, old: job.old, wrong: first.problems}) }
@@ -1516,13 +1592,29 @@ workflow edit_one(job: Editing) -> Drafted {
 workflow edit_again(job: Editing) -> Patched {
   asked  = edit_task(job.one.task, job.one.path, job.old, job.one.drafted, job.one.failure, job.wrong)
   answer = use_model scribe(asked.text) retry 1 otherwise {text: ""}
-  result = patched(job.old, answer.text)
+  edited = patched(job.old, answer.text)
+  result = call engine_reads(job, edited)
+}
+
+// Edits that all applied still make a file Kosika's engine reads first:
+// Python that does not parse, or Kosika that does not check, is an edit
+// gone wrong, said back to the model as any other.
+workflow engine_reads(job: Editing, edits: Patched) -> Patched {
+  read   = match edits.text.is_empty() {
+    case true { no_problems() }
+    case _ { call engine_on(job, edits) }
+  }
+  result = engine_said(edits, read)
+}
+
+workflow engine_on(job: Editing, edits: Patched) -> Engine {
+  read = execute helper.code_check(job.one.task.text, [{path: job.one.path, text: edits.text, before: job.old, exists: true}]) otherwise {problems: []}
 }
 
 // The tests fail: the file they point at is written again, shown what they
 // printed, and everything is tested once more.
 workflow mend_directly(task: Task, drafted: Drafted, before: Result) -> Result {
-  fixed  = call draft_one({task: task, path: to_mend(drafted, before.last.output), drafted: drafted, failure: before.last.output})
+  fixed  = call draft_one({task: task, path: to_mend(drafted, before.last.output), drafted: drafted, failure: with_hint(before.last.output)})
   saved  = execute writer.save_all(fixed.files, "Put right after the tests failed: " + task.text.take(200))
   work   = drafted_work(fixed)
   tested = call run_tests(work)
@@ -1536,7 +1628,7 @@ workflow mend_directly(task: Task, drafted: Drafted, before: Result) -> Result {
 }
 
 workflow mend_last(task: Task, drafted: Drafted, before: Result) -> Result {
-  fixed  = call draft_one({task: task, path: to_mend_again(drafted, before.last.output), drafted: drafted, failure: before.last.output})
+  fixed  = call draft_one({task: task, path: to_mend_again(drafted, before.last.output), drafted: drafted, failure: with_hint(before.last.output)})
   saved  = execute writer.save_all(fixed.files, "Put right a second time: " + task.text.take(200))
   work   = drafted_work(fixed)
   tested = call run_tests(work)
@@ -1614,6 +1706,68 @@ fn method_asked(task: Task) -> MethodAsked {
   return {kind: fixed, name: name, text: task.text}
 }
 
+fn needs_registering(asked: MethodAsked, tried: Result) -> Bool {
+  return not tried.last.passed and unknown_method(tried.last.output) == asked.name
+}
+
+// A Python type as Kosika names it, or "" when there is no plain match.
+fn kosika_type(python: Text) -> Text {
+  let t = python.replace(" ", "")
+  let optional = t.ends_with("|None")
+  let base = plain_type(if optional { t.take(t.length() - 5) } else { t })
+  if base.is_empty() { return "" }
+  return if optional { base + "?" } else { base }
+}
+
+fn plain_type(t: Text) -> Text {
+  if t == "str" { return "Text" }
+  if t == "bool" { return "Bool" }
+  if t == "int" or t == "float" or t == "int|float" or t == "float|int" { return "Number" }
+  if t == "list[str]" { return "Text[]" }
+  if t == "list[int]" or t == "list[float]" or t == "list[int|float]" { return "Number[]" }
+  return ""
+}
+
+// builtin_methods.py with the method registered, when its function
+// `_NAME(...) -> T` is there and no Method line names it yet; else as it is.
+// The line goes before the first one-line Method of the same kind, so it
+// sits among its own.
+fn registered(text: Text, asked: MethodAsked) -> Text {
+  let plain = text.replace("\r\n", "\n")
+  if plain.contains("\"" + asked.name + "\",") { return text }
+  let head = "def _" + asked.name + "("
+  let at = plain.index_of(head).or(default: -1)
+  if at < 0 { return text }
+  let signature = plain.drop(at + head.length()).split(":\n")[0]
+  let params = signature.split(")")[0].split(",").drop(1)
+  let returned = if signature.contains("->") { kosika_type(signature.split("->")[1]) } else { "" }
+  if returned.is_empty() { return text }
+  var shown: Text[] = []
+  for param in params {
+    let parts = param.split(":")
+    if parts.length() != 2 { return text }
+    let kind = kosika_type(parts[1])
+    if kind.is_empty() { return text }
+    shown = shown.append("(\"" + parts[0].trim() + "\", \"" + kind + "\")")
+  }
+  let args = if shown.is_empty() { "()" } else { "(" + shown.join(", ") + (if shown.length() == 1 { ",)" } else { ")" }) }
+  let receiver = if asked.kind == "array" { "ANY_ARRAY" } else { "\"" + asked.kind + "\"" }
+  let line = "    Method(" + receiver + ", \"" + asked.name + "\", " + args + ", \"" + returned + "\", _" + asked.name + "),"
+  let marker = "\n    Method(" + receiver + ", "
+  let place = plain.index_of(marker).or(default: -1)
+  if place < 0 { return text }
+  let now = plain.take(place) + "\n" + line + plain.drop(place)
+  return if text.contains("\r\n") { now.replace("\n", "\r\n") } else { now }
+}
+
+fn registered_work(asked: MethodAsked) -> Work {
+  return {summary: "Registered " + asked.name + " in the METHODS table, from its function's signature.", did: ["save_all kosika/builtin_methods.py", "save_all tests/test_" + asked.name + ".py"]}
+}
+
+fn after_registering(tried: Result, report: Result) -> Result {
+  return {text: tried.text + "\n\nThe method was written but not registered, so I registered it in the METHODS table myself and ran the tests again:\n" + report.text, last: report.last}
+}
+
 fn python_part(asked: MethodAsked) -> Task {
   let table = if asked.kind == "array" { "beside the other ANY_ARRAY methods" } else { "beside the other \"" + asked.kind + "\" methods" }
   return {text: asked.text + ". Do it in kosika/builtin_methods.py, as one Method in the METHODS table " + table + ", with a helper function above the table only if it needs more than one line. Write tests for it in tests/test_" + asked.name + ".py in the style of tests/test_short_methods.py, running small Kosika programs that call it"}
@@ -1644,12 +1798,31 @@ fn docs_part(asked: MethodAsked) -> Task {
   return {text: "in KOSIKA.md, add one row for the " + asked.kind + " method " + asked.name + " to the table of methods, just after the last row for a " + asked.kind + " method, in the same shape as the rows around it. What it does: " + asked.text}
 }
 
-// The three parts' reports, in order, under one opening line.
-fn all_parts(asked: MethodAsked, python: Result, go: Result, docs: Result) -> Result {
-  let passed = python.last.passed and go.last.passed
+// Calls the new method on sample values in both engines and compares what
+// they give: the one check that shows the Go engine does what the Python
+// one does, not just that it compiles. A method that takes arguments is
+// skipped, as there are no samples for what it takes.
+fn agree_script() -> Text {
+  return "import re, subprocess, sys, tempfile, os\nname, kind = sys.argv[1], sys.argv[2]\nsource = open('kosika/builtin_methods.py', encoding='utf-8').read()\nfound = re.search(r'Method\\(\\s*\"' + kind + r'\",\\s*\"' + name + r'\",\\s*\\((.*?)\\),\\s*\"([^\"]+)\"', source, re.S)\nif not found:\n    print('the Python engine has no Method line for ' + kind + ' ' + name)\n    sys.exit(1)\nif found.group(1).strip():\n    print('skipped: ' + name + ' takes arguments, so no sample call is made')\n    sys.exit(0)\nresult = found.group(2)\nsamples = {'Text': ['\"\"', '\"abc\"', '\" 12 \"', '\"0\"', '\"Hello World\"'], 'Number': ['0', '-2.5', '7', '1000000'], 'Bool': ['true', 'false']}.get(kind)\nif samples is None:\n    print('skipped: no samples for ' + kind)\n    sys.exit(0)\nfields = ' '.join('v%d: %s' % (i, result) for i in range(len(samples)))\nvalues = ', '.join('v%d: (%s).%s()' % (i, s, name) for i, s in enumerate(samples))\nprogram = 'record Out { ' + fields + ' }\\nfn f() -> Out {\\n  return {' + values + '}\\n}\\nworkflow main() -> Out { out = f() }\\n'\nfolder = tempfile.mkdtemp()\npath = os.path.join(folder, 'agree.kos')\nopen(path, 'w', encoding='utf-8').write(program)\npy = subprocess.run([sys.executable, '-m', 'kosika.cli', 'run', path], capture_output=True, text=True, cwd=folder, env=dict(os.environ, PYTHONPATH=os.getcwd()))\ngo = subprocess.run(['go', '-C', os.path.join(os.getcwd(), 'native'), 'run', '.', 'run', path], capture_output=True, text=True, cwd=folder)\nfirst = lambda ran: (ran.stdout.strip().splitlines() or [ran.stderr.strip()[-300:]])[0]\nprint('Python engine: ' + first(py))\nprint('Go engine:     ' + first(go))\nsys.exit(0 if py.returncode == 0 and go.returncode == 0 and first(py) == first(go) else 1)\n"
+}
+
+fn agree_args(asked: MethodAsked) -> Text[] {
+  return ["-c", agree_script(), asked.name, asked.kind]
+}
+
+fn go_again(asked: MethodAsked, python: Text, agreed: Ran) -> Task {
+  let first = go_part(asked, python)
+  return {text: first.text + "\n\nThis was tried once, and the two engines do not agree. Called on the same values, they said:\n" + agreed.stdout.take(1200) + agreed.stderr.take(400) + "\nIf the Go engine says it has no method " + asked.name + ", the entry in native/methods.go is missing: add it to the map, beside the methods like it."}
+}
+
+// The three parts' reports, in order, under one opening line, and what the
+// engines said when they were compared.
+fn all_parts(asked: MethodAsked, python: Result, go: Result, docs: Result, agreed: Ran) -> Result {
+  let same = agreed.exit_code == 0
+  let passed = python.last.passed and go.last.passed and same
   let opening = "I added the " + asked.kind + " method " + asked.name + " to Kosika in three parts: the Python engine, the Go engine and KOSIKA.md."
   return {
-    text: opening + "\n\nPython engine:\n" + python.text + "\n\nGo engine:\n" + go.text + "\n\nKOSIKA.md:\n" + docs.text,
+    text: opening + "\n\nPython engine:\n" + python.text + "\n\nGo engine:\n" + go.text + "\n\nKOSIKA.md:\n" + docs.text + "\n\n" + (if same { "The two engines agree:\n" } else { "The two engines do NOT agree, so this is not done:\n" }) + agreed.stdout.take(1200),
     last: {task: asked.text, output: go.last.output, passed: passed, known: true}
   }
 }
@@ -1661,7 +1834,14 @@ fn stopped_after(asked: MethodAsked, python: Result) -> Result {
 
 workflow kosika_method(task: Task) -> Result {
   asked  = method_asked(task)
-  python = call on_my_own(python_part(asked))
+  tried  = call on_my_own(python_part(asked))
+  // A small model often writes the method's function and never registers
+  // it. Registering is exact work, so the program does it, from the
+  // function's own signature, and runs the tests again.
+  python = match needs_registering(asked, tried) {
+    case true { call register_method(asked, tried) }
+    case _ { as_is(tried) }
+  }
   result = match python.last.passed {
     case true { call method_rest(asked, python) }
     case _ { stopped_after(asked, python) }
@@ -1669,11 +1849,41 @@ workflow kosika_method(task: Task) -> Result {
   require approval
 }
 
+workflow register_method(asked: MethodAsked, tried: Result) -> Result {
+  source = execute coder.read_file("kosika/builtin_methods.py") otherwise {text: ""}
+  now    = registered(source.text, asked)
+  result = match now == source.text {
+    case true { as_is(tried) }
+    case _ { call save_registered({asked: asked, old: source.text, now: now, tried: tried}) }
+  }
+  require approval
+}
+
+// The registry file before and after the program registered a method.
+record Registering { asked: MethodAsked old: Text now: Text tried: Result }
+
+workflow save_registered(job: Registering) -> Result {
+  saved  = execute writer.save_all([{path: "kosika/builtin_methods.py", text: job.now, before: job.old, exists: true}], "Registers " + job.asked.name + " in the METHODS table, from its function's signature.")
+  work   = registered_work(job.asked)
+  tested = call run_tests(work)
+  report = worked_on({text: job.asked.text}, work, tested)
+  result = after_registering(job.tried, report)
+  require approval
+}
+
 workflow method_rest(asked: MethodAsked, python: Result) -> Result {
   source = execute coder.read_file("kosika/builtin_methods.py") otherwise {text: ""}
-  go     = call on_my_own(go_part(asked, python_lines(source.text, asked.name)))
+  first  = call on_my_own(go_part(asked, python_lines(source.text, asked.name)))
+  agreed = execute runner.run_python(agree_args(asked))
+  // The engines disagree, or the Go one has no such method: the Go part is
+  // asked for once more, told what each engine said.
+  go     = match agreed.exit_code == 0 {
+    case true { as_is(first) }
+    case _ { call on_my_own(go_again(asked, python_lines(source.text, asked.name), agreed)) }
+  }
+  again  = execute runner.run_python(agree_args(asked))
   docs   = call on_my_own(docs_part(asked))
-  result = all_parts(asked, python, go, docs)
+  result = all_parts(asked, python, go, docs, again)
   require approval
 }
 
@@ -2397,4 +2607,72 @@ test "the second try at putting a change right takes the other file" {
   expect to_mend_again(both, "test_calc.py:5: AssertionError") == "calc.py"
   one = with_draft(no_drafts(), "calc.py", "", "x = 1")
   expect to_mend_again(one, "calc.py:1: NameError") == "calc.py"
+}
+
+test "each language has its own rules, and Kosika's engines their house rules" {
+  expect pack_for("calc.py").starts_with("Python rules")
+  expect not pack_for("calc.py").contains("reference engine")
+  expect pack_for("kosika/builtin_methods.py").contains("METHODS table")
+  expect pack_for("native/methods.go").contains("runFail")
+  expect pack_for("main.go").starts_with("Go rules")
+  expect pack_for("src/lib.rs").starts_with("Rust rules")
+  expect pack_for("src/main.c").starts_with("C and C++")
+  expect pack_for("App.java").starts_with("Java rules")
+  expect pack_for("text.ts").starts_with("JavaScript")
+  expect pack_for("README.md") == ""
+  expect file_plan({text: "add a function to src/lib.rs, with a test"}, {names: []}).files == ["src/lib.rs"]
+  expect scribe_task({text: "add sign"}, "native/methods.go", "package main", no_drafts(), "").text.contains("Go engine")
+}
+
+test "a method Kosika does not know is put right where it is registered" {
+  both = with_draft(with_draft(no_drafts(), "kosika/builtin_methods.py", "", "x = 1"), "tests/test_is_digits.py", "", "def test_a(): pass")
+  failure = "tests\\test_is_digits.py:26: in test_a\nE   kosika.checker.CheckError: Step 'function f' unknown method: 'Text' has no method 'is_digits'; available: add_days"
+  expect unknown_method(failure) == "is_digits"
+  expect unknown_method("1 failed") == ""
+  expect to_mend(both, failure) == "kosika/builtin_methods.py"
+  expect to_mend_again(both, failure) == "kosika/builtin_methods.py"
+  expect with_hint(failure).starts_with("The cause: Kosika does not know the method is_digits")
+  expect with_hint("1 failed") == "1 failed"
+}
+
+test "a new method counts as done only when both engines give the same answers" {
+  asked: MethodAsked = {kind: "Text", name: "is_digits", text: "add a Text method is_digits()"}
+  expect agree_args(asked)[0] == "-c"
+  expect agree_args(asked)[2] == "is_digits"
+  expect agree_script().contains("'go', '-C', os.path.join(os.getcwd(), 'native')")
+  ok: Result = {text: "fine", last: {task: "t", output: "", passed: true, known: true}}
+  same = all_parts(asked, ok, ok, ok, {exit_code: 0, stdout: "Python engine: {}\nGo engine:     {}", stderr: ""})
+  expect same.last.passed
+  expect same.text.contains("The two engines agree")
+  apart = all_parts(asked, ok, ok, ok, {exit_code: 1, stdout: "Go engine: no method", stderr: ""})
+  expect not apart.last.passed
+  expect apart.text.contains("do NOT agree")
+  expect go_again(asked, "", {exit_code: 1, stdout: "Go engine: kosika-native has no method 'is_digits'", stderr: ""}).text.contains("native/methods.go is missing")
+}
+
+test "an edit that writes the left-out marker, or that the engine cannot read, changes nothing" {
+  old = "a = 1\nb = 2\n"
+  marked = patched(old, "<<<<<<< FIND\nb = 2\n=======\nb = 2\n... (lines left out) ...\n>>>>>>> REPLACE")
+  expect marked.text == ""
+  expect marked.problems[0].contains("REPLACE must hold real lines only")
+  fine: Patched = {text: "a = 1\n", problems: []}
+  expect engine_said(fine, {problems: []}).text == "a = 1\n"
+  broken = engine_said(fine, {problems: ["big.py line 3: invalid syntax"]})
+  expect broken.text == ""
+  expect broken.problems == ["after the edits, big.py line 3: invalid syntax"]
+}
+
+test "a method written but not registered is registered by the program" {
+  asked: MethodAsked = {kind: "Text", name: "is_digits", text: "add a Text method is_digits()"}
+  file = "def _is_digits(text: str) -> bool:\n    return text.isdigit()\n\n\nMETHODS = (\n    Method(\"Text\", \"upper\", (), \"Text\", f),\n)\n"
+  now = registered(file, asked)
+  expect now.contains("    Method(\"Text\", \"is_digits\", (), \"Bool\", _is_digits),\n    Method(\"Text\", \"upper\"")
+  expect registered(now, asked) == now
+  padded = registered("def _pad_center(text: str, width: int, fill: str) -> str:\n    pass\nM = (\n    Method(\"Text\", \"upper\", (), \"Text\", f),\n)\n", {kind: "Text", name: "pad_center", text: ""})
+  expect padded.contains("Method(\"Text\", \"pad_center\", ((\"width\", \"Number\"), (\"fill\", \"Text\")), \"Text\", _pad_center),")
+  expect registered("no function here", asked) == "no function here"
+  expect kosika_type("int | None") == "Number?"
+  expect kosika_type("dict") == ""
+  failed: Result = {text: "t", last: {task: "t", output: "'Text' has no method 'is_digits'; available", passed: false, known: true}}
+  expect needs_registering(asked, failed)
 }
