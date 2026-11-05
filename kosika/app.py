@@ -2344,6 +2344,12 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
 
                 self._send(200, icon_bytes(), "image/x-icon")
                 return
+            if method == "GET" and url.path in ("/icon-192.png", "/icon-512.png"):
+                # The same mark, sharp, for the window's taskbar icon.
+                from .desktop_app import icon_png
+
+                self._send(200, icon_png(192 if "192" in url.path else 512), "image/png")
+                return
             if method == "GET" and url.path.startswith("/fonts/"):
                 # The two typefaces Kosika carries. Like the icon they are
                 # the same for everyone, and only those two files are given.
