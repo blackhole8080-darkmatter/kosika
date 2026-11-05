@@ -222,8 +222,7 @@ fn br_recipe_from(had: CanvasesRecalled, pick: Text) -> BrainRecipe { return br_
 // recipe; so does a canvas you rated down.
 fn br_fresh(text: Text) -> Bool {
   let t = " " + text.lower() + " "
-  let words = [" redraw", " draw it again", " fresh", " new one", " new picture", " new ", " another", " different", " unique", " surprise", " something else", " original", " creative", " never seen"]
-  return (for w in words where t.contains(w) { w }).length() > 0
+  return t.contains(" redraw") or t.contains(" draw it again") or t.contains(" fresh") or t.contains(" new one") or t.contains(" new picture")
 }
 
 // Art is made new every time: given again it would be the same piece.
@@ -313,8 +312,31 @@ fn br_choose(m: BrainMind, text: Text) -> BrainChoice {
 
 // The ask with the learned kind, when the words leave the kind open and
 // the person did not name one.
+// The Brain's choice for an ask. When the words settle the kind, the
+// Brain still listens to what it has learned: if your ratings taught it
+// that the kind the words pick goes badly for asks like this one, and it
+// is sure of another, it overrules the words and says so.
+//
+// Overruling needs both: the words' kind well under even (below 0.25,
+// where "no opinion" is 0.3) and another kind well over it (0.6 or more).
+fn br_choose_for(m: BrainMind, ask: DzAsk) -> BrainChoice {
+  if not dz_kind_sure(ask) { return br_choose(m, ask.text) }
+  let none: BrainChoice = {kind: "", sure: 0, why: ""}
+  if m.seen < 3 or br_words(ask.text).is_empty() { return none }
+  let words = dz_kind(ask)
+  let out = predict(m.net, br_features(ask.text))
+  let at = m.kinds.index_of(words)
+  if not at.exists() or out[at.value()] >= 0.25 { return none }
+  let sure = out.max().or(0)
+  let best = m.kinds[out.index_of(sure).or(0)]
+  if best == words or sure < 0.6 { return none }
+  let pct = (sure * 100).round()
+  return {kind: best, sure: sure, why: f"The words pointed to {words}, but Kosika has learned from {m.seen} drawings and ratings that {words} goes badly for asks like this, so it chose {best} itself ({pct}% sure)"}
+}
+
 fn br_with_kind(ask: DzAsk, c: BrainChoice) -> DzAsk {
-  if not ask.kind.trim().is_empty() or dz_kind_sure(ask) or c.kind.is_empty() { return ask }
+  let overrules = c.why.starts_with("The words pointed")
+  if not ask.kind.trim().is_empty() or (dz_kind_sure(ask) and not overrules) or c.kind.is_empty() { return ask }
   return {..ask, kind: c.kind}
 }
 
@@ -565,7 +587,7 @@ workflow brain_design(ask: DzAsk) -> DzResult {
   recipe = br_recipe_from(made, pick)
   had    = recall minds under "kind"
   mind   = br_mind_of(had)
-  choice = br_choose(mind, ask.text)
+  choice = br_choose_for(mind, ask)
   drawn  = match br_reusable(recipe, ask) {
     case true { br_reused(recipe) }
     case _ { call design(br_with_kind(ask, choice)) }
@@ -622,15 +644,20 @@ workflow brain_rate(r: BrainRating) -> BrainRated {
 workflow brain_rate_kept(r: BrainRating, c: BrainCanvas) -> BrainRated {
   saved  = remember br_rated_canvas(c, r) in canvases under br_key("canvas", c.topic)
   had    = recall minds under "kind"
-  taught = remember br_learn(br_mind_of(had), c.topic, c.kind, br_rated_value(r)) in minds under "kind"
+  taught = remember br_learn(br_mind_of(had), c.topic, c.kind, br_kind_value(c, r)) in minds under "kind"
   tasted = match c.kind == "art" {
-    case true { call gen_taste_rate({take: gen_take_of(c.svg), liked: r.liked}) }
+    case true { call gen_taste_rate({svg: c.svg, liked: r.liked}) }
     case _ { gen_no_taste() }
   }
   out    = br_rated_said(c, r)
 }
 
 fn br_rated_value(r: BrainRating) -> Number { return if r.liked { 1 } else { 0 } }
+
+// What a thumb teaches about the kind. A thumb down on art is about the
+// piece, its layers and colours, which Kosika's eye learns; it does not say
+// art was the wrong kind of picture, so the kind is not taught (-1).
+fn br_kind_value(c: BrainCanvas, r: BrainRating) -> Number { return if c.kind == "art" and not r.liked { -1 } else { br_rated_value(r) } }
 
 // ---------------------------------------------------------------- tests
 
@@ -688,6 +715,29 @@ test "the canvas says what the Brain remembered" {
   expect br_words("Show me how a binary search tree inserts 7 again") == ["binar", "searc", "tree", "inser", "7"]
 }
 
+test "the Brain overrules the words when your ratings taught it they go badly" {
+  ask: DzAsk = {text: "the burning of a star at night", palette: "", place: "studio", kind: ""}
+  expect dz_kind(ask) == "chemistry" and dz_kind_sure(ask)
+  m0 = br_new_mind()
+  m1 = br_learn(m0, "a burning star at night", "chemistry", 0)
+  m2 = br_learn(m1, "a burning star at night", "art", 1)
+  m3 = br_learn(m2, "the burning star at night", "chemistry", 0)
+  m4 = br_learn(m3, "burning star at night", "art", 1)
+  c = br_choose_for(m4, ask)
+  expect c.kind == "art"
+  expect c.why.starts_with("The words pointed to chemistry, but Kosika has learned from 4 drawings")
+  expect br_with_kind(ask, c).kind == "art"
+  // A thumb down on art teaches the eye, not that art was the wrong kind.
+  art: BrainCanvas = {..br_no_canvas(), kind: "art"}
+  expect br_kind_value(art, {ask: "x", liked: false}) == -1
+  expect br_kind_value(art, {ask: "x", liked: true}) == 1
+  expect br_kind_value({..art, kind: "diagram"}, {ask: "x", liked: false}) == 0
+  expect br_learn(m0, "a burning star", "art", -1).seen == 0
+  // Untaught, the words stand.
+  expect br_choose_for(m0, ask).kind == ""
+  expect br_with_kind(ask, br_choose_for(m0, ask)).kind == ""
+}
+
 fn br_test_canvas(topic: Text, score: Number) -> BrainCanvas { return {..br_no_canvas(), topic: topic, words: br_words(topic).join(" "), kind: "canvas", title: "Water Cycle", why: "drew all three", page: "<p>page</p>", embed: "<div class=\"kd-title\">Water Cycle</div>", score: score} }
 
 fn br_test_episode(c: BrainCanvas) -> BrainNote { return {kind: "episode", topic: c.topic, words: c.words, text: "drew it", source: "test", score: 1, times: 1} }
@@ -743,7 +793,8 @@ test "the Brain learns which kind of drawing suits asks like these" {
   // An ask with mostly new words: it is not sure, so it says nothing.
   expect br_choose(m, "what makes a volcano erupt").kind == ""
   expect c.why.starts_with("Kosika chose canvas itself: it has learned from 4 drawings and ratings")
-  // A kind named by the person, or settled by the words, is never overruled.
+  // A kind named by the person is never overruled; one settled by the words
+  // only when the Brain has learned it goes badly (below).
   expect br_with_kind({text: "how do the ocean tides move", palette: "", place: "studio", kind: "diagram"}, c).kind == "diagram"
   expect br_with_kind({text: "how do the ocean tides move", palette: "", place: "studio", kind: ""}, c).kind == "canvas"
   expect br_with_kind({text: "sort 3 1 2", palette: "", place: "studio", kind: ""}, c).kind == ""

@@ -16,8 +16,9 @@
 // one namespace.
 
 import "designs_palette.kos"
+import "nn.kos"
 
-export [GenRecipe, GenAsk, GenArt, GenFor, GenTake, GenTaste, GenRate, gen_pieces, gen_problems, gen_svg, gen_style, gen_page, gen_render, gen_make, gen_for, gen_backdrop, gen_takes, gen_score, gen_layered, gen_strip, gen_take_of, gen_taste_rate, gen_no_taste]
+export [GenRecipe, GenAsk, GenArt, GenFor, GenTake, GenTaste, GenRate, gen_pieces, gen_problems, gen_svg, gen_style, gen_page, gen_render, gen_make, gen_for, gen_backdrop, gen_takes, gen_score, gen_layered, gen_strip, gen_take_of, gen_taste_rate, gen_no_taste, GenEye, gen_new_eye, gen_judged, gen_eye_features]
 
 record GenRecipe { piece: Text palette: Text mood: Text seed: Number density: Number title: Text }
 record GenAsk { text: Text }
@@ -26,15 +27,25 @@ record GenBrief { task: Text ask: Text }
 // it and why. key names the layers ("flow+waves+mirror+ocean"), so a take
 // can be told from those already made, and your thumbs can teach which
 // layers you like.
-record GenTake { recipe: GenRecipe under: Text symmetry: Text focal: Bool grain: Bool key: Text svg: Text score: Number why: Text[] }
+record GenTake { recipe: GenRecipe under: Text symmetry: Text focal: Bool grain: Bool key: Text svg: Text score: Number why: Text[] marks: Number[] }
 record GenArt { recipe: GenRecipe svg: Text page: Text problems: Text[] takes: GenTake[] }
 
 // What the Brain has learned about art: the takes it has made, and those
 // you liked and did not.
 record GenTaste { seen: Text[] liked: Text[] disliked: Text[] }
-record GenRate { take: Text liked: Bool }
+record GenRate { svg: Text liked: Bool }
 
 memory tastes of GenTaste
+
+// Kosika's eye: a small network (std/nn.kos) that learns from your thumbs
+// what you find beautiful. It reads a take as numbers, its contrast,
+// balance, variety and novelty and which piece, field, symmetry and palette
+// it was made from, and says how likely you are to like it. Unlike a list
+// of liked takes, it carries over: liking reflections on a sea makes a
+// reflected forest more likely to be chosen too.
+record GenEye { net: Net xs: Number[][] ys: Number[][] seen: Number }
+
+memory eyes of GenEye
 
 model gen_artist {
   input: GenBrief
@@ -264,7 +275,7 @@ fn gen_key(r: GenRecipe, under: Text, symmetry: Text) -> Text {
 }
 
 fn gen_take(r: GenRecipe, under: Text, symmetry: Text, focal: Bool, grain: Bool) -> GenTake {
-  let t: GenTake = {recipe: r, under: under, symmetry: symmetry, focal: focal, grain: grain, key: gen_key(r, under, symmetry), svg: "", score: 0, why: []}
+  let t: GenTake = {recipe: r, under: under, symmetry: symmetry, focal: focal, grain: grain, key: gen_key(r, under, symmetry), svg: "", score: 0, why: [], marks: []}
   return {..t, svg: gen_layered(t)}
 }
 
@@ -297,21 +308,38 @@ fn gen_from_key(r: GenRecipe, key: Text, k: Number) -> GenTake {
 // Four takes: the artist's piece as it chose it, when that was never made,
 // and then layerings not made before, picked by the seed; when every one
 // has been made, any four.
-fn gen_takes(r: GenRecipe, taste: GenTaste) -> GenTake[] {
+fn gen_takes(r: GenRecipe, taste: GenTaste) -> GenTake[] { return gen_takes_of(r, taste, 4) }
+
+fn gen_takes_of(r: GenRecipe, taste: GenTaste, count: Number) -> GenTake[] {
   let all = gen_grammar(r)
   let fresh = for x in all where not taste.seen.contains(x) { x }
-  let pool = if fresh.length() >= 4 { fresh } else { all }
+  let pool = if fresh.length() >= count { fresh } else { all }
   let start = (gen_noise(r.seed, 3) * pool.length()).floor()
   let step = if pool.length() % 7 == 0 { 1 } else { 7 }
   var keys: Text[] = []
   if not taste.seen.contains(all[0]) { keys = [all[0]] }
   var k = 0
-  while keys.length() < 4 and k < pool.length() {
+  while keys.length() < count and k < pool.length() {
     let x = pool[(start + k * step) % pool.length()]
     if not keys.contains(x) { keys = keys.append(x) }
     k += 1
   }
   return for i in 0 until keys.length() { gen_score(gen_from_key(r, keys[i], i), taste) }
+}
+
+// With an eye that knows your taste, Kosika sketches eight takes, lets the
+// eye judge them all, and keeps the four best to show: it looks harder for
+// what you would like, as a painter makes studies before the canvas.
+fn gen_takes_judged(r: GenRecipe, taste: GenTaste, eye: GenEye) -> GenTake[] {
+  if not gen_eye_ready(eye) { return gen_takes(r, taste) }
+  var left = for t in gen_takes_of(r, taste, 8) { gen_judged(t, taste, eye) }
+  var kept: GenTake[] = []
+  while kept.length() < 4 and not left.is_empty() {
+    let best = gen_best(left)
+    kept = kept.append(best)
+    left = for t in left where t.key != best.key { t }
+  }
+  return kept
 }
 
 // ---------------------------------------------------------------- the critic
@@ -398,7 +426,71 @@ fn gen_score(t: GenTake, taste: GenTaste) -> GenTake {
   var why = [f"contrast {gen_pct(c)}", f"balance {gen_pct(b)}", f"variety {gen_pct(v)}", f"novelty {gen_pct(n)}"]
   if like > 0 { why = why.append("layers you liked") }
   if like < 0 { why = why.append("layers you did not like") }
+  let marks = [c, b, v, n]
+  let shown = (for m in marks { ((m * 100).floor() / 100).to_text() }).join(" ")
+  return {..t, score: (score * 100).floor() / 100, why: why, marks: marks, svg: t.svg.replace("data-take=", f"data-marks=\"{shown}\" data-take=")}
+}
+
+fn gen_hot(all: Text[], x: Text) -> Number[] { return for a in all { if a == x { 1 } else { 0 } } }
+
+// A take as the eye reads it: its four marks, then which piece, field,
+// symmetry and palette, one place each.
+fn gen_eye_features(key: Text, marks: Number[]) -> Number[] {
+  let p = key.split("+")
+  if p.length() != 4 or marks.length() != 4 { return [] }
+  return marks.concat(gen_hot(gen_pieces(), p[0])).concat(gen_hot(["plain"].concat(gen_pieces()), p[1])).concat(gen_hot(["none", "reflect", "mirror"], p[2])).concat(gen_hot(palette_names(), p[3]))
+}
+
+fn gen_eye_size() -> Number { return 4 + gen_pieces().length() + gen_pieces().length() + 1 + 3 + palette_names().length() }
+
+fn gen_new_eye() -> GenEye { return {net: net([gen_eye_size(), 6, 1], 11), xs: [], ys: [], seen: 0} }
+
+fn gen_eye_of(had: EyesRecalled) -> GenEye { return if had.value.exists() { had.value.value() } else { gen_new_eye() } }
+
+// How likely you are to like a take, from 0 to 1, by the eye.
+fn gen_eye_says(eye: GenEye, t: GenTake) -> Number {
+  let x = gen_eye_features(t.key, t.marks)
+  if x.is_empty() { return 0.5 }
+  return predict(eye.net, x)[0].max(0).min(1)
+}
+
+// Whether the eye has something to go on: at least one thumb up and one
+// down. Taught only "no", it would say no to everything.
+fn gen_eye_ready(eye: GenEye) -> Bool {
+  let up = (for y in eye.ys where y[0] > 0.5 { y }).length()
+  return up > 0 and up < eye.ys.length()
+}
+
+// The critic's score with the eye's judgement in it: once the eye has
+// learned from a thumb up and a thumb down, it takes the place of the list
+// of liked layers.
+fn gen_judged(t: GenTake, taste: GenTaste, eye: GenEye) -> GenTake {
+  if not gen_eye_ready(eye) { return t }
+  let p = gen_eye_says(eye, t)
+  let score = t.score - gen_liking(t, taste) + (p - 0.5) * 0.8
+  let why = (for w in t.why where not w.starts_with("layers you") { w }).append(f"you would like it {gen_pct(p)}%, Kosika's eye learned from {eye.seen} thumbs")
   return {..t, score: (score * 100).floor() / 100, why: why}
+}
+
+fn gen_marks_of(svg: Text) -> Number[] {
+  let parts = svg.split("data-marks=\"")
+  if parts.length() < 2 { return [] }
+  return for w in parts[1].split("\"")[0].words() where w.to_number().exists() { w.to_number().value() }
+}
+
+// One thumb taught: the take, read back from the drawing, and whether you
+// liked it. The eye keeps its last 30 lessons and learns from them again.
+fn gen_taught(eye: GenEye, r: GenRate) -> GenEye {
+  let x = gen_eye_features(gen_take_of(r.svg), gen_marks_of(r.svg))
+  if x.is_empty() { return eye }
+  let xs = eye.xs.append(x)
+  // Wanted outputs short of 0 and 1, so a few thumbs do not drive the
+  // network to say never or always.
+  let ys = eye.ys.append([if r.liked { 0.9 } else { 0.15 }])
+  let from = (xs.length() - 30).max(0)
+  let kx = xs.slice(from, xs.length())
+  let ky = ys.slice(from, ys.length())
+  return {net: train(eye.net, kx, ky, 0.3, 40), xs: kx, ys: ky, seen: eye.seen + 1}
 }
 
 fn gen_best(takes: GenTake[]) -> GenTake {
@@ -413,7 +505,9 @@ fn gen_best(takes: GenTake[]) -> GenTake {
 fn gen_card(t: GenTake, best: Text) -> Text {
   let mark = if t.svg == best { " best" } else { "" }
   let name = t.key.replace("+", " · ")
-  return f"<figure class=\"gen-take{mark}\" data-palette=\"{t.recipe.palette}\">{t.svg}<figcaption><b>{gen_pct(t.score)}</b> {name}</figcaption></figure>"
+  // What Kosika's eye thinks of it, once it has learned your taste.
+  let eye = (for w in t.why where w.starts_with("you would like it ") { " &#183; <i>you'd like it " + w.split(" ")[4].split(",")[0] + "</i>" }).join("")
+  return f"<figure class=\"gen-take{mark}\" data-palette=\"{t.recipe.palette}\">{t.svg}<figcaption><b>{gen_pct(t.score)}</b> {name}{eye}</figcaption></figure>"
 }
 
 fn gen_strip(art: GenArt) -> Text {
@@ -440,10 +534,11 @@ fn gen_saw(taste: GenTaste, takes: GenTake[]) -> GenTaste {
 }
 
 fn gen_rated(taste: GenTaste, r: GenRate) -> GenTaste {
-  if r.take.is_empty() { return taste }
-  let liked = for l in taste.liked where l != r.take { l }
-  let disliked = for d in taste.disliked where d != r.take { d }
-  return if r.liked { {..taste, liked: liked.append(r.take).drop((liked.length() - 19).max(0)), disliked: disliked} } else { {..taste, liked: liked, disliked: disliked.append(r.take).drop((disliked.length() - 19).max(0))} }
+  let take = gen_take_of(r.svg)
+  if take.is_empty() { return taste }
+  let liked = for l in taste.liked where l != take { l }
+  let disliked = for d in taste.disliked where d != take { d }
+  return if r.liked { {..taste, liked: liked.append(take).drop((liked.length() - 19).max(0)), disliked: disliked} } else { {..taste, liked: liked, disliked: disliked.append(take).drop((disliked.length() - 19).max(0))} }
 }
 
 // A new seed each time, so asking again never gives the same piece.
@@ -452,13 +547,15 @@ fn gen_new_seed(r: GenRecipe, taste: GenTaste) -> GenRecipe {
 }
 
 workflow gen_taste_rate(r: GenRate) -> GenTaste {
-  had  = recall tastes under "art"
-  kept = remember gen_rated(gen_taste_of(had), r) in tastes under "art"
-  out  = gen_rated(gen_taste_of(had), r)
+  had    = recall tastes under "art"
+  looked = recall eyes under "art"
+  kept   = remember gen_rated(gen_taste_of(had), r) in tastes under "art"
+  taught = remember gen_taught(gen_eye_of(looked), r) in eyes under "art"
+  out    = gen_rated(gen_taste_of(had), r)
 }
 
 fn gen_style() -> Text {
-  return ".gen{display:block;width:100%;height:auto;overflow:hidden}.gen-d{opacity:0;transform-box:fill-box;transform-origin:center;animation:gen-pop .7s ease-out forwards}.gen-turn{transform-origin:400px 240px;animation:gen-turn 160s linear infinite}.gen-line{fill:none;stroke-width:1.4;stroke-linecap:round;stroke-dasharray:.4 .6;opacity:.85;animation:gen-run 8s linear infinite}.gen-slide{animation:gen-slide 12s linear infinite}.gen-slide.back{animation-direction:reverse}.gen-wave{opacity:.28}.gen-branch{fill:none;stroke:var(--soft);stroke-linecap:round;stroke-dasharray:1;stroke-dashoffset:1;animation:gen-grow .6s ease-out forwards}.gen-leaf{opacity:0;transform-box:fill-box;transform-origin:center;animation:gen-pop .6s ease-out forwards}.gen-sway{transform-origin:400px 470px;animation:gen-sway 7s ease-in-out infinite alternate}.gen-ring{fill:none;stroke:color-mix(in srgb,var(--line) 14%,transparent);stroke-width:2.2;stroke-dasharray:3 9}.gen-sun{fill:var(--gold);filter:drop-shadow(0 0 18px var(--gold))}.gen-spin{animation:gen-turn 10s linear infinite}.gen-under{opacity:.32}.gen-twin{opacity:.72}.gen-reflect{opacity:.3}.gen-horizon{stroke:color-mix(in srgb,var(--line) 22%,transparent);stroke-width:1}.gen-glow{fill:var(--gold);opacity:.14;animation:gen-breathe 6s ease-in-out infinite alternate}.gen-core{fill:var(--gold);opacity:.9;filter:drop-shadow(0 0 22px var(--gold))}.gen-focal{transform-box:fill-box;transform-origin:center}.gen-grain{fill:var(--line);opacity:.16}.gen-takes{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:10px}.gen-take{margin:0;border-radius:10px;overflow:hidden;border:1px solid color-mix(in srgb,var(--line) 12%,transparent);background:var(--bg)}.gen-take.best{outline:2px solid var(--gold)}.gen-take .gen *{animation:none!important}.gen-take .gen-d,.gen-take .gen-leaf{opacity:.9}.gen-take .gen-branch{stroke-dashoffset:0}.gen-take figcaption{font:11px ui-monospace,Consolas,monospace;color:var(--soft);padding:5px 7px}.gen-take b{color:var(--ink)}@keyframes gen-breathe{from{opacity:.08}to{opacity:.22}}@keyframes gen-pop{from{opacity:0;transform:scale(0)}to{opacity:.92;transform:scale(1)}}@keyframes gen-turn{to{transform:rotate(360deg)}}@keyframes gen-run{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}@keyframes gen-slide{to{transform:translateX(var(--len))}}@keyframes gen-grow{to{stroke-dashoffset:0}}@keyframes gen-sway{from{transform:rotate(-1.6deg)}to{transform:rotate(1.6deg)}}@media (prefers-reduced-motion:reduce){.gen *{animation:none!important;opacity:1!important;stroke-dashoffset:0!important}}"
+  return ".gen{display:block;width:100%;height:auto;overflow:hidden}.gen-d{opacity:0;transform-box:fill-box;transform-origin:center;animation:gen-pop .7s ease-out forwards}.gen-turn{transform-origin:400px 240px;animation:gen-turn 160s linear infinite}.gen-line{fill:none;stroke-width:1.4;stroke-linecap:round;stroke-dasharray:.4 .6;opacity:.85;animation:gen-run 8s linear infinite}.gen-slide{animation:gen-slide 12s linear infinite}.gen-slide.back{animation-direction:reverse}.gen-wave{opacity:.28}.gen-branch{fill:none;stroke:var(--soft);stroke-linecap:round;stroke-dasharray:1;stroke-dashoffset:1;animation:gen-grow .6s ease-out forwards}.gen-leaf{opacity:0;transform-box:fill-box;transform-origin:center;animation:gen-pop .6s ease-out forwards}.gen-sway{transform-origin:400px 470px;animation:gen-sway 7s ease-in-out infinite alternate}.gen-ring{fill:none;stroke:color-mix(in srgb,var(--line) 14%,transparent);stroke-width:2.2;stroke-dasharray:3 9}.gen-sun{fill:var(--gold);filter:drop-shadow(0 0 18px var(--gold))}.gen-spin{animation:gen-turn 10s linear infinite}.gen-under{opacity:.32}.gen-twin{opacity:.72}.gen-reflect{opacity:.3}.gen-horizon{stroke:color-mix(in srgb,var(--line) 22%,transparent);stroke-width:1}.gen-glow{fill:var(--gold);opacity:.14;animation:gen-breathe 6s ease-in-out infinite alternate}.gen-core{fill:var(--gold);opacity:.9;filter:drop-shadow(0 0 22px var(--gold))}.gen-focal{transform-box:fill-box;transform-origin:center}.gen-grain{fill:var(--line);opacity:.16}.gen-takes{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:10px}.gen-take{margin:0;border-radius:10px;overflow:hidden;border:1px solid color-mix(in srgb,var(--line) 12%,transparent);background:var(--bg)}.gen-take.best{outline:2px solid var(--gold)}.gen-take .gen *{animation:none!important}.gen-take .gen-d,.gen-take .gen-leaf{opacity:.9}.gen-take .gen-branch{stroke-dashoffset:0}.gen-take figcaption{font:11px ui-monospace,Consolas,monospace;color:var(--soft);padding:5px 7px}.gen-take b{color:var(--ink)}.gen-take i{color:var(--gold);font-style:normal}@keyframes gen-breathe{from{opacity:.08}to{opacity:.22}}@keyframes gen-pop{from{opacity:0;transform:scale(0)}to{opacity:.92;transform:scale(1)}}@keyframes gen-turn{to{transform:rotate(360deg)}}@keyframes gen-run{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}@keyframes gen-slide{to{transform:translateX(var(--len))}}@keyframes gen-grow{to{stroke-dashoffset:0}}@keyframes gen-sway{from{transform:rotate(-1.6deg)}to{transform:rotate(1.6deg)}}@media (prefers-reduced-motion:reduce){.gen *{animation:none!important;opacity:1!important;stroke-dashoffset:0!important}}"
 }
 
 fn gen_page(r: GenRecipe, svg: Text) -> Text {
@@ -516,8 +613,9 @@ workflow gen_make(ask: GenAsk) -> GenArt {
   chosen = use_model gen_artist(gen_task(), ask.text) retry 1 otherwise gen_fallback()
   had    = recall tastes under "art"
   taste  = gen_taste_of(had)
+  looked = recall eyes under "art"
   r      = gen_new_seed(gen_fixed(chosen), taste)
-  takes  = gen_takes(r, taste)
+  takes  = gen_takes_judged(r, taste, gen_eye_of(looked))
   best   = gen_best(takes)
   seen   = remember gen_saw(taste, takes) in tastes under "art"
   out    = gen_art(best, takes)
@@ -553,12 +651,37 @@ test "the critic prefers what was never made, and your taste" {
   fresh = gen_score(t, gen_no_taste())
   seen = gen_score(t, {seen: [t.key], liked: [], disliked: []})
   expect fresh.score > seen.score
-  liked = gen_score(t, gen_rated(gen_no_taste(), {take: t.key, liked: true}))
-  disliked = gen_score(t, gen_rated(gen_no_taste(), {take: t.key, liked: false}))
+  liked = gen_score(t, gen_rated(gen_no_taste(), {svg: t.svg, liked: true}))
+  disliked = gen_score(t, gen_rated(gen_no_taste(), {svg: t.svg, liked: false}))
   expect liked.score > fresh.score and disliked.score < fresh.score
   expect gen_new_seed(r, {seen: ["a"], liked: [], disliked: []}).seed != gen_new_seed(r, gen_no_taste()).seed
   flow = gen_take({..r, piece: "flow"}, "", "none", false, false)
   expect gen_balance(flow) > 0 and gen_balance(flow) <= 1
+}
+
+test "Kosika's eye learns what you like, and carries it over to new takes" {
+  r = gen_fallback()
+  sea = gen_score(gen_take({..r, piece: "waves", palette: "ocean"}, "", "reflect", false, false), gen_no_taste())
+  dull = gen_score(gen_take({..r, piece: "waves", palette: "ocean"}, "flow", "mirror", false, false), gen_no_taste())
+  expect gen_marks_of(sea.svg).length() == 4
+  expect gen_eye_features(sea.key, sea.marks).length() == gen_eye_size()
+  one = gen_taught(gen_new_eye(), {svg: sea.svg, liked: true})
+  two = gen_taught(one, {svg: dull.svg, liked: false})
+  eye = gen_taught(gen_taught(two, {svg: sea.svg, liked: true}), {svg: dull.svg, liked: false})
+  expect eye.seen == 4
+  expect gen_eye_says(eye, sea) > gen_eye_says(eye, dull)
+  // Never shown: a reflected forest. The eye still leans towards it.
+  forest = gen_score(gen_take({..r, piece: "tree", palette: "forest"}, "", "reflect", false, false), gen_no_taste())
+  mirrored = gen_score(gen_take({..r, piece: "tree", palette: "forest"}, "flow", "mirror", false, false), gen_no_taste())
+  expect gen_eye_says(eye, forest) > gen_eye_says(eye, mirrored)
+  expect gen_judged(forest, gen_no_taste(), eye).why[4].starts_with("you would like it")
+  expect gen_judged(forest, gen_no_taste(), gen_new_eye()).score == forest.score
+  studies = gen_takes_judged({..r, piece: "waves", palette: "ocean"}, gen_no_taste(), eye)
+  expect studies.length() == 4
+  expect (for t in studies where t.symmetry == "reflect" { t }).length() >= 2
+  only_no = gen_taught(gen_taught(gen_new_eye(), {svg: dull.svg, liked: false}), {svg: sea.svg, liked: false})
+  expect not gen_eye_ready(only_no) and gen_eye_ready(eye)
+  expect gen_judged(forest, gen_no_taste(), only_no).score == forest.score
 }
 
 test "a bloom and orbits are drawn" {
