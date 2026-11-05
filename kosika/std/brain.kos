@@ -433,7 +433,9 @@ fn br_link_of(source: Text) -> Text {
 
 // The canvas, with what the Brain knows about its ask beneath it: each
 // fact's title linked to its source, what it says, and who and when.
-fn br_with_known(r: DzResult, facts: BrainNote[]) -> DzResult {
+fn br_with_known(r: DzResult, found: BrainNote[]) -> DzResult {
+  // Research only, with its sources: not what the person told Kosi.
+  let facts = for f in found where f.source.starts_with("http") { f }
   if facts.is_empty() or not r.embed.ends_with("</div>") { return r }
   var items = ""
   for f in facts {

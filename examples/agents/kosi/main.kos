@@ -336,10 +336,10 @@ fn ko_draw_ask(r: KosiReply) -> DzAsk { return {text: ko_about_kosika(r.draw.tri
 // Kosika's real parts, so that a picture of Kosika shows Kosika and not a
 // made-up system of gateways and payment services.
 fn ko_kosika_parts() -> Text {
-  return "Kosika's real parts: the Kosika language (its parser and checker); two engines that run it, the Python reference engine and the faster Go engine; the standard library (Brain for memory and learning, Designs and the Kosika canvas, algorithms, science); Kosika Studio, where you talk to the agents and see their work; and the agents themselves: Kosi, Iris the researcher, Sol the scientist, the crew and the coder"
+  return "its parts: the language with its parser and checker, the Python and Go engines, the standard library (Brain, Designs, algorithms, science), Studio, and the agents Kosi, Iris, Sol, the crew and the coder"
 }
 
-fn ko_about_kosika(ask: Text) -> Text { return if ask.lower().contains("kosika") { ask + ". " + ko_kosika_parts() + "." } else { ask } }
+fn ko_about_kosika(ask: Text) -> Text { return if ask.lower().contains("kosika") { ask + ", " + ko_kosika_parts() } else { ask } }
 
 // The person's last message in the talk before this one, or "".
 fn ko_last_said(talk: BrainFound) -> Text {
@@ -629,7 +629,7 @@ test "draw it for me draws what the talk was about, and an echo is no reply" {
 }
 
 test "a picture of Kosika is drawn from its real parts" {
-  expect ko_about_kosika("Kosika architecture diagram").contains("faster Go engine")
+  expect ko_about_kosika("Kosika architecture diagram").contains("Python and Go engines")
   expect ko_about_kosika("the water cycle") == "the water cycle"
 }
 
