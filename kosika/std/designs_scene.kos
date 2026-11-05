@@ -1,0 +1,522 @@
+// Kosika Designs: scenes, painted and moving.
+//
+// A landscape is not abstract art and not a diagram: it is a place, with a
+// sky, a land, water and life in it. A free model only says what the place
+// is (the time of day, the weather, the land, the water, the trees and
+// what else is there); Kosika paints all of it itself and makes it move:
+//
+//   sky        a gradient for the time of day; stars that twinkle at night,
+//              and an aurora that ripples when asked for
+//   sun, moon  where the time of day puts them, with their glow
+//   clouds     drifting; dark and many when it rains
+//   mountains  ridges grown by midpoint displacement, the same way real
+//              ranges look rough at every scale; the far ones paler, as air
+//              between the eye and a hill makes it (aerial perspective),
+//              snow on the highest when it is cold
+//   water      a lake or the sea at the horizon, mirroring what is above it,
+//              with the sun's path shimmering on it; or a river winding in
+//   trees      pines, round trees or palms, smaller the farther they stand,
+//              swaying in the wind
+//   life       birds that fly across and flap, boats that bob, a town's
+//              windows that light up at night
+//   weather    rain that falls, snow that drifts down, fog that rolls
+//
+// Every name here starts with ls_ or Ls, because all Kosika modules share
+// one namespace.
+
+export [LsRecipe, LsAsk, LsArt, ls_wants, ls_svg, ls_style, ls_page, ls_problems, ls_fixed, ls_render, ls_make, ls_fallback]
+
+record LsRecipe { time: Text weather: Text land: Text water: Text trees: Text extras: Text[] density: Number seed: Number title: Text }
+record LsAsk { text: Text }
+record LsBrief { task: Text ask: Text }
+record LsArt { recipe: LsRecipe svg: Text page: Text problems: Text[] }
+
+model ls_painter {
+  input: LsBrief
+  output: LsRecipe
+  parameters: {
+    max_output_tokens: 1500
+  }
+}
+
+fn ls_times() -> Text[] { return ["dawn", "day", "sunset", "night"] }
+fn ls_weathers() -> Text[] { return ["clear", "cloudy", "rain", "snow", "fog"] }
+fn ls_lands() -> Text[] { return ["mountains", "hills", "desert", "plains", "coast"] }
+fn ls_waters() -> Text[] { return ["none", "lake", "sea", "river"] }
+fn ls_tree_kinds() -> Text[] { return ["none", "pine", "round", "palm"] }
+fn ls_extra_kinds() -> Text[] { return ["birds", "boats", "town", "aurora", "stars"] }
+
+// Words that ask for a place to be painted, not explained.
+fn ls_place_words() -> Text[] { return [" landscape", " scenery", " scene of", " mountain", " lake", " sea ", " seaside", " ocean", " beach", " coast", " desert", " valley", " forest", " sunset", " sunrise", " dawn", " meadow", " river", " snowy", " village", " skyline", " island", " hills", " countryside", " night sky", " harbour", " harbor", " fjord", " waterfall", " jungle", " savanna", " prairie", " glacier", " dunes"] }
+
+// Whether an ask is for a painted place: it names one, and it does not ask
+// for abstract art, a pattern, or how or why something happens.
+fn ls_wants(text: Text) -> Bool {
+  let t = " " + text.lower().replace(",", " ").replace(".", " ").replace("?", " ").replace("!", " ") + " "
+  let named = (for w in ls_place_words() where t.contains(w) { w }).length() > 0
+  let abstract = t.contains(" abstract") or t.contains(" generative") or t.contains(" pattern")
+  let explains = t.contains(" how ") or t.contains(" why ") or t.contains(" explain") or t.contains(" diagram") or t.contains(" cycle")
+  return named and not abstract and not explains
+}
+
+fn ls_problems(r: LsRecipe) -> Text[] {
+  var out: Text[] = []
+  if not ls_times().contains(r.time) { out = out.append(f"time {r.time} is not one of {ls_times().join(\", \")}") }
+  if not ls_weathers().contains(r.weather) { out = out.append(f"weather {r.weather} is not one of {ls_weathers().join(\", \")}") }
+  if not ls_lands().contains(r.land) { out = out.append(f"land {r.land} is not one of {ls_lands().join(\", \")}") }
+  if not ls_waters().contains(r.water) { out = out.append(f"water {r.water} is not one of {ls_waters().join(\", \")}") }
+  if not ls_tree_kinds().contains(r.trees) { out = out.append(f"trees {r.trees} is not one of {ls_tree_kinds().join(\", \")}") }
+  return out
+}
+
+fn ls_pick(all: Text[], x: Text, fallback: Text) -> Text { return if all.contains(x.trim().lower()) { x.trim().lower() } else { fallback } }
+
+// What the painter chose, with anything out of range brought back in.
+fn ls_fixed(r: LsRecipe) -> LsRecipe {
+  let extras = for e in r.extras where ls_extra_kinds().contains(e.trim().lower()) { e.trim().lower() }
+  let title = if r.title.trim().is_empty() { "A Quiet Place" } else { r.title.trim().slice(0, r.title.trim().length().min(48)) }
+  return {time: ls_pick(ls_times(), r.time, "sunset"), weather: ls_pick(ls_weathers(), r.weather, "clear"), land: ls_pick(ls_lands(), r.land, "mountains"), water: ls_pick(ls_waters(), r.water, "lake"), trees: ls_pick(ls_tree_kinds(), r.trees, "pine"), extras: extras.take(4), density: r.density.max(0).min(1), seed: r.seed.abs().floor() % 99991, title: title}
+}
+
+fn ls_fallback() -> LsRecipe { return {time: "sunset", weather: "clear", land: "mountains", water: "lake", trees: "pine", extras: ["birds"], density: 0.6, seed: 271, title: "Evening at the Lake"} }
+
+// A number from 0 to 1 that looks random but is always the same for the
+// same seed and index.
+fn ls_noise(seed: Number, i: Number) -> Number {
+  let v = (i * 12.9898 + seed * 78.233).sin() * 43758.5453
+  return v - v.floor()
+}
+
+fn ls_n(x: Number) -> Text { return x.to_fixed(1) }
+
+// ---------------------------------------------------------------- colour
+
+record LsLight { top: Text low: Text sun: Text land: Text near: Text water: Text glow: Text }
+
+fn ls_light(r: LsRecipe) -> LsLight {
+  let grey = r.weather == "rain" or r.weather == "fog" or (r.weather == "cloudy" and r.time == "day")
+  if r.time == "night" { return {top: "#03050f", low: "#14213d", sun: "#f1efe4", land: "#141d33", near: "#0b1220", water: "#0d1a33", glow: "#9fb6ff"} }
+  if r.time == "dawn" { return {top: if grey { "#59607a" } else { "#2c3d6b" }, low: if grey { "#c9b2a6" } else { "#f7a983" }, sun: "#ffd9a8", land: "#6b6a8a", near: "#3d4a3a", water: "#5d6b92", glow: "#ffcf9e"} }
+  if r.time == "sunset" { return {top: if grey { "#4b4258" } else { "#2a1d52" }, low: if grey { "#b98a78" } else { "#ff7b47" }, sun: "#ffb55e", land: "#5b4566", near: "#2b2233", water: "#4a3557", glow: "#ffa060"} }
+  return {top: if grey { "#7d8a99" } else { "#2f86d6" }, low: if grey { "#c8d0d8" } else { "#c3e6f8" }, sun: "#fff6d2", land: "#6a86a8", near: "#3e7a45", water: "#3f86b8", glow: "#fff3b0"}
+}
+
+fn ls_ground(r: LsRecipe, l: LsLight) -> Text {
+  if r.land == "desert" { return if r.time == "night" { "#2d2a3a" } else if r.time == "day" { "#d8a458" } else { "#b07a4f" } }
+  if r.weather == "snow" { return if r.time == "night" { "#9aa6c2" } else { "#eef2f7" } }
+  return l.near
+}
+
+// ---------------------------------------------------------------- sky
+
+fn ls_horizon(r: LsRecipe) -> Number { return if r.water == "sea" or r.water == "lake" { 330 } else { 360 } }
+
+fn ls_sky(r: LsRecipe, l: LsLight) -> Text {
+  let grad = f"<linearGradient id=\"ls-sky\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"{l.top}\"/><stop offset=\"1\" stop-color=\"{l.low}\"/></linearGradient><radialGradient id=\"ls-glow\"><stop offset=\"0\" stop-color=\"{l.glow}\" stop-opacity=\".75\"/><stop offset=\"1\" stop-color=\"{l.glow}\" stop-opacity=\"0\"/></radialGradient>"
+  return "<defs>" + grad + "</defs><rect x=\"0\" y=\"0\" width=\"960\" height=\"540\" fill=\"url(#ls-sky)\"/>"
+}
+
+// Stars placed by the R2 sequence (steps of 1/g and 1/g squared, g the
+// plastic number 1.3247), which spreads points evenly without a grid.
+fn ls_stars(r: LsRecipe) -> Text {
+  if r.time != "night" and not r.extras.contains("stars") { return "" }
+  if r.weather == "rain" or r.weather == "fog" { return "" }
+  let g = 1.32471795724
+  var out: Text[] = []
+  for k in 0 until 150 {
+    let x = (0.5 + k / g) % 1 * 960
+    let y = (0.5 + k / (g * g)) % 1 * (ls_horizon(r) - 40)
+    let size = 0.5 + ls_noise(r.seed, k) * 1.3
+    let twinkle = if k % 3 == 0 { f" class=\"ls-tw\" style=\"animation-delay:-{ls_n(ls_noise(r.seed, k + 9) * 4)}s\"" } else { "" }
+    out = out.append(f"<circle cx=\"{ls_n(x)}\" cy=\"{ls_n(y)}\" r=\"{ls_n(size)}\"{twinkle}/>")
+  }
+  return "<g class=\"ls-stars\">" + out.join("") + "</g>"
+}
+
+fn ls_aurora(r: LsRecipe) -> Text {
+  if not r.extras.contains("aurora") { return "" }
+  var out: Text[] = []
+  for k in 0 until 3 {
+    var d = f"M-40 {ls_n(120 + k * 34)}"
+    var x = -40
+    while x <= 1000 {
+      let y = 120 + k * 34 + 26 * ((x + r.seed + k * 120) * 0.6).sin() + 12 * ((x - k * 70) * 1.7).sin()
+      d = d + f" L{ls_n(x)} {ls_n(y)}"
+      x = x + 24
+    }
+    let colour = if k == 1 { "#a98bff" } else { "#5ef2c8" }
+    out = out.append(f"<path class=\"ls-aurora\" d=\"{d}\" style=\"stroke:{colour};animation-delay:-{k * 2}s\"/>")
+  }
+  return "<g class=\"ls-auroras\">" + out.join("") + "</g>"
+}
+
+record LsSun { x: Number y: Number r: Number }
+
+fn ls_sun_at(r: LsRecipe) -> LsSun {
+  let h = ls_horizon(r)
+  let left = ls_noise(r.seed, 1) < 0.5
+  let x = if left { 260 + ls_noise(r.seed, 2) * 120 } else { 580 + ls_noise(r.seed, 2) * 120 }
+  if r.time == "day" { return {x: x, y: 90, r: 30} }
+  if r.time == "night" { return {x: x, y: 96, r: 22} }
+  return {x: x, y: h - 34, r: 38}
+}
+
+fn ls_sun(r: LsRecipe, l: LsLight) -> Text {
+  if r.weather == "rain" or r.weather == "fog" { return "" }
+  let s = ls_sun_at(r)
+  let glow = f"<circle cx=\"{ls_n(s.x)}\" cy=\"{ls_n(s.y)}\" r=\"{ls_n(s.r * 4.2)}\" fill=\"url(#ls-glow)\" class=\"ls-breathe\"/>"
+  let body = f"<circle cx=\"{ls_n(s.x)}\" cy=\"{ls_n(s.y)}\" r=\"{ls_n(s.r)}\" fill=\"{l.sun}\"/>"
+  // The moon: a crescent, the dark of the sky cut from its side.
+  let shade = if r.time == "night" { f"<circle cx=\"{ls_n(s.x + s.r * 0.45)}\" cy=\"{ls_n(s.y - s.r * 0.2)}\" r=\"{ls_n(s.r * 0.92)}\" fill=\"{l.top}\" opacity=\".92\"/>" } else { "" }
+  return "<g class=\"ls-sun\">" + glow + body + shade + "</g>"
+}
+
+fn ls_cloud(cx: Number, cy: Number, w: Number, colour: Text, k: Number, seed: Number) -> Text {
+  var puffs: Text[] = []
+  for j in 0 until 5 {
+    let px = cx - w / 2 + j * w / 4
+    let py = cy - (if j == 1 or j == 2 { w * 0.16 } else { w * 0.05 })
+    let pr = w * (0.17 + ls_noise(seed, k * 7 + j) * 0.09)
+    puffs = puffs.append(f"<circle cx=\"{ls_n(px)}\" cy=\"{ls_n(py)}\" r=\"{ls_n(pr)}\"/>")
+  }
+  let flat = f"<rect x=\"{ls_n(cx - w / 2)}\" y=\"{ls_n(cy - w * 0.04)}\" width=\"{ls_n(w)}\" height=\"{ls_n(w * 0.14)}\" rx=\"{ls_n(w * 0.07)}\"/>"
+  let drift = 50 + ls_noise(seed, k + 50) * 70
+  return f"<g class=\"ls-cloud\" style=\"fill:{colour};animation-duration:{ls_n(drift)}s;animation-delay:-{ls_n(ls_noise(seed, k + 60) * drift)}s\">" + puffs.join("") + flat + "</g>"
+}
+
+fn ls_clouds(r: LsRecipe) -> Text {
+  let count = if r.weather == "rain" { 9 } else if r.weather == "cloudy" or r.weather == "snow" { 6 } else if r.weather == "fog" or r.time == "night" { 0 } else { 2 }
+  let colour = if r.weather == "rain" { "#5b6573" } else if r.time == "night" { "#2a3552" } else if r.time == "sunset" { "#f2a27e" } else if r.time == "dawn" { "#f3c6b5" } else { "#ffffff" }
+  var out: Text[] = []
+  for k in 0 until count {
+    let x = (k + 0.5) * 960 / count + (ls_noise(r.seed, k + 20) - 0.5) * 80
+    let y = 50 + ls_noise(r.seed, k + 30) * 130
+    let w = 90 + ls_noise(r.seed, k + 40) * (if r.weather == "rain" { 150 } else { 100 })
+    out = out.append(ls_cloud(x, y, w, colour, k, r.seed))
+  }
+  return "<g class=\"ls-clouds\">" + out.join("") + "</g>"
+}
+
+// ---------------------------------------------------------------- land
+
+// A ridge across the picture by midpoint displacement: each pass puts a
+// point between every two and moves it up or down by a little less than
+// the pass before, so the line is rough at every scale.
+fn ls_ridge(seed: Number, base: Number, rough: Number, passes: Number) -> Number[] {
+  // Nine peaks and saddles to start, lower at the edges, then the passes.
+  var ys: Number[] = for i in 0 until 9 { base - rough * (0.2 + 0.8 * ls_noise(seed, i + 3)) * (if i == 0 or i == 8 { 0.45 } else { 1 }) }
+  var amp = rough * 0.5
+  for p in 0 until passes {
+    var next: Number[] = []
+    for i in 0 until ys.length() - 1 {
+      let mid = (ys[i] + ys[i + 1]) / 2 + (ls_noise(seed, p * 131 + i + 7) - 0.5) * amp
+      next = next.append(ys[i]).append(mid)
+    }
+    ys = next.append(ys[ys.length() - 1])
+    amp = amp * 0.55
+  }
+  return for y in ys { y.min(base) }
+}
+
+fn ls_ridge_path(ys: Number[], bottom: Number) -> Text {
+  let step = 960 / (ys.length() - 1)
+  let line = (for i in 0 until ys.length() { f"L{ls_n(i * step)} {ls_n(ys[i])}" }).join(" ")
+  return f"M0 {ls_n(bottom)} {line} L960 {ls_n(bottom)} Z"
+}
+
+// Snow on the peaks: from the top of the picture down to a line that
+// follows the ridge a little below it, ragged, and only above the snowline.
+fn ls_snow_path(ys: Number[], line: Number, seed: Number) -> Text {
+  let step = 960 / (ys.length() - 1)
+  let low = for i in 0 until ys.length() { if ys[i] < line { (ys[i] + 18 + ls_noise(seed, i + 300) * 26).min(line + 14) } else { ys[i] } }
+  let back = (for i in 0 until low.length() { f"L{ls_n((low.length() - 1 - i) * step)} {ls_n(low[low.length() - 1 - i])}" }).join(" ")
+  return f"M0 0 L960 0 {back} Z"
+}
+
+// Smooth rolling ground: a few long waves added together.
+fn ls_rolls(seed: Number, base: Number, height: Number) -> Number[] {
+  return for i in 0 until 49 { base - height * (0.5 + 0.3 * ((i * 7.5 + seed) * 1.3).sin() + 0.2 * ((i * 7.5 - seed * 3) * 3.1).sin()) }
+}
+
+fn ls_far(r: LsRecipe, l: LsLight) -> Text {
+  let h = ls_horizon(r)
+  if r.land == "plains" or (r.land == "coast" and r.water == "sea") { return "" }
+  let rough = if r.land == "mountains" { 230 } else if r.land == "desert" { 70 } else { 110 }
+  let snowy = if r.time == "night" { 0.35 } else { 0.85 }
+  var out: Text[] = []
+  for k in 0 until 3 {
+    let ys = if r.land == "mountains" { ls_ridge(r.seed + k * 17, h - 2, rough * (1 - k * 0.3), 3) } else { ls_rolls(r.seed + k * 5, h - 4, rough * (0.9 - k * 0.2)) }
+    // The farther, the more of the sky's colour: air between the eye and
+    // a hill makes it paler and bluer.
+    let haze = 62 - k * 22
+    let id = f"ls-r{k}"
+    let path = ls_ridge_path(ys, h + 2)
+    let snow = if r.land == "mountains" and (r.weather == "snow" or k == 0) { f"<clipPath id=\"{id}\"><path d=\"{path}\"/></clipPath><path d=\"{ls_snow_path(ys, h - rough * 0.55, r.seed + k)}\" clip-path=\"url(#{id})\" fill=\"#f4f6fb\" opacity=\"{snowy}\"/>" } else { "" }
+    // And the nearest, the darkest: it takes some of the near ground's colour.
+    let fill = if k == 2 { f"color-mix(in srgb,color-mix(in srgb,{l.land} 70%,{l.near}) {100 - haze}%,{l.low})" } else { f"color-mix(in srgb,{l.land} {100 - haze}%,{l.low})" }
+    out = out.append(f"<path d=\"{path}\" style=\"fill:{fill}\"/>" + snow)
+  }
+  return "<g class=\"ls-far\">" + out.join("") + "</g>"
+}
+
+// ---------------------------------------------------------------- water
+
+// A lake or the sea: the sky mirrored, the far land mirrored and dimmed,
+// the sun's path shimmering across it, ripples drifting.
+fn ls_water(r: LsRecipe, l: LsLight, far: Text) -> Text {
+  let h = ls_horizon(r)
+  if r.water != "sea" and r.water != "lake" { return "" }
+  let bottom = 540
+  let body = f"<linearGradient id=\"ls-wat\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"{l.low}\" stop-opacity=\".85\"/><stop offset=\"1\" stop-color=\"{l.water}\"/></linearGradient><rect x=\"0\" y=\"{ls_n(h)}\" width=\"960\" height=\"{ls_n(bottom - h)}\" fill=\"url(#ls-wat)\"/>"
+  // The mirror: what stands on the far shore, upside down about the horizon.
+  let mirror = if far.is_empty() { "" } else { f"<g class=\"ls-mirror\" transform=\"matrix(1 0 0 -0.55 0 {ls_n(h * 1.55)})\">{far}</g>" }
+  let s = ls_sun_at(r)
+  let lit = r.weather != "rain" and r.weather != "fog" and r.time != "day"
+  var path: Text[] = []
+  if lit {
+    for k in 0 until 14 {
+      let y = h + 6 + k * (bottom - h - 10) / 14
+      let w = 14 + k * 5 + ls_noise(r.seed, k + 70) * 18
+      path = path.append(f"<rect class=\"ls-glint\" x=\"{ls_n(s.x - w / 2)}\" y=\"{ls_n(y)}\" width=\"{ls_n(w)}\" height=\"2.2\" rx=\"1.1\" style=\"fill:{l.sun};animation-delay:-{ls_n(ls_noise(r.seed, k + 80) * 3)}s\"/>")
+    }
+  }
+  var ripples: Text[] = []
+  for k in 0 until 18 {
+    let y = h + 10 + ls_noise(r.seed, k + 90) * (bottom - h - 16)
+    let x = ls_noise(r.seed, k + 110) * 900
+    let w = 30 + (y - h) * 0.4
+    ripples = ripples.append(f"<line class=\"ls-ripple\" x1=\"{ls_n(x)}\" y1=\"{ls_n(y)}\" x2=\"{ls_n(x + w)}\" y2=\"{ls_n(y)}\" style=\"animation-delay:-{ls_n(ls_noise(r.seed, k + 120) * 6)}s\"/>")
+  }
+  return "<defs>" + body.split("<rect")[0] + "</defs><rect" + body.split("<rect")[1] + mirror + "<g>" + path.join("") + "</g><g>" + ripples.join("") + "</g>"
+}
+
+// A river from the horizon to the front, widening as it comes near.
+fn ls_river(r: LsRecipe, l: LsLight) -> Text {
+  if r.water != "river" { return "" }
+  let h = ls_horizon(r)
+  var left: Text[] = []
+  var right: Text[] = []
+  for k in 0 until 19 {
+    let t = k / 18
+    let y = h + t * (540 - h)
+    let x = 480 + 140 * ((t * 300 + r.seed) * 1).sin() * t
+    let half = 3 + t * t * 170
+    left = left.append(f"L{ls_n(x - half)} {ls_n(y)}")
+    right = right.append(f"L{ls_n(x + half)} {ls_n(y)}")
+  }
+  let d = "M480 " + ls_n(h) + " " + left.join(" ") + " " + right.reverse().join(" ") + " Z"
+  return f"<path d=\"{d}\" style=\"fill:color-mix(in srgb,{l.water} 70%,{l.low})\"/><path class=\"ls-flow\" d=\"{d}\" style=\"stroke:{l.low}\"/>"
+}
+
+// ---------------------------------------------------------------- the near ground
+
+fn ls_near(r: LsRecipe, l: LsLight) -> Text {
+  let ground = ls_ground(r, l)
+  if r.water == "sea" {
+    // A shore across the front: sand, or the land's own ground.
+    let ys = ls_rolls(r.seed + 9, 520, 40)
+    let sand = if r.land == "desert" or r.trees == "palm" or r.land == "coast" { "#d9b67a" } else { ground }
+    return f"<path d=\"{ls_ridge_path(ys, 540)}\" style=\"fill:{sand}\"/>"
+  }
+  // By a lake the near shore is low, so the water shows.
+  let lake = r.water == "lake"
+  let back = ls_rolls(r.seed + 3, if lake { 500 } else { 420 }, if lake { 26 } else { 60 })
+  let front = ls_rolls(r.seed + 6, if lake { 530 } else { 492 }, if lake { 22 } else { 50 })
+  let back_fill = f"color-mix(in srgb,{ground} 80%,{l.low})"
+  return f"<path d=\"{ls_ridge_path(back, 540)}\" style=\"fill:{back_fill}\"/><path d=\"{ls_ridge_path(front, 540)}\" style=\"fill:{ground}\"/>"
+}
+
+// ---------------------------------------------------------------- trees
+
+fn ls_lift(j: Number) -> Number { return if j == 1 { 0.14 } else { 0 } }
+
+fn ls_tree(kind: Text, x: Number, y: Number, s: Number, leaf: Text, k: Number, seed: Number) -> Text {
+  let trunk = "#3b2a1e"
+  let sway = f" style=\"animation-delay:-{ls_n(ls_noise(seed, k + 140) * 4)}s;animation-duration:{ls_n(3.5 + ls_noise(seed, k + 150) * 2.5)}s\""
+  if kind == "pine" {
+    let tiers = (for j in 0 until 3 { f"<path d=\"M{ls_n(x)} {ls_n(y - s * (1.15 - j * 0.28))} L{ls_n(x - s * (0.28 + j * 0.09))} {ls_n(y - s * (0.6 - j * 0.24))} L{ls_n(x + s * (0.28 + j * 0.09))} {ls_n(y - s * (0.6 - j * 0.24))} Z\" style=\"fill:{leaf}\"/>" }).join("")
+    return f"<g class=\"ls-tree\"{sway}><rect x=\"{ls_n(x - s * 0.05)}\" y=\"{ls_n(y - s * 0.2)}\" width=\"{ls_n(s * 0.1)}\" height=\"{ls_n(s * 0.2)}\" fill=\"{trunk}\"/>{tiers}</g>"
+  }
+  if kind == "palm" {
+    let top = f"{ls_n(x + s * 0.18)} {ls_n(y - s)}"
+    let fronds = (for j in 0 until 6 { f"<path d=\"M{top} q{ls_n(s * 0.4 * (j * 60 + 20).cos())} {ls_n(-s * 0.22)} {ls_n(s * 0.55 * (j * 60 + 20).cos())} {ls_n(s * 0.18 + s * 0.12 * (j * 60).sin())}\" style=\"stroke:{leaf}\"/>" }).join("")
+    return f"<g class=\"ls-tree ls-palm\"{sway}><path d=\"M{ls_n(x)} {ls_n(y)} Q{ls_n(x)} {ls_n(y - s * 0.6)} {top}\" style=\"stroke:{trunk};stroke-width:{ls_n(s * 0.06)}\"/>{fronds}</g>"
+  }
+  let crown = (for j in 0 until 3 { f"<circle cx=\"{ls_n(x + (j - 1) * s * 0.18)}\" cy=\"{ls_n(y - s * (0.62 + ls_lift(j)))}\" r=\"{ls_n(s * 0.27)}\" style=\"fill:{leaf}\"/>" }).join("")
+  return f"<g class=\"ls-tree\"{sway}><rect x=\"{ls_n(x - s * 0.05)}\" y=\"{ls_n(y - s * 0.5)}\" width=\"{ls_n(s * 0.1)}\" height=\"{ls_n(s * 0.5)}\" fill=\"{trunk}\"/>{crown}</g>"
+}
+
+fn ls_trees(r: LsRecipe, l: LsLight) -> Text {
+  if r.trees == "none" { return "" }
+  let count = (6 + r.density * 18).floor()
+  let leaf = if r.weather == "snow" and r.trees == "pine" { "#2f5a4a" } else if r.time == "night" { "#0e2a22" } else if r.time == "sunset" { "#2f3b2c" } else if r.trees == "palm" { "#3f8f4f" } else { "#2f6b3a" }
+  var out: Text[] = []
+  for k in 0 until count {
+    // Back to front, so near trees stand over far ones.
+    let depth = k / count
+    let y = if r.water == "sea" { 500 + depth * 34 } else if r.water == "lake" { 494 + depth * 44 } else { 430 + depth * 100 }
+    let x = ls_noise(r.seed, k + 160) * 960
+    // Leave the river's middle and the sun's path clear.
+    let clear = r.water == "river" and (x - 480).abs() < 60 + depth * 160
+    let s = if r.water == "lake" { 30 + depth * 60 } else { 34 + depth * 90 }
+    if not clear { out = out.append(ls_tree(r.trees, x, y, s, leaf, k, r.seed)) }
+  }
+  return "<g class=\"ls-trees\">" + out.join("") + "</g>"
+}
+
+// ---------------------------------------------------------------- life
+
+fn ls_birds(r: LsRecipe) -> Text {
+  if not r.extras.contains("birds") or r.weather == "rain" { return "" }
+  var out: Text[] = []
+  for k in 0 until 5 {
+    let y = 80 + ls_noise(r.seed, k + 170) * 140
+    let dur = 26 + ls_noise(r.seed, k + 180) * 14
+    let s = 1.4 + ls_noise(r.seed, k + 190) * 1.1
+    out = out.append(f"<g class=\"ls-bird\" style=\"animation-duration:{ls_n(dur)}s;animation-delay:-{ls_n(ls_noise(r.seed, k + 200) * dur)}s\"><path class=\"ls-wing\" transform=\"translate(0 {ls_n(y)}) scale({ls_n(s)})\" d=\"M-9 0 Q-4 -6 0 0 Q4 -6 9 0\"/></g>")
+  }
+  return "<g class=\"ls-birds\">" + out.join("") + "</g>"
+}
+
+fn ls_boats(r: LsRecipe) -> Text {
+  if not r.extras.contains("boats") or r.water != "sea" and r.water != "lake" { return "" }
+  let h = ls_horizon(r)
+  var out: Text[] = []
+  for k in 0 until 3 {
+    let x = 150 + k * 300 + (ls_noise(r.seed, k + 210) - 0.5) * 120
+    let y = h + 28 + k * 34
+    let s = 0.8 + k * 0.35
+    out = out.append(f"<g class=\"ls-boat\" style=\"animation-delay:-{k}s\"><g transform=\"translate({ls_n(x)} {ls_n(y)}) scale({ls_n(s)})\"><path d=\"M-22 0 L22 0 L14 9 L-14 9 Z\" fill=\"#2a1d17\"/><path d=\"M0 -1 L0 -34 L18 -4 Z\" fill=\"#f3efe6\"/><path d=\"M-2 -2 L-2 -26 L-15 -4 Z\" fill=\"#e5dccb\"/></g></g>")
+  }
+  return out.join("")
+}
+
+// A town on the far ground: houses and towers, their windows lit at night
+// one by one.
+fn ls_town(r: LsRecipe, l: LsLight) -> Text {
+  if not r.extras.contains("town") { return "" }
+  let h = ls_horizon(r)
+  let dark = if r.time == "night" { "#0b1020" } else if r.time == "sunset" { "#2a1f33" } else { "#4b5568" }
+  var out: Text[] = []
+  var x = 120
+  var k = 0
+  while x < 840 {
+    let w = 22 + ls_noise(r.seed, k + 220) * 30
+    let tall = 20 + ls_noise(r.seed, k + 230) * (if k % 5 == 2 { 90 } else { 40 })
+    out = out.append(f"<rect x=\"{ls_n(x)}\" y=\"{ls_n(h - tall)}\" width=\"{ls_n(w)}\" height=\"{ls_n(tall + 2)}\" fill=\"{dark}\"/>")
+    if r.time == "night" or r.time == "sunset" {
+      var wy = h - tall + 6
+      while wy < h - 6 {
+        if ls_noise(r.seed, k * 31 + wy) < 0.45 { out = out.append(f"<rect class=\"ls-window\" x=\"{ls_n(x + 4)}\" y=\"{ls_n(wy)}\" width=\"3\" height=\"4\" style=\"animation-delay:-{ls_n(ls_noise(r.seed, wy + k) * 8)}s\"/>") }
+        if w > 30 and ls_noise(r.seed, k * 17 + wy) < 0.45 { out = out.append(f"<rect class=\"ls-window\" x=\"{ls_n(x + w - 8)}\" y=\"{ls_n(wy)}\" width=\"3\" height=\"4\"/>") }
+        wy = wy + 9
+      }
+    }
+    x = x + w + 2 + ls_noise(r.seed, k + 240) * 10
+    k += 1
+  }
+  return "<g class=\"ls-town\">" + out.join("") + "</g>"
+}
+
+// ---------------------------------------------------------------- weather
+
+fn ls_weather(r: LsRecipe) -> Text {
+  if r.weather == "rain" {
+    let drops = (for k in 0 until 140 { f"<line class=\"ls-rain\" x1=\"{ls_n(ls_noise(r.seed, k + 300) * 1000 - 20)}\" y1=\"-20\" x2=\"{ls_n(ls_noise(r.seed, k + 300) * 1000 - 26)}\" y2=\"0\" style=\"animation-delay:-{ls_n(ls_noise(r.seed, k + 400) * 1.2)}s;animation-duration:{ls_n(0.7 + ls_noise(r.seed, k + 500) * 0.5)}s\"/>" }).join("")
+    return "<g class=\"ls-rains\">" + drops + "</g>"
+  }
+  if r.weather == "snow" {
+    let flakes = (for k in 0 until 110 { f"<circle class=\"ls-snow\" cx=\"{ls_n(ls_noise(r.seed, k + 300) * 960)}\" cy=\"-6\" r=\"{ls_n(1.2 + ls_noise(r.seed, k + 600) * 2.2)}\" style=\"animation-delay:-{ls_n(ls_noise(r.seed, k + 400) * 9)}s;animation-duration:{ls_n(6 + ls_noise(r.seed, k + 500) * 6)}s\"/>" }).join("")
+    return "<g class=\"ls-snows\">" + flakes + "</g>"
+  }
+  if r.weather == "fog" {
+    let banks = (for k in 0 until 4 { f"<ellipse class=\"ls-fog\" cx=\"{ls_n(240 + k * 170)}\" cy=\"{ls_n(300 + k * 45)}\" rx=\"520\" ry=\"{ls_n(36 + k * 8)}\" style=\"animation-delay:-{k * 5}s\"/>" }).join("")
+    return "<g class=\"ls-fogs\">" + banks + "</g>"
+  }
+  return ""
+}
+
+// ---------------------------------------------------------------- the scene
+
+fn ls_svg(r: LsRecipe) -> Text {
+  let l = ls_light(r)
+  let far = ls_far(r, l)
+  let layers = ls_sky(r, l) + ls_stars(r) + ls_aurora(r) + ls_sun(r, l) + ls_clouds(r) + far + ls_town(r, l) + ls_water(r, l, far) + ls_near(r, l) + ls_river(r, l) + ls_boats(r) + ls_trees(r, l) + ls_birds(r) + ls_weather(r)
+  return f"<svg xmlns=\"http://www.w3.org/2000/svg\" class=\"ls ls-{r.time}\" viewBox=\"0 0 960 540\" preserveAspectRatio=\"xMidYMid slice\" role=\"img\" aria-label=\"{r.title}\">{layers}</svg>"
+}
+
+fn ls_style() -> Text {
+  return ".ls{display:block;width:100%;height:auto;overflow:hidden;border-radius:16px}.ls-stars circle{fill:#fff;opacity:.85}.ls-tw{animation:ls-tw 3.6s ease-in-out infinite}@keyframes ls-tw{50%{opacity:.2}}.ls-aurora{fill:none;stroke-width:26;stroke-linecap:round;opacity:.28;filter:blur(6px);animation:ls-aurora 9s ease-in-out infinite alternate}@keyframes ls-aurora{from{transform:translateX(-30px);opacity:.18}to{transform:translateX(30px);opacity:.4}}.ls-breathe{animation:ls-breathe 6s ease-in-out infinite alternate}@keyframes ls-breathe{from{opacity:.7}to{opacity:1}}.ls-cloud{opacity:.92;animation:ls-drift 80s ease-in-out infinite alternate}@keyframes ls-drift{from{transform:translateX(-70px)}to{transform:translateX(70px)}}.ls-mirror{opacity:.32}.ls-glint{opacity:.8;animation:ls-glint 2.6s ease-in-out infinite}@keyframes ls-glint{50%{opacity:.15;transform:translateX(6px)}}.ls-ripple{stroke:#fff;stroke-width:1.2;stroke-linecap:round;opacity:.22;animation:ls-ripple 6s ease-in-out infinite}@keyframes ls-ripple{50%{transform:translateX(18px);opacity:.06}}.ls-flow{fill:none;stroke-width:1.4;stroke-dasharray:6 14;opacity:.45;animation:ls-flowing 2.4s linear infinite}@keyframes ls-flowing{to{stroke-dashoffset:-40}}.ls-tree{transform-box:fill-box;transform-origin:50% 100%;animation:ls-sway 4.5s ease-in-out infinite alternate}@keyframes ls-sway{from{transform:rotate(-1.8deg)}to{transform:rotate(1.8deg)}}.ls-palm path{fill:none;stroke-linecap:round;stroke-width:3.5}.ls-bird{animation:ls-fly 30s linear infinite}@keyframes ls-fly{from{transform:translateX(-60px)}to{transform:translateX(1020px)}}.ls-wing{fill:none;stroke:#1d2230;stroke-width:2.2;stroke-linecap:round;transform-box:fill-box;transform-origin:center;animation:ls-flap .5s ease-in-out infinite alternate}.ls-night .ls-wing{stroke:#c9d2ec}@keyframes ls-flap{to{transform:scaleY(-.45)}}.ls-boat{animation:ls-bob 3.2s ease-in-out infinite alternate}@keyframes ls-bob{from{transform:translateY(-2px) rotate(-1deg)}to{transform:translateY(2px) rotate(1deg)}}.ls-window{fill:#ffd27a;animation:ls-lit 8s steps(1) infinite}@keyframes ls-lit{0%,70%{opacity:1}80%{opacity:.2}}.ls-rain{stroke:#c9d6e8;stroke-width:1.1;opacity:.55;animation:ls-fall 1s linear infinite}@keyframes ls-fall{to{transform:translate(-60px,580px)}}.ls-snow{fill:#fff;opacity:.9;animation:ls-snowfall 9s linear infinite}@keyframes ls-snowfall{0%{transform:translate(0,0)}50%{transform:translate(14px,280px)}100%{transform:translate(-6px,560px)}}.ls-fog{fill:#e8ecf2;opacity:.22;filter:blur(10px);animation:ls-roll 18s ease-in-out infinite alternate}@keyframes ls-roll{from{transform:translateX(-60px)}to{transform:translateX(60px)}}@media (prefers-reduced-motion:reduce){.ls *{animation:none!important}}"
+}
+
+fn ls_page(r: LsRecipe, svg: Text) -> Text {
+  return f"<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>{r.title}</title><style>body{{margin:0;font:15px system-ui,sans-serif;color:#eceef2;background:#0b0c10}}main{{max-width:min(1680px,100%);margin:0 auto;padding:28px 16px}}.lab{{font:600 11px ui-monospace,Consolas,monospace;letter-spacing:.32em;text-transform:uppercase;color:#f5b45c}}h1{{margin:8px 0 4px;font-size:30px}}.how{{color:#a3a8bd;margin:0 0 16px}}{ls_style()}</style></head><body><main><div class=\"lab\">Kosika Designs &#183; scene</div><h1>{r.title}</h1><p class=\"how\">{r.land} at {r.time}, {r.weather}, water: {r.water}, trees: {r.trees}. Every ridge, ripple and leaf was worked out by Kosika; the painter only chose.</p>{svg}</main></body></html>"
+}
+
+workflow ls_render(r: LsRecipe) -> LsArt {
+  svg = ls_svg(ls_fixed(r))
+  out = {recipe: ls_fixed(r), svg: svg, page: ls_page(ls_fixed(r), svg), problems: ls_problems(ls_fixed(r))}
+}
+
+fn ls_task() -> Text {
+  return "You are a landscape painter choosing what a scene holds, for someone who asked for a picture of a place. Give time (dawn, day, sunset or night), weather (clear, cloudy, rain, snow or fog), land (mountains, hills, desert, plains or coast), water (none, lake, sea or river), trees (none, pine, round or palm), extras (any of birds, boats, town, aurora, stars, only those that belong), density (0 to 1: how many trees), seed (any whole number from 1 to 99999) and title (a short, evocative title of 2 to 5 words). Choose what the ask says; where it says nothing, choose what makes the most beautiful, believable scene."
+}
+
+fn ls_art(r: LsRecipe) -> LsArt {
+  let svg = ls_svg(r)
+  return {recipe: r, svg: svg, page: ls_page(r, svg), problems: ls_problems(r)}
+}
+
+workflow ls_make(ask: LsAsk) -> LsArt {
+  budget 2 model calls, 200 seconds
+  chosen = use_model ls_painter(ls_task(), ask.text) retry 1 otherwise ls_fallback()
+  out    = ls_art(ls_fixed(chosen))
+}
+
+// ---------------------------------------------------------------- tests
+
+test "asks for a place are painted, asks for how are explained" {
+  expect ls_wants("paint a mountain lake at sunset")
+  expect ls_wants("a snowy village at night")
+  expect ls_wants("draw a beach with palm trees")
+  expect not ls_wants("abstract art of the ocean")
+  expect not ls_wants("how does a river form")
+  expect not ls_wants("draw the water cycle")
+}
+
+test "a scene at sunset mirrors its mountains in the lake" {
+  svg = ls_svg(ls_fallback())
+  expect svg.contains("ls-sky") and svg.contains("ls-far") and svg.contains("ls-mirror") and svg.contains("ls-tree") and svg.contains("ls-bird")
+  expect svg.contains("ls-glint")
+}
+
+test "a night scene has stars, an aurora and lit windows" {
+  night = ls_svg({..ls_fallback(), time: "night", extras: ["aurora", "town"], trees: "none"})
+  expect night.contains("ls-stars") and night.contains("ls-aurora") and night.contains("ls-window")
+}
+
+test "rain falls on a river, and snow on the hills" {
+  rain = ls_svg({..ls_fallback(), weather: "rain", water: "river", trees: "none", land: "hills"})
+  expect rain.contains("ls-rain") and rain.contains("ls-flow") and not rain.contains("ls-glint")
+  snow = ls_svg({..ls_fallback(), weather: "snow", time: "day", water: "none", trees: "none", land: "hills", extras: []})
+  expect snow.contains("ls-snow") and not snow.contains("ls-mirror")
+}
+
+test "a coast has palms and boats" {
+  coast = ls_svg({..ls_fallback(), land: "coast", water: "sea", trees: "palm", extras: ["boats"], time: "day", density: 0})
+  expect coast.contains("ls-palm") and coast.contains("ls-boat")
+}
+
+test "a ridge is rough at every scale and stays in the picture" {
+  ys = ls_ridge(7, 330, 230, 3)
+  expect ys.length() == 65
+  expect (for y in ys where y < 0 or y > 340 { y }).is_empty()
+}
+
+test "a slip by the painter is brought back in range" {
+  fixed = ls_fixed({..ls_fallback(), time: "Midnight", weather: "storm", trees: "PINE", extras: ["birds", "dragons"], density: 3, seed: -5})
+  expect fixed.time == "sunset" and fixed.weather == "clear" and fixed.trees == "pine"
+  expect fixed.extras == ["birds"] and fixed.density == 1 and fixed.seed == 5
+  expect ls_problems(fixed).is_empty()
+}
+

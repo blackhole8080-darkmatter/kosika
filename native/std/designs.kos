@@ -49,6 +49,7 @@ import "designs_draw.kos"
 import "designs_main.kos"
 import "designs_art.kos"
 import "designs_generative.kos"
+import "designs_scene.kos"
 import "designs_quiz.kos"
 import "designs_paper.kos"
 import "science_chem.kos"
@@ -140,6 +141,7 @@ fn dz_named(ask: DzAsk) -> Text {
   // Asked for art in so many words, it is art, whatever it is of: "art of
   // planets orbiting a burning star" is not a reaction to balance.
   if dz_has(t, dz_art_asked()) { return "art" }
+  if ls_wants(ask.text) and dz_has(t, [" draw", " paint", " picture", " sketch", " scene", " landscape", " scenery", " wallpaper", " show me "]) { return "art" }
   if not al_which(ask.text).is_empty() { return "algorithm" }
   if t.starts_with(" convert ") { return "units" }
   if dz_has(t, [" periodic table", " periodic "]) or (se_find(ask.text) > 0 and dz_has(t, [" element", " atom", " electron", " tell me about ", " what is ", " shells"])) { return "element" }
@@ -283,6 +285,15 @@ fn dz_from_illustration(ask: DzAsk, r: ArtPage) -> DzResult {
   let inner = r.svg + words + f"<script>{art_script()}</script>"
   let embed = if r.problems.is_empty() { dz_wrap("illustration", place, palette, r.art.title, inner, art_style()) } else { "" }
   return {kind: "illustration", why: dz_why(ask), title: r.art.title, page: r.page, svg: r.svg, embed: embed, problems: r.problems, fixed: r.fixed}
+}
+
+// A painted place: a landscape with its sky, land, water and life, every
+// part worked out and moving.
+fn dz_from_scene(ask: DzAsk, a: LsArt) -> DzResult {
+  let place = dz_place(ask)
+  let embed = if a.problems.is_empty() { dz_wrap("art", place, "dark_matter", a.recipe.title, a.svg, ls_style()) } else { "" }
+  let why = "asks for a place, so Kosika painted it as a moving scene: " + a.recipe.land + " at " + a.recipe.time + ", " + a.recipe.weather
+  return {kind: "art", why: why, title: a.recipe.title, page: a.page, svg: a.svg, embed: embed, problems: a.problems, fixed: []}
 }
 
 fn dz_from_art(ask: DzAsk, g: GenArt) -> DzResult {
@@ -1837,7 +1848,20 @@ workflow dz_illustration(ask: DzAsk) -> DzResult {
   out   = dz_from_illustration(ask, drawn)
 }
 
+// Art is a place painted, or a mood made of moving shapes.
 workflow dz_art(ask: DzAsk) -> DzResult {
+  out = match ls_wants(ask.text) {
+    case true { call dz_scene(ask) }
+    case _ { call dz_abstract(ask) }
+  }
+}
+
+workflow dz_scene(ask: DzAsk) -> DzResult {
+  made = call ls_make({text: ask.text})
+  out  = dz_from_scene(ask, made)
+}
+
+workflow dz_abstract(ask: DzAsk) -> DzResult {
   made = call gen_make({text: ask.text})
   out  = dz_from_art(ask, made)
 }
@@ -2064,6 +2088,9 @@ test "art asked for in so many words is art, whatever it is of" {
   expect dz_kind({text: "generative art of planets orbiting a burning star", palette: "", place: "studio", kind: ""}) == "art"
   expect dz_kind({text: "a wallpaper of the periodic table", palette: "", place: "studio", kind: ""}) == "art"
   expect dz_kind({text: "balance the burning of methane", palette: "", place: "studio", kind: ""}) == "chemistry"
+  expect dz_kind({text: "paint a mountain lake at sunset", palette: "", place: "studio", kind: ""}) == "art"
+  expect dz_kind({text: "draw a snowy village at night", palette: "", place: "studio", kind: ""}) == "art"
+  expect dz_kind({text: "draw how a river erodes a valley", palette: "", place: "studio", kind: ""}) != "art"
 }
 
 test "style A: natural cycles draw their parts as living nodes, each moving as it means" {
