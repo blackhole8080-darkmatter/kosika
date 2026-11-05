@@ -413,10 +413,14 @@ fn ko_thought(msg: Msg, known: BrainFound, looked: BrainFound, exact: WkAnswer, 
   return th_build(msg.text, named, worked, evidence, memory.take(2), checks, final.reply)
 }
 
-fn ko_said(r: KosiReply, known: BrainFound, drawn: DzResult, thought: Thought) -> Said {
+fn ko_said(r: KosiReply, known: BrainFound, drawn: DzResult, thought: Thought, wanted: Bool) -> Said {
   let canvas = if drawn.problems.is_empty() { drawn.embed } else { "" }
-  let shown = if canvas.is_empty() { thought } else { th_with_drawing(thought, drawn.title, drawn.fixed) }
-  let text = ko_drawn_text(r, canvas, drawn.title)
+  // A drawing that was asked for and did not come out is said plainly,
+  // never passed off as made.
+  let failed = wanted and canvas.is_empty()
+  let drew = if canvas.is_empty() { thought } else { th_with_drawing(thought, drawn.title, drawn.fixed) }
+  let shown = if failed { th_with_failure(drew, "the drawing did not come out this time, so Kosi said so instead of describing it") } else { drew }
+  let text = if failed { "I tried to draw it, but the drawing didn't come out this time. Ask me again and I'll have another go." } else { ko_drawn_text(r, canvas, drawn.title) }
   return {text: text, suggest: ko_suggest(r), canvas: canvas, kept: ko_new_facts(r, known), project: r.project.trim(), thinking: th_answer(shown, text)}
 }
 
@@ -449,7 +453,7 @@ workflow chat(msg: Msg) -> Said {
     case _ { br_not_kept_kosi() }
   }
   heard  = call brain_keep(ko_talk_after(talk, msg.text, ko_reply_text(reply)))
-  out    = ko_said(reply, ko_both(known, seen), drawn, ko_thought(msg, known, looked, exact, said, reply))
+  out    = ko_said(reply, ko_both(known, seen), drawn, ko_thought(msg, known, looked, exact, said, reply), ko_wants_picture(msg, reply))
 }
 
 // The small brain: the same talk for a small model on a laptop's CPU. It
@@ -483,7 +487,7 @@ workflow chat_small(msg: Msg) -> Said {
     case _ { br_not_kept_kosi() }
   }
   heard  = call brain_keep(ko_talk_after(talk, msg.text, ko_reply_text(reply)))
-  out    = ko_said(reply, ko_both(known, seen), drawn, ko_thought(msg, known, looked, exact, raw, reply))
+  out    = ko_said(reply, ko_both(known, seen), drawn, ko_thought(msg, known, looked, exact, raw, reply), ko_wants_picture(msg, reply))
 }
 
 // ---------------------------------------------------------------- the friends

@@ -531,6 +531,20 @@ def _local_ready(model: str, url: str) -> bool:
     return any(n == model or n == model + ":latest" for n in names)
 
 
+def _kosi_task(text: str) -> str:
+    """The kind of work a message to Kosi is: research for Iris; drawing
+    when a picture is asked for or something is to be explained, which wants
+    the strong model, as a drawing's structure does; else talk, which wants
+    the quick one."""
+
+    low = " " + text.lower().strip() + " "
+    if low.lstrip().startswith(("iris", "ask iris", "hey iris")):
+        return "research"
+    if any(word in low for word in (" draw", " diagram", " picture", " sketch", " visual", " show me ", " canvas", " sol")):
+        return "designs"
+    return "talk"
+
+
 def kosi(text: str, *, local: bool = False, timeout: float = 600) -> dict[str, Any]:
     """Say something to Kosi, the companion run by Kosika Brain. The answer
     holds text, suggest, canvas (a Kosika canvas or ""), kept and project.
@@ -568,7 +582,7 @@ def kosi(text: str, *, local: bool = False, timeout: float = 600) -> dict[str, A
     # Kosi and Iris read Wikipedia to check what a question names, and Iris
     # reads arXiv for papers: those two sites only.
     extra = _brain_memory() + ["--allow-site", "en.wikipedia.org", "--allow-site", "export.arxiv.org"]
-    said = _run(KOSI, workflow, {"msg": {"text": text}}, extra=extra, first="who", timeout=timeout, env_more=env_more, task="research" if text.lower().lstrip().startswith(("iris", "ask iris", "hey iris")) else "talk")
+    said = _run(KOSI, workflow, {"msg": {"text": text}}, extra=extra, first="who", timeout=timeout, env_more=env_more, task=_kosi_task(text))
     said["local"] = local
     return said
 

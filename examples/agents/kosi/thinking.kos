@@ -10,7 +10,7 @@
 
 import "std/brain.kos"
 
-export [ThNode, Thought, th_none, th_node, th_build, th_steps, th_with_drawing, th_answer]
+export [ThNode, Thought, th_none, th_node, th_build, th_steps, th_with_drawing, th_answer, th_with_failure]
 
 // kind: question, named, exact, evidence, memory, check, answer. state:
 // "" or chosen, passed, fixed, ruled out, used.
@@ -113,6 +113,15 @@ fn th_with_drawing(t: Thought, title: Text, fixed: Text[]) -> Thought {
   links = if answer.is_empty() { links } else { links.append("dcheck>a") }
   let steps = for x in t.steps where x != "answered" { x }
   return {nodes: nodes, links: links, steps: steps.append("drew it, and Designs checked the drawing").append("answered")}
+}
+
+// A check that found something wrong and put it right, placed before the
+// answer.
+fn th_with_failure(t: Thought, what: Text) -> Thought {
+  let before = for n in t.nodes where n.kind != "answer" { n }
+  let after = for n in t.nodes where n.kind == "answer" { n }
+  let nodes = before.append(th_node("fail", "check", "Check · corrected", what, "", "fixed")).concat(after)
+  return {nodes: nodes, links: t.links.append("q>fail").append("fail>a"), steps: (for x in t.steps where x != "answered" { x }).append("checked the drawing · it did not come out").append("answered")}
 }
 
 // The answer as it was finally said.
