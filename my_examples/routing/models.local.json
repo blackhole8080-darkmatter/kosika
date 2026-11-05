@@ -1,0 +1,5 @@
+{
+  "cheap":   {"model": "qwen3:1.7b"},
+  "careful": {"model": "qwen2.5:7b"},
+  "strict":  {"model": "qwen2.5:7b"}
+}

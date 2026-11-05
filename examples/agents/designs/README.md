@@ -24,6 +24,30 @@ cloud drifts and rain drips. When a step is marked, its icon moves faster.
 
 ![A mind map of renewable energy](shots/renewable-energy-mind-map.png)
 
+### A sequence, an orbit and containers
+
+![What happens when you type a URL](shots/sequence-url.png)
+
+A **sequence** puts the actors along the top, each with a dashed lifeline.
+Their messages run between the lifelines in time order, one numbered row
+each, so a request and its reply read from top to bottom.
+
+![The solar system in order](shots/orbit-solar-system.png)
+
+An **orbit** puts one thing at the centre and the rest on rings, in order
+outward from it. Each card is placed round its ring by the golden angle,
+so no two land on the same side.
+
+![The architecture of a Kubernetes cluster](shots/containers-kubernetes.png)
+
+**Containers** are boxes holding cards, with links between any two cards.
+They suit a system's architecture, a cluster or a cell's organelles.
+
+Kosika also picks these kinds from the question itself. "When I type",
+"handshake" or "sequence diagram" gives a sequence. "Solar system",
+"planets" or "electron shell" gives an orbit. "Architecture", "cluster" or
+"organelles" gives containers.
+
 ### A comparison, as a table
 
 ![TCP, UDP and QUIC compared](shots/comparison-table.png)
@@ -84,18 +108,27 @@ count is called Fibonacci only when it is close to Fibonacci numbers.
 
 There are eight palettes. Dark Matter is the default, and Clear is safe for
 colour-blind readers (Okabe–Ito). Kosika checks every palette's contrast
-against WCAG before using it (`palette.kos`).
+against WCAG before using it (`std/designs_palette.kos`).
 
 ## The files
 
+Kosika Designs is part of Kosika's standard library, so any program can use
+it: `import "std/designs.kos"` and call `design`. Kosika then draws a
+diagram, an animated illustration, moving art, or one canvas of all three.
+
 | File | What it does |
 | --- | --- |
-| `main.kos` | Reads the question, plans the drawing and describes it |
-| `draw.kos` | Lays out and draws every kind of drawing, checks it, and writes the page |
-| `palette.kos` | Holds the palettes and checks their contrast |
-| `paper.kos` | Writes mathematics as a paper and checks each line |
-| `sunflower.kos` | Traces and measures a real sunflower photo |
-| `eyes.py` | Finds freely licensed photos on Wikipedia and Wikimedia Commons |
+| `kosika/std/designs.kos` | The front door: chooses how to draw, and answers every place in one shape |
+| `kosika/std/designs_main.kos` | Reads the question, plans the diagram and describes it |
+| `kosika/std/designs_draw.kos` | Lays out and draws every kind of diagram, checks it, and writes the page |
+| `kosika/std/designs_art.kos` | Animated illustrations, with their geometry and motion worked by Kosika |
+| `kosika/std/designs_generative.kos` | Moving generative art |
+| `kosika/std/designs_palette.kos` | Holds the palettes and checks their contrast |
+| `kosika/std/designs_paper.kos` | Writes mathematics as a paper and checks each line |
+| `explain.kos` (here) | An agent that answers in words and draws a canvas beside them |
+| `sunflower.kos`, `studio.kos` (here) | Traces and measures a real sunflower photo |
+| `eyes.py` (here) | Finds freely licensed photos on Wikipedia and Wikimedia Commons |
+| `art/` (here) | Hand-made illustrations and their README |
 
 Kosika AI Chat (`examples/apps/chat`) shows these drawings as its answers.
 

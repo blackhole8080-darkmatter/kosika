@@ -1,0 +1,150 @@
+{
+ "a": {
+  "title": "How gears trade speed for force",
+  "summary": "A small gear turning a big one: the big one turns slower, but with more force.",
+  "palette": "dark_matter",
+  "backdrop": "grid",
+  "figures": [
+   {
+    "id": "motor",
+    "kind": "gear",
+    "x": 30,
+    "y": 28,
+    "w": 9,
+    "h": 0,
+    "count": 12,
+    "hue": 0,
+    "label": "Driver",
+    "points": []
+   },
+   {
+    "id": "big",
+    "kind": "gear",
+    "x": 54.5,
+    "y": 28,
+    "w": 17,
+    "h": 0,
+    "count": 24,
+    "hue": 1,
+    "label": "Driven",
+    "points": []
+   },
+   {
+    "id": "small",
+    "kind": "gear",
+    "x": 77,
+    "y": 28,
+    "w": 7,
+    "h": 0,
+    "count": 10,
+    "hue": 2,
+    "label": "Third",
+    "points": []
+   },
+   {
+    "id": "power",
+    "kind": "arrow",
+    "x": 0,
+    "y": 0,
+    "w": 0,
+    "h": 0,
+    "count": 0,
+    "hue": 3,
+    "label": "Power in",
+    "points": [
+     8,
+     52,
+     18,
+     46,
+     26,
+     40
+    ]
+   },
+   {
+    "id": "load",
+    "kind": "arrow",
+    "x": 0,
+    "y": 0,
+    "w": 0,
+    "h": 0,
+    "count": 0,
+    "hue": 3,
+    "label": "",
+    "points": [
+     60,
+     52,
+     72,
+     54,
+     86,
+     52
+    ]
+   }
+  ],
+  "motions": [
+   {
+    "what": "motor",
+    "kind": "spin",
+    "around": "",
+    "seconds": 3,
+    "delay": 0
+   },
+   {
+    "what": "big",
+    "kind": "spin",
+    "around": "",
+    "seconds": 0,
+    "delay": 0
+   },
+   {
+    "what": "small",
+    "kind": "spin",
+    "around": "",
+    "seconds": 0,
+    "delay": 0
+   },
+   {
+    "what": "power",
+    "kind": "flow",
+    "around": "",
+    "seconds": 0,
+    "delay": 0
+   },
+   {
+    "what": "load",
+    "kind": "flow",
+    "around": "",
+    "seconds": 0,
+    "delay": 0
+   }
+  ],
+  "beats": [
+   {
+    "text": "A motor turns the small driver gear quickly.",
+    "shows": [
+     "motor",
+     "power"
+    ]
+   },
+   {
+    "text": "Its 12 teeth push the 24-tooth gear, which turns half as fast and the other way.",
+    "shows": [
+     "big",
+     "motor"
+    ]
+   },
+   {
+    "text": "Half the speed means twice the turning force: that is how gears help a bike climb a hill.",
+    "shows": [
+     "big",
+     "load"
+    ]
+   },
+   {
+    "text": "A third gear turns the same way as the first, at a speed set by its own teeth.",
+    "shows": [
+     "small"
+    ]
+   }
+  ]
+ }
+}

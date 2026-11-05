@@ -1,4 +1,4 @@
-"""The Kosika MCP server lets an assistant check, run, replay, and map programs."""
+"""The Kosika MCP server lets an assistant check, test, repair, run, replay, map and declare programs."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import io
 import json
 import sys
 import unittest
+from pathlib import Path
 from typing import Any
 
 from kosika.mcp_server import (
@@ -66,6 +67,62 @@ workflow main(city: City) -> Weather {
 """
 
 ORDER = {"order": {"customer": "Ada", "items": "pen,book"}}
+
+TYPO_FIELD = PURE.replace("order.items", "order.itms")
+TYPO_VARIABLE = PURE.replace("summarize_order(order)", "summarize_order(ordr)")
+NO_CLOSE_NAME = PURE.replace("order.items", "order.zzzzz")
+TWO_TYPOS = TYPO_FIELD.replace("summarize_order(order)", "summarize_order(ordr)")
+
+TESTED = """
+record Order { customer: Text items: Text }
+record Summary { greeting: Text count: Number }
+
+fn summarize_order(order: Order) -> Summary {
+  return {
+    greeting: "Hello, " + order.customer + "!",
+    count: order.items.split(separator: ",").length()
+  }
+}
+
+workflow main(order: Order) -> Summary {
+  summary = summarize_order(order)
+}
+
+test "the count is the number of items" {
+  result = main({customer: "Ada", items: "pen,book"})
+  expect result.count == 2
+}
+
+test "the greeting names the customer" {
+  result = main({customer: "Ada", items: "pen"})
+  expect result.greeting == "Hello, Ada!"
+}
+"""
+
+TESTED_WRONG = TESTED.replace("expect result.count == 2", "expect result.count == 3")
+
+TESTED_UNANSWERED = """
+record Ticket { text: Text }
+record Routing { queue: Text }
+model assistant
+workflow main(ticket: Ticket) -> Routing {
+  label = classify ticket.text into ["billing", "bug"]
+  routing = {queue: label.label}
+}
+test "the queue follows the label" {
+  result = main({text: "charged twice"})
+  expect result.queue == "billing"
+}
+"""
+
+CONTRACT = json.loads(
+    (
+        Path(__file__).resolve().parents[1]
+        / "examples"
+        / "components"
+        / "uppercase_python.component.json"
+    ).read_text(encoding="utf-8")
+)
 
 
 def payload(name: str, **arguments: Any) -> dict[str, Any]:
@@ -163,6 +220,121 @@ class ToolTests(unittest.TestCase):
         self.assertIn("nodes", payload("kosika_map", source=PURE, format="json")["map"])
         self.assertFalse(payload("kosika_map", source="record X {")["ok"])
 
+    def test_declare_renders_the_contract_it_is_given(self) -> None:
+        answer = payload("kosika_declare", contract=CONTRACT)
+        self.assertTrue(answer["ok"])
+        self.assertIn("tool uppercase_python {", answer["declaration"])
+        self.assertIn(
+            'source mcp "component:example.uppercase-python"', answer["declaration"]
+        )
+        self.assertIn("record UppercasePythonInput {", answer["declaration"])
+        self.assertTrue(payload("kosika_check", source=answer["declaration"])["ok"])
+
+    def test_declare_says_why_a_contract_cannot_be_shown(self) -> None:
+        broken = dict(CONTRACT)
+        del broken["schema"]
+        invalid = payload("kosika_declare", contract=broken)
+        self.assertEqual((invalid["ok"], invalid["stage"]), (False, "contract"))
+
+        unshowable = json.loads(json.dumps(CONTRACT))
+        unshowable["inputSchema"]["properties"]["text"] = {"type": "integer"}
+        unsupported = payload("kosika_declare", contract=unshowable)
+        self.assertEqual(
+            (unsupported["ok"], unsupported["stage"]), (False, "declaration")
+        )
+        self.assertIn("integer", unsupported["message"])
+
+    def test_test_runs_the_programs_own_tests(self) -> None:
+        answer = payload("kosika_test", source=TESTED)
+        self.assertTrue(answer["ok"])
+        self.assertEqual(
+            [(row["name"], row["passed"]) for row in answer["tests"]],
+            [
+                ("the count is the number of items", True),
+                ("the greeting names the customer", True),
+            ],
+        )
+        self.assertEqual((answer["passed"], answer["failed"]), (2, 0))
+
+    def test_test_reports_a_failing_expectation(self) -> None:
+        answer = payload("kosika_test", source=TESTED_WRONG)
+        self.assertFalse(answer["ok"])
+        failed = [row for row in answer["tests"] if not row["passed"]]
+        self.assertEqual(len(failed), 1)
+        self.assertIn("3", failed[0]["message"])
+        self.assertEqual(answer["failed"], 1)
+
+    def test_test_never_reaches_a_real_model(self) -> None:
+        answer = payload("kosika_test", source=TESTED_UNANSWERED)
+        self.assertFalse(answer["ok"])
+        self.assertIn("no response left", answer["tests"][0]["message"])
+
+    def test_test_stops_at_the_check_stage_and_names_one_test(self) -> None:
+        broken = payload("kosika_test", source="record Broken {")
+        self.assertEqual((broken["ok"], broken["stage"]), (False, "check"))
+        one = payload(
+            "kosika_test", source=TESTED, only="the greeting names the customer"
+        )
+        self.assertEqual(
+            [row["name"] for row in one["tests"]], ["the greeting names the customer"]
+        )
+        unknown = payload("kosika_test", source=TESTED, only="no such test")
+        self.assertEqual((unknown["ok"], unknown["stage"]), (False, "test"))
+
+    def test_repair_offers_the_typo_and_a_checked_patch(self) -> None:
+        answer = payload("kosika_repair", source=TYPO_FIELD)
+        self.assertFalse(answer["ok"])
+        self.assertEqual(
+            answer["edits"],
+            [
+                {
+                    "code": "check/field-access",
+                    "line": 8,
+                    "column": 18,
+                    "remove": "itms",
+                    "with": "items",
+                }
+            ],
+        )
+        self.assertIn("order.items", answer["patched"])
+        self.assertTrue(payload("kosika_check", source=answer["patched"])["ok"])
+
+    def test_repair_renames_an_unknown_variable(self) -> None:
+        answer = payload("kosika_repair", source=TYPO_VARIABLE)
+        edit = answer["edits"][0]
+        self.assertEqual((edit["remove"], edit["with"]), ("ordr", "order"))
+        self.assertIn("summarize_order(order)", answer["patched"])
+
+    def test_repair_applies_every_edit_it_can_verify(self) -> None:
+        answer = payload("kosika_repair", source=TWO_TYPOS)
+        self.assertEqual(len(answer["edits"]), 2)
+        self.assertTrue(payload("kosika_check", source=answer["patched"])["ok"])
+
+    def test_repair_leaves_a_problem_it_cannot_name(self) -> None:
+        answer = payload("kosika_repair", source=NO_CLOSE_NAME)
+        self.assertFalse(answer["ok"])
+        self.assertEqual(answer["edits"], [])
+        self.assertNotIn("patched", answer)
+
+    def test_repair_withholds_a_patch_that_does_not_check_clean(self) -> None:
+        answer = payload(
+            "kosika_repair",
+            source=TYPO_FIELD
+            + """
+workflow second(order: Order) -> Summary {
+  wrong = order.zzzzz
+}
+""",
+        )
+        self.assertEqual(len(answer["edits"]), 1)
+        self.assertNotIn("patched", answer)
+
+    def test_repair_is_quiet_for_a_clean_program(self) -> None:
+        self.assertEqual(
+            payload("kosika_repair", source=PURE),
+            {"ok": True, "problems": [], "edits": []},
+        )
+
     def test_bad_arguments_are_tool_errors(self) -> None:
         cases: list[tuple[str, dict[str, Any]]] = [
             ("kosika_check", {}),
@@ -173,6 +345,13 @@ class ToolTests(unittest.TestCase):
             ("kosika_run", {"source": PURE, "workflow": 3}),
             ("kosika_run", {"source": PURE, "model_answers": {"m": {"text": "x"}}}),
             ("kosika_map", {"source": PURE, "format": "svg"}),
+            ("kosika_declare", {}),
+            ("kosika_declare", {"contract": "not a record"}),
+            ("kosika_declare", {"contract": CONTRACT, "path": "C:/secret"}),
+            ("kosika_test", {}),
+            ("kosika_test", {"source": TESTED, "only": 3}),
+            ("kosika_repair", {}),
+            ("kosika_repair", {"source": PURE, "path": "C:/secret"}),
             ("kosika_guide", {"extra": 1}),
         ]
         for name, arguments in cases:
@@ -214,7 +393,7 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual([answer["id"] for answer in answers], [1, 2, 3, 4])
         self.assertEqual(answers[0]["result"]["protocolVersion"], PROTOCOL_VERSION)
         self.assertEqual(answers[0]["result"]["serverInfo"]["name"], "kosika")
-        self.assertEqual(len(answers[1]["result"]["tools"]), 5)
+        self.assertEqual(len(answers[1]["result"]["tools"]), 8)
         self.assertTrue(answers[2]["result"]["structuredContent"]["ok"])
 
     def test_protocol_errors_have_json_rpc_codes(self) -> None:

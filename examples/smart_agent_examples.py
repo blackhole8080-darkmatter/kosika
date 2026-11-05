@@ -9,6 +9,8 @@ These examples show how to make agents more powerful through:
 - Multi-agent coordination
 """
 
+from typing import Dict, List, Tuple
+
 from kosika.skills_framework import (
     Skill, SkillKind, SkillParameter, SkillOutput, SkillExample,
     get_skill_registry, create_skill

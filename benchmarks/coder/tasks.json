@@ -25,5 +25,8 @@
    ]},
   {"id": "website", "language": "html", "folder": "site",
    "task": "create a modern one-page website for a bakery called Crumb, with a hero, a menu of six items with prices, opening hours, and scroll animations",
-   "checks": [["python", "-c", "import pathlib,re; h=pathlib.Path('index.html').read_text(); c=pathlib.Path('styles.css').read_text(); assert '</html>' in h and h.count('<section')>=3 and 'styles.css' in h and 'script.js' in h; assert c.count('{')==c.count('}') and '@media' in c and len(c)>1500"], ["node", "--check", "script.js"]]}
+   "checks": [["python", "-c", "import pathlib,re; h=pathlib.Path('index.html').read_text(); c=pathlib.Path('styles.css').read_text(); assert '</html>' in h and h.count('<section')>=3 and 'styles.css' in h and 'script.js' in h; assert c.count('{')==c.count('}') and '@media' in c and len(c)>1500"], ["node", "--check", "script.js"]]},
+  {"id": "website-rendered", "language": "html", "folder": "site",
+   "task": "create a modern one-page website for a bakery called Crumb in index.html, with whatever stylesheets and scripts you want beside it: a hero with the bakery's name as a heading of 40px or more, a menu of six items each with a price, opening hours with times in them, and an animation that runs as the reader scrolls. it has to hold together on a phone: no sideways scrolling at 390px, and every link and button at least 44px tall. all the text has to be readable against whatever is behind it",
+   "checks": [["node", "{repo}/benchmarks/coder/render_check.mjs"]]}
 ]

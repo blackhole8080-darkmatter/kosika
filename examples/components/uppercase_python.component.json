@@ -1,0 +1,55 @@
+{
+  "schema": "kosika.component/v1",
+  "id": "example.uppercase-python",
+  "version": "1.0.0",
+  "tool": {
+    "name": "uppercase_python",
+    "operation": "uppercase_python"
+  },
+  "implementation": {
+    "artifact": "uppercase_python.py",
+    "sha256": "f69c32e969f08a170fcef2c2d63c06b919e9aa06fdb8194b7ac08a371013b409",
+    "protocol": "json-stdio/v1"
+  },
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "text": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "text"
+    ],
+    "additionalProperties": false
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "text": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "text"
+    ],
+    "additionalProperties": false
+  },
+  "access": "analyze",
+  "effects": [
+    "cpu:compute"
+  ],
+  "capabilities": [
+    "text:transform"
+  ],
+  "errors": [
+    {
+      "code": "input:invalid",
+      "retryable": false
+    }
+  ],
+  "cancellation": {
+    "mode": "terminate",
+    "timeoutMs": 5000
+  }
+}

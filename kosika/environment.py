@@ -332,4 +332,8 @@ DECIDED = (
     ("binding_id", "--binding-id"),
     ("memory", "--memory"),
     ("notify", "--notify"),
+    # An environment cannot name a database yet (see KOSIKA_DATA_ROADMAP.md,
+    # Phase 4), so granting one alongside --env would widen what the file
+    # allows.
+    ("database", "--database"),
 )

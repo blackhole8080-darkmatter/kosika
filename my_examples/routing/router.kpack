@@ -1,0 +1,23 @@
+{
+  "schema": "kosika.pack/v1",
+  "entry": "main.kos",
+  "program_hash": "30c06d8b3d876a6709a13521a0d72383533cac8f5a0d32c800aa3637caba5ff1",
+  "module_hashes": {
+    "main.kos": "c6a61ad1b873f40b98cb6376a7cd0017a1970ea345f532e86159c877de5bf4f0"
+  },
+  "modules": {
+    "main.kos": "record Ticket { text: Text }\nrecord Out { queue: Text brief: Text refund: Bool }\n\nmodel cheap\ndefault model careful\nmodel strict\n\nfn build(label: Choice, brief: Summary, refund: Decision) -> Out {\n  return {queue: label.label, brief: brief.text, refund: refund.answer}\n}\n\nworkflow main(ticket: Ticket) -> Out {\n  label  = classify ticket.text into [\"billing\", \"bug\", \"other\"] using cheap\n  brief  = summarize ticket.text\n  refund = decide \"Does the customer ask for a refund?\" given ticket.text using cheap, careful, strict vote 3\n  out    = build(label, brief, refund)\n}\n\ntest \"two models can outvote the third\" {\n  answers cheap: [\n    {label: \"billing\", confidence: 0.9},\n    {answer: false, confidence: 0.6, reason: \"No refund is mentioned.\"}\n  ]\n  answers careful: [\n    {text: \"Charged twice, wants a refund.\"},\n    {answer: true, confidence: 0.9, reason: \"They say please refund me.\"}\n  ]\n  answers strict: [\n    {answer: true, confidence: 0.8, reason: \"A refund is requested.\"}\n  ]\n  result = main({text: \"My card was charged twice. Please refund me.\"})\n  expect result.queue == \"billing\"\n  expect result.refund == true\n}\n"
+  },
+  "needs": {
+    "models": [
+      "careful",
+      "cheap",
+      "strict"
+    ],
+    "tools": [],
+    "workflows": [
+      "main"
+    ],
+    "tests": 1
+  }
+}

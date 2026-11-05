@@ -193,6 +193,19 @@ func Lex(source string) ([]Token, error) {
 					end++
 				}
 			}
+			// An exponent, as in 6.674e-11 or 5.972e24.
+			if end+1 < count && (text[end] == 'e' || text[end] == 'E') {
+				next := end + 1
+				if next < count && (text[next] == '+' || text[next] == '-') {
+					next++
+				}
+				if next < count && isDigit(text[next]) {
+					end = next
+					for end < count && isDigit(text[end]) {
+						end++
+					}
+				}
+			}
 			tokens = append(tokens, Token{"NUMBER", string(text[at:end]), line, column})
 			column += end - at
 			at = end

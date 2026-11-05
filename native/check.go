@@ -218,6 +218,30 @@ func fieldNames(fields []Param) []string {
 	return names
 }
 
+// namesOf returns each declaration's name, so a repeated one can be named.
+func namesOf[T any](items []T, name func(T) string) []string {
+	names := make([]string, len(items))
+	for i, item := range items {
+		names[i] = name(item)
+	}
+	return names
+}
+
+// declaredTwice says which declaration repeats, and what to do about it.
+func declaredTwice(kind string, names []string) string {
+	counted := map[string]int{}
+	for _, name := range names {
+		counted[name]++
+	}
+	repeated := ""
+	for name, count := range counted {
+		if count > 1 && (repeated == "" || name < repeated) {
+			repeated = name
+		}
+	}
+	return fmt.Sprintf("Duplicate %s declaration: %s is declared twice; a file declares each %s once, so merge the two declarations or rename one", kind, pyRepr(repeated), kind)
+}
+
 func (c *checker) validateType(t string) {
 	if params, out, ok := signature(t); ok {
 		seen := map[string]bool{}
@@ -243,6 +267,11 @@ func (c *checker) validateType(t string) {
 		}
 		c.validateType(t[:len(t)-1])
 	case c.records[t] == nil && c.enumValues(t) == nil && c.shape(t) == nil && c.choices[t] == nil:
+		if t == "Choice" {
+			// Choice is the built-in a thinking step gives; it is a type in a
+			// program that has one, and no record may hold it otherwise.
+			checkFail("Unknown field type %s: Choice is what a thinking step (classify, extract, summarize, decide) gives, and it is a type only in a program that has one; keep the record's fields Text, or add the step that produces it", pyRepr(t))
+		}
 		checkFail("Unknown field type %s", pyRepr(t))
 	}
 }
@@ -708,6 +737,21 @@ func (c *checker) methodType(e *MethodExpr, env *Env, step string) string {
 	if target, ok := e.Target.(*VarExpr); ok && env.present[target.Name] &&
 		(e.Name == "exists" || e.Name == "value" || e.Name == "or") {
 		receiverType += "?"
+	}
+	if record := c.records[receiverType]; record != nil {
+		// A record has no methods, so `known.value()` is a call on the record,
+		// not on its `value` field. Naming the field and the line that reads it
+		// saves the guess of which `.value` is missing.
+		if held, ok := fieldType(record.Fields, e.Name); ok {
+			shown := "the field"
+			if variable, ok := e.Target.(*VarExpr); ok {
+				shown = variable.Name + "." + e.Name
+			}
+			if strings.HasSuffix(held, "?") {
+				checkFail("Step %s unknown method: %s is a field of %s, not a method, and a record has no methods; %s holds %s, so write %s.value() to require it, %s.or(default: ...) for a fallback, or %s.exists() to test it", pyRepr(step), pyRepr(e.Name), pyRepr(receiverType), pyRepr(e.Name), pyRepr(held), shown, shown, shown)
+			}
+			checkFail("Step %s unknown method: %s is a field of %s, not a method, and a record has no methods; read it as %s", pyRepr(step), pyRepr(e.Name), pyRepr(receiverType), shown)
+		}
 	}
 	method, problem := resolveMethod(receiverType, e.Name)
 	if problem != "" {
@@ -1338,7 +1382,16 @@ func ModuleProblem(program *Program, path string, visible map[string]bool) strin
 	if absolute, err := filepath.Abs(path); err == nil {
 		path = absolute
 	}
-	return fmt.Sprintf("%s: unknown names, not declared here and not exported by an import (unavailable or private symbols %s).%s", path, pyList(hidden), didYouMean(hidden[0], candidates))
+	hint := didYouMean(hidden[0], candidates)
+	for _, name := range hidden {
+		// A name used as a type and never declared is a record the file still
+		// needs; saying so is the whole repair.
+		if name[0] >= 'A' && name[0] <= 'Z' && !strings.HasSuffix(name, "Recalled") {
+			hint += fmt.Sprintf(" %s is not declared here: declare it first, as `record %s { ... }` for a record.", name, name)
+			break
+		}
+	}
+	return fmt.Sprintf("%s: unknown names, not declared here and not exported by an import (unavailable or private symbols %s).%s", path, pyList(hidden), hint)
 }
 
 func newChecker(program *Program) *checker {
@@ -1500,20 +1553,20 @@ func (c *checker) checkDeclarations() {
 		}
 	}
 	c.checkModels()
-	if len(c.records) != len(c.program.Records) {
-		checkFail("Duplicate record declaration")
+	if names := namesOf(c.program.Records, func(record *RecordDecl) string { return record.Name }); len(c.records) != len(names) {
+		checkFail("%s", declaredTwice("record", names))
 	}
-	if len(c.tools) != len(c.program.Tools) {
-		checkFail("Duplicate tool declaration")
+	if names := namesOf(c.program.Tools, func(tool *ToolDecl) string { return tool.Name }); len(c.tools) != len(names) {
+		checkFail("%s", declaredTwice("tool", names))
 	}
-	if len(c.agents) != len(c.program.Agents) {
-		checkFail("Duplicate agent declaration")
+	if names := namesOf(c.program.Agents, func(agent *AgentDecl) string { return agent.Name }); len(c.agents) != len(names) {
+		checkFail("%s", declaredTwice("agent", names))
 	}
-	if len(c.workflows) != len(c.program.Workflows) {
-		checkFail("Duplicate workflow declaration")
+	if names := namesOf(c.program.Workflows, func(workflow *WorkflowDecl) string { return workflow.Name }); len(c.workflows) != len(names) {
+		checkFail("%s", declaredTwice("workflow", names))
 	}
 	if len(c.functions) != len(c.order) {
-		checkFail("Duplicate function declaration")
+		checkFail("%s", declaredTwice("function", c.order))
 	}
 	c.checkWorkflowCalls()
 	for _, record := range c.program.Records {

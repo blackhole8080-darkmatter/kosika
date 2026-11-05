@@ -15,12 +15,16 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
 )
 
 const (
 	maxCheckedSource = 64 * 1024
 	maxCheckedTests  = 30
 	maxNoteBytes     = 4000
+	maxPageBytes     = 512 * 1024
+	maxLinkChars     = 2048
+	maxNameChars     = 100
 )
 
 // checkSource is a `system "kosika"` tool's `check`: the program is put in
@@ -112,16 +116,69 @@ func cleanNoteAddress(address string) (string, string) {
 	return trimmed, ""
 }
 
+// cleanNoteLink is the address tapping the note opens: one http(s) address
+// with a host, no credentials, no spaces; "" when there is none.
+func cleanNoteLink(link string) (string, string) {
+	trimmed := strings.TrimSpace(link)
+	if trimmed == "" {
+		return "", ""
+	}
+	bad := fmt.Sprintf("notify link %s must be one short http(s) address, like https://arxiv.org/abs/2610.23850", pyRepr(link))
+	if len(trimmed) > maxLinkChars || strings.ContainsFunc(trimmed, unicode.IsSpace) {
+		return "", bad
+	}
+	parts, err := url.Parse(trimmed)
+	if err != nil || (parts.Scheme != "http" && parts.Scheme != "https") || parts.Hostname() == "" || parts.User != nil {
+		return "", bad
+	}
+	return trimmed, ""
+}
+
+// cleanNoteFileName is a file name with no path in it: letters, digits,
+// dot, dash, underscore.
+func cleanNoteFileName(name string) (string, string) {
+	kept := strings.Builder{}
+	for _, letter := range strings.TrimSpace(name) {
+		if letter < 128 && (unicode.IsLetter(letter) || unicode.IsDigit(letter) || letter == '.' || letter == '_' || letter == '-') {
+			kept.WriteRune(letter)
+		} else {
+			kept.WriteByte('-')
+		}
+	}
+	cleaned := clipText(kept.String(), maxNameChars)
+	if cleaned == "" || cleaned == "." || cleaned == ".." {
+		return "", fmt.Sprintf("notify file name %s is not a file name", pyRepr(name))
+	}
+	return cleaned, ""
+}
+
 // noteTool is a `system "notify"` tool's `send`: one note, sent only to
-// the address given.
+// the address given, with an optional link to open on tap and an optional
+// attached page.
 func (r *run) noteTool(arguments *Record) Value {
 	title, _ := arguments.Fields["title"].(string)
 	text, _ := arguments.Fields["text"].(string)
+	link, _ := arguments.Fields["link"].(string)
+	fileName, _ := arguments.Fields["file_name"].(string)
+	page, _ := arguments.Fields["file"].(string)
 	title = clipText(strings.Join(strings.Fields(title), " "), 200)
+	cleanedLink, problem := cleanNoteLink(link)
+	if problem != "" {
+		runFail(problem)
+	}
+	if (strings.TrimSpace(fileName) != "") != (page != "") {
+		runFail("A note's attached file needs a file_name too; give both, or neither for a plain note")
+	}
+	attachment := []byte(page)
+	if page != "" && len(attachment) > maxPageBytes {
+		attachment = nil
+		text += "\n[the page was too big to attach]"
+	}
 	data := []byte(text)
 	if len(data) > maxNoteBytes {
 		cut := strings.ToValidUTF8(string(data[:maxNoteBytes-40]), "")
 		data = []byte(cut + "\n[cut: the rest is on the computer]")
+		text = string(data)
 	}
 	ascii := []rune(title)
 	for i, letter := range ascii {
@@ -133,12 +190,38 @@ func (r *run) noteTool(arguments *Record) Value {
 	if parts, err := url.Parse(r.notify); err == nil {
 		host = parts.Hostname()
 	}
-	request, err := http.NewRequest("POST", r.notify, bytes.NewReader(data))
+	where := r.notify
+	body := data
+	attachedName := ""
+	var request *http.Request
+	var err error
+	if attachment != nil {
+		cleaned, nameProblem := cleanNoteFileName(fileName)
+		if nameProblem != "" {
+			runFail(nameProblem)
+		}
+		attachedName = cleaned
+		// The body is the file now, so the words of the note travel as the
+		// message parameter; ntfy turns each written \n back into a line.
+		message := strings.ReplaceAll(text, "\n", "\\n")
+		where = r.notify + "?message=" + strings.ReplaceAll(url.QueryEscape(message), "+", "%20")
+		request, err = http.NewRequest("POST", where, bytes.NewReader(attachment))
+	} else {
+		request, err = http.NewRequest("POST", where, bytes.NewReader(body))
+	}
 	if err != nil {
 		runFail(fmt.Sprintf("Could not reach %s: %v", host, err))
 	}
 	request.Header.Set("Title", string(ascii))
-	request.Header.Set("Content-Type", "text/plain; charset=utf-8")
+	if attachment != nil {
+		request.Header.Set("Filename", attachedName)
+		request.Header.Set("Content-Type", "text/html; charset=utf-8")
+	} else {
+		request.Header.Set("Content-Type", "text/plain; charset=utf-8")
+	}
+	if cleanedLink != "" {
+		request.Header.Set("Click", cleanedLink)
+	}
 	response, err := (&http.Client{Timeout: 20 * time.Second}).Do(request)
 	if err != nil {
 		runFail(fmt.Sprintf("Could not reach %s: %v", host, err))

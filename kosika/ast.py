@@ -134,6 +134,42 @@ def method_function(record: str, method: str) -> str:
 
 
 @dataclass(frozen=True)
+class ColumnDecl:
+    """One column a store declares: its name, and what it holds."""
+
+    name: str
+    type_name: str
+
+
+@dataclass(frozen=True)
+class TableDecl:
+    """One table a store declares."""
+
+    name: str
+    columns: tuple[ColumnDecl, ...]
+
+
+@dataclass(frozen=True)
+class StoreDecl:
+    """`store Notes at "./notes.db" { table notes { id: Number } }`:
+    the tables and columns a program means to use in one database file.
+
+    A store is a promise about a file, written where a person and the checker
+    can read it. It grants nothing and reaches nothing: the file it names is
+    relative to the program, and the runner still has to grant that file with
+    `--database`. Before the first step of a run the declaration is checked
+    against the file, so a table or a column that has drifted is refused
+    before anything happens (see `kosika.database.check_stores`). A column of
+    a store is `Text`, `Number` or `Bool`, the same three a row record may
+    hold.
+    """
+
+    name: str
+    file: str
+    tables: tuple[TableDecl, ...]
+
+
+@dataclass(frozen=True)
 class ToolDecl:
     name: str
     source: str
@@ -255,6 +291,19 @@ class ChoiceDecl:
 
     name: str
     alternatives: tuple[ChoiceAlternative, ...]
+
+
+@dataclass(frozen=True)
+class ChoiceExpr:
+    """A constructed choice value: `found(value: "hello")`.
+
+    `alternative` names which alternative; `arguments` are its field values,
+    in the alternative's declared field order.
+    """
+
+    choice_name: str
+    alternative: str
+    arguments: tuple[tuple[str, "Expression"], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -414,6 +463,7 @@ Expression = (
     | ContinueExpr
     | ModelVarExpr
     | Block
+    | ChoiceExpr
 )
 
 
@@ -854,6 +904,9 @@ class Program:
     enums: list[EnumDecl] = field(default_factory=list)
     # `shape NAME { fn ... }`.
     shapes: list[ShapeDecl] = field(default_factory=list)
+    # `store NAME at "FILE" { table ... }`: the tables a program means to
+    # use in one database file, checked against it before the first step.
+    stores: list[StoreDecl] = field(default_factory=list)
 
 
 #: Fields added to the tree after traces and approvals were first recorded,
@@ -889,6 +942,7 @@ _ABSENT_DEFAULTS: dict[str, tuple[Any, ...]] = {
     "boards": ((), []),
     "enums": ((), []),
     "shapes": ((), []),
+    "stores": ((), []),
     "learns": (False,),
     "plain": (False,),
     "learn_by": (None,),

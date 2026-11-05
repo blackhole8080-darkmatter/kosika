@@ -2,7 +2,7 @@
 #
 #   .\make.ps1 "create a visual representation of the Fibonacci sequence"
 #
-# 1. main.kos thinks of the best real-world example (a free Groq model).
+# 1. std/designs_main.kos thinks of the best real-world example (a free Groq model).
 # 2. eyes.py finds freely licensed photos of it on Wikimedia Commons and
 #    reads where the florets are; a free vision model makes a first guess.
 # 3. sunflower.kos measures, checks and draws. If the photo fails Kosika's
@@ -23,6 +23,7 @@ param(
 $ErrorActionPreference = "Stop"
 $kept = $null
 $here = $PSScriptRoot
+$std = Join-Path $here "..\..\..\kosika\std"
 $work = Join-Path ([IO.Path]::GetTempPath()) "kosika-designs"
 New-Item -ItemType Directory -Force $work | Out-Null
 $key = [Environment]::GetEnvironmentVariable("GROQ_API_KEY", "User")
@@ -36,7 +37,7 @@ function Read-Result($text) {
 }
 
 @{ ask = @{ text = $Prompt } } | ConvertTo-Json | Set-Content -Encoding utf8 (Join-Path $work "ask.json")
-$said = & $Kosika run (Join-Path $here "main.kos") --workflow think --input (Join-Path $work "ask.json") `
+$said = & $Kosika run (Join-Path $std "designs_main.kos") --workflow think --input (Join-Path $work "ask.json") `
   --model $Model --model-url https://api.groq.com/openai/v1 --model-protocol openai --trace (Join-Path $work "think.jsonl") | Out-String
 $plan = Read-Result $said
 $plan | ConvertTo-Json | Set-Content -Encoding utf8 (Join-Path $work "plan.json")

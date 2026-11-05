@@ -29,7 +29,7 @@
 
 import "std/math.kos"
 import "std/stats.kos"
-import "main.kos"
+import "std/designs_main.kos"
 
 export [Source, Guess, Measured, Found, Verdict, measure, judge, chains, golden_angle]
 

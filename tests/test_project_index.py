@@ -181,8 +181,14 @@ class ProjectIndexTests(unittest.TestCase):
         self.assertEqual(unused, ["Model idle is declared but no step asks it."])
 
     def test_the_examples_are_clean_apart_from_missing_evals(self) -> None:
-        rules = {s["rule"] for s in index_of(EXAMPLES)["suggestions"]}
-        self.assertEqual(rules, {"no-evals"})
+        found = index_of(EXAMPLES)["suggestions"]
+        rules = {s["rule"] for s in found}
+        # Some examples have workflows a host program runs by name (Kosika
+        # Chat runs the assistant's `route`), so "never run by another
+        # workflow" is a hint there, not a fault.
+        self.assertLessEqual(rules, {"no-evals", "unused-workflow"})
+        self.assertIn("no-evals", rules)
+        self.assertFalse([s for s in found if s["must"]])
 
     def test_the_page_labels_every_kind_the_index_can_emit(self) -> None:
         page = studio.PAGE.read_text(encoding="utf-8")
@@ -195,7 +201,18 @@ class ProjectIndexTests(unittest.TestCase):
         # Every kind the index emits, including the ones only choice
         # programs use, has a heading and a filter chip.
         self.assertEqual(
-            labels, {"agent", "workflow", "model", "tool", "memory", "board", "swarm", "record", "choice"}
+            labels,
+            {
+                "agent",
+                "workflow",
+                "model",
+                "tool",
+                "memory",
+                "board",
+                "swarm",
+                "record",
+                "choice",
+            },
         )
         self.assertEqual(labels, ordered)
 

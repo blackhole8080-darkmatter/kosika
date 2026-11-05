@@ -17,6 +17,19 @@ A task passes when every one of its checks succeeds afterwards in that
 folder: the project's tests, and a line of code that tries the new thing
 itself. The coder's own word that it is done counts for nothing.
 
+A design task asks for something whose quality is not in its source at all,
+and `website` and `website-rendered` are the same brief judged two ways: one
+reads the files, the other serves them and measures what a browser draws —
+sizes, overflow, thumb targets, contrast, movement and the pixels of a
+screenshot. The pair is there to show what the second judge buys, since a
+page can be perfect in a file and wrong on a screen. The rendered check needs
+a browser driver that Kosika itself does not depend on:
+
+    cd benchmarks/coder && npm install
+
+and CHROME_PATH if the machine's Chrome is somewhere unusual. Without them
+the check fails and says so rather than passing work it could not see.
+
 `--best-of N` gives each task up to N independent attempts, each from its
 own fresh copy of the project and of the agent. A task stops at its first
 attempt that passes, and the checks are the only judge. Nothing said in a

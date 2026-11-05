@@ -41,7 +41,7 @@ kosika start
 
 That one command:
 
-- makes a folder called `KosikaAgents` in your home folder, with three
+- makes a folder called `KosikaAgents` in your home folder, with four
   starter agents in it, if you do not have one yet;
 - looks for a model already on your computer and uses it;
 - opens Kosika Studio.

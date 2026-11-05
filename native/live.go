@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -176,26 +177,46 @@ func (h *httpProvider) complete(request *modelRequest) *modelResponse {
 		}
 	}
 	body, _ := json.Marshal(payload)
-	httpRequest, err := http.NewRequest("POST", h.endpoint, bytes.NewReader(body))
-	if err != nil {
-		stopProvider("Model provider request failed: %v", err)
-	}
-	httpRequest.Header.Set("Content-Type", "application/json")
-	if h.apiKey != "" {
-		httpRequest.Header.Set("Authorization", "Bearer "+h.apiKey)
-	}
-	answer, err := (&http.Client{Timeout: h.timeout}).Do(httpRequest)
-	if err != nil {
-		var timeout net.Error
-		if errors.As(err, &timeout) && timeout.Timeout() {
-			stopProvider("Model did not answer within %s seconds", pyShortFloat(h.timeout.Seconds()))
+	// A service that says it is too busy, or that the rate is used up for
+	// the moment (HTTP 429, 502, 503, 504), did not take the request, so
+	// it is asked again after a while, as the reference engine does: a
+	// little over three minutes in all, sooner if it says when.
+	busy := []time.Duration{5 * time.Second, 15 * time.Second, 30 * time.Second, 60 * time.Second, 90 * time.Second}
+	var answer *http.Response
+	var raw []byte
+	for {
+		httpRequest, err := http.NewRequest("POST", h.endpoint, bytes.NewReader(body))
+		if err != nil {
+			stopProvider("Model provider request failed: %v", err)
 		}
-		stopProvider("Model provider request failed: %v", err)
-	}
-	defer answer.Body.Close()
-	raw, err := io.ReadAll(answer.Body)
-	if err != nil {
-		stopProvider("Model provider request failed: %v", err)
+		httpRequest.Header.Set("Content-Type", "application/json")
+		httpRequest.Header.Set("User-Agent", "Kosika/1.0")
+		if h.apiKey != "" {
+			httpRequest.Header.Set("Authorization", "Bearer "+h.apiKey)
+		}
+		answer, err = (&http.Client{Timeout: h.timeout}).Do(httpRequest)
+		if err != nil {
+			var timeout net.Error
+			if errors.As(err, &timeout) && timeout.Timeout() {
+				stopProvider("Model did not answer within %s seconds", pyShortFloat(h.timeout.Seconds()))
+			}
+			stopProvider("Model provider request failed: %v", err)
+		}
+		raw, err = io.ReadAll(answer.Body)
+		answer.Body.Close()
+		if err != nil {
+			stopProvider("Model provider request failed: %v", err)
+		}
+		code := answer.StatusCode
+		if (code != 429 && code != 502 && code != 503 && code != 504) || len(busy) == 0 {
+			break
+		}
+		pause := busy[0]
+		busy = busy[1:]
+		if said, err := strconv.Atoi(strings.TrimSpace(answer.Header.Get("Retry-After"))); err == nil && said >= 0 {
+			pause = time.Duration(min(said, 120)) * time.Second
+		}
+		time.Sleep(pause)
 	}
 	if answer.StatusCode >= 400 {
 		stopProvider("Model provider returned HTTP %d: %s", answer.StatusCode, raw)

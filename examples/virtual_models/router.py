@@ -47,7 +47,8 @@ NAME = "kosika-virtual"
 def load(path: Path) -> dict:
     config = json.loads(path.read_text(encoding="utf-8"))
     for model in config["models"].values():
-        if not os.environ.get(model["key"]):
+        # A model on this computer, such as one Ollama serves, needs no key.
+        if model.get("key") and not os.environ.get(model["key"]):
             raise SystemExit(f"{model['key']} is not set; the router reads keys from the environment only.")
     return config
 
@@ -120,7 +121,7 @@ class Router:
         sent.update(model.get("extra", {}))
         request = urllib.request.Request(
             model["url"], data=json.dumps(sent).encode(), method="POST",
-            headers={"Authorization": "Bearer " + os.environ[model["key"]],
+            headers={**({"Authorization": "Bearer " + os.environ[model["key"]]} if model.get("key") else {}),
                      "Content-Type": "application/json", "User-Agent": AGENT})
         with urllib.request.urlopen(request, timeout=self.config["timeout_seconds"]) as answer:
             return json.load(answer)

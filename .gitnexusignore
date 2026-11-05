@@ -1,0 +1,3 @@
+# Vendored third-party repositories are integrated as external assets, not Kosika source.
+/external-integrations/
+/external_integrations/

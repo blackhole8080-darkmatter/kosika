@@ -1,0 +1,397 @@
+// Doctor: checks the health of this laptop and tells you what it found.
+//
+//   kosika test main.kos
+//   kosika studio FOLDER --model qwen2.5:3b --model-protocol ollama --allow-folder C:\Users\YOU --allow-shell
+//
+// It measures with small Python programs that only read: free disk space,
+// memory and what is using it, the battery, and the biggest files and
+// folders inside the folder you grant. Each program is shown to you in
+// full and waits for your yes. The numbers are worked out by code. The
+// model is asked only to turn the last check-up into advice.
+//
+// It never deletes, moves, closes or changes anything. It tells you what it
+// sees and you decide. Written for Windows.
+//
+// Say: checkup, disk, memory, battery, big files, folders, advice, or help.
+
+record Msg { text: Text }
+record Said { text: Text }
+record Kind { label: Text }
+
+record Command { args: Text[] }
+record Ran { exit_code: Number stdout: Text stderr: Text }
+// What a check found, in words, and whether to keep it for later advice.
+record Finding { text: Text facts: Text keep: Bool }
+record Chart { facts: Text }
+
+model adviser {
+  input: Prompt
+  output: Reply
+  parameters: {
+    max_output_tokens: 220
+  }
+}
+
+memory charts of Chart
+
+tool run_python {
+  source system "shell"
+  operation: "python"
+  access: execute
+  input: Command
+  output: Ran
+}
+
+agent hands {
+  can: [run_python]
+  max_steps: 1
+}
+
+// ---------------------------------------------------------------- routing
+
+fn kind_of(msg: Msg) -> Kind {
+  let text = msg.text.lower().trim()
+  var kind = "advice"
+  if text == "help" or text.contains("what can you do") { kind = "help" }
+  else if text.contains("checkup") or text.contains("check up") or text == "health" or text == "check" { kind = "checkup" }
+  else if text.contains("big file") or text.contains("large file") or text.contains("biggest file") { kind = "files" }
+  else if text.contains("folder") { kind = "folders" }
+  else if text.contains("disk") or text.contains("space") or text.contains("storage") { kind = "disk" }
+  else if text.contains("memory") or text.contains("ram") or text.contains("process") { kind = "memory" }
+  else if text.contains("battery") or text.contains("charge") or text.contains("power") { kind = "battery" }
+  return {label: kind}
+}
+
+// ------------------------------------------------ the programs it may start
+// Each is one small Python program that prints plain numbers. They only
+// read. You see the whole text before it runs.
+
+fn disk_code() -> Text {
+  return "import shutil\nt = shutil.disk_usage('C:/')\nprint('DISK', t.total, t.used, t.free)"
+}
+
+fn memory_code() -> Text {
+  return "import ctypes, subprocess, csv, io, collections\nclass M(ctypes.Structure):\n    _fields_ = [('size', ctypes.c_ulong), ('load', ctypes.c_ulong), ('total', ctypes.c_ulonglong), ('free', ctypes.c_ulonglong), ('rest', ctypes.c_ulonglong * 5)]\nm = M()\nm.size = ctypes.sizeof(M)\nctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m))\nprint('MEMORY', m.load, m.total, m.free)\nout = subprocess.run(['tasklist', '/FO', 'CSV', '/NH'], capture_output=True, text=True).stdout\nuse = collections.Counter()\nfor row in csv.reader(io.StringIO(out)):\n    if len(row) > 4:\n        use[row[0]] += int(''.join(c for c in row[4] if c.isdigit()) or 0)\nfor name, kb in use.most_common(8):\n    print('USES', kb, name)"
+}
+
+fn battery_code() -> Text {
+  return "import ctypes\nclass S(ctypes.Structure):\n    _fields_ = [('ac', ctypes.c_ubyte), ('flag', ctypes.c_ubyte), ('percent', ctypes.c_ubyte), ('saver', ctypes.c_ubyte), ('left', ctypes.c_ulong), ('full', ctypes.c_ulong)]\ns = S()\nctypes.windll.kernel32.GetSystemPowerStatus(ctypes.byref(s))\nprint('BATTERY', s.ac, s.percent, s.left)"
+}
+
+fn files_code() -> Text {
+  return "import os\nfound = []\nfor folder, inside, names in os.walk('.'):\n    inside[:] = [d for d in inside if not d.startswith('.')]\n    for name in names:\n        path = os.path.join(folder, name)\n        try:\n            found.append((os.path.getsize(path), path))\n        except OSError:\n            pass\nfor size, path in sorted(found, reverse=True)[:12]:\n    print('FILE', size, path)"
+}
+
+fn folders_code() -> Text {
+  return "import os\ndef weigh(path):\n    total = 0\n    for folder, _, names in os.walk(path):\n        for name in names:\n            try:\n                total += os.path.getsize(os.path.join(folder, name))\n            except OSError:\n                pass\n    return total\nsizes = [(weigh(n) if os.path.isdir(n) else os.path.getsize(n), n) for n in os.listdir('.')]\nfor size, name in sorted(sizes, reverse=True)[:12]:\n    print('FOLDER', size, name)"
+}
+
+fn disk_command(msg: Msg) -> Command {
+  return {args: ["-c", disk_code()]}
+}
+
+fn memory_command(msg: Msg) -> Command {
+  return {args: ["-c", memory_code()]}
+}
+
+fn battery_command(msg: Msg) -> Command {
+  return {args: ["-c", battery_code()]}
+}
+
+fn files_command(msg: Msg) -> Command {
+  return {args: ["-c", files_code()]}
+}
+
+fn folders_command(msg: Msg) -> Command {
+  return {args: ["-c", folders_code()]}
+}
+
+// One program for the whole check-up, so you are asked once, not three times.
+fn checkup_command(msg: Msg) -> Command {
+  return {args: ["-c", disk_code() + "\n" + memory_code() + "\n" + battery_code()]}
+}
+
+// ------------------------------------------------------ reading the numbers
+
+fn size_text(bytes: Number) -> Text {
+  if bytes >= 1073741824 { return ((bytes / 107374182.4).round() / 10).to_text() + " GB" }
+  if bytes >= 1048576 { return (bytes / 1048576).round().to_text() + " MB" }
+  if bytes >= 1024 { return (bytes / 1024).round().to_text() + " KB" }
+  return bytes.to_text() + " bytes"
+}
+
+// The rows of output that start with a given word, as their other words.
+fn rows(ran: Ran, tag: Text) -> Text[] {
+  var out: Text[] = []
+  let text = ran.stdout.slice(0, ran.stdout.length().min(6000))
+  for row in text.split("\n") {
+    if row.starts_with(tag + " ") { out = out.append(row.slice(tag.length() + 1, row.length()).trim()) }
+  }
+  return out
+}
+
+fn number_at(row: Text, place: Number) -> Number {
+  let parts = row.split(" ")
+  if place >= parts.length() { return 0 }
+  return parts[place].to_number().or(0)
+}
+
+// Everything after the first number: a name that may hold spaces.
+fn name_after(row: Text) -> Text {
+  let head = row.split(" ").first().or("")
+  return row.slice((head.length() + 1).min(row.length()), row.length()).trim()
+}
+
+fn failed(what: Text, ran: Ran) -> Finding {
+  let why = if ran.stderr.trim().length() > 0 { ran.stderr.slice(0, ran.stderr.length().min(300)).trim() } else { "it printed nothing I could read" }
+  return {text: "I could not measure " + what + ": " + why, facts: "", keep: false}
+}
+
+fn disk_line(ran: Ran) -> Text {
+  let found = rows(ran, "DISK")
+  if found.length() == 0 { return "" }
+  let total = number_at(found[0], 0)
+  let free = number_at(found[0], 2)
+  let percent = if total > 0 { (free * 100 / total).round() } else { 0 }
+  let word = if percent < 10 { " This is low." } else { if percent < 20 { " This is getting tight." } else { "" } }
+  return "Disk C: " + size_text(free) + " free of " + size_text(total) + " (" + percent + "% free)." + word
+}
+
+fn memory_lines(ran: Ran) -> Text {
+  let found = rows(ran, "MEMORY")
+  if found.length() == 0 { return "" }
+  let load = number_at(found[0], 0)
+  let total = number_at(found[0], 1)
+  let free = number_at(found[0], 2)
+  let word = if load >= 90 { " This is very full." } else { if load >= 75 { " This is fairly full." } else { "" } }
+  var lines: Text[] = ["Memory: " + load + "% in use, " + size_text(free) + " free of " + size_text(total) + "." + word]
+  let users = rows(ran, "USES")
+  if users.length() > 0 { lines = lines.append("Using the most memory:") }
+  for row in users.slice(0, users.length().min(6)) {
+    lines = lines.append("  " + size_text(number_at(row, 0) * 1024) + "  " + name_after(row))
+  }
+  return lines.join("\n")
+}
+
+fn battery_line(ran: Ran) -> Text {
+  let found = rows(ran, "BATTERY")
+  if found.length() == 0 { return "" }
+  let plugged = number_at(found[0], 0)
+  let percent = number_at(found[0], 1)
+  let left = number_at(found[0], 2)
+  if percent > 100 { return "Battery: this computer reports no battery." }
+  let power = if plugged == 1 { "plugged in" } else { "on battery" }
+  let time = if plugged != 1 and left > 0 and left < 4000000000 { ", about " + (left / 60).round() + " minutes left" } else { "" }
+  let word = if percent < 20 and plugged != 1 { " Plug it in soon." } else { "" }
+  return "Battery: " + percent + "%, " + power + time + "." + word
+}
+
+fn disk_found(ran: Ran) -> Finding {
+  let line = disk_line(ran)
+  if line.length() == 0 { return failed("the disk", ran) }
+  return {text: line, facts: line, keep: true}
+}
+
+fn memory_found(ran: Ran) -> Finding {
+  let lines = memory_lines(ran)
+  if lines.length() == 0 { return failed("memory", ran) }
+  return {text: lines, facts: lines, keep: true}
+}
+
+fn battery_found(ran: Ran) -> Finding {
+  let line = battery_line(ran)
+  if line.length() == 0 { return failed("the battery", ran) }
+  return {text: line, facts: line, keep: true}
+}
+
+fn checkup_found(ran: Ran) -> Finding {
+  var parts: Text[] = []
+  for part in [disk_line(ran), memory_lines(ran), battery_line(ran)] {
+    if part.length() > 0 { parts = parts.append(part) }
+  }
+  if parts.length() == 0 { return failed("this laptop", ran) }
+  let all = parts.join("\n")
+  return {text: all + "\nSay \"advice\" and I will tell you what I would do about it.", facts: all, keep: true}
+}
+
+fn sizes_found(ran: Ran, tag: Text, title: Text) -> Finding {
+  let found = rows(ran, tag)
+  if found.length() == 0 { return failed("the " + title, ran) }
+  var lines: Text[] = ["The biggest " + title + " in the folder you granted:"]
+  for row in found {
+    lines = lines.append("  " + size_text(number_at(row, 0)) + "  " + name_after(row).split("\\").join("/"))
+  }
+  return {text: lines.join("\n"), facts: lines.slice(0, lines.length().min(7)).join("\n"), keep: true}
+}
+
+fn files_found(ran: Ran) -> Finding {
+  return sizes_found(ran, "FILE", "files")
+}
+
+fn folders_found(ran: Ran) -> Finding {
+  return sizes_found(ran, "FOLDER", "folders and files")
+}
+
+// ------------------------------------------------------------------ advice
+
+fn advice_prompt(msg: Msg, known: ChartsRecalled) -> Prompt {
+  let facts = if known.found { known.value.value().facts } else { "" }
+  let seen = if facts.length() > 0 { facts } else { "(nothing has been measured yet)" }
+  return {text: "You are a careful computer technician. Using only the measurements below, give at most three short, practical pieces of advice for this Windows laptop, most important first. Refer to the numbers. If everything looks healthy, say so in one sentence. Do not suggest deleting system files. If nothing has been measured, tell the user to say \"checkup\" first.\n\nMeasurements:\n" + seen + "\n\nUser: " + msg.text.trim()}
+}
+
+fn sorry(msg: Msg) -> Reply {
+  return {text: "Sorry, I could not get an answer just now. Please try again."}
+}
+
+fn advised(reply: Reply) -> Finding {
+  return {text: reply.text.trim(), facts: "", keep: false}
+}
+
+fn help(msg: Msg) -> Finding {
+  return {text: "I check this laptop and tell you what I find. I never change anything.\ncheckup: disk, memory and battery in one go\ndisk, memory, battery: one at a time\nbig files, folders: what takes the space in the folder you granted\nadvice: what I would do about the last check-up\nEach measurement is a small Python program that I show you first.", facts: "", keep: false}
+}
+
+// A new measurement is added to what is known, newest last, kept short.
+fn charted(known: ChartsRecalled, found: Finding) -> Chart {
+  let before = if known.found { known.value.value().facts } else { "" }
+  if not found.keep { return {facts: before} }
+  let all = (before + "\n" + found.facts).trim()
+  return {facts: all.slice((all.length() - 1800).max(0), all.length())}
+}
+
+fn say(found: Finding) -> Said {
+  return {text: found.text}
+}
+
+// ------------------------------------------------------------ the requests
+
+workflow check_all(msg: Msg) -> Finding {
+  command = checkup_command(msg)
+  ran     = execute hands.run_python(command.args)
+  found   = checkup_found(ran)
+  require approval
+}
+
+workflow check_disk(msg: Msg) -> Finding {
+  command = disk_command(msg)
+  ran     = execute hands.run_python(command.args)
+  found   = disk_found(ran)
+  require approval
+}
+
+workflow check_memory(msg: Msg) -> Finding {
+  command = memory_command(msg)
+  ran     = execute hands.run_python(command.args)
+  found   = memory_found(ran)
+  require approval
+}
+
+workflow check_battery(msg: Msg) -> Finding {
+  command = battery_command(msg)
+  ran     = execute hands.run_python(command.args)
+  found   = battery_found(ran)
+  require approval
+}
+
+workflow check_files(msg: Msg) -> Finding {
+  command = files_command(msg)
+  ran     = execute hands.run_python(command.args)
+  found   = files_found(ran)
+  require approval
+}
+
+workflow check_folders(msg: Msg) -> Finding {
+  command = folders_command(msg)
+  ran     = execute hands.run_python(command.args)
+  found   = folders_found(ran)
+  require approval
+}
+
+workflow advise(msg: Msg) -> Finding {
+  known  = recall charts under "me"
+  prompt = advice_prompt(msg, known)
+  reply  = use_model adviser(prompt.text) retry 1 otherwise sorry(msg)
+  found  = advised(reply)
+}
+
+workflow main(msg: Msg) -> Said {
+  budget 2 model calls, 240 seconds
+  kind  = kind_of(msg)
+  found = match kind.label {
+    case "checkup" { call check_all(msg) }
+    case "disk" { call check_disk(msg) }
+    case "memory" { call check_memory(msg) }
+    case "battery" { call check_battery(msg) }
+    case "files" { call check_files(msg) }
+    case "folders" { call check_folders(msg) }
+    case "help" { help(msg) }
+    case _ { call advise(msg) }
+  }
+  known = recall charts under "me"
+  chart = charted(known, found)
+  saved = remember chart in charts under "me"
+  out   = say(found)
+  require approval
+}
+
+// ------------------------------------------------------------------ tests
+// Starting a program needs a real approval, so the tests cover reading what
+// the programs print and everything around them.
+
+test "requests are understood" {
+  expect kind_of({text: "checkup"}).label == "checkup"
+  expect kind_of({text: "how much disk space is left?"}).label == "disk"
+  expect kind_of({text: "what is using my memory"}).label == "memory"
+  expect kind_of({text: "biggest files"}).label == "files"
+  expect kind_of({text: "why is it slow?"}).label == "advice"
+}
+
+test "sizes are written the way people say them" {
+  expect size_text(512) == "512 bytes"
+  expect size_text(2048) == "2 KB"
+  expect size_text(5242880) == "5 MB"
+  expect size_text(256060514304) == "238.5 GB"
+}
+
+test "the disk is read and a tight one is flagged" {
+  roomy = disk_found({exit_code: 0, stdout: "DISK 256060514304 128030257152 128030257152\n", stderr: ""})
+  tight = disk_found({exit_code: 0, stdout: "DISK 256060514304 240000000000 16060514304\n", stderr: ""})
+  broken = disk_found({exit_code: 1, stdout: "", stderr: "PermissionError: denied"})
+  expect roomy.text == "Disk C: 119.2 GB free of 238.5 GB (50% free)."
+  expect tight.text == "Disk C: 15 GB free of 238.5 GB (6% free). This is low."
+  expect broken.text == "I could not measure the disk: PermissionError: denied"
+  expect broken.keep == false
+}
+
+test "memory names what is using it, even when a name has spaces" {
+  found = memory_found({exit_code: 0, stdout: "MEMORY 82 16943849472 3049892864\nUSES 2097152 chrome.exe\nUSES 1048576 Memory Compression\n", stderr: ""})
+  expect found.text == "Memory: 82% in use, 2.8 GB free of 15.8 GB. This is fairly full.\nUsing the most memory:\n  2 GB  chrome.exe\n  1 GB  Memory Compression"
+}
+
+test "the battery is read, plugged in or not" {
+  a = battery_found({exit_code: 0, stdout: "BATTERY 0 15 3600\n", stderr: ""})
+  b = battery_found({exit_code: 0, stdout: "BATTERY 1 100 4294967295\n", stderr: ""})
+  c = battery_found({exit_code: 0, stdout: "BATTERY 1 255 4294967295\n", stderr: ""})
+  expect a.text == "Battery: 15%, on battery, about 60 minutes left. Plug it in soon."
+  expect b.text == "Battery: 100%, plugged in."
+  expect c.text == "Battery: this computer reports no battery."
+}
+
+test "one check-up reads all three, and big files are listed" {
+  all = checkup_found({exit_code: 0, stdout: "DISK 256060514304 128030257152 128030257152\nMEMORY 40 16943849472 10166309683\nBATTERY 1 90 4294967295\n", stderr: ""})
+  files = files_found({exit_code: 0, stdout: "FILE 3221225472 .\\videos\\holiday film.mp4\nFILE 1048576 .\\a.bin\n", stderr: ""})
+  expect all.text.starts_with("Disk C: 119.2 GB free of 238.5 GB (50% free).\nMemory: 40% in use")
+  expect all.text.contains("Battery: 90%, plugged in.")
+  expect files.text == "The biggest files in the folder you granted:\n  3 GB  ./videos/holiday film.mp4\n  1 MB  ./a.bin"
+}
+
+test "advice is asked of the model with what was measured" {
+  answers adviser: [{text: "Say checkup first."}]
+  none: ChartsRecalled = {found: false, value: null}
+  a = main({text: "why is it slow?"})
+  chart = charted(none, {text: "x", facts: "Disk C: 15 GB free.", keep: true})
+  expect a.text == "Say checkup first."
+  expect chart.facts == "Disk C: 15 GB free."
+  expect advice_prompt({text: "why slow"}, none).text.contains("nothing has been measured yet")
+}

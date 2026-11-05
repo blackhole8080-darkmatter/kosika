@@ -1,0 +1,85 @@
+// Librarian: keeps and finds your notes through an MCP server.
+//
+//   kosika test main.kos
+//   kosika studio FOLDER --model qwen2.5:7b --model-protocol ollama --mcp notes="python FOLDER/agents/librarian/notes_server.py FOLDER/agents/librarian/notes.json"
+//
+// The notes live in a separate program, notes_server.py, which speaks MCP:
+// the same way thousands of ready-made tool servers do. This agent is given
+// three of that server's tools and the model chooses among them. Two only
+// read. The third, add_note, changes the notes file, so each use waits for
+// your yes.
+//
+// The server is reached only because the person starting Studio named it
+// with --mcp. Writing `source mcp "notes"` below asks; it grants nothing.
+
+record Msg { text: Text }
+record Said { text: Text }
+record Question { text: Text }
+record Answer { text: Text }
+
+record SearchNotesIn { query: Text }
+record SearchNotesOut { text: Text }
+record ListNotesIn { }
+record ListNotesOut { text: Text }
+record AddNoteIn { text: Text tag: Text? }
+record AddNoteOut { text: Text }
+
+tool search_notes {
+  source mcp "notes"
+  operation: "search_notes"
+  access: observe
+  input: SearchNotesIn
+  output: SearchNotesOut
+}
+
+tool list_notes {
+  source mcp "notes"
+  operation: "list_notes"
+  access: observe
+  input: ListNotesIn
+  output: ListNotesOut
+}
+
+tool add_note {
+  source mcp "notes"
+  operation: "add_note"
+  access: execute
+  input: AddNoteIn
+  output: AddNoteOut
+}
+
+model thinker {
+  input: Question
+  output: Answer
+  parameters: {
+    max_output_tokens: 250
+  }
+}
+
+agent librarian {
+  model: thinker
+  can: [search_notes, list_notes, add_note]
+  max_steps: 5
+  instructions: "You look after the user's notes. To answer a question, search the notes with one or two key words, or list them all, and answer only from what the tools return. If the user asks you to remember, save, or note something, use add_note once with the text to keep. Say plainly when no note answers the question. Keep answers short."
+}
+
+fn question(msg: Msg) -> Question {
+  return {text: msg.text.trim()}
+}
+
+fn tell(found: Answer) -> Said {
+  return {text: found.text.trim()}
+}
+
+workflow main(msg: Msg) -> Said {
+  budget 8 model calls, 300 seconds
+  ask   = question(msg)
+  found = ask librarian(ask.text)
+  said  = tell(found)
+  require approval
+}
+
+test "the answer is passed on tidily" {
+  expect tell({text: "  Your dentist is on Friday.  "}).text == "Your dentist is on Friday."
+  expect question({text: " when is the dentist? "}).text == "when is the dentist?"
+}

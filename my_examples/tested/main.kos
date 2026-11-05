@@ -1,0 +1,71 @@
+record Ticket { text: Text }
+record Out { queue: Text brief: Text }
+
+model assistant
+
+fn gcd(a: Number, b: Number) -> Number {
+  var x = a
+  var y = b
+  while y != 0 {
+    let t = y
+    y = x % y
+    x = t
+  }
+  return x
+}
+
+fn build(label: Choice, brief: Summary) -> Out {
+  return {queue: label.label, brief: brief.text}
+}
+
+workflow main(ticket: Ticket) -> Out {
+  label = classify ticket.text into ["billing", "bug", "other"] retry 1
+  brief = summarize ticket.text
+  out   = build(label, brief)
+}
+
+test "gcd of 48 and 18 is 6" {
+  expect gcd(48, 18) == 6
+  expect gcd(7, 13) == 1
+}
+
+test "a double charge goes to billing" {
+  answers assistant: [
+    {label: "billing", confidence: 0.9},
+    {text: "Charged twice."}
+  ]
+  result = main({text: "My card was charged twice."})
+  expect result.queue == "billing"
+  expect result.brief.contains("twice")
+}
+
+test "a wrong label is retried once" {
+  answers assistant: [
+    {label: "refund", confidence: 0.9},
+    {label: "bug", confidence: 0.6},
+    {text: "It crashes."}
+  ]
+  result = main({text: "The app crashes."})
+  expect result.queue == "bug"
+}
+
+test "this one fails on purpose" {
+  expect gcd(48, 18) == 7
+}
+
+workflow careful(ticket: Ticket) -> Out {
+  label = classify ticket.text into ["billing", "bug", "other"] vote 3
+  brief = summarize ticket.text
+  out   = build(label, brief)
+}
+
+test "two of three answers decide the queue" {
+  answers assistant: [
+    {label: "bug", confidence: 0.5},
+    {label: "billing", confidence: 0.8},
+    {label: "billing", confidence: 0.9},
+    {text: "Charged twice."}
+  ]
+  result = careful({text: "My card was charged twice."})
+  expect result.queue == "billing"
+}

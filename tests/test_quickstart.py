@@ -34,7 +34,9 @@ class QuickstartTests(unittest.TestCase):
         cards = studio.App(self.folder).overview()["agents"]
         self.assertEqual(len(cards), len(STARTERS))
         self.assertFalse(any(card.get("error") for card in cards), cards)
-        self.assertIn("3 starter agents were made for you", "\n".join(lines))
+        self.assertIn(
+            f"{len(STARTERS)} starter agents were made for you", "\n".join(lines)
+        )
         self.assertEqual(arguments[:2], ["studio", str(self.folder)])
 
     def test_it_picks_an_installed_model_and_turns_on_search_by_meaning(self) -> None:

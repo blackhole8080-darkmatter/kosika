@@ -1,0 +1,441 @@
+// Researcher: answers questions from the files in the folder you grant, and
+// proves each answer with an exact quote and the line it came from.
+//
+//   kosika test main.kos
+//   kosika studio FOLDER --model qwen2.5:3b --model-protocol ollama --allow-folder YOUR_NOTES_OR_PROJECT
+//
+// How it stays honest. Code picks the key words from your question and
+// searches the folder. Only the lines that were found are shown to the
+// model, which must answer and give one exact quote. Code then checks that
+// the quote really is in one of those lines, and it is code, not the model,
+// that names the file and line.
+//
+// Fast first, strong when needed. The question goes to the model called
+// reader. If its answer is not proven, the same question goes to the model
+// called strong. If that is not proven either, no answer is shown: you get
+// the closest lines instead. Give the two names different models with
+//
+//   --model qwen2.5:3b,strong=qwen2.5:7b
+//
+// and most questions cost only the fast model's time.
+//
+//   kosika measure main.kos --model-protocol ollama --model qwen2.5:3b --model qwen2.5:7b --model qwen2.5:3b,strong=qwen2.5:7b
+//
+// runs the evals at the end of this file on each setup, so you can see
+// which is right more often and how long each takes.
+//
+// It only reads. Say: a question, find WORDS, read FILE, summarize FILE,
+// or help.
+
+record Msg { text: Text }
+record Said { text: Text }
+record Kind { label: Text }
+record Clip { text: Text ok: Bool }
+
+record Query { path: Text query: Text }
+record Hits { matches: Text[] }
+record Where { path: Text }
+record FileText { text: Text }
+// What the model must give back: the answer, and the words that prove it.
+record Found { answer: Text quote: Text }
+record Ask { text: Text }
+
+default model reader {
+  input: Ask
+  output: Found
+  parameters: {
+    max_output_tokens: 220
+  }
+}
+
+// The model asked when reader's answer was not proven. It is asked the
+// same question and held to the same check.
+model strong {
+  input: Ask
+  output: Found
+  parameters: {
+    max_output_tokens: 220
+  }
+}
+
+tool search_files {
+  source system "files"
+  operation: "search"
+  access: observe
+  input: Query
+  output: Hits
+}
+
+tool look_at {
+  source system "files"
+  operation: "peek"
+  access: observe
+  input: Where
+  output: FileText
+}
+
+agent hands {
+  can: [search_files, look_at]
+  max_steps: 1
+}
+
+// ---------------------------------------------------------------- routing
+
+fn kind_of(msg: Msg) -> Kind {
+  let text = msg.text.lower().trim()
+  let first = text.split(" ").first().or("")
+  var kind = "ask"
+  if text == "help" or text.contains("what can you do") { kind = "help" }
+  else if first == "find" or first == "search" or first == "grep" { kind = "find" }
+  else if first == "read" or first == "open" or first == "show" { kind = "read" }
+  else if first == "summarize" or first == "summarise" { kind = "summary" }
+  return {label: kind}
+}
+
+// ------------------------------------------------------------- key words
+
+fn clean(word: Text) -> Text {
+  var out = word.lower()
+  for mark in ["?", "!", ",", ";", "\"", "'", "(", ")", ":"] {
+    out = out.split(mark).join("")
+  }
+  // A full stop ends a sentence but belongs inside a file name.
+  if out.ends_with(".") { out = out.slice(0, out.length() - 1) }
+  return out.trim()
+}
+
+// The words of a question worth searching for: not the small words every
+// question has. At most six, so the search stays sharp.
+fn key_words(text: Text, skip_first: Bool) -> Text {
+  let small = ["a", "an", "the", "is", "are", "was", "were", "be", "do", "does", "did", "i", "me", "my", "we", "our", "you", "your", "it", "its", "of", "in", "on", "at", "to", "for", "from", "by", "with", "about", "and", "or", "what", "when", "where", "which", "who", "whom", "why", "how", "tell", "say", "says", "said", "there", "that", "this", "these", "those", "have", "has", "had", "can", "could", "should", "would", "will", "please", "any", "all", "much", "many", "need", "find", "search", "show"]
+  var words: Text[] = []
+  var seen = false
+  for word in text.trim().split(" ") {
+    let item = clean(word)
+    if item.length() > 0 {
+      if (seen or not skip_first) and item.length() > 1 and not small.contains(item) and not words.contains(item) {
+        words = words.append(item)
+      }
+      seen = true
+    }
+  }
+  return words.slice(0, words.length().min(6)).join(" ")
+}
+
+fn question_query(msg: Msg) -> Query {
+  return {path: ".", query: key_words(msg.text, false)}
+}
+
+fn find_query(msg: Msg) -> Query {
+  return {path: ".", query: key_words(msg.text, true)}
+}
+
+fn no_hits(msg: Msg) -> Hits {
+  return {matches: []}
+}
+
+// ------------------------------------------------------------- answering
+
+// The lines found, as the model will see them. Kept short so a small
+// model can read all of it.
+fn passages(hits: Hits) -> Clip {
+  var rows: Text[] = []
+  var size = 0
+  for hit in hits.matches {
+    if rows.length() < 14 and size + hit.length() < 2600 {
+      rows = rows.append(hit)
+      size += hit.length()
+    }
+  }
+  return {text: rows.join("\n"), ok: rows.length() > 0}
+}
+
+fn ask_prompt(msg: Msg, pack: Clip) -> Ask {
+  return {text: "Answer the question using only the lines below. Each line is written as file:line: text.\nGive the answer in one or two short sentences.\nIn quote, copy the exact words from one line that prove your answer: the text only, without the file and line number, and without changing a single character.\nIf the lines do not answer the question, set answer to \"\" and quote to \"\".\n\nLines:\n" + pack.text + "\n\nQuestion: " + msg.text.trim()}
+}
+
+fn nothing(msg: Msg) -> Found {
+  return {answer: "", quote: ""}
+}
+
+// A quote without the marks around it. A model often ends a quote with a
+// full stop where the line goes on with a comma. The words between must
+// still be found exactly, so this forgives the ends and nothing else.
+fn bare(quote: Text) -> Text {
+  var text = quote.lower().trim()
+  var trimming = true
+  while trimming and text.length() > 0 {
+    trimming = false
+    for mark in [".", ",", ";", ":", "!", "?", "\"", "'"] {
+      if text.ends_with(mark) {
+        text = text.slice(0, text.length() - 1).trim()
+        trimming = true
+      }
+      if text.starts_with(mark) {
+        text = text.slice(1, text.length()).trim()
+        trimming = true
+      }
+    }
+  }
+  return text
+}
+
+// The hit that really holds the quote, or "" when none does. This is the
+// check: the model's quote must be found, letter for letter apart from
+// capitals, in a line the search returned.
+fn proof(hits: Hits, quote: Text) -> Text {
+  let wanted = bare(quote)
+  if wanted.length() < 6 { return "" }
+  for hit in hits.matches {
+    if hit.lower().contains(wanted) { return hit }
+  }
+  return ""
+}
+
+// "notes/plan.md:12: text" names its own source: "notes/plan.md, line 12".
+fn source_of(hit: Text) -> Text {
+  let parts = hit.split(":")
+  if parts.length() < 3 { return hit }
+  return parts[0] + ", line " + parts[1]
+}
+
+// The program's own check of the model's answer, used by `verify`. It
+// returns what is wrong, which is shown to the model, or "" when the answer
+// may stand. An answer left empty is refused too, so that a fast model
+// giving up is a reason to ask the strong one.
+fn proven(found: Found, hits: Hits) -> Text {
+  if found.answer.trim().length() == 0 { return "No answer was given. Answer from the lines and give an exact quote." }
+  if found.quote.trim().length() < 6 { return "Give a quote of at least a few words copied from one line, or set answer and quote to \"\" if the lines do not answer." }
+  if proof(hits, found.quote).length() == 0 { return "Your quote is not word for word in any of the lines. Copy the exact words from one line without changing them, and do not include the file name or line number. If the lines do not answer the question, set answer and quote to \"\"." }
+  return ""
+}
+
+fn unproven(hits: Hits) -> Found {
+  return {answer: "", quote: ""}
+}
+
+fn closest(hits: Hits) -> Text {
+  return hits.matches.slice(0, hits.matches.length().min(5)).join("\n")
+}
+
+fn answered(ask: Query, hits: Hits, found: Found) -> Said {
+  if ask.query.length() == 0 {
+    return {text: "Ask me something about the files, or say \"find\" and a few words."}
+  }
+  if hits.matches.length() == 0 {
+    return {text: "I found nothing about \"" + ask.query + "\" in the folder. Try other words, or say \"find\" and a word you know is in the file."}
+  }
+  let hit = proof(hits, found.quote)
+  if found.answer.trim().length() == 0 or hit.length() == 0 {
+    return {text: "I will not guess: I could not back an answer with an exact quote. The closest lines I found for \"" + ask.query + "\" are:\n" + closest(hits)}
+  }
+  return {text: found.answer.trim() + "\nQuote: \"" + found.quote.trim() + "\"\nFrom: " + source_of(hit)}
+}
+
+fn listed(ask: Query, hits: Hits) -> Said {
+  if ask.query.length() == 0 { return {text: "Tell me what to look for, like this: find invoice 2026"} }
+  if hits.matches.length() == 0 { return {text: "No line in the folder has \"" + ask.query + "\"."} }
+  let shown = hits.matches.slice(0, hits.matches.length().min(15))
+  return {text: hits.matches.length().to_text() + " line(s) for \"" + ask.query + "\", best first:\n" + shown.join("\n")}
+}
+
+// ------------------------------------------------------------------ files
+
+fn path_from(msg: Msg) -> Where {
+  var parts: Text[] = []
+  var seen = false
+  for word in msg.text.trim().split(" ") {
+    let item = word.trim()
+    if item.length() > 0 {
+      if seen { parts = parts.append(item) }
+      seen = true
+    }
+  }
+  var path = parts.join(" ").split("\\").join("/")
+  for mark in ["\"", "'", "?"] { path = path.split(mark).join("") }
+  return {path: path.trim()}
+}
+
+fn no_text(msg: Msg) -> FileText {
+  return {text: ""}
+}
+
+fn shown(where: Where, file: FileText) -> Said {
+  if where.path.length() == 0 { return {text: "Tell me which file, like this: read notes/plan.md"} }
+  if file.text.length() == 0 { return {text: "I could not read \"" + where.path + "\". It may be missing, not text, or outside the folder I may look in."} }
+  return {text: where.path + ":\n" + file.text.slice(0, file.text.length().min(1500))}
+}
+
+fn part_of(file: FileText) -> Clip {
+  return {text: file.text.slice(0, file.text.length().min(3500)), ok: file.text.length() > 0}
+}
+
+fn no_summary(msg: Msg) -> Summary {
+  return {text: ""}
+}
+
+fn summed(where: Where, brief: Summary) -> Said {
+  if brief.text.length() == 0 { return {text: "I could not read \"" + where.path + "\", so there is nothing to summarise."} }
+  return {text: "Summary of " + where.path + ":\n" + brief.text.trim()}
+}
+
+fn help(msg: Msg) -> Said {
+  return {text: "I answer from the files in the folder you granted, with an exact quote and its line.\nAsk a question: when is the demo with Ravi?\nfind WORDS: every matching line, no model needed\nread FILE: the start of a file\nsummarize FILE: what a file says\nI only read. I never change anything."}
+}
+
+// ------------------------------------------------------------ the requests
+
+// Ask the fast model and check its answer. If the check refuses it, ask
+// the strong model. If that is refused too, there is no answer.
+workflow read_and_prove(prompt: Ask, hits: Hits) -> Found {
+  found = use_model reader(prompt.text) verify proven(found, hits) escalate strong otherwise unproven(hits)
+}
+
+workflow ask_files(msg: Msg) -> Said {
+  ask    = question_query(msg)
+  hits   = execute hands.search_files(ask.path, ask.query) otherwise no_hits(msg)
+  pack   = passages(hits)
+  prompt = ask_prompt(msg, pack)
+  found  = match pack.ok {
+    case true { call read_and_prove(prompt, hits) }
+    case _ { nothing(msg) }
+  }
+  said   = answered(ask, hits, found)
+}
+
+workflow find_lines(msg: Msg) -> Said {
+  ask  = find_query(msg)
+  hits = execute hands.search_files(ask.path, ask.query) otherwise no_hits(msg)
+  said = listed(ask, hits)
+}
+
+workflow read_one(msg: Msg) -> Said {
+  where = path_from(msg)
+  file  = execute hands.look_at(where.path) otherwise no_text(msg)
+  said  = shown(where, file)
+}
+
+workflow summarise_one(msg: Msg) -> Said {
+  where = path_from(msg)
+  file  = execute hands.look_at(where.path) otherwise no_text(msg)
+  part  = part_of(file)
+  brief = match part.ok {
+    case true { summarize part.text }
+    case _ { no_summary(msg) }
+  }
+  said  = summed(where, brief)
+}
+
+workflow main(msg: Msg) -> Said {
+  budget 3 model calls, 240 seconds
+  kind = kind_of(msg)
+  said = match kind.label {
+    case "find" { call find_lines(msg) }
+    case "read" { call read_one(msg) }
+    case "summary" { call summarise_one(msg) }
+    case "help" { help(msg) }
+    case _ { call ask_files(msg) }
+  }
+}
+
+// ------------------------------------------------------------------ tests
+
+test "the key words of a question are found" {
+  expect key_words("When is the demo with Ravi?", false) == "demo ravi"
+  expect key_words("find invoice 2026", true) == "invoice 2026"
+  expect key_words("What does calc.py do?", false) == "calc.py"
+  expect key_words("what is it?", false) == ""
+}
+
+test "an answer is shown with its quote and the line it came from" {
+  answers search_files: [{matches: ["notes/work.md:12: Kosika demo for Ravi is next Tuesday at 3pm", "notes/old.md:4: the demo went well"]}]
+  answers reader: [{answer: "The demo is next Tuesday at 3pm.", quote: "Kosika demo for Ravi is next Tuesday at 3pm"}]
+  a = main({text: "When is the demo with Ravi?"})
+  expect a.text == "The demo is next Tuesday at 3pm.\nQuote: \"Kosika demo for Ravi is next Tuesday at 3pm\"\nFrom: notes/work.md, line 12"
+}
+
+test "an answer whose quote is not in the files is not shown" {
+  answers search_files: [{matches: ["notes/work.md:12: Kosika demo for Ravi is next Tuesday at 3pm"]}]
+  answers reader: [{answer: "The demo is on Friday.", quote: "The demo is on Friday at noon"}]
+  answers strong: [{answer: "The demo is on Friday.", quote: "Friday at noon, as I said"}]
+  a = main({text: "When is the demo with Ravi?"})
+  expect a.text.starts_with("I will not guess")
+  expect a.text.contains("notes/work.md:12")
+  expect not a.text.contains("Friday")
+}
+
+test "when nothing is found the model is not asked at all" {
+  answers search_files: [{matches: []}]
+  a = main({text: "When is the demo with Ravi?"})
+  b = main({text: "what is it?"})
+  expect a.text.starts_with("I found nothing about \"demo ravi\"")
+  expect b.text.starts_with("Ask me something")
+}
+
+test "the model may say the lines do not answer" {
+  answers search_files: [{matches: ["a.md:1: Ravi likes tea"]}]
+  answers reader: [{answer: "", quote: ""}]
+  answers strong: [{answer: "", quote: ""}]
+  a = main({text: "When is the demo with Ravi?"})
+  expect a.text.starts_with("I will not guess")
+}
+
+test "find lists matching lines without a model" {
+  answers search_files: [{matches: ["calc.py:1: def add(a, b):", "tests/test_calc.py:1: from calc import add"]}]
+  a = main({text: "find add"})
+  expect a.text == "2 line(s) for \"add\", best first:\ncalc.py:1: def add(a, b):\ntests/test_calc.py:1: from calc import add"
+}
+
+test "when the fast model cannot prove its answer the strong model is asked" {
+  answers search_files: [{matches: ["notes/work.md:12: Kosika demo for Ravi is next Tuesday at 3pm"]}]
+  answers reader: [{answer: "It is next Tuesday.", quote: "The demo will be held next Tuesday"}]
+  answers strong: [{answer: "It is next Tuesday at 3pm.", quote: "next Tuesday at 3pm"}]
+  a = main({text: "When is the demo with Ravi?"})
+  expect a.text == "It is next Tuesday at 3pm.\nQuote: \"next Tuesday at 3pm\"\nFrom: notes/work.md, line 12"
+  expect proven({answer: "x", quote: "not in any line at all"}, {matches: ["a.md:1: something else"]}).starts_with("Your quote is not word for word")
+  expect proven({answer: "", quote: ""}, {matches: []}).starts_with("No answer was given")
+}
+
+test "the check itself: a quote is proved only by a line that holds it" {
+  hits: Hits = {matches: ["a.md:3: The rent is 900 euros a month", "b.md:9: Rent is due on the 1st"]}
+  expect proof(hits, "rent is due on the 1st") == "b.md:9: Rent is due on the 1st"
+  expect proof(hits, "The rent is 950 euros") == ""
+  expect proof(hits, "rent") == ""
+  expect source_of("a.md:3: The rent is 900 euros a month") == "a.md, line 3"
+  expect proof({matches: ["h.md:3: Rent is 900 euros a month, due on the 1st."]}, "\"Rent is 900 euros a month.\"") == "h.md:3: Rent is 900 euros a month, due on the 1st."
+  expect proof({matches: ["h.md:3: Rent is 900 euros a month, due on the 1st."]}, "Rent is 950 euros a month.") == ""
+  expect bare(" ...\"Due on the 1st!\" ") == "due on the 1st"
+}
+
+// ------------------------------------------------------------------ evals
+// An eval is written like a test, but the model answers for itself. The
+// lines the search "found" are fixed here, so every model is given exactly
+// the same thing to read. `kosika test` skips these; `kosika measure` runs
+// them on the models you name.
+
+eval "it finds a date and proves it" {
+  answers search_files: [{matches: ["notes/work.md:12: Kosika demo for Ravi is next Tuesday at 3pm in room 4.", "notes/old.md:4: the last demo went well"]}]
+  a = main({text: "When is the demo with Ravi?"})
+  expect a.text.contains("Tuesday")
+  expect a.text.contains("From: notes/work.md, line 12")
+}
+
+eval "it copies a number exactly" {
+  answers search_files: [{matches: ["notes/home.md:3: Rent is 900 euros a month, due on the 1st.", "notes/home.md:5: Car insurance renews in March; the policy number is KX-22917."]}]
+  a = main({text: "How much is the rent?"})
+  expect a.text.contains("900")
+  expect a.text.contains("From: notes/home.md, line 3")
+}
+
+eval "it picks the right line among several" {
+  answers search_files: [{matches: ["notes/home.md:3: Rent is 900 euros a month, due on the 1st.", "notes/home.md:4: The landlord, Mr Okafor, can be reached on 555-0134.", "notes/home.md:5: Car insurance renews in March; the policy number is KX-22917."]}]
+  a = main({text: "What is the policy number of the car insurance?"})
+  expect a.text.contains("KX-22917")
+  expect a.text.contains("From: notes/home.md, line 5")
+}
+
+eval "it will not answer what the lines do not say" {
+  answers search_files: [{matches: ["notes/home.md:3: Rent is 900 euros a month, due on the 1st.", "notes/work.md:5: The staging server password is rotated every 90 days."]}]
+  a = main({text: "What is the wifi password at home?"})
+  expect a.text.starts_with("I will not guess")
+}

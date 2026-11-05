@@ -1,0 +1,25 @@
+record Ticket { text: Text }
+record Routing { queue: Text sure: Bool how: Text }
+
+model assistant
+
+// The backup plan: no AI, just look for a keyword.
+fn keyword_label(ticket: Ticket) -> Choice {
+  return {
+    label: if ticket.text.lower().contains("charge") { "billing" } else { "other" },
+    confidence: 0.3
+  }
+}
+
+fn route(label: Choice) -> Routing {
+  return {
+    queue: label.label,
+    sure: label.confidence > 0.5,
+    how: if label.confidence > 0.5 { "the model decided" } else { "the keyword backup decided" }
+  }
+}
+
+workflow main(ticket: Ticket) -> Routing {
+  label   = classify ticket.text into ["billing", "bug", "other"] otherwise keyword_label(ticket)
+  routing = route(label)
+}

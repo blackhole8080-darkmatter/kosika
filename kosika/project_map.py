@@ -252,6 +252,9 @@ def beginner_map(
     for tool in program.tools:
         if tool.source.startswith(("memory:", "board:", "world:", "direct:")):
             continue
+        if ("tool", tool.name) not in lines:
+            # Declared in an imported file, such as the standard library.
+            continue
         group, item = _tool_item(tool, lines.get(("tool", tool.name)))
         groups[group].append(item)
     def answers(model: ModelDecl) -> str:
@@ -270,7 +273,11 @@ def beginner_map(
             "does": answers(model) + (" (the default)" if model.default else ""),
         }
         for model in program.models
-        if model.provider is None and not model.verb
+        if model.provider is None
+        and not model.verb
+        # One declared in an imported file, such as the standard library's
+        # Designs, belongs to that file's map.
+        and ("model", model.name) in lines
     ]
     thinking = sorted({model.verb for model in program.models if model.verb})
     memories = [
@@ -281,6 +288,7 @@ def beginner_map(
             "does": f"remembers {memory.record} values between runs",
         }
         for memory in program.memories
+        if ("memory", memory.name) in lines
     ]
     entry = next((w for w in program.workflows if w.name == "main"), None)
     steps: list[dict[str, Any]] = []

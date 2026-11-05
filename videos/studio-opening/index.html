@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      @font-face { font-family: "EB Garamond"; src: url("assets/EBGaramond.ttf") format("truetype"); font-weight: 400 800; }
+      @font-face { font-family: "Figtree"; src: url("assets/Figtree.ttf") format("truetype"); font-weight: 300 900; }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: #07080d; }
+      #root { width: 100%; height: 100%; position: relative; overflow: hidden; background: #07080d; font-family: Figtree, system-ui, sans-serif; }
+      .layer { position: absolute; inset: 0; }
+      /* The light: three clouds of colour, and a vignette. */
+      .cloud { position: absolute; border-radius: 50%; filter: blur(90px); opacity: 0; }
+      #cloud-v { width: 1100px; height: 800px; left: 120px; top: 60px; background: #5b3fd6; }
+      #cloud-o { width: 900px; height: 700px; right: 80px; top: 220px; background: #ff7a3c; }
+      #cloud-c { width: 1000px; height: 600px; left: 520px; bottom: -200px; background: #1fa7d8; }
+      .vignette { background: radial-gradient(ellipse at 50% 50%, transparent 40%, rgba(0,0,0,.85) 100%); }
+      .star { position: absolute; width: 3px; height: 3px; border-radius: 50%; background: #fff; opacity: 0; }
+      /* The camera: everything that moves together. */
+      #camera { position: absolute; inset: 0; transform-origin: 960px 540px; }
+      /* Constellation */
+      #sky { position: absolute; inset: 0; }
+      .orbit { position: absolute; left: 960px; top: 540px; border-radius: 50%; border: 2px dashed rgba(169,147,255,.45); transform: translate(-50%, -50%); }
+      #orbit-a { width: 1300px; height: 760px; }
+      #orbit-b { width: 820px; height: 480px; border-color: rgba(85,214,255,.35); }
+      .spoke { position: absolute; left: 960px; top: 540px; height: 2px; transform-origin: 0 50%; background: linear-gradient(90deg, rgba(255,138,76,.65), rgba(85,214,255,.15)); }
+      .planet { position: absolute; width: 230px; height: 64px; margin: -32px 0 0 -115px; border-radius: 32px; background: rgba(20,22,34,.85); border: 1.5px solid rgba(255,255,255,.18); display: flex; align-items: center; gap: 14px; padding: 0 20px; color: #eef0f7; font: 600 22px/1 Figtree, sans-serif; box-shadow: 0 0 40px rgba(169,147,255,.25); }
+      .planet i { width: 14px; height: 14px; border-radius: 50%; display: block; box-shadow: 0 0 14px currentColor; background: currentColor; }
+      .comet { position: absolute; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; background: #fff; box-shadow: 0 0 18px 6px currentColor, 0 0 50px 14px currentColor; opacity: 0; }
+      .trail { position: absolute; height: 6px; margin-top: -3px; border-radius: 3px; transform-origin: 100% 50%; opacity: 0; }
+      /* The seal and the name. */
+      #lock { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 26px; }
+      #halo { position: absolute; left: 960px; top: 540px; width: 1100px; height: 1100px; margin: -550px 0 0 -550px; border-radius: 50%; background: radial-gradient(closest-side, rgba(255,138,76,.55), rgba(169,147,255,.25) 55%, transparent); opacity: 0; }
+      #seal { width: 220px; height: 220px; position: relative; display: block; }
+      #seal svg { width: 100%; height: 100%; overflow: visible; display: block; }
+      .ink { fill: none; stroke: #ffb48c; stroke-width: 3.4; stroke-linecap: round; filter: drop-shadow(0 0 10px #ff8a4c) drop-shadow(0 0 28px #a993ff); }
+      .spark { position: absolute; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; background: #ffd2b8; box-shadow: 0 0 12px #ff8a4c; opacity: 0; }
+      #word { display: flex; font: 600 190px/1 "EB Garamond", Georgia, serif; color: #f3f1ec; letter-spacing: .02em; text-shadow: 0 0 60px rgba(255,138,76,.45); }
+      #word span { display: block; }
+      #sub { font: 600 34px/1 Figtree, sans-serif; letter-spacing: .6em; text-transform: uppercase; background: linear-gradient(90deg, #ff8a4c, #a993ff 50%, #55d6ff); -webkit-background-clip: text; background-clip: text; color: transparent; padding-left: .6em; }
+      #tag { font: 500 26px/1 Figtree, sans-serif; letter-spacing: .42em; text-transform: uppercase; color: #a3a8bd; padding-left: .42em; }
+      #flash { position: absolute; inset: 0; background: radial-gradient(circle at 50% 50%, rgba(255,214,190,.9), rgba(255,138,76,.0) 60%); opacity: 0; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="7" data-width="1920" data-height="1080">
+      <div id="bg" class="clip layer" data-start="0" data-duration="7" data-track-index="0">
+        <div id="cloud-v" class="cloud"></div>
+        <div id="cloud-o" class="cloud"></div>
+        <div id="cloud-c" class="cloud"></div>
+        <div id="stars" class="layer"></div>
+        <div class="layer vignette"></div>
+      </div>
+      <div id="stage" class="clip layer" data-start="0" data-duration="7" data-track-index="1">
+        <div id="camera">
+          <div id="sky">
+            <div id="orbit-a" class="orbit"></div>
+            <div id="orbit-b" class="orbit"></div>
+            <div id="spokes"></div>
+            <div id="planets"></div>
+            <div id="comets"></div>
+          </div>
+          <div id="halo"></div>
+          <div id="lock">
+            <div id="seal">
+              <svg viewBox="0 0 100 100">
+                <circle id="ring" class="ink" cx="50" cy="50" r="44" />
+                <path id="k1" class="ink" d="M37 26 L37 74" />
+                <path id="k2" class="ink" d="M37 53 L64 26" />
+                <path id="k3" class="ink" d="M46 44 L66 74" />
+              </svg>
+            </div>
+            <div id="word"><span>K</span><span>o</span><span>s</span><span>i</span><span>k</span><span>a</span></div>
+            <div id="sub">Studio</div>
+            <div id="tag">agents you can trust</div>
+          </div>
+          <div id="sparks"></div>
+        </div>
+        <div id="flash"></div>
+      </div>
+    </div>
+    <script>
+      // Deterministic randomness: a seeded generator, so every render is the same.
+      let seed = 20261021;
+      const rand = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
+      const make = (cls, parent) => { const el = document.createElement("div"); el.className = cls; parent.appendChild(el); return el; };
+
+      const stars = [];
+      for (let i = 0; i < 140; i++) {
+        const st = make("star", document.getElementById("stars"));
+        st.style.left = (rand() * 1920).toFixed(1) + "px"; st.style.top = (rand() * 1080).toFixed(1) + "px";
+        const size = rand() < 0.15 ? 4 : 2; st.style.width = st.style.height = size + "px";
+        stars.push(st);
+      }
+
+      // The constellation: six parts on the orbit, a spoke to each from the core.
+      const CX = 960, CY = 540, RX = 650, RY = 380;
+      const parts = [["you", "#ff8a4c"], ["model · voice", "#a993ff"], ["memory", "#55d6ff"], ["tools", "#ffc857"], ["web", "#4fe0a6"], ["plain code", "#c9ccdb"]];
+      const planets = [], spokes = [], comets = [];
+      parts.forEach(([label, color], i) => {
+        const a = Math.PI + (i / parts.length) * Math.PI * 2;
+        const x = CX + RX * Math.cos(a), y = CY + RY * Math.sin(a);
+        const sp = make("spoke", document.getElementById("spokes"));
+        sp.style.width = Math.hypot(x - CX, y - CY).toFixed(1) + "px";
+        sp.style.transform = "rotate(" + (Math.atan2(y - CY, x - CX) * 180 / Math.PI).toFixed(2) + "deg)";
+        spokes.push(sp);
+        const pl = make("planet", document.getElementById("planets"));
+        pl.style.left = x.toFixed(1) + "px"; pl.style.top = y.toFixed(1) + "px";
+        const dot = document.createElement("i"); dot.style.color = color; pl.appendChild(dot); pl.appendChild(document.createTextNode(label));
+        planets.push(pl);
+        const cm = make("comet", document.getElementById("comets")); cm.style.color = color; cm.style.left = CX + "px"; cm.style.top = CY + "px";
+        comets.push({el: cm, x, y});
+      });
+
+      // Sparks that gather into the seal.
+      const sparks = [];
+      for (let i = 0; i < 48; i++) {
+        const sk = make("spark", document.getElementById("sparks"));
+        const a = rand() * Math.PI * 2, d = 520 + rand() * 520;
+        sk.style.left = "960px"; sk.style.top = "400px";
+        sparks.push({el: sk, x: Math.cos(a) * d, y: Math.sin(a) * d});
+      }
+
+      const tl = gsap.timeline({ paused: true });
+      const strokes = ["#ring", "#k1", "#k2", "#k3"];
+      strokes.forEach(id => { const el = document.querySelector(id); const len = el.getTotalLength(); el.style.strokeDasharray = len; el.dataset.len = len; });
+
+      // 0.0 – 1.4: the light comes up; sparks rush in and the seal draws itself.
+      tl.fromTo("#cloud-v", {opacity: 0, scale: 0.8}, {opacity: 0.55, scale: 1, duration: 2.2, ease: "power2.out"}, 0);
+      tl.fromTo("#cloud-o", {opacity: 0, scale: 0.8}, {opacity: 0.42, scale: 1, duration: 2.2, ease: "power2.out"}, 0.3);
+      tl.fromTo("#cloud-c", {opacity: 0, scale: 0.8}, {opacity: 0.38, scale: 1, duration: 2.2, ease: "power2.out"}, 0.6);
+      stars.forEach((st, i) => tl.fromTo(st, {opacity: 0}, {opacity: 0.25 + (i % 5) * 0.12, duration: 0.6, ease: "power1.out"}, 0.1 + (i % 23) * 0.04));
+      sparks.forEach((sp, i) => tl.fromTo(sp.el, {x: sp.x, y: sp.y, opacity: 0, scale: 1.6}, {x: 0, y: 0, opacity: 1, scale: 0.4, duration: 0.9, ease: "power4.in"}, 0.15 + (i % 12) * 0.035));
+      sparks.forEach(sp => tl.to(sp.el, {opacity: 0, duration: 0.12}, 1.18));
+      tl.fromTo("#flash", {opacity: 0}, {opacity: 0.85, duration: 0.08, ease: "none"}, 1.12);
+      tl.to("#flash", {opacity: 0, duration: 0.6, ease: "power2.out"}, 1.2);
+      strokes.forEach((id, i) => { const len = Number(document.querySelector(id).dataset.len); tl.fromTo(id, {strokeDashoffset: len}, {strokeDashoffset: 0, duration: i === 0 ? 0.9 : 0.45, ease: "power3.out"}, 1.05 + (i === 0 ? 0 : 0.25 + i * 0.12)); });
+      tl.fromTo("#seal", {scale: 0.6, y: 120}, {scale: 1, y: 120, duration: 0.9, ease: "power3.out"}, 1.05);
+      tl.fromTo("#halo", {opacity: 0, scale: 0.5}, {opacity: 0.42, scale: 1, duration: 1.2, ease: "power2.out"}, 1.1);
+
+      // 1.6 – 2.8: the name whips up letter by letter, then STUDIO sweeps in.
+      tl.set("#word span", {opacity: 0}, 0);
+      document.querySelectorAll("#word span").forEach((letter, i) => {
+        tl.set(letter, {opacity: 1}, 1.6 + i * 0.07);
+        tl.fromTo(letter, {y: 160, rotation: 4}, {y: 0, rotation: 0, duration: 0.55, ease: "power4.out"}, 1.6 + i * 0.07);
+      });
+      tl.fromTo("#word", {y: 120}, {y: 120, duration: 0.01}, 0);
+      tl.fromTo("#sub", {opacity: 0, scale: 1.35, y: 120}, {opacity: 1, scale: 1, y: 120, duration: 0.9, ease: "power3.out"}, 2.15);
+      tl.fromTo("#tag", {opacity: 0, y: 150}, {opacity: 0, y: 150, duration: 0.01}, 0);
+      tl.fromTo("#seal", {y: 120}, {y: 0, duration: 0.8, ease: "power3.inOut"}, 1.55);
+
+      // 3.0 – 5.4: the camera pulls back and the constellation opens around the name.
+      tl.to("#lock", {scale: 0.42, duration: 1.1, ease: "power3.inOut"}, 3.0);
+      tl.fromTo("#camera", {scale: 1.25, rotation: -2}, {scale: 1, rotation: 0, duration: 2.6, ease: "power2.out"}, 2.9);
+      tl.fromTo("#orbit-a", {opacity: 0, scale: 0.4}, {opacity: 1, scale: 1, duration: 1.2, ease: "power3.out"}, 3.1);
+      tl.fromTo("#orbit-b", {opacity: 0, scale: 0.4}, {opacity: 1, scale: 1, duration: 1.2, ease: "power3.out"}, 3.2);
+      tl.fromTo(["#orbit-a", "#orbit-b"], {rotation: 0}, {rotation: 14, duration: 4, ease: "none"}, 3.0);
+      spokes.forEach((sp, i) => tl.fromTo(sp, {scaleX: 0, opacity: 0}, {scaleX: 1, opacity: 1, duration: 0.7, ease: "power3.out"}, 3.35 + i * 0.07));
+      planets.forEach((pl, i) => tl.fromTo(pl, {scale: 0, opacity: 0}, {scale: 1, opacity: 1, duration: 0.7, ease: "power3.out"}, 3.5 + i * 0.08));
+      // Comets fly out along the spokes, each with a streak behind it.
+      comets.forEach((cm, i) => {
+        const t0 = 3.9 + i * 0.16;
+        tl.set(cm.el, {opacity: 1}, t0);
+        tl.fromTo(cm.el, {x: 0, y: 0}, {x: cm.x - CX, y: cm.y - CY, duration: 0.85, ease: "power2.inOut"}, t0);
+        tl.to(cm.el, {opacity: 0, scale: 2.4, duration: 0.25, ease: "power2.out"}, t0 + 0.85);
+        tl.fromTo(planets[i], {boxShadow: "0 0 40px rgba(169,147,255,.25)"}, {boxShadow: "0 0 70px " + cm.el.style.color, duration: 0.3, yoyo: true, repeat: 1}, t0 + 0.8);
+      });
+
+      // 5.4 – 7.0: the lockup returns to the front, the tagline lands, and the light holds.
+      tl.to("#lock", {scale: 0.78, duration: 1.0, ease: "power3.inOut"}, 5.3);
+      tl.to(["#sky"], {opacity: 0.55, duration: 1.0, ease: "power2.inOut"}, 5.3);
+      tl.fromTo("#tag", {opacity: 0, y: 190}, {opacity: 1, y: 120, duration: 0.8, ease: "power4.out"}, 5.6);
+      tl.to("#halo", {opacity: 0.5, scale: 1.12, duration: 1.4, ease: "sine.inOut"}, 5.4);
+
+      window.__timelines["main"] = tl;
+      tl.seek(0);
+    </script>
+  </body>
+</html>

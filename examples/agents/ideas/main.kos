@@ -37,7 +37,7 @@ record Idea { idea: Text try_first: Text }
 record Card { project: Text title: Text link: Text shared: Text[] idea: Text try_first: Text }
 record Shown { keys: Text[] }
 
-record Note { title: Text text: Text }
+record Note { title: Text text: Text link: Text file_name: Text file: Text }
 record Sent { sent: Bool }
 
 tool list_folder {
@@ -231,7 +231,7 @@ fn said_of(cards: Card[], read: Number) -> Said {
 
 fn phone_note(cards: Card[]) -> Note {
   let lines = for card in cards { f"{card.project}: {card.title}" }
-  return {title: f"{cards.length()} ideas for your projects", text: lines.join("\n")}
+  return {title: f"{cards.length()} ideas for your projects", text: lines.join("\n"), link: "", file_name: "", file: ""}
 }
 
 fn shown_with(past: ShownRecalled, chosen: Match[]) -> Shown {
@@ -328,7 +328,7 @@ workflow tell(note: Note) -> Sent {
 }
 
 workflow send(note: Note) -> Sent {
-  sent = execute reader.tell_me(note.title, note.text) otherwise not_sent()
+  sent = execute reader.tell_me(title: note.title, text: note.text, link: "", file_name: "", file: "") otherwise not_sent()
 }
 
 // ---------------------------------------------------------------- tests

@@ -1,0 +1,206 @@
+{
+  "model": "openai/gpt-oss-120b",
+  "url": "https://api.groq.com/openai/v1",
+  "mode": "best-of",
+  "best_of": 1,
+  "summary": {
+    "1": {
+      "passed": 4,
+      "tasks": 4,
+      "seconds": 121.2,
+      "attempts": 4
+    }
+  },
+  "languages": {
+    "html": {
+      "passed": 1,
+      "tasks": 1
+    },
+    "kosika": {
+      "passed": 1,
+      "tasks": 1
+    },
+    "python": {
+      "passed": 2,
+      "tasks": 2
+    }
+  },
+  "results": [
+    {
+      "id": "py-lru-cache",
+      "language": "python",
+      "passed": true,
+      "state": "done",
+      "seconds": 13.5,
+      "approvals": 2,
+      "failures": [],
+      "error": "",
+      "said": "Wrote lru.py, test_lru.py, one whole file at a time.\nWrote: lru.py, test_lru.py\nThe tests for lru pass. Only those were run; say \"test\" to run them all.",
+      "files": [
+        "calc.py",
+        "lru.py",
+        "test_calc.py",
+        "test_lru.py"
+      ],
+      "attempts": [
+        {
+          "id": "py-lru-cache",
+          "attempt": 1,
+          "asked": "write lru.py with a class LRUCache(capacity) that has get(key) returning the value or -1 and put(key, value), both O(1), evicting the least recently used key when full; and test_lru.py with pytest tests covering eviction order, updating an existing key, and capacity 1",
+          "passed": true,
+          "state": "done",
+          "abandoned": false,
+          "seconds": 13.5,
+          "approvals": 2,
+          "failures": [],
+          "excerpts": [],
+          "error": "",
+          "said": "Wrote lru.py, test_lru.py, one whole file at a time.\nWrote: lru.py, test_lru.py\nThe tests for lru pass. Only those were run; say \"test\" to run them all.",
+          "files": [
+            "calc.py",
+            "lru.py",
+            "test_calc.py",
+            "test_lru.py"
+          ]
+        }
+      ],
+      "summary": {
+        "1": {
+          "passed": true,
+          "attempts": 1,
+          "seconds": 13.5
+        }
+      }
+    },
+    {
+      "id": "py-expression-parser",
+      "language": "python",
+      "passed": true,
+      "state": "done",
+      "seconds": 33.0,
+      "approvals": 6,
+      "failures": [],
+      "error": "",
+      "said": "My first try failed its tests, so I read what they printed and put it right.\r\nWrote calc_parser.py, test_calc_parser.py, one whole file at a time.\nWrote: calc_parser.py, test_calc_parser.py\nThe tests for calc_parser pass. Only those were run; say \"test\" to run them all.",
+      "files": [
+        "calc.py",
+        "calc_parser.py",
+        "test_calc.py",
+        "test_calc_parser.py"
+      ],
+      "attempts": [
+        {
+          "id": "py-expression-parser",
+          "attempt": 1,
+          "asked": "write calc_parser.py with a function evaluate(text) that parses and evaluates arithmetic expressions with + - * / and parentheses, unary minus and decimal numbers, respecting precedence, without using eval or exec; raise ValueError for malformed input; and test_calc_parser.py with pytest tests",
+          "passed": true,
+          "state": "done",
+          "abandoned": false,
+          "seconds": 33.0,
+          "approvals": 6,
+          "failures": [],
+          "excerpts": [],
+          "error": "",
+          "said": "My first try failed its tests, so I read what they printed and put it right.\r\nWrote calc_parser.py, test_calc_parser.py, one whole file at a time.\nWrote: calc_parser.py, test_calc_parser.py\nThe tests for calc_parser pass. Only those were run; say \"test\" to run them all.",
+          "files": [
+            "calc.py",
+            "calc_parser.py",
+            "test_calc.py",
+            "test_calc_parser.py"
+          ]
+        }
+      ],
+      "summary": {
+        "1": {
+          "passed": true,
+          "attempts": 1,
+          "seconds": 33.0
+        }
+      }
+    },
+    {
+      "id": "kosika-agent",
+      "language": "kosika",
+      "passed": true,
+      "state": "done",
+      "seconds": 6.5,
+      "approvals": 2,
+      "failures": [],
+      "error": "",
+      "said": "Wrote triage/main.kos, one whole file at a time.\nWrote: triage/main.kos\nThe tests for triage/main.kos pass. Only those were run; say \"test\" to run them all.",
+      "files": [
+        "triage\\main.kos"
+      ],
+      "attempts": [
+        {
+          "id": "kosika-agent",
+          "attempt": 1,
+          "asked": "create a Kosika agent in triage/main.kos that sorts a support ticket (a record with text) into billing, bug or account using classify with learn, falls back to account when the model fails, keeps a count of tickets per category in memory, and has at least two tests that use answers for the model",
+          "passed": true,
+          "state": "done",
+          "abandoned": false,
+          "seconds": 6.5,
+          "approvals": 2,
+          "failures": [],
+          "excerpts": [],
+          "error": "",
+          "said": "Wrote triage/main.kos, one whole file at a time.\nWrote: triage/main.kos\nThe tests for triage/main.kos pass. Only those were run; say \"test\" to run them all.",
+          "files": [
+            "triage\\main.kos"
+          ]
+        }
+      ],
+      "summary": {
+        "1": {
+          "passed": true,
+          "attempts": 1,
+          "seconds": 6.5
+        }
+      }
+    },
+    {
+      "id": "motion-portfolio",
+      "language": "html",
+      "passed": true,
+      "state": "done",
+      "seconds": 68.2,
+      "approvals": 2,
+      "failures": [],
+      "error": "",
+      "said": "Wrote index.html, styles.css, script.js, one whole file at a time.\nWrote: index.html, styles.css, script.js\nOpen index.html from the project folder in your browser to see it.",
+      "files": [
+        "index.html",
+        "script.js",
+        "styles.css"
+      ],
+      "attempts": [
+        {
+          "id": "motion-portfolio",
+          "attempt": 1,
+          "asked": "create a professional dark-themed motion-graphics portfolio website for a designer named Aryan: an animated hero with layered shapes that move with the mouse, a projects grid of six cards with hover reveals, a skills section with bars that fill when scrolled into view, a contact form that checks its fields before sending, smooth scroll-triggered animations, and a layout that works on phones",
+          "passed": true,
+          "state": "done",
+          "abandoned": false,
+          "seconds": 68.2,
+          "approvals": 2,
+          "failures": [],
+          "excerpts": [],
+          "error": "",
+          "said": "Wrote index.html, styles.css, script.js, one whole file at a time.\nWrote: index.html, styles.css, script.js\nOpen index.html from the project folder in your browser to see it.",
+          "files": [
+            "index.html",
+            "script.js",
+            "styles.css"
+          ]
+        }
+      ],
+      "summary": {
+        "1": {
+          "passed": true,
+          "attempts": 1,
+          "seconds": 68.2
+        }
+      }
+    }
+  ]
+}

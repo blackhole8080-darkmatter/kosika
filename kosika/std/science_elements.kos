@@ -1,0 +1,239 @@
+// Kosika Science, the elements: the periodic table, and every atom drawn
+// from how its electrons fill their shells.
+//
+//   import "std/science_elements.kos"
+//
+//   kosika run science_elements.kos --workflow periodic --input ask.json
+//
+// where ask.json holds {"ask": {"text": "sodium", "palette": ""}}: the whole
+// table, coloured by family, with that element's card open. Kosika works
+// out each atom's electrons itself: it fills the subshells in the order of
+// rising energy (1s 2s 2p 3s 3p 4s 3d 4p ...), each to its capacity (2, 6,
+// 10, 14), and knows the few elements that break that order (chromium and
+// copper take an electron from 4s to half-fill or fill 3d). From that come
+// the shells (sodium: 2, 8, 1), the configuration (1s2 2s2 2p6 3s1, or
+// [Ne] 3s1), and the animated atom on each card.
+
+import "designs_palette.kos"
+
+export [SeAsk, SeElement, SePage, se_element, se_find, se_shells, se_config, se_short, se_page, periodic]
+
+record SeAsk { text: Text palette: Text }
+record SeElement { z: Number symbol: Text name: Text weight: Number category: Text period: Number group: Number shells: Number[] config: Text short: Text }
+record SePage { page: Text card: Text element: SeElement problems: Text[] }
+
+fn se_symbols() -> Text[] { return ["H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne", "Na", "Mg", "Al", "Si", "P", "S", "Cl", "Ar", "K", "Ca", "Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn", "Ga", "Ge", "As", "Se", "Br", "Kr", "Rb", "Sr", "Y", "Zr", "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Ag", "Cd", "In", "Sn", "Sb", "Te", "I", "Xe", "Cs", "Ba", "La", "Ce", "Pr", "Nd", "Pm", "Sm", "Eu", "Gd", "Tb", "Dy", "Ho", "Er", "Tm", "Yb", "Lu", "Hf", "Ta", "W", "Re", "Os", "Ir", "Pt", "Au", "Hg", "Tl", "Pb", "Bi", "Po", "At", "Rn", "Fr", "Ra", "Ac", "Th", "Pa", "U", "Np", "Pu", "Am", "Cm", "Bk", "Cf", "Es", "Fm", "Md", "No", "Lr", "Rf", "Db", "Sg", "Bh", "Hs", "Mt", "Ds", "Rg", "Cn", "Nh", "Fl", "Mc", "Lv", "Ts", "Og"] }
+fn se_names() -> Text[] { return ["Hydrogen", "Helium", "Lithium", "Beryllium", "Boron", "Carbon", "Nitrogen", "Oxygen", "Fluorine", "Neon", "Sodium", "Magnesium", "Aluminium", "Silicon", "Phosphorus", "Sulfur", "Chlorine", "Argon", "Potassium", "Calcium", "Scandium", "Titanium", "Vanadium", "Chromium", "Manganese", "Iron", "Cobalt", "Nickel", "Copper", "Zinc", "Gallium", "Germanium", "Arsenic", "Selenium", "Bromine", "Krypton", "Rubidium", "Strontium", "Yttrium", "Zirconium", "Niobium", "Molybdenum", "Technetium", "Ruthenium", "Rhodium", "Palladium", "Silver", "Cadmium", "Indium", "Tin", "Antimony", "Tellurium", "Iodine", "Xenon", "Caesium", "Barium", "Lanthanum", "Cerium", "Praseodymium", "Neodymium", "Promethium", "Samarium", "Europium", "Gadolinium", "Terbium", "Dysprosium", "Holmium", "Erbium", "Thulium", "Ytterbium", "Lutetium", "Hafnium", "Tantalum", "Tungsten", "Rhenium", "Osmium", "Iridium", "Platinum", "Gold", "Mercury", "Thallium", "Lead", "Bismuth", "Polonium", "Astatine", "Radon", "Francium", "Radium", "Actinium", "Thorium", "Protactinium", "Uranium", "Neptunium", "Plutonium", "Americium", "Curium", "Berkelium", "Californium", "Einsteinium", "Fermium", "Mendelevium", "Nobelium", "Lawrencium", "Rutherfordium", "Dubnium", "Seaborgium", "Bohrium", "Hassium", "Meitnerium", "Darmstadtium", "Roentgenium", "Copernicium", "Nihonium", "Flerovium", "Moscovium", "Livermorium", "Tennessine", "Oganesson"] }
+fn se_weights() -> Number[] { return [1.008, 4.0026, 6.94, 9.0122, 10.81, 12.011, 14.007, 15.999, 18.998, 20.18, 22.99, 24.305, 26.982, 28.085, 30.974, 32.06, 35.45, 39.948, 39.098, 40.078, 44.956, 47.867, 50.942, 51.996, 54.938, 55.845, 58.933, 58.693, 63.546, 65.38, 69.723, 72.63, 74.922, 78.971, 79.904, 83.798, 85.468, 87.62, 88.906, 91.224, 92.906, 95.95, 98, 101.07, 102.91, 106.42, 107.87, 112.41, 114.82, 118.71, 121.76, 127.6, 126.9, 131.29, 132.91, 137.33, 138.91, 140.12, 140.91, 144.24, 145, 150.36, 151.96, 157.25, 158.93, 162.5, 164.93, 167.26, 168.93, 173.05, 174.97, 178.49, 180.95, 183.84, 186.21, 190.23, 192.22, 195.08, 196.97, 200.59, 204.38, 207.2, 208.98, 209, 210, 222, 223, 226, 227, 232.04, 231.04, 238.03, 237, 244, 243, 247, 247, 251, 252, 257, 258, 259, 262, 267, 268, 269, 270, 269, 278, 281, 282, 285, 286, 289, 290, 293, 294, 294] }
+fn se_categories() -> Text[] { return ["nonmetal", "noble gas", "alkali metal", "alkaline earth metal", "metalloid", "nonmetal", "nonmetal", "nonmetal", "halogen", "noble gas", "alkali metal", "alkaline earth metal", "post-transition metal", "metalloid", "nonmetal", "nonmetal", "halogen", "noble gas", "alkali metal", "alkaline earth metal", "transition metal", "transition metal", "transition metal", "transition metal", "transition metal", "transition metal", "transition metal", "transition metal", "transition metal", "transition metal", "post-transition metal", "metalloid", "metalloid", "nonmetal", "halogen", "noble gas", "alkali metal", "alkaline earth metal", "transition metal", "transition metal", "transition metal", "transition metal", "transition metal", "transition metal", "transition metal", "transition metal", "transition metal", "transition metal", "post-transition metal", "post-transition metal", "metalloid", "metalloid", "halogen", "noble gas", "alkali metal", "alkaline earth metal", "lanthanide", "lanthanide", "lanthanide", "lanthanide", "lanthanide", "lanthanide", "lanthanide", "lanthanide", "lanthanide", "lanthanide", "lanthanide", "lanthanide", "lanthanide", "lanthanide", "lanthanide", "transition metal", "transition metal", "transition metal", "transition metal", "transition metal", "transition metal", "transition metal", "transition metal", "transition metal", "post-transition metal", "post-transition metal", "post-transition metal", "post-transition metal", "halogen", "noble gas", "alkali metal", "alkaline earth metal", "actinide", "actinide", "actinide", "actinide", "actinide", "actinide", "actinide", "actinide", "actinide", "actinide", "actinide", "actinide", "actinide", "actinide", "actinide", "transition metal", "transition metal", "transition metal", "transition metal", "transition metal", "transition metal", "transition metal", "transition metal", "transition metal", "post-transition metal", "post-transition metal", "post-transition metal", "post-transition metal", "halogen", "noble gas"] }
+fn se_periods() -> Number[] { return [1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7] }
+fn se_groups() -> Number[] { return [1, 18, 1, 2, 13, 14, 15, 16, 17, 18, 1, 2, 13, 14, 15, 16, 17, 18, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18] }
+fn se_columns() -> Number[] { return [1, 18, 1, 2, 13, 14, 15, 16, 17, 18, 1, 2, 13, 14, 15, 16, 17, 18, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18] }
+fn se_rows() -> Number[] { return [1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 6, 6, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 7, 7, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7] }
+
+// ---------------------------------------------------------------- electrons
+
+// The subshells in the order they fill: shell n and kind l (0 s, 1 p, 2 d, 3 f).
+fn se_order_n() -> Number[] { return [1, 2, 2, 3, 3, 4, 3, 4, 5, 4, 5, 6, 4, 5, 6, 7, 5, 6, 7] }
+fn se_order_l() -> Number[] { return [0, 0, 1, 0, 1, 0, 2, 1, 0, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1] }
+fn se_letters() -> Text { return "spdf" }
+
+// Elements whose ground state breaks the filling order: how many electrons
+// move from the outer s subshell into the d below it.
+fn se_odd() -> Number[] { return [24, 29, 41, 42, 44, 45, 46, 47, 78, 79] }
+fn se_moved() -> Number[] { return [1, 1, 1, 1, 1, 1, 2, 1, 1, 1] }
+
+// How many electrons each subshell in the filling order holds, for atom z.
+fn se_filled(z: Number) -> Number[] {
+  let ns = se_order_n()
+  let ls = se_order_l()
+  var left = z
+  var out: Number[] = []
+  for k in 0 until ns.length() {
+    let room = 2 * (2 * ls[k] + 1)
+    let put = left.min(room)
+    out = out.append(put)
+    left = left - put
+  }
+  let odd = se_odd().index_of(z).or(-1)
+  if odd < 0 { return out }
+  // the electrons move into the last d subshell with any in it, from the
+  // s subshell of the shell above
+  var d = -1
+  for k in 0 until out.length() {
+    if ls[k] == 2 and out[k] > 0 { d = k }
+  }
+  if d < 0 { return out }
+  var s = -1
+  for k in 0 until out.length() {
+    if ls[k] == 0 and ns[k] == ns[d] + 1 { s = k }
+  }
+  let moved = se_moved()[odd]
+  var shifted = out
+  shifted = for k in 0 until out.length() { if k == d { out[k] + moved } else { out[k] } }
+  return for k in 0 until shifted.length() { if k == s { shifted[k] - moved } else { shifted[k] } }
+}
+
+fn se_shells(z: Number) -> Number[] {
+  let filled = se_filled(z)
+  let ns = se_order_n()
+  var shells: Number[] = []
+  for n in 1 until 8 {
+    var total = 0
+    for k in 0 until filled.length() {
+      if ns[k] == n { total = total + filled[k] }
+    }
+    if total > 0 { shells = shells.append(total) }
+  }
+  return shells
+}
+
+// A count written raised: 6 as ⁶, 10 as ¹⁰.
+fn se_sup(n: Number) -> Text {
+  let raised = ["⁰", "¹", "²", "³", "⁴", "⁵", "⁶", "⁷", "⁸", "⁹"]
+  let digits = n.to_text()
+  var out = ""
+  for k in 0 until digits.length() { out = out + raised["0123456789".index_of(digits.slice(k, k + 1)).or(0)] }
+  return out
+}
+
+fn se_listed(filled: Number[], minus: Number[]) -> Text {
+  let ns = se_order_n()
+  let ls = se_order_l()
+  let letters = "spdf"
+  let raised = ["⁰", "¹", "²", "³", "⁴", "⁵", "⁶", "⁷", "⁸", "⁹"]
+  var parts: Text[] = []
+  for n in 1 until 8 {
+    for l in 0 until 4 {
+      for k in 0 until filled.length() {
+        let count = filled[k] - minus[k]
+        if ns[k] == n and ls[k] == l and count > 0 {
+          let up = if count >= 10 { raised[(count / 10).floor()] + raised[count % 10] } else { raised[count] }
+          parts = parts.append(n.to_text() + letters.slice(l, l + 1) + up)
+        }
+      }
+    }
+  }
+  return parts.join(" ")
+}
+
+// The configuration, subshells in order of shell then kind: 1s² 2s² 2p⁶ 3s¹.
+fn se_config(z: Number) -> Text {
+  let filled = se_filled(z)
+  return se_listed(filled, for k in filled { 0 })
+}
+
+fn se_nobles() -> Number[] { return [2, 10, 18, 36, 54, 86] }
+
+// The same, after the noble gas before it: [Ne] 3s¹.
+fn se_short(z: Number) -> Text {
+  var core = 0
+  for g in se_nobles() {
+    if g < z { core = g }
+  }
+  if core == 0 { return se_config(z) }
+  return "[" + se_symbols()[core - 1] + "] " + se_listed(se_filled(z), se_filled(core))
+}
+
+// ---------------------------------------------------------------- the elements
+
+fn se_element(z: Number) -> SeElement {
+  let i = z - 1
+  // (each table is a function returning a list; a page of 118 elements
+  // reads them 118 times, well inside the run's call budget)
+  return {z: z, symbol: se_symbols()[i], name: se_names()[i], weight: se_weights()[i], category: se_categories()[i], period: se_periods()[i], group: se_groups()[i], shells: se_shells(z), config: se_config(z), short: se_short(z)}
+}
+
+fn se_title_case(w: Text) -> Text {
+  if w.is_empty() { return w }
+  return w.slice(0, 1).upper() + w.slice(1, w.length()).lower()
+}
+
+// The element an ask is about, by name or symbol; 0 when none. Symbols that
+// are also everyday words (I, In, As, At, Be, No, He, Am) count only as names.
+fn se_find(text: Text) -> Number {
+  let words = for w in text.words() { w.trim_marks(".,?!:;()") }
+  for w in words {
+    let at = se_names().index_of(se_title_case(w)).or(-1)
+    if at >= 0 { return at + 1 }
+  }
+  let aliases = ["Aluminum", "Cesium", "Sulphur"]
+  let meant = [13, 55, 16]
+  for w in words {
+    let at = aliases.index_of(se_title_case(w)).or(-1)
+    if at >= 0 { return meant[at] }
+  }
+  let words_too = ["I", "In", "As", "At", "Be", "No", "He", "Am"]
+  for w in words {
+    let at = se_symbols().index_of(w).or(-1)
+    if at >= 0 and not words_too.contains(w) { return at + 1 }
+  }
+  return 0
+}
+
+fn se_families() -> Text[] { return ["alkali metal", "alkaline earth metal", "transition metal", "post-transition metal", "metalloid", "nonmetal", "halogen", "noble gas", "lanthanide", "actinide"] }
+
+// ---------------------------------------------------------------- drawing
+
+fn se_esc(text: Text) -> Text { return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;") }
+
+fn se_cell(e: SeElement, col: Number, row: Number) -> Text {
+  let fam = se_families().index_of(e.category).or(0)
+  return f"<button class=\"se-cell f{fam}\" style=\"grid-column:{col};grid-row:{row}\" data-z=\"{e.z}\" title=\"{e.name}\"><i>{e.z}</i><b>{e.symbol}</b><span>{e.name}</span></button>"
+}
+
+fn se_data_row(e: SeElement) -> Text {
+  let shells = (for s in e.shells { s.to_text() }).join(",")
+  return f"[{e.z},\"{e.symbol}\",\"{e.name}\",{e.weight},\"{e.category}\",{e.period},{e.group},[{shells}],\"{e.config}\",\"{se_esc(e.short)}\"]"
+}
+
+fn se_table(elements: SeElement[]) -> Text {
+  let cells = (for i in 0 until elements.length() { se_cell(elements[i], se_columns()[i], se_rows()[i]) }).join("")
+  let legend = (for k in 0 until se_families().length() { f"<span class=\"se-key f{k}\"><i></i>{se_families()[k]}</span>" }).join("")
+  return f"<div class=\"se-table\">{cells}<div class=\"se-gap\" style=\"grid-column:3;grid-row:6\">57–71</div><div class=\"se-gap\" style=\"grid-column:3;grid-row:7\">89–103</div></div><div class=\"se-legend\">{legend}</div>"
+}
+
+fn se_style() -> Text {
+  return ".se{color:var(--ink);font:15px/1.5 Figtree,system-ui,sans-serif}.se-wrap{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:20px;align-items:start}.se-table{display:grid;grid-template-columns:repeat(18,minmax(0,1fr));grid-template-rows:repeat(7,auto) 12px repeat(2,auto);gap:3px}.se-cell{all:unset;cursor:pointer;aspect-ratio:1;border-radius:6px;padding:3px;display:flex;flex-direction:column;justify-content:space-between;background:color-mix(in srgb,var(--fc) 22%,var(--halo));border:1px solid color-mix(in srgb,var(--fc) 50%,transparent);transition:transform .15s,box-shadow .15s;min-width:0;overflow:hidden}.se-cell i{font:normal 600 9px ui-monospace,Consolas,monospace;color:var(--soft)}.se-cell b{font-size:clamp(11px,1.4vw,17px);font-weight:800;line-height:1}.se-cell span{font-size:7px;color:var(--soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.se-cell:hover,.se-cell:focus-visible,.se-cell.on{transform:scale(1.18);z-index:2;box-shadow:0 0 0 2px var(--amber),0 8px 24px -8px var(--amber)}.se-gap{font:600 9px ui-monospace,Consolas,monospace;color:var(--soft);display:grid;place-items:center}.f0{--fc:var(--h0)}.f1{--fc:var(--h3)}.f2{--fc:var(--h1)}.f3{--fc:var(--h2)}.f4{--fc:#7dd3a8}.f5{--fc:var(--h4)}.f6{--fc:#f7d154}.f7{--fc:var(--h5)}.f8{--fc:#c084fc}.f9{--fc:#fb923c}.se-legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:12px;font-size:12px;color:var(--soft)}.se-key i{display:inline-block;width:10px;height:10px;border-radius:3px;background:var(--fc);margin-right:6px;vertical-align:-1px}.se-card{position:sticky;top:12px;background:color-mix(in srgb,var(--halo) 90%,transparent);border:1px solid color-mix(in srgb,var(--line) 12%,transparent);border-radius:20px;padding:16px}.se-top{display:flex;gap:14px;align-items:center}.se-big{width:84px;height:84px;border-radius:14px;display:grid;place-items:center;font-size:40px;font-weight:850;background:color-mix(in srgb,var(--fc) 30%,var(--halo));border:1px solid var(--fc)}.se-top h3{margin:0;font-size:24px}.se-top p{margin:2px 0 0;color:var(--soft);font-size:13px}.se-atom{width:100%;height:auto;display:block;margin:10px 0}.se-atom .nuc{fill:var(--amber)}.se-atom .shell{fill:none;stroke:color-mix(in srgb,var(--line) 25%,transparent);stroke-width:1}.se-atom .e{fill:var(--h2)}.se-atom .orbit{transform-origin:150px 150px;animation:se-turn linear infinite}@keyframes se-turn{to{transform:rotate(360deg)}}.se-facts{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:14px;margin:0}.se-facts dt{color:var(--soft)}.se-facts dd{margin:0;font-variant-numeric:tabular-nums}.se-how{color:var(--soft);font-size:12.5px;margin-top:10px}@media (max-width:900px){.se-wrap{grid-template-columns:1fr}.se-card{position:static}}@media (prefers-reduced-motion:reduce){.se-atom .orbit{animation:none}}"
+}
+
+// The card is drawn in the page from Kosika's numbers: the shells, the
+// configuration and the facts are all worked out above.
+fn se_script() -> Text {
+  return "(function(){var D=window.SE_DATA,F=window.SE_FAMILIES,card=document.getElementById('se-card');function atom(sh){var s='<svg class=\"se-atom\" viewBox=\"0 0 300 300\"><circle class=\"nuc\" cx=\"150\" cy=\"150\" r=\"16\"/>';var gap=Math.min(19,128/sh.length);sh.forEach(function(n,i){var r=26+gap*(i+1);s+='<circle class=\"shell\" cx=\"150\" cy=\"150\" r=\"'+r+'\"/><g class=\"orbit\" style=\"animation-duration:'+(6+i*4)+'s;animation-direction:'+(i%2?'reverse':'normal')+'\">';for(var k=0;k<n;k++){var a=2*Math.PI*k/n;s+='<circle class=\"e\" cx=\"'+(150+r*Math.cos(a)).toFixed(1)+'\" cy=\"'+(150+r*Math.sin(a)).toFixed(1)+'\" r=\"'+(n>18?2.4:3.4)+'\"/>'}s+='</g>'});return s+'</svg>'}function show(z){var e=D[z-1],f=F.indexOf(e[4]);document.querySelectorAll('.se-cell').forEach(function(c){c.classList.toggle('on',+c.dataset.z===z)});card.className='se-card f'+f;card.innerHTML='<div class=\"se-top\"><div class=\"se-big\">'+e[1]+'</div><div><h3>'+e[2]+'</h3><p>'+e[4]+' &#183; atomic number '+e[0]+'</p></div></div>'+atom(e[7])+'<dl class=\"se-facts\"><dt>Mass</dt><dd>'+e[3]+' g/mol</dd><dt>Period, group</dt><dd>'+e[5]+', '+(e[6]||'f-block')+'</dd><dt>Shells</dt><dd>'+e[7].join(', ')+'</dd><dt>Electrons</dt><dd>'+e[8]+'</dd><dt>In short</dt><dd>'+e[9]+'</dd></dl><p class=\"se-how\">Kosika filled the subshells in order of energy, 1s 2s 2p 3s 3p 4s 3d ..., each to its capacity, and knows the elements that break the order.</p>'}document.querySelectorAll('.se-cell').forEach(function(c){c.addEventListener('click',function(){show(+c.dataset.z)})});show(window.SE_START||1)})();"
+}
+
+fn se_page(ask: Text, z: Number, palette: Text) -> Text {
+  let all = for k in 1 until 119 { se_element(k) }
+  let data = "window.SE_DATA=[" + (for e in all { se_data_row(e) }).join(",") + "];window.SE_FAMILIES=[" + (for f in se_families() { "\"" + f + "\"" }).join(",") + "];window.SE_START=" + z.max(1).to_text() + ";"
+  let p = if palette_names().contains(palette) { palette } else { "dark_matter" }
+  return f"<!doctype html><html lang=\"en\" data-palette=\"{p}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>The periodic table</title><style>{palettes_css()}body{{margin:0;background:var(--bg)}}main{{max-width:1320px;margin:0 auto;padding:24px 16px 48px}}.se-head span{{font:600 10.5px ui-monospace,Consolas,monospace;letter-spacing:.22em;text-transform:uppercase;color:var(--gold)}}.se-head h2{{margin:4px 0 4px;font-size:28px;font-weight:850;letter-spacing:-.02em;color:var(--ink);font-family:Figtree,system-ui,sans-serif}}.se-head p{{margin:0 0 16px;color:var(--soft);font:14px system-ui,sans-serif}}{se_style()}</style></head><body><main class=\"se\"><div class=\"se-head\"><span>Kosika Science &#183; the elements</span><h2>The periodic table</h2><p>{se_esc(ask)}</p></div><div class=\"se-wrap\"><div>{se_table(all)}</div><div class=\"se-card\" id=\"se-card\"></div></div></main><script>{data}{se_script()}</script></body></html>"
+}
+
+workflow periodic(ask: SeAsk) -> SePage {
+  z   = se_find(ask.text)
+  out = {page: se_page(ask.text, z, ask.palette), card: "", element: se_element(z.max(1)), problems: []}
+}
+
+// ---------------------------------------------------------------- tests
+
+test "electrons fill their shells as Kosika works them out" {
+  expect se_shells(11) == [2, 8, 1]
+  expect se_shells(26) == [2, 8, 14, 2]
+  expect se_config(11) == "1s² 2s² 2p⁶ 3s¹"
+  expect se_short(11) == "[Ne] 3s¹"
+  // chromium and copper break the order
+  expect se_short(24) == "[Ar] 3d⁵ 4s¹"
+  expect se_short(29) == "[Ar] 3d¹⁰ 4s¹"
+  expect se_shells(79) == [2, 8, 18, 32, 18, 1]
+  expect se_shells(118) == [2, 8, 18, 32, 32, 18, 8]
+}
+
+test "elements are found by name or symbol" {
+  expect se_find("tell me about sodium") == 11
+  expect se_find("what is Fe") == 26
+  expect se_find("aluminum foil") == 13
+  expect se_find("why is the sky blue") == 0
+  expect se_element(79).name == "Gold"
+  expect se_element(57).group == 0
+}

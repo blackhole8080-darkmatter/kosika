@@ -1,0 +1,93 @@
+{
+ "a": {
+  "title": "Four real parts, drawn by Kosika",
+  "summary": "A heart, a cell, a transistor and an engine cylinder, each drawn from what it is made of.",
+  "palette": "dark_matter",
+  "backdrop": "grid",
+  "figures": [
+   {
+    "id": "heart",
+    "kind": "heart",
+    "x": 20,
+    "y": 22,
+    "w": 11,
+    "h": 0,
+    "count": 0,
+    "hue": 5,
+    "label": "Heart",
+    "points": []
+   },
+   {
+    "id": "cell",
+    "kind": "cell",
+    "x": 62,
+    "y": 20,
+    "w": 13,
+    "h": 0,
+    "count": 0,
+    "hue": 4,
+    "label": "Cell",
+    "points": []
+   },
+   {
+    "id": "transistor",
+    "kind": "transistor",
+    "x": 22,
+    "y": 48,
+    "w": 7,
+    "h": 0,
+    "count": 0,
+    "hue": 2,
+    "label": "",
+    "points": []
+   },
+   {
+    "id": "engine",
+    "kind": "engine",
+    "x": 66,
+    "y": 47,
+    "w": 9,
+    "h": 0,
+    "count": 0,
+    "hue": 3,
+    "label": "",
+    "points": []
+   }
+  ],
+  "motions": [
+   {
+    "what": "heart",
+    "kind": "pulse",
+    "around": "",
+    "seconds": 0.9,
+    "delay": 0
+   }
+  ],
+  "beats": [
+   {
+    "text": "The heart: two atria on top, two ventricles below, and the vessels leaving it.",
+    "shows": [
+     "heart"
+    ]
+   },
+   {
+    "text": "A cell: its nucleus, the mitochondria that make its energy, and ribosomes building proteins.",
+    "shows": [
+     "cell"
+    ]
+   },
+   {
+    "text": "An NPN transistor: a small current into the base B lets a larger one flow from C to E.",
+    "shows": [
+     "transistor"
+    ]
+   },
+   {
+    "text": "One engine cylinder: the piston rises and falls, and the rod turns the crank.",
+    "shows": [
+     "engine"
+    ]
+   }
+  ]
+ }
+}

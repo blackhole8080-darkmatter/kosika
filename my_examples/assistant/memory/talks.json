@@ -1,0 +1,12 @@
+{
+  "me": {
+    "turns": [
+      "User: hello",
+      "Assistant: Hello! What can I do for you? Say \"help\" to see what I can do.",
+      "User: hello",
+      "Assistant: Hello! What can I do for you? Say \"help\" to see what I can do.",
+      "User: hello",
+      "Assistant: Hello! What can I do for you? Say \"help\" to see what I can do."
+    ]
+  }
+}

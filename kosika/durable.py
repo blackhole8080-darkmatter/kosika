@@ -7,6 +7,7 @@ import hashlib
 import json
 import sqlite3
 import threading
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterator, Sequence
 
@@ -27,6 +28,22 @@ def digest(value: Any) -> str:
 #: The name an approval request carries when it is for a planning agent's
 #: whole list of changes. No declared tool can have it: it is not a name.
 PLAN_TOOL = "$plan"
+
+
+@dataclass(frozen=True)
+class Claimed:
+    """The action a step claimed before it happened, and who had said yes.
+
+    `action` is the hash the ledger holds: it covers the plan, the step the
+    call is made in, the tool and the exact arguments. `approved_by` is the
+    person whose approval matched it, and `plan_hash` the plan that approval
+    was given under -- both of which a trace records, so that a replay can
+    put a recorded call back to its approval.
+    """
+
+    plan_hash: str
+    action: str
+    approved_by: str
 
 
 class ApprovalPending(ExecutionError):
@@ -189,8 +206,10 @@ class ExecutionSession:
 
     def start(
         self, scope: tuple[str, ...], tool: str | None, arguments: dict[str, Any]
-    ) -> str | None:
-        action = None
+    ) -> Claimed | None:
+        """Claim this step's action, or pause: nothing happens without a yes."""
+
+        claimed = None
         if tool is not None:
             action = action_hash(self.plan_hash, json.dumps([*scope, tool]), arguments)
             approval = next(
@@ -214,8 +233,9 @@ class ExecutionSession:
                 self._save(scope, "pending", request)
                 raise ApprovalPending(request)
             self.ledger.claim(action, self.plan_hash, approval.approved_by, tool)
+            claimed = Claimed(self.plan_hash, action, approval.approved_by)
         self._save(scope, "started", {"arguments": arguments})
-        return action
+        return claimed
 
     def remember(self, scope: tuple[str, ...], payload: Any) -> None:
         """Keep something beside the steps, to be read when a step begins again."""

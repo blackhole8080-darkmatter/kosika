@@ -11,7 +11,7 @@
 // on this photo by sunflower.kos; the golden squares and spiral are drawn
 // exactly by draw.kos, to scale, from that measured centre.
 
-import "draw.kos"
+import "std/designs_draw.kos"
 import "sunflower.kos"
 
 export [Screen, Shown, screen]
