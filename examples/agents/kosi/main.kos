@@ -183,8 +183,13 @@ fn ko_known_you(found: BrainFound) -> Text {
 }
 
 // The checked facts Kosi has on a question, read now or kept before.
-fn ko_checked_facts(known: BrainFound, looked: BrainFound) -> BrainFound {
-  return {notes: for n in looked.notes.concat(known.notes) where n.kind == "fact" and n.source.contains("wikipedia.org") { n }, by: "words"}
+// The checked facts on a question: those read for it now, and those kept
+// before on the very things it names (a fact on Australia is no evidence
+// for a question on India).
+fn ko_checked_facts(known: BrainFound, looked: BrainFound, asked: Text) -> BrainFound {
+  let names = for x in fa_subjects(asked) { x.lower() }
+  let kept = for n in known.notes where n.kind == "fact" and n.source.contains("wikipedia.org") and names.contains(n.topic.lower()) { n }
+  return {notes: (for n in looked.notes where n.kind == "fact" and n.source.contains("wikipedia.org") { n }).concat(kept), by: "words"}
 }
 
 fn ko_note_line(n: BrainNote) -> Text {
@@ -358,10 +363,21 @@ fn ko_with_subject(r: KosiReply, msg: Msg, talk: BrainFound) -> KosiReply {
   return if bare and not before.is_empty() { {..r, draw: before} } else { r }
 }
 
+// The message itself, said back: the same words, give or take marks and
+// case. "Yes, New Delhi is India's capital" answers "is new delhi
+// india's capital", and is not said back.
+fn ko_plain(t: Text) -> Text { return t.lower().replace("?", "").replace(".", "").replace(",", "").replace("!", "").replace("’", "'").trim() }
+
+fn ko_said_back(reply: Text, said: Text) -> Bool {
+  let a = ko_plain(reply)
+  let b = ko_plain(said)
+  return a == b or (b.contains(a) and a.length() > 8)
+}
+
 // A reply that is the message said back is no reply.
 fn ko_not_echo(r: KosiReply, msg: Msg) -> KosiReply {
   // A short reply with no words of its own ("Here it is.") is not an echo.
-  if br_words(r.reply).length() < 3 or not ko_echoes(r.reply, msg.text) { return r }
+  if br_words(r.reply).length() < 3 or not ko_said_back(r.reply, msg.text) { return r }
   return {..r, reply: "Tell me a little more about what you have in mind, and I'll take it from there."}
 }
 
@@ -399,7 +415,7 @@ fn ko_drawn_text(r: KosiReply, canvas: Text, title: Text) -> Text {
 fn ko_thought(msg: Msg, known: BrainFound, looked: BrainFound, exact: WkAnswer, first: KosiReply, final: KosiReply) -> Thought {
   let named = if fa_asks_fact(msg.text) { fa_subjects(msg.text) } else { [] }
   let worked = if exact.future { "A year still to come: no one can know it yet." } else { exact.says }
-  let evidence = ko_checked_facts(known, looked).notes
+  let evidence = ko_checked_facts(known, looked, msg.text).notes
   // Only what was remembered that bears on the message: it shares a word.
   let asked = br_words(msg.text)
   let memory = for n in known.notes where n.kind == "fact" and n.source.starts_with("you told Kosi") and (for w in br_words(n.text) where asked.contains(w) { w }).length() > 0 { n }
@@ -471,7 +487,7 @@ workflow chat_small(msg: Msg) -> Said {
   exact  = wk_answer(msg.text, today.year)
   small  = use_model buddy(ko_small_task(), msg.text, ko_known_you(ko_both(known, looked)) + wk_note(exact), ko_small_earlier()) retry 1 otherwise ko_no_small()
   raw    = ko_from_small(small, msg.text)
-  reply  = ko_grounded(ko_checked(raw, exact), msg.text, ko_checked_facts(known, looked))
+  reply  = ko_grounded(ko_checked(raw, exact), msg.text, ko_checked_facts(known, looked, msg.text))
   drawn  = match ko_wants_picture(msg, reply) {
     case true { call brain_design(ko_draw_ask(reply)) }
     case _ { ko_no_canvas() }
@@ -610,7 +626,8 @@ test "a reply that only says the question back gives the checked fact" {
   mine = ko_test_found([ko_test_note("fact", "Their exam is on 12 December.", "Their exam is on 12 December.", "you told Kosi"), ko_test_note("fact", "They're vegetarian.", "They're vegetarian.", "you told Kosi")])
   expect ko_known_you(mine).lines() == ["- Your exam is on 12 December.", "- You're vegetarian."]
   kept: BrainFound = {notes: [], by: "words"}
-  expect ko_checked_facts(looked, kept).notes.length() == 1
+  expect ko_checked_facts(looked, kept, "Sydney is the capital of Australia, right?").notes.length() == 1
+  expect ko_checked_facts(looked, kept, "is new delhi india's capital").notes.is_empty()
 }
 
 test "draw it for me draws what the talk was about, and an echo is no reply" {
@@ -622,6 +639,8 @@ test "draw it for me draws what the talk was about, and an echo is no reply" {
   expect ko_not_echo(ko_test_reply("Here it is.", []), {text: "draw it for me"}).reply == "Here it is."
   expect ko_not_echo(ko_test_reply("I would love to sketch the gears for you, which part first?", []), {text: "draw it for me"}).reply.starts_with("I would love")
   expect not ko_echoes("No, Sydney is not the capital of Australia; Canberra is, and Sydney is its largest city.", "Sydney is the capital of Australia, right?")
+  expect not ko_said_back("Yes, New Delhi is India's capital.", "is new delhi india's capital")
+  expect ko_said_back("Is new delhi India's capital?", "is new delhi india's capital")
   expect ko_drawn_text(ko_test_reply("I would love to sketch it, which part?", []), "<div>", "Bicycle gears") == "Here it is: Bicycle gears."
   expect ko_drawn_text(ko_test_reply("Sure, I'll have Sol draw it.", []), "<div>", "Kosika's parts") == "Here it is: Kosika's parts."
   expect ko_new_facts(ko_test_reply("ok", ["They are asking for confirmation that it matches the intended design.", "They want more unique designs."]), ko_test_found([])).is_empty()

@@ -1858,7 +1858,7 @@ const THINK_COLUMNS = {question: 0, named: 1, exact: 2, evidence: 2, memory: 2, 
 const THINK_COLOUR = {passed: "var(--ok)", fixed: "var(--accent)", chosen: "var(--accent)", used: "var(--line)"};
 function thinkingBoard(thought, who, onAsk) {
   const nodes = (thought && thought.nodes) || [];
-  if (nodes.length < 3) return null;
+  if (nodes.length < 2) return null;
   const used = [...new Set(nodes.map(n => THINK_COLUMNS[n.kind] ?? 2))].sort((a, b) => a - b);
   const colOf = n => used.indexOf(THINK_COLUMNS[n.kind] ?? 2);
   const colW = 230, W = colW * used.length, nodeW = 196;
@@ -2272,7 +2272,7 @@ function showCrew() {
       // Sol: Kosika's exact science, explained and drawn.
       light("kosi>sol", "run"); light("sol>check", "run"); node("sol", "explaining"); node("check", "checking");
       const doneSol = row("Kosi → Sol", "explain and draw it");
-      const sol = await ask("Sol, explain " + what);
+      const sol = await ask("Sol, " + what);
       if (sol.text) checks++;
       doneSol(true, sol.canvas ? "drew it" : "explained");
       const science = ((sol.thinking || {}).nodes || []).filter(n => n.kind === "exact" || n.kind === "check");

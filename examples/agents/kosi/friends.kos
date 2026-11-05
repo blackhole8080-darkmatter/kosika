@@ -232,7 +232,14 @@ fn sol_said(r: SolReply, drawn: DzResult, science: Text, question: Text) -> FrSa
   return {who: "sol", text: text, canvas: canvas, kept: [], sources: [], suggest: ["Iris, research this", "draw it another way"], thinking: thought}
 }
 
-fn sol_wants_drawing(r: SolReply) -> Bool { return not r.draw.trim().is_empty() }
+// Sol draws when there is science to show or something to see working,
+// not for a question of fact ("is Mumbai India's capital?").
+fn sol_wants_drawing(r: SolReply, science: Text, question: Text) -> Bool {
+  if r.draw.trim().is_empty() { return false }
+  let q = " " + question.lower() + " "
+  let working = q.contains(" how ") or q.contains(" why ") or q.contains(" explain ") or q.contains(" draw ") or q.contains(" show ") or q.contains(" work")
+  return science != "(nothing exact)" or working
+}
 
 fn sol_known(found: BrainFound) -> Text {
   let notes = for n in found.notes where n.kind != "talk" { n }
@@ -247,7 +254,7 @@ workflow sol_explain(m: FrMsg) -> FrSaid {
   known    = call brain_recall({text: question, kind: ""})
   science  = sol_science(question)
   reply    = use_model sol(sol_task(), question, science, sol_known(known)) retry 1 otherwise sol_no_reply()
-  drawn    = match sol_wants_drawing(reply) {
+  drawn    = match sol_wants_drawing(reply, science, question) {
     case true { call brain_design(sol_draw_ask(reply, question)) }
     case _ { sol_no_canvas() }
   }

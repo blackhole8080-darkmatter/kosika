@@ -43,7 +43,17 @@ fn fa_capital(w: Text) -> Bool {
 // The things a question names: runs of capitalised words, "of" and "the"
 // allowed inside a run ("Great Wall of China"), a possessive dropped
 // ("Einstein's"), and words that only start the sentence left out.
+// What a question names: its capitalised names, or, typed all in lower
+// case ("is new delhi india's capital"), its first three words of its own.
 fn fa_subjects(text: Text) -> Text[] {
+  let named = fa_named(text)
+  if not named.is_empty() { return named }
+  let skip = ["capital", "biggest", "largest", "smallest", "right", "true", "really", "the", "and", "for", "with", "are", "was", "were", "who", "what", "when", "where", "which", "why", "how", "does", "did", "has", "have", "its", "it's", "bigger", "smaller", "than", "tell", "about", "you", "your", "yours", "me", "mine", "hello", "thanks", "thank", "please", "today", "good"]
+  let words = for w in text.lower().replace("?", " ").replace(",", " ").replace("'s", " ").replace("’s", " ").words() where w.length() >= 3 and not skip.contains(w) and not fa_starters().contains(w) and not fa_not_names().contains(w) { w.trim_marks(".!'") }
+  return if words.is_empty() { [] } else { [words.take(3).join(" ")] }
+}
+
+fn fa_named(text: Text) -> Text[] {
   let ws = for w in text.replace("?", " ").replace("!", " ").replace(",", " ").replace(".", " ").replace("\"", " ").words() { w.trim_marks("'()") }
   var out: Text[] = []
   var run: Text[] = []
@@ -77,7 +87,7 @@ fn fa_subjects(text: Text) -> Text[] {
 // something: it asks, and it names something.
 fn fa_asks_fact(text: Text) -> Bool {
   let low = " " + text.lower() + " "
-  let asks = text.contains("?") or low.starts_with(" what ") or low.starts_with(" who ") or low.starts_with(" why ") or low.starts_with(" when ") or low.starts_with(" where ") or low.starts_with(" which ") or low.starts_with(" since ") or low.starts_with(" tell me ")
+  let asks = text.contains("?") or low.starts_with(" is ") or low.starts_with(" are ") or low.starts_with(" was ") or low.starts_with(" were ") or low.starts_with(" does ") or low.starts_with(" did ") or low.starts_with(" how ") or low.starts_with(" what ") or low.starts_with(" who ") or low.starts_with(" why ") or low.starts_with(" when ") or low.starts_with(" where ") or low.starts_with(" which ") or low.starts_with(" since ") or low.starts_with(" tell me ")
   let personal = low.contains(" my ") or low.contains(" i ") or low.contains(" me ") or low.contains(" i'm ")
   let making = low.contains(" write ") or low.contains(" poem") or low.contains(" invent ") or low.contains(" slogan") or low.contains(" draw ")
   return asks and not personal and not making and not fa_subjects(text).is_empty()
@@ -193,6 +203,8 @@ test "the things a question names are found" {
   expect fa_subjects("Since the Great Wall of China is visible from the Moon with the naked eye, how big is it?") == ["Great Wall of China", "Moon"]
   expect fa_subjects("what's the capital of Zorbania?") == ["Zorbania"]
   expect fa_subjects("hi Kosi, how are you?").is_empty()
+  expect fa_subjects("is new delhi india's capital") == ["new delhi india"]
+  expect fa_asks_fact("is new delhi india's capital")
   expect fa_asks_fact("Sydney is the capital of Australia, right?")
   expect not fa_asks_fact("When is my exam now?")
   expect not fa_asks_fact("Write a four-line poem about a robot learning to dream.")
