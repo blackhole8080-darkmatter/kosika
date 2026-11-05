@@ -33,6 +33,7 @@ import "std/designs.kos"
 import "worked.kos"
 import "facts.kos"
 import "friends.kos"
+import "thinking.kos"
 
 export [Msg, Said, KosiBrief, KosiReply, chat, ko_spoken, ko_known_text, ko_talk_after, ko_new_facts]
 
@@ -41,7 +42,7 @@ record Msg { text: Text }
 // text: what Kosi says. canvas: a Kosika canvas when a picture helps, or "".
 // kept: what it will remember from this, in its own words. project: the
 // project the talk was about, if any.
-record Said { text: Text suggest: Text[] canvas: Text kept: Text[] project: Text }
+record Said { text: Text suggest: Text[] canvas: Text kept: Text[] project: Text thinking: Thought }
 
 // message: what they just said, the one thing to answer. memory: what Kosi
 // knows that bears on it. earlier: the talk before it, for context only.
@@ -125,8 +126,10 @@ fn ko_echoes(reply: Text, said: Text) -> Bool {
   let b = br_words(said)
   if a.is_empty() { return true }
   if b.is_empty() { return false }
+  // Said back: nearly all of the reply's words are the message's, and it
+  // adds hardly anything; a reply that corrects the message adds words.
   let shared = (for w in a where b.contains(w) { w }).length()
-  return shared / a.length() >= 0.75
+  return shared / a.length() >= 0.75 and a.length() <= b.length() + 1
 }
 
 fn ko_grounded(r: KosiReply, said: Text, looked: BrainFound) -> KosiReply {
@@ -242,7 +245,7 @@ fn ko_new_facts(r: KosiReply, known: BrainFound) -> Text[] {
     let stems = br_words(t)
     let low = " " + t.lower() + " "
     // Not a fact about the person: what happened in the talk itself.
-    let chatter = low.contains(" the user ") or low.contains(" kosi ") or low.contains(" greeted ") or low.contains(" asked about ")
+    let chatter = low.contains(" the user ") or low.contains(" user ") or low.contains(" asks how") or low.contains(" asks what") or low.contains(" asks if") or low.contains(" kosi ") or low.contains(" greeted ") or low.contains(" asked about ")
     let wanting = low.contains(" asking for") or low.contains(" asking if") or low.contains(" want a drawing") or low.contains(" want more ") or low.contains(" want another") or low.contains(" want a sketch") or low.contains(" confirmation")
     let asking = chatter or wanting or low.contains(" wants an explanation") or low.contains(" wants a drawing") or low.contains(" wants a picture") or low.contains(" asked ") or low.contains(" is asking ")
     let corrects = not ko_replaces(t, known).is_empty()
@@ -382,9 +385,29 @@ fn ko_drawn_text(r: KosiReply, canvas: Text, title: Text) -> Text {
   return if not canvas.is_empty() and hedges and not title.trim().is_empty() { "Here it is: " + title.trim() + "." } else { ko_reply_text(r) }
 }
 
-fn ko_said(r: KosiReply, known: BrainFound, drawn: DzResult) -> Said {
+// How Kosi got there, from the steps it really took: the things the
+// message names, Kosika's exact working, the checked facts read, what it
+// remembered of the person, and each check made on the model's reply.
+fn ko_thought(msg: Msg, known: BrainFound, looked: BrainFound, exact: WkAnswer, first: KosiReply, final: KosiReply) -> Thought {
+  let named = if fa_asks_fact(msg.text) { fa_subjects(msg.text) } else { [] }
+  let worked = if exact.future { "A year still to come: no one can know it yet." } else { exact.says }
+  let evidence = ko_checked_facts(known, looked).notes
+  // Only what was remembered that bears on the message: it shares a word.
+  let asked = br_words(msg.text)
+  let memory = for n in known.notes where n.kind == "fact" and n.source.starts_with("you told Kosi") and (for w in br_words(n.text) where asked.contains(w) { w }).length() > 0 { n }
+  var checks: Text[] = []
+  if not exact.says.is_empty() {
+    let held = first.reply == final.reply
+    checks = checks.append(if exact.future { if held { "passed: the reply says the future cannot be known" } else { "fixed: the reply told the future, so Kosika said it cannot be known" } } else { if held { "passed: the reply holds Kosika's exact answer" } else { "fixed: the reply missed Kosika's exact answer, so it was given instead" } })
+  }
+  if final.reply.starts_with("Tell me a little more") and first.reply != final.reply { checks = checks.append("fixed: the reply only said your message back") }
+  if final.reply.starts_with("From what I've checked:") and first.reply != final.reply { checks = checks.append("fixed: the reply only said the question back, so the checked fact was given") }
+  return th_build(msg.text, named, worked, evidence, memory.take(2), checks, final.reply)
+}
+
+fn ko_said(r: KosiReply, known: BrainFound, drawn: DzResult, thought: Thought) -> Said {
   let canvas = if drawn.problems.is_empty() { drawn.embed } else { "" }
-  return {text: ko_drawn_text(r, canvas, drawn.title), suggest: ko_suggest(r), canvas: canvas, kept: ko_new_facts(r, known), project: r.project.trim()}
+  return {text: ko_drawn_text(r, canvas, drawn.title), suggest: ko_suggest(r), canvas: canvas, kept: ko_new_facts(r, known), project: r.project.trim(), thinking: thought}
 }
 
 // ---------------------------------------------------------------- the workflows
@@ -416,7 +439,7 @@ workflow chat(msg: Msg) -> Said {
     case _ { br_not_kept_kosi() }
   }
   heard  = call brain_keep(ko_talk_after(talk, msg.text, ko_reply_text(reply)))
-  out    = ko_said(reply, ko_both(known, seen), drawn)
+  out    = ko_said(reply, ko_both(known, seen), drawn, ko_thought(msg, known, looked, exact, said, reply))
 }
 
 // The small brain: the same talk for a small model on a laptop's CPU. It
@@ -433,7 +456,8 @@ workflow chat_small(msg: Msg) -> Said {
   }
   exact  = wk_answer(msg.text, today.year)
   small  = use_model buddy(ko_small_task(), msg.text, ko_known_you(ko_both(known, looked)) + wk_note(exact), ko_small_earlier()) retry 1 otherwise ko_no_small()
-  reply  = ko_grounded(ko_checked(ko_from_small(small, msg.text), exact), msg.text, ko_checked_facts(known, looked))
+  raw    = ko_from_small(small, msg.text)
+  reply  = ko_grounded(ko_checked(raw, exact), msg.text, ko_checked_facts(known, looked))
   drawn  = match ko_wants_picture(msg, reply) {
     case true { call brain_design(ko_draw_ask(reply)) }
     case _ { ko_no_canvas() }
@@ -449,7 +473,7 @@ workflow chat_small(msg: Msg) -> Said {
     case _ { br_not_kept_kosi() }
   }
   heard  = call brain_keep(ko_talk_after(talk, msg.text, ko_reply_text(reply)))
-  out    = ko_said(reply, ko_both(known, seen), drawn)
+  out    = ko_said(reply, ko_both(known, seen), drawn, ko_thought(msg, known, looked, exact, raw, reply))
 }
 
 // ---------------------------------------------------------------- the friends
@@ -457,7 +481,7 @@ workflow chat_small(msg: Msg) -> Said {
 // Kosi's answer as one of the friends' answers, with the friends Kosi can
 // hand the question on to offered first.
 fn ko_as_friend(said: Said, asked: Text) -> FrSaid {
-  return {who: "kosi", text: said.text, canvas: said.canvas, kept: said.kept, sources: [], suggest: fr_suggest(asked).concat(said.suggest).take(4)}
+  return {who: "kosi", text: said.text, canvas: said.canvas, kept: said.kept, sources: for n in said.thinking.nodes where not n.source.is_empty() { n.source }, suggest: fr_suggest(asked).concat(said.suggest).take(4), thinking: said.thinking}
 }
 
 workflow ko_chat_friend(msg: Msg) -> FrSaid {
@@ -583,8 +607,10 @@ test "draw it for me draws what the talk was about, and an echo is no reply" {
   expect ko_not_echo(ko_test_reply("yes, but i meant something more unique", []), {text: "yes, but i meant something more unique"}).reply.starts_with("Tell me a little more")
   expect ko_not_echo(ko_test_reply("Here it is.", []), {text: "draw it for me"}).reply == "Here it is."
   expect ko_not_echo(ko_test_reply("I would love to sketch the gears for you, which part first?", []), {text: "draw it for me"}).reply.starts_with("I would love")
+  expect not ko_echoes("No, Sydney is not the capital of Australia; Canberra is, and Sydney is its largest city.", "Sydney is the capital of Australia, right?")
   expect ko_drawn_text(ko_test_reply("I would love to sketch it, which part?", []), "<div>", "Bicycle gears") == "Here it is: Bicycle gears."
   expect ko_new_facts(ko_test_reply("ok", ["They are asking for confirmation that it matches the intended design.", "They want more unique designs."]), ko_test_found([])).is_empty()
+  expect ko_new_facts(ko_test_reply("ok", ["User asks how many times r appears in strawberry."]), ko_test_found([])).is_empty()
 }
 
 test "a changed fact writes over the old one" {

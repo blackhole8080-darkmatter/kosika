@@ -19,13 +19,14 @@ import "std/brain.kos"
 import "std/designs.kos"
 import "facts.kos"
 import "std/science_chem.kos"
+import "thinking.kos"
 
 export [FrMsg, FrSaid, fr_who, fr_name, fr_suggest, iris_research, sol_explain]
 
 record FrMsg { text: Text }
 
 // who: "iris" or "sol". sources: where the answer came from, as links.
-record FrSaid { who: Text text: Text canvas: Text kept: Text[] sources: Text[] suggest: Text[] }
+record FrSaid { who: Text text: Text canvas: Text kept: Text[] sources: Text[] suggest: Text[] thinking: Thought }
 
 record IrisBrief { task: Text question: Text found: Text }
 record IrisReply { reply: Text }
@@ -105,9 +106,11 @@ fn iris_sources(found: BrainFound) -> Text[] {
   return out.take(5)
 }
 
-fn iris_said(r: IrisReply, found: BrainFound, gathered: BrainGathered) -> FrSaid {
+fn iris_said(r: IrisReply, found: BrainFound, gathered: BrainGathered, question: Text) -> FrSaid {
   let text = if r.reply.trim().is_empty() { "I looked, but I couldn't put an answer together this time. Ask me again in other words?" } else { r.reply.trim() }
-  return {who: "iris", text: text, canvas: "", kept: gathered.titles.take(3), sources: iris_sources(found), suggest: ["Sol, explain the science of this"]}
+  let read = for n in found.notes where n.kind == "fact" and n.source.starts_with("http") { n }
+  let thought = th_build(question, [], "", read, [], [], text)
+  return {who: "iris", text: text, canvas: "", kept: gathered.titles.take(3), sources: iris_sources(found), suggest: ["Sol, explain the science of this"], thinking: thought}
 }
 
 fn iris_papers(g: BrainGathered) -> BrainFound { return {notes: g.notes, by: "words"} }
@@ -144,7 +147,7 @@ fn iris_chat_task() -> Text {
 
 fn iris_chatted(r: IrisReply) -> FrSaid {
   let text = if r.reply.trim().is_empty() { "Hello! Ask me about anything you'd like me to read up on." } else { r.reply.trim() }
-  return {who: "iris", text: text, canvas: "", kept: [], sources: [], suggest: ["Iris, what's new in AI research?"]}
+  return {who: "iris", text: text, canvas: "", kept: [], sources: [], suggest: ["Iris, what's new in AI research?"], thinking: th_none()}
 }
 
 workflow iris_chat(m: FrMsg) -> FrSaid {
@@ -173,7 +176,7 @@ workflow iris_search(m: FrMsg) -> FrSaid {
   known    = call brain_recall({text: question, kind: "fact"})
   found    = iris_both(iris_both(iris_papers(gathered), looked), known)
   reply    = use_model iris(iris_task(), question, iris_found_text(found)) retry 1 otherwise iris_no_reply()
-  out      = iris_said(reply, found, gathered)
+  out      = iris_said(reply, found, gathered, question)
 }
 
 // ---------------------------------------------------------------- Sol
@@ -219,10 +222,13 @@ fn sol_draw_ask(r: SolReply, question: Text) -> DzAsk { return {text: if r.draw.
 
 fn sol_no_canvas() -> DzResult { return {kind: "", why: "", title: "", page: "", svg: "", embed: "", problems: [], fixed: []} }
 
-fn sol_said(r: SolReply, drawn: DzResult, science: Text) -> FrSaid {
+fn sol_said(r: SolReply, drawn: DzResult, science: Text, question: Text) -> FrSaid {
   let text = if r.reply.trim().is_empty() { "That one's got away from me for a moment. Ask me again?" } else { r.reply.trim() }
   let canvas = if drawn.problems.is_empty() { drawn.embed } else { "" }
-  return {who: "sol", text: text, canvas: canvas, kept: [], sources: [], suggest: ["Iris, research this", "draw it another way"]}
+  let exact = if science == "(nothing exact)" { "" } else { science }
+  let checks: Text[] = if science.contains("balanced by Kosika") { ["passed: the reaction is balanced by Kosika's chemistry, atoms and masses alike"] } else { [] }
+  let thought = th_build(question, [], exact, [], [], checks, text)
+  return {who: "sol", text: text, canvas: canvas, kept: [], sources: [], suggest: ["Iris, research this", "draw it another way"], thinking: thought}
 }
 
 fn sol_wants_drawing(r: SolReply) -> Bool { return not r.draw.trim().is_empty() }
@@ -244,7 +250,7 @@ workflow sol_explain(m: FrMsg) -> FrSaid {
     case true { call brain_design(sol_draw_ask(reply, question)) }
     case _ { sol_no_canvas() }
   }
-  out      = sol_said(reply, drawn, science)
+  out      = sol_said(reply, drawn, science, question)
 }
 
 // ---------------------------------------------------------------- tests

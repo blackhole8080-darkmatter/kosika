@@ -1848,6 +1848,72 @@ function kosiVoice() {
   for (const test of order) { const v = voices.find(test); if (v) return v; }
   return voices[0] || null;
 }
+// ------------------------------------------------- the thinking board
+// How an answer was reached, drawn on the Kosika canvas under it: the
+// question, what it names, Kosika's exact working, the evidence read with
+// its source, what was remembered, each check on the reply and how it came
+// out, and the answer. Each part is a step Kosika really took. Click a
+// part to ask about it: explain it, check it, go deeper, or open its source.
+const THINK_COLUMNS = {question: 0, named: 1, exact: 2, evidence: 2, memory: 2, check: 3, answer: 4};
+const THINK_COLOUR = {passed: "var(--ok)", fixed: "var(--accent)", chosen: "var(--accent)", used: "var(--line)"};
+function thinkingBoard(thought, who, onAsk) {
+  const nodes = (thought && thought.nodes) || [];
+  if (nodes.length < 3) return null;
+  const used = [...new Set(nodes.map(n => THINK_COLUMNS[n.kind] ?? 2))].sort((a, b) => a - b);
+  const colOf = n => used.indexOf(THINK_COLUMNS[n.kind] ?? 2);
+  const colW = 230, W = colW * used.length, nodeW = 196;
+  const perCol = used.map((_, c) => nodes.filter(n => colOf(n) === c));
+  const H = Math.max(200, Math.max(...perCol.map(list => list.length)) * 112 + 40);
+  const at = {};
+  perCol.forEach((list, c) => list.forEach((n, k) => { at[n.id] = {x: colW * (c + 0.5), y: H / (list.length + 1) * (k + 1)}; }));
+  const board = h("div", {style: `position:relative;width:${W}px;height:${H}px;transform-origin:0 0`});
+  for (const link of thought.links || []) {
+    const [a, b] = link.split(">"); const p = at[a], q = at[b]; if (!p || !q) continue;
+    const target = nodes.find(n => n.id === b) || {};
+    const length = Math.hypot(q.x - p.x, q.y - p.y), angle = Math.atan2(q.y - p.y, q.x - p.x) * 180 / Math.PI;
+    const colour = target.kind === "check" ? (THINK_COLOUR[target.state] || "var(--soft)") : target.kind === "answer" ? "var(--accent)" : "color-mix(in srgb,var(--ink) 28%,transparent)";
+    board.append(h("div", {"aria-hidden": "true", style: `position:absolute;left:${p.x}px;top:${p.y}px;width:${length}px;height:0;border-top:1.5px solid ${colour};transform:rotate(${angle}deg);transform-origin:0 0`}));
+  }
+  let open = null;
+  for (const n of nodes) {
+    const p = at[n.id];
+    const edge = n.kind === "check" ? (THINK_COLOUR[n.state] || "var(--line)") : n.kind === "answer" ? "var(--accent)" : "var(--line)";
+    const head = n.kind === "check" ? (n.state === "fixed" ? "CHECK · CORRECTED" : "CHECK · PASSED") : n.label.toUpperCase();
+    const part = h("button", {type: "button", title: "Ask about this part", style: `position:absolute;left:${p.x}px;top:${p.y}px;transform:translate(-50%,-50%);width:${nodeW}px;border:1px solid ${edge};background:var(--bg);border-radius:12px;padding:9px 11px;text-align:left;color:var(--ink);font:13px/1.4 var(--sans);box-shadow:none;cursor:pointer`},
+      h("div", {style: `font:10px var(--mono);letter-spacing:.04em;color:${n.kind === "check" ? edge : "var(--faint)"};margin-bottom:4px`}, head),
+      h("div", {style: "display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden"}, n.text));
+    part.onclick = event => {
+      event.stopPropagation();
+      if (open) open.remove();
+      const ask = text => { if (open) open.remove(); open = null; onAsk(text); };
+      const subject = n.text.length > 160 ? n.text.slice(0, 157) + "…" : n.text;
+      const buttons = [h("button", {type: "button", class: "ghost", style: "min-height:32px;padding:0 10px;font-size:12.5px", onclick: () => ask(`Explain this part: "${subject}"`)}, "Explain this"),
+        h("button", {type: "button", class: "ghost", style: "min-height:32px;padding:0 10px;font-size:12.5px", onclick: () => ask(`Is this right? "${subject}"`)}, "Is this right?"),
+        h("button", {type: "button", class: "ghost", style: "min-height:32px;padding:0 10px;font-size:12.5px", onclick: () => ask(`Go deeper on this: "${subject}"`)}, "Go deeper")];
+      if (n.source) buttons.push(h("a", {class: "say-src", href: n.source, target: "_blank", rel: "noopener", style: "min-height:32px;display:inline-flex;align-items:center"}, "Open source"));
+      open = h("div", {role: "dialog", "aria-label": "Ask about this part", style: `position:absolute;left:${Math.min(Math.max(p.x - 130, 6), W - 266)}px;top:${Math.min(p.y + 44, H - 80)}px;width:260px;z-index:2;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px;display:flex;flex-wrap:wrap;gap:6px`}, ...buttons);
+      board.append(open);
+    };
+    board.append(part);
+  }
+  const wrap = h("div", {style: "overflow:hidden;padding:14px 16px;background-image:radial-gradient(color-mix(in srgb,var(--ink) 14%,transparent) 1px,transparent 1px);background-size:20px 20px"}, board);
+  wrap.onclick = () => { if (open) { open.remove(); open = null; } };
+  const fit = () => { const room = wrap.clientWidth - 32; if (room <= 0) return; const k = Math.min(1, room / W); board.style.transform = `scale(${k})`; board.style.marginBottom = (H * k - H) + "px"; board.style.marginRight = (W * k - W) + "px"; };
+  try { new ResizeObserver(fit).observe(wrap); } catch (error) { /* full size */ }
+  const checks = nodes.filter(n => n.kind === "check");
+  const passed = checks.filter(n => n.state === "passed").length, fixed = checks.filter(n => n.state === "fixed").length;
+  const verdict = checks.length ? (fixed ? `${fixed} corrected by Kosika` + (passed ? `, ${passed} passed` : "") : `${passed} of ${checks.length} checks passed`) : "";
+  const name = (KOSI_FRIENDS[who] || KOSI_FRIENDS.kosi).name;
+  const panel = h("details", {open: checks.length || nodes.some(n => n.kind === "evidence") ? "" : null, style: "border:1px solid var(--line);border-radius:14px;overflow:hidden;margin-top:12px"},
+    h("summary", {style: "display:flex;justify-content:space-between;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line);font:11px var(--mono);color:var(--faint);cursor:pointer;list-style:none"},
+      h("span", null, `How ${name} got there · click any part to ask about it`), h("span", {style: `color:${fixed ? "var(--accent)" : "var(--ok)"}`}, verdict)),
+    wrap,
+    h("ol", {style: "list-style:none;margin:0;padding:10px 16px;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:6px 18px;font:11px var(--mono);color:var(--faint)"},
+      ...(thought.steps || []).map((s, k) => h("li", null, h("span", {style: "color:var(--ink)"}, String(k + 1)), " " + s))));
+  panel.addEventListener("toggle", fit);
+  return panel;
+}
+
 // Kosi's voice when it speaks for itself (Kokoro on this computer).
 const KOSI_VOICES = [["bm_george", "George (calm, deep, British)"], ["bm_lewis", "Lewis (British)"], ["bm_daniel", "Daniel (British)"], ["bm_fable", "Fable (British)"], ["bf_emma", "Emma (British)"], ["bf_isabella", "Isabella (British)"]];
 // Kosi's friends, each with a voice and a ring of its own: Iris the
@@ -1896,6 +1962,8 @@ function showTalk() {
     if ((entry.r.sources || []).length) facts.push(entry.r.sources.length + (entry.r.sources.length === 1 ? " source" : " sources"));
     if (entry.seconds) facts.push(entry.seconds + " s");
     const body = [h("div", {}, h("span", {class: "say-name"}, f.name), h("span", {class: "say-meta"}, facts.join(" · "))), h("div", {class: "say-text"}, entry.r.text)];
+    const thinking = thinkingBoard(entry.r.thinking, who, text => ask(who === "kosi" ? text : f.name + ", " + text));
+    if (thinking) body.push(thinking);
     if ((entry.r.sources || []).length) body.push(h("div", {style: "display:flex;flex-wrap:wrap;gap:6px;margin-top:10px"}, entry.r.sources.map(u => h("a", {class: "say-src", href: u, target: "_blank", rel: "noopener"}, u.replace(/^https?:\/\/(www\.|export\.)?/, "").replace(/^arxiv\.org\/abs\//, "arxiv ").replace(/^en\.wikipedia\.org\/wiki\//, "wikipedia ").slice(0, 42)))));
     if ((entry.r.kept || []).length) body.push(h("div", {class: "chips", style: "margin-top:10px"}, entry.r.kept.map(k => chip("will remember: " + k, "ok"))));
     if (entry.r.canvas) {
