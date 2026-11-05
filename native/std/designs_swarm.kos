@@ -118,18 +118,97 @@ fn sw_rays(n: SwNode, working: Bool) -> Text {
   return f"<g class=\"sw-rays\" style=\"stroke:{n.colour}\">{rays}{turn}</g>"
 }
 
+// ---------------------------------------------------------------- the friends, drawn
+//
+// Each friend is drawn as what it is, round its own centre:
+//   Kosi   the Kosika mark: an indigo ring, an amber ring that turns while
+//          Kosi works, a dark core with the K, the dot resting on top
+//   Iris   an eye: the white, an iris of fine fibres, a pupil that widens
+//          as she reads, a lens ring turning round it
+//   Sol    a sun: a corona of sixteen flames that turns and flickers, and a
+//          bright core
+//   brief  a page with its corner folded, lines of writing, and a seal
+//          that comes when it is ready
+
+fn sw_pts(xy: Number[]) -> Text {
+  var d = f"M{sw_n(xy[0])} {sw_n(xy[1])}"
+  var k = 2
+  while k + 1 < xy.length() {
+    d = d + f" L{sw_n(xy[k])} {sw_n(xy[k + 1])}"
+    k += 2
+  }
+  return d + " Z"
+}
+
+fn sw_spin(x: Number, y: Number, seconds: Number, on: Bool) -> Text {
+  return if on { f"<animateTransform attributeName=\"transform\" type=\"rotate\" from=\"0 {sw_n(x)} {sw_n(y)}\" to=\"360 {sw_n(x)} {sw_n(y)}\" dur=\"{sw_n(seconds)}s\" repeatCount=\"indefinite\"/>" } else { "" }
+}
+
+// The K of the Kosika mark, from its outline on a 120 square.
+fn sw_k(x: Number, y: Number, s: Number) -> Text {
+  let k = [39.79, 83.50, 39.79, 37.50, 50.31, 37.50, 50.31, 54.23, 65.75, 37.50, 79.55, 37.50, 60.27, 58.25, 80.21, 83.50, 67.10, 83.50, 53.32, 65.74, 50.31, 69.00, 50.31, 83.50]
+  let xy = for i in 0 until k.length() { if i % 2 == 0 { x + (k[i] - 60) * s } else { y + (k[i] - 60) * s } }
+  return f"<path class=\"sw-k\" d=\"{sw_pts(xy)}\"/>"
+}
+
+fn sw_kosi(n: SwNode, working: Bool) -> Text {
+  let s = 0.54
+  let ring = f"<circle cx=\"{sw_n(n.x)}\" cy=\"{sw_n(n.y)}\" r=\"{sw_n(22.5)}\" class=\"sw-amber\">{sw_spin(n.x, n.y, 6, working)}</circle>"
+  return f"<circle cx=\"{sw_n(n.x)}\" cy=\"{sw_n(n.y)}\" r=\"31\" class=\"sw-indigo\"/>{ring}<circle cx=\"{sw_n(n.x)}\" cy=\"{sw_n(n.y)}\" r=\"{sw_n(29 * s + 3)}\" class=\"sw-coal\"/>{sw_k(n.x, n.y, s)}<circle cx=\"{sw_n(n.x)}\" cy=\"{sw_n(n.y - 42 * s)}\" r=\"4.4\" class=\"sw-dot\"/>"
+}
+
+fn sw_iris(n: SwNode, working: Bool) -> Text {
+  let x = n.x
+  let y = n.y
+  let white = f"<path class=\"sw-white\" d=\"M{sw_n(x - 30)} {sw_n(y)} Q{sw_n(x)} {sw_n(y - 27)} {sw_n(x + 30)} {sw_n(y)} Q{sw_n(x)} {sw_n(y + 27)} {sw_n(x - 30)} {sw_n(y)} Z\"/>"
+  let fibres = (for k in 0 until 28 { f"M{sw_n(x + 5.5 * (k * 12.86).cos())} {sw_n(y + 5.5 * (k * 12.86).sin())} L{sw_n(x + 12.5 * (k * 12.86 + 6).cos())} {sw_n(y + 12.5 * (k * 12.86 + 6).sin())}" }).join(" ")
+  let widen = if working { "<animate attributeName=\"r\" values=\"4.5;7;4.5\" dur=\"2.4s\" repeatCount=\"indefinite\"/>" } else { "" }
+  let lens = f"<circle cx=\"{sw_n(x)}\" cy=\"{sw_n(y)}\" r=\"34\" class=\"sw-lensring\" style=\"stroke:{n.colour}\">{sw_spin(x, y, 10, working)}</circle>"
+  return f"{lens}{white}<circle cx=\"{sw_n(x)}\" cy=\"{sw_n(y)}\" r=\"13\" fill=\"url(#sw-g-iris)\"/><path class=\"sw-fibre\" d=\"{fibres}\"/><circle class=\"sw-pupil\" cx=\"{sw_n(x)}\" cy=\"{sw_n(y)}\" r=\"5\">{widen}</circle><circle class=\"sw-glint\" cx=\"{sw_n(x - 4)}\" cy=\"{sw_n(y - 4)}\" r=\"2.6\"/><path class=\"sw-lid\" d=\"M{sw_n(x - 30)} {sw_n(y)} Q{sw_n(x)} {sw_n(y - 31)} {sw_n(x + 30)} {sw_n(y)}\"/>"
+}
+
+fn sw_sol(n: SwNode, working: Bool) -> Text {
+  var xy: Number[] = []
+  for k in 0 until 32 {
+    let a = k * 11.25
+    let r = if k % 2 == 0 { 43 } else { 29 }
+    xy = xy.append(n.x + r * a.cos()).append(n.y + r * a.sin())
+  }
+  let flicker = if working { "<animate attributeName=\"opacity\" values=\".75;1;.8;1;.75\" dur=\"1.6s\" repeatCount=\"indefinite\"/>" } else { "" }
+  let corona = f"<path class=\"sw-corona\" d=\"{sw_pts(xy)}\" fill=\"url(#sw-g-sol)\">{sw_spin(n.x, n.y, 24, working)}{flicker}</path>"
+  return f"{corona}<circle cx=\"{sw_n(n.x)}\" cy=\"{sw_n(n.y)}\" r=\"24\" fill=\"url(#sw-g-core)\"/><circle cx=\"{sw_n(n.x - 7)}\" cy=\"{sw_n(n.y - 7)}\" r=\"6\" class=\"sw-shine\"/>"
+}
+
+fn sw_short(k: Number) -> Number { return if k == 4 { 12 } else { 0 } }
+
+fn sw_page(n: SwNode, ready: Bool) -> Text {
+  let x = n.x
+  let y = n.y
+  let paper = f"<path class=\"sw-paper\" d=\"M{sw_n(x - 22)} {sw_n(y - 29)} L{sw_n(x + 12)} {sw_n(y - 29)} L{sw_n(x + 22)} {sw_n(y - 19)} L{sw_n(x + 22)} {sw_n(y + 29)} L{sw_n(x - 22)} {sw_n(y + 29)} Z\"/><path class=\"sw-fold\" d=\"M{sw_n(x + 12)} {sw_n(y - 29)} L{sw_n(x + 12)} {sw_n(y - 19)} L{sw_n(x + 22)} {sw_n(y - 19)} Z\"/>"
+  let lines = (for k in 0 until 5 { f"<line class=\"sw-writing\" x1=\"{sw_n(x - 15)}\" y1=\"{sw_n(y - 16 + k * 8)}\" x2=\"{sw_n(x + 15 - sw_short(k))}\" y2=\"{sw_n(y - 16 + k * 8)}\"/>" }).join("")
+  let seal = if ready { f"<circle cx=\"{sw_n(x + 14)}\" cy=\"{sw_n(y + 22)}\" r=\"9\" class=\"sw-seal\"/>" } else { "" }
+  return paper + lines + seal
+}
+
+fn sw_figure(n: SwNode, working: Bool, done: Bool) -> Text {
+  if n.id == "kosi" { return sw_kosi(n, working) }
+  if n.id == "iris" { return sw_iris(n, working) }
+  if n.id == "sol" { return sw_sol(n, working) }
+  return sw_page(n, done)
+}
+
 fn sw_agent(b: SwBoard, n: SwNode) -> Text {
   let state = sw_state(b, n.id)
   let working = not sw_idle(state) and not sw_done(state)
   let look = if sw_idle(state) { "idle" } else if working { "working" } else { "done" }
-  let ball = art_ball(n.x, n.y, 30, f"url(#sw-g-{n.id})", "", "#fff")
+  let ball = sw_figure(n, working, sw_done(state))
   // At work: a glow that breathes and a spark that circles the figure.
   let glow = if working { f"<circle class=\"sw-glow\" cx=\"{sw_n(n.x)}\" cy=\"{sw_n(n.y)}\" r=\"34\" style=\"stroke:{n.colour}\"><animate attributeName=\"r\" values=\"34;50;34\" dur=\"2.2s\" repeatCount=\"indefinite\"/><animate attributeName=\"opacity\" values=\".7;0;.7\" dur=\"2.2s\" repeatCount=\"indefinite\"/></circle>" } else { "" }
   let orbit = f"<circle class=\"sw-track\" cx=\"{sw_n(n.x)}\" cy=\"{sw_n(n.y)}\" r=\"40\" style=\"stroke:{n.colour}\"/>"
   let spark = if working { f"<g><circle class=\"sw-spark\" cx=\"{sw_n(n.x + 40)}\" cy=\"{sw_n(n.y)}\" r=\"4.5\" style=\"fill:{n.colour};color:{n.colour}\"/><animateTransform attributeName=\"transform\" type=\"rotate\" from=\"0 {sw_n(n.x)} {sw_n(n.y)}\" to=\"360 {sw_n(n.x)} {sw_n(n.y)}\" dur=\"2.6s\" repeatCount=\"indefinite\"/></g>" } else { "" }
   let tick = if sw_done(state) { f"<g class=\"sw-tick\"><circle cx=\"{sw_n(n.x + 24)}\" cy=\"{sw_n(n.y - 24)}\" r=\"9\"/><path d=\"M{sw_n(n.x + 19.5)} {sw_n(n.y - 24)} l3 3.4 l6 -6.8\"/></g>" } else { "" }
   let label = f"<text class=\"sw-name\" x=\"{sw_n(n.x)}\" y=\"{sw_n(n.y + 60)}\">{art_esc(n.name)}</text><text class=\"sw-role\" x=\"{sw_n(n.x)}\" y=\"{sw_n(n.y + 76)}\">{art_esc(n.role)} &#183; {art_esc(state)}</text>"
-  return f"<g class=\"sw-agent {look}\" data-of=\"{n.id}\">{glow}{orbit}{sw_rays(n, working)}{ball}{sw_emblem(n)}{spark}{tick}{label}</g>"
+  return f"<g class=\"sw-agent {look}\" data-of=\"{n.id}\">{glow}{orbit}{ball}{spark}{tick}{label}</g>"
 }
 
 fn sw_tool(b: SwBoard, n: SwNode) -> Text {
@@ -221,8 +300,9 @@ fn sw_pins(b: SwBoard) -> Text {
 
 fn sw_defs() -> Text {
   let balls = (for n in sw_nodes() where not n.tool { f"<radialGradient id=\"sw-g-{n.id}\" cx=\"34%\" cy=\"28%\" r=\"78%\"><stop offset=\"0\" style=\"stop-color:color-mix(in srgb,{n.colour} 55%,#fff)\"/><stop offset=\".55\" style=\"stop-color:{n.colour}\"/><stop offset=\"1\" style=\"stop-color:color-mix(in srgb,{n.colour} 55%,#000)\"/></radialGradient>" }).join("")
+  let core = "<radialGradient id=\"sw-g-core\" cx=\"40%\" cy=\"38%\" r=\"70%\"><stop offset=\"0\" stop-color=\"#fffbe9\"/><stop offset=\".45\" stop-color=\"#ffe2a3\"/><stop offset=\"1\" stop-color=\"#b6acf5\"/></radialGradient>"
   let dots = "<pattern id=\"sw-dots\" width=\"20\" height=\"20\" patternUnits=\"userSpaceOnUse\"><circle cx=\"1\" cy=\"1\" r=\"1\" class=\"sw-dot\"/></pattern>"
-  return "<defs>" + balls + dots + "</defs>"
+  return "<defs>" + balls + core + dots + "</defs>"
 }
 
 fn sw_svg(b: SwBoard) -> Text {
@@ -235,7 +315,7 @@ fn sw_svg(b: SwBoard) -> Text {
 }
 
 fn sw_style() -> Text {
-  return art_ball_style() + ".sw{--sw-ink:var(--ink,#eceef2);--sw-soft:var(--soft,#a3a8bd);--sw-line:color-mix(in srgb,var(--sw-ink) 22%,transparent);--sw-bg:var(--bg,#0e0f12);display:block;width:100%;height:auto;font-family:system-ui,-apple-system,Segoe UI,sans-serif}.sw-board{fill:var(--panel,#15171c)}.sw-dot{fill:color-mix(in srgb,var(--sw-ink) 16%,transparent)}.sw-label{fill:var(--sw-soft);font:600 10px ui-monospace,Consolas,monospace;letter-spacing:.16em}.sw-wire path{fill:none;stroke-width:1.6;stroke-linecap:round;transition:stroke .3s}.sw-wire.waiting path{stroke-dasharray:5 6}.sw-wire.run path{stroke-width:2.2;stroke-dasharray:7 7;animation:sw-run 0.9s linear infinite}.sw-wire.done path{stroke-width:1.8;opacity:.85}@keyframes sw-run{to{stroke-dashoffset:-14}}.sw-port{stroke:var(--sw-bg);stroke-width:1.5}.sw-spark{filter:drop-shadow(0 0 5px currentColor)}.sw-track{fill:none;stroke-width:1.2;stroke-dasharray:2 6;opacity:.55}.sw-agent.idle .sw-track{opacity:.25}.sw-agent.idle .ab-g{opacity:.55;filter:saturate(.35)}.sw-agent .ab-g{transition:opacity .4s,filter .4s}.sw-glow{fill:none;stroke-width:2}.sw-k{fill:#1a1308;font:800 26px system-ui,sans-serif;text-anchor:middle}.sw-lens{fill:#effffb;stroke:#0c3b35;stroke-width:1.6}.sw-pupil{fill:#0c3b35}.sw-glint{fill:#fff}.sw-core{fill:#fff6d8;opacity:.9}.sw-rays line{stroke-width:3;stroke-linecap:round}.sw-agent.idle .sw-rays{opacity:.35}.sw-line-w{stroke:#0d2a19;stroke-width:3;stroke-linecap:round}.sw-tick circle{fill:#6fd49a;stroke:var(--sw-bg);stroke-width:2}.sw-tick path{fill:none;stroke:#0b2615;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}.sw-name{fill:var(--sw-ink);font-weight:650;font-size:15px;text-anchor:middle}.sw-role{fill:var(--sw-soft);font:11px ui-monospace,Consolas,monospace;text-anchor:middle}.sw-tool rect{fill:var(--sw-bg);stroke-width:1.2}.sw-tool text{font:11px ui-monospace,Consolas,monospace;text-anchor:middle}.sw-tool.working rect{stroke-dasharray:4 4;animation:sw-run .9s linear infinite}.sw-card rect{fill:var(--sw-bg);stroke-width:1.3}.sw-card-h{font:600 10px ui-monospace,Consolas,monospace;letter-spacing:.08em}.sw-card-t{fill:var(--sw-ink);font-size:12.5px}.sw a:hover .sw-card rect{stroke-width:2.4}.sw-tie{fill:none;stroke-width:1.3;opacity:.7}@media (prefers-reduced-motion:reduce){.sw *{animation:none!important}}"
+  return art_ball_style() + ".sw{--sw-ink:var(--ink,#eceef2);--sw-soft:var(--soft,#a3a8bd);--sw-line:color-mix(in srgb,var(--sw-ink) 22%,transparent);--sw-bg:var(--bg,#0e0f12);display:block;width:100%;height:auto;font-family:system-ui,-apple-system,Segoe UI,sans-serif}.sw-board{fill:var(--panel,#15171c)}.sw-dot{fill:color-mix(in srgb,var(--sw-ink) 16%,transparent)}.sw-label{fill:var(--sw-soft);font:600 10px ui-monospace,Consolas,monospace;letter-spacing:.16em}.sw-wire path{fill:none;stroke-width:1.6;stroke-linecap:round;transition:stroke .3s}.sw-wire.waiting path{stroke-dasharray:5 6}.sw-wire.run path{stroke-width:2.2;stroke-dasharray:7 7;animation:sw-run 0.9s linear infinite}.sw-wire.done path{stroke-width:1.8;opacity:.85}@keyframes sw-run{to{stroke-dashoffset:-14}}.sw-port{stroke:var(--sw-bg);stroke-width:1.5}.sw-spark{filter:drop-shadow(0 0 5px currentColor)}.sw-track{fill:none;stroke-width:1.2;stroke-dasharray:2 6;opacity:.55}.sw-agent.idle .sw-track{opacity:.25}.sw-agent.idle .ab-g{opacity:.55;filter:saturate(.35)}.sw-agent .ab-g{transition:opacity .4s,filter .4s}.sw-glow{fill:none;stroke-width:2}.sw-k{fill:#f2f4ff}.sw-indigo{fill:#2b2350;filter:drop-shadow(0 3px 6px rgba(0,0,0,.45))}.sw-amber{fill:none;stroke:#f5b45c;stroke-width:4.5;stroke-dasharray:118 24;stroke-linecap:round}.sw-coal{fill:#05060b}.sw-dot{fill:#fff4e2;stroke:#05060b;stroke-width:2}.sw-white{fill:#f3fffc;stroke:#0c3b35;stroke-width:1.4;filter:drop-shadow(0 3px 6px rgba(0,0,0,.4))}.sw-fibre{fill:none;stroke:#0c4a42;stroke-width:1;opacity:.75}.sw-lensring{fill:none;stroke-width:1.6;stroke-dasharray:3 5}.sw-lid{fill:none;stroke:#0c3b35;stroke-width:2.6;stroke-linecap:round}.sw-corona{filter:drop-shadow(0 0 8px #b6acf5)}.sw-shine{fill:#fff;opacity:.7}.sw-paper{fill:#eef8f1;stroke:#2f6b47;stroke-width:1.4;filter:drop-shadow(0 3px 6px rgba(0,0,0,.4))}.sw-fold{fill:#cfe6d6;stroke:#2f6b47;stroke-width:1.2}.sw-writing{stroke:#4c7a5e;stroke-width:2.2;stroke-linecap:round}.sw-seal{fill:#6fd49a;stroke:#1d4a30;stroke-width:1.5}.sw-agent.idle .sw-indigo,.sw-agent.idle .sw-white,.sw-agent.idle .sw-corona,.sw-agent.idle .sw-paper{filter:saturate(.3) brightness(.75)}.sw-agent.idle{opacity:.7}.sw-lens{fill:#effffb;stroke:#0c3b35;stroke-width:1.6}.sw-pupil{fill:#0c3b35}.sw-glint{fill:#fff}.sw-core{fill:#fff6d8;opacity:.9}.sw-rays line{stroke-width:3;stroke-linecap:round}.sw-agent.idle .sw-rays{opacity:.35}.sw-line-w{stroke:#0d2a19;stroke-width:3;stroke-linecap:round}.sw-tick circle{fill:#6fd49a;stroke:var(--sw-bg);stroke-width:2}.sw-tick path{fill:none;stroke:#0b2615;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}.sw-name{fill:var(--sw-ink);font-weight:650;font-size:15px;text-anchor:middle}.sw-role{fill:var(--sw-soft);font:11px ui-monospace,Consolas,monospace;text-anchor:middle}.sw-tool rect{fill:var(--sw-bg);stroke-width:1.2}.sw-tool text{font:11px ui-monospace,Consolas,monospace;text-anchor:middle}.sw-tool.working rect{stroke-dasharray:4 4;animation:sw-run .9s linear infinite}.sw-card rect{fill:var(--sw-bg);stroke-width:1.3}.sw-card-h{font:600 10px ui-monospace,Consolas,monospace;letter-spacing:.08em}.sw-card-t{fill:var(--sw-ink);font-size:12.5px}.sw a:hover .sw-card rect{stroke-width:2.4}.sw-tie{fill:none;stroke-width:1.3;opacity:.7}@media (prefers-reduced-motion:reduce){.sw *{animation:none!important}}"
 }
 
 workflow swarm_board(b: SwBoard) -> SwDrawn {
@@ -249,7 +329,7 @@ fn sw_test_board(states: SwState[], pins: SwPin[]) -> SwBoard { return {states: 
 test "the swarm board is drawn by Kosika, with the friends as figures" {
   waiting = sw_svg(sw_test_board([], []))
   expect waiting.contains("data-of=\"kosi\"") and waiting.contains("data-of=\"iris\"") and waiting.contains("data-of=\"sol\"")
-  expect waiting.contains("sw-lens") and waiting.contains("sw-rays") and waiting.contains(">K</text>")
+  expect waiting.contains("sw-white") and waiting.contains("sw-corona") and waiting.contains("sw-k") and waiting.contains("sw-paper")
   expect not waiting.contains("sw-spark")
   expect waiting.contains("class=\"sw-wire waiting\"")
 }

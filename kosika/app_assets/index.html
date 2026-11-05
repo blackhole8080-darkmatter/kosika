@@ -2269,14 +2269,40 @@ function showCrew() {
       const say = (who, r) => h("div", {class: "say-from", style: "margin-top:16px"}, h("div", {class: "say-ring", style: `--ring:${SWARM_NODES[who].ring}`, "aria-hidden": "true"}, SWARM_NODES[who].name[0]),
         h("div", {style: "min-width:0;flex:1"}, h("span", {class: "say-name"}, SWARM_NODES[who].name), h("span", {class: "say-meta"}, SWARM_NODES[who].role), h("div", {class: "say-text"}, r.text),
           ...((r.sources || []).length ? [h("div", {style: "display:flex;flex-wrap:wrap;gap:6px;margin-top:10px"}, r.sources.map(u => h("a", {class: "say-src", href: u, target: "_blank", rel: "noopener"}, u.replace(/^https?:\/\/(www\.|export\.)?/, "").slice(0, 42))))] : [])));
-      const parts = [h("h2", {style: "margin:0"}, "The brief"), say("kosi", brief), say("iris", iris), say("sol", sol)];
-      if (sol.canvas) {
-        const frame = h("iframe", {title: "Kosika canvas", style: "width:100%;height:720px;border:0;border-radius:12px;background:transparent;margin-top:12px"});
-        frame.srcdoc = "<!doctype html><html><head><meta charset=\"utf-8\"><style>html,body{margin:0;background:transparent}</style></head><body>" + sol.canvas + "</body></html>";
+      // One answer, shown: the canvas Sol drew (or, when he drew none, one
+      // Designs draws now from the brief), the brief beneath it as its
+      // caption, Iris's sources as links, and what each friend said folded
+      // away below.
+      // Then the answer on one canvas. Drawn alongside the friends it slowed
+      // them all: the free models share one allowance a minute.
+      const doneDraw = row("Designs → the canvas", "draw the answer on one canvas");
+      const drawing = api("/api/design", {method: "POST", body: JSON.stringify({text: what, kind: "canvas", palette: ""})})
+        .then(made => { doneDraw(!!made.embed, made.embed ? made.kind : "nothing drawn"); return made.embed || ""; })
+        .catch(error => { doneDraw(false, String(error.message || error)); return ""; });
+      // The answer shows at once, with the canvas drawing in its place; the
+      // canvas Designs draws of the question takes it when it comes, or
+      // failing that Sol's own drawing, unless it was only art for a mood.
+      const stage = h("div", {style: "min-height:200px;display:flex;align-items:center;justify-content:center;border-top:1px solid var(--line);border-bottom:1px solid var(--line);color:var(--faint);font:12px var(--mono)"}, "Kosika is drawing the answer on one canvas…");
+      const sources = (iris.sources || []).map(u => h("a", {class: "say-src", href: u, target: "_blank", rel: "noopener"}, u.replace(/^https?:\/\/(www\.|export\.)?/, "").slice(0, 42)));
+      const answer = h("section", {"aria-label": "The answer, on the Kosika canvas", style: "border:1px solid var(--line);border-radius:16px;background:var(--panel);overflow:hidden"},
+        h("div", {style: "padding:16px 20px 10px;display:flex;flex-wrap:wrap;gap:10px;align-items:baseline"},
+          h("span", {style: "font:600 11px var(--mono);letter-spacing:.16em;color:var(--accent)"}, "THE ANSWER · ON THE KOSIKA CANVAS"),
+          h("h2", {style: "margin:0;flex-basis:100%;font-size:22px"}, what)),
+        stage,
+        h("div", {style: "padding:16px 20px 6px;font-size:17px;line-height:1.65;max-width:980px"}, brief.text),
+        sources.length ? h("div", {style: "display:flex;flex-wrap:wrap;gap:6px;padding:6px 20px 12px"}, h("span", {style: "font:11px var(--mono);color:var(--faint);align-self:center"}, "Iris read"), ...sources) : null,
+        h("details", {style: "padding:4px 20px 18px"}, h("summary", {style: "cursor:pointer;color:var(--soft);font-size:14px"}, "What each friend said"), say("kosi", brief), say("iris", iris), say("sol", sol)));
+      result.replaceChildren(answer);
+      const drawn = await drawing;
+      const canvas = drawn || (sol.canvas && !sol.canvas.includes('class="kd kd-art"') ? sol.canvas : "");
+      if (canvas) {
+        const frame = h("iframe", {title: "The answer, on the Kosika canvas", style: "display:block;width:100%;height:720px;border:0;background:transparent"});
+        frame.srcdoc = "<!doctype html><html><head><meta charset=\"utf-8\"><style>html,body{margin:0;background:transparent}</style></head><body>" + canvas + "</body></html>";
         frame.addEventListener("load", () => { const fit = () => { try { frame.style.height = (frame.contentDocument.body.scrollHeight + 4) + "px"; } catch (error) { /* keep */ } }; fit(); setTimeout(fit, 1500); });
-        parts.push(frame);
+        stage.replaceWith(frame);
+      } else {
+        stage.textContent = "Kosika could not draw this one on a canvas; the brief is below.";
       }
-      result.replaceChildren(...parts);
     } catch (error) {
       row("The swarm", String(error.message || error))(false);
     } finally {
