@@ -1789,6 +1789,24 @@ function showDesigns() {
       // top so each line meets its scene.
       let voice = null, caps = [], clips = [], preparing = null;
       const narrate = h("button", {class: "ghost", style: "display:none", title: "Kosi reads each caption aloud as it comes"}, "\u{1F50A} Narrate");
+      // A part clicked in the animation: Kosi says what it is doing there,
+      // and Go deeper draws that part on a canvas of its own. Only this
+      // frame's own asks are heard.
+      const asked = h("div", {style: "display:none;margin-top:12px;border:1px solid var(--line);border-radius:14px;padding:14px 16px;background:var(--panel)"});
+      const hear = async event => {
+        if (!frame.isConnected) { window.removeEventListener("message", hear); return; }
+        if (event.source !== frame.contentWindow || !event.data || event.data.kosika !== "part") return;
+        const part = String(event.data.part || "").slice(0, 60), scene = String(event.data.scene || "").slice(0, 60), title = String(event.data.title || "").slice(0, 80);
+        const deeper = h("button", {class: "ghost", onclick: () => { ask.value = "show how the " + part + " works in " + title.toLowerCase(); kind.value = "canvas"; run(); }}, "Go deeper");
+        const answer = h("div", {class: "say-text", style: "margin-top:6px"}, "Kosi is thinking\u2026");
+        asked.style.display = "";
+        asked.replaceChildren(h("div", {style: "font:600 11px var(--mono);letter-spacing:.14em;color:var(--accent)"}, "KOSI ON THE " + part.toUpperCase() + (scene ? " \u00b7 " + scene.toUpperCase() : "")), answer, h("div", {style: "display:flex;gap:8px;margin-top:10px"}, deeper));
+        try {
+          const r = await api("/api/kosi", {method: "POST", body: JSON.stringify({text: "In an animation of " + title + ", during the step \"" + scene + "\", what is the " + part + " doing, and why does it matter? Two or three sentences."})});
+          answer.textContent = r.text || "Kosi has nothing to say on that just now.";
+        } catch (error) { answer.textContent = String(error.message || error); }
+      };
+      window.addEventListener("message", hear);
       function prepare() {
         if (preparing) return preparing;
         const doc = frame.contentDocument;
@@ -1844,7 +1862,7 @@ function showDesigns() {
       out.replaceChildren(
         h("div", {class: "chips"}, chip(made.kind, "accent"), (made.fixed || []).length ? chip("Kosika fixed " + made.fixed.length, "ok") : null, (made.fixed || []).includes("reused a kept canvas") ? chip("from memory, no model", "ok") : null),
         h("p", {class: "lead"}, said + (said.endsWith(".") ? "" : ".")),
-        frame, h("div", {style: "display:flex;gap:8px;flex-wrap:wrap;align-items:center"}, narrate, open, good, bad, rated));
+        frame, h("div", {style: "display:flex;gap:8px;flex-wrap:wrap;align-items:center"}, narrate, open, good, bad, rated), asked);
     } catch (error) {
       out.replaceChildren(h("div", {class: "banner bad"}, String(error.message || error)));
     } finally { draw.disabled = false; }

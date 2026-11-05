@@ -2284,7 +2284,9 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                 "Content-Security-Policy",
                 "default-src 'none'; style-src 'unsafe-inline'; "
                 "script-src 'unsafe-inline'; connect-src 'self'; font-src 'self'; "
-                "img-src 'self'",
+                # Kosi's voice comes back as audio in the answer itself and is
+                # played from there; nothing is played from anywhere else.
+                "img-src 'self'; media-src data:",
             )
             self.end_headers()
             self.wfile.write(body)

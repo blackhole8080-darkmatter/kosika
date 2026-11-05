@@ -23,7 +23,7 @@
 import "designs_forms.kos"
 import "designs_scene.kos"
 
-export [AnKey, AnActor, AnCaption, AnRecipe, AnStory, AnAsk, AnArt, an_wants, an_story_wants, an_story_make, an_story_render, an_story_fallback, an_story_svg, an_svg, an_style, an_script, an_controls, an_page, an_fixed, an_problems, an_bounce, an_render, an_make, an_fallback]
+export [AnKey, AnActor, AnCaption, AnRecipe, AnStory, AnAsk, AnArt, an_parts_script, an_part_name, an_bounce_with, an_wants, an_story_wants, an_story_make, an_story_render, an_story_fallback, an_story_svg, an_svg, an_style, an_script, an_controls, an_page, an_fixed, an_problems, an_bounce, an_render, an_make, an_fallback]
 
 // t from 0 to 1 of the whole; x and y from 0 to 100 across and down.
 record AnKey { t: Number x: Number y: Number scale: Number turn: Number }
@@ -140,9 +140,11 @@ fn an_fallback() -> AnRecipe {
 // and t from 0 to 1: it falls from y0 to the ground under g, keeps 70% of
 // its speed at each bounce, and drifts from x0 to x1 all the while.
 // 540 pixels stand for 3 metres.
-fn an_bounce(x0: Number, x1: Number, y0: Number, ground: Number, seconds: Number) -> Number[] {
-  let g = 9.81 * 540 / 3
-  let e = 0.7
+fn an_bounce(x0: Number, x1: Number, y0: Number, ground: Number, seconds: Number) -> Number[] { return an_bounce_with(x0, x1, y0, ground, seconds, 9.81, 0.7) }
+
+// The same with gravity `gravity` in m/s^2 and restitution `e`.
+fn an_bounce_with(x0: Number, x1: Number, y0: Number, ground: Number, seconds: Number, gravity: Number, e: Number) -> Number[] {
+  let g = gravity * 540 / 3
   var out: Number[] = []
   var t = 0
   var y = y0
@@ -218,6 +220,25 @@ fn an_sun() -> Text {
   return f"<circle r=\"110\" fill=\"url(#an-glow)\" class=\"an-pulse\"/><path d=\"{d} Z\" fill=\"url(#an-corona)\" class=\"an-corona\"/><circle r=\"40\" fill=\"url(#an-core)\"/><circle cx=\"-12\" cy=\"-12\" r=\"10\" fill=\"#fff\" opacity=\".55\"/>"
 }
 
+// What a part is called, for asking about it.
+fn an_part_name(form: Text) -> Text {
+  if form == "co2" { return "carbon dioxide" }
+  if form == "o2" { return "oxygen" }
+  if form == "h2o" { return "water" }
+  if form == "vapour" { return "water vapour" }
+  if form == "phase" { return "the moon's phase" }
+  if form == "intestine" { return "small intestine" }
+  if form == "magma" { return "magma chamber" }
+  return form
+}
+
+// Clicking a part pauses the animation and asks about it: in Studio the
+// page around it hears the ask and Kosi answers; on a page of its own the
+// part's name is shown.
+fn an_parts_script() -> Text {
+  return "(function(){var me=document.currentScript,box=me.parentNode,svg=box.querySelector('svg.an');if(!svg)return;var said=box.querySelector('.an-asked');if(!said){said=document.createElement('div');said.className='an-asked';box.appendChild(said)}svg.addEventListener('click',function(ev){var part=ev.target.closest&&ev.target.closest('.an-part');if(!part)return;svg.pauseAnimations();var play=box.querySelector('.an-play');if(play)play.textContent='Play';var scene=ev.target.closest('.an-scene');var ask={kosika:'part',part:part.dataset.part,scene:scene?scene.dataset.title:'',title:svg.getAttribute('aria-label'),at:svg.getCurrentTime()};if(window.parent&&window.parent!==window){window.parent.postMessage(ask,'*');said.textContent='Asking Kosi about the '+ask.part+'\u2026'}else{said.textContent='That is the '+ask.part+(ask.scene?', in '+ask.scene:'')+'. In Kosika Studio, Kosi explains it.'}})})();"
+}
+
 fn an_atom_r(j: Number) -> Number { return if j == 0 { 14 } else { 11 } }
 
 // A molecule: atoms as balls side by side, its formula beneath.
@@ -271,24 +292,31 @@ fn an_actor_in(a: AnActor, k: Number, seconds: Number, total: Number, s: Number,
   let id = f"an-g{k}"
   let c = fm_colour(a.hue)
   let dur = an_n(total)
-  let body = f"<g transform=\"scale({an_n(an_size(a.form))})\"><g class=\"fm-form fm-{a.form}\" style=\"--c:{c}\">{an_actor_body(a, id, c, k)}</g></g>"
+  let body = f"<g class=\"an-part\" data-part=\"{an_esc(an_part_name(a.form))}\" transform=\"scale({an_n(an_size(a.form))})\"><circle class=\"an-hit\" r=\"44\" fill=\"transparent\"/><g class=\"fm-form fm-{a.form}\" style=\"--c:{c}\">{an_actor_body(a, id, c, k)}</g></g>"
   if a.motion == "bounce" {
     let p0 = an_px(a.keys[0])
     let p1 = an_px(a.keys[a.keys.length() - 1])
-    let pts = an_bounce(p0[0], p1[0], p0[1], 470, seconds)
-    var d = ""
-    var times: Text[] = []
-    var points: Text[] = []
-    var i = 0
-    while i + 2 < pts.length() {
-      d = d + (if i == 0 { "M" } else { " L" }) + an_n(pts[i + 1]) + " " + an_n(pts[i + 2])
-      times = times.append(an_n(s + pts[i].min(1) * (e - s)))
-      i += 3
+    // One ball for each world and each bounciness; the sliders show one.
+    var worlds = ""
+    for gv in [9.81, 3.71, 1.62] {
+      for ev in [0.5, 0.7, 0.9] {
+        let pts = an_bounce_with(p0[0], p1[0], p0[1], 470, seconds, gv, ev)
+        var d = ""
+        var times: Text[] = []
+        var i = 0
+        while i + 2 < pts.length() {
+          d = d + (if i == 0 { "M" } else { " L" }) + an_n(pts[i + 1]) + " " + an_n(pts[i + 2])
+          times = times.append(an_n(s + pts[i].min(1) * (e - s)))
+          i += 3
+        }
+        let n = times.length()
+        let held = an_held(times, for j in 0 until n { an_n(j / (n - 1).max(1)) }, s, e)
+        let shown = if gv == 9.81 and ev == 0.7 { "" } else { " style=\"display:none\"" }
+        worlds = worlds + f"<g class=\"an-variant\" data-g=\"{gv}\" data-e=\"{ev}\"{shown}><g><animateMotion dur=\"{dur}s\" repeatCount=\"indefinite\" calcMode=\"linear\" keyPoints=\"{an_semi(held[1])}\" keyTimes=\"{an_semi(held[0])}\" path=\"{d}\"/>{body}{tag}</g></g>"
+      }
     }
-    let n = times.length()
-    let held = an_held(times, for j in 0 until n { an_n(j / (n - 1).max(1)) }, s, e)
     let shade = an_held([an_n(s), an_n(e)], [an_n(p0[0]), an_n(p1[0])], s, e)
-    return f"<g><animateMotion dur=\"{dur}s\" repeatCount=\"indefinite\" calcMode=\"linear\" keyPoints=\"{an_semi(held[1])}\" keyTimes=\"{an_semi(held[0])}\" path=\"{d}\"/>{body}{tag}</g><ellipse class=\"an-shadow\" cx=\"0\" cy=\"500\" rx=\"30\" ry=\"6\"><animate attributeName=\"cx\" values=\"{an_semi(shade[1])}\" keyTimes=\"{an_semi(shade[0])}\" dur=\"{dur}s\" repeatCount=\"indefinite\"/></ellipse>"
+    return f"{worlds}<ellipse class=\"an-shadow\" cx=\"0\" cy=\"500\" rx=\"30\" ry=\"6\"><animate attributeName=\"cx\" values=\"{an_semi(shade[1])}\" keyTimes=\"{an_semi(shade[0])}\" dur=\"{dur}s\" repeatCount=\"indefinite\"/></ellipse>"
   }
   if a.motion == "orbit" {
     let c0 = an_px(a.keys[0])
@@ -351,7 +379,7 @@ fn an_svg(r: AnRecipe) -> Text {
 }
 
 fn an_style() -> Text {
-  return fm_style() + ls_style() + ".an .an-painted{width:960px;height:540px;border-radius:0}" + ".an-cap{fill:#fff;font:600 19px system-ui,sans-serif;text-anchor:middle;paint-order:stroke;stroke:rgba(0,0,0,.55);stroke-width:4px}.an-capbar{fill:rgba(0,0,0,.28)}.an-shadow{fill:rgba(0,0,0,.35)}.an-ground{stroke:rgba(255,255,255,.25);stroke-width:2}.an-track{fill:none;stroke:rgba(255,255,255,.18);stroke-width:1.5;stroke-dasharray:3 8}.an-ring{fill:none;stroke-width:5;opacity:.9}.an-ringback{fill:none;stroke-width:5;opacity:.4}.an-wing{fill:rgba(235,245,255,.75);stroke:rgba(0,0,0,.25);transform-box:fill-box;transform-origin:50% 100%;animation:an-buzz .08s linear infinite alternate}@keyframes an-buzz{to{transform:scaleY(.55)}}.an-sub{font-size:11px}.an-chem{font:700 15px ui-monospace,Consolas,monospace;text-anchor:middle;fill:#eceef2;paint-order:stroke;stroke:rgba(0,0,0,.45);stroke-width:3px}.an-glowing{filter:drop-shadow(0 0 10px #ff6a2b)}.an-ash{fill:#4a4648;opacity:.92}.an-churn{transform-box:fill-box;transform-origin:center;animation:an-churn 1.6s ease-in-out infinite alternate}@keyframes an-churn{to{transform:scale(1.05,.95) rotate(3deg)}}.an-peristalsis{animation:an-flowing 1.2s linear infinite}@keyframes an-flowing{to{stroke-dashoffset:-28}}.an-seg{fill:#8fd16a;stroke:#3e7a35;stroke-width:1.5;animation:an-inch .9s ease-in-out infinite alternate}@keyframes an-inch{to{transform:translateY(-5px)}}.an-antenna{fill:none;stroke:#2a2016;stroke-width:2;stroke-linecap:round}.an-sway{transform-box:fill-box;transform-origin:50% 0;animation:an-swing 3s ease-in-out infinite alternate}@keyframes an-swing{from{transform:rotate(-4deg)}to{transform:rotate(4deg)}}.an-stem{fill:none;stroke:#4c8a3c;stroke-width:5;stroke-linecap:round}.an-root{fill:none;stroke:#8a6a4a;stroke-width:2.5;stroke-linecap:round}.an-label .an-arrow{fill:none;stroke:#ffd27a;stroke-width:2.4;stroke-linecap:round}.an-dot{fill:#ffd27a;stroke:#1a1308;stroke-width:1.5}.an-tag{fill:rgba(14,16,22,.82);stroke:#ffd27a;stroke-width:1.4}.an-tagt{fill:#ffe9b8;font:600 13px ui-monospace,Consolas,monospace;text-anchor:middle;letter-spacing:.04em}.an-board{fill:#11141b}.an-board-l{fill:#a3a8bd;font:600 10px ui-monospace,Consolas,monospace;letter-spacing:.16em}.an-card-box{fill:#0b0d12;stroke:rgba(236,238,242,.18);stroke-width:1.2}.an-card-on{fill:rgba(245,180,92,.14);stroke:#f5b45c;stroke-width:2;filter:drop-shadow(0 0 8px rgba(245,180,92,.55))}.an-card-num{fill:#1d2230;stroke:#f5b45c;stroke-width:1.4}.an-card-n{fill:#f5b45c;font:700 12px ui-monospace,Consolas,monospace;text-anchor:middle}.an-card-t{fill:#eceef2;font:600 14px system-ui,sans-serif}.an-wire{fill:none;stroke:rgba(245,180,92,.45);stroke-width:1.6;stroke-dasharray:4 5}.an-wire.back{stroke:rgba(111,212,154,.5)}.an-spark{fill:#ffd27a;filter:drop-shadow(0 0 4px #ffd27a)}.an-cloud{fill:#f7f9fc;filter:drop-shadow(0 6px 8px rgba(40,60,90,.25))}.an-cloud-under{fill:#d9e2ee}.an-corona{transform-box:fill-box;transform-origin:center;animation:an-turn 30s linear infinite}@keyframes an-turn{to{transform:rotate(360deg)}}.an-pulse{animation:an-pulse 3s ease-in-out infinite alternate}@keyframes an-pulse{from{opacity:.7}to{opacity:1}}.an-air{filter:drop-shadow(0 0 6px rgba(120,190,255,.6))}.an-sea{opacity:.95}.an-vapour{fill:none;stroke:rgba(255,255,255,.8);stroke-width:3;stroke-linecap:round;stroke-dasharray:6 8;animation:an-rise 1.6s linear infinite}@keyframes an-rise{to{stroke-dashoffset:28}}.an-skep{fill:#d9a441;stroke:#8a5a1e;stroke-width:2}.an-stripe{fill:none;stroke:#2a2016;stroke-width:5;stroke-linecap:round}.an-bar{display:flex;gap:10px;align-items:center;margin-top:10px;font:12px ui-monospace,Consolas,monospace;color:#a3a8bd}.an-bar button{font:600 12px system-ui,sans-serif;border:1px solid #3a3f4c;background:#15171c;color:#eceef2;border-radius:8px;padding:6px 12px;cursor:pointer}.an-bar input{flex:1}"
+  return fm_style() + ls_style() + ".an .an-painted{width:960px;height:540px;border-radius:0}" + ".an-cap{fill:#fff;font:600 19px system-ui,sans-serif;text-anchor:middle;paint-order:stroke;stroke:rgba(0,0,0,.55);stroke-width:4px}.an-capbar{fill:rgba(0,0,0,.28)}.an-shadow{fill:rgba(0,0,0,.35)}.an-ground{stroke:rgba(255,255,255,.25);stroke-width:2}.an-track{fill:none;stroke:rgba(255,255,255,.18);stroke-width:1.5;stroke-dasharray:3 8}.an-ring{fill:none;stroke-width:5;opacity:.9}.an-ringback{fill:none;stroke-width:5;opacity:.4}.an-wing{fill:rgba(235,245,255,.75);stroke:rgba(0,0,0,.25);transform-box:fill-box;transform-origin:50% 100%;animation:an-buzz .08s linear infinite alternate}@keyframes an-buzz{to{transform:scaleY(.55)}}.an-sub{font-size:11px}.an-chem{font:700 15px ui-monospace,Consolas,monospace;text-anchor:middle;fill:#eceef2;paint-order:stroke;stroke:rgba(0,0,0,.45);stroke-width:3px}.an-glowing{filter:drop-shadow(0 0 10px #ff6a2b)}.an-ash{fill:#4a4648;opacity:.92}.an-churn{transform-box:fill-box;transform-origin:center;animation:an-churn 1.6s ease-in-out infinite alternate}@keyframes an-churn{to{transform:scale(1.05,.95) rotate(3deg)}}.an-peristalsis{animation:an-flowing 1.2s linear infinite}@keyframes an-flowing{to{stroke-dashoffset:-28}}.an-seg{fill:#8fd16a;stroke:#3e7a35;stroke-width:1.5;animation:an-inch .9s ease-in-out infinite alternate}@keyframes an-inch{to{transform:translateY(-5px)}}.an-antenna{fill:none;stroke:#2a2016;stroke-width:2;stroke-linecap:round}.an-sway{transform-box:fill-box;transform-origin:50% 0;animation:an-swing 3s ease-in-out infinite alternate}@keyframes an-swing{from{transform:rotate(-4deg)}to{transform:rotate(4deg)}}.an-stem{fill:none;stroke:#4c8a3c;stroke-width:5;stroke-linecap:round}.an-root{fill:none;stroke:#8a6a4a;stroke-width:2.5;stroke-linecap:round}.an-sci{display:flex;gap:18px;flex-wrap:wrap;margin:10px 0 0;font:13px system-ui,sans-serif;color:#cfd3dc}.an-sci label{display:flex;gap:8px;align-items:center}.an-sci select{background:#15171c;color:#eceef2;border:1px solid #3a3f4c;border-radius:6px;padding:3px 6px}.an .an-painted,.an .an-painted *,.an .an-bg,.an .an-bg *,.an .an-label,.an .an-capbar,.an .an-cap{pointer-events:none}.an-part{cursor:pointer}.an-part:hover{filter:brightness(1.15) drop-shadow(0 0 6px #ffd27a)}.an-asked{font:13px system-ui,sans-serif;color:#ffd27a;margin-top:6px;min-height:1em}.an-label .an-arrow{fill:none;stroke:#ffd27a;stroke-width:2.4;stroke-linecap:round}.an-dot{fill:#ffd27a;stroke:#1a1308;stroke-width:1.5}.an-tag{fill:rgba(14,16,22,.82);stroke:#ffd27a;stroke-width:1.4}.an-tagt{fill:#ffe9b8;font:600 13px ui-monospace,Consolas,monospace;text-anchor:middle;letter-spacing:.04em}.an-board{fill:#11141b}.an-board-l{fill:#a3a8bd;font:600 10px ui-monospace,Consolas,monospace;letter-spacing:.16em}.an-card-box{fill:#0b0d12;stroke:rgba(236,238,242,.18);stroke-width:1.2}.an-card-on{fill:rgba(245,180,92,.14);stroke:#f5b45c;stroke-width:2;filter:drop-shadow(0 0 8px rgba(245,180,92,.55))}.an-card-num{fill:#1d2230;stroke:#f5b45c;stroke-width:1.4}.an-card-n{fill:#f5b45c;font:700 12px ui-monospace,Consolas,monospace;text-anchor:middle}.an-card-t{fill:#eceef2;font:600 14px system-ui,sans-serif}.an-wire{fill:none;stroke:rgba(245,180,92,.45);stroke-width:1.6;stroke-dasharray:4 5}.an-wire.back{stroke:rgba(111,212,154,.5)}.an-spark{fill:#ffd27a;filter:drop-shadow(0 0 4px #ffd27a)}.an-cloud{fill:#f7f9fc;filter:drop-shadow(0 6px 8px rgba(40,60,90,.25))}.an-cloud-under{fill:#d9e2ee}.an-corona{transform-box:fill-box;transform-origin:center;animation:an-turn 30s linear infinite}@keyframes an-turn{to{transform:rotate(360deg)}}.an-pulse{animation:an-pulse 3s ease-in-out infinite alternate}@keyframes an-pulse{from{opacity:.7}to{opacity:1}}.an-air{filter:drop-shadow(0 0 6px rgba(120,190,255,.6))}.an-sea{opacity:.95}.an-vapour{fill:none;stroke:rgba(255,255,255,.8);stroke-width:3;stroke-linecap:round;stroke-dasharray:6 8;animation:an-rise 1.6s linear infinite}@keyframes an-rise{to{stroke-dashoffset:28}}.an-skep{fill:#d9a441;stroke:#8a5a1e;stroke-width:2}.an-stripe{fill:none;stroke:#2a2016;stroke-width:5;stroke-linecap:round}.an-bar{display:flex;gap:10px;align-items:center;margin-top:10px;font:12px ui-monospace,Consolas,monospace;color:#a3a8bd}.an-bar button{font:600 12px system-ui,sans-serif;border:1px solid #3a3f4c;background:#15171c;color:#eceef2;border-radius:8px;padding:6px 12px;cursor:pointer}.an-bar input{flex:1}"
 }
 
 // Play, pause and scrub: one clock for every actor and caption.
@@ -359,19 +387,26 @@ fn an_script(seconds: Number) -> Text {
   return "(function(){var me=document.currentScript,box=me.parentNode,svg=box.querySelector('svg.an'),play=box.querySelector('.an-play'),bar=box.querySelector('.an-time'),out=box.querySelector('.an-now'),total=" + an_n(seconds) + ",held=false;function show(){var t=svg.getCurrentTime()%total;if(!held)bar.value=t/total*1000;out.textContent=t.toFixed(1)+' / '+total.toFixed(1)+' s'}play.addEventListener('click',function(){if(svg.animationsPaused()){svg.unpauseAnimations();play.textContent='Pause'}else{svg.pauseAnimations();play.textContent='Play'}});bar.addEventListener('input',function(){held=true;svg.pauseAnimations();play.textContent='Play';svg.setCurrentTime(bar.value/1000*total);show()});bar.addEventListener('change',function(){held=false});setInterval(show,100)})();"
 }
 
+// For a bounce: which world, and how bouncy, each changing the ball's
+// path as Kosika worked it out.
+fn an_science(r: AnRecipe) -> Text {
+  if (for a in r.actors where a.motion == "bounce" { a }).is_empty() { return "" }
+  return "<div class=\"an-sci\"><label>World <select class=\"an-world\"><option value=\"9.81\" selected>Earth, g = 9.81 m/s²</option><option value=\"3.71\">Mars, g = 3.71 m/s²</option><option value=\"1.62\">Moon, g = 1.62 m/s²</option></select></label><label>Bounciness <input class=\"an-bounce\" type=\"range\" min=\"0\" max=\"2\" step=\"1\" value=\"1\"><span class=\"an-e\">70%</span></label></div><script>(function(){var box=document.currentScript.parentNode,svg=box.querySelector('svg.an'),w=box.querySelector('.an-world'),b=box.querySelector('.an-bounce'),o=box.querySelector('.an-e'),es=['0.5','0.7','0.9'];function show(){var e=es[b.value];o.textContent=Math.round(e*100)+'%';svg.querySelectorAll('.an-variant').forEach(function(v){v.style.display=(v.dataset.g===w.value&&v.dataset.e===e)?'':'none'});svg.setCurrentTime(0)}w.addEventListener('change',show);b.addEventListener('input',show)})();</script>"
+}
+
 fn an_controls(r: AnRecipe) -> Text {
-  return f"<div class=\"an-bar\"><button class=\"an-play\" type=\"button\">Pause</button><input class=\"an-time\" type=\"range\" min=\"0\" max=\"1000\" value=\"0\" aria-label=\"Scrub the animation\"><span class=\"an-now\">0.0 / {an_n(r.seconds)} s</span></div>"
+  return an_science(r) + f"<div class=\"an-bar\"><button class=\"an-play\" type=\"button\">Pause</button><input class=\"an-time\" type=\"range\" min=\"0\" max=\"1000\" value=\"0\" aria-label=\"Scrub the animation\"><span class=\"an-now\">0.0 / {an_n(r.seconds)} s</span></div>"
 }
 
 fn an_page(r: AnRecipe, svg: Text, notes: Text[]) -> Text {
   let said = if notes.is_empty() { "" } else { "<p class=\"how\">" + an_esc(notes.join(" ")) + "</p>" }
-  return f"<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>{an_esc(r.title)}</title><style>body{{margin:0;font:15px system-ui,sans-serif;color:#eceef2;background:#0b0c10}}main{{max-width:min(1680px,100%);margin:0 auto;padding:28px 16px}}.lab{{font:600 11px ui-monospace,Consolas,monospace;letter-spacing:.32em;text-transform:uppercase;color:#f5b45c}}h1{{margin:8px 0 4px;font-size:30px}}.how{{color:#a3a8bd;margin:0 0 16px}}{an_style()}</style></head><body><main><div class=\"lab\">Kosika Designs &#183; animation</div><h1>{an_esc(r.title)}</h1>{said}<div class=\"an-box\">{svg}{an_controls(r)}<script>{an_script(r.seconds)}</script></div></main></body></html>"
+  return f"<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>{an_esc(r.title)}</title><style>body{{margin:0;font:15px system-ui,sans-serif;color:#eceef2;background:#0b0c10}}main{{max-width:min(1680px,100%);margin:0 auto;padding:28px 16px}}.lab{{font:600 11px ui-monospace,Consolas,monospace;letter-spacing:.32em;text-transform:uppercase;color:#f5b45c}}h1{{margin:8px 0 4px;font-size:30px}}.how{{color:#a3a8bd;margin:0 0 16px}}{an_style()}</style></head><body><main><div class=\"lab\">Kosika Designs &#183; animation</div><h1>{an_esc(r.title)}</h1>{said}<div class=\"an-box\">{svg}{an_controls(r)}<script>{an_script(r.seconds)}{an_parts_script()}</script></div></main></body></html>"
 }
 
 // What Kosika worked out itself, said plainly under the animation.
 fn an_notes(r: AnRecipe) -> Text[] {
   var out: Text[] = []
-  if (for a in r.actors where a.motion == "bounce" { a }).length() > 0 { out = out.append("The bounce is worked out by Kosika: the ball falls under g = 9.81 m/s² (the picture is 3 m tall) and keeps 70% of its speed at each bounce, so it rises to 49% of the height before.") }
+  if (for a in r.actors where a.motion == "bounce" { a }).length() > 0 { out = out.append("The bounce is worked out by Kosika: the ball falls under g = 9.81 m/s² (the picture is 3 m tall) and keeps 70% of its speed at each bounce, so it rises to 49% of the height before. Try it on Mars or the Moon, or make it bouncier.") }
   if (for a in r.actors where a.motion == "orbit" { a }).length() > 0 { out = out.append("The orbit goes round at an even pace, once in the animation's length.") }
   return out
 }
@@ -453,7 +488,7 @@ fn an_painting(backdrop: Text) -> LsRecipe {
 fn an_painted(backdrop: Text) -> Bool { return backdrop == "meadow" or backdrop == "night" or backdrop == "studio" or backdrop == "coast" }
 
 fn an_backdrop(backdrop: Text, i: Number) -> Text {
-  if not an_painted(backdrop) { return fm_backdrop(backdrop, 9 + i) }
+  if not an_painted(backdrop) { return "<g class=\"an-bg\">" + fm_backdrop(backdrop, 9 + i) + "</g>" }
   let painted = ls_svg(an_painting(backdrop)).replace("id=\"ls-", f"id=\"ls{i}-").replace("url(#ls-", f"url(#ls{i}-")
   return painted.replace("<svg xmlns=\"http://www.w3.org/2000/svg\" class=\"ls ", "<svg x=\"0\" y=\"0\" width=\"960\" height=\"540\" class=\"an-painted ls ")
 }
@@ -522,7 +557,12 @@ fn an_scene_show(s: Number, e: Number, total: Number) -> Text {
   let gone = (out + 0.001).min(0.999)
   let values = if s <= 0 { "1;1;0;0" } else if e >= 1 { "0;0;1;1" } else { "0;0;1;1;0;0" }
   let times = if s <= 0 { f"0;{an_n3(out)};{an_n3(gone)};1" } else if e >= 1 { f"0;{an_n3(s)};{an_n3(s + f)};1" } else { f"0;{an_n3(s)};{an_n3(s + f)};{an_n3(out)};{an_n3(gone)};1" }
-  return f"<animate attributeName=\"opacity\" values=\"{values}\" keyTimes=\"{times}\" dur=\"{an_n(total)}s\" repeatCount=\"indefinite\"/>"
+  // Out of its share of the clock a scene is hidden as well as see-through,
+  // so a click reaches the scene that shows.
+  let vis = if s <= 0 { "visible;hidden" } else if e >= 1 { "hidden;visible" } else { "hidden;visible;hidden" }
+  let pe = vis.replace("hidden", "none").replace("visible", "auto")
+  let vt = if s <= 0 { f"0;{an_n3(gone)}" } else if e >= 1 { f"0;{an_n3(s)}" } else { f"0;{an_n3(s)};{an_n3(gone)}" }
+  return f"<animate attributeName=\"opacity\" values=\"{values}\" keyTimes=\"{times}\" dur=\"{an_n(total)}s\" repeatCount=\"indefinite\"/><animate attributeName=\"visibility\" calcMode=\"discrete\" values=\"{vis}\" keyTimes=\"{vt}\" dur=\"{an_n(total)}s\" repeatCount=\"indefinite\"/><animate attributeName=\"pointer-events\" calcMode=\"discrete\" values=\"{pe}\" keyTimes=\"{vt}\" dur=\"{an_n(total)}s\" repeatCount=\"indefinite\"/>"
 }
 
 fn an_mapped(a: AnActor, s: Number, e: Number) -> AnActor {
@@ -651,6 +691,42 @@ fn an_steps(st: AnStory, total: Number) -> Text {
   return f"<rect x=\"960\" y=\"0\" width=\"320\" height=\"540\" class=\"an-board\"/><rect x=\"960\" y=\"0\" width=\"320\" height=\"540\" fill=\"url(#an-dots)\"/><text x=\"984\" y=\"32\" class=\"an-board-l\">KOSIKA CANVAS &#183; THE STEPS</text>{wires}{back}{cards}"
 }
 
+// ---------------------------------------------------------------- the camera
+//
+// A scene may be filmed with a move: closing in on a part (the leaf, the
+// cloud) or pulling back to show the whole. A zoom z about a point (x, y)
+// is translate(x (1 - z), y (1 - z)) scale(z), both moved on the clock.
+
+record AnCam { scene: Number t0: Number t1: Number x: Number y: Number z0: Number z1: Number }
+
+fn an_story_camera(title: Text) -> AnCam[] {
+  if title == "Photosynthesis" { return [{scene: 2, t0: 0, t1: 0.5, x: 50, y: 58, z0: 1, z1: 1.45}] }
+  if title == "The Water Cycle" { return [{scene: 1, t0: 0.2, t1: 0.9, x: 50, y: 24, z0: 1, z1: 1.35}] }
+  if title == "A Volcano Erupts" { return [{scene: 0, t0: 0, t1: 0.6, x: 50, y: 80, z0: 1.5, z1: 1}, {scene: 2, t0: 0, t1: 0.5, x: 50, y: 40, z0: 1.3, z1: 1}] }
+  if title == "How We Digest Food" { return [{scene: 2, t0: 0.1, t1: 0.6, x: 50, y: 50, z0: 1, z1: 1.3}] }
+  if title == "From Seed to Tree" { return [{scene: 0, t0: 0, t1: 0.8, x: 50, y: 78, z0: 1.6, z1: 1.1}, {scene: 2, t0: 0, t1: 0.7, x: 50, y: 60, z0: 1.3, z1: 1}] }
+  if title == "A Butterfly's Life" { return [{scene: 1, t0: 0, t1: 0.6, x: 50, y: 60, z0: 1.4, z1: 1.1}, {scene: 3, t0: 0.4, t1: 1, x: 72, y: 62, z0: 1, z1: 1.3}] }
+  return []
+}
+
+// The groups that hold a scene's camera move: [open, close].
+fn an_camera(title: Text, i: Number, s: Number, e: Number, total: Number) -> Text[] {
+  let mine = for c in an_story_camera(title) where c.scene == i { c }
+  if mine.is_empty() { return ["", ""] }
+  let c = mine[0]
+  let x = c.x * 9.6
+  let y = c.y * 5.4
+  let g0 = s + c.t0 * (e - s)
+  let g1 = s + c.t1 * (e - s)
+  let times = f"0;{an_n3(g0)};{an_n3(g1.max(g0 + 0.001))};1"
+  let tx0 = f"{an_n(x * (1 - c.z0))} {an_n(y * (1 - c.z0))}"
+  let tx1 = f"{an_n(x * (1 - c.z1))} {an_n(y * (1 - c.z1))}"
+  let d = an_n(total)
+  let move = f"<animateTransform attributeName=\"transform\" type=\"translate\" values=\"{tx0};{tx0};{tx1};{tx1}\" keyTimes=\"{times}\" dur=\"{d}s\" repeatCount=\"indefinite\"/>"
+  let zoom = f"<animateTransform attributeName=\"transform\" type=\"scale\" values=\"{an_n(c.z0)};{an_n(c.z0)};{an_n(c.z1)};{an_n(c.z1)}\" keyTimes=\"{times}\" dur=\"{d}s\" repeatCount=\"indefinite\"/>"
+  return [f"<g class=\"an-cam\" transform=\"translate({tx0})\">{move}<g transform=\"scale({an_n(c.z0)})\">{zoom}", "</g></g>"]
+}
+
 fn an_story_svg(st: AnStory) -> Text {
   if st.scenes.is_empty() { return "" }
   let total = an_story_total(st)
@@ -672,7 +748,8 @@ fn an_story_svg(st: AnStory) -> Text {
       actors = actors + an_actor_in(a, i * 10 + j, sc.seconds, total, s, e, tag)
     }
     let shown = if s <= 0 { "1" } else { "0" }
-    scenes = scenes + f"<g class=\"an-scene\" opacity=\"{shown}\">{an_scene_show(s, e, total)}{an_backdrop(sc.backdrop, i)}{actors}</g>"
+    let cam = an_camera(st.title, i, s, e, total)
+    scenes = scenes + f"<g class=\"an-scene\" data-title=\"{an_esc(sc.title)}\" opacity=\"{shown}\">{an_scene_show(s, e, total)}{cam[0]}{an_backdrop(sc.backdrop, i)}{actors}{cam[1]}</g>"
     caps = caps + an_captions_in(sc, total, s, e)
     at = at + sc.seconds
   }
@@ -810,6 +887,23 @@ test "the moon's lit part grows from the right and shrinks from the right" {
   expect an_phase(45).contains("A34 34 0 0 1 0 34") and an_phase(225).contains("A34 34 0 0 0 0 34")
   // New: the lit half and its edge cancel; full: the edge bows the other way.
   expect an_phase(0).contains("A34.00 34 0 0 0 0 -34") and an_phase(180).contains("A34.00 34 0 0 0 0 -34")
+}
+
+test "the camera closes in on a part" {
+  st = an_story_fixed(an_photosynthesis_story())
+  svg = an_story_svg(st)
+  expect svg.contains("class=\"an-cam\"") and svg.contains("type=\"scale\"")
+  expect svg.contains("data-part=\"carbon dioxide\"") and svg.contains("data-title=\"Light\"")
+}
+
+test "the bounce can be tried on other worlds" {
+  ball = an_art(an_fixed(an_fallback()))
+  expect ball.svg.split("class=\"an-variant\"").length() == 10
+  expect ball.page.contains("an-world") and ball.page.contains("Mars")
+  moon = an_bounce_with(100, 100, 60, 470, 6, 1.62, 0.7)
+  earth = an_bounce_with(100, 100, 60, 470, 6, 9.81, 0.7)
+  // On the moon the ball has not yet landed when on Earth it has bounced.
+  expect moon[3 * 15 + 2] < earth[3 * 15 + 2]
 }
 
 test "a label points at where its actor is then" {

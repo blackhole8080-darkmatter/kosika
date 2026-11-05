@@ -313,7 +313,7 @@ fn dz_from_forms(ask: DzAsk, a: FmArt) -> DzResult {
 fn dz_from_anim(ask: DzAsk, a: AnArt) -> DzResult {
   let place = dz_place(ask)
   let notes = if a.notes.is_empty() { "" } else { "<p class=\"an-note\">" + art_esc(a.notes.join(" ")) + "</p>" }
-  let inner = "<div class=\"an-box\">" + a.svg + an_controls(a.recipe) + "<script>" + an_script(a.recipe.seconds) + "</script></div>" + notes
+  let inner = "<div class=\"an-box\">" + a.svg + an_controls(a.recipe) + "<script>" + an_script(a.recipe.seconds) + an_parts_script() + "</script></div>" + notes
   let embed = if a.problems.is_empty() { dz_wrap("art", place, "dark_matter", a.recipe.title, inner, an_style() + ".an-note{color:var(--soft);font-size:13px;margin:8px 2px 0}") } else { "" }
   let why = "asks for something to move, so Kosika animated it on one clock, " + a.recipe.seconds.to_text() + " seconds, with its captions timed to each moment"
   return {kind: "art", why: why, title: a.recipe.title, page: a.page, svg: a.svg, embed: embed, problems: a.problems, fixed: []}
