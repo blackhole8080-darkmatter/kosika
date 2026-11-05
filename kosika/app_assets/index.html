@@ -2186,56 +2186,39 @@ function showCrew() {
   const task = h("input", {type: "text", "aria-label": "Task for the swarm", placeholder: "Give the swarm a task: research and explain anything", style: "flex:1;min-width:0;min-height:42px;border:0;background:transparent;font-size:15px;box-shadow:none"});
   const start = h("button", {style: "min-height:40px;padding:0 16px"}, "Start");
   const live = h("span", {style: "display:none;align-items:center;gap:8px;font:12px var(--mono);color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 35%,var(--line));border-radius:999px;padding:4px 10px"});
-  const board = h("div", {style: "position:relative;width:960px;height:600px;transform-origin:0 0"});
-  const wrap = h("section", {"aria-label": "The swarm, drawn on the Kosika canvas", style: "flex:999 1 560px;min-width:0;overflow:hidden;border:1px solid var(--line);border-radius:14px;padding:16px;background-color:var(--panel);background-image:radial-gradient(color-mix(in srgb,var(--ink) 14%,transparent) 1px,transparent 1px);background-size:20px 20px"}, board);
+  const board = h("div", {style: "width:100%;min-height:200px"});
+  const wrap = h("section", {"aria-label": "The swarm, drawn on the Kosika canvas", style: "flex:999 1 560px;min-width:0;overflow:hidden;border:1px solid var(--line);border-radius:14px;background:var(--panel)"}, board);
   const calls = h("div", {style: "display:flex;flex-direction:column"});
   const totals = h("div", {style: "display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:auto;padding-top:14px"});
   const aside = h("aside", {"aria-label": "Calls", style: "flex:1 1 300px;max-width:420px;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:14px;padding:16px 18px;background:var(--panel)"},
     h("div", {style: "font:600 12px var(--sans);letter-spacing:.08em;text-transform:uppercase;color:var(--soft);margin-bottom:6px"}, "Calls"), calls, totals);
   const result = h("div", {style: "margin-top:20px;max-width:980px"});
-  const lines = {}, nodes = {};
-  for (const [a, b] of SWARM_LINKS) {
-    const p = SWARM_NODES[a], q = SWARM_NODES[b];
-    const length = Math.hypot(q.x - p.x, q.y - p.y), angle = Math.atan2(q.y - p.y, q.x - p.x) * 180 / Math.PI;
-    lines[a + ">" + b] = h("div", {"aria-hidden": "true", style: `position:absolute;left:${p.x}px;top:${p.y}px;width:${length}px;height:0;border-top:1.5px dashed var(--line);transform:rotate(${angle}deg);transform-origin:0 0;transition:border-color .3s`});
+  // The board is drawn by Kosika (std/designs_swarm.kos): Studio sends what
+  // each friend is doing and what they pinned, and shows the board Kosika
+  // gives back. The latest drawing wins.
+  const states = {};
+  let pins = [], drawn = 0, queued = false;
+  async function redraw() {
+    const mine = ++drawn;
+    try {
+      const r = await api("/api/swarm/board", {method: "POST", body: JSON.stringify({states: Object.entries(states).map(([id, state]) => ({id, state})), pins})});
+      if (mine !== drawn) return;
+      // Read as an SVG document, never as markup into the page; nothing in it
+      // may run, so scripts and on- handlers are dropped.
+      const doc = new DOMParser().parseFromString(r.svg, "image/svg+xml");
+      const svg = doc.documentElement;
+      if (svg.nodeName !== "svg") return;
+      svg.querySelectorAll("script, foreignObject").forEach(e => e.remove());
+      svg.querySelectorAll("*").forEach(e => { for (const a of [...e.attributes]) if (/^on/i.test(a.name)) e.removeAttribute(a.name); });
+      const look = document.createElement("style"); look.textContent = r.style;
+      board.replaceChildren(look, document.importNode(svg, true));
+    } catch (error) { /* the last board stays */ }
   }
-  for (const [id, n] of Object.entries(SWARM_NODES)) {
-    nodes[id] = n.tool
-      ? h("div", {style: `position:absolute;left:${n.x}px;top:${n.y}px;transform:translate(-50%,-50%);border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:6px 10px;font:11px var(--mono);color:var(--soft);transition:all .3s`}, n.name)
-      : h("div", {style: `position:absolute;left:${n.x}px;top:${n.y}px;transform:translate(-50%,-50%);width:170px;border:1px solid var(--line);background:var(--bg);border-radius:12px;padding:10px 12px;text-align:center;transition:all .3s`},
-          h("div", {style: "font-weight:600;font-size:14px"}, n.name), h("div", {class: "state", style: "font:11px var(--mono);color:var(--faint);margin-top:2px"}, n.role + " · waiting"));
-  }
-  board.append(...Object.values(lines), ...Object.values(nodes));
-  const fitBoard = () => { const room = wrap.clientWidth - 32; const k = Math.min(1, room / 960); board.style.transform = `translateX(${Math.max(0, (room - 960 * k) / 2)}px) scale(${k})`; board.style.marginBottom = (600 * k - 600) + "px"; };
-  // What the friends pin to the shared board: Iris her evidence, each card
-  // with its source, Sol his exact science; Kosi links them into the brief.
-  let pins = [];
-  function unpin() { for (const p of pins) p.remove(); pins = []; }
-  function pin(x, y, head, text, colour, source) {
-    const card = h(source ? "a" : "div", {href: source || null, target: source ? "_blank" : null, rel: source ? "noopener" : null, title: source || null, style: `position:absolute;left:${x}px;top:${y}px;width:230px;border:1px solid ${colour};background:var(--bg);border-radius:10px;padding:8px 10px;color:var(--ink);text-decoration:none;font:12px/1.4 var(--sans);opacity:0;transform:translateY(6px);transition:opacity .4s,transform .4s`},
-      h("div", {style: `font:10px var(--mono);color:${colour};margin-bottom:3px`}, head),
-      h("div", {style: "display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden"}, text));
-    board.append(card); pins.push(card);
-    requestAnimationFrame(() => { card.style.opacity = "1"; card.style.transform = "none"; });
-    return card;
-  }
-  function tie(x1, y1, x2, y2, colour) {
-    const length = Math.hypot(x2 - x1, y2 - y1), angle = Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI;
-    const line = h("div", {"aria-hidden": "true", style: `position:absolute;left:${x1}px;top:${y1}px;width:${length}px;height:0;border-top:1.5px solid ${colour};transform:rotate(${angle}deg);transform-origin:0 0;opacity:.7`});
-    board.prepend(line); pins.push(line);
-  }
-  try { new ResizeObserver(fitBoard).observe(wrap); } catch (error) { /* drawn at full size */ }
-  function light(link, how) {
-    const line = lines[link]; if (!line) return;
-    line.style.borderTop = how === "run" ? "2px solid var(--accent)" : how === "done" ? "1.5px solid " + (SWARM_NODES[link.split(">")[1]].ring || "var(--soft)") : "1.5px dashed var(--line)";
-  }
-  function node(id, state, colour) {
-    const n = SWARM_NODES[id], el = nodes[id];
-    el.style.borderColor = state === "waiting" ? "var(--line)" : (colour || n.ring || "var(--accent)");
-    el.style.boxShadow = state === "running" ? "0 0 0 4px color-mix(in srgb," + (n.ring || "var(--accent)") + " 18%,transparent)" : "none";
-    const s = el.querySelector(".state"); if (s) s.textContent = n.role + " · " + state;
-    if (n.tool) el.style.color = state === "waiting" ? "var(--soft)" : (colour || "var(--accent)");
-  }
+  function soon() { if (queued) return; queued = true; setTimeout(() => { queued = false; redraw(); }, 40); }
+  function unpin() { pins = []; soon(); }
+  function pin(who, kind, head, text, source) { pins.push({who, kind, head, text: String(text || ""), source: source || ""}); soon(); }
+  function node(id, state) { states[id] = state; soon(); }
+  function light() { /* the wires follow the friends' states */ }
   let began = 0, made = 0, sites = 0, checks = 0;
   function clock() { const s = Math.floor((Date.now() - began) / 1000); return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0"); }
   function row(who, what) {
@@ -2255,7 +2238,6 @@ function showCrew() {
     if (!what || swarmRunning) { task.focus(); return; }
     swarmRunning = true; start.disabled = true; calls.replaceChildren(); result.replaceChildren(); made = sites = checks = 0; total(); unpin();
     for (const id of Object.keys(SWARM_NODES)) node(id, "waiting");
-    for (const link of Object.keys(lines)) light(link);
     began = Date.now(); live.style.display = "inline-flex";
     const tick = setInterval(() => { live.textContent = "live · " + clock(); }, 250);
     try {
@@ -2268,7 +2250,7 @@ function showCrew() {
       const found = (iris.sources || []).length; sites += found; if (iris.text && !/couldn't|could not/i.test(iris.text)) checks++;
       doneIris(true, found + " sources");
       const read = ((iris.thinking || {}).nodes || []).filter(n => n.kind === "evidence").slice(0, 3);
-      read.forEach((n, k) => { const y = 250 + k * 92; pin(30, y, n.label.toUpperCase(), n.text, "#5ec4b6", n.source); tie(190, 112, 145, y, "#5ec4b6"); }); light("kosi>iris", "done"); light("iris>arxiv", "done"); light("iris>wiki", "done"); node("iris", "done"); node("arxiv", "done", "var(--soft)"); node("wiki", "done", "var(--soft)"); total();
+      read.forEach(n => pin("iris", "evidence", n.label, n.text, n.source)); light("kosi>iris", "done"); light("iris>arxiv", "done"); light("iris>wiki", "done"); node("iris", "done"); node("arxiv", "done", "var(--soft)"); node("wiki", "done", "var(--soft)"); total();
       // Sol: Kosika's exact science, explained and drawn.
       light("kosi>sol", "run"); light("sol>check", "run"); node("sol", "explaining"); node("check", "checking");
       const doneSol = row("Kosi → Sol", "explain and draw it");
@@ -2276,15 +2258,14 @@ function showCrew() {
       if (sol.text) checks++;
       doneSol(true, sol.canvas ? "drew it" : "explained");
       const science = ((sol.thinking || {}).nodes || []).filter(n => n.kind === "exact" || n.kind === "check");
-      science.slice(0, 2).forEach((n, k) => { const y = 250 + k * 92; pin(700, y, n.kind === "check" ? "CHECK · PASSED" : "WORKED OUT BY KOSIKA", n.text, n.kind === "check" ? "var(--ok)" : "#b6acf5", ""); tie(770, 112, 815, y, "#b6acf5"); }); light("kosi>sol", "done"); light("sol>check", "done"); node("sol", "done"); node("check", "passed", "var(--ok)"); total();
+      science.slice(0, 2).forEach(n => pin("sol", n.kind === "check" ? "check" : "exact", n.kind === "check" ? "check · passed" : "worked out by Kosika", n.text, "")); light("kosi>sol", "done"); light("sol>check", "done"); node("sol", "done"); node("check", "passed", "var(--ok)"); total();
       // Kosi: the brief from both.
       light("kosi>check", "run"); light("kosi>brief", "run"); node("kosi", "writing the brief");
       const doneKosi = row("Kosi → the brief", "from what Iris found and Sol explained");
       const brief = await ask("Write me a short brief, in four sentences, on " + what + ". Use only these notes. From Iris: " + iris.text + " From Sol: " + sol.text);
       if (brief.text) checks++;
       doneKosi(true); light("kosi>check", "done"); light("kosi>brief", "done"); node("kosi", "done"); node("brief", "ready", "var(--ok)"); total();
-      for (const card of pins.filter(p => p.style.width === "230px")) { const x = parseFloat(card.style.left) + 115, y = parseFloat(card.style.top) + 40; tie(x, y, 480, 430, "var(--ok)"); }
-      pin(330, 480, "THE BRIEF", brief.text, "var(--ok)", "").style.width = "300px";
+      pin("brief", "brief", "the brief", brief.text, "");
       const say = (who, r) => h("div", {class: "say-from", style: "margin-top:16px"}, h("div", {class: "say-ring", style: `--ring:${SWARM_NODES[who].ring}`, "aria-hidden": "true"}, SWARM_NODES[who].name[0]),
         h("div", {style: "min-width:0;flex:1"}, h("span", {class: "say-name"}, SWARM_NODES[who].name), h("span", {class: "say-meta"}, SWARM_NODES[who].role), h("div", {class: "say-text"}, r.text),
           ...((r.sources || []).length ? [h("div", {style: "display:flex;flex-wrap:wrap;gap:6px;margin-top:10px"}, r.sources.map(u => h("a", {class: "say-src", href: u, target: "_blank", rel: "noopener"}, u.replace(/^https?:\/\/(www\.|export\.)?/, "").slice(0, 42))))] : [])));
@@ -2305,7 +2286,7 @@ function showCrew() {
   start.onclick = run;
   task.addEventListener("keydown", event => { if (event.key === "Enter") run(); });
   const pack = h("button", {class: "ghost", title: "Five agents make a study pack together", onclick: () => showCrewPack()}, "Make a study pack");
-  total();
+  total(); redraw();
   main.replaceChildren(
     h("div", {style: "display:flex;flex-wrap:wrap;gap:14px;align-items:center;padding-bottom:16px;border-bottom:1px solid var(--line)"}, h("h1", {style: "margin:0"}, "Swarm"), live, h("div", {style: "margin-left:auto"}, pack)),
     h("div", {style: "display:flex;gap:8px;align-items:center;border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:5px 5px 5px 12px;margin:18px 0;max-width:980px"}, task, start),

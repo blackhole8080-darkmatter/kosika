@@ -2455,6 +2455,15 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                         self._json(200, design(str(body.get("text", "")), palette=str(body.get("palette", "")), place="studio", kind=str(body.get("kind", ""))))
                     except DesignsError as exc:
                         raise AppError(str(exc)) from exc
+                elif method == "POST" and url.path == "/api/swarm/board":
+                    # The Swarm page's board, drawn by Kosika itself.
+                    from .designs import DesignsError, swarm_board
+
+                    body = self._body()
+                    try:
+                        self._json(200, swarm_board(body.get("states") or [], body.get("pins") or []))
+                    except DesignsError as exc:
+                        raise AppError(str(exc)) from exc
                 elif method == "POST" and url.path == "/api/models":
                     # The Models page: pin a model for a kind of work, or
                     # give the choice back to Kosika.

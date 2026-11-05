@@ -441,6 +441,24 @@ def _run(source: Path, workflow: str, given_input: dict, *, extra: list[str] | N
     return said
 
 
+SWARM = Path(__file__).resolve().parent / "std" / "designs_swarm.kos"
+
+
+def swarm_board(states: list, pins: list, timeout: float = 60) -> dict[str, Any]:
+    """The Swarm page's board, drawn by Kosika (std/designs_swarm.kos): the
+    friends as Designs' figures, the work moving along wires, and the cards
+    each one pinned. No model is asked."""
+
+    board = {
+        "states": [{"id": str(s.get("id", "")), "state": str(s.get("state", ""))} for s in states if isinstance(s, dict)][:20],
+        "pins": [
+            {key: str(p.get(key, ""))[:600] for key in ("who", "kind", "head", "text", "source")}
+            for p in pins if isinstance(p, dict)
+        ][:12],
+    }
+    return _run_once(SWARM, "swarm_board", {"b": board}, dict(os.environ), None, "svg", timeout)
+
+
 def _too_large(said: dict[str, Any] | None, error: str) -> bool:
     text = error + (json.dumps(said)[:4000] if said else "")
     return "HTTP 413" in text or "Request too large" in text
