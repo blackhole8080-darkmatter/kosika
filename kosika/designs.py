@@ -407,7 +407,7 @@ def _unanswered(said: dict[str, Any] | None, error: str) -> bool:
     if text.startswith(("Sorry, I lost my words", "I looked, but I couldn't put an answer together", "That one's got away from me")):
         return True
     problems = (said or {}).get("problems") or []
-    return any(p == "give a title" or p.startswith("0 parts") or p.startswith("0 figures") for p in problems)
+    return any(p == "give a title" or p.startswith("0 parts") or p.startswith("0 figures") or p.startswith("no story was written") for p in problems)
 
 
 def _run(source: Path, workflow: str, given_input: dict, *, extra: list[str] | None = None, first: str = "kind", timeout: float = 600, env_more: dict[str, str] | None = None, task: str = "designs") -> dict[str, Any]:

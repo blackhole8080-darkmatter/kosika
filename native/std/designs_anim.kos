@@ -22,7 +22,7 @@
 
 import "designs_forms.kos"
 
-export [AnKey, AnActor, AnCaption, AnRecipe, AnAsk, AnArt, an_wants, an_svg, an_style, an_script, an_controls, an_page, an_fixed, an_problems, an_bounce, an_render, an_make, an_fallback]
+export [AnKey, AnActor, AnCaption, AnRecipe, AnStory, AnAsk, AnArt, an_wants, an_story_wants, an_story_make, an_story_render, an_story_fallback, an_story_svg, an_svg, an_style, an_script, an_controls, an_page, an_fixed, an_problems, an_bounce, an_render, an_make, an_fallback]
 
 // t from 0 to 1 of the whole; x and y from 0 to 100 across and down.
 record AnKey { t: Number x: Number y: Number scale: Number turn: Number }
@@ -32,6 +32,9 @@ record AnKey { t: Number x: Number y: Number scale: Number turn: Number }
 record AnActor { id: Text form: Text hue: Text motion: Text keys: AnKey[] }
 record AnCaption { t: Number text: Text }
 record AnRecipe { title: Text seconds: Number backdrop: Text actors: AnActor[] captions: AnCaption[] }
+// A story: scenes played one after another on one clock, each fading in
+// as the last fades out.
+record AnStory { title: Text scenes: AnRecipe[] }
 record AnAsk { text: Text }
 record AnBrief { task: Text ask: Text }
 record AnArt { recipe: AnRecipe svg: Text page: Text problems: Text[] notes: Text[] }
@@ -40,16 +43,18 @@ model an_director {
   input: AnBrief
   output: AnRecipe
   parameters: {
-    max_output_tokens: 2500
+    max_output_tokens: 4000
   }
 }
 
-fn an_extra_forms() -> Text[] { return ["ball", "planet", "moon", "sun", "bee", "hive", "tree"] }
+fn an_extra_forms() -> Text[] { return ["ball", "planet", "moon", "sun", "bee", "hive", "tree", "seed", "sprout", "cloud", "raindrop", "sea", "vapour", "egg", "caterpillar", "chrysalis"] }
 fn an_all_forms() -> Text[] { return fm_forms().concat(an_extra_forms()) }
 fn an_motions() -> Text[] { return ["keys", "bounce", "orbit"] }
 
 fn an_n(x: Number) -> Text { return x.to_fixed(2) }
 fn an_cat(xs: Text[]) -> Text { return xs.join("") }
+fn an_n3(x: Number) -> Text { return x.to_fixed(3) }
+fn an_semi(xs: Text[]) -> Text { return xs.join(";") }
 
 // Whether an ask is for an animation: it asks for one, or for something to
 // move, and names what is in it.
@@ -89,8 +94,31 @@ fn an_keys_fixed(keys: AnKey[]) -> AnKey[] {
   return head.concat(fixed).concat(tail)
 }
 
+// Things that have their own colour keep it, whatever the director said:
+// the sea is blue, a cloud white, the sun gold.
+fn an_true_hue(form: Text, hue: Text) -> Text {
+  if form == "sea" or form == "raindrop" { return "sky" }
+  if form == "cloud" or form == "vapour" or form == "moon" { return "pearl" }
+  if form == "sun" { return "gold" }
+  if form == "sprout" or form == "tree" or form == "fern" or form == "leaf" { return "leaf" }
+  return if fm_hues().contains(hue) { hue } else { "amber" }
+}
+
+// Only what goes round, goes round: a moon or a planet.
+fn an_true_motion(form: Text, motion: Text) -> Text {
+  if motion == "orbit" and form != "moon" and form != "planet" { return "keys" }
+  return if an_motions().contains(motion) { motion } else { "keys" }
+}
+
+// A cloud stays in the sky, the sea at the bottom.
+fn an_true_keys(form: Text, keys: AnKey[]) -> AnKey[] {
+  if form == "cloud" { return for k in keys { {..k, y: k.y.min(35)} } }
+  if form == "sea" { return for k in keys { {..k, y: k.y.max(80)} } }
+  return keys
+}
+
 fn an_fixed(r: AnRecipe) -> AnRecipe {
-  let actors: AnActor[] = for a in r.actors where an_all_forms().contains(a.form.trim().lower()) { {id: if a.id.trim().is_empty() { a.form } else { a.id.trim() }, form: a.form.trim().lower(), hue: if fm_hues().contains(a.hue.trim().lower()) { a.hue.trim().lower() } else { "amber" }, motion: if an_motions().contains(a.motion.trim().lower()) { a.motion.trim().lower() } else { "keys" }, keys: an_keys_fixed(a.keys)} }
+  let actors: AnActor[] = for a in r.actors where an_all_forms().contains(a.form.trim().lower()) { {id: if a.id.trim().is_empty() { a.form } else { a.id.trim() }, form: a.form.trim().lower(), hue: an_true_hue(a.form.trim().lower(), a.hue.trim().lower()), motion: an_true_motion(a.form.trim().lower(), a.motion.trim().lower()), keys: an_true_keys(a.form.trim().lower(), an_keys_fixed(a.keys))} }
   let said: AnCaption[] = for c in r.captions where not c.text.trim().is_empty() { {t: an_clamp(c.t, 0, 1), text: c.text.trim().slice(0, c.text.trim().length().min(90))} }
   let captions = said.sort_by("t")
   let backdrop = if fm_backdrops().contains(r.backdrop.trim().lower()) { r.backdrop.trim().lower() } else { "meadow" }
@@ -141,42 +169,71 @@ fn an_actor_body(a: AnActor, id: Text, c: Text, seed: Number) -> Text {
   if a.form == "sun" { return f"<circle r=\"90\" fill=\"url(#an-glow)\"/><circle r=\"46\" fill=\"url(#{id})\"/>" }
   if a.form == "bee" { return "<g class=\"an-bee\"><ellipse class=\"an-wing\" cx=\"-6\" cy=\"-22\" rx=\"14\" ry=\"20\" transform=\"rotate(-20)\"/><ellipse class=\"an-wing\" cx=\"10\" cy=\"-22\" rx=\"12\" ry=\"18\" transform=\"rotate(18)\"/><ellipse rx=\"30\" ry=\"20\" fill=\"#f5c542\"/><path d=\"M-12 -19 Q-8 0 -12 19 M2 -20 Q6 0 2 20 M16 -16 Q19 0 16 16\" class=\"an-stripe\"/><circle cx=\"27\" cy=\"-4\" r=\"9\" fill=\"#2a2016\"/><path d=\"M-30 0 L-40 0\" class=\"an-stripe\"/></g>" }
   if a.form == "hive" { return "<g>" + an_cat(for k in 0 until 5 { f"<ellipse cx=\"0\" cy=\"{an_n(30 - k * 14)}\" rx=\"{an_n(44 - k * 7)}\" ry=\"9\" class=\"an-skep\"/>" }) + "<ellipse cx=\"0\" cy=\"30\" rx=\"9\" ry=\"6\" fill=\"#2a1a0c\"/><rect x=\"-56\" y=\"38\" width=\"112\" height=\"8\" rx=\"3\" fill=\"#5a3a1e\"/></g>" }
+  if a.form == "egg" { return "<path d=\"M-60 10 Q0 -40 60 10 Q0 30 -60 10 Z\" fill=\"#6fbf5a\"/>" + an_cat(for j in 0 until 5 { f"<ellipse cx=\"{an_n(-16 + j * 8)}\" cy=\"{an_n(2 - (j % 2) * 5)}\" rx=\"4\" ry=\"5\" fill=\"#f6f0dc\" stroke=\"#c9bf9c\"/>" }) }
+  if a.form == "caterpillar" { return "<g class=\"an-crawl\">" + an_cat(for j in 0 until 7 { f"<circle cx=\"{an_n(-42 + j * 13)}\" cy=\"0\" r=\"{an_n(an_seg_r(j))}\" class=\"an-seg\" style=\"animation-delay:-{an_n(j * 0.12)}s\"/>" }) + "<circle cx=\"39\" cy=\"-3\" r=\"2.4\" fill=\"#111\"/><path d=\"M36 -10 L32 -20 M42 -10 L46 -20\" class=\"an-antenna\"/></g>" }
+  if a.form == "chrysalis" { return "<path d=\"M0 -50 L0 -30\" class=\"an-antenna\"/><path d=\"M0 -30 Q22 -6 10 30 Q0 46 -10 30 Q-22 -6 0 -30 Z\" fill=\"#7cc46a\" stroke=\"#3e7a35\" stroke-width=\"2\" class=\"an-sway\"/><path d=\"M-6 -8 Q0 4 6 -8\" fill=\"none\" stroke=\"#e9c46a\" stroke-width=\"2\"/>" }
+  if a.form == "seed" { return "<ellipse rx=\"16\" ry=\"11\" fill=\"#8a5a2b\" transform=\"rotate(-20)\"/><ellipse cx=\"-5\" cy=\"-4\" rx=\"5\" ry=\"3\" fill=\"#c49060\" transform=\"rotate(-20)\"/>" }
+  if a.form == "sprout" { return "<path d=\"M0 40 Q-4 10 0 -30\" class=\"an-stem\"/><path d=\"M0 -10 Q-34 -26 -40 -6 Q-20 4 0 -10 Z\" fill=\"#6fbf5a\"/><path d=\"M0 -24 Q30 -46 40 -24 Q22 -12 0 -24 Z\" fill=\"#5aa94a\"/><path d=\"M0 40 Q-12 52 -18 64 M0 40 Q8 54 16 62 M0 40 L2 66\" class=\"an-root\"/>" }
+  if a.form == "cloud" { return "<g class=\"an-cloud\">" + an_cat(for j in 0 until 5 { f"<circle cx=\"{an_n(-56 + j * 28)}\" cy=\"{an_n(an_puff_y(j))}\" r=\"{an_n(an_puff_r(j))}\"/>" }) + "<rect x=\"-70\" y=\"-4\" width=\"140\" height=\"28\" rx=\"14\"/></g>" }
+  if a.form == "raindrop" { return "<path d=\"M0 -22 Q16 4 0 14 Q-16 4 0 -22 Z\" fill=\"#6cc3f0\"/><path d=\"M-4 0 Q-6 6 -1 9\" stroke=\"#fff\" stroke-width=\"2\" fill=\"none\" opacity=\".7\"/>" }
+  if a.form == "sea" { return "<path d=\"M-500 0 Q-437 -18 -375 0 T-250 0 T-125 0 T0 0 T125 0 T250 0 T375 0 T500 0 L500 120 L-500 120 Z\" fill=\"url(#" + id + ")\" class=\"an-sea\"/>" }
+  if a.form == "vapour" { return an_cat(for j in 0 until 3 { f"<path class=\"an-vapour\" d=\"M{an_n(-30 + j * 30)} 40 q-14 -20 0 -40 t0 -40\" style=\"animation-delay:-{an_n(j * 0.6)}s\"/>" }) }
   if a.form == "tree" { return f"<rect x=\"-8\" y=\"0\" width=\"16\" height=\"70\" fill=\"#5a3a1e\"/><circle cx=\"0\" cy=\"-20\" r=\"48\" fill=\"url(#{id})\"/><circle cx=\"-32\" cy=\"6\" r=\"30\" fill=\"url(#{id})\"/><circle cx=\"32\" cy=\"6\" r=\"30\" fill=\"url(#{id})\"/>" }
   return fm_form_svg(a.form, id, c, seed)
 }
 
-fn an_size(form: Text) -> Number { return if form == "ball" or form == "moon" or form == "bee" { 1 } else if form == "sun" or form == "planet" { 1 } else { 0.55 } }
+fn an_seg_r(j: Number) -> Number { return if j == 6 { 11 } else { 9 } }
+fn an_puff_y(j: Number) -> Number { return if j == 1 or j == 2 { -18 } else { 0 } }
+fn an_puff_r(j: Number) -> Number { return if j == 2 { 34 } else { 26 } }
+
+fn an_size(form: Text) -> Number { return if an_extra_forms().contains(form) { 1 } else { 0.55 } }
 
 // One actor: a path to move along, eased between keyframes, and its
 // scale and turn changing with it.
-fn an_actor(a: AnActor, k: Number, r: AnRecipe) -> Text {
+fn an_actor(a: AnActor, k: Number, r: AnRecipe) -> Text { return an_actor_in(a, k, r.seconds, r.seconds, 0, 1) }
+
+// Times on the whole clock for a scene from s to e: held still before and
+// after it.
+fn an_held(times: Text[], points: Text[], s: Number, e: Number) -> Text[][] {
+  let t1: Text[] = if s > 0 { ["0"].concat(times) } else { times }
+  let p1: Text[] = if s > 0 { [points[0]].concat(points) } else { points }
+  let t2: Text[] = if e < 1 { t1.append("1") } else { t1 }
+  let p2: Text[] = if e < 1 { p1.append(p1[p1.length() - 1]) } else { p1 }
+  return [t2, p2]
+}
+
+// An actor of a scene that runs from s to e of a clock `total` seconds
+// long; `seconds` is the scene's own length, for its physics.
+fn an_actor_in(a: AnActor, k: Number, seconds: Number, total: Number, s: Number, e: Number) -> Text {
   let id = f"an-g{k}"
   let c = fm_colour(a.hue)
-  let dur = an_n(r.seconds)
+  let dur = an_n(total)
   let body = f"<g transform=\"scale({an_n(an_size(a.form))})\"><g class=\"fm-form fm-{a.form}\" style=\"--c:{c}\">{an_actor_body(a, id, c, k)}</g></g>"
   if a.motion == "bounce" {
     let p0 = an_px(a.keys[0])
     let p1 = an_px(a.keys[a.keys.length() - 1])
-    let pts = an_bounce(p0[0], p1[0], p0[1], 470, r.seconds)
+    let pts = an_bounce(p0[0], p1[0], p0[1], 470, seconds)
     var d = ""
     var times: Text[] = []
     var points: Text[] = []
     var i = 0
     while i + 2 < pts.length() {
       d = d + (if i == 0 { "M" } else { " L" }) + an_n(pts[i + 1]) + " " + an_n(pts[i + 2])
-      times = times.append(an_n(pts[i].min(1)))
+      times = times.append(an_n(s + pts[i].min(1) * (e - s)))
       i += 3
     }
     let n = times.length()
-    let frac = (for j in 0 until n { an_n(j / (n - 1).max(1)) }).join(";")
-    return f"<g><animateMotion dur=\"{dur}s\" repeatCount=\"indefinite\" calcMode=\"linear\" keyPoints=\"{frac}\" keyTimes=\"{times.join(\";\")}\" path=\"{d}\"/>{body}</g><ellipse class=\"an-shadow\" cx=\"0\" cy=\"500\" rx=\"30\" ry=\"6\"><animate attributeName=\"cx\" values=\"{an_n(p0[0])};{an_n(p1[0])}\" dur=\"{dur}s\" repeatCount=\"indefinite\"/></ellipse>"
+    let held = an_held(times, for j in 0 until n { an_n(j / (n - 1).max(1)) }, s, e)
+    let shade = an_held([an_n(s), an_n(e)], [an_n(p0[0]), an_n(p1[0])], s, e)
+    return f"<g><animateMotion dur=\"{dur}s\" repeatCount=\"indefinite\" calcMode=\"linear\" keyPoints=\"{an_semi(held[1])}\" keyTimes=\"{an_semi(held[0])}\" path=\"{d}\"/>{body}</g><ellipse class=\"an-shadow\" cx=\"0\" cy=\"500\" rx=\"30\" ry=\"6\"><animate attributeName=\"cx\" values=\"{an_semi(shade[1])}\" keyTimes=\"{an_semi(shade[0])}\" dur=\"{dur}s\" repeatCount=\"indefinite\"/></ellipse>"
   }
   if a.motion == "orbit" {
     let c0 = an_px(a.keys[0])
     let edge = if a.keys.length() > 1 { an_px(a.keys[1]) } else { [c0[0] + 200, c0[1]] }
     let rad = ((edge[0] - c0[0]) * (edge[0] - c0[0]) + (edge[1] - c0[1]) * (edge[1] - c0[1])).sqrt().max(40)
     let d = f"M{an_n(c0[0] + rad)} {an_n(c0[1])} A{an_n(rad)} {an_n(rad * 0.42)} 0 1 1 {an_n(c0[0] - rad)} {an_n(c0[1])} A{an_n(rad)} {an_n(rad * 0.42)} 0 1 1 {an_n(c0[0] + rad)} {an_n(c0[1])}"
-    return f"<path class=\"an-track\" d=\"{d}\"/><g><animateMotion dur=\"{dur}s\" repeatCount=\"indefinite\" path=\"{d}\"/>{body}</g>"
+    let round = an_held([an_n(s), an_n(e)], ["0", "1"], s, e)
+    return f"<path class=\"an-track\" d=\"{d}\"/><g><animateMotion dur=\"{dur}s\" repeatCount=\"indefinite\" calcMode=\"linear\" keyPoints=\"{an_semi(round[1])}\" keyTimes=\"{an_semi(round[0])}\" path=\"{d}\"/>{body}</g>"
   }
   let pts = for key in a.keys { an_px(key) }
   let d = "M" + (for p in pts { an_n(p[0]) + " " + an_n(p[1]) }).join(" L")
@@ -200,15 +257,17 @@ fn an_actor(a: AnActor, k: Number, r: AnRecipe) -> Text {
 }
 
 // Each caption shows from its moment until the next one's.
-fn an_captions(r: AnRecipe) -> Text {
+fn an_captions(r: AnRecipe) -> Text { return an_captions_in(r, r.seconds, 0, 1) }
+
+fn an_captions_in(r: AnRecipe, total: Number, s: Number, e: Number) -> Text {
   let n = r.captions.length()
   var out: Text[] = []
   for k in 0 until n {
-    let from = r.captions[k].t
-    let to = if k + 1 < n { r.captions[k + 1].t } else { 1 }
-    let values = if from <= 0 { "1;0;0" } else { "0;1;0;0" }
-    let times = if from <= 0 { f"0;{an_n(to)};1" } else { f"0;{an_n(from)};{an_n(to.max(from + 0.001))};1" }
-    out = out.append(f"<text class=\"an-cap\" x=\"480\" y=\"518\" opacity=\"0\">{an_esc(r.captions[k].text)}<animate attributeName=\"opacity\" calcMode=\"discrete\" values=\"{values}\" keyTimes=\"{times}\" dur=\"{an_n(r.seconds)}s\" repeatCount=\"indefinite\"/></text>")
+    let from = s + r.captions[k].t * (e - s)
+    let to = if k + 1 < n { s + r.captions[k + 1].t * (e - s) } else { e }
+    let values = if from <= 0 { (if to >= 1 { "1;1" } else { "1;0;0" }) } else { (if to >= 1 { "0;1;1" } else { "0;1;0;0" }) }
+    let times = if from <= 0 { (if to >= 1 { "0;1" } else { f"0;{an_n(to)};1" }) } else { (if to >= 1 { f"0;{an_n(from)};1" } else { f"0;{an_n(from)};{an_n(to.max(from + 0.001))};1" }) }
+    out = out.append(f"<text class=\"an-cap\" x=\"480\" y=\"518\" opacity=\"0\">{an_esc(r.captions[k].text)}<animate attributeName=\"opacity\" calcMode=\"discrete\" values=\"{values}\" keyTimes=\"{times}\" dur=\"{an_n(total)}s\" repeatCount=\"indefinite\"/></text>")
   }
   return an_cat(out)
 }
@@ -228,7 +287,7 @@ fn an_svg(r: AnRecipe) -> Text {
 }
 
 fn an_style() -> Text {
-  return fm_style() + ".an-cap{fill:#fff;font:600 19px system-ui,sans-serif;text-anchor:middle;paint-order:stroke;stroke:rgba(0,0,0,.55);stroke-width:4px}.an-capbar{fill:rgba(0,0,0,.28)}.an-shadow{fill:rgba(0,0,0,.35)}.an-ground{stroke:rgba(255,255,255,.25);stroke-width:2}.an-track{fill:none;stroke:rgba(255,255,255,.18);stroke-width:1.5;stroke-dasharray:3 8}.an-ring{fill:none;stroke-width:5;opacity:.9}.an-ringback{fill:none;stroke-width:5;opacity:.4}.an-wing{fill:rgba(235,245,255,.75);stroke:rgba(0,0,0,.25);transform-box:fill-box;transform-origin:50% 100%;animation:an-buzz .08s linear infinite alternate}@keyframes an-buzz{to{transform:scaleY(.55)}}.an-skep{fill:#d9a441;stroke:#8a5a1e;stroke-width:2}.an-stripe{fill:none;stroke:#2a2016;stroke-width:5;stroke-linecap:round}.an-bar{display:flex;gap:10px;align-items:center;margin-top:10px;font:12px ui-monospace,Consolas,monospace;color:#a3a8bd}.an-bar button{font:600 12px system-ui,sans-serif;border:1px solid #3a3f4c;background:#15171c;color:#eceef2;border-radius:8px;padding:6px 12px;cursor:pointer}.an-bar input{flex:1}"
+  return fm_style() + ".an-cap{fill:#fff;font:600 19px system-ui,sans-serif;text-anchor:middle;paint-order:stroke;stroke:rgba(0,0,0,.55);stroke-width:4px}.an-capbar{fill:rgba(0,0,0,.28)}.an-shadow{fill:rgba(0,0,0,.35)}.an-ground{stroke:rgba(255,255,255,.25);stroke-width:2}.an-track{fill:none;stroke:rgba(255,255,255,.18);stroke-width:1.5;stroke-dasharray:3 8}.an-ring{fill:none;stroke-width:5;opacity:.9}.an-ringback{fill:none;stroke-width:5;opacity:.4}.an-wing{fill:rgba(235,245,255,.75);stroke:rgba(0,0,0,.25);transform-box:fill-box;transform-origin:50% 100%;animation:an-buzz .08s linear infinite alternate}@keyframes an-buzz{to{transform:scaleY(.55)}}.an-seg{fill:#8fd16a;stroke:#3e7a35;stroke-width:1.5;animation:an-inch .9s ease-in-out infinite alternate}@keyframes an-inch{to{transform:translateY(-5px)}}.an-antenna{fill:none;stroke:#2a2016;stroke-width:2;stroke-linecap:round}.an-sway{transform-box:fill-box;transform-origin:50% 0;animation:an-swing 3s ease-in-out infinite alternate}@keyframes an-swing{from{transform:rotate(-4deg)}to{transform:rotate(4deg)}}.an-stem{fill:none;stroke:#4c8a3c;stroke-width:5;stroke-linecap:round}.an-root{fill:none;stroke:#8a6a4a;stroke-width:2.5;stroke-linecap:round}.an-cloud{fill:#f4f7fb}.an-sea{opacity:.95}.an-vapour{fill:none;stroke:rgba(255,255,255,.8);stroke-width:3;stroke-linecap:round;stroke-dasharray:6 8;animation:an-rise 1.6s linear infinite}@keyframes an-rise{to{stroke-dashoffset:28}}.an-skep{fill:#d9a441;stroke:#8a5a1e;stroke-width:2}.an-stripe{fill:none;stroke:#2a2016;stroke-width:5;stroke-linecap:round}.an-bar{display:flex;gap:10px;align-items:center;margin-top:10px;font:12px ui-monospace,Consolas,monospace;color:#a3a8bd}.an-bar button{font:600 12px system-ui,sans-serif;border:1px solid #3a3f4c;background:#15171c;color:#eceef2;border-radius:8px;padding:6px 12px;cursor:pointer}.an-bar input{flex:1}"
 }
 
 // Play, pause and scrub: one clock for every actor and caption.
@@ -261,6 +320,150 @@ fn an_art(r: AnRecipe) -> AnArt {
 
 workflow an_render(r: AnRecipe) -> AnArt {
   out = an_art(an_fixed(r))
+}
+
+// ---------------------------------------------------------------- stories
+
+fn an_story_words() -> Text[] { return [" grow", " grows", " growing", " cycle", " life of", " life cycle", " turns into", " becomes", " process", " journey", " evaporat", " stages", " step by step", " story of"] }
+
+// Whether an ask is for a process told in scenes: it asks to animate, and
+// for something that happens in stages.
+fn an_story_wants(text: Text) -> Bool {
+  let t = " " + text.lower().replace(",", " ").replace(".", " ") + " "
+  let moving = t.contains(" animate") or t.contains(" animation") or t.contains(" animated")
+  let stages = (for w in an_story_words() where t.contains(w) { w }).length() > 0
+  return moving and stages and not t.contains(" explain") and not t.contains(" diagram")
+}
+
+fn an_story_fixed(st: AnStory) -> AnStory {
+  let scenes = for sc in st.scenes { an_fixed(sc) }
+  let kept = for sc in scenes where not sc.actors.is_empty() { {..sc, seconds: sc.seconds.min(12)} }
+  let title = if st.title.trim().is_empty() { "A Story" } else { st.title.trim().slice(0, st.title.trim().length().min(48)) }
+  return {title: title, scenes: kept.take(5)}
+}
+
+fn an_story_fallback() -> AnStory {
+  return {title: "From Seed to Tree", scenes: [
+    {title: "The seed", seconds: 5, backdrop: "meadow", actors: [{id: "seed", form: "seed", hue: "amber", motion: "keys", keys: [{t: 0, x: 50, y: 82, scale: 1, turn: 0}]}, {id: "rain", form: "raindrop", hue: "sky", motion: "keys", keys: [{t: 0, x: 44, y: 10, scale: 1, turn: 0}, {t: 0.8, x: 49, y: 80, scale: 0.6, turn: 0}]}, {id: "cloud", form: "cloud", hue: "pearl", motion: "keys", keys: [{t: 0, x: 40, y: 12, scale: 1, turn: 0}, {t: 1, x: 56, y: 12, scale: 1, turn: 0}]}], captions: [{t: 0, text: "A seed lies in the soil."}, {t: 0.5, text: "Rain soaks into it, and it wakes."}]},
+    {title: "The sprout", seconds: 5, backdrop: "meadow", actors: [{id: "sprout", form: "sprout", hue: "leaf", motion: "keys", keys: [{t: 0, x: 50, y: 78, scale: 0.2, turn: 0}, {t: 1, x: 50, y: 74, scale: 1.3, turn: 0}]}, {id: "sun", form: "sun", hue: "gold", motion: "keys", keys: [{t: 0, x: 82, y: 18, scale: 0.6, turn: 0}]}], captions: [{t: 0, text: "A root grows down, a shoot grows up."}, {t: 0.5, text: "Its first leaves turn to the sun."}]},
+    {title: "The tree", seconds: 6, backdrop: "meadow", actors: [{id: "tree", form: "tree", hue: "leaf", motion: "keys", keys: [{t: 0, x: 50, y: 70, scale: 0.4, turn: 0}, {t: 1, x: 50, y: 58, scale: 1.6, turn: 0}]}, {id: "sun", form: "sun", hue: "gold", motion: "keys", keys: [{t: 0, x: 82, y: 18, scale: 0.6, turn: 0}]}, {id: "bird", form: "bee", hue: "gold", motion: "keys", keys: [{t: 0.4, x: 10, y: 30, scale: 0.6, turn: 0}, {t: 1, x: 44, y: 40, scale: 0.6, turn: 0}]}], captions: [{t: 0, text: "Year by year it grows."}, {t: 0.6, text: "From one seed, a tree."}]}
+  ]}
+}
+
+// The water cycle, told by Kosika itself when no model can tell it.
+fn an_water_story() -> AnStory {
+  return {title: "The Water Cycle", scenes: [
+    {title: "Evaporation", seconds: 5, backdrop: "meadow", actors: [{id: "sea", form: "sea", hue: "sky", motion: "keys", keys: [{t: 0, x: 50, y: 84, scale: 1, turn: 0}]}, {id: "sun", form: "sun", hue: "gold", motion: "keys", keys: [{t: 0, x: 80, y: 18, scale: 0.7, turn: 0}]}, {id: "vapour", form: "vapour", hue: "pearl", motion: "keys", keys: [{t: 0, x: 42, y: 72, scale: 1, turn: 0}, {t: 1, x: 44, y: 40, scale: 1.2, turn: 0}]}], captions: [{t: 0, text: "The sun warms the sea."}, {t: 0.45, text: "Water rises into the air as vapour."}]},
+    {title: "Condensation", seconds: 5, backdrop: "meadow", actors: [{id: "vapour", form: "vapour", hue: "pearl", motion: "keys", keys: [{t: 0, x: 48, y: 62, scale: 1, turn: 0}, {t: 0.7, x: 50, y: 34, scale: 0.6, turn: 0}]}, {id: "cloud", form: "cloud", hue: "pearl", motion: "keys", keys: [{t: 0, x: 50, y: 22, scale: 0.3, turn: 0}, {t: 1, x: 50, y: 22, scale: 1.4, turn: 0}]}], captions: [{t: 0, text: "High up the vapour cools."}, {t: 0.5, text: "It gathers into droplets: a cloud."}]},
+    {title: "Precipitation", seconds: 5, backdrop: "meadow", actors: [{id: "cloud", form: "cloud", hue: "pearl", motion: "keys", keys: [{t: 0, x: 50, y: 20, scale: 1.4, turn: 0}]}, {id: "r1", form: "raindrop", hue: "sky", motion: "keys", keys: [{t: 0, x: 40, y: 30, scale: 1, turn: 0}, {t: 0.7, x: 40, y: 86, scale: 1, turn: 0}]}, {id: "r2", form: "raindrop", hue: "sky", motion: "keys", keys: [{t: 0.2, x: 52, y: 30, scale: 1, turn: 0}, {t: 0.9, x: 52, y: 86, scale: 1, turn: 0}]}, {id: "r3", form: "raindrop", hue: "sky", motion: "keys", keys: [{t: 0.1, x: 62, y: 30, scale: 1, turn: 0}, {t: 0.8, x: 62, y: 86, scale: 1, turn: 0}]}], captions: [{t: 0, text: "The droplets grow heavy."}, {t: 0.4, text: "They fall as rain."}]},
+    {title: "Collection", seconds: 5, backdrop: "meadow", actors: [{id: "sea", form: "sea", hue: "sky", motion: "keys", keys: [{t: 0, x: 50, y: 92, scale: 1, turn: 0}, {t: 1, x: 50, y: 84, scale: 1, turn: 0}]}, {id: "sun", form: "sun", hue: "gold", motion: "keys", keys: [{t: 0, x: 80, y: 30, scale: 0.4, turn: 0}, {t: 1, x: 80, y: 18, scale: 0.7, turn: 0}]}], captions: [{t: 0, text: "Rain runs back to the sea."}, {t: 0.5, text: "And the cycle begins again."}]}
+  ]}
+}
+
+// A butterfly's life, in its four stages.
+fn an_butterfly_story() -> AnStory {
+  return {title: "A Butterfly's Life", scenes: [
+    {title: "Egg", seconds: 4, backdrop: "meadow", actors: [{id: "egg", form: "egg", hue: "leaf", motion: "keys", keys: [{t: 0, x: 50, y: 60, scale: 1.4, turn: 0}]}], captions: [{t: 0, text: "A butterfly lays her eggs on a leaf."}]},
+    {title: "Caterpillar", seconds: 6, backdrop: "meadow", actors: [{id: "leaf", form: "leaf", hue: "leaf", motion: "keys", keys: [{t: 0, x: 55, y: 64, scale: 1.2, turn: 0}]}, {id: "cat", form: "caterpillar", hue: "leaf", motion: "keys", keys: [{t: 0, x: 22, y: 60, scale: 0.6, turn: 0}, {t: 1, x: 60, y: 58, scale: 1.3, turn: 0}]}], captions: [{t: 0, text: "A caterpillar hatches and eats."}, {t: 0.5, text: "It grows, and grows."}]},
+    {title: "Chrysalis", seconds: 5, backdrop: "meadow", actors: [{id: "chr", form: "chrysalis", hue: "leaf", motion: "keys", keys: [{t: 0, x: 50, y: 40, scale: 1.3, turn: 0}]}], captions: [{t: 0, text: "It hangs and makes a chrysalis."}, {t: 0.5, text: "Inside, its body is rebuilt."}]},
+    {title: "Butterfly", seconds: 6, backdrop: "meadow", actors: [{id: "flower", form: "flower", hue: "rose", motion: "keys", keys: [{t: 0, x: 74, y: 72, scale: 1, turn: 0}]}, {id: "bfly", form: "butterfly", hue: "violet", motion: "keys", keys: [{t: 0, x: 50, y: 40, scale: 0.5, turn: 0}, {t: 0.3, x: 40, y: 30, scale: 1.1, turn: 0}, {t: 1, x: 72, y: 56, scale: 1, turn: 0}]}], captions: [{t: 0, text: "A butterfly comes out."}, {t: 0.5, text: "It flies to a flower, and the cycle begins again."}]}
+  ]}
+}
+
+// What Kosika can tell itself when no model writes the story: the water
+// cycle and a seed growing; anything else is said plainly to have no story.
+fn an_story_built_in(text: Text) -> AnStory {
+  let t = " " + text.lower() + " "
+  if t.contains(" water cycle") or t.contains(" rain") or t.contains(" evaporat") { return an_water_story() }
+  if t.contains(" seed") or t.contains(" tree") or t.contains(" sprout") or t.contains(" plant") { return an_story_fallback() }
+  if t.contains(" butterfl") or t.contains(" caterpillar") or t.contains(" chrysalis") or t.contains(" metamorph") { return an_butterfly_story() }
+  return {title: "", scenes: []}
+}
+
+// A scene shows during its share of the clock, fading in and out.
+fn an_scene_show(s: Number, e: Number, total: Number) -> Text {
+  if s <= 0 and e >= 1 { return "" }
+  // The next scene fades in over this one, which stays whole until the
+  // next has: no dark gap between them.
+  let f = (0.5 / total).min((e - s) / 4)
+  let out = (e + f).min(0.998)
+  let gone = (out + 0.001).min(0.999)
+  let values = if s <= 0 { "1;1;0;0" } else if e >= 1 { "0;0;1;1" } else { "0;0;1;1;0;0" }
+  let times = if s <= 0 { f"0;{an_n3(out)};{an_n3(gone)};1" } else if e >= 1 { f"0;{an_n3(s)};{an_n3(s + f)};1" } else { f"0;{an_n3(s)};{an_n3(s + f)};{an_n3(out)};{an_n3(gone)};1" }
+  return f"<animate attributeName=\"opacity\" values=\"{values}\" keyTimes=\"{times}\" dur=\"{an_n(total)}s\" repeatCount=\"indefinite\"/>"
+}
+
+fn an_mapped(a: AnActor, s: Number, e: Number) -> AnActor {
+  if a.motion != "keys" { return a }
+  return {..a, keys: an_keys_fixed(for k in a.keys { {..k, t: s + k.t * (e - s)} })}
+}
+
+fn an_story_total(st: AnStory) -> Number { return (for sc in st.scenes { sc.seconds }).sum() }
+
+fn an_story_svg(st: AnStory) -> Text {
+  let total = an_story_total(st)
+  var defs = "<radialGradient id=\"an-glow\"><stop offset=\"0\" stop-color=\"#ffd27a\" stop-opacity=\".7\"/><stop offset=\"1\" stop-color=\"#ffd27a\" stop-opacity=\"0\"/></radialGradient>"
+  var scenes = ""
+  var caps = ""
+  var at = 0
+  for i in 0 until st.scenes.length() {
+    let sc = st.scenes[i]
+    let s = at / total
+    let e = (at + sc.seconds) / total
+    var actors = ""
+    for j in 0 until sc.actors.length() {
+      let a = an_mapped(sc.actors[j], s, e)
+      defs = defs + fm_gradient(f"an-g{i * 10 + j}", fm_colour(a.hue))
+      actors = actors + an_actor_in(a, i * 10 + j, sc.seconds, total, s, e)
+    }
+    let shown = if s <= 0 { "1" } else { "0" }
+    scenes = scenes + f"<g class=\"an-scene\" opacity=\"{shown}\">{an_scene_show(s, e, total)}{fm_backdrop(sc.backdrop, 9 + i)}{actors}</g>"
+    caps = caps + an_captions_in(sc, total, s, e)
+    at = at + sc.seconds
+  }
+  return f"<svg xmlns=\"http://www.w3.org/2000/svg\" class=\"an fm\" viewBox=\"0 0 960 540\" role=\"img\" aria-label=\"{an_esc(st.title)}\"><defs>{defs}</defs>{scenes}<rect class=\"an-capbar\" x=\"0\" y=\"490\" width=\"960\" height=\"50\"/>{caps}</svg>"
+}
+
+fn an_story_art(st: AnStory) -> AnArt {
+  let total = an_story_total(st)
+  let r: AnRecipe = {title: st.title, seconds: total, backdrop: "meadow", actors: [], captions: []}
+  let svg = an_story_svg(st)
+  let notes = [f"{st.scenes.length()} scenes on one clock, {an_n(total)} seconds: " + (for sc in st.scenes { sc.title }).join(", ") + "."]
+  return {recipe: r, svg: svg, page: an_page(r, svg, notes), problems: if st.scenes.is_empty() { ["no story was written for this one"] } else { [] }, notes: notes}
+}
+
+workflow an_story_render(st: AnStory) -> AnArt {
+  out = an_story_art(an_story_fixed(st))
+}
+
+model an_storyteller {
+  input: AnBrief
+  output: AnStory
+  parameters: {
+    max_output_tokens: 5000
+  }
+}
+
+fn an_story_task() -> Text {
+  return "You are telling a process as a short animated story, scene by scene, for someone who asked for it. Give title (2 to 5 words) and scenes (2 to 4, in order). Each scene has title (2 to 4 words: the stage), seconds (4 to 8), backdrop (deep sea, night, paper, meadow or studio), actors (1 to 4, each with id, form (one of " + an_all_forms().join(", ") + "), hue (coral, amber, teal, violet, rose, gold, sky, leaf, pearl or ink), motion (keys, bounce or orbit) and keys (each with t from 0 to 1 of the scene, x 0 left to 100 right, y 0 top to 100 bottom, the ground near 85, scale with 1 its usual size and 0.2 just begun, and turn in degrees)) and captions (1 or 2, each with t and one short sentence). Show each stage happening: grow things by scale, move things by x and y. Keep what is true."
+}
+
+// A process Kosika knows (the water cycle, a seed growing) it tells itself,
+// scene by scene and true; anything else a model writes, and Kosika keeps
+// it to what is true of the things in it.
+workflow an_story_make(ask: AnAsk) -> AnArt {
+  budget 2 model calls, 240 seconds
+  chosen = match an_story_built_in(ask.text).scenes.is_empty() {
+    case true { call an_story_told(ask) }
+    case _ { an_story_built_in(ask.text) }
+  }
+  out    = an_story_art(an_story_fixed(chosen))
+}
+
+workflow an_story_told(ask: AnAsk) -> AnStory {
+  budget 2 model calls, 240 seconds
+  told = use_model an_storyteller(an_story_task(), ask.text) retry 1 otherwise an_story_built_in(ask.text)
+  out  = told
 }
 
 fn an_task() -> Text {
@@ -303,6 +506,47 @@ test "an animation has its clock, its captions and its actors" {
   expect art.svg.contains("animateMotion") and art.svg.contains("an-cap")
   expect art.page.contains("an-time") and art.page.contains("setCurrentTime")
   expect art.notes[0].contains("9.81")
+}
+
+test "a process asked to be animated is told in scenes" {
+  expect an_story_wants("animate how a seed grows into a tree")
+  expect an_story_wants("animate the water cycle")
+  expect not an_story_wants("animate a ball bouncing")
+  expect not an_story_wants("explain the water cycle")
+}
+
+test "a story plays its scenes in turn on one clock" {
+  st = an_story_fixed(an_story_fallback())
+  expect an_story_total(st) == 16
+  art = an_story_art(st)
+  expect art.problems.is_empty()
+  expect art.svg.split("class=\"an-scene\"").length() == 4
+  expect art.svg.contains("an-stem") and art.svg.contains("an-cloud")
+  expect art.page.contains("an-time")
+  expect art.notes[0].starts_with("3 scenes on one clock")
+}
+
+test "with no model, Kosika tells the stories it knows, and says when it has none" {
+  expect an_story_built_in("animate the water cycle").scenes.length() == 4
+  expect an_story_built_in("animate how a seed grows into a tree").title == "From Seed to Tree"
+  expect an_story_built_in("animate the life of a butterfly").scenes.length() == 4
+  none = an_story_art(an_story_fixed(an_story_built_in("animate the life of a star")))
+  expect none.problems == ["no story was written for this one"]
+}
+
+test "a scene shows only in its own share of the clock" {
+  expect an_scene_show(0, 1, 10) == ""
+  expect an_scene_show(0.5, 1, 10).contains("values=\"0;0;1;1\"")
+  expect an_scene_show(0, 0.5, 10).contains("keyTimes=\"0;0.550;0.551;1\"")
+  held = an_held(["0.50", "0.75"], ["0", "1"], 0.5, 0.75)
+  expect held[0] == ["0", "0.50", "0.75", "1"] and held[1] == ["0", "0", "1", "1"]
+}
+
+test "things keep their own colours and places" {
+  r: AnRecipe = {title: "x", seconds: 5, backdrop: "meadow", actors: [{id: "s", form: "sea", hue: "coral", motion: "orbit", keys: [{t: 0, x: 50, y: 40, scale: 1, turn: 0}]}, {id: "c", form: "cloud", hue: "ink", motion: "keys", keys: [{t: 0, x: 50, y: 80, scale: 1, turn: 0}]}], captions: []}
+  f = an_fixed(r)
+  expect f.actors[0].hue == "sky" and f.actors[0].motion == "keys" and f.actors[0].keys[0].y == 80
+  expect f.actors[1].hue == "pearl" and f.actors[1].keys[0].y == 35
 }
 
 test "a slip by the director is brought back in range" {
