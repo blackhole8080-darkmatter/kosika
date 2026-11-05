@@ -324,6 +324,9 @@ fn br_choose_for(m: BrainMind, ask: DzAsk) -> BrainChoice {
   let none: BrainChoice = {kind: "", sure: 0, why: ""}
   if m.seen < 3 or br_words(ask.text).is_empty() { return none }
   let words = dz_kind(ask)
+  // Art asked for in so many words stays art: a thumb down on art was about
+  // the piece, not the kind (thumbs on art before br_kind_value taught it so).
+  if words == "art" { return none }
   let out = predict(m.net, br_features(ask.text))
   let at = m.kinds.index_of(words)
   if not at.exists() or out[at.value()] >= 0.25 { return none }
@@ -733,6 +736,10 @@ test "the Brain overrules the words when your ratings taught it they go badly" {
   expect br_kind_value(art, {ask: "x", liked: true}) == 1
   expect br_kind_value({..art, kind: "diagram"}, {ask: "x", liked: false}) == 0
   expect br_learn(m0, "a burning star", "art", -1).seen == 0
+  // Art the words settle is never overruled.
+  artful: DzAsk = {text: "draw a jellyfish and a starfish", palette: "", place: "studio", kind: ""}
+  m5 = br_learn(br_learn(br_learn(br_learn(m0, "draw a jellyfish and a starfish", "art", 0), "draw a jellyfish and a starfish", "diagram", 1), "draw a jellyfish", "art", 0), "draw a starfish", "diagram", 1)
+  expect br_choose_for(m5, artful).kind == ""
   // Untaught, the words stand.
   expect br_choose_for(m0, ask).kind == ""
   expect br_with_kind(ask, br_choose_for(m0, ask)).kind == ""

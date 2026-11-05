@@ -1,0 +1,591 @@
+// Kosika Designs: forms, irregular and alive.
+//
+// Not circles and boxes: the shapes of real things, each worked out from
+// the geometry that makes it, then shaded and set moving.
+//
+//   nautilus    a logarithmic spiral, each chamber the last one grown by
+//               the same ratio, the walls between them drawn in
+//   butterfly   Temple Fay's butterfly curve,
+//               r = e^sin t - 2 cos 4t + sin^5((2t - pi) / 24), mirrored,
+//               its wings beating
+//   jellyfish   a bell with a scalloped rim that pulses, and tentacles that
+//               trail and sway
+//   fish        a body from two arcs, a tail that wags, scales in rows
+//   fern        grown by an L-system, the same rule at every frond, so each
+//               leaflet is a small fern
+//   snowflake   six arms, each with branches, each branch with twigs,
+//               always the same six times over (hexagonal ice)
+//   crystal     a cluster of six-sided prisms, lit faces and dark faces
+//   feather     a curved shaft with barbs, a few split apart
+//   leaf        a blade that narrows to a point, serrated, with its veins
+//   starfish    Gielis' superformula with five arms
+//   flower      petals from a rose curve, turning slowly
+//   cell        a membrane made irregular by noise, a nucleus inside
+//   vase        a turned profile, mirrored, with bands painted on
+//   spirograph  a hypotrochoid, a circle rolling inside a circle, drawn
+//               as if by a pen
+//
+// Every name here starts with fm_ or Fm, because all Kosika modules share
+// one namespace.
+
+export [FmItem, FmRecipe, FmAsk, FmArt, fm_forms, fm_wants, fm_form_svg, fm_svg, fm_style, fm_page, fm_fixed, fm_problems, fm_render, fm_make, fm_fallback]
+
+record FmItem { form: Text hue: Text }
+record FmRecipe { items: FmItem[] backdrop: Text seed: Number title: Text }
+record FmAsk { text: Text }
+record FmBrief { task: Text ask: Text }
+record FmArt { recipe: FmRecipe svg: Text page: Text problems: Text[] }
+
+model fm_sculptor {
+  input: FmBrief
+  output: FmRecipe
+  parameters: {
+    max_output_tokens: 1200
+  }
+}
+
+fn fm_forms() -> Text[] { return ["nautilus", "butterfly", "jellyfish", "fish", "fern", "snowflake", "crystal", "feather", "leaf", "starfish", "flower", "cell", "vase", "spirograph"] }
+fn fm_hues() -> Text[] { return ["coral", "amber", "teal", "violet", "rose", "gold", "sky", "leaf", "pearl", "ink"] }
+fn fm_backdrops() -> Text[] { return ["deep sea", "night", "paper", "meadow", "studio"] }
+
+fn fm_colour(hue: Text) -> Text {
+  if hue == "coral" { return "#ff7a5c" }
+  if hue == "amber" { return "#f5b45c" }
+  if hue == "teal" { return "#3fc9b0" }
+  if hue == "violet" { return "#a98bff" }
+  if hue == "rose" { return "#ff7fae" }
+  if hue == "gold" { return "#e9c46a" }
+  if hue == "sky" { return "#6cc3f0" }
+  if hue == "leaf" { return "#6fbf5a" }
+  if hue == "ink" { return "#2b3045" }
+  return "#efe7da"
+}
+
+// The names of things this library can draw, and the words people use for
+// them.
+fn fm_names() -> Text[][] {
+  return [["nautilus", "nautilus", "seashell", "shell", "ammonite", "spiral shell"], ["butterfly", "butterfly", "butterflies", "moth"], ["jellyfish", "jellyfish", "jelly fish", "medusa"], ["fish", "fish", "goldfish", "koi"], ["fern", "fern", "ferns", "frond"], ["snowflake", "snowflake", "snowflakes", "ice crystal"], ["crystal", "crystal", "crystals", "gem", "gems", "quartz", "amethyst"], ["feather", "feather", "feathers", "quill"], ["leaf", "leaf", "leaves"], ["starfish", "starfish", "sea star"], ["flower", "flower", "flowers", "blossom", "bloom"], ["cell", "cell", "cells", "amoeba", "bacteria", "microbe"], ["vase", "vase", "pot", "pottery", "urn"], ["spirograph", "spirograph", "hypotrochoid", "rosette", "mandala"]]
+}
+
+// The forms an ask names, in the order it names them.
+fn fm_named(text: Text) -> Text[] {
+  let t = " " + text.lower().replace(",", " ").replace(".", " ").replace("?", " ").replace("!", " ") + " "
+  var out: Text[] = []
+  for names in fm_names() {
+    let hit = (for w in names.drop(1) where t.contains(" " + w + " ") { w }).length() > 0
+    if hit and not out.contains(names[0]) { out = out.append(names[0]) }
+  }
+  return out
+}
+
+// Whether an ask is for these forms: it names one and does not ask how
+// or why it works.
+fn fm_wants(text: Text) -> Bool {
+  let t = " " + text.lower() + " "
+  let explains = t.contains(" how ") or t.contains(" why ") or t.contains(" explain") or t.contains(" diagram") or t.contains(" life cycle") or t.contains(" anatomy") or t.contains(" parts of")
+  return not fm_named(text).is_empty() and not explains
+}
+
+fn fm_problems(r: FmRecipe) -> Text[] {
+  var out: Text[] = []
+  if r.items.is_empty() { out = out.append("there is nothing to draw") }
+  for i in r.items {
+    if not fm_forms().contains(i.form) { out = out.append(f"form {i.form} is not one of {fm_forms().join(\", \")}") }
+  }
+  return out
+}
+
+fn fm_fixed(r: FmRecipe) -> FmRecipe {
+  let items: FmItem[] = for i in r.items where fm_forms().contains(i.form.trim().lower()) { {form: i.form.trim().lower(), hue: if fm_hues().contains(i.hue.trim().lower()) { i.hue.trim().lower() } else { "coral" }} }
+  let backdrop = if fm_backdrops().contains(r.backdrop.trim().lower()) { r.backdrop.trim().lower() } else { "night" }
+  let title = if r.title.trim().is_empty() { "Forms" } else { r.title.trim().slice(0, r.title.trim().length().min(48)) }
+  let kept: FmItem[] = if items.is_empty() { [{form: "nautilus", hue: "amber"}] } else { items.take(7) }
+  return {items: kept, backdrop: backdrop, seed: r.seed.abs().floor() % 99991, title: title}
+}
+
+fn fm_fallback() -> FmRecipe { return {items: [{form: "nautilus", hue: "amber"}, {form: "jellyfish", hue: "violet"}, {form: "starfish", hue: "coral"}], backdrop: "deep sea", seed: 41, title: "Under the Sea"} }
+
+fn fm_noise(seed: Number, i: Number) -> Number {
+  let v = (i * 12.9898 + seed * 78.233).sin() * 43758.5453
+  return v - v.floor()
+}
+
+fn fm_n(x: Number) -> Text { return x.to_fixed(1) }
+
+fn fm_cat(xs: Text[]) -> Text { return xs.join("") }
+
+fn fm_slug(b: Text) -> Text { return b.replace(" ", "-") }
+
+// A closed path through points given as x, y, x, y...
+fn fm_closed(xy: Number[]) -> Text {
+  if xy.length() < 4 { return "" }
+  var d = f"M{fm_n(xy[0])} {fm_n(xy[1])}"
+  var k = 2
+  while k + 1 < xy.length() {
+    d = d + f" L{fm_n(xy[k])} {fm_n(xy[k + 1])}"
+    k += 2
+  }
+  return d + " Z"
+}
+
+fn fm_open(xy: Number[]) -> Text {
+  let d = fm_closed(xy)
+  return if d.is_empty() { "" } else { d.slice(0, d.length() - 2) }
+}
+
+// ---------------------------------------------------------------- the forms
+//
+// Each form is drawn round its own centre, about 90 across from it, and
+// placed later. g is the id of its gradient; c its colour.
+
+// The nautilus: r = a e^(b t). Its chambers are the spiral's turns cut by
+// walls every 30 degrees; each wall a little curved, as a septum is.
+fn fm_nautilus(g: Text, c: Text) -> Text {
+  let b = 0.0035
+  var outer: Number[] = []
+  var inner: Number[] = []
+  for k in 0 until 181 {
+    let t = k * 4
+    let r = 88 * (2.71828).power(b * (t - 720))
+    outer = outer.append(r * t.cos()).append(r * t.sin())
+    let ri = 88 * (2.71828).power(b * (t - 1080))
+    inner = inner.append(ri * t.cos()).append(ri * t.sin())
+  }
+  var walls: Text[] = []
+  for k in 0 until 18 {
+    let t = 360 + k * 20
+    let ro = 88 * (2.71828).power(b * (t - 720))
+    let ri = 88 * (2.71828).power(b * (t - 1080))
+    let mx = (ro + ri) / 2 * (t - 8).cos()
+    let my = (ro + ri) / 2 * (t - 8).sin()
+    walls = walls.append(f"<path class=\"fm-line\" d=\"M{fm_n(ro * t.cos())} {fm_n(ro * t.sin())} Q{fm_n(mx)} {fm_n(my)} {fm_n(ri * t.cos())} {fm_n(ri * t.sin())}\"/>")
+  }
+  var stripes: Text[] = []
+  for k in 0 until 9 {
+    let t = 450 + k * 30
+    let ro = 88 * (2.71828).power(b * (t - 720))
+    stripes = stripes.append(f"<path class=\"fm-stripe\" d=\"M{fm_n(ro * t.cos())} {fm_n(ro * t.sin())} Q{fm_n(ro * 0.8 * (t + 12).cos())} {fm_n(ro * 0.8 * (t + 12).sin())} {fm_n(ro * 0.55 * (t + 6).cos())} {fm_n(ro * 0.55 * (t + 6).sin())}\"/>")
+  }
+  return f"<g class=\"fm-turn\"><path d=\"{fm_closed(outer)}\" fill=\"url(#{g})\"/>{fm_cat(stripes)}<path class=\"fm-line\" d=\"{fm_open(outer)}\"/><path class=\"fm-line\" d=\"{fm_open(inner)}\"/>{fm_cat(walls)}</g>"
+}
+
+// Temple Fay's butterfly curve, 1989.
+fn fm_butterfly(g: Text, c: Text) -> Text {
+  var right: Number[] = []
+  var left: Number[] = []
+  for k in 0 until 241 {
+    let t = k * 1.5
+    let s = (2 * t - 180) / 24
+    let r = (2.71828).power(t.sin()) - 2 * (4 * t).cos() + (s.sin()).power(5)
+    let x = r * t.cos() * 17
+    let y = -r * t.sin() * 17 + 20
+    if x >= 0 { right = right.append(x).append(y) } else { left = left.append(x).append(y) }
+  }
+  let spots = f"<circle cx=\"34\" cy=\"-22\" r=\"9\" class=\"fm-spot\"/><circle cx=\"-34\" cy=\"-22\" r=\"9\" class=\"fm-spot\"/><circle cx=\"22\" cy=\"34\" r=\"5\" class=\"fm-spot\"/><circle cx=\"-22\" cy=\"34\" r=\"5\" class=\"fm-spot\"/>"
+  let body = "<ellipse cx=\"0\" cy=\"8\" rx=\"5\" ry=\"34\" class=\"fm-body\"/><path class=\"fm-line\" d=\"M-2 -24 Q-10 -48 -20 -56 M2 -24 Q10 -48 20 -56\"/>"
+  return f"<g class=\"fm-wing fm-wing-r\"><path d=\"{fm_closed(right.concat([0, 20]))}\" fill=\"url(#{g})\"/></g><g class=\"fm-wing fm-wing-l\"><path d=\"{fm_closed(left.concat([0, 20]))}\" fill=\"url(#{g})\"/></g>{spots}{body}"
+}
+
+fn fm_jellyfish(g: Text, c: Text) -> Text {
+  var bell: Number[] = []
+  for k in 0 until 37 {
+    let t = 180 + k * 5
+    let r = 62
+    bell = bell.append(r * t.cos()).append(-12 + r * 0.82 * t.sin())
+  }
+  // The rim: scallops between the bell's two ends.
+  var rim: Number[] = []
+  for k in 0 until 25 {
+    let x = 62 - k * 124 / 24
+    let y = -12 + (if k % 2 == 1 { 9 } else { 0 })
+    rim = rim.append(x).append(y)
+  }
+  var arms: Text[] = []
+  for k in 0 until 7 {
+    let x = -48 + k * 16
+    let d = f"M{fm_n(x)} -6 C{fm_n(x - 14)} 26 {fm_n(x + 16)} 52 {fm_n(x - 4)} 90"
+    arms = arms.append(f"<path class=\"fm-arm\" d=\"{d}\" style=\"stroke:{c};animation-delay:-{fm_n(k * 0.35)}s\"/>")
+  }
+  let frills = (for k in 0 until 3 { f"<path class=\"fm-frill\" d=\"M{fm_n(-12 + k * 12)} -4 q-8 30 4 64 q10 18 -2 30\" style=\"stroke:{c}\"/>" }).join("")
+  return f"<g class=\"fm-pulse\"><g class=\"fm-arms\">{fm_cat(arms)}{frills}</g><path d=\"{fm_closed(bell.concat(rim))}\" fill=\"url(#{g})\" class=\"fm-glass\"/><path class=\"fm-line soft\" d=\"M-40 -30 Q0 -60 40 -30\"/></g>"
+}
+
+fn fm_fish(g: Text, c: Text) -> Text {
+  let body = "M-70 0 Q-20 -46 46 -10 Q58 0 46 10 Q-20 46 -70 0 Z"
+  let tail = "<path class=\"fm-tail\" d=\"M-66 0 L-98 -30 Q-88 0 -98 30 Z\" fill=\"url(#" + g + ")\"/>"
+  var scales: Text[] = []
+  for row in 0 until 3 {
+    for k in 0 until 6 {
+      let x = -44 + k * 14 + row * 7
+      let y = -14 + row * 14
+      scales = scales.append(f"<path class=\"fm-scale\" d=\"M{fm_n(x)} {fm_n(y - 6)} q6 6 0 12\"/>")
+    }
+  }
+  let fins = "<path class=\"fm-fin\" d=\"M-18 -26 Q0 -52 18 -20 Z\" fill=\"url(#" + g + ")\"/><path class=\"fm-fin\" d=\"M-4 18 Q8 38 20 16 Z\" fill=\"url(#" + g + ")\"/>"
+  let eye = "<circle cx=\"30\" cy=\"-6\" r=\"6\" fill=\"#fff\"/><circle cx=\"31.5\" cy=\"-6\" r=\"3\" fill=\"#111\"/>"
+  return f"<g class=\"fm-swim\">{tail}{fins}<path d=\"{body}\" fill=\"url(#{g})\"/>{fm_cat(scales)}<path class=\"fm-line soft\" d=\"M14 -18 Q22 0 14 18\"/>{eye}</g>"
+}
+
+// A fern by an L-system: X -> F+[[X]-X]-F[-FX]+X, F -> FF,
+// walked by a turtle that turns 25 degrees. Four times over: a fern is a
+// fern of ferns.
+fn fm_fern(g: Text, c: Text) -> Text {
+  var s = "X"
+  for n in 0 until 4 {
+    s = s.replace("X", "Y").replace("F", "FF").replace("Y", "F+[[X]-X]-F[-FX]+X")
+  }
+  var x = 0
+  var y = 96
+  var a = -82
+  var stack: Number[][] = []
+  var d = "M0 92"
+  for ch in s.chars() {
+    if ch == "F" {
+      x = x + 4.4 * a.cos()
+      y = y + 4.4 * a.sin()
+      d = d + f" L{fm_n(x)} {fm_n(y)}"
+    } else if ch == "+" {
+      a = a + 25
+    } else if ch == "-" {
+      a = a - 25
+    } else if ch == "[" {
+      stack = stack.append([x, y, a])
+    } else if ch == "]" {
+      let top = stack[stack.length() - 1]
+      stack = stack.take(stack.length() - 1)
+      x = top[0]
+      y = top[1]
+      a = top[2]
+      d = d + f" M{fm_n(x)} {fm_n(y)}"
+    }
+  }
+  return f"<g class=\"fm-sway\"><path class=\"fm-fern\" d=\"{d}\" style=\"stroke:{c}\"/></g>"
+}
+
+// Six arms of hexagonal ice: each arm has branches, each branch twigs.
+fn fm_snowflake(g: Text, c: Text) -> Text {
+  var d = ""
+  for arm in 0 until 6 {
+    let a = arm * 60 - 90
+    d = d + f"M0 0 L{fm_n(86 * a.cos())} {fm_n(86 * a.sin())} "
+    for k in 1 until 4 {
+      let r = k * 22
+      let len = 30 - k * 6
+      let bx = r * a.cos()
+      let by = r * a.sin()
+      for side in [-60, 60] {
+        let b = a + side
+        let ex = bx + len * b.cos()
+        let ey = by + len * b.sin()
+        d = d + f"M{fm_n(bx)} {fm_n(by)} L{fm_n(ex)} {fm_n(ey)} "
+        let tx = bx + len * 0.5 * b.cos()
+        let ty = by + len * 0.5 * b.sin()
+        d = d + f"M{fm_n(tx)} {fm_n(ty)} L{fm_n(tx + len * 0.4 * a.cos())} {fm_n(ty + len * 0.4 * a.sin())} "
+      }
+    }
+  }
+  let hex = (for k in 0 until 6 { f"{fm_n(12 * (k * 60 - 90).cos())} {fm_n(12 * (k * 60 - 90).sin())}" }).join(" L")
+  return f"<g class=\"fm-spin\"><path class=\"fm-ice\" d=\"{d}\" style=\"stroke:{c}\"/><path d=\"M{hex} Z\" fill=\"url(#{g})\"/></g>"
+}
+
+// A crystal cluster: six-sided prisms, each with a lit face, a dark face
+// and a point, leaning out from a common base.
+fn fm_crystal(g: Text, c: Text) -> Text {
+  var out: Text[] = []
+  let leans = [-28, -12, 4, 18, 32]
+  let tall = [70, 100, 120, 92, 64]
+  for k in 0 until 5 {
+    let a = leans[k] - 90
+    let h = tall[k]
+    let w = 16 - (k - 2).abs() * 2
+    let bx = (k - 2) * 12
+    let px = a + 90
+    let tx = bx + h * a.cos()
+    let ty = 70 + h * a.sin()
+    let nx = w * px.cos()
+    let ny = w * px.sin()
+    let lit = f"M{fm_n(bx)} 70 L{fm_n(tx)} {fm_n(ty)} L{fm_n(tx + nx * 0.5 + (h * 0.18) * a.cos())} {fm_n(ty + ny * 0.5 + (h * 0.18) * a.sin())} L{fm_n(tx + nx)} {fm_n(ty + ny)} L{fm_n(bx + nx)} {fm_n(70 + ny)} Z"
+    let dark = f"M{fm_n(bx + nx)} {fm_n(70 + ny)} L{fm_n(tx + nx)} {fm_n(ty + ny)} L{fm_n(tx + nx * 0.5 + (h * 0.18) * a.cos())} {fm_n(ty + ny * 0.5 + (h * 0.18) * a.sin())} L{fm_n(tx + nx * 1.6)} {fm_n(ty + ny * 1.6)} L{fm_n(bx + nx * 1.6)} {fm_n(70 + ny * 1.6)} Z"
+    out = out.append(f"<path d=\"{lit}\" fill=\"url(#{g})\" class=\"fm-facet\"/><path d=\"{dark}\" class=\"fm-dark\" style=\"fill:{c}\"/>")
+  }
+  return "<g class=\"fm-shine\">" + out.join("") + "<ellipse cx=\"0\" cy=\"72\" rx=\"56\" ry=\"8\" class=\"fm-rock\"/></g>"
+}
+
+fn fm_feather(g: Text, c: Text, seed: Number) -> Text {
+  var barbs: Text[] = []
+  for k in 0 until 34 {
+    let t = k / 33
+    let x = -8 + 26 * t * t
+    let y = 86 - t * 172
+    let len = 40 * (1 - (2 * t - 1).abs()).power(0.6) + 6
+    let gap = fm_noise(seed, k) < 0.12
+    for side in [-1, 1] {
+      let lean = if gap { 12 } else { 0 }
+      barbs = barbs.append(f"<path class=\"fm-barb\" d=\"M{fm_n(x)} {fm_n(y)} q{fm_n(side * len * 0.5)} {fm_n(-8 - lean)} {fm_n(side * len)} {fm_n(-14 - lean)}\" style=\"stroke:{c}\"/>")
+    }
+  }
+  return f"<g class=\"fm-float\">{fm_cat(barbs)}<path class=\"fm-shaft\" d=\"M-8 96 Q-8 0 18 -86\"/></g>"
+}
+
+fn fm_leaf(g: Text, c: Text, seed: Number) -> Text {
+  var top: Number[] = []
+  var bottom: Number[] = []
+  for k in 0 until 41 {
+    let t = k / 40
+    let x = -80 + t * 160
+    let w = 42 * (t * 180).sin().power(0.8) * (1 + (if k % 2 == 0 { 0.06 } else { 0 }))
+    top = top.append(x).append(-w)
+    bottom = bottom.append(x).append(w)
+  }
+  var back: Number[] = []
+  var k = bottom.length() - 2
+  while k >= 0 {
+    back = back.append(bottom[k]).append(bottom[k + 1])
+    k -= 2
+  }
+  let veins = (for v in 1 until 8 { f"<path class=\"fm-vein\" d=\"M{fm_n(-70 + v * 18)} 0 q12 -14 24 -{fm_n(26 - (v - 4).abs() * 3)} M{fm_n(-70 + v * 18)} 0 q12 14 24 {fm_n(26 - (v - 4).abs() * 3)}\"/>" }).join("")
+  return f"<g class=\"fm-float\" transform=\"rotate(-24)\"><path d=\"{fm_closed(top.concat(back))}\" fill=\"url(#{g})\"/><path class=\"fm-vein main\" d=\"M-92 6 L80 0\"/>{veins}</g>"
+}
+
+// Gielis' superformula: r = (|cos(m t / 4)|^n2 + |sin(m t / 4)|^n3)^(-1/n1).
+fn fm_super(m: Number, n1: Number, n2: Number, n3: Number, size: Number) -> Number[] {
+  var xy: Number[] = []
+  var big = 0
+  var rs: Number[] = []
+  for k in 0 until 181 {
+    let t = k * 2
+    let a = (m * t / 4).cos().abs().power(n2) + (m * t / 4).sin().abs().power(n3)
+    let r = a.max(0.000001).power(-1 / n1)
+    rs = rs.append(r)
+    big = big.max(r)
+  }
+  for k in 0 until 181 {
+    let t = k * 2 - 90
+    let r = rs[k] / big * size
+    xy = xy.append(r * t.cos()).append(r * t.sin())
+  }
+  return xy
+}
+
+// The starfish: five arms where |cos(5t / 2)| is 1, narrow valleys between,
+// the arms tapering: r = R (0.3 + 0.7 |cos(5t / 2)|^2.4).
+fn fm_starfish(g: Text, c: Text) -> Text {
+  var body: Number[] = []
+  for k in 0 until 181 {
+    let t = k * 2 - 90
+    let r = 88 * (0.3 + 0.7 * ((5 * (t + 90) / 2).cos().abs()).power(2.4))
+    body = body.append(r * t.cos()).append(r * t.sin())
+  }
+  var bumps: Text[] = []
+  for arm in 0 until 5 {
+    let a = arm * 72 - 90
+    for k in 1 until 6 {
+      bumps = bumps.append(f"<circle class=\"fm-bump\" cx=\"{fm_n(k * 13 * a.cos())}\" cy=\"{fm_n(k * 13 * a.sin())}\" r=\"{fm_n(4.2 - k * 0.5)}\"/>")
+    }
+  }
+  return f"<g class=\"fm-breathe\"><path d=\"{fm_closed(body)}\" fill=\"url(#{g})\"/>{fm_cat(bumps)}</g>"
+}
+
+// Petals by a rose curve r = |cos(k t)|, k = 3: six petals.
+fn fm_flower(g: Text, c: Text) -> Text {
+  var outer: Number[] = []
+  var inner: Number[] = []
+  for k in 0 until 241 {
+    let t = k * 1.5
+    let r = (3 * t).cos().abs().power(0.7)
+    outer = outer.append(88 * r * t.cos()).append(88 * r * t.sin())
+    inner = inner.append(52 * r * (t + 30).cos()).append(52 * r * (t + 30).sin())
+  }
+  let seeds = (for k in 0 until 40 { f"<circle class=\"fm-seed\" cx=\"{fm_n(2.1 * k.sqrt() * (k * 137.508).cos())}\" cy=\"{fm_n(2.1 * k.sqrt() * (k * 137.508).sin())}\" r=\"1.6\"/>" }).join("")
+  return f"<g class=\"fm-spin slow\"><path d=\"{fm_closed(outer)}\" fill=\"url(#{g})\"/><path d=\"{fm_closed(inner)}\" fill=\"url(#{g})\" class=\"fm-inner\"/><circle r=\"16\" class=\"fm-heart\"/>{seeds}</g>"
+}
+
+fn fm_cell(g: Text, c: Text, seed: Number) -> Text {
+  var xy: Number[] = []
+  for k in 0 until 73 {
+    let t = k * 5
+    let r = 80 * (1 + 0.1 * (3 * t + seed).sin() + 0.06 * (5 * t - seed * 2).sin() + 0.04 * (9 * t + seed * 3).sin())
+    xy = xy.append(r * t.cos()).append(r * 0.86 * t.sin())
+  }
+  let bits = (for k in 0 until 9 { f"<ellipse class=\"fm-organelle\" cx=\"{fm_n((fm_noise(seed, k) - 0.5) * 100)}\" cy=\"{fm_n((fm_noise(seed, k + 20) - 0.5) * 80)}\" rx=\"{fm_n(5 + fm_noise(seed, k + 40) * 6)}\" ry=\"{fm_n(3 + fm_noise(seed, k + 60) * 3)}\"/>" }).join("")
+  return f"<g class=\"fm-wobble\"><path d=\"{fm_closed(xy)}\" fill=\"url(#{g})\" class=\"fm-membrane\"/>{bits}<circle cx=\"8\" cy=\"-4\" r=\"24\" class=\"fm-nucleus\"/><circle cx=\"12\" cy=\"-8\" r=\"7\" class=\"fm-nucleolus\"/></g>"
+}
+
+// A vase turned on a wheel: a profile, mirrored.
+fn fm_vase(g: Text, c: Text) -> Text {
+  var right: Number[] = []
+  var left: Number[] = []
+  for k in 0 until 31 {
+    let t = k / 30
+    let y = 90 - t * 180
+    let w = 22 + 38 * (t * 200).sin().max(0) + (if t > 0.82 { (t - 0.82) * 90 } else { 0 }) - (if t > 0.6 and t < 0.85 { 16 * ((t - 0.6) / 0.25 * 180).sin() } else { 0 })
+    right = right.append(w).append(y)
+    left = [0 - w, y].concat(left)
+  }
+  let bands = (for k in 0 until 3 { f"<path class=\"fm-band\" d=\"M-56 {fm_n(-10 + k * 24)} Q0 {fm_n(-2 + k * 24)} 56 {fm_n(-10 + k * 24)}\" style=\"stroke:{c}\"/>" }).join("")
+  return f"<g><path d=\"{fm_closed(right.concat(left))}\" fill=\"url(#{g})\"/>{bands}<ellipse cx=\"0\" cy=\"-90\" rx=\"22\" ry=\"5\" class=\"fm-mouth\"/></g>"
+}
+
+// A hypotrochoid: a circle of radius r rolls inside one of radius R; a pen
+// d from its centre draws.
+fn fm_spirograph(g: Text, c: Text, seed: Number) -> Text {
+  let bigR = 60
+  // 60 and 21 or 27 share 3: the pen comes home after 7 or 9 turns of the
+  // small circle, having drawn 20 loops.
+  let r = if fm_noise(seed, 1) < 0.5 { 21 } else { 27 }
+  let d = 34
+  let turns = r / 3
+  var xy: Number[] = []
+  for k in 0 until turns * 120 + 1 {
+    let t = k * 3
+    let x = (bigR - r) * t.cos() + d * ((bigR - r) / r * t).cos()
+    let y = (bigR - r) * t.sin() - d * ((bigR - r) / r * t).sin()
+    xy = xy.append(x).append(y)
+  }
+  return f"<g class=\"fm-spin slow\"><path class=\"fm-pen\" pathLength=\"1\" d=\"{fm_open(xy)}\" style=\"stroke:{c}\"/></g>"
+}
+
+fn fm_form_svg(form: Text, g: Text, c: Text, seed: Number) -> Text {
+  if form == "nautilus" { return fm_nautilus(g, c) }
+  if form == "butterfly" { return fm_butterfly(g, c) }
+  if form == "jellyfish" { return fm_jellyfish(g, c) }
+  if form == "fish" { return fm_fish(g, c) }
+  if form == "fern" { return fm_fern(g, c) }
+  if form == "snowflake" { return fm_snowflake(g, c) }
+  if form == "crystal" { return fm_crystal(g, c) }
+  if form == "feather" { return fm_feather(g, c, seed) }
+  if form == "leaf" { return fm_leaf(g, c, seed) }
+  if form == "starfish" { return fm_starfish(g, c) }
+  if form == "flower" { return fm_flower(g, c) }
+  if form == "cell" { return fm_cell(g, c, seed) }
+  if form == "vase" { return fm_vase(g, c) }
+  return fm_spirograph(g, c, seed)
+}
+
+// ---------------------------------------------------------------- the picture
+
+record FmSpot { x: Number y: Number s: Number }
+
+// Where each form goes: one alone sits in the middle, large; more share
+// the picture in a row that rises and falls, the first a little larger.
+fn fm_spot(k: Number, count: Number, seed: Number) -> FmSpot {
+  if count == 1 { return {x: 480, y: 280, s: 2.3} }
+  let gap = 900 / count
+  let x = 30 + gap * (k + 0.5)
+  let y = 280 + (if k % 2 == 0 { -40 } else { 50 }) + (fm_noise(seed, k + 5) - 0.5) * 30
+  let s = (gap / 210).min(1.75) * (if k == 0 { 1.12 } else { 1 })
+  return {x: x, y: y, s: s}
+}
+
+fn fm_backdrop(b: Text, seed: Number) -> Text {
+  let top = if b == "deep sea" { "#04263a" } else if b == "paper" { "#f4efe4" } else if b == "meadow" { "#cfe8c4" } else if b == "studio" { "#22252d" } else { "#070914" }
+  let low = if b == "deep sea" { "#020b14" } else if b == "paper" { "#e6dcc8" } else if b == "meadow" { "#8fbf74" } else if b == "studio" { "#0f1116" } else { "#1a1d38" }
+  var bits = ""
+  if b == "deep sea" {
+    bits = (for k in 0 until 26 { f"<circle class=\"fm-bubble\" cx=\"{fm_n(fm_noise(seed, k) * 960)}\" cy=\"{fm_n(560)}\" r=\"{fm_n(2 + fm_noise(seed, k + 30) * 5)}\" style=\"animation-delay:-{fm_n(fm_noise(seed, k + 60) * 12)}s;animation-duration:{fm_n(8 + fm_noise(seed, k + 90) * 8)}s\"/>" }).join("") + "<path class=\"fm-ray\" d=\"M180 0 L320 0 L520 540 L260 540 Z\"/><path class=\"fm-ray\" d=\"M560 0 L640 0 L820 540 L660 540 Z\"/>"
+  }
+  if b == "night" {
+    let g = 1.32471795724
+    bits = (for k in 0 until 90 { f"<circle class=\"fm-star\" cx=\"{fm_n((0.5 + k / g) % 1 * 960)}\" cy=\"{fm_n((0.5 + k / (g * g)) % 1 * 540)}\" r=\"{fm_n(0.5 + fm_noise(seed, k) * 1.2)}\"/>" }).join("")
+  }
+  return f"<defs><linearGradient id=\"fm-bg\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"{top}\"/><stop offset=\"1\" stop-color=\"{low}\"/></linearGradient></defs><rect width=\"960\" height=\"540\" fill=\"url(#fm-bg)\"/>{bits}"
+}
+
+fn fm_gradient(id: Text, c: Text) -> Text {
+  return f"<radialGradient id=\"{id}\" cx=\"35%\" cy=\"30%\" r=\"80%\"><stop offset=\"0\" style=\"stop-color:color-mix(in srgb,{c} 45%,#fff)\"/><stop offset=\".55\" style=\"stop-color:{c}\"/><stop offset=\"1\" style=\"stop-color:color-mix(in srgb,{c} 55%,#000)\"/></radialGradient>"
+}
+
+fn fm_svg(r: FmRecipe) -> Text {
+  var defs = ""
+  var forms = ""
+  let count = r.items.length()
+  for k in 0 until count {
+    let item = r.items[k]
+    let id = f"fm-g{k}"
+    let c = fm_colour(item.hue)
+    defs = defs + fm_gradient(id, c)
+    let at = fm_spot(k, count, r.seed)
+    let delay = fm_n(fm_noise(r.seed, k + 13) * 3)
+    forms = forms + f"<g transform=\"translate({fm_n(at.x)} {fm_n(at.y)}) scale({fm_n(at.s)})\"><g class=\"fm-form fm-{item.form}\" style=\"--c:{c};animation-delay:-{delay}s\">{fm_form_svg(item.form, id, c, r.seed + k)}</g></g>"
+  }
+  return f"<svg xmlns=\"http://www.w3.org/2000/svg\" class=\"fm fm-on-{fm_slug(r.backdrop)}\" viewBox=\"0 0 960 540\" role=\"img\" aria-label=\"{r.title}\">{fm_backdrop(r.backdrop, r.seed)}<defs>{defs}</defs>{forms}</svg>"
+}
+
+fn fm_style() -> Text {
+  return ".fm{display:block;width:100%;height:auto;overflow:hidden;border-radius:16px}.fm-form *{vector-effect:non-scaling-stroke}.fm-line{fill:none;stroke:rgba(0,0,0,.38);stroke-width:1.3;stroke-linecap:round}.fm-line.soft{stroke:rgba(255,255,255,.35)}.fm-stripe{fill:none;stroke:color-mix(in srgb,var(--c) 45%,#3a1d08);stroke-width:4;stroke-linecap:round;opacity:.55}.fm-turn{animation:fm-turn 60s linear infinite}.fm-spin{animation:fm-turn 40s linear infinite}.fm-spin.slow{animation-duration:90s}@keyframes fm-turn{to{transform:rotate(360deg)}}.fm-wing{transform-box:view-box;transform-origin:0 0;animation:fm-flap .7s ease-in-out infinite alternate}@keyframes fm-flap{from{transform:scaleX(1)}to{transform:scaleX(.6)}}.fm-spot{fill:rgba(255,255,255,.55);stroke:rgba(0,0,0,.35);stroke-width:2}.fm-body{fill:#231a14}.fm-butterfly{animation:fm-flutter 5s ease-in-out infinite alternate}@keyframes fm-flutter{from{transform:translate(-14px,8px) rotate(-6deg)}to{transform:translate(14px,-10px) rotate(6deg)}}.fm-glass{opacity:.82}.fm-pulse{transform-box:fill-box;transform-origin:50% 20%;animation:fm-pulse 2.8s ease-in-out infinite}@keyframes fm-pulse{50%{transform:scale(1.06,.9)}}.fm-arm{fill:none;stroke-width:2;stroke-linecap:round;opacity:.75;transform-box:fill-box;transform-origin:50% 0;animation:fm-trail 3s ease-in-out infinite alternate}.fm-frill{fill:none;stroke-width:5;stroke-linecap:round;opacity:.45}@keyframes fm-trail{from{transform:skewX(-8deg)}to{transform:skewX(8deg)}}.fm-jellyfish{animation:fm-rise 9s ease-in-out infinite alternate}@keyframes fm-rise{from{transform:translateY(16px)}to{transform:translateY(-16px)}}.fm-swim{animation:fm-swim 4s ease-in-out infinite alternate}@keyframes fm-swim{from{transform:translate(-18px,4px)}to{transform:translate(18px,-4px)}}.fm-tail{transform-box:fill-box;transform-origin:100% 50%;animation:fm-wag .5s ease-in-out infinite alternate}@keyframes fm-wag{from{transform:scaleX(.8) skewY(-12deg)}to{transform:scaleX(1) skewY(12deg)}}.fm-scale{fill:none;stroke:rgba(255,255,255,.35);stroke-width:1.2}.fm-fin{opacity:.85}.fm-fern{fill:none;stroke-width:2;stroke-linecap:round;filter:brightness(.7)}.fm-sway{transform-box:fill-box;transform-origin:50% 100%;animation:fm-sway 5s ease-in-out infinite alternate}@keyframes fm-sway{from{transform:rotate(-3deg)}to{transform:rotate(3deg)}}.fm-ice{fill:none;stroke-width:3.2;stroke-linecap:round;filter:drop-shadow(0 0 4px var(--c))}.fm-facet{stroke:rgba(255,255,255,.4);stroke-width:1}.fm-dark{opacity:.55;filter:brightness(.55)}.fm-rock{fill:#2a2622;opacity:.8}.fm-shine{animation:fm-shine 4s ease-in-out infinite alternate}@keyframes fm-shine{from{filter:brightness(.9)}to{filter:brightness(1.25) drop-shadow(0 0 10px var(--c))}}.fm-barb{fill:none;stroke-width:1.4;stroke-linecap:round;opacity:.9}.fm-shaft{fill:none;stroke:#f2ede4;stroke-width:3;stroke-linecap:round}.fm-float{animation:fm-float 6s ease-in-out infinite alternate}@keyframes fm-float{from{transform:translateY(-8px) rotate(-4deg)}to{transform:translateY(8px) rotate(4deg)}}.fm-vein{fill:none;stroke:rgba(0,0,0,.28);stroke-width:1.2}.fm-vein.main{stroke-width:2.4}.fm-bump{fill:rgba(255,255,255,.45)}.fm-breathe{transform-box:fill-box;transform-origin:center;animation:fm-breathe 4s ease-in-out infinite alternate}@keyframes fm-breathe{to{transform:scale(1.04) rotate(4deg)}}.fm-inner{filter:brightness(1.2);opacity:.9}.fm-heart{fill:#5a3410}.fm-seed{fill:#f5c45c}.fm-membrane{stroke:rgba(255,255,255,.5);stroke-width:2.5;opacity:.85}.fm-organelle{fill:rgba(0,0,0,.25)}.fm-nucleus{fill:color-mix(in srgb,var(--c) 45%,#1b1030);stroke:rgba(255,255,255,.4);stroke-width:1.5}.fm-nucleolus{fill:rgba(0,0,0,.4)}.fm-wobble{transform-box:fill-box;transform-origin:center;animation:fm-wobble 5s ease-in-out infinite alternate}@keyframes fm-wobble{from{transform:scale(1,.96) rotate(-3deg)}to{transform:scale(.96,1.03) rotate(3deg)}}.fm-band{fill:none;stroke-width:5;opacity:.7;filter:brightness(.6)}.fm-mouth{fill:rgba(0,0,0,.45)}.fm-pen{fill:none;stroke-width:1.4;stroke-dasharray:1;stroke-dashoffset:1;animation:fm-draw 12s ease-in-out infinite alternate}@keyframes fm-draw{to{stroke-dashoffset:0}}.fm-bubble{fill:none;stroke:rgba(180,230,255,.45);stroke-width:1.2;animation:fm-up 12s linear infinite}@keyframes fm-up{to{transform:translateY(-600px)}}.fm-ray{fill:rgba(140,220,255,.05)}.fm-star{fill:#fff;opacity:.7}@media (prefers-reduced-motion:reduce){.fm *{animation:none!important}}"
+}
+
+fn fm_page(r: FmRecipe, svg: Text) -> Text {
+  let names = (for i in r.items { i.form }).join(", ")
+  return f"<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>{r.title}</title><style>body{{margin:0;font:15px system-ui,sans-serif;color:#eceef2;background:#0b0c10}}main{{max-width:min(1680px,100%);margin:0 auto;padding:28px 16px}}.lab{{font:600 11px ui-monospace,Consolas,monospace;letter-spacing:.32em;text-transform:uppercase;color:#f5b45c}}h1{{margin:8px 0 4px;font-size:30px}}.how{{color:#a3a8bd;margin:0 0 16px}}{fm_style()}</style></head><body><main><div class=\"lab\">Kosika Designs &#183; forms</div><h1>{r.title}</h1><p class=\"how\">{names}, each worked out from the geometry that makes it, and set moving by Kosika.</p>{svg}</main></body></html>"
+}
+
+workflow fm_render(r: FmRecipe) -> FmArt {
+  out = fm_art(fm_fixed(r))
+}
+
+fn fm_art(r: FmRecipe) -> FmArt {
+  let svg = fm_svg(r)
+  return {recipe: r, svg: svg, page: fm_page(r, svg), problems: fm_problems(r)}
+}
+
+fn fm_task() -> Text {
+  return "You are choosing which forms make up a picture someone asked for, from Kosika's library of forms: nautilus, butterfly, jellyfish, fish, fern, snowflake, crystal, feather, leaf, starfish, flower, cell, vase, spirograph. Give items (1 to 7 of them, each with form, one of those names, and hue, one of coral, amber, teal, violet, rose, gold, sky, leaf, pearl, ink: the colour that suits it; repeat a form for more of it), backdrop (deep sea, night, paper, meadow or studio: where they belong), seed (any whole number from 1 to 99999) and title (2 to 5 evocative words). Put first what the ask is mostly about."
+}
+
+// The forms the ask named, for when no model can answer.
+fn fm_from_words(text: Text) -> FmRecipe {
+  let named = fm_named(text)
+  let hues = ["amber", "violet", "coral", "teal", "rose", "gold", "sky"]
+  let items: FmItem[] = for k in 0 until named.length() { {form: named[k], hue: hues[k % hues.length()]} }
+  return if items.is_empty() { fm_fallback() } else { {..fm_fallback(), items: items, title: "Forms"} }
+}
+
+workflow fm_make(ask: FmAsk) -> FmArt {
+  budget 2 model calls, 200 seconds
+  chosen = use_model fm_sculptor(fm_task(), ask.text) retry 1 otherwise fm_from_words(ask.text)
+  out    = fm_art(fm_fixed(chosen))
+}
+
+// ---------------------------------------------------------------- tests
+
+test "an ask that names a form is drawn as that form" {
+  expect fm_named("draw a nautilus shell and a jellyfish") == ["nautilus", "jellyfish"]
+  expect fm_wants("paint a butterfly on a flower")
+  expect not fm_wants("explain the life cycle of a butterfly")
+  expect not fm_wants("what is the capital of France")
+  expect fm_from_words("a fern and a snowflake").items.length() == 2
+}
+
+test "a nautilus is a logarithmic spiral with its chambers" {
+  svg = fm_form_svg("nautilus", "g", "#f5b45c", 1)
+  expect svg.contains("fm-turn") and svg.contains("Q")
+}
+
+test "a butterfly is drawn from Fay's curve, two wings" {
+  svg = fm_form_svg("butterfly", "g", "#a98bff", 1)
+  expect svg.contains("fm-wing-r") and svg.contains("fm-wing-l")
+}
+
+test "a fern is grown by its L-system" {
+  svg = fm_form_svg("fern", "g", "#6fbf5a", 1)
+  expect svg.contains("fm-fern")
+  expect svg.split(" L").length() > 100
+}
+
+test "a snowflake has six arms" {
+  svg = fm_form_svg("snowflake", "g", "#6cc3f0", 1)
+  expect svg.split("M0 0 L").length() == 7
+}
+
+test "the superformula with five arms draws a starfish in its box" {
+  xy = fm_super(5, 0.55, 1.8, 1.8, 88)
+  expect xy.length() == 362
+  expect (for v in xy where v.abs() > 88.5 { v }).is_empty()
+}
+
+test "a slip by the sculptor is brought back in range" {
+  fixed = fm_fixed({items: [{form: "Dragon", hue: "red"}, {form: "FISH", hue: "Gold"}], backdrop: "space", seed: -3, title: ""})
+  expect fixed.items.length() == 1 and fixed.items[0].form == "fish" and fixed.items[0].hue == "gold"
+  expect fixed.backdrop == "night" and fixed.seed == 3 and fixed.title == "Forms"
+}
