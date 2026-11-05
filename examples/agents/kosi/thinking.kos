@@ -10,7 +10,7 @@
 
 import "std/brain.kos"
 
-export [ThNode, Thought, th_none, th_node, th_build, th_steps]
+export [ThNode, Thought, th_none, th_node, th_build, th_steps, th_with_drawing, th_answer]
 
 // kind: question, named, exact, evidence, memory, check, answer. state:
 // "" or chosen, passed, fixed, ruled out, used.
@@ -94,6 +94,32 @@ fn th_steps(nodes: ThNode[]) -> Text[] {
   return out.append("answered")
 }
 
+// A drawing made for the answer, and the checks Designs made on it before
+// it was shown: every link joins two real parts, every label fits, each
+// step points at a real part, and anything Designs had to put right.
+fn th_with_drawing(t: Thought, title: Text, fixed: Text[]) -> Thought {
+  if title.trim().is_empty() { return t }
+  let answer = (for n in t.nodes where n.kind == "answer" { n.id }).take(1)
+  var nodes = for n in t.nodes where n.kind != "answer" { n }
+  nodes = nodes.append(th_node("drawn", "exact", "Drawn on the canvas", title.trim(), "", "used"))
+  nodes = nodes.append(th_node("dcheck", "check", "Check · passed", "Designs checked the drawing: every link joins two real parts, every label fits, each step points at a real part", "", "passed"))
+  var links = t.links.append("q>drawn").append("drawn>dcheck")
+  for k in 0 until fixed.take(2).length() {
+    let id = f"df{k}"
+    nodes = nodes.append(th_node(id, "check", "Check · corrected", "Designs put right: " + fixed[k], "", "fixed"))
+    links = links.append("drawn>" + id).append(id + ">a")
+  }
+  nodes = nodes.concat(for n in t.nodes where n.kind == "answer" { n })
+  links = if answer.is_empty() { links } else { links.append("dcheck>a") }
+  let steps = for x in t.steps where x != "answered" { x }
+  return {nodes: nodes, links: links, steps: steps.append("drew it, and Designs checked the drawing").append("answered")}
+}
+
+// The answer as it was finally said.
+fn th_answer(t: Thought, text: Text) -> Thought {
+  return {..t, nodes: for n in t.nodes { if n.kind == "answer" { {..n, text: th_short(text, 140)} } else { n } }}
+}
+
 // ---------------------------------------------------------------- tests
 
 fn th_test_note(text: Text, source: Text) -> BrainNote { return {kind: "fact", topic: "t", words: "", text: text, source: source, score: 1, times: 1} }
@@ -114,6 +140,11 @@ test "a check sits between what was used and the answer" {
   expect t.nodes[3].state == "fixed"
   expect t.steps.contains("checked the reply · corrected")
   expect th_none().nodes.is_empty()
+  drawn = th_with_drawing(th_build("draw the water cycle", [], "", [], [], [], "Here it is."), "The Water Cycle", ["a label was too long"])
+  expect (for n in drawn.nodes { n.kind }) == ["question", "exact", "check", "check", "answer"]
+  expect drawn.links.contains("dcheck>a")
+  expect drawn.steps == ["read the question", "drew it, and Designs checked the drawing", "answered"]
+  expect th_with_drawing(th_none(), "", []).nodes.is_empty()
   twice = th_build("q", [], "", [th_test_note("Same.", "https://arxiv.org/abs/1"), th_test_note("Same.", "https://arxiv.org/abs/1")], [], [], "a")
   expect (for n in twice.nodes where n.kind == "evidence" { n }).length() == 1
 }

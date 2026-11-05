@@ -227,7 +227,8 @@ fn sol_said(r: SolReply, drawn: DzResult, science: Text, question: Text) -> FrSa
   let canvas = if drawn.problems.is_empty() { drawn.embed } else { "" }
   let exact = if science == "(nothing exact)" { "" } else { science }
   let checks: Text[] = if science.contains("balanced by Kosika") { ["passed: the reaction is balanced by Kosika's chemistry, atoms and masses alike"] } else { [] }
-  let thought = th_build(question, [], exact, [], [], checks, text)
+  let made = th_build(question, [], exact, [], [], checks, text)
+  let thought = if canvas.is_empty() { made } else { th_with_drawing(made, drawn.title, drawn.fixed) }
   return {who: "sol", text: text, canvas: canvas, kept: [], sources: [], suggest: ["Iris, research this", "draw it another way"], thinking: thought}
 }
 
