@@ -1151,6 +1151,17 @@ fn to_mend(drafted: Drafted, output: Text) -> Text {
   return chosen
 }
 
+// The second time a change is put right, the other file: when a test
+// keeps failing after its own file was rewritten, the fault is as likely in
+// the code it tests, and the reverse.
+fn to_mend_again(drafted: Drafted, output: Text) -> Text {
+  let first = to_mend(drafted, output)
+  for file in drafted.files {
+    if file.path != first { return file.path }
+  }
+  return first
+}
+
 fn as_is(result: Result) -> Result {
   return result
 }
@@ -1525,7 +1536,7 @@ workflow mend_directly(task: Task, drafted: Drafted, before: Result) -> Result {
 }
 
 workflow mend_last(task: Task, drafted: Drafted, before: Result) -> Result {
-  fixed  = call draft_one({task: task, path: to_mend(drafted, before.last.output), drafted: drafted, failure: before.last.output})
+  fixed  = call draft_one({task: task, path: to_mend_again(drafted, before.last.output), drafted: drafted, failure: before.last.output})
   saved  = execute writer.save_all(fixed.files, "Put right a second time: " + task.text.take(200))
   work   = drafted_work(fixed)
   tested = call run_tests(work)
@@ -1559,6 +1570,110 @@ workflow mend(task: Task, before: Result) -> Result {
   fixed  = ask coder(fix_task(before.last).text) otherwise {summary: "", did: []}
   tested = call run_tests(fixed)
   result = mended(before, worked_on(task, fixed, tested), fixed)
+  require approval
+}
+
+// ---------------------------------------------------------------- developing Kosika
+//
+// Kosika itself is two engines, Python and Go, held to one language. A
+// change to the language touches the same places every time, so the coder
+// knows them and does not wait to be told: asked in Kosika's own folder to
+// add a method, it adds it to the Python engine with tests, then to the Go
+// engine with its type, copying what the Python one does, then to the table
+// of methods in KOSIKA.md. Each part is one ordinary task, planned file by
+// file and checked as any other: the Python tests, go vet, and the book.
+
+// A method asked for: the kind it belongs to (Text, Number, Bool, or an
+// array), its name, and the words of the request.
+record MethodAsked { kind: Text name: Text text: Text }
+
+// Asked in a folder that holds Kosika's two engines to add a method.
+fn is_kosika_method(task: Task, folder: Listing) -> Bool {
+  if not (folder.names.contains("kosika/") and folder.names.contains("native/")) { return false }
+  let said = " " + task.text.lower().words().join(" ") + " "
+  if not (said.starts_with(" add ") and said.contains(" method")) { return false }
+  return not method_asked(task).name.is_empty()
+}
+
+// The kind and the name of the method a request asks for: in "add a Text
+// method pad_center(width: Number) that ...", Text and pad_center.
+fn method_asked(task: Task) -> MethodAsked {
+  let words = task.text.replace("(", " (").replace("`", " ").words()
+  var kind = ""
+  var name = ""
+  for i in 0 until words.length() {
+    let word = words[i].lower().trim_marks(".,:;")
+    if word == "method" or word == "methods" {
+      if i > 0 and kind.is_empty() { kind = words[i - 1].trim_marks(".,:;\"'") }
+      if i + 1 < words.length() and name.is_empty() { name = words[i + 1].trim_marks(".,:;\"'") }
+    }
+  }
+  let known = ["Text", "Number", "Bool", "array", "list"]
+  let fixed = if kind.lower() == "list" or kind.lower() == "array" { "array" } else { kind.capitalize() }
+  if not known.contains(fixed) or not plain_name(name) { return {kind: "", name: "", text: task.text} }
+  return {kind: fixed, name: name, text: task.text}
+}
+
+fn python_part(asked: MethodAsked) -> Task {
+  let table = if asked.kind == "array" { "beside the other ANY_ARRAY methods" } else { "beside the other \"" + asked.kind + "\" methods" }
+  return {text: asked.text + ". Do it in kosika/builtin_methods.py, as one Method in the METHODS table " + table + ", with a helper function above the table only if it needs more than one line. Write tests for it in tests/test_" + asked.name + ".py in the style of tests/test_short_methods.py, running small Kosika programs that call it"}
+}
+
+// The lines of the Python engine that define the method, which the Go one
+// must do exactly as.
+fn python_lines(text: Text, name: Text) -> Text {
+  let lines = text.replace("\r\n", "\n").lines()
+  var found: Text[] = []
+  for i in 0 until lines.length() {
+    if lines[i].contains("\"" + name + "\"") or lines[i].contains("def _" + name) {
+      for line in lines.drop((i - 2).max(0)).take(8) {
+        if not found.contains(line) { found = found.append(line) }
+      }
+    }
+  }
+  return found.take(40).join("\n")
+}
+
+fn go_part(asked: MethodAsked, python: Text) -> Task {
+  let maps = if asked.kind == "Text" { "textMethods" } else { if asked.kind == "Number" { "numberMethods" } else { if asked.kind == "array" { "listMethods" } else { "the map of " + asked.kind + " methods" } } }
+  let shown = if python.trim().is_empty() { "" } else { " It must give exactly what the Python engine gives, which is:\n```\n" + python + "\n```" }
+  return {text: "add the " + asked.kind + " method " + asked.name + " to native/methods.go in " + maps + ", beside the methods like it, and declare its type in native/types.go beside the other m(\"" + asked.kind + "\", ...) lines." + shown}
+}
+
+fn docs_part(asked: MethodAsked) -> Task {
+  return {text: "in KOSIKA.md, add one row for the " + asked.kind + " method " + asked.name + " to the table of methods, just after the last row for a " + asked.kind + " method, in the same shape as the rows around it. What it does: " + asked.text}
+}
+
+// The three parts' reports, in order, under one opening line.
+fn all_parts(asked: MethodAsked, python: Result, go: Result, docs: Result) -> Result {
+  let passed = python.last.passed and go.last.passed
+  let opening = "I added the " + asked.kind + " method " + asked.name + " to Kosika in three parts: the Python engine, the Go engine and KOSIKA.md."
+  return {
+    text: opening + "\n\nPython engine:\n" + python.text + "\n\nGo engine:\n" + go.text + "\n\nKOSIKA.md:\n" + docs.text,
+    last: {task: asked.text, output: go.last.output, passed: passed, known: true}
+  }
+}
+
+// The Python part failed: the rest is not started on top of it.
+fn stopped_after(asked: MethodAsked, python: Result) -> Result {
+  return {text: "I started on the " + asked.kind + " method " + asked.name + " with the Python engine, and its tests did not pass, so I did not go on to the Go engine or KOSIKA.md. Say \"fix\" to try again.\n\n" + python.text, last: python.last}
+}
+
+workflow kosika_method(task: Task) -> Result {
+  asked  = method_asked(task)
+  python = call on_my_own(python_part(asked))
+  result = match python.last.passed {
+    case true { call method_rest(asked, python) }
+    case _ { stopped_after(asked, python) }
+  }
+  require approval
+}
+
+workflow method_rest(asked: MethodAsked, python: Result) -> Result {
+  source = execute coder.read_file("kosika/builtin_methods.py") otherwise {text: ""}
+  go     = call on_my_own(go_part(asked, python_lines(source.text, asked.name)))
+  docs   = call on_my_own(docs_part(asked))
+  result = all_parts(asked, python, go, docs)
   require approval
 }
 
@@ -1722,7 +1837,11 @@ workflow new_site(msg: Msg) -> Result {
 
 workflow new_task(msg: Msg) -> Result {
   task   = task_of(msg)
-  result = call do_task(task)
+  folder = execute helper.list_folder(".") otherwise {names: []}
+  result = match is_kosika_method(task, folder) {
+    case true { call kosika_method(task) }
+    case _ { call do_task(task) }
+  }
   require approval
 }
 
@@ -1756,7 +1875,7 @@ workflow help(msg: Msg) -> Result {
 }
 
 workflow main(msg: Msg) -> Said {
-  budget 22 model calls, 3600 seconds
+  budget 30 model calls, 3600 seconds
   kind   = kind_of(msg)
   result = match kind {
     case "help" { call help(msg) }
@@ -2249,4 +2368,33 @@ test "a change to Go is vetted in its own folder" {
   expect go_dir({summary: "s", did: ["save_all main.go"]}) == "."
   expect go_dir({summary: "s", did: ["save_all calc.py"]}) == ""
   expect file_plan({text: "add trim_start to native/methods.go and native/types.go"}, {names: []}).files == ["native/methods.go", "native/types.go"]
+}
+
+test "asked in Kosika's own folder for a method, the coder knows every place it goes" {
+  folder: Listing = {names: ["KOSIKA.md", "kosika/", "native/", "tests/"]}
+  task: Task = {text: "add a Text method pad_center(width: Number, fill: Text) that pads both ends"}
+  expect is_kosika_method(task, folder)
+  expect not is_kosika_method(task, {names: ["calc.py"]})
+  expect not is_kosika_method({text: "fix the parser"}, folder)
+  asked = method_asked(task)
+  expect asked.kind == "Text"
+  expect asked.name == "pad_center"
+  expect method_asked({text: "add an array method chunk(size: Number)"}).kind == "array"
+  python = python_part(asked)
+  expect file_plan(python, {names: []}).files == ["kosika/builtin_methods.py", "tests/test_pad_center.py"]
+  expect file_plan(python, {names: []}).seen == ["tests/test_short_methods.py"]
+  go = go_part(asked, "    Method(\"Text\", \"pad_center\", (), \"Text\", _pad_center),")
+  expect file_plan(go, {names: []}).files == ["native/methods.go", "native/types.go"]
+  expect go.text.contains("textMethods")
+  expect go.text.contains("_pad_center")
+  expect file_plan(docs_part(asked), {names: []}).files == ["KOSIKA.md"]
+  expect python_lines("a\nb\n    Method(\"Text\", \"pad_center\", (), \"Text\", f),\nc\n", "pad_center").contains("pad_center")
+}
+
+test "the second try at putting a change right takes the other file" {
+  both = with_draft(with_draft(no_drafts(), "calc.py", "", "x = 1"), "test_calc.py", "", "def test_a(): pass")
+  expect to_mend(both, "test_calc.py:5: AssertionError") == "test_calc.py"
+  expect to_mend_again(both, "test_calc.py:5: AssertionError") == "calc.py"
+  one = with_draft(no_drafts(), "calc.py", "", "x = 1")
+  expect to_mend_again(one, "calc.py:1: NameError") == "calc.py"
 }
