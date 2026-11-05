@@ -246,7 +246,7 @@ fn ko_new_facts(r: KosiReply, known: BrainFound) -> Text[] {
     let low = " " + t.lower() + " "
     // Not a fact about the person: what happened in the talk itself.
     let chatter = low.contains(" the user ") or low.contains(" user ") or low.contains(" asks how") or low.contains(" asks what") or low.contains(" asks if") or low.contains(" kosi ") or low.contains(" greeted ") or low.contains(" asked about ")
-    let wanting = low.contains(" asking for") or low.contains(" asking if") or low.contains(" want a drawing") or low.contains(" want more ") or low.contains(" want another") or low.contains(" want a sketch") or low.contains(" confirmation")
+    let wanting = low.contains(" requested ") or low.contains(" request a") or low.contains(" asked for ") or low.contains(" asking for") or low.contains(" asking if") or low.contains(" want a drawing") or low.contains(" want more ") or low.contains(" want another") or low.contains(" want a sketch") or low.contains(" confirmation")
     let asking = chatter or wanting or low.contains(" wants an explanation") or low.contains(" wants a drawing") or low.contains(" wants a picture") or low.contains(" asked ") or low.contains(" is asking ")
     let corrects = not ko_replaces(t, known).is_empty()
     let said_before = not corrects and (for h in have.concat(taken) where br_near(stems, h.join(" ")) >= 0.5 { h }).length() > 0
@@ -626,6 +626,7 @@ test "draw it for me draws what the talk was about, and an echo is no reply" {
   expect ko_drawn_text(ko_test_reply("Sure, I'll have Sol draw it.", []), "<div>", "Kosika's parts") == "Here it is: Kosika's parts."
   expect ko_new_facts(ko_test_reply("ok", ["They are asking for confirmation that it matches the intended design.", "They want more unique designs."]), ko_test_found([])).is_empty()
   expect ko_new_facts(ko_test_reply("ok", ["User asks how many times r appears in strawberry."]), ko_test_found([])).is_empty()
+  expect ko_new_facts(ko_test_reply("ok", ["They requested a diagram of Kosika's components."]), ko_test_found([])).is_empty()
 }
 
 test "a picture of Kosika is drawn from its real parts" {
