@@ -21,6 +21,7 @@
 // one namespace.
 
 import "designs_forms.kos"
+import "designs_scene.kos"
 
 export [AnKey, AnActor, AnCaption, AnRecipe, AnStory, AnAsk, AnArt, an_wants, an_story_wants, an_story_make, an_story_render, an_story_fallback, an_story_svg, an_svg, an_style, an_script, an_controls, an_page, an_fixed, an_problems, an_bounce, an_render, an_make, an_fallback]
 
@@ -121,7 +122,7 @@ fn an_fixed(r: AnRecipe) -> AnRecipe {
   let actors: AnActor[] = for a in r.actors where an_all_forms().contains(a.form.trim().lower()) { {id: if a.id.trim().is_empty() { a.form } else { a.id.trim() }, form: a.form.trim().lower(), hue: an_true_hue(a.form.trim().lower(), a.hue.trim().lower()), motion: an_true_motion(a.form.trim().lower(), a.motion.trim().lower()), keys: an_true_keys(a.form.trim().lower(), an_keys_fixed(a.keys))} }
   let said: AnCaption[] = for c in r.captions where not c.text.trim().is_empty() { {t: an_clamp(c.t, 0, 1), text: c.text.trim().slice(0, c.text.trim().length().min(90))} }
   let captions = said.sort_by("t")
-  let backdrop = if fm_backdrops().contains(r.backdrop.trim().lower()) { r.backdrop.trim().lower() } else { "meadow" }
+  let backdrop = if fm_backdrops().append("coast").contains(r.backdrop.trim().lower()) { r.backdrop.trim().lower() } else { "meadow" }
   let title = if r.title.trim().is_empty() { "An Animation" } else { r.title.trim().slice(0, r.title.trim().length().min(48)) }
   return {title: title, seconds: an_clamp(r.seconds, 3, 30), backdrop: backdrop, actors: actors.take(6), captions: captions.take(8)}
 }
@@ -166,10 +167,10 @@ fn an_actor_body(a: AnActor, id: Text, c: Text, seed: Number) -> Text {
   if a.form == "ball" { return f"<circle r=\"34\" fill=\"url(#{id})\"/><circle cx=\"-11\" cy=\"-12\" r=\"9\" fill=\"#fff\" opacity=\".45\"/>" }
   if a.form == "planet" { return f"<ellipse rx=\"70\" ry=\"14\" class=\"an-ringback\" style=\"stroke:{c}\"/><circle r=\"40\" fill=\"url(#{id})\"/><path d=\"M-70 0 A70 14 0 0 0 70 0\" class=\"an-ring\" style=\"stroke:{c}\"/>" }
   if a.form == "moon" { return "<circle r=\"30\" fill=\"#cfd3dc\"/><circle cx=\"-9\" cy=\"-7\" r=\"6\" fill=\"#aab0bc\"/><circle cx=\"10\" cy=\"8\" r=\"4\" fill=\"#aab0bc\"/><circle cx=\"6\" cy=\"-14\" r=\"3\" fill=\"#aab0bc\"/>" }
-  if a.form == "sun" { return f"<circle r=\"90\" fill=\"url(#an-glow)\"/><circle r=\"46\" fill=\"url(#{id})\"/>" }
+  if a.form == "sun" { return an_sun() }
   if a.form == "bee" { return "<g class=\"an-bee\"><ellipse class=\"an-wing\" cx=\"-6\" cy=\"-22\" rx=\"14\" ry=\"20\" transform=\"rotate(-20)\"/><ellipse class=\"an-wing\" cx=\"10\" cy=\"-22\" rx=\"12\" ry=\"18\" transform=\"rotate(18)\"/><ellipse rx=\"30\" ry=\"20\" fill=\"#f5c542\"/><path d=\"M-12 -19 Q-8 0 -12 19 M2 -20 Q6 0 2 20 M16 -16 Q19 0 16 16\" class=\"an-stripe\"/><circle cx=\"27\" cy=\"-4\" r=\"9\" fill=\"#2a2016\"/><path d=\"M-30 0 L-40 0\" class=\"an-stripe\"/></g>" }
   if a.form == "hive" { return "<g>" + an_cat(for k in 0 until 5 { f"<ellipse cx=\"0\" cy=\"{an_n(30 - k * 14)}\" rx=\"{an_n(44 - k * 7)}\" ry=\"9\" class=\"an-skep\"/>" }) + "<ellipse cx=\"0\" cy=\"30\" rx=\"9\" ry=\"6\" fill=\"#2a1a0c\"/><rect x=\"-56\" y=\"38\" width=\"112\" height=\"8\" rx=\"3\" fill=\"#5a3a1e\"/></g>" }
-  if a.form == "earth" { return "<circle r=\"40\" fill=\"#3f86c9\"/><path d=\"M-22 -26 Q-6 -34 4 -22 Q0 -8 -14 -6 Q-30 -10 -22 -26 Z M8 4 Q26 -2 30 14 Q20 30 6 26 Q-2 16 8 4 Z M-30 10 Q-20 8 -18 20 Q-26 26 -32 18 Z\" fill=\"#5fb35a\"/><circle r=\"40\" fill=\"none\" stroke=\"rgba(255,255,255,.35)\" stroke-width=\"3\"/>" }
+  if a.form == "earth" { return "<circle r=\"40\" fill=\"url(#an-ocean)\"/><path d=\"M-22 -26 Q-6 -34 4 -22 Q0 -8 -14 -6 Q-30 -10 -22 -26 Z M8 4 Q26 -2 30 14 Q20 30 6 26 Q-2 16 8 4 Z M-30 10 Q-20 8 -18 20 Q-26 26 -32 18 Z\" fill=\"#5fb35a\"/><circle r=\"40\" fill=\"url(#an-night)\"/><circle r=\"40\" fill=\"none\" stroke=\"rgba(160,210,255,.55)\" stroke-width=\"3\" class=\"an-air\"/>" }
   if a.form == "phase" { return an_phase(a.keys[0].turn) }
   if a.form == "co2" { return an_molecule("CO<tspan class=\"an-sub\" dy=\"4\">2</tspan>", "#8a8f9c", ["#2b2f38", "#d94c3d", "#d94c3d"]) }
   if a.form == "o2" { return an_molecule("O<tspan class=\"an-sub\" dy=\"4\">2</tspan>", "#d94c3d", ["#d94c3d", "#d94c3d"]) }
@@ -189,12 +190,29 @@ fn an_actor_body(a: AnActor, id: Text, c: Text, seed: Number) -> Text {
   if a.form == "chrysalis" { return "<path d=\"M0 -50 L0 -30\" class=\"an-antenna\"/><path d=\"M0 -30 Q22 -6 10 30 Q0 46 -10 30 Q-22 -6 0 -30 Z\" fill=\"#7cc46a\" stroke=\"#3e7a35\" stroke-width=\"2\" class=\"an-sway\"/><path d=\"M-6 -8 Q0 4 6 -8\" fill=\"none\" stroke=\"#e9c46a\" stroke-width=\"2\"/>" }
   if a.form == "seed" { return "<ellipse rx=\"16\" ry=\"11\" fill=\"#8a5a2b\" transform=\"rotate(-20)\"/><ellipse cx=\"-5\" cy=\"-4\" rx=\"5\" ry=\"3\" fill=\"#c49060\" transform=\"rotate(-20)\"/>" }
   if a.form == "sprout" { return "<path d=\"M0 40 Q-4 10 0 -30\" class=\"an-stem\"/><path d=\"M0 -10 Q-34 -26 -40 -6 Q-20 4 0 -10 Z\" fill=\"#6fbf5a\"/><path d=\"M0 -24 Q30 -46 40 -24 Q22 -12 0 -24 Z\" fill=\"#5aa94a\"/><path d=\"M0 40 Q-12 52 -18 64 M0 40 Q8 54 16 62 M0 40 L2 66\" class=\"an-root\"/>" }
-  if a.form == "cloud" { return "<g class=\"an-cloud\">" + an_cat(for j in 0 until 5 { f"<circle cx=\"{an_n(-56 + j * 28)}\" cy=\"{an_n(an_puff_y(j))}\" r=\"{an_n(an_puff_r(j))}\"/>" }) + "<rect x=\"-70\" y=\"-4\" width=\"140\" height=\"28\" rx=\"14\"/></g>" }
+  if a.form == "cloud" { return "<g class=\"an-cloud\"><g class=\"an-cloud-under\" transform=\"translate(6 10)\">" + an_cat(for j in 0 until 5 { f"<circle cx=\"{an_n(-56 + j * 28)}\" cy=\"{an_n(an_puff_y(j))}\" r=\"{an_n(an_puff_r(j))}\"/>" }) + "</g>" + an_cat(for j in 0 until 5 { f"<circle cx=\"{an_n(-56 + j * 28)}\" cy=\"{an_n(an_puff_y(j))}\" r=\"{an_n(an_puff_r(j))}\"/>" }) + "<rect x=\"-70\" y=\"-4\" width=\"140\" height=\"28\" rx=\"14\"/></g>" }
   if a.form == "raindrop" { return "<path d=\"M0 -22 Q16 4 0 14 Q-16 4 0 -22 Z\" fill=\"#6cc3f0\"/><path d=\"M-4 0 Q-6 6 -1 9\" stroke=\"#fff\" stroke-width=\"2\" fill=\"none\" opacity=\".7\"/>" }
   if a.form == "sea" { return "<path d=\"M-500 0 Q-437 -18 -375 0 T-250 0 T-125 0 T0 0 T125 0 T250 0 T375 0 T500 0 L500 120 L-500 120 Z\" fill=\"url(#" + id + ")\" class=\"an-sea\"/>" }
   if a.form == "vapour" { return an_cat(for j in 0 until 3 { f"<path class=\"an-vapour\" d=\"M{an_n(-30 + j * 30)} 40 q-14 -20 0 -40 t0 -40\" style=\"animation-delay:-{an_n(j * 0.6)}s\"/>" }) }
   if a.form == "tree" { return f"<rect x=\"-8\" y=\"0\" width=\"16\" height=\"70\" fill=\"#5a3a1e\"/><circle cx=\"0\" cy=\"-20\" r=\"48\" fill=\"url(#{id})\"/><circle cx=\"-32\" cy=\"6\" r=\"30\" fill=\"url(#{id})\"/><circle cx=\"32\" cy=\"6\" r=\"30\" fill=\"url(#{id})\"/>" }
   return fm_form_svg(a.form, id, c, seed)
+}
+
+// The sun: a bright core, sixteen flames that turn, and its glow.
+fn an_sun() -> Text {
+  var xy: Number[] = []
+  for k in 0 until 32 {
+    let a = k * 11.25
+    let r = if k % 2 == 0 { 62 } else { 46 }
+    xy = xy.append(r * a.cos()).append(r * a.sin())
+  }
+  var d = f"M{an_n(xy[0])} {an_n(xy[1])}"
+  var k = 2
+  while k + 1 < xy.length() {
+    d = d + f" L{an_n(xy[k])} {an_n(xy[k + 1])}"
+    k += 2
+  }
+  return f"<circle r=\"110\" fill=\"url(#an-glow)\" class=\"an-pulse\"/><path d=\"{d} Z\" fill=\"url(#an-corona)\" class=\"an-corona\"/><circle r=\"40\" fill=\"url(#an-core)\"/><circle cx=\"-12\" cy=\"-12\" r=\"10\" fill=\"#fff\" opacity=\".55\"/>"
 }
 
 fn an_atom_r(j: Number) -> Number { return if j == 0 { 14 } else { 11 } }
@@ -318,7 +336,7 @@ fn an_captions_in(r: AnRecipe, total: Number, s: Number, e: Number) -> Text {
 fn an_esc(t: Text) -> Text { return t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") }
 
 fn an_svg(r: AnRecipe) -> Text {
-  var defs = "<radialGradient id=\"an-glow\"><stop offset=\"0\" stop-color=\"#ffd27a\" stop-opacity=\".7\"/><stop offset=\"1\" stop-color=\"#ffd27a\" stop-opacity=\"0\"/></radialGradient><radialGradient id=\"an-magma\"><stop offset=\"0\" stop-color=\"#ffd27a\"/><stop offset=\".5\" stop-color=\"#ff6a2b\"/><stop offset=\"1\" stop-color=\"#9a1d0e\"/></radialGradient>"
+  var defs = "<radialGradient id=\"an-glow\"><stop offset=\"0\" stop-color=\"#ffd27a\" stop-opacity=\".7\"/><stop offset=\"1\" stop-color=\"#ffd27a\" stop-opacity=\"0\"/></radialGradient><radialGradient id=\"an-magma\"><stop offset=\"0\" stop-color=\"#ffd27a\"/><stop offset=\".5\" stop-color=\"#ff6a2b\"/><stop offset=\"1\" stop-color=\"#9a1d0e\"/></radialGradient><radialGradient id=\"an-corona\"><stop offset=\".5\" stop-color=\"#ffd27a\"/><stop offset=\"1\" stop-color=\"#f5a623\" stop-opacity=\".6\"/></radialGradient><radialGradient id=\"an-core\" cx=\"40%\" cy=\"38%\" r=\"70%\"><stop offset=\"0\" stop-color=\"#fffbe9\"/><stop offset=\".5\" stop-color=\"#ffe08a\"/><stop offset=\"1\" stop-color=\"#f5a623\"/></radialGradient><radialGradient id=\"an-ocean\" cx=\"35%\" cy=\"32%\" r=\"75%\"><stop offset=\"0\" stop-color=\"#7cc4f2\"/><stop offset=\".6\" stop-color=\"#2f7fc4\"/><stop offset=\"1\" stop-color=\"#174a7a\"/></radialGradient><radialGradient id=\"an-night\" cx=\"80%\" cy=\"75%\" r=\"70%\"><stop offset=\"0\" stop-color=\"#000\" stop-opacity=\".55\"/><stop offset=\".6\" stop-color=\"#000\" stop-opacity=\".15\"/><stop offset=\"1\" stop-color=\"#000\" stop-opacity=\"0\"/></radialGradient>"
   var actors = ""
   for k in 0 until r.actors.length() {
     let a = r.actors[k]
@@ -326,11 +344,11 @@ fn an_svg(r: AnRecipe) -> Text {
     actors = actors + an_actor(a, k, r)
   }
   let ground = if r.actors.length() > 0 and (for a in r.actors where a.motion == "bounce" { a }).length() > 0 { "<line class=\"an-ground\" x1=\"0\" y1=\"504\" x2=\"960\" y2=\"504\"/>" } else { "" }
-  return f"<svg xmlns=\"http://www.w3.org/2000/svg\" class=\"an fm\" viewBox=\"0 0 960 540\" role=\"img\" aria-label=\"{an_esc(r.title)}\">{fm_backdrop(r.backdrop, 9)}<defs>{defs}</defs>{ground}{actors}<rect class=\"an-capbar\" x=\"0\" y=\"490\" width=\"960\" height=\"50\"/>{an_captions(r)}</svg>"
+  return f"<svg xmlns=\"http://www.w3.org/2000/svg\" class=\"an fm\" viewBox=\"0 0 960 540\" role=\"img\" aria-label=\"{an_esc(r.title)}\">{an_backdrop(r.backdrop, 0)}<defs>{defs}</defs>{ground}{actors}<rect class=\"an-capbar\" x=\"0\" y=\"490\" width=\"960\" height=\"50\"/>{an_captions(r)}</svg>"
 }
 
 fn an_style() -> Text {
-  return fm_style() + ".an-cap{fill:#fff;font:600 19px system-ui,sans-serif;text-anchor:middle;paint-order:stroke;stroke:rgba(0,0,0,.55);stroke-width:4px}.an-capbar{fill:rgba(0,0,0,.28)}.an-shadow{fill:rgba(0,0,0,.35)}.an-ground{stroke:rgba(255,255,255,.25);stroke-width:2}.an-track{fill:none;stroke:rgba(255,255,255,.18);stroke-width:1.5;stroke-dasharray:3 8}.an-ring{fill:none;stroke-width:5;opacity:.9}.an-ringback{fill:none;stroke-width:5;opacity:.4}.an-wing{fill:rgba(235,245,255,.75);stroke:rgba(0,0,0,.25);transform-box:fill-box;transform-origin:50% 100%;animation:an-buzz .08s linear infinite alternate}@keyframes an-buzz{to{transform:scaleY(.55)}}.an-sub{font-size:11px}.an-chem{font:700 15px ui-monospace,Consolas,monospace;text-anchor:middle;fill:#eceef2;paint-order:stroke;stroke:rgba(0,0,0,.45);stroke-width:3px}.an-glowing{filter:drop-shadow(0 0 10px #ff6a2b)}.an-ash{fill:#4a4648;opacity:.92}.an-churn{transform-box:fill-box;transform-origin:center;animation:an-churn 1.6s ease-in-out infinite alternate}@keyframes an-churn{to{transform:scale(1.05,.95) rotate(3deg)}}.an-peristalsis{animation:an-flowing 1.2s linear infinite}@keyframes an-flowing{to{stroke-dashoffset:-28}}.an-seg{fill:#8fd16a;stroke:#3e7a35;stroke-width:1.5;animation:an-inch .9s ease-in-out infinite alternate}@keyframes an-inch{to{transform:translateY(-5px)}}.an-antenna{fill:none;stroke:#2a2016;stroke-width:2;stroke-linecap:round}.an-sway{transform-box:fill-box;transform-origin:50% 0;animation:an-swing 3s ease-in-out infinite alternate}@keyframes an-swing{from{transform:rotate(-4deg)}to{transform:rotate(4deg)}}.an-stem{fill:none;stroke:#4c8a3c;stroke-width:5;stroke-linecap:round}.an-root{fill:none;stroke:#8a6a4a;stroke-width:2.5;stroke-linecap:round}.an-cloud{fill:#f4f7fb}.an-sea{opacity:.95}.an-vapour{fill:none;stroke:rgba(255,255,255,.8);stroke-width:3;stroke-linecap:round;stroke-dasharray:6 8;animation:an-rise 1.6s linear infinite}@keyframes an-rise{to{stroke-dashoffset:28}}.an-skep{fill:#d9a441;stroke:#8a5a1e;stroke-width:2}.an-stripe{fill:none;stroke:#2a2016;stroke-width:5;stroke-linecap:round}.an-bar{display:flex;gap:10px;align-items:center;margin-top:10px;font:12px ui-monospace,Consolas,monospace;color:#a3a8bd}.an-bar button{font:600 12px system-ui,sans-serif;border:1px solid #3a3f4c;background:#15171c;color:#eceef2;border-radius:8px;padding:6px 12px;cursor:pointer}.an-bar input{flex:1}"
+  return fm_style() + ls_style() + ".an .an-painted{width:960px;height:540px;border-radius:0}" + ".an-cap{fill:#fff;font:600 19px system-ui,sans-serif;text-anchor:middle;paint-order:stroke;stroke:rgba(0,0,0,.55);stroke-width:4px}.an-capbar{fill:rgba(0,0,0,.28)}.an-shadow{fill:rgba(0,0,0,.35)}.an-ground{stroke:rgba(255,255,255,.25);stroke-width:2}.an-track{fill:none;stroke:rgba(255,255,255,.18);stroke-width:1.5;stroke-dasharray:3 8}.an-ring{fill:none;stroke-width:5;opacity:.9}.an-ringback{fill:none;stroke-width:5;opacity:.4}.an-wing{fill:rgba(235,245,255,.75);stroke:rgba(0,0,0,.25);transform-box:fill-box;transform-origin:50% 100%;animation:an-buzz .08s linear infinite alternate}@keyframes an-buzz{to{transform:scaleY(.55)}}.an-sub{font-size:11px}.an-chem{font:700 15px ui-monospace,Consolas,monospace;text-anchor:middle;fill:#eceef2;paint-order:stroke;stroke:rgba(0,0,0,.45);stroke-width:3px}.an-glowing{filter:drop-shadow(0 0 10px #ff6a2b)}.an-ash{fill:#4a4648;opacity:.92}.an-churn{transform-box:fill-box;transform-origin:center;animation:an-churn 1.6s ease-in-out infinite alternate}@keyframes an-churn{to{transform:scale(1.05,.95) rotate(3deg)}}.an-peristalsis{animation:an-flowing 1.2s linear infinite}@keyframes an-flowing{to{stroke-dashoffset:-28}}.an-seg{fill:#8fd16a;stroke:#3e7a35;stroke-width:1.5;animation:an-inch .9s ease-in-out infinite alternate}@keyframes an-inch{to{transform:translateY(-5px)}}.an-antenna{fill:none;stroke:#2a2016;stroke-width:2;stroke-linecap:round}.an-sway{transform-box:fill-box;transform-origin:50% 0;animation:an-swing 3s ease-in-out infinite alternate}@keyframes an-swing{from{transform:rotate(-4deg)}to{transform:rotate(4deg)}}.an-stem{fill:none;stroke:#4c8a3c;stroke-width:5;stroke-linecap:round}.an-root{fill:none;stroke:#8a6a4a;stroke-width:2.5;stroke-linecap:round}.an-cloud{fill:#f7f9fc;filter:drop-shadow(0 6px 8px rgba(40,60,90,.25))}.an-cloud-under{fill:#d9e2ee}.an-corona{transform-box:fill-box;transform-origin:center;animation:an-turn 30s linear infinite}@keyframes an-turn{to{transform:rotate(360deg)}}.an-pulse{animation:an-pulse 3s ease-in-out infinite alternate}@keyframes an-pulse{from{opacity:.7}to{opacity:1}}.an-air{filter:drop-shadow(0 0 6px rgba(120,190,255,.6))}.an-sea{opacity:.95}.an-vapour{fill:none;stroke:rgba(255,255,255,.8);stroke-width:3;stroke-linecap:round;stroke-dasharray:6 8;animation:an-rise 1.6s linear infinite}@keyframes an-rise{to{stroke-dashoffset:28}}.an-skep{fill:#d9a441;stroke:#8a5a1e;stroke-width:2}.an-stripe{fill:none;stroke:#2a2016;stroke-width:5;stroke-linecap:round}.an-bar{display:flex;gap:10px;align-items:center;margin-top:10px;font:12px ui-monospace,Consolas,monospace;color:#a3a8bd}.an-bar button{font:600 12px system-ui,sans-serif;border:1px solid #3a3f4c;background:#15171c;color:#eceef2;border-radius:8px;padding:6px 12px;cursor:pointer}.an-bar input{flex:1}"
 }
 
 // Play, pause and scrub: one clock for every actor and caption.
@@ -396,10 +414,10 @@ fn an_story_fallback() -> AnStory {
 // The water cycle, told by Kosika itself when no model can tell it.
 fn an_water_story() -> AnStory {
   return {title: "The Water Cycle", scenes: [
-    {title: "Evaporation", seconds: 5, backdrop: "meadow", actors: [{id: "sea", form: "sea", hue: "sky", motion: "keys", keys: [{t: 0, x: 50, y: 84, scale: 1, turn: 0}]}, {id: "sun", form: "sun", hue: "gold", motion: "keys", keys: [{t: 0, x: 80, y: 18, scale: 0.7, turn: 0}]}, {id: "vapour", form: "vapour", hue: "pearl", motion: "keys", keys: [{t: 0, x: 42, y: 72, scale: 1, turn: 0}, {t: 1, x: 44, y: 40, scale: 1.2, turn: 0}]}], captions: [{t: 0, text: "The sun warms the sea."}, {t: 0.45, text: "Water rises into the air as vapour."}]},
+    {title: "Evaporation", seconds: 5, backdrop: "coast", actors: [{id: "sun", form: "sun", hue: "gold", motion: "keys", keys: [{t: 0, x: 80, y: 18, scale: 0.7, turn: 0}]}, {id: "vapour", form: "vapour", hue: "pearl", motion: "keys", keys: [{t: 0, x: 40, y: 74, scale: 1, turn: 0}, {t: 1, x: 44, y: 38, scale: 1.2, turn: 0}]}, {id: "vapour2", form: "vapour", hue: "pearl", motion: "keys", keys: [{t: 0.3, x: 60, y: 76, scale: 1, turn: 0}, {t: 1, x: 58, y: 44, scale: 1.1, turn: 0}]}], captions: [{t: 0, text: "The sun warms the sea."}, {t: 0.45, text: "Water rises into the air as vapour."}]},
     {title: "Condensation", seconds: 5, backdrop: "meadow", actors: [{id: "vapour", form: "vapour", hue: "pearl", motion: "keys", keys: [{t: 0, x: 48, y: 62, scale: 1, turn: 0}, {t: 0.7, x: 50, y: 34, scale: 0.6, turn: 0}]}, {id: "cloud", form: "cloud", hue: "pearl", motion: "keys", keys: [{t: 0, x: 50, y: 22, scale: 0.3, turn: 0}, {t: 1, x: 50, y: 22, scale: 1.4, turn: 0}]}], captions: [{t: 0, text: "High up the vapour cools."}, {t: 0.5, text: "It gathers into droplets: a cloud."}]},
     {title: "Precipitation", seconds: 5, backdrop: "meadow", actors: [{id: "cloud", form: "cloud", hue: "pearl", motion: "keys", keys: [{t: 0, x: 50, y: 20, scale: 1.4, turn: 0}]}, {id: "r1", form: "raindrop", hue: "sky", motion: "keys", keys: [{t: 0, x: 40, y: 30, scale: 1, turn: 0}, {t: 0.7, x: 40, y: 86, scale: 1, turn: 0}]}, {id: "r2", form: "raindrop", hue: "sky", motion: "keys", keys: [{t: 0.2, x: 52, y: 30, scale: 1, turn: 0}, {t: 0.9, x: 52, y: 86, scale: 1, turn: 0}]}, {id: "r3", form: "raindrop", hue: "sky", motion: "keys", keys: [{t: 0.1, x: 62, y: 30, scale: 1, turn: 0}, {t: 0.8, x: 62, y: 86, scale: 1, turn: 0}]}], captions: [{t: 0, text: "The droplets grow heavy."}, {t: 0.4, text: "They fall as rain."}]},
-    {title: "Collection", seconds: 5, backdrop: "meadow", actors: [{id: "sea", form: "sea", hue: "sky", motion: "keys", keys: [{t: 0, x: 50, y: 92, scale: 1, turn: 0}, {t: 1, x: 50, y: 84, scale: 1, turn: 0}]}, {id: "sun", form: "sun", hue: "gold", motion: "keys", keys: [{t: 0, x: 80, y: 30, scale: 0.4, turn: 0}, {t: 1, x: 80, y: 18, scale: 0.7, turn: 0}]}], captions: [{t: 0, text: "Rain runs back to the sea."}, {t: 0.5, text: "And the cycle begins again."}]}
+    {title: "Collection", seconds: 5, backdrop: "coast", actors: [{id: "d1", form: "raindrop", hue: "sky", motion: "keys", keys: [{t: 0, x: 30, y: 40, scale: 0.8, turn: 0}, {t: 0.6, x: 34, y: 72, scale: 0.8, turn: 0}]}, {id: "d2", form: "raindrop", hue: "sky", motion: "keys", keys: [{t: 0.2, x: 66, y: 42, scale: 0.8, turn: 0}, {t: 0.8, x: 62, y: 74, scale: 0.8, turn: 0}]}, {id: "sun", form: "sun", hue: "gold", motion: "keys", keys: [{t: 0, x: 80, y: 30, scale: 0.4, turn: 0}, {t: 1, x: 80, y: 18, scale: 0.7, turn: 0}]}], captions: [{t: 0, text: "Rain runs back to the sea."}, {t: 0.5, text: "And the cycle begins again."}]}
   ]}
 }
 
@@ -411,6 +429,30 @@ fn an_butterfly_story() -> AnStory {
     {title: "Chrysalis", seconds: 5, backdrop: "meadow", actors: [{id: "chr", form: "chrysalis", hue: "leaf", motion: "keys", keys: [{t: 0, x: 50, y: 40, scale: 1.3, turn: 0}]}], captions: [{t: 0, text: "It hangs and makes a chrysalis."}, {t: 0.5, text: "Inside, its body is rebuilt."}]},
     {title: "Butterfly", seconds: 6, backdrop: "meadow", actors: [{id: "flower", form: "flower", hue: "rose", motion: "keys", keys: [{t: 0, x: 74, y: 72, scale: 1, turn: 0}]}, {id: "bfly", form: "butterfly", hue: "violet", motion: "keys", keys: [{t: 0, x: 50, y: 40, scale: 0.5, turn: 0}, {t: 0.3, x: 40, y: 30, scale: 1.1, turn: 0}, {t: 1, x: 72, y: 56, scale: 1, turn: 0}]}], captions: [{t: 0, text: "A butterfly comes out."}, {t: 0.5, text: "It flies to a flower, and the cycle begins again."}]}
   ]}
+}
+
+// ---------------------------------------------------------------- painted backdrops
+//
+// Behind the actors, a place painted by Kosika's scene painter
+// (std/designs_scene.kos): a day of rolling hills, a night of mountains
+// under stars, a dusk, a coast. The painted sun and moon are left out, for
+// the animation brings its own. Each scene's painting has ids of its own,
+// so two paintings in one story do not share a sky.
+
+fn an_painting(backdrop: Text) -> LsRecipe {
+  let none: Text[] = ["no sun"]
+  if backdrop == "night" { return {time: "night", weather: "clear", land: "mountains", water: "none", trees: "none", extras: ["stars", "no sun"], density: 0, seed: 31, title: "night"} }
+  if backdrop == "studio" { return {time: "sunset", weather: "clear", land: "hills", water: "none", trees: "none", extras: none, density: 0, seed: 17, title: "dusk"} }
+  if backdrop == "coast" { return {time: "day", weather: "clear", land: "coast", water: "sea", trees: "none", extras: none, density: 0, seed: 23, title: "coast"} }
+  return {time: "day", weather: "clear", land: "hills", water: "none", trees: "none", extras: ["birds", "no sun"], density: 0, seed: 11, title: "meadow"}
+}
+
+fn an_painted(backdrop: Text) -> Bool { return backdrop == "meadow" or backdrop == "night" or backdrop == "studio" or backdrop == "coast" }
+
+fn an_backdrop(backdrop: Text, i: Number) -> Text {
+  if not an_painted(backdrop) { return fm_backdrop(backdrop, 9 + i) }
+  let painted = ls_svg(an_painting(backdrop)).replace("id=\"ls-", f"id=\"ls{i}-").replace("url(#ls-", f"url(#ls{i}-")
+  return painted.replace("<svg xmlns=\"http://www.w3.org/2000/svg\" class=\"ls ", "<svg x=\"0\" y=\"0\" width=\"960\" height=\"540\" class=\"an-painted ls ")
 }
 
 fn an_k(t: Number, x: Number, y: Number, scale: Number) -> AnKey { return {t: t, x: x, y: y, scale: scale, turn: 0} }
@@ -489,7 +531,7 @@ fn an_story_total(st: AnStory) -> Number { return (for sc in st.scenes { sc.seco
 
 fn an_story_svg(st: AnStory) -> Text {
   let total = an_story_total(st)
-  var defs = "<radialGradient id=\"an-glow\"><stop offset=\"0\" stop-color=\"#ffd27a\" stop-opacity=\".7\"/><stop offset=\"1\" stop-color=\"#ffd27a\" stop-opacity=\"0\"/></radialGradient><radialGradient id=\"an-magma\"><stop offset=\"0\" stop-color=\"#ffd27a\"/><stop offset=\".5\" stop-color=\"#ff6a2b\"/><stop offset=\"1\" stop-color=\"#9a1d0e\"/></radialGradient>"
+  var defs = "<radialGradient id=\"an-glow\"><stop offset=\"0\" stop-color=\"#ffd27a\" stop-opacity=\".7\"/><stop offset=\"1\" stop-color=\"#ffd27a\" stop-opacity=\"0\"/></radialGradient><radialGradient id=\"an-magma\"><stop offset=\"0\" stop-color=\"#ffd27a\"/><stop offset=\".5\" stop-color=\"#ff6a2b\"/><stop offset=\"1\" stop-color=\"#9a1d0e\"/></radialGradient><radialGradient id=\"an-corona\"><stop offset=\".5\" stop-color=\"#ffd27a\"/><stop offset=\"1\" stop-color=\"#f5a623\" stop-opacity=\".6\"/></radialGradient><radialGradient id=\"an-core\" cx=\"40%\" cy=\"38%\" r=\"70%\"><stop offset=\"0\" stop-color=\"#fffbe9\"/><stop offset=\".5\" stop-color=\"#ffe08a\"/><stop offset=\"1\" stop-color=\"#f5a623\"/></radialGradient><radialGradient id=\"an-ocean\" cx=\"35%\" cy=\"32%\" r=\"75%\"><stop offset=\"0\" stop-color=\"#7cc4f2\"/><stop offset=\".6\" stop-color=\"#2f7fc4\"/><stop offset=\"1\" stop-color=\"#174a7a\"/></radialGradient><radialGradient id=\"an-night\" cx=\"80%\" cy=\"75%\" r=\"70%\"><stop offset=\"0\" stop-color=\"#000\" stop-opacity=\".55\"/><stop offset=\".6\" stop-color=\"#000\" stop-opacity=\".15\"/><stop offset=\"1\" stop-color=\"#000\" stop-opacity=\"0\"/></radialGradient>"
   var scenes = ""
   var caps = ""
   var at = 0
@@ -504,7 +546,7 @@ fn an_story_svg(st: AnStory) -> Text {
       actors = actors + an_actor_in(a, i * 10 + j, sc.seconds, total, s, e)
     }
     let shown = if s <= 0 { "1" } else { "0" }
-    scenes = scenes + f"<g class=\"an-scene\" opacity=\"{shown}\">{an_scene_show(s, e, total)}{fm_backdrop(sc.backdrop, 9 + i)}{actors}</g>"
+    scenes = scenes + f"<g class=\"an-scene\" opacity=\"{shown}\">{an_scene_show(s, e, total)}{an_backdrop(sc.backdrop, i)}{actors}</g>"
     caps = caps + an_captions_in(sc, total, s, e)
     at = at + sc.seconds
   }
@@ -609,6 +651,8 @@ test "a story plays its scenes in turn on one clock" {
   expect art.problems.is_empty()
   expect art.svg.split("class=\"an-scene\"").length() == 4
   expect art.svg.contains("an-stem") and art.svg.contains("an-cloud")
+  // Painted by the scene painter, each scene with its own sky.
+  expect art.svg.contains("an-painted ls") and art.svg.contains("id=\"ls0-sky\"") and art.svg.contains("id=\"ls1-sky\"")
   expect art.page.contains("an-time")
   expect art.notes[0].starts_with("3 scenes on one clock")
 }

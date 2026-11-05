@@ -162,7 +162,7 @@ fn ls_sun_at(r: LsRecipe) -> LsSun {
 }
 
 fn ls_sun(r: LsRecipe, l: LsLight) -> Text {
-  if r.weather == "rain" or r.weather == "fog" { return "" }
+  if r.weather == "rain" or r.weather == "fog" or r.extras.contains("no sun") { return "" }
   let s = ls_sun_at(r)
   let glow = f"<circle cx=\"{ls_n(s.x)}\" cy=\"{ls_n(s.y)}\" r=\"{ls_n(s.r * 4.2)}\" fill=\"url(#ls-glow)\" class=\"ls-breathe\"/>"
   let body = f"<circle cx=\"{ls_n(s.x)}\" cy=\"{ls_n(s.y)}\" r=\"{ls_n(s.r)}\" fill=\"{l.sun}\"/>"
