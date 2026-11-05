@@ -51,6 +51,7 @@ import "designs_art.kos"
 import "designs_generative.kos"
 import "designs_scene.kos"
 import "designs_forms.kos"
+import "designs_anim.kos"
 import "designs_quiz.kos"
 import "designs_paper.kos"
 import "science_chem.kos"
@@ -142,6 +143,7 @@ fn dz_named(ask: DzAsk) -> Text {
   // Asked for art in so many words, it is art, whatever it is of: "art of
   // planets orbiting a burning star" is not a reaction to balance.
   if dz_has(t, dz_art_asked()) { return "art" }
+  if an_wants(ask.text) { return "art" }
   if (ls_wants(ask.text) or fm_wants(ask.text)) and dz_has(t, [" draw", " paint", " picture", " sketch", " scene", " landscape", " scenery", " wallpaper", " show me ", " art "]) { return "art" }
   if not al_which(ask.text).is_empty() { return "algorithm" }
   if t.starts_with(" convert ") { return "units" }
@@ -303,6 +305,17 @@ fn dz_from_forms(ask: DzAsk, a: FmArt) -> DzResult {
   let embed = if a.problems.is_empty() { dz_wrap("art", place, "dark_matter", a.recipe.title, a.svg, fm_style()) } else { "" }
   let names = (for i in a.recipe.items { i.form }).unique().join(", ")
   let why = "asks for " + names + ", so Kosika drew each from the geometry that makes it and set it moving"
+  return {kind: "art", why: why, title: a.recipe.title, page: a.page, svg: a.svg, embed: embed, problems: a.problems, fixed: []}
+}
+
+// An animation: actors moving through time on one clock, captions timed
+// to the moments, play, pause and scrub.
+fn dz_from_anim(ask: DzAsk, a: AnArt) -> DzResult {
+  let place = dz_place(ask)
+  let notes = if a.notes.is_empty() { "" } else { "<p class=\"an-note\">" + art_esc(a.notes.join(" ")) + "</p>" }
+  let inner = "<div class=\"an-box\">" + a.svg + an_controls(a.recipe) + "<script>" + an_script(a.recipe.seconds) + "</script></div>" + notes
+  let embed = if a.problems.is_empty() { dz_wrap("art", place, "dark_matter", a.recipe.title, inner, an_style() + ".an-note{color:var(--soft);font-size:13px;margin:8px 2px 0}") } else { "" }
+  let why = "asks for something to move, so Kosika animated it on one clock, " + a.recipe.seconds.to_text() + " seconds, with its captions timed to each moment"
   return {kind: "art", why: why, title: a.recipe.title, page: a.page, svg: a.svg, embed: embed, problems: a.problems, fixed: []}
 }
 
@@ -1860,14 +1873,20 @@ workflow dz_illustration(ask: DzAsk) -> DzResult {
 
 // Art is things drawn from their geometry, a place painted, or a mood
 // made of moving shapes.
-fn dz_art_way(ask: DzAsk) -> Text { return if fm_wants(ask.text) { "forms" } else if ls_wants(ask.text) { "scene" } else { "abstract" } }
+fn dz_art_way(ask: DzAsk) -> Text { return if an_wants(ask.text) { "animation" } else if fm_wants(ask.text) { "forms" } else if ls_wants(ask.text) { "scene" } else { "abstract" } }
 
 workflow dz_art(ask: DzAsk) -> DzResult {
   out = match dz_art_way(ask) {
+    case "animation" { call dz_animation(ask) }
     case "forms" { call dz_forms(ask) }
     case "scene" { call dz_scene(ask) }
     case _ { call dz_abstract(ask) }
   }
+}
+
+workflow dz_animation(ask: DzAsk) -> DzResult {
+  made = call an_make({text: ask.text})
+  out  = dz_from_anim(ask, made)
 }
 
 workflow dz_forms(ask: DzAsk) -> DzResult {
@@ -2112,6 +2131,9 @@ test "art asked for in so many words is art, whatever it is of" {
   expect dz_kind({text: "draw how a river erodes a valley", palette: "", place: "studio", kind: ""}) != "art"
   expect dz_kind({text: "draw a jellyfish and a nautilus shell", palette: "", place: "studio", kind: ""}) == "art"
   expect dz_art_way({text: "draw a butterfly in a meadow", palette: "", place: "studio", kind: ""}) == "forms"
+  expect dz_art_way({text: "animate a bee flying from a flower to its hive", palette: "", place: "studio", kind: ""}) == "animation"
+  expect dz_kind({text: "animate a ball bouncing", palette: "", place: "studio", kind: ""}) == "art"
+  expect dz_kind({text: "animate the water cycle", palette: "", place: "studio", kind: ""}) != "art"
   expect dz_art_way({text: "paint a meadow at dawn", palette: "", place: "studio", kind: ""}) == "scene"
   expect dz_kind({text: "explain the life cycle of a butterfly", palette: "", place: "studio", kind: ""}) != "art"
 }

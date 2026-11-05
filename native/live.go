@@ -238,6 +238,12 @@ func (h *httpProvider) complete(request *modelRequest) *modelResponse {
 		pause := busy[0]
 		busy = busy[1:]
 		if said, err := strconv.Atoi(strings.TrimSpace(answer.Header.Get("Retry-After"))); err == nil && said >= 0 {
+			// More than two minutes is not busy for the moment: a day's
+			// allowance is used up, so it is said at once, as the
+			// reference engine does, for the caller to ask another model.
+			if said > 120 {
+				break
+			}
 			pause = time.Duration(min(said, 120)) * time.Second
 		}
 		time.Sleep(pause)

@@ -583,6 +583,13 @@ class OpenAICompatibleProvider:
                 pause = busy.pop(0)
                 said = exc.headers.get("Retry-After") if exc.headers else None
                 if said and said.strip().isdigit():
+                    # A service that asks for more than two minutes is not
+                    # busy for the moment: an allowance for the day is used
+                    # up. Waiting would hold the run for minutes and fail
+                    # anyway, so it is said at once and the caller can ask
+                    # another model.
+                    if int(said.strip()) > 120:
+                        raise
                     pause = min(int(said.strip()), 120)
                 exc.close()
                 time.sleep(pause)

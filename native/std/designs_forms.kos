@@ -28,7 +28,7 @@
 // Every name here starts with fm_ or Fm, because all Kosika modules share
 // one namespace.
 
-export [FmItem, FmRecipe, FmAsk, FmArt, fm_forms, fm_wants, fm_form_svg, fm_svg, fm_style, fm_page, fm_fixed, fm_problems, fm_render, fm_make, fm_fallback]
+export [FmItem, FmRecipe, FmAsk, FmArt, fm_forms, fm_wants, fm_backdrop, fm_backdrops, fm_colour, fm_gradient, fm_hues, fm_named, fm_form_svg, fm_svg, fm_style, fm_page, fm_fixed, fm_problems, fm_render, fm_make, fm_fallback]
 
 record FmItem { form: Text hue: Text }
 record FmRecipe { items: FmItem[] backdrop: Text seed: Number title: Text }

@@ -1,0 +1,312 @@
+// Kosika Designs: animations, told in time.
+//
+// Art that moves in place loops; an animation tells something: a bee flies
+// from the flower to the hive, a ball is dropped and bounces, the moon goes
+// round the earth. A free model writes the storyboard (who is in it, where
+// each one is at which moment, and what the caption says then); Kosika
+// does the rest:
+//
+//   keyframes  each actor's places in time, sorted, filled out to the start
+//              and the end, eased in and out between
+//   physics    a bounce is not guessed: the ball falls under g = 9.81 m/s^2
+//              and each bounce keeps 70% of its speed, so it rises to 49% of
+//              its height; an orbit goes round at an even pace
+//   time       one clock for every actor and caption, which you can play,
+//              pause and scrub
+//
+// Actors are the forms of Designs (std/designs_forms.kos) and a few more:
+// a ball, a planet, the moon, the sun, a bee.
+//
+// Every name here starts with an_ or An, because all Kosika modules share
+// one namespace.
+
+import "designs_forms.kos"
+
+export [AnKey, AnActor, AnCaption, AnRecipe, AnAsk, AnArt, an_wants, an_svg, an_style, an_script, an_controls, an_page, an_fixed, an_problems, an_bounce, an_render, an_make, an_fallback]
+
+// t from 0 to 1 of the whole; x and y from 0 to 100 across and down.
+record AnKey { t: Number x: Number y: Number scale: Number turn: Number }
+// motion: keys (go through the keyframes), bounce (dropped from the first
+// key, bouncing where it lands) or orbit (round the first key, at the
+// distance of the second).
+record AnActor { id: Text form: Text hue: Text motion: Text keys: AnKey[] }
+record AnCaption { t: Number text: Text }
+record AnRecipe { title: Text seconds: Number backdrop: Text actors: AnActor[] captions: AnCaption[] }
+record AnAsk { text: Text }
+record AnBrief { task: Text ask: Text }
+record AnArt { recipe: AnRecipe svg: Text page: Text problems: Text[] notes: Text[] }
+
+model an_director {
+  input: AnBrief
+  output: AnRecipe
+  parameters: {
+    max_output_tokens: 2500
+  }
+}
+
+fn an_extra_forms() -> Text[] { return ["ball", "planet", "moon", "sun", "bee", "hive", "tree"] }
+fn an_all_forms() -> Text[] { return fm_forms().concat(an_extra_forms()) }
+fn an_motions() -> Text[] { return ["keys", "bounce", "orbit"] }
+
+fn an_n(x: Number) -> Text { return x.to_fixed(2) }
+fn an_cat(xs: Text[]) -> Text { return xs.join("") }
+
+// Whether an ask is for an animation: it asks for one, or for something to
+// move, and names what is in it.
+fn an_wants(text: Text) -> Bool {
+  let t = " " + text.lower().replace(",", " ").replace(".", " ") + " "
+  let moving = t.contains(" animate") or t.contains(" animation") or t.contains(" animated") or t.contains(" bouncing") or t.contains(" bounce") or t.contains(" flying") or t.contains(" flies ") or t.contains(" swimming") or t.contains(" swims ") or t.contains(" orbiting") or t.contains(" orbits ") or t.contains(" falling") or t.contains(" drifting")
+  let actors = not fm_named(text).is_empty() or (for w in [" ball", " planet", " moon", " earth", " sun ", " bee", " bees"] where t.contains(w) { w }).length() > 0
+  let explains = t.contains(" why ") or t.contains(" explain") or t.contains(" diagram")
+  return moving and actors and not explains
+}
+
+fn an_problems(r: AnRecipe) -> Text[] {
+  var out: Text[] = []
+  if r.actors.is_empty() { out = out.append("there is no one in the animation") }
+  for a in r.actors {
+    if not an_all_forms().contains(a.form) { out = out.append(f"actor {a.id}: form {a.form} is not one Kosika can draw") }
+    if a.keys.is_empty() { out = out.append(f"actor {a.id} has no keyframes") }
+  }
+  return out
+}
+
+fn an_clamp(x: Number, lo: Number, hi: Number) -> Number { return x.max(lo).min(hi) }
+
+fn an_key_fixed(k: AnKey) -> AnKey {
+  return {t: an_clamp(k.t, 0, 1), x: an_clamp(k.x, 0, 100), y: an_clamp(k.y, 0, 100), scale: if k.scale <= 0 { 1 } else { an_clamp(k.scale, 0.2, 3) }, turn: an_clamp(k.turn, -720, 720)}
+}
+
+// Keyframes in time order, with one at the very start and one at the very
+// end, so every actor is somewhere all the time.
+fn an_keys_fixed(keys: AnKey[]) -> AnKey[] {
+  let fixed = (for k in keys { an_key_fixed(k) }).sort_by("t")
+  if fixed.is_empty() { return [{t: 0, x: 50, y: 50, scale: 1, turn: 0}, {t: 1, x: 50, y: 50, scale: 1, turn: 0}] }
+  let first = fixed[0]
+  let last = fixed[fixed.length() - 1]
+  let head: AnKey[] = if first.t > 0 { [{..first, t: 0}] } else { [] }
+  let tail: AnKey[] = if last.t < 1 { [{..last, t: 1}] } else { [] }
+  return head.concat(fixed).concat(tail)
+}
+
+fn an_fixed(r: AnRecipe) -> AnRecipe {
+  let actors: AnActor[] = for a in r.actors where an_all_forms().contains(a.form.trim().lower()) { {id: if a.id.trim().is_empty() { a.form } else { a.id.trim() }, form: a.form.trim().lower(), hue: if fm_hues().contains(a.hue.trim().lower()) { a.hue.trim().lower() } else { "amber" }, motion: if an_motions().contains(a.motion.trim().lower()) { a.motion.trim().lower() } else { "keys" }, keys: an_keys_fixed(a.keys)} }
+  let said: AnCaption[] = for c in r.captions where not c.text.trim().is_empty() { {t: an_clamp(c.t, 0, 1), text: c.text.trim().slice(0, c.text.trim().length().min(90))} }
+  let captions = said.sort_by("t")
+  let backdrop = if fm_backdrops().contains(r.backdrop.trim().lower()) { r.backdrop.trim().lower() } else { "meadow" }
+  let title = if r.title.trim().is_empty() { "An Animation" } else { r.title.trim().slice(0, r.title.trim().length().min(48)) }
+  return {title: title, seconds: an_clamp(r.seconds, 3, 30), backdrop: backdrop, actors: actors.take(6), captions: captions.take(8)}
+}
+
+fn an_fallback() -> AnRecipe {
+  return {title: "A Ball Dropped", seconds: 6, backdrop: "studio", actors: [{id: "ball", form: "ball", hue: "coral", motion: "bounce", keys: [{t: 0, x: 20, y: 12, scale: 1, turn: 0}, {t: 1, x: 80, y: 12, scale: 1, turn: 0}]}], captions: [{t: 0, text: "A ball is dropped."}, {t: 0.35, text: "Each bounce keeps 70% of its speed."}, {t: 0.7, text: "So each rises to half its height."}]}
+}
+
+// ---------------------------------------------------------------- physics
+
+// Where a dropped ball is, every thirtieth of a second, as x, y in pixels
+// and t from 0 to 1: it falls from y0 to the ground under g, keeps 70% of
+// its speed at each bounce, and drifts from x0 to x1 all the while.
+// 540 pixels stand for 3 metres.
+fn an_bounce(x0: Number, x1: Number, y0: Number, ground: Number, seconds: Number) -> Number[] {
+  let g = 9.81 * 540 / 3
+  let e = 0.7
+  var out: Number[] = []
+  var t = 0
+  var y = y0
+  var v = 0
+  let step = 1 / 30
+  while t <= seconds {
+    out = out.append(t / seconds).append(x0 + (x1 - x0) * t / seconds).append(y)
+    v = v + g * step
+    y = y + v * step
+    if y >= ground {
+      y = ground
+      v = 0 - v * e
+      if v.abs() < 20 { v = 0 }
+    }
+    t = t + step
+  }
+  return out
+}
+
+// ---------------------------------------------------------------- actors
+
+fn an_px(k: AnKey) -> Number[] { return [k.x * 9.6, k.y * 5.4] }
+
+fn an_actor_body(a: AnActor, id: Text, c: Text, seed: Number) -> Text {
+  if a.form == "ball" { return f"<circle r=\"34\" fill=\"url(#{id})\"/><circle cx=\"-11\" cy=\"-12\" r=\"9\" fill=\"#fff\" opacity=\".45\"/>" }
+  if a.form == "planet" { return f"<ellipse rx=\"70\" ry=\"14\" class=\"an-ringback\" style=\"stroke:{c}\"/><circle r=\"40\" fill=\"url(#{id})\"/><path d=\"M-70 0 A70 14 0 0 0 70 0\" class=\"an-ring\" style=\"stroke:{c}\"/>" }
+  if a.form == "moon" { return "<circle r=\"30\" fill=\"#cfd3dc\"/><circle cx=\"-9\" cy=\"-7\" r=\"6\" fill=\"#aab0bc\"/><circle cx=\"10\" cy=\"8\" r=\"4\" fill=\"#aab0bc\"/><circle cx=\"6\" cy=\"-14\" r=\"3\" fill=\"#aab0bc\"/>" }
+  if a.form == "sun" { return f"<circle r=\"90\" fill=\"url(#an-glow)\"/><circle r=\"46\" fill=\"url(#{id})\"/>" }
+  if a.form == "bee" { return "<g class=\"an-bee\"><ellipse class=\"an-wing\" cx=\"-6\" cy=\"-22\" rx=\"14\" ry=\"20\" transform=\"rotate(-20)\"/><ellipse class=\"an-wing\" cx=\"10\" cy=\"-22\" rx=\"12\" ry=\"18\" transform=\"rotate(18)\"/><ellipse rx=\"30\" ry=\"20\" fill=\"#f5c542\"/><path d=\"M-12 -19 Q-8 0 -12 19 M2 -20 Q6 0 2 20 M16 -16 Q19 0 16 16\" class=\"an-stripe\"/><circle cx=\"27\" cy=\"-4\" r=\"9\" fill=\"#2a2016\"/><path d=\"M-30 0 L-40 0\" class=\"an-stripe\"/></g>" }
+  if a.form == "hive" { return "<g>" + an_cat(for k in 0 until 5 { f"<ellipse cx=\"0\" cy=\"{an_n(30 - k * 14)}\" rx=\"{an_n(44 - k * 7)}\" ry=\"9\" class=\"an-skep\"/>" }) + "<ellipse cx=\"0\" cy=\"30\" rx=\"9\" ry=\"6\" fill=\"#2a1a0c\"/><rect x=\"-56\" y=\"38\" width=\"112\" height=\"8\" rx=\"3\" fill=\"#5a3a1e\"/></g>" }
+  if a.form == "tree" { return f"<rect x=\"-8\" y=\"0\" width=\"16\" height=\"70\" fill=\"#5a3a1e\"/><circle cx=\"0\" cy=\"-20\" r=\"48\" fill=\"url(#{id})\"/><circle cx=\"-32\" cy=\"6\" r=\"30\" fill=\"url(#{id})\"/><circle cx=\"32\" cy=\"6\" r=\"30\" fill=\"url(#{id})\"/>" }
+  return fm_form_svg(a.form, id, c, seed)
+}
+
+fn an_size(form: Text) -> Number { return if form == "ball" or form == "moon" or form == "bee" { 1 } else if form == "sun" or form == "planet" { 1 } else { 0.55 } }
+
+// One actor: a path to move along, eased between keyframes, and its
+// scale and turn changing with it.
+fn an_actor(a: AnActor, k: Number, r: AnRecipe) -> Text {
+  let id = f"an-g{k}"
+  let c = fm_colour(a.hue)
+  let dur = an_n(r.seconds)
+  let body = f"<g transform=\"scale({an_n(an_size(a.form))})\"><g class=\"fm-form fm-{a.form}\" style=\"--c:{c}\">{an_actor_body(a, id, c, k)}</g></g>"
+  if a.motion == "bounce" {
+    let p0 = an_px(a.keys[0])
+    let p1 = an_px(a.keys[a.keys.length() - 1])
+    let pts = an_bounce(p0[0], p1[0], p0[1], 470, r.seconds)
+    var d = ""
+    var times: Text[] = []
+    var points: Text[] = []
+    var i = 0
+    while i + 2 < pts.length() {
+      d = d + (if i == 0 { "M" } else { " L" }) + an_n(pts[i + 1]) + " " + an_n(pts[i + 2])
+      times = times.append(an_n(pts[i].min(1)))
+      i += 3
+    }
+    let n = times.length()
+    let frac = (for j in 0 until n { an_n(j / (n - 1).max(1)) }).join(";")
+    return f"<g><animateMotion dur=\"{dur}s\" repeatCount=\"indefinite\" calcMode=\"linear\" keyPoints=\"{frac}\" keyTimes=\"{times.join(\";\")}\" path=\"{d}\"/>{body}</g><ellipse class=\"an-shadow\" cx=\"0\" cy=\"500\" rx=\"30\" ry=\"6\"><animate attributeName=\"cx\" values=\"{an_n(p0[0])};{an_n(p1[0])}\" dur=\"{dur}s\" repeatCount=\"indefinite\"/></ellipse>"
+  }
+  if a.motion == "orbit" {
+    let c0 = an_px(a.keys[0])
+    let edge = if a.keys.length() > 1 { an_px(a.keys[1]) } else { [c0[0] + 200, c0[1]] }
+    let rad = ((edge[0] - c0[0]) * (edge[0] - c0[0]) + (edge[1] - c0[1]) * (edge[1] - c0[1])).sqrt().max(40)
+    let d = f"M{an_n(c0[0] + rad)} {an_n(c0[1])} A{an_n(rad)} {an_n(rad * 0.42)} 0 1 1 {an_n(c0[0] - rad)} {an_n(c0[1])} A{an_n(rad)} {an_n(rad * 0.42)} 0 1 1 {an_n(c0[0] + rad)} {an_n(c0[1])}"
+    return f"<path class=\"an-track\" d=\"{d}\"/><g><animateMotion dur=\"{dur}s\" repeatCount=\"indefinite\" path=\"{d}\"/>{body}</g>"
+  }
+  let pts = for key in a.keys { an_px(key) }
+  let d = "M" + (for p in pts { an_n(p[0]) + " " + an_n(p[1]) }).join(" L")
+  // How far along the path each keyframe is, by the length of the legs.
+  var legs: Number[] = [0]
+  for j in 1 until pts.length() {
+    let dx = pts[j][0] - pts[j - 1][0]
+    let dy = pts[j][1] - pts[j - 1][1]
+    legs = legs.append(legs[j - 1] + (dx * dx + dy * dy).sqrt())
+  }
+  let whole = legs[legs.length() - 1].max(0.001)
+  let kp = (for l in legs { an_n(l / whole) }).join(";")
+  let kt = (for key in a.keys { an_n(key.t) }).join(";")
+  let ease = (for j in 1 until a.keys.length() { ".42 0 .58 1" }).join(";")
+  let scales = (for key in a.keys { an_n(key.scale) }).join(";")
+  let turns = (for key in a.keys { an_n(key.turn) }).join(";")
+  let still = whole < 1
+  let motion = if still { "" } else { f"<animateMotion dur=\"{dur}s\" repeatCount=\"indefinite\" calcMode=\"spline\" keyPoints=\"{kp}\" keyTimes=\"{kt}\" keySplines=\"{ease}\" path=\"{d}\"/>" }
+  let at = if still { f" transform=\"translate({an_n(pts[0][0])} {an_n(pts[0][1])})\"" } else { "" }
+  return f"<g{at}>{motion}<g><animateTransform attributeName=\"transform\" type=\"scale\" values=\"{scales}\" keyTimes=\"{kt}\" dur=\"{dur}s\" repeatCount=\"indefinite\"/><g><animateTransform attributeName=\"transform\" type=\"rotate\" values=\"{turns}\" keyTimes=\"{kt}\" dur=\"{dur}s\" repeatCount=\"indefinite\"/>{body}</g></g></g>"
+}
+
+// Each caption shows from its moment until the next one's.
+fn an_captions(r: AnRecipe) -> Text {
+  let n = r.captions.length()
+  var out: Text[] = []
+  for k in 0 until n {
+    let from = r.captions[k].t
+    let to = if k + 1 < n { r.captions[k + 1].t } else { 1 }
+    let values = if from <= 0 { "1;0;0" } else { "0;1;0;0" }
+    let times = if from <= 0 { f"0;{an_n(to)};1" } else { f"0;{an_n(from)};{an_n(to.max(from + 0.001))};1" }
+    out = out.append(f"<text class=\"an-cap\" x=\"480\" y=\"518\" opacity=\"0\">{an_esc(r.captions[k].text)}<animate attributeName=\"opacity\" calcMode=\"discrete\" values=\"{values}\" keyTimes=\"{times}\" dur=\"{an_n(r.seconds)}s\" repeatCount=\"indefinite\"/></text>")
+  }
+  return an_cat(out)
+}
+
+fn an_esc(t: Text) -> Text { return t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") }
+
+fn an_svg(r: AnRecipe) -> Text {
+  var defs = "<radialGradient id=\"an-glow\"><stop offset=\"0\" stop-color=\"#ffd27a\" stop-opacity=\".7\"/><stop offset=\"1\" stop-color=\"#ffd27a\" stop-opacity=\"0\"/></radialGradient>"
+  var actors = ""
+  for k in 0 until r.actors.length() {
+    let a = r.actors[k]
+    defs = defs + fm_gradient(f"an-g{k}", fm_colour(a.hue))
+    actors = actors + an_actor(a, k, r)
+  }
+  let ground = if r.actors.length() > 0 and (for a in r.actors where a.motion == "bounce" { a }).length() > 0 { "<line class=\"an-ground\" x1=\"0\" y1=\"504\" x2=\"960\" y2=\"504\"/>" } else { "" }
+  return f"<svg xmlns=\"http://www.w3.org/2000/svg\" class=\"an fm\" viewBox=\"0 0 960 540\" role=\"img\" aria-label=\"{an_esc(r.title)}\">{fm_backdrop(r.backdrop, 9)}<defs>{defs}</defs>{ground}{actors}<rect class=\"an-capbar\" x=\"0\" y=\"490\" width=\"960\" height=\"50\"/>{an_captions(r)}</svg>"
+}
+
+fn an_style() -> Text {
+  return fm_style() + ".an-cap{fill:#fff;font:600 19px system-ui,sans-serif;text-anchor:middle;paint-order:stroke;stroke:rgba(0,0,0,.55);stroke-width:4px}.an-capbar{fill:rgba(0,0,0,.28)}.an-shadow{fill:rgba(0,0,0,.35)}.an-ground{stroke:rgba(255,255,255,.25);stroke-width:2}.an-track{fill:none;stroke:rgba(255,255,255,.18);stroke-width:1.5;stroke-dasharray:3 8}.an-ring{fill:none;stroke-width:5;opacity:.9}.an-ringback{fill:none;stroke-width:5;opacity:.4}.an-wing{fill:rgba(235,245,255,.75);stroke:rgba(0,0,0,.25);transform-box:fill-box;transform-origin:50% 100%;animation:an-buzz .08s linear infinite alternate}@keyframes an-buzz{to{transform:scaleY(.55)}}.an-skep{fill:#d9a441;stroke:#8a5a1e;stroke-width:2}.an-stripe{fill:none;stroke:#2a2016;stroke-width:5;stroke-linecap:round}.an-bar{display:flex;gap:10px;align-items:center;margin-top:10px;font:12px ui-monospace,Consolas,monospace;color:#a3a8bd}.an-bar button{font:600 12px system-ui,sans-serif;border:1px solid #3a3f4c;background:#15171c;color:#eceef2;border-radius:8px;padding:6px 12px;cursor:pointer}.an-bar input{flex:1}"
+}
+
+// Play, pause and scrub: one clock for every actor and caption.
+fn an_script(seconds: Number) -> Text {
+  return "(function(){var me=document.currentScript,box=me.parentNode,svg=box.querySelector('svg.an'),play=box.querySelector('.an-play'),bar=box.querySelector('.an-time'),out=box.querySelector('.an-now'),total=" + an_n(seconds) + ",held=false;function show(){var t=svg.getCurrentTime()%total;if(!held)bar.value=t/total*1000;out.textContent=t.toFixed(1)+' / '+total.toFixed(1)+' s'}play.addEventListener('click',function(){if(svg.animationsPaused()){svg.unpauseAnimations();play.textContent='Pause'}else{svg.pauseAnimations();play.textContent='Play'}});bar.addEventListener('input',function(){held=true;svg.pauseAnimations();play.textContent='Play';svg.setCurrentTime(bar.value/1000*total);show()});bar.addEventListener('change',function(){held=false});setInterval(show,100)})();"
+}
+
+fn an_controls(r: AnRecipe) -> Text {
+  return f"<div class=\"an-bar\"><button class=\"an-play\" type=\"button\">Pause</button><input class=\"an-time\" type=\"range\" min=\"0\" max=\"1000\" value=\"0\" aria-label=\"Scrub the animation\"><span class=\"an-now\">0.0 / {an_n(r.seconds)} s</span></div>"
+}
+
+fn an_page(r: AnRecipe, svg: Text, notes: Text[]) -> Text {
+  let said = if notes.is_empty() { "" } else { "<p class=\"how\">" + an_esc(notes.join(" ")) + "</p>" }
+  return f"<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>{an_esc(r.title)}</title><style>body{{margin:0;font:15px system-ui,sans-serif;color:#eceef2;background:#0b0c10}}main{{max-width:min(1680px,100%);margin:0 auto;padding:28px 16px}}.lab{{font:600 11px ui-monospace,Consolas,monospace;letter-spacing:.32em;text-transform:uppercase;color:#f5b45c}}h1{{margin:8px 0 4px;font-size:30px}}.how{{color:#a3a8bd;margin:0 0 16px}}{an_style()}</style></head><body><main><div class=\"lab\">Kosika Designs &#183; animation</div><h1>{an_esc(r.title)}</h1>{said}<div class=\"an-box\">{svg}{an_controls(r)}<script>{an_script(r.seconds)}</script></div></main></body></html>"
+}
+
+// What Kosika worked out itself, said plainly under the animation.
+fn an_notes(r: AnRecipe) -> Text[] {
+  var out: Text[] = []
+  if (for a in r.actors where a.motion == "bounce" { a }).length() > 0 { out = out.append("The bounce is worked out by Kosika: the ball falls under g = 9.81 m/s² (the picture is 3 m tall) and keeps 70% of its speed at each bounce, so it rises to 49% of the height before.") }
+  if (for a in r.actors where a.motion == "orbit" { a }).length() > 0 { out = out.append("The orbit goes round at an even pace, once in the animation's length.") }
+  return out
+}
+
+fn an_art(r: AnRecipe) -> AnArt {
+  let svg = an_svg(r)
+  let notes = an_notes(r)
+  return {recipe: r, svg: svg, page: an_page(r, svg, notes), problems: an_problems(r), notes: notes}
+}
+
+workflow an_render(r: AnRecipe) -> AnArt {
+  out = an_art(an_fixed(r))
+}
+
+fn an_task() -> Text {
+  return "You are directing a short animation someone asked for. Give title (2 to 5 words), seconds (how long one run takes, 4 to 20), backdrop (deep sea, night, paper, meadow or studio), actors (1 to 6, each with id (a short name), form (one of " + an_all_forms().join(", ") + "), hue (one of coral, amber, teal, violet, rose, gold, sky, leaf, pearl, ink), motion (keys: it moves through its keyframes; bounce: it is dropped from its first keyframe and bounces, drifting to its last; orbit: it goes round its first keyframe at the distance of its second) and keys: keyframes, each with t (0 to 1 of the whole), x (0 left to 100 right), y (0 top to 100 bottom; the ground is near 90), scale (1 is its usual size) and turn (degrees)), and captions (2 to 6, each with t, the moment it starts, and text, one short sentence on what is happening then). Make the motion tell what was asked, step by step, with keyframes where things change."
+}
+
+workflow an_make(ask: AnAsk) -> AnArt {
+  budget 2 model calls, 200 seconds
+  chosen = use_model an_director(an_task(), ask.text) retry 1 otherwise an_fallback()
+  out    = an_art(an_fixed(chosen))
+}
+
+// ---------------------------------------------------------------- tests
+
+test "an ask to animate something is an animation" {
+  expect an_wants("animate a bee flying from a flower to its hive")
+  expect an_wants("a ball bouncing")
+  expect an_wants("animate the moon orbiting the earth")
+  expect not an_wants("draw a jellyfish")
+  expect not an_wants("why does a ball bounce, explain")
+}
+
+test "keyframes are sorted and reach from start to end" {
+  keys = an_keys_fixed([{t: 0.8, x: 90, y: 50, scale: 1, turn: 0}, {t: 0.2, x: 10, y: 140, scale: 0, turn: 0}])
+  expect (for k in keys { k.t }) == [0, 0.2, 0.8, 1]
+  expect keys[1].y == 100 and keys[1].scale == 1
+}
+
+test "a dropped ball bounces lower each time, by its restitution" {
+  pts = an_bounce(100, 800, 60, 470, 6)
+  ys = for i in 0 until pts.length() where i % 3 == 2 { pts[i] }
+  expect (for y in ys where y > 470 { y }).is_empty()
+  expect ys[0] == 60
+  expect pts[pts.length() - 3] <= 1
+}
+
+test "an animation has its clock, its captions and its actors" {
+  art = an_art(an_fixed(an_fallback()))
+  expect art.problems.is_empty()
+  expect art.svg.contains("animateMotion") and art.svg.contains("an-cap")
+  expect art.page.contains("an-time") and art.page.contains("setCurrentTime")
+  expect art.notes[0].contains("9.81")
+}
+
+test "a slip by the director is brought back in range" {
+  fixed = an_fixed({title: "", seconds: 99, backdrop: "mars", actors: [{id: "", form: "Fish", hue: "neon", motion: "zoom", keys: []}, {id: "x", form: "dragon", hue: "red", motion: "keys", keys: []}], captions: [{t: 2, text: " Hello "}]})
+  expect fixed.actors.length() == 1 and fixed.actors[0].form == "fish" and fixed.actors[0].motion == "keys"
+  expect fixed.seconds == 30 and fixed.backdrop == "meadow" and fixed.captions[0].t == 1 and fixed.captions[0].text == "Hello"
+}
