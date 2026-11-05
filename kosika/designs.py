@@ -687,7 +687,23 @@ def speak(text: str, voice: str = "") -> bytes:
 
     if not text.strip():
         return b""
+    # A line said once is kept, so an animation narrated again (or a caption
+    # Kosika tells in every water cycle) is spoken at once: on a laptop's
+    # CPU each new line takes seconds.
+    import hashlib
+
+    kept = Path.home() / ".kosika" / "voice" / "said" / (hashlib.sha256(f"{voice}|{text}".encode()).hexdigest()[:24] + ".wav")
+    try:
+        return kept.read_bytes()
+    except OSError:
+        pass
     said = _speak_kokoro(text, voice) or _speak_voicestudio(text) or _speak_orpheus(text, "" if voice in KOKORO_VOICES else voice)
+    if said:
+        try:
+            kept.parent.mkdir(parents=True, exist_ok=True)
+            kept.write_bytes(said)
+        except OSError:
+            pass
     return said
 
 

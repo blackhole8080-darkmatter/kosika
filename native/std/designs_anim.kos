@@ -36,6 +36,9 @@ record AnRecipe { title: Text seconds: Number backdrop: Text actors: AnActor[] c
 // A story: scenes played one after another on one clock, each fading in
 // as the last fades out.
 record AnStory { title: Text scenes: AnRecipe[] }
+// A label for an actor of a scene: it appears at t of that scene, its arrow
+// drawing itself to where the actor is then.
+record AnLabel { scene: Number t: Number text: Text actor: Text }
 record AnAsk { text: Text }
 record AnBrief { task: Text ask: Text }
 record AnArt { recipe: AnRecipe svg: Text page: Text problems: Text[] notes: Text[] }
@@ -250,7 +253,7 @@ fn an_size(form: Text) -> Number { return if an_extra_forms().contains(form) { 1
 
 // One actor: a path to move along, eased between keyframes, and its
 // scale and turn changing with it.
-fn an_actor(a: AnActor, k: Number, r: AnRecipe) -> Text { return an_actor_in(a, k, r.seconds, r.seconds, 0, 1) }
+fn an_actor(a: AnActor, k: Number, r: AnRecipe) -> Text { return an_actor_in(a, k, r.seconds, r.seconds, 0, 1, "") }
 
 // Times on the whole clock for a scene from s to e: held still before and
 // after it.
@@ -264,7 +267,7 @@ fn an_held(times: Text[], points: Text[], s: Number, e: Number) -> Text[][] {
 
 // An actor of a scene that runs from s to e of a clock `total` seconds
 // long; `seconds` is the scene's own length, for its physics.
-fn an_actor_in(a: AnActor, k: Number, seconds: Number, total: Number, s: Number, e: Number) -> Text {
+fn an_actor_in(a: AnActor, k: Number, seconds: Number, total: Number, s: Number, e: Number, tag: Text) -> Text {
   let id = f"an-g{k}"
   let c = fm_colour(a.hue)
   let dur = an_n(total)
@@ -285,7 +288,7 @@ fn an_actor_in(a: AnActor, k: Number, seconds: Number, total: Number, s: Number,
     let n = times.length()
     let held = an_held(times, for j in 0 until n { an_n(j / (n - 1).max(1)) }, s, e)
     let shade = an_held([an_n(s), an_n(e)], [an_n(p0[0]), an_n(p1[0])], s, e)
-    return f"<g><animateMotion dur=\"{dur}s\" repeatCount=\"indefinite\" calcMode=\"linear\" keyPoints=\"{an_semi(held[1])}\" keyTimes=\"{an_semi(held[0])}\" path=\"{d}\"/>{body}</g><ellipse class=\"an-shadow\" cx=\"0\" cy=\"500\" rx=\"30\" ry=\"6\"><animate attributeName=\"cx\" values=\"{an_semi(shade[1])}\" keyTimes=\"{an_semi(shade[0])}\" dur=\"{dur}s\" repeatCount=\"indefinite\"/></ellipse>"
+    return f"<g><animateMotion dur=\"{dur}s\" repeatCount=\"indefinite\" calcMode=\"linear\" keyPoints=\"{an_semi(held[1])}\" keyTimes=\"{an_semi(held[0])}\" path=\"{d}\"/>{body}{tag}</g><ellipse class=\"an-shadow\" cx=\"0\" cy=\"500\" rx=\"30\" ry=\"6\"><animate attributeName=\"cx\" values=\"{an_semi(shade[1])}\" keyTimes=\"{an_semi(shade[0])}\" dur=\"{dur}s\" repeatCount=\"indefinite\"/></ellipse>"
   }
   if a.motion == "orbit" {
     let c0 = an_px(a.keys[0])
@@ -293,7 +296,7 @@ fn an_actor_in(a: AnActor, k: Number, seconds: Number, total: Number, s: Number,
     let rad = ((edge[0] - c0[0]) * (edge[0] - c0[0]) + (edge[1] - c0[1]) * (edge[1] - c0[1])).sqrt().max(40)
     let d = f"M{an_n(c0[0] + rad)} {an_n(c0[1])} A{an_n(rad)} {an_n(rad * 0.42)} 0 1 1 {an_n(c0[0] - rad)} {an_n(c0[1])} A{an_n(rad)} {an_n(rad * 0.42)} 0 1 1 {an_n(c0[0] + rad)} {an_n(c0[1])}"
     let round = an_held([an_n(s), an_n(e)], ["0", "1"], s, e)
-    return f"<path class=\"an-track\" d=\"{d}\"/><g><animateMotion dur=\"{dur}s\" repeatCount=\"indefinite\" calcMode=\"linear\" keyPoints=\"{an_semi(round[1])}\" keyTimes=\"{an_semi(round[0])}\" path=\"{d}\"/>{body}</g>"
+    return f"<path class=\"an-track\" d=\"{d}\"/><g><animateMotion dur=\"{dur}s\" repeatCount=\"indefinite\" calcMode=\"linear\" keyPoints=\"{an_semi(round[1])}\" keyTimes=\"{an_semi(round[0])}\" path=\"{d}\"/>{body}{tag}</g>"
   }
   let pts = for key in a.keys { an_px(key) }
   let d = "M" + (for p in pts { an_n(p[0]) + " " + an_n(p[1]) }).join(" L")
@@ -314,7 +317,7 @@ fn an_actor_in(a: AnActor, k: Number, seconds: Number, total: Number, s: Number,
   let still = whole < 1
   let motion = if still { "" } else { f"<animateMotion dur=\"{dur}s\" repeatCount=\"indefinite\" calcMode=\"spline\" keyPoints=\"{kp}\" keyTimes=\"{kt}\" keySplines=\"{ease}\" path=\"{d}\"/>" }
   let at = if still { f" transform=\"translate({an_n(pts[0][0])} {an_n(pts[0][1])})\"" } else { "" }
-  return f"<g{at}>{motion}<g><animateTransform attributeName=\"transform\" type=\"scale\" values=\"{scales}\" keyTimes=\"{kt}\" dur=\"{dur}s\" repeatCount=\"indefinite\"/><g><animateTransform attributeName=\"transform\" type=\"rotate\" values=\"{turns}\" keyTimes=\"{kt}\" dur=\"{dur}s\" repeatCount=\"indefinite\"/>{body}</g></g></g>"
+  return f"<g{at}>{motion}<g><animateTransform attributeName=\"transform\" type=\"scale\" values=\"{scales}\" keyTimes=\"{kt}\" dur=\"{dur}s\" repeatCount=\"indefinite\"/><g><animateTransform attributeName=\"transform\" type=\"rotate\" values=\"{turns}\" keyTimes=\"{kt}\" dur=\"{dur}s\" repeatCount=\"indefinite\"/>{body}</g></g>{tag}</g>"
 }
 
 // Each caption shows from its moment until the next one's.
@@ -328,7 +331,7 @@ fn an_captions_in(r: AnRecipe, total: Number, s: Number, e: Number) -> Text {
     let to = if k + 1 < n { s + r.captions[k + 1].t * (e - s) } else { e }
     let values = if from <= 0 { (if to >= 1 { "1;1" } else { "1;0;0" }) } else { (if to >= 1 { "0;1;1" } else { "0;1;0;0" }) }
     let times = if from <= 0 { (if to >= 1 { "0;1" } else { f"0;{an_n(to)};1" }) } else { (if to >= 1 { f"0;{an_n(from)};1" } else { f"0;{an_n(from)};{an_n(to.max(from + 0.001))};1" }) }
-    out = out.append(f"<text class=\"an-cap\" x=\"480\" y=\"518\" opacity=\"0\">{an_esc(r.captions[k].text)}<animate attributeName=\"opacity\" calcMode=\"discrete\" values=\"{values}\" keyTimes=\"{times}\" dur=\"{an_n(total)}s\" repeatCount=\"indefinite\"/></text>")
+    out = out.append(f"<text class=\"an-cap\" x=\"480\" y=\"518\" opacity=\"0\" data-from=\"{an_n(from * total)}\" data-to=\"{an_n(to * total)}\">{an_esc(r.captions[k].text)}<animate attributeName=\"opacity\" calcMode=\"discrete\" values=\"{values}\" keyTimes=\"{times}\" dur=\"{an_n(total)}s\" repeatCount=\"indefinite\"/></text>")
   }
   return an_cat(out)
 }
@@ -348,7 +351,7 @@ fn an_svg(r: AnRecipe) -> Text {
 }
 
 fn an_style() -> Text {
-  return fm_style() + ls_style() + ".an .an-painted{width:960px;height:540px;border-radius:0}" + ".an-cap{fill:#fff;font:600 19px system-ui,sans-serif;text-anchor:middle;paint-order:stroke;stroke:rgba(0,0,0,.55);stroke-width:4px}.an-capbar{fill:rgba(0,0,0,.28)}.an-shadow{fill:rgba(0,0,0,.35)}.an-ground{stroke:rgba(255,255,255,.25);stroke-width:2}.an-track{fill:none;stroke:rgba(255,255,255,.18);stroke-width:1.5;stroke-dasharray:3 8}.an-ring{fill:none;stroke-width:5;opacity:.9}.an-ringback{fill:none;stroke-width:5;opacity:.4}.an-wing{fill:rgba(235,245,255,.75);stroke:rgba(0,0,0,.25);transform-box:fill-box;transform-origin:50% 100%;animation:an-buzz .08s linear infinite alternate}@keyframes an-buzz{to{transform:scaleY(.55)}}.an-sub{font-size:11px}.an-chem{font:700 15px ui-monospace,Consolas,monospace;text-anchor:middle;fill:#eceef2;paint-order:stroke;stroke:rgba(0,0,0,.45);stroke-width:3px}.an-glowing{filter:drop-shadow(0 0 10px #ff6a2b)}.an-ash{fill:#4a4648;opacity:.92}.an-churn{transform-box:fill-box;transform-origin:center;animation:an-churn 1.6s ease-in-out infinite alternate}@keyframes an-churn{to{transform:scale(1.05,.95) rotate(3deg)}}.an-peristalsis{animation:an-flowing 1.2s linear infinite}@keyframes an-flowing{to{stroke-dashoffset:-28}}.an-seg{fill:#8fd16a;stroke:#3e7a35;stroke-width:1.5;animation:an-inch .9s ease-in-out infinite alternate}@keyframes an-inch{to{transform:translateY(-5px)}}.an-antenna{fill:none;stroke:#2a2016;stroke-width:2;stroke-linecap:round}.an-sway{transform-box:fill-box;transform-origin:50% 0;animation:an-swing 3s ease-in-out infinite alternate}@keyframes an-swing{from{transform:rotate(-4deg)}to{transform:rotate(4deg)}}.an-stem{fill:none;stroke:#4c8a3c;stroke-width:5;stroke-linecap:round}.an-root{fill:none;stroke:#8a6a4a;stroke-width:2.5;stroke-linecap:round}.an-cloud{fill:#f7f9fc;filter:drop-shadow(0 6px 8px rgba(40,60,90,.25))}.an-cloud-under{fill:#d9e2ee}.an-corona{transform-box:fill-box;transform-origin:center;animation:an-turn 30s linear infinite}@keyframes an-turn{to{transform:rotate(360deg)}}.an-pulse{animation:an-pulse 3s ease-in-out infinite alternate}@keyframes an-pulse{from{opacity:.7}to{opacity:1}}.an-air{filter:drop-shadow(0 0 6px rgba(120,190,255,.6))}.an-sea{opacity:.95}.an-vapour{fill:none;stroke:rgba(255,255,255,.8);stroke-width:3;stroke-linecap:round;stroke-dasharray:6 8;animation:an-rise 1.6s linear infinite}@keyframes an-rise{to{stroke-dashoffset:28}}.an-skep{fill:#d9a441;stroke:#8a5a1e;stroke-width:2}.an-stripe{fill:none;stroke:#2a2016;stroke-width:5;stroke-linecap:round}.an-bar{display:flex;gap:10px;align-items:center;margin-top:10px;font:12px ui-monospace,Consolas,monospace;color:#a3a8bd}.an-bar button{font:600 12px system-ui,sans-serif;border:1px solid #3a3f4c;background:#15171c;color:#eceef2;border-radius:8px;padding:6px 12px;cursor:pointer}.an-bar input{flex:1}"
+  return fm_style() + ls_style() + ".an .an-painted{width:960px;height:540px;border-radius:0}" + ".an-cap{fill:#fff;font:600 19px system-ui,sans-serif;text-anchor:middle;paint-order:stroke;stroke:rgba(0,0,0,.55);stroke-width:4px}.an-capbar{fill:rgba(0,0,0,.28)}.an-shadow{fill:rgba(0,0,0,.35)}.an-ground{stroke:rgba(255,255,255,.25);stroke-width:2}.an-track{fill:none;stroke:rgba(255,255,255,.18);stroke-width:1.5;stroke-dasharray:3 8}.an-ring{fill:none;stroke-width:5;opacity:.9}.an-ringback{fill:none;stroke-width:5;opacity:.4}.an-wing{fill:rgba(235,245,255,.75);stroke:rgba(0,0,0,.25);transform-box:fill-box;transform-origin:50% 100%;animation:an-buzz .08s linear infinite alternate}@keyframes an-buzz{to{transform:scaleY(.55)}}.an-sub{font-size:11px}.an-chem{font:700 15px ui-monospace,Consolas,monospace;text-anchor:middle;fill:#eceef2;paint-order:stroke;stroke:rgba(0,0,0,.45);stroke-width:3px}.an-glowing{filter:drop-shadow(0 0 10px #ff6a2b)}.an-ash{fill:#4a4648;opacity:.92}.an-churn{transform-box:fill-box;transform-origin:center;animation:an-churn 1.6s ease-in-out infinite alternate}@keyframes an-churn{to{transform:scale(1.05,.95) rotate(3deg)}}.an-peristalsis{animation:an-flowing 1.2s linear infinite}@keyframes an-flowing{to{stroke-dashoffset:-28}}.an-seg{fill:#8fd16a;stroke:#3e7a35;stroke-width:1.5;animation:an-inch .9s ease-in-out infinite alternate}@keyframes an-inch{to{transform:translateY(-5px)}}.an-antenna{fill:none;stroke:#2a2016;stroke-width:2;stroke-linecap:round}.an-sway{transform-box:fill-box;transform-origin:50% 0;animation:an-swing 3s ease-in-out infinite alternate}@keyframes an-swing{from{transform:rotate(-4deg)}to{transform:rotate(4deg)}}.an-stem{fill:none;stroke:#4c8a3c;stroke-width:5;stroke-linecap:round}.an-root{fill:none;stroke:#8a6a4a;stroke-width:2.5;stroke-linecap:round}.an-label .an-arrow{fill:none;stroke:#ffd27a;stroke-width:2.4;stroke-linecap:round}.an-dot{fill:#ffd27a;stroke:#1a1308;stroke-width:1.5}.an-tag{fill:rgba(14,16,22,.82);stroke:#ffd27a;stroke-width:1.4}.an-tagt{fill:#ffe9b8;font:600 13px ui-monospace,Consolas,monospace;text-anchor:middle;letter-spacing:.04em}.an-board{fill:#11141b}.an-board-l{fill:#a3a8bd;font:600 10px ui-monospace,Consolas,monospace;letter-spacing:.16em}.an-card-box{fill:#0b0d12;stroke:rgba(236,238,242,.18);stroke-width:1.2}.an-card-on{fill:rgba(245,180,92,.14);stroke:#f5b45c;stroke-width:2;filter:drop-shadow(0 0 8px rgba(245,180,92,.55))}.an-card-num{fill:#1d2230;stroke:#f5b45c;stroke-width:1.4}.an-card-n{fill:#f5b45c;font:700 12px ui-monospace,Consolas,monospace;text-anchor:middle}.an-card-t{fill:#eceef2;font:600 14px system-ui,sans-serif}.an-wire{fill:none;stroke:rgba(245,180,92,.45);stroke-width:1.6;stroke-dasharray:4 5}.an-wire.back{stroke:rgba(111,212,154,.5)}.an-spark{fill:#ffd27a;filter:drop-shadow(0 0 4px #ffd27a)}.an-cloud{fill:#f7f9fc;filter:drop-shadow(0 6px 8px rgba(40,60,90,.25))}.an-cloud-under{fill:#d9e2ee}.an-corona{transform-box:fill-box;transform-origin:center;animation:an-turn 30s linear infinite}@keyframes an-turn{to{transform:rotate(360deg)}}.an-pulse{animation:an-pulse 3s ease-in-out infinite alternate}@keyframes an-pulse{from{opacity:.7}to{opacity:1}}.an-air{filter:drop-shadow(0 0 6px rgba(120,190,255,.6))}.an-sea{opacity:.95}.an-vapour{fill:none;stroke:rgba(255,255,255,.8);stroke-width:3;stroke-linecap:round;stroke-dasharray:6 8;animation:an-rise 1.6s linear infinite}@keyframes an-rise{to{stroke-dashoffset:28}}.an-skep{fill:#d9a441;stroke:#8a5a1e;stroke-width:2}.an-stripe{fill:none;stroke:#2a2016;stroke-width:5;stroke-linecap:round}.an-bar{display:flex;gap:10px;align-items:center;margin-top:10px;font:12px ui-monospace,Consolas,monospace;color:#a3a8bd}.an-bar button{font:600 12px system-ui,sans-serif;border:1px solid #3a3f4c;background:#15171c;color:#eceef2;border-radius:8px;padding:6px 12px;cursor:pointer}.an-bar input{flex:1}"
 }
 
 // Play, pause and scrub: one clock for every actor and caption.
@@ -529,11 +532,132 @@ fn an_mapped(a: AnActor, s: Number, e: Number) -> AnActor {
 
 fn an_story_total(st: AnStory) -> Number { return (for sc in st.scenes { sc.seconds }).sum() }
 
+// ---------------------------------------------------------------- labels
+
+// The labels Kosika gives its own stories.
+fn an_story_labels(title: Text) -> AnLabel[] {
+  if title == "The Water Cycle" { return [{scene: 0, t: 0.45, text: "evaporation", actor: "vapour"}, {scene: 1, t: 0.4, text: "condensation", actor: "cloud"}, {scene: 2, t: 0.35, text: "precipitation", actor: "r2"}, {scene: 3, t: 0.3, text: "collection", actor: "d1"}] }
+  if title == "Photosynthesis" { return [{scene: 0, t: 0.4, text: "chlorophyll", actor: "leaf"}, {scene: 1, t: 0.5, text: "carbon dioxide", actor: "co2"}, {scene: 1, t: 0.75, text: "water", actor: "h2o"}, {scene: 2, t: 0.3, text: "glucose", actor: "sugar"}, {scene: 2, t: 0.7, text: "oxygen", actor: "o2"}] }
+  if title == "A Volcano Erupts" { return [{scene: 0, t: 0.2, text: "magma chamber", actor: "magma"}, {scene: 1, t: 0.5, text: "ash and gas", actor: "ash"}, {scene: 2, t: 0.6, text: "lava flow", actor: "lava1"}] }
+  if title == "How We Digest Food" { return [{scene: 0, t: 0.3, text: "teeth", actor: "mouth"}, {scene: 1, t: 0.4, text: "stomach acid", actor: "stomach"}, {scene: 2, t: 0.5, text: "nutrients", actor: "n2"}] }
+  if title == "A Butterfly's Life" { return [{scene: 0, t: 0.3, text: "eggs", actor: "egg"}, {scene: 1, t: 0.4, text: "larva", actor: "cat"}, {scene: 2, t: 0.3, text: "pupa", actor: "chr"}, {scene: 3, t: 0.4, text: "adult", actor: "bfly"}] }
+  if title == "From Seed to Tree" { return [{scene: 0, t: 0.2, text: "seed", actor: "seed"}, {scene: 1, t: 0.5, text: "root and shoot", actor: "sprout"}, {scene: 2, t: 0.6, text: "tree", actor: "tree"}] }
+  return []
+}
+
+// For a story a model wrote: each scene's first actor that moves, by its
+// own name.
+fn an_auto_labels(st: AnStory) -> AnLabel[] {
+  var out: AnLabel[] = []
+  for i in 0 until st.scenes.length() {
+    let moving = for a in st.scenes[i].actors where a.keys.length() > 1 { a }
+    if not moving.is_empty() { out = out.append({scene: i, t: 0.4, text: moving[0].id, actor: moving[0].id}) }
+  }
+  return out
+}
+
+// Where an actor is at t of its scene, between its keyframes.
+fn an_where(a: AnActor, t: Number) -> Number[] {
+  var at = an_px(a.keys[0])
+  for j in 1 until a.keys.length() {
+    let k0 = a.keys[j - 1]
+    let k1 = a.keys[j]
+    if t >= k0.t and t <= k1.t {
+      let f = if k1.t > k0.t { (t - k0.t) / (k1.t - k0.t) } else { 1 }
+      let p0 = an_px(k0)
+      let p1 = an_px(k1)
+      at = [p0[0] + (p1[0] - p0[0]) * f, p0[1] + (p1[1] - p0[1]) * f]
+    }
+    if t > k1.t { at = an_px(k1) }
+  }
+  return at
+}
+
+// A tag that goes with its actor: a leader drawn out from it and the name
+// at its end, on the side with more room.
+fn an_tag(l: AnLabel, a: AnActor, s: Number, e: Number, total: Number) -> Text {
+  let at = an_where(a, l.t)
+  let left = at[0] > 560
+  let w = l.text.length() * 8.6 + 24
+  let up = at[1] > 120
+  let ty = if up { -96 } else { 60 }
+  let tx = if left { 0 - 70 - w } else { 70 }
+  let ex = if left { tx + w } else { tx }
+  let ey = ty + 15
+  let sy = if up { -22 } else { 22 }
+  let len = ((ex * ex) + (ey - sy) * (ey - sy)).sqrt() + 20
+  let g = s + l.t * (e - s)
+  let d = (0.6 / total).min((e - g) / 2)
+  let shown = f"<animate attributeName=\"opacity\" values=\"0;0;1;1;0;0\" keyTimes=\"0;{an_n3(g)};{an_n3(g + d)};{an_n3(e)};{an_n3((e + 0.002).min(0.999))};1\" dur=\"{an_n(total)}s\" repeatCount=\"indefinite\"/>"
+  let drawn = f"<animate attributeName=\"stroke-dashoffset\" values=\"{an_n(len)};{an_n(len)};0;0\" keyTimes=\"0;{an_n3(g)};{an_n3(g + d)};1\" dur=\"{an_n(total)}s\" repeatCount=\"indefinite\"/>"
+  return f"<g class=\"an-label\" opacity=\"0\">{shown}<path class=\"an-arrow\" d=\"M0 {sy} Q{an_n(ex / 2)} {an_n(ey + (0 - sy) * 0.2)} {an_n(ex)} {an_n(ey)}\" stroke-dasharray=\"{an_n(len)} {an_n(len)}\" stroke-dashoffset=\"{an_n(len)}\">{drawn}</path><circle class=\"an-dot\" cx=\"0\" cy=\"{sy}\" r=\"4.5\"/><rect class=\"an-tag\" x=\"{an_n(tx)}\" y=\"{an_n(ty)}\" width=\"{an_n(w)}\" height=\"30\" rx=\"15\"/><text class=\"an-tagt\" x=\"{an_n(tx + w / 2)}\" y=\"{an_n(ty + 20)}\">{an_esc(l.text)}</text></g>"
+}
+
+// A label: a tag beside the actor and an arrow that draws itself to it.
+fn an_label(l: AnLabel, a: AnActor, s: Number, e: Number, total: Number) -> Text {
+  let at = an_where(a, l.t)
+  let x = at[0]
+  let y = at[1]
+  let w = l.text.length() * 8.6 + 24
+  let left = x > 600
+  let bx = if left { (x - 150 - w).max(10) } else { (x + 150).min(950 - w) }
+  let by = (y - 90).max(14).min(440)
+  let ex = if left { bx + w } else { bx }
+  let ey = by + 15
+  let len = ((x - ex) * (x - ex) + (y - ey) * (y - ey)).sqrt()
+  let g = s + l.t * (e - s)
+  let d = (0.6 / total).min((e - g) / 2)
+  let shown = f"<animate attributeName=\"opacity\" values=\"0;0;1;1;0;0\" keyTimes=\"0;{an_n3(g)};{an_n3(g + d)};{an_n3(e)};{an_n3((e + 0.002).min(0.999))};1\" dur=\"{an_n(total)}s\" repeatCount=\"indefinite\"/>"
+  let drawn = f"<animate attributeName=\"stroke-dashoffset\" values=\"{an_n(len)};{an_n(len)};0;0\" keyTimes=\"0;{an_n3(g)};{an_n3(g + d)};1\" dur=\"{an_n(total)}s\" repeatCount=\"indefinite\"/>"
+  return f"<g class=\"an-label\" opacity=\"0\">{shown}<path class=\"an-arrow\" d=\"M{an_n(ex)} {an_n(ey)} Q{an_n((ex + x) / 2)} {an_n((ey + y) / 2 - 30)} {an_n(x)} {an_n(y)}\" stroke-dasharray=\"{an_n(len)} {an_n(len)}\" stroke-dashoffset=\"{an_n(len)}\">{drawn}</path><circle class=\"an-dot\" cx=\"{an_n(x)}\" cy=\"{an_n(y)}\" r=\"5\"/><rect class=\"an-tag\" x=\"{an_n(bx)}\" y=\"{an_n(by)}\" width=\"{an_n(w)}\" height=\"30\" rx=\"15\"/><text class=\"an-tagt\" x=\"{an_n(bx + w / 2)}\" y=\"{an_n(by + 20)}\">{an_esc(l.text)}</text></g>"
+}
+
+// ---------------------------------------------------------------- the canvas beside it
+
+// Whether a story comes back to where it began.
+fn an_cyclic(st: AnStory) -> Bool {
+  let t = " " + st.title.lower() + " "
+  return t.contains("cycle") or t.contains("life") or t.contains("phases")
+}
+
+// The Kosika canvas of the story's steps, beside the animation: a card for
+// each scene on a dotted board, wires between them, each card lit while
+// its scene plays, and a spark that runs along the wire to the next.
+fn an_steps(st: AnStory, total: Number) -> Text {
+  let n = st.scenes.length()
+  let top = 54
+  let gap = 10
+  let h = ((540 - top - 24 - gap * (n - 1)) / n).min(64)
+  var cards = ""
+  var wires = ""
+  var at = 0
+  for i in 0 until n {
+    let sc = st.scenes[i]
+    let s = at / total
+    let e = (at + sc.seconds) / total
+    let y = top + i * (h + gap)
+    let lit = if s <= 0 { f"values=\"1;0;0\" keyTimes=\"0;{an_n3(e)};1\"" } else if e >= 1 { f"values=\"0;1;1\" keyTimes=\"0;{an_n3(s)};1\"" } else { f"values=\"0;1;0;0\" keyTimes=\"0;{an_n3(s)};{an_n3(e)};1\"" }
+    let start = if s <= 0 { "1" } else { "0" }
+    cards = cards + f"<g class=\"an-card\"><rect x=\"984\" y=\"{an_n(y)}\" width=\"272\" height=\"{an_n(h)}\" rx=\"10\" class=\"an-card-box\"/><rect x=\"984\" y=\"{an_n(y)}\" width=\"272\" height=\"{an_n(h)}\" rx=\"10\" class=\"an-card-on\" opacity=\"{start}\"><animate attributeName=\"opacity\" calcMode=\"discrete\" {lit} dur=\"{an_n(total)}s\" repeatCount=\"indefinite\"/></rect><circle cx=\"1008\" cy=\"{an_n(y + h / 2)}\" r=\"12\" class=\"an-card-num\"/><text x=\"1008\" y=\"{an_n(y + h / 2 + 4.5)}\" class=\"an-card-n\">{i + 1}</text><text x=\"1030\" y=\"{an_n(y + h / 2 + 5)}\" class=\"an-card-t\">{an_esc(sc.title)}</text></g>"
+    if i + 1 < n {
+      let wd = f"M1008 {an_n(y + h / 2 + 12)} L1008 {an_n(y + h + gap + h / 2 - 12)}"
+      let spark = an_held([an_n3((e - 0.02).max(s)), an_n3(e)], ["0", "1"], 0.0001, 0.9999)
+      wires = wires + f"<path class=\"an-wire\" d=\"{wd}\"/><circle r=\"3.5\" class=\"an-spark\"><animateMotion dur=\"{an_n(total)}s\" repeatCount=\"indefinite\" calcMode=\"linear\" keyPoints=\"{an_semi(spark[1])}\" keyTimes=\"{an_semi(spark[0])}\" path=\"{wd}\"/></circle>"
+    }
+    at = at + sc.seconds
+  }
+  let last = top + (n - 1) * (h + gap)
+  let back = if an_cyclic(st) and n > 2 { f"<path class=\"an-wire back\" d=\"M1256 {an_n(last + h / 2)} C1276 {an_n(last + h / 2)} 1276 {an_n(top + h / 2)} 1256 {an_n(top + h / 2)}\"/>" } else { "" }
+  return f"<rect x=\"960\" y=\"0\" width=\"320\" height=\"540\" class=\"an-board\"/><rect x=\"960\" y=\"0\" width=\"320\" height=\"540\" fill=\"url(#an-dots)\"/><text x=\"984\" y=\"32\" class=\"an-board-l\">KOSIKA CANVAS &#183; THE STEPS</text>{wires}{back}{cards}"
+}
+
 fn an_story_svg(st: AnStory) -> Text {
+  if st.scenes.is_empty() { return "" }
   let total = an_story_total(st)
   var defs = "<radialGradient id=\"an-glow\"><stop offset=\"0\" stop-color=\"#ffd27a\" stop-opacity=\".7\"/><stop offset=\"1\" stop-color=\"#ffd27a\" stop-opacity=\"0\"/></radialGradient><radialGradient id=\"an-magma\"><stop offset=\"0\" stop-color=\"#ffd27a\"/><stop offset=\".5\" stop-color=\"#ff6a2b\"/><stop offset=\"1\" stop-color=\"#9a1d0e\"/></radialGradient><radialGradient id=\"an-corona\"><stop offset=\".5\" stop-color=\"#ffd27a\"/><stop offset=\"1\" stop-color=\"#f5a623\" stop-opacity=\".6\"/></radialGradient><radialGradient id=\"an-core\" cx=\"40%\" cy=\"38%\" r=\"70%\"><stop offset=\"0\" stop-color=\"#fffbe9\"/><stop offset=\".5\" stop-color=\"#ffe08a\"/><stop offset=\"1\" stop-color=\"#f5a623\"/></radialGradient><radialGradient id=\"an-ocean\" cx=\"35%\" cy=\"32%\" r=\"75%\"><stop offset=\"0\" stop-color=\"#7cc4f2\"/><stop offset=\".6\" stop-color=\"#2f7fc4\"/><stop offset=\"1\" stop-color=\"#174a7a\"/></radialGradient><radialGradient id=\"an-night\" cx=\"80%\" cy=\"75%\" r=\"70%\"><stop offset=\"0\" stop-color=\"#000\" stop-opacity=\".55\"/><stop offset=\".6\" stop-color=\"#000\" stop-opacity=\".15\"/><stop offset=\"1\" stop-color=\"#000\" stop-opacity=\"0\"/></radialGradient>"
   var scenes = ""
   var caps = ""
+  var labels = ""
   var at = 0
   for i in 0 until st.scenes.length() {
     let sc = st.scenes[i]
@@ -542,15 +666,23 @@ fn an_story_svg(st: AnStory) -> Text {
     var actors = ""
     for j in 0 until sc.actors.length() {
       let a = an_mapped(sc.actors[j], s, e)
+      let mine = for l in an_labels_for(st) where l.scene == i and l.actor == sc.actors[j].id { l }
+      let tag = if mine.is_empty() { "" } else { an_tag(mine[0], sc.actors[j], s, e, total) }
       defs = defs + fm_gradient(f"an-g{i * 10 + j}", fm_colour(a.hue))
-      actors = actors + an_actor_in(a, i * 10 + j, sc.seconds, total, s, e)
+      actors = actors + an_actor_in(a, i * 10 + j, sc.seconds, total, s, e, tag)
     }
     let shown = if s <= 0 { "1" } else { "0" }
     scenes = scenes + f"<g class=\"an-scene\" opacity=\"{shown}\">{an_scene_show(s, e, total)}{an_backdrop(sc.backdrop, i)}{actors}</g>"
     caps = caps + an_captions_in(sc, total, s, e)
     at = at + sc.seconds
   }
-  return f"<svg xmlns=\"http://www.w3.org/2000/svg\" class=\"an fm\" viewBox=\"0 0 960 540\" role=\"img\" aria-label=\"{an_esc(st.title)}\"><defs>{defs}</defs>{scenes}<rect class=\"an-capbar\" x=\"0\" y=\"490\" width=\"960\" height=\"50\"/>{caps}</svg>"
+  let dots = "<pattern id=\"an-dots\" width=\"20\" height=\"20\" patternUnits=\"userSpaceOnUse\"><circle cx=\"1\" cy=\"1\" r=\"1\" fill=\"rgba(236,238,242,.14)\"/></pattern>"
+  return f"<svg xmlns=\"http://www.w3.org/2000/svg\" class=\"an fm an-story\" viewBox=\"0 0 1280 540\" role=\"img\" aria-label=\"{an_esc(st.title)}\"><defs>{defs}{dots}<clipPath id=\"an-stage\"><rect width=\"960\" height=\"540\"/></clipPath></defs><g clip-path=\"url(#an-stage)\">{scenes}{labels}<rect class=\"an-capbar\" x=\"0\" y=\"490\" width=\"960\" height=\"50\"/>{caps}</g>{an_steps(st, total)}</svg>"
+}
+
+fn an_labels_for(st: AnStory) -> AnLabel[] {
+  let own = an_story_labels(st.title)
+  return if own.is_empty() { an_auto_labels(st) } else { own }
 }
 
 fn an_story_art(st: AnStory) -> AnArt {
@@ -655,6 +787,9 @@ test "a story plays its scenes in turn on one clock" {
   expect art.svg.contains("an-painted ls") and art.svg.contains("id=\"ls0-sky\"") and art.svg.contains("id=\"ls1-sky\"")
   expect art.page.contains("an-time")
   expect art.notes[0].starts_with("3 scenes on one clock")
+  // The canvas of the steps beside it, and labels that point.
+  expect art.svg.contains("KOSIKA CANVAS &#183; THE STEPS") and art.svg.split("class=\"an-card\"").length() == 4
+  expect art.svg.contains("an-label") and art.svg.contains("data-from=")
 }
 
 test "with no model, Kosika tells the stories it knows, and says when it has none" {
@@ -675,6 +810,13 @@ test "the moon's lit part grows from the right and shrinks from the right" {
   expect an_phase(45).contains("A34 34 0 0 1 0 34") and an_phase(225).contains("A34 34 0 0 0 0 34")
   // New: the lit half and its edge cancel; full: the edge bows the other way.
   expect an_phase(0).contains("A34.00 34 0 0 0 0 -34") and an_phase(180).contains("A34.00 34 0 0 0 0 -34")
+}
+
+test "a label points at where its actor is then" {
+  a: AnActor = {id: "x", form: "ball", hue: "coral", motion: "keys", keys: [{t: 0, x: 0, y: 0, scale: 1, turn: 0}, {t: 1, x: 100, y: 100, scale: 1, turn: 0}]}
+  expect an_where(a, 0.5) == [480, 270]
+  expect an_where(a, 1) == [960, 540]
+  expect an_cyclic({title: "The Water Cycle", scenes: []}) and not an_cyclic({title: "A Volcano Erupts", scenes: []})
 }
 
 test "a scene shows only in its own share of the clock" {

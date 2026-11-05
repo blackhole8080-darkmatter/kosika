@@ -1779,7 +1779,55 @@ function showDesigns() {
         fit(); setTimeout(fit, 900);
         // and again whenever it changes, as when a panel inside is opened
         try { new ResizeObserver(fit).observe(frame.contentDocument.body); } catch (error) { /* the set height stays */ }
+        // An animation with timed captions can be narrated; its lines are
+        // made ready in turn at once, first line first, so narration can
+        // start whenever it is asked for.
+        try { if (frame.contentDocument.querySelector(".an-cap[data-from]")) { narrate.style.display = ""; prepare(); } } catch (error) { /* no narration */ }
       });
+      // Kosi reads each caption aloud as its moment comes, in Kosi's own
+      // voice (Kokoro on this computer), the animation started from the
+      // top so each line meets its scene.
+      let voice = null, caps = [], clips = [], preparing = null;
+      const narrate = h("button", {class: "ghost", style: "display:none", title: "Kosi reads each caption aloud as it comes"}, "\u{1F50A} Narrate");
+      function prepare() {
+        if (preparing) return preparing;
+        const doc = frame.contentDocument;
+        caps = [...doc.querySelectorAll(".an-cap[data-from]")].map(t => ({from: parseFloat(t.dataset.from), to: parseFloat(t.dataset.to), text: t.textContent.trim()}));
+        clips = caps.map(() => null);
+        preparing = (async () => {
+          for (let k = 0; k < caps.length; k++) {
+            try { const r = await api("/api/kosi/speak", {method: "POST", body: JSON.stringify({text: caps[k].text})}); clips[k] = r.audio ? new Audio("data:audio/wav;base64," + r.audio) : false; } catch (error) { clips[k] = false; }
+          }
+        })();
+        return preparing;
+      }
+      narrate.onclick = async () => {
+        if (voice) { clearInterval(voice.tick); if (voice.audio) voice.audio.pause(); if (canSpeak) speechSynthesis.cancel(); voice = null; narrate.textContent = "\u{1F50A} Narrate"; return; }
+        const svg = frame.contentDocument.querySelector("svg.an");
+        prepare();
+        if (!svg || !caps.length) return;
+        // The first line is waited for; the rest come while it plays.
+        narrate.disabled = true; narrate.textContent = "Kosi is warming up\u2026";
+        while (clips[0] === null) await new Promise(r => setTimeout(r, 200));
+        narrate.disabled = false; narrate.textContent = "\u{1F507} Stop narrating";
+        const total = Math.max(...caps.map(c => c.to));
+        svg.setCurrentTime(0); svg.unpauseAnimations();
+        const played = new Set(); let last = 0;
+        voice = {audio: null, tick: setInterval(() => {
+          const t = svg.getCurrentTime() % total;
+          if (t < last) played.clear();
+          last = t;
+          caps.forEach((c, k) => {
+            // A line not ready at its moment is said when it is, while its
+            // caption still shows.
+            if (played.has(k) || t < c.from || t >= c.to - 0.8 || clips[k] === null) return;
+            played.add(k);
+            if (voice.audio) voice.audio.pause();
+            if (clips[k]) { voice.audio = clips[k]; clips[k].currentTime = 0; clips[k].play().catch(() => {}); }
+            else if (canSpeak) { speechSynthesis.cancel(); speechSynthesis.speak(new SpeechSynthesisUtterance(c.text)); }
+          });
+        }, 100)};
+      };
       const open = h("button", {class: "ghost", onclick: () => { const url = URL.createObjectURL(new Blob([made.page], {type: "text/html"})); window.open(url, "_blank"); }}, "Open as a page");
       // Kosika Brain keeps what it drew: a thumbs up gives it again for
       // asks like this one, a thumbs down means it is never reused.
@@ -1796,7 +1844,7 @@ function showDesigns() {
       out.replaceChildren(
         h("div", {class: "chips"}, chip(made.kind, "accent"), (made.fixed || []).length ? chip("Kosika fixed " + made.fixed.length, "ok") : null, (made.fixed || []).includes("reused a kept canvas") ? chip("from memory, no model", "ok") : null),
         h("p", {class: "lead"}, said + (said.endsWith(".") ? "" : ".")),
-        frame, h("div", {style: "display:flex;gap:8px;flex-wrap:wrap;align-items:center"}, open, good, bad, rated));
+        frame, h("div", {style: "display:flex;gap:8px;flex-wrap:wrap;align-items:center"}, narrate, open, good, bad, rated));
     } catch (error) {
       out.replaceChildren(h("div", {class: "banner bad"}, String(error.message || error)));
     } finally { draw.disabled = false; }
