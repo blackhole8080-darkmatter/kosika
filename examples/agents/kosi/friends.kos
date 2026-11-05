@@ -117,6 +117,36 @@ fn iris_papers(g: BrainGathered) -> BrainFound { return {notes: g.notes, by: "wo
 
 fn iris_both(a: BrainFound, b: BrainFound) -> BrainFound { return {notes: a.notes.concat(b.notes), by: a.by} }
 
+// What the Brain already kept, held to the same test: a paper kept for
+// another question that shares only a word is left out here too.
+fn iris_kept_on_topic(known: BrainFound, question: Text, looked: BrainFound, intro: FaPage) -> BrainFound { return {notes: br_on_topic(known.notes, iris_about(question, looked, intro), iris_topic(question)), by: known.by} }
+
+// What a question is about: its own words, what Wikipedia says of what it
+// names, and the opening of the Wikipedia article on its main word ("how
+// a rainbow forms": the article Rainbow, on light, water and refraction).
+fn iris_about(question: Text, looked: BrainFound, intro: FaPage) -> Text { return question + ". " + (for n in looked.notes { n.text }).join(" ") + " " + fa_page_sentences(intro.text).take(5).join(" ") }
+
+// The article Iris read on the question's main word, as evidence: its
+// opening two sentences, with the page they came from.
+fn iris_read_intro(question: Text, intro: FaPage) -> BrainFound {
+  if intro.text.is_empty() { return {notes: [], by: "words"} }
+  return {notes: for line in iris_opening(fa_page_sentences(intro.text), iris_main(question)) { fa_note(iris_main(question), intro, line) }, by: "words"}
+}
+
+// The article's opening, not its furniture: sentences that name the main
+// word and say what it is or does; a note pointing elsewhere ("For other
+// uses, see ...") and a picture's caption have no verb of being.
+fn iris_opening(lines: Text[], main: Text) -> Text[] {
+  let word = main.lower()
+  return (for l in lines where l.lower().contains(word) and not l.contains("disambiguation") and not l.starts_with("For other") and not l.starts_with("Not to be confused") and (l.contains(" is ") or l.contains(" are ") or l.contains(" was ") or l.contains(" were ") or l.contains(" can ")) { l }).take(2)
+}
+
+// The question's main word: the first of its own words.
+fn iris_main(question: Text) -> Text {
+  let words = iris_topic(question).words()
+  return if words.is_empty() { question } else { words[0] }
+}
+
 // What Iris searches arXiv for: the question's own words, without the
 // asking ("what is new in research on ...") that no paper's text holds.
 // arXiv finds papers holding every word asked, so at most four are used.
@@ -167,14 +197,17 @@ workflow iris_research(m: FrMsg) -> FrSaid {
 workflow iris_search(m: FrMsg) -> FrSaid {
   budget 5 model calls, 600 seconds
   question = fr_question(m.text)
-  first    = call brain_gather({topic: iris_topic(question)})
+  // Wikipedia first: what the question names, read and checked. The
+  // papers after it are kept only when they are about the same thing.
+  looked   = call fa_look_up({question: question, subjects: fa_subjects(question)})
+  intro    = call fa_read({url: fa_url(iris_main(question))})
+  first    = call brain_gather_about({topic: iris_topic(question), about: iris_about(question, looked, intro)})
   gathered = match first.kept == 0 {
-    case true { call brain_gather({topic: iris_fewer(question)}) }
+    case true { call brain_gather_about({topic: iris_fewer(question), about: iris_about(question, looked, intro)}) }
     case _ { first }
   }
-  looked   = call fa_look_up({question: question, subjects: fa_subjects(question)})
   known    = call brain_recall({text: question, kind: "fact"})
-  found    = iris_both(iris_both(iris_papers(gathered), looked), known)
+  found    = iris_both(iris_both(iris_both(looked, iris_read_intro(question, intro)), iris_papers(gathered)), iris_kept_on_topic(known, question, looked, intro))
   reply    = use_model iris(iris_task(), question, iris_found_text(found)) retry 1 otherwise iris_no_reply()
   out      = iris_said(reply, found, gathered, question)
 }
@@ -262,6 +295,11 @@ workflow sol_explain(m: FrMsg) -> FrSaid {
 }
 
 // ---------------------------------------------------------------- tests
+
+test "Iris reads an article's opening, not its notes and captions" {
+  lines = ["For other uses, see Rainbow (disambiguation).", "Double rainbow and supernumerary rainbows on the inside of the primary arc.", "A rainbow is an optical phenomenon caused by refraction, internal reflection and dispersion of light in water droplets.", "Rainbows can be full circles."]
+  expect iris_opening(lines, "rainbow") == ["A rainbow is an optical phenomenon caused by refraction, internal reflection and dispersion of light in water droplets.", "Rainbows can be full circles."]
+}
 
 test "a message finds the friend it is for, and its question" {
   expect fr_who("Iris, what's new on sparse attention?") == "iris"

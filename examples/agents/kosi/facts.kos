@@ -11,7 +11,7 @@
 
 import "std/brain.kos"
 
-export [FaLook, FaPage, fa_subjects, fa_missing, fa_url, fa_sentences, fa_note, fa_asks_fact, fa_look_up]
+export [FaLook, FaPage, FaUrl, fa_read, fa_page_sentences, fa_subjects, fa_missing, fa_url, fa_sentences, fa_note, fa_asks_fact, fa_look_up]
 
 record FaLook { question: Text subjects: Text[] }
 record FaPage { url: Text title: Text text: Text }

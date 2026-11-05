@@ -41,7 +41,7 @@ import "designs_generative.kos"
 import "nn.kos"
 import "algorithms.kos"
 
-export [BrainGatherAsk, BrainGathered, BrainPage, BrainPaper, brain_gather, br_papers_in, br_facts, br_known, br_with_known, br_search_url, BrainNote, BrainAsk, BrainFound, BrainPast, BrainKept, BrainCanvas, BrainRecipe, BrainRating, BrainRated, BrainMind, BrainChoice, br_features, br_new_mind, br_learn, br_choose, brain_recall, brain_get, brain_keep, brain_design, brain_rate, br_reusable, br_rated_canvas, br_words, br_near, br_floor, br_past, br_told]
+export [BrainGatherAsk, BrainGatherAbout, brain_gather_about, br_on_topic, BrainGathered, BrainPage, BrainPaper, brain_gather, br_papers_in, br_facts, br_known, br_with_known, br_search_url, BrainNote, BrainAsk, BrainFound, BrainPast, BrainKept, BrainCanvas, BrainRecipe, BrainRating, BrainRated, BrainMind, BrainChoice, br_features, br_new_mind, br_learn, br_choose, brain_recall, brain_get, brain_keep, brain_design, brain_rate, br_reusable, br_rated_canvas, br_words, br_near, br_floor, br_past, br_told]
 
 // kind: episode, fact, recipe or structure.
 // topic: what it is about, in words a person would use.
@@ -85,6 +85,11 @@ memory minds of BrainMind
 // ---------------------------------------------------------------- gathering, the records
 
 record BrainGatherAsk { topic: Text }
+// A gathering with what the topic is about: words from the question and
+// from what is already known of it (a Wikipedia article), so a paper that
+// only shares the topic's word ("rainbow" in graph colouring, for a
+// rainbow in the sky) is left out.
+record BrainGatherAbout { topic: Text about: Text }
 // notes: the papers read, each kept as a fact with its source.
 record BrainGathered { kept: Number titles: Text[] said: Text notes: BrainNote[] }
 
@@ -605,6 +610,30 @@ workflow brain_design(ask: DzAsk) -> DzResult {
 }
 
 // Gather research on a topic into the Brain's knowledge.
+// The papers that are about what the topic is about: each shares, past the
+// topic's own words, a word or two with what it is about. With nothing
+// to go by, every paper stays.
+fn br_on_topic(facts: BrainNote[], about: Text, topic: Text) -> BrainNote[] {
+  let own = br_words(topic)
+  let context = for w in br_words(about) where not own.contains(w) and not w.to_number().exists() { w }
+  if context.is_empty() { return facts }
+  // With a whole article to go by, one shared word is chance; two is a
+  // paper about the same thing.
+  let need = if context.unique().length() >= 15 { 2 } else { 1 }
+  return for f in facts where (for w in br_words(f.topic + " " + f.text).unique() where context.contains(w) { w }).length() >= need { f }
+}
+
+workflow brain_gather_about(g: BrainGatherAbout) -> BrainGathered {
+  budget 1 model calls, 120 seconds
+  page  = execute brain_library.brain_feed(br_search_url(g.topic)) otherwise br_no_page()
+  facts = br_on_topic(br_facts(page, g.topic), g.about, g.topic)
+  kept  = match facts.is_empty() {
+    case true { br_not_kept() }
+    case _ { call brain_keep_facts(br_fact_batch(facts)) }
+  }
+  out   = br_gathered(g.topic, facts)
+}
+
 workflow brain_gather(g: BrainGatherAsk) -> BrainGathered {
   budget 1 model calls, 120 seconds
   page  = execute brain_library.brain_feed(br_search_url(g.topic)) otherwise br_no_page()
@@ -743,6 +772,14 @@ test "the Brain overrules the words when your ratings taught it they go badly" {
   // Untaught, the words stand.
   expect br_choose_for(m0, ask).kind == ""
   expect br_with_kind(ask, br_choose_for(m0, ask)).kind == ""
+}
+
+test "a paper that only shares the topic's word is left out" {
+  graph: BrainNote = {kind: "fact", topic: "Rainbow paths in edge-coloured graphs", words: "", text: "A path in an edge-coloured graph is rainbow if no two edges share a colour.", source: "https://arxiv.org/abs/1", score: 1, times: 1}
+  sky: BrainNote = {kind: "fact", topic: "Supernumerary rainbows", words: "", text: "Sunlight refracted inside water droplets makes the arcs we see.", source: "https://arxiv.org/abs/2", score: 1, times: 1}
+  about = "how a rainbow forms. A rainbow is an optical phenomenon caused by refraction of sunlight in water droplets."
+  expect br_on_topic([graph, sky], about, "rainbow forms") == [sky]
+  expect br_on_topic([graph, sky], "rainbow", "rainbow").length() == 2
 }
 
 fn br_test_canvas(topic: Text, score: Number) -> BrainCanvas { return {..br_no_canvas(), topic: topic, words: br_words(topic).join(" "), kind: "canvas", title: "Water Cycle", why: "drew all three", page: "<p>page</p>", embed: "<div class=\"kd-title\">Water Cycle</div>", score: score} }
