@@ -18,7 +18,7 @@
 import "designs_draw.kos"
 import "designs_palette.kos"
 
-export [Ask, Plan, Job, Review, Reviewed, think, describe, critique, automation, kinds_guide]
+export [Ask, Answer, Plan, Job, Review, Reviewed, answer_kind, think, describe, critique, automation, kinds_guide]
 
 record Ask { text: Text }
 record Brief { task: Text ask: Text }

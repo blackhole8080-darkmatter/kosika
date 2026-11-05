@@ -51,6 +51,15 @@ class JsonModeTests(unittest.TestCase):
     def test_the_ollama_protocol_uses_its_own_spelling(self) -> None:
         provider, sent = capture("ollama")
         call_model(provider, {"text": "x"}, SCHEMA)
+        # Ollama is given the record's whole schema as the answer's format,
+        # so even a small model cannot leave a field out.
+        self.assertEqual(sent[0]["format"], SCHEMA)
+
+    def test_a_request_with_no_schema_asks_ollama_for_json(self) -> None:
+        provider, sent = capture("ollama")
+        provider.complete(
+            ModelRequest(messages=(ChatMessage(role="user", content="hi"),), json_object=True)
+        )
         self.assertEqual(sent[0]["format"], "json")
 
     def test_ollama_is_asked_to_keep_the_model_ready(self) -> None:

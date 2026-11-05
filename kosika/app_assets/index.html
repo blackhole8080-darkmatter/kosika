@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230a0c16'/%3E%3Ccircle cx='32' cy='32' r='18' fill='none' stroke='%23f5b45c' stroke-width='5'/%3E%3Ccircle cx='32' cy='32' r='8' fill='%2306070d'/%3E%3C/svg%3E"><title>Kosika Studio</title>
+<link rel="icon" href="/favicon.ico" sizes="any"><link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png"><link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png"><link rel="apple-touch-icon" href="/icon-192.png"><title>Kosika Studio</title>
 <style>
 :root {
   --bg: #f6f4ef; --panel: #ffffff; --rail: #efece5; --ink: #1d1b18; --soft: #6c675f; --faint: #9a958b; --line: #e3dfd6;
@@ -1050,6 +1050,92 @@ body.on-mission .track { opacity: .5; }
 
 @media (prefers-reduced-motion: reduce) { [data-skin="dark-matter"] body::after { display: none; } }
 
+
+/* ==========================================================================
+   Graphite and Paper: the quiet looks, and Graphite is Studio's own. Flat
+   surfaces, thin borders, one amber accent (the mark's ring) for what is
+   live or chosen, a plain sans for words and a mono only for small facts.
+   No clouds, grain, glass, glow or text that shines: the Kosika canvas,
+   with its dotted board, is the one strong picture on the page. Paper is
+   the same in daylight.
+   ========================================================================== */
+:root[data-skin="graphite"] {
+  --bg: #0e0f12; --panel: #15171c; --rail: #0b0c0f; --ink: #ecedee; --soft: #a9adb6; --faint: #8e929c; --line: #23262d;
+  --accent: #f5b45c; --accent-soft: #1d1810; --ok: #6fcf97; --ok-soft: #13221a; --bad: #f2a3a3; --bad-soft: #2a1717;
+  --warn: #e9c46a; --warn-soft: #231d10; --think: #b6acf5; --think-soft: #1b1930; --mem: #7fd1c7; --mem-soft: #12201e;
+  --code: #c3c6cd; --code-soft: #1a1c22; --glass: #15171c; --glass-edge: #23262d; --glow: rgba(245, 180, 92, .18);
+  --glow-a: #f5b45c; --glow-b: #f5b45c; --glow-c: #f5b45c; --shadow: none; --lift: none;
+  --sans: Inter, "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif; --display: var(--sans);
+  --mono: "Cascadia Code", "JetBrains Mono", ui-monospace, Consolas, monospace;
+  --ease: cubic-bezier(.2, .8, .2, 1); --settle: var(--ease);
+  color-scheme: dark;
+}
+:root[data-skin="paper"], :root[data-skin="graphite"][data-theme="light"] {
+  --bg: #f7f6f3; --panel: #ffffff; --rail: #fbfaf8; --ink: #16171a; --soft: #4a4d55; --faint: #5d6069; --line: #e4e2dc;
+  --accent: #9a5a0c; --accent-soft: #fbf1e3; --ok: #2e7d4f; --ok-soft: #e6f3eb; --bad: #b3382c; --bad-soft: #f8e3e0;
+  --warn: #8a6100; --warn-soft: #f8ecd0; --think: #5b4bb5; --think-soft: #ebe8fa; --mem: #1f6f8b; --mem-soft: #dff0f5;
+  --code: #3c3f46; --code-soft: #efede8; --glass: #ffffff; --glass-edge: #e4e2dc; --glow: rgba(154, 90, 12, .16);
+  --glow-a: #9a5a0c; --glow-b: #9a5a0c; --glow-c: #9a5a0c; --shadow: none; --lift: none;
+  --sans: Inter, "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif; --display: var(--sans);
+  --mono: "Cascadia Code", "JetBrains Mono", ui-monospace, Consolas, monospace;
+  --ease: cubic-bezier(.2, .8, .2, 1); --settle: var(--ease);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: light) {
+  :root[data-skin="graphite"]:not([data-theme="dark"]) {
+  --bg: #f7f6f3; --panel: #ffffff; --rail: #fbfaf8; --ink: #16171a; --soft: #4a4d55; --faint: #5d6069; --line: #e4e2dc;
+  --accent: #9a5a0c; --accent-soft: #fbf1e3; --ok: #2e7d4f; --ok-soft: #e6f3eb; --bad: #b3382c; --bad-soft: #f8e3e0;
+  --warn: #8a6100; --warn-soft: #f8ecd0; --think: #5b4bb5; --think-soft: #ebe8fa; --mem: #1f6f8b; --mem-soft: #dff0f5;
+  --code: #3c3f46; --code-soft: #efede8; --glass: #ffffff; --glass-edge: #e4e2dc; --glow: rgba(154, 90, 12, .16);
+  --glow-a: #9a5a0c; --glow-b: #9a5a0c; --glow-c: #9a5a0c; --shadow: none; --lift: none;
+  --sans: Inter, "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif; --display: var(--sans);
+  --mono: "Cascadia Code", "JetBrains Mono", ui-monospace, Consolas, monospace;
+  --ease: cubic-bezier(.2, .8, .2, 1); --settle: var(--ease);
+  color-scheme: light;
+}
+}
+:is([data-skin="graphite"], [data-skin="paper"]) body { font: 14.5px/1.55 var(--sans); background: var(--bg); letter-spacing: 0; grid-template-columns: 224px minmax(0, 1fr); }
+:is([data-skin="graphite"], [data-skin="paper"]) :is(.nebula, .grain, .spot, .ripple, .spy-only) { display: none !important; }
+:is([data-skin="graphite"], [data-skin="paper"]) body::before, :is([data-skin="graphite"], [data-skin="paper"]) body::after, :is([data-skin="graphite"], [data-skin="paper"]) .card::after { display: none !important; }
+:is([data-skin="graphite"], [data-skin="paper"]) aside.rail { background: var(--rail); backdrop-filter: none; -webkit-backdrop-filter: none; border-right: 1px solid var(--line); }
+:is([data-skin="graphite"], [data-skin="paper"]) .brand { font: 600 15px var(--sans); letter-spacing: -.01em; }
+:is([data-skin="graphite"], [data-skin="paper"]) .brand small { background: none; -webkit-text-fill-color: var(--faint); color: var(--faint); font: 500 11px var(--mono); letter-spacing: 0; text-transform: none; margin-left: auto; }
+:is([data-skin="graphite"], [data-skin="paper"]) .nav { border-radius: 8px; font-weight: 500; color: var(--soft); }
+:is([data-skin="graphite"], [data-skin="paper"]) .nav:hover { background: var(--code-soft); color: var(--ink); }
+:is([data-skin="graphite"], [data-skin="paper"]) .nav.on { background: var(--code-soft); color: var(--ink); }
+:is([data-skin="graphite"], [data-skin="paper"]) .nav.on::before { background: var(--accent); }
+:is([data-skin="graphite"], [data-skin="paper"]) .nav-pill { background: var(--code-soft) !important; box-shadow: none !important; }
+:is([data-skin="graphite"], [data-skin="paper"]) main h1 { font: 600 24px/1.2 var(--sans); letter-spacing: -.02em; background: none; -webkit-text-fill-color: currentColor; color: var(--ink); animation: none; text-transform: none; }
+:is([data-skin="graphite"], [data-skin="paper"]) main h1::after { content: none; }
+:is([data-skin="graphite"], [data-skin="paper"]) h2, :is([data-skin="graphite"], [data-skin="paper"]) .card h3 { font-family: var(--sans); font-weight: 600; letter-spacing: -.01em; text-transform: none; }
+:is([data-skin="graphite"], [data-skin="paper"]) :is(.card, .panel, .fact, .stage-wrap, .chat, .banner) { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
+:is([data-skin="graphite"], [data-skin="paper"]) .card:hover { transform: none; box-shadow: none; border-color: color-mix(in srgb, var(--ink) 22%, var(--line)); }
+:is([data-skin="graphite"], [data-skin="paper"]) .chip { font: 500 11px/1.6 var(--mono); letter-spacing: 0; text-transform: none; border-radius: 6px; border: 1px solid var(--line); background: transparent; color: var(--soft); padding: 3px 8px; }
+:is([data-skin="graphite"], [data-skin="paper"]) .chip.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 35%, var(--line)); }
+:is([data-skin="graphite"], [data-skin="paper"]) .chip.bad { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 35%, var(--line)); }
+:is([data-skin="graphite"], [data-skin="paper"]) .chip.accent, :is([data-skin="graphite"], [data-skin="paper"]) .chip.warn { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
+:is([data-skin="graphite"], [data-skin="paper"]) button, :is([data-skin="graphite"], [data-skin="paper"]) .btn { background: var(--ink); color: var(--bg); border: 0; border-radius: 9px; box-shadow: none; font-weight: 600; filter: none; text-transform: none; letter-spacing: 0; }
+:is([data-skin="graphite"], [data-skin="paper"]) button:hover:not(:disabled) { filter: none; box-shadow: none; background: color-mix(in srgb, var(--ink) 86%, var(--bg)); }
+:is([data-skin="graphite"], [data-skin="paper"]) :is(button.quiet, button.ghost, .ghost) { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+:is([data-skin="graphite"], [data-skin="paper"]) :is(button.quiet, button.ghost, .ghost):hover:not(:disabled) { background: var(--code-soft); }
+:is([data-skin="graphite"], [data-skin="paper"]) :is(input[type=text], textarea, select) { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 9px; }
+:is([data-skin="graphite"], [data-skin="paper"]) :is(input[type=text], textarea):focus { border-color: color-mix(in srgb, var(--accent) 60%, var(--line)); box-shadow: 0 0 0 3px var(--glow); outline: none; }
+:is([data-skin="graphite"], [data-skin="paper"]) input[type=checkbox] { accent-color: var(--accent); }
+:is([data-skin="graphite"], [data-skin="paper"]) .arrive { animation: calm-in .35s var(--ease) both; animation-delay: calc(var(--i, 0) * 30ms); }
+@keyframes calm-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+:is([data-skin="graphite"], [data-skin="paper"]) ::selection { background: color-mix(in srgb, var(--accent) 35%, transparent); }
+
+/* Talk: who is answering is a small ring and a name, not a coloured bubble. */
+.friends { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.friends button { background: transparent !important; color: var(--soft) !important; border: 0 !important; border-radius: 7px; padding: 6px 12px; min-height: 32px; font-weight: 500; box-shadow: none !important; }
+.friends button[aria-pressed="true"] { background: var(--ink) !important; color: var(--bg) !important; }
+.say-from { display: flex; gap: 12px; }
+.say-ring { flex: none; width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--ring, var(--accent)); display: grid; place-items: center; font: 600 12px var(--sans, system-ui); color: var(--ring, var(--accent)); margin-top: 1px; }
+.say-name { font-weight: 600; font-size: 14px; } .say-meta { font: 11px var(--mono); color: var(--faint); margin-left: 8px; }
+.say-text { font-size: 15.5px; line-height: 1.65; margin-top: 4px; max-width: 760px; }
+.say-you { justify-self: end; max-width: 72%; background: var(--code-soft); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; font-size: 15px; }
+.say-src { font: 11px var(--mono); color: var(--soft); text-decoration: none; border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
+.say-src:hover { color: var(--ink); border-color: color-mix(in srgb, var(--ink) 30%, var(--line)); }
 </style>
 </head>
 <body>
@@ -1065,10 +1151,13 @@ body.on-mission .track { opacity: .5; }
 <template id="icon-runs"><svg viewBox="0 0 24 24"><path d="M12 8v4l3 2"/><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/></svg></template>
 <template id="icon-tools"><svg viewBox="0 0 24 24"><path d="M14.5 6.5a4 4 0 0 0-5.300 5.300L3 18l3 3 6.200-6.200a4 4 0 0 0 5.300-5.300l-2.500 2.500-2.500-2.500 2.500-2.500z"/></svg></template>
 <template id="icon-skills"><svg viewBox="0 0 24 24"><path d="M12 3l2.600 5.400L20 9.300l-4 4 1 5.700-5-2.700L7 19l1-5.700-4-4 5.400-.900L12 3z"/></svg></template>
+<template id="icon-talk"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg></template>
+<template id="icon-crew"><svg viewBox="0 0 24 24"><circle cx="12" cy="7" r="3"/><circle cx="5" cy="15" r="2.500"/><circle cx="19" cy="15" r="2.500"/><path d="M12 10v4M9.500 12.500 6.500 13.500M14.500 12.500l3 1"/><path d="M8 21c.5-2.200 2-3.500 4-3.500s3.500 1.300 4 3.500"/></svg></template>
 <template id="icon-study"><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M7 9.500v5c0 1.400 2.200 3 5 3s5-1.600 5-3v-5"/><path d="M21 7v6"/></svg></template>
 <template id="icon-designs"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.300-.3-.4-.5-.8-.5-1.300 0-1.100.9-2 2-2h2.400A4.600 4.600 0 0 0 22 9.800C22 6 17.500 3 12 3z"/><circle cx="7.500" cy="11" r="1.200"/><circle cx="10.500" cy="7" r="1.200"/><circle cx="15.500" cy="7.500" r="1.200"/></svg></template>
 <template id="icon-mayaos"><svg viewBox="0 0 24 24"><path d="M12 2.8l8 4.6v9.2l-8 4.6-8-4.6V7.4z"/><path d="M8 15V9.5l4 3 4-3V15"/></svg></template>
 <template id="icon-services"><svg viewBox="0 0 24 24"><path d="M12 3v3"/><path d="M12 18v3"/><path d="M4.2 7.5l2.6 1.5"/><path d="M17.2 15l2.6 1.5"/><path d="M4.2 16.5l2.6-1.5"/><path d="M17.2 9l2.6-1.5"/><circle cx="12" cy="12" r="4"/></svg></template>
+<template id="icon-models"><svg viewBox="0 0 24 24"><path d="M12 3l9 4.5-9 4.5-9-4.5z"/><path d="M3 12l9 4.5 9-4.5"/><path d="M3 16.5L12 21l9-4.5"/></svg></template>
 <template id="icon-permissions"><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.2 8-8 9-4.800-1-8-4.500-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/></svg></template>
 <script>
 "use strict";
@@ -1201,7 +1290,7 @@ setTheme(theme());
 let jumpItems = null;
 async function openJump() {
   if (document.querySelector(".veil")) return;
-  const pages = [["assistant", "Assistant"], ["project", "Project"], ["agents", "Agents"], ["runs", "Runs"], ["tools", "Tools"], ["skills", "Skills"], ["study", "Study"], ["designs", "Designs"], ["permissions", "Permissions"]].map(([view, name]) => ({kind: "page", name, detail: "", title: "Studio", view}));
+  const pages = [["assistant", "Assistant"], ["talk", "Talk to Kosi"], ["project", "Project"], ["agents", "Agents"], ["runs", "Runs"], ["tools", "Tools"], ["skills", "Skills"], ["study", "Study"], ["designs", "Designs"], ["crew", "Crew"], ["permissions", "Permissions"]].map(([view, name]) => ({kind: "page", name, detail: "", title: "Studio", view}));
   const box = h("input", {type: "text", placeholder: "Jump to an agent, workflow, model, tool, memory or record"}), found = h("div", {class: "found"});
   const veil = h("div", {class: "veil", onclick: event => { if (event.target === veil) close(); }}, h("div", {class: "jump"}, box, found, h("div", {class: "keys"}, "↑ ↓ to move · Enter to open · Esc to close")));
   let hits = [], at = 0;
@@ -1250,16 +1339,23 @@ async function loadBrand() {
   } catch (error) { /* the plain K stays */ }
 }
 
+let overviewLoading = null;
+function loadOverview(again) {
+  if (!overviewLoading || again) overviewLoading = api("/api/agents").then(found => { overview = found; return found; }).catch(error => { overviewLoading = null; throw error; });
+  return overviewLoading;
+}
+
 function go(view, id) { location.hash = "#" + view + (id ? "/" + encodeURIComponent(id) : ""); }
 window.addEventListener("hashchange", route);
 
 function drawRail(active) {
-  const items = [["assistant", "Assistant"], ["mayaos", "MayaOS"], ["project", "Project"], ["agents", "Agents"], ["runs", "Runs"], ["tools", "Tools"], ["skills", "Skills"], ["study", "Study"], ["designs", "Designs"], ["services", "Services"], ["permissions", "Permissions"]];
+  const items = [["talk", "Talk"], ["crew", "Swarm"], ["designs", "Designs"], ["agents", "Agents"], ["models", "Models"], ["runs", "Runs"], ["permissions", "Settings"]];
+  if (["project", "skills", "tools", "agent"].includes(active)) active = "agents";
   document.getElementById("nav").replaceChildren(...items.map(([key, label]) =>
     h("div", {class: "nav" + (key === active ? " on" : "") + (key === "mayaos" ? " door" : ""), title: key === "mayaos" ? "Open MayaOS, the app your agents live in" : null, onclick: () => key === "mayaos" ? openMaya() : go(key)}, icon(key), label, key === "mayaos" ? h("span", {class: "out"}, "\u2197") : null)));
   document.getElementById("foot").replaceChildren(
-    h("div", null, h("span", {class: "dot" + (overview.can_run ? "" : " off")}), overview.can_run ? overview.model : "no model: view and test only"),
-    h("div", {class: "path", title: overview.root}, overview.root.split(/[\\/]/).slice(-2).join("/")),
+    h("div", {style: "cursor:pointer", title: "See and choose models", onclick: () => go("models")}, h("span", {class: "dot"}), "Models: Kosika chooses"),
+    ...(overview ? [h("div", {class: "path", title: overview.root}, overview.root.split(/[\\/]/).slice(-2).join("/"))] : []),
     h("div", {class: "theme", title: "Jump to any agent, workflow, tool or record", onclick: openJump}, h("span", null, "Jump to…"), h("small", {style: "margin-left:auto;color:var(--faint)"}, "Ctrl K")),
     h("div", {class: "theme", title: "Change between your computer's setting, light and dark", onclick: () => { setTheme(THEMES[(THEMES.indexOf(theme()) + 1) % THEMES.length]); drawRail(active); }}, h("i"), "Theme: " + THEME_WORDS[theme()]));
 }
@@ -1270,9 +1366,11 @@ async function route() {
   const [view, rawId] = location.hash.slice(1).split("/");
   const id = rawId ? decodeURIComponent(rawId) : "";
   try {
-    overview = await api("/api/agents");
+    const active = view || "talk";
+    const needs = ["agents", "agent", "project", "runs", "tools", "skills", "assistant", "permissions"].includes(active);
+    if (needs) { drawRail(active); if (!overview) main.replaceChildren(h("div", {style: "font:12px var(--mono);color:var(--faint)"}, "reading your agents…")); await loadOverview(); }
+    else loadOverview().then(() => { if (mine === routing) drawRail(active); }).catch(() => {});
     if (mine !== routing) return;
-    const active = view || "assistant";
     drawRail(active === "agent" ? "agents" : active);
     if (active === "agents") showAgents();
     else if (active === "agent") await showAgent(id, false);
@@ -1282,10 +1380,14 @@ async function route() {
     else if (active === "skills") await showSkills();
     else if (active === "designs") showDesigns();
     else if (active === "study") showStudy();
+    else if (active === "crew") showCrew();
+    else if (active === "talk") showTalk();
     else if (active === "permissions") showPermissions();
+    else if (active === "models") await showModels();
     else if (active === "services") await showServices();
-    else if (overview.assistant) await showAgent(overview.assistant, true);
-    else showAgents();
+    else if (active === "assistant" && overview.assistant) await showAgent(overview.assistant, true);
+    else showTalk();
+    if (["agents", "project", "skills", "tools"].includes(active)) main.prepend(agentTabs(active));
   } catch (error) {
     main.replaceChildren(h("div", {class: "banner bad"}, String(error.message || error)));
   }
@@ -1655,7 +1757,7 @@ async function openMaya() {
 // stay inside it.
 function showDesigns() {
   const ask = h("input", {type: "text", placeholder: "how does a rainbow form, compare solar and wind power, a calm background about the sea…", style: "flex:1;min-width:220px"});
-  const kind = h("select", null, [["", "Kosika chooses"], ["diagram", "Diagram"], ["illustration", "Illustration"], ["art", "Moving art"]].map(([value, label]) => h("option", {value}, label)));
+  const kind = h("select", null, [["", "Kosika chooses"], ["diagram", "Diagram"], ["illustration", "Illustration"], ["art", "Moving art"], ["canvas", "Canvas"], ["algorithm", "Algorithm"]].map(([value, label]) => h("option", {value}, label)));
   const out = h("div", {class: "designs-out"});
   const draw = h("button", {onclick: run}, "Draw");
   async function run() {
@@ -1671,23 +1773,661 @@ function showDesigns() {
       }
       const frame = h("iframe", {title: made.title, style: "width:100%;height:" + (made.kind === "diagram" ? 720 : 860) + "px;border:0;border-radius:18px;background:transparent"});
       frame.srcdoc = "<!doctype html><html><head><meta charset=\"utf-8\"><style>html,body{margin:0;background:transparent}</style></head><body>" + made.embed + "</body></html>";
+      // As tall as what it holds, so a short picture leaves no empty block.
+      frame.addEventListener("load", () => {
+        const fit = () => { try { frame.style.height = (frame.contentDocument.body.scrollHeight + 4) + "px"; } catch (error) { /* keep the set height */ } };
+        fit(); setTimeout(fit, 900);
+        // and again whenever it changes, as when a panel inside is opened
+        try { new ResizeObserver(fit).observe(frame.contentDocument.body); } catch (error) { /* the set height stays */ }
+        // An animation with timed captions can be narrated; its lines are
+        // made ready in turn at once, first line first, so narration can
+        // start whenever it is asked for.
+        try { if (frame.contentDocument.querySelector(".an-cap[data-from]")) { narrate.style.display = ""; prepare(); } } catch (error) { /* no narration */ }
+      });
+      // Kosi reads each caption aloud as its moment comes, in Kosi's own
+      // voice (Kokoro on this computer), the animation started from the
+      // top so each line meets its scene.
+      let voice = null, caps = [], clips = [], preparing = null;
+      const narrate = h("button", {class: "ghost", style: "display:none", title: "Kosi reads each caption aloud as it comes"}, "\u{1F50A} Narrate");
+      // A part clicked in the animation: Kosi says what it is doing there,
+      // and Go deeper draws that part on a canvas of its own. Only this
+      // frame's own asks are heard.
+      const asked = h("div", {style: "display:none;margin-top:12px;border:1px solid var(--line);border-radius:14px;padding:14px 16px;background:var(--panel)"});
+      const hear = async event => {
+        if (!frame.isConnected) { window.removeEventListener("message", hear); return; }
+        if (event.source !== frame.contentWindow || !event.data || event.data.kosika !== "part") return;
+        const part = String(event.data.part || "").slice(0, 60), scene = String(event.data.scene || "").slice(0, 60), title = String(event.data.title || "").slice(0, 80);
+        const deeper = h("button", {class: "ghost", onclick: () => { ask.value = "show how the " + part + " works in " + title.toLowerCase(); kind.value = "canvas"; run(); }}, "Go deeper");
+        const answer = h("div", {class: "say-text", style: "margin-top:6px"}, "Kosi is thinking\u2026");
+        asked.style.display = "";
+        asked.replaceChildren(h("div", {style: "font:600 11px var(--mono);letter-spacing:.14em;color:var(--accent)"}, "KOSI ON THE " + part.toUpperCase() + (scene ? " \u00b7 " + scene.toUpperCase() : "")), answer, h("div", {style: "display:flex;gap:8px;margin-top:10px"}, deeper));
+        try {
+          const r = await api("/api/kosi", {method: "POST", body: JSON.stringify({text: "In an animation of " + title + ", during the step \"" + scene + "\", what is the " + part + " doing, and why does it matter? Two or three sentences."})});
+          answer.textContent = r.text || "Kosi has nothing to say on that just now.";
+        } catch (error) { answer.textContent = String(error.message || error); }
+      };
+      window.addEventListener("message", hear);
+      function prepare() {
+        if (preparing) return preparing;
+        const doc = frame.contentDocument;
+        caps = [...doc.querySelectorAll(".an-cap[data-from]")].map(t => ({from: parseFloat(t.dataset.from), to: parseFloat(t.dataset.to), text: t.textContent.trim()}));
+        clips = caps.map(() => null);
+        preparing = (async () => {
+          for (let k = 0; k < caps.length; k++) {
+            try { const r = await api("/api/kosi/speak", {method: "POST", body: JSON.stringify({text: caps[k].text})}); clips[k] = r.audio ? new Audio("data:audio/wav;base64," + r.audio) : false; } catch (error) { clips[k] = false; }
+          }
+        })();
+        return preparing;
+      }
+      narrate.onclick = async () => {
+        if (voice) { clearInterval(voice.tick); if (voice.audio) voice.audio.pause(); if (canSpeak) speechSynthesis.cancel(); voice = null; narrate.textContent = "\u{1F50A} Narrate"; return; }
+        const svg = frame.contentDocument.querySelector("svg.an");
+        prepare();
+        if (!svg || !caps.length) return;
+        // The first line is waited for; the rest come while it plays.
+        narrate.disabled = true; narrate.textContent = "Kosi is warming up\u2026";
+        while (clips[0] === null) await new Promise(r => setTimeout(r, 200));
+        narrate.disabled = false; narrate.textContent = "\u{1F507} Stop narrating";
+        const total = Math.max(...caps.map(c => c.to));
+        svg.setCurrentTime(0); svg.unpauseAnimations();
+        const played = new Set(); let last = 0;
+        voice = {audio: null, tick: setInterval(() => {
+          const t = svg.getCurrentTime() % total;
+          if (t < last) played.clear();
+          last = t;
+          caps.forEach((c, k) => {
+            // A line not ready at its moment is said when it is, while its
+            // caption still shows.
+            if (played.has(k) || t < c.from || t >= c.to - 0.8 || clips[k] === null) return;
+            played.add(k);
+            if (voice.audio) voice.audio.pause();
+            if (clips[k]) { voice.audio = clips[k]; clips[k].currentTime = 0; clips[k].play().catch(() => {}); }
+            else if (canSpeak) { speechSynthesis.cancel(); speechSynthesis.speak(new SpeechSynthesisUtterance(c.text)); }
+          });
+        }, 100)};
+      };
       const open = h("button", {class: "ghost", onclick: () => { const url = URL.createObjectURL(new Blob([made.page], {type: "text/html"})); window.open(url, "_blank"); }}, "Open as a page");
+      // Kosika Brain keeps what it drew: a thumbs up gives it again for
+      // asks like this one, a thumbs down means it is never reused.
+      const rated = h("span", {class: "lead"});
+      async function rate(liked) {
+        try {
+          const said = await api("/api/design/rate", {method: "POST", body: JSON.stringify({text, liked})});
+          rated.textContent = said.said;
+        } catch (error) { rated.textContent = String(error.message || error); }
+      }
+      const good = h("button", {class: "ghost", title: "Kosika keeps it and gives it again for asks like this", onclick: () => rate(true)}, "\u{1F44D} Good, keep it");
+      const bad = h("button", {class: "ghost", title: "Kosika will not reuse it, and draws the next one afresh", onclick: () => rate(false)}, "\u{1F44E} Not right");
+      const said = made.why.startsWith("Kosika ") ? made.why : "Kosika " + made.why;
       out.replaceChildren(
-        h("div", {class: "chips"}, chip(made.kind, "accent"), (made.fixed || []).length ? chip("Kosika fixed " + made.fixed.length, "ok") : null),
-        h("p", {class: "lead"}, "Kosika " + made.why + "."),
-        frame, h("div", null, open));
+        h("div", {class: "chips"}, chip(made.kind, "accent"), (made.fixed || []).length ? chip("Kosika fixed " + made.fixed.length, "ok") : null, (made.fixed || []).includes("reused a kept canvas") ? chip("from memory, no model", "ok") : null),
+        h("p", {class: "lead"}, said + (said.endsWith(".") ? "" : ".")),
+        frame, h("div", {style: "display:flex;gap:8px;flex-wrap:wrap;align-items:center"}, narrate, open, good, bad, rated), asked);
     } catch (error) {
       out.replaceChildren(h("div", {class: "banner bad"}, String(error.message || error)));
     } finally { draw.disabled = false; }
   }
   ask.addEventListener("keydown", event => { if (event.key === "Enter") run(); });
+  // Kosika Brain reads up on a topic: arXiv papers kept as facts with their
+  // sources, shown under any canvas drawn on it later.
+  const topic = h("input", {type: "text", placeholder: "ocean tides, binary search trees, photosynthesis…", style: "flex:1;min-width:200px"});
+  const learnt = h("span", {class: "lead"});
+  const read = h("button", {class: "ghost", onclick: learn}, "Read up on it");
+  async function learn() {
+    const text = topic.value.trim();
+    if (!text) { topic.focus(); return; }
+    read.disabled = true;
+    learnt.textContent = "Kosika is reading research on it…";
+    try {
+      const got = await api("/api/brain/gather", {method: "POST", body: JSON.stringify({topic: text})});
+      learnt.replaceChildren(document.createTextNode(got.said), got.titles && got.titles.length ? h("ul", {style: "margin:6px 0 0;padding-left:18px"}, got.titles.map(t => h("li", null, t))) : "");
+    } catch (error) { learnt.textContent = String(error.message || error); }
+    finally { read.disabled = false; }
+  }
+  topic.addEventListener("keydown", event => { if (event.key === "Enter") learn(); });
   const tries = ["how does a rainbow form", "how do bicycle gears make climbing easier", "compare solar and wind power", "a calm abstract background about the ocean"];
   main.replaceChildren(titled("Designs"),
     h("p", {class: "lead"}, "Ask for a picture. Kosika chooses a diagram for structure, an animated illustration for how something works, or moving art for a mood, and draws it itself; a free model only says what is in it."),
     h("div", {style: "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0 10px"}, ask, kind, draw),
     h("div", {class: "chips"}, tries.map(text => h("span", {class: "chip", style: "cursor:pointer", onclick: () => { ask.value = text; run(); }}, text))),
+    h("details", {style: "margin:4px 0 12px"}, h("summary", {class: "lead", style: "cursor:pointer"}, "Teach Kosika Brain: have it read research on a topic first"),
+      h("div", {style: "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px"}, topic, read), learnt),
     out);
   ask.focus();
+}
+
+// Talk to Kosi (examples/agents/kosi), the companion run by Kosika Brain:
+// type, or press the microphone and speak. Whisper hears you, the Brain
+// remembers you and your work, and Kosi answers aloud, in Groq's Orpheus
+// voice when it is allowed and the browser's own voice when it is not. A
+// picture it draws comes on the Kosika canvas under its words.
+const talkLog = [];
+// The browser's calmest voice for Kosi: Microsoft's natural British voices
+// first (Ryan, Thomas), then other natural voices, then any English one.
+// A voice picked on the Talk page is kept for next time.
+function kosiVoice() {
+  if (!window.speechSynthesis) return null;
+  const voices = speechSynthesis.getVoices().filter(v => /^en/i.test(v.lang));
+  let picked = "";
+  try { picked = localStorage.getItem("kosi-voice") || ""; } catch (error) { /* no storage */ }
+  const order = [v => v.name === picked, v => /Ryan.*Natural/i.test(v.name), v => /Thomas.*Natural/i.test(v.name), v => /(Andrew|Brian|Guy|Christopher).*Natural/i.test(v.name), v => /natural/i.test(v.name) && /en-GB/i.test(v.lang), v => /natural/i.test(v.name), v => /Google UK English Male/i.test(v.name), v => /en-GB/i.test(v.lang)];
+  for (const test of order) { const v = voices.find(test); if (v) return v; }
+  return voices[0] || null;
+}
+// ------------------------------------------------- the thinking board
+// How an answer was reached, drawn on the Kosika canvas under it: the
+// question, what it names, Kosika's exact working, the evidence read with
+// its source, what was remembered, each check on the reply and how it came
+// out, and the answer. Each part is a step Kosika really took. Click a
+// part to ask about it: explain it, check it, go deeper, or open its source.
+const THINK_COLUMNS = {question: 0, named: 1, exact: 2, evidence: 2, memory: 2, check: 3, answer: 4};
+const THINK_COLOUR = {passed: "var(--ok)", fixed: "var(--accent)", chosen: "var(--accent)", used: "var(--line)"};
+function thinkingBoard(thought, who, onAsk) {
+  const nodes = (thought && thought.nodes) || [];
+  if (nodes.length < 2) return null;
+  const used = [...new Set(nodes.map(n => THINK_COLUMNS[n.kind] ?? 2))].sort((a, b) => a - b);
+  const colOf = n => used.indexOf(THINK_COLUMNS[n.kind] ?? 2);
+  const colW = 230, W = colW * used.length, nodeW = 196;
+  const perCol = used.map((_, c) => nodes.filter(n => colOf(n) === c));
+  const H = Math.max(200, Math.max(...perCol.map(list => list.length)) * 112 + 40);
+  const at = {};
+  perCol.forEach((list, c) => list.forEach((n, k) => { at[n.id] = {x: colW * (c + 0.5), y: H / (list.length + 1) * (k + 1)}; }));
+  const board = h("div", {style: `position:relative;width:${W}px;height:${H}px;transform-origin:0 0`});
+  for (const link of thought.links || []) {
+    const [a, b] = link.split(">"); const p = at[a], q = at[b]; if (!p || !q) continue;
+    const target = nodes.find(n => n.id === b) || {};
+    const length = Math.hypot(q.x - p.x, q.y - p.y), angle = Math.atan2(q.y - p.y, q.x - p.x) * 180 / Math.PI;
+    const colour = target.kind === "check" ? (THINK_COLOUR[target.state] || "var(--soft)") : target.kind === "answer" ? "var(--accent)" : "color-mix(in srgb,var(--ink) 28%,transparent)";
+    board.append(h("div", {"aria-hidden": "true", style: `position:absolute;left:${p.x}px;top:${p.y}px;width:${length}px;height:0;border-top:1.5px solid ${colour};transform:rotate(${angle}deg);transform-origin:0 0`}));
+  }
+  let open = null;
+  for (const n of nodes) {
+    const p = at[n.id];
+    const edge = n.kind === "check" ? (THINK_COLOUR[n.state] || "var(--line)") : n.kind === "answer" ? "var(--accent)" : "var(--line)";
+    const head = n.kind === "check" ? (n.state === "fixed" ? "CHECK · CORRECTED" : "CHECK · PASSED") : n.label.toUpperCase();
+    const part = h("button", {type: "button", title: "Ask about this part", style: `position:absolute;left:${p.x}px;top:${p.y}px;transform:translate(-50%,-50%);width:${nodeW}px;border:1px solid ${edge};background:var(--bg);border-radius:12px;padding:9px 11px;text-align:left;color:var(--ink);font:13px/1.4 var(--sans);box-shadow:none;cursor:pointer`},
+      h("div", {style: `font:10px var(--mono);letter-spacing:.04em;color:${n.kind === "check" ? edge : "var(--faint)"};margin-bottom:4px`}, head),
+      h("div", {style: "display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden"}, n.text));
+    part.onclick = event => {
+      event.stopPropagation();
+      if (open) open.remove();
+      const ask = text => { if (open) open.remove(); open = null; onAsk(text); };
+      const subject = n.text.length > 160 ? n.text.slice(0, 157) + "…" : n.text;
+      const buttons = [h("button", {type: "button", class: "ghost", style: "min-height:32px;padding:0 10px;font-size:12.5px", onclick: () => ask(`Explain this part: "${subject}"`)}, "Explain this"),
+        h("button", {type: "button", class: "ghost", style: "min-height:32px;padding:0 10px;font-size:12.5px", onclick: () => ask(`Is this right? "${subject}"`)}, "Is this right?"),
+        h("button", {type: "button", class: "ghost", style: "min-height:32px;padding:0 10px;font-size:12.5px", onclick: () => ask(`Go deeper on this: "${subject}"`)}, "Go deeper")];
+      if (n.source) buttons.push(h("a", {class: "say-src", href: n.source, target: "_blank", rel: "noopener", style: "min-height:32px;display:inline-flex;align-items:center"}, "Open source"));
+      open = h("div", {role: "dialog", "aria-label": "Ask about this part", style: `position:absolute;left:${Math.min(Math.max(p.x - 130, 6), W - 266)}px;top:${Math.min(p.y + 44, H - 80)}px;width:260px;z-index:2;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px;display:flex;flex-wrap:wrap;gap:6px`}, ...buttons);
+      board.append(open);
+    };
+    board.append(part);
+  }
+  const wrap = h("div", {style: "overflow:hidden;padding:14px 16px;background-image:radial-gradient(color-mix(in srgb,var(--ink) 14%,transparent) 1px,transparent 1px);background-size:20px 20px"}, board);
+  wrap.onclick = () => { if (open) { open.remove(); open = null; } };
+  const fit = () => { const room = wrap.clientWidth - 32; if (room <= 0) return; const k = Math.min(1, room / W); board.style.transform = `scale(${k})`; board.style.marginBottom = (H * k - H) + "px"; board.style.marginRight = (W * k - W) + "px"; };
+  try { new ResizeObserver(fit).observe(wrap); } catch (error) { /* full size */ }
+  const checks = nodes.filter(n => n.kind === "check");
+  const passed = checks.filter(n => n.state === "passed").length, fixed = checks.filter(n => n.state === "fixed").length;
+  const verdict = checks.length ? (fixed ? `${fixed} corrected by Kosika` + (passed ? `, ${passed} passed` : "") : `${passed} of ${checks.length} checks passed`) : "";
+  const name = (KOSI_FRIENDS[who] || KOSI_FRIENDS.kosi).name;
+  const panel = h("details", {open: checks.length || nodes.some(n => n.kind === "evidence") ? "" : null, style: "border:1px solid var(--line);border-radius:14px;overflow:hidden;margin-top:12px"},
+    h("summary", {style: "display:flex;justify-content:space-between;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line);font:11px var(--mono);color:var(--faint);cursor:pointer;list-style:none"},
+      h("span", null, `How ${name} got there · click any part to ask about it`), h("span", {style: `color:${fixed ? "var(--accent)" : "var(--ok)"}`}, verdict)),
+    wrap,
+    h("ol", {style: "list-style:none;margin:0;padding:10px 16px;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:6px 18px;font:11px var(--mono);color:var(--faint)"},
+      ...(thought.steps || []).map((s, k) => h("li", null, h("span", {style: "color:var(--ink)"}, String(k + 1)), " " + s))));
+  panel.addEventListener("toggle", fit);
+  return panel;
+}
+
+// Kosi's voice when it speaks for itself (Kokoro on this computer).
+const KOSI_VOICES = [["bm_george", "George (calm, deep, British)"], ["bm_lewis", "Lewis (British)"], ["bm_daniel", "Daniel (British)"], ["bm_fable", "Fable (British)"], ["bf_emma", "Emma (British)"], ["bf_isabella", "Isabella (British)"]];
+// Kosi's friends, each with a voice and a ring of its own: Iris the
+// researcher and Sol the scientist. Kosi speaks in the voice chosen below.
+const KOSI_FRIENDS = {kosi: {name: "Kosi", role: "companion", voice: null, colour: "var(--accent)"}, iris: {name: "Iris", role: "researcher", voice: "bf_emma", colour: "#5ec4b6"}, sol: {name: "Sol", role: "scientist", voice: "bm_lewis", colour: "#b6acf5"}};
+function kosiServerVoice() { try { return localStorage.getItem("kosi-own-voice") || "bm_george"; } catch (error) { return "bm_george"; } }
+// Who a message is for, read the way Kosi reads it: by name or by role.
+function kosiAddressed(text) { return /(^\s*(hey\s+)?iris\b|\bask iris\b|\bthe researcher\b)/i.test(text) ? "iris" : /(^\s*(hey\s+)?sol\b|\bask sol\b|\bthe scientist\b)/i.test(text) ? "sol" : ""; }
+function showTalk() {
+  // Who you are talking to: Kosi, or one of its friends. A message to a
+  // friend is sent with their name in front, as Kosi reads it.
+  let talkWith = "kosi";
+  const say = h("input", {type: "text", style: "flex:1;min-width:0;min-height:42px;border:0;background:transparent;font-size:15px;box-shadow:none", "aria-label": "Message"});
+  const send = h("button", {onclick: () => ask(say.value), style: "min-height:40px;padding:0 16px"}, "Send");
+  const micIcon = () => s("svg", {width: "16", height: "16", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "1.8", "aria-hidden": "true"}, s("rect", {x: "9", y: "3", width: "6", height: "12", rx: "3"}), s("path", {d: "M5 11a7 7 0 0 0 14 0M12 18v3"}));
+  const mic = h("button", {class: "ghost", title: "Press to speak, press again to stop", "aria-label": "Speak", style: "width:40px;min-height:40px;padding:0;display:grid;place-items:center"});
+  mic.replaceChildren(micIcon());
+  const voiceOn = h("input", {type: "checkbox", id: "kosi-voice"});
+  voiceOn.checked = true;
+  // On this laptop: Kosi's small brain on a small model in Ollama, on the
+  // CPU alone. No cloud model, no daily limit; the voices are made here too.
+  const localOn = h("input", {type: "checkbox", id: "kosi-local"});
+  try { localOn.checked = localStorage.getItem("kosi-local") === "1"; } catch (error) { /* keep */ }
+  localOn.onchange = () => { try { localStorage.setItem("kosi-local", localOn.checked ? "1" : "0"); } catch (error) { /* keep */ } };
+  const status = h("span", {style: "font:12px var(--mono);color:var(--faint)"});
+  const log = h("div", {style: "display:grid;gap:22px;margin:22px 0 18px"});
+  const switcher = h("div", {class: "friends", role: "group", "aria-label": "Who you are talking to"});
+  function placeholder() { const f = KOSI_FRIENDS[talkWith]; say.placeholder = talkWith === "kosi" ? "Message Kosi, or ask Iris or Sol by name" : `Ask ${f.name}, the ${f.role}`; }
+  function drawSwitch() {
+    switcher.replaceChildren(...Object.entries(KOSI_FRIENDS).map(([id, f]) => h("button", {type: "button", "aria-pressed": id === talkWith ? "true" : "false", title: `Talk to ${f.name}, the ${f.role}`, onclick: () => {
+      talkWith = id;
+      drawSwitch(); placeholder(); say.focus();
+    }}, f.name)));
+  }
+  function ring(who) {
+    const f = KOSI_FRIENDS[who] || KOSI_FRIENDS.kosi;
+    return h("div", {class: "say-ring", style: `--ring:${f.colour}`, "aria-hidden": "true"}, f.name[0]);
+  }
+  function bubble(entry) {
+    const you = h("div", {class: "say-you"}, entry.q);
+    const who = entry.r ? (entry.r.who || "kosi") : entry.who;
+    const f = KOSI_FRIENDS[who] || KOSI_FRIENDS.kosi;
+    if (!entry.r) return h("div", {style: "display:grid;gap:14px"}, you, h("div", {class: "say-from"}, ring(who), h("div", {}, h("span", {class: "say-name"}, f.name), h("span", {class: "say-meta"}, f.role + " · thinking…"))));
+    const facts = [f.role];
+    if (entry.r.local) facts.push("on this laptop");
+    if ((entry.r.sources || []).length) facts.push(entry.r.sources.length + (entry.r.sources.length === 1 ? " source" : " sources"));
+    if (entry.seconds) facts.push(entry.seconds + " s");
+    const body = [h("div", {}, h("span", {class: "say-name"}, f.name), h("span", {class: "say-meta"}, facts.join(" · "))), h("div", {class: "say-text"}, entry.r.text)];
+    const thinking = thinkingBoard(entry.r.thinking, who, text => ask(who === "kosi" ? text : f.name + ", " + text));
+    if (thinking) body.push(thinking);
+    if ((entry.r.sources || []).length) body.push(h("div", {style: "display:flex;flex-wrap:wrap;gap:6px;margin-top:10px"}, entry.r.sources.map(u => h("a", {class: "say-src", href: u, target: "_blank", rel: "noopener"}, u.replace(/^https?:\/\/(www\.|export\.)?/, "").replace(/^arxiv\.org\/abs\//, "arxiv ").replace(/^en\.wikipedia\.org\/wiki\//, "wikipedia ").slice(0, 42)))));
+    if ((entry.r.kept || []).length) body.push(h("div", {class: "chips", style: "margin-top:10px"}, entry.r.kept.map(k => chip("will remember: " + k, "ok"))));
+    if (entry.r.canvas) {
+      const frame = h("iframe", {title: "Kosika canvas", style: "width:100%;height:720px;border:0;border-radius:12px;background:transparent;margin-top:12px"});
+      frame.srcdoc = "<!doctype html><html><head><meta charset=\"utf-8\"><style>html,body{margin:0;background:transparent}</style></head><body>" + entry.r.canvas + "</body></html>";
+      frame.addEventListener("load", () => { const fit = () => { try { frame.style.height = (frame.contentDocument.body.scrollHeight + 4) + "px"; } catch (error) { /* keep */ } }; fit(); setTimeout(fit, 1500); try { new ResizeObserver(fit).observe(frame.contentDocument.body); } catch (error) { /* keep */ } });
+      body.push(frame);
+    }
+    if ((entry.r.suggest || []).length) body.push(h("div", {style: "display:flex;flex-wrap:wrap;gap:6px;margin-top:10px"}, entry.r.suggest.map(s => h("button", {type: "button", class: "ghost", style: "min-height:30px;padding:0 10px;font-size:12.5px;font-weight:500", onclick: () => ask(withSubject(s, entry.q))}, s))));
+    return h("div", {style: "display:grid;gap:14px"}, you, h("div", {class: "say-from"}, ring(who), h("div", {style: "min-width:0;flex:1"}, ...body)));
+  }
+  function draw() { log.replaceChildren(...talkLog.map(bubble)); }
+  // What a suggestion asks, with the subject of the message it answered.
+  function withSubject(suggestion, asked) {
+    const topic = String(asked || "").replace(/^\s*(hey\s+)?(iris|sol|kosi)\s*[,:]?\s*/i, "").replace(/[?.!]+$/, "").trim();
+    const s = suggestion.toLowerCase();
+    if (!topic) return suggestion;
+    if (s.startsWith("sol, explain the science")) return "Sol, explain the science of " + topic;
+    if (s.startsWith("iris, research this")) return "Iris, research " + topic;
+    if (s === "draw it for me") return "Draw " + topic;
+    if (s === "draw it another way") return "Sol, draw " + topic + " another way";
+    if (s === "what did you find before?") return "Iris, what did you find before about " + topic + "?";
+    return suggestion;
+  }
+  let playing = null, saying = 0;
+  // Each friend's own voice, a sentence at a time: the first sentence plays
+  // while the next is being made, so it starts speaking in a few seconds.
+  async function voice(text, who) {
+    if (!voiceOn.checked || !text) return;
+    const speaker = (KOSI_FRIENDS[who] || {}).voice || kosiServerVoice();
+    const turn = ++saying;
+    const sentences = text.match(/[^.!?]+[.!?]+["')\]]*|[^.!?]+$/g) || [text];
+    const make = s => api("/api/kosi/speak", {method: "POST", body: JSON.stringify({text: s.trim(), voice: speaker})}).then(got => got.audio || "").catch(() => "");
+    let next = make(sentences[0]);
+    let spoke = false;
+    for (let i = 0; i < sentences.length; i++) {
+      const audio = await next;
+      if (turn !== saying) return;
+      if (!audio) break;
+      if (i + 1 < sentences.length) next = make(sentences[i + 1]);
+      spoke = true;
+      if (playing) playing.pause();
+      playing = new Audio("data:audio/wav;base64," + audio);
+      await new Promise(done => { playing.onended = done; playing.onerror = done; playing.play().catch(done); });
+      if (turn !== saying) return;
+    }
+    if (spoke) return;
+    if (!window.speechSynthesis) return;
+    speechSynthesis.cancel();
+    const line = new SpeechSynthesisUtterance(text);
+    line.voice = kosiVoice();
+    line.rate = 0.96;
+    line.pitch = 0.92;
+    speechSynthesis.speak(line);
+  }
+  async function ask(text) {
+    text = String(text || "").trim();
+    if (!text) { say.focus(); return; }
+    say.value = "";
+    // Talking to a friend: the message goes to them unless it names
+    // someone else itself.
+    const named = kosiAddressed(text);
+    const sent = !named && talkWith !== "kosi" ? KOSI_FRIENDS[talkWith].name + ", " + text : text;
+    const entry = {q: text, r: null, who: named || talkWith};
+    if (intro.isConnected) intro.replaceWith(log);
+    talkLog.push(entry); draw();
+    send.disabled = true;
+    const began = Date.now();
+    try { entry.r = await api("/api/kosi", {method: "POST", body: JSON.stringify({text: sent, local: localOn.checked})}); }
+    catch (error) { entry.r = {who: entry.who, text: String(error.message || error), kept: [], suggest: []}; }
+    finally { send.disabled = false; }
+    entry.seconds = Math.round((Date.now() - began) / 100) / 10;
+    draw();
+    voice(entry.r.text, entry.r.who);
+  }
+  let recorder = null, chunks = [];
+  mic.onclick = async () => {
+    if (recorder && recorder.state === "recording") { recorder.stop(); return; }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({audio: true});
+      chunks = [];
+      recorder = new MediaRecorder(stream);
+      recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        mic.replaceChildren(micIcon()); mic.style.borderColor = "";
+        status.textContent = "listening back…";
+        const blob = new Blob(chunks, {type: recorder.mimeType || "audio/webm"});
+        const audio = await new Promise(done => { const r = new FileReader(); r.onload = () => done(String(r.result).split(",")[1] || ""); r.readAsDataURL(blob); });
+        try {
+          const heard = await api("/api/kosi/hear", {method: "POST", body: JSON.stringify({audio, type: blob.type})});
+          status.textContent = "";
+          if (heard.text) ask(heard.text); else status.textContent = "didn't catch that, try again?";
+        } catch (error) { status.textContent = String(error.message || error); }
+      };
+      recorder.start();
+      if (playing) playing.pause();
+      if (window.speechSynthesis) speechSynthesis.cancel();
+      mic.textContent = "■"; mic.style.borderColor = "var(--accent)";
+      status.textContent = "listening… press again when you're done";
+    } catch (error) { status.textContent = "can't reach the microphone: " + (error.message || error); }
+  };
+  say.addEventListener("keydown", event => { if (event.key === "Enter") ask(say.value); });
+  const pick = h("select", {title: "The browser's voice, used only when Kosi's own voice cannot speak"});
+  function voices() {
+    const list = window.speechSynthesis ? speechSynthesis.getVoices().filter(v => /^en/i.test(v.lang)) : [];
+    const now = kosiVoice();
+    pick.replaceChildren(...list.map(v => h("option", {value: v.name, selected: now && v.name === now.name ? "" : null}, v.name.replace(/^Microsoft /, "").replace(/ - English.*$/, "") + " (" + v.lang + ")")));
+  }
+  pick.onchange = () => { try { localStorage.setItem("kosi-voice", pick.value); } catch (error) { /* no storage */ } voice("Hello, I'm Kosi. This is how I sound now."); };
+  const own = h("select", {title: "Kosi's own voice, made on this computer"}, KOSI_VOICES.map(([value, label]) => h("option", {value, selected: value === kosiServerVoice() ? "" : null}, label)));
+  own.onchange = () => { try { localStorage.setItem("kosi-own-voice", own.value); } catch (error) { /* no storage */ } voice("Good evening. I'm Kosi, and this is how I sound now."); };
+  if (window.speechSynthesis) { voices(); speechSynthesis.onvoiceschanged = voices; }
+  drawSwitch(); placeholder();
+  // Before the first message: who is here. It gives way to the talk.
+  const intro = h("div", {style: "max-width:620px;margin:42px 0 24px;color:var(--soft);font-size:15px;line-height:1.7"},
+    h("div", {style: "font-size:20px;font-weight:600;color:var(--ink);margin-bottom:6px"}, "Kosi and its friends"),
+    "Talk to Kosi about anything: your day, a project, an idea. Ask Iris, the researcher, to read up on something, with sources. Ask Sol, the scientist, how something works, and he'll draw it.");
+  const option = (input, label, title) => h("label", {style: "display:flex;gap:7px;align-items:center;font-size:13px;color:var(--soft)", title: title || ""}, ...(input.tagName === "SELECT" ? [label, input] : [input, label]));
+  const more = h("details", {style: "font-size:13px;color:var(--soft)"}, h("summary", {style: "cursor:pointer"}, "More"), h("div", {style: "display:flex;gap:10px;align-items:center;margin-top:8px"}, option(pick, "Browser voice", "Used only when Kosi's own voice cannot speak")));
+  const composer = h("div", {style: "position:sticky;bottom:0;padding:12px 0 16px;background:linear-gradient(to top, var(--bg) 70%, transparent);max-width:860px"},
+    h("div", {style: "display:flex;gap:8px;align-items:center;border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:5px 5px 5px 12px"}, say, mic, send),
+    h("div", {style: "margin-top:6px;min-height:16px"}, status));
+  main.replaceChildren(
+    h("div", {style: "display:flex;flex-wrap:wrap;gap:14px;align-items:center;padding-bottom:16px;border-bottom:1px solid var(--line)"},
+      h("h1", {style: "margin:0"}, "Talk"), switcher,
+      h("div", {style: "margin-left:auto;display:flex;flex-wrap:wrap;gap:14px;align-items:center"},
+        option(voiceOn, "Speak replies"), option(localOn, "On this laptop", "Think on this laptop alone, with a small model on the CPU: no internet model and no daily limit"),
+        option(own, "Voice"), more)),
+    talkLog.length ? log : intro,
+    composer);
+  draw();
+  say.focus();
+}
+
+// ------------------------------------------------- models
+// Every model Kosika can reach, whether it answers now, how it thinks and
+// how fast, and the one Kosika uses for each kind of work. A person can
+// pin a model for a kind of work, or leave the choice to Kosika.
+async function showModels() {
+  const wait = h("div", {style: "font:12px var(--mono);color:var(--faint)"}, "checking every model…");
+  main.replaceChildren(modelsHead(), wait);
+  let state;
+  try { state = await api("/api/models"); }
+  catch (error) { wait.textContent = String(error.message || error); return; }
+  drawModels(state);
+}
+function modelsHead() {
+  return h("div", {style: "display:flex;flex-wrap:wrap;align-items:center;gap:14px;padding-bottom:16px;border-bottom:1px solid var(--line)"},
+    h("div", {style: "flex:1 1 320px"}, h("h1", {style: "margin:0 0 4px"}, "Models"),
+      h("div", {style: "font-size:14px;color:var(--soft)"}, "Kosika picks the best model it can reach for each kind of work, and moves on when one cannot answer.")),
+    h("button", {class: "ghost", onclick: () => showModels()}, "Check all models"));
+}
+function drawModels(state) {
+  const bar = (label, value) => [h("span", {style: "font-size:12px;color:var(--soft)"}, label),
+    h("div", {style: "height:5px;background:var(--line);border-radius:3px"}, h("div", {style: `width:${value}%;height:5px;background:var(--ink);border-radius:3px`}))];
+  const usable = state.models.filter(m => !m.local || m.ready).filter(m => !/embed/i.test(m.id));
+  // The cloud models and the laptop models Kosika would use get cards; the
+  // rest of the laptop's models are listed below them.
+  const shown = usable.filter(m => !m.local || (m.uses || []).length || state.tasks.some(t => (t.then || []).includes(m.id)));
+  const rest = usable.filter(m => !shown.includes(m));
+  const cards = shown.map(m => {
+    const chosen = (m.uses || []).length > 0;
+    const dot = m.ready ? (m.local ? "var(--soft)" : "var(--ok)") : "var(--bad)";
+    return h("article", {style: `border:1px solid ${chosen ? "var(--accent)" : "var(--line)"};background:var(--panel);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:10px;min-width:0`},
+      h("div", {style: "display:flex;justify-content:space-between;align-items:center;gap:8px"}, h("span", {style: "font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"}, m.name),
+        h("span", {style: "display:flex;align-items:center;gap:6px;font:11px var(--mono);color:var(--soft);flex:none"}, h("span", {style: `width:7px;height:7px;border-radius:50%;background:${dot}`}), m.state)),
+      h("div", {style: "font:11px var(--mono);color:var(--faint)"}, m.where),
+      h("div", {style: "display:grid;grid-template-columns:64px minmax(0,1fr);gap:6px 10px;align-items:center"}, ...bar("Thinking", m.thinking), ...bar("Speed", m.speed)),
+      h("div", {style: "display:flex;flex-wrap:wrap;gap:6px;min-height:22px"}, ...(m.uses || []).map(u => h("span", {class: "chip accent"}, u))));
+  });
+  const options = [h("option", {value: ""}, "Kosika chooses")].concat(usable.filter(m => m.ready).map(m => h("option", {value: m.id}, m.name)));
+  const tasks = state.tasks.map(t => {
+    const pick = h("select", {"aria-label": "Model for " + t.label, style: "width:100%;margin-top:10px"}, options.map(o => o.cloneNode(true)));
+    pick.value = t.pinned || "";
+    pick.onchange = async () => { try { drawModels(await api("/api/models", {method: "POST", body: JSON.stringify({task: t.task, model: pick.value})})); } catch (error) { main.prepend(h("div", {class: "banner bad"}, String(error.message || error))); } };
+    const named = (state.models.find(m => m.id === t.chosen) || {}).name || "none can answer";
+    const then = (t.then || []).map(id => (state.models.find(m => m.id === id) || {name: id}).name);
+    return h("div", {style: "padding:16px;border-right:1px solid var(--line);min-width:0"},
+      h("div", {style: "font-weight:600;font-size:14px"}, t.label),
+      h("div", {style: "font-size:12px;color:var(--faint);margin:4px 0 10px"}, t.needs),
+      h("div", {style: "font:12px var(--mono);color:var(--accent)"}, (t.pinned ? "pinned: " : "") + named),
+      ...(then.length ? [h("div", {style: "font:11px var(--mono);color:var(--faint);margin-top:4px"}, "then " + then.join(", "))] : []),
+      pick);
+  });
+  main.replaceChildren(modelsHead(),
+    h("div", {style: "display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-top:20px"}, ...cards),
+    ...(rest.length ? [h("details", {style: "margin-top:12px;font-size:13px;color:var(--soft)"}, h("summary", {style: "cursor:pointer"}, rest.length + " more on this laptop"),
+      h("div", {style: "display:flex;flex-wrap:wrap;gap:6px;margin-top:10px"}, ...rest.map(m => h("span", {class: "chip", title: m.where}, m.name))))] : []),
+    h("section", {"aria-label": "How Kosika chooses", style: "border:1px solid var(--line);border-radius:14px;overflow:hidden;margin-top:22px"},
+      h("div", {style: "display:flex;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--line);font:11px var(--mono);color:var(--faint)"}, h("span", null, "How Kosika chooses"), h("span", null, "from what each kind of work needs")),
+      h("div", {style: "display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));background-image:radial-gradient(color-mix(in srgb,var(--ink) 14%,transparent) 1px,transparent 1px);background-size:20px 20px"}, ...tasks)),
+    h("div", {style: "font-size:13px;color:var(--faint);margin-top:16px;max-width:760px"}, "Add a model to this laptop with Ollama (ollama pull qwen2.5:3b) and it appears here. Cloud models need their own key in this computer's settings: GROQ_API_KEY for Groq."));
+}
+
+// The pages under Agents, as tabs: the agents themselves, the whole
+// project, their skills and their tools.
+function agentTabs(active) {
+  const tab = (key, label) => h("button", {type: "button", "aria-pressed": key === active ? "true" : "false", onclick: () => go(key)}, label);
+  return h("div", {class: "friends", role: "group", "aria-label": "Agents", style: "margin-bottom:16px"}, tab("agents", "Agents"), tab("project", "Project"), tab("skills", "Skills"), tab("tools", "Tools"));
+}
+
+// ------------------------------------------------- the swarm, live
+// Kosi and its friends working together on one task, drawn as it happens
+// on the Kosika canvas: each agent a node, a line lit while a call runs,
+// and beside it every call with its timing. Nothing is staged: each line
+// lights when its call starts and settles when the answer comes back.
+const SWARM_NODES = {
+  kosi: {x: 480, y: 230, name: "Kosi", role: "conductor", ring: "var(--accent)"},
+  iris: {x: 190, y: 90, name: "Iris", role: "researcher", ring: "#5ec4b6"},
+  sol: {x: 770, y: 90, name: "Sol", role: "scientist", ring: "#b6acf5"},
+  arxiv: {x: 50, y: 160, name: "arXiv", tool: true},
+  wiki: {x: 360, y: 28, name: "Wikipedia", tool: true},
+  check: {x: 910, y: 170, name: "Kosika checks", tool: true},
+  brief: {x: 480, y: 430, name: "The brief", role: "what you get", ring: "var(--ok)"}
+};
+const SWARM_LINKS = [["kosi", "iris"], ["kosi", "sol"], ["iris", "arxiv"], ["iris", "wiki"], ["sol", "check"], ["kosi", "check"], ["kosi", "brief"]];
+let swarmRunning = false;
+function showCrew() {
+  const task = h("input", {type: "text", "aria-label": "Task for the swarm", placeholder: "Give the swarm a task: research and explain anything", style: "flex:1;min-width:0;min-height:42px;border:0;background:transparent;font-size:15px;box-shadow:none"});
+  const start = h("button", {style: "min-height:40px;padding:0 16px"}, "Start");
+  const live = h("span", {style: "display:none;align-items:center;gap:8px;font:12px var(--mono);color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 35%,var(--line));border-radius:999px;padding:4px 10px"});
+  const board = h("div", {style: "width:100%;min-height:200px"});
+  const wrap = h("section", {"aria-label": "The swarm, drawn on the Kosika canvas", style: "flex:999 1 560px;min-width:0;overflow:hidden;border:1px solid var(--line);border-radius:14px;background:var(--panel)"}, board);
+  const calls = h("div", {style: "display:flex;flex-direction:column"});
+  const totals = h("div", {style: "display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:auto;padding-top:14px"});
+  const aside = h("aside", {"aria-label": "Calls", style: "flex:1 1 300px;max-width:420px;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:14px;padding:16px 18px;background:var(--panel)"},
+    h("div", {style: "font:600 12px var(--sans);letter-spacing:.08em;text-transform:uppercase;color:var(--soft);margin-bottom:6px"}, "Calls"), calls, totals);
+  const result = h("div", {style: "margin-top:20px;max-width:980px"});
+  // The board is drawn by Kosika (std/designs_swarm.kos): Studio sends what
+  // each friend is doing and what they pinned, and shows the board Kosika
+  // gives back. The latest drawing wins.
+  const states = {};
+  let pins = [], drawn = 0, queued = false;
+  async function redraw() {
+    const mine = ++drawn;
+    try {
+      const r = await api("/api/swarm/board", {method: "POST", body: JSON.stringify({states: Object.entries(states).map(([id, state]) => ({id, state})), pins})});
+      if (mine !== drawn) return;
+      // Read as an SVG document, never as markup into the page; nothing in it
+      // may run, so scripts and on- handlers are dropped.
+      const doc = new DOMParser().parseFromString(r.svg, "image/svg+xml");
+      const svg = doc.documentElement;
+      if (svg.nodeName !== "svg") return;
+      svg.querySelectorAll("script, foreignObject").forEach(e => e.remove());
+      svg.querySelectorAll("*").forEach(e => { for (const a of [...e.attributes]) if (/^on/i.test(a.name)) e.removeAttribute(a.name); });
+      const look = document.createElement("style"); look.textContent = r.style;
+      board.replaceChildren(look, document.importNode(svg, true));
+    } catch (error) { /* the last board stays */ }
+  }
+  function soon() { if (queued) return; queued = true; setTimeout(() => { queued = false; redraw(); }, 40); }
+  function unpin() { pins = []; soon(); }
+  function pin(who, kind, head, text, source) { pins.push({who, kind, head, text: String(text || ""), source: source || ""}); soon(); }
+  function node(id, state) { states[id] = state; soon(); }
+  function light() { /* the wires follow the friends' states */ }
+  let began = 0, made = 0, sites = 0, checks = 0;
+  function clock() { const s = Math.floor((Date.now() - began) / 1000); return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0"); }
+  function row(who, what) {
+    const status = h("span", {style: "font:11px var(--mono);color:var(--accent)"}, "running");
+    calls.append(h("div", {style: "display:grid;grid-template-columns:44px minmax(0,1fr);gap:10px;align-items:baseline;padding:10px 0;border-bottom:1px solid var(--line)"},
+      h("span", {style: "font:11px var(--mono);color:var(--faint)"}, clock()), h("div", {style: "min-width:0"}, h("div", {style: "font-size:14px"}, who), h("div", {style: "font-size:12px;color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap"}, what), status)));
+    const t0 = Date.now();
+    return (ok, note) => { status.textContent = (ok ? "done " : "failed ") + ((Date.now() - t0) / 1000).toFixed(1) + " s" + (note ? " · " + note : ""); status.style.color = ok ? "var(--ok)" : "var(--bad)"; };
+  }
+  function total() {
+    const tile = (n, label, ok) => h("div", {style: `border:1px solid ${ok ? "color-mix(in srgb,var(--ok) 35%,var(--line))" : "var(--line)"};border-radius:10px;padding:10px`}, h("div", {style: `font-size:18px;font-weight:600;${ok ? "color:var(--ok)" : ""}`}, String(n)), h("div", {style: "font-size:11px;color:var(--faint)"}, label));
+    totals.replaceChildren(tile(made, "model calls"), tile(sites, "sources read"), tile(checks + "/" + made, "answers checked", made && checks === made));
+  }
+  async function ask(text) { made++; total(); const r = await api("/api/kosi", {method: "POST", body: JSON.stringify({text})}); return r; }
+  async function run() {
+    const what = task.value.trim();
+    if (!what || swarmRunning) { task.focus(); return; }
+    swarmRunning = true; start.disabled = true; calls.replaceChildren(); result.replaceChildren(); made = sites = checks = 0; total(); unpin();
+    for (const id of Object.keys(SWARM_NODES)) node(id, "waiting");
+    began = Date.now(); live.style.display = "inline-flex";
+    const tick = setInterval(() => { live.textContent = "live · " + clock(); }, 250);
+    try {
+      node("kosi", "planning");
+      row("Kosi → plan", "Iris researches, Sol explains and draws, Kosi writes the brief")(true, "no model");
+      // Iris: papers and checked facts.
+      node("kosi", "handing on"); light("kosi>iris", "run"); light("iris>arxiv", "run"); light("iris>wiki", "run"); node("iris", "reading"); node("arxiv", "reading"); node("wiki", "reading");
+      let doneIris = row("Kosi → Iris", what);
+      const iris = await ask("Iris, " + what);
+      const found = (iris.sources || []).length; sites += found; if (iris.text && !/couldn't|could not/i.test(iris.text)) checks++;
+      doneIris(true, found + " sources");
+      const read = ((iris.thinking || {}).nodes || []).filter(n => n.kind === "evidence").slice(0, 3);
+      read.forEach(n => pin("iris", "evidence", n.label, n.text, n.source)); light("kosi>iris", "done"); light("iris>arxiv", "done"); light("iris>wiki", "done"); node("iris", "done"); node("arxiv", "done", "var(--soft)"); node("wiki", "done", "var(--soft)"); total();
+      // Sol: Kosika's exact science, explained and drawn.
+      light("kosi>sol", "run"); light("sol>check", "run"); node("sol", "explaining"); node("check", "checking");
+      const doneSol = row("Kosi → Sol", "explain and draw it");
+      const sol = await ask("Sol, " + what);
+      if (sol.text) checks++;
+      doneSol(true, sol.canvas ? "drew it" : "explained");
+      const science = ((sol.thinking || {}).nodes || []).filter(n => n.kind === "exact" || n.kind === "check");
+      science.slice(0, 2).forEach(n => pin("sol", n.kind === "check" ? "check" : "exact", n.kind === "check" ? "check · passed" : "worked out by Kosika", n.text, "")); light("kosi>sol", "done"); light("sol>check", "done"); node("sol", "done"); node("check", "passed", "var(--ok)"); total();
+      // Kosi: the brief from both.
+      light("kosi>check", "run"); light("kosi>brief", "run"); node("kosi", "writing the brief");
+      const doneKosi = row("Kosi → the brief", "from what Iris found and Sol explained");
+      const brief = await ask("Write me a short brief, in four sentences, on " + what + ". Use only these notes. From Iris: " + iris.text + " From Sol: " + sol.text);
+      if (brief.text) checks++;
+      doneKosi(true); light("kosi>check", "done"); light("kosi>brief", "done"); node("kosi", "done"); node("brief", "ready", "var(--ok)"); total();
+      pin("brief", "brief", "the brief", brief.text, "");
+      const say = (who, r) => h("div", {class: "say-from", style: "margin-top:16px"}, h("div", {class: "say-ring", style: `--ring:${SWARM_NODES[who].ring}`, "aria-hidden": "true"}, SWARM_NODES[who].name[0]),
+        h("div", {style: "min-width:0;flex:1"}, h("span", {class: "say-name"}, SWARM_NODES[who].name), h("span", {class: "say-meta"}, SWARM_NODES[who].role), h("div", {class: "say-text"}, r.text),
+          ...((r.sources || []).length ? [h("div", {style: "display:flex;flex-wrap:wrap;gap:6px;margin-top:10px"}, r.sources.map(u => h("a", {class: "say-src", href: u, target: "_blank", rel: "noopener"}, u.replace(/^https?:\/\/(www\.|export\.)?/, "").slice(0, 42))))] : [])));
+      // One answer, shown: the canvas Sol drew (or, when he drew none, one
+      // Designs draws now from the brief), the brief beneath it as its
+      // caption, Iris's sources as links, and what each friend said folded
+      // away below.
+      // Then the answer on one canvas. Drawn alongside the friends it slowed
+      // them all: the free models share one allowance a minute.
+      const doneDraw = row("Designs → the canvas", "draw the answer on one canvas");
+      const drawing = api("/api/design", {method: "POST", body: JSON.stringify({text: what, kind: "canvas", palette: ""})})
+        .then(made => { doneDraw(!!made.embed, made.embed ? made.kind : "nothing drawn"); return made.embed || ""; })
+        .catch(error => { doneDraw(false, String(error.message || error)); return ""; });
+      // The answer shows at once, with the canvas drawing in its place; the
+      // canvas Designs draws of the question takes it when it comes, or
+      // failing that Sol's own drawing, unless it was only art for a mood.
+      const stage = h("div", {style: "min-height:200px;display:flex;align-items:center;justify-content:center;border-top:1px solid var(--line);border-bottom:1px solid var(--line);color:var(--faint);font:12px var(--mono)"}, "Kosika is drawing the answer on one canvas…");
+      const sources = (iris.sources || []).map(u => h("a", {class: "say-src", href: u, target: "_blank", rel: "noopener"}, u.replace(/^https?:\/\/(www\.|export\.)?/, "").slice(0, 42)));
+      const answer = h("section", {"aria-label": "The answer, on the Kosika canvas", style: "border:1px solid var(--line);border-radius:16px;background:var(--panel);overflow:hidden"},
+        h("div", {style: "padding:16px 20px 10px;display:flex;flex-wrap:wrap;gap:10px;align-items:baseline"},
+          h("span", {style: "font:600 11px var(--mono);letter-spacing:.16em;color:var(--accent)"}, "THE ANSWER · ON THE KOSIKA CANVAS"),
+          h("h2", {style: "margin:0;flex-basis:100%;font-size:22px"}, what)),
+        stage,
+        h("div", {style: "padding:16px 20px 6px;font-size:17px;line-height:1.65;max-width:980px"}, brief.text),
+        sources.length ? h("div", {style: "display:flex;flex-wrap:wrap;gap:6px;padding:6px 20px 12px"}, h("span", {style: "font:11px var(--mono);color:var(--faint);align-self:center"}, "Iris read"), ...sources) : null,
+        h("details", {style: "padding:4px 20px 18px"}, h("summary", {style: "cursor:pointer;color:var(--soft);font-size:14px"}, "What each friend said"), say("kosi", brief), say("iris", iris), say("sol", sol)));
+      result.replaceChildren(answer);
+      const drawn = await drawing;
+      const canvas = drawn || (sol.canvas && !sol.canvas.includes('class="kd kd-art"') ? sol.canvas : "");
+      if (canvas) {
+        const frame = h("iframe", {title: "The answer, on the Kosika canvas", style: "display:block;width:100%;height:720px;border:0;background:transparent"});
+        frame.srcdoc = "<!doctype html><html><head><meta charset=\"utf-8\"><style>html,body{margin:0;background:transparent}</style></head><body>" + canvas + "</body></html>";
+        frame.addEventListener("load", () => { const fit = () => { try { frame.style.height = (frame.contentDocument.body.scrollHeight + 4) + "px"; } catch (error) { /* keep */ } }; fit(); setTimeout(fit, 1500); });
+        stage.replaceWith(frame);
+      } else {
+        stage.textContent = "Kosika could not draw this one on a canvas; the brief is below.";
+      }
+    } catch (error) {
+      row("The swarm", String(error.message || error))(false);
+    } finally {
+      clearInterval(tick); live.textContent = "done · " + clock(); swarmRunning = false; start.disabled = false;
+    }
+  }
+  start.onclick = run;
+  task.addEventListener("keydown", event => { if (event.key === "Enter") run(); });
+  const pack = h("button", {class: "ghost", title: "Five agents make a study pack together", onclick: () => showCrewPack()}, "Make a study pack");
+  total(); redraw();
+  main.replaceChildren(
+    h("div", {style: "display:flex;flex-wrap:wrap;gap:14px;align-items:center;padding-bottom:16px;border-bottom:1px solid var(--line)"}, h("h1", {style: "margin:0"}, "Swarm"), live, h("div", {style: "margin-left:auto"}, pack)),
+    h("div", {style: "display:flex;gap:8px;align-items:center;border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:5px 5px 5px 12px;margin:18px 0;max-width:980px"}, task, start),
+    h("div", {style: "display:flex;flex-wrap:wrap;gap:16px;max-width:1180px"}, wrap, aside),
+    result);
+  task.focus();
+}
+
+// The crew (examples/agents/crew), run by Kosika Brain: give it a topic and
+// five agents make a study pack together, each one's work checked by
+// Kosika, the crew at work played on a Kosika canvas at the top.
+function showCrewPack() {
+  const topic = h("input", {type: "text", placeholder: "photosynthesis, the water cycle, how vaccines work…", style: "flex:1;min-width:220px"});
+  const go = h("button", {onclick: run}, "Make a pack");
+  const out = h("div", {style: "margin-top:14px"});
+  async function run() {
+    const text = topic.value.trim();
+    if (!text) { topic.focus(); return; }
+    go.disabled = true;
+    const started = Date.now();
+    const wait = h("p", {class: "lead"}, "The crew is at work: planning, working out, drawing, writing and marking…");
+    const tick = setInterval(() => { wait.textContent = "The crew is at work: planning, working out, drawing, writing and marking… " + Math.round((Date.now() - started) / 1000) + " s"; }, 1000);
+    out.replaceChildren(wait);
+    try {
+      const made = await api("/api/crew", {method: "POST", body: JSON.stringify({topic: text})});
+      const passed = (made.board || []).filter(t => t.passed).length;
+      const frame = h("iframe", {title: made.title, style: "width:100%;height:1400px;border:0;border-radius:18px;background:transparent"});
+      frame.srcdoc = made.page;
+      frame.addEventListener("load", () => {
+        const fit = () => { try { frame.style.height = (frame.contentDocument.body.scrollHeight + 4) + "px"; } catch (error) { /* keep the set height */ } };
+        fit(); setTimeout(fit, 1500);
+        try { new ResizeObserver(fit).observe(frame.contentDocument.body); } catch (error) { /* the set height stays */ }
+      });
+      out.replaceChildren(
+        h("div", {class: "chips"}, chip(passed + " of " + (made.board || []).length + " members passed", passed === (made.board || []).length ? "ok" : "warn"), ...(made.board || []).map(t => chip(t.who + (t.passed ? " \u2713" : " \u2717"), t.passed ? "ok" : "warn"))),
+        (made.problems || []).length ? h("p", {class: "lead"}, "Kosika held back: " + made.problems.join("; ")) : null,
+        frame);
+    } catch (error) {
+      out.replaceChildren(h("div", {class: "banner bad"}, String(error.message || error)));
+    } finally { clearInterval(tick); go.disabled = false; }
+  }
+  topic.addEventListener("keydown", event => { if (event.key === "Enter") run(); });
+  const tries = ["photosynthesis", "the water cycle", "how vaccines work", "burning methane"];
+  main.replaceChildren(titled("Crew"),
+    h("p", {class: "lead"}, "A team of five agents, run by Kosika Brain, makes a study pack: the Conductor plans, the Scientist works out what is exact, the Designer draws the canvas, the Tutor writes notes and the Examiner marks them. Kosika checks each one's work, gives the Tutor a second try when something is wrong, and remembers how each member did."),
+    h("div", {style: "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0 10px"}, topic, go),
+    h("div", {class: "chips"}, tries.map(text => h("span", {class: "chip", style: "cursor:pointer", onclick: () => { topic.value = text; run(); }}, text))),
+    out);
+  topic.focus();
 }
 
 // The study companion (examples/agents/study): ask anything and get an
@@ -3154,25 +3894,17 @@ loadBrand().finally(route);
 // ------------------------------------------------- skins
 // Four looks: Cinema (the nebula), and three from LemoLab's film styles.
 // The choice is this person's and stays on this computer.
-const SKINS = [["dark-matter", "Dark Matter"], ["cutting-room", "The Cutting Room"], ["cinema", "Cinema"], ["swiss", "Swiss Motion"], ["spy", "Spy Titles"]];
-function skin() { try { return localStorage.getItem("kosika-skin") || "dark-matter"; } catch (error) { return "dark-matter"; } }
+// One look: Graphite, which turns to its daylight twin, Paper, when the
+// Theme is light. The film looks Studio once had are no longer offered.
+const SKINS = [["graphite", "Graphite"]];
+function skin() { return "graphite"; }
 function setSkin(name) {
   try { localStorage.setItem("kosika-skin", name); } catch (error) { /* this visit only */ }
   if (name === "cinema") delete document.documentElement.dataset.skin; else document.documentElement.dataset.skin = name;
 }
+try { if (!localStorage.getItem("kosika-graphite-chosen")) { localStorage.setItem("kosika-skin", "graphite"); localStorage.setItem("kosika-graphite-chosen", "1"); } } catch (error) { /* this visit only */ }
 setSkin(skin());
-(function skinSwitch() {
-  const foot = document.getElementById("foot");
-  function add() {
-    if (foot.querySelector(".skin-switch")) return;
-    const label = SKINS.find(item => item[0] === skin()) || SKINS[0];
-    foot.append(h("div", {class: "theme skin-switch", title: "Change Studio's look", onclick: () => {
-      const next = SKINS[(SKINS.findIndex(item => item[0] === skin()) + 1) % SKINS.length][0];
-      setSkin(next); foot.querySelector(".skin-switch").remove(); add();
-    }}, h("i"), "Look: " + label[1]));
-  }
-  new MutationObserver(add).observe(foot, {childList: true});
-})();
+// The look is not switched any more: there is one.
 
 // ------------------------------------------------- the agency (Spy Titles)
 // What the look adds to the page: the credits, case files with stamps,

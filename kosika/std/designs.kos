@@ -49,21 +49,25 @@ import "designs_draw.kos"
 import "designs_main.kos"
 import "designs_art.kos"
 import "designs_generative.kos"
+import "designs_scene.kos"
+import "designs_forms.kos"
+import "designs_anim.kos"
 import "designs_quiz.kos"
 import "designs_paper.kos"
 import "science_chem.kos"
 import "science_units.kos"
 import "science_elements.kos"
 import "science_molecules.kos"
+import "algorithms.kos"
 import "std/math.kos"
 
-export [DzAsk, DzResult, DzKind, dz_kinds, dz_places, dz_kind, dz_why, design, design_kind, dz_lab, dz_lab_style, DzFormula, dz_formula_for, dz_formula_card, dz_formula_style]
+export [DzAsk, DzResult, DzKind, DzProbe, DzScene, dz_play, dz_canvas_embed, dz_kinds, dz_places, dz_kind, dz_kind_sure, dz_why, design, design_kind, design_kind_probe, dz_lab, dz_lab_style, DzFormula, dz_formula_for, dz_formula_card, dz_formula_style, dz_reaction, dz_science_field]
 
 record DzAsk { text: Text palette: Text place: Text kind: Text }
 record DzKind { kind: Text why: Text }
 record DzResult { kind: Text why: Text title: Text page: Text svg: Text embed: Text problems: Text[] fixed: Text[] }
 
-fn dz_kinds() -> Text[] { return ["diagram", "illustration", "art", "canvas", "quiz", "worked", "chemistry", "units", "element"] }
+fn dz_kinds() -> Text[] { return ["diagram", "illustration", "art", "canvas", "quiz", "worked", "chemistry", "units", "element", "algorithm"] }
 fn dz_places() -> Text[] { return ["chat", "studio", "site", "agent"] }
 
 fn dz_place(ask: DzAsk) -> Text {
@@ -83,21 +87,25 @@ fn dz_has(t: Text, words: Text[]) -> Bool {
 }
 
 fn dz_art_words() -> Text[] { return [" art ", " artwork", " wallpaper", " background", " backdrop", " abstract", " generative", " pattern", " screensaver", " cover image", " mood ", " aesthetic", " something beautiful", " ambient"] }
+fn dz_art_asked() -> Text[] { return [" art of ", " art about ", " art piece", " piece of art", " artwork", " generative art", " abstract art", " wallpaper", " screensaver"] }
 fn dz_diagram_words() -> Text[] { return [" diagram", " flowchart", " flow chart", " mind map", " mindmap", " map of ", " timeline", " compare ", " comparison", " vs ", " vs. ", " versus ", " difference between", " hierarchy", " family tree", " org chart", " architecture", " structure of", " steps ", " step by step", " pipeline", " workflow", " table ", " graph ", " layers of", " types of", " kinds of", " parts of"] }
 // Systems with no body to watch move: how they work is a structure of
 // parts and steps, so even a "how does" about them is drawn as a diagram.
 fn dz_abstract_words() -> Text[] { return [" neural network", " transformer", " llm", " language model", " machine learning", " algorithm", " protocol", " internet", " http", " tcp", " dns", " blockchain", " database", " api ", " compiler", " software", " program ", " encryption", " search engine", " operating system", " git ", " kubernetes", " cloud computing", " recursion", " sorting"] }
+// Money and markets: an effect between things is drawn as a diagram of what
+// causes what, not as a picture that only moves.
+fn dz_economics_words() -> Text[] { return [" economy", " economic", " inflation", " interest rate", " interest rates", " compound interest", " mortgage", " loan", " loans", " gdp", " tax ", " taxes ", " market ", " markets ", " supply and demand", " invest", " price", " prices", " wage", " wages", " income", " rent ", " rents ", " tariff", " tariffs", " bank ", " banks "] }
 
 // Asking to be tested, not taught: a quiz.
 fn dz_quiz_words() -> Text[] { return [" quiz", " test me", " flashcard", " flash card", " practice question", " check my understanding", " mcq", " multiple choice"] }
 
-fn dz_illustration_words() -> Text[] { return [" animate", " animation", " animated", " illustrate", " illustration", " show me how", " what happens when", " what happens if", " what is inside", " how does ", " how do ", " why does ", " why do ", " why is ", " why are "] }
+fn dz_illustration_words() -> Text[] { return [" animate", " animation", " animated", " illustrate", " illustration", " show me how", " what happens when", " what happens if", " what is inside", " how does ", " how do ", " why does ", " why do ", " why is ", " why are ", " what happens in ", " what happens inside "] }
 
 // Science asks: which field the ask belongs to, by its words, and the
 // reaction it names, if any, as an equation for science_chem to balance.
 fn dz_biology_words() -> Text[] { return [" photosynthesis", " respiration", " cell ", " cells ", " mitosis", " dna", " gene", " enzyme", " heart", " blood", " lungs", " neuron", " plant", " leaf", " leaves", " bacteria", " virus", " digestion", " evolution", " ecosystem", " food chain", " protein"] }
 fn dz_chemistry_words() -> Text[] { return [" reaction", " molecule", " molecules", " acid", " base ", " rust", " rusting", " burn", " burns", " combustion", " oxidation", " neutralis", " neutraliz", " electrolysis", " bond", " compound", " haber", " ammonia", " baking soda", " vinegar"] }
-fn dz_physics_words() -> Text[] { return [" pendulum", " swing", " projectile", " thrown", " throw ", " orbit", " planet", " moon", " gravity", " force", " momentum", " energy", " wave", " waves", " light", " sound", " electric", " circuit", " magnet", " gear", " gears", " engine", " friction", " velocity", " acceleration"] }
+fn dz_physics_words() -> Text[] { return [" pendulum", " swing", " projectile", " thrown", " throw ", " orbit", " planet", " moon", " gravity", " force", " momentum", " energy", " wave", " waves", " light", " sound", " electric", " circuit", " magnet", " gear", " gears", " engine", " friction", " velocity", " acceleration", " nuclear", " reactor", " pressure", " voltage"] }
 
 fn dz_science_field(text: Text) -> Text {
   let t = dz_padded(text)
@@ -122,15 +130,22 @@ fn dz_reaction(text: Text) -> Text {
   return ""
 }
 
-// Which way of drawing suits the ask, by its words: a named kind first;
-// then asking for a diagram's shape (a timeline, a comparison, the steps);
-// then asking for art; then asking how or why something happens, which
-// moves, so it is illustrated; anything else is drawn as a diagram.
-fn dz_kind(ask: DzAsk) -> Text {
+// The kind the words themselves settle: a named kind first; then asking for
+// the shape of a diagram, a timeline or a comparison, the steps; then art;
+// then something about money, which causes what and so is a diagram; then
+// asking how or why something happens, which moves, so it is illustrated.
+// "" when the words settle nothing.
+fn dz_named(ask: DzAsk) -> Text {
   let named = ask.kind.trim().lower()
   if dz_kinds().contains(named) { return named }
   let t = dz_padded(ask.text)
   if dz_has(t, dz_quiz_words()) { return "quiz" }
+  // Asked for art in so many words, it is art, whatever it is of: "art of
+  // planets orbiting a burning star" is not a reaction to balance.
+  if dz_has(t, dz_art_asked()) { return "art" }
+  if an_wants(ask.text) or an_story_wants(ask.text) { return "art" }
+  if (ls_wants(ask.text) or fm_wants(ask.text)) and dz_has(t, [" draw", " paint", " picture", " sketch", " scene", " landscape", " scenery", " wallpaper", " show me ", " art "]) { return "art" }
+  if not al_which(ask.text).is_empty() { return "algorithm" }
   if t.starts_with(" convert ") { return "units" }
   if dz_has(t, [" periodic table", " periodic "]) or (se_find(ask.text) > 0 and dz_has(t, [" element", " atom", " electron", " tell me about ", " what is ", " shells"])) { return "element" }
   if dz_has(t, [" balance ", " balancing ", "->", "→", " chemical equation", " reaction for ", " reaction of ", " burning ", " combustion ", " as a reaction", " react with ", " reacts with "]) { return "chemistry" }
@@ -138,9 +153,35 @@ fn dz_kind(ask: DzAsk) -> Text {
   if dz_has(t, dz_diagram_words()) { return "diagram" }
   if dz_has(t, dz_art_words()) { return "art" }
   if dz_has(t, dz_abstract_words()) { return "diagram" }
+  if dz_has(t, dz_economics_words()) { return "diagram" }
   if dz_has(t, dz_illustration_words()) and not dz_science_field(ask.text).is_empty() { return "canvas" }
+  return ""
+}
+
+// The kind to draw, by the words: when they settle it, that is the answer;
+// when they do not, this is only a guess, and dz_kind_sure says so.
+fn dz_kind(ask: DzAsk) -> Text {
+  let decided = dz_named(ask)
+  if not decided.is_empty() { return decided }
+  let t = dz_padded(ask.text)
   if dz_has(t, dz_illustration_words()) { return "illustration" }
   return "diagram"
+}
+
+// Whether the words alone settled the kind. When they did not, the last two
+// answers of dz_kind are a guess dressed as a decision, so the front door
+// asks a model instead and keeps its answer only when Kosika can draw it.
+fn dz_kind_sure(ask: DzAsk) -> Bool { return not dz_named(ask).is_empty() }
+
+
+// What the words decided, whether they decided it, and the sentence Kosika
+// would give for it: the row a grader records, and the same row a ledger
+// keeps, computed without asking a model anything.
+record DzProbe { kind: Text sure: Bool why: Text }
+
+workflow design_kind_probe(ask: DzAsk) -> DzProbe {
+  guessed = dz_kind(ask)
+  out = {kind: guessed, sure: dz_kind_sure(ask), why: dz_why(ask)}
 }
 
 fn dz_why(ask: DzAsk) -> Text {
@@ -148,13 +189,70 @@ fn dz_why(ask: DzAsk) -> Text {
   if dz_kinds().contains(ask.kind.trim().lower()) { return f"asked for {kind}" }
   if kind == "canvas" { return "asks how something in " + dz_science_field(ask.text) + " happens, so Kosika drew it on one canvas: the structure, the moving picture and, for a reaction, the reaction itself" }
   if kind == "chemistry" { return "asks about a reaction, so Kosika balanced it itself and checked the atoms and the mass" }
-  if kind == "element" { return "asks about an element, so Kosika opened the periodic table at it and worked out its electrons itself" }
+  if kind == "element" { return "asks about an element, so Kosika opened the periodic table at it, worked out its electrons itself, drew its atom with Designs' art and set a checked quiz on it" }
   if kind == "units" { return "asks to convert units, so Kosika read both units into SI and checked they measure the same thing" }
+  if kind == "algorithm" { return "asks how an algorithm works, so Kosika ran it itself, step by step, checked the answer another way, and played it" }
   if kind == "quiz" { return "asks to be tested, so it is a quiz Kosika checked, with each answer's reason" }
   if kind == "worked" { return "asks for mathematics worked out, so each line is worked and checked by Kosika" }
   if kind == "art" { return "asks for a mood or a background, so it is drawn as moving art" }
   if kind == "illustration" { return "asks how or why something happens, so it is drawn moving, beside its explanation" }
   return "asks about the parts and structure of something, so it is drawn as a diagram"
+}
+
+// ---------------------------------------------------------------- choosing with a model
+
+// The words in dz_kind cover the asks people repeat, but a plain ask can
+// miss every list: "how do interest rates affect house prices" reads only as
+// a "how do", and a moving picture of house prices would be a guess. When
+// the words settle nothing, a model chooses the way of drawing, and Kosika
+// keeps its choice only when it is one Kosika can actually draw.
+
+record VarietyBrief { task: Text ask: Text guessed: Text }
+record VarietyGuessed { kind: Text }
+
+model variety {
+  input: VarietyBrief
+  output: DzKind
+  parameters: {
+    max_output_tokens: 400
+  }
+}
+
+fn variety_task() -> Text {
+  return "Someone asked for a picture. Choose the one way of drawing that answers them best. The ways: diagram (the parts, steps or links of something, explained in order); illustration (a moving picture of how or why a real thing happens, beside its explanation); art (a mood, a background, a wallpaper, abstract moving art); canvas (a science ask answered whole, with the structure, the moving picture, a lab and a quiz); algorithm (a data structure or algorithm, such as a binary search tree, a sort, a binary search or a shortest path, run step by step); quiz (they asked to be tested); worked (mathematics worked out line by line); chemistry (a chemical reaction, balanced and checked); units (a conversion between units); element (a chemical element or the periodic table). Give kind, one of " + dz_kinds().join(", ") + ", and why, one plain sentence on why it answers the ask best."
+}
+
+fn no_variety() -> DzKind { return {kind: "", why: ""} }
+fn dz_kind_of(kind: Text) -> DzKind { return {kind: kind, why: ""} }
+
+// What Kosika keeps from the model: a kind it can draw, else the words' guess.
+fn dz_kind_kept(guessed: Text, said: DzKind) -> Text {
+  let kind = said.kind.trim().lower()
+  return if dz_kinds().contains(kind) { kind } else { guessed }
+}
+
+// The model's reason, kept only when its choice was kept too.
+fn dz_kind_reason(said: DzKind) -> Text {
+  return if dz_kinds().contains(said.kind.trim().lower()) { said.why.trim() } else { "" }
+}
+
+fn dz_chosen_why(kept: Text, said: Text) -> Text { return if said.is_empty() { kept } else { said } }
+
+// The kind to draw, and a model's reason when a model chose it: nothing is
+// asked of a model when the words already settle the kind.
+workflow dz_kind_better(ask: DzAsk) -> DzKind {
+  budget 2 model calls, 120 seconds
+  guessed = dz_kind(ask)
+  out = match dz_kind_sure(ask) {
+    case true { dz_kind_of(guessed) }
+    case _ { call dz_kind_asked(ask, {kind: guessed}) }
+  }
+}
+
+workflow dz_kind_asked(ask: DzAsk, guessed: VarietyGuessed) -> DzKind {
+  budget 2 model calls, 120 seconds
+  said = use_model variety(variety_task(), ask.text, guessed.kind) retry 1 otherwise no_variety()
+  out  = {kind: dz_kind_kept(guessed.kind, said), why: dz_kind_reason(said)}
 }
 
 // ---------------------------------------------------------------- one shape of answer
@@ -192,10 +290,39 @@ fn dz_from_illustration(ask: DzAsk, r: ArtPage) -> DzResult {
   return {kind: "illustration", why: dz_why(ask), title: r.art.title, page: r.page, svg: r.svg, embed: embed, problems: r.problems, fixed: r.fixed}
 }
 
+// A painted place: a landscape with its sky, land, water and life, every
+// part worked out and moving.
+fn dz_from_scene(ask: DzAsk, a: LsArt) -> DzResult {
+  let place = dz_place(ask)
+  let embed = if a.problems.is_empty() { dz_wrap("art", place, "dark_matter", a.recipe.title, a.svg, ls_style()) } else { "" }
+  let why = "asks for a place, so Kosika painted it as a moving scene: " + a.recipe.land + " at " + a.recipe.time + ", " + a.recipe.weather
+  return {kind: "art", why: why, title: a.recipe.title, page: a.page, svg: a.svg, embed: embed, problems: a.problems, fixed: []}
+}
+
+// Forms: real things, each from the geometry that makes it, and moving.
+fn dz_from_forms(ask: DzAsk, a: FmArt) -> DzResult {
+  let place = dz_place(ask)
+  let embed = if a.problems.is_empty() { dz_wrap("art", place, "dark_matter", a.recipe.title, a.svg, fm_style()) } else { "" }
+  let names = (for i in a.recipe.items { i.form }).unique().join(", ")
+  let why = "asks for " + names + ", so Kosika drew each from the geometry that makes it and set it moving"
+  return {kind: "art", why: why, title: a.recipe.title, page: a.page, svg: a.svg, embed: embed, problems: a.problems, fixed: []}
+}
+
+// An animation: actors moving through time on one clock, captions timed
+// to the moments, play, pause and scrub.
+fn dz_from_anim(ask: DzAsk, a: AnArt) -> DzResult {
+  let place = dz_place(ask)
+  let notes = if a.notes.is_empty() { "" } else { "<p class=\"an-note\">" + art_esc(a.notes.join(" ")) + "</p>" }
+  let inner = "<div class=\"an-box\">" + a.svg + an_controls(a.recipe) + "<script>" + an_script(a.recipe.seconds) + an_parts_script() + "</script></div>" + notes
+  let embed = if a.problems.is_empty() { dz_wrap("art", place, "dark_matter", a.recipe.title, inner, an_style() + ".an-note{color:var(--soft);font-size:13px;margin:8px 2px 0}") } else { "" }
+  let why = "asks for something to move, so Kosika animated it on one clock, " + a.recipe.seconds.to_text() + " seconds, with its captions timed to each moment"
+  return {kind: "art", why: why, title: a.recipe.title, page: a.page, svg: a.svg, embed: embed, problems: a.problems, fixed: []}
+}
+
 fn dz_from_art(ask: DzAsk, g: GenArt) -> DzResult {
   let place = dz_place(ask)
   let palette = dz_palette(ask.palette, g.recipe.palette)
-  let embed = if g.problems.is_empty() { dz_wrap("art", place, palette, g.recipe.title, g.svg, gen_style()) } else { "" }
+  let embed = if g.problems.is_empty() { dz_wrap("art", place, palette, g.recipe.title, g.svg + gen_strip(g), gen_style()) } else { "" }
   return {kind: "art", why: dz_why(ask), title: g.recipe.title, page: g.page, svg: g.svg, embed: embed, problems: g.problems, fixed: []}
 }
 
@@ -261,7 +388,7 @@ fn dz_step_shown(s: Structure, a: Art) -> Number {
 }
 
 fn dz_canvas_style() -> Text {
-  return ".kd-canvas{position:relative;overflow:hidden;padding:18px}.kd-canvas>.kc-art{position:absolute;inset:0;opacity:.32;pointer-events:none}.kd-canvas>.kc-art svg{width:100%;height:100%;display:block}.kd-canvas>.kc-head,.kd-canvas>.kc-grid,.kd-canvas>div:not(.kc-art),.kd-canvas>.kc-note{position:relative}.kc-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 14px;margin:2px 4px 14px}.kc-head h2{margin:0;font-size:22px;font-weight:850;letter-spacing:-.02em}.kc-head p{margin:0;color:var(--soft);font-size:14px}.kc-grid{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:16px;align-items:start}.kc-card{background:color-mix(in srgb,var(--halo) 82%,transparent);border:1px solid color-mix(in srgb,var(--line) 12%,transparent);border-radius:18px;padding:12px;backdrop-filter:blur(6px)}.kc-label{font:600 10.5px ui-monospace,Consolas,monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);margin:2px 4px 10px}.kc-label b{color:var(--amber);font-weight:600}.kc-card .kd-frame{height:620px}.kc-note{color:var(--soft);font-size:12.5px;margin:12px 4px 0}.kc-quiz{margin-top:16px}.kc-reaction{margin-top:16px}.kc-field{font:600 10.5px ui-monospace,Consolas,monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--amber);border:1px solid color-mix(in srgb,var(--amber) 45%,transparent);border-radius:999px;padding:3px 9px;align-self:center}@media (max-width:900px){.kc-grid{grid-template-columns:1fr}}"
+  return ".kd-canvas{position:relative;overflow:hidden;padding:18px}.kd-canvas>.kc-art{position:absolute;inset:0;opacity:.32;pointer-events:none}.kd-canvas>.kc-art svg{width:100%;height:100%;display:block}.kd-canvas>.kc-head,.kd-canvas>.kc-grid,.kd-canvas>div:not(.kc-art),.kd-canvas>.kc-note{position:relative}.kc-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 14px;margin:2px 4px 14px}.kc-head h2{margin:0;font-size:22px;font-weight:850;letter-spacing:-.02em}.kc-head p{margin:0;color:var(--soft);font-size:14px}.kc-grid{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:16px;align-items:start}.kc-card{background:color-mix(in srgb,var(--halo) 82%,transparent);border:1px solid color-mix(in srgb,var(--line) 12%,transparent);border-radius:18px;padding:12px;backdrop-filter:blur(6px)}.kc-label{font:600 10.5px ui-monospace,Consolas,monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);margin:2px 4px 10px}.kc-label b{color:var(--amber);font-weight:600}.kc-card .kd-frame{height:620px}.kc-note{color:var(--soft);font-size:12.5px;margin:12px 4px 0}.kc-quiz{margin-top:16px}.kc-one-grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:18px;align-items:start}.kc-one-art svg{width:100%;height:auto;display:block}.kc-one-story .beats{margin:0 0 12px}.kc-map{border-top:1px solid color-mix(in srgb,var(--line) 12%,transparent);padding-top:10px}.kc-parts{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}.kc-part{font:600 11px ui-monospace,Consolas,monospace;letter-spacing:.04em;padding:4px 9px;border-radius:999px;border:1px solid color-mix(in srgb,var(--gold) 45%,transparent);color:var(--gold)}.kc-links{list-style:none;margin:0;padding:0;color:var(--soft);font-size:13.5px}.kc-links li{padding:3px 0}.kc-links b{color:var(--amber)}.kc-full{margin-top:14px}.kc-full summary{cursor:pointer;color:var(--soft);font:600 11px ui-monospace,Consolas,monospace;letter-spacing:.18em;text-transform:uppercase}.kc-full .kd-frame{height:620px;margin-top:10px}@media (max-width:900px){.kc-one-grid{grid-template-columns:1fr}}.kc-reaction{margin-top:16px}.kc-field{font:600 10.5px ui-monospace,Consolas,monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--amber);border:1px solid color-mix(in srgb,var(--amber) 45%,transparent);border-radius:999px;padding:3px 9px;align-self:center}@media (max-width:900px){.kc-grid{grid-template-columns:1fr}}"
 }
 
 fn dz_card(label: Text, inner: Text) -> Text { return f"<div class=\"kc-card\"><div class=\"kc-label\">{label}</div>{inner}</div>" }
@@ -278,7 +405,7 @@ fn dz_canvas_lead(ask: DzAsk) -> Text {
   return if kind == "canvas" { "illustration" } else { kind }
 }
 
-fn dz_from_canvas(ask: DzAsk, palette: Text, r: Request, d: Design, m: ArtPage, g: GenArt, z: QzPage) -> DzResult {
+fn dz_from_canvas(ask: DzAsk, palette: Text, r: Request, d: Design, m: ArtPage, g: GenArt, z: QzPage, flows: DzFlows) -> DzResult {
   let place = dz_place(ask)
   let on_subject = dz_on_subject(ask.text, r.structure)
   let has_diagram = d.problems.is_empty() and not d.page.is_empty() and on_subject
@@ -299,7 +426,8 @@ fn dz_from_canvas(ask: DzAsk, palette: Text, r: Request, d: Design, m: ArtPage, 
   if not has_moving { left = left.append("the moving picture (" + m.problems.join("; ") + ")") }
   let note = if left.is_empty() { "" } else { "<p class=\"kc-note\">Left out: " + art_esc(left.join("; ")) + ".</p>" }
   let both = not first.is_empty() and not second.is_empty()
-  let grid = if both { "<div class=\"kc-grid\">" + first + second + "</div>" } else { "<div>" + first + second + "</div>" }
+  // Both drawn: one picture, the art and the structure together.
+  let grid = if both { dz_stage(r, d, m, dz_graph(dz_formula_for(ask.text)).svg, flows, lead) } else { "<div>" + first + second + "</div>" }
   let field = dz_science_field(ask.text)
   let equation = dz_reaction(ask.text)
   let balanced = sc_balance(equation)
@@ -310,7 +438,7 @@ fn dz_from_canvas(ask: DzAsk, palette: Text, r: Request, d: Design, m: ArtPage, 
   let inner = "<div class=\"kc-art\" aria-hidden=\"true\">" + g.svg + "</div><div class=\"kc-head\">" + dz_field_label(field) + "<h2>" + art_esc(title) + "</h2><p>" + art_esc(summary) + "</p></div>" + grid + formula + reaction + lab + check + note
   let own = not (formula.is_empty() and reaction.is_empty() and lab.is_empty())
   let drawn = has_diagram or has_moving or own
-  let embed = if drawn { dz_wrap("canvas", place, palette, "", inner, art_style() + gen_style() + qz_style() + sc_style() + sm_style() + dz_lab_style() + dz_formula_style() + dz_canvas_style()) } else { "" }
+  let embed = if drawn { dz_wrap("canvas", place, palette, "", inner, art_style() + gen_style() + qz_style() + sc_style() + sm_style() + dz_lab_style() + dz_formula_style() + dz_canvas_style() + dz_stage_style() + dz_living_style() + dz_journey_style()) } else { "" }
   let page = if drawn { dz_canvas_page(title, palette, embed) } else { "" }
   let none: Text[] = []
   let wrong = if drawn { none } else { d.problems.concat(m.problems) }
@@ -628,6 +756,852 @@ fn dz_reaction_name(text: Text) -> Text {
   return "The reaction"
 }
 
+// ---------------------------------------------------------------- one picture
+//
+// The structure and the art in one element. The art is the picture; the
+// structure's steps are told beside it, each tied to the figures of the
+// art it is about (by the words they share with the figures' names), so
+// pointing at a step lights its part of the picture and pointing at a
+// figure finds its step. The structure's parts and links sit under the
+// steps as a map of names. The full diagram is still a click away.
+
+// Names are short (a bob, a sun), so words of three letters count here.
+fn dz_name_words(text: Text) -> Text[] {
+  let common = ["the", "and", "for", "its", "are", "was", "has", "how", "why", "but", "not", "you", "can", "one", "two", "that", "this", "with", "from", "into", "they", "then", "than", "each", "when", "what", "where", "which"]
+  var out: Text[] = []
+  for w in text.lower().replace(",", " ").replace(".", " ").replace(":", " ").replace(";", " ").replace("(", " ").replace(")", " ").words() {
+    if w.length() >= 3 and not common.contains(w) and not out.contains(w) { out = out.append(w) }
+  }
+  return out
+}
+
+// What a real part of the art is made of, so a step that names a part of
+// it (the left ventricle) is tied to it (the heart).
+fn dz_part_vocab(kind: Text) -> Text {
+  if kind == "heart" { return "heart atrium atria ventricle ventricles valve valves aorta artery arteries vein veins chamber chambers blood pump" }
+  if kind == "cell" { return "cell nucleus nucleolus mitochondria mitochondrion ribosome ribosomes membrane cytoplasm organelle" }
+  if kind == "leaf" { return "leaf chloroplast chloroplasts chlorophyll light sunlight carbon dioxide oxygen stomata vein glucose sugar" }
+  if kind == "atom" { return "atom nucleus electron electrons shell shells proton protons orbit" }
+  if kind == "neuron" { return "neuron nerve dendrite dendrites axon myelin terminal terminals signal impulse synapse" }
+  if kind == "dna" { return "dna gene base bases pair pairs strand strands helix adenine thymine guanine cytosine" }
+  if kind == "circuit" { return "circuit battery resistor current charge charges wire voltage resistance" }
+  if kind == "magnet" { return "magnet magnetic field pole poles north south" }
+  if kind == "engine" { return "engine piston crank cylinder spark fuel stroke" }
+  if kind == "transistor" { return "transistor base collector emitter current switch" }
+  return ""
+}
+
+fn dz_figure_words(f: Figure) -> Text[] { return dz_name_words(f.id.replace("_", " ") + " " + f.label + " " + dz_part_vocab(f.kind)) }
+
+fn dz_step_text(s: Structure, st: Step) -> Text {
+  let named = for id in st.parts { dz_part_label(s, id) }
+  return st.text + " " + named.join(" ")
+}
+
+fn dz_part_label(s: Structure, id: Text) -> Text {
+  for p in s.parts {
+    if p.id == id { return p.label }
+  }
+  return id
+}
+
+// The figures of the art one step is about.
+fn dz_step_figures(s: Structure, st: Step, a: Art) -> Text[] {
+  let said = dz_stems(dz_name_words(dz_step_text(s, st)))
+  return for f in a.figures where f.kind != "text" and dz_shared(dz_stems(dz_figure_words(f)), said) > 0 { f.id }
+}
+
+fn dz_unified_beats(s: Structure, a: Art) -> Beat[] {
+  let steps = for st in s.steps { dz_unified_beat(st.text, dz_or_all(dz_step_figures(s, st, a), a)) }
+  // The art's own sentences about figures no step reached are kept, after.
+  var reached: Text[] = []
+  for b in steps { reached = reached.concat(b.shows) }
+  let extra = for b in a.beats where (for id in b.shows where not reached.contains(id) { id }).length() > 0 { b }
+  return steps.concat(extra)
+}
+
+// A step tied to no figure shows the whole picture rather than none of it.
+fn dz_unified_beat(text: Text, shows: Text[]) -> Beat { return {text: text, shows: shows} }
+
+fn dz_or_all(found: Text[], a: Art) -> Text[] { return if found.is_empty() { dz_all_figures(a) } else { found } }
+
+fn dz_all_figures(a: Art) -> Text[] { return for f in a.figures where f.kind != "text" { f.id } }
+
+fn dz_parts_map(s: Structure) -> Text {
+  let parts = (for p in s.parts { "<span class=\"kc-part\">" + art_esc(p.label) + "</span>" }).join("")
+  let links = (for l in s.links { "<li>" + art_esc(dz_part_label(s, l.from)) + " <b>&#8594;</b> " + art_esc(dz_part_label(s, l.to)) + (if l.label.is_empty() { "" } else { " <i>" + art_esc(l.label) + "</i>" }) + "</li>" }).join("")
+  return "<div class=\"kc-map\"><div class=\"kc-parts\">" + parts + "</div>" + (if links.is_empty() { "" } else { "<ul class=\"kc-links\">" + links + "</ul>" }) + "</div>"
+}
+
+// ---------------------------------------------------------------- living cards
+//
+// The diagram and the art as one thing. Each part of the structure is a
+// card, and the card holds its own living picture: a real part of the art
+// library when the part is one (a heart for an atrium or a ventricle, a
+// cell, an atom, a leaf...), its icon otherwise, moving as such things
+// move. Each link carries what travels along it, and the colour of what
+// travels means something: a model says what each link carries and gives
+// the same kind of thing the same colour and a change of state a new one
+// (blood before the lungs and after); Kosika keeps only flows that are
+// links of the structure, and colours the rest by their place in order.
+
+record DzFlow { from: Text to: Text carries: Text hue: Number }
+record DzFlows { flows: DzFlow[] }
+record DzFlowBrief { task: Text structure: Text }
+
+model flow_reader {
+  input: DzFlowBrief
+  output: DzFlows
+  parameters: {
+    max_output_tokens: 1200
+  }
+}
+
+fn dz_flow_task() -> Text {
+  return "You read a diagram's links and say what travels along each. Give flows: one per link, with from and to (the part ids exactly as given), carries (1 to 3 words: what moves along it, like oxygen-poor blood, water vapour, an electrical signal, money) and hue (0 to 5). Give the same kind of thing the same hue everywhere, and a new hue when it changes state, so the colours tell the story: 0 amber, 1 violet, 2 sky blue, 3 gold, 4 mint green, 5 rose red. Use sky blue for oxygen-poor blood and rose red for oxygen-rich blood, sky blue for water, gold for energy or light."
+}
+
+fn dz_flow_text(s: Structure) -> Text {
+  let parts = (for p in s.parts { p.id + " = " + p.label }).join("; ")
+  let links = (for l in s.links { l.from + " -> " + l.to + dz_link_said(l) }).join("; ")
+  return "Parts: " + parts + ". Links: " + links + "."
+}
+
+fn dz_link_said(l: Link) -> Text { return if l.label.is_empty() { "" } else { " (" + l.label + ")" } }
+
+fn dz_flow_brief(r: Request) -> DzFlowBrief { return {task: dz_flow_task(), structure: dz_flow_text(r.structure)} }
+
+fn dz_no_flows() -> DzFlows { return {flows: []} }
+
+// The flow of one link: the model's, when it named that link, else a
+// colour by its place in order.
+fn dz_flow_of(f: DzFlows, l: Link, k: Number) -> DzFlow {
+  for x in f.flows {
+    if x.from == l.from and x.to == l.to { return {..x, hue: x.hue.abs().floor() % 6} }
+  }
+  return {from: l.from, to: l.to, carries: l.label, hue: k % 6}
+}
+
+// The art kind a part is, when it is one of the art's real parts.
+fn dz_art_kinds() -> Text[] { return ["heart", "cell", "atom", "leaf", "neuron", "dna", "circuit", "magnet", "engine", "transistor"] }
+
+// Each art part's words, worked out once for a whole drawing.
+// Whole words, not stems: "collection" is not a transistor's collector.
+fn dz_art_vocab() -> Text[][] { return for kind in dz_art_kinds() { dz_name_words(dz_part_vocab(kind)) } }
+
+fn dz_part_art(label: Text) -> Text { return dz_part_art_with(label, dz_art_vocab()) }
+
+fn dz_part_art_with(label: Text, vocab: Text[][]) -> Text {
+  let said = dz_name_words(label)
+  let kinds = dz_art_kinds()
+  for k in 0 until kinds.length() {
+    if dz_shared(vocab[k], said) > 0 { return kinds[k] }
+  }
+  return ""
+}
+
+fn dz_part_icon(s: Structure, id: Text) -> Text {
+  for l in s.looks {
+    if l.part == id { return l.icon }
+  }
+  return ""
+}
+
+// Where each card sits: a ring for a cycle or anything round one centre,
+// rows that turn back on themselves (a snake) for everything else.
+fn dz_card_spots(s: Structure, w: Number) -> Number[][] {
+  let n = s.parts.length()
+  var xs: Number[] = []
+  var ys: Number[] = []
+  if ["cycle", "orbit", "hub"].contains(s.shape) {
+    for k in 0 until n {
+      let deg = 360 * k / n.max(1) - 90
+      xs = xs.append(w / 2 + deg.cos() * 330)
+      ys = ys.append(260 + deg.sin() * 190)
+    }
+    return [xs, ys]
+  }
+  let per = 3
+  for k in 0 until n {
+    let row = (k / per).floor()
+    let at = k % per
+    let col = if row % 2 == 0 { at } else { per - 1 - at }
+    xs = xs.append(w / 2 + (col - 1) * 310)
+    ys = ys.append(100 + row * 200)
+  }
+  return [xs, ys]
+}
+
+fn dz_card_art(s: Structure, p: Part, x: Number, y: Number, hue: Number, vocab: Text[][]) -> Text {
+  let kind = dz_part_art_with(p.label, vocab)
+  if not kind.is_empty() {
+    let f: Figure = {id: p.id, kind: kind, x: 0, y: 0, w: 4.2, h: 0, count: if kind == "atom" { 6 } else { 0 }, hue: hue, label: "", points: []}
+    // The place is the outer group's; the motion is the inner one's, so
+    // the animation's own transform does not undo where the art sits.
+    return f"<g transform=\"translate({(x * 10).round() / 10} {(y * 10).round() / 10 - 22})\"><g class=\"lc-art lc-move-{kind}\" style=\"--c:var(--h{hue})\">{art_shape(f)}</g></g>"
+  }
+  let icon = dz_part_icon(s, p.id)
+  if not icon.is_empty() { return f"<g class=\"lc-icon-at\" transform=\"translate({(x * 10).round() / 10} {(y * 10).round() / 10 - 6})\"><text class=\"lc-icon {dz_meaning_motion(p)}\">{icon}</text></g>" }
+  return f"<circle class=\"lc-dot\" cx=\"{(x * 10).round() / 10}\" cy=\"{(y * 10).round() / 10 - 22}\" r=\"22\" style=\"fill:var(--h{hue})\"/><text class=\"lc-letter\" x=\"{(x * 10).round() / 10}\" y=\"{(y * 10).round() / 10 - 15}\">{art_esc(p.label.slice(0, 1).upper())}</text>"
+}
+
+// A motion that means what the part does: vapour rises, rain falls, the
+// sun shines, a cloud drifts, a pump beats, a wheel turns.
+fn dz_meaning_motion(p: Part) -> Text {
+  let t = " " + (p.label + " " + p.note + " " + p.id).lower() + " "
+  if dz_has(t, ["rise", "rises", "evapor", "vapo", "steam", "grow", "lift", "ascend", "upward"]) { return "lc-rise" }
+  if dz_has(t, ["fall", "rain", "precip", "drop", "snow", "sink", "descend", "downward"]) { return "lc-fall" }
+  if dz_has(t, ["sun", "heat", "light", "energy", "shine", "burn", "warm", "fire", "power"]) { return "lc-shine" }
+  if dz_has(t, ["cloud", "condens", "cool", "drift", "wind", "air", "breath", "lung"]) { return "lc-drift" }
+  if dz_has(t, ["pump", "beat", "heart", "contract", "squeez", "pulse"]) { return "lc-beat" }
+  if dz_has(t, ["spin", "turn", "rotat", "orbit", "wheel", "cycle"]) { return "lc-spin" }
+  return "lc-bob"
+}
+
+// Style A: the nodes are the art. No boxes: each part is its living
+// picture in a ring of light, its name beneath. Kosika draws natural
+// cycles this way, where the parts are things to look at, not systems.
+fn dz_living_nodes(s: Structure) -> Bool {
+  if not ["cycle", "orbit", "hub"].contains(s.shape) { return false }
+  let vocab = dz_art_vocab()
+  for p in s.parts {
+    if not dz_part_art_with(p.label, vocab).is_empty() { return false }
+  }
+  return true
+}
+
+fn dz_living_svg(s: Structure, flows: DzFlows) -> Text {
+  let round = dz_living_nodes(s)
+  let w = 1000
+  let spots = dz_card_spots(s, w)
+  let xs = spots[0]
+  let ys = spots[1]
+  let n = s.parts.length()
+  let rows = if ["cycle", "orbit", "hub"].contains(s.shape) { 3 } else { ((n + 2) / 3).floor() }
+  let h = if ["cycle", "orbit", "hub"].contains(s.shape) { 520 } else { 200 * rows + 10 }
+  let ids = for p in s.parts { p.id }
+  var links = ""
+  for k in 0 until s.links.length() {
+    let l = s.links[k]
+    let i = ids.index_of(l.from).or(-1)
+    let j = ids.index_of(l.to).or(-1)
+    if i >= 0 and j >= 0 and i != j {
+      let f = dz_flow_of(flows, l, k)
+      let dx = xs[j] - xs[i]
+      let dy = ys[j] - ys[i]
+      let len = (dx * dx + dy * dy).sqrt().max(1)
+      let reach_x = if round { 82 } else { 112 }
+      let reach_y = if round { 82 } else { 72 }
+      let x1 = xs[i] + dx / len * reach_x
+      let y1 = ys[i] + dy / len * reach_y
+      let x2 = xs[j] - dx / len * reach_x
+      let y2 = ys[j] - dy / len * reach_y
+      let mx = (x1 + x2) / 2 - dy / len * 26
+      let my = (y1 + y2) / 2 + dx / len * 26
+      let path = f"M{(x1 * 10).round() / 10} {(y1 * 10).round() / 10} Q{(mx * 10).round() / 10} {(my * 10).round() / 10} {(x2 * 10).round() / 10} {(y2 * 10).round() / 10}"
+      let dots = (for d in 0 until 3 { f"<circle class=\"lc-drop\" r=\"7\" style=\"fill:var(--h{f.hue})\"><animateMotion dur=\"2.4s\" begin=\"-{d * 0.8}s\" repeatCount=\"indefinite\" path=\"{path}\"/></circle>" }).join("")
+      let said = if f.carries.is_empty() { "" } else { f"<text class=\"lc-carries\" x=\"{(mx * 10).round() / 10}\" y=\"{(my * 10).round() / 10 - 8}\" style=\"fill:var(--h{f.hue})\">{art_esc(f.carries)}</text>" }
+      links = links + f"<g class=\"lc-link\" data-from=\"{l.from}\" data-to=\"{l.to}\"><path d=\"{path}\" style=\"stroke:var(--h{f.hue})\" marker-end=\"url(#lc-head)\"/>{dots}{said}</g>"
+    }
+  }
+  var cards = ""
+  let vocab = dz_art_vocab()
+  for k in 0 until n {
+    let p = s.parts[k]
+    let x = xs[k]
+    let y = ys[k]
+    let hue = k % 6
+    let box = if round { f"<circle class=\"lc-halo\" cx=\"{(x * 10).round() / 10}\" cy=\"{(y * 10).round() / 10 - 14}\" r=\"66\" style=\"--c:var(--h{hue})\"/>" } else { f"<rect class=\"lc-box\" x=\"{(x * 10).round() / 10 - 105}\" y=\"{(y * 10).round() / 10 - 68}\" width=\"210\" height=\"136\" rx=\"20\" style=\"--c:var(--h{hue})\"/>" }
+    let name_y = if round { 74 } else { 34 }
+    let name = f"<text class=\"lc-name\" x=\"{(x * 10).round() / 10}\" y=\"{(y * 10).round() / 10 + name_y}\">{art_esc(p.label)}</text><text class=\"lc-note\" x=\"{(x * 10).round() / 10}\" y=\"{(y * 10).round() / 10 + name_y + 18}\">{art_esc(p.note.upper())}</text>"
+    cards = cards + f"<g class=\"lc-card\" data-part=\"{p.id}\">{box}{dz_card_art(s, p, x, y, hue, vocab)}{name}</g>"
+  }
+  let head = "<defs><marker id=\"lc-head\" viewBox=\"0 0 10 10\" refX=\"8\" refY=\"5\" markerWidth=\"6\" markerHeight=\"6\" orient=\"auto\"><path d=\"M0 0 L10 5 L0 10 z\" class=\"lc-arrow\"/></marker></defs>"
+  let style_class = if round { "lc lc-nodes" } else { "lc" }
+  let tall = if round { h + 40 } else { h }
+  return f"<svg class=\"art {style_class}\" viewBox=\"0 0 {w} {tall}\" role=\"img\" aria-label=\"{art_esc(s.title)}\">{head}{links}{cards}</svg>"
+}
+
+fn dz_living_style() -> Text {
+  return ".lc{width:100%;height:auto;display:block}.lc-box{fill:color-mix(in srgb,var(--c) 10%,var(--halo));stroke:color-mix(in srgb,var(--c) 55%,transparent);stroke-width:2;filter:drop-shadow(0 8px 18px rgb(0 0 0/.35))}.lc-name{fill:var(--ink);font:700 16px Figtree,system-ui,sans-serif;text-anchor:middle}.lc-note{fill:var(--soft);font:600 10px ui-monospace,Consolas,monospace;letter-spacing:.12em;text-anchor:middle}.lc-icon{font-size:44px;text-anchor:middle;transform-box:fill-box;transform-origin:center;animation:lc-bob 2.4s ease-in-out infinite}.lc-nodes .lc-icon{font-size:62px}.lc-halo{fill:color-mix(in srgb,var(--c) 16%,var(--halo));stroke:color-mix(in srgb,var(--c) 70%,transparent);stroke-width:3;filter:drop-shadow(0 0 18px color-mix(in srgb,var(--c) 45%,transparent))}.lc-card.st-on .lc-halo{stroke-width:5;filter:drop-shadow(0 0 22px var(--amber))}.lc-rise{animation:lc-rise 2.6s ease-in-out infinite}.lc-fall{animation:lc-fall 1.6s ease-in infinite}.lc-shine{animation:lc-shine 2.4s ease-in-out infinite}.lc-drift{animation:lc-drift 4s ease-in-out infinite alternate}.lc-beat{animation:lc-beat 1.1s ease-in-out infinite}.lc-spin{animation:lc-spin 6s linear infinite}.lc-bob{animation:lc-bob 2.4s ease-in-out infinite}@keyframes lc-rise{0%{transform:translateY(8px);opacity:.6}60%{opacity:1}100%{transform:translateY(-10px);opacity:.6}}@keyframes lc-fall{0%{transform:translateY(-8px)}100%{transform:translateY(8px)}}@keyframes lc-shine{50%{transform:scale(1.12);filter:drop-shadow(0 0 14px #ffd76a)}}@keyframes lc-drift{to{transform:translateX(12px)}}@keyframes lc-spin{to{transform:rotate(360deg)}}.lc-letter{fill:var(--bg);font:800 20px Figtree,system-ui,sans-serif;text-anchor:middle}.lc-link path{fill:none;stroke-width:3.5;opacity:.6}.lc-arrow{fill:var(--soft)}.lc-carries{font:700 12px Figtree,system-ui,sans-serif;text-anchor:middle;paint-order:stroke;stroke:var(--bg);stroke-width:4px}.lc-drop{filter:drop-shadow(0 0 6px currentColor)}.lc-art{animation:lc-beat 1.1s ease-in-out infinite;transform-box:fill-box;transform-origin:center}.lc-move-heart{animation-name:lc-beat}.lc-move-cell,.lc-move-leaf,.lc-move-atom{animation:lc-bob 3s ease-in-out infinite}@keyframes lc-beat{30%{transform:scale(.9)}60%{transform:scale(1)}}@keyframes lc-bob{50%{transform:translateY(-5px)}}.lc-card{transition:opacity .5s}.lc-card.st-dim,.lc-link.st-dim{opacity:.35}.lc-card.st-on .lc-box{stroke-width:4;filter:drop-shadow(0 0 14px var(--amber))}.lc-link.st-run path{opacity:1;stroke-width:6}@media (prefers-reduced-motion:reduce){.lc-art,.lc-icon{animation:none}}"
+}
+
+// ---------------------------------------------------------------- the stage
+//
+// The canvas as one big screen that plays the explanation scene by scene.
+// The storyboard is Kosika's: each step of the structure becomes a scene
+// that says what happens (the step's own words), which figures of the art
+// it is about, which link of the structure it carries (from one part to
+// another) and which parts are known by then. Kosika checks every scene
+// against the structure and the art. The stage plays it: the figures of
+// the scene light on the picture, the parts gather into a mind map beside
+// it, the scene's link runs as a moving arrow between them, and a caption
+// says what is happening. A formula's graph is the last scene, drawn in.
+
+// runs: further links the scene runs at once, each "from>to", as a path's.
+record DzScene { caption: Text shows: Text[] from: Text to: Text label: Text known: Text[] parts: Text[] runs: Text[] }
+
+// The part ids a step names: those it lists, and those whose label its
+// words carry.
+fn dz_step_parts(s: Structure, st: Step) -> Text[] { return dz_step_parts_with(s, st, for p in s.parts { dz_stems(dz_name_words(p.label)) }) }
+
+fn dz_step_parts_with(s: Structure, st: Step, part_stems: Text[][]) -> Text[] {
+  let said = dz_stems(dz_name_words(st.text))
+  var out: Text[] = for id in st.parts where (for p in s.parts where p.id == id { p }).length() > 0 { id }
+  for k in 0 until s.parts.length() {
+    // Every word of the part's name, so "right atrium" is not named by
+    // a step about the right ventricle.
+    let own = part_stems[k]
+    let p = s.parts[k]
+    if not out.contains(p.id) and not own.is_empty() and dz_shared(own, said) == own.length() { out = out.append(p.id) }
+  }
+  return out
+}
+
+// The link of the structure a step carries: the first whose two ends it
+// names.
+fn dz_step_link(s: Structure, named: Text[], known: Text[]) -> Link {
+  for l in s.links {
+    if named.contains(l.from) and named.contains(l.to) { return l }
+  }
+  // A step that names one part carries the link into it from a part the
+  // story has already reached (blood reaches the arteries from the
+  // ventricle met just before).
+  for l in s.links {
+    if named.contains(l.to) and known.contains(l.from) and not named.contains(l.from) { return l }
+  }
+  return dz_no_link()
+}
+
+fn dz_scene(caption: Text, shows: Text[], l: Link, known: Text[], parts: Text[]) -> DzScene { return {caption: dz_concise(caption), shows: shows, from: l.from, to: l.to, label: l.label, known: known, parts: parts, runs: []} }
+
+// A caption is a short line: the picture says the rest. The step's first
+// clause, at most sixteen words.
+fn dz_concise(text: Text) -> Text {
+  let words = text.trim().words()
+  if words.length() <= 14 { return text.trim() }
+  var out: Text[] = []
+  var stop = false
+  for w in words {
+    if not stop {
+      out = out.append(w)
+      if out.length() >= 8 and (w.ends_with(",") or w.ends_with(";")) { stop = true }
+      if out.length() >= 16 { stop = true }
+    }
+  }
+  let said = out.join(" ")
+  let cut = if said.ends_with(",") or said.ends_with(";") { said.slice(0, said.length() - 1) } else { said }
+  return if out.length() < words.length() { cut + " …" } else { cut }
+}
+
+fn dz_no_link() -> Link { return {from: "", to: "", label: ""} }
+
+fn dz_storyboard(s: Structure, a: Art) -> DzScene[] {
+  var known: Text[] = []
+  var scenes: DzScene[] = []
+  // Each figure's and each part's words, worked out once, not per step.
+  let figure_stems = for f in a.figures { dz_stems(dz_figure_words(f)) }
+  let part_stems = for p in s.parts { dz_stems(dz_name_words(p.label)) }
+  for st in s.steps {
+    let said = dz_stems(dz_name_words(dz_step_text(s, st)))
+    let named = dz_step_parts_with(s, st, part_stems)
+    let lit = for k in 0 until a.figures.length() where a.figures[k].kind != "text" and dz_shared(figure_stems[k], said) > 0 { a.figures[k].id }
+    let before = known
+    for id in named {
+      if not known.contains(id) { known = known.append(id) }
+    }
+    let l = dz_step_link(s, named, before)
+    scenes = scenes.append(dz_scene(st.text, dz_or_all(lit, a), l, known, named))
+  }
+  return scenes
+}
+
+// What the storyboard gets wrong, if anything: a scene that lights a
+// figure the art does not have, or runs a link between parts the
+// structure does not have.
+fn dz_storyboard_problems(scenes: DzScene[], s: Structure, a: Art) -> Text[] {
+  let figures = for f in a.figures { f.id }
+  let parts = for p in s.parts { p.id }
+  var out: Text[] = []
+  for k in 0 until scenes.length() {
+    for id in scenes[k].shows {
+      if not figures.contains(id) { out = out.append(f"scene {k + 1} lights {id}, which the picture does not have") }
+    }
+    if not scenes[k].from.is_empty() and not (parts.contains(scenes[k].from) and parts.contains(scenes[k].to)) { out = out.append(f"scene {k + 1} runs a link the structure does not have") }
+  }
+  return out
+}
+
+// The mind map: the structure's parts on a ring, its links between them,
+// each with a dot that runs along it when its scene plays.
+fn dz_mind_map(s: Structure) -> Text {
+  let n = s.parts.length()
+  let cx = 200
+  let cy = 170
+  let r = 125
+  var xs: Number[] = []
+  var ys: Number[] = []
+  for k in 0 until n {
+    let deg = 360 * k / n.max(1) - 90
+    xs = xs.append(cx + deg.cos() * r)
+    ys = ys.append(cy + deg.sin() * r)
+  }
+  let ids = for p in s.parts { p.id }
+  var edges = ""
+  for k in 0 until s.links.length() {
+    let l = s.links[k]
+    let i = ids.index_of(l.from).or(-1)
+    let j = ids.index_of(l.to).or(-1)
+    if i >= 0 and j >= 0 and i != j {
+      // From edge to edge of the two nodes, so the arrow's tip meets the
+      // node it points at.
+      let dx = xs[j] - xs[i]
+      let dy = ys[j] - ys[i]
+      let len = (dx * dx + dy * dy).sqrt().max(1)
+      let x1 = xs[i] + dx / len * 32
+      let y1 = ys[i] + dy / len * 32
+      let x2 = xs[j] - dx / len * 34
+      let y2 = ys[j] - dy / len * 34
+      let path = f"M{(x1 * 10).round() / 10} {(y1 * 10).round() / 10} L{(x2 * 10).round() / 10} {(y2 * 10).round() / 10}"
+      edges = edges + f"<g class=\"mm-edge\" data-from=\"{l.from}\" data-to=\"{l.to}\"><path d=\"{path}\" marker-end=\"url(#mm-head)\"/><circle class=\"mm-dot\" r=\"6\"><animateMotion dur=\"1.6s\" repeatCount=\"indefinite\" path=\"{path}\"/></circle></g>"
+    }
+  }
+  let nodes = (for k in 0 until n { f"<g class=\"mm-node\" data-part=\"{s.parts[k].id}\"><circle cx=\"{(xs[k] * 10).round() / 10}\" cy=\"{(ys[k] * 10).round() / 10}\" r=\"30\"/><text x=\"{(xs[k] * 10).round() / 10}\" y=\"{(ys[k] * 10).round() / 10 + 4}\">{art_esc(dz_short_label(s.parts[k].label))}</text></g>" }).join("")
+  let head = "<defs><marker id=\"mm-head\" viewBox=\"0 0 10 10\" refX=\"9\" refY=\"5\" markerWidth=\"7\" markerHeight=\"7\" orient=\"auto\"><path d=\"M0 0 L10 5 L0 10 z\" class=\"mm-arrow\"/></marker></defs>"
+  return f"<svg class=\"mm\" viewBox=\"0 0 400 340\" role=\"img\" aria-label=\"The parts and how they connect\">{head}{edges}{nodes}</svg>"
+}
+
+fn dz_short_label(label: Text) -> Text {
+  let words = label.words()
+  return if label.length() <= 14 { label } else { words.take(2).join(" ") }
+}
+
+fn dz_scene_json(sc: DzScene) -> Text {
+  let shows = (for id in sc.shows { "\"" + id + "\"" }).join(",")
+  let known = (for id in sc.known { "\"" + id + "\"" }).join(",")
+  let parts = (for id in sc.parts { "\"" + id + "\"" }).join(",")
+  let runs = (for id in sc.runs { "\"" + dz_js(id) + "\"" }).join(",")
+  return "{\"parts\":[" + parts + "],\"caption\":\"" + dz_js(sc.caption) + "\",\"shows\":[" + shows + "],\"from\":\"" + dz_js(sc.from) + "\",\"to\":\"" + dz_js(sc.to) + "\",\"label\":\"" + dz_js(sc.label) + "\",\"known\":[" + known + "],\"runs\":[" + runs + "]}"
+}
+
+// Text inside a JSON string: backslashes and quotes escaped, lines joined.
+fn dz_js(t: Text) -> Text {
+  return t.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ")
+}
+
+// Inside the drawing: a scene's parts light, the rest dim, its link runs.
+fn dz_played_style() -> Text {
+  return "main{padding:6px 4px!important;max-width:none!important}.brand,.ask,h1,.lede,.notes,.hud,.bar,.think,.photos,.photo-strip,.refphoto,.leaders{display:none!important}.board{margin:0!important;padding:0!important}.part.st-dim,.link.st-dim{opacity:.5;transition:opacity .5s}.part.st-on{opacity:1;filter:drop-shadow(0 0 10px var(--amber));transition:all .5s}.link.st-run{opacity:1}.link.st-run .pulse{opacity:1;stroke-width:4;animation:run .8s linear infinite}.link.st-run .wire{stroke-width:3}"
+}
+
+fn dz_played_script() -> Text {
+  return "function tell(){var b=document.getElementById('board');var h=Math.ceil((b?b.getBoundingClientRect().bottom:document.body.scrollHeight)+16);parent.postMessage({stageHeight:h},'*')}addEventListener('load',function(){tell();setTimeout(tell,1500);setTimeout(tell,4000)});addEventListener('resize',tell);addEventListener('message',function(e){var m=e.data||{};if(!m.stage)return;var parts=m.parts||[],all=m.all;document.querySelectorAll('.part').forEach(function(p){var id=p.id.replace(/^p-/,'');var on=parts.indexOf(id)>=0;p.classList.toggle('st-on',!all&&on);p.classList.toggle('st-dim',!all&&!on&&parts.length>0)});document.querySelectorAll('.link').forEach(function(l){var pair=l.dataset.a.replace(/^p-/,'')+'>'+l.dataset.b.replace(/^p-/,''),back=l.dataset.b.replace(/^p-/,'')+'>'+l.dataset.a.replace(/^p-/,'');var run=!all&&((m.from&&l.dataset.a==='p-'+m.from&&l.dataset.b==='p-'+m.to)||(m.runs||[]).indexOf(pair)>=0||(m.runs||[]).indexOf(back)>=0);l.classList.toggle('st-run',!!run);l.classList.toggle('st-dim',!all&&!run&&parts.length>0)});var first=parts.length?document.getElementById('p-'+parts[0]):null;if(first&&first.scrollIntoView)first.scrollIntoView({block:'nearest',behavior:'smooth'})});"
+}
+
+// The canvas carries no quiz: quizzes are the study agent's, asked for by
+// name (kind "quiz").
+fn dz_no_quiz() -> QzPage { return {page: "", card: "", problems: [], quiz: {title: "", topic: "", palette: "dark_matter", questions: []}, checked: ""} }
+
+fn dz_stage_script() -> Text {
+  return "(function(){var me=document.currentScript,st=me&&me.closest?me.closest('.kc-stage'):null;if(!st)st=document.querySelector('.kc-stage');if(!st)return;var S=JSON.parse(st.dataset.scenes),own=[].slice.call(st.querySelectorAll('.art .own')),nodes=[].slice.call(st.querySelectorAll('.mm-node')),edges=[].slice.call(st.querySelectorAll('.mm-edge')),cap=st.querySelector('.st-caption'),num=st.querySelector('.st-num'),dots=[].slice.call(st.querySelectorAll('.st-dot')),graph=st.querySelector('.st-graph'),i=0,playing=true,timer=null,still=matchMedia('(prefers-reduced-motion: reduce)').matches;function show(k){i=k;var last=k===S.length;var sc=last?null:S[k];own.forEach(function(e){var on=sc&&sc.shows.indexOf(e.dataset.of)>=0;e.classList.remove('wait');e.classList.toggle('lit',!!on);e.classList.toggle('dim',!!sc&&!on)});nodes.forEach(function(n){var id=n.dataset.part;n.classList.toggle('known',last||(sc&&sc.known.indexOf(id)>=0));n.classList.toggle('now',!!sc&&(sc.from===id||sc.to===id))});edges.forEach(function(e){e.classList.toggle('run',!!sc&&e.dataset.from===sc.from&&e.dataset.to===sc.to)});if(graph)graph.classList.toggle('on',last);var lit=sc?(sc.parts.length?sc.parts:[sc.from,sc.to].filter(Boolean)):[];st.querySelectorAll('.lc-card').forEach(function(c){var on=lit.indexOf(c.dataset.part)>=0;c.classList.toggle('st-on',on);c.classList.toggle('st-dim',!!sc&&lit.length>0&&!on)});st.querySelectorAll('.lc-link').forEach(function(l){var run=!!sc&&!!sc.from&&l.dataset.from===sc.from&&l.dataset.to===sc.to;l.classList.toggle('st-run',run);l.classList.toggle('st-dim',!!sc&&lit.length>0&&!run)});st.querySelectorAll('.jr-pin,.jr-leg').forEach(function(p){var j=+p.dataset.k;p.classList.toggle('done',last||j<k);p.classList.toggle('now',!last&&j===k)});var fr=st.querySelector('iframe.st-form');if(fr&&fr.contentWindow){var msg=last?{stage:1,all:1}:{stage:1,parts:sc.parts.length?sc.parts:[sc.from,sc.to].filter(Boolean),from:sc.from,to:sc.to,runs:sc.runs||[]};fr.contentWindow.postMessage(msg,'*')}cap.textContent=last?(graph?'And the formula behind it, drawn as a graph.':'That is the whole of it.'):sc.caption;num.textContent=last?'':(k+1)+' / '+S.length;dots.forEach(function(d,j){d.classList.toggle('on',j===k)})}var total=S.length+(graph?1:0);function next(){show((i+1)%total)}addEventListener('message',function(e){var h=e.data&&e.data.stageHeight;var fr=st.querySelector('iframe.st-form');if(h&&fr&&e.source===fr.contentWindow)fr.style.height=Math.max(260,Math.min(900,h))+'px'});function play(){clearInterval(timer);if(playing&&!still)timer=setInterval(next,5200)}st.querySelector('.st-next').onclick=function(){next();play()};st.querySelector('.st-prev').onclick=function(){show((i-1+total)%total);play()};var pb=st.querySelector('.st-play');pb.onclick=function(){playing=!playing;pb.textContent=playing?'Pause':'Play';play()};dots.forEach(function(d,j){d.onclick=function(){show(j);play()}});show(0);play()})();"
+}
+
+fn dz_stage_style() -> Text {
+  return ".kc-stage{padding:18px}.st-screen{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;align-items:start}.st-map .kc-full{text-align:right;margin-top:6px}.st-map .kc-full[open]{text-align:left}.st-art svg{width:100%;height:auto;display:block}.st-living{max-width:1060px;margin:0 auto}.st-opens{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:18px;margin-top:8px}.st-opens .kc-full[open]{flex-basis:100%}.st-form{width:100%;height:520px;border:0;border-radius:14px;background:transparent}.mm{width:100%;height:auto;display:block}.mm-node circle{fill:var(--halo);stroke:color-mix(in srgb,var(--line) 30%,transparent);stroke-width:1.5;transition:all .5s}.mm-node text{fill:var(--soft);font:600 10.5px Figtree,system-ui,sans-serif;text-anchor:middle}.mm-node{opacity:.15;transition:opacity .6s}.mm-node.known{opacity:1}.mm-node.now circle{stroke:var(--amber);stroke-width:3;fill:color-mix(in srgb,var(--amber) 22%,var(--halo))}.mm-node.now text{fill:var(--ink)}.mm-edge path{stroke:color-mix(in srgb,var(--line) 35%,transparent);stroke-width:2;fill:none;transition:stroke .4s}.mm-arrow{fill:color-mix(in srgb,var(--line) 50%,transparent)}.mm-edge.run path{stroke:var(--amber);stroke-width:3}.mm-dot{fill:var(--amber);opacity:0}.mm-edge.run .mm-dot{opacity:1}.st-bar{display:flex;align-items:center;gap:14px;margin-top:14px;padding:12px 14px;border-radius:14px;background:color-mix(in srgb,var(--halo) 85%,transparent);border:1px solid color-mix(in srgb,var(--line) 14%,transparent)}.st-num{font:600 11px ui-monospace,Consolas,monospace;color:var(--gold);letter-spacing:.12em;min-width:44px}.st-caption{flex:1;font-size:17px;line-height:1.45;color:var(--ink)}.st-bar button{font:600 10.5px ui-monospace,Consolas,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--soft);background:none;border:1px solid color-mix(in srgb,var(--line) 22%,transparent);border-radius:999px;padding:7px 12px;cursor:pointer}.st-bar button:focus-visible{outline:2px solid var(--amber)}.st-dots{display:flex;gap:6px;justify-content:center;margin-top:10px}.st-dot{width:9px;height:9px;border-radius:50%;border:0;padding:0;background:color-mix(in srgb,var(--line) 30%,transparent);cursor:pointer}.st-dot.on{background:var(--amber)}.st-graph{display:none;margin:14px auto 0;max-width:640px}.st-graph.on{display:block}@media (max-width:900px){.st-screen{grid-template-columns:1fr}}"
+}
+
+// ---------------------------------------------------------------- the journey
+//
+// Style B: the diagram drawn through the scene. When the explanation is a
+// journey (a flow or a timeline) and the moving picture has a figure for
+// most of its steps, the steps are not drawn as boxes beside the picture:
+// they are numbered pins on the picture's own figures, joined by a road in
+// step order, and each scene runs its stretch of road.
+
+record DzPin { k: Number x: Number y: Number of: Text }
+
+// How far a figure reaches from its centre, in pixels.
+fn dz_figure_reach(f: Figure) -> Number {
+  let s = art_px()
+  if f.kind == "rect" { return f.w.max(f.h) * s / 2 }
+  if art_round().contains(f.kind) { return f.w * s * art_reach(f.kind) }
+  return 0
+}
+
+// Each step's pin sits on the figure it names best (not the one the step
+// before stood on, nor one pinned before but by the last step), up and to the left of the figure's centre so the art
+// stays seen. A step that names no figure gets no pin.
+fn dz_journey_pins(s: Structure, a: Art) -> DzPin[] {
+  let figure_stems = for f in a.figures { dz_bare_words(dz_figure_words(f)) }
+  let figure_heads = for words in figure_stems { dz_stems(words) }
+  let w = art_width() * art_px()
+  let h = art_height() * art_px()
+  var pins: DzPin[] = []
+  var last = ""
+  for k in 0 until s.steps.length() {
+    let said = dz_bare_words(dz_name_words(dz_step_text(s, s.steps[k])))
+    let heads = dz_stems(said)
+    let line = " " + said.join(" ") + " "
+    // A journey goes on: a figure pinned before is taken again only by the
+    // last step, coming home, and only when no new figure is named.
+    let end = k == s.steps.length() - 1
+    let used = for p in pins { p.of }
+    var best = -1
+    var score = 0
+    var back = -1
+    var back_score = 0
+    for j in 0 until a.figures.length() {
+      let f = a.figures[j]
+      let n = if f.kind == "text" or f.id == last { 0 } else { dz_near_count(figure_stems[j], figure_heads[j], heads, line) }
+      if used.contains(f.id) {
+        if end and n > back_score {
+          back = j
+          back_score = n
+        }
+      } else {
+        if n > score {
+          best = j
+          score = n
+        }
+      }
+    }
+    if best < 0 { best = back }
+    if best >= 0 {
+      let f = a.figures[best]
+      let c = art_centre(f)
+      let r = dz_figure_reach(f).min(70) * 0.6
+      // A figure pinned before takes the next pin beside the first.
+      let again = (for p in pins where p.of == f.id { p }).length()
+      let x = (c[0] * art_px() - r + again * 36).max(20).min(w - 20)
+      let y = (c[1] * art_px() - r).max(20).min(h - 20)
+      pins = pins.append({k: k, x: x, y: y, of: f.id})
+      last = f.id
+    }
+  }
+  return pins
+}
+
+// Words without their digits (line1 is a line), of three letters or more.
+fn dz_bare_words(words: Text[]) -> Text[] {
+  var out: Text[] = []
+  for w in words {
+    var t = w
+    for d in ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "-", "‑"] { t = t.replace(d, "") }
+    if t.length() >= 3 and not out.contains(t) { out = out.append(t) }
+  }
+  return out
+}
+
+// How near a step comes to a figure's words: two for the same first five
+// letters (home, homes), one for a word of four letters or more inside a
+// word the step says (station, substation), so the closer name wins.
+// `figure_heads` and `heads` are the figure's and the step's words cut to
+// five letters, `line` the step's words between spaces: all worked out
+// once, as the whole run shares one budget of function calls.
+fn dz_near_count(figure: Text[], figure_heads: Text[], heads: Text[], line: Text) -> Number {
+  var n = 0
+  for k in 0 until figure.length() {
+    if heads.contains(figure_heads[k]) { n = n + 2 } else { if figure[k].length() >= 4 and line.contains(figure[k]) { n = n + 1 } }
+  }
+  return n
+}
+
+// A journey when the shape is one and the pins cover most of the steps,
+// standing on at least three different figures.
+fn dz_journey_fits(s: Structure, pins: DzPin[]) -> Bool {
+  if not ["flow", "timeline"].contains(s.shape) { return false }
+  var figures: Text[] = []
+  for p in pins {
+    if not figures.contains(p.of) { figures = figures.append(p.of) }
+  }
+  return figures.length() >= 3 and pins.length() >= (s.steps.length() * 0.6).max(3)
+}
+
+fn dz_r(x: Number) -> Number { return (x * 10).round() / 10 }
+
+// The road from pin to pin, gently bowed, and the pins over it.
+fn dz_journey_svg(pins: DzPin[]) -> Text {
+  let w = art_width() * art_px()
+  let h = art_height() * art_px()
+  var legs = ""
+  for i in 1 until pins.length() {
+    let a = pins[i - 1]
+    let b = pins[i]
+    let dx = b.x - a.x
+    let dy = b.y - a.y
+    let cx = (a.x + b.x) / 2 - dy * 0.18
+    let cy = (a.y + b.y) / 2 + dx * 0.18
+    let d = f"M{dz_r(a.x)} {dz_r(a.y)} Q{dz_r(cx)} {dz_r(cy)} {dz_r(b.x)} {dz_r(b.y)}"
+    legs = legs + f"<g class=\"jr-leg\" data-k=\"{b.k}\"><path class=\"jr-road\" d=\"{d}\"/><path class=\"jr-run\" d=\"{d}\"/><circle class=\"jr-dot\" r=\"6\"><animateMotion dur=\"1.8s\" repeatCount=\"indefinite\" path=\"{d}\"/></circle></g>"
+  }
+  let marks = (for p in pins { f"<g class=\"jr-pin\" data-k=\"{p.k}\"><circle cx=\"{dz_r(p.x)}\" cy=\"{dz_r(p.y)}\" r=\"16\"/><text x=\"{dz_r(p.x)}\" y=\"{dz_r(p.y + 5)}\">{p.k + 1}</text></g>" }).join("")
+  return f"<svg class=\"jr\" viewBox=\"0 0 {w} {h}\" aria-hidden=\"true\">{legs}{marks}</svg>"
+}
+
+fn dz_journey_style() -> Text {
+  return ".st-journey{position:relative;max-width:1060px;margin:0 auto}.st-journey .jr{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}.jr-road{fill:none;stroke:color-mix(in srgb,var(--ink) 28%,transparent);stroke-width:3;stroke-dasharray:2 9;stroke-linecap:round}.jr-run{fill:none;stroke:var(--amber);stroke-width:4;stroke-linecap:round;stroke-dasharray:7 9;opacity:0;transition:opacity .5s;animation:jr-run 1s linear infinite}.jr-leg.done .jr-run{opacity:.45;animation:none}.jr-leg.now .jr-run{opacity:1}.jr-dot{fill:var(--amber);opacity:0;filter:drop-shadow(0 0 6px var(--amber))}.jr-leg.now .jr-dot{opacity:1}@keyframes jr-run{to{stroke-dashoffset:-16}}.jr-pin circle{fill:var(--halo);stroke:color-mix(in srgb,var(--ink) 45%,transparent);stroke-width:2;transition:all .4s}.jr-pin text{fill:var(--soft);font:700 13px ui-monospace,Consolas,monospace;text-anchor:middle;transition:fill .4s}.jr-pin.done circle{stroke:var(--amber)}.jr-pin.now circle{fill:var(--amber);stroke:var(--amber);filter:drop-shadow(0 0 10px var(--amber))}.jr-pin.now text{fill:var(--halo)}@media (prefers-reduced-motion:reduce){.jr *{animation:none!important}.jr-dot{display:none}}"
+}
+
+// ---------------------------------------------------------------- Kosika's own reading
+//
+// What Kosika works out itself rather than take from the model: the shape
+// of the explanation, read from its links, and where the picture's figures
+// stand, in the order the story meets them.
+
+// The shape the links make. A loop through most of the parts is a cycle;
+// one part linked to nearly all the others, which link to little else, is
+// a hub; a chain, each part leading to at most one, is a flow. Any other
+// shape the model chose (a tree, a timeline, a table...) is kept.
+fn dz_read_shape(s: Structure) -> Text {
+  if not ["flow", "cycle", "hub"].contains(s.shape) { return s.shape }
+  let ids = for p in s.parts { p.id }
+  let n = ids.length()
+  if n < 3 { return s.shape }
+  let links = for l in s.links where l.from != l.to and ids.contains(l.from) and ids.contains(l.to) { l }
+  let outs = for id in ids { (for l in links where l.from == id { l }).length() }
+  let ins = for id in ids { (for l in links where l.to == id { l }).length() }
+  let next = for id in ids { dz_first_to(links, id) }
+  // The longest loop found by following each part's first link.
+  var loop = 0
+  for start in ids {
+    let size = dz_loop_from(ids, next, start)
+    if size > loop { loop = size }
+  }
+  if loop >= 3 and loop >= n * 0.6 { return "cycle" }
+  let degrees = for k in 0 until n { outs[k] + ins[k] }
+  let most = degrees.max().or(0)
+  let hub = degrees.index_of(most).or(0)
+  let others = for k in 0 until n where k != hub and degrees[k] > 2 { k }
+  if most >= n - 1 and n >= 4 and others.is_empty() { return "hub" }
+  let forks = for k in 0 until n where outs[k] > 1 or ins[k] > 1 { k }
+  if forks.is_empty() and links.length() >= n - 1 { return "flow" }
+  return s.shape
+}
+
+fn dz_first_to(links: Link[], id: Text) -> Text {
+  for l in links {
+    if l.from == id { return l.to }
+  }
+  return ""
+}
+
+// How many parts the walk from `start` passes before it comes back to
+// `start`; 0 when it never does.
+fn dz_loop_from(ids: Text[], next: Text[], start: Text) -> Number {
+  var at = start
+  var seen: Text[] = []
+  for k in 0 until ids.length() {
+    if not at.is_empty() and not seen.contains(at) {
+      seen = seen.append(at)
+      at = next[ids.index_of(at).or(0)]
+    }
+  }
+  return if at == start { seen.length() } else { 0 }
+}
+
+fn dz_read(r: Request) -> Request { return {..r, structure: {..r.structure, shape: dz_read_shape(r.structure)}} }
+
+// Where a journey's figures stand. The story's figures go left to right
+// in the order it meets them, evenly spaced, each keeping the height the
+// model gave it (the sky above, the ground below). Smaller things standing
+// on one go with it; a line or arrow ending at one has that end moved too.
+// A picture already in story order, with nothing overlapping, is kept.
+record DzPlacing { art: Art moved: Bool note: Text }
+
+// Two steps, so each keeps within Kosika's budget: first where the figures
+// go, then (only when any moved) the picture drawn again and checked.
+fn dz_placing(m: ArtPage, s: Structure, said: Text) -> DzPlacing {
+  let read = if said == s.shape or said.is_empty() { "" } else { f"read the shape as {s.shape} from its links, where the model said {said}" }
+  let still: DzPlacing = {art: m.art, moved: false, note: read}
+  // Only a journey is laid out by Kosika: a cycle keeps the model's own
+  // scene, whose sky, sea and land already mean where things are.
+  if m.svg.is_empty() or not ["flow", "timeline"].contains(s.shape) { return still }
+  var chain: Text[] = []
+  for p in dz_journey_pins(s, m.art) {
+    if not chain.contains(p.of) { chain = chain.append(p.of) }
+  }
+  if chain.length() < 3 or dz_in_order(m.art, chain) { return still }
+  let names = chain.join(", ")
+  let placed = f"placed {names} left to right in the order the story meets them"
+  return {art: dz_compose(m.art, chain), moved: true, note: if read.is_empty() { placed } else { read + "; " + placed }}
+}
+
+fn dz_placed(m: ArtPage, p: DzPlacing) -> ArtPage {
+  let notes: Text[] = if p.note.is_empty() { [] } else { [p.note] }
+  let kept = {..m, fixed: notes.concat(m.fixed)}
+  if not p.moved { return kept }
+  // Checked and drawn again, but not the whole art page: the canvas shows
+  // the picture only, and the run shares one budget of function calls.
+  if not art_problems(p.art).is_empty() { return kept }
+  let tidy = art_tidy(p.art)
+  return {..kept, art: tidy, svg: art_svg(tidy)}
+}
+
+fn dz_figure_at(a: Art, id: Text) -> Number {
+  for k in 0 until a.figures.length() {
+    if a.figures[k].id == id { return k }
+  }
+  return -1
+}
+
+// In story order already: each further right than the one before, by a
+// clear gap, and no two touching.
+fn dz_in_order(a: Art, chain: Text[]) -> Bool {
+  let px = art_px()
+  for k in 1 until chain.length() {
+    let f = a.figures[dz_figure_at(a, chain[k - 1])]
+    let g = a.figures[dz_figure_at(a, chain[k])]
+    let c = art_centre(f)
+    let d = art_centre(g)
+    if d[0] - c[0] < 8 { return false }
+    let gap = ((d[0] - c[0]) * (d[0] - c[0]) + (d[1] - c[1]) * (d[1] - c[1])).sqrt()
+    if gap * px < dz_figure_reach(f) + dz_figure_reach(g) { return false }
+  }
+  return true
+}
+
+fn dz_compose(a: Art, chain: Text[]) -> Art {
+  let n = chain.length()
+  let step = 76 / (n - 1)
+  let at = for id in chain { dz_figure_at(a, id) }
+  let olds = for k in at { art_centre(a.figures[k]) }
+  // Each story figure's new place, and how much it shrinks to leave room.
+  let xs = for i in 0 until n { 12 + step * i }
+  let ys = for i in 0 until n { olds[i][1].max(8).min(52) }
+  let room = step * art_px() * 0.45
+  let reaches = for k in at { dz_figure_reach(a.figures[k]) }
+  let shrink = for r in reaches { if r > room { room / r } else { 1 } }
+  let near_by = for k in at { dz_figure_reach(a.figures[k]) / art_px() + 3 }
+  var figures: Figure[] = []
+  for k in 0 until a.figures.length() {
+    let f = a.figures[k]
+    let i = at.index_of(k).or(-1)
+    let moved = if i >= 0 { {..f, x: xs[i], y: ys[i], w: f.w * shrink[i], h: f.h * shrink[i]} } else { dz_carried(f, olds, xs, ys, near_by, reaches) }
+    figures = figures.append(moved)
+  }
+  return {..a, figures: figures}
+}
+
+// A figure that is not in the story moves with the story figure it stands
+// on (its centre within that figure's reach, and smaller than it), or, for
+// a line, each end with the figure it ends at. Anything else stays put.
+fn dz_carried(f: Figure, olds: Number[][], xs: Number[], ys: Number[], near_by: Number[], reaches: Number[]) -> Figure {
+  if art_pointed().contains(f.kind) {
+    let half = (f.points.length() / 2).floor()
+    var points: Number[] = []
+    for k in 0 until half {
+      let x = f.points[2 * k]
+      let y = f.points[2 * k + 1]
+      let near = dz_nearest(x, y, olds, near_by)
+      let dx = if near < 0 { 0 } else { xs[near] - olds[near][0] }
+      let dy = if near < 0 { 0 } else { ys[near] - olds[near][1] }
+      points = points.append(x + dx).append(y + dy)
+    }
+    return {..f, points: points}
+  }
+  let near = dz_nearest(f.x, f.y, olds, near_by)
+  if near < 0 { return f }
+  if dz_figure_reach(f) >= reaches[near] { return f }
+  return {..f, x: f.x + xs[near] - olds[near][0], y: f.y + ys[near] - olds[near][1]}
+}
+
+fn dz_nearest(x: Number, y: Number, olds: Number[][], near_by: Number[]) -> Number {
+  var best = -1
+  var close = 1000
+  for i in 0 until olds.length() {
+    let d = ((x - olds[i][0]) * (x - olds[i][0]) + (y - olds[i][1]) * (y - olds[i][1])).sqrt()
+    if d <= near_by[i] and d < close {
+      best = i
+      close = d
+    }
+  }
+  return best
+}
+
+fn dz_test_link(a: Text, b: Text) -> Link { return {from: a, to: b, label: ""} }
+
+fn dz_test_shaped(shape: Text, links: Link[]) -> Structure {
+  let ids = ["a", "b", "c", "d"]
+  return {..dz_test_heart(), shape: shape, parts: for id in ids { {..dz_test_part(id, ""), id: id} }, links: links}
+}
+
+test "Kosika reads the shape from the links, not the model's word" {
+  loop = [dz_test_link("a", "b"), dz_test_link("b", "c"), dz_test_link("c", "d"), dz_test_link("d", "a")]
+  chain = [dz_test_link("a", "b"), dz_test_link("b", "c"), dz_test_link("c", "d")]
+  star = [dz_test_link("a", "b"), dz_test_link("a", "c"), dz_test_link("a", "d")]
+  expect dz_read_shape(dz_test_shaped("flow", loop)) == "cycle"
+  expect dz_read_shape(dz_test_shaped("cycle", chain)) == "flow"
+  expect dz_read_shape(dz_test_shaped("flow", star)) == "hub"
+  expect dz_read_shape(dz_test_shaped("tree", loop)) == "tree"
+}
+
+test "Kosika places the story's figures left to right, keeping their heights" {
+  road = dz_test_road()
+  muddled = {..dz_test_road_art(), figures: [dz_test_spot("sun", "Sun", 80, 12), dz_test_spot("cloud", "Cloud", 20, 12), dz_test_spot("mountain", "Mountain", 50, 40), dz_test_spot("river", "River", 50, 50), dz_test_spot("sea", "Sea", 15, 50)]}
+  chain = ["sun", "cloud", "mountain", "river"]
+  expect not dz_in_order(muddled, chain)
+  placed = dz_compose(muddled, chain)
+  expect placed.figures[0].x < placed.figures[1].x and placed.figures[1].x < placed.figures[2].x and placed.figures[2].x < placed.figures[3].x
+  expect placed.figures[0].y == 12 and placed.figures[2].y == 40
+  expect placed.figures[4].x == 15
+  expect dz_in_order(placed, chain)
+}
+
+// Shapes the living cards read well in; a table, a timeline, a message
+// sequence or a sketch keep their own drawing.
+fn dz_living_fits(s: Structure) -> Bool { return not ["compare", "timeline", "sequence", "sketch", "tree", "mindmap", "nested", "layers", "containers"].contains(s.shape) and s.parts.length() >= 2 and s.parts.length() <= 9 }
+
+fn dz_stage(r: Request, d: Design, m: ArtPage, graph: Text, flows: DzFlows, lead: Text) -> Text {
+  let s = r.structure
+  let scenes = dz_storyboard(s, m.art)
+  let data = "[" + (for sc in scenes { dz_scene_json(sc) }).join(",") + "]"
+  let total = scenes.length() + (if graph.is_empty() { 0 } else { 1 })
+  let dots = (for k in 0 until total { f"<button class=\"st-dot\" aria-label=\"Scene {k + 1}\"></button>" }).join("")
+  // The structure in its own form (a cycle, a flow, a tree, a table, a
+  // graph...), drawn by Designs with its icons, and played: each scene
+  // lights its parts and runs its link in that drawing.
+  let played = d.page.replace("</head>", "<style>html{background:var(--bg)}" + dz_played_style() + "</style></head>").replace("</body>", "<script>" + dz_played_script() + "</script></body>")
+  let form = if d.page.is_empty() { dz_mind_map(s) } else { "<iframe class=\"st-form\" title=\"" + art_esc(s.title) + "\" srcdoc=\"" + art_esc(played) + "\"></iframe>" }
+  let open_full = "<details class=\"kc-full\"><summary>Open the full diagram</summary>" + dz_diagram_frame(r, d) + "</details>"
+  // One entity when it fits: the parts are cards with living art inside
+  // and what flows between them coloured by meaning; the moving picture
+  // and the full diagram open beneath.
+  let living = lead == "illustration" and dz_living_fits(s)
+  let open_art = "<details class=\"kc-full\"><summary>Open the moving picture</summary><div class=\"st-art\">" + m.svg + "</div></details>"
+  // A structure ask leads with the diagram, so its stage is the two-column
+  // one: the diagram played, the picture beside it. Drawing the explanation
+  // through the picture is for a how or why ask, whose canvas says it leads
+  // with the picture; its pins are worked out only then, which also keeps a
+  // big ask inside its budget of function calls.
+  let pins: DzPin[] = if lead != "illustration" { [] } else if ["flow", "timeline"].contains(s.shape) { dz_journey_pins(s, m.art) } else { [] }
+  let journey = lead == "illustration" and dz_journey_fits(s, pins)
+  let road = "<div class=\"st-journey\">" + m.svg + dz_journey_svg(pins) + "</div><div class=\"st-opens\">" + open_full + "</div>"
+  let screen = if journey { road } else { dz_stage_screen(s, m, flows, living, form, open_art, open_full, lead) }
+  let bar = "<div class=\"st-bar\"><span class=\"st-num\"></span><span class=\"st-caption\"></span><button class=\"st-prev\" type=\"button\">Back</button><button class=\"st-play\" type=\"button\">Pause</button><button class=\"st-next\" type=\"button\">Next</button></div>"
+  let graph_part = if graph.is_empty() { "" } else { "<div class=\"st-graph\">" + graph + "</div>" }
+  return "<div class=\"kc-card kc-stage\" data-scenes=\"" + art_esc(data) + "\"><div class=\"kc-label\">Kosika canvas &#183; <b>the explanation, played</b></div>" + screen + bar + "<div class=\"st-dots\">" + dots + "</div>" + graph_part + "<script>" + dz_stage_script() + "</script></div>"
+}
+
+fn dz_stage_screen(s: Structure, m: ArtPage, flows: DzFlows, living: Bool, form: Text, open_art: Text, open_full: Text, lead: Text) -> Text {
+  if living { return "<div class=\"st-living\">" + dz_living_svg(s, flows) + "</div><div class=\"st-opens\">" + open_art + open_full + "</div>" }
+  let picture = "<div class=\"st-art\">" + m.svg + "</div>"
+  let structure = "<div class=\"st-map\">" + form + open_full + "</div>"
+  // Whichever the canvas says it leads with is the one on the left, so its
+  // why never describes a page the reader is not looking at: a structure ask
+  // opens with the diagram, played, and a how or why ask with the picture.
+  return if lead == "illustration" { "<div class=\"st-screen\">" + picture + structure + "</div>" } else { "<div class=\"st-screen\">" + structure + picture + "</div>" }
+}
+
+fn dz_unified(r: Request, d: Design, m: ArtPage) -> Text {
+  let s = r.structure
+  let beats = dz_unified_beats(s, m.art)
+  let told = {..m.art, beats: beats}
+  let picture = "<div class=\"kc-one-art\">" + m.svg + "</div>"
+  let story = "<div class=\"kc-one-story\"><div class=\"kc-label\">The structure &#183; <b>told on the picture</b></div>" + dz_beats(told) + dz_parts_map(s) + "</div>"
+  let full = "<details class=\"kc-full\"><summary>Open the full diagram</summary>" + dz_diagram_frame(r, d) + "</details>"
+  return "<div class=\"kc-card kc-one\"><div class=\"kc-one-grid\">" + picture + story + "</div>" + full + "<script>" + art_script() + "</script></div>"
+}
+
 fn dz_canvas_why(lead: Text, step: Number) -> Text {
   let first = if lead == "illustration" { "leads with the moving picture, since the ask is how or why something happens" } else { "leads with the diagram, since the ask is about structure" }
   let tie = if step >= 0 { f", and ties the moving picture to step {step + 1}, the one it shows" } else { "" }
@@ -683,6 +1657,106 @@ fn dz_from_units(ask: DzAsk, u: SuPage) -> DzResult {
 fn dz_sc_ask(ask: DzAsk) -> ScAsk { return {text: ask.text.trim().replace("balance ", "").replace("Balance ", ""), palette: ask.palette} }
 fn dz_su_ask(ask: DzAsk) -> SuAsk { return {text: ask.text} }
 
+workflow dz_algorithm(ask: DzAsk) -> DzResult {
+  ran   = call algorithm({text: ask.text, palette: ask.palette})
+  drawn = call draw(dz_al_request(ask, ran.run))
+  out   = dz_from_algorithm(ask, ran, drawn)
+}
+
+// ---------------------------------------------------------------- algorithms drawn by Designs
+//
+// A tree or a graph an algorithm ran on is handed to Designs as the
+// structure it is: a tree's cards by their parents, a graph's places and
+// weighted edges. Designs draws it on its dotted board, with its cards,
+// ports and wires (and, for a weighted graph, its own checked working), and
+// the canvas plays the run through that drawing: each step lights the
+// parts it touches and runs the edge it takes.
+
+fn dz_al_drawn(r: AlRun) -> Bool { return r.kind == "tree" or r.kind == "graph" }
+
+fn dz_al_parent(r: AlRun, id: Text) -> Text {
+  if r.kind != "tree" { return "" }
+  for e in r.edges {
+    if e.b == id { return e.a }
+  }
+  return ""
+}
+
+fn dz_al_is_node(r: AlRun, id: Text) -> Bool { return (for n in r.nodes where n.id == id { n }).length() > 0 }
+
+fn dz_al_structure(r: AlRun) -> Structure {
+  let parts: Part[] = for n in r.nodes { {id: n.id, label: n.label, note: "", parent: dz_al_parent(r, n.id)} }
+  let links: Link[] = for e in r.edges { {from: e.a, to: e.b, label: e.label} }
+  // Designs writes at most seven sentences beside a drawing: the first, the
+  // last, and evenly between. The canvas still plays every step.
+  let n = r.steps.length()
+  let keys = if n <= 7 { for k in 0 until n { k } } else { for k in 0 until 7 { (k * (n - 1) / 6).round() } }
+  let steps: Step[] = for k in keys { {text: r.steps[k].text, parts: for id in r.steps[k].lit where dz_al_is_node(r, id) { id }} }
+  return {title: r.title, summary: r.answer, shape: r.kind, figure: "", photo: "", parts: parts, links: links, steps: steps, marks: [], looks: [], aspects: []}
+}
+
+fn dz_al_request(ask: DzAsk, r: AlRun) -> Request {
+  let none: Part[] = []
+  let shape = if dz_al_drawn(r) { dz_al_structure(r) } else { {..dz_al_structure(r), shape: "", parts: none} }
+  return {ask: ask.text, structure: shape, picture: {title: "", author: "", license: "", license_url: "", page_url: "", image: ""}, palette: dz_palette(ask.palette, "dark_matter"), photos: [], backdrop: ""}
+}
+
+// Each step as a scene of the canvas: the nodes it lights, and the edge it
+// takes (an edge a step lights, or the one into a node it adds).
+fn dz_al_scenes(r: AlRun) -> DzScene[] {
+  var known: Text[] = []
+  var scenes: DzScene[] = []
+  for st in r.steps {
+    let lit = for id in st.lit where dz_al_is_node(r, id) { id }
+    for id in lit.concat(st.seen) {
+      if dz_al_is_node(r, id) and not known.contains(id) { known = known.append(id) }
+    }
+    let edges = for e in r.edges where st.lit.contains(e.id) { e }
+    let from = if edges.is_empty() { "" } else { edges[0].a }
+    let to = if edges.is_empty() { "" } else { edges[0].b }
+    let label = if edges.is_empty() { "" } else { edges[0].label }
+    scenes = scenes.append({caption: st.text, shows: [], from: from, to: to, label: label, known: known, parts: lit, runs: for e in edges { e.a + ">" + e.b }})
+  }
+  return scenes
+}
+
+// The Kosika canvas's stage, playing scenes through a drawing Designs made:
+// each scene lights its parts and runs its links in the drawing, with the
+// canvas's step bar and dots, a line of Kosika's check, and beside it every
+// step to open and the full drawing. Anything that plays a structure (an
+// algorithm's run, a crew at work) plays it here.
+fn dz_play(title: Text, scenes: DzScene[], d: Design, check: Text, passed: Bool) -> Text {
+  let data = "[" + (for sc in scenes { dz_scene_json(sc) }).join(",") + "]"
+  let dots = (for k in 0 until scenes.length() { f"<button class=\"st-dot\" aria-label=\"Step {k + 1}\"></button>" }).join("")
+  let played = d.page.replace("</head>", "<style>html{background:var(--bg)}" + dz_played_style() + "</style></head>").replace("</body>", "<script>" + dz_played_script() + "</script></body>")
+  let form = "<iframe class=\"st-form\" title=\"" + art_esc(title) + "\" srcdoc=\"" + art_esc(played) + "\"></iframe>"
+  let bar = "<div class=\"st-bar\"><span class=\"st-num\"></span><span class=\"st-caption\"></span><button class=\"st-prev\" type=\"button\">Back</button><button class=\"st-play\" type=\"button\">Pause</button><button class=\"st-next\" type=\"button\">Next</button></div>"
+  let mark = if passed { "<span class=\"al-check\">" + art_esc(check) + "</span>" } else { "<span class=\"al-check bad\">" + art_esc(check) + "</span>" }
+  let every = (for sc in scenes { "<li>" + art_esc(sc.caption) + "</li>" }).join("")
+  let opens = "<div class=\"st-opens\"><details class=\"kc-full\"><summary>Open every step</summary><ol class=\"al-steps\">" + every + "</ol></details><details class=\"kc-full\"><summary>Open the full diagram</summary><iframe class=\"kd-frame\" title=\"" + art_esc(title) + "\" srcdoc=\"" + art_esc(d.page) + "\"></iframe></details></div>"
+  return "<div class=\"kc-card kc-stage\" data-scenes=\"" + art_esc(data) + "\"><div class=\"kc-label\">Kosika canvas &#183; <b>the explanation, played</b></div>" + form + bar + "<div class=\"st-dots\">" + dots + "</div><div class=\"al-checked\">" + mark + "</div>" + opens + "<script>" + dz_stage_script() + "</script></div>"
+}
+
+// What a played stage needs around it, as an embed of its own.
+fn dz_canvas_embed(title: Text, inner: Text, palette: Text) -> Text { return dz_wrap("canvas", "studio", dz_palette(palette, "dark_matter"), title, inner, al_style() + dz_canvas_style() + dz_stage_style()) }
+
+fn dz_al_stage(r: AlRun, d: Design) -> Text {
+  let check = if r.problems.is_empty() { "Checked by Kosika: " + r.answer } else { "Check failed: " + r.problems.join("; ") }
+  return dz_play(r.title, dz_al_scenes(r), d, check, r.problems.is_empty())
+}
+
+// An algorithm Kosika ran and checked, played step by step.
+fn dz_from_algorithm(ask: DzAsk, a: AlPage, d: Design) -> DzResult {
+  let place = dz_place(ask)
+  let palette = dz_palette(ask.palette, "dark_matter")
+  // On the Kosika canvas, with the canvas's own stage, bar and panels: a
+  // tree or a graph drawn by Designs and played through, a list as bars.
+  let designed = dz_al_drawn(a.run) and d.problems.is_empty() and not d.page.is_empty()
+  let inner = if designed { dz_al_stage(a.run, d) } else { a.card }
+  let embed = dz_wrap("canvas", place, palette, a.run.title, inner, al_style() + dz_canvas_style() + dz_stage_style())
+  return {kind: "algorithm", why: dz_why(ask), title: a.run.title, page: dz_canvas_page(a.run.title, palette, embed), svg: al_svg(a.run), embed: embed, problems: a.problems, fixed: []}
+}
+
 workflow dz_chemistry(ask: DzAsk) -> DzResult {
   balanced = call balance(dz_sc_ask(ask))
   out      = dz_from_chemistry(ask, balanced)
@@ -690,17 +1764,51 @@ workflow dz_chemistry(ask: DzAsk) -> DzResult {
 
 fn dz_se_ask(ask: DzAsk) -> SeAsk { return {text: ask.text, palette: ask.palette} }
 
-fn dz_from_element(ask: DzAsk, e: SePage) -> DzResult {
+// An element on the canvas: the periodic table opened at it, its atom
+// drawn by Designs' own art (the atom part, its shells filled by Kosika)
+// with sentences Kosika writes from its own numbers, and a quiz on it that
+// a model writes and a second model checks blind.
+fn dz_atom_sentences(e: SeElement) -> Text[] {
+  let shells = (for n in e.shells { f"{n}" }).join(", ")
+  let outer = e.shells[e.shells.length() - 1]
+  let first = f"{e.name} has {e.z} electrons around a nucleus of {e.z} protons."
+  let second = f"They fill the shells {shells}, from the inside out: {e.short}."
+  let third = if e.category == "noble gas" { "Its outer shell is full, so it hardly reacts with anything." } else if e.category == "alkali metal" { f"Its outer shell holds just {outer}, which it gives away easily: that is why it reacts so readily." } else if e.category == "halogen" { "Its outer shell is one electron short of full, so it takes one eagerly." } else if e.category == "alkaline earth metal" { "It gives away its two outer electrons to react." } else { f"Its outer shell holds {outer}, and those decide how it bonds." }
+  return [first, second, third]
+}
+
+fn dz_atom_beat(t: Text) -> Beat { return {text: t, shows: ["atom"]} }
+
+fn dz_atom_art(e: SeElement, palette: Text) -> Art {
+  let atom: Figure = {id: "atom", kind: "atom", x: 50, y: 30, w: 22, h: 0, count: e.z, hue: 1, label: "", points: []}
+  let beats = for t in dz_atom_sentences(e) { dz_atom_beat(t) }
+  let name: Figure = {id: "name", kind: "text", x: 50, y: 6, w: 2.5, h: 0, count: 0, hue: 6, label: e.name + ", " + e.symbol, points: []}
+  return {title: e.name, summary: f"The atom of {e.name.lower()}, its electrons in shells.", palette: palette, backdrop: "plain", figures: [atom, name], motions: [], beats: beats}
+}
+
+fn dz_element_quiz(ask: DzAsk, e: SeElement) -> QzAsk { return {text: f"a quiz on the element {e.name}: its electrons, its place in the periodic table and how it reacts", palette: ask.palette} }
+
+fn dz_from_element(ask: DzAsk, e: SePage, atom: ArtPage, z: QzPage) -> DzResult {
   let place = dz_place(ask)
+  let palette = dz_palette(ask.palette, "dark_matter")
   let page = e.page.replace("</head>", "<style>html{background:var(--bg)}</style></head>")
   let frame = "<iframe class=\"kd-frame\" style=\"height:760px\" title=\"The periodic table\" srcdoc=\"" + art_esc(page) + "\"></iframe>"
-  let embed = dz_wrap("element", place, dz_palette(ask.palette, "dark_matter"), "", frame, "")
-  return {kind: "element", why: dz_why(ask), title: e.element.name, page: e.page, svg: "", embed: embed, problems: e.problems, fixed: []}
+  let drawn = atom.problems.is_empty() and not atom.svg.is_empty()
+  let art_card = if drawn { dz_card("The atom &#183; <b>drawn by Kosika Designs</b>", atom.svg + dz_beats(atom.art) + "<script>" + art_script() + "</script>") } else { "" }
+  let quiz_card = if z.problems.is_empty() and not z.card.is_empty() { "<div class=\"kc-card\">" + z.card + "<script>" + qz_script() + "</script></div>" } else { "" }
+  let both = not art_card.is_empty() and not quiz_card.is_empty()
+  let below = if both { "<div class=\"kc-grid\">" + art_card + quiz_card + "</div>" } else { "<div>" + art_card + quiz_card + "</div>" }
+  let head = "<div class=\"kc-head\">" + dz_field_label("chemistry") + "<h2>" + art_esc(e.element.name) + "</h2><p>" + art_esc(e.element.category) + ", atomic number " + f"{e.element.z}" + "</p></div>"
+  let embed = dz_wrap("element", place, palette, "", head + frame + "<div style=\"margin-top:16px\">" + below + "</div>", art_style() + qz_style() + dz_canvas_style())
+  // The page is the whole canvas, not the table alone, so Chat and the
+  // website show the atom and the quiz too.
+  return {kind: "element", why: dz_why(ask), title: e.element.name, page: dz_canvas_page(e.element.name, palette, embed), svg: atom.svg, embed: embed, problems: e.problems, fixed: atom.fixed}
 }
 
 workflow dz_element(ask: DzAsk) -> DzResult {
-  table = call periodic(dz_se_ask(ask))
-  out   = dz_from_element(ask, table)
+  table  = call periodic(dz_se_ask(ask))
+  atom   = call render(dz_atom_art(table.element, dz_palette(ask.palette, "dark_matter")))
+  out    = dz_from_element(ask, table, atom, dz_no_quiz())
 }
 
 workflow dz_units(ask: DzAsk) -> DzResult {
@@ -721,33 +1829,37 @@ workflow dz_worked(ask: DzAsk) -> DzResult {
 workflow dz_canvas(ask: DzAsk) -> DzResult {
   said    = call describe({text: ask.text})
   palette = dz_canvas_palette(ask, said)
-  asked   = dz_canvas_request(said, palette)
+  asked   = dz_read(dz_canvas_request(said, palette))
   drawn   = call draw(asked)
-  moving  = call illustrate(dz_moving_ask(ask, palette))
+  first   = call illustrate(dz_moving_ask(ask, palette))
+  placing = dz_placing(first, asked.structure, said.structure.shape)
+  moving  = dz_placed(first, placing)
   behind  = call gen_backdrop(dz_gen_for(asked, palette))
-  checks  = call quiz(dz_quiz_ask(ask, palette))
-  out     = dz_from_canvas(ask, palette, asked, drawn, moving, behind, checks)
+  flows   = use_model flow_reader(dz_flow_task(), dz_flow_text(asked.structure)) retry 1 otherwise dz_no_flows()
+  out     = dz_from_canvas(ask, palette, asked, drawn, moving, behind, dz_no_quiz(), flows)
 }
 
 // ---------------------------------------------------------------- the front door
 
 workflow design(ask: DzAsk) -> DzResult {
-  budget 10 model calls, 900 seconds
-  kind = dz_kind(ask)
-  out  = match kind {
+  budget 11 model calls, 900 seconds
+  chosen = call dz_kind_better(ask)
+  drawn  = match chosen.kind {
     case "canvas" { call dz_canvas(ask) }
     case "quiz" { call dz_quiz(ask) }
     case "chemistry" { call dz_chemistry(ask) }
     case "units" { call dz_units(ask) }
+    case "algorithm" { call dz_algorithm(ask) }
     case "element" { call dz_element(ask) }
     case "worked" { call dz_worked(ask) }
     case "art" { call dz_art(ask) }
     case "illustration" { call dz_illustration(ask) }
     case _ { call dz_diagram(ask) }
   }
+  out = {..drawn, why: dz_chosen_why(drawn.why, chosen.why)}
 }
 
-// Only the choice, with no drawing and no model: for a place that draws a
+// Only the choice, by the words alone, with no drawing and no model: for a place that draws a
 // kind its own way (Chat keeps its own diagram pipeline, with its critic
 // and photos) and asks Designs for the rest.
 workflow design_kind(ask: DzAsk) -> DzKind {
@@ -759,7 +1871,41 @@ workflow dz_illustration(ask: DzAsk) -> DzResult {
   out   = dz_from_illustration(ask, drawn)
 }
 
+// Art is things drawn from their geometry, a place painted, or a mood
+// made of moving shapes.
+fn dz_art_way(ask: DzAsk) -> Text { return if an_story_wants(ask.text) { "story" } else if an_wants(ask.text) { "animation" } else if fm_wants(ask.text) { "forms" } else if ls_wants(ask.text) { "scene" } else { "abstract" } }
+
 workflow dz_art(ask: DzAsk) -> DzResult {
+  out = match dz_art_way(ask) {
+    case "story" { call dz_story(ask) }
+    case "animation" { call dz_animation(ask) }
+    case "forms" { call dz_forms(ask) }
+    case "scene" { call dz_scene(ask) }
+    case _ { call dz_abstract(ask) }
+  }
+}
+
+workflow dz_story(ask: DzAsk) -> DzResult {
+  made = call an_story_make({text: ask.text})
+  out  = dz_from_anim(ask, made)
+}
+
+workflow dz_animation(ask: DzAsk) -> DzResult {
+  made = call an_make({text: ask.text})
+  out  = dz_from_anim(ask, made)
+}
+
+workflow dz_forms(ask: DzAsk) -> DzResult {
+  made = call fm_make({text: ask.text})
+  out  = dz_from_forms(ask, made)
+}
+
+workflow dz_scene(ask: DzAsk) -> DzResult {
+  made = call ls_make({text: ask.text})
+  out  = dz_from_scene(ask, made)
+}
+
+workflow dz_abstract(ask: DzAsk) -> DzResult {
   made = call gen_make({text: ask.text})
   out  = dz_from_art(ask, made)
 }
@@ -799,6 +1945,48 @@ test "Kosika chooses the way of drawing by the words of the ask" {
   expect dz_kind(dz_ask("tell me about sodium")) == "element"
   expect dz_kind(dz_ask("show me the periodic table")) == "element"
   expect dz_kind({..dz_ask("the Krebs cycle"), kind: "Illustration"}) == "illustration"
+}
+
+// Every way of drawing Kosika has can be asked for by name, and each one
+// says why it was chosen: the front door accepts all of them.
+test "every way of drawing can be asked for by name" {
+  expect (for k in dz_kinds() where dz_kind({..dz_ask("anything at all"), kind: k}) != k { k }).is_empty()
+  expect (for k in dz_kinds() where dz_why({..dz_ask("anything at all"), kind: k}).is_empty() { k }).is_empty()
+}
+
+// The words settle most asks and say so; when they do not, they say that
+// too, so a guess is never passed off as a decision.
+test "the words say when they have not settled the kind" {
+  expect dz_kind_sure(dz_ask("balance C3H8 + O2 -> CO2 + H2O"))
+  expect dz_kind_sure(dz_ask("quiz me on photosynthesis"))
+  expect dz_kind_sure(dz_ask("how does photosynthesis work"))
+  expect dz_kind_sure(dz_ask("draw a timeline of the space race"))
+  expect not dz_kind_sure(dz_ask("why do cats purr"))
+  expect not dz_kind_sure(dz_ask("the Krebs cycle"))
+  // the guesses themselves are still the kinds Kosika would draw
+  expect dz_kind(dz_ask("why do cats purr")) == "illustration"
+  expect dz_kind(dz_ask("the Krebs cycle")) == "diagram"
+}
+
+// A plain ask about money or a reactor used to be read as a moving picture
+// or as a guess; the words for them now decide.
+test "plain asks about money and physics are read as what they are" {
+  expect dz_kind(dz_ask("how do interest rates affect house prices")) == "diagram"
+  expect dz_kind(dz_ask("explain compound interest over ten years")) == "diagram"
+  expect dz_kind(dz_ask("what happens inside a nuclear reactor")) == "canvas"
+  expect dz_science_field("what happens inside a nuclear reactor") == "physics"
+}
+
+// A model may choose the way of drawing, but only into a kind Kosika can
+// draw: anything else is dropped and the words' guess stands.
+test "a model chooses the kind only when Kosika can draw it" {
+  expect dz_kind_kept("illustration", {kind: "Canvas", why: "It moves."}) == "canvas"
+  expect dz_kind_reason({kind: "Canvas", why: "It moves."}) == "It moves."
+  expect dz_kind_kept("illustration", {kind: "hologram", why: "w"}) == "illustration"
+  expect dz_kind_kept("illustration", no_variety()) == "illustration"
+  expect dz_kind_reason({kind: "hologram", why: "w"}).is_empty()
+  expect dz_chosen_why("the words reason", "") == "the words reason"
+  expect dz_chosen_why("the words reason", "the model reason") == "the model reason"
 }
 
 test "an embed carries its own colours and stays inside itself" {
@@ -880,4 +2068,138 @@ test "a formula's graph is plotted by Kosika, with the example and any turns mar
   expect pend.marks[0] == "the example: L = 1 gives T = 2.0061"
   expect dz_nice_step(7) == 2
   expect dz_nice_step(0.3) == 0.1
+}
+
+test "an element's atom is drawn by Designs' art, with Kosika's own sentences" {
+  na = dz_atom_art(se_element(11), "dark_matter")
+  expect na.figures[0].kind == "atom" and na.figures[0].count == 11
+  expect na.beats[1].text == "They fill the shells 2, 8, 1, from the inside out: [Ne] 3s¹."
+  expect na.beats[2].text.contains("reacts so readily")
+  expect art_problems(na) == []
+  expect dz_atom_sentences(se_element(10))[2].contains("hardly reacts")
+}
+
+fn dz_test_step() -> Step { return {text: "Gravity pulls the bob back toward the lowest point", parts: []} }
+
+fn dz_test_figure(id: Text, label: Text) -> Figure { return {id: id, kind: "circle", x: 50, y: 30, w: 3, h: 0, count: 0, hue: 1, label: label, points: []} }
+
+fn dz_test_art() -> Art { return {title: "Pendulum", summary: "", palette: "dark_matter", backdrop: "plain", figures: [dz_test_figure("bob", "Bob"), dz_test_figure("pivot", "Pivot")], motions: [], beats: []} }
+
+test "the structure's steps are tied to the art's figures by the words they share" {
+  expect dz_step_figures(dz_test_structure("How a pendulum swings"), dz_test_step(), dz_test_art()) == ["bob"]
+  heart: Figure = {..dz_test_figure("heart", ""), kind: "heart"}
+  expect dz_figure_words(heart).contains("ventricle")
+}
+
+fn dz_test_heart() -> Structure {
+  return {title: "The heart", summary: "", shape: "", figure: "", photo: "", parts: [{id: "ra", label: "Right atrium", note: "", parent: ""}, {id: "rv", label: "Right ventricle", note: "", parent: ""}, {id: "lungs", label: "Lungs", note: "", parent: ""}], links: [{from: "ra", to: "rv", label: "through the valve"}, {from: "rv", to: "lungs", label: "pumped"}], steps: [{text: "Blood enters the right atrium and passes to the right ventricle", parts: []}, {text: "The right ventricle pumps it to the lungs", parts: []}], marks: [], looks: [], aspects: []}
+}
+
+fn dz_test_heart_art() -> Art { return {title: "Heart", summary: "", palette: "dark_matter", backdrop: "plain", figures: [{..dz_test_figure("heart", ""), kind: "heart"}], motions: [], beats: []} }
+
+test "the storyboard turns each step into a scene Kosika checks" {
+  board = dz_storyboard(dz_test_heart(), dz_test_heart_art())
+  expect board.length() == 2
+  expect board[0].from == "ra" and board[0].to == "rv"
+  expect board[1].from == "rv" and board[1].to == "lungs"
+  expect board[1].known == ["ra", "rv", "lungs"]
+  expect board[0].shows == ["heart"]
+  expect board[0].parts == ["ra", "rv"]
+  expect dz_concise("Deoxygenated blood from the whole body enters the right atrium, then passes through the tricuspid valve into the right ventricle") == "Deoxygenated blood from the whole body enters the right atrium …"
+  expect dz_storyboard_problems(board, dz_test_heart(), dz_test_heart_art()) == []
+  expect dz_mind_map(dz_test_heart()).split("class=\"mm-edge\"").length() == 3
+}
+
+fn dz_test_flows() -> DzFlows { return {flows: [{from: "ra", to: "rv", carries: "oxygen-poor blood", hue: 2}, {from: "rv", to: "lungs", carries: "oxygen-poor blood", hue: 8}]} }
+
+test "living cards: the art a part is, and what its links carry" {
+  expect dz_part_art("Right atrium") == "heart"
+  expect dz_part_art("Nucleus") == "cell"
+  expect dz_part_art("Evaporation") == ""
+  expect dz_part_art("Collection") == ""
+  heart = dz_test_heart()
+  expect dz_flow_of(dz_test_flows(), heart.links[0], 0).carries == "oxygen-poor blood"
+  expect dz_flow_of(dz_test_flows(), heart.links[1], 1).hue == 2
+  svg = dz_living_svg(heart, dz_test_flows())
+  expect svg.split("class=\"lc-card\"").length() == 4
+  expect svg.contains("lc-move-heart")
+  expect dz_flow_text(heart).contains("ra -> rv (through the valve)")
+}
+
+fn dz_test_part(label: Text, note: Text) -> Part { return {id: "x", label: label, note: note, parent: ""} }
+
+test "art asked for in so many words is art, whatever it is of" {
+  expect dz_kind({text: "generative art of planets orbiting a burning star", palette: "", place: "studio", kind: ""}) == "art"
+  expect dz_kind({text: "a wallpaper of the periodic table", palette: "", place: "studio", kind: ""}) == "art"
+  expect dz_kind({text: "balance the burning of methane", palette: "", place: "studio", kind: ""}) == "chemistry"
+  expect dz_kind({text: "paint a mountain lake at sunset", palette: "", place: "studio", kind: ""}) == "art"
+  expect dz_kind({text: "draw a snowy village at night", palette: "", place: "studio", kind: ""}) == "art"
+  expect dz_kind({text: "draw how a river erodes a valley", palette: "", place: "studio", kind: ""}) != "art"
+  expect dz_kind({text: "draw a jellyfish and a nautilus shell", palette: "", place: "studio", kind: ""}) == "art"
+  expect dz_art_way({text: "draw a butterfly in a meadow", palette: "", place: "studio", kind: ""}) == "forms"
+  expect dz_art_way({text: "animate a bee flying from a flower to its hive", palette: "", place: "studio", kind: ""}) == "animation"
+  expect dz_kind({text: "animate a ball bouncing", palette: "", place: "studio", kind: ""}) == "art"
+  expect dz_art_way({text: "animate the water cycle", palette: "", place: "studio", kind: ""}) == "story"
+  expect dz_kind({text: "explain the water cycle", palette: "", place: "studio", kind: ""}) != "art"
+  expect dz_art_way({text: "paint a meadow at dawn", palette: "", place: "studio", kind: ""}) == "scene"
+  expect dz_kind({text: "explain the life cycle of a butterfly", palette: "", place: "studio", kind: ""}) != "art"
+}
+
+test "style A: natural cycles draw their parts as living nodes, each moving as it means" {
+  expect dz_meaning_motion(dz_test_part("Evaporation", "water vapor rises")) == "lc-rise"
+  expect dz_meaning_motion(dz_test_part("Precipitation", "water falls as rain")) == "lc-fall"
+  expect dz_meaning_motion(dz_test_part("Sun", "")) == "lc-shine"
+  expect not dz_living_nodes(dz_test_heart())
+}
+
+fn dz_test_spot(id: Text, label: Text, x: Number, y: Number) -> Figure { return {..dz_test_figure(id, label), x: x, y: y} }
+
+fn dz_test_road() -> Structure {
+  return {..dz_test_heart(), title: "A raindrop's journey", shape: "flow", steps: [{text: "The sun warms the sea", parts: []}, {text: "Vapour rises into a cloud", parts: []}, {text: "Rain falls on the mountain", parts: []}, {text: "A river carries it back to the sea", parts: []}]}
+}
+
+fn dz_test_road_art() -> Art { return {..dz_test_heart_art(), figures: [dz_test_spot("sun", "Sun", 15, 12), dz_test_spot("cloud", "Cloud", 45, 12), dz_test_spot("mountain", "Mountain", 70, 40), dz_test_spot("river", "River", 50, 50), dz_test_spot("sea", "Sea", 15, 50)]} }
+
+test "style B: a journey is drawn through the picture, one pin per step on its figures" {
+  pins = dz_journey_pins(dz_test_road(), dz_test_road_art())
+  expect pins.length() == 4
+  expect pins[0].of == "sun"
+  expect pins[1].of == "cloud"
+  expect pins[2].of == "mountain"
+  expect pins[3].of == "river"
+  expect dz_journey_fits(dz_test_road(), pins)
+  expect not dz_journey_fits(dz_test_heart(), pins)
+  svg = dz_journey_svg(pins)
+  expect svg.split("class=\"jr-pin\"").length() == 5
+  expect svg.split("class=\"jr-leg\"").length() == 4
+  expect not dz_journey_fits(dz_test_road(), dz_journey_pins(dz_test_road(), dz_test_heart_art()))
+  back = {..dz_test_road(), steps: [{text: "The sun warms the sea", parts: []}, {text: "Vapour rises into a cloud", parts: []}, {text: "The sun shines on", parts: []}, {text: "Rain falls on the mountain", parts: []}, {text: "And back to the sun", parts: []}]}
+  again = dz_journey_pins(back, dz_test_road_art())
+  expect (for p in again { p.k }) == [0, 1, 3, 4]
+  expect again[3].of == "sun"
+  expect dz_bare_words(["line1", "high‑voltage", "sea"]) == ["line", "highvoltage", "sea"]
+  expect dz_near_count(["station", "home", "tower"], ["stati", "home", "tower"], ["subst", "homes"], " substation homes ") == 2
+  expect dz_near_count(["subst"], ["subst"], ["subst"], " substation ") > dz_near_count(["station"], ["stati"], ["subst"], " substation ")
+}
+
+test "a tree or a graph an algorithm ran on is handed to Designs as its structure" {
+  tree = al_bst("Show me how a binary search tree inserts 7")
+  t = dz_al_structure(tree)
+  expect t.shape == "tree"
+  expect problems(t) == []
+  expect (for p in t.parts where p.id == "n7" { p.parent }) == ["n6"]
+  expect (for p in t.parts where p.id == "n8" { p.parent }) == [""]
+  scenes = dz_al_scenes(tree)
+  expect scenes[1].parts == ["n8"]
+  expect scenes[4].from == "n6" and scenes[4].to == "n7"
+  path = al_path("shortest path from A to E")
+  g = dz_al_structure(path)
+  expect g.shape == "graph"
+  expect problems(g) == []
+  expect g.links[0].label == "4"
+  expect g.steps.length() == 7 and g.steps[6].text == path.steps[path.steps.length() - 1].text
+  expect dz_al_scenes(path).length() == path.steps.length()
+  // The last step runs the whole path at once.
+  expect dz_al_scenes(path)[path.steps.length() - 1].runs.length() == 4
+  expect dz_scene_json(dz_al_scenes(path)[path.steps.length() - 1]).contains("\"runs\":[\"A>C\"")
 }

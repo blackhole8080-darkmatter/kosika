@@ -1,0 +1,671 @@
+// Algorithms Kosika runs, checks and plays.
+//
+// For an ask like "show me how a binary search tree inserts 7", Kosika runs
+// the algorithm itself, step by step, keeping each step as a sentence and
+// the parts of the structure it touches. Then it checks the answer by a
+// different route (a tree read in order must come out sorted; a sorted list
+// must hold the same numbers; a shortest path must beat every edge), and
+// only a checked run is played. No model is asked: the numbers come from the
+// ask, or a small example when it gives none.
+//
+// Four for a start: a binary search tree insert, a bubble sort, a binary
+// search, and Dijkstra's shortest path. A tree or a graph is handed to
+// Kosika Designs and drawn by it (designs.kos, dz_al_structure); a list is
+// drawn here as bars shaded like Designs' art, on its dotted board.
+
+import "designs_art.kos"
+
+export [AlAsk, AlStep, AlNode, AlEdge, AlRun, AlPage, al_which, al_numbers, al_bst, al_sort, al_search, al_path, al_traverse, al_run, al_svg, al_style, al_card, algorithm]
+
+record AlAsk { text: Text palette: Text }
+
+// One step: its sentence, the parts it lights now, and the parts already
+// done (seen, settled, or ruled out).
+record AlStep { text: Text lit: Text[] seen: Text[] }
+
+// from: the step a part first appears in (0 when it is there from the start).
+record AlNode { id: Text label: Text x: Number y: Number from: Number }
+record AlEdge { id: Text a: Text b: Text label: Text from: Number }
+
+// kind: tree, bars or graph. frames: for bars, the numbers at each step.
+record AlRun { kind: Text title: Text nodes: AlNode[] edges: AlEdge[] steps: AlStep[] frames: Number[][] answer: Text problems: Text[] }
+
+record AlPage { card: Text run: AlRun problems: Text[] }
+
+// ---------------------------------------------------------------- reading the ask
+
+fn al_padded(text: Text) -> Text { return " " + text.lower().replace(",", " ").replace(".", " ").replace("?", " ").replace("!", " ") + " " }
+
+// Which algorithm the ask is about, or "".
+fn al_which(text: Text) -> Text {
+  let t = al_padded(text)
+  if t.contains(" binary search tree") or t.contains(" bst ") { return "bst" }
+  if t.contains(" binary search") { return "search" }
+  if t.contains(" breadth first") or t.contains(" breadth-first") or t.contains(" bfs ") { return "bfs" }
+  if t.contains(" depth first") or t.contains(" depth-first") or t.contains(" dfs ") { return "dfs" }
+  if t.contains(" shortest path") or t.contains(" dijkstra") or t.contains(" shortest route") or t.contains(" cheapest route") or t.contains(" cheapest path") or t.contains(" fastest route") { return "path" }
+  // "sort" alone is too common a word ("what sort of rock"): it counts
+  // only beside numbers to sort, or named as an algorithm.
+  if t.contains(" bubble sort") or t.contains(" sorting algorithm") { return "sort" }
+  if (t.contains(" sort ") or t.contains(" sorts ")) and al_numbers(text).length() >= 2 { return "sort" }
+  return ""
+}
+
+// The numbers the ask gives, in order.
+fn al_numbers(text: Text) -> Number[] {
+  var out: Number[] = []
+  for w in text.replace(",", " ").replace("[", " ").replace("]", " ").words() {
+    let v = w.trim_marks(".,;:()?!").to_number()
+    if v.exists() { out = out.append(v.value()) }
+  }
+  return out
+}
+
+// The number right after one of these words, as in "insert 7" or "find 7".
+fn al_after(text: Text, leads: Text[]) -> Number[] {
+  let words = text.lower().replace(",", " ").words()
+  for k in 0 until words.length() - 1 {
+    if leads.contains(words[k].trim_marks(".,;:")) {
+      let v = words[k + 1].trim_marks(".,;:()?!").to_number()
+      if v.exists() { return [v.value()] }
+    }
+  }
+  return []
+}
+
+// The numbers, without the one the ask is about (the first time it appears).
+fn al_without(xs: Number[], x: Number) -> Number[] {
+  var out: Number[] = []
+  var dropped = false
+  for v in xs {
+    if v == x and not dropped { dropped = true } else { out = out.append(v) }
+  }
+  return out
+}
+
+fn al_n(x: Number) -> Text { return if x == x.floor() { f"{x.floor()}" } else { f"{x}" } }
+
+// ---------------------------------------------------------------- a binary search tree
+
+// The tree as three lists: keys, and each key's left and right child (-1
+// when there is none). Built by inserting the keys in the order given.
+record AlTree { keys: Number[] left: Number[] right: Number[] }
+
+fn al_tree_add(t: AlTree, key: Number) -> AlTree {
+  if t.keys.contains(key) { return t }
+  let at = t.keys.length()
+  var keys = t.keys.append(key)
+  var left = t.left.append(-1)
+  var right = t.right.append(-1)
+  if at == 0 { return {keys: keys, left: left, right: right} }
+  var k = 0
+  var placed = false
+  while not placed {
+    if key < keys[k] {
+      if left[k] < 0 {
+        left = left.set(k, at)
+        placed = true
+      } else { k = left[k] }
+    } else {
+      if right[k] < 0 {
+        right = right.set(k, at)
+        placed = true
+      } else { k = right[k] }
+    }
+  }
+  return {keys: keys, left: left, right: right}
+}
+
+// The keys read in order: left, the key, right. A right tree reads sorted.
+fn al_in_order(t: AlTree) -> Number[] {
+  var out: Number[] = []
+  var stack: Number[] = []
+  var k = if t.keys.is_empty() { -1 } else { 0 }
+  var going = true
+  while going {
+    if k >= 0 {
+      stack = stack.append(k)
+      k = t.left[k]
+    } else {
+      if stack.is_empty() { going = false } else {
+        let top = stack[stack.length() - 1]
+        stack = stack.slice(0, stack.length() - 1)
+        out = out.append(t.keys[top])
+        k = t.right[top]
+      }
+    }
+  }
+  return out
+}
+
+fn al_depth(t: AlTree, key: Number) -> Number {
+  var k = 0
+  var d = 0
+  while t.keys[k] != key {
+    k = if key < t.keys[k] { t.left[k] } else { t.right[k] }
+    d = d + 1
+  }
+  return d
+}
+
+fn al_sorted(xs: Number[]) -> Bool {
+  for k in 1 until xs.length() {
+    if xs[k] < xs[k - 1] { return false }
+  }
+  return true
+}
+
+fn al_tree_example() -> Number[] { return [8, 3, 10, 1, 6, 14, 4, 13] }
+
+fn al_bst(text: Text) -> AlRun {
+  let asked = al_after(text, ["insert", "inserts", "inserting", "add", "adds", "adding"])
+  let key = if asked.is_empty() { 7 } else { asked[0] }
+  let given = al_without(al_numbers(text), key)
+  let start = if given.length() >= 2 { given } else { al_tree_example() }
+  var t: AlTree = {keys: [], left: [], right: []}
+  for v in start { t = al_tree_add(t, v) }
+  let before = for v in t.keys { "n" + al_n(v) }
+  var steps: AlStep[] = [{text: "A binary search tree: everything to the left of a number is smaller, everything to the right is larger.", lit: [], seen: before}]
+  // The walk the new key takes, by the same rule an insert uses.
+  var k = 0
+  var walked: Text[] = []
+  var found = false
+  var parent = -1
+  while k >= 0 and not found {
+    let here = t.keys[k]
+    let id = "n" + al_n(here)
+    if here == key {
+      found = true
+      steps = steps.append({text: f"{al_n(key)} meets {al_n(here)}: it is already in the tree, so nothing changes.", lit: [id], seen: walked})
+    } else {
+      let way = if key < here { "smaller, so it goes left" } else { "larger, so it goes right" }
+      steps = steps.append({text: f"{al_n(key)} meets {al_n(here)}: {al_n(key)} is {way}.", lit: [id], seen: walked})
+      walked = walked.append(id)
+      parent = k
+      k = if key < here { t.left[k] } else { t.right[k] }
+    }
+  }
+  let after = if found { t } else { al_tree_add(t, key) }
+  let added = steps.length()
+  if not found {
+    let side = if key < t.keys[parent] { "left" } else { "right" }
+    steps = steps.append({text: f"The {side} of {al_n(t.keys[parent])} is empty, so {al_n(key)} goes there.", lit: ["n" + al_n(key), "e" + al_n(key)], seen: walked})
+  }
+  let order = al_in_order(after)
+  let said = (for v in order { al_n(v) }).join(" ")
+  steps = steps.append({text: f"Read in order, left to right: {said}. Still sorted, so the tree is right.", lit: [], seen: for v in order { "n" + al_n(v) }})
+  // Laid out by in-order place across and depth down, so nothing overlaps.
+  let n = order.length()
+  let nodes: AlNode[] = for v in order { {id: "n" + al_n(v), label: al_n(v), x: 60 + 780 * order.index_of(v).or(0) / (n - 1).max(1), y: 50 + 74 * al_depth(after, v), from: if v == key and not found { added } else { 0 }} }
+  var edges: AlEdge[] = []
+  for i in 0 until after.keys.length() {
+    for c in [after.left[i], after.right[i]] {
+      if c >= 0 { edges = edges.append({id: "e" + al_n(after.keys[c]), a: "n" + al_n(after.keys[i]), b: "n" + al_n(after.keys[c]), label: "", from: if after.keys[c] == key and not found { added } else { 0 }}) }
+    }
+  }
+  let wrong: Text[] = if al_sorted(order) and order.contains(key) { [] } else { ["the tree no longer reads in order"] }
+  let went = if found or parent < 0 { "" } else { if key < t.keys[parent] { "left" } else { "right" } }
+  let under = if parent < 0 { "" } else { al_n(t.keys[parent]) }
+  let answer = if found { f"{al_n(key)} was already in the tree" } else { f"{al_n(key)} goes to the {went} of {under}" }
+  return {kind: "tree", title: f"A binary search tree inserts {al_n(key)}", nodes: nodes, edges: edges, steps: steps, frames: [], answer: answer, problems: wrong}
+}
+
+// ---------------------------------------------------------------- a bubble sort
+
+fn al_sort_example() -> Number[] { return [5, 2, 9, 1, 7, 3] }
+
+fn al_bar(k: Number) -> Text { return "b" + al_n(k) }
+
+fn al_sort(text: Text) -> AlRun {
+  let given = al_numbers(text)
+  let start = if given.length() >= 2 { given.take(10) } else { al_sort_example() }
+  var xs = start
+  var frames: Number[][] = [xs]
+  var steps: AlStep[] = [{text: "Bubble sort: walk along, and swap any two neighbours in the wrong order. The largest bubbles to the end each pass.", lit: [], seen: []}]
+  var done: Text[] = []
+  var end = xs.length() - 1
+  var swapped = true
+  while swapped and end > 0 {
+    swapped = false
+    for i in 0 until end {
+      let a = xs[i]
+      let b = xs[i + 1]
+      if a > b {
+        xs = xs.set(i, b).set(i + 1, a)
+        swapped = true
+        steps = steps.append({text: f"{al_n(a)} and {al_n(b)}: {al_n(a)} is larger, so they swap.", lit: [al_bar(i), al_bar(i + 1)], seen: done})
+      } else {
+        steps = steps.append({text: f"{al_n(a)} and {al_n(b)}: already in order.", lit: [al_bar(i), al_bar(i + 1)], seen: done})
+      }
+      frames = frames.append(xs)
+    }
+    done = done.append(al_bar(end))
+    end = end - 1
+  }
+  let all = for k in 0 until xs.length() { al_bar(k) }
+  steps = steps.append({text: "Sorted: " + (for v in xs { al_n(v) }).join(", ") + ". Kosika checked it holds the same numbers, smallest first.", lit: [], seen: all})
+  frames = frames.append(xs)
+  let wrong: Text[] = if al_sorted(xs) and xs == start.sort() { [] } else { ["the sorted list is out of order or lost a number"] }
+  return {kind: "bars", title: "Bubble sort", nodes: [], edges: [], steps: steps, frames: frames, answer: (for v in xs { al_n(v) }).join(", "), problems: wrong}
+}
+
+// ---------------------------------------------------------------- a binary search
+
+fn al_search_example() -> Number[] { return [1, 3, 4, 6, 7, 9, 12, 15] }
+
+fn al_search(text: Text) -> AlRun {
+  let asked = al_after(text, ["find", "finds", "finding", "for", "search"])
+  let target = if asked.is_empty() { 7 } else { asked[0] }
+  let given = al_without(al_numbers(text), target)
+  let raw = if given.length() >= 2 { given.take(14) } else { al_search_example() }
+  let xs = raw.sort()
+  let sorted_note = if raw == xs { "" } else { " Kosika sorted the list first, as a binary search needs." }
+  var steps: AlStep[] = [{text: f"Binary search for {al_n(target)}: look in the middle, and throw away the half it cannot be in.{sorted_note}", lit: [], seen: []}]
+  var lo = 0
+  var hi = xs.length() - 1
+  var at = -1
+  while lo <= hi and at < 0 {
+    let mid = ((lo + hi) / 2).floor()
+    let out = for k in 0 until xs.length() where k < lo or k > hi { al_bar(k) }
+    if xs[mid] == target {
+      at = mid
+      steps = steps.append({text: f"The middle is {al_n(xs[mid])}: found it, at place {mid + 1}.", lit: [al_bar(mid)], seen: out})
+    } else {
+      let half = if target < xs[mid] { "smaller, so it can only be in the left half" } else { "larger, so it can only be in the right half" }
+      steps = steps.append({text: f"The middle is {al_n(xs[mid])}: {al_n(target)} is {half}.", lit: [al_bar(mid)], seen: out})
+      if target < xs[mid] { hi = mid - 1 } else { lo = mid + 1 }
+    }
+  }
+  if at < 0 { steps = steps.append({text: f"Nothing is left to look at, so {al_n(target)} is not in the list.", lit: [], seen: for k in 0 until xs.length() { al_bar(k) }}) }
+  let frames = for s in steps { xs }
+  let right = if at >= 0 { xs[at] == target } else { not xs.contains(target) }
+  let wrong: Text[] = if right { [] } else { ["the search's answer does not match the list"] }
+  let answer = if at >= 0 { f"{al_n(target)} is at place {at + 1}" } else { f"{al_n(target)} is not in the list" }
+  return {kind: "bars", title: f"Binary search for {al_n(target)}", nodes: [], edges: [], steps: steps, frames: frames, answer: answer, problems: wrong}
+}
+
+// ---------------------------------------------------------------- the shortest path
+
+fn al_graph_example() -> AlEdge[] {
+  return [al_e("A", "B", 4), al_e("A", "C", 2), al_e("C", "B", 1), al_e("B", "D", 5), al_e("C", "D", 8), al_e("C", "E", 10), al_e("D", "E", 2)]
+}
+
+fn al_e(a: Text, b: Text, w: Number) -> AlEdge { return {id: "e" + a + b, a: a, b: b, label: al_n(w), from: 0} }
+
+// Edges as the ask writes them: "A-B 4" or "A-B: 4", one letter each end.
+fn al_edges(text: Text) -> AlEdge[] {
+  let words = text.replace(",", " ").replace(";", " ").words()
+  var out: AlEdge[] = []
+  for k in 0 until words.length() - 1 {
+    let pair = words[k].trim_marks(":").split("-")
+    let w = words[k + 1].trim_marks(".,;:()").to_number()
+    if pair.length() == 2 and pair[0].length() == 1 and pair[1].length() == 1 and w.exists() { out = out.append(al_e(pair[0].upper(), pair[1].upper(), w.value())) }
+  }
+  return out
+}
+
+// "from A to E": the two ends the ask names, or the first and last place.
+fn al_ends(text: Text, names: Text[]) -> Text[] {
+  let words = text.replace(",", " ").words()
+  var from = ""
+  var to = ""
+  for k in 0 until words.length() - 1 {
+    let w = words[k].lower()
+    let next = words[k + 1].trim_marks(".,;:?!").upper()
+    if w == "from" and names.contains(next) { from = next }
+    if w == "to" and names.contains(next) { to = next }
+  }
+  return [if from.is_empty() { names[0] } else { from }, if to.is_empty() { names[names.length() - 1] } else { to }]
+}
+
+fn al_path(text: Text) -> AlRun {
+  let given = al_edges(text)
+  let edges = if given.length() >= 2 { given } else { al_graph_example() }
+  var names: Text[] = []
+  for e in edges {
+    if not names.contains(e.a) { names = names.append(e.a) }
+    if not names.contains(e.b) { names = names.append(e.b) }
+  }
+  names = names.sort()
+  let ends = al_ends(text, names)
+  let n = names.length()
+  let far = 1000000
+  var dist: Number[] = for x in names { far }
+  var prev: Number[] = for x in names { -1 }
+  var settled: Text[] = []
+  dist = dist.set(names.index_of(ends[0]).or(0), 0)
+  var steps: AlStep[] = [{text: f"Shortest path from {ends[0]} to {ends[1]}: always settle the nearest place not yet settled, then see if going through it is shorter.", lit: [ends[0]], seen: []}]
+  var going = true
+  while going {
+    // the nearest place not yet settled
+    var u = -1
+    for k in 0 until n {
+      if not settled.contains(names[k]) and dist[k] < far and (u < 0 or dist[k] < dist[u]) { u = k }
+    }
+    if u < 0 { going = false } else {
+      settled = settled.append(names[u])
+      steps = steps.append({text: f"Settle {names[u]}: nothing is nearer, at distance {al_n(dist[u])}.", lit: [names[u]], seen: settled})
+      if names[u] == ends[1] { going = false } else {
+        for e in edges {
+          let other = if e.a == names[u] { e.b } else { if e.b == names[u] { e.a } else { "" } }
+          let v = names.index_of(other).or(-1)
+          if v >= 0 and not settled.contains(other) {
+            let through = dist[u] + e.label.to_number().or(0)
+            if through < dist[v] {
+              let was = if dist[v] >= far { "the first way found" } else { f"better than {al_n(dist[v])}" }
+              dist = dist.set(v, through)
+              prev = prev.set(v, u)
+              steps = steps.append({text: f"Through {names[u]}, {other} costs {al_n(dist[u])} + {e.label} = {al_n(through)}: {was}.", lit: [e.id, other], seen: settled})
+            }
+          }
+        }
+      }
+    }
+  }
+  // The path, walked back from the end.
+  let goal = names.index_of(ends[1]).or(0)
+  var path: Text[] = []
+  var at = goal
+  while at >= 0 {
+    path = [names[at]].concat(path)
+    at = prev[at]
+  }
+  let reached = dist[goal] < far
+  var path_edges: Text[] = []
+  for k in 1 until path.length() {
+    for e in edges {
+      if (e.a == path[k - 1] and e.b == path[k]) or (e.b == path[k - 1] and e.a == path[k]) { path_edges = path_edges.append(e.id) }
+    }
+  }
+  let route = path.join(" → ")
+  if reached { steps = steps.append({text: f"The shortest path is {route}, {al_n(dist[goal])} in all.", lit: path.concat(path_edges), seen: settled}) }
+  else { steps = steps.append({text: f"No path reaches {ends[1]} from {ends[0]}.", lit: [], seen: settled}) }
+  // The check, by a different route: no edge offers a shorter way to any
+  // settled place, and the path's own edges add up to its length.
+  var wrong: Text[] = []
+  var total = 0
+  for e in edges {
+    if path_edges.contains(e.id) { total = total + e.label.to_number().or(0) }
+  }
+  if reached and total != dist[goal] { wrong = wrong.append("the path's edges do not add up to its length") }
+  wrong = wrong.concat(for e in edges where settled.contains(e.a) and settled.contains(e.b) and al_shorter(dist, names, e) { f"edge {e.a}-{e.b} offers a shorter way" })
+  // Places on a ring, in name order.
+  let nodes: AlNode[] = for k in 0 until n { {id: names[k], label: names[k], x: 450 + 300 * (360 * k / n - 90).cos(), y: 190 + 140 * (360 * k / n - 90).sin(), from: 0} }
+  let answer = if reached { f"{route}, {al_n(dist[goal])} in all" } else { "no path" }
+  return {kind: "graph", title: f"Shortest path from {ends[0]} to {ends[1]}", nodes: nodes, edges: edges, steps: steps, frames: [], answer: answer, problems: wrong}
+}
+
+fn al_shorter(dist: Number[], names: Text[], e: AlEdge) -> Bool {
+  let a = dist[names.index_of(e.a).or(0)]
+  let b = dist[names.index_of(e.b).or(0)]
+  let w = e.label.to_number().or(0)
+  return b > a + w or a > b + w
+}
+
+// ---------------------------------------------------------------- breadth-first and depth-first search
+
+fn al_plain_example() -> AlEdge[] {
+  return [al_e("A", "B", 0), al_e("A", "C", 0), al_e("B", "D", 0), al_e("C", "D", 0), al_e("C", "E", 0), al_e("D", "F", 0), al_e("E", "F", 0)]
+}
+
+// The places next to one, in name order, so a run always goes the same way.
+fn al_neighbours(edges: AlEdge[], at: Text) -> Text[] {
+  var out: Text[] = []
+  for e in edges {
+    if e.a == at and not out.contains(e.b) { out = out.append(e.b) }
+    if e.b == at and not out.contains(e.a) { out = out.append(e.a) }
+  }
+  return out.sort()
+}
+
+fn al_edge_between(edges: AlEdge[], a: Text, b: Text) -> Text {
+  for e in edges {
+    if (e.a == a and e.b == b) or (e.a == b and e.b == a) { return e.id }
+  }
+  return ""
+}
+
+// Breadth-first ("bfs") visits a place's neighbours before going further,
+// with a queue; depth-first ("dfs") goes as far as it can down one way
+// before coming back, with a stack. Each step is one place visited, the
+// edge it was reached by, and what joins the queue or the stack.
+fn al_traverse(text: Text, how: Text) -> AlRun {
+  let given = al_edges(text)
+  let raw = if given.length() >= 2 { given } else { al_plain_example() }
+  let edges = for e in raw { {..e, label: ""} }
+  var names: Text[] = []
+  for e in edges {
+    if not names.contains(e.a) { names = names.append(e.a) }
+    if not names.contains(e.b) { names = names.append(e.b) }
+  }
+  names = names.sort()
+  let start = al_ends(text, names)[0]
+  let wide = how == "bfs"
+  let kind = if wide { "Breadth-first" } else { "Depth-first" }
+  let holder = if wide { "queue" } else { "stack" }
+  var waiting: Text[] = [start]
+  var came: Text[] = for x in names { "" }
+  var seen: Text[] = [start]
+  var visited: Text[] = []
+  var depth: Number[] = for x in names { -1 }
+  depth = depth.set(names.index_of(start).or(0), 0)
+  var steps: AlStep[] = [{text: f"{kind} search from {start}: visit a place, then put its unseen neighbours on the {holder}, and take the next from the " + (if wide { "front" } else { "top" }) + ".", lit: [start], seen: []}]
+  while not waiting.is_empty() {
+    let at = if wide { waiting[0] } else { waiting[waiting.length() - 1] }
+    waiting = if wide { waiting.slice(1, waiting.length()) } else { waiting.slice(0, waiting.length() - 1) }
+    if not visited.contains(at) {
+      visited = visited.append(at)
+      let k = names.index_of(at).or(0)
+      var fresh: Text[] = []
+      // Breadth-first takes a place on once, when first seen; depth-first
+      // takes on every neighbour not yet visited, so the newest way in wins.
+      for nb in al_neighbours(edges, at) {
+        let take = if wide { not seen.contains(nb) } else { not visited.contains(nb) }
+        if take {
+          if not seen.contains(nb) { seen = seen.append(nb) }
+          fresh = fresh.append(nb)
+          came = came.set(names.index_of(nb).or(0), at)
+          depth = depth.set(names.index_of(nb).or(0), depth[k] + 1)
+        }
+      }
+      // A stack takes the last first, so the first neighbour is pushed last.
+      waiting = if wide { waiting.concat(fresh) } else { waiting.concat(fresh.reverse()) }
+      let by = came[k]
+      let lit = if by.is_empty() { [at] } else { [at, al_edge_between(edges, by, at)] }
+      let joined = if fresh.is_empty() { "no new places join" } else { fresh.join(" and ") + " join the " + holder }
+      let from = if by.is_empty() { "" } else { f", reached from {by}" }
+      steps = steps.append({text: f"Visit {at}{from}: {joined}.", lit: lit, seen: visited})
+    }
+  }
+  let order = visited.join(" → ")
+  steps = steps.append({text: f"Every place reached once: {order}.", lit: visited, seen: visited})
+  // The check, another way: each place is visited once, every place joined
+  // to the start is reached, and each was reached from a place next to it.
+  // Breadth-first visits them nearest first.
+  var wrong: Text[] = []
+  for x in names {
+    if (for v in visited where v == x { v }).length() > 1 { wrong = wrong.append(f"{x} was visited twice") }
+  }
+  if visited.length() != seen.length() { wrong = wrong.append("a place seen was never visited") }
+  for k in 1 until visited.length() {
+    let by = came[names.index_of(visited[k]).or(0)]
+    if not al_neighbours(edges, by).contains(visited[k]) { wrong = wrong.append(f"{visited[k]} was reached from a place not next to it") }
+    if wide and depth[names.index_of(visited[k]).or(0)] < depth[names.index_of(visited[k - 1]).or(0)] { wrong = wrong.append("breadth-first went back to a nearer place") }
+  }
+  let n = names.length()
+  let nodes: AlNode[] = for k in 0 until n { {id: names[k], label: names[k], x: 450 + 300 * (360 * k / n - 90).cos(), y: 190 + 140 * (360 * k / n - 90).sin(), from: 0} }
+  return {kind: "graph", title: f"{kind} search from {start}", nodes: nodes, edges: edges, steps: steps, frames: [], answer: order, problems: wrong}
+}
+
+// ---------------------------------------------------------------- run
+
+fn al_run(text: Text) -> AlRun {
+  let which = al_which(text)
+  if which == "bst" { return al_bst(text) }
+  if which == "search" { return al_search(text) }
+  if which == "path" { return al_path(text) }
+  if which == "bfs" or which == "dfs" { return al_traverse(text, which) }
+  return al_sort(text)
+}
+
+// ---------------------------------------------------------------- drawing
+
+fn al_esc(t: Text) -> Text { return t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;") }
+
+fn al_r(x: Number) -> Text { return f"{(x * 10).round() / 10}" }
+
+fn al_at(nodes: AlNode[], id: Text) -> AlNode {
+  for n in nodes {
+    if n.id == id { return n }
+  }
+  return {id: "", label: "", x: 0, y: 0, from: 0}
+}
+
+// A node's colour: by depth in a tree, by place in a graph, so a level or
+// a place keeps its colour from step to step. The new key is green.
+fn al_hue(r: AlRun, n: AlNode, k: Number) -> Number {
+  if n.from > 0 { return 4 }
+  return if r.kind == "tree" { ((n.y - 50) / 74).round() % 6 } else { k % 6 }
+}
+
+fn al_svg(r: AlRun) -> Text {
+  if r.kind == "bars" { return al_bars_svg(r) }
+  var edges = ""
+  for e in r.edges {
+    let a = al_at(r.nodes, e.a)
+    let b = al_at(r.nodes, e.b)
+    let mx = (a.x + b.x) / 2
+    let my = (a.y + b.y) / 2
+    let tag = if e.label.is_empty() { "" } else { f"<text class=\"al-w\" x=\"{al_r(mx)}\" y=\"{al_r(my - 6)}\">{al_esc(e.label)}</text>" }
+    let path = f"M{al_r(a.x)} {al_r(a.y)} L{al_r(b.x)} {al_r(b.y)}"
+    // The traveller: Designs' spark, running the edge while its step plays.
+    let spark = f"<circle class=\"al-spark\" r=\"6\"><animateMotion dur=\"1.4s\" repeatCount=\"indefinite\" path=\"{path}\"/></circle>"
+    edges = edges + f"<g class=\"al-edge\" data-id=\"{e.id}\" data-from=\"{e.from}\"><path class=\"al-wire\" d=\"{path}\"/>{spark}{tag}</g>"
+  }
+  var nodes = ""
+  for k in 0 until r.nodes.length() {
+    let n = r.nodes[k]
+    let ball = art_ball(n.x, n.y, 24, f"url(#art-g{al_hue(r, n, k)})", al_esc(n.label), "#fff")
+    nodes = nodes + f"<g class=\"al-node\" data-id=\"{n.id}\" data-from=\"{n.from}\"><circle class=\"al-ring\" cx=\"{al_r(n.x)}\" cy=\"{al_r(n.y)}\" r=\"31\"/><g class=\"al-ball\">{ball}</g></g>"
+  }
+  let h = if r.kind == "graph" { 380 } else { (for n in r.nodes { n.y }).max().or(50) + 50 }
+  return f"<svg class=\"al-svg art\" viewBox=\"0 0 900 {h}\" role=\"img\" aria-label=\"{al_esc(r.title)}\"><defs>{art_gradients()}</defs><rect class=\"ground\" width=\"900\" height=\"{h}\" rx=\"22\"/>{edges}{nodes}</svg>"
+}
+
+// Bars for a list: one frame per step, since a sort moves them about. Each
+// bar is shaded like Designs' art, and keeps its colour by its value, so a
+// number is followed by eye as it moves.
+fn al_bars_svg(r: AlRun) -> Text {
+  let order: Number[] = if r.frames.is_empty() { [] } else { r.frames[0].sort() }
+  var frames = ""
+  for k in 0 until r.frames.length() {
+    let xs = r.frames[k]
+    let top = xs.max().or(1).max(1)
+    let n = xs.length()
+    let w = 760 / n.max(1)
+    var bars = ""
+    for i in 0 until n {
+      let hue = order.index_of(xs[i]).or(0) % 6
+      let x = 70 + w * i + 4
+      let tall = 240 * xs[i] / top
+      bars = bars + f"<g class=\"al-bar\" data-id=\"{al_bar(i)}\"><rect x=\"{al_r(x)}\" y=\"{al_r(300 - tall)}\" width=\"{al_r(w - 8)}\" height=\"{al_r(tall)}\" rx=\"8\" style=\"fill:url(#art-g{hue})\"/><rect class=\"al-shine\" x=\"{al_r(x + 6)}\" y=\"{al_r(306 - tall)}\" width=\"{al_r((w - 8) * 0.18)}\" height=\"{al_r((tall - 12).max(0))}\" rx=\"4\"/><text x=\"{al_r(70 + w * i + w / 2)}\" y=\"326\">{al_n(xs[i])}</text></g>"
+    }
+    frames = frames + f"<g class=\"al-frame\" data-k=\"{k}\">{bars}</g>"
+  }
+  return f"<svg class=\"al-svg art\" viewBox=\"0 0 900 350\" role=\"img\" aria-label=\"{al_esc(r.title)}\"><defs>{art_gradients()}</defs><rect class=\"ground\" width=\"900\" height=\"350\" rx=\"22\"/>{frames}</svg>"
+}
+
+fn al_steps_json(r: AlRun) -> Text {
+  let one = for s in r.steps { "{\"t\":\"" + s.text.replace("\\", "\\\\").replace("\"", "\\\"") + "\",\"lit\":[" + (for x in s.lit { "\"" + x + "\"" }).join(",") + "],\"seen\":[" + (for x in s.seen { "\"" + x + "\"" }).join(",") + "]}" }
+  return "[" + one.join(",") + "]"
+}
+
+fn al_style() -> Text {
+  return art_ball_style() + ".al{display:grid;gap:12px}.al-screen{overflow-x:auto;border-radius:18px;background-color:color-mix(in srgb,var(--bg) 70%,#000);background-image:radial-gradient(color-mix(in srgb,var(--line) 16%,transparent) 1.1px,transparent 1.4px);background-size:22px 22px}.al-svg{display:block;width:100%;min-width:560px;height:auto}.al-svg .ground{fill:transparent;stroke:none}.al-ball{transform-box:fill-box;transform-origin:center;transition:opacity .4s}.al-ring{fill:none;stroke:transparent;stroke-width:3;transition:all .4s}.al-node.seen .al-ring{stroke:color-mix(in srgb,var(--amber) 70%,transparent)}.al-node.lit .al-ring{stroke:var(--amber);stroke-width:4;filter:drop-shadow(0 0 10px var(--amber))}.al-node.lit .al-ball{animation:al-pulse 1.2s ease-in-out infinite}@keyframes al-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}.al-node .ab-t{font-size:16px!important;paint-order:stroke;stroke:rgba(0,0,0,.35);stroke-width:3px}.al-wire{fill:none;stroke:color-mix(in srgb,var(--line) 32%,transparent);stroke-width:3;stroke-linecap:round;transition:all .4s}.al-edge.lit .al-wire{stroke:var(--amber);stroke-width:5;stroke-dasharray:8 8;animation:al-run .9s linear infinite}@keyframes al-run{to{stroke-dashoffset:-16}}.al-spark{fill:#fff;opacity:0;filter:drop-shadow(0 0 6px var(--amber))}.al-edge.lit .al-spark{opacity:1}.al-w{fill:var(--soft);font:600 13px ui-monospace,Consolas,monospace;text-anchor:middle;paint-order:stroke;stroke:var(--halo);stroke-width:4px}.al-later{opacity:0}.al-bar rect{transition:all .3s}.al-shine{fill:#fff;opacity:.22}.al-bar text{fill:var(--soft);font:600 13px ui-monospace,Consolas,monospace;text-anchor:middle}.al-bar.seen rect{opacity:.28}.al-bar.lit rect:first-child{filter:drop-shadow(0 0 10px var(--amber));stroke:var(--amber);stroke-width:3}.al-bar.lit text{fill:var(--amber)}.al-frame{display:none}.al-frame.on{display:inline}.al-foot{display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:14px;border:1px solid color-mix(in srgb,var(--line) 16%,transparent)}.al-num{font:600 11px ui-monospace,Consolas,monospace;color:var(--gold);letter-spacing:.12em;min-width:48px}.al-cap{flex:1;font-size:16px;line-height:1.45;color:var(--ink)}.al-foot button{font:600 10.5px ui-monospace,Consolas,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--soft);background:none;border:1px solid color-mix(in srgb,var(--line) 22%,transparent);border-radius:999px;padding:7px 12px;cursor:pointer}.al-check{font:600 11px ui-monospace,Consolas,monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--h4)}.al-checked{margin:10px 4px 0}.al-steps{margin:10px 0 0;padding-left:22px;color:var(--soft);text-align:left;font-size:14px;line-height:1.5}.al-steps li{padding:2px 0}.al-check.bad{color:var(--h0)}@media (prefers-reduced-motion:reduce){.al-svg *{animation:none!important}.al-spark{display:none}}"
+}
+
+fn al_script() -> Text {
+  return "(function(){var root=document.currentScript.parentNode,S=JSON.parse(root.dataset.steps),i=0,playing=!matchMedia('(prefers-reduced-motion: reduce)').matches,timer=null,cap=root.querySelector('.al-cap'),num=root.querySelector('.al-num'),pb=root.querySelector('.al-play'),dots=[].slice.call(root.querySelectorAll('.al-dot'));function show(k){i=k;var s=S[k];root.querySelectorAll('[data-id]').forEach(function(e){var id=e.dataset.id;e.classList.toggle('lit',s.lit.indexOf(id)>=0);e.classList.toggle('seen',s.seen.indexOf(id)>=0&&s.lit.indexOf(id)<0)});root.querySelectorAll('[data-from]').forEach(function(e){e.classList.toggle('al-later',+e.dataset.from>k)});var fr=root.querySelectorAll('.al-frame');fr.forEach(function(f){f.classList.toggle('on',+f.dataset.k===Math.min(k,fr.length-1))});cap.textContent=s.t;num.textContent=(k+1)+' / '+S.length;dots.forEach(function(d,j){d.classList.toggle('on',j===k)})}function tick(){clearInterval(timer);if(playing)timer=setInterval(function(){show((i+1)%S.length)},2600)}root.querySelector('.al-next').onclick=function(){show((i+1)%S.length);tick()};root.querySelector('.al-prev').onclick=function(){show((i-1+S.length)%S.length);tick()};pb.textContent=playing?'Pause':'Play';pb.onclick=function(){playing=!playing;pb.textContent=playing?'Pause':'Play';tick()};dots.forEach(function(d,j){d.onclick=function(){show(j);tick()}});show(0);tick()})();"
+}
+
+// The run on the Kosika canvas: its stage, labelled as every canvas is,
+// the picture drawn with Designs' art, the canvas's step bar and dots, and
+// beside it, to open, every step in order and Kosika's check.
+fn al_card(r: AlRun) -> Text {
+  let check = if r.problems.is_empty() { "<span class=\"al-check\">Checked by Kosika: " + al_esc(r.answer) + "</span>" } else { "<span class=\"al-check bad\">Check failed: " + al_esc(r.problems.join("; ")) + "</span>" }
+  let bar = "<div class=\"st-bar\"><span class=\"st-num al-num\"></span><span class=\"st-caption al-cap\"></span><button class=\"st-prev al-prev\" type=\"button\">Back</button><button class=\"st-play al-play\" type=\"button\">Pause</button><button class=\"st-next al-next\" type=\"button\">Next</button></div>"
+  let dots = (for k in 0 until r.steps.length() { f"<button class=\"st-dot al-dot\" type=\"button\" aria-label=\"Step {k + 1}\"></button>" }).join("")
+  let every = (for s in r.steps { "<li>" + al_esc(s.text) + "</li>" }).join("")
+  let opens = "<div class=\"st-opens\"><details class=\"kc-full\"><summary>Open every step</summary><ol class=\"al-steps\">" + every + "</ol></details></div>"
+  return "<div class=\"al kc-card kc-stage\" data-steps=\"" + al_esc(al_steps_json(r)) + "\"><div class=\"kc-label\">Kosika canvas &#183; <b>the explanation, played</b></div><div class=\"al-screen\">" + al_svg(r) + "</div>" + bar + "<div class=\"st-dots\">" + dots + "</div><div class=\"al-checked\">" + check + "</div>" + opens + "<script>" + al_script() + "</script></div>"
+}
+
+workflow algorithm(ask: AlAsk) -> AlPage {
+  ran = al_run(ask.text)
+  out = al_page(ran)
+}
+
+fn al_page(r: AlRun) -> AlPage { return {card: al_card(r), run: r, problems: r.problems} }
+
+// ---------------------------------------------------------------- tests
+
+test "Kosika reads which algorithm and which numbers" {
+  expect al_which("Show me how a binary search tree inserts 7") == "bst"
+  expect al_which("binary search for 9 in 1 4 9 12") == "search"
+  expect al_which("shortest path from A to E") == "path"
+  expect al_which("sort 5 2 9 1") == "sort"
+  expect al_which("how do volcanoes work") == ""
+  expect al_which("what sort of rock is granite") == ""
+  expect al_numbers("insert 7 into 8, 3, 10") == [7, 8, 3, 10]
+  expect al_after("show how a tree inserts 7", ["inserts"]) == [7]
+}
+
+test "a binary search tree inserts 7 where the rule says, and still reads in order" {
+  r = al_bst("Show me how a binary search tree inserts 7")
+  expect r.problems == []
+  expect r.answer == "7 goes to the right of 6"
+  expect r.steps[1].text == "7 meets 8: 7 is smaller, so it goes left."
+  expect r.steps[2].text == "7 meets 3: 7 is larger, so it goes right."
+  expect r.steps[3].text == "7 meets 6: 7 is larger, so it goes right."
+  expect r.steps[r.steps.length() - 1].text.starts_with("Read in order, left to right: 1 3 4 6 7 8 10 13 14")
+  again = al_bst("binary search tree: insert 6 into 8 3 10 6")
+  expect again.answer == "6 was already in the tree"
+}
+
+test "a bubble sort ends sorted with the same numbers" {
+  r = al_sort("sort 5 2 9 1")
+  expect r.problems == []
+  expect r.answer == "1, 2, 5, 9"
+  expect r.steps[1].text == "5 and 2: 5 is larger, so they swap."
+  expect r.frames.length() == r.steps.length()
+}
+
+test "a binary search finds 7, or says it is not there" {
+  r = al_search("binary search for 7 in 1 3 4 6 7 9 12 15")
+  expect r.problems == []
+  expect r.answer == "7 is at place 5"
+  missing = al_search("binary search for 5 in 1 3 4 6 7 9")
+  expect missing.answer == "5 is not in the list"
+  expect missing.problems == []
+}
+
+test "breadth-first visits nearest first, depth-first goes deep first" {
+  expect al_which("show me breadth first search") == "bfs"
+  expect al_which("how does depth-first search work") == "dfs"
+  expect al_which("what is the cheapest route from A to E") == "path"
+  b = al_traverse("breadth first search from A", "bfs")
+  expect b.problems == []
+  expect b.answer == "A → B → C → D → E → F"
+  d = al_traverse("depth first search from A", "dfs")
+  expect d.problems == []
+  expect d.answer == "A → B → D → C → E → F"
+  expect d.steps[2].text == "Visit B, reached from A: D join the stack."
+}
+
+test "the shortest path beats every edge and adds up" {
+  r = al_path("shortest path from A to E")
+  expect r.problems == []
+  expect r.answer == "A → C → B → D → E, 10 in all"
+  own = al_path("shortest path from A to C with A-B 1, B-C 1, A-C 5")
+  expect own.answer == "A → B → C, 2 in all"
+}

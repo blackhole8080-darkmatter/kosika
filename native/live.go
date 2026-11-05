@@ -52,6 +52,9 @@ type modelRequest struct {
 	Model      string
 	Decl       *ModelDecl
 	JSONObject bool
+	// Schema is the record asked for. Ollama is given it as the answer's
+	// format, so even a small model on a laptop cannot leave out a field.
+	Schema Value
 }
 
 type modelResponse struct {
@@ -104,6 +107,18 @@ func stopProvider(format string, args ...any) {
 
 const defaultLocalModelURL = "http://localhost:11434/v1"
 
+// modelThink reads KOSIKA_MODEL_THINK: on or off, or unset for the server's
+// own default, as the reference engine reads it.
+func modelThink() (bool, bool) {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("KOSIKA_MODEL_THINK"))) {
+	case "on", "true", "1":
+		return true, true
+	case "off", "false", "0":
+		return false, true
+	}
+	return false, false
+}
+
 func newHTTPProvider(url, model, protocol string, seconds float64, maxOutput int) *httpProvider {
 	trimmed := strings.TrimRight(url, "/")
 	endpoint := trimmed + "/chat/completions"
@@ -142,6 +157,12 @@ func (h *httpProvider) complete(request *modelRequest) *modelResponse {
 		options = map[string]any{}
 		payload["stream"] = false
 		payload["keep_alive"] = "30m"
+		// KOSIKA_MODEL_THINK=off asks a reasoning model (qwen3, say) for its
+		// answer without a reasoning trace first: on a laptop's CPU the trace
+		// takes minutes. on asks for one; unset leaves the server's default.
+		if think, ok := modelThink(); ok {
+			payload["think"] = think
+		}
 	}
 	if decl := request.Decl; decl != nil {
 		if decl.Temperature != nil {
@@ -172,6 +193,9 @@ func (h *httpProvider) complete(request *modelRequest) *modelResponse {
 	if request.JSONObject && (h.protocol == "ollama" || len(request.Tools) == 0) {
 		if h.protocol == "ollama" {
 			payload["format"] = "json"
+			if request.Schema != nil {
+				payload["format"] = plainJSON(request.Schema)
+			}
 		} else {
 			payload["response_format"] = map[string]any{"type": "json_object"}
 		}
@@ -214,9 +238,21 @@ func (h *httpProvider) complete(request *modelRequest) *modelResponse {
 		pause := busy[0]
 		busy = busy[1:]
 		if said, err := strconv.Atoi(strings.TrimSpace(answer.Header.Get("Retry-After"))); err == nil && said >= 0 {
+			// More than two minutes is not busy for the moment: a day's
+			// allowance is used up, so it is said at once, as the
+			// reference engine does, for the caller to ask another model.
+			if said > 120 {
+				break
+			}
 			pause = time.Duration(min(said, 120)) * time.Second
 		}
 		time.Sleep(pause)
+	}
+	if answer.StatusCode == 400 && bytes.Contains(raw, []byte("json_validate_failed")) {
+		// The service was reached and the model answered, but its answer
+		// was not the JSON asked for: a bad answer, which the step's
+		// `retry` and `otherwise` handle, not a broken service.
+		runFail("The model's answer was not valid JSON (the service said: json_validate_failed)")
 	}
 	if answer.StatusCode >= 400 {
 		stopProvider("Model provider returned HTTP %d: %s", answer.StatusCode, raw)

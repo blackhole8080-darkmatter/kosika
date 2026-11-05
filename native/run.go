@@ -23,7 +23,7 @@ func runCommand(args []string) int {
 	options["--trace"] = "run_trace.jsonl"
 	flags := map[string]bool{"--approve": true, "--allow-shell": true, "--computer": true, "--json": true}
 	var givenSites []string
-	known := map[string]bool{"--linux": true, "--notify": true, "--embed-url": true, "--embed-model": true, "--allow-site": true, "--services": true, "--allow-folder": true, "--memory": true, "--env": true, "--journal": true, "--binding-id": true, "--approval-record": true, "--approved-by": true, "--trace": true, "--model-fixture": true, "--mcp-server": true, "--mcp-manifest": true, "--mcp-source": true, "--workflow": true, "--input": true, "--model": true, "--model-url": true, "--model-protocol": true, "--model-timeout": true, "--model-binding": true, "--max-output-tokens": true}
+	known := map[string]bool{"--linux": true, "--notify": true, "--embed-url": true, "--embed-model": true, "--allow-site": true, "--services": true, "--allow-folder": true, "--memory": true, "--env": true, "--standing": true, "--journal": true, "--binding-id": true, "--approval-record": true, "--approved-by": true, "--trace": true, "--model-fixture": true, "--mcp-server": true, "--mcp-manifest": true, "--mcp-source": true, "--workflow": true, "--input": true, "--model": true, "--model-url": true, "--model-protocol": true, "--model-timeout": true, "--model-binding": true, "--max-output-tokens": true, "--max-function-calls": true}
 	for i := 1; i < len(args); i++ {
 		name, value, joined := strings.Cut(args[i], "=")
 		if flags[name] && !joined {
@@ -63,6 +63,14 @@ func runCommand(args []string) int {
 	if err != nil || maxOutput < 1 {
 		fmt.Fprintln(os.Stderr, "--max-output-tokens must be a positive integer")
 		return 2
+	}
+	if given := options["--max-function-calls"]; given != "" {
+		calls, err := strconv.Atoi(given)
+		if err != nil || calls < 1 || calls > 1_000_000 {
+			fmt.Fprintln(os.Stderr, "max_function_calls must be an integer from 1 to 1000000")
+			return 2
+		}
+		maxFunctionCalls = calls
 	}
 	// The program is checked first, as the reference checks it, before
 	// anything it would reach is looked at.
@@ -126,8 +134,17 @@ func runCommand(args []string) int {
 		}
 		approvals = append(approvals, record)
 	}
+	var standing []standingRule
+	if file := options["--standing"]; file != "" {
+		rules, problem := readStanding(file)
+		if problem != "" {
+			fmt.Fprintf(os.Stderr, "Workflow failed: %s\n", problem)
+			return 2
+		}
+		standing = rules
+	}
 	journalPath, bindingID := options["--journal"], options["--binding-id"]
-	if options["--approve"] != "" && journalPath == "" {
+	if (options["--approve"] != "" || len(standing) > 0) && journalPath == "" {
 		// Approval needs a journal to remember what was approved between
 		// the pause and the resume; an asked-for run keeps one for itself.
 		scratch, err := os.MkdirTemp("", "kosika-approve-")
@@ -338,8 +355,13 @@ func runCommand(args []string) int {
 		return result, "", ""
 	}
 	result, stopped, failure := attempt()
-	for pending != nil && options["--approve"] != "" {
-		granted := askApproval(pending, options["--approved-by"])
+	for pending != nil {
+		// A standing permission the person set once answers first; then
+		// the person at the terminal, if --approve asks them.
+		granted := standingGrant(pending, standing)
+		if granted == nil && options["--approve"] != "" {
+			granted = askApproval(pending, options["--approved-by"])
+		}
 		if granted == nil {
 			break
 		}

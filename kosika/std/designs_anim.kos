@@ -1,0 +1,935 @@
+// Kosika Designs: animations, told in time.
+//
+// Art that moves in place loops; an animation tells something: a bee flies
+// from the flower to the hive, a ball is dropped and bounces, the moon goes
+// round the earth. A free model writes the storyboard (who is in it, where
+// each one is at which moment, and what the caption says then); Kosika
+// does the rest:
+//
+//   keyframes  each actor's places in time, sorted, filled out to the start
+//              and the end, eased in and out between
+//   physics    a bounce is not guessed: the ball falls under g = 9.81 m/s^2
+//              and each bounce keeps 70% of its speed, so it rises to 49% of
+//              its height; an orbit goes round at an even pace
+//   time       one clock for every actor and caption, which you can play,
+//              pause and scrub
+//
+// Actors are the forms of Designs (std/designs_forms.kos) and a few more:
+// a ball, a planet, the moon, the sun, a bee.
+//
+// Every name here starts with an_ or An, because all Kosika modules share
+// one namespace.
+
+import "designs_forms.kos"
+import "designs_scene.kos"
+
+export [AnKey, AnActor, AnCaption, AnRecipe, AnStory, AnAsk, AnArt, an_parts_script, an_part_name, an_bounce_with, an_wants, an_story_wants, an_story_make, an_story_render, an_story_fallback, an_story_svg, an_svg, an_style, an_script, an_controls, an_page, an_fixed, an_problems, an_bounce, an_render, an_make, an_fallback]
+
+// t from 0 to 1 of the whole; x and y from 0 to 100 across and down.
+record AnKey { t: Number x: Number y: Number scale: Number turn: Number }
+// motion: keys (go through the keyframes), bounce (dropped from the first
+// key, bouncing where it lands) or orbit (round the first key, at the
+// distance of the second).
+record AnActor { id: Text form: Text hue: Text motion: Text keys: AnKey[] }
+record AnCaption { t: Number text: Text }
+record AnRecipe { title: Text seconds: Number backdrop: Text actors: AnActor[] captions: AnCaption[] }
+// A story: scenes played one after another on one clock, each fading in
+// as the last fades out.
+record AnStory { title: Text scenes: AnRecipe[] }
+// A label for an actor of a scene: it appears at t of that scene, its arrow
+// drawing itself to where the actor is then.
+record AnLabel { scene: Number t: Number text: Text actor: Text }
+record AnAsk { text: Text }
+record AnBrief { task: Text ask: Text }
+record AnArt { recipe: AnRecipe svg: Text page: Text problems: Text[] notes: Text[] }
+
+model an_director {
+  input: AnBrief
+  output: AnRecipe
+  parameters: {
+    max_output_tokens: 4000
+  }
+}
+
+fn an_extra_forms() -> Text[] { return ["ball", "planet", "moon", "sun", "bee", "hive", "tree", "seed", "sprout", "cloud", "raindrop", "sea", "vapour", "egg", "caterpillar", "chrysalis", "earth", "phase", "co2", "o2", "h2o", "sugar", "volcano", "magma", "lava", "ash", "mouth", "stomach", "intestine", "food", "nutrient"] }
+fn an_all_forms() -> Text[] { return fm_forms().concat(an_extra_forms()) }
+fn an_motions() -> Text[] { return ["keys", "bounce", "orbit"] }
+
+fn an_n(x: Number) -> Text { return x.to_fixed(2) }
+fn an_cat(xs: Text[]) -> Text { return xs.join("") }
+fn an_n3(x: Number) -> Text { return x.to_fixed(3) }
+fn an_semi(xs: Text[]) -> Text { return xs.join(";") }
+
+// Whether an ask is for an animation: it asks for one, or for something to
+// move, and names what is in it.
+fn an_wants(text: Text) -> Bool {
+  let t = " " + text.lower().replace(",", " ").replace(".", " ") + " "
+  let moving = t.contains(" animate") or t.contains(" animation") or t.contains(" animated") or t.contains(" bouncing") or t.contains(" bounce") or t.contains(" flying") or t.contains(" flies ") or t.contains(" swimming") or t.contains(" swims ") or t.contains(" orbiting") or t.contains(" orbits ") or t.contains(" falling") or t.contains(" drifting")
+  let actors = not fm_named(text).is_empty() or (for w in [" ball", " planet", " moon", " earth", " sun ", " bee", " bees"] where t.contains(w) { w }).length() > 0
+  let explains = t.contains(" why ") or t.contains(" explain") or t.contains(" diagram")
+  return moving and actors and not explains
+}
+
+fn an_problems(r: AnRecipe) -> Text[] {
+  var out: Text[] = []
+  if r.actors.is_empty() { out = out.append("there is no one in the animation") }
+  for a in r.actors {
+    if not an_all_forms().contains(a.form) { out = out.append(f"actor {a.id}: form {a.form} is not one Kosika can draw") }
+    if a.keys.is_empty() { out = out.append(f"actor {a.id} has no keyframes") }
+  }
+  return out
+}
+
+fn an_clamp(x: Number, lo: Number, hi: Number) -> Number { return x.max(lo).min(hi) }
+
+fn an_key_fixed(k: AnKey) -> AnKey {
+  return {t: an_clamp(k.t, 0, 1), x: an_clamp(k.x, 0, 100), y: an_clamp(k.y, 0, 100), scale: if k.scale <= 0 { 1 } else { an_clamp(k.scale, 0.2, 3) }, turn: an_clamp(k.turn, -720, 720)}
+}
+
+// Keyframes in time order, with one at the very start and one at the very
+// end, so every actor is somewhere all the time.
+fn an_keys_fixed(keys: AnKey[]) -> AnKey[] {
+  let fixed = (for k in keys { an_key_fixed(k) }).sort_by("t")
+  if fixed.is_empty() { return [{t: 0, x: 50, y: 50, scale: 1, turn: 0}, {t: 1, x: 50, y: 50, scale: 1, turn: 0}] }
+  let first = fixed[0]
+  let last = fixed[fixed.length() - 1]
+  let head: AnKey[] = if first.t > 0 { [{..first, t: 0}] } else { [] }
+  let tail: AnKey[] = if last.t < 1 { [{..last, t: 1}] } else { [] }
+  return head.concat(fixed).concat(tail)
+}
+
+// Things that have their own colour keep it, whatever the director said:
+// the sea is blue, a cloud white, the sun gold.
+fn an_true_hue(form: Text, hue: Text) -> Text {
+  if form == "sea" or form == "raindrop" { return "sky" }
+  if form == "cloud" or form == "vapour" or form == "moon" { return "pearl" }
+  if form == "sun" { return "gold" }
+  if form == "sprout" or form == "tree" or form == "fern" or form == "leaf" { return "leaf" }
+  return if fm_hues().contains(hue) { hue } else { "amber" }
+}
+
+// Only what goes round, goes round: a moon or a planet.
+fn an_true_motion(form: Text, motion: Text) -> Text {
+  if motion == "orbit" and form != "moon" and form != "planet" { return "keys" }
+  return if an_motions().contains(motion) { motion } else { "keys" }
+}
+
+// A cloud stays in the sky, the sea at the bottom.
+fn an_true_keys(form: Text, keys: AnKey[]) -> AnKey[] {
+  if form == "cloud" { return for k in keys { {..k, y: k.y.min(35)} } }
+  if form == "sea" { return for k in keys { {..k, y: k.y.max(80)} } }
+  return keys
+}
+
+fn an_fixed(r: AnRecipe) -> AnRecipe {
+  let actors: AnActor[] = for a in r.actors where an_all_forms().contains(a.form.trim().lower()) { {id: if a.id.trim().is_empty() { a.form } else { a.id.trim() }, form: a.form.trim().lower(), hue: an_true_hue(a.form.trim().lower(), a.hue.trim().lower()), motion: an_true_motion(a.form.trim().lower(), a.motion.trim().lower()), keys: an_true_keys(a.form.trim().lower(), an_keys_fixed(a.keys))} }
+  let said: AnCaption[] = for c in r.captions where not c.text.trim().is_empty() { {t: an_clamp(c.t, 0, 1), text: c.text.trim().slice(0, c.text.trim().length().min(90))} }
+  let captions = said.sort_by("t")
+  let backdrop = if fm_backdrops().append("coast").contains(r.backdrop.trim().lower()) { r.backdrop.trim().lower() } else { "meadow" }
+  let title = if r.title.trim().is_empty() { "An Animation" } else { r.title.trim().slice(0, r.title.trim().length().min(48)) }
+  return {title: title, seconds: an_clamp(r.seconds, 3, 30), backdrop: backdrop, actors: actors.take(6), captions: captions.take(8)}
+}
+
+fn an_fallback() -> AnRecipe {
+  return {title: "A Ball Dropped", seconds: 6, backdrop: "studio", actors: [{id: "ball", form: "ball", hue: "coral", motion: "bounce", keys: [{t: 0, x: 20, y: 12, scale: 1, turn: 0}, {t: 1, x: 80, y: 12, scale: 1, turn: 0}]}], captions: [{t: 0, text: "A ball is dropped."}, {t: 0.35, text: "Each bounce keeps 70% of its speed."}, {t: 0.7, text: "So each rises to half its height."}]}
+}
+
+// ---------------------------------------------------------------- physics
+
+// Where a dropped ball is, every thirtieth of a second, as x, y in pixels
+// and t from 0 to 1: it falls from y0 to the ground under g, keeps 70% of
+// its speed at each bounce, and drifts from x0 to x1 all the while.
+// 540 pixels stand for 3 metres.
+fn an_bounce(x0: Number, x1: Number, y0: Number, ground: Number, seconds: Number) -> Number[] { return an_bounce_with(x0, x1, y0, ground, seconds, 9.81, 0.7) }
+
+// The same with gravity `gravity` in m/s^2 and restitution `e`.
+fn an_bounce_with(x0: Number, x1: Number, y0: Number, ground: Number, seconds: Number, gravity: Number, e: Number) -> Number[] {
+  let g = gravity * 540 / 3
+  var out: Number[] = []
+  var t = 0
+  var y = y0
+  var v = 0
+  let step = 1 / 30
+  while t <= seconds {
+    out = out.append(t / seconds).append(x0 + (x1 - x0) * t / seconds).append(y)
+    v = v + g * step
+    y = y + v * step
+    if y >= ground {
+      y = ground
+      v = 0 - v * e
+      if v.abs() < 20 { v = 0 }
+    }
+    t = t + step
+  }
+  return out
+}
+
+// ---------------------------------------------------------------- actors
+
+fn an_px(k: AnKey) -> Number[] { return [k.x * 9.6, k.y * 5.4] }
+
+fn an_actor_body(a: AnActor, id: Text, c: Text, seed: Number) -> Text {
+  if a.form == "ball" { return f"<circle r=\"34\" fill=\"url(#{id})\"/><circle cx=\"-11\" cy=\"-12\" r=\"9\" fill=\"#fff\" opacity=\".45\"/>" }
+  if a.form == "planet" { return f"<ellipse rx=\"70\" ry=\"14\" class=\"an-ringback\" style=\"stroke:{c}\"/><circle r=\"40\" fill=\"url(#{id})\"/><path d=\"M-70 0 A70 14 0 0 0 70 0\" class=\"an-ring\" style=\"stroke:{c}\"/>" }
+  if a.form == "moon" { return "<circle r=\"30\" fill=\"#cfd3dc\"/><circle cx=\"-9\" cy=\"-7\" r=\"6\" fill=\"#aab0bc\"/><circle cx=\"10\" cy=\"8\" r=\"4\" fill=\"#aab0bc\"/><circle cx=\"6\" cy=\"-14\" r=\"3\" fill=\"#aab0bc\"/>" }
+  if a.form == "sun" { return an_sun() }
+  if a.form == "bee" { return "<g class=\"an-bee\"><ellipse class=\"an-wing\" cx=\"-6\" cy=\"-22\" rx=\"14\" ry=\"20\" transform=\"rotate(-20)\"/><ellipse class=\"an-wing\" cx=\"10\" cy=\"-22\" rx=\"12\" ry=\"18\" transform=\"rotate(18)\"/><ellipse rx=\"30\" ry=\"20\" fill=\"#f5c542\"/><path d=\"M-12 -19 Q-8 0 -12 19 M2 -20 Q6 0 2 20 M16 -16 Q19 0 16 16\" class=\"an-stripe\"/><circle cx=\"27\" cy=\"-4\" r=\"9\" fill=\"#2a2016\"/><path d=\"M-30 0 L-40 0\" class=\"an-stripe\"/></g>" }
+  if a.form == "hive" { return "<g>" + an_cat(for k in 0 until 5 { f"<ellipse cx=\"0\" cy=\"{an_n(30 - k * 14)}\" rx=\"{an_n(44 - k * 7)}\" ry=\"9\" class=\"an-skep\"/>" }) + "<ellipse cx=\"0\" cy=\"30\" rx=\"9\" ry=\"6\" fill=\"#2a1a0c\"/><rect x=\"-56\" y=\"38\" width=\"112\" height=\"8\" rx=\"3\" fill=\"#5a3a1e\"/></g>" }
+  if a.form == "earth" { return "<circle r=\"40\" fill=\"url(#an-ocean)\"/><path d=\"M-22 -26 Q-6 -34 4 -22 Q0 -8 -14 -6 Q-30 -10 -22 -26 Z M8 4 Q26 -2 30 14 Q20 30 6 26 Q-2 16 8 4 Z M-30 10 Q-20 8 -18 20 Q-26 26 -32 18 Z\" fill=\"#5fb35a\"/><circle r=\"40\" fill=\"url(#an-night)\"/><circle r=\"40\" fill=\"none\" stroke=\"rgba(160,210,255,.55)\" stroke-width=\"3\" class=\"an-air\"/>" }
+  if a.form == "phase" { return an_phase(a.keys[0].turn) }
+  if a.form == "co2" { return an_molecule("CO<tspan class=\"an-sub\" dy=\"4\">2</tspan>", "#8a8f9c", ["#2b2f38", "#d94c3d", "#d94c3d"]) }
+  if a.form == "o2" { return an_molecule("O<tspan class=\"an-sub\" dy=\"4\">2</tspan>", "#d94c3d", ["#d94c3d", "#d94c3d"]) }
+  if a.form == "h2o" { return an_molecule("H<tspan class=\"an-sub\" dy=\"4\">2</tspan><tspan dy=\"-4\">O</tspan>", "#3f86c9", ["#d94c3d", "#f2f2f2", "#f2f2f2"]) }
+  if a.form == "sugar" { return "<path d=\"M0 -26 L22 -13 L22 13 L0 26 L-22 13 L-22 -13 Z\" fill=\"#f5c542\" stroke=\"#8a5a1e\" stroke-width=\"2.5\"/><text class=\"an-chem\" y=\"44\">sugar</text>" }
+  if a.form == "volcano" { return "<path d=\"M-230 120 L-46 -80 Q0 -92 46 -80 L230 120 Z\" fill=\"#6b4a3a\"/><path d=\"M-46 -80 Q0 -66 46 -80\" fill=\"none\" stroke=\"#2a1a12\" stroke-width=\"6\"/><path d=\"M-120 30 L-60 -20 M90 40 L40 -10\" stroke=\"#5a3a2c\" stroke-width=\"4\" fill=\"none\"/>" }
+  if a.form == "magma" { return "<ellipse rx=\"120\" ry=\"40\" fill=\"url(#an-magma)\" class=\"an-glowing\"/>" }
+  if a.form == "lava" { return "<path d=\"M0 -24 Q22 -6 14 14 Q0 26 -14 14 Q-22 -6 0 -24 Z\" fill=\"#ff6a2b\" class=\"an-glowing\"/>" }
+  if a.form == "ash" { return "<g class=\"an-ash\">" + an_cat(for j in 0 until 5 { f"<circle cx=\"{an_n(-56 + j * 28)}\" cy=\"{an_n(an_puff_y(j))}\" r=\"{an_n(an_puff_r(j))}\"/>" }) + "</g>" }
+  if a.form == "mouth" { return "<path d=\"M-60 -10 Q0 -50 60 -10 Q0 40 -60 -10 Z\" fill=\"#7a2230\"/><path d=\"M-44 -22 L-36 -12 L-28 -24 L-20 -14 L-12 -26 L-4 -16 L4 -26 L12 -16 L20 -24 L28 -14 L36 -22 L44 -12\" fill=\"#fff\" stroke=\"#ddd\"/><path d=\"M-30 6 Q0 20 30 6\" fill=\"#d9576a\"/>" }
+  if a.form == "stomach" { return "<path d=\"M-20 -60 Q-10 -70 10 -60 Q20 -30 50 -10 Q80 30 30 60 Q-30 80 -50 30 Q-60 0 -30 -20 Q-20 -40 -20 -60 Z\" fill=\"#e98a8a\" stroke=\"#a14a4a\" stroke-width=\"3\" class=\"an-churn\"/>" }
+  if a.form == "intestine" { return "<path d=\"M-90 -40 Q-60 -70 -30 -40 T30 -40 T90 -40 Q110 -10 90 10 Q60 40 30 10 T-30 10 T-90 10 Q-110 40 -90 60 Q-60 90 -30 60 T30 60 T90 60\" fill=\"none\" stroke=\"#e9a07a\" stroke-width=\"18\" stroke-linecap=\"round\"/><path d=\"M-90 -40 Q-60 -70 -30 -40 T30 -40 T90 -40 Q110 -10 90 10 Q60 40 30 10 T-30 10 T-90 10 Q-110 40 -90 60 Q-60 90 -30 60 T30 60 T90 60\" fill=\"none\" stroke=\"#b8664a\" stroke-width=\"2\" stroke-dasharray=\"4 10\" class=\"an-peristalsis\"/>" }
+  if a.form == "food" { return "<circle r=\"16\" fill=\"#c98a3a\"/><circle cx=\"-5\" cy=\"-5\" r=\"4\" fill=\"#e8b46a\"/>" }
+  if a.form == "nutrient" { return "<circle r=\"8\" fill=\"#e23d4a\"/><circle cx=\"-2\" cy=\"-2\" r=\"2.5\" fill=\"#ff9aa3\"/>" }
+  if a.form == "egg" { return "<path d=\"M-60 10 Q0 -40 60 10 Q0 30 -60 10 Z\" fill=\"#6fbf5a\"/>" + an_cat(for j in 0 until 5 { f"<ellipse cx=\"{an_n(-16 + j * 8)}\" cy=\"{an_n(2 - (j % 2) * 5)}\" rx=\"4\" ry=\"5\" fill=\"#f6f0dc\" stroke=\"#c9bf9c\"/>" }) }
+  if a.form == "caterpillar" { return "<g class=\"an-crawl\">" + an_cat(for j in 0 until 7 { f"<circle cx=\"{an_n(-42 + j * 13)}\" cy=\"0\" r=\"{an_n(an_seg_r(j))}\" class=\"an-seg\" style=\"animation-delay:-{an_n(j * 0.12)}s\"/>" }) + "<circle cx=\"39\" cy=\"-3\" r=\"2.4\" fill=\"#111\"/><path d=\"M36 -10 L32 -20 M42 -10 L46 -20\" class=\"an-antenna\"/></g>" }
+  if a.form == "chrysalis" { return "<path d=\"M0 -50 L0 -30\" class=\"an-antenna\"/><path d=\"M0 -30 Q22 -6 10 30 Q0 46 -10 30 Q-22 -6 0 -30 Z\" fill=\"#7cc46a\" stroke=\"#3e7a35\" stroke-width=\"2\" class=\"an-sway\"/><path d=\"M-6 -8 Q0 4 6 -8\" fill=\"none\" stroke=\"#e9c46a\" stroke-width=\"2\"/>" }
+  if a.form == "seed" { return "<ellipse rx=\"16\" ry=\"11\" fill=\"#8a5a2b\" transform=\"rotate(-20)\"/><ellipse cx=\"-5\" cy=\"-4\" rx=\"5\" ry=\"3\" fill=\"#c49060\" transform=\"rotate(-20)\"/>" }
+  if a.form == "sprout" { return "<path d=\"M0 40 Q-4 10 0 -30\" class=\"an-stem\"/><path d=\"M0 -10 Q-34 -26 -40 -6 Q-20 4 0 -10 Z\" fill=\"#6fbf5a\"/><path d=\"M0 -24 Q30 -46 40 -24 Q22 -12 0 -24 Z\" fill=\"#5aa94a\"/><path d=\"M0 40 Q-12 52 -18 64 M0 40 Q8 54 16 62 M0 40 L2 66\" class=\"an-root\"/>" }
+  if a.form == "cloud" { return "<g class=\"an-cloud\"><g class=\"an-cloud-under\" transform=\"translate(6 10)\">" + an_cat(for j in 0 until 5 { f"<circle cx=\"{an_n(-56 + j * 28)}\" cy=\"{an_n(an_puff_y(j))}\" r=\"{an_n(an_puff_r(j))}\"/>" }) + "</g>" + an_cat(for j in 0 until 5 { f"<circle cx=\"{an_n(-56 + j * 28)}\" cy=\"{an_n(an_puff_y(j))}\" r=\"{an_n(an_puff_r(j))}\"/>" }) + "<rect x=\"-70\" y=\"-4\" width=\"140\" height=\"28\" rx=\"14\"/></g>" }
+  if a.form == "raindrop" { return "<path d=\"M0 -22 Q16 4 0 14 Q-16 4 0 -22 Z\" fill=\"#6cc3f0\"/><path d=\"M-4 0 Q-6 6 -1 9\" stroke=\"#fff\" stroke-width=\"2\" fill=\"none\" opacity=\".7\"/>" }
+  if a.form == "sea" { return "<path d=\"M-500 0 Q-437 -18 -375 0 T-250 0 T-125 0 T0 0 T125 0 T250 0 T375 0 T500 0 L500 120 L-500 120 Z\" fill=\"url(#" + id + ")\" class=\"an-sea\"/>" }
+  if a.form == "vapour" { return an_cat(for j in 0 until 3 { f"<path class=\"an-vapour\" d=\"M{an_n(-30 + j * 30)} 40 q-14 -20 0 -40 t0 -40\" style=\"animation-delay:-{an_n(j * 0.6)}s\"/>" }) }
+  if a.form == "tree" { return f"<rect x=\"-8\" y=\"0\" width=\"16\" height=\"70\" fill=\"#5a3a1e\"/><circle cx=\"0\" cy=\"-20\" r=\"48\" fill=\"url(#{id})\"/><circle cx=\"-32\" cy=\"6\" r=\"30\" fill=\"url(#{id})\"/><circle cx=\"32\" cy=\"6\" r=\"30\" fill=\"url(#{id})\"/>" }
+  return fm_form_svg(a.form, id, c, seed)
+}
+
+// The sun: a bright core, sixteen flames that turn, and its glow.
+fn an_sun() -> Text {
+  var xy: Number[] = []
+  for k in 0 until 32 {
+    let a = k * 11.25
+    let r = if k % 2 == 0 { 62 } else { 46 }
+    xy = xy.append(r * a.cos()).append(r * a.sin())
+  }
+  var d = f"M{an_n(xy[0])} {an_n(xy[1])}"
+  var k = 2
+  while k + 1 < xy.length() {
+    d = d + f" L{an_n(xy[k])} {an_n(xy[k + 1])}"
+    k += 2
+  }
+  return f"<circle r=\"110\" fill=\"url(#an-glow)\" class=\"an-pulse\"/><path d=\"{d} Z\" fill=\"url(#an-corona)\" class=\"an-corona\"/><circle r=\"40\" fill=\"url(#an-core)\"/><circle cx=\"-12\" cy=\"-12\" r=\"10\" fill=\"#fff\" opacity=\".55\"/>"
+}
+
+// What a part is called, for asking about it.
+fn an_part_name(form: Text) -> Text {
+  if form == "co2" { return "carbon dioxide" }
+  if form == "o2" { return "oxygen" }
+  if form == "h2o" { return "water" }
+  if form == "vapour" { return "water vapour" }
+  if form == "phase" { return "the moon's phase" }
+  if form == "intestine" { return "small intestine" }
+  if form == "magma" { return "magma chamber" }
+  return form
+}
+
+// Clicking a part pauses the animation and asks about it: in Studio the
+// page around it hears the ask and Kosi answers; on a page of its own the
+// part's name is shown.
+fn an_parts_script() -> Text {
+  return "(function(){var me=document.currentScript,box=me.parentNode,svg=box.querySelector('svg.an');if(!svg)return;var said=box.querySelector('.an-asked');if(!said){said=document.createElement('div');said.className='an-asked';box.appendChild(said)}svg.addEventListener('click',function(ev){var part=ev.target.closest&&ev.target.closest('.an-part');if(!part)return;svg.pauseAnimations();var play=box.querySelector('.an-play');if(play)play.textContent='Play';var scene=ev.target.closest('.an-scene');var ask={kosika:'part',part:part.dataset.part,scene:scene?scene.dataset.title:'',title:svg.getAttribute('aria-label'),at:svg.getCurrentTime()};if(window.parent&&window.parent!==window){window.parent.postMessage(ask,'*');said.textContent='Asking Kosi about the '+ask.part+'\u2026'}else{said.textContent='That is the '+ask.part+(ask.scene?', in '+ask.scene:'')+'. In Kosika Studio, Kosi explains it.'}})})();"
+}
+
+fn an_atom_r(j: Number) -> Number { return if j == 0 { 14 } else { 11 } }
+
+// A molecule: atoms as balls side by side, its formula beneath.
+fn an_molecule(name: Text, ring: Text, atoms: Text[]) -> Text {
+  let n = atoms.length()
+  let balls = an_cat(for j in 0 until n { f"<circle cx=\"{an_n((j - (n - 1) / 2) * 20)}\" cy=\"0\" r=\"{an_n(an_atom_r(j))}\" fill=\"{atoms[j]}\" stroke=\"rgba(0,0,0,.35)\"/>" })
+  return balls + f"<text class=\"an-chem\" y=\"34\" style=\"fill:{ring}\">{name}</text>"
+}
+
+// The moon as it looks from the earth, `angle` degrees round from new: the
+// lit part grows from the right (waxing) to full at 180, then shrinks.
+fn an_phase(angle: Number) -> Text {
+  let a = angle % 360
+  let r = 34
+  let w = r * (a).cos().abs()
+  // The lit side: right while waxing, left while waning.
+  let right = a < 180
+  let lit_half = if right { f"M0 {an_n(0 - r)} A{r} {r} 0 0 1 0 {r}" } else { f"M0 {an_n(0 - r)} A{r} {r} 0 0 0 0 {r}" }
+  // The terminator: an ellipse edge, bulging into the dark side before
+  // the quarter and into the lit side after it.
+  // Before a quarter the edge bows towards the lit side (a crescent),
+  // after it towards the dark side (gibbous).
+  let sweep = if right { (if a < 90 { 0 } else { 1 }) } else { (if a < 270 { 0 } else { 1 }) }
+  let back = f" A{an_n(w)} {r} 0 0 {sweep} 0 {an_n(0 - r)} Z"
+  return f"<circle r=\"{r}\" fill=\"#2a2f3e\"/><path d=\"{lit_half}{back}\" fill=\"#eef0f4\"/><circle r=\"{r}\" fill=\"none\" stroke=\"rgba(255,255,255,.25)\"/>"
+}
+
+fn an_seg_r(j: Number) -> Number { return if j == 6 { 11 } else { 9 } }
+fn an_puff_y(j: Number) -> Number { return if j == 1 or j == 2 { -18 } else { 0 } }
+fn an_puff_r(j: Number) -> Number { return if j == 2 { 34 } else { 26 } }
+
+fn an_size(form: Text) -> Number { return if an_extra_forms().contains(form) { 1 } else { 0.55 } }
+
+// One actor: a path to move along, eased between keyframes, and its
+// scale and turn changing with it.
+fn an_actor(a: AnActor, k: Number, r: AnRecipe) -> Text { return an_actor_in(a, k, r.seconds, r.seconds, 0, 1, "") }
+
+// Times on the whole clock for a scene from s to e: held still before and
+// after it.
+fn an_held(times: Text[], points: Text[], s: Number, e: Number) -> Text[][] {
+  let t1: Text[] = if s > 0 { ["0"].concat(times) } else { times }
+  let p1: Text[] = if s > 0 { [points[0]].concat(points) } else { points }
+  let t2: Text[] = if e < 1 { t1.append("1") } else { t1 }
+  let p2: Text[] = if e < 1 { p1.append(p1[p1.length() - 1]) } else { p1 }
+  return [t2, p2]
+}
+
+// An actor of a scene that runs from s to e of a clock `total` seconds
+// long; `seconds` is the scene's own length, for its physics.
+fn an_actor_in(a: AnActor, k: Number, seconds: Number, total: Number, s: Number, e: Number, tag: Text) -> Text {
+  let id = f"an-g{k}"
+  let c = fm_colour(a.hue)
+  let dur = an_n(total)
+  let body = f"<g class=\"an-part\" data-part=\"{an_esc(an_part_name(a.form))}\" transform=\"scale({an_n(an_size(a.form))})\"><circle class=\"an-hit\" r=\"44\" fill=\"transparent\"/><g class=\"fm-form fm-{a.form}\" style=\"--c:{c}\">{an_actor_body(a, id, c, k)}</g></g>"
+  if a.motion == "bounce" {
+    let p0 = an_px(a.keys[0])
+    let p1 = an_px(a.keys[a.keys.length() - 1])
+    // One ball for each world and each bounciness; the sliders show one.
+    var worlds = ""
+    for gv in [9.81, 3.71, 1.62] {
+      for ev in [0.5, 0.7, 0.9] {
+        let pts = an_bounce_with(p0[0], p1[0], p0[1], 470, seconds, gv, ev)
+        var d = ""
+        var times: Text[] = []
+        var i = 0
+        while i + 2 < pts.length() {
+          d = d + (if i == 0 { "M" } else { " L" }) + an_n(pts[i + 1]) + " " + an_n(pts[i + 2])
+          times = times.append(an_n(s + pts[i].min(1) * (e - s)))
+          i += 3
+        }
+        let n = times.length()
+        let held = an_held(times, for j in 0 until n { an_n(j / (n - 1).max(1)) }, s, e)
+        let shown = if gv == 9.81 and ev == 0.7 { "" } else { " style=\"display:none\"" }
+        worlds = worlds + f"<g class=\"an-variant\" data-g=\"{gv}\" data-e=\"{ev}\"{shown}><g><animateMotion dur=\"{dur}s\" repeatCount=\"indefinite\" calcMode=\"linear\" keyPoints=\"{an_semi(held[1])}\" keyTimes=\"{an_semi(held[0])}\" path=\"{d}\"/>{body}{tag}</g></g>"
+      }
+    }
+    let shade = an_held([an_n(s), an_n(e)], [an_n(p0[0]), an_n(p1[0])], s, e)
+    return f"{worlds}<ellipse class=\"an-shadow\" cx=\"0\" cy=\"500\" rx=\"30\" ry=\"6\"><animate attributeName=\"cx\" values=\"{an_semi(shade[1])}\" keyTimes=\"{an_semi(shade[0])}\" dur=\"{dur}s\" repeatCount=\"indefinite\"/></ellipse>"
+  }
+  if a.motion == "orbit" {
+    let c0 = an_px(a.keys[0])
+    let edge = if a.keys.length() > 1 { an_px(a.keys[1]) } else { [c0[0] + 200, c0[1]] }
+    let rad = ((edge[0] - c0[0]) * (edge[0] - c0[0]) + (edge[1] - c0[1]) * (edge[1] - c0[1])).sqrt().max(40)
+    let d = f"M{an_n(c0[0] + rad)} {an_n(c0[1])} A{an_n(rad)} {an_n(rad * 0.42)} 0 1 1 {an_n(c0[0] - rad)} {an_n(c0[1])} A{an_n(rad)} {an_n(rad * 0.42)} 0 1 1 {an_n(c0[0] + rad)} {an_n(c0[1])}"
+    let round = an_held([an_n(s), an_n(e)], ["0", "1"], s, e)
+    return f"<path class=\"an-track\" d=\"{d}\"/><g><animateMotion dur=\"{dur}s\" repeatCount=\"indefinite\" calcMode=\"linear\" keyPoints=\"{an_semi(round[1])}\" keyTimes=\"{an_semi(round[0])}\" path=\"{d}\"/>{body}{tag}</g>"
+  }
+  let pts = for key in a.keys { an_px(key) }
+  let d = "M" + (for p in pts { an_n(p[0]) + " " + an_n(p[1]) }).join(" L")
+  // How far along the path each keyframe is, by the length of the legs.
+  var legs: Number[] = [0]
+  for j in 1 until pts.length() {
+    let dx = pts[j][0] - pts[j - 1][0]
+    let dy = pts[j][1] - pts[j - 1][1]
+    legs = legs.append(legs[j - 1] + (dx * dx + dy * dy).sqrt())
+  }
+  let whole = legs[legs.length() - 1].max(0.001)
+  let kp = (for l in legs { an_n(l / whole) }).join(";")
+  let kt = (for key in a.keys { an_n(key.t) }).join(";")
+  let ease = (for j in 1 until a.keys.length() { ".42 0 .58 1" }).join(";")
+  let scales = (for key in a.keys { an_n(key.scale) }).join(";")
+  // A phase keeps its angle in turn: the moon does not spin for it.
+  let turns = (for key in a.keys { if a.form == "phase" { "0" } else { an_n(key.turn) } }).join(";")
+  let still = whole < 1
+  let motion = if still { "" } else { f"<animateMotion dur=\"{dur}s\" repeatCount=\"indefinite\" calcMode=\"spline\" keyPoints=\"{kp}\" keyTimes=\"{kt}\" keySplines=\"{ease}\" path=\"{d}\"/>" }
+  let at = if still { f" transform=\"translate({an_n(pts[0][0])} {an_n(pts[0][1])})\"" } else { "" }
+  return f"<g{at}>{motion}<g><animateTransform attributeName=\"transform\" type=\"scale\" values=\"{scales}\" keyTimes=\"{kt}\" dur=\"{dur}s\" repeatCount=\"indefinite\"/><g><animateTransform attributeName=\"transform\" type=\"rotate\" values=\"{turns}\" keyTimes=\"{kt}\" dur=\"{dur}s\" repeatCount=\"indefinite\"/>{body}</g></g>{tag}</g>"
+}
+
+// Each caption shows from its moment until the next one's.
+fn an_captions(r: AnRecipe) -> Text { return an_captions_in(r, r.seconds, 0, 1) }
+
+fn an_captions_in(r: AnRecipe, total: Number, s: Number, e: Number) -> Text {
+  let n = r.captions.length()
+  var out: Text[] = []
+  for k in 0 until n {
+    let from = s + r.captions[k].t * (e - s)
+    let to = if k + 1 < n { s + r.captions[k + 1].t * (e - s) } else { e }
+    let values = if from <= 0 { (if to >= 1 { "1;1" } else { "1;0;0" }) } else { (if to >= 1 { "0;1;1" } else { "0;1;0;0" }) }
+    let times = if from <= 0 { (if to >= 1 { "0;1" } else { f"0;{an_n(to)};1" }) } else { (if to >= 1 { f"0;{an_n(from)};1" } else { f"0;{an_n(from)};{an_n(to.max(from + 0.001))};1" }) }
+    out = out.append(f"<text class=\"an-cap\" x=\"480\" y=\"518\" opacity=\"0\" data-from=\"{an_n(from * total)}\" data-to=\"{an_n(to * total)}\">{an_esc(r.captions[k].text)}<animate attributeName=\"opacity\" calcMode=\"discrete\" values=\"{values}\" keyTimes=\"{times}\" dur=\"{an_n(total)}s\" repeatCount=\"indefinite\"/></text>")
+  }
+  return an_cat(out)
+}
+
+fn an_esc(t: Text) -> Text { return t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") }
+
+fn an_svg(r: AnRecipe) -> Text {
+  var defs = "<radialGradient id=\"an-glow\"><stop offset=\"0\" stop-color=\"#ffd27a\" stop-opacity=\".7\"/><stop offset=\"1\" stop-color=\"#ffd27a\" stop-opacity=\"0\"/></radialGradient><radialGradient id=\"an-magma\"><stop offset=\"0\" stop-color=\"#ffd27a\"/><stop offset=\".5\" stop-color=\"#ff6a2b\"/><stop offset=\"1\" stop-color=\"#9a1d0e\"/></radialGradient><radialGradient id=\"an-corona\"><stop offset=\".5\" stop-color=\"#ffd27a\"/><stop offset=\"1\" stop-color=\"#f5a623\" stop-opacity=\".6\"/></radialGradient><radialGradient id=\"an-core\" cx=\"40%\" cy=\"38%\" r=\"70%\"><stop offset=\"0\" stop-color=\"#fffbe9\"/><stop offset=\".5\" stop-color=\"#ffe08a\"/><stop offset=\"1\" stop-color=\"#f5a623\"/></radialGradient><radialGradient id=\"an-ocean\" cx=\"35%\" cy=\"32%\" r=\"75%\"><stop offset=\"0\" stop-color=\"#7cc4f2\"/><stop offset=\".6\" stop-color=\"#2f7fc4\"/><stop offset=\"1\" stop-color=\"#174a7a\"/></radialGradient><radialGradient id=\"an-night\" cx=\"80%\" cy=\"75%\" r=\"70%\"><stop offset=\"0\" stop-color=\"#000\" stop-opacity=\".55\"/><stop offset=\".6\" stop-color=\"#000\" stop-opacity=\".15\"/><stop offset=\"1\" stop-color=\"#000\" stop-opacity=\"0\"/></radialGradient>"
+  var actors = ""
+  for k in 0 until r.actors.length() {
+    let a = r.actors[k]
+    defs = defs + fm_gradient(f"an-g{k}", fm_colour(a.hue))
+    actors = actors + an_actor(a, k, r)
+  }
+  let ground = if r.actors.length() > 0 and (for a in r.actors where a.motion == "bounce" { a }).length() > 0 { "<line class=\"an-ground\" x1=\"0\" y1=\"504\" x2=\"960\" y2=\"504\"/>" } else { "" }
+  return f"<svg xmlns=\"http://www.w3.org/2000/svg\" class=\"an fm\" viewBox=\"0 0 960 540\" role=\"img\" aria-label=\"{an_esc(r.title)}\">{an_backdrop(r.backdrop, 0)}<defs>{defs}</defs>{ground}{actors}<rect class=\"an-capbar\" x=\"0\" y=\"490\" width=\"960\" height=\"50\"/>{an_captions(r)}</svg>"
+}
+
+fn an_style() -> Text {
+  return fm_style() + ls_style() + ".an .an-painted{width:960px;height:540px;border-radius:0}" + ".an-cap{fill:#fff;font:600 19px system-ui,sans-serif;text-anchor:middle;paint-order:stroke;stroke:rgba(0,0,0,.55);stroke-width:4px}.an-capbar{fill:rgba(0,0,0,.28)}.an-shadow{fill:rgba(0,0,0,.35)}.an-ground{stroke:rgba(255,255,255,.25);stroke-width:2}.an-track{fill:none;stroke:rgba(255,255,255,.18);stroke-width:1.5;stroke-dasharray:3 8}.an-ring{fill:none;stroke-width:5;opacity:.9}.an-ringback{fill:none;stroke-width:5;opacity:.4}.an-wing{fill:rgba(235,245,255,.75);stroke:rgba(0,0,0,.25);transform-box:fill-box;transform-origin:50% 100%;animation:an-buzz .08s linear infinite alternate}@keyframes an-buzz{to{transform:scaleY(.55)}}.an-sub{font-size:11px}.an-chem{font:700 15px ui-monospace,Consolas,monospace;text-anchor:middle;fill:#eceef2;paint-order:stroke;stroke:rgba(0,0,0,.45);stroke-width:3px}.an-glowing{filter:drop-shadow(0 0 10px #ff6a2b)}.an-ash{fill:#4a4648;opacity:.92}.an-churn{transform-box:fill-box;transform-origin:center;animation:an-churn 1.6s ease-in-out infinite alternate}@keyframes an-churn{to{transform:scale(1.05,.95) rotate(3deg)}}.an-peristalsis{animation:an-flowing 1.2s linear infinite}@keyframes an-flowing{to{stroke-dashoffset:-28}}.an-seg{fill:#8fd16a;stroke:#3e7a35;stroke-width:1.5;animation:an-inch .9s ease-in-out infinite alternate}@keyframes an-inch{to{transform:translateY(-5px)}}.an-antenna{fill:none;stroke:#2a2016;stroke-width:2;stroke-linecap:round}.an-sway{transform-box:fill-box;transform-origin:50% 0;animation:an-swing 3s ease-in-out infinite alternate}@keyframes an-swing{from{transform:rotate(-4deg)}to{transform:rotate(4deg)}}.an-stem{fill:none;stroke:#4c8a3c;stroke-width:5;stroke-linecap:round}.an-root{fill:none;stroke:#8a6a4a;stroke-width:2.5;stroke-linecap:round}.an-sci{display:flex;gap:18px;flex-wrap:wrap;margin:10px 0 0;font:13px system-ui,sans-serif;color:#cfd3dc}.an-sci label{display:flex;gap:8px;align-items:center}.an-sci select{background:#15171c;color:#eceef2;border:1px solid #3a3f4c;border-radius:6px;padding:3px 6px}.an .an-painted,.an .an-painted *,.an .an-bg,.an .an-bg *,.an .an-label,.an .an-capbar,.an .an-cap{pointer-events:none}.an-part{cursor:pointer}.an-part:hover{filter:brightness(1.15) drop-shadow(0 0 6px #ffd27a)}.an-asked{font:13px system-ui,sans-serif;color:#ffd27a;margin-top:6px;min-height:1em}.an-label .an-arrow{fill:none;stroke:#ffd27a;stroke-width:2.4;stroke-linecap:round}.an-dot{fill:#ffd27a;stroke:#1a1308;stroke-width:1.5}.an-tag{fill:rgba(14,16,22,.82);stroke:#ffd27a;stroke-width:1.4}.an-tagt{fill:#ffe9b8;font:600 13px ui-monospace,Consolas,monospace;text-anchor:middle;letter-spacing:.04em}.an-board{fill:#11141b}.an-board-l{fill:#a3a8bd;font:600 10px ui-monospace,Consolas,monospace;letter-spacing:.16em}.an-card-box{fill:#0b0d12;stroke:rgba(236,238,242,.18);stroke-width:1.2}.an-card-on{fill:rgba(245,180,92,.14);stroke:#f5b45c;stroke-width:2;filter:drop-shadow(0 0 8px rgba(245,180,92,.55))}.an-card-num{fill:#1d2230;stroke:#f5b45c;stroke-width:1.4}.an-card-n{fill:#f5b45c;font:700 12px ui-monospace,Consolas,monospace;text-anchor:middle}.an-card-t{fill:#eceef2;font:600 14px system-ui,sans-serif}.an-wire{fill:none;stroke:rgba(245,180,92,.45);stroke-width:1.6;stroke-dasharray:4 5}.an-wire.back{stroke:rgba(111,212,154,.5)}.an-spark{fill:#ffd27a;filter:drop-shadow(0 0 4px #ffd27a)}.an-cloud{fill:#f7f9fc;filter:drop-shadow(0 6px 8px rgba(40,60,90,.25))}.an-cloud-under{fill:#d9e2ee}.an-corona{transform-box:fill-box;transform-origin:center;animation:an-turn 30s linear infinite}@keyframes an-turn{to{transform:rotate(360deg)}}.an-pulse{animation:an-pulse 3s ease-in-out infinite alternate}@keyframes an-pulse{from{opacity:.7}to{opacity:1}}.an-air{filter:drop-shadow(0 0 6px rgba(120,190,255,.6))}.an-sea{opacity:.95}.an-vapour{fill:none;stroke:rgba(255,255,255,.8);stroke-width:3;stroke-linecap:round;stroke-dasharray:6 8;animation:an-rise 1.6s linear infinite}@keyframes an-rise{to{stroke-dashoffset:28}}.an-skep{fill:#d9a441;stroke:#8a5a1e;stroke-width:2}.an-stripe{fill:none;stroke:#2a2016;stroke-width:5;stroke-linecap:round}.an-bar{display:flex;gap:10px;align-items:center;margin-top:10px;font:12px ui-monospace,Consolas,monospace;color:#a3a8bd}.an-bar button{font:600 12px system-ui,sans-serif;border:1px solid #3a3f4c;background:#15171c;color:#eceef2;border-radius:8px;padding:6px 12px;cursor:pointer}.an-bar input{flex:1}"
+}
+
+// Play, pause and scrub: one clock for every actor and caption.
+fn an_script(seconds: Number) -> Text {
+  return "(function(){var me=document.currentScript,box=me.parentNode,svg=box.querySelector('svg.an'),play=box.querySelector('.an-play'),bar=box.querySelector('.an-time'),out=box.querySelector('.an-now'),total=" + an_n(seconds) + ",held=false;function show(){var t=svg.getCurrentTime()%total;if(!held)bar.value=t/total*1000;out.textContent=t.toFixed(1)+' / '+total.toFixed(1)+' s'}play.addEventListener('click',function(){if(svg.animationsPaused()){svg.unpauseAnimations();play.textContent='Pause'}else{svg.pauseAnimations();play.textContent='Play'}});bar.addEventListener('input',function(){held=true;svg.pauseAnimations();play.textContent='Play';svg.setCurrentTime(bar.value/1000*total);show()});bar.addEventListener('change',function(){held=false});setInterval(show,100)})();"
+}
+
+// For a bounce: which world, and how bouncy, each changing the ball's
+// path as Kosika worked it out.
+fn an_science(r: AnRecipe) -> Text {
+  if (for a in r.actors where a.motion == "bounce" { a }).is_empty() { return "" }
+  return "<div class=\"an-sci\"><label>World <select class=\"an-world\"><option value=\"9.81\" selected>Earth, g = 9.81 m/s²</option><option value=\"3.71\">Mars, g = 3.71 m/s²</option><option value=\"1.62\">Moon, g = 1.62 m/s²</option></select></label><label>Bounciness <input class=\"an-bounce\" type=\"range\" min=\"0\" max=\"2\" step=\"1\" value=\"1\"><span class=\"an-e\">70%</span></label></div><script>(function(){var box=document.currentScript.parentNode,svg=box.querySelector('svg.an'),w=box.querySelector('.an-world'),b=box.querySelector('.an-bounce'),o=box.querySelector('.an-e'),es=['0.5','0.7','0.9'];function show(){var e=es[b.value];o.textContent=Math.round(e*100)+'%';svg.querySelectorAll('.an-variant').forEach(function(v){v.style.display=(v.dataset.g===w.value&&v.dataset.e===e)?'':'none'});svg.setCurrentTime(0)}w.addEventListener('change',show);b.addEventListener('input',show)})();</script>"
+}
+
+fn an_controls(r: AnRecipe) -> Text {
+  return an_science(r) + f"<div class=\"an-bar\"><button class=\"an-play\" type=\"button\">Pause</button><input class=\"an-time\" type=\"range\" min=\"0\" max=\"1000\" value=\"0\" aria-label=\"Scrub the animation\"><span class=\"an-now\">0.0 / {an_n(r.seconds)} s</span></div>"
+}
+
+fn an_page(r: AnRecipe, svg: Text, notes: Text[]) -> Text {
+  let said = if notes.is_empty() { "" } else { "<p class=\"how\">" + an_esc(notes.join(" ")) + "</p>" }
+  return f"<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>{an_esc(r.title)}</title><style>body{{margin:0;font:15px system-ui,sans-serif;color:#eceef2;background:#0b0c10}}main{{max-width:min(1680px,100%);margin:0 auto;padding:28px 16px}}.lab{{font:600 11px ui-monospace,Consolas,monospace;letter-spacing:.32em;text-transform:uppercase;color:#f5b45c}}h1{{margin:8px 0 4px;font-size:30px}}.how{{color:#a3a8bd;margin:0 0 16px}}{an_style()}</style></head><body><main><div class=\"lab\">Kosika Designs &#183; animation</div><h1>{an_esc(r.title)}</h1>{said}<div class=\"an-box\">{svg}{an_controls(r)}<script>{an_script(r.seconds)}{an_parts_script()}</script></div></main></body></html>"
+}
+
+// What Kosika worked out itself, said plainly under the animation.
+fn an_notes(r: AnRecipe) -> Text[] {
+  var out: Text[] = []
+  if (for a in r.actors where a.motion == "bounce" { a }).length() > 0 { out = out.append("The bounce is worked out by Kosika: the ball falls under g = 9.81 m/s² (the picture is 3 m tall) and keeps 70% of its speed at each bounce, so it rises to 49% of the height before. Try it on Mars or the Moon, or make it bouncier.") }
+  if (for a in r.actors where a.motion == "orbit" { a }).length() > 0 { out = out.append("The orbit goes round at an even pace, once in the animation's length.") }
+  return out
+}
+
+fn an_art(r: AnRecipe) -> AnArt {
+  let svg = an_svg(r)
+  let notes = an_notes(r)
+  return {recipe: r, svg: svg, page: an_page(r, svg, notes), problems: an_problems(r), notes: notes}
+}
+
+workflow an_render(r: AnRecipe) -> AnArt {
+  out = an_art(an_fixed(r))
+}
+
+// ---------------------------------------------------------------- stories
+
+fn an_story_words() -> Text[] { return [" phases", " erupt", " digest", " photosynth", " grow", " grows", " growing", " cycle", " life of", " life cycle", " turns into", " becomes", " process", " journey", " evaporat", " stages", " step by step", " story of"] }
+
+// Whether an ask is for a process told in scenes: it asks to animate, and
+// for something that happens in stages.
+fn an_story_wants(text: Text) -> Bool {
+  let t = " " + text.lower().replace(",", " ").replace(".", " ") + " "
+  let moving = t.contains(" animate") or t.contains(" animation") or t.contains(" animated")
+  let stages = (for w in an_story_words() where t.contains(w) { w }).length() > 0
+  return moving and stages and not t.contains(" explain") and not t.contains(" diagram")
+}
+
+fn an_story_fixed(st: AnStory) -> AnStory {
+  let scenes = for sc in st.scenes { an_fixed(sc) }
+  let kept = for sc in scenes where not sc.actors.is_empty() { {..sc, seconds: sc.seconds.min(12)} }
+  let title = if st.title.trim().is_empty() { "A Story" } else { st.title.trim().slice(0, st.title.trim().length().min(48)) }
+  return {title: title, scenes: kept.take(8)}
+}
+
+fn an_story_fallback() -> AnStory {
+  return {title: "From Seed to Tree", scenes: [
+    {title: "The seed", seconds: 5, backdrop: "meadow", actors: [{id: "seed", form: "seed", hue: "amber", motion: "keys", keys: [{t: 0, x: 50, y: 82, scale: 1, turn: 0}]}, {id: "rain", form: "raindrop", hue: "sky", motion: "keys", keys: [{t: 0, x: 44, y: 10, scale: 1, turn: 0}, {t: 0.8, x: 49, y: 80, scale: 0.6, turn: 0}]}, {id: "cloud", form: "cloud", hue: "pearl", motion: "keys", keys: [{t: 0, x: 40, y: 12, scale: 1, turn: 0}, {t: 1, x: 56, y: 12, scale: 1, turn: 0}]}], captions: [{t: 0, text: "A seed lies in the soil."}, {t: 0.5, text: "Rain soaks into it, and it wakes."}]},
+    {title: "The sprout", seconds: 5, backdrop: "meadow", actors: [{id: "sprout", form: "sprout", hue: "leaf", motion: "keys", keys: [{t: 0, x: 50, y: 78, scale: 0.2, turn: 0}, {t: 1, x: 50, y: 74, scale: 1.3, turn: 0}]}, {id: "sun", form: "sun", hue: "gold", motion: "keys", keys: [{t: 0, x: 82, y: 18, scale: 0.6, turn: 0}]}], captions: [{t: 0, text: "A root grows down, a shoot grows up."}, {t: 0.5, text: "Its first leaves turn to the sun."}]},
+    {title: "The tree", seconds: 6, backdrop: "meadow", actors: [{id: "tree", form: "tree", hue: "leaf", motion: "keys", keys: [{t: 0, x: 50, y: 70, scale: 0.4, turn: 0}, {t: 1, x: 50, y: 58, scale: 1.6, turn: 0}]}, {id: "sun", form: "sun", hue: "gold", motion: "keys", keys: [{t: 0, x: 82, y: 18, scale: 0.6, turn: 0}]}, {id: "bird", form: "bee", hue: "gold", motion: "keys", keys: [{t: 0.4, x: 10, y: 30, scale: 0.6, turn: 0}, {t: 1, x: 44, y: 40, scale: 0.6, turn: 0}]}], captions: [{t: 0, text: "Year by year it grows."}, {t: 0.6, text: "From one seed, a tree."}]}
+  ]}
+}
+
+// The water cycle, told by Kosika itself when no model can tell it.
+fn an_water_story() -> AnStory {
+  return {title: "The Water Cycle", scenes: [
+    {title: "Evaporation", seconds: 5, backdrop: "coast", actors: [{id: "sun", form: "sun", hue: "gold", motion: "keys", keys: [{t: 0, x: 80, y: 18, scale: 0.7, turn: 0}]}, {id: "vapour", form: "vapour", hue: "pearl", motion: "keys", keys: [{t: 0, x: 40, y: 74, scale: 1, turn: 0}, {t: 1, x: 44, y: 38, scale: 1.2, turn: 0}]}, {id: "vapour2", form: "vapour", hue: "pearl", motion: "keys", keys: [{t: 0.3, x: 60, y: 76, scale: 1, turn: 0}, {t: 1, x: 58, y: 44, scale: 1.1, turn: 0}]}], captions: [{t: 0, text: "The sun warms the sea."}, {t: 0.45, text: "Water rises into the air as vapour."}]},
+    {title: "Condensation", seconds: 5, backdrop: "meadow", actors: [{id: "vapour", form: "vapour", hue: "pearl", motion: "keys", keys: [{t: 0, x: 48, y: 62, scale: 1, turn: 0}, {t: 0.7, x: 50, y: 34, scale: 0.6, turn: 0}]}, {id: "cloud", form: "cloud", hue: "pearl", motion: "keys", keys: [{t: 0, x: 50, y: 22, scale: 0.3, turn: 0}, {t: 1, x: 50, y: 22, scale: 1.4, turn: 0}]}], captions: [{t: 0, text: "High up the vapour cools."}, {t: 0.5, text: "It gathers into droplets: a cloud."}]},
+    {title: "Precipitation", seconds: 5, backdrop: "meadow", actors: [{id: "cloud", form: "cloud", hue: "pearl", motion: "keys", keys: [{t: 0, x: 50, y: 20, scale: 1.4, turn: 0}]}, {id: "r1", form: "raindrop", hue: "sky", motion: "keys", keys: [{t: 0, x: 40, y: 30, scale: 1, turn: 0}, {t: 0.7, x: 40, y: 86, scale: 1, turn: 0}]}, {id: "r2", form: "raindrop", hue: "sky", motion: "keys", keys: [{t: 0.2, x: 52, y: 30, scale: 1, turn: 0}, {t: 0.9, x: 52, y: 86, scale: 1, turn: 0}]}, {id: "r3", form: "raindrop", hue: "sky", motion: "keys", keys: [{t: 0.1, x: 62, y: 30, scale: 1, turn: 0}, {t: 0.8, x: 62, y: 86, scale: 1, turn: 0}]}], captions: [{t: 0, text: "The droplets grow heavy."}, {t: 0.4, text: "They fall as rain."}]},
+    {title: "Collection", seconds: 5, backdrop: "coast", actors: [{id: "d1", form: "raindrop", hue: "sky", motion: "keys", keys: [{t: 0, x: 30, y: 40, scale: 0.8, turn: 0}, {t: 0.6, x: 34, y: 72, scale: 0.8, turn: 0}]}, {id: "d2", form: "raindrop", hue: "sky", motion: "keys", keys: [{t: 0.2, x: 66, y: 42, scale: 0.8, turn: 0}, {t: 0.8, x: 62, y: 74, scale: 0.8, turn: 0}]}, {id: "sun", form: "sun", hue: "gold", motion: "keys", keys: [{t: 0, x: 80, y: 30, scale: 0.4, turn: 0}, {t: 1, x: 80, y: 18, scale: 0.7, turn: 0}]}], captions: [{t: 0, text: "Rain runs back to the sea."}, {t: 0.5, text: "And the cycle begins again."}]}
+  ]}
+}
+
+// A butterfly's life, in its four stages.
+fn an_butterfly_story() -> AnStory {
+  return {title: "A Butterfly's Life", scenes: [
+    {title: "Egg", seconds: 4, backdrop: "meadow", actors: [{id: "egg", form: "egg", hue: "leaf", motion: "keys", keys: [{t: 0, x: 50, y: 60, scale: 1.4, turn: 0}]}], captions: [{t: 0, text: "A butterfly lays her eggs on a leaf."}]},
+    {title: "Caterpillar", seconds: 6, backdrop: "meadow", actors: [{id: "leaf", form: "leaf", hue: "leaf", motion: "keys", keys: [{t: 0, x: 55, y: 64, scale: 1.2, turn: 0}]}, {id: "cat", form: "caterpillar", hue: "leaf", motion: "keys", keys: [{t: 0, x: 22, y: 60, scale: 0.6, turn: 0}, {t: 1, x: 60, y: 58, scale: 1.3, turn: 0}]}], captions: [{t: 0, text: "A caterpillar hatches and eats."}, {t: 0.5, text: "It grows, and grows."}]},
+    {title: "Chrysalis", seconds: 5, backdrop: "meadow", actors: [{id: "chr", form: "chrysalis", hue: "leaf", motion: "keys", keys: [{t: 0, x: 50, y: 40, scale: 1.3, turn: 0}]}], captions: [{t: 0, text: "It hangs and makes a chrysalis."}, {t: 0.5, text: "Inside, its body is rebuilt."}]},
+    {title: "Butterfly", seconds: 6, backdrop: "meadow", actors: [{id: "flower", form: "flower", hue: "rose", motion: "keys", keys: [{t: 0, x: 74, y: 72, scale: 1, turn: 0}]}, {id: "bfly", form: "butterfly", hue: "violet", motion: "keys", keys: [{t: 0, x: 50, y: 40, scale: 0.5, turn: 0}, {t: 0.3, x: 40, y: 30, scale: 1.1, turn: 0}, {t: 1, x: 72, y: 56, scale: 1, turn: 0}]}], captions: [{t: 0, text: "A butterfly comes out."}, {t: 0.5, text: "It flies to a flower, and the cycle begins again."}]}
+  ]}
+}
+
+// ---------------------------------------------------------------- painted backdrops
+//
+// Behind the actors, a place painted by Kosika's scene painter
+// (std/designs_scene.kos): a day of rolling hills, a night of mountains
+// under stars, a dusk, a coast. The painted sun and moon are left out, for
+// the animation brings its own. Each scene's painting has ids of its own,
+// so two paintings in one story do not share a sky.
+
+fn an_painting(backdrop: Text) -> LsRecipe {
+  let none: Text[] = ["no sun"]
+  if backdrop == "night" { return {time: "night", weather: "clear", land: "mountains", water: "none", trees: "none", extras: ["stars", "no sun"], density: 0, seed: 31, title: "night"} }
+  if backdrop == "studio" { return {time: "sunset", weather: "clear", land: "hills", water: "none", trees: "none", extras: none, density: 0, seed: 17, title: "dusk"} }
+  if backdrop == "coast" { return {time: "day", weather: "clear", land: "coast", water: "sea", trees: "none", extras: none, density: 0, seed: 23, title: "coast"} }
+  return {time: "day", weather: "clear", land: "hills", water: "none", trees: "none", extras: ["birds", "no sun"], density: 0, seed: 11, title: "meadow"}
+}
+
+fn an_painted(backdrop: Text) -> Bool { return backdrop == "meadow" or backdrop == "night" or backdrop == "studio" or backdrop == "coast" }
+
+fn an_backdrop(backdrop: Text, i: Number) -> Text {
+  if not an_painted(backdrop) { return "<g class=\"an-bg\">" + fm_backdrop(backdrop, 9 + i) + "</g>" }
+  let painted = ls_svg(an_painting(backdrop)).replace("id=\"ls-", f"id=\"ls{i}-").replace("url(#ls-", f"url(#ls{i}-")
+  return painted.replace("<svg xmlns=\"http://www.w3.org/2000/svg\" class=\"ls ", "<svg x=\"0\" y=\"0\" width=\"960\" height=\"540\" class=\"an-painted ls ")
+}
+
+fn an_k(t: Number, x: Number, y: Number, scale: Number) -> AnKey { return {t: t, x: x, y: y, scale: scale, turn: 0} }
+fn an_at(x: Number, y: Number, scale: Number) -> AnKey[] { return [an_k(0, x, y, scale)] }
+fn an_a(id: Text, form: Text, hue: Text, keys: AnKey[]) -> AnActor { return {id: id, form: form, hue: hue, motion: "keys", keys: keys} }
+fn an_c(t: Number, text: Text) -> AnCaption { return {t: t, text: text} }
+fn an_scene(title: Text, seconds: Number, backdrop: Text, actors: AnActor[], captions: AnCaption[]) -> AnRecipe { return {title: title, seconds: seconds, backdrop: backdrop, actors: actors, captions: captions} }
+
+// Photosynthesis: 6 CO2 + 6 H2O + light -> C6H12O6 + 6 O2.
+fn an_photosynthesis_story() -> AnStory {
+  return {title: "Photosynthesis", scenes: [
+    an_scene("Light", 5, "meadow", [an_a("leaf", "leaf", "leaf", an_at(50, 58, 2.2)), an_a("sun", "sun", "gold", an_at(84, 16, 0.7)), an_a("ray", "raindrop", "gold", [an_k(0, 78, 22, 0.5), an_k(1, 54, 52, 0.5)])], [an_c(0, "A leaf takes in sunlight."), an_c(0.5, "Its green chlorophyll catches the light's energy.")]),
+    an_scene("Carbon dioxide and water", 6, "meadow", [an_a("leaf", "leaf", "leaf", an_at(50, 58, 2.2)), an_a("co2", "co2", "pearl", [an_k(0, 10, 30, 1), an_k(1, 44, 52, 1)]), an_a("co2b", "co2", "pearl", [an_k(0.2, 8, 60, 1), an_k(1, 40, 64, 1)]), an_a("h2o", "h2o", "sky", [an_k(0, 52, 96, 1), an_k(1, 54, 66, 1)])], [an_c(0, "Carbon dioxide comes in from the air."), an_c(0.5, "Water comes up from the roots.")]),
+    an_scene("Sugar and oxygen", 6, "meadow", [an_a("leaf", "leaf", "leaf", an_at(50, 58, 2.2)), an_a("sugar", "sugar", "gold", [an_k(0, 50, 58, 0.3), an_k(1, 50, 58, 1.3)]), an_a("o2", "o2", "pearl", [an_k(0.2, 56, 54, 1), an_k(1, 86, 20, 1)]), an_a("o2b", "o2", "pearl", [an_k(0.4, 46, 54, 1), an_k(1, 70, 10, 1)])], [an_c(0, "The light's energy joins them into sugar, food for the plant."), an_c(0.5, "Oxygen is left over, and goes out into the air.")])
+  ]}
+}
+
+// The moon's phases: the sun lights half the moon always; from the earth
+// we see more or less of that half as the moon goes round, in 29.5 days.
+fn an_moon_story() -> AnStory {
+  let names = ["New moon", "Waxing crescent", "First quarter", "Waxing gibbous", "Full moon", "Waning gibbous", "Last quarter", "Waning crescent"]
+  let scenes = for k in 0 until 8 { an_scene(names[k], 2.5, "night", [an_a("phase", "phase", "pearl", [{t: 0, x: 50, y: 44, scale: 2.4, turn: k * 45}]), an_a("earth", "earth", "sky", an_at(14, 76, 0.7)), {id: "moon", form: "moon", hue: "pearl", motion: "orbit", keys: [an_k(0, 14, 76, 0.4), an_k(1, 26, 76, 0.4)]}], [an_c(0, names[k] + (if k == 0 { ": the lit side faces away from us." } else if k == 4 { ": we see all of the lit side." } else { "." }))]) }
+  return {title: "The Moon's Phases", scenes: scenes}
+}
+
+fn an_volcano_story() -> AnStory {
+  return {title: "A Volcano Erupts", scenes: [
+    an_scene("Magma rises", 6, "studio", [an_a("volcano", "volcano", "amber", an_at(50, 60, 1.3)), an_a("magma", "magma", "coral", an_at(50, 84, 0.9)), an_a("lava", "lava", "coral", [an_k(0, 50, 82, 1), an_k(1, 50, 42, 1)])], [an_c(0, "Deep below, rock melts into magma."), an_c(0.4, "Lighter than the rock around it, the magma rises.")]),
+    an_scene("Pressure builds", 5, "studio", [an_a("volcano", "volcano", "amber", an_at(50, 60, 1.3)), an_a("magma", "magma", "coral", [an_k(0, 50, 84, 0.9), an_k(1, 50, 84, 1.2)]), an_a("ash", "ash", "ink", [an_k(0.4, 50, 44, 0.3), an_k(1, 50, 30, 0.8)])], [an_c(0, "Gas in the magma presses harder and harder."), an_c(0.5, "Steam and ash begin to escape.")]),
+    an_scene("Eruption", 6, "studio", [an_a("volcano", "volcano", "amber", an_at(50, 60, 1.3)), an_a("ash", "ash", "ink", [an_k(0, 50, 30, 0.8), an_k(1, 56, 14, 2)]), an_a("lava1", "lava", "coral", [an_k(0, 50, 46, 1), an_k(0.5, 40, 30, 1), an_k(1, 26, 84, 1)]), an_a("lava2", "lava", "coral", [an_k(0.1, 50, 46, 1), an_k(0.6, 62, 28, 1), an_k(1, 76, 84, 1)]), an_a("lava3", "lava", "coral", [an_k(0.3, 50, 46, 1), an_k(1, 46, 70, 1.2)])], [an_c(0, "It erupts: lava and ash burst out."), an_c(0.5, "Lava flows down the slopes and cools into new rock.")])
+  ]}
+}
+
+fn an_digestion_story() -> AnStory {
+  return {title: "How We Digest Food", scenes: [
+    an_scene("Mouth", 5, "paper", [an_a("mouth", "mouth", "rose", an_at(50, 46, 2)), an_a("food", "food", "amber", [an_k(0, 12, 40, 1.4), an_k(0.5, 46, 46, 1.2), an_k(1, 50, 48, 0.8)])], [an_c(0, "Teeth chew the food into small pieces."), an_c(0.5, "Saliva begins to break down starch.")]),
+    an_scene("Stomach", 5, "paper", [an_a("stomach", "stomach", "rose", an_at(50, 50, 2.4)), an_a("food", "food", "amber", [an_k(0, 44, 18, 0.8), an_k(0.4, 50, 50, 0.8), an_k(1, 52, 54, 0.5)])], [an_c(0, "Swallowed, it reaches the stomach."), an_c(0.4, "The stomach churns it with acid and enzymes.")]),
+    an_scene("Small intestine", 6, "paper", [an_a("gut", "intestine", "coral", an_at(50, 50, 2.4)), an_a("food", "food", "amber", [an_k(0, 20, 26, 0.5), an_k(0.5, 80, 50, 0.4), an_k(1, 76, 76, 0.3)]), an_a("n1", "nutrient", "coral", [an_k(0.3, 40, 30, 1), an_k(1, 30, 6, 1)]), an_a("n2", "nutrient", "coral", [an_k(0.5, 60, 50, 1), an_k(1, 72, 8, 1)]), an_a("n3", "nutrient", "coral", [an_k(0.7, 50, 72, 1), an_k(1, 50, 10, 1)])], [an_c(0, "In the small intestine, food is broken down further."), an_c(0.5, "Nutrients pass through its wall into the blood.")])
+  ]}
+}
+
+// What Kosika can tell itself when no model writes the story: the water
+// cycle and a seed growing; anything else is said plainly to have no story.
+fn an_story_built_in(text: Text) -> AnStory {
+  let t = " " + text.lower() + " "
+  if t.contains(" water cycle") or t.contains(" rain") or t.contains(" evaporat") { return an_water_story() }
+  if t.contains(" photosynth") { return an_photosynthesis_story() }
+  if t.contains(" seed") or t.contains(" tree") or t.contains(" sprout") or (t.contains(" plant") and t.contains(" grow")) { return an_story_fallback() }
+  if t.contains(" butterfl") or t.contains(" caterpillar") or t.contains(" chrysalis") or t.contains(" metamorph") { return an_butterfly_story() }
+  if t.contains(" photosynth") { return an_photosynthesis_story() }
+  if (t.contains(" moon") and (t.contains(" phase") or t.contains(" wax") or t.contains(" wane"))) or t.contains(" lunar phase") { return an_moon_story() }
+  if t.contains(" volcan") or t.contains(" erupt") or t.contains(" lava") or t.contains(" magma") { return an_volcano_story() }
+  if t.contains(" digest") or t.contains(" stomach") or t.contains(" intestine") { return an_digestion_story() }
+  return {title: "", scenes: []}
+}
+
+// A scene shows during its share of the clock, fading in and out.
+fn an_scene_show(s: Number, e: Number, total: Number) -> Text {
+  if s <= 0 and e >= 1 { return "" }
+  // The next scene fades in over this one, which stays whole until the
+  // next has: no dark gap between them.
+  let f = (0.5 / total).min((e - s) / 4)
+  let out = (e + f).min(0.998)
+  let gone = (out + 0.001).min(0.999)
+  let values = if s <= 0 { "1;1;0;0" } else if e >= 1 { "0;0;1;1" } else { "0;0;1;1;0;0" }
+  let times = if s <= 0 { f"0;{an_n3(out)};{an_n3(gone)};1" } else if e >= 1 { f"0;{an_n3(s)};{an_n3(s + f)};1" } else { f"0;{an_n3(s)};{an_n3(s + f)};{an_n3(out)};{an_n3(gone)};1" }
+  // Out of its share of the clock a scene is hidden as well as see-through,
+  // so a click reaches the scene that shows.
+  let vis = if s <= 0 { "visible;hidden" } else if e >= 1 { "hidden;visible" } else { "hidden;visible;hidden" }
+  let pe = vis.replace("hidden", "none").replace("visible", "auto")
+  let vt = if s <= 0 { f"0;{an_n3(gone)}" } else if e >= 1 { f"0;{an_n3(s)}" } else { f"0;{an_n3(s)};{an_n3(gone)}" }
+  return f"<animate attributeName=\"opacity\" values=\"{values}\" keyTimes=\"{times}\" dur=\"{an_n(total)}s\" repeatCount=\"indefinite\"/><animate attributeName=\"visibility\" calcMode=\"discrete\" values=\"{vis}\" keyTimes=\"{vt}\" dur=\"{an_n(total)}s\" repeatCount=\"indefinite\"/><animate attributeName=\"pointer-events\" calcMode=\"discrete\" values=\"{pe}\" keyTimes=\"{vt}\" dur=\"{an_n(total)}s\" repeatCount=\"indefinite\"/>"
+}
+
+fn an_mapped(a: AnActor, s: Number, e: Number) -> AnActor {
+  if a.motion != "keys" { return a }
+  return {..a, keys: an_keys_fixed(for k in a.keys { {..k, t: s + k.t * (e - s)} })}
+}
+
+fn an_story_total(st: AnStory) -> Number { return (for sc in st.scenes { sc.seconds }).sum() }
+
+// ---------------------------------------------------------------- labels
+
+// The labels Kosika gives its own stories.
+fn an_story_labels(title: Text) -> AnLabel[] {
+  if title == "The Water Cycle" { return [{scene: 0, t: 0.45, text: "evaporation", actor: "vapour"}, {scene: 1, t: 0.4, text: "condensation", actor: "cloud"}, {scene: 2, t: 0.35, text: "precipitation", actor: "r2"}, {scene: 3, t: 0.3, text: "collection", actor: "d1"}] }
+  if title == "Photosynthesis" { return [{scene: 0, t: 0.4, text: "chlorophyll", actor: "leaf"}, {scene: 1, t: 0.5, text: "carbon dioxide", actor: "co2"}, {scene: 1, t: 0.75, text: "water", actor: "h2o"}, {scene: 2, t: 0.3, text: "glucose", actor: "sugar"}, {scene: 2, t: 0.7, text: "oxygen", actor: "o2"}] }
+  if title == "A Volcano Erupts" { return [{scene: 0, t: 0.2, text: "magma chamber", actor: "magma"}, {scene: 1, t: 0.5, text: "ash and gas", actor: "ash"}, {scene: 2, t: 0.6, text: "lava flow", actor: "lava1"}] }
+  if title == "How We Digest Food" { return [{scene: 0, t: 0.3, text: "teeth", actor: "mouth"}, {scene: 1, t: 0.4, text: "stomach acid", actor: "stomach"}, {scene: 2, t: 0.5, text: "nutrients", actor: "n2"}] }
+  if title == "A Butterfly's Life" { return [{scene: 0, t: 0.3, text: "eggs", actor: "egg"}, {scene: 1, t: 0.4, text: "larva", actor: "cat"}, {scene: 2, t: 0.3, text: "pupa", actor: "chr"}, {scene: 3, t: 0.4, text: "adult", actor: "bfly"}] }
+  if title == "From Seed to Tree" { return [{scene: 0, t: 0.2, text: "seed", actor: "seed"}, {scene: 1, t: 0.5, text: "root and shoot", actor: "sprout"}, {scene: 2, t: 0.6, text: "tree", actor: "tree"}] }
+  return []
+}
+
+// For a story a model wrote: each scene's first actor that moves, by its
+// own name.
+fn an_auto_labels(st: AnStory) -> AnLabel[] {
+  var out: AnLabel[] = []
+  for i in 0 until st.scenes.length() {
+    let moving = for a in st.scenes[i].actors where a.keys.length() > 1 { a }
+    if not moving.is_empty() { out = out.append({scene: i, t: 0.4, text: moving[0].id, actor: moving[0].id}) }
+  }
+  return out
+}
+
+// Where an actor is at t of its scene, between its keyframes.
+fn an_where(a: AnActor, t: Number) -> Number[] {
+  var at = an_px(a.keys[0])
+  for j in 1 until a.keys.length() {
+    let k0 = a.keys[j - 1]
+    let k1 = a.keys[j]
+    if t >= k0.t and t <= k1.t {
+      let f = if k1.t > k0.t { (t - k0.t) / (k1.t - k0.t) } else { 1 }
+      let p0 = an_px(k0)
+      let p1 = an_px(k1)
+      at = [p0[0] + (p1[0] - p0[0]) * f, p0[1] + (p1[1] - p0[1]) * f]
+    }
+    if t > k1.t { at = an_px(k1) }
+  }
+  return at
+}
+
+// A tag that goes with its actor: a leader drawn out from it and the name
+// at its end, on the side with more room.
+fn an_tag(l: AnLabel, a: AnActor, s: Number, e: Number, total: Number) -> Text {
+  let at = an_where(a, l.t)
+  let left = at[0] > 560
+  let w = l.text.length() * 8.6 + 24
+  let up = at[1] > 120
+  let ty = if up { -96 } else { 60 }
+  let tx = if left { 0 - 70 - w } else { 70 }
+  let ex = if left { tx + w } else { tx }
+  let ey = ty + 15
+  let sy = if up { -22 } else { 22 }
+  let len = ((ex * ex) + (ey - sy) * (ey - sy)).sqrt() + 20
+  let g = s + l.t * (e - s)
+  let d = (0.6 / total).min((e - g) / 2)
+  let shown = f"<animate attributeName=\"opacity\" values=\"0;0;1;1;0;0\" keyTimes=\"0;{an_n3(g)};{an_n3(g + d)};{an_n3(e)};{an_n3((e + 0.002).min(0.999))};1\" dur=\"{an_n(total)}s\" repeatCount=\"indefinite\"/>"
+  let drawn = f"<animate attributeName=\"stroke-dashoffset\" values=\"{an_n(len)};{an_n(len)};0;0\" keyTimes=\"0;{an_n3(g)};{an_n3(g + d)};1\" dur=\"{an_n(total)}s\" repeatCount=\"indefinite\"/>"
+  return f"<g class=\"an-label\" opacity=\"0\">{shown}<path class=\"an-arrow\" d=\"M0 {sy} Q{an_n(ex / 2)} {an_n(ey + (0 - sy) * 0.2)} {an_n(ex)} {an_n(ey)}\" stroke-dasharray=\"{an_n(len)} {an_n(len)}\" stroke-dashoffset=\"{an_n(len)}\">{drawn}</path><circle class=\"an-dot\" cx=\"0\" cy=\"{sy}\" r=\"4.5\"/><rect class=\"an-tag\" x=\"{an_n(tx)}\" y=\"{an_n(ty)}\" width=\"{an_n(w)}\" height=\"30\" rx=\"15\"/><text class=\"an-tagt\" x=\"{an_n(tx + w / 2)}\" y=\"{an_n(ty + 20)}\">{an_esc(l.text)}</text></g>"
+}
+
+// A label: a tag beside the actor and an arrow that draws itself to it.
+fn an_label(l: AnLabel, a: AnActor, s: Number, e: Number, total: Number) -> Text {
+  let at = an_where(a, l.t)
+  let x = at[0]
+  let y = at[1]
+  let w = l.text.length() * 8.6 + 24
+  let left = x > 600
+  let bx = if left { (x - 150 - w).max(10) } else { (x + 150).min(950 - w) }
+  let by = (y - 90).max(14).min(440)
+  let ex = if left { bx + w } else { bx }
+  let ey = by + 15
+  let len = ((x - ex) * (x - ex) + (y - ey) * (y - ey)).sqrt()
+  let g = s + l.t * (e - s)
+  let d = (0.6 / total).min((e - g) / 2)
+  let shown = f"<animate attributeName=\"opacity\" values=\"0;0;1;1;0;0\" keyTimes=\"0;{an_n3(g)};{an_n3(g + d)};{an_n3(e)};{an_n3((e + 0.002).min(0.999))};1\" dur=\"{an_n(total)}s\" repeatCount=\"indefinite\"/>"
+  let drawn = f"<animate attributeName=\"stroke-dashoffset\" values=\"{an_n(len)};{an_n(len)};0;0\" keyTimes=\"0;{an_n3(g)};{an_n3(g + d)};1\" dur=\"{an_n(total)}s\" repeatCount=\"indefinite\"/>"
+  return f"<g class=\"an-label\" opacity=\"0\">{shown}<path class=\"an-arrow\" d=\"M{an_n(ex)} {an_n(ey)} Q{an_n((ex + x) / 2)} {an_n((ey + y) / 2 - 30)} {an_n(x)} {an_n(y)}\" stroke-dasharray=\"{an_n(len)} {an_n(len)}\" stroke-dashoffset=\"{an_n(len)}\">{drawn}</path><circle class=\"an-dot\" cx=\"{an_n(x)}\" cy=\"{an_n(y)}\" r=\"5\"/><rect class=\"an-tag\" x=\"{an_n(bx)}\" y=\"{an_n(by)}\" width=\"{an_n(w)}\" height=\"30\" rx=\"15\"/><text class=\"an-tagt\" x=\"{an_n(bx + w / 2)}\" y=\"{an_n(by + 20)}\">{an_esc(l.text)}</text></g>"
+}
+
+// ---------------------------------------------------------------- the canvas beside it
+
+// Whether a story comes back to where it began.
+fn an_cyclic(st: AnStory) -> Bool {
+  let t = " " + st.title.lower() + " "
+  return t.contains("cycle") or t.contains("life") or t.contains("phases")
+}
+
+// The Kosika canvas of the story's steps, beside the animation: a card for
+// each scene on a dotted board, wires between them, each card lit while
+// its scene plays, and a spark that runs along the wire to the next.
+fn an_steps(st: AnStory, total: Number) -> Text {
+  let n = st.scenes.length()
+  let top = 54
+  let gap = 10
+  let h = ((540 - top - 24 - gap * (n - 1)) / n).min(64)
+  var cards = ""
+  var wires = ""
+  var at = 0
+  for i in 0 until n {
+    let sc = st.scenes[i]
+    let s = at / total
+    let e = (at + sc.seconds) / total
+    let y = top + i * (h + gap)
+    let lit = if s <= 0 { f"values=\"1;0;0\" keyTimes=\"0;{an_n3(e)};1\"" } else if e >= 1 { f"values=\"0;1;1\" keyTimes=\"0;{an_n3(s)};1\"" } else { f"values=\"0;1;0;0\" keyTimes=\"0;{an_n3(s)};{an_n3(e)};1\"" }
+    let start = if s <= 0 { "1" } else { "0" }
+    cards = cards + f"<g class=\"an-card\"><rect x=\"984\" y=\"{an_n(y)}\" width=\"272\" height=\"{an_n(h)}\" rx=\"10\" class=\"an-card-box\"/><rect x=\"984\" y=\"{an_n(y)}\" width=\"272\" height=\"{an_n(h)}\" rx=\"10\" class=\"an-card-on\" opacity=\"{start}\"><animate attributeName=\"opacity\" calcMode=\"discrete\" {lit} dur=\"{an_n(total)}s\" repeatCount=\"indefinite\"/></rect><circle cx=\"1008\" cy=\"{an_n(y + h / 2)}\" r=\"12\" class=\"an-card-num\"/><text x=\"1008\" y=\"{an_n(y + h / 2 + 4.5)}\" class=\"an-card-n\">{i + 1}</text><text x=\"1030\" y=\"{an_n(y + h / 2 + 5)}\" class=\"an-card-t\">{an_esc(sc.title)}</text></g>"
+    if i + 1 < n {
+      let wd = f"M1008 {an_n(y + h / 2 + 12)} L1008 {an_n(y + h + gap + h / 2 - 12)}"
+      let spark = an_held([an_n3((e - 0.02).max(s)), an_n3(e)], ["0", "1"], 0.0001, 0.9999)
+      wires = wires + f"<path class=\"an-wire\" d=\"{wd}\"/><circle r=\"3.5\" class=\"an-spark\"><animateMotion dur=\"{an_n(total)}s\" repeatCount=\"indefinite\" calcMode=\"linear\" keyPoints=\"{an_semi(spark[1])}\" keyTimes=\"{an_semi(spark[0])}\" path=\"{wd}\"/></circle>"
+    }
+    at = at + sc.seconds
+  }
+  let last = top + (n - 1) * (h + gap)
+  let back = if an_cyclic(st) and n > 2 { f"<path class=\"an-wire back\" d=\"M1256 {an_n(last + h / 2)} C1276 {an_n(last + h / 2)} 1276 {an_n(top + h / 2)} 1256 {an_n(top + h / 2)}\"/>" } else { "" }
+  return f"<rect x=\"960\" y=\"0\" width=\"320\" height=\"540\" class=\"an-board\"/><rect x=\"960\" y=\"0\" width=\"320\" height=\"540\" fill=\"url(#an-dots)\"/><text x=\"984\" y=\"32\" class=\"an-board-l\">KOSIKA CANVAS &#183; THE STEPS</text>{wires}{back}{cards}"
+}
+
+// ---------------------------------------------------------------- the camera
+//
+// A scene may be filmed with a move: closing in on a part (the leaf, the
+// cloud) or pulling back to show the whole. A zoom z about a point (x, y)
+// is translate(x (1 - z), y (1 - z)) scale(z), both moved on the clock.
+
+record AnCam { scene: Number t0: Number t1: Number x: Number y: Number z0: Number z1: Number }
+
+fn an_story_camera(title: Text) -> AnCam[] {
+  if title == "Photosynthesis" { return [{scene: 2, t0: 0, t1: 0.5, x: 50, y: 58, z0: 1, z1: 1.45}] }
+  if title == "The Water Cycle" { return [{scene: 1, t0: 0.2, t1: 0.9, x: 50, y: 24, z0: 1, z1: 1.35}] }
+  if title == "A Volcano Erupts" { return [{scene: 0, t0: 0, t1: 0.6, x: 50, y: 80, z0: 1.5, z1: 1}, {scene: 2, t0: 0, t1: 0.5, x: 50, y: 40, z0: 1.3, z1: 1}] }
+  if title == "How We Digest Food" { return [{scene: 2, t0: 0.1, t1: 0.6, x: 50, y: 50, z0: 1, z1: 1.3}] }
+  if title == "From Seed to Tree" { return [{scene: 0, t0: 0, t1: 0.8, x: 50, y: 78, z0: 1.6, z1: 1.1}, {scene: 2, t0: 0, t1: 0.7, x: 50, y: 60, z0: 1.3, z1: 1}] }
+  if title == "A Butterfly's Life" { return [{scene: 1, t0: 0, t1: 0.6, x: 50, y: 60, z0: 1.4, z1: 1.1}, {scene: 3, t0: 0.4, t1: 1, x: 72, y: 62, z0: 1, z1: 1.3}] }
+  return []
+}
+
+// The groups that hold a scene's camera move: [open, close].
+fn an_camera(title: Text, i: Number, s: Number, e: Number, total: Number) -> Text[] {
+  let mine = for c in an_story_camera(title) where c.scene == i { c }
+  if mine.is_empty() { return ["", ""] }
+  let c = mine[0]
+  let x = c.x * 9.6
+  let y = c.y * 5.4
+  let g0 = s + c.t0 * (e - s)
+  let g1 = s + c.t1 * (e - s)
+  let times = f"0;{an_n3(g0)};{an_n3(g1.max(g0 + 0.001))};1"
+  let tx0 = f"{an_n(x * (1 - c.z0))} {an_n(y * (1 - c.z0))}"
+  let tx1 = f"{an_n(x * (1 - c.z1))} {an_n(y * (1 - c.z1))}"
+  let d = an_n(total)
+  let move = f"<animateTransform attributeName=\"transform\" type=\"translate\" values=\"{tx0};{tx0};{tx1};{tx1}\" keyTimes=\"{times}\" dur=\"{d}s\" repeatCount=\"indefinite\"/>"
+  let zoom = f"<animateTransform attributeName=\"transform\" type=\"scale\" values=\"{an_n(c.z0)};{an_n(c.z0)};{an_n(c.z1)};{an_n(c.z1)}\" keyTimes=\"{times}\" dur=\"{d}s\" repeatCount=\"indefinite\"/>"
+  return [f"<g class=\"an-cam\" transform=\"translate({tx0})\">{move}<g transform=\"scale({an_n(c.z0)})\">{zoom}", "</g></g>"]
+}
+
+fn an_story_svg(st: AnStory) -> Text {
+  if st.scenes.is_empty() { return "" }
+  let total = an_story_total(st)
+  var defs = "<radialGradient id=\"an-glow\"><stop offset=\"0\" stop-color=\"#ffd27a\" stop-opacity=\".7\"/><stop offset=\"1\" stop-color=\"#ffd27a\" stop-opacity=\"0\"/></radialGradient><radialGradient id=\"an-magma\"><stop offset=\"0\" stop-color=\"#ffd27a\"/><stop offset=\".5\" stop-color=\"#ff6a2b\"/><stop offset=\"1\" stop-color=\"#9a1d0e\"/></radialGradient><radialGradient id=\"an-corona\"><stop offset=\".5\" stop-color=\"#ffd27a\"/><stop offset=\"1\" stop-color=\"#f5a623\" stop-opacity=\".6\"/></radialGradient><radialGradient id=\"an-core\" cx=\"40%\" cy=\"38%\" r=\"70%\"><stop offset=\"0\" stop-color=\"#fffbe9\"/><stop offset=\".5\" stop-color=\"#ffe08a\"/><stop offset=\"1\" stop-color=\"#f5a623\"/></radialGradient><radialGradient id=\"an-ocean\" cx=\"35%\" cy=\"32%\" r=\"75%\"><stop offset=\"0\" stop-color=\"#7cc4f2\"/><stop offset=\".6\" stop-color=\"#2f7fc4\"/><stop offset=\"1\" stop-color=\"#174a7a\"/></radialGradient><radialGradient id=\"an-night\" cx=\"80%\" cy=\"75%\" r=\"70%\"><stop offset=\"0\" stop-color=\"#000\" stop-opacity=\".55\"/><stop offset=\".6\" stop-color=\"#000\" stop-opacity=\".15\"/><stop offset=\"1\" stop-color=\"#000\" stop-opacity=\"0\"/></radialGradient>"
+  var scenes = ""
+  var caps = ""
+  var labels = ""
+  var at = 0
+  for i in 0 until st.scenes.length() {
+    let sc = st.scenes[i]
+    let s = at / total
+    let e = (at + sc.seconds) / total
+    var actors = ""
+    for j in 0 until sc.actors.length() {
+      let a = an_mapped(sc.actors[j], s, e)
+      let mine = for l in an_labels_for(st) where l.scene == i and l.actor == sc.actors[j].id { l }
+      let tag = if mine.is_empty() { "" } else { an_tag(mine[0], sc.actors[j], s, e, total) }
+      defs = defs + fm_gradient(f"an-g{i * 10 + j}", fm_colour(a.hue))
+      actors = actors + an_actor_in(a, i * 10 + j, sc.seconds, total, s, e, tag)
+    }
+    let shown = if s <= 0 { "1" } else { "0" }
+    let cam = an_camera(st.title, i, s, e, total)
+    scenes = scenes + f"<g class=\"an-scene\" data-title=\"{an_esc(sc.title)}\" opacity=\"{shown}\">{an_scene_show(s, e, total)}{cam[0]}{an_backdrop(sc.backdrop, i)}{actors}{cam[1]}</g>"
+    caps = caps + an_captions_in(sc, total, s, e)
+    at = at + sc.seconds
+  }
+  let dots = "<pattern id=\"an-dots\" width=\"20\" height=\"20\" patternUnits=\"userSpaceOnUse\"><circle cx=\"1\" cy=\"1\" r=\"1\" fill=\"rgba(236,238,242,.14)\"/></pattern>"
+  return f"<svg xmlns=\"http://www.w3.org/2000/svg\" class=\"an fm an-story\" viewBox=\"0 0 1280 540\" role=\"img\" aria-label=\"{an_esc(st.title)}\"><defs>{defs}{dots}<clipPath id=\"an-stage\"><rect width=\"960\" height=\"540\"/></clipPath></defs><g clip-path=\"url(#an-stage)\">{scenes}{labels}<rect class=\"an-capbar\" x=\"0\" y=\"490\" width=\"960\" height=\"50\"/>{caps}</g>{an_steps(st, total)}</svg>"
+}
+
+fn an_labels_for(st: AnStory) -> AnLabel[] {
+  let own = an_story_labels(st.title)
+  return if own.is_empty() { an_auto_labels(st) } else { own }
+}
+
+fn an_story_art(st: AnStory) -> AnArt {
+  let total = an_story_total(st)
+  let r: AnRecipe = {title: st.title, seconds: total, backdrop: "meadow", actors: [], captions: []}
+  let svg = an_story_svg(st)
+  let notes = [f"{st.scenes.length()} scenes on one clock, {an_n(total)} seconds: " + (for sc in st.scenes { sc.title }).join(", ") + "."]
+  return {recipe: r, svg: svg, page: an_page(r, svg, notes), problems: if st.scenes.is_empty() { ["no story was written for this one"] } else { [] }, notes: notes}
+}
+
+workflow an_story_render(st: AnStory) -> AnArt {
+  out = an_story_art(an_story_fixed(st))
+}
+
+model an_storyteller {
+  input: AnBrief
+  output: AnStory
+  parameters: {
+    max_output_tokens: 5000
+  }
+}
+
+fn an_story_task() -> Text {
+  return "You are telling a process as a short animated story, scene by scene, for someone who asked for it. Give title (2 to 5 words) and scenes (2 to 4, in order). Each scene has title (2 to 4 words: the stage), seconds (4 to 8), backdrop (deep sea, night, paper, meadow or studio), actors (1 to 4, each with id, form (one of " + an_all_forms().join(", ") + "), hue (coral, amber, teal, violet, rose, gold, sky, leaf, pearl or ink), motion (keys, bounce or orbit) and keys (each with t from 0 to 1 of the scene, x 0 left to 100 right, y 0 top to 100 bottom, the ground near 85, scale with 1 its usual size and 0.2 just begun, and turn in degrees)) and captions (1 or 2, each with t and one short sentence). Show each stage happening: grow things by scale, move things by x and y. Keep what is true."
+}
+
+// A process Kosika knows (the water cycle, a seed growing) it tells itself,
+// scene by scene and true; anything else a model writes, and Kosika keeps
+// it to what is true of the things in it.
+workflow an_story_make(ask: AnAsk) -> AnArt {
+  budget 2 model calls, 240 seconds
+  chosen = match an_story_built_in(ask.text).scenes.is_empty() {
+    case true { call an_story_told(ask) }
+    case _ { an_story_built_in(ask.text) }
+  }
+  out    = an_story_art(an_story_fixed(chosen))
+}
+
+workflow an_story_told(ask: AnAsk) -> AnStory {
+  budget 2 model calls, 240 seconds
+  told = use_model an_storyteller(an_story_task(), ask.text) retry 1 otherwise an_story_built_in(ask.text)
+  out  = told
+}
+
+fn an_task() -> Text {
+  return "You are directing a short animation someone asked for. Give title (2 to 5 words), seconds (how long one run takes, 4 to 20), backdrop (deep sea, night, paper, meadow or studio), actors (1 to 6, each with id (a short name), form (one of " + an_all_forms().join(", ") + "), hue (one of coral, amber, teal, violet, rose, gold, sky, leaf, pearl, ink), motion (keys: it moves through its keyframes; bounce: it is dropped from its first keyframe and bounces, drifting to its last; orbit: it goes round its first keyframe at the distance of its second) and keys: keyframes, each with t (0 to 1 of the whole), x (0 left to 100 right), y (0 top to 100 bottom; the ground is near 90), scale (1 is its usual size) and turn (degrees)), and captions (2 to 6, each with t, the moment it starts, and text, one short sentence on what is happening then). Make the motion tell what was asked, step by step, with keyframes where things change."
+}
+
+workflow an_make(ask: AnAsk) -> AnArt {
+  budget 2 model calls, 200 seconds
+  chosen = use_model an_director(an_task(), ask.text) retry 1 otherwise an_fallback()
+  out    = an_art(an_fixed(chosen))
+}
+
+// ---------------------------------------------------------------- tests
+
+test "an ask to animate something is an animation" {
+  expect an_wants("animate a bee flying from a flower to its hive")
+  expect an_wants("a ball bouncing")
+  expect an_wants("animate the moon orbiting the earth")
+  expect not an_wants("draw a jellyfish")
+  expect not an_wants("why does a ball bounce, explain")
+}
+
+test "keyframes are sorted and reach from start to end" {
+  keys = an_keys_fixed([{t: 0.8, x: 90, y: 50, scale: 1, turn: 0}, {t: 0.2, x: 10, y: 140, scale: 0, turn: 0}])
+  expect (for k in keys { k.t }) == [0, 0.2, 0.8, 1]
+  expect keys[1].y == 100 and keys[1].scale == 1
+}
+
+test "a dropped ball bounces lower each time, by its restitution" {
+  pts = an_bounce(100, 800, 60, 470, 6)
+  ys = for i in 0 until pts.length() where i % 3 == 2 { pts[i] }
+  expect (for y in ys where y > 470 { y }).is_empty()
+  expect ys[0] == 60
+  expect pts[pts.length() - 3] <= 1
+}
+
+test "an animation has its clock, its captions and its actors" {
+  art = an_art(an_fixed(an_fallback()))
+  expect art.problems.is_empty()
+  expect art.svg.contains("animateMotion") and art.svg.contains("an-cap")
+  expect art.page.contains("an-time") and art.page.contains("setCurrentTime")
+  expect art.notes[0].contains("9.81")
+}
+
+test "a process asked to be animated is told in scenes" {
+  expect an_story_wants("animate how a seed grows into a tree")
+  expect an_story_wants("animate the water cycle")
+  expect not an_story_wants("animate a ball bouncing")
+  expect not an_story_wants("explain the water cycle")
+}
+
+test "a story plays its scenes in turn on one clock" {
+  st = an_story_fixed(an_story_fallback())
+  expect an_story_total(st) == 16
+  art = an_story_art(st)
+  expect art.problems.is_empty()
+  expect art.svg.split("class=\"an-scene\"").length() == 4
+  expect art.svg.contains("an-stem") and art.svg.contains("an-cloud")
+  // Painted by the scene painter, each scene with its own sky.
+  expect art.svg.contains("an-painted ls") and art.svg.contains("id=\"ls0-sky\"") and art.svg.contains("id=\"ls1-sky\"")
+  expect art.page.contains("an-time")
+  expect art.notes[0].starts_with("3 scenes on one clock")
+  // The canvas of the steps beside it, and labels that point.
+  expect art.svg.contains("KOSIKA CANVAS &#183; THE STEPS") and art.svg.split("class=\"an-card\"").length() == 4
+  expect art.svg.contains("an-label") and art.svg.contains("data-from=")
+}
+
+test "with no model, Kosika tells the stories it knows, and says when it has none" {
+  expect an_story_built_in("animate the water cycle").scenes.length() == 4
+  expect an_story_built_in("animate how a seed grows into a tree").title == "From Seed to Tree"
+  expect an_story_built_in("animate the life of a butterfly").scenes.length() == 4
+  expect an_story_built_in("animate photosynthesis in a plant").title == "Photosynthesis"
+  expect an_story_built_in("animate the phases of the moon").scenes.length() == 8
+  expect an_story_built_in("animate a volcano erupting").title == "A Volcano Erupts"
+  expect an_story_built_in("animate how we digest food").title == "How We Digest Food"
+  none = an_story_art(an_story_fixed(an_story_built_in("animate the life of a star")))
+  expect none.problems == ["no story was written for this one"]
+}
+
+test "the moon's lit part grows from the right and shrinks from the right" {
+  expect an_phase(90).contains("A0.00 34")
+  expect an_phase(180).contains("#eef0f4")
+  expect an_phase(45).contains("A34 34 0 0 1 0 34") and an_phase(225).contains("A34 34 0 0 0 0 34")
+  // New: the lit half and its edge cancel; full: the edge bows the other way.
+  expect an_phase(0).contains("A34.00 34 0 0 0 0 -34") and an_phase(180).contains("A34.00 34 0 0 0 0 -34")
+}
+
+test "the camera closes in on a part" {
+  st = an_story_fixed(an_photosynthesis_story())
+  svg = an_story_svg(st)
+  expect svg.contains("class=\"an-cam\"") and svg.contains("type=\"scale\"")
+  expect svg.contains("data-part=\"carbon dioxide\"") and svg.contains("data-title=\"Light\"")
+}
+
+test "the bounce can be tried on other worlds" {
+  ball = an_art(an_fixed(an_fallback()))
+  expect ball.svg.split("class=\"an-variant\"").length() == 10
+  expect ball.page.contains("an-world") and ball.page.contains("Mars")
+  moon = an_bounce_with(100, 100, 60, 470, 6, 1.62, 0.7)
+  earth = an_bounce_with(100, 100, 60, 470, 6, 9.81, 0.7)
+  // On the moon the ball has not yet landed when on Earth it has bounced.
+  expect moon[3 * 15 + 2] < earth[3 * 15 + 2]
+}
+
+test "a label points at where its actor is then" {
+  a: AnActor = {id: "x", form: "ball", hue: "coral", motion: "keys", keys: [{t: 0, x: 0, y: 0, scale: 1, turn: 0}, {t: 1, x: 100, y: 100, scale: 1, turn: 0}]}
+  expect an_where(a, 0.5) == [480, 270]
+  expect an_where(a, 1) == [960, 540]
+  expect an_cyclic({title: "The Water Cycle", scenes: []}) and not an_cyclic({title: "A Volcano Erupts", scenes: []})
+}
+
+test "a scene shows only in its own share of the clock" {
+  expect an_scene_show(0, 1, 10) == ""
+  expect an_scene_show(0.5, 1, 10).contains("values=\"0;0;1;1\"")
+  expect an_scene_show(0, 0.5, 10).contains("keyTimes=\"0;0.550;0.551;1\"")
+  held = an_held(["0.50", "0.75"], ["0", "1"], 0.5, 0.75)
+  expect held[0] == ["0", "0.50", "0.75", "1"] and held[1] == ["0", "0", "1", "1"]
+}
+
+test "things keep their own colours and places" {
+  r: AnRecipe = {title: "x", seconds: 5, backdrop: "meadow", actors: [{id: "s", form: "sea", hue: "coral", motion: "orbit", keys: [{t: 0, x: 50, y: 40, scale: 1, turn: 0}]}, {id: "c", form: "cloud", hue: "ink", motion: "keys", keys: [{t: 0, x: 50, y: 80, scale: 1, turn: 0}]}], captions: []}
+  f = an_fixed(r)
+  expect f.actors[0].hue == "sky" and f.actors[0].motion == "keys" and f.actors[0].keys[0].y == 80
+  expect f.actors[1].hue == "pearl" and f.actors[1].keys[0].y == 35
+}
+
+test "a slip by the director is brought back in range" {
+  fixed = an_fixed({title: "", seconds: 99, backdrop: "mars", actors: [{id: "", form: "Fish", hue: "neon", motion: "zoom", keys: []}, {id: "x", form: "dragon", hue: "red", motion: "keys", keys: []}], captions: [{t: 2, text: " Hello "}]})
+  expect fixed.actors.length() == 1 and fixed.actors[0].form == "fish" and fixed.actors[0].motion == "keys"
+  expect fixed.seconds == 30 and fixed.backdrop == "meadow" and fixed.captions[0].t == 1 and fixed.captions[0].text == "Hello"
+}

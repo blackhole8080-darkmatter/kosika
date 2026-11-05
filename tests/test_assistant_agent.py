@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
 import shutil
 import tempfile
 import unittest
@@ -172,10 +171,15 @@ class SpeakingTests(unittest.TestCase):
         self.assertIn('localStorage.getItem("kosika-speak") === "on"', self.page)
         self.assertIn("speechSynthesis.cancel()", self.page)
 
-    def test_the_page_does_not_listen(self) -> None:
-        # Hearing is a separate decision; nothing here opens the microphone.
-        for word in ("SpeechRecognition", "getUserMedia", "webkitSpeech"):
+    def test_the_page_listens_only_when_the_microphone_is_pressed(self) -> None:
+        # The browser's own speech recognition sends what is heard away, so
+        # it is never used. The microphone opens in one place only: the
+        # button on Talk to Kosi, pressed by the person.
+        for word in ("SpeechRecognition", "webkitSpeech"):
             self.assertNotIn(word, self.page)
+        self.assertEqual(self.page.count("getUserMedia"), 1)
+        handler = self.page.index("mic.onclick = async () =>")
+        self.assertLess(self.page.index("getUserMedia") - handler, 300)
 
 
 class OrbTests(unittest.TestCase):
@@ -206,15 +210,16 @@ class OrbTests(unittest.TestCase):
         for word in ("http://", "https://", "innerHTML", "<img"):
             self.assertNotIn(word, self.page)
         # The only things the page fetches by address are Kosika's own two
-        # typefaces, from this computer. A drawing written into the page
-        # (data:) or a mark it points at (#) fetches nothing.
-        addresses = [
-            address
-            for address in re.findall(r"url\(['\"]?([^'\")]*)", self.page)
-            if not address.startswith(("data:", "#", "%23"))
+        # typefaces, from this computer. A url() of a picture written into
+        # the page (data:) or of a part of the page itself (#) fetches
+        # nothing.
+        import re
+
+        fetched = [
+            u for u in re.findall(r"url\(\s*['\"]?([^'\")]*)", self.page)
+            if not u.startswith(("data:", "#", "%23"))
         ]
-        self.assertEqual(len(addresses), 2)
-        self.assertTrue(all(a.startswith("/fonts/") for a in addresses), addresses)
+        self.assertEqual(sorted(fetched), ["/fonts/EBGaramond.ttf", "/fonts/Figtree.ttf"])
 
 
 if __name__ == "__main__":

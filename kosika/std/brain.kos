@@ -1,0 +1,882 @@
+// Kosika Brain: the thinking layer behind Kosika's parts.
+//
+// The Brain keeps one memory of notes, in four kinds:
+//   episode    what happened: an ask, what was made of it, how it went
+//   fact       what is known, with the source it came from
+//   recipe     how something was done well, to do it again
+//   structure  how to think it: a graph, a tree, an algorithm's steps
+//
+// Every ask runs the same loop: sense what is asked, recall what the
+// memory holds about it (by meaning with an embedding model, by words
+// without one, and only above a floor, so a half-fitting memory is left out
+// rather than misleading the answer), think and check through the part that
+// does the work, act, and learn by keeping what happened.
+//
+// Phase 1: the memory, recall with its floor, and Designs as the first part
+// the Brain thinks through. A canvas asked about again says what it drew
+// before. Programs opt in by importing this module and running with
+// `--memory FOLDER`; Designs alone keeps working without a memory.
+//
+// Phase 3, learning: a canvas that passed its checks is kept whole as a
+// recipe, and an ask near enough to it is answered from the recipe, with no
+// model asked. You rate a canvas up or down: up keeps it first in line, down
+// means it is never reused and the next ask draws afresh.
+//
+// The Brain also learns its own choices. A small network (std/nn.kos,
+// written in Kosika) reads an ask's topic words and says how well each kind
+// of drawing has gone for asks like it: a canvas that passed its checks
+// counts for that kind, a thumbs up counts more, a thumbs down counts
+// against it. When the words alone do not settle the kind and the network
+// is sure, the Brain draws that kind and says so, without asking a model.
+//
+// Phase 4, gathering: brain_gather reads arXiv's own search for a topic and
+// keeps each paper as a fact, with its link, authors and date as its
+// source, and the abstract's first sentence as what it says. A canvas
+// drawn later shows what the Brain knows about its ask, each fact linked
+// to where it came from. Gathering reads the web, so it runs only with
+// `--allow-site export.arxiv.org`.
+
+import "designs.kos"
+import "designs_generative.kos"
+import "nn.kos"
+import "algorithms.kos"
+
+export [BrainGatherAsk, BrainGatherAbout, brain_gather_about, br_on_topic, BrainGathered, BrainPage, BrainPaper, brain_gather, br_papers_in, br_facts, br_known, br_with_known, br_search_url, BrainNote, BrainAsk, BrainFound, BrainPast, BrainKept, BrainCanvas, BrainRecipe, BrainRating, BrainRated, BrainMind, BrainChoice, br_features, br_new_mind, br_learn, br_choose, brain_recall, brain_get, brain_keep, brain_design, brain_rate, br_reusable, br_rated_canvas, br_words, br_near, br_floor, br_past, br_told]
+
+// kind: episode, fact, recipe or structure.
+// topic: what it is about, in words a person would use.
+// words: the topic's words cut to their stems, for recall by words.
+// text: the note itself. source: where it came from.
+// score: how well it went, 0 to 1. times: how often it has been met.
+record BrainNote { kind: Text topic: Text words: Text text: Text source: Text score: Number times: Number }
+
+record BrainAsk { text: Text kind: Text }
+
+// notes: what the memory holds about the ask, nearest first, above the
+// floor. by: "meaning" or "words", how they were found.
+record BrainFound { notes: BrainNote[] by: Text }
+
+// What the Brain remembers having drawn for an ask like this one.
+record BrainPast { found: Bool topic: Text text: Text times: Number near: Number }
+
+record BrainKept { key: Text entries: Number }
+
+memory brain of BrainNote
+
+// A canvas kept whole, to give again. score: 1 when it passed its checks,
+// 2 when you liked it, -1 when you did not (then it is never reused).
+record BrainCanvas { topic: Text words: Text kind: Text title: Text why: Text page: Text svg: Text embed: Text score: Number }
+
+memory canvases of BrainCanvas
+
+// The kept canvas nearest the ask, and how near.
+record BrainRecipe { found: Bool canvas: BrainCanvas near: Number }
+
+record BrainRating { ask: Text liked: Bool }
+
+// What the Brain has learned about which kind to draw. kinds: the outputs,
+// in order. xs, ys: the latest examples, which it learns from again each
+// time, so one rating does not wipe out the rest. seen: how many examples
+// it has met in all.
+record BrainMind { kinds: Text[] net: Net xs: Number[][] ys: Number[][] seen: Number }
+
+memory minds of BrainMind
+
+// ---------------------------------------------------------------- gathering, the records
+
+record BrainGatherAsk { topic: Text }
+// A gathering with what the topic is about: words from the question and
+// from what is already known of it (a Wikipedia article), so a paper that
+// only shares the topic's word ("rainbow" in graph colouring, for a
+// rainbow in the sky) is left out.
+record BrainGatherAbout { topic: Text about: Text }
+// notes: the papers read, each kept as a fact with its source.
+record BrainGathered { kept: Number titles: Text[] said: Text notes: BrainNote[] }
+
+// A page as Kosika's web tool reads it, and a paper found on it.
+record BrainPageRequest { url: Text }
+record BrainPage { url: Text title: Text text: Text }
+record BrainPaper { title: Text link: Text published: Text authors: Text summary: Text }
+
+tool brain_feed {
+  source system "web"
+  operation: "fetch"
+  access: observe
+  input: BrainPageRequest
+  output: BrainPage
+}
+
+agent brain_library {
+  can: [brain_feed]
+}
+
+// The kind the network would choose, how sure it is (0 to 1), and why.
+record BrainChoice { kind: Text sure: Number why: Text }
+record BrainRated { rated: Bool said: Text }
+
+// ---------------------------------------------------------------- sense
+
+fn br_common() -> Text[] { return ["the", "and", "for", "its", "are", "was", "has", "how", "why", "but", "not", "you", "can", "one", "two", "that", "this", "with", "from", "into", "they", "then", "than", "each", "when", "what", "where", "which", "does", "work", "works", "explain", "show", "tell", "about", "make", "draw", "please", "again", "me", "a", "an", "is", "do", "of", "to", "in", "on", "it", "my", "i"] }
+
+// The ask's words that carry its topic, cut to five letters, so
+// "evaporates" and "evaporation" meet. Numbers are kept whole, however
+// short: in "binary search for 9 in 2 4 6" the numbers are the question.
+fn br_words(text: Text) -> Text[] {
+  let common = br_common()
+  var out: Text[] = []
+  for w in text.lower().replace(",", " ").replace(".", " ").replace("?", " ").replace("!", " ").replace(":", " ").replace(";", " ").replace("(", " ").replace(")", " ").replace("'", " ").words() {
+    let number = w.to_number().exists()
+    let stem = if w.length() > 5 and not number { w.slice(0, 5) } else { w }
+    if (number or (w.length() >= 3 and not common.contains(w))) and not out.contains(stem) { out = out.append(stem) }
+  }
+  return out
+}
+
+fn br_key(kind: Text, text: Text) -> Text {
+  let key = kind + ":" + br_words(text).join("-")
+  return if key.length() > 200 { key.slice(0, 200) } else { key }
+}
+
+// ---------------------------------------------------------------- recall
+
+// How near a note comes to the ask by words: the words they share, out of
+// all the words either uses. Counting both sides keeps "binary search" from
+// taking a memory of "binary search tree insert" for itself.
+fn br_near(asked: Text[], note: Text) -> Number {
+  if asked.is_empty() { return 0 }
+  let theirs = note.words()
+  let shared = (for w in asked where theirs.contains(w) { w }).length()
+  let either = asked.length() + (for w in theirs where not asked.contains(w) { w }).length()
+  return shared / either
+}
+
+// The floor a memory must reach to be used. Meaning scores come from the
+// embedding model (the mind layer measured 0.95 for a real answer, 0.53 for
+// a half-fit, 0.42 for none); by words, the note must hold most of the
+// ask's topic words.
+fn br_floor(by: Text) -> Number { return 0.6 }
+
+fn br_nearness(by: Text, score: Number, asked: Text[], note: BrainNote) -> Number {
+  return if by == "meaning" { score } else { br_near(asked, note.words) }
+}
+
+// Two asks are the same question only about the same algorithm, if either
+// is about one: a breadth-first search is not a binary search tree.
+fn br_same_subject(text: Text, topic: Text) -> Bool { return al_which(text) == al_which(topic) }
+
+// A canvas is given again only for the same numbers, too: a search for 11
+// is not the search for 9 it was drawn for.
+fn br_same_question(text: Text, topic: Text) -> Bool { return br_same_subject(text, topic) and al_numbers(text) == al_numbers(topic) }
+
+fn br_kept_notes(found: BrainLike, text: Text, kind: Text) -> BrainFound {
+  let asked = br_words(text)
+  let floor = br_floor(found.by)
+  let notes = for m in found.matches where (kind.is_empty() or m.value.kind == kind) and br_nearness(found.by, m.score, asked, m.value) >= floor { m.value }
+  return {notes: notes, by: found.by}
+}
+
+// What the Brain drew before for an ask like this, if anything reaches
+// the floor.
+fn br_past(found: BrainLike, text: Text) -> BrainPast {
+  let asked = br_words(text)
+  let floor = br_floor(found.by)
+  for m in found.matches {
+    let near = br_nearness(found.by, m.score, asked, m.value)
+    // To say it has met this ask before, a meaning match must also share
+    // some of the ask's words: an embedding model puts "breadth-first
+    // search" near "binary search tree".
+    let shares = found.by != "meaning" or br_near(asked, m.value.words) >= 0.2
+    // A drawing that failed is not one to say it remembers.
+    if m.value.kind == "episode" and m.value.score > 0 and near >= floor and shares and br_same_subject(text, m.value.topic) { return {found: true, topic: m.value.topic, text: m.value.text, times: m.value.times, near: near} }
+  }
+  return {found: false, topic: "", text: "", times: 0, near: 0}
+}
+
+// ---------------------------------------------------------------- recipes
+
+fn br_no_canvas() -> BrainCanvas { return {topic: "", words: "", kind: "", title: "", why: "", page: "", svg: "", embed: "", score: 0} }
+
+// A recipe is reused only when the ask is nearer than for recall: the words
+// must nearly all be the same topic, or the meaning very close.
+fn br_reuse_floor(by: Text) -> Number { return if by == "meaning" { 0.85 } else { 0.75 } }
+
+// The kept canvas to give again is found through the Brain's short note of
+// each ask, not the canvas itself, whose page would drown its topic for an
+// embedding model: the nearest episode that is the same question, near
+// enough, names the canvas, which is then fetched by its key.
+fn br_recipe_pick(found: BrainLike, text: Text) -> Text {
+  let asked = br_words(text)
+  for m in found.matches {
+    // Near enough to give the same canvas: nearly all the same words, or,
+    // by meaning, very close and sharing a good part of them.
+    let words = br_near(asked, m.value.words)
+    let near = words >= br_reuse_floor("words") or (found.by == "meaning" and m.score >= br_reuse_floor("meaning") and words >= 0.4)
+    if m.value.kind == "episode" and near and br_same_question(text, m.value.topic) { return m.value.topic }
+  }
+  return ""
+}
+
+fn br_recipe_of(pick: Text, kept: Bool, c: BrainCanvas) -> BrainRecipe {
+  if pick.is_empty() or not kept { return {found: false, canvas: br_no_canvas(), near: 0} }
+  return {found: true, canvas: c, near: 1}
+}
+
+fn br_recipe_from(had: CanvasesRecalled, pick: Text) -> BrainRecipe { return br_recipe_of(pick, had.value.exists(), br_canvas_of(had)) }
+
+// Asking for it fresh ("draw it again", "redraw", "a new one") skips the
+// recipe; so does a canvas you rated down.
+fn br_fresh(text: Text) -> Bool {
+  let t = " " + text.lower() + " "
+  return t.contains(" redraw") or t.contains(" draw it again") or t.contains(" fresh") or t.contains(" new one") or t.contains(" new picture")
+}
+
+// Art is made new every time: given again it would be the same piece.
+// A kept canvas of another kind than the words now settle is not given
+// again: Designs has learned better since it was drawn.
+fn br_reusable(recipe: BrainRecipe, ask: DzAsk) -> Bool { return recipe.found and recipe.canvas.score >= 1 and recipe.canvas.kind != "art" and not br_fresh(ask.text) and (not dz_kind_sure(ask) or dz_kind(ask) == recipe.canvas.kind) }
+
+fn br_reused(recipe: BrainRecipe) -> DzResult {
+  let c = recipe.canvas
+  let liked = if c.score >= 2 { ", which you liked" } else { "" }
+  let why = f"Kosika reused the canvas it kept for '{c.topic}'{liked}, so no model was asked. " + c.why
+  return {kind: c.kind, why: why, title: c.title, page: c.page, svg: c.svg, embed: c.embed, problems: [], fixed: ["reused a kept canvas"]}
+}
+
+fn br_canvas(ask: DzAsk, r: DzResult) -> BrainCanvas {
+  return {topic: ask.text, words: br_words(ask.text).join(" "), kind: r.kind, title: r.title, why: r.why, page: r.page, svg: r.svg, embed: r.embed, score: 1}
+}
+
+// Keep a canvas that passed its checks and was drawn now, not one reused.
+fn br_worth_keeping(r: DzResult, recipe: BrainRecipe, ask: DzAsk) -> Bool {
+  return not br_reusable(recipe, ask) and r.problems.is_empty() and not r.page.is_empty()
+}
+
+fn br_not_kept() -> BrainKept { return {key: "", entries: 0} }
+
+// ---------------------------------------------------------------- learning the kind
+
+fn br_buckets() -> Number { return 24 }
+
+// An ask as numbers the network reads: each topic word is hashed into one
+// of 24 places, and the places are scaled so the fullest is 1. Numbers are
+// left out, since they change from ask to ask and say nothing of the kind.
+fn br_features(text: Text) -> Number[] {
+  let marks = "abcdefghijklmnopqrstuvwxyz"
+  var counts: Number[] = for k in 0 until br_buckets() { 0 }
+  for w in br_words(text) {
+    if not w.to_number().exists() {
+      var h = 7
+      for c in w.chars() { h = (h * 31 + marks.index_of(c).or(26) + 1) % 9973 }
+      let at = h % br_buckets()
+      counts = counts.set(at, counts[at] + 1)
+    }
+  }
+  let top = counts.max().or(0).max(1)
+  return for c in counts { c / top }
+}
+
+fn br_new_mind() -> BrainMind {
+  let kinds = dz_kinds()
+  return {kinds: kinds, net: net([br_buckets(), 8, kinds.length()], 7), xs: [], ys: [], seen: 0}
+}
+
+fn br_mind_of(had: MindsRecalled) -> BrainMind { return if had.value.exists() { had.value.value() } else { br_new_mind() } }
+
+// One example: the kind it was, and how well it went, as the network's
+// wanted outputs. That kind: 0.85 when it passed its checks, 1 when you
+// liked it, 0 when you did not; every other kind a little under even.
+fn br_wanted(kinds: Text[], kind: Text, value: Number) -> Number[] {
+  return for k in kinds { if k == kind { value } else { 0.3 } }
+}
+
+// The mind after one more example, learned again with the latest 20, so it
+// keeps what it knew. value < 0 means there is nothing to learn from.
+fn br_learn(m: BrainMind, text: Text, kind: Text, value: Number) -> BrainMind {
+  if value < 0 or not m.kinds.contains(kind) or br_words(text).is_empty() { return m }
+  let xs = m.xs.append(br_features(text))
+  let ys = m.ys.append(br_wanted(m.kinds, kind, value))
+  let keep = 20
+  let from = (xs.length() - keep).max(0)
+  let kx = xs.slice(from, xs.length())
+  let ky = ys.slice(from, ys.length())
+  return {..m, net: train(m.net, kx, ky, 0.5, 25), xs: kx, ys: ky, seen: m.seen + 1}
+}
+
+// What the network would choose for an ask. It speaks only after three
+// examples, and only for a kind it is sure of.
+fn br_choose(m: BrainMind, text: Text) -> BrainChoice {
+  if m.seen < 3 or br_words(text).is_empty() { return {kind: "", sure: 0, why: ""} }
+  let out = predict(m.net, br_features(text))
+  let sure = out.max().or(0)
+  let at = out.index_of(sure).or(0)
+  if sure < 0.75 { return {kind: "", sure: sure, why: ""} }
+  let kind = m.kinds[at]
+  let pct = (sure * 100).round()
+  return {kind: kind, sure: sure, why: f"Kosika chose {kind} itself: it has learned from {m.seen} drawings and ratings that {kind} suits asks like this ({pct}% sure), so no model was asked to choose"}
+}
+
+// The ask with the learned kind, when the words leave the kind open and
+// the person did not name one.
+// The Brain's choice for an ask. When the words settle the kind, the
+// Brain still listens to what it has learned: if your ratings taught it
+// that the kind the words pick goes badly for asks like this one, and it
+// is sure of another, it overrules the words and says so.
+//
+// Overruling needs both: the words' kind well under even (below 0.25,
+// where "no opinion" is 0.3) and another kind well over it (0.6 or more).
+fn br_choose_for(m: BrainMind, ask: DzAsk) -> BrainChoice {
+  if not dz_kind_sure(ask) { return br_choose(m, ask.text) }
+  let none: BrainChoice = {kind: "", sure: 0, why: ""}
+  if m.seen < 3 or br_words(ask.text).is_empty() { return none }
+  let words = dz_kind(ask)
+  // Art asked for in so many words stays art: a thumb down on art was about
+  // the piece, not the kind (thumbs on art before br_kind_value taught it so).
+  if words == "art" { return none }
+  let out = predict(m.net, br_features(ask.text))
+  let at = m.kinds.index_of(words)
+  if not at.exists() or out[at.value()] >= 0.25 { return none }
+  let sure = out.max().or(0)
+  let best = m.kinds[out.index_of(sure).or(0)]
+  if best == words or sure < 0.6 { return none }
+  let pct = (sure * 100).round()
+  return {kind: best, sure: sure, why: f"The words pointed to {words}, but Kosika has learned from {m.seen} drawings and ratings that {words} goes badly for asks like this, so it chose {best} itself ({pct}% sure)"}
+}
+
+fn br_with_kind(ask: DzAsk, c: BrainChoice) -> DzAsk {
+  let overrules = c.why.starts_with("The words pointed")
+  if not ask.kind.trim().is_empty() or (dz_kind_sure(ask) and not overrules) or c.kind.is_empty() { return ask }
+  return {..ask, kind: c.kind}
+}
+
+fn br_chose(r: DzResult, ask: DzAsk, c: BrainChoice) -> DzResult {
+  let used = not c.kind.is_empty() and br_with_kind(ask, c).kind == c.kind and ask.kind.trim().is_empty()
+  // Designs reads a kind it is handed as asked for; here the Brain chose it.
+  let rest = if r.why.starts_with("asked for ") { "" } else { ". " + r.why }
+  return if used and r.kind == c.kind { {..r, why: c.why + rest} } else { r }
+}
+
+// How much a drawing teaches: a checked one drawn now teaches a little, a
+// reused one nothing new.
+fn br_drawn_value(r: DzResult, recipe: BrainRecipe, ask: DzAsk) -> Number {
+  return if br_worth_keeping(r, recipe, ask) { 0.85 } else { -1 }
+}
+
+// ---------------------------------------------------------------- gathering
+
+// arXiv's own relevance search for a topic: every topic word must appear.
+fn br_search_url(topic: Text) -> Text {
+  let words = for w in topic.lower().replace(",", " ").replace("?", " ").words() where w.length() >= 3 and not br_common().contains(w) { "all:" + w.trim_marks(".:;!") }
+  return "https://export.arxiv.org/api/query?search_query=" + words.join("+AND+") + "&sortBy=relevance&max_results=6"
+}
+
+fn br_no_page() -> BrainPage { return {url: "", title: "", text: ""} }
+
+// The papers in a feed as Kosika's web tool gives it: each entry begins
+// with ---, then a line for each of its parts.
+fn br_papers_in(text: Text) -> BrainPaper[] {
+  var found: BrainPaper[] = []
+  var title = ""
+  var link = ""
+  var published = ""
+  var authors: Text[] = []
+  var summary = ""
+  var open = false
+  for line in (text + "\n---").lines() {
+    if line.trim() == "---" {
+      if open and not title.is_empty() and not link.is_empty() {
+        found = found.append({title: title, link: link, published: published.take(10), authors: authors.take(3).join(", "), summary: summary})
+      }
+      title = ""
+      link = ""
+      published = ""
+      authors = []
+      summary = ""
+      open = true
+    } else if line.starts_with("Title: ") { title = line.drop(7).trim() }
+    else if line.starts_with("Link: ") { link = line.drop(6).trim() }
+    else if line.starts_with("Published: ") { published = line.drop(11).trim() }
+    else if line.starts_with("Author: ") { authors = authors.append(line.drop(8).trim()) }
+    else if line.starts_with("Summary: ") { summary = line.drop(9).trim() }
+  }
+  return found
+}
+
+// What a paper says, in its own first sentence, cut short when long.
+fn br_first_sentence(summary: Text) -> Text {
+  let words = summary.replace("\n", " ").words()
+  // A full stop ends the sentence unless it is inside brackets, as in
+  // "[Probab. Theory ...]", or ends a short form like "e.g." or "et al.".
+  let short = ["e.g.", "i.e.", "al.", "etc.", "fig.", "eq.", "vs.", "cf.", "no.", "dr.", "prof."]
+  var out: Text[] = []
+  var done = false
+  var depth = 0
+  for w in words {
+    if not done {
+      out = out.append(w)
+      depth = depth + w.count("(") + w.count("[") - w.count(")") - w.count("]")
+      if w.ends_with(".") and depth <= 0 and not short.contains(w.lower()) and out.length() >= 6 { done = true }
+      if out.length() >= 28 { done = true }
+    }
+  }
+  let said = out.join(" ")
+  return if done and not said.ends_with(".") { said + " …" } else { said }
+}
+
+// Each paper as a fact the Brain keeps: about the topic it was gathered
+// for and the paper's own title, saying its first sentence, from its link.
+fn br_facts(page: BrainPage, topic: Text) -> BrainNote[] {
+  let asked = br_words(topic)
+  return for paper in br_papers_in(page.text).take(6) {
+    {kind: "fact", topic: paper.title, words: asked.concat(for w in br_words(paper.title) where not asked.contains(w) { w }).join(" "), text: br_first_sentence(paper.summary), source: paper.link + " · " + paper.authors + " · " + paper.published, score: 1, times: 1}
+  }
+}
+
+fn br_fact_key(n: BrainNote) -> Text { return br_key("fact", n.topic) }
+
+// The facts, six of them, so each can be kept by a step of its own; fewer
+// facts repeat the last, which is kept under the same key again.
+fn br_fact_at(facts: BrainNote[], k: Number) -> BrainNote { return facts[k.min(facts.length() - 1)] }
+
+fn br_gathered(topic: Text, facts: BrainNote[]) -> BrainGathered {
+  let titles = for f in facts { f.topic }
+  let said = if facts.is_empty() { f"Kosika found no papers on '{topic}'. Check that export.arxiv.org is allowed, or try other words." } else { f"Kosika read {facts.length()} papers on '{topic}' and keeps each as a fact, with its source." }
+  return {kept: facts.length(), titles: titles, said: said, notes: facts}
+}
+
+// ---------------------------------------------------------------- using what it knows
+
+// The facts the Brain knows about an ask: most of the ask's topic words
+// are in the fact's words (or, by meaning, it is near), at most three.
+fn br_known(found: BrainLike, text: Text) -> BrainNote[] {
+  // The ask's numbers say nothing of its subject: "sort 7 3 9" is about sorting.
+  let asked = for w in br_words(text) where not w.to_number().exists() { w }
+  var out: BrainNote[] = []
+  for m in found.matches {
+    let theirs = m.value.words.words()
+    let shared = (for w in asked where theirs.contains(w) { w }).length()
+    let near = if found.by == "meaning" { m.score >= br_floor("meaning") } else { shared >= 2 and shared >= asked.length() * 0.5 }
+    if m.value.kind == "fact" and near and out.length() < 3 { out = out.append(m.value) }
+  }
+  return out
+}
+
+// A link in a source, if it starts with one.
+fn br_link_of(source: Text) -> Text {
+  let first = source.split(" · ")[0]
+  return if first.starts_with("https://") { first } else { "" }
+}
+
+// The canvas, with what the Brain knows about its ask beneath it: each
+// fact's title linked to its source, what it says, and who and when.
+fn br_with_known(r: DzResult, found: BrainNote[]) -> DzResult {
+  // Research only, with its sources: not what the person told Kosi.
+  let facts = for f in found where f.source.starts_with("http") { f }
+  // Art is a mood, not an explanation: research beside it is noise.
+  if facts.is_empty() or r.kind == "art" or not r.embed.ends_with("</div>") { return r }
+  var items = ""
+  for f in facts {
+    let link = br_link_of(f.source)
+    let title = if link.is_empty() { br_esc(f.topic) } else { "<a href=\"" + br_esc(link) + "\" target=\"_blank\" rel=\"noopener\" style=\"color:var(--ink)\">" + br_esc(f.topic) + "</a>" }
+    let rest = f.source.split(" · ").drop(1).join(" · ")
+    items = items + "<li style=\"margin:0 0 10px\"><div style=\"font-weight:700\">" + title + "</div><div style=\"color:var(--soft)\">" + br_esc(f.text) + "</div><div style=\"color:var(--soft);font:500 11px ui-monospace,Consolas,monospace;letter-spacing:.06em;margin-top:2px\">" + br_esc(rest) + "</div></li>"
+  }
+  let card = "<div class=\"kc-card br-known\" style=\"margin-top:14px;padding:14px 16px\"><div class=\"kc-label\">What Kosika knows &#183; <b>gathered from research, with sources</b></div><ul style=\"list-style:none;margin:4px 4px 0;padding:0\">" + items + "</ul></div>"
+  let embed = r.embed.slice(0, r.embed.length() - 6) + card + "</div>"
+  let page = r.page.replace(r.embed, embed)
+  let n = facts.length()
+  let papers = if n == 1 { "paper" } else { "papers" }
+  let stop = if r.why.trim().ends_with(".") { " " } else { ". " }
+  return {..r, embed: embed, page: page, why: r.why.trim() + stop + f"It adds what it gathered on this from {n} research {papers}, each with its source."}
+}
+
+// ---------------------------------------------------------------- rating
+
+fn br_rated_canvas(c: BrainCanvas, r: BrainRating) -> BrainCanvas { return {..c, score: if r.liked { 2 } else { -1 }} }
+
+fn br_canvas_of(had: CanvasesRecalled) -> BrainCanvas { return if had.value.exists() { had.value.value() } else { br_no_canvas() } }
+
+fn br_unrated(r: BrainRating) -> BrainRated { return {rated: false, said: f"Kosika has no kept canvas for '{r.ask}' to rate."} }
+
+fn br_rated_said(c: BrainCanvas, r: BrainRating) -> BrainRated {
+  let said = if r.liked { f"Kosika will give '{c.title}' again for asks like '{c.topic}'." } else { f"Kosika will not reuse '{c.title}'; the next ask like '{c.topic}' is drawn afresh." }
+  return {rated: true, said: said}
+}
+
+// ---------------------------------------------------------------- learn
+
+// What a canvas looked like, in a few words, read from what Designs made.
+fn br_style(r: DzResult) -> Text {
+  if r.kind == "algorithm" { return "an algorithm run and played step by step" }
+  if r.embed.contains("class=\"st-journey\"") { return "a journey drawn through the picture" }
+  if r.embed.contains("class=\"art lc lc-nodes\"") { return "living nodes" }
+  if r.embed.contains("class=\"st-living\"") { return "living cards" }
+  if r.embed.contains("class=\"kc-card kc-stage\"") { return "a played diagram and picture" }
+  if r.kind == "art" { return "moving art" }
+  return "a " + r.kind
+}
+
+fn br_drawn(r: DzResult) -> Text { return f"drew '{r.title}' as {br_style(r)}" }
+
+fn br_episode(ask: DzAsk, r: DzResult, past: BrainPast) -> BrainNote {
+  // The same topic, however it was worded, is the same episode met again.
+  let times = if past.found and br_key("episode", past.topic) == br_key("episode", ask.text) { past.times + 1 } else { 1 }
+  let score = if r.problems.is_empty() and not r.page.is_empty() { 1 } else { 0 }
+  return {kind: "episode", topic: ask.text, words: br_words(ask.text).join(" "), text: br_drawn(r), source: "Kosika Designs, " + r.kind, score: score, times: times}
+}
+
+// ---------------------------------------------------------------- act
+
+// The canvas, telling what the Brain remembered: in the reasons it gives,
+// and as a line on the stage itself.
+fn br_told(r: DzResult, past: BrainPast) -> DzResult {
+  if not past.found { return r }
+  if r.kind == "art" { return br_told_art(r, past) }
+  let again = if past.times > 1 { f" ({past.times} times before)" } else { "" }
+  let said = f"Kosika remembers this: for '{past.topic}' it {past.text}{again}"
+  let label = "<div class=\"kc-label\">Kosika canvas &#183; <b>the explanation, played</b></div>"
+  let badge = "<div class=\"kc-label\">Kosika canvas &#183; <b>the explanation, played</b> &#183; <span class=\"br-mem\" style=\"color:var(--amber)\">remembered: " + br_esc(past.text + again) + "</span></div>"
+  // A page with no stage (an algorithm, a diagram) shows it above its title.
+  let line = "<div class=\"br-mem\" style=\"color:var(--amber);font:600 11px ui-monospace,Consolas,monospace;letter-spacing:.12em;text-transform:uppercase;margin:2px 4px 6px\">Kosika remembers: " + br_esc(past.text + again) + "</div><div class=\"kd-title\">"
+  let staged = r.embed.contains(label)
+  let embed = if staged { r.embed.replace(label, badge) } else { r.embed.replace("<div class=\"kd-title\">", line) }
+  let page = if staged { r.page.replace(label, badge) } else { r.page.replace("<div class=\"kd-title\">", line) }
+  return {..r, why: said + ". " + r.why, embed: embed, page: page}
+}
+
+// Art is never given again: the Brain says what it made before, and that
+// this piece is new, with layers it has not made.
+fn br_told_art(r: DzResult, past: BrainPast) -> DzResult {
+  let said = f"Kosika has made art for this before ({past.text}); this is a new piece, from layers it had not made yet"
+  let line = "<div class=\"br-mem\" style=\"color:var(--amber);font:600 11px ui-monospace,Consolas,monospace;letter-spacing:.12em;text-transform:uppercase;margin:2px 4px 6px\">New piece &#183; before, Kosika " + br_esc(past.text) + "</div><div class=\"kd-title\">"
+  return {..r, why: said + ". " + r.why, embed: r.embed.replace("<div class=\"kd-title\">", line), page: r.page.replace("<div class=\"kd-title\">", line)}
+}
+
+// ---------------------------------------------------------------- the workflows
+
+// What the memory holds about an ask, above the floor. kind narrows it to
+// one kind of note; "" takes every kind.
+workflow brain_recall(ask: BrainAsk) -> BrainFound {
+  found = recall brain like ask.text
+  out   = br_kept_notes(found, ask.text, ask.kind)
+}
+
+// One note by its kind and topic exactly, such as the talk so far; none
+// when there is no such note.
+workflow brain_get(ask: BrainAsk) -> BrainFound {
+  had = recall brain under br_key(ask.kind, ask.text)
+  out = br_got(had)
+}
+
+fn br_got(had: BrainRecalled) -> BrainFound {
+  let none: BrainNote[] = []
+  return {notes: if had.value.exists() { [had.value.value()] } else { none }, by: "key"}
+}
+
+// Keep a note: a fact with its source, a recipe, a structure, an episode.
+workflow brain_keep(note: BrainNote) -> BrainKept {
+  saved = remember note in brain under br_key(note.kind, note.topic)
+  out   = br_saved(saved)
+}
+
+fn br_esc(t: Text) -> Text { return t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;").replace("'", "&#39;") }
+
+fn br_saved(saved: MemorySaved) -> BrainKept { return {key: saved.key, entries: saved.entries} }
+
+// Designs, thought through by the Brain: recall, draw, keep what happened,
+// and say what was remembered.
+workflow brain_design(ask: DzAsk) -> DzResult {
+  budget 12 model calls, 900 seconds
+  // Asked in the person's own words: an embedding model reads meaning from
+  // a sentence, not from stems, and recall by words finds the same words.
+  found  = recall brain like ask.text
+  past   = br_past(found, ask.text)
+  pick   = br_recipe_pick(found, ask.text)
+  made   = recall canvases under br_key("canvas", pick)
+  recipe = br_recipe_from(made, pick)
+  had    = recall minds under "kind"
+  mind   = br_mind_of(had)
+  choice = br_choose_for(mind, ask)
+  drawn  = match br_reusable(recipe, ask) {
+    case true { br_reused(recipe) }
+    case _ { call design(br_with_kind(ask, choice)) }
+  }
+  taught = remember br_learn(mind, ask.text, drawn.kind, br_drawn_value(drawn, recipe, ask)) in minds under "kind"
+  kept   = remember br_episode(ask, drawn, past) in brain under br_key("episode", ask.text)
+  stored = match br_worth_keeping(drawn, recipe, ask) {
+    case true { call brain_keep_canvas(br_canvas(ask, drawn)) }
+    case _ { br_not_kept() }
+  }
+  out    = br_with_known(br_told(br_chose(drawn, ask, choice), past), br_known(found, ask.text))
+}
+
+// Gather research on a topic into the Brain's knowledge.
+// The papers that are about what the topic is about: each shares, past the
+// topic's own words, a word or two with what it is about. With nothing
+// to go by, every paper stays.
+fn br_on_topic(facts: BrainNote[], about: Text, topic: Text) -> BrainNote[] {
+  let own = br_words(topic)
+  let context = for w in br_words(about) where not own.contains(w) and not w.to_number().exists() { w }
+  if context.is_empty() { return facts }
+  // With a whole article to go by, one shared word is chance; two is a
+  // paper about the same thing.
+  let need = if context.unique().length() >= 15 { 2 } else { 1 }
+  return for f in facts where (for w in br_words(f.topic + " " + f.text).unique() where context.contains(w) { w }).length() >= need { f }
+}
+
+workflow brain_gather_about(g: BrainGatherAbout) -> BrainGathered {
+  budget 1 model calls, 120 seconds
+  page  = execute brain_library.brain_feed(br_search_url(g.topic)) otherwise br_no_page()
+  facts = br_on_topic(br_facts(page, g.topic), g.about, g.topic)
+  kept  = match facts.is_empty() {
+    case true { br_not_kept() }
+    case _ { call brain_keep_facts(br_fact_batch(facts)) }
+  }
+  out   = br_gathered(g.topic, facts)
+}
+
+workflow brain_gather(g: BrainGatherAsk) -> BrainGathered {
+  budget 1 model calls, 120 seconds
+  page  = execute brain_library.brain_feed(br_search_url(g.topic)) otherwise br_no_page()
+  facts = br_facts(page, g.topic)
+  kept  = match facts.is_empty() {
+    case true { br_not_kept() }
+    case _ { call brain_keep_facts(br_fact_batch(facts)) }
+  }
+  out   = br_gathered(g.topic, facts)
+}
+
+record BrainFacts { facts: BrainNote[] }
+
+fn br_fact_batch(facts: BrainNote[]) -> BrainFacts { return {facts: facts} }
+
+workflow brain_keep_facts(b: BrainFacts) -> BrainKept {
+  k0  = remember br_fact_at(b.facts, 0) in brain under br_fact_key(br_fact_at(b.facts, 0))
+  k1  = remember br_fact_at(b.facts, 1) in brain under br_fact_key(br_fact_at(b.facts, 1))
+  k2  = remember br_fact_at(b.facts, 2) in brain under br_fact_key(br_fact_at(b.facts, 2))
+  k3  = remember br_fact_at(b.facts, 3) in brain under br_fact_key(br_fact_at(b.facts, 3))
+  k4  = remember br_fact_at(b.facts, 4) in brain under br_fact_key(br_fact_at(b.facts, 4))
+  k5  = remember br_fact_at(b.facts, 5) in brain under br_fact_key(br_fact_at(b.facts, 5))
+  out = br_saved(k5)
+}
+
+workflow brain_keep_canvas(c: BrainCanvas) -> BrainKept {
+  saved = remember c in canvases under br_key("canvas", c.topic)
+  out   = br_saved(saved)
+}
+
+// Your thumbs up or down on a canvas the Brain kept for an ask.
+workflow brain_rate(r: BrainRating) -> BrainRated {
+  had = recall canvases under br_key("canvas", r.ask)
+  out = match had.found {
+    case true { call brain_rate_kept(r, br_canvas_of(had)) }
+    case _ { br_unrated(r) }
+  }
+}
+
+workflow brain_rate_kept(r: BrainRating, c: BrainCanvas) -> BrainRated {
+  saved  = remember br_rated_canvas(c, r) in canvases under br_key("canvas", c.topic)
+  had    = recall minds under "kind"
+  taught = remember br_learn(br_mind_of(had), c.topic, c.kind, br_kind_value(c, r)) in minds under "kind"
+  tasted = match c.kind == "art" {
+    case true { call gen_taste_rate({svg: c.svg, liked: r.liked}) }
+    case _ { gen_no_taste() }
+  }
+  out    = br_rated_said(c, r)
+}
+
+fn br_rated_value(r: BrainRating) -> Number { return if r.liked { 1 } else { 0 } }
+
+// What a thumb teaches about the kind. A thumb down on art is about the
+// piece, its layers and colours, which Kosika's eye learns; it does not say
+// art was the wrong kind of picture, so the kind is not taught (-1).
+fn br_kind_value(c: BrainCanvas, r: BrainRating) -> Number { return if c.kind == "art" and not r.liked { -1 } else { br_rated_value(r) } }
+
+// ---------------------------------------------------------------- tests
+
+fn br_test_note(topic: Text, text: Text) -> BrainNote { return {kind: "episode", topic: topic, words: br_words(topic).join(" "), text: text, source: "test", score: 1, times: 1} }
+
+fn br_test_match(n: BrainNote, score: Number) -> BrainMatch { return {key: br_key(n.kind, n.topic), value: n, score: score} }
+
+fn br_test_found(matches: BrainMatch[], by: Text) -> BrainLike { return {matches: matches, by: by} }
+
+fn br_test_result() -> DzResult { return {kind: "canvas", why: "drew all three", title: "Water Cycle", page: "<div class=\"kc-label\">Kosika canvas &#183; <b>the explanation, played</b></div>", svg: "", embed: "<div class=\"kc-card kc-stage\"><div class=\"kc-label\">Kosika canvas &#183; <b>the explanation, played</b></div><svg class=\"art lc lc-nodes\"></svg></div>", problems: [], fixed: []} }
+
+test "the Brain reads an ask's topic words" {
+  expect br_words("How does the water cycle work?") == ["water", "cycle"]
+  expect br_words("Explain the water cycle") == ["water", "cycle"]
+  expect br_words("how evaporation happens") == ["evapo", "happe"]
+  expect br_key("episode", "How does the water cycle work?") == "episode:water-cycle"
+  expect br_words("binary search for 9 in 2 4 6") == ["binar", "searc", "9", "2", "4", "6"]
+}
+
+test "a memory is used only above the floor" {
+  water = br_test_note("how does the water cycle work", "drew 'Water Cycle' as living nodes")
+  heart = br_test_note("how does the heart pump blood", "drew 'The Heart' as living cards")
+  by_words = br_test_found([br_test_match(heart, 0.2), br_test_match(water, 0.2)], "words")
+  past = br_past(by_words, "explain the water cycle")
+  expect past.found and past.topic == "how does the water cycle work"
+  expect not br_past(by_words, "the carbon cycle in oceans").found
+  tree = br_test_note("show me how a binary search tree inserts 7", "ran a binary search tree insert")
+  expect not br_past(br_test_found([br_test_match(tree, 0.5)], "words"), "binary search for 7 in 1 3 4 6 7").found
+  expect br_past(br_test_found([br_test_match(tree, 0.5)], "words"), "how does a binary search tree insert 9").found
+  // By meaning: a close score is not enough without shared words, or for another algorithm.
+  expect not br_past(br_test_found([br_test_match(tree, 0.8)], "meaning"), "breadth first search from A").found
+  expect br_past(br_test_found([br_test_match(tree, 0.7)], "meaning"), "add a value to a binary search tree").found
+  nine = br_test_canvas("binary search for 9 in 2 4 6 9 11 15 20", 2)
+  expect not br_test_recipe(nine, "binary search for 11 in 2 4 6 9 11 15 20", "meaning", 0.97).found
+  expect br_test_recipe(nine, "show me a binary search for 9 in 2 4 6 9 11 15 20", "meaning", 0.97).found
+  // By meaning, the model's score decides: 0.53 is a half-fit and is left out.
+  by_meaning = br_test_found([br_test_match(water, 0.53)], "meaning")
+  expect not br_past(by_meaning, "explain the water cycle").found
+  expect br_kept_notes(br_test_found([br_test_match(water, 0.91)], "meaning"), "rain", "").notes.length() == 1
+}
+
+test "the canvas says what the Brain remembered" {
+  r = br_test_result()
+  expect br_style(r) == "living nodes"
+  first = br_episode({text: "how does the water cycle work", palette: "", place: "studio", kind: "canvas"}, r, br_past(br_test_found([], "words"), "x"))
+  expect first.times == 1 and first.text == "drew 'Water Cycle' as living nodes"
+  past = br_past(br_test_found([br_test_match(first, 0.5)], "words"), "explain the water cycle")
+  told = br_told(r, past)
+  expect br_episode({text: "explain the water cycle", palette: "", place: "studio", kind: "canvas"}, r, past).times == 2
+  expect told.why.starts_with("Kosika remembers this: for 'how does the water cycle work' it drew 'Water Cycle' as living nodes")
+  expect told.embed.contains("remembered: drew &#39;Water Cycle&#39; as living nodes")
+  expect br_told(r, br_past(br_test_found([], "words"), "x")).why == "drew all three"
+  plain = {..r, embed: "<div class=\"kd\"><div class=\"kd-title\">Bubble sort</div></div>"}
+  expect br_told(plain, past).embed.contains("Kosika remembers: drew &#39;Water Cycle&#39; as living nodes</div><div class=\"kd-title\">Bubble sort")
+  expect br_words("Show me how a binary search tree inserts 7 again") == ["binar", "searc", "tree", "inser", "7"]
+}
+
+test "the Brain overrules the words when your ratings taught it they go badly" {
+  ask: DzAsk = {text: "the burning of a star at night", palette: "", place: "studio", kind: ""}
+  expect dz_kind(ask) == "chemistry" and dz_kind_sure(ask)
+  m0 = br_new_mind()
+  m1 = br_learn(m0, "a burning star at night", "chemistry", 0)
+  m2 = br_learn(m1, "a burning star at night", "art", 1)
+  m3 = br_learn(m2, "the burning star at night", "chemistry", 0)
+  m4 = br_learn(m3, "burning star at night", "art", 1)
+  c = br_choose_for(m4, ask)
+  expect c.kind == "art"
+  expect c.why.starts_with("The words pointed to chemistry, but Kosika has learned from 4 drawings")
+  expect br_with_kind(ask, c).kind == "art"
+  // A thumb down on art teaches the eye, not that art was the wrong kind.
+  art: BrainCanvas = {..br_no_canvas(), kind: "art"}
+  expect br_kind_value(art, {ask: "x", liked: false}) == -1
+  expect br_kind_value(art, {ask: "x", liked: true}) == 1
+  expect br_kind_value({..art, kind: "diagram"}, {ask: "x", liked: false}) == 0
+  expect br_learn(m0, "a burning star", "art", -1).seen == 0
+  // Art the words settle is never overruled.
+  artful: DzAsk = {text: "draw a jellyfish and a starfish", palette: "", place: "studio", kind: ""}
+  m5 = br_learn(br_learn(br_learn(br_learn(m0, "draw a jellyfish and a starfish", "art", 0), "draw a jellyfish and a starfish", "diagram", 1), "draw a jellyfish", "art", 0), "draw a starfish", "diagram", 1)
+  expect br_choose_for(m5, artful).kind == ""
+  // Untaught, the words stand.
+  expect br_choose_for(m0, ask).kind == ""
+  expect br_with_kind(ask, br_choose_for(m0, ask)).kind == ""
+}
+
+test "a paper that only shares the topic's word is left out" {
+  graph: BrainNote = {kind: "fact", topic: "Rainbow paths in edge-coloured graphs", words: "", text: "A path in an edge-coloured graph is rainbow if no two edges share a colour.", source: "https://arxiv.org/abs/1", score: 1, times: 1}
+  sky: BrainNote = {kind: "fact", topic: "Supernumerary rainbows", words: "", text: "Sunlight refracted inside water droplets makes the arcs we see.", source: "https://arxiv.org/abs/2", score: 1, times: 1}
+  about = "how a rainbow forms. A rainbow is an optical phenomenon caused by refraction of sunlight in water droplets."
+  expect br_on_topic([graph, sky], about, "rainbow forms") == [sky]
+  expect br_on_topic([graph, sky], "rainbow", "rainbow").length() == 2
+}
+
+fn br_test_canvas(topic: Text, score: Number) -> BrainCanvas { return {..br_no_canvas(), topic: topic, words: br_words(topic).join(" "), kind: "canvas", title: "Water Cycle", why: "drew all three", page: "<p>page</p>", embed: "<div class=\"kd-title\">Water Cycle</div>", score: score} }
+
+fn br_test_episode(c: BrainCanvas) -> BrainNote { return {kind: "episode", topic: c.topic, words: c.words, text: "drew it", source: "test", score: 1, times: 1} }
+
+fn br_test_recipe(c: BrainCanvas, text: Text, by: Text, score: Number) -> BrainRecipe {
+  let found: BrainLike = {matches: [{key: br_key("episode", c.topic), value: br_test_episode(c), score: score}], by: by}
+  return br_recipe_of(br_recipe_pick(found, text), true, c)
+}
+
+fn br_test_ask(text: Text) -> DzAsk { return {text: text, palette: "", place: "studio", kind: ""} }
+
+test "a kept canvas is given again for a near ask, with no model" {
+  kept = br_test_canvas("how does the water cycle work", 1)
+  recipe = br_test_recipe(kept, "explain the water cycle", "words", 0.5)
+  expect recipe.found
+  expect br_reusable(recipe, br_test_ask("explain the water cycle"))
+  given = br_reused(recipe)
+  expect given.page == "<p>page</p>"
+  expect given.why.starts_with("Kosika reused the canvas it kept for 'how does the water cycle work', so no model was asked.")
+  // Too far, asked fresh, or rated down: drawn again instead.
+  expect not br_test_recipe(kept, "the water cycle and climate change", "words", 0.5).found
+  expect not br_reusable(recipe, br_test_ask("redraw the water cycle"))
+  down = br_test_recipe(br_rated_canvas(kept, {ask: "x", liked: false}), "explain the water cycle", "words", 0.5)
+  expect down.found and not br_reusable(down, br_test_ask("explain the water cycle"))
+  // Other numbers are another question: not the same canvas.
+  nine = br_test_canvas("binary search for 9 in 2 4 6 9 11 15 20", 2)
+  expect not br_test_recipe(nine, "binary search for 11 in 3 5 8 11 14 19 23", "words", 0.5).found
+  expect br_test_recipe(nine, "show me a binary search for 9 in 2 4 6 9 11 15 20", "words", 0.5).found
+  // A canvas drawn now and checked is kept; one reused is not kept again.
+  expect not br_worth_keeping(given, recipe, br_test_ask("explain the water cycle"))
+}
+
+test "a thumbs up keeps a canvas first; a thumbs down stops its reuse" {
+  kept = br_test_canvas("how does the water cycle work", 1)
+  expect br_rated_canvas(kept, {ask: "x", liked: true}).score == 2
+  expect br_rated_canvas(kept, {ask: "x", liked: false}).score == -1
+  expect br_rated_said(kept, {ask: "x", liked: false}).said == "Kosika will not reuse 'Water Cycle'; the next ask like 'how does the water cycle work' is drawn afresh."
+  liked = br_test_recipe(br_rated_canvas(kept, {ask: "x", liked: true}), "explain the water cycle", "words", 0.5)
+  expect br_reused(liked).why.contains(", which you liked, so no model was asked")
+}
+
+test "the Brain learns which kind of drawing suits asks like these" {
+  m0 = br_new_mind()
+  expect br_choose(m0, "how do tides work").kind == ""
+  // Liked canvases for ocean asks, a disliked diagram for one of them.
+  m1 = br_learn(m0, "how do ocean tides work", "canvas", 1)
+  m2 = br_learn(m1, "why do ocean waves break", "canvas", 1)
+  m3 = br_learn(m2, "how do ocean currents move heat", "canvas", 1)
+  m = br_learn(m3, "ocean tides and the moon", "diagram", 0)
+  expect m.seen == 4
+  c = br_choose(m, "how do the ocean tides move")
+  expect c.kind == "canvas"
+  // An ask with mostly new words: it is not sure, so it says nothing.
+  expect br_choose(m, "what makes a volcano erupt").kind == ""
+  expect c.why.starts_with("Kosika chose canvas itself: it has learned from 4 drawings and ratings")
+  // A kind named by the person is never overruled; one settled by the words
+  // only when the Brain has learned it goes badly (below).
+  expect br_with_kind({text: "how do the ocean tides move", palette: "", place: "studio", kind: "diagram"}, c).kind == "diagram"
+  expect br_with_kind({text: "how do the ocean tides move", palette: "", place: "studio", kind: ""}, c).kind == "canvas"
+  expect br_with_kind({text: "sort 3 1 2", palette: "", place: "studio", kind: ""}, c).kind == ""
+  expect br_chose({..br_test_result(), kind: "canvas", why: "asked for canvas"}, {text: "how do the ocean tides move", palette: "", place: "studio", kind: ""}, c).why.ends_with("so no model was asked to choose")
+  expect br_features("how do ocean tides work").length() == 24
+  expect br_features("sort 3 1 2") == br_features("sort 9 8 7")
+}
+
+fn br_test_feed() -> Text {
+  return "---\nTitle: Tidal dissipation in shallow seas\nLink: https://arxiv.org/abs/2610.00001v1\nPublished: 2026-10-02T10:00:00Z\nAuthor: A. Wave\nAuthor: B. Moon\nSummary: We measure how ocean tides lose energy in shallow seas. The loss is larger than models predict.\n---\nTitle: Moon-driven ocean tides and climate\nLink: https://arxiv.org/abs/2610.00002v1\nPublished: 2026-10-05T10:00:00Z\nAuthor: C. Sea\nSummary: Ocean tides mix heat into the deep ocean, which shapes climate over centuries.\n"
+}
+
+fn br_test_page() -> BrainPage { return {url: "", title: "", text: br_test_feed()} }
+
+test "the Brain keeps gathered papers as facts with their sources" {
+  page = br_test_page()
+  papers = br_papers_in(page.text)
+  expect papers.length() == 2
+  expect papers[0].authors == "A. Wave, B. Moon"
+  facts = br_facts(page, "ocean tides")
+  expect facts[0].kind == "fact"
+  expect facts[0].text == "We measure how ocean tides lose energy in shallow seas."
+  expect br_first_sentence("Following the model of Aguech et al. [Probab. Theory 2009], we study depths in random trees. More follows.") == "Following the model of Aguech et al. [Probab. Theory 2009], we study depths in random trees."
+  expect facts[0].source == "https://arxiv.org/abs/2610.00001v1 · A. Wave, B. Moon · 2026-10-02"
+  expect br_search_url("how do ocean tides work") == "https://export.arxiv.org/api/query?search_query=all:ocean+AND+all:tides&sortBy=relevance&max_results=6"
+  expect br_gathered("ocean tides", facts).said == "Kosika read 2 papers on 'ocean tides' and keeps each as a fact, with its source."
+}
+
+test "a canvas shows what the Brain knows about its ask, linked to its sources" {
+  facts = br_facts(br_test_page(), "ocean tides")
+  found = br_test_found([br_test_match(facts[0], 0.3), br_test_match(facts[1], 0.3)], "words")
+  known = br_known(found, "how do ocean tides work")
+  expect known.length() == 2
+  expect br_known(found, "how does a volcano erupt").is_empty()
+  expect br_known(found, "ocean tides 1 2 3 4 5 6").length() == 2
+  told = br_with_known(br_test_result(), known)
+  expect told.embed.contains("What Kosika knows &#183; <b>gathered from research, with sources</b>")
+  expect told.embed.contains("<a href=\"https://arxiv.org/abs/2610.00001v1\"")
+  expect told.embed.ends_with("</div>")
+  expect told.why.ends_with("from 2 research papers, each with its source.")
+}

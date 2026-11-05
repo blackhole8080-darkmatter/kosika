@@ -86,6 +86,9 @@ func main() {
 	if len(args) >= 2 && args[0] == "run" {
 		os.Exit(runCommand(args[1:]))
 	}
+	if len(args) == 2 && args[0] == "keep" {
+		os.Exit(keepCommand(args[1:]))
+	}
 	if len(args) >= 2 && args[0] == "serve" {
 		os.Exit(serveCommand(args[1:]))
 	}

@@ -1,0 +1,668 @@
+// Kosi: Aryan's own companion, run by Kosika Brain.
+//
+//   kosika test main.kos
+//   kosika run main.kos --workflow chat --input said.json --memory FOLDER
+//       --model openai/gpt-oss-20b --model-url https://api.groq.com/openai/v1
+//       --model-protocol openai --max-function-calls 100000
+//       [--embed-model nomic-embed-text --embed-url http://127.0.0.1:11434]
+//
+// where said.json holds {"msg": {"text": "what should I work on tonight?"}}.
+//
+// Talk to it as to a close friend: about your day, a job, a project, an idea.
+// It answers in a few warm, plain sentences, written to be heard as well as
+// read. Behind every answer is the Brain:
+//
+//   recall    what Kosi knows that bears on what you said, by meaning:
+//             things you told it, your projects and their next steps, what
+//             it has drawn and gathered, and the last of the talk
+//   answer    a free model writes the reply with that in front of it, and
+//             says what is worth remembering, which project it touches, and
+//             whether a picture would help
+//   check     Kosika tidies the reply for speaking (no lists or marks, a
+//             spoken length), and keeps only short, new things to remember
+//   act       a picture is drawn on the Kosika canvas through the Brain
+//   learn     the talk, what you said worth keeping, and each project's next
+//             step go back into the Brain for the next conversation
+//
+// It touches nothing on the computer: no files, no programs, no web. Kosika's
+// other agents (the crew, the coder, the gatherer) do that work, each asking
+// first. Kosi is the one you talk to.
+
+import "std/brain.kos"
+import "std/designs.kos"
+import "worked.kos"
+import "facts.kos"
+import "friends.kos"
+import "thinking.kos"
+
+export [Msg, Said, KosiBrief, KosiReply, chat, ko_spoken, ko_known_text, ko_talk_after, ko_new_facts]
+
+record Msg { text: Text }
+
+// text: what Kosi says. canvas: a Kosika canvas when a picture helps, or "".
+// kept: what it will remember from this, in its own words. project: the
+// project the talk was about, if any.
+record Said { text: Text suggest: Text[] canvas: Text kept: Text[] project: Text thinking: Thought }
+
+// message: what they just said, the one thing to answer. memory: what Kosi
+// knows that bears on it. earlier: the talk before it, for context only.
+record KosiBrief { task: Text message: Text memory: Text earlier: Text now: Text }
+
+// remember: short facts worth keeping from this message alone. draw: what
+// to draw, in a few words, or "". project, step: the project the message is
+// about and its next step, or "".
+record KosiReply { reply: Text remember: Text[] draw: Text project: Text step: Text }
+
+record KosiFacts { notes: BrainNote[] }
+
+// The small brain: what a small model on a laptop's CPU is asked. Less to
+// read and less to fill in, so it answers the message instead of losing it.
+record KosiSmallBrief { task: Text message: Text memory: Text earlier: Text }
+record KosiSmallReply { reply: Text remember: Text[] }
+
+model friend {
+  input: KosiBrief
+  output: KosiReply
+  parameters: {
+    max_output_tokens: 1500
+  }
+}
+
+model buddy {
+  input: KosiSmallBrief
+  output: KosiSmallReply
+  parameters: {
+    max_output_tokens: 300
+  }
+}
+
+// ---------------------------------------------------------------- asking the model
+
+fn ko_task() -> Text {
+  return "You are Kosi, the person's own AI companion, built into Kosika, the programming language and studio they are making. Talk like a close and honest friend who is also very capable, with the manner of a calm, composed British assistant: unhurried, warmly polite, quietly confident, now and then a light, dry wit, never servile and never gushing: plain spoken English, short sentences meant to be heard aloud, no lists, no headings, no markdown, no emoji. Usually two to five sentences; more only when they ask you to explain something. Answer `message`, what they have just said, and only that: `earlier` is the conversation before it, there for context, and is never to be answered again. Use `memory`, what Kosi knows, only where it really bears on the message, and never invent a memory or a fact; if you do not know, or cannot do something, say so plainly and offer what you can do; never offer to look up what no one can know, such as the future or what they did that they never told you. When you speak of Kosika itself, keep to what it is: the Kosika language with its parser and checker, a Python and a faster Go engine, the standard library (Brain, Designs and the canvas, algorithms, science), Kosika Studio, and the agents Kosi, Iris, Sol, the crew and the coder; never invent parts it does not have. You cannot touch their files, programs or the web yourself: other Kosika agents do that, and you can suggest one. You cannot see pictures, files or screens they show you; say so if they ask what you think of one. You never draw in words: when a picture would help or is asked for, fill `draw` and Kosika draws it on the canvas, here and now (not Sol, not later); never say you have drawn, sketched or seen something, and never agree to build or do something you cannot do yourself in this talk. You have two friends in this talk, and they are real: Iris, the researcher, who reads papers and checked facts and says where they came from, and Sol, the scientist, who explains how things work with Kosika's exact formulas and reactions and draws them; the person asks them by name ('Iris, ...', 'Sol, ...'), and you may suggest it when it would help. Then fill in: remember, up to three short facts worth keeping from THIS message only, never what they ask for in it and never what Kosi already knows (about them, their projects, plans, preferences, people or deadlines), each a complete sentence in the third person such as 'Their exam is on 12 December.', or none if nothing new; draw, a few words naming what to draw if a picture would really help (how something works, a structure, an algorithm), else empty; project, the name of their project this message is about, else empty; step, that project's next step if one was agreed or stated, else empty."
+}
+
+fn ko_small_task() -> Text {
+  return "You are Kosi, a calm, warm British companion, with two friends the person can ask by name: Iris the researcher and Sol the scientist. Reply to `message` and only to it, in two to four short spoken sentences, plain words, no lists. Never repeat their message back, and never add anything about them that memory does not say. Talk to them as 'you'. Only when they tell you something about themselves, say briefly that you'll remember it. Use `memory` only if it helps; a line 'Worked out exactly by Kosika' is right, so use it. If you do not know, say so; never make up facts or the future. remember: up to two short new facts the person states about themselves in this message, in the third person ('Their ... is ...'), or none."
+}
+
+// What a person tells Kosi about themselves, kept by Kosika's own rule and
+// not by the model: a statement in the first person ("My exam is on 12
+// December.", "I'm vegetarian.") turned into the third ("Their exam is on
+// 12 December.", "They're vegetarian."). A question or a request is not a
+// fact. A small model cannot be trusted to pick facts out; this can.
+fn ko_told(text: Text) -> Text[] {
+  let t = text.trim()
+  let low = " " + t.lower() + " "
+  let asks = t.contains("?") or low.starts_with(" what ") or low.starts_with(" how ") or low.starts_with(" can ") or low.starts_with(" could ") or low.starts_with(" suggest ") or low.starts_with(" tell ") or low.starts_with(" give ") or low.starts_with(" write ") or low.starts_with(" explain ") or low.starts_with(" please ")
+  let mine = low.contains(" my ") or low.contains(" i'm ") or low.contains(" i am ") or low.contains(" i have ") or low.contains(" i get ") or low.contains(" i live ") or low.contains(" i work ") or low.contains(" i study ") or low.contains(" i like ") or low.contains(" i love ") or low.contains(" i don't ")
+  if asks or not mine { return [] }
+  var out: Text[] = []
+  for part in t.replace("!", ".").split(". ") {
+    var words: Text[] = []
+    for w in part.trim().trim_marks(".").words() {
+      let bare = w.trim_marks(",;:").lower()
+      let mark = if w.ends_with(",") { "," } else { "" }
+      let swapped = if bare == "my" { "their" } else { if bare == "i'm" { "they're" } else { if bare == "i" { "they" } else { if bare == "me" { "them" } else { if bare == "i've" { "they've" } else { if bare == "i'll" { "they'll" } else { if bare == "am" { "are" } else { if bare == "mine" { "theirs" } else { "" } } } } } } } }
+      words = words.append(if swapped.is_empty() { w } else { swapped + mark })
+    }
+    let lead = ["also,", "and", "actually,", "also", "actually", "oh,", "so", "well,"]
+    while not words.is_empty() and lead.contains(words[0].lower()) { words = words.drop(1) }
+    let line = words.join(" ").replace(", by the way", "").replace(" by the way", "").replace(", btw", "").replace(" btw", "")
+    if words.length() >= 2 and (line.lower().starts_with("their ") or line.lower().starts_with("they")) {
+      out = out.append(line.slice(0, 1).upper() + line.slice(1, line.length()) + ".")
+    }
+  }
+  return out.take(3)
+}
+
+fn ko_nothing_looked() -> BrainFound { return {notes: [], by: "words"} }
+
+// A small model sometimes says the question back instead of answering it.
+// A reply that is mostly the message's own words, when Kosi has checked a
+// fact on it, gives the fact instead.
+fn ko_echoes(reply: Text, said: Text) -> Bool {
+  let a = br_words(reply)
+  let b = br_words(said)
+  if a.is_empty() { return true }
+  if b.is_empty() { return false }
+  // Said back: nearly all of the reply's words are the message's, and it
+  // adds hardly anything; a reply that corrects the message adds words.
+  let shared = (for w in a where b.contains(w) { w }).length()
+  return shared / a.length() >= 0.75 and a.length() <= b.length() + 1
+}
+
+fn ko_grounded(r: KosiReply, said: Text, looked: BrainFound) -> KosiReply {
+  if looked.notes.is_empty() or not ko_echoes(r.reply, said) { return r }
+  return {..r, reply: "From what I've checked: " + looked.notes[0].text}
+}
+
+fn ko_no_small() -> KosiSmallReply { return {reply: "", remember: []} }
+
+// A small model mixes its instructions into what it says and keeps: the
+// reply loses any "Worked out exactly by Kosika", and a fact is kept only
+// when it is about the person ("They ...", "Their ...").
+fn ko_from_small(r: KosiSmallReply, said: Text) -> KosiReply {
+  let reply = r.reply.replace("Worked out exactly by Kosika:", "").replace("Worked out exactly by Kosika.", "").replace("Worked out exactly by Kosika", "").trim()
+  // and only when the message says it: a small model also "remembers" what
+  // it was never told, even the example in its own brief.
+  let heard = br_words(said)
+  let theirs = for f in r.remember where (f.trim().starts_with("They ") or f.trim().starts_with("Their ")) and not f.contains("Kosika") and not f.lower().contains("message") and ko_heard(br_words(f), heard) { f.trim() }
+  return {reply: reply, remember: ko_told(said).concat(theirs).take(3), draw: "", project: "", step: ""}
+}
+
+// Most of a fact's words are in what was said.
+fn ko_heard(fact: Text[], said: Text[]) -> Bool {
+  let own = for w in fact where w != "their" and w != "they" and w != "they're" { w }
+  if own.is_empty() { return false }
+  return (for w in own where said.contains(w) { w }).length() / own.length() >= 0.6
+}
+
+// A small model answers the talk before instead of the message, so it is
+// not shown the talk: what it needs from earlier is in memory.
+fn ko_small_earlier() -> Text { return "(left out)" }
+
+// What Kosi says, checked against what Kosika worked out exactly.
+fn ko_checked(r: KosiReply, exact: WkAnswer) -> KosiReply { return {..r, reply: wk_checked(r.reply, exact)} }
+
+fn ko_no_reply() -> KosiReply { return {reply: "", remember: [], draw: "", project: "", step: ""} }
+
+// What Kosi knows that bears on what was said, as lines for the model.
+fn ko_known_text(found: BrainFound) -> Text {
+  let notes = for n in found.notes where n.kind != "talk" { n }
+  if notes.is_empty() { return "(nothing yet)" }
+  return (for n in notes.take(6) { "- " + ko_note_line(n) }).join("\n")
+}
+
+// What Kosi knows, said to the person: a small model copies the memory's
+// "Their exam is on 12 December." into its reply as it stands, so for the
+// small brain the person's facts are written as "Your exam ...".
+fn ko_known_you(found: BrainFound) -> Text {
+  let text = ko_known_text(found)
+  return text.replace("- Their ", "- Your ").replace("- They're ", "- You're ").replace("- They are ", "- You are ").replace("- They ", "- You ").replace(" their ", " your ").replace(" they ", " you ")
+}
+
+// The checked facts Kosi has on a question, read now or kept before.
+// The checked facts on a question: those read for it now, and those kept
+// before on the very things it names (a fact on Australia is no evidence
+// for a question on India).
+fn ko_checked_facts(known: BrainFound, looked: BrainFound, asked: Text) -> BrainFound {
+  let names = for x in fa_subjects(asked) { x.lower() }
+  let kept = for n in known.notes where n.kind == "fact" and n.source.contains("wikipedia.org") and names.contains(n.topic.lower()) { n }
+  return {notes: (for n in looked.notes where n.kind == "fact" and n.source.contains("wikipedia.org") { n }).concat(kept), by: "words"}
+}
+
+fn ko_note_line(n: BrainNote) -> Text {
+  if n.kind == "fact" and n.source.contains("wikipedia.org") { return "Checked fact (Wikipedia, " + n.topic + "; this is right, so go by it): " + n.text }
+  if n.kind == "fact" and n.source.starts_with("https://") { return "Research: " + n.topic + ": " + n.text }
+  if n.kind == "project" { return "Project " + n.topic + ": next step " + n.text }
+  if n.kind == "episode" { return "Earlier: for '" + n.topic + "' Kosika " + n.text }
+  return n.text
+}
+
+fn ko_talk_text(talk: BrainFound) -> Text { return if talk.notes.is_empty() { "(this is the start of the talk)" } else { talk.notes[0].text.replace(" | ", "\n") } }
+
+fn ko_now(today: Moment) -> Text { return f"{today.weekday} {today.date}, {today.time}" }
+
+// ---------------------------------------------------------------- checking the reply
+
+// The reply as it should be heard: list marks and markdown taken out, lines
+// joined, and cut at a sentence once it runs past 120 words.
+fn ko_spoken(text: Text) -> Text {
+  var lines: Text[] = []
+  for line in text.lines() {
+    var l = line.trim()
+    for mark in ["### ", "## ", "# ", "- ", "* ", "• "] {
+      if l.starts_with(mark) { l = l.drop(mark.length()) }
+    }
+    l = l.replace("**", "").replace("__", "").replace("`", "")
+    if not l.is_empty() { lines = lines.append(l) }
+  }
+  let words = lines.join(" ").words()
+  if words.length() <= 120 { return words.join(" ") }
+  var out: Text[] = []
+  var done = false
+  for w in words {
+    if not done {
+      out = out.append(w)
+      if out.length() >= 60 and (w.ends_with(".") or w.ends_with("?") or w.ends_with("!")) { done = true }
+      if out.length() >= 140 { done = true }
+    }
+  }
+  return out.join(" ")
+}
+
+fn ko_reply_text(r: KosiReply) -> Text {
+  let said = ko_spoken(r.reply)
+  return if said.is_empty() { "Sorry, I lost my words there. Could you say that again?" } else { said }
+}
+
+// What is worth remembering: short, whole sentences about the person or
+// their work, not a request of this message ("they want a drawing"), and
+// not something Kosi already knows in other words (most of the same words).
+fn ko_new_facts(r: KosiReply, known: BrainFound) -> Text[] {
+  let have = for n in known.notes where n.kind != "talk" { br_words(n.text) }
+  var out: Text[] = []
+  var taken: Text[][] = []
+  for f in r.remember.take(3) {
+    let t = f.trim()
+    let words = t.words().length()
+    let stems = br_words(t)
+    let low = " " + t.lower() + " "
+    // Not a fact about the person: what happened in the talk itself.
+    let chatter = low.contains(" the user ") or low.contains(" user ") or low.contains(" asks how") or low.contains(" asks what") or low.contains(" asks if") or low.contains(" kosi ") or low.contains(" greeted ") or low.contains(" asked about ")
+    let wanting = low.contains(" requested ") or low.contains(" request a") or low.contains(" asked for ") or low.contains(" asking for") or low.contains(" asking if") or low.contains(" want a drawing") or low.contains(" want more ") or low.contains(" want another") or low.contains(" want a sketch") or low.contains(" confirmation")
+    let asking = chatter or wanting or low.contains(" wants an explanation") or low.contains(" wants a drawing") or low.contains(" wants a picture") or low.contains(" asked ") or low.contains(" is asking ")
+    let corrects = not ko_replaces(t, known).is_empty()
+    let said_before = not corrects and (for h in have.concat(taken) where br_near(stems, h.join(" ")) >= 0.5 { h }).length() > 0
+    if words >= 2 and words <= 30 and not asking and not said_before {
+      out = out.append(t)
+      taken = taken.append(stems)
+    }
+  }
+  return out
+}
+
+// The numbers in a fact, a date's "19th" read as 19.
+fn ko_numbers(text: Text) -> Number[] {
+  var out: Number[] = []
+  for w in text.replace(",", " ").replace("/", " ").words() {
+    let bare = w.trim_marks(".,;:()?!'\"").lower()
+    let plain = if bare.ends_with("st") or bare.ends_with("nd") or bare.ends_with("rd") or bare.ends_with("th") { bare.slice(0, bare.length() - 2) } else { bare }
+    let v = plain.to_number()
+    if v.exists() { out = out.append(v.value()) }
+  }
+  return out
+}
+
+// A fact that changes one Kosi holds: most of the same words, other
+// numbers ("Their exam is now on 19 December." after "... on 12 December.").
+// The topic of the fact it replaces, else "".
+fn ko_replaces(text: Text, known: BrainFound) -> Text {
+  let stems = br_words(text)
+  let numbers = ko_numbers(text)
+  if numbers.is_empty() { return "" }
+  for n in known.notes where n.kind == "fact" {
+    if ko_same_subject(text, n.text) and ko_numbers(n.text) != numbers { return n.topic }
+  }
+  return ""
+}
+
+// Two facts are about the same thing when most words of the shorter, not
+// counting numbers or "they" and "their", are in the longer: "Their exam has
+// moved to 19 December." and "Their signals and systems exam is on 12
+// December." are, "Their sister's birthday is on 14 March." is not.
+fn ko_same_subject(a: Text, b: Text) -> Bool {
+  let wa = for w in br_words(a) where not w.to_number().exists() and w != "their" and w != "they" and w != "moved" and w != "now" { w }
+  let wb = for w in br_words(b) where not w.to_number().exists() and w != "their" and w != "they" and w != "moved" and w != "now" { w }
+  if wa.is_empty() or wb.is_empty() { return false }
+  let shared = (for w in wa.unique() where wb.contains(w) { w }).length()
+  return shared / wa.unique().length().min(wb.unique().length()) >= 0.6
+}
+
+// A new fact is kept under its own words; a changed one under the topic of
+// the fact it replaces, so the old one is written over, not kept beside it.
+fn ko_fact_note(text: Text, today: Moment, known: BrainFound) -> BrainNote {
+  let old = ko_replaces(text, known)
+  let topic = if old.is_empty() { text } else { old }
+  return {kind: "fact", topic: topic, words: br_words(text).join(" "), text: text, source: "you told Kosi, " + today.date, score: 1, times: 1}
+}
+
+// The facts Kosi already holds on what it was told to remember, so the same
+// thing said in other words is not kept twice.
+fn ko_seen_ask(r: KosiReply) -> BrainAsk { return {text: if r.remember.is_empty() { "nothing" } else { r.remember.join(" ") }, kind: "fact"} }
+
+fn ko_both(a: BrainFound, b: BrainFound) -> BrainFound { return {notes: a.notes.concat(b.notes), by: a.by} }
+
+fn ko_facts(r: KosiReply, known: BrainFound, today: Moment) -> KosiFacts { return {notes: for f in ko_new_facts(r, known) { ko_fact_note(f, today, known) }} }
+
+// ---------------------------------------------------------------- the talk
+
+fn ko_talk_ask() -> BrainAsk { return {text: "the talk so far", kind: "talk"} }
+
+// The talk after this turn: the last ten lines, oldest first.
+fn ko_talk_after(talk: BrainFound, said: Text, reply: Text) -> BrainNote {
+  let before: Text[] = if talk.notes.is_empty() { [] } else { talk.notes[0].text.split(" | ") }
+  let lines = before.concat(["You: " + said, "Kosi: " + reply])
+  let from = (lines.length() - 10).max(0)
+  return {kind: "talk", topic: "the talk so far", words: "talk far", text: lines.slice(from, lines.length()).join(" | "), source: "Kosi", score: 1, times: 1}
+}
+
+fn ko_project_note(r: KosiReply, today: Moment) -> BrainNote {
+  return {kind: "project", topic: r.project.trim(), words: br_words(r.project).join(" "), text: r.step.trim(), source: "you told Kosi, " + today.date, score: 1, times: 1}
+}
+
+fn ko_has_project(r: KosiReply) -> Bool { return not r.project.trim().is_empty() and not r.step.trim().is_empty() }
+
+// ---------------------------------------------------------------- a picture
+
+fn ko_draw_ask(r: KosiReply) -> DzAsk { return {text: ko_about_kosika(r.draw.trim()), palette: "", place: "chat", kind: ""} }
+
+// Kosika's real parts, so that a picture of Kosika shows Kosika and not a
+// made-up system of gateways and payment services.
+fn ko_kosika_parts() -> Text {
+  return "its parts: the language with its parser and checker, the Python and Go engines, the standard library (Brain, Designs, algorithms, science), Studio, and the agents Kosi, Iris, Sol, the crew and the coder"
+}
+
+fn ko_about_kosika(ask: Text) -> Text { return if ask.lower().contains("kosika") { ask + ", " + ko_kosika_parts() } else { ask } }
+
+// The person's last message in the talk before this one, or "".
+fn ko_last_said(talk: BrainFound) -> Text {
+  if talk.notes.is_empty() { return "" }
+  let theirs = for line in talk.notes[0].text.split(" | ") where line.starts_with("You: ") { line.drop(5) }
+  return if theirs.is_empty() { "" } else { theirs.last().value() }
+}
+
+// What to draw: what the model named, else for "draw it for me" the
+// subject of the message before.
+fn ko_with_subject(r: KosiReply, msg: Msg, talk: BrainFound) -> KosiReply {
+  if not r.draw.trim().is_empty() { return r }
+  let t = " " + msg.text.lower() + " "
+  let bare = t.contains(" draw it") or t.contains(" draw that") or t.contains(" show me ") or t.contains(" picture of it") or t.trim() == "show me"
+  let before = ko_last_said(talk)
+  return if bare and not before.is_empty() { {..r, draw: before} } else { r }
+}
+
+// The message itself, said back: the same words, give or take marks and
+// case. "Yes, New Delhi is India's capital" answers "is new delhi
+// india's capital", and is not said back.
+fn ko_plain(t: Text) -> Text { return t.lower().replace("?", "").replace(".", "").replace(",", "").replace("!", "").replace("’", "'").trim() }
+
+fn ko_said_back(reply: Text, said: Text) -> Bool {
+  let a = ko_plain(reply)
+  let b = ko_plain(said)
+  return a == b or (b.contains(a) and a.length() > 8)
+}
+
+// A reply that is the message said back is no reply.
+fn ko_not_echo(r: KosiReply, msg: Msg) -> KosiReply {
+  // A short reply with no words of its own ("Here it is.") is not an echo.
+  if br_words(r.reply).length() < 3 or not ko_said_back(r.reply, msg.text) { return r }
+  return {..r, reply: "Tell me a little more about what you have in mind, and I'll take it from there."}
+}
+
+// A picture only when it was asked for, or the person asks how something
+// works and the model thinks one would help: never for small talk.
+fn ko_wants_picture(msg: Msg, r: KosiReply) -> Bool {
+  if r.draw.trim().is_empty() { return false }
+  let t = " " + msg.text.lower().replace("?", " ").replace(",", " ") + " "
+  let asked = t.contains(" draw ") or t.contains(" picture") or t.contains(" diagram") or t.contains(" sketch") or t.contains(" visual") or t.contains(" show me ") or t.contains(" canvas")
+  let how = t.contains(" how does ") or t.contains(" how do ") or t.contains(" explain ") or t.contains(" how is ") or t.contains(" how are ")
+  return asked or how
+}
+
+fn ko_no_canvas() -> DzResult { return {kind: "", why: "", title: "", page: "", svg: "", embed: "", problems: [], fixed: []} }
+
+fn ko_suggest(r: KosiReply) -> Text[] {
+  var out: Text[] = []
+  if not r.project.trim().is_empty() { out = out.append("what's next on " + r.project.trim() + "?") }
+  out = out.append("what do you remember about me?")
+  if r.draw.trim().is_empty() { out = out.append("draw it for me") }
+  return out.take(3)
+}
+
+// When Kosika drew the picture, a reply still asking what to draw, or
+// offering to sketch it, says what was drawn instead.
+fn ko_drawn_text(r: KosiReply, canvas: Text, title: Text) -> Text {
+  let low = r.reply.lower()
+  let hedges = (r.reply.contains("?") and (low.contains("sketch") or low.contains("draw") or low.contains("tell me"))) or low.contains("have sol draw") or low.contains("sol will draw") or low.contains("i will draw") or low.contains("i'll draw")
+  return if not canvas.is_empty() and hedges and not title.trim().is_empty() { "Here it is: " + title.trim() + "." } else { ko_reply_text(r) }
+}
+
+// How Kosi got there, from the steps it really took: the things the
+// message names, Kosika's exact working, the checked facts read, what it
+// remembered of the person, and each check made on the model's reply.
+fn ko_thought(msg: Msg, known: BrainFound, looked: BrainFound, exact: WkAnswer, first: KosiReply, final: KosiReply) -> Thought {
+  let named = if fa_asks_fact(msg.text) { fa_subjects(msg.text) } else { [] }
+  let worked = if exact.future { "A year still to come: no one can know it yet." } else { exact.says }
+  let evidence = ko_checked_facts(known, looked, msg.text).notes
+  // Only what was remembered that bears on the message: it shares a word.
+  let asked = br_words(msg.text)
+  let memory = for n in known.notes where n.kind == "fact" and n.source.starts_with("you told Kosi") and (for w in br_words(n.text) where asked.contains(w) { w }).length() > 0 { n }
+  var checks: Text[] = []
+  if not exact.says.is_empty() {
+    let held = first.reply == final.reply
+    checks = checks.append(if exact.future { if held { "passed: the reply says the future cannot be known" } else { "fixed: the reply told the future, so Kosika said it cannot be known" } } else { if held { "passed: the reply holds Kosika's exact answer" } else { "fixed: the reply missed Kosika's exact answer, so it was given instead" } })
+  }
+  if final.reply.starts_with("Tell me a little more") and first.reply != final.reply { checks = checks.append("fixed: the reply only said your message back") }
+  if final.reply.starts_with("From what I've checked:") and first.reply != final.reply { checks = checks.append("fixed: the reply only said the question back, so the checked fact was given") }
+  return th_build(msg.text, named, worked, evidence, memory.take(2), checks, final.reply)
+}
+
+fn ko_said(r: KosiReply, known: BrainFound, drawn: DzResult, thought: Thought, wanted: Bool) -> Said {
+  let canvas = if drawn.problems.is_empty() { drawn.embed } else { "" }
+  // A drawing that was asked for and did not come out is said plainly,
+  // never passed off as made.
+  let failed = wanted and canvas.is_empty()
+  let drew = if canvas.is_empty() { thought } else { th_with_drawing(thought, drawn.title, drawn.fixed) }
+  let shown = if failed { th_with_failure(drew, "the drawing did not come out this time, so Kosi said so instead of describing it") } else { drew }
+  let text = if failed { "I tried to draw it, but the drawing didn't come out this time. Ask me again and I'll have another go." } else { ko_drawn_text(r, canvas, drawn.title) }
+  return {text: text, suggest: ko_suggest(r), canvas: canvas, kept: ko_new_facts(r, known), project: r.project.trim(), thinking: th_answer(shown, text)}
+}
+
+// ---------------------------------------------------------------- the workflows
+
+workflow chat(msg: Msg) -> Said {
+  budget 10 model calls, 600 seconds
+  today  = now
+  known  = call brain_recall({text: msg.text, kind: ""})
+  talk   = call brain_get(ko_talk_ask())
+  looked = match fa_asks_fact(msg.text) and not fa_missing(fa_subjects(msg.text), known).is_empty() {
+    case true { call fa_look_up({question: msg.text, subjects: fa_missing(fa_subjects(msg.text), known)}) }
+    case _ { ko_nothing_looked() }
+  }
+  exact  = wk_answer(msg.text, today.year)
+  said   = use_model friend(ko_task(), msg.text, ko_known_text(ko_both(known, looked)) + wk_note(exact), ko_talk_text(talk), ko_now(today)) retry 1 otherwise ko_no_reply()
+  reply  = ko_not_echo(ko_with_subject(ko_checked(said, exact), msg, talk), msg)
+  drawn  = match ko_wants_picture(msg, reply) {
+    case true { call brain_design(ko_draw_ask(reply)) }
+    case _ { ko_no_canvas() }
+  }
+  seen   = call brain_recall(ko_seen_ask(reply))
+  facts  = ko_facts(reply, ko_both(known, seen), today)
+  kept   = match facts.notes.is_empty() {
+    case true { br_not_kept_kosi() }
+    case _ { call ko_keep_facts(facts) }
+  }
+  aim    = match ko_has_project(reply) {
+    case true { call brain_keep(ko_project_note(reply, today)) }
+    case _ { br_not_kept_kosi() }
+  }
+  heard  = call brain_keep(ko_talk_after(talk, msg.text, ko_reply_text(reply)))
+  out    = ko_said(reply, ko_both(known, seen), drawn, ko_thought(msg, known, looked, exact, said, reply), ko_wants_picture(msg, reply))
+}
+
+// The small brain: the same talk for a small model on a laptop's CPU. It
+// is asked less, draws nothing and keeps no project, and what it says is
+// checked against Kosika's own working all the same.
+workflow chat_small(msg: Msg) -> Said {
+  budget 10 model calls, 600 seconds
+  today  = now
+  known  = call brain_recall({text: msg.text, kind: ""})
+  talk   = call brain_get(ko_talk_ask())
+  looked = match fa_asks_fact(msg.text) and not fa_missing(fa_subjects(msg.text), known).is_empty() {
+    case true { call fa_look_up({question: msg.text, subjects: fa_missing(fa_subjects(msg.text), known)}) }
+    case _ { ko_nothing_looked() }
+  }
+  exact  = wk_answer(msg.text, today.year)
+  small  = use_model buddy(ko_small_task(), msg.text, ko_known_you(ko_both(known, looked)) + wk_note(exact), ko_small_earlier()) retry 1 otherwise ko_no_small()
+  raw    = ko_from_small(small, msg.text)
+  reply  = ko_grounded(ko_checked(raw, exact), msg.text, ko_checked_facts(known, looked, msg.text))
+  drawn  = match ko_wants_picture(msg, reply) {
+    case true { call brain_design(ko_draw_ask(reply)) }
+    case _ { ko_no_canvas() }
+  }
+  seen   = call brain_recall(ko_seen_ask(reply))
+  facts  = ko_facts(reply, ko_both(known, seen), today)
+  kept   = match facts.notes.is_empty() {
+    case true { br_not_kept_kosi() }
+    case _ { call ko_keep_facts(facts) }
+  }
+  aim    = match ko_has_project(reply) {
+    case true { call brain_keep(ko_project_note(reply, today)) }
+    case _ { br_not_kept_kosi() }
+  }
+  heard  = call brain_keep(ko_talk_after(talk, msg.text, ko_reply_text(reply)))
+  out    = ko_said(reply, ko_both(known, seen), drawn, ko_thought(msg, known, looked, exact, raw, reply), ko_wants_picture(msg, reply))
+}
+
+// ---------------------------------------------------------------- the friends
+
+// Kosi's answer as one of the friends' answers, with the friends Kosi can
+// hand the question on to offered first.
+fn ko_as_friend(said: Said, asked: Text) -> FrSaid {
+  return {who: "kosi", text: said.text, canvas: said.canvas, kept: said.kept, sources: for n in said.thinking.nodes where not n.source.is_empty() { n.source }, suggest: fr_suggest(asked).concat(said.suggest).take(4), thinking: said.thinking}
+}
+
+workflow ko_chat_friend(msg: Msg) -> FrSaid {
+  said = call chat(msg)
+  out  = ko_as_friend(said, msg.text)
+}
+
+workflow ko_small_friend(msg: Msg) -> FrSaid {
+  said = call chat_small(msg)
+  out  = ko_as_friend(said, msg.text)
+}
+
+// The talk with Kosi and its friends: a message for Iris or Sol goes to
+// them, everything else to Kosi.
+workflow talk(msg: Msg) -> FrSaid {
+  budget 14 model calls, 900 seconds
+  who = fr_who(msg.text)
+  out = match who {
+    case "iris" { call iris_research({text: msg.text}) }
+    case "sol" { call sol_explain({text: msg.text}) }
+    case _ { call ko_chat_friend(msg) }
+  }
+}
+
+// The same on this laptop: Kosi through the small brain.
+workflow talk_small(msg: Msg) -> FrSaid {
+  budget 14 model calls, 900 seconds
+  who = fr_who(msg.text)
+  out = match who {
+    case "iris" { call iris_research({text: msg.text}) }
+    case "sol" { call sol_explain({text: msg.text}) }
+    case _ { call ko_small_friend(msg) }
+  }
+}
+
+fn br_not_kept_kosi() -> BrainKept { return {key: "", entries: 0} }
+
+fn ko_fact_at(f: KosiFacts, k: Number) -> BrainNote { return f.notes[k.min(f.notes.length() - 1)] }
+
+// Up to three facts, each kept by a step of its own; fewer repeat the last,
+// which is kept under the same key again.
+workflow ko_keep_facts(f: KosiFacts) -> BrainKept {
+  a   = call brain_keep(ko_fact_at(f, 0))
+  b   = call brain_keep(ko_fact_at(f, 1))
+  c   = call brain_keep(ko_fact_at(f, 2))
+  out = c
+}
+
+// ---------------------------------------------------------------- tests
+
+fn ko_test_found(notes: BrainNote[]) -> BrainFound { return {notes: notes, by: "words"} }
+
+fn ko_test_note(kind: Text, topic: Text, text: Text, source: Text) -> BrainNote { return {kind: kind, topic: topic, words: br_words(topic).join(" "), text: text, source: source, score: 1, times: 1} }
+
+fn ko_test_reply(reply: Text, remember: Text[]) -> KosiReply { return {reply: reply, remember: remember, draw: "", project: "", step: ""} }
+
+test "a reply is tidied to be heard, and cut at a sentence when long" {
+  expect ko_spoken("**Sure!**\n- First, rest.\n- Then study.") == "Sure! First, rest. Then study."
+  long = (for k in 0 until 50 { "This is one more sentence." }).join(" ")
+  cut = ko_spoken(long)
+  expect cut.words().length() <= 140 and cut.ends_with(".")
+  expect ko_reply_text(ko_test_reply("", [])) == "Sorry, I lost my words there. Could you say that again?"
+}
+
+test "Kosi keeps only short new facts, and the last ten lines of the talk" {
+  known = ko_test_found([ko_test_note("fact", "Their exam is on 12 December.", "Their exam is on 12 December.", "you told Kosi, 2026-11-03")])
+  r = ko_test_reply("Got it.", ["Their exam is on 12 December.", "They are applying to Bosch for an internship.", "ok", "They like long walks by the river in the evening after work, especially in autumn when the leaves turn, and they like to listen to podcasts about history and science while they walk."])
+  expect ko_new_facts(r, known) == ["They are applying to Bosch for an internship."]
+  // The same fact in other words, a request, or one said twice: not kept again.
+  again = ko_test_reply("ok", ["They have an exam on 12 December.", "The user wants a drawing of the insertion process.", "They are applying to Bosch.", "They are applying to Bosch for a job."])
+  expect ko_new_facts(again, known) == ["They are applying to Bosch."]
+  expect not ko_wants_picture({text: "what do you remember about me?"}, {..ko_test_reply("", []), draw: "voice interface"})
+  expect ko_wants_picture({text: "can you draw it for me"}, {..ko_test_reply("", []), draw: "binary search tree"})
+  empty = ko_test_found([])
+  t1 = ko_talk_after(empty, "hi", "Hey!")
+  expect t1.text == "You: hi | Kosi: Hey!"
+  long = ko_test_found([{..t1, text: (for k in 0 until 10 { f"You: line {k}" }).join(" | ")}])
+  expect ko_talk_after(long, "next", "ok").text.split(" | ").length() == 10
+}
+
+test "what Kosi knows is put in front of the model, and the talk is not counted twice" {
+  known = ko_test_found([ko_test_note("project", "Kosika", "add voice to Kosi", "you told Kosi"), ko_test_note("talk", "the talk so far", "You: hi | Kosi: Hey!", "Kosi"), ko_test_note("fact", "Tidal dissipation", "We measure tides.", "https://arxiv.org/abs/1 · A · 2026")])
+  text = ko_known_text(known)
+  expect text.contains("- Project Kosika: next step add voice to Kosi")
+  expect text.contains("- Research: Tidal dissipation: We measure tides.")
+  expect not text.contains("Kosi: Hey!")
+  expect ko_known_text(ko_test_found([])) == "(nothing yet)"
+}
+
+test "a small model's reply loses Kosika's notes, and keeps only facts about the person" {
+  r = ko_from_small({reply: "So 8 are left. Worked out exactly by Kosika.", remember: ["Worked out exactly by Kosika", "Today is Saturday", "Their sister is called Riya.", "Kosika is a calm companion."]}, "how many are left?")
+  expect r.reply == "So 8 are left."
+  expect r.remember.is_empty()
+  told = ko_from_small({reply: "Noted.", remember: ["Their exam is on 12 December.", "They are vegetarian."]}, "Also, I'm vegetarian.")
+  expect told.remember == ["They're vegetarian.", "They are vegetarian."]
+  expect ko_told("My sister Riya's birthday is on 14 March, and she loves astronomy.") == ["Their sister Riya's birthday is on 14 March, and she loves astronomy."]
+  expect ko_told("Also, I'm vegetarian.") == ["They're vegetarian."]
+  expect ko_told("My exam is on 12 December, by the way.") == ["Their exam is on 12 December."]
+  expect ko_told("And I get around on a scooter, I don't have a car.") == ["They get around on a scooter, they don't have a car."]
+  expect ko_told("Actually, my exam has moved to 19 December.") == ["Their exam has moved to 19 December."]
+  expect ko_told("Suggest a birthday present for my sister.").is_empty()
+  expect ko_told("when is my exam?").is_empty()
+}
+
+test "a reply that only says the question back gives the checked fact" {
+  looked: BrainFound = {notes: [ko_test_note("fact", "Australia", "Canberra is the nation's capital.", "https://en.wikipedia.org/wiki/Australia")], by: "words"}
+  r = ko_test_reply("Sydney is the capital of Australia, right?", [])
+  expect ko_grounded(r, "Sydney is the capital of Australia, right?", looked).reply == "From what I've checked: Canberra is the nation's capital."
+  fine = ko_test_reply("No, the capital is Canberra; Sydney is the largest city.", [])
+  expect ko_grounded(fine, "Sydney is the capital of Australia, right?", looked).reply == fine.reply
+  expect ko_note_line(looked.notes[0]).starts_with("Checked fact (Wikipedia, Australia")
+  mine = ko_test_found([ko_test_note("fact", "Their exam is on 12 December.", "Their exam is on 12 December.", "you told Kosi"), ko_test_note("fact", "They're vegetarian.", "They're vegetarian.", "you told Kosi")])
+  expect ko_known_you(mine).lines() == ["- Your exam is on 12 December.", "- You're vegetarian."]
+  kept: BrainFound = {notes: [], by: "words"}
+  expect ko_checked_facts(looked, kept, "Sydney is the capital of Australia, right?").notes.length() == 1
+  expect ko_checked_facts(looked, kept, "is new delhi india's capital").notes.is_empty()
+}
+
+test "draw it for me draws what the talk was about, and an echo is no reply" {
+  talk = ko_test_found([{..ko_test_note("talk", "the talk so far", "", "Kosi"), text: "You: how does a rainbow form | Kosi: Sunlight bends in raindrops."}])
+  r = ko_with_subject(ko_test_reply("Here it is.", []), {text: "draw it for me"}, talk)
+  expect r.draw == "how does a rainbow form"
+  expect ko_with_subject(ko_test_reply("Sure.", []), {text: "how are you"}, talk).draw == ""
+  expect ko_not_echo(ko_test_reply("yes, but i meant something more unique", []), {text: "yes, but i meant something more unique"}).reply.starts_with("Tell me a little more")
+  expect ko_not_echo(ko_test_reply("Here it is.", []), {text: "draw it for me"}).reply == "Here it is."
+  expect ko_not_echo(ko_test_reply("I would love to sketch the gears for you, which part first?", []), {text: "draw it for me"}).reply.starts_with("I would love")
+  expect not ko_echoes("No, Sydney is not the capital of Australia; Canberra is, and Sydney is its largest city.", "Sydney is the capital of Australia, right?")
+  expect not ko_said_back("Yes, New Delhi is India's capital.", "is new delhi india's capital")
+  expect ko_said_back("Is new delhi India's capital?", "is new delhi india's capital")
+  expect ko_drawn_text(ko_test_reply("I would love to sketch it, which part?", []), "<div>", "Bicycle gears") == "Here it is: Bicycle gears."
+  expect ko_drawn_text(ko_test_reply("Sure, I'll have Sol draw it.", []), "<div>", "Kosika's parts") == "Here it is: Kosika's parts."
+  expect ko_new_facts(ko_test_reply("ok", ["They are asking for confirmation that it matches the intended design.", "They want more unique designs."]), ko_test_found([])).is_empty()
+  expect ko_new_facts(ko_test_reply("ok", ["User asks how many times r appears in strawberry."]), ko_test_found([])).is_empty()
+  expect ko_new_facts(ko_test_reply("ok", ["They requested a diagram of Kosika's components."]), ko_test_found([])).is_empty()
+}
+
+test "a picture of Kosika is drawn from its real parts" {
+  expect ko_about_kosika("Kosika architecture diagram").contains("Python and Go engines")
+  expect ko_about_kosika("the water cycle") == "the water cycle"
+}
+
+test "a changed fact writes over the old one" {
+  known = ko_test_found([ko_test_note("fact", "Their exam is on 12 December.", "Their exam is on 12 December.", "you told Kosi, 2026-11-03")])
+  moved = ko_test_reply("Noted.", ["Their exam is now on 19 December."])
+  expect ko_new_facts(moved, known) == ["Their exam is now on 19 December."]
+  expect ko_replaces("Their exam is now on 19th December.", known) == "Their exam is on 12 December."
+  expect ko_replaces("Their exam is on 12 December.", known) == ""
+  expect ko_replaces("Their exam has moved to 19 December.", known) == "Their exam is on 12 December."
+  systems = ko_test_found([ko_test_note("fact", "Their signals and systems exam is on 12 December.", "Their signals and systems exam is on 12 December.", "you told Kosi"), ko_test_note("fact", "Their sister's birthday is on 14 March.", "Their sister's birthday is on 14 March.", "you told Kosi")])
+  expect ko_replaces("Their exam has moved to 19 December.", systems) == "Their signals and systems exam is on 12 December."
+  expect ko_replaces("Their dentist appointment is on 3 May.", systems) == ""
+  expect ko_new_facts(ko_test_reply("ok", ["They have an exam on 12 December."]), known).is_empty()
+  expect ko_numbers("on the 19th, at 9:30") == [19]
+}

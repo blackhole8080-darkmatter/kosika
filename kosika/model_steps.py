@@ -150,6 +150,7 @@ def call_model(
             presence_penalty=presence_penalty,
             stop=stop,
             json_object=True,
+            schema=output_schema,
         )
     )
     if response.tool_calls or response.finish_reason != "stop":

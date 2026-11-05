@@ -1,0 +1,223 @@
+// Kosi's checked facts: what a question names, looked up and kept.
+//
+// A small model on a laptop's CPU knows less than it says: asked "Sydney is
+// the capital of Australia, right?" it says yes. Kosika does not guess
+// either. When a question names something (Sydney, Australia, Einstein),
+// Kosi looks for a fact it has already checked; if it has none, it reads
+// the Wikipedia article on that thing, keeps the one or two sentences that
+// answer the question, with the page they came from, and puts them in
+// front of the model as checked facts. A fact read once is kept in the
+// Brain's memory, so the next time no page is read at all.
+
+import "std/brain.kos"
+
+export [FaLook, FaPage, FaUrl, fa_read, fa_page_sentences, fa_subjects, fa_missing, fa_url, fa_sentences, fa_note, fa_asks_fact, fa_look_up]
+
+record FaLook { question: Text subjects: Text[] }
+record FaPage { url: Text title: Text text: Text }
+record FaUrl { url: Text }
+
+tool fa_page {
+  source system "web"
+  operation: "fetch"
+  access: observe
+  input: FaUrl
+  output: FaPage
+}
+
+agent fa_reader {
+  can: [fa_page]
+}
+
+// Words that start a question or a sentence, not names.
+fn fa_starters() -> Text[] { return ["what", "why", "who", "whom", "whose", "how", "when", "where", "which", "since", "tell", "my", "if", "is", "are", "was", "were", "a", "an", "the", "in", "can", "could", "do", "does", "did", "i", "i'm", "please", "and", "so", "also", "actually", "hi", "hey", "explain", "give", "should", "would", "will", "on", "at", "of", "for", "to"] }
+
+fn fa_not_names() -> Text[] { return ["kosi", "kosika", "i", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december", "ok", "okay", "yes", "no"] }
+
+fn fa_capital(w: Text) -> Bool {
+  if w.is_empty() { return false }
+  let first = w.slice(0, 1)
+  return first != first.lower() and first == first.upper()
+}
+
+// The things a question names: runs of capitalised words, "of" and "the"
+// allowed inside a run ("Great Wall of China"), a possessive dropped
+// ("Einstein's"), and words that only start the sentence left out.
+// What a question names: its capitalised names, or, typed all in lower
+// case ("is new delhi india's capital"), its first three words of its own.
+fn fa_subjects(text: Text) -> Text[] {
+  let named = fa_named(text)
+  if not named.is_empty() { return named }
+  let skip = ["capital", "biggest", "largest", "smallest", "right", "true", "really", "the", "and", "for", "with", "are", "was", "were", "who", "what", "when", "where", "which", "why", "how", "does", "did", "has", "have", "its", "it's", "bigger", "smaller", "than", "tell", "about", "you", "your", "yours", "me", "mine", "hello", "thanks", "thank", "please", "today", "good"]
+  let words = for w in text.lower().replace("?", " ").replace(",", " ").replace("'s", " ").replace("’s", " ").words() where w.length() >= 3 and not skip.contains(w) and not fa_starters().contains(w) and not fa_not_names().contains(w) { w.trim_marks(".!'") }
+  return if words.is_empty() { [] } else { [words.take(3).join(" ")] }
+}
+
+fn fa_named(text: Text) -> Text[] {
+  let ws = for w in text.replace("?", " ").replace("!", " ").replace(",", " ").replace(".", " ").replace("\"", " ").words() { w.trim_marks("'()") }
+  var out: Text[] = []
+  var run: Text[] = []
+  for k in 0 until ws.length() {
+    let w = if ws[k].ends_with("'s") { ws[k].slice(0, ws[k].length() - 2) } else { ws[k] }
+    let joins = not run.is_empty() and (w == "of" or w == "the") and k + 1 < ws.length() and fa_capital(ws[k + 1])
+    let name = fa_capital(w) and not fa_not_names().contains(w.lower()) and not (fa_starters().contains(w.lower()) and run.is_empty())
+    if name or joins {
+      run = run.append(w)
+    } else {
+      if not run.is_empty() {
+        let found = run.join(" ")
+        if not out.contains(found) { out = out.append(found) }
+      }
+      run = []
+    }
+    if ws[k].ends_with("'s") and not run.is_empty() {
+      let found = run.join(" ")
+      if not out.contains(found) { out = out.append(found) }
+      run = []
+    }
+  }
+  if not run.is_empty() {
+    let found = run.join(" ")
+    if not out.contains(found) { out = out.append(found) }
+  }
+  return out.take(3)
+}
+
+// A question about the world, not about the person or a request to make
+// something: it asks, and it names something.
+fn fa_asks_fact(text: Text) -> Bool {
+  let low = " " + text.lower() + " "
+  let asks = text.contains("?") or low.starts_with(" is ") or low.starts_with(" are ") or low.starts_with(" was ") or low.starts_with(" were ") or low.starts_with(" does ") or low.starts_with(" did ") or low.starts_with(" how ") or low.starts_with(" what ") or low.starts_with(" who ") or low.starts_with(" why ") or low.starts_with(" when ") or low.starts_with(" where ") or low.starts_with(" which ") or low.starts_with(" since ") or low.starts_with(" tell me ")
+  let personal = low.contains(" my ") or low.contains(" i ") or low.contains(" me ") or low.contains(" i'm ")
+  let making = low.contains(" write ") or low.contains(" poem") or low.contains(" invent ") or low.contains(" slogan") or low.contains(" draw ")
+  return asks and not personal and not making and not fa_subjects(text).is_empty()
+}
+
+// The subjects Kosi holds no checked fact on yet.
+fn fa_missing(subjects: Text[], known: BrainFound) -> Text[] {
+  return for s in subjects where (for n in known.notes where n.source.contains("wikipedia.org") and n.topic.lower() == s.lower() { n }).is_empty() { s }
+}
+
+fn fa_url(subject: Text) -> Text { return "https://en.wikipedia.org/w/index.php?title=Special:Search&go=Go&search=" + subject.replace(" ", "+") }
+
+// A page's text as sentences: citation marks taken out, lines that are not
+// sentences (a menu, a caption) left out.
+fn fa_page_sentences(text: Text) -> Text[] {
+  var clean = text
+  for k in 1 until 400 {
+    clean = clean.replace(f"[{k}]", "")
+  }
+  let body = clean.replace("[citation needed]", "").replace("\n", " \n ")
+  var out: Text[] = []
+  for line in body.split("\n") {
+    for part in line.split(". ") {
+      let s = part.trim()
+      let n = s.words().length()
+      if n >= 6 and n <= 60 and fa_capital(s) and not s.contains("[") and not s.contains("|") { out = out.append(if s.ends_with(".") { s } else { s + "." }) }
+    }
+  }
+  return out.take(400)
+}
+
+// The sentences of a page that answer the question best: most of the
+// question's words, the page's own subject aside. At most two, in the
+// order they come.
+fn fa_sentences(text: Text, question: Text, subject: Text) -> Text[] {
+  let own = br_words(subject)
+  let asked = for w in br_words(question) where not own.contains(w) and w != "right" and w != "true" and w != "really" { w }
+  if asked.is_empty() { return [] }
+  let all = fa_page_sentences(text)
+  var best: Number[] = []
+  for s in all {
+    let theirs = br_words(s)
+    best = best.append((for w in asked where theirs.contains(w) { w }).length())
+  }
+  let top = best.max().or(0)
+  // One shared word is chance on a long page; two is an answer, unless the
+  // question has only one word of its own.
+  if top < 1 or (top < 2 and asked.length() > 1) { return [] }
+  var out: Text[] = []
+  for k in 0 until all.length() {
+    if best[k] == top and out.length() < 2 { out = out.append(all[k]) }
+  }
+  return out
+}
+
+fn fa_note(subject: Text, page: FaPage, line: Text) -> BrainNote {
+  let source = if page.url.is_empty() { fa_url(subject) } else { page.url }
+  return {kind: "fact", topic: subject, words: br_words(subject + " " + line).join(" "), text: line, source: source, score: 1, times: 1}
+}
+
+fn fa_no_page() -> FaPage { return {url: "", title: "", text: ""} }
+
+fn fa_no_kept() -> BrainKept { return {key: "", entries: 0} }
+
+fn fa_first(l: FaLook) -> Text { return if l.subjects.is_empty() { "" } else { l.subjects[0] } }
+fn fa_second(l: FaLook) -> Text { return if l.subjects.length() < 2 { "" } else { l.subjects[1] } }
+
+fn fa_lines(subject: Text, page: FaPage, question: Text) -> BrainNote[] {
+  if subject.is_empty() or page.text.is_empty() { return [] }
+  return for line in fa_sentences(page.text, question, subject) { fa_note(subject, page, line) }
+}
+
+fn fa_found(a: BrainNote[], b: BrainNote[]) -> BrainFound { return {notes: a.concat(b), by: "words"} }
+
+fn fa_kept_text(notes: BrainNote[]) -> BrainNote { return notes[0] }
+
+// One page read, or none when it cannot be: offline, or no such page.
+workflow fa_read(u: FaUrl) -> FaPage {
+  page = execute fa_reader.fa_page(u.url) otherwise fa_no_page()
+  out  = page
+}
+
+// The look-up itself: up to two pages, the sentences that answer the
+// question kept in the Brain's memory with their page.
+workflow fa_look_up(l: FaLook) -> BrainFound {
+  budget 1 model calls, 60 seconds
+  one   = match fa_first(l).is_empty() {
+    case true { fa_no_page() }
+    case _ { call fa_read({url: fa_url(fa_first(l))}) }
+  }
+  two   = match fa_second(l).is_empty() {
+    case true { fa_no_page() }
+    case _ { call fa_read({url: fa_url(fa_second(l))}) }
+  }
+  a     = fa_lines(fa_first(l), one, l.question)
+  b     = fa_lines(fa_second(l), two, l.question)
+  kept1 = match a.is_empty() {
+    case true { fa_no_kept() }
+    case _ { call brain_keep(fa_kept_text(a)) }
+  }
+  kept2 = match b.is_empty() {
+    case true { fa_no_kept() }
+    case _ { call brain_keep(fa_kept_text(b)) }
+  }
+  out   = fa_found(a, b)
+}
+
+// ---------------------------------------------------------------- tests
+
+test "the things a question names are found" {
+  expect fa_subjects("Sydney is the capital of Australia, right?") == ["Sydney", "Australia"]
+  expect fa_subjects("Why did Einstein win his Nobel Prize for relativity?") == ["Einstein", "Nobel Prize"]
+  expect fa_subjects("Since the Great Wall of China is visible from the Moon with the naked eye, how big is it?") == ["Great Wall of China", "Moon"]
+  expect fa_subjects("what's the capital of Zorbania?") == ["Zorbania"]
+  expect fa_subjects("hi Kosi, how are you?").is_empty()
+  expect fa_subjects("is new delhi india's capital") == ["new delhi india"]
+  expect fa_asks_fact("is new delhi india's capital")
+  expect fa_asks_fact("Sydney is the capital of Australia, right?")
+  expect not fa_asks_fact("When is my exam now?")
+  expect not fa_asks_fact("Write a four-line poem about a robot learning to dream.")
+  expect not fa_asks_fact("I GOT THE INTERNSHIP!!!")
+}
+
+test "the sentences that answer the question are kept, with their page" {
+  page = "Coordinates: 25S 133E\nAustralia, officially the Commonwealth of Australia, is a country comprising the mainland of the Australian continent.[12] It is the sixth-largest country in the world.\nThe capital is Canberra, and the largest city is Sydney.[15]\nMenu\nSearch"
+  lines = fa_sentences(page, "Sydney is the capital of Australia, right?", "Australia")
+  expect lines == ["The capital is Canberra, and the largest city is Sydney."]
+  note = fa_note("Australia", {url: "https://en.wikipedia.org/wiki/Australia", title: "Australia", text: page}, lines[0])
+  expect note.source == "https://en.wikipedia.org/wiki/Australia"
+  expect fa_url("Great Wall of China") == "https://en.wikipedia.org/w/index.php?title=Special:Search&go=Go&search=Great+Wall+of+China"
+  known: BrainFound = {notes: [note], by: "words"}
+  expect fa_missing(["Australia", "Sydney"], known) == ["Sydney"]
+}

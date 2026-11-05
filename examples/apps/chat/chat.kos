@@ -12,10 +12,10 @@ export [Turn, Reply, answer]
 // and the new message.
 record Turn { history: Text ask: Text }
 record Reply { text: Text }
-record Brief { task: Text history: Text ask: Text }
+record ChatBrief { task: Text history: Text ask: Text }
 
 model answerer {
-  input: Brief
+  input: ChatBrief
   output: Reply
   parameters: {
     max_output_tokens: 4000
