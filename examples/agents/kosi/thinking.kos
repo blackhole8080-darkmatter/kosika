@@ -43,8 +43,16 @@ fn th_build(question: Text, named: Text[], exact: Text, evidence: BrainNote[], m
     links = links.append("q>exact")
     ends = ends.append("exact")
   }
-  for k in 0 until evidence.take(3).length() {
-    let e = evidence[k]
+  // The same sentence read twice (a paper found by two searches) is one
+  // piece of evidence.
+  var seen: Text[] = []
+  var once: BrainNote[] = []
+  for e in evidence where not seen.contains(e.text) {
+    seen = seen.append(e.text)
+    once = once.append(e)
+  }
+  for k in 0 until once.take(3).length() {
+    let e = once[k]
     let id = f"e{k}"
     let site = if e.source.contains("wikipedia.org") { "Wikipedia" } else { if e.source.contains("arxiv.org") { "arXiv" } else { "a source" } }
     nodes = nodes.append(th_node(id, "evidence", "Evidence · " + site, th_short(e.text, 160), e.source.split(" · ")[0], "used"))
@@ -106,4 +114,6 @@ test "a check sits between what was used and the answer" {
   expect t.nodes[3].state == "fixed"
   expect t.steps.contains("checked the reply · corrected")
   expect th_none().nodes.is_empty()
+  twice = th_build("q", [], "", [th_test_note("Same.", "https://arxiv.org/abs/1"), th_test_note("Same.", "https://arxiv.org/abs/1")], [], [], "a")
+  expect (for n in twice.nodes where n.kind == "evidence" { n }).length() == 1
 }
