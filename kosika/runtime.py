@@ -1282,8 +1282,11 @@ def _ask_model(
                 try:
                     verify(model.evidence, arguments, result, quotes)
                 except EvidenceError as exc:
+                    # A model that is only a record shape has no verb, and a
+                    # message that begins "None answered" tells nobody which
+                    # step to look at.
                     raise ThinkingAnswerError(
-                        f"{model.verb} answered without evidence: {exc}"
+                        f"{model.verb or model.name} answered without evidence: {exc}"
                     ) from exc
                 response = {**response, "evidence": quotes}
             check_answer(model, arguments, result)

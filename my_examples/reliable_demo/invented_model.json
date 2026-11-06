@@ -1,0 +1,5 @@
+{"assistant": [
+  {"customer": "Hana Sato", "order_id": "KX-4471", "amount": 120, "evidence": {"customer": "My name is Hana Sato", "order_id": "order KX-4471", "amount": "charged 120 dollars"}},
+  {"customer": "Hana Sato", "order_id": null, "amount": 120, "evidence": {"customer": "My name is Hana Sato", "order_id": null, "amount": "charged 120 dollars"}},
+  {"answer": true, "confidence": 0.9, "reason": "The customer asks for a refund.", "evidence": ["Please refund me"]}
+]}

@@ -1,0 +1,59 @@
+// A plain model step written `with evidence` must quote the text it was
+// given: every quote has to appear in the arguments the step passed. A quote
+// that is not there refuses the answer, so `otherwise` answers instead.
+//
+// A thinking step's text is the field its verb reads; a plain call names its
+// own arguments, so the text it was given is every text it passed.
+
+record Question { text: Text }
+record Answer { text: Text }
+
+model reader { input: Question output: Answer }
+
+workflow main(question: Question) -> Answer {
+  answer = use_model reader(question.text) with evidence
+}
+
+workflow careful(question: Question) -> Answer {
+  answer = use_model reader(question.text) with evidence otherwise {text: "not stated"}
+}
+
+test "a quote from the question passes" {
+  answers reader: [
+    {text: "900 euros a month", evidence: ["Rent is 900 euros"]}
+  ]
+  said = main({text: "Rent is 900 euros a month."})
+  expect said.text == "900 euros a month"
+}
+
+test "case and extra spacing are forgiven" {
+  answers reader: [
+    {text: "900", evidence: ["rent   is 900 EUROS"]}
+  ]
+  said = main({text: "Rent is 900 euros a month."})
+  expect said.text == "900"
+}
+
+test "a paraphrase is not a quote" {
+  answers reader: [
+    {text: "900", evidence: ["the rent"]}
+  ]
+  said = careful({text: "Rent is 900 euros a month."})
+  expect said.text == "not stated"
+}
+
+test "a quote that is not in the question refuses the answer" {
+  answers reader: [
+    {text: "1200 euros", evidence: ["Rent is 1200 euros"]}
+  ]
+  said = careful({text: "Rent is 900 euros a month."})
+  expect said.text == "not stated"
+}
+
+test "an answer with no quote at all is refused" {
+  answers reader: [
+    {text: "900 euros a month", evidence: []}
+  ]
+  said = careful({text: "Rent is 900 euros a month."})
+  expect said.text == "not stated"
+}

@@ -1,0 +1,95 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "studio",
+      "runtimeExecutable": "C:/Users/Aryan/Aryan_Private/projects/kosika/.venv/Scripts/python.exe",
+      "runtimeArgs": [
+        "-u",
+        "-m",
+        "kosika.cli",
+        "start",
+        "--port",
+        "8765",
+        "--no-browser",
+        "C:/Users/Aryan/AppData/Local/Temp/claude/C--Users-Aryan-Aryan-Private-projects-kosika/b1a7380a-e48e-4a63-bbef-66c59fd09119/scratchpad/studio_agents"
+      ],
+      "port": 8765
+    },
+    {
+      "name": "portfolio",
+      "runtimeExecutable": "C:/Users/Aryan/Aryan_Private/projects/kosika/.venv/Scripts/python.exe",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8791",
+        "--bind",
+        "127.0.0.1",
+        "--directory",
+        "C:/Users/Aryan/Aryan_Private/kosika-bench/results/motion-portfolio"
+      ],
+      "port": 8791
+    },
+    {
+      "name": "studio-services",
+      "runtimeExecutable": "C:/Windows/System32/cmd.exe",
+      "runtimeArgs": [
+        "/c",
+        "C:\\Users\\Aryan\\AppData\\Local\\Temp\\claude\\C--Users-Aryan-Aryan-Private-projects-kosika\\b1a7380a-e48e-4a63-bbef-66c59fd09119\\scratchpad\\studio-services.cmd"
+      ],
+      "port": 8766
+    },
+    {
+      "name": "studio-aios",
+      "runtimeExecutable": "C:/Users/Aryan/Aryan_Private/projects/kosika/.venv/Scripts/python.exe",
+      "runtimeArgs": [
+        "-u",
+        "C:/Users/Aryan/AppData/Local/Temp/claude/C--Users-Aryan-Aryan-Private-projects-kosika/1a8505e8-f51e-4b0f-ba5b-4b0805797e12/scratchpad/studio_aios.py"
+      ],
+      "port": 8767
+    },
+    {
+      "name": "art",
+      "runtimeExecutable": "C:/Users/Aryan/Aryan_Private/projects/kosika/.venv/Scripts/python.exe",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8794",
+        "--bind",
+        "127.0.0.1",
+        "--directory",
+        "C:/Users/Aryan/AppData/Local/Temp/kd/art"
+      ],
+      "port": 8794
+    },
+    {
+      "name": "studio-designs",
+      "runtimeExecutable": "C:/Users/Aryan/AppData/Local/Programs/Python/Python312/python.exe",
+      "runtimeArgs": [
+        "-u",
+        "C:/Users/Aryan/AppData/Local/Temp/claude/C--Users-Aryan-Aryan-Private-projects-kosika/15667f4d-f682-4094-bd1c-807e3ac100a4/scratchpad/studio_designs.py"
+      ],
+      "port": 8796
+    },
+    {
+      "name": "router-local",
+      "runtimeExecutable": "C:/Users/Aryan/AppData/Local/Programs/Python/Python312/python.exe",
+      "runtimeArgs": [
+        "C:/Users/Aryan/Aryan_Private/projects/kosika/examples/virtual_models/router.py",
+        "--port",
+        "8797"
+      ],
+      "port": 8797
+    },
+    {
+      "name": "router",
+      "runtimeExecutable": "C:/Users/Aryan/AppData/Local/Programs/Python/Python312/python.exe",
+      "runtimeArgs": [
+        "C:/Users/Aryan/Aryan_Private/projects/kosika/examples/virtual_models/router.py",
+        "--port",
+        "8791"
+      ],
+      "port": 8791
+    }
+  ]
+}

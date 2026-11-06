@@ -1,0 +1,24 @@
+record Ticket { text: Text }
+record Invoice { customer: Text amount: Number }
+record Routing { queue: Text escalate: Bool brief: Text customer: Text amount: Number why: Text }
+
+model assistant
+
+fn route(label: Choice, urgent: Decision, brief: Summary, invoice: Invoice) -> Routing {
+  return {
+    queue: label.label,
+    escalate: urgent.answer,
+    brief: brief.text,
+    customer: invoice.customer,
+    amount: invoice.amount,
+    why: urgent.reason
+  }
+}
+
+workflow main(ticket: Ticket) -> Routing {
+  label   = classify ticket.text into ["billing", "bug", "other"]
+  invoice = extract Invoice from ticket.text
+  brief   = summarize ticket.text
+  urgent  = decide "Does the customer say they were charged more than once?" given ticket.text
+  routing = route(label, urgent, brief, invoice)
+}

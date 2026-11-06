@@ -305,6 +305,8 @@ var methodTypes = []methodType{
 	m("Text", "upper", "Text"),
 	m("Text", "lower", "Text"),
 	m("Text", "trim", "Text"),
+	m("Text", "trim_start", "Text"),
+	m("Text", "trim_end", "Text"),
 	m("Text", "contains", "Bool", "part", "Text"),
 	m("Text", "starts_with", "Bool", "prefix", "Text"),
 	m("Text", "ends_with", "Bool", "suffix", "Text"),
@@ -372,8 +374,7 @@ var methodTypes = []methodType{
 	m("Text", "replace", "Text", "old", "Text", "new", "Text"),
 	m("Text", "trim_marks", "Text", "marks", "Text"),
 	m("Text[]", "join", "Text", "separator", "Text"),
-	// Vectors and matrices. The checker knows them; this engine cannot run
-	// them yet, and says so when one is called.
+	// Vectors, matrices, relations and graphs: the methods in matrices.go.
 	m("Number[]", "plus", "Number[]", "other", "Number[]"),
 	m("Number[]", "minus", "Number[]", "other", "Number[]"),
 	m("Number[]", "scaled", "Number[]", "by", "Number"),

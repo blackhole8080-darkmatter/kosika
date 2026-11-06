@@ -1,0 +1,8 @@
+{
+  "name": "kosika-coder-bench",
+  "private": true,
+  "description": "The dependency the design task is judged with: a browser driver, kept out of Kosika's own requirements because the benchmark is the only thing that needs it.",
+  "devDependencies": {
+    "puppeteer-core": "^25.16.0"
+  }
+}

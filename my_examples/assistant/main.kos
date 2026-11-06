@@ -1,0 +1,691 @@
+// A laptop assistant written in Kosika.
+//
+//   kosika test main.kos
+//   kosika chat main.kos --model qwen2.5:7b --memory memory --allow-folder FOLDER --allow-site en.wikipedia.org --approve
+//
+// What it does today: answers questions and gives advice, remembers the
+// conversation, keeps your notes, plays tic-tac-toe against you, and looks
+// at files in the one folder you grant (list, read, summarise).
+// With --approve it can also create a new text file there, after showing you
+// exactly what it will write and getting your yes. It never overwrites.
+// With --allow-site en.wikipedia.org it can also read Wikipedia: "news" for
+// current events and "look up alan turing" for an article, naming its source.
+// What it does not do yet: deleting, moving, or running anything.
+
+record Msg { text: Text }
+record Said { text: Text }
+record Kind { label: Text }
+record Talk { turns: Text[] }
+record Notebook { items: Text[] }
+record Board { cells: Text[] over: Bool }
+record Round { board: Board text: Text }
+record Turn { talk: Talk said: Said }
+
+// Answers are kept short on purpose: on a laptop without a graphics card a
+// model writes only a few words a second, so length is what costs time.
+model assistant {
+  input: Prompt
+  output: Reply
+  parameters: {
+    max_output_tokens: 160
+  }
+}
+
+memory talks of Talk
+memory notebooks of Notebook
+memory games of Board
+
+// ---------------------------------------------------------------- routing
+
+// Plain words decide every request, in no time at all. Anything they do not
+// recognise is a question for the model, asked once. An earlier version
+// asked the model twice, first to sort the message and then to answer it,
+// which doubled the wait for a simple "hello".
+fn quick_kind(msg: Msg) -> Kind {
+  let text = msg.text.lower().trim()
+  let first = text.split(" ").first().or("")
+  let bare = text.split("!").join("").split(".").join("").split(",").join("").trim()
+  var kind = "chat"
+  if ["hello", "hi", "hey", "hello there", "hi there", "good morning", "good evening", "good afternoon"].contains(bare) { kind = "greeting" }
+  else if ["thanks", "thank you", "thx", "ok thanks", "thanks a lot", "cheers"].contains(bare) { kind = "thanks" }
+  else if text.starts_with("note:") or text.starts_with("note ") or text.starts_with("remember ") { kind = "note" }
+  else if text == "notes" or text.contains("my notes") { kind = "notes" }
+  else if text.contains("tic") or text.contains("game") or first == "play" or first.to_number().exists() { kind = "game" }
+  else if text.starts_with("look up ") or first == "wiki" { kind = "lookup" }
+  else if text.contains("news") or text.contains("headline") { kind = "news" }
+  else if text == "help" or text.contains("what can you do") or text.contains("who are you") { kind = "help" }
+  else if first == "write" or first == "create" or text.starts_with("save notes to ") or text.starts_with("save my notes to ") { kind = "write" }
+  else if first == "summarize" or first == "summarise" { kind = "summary" }
+  else if first == "read" or first == "open" { kind = "read" }
+  else if first == "list" or first == "files" or text.starts_with("show files") or text.starts_with("what is in") { kind = "list" }
+  else if text.contains("delete ") or text.contains("rename ") or text.contains("move ") or text.contains("run ") or text.contains("install ") { kind = "laptop" }
+  return {label: kind}
+}
+
+fn greet(msg: Msg) -> Said {
+  return {text: "Hello! What can I do for you? Say \"help\" to see what I can do."}
+}
+
+fn welcome(msg: Msg) -> Said {
+  return {text: "You are welcome."}
+}
+
+// ------------------------------------------------------------------- chat
+
+fn build_prompt(msg: Msg, past: TalksRecalled) -> Prompt {
+  let turns = if past.found { past.value.value().turns } else { [] }
+  var text = "You are a helpful assistant on the user's own laptop. Answer from your own knowledge in a few short, clear sentences. Explain, advise, and teach freely on any subject: science, maths, writing, planning, anything. If you are unsure of a fact, say so. Never refuse just because you cannot browse; simply answer with what you know. Do not claim to have opened a file or a web page.\n"
+  if turns.length() > 0 {
+    text += "\nThe conversation so far:\n" + turns.join("\n") + "\n"
+  }
+  return {text: text + "\nUser: " + msg.text + "\nAssistant:"}
+}
+
+fn say(text: Text) -> Said {
+  return {text: text.trim()}
+}
+
+// Used when the model's answer is unusable twice in a row.
+fn sorry(msg: Msg) -> Reply {
+  return {text: "Sorry, I could not get an answer just now. Please try again."}
+}
+
+workflow chat(msg: Msg) -> Said {
+  past   = recall talks under "me"
+  prompt = build_prompt(msg, past)
+  reply  = use_model assistant(prompt.text) retry 1 otherwise sorry(msg)
+  said   = say(reply.text)
+}
+
+// ------------------------------------------------------------------ notes
+
+fn add_note(msg: Msg, known: NotebooksRecalled) -> Notebook {
+  let items = if known.found { known.value.value().items } else { [] }
+  var note = msg.text.trim()
+  for prefix in ["note:", "note ", "remember "] {
+    if note.lower().starts_with(prefix) {
+      note = note.slice(prefix.length(), note.length()).trim()
+    }
+  }
+  return {items: items.append(note)}
+}
+
+fn noted(book: Notebook) -> Said {
+  return {text: "Noted. You have " + book.items.length() + " note(s)."}
+}
+
+fn list_notes(known: NotebooksRecalled) -> Said {
+  let items = if known.found { known.value.value().items } else { [] }
+  if items.length() == 0 {
+    return {text: "You have no notes yet. Say \"note: buy milk\" to add one."}
+  }
+  var lines: Text[] = []
+  for i in 0 until items.length() {
+    lines = lines.append((i + 1).to_text() + ". " + items[i])
+  }
+  return {text: "Your notes:\n" + lines.join("\n")}
+}
+
+workflow note(msg: Msg) -> Said {
+  known = recall notebooks under "me"
+  book  = add_note(msg, known)
+  saved = remember book in notebooks under "me"
+  said  = noted(book)
+}
+
+workflow notes(msg: Msg) -> Said {
+  known = recall notebooks under "me"
+  said  = list_notes(known)
+}
+
+// ------------------------------------------------------------ tic-tac-toe
+// The whole game is ordinary code: the rules are exact and a move is instant.
+
+fn empty_board() -> Board {
+  return {cells: [" ", " ", " ", " ", " ", " ", " ", " ", " "], over: false}
+}
+
+fn winner(cells: Text[]) -> Text {
+  let lines = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [0, 3, 6], [1, 4, 7], [2, 5, 8], [0, 4, 8], [2, 4, 6]]
+  for line in lines {
+    let a = cells[line[0]]
+    if a != " " and a == cells[line[1]] and a == cells[line[2]] { return a }
+  }
+  return " "
+}
+
+fn full(cells: Text[]) -> Bool {
+  return not cells.contains(" ")
+}
+
+// Where `mark` would complete a line right now, or -1.
+fn finishing_move(cells: Text[], mark: Text) -> Number {
+  for i in 0 until 9 {
+    if cells[i] == " " {
+      var trial = cells
+      trial[i] = mark
+      if winner(trial) == mark { return i }
+    }
+  }
+  return -1
+}
+
+fn computer_move(cells: Text[]) -> Number {
+  let win = finishing_move(cells, "O")
+  if win >= 0 { return win }
+  let block = finishing_move(cells, "X")
+  if block >= 0 { return block }
+  for i in [4, 0, 2, 6, 8, 1, 3, 5, 7] {
+    if cells[i] == " " { return i }
+  }
+  return -1
+}
+
+fn draw(cells: Text[]) -> Text {
+  var rows: Text[] = []
+  for r in 0 until 3 {
+    var row: Text[] = []
+    for c in 0 until 3 {
+      let i = r * 3 + c
+      row = row.append(if cells[i] == " " { (i + 1).to_text() } else { cells[i] })
+    }
+    rows = rows.append(" " + row.join(" | "))
+  }
+  return rows.join("\n-----------\n")
+}
+
+// The first whole number from 1 to 9 the user wrote, or 0.
+fn chosen_square(msg: Msg) -> Number {
+  for word in msg.text.split(" ") {
+    let n = word.trim().to_number()
+    if n.exists() and n >= 1 and n <= 9 and n == n.floor() { return n }
+  }
+  return 0
+}
+
+fn play(known: GamesRecalled, msg: Msg) -> Round {
+  let wants_new = msg.text.lower().contains("new")
+  var board = if known.found and not wants_new { known.value.value() } else { empty_board() }
+  if board.over { board = empty_board() }
+  var cells = board.cells
+  let square = chosen_square(msg)
+  if square == 0 {
+    return {board: {cells: cells, over: false}, text: "You are X. Pick a square from 1 to 9.\n" + draw(cells)}
+  }
+  if cells[square - 1] != " " {
+    return {board: {cells: cells, over: false}, text: "Square " + square + " is taken. Pick another.\n" + draw(cells)}
+  }
+  cells[square - 1] = "X"
+  if winner(cells) == "X" {
+    return {board: {cells: cells, over: true}, text: draw(cells) + "\nYou win! Say \"play\" for another game."}
+  }
+  if full(cells) {
+    return {board: {cells: cells, over: true}, text: draw(cells) + "\nA draw. Say \"play\" for another game."}
+  }
+  let reply = computer_move(cells)
+  cells[reply] = "O"
+  if winner(cells) == "O" {
+    return {board: {cells: cells, over: true}, text: draw(cells) + "\nI win this one. Say \"play\" for another game."}
+  }
+  if full(cells) {
+    return {board: {cells: cells, over: true}, text: draw(cells) + "\nA draw. Say \"play\" for another game."}
+  }
+  return {board: {cells: cells, over: false}, text: "I took square " + (reply + 1) + ". Your move.\n" + draw(cells)}
+}
+
+fn board_of(round: Round) -> Board {
+  return round.board
+}
+
+fn round_text(round: Round) -> Said {
+  return {text: round.text}
+}
+
+workflow game(msg: Msg) -> Said {
+  known = recall games under "me"
+  round = play(known, msg)
+  board = board_of(round)
+  saved = remember board in games under "me"
+  said  = round_text(round)
+}
+
+// ------------------------------------------------------------------ files
+// The assistant can look inside the one folder you grant with
+// --allow-folder. These tools only read. They cannot change anything.
+
+record Where { path: Text }
+record Listing { names: Text[] }
+record FileText { text: Text }
+record Clip { text: Text ok: Bool }
+
+tool list_folder {
+  source system "files"
+  operation: "list"
+  access: observe
+  input: Where
+  output: Listing
+}
+
+tool read_file {
+  source system "files"
+  operation: "read"
+  access: observe
+  input: Where
+  output: FileText
+}
+
+agent hands {
+  can: [list_folder, read_file]
+  max_steps: 1
+}
+
+// The path the user named: what is left after the command words.
+fn path_from(msg: Msg) -> Where {
+  let skip = ["list", "show", "read", "open", "summarize", "summarise", "files", "file", "folder", "in", "the", "me", "of", "what", "is", "whats", "inside", "please", "my"]
+  var parts: Text[] = []
+  for word in msg.text.trim().split(" ") {
+    let clean = word.trim()
+    if clean.length() > 0 and (parts.length() > 0 or not skip.contains(clean.lower())) {
+      parts = parts.append(clean)
+    }
+  }
+  var path = parts.join(" ")
+  for mark in ["?", "\"", "'"] {
+    path = path.split(mark).join("")
+  }
+  path = path.split("\\").join("/").trim()
+  if path.lower().ends_with(" folder") {
+    path = path.slice(0, path.length() - 7).trim()
+  }
+  return {path: if path.length() == 0 { "." } else { path }}
+}
+
+fn no_listing(msg: Msg) -> Listing {
+  return {names: []}
+}
+
+fn no_text(msg: Msg) -> FileText {
+  return {text: ""}
+}
+
+fn show_listing(where: Where, found: Listing) -> Said {
+  if found.names.length() == 0 {
+    return {text: "I found nothing at \"" + where.path + "\". It may be empty, missing, or outside the folder I am allowed to see."}
+  }
+  let shown = found.names.slice(0, found.names.length().min(40))
+  let more = found.names.length() - shown.length()
+  let tail = if more > 0 { "\n...and " + more + " more" } else { "" }
+  return {text: "In " + where.path + " (" + found.names.length() + " items):\n" + shown.join("\n") + tail}
+}
+
+fn show_file(where: Where, file: FileText) -> Said {
+  if file.text.length() == 0 {
+    return {text: "I could not read \"" + where.path + "\". It may be missing, empty, not text, over 1 MB, or outside the folder I am allowed to see."}
+  }
+  let cut = file.text.slice(0, file.text.length().min(1200))
+  let tail = if file.text.length() > 1200 { "\n...(" + file.text.length() + " characters in all)" } else { "" }
+  return {text: where.path + ":\n" + cut + tail}
+}
+
+fn clip(file: FileText) -> Clip {
+  return {text: file.text.slice(0, file.text.length().min(4000)), ok: file.text.length() > 0}
+}
+
+fn no_summary(msg: Msg) -> Summary {
+  return {text: ""}
+}
+
+fn summary_said(where: Where, brief: Summary) -> Said {
+  if brief.text.length() == 0 {
+    return {text: "I could not read \"" + where.path + "\", so there is nothing to summarise."}
+  }
+  return {text: "Summary of " + where.path + ":\n" + brief.text}
+}
+
+workflow list_files(msg: Msg) -> Said {
+  where = path_from(msg)
+  found = execute hands.list_folder(where.path) otherwise no_listing(msg)
+  said  = show_listing(where, found)
+}
+
+workflow read_one(msg: Msg) -> Said {
+  where = path_from(msg)
+  file  = execute hands.read_file(where.path) otherwise no_text(msg)
+  said  = show_file(where, file)
+}
+
+workflow summarise_one(msg: Msg) -> Said {
+  where = path_from(msg)
+  file  = execute hands.read_file(where.path) otherwise no_text(msg)
+  part  = clip(file)
+  brief = match part.ok {
+    case true { summarize part.text }
+    case _ { no_summary(msg) }
+  }
+  said  = summary_said(where, brief)
+}
+
+// ----------------------------------------------------------------- acting
+// The one thing the assistant may change: it can create a new text file in
+// the folder you granted. It can never overwrite or delete one, and every
+// file is created only after you are shown its exact path and text and
+// answer yes (start the chat with --approve).
+
+record NewFile { path: Text text: Text }
+record Written { bytes: Number }
+record Draft { path: Text text: Text problem: Text }
+
+tool create_file {
+  source system "files"
+  operation: "create"
+  access: execute
+  input: NewFile
+  output: Written
+}
+
+agent scribe {
+  can: [create_file]
+  max_steps: 1
+}
+
+fn clean_path(raw: Text) -> Text {
+  var path = raw.trim()
+  for mark in ["\"", "'"] {
+    path = path.split(mark).join("")
+  }
+  return path.split("\\").join("/").trim()
+}
+
+// "write PATH: TEXT", "create PATH: TEXT", or "save notes to PATH".
+fn draft_file(msg: Msg, known: NotebooksRecalled) -> Draft {
+  let text = msg.text.trim()
+  let lower = text.lower()
+  var path = ""
+  var body = ""
+  if lower.starts_with("save notes to ") or lower.starts_with("save my notes to ") {
+    let items = if known.found { known.value.value().items } else { [] }
+    let after = if lower.starts_with("save notes to ") { 14 } else { 17 }
+    path = clean_path(text.slice(after, text.length()))
+    body = if items.length() > 0 { items.join("\n") + "\n" } else { "" }
+    if body.length() == 0 {
+      return {path: path, text: "", problem: "You have no notes to save yet."}
+    }
+  } else {
+    let head = text.split(":").first().or("")
+    if head.length() == text.length() {
+      return {path: "", text: "", problem: "Tell me the file and the text, like this: write notes/todo.txt: buy milk"}
+    }
+    let words = head.trim().split(" ")
+    path = clean_path(words.slice(1, words.length()).join(" "))
+    body = text.slice(head.length() + 1, text.length()).trim()
+  }
+  if path.length() == 0 {
+    return {path: "", text: "", problem: "I need a file name, like this: write notes/todo.txt: buy milk"}
+  }
+  if body.length() == 0 {
+    return {path: path, text: "", problem: "There is no text to put in " + path + "."}
+  }
+  return {path: path, text: body, problem: ""}
+}
+
+fn cannot_write(draft: Draft) -> Said {
+  return {text: draft.problem}
+}
+
+fn wrote(draft: Draft, done: Written) -> Said {
+  return {text: "Created " + draft.path + " (" + done.bytes + " bytes)."}
+}
+
+workflow create_it(draft: Draft) -> Said {
+  done = execute scribe.create_file(draft.path, draft.text)
+  said = wrote(draft, done)
+  require approval
+}
+
+workflow write_one(msg: Msg) -> Said {
+  known = recall notebooks under "me"
+  draft = draft_file(msg, known)
+  said  = match draft.problem {
+    case "" { call create_it(draft) }
+    case _ { cannot_write(draft) }
+  }
+  require approval
+}
+
+// -------------------------------------------------------------------- web
+// The assistant can read pages on the sites you allow with --allow-site.
+// It only reads. It never logs in, posts, or submits anything, and every
+// answer names the page it came from.
+
+record PageRequest { url: Text }
+record Page { url: Text title: Text text: Text }
+
+tool read_page {
+  source system "web"
+  operation: "fetch"
+  access: observe
+  input: PageRequest
+  output: Page
+}
+
+agent browser {
+  can: [read_page]
+  max_steps: 1
+}
+
+fn news_address(msg: Msg) -> PageRequest {
+  return {url: "https://en.wikipedia.org/wiki/Portal:Current_events"}
+}
+
+// "look up alan turing" or "wiki alan turing" names a Wikipedia article.
+fn lookup_address(msg: Msg) -> PageRequest {
+  let skip = ["look", "up", "wiki", "wikipedia", "about", "on", "the", "please"]
+  var parts: Text[] = []
+  for word in msg.text.trim().split(" ") {
+    var clean = word.trim()
+    for mark in ["?", ".", ",", "\"", "'", "/", "#"] {
+      clean = clean.split(mark).join("")
+    }
+    if clean.length() > 0 and (parts.length() > 0 or not skip.contains(clean.lower())) {
+      parts = parts.append(clean)
+    }
+  }
+  return {url: "https://en.wikipedia.org/wiki/" + parts.join("_")}
+}
+
+fn no_page(msg: Msg) -> Page {
+  return {url: "", title: "", text: ""}
+}
+
+fn page_part(page: Page) -> Clip {
+  return {text: page.text.slice(0, page.text.length().min(5000)), ok: page.text.length() > 0}
+}
+
+fn web_said(page: Page, brief: Summary) -> Said {
+  if brief.text.length() == 0 {
+    return {text: "I could not read that page. Either the page does not exist, or I was not started with --allow-site en.wikipedia.org."}
+  }
+  return {text: brief.text + "\nSource: " + page.title + " (" + page.url + ")"}
+}
+
+workflow news(msg: Msg) -> Said {
+  where = news_address(msg)
+  page  = execute browser.read_page(where.url) otherwise no_page(msg)
+  part  = page_part(page)
+  brief = match part.ok {
+    case true { summarize part.text }
+    case _ { no_summary(msg) }
+  }
+  said  = web_said(page, brief)
+}
+
+workflow look_up(msg: Msg) -> Said {
+  where = lookup_address(msg)
+  page  = execute browser.read_page(where.url) otherwise no_page(msg)
+  part  = page_part(page)
+  brief = match part.ok {
+    case true { summarize part.text }
+    case _ { no_summary(msg) }
+  }
+  said  = web_said(page, brief)
+}
+
+// ------------------------------------------------------- not there yet
+
+fn no_hands(msg: Msg) -> Said {
+  return {text: "I can look at files and create new ones in the folder you granted, but I cannot change, delete, move, or run anything. I only add; I never overwrite."}
+}
+
+fn help(msg: Msg) -> Said {
+  return {text: "I can chat and give advice, keep notes (\"note: call mum\", \"notes\"), play tic-tac-toe (\"play\"), look at your files (\"list projects\", \"read CLAUDE.md\", \"summarize CLAUDE.md\"), and create a new file after you approve it (\"write notes/todo.txt: buy milk\", \"save notes to notes/mine.txt\"). Ask me anything."}
+}
+
+// ------------------------------------------------------------ the assistant
+
+fn remembered(past: TalksRecalled, msg: Msg, said: Said) -> Talk {
+  let turns = if past.found { past.value.value().turns } else { [] }
+  let all = turns.append("User: " + msg.text).append("Assistant: " + said.text)
+  // Keep the last six lines, so the prompt stays short and answers stay fast.
+  let start = (all.length() - 6).max(0)
+  return {turns: all.slice(start, all.length())}
+}
+
+workflow main(msg: Msg) -> Said {
+  budget 4 model calls, 180 seconds
+  kind  = quick_kind(msg)
+  said  = match kind.label {
+    case "greeting" { greet(msg) }
+    case "thanks" { welcome(msg) }
+    case "game" { call game(msg) }
+    case "note" { call note(msg) }
+    case "notes" { call notes(msg) }
+    case "list" { call list_files(msg) }
+    case "read" { call read_one(msg) }
+    case "summary" { call summarise_one(msg) }
+    case "write" { call write_one(msg) }
+    case "news" { call news(msg) }
+    case "lookup" { call look_up(msg) }
+    case "laptop" { no_hands(msg) }
+    case "help" { help(msg) }
+    case _ { call chat(msg) }
+  }
+  past  = recall talks under "me"
+  talk  = remembered(past, msg, said)
+  saved = remember talk in talks under "me"
+  out   = say(said.text)
+  require approval
+}
+
+// ------------------------------------------------------------------ tests
+
+test "a note is kept and listed" {
+  a = main({text: "note: call mum"})
+  b = main({text: "remember buy milk"})
+  c = main({text: "notes"})
+  expect a.text == "Noted. You have 1 note(s)."
+  expect c.text == "Your notes:\n1. call mum\n2. buy milk"
+}
+
+test "a question goes to the model with the conversation so far" {
+  answers assistant: [{text: "Paris."}, {text: "About two million people."}]
+  a = main({text: "What is the capital of France?"})
+  b = main({text: "How many people live there, roughly?"})
+  expect a.text == "Paris."
+  expect b.text == "About two million people."
+}
+
+test "greetings and thanks are answered at once, without the model" {
+  a = main({text: "Hello!"})
+  b = main({text: "thanks"})
+  expect a.text.starts_with("Hello!")
+  expect b.text == "You are welcome."
+}
+
+test "anything unrecognised is one question to the model" {
+  answers assistant: [{text: "Not sure what you mean."}]
+  a = main({text: "hmm"})
+  expect a.text == "Not sure what you mean."
+}
+
+test "the computer blocks a winning line" {
+  a = main({text: "play"})
+  b = main({text: "1"})
+  c = main({text: "2"})
+  expect a.text.contains("Pick a square")
+  expect b.text.contains("I took square 5")
+  expect c.text.contains("I took square 3")
+}
+
+test "a taken square is refused and the rules are exact" {
+  a = main({text: "play 5"})
+  b = main({text: "5"})
+  expect a.text.contains("I took square 1")
+  expect b.text.contains("Square 5 is taken")
+  expect winner(["X", "X", "X", " ", "O", "O", " ", " ", " "]) == "X"
+  expect winner(["X", "O", "X", " ", "O", " ", " ", "O", " "]) == "O"
+  expect finishing_move(["O", "O", " ", " ", "X", " ", " ", " ", "X"], "O") == 2
+}
+
+test "news and laptop control are refused honestly" {
+  a = main({text: "any news today"})
+  b = main({text: "delete my downloads"})
+  c = main({text: "what can you do"})
+  expect a.text.contains("--allow-site")
+  expect b.text.contains("never overwrite")
+  expect c.text.contains("keep notes")
+}
+
+test "it lists a folder and reads a file" {
+  answers list_folder: [{names: ["kosika/", "notes.txt"]}]
+  answers read_file: [{text: "Buy milk."}]
+  a = main({text: "list projects"})
+  b = main({text: "read projects/notes.txt"})
+  expect a.text == "In projects (2 items):\nkosika/\nnotes.txt"
+  expect b.text == "projects/notes.txt:\nBuy milk."
+}
+
+test "it summarises a file, and says so when it cannot read one" {
+  answers read_file: [{text: "A long plan about the kosika language."}]
+  answers assistant: [{text: "A plan for Kosika."}]
+  a = main({text: "summarize projects/plan.md"})
+  b = main({text: "summarize missing.md"})
+  expect a.text == "Summary of projects/plan.md:\nA plan for Kosika."
+  expect b.text.contains("nothing to summarise")
+}
+
+test "the path is what is left after the command words" {
+  expect path_from({text: "list"}).path == "."
+  expect path_from({text: "what is in the projects folder?"}).path == "projects"
+  expect path_from({text: "read projects\\kosika\\README.md"}).path == "projects/kosika/README.md"
+}
+
+test "a file request is understood, or explained when it is not" {
+  none: NotebooksRecalled = {found: false, value: null}
+  a = draft_file({text: "write notes/todo.txt: buy milk"}, none)
+  b = draft_file({text: "write notes/todo.txt"}, none)
+  c = draft_file({text: "save notes to mine.txt"}, none)
+  expect a.path == "notes/todo.txt"
+  expect a.text == "buy milk"
+  expect a.problem == ""
+  expect b.problem.contains("like this")
+  expect c.problem == "You have no notes to save yet."
+}
+
+test "a badly formed write request changes nothing and needs no approval" {
+  a = main({text: "write something"})
+  expect a.text.contains("like this")
+}
+
+test "news and lookups name their source" {
+  answers read_page: [
+    {url: "https://en.wikipedia.org/wiki/Portal:Current_events", title: "Portal:Current events", text: "A storm hit the coast."},
+    {url: "https://en.wikipedia.org/wiki/Alan_Turing", title: "Alan Turing", text: "Alan Turing was a mathematician."}
+  ]
+  answers assistant: [{text: "A storm hit the coast."}, {text: "A mathematician."}]
+  a = main({text: "any news today"})
+  b = main({text: "look up Alan Turing"})
+  expect a.text.starts_with("A storm hit the coast.")
+  expect a.text.ends_with("Source: Portal:Current events (https://en.wikipedia.org/wiki/Portal:Current_events)")
+  expect b.text.contains("Source: Alan Turing (https://en.wikipedia.org/wiki/Alan_Turing)")
+  expect lookup_address({text: "look up the Eiffel Tower?"}).url == "https://en.wikipedia.org/wiki/Eiffel_Tower"
+}

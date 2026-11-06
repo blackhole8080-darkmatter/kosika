@@ -9,6 +9,9 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"os"
+	"runtime"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"time"
@@ -333,6 +336,16 @@ func (r *run) attempt(step *Step, call *StepCall, environment *Scope, at frame, 
 		if caught := recover(); caught != nil {
 			if problem, ok := caught.(*RunError); ok {
 				failure = problem
+				return
+			}
+			// A fault in the engine itself (an index out of range, a nil
+			// map) is a failure of this step, not of the whole run: the
+			// step's `otherwise` can still take over, and the run says
+			// what happened and where, instead of crashing. The full stack
+			// goes to stderr for whoever fixes the engine.
+			if fault, ok := caught.(runtime.Error); ok {
+				fmt.Fprintf(os.Stderr, "kosika: engine fault in step %s: %v\n%s\n", step.Name, fault, debug.Stack())
+				failure = &RunError{Message: fmt.Sprintf("Kosika's engine hit an internal fault in step %s: %v", step.Name, fault)}
 				return
 			}
 			panic(caught)
@@ -876,8 +889,12 @@ func (r *run) askOnce(model *ModelDecl, bound string, arguments map[string]Value
 	}
 	var note answerNote
 	rejected := 0
+	var shape Value
+	if !model.Plain {
+		shape = asked
+	}
 	for {
-		response := r.askBound(bound, &modelRequest{Messages: messages, Model: deployment(model), Decl: model, JSONObject: true})
+		response := r.askBound(bound, &modelRequest{Messages: messages, Model: deployment(model), Decl: model, JSONObject: true, Schema: shape})
 		if len(response.ToolCalls) > 0 || response.Finish != "stop" {
 			runFail("Model step requires a completed response without tool calls")
 		}
@@ -911,7 +928,13 @@ func (r *run) askOnce(model *ModelDecl, bound string, arguments map[string]Value
 				record, quotes := splitEvidence(answer.(*Record))
 				answer = record
 				if missing := evidenceProblem(model.Evidence, arguments, record, quotes); missing != "" {
-					problem = model.Verb + " answered without evidence: " + missing
+					// A model that is only a record shape has no verb, and a
+					// message that begins "None answered" names nothing.
+					named := model.Verb
+					if named == "" {
+						named = model.Name
+					}
+					problem = named + " answered without evidence: " + missing
 				} else {
 					note.evidence = &answerQuotes{quotes}
 					problem = brokenPromise(model, arguments, record)

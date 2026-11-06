@@ -16,6 +16,7 @@ from .ast import (
     ChoiceAlternative,
     ChoiceDecl,
     ChoiceField,
+    ColumnDecl,
     ConditionalExpr,
     ContinueExpr,
     EnumDecl,
@@ -47,7 +48,9 @@ from .ast import (
     ShapeDecl,
     ShapeMethod,
     Step,
+    StoreDecl,
     SwarmDecl,
+    TableDecl,
     TestDecl,
     TestStep,
     ThinkCall,
@@ -518,7 +521,7 @@ class Parser:
                 value = LiteralExpr(token.value)
             elif token.kind == "NUMBER":
                 self.advance()
-                number = float(token.value) if "." in token.value else int(token.value)
+                number = float(token.value) if any(ch in token.value for ch in ".eE") else int(token.value)
                 value = LiteralExpr(number)
             elif token.kind == "IDENT":
                 self.advance()
@@ -763,6 +766,8 @@ class Parser:
                 board_name = self.identifier()
                 self.expect("of")
                 program.boards.append(BoardDecl(board_name, self.identifier()))
+            elif keyword == "store" and self.peek().kind == "IDENT":
+                program.stores.append(self.parse_store())
             elif keyword == "memory" and self.peek().kind == "IDENT":
                 self.advance()
                 memory_name = self.identifier()
@@ -1042,6 +1047,52 @@ class Parser:
             values.get("input"),
         )
 
+    def parse_store(self) -> StoreDecl:
+        """Parse `store NAME at "FILE" { table notes { id: Number } }`.
+
+        A store says which tables and columns a program means to use in one
+        database file. The file is a quoted path relative to the program, and
+        each column is a name and one of `Text`, `Number` and `Bool`; the
+        checker says so (see `kosika.checker._check_stores`), and the file
+        itself is checked before a run starts.
+        """
+
+        self.expect("store")
+        name = self.identifier()
+        self.expect("at")
+        if self.current.kind != "STRING":
+            token = self.current
+            raise ParseError(
+                f"A store needs a quoted file, as `store {name} at './notes.db'` "
+                f"at {token.line}:{token.column}"
+            )
+        file = self.advance().value
+        self.expect("{")
+        tables: list[TableDecl] = []
+        while not self.accept("}"):
+            self.expect("table")
+            table_name = self.identifier()
+            self.expect("{")
+            columns: list[ColumnDecl] = []
+            while not self.accept("}"):
+                column_name = self.identifier()
+                self.expect(":")
+                columns.append(ColumnDecl(column_name, self.parse_type_name()))
+                if self.check("="):
+                    # A store says which column a program means, and the file
+                    # is where a default lives; a column that carried one here
+                    # would be a promise nothing checks.
+                    token = self.current
+                    raise ParseError(
+                        f"Column {column_name!r} has a default value at "
+                        f"{token.line}:{token.column}; a store declares the "
+                        "columns it means, and a default belongs in the "
+                        "database, so write it where the column is created"
+                    )
+                self.accept(",")
+            tables.append(TableDecl(table_name, tuple(columns)))
+        return StoreDecl(name, file, tuple(tables))
+
     def parse_name_list(self) -> tuple[str, ...]:
         self.expect("[")
         values: list[str] = []
@@ -1203,6 +1254,9 @@ class Parser:
                         raise ParseError(
                             f"Unexpected workflow item {token.value!r} at "
                             f"{token.line}:{token.column}"
+                            "; a workflow step is one line `name = <one call>`,"
+                            " and the last step's value is the result, so put"
+                            " logic in a fn"
                         )
                     steps.append(replace(self.parse_short_step(), group=groups))
             elif self.accept("require"):
@@ -1213,7 +1267,10 @@ class Parser:
             else:
                 token = self.current
                 raise ParseError(
-                    f"Unexpected workflow item {token.value!r} at {token.line}:{token.column}"
+                    f"Unexpected workflow item {token.value!r} at "
+                    f"{token.line}:{token.column}"
+                    "; a workflow step is one line `name = <one call>`, and"
+                    " the last step's value is the result, so put logic in a fn"
                 )
         return WorkflowDecl(
             name,
@@ -1620,7 +1677,15 @@ class Parser:
         escalate = self.identifier() if self.accept("escalate") else None
         learns, learn_by = self.parse_learn()
         fallback = self.parse_step_call() if self.accept("otherwise") else None
-        self.expect("return")
+        if not self.check("return"):
+            token = self.current
+            raise ParseError(
+                f"Expected 'return' at {token.line}:{token.column}, "
+                f"got {token.value!r}"
+                "; a step block is one call followed by `return <name>`, so"
+                " put any other statement in a fn"
+            )
+        self.advance()
         return_name = self.identifier()
         self.expect("}")
         return Step(
@@ -1767,13 +1832,29 @@ class Parser:
         elif self.accept("use_model"):
             model_name = self.identifier()
             self.expect("(")
-            call = ModelCall(model_name, self.parse_arguments())
+            arguments = self.parse_arguments()
+            evidence = None
+            if self.check("with") and self.peek().value == "evidence":
+                # `with evidence`: the answer must quote the text it was given.
+                # Lowered to a generated model; see kosika.model_evidence.
+                self.advance()
+                self.advance()
+                evidence = "input"
+            call = ModelCall(model_name, arguments, evidence)
         elif self.current.kind == "IDENT" and self.current.value != "execute":
             function_name = self.identifier()
             self.expect("(")
             call = FunctionCall(function_name, self.parse_arguments())
         else:
-            self.expect("execute")
+            if not self.check("execute"):
+                token = self.current
+                raise ParseError(
+                    f"Expected 'execute' at {token.line}:{token.column}, "
+                    f"got {token.value!r}"
+                    "; a step's body must be one call, so work a plain value"
+                    " out in a fn and call that"
+                )
+            self.advance()
             agent_name = self.identifier()
             self.expect(".")
             tool_name = self.identifier()
@@ -1801,10 +1882,13 @@ def parse(source: str, *, lower_thinking_steps: bool = True) -> Program:
         from .board import lower_board
         from .direct import lower_direct
         from .memory import lower_memory
+        from .model_evidence import lower_model_evidence
 
         return lower_sugar(
             lower_thinking(
-                lower_board(lower_memory(lower_direct(lower_ambient(program))))
+                lower_model_evidence(
+                    lower_board(lower_memory(lower_direct(lower_ambient(program))))
+                )
             )
         )
     except ValueError as exc:

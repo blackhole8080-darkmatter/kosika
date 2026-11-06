@@ -1,0 +1,72 @@
+// A support desk agent that remembers each customer between runs.
+//
+//   kosika test main.kos
+//   kosika run main.kos --input input.json --model qwen2.5:7b --memory memory
+
+record Ticket { customer: Text text: Text }
+record History { tickets: Number last_queue: Text }
+record DeskReply { queue: Text urgent: Bool returning: Bool tickets: Number message: Text }
+
+model assistant
+memory customers of History
+
+fn updated(known: CustomersRecalled, label: Choice) -> History {
+  let before = if known.found { known.value.value().tickets } else { 0 }
+  return {tickets: before + 1, last_queue: label.label}
+}
+
+fn fallback_label(ticket: Ticket) -> Choice {
+  return {label: "other", confidence: 0}
+}
+
+fn reply(ticket: Ticket, known: CustomersRecalled, history: History, label: Choice, urgent: Decision, draft: Summary) -> DeskReply {
+  let greeting = if known.found { "Welcome back, " } else { "Hello, " }
+  return {
+    queue: label.label,
+    urgent: urgent.answer,
+    returning: known.found,
+    tickets: history.tickets,
+    message: greeting + ticket.customer + ". " + draft.text
+  }
+}
+
+workflow main(ticket: Ticket) -> DeskReply {
+  budget 12 model calls, 300 seconds
+  known   = recall customers under ticket.customer
+  label   = classify ticket.text into ["billing", "bug", "account", "other"] retry 1 otherwise fallback_label(ticket)
+  urgent  = decide "Is the customer unable to use the product at all right now?" given ticket.text with evidence retry 1
+  draft   = summarize ticket.text
+  history = updated(known, label)
+  saved   = remember history in customers under ticket.customer
+  result  = reply(ticket, known, history, label, urgent, draft)
+}
+
+test "a new customer is greeted and remembered" {
+  answers assistant: [
+    {label: "bug", confidence: 0.9},
+    {answer: true, confidence: 0.9, reason: "They cannot open the app.", evidence: ["cannot open the app"]},
+    {text: "The app will not open since the update."}
+  ]
+  first = main({customer: "Ada", text: "I cannot open the app since the update."})
+  expect first.returning == false
+  expect first.tickets == 1
+  expect first.urgent == true
+  expect first.message.starts_with("Hello, Ada")
+}
+
+test "the second ticket knows the customer" {
+  answers assistant: [
+    {label: "bug", confidence: 0.9},
+    {answer: true, confidence: 0.9, reason: "r", evidence: ["cannot open the app"]},
+    {text: "The app will not open."},
+    {label: "billing", confidence: 0.8},
+    {answer: false, confidence: 0.7, reason: "r", evidence: []},
+    {text: "Asks for an invoice copy."}
+  ]
+  first  = main({customer: "Ada", text: "I cannot open the app since the update."})
+  second = main({customer: "Ada", text: "Please send me a copy of my invoice."})
+  expect second.returning == true
+  expect second.tickets == 2
+  expect second.queue == "billing"
+  expect second.message.starts_with("Welcome back, Ada")
+}

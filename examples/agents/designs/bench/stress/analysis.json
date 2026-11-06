@@ -1,0 +1,54 @@
+[
+ {
+  "id": "d1",
+  "asked": "diagram",
+  "text": "the whole human digestive system, from mouth to colon, and how food moves through every organ",
+  "svg": 7544,
+  "nested": 0,
+  "viewBox": [
+   860.0,
+   540.0
+  ],
+  "elements": 83,
+  "groups": 15,
+  "cards": 16,
+  "links": 14,
+  "labels": 23,
+  "words": 69,
+  "longest": 52,
+  "empty": 0,
+  "repeated": 1,
+  "outside": [
+   "Transports food to stomachTransports food to stomach",
+   "Mixes food with acidMixes food with acid"
+  ],
+  "overlaps": 8,
+  "drawing": true
+ },
+ {
+  "id": "d2",
+  "asked": "diagram",
+  "text": "how a database commits a transaction, step by step, through the write-ahead log, fsync and the commit record",
+  "svg": 3765,
+  "nested": 0,
+  "viewBox": [
+   860.0,
+   360.0
+  ],
+  "elements": 39,
+  "groups": 7,
+  "cards": 8,
+  "links": 6,
+  "labels": 11,
+  "words": 53,
+  "longest": 62,
+  "empty": 0,
+  "repeated": 1,
+  "outside": [
+   "Log buffer flushed to diskLog buffer flushed to disk",
+   "Commit marker appended to logCommit marker appended to log"
+  ],
+  "overlaps": 4,
+  "drawing": true
+ }
+]

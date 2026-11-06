@@ -1,0 +1,81 @@
+// An expense checker. The model reads the receipt; plain code applies the rules.
+//
+//   kosika test main.kos
+//   kosika run main.kos --input input.json --model qwen2.5:7b
+
+record Claim { employee: Text receipt: Text }
+record Receipt { merchant: Text? total: Number? category: Text? }
+record Verdict { approved: Bool amount: Number category: Text reasons: Text[] }
+
+model assistant
+
+fn unreadable(claim: Claim) -> Receipt {
+  return {merchant: null, total: null, category: null}
+}
+
+// The policy is ordinary code, so it is exact and the same every time.
+fn limit_for(category: Text) -> Number {
+  return match category {
+    case "meal" { 50 }
+    case "travel" { 400 }
+    case "hotel" { 250 }
+    case _ { 100 }
+  }
+}
+
+fn judge(receipt: Receipt, personal: Decision) -> Verdict {
+  var reasons: Text[] = []
+  if not receipt.total.exists() {
+    return {approved: false, amount: 0, category: "unknown", reasons: ["The receipt total could not be read."]}
+  }
+  let total = receipt.total.value()
+  let category = receipt.category.or("other")
+  let limit = limit_for(category)
+  if total > limit {
+    reasons = reasons.append("The total " + total + " is over the " + category + " limit of " + limit + ".")
+  }
+  if personal.answer {
+    reasons = reasons.append("It looks personal: " + personal.reason)
+  }
+  return {approved: reasons.length() == 0, amount: total, category: category, reasons: reasons}
+}
+
+workflow main(claim: Claim) -> Verdict {
+  budget 8 model calls, 300 seconds
+  receipt  = extract Receipt from claim.receipt with evidence retry 2 otherwise unreadable(claim)
+  personal = decide "Does this receipt include alcohol, gifts, or other personal items?" given claim.receipt with evidence retry 1
+  verdict  = judge(receipt, personal)
+}
+
+test "a cheap meal is approved" {
+  answers assistant: [
+    {merchant: "Cafe Luna", total: 18, category: "meal", evidence: {merchant: "Cafe Luna", total: "Total 18.00", category: "Lunch"}},
+    {answer: false, confidence: 0.9, reason: "Only food.", evidence: []}
+  ]
+  verdict = main({employee: "Ada", receipt: "Cafe Luna. Lunch menu 18.00. Total 18.00"})
+  expect verdict.approved == true
+  expect verdict.amount == 18
+}
+
+test "an expensive meal is refused by the code, not the model" {
+  answers assistant: [
+    {merchant: "Chez Max", total: 95, category: "meal", evidence: {merchant: "Chez Max", total: "Total 95.00", category: "Dinner"}},
+    {answer: false, confidence: 0.9, reason: "Only food.", evidence: []}
+  ]
+  verdict = main({employee: "Ada", receipt: "Chez Max. Dinner for one. Total 95.00"})
+  expect verdict.approved == false
+  expect verdict.reasons.length() == 1
+  expect verdict.reasons[0].contains("over the meal limit of 50")
+}
+
+test "a made-up total is rejected and the claim is not approved" {
+  answers assistant: [
+    {merchant: "Cafe Luna", total: 12, category: "meal", evidence: {merchant: "Cafe Luna", total: "Total 12.00", category: "Lunch"}},
+    {merchant: "Cafe Luna", total: 12, category: "meal", evidence: {merchant: "Cafe Luna", total: "Total 12.00", category: "Lunch"}},
+    {merchant: "Cafe Luna", total: 12, category: "meal", evidence: {merchant: "Cafe Luna", total: "Total 12.00", category: "Lunch"}},
+    {answer: false, confidence: 0.9, reason: "Only food.", evidence: []}
+  ]
+  verdict = main({employee: "Ada", receipt: "Cafe Luna. Lunch menu. The total is smudged."})
+  expect verdict.approved == false
+  expect verdict.reasons[0] == "The receipt total could not be read."
+}

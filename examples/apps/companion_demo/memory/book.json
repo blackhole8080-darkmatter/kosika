@@ -1,0 +1,18 @@
+{
+  "book": {
+    "facts": [
+      "my locker is 14"
+    ],
+    "turns": [
+      "You: what is my locker?",
+      "Me: Your locker is 14. I don't know how to find this information, I can only provide the number that was given to you so far.",
+      "You: draw me a diagram of a bicycle",
+      "Me: I drew Bicycle Sketch. asks about the parts and structure of something, so it is drawn as a diagram",
+      "You: draw me a diagram of a brand new motorcycle on a road",
+      "Me: I could not draw that one just now. Ask me again, or ask in words.",
+      "You: draw me a diagram of a brand new motorcycle on a road",
+      "Me: I drew Brand New Motorcycle on Road. asks about the parts and structure of something, so it is drawn as a diagram"
+    ],
+    "you": ""
+  }
+}

@@ -26,14 +26,63 @@
 // program can reason about where anything is, exactly.
 
 record Key { at: Number to: Number }
-record Shape { id: Text kind: Text x: Number y: Number size: Number color: Text text: Text }
-record Move { shape: Text what: Text to: Number start: Number seconds: Number ease: Text repeat: Number color: Text }
-record Scene { width: Number height: Number seconds: Number background: Text shapes: Shape[] moves: Move[] }
+record GradientStop { offset: Number color: Text opacity: Number = 1 }
+record Gradient {
+  id: Text
+  kind: Text           // "linear" or "radial"
+  stops: GradientStop[]
+  x1: Number = 0
+  y1: Number = 0
+  x2: Number = 1
+  y2: Number = 0
+  cx: Number = 0.5
+  cy: Number = 0.5
+  r: Number = 0.5
+}
+record Filter { id: Text xml: Text }
+record Shape {
+  id: Text
+  kind: Text
+  x: Number = 0
+  y: Number = 0
+  size: Number = 0
+  color: Text = ""
+  text: Text = ""
+  fill: Text = ""              // color or url(#gradient-id)
+  source: Text = ""
+  target: Text = ""
+  points: Number[][] = []
+  style: Text = "straight"
+  dash: Text = ""              // stroke-dasharray for links
+  gradient: Gradient? = null    // inline gradient definition
+  filter: Text = ""            // reference to a filter id
+}
+record Move {
+  shape: Text
+  what: Text
+  to: Number = 0
+  keys: Key[] = []
+  start: Number = 0
+  seconds: Number = 1
+  ease: Text = "both"
+  repeat: Number = 1
+  color: Text = ""
+  path: Text = ""
+}
+record Scene {
+  width: Number
+  height: Number
+  seconds: Number
+  background: Text
+  shapes: Shape[]
+  moves: Move[]
+  filters: Filter[] = []       // reusable filter definitions
+}
 
-export [Key, Shape, Move, Scene, key, shape, words_shape, move, color_move, hidden, forever, scene, scene_problems, is_color, is_id, lerp, sample]
+export [Key, Shape, Move, Scene, Gradient, GradientStop, Filter, key, shape, words_shape, link, move, color_move, hidden, forever, scene, scene_problems, is_color, is_id, lerp, sample, gradient, gradient_stop, filter_def]
 
-fn kinds() -> Text[] { return ["circle", "square", "ring", "text"] }
-fn whats() -> Text[] { return ["x", "y", "size", "turn", "fade", "color"] }
+fn kinds() -> Text[] { return ["circle", "square", "ring", "text", "link"] }
+fn whats() -> Text[] { return ["x", "y", "size", "turn", "fade", "color", "path"] }
 fn eases() -> Text[] { return ["linear", "in", "out", "both", "bounce", "back"] }
 fn letters() -> Text { return "abcdefghijklmnopqrstuvwxyz" }
 fn digits() -> Text { return "0123456789" }
@@ -43,20 +92,44 @@ fn key(at: Number, to: Number) -> Key {
   return {at: at, to: to}
 }
 
+fn gradient_stop(offset: Number, color: Text, opacity: Number) -> GradientStop {
+  return {offset: offset, color: color, opacity: opacity}
+}
+
+fn gradient(id: Text, kind: Text, stops: GradientStop[]) -> Gradient {
+  return {id: id, kind: kind, stops: stops, x1: 0, y1: 0, x2: 1, y2: 0, cx: 0.5, cy: 0.5, r: 0.5}
+}
+
+fn filter_def(id: Text, xml: Text) -> Filter {
+  return {id: id, xml: xml}
+}
+
 fn shape(id: Text, kind: Text, x: Number, y: Number, size: Number, color: Text) -> Shape {
-  return {id: id, kind: kind, x: x, y: y, size: size, color: color, text: ""}
+  return {id: id, kind: kind, x: x, y: y, size: size, color: color, text: "", fill: "", source: "", target: "", points: [], style: "straight", dash: "", gradient: null, filter: ""}
 }
 
 fn words_shape(id: Text, x: Number, y: Number, size: Number, color: Text, text: Text) -> Shape {
-  return {id: id, kind: "text", x: x, y: y, size: size, color: color, text: text}
+  return {id: id, kind: "text", x: x, y: y, size: size, color: color, text: text, fill: "", source: "", target: "", points: [], style: "straight", dash: "", gradient: null, filter: ""}
+}
+
+fn link(id: Text, source: Text, target: Text, points: Number[][], color: Text, size: Number, style: Text) -> Shape {
+  return {id: id, kind: "link", x: 0, y: 0, size: size, color: color, text: "", fill: "", source: source, target: target, points: points, style: style, dash: "", gradient: null, filter: ""}
 }
 
 fn move(shape_id: Text, what: Text, to: Number, start: Number, seconds: Number, ease: Text) -> Move {
-  return {shape: shape_id, what: what, to: to, start: start, seconds: seconds, ease: ease, repeat: 1, color: ""}
+  return {shape: shape_id, what: what, to: to, keys: [], start: start, seconds: seconds, ease: ease, repeat: 1, color: "", path: ""}
+}
+
+fn move_keys(shape_id: Text, what: Text, keys: Key[], start: Number, seconds: Number, ease: Text) -> Move {
+  return {shape: shape_id, what: what, to: 0, keys: keys, start: start, seconds: seconds, ease: ease, repeat: 1, color: "", path: ""}
+}
+
+fn path_move(shape_id: Text, path_id: Text, start: Number, seconds: Number, ease: Text) -> Move {
+  return {shape: shape_id, what: "path", to: 0, keys: [], start: start, seconds: seconds, ease: ease, repeat: 1, color: "", path: path_id}
 }
 
 fn color_move(shape_id: Text, color: Text, start: Number, seconds: Number, ease: Text) -> Move {
-  return {shape: shape_id, what: "color", to: 0, start: start, seconds: seconds, ease: ease, repeat: 1, color: color}
+  return {shape: shape_id, what: "color", to: 0, keys: [], start: start, seconds: seconds, ease: ease, repeat: 1, color: color, path: ""}
 }
 
 fn hidden(shape_id: Text) -> Move {
@@ -68,7 +141,7 @@ fn forever(m: Move) -> Move {
 }
 
 fn scene(width: Number, height: Number, seconds: Number, background: Text, shapes: Shape[], moves: Move[]) -> Scene {
-  return {width: width, height: height, seconds: seconds, background: background, shapes: shapes, moves: moves}
+  return {width: width, height: height, seconds: seconds, background: background, shapes: shapes, moves: moves, filters: []}
 }
 
 fn is_color(text: Text) -> Bool {
@@ -129,6 +202,18 @@ fn shape_problems(item: Shape, number: Number, seen: Text[]) -> Text[] {
   if not is_color(item.color) { out = out.append(label + " needs a colour written like #e8813a.") }
   if item.text.length() > 200 { out = out.append(label + " has text longer than 200 characters.") }
   if item.kind == "text" and item.text.is_empty() { out = out.append(label + " is of kind text and has no text.") }
+  if item.kind == "link" {
+    if item.source.is_empty() { out = out.append(label + " needs a source vertex id.") }
+    if item.target.is_empty() { out = out.append(label + " needs a target vertex id.") }
+    if item.source == item.target { out = out.append(label + " links " + item.source + " to itself.") }
+    if item.points.length() < 2 { out = out.append(label + " needs at least two route points.") }
+    if not (item.style == "straight" or item.style == "curved" or item.style == "orthogonal") { out = out.append(label + " has style " + item.style + "; use straight, curved or orthogonal.") }
+    if not is_color(item.color) { out = out.append(label + " needs a colour written like #e8813a.") }
+    if item.size < 0 { out = out.append(label + " has a stroke width below 0.") }
+  }
+  if not item.fill.is_empty() and not item.fill.starts_with("url(") and not is_color(item.fill) { out = out.append(label + " fill must be a colour or url(#gradient-id).") }
+  if not item.dash.is_empty() and item.kind != "link" { out = out.append(label + " dash is only valid on links.") }
+  if not item.filter.is_empty() and not is_id(item.filter) { out = out.append(label + " filter must reference a filter id.") }
   return out
 }
 
@@ -139,15 +224,26 @@ fn move_problems(item: Move, number: Number, ids: Text[], length: Number) -> Tex
     out = out.append(label + " moves " + item.shape + ", and no shape has that id.")
   }
   if not whats().contains(item.what) {
-    out = out.append(label + " changes " + item.what + "; use x, y, size, turn, fade or color.")
+    out = out.append(label + " changes " + item.what + "; use x, y, size, turn, fade, color or path.")
   }
   if item.what == "color" {
     if not is_color(item.color) { out = out.append(label + " changes colour and needs a color written like #e8813a.") }
+  } else if item.what == "path" {
+    if item.path.is_empty() { out = out.append(label + " moves along a path but names no path id.") }
   } else {
     if item.what == "fade" and (item.to < 0 or item.to > 1) {
       out = out.append(label + " fades to " + item.to.to_text() + "; a fade is from 0 to 1.")
     }
     if item.what == "size" and item.to < 0 { out = out.append(label + " shrinks below 0.") }
+    if item.keys.length() > 0 {
+      var first_key = item.keys[0]
+      if first_key.at > 0 { out = out.append(label + " first key must start at time 0.") }
+      var last_key = item.keys[item.keys.length() - 1]
+      if last_key.at < 1 { out = out.append(label + " last key must end at time 1.") }
+      for i in 0 until item.keys.length() - 1 {
+        if item.keys[i].at >= item.keys[i + 1].at { out = out.append(label + " keys must be in increasing time order.") }
+      }
+    }
   }
   if item.repeat != (item.repeat * 1000000).round() / 1000000 or item.repeat < 0 or item.repeat > 1000 {
     out = out.append(label + " repeats " + item.repeat.to_text() + " times; use a whole number from 1 to 1000, or 0 for without end.")
@@ -188,6 +284,39 @@ fn scene_problems(film: Scene) -> Text[] {
   let ids = seen
   for number in 0 until film.moves.length() {
     out = out.concat(move_problems(film.moves[number], number + 1, ids, film.seconds))
+  }
+  for number in 0 until film.shapes.length() {
+    let item = film.shapes[number]
+    if item.kind == "link" {
+      if not ids.contains(item.source) { out = out.append("Link " + item.id + " sources " + item.source + ", but no shape has that id.") }
+      if not ids.contains(item.target) { out = out.append("Link " + item.id + " targets " + item.target + ", but no shape has that id.") }
+    }
+  }
+  for number in 0 until film.moves.length() {
+    let item = film.moves[number]
+    if item.what == "path" {
+      if not ids.contains(item.path) { out = out.append("Move of " + item.shape + " moves along path " + item.path + ", but no shape has that id.") }
+      else {
+        var found = false
+        var path_kind = ""
+        for i in 0 until film.shapes.length() {
+          if film.shapes[i].id == item.path {
+            found = true
+            path_kind = film.shapes[i].kind
+          }
+        }
+        if found and path_kind != "link" { out = out.append("Move of " + item.shape + " moves along " + item.path + ", but that shape is not a link.") }
+      }
+    }
+  }
+  // Validate filter references across shapes.
+  var filter_ids: Text[] = []
+  for i in 0 until film.filters.length() {
+    filter_ids = filter_ids.append(film.filters[i].id)
+  }
+  for number in 0 until film.shapes.length() {
+    let item = film.shapes[number]
+    if not item.filter.is_empty() and not filter_ids.contains(item.filter) { out = out.append("Shape " + item.id + " references filter " + item.filter + ", but no such filter is defined.") }
   }
   return out
 }

@@ -259,7 +259,7 @@ func boundedCount(token Token, low, high int) int {
 }
 
 func numberLiteral(text string, negative bool) Value {
-	if strings.Contains(text, ".") {
+	if strings.ContainsAny(text, ".eE") {
 		f, _ := strconv.ParseFloat(text, 64)
 		if negative {
 			f = -f
@@ -952,7 +952,7 @@ func (p *Parser) parseTest() *TestDecl {
 
 // notYet are the declarations this engine does not read yet.
 var notYet = map[string]bool{
-	"swarm": true, "default": true,
+	"swarm": true, "default": true, "store": true,
 }
 
 func (p *Parser) parseProgram() *Program {

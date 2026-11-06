@@ -5,6 +5,7 @@ import "std/text.kos"
 import "std/stats.kos"
 import "std/search.kos"
 import "std/evidence.kos"
+import "std/db.kos"
 
 test "the standard library" {
   expect words_of("Hello, World! It's me.") == ["hello", "world", "it's", "me"]
@@ -69,6 +70,21 @@ test "a quote is proved only by a line that holds it" {
   expect search_words("what is it?", false) == ""
   expect says_in("Tom", "Which friend cannot eat nuts?", "Tom is allergic to peanuts.")
   expect not says_in("the friend", "Which friend cannot eat nuts?", "Tom is allergic to peanuts.")
+}
+
+test "a grid is read by column name" {
+  columns = ["id", "title"]
+  rows = [["1", "first"], ["2", "second"]]
+  expect column(columns, "title") == 1
+  expect column(columns, "gone") == -1
+  expect cell(rows[1], columns, "title") == "second"
+  expect as_number(cell(rows[0], columns, "id")) == 1
+  keyed = grid_rows(columns, rows)
+  expect keyed.length() == 2
+  expect keyed[1].get("title").or("") == "second"
+  expect keyed[0].keys() == ["id", "title"]
+  expect keyed[0].get("gone").exists() == false
+  expect grid_rows(columns, []).length() == 0
 }
 
 test "a long text, such as a paper, splits whole" {

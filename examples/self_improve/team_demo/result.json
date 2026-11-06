@@ -1,0 +1,100 @@
+{
+  "request": {
+    "project": "kosika-native-learning",
+    "question": "Does the native engine currently support learn? What should a developer verify before choosing it for a learning agent?",
+    "focus": "native/README.md",
+    "reference": "conformance/README.md"
+  },
+  "models": {
+    "researcher_model": "qwen2.5:3b",
+    "planner_model": "qwen2.5:3b",
+    "reviewer_model": "qwen2.5:7b"
+  },
+  "fresh": {
+    "elapsed_seconds": 41.875,
+    "execution": {
+      "function_calls": 95,
+      "loop_iterations": 19144,
+      "model_calls": 4,
+      "steps": 46,
+      "tool_calls": 10
+    },
+    "result": {
+      "status": "completed",
+      "answer": "The native engine does not support the `learn` feature, and developers should verify if this feature is necessary for their learning agent before choosing to use it.",
+      "suggestions": [
+        "Verify if the `learn` feature is essential for the learning agent's functionality.",
+        "Check if the `learn` feature can be replaced with other available features in the native engine."
+      ],
+      "clarification": "",
+      "evidence": [
+        {
+          "source": "conformance/README.md:43",
+          "quote": "Read the new `.expected.txt` before committing it. It becomes the law, so\nit must be what Kosika should do, not merely what one engine happens to do.\n\n## What the suite does not cover yet\n\n- An agent calling its tools, `verify`, `vote`, `escalate`, `with\n"
+        },
+        {
+          "source": "native/README.md:79",
+          "quote": "\n## What it does not have yet\n\n- Models that answer `as text`, and steps with `verify`, `vote`,\n  `escalate`, `learn` or `with evidence`, and\n  `parallel` blocks.\n"
+        },
+        {
+          "source": "native/README.md:85",
+          "quote": "- An agent's plan that writes files, or an agent with its own `check`:\n  the reference checks such a plan before showing it, and those checks are\n  not here yet, so such a plan is refused by name. Replaying an agent\n  run's own trace, an answer with evidence, or a verified answer.\n- `system` tools other than files and shell (web, kosika, meaning, agents,\n  outside), and `fetch`; so an environment's `allow site` grants nothing\n"
+        }
+      ],
+      "concerns": [],
+      "participants": [
+        "researcher",
+        "planner",
+        "reviewer"
+      ],
+      "memory": "stored"
+    }
+  },
+  "recalled": {
+    "elapsed_seconds": 3.219,
+    "execution": {
+      "function_calls": 73,
+      "loop_iterations": 19077,
+      "model_calls": 0,
+      "steps": 8,
+      "tool_calls": 3
+    },
+    "result": {
+      "status": "completed",
+      "answer": "The native engine does not support the `learn` feature, and developers should verify if this feature is necessary for their learning agent before choosing to use it.",
+      "suggestions": [
+        "Verify if the `learn` feature is essential for the learning agent's functionality.",
+        "Check if the `learn` feature can be replaced with other available features in the native engine."
+      ],
+      "clarification": "",
+      "evidence": [
+        {
+          "quote": "Read the new `.expected.txt` before committing it. It becomes the law, so\nit must be what Kosika should do, not merely what one engine happens to do.\n\n## What the suite does not cover yet\n\n- An agent calling its tools, `verify`, `vote`, `escalate`, `with\n",
+          "source": "conformance/README.md:43"
+        },
+        {
+          "quote": "\n## What it does not have yet\n\n- Models that answer `as text`, and steps with `verify`, `vote`,\n  `escalate`, `learn` or `with evidence`, and\n  `parallel` blocks.\n",
+          "source": "native/README.md:79"
+        },
+        {
+          "quote": "- An agent's plan that writes files, or an agent with its own `check`:\n  the reference checks such a plan before showing it, and those checks are\n  not here yet, so such a plan is refused by name. Replaying an agent\n  run's own trace, an answer with evidence, or a verified answer.\n- `system` tools other than files and shell (web, kosika, meaning, agents,\n  outside), and `fetch`; so an environment's `allow site` grants nothing\n",
+          "source": "native/README.md:85"
+        }
+      ],
+      "concerns": [],
+      "participants": [],
+      "memory": "reused"
+    }
+  },
+  "verification": {
+    "fresh_replay_matched": true,
+    "recalled_replay_matched": true,
+    "recall_model_endpoint": "http://127.0.0.1:1"
+  },
+  "limits": [
+    "One authored demonstration, not a general intelligence benchmark.",
+    "Model review is not proof or execution authority.",
+    "Memory is the last accepted response per project key, scoped to the question and selected source context.",
+    "Earlier all-3B attempts were refused or declined; stronger review was used for this successful run."
+  ]
+}

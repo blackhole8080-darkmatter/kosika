@@ -46,7 +46,7 @@ what happened without asking a model anything.
 
 The hero plays the film itself, not a second animation: a two-second slice of the
 running timeline (5.15s–7.15s), cropped past the recording's clock, soft-focused
-and masked, at 30% over the ink. It is mirrored into a four-second loop, so the
+and masked, at 22% over the ink. It is mirrored into a four-second loop, so the
 clips fill the lanes and then empty them — no cut, no jump back.
 
 ```text
@@ -104,6 +104,68 @@ node film/render.mjs --stills 2.4,11.9,17.2 --out ../media/stills/
 from the same timeline and muxed with ffmpeg (`-c:v copy`, AAC), so picture
 and sound stay in step by construction.
 
+## Design and motion
+
+The motion follows a small written system rather than improvisation per
+section. It was drawn from the design skills kept beside this repo in
+`Aryan_Private/programs` — Hallmark's floor, garden-skills'
+`web-design-engineer` and `motion-showreel` craft notes, `baoyu-design`, the
+style library in `awesome-design-skills`, `ui-ux-pro-max`'s animation rules
+(spring/physics curves, exits 60–70% of entrances, one or two moving elements
+per view, 44px tap targets), the cinematic reference in
+`awesome-claude-design/design-md/cinematic`, and the motion-graphics prompts in
+`awesome-opus5-5-videos` (draw-on marks, kinetic type, a smear behind anything
+that travels):
+
+- **One movement at a time.** Siblings arrive 60ms apart, entrances take
+  0.55s, exits 0.22s, and nothing but `transform` and `opacity` is animated.
+- **Three motion characters, in tokens:** `--settle` (arrives and stays),
+  `--snap` (hard start, long glide), `--spring` (overshoots, for things that
+  land — the stamps).
+- **The scroll is a camera.** The recording's stage pushes in 2% across its
+  320vh; the film pushes in and back over its own 18 seconds, on its clock, so
+  pausing holds the frame still.
+- **The orbit is the timeline.** A gold arc runs round the run's ring, growing
+  with the scroll, its head the same dot the film travels on. Both ends measure
+  *arc length*, not angle: on an ellipse of rx 250 / ry 108 a fifth of the angle
+  is not a fifth of the path, and the dot would run ahead of its arc.
+- **Kinetic type, once.** Section headlines split into words at load, each
+  rising out of its own mask 55ms after the last. The parent does not fade as
+  well — one movement. Reduced motion keeps the plain line.
+- **The dot has a comet.** Six short arcs of falling alpha behind it, in the
+  dot's own colour rather than the ring's gold, so it reads as travel.
+- **Atmosphere behind the hero.** Two fields of light drifting on 34- and
+  44-second alternates, transform-only, gone entirely under reduced motion.
+- **The chips sit at different depths.** They already drift on their own
+  timers; scrolling now lifts them apart, each by its own depth.
+- **A step landing sends one ring out** from the node that took it — spent on
+  the moment, not looped. The beats are front-loaded (the model call is most of
+  the run), so the rings cluster where the steps are.
+- **The meter in the reel bar is the film's own score,** drawn by an analyser
+  on the audio element rather than on a timer. It ticks flat until you ask for
+  sound, and it is hidden on a phone.
+- **Buttons lean a few pixels toward the pointer,** on the same spring, on a
+  pointer with a real hover. The hover lift rides on top rather than replacing
+  it, and the card glyphs ring and tilt on hover and focus.
+- **Events drift past the stage.** Three trace lines float in the run's side
+  margins, gone below 1180px and under reduced motion — the hero's floating
+  motif, but saying something the diagram cannot.
+- **The Studio window arrives as a product shot:** tipped back 9°, then squared
+  up on the spring. It settles in place; nothing keeps moving afterwards.
+- **The playhead moves by `transform`,** measured against a cached track
+  width, so scrubbing never asks the browser for layout.
+- **Focus is a state, not a fade:** rings appear instantly, the command blocks
+  are `<button>`s, every control a thumb has to hit is 44px or taller, the body
+  sits at a 16px base, and the film's camera move is skipped under
+  `prefers-reduced-motion`.
+- **The hero is one screen:** headline, one 21-word sentence and an action
+  above the fold at 1280×800.
+
+One deliberate deviation: the tracked-caps `overline` above each section is
+this site's own editorial system, kept on purpose against the skill's ban on
+small-caps labels. The paper's stamps land on the exhibit artwork, never across
+the note they stamp.
+
 ## Serving it
 
 ```text
@@ -142,7 +204,11 @@ frame worth photographing, so they always match the code.
   has a `prefers-reduced-motion` resting state (and a `<noscript>` one).
 - Every colour on the page and in Studio comes from one token set, so the site
   re-grades itself with the same Dark Matter identity the app wears.
-- `node tools/check.mjs` walks the page at 1440 and 390, and asserts what the
-  last review verified by hand: no overflow, no console errors, every image
-  decoded, the paper section clear of the wipe canvas, the run scrubbing, the
-  reel seeking, and the floating chips gone on a phone.
+- `node tools/check.mjs` walks the page at 1440 and 390, with a
+  reduced-motion pass, and asserts what the last review verified by hand: no
+  overflow, no console errors, every image decoded, the paper section clear of
+  the wipe canvas, the stamps clear of the exhibit notes, the run scrubbing
+  (playhead advancing by transform, the orbit's arc following it, the dot
+  riding the ring), the hero film playing and the reel seeking, the hero inside
+  one screen, focus rings present, 44px tap targets, and the floating chips and
+  the film gone on a phone.

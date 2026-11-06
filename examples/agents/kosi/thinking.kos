@@ -1,0 +1,159 @@
+// The thinking board: how an answer was reached, as Kosika knows it.
+//
+// Every answer Kosi and its friends give carries its thinking: the
+// question, the things it names, what Kosika worked out exactly, the
+// evidence read (with where it came from), what Kosi remembered, the
+// checks made on the reply and how they came out, and the answer. Studio
+// draws it on the Kosika canvas under the answer, and any part of it can
+// be asked about. Nothing here is the model's account of itself: each part
+// is a step Kosika really took, so the board can be trusted.
+
+import "std/brain.kos"
+
+export [ThNode, Thought, th_none, th_node, th_build, th_steps, th_with_drawing, th_answer, th_with_failure]
+
+// kind: question, named, exact, evidence, memory, check, answer. state:
+// "" or chosen, passed, fixed, ruled out, used.
+record ThNode { id: Text kind: Text label: Text text: Text source: Text state: Text }
+
+// links: "a>b" pairs of node ids. steps: what was done, in order.
+record Thought { nodes: ThNode[] links: Text[] steps: Text[] }
+
+fn th_none() -> Thought { return {nodes: [], links: [], steps: []} }
+
+fn th_node(id: Text, kind: Text, label: Text, text: Text, source: Text, state: Text) -> ThNode { return {id: id, kind: kind, label: label, text: text, source: source, state: state} }
+
+fn th_short(text: Text, most: Number) -> Text {
+  let t = text.trim()
+  return if t.length() <= most { t } else { t.take(most - 1).trim() + "…" }
+}
+
+// The board from what was really done. checks: each check as
+// "passed: what" or "fixed: what".
+fn th_build(question: Text, named: Text[], exact: Text, evidence: BrainNote[], memory: BrainNote[], checks: Text[], answer: Text) -> Thought {
+  var nodes: ThNode[] = [th_node("q", "question", "Question", th_short(question, 120), "", "")]
+  var links: Text[] = []
+  if not named.is_empty() {
+    nodes = nodes.append(th_node("named", "named", "Named", named.join(", "), "", ""))
+    links = links.append("q>named")
+  }
+  var ends: Text[] = []
+  if not exact.trim().is_empty() {
+    nodes = nodes.append(th_node("exact", "exact", "Worked out by Kosika", th_short(exact, 160), "", "used"))
+    links = links.append("q>exact")
+    ends = ends.append("exact")
+  }
+  // The same sentence read twice (a paper found by two searches) is one
+  // piece of evidence.
+  var seen: Text[] = []
+  var once: BrainNote[] = []
+  for e in evidence where not seen.contains(e.text) {
+    seen = seen.append(e.text)
+    once = once.append(e)
+  }
+  for k in 0 until once.take(3).length() {
+    let e = once[k]
+    let id = f"e{k}"
+    let site = if e.source.contains("wikipedia.org") { "Wikipedia" } else { if e.source.contains("arxiv.org") { "arXiv" } else { "a source" } }
+    nodes = nodes.append(th_node(id, "evidence", "Evidence · " + site, th_short(e.text, 160), e.source.split(" · ")[0], "used"))
+    links = links.append(if named.is_empty() { "q>" + id } else { "named>" + id })
+    ends = ends.append(id)
+  }
+  for k in 0 until memory.take(2).length() {
+    let id = f"m{k}"
+    nodes = nodes.append(th_node(id, "memory", "Memory", th_short(memory[k].text, 120), "", "used"))
+    links = links.append("q>" + id)
+    ends = ends.append(id)
+  }
+  for k in 0 until checks.length() {
+    let c = checks[k]
+    let state = if c.starts_with("fixed:") { "fixed" } else { "passed" }
+    let id = f"c{k}"
+    nodes = nodes.append(th_node(id, "check", if state == "fixed" { "Check · corrected" } else { "Check · passed" }, c.split(": ").drop(1).join(": "), "", state))
+    for e in ends { links = links.append(e + ">" + id) }
+    links = links.append(id + ">a")
+  }
+  if checks.is_empty() {
+    for e in ends { links = links.append(e + ">a") }
+    if ends.is_empty() { links = links.append(if named.is_empty() { "q>a" } else { "named>a" }) }
+  }
+  nodes = nodes.append(th_node("a", "answer", "Answer", th_short(answer, 140), "", "chosen"))
+  return {nodes: nodes, links: links, steps: th_steps(nodes)}
+}
+
+// What was done, in order, from the board's own parts.
+fn th_steps(nodes: ThNode[]) -> Text[] {
+  var out: Text[] = ["read the question"]
+  for n in nodes where n.kind == "named" { out = out.append("named: " + n.text) }
+  if (for n in nodes where n.kind == "exact" { n }).length() > 0 { out = out.append("worked it out exactly") }
+  let read = (for n in nodes where n.kind == "evidence" { n }).length()
+  let kept = (for n in nodes where n.kind == "memory" { n }).length()
+  if read > 0 { out = out.append(f"read {read} " + (if read == 1 { "source" } else { "sources" })) }
+  if kept > 0 { out = out.append(f"recalled {kept} " + (if kept == 1 { "thing" } else { "things" }) + " you told Kosi") }
+  for n in nodes where n.kind == "check" { out = out.append(if n.state == "fixed" { "checked the reply · corrected" } else { "checked the reply · passed" }) }
+  return out.append("answered")
+}
+
+// A drawing made for the answer, and the checks Designs made on it before
+// it was shown: every link joins two real parts, every label fits, each
+// step points at a real part, and anything Designs had to put right.
+fn th_with_drawing(t: Thought, title: Text, fixed: Text[]) -> Thought {
+  if title.trim().is_empty() { return t }
+  let answer = (for n in t.nodes where n.kind == "answer" { n.id }).take(1)
+  var nodes = for n in t.nodes where n.kind != "answer" { n }
+  nodes = nodes.append(th_node("drawn", "exact", "Drawn on the canvas", title.trim(), "", "used"))
+  nodes = nodes.append(th_node("dcheck", "check", "Check · passed", "Designs checked the drawing: every link joins two real parts, every label fits, each step points at a real part", "", "passed"))
+  var links = t.links.append("q>drawn").append("drawn>dcheck")
+  for k in 0 until fixed.take(2).length() {
+    let id = f"df{k}"
+    nodes = nodes.append(th_node(id, "check", "Check · corrected", "Designs put right: " + fixed[k], "", "fixed"))
+    links = links.append("drawn>" + id).append(id + ">a")
+  }
+  nodes = nodes.concat(for n in t.nodes where n.kind == "answer" { n })
+  links = if answer.is_empty() { links } else { links.append("dcheck>a") }
+  let steps = for x in t.steps where x != "answered" { x }
+  return {nodes: nodes, links: links, steps: steps.append("drew it, and Designs checked the drawing").append("answered")}
+}
+
+// A check that found something wrong and put it right, placed before the
+// answer.
+fn th_with_failure(t: Thought, what: Text) -> Thought {
+  let before = for n in t.nodes where n.kind != "answer" { n }
+  let after = for n in t.nodes where n.kind == "answer" { n }
+  let nodes = before.append(th_node("fail", "check", "Check · corrected", what, "", "fixed")).concat(after)
+  return {nodes: nodes, links: t.links.append("q>fail").append("fail>a"), steps: (for x in t.steps where x != "answered" { x }).append("checked the drawing · it did not come out").append("answered")}
+}
+
+// The answer as it was finally said.
+fn th_answer(t: Thought, text: Text) -> Thought {
+  return {..t, nodes: for n in t.nodes { if n.kind == "answer" { {..n, text: th_short(text, 140)} } else { n } }}
+}
+
+// ---------------------------------------------------------------- tests
+
+fn th_test_note(text: Text, source: Text) -> BrainNote { return {kind: "fact", topic: "t", words: "", text: text, source: source, score: 1, times: 1} }
+
+test "the board holds only what was done, linked in order" {
+  t = th_build("Sydney is the capital of Australia, right?", ["Sydney", "Australia"], "", [th_test_note("Canberra is the nation's capital.", "https://en.wikipedia.org/wiki/Australia")], [], [], "Canberra is the capital.")
+  expect (for n in t.nodes { n.kind }) == ["question", "named", "evidence", "answer"]
+  expect t.links == ["q>named", "named>e0", "e0>a"]
+  expect t.nodes[2].label == "Evidence · Wikipedia"
+  expect t.nodes[2].source == "https://en.wikipedia.org/wiki/Australia"
+  expect t.steps == ["read the question", "named: Sydney, Australia", "read 1 source", "answered"]
+}
+
+test "a check sits between what was used and the answer" {
+  t = th_build("how many r's in strawberry?", [], "The letter r appears 3 times in strawberry.", [], [th_test_note("Their exam is on 19 December.", "you told Kosi")], ["fixed: the reply missed the exact answer, so Kosika gave it"], "The letter r appears 3 times.")
+  expect (for n in t.nodes { n.kind }) == ["question", "exact", "memory", "check", "answer"]
+  expect t.links == ["q>exact", "q>m0", "exact>c0", "m0>c0", "c0>a"]
+  expect t.nodes[3].state == "fixed"
+  expect t.steps.contains("checked the reply · corrected")
+  expect th_none().nodes.is_empty()
+  drawn = th_with_drawing(th_build("draw the water cycle", [], "", [], [], [], "Here it is."), "The Water Cycle", ["a label was too long"])
+  expect (for n in drawn.nodes { n.kind }) == ["question", "exact", "check", "check", "answer"]
+  expect drawn.links.contains("dcheck>a")
+  expect drawn.steps == ["read the question", "drew it, and Designs checked the drawing", "answered"]
+  expect th_with_drawing(th_none(), "", []).nodes.is_empty()
+  twice = th_build("q", [], "", [th_test_note("Same.", "https://arxiv.org/abs/1"), th_test_note("Same.", "https://arxiv.org/abs/1")], [], [], "a")
+  expect (for n in twice.nodes where n.kind == "evidence" { n }).length() == 1
+}

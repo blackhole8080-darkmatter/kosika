@@ -6,6 +6,7 @@ as the reference does), is kept in `vendor/`, so it builds with no
 network.
 
     go build -o kosika-native.exe .
+    kosika-native check FILE.kos     would it run: `OK`, or the reason it would not
     kosika-native test FILE.kos      run the tests the file carries
     kosika-native tokens FILE.kos    the file's tokens, one JSON object a line
     kosika-native run FILE.kos --input IN.json --model qwen2.5:7b
@@ -57,7 +58,7 @@ asked again on a refused answer with `retry`, asked several times with
 stronger model with `escalate`, or answered from what it learned with
 `learn` when run with `--memory`), ask an agent, or
 think (`classify`, `extract`, `summarize`, `decide`, the first three
-quoting the text they were given when written `with evidence`), with a
+quoting the text they were given when written `with evidence`), or ask a model whose answer must quote the step's own arguments (`answer = use_model assistant(question.text) with evidence`), with a
 fallback
 (`otherwise`) or a choice of call (`match`), or are a plain value worked
 out by code (`count = before + 1`); `parallel` blocks, whose steps it

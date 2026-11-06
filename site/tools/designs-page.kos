@@ -1,0 +1,135 @@
+// Build site/designs.html: Kosika Designs, drawn live for the website,
+// by a Kosika program. This is the Kosika twin of build-designs.py: the
+// same asks, the same page, with nothing in between but Kosika.
+//
+//   kosika run site/tools/designs-page.kos --workflow site --input ask.json
+//       --allow-folder site --approve
+//       --model openai/gpt-oss-120b --model-url https://api.groq.com/openai/v1
+//       --model-protocol openai --max-output-tokens 8000
+//
+// where ask.json holds {"ask": {"out": "designs.html"}}: the file inside the
+// granted folder to write. Each picture is asked for through the front
+// door Chat, Studio and the agents use (std/designs.kos), with place
+// "site"; a picture that comes back with problems is asked for once more,
+// and one that still has them is left off the page and named.
+
+import "std/designs.kos"
+
+export [SiteAsk, SitePage, site]
+
+record SiteAsk { out: Text }
+record SitePage { wrote: Text drawn: Number skipped: Text[] }
+record NewFile { path: Text text: Text }
+record Written { bytes: Number }
+
+tool write_file {
+  source system "files"
+  operation: "write"
+  access: execute
+  input: NewFile
+  output: Written
+}
+
+agent hands {
+  can: [write_file]
+  max_steps: 1
+}
+
+fn sp_asks() -> Text[] {
+  return ["how do bicycle gears make climbing easier", "how does a rainbow form", "what is a black hole", "a calm abstract background about the ocean", "compare solar and wind power"]
+}
+
+fn sp_ask(k: Number) -> DzAsk { return {text: sp_asks()[k], palette: "", place: "site", kind: ""} }
+
+fn sp_esc(t: Text) -> Text { return t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;") }
+
+fn sp_drawn(r: DzResult) -> Bool { return r.problems.is_empty() and not r.embed.is_empty() }
+
+// The better of two tries: the first if it was drawn, else the second.
+fn sp_pick(first: DzResult, second: DzResult) -> DzResult { return if sp_drawn(first) { first } else { second } }
+
+fn sp_height(kind: Text) -> Number {
+  if kind == "diagram" { return 760 }
+  if kind == "illustration" { return 900 }
+  if kind == "canvas" { return 1500 }
+  return 520
+}
+
+fn sp_framed(r: DzResult) -> Text {
+  let page = "<!doctype html><html><head><meta charset=\"utf-8\"><style>html,body{margin:0;background:#06070d;color-scheme:dark}</style></head><body>" + r.embed + "</body></html>"
+  return f"<iframe loading=\"lazy\" style=\"height:{sp_height(r.kind)}px\" srcdoc=\"{sp_esc(page)}\"></iframe>"
+}
+
+fn sp_section(asked: Text, r: DzResult) -> Text {
+  return f"<section><div class=\"asked\">{sp_esc(r.kind)} &#183; asked: <span>&ldquo;{sp_esc(asked)}&rdquo;</span></div>{sp_framed(r)}<p class=\"why\">Kosika {sp_esc(r.why)}.</p></section>"
+}
+
+fn sp_style() -> Text {
+  return "@font-face{font-family:Figtree;src:url(fonts/Figtree.ttf) format('truetype');font-weight:300 900;font-display:swap}:root{--bg:#06070d;--panel:#0d0f1a;--ink:#eef0f7;--soft:#a3a8bd;--gold:#f5b45c;--amber:#ff8a4c;--line:rgba(238,240,247,.1);color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 Figtree,system-ui,-apple-system,'Segoe UI',sans-serif}header,main{max-width:1180px;margin:0 auto;padding-left:max(20px,env(safe-area-inset-left,0px));padding-right:max(20px,env(safe-area-inset-right,0px))}header{display:flex;align-items:center;justify-content:space-between;padding-block:22px}header a{color:var(--soft);text-decoration:none;font-size:14px}header a.home{color:var(--ink);font-weight:800;letter-spacing:-.01em;font-size:17px}.eyebrow{font:600 11px ui-monospace,Consolas,monospace;letter-spacing:.3em;text-transform:uppercase;color:var(--gold)}h1{font-size:clamp(32px,5vw,52px);font-weight:850;letter-spacing:-.03em;line-height:1.04;margin:10px 0 12px;text-wrap:balance}.lede{color:var(--soft);max-width:64ch;margin:0 0 30px}.ways{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:12px;margin-bottom:40px}.ways div{border:1px solid var(--line);border-radius:14px;padding:14px 16px;background:var(--panel)}.ways b{display:block;color:var(--gold);font:600 11px ui-monospace,Consolas,monospace;letter-spacing:.18em;text-transform:uppercase;margin-bottom:4px}.ways p{margin:0;color:var(--soft);font-size:14.5px}section{margin:0 0 46px}.asked{font:600 12px ui-monospace,Consolas,monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--soft);margin-bottom:10px}.asked span{color:var(--amber)}.why{color:var(--soft);font-size:13.5px;margin:10px 4px 0}iframe{width:100%;border:0;border-radius:22px;background:transparent}footer{max-width:1180px;margin:0 auto;padding:30px 20px 60px;color:var(--soft);font-size:13px}"
+}
+
+fn sp_html(made: DzResult[]) -> Text {
+  let asks = sp_asks()
+  let sections = (for k in 0 until made.length() where sp_drawn(made[k]) { sp_section(asks[k], made[k]) }).join("")
+  let head = "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>Kosika Designs</title>\n<meta name=\"description\" content=\"Kosika Designs draws diagrams, animated illustrations and moving art, and every part of Kosika uses it.\">\n<link rel=\"icon\" href=\"assets/mark.svg\" type=\"image/svg+xml\">\n<style>" + sp_style() + "</style>\n</head>\n"
+  let intro = "<header><a class=\"home\" href=\"index.html\">Kosika</a><a href=\"index.html#start\">Get started</a></header>\n<main>\n<div class=\"eyebrow\">Kosika Designs</div>\n<h1>Pictures that explain, drawn by Kosika</h1>\n<p class=\"lede\">Chat, Studio, this website and every agent ask Kosika Designs for pictures in the same way. A free model only says what is in a picture. Kosika checks it, works out the geometry and the motion itself, and draws it. Everything below was drawn that way.</p>\n<div class=\"ways\">\n<div><b>Diagram</b><p>The structure of a thing: parts, steps, comparisons, timelines.</p></div>\n<div><b>Illustration</b><p>How something works, as a small animated picture beside a few sentences.</p></div>\n<div><b>Moving art</b><p>An abstract piece for a mood, a background or a cover.</p></div>\n</div>\n"
+  return head + "<body>\n" + intro + sections + "\n</main>\n<footer>Drawn by site/tools/designs-page.kos, a Kosika program, through std/designs.kos.</footer>\n</body>\n</html>\n"
+}
+
+fn sp_file(ask: SiteAsk, made: DzResult[]) -> NewFile { return {path: ask.out, text: sp_html(made)} }
+
+fn sp_result(ask: SiteAsk, made: DzResult[], done: Written) -> SitePage {
+  let asks = sp_asks()
+  let skipped = for k in 0 until made.length() where not sp_drawn(made[k]) { asks[k] + ": " + made[k].problems.join("; ") }
+  let drawn = (for r in made where sp_drawn(r) { r }).length()
+  return {wrote: f"{ask.out} ({done.bytes} bytes)", drawn: drawn, skipped: skipped}
+}
+
+workflow site(ask: SiteAsk) -> SitePage {
+  budget 110 model calls, 5 tool calls, 3600 seconds
+  a1    = call design(sp_ask(0))
+  a2    = call design(sp_ask(1))
+  a3    = call design(sp_ask(2))
+  a4    = call design(sp_ask(3))
+  a5    = call design(sp_ask(4))
+  b1    = match sp_drawn(a1) {
+    case true { a1 }
+    case _ { call design(sp_ask(0)) }
+  }
+  b2    = match sp_drawn(a2) {
+    case true { a2 }
+    case _ { call design(sp_ask(1)) }
+  }
+  b3    = match sp_drawn(a3) {
+    case true { a3 }
+    case _ { call design(sp_ask(2)) }
+  }
+  b4    = match sp_drawn(a4) {
+    case true { a4 }
+    case _ { call design(sp_ask(3)) }
+  }
+  b5    = match sp_drawn(a5) {
+    case true { a5 }
+    case _ { call design(sp_ask(4)) }
+  }
+  made  = [sp_pick(a1, b1), sp_pick(a2, b2), sp_pick(a3, b3), sp_pick(a4, b4), sp_pick(a5, b5)]
+  file  = sp_file(ask, made)
+  done  = execute hands.write_file(file.path, file.text)
+  out   = sp_result(ask, made, done)
+  require approval
+}
+
+fn sp_sample(embed: Text, problems: Text[]) -> DzResult {
+  return {kind: "diagram", why: "drew it", title: "Gears", page: "", svg: "", embed: embed, problems: problems, fixed: []}
+}
+
+test "the page holds what was drawn and names what was not" {
+  good = sp_sample("<div>gears</div>", [])
+  bad = sp_sample("", ["no figures"])
+  html = sp_html([good, bad, good, good, good])
+  expect html.contains("<title>Kosika Designs</title>")
+  expect html.split("<section>").length() == 5
+  expect html.contains("&ldquo;how do bicycle gears make climbing easier&rdquo;")
+  expect sp_pick(bad, good).embed == "<div>gears</div>"
+  expect sp_height("canvas") == 1500
+}

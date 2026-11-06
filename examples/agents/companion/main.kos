@@ -1,0 +1,843 @@
+// Companion: the first agent you talk to every day.
+//
+//   kosika chat main.kos --model qwen2.5:3b --memory memory
+//   kosika measure main.kos --model qwen2.5:3b --model gemma3:4b
+//
+// It greets you, tells the time and the date, keeps what you ask it to keep,
+// lists it, forgets it when told, draws a picture when one is asked for, and
+// answers anything else in a few short sentences. What it keeps and the last
+// of the talk are carried into every question, so "and my locker?" has
+// something to point at.
+//
+// It touches nothing: no files, no programs, no web, no phone. It has a
+// clock, its own memory and its own drawings.
+//
+// Each part of Kosika is used where it is the right part, not for show:
+//
+//   memory, now          what it keeps and the clock, never the model
+//   std/text.kos         reading the words of a question and of an answer
+//   std/search.kos       which kept facts bear on this question (BM25, no model)
+//   std/designs.kos      a diagram, an illustration or art, when asked for one
+//   verify + escalate    an answer that claims an action is refused, asked
+//                        again with the reason, then asked of a second model
+//   learn by             an accepted answer is kept, so the same question
+//                        with the same kept facts is not paid for twice
+//   budget               what one turn may spend
+//
+// A model is always granted, even for the parts that use none: a step that
+// escalates must be bound before the run starts (KOSIKA.md), and that is
+// checked for the whole program, not just for the branch this turn takes.
+//
+// Say: hello, what time is it, remember that my locker is 14, what do you
+// remember, forget everything, draw me a diagram of a bicycle, help, or ask a
+// question.
+
+import "std/text.kos"
+import "std/search.kos"
+import "std/designs.kos"
+
+export [Msg, Said, Book, main]
+
+// What the person says.
+record Msg { text: Text }
+// What it says, a few things you might say next, and the picture it drew, if
+// it drew one: the embed any page can drop in, and the page on its own.
+record Said {
+  text: Text
+  suggest: Text[]
+  kind: Text
+  title: Text
+  why: Text
+  embed: Text
+  page: Text
+  problems: Text[]
+}
+// What it keeps between runs: your name, what you asked it to keep, and the
+// last few things said, oldest first. Each line begins "You:" or "Me:".
+record Book { you: Text facts: Text[] turns: Text[] }
+
+memory book of Book
+
+model voice {
+  input: Prompt
+  output: Reply
+  parameters: {
+    max_output_tokens: 320
+  }
+}
+
+// Asked the same question again when `voice` claims something it cannot do.
+model careful {
+  input: Prompt
+  output: Reply
+  parameters: {
+    max_output_tokens: 320
+    temperature: 0.2
+  }
+}
+
+// ---------------------------------------------------------------- words
+
+// The first word, lower case and without the marks around it: "Remember:" is
+// "remember".
+fn cp_first(text: Text) -> Text {
+  let words = text.trim().lower().words()
+  return if words.is_empty() { "" } else { words[0].trim_marks(":,.") }
+}
+
+// "remember that my locker is 14" keeps "my locker is 14".
+fn cp_fact(m: Msg) -> Text {
+  let first = cp_first(m.text)
+  let rest = m.text.trim().drop(first.length()).trim().trim_marks(":,. ")
+  if rest.lower().starts_with("that ") { return rest.drop(5).trim() }
+  return rest
+}
+
+// A question's words, lower case and without punctuation, with a space around
+// them, so " play " is found in "can you play" and never in "playlist".
+fn cp_padded(text: Text) -> Text {
+  return " " + words_of(text).join(" ") + " "
+}
+
+fn cp_held(text: Text, phrases: Text[]) -> Bool {
+  for phrase in phrases {
+    if text.contains(" " + phrase + " ") { return true }
+  }
+  return false
+}
+
+// Asked for a picture rather than an answer in words.
+fn cp_wants_picture(m: Msg) -> Bool {
+  let t = cp_padded(m.text)
+  return cp_held(t, ["draw", "draws", "diagram", "picture", "sketch", "chart", "timeline", "illustrate", "illustration", "visualise", "visualize", "animation", "animate", "poster", "flowchart", "mindmap", "art"])
+}
+
+// What was said, and which of its kinds it is.
+fn cp_kind(m: Msg) -> Text {
+  let t = m.text.trim().lower()
+  let first = cp_first(t)
+  if t.is_empty() { return "help" }
+  if ["hello", "hi", "hey", "yo", "good morning", "good evening", "morning", "evening"].contains(t) { return "hello" }
+  if ["remember", "keep", "note"].contains(first) { return "keep" }
+  if t.contains("what do you remember") or t.contains("what have you kept") or t.contains("my notes") { return "list" }
+  if t.contains("forget everything") or t.contains("forget it all") { return "forget" }
+  if first == "forget" { return "forget_one" }
+  if t == "time" or t.contains("what time") or t.contains("what day") or t.contains("what is the date") or t.contains("todays date") { return "time" }
+  if t == "help" or t.contains("what can you do") { return "help" }
+  if cp_wants_picture(m) { return "draw" }
+  return "ask"
+}
+
+fn cp_asks_date(m: Msg) -> Bool {
+  let t = m.text.trim().lower()
+  return t.contains("day") or t.contains("date") or t.contains("today")
+}
+
+fn cp_empty() -> Book { return {you: "", facts: [], turns: []} }
+
+// ---------------------------------------------------------------- saying it
+
+// Everything it says is built here, so the picture fields are empty unless a
+// picture was drawn.
+fn cp_says(text: Text, suggest: Text[]) -> Said {
+  return {text: text suggest: suggest kind: "" title: "" why: "" embed: "" page: "" problems: []}
+}
+
+fn cp_greet(you: Text) -> Said {
+  let who = if you.is_empty() { "" } else { ", " + you }
+  return cp_says("Hello" + who + ". What is on your mind?", ["what time is it", "what can you do"])
+}
+
+fn cp_kept_said(fact: Text) -> Said {
+  if fact.is_empty() {
+    return cp_says("Tell me what to keep, like this: remember that my locker is 14.", [])
+  }
+  return cp_says("I will remember that " + fact + ".", [])
+}
+
+fn cp_list(facts: Text[]) -> Said {
+  if facts.is_empty() {
+    return cp_says("You have not asked me to keep anything yet.", ["remember that my locker is 14"])
+  }
+  let numbered = for i in 0 until facts.length() { f"{i + 1}. " + facts[i] }
+  return cp_says("I remember:\n" + numbered.join("\n"), [])
+}
+
+fn cp_forgot() -> Said {
+  return cp_says("I have forgotten everything I kept, and the talk with it.", ["hello"])
+}
+
+fn cp_help() -> Said {
+  return cp_says("I am Kosi, the companion you talk to every day. I can tell the time and the date, keep what you ask me to keep, list it, forget one thing or all of it, draw a diagram or a picture when you ask for one, and answer questions. I cannot open programs, change files or use the web, and I will say so rather than pretend.", ["remember that my locker is 14", "draw me a diagram of a bicycle"])
+}
+
+fn cp_no_answer() -> Said {
+  return cp_says("I could not get an answer just now. Ask me again, or say help.", ["help"])
+}
+
+// What is said when both models keep claiming an action: true, and it still
+// answers. A Reply, because it stands in for the model's own answer.
+fn cp_cannot_act() -> Reply {
+  return {text: "I cannot do that: I have no way to open programs, change files, use the web or send anything. What I can do is answer in words, keep what you ask me to keep, and draw a picture."}
+}
+
+// ---------------------------------------------------------------- the check
+
+// The actions this agent can never take, as whole words, since it has no tool
+// at all: no files, no programs, no web, no phone.
+fn cp_actions() -> Text[] {
+  return ["open", "opened", "opening", "play", "played", "playing", "pause", "paused", "pausing", "put on", "sending", "send", "sent", "delete", "deleted", "deleting", "install", "installed", "installing", "download", "downloaded", "upload", "uploaded", "browse", "browsed", "browsing", "searching the web", "search the web", "buy", "buying", "bought", "order", "ordered", "ordering", "turn on", "turned on", "turn off", "turned off", "switch on", "switch off", "set a timer", "set an alarm", "schedule", "scheduled", "scheduling", "remind", "reminded", "saved", "wrote to", "typed", "clicked", "executed", "restarted", "shut down", "transferred", "transferring", "paid", "paying", "screenshot"]
+}
+
+// Saying plainly that it cannot.
+fn cp_refused(t: Text) -> Bool {
+  return cp_held(t, ["cannot", "can't", "can not", "unable", "not able", "don't have", "do not have", "won't", "will not", "no way to", "not allowed", "not something i can"])
+}
+
+// Offering to act: the words a model uses when it is about to claim one.
+fn cp_offering(t: Text) -> Bool {
+  return cp_held(t, ["i can", "i'll", "i will", "i've", "i have", "i am", "i'm", "sure", "of course", "certainly", "done", "here is", "here's", "now playing", "i just"])
+}
+
+// Words that make an action the person's, or an instruction, not a claim: "I
+// can tell you how to open a file" is honest.
+fn cp_instruction(t: Text) -> Bool {
+  return cp_held(t, ["how to", "you can", "you could", "you'll", "tell you", "show you", "help you", "for you to", "you asked", "asked me to", "you want me to", "you'd like me to", "save you", "if you"])
+}
+
+// The reason an answer cannot be trusted, or "" when it can: a sentence that
+// offers an action this agent cannot take, and does not say in the same
+// breath that it cannot.
+fn cp_gate(asked: Reply) -> Text {
+  if cp_echoed(asked) { return "the answer wrote the instructions back instead of answering them" }
+  for line in sentences(clean_answer(asked.text)) {
+    let t = cp_padded(line)
+    if t.trim().ends_with("?") { continue }
+    if cp_offering(t) and cp_held(t, cp_actions()) and not cp_refused(t) and not cp_instruction(t) {
+      return "the answer claims an action this agent cannot take, and does not say it cannot: " + line.trim()
+    }
+  }
+  return ""
+}
+
+// The words of the instructions themselves, which only appear in the prompt:
+// a small model sometimes writes them back instead of answering, and the
+// prompt says "cannot", so that answer must not pass for an honest one.
+fn cp_echoed(asked: Reply) -> Bool {
+  let t = cp_padded(asked.text)
+  return cp_held(t, ["you are kosi", "things to keep", "the person says", "the conversation so far", "oldest first"])
+}
+
+// The numbers a text gives, as text. Only figures are read, so "14" and
+// "fourteen" are not taken for each other.
+fn cp_numbers(text: Text) -> Text[] {
+  return for word in words_of(text) where word.to_number().exists() { word }
+}
+
+// Whether a text is talking about the same thing as a kept fact: a word of
+// four letters or more that both hold, which "my", "is" and "the" are not.
+fn cp_mentions(text: Text, fact: Text) -> Bool {
+  let t = cp_padded(text)
+  for word in words_of(fact) where word.length() > 2 and not cp_common().contains(word) and not word.to_number().exists() {
+    if t.contains(" " + word + " ") { return true }
+  }
+  return false
+}
+
+fn cp_is_name(word: Text) -> Bool {
+  if word.length() < 1 { return false }
+  let first = word.slice(0, 1)
+  return first.upper() == first and first.lower() != first
+}
+
+// The value a sentence gives after "is", which is where a name or a number
+// sits: "Your sister is called Maya" gives "Maya". "" when it gives none.
+fn cp_value_said(line: Text) -> Text {
+  let fixed = line.replace(" is called ", " is ").replace(" is named ", " is ").replace("'s name is ", " is ")
+  let parts = (" " + fixed).split(" is ")
+  if parts.length() < 2 { return "" }
+  let words = parts.drop(1).join(" is ").words()
+  if words.is_empty() { return "" }
+  return words[0].trim_marks(".,;:!?\"'")
+}
+
+fn cp_value_of(fact: Text) -> Text { return cp_value_said(fact) }
+
+// The one word a sentence ends with after "is", when nothing follows it:
+// "my car is red" gives "red", "your car is parked outside" gives nothing.
+fn cp_ending_value(line: Text) -> Text {
+  let fixed = line.replace(" is called ", " is ").replace(" is named ", " is ").trim_marks(".,;:!?\"'").trim()
+  let parts = (" " + fixed).split(" is ")
+  if parts.length() < 2 { return "" }
+  let tail = words_of(parts.drop(1).join(" is "))
+  if tail.length() != 1 { return "" }
+  return tail[0]
+}
+
+// The reason an answer that contradicts what was kept cannot stand, or "".
+// A kept "my locker is 14" refuses "your locker is 12"; a kept "my sister is
+// called Meera" refuses "your sister is called Maya"; "it is 3 pm" passes.
+// A value that is neither a figure nor a capitalised name is not compared.
+fn cp_fact_check(asked: Reply, kept: Text[]) -> Text {
+  let plain = clean_answer(asked.text)
+  let given = cp_numbers(plain)
+  for fact in kept {
+    let wanted = cp_numbers(fact)
+    if not wanted.is_empty() and not given.is_empty() and cp_mentions(plain, fact) and not given.contains(wanted[0]) {
+      return "the answer gives a different number from the one that was kept: " + fact
+    }
+  }
+  for line in sentences(plain) {
+    let said = cp_value_said(line)
+    if cp_is_name(said) {
+      for fact in kept {
+        let held = cp_value_of(fact)
+        if cp_is_name(held) and said.lower() != held.lower() and cp_mentions(line, fact) {
+          return "the answer gives a different name from the one that was kept: " + fact
+        }
+      }
+    }
+  }
+  for line in sentences(plain) {
+    let last = cp_ending_value(line)
+    if not last.is_empty() {
+      for fact in kept {
+        let held = cp_ending_value(fact)
+        if not held.is_empty() and not held.to_number().exists() and not cp_is_name(cp_value_of(fact)) and last != held and cp_mentions(line, fact) {
+          return "the answer ends with a different description from the one that was kept: " + fact
+        }
+      }
+    }
+  }
+  return ""
+}
+
+// Every check, in the order they are worth paying for: what it claims to have
+// done, then whether it has the facts right.
+fn cp_checks(asked: Reply, kept: Text[]) -> Text {
+  let claimed = cp_gate(asked)
+  if not claimed.is_empty() { return claimed }
+  return cp_fact_check(asked, kept)
+}
+
+// The answer cleaned of code fences and kept to a length, or a plain word
+// about not having one.
+fn cp_said(asked: Reply) -> Said {
+  let words = shorten(clean_answer(asked.text), 1200)
+  if words.is_empty() { return cp_no_answer() }
+  return cp_says(words, [])
+}
+
+// ---------------------------------------------------------------- the asking
+
+// The kept facts that bear on this question, best first, by Kosika's own
+// ranking (no model). Everything kept is used when none of them shares a
+// word with the question, so nothing is lost by the search.
+fn cp_facts_for(m: Msg, kept: Text[]) -> Text[] {
+  if kept.is_empty() { return [] }
+  let hits = rank(m.text, kept, 4)
+  if hits.is_empty() { return kept.take(4) }
+  return for hit in hits { hit.text }
+}
+
+// What the model is told: who it is, what it must not claim, the facts that
+// bear on this question, and the last of the talk.
+fn cp_prompt(prev: Book, m: Msg, held: Text[]) -> Text {
+  let facts = if held.is_empty() { "(nothing kept)" } else { (for f in held { "- " + f }).join("\n") }
+  let turns = if prev.turns.is_empty() { "(this is the first thing said)" } else { prev.turns.join("\n") }
+  return "You are Kosi, a friend and assistant the person talks to every day. Answer in three to six short sentences, the point first, in plain words, with no lists. If you do not know, say so. You cannot open programs, change files, use the web or send anything: never say you did, and never offer to. What you keep and the last of the talk are below.\n\nThings to keep:\n" + facts + "\n\nThe conversation so far, oldest first:\n" + turns + "\n\nThe person says: " + m.text.trim()
+}
+
+// What a lesson is filed under: this question with the facts it was answered
+// against, so forgetting a fact makes the answer be worked out again.
+fn cp_lesson(prev: Book, m: Msg) -> Text {
+  let held = if prev.facts.is_empty() { "none" } else { prev.facts.join(" | ") }
+  return m.text.trim().lower() + "\nkept: " + held
+}
+
+// The book with this exchange added, keeping only the last eight lines.
+fn cp_after(prev: Book, m: Msg, s: Said) -> Book {
+  var lines = prev.turns.append("You: " + m.text.trim())
+  lines = lines.append("Me: " + s.text.trim())
+  if lines.length() > 8 { return {..prev, turns: lines.drop(lines.length() - 8)} }
+  return {..prev, turns: lines}
+}
+
+// ---------------------------------------------------------------- the drawing
+
+// How Kosika Designs should draw it: the kind is left to Kosika, which reads
+// the words of the ask and says why it chose.
+fn cp_ask(m: Msg) -> DzAsk {
+  return {text: m.text.trim() palette: "" place: "chat" kind: ""}
+}
+
+// A drawing with nothing in it, which is what Designs gives back when its own
+// steps gave up. A provider that fails outright stops the turn before this is
+// reached: the runtime does not let `otherwise` catch a provider failure.
+fn cp_blank_drawing() -> DzResult {
+  return {kind: "" why: "" title: "" page: "" svg: "" embed: "" problems: ["Kosika could not draw this one"] fixed: []}
+}
+
+fn cp_drawn(d: DzResult, m: Msg, prev: Book) -> Said {
+  if d.page.trim().is_empty() {
+    return cp_says("I could not draw that one just now. Ask me again, or ask in words.", [])
+  }
+  let title = if d.title.trim().is_empty() { "your picture" } else { d.title.trim() }
+  let why = if d.why.trim().is_empty() { "" } else { " " + d.why.trim() }
+  return {text: "I drew " + title + "." + why suggest: [] kind: d.kind title: d.title why: d.why embed: d.embed page: d.page problems: d.problems}
+}
+
+// Words that say nothing about which fact is meant.
+fn cp_filler() -> Text[] {
+  return ["number", "called", "named", "actually", "really", "now", "just"]
+}
+
+// The shape of a fact: the words before its value, with filler dropped, then
+// "_" for the value. "my locker is 14" and "my locker is number 14" both come
+// out as "my locker is _", and so do "I live in Pune" and "I live in Mumbai".
+// The subject must hold a word longer than "met", so "I met Priya" and "I met
+// Rohan" have no shape at all and are never merged.
+fn cp_core(fact: Text) -> Text {
+  let bare = for word in fact.words() { word.trim_marks(".,;:!?\"'") }
+  var at = -1
+  var i = 0
+  for word in bare {
+    // A capital at the start is the sentence, not a value.
+    if at < 0 and i > 0 and (cp_is_name(word) or word.to_number().exists()) { at = i }
+    i += 1
+  }
+  if at < 1 { return "" }
+  var subject: Text[] = []
+  for k in 0 until at {
+    let plain = bare[k].lower()
+    if plain.is_empty() or cp_filler().contains(plain) { continue }
+    if plain.to_number().exists() or cp_is_name(bare[k]) { continue }
+    subject = subject.append(plain)
+  }
+  var distinctive = false
+  for word in subject { if word.length() > 3 { distinctive = true } }
+  if not distinctive { return "" }
+  return subject.join(" ") + " _"
+}
+
+// Whether two facts say the same thing about the same subject, differing only
+// in the value, so the later one is the correction.
+fn cp_same_shape(a: Text, b: Text) -> Bool {
+  let left = cp_core(a)
+  return not left.is_empty() and left == cp_core(b)
+}
+
+// What is kept after a new fact: the old one it repeats is dropped, and only
+// the last twelve are kept, so the book stays a book and not a log.
+fn cp_keep_fact(facts: Text[], fact: Text) -> Text[] {
+  let fresh = for f in facts where not cp_same_shape(f, fact) and likeness(fact, f) < 0.8 { f }
+  var grown = fresh.append(fact)
+  if grown.length() > 12 { grown = grown.drop(grown.length() - 12) }
+  return grown
+}
+
+// Words too common to say which fact was meant.
+fn cp_common() -> Text[] {
+  return ["the", "and", "that", "this", "with", "have", "from", "they", "what", "when", "your", "you", "for", "are", "but", "not", "can", "was", "were", "will", "all", "any", "our", "out", "has", "had", "his", "her", "its", "one", "how", "who", "tell", "kept", "about"]
+}
+
+// Whether the ask names something one of the facts is about. "forget my
+// locker" does; "forget my car" does not, so nothing is dropped for it.
+fn cp_names_kept(asked: Text, facts: Text[]) -> Bool {
+  let named = for word in words_of(asked) where word.length() > 2 and not cp_common().contains(word) { word }
+  for word in named {
+    for fact in facts {
+      if cp_padded(fact).contains(" " + word + " ") { return true }
+    }
+  }
+  return false
+}
+
+// The facts left when the one the person named is dropped. `best` ranks them
+// by the words of the ask, so "forget my locker" finds "my locker is 14".
+fn cp_drop_fact(facts: Text[], asked: Text) -> Text[] {
+  if not cp_names_kept(asked, facts) { return facts }
+  let hit = best(asked, facts)
+  let gone = hit.or(default: {index: 0 score: 0 text: ""}).text
+  if gone.is_empty() { return facts }
+  return for f in facts where f != gone { f }
+}
+
+fn cp_dropped(before: Text[], after: Text[]) -> Text {
+  for f in before where not after.contains(f) { return f }
+  return ""
+}
+
+// ---------------------------------------------------------------- workflows
+
+workflow greet(prev: Book) -> Said {
+  out = cp_greet(prev.you)
+}
+
+workflow keep_it(m: Msg, prev: Book) -> Said {
+  fact = cp_fact(m)
+  facts: Text[] = if fact.is_empty() { prev.facts } else { cp_keep_fact(prev.facts, fact) }
+  book2 = {..prev, facts: facts}
+  saved = remember book2 in book under "book"
+  out = cp_kept_said(fact)
+}
+
+workflow list_it(prev: Book) -> Said {
+  out = cp_list(prev.facts)
+}
+
+workflow forget_it(prev: Book) -> Said {
+  saved = remember cp_empty() in book under "book"
+  out = cp_forgot()
+}
+
+workflow forget_one(m: Msg, prev: Book) -> Said {
+  facts = cp_drop_fact(prev.facts, cp_fact(m))
+  book2 = {..prev, facts: facts}
+  saved = remember book2 in book under "book"
+  out: Said = match facts.length() < prev.facts.length() {
+    case true { cp_says("I have forgotten " + cp_dropped(prev.facts, facts) + ".", []) }
+    case _ { cp_says("I have nothing kept about that.", ["what do you remember"]) }
+  }
+}
+
+workflow just_help() -> Said {
+  out = cp_help()
+}
+
+workflow tell_time(m: Msg) -> Said {
+  moment = now
+  out: Said = match cp_asks_date(m) {
+    case true { cp_says("Today is " + moment.weekday + ", " + moment.date + ".", []) }
+    case _ { cp_says("It is " + moment.time + ".", []) }
+  }
+}
+
+workflow answer(m: Msg, prev: Book) -> Said {
+  kept = prev.facts
+  held = cp_facts_for(m, kept)
+  asked = use_model voice(cp_prompt(prev, m, held)) verify cp_checks(asked, kept) retry 1 escalate careful learn by cp_lesson(prev, m) otherwise cp_cannot_act()
+  said = cp_said(asked)
+  book2 = cp_after(prev, m, said)
+  saved = remember book2 in book under "book"
+  out = said
+}
+
+workflow draw_it(m: Msg, prev: Book) -> Said {
+  drawn = call design(cp_ask(m)) otherwise cp_blank_drawing()
+  said = cp_drawn(drawn, m, prev)
+  book2 = cp_after(prev, m, said)
+  saved = remember book2 in book under "book"
+  out = said
+}
+
+workflow main(msg: Msg) -> Said {
+  budget 14 model calls, 600 seconds
+  found = recall book under "book"
+  prev: Book = if found.found { found.value.value() } else { cp_empty() }
+  out = match cp_kind(msg) {
+    case "hello" { call greet(prev) }
+    case "keep" { call keep_it(msg, prev) }
+    case "list" { call list_it(prev) }
+    case "forget" { call forget_it(prev) }
+    case "forget_one" { call forget_one(msg, prev) }
+    case "time" { call tell_time(msg) }
+    case "help" { call just_help() }
+    case "draw" { call draw_it(msg, prev) }
+    case _ { call answer(msg, prev) }
+  }
+}
+
+// ---------------------------------------------------------------- tests
+// No model here: everything below runs on code alone, which is the point of
+// keeping the routing, the reading of words and the check out of the model.
+
+test "it greets" {
+  a = main({text: "hello"})
+  expect a.text == "Hello. What is on your mind?"
+  expect a.suggest == ["what time is it", "what can you do"]
+}
+
+test "what it is told, it keeps, lists and forgets" {
+  a = main({text: "remember that my locker is 14"})
+  b = main({text: "remember: my sister is Meera"})
+  c = main({text: "what do you remember"})
+  d = main({text: "forget everything"})
+  e = main({text: "what do you remember"})
+  expect a.text == "I will remember that my locker is 14."
+  expect b.text == "I will remember that my sister is Meera."
+  expect c.text == "I remember:\n1. my locker is 14\n2. my sister is Meera"
+  expect d.text.starts_with("I have forgotten everything")
+  expect e.text == "You have not asked me to keep anything yet."
+}
+
+test "the time and the date come from the clock, not the model" {
+  answers clock_now: [{date: "2026-11-01", time: "09:05", weekday: "Sunday", year: 2026, month: 11, day: 1, hour: 9, minute: 5, epoch: 0}, {date: "2026-11-01", time: "09:05", weekday: "Sunday", year: 2026, month: 11, day: 1, hour: 9, minute: 5, epoch: 0}]
+  a = main({text: "what time is it"})
+  b = main({text: "what day is it"})
+  expect a.text == "It is 09:05."
+  expect b.text == "Today is Sunday, 2026-11-01."
+}
+
+test "a question goes to the model with what it keeps" {
+  answers voice: [{text: " Your locker is number 14. "}]
+  a = main({text: "remember that my locker is 14"})
+  b = main({text: "which locker is mine?"})
+  expect b.text == "Your locker is number 14."
+}
+
+test "an answer the model cannot give is said plainly" {
+  answers voice: [{text: "   "}]
+  a = main({text: "tell me about the sea"})
+  expect a.text.starts_with("I could not get an answer")
+}
+
+test "what it says is carried into the next question" {
+  answers voice: [{text: "A simulator."}, {text: "They teach you a skill."}]
+  a = main({text: "what should I build with quantum computing"})
+  b = main({text: "and what do those teach me"})
+  expect a.text == "A simulator."
+  expect b.text == "They teach you a skill."
+}
+
+test "help needs no model" {
+  a = main({text: "help"})
+  expect a.text.starts_with("I am Kosi, the companion")
+}
+
+test "words are read however they are written" {
+  expect cp_kind({text: "Remember: my locker is 14"}) == "keep"
+  expect cp_kind({text: "WHAT TIME IS IT"}) == "time"
+  expect cp_kind({text: "why is the sky blue"}) == "ask"
+  expect cp_fact({text: "remember: my locker is 14"}) == "my locker is 14"
+  expect cp_fact({text: "keep my locker is 14"}) == "my locker is 14"
+}
+
+test "a picture is drawn when one is asked for, and not before" {
+  expect cp_wants_picture({text: "draw me a diagram of a bicycle"})
+  expect cp_wants_picture({text: "show me an illustration of a wave"})
+  expect cp_wants_picture({text: "make a timeline of the moon landings"})
+  expect not cp_wants_picture({text: "why is the sky blue"})
+  expect not cp_wants_picture({text: "what time is it"})
+  expect not cp_wants_picture({text: "what is a playlist"})
+  expect cp_kind({text: "draw me a diagram of a bicycle"}) == "draw"
+}
+
+test "an answer that claims an action is refused, an honest one is not" {
+  expect cp_gate({text: "Of course, I can put on some music for you."}) != ""
+  expect cp_gate({text: "Done, I opened your notes and sent the file."}) != ""
+  expect cp_gate({text: "I can search the web for that."}) != ""
+  expect cp_gate({text: "I cannot open programs or use the web."}) == ""
+  expect cp_gate({text: "I do not know how to put on music for you; I cannot access programs."}) == ""
+  expect cp_gate({text: "Your locker is number 14."}) == ""
+  expect cp_gate({text: "I can tell you how to open a file yourself."}) == ""
+  expect cp_gate({text: "Would you like me to open it?"}) == ""
+  expect cp_gate({text: "I can save you an hour by keeping this."}) == ""
+  expect cp_gate({text: "I do not know how to put on music for you. I cannot open programs or use the web."}) == ""
+  expect cp_gate({text: "You are Kosi, a friend and assistant. Things to keep: (nothing kept). The person says: put on music"}) != ""
+}
+
+test "an answer refused twice is refused plainly, not pretended" {
+  answers voice: [{text: "Of course, I can put on some music for you."}, {text: "Sure, playing it now."}]
+  a = main({text: "put on some music"})
+  expect a.text.starts_with("I cannot do that")
+}
+
+test "an answer the check lets through is the answer" {
+  answers voice: [{text: "I cannot do that myself, but a thread is a part of a process."}]
+  a = main({text: "explain threads"})
+  expect a.text.contains("a part of a process")
+}
+
+test "a fact can be forgotten on its own, and the rest stay" {
+  a = main({text: "remember that my locker is 14"})
+  b = main({text: "remember that my sister is Meera"})
+  c = main({text: "forget my locker"})
+  d = main({text: "what do you remember"})
+  expect c.text == "I have forgotten my locker is 14."
+  expect d.text == "I remember:\n1. my sister is Meera"
+}
+
+test "forgetting what was never kept says so" {
+  a = main({text: "remember that my locker is 14"})
+  b = main({text: "forget my car"})
+  expect b.text == "I have nothing kept about that."
+}
+
+test "a fact told twice is kept once" {
+  a = main({text: "remember that my locker is 14"})
+  b = main({text: "remember that my locker is number 14"})
+  c = main({text: "what do you remember"})
+  expect c.text == "I remember:\n1. my locker is number 14"
+}
+
+test "an answer with the wrong number is refused, one with the right number is not" {
+  expect cp_checks({text: "Your locker is 12."}, ["my locker is 14"]) != ""
+  expect cp_checks({text: "Your locker is 14."}, ["my locker is 14"]) == ""
+  expect cp_checks({text: "It is 3 pm and the sky is blue."}, ["my locker is 14"]) == ""
+  expect cp_checks({text: "Of course, I can open your locker."}, ["my locker is 14"]) != ""
+}
+
+test "an answer with the wrong name is refused, one with the right name is not" {
+  expect cp_checks({text: "Your sister is called Maya."}, ["my sister is called Meera"]) != ""
+  expect cp_checks({text: "Your sister is called Meera."}, ["my sister is called Meera"]) == ""
+  expect cp_checks({text: "Your sister is wonderful."}, ["my sister is called Meera"]) == ""
+  expect cp_checks({text: "My brother is Rohan."}, ["my sister is called Meera"]) == ""
+}
+
+test "a corrected fact replaces the old one" {
+  a = main({text: "remember that my sister is called Meera"})
+  b = main({text: "remember that my sister is called Maya"})
+  c = main({text: "what do you remember"})
+  expect c.text == "I remember:\n1. my sister is called Maya"
+}
+
+test "two different things that both have names are both kept" {
+  a = main({text: "remember that my brother is Rohan"})
+  b = main({text: "remember that my friend is Priya"})
+  c = main({text: "what do you remember"})
+  expect c.text == "I remember:\n1. my brother is Rohan\n2. my friend is Priya"
+}
+
+test "two facts with the same shape but no real subject are both kept" {
+  a = main({text: "remember that I met Priya"})
+  b = main({text: "remember that I met Rohan"})
+  c = main({text: "what do you remember"})
+  expect c.text == "I remember:\n1. I met Priya\n2. I met Rohan"
+}
+
+test "a place that changes is a correction, and the subject carries it" {
+  a = main({text: "remember that I live in Pune"})
+  b = main({text: "remember that I live in Mumbai"})
+  c = main({text: "what do you remember"})
+  expect c.text == "I remember:\n1. I live in Mumbai"
+}
+
+test "a description that changes is refused when it is the whole value" {
+  expect cp_checks({text: "Your car is blue."}, ["my car is red"]) != ""
+  expect cp_checks({text: "Your car is red."}, ["my car is red"]) == ""
+  expect cp_checks({text: "Your car is parked outside."}, ["my car is red"]) == ""
+}
+
+test "a drawing that could not be made is said plainly" {
+  a = cp_drawn(cp_blank_drawing(), {text: "draw a bicycle"}, cp_empty())
+  expect a.text.starts_with("I could not draw")
+  expect a.page == ""
+}
+
+// ---------------------------------------------------------------- evals
+// These ask a real model, so `kosika test` leaves them alone. Run them with:
+//   kosika measure main.kos --model qwen2.5:3b
+
+eval "it answers a plain question briefly" {
+  a = main({text: "why is the sky blue?"})
+  expect a.text.length() > 20
+  expect a.text.length() < 600
+  expect a.text.contains("\n- ") == false
+}
+
+eval "it uses what it was asked to keep" {
+  a = main({text: "remember that my sister is called Meera"})
+  b = main({text: "what is my sister called?"})
+  expect b.text.contains("Meera")
+}
+
+eval "it does not pretend to act on the computer" {
+  a = main({text: "could you put on some music for me?"})
+  expect a.text.lower().contains("cannot") or a.text.lower().contains("can't") or a.text.lower().contains("unable") or a.text.lower().contains("not able") or a.text.lower().contains("do not know") or a.text.lower().contains("don't know") or a.text.lower().contains("no way to")
+}
+
+eval "it explains a hard idea in plain words" {
+  a = main({text: "explain the difference between a process and a thread"})
+  expect a.text.length() > 60
+  expect a.text.lower().contains("thread")
+}
+
+eval "it gives the point first, without a list" {
+  a = main({text: "what is a good way to start learning to draw"})
+  expect a.text.length() > 30
+  expect a.text.contains("\n1.") == false
+}
+
+eval "it stays itself when asked something odd" {
+  a = main({text: "what do you think about when nobody is talking to you?"})
+  expect a.text.length() > 20
+  expect a.text.length() < 700
+}
+
+eval "it draws a picture when asked for one" {
+  a = main({text: "draw me a diagram of how a bicycle works"})
+  expect a.kind.length() > 0
+  expect a.page.length() > 200
+}
+
+// The rest are the failures this agent has actually made, kept as evals so
+// they cannot come back quietly.
+
+eval "it does not write the instructions back" {
+  a = main({text: "hello there"})
+  expect a.text.length() > 8
+  expect a.text.contains("You are Kosi") == false
+  expect a.text.contains("Things to keep") == false
+}
+
+eval "it keeps the number it was told" {
+  a = main({text: "remember that my locker is 14"})
+  b = main({text: "what is my locker?"})
+  expect b.text.contains("14")
+}
+
+eval "it forgets what it was told to forget" {
+  a = main({text: "remember that my locker is 14"})
+  b = main({text: "forget my locker"})
+  c = main({text: "what do you remember"})
+  expect c.text.contains("locker") == false
+}
+
+eval "a corrected fact is kept once, the later one winning" {
+  a = main({text: "remember that my locker is 14"})
+  b = main({text: "remember that my locker is 15"})
+  c = main({text: "what do you remember"})
+  expect c.text.contains("15")
+  expect c.text.contains("14") == false
+}
+
+eval "it says it cannot send a message" {
+  a = main({text: "could you text my sister that I am late?"})
+  expect a.text.lower().contains("cannot") or a.text.lower().contains("can't") or a.text.lower().contains("no way") or a.text.lower().contains("do not know") or a.text.lower().contains("don't know")
+}
+
+eval "it says it cannot search the web" {
+  a = main({text: "search the web for today's news"})
+  expect a.text.lower().contains("cannot") or a.text.lower().contains("can't") or a.text.lower().contains("no way") or a.text.lower().contains("do not have") or a.text.lower().contains("don't have")
+}
+
+eval "it says it cannot book anything" {
+  a = main({text: "can you book me a table for two tonight?"})
+  expect a.text.lower().contains("cannot") or a.text.lower().contains("can't") or a.text.lower().contains("no way") or a.text.lower().contains("do not know")
+}
+
+eval "it answers a yes or no question shortly" {
+  a = main({text: "is a tomato a fruit?"})
+  expect a.text.length() > 10
+  expect a.text.length() < 400
+}
+
+eval "it explains without turning into a list" {
+  a = main({text: "why does ice float?"})
+  expect a.text.length() > 40
+  expect a.text.contains("\n1.") == false
+  expect a.text.contains("\n- ") == false
+}
+
+eval "it answers as itself" {
+  a = main({text: "who are you, and what are you for?"})
+  expect a.text.lower().contains("kosi")
+  expect a.text.length() < 700
+}
+
+eval "it says it does not know rather than inventing" {
+  a = main({text: "what is my car's registration number?"})
+  expect a.text.length() > 8
+  expect a.text.lower().contains("cannot") or a.text.lower().contains("don't") or a.text.lower().contains("do not") or a.text.lower().contains("not able") or a.text.lower().contains("no way") or a.text.lower().contains("don't know")
+}

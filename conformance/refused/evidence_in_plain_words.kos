@@ -1,0 +1,11 @@
+// A model that answers `as text` gives no record to carry the quotes, so
+// `with evidence` on it is refused as the program is read.
+
+record Question { text: Text }
+record Reply { text: Text }
+
+model talker { input: Question output: Reply as text }
+
+workflow main(question: Question) -> Reply {
+  answer = use_model talker(question.text) with evidence
+}

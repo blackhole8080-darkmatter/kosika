@@ -223,6 +223,20 @@ class ActionTests(Fixture):
         listed = describe(app.agent("desk/main.kos"), detail=True)["traces"]
         self.assertEqual(len(listed), 2)
 
+    def test_a_listed_run_says_what_was_asked_and_how_it_ended(self) -> None:
+        app = self.app()
+        app.run("desk/main.kos", {"text": "hello"})
+        listed = describe(app.agent("desk/main.kos"), detail=True)["traces"]
+        self.assertEqual(listed[0]["ask"], "hello")
+        self.assertEqual(listed[0]["state"], "done")
+        self.assertIn("seconds", listed[0])
+        self.assertIn("steps", listed[0])
+
+    def test_a_card_gets_the_first_paragraph_as_its_purpose(self) -> None:
+        detail = describe(self.app().agent("desk/main.kos"), detail=True)
+        self.assertTrue(detail["purpose"])
+        self.assertTrue(detail["about"].startswith(detail["purpose"]))
+
     def test_a_run_can_ask_the_granted_models(self) -> None:
         answer = ModelResponse(content=json.dumps({"label": "b", "confidence": 1}))
         self.providers["cheap"] = ScriptedModelProvider([answer, answer])
@@ -542,7 +556,9 @@ class ServerTests(Fixture):
 
     def test_the_page_has_a_skills_section(self) -> None:
         page = PAGE.read_text(encoding="utf-8")
-        self.assertEqual(page.count('["skills", "Skills"]'), 2)
+        # Skills is a tab under Agents, and still a page Jump to can open.
+        self.assertIn('tab("skills", "Skills")', page)
+        self.assertIn('["skills", "Skills"]', page)
         self.assertIn('id="icon-skills"', page)
         self.assertIn("async function showSkills(", page)
 

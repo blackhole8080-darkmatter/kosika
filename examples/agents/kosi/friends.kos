@@ -1,0 +1,329 @@
+// Kosi's friends: the swarm you can talk to as you talk to Kosi.
+//
+// Kosi is the friend you talk to. When a question needs a specialist, you
+// ask for one by name ("Iris, what's new on sparse attention?") or as the
+// researcher or the scientist, and that friend answers in the same talk,
+// in a voice of its own, sharing Kosi's memory:
+//
+//   Iris, the researcher: reads arXiv and Wikipedia through the Brain,
+//     answers from what she found, says where it came from, and keeps the
+//     papers in memory so the next question starts from them.
+//   Sol, the scientist: brings Kosika's own science (formulas with their
+//     units, reactions, the field a question belongs to), explains it, and
+//     draws it on the Kosika canvas.
+//
+// Each is a workflow of its own with its own manner; what they find is
+// checked by Kosika the same way Kosi's answers are.
+
+import "std/brain.kos"
+import "std/designs.kos"
+import "facts.kos"
+import "std/science_chem.kos"
+import "thinking.kos"
+
+export [FrMsg, FrSaid, fr_who, fr_name, fr_suggest, iris_research, sol_explain]
+
+record FrMsg { text: Text }
+
+// who: "iris" or "sol". sources: where the answer came from, as links.
+record FrSaid { who: Text text: Text canvas: Text kept: Text[] sources: Text[] suggest: Text[] thinking: Thought }
+
+record IrisBrief { task: Text question: Text found: Text }
+record IrisReply { reply: Text }
+
+record SolBrief { task: Text question: Text science: Text memory: Text }
+record SolReply { reply: Text draw: Text }
+
+model iris {
+  input: IrisBrief
+  output: IrisReply
+  parameters: {
+    max_output_tokens: 900
+  }
+}
+
+model sol {
+  input: SolBrief
+  output: SolReply
+  parameters: {
+    max_output_tokens: 900
+  }
+}
+
+// ---------------------------------------------------------------- who is asked
+
+// The friend a message is for: by name at its start or anywhere ("ask
+// Iris"), or by role. "" for Kosi.
+fn fr_who(text: Text) -> Text {
+  let t = " " + text.lower().replace(",", " ").replace(":", " ").replace("?", " ").replace("!", " ") + " "
+  if t.starts_with(" iris ") or t.contains(" ask iris ") or t.contains(" hey iris ") or t.contains(" the researcher ") or t.starts_with(" researcher ") { return "iris" }
+  if t.starts_with(" sol ") or t.contains(" ask sol ") or t.contains(" hey sol ") or t.contains(" the scientist ") or t.starts_with(" scientist ") { return "sol" }
+  return ""
+}
+
+fn fr_name(who: Text) -> Text { return if who == "iris" { "Iris" } else { if who == "sol" { "Sol" } else { "Kosi" } } }
+
+// The question without the friend's name in front: "Iris, what is X?" asks
+// "what is X?".
+fn fr_question(text: Text) -> Text {
+  let t = text.trim()
+  let low = t.lower()
+  for lead in ["iris,", "iris:", "iris ", "sol,", "sol:", "sol ", "hey iris,", "hey sol,", "ask iris to ", "ask sol to ", "ask iris ", "ask sol ", "researcher,", "scientist,"] {
+    if low.starts_with(lead) { return t.slice(lead.length(), t.length()).trim() }
+  }
+  return t
+}
+
+// What Kosi offers to hand on: a question about the world to Iris, one
+// about science to Sol.
+fn fr_suggest(text: Text) -> Text[] {
+  var out: Text[] = []
+  if fa_asks_fact(text) { out = out.append("Iris, research this") }
+  if not dz_science_field(text).is_empty() or not dz_formula_for(text).key.is_empty() { out = out.append("Sol, explain the science") }
+  return out
+}
+
+// ---------------------------------------------------------------- Iris
+
+fn iris_task() -> Text {
+  return "You are Iris, the researcher among Kosi's friends: curious, precise and warm, a little quick, British. Answer `question` from `found`, the papers and checked facts Iris just read, in three to six short spoken sentences, plain words, no lists, no markdown. Say what the sources say and which one, by its title or site, and say plainly when they do not answer the question. Never invent a paper, a number or a result."
+}
+
+fn iris_no_reply() -> IrisReply { return {reply: ""} }
+
+fn iris_found_text(found: BrainFound) -> Text {
+  let notes = for n in found.notes where n.kind == "fact" { n }
+  if notes.is_empty() { return "(nothing found)" }
+  return (for n in notes.take(8) { "- " + n.topic + ": " + n.text + " (" + n.source + ")" }).join("\n")
+}
+
+fn iris_sources(found: BrainFound) -> Text[] {
+  var out: Text[] = []
+  for n in found.notes where n.kind == "fact" {
+    let link = n.source.split(" · ")[0]
+    if link.starts_with("http") and not out.contains(link) { out = out.append(link) }
+  }
+  return out.take(5)
+}
+
+fn iris_said(r: IrisReply, found: BrainFound, gathered: BrainGathered, question: Text) -> FrSaid {
+  let text = if r.reply.trim().is_empty() { "I looked, but I couldn't put an answer together this time. Ask me again in other words?" } else { r.reply.trim() }
+  let read = for n in found.notes where n.kind == "fact" and n.source.starts_with("http") { n }
+  let thought = th_build(question, [], "", read, [], [], text)
+  return {who: "iris", text: text, canvas: "", kept: gathered.titles.take(3), sources: iris_sources(found), suggest: ["Sol, explain the science of this"], thinking: thought}
+}
+
+fn iris_papers(g: BrainGathered) -> BrainFound { return {notes: g.notes, by: "words"} }
+
+fn iris_both(a: BrainFound, b: BrainFound) -> BrainFound { return {notes: a.notes.concat(b.notes), by: a.by} }
+
+// What the Brain already kept, held to the same test: a paper kept for
+// another question that shares only a word is left out here too.
+fn iris_kept_on_topic(known: BrainFound, question: Text, looked: BrainFound, intro: FaPage) -> BrainFound { return {notes: br_on_topic(known.notes, iris_about(question, looked, intro), iris_topic(question)), by: known.by} }
+
+// What a question is about: its own words, what Wikipedia says of what it
+// names, and the opening of the Wikipedia article on its main word ("how
+// a rainbow forms": the article Rainbow, on light, water and refraction).
+fn iris_about(question: Text, looked: BrainFound, intro: FaPage) -> Text { return question + ". " + (for n in looked.notes { n.text }).join(" ") + " " + fa_page_sentences(intro.text).take(5).join(" ") }
+
+// The article Iris read on the question's main word, as evidence: its
+// opening two sentences, with the page they came from.
+fn iris_read_intro(question: Text, intro: FaPage) -> BrainFound {
+  if intro.text.is_empty() { return {notes: [], by: "words"} }
+  return {notes: for line in iris_opening(fa_page_sentences(intro.text), iris_main(question)) { fa_note(iris_main(question), intro, line) }, by: "words"}
+}
+
+// The article's opening, not its furniture: sentences that name the main
+// word and say what it is or does; a note pointing elsewhere ("For other
+// uses, see ...") and a picture's caption have no verb of being.
+fn iris_opening(lines: Text[], main: Text) -> Text[] {
+  let word = main.lower()
+  return (for l in lines where l.lower().contains(word) and not l.contains("disambiguation") and not l.starts_with("For other") and not l.starts_with("Not to be confused") and (l.contains(" is ") or l.contains(" are ") or l.contains(" was ") or l.contains(" were ") or l.contains(" can ")) { l }).take(2)
+}
+
+// The question's main word: the first of its own words.
+fn iris_main(question: Text) -> Text {
+  let words = iris_topic(question).words()
+  return if words.is_empty() { question } else { words[0] }
+}
+
+// What Iris searches arXiv for: the question's own words, without the
+// asking ("what is new in research on ...") that no paper's text holds.
+// arXiv finds papers holding every word asked, so at most four are used.
+fn iris_topic(question: Text) -> Text {
+  let filler = ["what", "whats", "what's", "new", "news", "latest", "recent", "research", "papers", "paper", "about", "tell", "know", "there", "anything", "any", "find", "look", "into", "running", "work", "works", "does", "explain", "please", "could", "would", "should", "with", "from", "that", "this", "these", "those", "them", "they", "have", "been", "being", "some", "much", "more", "most", "also", "your", "find", "show", "give", "lately", "today", "currently", "happening", "going", "say", "says", "said", "each", "other", "others", "other's", "think", "thinks", "people", "someone", "anyone"]
+  let words = for w in question.lower().replace(",", " ").replace("?", " ").replace("!", " ").replace("'", " ").words() where w.trim_marks(".:;").length() >= 3 and not filler.contains(w.trim_marks(".:;")) and w != "the" and w != "and" and w != "for" and w != "how" and w != "why" { w.trim_marks(".:;") }
+  return words.take(3).join(" ")
+}
+
+// arXiv finds only papers holding every word, so when three find nothing
+// Iris asks again with the first two.
+fn iris_fewer(question: Text) -> Text { return iris_topic(question).words().take(2).join(" ") }
+
+// Iris reads arXiv for the question, checks what it names on Wikipedia,
+// recalls what the Brain already holds on it, and answers from all three.
+// Whether a message is something to look up: it has at least two words of
+// its own after the asking, and is not a greeting or thanks.
+fn iris_looks_up(question: Text) -> Bool {
+  let small = ["hello", "hi", "hey", "there", "thanks", "thank", "you", "so", "much", "very", "ok", "okay", "yes", "yeah", "no", "bye", "good", "night", "morning", "how", "are", "cool", "nice", "great", "iris"]
+  let words = for w in question.lower().replace(",", " ").words() { w.trim_marks(".!?") }
+  if (for w in words where not w.is_empty() and not small.contains(w) { w }).is_empty() { return false }
+  return iris_topic(question).words().length() >= 2
+}
+
+fn iris_chat_task() -> Text {
+  return "You are Iris, the researcher among Kosi's friends: curious, precise and warm, British. The person is chatting, not asking you to look anything up. Answer in one or two short, friendly spoken sentences, and offer to look something up for them. Never mention papers or sources here."
+}
+
+fn iris_chatted(r: IrisReply) -> FrSaid {
+  let text = if r.reply.trim().is_empty() { "Hello! Ask me about anything you'd like me to read up on." } else { r.reply.trim() }
+  return {who: "iris", text: text, canvas: "", kept: [], sources: [], suggest: ["Iris, what's new in AI research?"], thinking: th_none()}
+}
+
+workflow iris_chat(m: FrMsg) -> FrSaid {
+  budget 2 model calls, 120 seconds
+  reply = use_model iris(iris_chat_task(), fr_question(m.text), "(nothing searched)") retry 1 otherwise iris_no_reply()
+  out   = iris_chatted(reply)
+}
+
+workflow iris_research(m: FrMsg) -> FrSaid {
+  budget 6 model calls, 600 seconds
+  out = match iris_looks_up(fr_question(m.text)) {
+    case true { call iris_search(m) }
+    case _ { call iris_chat(m) }
+  }
+}
+
+workflow iris_search(m: FrMsg) -> FrSaid {
+  budget 5 model calls, 600 seconds
+  question = fr_question(m.text)
+  // Wikipedia first: what the question names, read and checked. The
+  // papers after it are kept only when they are about the same thing.
+  looked   = call fa_look_up({question: question, subjects: fa_subjects(question)})
+  intro    = call fa_read({url: fa_url(iris_main(question))})
+  first    = call brain_gather_about({topic: iris_topic(question), about: iris_about(question, looked, intro)})
+  gathered = match first.kept == 0 {
+    case true { call brain_gather_about({topic: iris_fewer(question), about: iris_about(question, looked, intro)}) }
+    case _ { first }
+  }
+  known    = call brain_recall({text: question, kind: "fact"})
+  found    = iris_both(iris_both(iris_both(looked, iris_read_intro(question, intro)), iris_papers(gathered)), iris_kept_on_topic(known, question, looked, intro))
+  reply    = use_model iris(iris_task(), question, iris_found_text(found)) retry 1 otherwise iris_no_reply()
+  out      = iris_said(reply, found, gathered, question)
+}
+
+// ---------------------------------------------------------------- Sol
+
+fn sol_task() -> Text {
+  return "You are Sol, the scientist among Kosi's friends: calm, patient and delighted by how things work, British. Explain `question` in three to six short spoken sentences, plain words, no lists, no markdown, the way a good teacher would at a kitchen table. `science` is what Kosika worked out exactly (a formula with its units, a reaction, the field); when it is there, use it as it stands and do not change it. `memory` is what Kosi knows. Then draw: a few words naming what to draw so it can be seen working (a process, a structure, a formula), or empty."
+}
+
+fn sol_no_reply() -> SolReply { return {reply: "", draw: ""} }
+
+// What Kosika knows exactly about a science question: its field, the
+// formula that fits it with every symbol's meaning and unit, and the
+// reaction it names.
+fn sol_science(text: Text) -> Text {
+  var out: Text[] = []
+  let field = dz_science_field(text)
+  if not field.is_empty() { out = out.append("Field: " + field + ".") }
+  let f = dz_formula_for(text)
+  if not f.key.is_empty() {
+    let parts = (for k in 0 until f.symbols.length() { f.symbols[k] + " is " + f.meanings[k] + (if f.units[k].is_empty() { "" } else { " in " + f.units[k] }) }).join("; ")
+    out = out.append(f"{f.name}: {f.formula}, where {parts}. {f.meaning}")
+  }
+  // A reaction is balanced by Kosika's own chemistry, and its masses
+  // checked to match on both sides.
+  let reaction = dz_reaction(text)
+  if not reaction.is_empty() {
+    let b = sc_balance(reaction)
+    out = out.append(if b.ok { "Reaction, balanced by Kosika: " + sol_balanced(b) + "." } else { "Reaction: " + reaction + "." })
+  }
+  return if out.is_empty() { "(nothing exact)" } else { out.join(" ") }
+}
+
+// A balanced reaction written out: "6CO2 + 6H2O -> C6H12O6 + 6O2".
+fn sol_term(b: ScBalanced, k: Number) -> Text { return (if b.coefficients[k] == 1 { "" } else { f"{b.coefficients[k]}" }) + b.species[k] }
+
+fn sol_balanced(b: ScBalanced) -> Text {
+  let lefts = (for k in 0 until b.species.length() where b.sides[k] > 0 { sol_term(b, k) }).join(" + ")
+  let rights = (for k in 0 until b.species.length() where b.sides[k] < 0 { sol_term(b, k) }).join(" + ")
+  return lefts + " -> " + rights
+}
+
+fn sol_draw_ask(r: SolReply, question: Text) -> DzAsk { return {text: if r.draw.trim().is_empty() { question } else { r.draw.trim() }, palette: "", place: "chat", kind: ""} }
+
+fn sol_no_canvas() -> DzResult { return {kind: "", why: "", title: "", page: "", svg: "", embed: "", problems: [], fixed: []} }
+
+fn sol_said(r: SolReply, drawn: DzResult, science: Text, question: Text) -> FrSaid {
+  let text = if r.reply.trim().is_empty() { "That one's got away from me for a moment. Ask me again?" } else { r.reply.trim() }
+  let canvas = if drawn.problems.is_empty() { drawn.embed } else { "" }
+  let exact = if science == "(nothing exact)" { "" } else { science }
+  let checks: Text[] = if science.contains("balanced by Kosika") { ["passed: the reaction is balanced by Kosika's chemistry, atoms and masses alike"] } else { [] }
+  let made = th_build(question, [], exact, [], [], checks, text)
+  let thought = if canvas.is_empty() { made } else { th_with_drawing(made, drawn.title, drawn.fixed) }
+  return {who: "sol", text: text, canvas: canvas, kept: [], sources: [], suggest: ["Iris, research this", "draw it another way"], thinking: thought}
+}
+
+// Sol draws when there is science to show or something to see working,
+// not for a question of fact ("is Mumbai India's capital?").
+fn sol_wants_drawing(r: SolReply, science: Text, question: Text) -> Bool {
+  if r.draw.trim().is_empty() { return false }
+  let q = " " + question.lower() + " "
+  let working = q.contains(" how ") or q.contains(" why ") or q.contains(" explain ") or q.contains(" draw ") or q.contains(" show ") or q.contains(" work")
+  return science != "(nothing exact)" or working
+}
+
+fn sol_known(found: BrainFound) -> Text {
+  let notes = for n in found.notes where n.kind != "talk" { n }
+  if notes.is_empty() { return "(nothing yet)" }
+  return (for n in notes.take(5) { "- " + n.text }).join("\n")
+}
+
+// Sol brings Kosika's exact science, explains it, and draws it.
+workflow sol_explain(m: FrMsg) -> FrSaid {
+  budget 10 model calls, 900 seconds
+  question = fr_question(m.text)
+  known    = call brain_recall({text: question, kind: ""})
+  science  = sol_science(question)
+  reply    = use_model sol(sol_task(), question, science, sol_known(known)) retry 1 otherwise sol_no_reply()
+  drawn    = match sol_wants_drawing(reply, science, question) {
+    case true { call brain_design(sol_draw_ask(reply, question)) }
+    case _ { sol_no_canvas() }
+  }
+  out      = sol_said(reply, drawn, science, question)
+}
+
+// ---------------------------------------------------------------- tests
+
+test "Iris reads an article's opening, not its notes and captions" {
+  lines = ["For other uses, see Rainbow (disambiguation).", "Double rainbow and supernumerary rainbows on the inside of the primary arc.", "A rainbow is an optical phenomenon caused by refraction, internal reflection and dispersion of light in water droplets.", "Rainbows can be full circles."]
+  expect iris_opening(lines, "rainbow") == ["A rainbow is an optical phenomenon caused by refraction, internal reflection and dispersion of light in water droplets.", "Rainbows can be full circles."]
+}
+
+test "a message finds the friend it is for, and its question" {
+  expect fr_who("Iris, what's new on sparse attention?") == "iris"
+  expect fr_who("can you ask Iris about black holes") == "iris"
+  expect fr_who("ask the scientist how photosynthesis works") == "sol"
+  expect fr_who("Sol: why is the sky blue?") == "sol"
+  expect fr_who("how was your day?") == ""
+  expect fr_who("I visited Bristol yesterday") == ""
+  expect fr_question("Iris, what's new on sparse attention?") == "what's new on sparse attention?"
+  expect fr_question("Sol: why is the sky blue?") == "why is the sky blue?"
+  expect fr_name("sol") == "Sol"
+  expect iris_topic("what is new in research on small language models running on CPUs?") == "small language models"
+  expect iris_topic("what do recent papers say about agent swarms that check each other's work?") == "agent swarms check"
+  expect iris_fewer("what do recent papers say about agent swarms that check each other's work?") == "agent swarms"
+  expect not iris_looks_up("hello")
+  expect not iris_looks_up("Thank you. Thank you.")
+  expect iris_looks_up("what's new in research on small language models running on CPUs?")
+}
+
+test "Sol gets Kosika's exact science, and Iris says where hers came from" {
+  expect sol_science("how does photosynthesis work?") == "Field: biology. Reaction, balanced by Kosika: 6CO2 + 6H2O -> C6H12O6 + 6O2."
+  expect sol_science("hello there") == "(nothing exact)"
+  found: BrainFound = {notes: [{kind: "fact", topic: "Sparse attention", words: "", text: "It cuts cost.", source: "https://arxiv.org/abs/1 · A. Author · 2026-01-01", score: 1, times: 1}, {kind: "talk", topic: "t", words: "", text: "You: hi", source: "Kosi", score: 1, times: 1}], by: "words"}
+  expect iris_sources(found) == ["https://arxiv.org/abs/1"]
+  expect iris_found_text(found) == "- Sparse attention: It cuts cost. (https://arxiv.org/abs/1 · A. Author · 2026-01-01)"
+  expect fr_suggest("Sydney is the capital of Australia, right?") == ["Iris, research this"]
+}

@@ -78,15 +78,19 @@ With no terminal to ask, the run pauses instead of proceeding. See
 
 `kosika-mcp` is a Model Context Protocol server. Connected to an assistant such
 as Claude Code or the Gemini CLI, it lets the assistant read the language
-guide, then write, check, run, replay, and map Kosika programs by itself.
+guide, then write, check, repair, test, run, replay, map, and declare Kosika
+programs by itself.
 
 | Tool | What it does |
 | --- | --- |
 | `kosika_guide` | Returns `AGENT_GUIDE.md` |
 | `kosika_check` | Checks a program; returns codes, messages, and lines |
+| `kosika_repair` | Names the token to change for a typo, and returns a patch that checks clean |
+| `kosika_test` | Runs the program's own `test` blocks, each with its scripted answers |
 | `kosika_run` | Runs a workflow with the inputs and scripted answers supplied |
 | `kosika_replay` | Validates a trace from `kosika_run` and returns its result |
 | `kosika_map` | Describes what a checked program declares |
+| `kosika_declare` | Turns a pinned component contract into Kosika declarations |
 
 Connect it by adding a stdio server whose command is `kosika-mcp` (or
 `python -m kosika.mcp_server`). For Claude Code:
@@ -99,8 +103,11 @@ The server has no power of its own. Programs arrive as text and are checked in
 a temporary folder; no tool takes a file path, address, or command.
 `kosika_run` never calls a real model or tool: answers come only from the
 `model_answers` and `tool_answers` the assistant supplies, and a program that
-needs one it was not given fails. Runs are bounded to 16 model calls, 16 tool
-calls, and 10 seconds.
+needs one it was not given fails. `kosika_test` runs only the tests written in
+the program, which use their own `answers` lines. `kosika_repair` only renames a
+field or variable the checker already spelled for it, and returns a patch only
+after that patch checks clean. Runs are bounded to 16 model calls, 16 tool calls,
+and 10 seconds.
 
 ## Recovering from a failed step
 
@@ -926,6 +933,26 @@ How much time it saves depends on what is behind the steps. Three web
 pages or three different hosted models overlap fully. Two steps that ask
 the same local model do not, because one model on one computer answers one
 question at a time.
+
+### A model step that must quote its input
+
+`with evidence` is not only for thinking steps. A plain model step can be held
+to the same guarantee:
+
+```kosika
+workflow main(question: Question) -> Answer {
+  answer = use_model assistant(question.text) with evidence
+}
+```
+
+The model is asked for its record plus `evidence`: a list of short exact
+quotes, and every quote must appear in the text the step passed as arguments.
+A quote that is not there is refused like any broken answer, so `retry N` can
+ask again and `otherwise` can recover. The quotes are kept in the run's trace
+and checked again by `kosika replay`: the guarantee survives the recording,
+which is the part a program written in a general-purpose language cannot offer
+for free. What it proves is that the words were in the input; it does not prove
+that they support the conclusion.
 
 ### Checking a model's answer with your own code
 

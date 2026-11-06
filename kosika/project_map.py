@@ -82,13 +82,32 @@ def _lines(source: str) -> dict[tuple[str, str], int]:
     return found
 
 
+#: Words that start a line of a workflow's body but name no step.
+_NOT_A_STEP = frozenset(
+    {"let", "var", "if", "case", "else", "return", "require", "budget",
+     "parallel", "for", "match", "call", "expect", "while"}
+)
+
+
+def _exported(source: str) -> set[str]:
+    """The names a program offers to other files, from `export [...]`."""
+
+    found: set[str] = set()
+    for block in re.findall(r"export\s*\[([^\]]*)\]", source):
+        found.update(
+            name.strip() for name in block.split(",") if name.strip()
+        )
+    return found
+
+
 def _step_lines(source: str, workflow: str) -> dict[str, int]:
     """Where each step of a workflow is written: name -> line."""
 
     found: dict[str, int] = {}
     inside = False
     start = re.compile(rf"^\s*workflow\s+{re.escape(workflow)}\b")
-    step = re.compile(r"^\s*([A-Za-z_]\w*)\s*=")
+    # A step may be given a type (`prev: Book = ...`), which is still its line.
+    step = re.compile(r"^\s*([A-Za-z_]\w*)\s*(?::\s*[^=\n]+?)?\s*=")
     for number, line in enumerate(source.splitlines(), 1):
         if start.match(line):
             inside = True
@@ -97,7 +116,7 @@ def _step_lines(source: str, workflow: str) -> dict[str, int]:
             if line.startswith("}"):
                 break
             match = step.match(line)
-            if match:
+            if match and match.group(1) not in _NOT_A_STEP:
                 found.setdefault(match.group(1), number)
     return found
 
@@ -252,6 +271,9 @@ def beginner_map(
     for tool in program.tools:
         if tool.source.startswith(("memory:", "board:", "world:", "direct:")):
             continue
+        # A tool an import brought in has no line in this file to point at.
+        if ("tool", tool.name) not in lines:
+            continue
         group, item = _tool_item(tool, lines.get(("tool", tool.name)))
         groups[group].append(item)
     def answers(model: ModelDecl) -> str:
@@ -270,7 +292,9 @@ def beginner_map(
             "does": answers(model) + (" (the default)" if model.default else ""),
         }
         for model in program.models
-        if model.provider is None and not model.verb
+        if model.provider is None
+        and not model.verb
+        and ("model", model.name) in lines
     ]
     thinking = sorted({model.verb for model in program.models if model.verb})
     memories = [
@@ -281,12 +305,13 @@ def beginner_map(
             "does": f"remembers {memory.record} values between runs",
         }
         for memory in program.memories
+        if ("memory", memory.name) in lines
     ]
     entry = next((w for w in program.workflows if w.name == "main"), None)
     steps: list[dict[str, Any]] = []
     given: list[dict[str, Any]] = []
     gives: dict[str, Any] = {}
-    if entry is not None:
+    if entry is not None and ("workflow", entry.name) in lines:
         at = _step_lines(source, "main")
         steps = [_step(program, step, at.get(step.name)) for step in entry.steps]
         given = [

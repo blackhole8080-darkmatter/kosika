@@ -1,0 +1,26 @@
+// A tiny agent the keeper runs: it writes a dated note into its folder.
+record NoteAsk { name: Text text: Text }
+record NoteDone { wrote: Text bytes: Number }
+record NewFile { path: Text text: Text }
+record Written { bytes: Number }
+
+tool write_file {
+  source system "files"
+  operation: "write"
+  access: execute
+  input: NewFile
+  output: Written
+}
+
+agent hands {
+  can: [write_file]
+  max_steps: 1
+}
+
+fn note_done(a: NoteAsk, w: Written) -> NoteDone { return {wrote: a.name, bytes: w.bytes} }
+
+workflow note(a: NoteAsk) -> NoteDone {
+  done = execute hands.write_file(a.name, a.text)
+  out  = note_done(a, done)
+  require approval
+}

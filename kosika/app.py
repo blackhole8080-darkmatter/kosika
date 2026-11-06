@@ -99,6 +99,8 @@ PAGE = Path(__file__).parent / "app_assets" / "index.html"
 BRAND = Path(__file__).parent / "app_assets" / "brand.kos"
 MAX_AGENTS = 200
 MAX_BODY = 64 * 1024
+# A recording sent to be heard is bigger than any other request; Whisper takes 25 MB.
+MAX_AUDIO = 12 * 1024 * 1024
 _SKIPPED = {"_trash", "archive", "node_modules", "__pycache__", "runs"}
 
 ModelBinder = Callable[[Program], Mapping[str, ModelProvider]]
@@ -232,6 +234,94 @@ def _step_view(program: Program, step: Step) -> dict[str, Any]:
     return view
 
 
+def _first_words(payload: Any) -> str:
+    """The first piece of text inside a run's inputs: what it was asked."""
+
+    if isinstance(payload, str):
+        return payload.strip()
+    if isinstance(payload, dict):
+        for value in payload.values():
+            found = _first_words(value)
+            if found:
+                return found
+    elif isinstance(payload, (list, tuple)):
+        for value in payload:
+            found = _first_words(value)
+            if found:
+                return found
+    return ""
+
+
+def _last_record(path: Path) -> Any:
+    """The last line of a trace, read from the end so a long run costs one
+    seek rather than a whole file."""
+
+    try:
+        with path.open("rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            size = handle.tell()
+            block = min(size, 16384)
+            handle.seek(size - block)
+            tail = handle.read().decode("utf-8", "replace")
+    except (OSError, ValueError):
+        return None
+    for line in reversed(tail.splitlines()):
+        if line.strip():
+            try:
+                return json.loads(line)
+            except ValueError:
+                return None
+    return None
+
+
+#: What a run's last event says about how it ended, in a word.
+RUN_STATES = {
+    "run_complete": "done",
+    "run_failed": "failed",
+    "run_cancelled": "stopped",
+    "run_paused": "paused",
+}
+
+
+def _run_facts(path: Path) -> dict[str, Any]:
+    """What a trace says at both ends: the ask it started with, how it ended,
+    how long it took and how many steps it used. Each is left out when the
+    trace does not record it, so the page never invents a number."""
+
+    facts: dict[str, Any] = {}
+    try:
+        with path.open("rb") as handle:
+            head = handle.readline(65536)
+    except OSError:
+        return facts
+    try:
+        started = json.loads(head.decode("utf-8", "replace"))
+    except (ValueError, UnicodeDecodeError):
+        started = None
+    if isinstance(started, dict):
+        ask = " ".join(_first_words(started.get("inputs")).split())
+        if ask:
+            facts["ask"] = ask[:160]
+    last = _last_record(path)
+    if isinstance(last, dict):
+        facts["state"] = RUN_STATES.get(str(last.get("event", "")), "unfinished")
+        execution = last.get("execution")
+        if isinstance(execution, dict):
+            seconds = execution.get("elapsed_seconds")
+            if isinstance(seconds, (int, float)) and not isinstance(seconds, bool):
+                facts["seconds"] = round(float(seconds), 2)
+            used = execution.get("used")
+            steps = used.get("steps") if isinstance(used, dict) else None
+            if isinstance(steps, int) and not isinstance(steps, bool):
+                facts["steps"] = steps
+        error = last.get("error")
+        if isinstance(error, dict) and facts.get("state") in ("failed", "paused"):
+            because = str(error.get("code") or error.get("type") or "").strip()
+            if because:
+                facts["because"] = because
+    return facts
+
+
 def _traces(folder: Path) -> list[dict[str, Any]]:
     found: list[dict[str, Any]] = []
     for directory in (folder, folder / "runs"):
@@ -243,6 +333,7 @@ def _traces(folder: Path) -> list[dict[str, Any]]:
                     {
                         "name": path.relative_to(folder).as_posix(),
                         "modified": path.stat().st_mtime,
+                        **_run_facts(path),
                     }
                 )
             except OSError:
@@ -270,6 +361,9 @@ def describe(agent: Agent, *, detail: bool) -> dict[str, Any]:
     except (OSError, UnicodeDecodeError) as exc:
         return {**view, "error": f"Cannot read the file: {exc}"}
     view["about"] = _about(source)
+    # The first paragraph alone, for a card: what the program is for, in the
+    # author's own words, without the running instructions that follow it.
+    view["purpose"] = _about(source, first_only=True) or view["about"]
     try:
         program = _loaded(agent.path)
     except ValueError as exc:
@@ -870,8 +964,53 @@ class App:
             raise AppError("No such agent in this folder", 404)
         return found
 
+    def _cards(self) -> list[dict[str, Any]]:
+        """Every agent's card. Reading and checking every program took
+        twelve seconds and more on a big folder, on every page Studio drew;
+        a card is now kept until its folder's programs or Kosika itself
+        change, in memory and on this computer, so a restart is fast too."""
+
+        agents = list(self.agents().values())
+        here = Path(__file__).resolve().parent
+
+        def stamp(path: Path) -> list[Any]:
+            files = sorted(path.parent.glob("*.kos"))
+            return [[str(f), f.stat().st_mtime_ns, f.stat().st_size] for f in files]
+
+        try:
+            engine = max(p.stat().st_mtime_ns for p in [*here.glob("*.py"), *here.glob("std/*.kos")])
+        except ValueError:
+            engine = 0
+        store = Path.home() / ".kosika" / "studio-cards.json"
+        kept = getattr(self, "_card_cache", None)
+        if kept is None:
+            try:
+                kept = json.loads(store.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                kept = {}
+            self._card_cache = kept
+        cards, changed = [], False
+        for agent in agents:
+            key = str(agent.path)
+            mark = [engine, stamp(agent.path)]
+            entry = kept.get(key)
+            if isinstance(entry, dict) and entry.get("mark") == mark:
+                cards.append(entry["card"])
+                continue
+            card = describe(agent, detail=False)
+            kept[key] = {"mark": mark, "card": card}
+            cards.append(card)
+            changed = True
+        if changed:
+            try:
+                store.parent.mkdir(parents=True, exist_ok=True)
+                store.write_text(json.dumps(kept), encoding="utf-8")
+            except (OSError, TypeError, ValueError):
+                pass
+        return cards
+
     def overview(self) -> dict[str, Any]:
-        cards = [describe(a, detail=False) for a in self.agents().values()]
+        cards = self._cards()
         return {
             "root": str(self.root),
             "can_run": self.bind_models is not None,
@@ -1604,9 +1743,37 @@ class App:
         """Everything in this folder in one list, with suggestions that
         come from rules, never from a model."""
 
-        return project_index(
-            [(agent.id, agent.title, agent.path) for agent in self.agents().values()]
+        # Indexing every program took forty seconds and more; the index is
+        # kept until a program in the folder, or Kosika itself, changes.
+        agents = list(self.agents().values())
+        here = Path(__file__).resolve().parent
+        try:
+            engine = max(p.stat().st_mtime_ns for p in [*here.glob("*.py"), *here.glob("std/*.kos")])
+        except ValueError:
+            engine = 0
+        mark = [engine] + sorted(
+            [str(f), f.stat().st_mtime_ns, f.stat().st_size]
+            for agent in agents for f in agent.path.parent.glob("*.kos")
         )
+        store = Path.home() / ".kosika" / "studio-project.json"
+        kept = getattr(self, "_project_cache", None)
+        if kept is None:
+            try:
+                kept = json.loads(store.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                kept = {}
+        if kept.get("root") == str(self.root) and kept.get("mark") == mark:
+            self._project_cache = kept
+            return kept["index"]
+        index = project_index([(agent.id, agent.title, agent.path) for agent in agents])
+        kept = {"root": str(self.root), "mark": mark, "index": index}
+        self._project_cache = kept
+        try:
+            store.parent.mkdir(parents=True, exist_ok=True)
+            store.write_text(json.dumps(kept), encoding="utf-8")
+        except (OSError, TypeError, ValueError):
+            pass
+        return index
 
     def scene(self, agent_id: str, inputs: dict[str, Any]) -> dict[str, Any]:
         """Run a program that describes an animation, and give back the
@@ -2116,7 +2283,10 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
             self.send_header(
                 "Content-Security-Policy",
                 "default-src 'none'; style-src 'unsafe-inline'; "
-                "script-src 'unsafe-inline'; connect-src 'self'; font-src 'self'",
+                "script-src 'unsafe-inline'; connect-src 'self'; font-src 'self'; "
+                # Kosi's voice comes back as audio in the answer itself and is
+                # played from there; nothing is played from anywhere else.
+                "img-src 'self'; media-src data:",
             )
             self.end_headers()
             self.wfile.write(body)
@@ -2128,9 +2298,9 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                 "application/json; charset=utf-8",
             )
 
-        def _body(self) -> dict[str, Any]:
+        def _body(self, most: int = MAX_BODY) -> dict[str, Any]:
             length = int(self.headers.get("Content-Length") or 0)
-            if not 0 < length <= MAX_BODY:
+            if not 0 < length <= most:
                 raise AppError("The request is empty or too large")
             body = json.loads(self.rfile.read(length).decode("utf-8"))
             if not isinstance(body, dict):
@@ -2175,6 +2345,12 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                 from .desktop_app import icon_bytes
 
                 self._send(200, icon_bytes(), "image/x-icon")
+                return
+            if method == "GET" and url.path in ("/icon-192.png", "/icon-512.png"):
+                # The same mark, sharp, for the window's taskbar icon.
+                from .desktop_app import icon_png
+
+                self._send(200, icon_png(192 if "192" in url.path else 512), "image/png")
                 return
             if method == "GET" and url.path.startswith("/fonts/"):
                 # The two typefaces Kosika carries. Like the icon they are
@@ -2272,8 +2448,104 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                         self._json(200, app.scene(agent_id, body["inputs"]))
                     else:
                         raise AppError("Send inputs to run, or a scene to draw")
+                elif method == "POST" and url.path == "/api/design":
+                    # Kosika Designs: the same front door Chat and the agents use.
+                    from .designs import DesignsError, design
+
+                    body = self._body()
+                    try:
+                        self._json(200, design(str(body.get("text", "")), palette=str(body.get("palette", "")), place="studio", kind=str(body.get("kind", ""))))
+                    except DesignsError as exc:
+                        raise AppError(str(exc)) from exc
+                elif method == "POST" and url.path == "/api/swarm/board":
+                    # The Swarm page's board, drawn by Kosika itself.
+                    from .designs import DesignsError, swarm_board
+
+                    body = self._body()
+                    try:
+                        self._json(200, swarm_board(body.get("states") or [], body.get("pins") or []))
+                    except DesignsError as exc:
+                        raise AppError(str(exc)) from exc
+                elif method == "POST" and url.path == "/api/models":
+                    # The Models page: pin a model for a kind of work, or
+                    # give the choice back to Kosika.
+                    from .designs import DesignsError, choose_model
+
+                    body = self._body()
+                    try:
+                        self._json(200, choose_model(str(body.get("task", "")), str(body.get("model", ""))))
+                    except DesignsError as exc:
+                        raise AppError(str(exc)) from exc
+                elif method == "POST" and url.path == "/api/kosi":
+                    # Kosi, the companion run by Kosika Brain.
+                    from .designs import DesignsError, kosi
+
+                    try:
+                        body = self._body()
+                        self._json(200, kosi(str(body.get("text", "")), local=body.get("local") is True))
+                    except DesignsError as exc:
+                        raise AppError(str(exc)) from exc
+                elif method == "POST" and url.path == "/api/kosi/hear":
+                    # What was said, from a recording made in the page.
+                    import base64
+
+                    from .designs import DesignsError, hear
+
+                    body = self._body(MAX_AUDIO)
+                    try:
+                        self._json(200, {"text": hear(base64.b64decode(str(body.get("audio", ""))), str(body.get("type", "audio/webm")))})
+                    except (DesignsError, ValueError) as exc:
+                        raise AppError(str(exc)) from exc
+                elif method == "POST" and url.path == "/api/kosi/speak":
+                    # Kosi's voice, or nothing, and the page speaks for it.
+                    import base64
+
+                    from .designs import speak
+
+                    body = self._body()
+                    said = speak(str(body.get("text", "")), str(body.get("voice", "")))
+                    self._json(200, {"audio": base64.b64encode(said).decode() if said else ""})
+                elif method == "POST" and url.path == "/api/crew":
+                    # A Kosika crew, run by Kosika Brain, makes a study pack.
+                    from .designs import DesignsError, crew
+
+                    try:
+                        self._json(200, crew(str(self._body().get("topic", ""))))
+                    except DesignsError as exc:
+                        raise AppError(str(exc)) from exc
+                elif method == "POST" and url.path == "/api/brain/gather":
+                    # Kosika Brain reads research on a topic and keeps it, with sources.
+                    from .designs import DesignsError, gather
+
+                    try:
+                        self._json(200, gather(str(self._body().get("topic", ""))))
+                    except DesignsError as exc:
+                        raise AppError(str(exc)) from exc
+                elif method == "POST" and url.path == "/api/design/rate":
+                    # A thumbs up or down on a canvas Kosika Brain kept.
+                    from .designs import DesignsError, rate
+
+                    body = self._body()
+                    try:
+                        self._json(200, rate(str(body.get("text", "")), bool(body.get("liked"))))
+                    except DesignsError as exc:
+                        raise AppError(str(exc)) from exc
+                elif method == "POST" and url.path == "/api/study":
+                    # The study companion: words, the person's notes, and a Designs canvas.
+                    from .designs import DesignsError, study
+
+                    try:
+                        self._json(200, study(str(self._body().get("text", ""))))
+                    except DesignsError as exc:
+                        raise AppError(str(exc)) from exc
                 elif method == "GET" and url.path == "/api/brand":
                     self._json(200, app.brand())
+                elif method == "GET" and url.path == "/api/models":
+                    # Every model Kosika can reach, whether it answers now,
+                    # and the one it would use for each kind of work.
+                    from .designs import models_status
+
+                    self._json(200, models_status())
                 elif method == "GET" and url.path == "/api/project":
                     self._json(200, app.project())
                 elif method == "GET" and url.path == "/api/outside":
@@ -2395,6 +2667,25 @@ def open_window(url: str) -> bool:
     return False
 
 
+def _free_settings(settings: Path) -> Path:
+    """A settings folder no browser is using now.
+
+    A browser left running on the folder, even with no window showing,
+    takes the new page itself and the one just started exits at once: the
+    app would think its window was closed and stop before it was seen. Such
+    a folder's lock file cannot be removed, so the next free one is used.
+    """
+
+    for k in range(6):
+        folder = settings if k == 0 else settings.with_name(f"{settings.name}-{k + 1}")
+        try:
+            (folder / "lockfile").unlink(missing_ok=True)
+            return folder
+        except OSError:
+            continue
+    return settings
+
+
 def open_app_window(
     url: str, settings: Path, announce_as: str = "studio"
 ) -> subprocess.Popen[bytes] | None:
@@ -2409,6 +2700,7 @@ def open_app_window(
     (MayaOS opens Studio, and Studio MayaOS) can find it.
     """
 
+    settings = _free_settings(settings)
     settings.mkdir(parents=True, exist_ok=True)
     if announce_as:
         from .desktop_app import announce

@@ -35,13 +35,27 @@ class IconTests(unittest.TestCase):
             end = offset + length
         self.assertEqual(end, len(data))
 
-    def test_the_picture_is_a_dark_tile_with_see_through_corners(self) -> None:
-        picture = desktop_app._picture(32)[40:]
-        corner = picture[0:4]  # bottom-left pixel: blue, green, red, alpha
-        middle = picture[(16 * 32 + 16) * 4 : (16 * 32 + 16) * 4 + 4]
-        self.assertEqual(corner[3], 0)
+    def test_the_picture_is_the_round_mark_with_see_through_corners(self) -> None:
+        picture = desktop_app._picture(48)[40:]
+
+        def at(x: int, y: int) -> bytes:  # from the top left; rows are stored bottom first
+            start = ((47 - y) * 48 + x) * 4
+            return picture[start : start + 4]  # blue, green, red, alpha
+
+        self.assertEqual(at(0, 47)[3], 0)  # a corner outside the badge
+        self.assertEqual(at(0, 0)[3], 0)
+        letter = at(18, 24)  # the K's stem, in the core
+        self.assertEqual(letter[3], 255)
+        self.assertGreater(min(letter[:3]), 200)
+        amber = at(24, 40)  # the amber ring below the core
+        self.assertGreater(amber[2], 200)
+        self.assertLess(amber[0], 140)
+
+    def test_another_app_keeps_its_own_colours(self) -> None:
+        maya = desktop_app._picture(32, desktop_app.MAYAOS_COLOURS)[40:]
+        middle = maya[(16 * 32 + 16) * 4 : (16 * 32 + 16) * 4 + 4]
         self.assertEqual(middle[3], 255)
-        self.assertGreater(middle[0], 200)  # the pale dot in the centre
+        self.assertGreater(middle[2], 200)  # the amber core
 
     def test_the_icon_is_the_same_every_time(self) -> None:
         self.assertEqual(desktop_app.icon_bytes(), desktop_app.icon_bytes())

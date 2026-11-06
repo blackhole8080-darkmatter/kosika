@@ -47,6 +47,13 @@ tracing = ["respan-ai==4.2.4; python_version >= '3.11'"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 cache_dir = ".cache/pytest"
+# A slow test needs something this machine may not have or may be slow at: a
+# server, a browser, a Go build, a subprocess, the network. They are marked
+# where they are defined, so the fast lane is `pytest -m "not slow"` and the
+# whole set is still `pytest`.
+markers = [
+    "slow: needs a server, a browser, a build or the network, or simply takes seconds",
+]
 
 [tool.ruff]
 target-version = "py310"

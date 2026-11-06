@@ -174,19 +174,33 @@ FEED_TYPES = (
 )
 
 
+def _bare(tag: str) -> str:
+    """A tag without its namespace prefix: dc:date reads as date, as RDF
+    feeds such as bioRxiv's write their authors and dates."""
+
+    return tag.split(":")[-1]
+
+
 class _Feed(html.parser.HTMLParser):
     """A feed as plain lines: each entry begins with `---`, then one line for
-    each of its title, date, authors, link and summary that it has."""
+    each of its title, date, authors, link and summary that it has. Atom
+    gives the link as an attribute, RSS as the link tag's own words, and an
+    RDF feed as the item's about attribute; all three are read, and the same
+    line is not said twice in one entry, as feeds that say a field two ways
+    (a title and a dc:title) are read once."""
 
     _ENTRY = frozenset(("entry", "item"))
     _LABELS = {
         "title": "Title",
         "published": "Published",
         "pubdate": "Published",
+        "date": "Published",
         "updated": "Updated",
         "name": "Author",
+        "creator": "Author",
         "summary": "Summary",
         "description": "Summary",
+        "link": "Link",
     }
 
     def __init__(self) -> None:
@@ -195,30 +209,53 @@ class _Feed(html.parser.HTMLParser):
         self._entry = 0
         self._label: str | None = None
         self._text: list[str] = []
+        self._said: list[str] = []
+
+    def _say(self, line: str) -> None:
+        if line not in self._said:
+            self._said.append(line)
+            self.lines.append(line)
 
     def handle_starttag(self, tag: str, attrs: Any) -> None:
-        if tag in self._ENTRY:
+        bare = _bare(tag)
+        if bare in self._ENTRY:
             self._entry += 1
             self.lines.append("---")
-        elif self._entry and tag in self._LABELS:
-            self._label, self._text = self._LABELS[tag], []
-        elif self._entry and tag == "link":
+            self._said = []
+            about = dict(attrs).get("rdf:about", "")
+            if about:
+                self._say(f"Link: {about}")
+        elif self._entry and bare == "link":
             found = dict(attrs)
-            if found.get("href") and found.get("rel", "alternate") == "alternate":
-                self.lines.append(f"Link: {found['href']}")
+            href = found.get("href", "")
+            rel = found.get("rel", "alternate")
+            if href and rel == "alternate":
+                self._say(f"Link: {href}")
+            elif not href:
+                self._label, self._text = "Link", []
+        elif self._entry and bare in self._LABELS:
+            self._label, self._text = self._LABELS[bare], []
 
     def handle_endtag(self, tag: str) -> None:
-        if tag in self._ENTRY and self._entry:
+        bare = _bare(tag)
+        if bare in self._ENTRY and self._entry:
             self._entry -= 1
-        elif self._label is not None and self._LABELS.get(tag) == self._label:
+        elif self._label is not None and self._LABELS.get(bare) == self._label:
             said = " ".join("".join(self._text).split())
             if said:
-                self.lines.append(f"{self._label}: {said}")
+                self._say(f"{self._label}: {said}")
             self._label = None
 
     def handle_data(self, data: str) -> None:
         if self._label is not None:
             self._text.append(data)
+
+    def unknown_decl(self, data: str) -> None:
+        # A feed may wrap a field's words in <![CDATA[...]]>; the words are
+        # the field's. In an HTML page such a section stays dropped, as
+        # browsers treat it as nothing.
+        if data.startswith("CDATA["):
+            self.handle_data(data[len("CDATA[") :])
 
 
 def readable_feed(body: str) -> str:

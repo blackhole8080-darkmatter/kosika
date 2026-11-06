@@ -1,0 +1,131 @@
+{
+ "a": {
+  "title": "A spiral galaxy turns",
+  "summary": "Stars and gas swirl round a bright core in two golden-ratio arms.",
+  "palette": "aurora",
+  "backdrop": "night",
+  "figures": [
+   {
+    "id": "arm1",
+    "kind": "spiral",
+    "x": 50,
+    "y": 30,
+    "w": 26,
+    "h": 0,
+    "count": 3,
+    "hue": 0,
+    "label": "",
+    "points": []
+   },
+   {
+    "id": "arm2",
+    "kind": "spiral",
+    "x": 50,
+    "y": 30,
+    "w": 26,
+    "h": 180,
+    "count": 3,
+    "hue": 2,
+    "label": "",
+    "points": []
+   },
+   {
+    "id": "core",
+    "kind": "circle",
+    "x": 50,
+    "y": 30,
+    "w": 3.2,
+    "h": 0,
+    "count": 0,
+    "hue": 4,
+    "label": "",
+    "points": []
+   },
+   {
+    "id": "halo",
+    "kind": "ring",
+    "x": 50,
+    "y": 30,
+    "w": 6,
+    "h": 0,
+    "count": 0,
+    "hue": 4,
+    "label": "",
+    "points": []
+   },
+   {
+    "id": "sun",
+    "kind": "star",
+    "x": 66,
+    "y": 22,
+    "w": 1.4,
+    "h": 0,
+    "count": 5,
+    "hue": 4,
+    "label": "Our Sun",
+    "points": []
+   }
+  ],
+  "motions": [
+   {
+    "what": "arm1",
+    "kind": "spin",
+    "around": "",
+    "seconds": 40,
+    "delay": 0
+   },
+   {
+    "what": "arm2",
+    "kind": "spin",
+    "around": "",
+    "seconds": 40,
+    "delay": 0
+   },
+   {
+    "what": "core",
+    "kind": "pulse",
+    "around": "",
+    "seconds": 4,
+    "delay": 0
+   },
+   {
+    "what": "halo",
+    "kind": "blink",
+    "around": "",
+    "seconds": 4,
+    "delay": 0
+   },
+   {
+    "what": "sun",
+    "kind": "orbit",
+    "around": "core",
+    "seconds": 40,
+    "delay": 0
+   }
+  ],
+  "beats": [
+   {
+    "text": "At the centre sits a dense, bright core of old stars around a black hole.",
+    "shows": [
+     "core",
+     "halo"
+    ]
+   },
+   {
+    "text": "Two arms wind out from it, each widening by the golden ratio every quarter turn.",
+    "shows": [
+     "arm1",
+     "arm2"
+    ]
+   },
+   {
+    "text": "The whole disc turns: our Sun takes about 230 million years to go round once.",
+    "shows": [
+     "sun",
+     "arm1",
+     "arm2"
+    ]
+   }
+  ]
+ }
+}

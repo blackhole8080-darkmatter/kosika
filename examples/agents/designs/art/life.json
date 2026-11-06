@@ -1,0 +1,61 @@
+{
+ "a": {
+  "title": "Life's machinery, drawn by Kosika",
+  "summary": "A DNA double helix turning, its bases paired by Kosika, and a neuron sending a signal down its axon.",
+  "palette": "dark_matter",
+  "backdrop": "grid",
+  "figures": [
+   {
+    "id": "dna",
+    "kind": "dna",
+    "x": 50,
+    "y": 19,
+    "w": 30,
+    "h": 0,
+    "count": 0,
+    "hue": 4,
+    "label": "",
+    "points": []
+   },
+   {
+    "id": "neuron",
+    "kind": "neuron",
+    "x": 50,
+    "y": 41,
+    "w": 30,
+    "h": 0,
+    "count": 0,
+    "hue": 2,
+    "label": "",
+    "points": []
+   }
+  ],
+  "motions": [],
+  "beats": [
+   {
+    "text": "DNA is two strands wound round each other, joined by base pairs.",
+    "shows": [
+     "dna"
+    ]
+   },
+   {
+    "text": "A always pairs with T and G with C, so one strand spells out the other.",
+    "shows": [
+     "dna"
+    ]
+   },
+   {
+    "text": "A neuron gathers signals on its dendrites and fires down its axon.",
+    "shows": [
+     "neuron"
+    ]
+   },
+   {
+    "text": "Myelin wraps the axon so the signal jumps along quickly to the terminals.",
+    "shows": [
+     "neuron"
+    ]
+   }
+  ]
+ }
+}

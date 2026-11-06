@@ -396,8 +396,12 @@ class StudioSceneTests(unittest.TestCase):
         self.assertTrue(brand["ok"], brand)
         root = ET.fromstring(brand["svg"])
         ids = [g.get("id") for g in root.iter(f"{SVG}g") if g.get("id")]
-        self.assertEqual(len(ids), 12)
-        self.assertEqual(ids[-2:], ["tile", "letter"])
+        # The sixteen the mark's own tests in brand.kos count: a halo, a
+        # photon ring, twelve accretion particles, the void and the letter.
+        self.assertEqual(ids[:2], ["halo", "photon"])
+        self.assertEqual(ids[2:14], [f"dot{i}" for i in range(12)])
+        self.assertEqual(ids[-2:], ["core", "letter"])
+        self.assertEqual(len(ids), 16)
         # It sits on Studio's own background, so it brings none of its own.
         self.assertEqual(list(root.findall(f"{SVG}rect")), [])
         self.assertIn("<rect", to_svg(SCENE).split("\n")[1])

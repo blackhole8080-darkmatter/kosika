@@ -943,7 +943,7 @@ class NativeTests(unittest.TestCase):
             "record Planned { path: Text text: Text before: Text exists: Bool }\n"
             "record Reading { text: Text files: Planned[] }\n"
             "record Engine { problems: Text[] }\n"
-            "record Note { title: Text text: Text }\n"
+            "record Note { title: Text text: Text link: Text file_name: Text file: Text }\n"
             "record Sent { sent: Bool }\n"
             'tool check_program {\n  source system "kosika"\n  operation: "check"\n'
             "  access: observe\n  input: Code\n  output: Checked\n}\n"
@@ -954,7 +954,7 @@ class NativeTests(unittest.TestCase):
             "agent desk {\n  can: [check_program, check_plan, tell_me]\n  max_steps: 1\n}\n"
             "workflow check(c: Code) -> Checked {\n  r = execute desk.check_program(c.source)\n}\n"
             "workflow plan(r: Reading) -> Engine {\n  e = execute desk.check_plan(r.text, r.files)\n}\n"
-            "workflow note(n: Note) -> Sent {\n  require approval\n  s = execute desk.tell_me(n.title, n.text)\n}\n"
+            "workflow note(n: Note) -> Sent {\n  require approval\n  s = execute desk.tell_me(n.title, n.text, n.link, n.file_name, n.file)\n}\n"
         )
         good = (
             "record In { n: Number }\nrecord Out { twice: Number }\n"
@@ -1001,7 +1001,9 @@ class NativeTests(unittest.TestCase):
                     {"r": {"text": "Please write the tests for the doubler.", "files": planned}}
                 ))
                 outcome["plan"] = engine(name, folder, "--workflow", "plan", "--input", "in.json")
-                (folder / "in.json").write_text(json.dumps({"n": {"title": "Done", "text": "All good."}}))
+                (folder / "in.json").write_text(json.dumps(
+                    {"n": {"title": "Done", "text": "All good.", "link": "", "file_name": "", "file": ""}}
+                ))
                 outcome["unbound note"] = engine(name, folder, "--workflow", "note", "--input", "in.json")
                 for address in ("http://ntfy.sh/topic", "https://ntfy.sh/", "https://ntfy.sh/t?x=1",
                                 "https://me:pw@ntfy.sh/t", "https://ntfy.sh:8443/t"):

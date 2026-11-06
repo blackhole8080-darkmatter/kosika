@@ -1,0 +1,85 @@
+// Scout: ask a question about the files in the folder you grant, and it
+// works out for itself which files to look at.
+//
+//   kosika test main.kos
+//   kosika studio FOLDER --model qwen2.5:7b --model-protocol ollama --allow-folder YOUR_PROJECT
+//
+// The other agents here follow steps written in advance. Scout is given a
+// goal and two tools, and the model chooses: list a folder, look at a
+// file, look at another, then answer. It may take at most six turns, it can
+// only look, never change, and every tool it picked is recorded.
+//
+// It is told to name the files its answer came from. Nothing checks that
+// it names them truthfully, so open the run in Studio to see what it read.
+
+record Msg { text: Text }
+record Said { text: Text }
+record Question { text: Text }
+record Where { path: Text }
+record Listing { names: Text[] }
+record FileText { text: Text }
+// What the scout found: the answer, and the files it came from.
+record Finding { answer: Text sources: Text[] }
+
+model thinker {
+  input: Question
+  output: Finding
+  parameters: {
+    max_output_tokens: 300
+  }
+}
+
+tool list_folder {
+  source system "files"
+  operation: "list"
+  access: observe
+  input: Where
+  output: Listing
+}
+
+tool look_at {
+  source system "files"
+  operation: "peek"
+  access: observe
+  input: Where
+  output: FileText
+}
+
+agent scout {
+  model: thinker
+  can: [list_folder, look_at]
+  max_steps: 6
+  max_tool_calls: 8
+  instructions: "You answer questions about the files in one folder. You cannot see anything until you use a tool. First list the folder with path \".\" unless the user named a file. Then look at the files that could hold the answer. Never guess what a file contains. When you know, answer in two or three short sentences and list in sources the paths of the files you looked at that support the answer. If the files do not hold the answer, say so."
+}
+
+fn question(msg: Msg) -> Question {
+  return {text: msg.text.trim()}
+}
+
+fn nothing_found(msg: Msg) -> Finding {
+  return {answer: "I could not work that out from the files. Try naming the file, or ask in another way.", sources: []}
+}
+
+fn tell(found: Finding) -> Said {
+  var sources: Text[] = []
+  for source in found.sources {
+    if source.trim().length() > 0 { sources = sources.append(source.trim()) }
+  }
+  let tail = if sources.length() > 0 { "\nFrom: " + sources.unique().join(", ") } else { "" }
+  return {text: found.answer.trim() + tail}
+}
+
+workflow main(msg: Msg) -> Said {
+  budget 8 model calls, 300 seconds
+  ask   = question(msg)
+  found = ask scout(ask.text) otherwise nothing_found(msg)
+  said  = tell(found)
+}
+
+test "the answer names where it came from" {
+  a = tell({answer: " It adds two numbers. ", sources: ["calc.py", "calc.py", " "]})
+  b = tell({answer: "Nothing here says.", sources: []})
+  expect a.text == "It adds two numbers.\nFrom: calc.py"
+  expect b.text == "Nothing here says."
+}

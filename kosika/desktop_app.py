@@ -15,6 +15,7 @@ file, and a failure to start is shown in a small message box.
 from __future__ import annotations
 
 import json
+import functools
 import math
 import os
 import socket
@@ -23,12 +24,15 @@ import subprocess
 import sys
 import time
 import traceback
+import zlib
 from pathlib import Path
 from urllib.parse import urlsplit
 
 NAME = "Kosika Studio"
-#: Sizes of the icon's pictures, in pixels.
-ICON_SIZES = (16, 32, 48, 256)
+#: Sizes of the icon's pictures, in pixels. Windows picks the one that fits
+#: the taskbar at the screen's scale (24 at 150%, 32 at 200%, 40 at 250%...);
+#: a size it does not find is scaled from another, and comes out blurred.
+ICON_SIZES = (16, 20, 24, 30, 32, 36, 40, 48, 60, 64, 72, 80, 96, 128, 256)
 #: The colours of the mark: the same ink and accent as Studio's page.
 _INK = (0x1D, 0x1B, 0x18)
 _ACCENT = (0xE8, 0x81, 0x3A)
@@ -66,10 +70,146 @@ def _cover(x: float, y: float, size: int) -> tuple[float, float, float]:
     return inside, ring * inside, dot * inside
 
 
+#: The Kosika mark, as site/assets/mark.svg draws it on a 120 square: an
+#: indigo ring, an amber ring, a dark core, the K in Figtree's outline and a
+#: dot resting on the rings.
+_MARK_K = (
+    (39.79, 83.50), (39.79, 37.50), (50.31, 37.50), (50.31, 54.23), (65.75, 37.50),
+    (79.55, 37.50), (60.27, 58.25), (80.21, 83.50), (67.10, 83.50), (53.32, 65.74),
+    (50.31, 69.00), (50.31, 83.50),
+)
+_MARK_TILE = (0x0B, 0x0B, 0x16)
+_MARK_OUTER = (0x2B, 0x23, 0x50)
+_MARK_AMBER = (0xF5, 0xB4, 0x5C)
+_MARK_CORE = (0x05, 0x06, 0x0B)
+_MARK_LETTER = (0xF2, 0xF4, 0xFF)
+_MARK_DOT = (0xFF, 0xF4, 0xE2)
+
+
+def _inside(x: float, y: float, polygon: tuple) -> bool:
+    """Whether a point is inside a polygon, by the even-odd rule."""
+
+    inside = False
+    j = len(polygon) - 1
+    for i, (xi, yi) in enumerate(polygon):
+        xj, yj = polygon[j]
+        if (yi > y) != (yj > y) and x < (xj - xi) * (y - yi) / (yj - yi) + xi:
+            inside = not inside
+        j = i
+    return inside
+
+
+def _mark_point(x: float, y: float) -> tuple[tuple[int, int, int], float]:
+    """The colour of the mark at one point of its 120 square, and how much
+    of it is there (0 outside the badge)."""
+
+    away = math.hypot(x - 60, y - 60)
+    dot = math.hypot(x - 60, y - 18)
+    if dot <= 7.5:
+        return _MARK_DOT, 1.0
+    if dot <= 9.25:
+        return _MARK_CORE, 1.0
+    if away > 58:
+        return _MARK_TILE, 0.0
+    if away >= 50:
+        return _MARK_OUTER, 1.0
+    if 38.5 <= away <= 45.5:
+        return _MARK_AMBER, 1.0
+    if away < 38.5 and _inside(x, y, _MARK_K):
+        return _MARK_LETTER, 1.0
+    return (_MARK_CORE if away <= 29 else _MARK_TILE), 1.0
+
+
+@functools.lru_cache(maxsize=None)
+def _mark_rows(size: int) -> tuple[bytes, ...]:
+    """The Kosika mark at one size, top row first, each pixel red, green,
+    blue and alpha. Each pixel is the average of many points inside it, so
+    its edges are smooth: 8 by 8 at small sizes, where every pixel shows."""
+
+    samples = 8 if size <= 64 else 4 if size <= 256 else 3
+    rows: list[bytes] = []
+    for row in range(size):
+        line = bytearray()
+        for column in range(size):
+            red = green = blue = cover = 0.0
+            for sy in range(samples):
+                for sx in range(samples):
+                    colour, there = _mark_point(
+                        (column + (sx + 0.5) / samples) * 120 / size,
+                        (row + (sy + 0.5) / samples) * 120 / size,
+                    )
+                    red += colour[0] * there
+                    green += colour[1] * there
+                    blue += colour[2] * there
+                    cover += there
+            count = samples * samples
+            if cover:
+                red, green, blue = red / cover, green / cover, blue / cover
+            line += bytes((int(round(red)), int(round(green)), int(round(blue)), int(round(255 * cover / count))))
+        rows.append(bytes(line))
+    return tuple(rows)
+
+
+def _mark_picture(size: int) -> bytes:
+    """One square picture of the Kosika mark, the one on the website and in
+    Studio, as the bitmap an .ico file holds."""
+
+    rows = []
+    for line in reversed(_mark_rows(size)):  # bitmaps are stored bottom row first
+        swapped = bytearray(line)
+        swapped[0::4], swapped[2::4] = line[2::4], line[0::4]  # blue, green, red, alpha
+        rows.append(bytes(swapped))
+    mask_row = bytes(((size + 31) // 32) * 4)
+    header = struct.pack("<IiiHHIIiiII", 40, size, size * 2, 1, 32, 0, 0, 0, 0, 0, 0)
+    return header + b"".join(rows) + mask_row * size
+
+
+def _kept(name: str, make) -> bytes:
+    """A picture drawn once and kept in Kosika's folder: drawing the mark
+    smoothly at every size takes seconds. The name carries what the picture
+    is drawn from, so a changed mark is drawn again."""
+
+    import hashlib
+
+    recipe = repr((_MARK_K, _MARK_TILE, _MARK_OUTER, _MARK_AMBER, _MARK_CORE, _MARK_LETTER, _MARK_DOT, ICON_SIZES, 2))
+    path = home() / "icons" / f"{name}-{hashlib.sha256(recipe.encode()).hexdigest()[:12]}"
+    try:
+        return path.read_bytes()
+    except OSError:
+        data = make()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+    except OSError:
+        pass
+    return data
+
+
+@functools.lru_cache(maxsize=None)
+def icon_png(size: int) -> bytes:
+    """The mark as a PNG, for the window: a browser's app window takes its
+    taskbar icon from the page, and picks the sharpest picture it is given."""
+
+    return _kept(f"mark-{size}.png", lambda: _png(size))
+
+
+def _png(size: int) -> bytes:
+    raw = b"".join(b"\x00" + line for line in _mark_rows(size))
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+    header = struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0)  # 8 bits, red green blue alpha
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b"")
+
+
 def _picture(size: int, colours: tuple = KOSIKA_COLOURS) -> bytes:
     """One square picture of the mark as the bitmap an .ico file holds:
-    a dark tile, an orange ring and a pale dot (or the colours given)."""
+    Kosika's own mark, or for another app a dark tile, a ring and a dot in
+    its colours."""
 
+    if colours == KOSIKA_COLOURS:
+        return _mark_picture(size)
     ink, accent, paper = colours
     samples = 4 if size <= 64 else 2
     rows: list[bytes] = []
@@ -103,9 +243,16 @@ def _picture(size: int, colours: tuple = KOSIKA_COLOURS) -> bytes:
     return header + b"".join(rows) + mask_row * size
 
 
+@functools.lru_cache(maxsize=None)
 def icon_bytes(colours: tuple = KOSIKA_COLOURS) -> bytes:
     """The whole .ico file: the mark at each size."""
 
+    if colours == KOSIKA_COLOURS:
+        return _kept("kosika.ico", lambda: _icon(colours))
+    return _icon(colours)
+
+
+def _icon(colours: tuple) -> bytes:
     pictures = [_picture(size, colours) for size in ICON_SIZES]
     offset = 6 + 16 * len(pictures)
     entries = b""

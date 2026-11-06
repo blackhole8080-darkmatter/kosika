@@ -74,6 +74,49 @@ class StarterTests(unittest.TestCase):
         expected = json.loads((project / "responses.json").read_text("utf-8"))
         self.assertEqual(replay(trace), expected["assistant"][0])
 
+    def test_the_starter_has_a_test_and_accepts_its_folder(self) -> None:
+        project = self.root / "hello"
+        create_starter(project)
+        code, out, err = invoke("test", str(project))
+        self.assertEqual(code, 0, err)
+        self.assertIn("1 passed, 0 failed", out)
+
+    def test_test_explains_a_folder_without_main(self) -> None:
+        empty = self.root / "empty"
+        empty.mkdir()
+        code, _, err = invoke("test", str(empty))
+        self.assertEqual(code, 2)
+        self.assertIn("folder without a main.kos file", err)
+
+    def test_the_researcher_starter_has_a_complete_offline_path(self) -> None:
+        project = self.root / "lab"
+        code, out, err = invoke("new", str(project), "--kind", "researcher")
+        self.assertEqual(code, 0, err)
+        self.assertIn("responses.json", out)
+        code, _, err = invoke("check", str(project / "main.kos"))
+        self.assertEqual(code, 0, err)
+        code, out, err = invoke("test", str(project))
+        self.assertEqual(code, 0, err)
+        self.assertIn("4 passed, 0 failed", out)
+        trace = project / "run.jsonl"
+        code, _, err = invoke(
+            "run",
+            str(project / "main.kos"),
+            "--input",
+            str(project / "input.json"),
+            "--model-fixture",
+            str(project / "responses.json"),
+            "--trace",
+            str(trace),
+        )
+        self.assertEqual(code, 0, err)
+        report = replay(trace)
+        self.assertEqual(report["documents"], 2)
+        self.assertEqual(report["checked"], 2)
+        self.assertEqual(report["unsupported"], 1)
+        self.assertTrue(report["findings"][0]["verified"])
+        self.assertFalse(report["findings"][1]["verified"])
+
     def test_the_readme_names_the_project(self) -> None:
         create_starter(self.root / "my-agent")
         readme = (self.root / "my-agent" / "README.md").read_text("utf-8")

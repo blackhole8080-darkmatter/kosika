@@ -62,6 +62,9 @@ CODES: Mapping[str, str] = {
     # -- Syntactic -------------------------------------------------------
     "parse/expected-token": "A required token was not present.",
     "parse/step-as-value": "A workflow step such as classify was written where a value belongs.",
+    "parse/step-call": "A step's body must be one call, not an arbitrary value.",
+    "parse/step-return": "A step block must end with `return <name>`.",
+    "parse/workflow-item": "A workflow body may hold only steps, `parallel`, `require approval` and `budget`.",
     "parse/expected-identifier": "A declaration or binding required an identifier.",
     "parse/unnamed-argument": "A call argument needs a name.",
     "check/unnamed-argument": "A call's single argument cannot be named for it.",
@@ -105,12 +108,13 @@ CODES: Mapping[str, str] = {
     "check/enum": "An enum is declared or used with a value it does not have.",
     "check/choice": "A choice, its alternatives, or a match on it is declared or used in a way it does not allow.",
     "check/shape": "A shape is declared or used in a way it does not allow.",
+    "check/store": "A store is declared in a way that cannot be honoured.",
     "check/default": "A default value is not written out or does not fit its type.",
     "check/plain-model": "A model that answers as text does not return a record of one Text field.",
     "check/choice-evidence": "A model that answers with a choice has no record to quote evidence from.",
     "check/learn": "A step that learns is not a model step, or is known by a value that is not Text.",
     "check/step-match": "A step that chooses between calls is not well formed.",
-    "check/invalid-system-tool": "A shell or files tool is declared incorrectly.",
+    "check/invalid-system-tool": "A system tool is declared incorrectly.",
     "check/thinking-evidence": "A thinking step cannot be asked for evidence.",
     "check/thinking-model-required": "A thinking step has no single model to ask.",
     "check/thinking-record-clash": "A declared record clashes with a built-in one.",
@@ -264,7 +268,7 @@ _EXPECT_GOT_RE = re.compile(
 )
 _PARSE_EXPECTED_RE = re.compile(
     r"^Expected (?P<expected>.+?) at \d+:\d+"
-    r"(?:, got (?P<actual>.*))?$"
+    r"(?:, got (?P<actual>[^;]*?))?(?:; .*)?$"
 )
 _OPERATOR_RE = re.compile(
     r"operator '(?P<operator>[^']+)' expects [^,]+, "
@@ -294,6 +298,18 @@ _RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
         re.compile(r"^Expected (identifier|string or identifier) at"),
     ),
     ("parse/step-as-value", re.compile(r"is a workflow step, not a value")),
+    # The step grammar rules come before the generic token rule so a failure
+    # that names the rule gets its own code, while still reporting
+    # ``expected``/``actual`` from the same message.
+    (
+        "parse/step-return",
+        re.compile(r"^Expected 'return' at \d+:\d+.*; a step block"),
+    ),
+    (
+        "parse/step-call",
+        re.compile(r"^Expected 'execute' at \d+:\d+.*; a step's body"),
+    ),
+    ("parse/workflow-item", re.compile(r"^Unexpected workflow item")),
     ("parse/expected-token", re.compile(r"^Expected \S+ at \d+:\d+")),
     ("parse/empty-block", re.compile(r"^Empty block")),
     ("parse/limit-exceeded", re.compile(r"(nesting|depth) exceeds \d+")),
@@ -368,6 +384,14 @@ _RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("check/budget", re.compile(r"^Workflow '[^']+' budget ")),
     ("check/memory", re.compile(r"^Memory ")),
     ("check/board", re.compile(r"^Board ")),
+    (
+        "check/store",
+        re.compile(
+            r"^Store "
+            r"|^Stores .* both name "
+            r"|^Table [\w.]+ (declares|has) "
+        ),
+    ),
     ("check/enum", re.compile(r"^Enum '")),
     (
         "check/choice",
@@ -543,7 +567,11 @@ _RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ),
     (
         "parse/invalid-declaration",
-        re.compile(r"^Unexpected (declaration|workflow item)"),
+        re.compile(
+            r"^Unexpected (declaration|workflow item)"
+            r"|^A store needs a quoted file"
+            r"|^Column '[^']+' has a default value at \d+:\d+"
+        ),
     ),
     # Generic fallbacks: typed mismatches that share one shape.
     ("check/type-mismatch", re.compile(r"expects .*, got ")),
@@ -605,6 +633,7 @@ def _owner_of(message: str) -> tuple[str | None, str | None]:
         ("function", "Function"),
         ("agent", "Agent"),
         ("record", "Record"),
+        ("store", "Store"),
         ("workflow", "Workflow"),
         ("model", "Model"),
         ("tool", "Tool"),

@@ -22,12 +22,28 @@
 //   glossary  label is the word, value its meaning in plain words
 //   card      center is the name, label and value one fact each
 //   quote     value is one sentence from the paper
+//   scatter   label names the point, value its two numbers as "x y";
+//             center names the two axes; code computes and marks r
+//   box       label is the group, value its numbers "12 14 9 11" as the
+//             paper gives them; code draws the median, quartiles and
+//             whiskers (computed), so groups can be compared
+//   forest    label is the study or condition, value three numbers as
+//             "estimate low high"; for differences where no effect is 0;
+//             every row shares one axis code scales
+//   compare   items with no group name the columns (two to four); items
+//             whose group is a column's name are its rows; center says
+//             what is being compared — paradigms side by side
+//   cycle     label is a stage, value what happens in it, three to eight
+//             stages in order round the loop; center names the loop, for
+//             a process that feeds back on itself
 //
 // Every figure names the section of the paper it came from.
 
-export [Look, Item, Figure, Drawing, Sheet, drawable, grounded, page]
+import "std/stats.kos"
 
-enum Look { flow, numbers, bars, curve, tree, mindmap, timeline, glossary, card, quote }
+export [Look, Item, Figure, Drawing, Sheet, drawable, grounded, page, outline_text, number_text]
+
+enum Look { flow, numbers, bars, curve, tree, mindmap, timeline, glossary, card, quote, scatter, box, forest, compare, cycle }
 
 record Item { label: Text value: Text note: Text group: Text }
 record Figure { look: Look title: Text section: Text center: Text items: Item[] }
@@ -116,6 +132,12 @@ fn leading_number(text: Text) -> Number? {
 
 // ---------------------------------------------------------------- is a figure fit to draw
 
+// The estimate of a forest row sits between the ends of its range.
+fn within_ci(value: Text) -> Bool {
+  let triple = heights(value)
+  return triple.length() == 3 and triple[1] <= triple[0] and triple[0] <= triple[2]
+}
+
 fn drawable(figure: Figure) -> Bool {
   let count = figure.items.length()
   return match figure.look {
@@ -129,6 +151,11 @@ fn drawable(figure: Figure) -> Bool {
     case "glossary" { count >= 1 }
     case "card" { count >= 1 and not figure.center.trim().is_empty() }
     case "quote" { count >= 1 }
+    case "scatter" { count >= 3 and count <= 30 and (for item in figure.items where heights(item.value).length() == 2 { item }).length() == count }
+    case "box" { count >= 2 and count <= 8 and (for item in figure.items where heights(item.value).length() >= 4 { item }).length() == count }
+    case "forest" { count >= 2 and count <= 10 and (for item in figure.items where within_ci(item.value) { item }).length() == count }
+    case "compare" { branches(figure).length() >= 2 and branches(figure).length() <= 4 and (for branch in branches(figure) where leaves(figure, branch).length() >= 1 { branch }).length() == branches(figure).length() }
+    case "cycle" { count >= 3 and count <= 8 and (for item in figure.items where item.label.trim().length() >= 2 { item }).length() == count }
   }
 }
 
@@ -143,6 +170,12 @@ fn number_text(text: Text) -> Text {
   return digits.trim_marks(".,")
 }
 
+// Whether every number a figure's values give, as written, is one the
+// paper itself gives. A model that makes a number up loses the figure.
+fn numbers_from_paper(figure: Figure, source: Text) -> Bool {
+  return (for item in figure.items where (for h in item.value.replace(",", " ").words() where not source.contains(h) { h }).is_empty() { item }).length() == figure.items.length()
+}
+
 // A figure of numbers is kept only when each number is one the paper
 // itself gives: it must be found, as written, in the text the model read.
 // A model that makes a number up, or puts a name where the number goes,
@@ -152,7 +185,10 @@ fn grounded(figure: Figure, source: Text) -> Bool {
   return match figure.look {
     case "numbers" { (for item in figure.items where "0123456789x×~≈<>+-$".contains(item.label.trim().take(1).lower()) and not number_text(item.label).is_empty() and source.contains(number_text(item.label)) { item }).length() == figure.items.length() }
     case "bars" { (for item in figure.items where not number_text(item.value).is_empty() and source.contains(number_text(item.value)) { item }).length() == figure.items.length() }
-    case "curve" { (for item in figure.items where (for h in item.value.replace(",", " ").words() where not source.contains(h) { h }).is_empty() { item }).length() == figure.items.length() }
+    case "curve" { numbers_from_paper(figure, source) }
+    case "scatter" { numbers_from_paper(figure, source) }
+    case "box" { numbers_from_paper(figure, source) }
+    case "forest" { numbers_from_paper(figure, source) }
     case "quote" { (for item in figure.items where item.value.trim().length() >= 30 and source.contains(item.value.trim()) { item }).length() == figure.items.length() }
     case _ { true }
   }
@@ -166,6 +202,11 @@ fn wide(look: Look) -> Bool {
     case "timeline" { true }
     case "curve" { true }
     case "tree" { true }
+    case "scatter" { true }
+    case "box" { true }
+    case "forest" { true }
+    case "compare" { true }
+    case "cycle" { true }
     case _ { false }
   }
 }
@@ -318,6 +359,190 @@ fn draw_quote(figure: Figure) -> Text {
   return (for item in figure.items { f"<blockquote>&#8220;{esc(item.value)}&#8221;</blockquote>" }).join("")
 }
 
+// Where a value sits on a chart's axis, from its low end.
+fn chart_x(x: Number, lo: Number, span: Number, left: Number, wide: Number) -> Number {
+  return left + wide * (x - lo) / span
+}
+
+// Where a value sits on a chart's axis, from its high end (charts grow down).
+fn chart_y(y: Number, hi: Number, span: Number, top: Number, tall: Number) -> Number {
+  return top + tall * (hi - y) / span
+}
+
+// A scatter of pairs: x runs along the bottom, y up the side, the trend
+// dashed, and r computed from the plotted numbers and marked as computed.
+fn draw_scatter(figure: Figure) -> Text {
+  let w = 640
+  let h = 220
+  let xs = for item in figure.items { heights(item.value)[0] }
+  let ys = for item in figure.items { heights(item.value)[1] }
+  let xlo = xs.min().value()
+  let xhi = xs.max().value()
+  let ylo = ys.min().value()
+  let yhi = ys.max().value()
+  let xspan = if xhi == xlo { xhi.abs().max(1) } else { xhi - xlo }
+  let yspan = if yhi == ylo { yhi.abs().max(1) } else { yhi - ylo }
+  var parts: Text[] = [f"<svg viewBox=\"0 0 {w} {h + 34}\" width=\"100%\"><g stroke=\"#262c45\"><line x1=\"40\" y1=\"10\" x2=\"40\" y2=\"{h}\"/><line x1=\"40\" y1=\"{h}\" x2=\"{w - 10}\" y2=\"{h}\"/></g>"]
+  let r = correlation(xs, ys)
+  let sx = deviation(xs)
+  let sy = deviation(ys)
+  if r.exists() and sx.exists() and sy.exists() and sx.value() > 0 and sy.value() > 0 {
+    let slope = r.value() * sy.value() / sx.value()
+    let mx = xs.sum() / xs.length()
+    let my = ys.sum() / ys.length()
+    let from_x = chart_x(xlo, xlo, xspan, 46, w - 76)
+    let to_x = chart_x(xhi, xlo, xspan, 46, w - 76)
+    let from_y = chart_y(my + slope * (xlo - mx), yhi, yspan, 30, h - 64)
+    let to_y = chart_y(my + slope * (xhi - mx), yhi, yspan, 30, h - 64)
+    parts = parts.append(f"<line x1=\"{n(from_x)}\" y1=\"{n(from_y)}\" x2=\"{n(to_x)}\" y2=\"{n(to_y)}\" stroke=\"{hue(2)}\" stroke-width=\"2\" stroke-dasharray=\"7 5\"/>")
+    parts = parts.append(f"<text x=\"{w - 14}\" y=\"22\" fill=\"{hue(2)}\" font-size=\"11\" text-anchor=\"end\">r = {n(r.value())} (computed)</text>")
+  }
+  for item in figure.items {
+    let pair = heights(item.value)
+    parts = parts.append(f"<circle cx=\"{n(chart_x(pair[0], xlo, xspan, 46, w - 76))}\" cy=\"{n(chart_y(pair[1], yhi, yspan, 30, h - 64))}\" r=\"4.5\" fill=\"{hue(1)}\" stroke=\"#0a0c16\" stroke-width=\"1\"/>")
+  }
+  parts = parts.append(f"<text x=\"{n(w / 2)}\" y=\"{h + 26}\" fill=\"#8a90b8\" font-size=\"12\" text-anchor=\"middle\">{esc(figure.center)}</text></svg>")
+  return parts.join("")
+}
+
+// One box per group: whisker to the extremes, box to the quartiles, line
+// at the median — each computed from that group's own numbers.
+fn draw_box(figure: Figure) -> Text {
+  let w = 640
+  let h = 210
+  var every: Number[] = []
+  for item in figure.items { every = every.concat(heights(item.value)) }
+  let lo = every.min().value()
+  let hi = every.max().value()
+  let span = if hi == lo { hi.abs().max(1) } else { hi - lo }
+  let count = figure.items.length()
+  var parts: Text[] = [f"<svg viewBox=\"0 0 {w} {h + 26}\" width=\"100%\"><g stroke=\"#262c45\"><line x1=\"40\" y1=\"14\" x2=\"40\" y2=\"{h - 30}\"/></g>"]
+  for i in 0 until count {
+    let item = figure.items[i]
+    let values = heights(item.value)
+    let mid = median(values).or(0)
+    let q1 = percentile(values, 25).or(0)
+    let q3 = percentile(values, 75).or(0)
+    let top = chart_y(values.max().value(), hi, span, 26, h - 70)
+    let bottom = chart_y(values.min().value(), hi, span, 26, h - 70)
+    let boxh = (chart_y(q1, hi, span, 26, h - 70) - chart_y(q3, hi, span, 26, h - 70)).max(2)
+    let x = chart_x(i + 0.5, 0, count, 60, w - 120)
+    parts = parts.append(f"<line x1=\"{n(x)}\" y1=\"{n(top)}\" x2=\"{n(x)}\" y2=\"{n(bottom)}\" stroke=\"{hue(i)}\" stroke-width=\"1.6\"/>")
+    parts = parts.append(f"<line x1=\"{n(x - 8)}\" y1=\"{n(top)}\" x2=\"{n(x + 8)}\" y2=\"{n(top)}\" stroke=\"{hue(i)}\" stroke-width=\"1.6\"/>")
+    parts = parts.append(f"<line x1=\"{n(x - 8)}\" y1=\"{n(bottom)}\" x2=\"{n(x + 8)}\" y2=\"{n(bottom)}\" stroke=\"{hue(i)}\" stroke-width=\"1.6\"/>")
+    parts = parts.append(f"<rect x=\"{n(x - 40)}\" y=\"{n(chart_y(q3, hi, span, 26, h - 70))}\" width=\"80\" height=\"{n(boxh)}\" rx=\"6\" fill=\"#0e1222\" stroke=\"{hue(i)}\"/>")
+    parts = parts.append(f"<line x1=\"{n(x - 40)}\" y1=\"{n(chart_y(mid, hi, span, 26, h - 70))}\" x2=\"{n(x + 40)}\" y2=\"{n(chart_y(mid, hi, span, 26, h - 70))}\" stroke=\"{hue(i)}\" stroke-width=\"3\"/>")
+    parts = parts.append(f"<text x=\"{n(x)}\" y=\"{n(chart_y(mid, hi, span, 26, h - 70) - 8)}\" fill=\"{hue(i)}\" font-size=\"11\" font-weight=\"700\" text-anchor=\"middle\">{esc(n(mid))}</text>")
+    parts = parts.append(svg_text(x, h - 8, item.label, 14, 12.5, "#dfe3ff", true))
+  }
+  parts = parts.append(f"<text x=\"{w - 12}\" y=\"22\" fill=\"#6b7299\" font-size=\"10\" text-anchor=\"end\">median &amp; quartiles computed</text></svg>")
+  return parts.join("")
+}
+
+// One row per study: the square is the estimate, the bar its range, and
+// every row shares one axis with the no-effect line at 0.
+fn draw_forest(figure: Figure) -> Text {
+  let w = 640
+  let rows = figure.items.length()
+  let row_h = 34
+  let h = rows * row_h + 44
+  var lo = 0
+  var hi = 0
+  for item in figure.items {
+    let triple = heights(item.value)
+    lo = lo.min(triple[1])
+    hi = hi.max(triple[2])
+  }
+  let span = if hi == lo { hi.abs().max(1) } else { hi - lo }
+  var parts: Text[] = [f"<svg viewBox=\"0 0 {w} {h}\" width=\"100%\">"]
+  let zero = chart_x(0, lo, span, 210, w - 340)
+  parts = parts.append(f"<line x1=\"{n(zero)}\" y1=\"8\" x2=\"{n(zero)}\" y2=\"{h - 30}\" stroke=\"#4b5280\" stroke-width=\"1.4\" stroke-dasharray=\"5 4\"/>")
+  parts = parts.append(f"<text x=\"{n(zero)}\" y=\"{h - 12}\" fill=\"#8a90b8\" font-size=\"11\" text-anchor=\"middle\">0 · no effect</text>")
+  for i in 0 until rows {
+    let item = figure.items[i]
+    let triple = heights(item.value)
+    let y = 20 + i * row_h
+    parts = parts.append(svg_text(10, y + 4, item.label, 22, 12, "#eef0ff", false))
+    parts = parts.append(f"<line x1=\"{n(chart_x(triple[1], lo, span, 210, w - 340))}\" y1=\"{n(y)}\" x2=\"{n(chart_x(triple[2], lo, span, 210, w - 340))}\" y2=\"{n(y)}\" stroke=\"{hue(i)}\" stroke-width=\"2.4\" stroke-linecap=\"round\"/>")
+    parts = parts.append(f"<rect x=\"{n(chart_x(triple[0], lo, span, 210, w - 340) - 5)}\" y=\"{n(y - 5)}\" width=\"10\" height=\"10\" fill=\"{hue(i)}\"/>")
+    parts = parts.append(f"<text x=\"{w - 10}\" y=\"{n(y + 4)}\" fill=\"#dfe3ff\" font-size=\"11.5\" text-anchor=\"end\">{esc(n(triple[0]))} [{esc(n(triple[1]))}, {esc(n(triple[2]))}]</text>")
+  }
+  parts = parts.append("</svg>")
+  return parts.join("")
+}
+
+// Two to four columns side by side: each branch is a column, its leaves
+// the rows that make the contrast worth seeing.
+fn draw_compare(figure: Figure) -> Text {
+  let cols = branches(figure)
+  var parts: Text[] = [f"<div class=\"cmp cmp{cols.length()}\">"]
+  for i in 0 until cols.length() {
+    let col = cols[i]
+    var rows: Text[] = []
+    for leaf in leaves(figure, col) {
+      let tag = if leaf.note.trim().is_empty() { "" } else { f" <i>{esc(leaf.note)}</i>" }
+      rows = rows.append(f"<li>{esc(leaf.label)}{tag}</li>")
+    }
+    parts = parts.append(f"<div class=\"col\" style=\"border-color:{hue(i)}55\"><h4 style=\"color:{hue(i)}\">{esc(col.label)}</h4><ul>{rows.join(\"\")}</ul></div>")
+  }
+  parts = parts.append("</div>")
+  return parts.join("")
+}
+
+// A stage's place on the ring: 0 is the top, then clockwise.
+fn cycle_angle(i: Number, stages: Number) -> Number {
+  return i * 360 / stages - 90
+}
+
+// A loop that feeds back on itself: the stages round a ring, an arrow
+// from each to the next and back to the first, the loop named in the
+// middle.
+fn draw_cycle(figure: Figure) -> Text {
+  let w = 1000
+  let h = 470
+  let cx = w / 2
+  let cy = h / 2 + 6
+  let count = figure.items.length()
+  let rx = 330
+  let ry = 152
+  let mark = "cyc" + count.to_text() + figure.title.length().to_text()
+  var parts: Text[] = [f"<svg viewBox=\"0 0 {w} {h}\" width=\"100%\"><defs><marker id=\"{mark}\" viewBox=\"0 0 10 10\" refX=\"9\" refY=\"5\" markerWidth=\"7\" markerHeight=\"7\" orient=\"auto\"><path d=\"M0 0L10 5L0 10z\" fill=\"#4b5280\"/></marker></defs>"]
+  for i in 0 until count {
+    let a = cycle_angle(i, count)
+    let b = cycle_angle((i + 1) % count, count)
+    let mid = (a + b) / 2
+    let x1 = cx + rx * a.cos()
+    let y1 = cy + ry * a.sin()
+    let x2 = cx + rx * b.cos()
+    let y2 = cy + ry * b.sin()
+    let qx = cx + rx * 1.22 * mid.cos()
+    let qy = cy + ry * 1.24 * mid.sin()
+    parts = parts.append(f"<path d=\"M{n(x1)} {n(y1)} Q {n(qx)} {n(qy)} {n(x2)} {n(y2)}\" fill=\"none\" stroke=\"#4b5280\" stroke-width=\"1.8\" marker-end=\"url(#{mark})\"/>")
+  }
+  for i in 0 until count {
+    let item = figure.items[i]
+    let a = cycle_angle(i, count)
+    let x = cx + rx * a.cos()
+    let y = cy + ry * a.sin()
+    parts = parts.append(f"<rect x=\"{n(x - 78)}\" y=\"{n(y - 17)}\" width=\"156\" height=\"34\" rx=\"17\" fill=\"{hue(i)}\"/>")
+    parts = parts.append(f"<text x=\"{n(x)}\" y=\"{n(y + 5)}\" fill=\"#0b0d17\" font-size=\"12.5\" font-weight=\"700\" text-anchor=\"middle\">{esc(item.label.trim().take(20))}</text>")
+    if not item.value.trim().is_empty() {
+      parts = parts.append(svg_text(x, y + 36, item.value, 18, 10.5, "#9aa1c4", true))
+    }
+  }
+  parts = parts.append(f"<circle cx=\"{cx}\" cy=\"{cy}\" r=\"66\" fill=\"#232a7a\" stroke=\"#7c8cff\" stroke-width=\"2\"/>")
+  parts = parts.append(svg_text(cx, cy + 4, figure.center, 13, 14, "#ffffff", true))
+  parts = parts.append("</svg>")
+  return parts.join("")
+}
+
+// A cycle as a plain outline: what a phone shows instead of the ring.
+fn cycle_outline(figure: Figure) -> Text {
+  var rows: Text[] = []
+  for item in figure.items { rows = rows.append(f"<li>{esc(item.label)}</li>") }
+  return f"<div class=\"outline\"><b class=\"root\">{esc(figure.center)}</b><ul>{rows.join(\"\")}</ul></div>"
+}
+
 // A mind map or tree as a plain outline: what a phone shows instead of
 // the drawing, whose words would be too small there.
 fn outline(figure: Figure) -> Text {
@@ -345,7 +570,161 @@ fn drawn(figure: Figure) -> Text {
     case "glossary" { draw_glossary(figure) }
     case "card" { draw_card(figure) }
     case "quote" { draw_quote(figure) }
+    case "scatter" { draw_scatter(figure) }
+    case "box" { draw_box(figure) }
+    case "forest" { draw_forest(figure) }
+    case "compare" { draw_compare(figure) }
+    case "cycle" { f"<div class=\"pic\">{draw_cycle(figure)}</div>{cycle_outline(figure)}" }
   }
+}
+
+// ------------------------------------------------------- the note's outline
+
+// The outline as plain words too, for the text of a phone note: the same
+// structure the page draws, readable without opening anything.
+
+// A figure of label-and-value items, one line each: "x3.1 — brighter".
+fn pair_lines(figure: Figure, mark: Text) -> Text[] {
+  var lines: Text[] = []
+  for item in figure.items {
+    let note = if item.note.trim().is_empty() { "" } else { " " + item.note.trim() }
+    if lines.length() < 8 { lines = lines.append(item.label + mark + item.value + note) }
+  }
+  return lines
+}
+
+fn flow_lines(figure: Figure) -> Text[] {
+  var lines: Text[] = []
+  for i in 0 until figure.items.length() {
+    if lines.length() < 8 {
+      let item = figure.items[i]
+      lines = lines.append(f"{i + 1}. {item.label} — {item.value}")
+    }
+  }
+  return lines
+}
+
+// A tree or mind map: the center, then each branch with its leaves.
+fn branch_lines(figure: Figure) -> Text[] {
+  var lines: Text[] = []
+  if not figure.center.trim().is_empty() { lines = lines.append(figure.center.trim()) }
+  for branch in branches(figure) {
+    if lines.length() < 9 {
+      let tag = if branch.note.trim().is_empty() { "" } else { " · " + branch.note.trim() }
+      lines = lines.append(branch.label + tag)
+      for leaf in leaves(figure, branch) {
+        if lines.length() < 9 { lines = lines.append("  · " + leaf.label) }
+      }
+    }
+  }
+  return lines
+}
+
+fn card_lines(figure: Figure) -> Text[] {
+  var lines: Text[] = []
+  if not figure.center.trim().is_empty() { lines = lines.append(figure.center.trim()) }
+  for item in figure.items {
+    if lines.length() < 8 { lines = lines.append(item.label + ": " + item.value) }
+  }
+  return lines
+}
+
+fn quote_lines(figure: Figure) -> Text[] {
+  var lines: Text[] = []
+  for item in figure.items {
+    if lines.length() < 4 { lines = lines.append("“" + item.value.take(140) + "”") }
+  }
+  return lines
+}
+
+// A scatter in words: each point, then the correlation, computed.
+fn scatter_lines(figure: Figure) -> Text[] {
+  var lines: Text[] = []
+  for item in figure.items {
+    if lines.length() < 8 {
+      let pair = heights(item.value)
+      let named = if item.label.trim().is_empty() { "" } else { item.label.trim() + ": " }
+      lines = lines.append(named + n(pair[0]) + ", " + n(pair[1]))
+    }
+  }
+  let xs = for item in figure.items { heights(item.value)[0] }
+  let ys = for item in figure.items { heights(item.value)[1] }
+  let r = correlation(xs, ys)
+  if r.exists() { lines = lines.append("r = " + n(r.value()) + " (computed)") }
+  return lines
+}
+
+// Each group's median, computed from its own numbers.
+fn box_lines(figure: Figure) -> Text[] {
+  var lines: Text[] = []
+  for item in figure.items {
+    if lines.length() < 8 {
+      let values = heights(item.value)
+      let mid = median(values)
+      if mid.exists() { lines = lines.append(item.label + ": median " + n(mid.value()) + " (computed), " + values.length().to_text() + " values") }
+    }
+  }
+  return lines
+}
+
+// One row per study: the estimate and its range.
+fn forest_lines(figure: Figure) -> Text[] {
+  var lines: Text[] = []
+  for item in figure.items {
+    if lines.length() < 8 {
+      let triple = heights(item.value)
+      lines = lines.append(item.label + ": " + n(triple[0]) + " [" + n(triple[1]) + ", " + n(triple[2]) + "]")
+    }
+  }
+  return lines
+}
+
+// A loop in words: each stage with what happens in it, then the repeat.
+fn cycle_lines(figure: Figure) -> Text[] {
+  var lines: Text[] = pair_lines(figure, " — ")
+  if not lines.is_empty() { lines = lines.append("(and back to the start: the loop repeats)") }
+  return lines
+}
+
+// One drawable figure as its title, then its lines.
+fn figure_lines(figure: Figure) -> Text[] {
+  let body: Text[] = match figure.look {
+    case "flow" { flow_lines(figure) }
+    case "numbers" { pair_lines(figure, " — ") }
+    case "bars" { pair_lines(figure, ": ") }
+    case "curve" { pair_lines(figure, ": ") }
+    case "tree" { branch_lines(figure) }
+    case "mindmap" { branch_lines(figure) }
+    case "timeline" { pair_lines(figure, ": ") }
+    case "glossary" { pair_lines(figure, " — ") }
+    case "card" { card_lines(figure) }
+    case "quote" { quote_lines(figure) }
+    case "scatter" { scatter_lines(figure) }
+    case "box" { box_lines(figure) }
+    case "forest" { forest_lines(figure) }
+    case "compare" { branch_lines(figure) }
+    case "cycle" { cycle_lines(figure) }
+  }
+  return [figure.title.take(60)].concat(body)
+}
+
+// A drawing as plain words, held to about `most` characters so it fits a
+// note: each drawable figure's outline, one blank line between figures.
+fn outline_text(drawing: Drawing, most: Number) -> Text {
+  var lines: Text[] = []
+  var size = 0
+  for figure in drawing.figures where drawable(figure) {
+    for line in figure_lines(figure) {
+      if size + line.length() + 1 <= most - 16 {
+        lines = lines.append(line)
+        size += line.length() + 1
+      }
+    }
+    if size + 1 <= most - 16 { lines = lines.append("") }
+  }
+  if lines.is_empty() { return "" }
+  if size >= most - 60 { lines = lines.append("[outline cut]") }
+  return lines.join("\n").trim()
 }
 
 fn box(figure: Figure) -> Text {
@@ -357,21 +736,22 @@ fn box(figure: Figure) -> Text {
 // ---------------------------------------------------------------- the page
 
 fn style() -> Text {
-  return ":root{--ink:#eef0ff;--dim:#9aa1c4;--faint:#6b7299;--line:#252b44}*{box-sizing:border-box;margin:0}body{max-width:1200px;margin:auto;padding:34px 40px;background:#0a0c16;color:var(--ink);font:14.5px/1.5 'Segoe UI',system-ui,sans-serif}.paper{border-radius:22px;padding:26px 28px;margin-bottom:28px;border:1px solid var(--line);background:#0e1120}.meta{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}.chip{font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:3px 10px;border-radius:999px;border:1px solid var(--line);color:var(--dim)}h1{font-size:28px;font-weight:800;margin-bottom:18px}h2{font-size:25px;line-height:1.2;font-weight:800;margin-bottom:4px}h2 a{color:inherit;text-decoration:none}.by{color:var(--dim);font-size:13px;margin-bottom:16px}.q{font-size:16px;color:#dfe3ff;margin-bottom:16px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.box{background:#0a0d1a;border:1px solid var(--line);border-radius:16px;padding:16px 18px;position:relative}.wide{grid-column:1/-1}.box h3{font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);font-weight:600;margin-bottom:10px;padding-right:230px}.kind{position:absolute;top:15px;right:16px;font-size:10.5px;color:var(--faint);font-family:Consolas,monospace}.flow{display:flex;align-items:stretch}.step{flex:1;padding:12px 14px;border-radius:12px;background:#0e1222;border:1px solid;font-size:13.5px}.step b{display:block;font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px}.arrow{width:28px;display:grid;place-items:center;color:#4b5280;font-size:20px}.stats{display:flex;flex-direction:column;gap:12px}.stat{display:flex;gap:14px;align-items:center}.big{font-size:30px;font-weight:800;line-height:1.1}.stat p,.when p{color:var(--dim);font-size:13px}.bar{display:grid;grid-template-columns:150px 1fr 110px;gap:10px;align-items:center;margin:7px 0;font-size:13px}.track{height:12px;border-radius:6px;background:#1a1f35;overflow:hidden}.track div{height:100%;border-radius:6px}.bar b{font-size:12.5px;text-align:right}.line{display:flex;gap:14px;border-top:2px solid #262c45;padding-top:14px}.when{flex:1;position:relative}.when i{position:absolute;top:-21px;left:0;width:12px;height:12px;border-radius:50%}.when b{font-size:13px}.gl{display:flex;flex-direction:column;gap:8px;font-size:13.5px;color:#d6daf5}.gl b{color:#fff}.name{font-size:20px;font-weight:800;margin-bottom:8px}blockquote{font-size:17px;line-height:1.45;color:#ffd08a;border-left:3px solid #ffb547;padding-left:14px;margin:4px 0}.foot{color:var(--faint);font-size:12px}.outline{display:none}.outline .root{display:block;font-size:17px;margin-bottom:10px}.branch{border-left:3px solid;padding:2px 0 2px 12px;margin:8px 0}.branch span{font-weight:700;font-size:14px}.branch i{font-style:normal;font-size:11px;color:var(--dim);margin-left:6px;text-transform:uppercase}.branch ul{margin:4px 0 0 18px;padding:0;color:#d6daf5;font-size:13.5px}@media (max-width:700px){.pic{display:none}.outline{display:block}body{padding:18px 14px;overflow-x:hidden}svg{max-width:100%}.grid>*{min-width:0}.paper{padding:18px 16px;border-radius:18px}.grid{grid-template-columns:minmax(0,1fr)}.flow{flex-direction:column}.arrow{height:22px;width:auto;transform:rotate(90deg)}.box h3{padding-right:0}.kind{position:static;display:block;margin:-4px 0 10px}h1{font-size:22px}h2{font-size:20px}.bar{grid-template-columns:96px 1fr 76px}.line{flex-direction:column;border-top:none;border-left:2px solid #262c45;padding:0 0 0 16px}.when i{top:4px;left:-23px}}"
+  return ":root{--ink:#eef0ff;--dim:#9aa1c4;--faint:#6b7299;--line:#252b44}*{box-sizing:border-box;margin:0}body{max-width:1200px;margin:auto;padding:34px 40px;background:#0a0c16;color:var(--ink);font:14.5px/1.5 'Segoe UI',system-ui,sans-serif}.paper{border-radius:22px;padding:26px 28px;margin-bottom:28px;border:1px solid var(--line);background:#0e1120}.meta{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}.chip{font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:3px 10px;border-radius:999px;border:1px solid var(--line);color:var(--dim)}h1{font-size:28px;font-weight:800;margin-bottom:18px}h2{font-size:25px;line-height:1.2;font-weight:800;margin-bottom:4px}h2 a{color:inherit;text-decoration:none}.by{color:var(--dim);font-size:13px;margin-bottom:16px}.q{font-size:16px;color:#dfe3ff;margin-bottom:16px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.box{background:#0a0d1a;border:1px solid var(--line);border-radius:16px;padding:16px 18px;position:relative}.wide{grid-column:1/-1}.box h3{font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);font-weight:600;margin-bottom:10px;padding-right:230px}.kind{position:absolute;top:15px;right:16px;font-size:10.5px;color:var(--faint);font-family:Consolas,monospace}.flow{display:flex;align-items:stretch}.step{flex:1;padding:12px 14px;border-radius:12px;background:#0e1222;border:1px solid;font-size:13.5px}.step b{display:block;font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px}.arrow{width:28px;display:grid;place-items:center;color:#4b5280;font-size:20px}.stats{display:flex;flex-direction:column;gap:12px}.stat{display:flex;gap:14px;align-items:center}.big{font-size:30px;font-weight:800;line-height:1.1}.stat p,.when p{color:var(--dim);font-size:13px}.bar{display:grid;grid-template-columns:150px 1fr 110px;gap:10px;align-items:center;margin:7px 0;font-size:13px}.track{height:12px;border-radius:6px;background:#1a1f35;overflow:hidden}.track div{height:100%;border-radius:6px}.bar b{font-size:12.5px;text-align:right}.line{display:flex;gap:14px;border-top:2px solid #262c45;padding-top:14px}.when{flex:1;position:relative}.when i{position:absolute;top:-21px;left:0;width:12px;height:12px;border-radius:50%}.when b{font-size:13px}.gl{display:flex;flex-direction:column;gap:8px;font-size:13.5px;color:#d6daf5}.gl b{color:#fff}.name{font-size:20px;font-weight:800;margin-bottom:8px}blockquote{font-size:17px;line-height:1.45;color:#ffd08a;border-left:3px solid #ffb547;padding-left:14px;margin:4px 0}.foot{color:var(--faint);font-size:12px}.cmp{display:grid;gap:12px}.cmp2{grid-template-columns:1fr 1fr}.cmp3{grid-template-columns:1fr 1fr 1fr}.cmp4{grid-template-columns:repeat(4,1fr)}.col{background:#0e1222;border:1px solid;border-radius:12px;padding:12px 14px}.col h4{font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;margin:0 0 8px}.col ul{margin:0;padding:0 0 0 16px;color:#d6daf5;font-size:13px;line-height:1.55}.col li{margin:3px 0}.col li i{font-style:normal;font-size:11px;color:var(--dim)}.outline{display:none}.outline .root{display:block;font-size:17px;margin-bottom:10px}.branch{border-left:3px solid;padding:2px 0 2px 12px;margin:8px 0}.branch span{font-weight:700;font-size:14px}.branch i{font-style:normal;font-size:11px;color:var(--dim);margin-left:6px;text-transform:uppercase}.branch ul{margin:4px 0 0 18px;padding:0;color:#d6daf5;font-size:13.5px}@media (max-width:700px){.pic{display:none}.outline{display:block}body{padding:18px 14px;overflow-x:hidden}svg{max-width:100%}.grid>*{min-width:0}.paper{padding:18px 16px;border-radius:18px}.grid{grid-template-columns:minmax(0,1fr)}.cmp2,.cmp3,.cmp4{grid-template-columns:minmax(0,1fr)}.flow{flex-direction:column}.arrow{height:22px;width:auto;transform:rotate(90deg)}.box h3{padding-right:0}.kind{position:static;display:block;margin:-4px 0 10px}h1{font-size:22px}h2{font-size:20px}.bar{grid-template-columns:96px 1fr 76px}.line{flex-direction:column;border-top:none;border-left:2px solid #262c45;padding:0 0 0 16px}.when i{top:4px;left:-23px}}"
 }
 
 fn sheet_html(sheet: Sheet, i: Number) -> Text {
   let shown = for figure in sheet.drawing.figures where drawable(figure) { box(figure) }
   let count = if shown.length() == 1 { "1 figure" } else { f"{shown.length()} figures" }
   let when = if sheet.published.is_empty() { "" } else { " · " + esc(sheet.published) }
-  return f"<article class=\"paper\" style=\"background:radial-gradient(700px 360px at 90% 0%,{hue(i)}22 0,transparent 60%),#0e1120\"><div class=\"meta\"><span class=\"chip\" style=\"color:{hue(i)};border-color:{hue(i)}66\">{esc(sheet.field)}</span><span class=\"chip\">arXiv preprint{when}</span><span class=\"chip\">{count}</span></div><h2><a href=\"{esc(sheet.link)}\">{esc(sheet.title)}</a></h2><div class=\"by\">{esc(sheet.authors)}</div><p class=\"q\">{esc(sheet.drawing.question)}</p><div class=\"grid\">{shown.join(\"\")}</div></article>"
+  let server = if sheet.field.contains("bioRxiv") { "bioRxiv preprint" } else { "arXiv preprint" }
+  return f"<article class=\"paper\" style=\"background:radial-gradient(700px 360px at 90% 0%,{hue(i)}22 0,transparent 60%),#0e1120\"><div class=\"meta\"><span class=\"chip\" style=\"color:{hue(i)};border-color:{hue(i)}66\">{esc(sheet.field)}</span><span class=\"chip\">{server}{when}</span><span class=\"chip\">{count}</span></div><h2><a href=\"{esc(sheet.link)}\">{esc(sheet.title)}</a></h2><div class=\"by\">{esc(sheet.authors)}</div><p class=\"q\">{esc(sheet.drawing.question)}</p><div class=\"grid\">{shown.join(\"\")}</div></article>"
 }
 
 // A whole page: one block of figures for each paper.
 fn page(title: Text, sheets: Sheet[]) -> Text {
   var parts: Text[] = []
   for i in 0 until sheets.length() { parts = parts.append(sheet_html(sheets[i], i)) }
-  return f"<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{esc(title)}</title><style>{style()}</style></head><body><h1>{esc(title)}</h1>{parts.join(\"\")}<p class=\"foot\">Each paper is a preprint on arXiv. A model chose and filled these figures from the paper; code drew them. Check a figure against its section before relying on it.</p></body></html>"
+  return f"<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{esc(title)}</title><style>{style()}</style></head><body><h1>{esc(title)}</h1>{parts.join(\"\")}<p class=\"foot\">Each paper is a preprint, on arXiv or bioRxiv. A model chose and filled these figures from the paper; code drew them. Check a figure against its section before relying on it.</p></body></html>"
 }
 
 // ---------------------------------------------------------------- tests
@@ -437,4 +817,202 @@ test "the page draws each kind" {
   expect not html.contains("Broken")
   expect html.contains("<div class=\"outline\"><b class=\"root\">KSD certificate</b>")
   expect html.contains("<li>Quartic family</li>")
+}
+
+test "a drawing becomes plain words for a phone note" {
+  text = outline_text(sample().drawing, 1200)
+  expect text.contains("How much brighter")
+  expect text.contains("x3.1 — peak brightness with Saturn-sized rings")
+  expect text.contains("KSD certificate")
+  expect text.contains("Gaussian")
+  expect text.contains("  · Quartic family")
+  expect not text.contains("Broken")
+  short = outline_text(sample().drawing, 90)
+  expect short.length() <= 106
+  expect short.contains("[outline cut]")
+}
+
+// Count items all holding the same value, for the tests.
+fn row_items(count: Number, value: Text) -> Item[] {
+  var items: Item[] = []
+  for i in 0 until count { items = items.append({label: "", value: value, note: "", group: ""}) }
+  return items
+}
+
+test "scatter, box and forest are fit only when filled exactly" {
+  scatter: Figure = {look: Look.scatter, title: "", section: "", center: "dose vs response", items: [
+    {label: "", value: "1 2", note: "", group: ""},
+    {label: "", value: "2 4", note: "", group: ""},
+    {label: "", value: "3 9", note: "", group: ""}
+  ]}
+  expect drawable(scatter)
+  missing: Figure = {look: Look.scatter, title: "", section: "", center: "", items: [
+    {label: "", value: "1 2", note: "", group: ""},
+    {label: "", value: "2 4", note: "", group: ""},
+    {label: "", value: "3", note: "", group: ""}
+  ]}
+  expect not drawable(missing)
+  thick: Figure = {look: Look.scatter, title: "", section: "", center: "", items: row_items(31, "1 2")}
+  expect not drawable(thick)
+  boxes: Figure = {look: Look.box, title: "", section: "", center: "", items: [
+    {label: "control", value: "12 14 9 11", note: "", group: ""},
+    {label: "treated", value: "18 21 15 19", note: "", group: ""}
+  ]}
+  expect drawable(boxes)
+  lone: Figure = {look: Look.box, title: "", section: "", center: "", items: [{label: "one", value: "12 14 9 11", note: "", group: ""}]}
+  expect not drawable(lone)
+  thin: Figure = {look: Look.box, title: "", section: "", center: "", items: [
+    {label: "one", value: "12 14 9", note: "", group: ""},
+    {label: "two", value: "1 2 3 4", note: "", group: ""}
+  ]}
+  expect not drawable(thin)
+  forest: Figure = {look: Look.forest, title: "", section: "", center: "", items: [
+    {label: "study A", value: "2.4 1.1 3.8", note: "", group: ""},
+    {label: "study B", value: "-0.5 -1.2 0.3", note: "", group: ""}
+  ]}
+  expect drawable(forest)
+  outside: Figure = {look: Look.forest, title: "", section: "", center: "", items: [
+    {label: "A", value: "2.4 3.8 1.1", note: "", group: ""},
+    {label: "B", value: "1 0 2", note: "", group: ""}
+  ]}
+  expect not drawable(outside)
+}
+
+test "a number the paper does not give loses the computed figure too" {
+  source = "Doses 1, 2 and 3 gave scores 2, 4 and 9. Controls ran 12 14 9 11 and treated 18 21 15 19."
+  scatter: Figure = {look: Look.scatter, title: "", section: "", center: "", items: [{label: "", value: "1 2", note: "", group: ""}, {label: "", value: "2 4", note: "", group: ""}, {label: "", value: "3 9", note: "", group: ""}]}
+  made_up: Figure = {look: Look.scatter, title: "", section: "", center: "", items: [{label: "", value: "1 2", note: "", group: ""}, {label: "", value: "7 8", note: "", group: ""}, {label: "", value: "3 9", note: "", group: ""}]}
+  boxes: Figure = {look: Look.box, title: "", section: "", center: "", items: [{label: "control", value: "12 14 9 11", note: "", group: ""}, {label: "treated", value: "18 21 15 19", note: "", group: ""}]}
+  forest: Figure = {look: Look.forest, title: "", section: "", center: "", items: [{label: "A", value: "2 1 3", note: "", group: ""}, {label: "B", value: "4 2 9", note: "", group: ""}]}
+  expect grounded(scatter, source)
+  expect not grounded(made_up, source)
+  expect grounded(boxes, source)
+  expect grounded(forest, source)
+  expect not grounded(forest, "The paper says nothing with numbers here.")
+}
+
+test "a scatter draws its points, trend and computed r" {
+  up: Figure = {look: Look.scatter, title: "Dose and score", section: "Fig 2", center: "dose vs score", items: [{label: "", value: "1 2", note: "", group: ""}, {label: "", value: "2 4", note: "", group: ""}, {label: "", value: "3 6", note: "", group: ""}]}
+  html = drawn(up)
+  expect html.contains("r = 1 (computed)")
+  expect html.contains("<circle")
+  expect html.contains("stroke-dasharray=\"7 5\"")
+  expect html.contains("dose vs score")
+}
+
+test "a box draws the median computed from each group's own numbers" {
+  boxes: Figure = {look: Look.box, title: "How the groups spread", section: "Table 1", center: "", items: [{label: "control", value: "12 14 9 11", note: "", group: ""}, {label: "treated", value: "18 21 15 19", note: "", group: ""}]}
+  html = drawn(boxes)
+  expect html.contains("11.5")
+  expect html.contains("18.5")
+  expect html.contains("median &amp; quartiles computed")
+  expect html.contains("control")
+}
+
+test "a forest draws one shared axis with the no-effect line" {
+  forest: Figure = {look: Look.forest, title: "The studies side by side", section: "Fig 4", center: "", items: [{label: "study A", value: "2.4 1.1 3.8", note: "", group: ""}, {label: "study B", value: "-0.5 -1.2 0.3", note: "", group: ""}]}
+  html = drawn(forest)
+  expect html.contains("0 · no effect")
+  expect html.contains("2.4 [1.1, 3.8]")
+  expect html.contains("-0.5 [-1.2, 0.3]")
+  expect html.contains("study A")
+}
+
+test "the outline carries the computed statistics" {
+  drawing: Drawing = {question: "q", figures: [
+    {look: Look.scatter, title: "Dose and score", section: "", center: "", items: [{label: "low", value: "1 2", note: "", group: ""}, {label: "mid", value: "2 4", note: "", group: ""}, {label: "high", value: "3 6", note: "", group: ""}]},
+    {look: Look.box, title: "How the groups spread", section: "", center: "", items: [{label: "control", value: "12 14 9 11", note: "", group: ""}, {label: "treated", value: "18 21 15 19", note: "", group: ""}]},
+    {look: Look.forest, title: "The studies side by side", section: "", center: "", items: [{label: "A", value: "2.4 1.1 3.8", note: "", group: ""}, {label: "B", value: "-0.5 -1.2 0.3", note: "", group: ""}]}
+  ]}
+  text = outline_text(drawing, 1200)
+  expect text.contains("low: 1, 2")
+  expect text.contains("r = 1 (computed)")
+  expect text.contains("control: median 11.5 (computed), 4 values")
+  expect text.contains("A: 2.4 [1.1, 3.8]")
+}
+
+test "compare and cycle are fit only when filled exactly" {
+  paradigms: Figure = {look: Look.compare, title: "", section: "", center: "two ways to learn", items: [
+    {label: "supervised", value: "", note: "", group: ""},
+    {label: "needs labels", value: "", note: "costly", group: "supervised"},
+    {label: "self-supervised", value: "", note: "", group: ""},
+    {label: "labels itself", value: "", note: "", group: "self-supervised"}
+  ]}
+  expect drawable(paradigms)
+  expect grounded(paradigms, "")
+  one_column: Figure = {look: Look.compare, title: "", section: "", center: "", items: [
+    {label: "only", value: "", note: "", group: ""},
+    {label: "row", value: "", note: "", group: "only"}
+  ]}
+  expect not drawable(one_column)
+  empty_column: Figure = {look: Look.compare, title: "", section: "", center: "", items: [
+    {label: "a", value: "", note: "", group: ""},
+    {label: "b", value: "", note: "", group: ""},
+    {label: "row", value: "", note: "", group: "a"}
+  ]}
+  expect not drawable(empty_column)
+  loop: Figure = {look: Look.cycle, title: "", section: "", center: "the training loop", items: [
+    {label: "predict", value: "guess the mask", note: "", group: ""},
+    {label: "score", value: "measure the error", note: "", group: ""},
+    {label: "update", value: "nudge the weights", note: "", group: ""}
+  ]}
+  expect drawable(loop)
+  pair: Figure = {look: Look.cycle, title: "", section: "", center: "", items: [
+    {label: "a", value: "", note: "", group: ""},
+    {label: "b", value: "", note: "", group: ""}
+  ]}
+  expect not drawable(pair)
+  nameless: Figure = {look: Look.cycle, title: "", section: "", center: "", items: row_items(3, "x")}
+  expect not drawable(nameless)
+}
+
+test "compare draws its columns side by side" {
+  paradigms: Figure = {look: Look.compare, title: "Two ways to learn", section: "§2", center: "", items: [
+    {label: "supervised", value: "", note: "", group: ""},
+    {label: "needs labels", value: "", note: "costly", group: "supervised"},
+    {label: "self-supervised", value: "", note: "", group: ""},
+    {label: "labels itself", value: "", note: "", group: "self-supervised"}
+  ]}
+  html = drawn(paradigms)
+  expect html.contains("cmp2")
+  expect html.contains("<h4")
+  expect html.contains("needs labels")
+  expect html.contains("<i>costly</i>")
+  expect html.contains("labels itself")
+}
+
+test "cycle draws a ring with an arrow back to the start" {
+  loop: Figure = {look: Look.cycle, title: "The training loop", section: "§3", center: "training", items: [
+    {label: "predict", value: "guess the mask", note: "", group: ""},
+    {label: "score", value: "measure the error", note: "", group: ""},
+    {label: "update", value: "nudge the weights", note: "", group: ""}
+  ]}
+  html = drawn(loop)
+  expect html.contains("<marker")
+  expect html.contains("marker-end")
+  expect html.contains("predict")
+  expect html.contains("guess the mask")
+  expect html.count("<rect") >= 3
+  expect html.contains("<div class=\"outline\"><b class=\"root\">training</b>")
+}
+
+test "the outline speaks of columns and loops" {
+  drawing: Drawing = {question: "q", figures: [
+    {look: Look.compare, title: "Two ways to learn", section: "", center: "learning", items: [
+      {label: "supervised", value: "", note: "", group: ""},
+      {label: "needs labels", value: "", note: "", group: "supervised"},
+      {label: "self-supervised", value: "", note: "", group: ""},
+      {label: "labels itself", value: "", note: "", group: "self-supervised"}
+    ]},
+    {look: Look.cycle, title: "The training loop", section: "", center: "training", items: [
+      {label: "predict", value: "guess the mask", note: "", group: ""},
+      {label: "score", value: "measure the error", note: "", group: ""},
+      {label: "update", value: "nudge the weights", note: "", group: ""}
+    ]}
+  ]}
+  text = outline_text(drawing, 1200)
+  expect text.contains("supervised")
+  expect text.contains("  · needs labels")
+  expect text.contains("predict — guess the mask")
+  expect text.contains("(and back to the start: the loop repeats)")
 }

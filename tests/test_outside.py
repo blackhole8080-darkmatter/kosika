@@ -201,8 +201,12 @@ class CoderTests(unittest.TestCase):
             app = App(
                 top / "agents",
                 bind_models=lambda program: {
+                    # Every model the coder declares: a declaration alone
+                    # grants nothing, and the run is refused at the plan
+                    # before any step it does not reach is even asked.
                     "engineer": ScriptedModelProvider([]),
                     "reader": self.reader,
+                    "scribe": ScriptedModelProvider([]),
                 },
                 allow_folder=folder,
                 allow_shell=True,
@@ -287,7 +291,10 @@ class CoderTests(unittest.TestCase):
             )
         )
         self.assertIn("Wrote: calc.py, test_calc.py", done["text"])
-        self.assertIn("The tests for calc pass. Only those were run", done["text"])
+        # The coder names the test file it narrowed to, and offers the rest.
+        self.assertIn(
+            "The tests for test_calc.py pass. Only those were run", done["text"]
+        )
 
     def test_a_no_leaves_the_folder_as_it_was(self) -> None:
         app = self.make(self.work)

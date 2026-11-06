@@ -155,7 +155,9 @@ class OptionalTests(unittest.TestCase):
             value_of("none.value()", "Text", setup)
 
     def test_to_number_reads_decimals_or_gives_nothing(self) -> None:
-        cases = {'"12"': 12, '" -3.5 "': -3.5, '"1e3"': None, '"abc"': None, '""': None}
+        # An exponent is read too, so a number Kosika writes as text
+        # (6.6743e-11) reads back; a bare "1e" is not a number.
+        cases = {'"12"': 12, '" -3.5 "': -3.5, '"1e3"': 1000.0, '"2.5E-3"': 0.0025, '"1e"': None, '"abc"': None, '""': None}
         for text, expected in cases.items():
             with self.subTest(text=text):
                 self.assertEqual(value_of(f"{text}.to_number()", "Number?"), expected)

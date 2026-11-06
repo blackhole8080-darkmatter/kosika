@@ -20,10 +20,17 @@ from .approval_ledger import ApprovalLedger
 from .ast import Program, ToolDecl
 from .checker import check
 from .command_model import CommandModelProvider
+from .component_declaration import (
+    ComponentDeclarationError,
+    declaration_for_contract,
+)
 from .components import (
+    MAX_MESSAGE_BYTES,
     ComponentContractError,
     bind_component,
+    component_contract_to_dict,
     load_component_contract,
+    parse_component_contract,
     verify_component_artifact,
 )
 from .controls import ControlledProvider, ExecutionError, ModelLimits
@@ -111,7 +118,7 @@ from .source_map import (
 from .source_map import to_mermaid as render_source_map_mermaid
 from .source_map import to_text as render_source_map_text
 from .synapse_bridge import normalize_events
-from .system_tools import bind_system_tools
+from .system_tools import bind_system_tools, system_kind
 from .tracing import start as start_tracing
 
 
@@ -1101,6 +1108,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="JSON request file, or '-' to read the request from standard input.",
     )
 
+    subparsers.add_parser(
+        "engines",
+        help="Which engines can run Kosika programs, and whether each is here.",
+    )
     check_parser = subparsers.add_parser("check")
     check_parser.add_argument("source", type=Path)
     check_parser.add_argument(
@@ -1446,6 +1457,20 @@ def build_parser() -> argparse.ArgumentParser:
 
     run_parser = subparsers.add_parser("run")
     run_parser.add_argument("source", type=Path)
+    run_parser.add_argument(
+        "--require-qualified",
+        action="store_true",
+        help=(
+            "Ask nothing of a model that has no recorded evaluation showing no "
+            "wrong answer. Refuses the run instead, naming what is missing."
+        ),
+    )
+    run_parser.add_argument(
+        "--qualifications",
+        type=Path,
+        default=Path(".kosika/virtual-models.json"),
+        help="Where recorded evaluations are kept.",
+    )
     run_parser.add_argument("--workflow", default="main")
     run_parser.add_argument(
         "--env",
@@ -1623,6 +1648,16 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     run_parser.add_argument(
+        "--database",
+        type=Path,
+        metavar="FILE",
+        help=(
+            "The one database file a db tool may reach. A query only reads it; "
+            "a run changes it, and needs your yes for each call. Without it, a "
+            "db tool reaches nothing."
+        ),
+    )
+    run_parser.add_argument(
         "--model-timeout",
         type=float,
         default=60.0,
@@ -1663,9 +1698,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--kind",
         default="hello",
         help=(
-            "What to start from: hello (default), support (an agent with "
-            "memory), expense (a model reads, code decides), or notes (a model "
-            "extracts, code organises)."
+            "What to start from: hello (default), researcher (a model extracts "
+            "claims, code checks every quote), support (an agent with memory), "
+            "expense (a model reads, code decides), or notes (a model extracts, "
+            "code organises)."
         ),
     )
 
@@ -1813,6 +1849,41 @@ def build_parser() -> argparse.ArgumentParser:
         default="cli-user",
         help="Approval actor recorded with --approval-plan-hash.",
     )
+
+    db_parser = subparsers.add_parser(
+        "db",
+        help=(
+            "Read a database file, and write the tables a program declares in "
+            "its stores."
+        ),
+    )
+    db_commands = db_parser.add_subparsers(dest="db_command", required=True)
+    db_init = db_commands.add_parser(
+        "init", help="Write the tables a program declares into a database file."
+    )
+    db_init.add_argument("file", type=Path)
+    db_init.add_argument(
+        "--from",
+        dest="from_program",
+        type=Path,
+        required=True,
+        help=(
+            "The program whose `store` declares the tables. A table that is "
+            "already there is only read: nothing it holds is ever changed."
+        ),
+    )
+    db_init.add_argument("--json", action="store_true")
+    db_inspect = db_commands.add_parser(
+        "inspect", help="Say what is in a database file."
+    )
+    db_inspect.add_argument("file", type=Path)
+    db_inspect.add_argument(
+        "--from",
+        dest="from_program",
+        type=Path,
+        help="A program whose `store` is compared with the file.",
+    )
+    db_inspect.add_argument("--json", action="store_true")
 
     replay_parser = subparsers.add_parser("replay")
     replay_parser.add_argument("trace", type=Path)
@@ -2000,7 +2071,11 @@ def build_parser() -> argparse.ArgumentParser:
     test_parser = subparsers.add_parser(
         "test", help="Run the tests written in a Kosika program."
     )
-    test_parser.add_argument("source", type=Path)
+    test_parser.add_argument(
+        "source",
+        type=Path,
+        help="A .kos file, or a folder containing main.kos.",
+    )
     test_parser.add_argument("--only", help="Run only the test with this name.")
     test_parser.add_argument("--json", action="store_true")
     measure_parser = subparsers.add_parser(
@@ -2257,9 +2332,59 @@ def build_parser() -> argparse.ArgumentParser:
     )
     virtual_model_add.add_argument("profile", type=Path)
     virtual_model_add.add_argument("candidate", type=Path)
+    virtual_model_eval = virtual_model_commands.add_parser(
+        "eval",
+        help=(
+            "Score a recorded benchmark run as evidence for a virtual-model "
+            "combination, and refuse it when it showed a wrong answer."
+        ),
+    )
+    virtual_model_eval.add_argument("results", type=Path)
+    virtual_model_eval.add_argument(
+        "--profile",
+        type=Path,
+        help=(
+            "Bind the evidence to this profile, so editing the profile "
+            "invalidates the pass instead of inheriting it."
+        ),
+    )
+    virtual_model_eval.add_argument(
+        "--state",
+        type=Path,
+        default=Path(".kosika/virtual-models.json"),
+        help="Where recorded evaluations are kept.",
+    )
+    virtual_model_eval.add_argument(
+        "--record",
+        action="store_true",
+        help="Keep this evaluation, and say what changed since the last one.",
+    )
+    virtual_model_eval.add_argument(
+        "--min-right",
+        type=float,
+        help="Refuse the combination below this share of right answers (0..1).",
+    )
+    virtual_model_eval.add_argument(
+        "--allow-wrong",
+        action="store_true",
+        help=(
+            "Qualify even when a wrong answer was shown. Off by default, "
+            "because a wrong answer is what this exists to prevent."
+        ),
+    )
+    virtual_model_eval.add_argument(
+        "--gate",
+        action="store_true",
+        help="Exit 1 when the combination does not qualify.",
+    )
+    virtual_model_eval.add_argument(
+        "--json",
+        action="store_true",
+        help="Print the evaluation as JSON instead of a human-readable summary.",
+    )
     component_parser = subparsers.add_parser(
         "component",
-        help="Validate a pinned cross-language component contract.",
+        help="Validate, describe, or declare a pinned cross-language component contract.",
     )
     component_subparsers = component_parser.add_subparsers(
         dest="component_command", required=True
@@ -2273,6 +2398,45 @@ def build_parser() -> argparse.ArgumentParser:
         "--json",
         action="store_true",
         help="Print the validated component identity as JSON.",
+    )
+    component_describe_parser = component_subparsers.add_parser(
+        "describe",
+        help="Generate a contract from a Python component's --describe output.",
+        description=(
+            "Run the script's own --describe in a bounded subprocess, then "
+            "validate the contract and re-hash the pinned artifact. The "
+            "script is executed, but no tool call is served."
+        ),
+    )
+    component_describe_parser.add_argument("source", type=Path)
+    component_describe_parser.add_argument(
+        "--tool",
+        help="Tool name when the artifact defines more than one.",
+    )
+    component_describe_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Write the contract here instead of standard output.",
+    )
+    component_describe_parser.add_argument(
+        "--python",
+        type=Path,
+        help="Interpreter used to run the artifact (default: this Python).",
+    )
+    component_declaration_parser = component_subparsers.add_parser(
+        "declaration",
+        help="Write Kosika declarations for a pinned component contract.",
+        description=(
+            "Read a validated contract and emit the Kosika enums, records and "
+            "tool declaration its schemas describe. Shapes only: the host still "
+            "grants the manifest, its effects and capabilities."
+        ),
+    )
+    component_declaration_parser.add_argument("manifest", type=Path)
+    component_declaration_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Write the declarations here instead of standard output.",
     )
 
     extension_parser = subparsers.add_parser(
@@ -2293,10 +2457,396 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print the structured validation summary as JSON.",
     )
 
+    selfdev_parser = subparsers.add_parser(
+        "selfdev",
+        help="Improve this tree's own source: propose, check, keep or undo, and remember.",
+    )
+    selfdev_commands = selfdev_parser.add_subparsers(
+        dest="selfdev_command", required=True
+    )
+    selfdev_survey = selfdev_commands.add_parser(
+        "survey", help="List the work the tree itself names. No model is asked."
+    )
+    selfdev_survey.add_argument("--root", type=Path, default=Path("."))
+    selfdev_survey.add_argument(
+        "--folder",
+        action="append",
+        help="A folder to read for markers. Repeatable; defaults to kosika and tests.",
+    )
+    selfdev_survey.add_argument("--limit", type=int, default=50)
+    selfdev_survey.add_argument("--state", type=Path, help="Where the ledger is kept.")
+    selfdev_survey.add_argument(
+        "--format", choices=("text", "json"), default="text", help="Output format."
+    )
+    selfdev_status = selfdev_commands.add_parser(
+        "status", help="What earlier runs tried, kept, undid and gave up on."
+    )
+    selfdev_status.add_argument("--root", type=Path, default=Path("."))
+    selfdev_status.add_argument("--state", type=Path, help="Where the ledger is kept.")
+    selfdev_status.add_argument(
+        "--format", choices=("text", "json"), default="text", help="Output format."
+    )
+    selfdev_run = selfdev_commands.add_parser(
+        "run",
+        help=(
+            "Try the work in the backlog: each change is checked, and only one "
+            "that passes is kept."
+        ),
+    )
+    selfdev_run.add_argument("--root", type=Path, default=Path("."))
+    selfdev_run.add_argument(
+        "--allow",
+        action="append",
+        help="A path this run may edit, as a prefix. Repeatable; defaults to kosika and tests.",
+    )
+    selfdev_run.add_argument(
+        "--folder",
+        action="append",
+        help="A folder to read for markers. Repeatable; defaults to kosika and tests.",
+    )
+    selfdev_run.add_argument("--state", type=Path, help="Where the ledger is kept.")
+    selfdev_run.add_argument(
+        "--model",
+        help=(
+            "A model on this computer, asked for one patch at a time. No quota "
+            "and no bill: a local Ollama server unless --base-url says otherwise."
+        ),
+    )
+    selfdev_run.add_argument(
+        "--base-url", help="OpenAI-compatible base URL. Default http://127.0.0.1:11434"
+    )
+    selfdev_run.add_argument(
+        "--protocol",
+        choices=("openai", "ollama"),
+        help="Model wire format. Defaults to ollama with no --base-url, else openai.",
+    )
+    selfdev_run.add_argument(
+        "--command",
+        dest="command_line",
+        help=(
+            "An agent already installed, started in this folder with one request: "
+            'for example --command "claude -p". Its edits are checked the same way.'
+        ),
+    )
+    selfdev_run.add_argument(
+        "--gate",
+        action="append",
+        help=(
+            "A command a change must also pass, run in the project. Repeatable, "
+            'for example --gate "python -m pytest -q tests/test_cli_coverage.py".'
+        ),
+    )
+    selfdev_run.add_argument("--gate-timeout", type=float, default=300.0)
+    selfdev_run.add_argument(
+        "--timeout", type=float, default=1800.0, help="How long one --command may run."
+    )
+    selfdev_run.add_argument("--model-timeout", type=float, default=180.0)
+    selfdev_run.add_argument(
+        "--max-output-tokens",
+        type=int,
+        default=2048,
+        help=(
+            "How long one answer may be. A patch is short; a smaller number is "
+            "what makes a model on a CPU finish at all."
+        ),
+    )
+    selfdev_run.add_argument(
+        "--excerpt-chars",
+        type=int,
+        default=12000,
+        help=(
+            "How much of the file the proposer is shown. Smaller asks less of "
+            "a slow model; the window is centred on the reported line."
+        ),
+    )
+    selfdev_run.add_argument(
+        "--cycles", type=int, default=1, help="How many tasks to attempt."
+    )
+    selfdev_run.add_argument(
+        "--until-hours",
+        type=float,
+        help="Keep going until this many hours have passed, then stop.",
+    )
+    selfdev_run.add_argument("--max-attempts", type=int, default=2)
+    selfdev_run.add_argument(
+        "--max-task-failures",
+        type=int,
+        default=3,
+        help="Leave a task alone after this many attempts were given up on.",
+    )
+    selfdev_run.add_argument("--max-consecutive-failures", type=int, default=3)
+    selfdev_run.add_argument(
+        "--sleep", type=float, default=0.0, help="Seconds to wait between attempts."
+    )
+    selfdev_run.add_argument(
+        "--commit",
+        action="store_true",
+        help="Commit each change that passes, naming the task it came from.",
+    )
+    selfdev_run.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Ask nothing and change nothing: print what the next task would be asked.",
+    )
+    selfdev_run.add_argument(
+        "--format", choices=("text", "json"), default="text", help="Output format."
+    )
+
     # Every subparser is registered by this point, so the usage list can be
     # derived from them rather than maintained by hand.
     subparsers.metavar = command_metavar(subparsers)
     return parser
+
+
+def _selfdev_command(args: argparse.Namespace) -> int:
+    """Survey this tree for its own unfinished work, and improve it safely.
+
+    Nothing here trusts a model: `survey` names the work from the tree, a
+    change is only kept when the changed files compile, import and pass the
+    linter and any `--gate` command, and a change that does not is undone from
+    the bytes taken before it was applied.
+    """
+
+    import shlex
+
+    from .selfdev import (
+        DEFAULT_ALLOW,
+        DEFAULT_FOLDERS,
+        DelegateProposer,
+        Ledger,
+        ModelProposer,
+        SelfDevEngine,
+        SilentProposer,
+        default_state_folder,
+        rank,
+        survey,
+    )
+
+    root = Path(getattr(args, "root", Path("."))).resolve()
+    if not root.is_dir():
+        print(f"Selfdev refused: there is no folder at {str(root)!r}", file=sys.stderr)
+        return 2
+    state = (
+        Path(args.state).resolve()
+        if getattr(args, "state", None)
+        else default_state_folder(root)
+    )
+    ledger = Ledger(state / "ledger.jsonl")
+    folders = tuple(getattr(args, "folder", None) or DEFAULT_FOLDERS)
+
+    if args.selfdev_command == "survey":
+        tasks = rank(survey(root, folders=folders, max_findings=args.limit), ledger)
+        if args.format == "json":
+            print(
+                json.dumps(
+                    {
+                        "root": str(root),
+                        "folders": list(folders),
+                        "tasks": [task.to_dict() for task in tasks],
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
+        print(
+            f"{len(tasks)} task(s) named by {root}"
+            + (f" under {', '.join(folders)}" if tasks else "")
+        )
+        for task in tasks:
+            print("  " + task.describe())
+        if not tasks:
+            print("  Nothing unfinished was named. That is the good outcome.")
+        return 0
+
+    if args.selfdev_command == "status":
+        records = ledger.records()
+        stats = ledger.stats()
+        payload = {
+            "root": str(root),
+            "state": str(state),
+            "ledger": str(ledger.path),
+            "attempts": len(records),
+            "by_kind": stats,
+            "last": records[-1] if records else None,
+        }
+        if args.format == "json":
+            print(json.dumps(payload, indent=2, sort_keys=True))
+            return 0
+        print(f"root        : {root}")
+        print(f"ledger      : {ledger.path}")
+        print(f"attempts    : {len(records)}")
+        for kind, bucket in sorted(stats.items()):
+            print(
+                f"  {kind:<14} kept {int(bucket['kept'])}/{int(bucket['attempts'])}  "
+                f"kept-rate {bucket['rate']:.2f}"
+            )
+        last = records[-1] if records else None
+        if last is not None:
+            print(f"last        : {last.get('status')} {last.get('title', '')}")
+        return 0
+
+    allow = tuple(getattr(args, "allow", None) or DEFAULT_ALLOW)
+    if args.command_line and args.model:
+        print(
+            "Selfdev refused: choose one of --model and --command, not both.",
+            file=sys.stderr,
+        )
+        return 2
+    if args.command_line:
+        proposer = DelegateProposer(
+            shlex.split(args.command_line), root=root, timeout=args.timeout
+        )
+    elif args.model:
+        protocol = args.protocol or (
+            "ollama" if args.base_url is None else "openai"
+        )
+        provider = OpenAICompatibleProvider(
+            args.base_url or "http://127.0.0.1:11434",
+            args.model,
+            protocol=protocol,
+            timeout=args.model_timeout,
+            think=False,
+        )
+        proposer = ModelProposer(
+            provider, max_output_tokens=args.max_output_tokens
+        )
+    elif args.dry_run:
+        proposer = SilentProposer()
+    else:
+        print(
+            "Selfdev needs a way to propose a change: --model for a model on this "
+            "computer, or --command for an agent already installed.\n"
+            "  kosika selfdev run --model qwen2.5-coder:7b\n"
+            '  kosika selfdev run --command "claude -p"\n'
+            "  kosika selfdev run --dry-run     (shows the next request, asks nothing)",
+            file=sys.stderr,
+        )
+        return 2
+
+    engine = SelfDevEngine(
+        root,
+        proposer,
+        allow=allow,
+        gate_commands=tuple(args.gate or ()),
+        state_folder=state,
+        max_attempts=args.max_attempts,
+        max_task_failures=args.max_task_failures,
+        commit=args.commit,
+        dry_run=args.dry_run,
+        sleep_seconds=args.sleep,
+        gate_timeout=args.gate_timeout,
+        excerpt_chars=args.excerpt_chars,
+        log=print if args.format == "text" else None,
+    )
+    summary = engine.run(
+        cycles=None if args.until_hours else args.cycles,
+        until_hours=args.until_hours,
+        max_consecutive_failures=args.max_consecutive_failures,
+        folders=folders,
+    )
+    if args.format == "json":
+        print(json.dumps(summary, indent=2, sort_keys=True))
+        return 0
+    print(
+        f"\nkept {summary['kept']}  reverted {summary['reverted']}  "
+        f"refused {summary['refused']}  in {summary['cycles']} attempt(s)\n"
+        f"stopped: {summary['stopped']}\n"
+        f"ledger : {ledger.path}"
+    )
+    return 0
+
+
+def _run_component_describe(args: argparse.Namespace) -> int:
+    source = args.source
+    if not source.is_file():
+        print(f"Component describe failed: not a file: {source}", file=sys.stderr)
+        return 2
+    python = str(args.python) if args.python is not None else sys.executable
+    command = [python, str(source.absolute()), "--describe"]
+    if args.tool:
+        command.extend(["--tool", args.tool])
+    environment = dict(os.environ)
+    package_root = str(Path(__file__).resolve().parent.parent)
+    existing = environment.get("PYTHONPATH")
+    environment["PYTHONPATH"] = (
+        package_root + os.pathsep + existing if existing else package_root
+    )
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=source.parent,
+            env=environment,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        print(f"Component describe failed: {exc}", file=sys.stderr)
+        return 2
+    if completed.returncode != 0:
+        detail = (
+            completed.stderr.strip()
+            or completed.stdout.strip()
+            or f"exit status {completed.returncode}"
+        )
+        print(f"Component describe failed: {detail}", file=sys.stderr)
+        return 2
+    if len(completed.stdout.encode("utf-8")) > MAX_MESSAGE_BYTES:
+        print(
+            "Component describe failed: contract exceeds 1 MiB",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        contract = parse_component_contract(strict_json(completed.stdout))
+        if contract.implementation.artifact != source.name:
+            raise ComponentContractError(
+                "The generated contract pins "
+                f"{contract.implementation.artifact!r}, not {source.name!r}"
+            )
+        artifact = verify_component_artifact(contract, source.parent)
+    except (ComponentContractError, ValueError) as exc:
+        print(f"Component describe failed: {exc}", file=sys.stderr)
+        return 2
+    text = json.dumps(component_contract_to_dict(contract), indent=2) + "\n"
+    if args.output is not None:
+        try:
+            args.output.write_text(text, encoding="utf-8")
+        except OSError as exc:
+            print(f"Component describe failed: {exc}", file=sys.stderr)
+            return 2
+        print(f"Wrote component contract: {args.output}")
+        print(f"Component: {contract.component_id} {contract.version}")
+        print(f"Tool: {contract.tool_name} ({contract.operation})")
+        print(f"Artifact: {artifact.name} {contract.implementation.sha256}")
+    else:
+        sys.stdout.write(text)
+    return 0
+
+
+def _run_component_declaration(args: argparse.Namespace) -> int:
+    try:
+        contract = load_component_contract(args.manifest)
+        artifact = verify_component_artifact(contract, args.manifest.parent)
+        text = declaration_for_contract(contract)
+    except (ComponentContractError, ComponentDeclarationError, OSError) as exc:
+        print(f"Component declaration failed: {exc}", file=sys.stderr)
+        return 2
+    if args.output is not None:
+        try:
+            args.output.write_text(text, encoding="utf-8")
+        except OSError as exc:
+            print(f"Component declaration failed: {exc}", file=sys.stderr)
+            return 2
+        print(f"Wrote Kosika declarations: {args.output}")
+        print(f"Tool: {contract.tool_name} ({contract.operation})")
+        print(f"Artifact: {artifact.name} {contract.implementation.sha256}")
+    else:
+        sys.stdout.write(text)
+    return 0
 
 
 def _outside_settings() -> tuple[tuple[str, ...], Path | None]:
@@ -2307,19 +2857,181 @@ def _outside_settings() -> tuple[tuple[str, ...], Path | None]:
     return load_settings()
 
 
+def _db_command(args: argparse.Namespace) -> int:
+    """`kosika db inspect` says what is in a file; `kosika db init` writes the
+    tables a program's stores declare. Neither alters a column silently: a
+    table that is there is only read, and a column that disagrees is a refusal
+    naming it."""
+
+    from .database import (
+        DatabaseError,
+        apply_init,
+        describe,
+        named_file,
+        plan_init,
+        store_for,
+        store_problems,
+    )
+
+    try:
+        where = named_file(args.file)
+        program = load_program(args.from_program) if args.from_program else None
+        store = (
+            store_for(program, where, Path(args.from_program).resolve().parent)
+            if program is not None
+            else None
+        )
+    except (ValueError, OSError) as exc:
+        print(f"Database refused: {exc}", file=sys.stderr)
+        return 2
+    if args.db_command == "init":
+        if store is None:
+            print(
+                "Database refused: --from needs a program that declares a "
+                "store, since a store says which tables to write",
+                file=sys.stderr,
+            )
+            return 2
+        plan = plan_init(where, store)
+        written: list[str] = []
+        if not plan.problems:
+            try:
+                written = apply_init(plan)
+            except DatabaseError as exc:
+                print(f"Database refused: {exc}", file=sys.stderr)
+                return 2
+        if args.json:
+            print(
+                json.dumps(
+                    {
+                        "database": str(where),
+                        "store": store.name,
+                        "creates": [
+                            {"table": name, "statement": statement}
+                            for name, statement in plan.creates
+                        ],
+                        "keeps": plan.keeps,
+                        "problems": plan.problems,
+                        "written": written,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 2 if plan.problems else 0
+        print(f"Plan for {where}:")
+        for name, statement in plan.creates:
+            print(f"  write table {name}: {statement}")
+        for name in plan.keeps:
+            print(f"  keep table {name}: it is there and agrees")
+        for problem in plan.problems:
+            print(f"  cannot: {problem}")
+        if plan.problems:
+            print(
+                "Nothing was written: a column that is there is never changed "
+                "by this command, so change the column, or the store",
+                file=sys.stderr,
+            )
+            return 2
+        if not written:
+            print("Nothing to write: every table the store declares is there.")
+            return 0
+        print(
+            f"Wrote {len(written)} table"
+            f"{'s' if len(written) != 1 else ''}: {', '.join(written)}"
+        )
+        return 0
+    if not where.is_file():
+        print(
+            f"Database refused: there is no database at {str(where)!r}",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        payload = describe(where)
+        problems = store_problems(where, store) if store is not None else []
+    except DatabaseError as exc:
+        print(f"Database refused: {exc}", file=sys.stderr)
+        return 2
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    **payload,
+                    "store": (
+                        {"name": store.name, "problems": problems}
+                        if store is not None
+                        else None
+                    ),
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 2 if problems else 0
+    print(str(where))
+    for table in payload["tables"]:
+        print(f"  table {table['name']} ({table['rows']} rows)")
+        for column in table["columns"]:
+            print(
+                f"    {column['name']:20} {column['declared']:12} "
+                f"{column['affinity']}"
+            )
+    if store is None:
+        return 0
+    if problems:
+        print(f"store {store.name}: the database does not agree")
+        for problem in problems:
+            print(f"  {problem}")
+        return 2
+    print(f"store {store.name}: the database agrees")
+    return 0
+
+
+def configure_console() -> None:
+    """Set how the streams the CLI prints through handle a character.
+
+    A console keeps its own encoding, since its code page is what the person
+    at it is reading. A stream that is not a console -- a page, a file, a
+    pipe -- is written as UTF-8, so a Greek alpha or a subscript survives
+    instead of becoming a question mark, and a character nothing can encode
+    is still shown as a stand-in rather than crashing the program.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            if stream.isatty():
+                stream.reconfigure(errors="replace")  # type: ignore[union-attr]
+            else:
+                stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
 def main() -> int:
     # Tracing, when RESPAN_API_KEY is set, begins before any model is asked
     # anything; without the key this does nothing at all (kosika/tracing.py).
     start_tracing()
-    # A console that cannot show a character (Windows' cp1252 and a test
-    # named with a typographic dash) shows a stand-in rather than crashing.
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            stream.reconfigure(errors="replace")  # type: ignore[union-attr]
-        except (AttributeError, ValueError):
-            pass
+    configure_console()
     parser = build_parser()
-    args = parser.parse_args()
+    from .engines import EngineError, delegate, describe, get, take_engine
+
+    try:
+        chosen, argv = take_engine(sys.argv[1:])
+    except EngineError as exc:
+        print(f"Not run: {exc}", file=sys.stderr)
+        return 2
+    if chosen is not None and chosen != "python":
+        # `--engine go`: the command as written, run by the engine built for
+        # it, with the flag taken out so every other argument is its own.
+        try:
+            return delegate(get(chosen), argv)
+        except EngineError as exc:
+            print(f"Not run: {exc}", file=sys.stderr)
+            return 2
+    args = parser.parse_args(argv)
+    if args.command == "engines":
+        print("\n".join(describe()))
+        return 0
     if args.command == "start":
         from .quickstart import default_folder, installed_models, start_plan
 
@@ -2810,6 +3522,48 @@ def main() -> int:
             print(f"Skill selection failed safely: {exc}", file=sys.stderr)
             return 2
     if args.command == "virtual-model":
+        if args.virtual_model_command == "eval":
+            from .virtual_eval import compare, qualify, record_eval, render_text
+            from .virtual_eval import score as score_virtual_model
+
+            if args.min_right is not None and not 0.0 <= args.min_right <= 1.0:
+                print("--min-right must be from 0 to 1", file=sys.stderr)
+                return 2
+            try:
+                found = score_virtual_model(args.results, profile=args.profile)
+            except (OSError, TypeError, ValueError) as exc:
+                print(f"Evaluation not read: {exc}", file=sys.stderr)
+                return 2
+            ok, reasons = qualify(
+                found,
+                min_right=args.min_right,
+                require_no_wrong=not args.allow_wrong,
+            )
+            changes: list[str] = []
+            if args.record:
+                try:
+                    previous = record_eval(args.state, found)
+                except (OSError, TypeError, ValueError) as exc:
+                    print(f"Evaluation not recorded: {exc}", file=sys.stderr)
+                    return 2
+                if previous is not None:
+                    changes = compare(previous, found)
+            if args.json:
+                payload = found.as_dict()
+                payload["qualified"] = ok
+                payload["reasons"] = reasons
+                payload["changes"] = changes
+                print(json.dumps(payload, indent=2, ensure_ascii=False))
+            else:
+                print(render_text(found, reasons=[] if ok else reasons))
+                if changes:
+                    print("changed since the last evaluation of this combination:")
+                    for change in changes:
+                        print(f"  {change}")
+                if args.record:
+                    print(f"recorded in {args.state.as_posix()}")
+                print("qualifies: yes" if ok else "qualifies: no")
+            return 0 if ok or not args.gate else 1
         from .virtual_model import (
             accept_verified_example,
             read_example_candidate,
@@ -2863,6 +3617,10 @@ def main() -> int:
     if args.command == "agent":
         return _run_agent_command(args, parser)
     if args.command == "component":
+        if args.component_command == "describe":
+            return _run_component_describe(args)
+        if args.component_command == "declaration":
+            return _run_component_declaration(args)
         try:
             component_contract = load_component_contract(args.manifest)
             artifact = verify_component_artifact(
@@ -3210,6 +3968,8 @@ def main() -> int:
         print(json.dumps(told, indent=2) if args.json else story_to_text(told))
         return 0
 
+    if args.command == "selfdev":
+        return _selfdev_command(args)
     if args.command == "pack":
         from .pack import PackError, check_pack, unpack, write_pack
         from .pack import to_text as pack_to_text
@@ -3343,8 +4103,17 @@ def main() -> int:
         from .testing import run_tests
         from .testing import to_text as tests_to_text
 
+        source = args.source
+        if source.is_dir():
+            source = source / "main.kos"
+            if not source.is_file():
+                print(
+                    f"Check failed: {args.source} is a folder without a main.kos file",
+                    file=sys.stderr,
+                )
+                return 2
         try:
-            results = run_tests(load_program(args.source), only=args.only)
+            results = run_tests(load_program(source), only=args.only)
         except (ValueError, OSError) as exc:
             print(f"Check failed: {exc}", file=sys.stderr)
             return 2
@@ -3491,6 +4260,8 @@ def main() -> int:
     if args.command == "analyze":
         return 0
 
+    if args.command == "db":
+        return _db_command(args)
     json_check = args.command == "check" and getattr(args, "format", None) == "json"
     if json_check:
         response = check_project(args.source)
@@ -3504,6 +4275,14 @@ def main() -> int:
     except (ValueError, OSError) as exc:
         print(f"Check failed: {exc}{_failure_line(args.source)}", file=sys.stderr)
         return 2
+    if getattr(args, "require_qualified", False):
+        # Before the first model is asked: what has actually been qualified.
+        from .qualified import asked_models, qualify
+
+        verdict = qualify(args.qualifications, asked_models(program, args.model))
+        if not verdict.allowed:
+            print(f"Not run: {verdict.as_text()}", file=sys.stderr)
+            return 2
     if args.command == "check":
         print(f"OK: {args.source}")
         return 0
@@ -3576,6 +4355,24 @@ def main() -> int:
         if args.trace == Path("run_trace.jsonl") and environment.keep is not None:
             args.trace = environment.trace_path()
 
+    if program.stores and args.command == "run":
+        # A store is a promise about a file, so the file is asked whether it
+        # keeps it before the first step runs. Only the host knows the file,
+        # so this is a preflight rather than a check (see
+        # kosika.database.check_stores); `kosika check` still passes a program
+        # whose tables are not there yet, since no file is named there.
+        from .database import check_stores
+
+        try:
+            check_stores(
+                program,
+                getattr(args, "database", None),
+                Path(args.source).resolve().parent,
+            )
+        except ValueError as exc:
+            print(f"Workflow failed: {exc}", file=sys.stderr)
+            return 2
+
     mcp_commands: dict[str, Sequence[str]] | None = None
     run_manifest: MCPManifest | dict[str, MCPManifest] | None = None
     if environment is not None and environment.mcp:
@@ -3636,11 +4433,25 @@ def main() -> int:
             services=getattr(args, "services", None),
             linux=getattr(args, "linux", None),
             computer=getattr(args, "computer", False),
+            database=getattr(args, "database", None),
         )
         system_bindings = {
             **system_bindings,
             **bind_memory_tools(program, getattr(args, "memory", None), meaning=_meaning(args)),
         }
+        # What the run records about the database it was given: the tables the
+        # file has, so that a replay can put a recorded statement back to
+        # SQLite with no database present (see kosika.database.sent_problem).
+        # Only a program that reaches a database is asked.
+        from .database import granted_tables
+
+        granted_database = getattr(args, "database", None)
+        database_tables = (
+            granted_tables(granted_database)
+            if granted_database is not None
+            and any(system_kind(tool) == "db" for tool in program.tools)
+            else None
+        )
         if args.approve and not args.journal:
             # Approval needs a journal to remember what was approved between
             # the pause and the resume; an asked-for run keeps one for itself.
@@ -3706,6 +4517,7 @@ def main() -> int:
                     inputs=inputs,
                     model_bindings=bindings,
                     tool_bindings=host_tool_bindings or None,
+                    database_tables=database_tables,
                     session=session,
                     limits=ExecutionLimits(
                         max_function_calls=args.max_function_calls,

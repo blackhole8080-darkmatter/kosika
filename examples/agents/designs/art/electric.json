@@ -1,0 +1,61 @@
+{
+ "a": {
+  "title": "Electricity and magnetism, drawn by Kosika",
+  "summary": "A 6 volt battery drives current through a 4 ohm resistor, and a bar magnet's field runs from N to S.",
+  "palette": "dark_matter",
+  "backdrop": "grid",
+  "figures": [
+   {
+    "id": "circuit",
+    "kind": "circuit",
+    "x": 27,
+    "y": 30,
+    "w": 20,
+    "h": 4,
+    "count": 6,
+    "hue": 2,
+    "label": "",
+    "points": []
+   },
+   {
+    "id": "magnet",
+    "kind": "magnet",
+    "x": 74,
+    "y": 30,
+    "w": 24,
+    "h": 0,
+    "count": 0,
+    "hue": 3,
+    "label": "",
+    "points": []
+   }
+  ],
+  "motions": [],
+  "beats": [
+   {
+    "text": "The battery pushes charge out of its positive plate and round the loop.",
+    "shows": [
+     "circuit"
+    ]
+   },
+   {
+    "text": "Ohm's law sets the current: 6 volts across 4 ohms gives 1.5 amps.",
+    "shows": [
+     "circuit"
+    ]
+   },
+   {
+    "text": "A magnet's field leaves its north pole and curves round into its south pole.",
+    "shows": [
+     "magnet"
+    ]
+   },
+   {
+    "text": "Each line keeps to the dipole law, closer together where the field is stronger.",
+    "shows": [
+     "magnet"
+    ]
+   }
+  ]
+ }
+}

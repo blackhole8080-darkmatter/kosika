@@ -66,14 +66,44 @@ empty folder and shown no file, so the host binds it whenever the owner has
 allowed an outside agent, with no folder granted. The words of the question
 still go to the company that runs the agent.
 
+One more kind, `source system "db"`, reaches a database file:
+
+    record Note { id: Number title: Text }
+    record Notes { rows: Note[] more: Bool }
+
+    tool find_orders {
+      source system "db"
+      operation: "query"           // only looks, so it may be `observe`
+      access: observe
+      input: Statement             // {sql: Text, values: Text[]}
+      output: Grid                 // {columns: Text[], rows: Text[][], more: Bool}
+    }
+
+    tool read_notes {
+      source system "db"
+      operation: "rows"            // only looks; the answer as the row record
+      access: observe
+      input: Statement
+      output: Notes                // {rows: Note[], more: Bool}
+    }
+
+The person running the program names the one file (`--database notes.db`).
+`query` opens it read-only and gives the rows back as a grid of text, and
+`rows` gives the same statement back as the program's own records, mapping
+each column by name onto the field of that name and refusing a row that does
+not fit; `run` changes the database, so it is `execute` and every call needs a
+yes. Only `values` are bound, a statement is stopped after 5 seconds, and the
+answers replay from the trace like any other tool's. See kosika.database.
+
 For the other kinds, three independent things must all be true before
 anything happens:
 
 1. The declaration. A system tool must have `access: execute`, so the checker
-   forces every workflow that uses one to state `require approval`. The one
-   exception is a files tool whose operation is `read` or `list`: it may be
-   `access: observe`, because it cannot change anything. It still needs the
-   folder grant, and can see only inside that folder.
+   forces every workflow that uses one to state `require approval`. The
+   exceptions are the tools that cannot change anything: a files tool whose
+   operation is `read` or `list`, and a db tool whose operation is `query` or
+   `rows`. Those may be `access: observe`. They still need their grant (the
+   folder, or the database file), and reach only inside it.
 2. The host grant. Nothing here is bound unless the person running the program
    passes a folder (and, for shell tools, allows shell). A declaration alone
    reaches nothing.
@@ -104,9 +134,13 @@ from .sessions import Session, SessionError
 from .web import WebError, bind_web_tool
 
 SYSTEM_PREFIX = "system:"
+#: The source a db tool declares, as the parser records it: `system "db"`.
+#: Replay judges a recorded statement against it (see kosika.database).
+DB_SOURCE = SYSTEM_PREFIX + "db"
 SYSTEM_KINDS = (
     "shell",
     "files",
+    "db",
     "web",
     "kosika",
     "meaning",
@@ -134,6 +168,12 @@ FILE_OPERATIONS = (
 #: In a shape, an array of records that each have exactly the fields of a
 #: planned file: {path, text, before, exists}.
 PLANNED_FILES = "<planned files>"
+#: In a shape, an array of records that each map the columns of a database
+#: answer onto their fields: every field Text, Number or Bool, which are the
+#: types a cell can be read as (see kosika.database).
+TYPED_ROWS = "<typed rows>"
+#: How a shape says what a typed row must be, in a refusal.
+TYPED_ROW_FIELDS = "R[], where R is a record whose every field is Text, Number or Bool"
 READ_ONLY_OPERATIONS = ("read", "peek", "search", "find", "list")
 #: Limits on one search of a folder, so it always comes back.
 MAX_SEARCH_MATCHES = 40
@@ -183,6 +223,27 @@ SHAPES: dict[str, tuple[dict[str, str], dict[str, str]]] = {
     # `search`, nearest first. It needs an embedding model, which the
     # person running the program grants; see kosika.embeddings.
     "find": ({"path": "Text", "query": "Text"}, {"matches": "Text[]"}),
+    # One statement against the database file the person named. `query`
+    # only looks, through a read-only connection, and gives rows back as
+    # a grid of text; `run` changes the database, so it needs approval.
+    # Each cell is text, and `more` says the row limit cut the answer
+    # short. See kosika.database.
+    "db:query": (
+        {"sql": "Text", "values": "Text[]"},
+        {"columns": "Text[]", "rows": "Text[][]", "more": "Bool"},
+    ),
+    # The same statement, answered as the program's own records: each
+    # column is mapped by name onto the field of that name in R, and a
+    # row that does not fit is refused, naming the row and the column.
+    # `more` says the row limit cut the answer short.
+    "db:rows": (
+        {"sql": "Text", "values": "Text[]"},
+        {"rows": TYPED_ROWS, "more": "Bool"},
+    ),
+    "db:run": (
+        {"sql": "Text", "values": "Text[]"},
+        {"changed": "Number"},
+    ),
     "write": ({"path": "Text", "text": "Text"}, {"bytes": "Number"}),
     # Like write, but refuses when anything is already at that path, so it
     # can add to a folder and never destroy what is there.
@@ -240,7 +301,19 @@ SHAPES: dict[str, tuple[dict[str, str], dict[str, str]]] = {
         {"url": "Text", "title": "Text", "text": "Text", "next": "Number"},
     ),
     # A note sent to the one address the person named; see kosika.notify.
-    "send": ({"title": "Text", "text": "Text"}, {"sent": "Bool"}),
+    # `link` is the address tapping the note opens ("" for none), and
+    # `file_name` with `file` is one attached text page ("" for a plain
+    # note).
+    "send": (
+        {
+            "title": "Text",
+            "text": "Text",
+            "link": "Text",
+            "file_name": "Text",
+            "file": "Text",
+        },
+        {"sent": "Bool"},
+    ),
     # The owner's services (see kosika.services): their names, which are
     # paused, and how each last ran, as the runner last wrote it. Pausing
     # and resuming change only the paused list, which the runner reads.
@@ -296,6 +369,21 @@ def system_kind(tool: ToolDecl) -> str | None:
     return tool.source[len(SYSTEM_PREFIX) :]
 
 
+def row_fields_fit(fields: dict[str, str] | None) -> bool:
+    """Whether a record can be a row of a database answer: at least one
+    field, and every field one of the types a cell can be read as.
+
+    The types are kosika.database's, which maps the cells onto them; the
+    import is here so that the two cannot drift apart.
+    """
+
+    from .database import ROW_FIELD_TYPES
+
+    if not fields:
+        return False
+    return all(kind in ROW_FIELD_TYPES for kind in fields.values())
+
+
 def _fits(
     records: dict[str, dict[str, str]],
     actual: dict[str, str] | None,
@@ -303,7 +391,9 @@ def _fits(
 ) -> bool:
     """Whether a record has exactly the wanted fields. A wanted type of
     PLANNED_FILES is met by an array of any record that has exactly the
-    fields of a planned file, whatever the program calls it."""
+    fields of a planned file, and one of TYPED_ROWS by an array of any
+    record whose every field a database cell can be read as, whatever the
+    program calls them."""
 
     if actual is None:
         # A tool that takes nothing declares no input record.
@@ -312,12 +402,27 @@ def _fits(
         return False
     for name, kind in wanted.items():
         have = actual[name]
-        if kind != PLANNED_FILES:
+        if kind not in (PLANNED_FILES, TYPED_ROWS):
             if have != kind:
                 return False
-        elif not have.endswith("[]") or records.get(have[:-2]) != PLAN_FILE_FIELDS:
+        elif not have.endswith("[]"):
+            return False
+        elif kind == PLANNED_FILES:
+            if records.get(have[:-2]) != PLAN_FILE_FIELDS:
+                return False
+        elif not row_fields_fit(records.get(have[:-2])):
             return False
     return True
+
+
+def _described(kind: str, planned: str) -> str:
+    """One wanted field, said in a refusal as the program must write it."""
+
+    if kind == PLANNED_FILES:
+        return f"R[], where R is a record {{{planned}}}"
+    if kind == TYPED_ROWS:
+        return TYPED_ROW_FIELDS
+    return kind
 
 
 def declaration_problem(program: Program, tool: ToolDecl) -> str | None:
@@ -336,6 +441,7 @@ def declaration_problem(program: Program, tool: ToolDecl) -> str | None:
     # Writing a file and starting a program always need approval.
     looks_only = (
         (kind == "files" and tool.operation in READ_ONLY_OPERATIONS)
+        or (kind == "db" and tool.operation in ("query", "rows"))
         or kind == "web"
         or kind == "kosika"
         or kind == "meaning"
@@ -355,6 +461,12 @@ def declaration_problem(program: Program, tool: ToolDecl) -> str | None:
         return (
             f"Tool {tool.name!r} has unknown agents operation {tool.operation!r}; "
             "the only one is ask"
+        )
+    if kind == "db" and tool.operation not in ("query", "rows", "run"):
+        return (
+            f"Tool {tool.name!r} has unknown db operation {tool.operation!r}; "
+            "use one of: query (only looks, a grid of text), rows (only looks, "
+            "the program's own records), run (changes the database)"
         )
     if kind == "meaning" and tool.operation != "near":
         return (
@@ -421,8 +533,7 @@ def declaration_problem(program: Program, tool: ToolDecl) -> str | None:
     ):
         if not _fits(records, records.get(record_name or ""), wanted):
             shape = ", ".join(
-                f"{name}: {'R[], where R is a record {' + planned + '}' if kind_ == PLANNED_FILES else kind_}"
-                for name, kind_ in wanted.items()
+                f"{name}: {_described(kind_, planned)}" for name, kind_ in wanted.items()
             )
             return (
                 f"Tool {tool.name!r} {label} record must have exactly the "
@@ -1008,6 +1119,7 @@ def bind_system_tools(
     services: str | Path | None = None,
     linux: str | None = None,
     computer: bool = False,
+    database: str | Path | None = None,
 ) -> dict[str, Callable[[ToolDecl, dict[str, Any]], Any]]:
     """Bind the program's system tools that the host has granted.
 
@@ -1065,6 +1177,14 @@ def bind_system_tools(
                 if system_kind(tool) == "meaning"
             }
         )
+    if database is not None:
+        from .database import DatabaseError, bind_database_tool
+
+        try:
+            keeper = bind_database_tool(database, program)
+        except DatabaseError as exc:
+            raise SystemToolError(str(exc)) from exc
+        web.update({tool.name: keeper for tool in system if system_kind(tool) == "db"})
     if folder is None:
         if allow_shell:
             raise SystemToolError(

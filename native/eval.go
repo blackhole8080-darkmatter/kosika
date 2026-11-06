@@ -17,10 +17,13 @@ import (
 
 // The reference engine's limits on one run.
 const (
-	maxFunctionCalls  = 10_000
 	maxLoopIterations = 1_000_000
 	maxCallDepth      = 128
 )
+
+// The function calls one run may make: 10,000 unless the person running it
+// says otherwise with --max-function-calls, as the reference engine allows.
+var maxFunctionCalls = 10_000
 
 type Scope struct {
 	vars   map[string]Value

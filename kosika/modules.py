@@ -44,6 +44,7 @@ CATEGORIES = (
     "choices",
     "enums",
     "shapes",
+    "stores",
     "tools",
     "agents",
     "swarms",
@@ -330,6 +331,18 @@ def load_program(
                 | {"Text", "Number", "Bool"}
                 | set(supplied_names(module.memories)),
             )
+            # A name that is used as a type and never declared is a record the
+            # file still needs; saying so is the whole repair.
+            unwritten = [
+                name
+                for name in sorted(hidden)
+                if name[:1].isupper() and not name.endswith("Recalled")
+            ]
+            if unwritten:
+                hint += (
+                    f" {unwritten[0]} is not declared here: declare it first, "
+                    f"as `record {unwritten[0]} {{ ... }}` for a record."
+                )
             recalled = [name for name in sorted(hidden) if name.endswith("Recalled")]
             if recalled and module.memories:
                 # The type of what `recall` gives is named after the memory,
@@ -375,10 +388,14 @@ def load_program(
     # Thinking steps are lowered once over the merged program, so a general
     # model declared in one module serves steps written in another and the
     # built-in records are added a single time.
+    from .model_evidence import lower_model_evidence
+
     try:
         merged = lower_sugar(
             lower_thinking(
-                lower_board(lower_memory(lower_direct(lower_ambient(merged))))
+                lower_model_evidence(
+                    lower_board(lower_memory(lower_direct(lower_ambient(merged))))
+                )
             )
         )
     except (ThinkingError, MemoryError_, BoardError) as exc:
