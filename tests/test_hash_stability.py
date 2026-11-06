@@ -76,11 +76,34 @@ def test_program_hashes_have_not_moved() -> None:
 
 
 if __name__ == "__main__":
-    hashes = corpus_hashes()
-    BASELINE.write_text(
-        json.dumps(hashes, indent=1, sort_keys=True) + "\n",
-        encoding="utf-8",
-        newline="\n",
-    )
-    print(f"wrote {len(hashes)} program hashes to {BASELINE.name}")
-    raise SystemExit(0 if "--write" in sys.argv else 2)
+    if "--write" in sys.argv:
+        hashes = corpus_hashes()
+        # Floor: the corpus holds 257 .kos files under CORPUS, 165 of which
+        # load. A plausible-looking count is the only proof the loader ran;
+        # without it a wholesale load_program failure would quietly write an
+        # empty baseline. A low N means the loader is failing, not that the
+        # corpus shrank.
+        if len(hashes) < 100:
+            raise SystemExit(
+                f"only {len(hashes)} programs loaded (measured: 165 loadable "
+                "of 257 .kos files). The loader is failing wholesale, not "
+                "the corpus being small. Refusing to write the baseline."
+            )
+        BASELINE.write_text(
+            json.dumps(hashes, indent=1, sort_keys=True) + "\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        print(f"wrote {len(hashes)} program hashes to {BASELINE.name}")
+        raise SystemExit(0)
+
+    # Bare run: verify against the committed baseline, write nothing. Reuse
+    # the pytest comparison so the two paths cannot disagree.
+    recorded = json.loads(BASELINE.read_text(encoding="utf-8"))
+    try:
+        test_program_hashes_have_not_moved()
+    except AssertionError as exc:
+        print(exc)
+        raise SystemExit(1)
+    print(f"guard: {len(recorded)} program hashes match")
+    raise SystemExit(0)
