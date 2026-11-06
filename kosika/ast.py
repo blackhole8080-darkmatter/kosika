@@ -553,6 +553,37 @@ class ToolCall:
 
 
 @dataclass(frozen=True)
+class DeclRef:
+    """A bare identifier in a declaration body: a reference, not text.
+
+    The rule that makes a declaration worth more than JSON. `"coder"` is inert
+    text; `coder` is a name the checker resolves, so a reference to nothing is
+    a refusal rather than a string that fails at run time.
+    """
+
+    name: str
+
+
+@dataclass(frozen=True)
+class DeclList:
+    """A `[...]` in a declaration body."""
+
+    items: tuple[Any, ...] = ()
+
+
+@dataclass(frozen=True)
+class DeclMap:
+    """A `{k: v}` in a declaration body.
+
+    Entries and not a dict, in both engines: a Go map's iteration order is
+    randomised, and the payload the two engines hash must be identical. Order
+    is the source's, which is also what an author reads.
+    """
+
+    entries: tuple[tuple[str, Any], ...] = ()
+
+
+@dataclass(frozen=True)
 class ModelParameters:
     temperature: float | None = None
     max_output_tokens: int | None = None
@@ -585,6 +616,11 @@ class ModelDecl:
     # and the answer fills the output record's one Text field. A small model
     # writes a file far better as itself than escaped inside a JSON string.
     plain: bool = False
+    # The declaration-body fields a model config carries: `base`, `embed`,
+    # `sources`, `limits`, `cache`, `fallback`. Values are what the parser
+    # read, not yet typed; the checker types them. Ordered pairs, so the
+    # payload is the same in both engines.
+    config: tuple[tuple[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -950,6 +986,7 @@ _ABSENT_DEFAULTS: dict[str, tuple[Any, ...]] = {
     "learns": (False,),
     "plain": (False,),
     "learn_by": (None,),
+    "config": ((), []),
 }
 
 
