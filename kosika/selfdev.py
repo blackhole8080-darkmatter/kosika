@@ -483,6 +483,33 @@ class Edit:
 class Proposal:
     edits: tuple[Edit, ...] = ()
     note: str = ""
+    #: Lines this answer asked to see before it can decide. A refusal that names
+    #: what it cannot see is worth more than a guess, so it is a first-class
+    #: answer rather than a note to be read by a person.
+    need: dict[str, Any] | None = None
+
+
+def _read_need(raw: Any) -> dict[str, Any] | None:
+    """The lines an answer asked to see, or None when it asked for none."""
+
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise ProposalError("need must be an object with path and lines")
+    where = raw.get("path")
+    if not isinstance(where, str) or not where.strip():
+        raise ProposalError("need.path must be a path")
+    lines = raw.get("lines")
+    if (
+        not isinstance(lines, (list, tuple))
+        or len(lines) != 2
+        or not all(isinstance(number, int) and number > 0 for number in lines)
+    ):
+        raise ProposalError("need.lines must be two line numbers")
+    start, end = sorted(int(number) for number in lines)
+    if end - start > 400:
+        raise ProposalError("need.lines may ask for at most 400 lines")
+    return {"path": where.strip(), "lines": [start, end]}
 
 
 def _json_object(text: str) -> dict[str, Any]:
@@ -544,7 +571,9 @@ def parse_proposal(text: str) -> Proposal:
         if not isinstance(replace, str):
             raise ProposalError(f"edit {index + 1} replace must be text")
         edits.append(Edit(path=path.strip(), find=find, replace=replace))
-    return Proposal(edits=tuple(edits), note=note)
+    return Proposal(
+        edits=tuple(edits), note=note, need=_read_need(payload.get("need"))
+    )
 
 
 def allowed(path: str, allow: Sequence[str]) -> bool:
@@ -590,6 +619,29 @@ def safe_target(root: Path, relative: str, allow: Sequence[str]) -> Path:
     return target
 
 
+def _uncolumn(text: str) -> str:
+    """The text with a leading line-number column removed, or it unchanged.
+
+    The window a proposal copies from prints each line as a right-aligned
+    number, two spaces, then the line. If any line is not shaped that way the
+    text is returned untouched, so this can only ever drop that column.
+    """
+
+    kept: list[str] = []
+    for line in text.split("\n"):
+        head = line.lstrip()
+        digits = 0
+        while digits < len(head) and head[digits].isdigit():
+            digits += 1
+        if 0 < digits <= 6 and head[digits : digits + 2] == "  ":
+            kept.append(head[digits + 2 :])
+        elif not line.strip():
+            kept.append("")
+        else:
+            return text
+    return "\n".join(kept)
+
+
 def apply_edits(root: Path, edits: Sequence[Edit], *, allow: Sequence[str]) -> list[str]:
     """Write a proposal's edits, after checking every one of them.
 
@@ -624,10 +676,19 @@ def apply_edits(root: Path, edits: Sequence[Edit], *, allow: Sequence[str]) -> l
             span = edit.find.replace("\r\n", "\n")
             count = text.count(span)
             if count == 0:
-                raise ProposalError(
-                    f"the text to replace was not found in {relative}; "
-                    "copy it exactly from the file as shown"
-                )
+                # A proposal copied out of the shown window can carry the line
+                # numbers the window prints. Dropping that column is the one
+                # repair attempted here, and only when what remains matches
+                # exactly once, so "exactly one place" still holds.
+                bare = _uncolumn(span)
+                if bare != span and bare and text.count(bare) == 1:
+                    span, count = bare, 1
+                else:
+                    raise ProposalError(
+                        f"the text to replace was not found in {relative}; "
+                        "copy it exactly from the file as shown, without the "
+                        "line numbers the window prints"
+                    )
             if count > 1:
                 raise ProposalError(
                     f"the text to replace appears {count} times in {relative}; "
@@ -983,6 +1044,257 @@ def repo_map(
     return lines
 
 
+STOPWORDS = frozenset(
+    "the a an and or of to for in on with how make this true phase design "
+    "implement build create add from as is be it that which its into new use "
+    "one two three step steps so then when where what who why".split()
+)
+
+
+def _words(text: str) -> set[str]:
+    return {
+        word for word in re.findall(r"[a-z0-9]+", text.lower())
+        if len(word) > 2 and word not in STOPWORDS
+    }
+
+
+def _stem(word: str) -> str:
+    """The first five letters: enough for agent to match agents."""
+
+    return word[:5]
+
+
+def _wanted(text: str) -> set[str]:
+    return {_stem(word) for word in _words(text)}
+
+
+#: The embedding model the laptop already has; nothing is downloaded for it.
+MEANING_MODEL = "nomic-embed-text"
+
+
+def _cosine(left: Sequence[float], right: Sequence[float]) -> float:
+    dot = sum(a * b for a, b in zip(left, right))
+    norm = (sum(a * a for a in left) * sum(b * b for b in right)) ** 0.5
+    return dot / norm if norm else 0.0
+
+
+def _code_files(root, allow) -> list[tuple[str, Path, str]]:
+    found: list[tuple[str, Path, str]] = []
+    for relative, path in _walk(Path(root)):
+        if path.suffix not in _CODE_SUFFIXES or not allowed(relative, allow):
+            continue
+        text = _read_text(path)
+        if text is not None:
+            found.append((relative, path, text))
+    return found
+
+
+def _rank_by_meaning(root, task, allow) -> list[tuple[float, str, Path]]:
+    """Files ranked by nearness of meaning to the task.
+
+    Words alone cannot tell that a roadmap item about disagreement between
+    agents belongs in the orchestration module: nothing in either name says
+    so. Meaning can. The vectors are cached in the project's own state
+    folder, so only the first run pays for them.
+    """
+
+    try:
+        from .embeddings import EmbeddingError, Meaning, ollama_embedder
+    except ImportError:
+        return []
+    files = _code_files(root, allow)
+    if not files:
+        return []
+    bodies = [
+        f"{relative}\n{_purpose(text)}\n{text[:1500]}"
+        for relative, _, text in files
+    ]
+    asked = f"{task.title}\n{task.detail}"
+    try:
+        meaning = Meaning(
+            ollama_embedder(MEANING_MODEL),
+            model=MEANING_MODEL,
+            store=default_state_folder(Path(root)) / "embeddings.sqlite3",
+        )
+        vectors = meaning.vectors([asked] + bodies)
+    except EmbeddingError:
+        return []
+    if not vectors or vectors[0] is None:
+        return []
+    query = vectors[0]
+    return [
+        (_cosine(query, vector), relative, path)
+        for (relative, path, _), vector in zip(files, vectors[1:])
+        if vector is not None
+    ]
+
+
+def _rank_by_words(root, task, allow) -> list[tuple[float, str, Path]]:
+    """Files ranked by shared word stems and mentions, with no model at all."""
+
+    wanted = _wanted(task.title + " " + task.detail)
+    if not wanted:
+        return []
+    scored: list[tuple[float, str, Path]] = []
+    for relative, path, text in _code_files(root, allow):
+        lowered = text.lower()
+        mentions = sum(1 for stem in wanted if stem in lowered)
+        score = (
+            3 * len(wanted & _wanted(relative))
+            + len(wanted & _wanted(_purpose(text)))
+            + min(mentions, 3)
+        )
+        if score:
+            scored.append((score, relative, path))
+    return scored
+
+
+def _named_symbols(task: Task) -> dict[str, str]:
+    """The names decomposition said this task extends, and the file of each."""
+
+    named: dict[str, str] = {}
+    for line in task.detail.split("\n"):
+        if not line.startswith("Existing code this may extend:"):
+            continue
+        for entry in line.split(":", 1)[1].split(";"):
+            entry = entry.strip()
+            if "(" not in entry or not entry.endswith(")"):
+                continue
+            name, where = entry[:-1].split("(", 1)
+            if name.strip() and where.strip():
+                named[name.strip().lower()] = where.strip()
+    return named
+
+
+def _nearby_code(
+    root: Path,
+    task: Task,
+    allow: Sequence[str],
+    *,
+    files: int = 1,
+    per_file: int = 6000,
+) -> list[str]:
+    """The code a task named in a document most likely belongs in.
+
+    A roadmap line says what to do and where it was written down, never which
+    file implements it, so a proposer shown only the document can do nothing
+    but refuse. A decomposition can say which name the task extends; when one
+    has, that file comes first and the window is centred on the name itself,
+    because a class that begins below the fold is exactly what a refusal was
+    made of. Without one, the file is chosen by meaning and the window follows
+    the task's words.
+    """
+
+    scored = _rank_by_meaning(root, task, allow)
+    if not scored:
+        # No embedding model on this computer: count words instead, which
+        # chooses worse but is never unavailable.
+        scored = _rank_by_words(root, task, allow)
+    if not scored:
+        return []
+    scored.sort(key=lambda item: (-item[0], item[1]))
+    named = _named_symbols(task)
+    if named:
+        where_order = {where: index for index, where in enumerate(named.values())}
+        scored.sort(
+            key=lambda item: (where_order.get(item[1], len(where_order)), -item[0], item[1])
+        )
+        files = max(files, min(len(set(named.values())), 2))
+    wanted = _wanted(task.title + " " + task.detail)
+    parts = [
+        "THE CODE THIS PROBABLY BELONGS IN",
+        "Chosen from this project by meaning, not by a model. If it is plainly "
+        "the wrong file, change nothing and name the right file in the note. If "
+        "the change needs lines you cannot see, change nothing and name them.",
+    ]
+    for _, relative, path in scored[:files]:
+        lines = (_read_text(path) or "").split("\n")
+        span = 140
+        step = max(1, span // 2)
+        best_start: int | None = None
+        anchored = False
+        for name, where in named.items():
+            if where != relative:
+                continue
+            for number, line in enumerate(lines):
+                if name in line.lower():
+                    best_start = max(0, number - span // 3)
+                    anchored = True
+                    break
+            if best_start is not None:
+                break
+        if best_start is None:
+            best, start_at = -1, 0
+            for begin in range(0, max(1, len(lines) - span + 1), step):
+                window = " ".join(lines[begin : begin + span]).lower()
+                score = sum(1 for stem in wanted if stem in window)
+                if score > best:
+                    start_at, best = begin, score
+            best_start = start_at
+        body: list[str] = []
+        used = 0
+        for number in range(best_start + 1, min(len(lines), best_start + span) + 1):
+            entry = f"{number:6d}  {lines[number - 1]}"
+            if used + len(entry) > per_file:
+                break
+            body.append(entry)
+            used += len(entry)
+        if anchored and best_start > 0:
+            # An anchored window starts at the symbol, which leaves out the
+            # imports a change has to fit into. The top of the file goes first.
+            head: list[str] = []
+            head_used = 0
+            for number in range(1, min(len(lines), 24) + 1):
+                entry = f"{number:6d}  {lines[number - 1]}"
+                if head_used + len(entry) > 1600:
+                    break
+                head.append(entry)
+                head_used += len(entry)
+            parts.append(
+                f"--- {relative} (lines 1 to {len(head)}, the top of the file) ---\n"
+                + "\n".join(head)
+            )
+        parts.append(
+            f"--- {relative} (lines {best_start + 1} to {best_start + len(body)} "
+            f"of {len(lines)}) ---\n" + "\n".join(body)
+        )
+    return parts
+
+
+def _wanted_lines(
+    root: Path,
+    want: dict[str, Any],
+    allow: Sequence[str],
+    chars: int,
+) -> str:
+    """The lines a previous attempt asked to see, numbered as the prompt shows."""
+
+    where = str(want.get("path", ""))
+    if not allowed(where, allow):
+        return f"  (it asked for {where}, which this run may not read)"
+    text = _read_text(Path(root) / where)
+    if text is None:
+        return f"  (it asked for {where}, which could not be read)"
+    lines = text.split("\n")
+    asked = want.get("lines") or [1, 1]
+    start = max(1, int(asked[0]))
+    end = min(len(lines), max(start, int(asked[1])))
+    body: list[str] = []
+    used = 0
+    for number in range(start, end + 1):
+        entry = f"{number:6d}  {lines[number - 1]}"
+        if used + len(entry) > chars:
+            body.append("         ... the rest is beyond the size shown")
+            break
+        body.append(entry)
+        used += len(entry)
+    shown = start + max(0, len(body) - 1)
+    return (
+        f"--- {where} (lines {start} to {shown} of {len(lines)}) ---\n"
+        + "\n".join(body)
+    )
+
+
 def build_prompt(
     root: Path,
     task: Task,
@@ -991,6 +1303,7 @@ def build_prompt(
     notes: Sequence[str] = (),
     in_place: bool = False,
     excerpt_chars: int = MAX_EXCERPT_CHARS,
+    want: dict[str, Any] | None = None,
 ) -> str:
     """What a proposer is told: the task, the file, the rules, and last time."""
 
@@ -1005,14 +1318,27 @@ def build_prompt(
     if allowed(task.path, allow):
         parts += ["THE FILE AS IT IS NOW", _excerpt(root, task, excerpt_chars), ""]
     else:
+        nearby = _nearby_code(root, task, allow)
         parts += [
             "WHERE THE WORK BELONGS",
-            f"{task.path} names the work; it is not the file to change. "
-            "The file to change is one of these. Read the task, choose the one "
-            "file whose job this is, and change only that:",
-            *repo_map(root, allow),
-            "",
+            f"{task.path} names the work; it is not the file to change.",
         ]
+        if nearby:
+            # Code first, and the file list not at all: a hundred and fifty
+            # names in front of two excerpts is enough noise for an answer to
+            # be written from the names instead of from the code.
+            parts += [
+                "The code below was chosen by the words in the task. Change "
+                "one of these files unless it is plainly the wrong place:",
+                *nearby,
+            ]
+        else:
+            parts += [
+                "The file to change is one of these. Read the task, choose "
+                "the one file whose job this is, and change only that:",
+                *repo_map(root, allow),
+            ]
+        parts += [""]
     parts += [
         "WHAT MAY BE CHANGED",
         ", ".join(allow),
@@ -1038,10 +1364,20 @@ def build_prompt(
             '{"path": "kosika/example.py", "content": "the whole new file"}.',
             "- If no safe change is possible, answer "
             '{"edits": [], "note": "what is missing"}.',
+            "- If you need lines this prompt does not show, ask once instead of "
+            "guessing: "
+            '{"edits": [], "need": {"path": "kosika/example.py", "lines": [120, 200]}, '
+            '"note": "why you need them"}.',
         ]
     if notes:
         parts += ["", "WHAT WENT WRONG LAST TIME, DO NOT REPEAT IT"]
         parts += [f"- {note}" for note in notes]
+    if want is not None:
+        parts += [
+            "",
+            "THE LINES IT ASKED TO SEE",
+            _wanted_lines(root, want, allow, excerpt_chars),
+        ]
     return "\n".join(parts)
 
 
@@ -1080,6 +1416,20 @@ class ModelProposer:
             hint = " (the model spent its whole answer on reasoning)" if reasoning else ""
             raise ProposalError(f"the model answered nothing{hint}")
         return parse_proposal(content)
+
+
+class VirtualModelProposer(ModelProposer):
+    """A specialist answers: the same model, plus this project's own sources.
+
+    A virtual model is a profile of instructions, local sources and verified
+    examples, retrieved per request (kosika/virtual_model.py). The model is
+    still only a proposer: the gate decides, and a change kept through here
+    passed the same checks as any other. That is the point of using one for
+    self-development -- the answer starts from this project's documents rather
+    than from whatever a general model remembers about Kosika.
+    """
+
+    backend = "specialist"
 
 
 class SilentProposer:
@@ -1159,6 +1509,7 @@ class Attempt:
     note: str = ""
     seconds: float = 0.0
     backend: str = ""
+    need: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -1169,6 +1520,7 @@ class Attempt:
             "note": self.note,
             "seconds": round(self.seconds, 2),
             "backend": self.backend,
+            "need": self.need,
         }
 
     def describe(self) -> str:
@@ -1183,6 +1535,12 @@ class Attempt:
                 if not step.ok and step.detail:
                     for line in step.detail.split("\n")[:6]:
                         lines.append(f"               {line}")
+        if self.need is not None:
+            asked = self.need.get("lines") or [0, 0]
+            lines.append(
+                "          asked to see lines "
+                f"{asked[0]}-{asked[1]} of {self.need.get('path')}"
+            )
         if self.note:
             lines.append(f"          note: {self.note[:400]}")
         lines.append(f"          {self.seconds:.1f}s")
@@ -1191,6 +1549,205 @@ class Attempt:
 
 def default_state_folder(root: Path) -> Path:
     return Path(root) / STATE_FOLDER
+
+
+@dataclass
+class Decomposition:
+    """Which tasks name code that exists, and what was dropped for naming none."""
+
+    kept: list[Task]
+    dropped: list[tuple[Task, str]]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "kept": [task.to_dict() for task in self.kept],
+            "dropped": [
+                {"task": task.to_dict(), "why": why} for task, why in self.dropped
+            ],
+        }
+
+
+#: Names too common to be the one a sentence means: "type inference engine"
+#: is not asking for `engine`, the function that picks an engine. Offering
+#: these makes a confident wrong choice look like a considered one.
+GENERIC_NAMES = frozenset(
+    {
+        "engine", "state", "run", "main", "value", "data", "result", "item",
+        "entry", "object", "node", "list", "dict", "text", "path", "file",
+        "name", "start", "stop", "check", "call", "load", "save", "read",
+        "write", "open", "close", "next", "step", "task", "kind", "type",
+        "size", "count", "index", "settings", "options", "config",
+    }
+)
+
+
+_DEFINITION = {
+    ".py": re.compile(r"(?m)^\s*(?:async\s+)?(?:def|class)\s+(\w+)"),
+    ".kos": re.compile(r"(?m)^\s*fn\s+(\w+)"),
+}
+
+
+def symbol_index(
+    root: Path, folders: Sequence[str] = DEFAULT_FOLDERS
+) -> dict[str, str]:
+    """Every name this tree defines, and the file that defines it.
+
+    Read from the source itself, so a name here is one a change could really
+    call. Dunder names are left out: no roadmap line means one of those.
+    """
+
+    found: dict[str, str] = {}
+    for relative, path in _walk(Path(root), folders):
+        pattern = _DEFINITION.get(path.suffix)
+        if pattern is None:
+            continue
+        text = _read_text(path)
+        if text is None:
+            continue
+        for match in pattern.finditer(text):
+            name = match.group(1)
+            if len(name) >= 4 and not name.startswith("__"):
+                found.setdefault(name.lower(), relative)
+    return found
+
+
+def _name_words(name: str) -> set[str]:
+    """`getPerformanceMetrics` and `get_performance_metrics` split the same way."""
+
+    spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", name.replace("_", " "))
+    return _wanted(spaced)
+
+
+def _strip_fence(text: str) -> str:
+    body = text.strip()
+    if body.startswith("```"):
+        body = body.split("\n", 1)[-1]
+        if body.rstrip().endswith("```"):
+            body = body.rstrip()[:-3]
+    return body.strip()
+
+
+def _decompose_prompt(
+    task: Task, shortlist: Sequence[str], index: dict[str, str]
+) -> str:
+    names = "\n".join(f"- {name}  ({index[name]})" for name in shortlist)
+    return "\n".join(
+        [
+            "A project writes down what it has not done yet. Each line is meant",
+            "to be made true by changing code. Your job is narrower than that:",
+            "say which of the names below the line is asking to be extended, or",
+            "that none of them is.",
+            "",
+            "THE LINE",
+            task.title,
+            "",
+            "NAMES THAT EXIST IN THIS PROJECT",
+            names,
+            "",
+            "HOW TO ANSWER",
+            "One JSON object, nothing else:",
+            '{"symbols": ["name from the list"], "why": "one sentence"}',
+            "- Name only symbols from the list above, spelled as printed.",
+            "- If no listed name is where this work belongs, answer",
+            '  {"symbols": [], "why": "what would have to exist first"}.',
+            "- Something new -- a framework, a phase, a design -- usually means",
+            "  none, and saying none is the useful answer, not a failure.",
+        ]
+    )
+
+
+def decompose(
+    root: Path,
+    tasks: Sequence[Task],
+    ask: Any,
+    *,
+    folders: Sequence[str] = DEFAULT_FOLDERS,
+    candidates: int = 40,
+) -> Decomposition:
+    """Keep only the tasks that name code this project already has.
+
+    A roadmap line that names nothing is not a change anyone can make: the
+    proposer is handed one sentence about a feature that does not exist, and
+    refuses, correctly. One cheap question per task -- which of these names
+    would this extend, or none -- either supplies the missing fact or proves
+    the task belongs to a person.
+    """
+
+    index = symbol_index(root, folders)
+    kept: list[Task] = []
+    dropped: list[tuple[Task, str]] = []
+    for task in tasks:
+        wanted = _wanted(f"{task.title} {task.detail}")
+        near = sorted(
+            ((len(_name_words(name) & wanted), name) for name in index),
+            key=lambda pair: (-pair[0], pair[1]),
+        )
+        shortlist = [
+            name for score, name in near if score > 0 and name not in GENERIC_NAMES
+        ][:candidates]
+        if not shortlist:
+            dropped.append((task, "no name in the project shares a word with it"))
+            continue
+        text = _strip_fence(str(ask(_decompose_prompt(task, shortlist, index))))
+        try:
+            answer: Any = json.loads(text)
+        except (ValueError, TypeError):
+            # A model sometimes wraps the object in a sentence. Take one object
+            # out of it, and still refuse the answer if there is not one.
+            match = re.search(r"\{.*\}", text, re.S)
+            try:
+                answer = json.loads(match.group(0)) if match else None
+            except ValueError:
+                answer = None
+        if answer is None:
+            dropped.append((task, "the model's answer was not JSON"))
+            continue
+        if not isinstance(answer, dict):
+            dropped.append((task, "the model's answer was not one object"))
+            continue
+        allowed_names = set(shortlist)
+        chosen: list[str] = []
+        for name in answer.get("symbols") or []:
+            lowered = str(name).strip().lower()
+            if lowered in allowed_names and lowered not in chosen:
+                chosen.append(lowered)
+        why = str(answer.get("why", "")).strip() or "the model named nothing"
+        if not chosen:
+            dropped.append((task, why))
+            continue
+        named = "; ".join(f"{name} ({index[name]})" for name in chosen)
+        kept.append(
+            Task(
+                id=task.id,
+                kind=task.kind,
+                title=task.title,
+                detail=f"{task.detail}\nExisting code this may extend: {named}",
+                path=task.path,
+                line=task.line,
+                weight=task.weight,
+            )
+        )
+    return Decomposition(kept=kept, dropped=dropped)
+
+
+def make_ask(provider: Any, *, max_output_tokens: int = 800) -> Any:
+    """One short question over a provider, for work that is not a patch."""
+
+    def ask(text: str) -> str:
+        reply = provider.complete(
+            ModelRequest(
+                messages=(
+                    ChatMessage("system", "Answer with one JSON object, nothing else."),
+                    ChatMessage("user", text),
+                ),
+                temperature=0.1,
+                max_output_tokens=max_output_tokens,
+                json_object=True,
+            )
+        )
+        return reply.content or ""
+
+    return ask
 
 
 class SelfDevEngine:
@@ -1211,6 +1768,8 @@ class SelfDevEngine:
         sleep_seconds: float = 0.0,
         gate_timeout: float = 300.0,
         excerpt_chars: int = MAX_EXCERPT_CHARS,
+        kinds: Sequence[str] = (),
+        plan: Sequence[Task] | None = None,
         log: Any = None,
     ) -> None:
         self.root = Path(root).resolve()
@@ -1226,6 +1785,13 @@ class SelfDevEngine:
         self.sleep_seconds = max(0.0, sleep_seconds)
         self.gate_timeout = gate_timeout
         self.excerpt_chars = max(2000, excerpt_chars)
+        # Empty means every kind a survey names; naming kinds is how a run
+        # is pointed at work that is one edit, rather than at a roadmap.
+        self.kinds = tuple(kinds)
+        # A decomposed plan, when there is one: the model has already said
+        # which existing code each task extends, so the survey is not asked
+        # again and nothing unnamed gets through.
+        self.plan = list(plan) if plan is not None else None
         self._log = log
 
     # -- telling a person what is happening ---------------------------------
@@ -1242,11 +1808,16 @@ class SelfDevEngine:
         folders: Sequence[str] = DEFAULT_FOLDERS,
         limit: int = 200,
     ) -> list[Task]:
-        return rank(
-            survey(self.root, folders=folders, max_findings=limit),
+        found = rank(
+            self.plan
+            if self.plan is not None
+            else survey(self.root, folders=folders, max_findings=limit),
             self.ledger,
             max_task_failures=self.max_task_failures,
         )
+        if not self.kinds:
+            return found
+        return [task for task in found if task.kind in self.kinds]
 
     # -- one task -----------------------------------------------------------
 
@@ -1260,20 +1831,31 @@ class SelfDevEngine:
             if str(entry.get("note", "")).strip()
         ][-3:]
 
+        want: dict[str, Any] | None = None
         if self.dry_run:
             # A dry run asks nothing and records nothing: it shows the request
             # the next task would get, and leaves the ledger alone.
-            attempt = self._once(task, notes)
+            attempt = self._once(task, notes, want)
             attempt.seconds = time.monotonic() - started
             return attempt
 
         last: Attempt | None = None
         for index in range(self.max_attempts):
-            attempt = self._once(task, notes)
+            attempt = self._once(task, notes, want)
             attempt.seconds = time.monotonic() - started
             if attempt.status == "kept":
                 self._record(attempt)
                 return attempt
+            if attempt.need is not None:
+                # A refusal that named what it cannot see costs one attempt and
+                # buys the next one the lines, which is the whole point of
+                # asking rather than guessing.
+                want = attempt.need
+                asked = attempt.need.get("lines") or [0, 0]
+                self.tell(
+                    "          asked for lines "
+                    f"{asked[0]}-{asked[1]} of {attempt.need.get('path')}"
+                )
             notes = [*notes, f"{attempt.status}: {attempt.note}"][-3:]
             last = attempt
             if index + 1 < self.max_attempts:
@@ -1282,7 +1864,12 @@ class SelfDevEngine:
         self._record(last)
         return last
 
-    def _once(self, task: Task, notes: Sequence[str]) -> Attempt:
+    def _once(
+        self,
+        task: Task,
+        notes: Sequence[str],
+        want: dict[str, Any] | None = None,
+    ) -> Attempt:
         in_place = bool(getattr(self.proposer, "in_place", False))
         backend = str(getattr(self.proposer, "backend", "?"))
         prompt = build_prompt(
@@ -1290,6 +1877,7 @@ class SelfDevEngine:
             task,
             allow=self.allow,
             notes=notes,
+            want=want,
             in_place=in_place,
             excerpt_chars=self.excerpt_chars,
         )
@@ -1324,6 +1912,7 @@ class SelfDevEngine:
                         status="refused",
                         note=proposal.note or "the proposer offered no change",
                         backend=backend,
+                        need=proposal.need,
                     )
                 paths = [edit.path for edit in proposal.edits]
                 try:

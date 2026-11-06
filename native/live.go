@@ -97,6 +97,9 @@ type httpProvider struct {
 	endpoint, model, protocol, apiKey string
 	timeout                           time.Duration
 	maxOutput                         int
+	// window is the context, in tokens, that the person running the program
+	// named; 0 when nobody did, and then the smallest tier that fits is used.
+	window int
 }
 
 // stopProvider ends the run: a model server that cannot answer is not a
@@ -119,7 +122,7 @@ func modelThink() (bool, bool) {
 	return false, false
 }
 
-func newHTTPProvider(url, model, protocol string, seconds float64, maxOutput int) *httpProvider {
+func newHTTPProvider(url, model, protocol string, seconds float64, maxOutput, window int) *httpProvider {
 	trimmed := strings.TrimRight(url, "/")
 	endpoint := trimmed + "/chat/completions"
 	if strings.HasSuffix(trimmed, "/chat/completions") {
@@ -131,7 +134,7 @@ func newHTTPProvider(url, model, protocol string, seconds float64, maxOutput int
 			endpoint = trimmed
 		}
 	}
-	return &httpProvider{endpoint, model, protocol, os.Getenv("KOSIKA_MODEL_API_KEY"), time.Duration(seconds * float64(time.Second)), maxOutput}
+	return &httpProvider{endpoint, model, protocol, os.Getenv("KOSIKA_MODEL_API_KEY"), time.Duration(seconds * float64(time.Second)), maxOutput, window}
 }
 
 func (h *httpProvider) complete(request *modelRequest) *modelResponse {
@@ -183,7 +186,18 @@ func (h *httpProvider) complete(request *modelRequest) *modelResponse {
 	}
 	if h.protocol == "ollama" {
 		options["num_predict"] = capped
-		options["num_ctx"] = ollamaContext(request, capped)
+		if h.window > 0 {
+			// A window named by the person running it is asked for exactly:
+			// no tiers, and a prompt it cannot hold is refused rather than
+			// cut short by the server.
+			needed := ollamaTokens(request, capped)
+			if needed > h.window {
+				stopProvider("the model needs about %d tokens, more than the %d it was given; run it with a larger --model-context", needed, h.window)
+			}
+			options["num_ctx"] = h.window
+		} else {
+			options["num_ctx"] = ollamaContext(request, capped)
+		}
 	} else {
 		options["max_tokens"] = capped
 	}
@@ -635,9 +649,8 @@ func (message chatMessage) record() *Record {
 // are.
 var ollamaContexts = []int{8192, 16384, 32768}
 
-// ollamaContext is the smallest window that holds a request, at about three
-// characters a token, its answer and a margin.
-func ollamaContext(request *modelRequest, answer int) int {
+// ollamaTokens is about how many tokens a request and its answer need.
+func ollamaTokens(request *modelRequest, answer int) int {
 	text := 0
 	for _, message := range request.Messages {
 		text += len([]rune(message.Content))
@@ -652,7 +665,13 @@ func ollamaContext(request *modelRequest, answer int) int {
 	for _, tool := range request.Tools {
 		text += len([]rune(tool.Name)) + len([]rune(tool.Description)) + len([]rune(pyJSON(tool.Schema, true)))
 	}
-	wanted := text/3 + answer + 512
+	return text/3 + answer + 512
+}
+
+// ollamaContext is the smallest window that holds a request, at about three
+// characters a token, its answer and a margin.
+func ollamaContext(request *modelRequest, answer int) int {
+	wanted := ollamaTokens(request, answer)
 	for _, size := range ollamaContexts {
 		if size >= wanted {
 			return size

@@ -23,7 +23,7 @@ func runCommand(args []string) int {
 	options["--trace"] = "run_trace.jsonl"
 	flags := map[string]bool{"--approve": true, "--allow-shell": true, "--computer": true, "--json": true}
 	var givenSites []string
-	known := map[string]bool{"--linux": true, "--notify": true, "--embed-url": true, "--embed-model": true, "--allow-site": true, "--services": true, "--allow-folder": true, "--memory": true, "--env": true, "--standing": true, "--journal": true, "--binding-id": true, "--approval-record": true, "--approved-by": true, "--trace": true, "--model-fixture": true, "--mcp-server": true, "--mcp-manifest": true, "--mcp-source": true, "--workflow": true, "--input": true, "--model": true, "--model-url": true, "--model-protocol": true, "--model-timeout": true, "--model-binding": true, "--max-output-tokens": true, "--max-function-calls": true}
+	known := map[string]bool{"--linux": true, "--notify": true, "--embed-url": true, "--embed-model": true, "--allow-site": true, "--services": true, "--allow-folder": true, "--memory": true, "--env": true, "--standing": true, "--journal": true, "--binding-id": true, "--approval-record": true, "--approved-by": true, "--trace": true, "--model-fixture": true, "--mcp-server": true, "--mcp-manifest": true, "--mcp-source": true, "--workflow": true, "--input": true, "--model": true, "--model-url": true, "--model-protocol": true, "--model-timeout": true, "--model-context": true, "--model-binding": true, "--max-output-tokens": true, "--max-function-calls": true}
 	for i := 1; i < len(args); i++ {
 		name, value, joined := strings.Cut(args[i], "=")
 		if flags[name] && !joined {
@@ -62,6 +62,21 @@ func runCommand(args []string) int {
 	maxOutput, err := strconv.Atoi(options["--max-output-tokens"])
 	if err != nil || maxOutput < 1 {
 		fmt.Fprintln(os.Stderr, "--max-output-tokens must be a positive integer")
+		return 2
+	}
+	// A context window named here is asked for exactly; none named means the
+	// smallest tier that fits each request.
+	window := 0
+	if given := options["--model-context"]; given != "" {
+		size, err := strconv.Atoi(given)
+		if err != nil || size < 1 {
+			fmt.Fprintln(os.Stderr, "--model-context must be a positive whole number of tokens")
+			return 2
+		}
+		window = size
+	}
+	if window > 0 && protocol != "ollama" {
+		fmt.Fprintln(os.Stderr, "--model-context needs --model-protocol ollama: an OpenAI-shaped endpoint is given no way to be told a context window")
 		return 2
 	}
 	if given := options["--max-function-calls"]; given != "" {
@@ -164,7 +179,7 @@ func runCommand(args []string) int {
 		fmt.Fprintln(os.Stderr, "Workflow failed: Use --journal with --binding-id; approvals also require a journal")
 		return 2
 	}
-	providers, problem := modelBindings(program, options, protocol, seconds, maxOutput)
+	providers, problem := modelBindings(program, options, protocol, seconds, maxOutput, window)
 	if env != nil {
 		providers, problem = env.bindings(program, maxOutput)
 	}
@@ -466,7 +481,7 @@ func fixtureBindings(path string) (map[string]modelProvider, string) {
 // the reference's --model, --model-url and --model-binding do. With
 // --model alone every declared model is answered by it; `--model
 // fast,strong=big` answers the one called strong with big.
-func modelBindings(program *Program, options map[string]string, protocol string, seconds float64, maxOutput int) (map[string]modelProvider, string) {
+func modelBindings(program *Program, options map[string]string, protocol string, seconds float64, maxOutput, window int) (map[string]modelProvider, string) {
 	providers := map[string]modelProvider{}
 	modelName, url, binding := options["--model"], options["--model-url"], options["--model-binding"]
 	if modelName == "" && url == "" && binding == "" {
@@ -524,7 +539,7 @@ func modelBindings(program *Program, options map[string]string, protocol string,
 		if real, ok := overrides[name]; ok {
 			answering = real
 		}
-		providers[name] = newHTTPProvider(url, answering, protocol, seconds, maxOutput)
+		providers[name] = newHTTPProvider(url, answering, protocol, seconds, maxOutput, window)
 	}
 	return providers, ""
 }

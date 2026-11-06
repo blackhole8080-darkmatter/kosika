@@ -675,9 +675,9 @@ func (r *run) learned(model *ModelDecl, arguments map[string]Value) (Value, *Rec
 		input.set(name, value)
 	}
 	r.validate(input, model.Input, "$")
-	if r.lessons != nil {
+	if r.lessons != nil && r.check == nil && (r.plan == nil || r.plan.votes == 0) {
 		question := r.question(arguments)
-		known := r.lessons.recall(lessonName(learning.workflow, learning.step, model), question, model.Verb == "classify" || model.Verb == "decide")
+		known := r.lessons.recallExact(lessonName(learning.workflow, learning.step, model), lessonRequest(question, arguments))
 		if known != nil && schemaProblem(known.answer, r.checker.schemaFor(model.Output), "$", r.checker.schemaFor(model.Output)) == "" {
 			how := newRecord()
 			how.set("how", known.how)
@@ -706,10 +706,11 @@ func (r *run) question(arguments map[string]Value) string {
 
 // keepLesson keeps a learning step's accepted answer.
 func (r *run) keepLesson(model *ModelDecl, arguments map[string]Value, answer Value) {
-	if r.learning == nil || r.lessons == nil {
+	if r.learning == nil || r.lessons == nil || r.check != nil || (r.plan != nil && r.plan.votes > 0) {
 		return
 	}
-	r.lessons.keep(lessonName(r.learning.workflow, r.learning.step, model), r.question(arguments), answer)
+	question := r.question(arguments)
+	r.lessons.keep(lessonName(r.learning.workflow, r.learning.step, model), question, answer, lessonRequest(question, arguments))
 }
 
 // boundName is the name a model's host binding goes by: a model made for a

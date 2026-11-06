@@ -49,14 +49,15 @@ def _read_tasks(path: str | Path) -> tuple[str, list[dict[str, Any]]]:
         raise LearningEvaluationError("Learning evaluations require 1..64 tasks")
     ids: set[str] = set()
     for task in tasks:
-        if not isinstance(task, dict) or set(task) != {
+        if not isinstance(task, dict) or set(task) - {"warm_inputs"} != {
             "id",
             "inputs",
             "expected",
             "responses",
         }:
             raise LearningEvaluationError(
-                "Each task needs exactly id, inputs, expected, and responses"
+                "Each task needs exactly id, inputs, expected, and responses, "
+                "and may add warm_inputs"
             )
         task_id = task["id"]
         if (
@@ -71,6 +72,10 @@ def _read_tasks(path: str | Path) -> tuple[str, list[dict[str, Any]]]:
         ):
             raise LearningEvaluationError(
                 f"Task {task_id!r} needs object inputs and expected output"
+            )
+        if not isinstance(task.get("warm_inputs", task["inputs"]), dict):
+            raise LearningEvaluationError(
+                f"Task {task_id!r} warm_inputs must be an object"
             )
         responses = task["responses"]
         if not isinstance(responses, dict) or not responses:
@@ -115,6 +120,7 @@ def _aggregate(stats: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "model_steps": steps,
         "from_lessons": lessons,
+        "live_model": sum(item["live_model"] for item in stats),
         "independence_ratio": round(lessons / steps, 3) if steps else None,
         "how": dict(sorted(how.items())),
     }
@@ -124,6 +130,10 @@ def evaluate_learning(
     source: str | Path, tasks_path: str | Path, output: str | Path
 ) -> dict[str, Any]:
     """Run tasks once with fixtures, retain accepted answers, then run offline.
+
+    A task may add `warm_inputs`, the same question written differently.
+    The warm run asks it instead, so a step written `learn near` answers
+    without the model and the saved calls are what the report counts.
 
     The output directory must not exist. Raw traces and the human-readable
     lesson store are preserved there for inspection and independent replay.
@@ -189,7 +199,7 @@ def evaluate_learning(
             program,
             workflow,
             warm_trace,
-            inputs=task["inputs"],
+            inputs=task.get("warm_inputs", task["inputs"]),
             model_bindings={},
             lessons=memory,
         )
@@ -228,6 +238,12 @@ def evaluate_learning(
         "warm_passed": sum(item["warm"]["passed"] for item in results),
         "cold": cold,
         "warm": warm,
+        "calls_saved": cold["live_model"] - warm["live_model"],
+        "calls_saved_ratio": (
+            round((cold["live_model"] - warm["live_model"]) / cold["live_model"], 3)
+            if cold["live_model"]
+            else None
+        ),
         "results": results,
     }
     (directory / "report.json").write_text(
@@ -248,5 +264,8 @@ def report_to_text(report: dict[str, Any]) -> str:
             f"{'warm correct':<20}: {report['warm_passed']}/{report['tasks']}",
             f"{'model independence':<20}: "
             f"{'none' if independence is None else independence}",
+            f"{'model calls cold':<20}: {report['cold']['live_model']}",
+            f"{'model calls warm':<20}: {report['warm']['live_model']}",
+            f"{'calls saved':<20}: {report['calls_saved']}",
         )
     )

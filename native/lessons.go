@@ -152,6 +152,70 @@ func withoutConfidence(answer Value) Value {
 	return out
 }
 
+func (s *lessonStore) recallExact(step, request string) *recalled {
+	digest := sha256.Sum256([]byte(request))
+	key := hex.EncodeToString(digest[:])
+	book := s.book(step)
+	for i := len(book) - 1; i >= 0; i-- {
+		if book[i].Fields["request_hash"] == key {
+			return &recalled{book[i].Fields["answer"], "same", 1.0, len(book)}
+		}
+	}
+	return nil
+}
+
+func lessonRequest(question string, arguments map[string]Value) string {
+	input := newRecord()
+	for name, value := range arguments {
+		input.set(name, value)
+	}
+	request := newRecord()
+	request.set("question", question)
+	request.set("arguments", input)
+	return lessonRequestJSON(request)
+}
+
+// Request numbers preserve Python JSON spelling without changing existing plan hashes.
+func lessonRequestJSON(value Value) string {
+	switch v := value.(type) {
+	case float64:
+		if math.IsNaN(v) {
+			return "NaN"
+		}
+		if math.IsInf(v, 1) {
+			return "Infinity"
+		}
+		if math.IsInf(v, -1) {
+			return "-Infinity"
+		}
+		format := byte('e')
+		if v == 0 || (math.Abs(v) >= 1e-4 && math.Abs(v) < 1e16) {
+			format = 'f'
+		}
+		text := strconv.FormatFloat(v, format, -1, 64)
+		if format == 'f' && !strings.Contains(text, ".") {
+			text += ".0"
+		}
+		return text
+	case []Value:
+		items := make([]string, len(v))
+		for i, item := range v {
+			items[i] = lessonRequestJSON(item)
+		}
+		return "[" + strings.Join(items, ",") + "]"
+	case *Record:
+		keys := append([]string{}, v.Keys...)
+		sort.Strings(keys)
+		items := make([]string, len(keys))
+		for i, key := range keys {
+			items[i] = unicodeJSON(key, true, true) + ":" + lessonRequestJSON(v.Fields[key])
+		}
+		return "{" + strings.Join(items, ",") + "}"
+	default:
+		return unicodeJSON(value, true, true)
+	}
+}
+
 func (s *lessonStore) recall(step, question string, voting bool) *recalled {
 	asked := wordsOf(question)
 	plain := strings.Join(asked, " ")
@@ -247,20 +311,20 @@ func clipped(text string, most int) string {
 }
 
 // keep keeps a model's accepted answer to a question.
-func (s *lessonStore) keep(step, question string, answer Value) {
+func (s *lessonStore) keep(step, question string, answer Value, request string) {
 	plain := strings.Join(wordsOf(question), " ")
-	if plain == "" {
-		return
-	}
+	digest := sha256.Sum256([]byte(request))
+	key := hex.EncodeToString(digest[:])
 	var book []*Record
 	for _, item := range s.book(step) {
-		if item.Fields["plain"] != plain {
+		if item.Fields["request_hash"] != key {
 			book = append(book, item)
 		}
 	}
 	lesson := newRecord()
 	lesson.set("question", clipped(question, 2000))
 	lesson.set("plain", clipped(plain, 2000))
+	lesson.set("request_hash", key)
 	lesson.set("answer", answer)
 	lesson.set("at", bigInt(int(math.Round(float64(time.Now().UnixNano())/1e9))))
 	book = append(book, lesson)

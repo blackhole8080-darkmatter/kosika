@@ -90,11 +90,23 @@ def design(
     ask = {"ask": {"text": text, "palette": palette, "place": place, "kind": kind}}
     if _brain_on():
         return _run(BRAIN, "brain_design", ask, extra=_brain_memory(), timeout=timeout)
-    return _run(FRONT_DOOR, "design", ask, timeout=timeout)
+    return _run(FRONT_DOOR, "design", ask, extra=_designs_memory(), timeout=timeout)
 
 
 def _brain_on() -> bool:
     return BRAIN.is_file() and os.environ.get("KOSIKA_BRAIN", "1") != "0"
+
+
+def _designs_memory() -> list[str]:
+    # Art remembers what a person taught it to like: std/designs_generative.kos
+    # declares `memory tastes` and `memory eyes`, and the engine refuses to
+    # load a program that declares a memory granted no folder. The front door
+    # therefore always names one, as the Brain path does for its own.
+    memory = Path(
+        os.environ.get("KOSIKA_DESIGNS_MEMORY", str(Path.home() / ".kosika" / "designs"))
+    )
+    memory.mkdir(parents=True, exist_ok=True)
+    return ["--memory", str(memory)]
 
 
 def _brain_memory() -> list[str]:

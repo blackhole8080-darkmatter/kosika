@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import time
+from collections import deque
 from dataclasses import dataclass
+from itertools import islice
 from pathlib import Path
 from typing import Callable, Sequence
 
@@ -37,21 +39,74 @@ def retrieve(
     *,
     limit: int = 4,
     floor: float = RELEVANCE_FLOOR,
+    max_context_chars: int = 8000,
+    max_neighbours: int = 16,
 ) -> Retrieved:
+    """Bound context and graph expansion; semantic search still scans entities."""
+    if limit < 0 or max_context_chars < 0 or max_neighbours < 0:
+        raise ValueError("retrieval limits must be non-negative")
+    if limit == 0 or max_context_chars == 0:
+        return Retrieved("", ())
+
     hits = graph.semantic_search(list(embed(request)), top_k=limit)
     kept = [entity_id for entity_id, score in hits if score >= floor]
     if not kept:
         return Retrieved("", ())
     lines: list[str] = []
+    sources: list[str] = []
+    rendered: set[str] = set()
+    remaining = max_context_chars
+
+    def append_entity(entity_id: str, prefix: str) -> bool:
+        nonlocal remaining
+        if entity_id in rendered:
+            return False
+        entity = graph.entities.get(entity_id)
+        if entity is None:
+            return False
+        # Measure before formatting so an oversized fact is never copied.
+        size = len(prefix) + len(entity.name) + 2 + len(entity.description) + bool(lines)
+        if size > remaining:
+            return False
+        lines.append(f"{prefix}{entity.name}: {entity.description}")
+        remaining -= size
+        rendered.add(entity_id)
+        return True
+
+    # Reserve space for primary hits before considering any neighbours.
     for entity_id in kept:
-        entity = graph.entities[entity_id]
-        lines.append(f"- {entity.name}: {entity.description}")
+        if append_entity(entity_id, "- "):
+            sources.append(entity_id)
+        if remaining == 0:
+            break
+    if not sources or remaining == 0 or max_neighbours == 0:
+        return Retrieved("\n".join(lines), tuple(sources))
+
+    # Bound the scan itself, including unrelated entries, preserving insertion order.
+    adjacency: dict[tuple[str, RelationType], list[str]] = {}
+    for edge in islice(graph.relationships.values(), 4096):
+        if edge.relation_type in _RESONATE:
+            adjacency.setdefault((edge.source, edge.relation_type), []).append(edge.target)
+
+    neighbours = 0
+    for entity_id in sources:
         for relation in _RESONATE:
-            for other in graph.infer(entity_id, relation, max_depth=2):
-                neighbour = graph.entities.get(other)
-                if neighbour:
-                    lines.append(f"  - relates to {neighbour.name}: {neighbour.description}")
-    return Retrieved("\n".join(lines), tuple(kept))
+            queue = deque([(entity_id, 0)])
+            visited = {entity_id}
+            while queue:
+                current, depth = queue.popleft()
+                if depth >= 2:
+                    continue
+                for other in adjacency.get((current, relation), ()):
+                    if other in visited:
+                        continue
+                    visited.add(other)
+                    queue.append((other, depth + 1))
+                    if append_entity(other, "  - relates to "):
+                        neighbours += 1
+                        if neighbours == max_neighbours or remaining == 0:
+                            return Retrieved("\n".join(lines), tuple(sources))
+    return Retrieved("\n".join(lines), tuple(sources))
 
 
 @dataclass(frozen=True)
@@ -135,9 +190,17 @@ def mind_hooks(
     verifier: Callable[[dict], str] | None = None,
     limit: int = 4,
     floor: float = RELEVANCE_FLOOR,
+    max_context_chars: int = 8000,
+    max_neighbours: int = 16,
 ) -> MindHooks:
+    if limit < 0 or max_context_chars < 0 or max_neighbours < 0:
+        raise ValueError("retrieval limits must be non-negative")
+
     def context(arguments: dict) -> str:
         text = " ".join(str(value) for value in arguments.values())
-        return retrieve(graph, text, embed, limit=limit, floor=floor).context
+        return retrieve(
+            graph, text, embed, limit=limit, floor=floor,
+            max_context_chars=max_context_chars, max_neighbours=max_neighbours,
+        ).context
 
     return MindHooks(context=context, verify=make_reflect(choices=choices, verifier=verifier))

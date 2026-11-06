@@ -165,8 +165,14 @@ Transport = Callable[[urllib.request.Request, float], bytes]
 #: ``/chat/completions`` shape most gateways expose. ``ollama`` is Ollama's native
 #: ``/api/chat`` shape, which is the only one of the two that honours ``think``.
 MODEL_PROTOCOLS = ("openai", "ollama")
-#: How long Ollama is asked to keep a model loaded after it answers.
-OLLAMA_KEEP_ALIVE = "30m"
+#: How long Ollama is asked to keep a model loaded after it answers. A model
+#: that has been unloaded reads a whole profile's sources again before it can
+#: answer: measured here, 233 s on a cold cache against 49 s warm. A gateway
+#: serving other agents therefore wants hours, so KOSIKA_OLLAMA_KEEP_ALIVE sets
+#: it without editing the code.
+OLLAMA_KEEP_ALIVE = (
+    os.environ.get("KOSIKA_OLLAMA_KEEP_ALIVE", "30m").strip() or "30m"
+)
 #: The context windows Ollama is asked for, smallest first. Ollama gives a
 #: model 4096 tokens unless told otherwise, and quietly drops the start of a
 #: conversation that does not fit, which is where an agent's instructions
@@ -175,10 +181,9 @@ OLLAMA_KEEP_ALIVE = "30m"
 OLLAMA_CONTEXTS = (8192, 16384, 32768)
 
 
-def ollama_context(request: ModelRequest) -> int:
-    """The context window a request to Ollama needs: its text, at about three
-    characters a token, its answer and a margin, rounded up to a size in
-    OLLAMA_CONTEXTS."""
+def ollama_tokens(request: ModelRequest) -> int:
+    """About how many tokens a request and its answer need: its text at
+    three characters a token, its answer, and a margin."""
 
     text = 0
     for message in request.messages:
@@ -188,7 +193,15 @@ def ollama_context(request: ModelRequest) -> int:
     for tool in request.tools:
         text += len(tool.name) + len(tool.description)
         text += len(json.dumps(tool.input_schema, sort_keys=True))
-    wanted = text // 3 + (request.max_output_tokens or 1024) + 512
+    return text // 3 + (request.max_output_tokens or 1024) + 512
+
+
+def ollama_context(request: ModelRequest) -> int:
+    """The context window a request to Ollama needs: its text, at about three
+    characters a token, its answer and a margin, rounded up to a size in
+    OLLAMA_CONTEXTS."""
+
+    wanted = ollama_tokens(request)
     return next(
         (size for size in OLLAMA_CONTEXTS if size >= wanted), OLLAMA_CONTEXTS[-1]
     )
@@ -219,6 +232,7 @@ class OpenAICompatibleProvider:
         transport: Transport | None = None,
         think: bool | None = None,
         protocol: str = "openai",
+        context: int | None = None,
     ) -> None:
         if not base_url:
             raise ValueError("Model base URL cannot be empty")
@@ -232,6 +246,17 @@ class OpenAICompatibleProvider:
             raise ValueError(
                 f"Model protocol must be one of {', '.join(MODEL_PROTOCOLS)}"
             )
+        if context is not None:
+            if type(context) is not int or context <= 0:
+                raise ValueError(
+                    "Model context must be a positive whole number of tokens"
+                )
+            if protocol != "ollama":
+                raise ValueError(
+                    "Model context needs the ollama protocol: an OpenAI-shaped "
+                    "endpoint is given no way to be told a context window"
+                )
+        self.context = context
         self.protocol = protocol
         trimmed = base_url.rstrip("/")
         if protocol == "ollama":
@@ -487,7 +512,19 @@ class OpenAICompatibleProvider:
             ):
                 raise ModelProviderError("max_output_tokens must be a positive integer")
             options["num_predict"] = request.max_output_tokens
-        options["num_ctx"] = min(ollama_context(request), self._context_limit)
+        if self.context is None:
+            options["num_ctx"] = min(ollama_context(request), self._context_limit)
+        else:
+            # A window named by the person running it is asked for exactly:
+            # no tiers, and no shrinking after a refusal to hold the prompt.
+            needed = ollama_tokens(request)
+            if needed > self.context:
+                raise ModelProviderError(
+                    f"the model needs about {needed} tokens, more than the "
+                    f"{self.context} it was given; run it with a larger "
+                    "--model-context"
+                )
+            options["num_ctx"] = self.context
 
         payload: dict[str, Any] = {
             "model": request.model or self.model,

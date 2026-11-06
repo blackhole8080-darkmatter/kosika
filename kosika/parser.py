@@ -1529,7 +1529,7 @@ class Parser:
         votes = self.parse_step_count("vote")
         retries = self.parse_step_count("retry")
         escalate = self.identifier() if self.accept("escalate") else None
-        learns, learn_by = self.parse_learn()
+        learns, learn_by, learn_near = self.parse_learn()
         fallback = self.parse_step_call() if self.accept("otherwise") else None
         return Step(
             name,
@@ -1544,6 +1544,7 @@ class Parser:
             escalate=escalate,
             learns=learns,
             learn_by=learn_by,
+            learn_near=learn_near,
         )
 
     def parse_match_step(self, name: str) -> Step | None:
@@ -1640,14 +1641,21 @@ class Parser:
         self.index = start
         return FunctionCall(VALUE_CALL, (("value", self.expression()),))
 
-    def parse_learn(self) -> tuple[bool, Expression | None]:
-        """An optional `learn` or `learn by EXPRESSION` after a step's call.
-        `learn` followed by `=` or `:` is the name of the next step."""
+    def parse_learn(self) -> tuple[bool, Expression | None, bool]:
+        """An optional `learn`, `learn near`, or `learn near by EXPRESSION`
+        after a step's call. `learn` followed by `=` or `:` is the name of
+        the next step."""
 
         if not self.check("learn") or self.peek().value in ("=", ":"):
-            return False, None
+            return False, None, False
         self.advance()
-        return True, (self.expression() if self.accept("by") else None)
+        learned = self.tokens[self.index - 1]
+        # `near` is the modifier only when it is written on the same line:
+        # a step named `near` on the next line is a step, not a modifier.
+        near = self.check("near") and self.current.line == learned.line
+        if near:
+            self.advance()
+        return True, (self.expression() if self.accept("by") else None), near
 
     def parse_step_count(self, word: str) -> int:
         """Parse an optional `vote N` or `retry N` after a step's call."""
@@ -1675,7 +1683,7 @@ class Parser:
         votes = self.parse_step_count("vote")
         retries = self.parse_step_count("retry")
         escalate = self.identifier() if self.accept("escalate") else None
-        learns, learn_by = self.parse_learn()
+        learns, learn_by, learn_near = self.parse_learn()
         fallback = self.parse_step_call() if self.accept("otherwise") else None
         if not self.check("return"):
             token = self.current
@@ -1701,6 +1709,7 @@ class Parser:
             escalate=escalate,
             learns=learns,
             learn_by=learn_by,
+            learn_near=learn_near,
         )
 
     def parse_think_call(self) -> ThinkCall:

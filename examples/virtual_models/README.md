@@ -65,6 +65,43 @@ either changed after review, the candidate must be reviewed again. A changed
 source snapshot changes the agent plan identity, so durable resumes and
 approval hashes cannot silently carry over to different specialist knowledge.
 
+## Trained ranking
+
+A profile can read its passages with learned weights instead of shared words.
+Training uses the profile's own verified examples: each cited passage is a
+positive and passages with no citation are negatives, so nothing is learned
+from model output.
+
+```sh
+kosika train ranker examples/virtual_models/kosika-specialist.json \
+  --output examples/virtual_models/kosika-specialist.ranker.json
+```
+
+Before keeping a checkpoint, score it on examples it was not trained on:
+
+```sh
+kosika train eval examples/virtual_models/kosika-specialist.json \
+  --holdout 1 --min-accuracy 0.8 \
+  --output examples/virtual_models/kosika-specialist.ranker.json
+```
+
+Whole verified examples are held out (never split by passage), the rest are
+trained on, and the gate fails with exit code 1 when held-out accuracy is below
+the threshold. A checkpoint that misses the gate is not written. The same run
+scores the lexical rule Kosika used before training -- read only passages that
+share a word with the question -- on those same held-out pairs, so the trained
+number is reported next to its baseline and the difference between them. At
+least two verified examples must remain for training; `--min-train-examples`
+can lower that on purpose, but a ranker fitted on one example is refused by
+default, because its held-out score measures that example rather than any
+ability to generalize.
+
+Add `"ranker": "kosika-specialist.ranker.json"` to the profile to use it. The
+checkpoint carries its hyperparameters, its training metrics and a digest over
+the weights: a hand-edited weight is refused on load, and a different digest is
+different knowledge, so an agent's plan identity changes with it. This trains a
+few thousand weights -- a ranking model, not a language model.
+
 Profiles use schema `kosika.virtual-model/v1`; their paths are relative to the
 profile file. Supported source files are `.kos`, `.md`, `.py`, and `.go`. Keep
 sources limited to material you intend to send to your configured model

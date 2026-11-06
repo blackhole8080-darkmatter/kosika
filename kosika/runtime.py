@@ -1430,6 +1430,37 @@ def _plain_field(model: ModelDecl, schema: dict[str, Any]) -> str | None:
     return next(iter(schema.get("properties", {})), None)
 
 
+def _context_of(arguments: Mapping[str, Any], question: str) -> str:
+    """The inputs a question was asked about, apart from the question itself.
+
+    A near step may reuse an answer for a question written differently, but
+    never for other inputs, so what the question was read from is dropped
+    and the amounts, flags, lists and choices are kept: two runs that differ
+    in any of those get different contexts, and the lesson does not cross.
+    """
+
+    def without(value: Any) -> Any:
+        if isinstance(value, str):
+            return None if question and question in value else value
+        if isinstance(value, Mapping):
+            return {
+                key: kept
+                for key, kept in ((k, without(v)) for k, v in value.items())
+                if kept is not None
+            }
+        if isinstance(value, list):
+            return [without(item) for item in value]
+        return value
+
+    kept = {name: without(value) for name, value in arguments.items()}
+    return json.dumps(
+        {name: value for name, value in kept.items() if value is not None},
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+
+
 def _lesson_name(workflow: str, step: str, model: ModelDecl) -> str:
     """The lessons of one step, kept apart from those of any other step
     and of an earlier version of its model: a model declared differently
@@ -2558,7 +2589,11 @@ def _run_workflow(
                     )
                 )
                 early = ahead.pop(step.name, None)
-                book = getattr(_control, "lessons", None) if step.learns else None
+                book = (
+                    getattr(_control, "lessons", None)
+                    if step.learns and not step.votes and _control.mind is None
+                    else None
+                )
                 known = None
                 if step.learns:
                     question = (
@@ -2570,19 +2605,42 @@ def _run_workflow(
                         if step.learn_by is not None
                         else _question_of(arguments)
                     )
+                    request = json.dumps(
+                        {"question": question, "arguments": arguments},
+                        sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+                    )
+                    context = _context_of(arguments, question)
                     lesson = _lesson_name(workflow.name, step.name, model)
                     if book is not None:
                         book.adopt(
                             _earlier_lesson_name(workflow.name, step.name, model), lesson
                         )
-                        known = book.recall(
-                            lesson, question, voting=model.verb in ("classify", "decide")
-                        )
+                        known = book.recall_exact(lesson, request)
+                        if known is None and step.learn_near:
+                            # `learn near`: only what was kept for these
+                            # inputs, and only a question carrying the same
+                            # figures and the same capitals.
+                            known = book.recall(
+                                lesson,
+                                question,
+                                voting=False,
+                                context=context,
+                                same_figures=True,
+                            )
                     if known is not None:
                         try:
                             validate(known["answer"], output_schema)
                         except ValueError:
                             known = None
+                if known is not None and step.verify is not None:
+                    # A kept answer is only as good as the check the program
+                    # would put a fresh one through: it is checked here, and a
+                    # refusal sends the question to the model.
+                    complaint, _ = _verifier(step, environment, program, functions)(
+                        known["answer"]
+                    )
+                    if complaint.strip():
+                        known = None
                 if known is not None:
                     result = known["answer"]
                     # Recorded as the model's answer would be, so the run
@@ -2606,7 +2664,9 @@ def _run_workflow(
                         else model_answer(step, arguments)
                     )
                     if book is not None:
-                        book.keep(lesson, question, result)
+                        book.keep(
+                            lesson, question, result, request=request, context=context
+                        )
                 events.append(
                     _event("model_return", model=model.name, result=result, **response)
                 )
@@ -2708,6 +2768,9 @@ def _run_workflow(
                 votes=0,
                 verify=None,
                 escalate=None,
+                learns=False,
+                learn_by=None,
+                learn_near=False,
             )
             if isinstance(exc, ExecutionError):
                 # On resume, a step its fallback completed earlier is stored

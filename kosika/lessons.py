@@ -7,19 +7,26 @@ program accepted, with what it was asked:
     reply = use_model voice(prompt.text) learn by msg.text otherwise ...
     kind  = classify t.text into ["bill", "bug"] learn
 
-Before asking the model again, the step looks at what it has kept:
+Approximate recall finds candidates among the answers kept:
 
 - the same question (the same words, ignoring case and punctuation) is
   answered with the answer kept for it;
 - a question that differs by a word or two from a kept one, when nearly
   all its words are the same, is answered like it;
+- a question that means what a kept one means, written in other words, is
+  answered like it when an embedding model is granted (`--embed-model`):
+  the two are compared as vectors, and nothing is asked of a model at
+  run time that the store has not already been told;
 - a `classify` or `decide` step, once it has kept enough examples, answers
   by itself when the examples most like the question agree on one answer.
 
-Only when none of these holds is the model asked, and its answer is kept
-in turn. A step that learns may run with no model at all: it answers what
-it has learned and, for anything else, fails the way a model that cannot
-be reached fails, so its `otherwise` runs.
+Runtime reuse requires an exact full-request identity, unless the step
+is written `learn near`: then an answer kept for the same inputs may also
+be given to a question that reads differently, never to one carrying other
+figures (`+15` for `-15`) or other words in capitals (`US` for `us`), and
+never to one asked about other inputs. Otherwise the model is asked and its
+answer is kept.
+A step with no connected model runs its `otherwise` for an unseen request.
 
 Lessons live in a folder the person chose (the memory folder), one file
 for each step, as plain JSON they can read or delete. Without a folder a
@@ -51,6 +58,11 @@ VOTE_EXAMPLES = 6
 VOTE_NEIGHBOURS = 7
 VOTE_AGREEMENT = 0.8
 VOTE_NEAREST = 0.4
+#: How near two questions must be in meaning, as a cosine of their
+#: vectors, for one's answer to be given to the other. Set to favour
+#: precision over recall until a task set calibrates it; a wrong answer
+#: given confidently is worse than a model asked.
+SEMANTIC_ENOUGH = 0.8
 
 _WORD = re.compile(r"[^\W_]+", re.UNICODE)
 
@@ -65,6 +77,34 @@ def _likeness(a: set[str], b: set[str]) -> float:
     return len(a & b) / len(a | b)
 
 
+_NUMBER = re.compile(r"[+-]?\d+(?:[.,]\d+)?")
+
+
+def _figures(text: str) -> tuple[str, ...]:
+    """The figures a question carries, signs and decimal marks kept.
+
+    Words may be said another way; a figure may not: `+15` and `-15` are
+    different questions, and so are `150` and `15`.
+    """
+
+    return tuple(number.replace(",", ".") for number in _NUMBER.findall(text))
+
+
+def _caps(text: str) -> tuple[tuple[int, str], ...]:
+    """Where a question writes words in capitals, such as `US`, and which.
+
+    `US` and `us` are different words, and case is how a reader tells them
+    apart, so a near question may not move that case onto another word:
+    `compare US and us` and `compare us and US` keep different capitals.
+    """
+
+    return tuple(
+        (position, word.lower())
+        for position, word in enumerate(_WORD.findall(text))
+        if len(word) > 1 and word.isupper()
+    )
+
+
 def _canonical(value: Any) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
@@ -72,8 +112,11 @@ def _canonical(value: Any) -> str:
 class Lessons:
     """The lessons of every learning step of one program, kept in `folder`."""
 
-    def __init__(self, folder: str | Path):
+    def __init__(self, folder: str | Path, meaning: Any | None = None):
         self.folder = Path(folder)
+        #: The grant that turns questions into vectors, or None. Without it
+        #: a lesson is matched by its words alone, as before.
+        self.meaning = meaning
         self._lock = threading.Lock()
         self._loaded: dict[str, list[dict[str, Any]]] = {}
 
@@ -111,19 +154,62 @@ class Lessons:
         with self._lock:
             return len(self._book(step))
 
-    def recall(self, step: str, question: str, *, voting: bool) -> dict[str, Any] | None:
+    def recall_exact(self, step: str, request: str) -> dict[str, Any] | None:
+        digest = hashlib.sha256(request.encode("utf-8")).hexdigest()
+        with self._lock:
+            book = self._book(step)
+            for item in reversed(book):
+                if item.get("request_hash") == digest:
+                    return {"answer": item["answer"], "how": "same", "likeness": 1.0, "lessons": len(book)}
+        return None
+
+    def recall(
+        self,
+        step: str,
+        question: str,
+        *,
+        voting: bool,
+        context: str | None = None,
+        same_figures: bool = False,
+    ) -> dict[str, Any] | None:
         """The answer learned for `question`, with how it was found, or None
-        when the model must be asked."""
+        when the model must be asked.
+
+        `context` holds a recall to the lessons kept for those inputs, so a
+        caller that offers approximate matching can never cross from one set
+        of inputs to another. Without it every lesson is a candidate, which is
+        what the tool and Studio readers have always done.
+
+        `same_figures` admits only lessons whose question carries the same
+        numbers, signs and words in capitals: what `learn near` may reword,
+        it may not renumber.
+        """
 
         asked = words_of(question)
         plain = " ".join(asked)
+        figures = _figures(question) if same_figures else None
+        caps = _caps(question) if same_figures else None
         with self._lock:
-            book = list(self._book(step))
+            book = [
+                item
+                for item in self._book(step)
+                if (context is None or item.get("context") == context)
+                and (
+                    figures is None
+                    or (
+                        _figures(item.get("question", "")) == figures
+                        and _caps(item.get("question", "")) == caps
+                    )
+                )
+            ]
         if not book:
             return None
         for item in reversed(book):
             if item.get("plain") == plain:
                 return {"answer": item["answer"], "how": "same", "likeness": 1.0, "lessons": len(book)}
+        by_meaning = self._by_meaning(step, question, book)
+        if by_meaning is not None:
+            return by_meaning
         mine = set(asked)
         ranked = sorted(
             ((_likeness(mine, set(item.get("plain", "").split())), index, item) for index, item in enumerate(book)),
@@ -157,22 +243,141 @@ class Lessons:
             answer["confidence"] = round(agreement, 3)
         return {"answer": answer, "how": "examples", "likeness": round(likeness, 3), "lessons": len(book)}
 
-    def keep(self, step: str, question: str, answer: Any) -> None:
-        """Keep a model's accepted answer to `question`."""
+    def _by_meaning(
+        self, step: str, question: str, book: list[dict[str, Any]]
+    ) -> dict[str, Any] | None:
+        """The kept question nearest in meaning, or None when none is near.
+
+        Vectors are made by the granted embedding model and kept in its own
+        store, so a question already asked costs no model call; one never
+        asked before is embedded once. A model that cannot be reached is
+        not a failure: the words are compared instead.
+        """
+
+        if self.meaning is None or not book:
+            return None
+        try:
+            scored = self.meaning.nearest(
+                question, [item.get("question", "") for item in book]
+            )
+        except (RuntimeError, OSError, ValueError):
+            return None
+        if not scored:
+            return None
+        likeness, position = scored[0]
+        if likeness < SEMANTIC_ENOUGH or not 0 <= position < len(book):
+            return None
+        item = book[position]
+        return {
+            "answer": item["answer"],
+            "how": "meaning",
+            "likeness": round(float(likeness), 3),
+            "lessons": len(book),
+        }
+
+    def keep(
+        self,
+        step: str,
+        question: str,
+        answer: Any,
+        *,
+        request: str | None = None,
+        context: str | None = None,
+    ) -> None:
+        """Keep a model's accepted answer to `question`.
+
+        `context` is what the answer was computed for, apart from the
+        question: a lesson is reused only for the same context, however alike
+        two questions read.
+        """
 
         plain = " ".join(words_of(question))
-        if not plain:
+        if not plain and request is None:
             return
+        key = question if request is None else request
+        if request is None and context is not None:
+            # The same question asked with different inputs is a different
+            # lesson, so one does not overwrite the other.
+            key = json.dumps([question, context], ensure_ascii=False)
+        digest = hashlib.sha256(key.encode("utf-8")).hexdigest()
         with self._lock:
             book = self._book(step)
-            book[:] = [item for item in book if item.get("plain") != plain]
-            book.append({"question": question[:2000], "plain": plain[:2000], "answer": answer, "at": round(time.time())})
+            book[:] = [item for item in book if item.get("request_hash") != digest]
+            book.append({
+                "question": question[:2000], "plain": plain[:2000],
+                "context": context,
+                "request_hash": digest, "answer": answer, "at": round(time.time()),
+            })
             del book[:-MAX_LESSONS]
-            path = self._path(step)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            spare = path.with_suffix(".tmp")
-            spare.write_text(json.dumps(book, ensure_ascii=False, indent=1), encoding="utf-8")
-            spare.replace(path)
+            self._save(step, book)
+
+    def _save(self, step: str, book: list[dict[str, Any]]) -> None:
+        path = self._path(step)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        spare = path.with_suffix(".tmp")
+        spare.write_text(json.dumps(book, ensure_ascii=False, indent=1), encoding="utf-8")
+        spare.replace(path)
+
+    def correct(
+        self, step: str, question: str, answer: Any, *, request: str | None = None
+    ) -> bool:
+        """Replace the answer kept for `question`, or keep it when none is.
+
+        A lesson is found the way `recall` would find it: by the words of its
+        question, or by an exact request when one is given. True says a kept
+        answer was replaced; False says the answer was new and is now kept.
+        """
+
+        plain = " ".join(words_of(question))
+        digest = hashlib.sha256(
+            (question if request is None else request).encode("utf-8")
+        ).hexdigest()
+        with self._lock:
+            book = self._book(step)
+            for item in reversed(book):
+                matched = (
+                    item.get("request_hash") == digest
+                    if request is not None
+                    else item.get("plain") == plain
+                )
+                if matched:
+                    item["answer"] = answer
+                    item["at"] = round(time.time())
+                    self._save(step, book)
+                    return True
+        self.keep(step, question, answer, request=request)
+        return False
+
+    def forget(
+        self, step: str, question: str, *, request: str | None = None
+    ) -> int:
+        """Drop every lesson kept for `question`; says how many went.
+
+        Nothing is written when there was nothing to drop, and a forgotten
+        question is asked of the model again rather than answered from a
+        lesson nobody trusts.
+        """
+
+        plain = " ".join(words_of(question))
+        digest = hashlib.sha256(
+            (question if request is None else request).encode("utf-8")
+        ).hexdigest()
+        with self._lock:
+            book = self._book(step)
+            kept = [
+                item
+                for item in book
+                if not (
+                    item.get("request_hash") == digest
+                    if request is not None
+                    else item.get("plain") == plain
+                )
+            ]
+            dropped = len(book) - len(kept)
+            if dropped:
+                book[:] = kept
+                self._save(step, book)
+            return dropped
 
 
 def census(events: list[dict[str, Any]]) -> dict[str, Any]:

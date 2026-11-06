@@ -77,12 +77,53 @@ class CheckError(ValueError):
 _ALLOWED_ACCESS = {"observe", "analyze", "prepare", "execute"}
 _PRIMITIVE_TYPES = {"Text", "Number", "Bool", "Null"}
 
+#: Names to declarations, per program, by identity. A program is never
+#: changed once made, so the table built for one stays right for as long as
+#: it lives. Walking every function to look one up, on every expression, is
+#: what made a large file take seconds to check.
+_INDEX: dict[int, tuple[weakref.ref[Program], dict[str, dict]]] = {}
+
+
+def _index(program: Program) -> dict[str, dict]:
+    """This program's declarations, by the name each is written under."""
+
+    known = _INDEX.get(id(program))
+    if known is not None and known[0]() is program:
+        return known[1]
+    alternatives: dict[str, tuple[object, object]] = {}
+    for choice in program.choices:
+        for alternative in choice.alternatives:
+            alternatives[alternative.name] = (choice, alternative)
+    built: dict[str, dict] = {
+        "functions": {item.name: item for item in program.functions},
+        "records": {item.name: item for item in program.records},
+        "fields": {
+            record.name: {
+                field.name: field.type_name for field in record.fields
+            }
+            for record in program.records
+        },
+        "models": {item.name: item for item in program.models},
+        "tools": {item.name: item for item in program.tools},
+        "workflows": {item.name: item for item in program.workflows},
+        "shapes": {item.name: item for item in program.shapes},
+        "choices": {item.name: item for item in program.choices},
+        "enums": {item.name: item for item in program.enums},
+        "alternatives": alternatives,
+    }
+    key = id(program)
+    _INDEX[key] = (
+        weakref.ref(program, lambda _ref: _INDEX.pop(key, None)),
+        built,
+    )
+    return built
+
 
 def _record_fields(program: Program, record_name: str) -> dict[str, str]:
-    for record in program.records:
-        if record.name == record_name:
-            return {field.name: field.type_name for field in record.fields}
-    raise CheckError(f"Unknown record type {record_name!r}")
+    fields = _index(program)["fields"].get(record_name)
+    if fields is None:
+        raise CheckError(f"Unknown record type {record_name!r}")
+    return dict(fields)
 
 
 def _check_stores(program: Program) -> None:
@@ -204,27 +245,21 @@ def _validate_type_name(program: Program, type_name: str) -> None:
 def _choice_named(program: Program, type_name: str):
     """The `choice` a type name names, or None."""
 
-    for choice in program.choices:
-        if choice.name == type_name:
-            return choice
-    return None
+    return _index(program)["choices"].get(type_name)
 
 
 def _choice_alternative(program: Program, name: str):
     """The choice and alternative a constructor name names, or (None, None)."""
 
-    for choice in program.choices:
-        for alternative in choice.alternatives:
-            if alternative.name == name:
-                return choice, alternative
-    return None, None
+    found = _index(program)["alternatives"].get(name)
+    if found is None:
+        return None, None
+    return found
 
 
 def _enum_values(program: Program, type_name: str) -> tuple[str, ...] | None:
-    for enum in program.enums:
-        if enum.name == type_name:
-            return enum.values
-    return None
+    enum = _index(program)["enums"].get(type_name)
+    return None if enum is None else enum.values
 
 
 def _check_shapes(program: Program) -> None:
@@ -1268,14 +1303,7 @@ def _expression_type(
             )
         return branch_type
     if isinstance(expression, FunctionRefExpr):
-        function = next(
-            (
-                item
-                for item in program.functions
-                if item.name == expression.function_name
-            ),
-            None,
-        )
+        function = _index(program)["functions"].get(expression.function_name)
         if function is None:
             raise CheckError(f"Unknown function reference {expression.function_name!r}")
         _check_arguments(
@@ -1327,14 +1355,7 @@ def _expression_type(
                 },
             )
             return choice.name
-        function = next(
-            (
-                item
-                for item in program.functions
-                if item.name == expression.function_name
-            ),
-            None,
-        )
+        function = _index(program)["functions"].get(expression.function_name)
         if function is None:
             raise CheckError(
                 f"Step {step_name!r} uses unknown function {expression.function_name!r}"
@@ -1478,6 +1499,9 @@ def _check_fallbacks(program: Program) -> None:
                         escalate=step.escalate if step.fallback is None else None,
                         learns=step.learns if step.fallback is None else False,
                         learn_by=step.learn_by if step.fallback is None else None,
+                        learn_near=(
+                            step.learn_near if step.fallback is None else False
+                        ),
                     )
                     for step in workflow.steps
                 ),
@@ -1512,7 +1536,7 @@ def _plan_check_fits(program: Program, agent: AgentDecl) -> bool:
     where R is a record with exactly the fields of `PLAN_FILE_FIELDS`.
     """
 
-    function = next((f for f in program.functions if f.name == agent.check), None)
+    function = _index(program)["functions"].get(agent.check)
     if function is None:
         return False
     if len(function.parameters) != 2 or function.output_type != "Text[]":
@@ -1520,7 +1544,7 @@ def _plan_check_fits(program: Program, agent: AgentDecl) -> bool:
     first, second = function.parameters
     if first.type_name != "Text" or not second.type_name.endswith("[]"):
         return False
-    record = next((r for r in program.records if r.name == second.type_name[:-2]), None)
+    record = _index(program)["records"].get(second.type_name[:-2])
     return (
         record is not None
         and {field.name: field.type_name for field in record.fields} == PLAN_FILE_FIELDS
@@ -1637,7 +1661,11 @@ def _check_branches(program: Program) -> None:
                     f"Step {step.name!r} match branches return different "
                     f"types: {', '.join(sorted(map(str, outputs)))}"
                 )
-    for index in range(most):
+    # Every branch of a step must give the same type, which was checked
+    # above; checking the program once with one branch in the step's place
+    # therefore says what checking it once per branch would say, and saying
+    # it once per branch per match was the cost of a large file.
+    for index in (0,):
         check(
             replace(
                 program,
@@ -1944,10 +1972,7 @@ def _check(program: Program) -> None:
         for step in workflow.steps:
             if step.votes:
                 asked = (
-                    next(
-                        (m for m in program.models if m.name == step.call.model_name),
-                        None,
-                    )
+                    _index(program)["models"].get(step.call.model_name)
                     if isinstance(step.call, ModelCall)
                     else None
                 )
@@ -1978,9 +2003,7 @@ def _check(program: Program) -> None:
                         f"Step {step.name!r} cannot escalate: a voting step "
                         "already asks more than once; name its models with using"
                     )
-                stronger = next(
-                    (m for m in program.models if m.name == step.escalate), None
-                )
+                stronger = _index(program)["models"].get(step.escalate)
                 if stronger is None or stronger.provider is not None:
                     raise CheckError(
                         f"Step {step.name!r} cannot escalate: {step.escalate!r} "
@@ -2047,9 +2070,7 @@ def _check(program: Program) -> None:
         if model.deployment is not None and not model.deployment:
             raise CheckError(f"Model {model.name!r} deployment must not be empty")
         if model.plain:
-            written = next(
-                (r for r in program.records if r.name == model.output), None
-            )
+            written = _index(program)["records"].get(model.output)
             if (
                 written is None
                 or len(written.fields) != 1

@@ -724,6 +724,11 @@ class Step:
     # is not the whole of what the model is given.
     learns: bool = False
     learn_by: Any = None
+    # `learn near`: an answer kept for the same inputs may also be given to
+    # a question that reads differently. Opt-in, because telling two
+    # questions apart by their words alone is wrong often enough that it is
+    # a decision the program has to make, not one the runtime makes for it.
+    learn_near: bool = False
 
 
 @dataclass(frozen=True)
@@ -986,6 +991,7 @@ _ABSENT_DEFAULTS: dict[str, tuple[Any, ...]] = {
     "learns": (False,),
     "plain": (False,),
     "learn_by": (None,),
+    "learn_near": (False,),
     "config": ((), []),
 }
 

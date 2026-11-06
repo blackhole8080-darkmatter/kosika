@@ -416,6 +416,88 @@ class NativeTests(unittest.TestCase):
                     # Each engine asked the same questions, word for word.
                     self.assertEqual(asked, by_reference)
 
+    def test_a_granted_context_window_reaches_both_engines(self) -> None:
+        # A machine with little memory names the window the model may hold.
+        # Both engines ask the server for exactly that window, and both
+        # refuse a prompt it cannot hold rather than let the server drop
+        # the start of the conversation, where the instructions are.
+        replies = [
+            {"label": "billing", "confidence": 0.9},
+            {"number": "A-7", "total": 40},
+            {"text": "Charged twice."},
+            {"answer": True, "confidence": 0.8, "reason": "It says so."},
+        ]
+        asked: list[dict] = []
+
+        class Server(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:  # noqa: N802 - the http.server name
+                body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                asked.append({"path": self.path, **body})
+                reply = json.dumps(replies[(len(asked) - 1) % len(replies)])
+                answer = {"message": {"role": "assistant", "content": reply}, "done": True}
+                data = json.dumps(answer).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            def log_message(self, *_: object) -> None:
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Server)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.shutdown)
+        program = ROOT / "conformance" / "cases" / "thinking.kos"
+        flags = [
+            "--model", "small", "--model-url", f"http://127.0.0.1:{server.server_port}",
+            "--model-protocol", "ollama", "--model-context", "2048",
+        ]
+
+        def run_reference(*arguments: str) -> subprocess.CompletedProcess[str]:
+            return subprocess.run(
+                [sys.executable, "-m", "kosika.cli", "run", str(program), *arguments],
+                cwd=ROOT, capture_output=True, text=True,
+            )
+
+        with tempfile.TemporaryDirectory() as scratch:
+            inputs = Path(scratch) / "input.json"
+            inputs.write_text(json.dumps({"ticket": {"text": "Charged twice."}}))
+            asked.clear()
+            reference = run_reference("--input", str(inputs), *flags)
+            by_reference = list(asked)
+            asked.clear()
+            native = self.run_engine("run", str(program), "--input", str(inputs), *flags)
+            self.assertEqual(reference.returncode, 0, reference.stderr)
+            self.assertEqual(native.returncode, 0, native.stderr.decode())
+            self.assertEqual(
+                native.stdout.decode("utf-8").splitlines()[0],
+                reference.stdout.splitlines()[0],
+            )
+            # Each engine asked the same questions, word for word, and every
+            # one of them named the window it was given, not a tier.
+            self.assertEqual(asked, by_reference)
+            self.assertTrue(by_reference)
+            for request in by_reference:
+                self.assertEqual(request["options"]["num_ctx"], 2048)
+
+            big = Path(scratch) / "big.json"
+            big.write_text(json.dumps({"ticket": {"text": "x" * 12_000}}), encoding="utf-8")
+            asked.clear()
+            reference = run_reference("--input", str(big), *flags)
+            asked_by_reference = list(asked)
+            asked.clear()
+            native = self.run_engine("run", str(program), "--input", str(big), *flags)
+            # Neither engine let the server drop the start of the prompt.
+            self.assertEqual(asked_by_reference, [])
+            self.assertEqual(asked, [])
+            self.assertNotEqual(reference.returncode, 0, reference.stdout)
+            self.assertEqual(native.returncode, reference.returncode)
+            self.assertEqual(
+                native.stderr.decode("utf-8").strip().splitlines()[-1],
+                reference.stderr.strip().splitlines()[-1],
+            )
+
     def test_an_agent_calls_its_tools_as_the_reference_does(self) -> None:
         # A stand-in model that asks for the disk tool, then answers from
         # what the tool gave back; the tool is the example MCP server.
@@ -1093,9 +1175,6 @@ class NativeTests(unittest.TestCase):
         self.assertIn("is not a plain name", seen["reference"]["bad name"][2][0])
 
     def test_it_learns_where_the_reference_learns(self) -> None:
-        # Lessons one engine keeps, the other finds and answers from, with
-        # the same trace: the same question again, and a new question that
-        # the examples kept answer alike.
         program = str(ROOT / "conformance" / "cases" / "learn.kos")
         asked = [
             "the invoice total is wrong",
@@ -1143,7 +1222,7 @@ class NativeTests(unittest.TestCase):
                     "writer": [{"text": "asked again"}] * 2,
                 }))
                 traces = {}
-                for text, how in ((asked[0], "same"), ("is the invoice total wrong here", "examples")):
+                for text, how in ((asked[0], "same"), ("is the invoice total wrong here", "new")):
                     (folder / "in.json").write_text(json.dumps({"t": {"text": text}}))
                     for name in ("reference", "native"):
                         trace = folder / f"{name}-{how}.jsonl"
@@ -1157,8 +1236,86 @@ class NativeTests(unittest.TestCase):
                         traces[name, how] = [clean(json.loads(line)) for line in lines]
                     self.assertEqual(traces["native", how], traces["reference", how])
                     returns = [e for e in traces[finder, how] if e.get("event") == "model_return"]
-                    self.assertEqual(returns[0]["learned"]["how"], how)
-                    self.assertEqual(returns[0]["result"]["label"], "billing")
+                    if how == "same":
+                        self.assertEqual(returns[0]["learned"]["how"], "same")
+                        self.assertEqual(returns[0]["result"]["label"], "billing")
+                    else:
+                        self.assertNotIn("learned", returns[0])
+                        self.assertEqual(returns[0]["result"]["label"], "bug")
+
+    def test_exact_lesson_requests_keep_all_fields_across_engines(self) -> None:
+        source = """
+record Detail { number: Number }
+record Ticket { text: Text amount: Number approved: Bool items: Text[] detail: Detail values: Number[] }
+record Said { text: Text }
+model writer { input: Ticket output: Said }
+workflow main(t: Ticket) -> Said {
+  said = use_model writer(text: t.text, amount: t.amount, approved: t.approved, items: t.items, detail: t.detail, values: t.values) learn by t.text otherwise {text: "unknown"}
+}
+"""
+        original = {"text": "Café 東京 " + "status " * 300, "amount": 1.5e-7,
+                    "approved": True, "items": ["α", "β"],
+                    "detail": {"number": -0.0}, "values": [1e16, 1e6, 5e-324]}
+        with tempfile.TemporaryDirectory() as scratch:
+            folder = Path(scratch)
+            program = folder / "learn.kos"
+            program.write_text(source, encoding="utf-8")
+            fixture = folder / "fixture.json"
+            fixture.write_text(json.dumps({"writer": [{"text": "accepted"}]}))
+
+            def engine(name, memory, payload, connected=False):
+                inputs = folder / "input.json"
+                inputs.write_text(json.dumps({"t": payload}), encoding="utf-8")
+                trace = folder / "trace.jsonl"
+                flags = ["run", str(program), "--memory", str(memory), "--input", str(inputs),
+                         "--trace", str(trace)]
+                if connected:
+                    flags += ["--model-fixture", str(fixture)]
+                if name == "native":
+                    ran = self.run_engine(*flags)
+                else:
+                    ran = subprocess.run([sys.executable, "-m", "kosika.cli", *flags],
+                                         cwd=ROOT, capture_output=True)
+                self.assertEqual(ran.returncode, 0, ran.stderr.decode())
+                return ast.literal_eval(ran.stdout.decode().splitlines()[0])
+
+            for keeper in ("reference", "native"):
+                with self.subTest(keeper=keeper):
+                    memory = folder / keeper
+                    self.assertEqual(engine(keeper, memory, original, True), {"text": "accepted"})
+                    numbers = [(1e16, "large"), (-0.0, "negative zero"), (0.0, "positive zero")]
+                    for amount, expected in numbers:
+                        with self.subTest(seed=expected):
+                            fixture.write_text(json.dumps({"writer": [{"text": expected}]}))
+                            self.assertEqual(engine(keeper, memory, {**original, "amount": amount}, True),
+                                             {"text": expected})
+                    fixture.write_text(json.dumps({"writer": [{"text": "accepted"}]}))
+                    for finder in ("reference", "native"):
+                        with self.subTest(finder=finder):
+                            self.assertEqual(engine(finder, memory, original), {"text": "accepted"})
+                            for change in ({"amount": -1.5e-7}, {"approved": False},
+                                           {"items": ["β", "α"]}, {"text": original["text"] + "not"},
+                                           {"detail": {"number": 0.0}}, {"values": [1e16, 1e6, 0.0]}):
+                                with self.subTest(change=change):
+                                    self.assertEqual(engine(finder, memory, {**original, **change}),
+                                                     {"text": "unknown"})
+                            for amount, expected in numbers:
+                                with self.subTest(number=expected):
+                                    self.assertEqual(engine(finder, memory, {**original, "amount": amount}),
+                                                     {"text": expected})
+                            for clause in ("verify refuse(said)", "vote 3"):
+                                with self.subTest(clause=clause):
+                                    try:
+                                        guarded = source.replace("learn by t.text", clause + " learn by t.text")
+                                        guarded += '\nfn refuse(s: Said) -> Text { return "not permitted" }\n'
+                                        program.write_text(guarded, encoding="utf-8")
+                                        fixture.write_text(json.dumps({"writer": [
+                                            {"text": "accepted"}, {"text": "denied"}, {"text": "unsure"},
+                                        ]}))
+                                        self.assertEqual(engine(finder, memory, original, True), {"text": "unknown"})
+                                    finally:
+                                        program.write_text(source, encoding="utf-8")
+                                        fixture.write_text(json.dumps({"writer": [{"text": "accepted"}]}))
 
     def test_it_reaches_a_pinned_mcp_server_as_the_reference_does(self) -> None:
         program = ROOT / "examples" / "test_host_live.kos"

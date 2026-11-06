@@ -763,6 +763,14 @@ think = "classify"  expression "into" expression [ "using" identifier ]
 - A model step MAY be followed by `learn`, or `learn by EXPRESSION`, written
   after any `escalate` and before any `otherwise`:
   `reply = use_model voice(p.text) retry 1 learn by msg.text otherwise f(msg)`.
+  A step MAY be written `learn near`, or `learn near by EXPRESSION`, to
+  answer a question that reads differently from one already answered: the
+  same words in another order, nearly the same words, or, when an embedding
+  model is granted, other words that mean the same. A near step answers
+  only from answers kept for the same inputs, and never a question carrying
+  other figures (`+15` for `-15`) or other words in capitals (`US` for
+  `us`). Without `near`, only the same question with the same inputs is
+  answered from a lesson.
   The step keeps every answer its model gave and the program accepted, with
   the question it answered: the Text of `EXPRESSION` (which MUST be Text),
   or else the text the model was given. Before asking the model, the step
