@@ -19,6 +19,9 @@ from .ast import (
     ColumnDecl,
     ConditionalExpr,
     ContinueExpr,
+    DeclList,
+    DeclMap,
+    DeclRef,
     EnumDecl,
     Expression,
     FailExpr,
@@ -843,6 +846,7 @@ class Parser:
         parameters = ModelParameters()
         seen: set[str] = set()
         plain = False
+        config: list[tuple[str, Any]] = []
         while not self.accept("}"):
             key = self.identifier()
             if key in seen:
@@ -851,6 +855,10 @@ class Parser:
             if key == "parameters":
                 self.expect(":")
                 parameters = self.parse_model_parameters()
+                continue
+            if key in self.MODEL_CONFIG_KEYS:
+                self.expect(":")
+                config.append((key, self.parse_declaration_value()))
                 continue
             if key not in {"input", "output", "deployment"}:
                 raise ParseError(f"Invalid model field {key!r}")
@@ -869,7 +877,13 @@ class Parser:
         if set(values) != {"input", "output"}:
             raise ParseError(f"Model {name!r} requires input and output records")
         return ModelDecl(
-            name, values["input"], values["output"], deployment, parameters, plain=plain
+            name,
+            values["input"],
+            values["output"],
+            deployment,
+            parameters,
+            plain=plain,
+            config=tuple(config),
         )
 
     def parse_model_parameters(self) -> ModelParameters:
@@ -925,6 +939,81 @@ class Parser:
             frequency_penalty,
             presence_penalty,
             stop,
+        )
+
+    #: The model-body keys that take a declaration value rather than a record
+    #: name or a typed parameter block. Slice 1 parses and types these; what
+    #: they mean is settled later.
+    MODEL_CONFIG_KEYS = frozenset(
+        {"base", "embed", "sources", "limits", "cache", "fallback"}
+    )
+
+    def parse_declaration_value(self, depth: int = 0) -> Any:
+        """One value of a declaration body.
+
+        Text, a whole or decimal number, `on`/`off`, `none`, a bare identifier
+        (a reference), a list, or a map — the last two nesting arbitrarily.
+        Nothing here is typed: a decimal in a whole-number field is refused by
+        the checker, so that the suite can hold it as a refusal.
+        """
+
+        if depth >= 32:
+            raise ParseError("Declaration value nesting exceeds 32")
+        if self.check("["):
+            self.advance()
+            items: list[Any] = []
+            while not self.accept("]"):
+                items.append(self.parse_declaration_value(depth + 1))
+                if not self.accept(","):
+                    break
+            self.expect("]")
+            return DeclList(tuple(items))
+        if self.check("{"):
+            self.advance()
+            entries: list[tuple[str, Any]] = []
+            seen: set[str] = set()
+            while not self.accept("}"):
+                key = self.identifier()
+                if key in seen:
+                    raise ParseError(f"Invalid or duplicate model field {key!r}")
+                seen.add(key)
+                self.expect(":")
+                entries.append((key, self.parse_declaration_value(depth + 1)))
+                if not self.accept(","):
+                    break
+            self.expect("}")
+            return DeclMap(tuple(entries))
+        token = self.current
+        if token.kind == "STRING":
+            self.advance()
+            return token.value
+        if token.kind == "NUMBER":
+            self.advance()
+            return int(token.value) if token.value.isdigit() else float(token.value)
+        if token.kind == "IDENT":
+            self.advance()
+            if token.value == "on":
+                return True
+            if token.value == "off":
+                return False
+            if token.value == "none":
+                return None
+            return DeclRef(token.value)
+        if token.value == "-":
+            self.advance()
+            number = self.current
+            if number.kind != "NUMBER":
+                raise ParseError(
+                    f"Expected number at {number.line}:{number.column}, "
+                    f"got {number.value!r}"
+                )
+            self.advance()
+            value = (
+                int(number.value) if number.value.isdigit() else float(number.value)
+            )
+            return -value
+        raise ParseError(
+            f"Expected value at {token.line}:{token.column}, got {token.value!r}"
         )
 
     def parse_string_list(self) -> tuple[str, ...]:
