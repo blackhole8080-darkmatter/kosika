@@ -520,25 +520,27 @@ In `kosika/parser.py`, immediately after `parse_model_parameters` ends (the meth
         if self.check("["):
             self.advance()
             items: list[Any] = []
-            while not self.accept("]"):
-                items.append(self.parse_declaration_value(depth + 1))
-                if not self.accept(","):
-                    break
+            if not self.check("]"):
+                while True:
+                    items.append(self.parse_declaration_value(depth + 1))
+                    if not self.accept(","):
+                        break
             self.expect("]")
             return DeclList(tuple(items))
         if self.check("{"):
             self.advance()
             entries: list[tuple[str, Any]] = []
             seen: set[str] = set()
-            while not self.accept("}"):
-                key = self.identifier()
-                if key in seen:
-                    raise ParseError(f"Invalid or duplicate model field {key!r}")
-                seen.add(key)
-                self.expect(":")
-                entries.append((key, self.parse_declaration_value(depth + 1)))
-                if not self.accept(","):
-                    break
+            if not self.check("}"):
+                while True:
+                    key = self.identifier()
+                    if key in seen:
+                        raise ParseError(f"Invalid or duplicate model field {key!r}")
+                    seen.add(key)
+                    self.expect(":")
+                    entries.append((key, self.parse_declaration_value(depth + 1)))
+                    if not self.accept(","):
+                        break
             self.expect("}")
             return DeclMap(tuple(entries))
         token = self.current
@@ -999,10 +1001,12 @@ func (p *Parser) parseDeclValue(depth int) any {
 	if p.check("[") {
 		p.advance()
 		items := []any{}
-		for !p.accept("]") {
-			items = append(items, p.parseDeclValue(depth+1))
-			if !p.accept(",") {
-				break
+		if !p.check("]") {
+			for {
+				items = append(items, p.parseDeclValue(depth+1))
+				if !p.accept(",") {
+					break
+				}
 			}
 		}
 		p.expect("]")
@@ -1012,16 +1016,18 @@ func (p *Parser) parseDeclValue(depth int) any {
 		p.advance()
 		entries := []declEntry{}
 		seen := map[string]bool{}
-		for !p.accept("}") {
-			key := p.identifier()
-			if seen[key] {
-				parseFail("Invalid or duplicate model field %s", pyRepr(key))
-			}
-			seen[key] = true
-			p.expect(":")
-			entries = append(entries, declEntry{key, p.parseDeclValue(depth + 1)})
-			if !p.accept(",") {
-				break
+		if !p.check("}") {
+			for {
+				key := p.identifier()
+				if seen[key] {
+					parseFail("Invalid or duplicate model field %s", pyRepr(key))
+				}
+				seen[key] = true
+				p.expect(":")
+				entries = append(entries, declEntry{key, p.parseDeclValue(depth + 1)})
+				if !p.accept(",") {
+					break
+				}
 			}
 		}
 		p.expect("}")
