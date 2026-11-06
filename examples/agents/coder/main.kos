@@ -1158,6 +1158,9 @@ fn patched(old: Text, answer: Text) -> Patched {
     problems = problems.concat(last.problems)
   }
   if n == 0 { problems = problems.append("there was no <<<<<<< FIND block in the answer") }
+  for name in twice_now(old.replace("\r\n", "\n"), text) {
+    problems = problems.append("the edits define " + name + " a second time; it is already in the file, so leave it where it is and copy nothing that is already there")
+  }
   if not problems.is_empty() { return {text: "", problems: problems} }
   return {text: if crlf { text.replace("\n", "\r\n") } else { text }, problems: []}
 }
@@ -1171,6 +1174,30 @@ fn engine_said(edits: Patched, read: Engine) -> Patched {
   if read.problems.is_empty() { return edits }
   let said = for problem in read.problems.take(4) { "after the edits, " + problem }
   return {text: "", problems: said}
+}
+
+// The names a file defines more than once after a change that it defined
+// once before it: a model that pastes a function it was shown, again.
+fn twice_now(old: Text, new: Text) -> Text[] {
+  var twice: Text[] = []
+  for name in defined(new) {
+    if heads(new, name) > 1 and heads(old, name) < heads(new, name) and not twice.contains(name) { twice = twice.append(name) }
+  }
+  return twice
+}
+
+// How many times a text begins a definition of a name at the left margin.
+fn heads(text: Text, name: Text) -> Number {
+  let lines = "
+" + text
+  var count = 0
+  for word in ["def ", "class ", "fn ", "func ", "record ", "workflow "] {
+    count += lines.count("
+" + word + name + "(") + lines.count("
+" + word + name + " ") + lines.count("
+" + word + name + ":")
+  }
+  return count
 }
 
 fn kept_patch(patch: Patched) -> Patched {
@@ -2675,4 +2702,13 @@ test "a method written but not registered is registered by the program" {
   expect kosika_type("dict") == ""
   failed: Result = {text: "t", last: {task: "t", output: "'Text' has no method 'is_digits'; available", passed: false, known: true}}
   expect needs_registering(asked, failed)
+}
+
+test "an edit that pastes a function the file already has changes nothing" {
+  old = "def _to_number(text):\n    return 1\n\ndef _pad(t):\n    return t\n"
+  pasted = patched(old, "<<<<<<< FIND\ndef _pad(t):\n=======\ndef _is_digits(t):\n    return True\n\ndef _to_number(text):\n    return 1\n\ndef _pad(t):\n>>>>>>> REPLACE")
+  expect pasted.text == ""
+  expect pasted.problems[0].contains("define _to_number a second time")
+  added = patched(old, "<<<<<<< FIND\ndef _pad(t):\n=======\ndef _is_digits(t):\n    return True\n\ndef _pad(t):\n>>>>>>> REPLACE")
+  expect added.problems == []
 }
