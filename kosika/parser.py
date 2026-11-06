@@ -962,25 +962,27 @@ class Parser:
         if self.check("["):
             self.advance()
             items: list[Any] = []
-            while not self.accept("]"):
-                items.append(self.parse_declaration_value(depth + 1))
-                if not self.accept(","):
-                    break
+            if not self.check("]"):
+                while True:
+                    items.append(self.parse_declaration_value(depth + 1))
+                    if not self.accept(","):
+                        break
             self.expect("]")
             return DeclList(tuple(items))
         if self.check("{"):
             self.advance()
             entries: list[tuple[str, Any]] = []
             seen: set[str] = set()
-            while not self.accept("}"):
-                key = self.identifier()
-                if key in seen:
-                    raise ParseError(f"Invalid or duplicate model field {key!r}")
-                seen.add(key)
-                self.expect(":")
-                entries.append((key, self.parse_declaration_value(depth + 1)))
-                if not self.accept(","):
-                    break
+            if not self.check("}"):
+                while True:
+                    key = self.identifier()
+                    if key in seen:
+                        raise ParseError(f"Invalid or duplicate model field {key!r}")
+                    seen.add(key)
+                    self.expect(":")
+                    entries.append((key, self.parse_declaration_value(depth + 1)))
+                    if not self.accept(","):
+                        break
             self.expect("}")
             return DeclMap(tuple(entries))
         token = self.current

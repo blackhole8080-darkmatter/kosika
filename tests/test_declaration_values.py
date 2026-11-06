@@ -162,3 +162,30 @@ def test_nesting_has_a_limit() -> None:
     deep = "[" * 33 + "]" * 33
     with pytest.raises(ParseError, match=r"nesting exceeds 32"):
         parse(f"model m {{\n  sources: {deep}\n}}\n")
+
+
+def test_empty_containers_parse() -> None:
+    program = parse(
+        "model m {\n"
+        "  sources: []\n"
+        "  limits: {}\n"
+        '  base: "x"\n'
+        "}\n"
+    )
+    assert program.models[0].config == (
+        ("sources", DeclList(())),
+        ("limits", DeclMap(())),
+        ("base", "x"),
+    )
+
+
+def test_nested_empty_containers_parse() -> None:
+    program = parse("model m {\n  limits: { a: [], b: {} }\n}\n")
+    assert program.models[0].config == (
+        ("limits", DeclMap((("a", DeclList(())), ("b", DeclMap(()))))),
+    )
+
+
+def test_a_trailing_comma_is_refused() -> None:
+    with pytest.raises(ParseError, match=r"Expected value"):
+        parse("model m {\n  sources: [1,]\n}\n")
