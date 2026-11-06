@@ -1,7 +1,7 @@
 # Kosika declaration layer — design (spec A)
 
 Date: 2026-11-05
-Status: approved in conversation, pending spec review
+Status: approved 2026-11-06 (spec review gate passed)
 Supersedes: nothing. Discharges the Mind-layer spec's deferred item, *"Virtual models (to be
 specified separately by the author)"* (`2026-11-02-kosika-mind-layer-design.md`, Out of scope).
 
@@ -45,21 +45,24 @@ are untouched by this spec.
 
 ```kosika
 model specialist {
-  base "qwen2.5:7b"                       // STRING: a provider id, inert text
-  embed "nomic-embed-text"
-  sources ["KOSIKA.md", "std/nn.kos"]
-  limits { context: 8000, results: 6 }    // nested map, NUMBER values
-  cache on                                // BOOL
-  fallback none                           // NULL
+  base: "qwen2.5:7b"                     // STRING: a provider id, inert text
+  embed: "nomic-embed-text"
+  sources: ["KOSIKA.md", "std/nn.kos"]
+  limits: { context: 8000, results: 6 }  // nested map, NUMBER values
+  cache: on                              // BOOL
+  fallback: none                         // NULL
 }
 
 model router extends specialist {
   resolved: late
-  route "code" -> coder                   // IDENT: a reference, resolved and checked
-  route "prose" -> author
+  route: "code" -> coder                 // IDENT: a reference, resolved and checked
+  route: "prose" -> author
   otherwise -> specialist
 }
 ```
+
+Declaration-body fields are written `key: value`, the colon form every existing
+declaration body uses (amended 2026-11-06 with the slice-1 plan, deviation 2).
 
 **The rule that makes this better than JSON:** a bare identifier is a *reference* the checker
 resolves; a quoted string is *inert text*. This is already the language's convention —
@@ -301,6 +304,28 @@ Checked in this session, not assumed:
 - Conformance today: 122 programs — 32 `cases/`, 11 `failing/`, 79 `refused/` — against 219
   `CheckError` and 56 `ParseError` sites, with no parser-error cases. Spec A adds the first
   parser-adjacent error cases the suite has had.
+
+## Amendment 2026-11-06 — profile schema extension (approved by the author)
+
+The grammar example names fields today's profile loader does not accept. Resolution:
+the profile schema grows, in **both** source forms, with four new typed fields:
+
+| Field | Type | Runtime meaning in spec A |
+|---|---|---|
+| `base` | string (inert provider model id) | overrides the model id sent to the host provider in `complete()` |
+| `embed` | string (inert) | declared, typed, hashed; no runtime effect yet — semantics in a later spec |
+| `cache` | boolean | declared, typed, hashed; no runtime effect yet — semantics in a later spec |
+| `fallback` | `none`, inert text, or (from slice 3) a reference to a declared model | resolved and hashed; no runtime effect yet — semantics in a later spec |
+
+`limits { context: N, results: M }` is declaration syntax for the existing
+`max_context_chars` / `max_results` fields; the payload carries the flat fields, with the
+same ranges (512..16000, 1..12). The loader's allowed-field set gains the four new names;
+the unknown-field refusal stays for everything else. Type checking applies to JSON
+profiles too — parity of what goes unchecked is not granted.
+
+Existing profiles carry none of the new fields, so their payloads and hashes are
+unchanged; `to-kos` emits only fields that are present. The convergence invariant and the
+hash-stability guard are untouched by this amendment.
 
 ## Out of scope
 
