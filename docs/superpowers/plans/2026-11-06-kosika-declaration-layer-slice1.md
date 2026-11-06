@@ -444,7 +444,11 @@ def test_the_existing_fields_are_untouched() -> None:
         "record A { text: Text }\n"
         "model m {\n"
         '  input: Q\n  output: A\n  deployment: "small"\n'
-        "  parameters: { temperature: 0.2, max_output_tokens: 200, stop: [\"END\"] }\n"
+        "  parameters: {\n"
+        "    temperature: 0.2\n"
+        "    max_output_tokens: 200\n"
+        '    stop: ["END"]\n'
+        "  }\n"
         '  base: "x"\n'
         "}\n"
     )
