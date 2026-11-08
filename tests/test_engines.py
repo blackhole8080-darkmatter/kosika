@@ -142,9 +142,12 @@ class DescribeTests(unittest.TestCase):
 class CommandTests(unittest.TestCase):
     def test_an_unknown_engine_stops_before_anything_runs(self) -> None:
         err = StringIO()
-        with patch.object(
-            sys, "argv", ["kosika", "run", "nope.kos", "--engine", "rust"]
-        ), redirect_stderr(err):
+        with (
+            patch.object(
+                sys, "argv", ["kosika", "run", "nope.kos", "--engine", "rust"]
+            ),
+            redirect_stderr(err),
+        ):
             self.assertEqual(main(), 2)
         self.assertIn("rust", err.getvalue())
 
@@ -158,21 +161,24 @@ class CommandTests(unittest.TestCase):
             inputs.write_text(INPUTS, encoding="utf-8")
             trace = Path(folder) / "trace.jsonl"
             out = StringIO()
-            with patch.object(
-                sys,
-                "argv",
-                [
-                    "kosika",
-                    "run",
-                    str(source),
-                    "--input",
-                    str(inputs),
-                    "--trace",
-                    str(trace),
-                    "--engine",
-                    "python",
-                ],
-            ), redirect_stdout(out):
+            with (
+                patch.object(
+                    sys,
+                    "argv",
+                    [
+                        "kosika",
+                        "run",
+                        str(source),
+                        "--input",
+                        str(inputs),
+                        "--trace",
+                        str(trace),
+                        "--engine",
+                        "python",
+                    ],
+                ),
+                redirect_stdout(out),
+            ):
                 self.assertEqual(main(), 0)
         self.assertIn("hello ada", out.getvalue())
 
@@ -185,7 +191,13 @@ class ParityTests(unittest.TestCase):
 
     def answer(self, command: list[str], folder: Path) -> str:
         finished = subprocess.run(
-            [*command, "run", str(folder / "main.kos"), "--input", str(folder / "in.json")],
+            [
+                *command,
+                "run",
+                str(folder / "main.kos"),
+                "--input",
+                str(folder / "in.json"),
+            ],
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -204,7 +216,9 @@ class ParityTests(unittest.TestCase):
             root = Path(folder)
             (root / "main.kos").write_text(PROGRAM, encoding="utf-8")
             (root / "in.json").write_text(INPUTS, encoding="utf-8")
-            reference = self.answer(engines.ENGINE_PYTHON.command(), root)
+            reference_command = engines.ENGINE_PYTHON.command()
+            assert reference_command is not None
+            reference = self.answer(reference_command, root)
             native = self.answer(go, root)
         self.assertEqual(reference, native)
         self.assertIn("hello ada", reference)
@@ -234,9 +248,9 @@ class CheckParityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             source = Path(folder) / "main.kos"
             source.write_text(PROGRAM, encoding="utf-8")
-            reference = self.run_engine(
-                engines.ENGINE_PYTHON.command(), "check", str(source)
-            )
+            reference_command = engines.ENGINE_PYTHON.command()
+            assert reference_command is not None
+            reference = self.run_engine(reference_command, "check", str(source))
             native = self.run_engine(native_command, "check", str(source))
         self.assertEqual(reference.returncode, 0, reference.stderr)
         self.assertEqual(native.returncode, 0, native.stderr)
@@ -254,9 +268,9 @@ class CheckParityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             source = Path(folder) / "bad.kos"
             source.write_text(source_text, encoding="utf-8")
-            reference = self.run_engine(
-                engines.ENGINE_PYTHON.command(), "check", str(source)
-            )
+            reference_command = engines.ENGINE_PYTHON.command()
+            assert reference_command is not None
+            reference = self.run_engine(reference_command, "check", str(source))
             native = self.run_engine(native_command, "check", str(source))
         self.assertEqual(reference.returncode, 2)
         self.assertEqual(native.returncode, 2)

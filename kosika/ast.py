@@ -1018,7 +1018,6 @@ def program_payload(program: Program) -> dict[str, Any]:
 
 
 def _program_payload(program: Program) -> dict[str, Any]:
-
     def prune(value: Any) -> Any:
         if isinstance(value, dict):
             return {

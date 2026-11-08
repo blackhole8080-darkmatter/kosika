@@ -291,6 +291,10 @@
   "30fd2b4639ca2f6bacdc549b5a8dfad67299b9828dcf9e0ce4916d4ea874e6cb",
   "5527cd5a0b05fb60b9e013e50ce350fd659c3d982cecf32770c7b056b7f10ba0"
  ],
+ "examples/agents/hatchet/main.kos": [
+  "160789f698ad6e2a0a5eda7a0e7f023d52285c71ebcb296458fbb0728136b53e",
+  "83faf697ad76c17e0cf770ebefa6f72adfaf18e8b9527667473534d253977720"
+ ],
  "examples/agents/ideas/main.kos": [
   "1f17f17db4fc1dab4f07cfa34058d08a255b9587b9d60fad8c256c6d1bed88eb",
   "27591a6fe1fb1c9c76a83571a014b2aa9fb17fc394945b6e8e6b159113e07a11"
@@ -358,6 +362,10 @@
  "examples/agents/study/main.kos": [
   "64aa3cb40c874b95bb4f28ea5870521940e47125ac4579646e522f9d095082f1",
   "334a9bcf020fc8d6c6d2060cc54227fc8af3ed04005b2124a2c2c97e9cd67279"
+ ],
+ "examples/agents/undertow/main.kos": [
+  "490f0370dba8647e8e96b9bb8dd194898f9a25efda9e7890e8b5e5f9e90f9597",
+  "ebd49cba836a78251c9441bc1c78f0411091738bd70df8d1d40ae7fb7f4697a1"
  ],
  "examples/agents/workbench/main.kos": [
   "dabfd84391688315f6151a5e407c67fe13a46d474606d1338647bba1cbddd593",
@@ -618,6 +626,10 @@
  "kosika/std/math.kos": [
   "6135c3a48e09c7d656e5b6f62662cf9dfdb58bef62d857e8ea738826919ead4b",
   "49f94af1115c1ec5e1383beff3c491e262d282b032a5f6679e132b71eaace7f8"
+ ],
+ "kosika/std/maths.kos": [
+  "5b6ac86172a20b91fc59f6c07f3d73fe943a205c0af399ad95a4b1ccaf554c02",
+  "d9f3015f12dd1ca8e8847646695217b0d50aed35038904b7b0ada36f5fec1c89"
  ],
  "kosika/std/nn.kos": [
   "f7a9cbfb0cfeb4dcb9261c238a617416487c3569f9c894889f5bcc65cfe81973",
