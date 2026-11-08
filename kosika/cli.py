@@ -253,6 +253,7 @@ def _agent_tool_fixture(path: Path) -> dict[str, Any]:
 
 def _agent_tool_fixture_result(fixture: dict[str, Any], declaration: ToolDecl) -> Any:
     from .agent import AgentLoopError
+
     value = fixture.get(declaration.name, fixture.get(declaration.operation))
     if value is None:
         raise AgentLoopError(
@@ -273,6 +274,7 @@ def _run_agent_command(
     from .agent import AgentLoop, AgentLoopError, ApprovalRecord
     from .checker import check
     from .durable import AgentExecutionSession
+
     if args.mcp_server is not None and args.mcp_manifest is None:
         parser.error("--mcp-manifest is required when --mcp-server is used")
     if args.mcp_server is None and args.mcp_manifest is not None:
@@ -392,6 +394,9 @@ def _run_agent_command(
 
         try:
             provider: Any
+            provider_model = (
+                model_name if isinstance(model_name, str) else str(agent_decl.model)
+            )
             if args.models is not None:
                 # The agent's declared model is answered by whatever route the
                 # person named: an endpoint, or a command such as the Langflow
@@ -413,11 +418,11 @@ def _run_agent_command(
                     return 2
                 provider = agent_routes[agent_decl.model]
             elif args.model_fixture is not None:
-                provider = _agent_model_fixture(args.model_fixture, model_name)
+                provider = _agent_model_fixture(args.model_fixture, provider_model)
             else:
                 provider = OpenAICompatibleProvider(
                     args.model_url,
-                    model_name,
+                    provider_model,
                     api_key=os.environ.get("KOSIKA_MODEL_API_KEY"),
                 )
             if args.virtual_model is not None:
@@ -1121,6 +1126,51 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("text", "json"),
         default="text",
         help="Output format. JSON emits machine-readable diagnostics.",
+    )
+
+    init_parser = subparsers.add_parser(
+        "init",
+        help="Write a kosika.toml for a folder so it can be built.",
+    )
+    init_parser.add_argument(
+        "folder",
+        nargs="?",
+        type=Path,
+        default=Path("."),
+        help="Folder to start a project in. Default: this folder.",
+    )
+    init_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Replace a kosika.toml that is already there.",
+    )
+    init_parser.add_argument(
+        "--json", action="store_true", help="Print what was written as JSON."
+    )
+
+    build_parser = subparsers.add_parser(
+        "build",
+        help="Build a project's targets from its kosika.toml.",
+    )
+    build_parser.add_argument(
+        "folder",
+        nargs="?",
+        type=Path,
+        default=Path("."),
+        help="Project folder holding kosika.toml.",
+    )
+    build_parser.add_argument(
+        "--out",
+        type=Path,
+        help="Where the artifact is written. Default: <folder>/build.",
+    )
+    build_parser.add_argument(
+        "--key",
+        type=Path,
+        help="Signing key. Default: <folder>/.kosika/pack-key.json.",
+    )
+    build_parser.add_argument(
+        "--json", action="store_true", help="Print the manifest as JSON."
     )
 
     benchmark_parser = subparsers.add_parser(
@@ -2074,7 +2124,22 @@ def build_parser() -> argparse.ArgumentParser:
     pack_check.add_argument(
         "--test", action="store_true", help="Also run the tests inside the pack."
     )
+    pack_check.add_argument(
+        "--require-signature",
+        action="store_true",
+        help="Refuse a pack that is unsigned, or whose signature does not verify.",
+    )
     pack_check.add_argument("--json", action="store_true")
+    pack_sign = pack_commands.add_parser(
+        "sign", help="Sign a pack with this device's key, showing who made it."
+    )
+    pack_sign.add_argument("pack", type=Path)
+    pack_sign.add_argument(
+        "--key",
+        type=Path,
+        default=None,
+        help="The key file to sign with; .kosika/pack-key.json by default.",
+    )
     pack_unpack = pack_commands.add_parser(
         "unpack", help="Verify a pack, then write its files into an empty folder."
     )
@@ -2370,9 +2435,8 @@ def build_parser() -> argparse.ArgumentParser:
             "and keep the checkpoint as a ranker a virtual model can use."
         ),
     )
-    train_commands = train_parser.add_subparsers(
-        dest="train_command", required=True
-    )
+    train_commands = train_parser.add_subparsers(dest="train_command", required=True)
+
     def add_training_hyperparameters(target: Any) -> None:
         target.add_argument("--epochs", type=int, default=30)
         target.add_argument("--batch-size", type=int, default=8)
@@ -2470,7 +2534,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     virtual_model_serve.add_argument("profile", type=Path)
     virtual_model_serve.add_argument(
-        "--model", required=True, help="The model that answers, on this computer or a service."
+        "--model",
+        required=True,
+        help="The model that answers, on this computer or a service.",
     )
     virtual_model_serve.add_argument("--base-url", default=None)
     virtual_model_serve.add_argument(
@@ -2512,6 +2578,67 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Load the model and read the profile's documents before the first "
             "caller asks, then say how long that took. The answers are unchanged."
+        ),
+    )
+    virtual_model_serve.add_argument(
+        "--answers",
+        type=Path,
+        help=(
+            "Where answers already paid for are kept (default: beside the "
+            "usage journal). Asking the same question again costs nothing."
+        ),
+    )
+    virtual_model_serve.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Ask the model every time, even for a question already answered.",
+    )
+    virtual_model_serve.add_argument(
+        "--answer-age-hours",
+        type=float,
+        default=24.0,
+        help=(
+            "How long a kept answer may be served (default: 24). A kept answer "
+            "is never re-checked, so an old one is a miss; zero keeps it until "
+            "the cache is pruned by hand."
+        ),
+    )
+    virtual_model_usage = virtual_model_commands.add_parser(
+        "usage",
+        help=(
+            "What each caller asked for and spent, day by day, read back from "
+            "the journal rather than remembered."
+        ),
+    )
+    virtual_model_usage.add_argument("profile", type=Path)
+    virtual_model_usage.add_argument(
+        "--state",
+        type=Path,
+        help="The usage journal to read (default: .kosika/<profile>-usage.jsonl).",
+    )
+    virtual_model_usage.add_argument(
+        "--days",
+        type=int,
+        help="Only the most recent this many days with activity.",
+    )
+    virtual_model_usage.add_argument(
+        "--format", choices=("text", "json"), default="text", help="Output format."
+    )
+    virtual_model_serve.add_argument(
+        "--no-citations",
+        action="store_true",
+        help=(
+            "Accept an answer that names a file, flag or folder the profile's "
+            "documents do not contain. By default such an answer is refused."
+        ),
+    )
+    virtual_model_serve.add_argument(
+        "--require-citations",
+        action="store_true",
+        help=(
+            "Refuse an answer that names a file or flag without a citation whose "
+            "line shows that name. Measured to refuse real names as well as "
+            "invented ones, so the default only reports them (kosika.unbacked)."
         ),
     )
     virtual_model_eval = virtual_model_commands.add_parser(
@@ -2854,7 +2981,6 @@ def _warm_specialist(specialist: Any) -> None:
     threading.Thread(target=run, name="kosika-warm", daemon=True).start()
 
 
-
 def _virtual_serve(args: argparse.Namespace) -> int:
     """Serve one virtual model under a daily allowance, until stopped.
 
@@ -2866,6 +2992,7 @@ def _virtual_serve(args: argparse.Namespace) -> int:
     from .model import OpenAICompatibleProvider
     from .virtual_model import VirtualModelError, VirtualModelProvider
     from .virtual_serve import (
+        AnswerCache,
         Gateway,
         Meter,
         Quota,
@@ -2916,11 +3043,33 @@ def _virtual_serve(args: argparse.Namespace) -> int:
         tokens_per_day=args.tokens_per_day,
         tokens_per_call=args.tokens_per_call,
     )
+    answers = (
+        Path(args.answers).resolve()
+        if args.answers
+        else state.with_name(f"{state.stem}-answers.json")
+    )
+    cache = (
+        None
+        if args.no_cache
+        else AnswerCache(answers, max_age_seconds=args.answer_age_hours * 3600.0)
+    )
+
+    def _saved(tokens: int) -> None:
+        print(
+            f"saved       : repeat answered from the cache, {tokens} tokens not "
+            f"spent ({gateway.hits} so far)",
+            flush=True,
+        )
+
     gateway = Gateway(
         specialist,
         Meter(journal, quota),
         name=specialist.name or profile.stem,
         keys=keys,
+        cache=cache,
+        ground=not args.no_citations,
+        require_citations=args.require_citations,
+        on_hit=_saved,
     )
     try:
         server = make_server(gateway, host=args.host, port=args.port)
@@ -2940,20 +3089,113 @@ def _virtual_serve(args: argparse.Namespace) -> int:
         f"per day, at most {quota.tokens_per_call} per call"
     )
     print(f"usage       : {journal.path}")
+    if cache is None:
+        print("answers     : not kept; every call asks the model")
+    else:
+        kept_for = (
+            "until pruned by hand"
+            if args.answer_age_hours <= 0
+            else f"for {args.answer_age_hours:g}h"
+        )
+        print(f"answers     : {answers} ({len(cache)} kept, {kept_for})")
+    print(
+        "grounding   : "
+        + (
+            "a file, flag, folder or path named in an answer must appear in the "
+            "documents, or the answer is refused"
+            if not args.no_citations
+            else "off; names in an answer are not checked against the documents"
+        )
+    )
     if made is not None:
         print(f"key         : {made}")
         print("              shown once; keep it out of logs and shared files")
     if args.host not in ("127.0.0.1", "localhost", "::1"):
-        print("warning     : bound beyond loopback, so anyone who can reach the port may ask")
+        print(
+            "warning     : bound beyond loopback, so anyone who can reach the port may ask"
+        )
     sys.stdout.flush()
     if args.warm:
         _warm_specialist(specialist)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nstopped")
+        if gateway.hits:
+            print(
+                f"\nsaved       : {gateway.hits} repeats answered from the cache, "
+                f"{gateway.saved_tokens} tokens not spent"
+            )
+        print("stopped")
     finally:
         server.server_close()
+    return 0
+
+
+def _virtual_usage(args: argparse.Namespace) -> int:
+    """What each caller spent, and what the cache gave back, from the journal."""
+
+    from .virtual_serve import UsageJournal, report
+
+    profile = Path(args.profile).resolve()
+    state = (
+        Path(args.state).resolve()
+        if args.state
+        else Path(".kosika") / f"{profile.stem}-usage.jsonl"
+    )
+    journal = UsageJournal(state)
+    if not journal.path.is_file():
+        print(f"Nothing recorded yet: {journal.path} does not exist.", file=sys.stderr)
+        return 2
+    spends = report(journal, days=args.days)
+    if args.format == "json":
+        print(
+            json.dumps(
+                {
+                    "journal": str(journal.path),
+                    "spends": [
+                        {
+                            "day": spend.day,
+                            "caller": spend.caller,
+                            "calls": spend.calls,
+                            "tokens": spend.tokens,
+                            "repeats": spend.repeats,
+                            "tokens_not_spent": spend.saved_tokens,
+                            "refused": spend.refusals,
+                        }
+                        for spend in spends
+                    ],
+                },
+                indent=2,
+            )
+        )
+        return 0
+    if not spends:
+        print(f"No calls recorded in {journal.path}.")
+        return 0
+    print(f"journal     : {journal.path}")
+    print(
+        f"{'day':<12}{'caller':<12}{'calls':>7}{'tokens':>10}{'repeats':>9}"
+        f"{'not spent':>11}{'refused':>9}"
+    )
+    for spend in spends:
+        print(
+            f"{spend.day:<12}{spend.caller:<12}{spend.calls:>7}{spend.tokens:>10,}"
+            f"{spend.repeats:>9}{spend.saved_tokens:>11,}{spend.refusals:>9}"
+        )
+    if len(spends) > 1:
+        print(
+            f"{'total':<12}{'-':<12}"
+            f"{sum(spend.calls for spend in spends):>7}"
+            f"{sum(spend.tokens for spend in spends):>10,}"
+            f"{sum(spend.repeats for spend in spends):>9}"
+            f"{sum(spend.saved_tokens for spend in spends):>11,}"
+            f"{sum(spend.refusals for spend in spends):>9}"
+        )
+    if any(spend.refusals for spend in spends):
+        print(
+            "refused     : answers the documents did not support; they were "
+            "replaced by a refusal and are still charged"
+        )
     return 0
 
 
@@ -3057,8 +3299,7 @@ def _selfdev_command(args: argparse.Namespace) -> int:
         return 2
     if args.command_line and getattr(args, "virtual_model", None):
         print(
-            "Selfdev refused: choose one of --command and --virtual-model, "
-            "not both.",
+            "Selfdev refused: choose one of --command and --virtual-model, not both.",
             file=sys.stderr,
         )
         return 2
@@ -3069,14 +3310,13 @@ def _selfdev_command(args: argparse.Namespace) -> int:
         )
         return 2
     ask = None
+    proposer: Any
     if args.command_line:
         proposer = DelegateProposer(
             shlex.split(args.command_line), root=root, timeout=args.timeout
         )
     elif args.model:
-        protocol = args.protocol or (
-            "ollama" if args.base_url is None else "openai"
-        )
+        protocol = args.protocol or ("ollama" if args.base_url is None else "openai")
         provider = OpenAICompatibleProvider(
             args.base_url or "http://127.0.0.1:11434",
             args.model,
@@ -3100,9 +3340,7 @@ def _selfdev_command(args: argparse.Namespace) -> int:
                 specialist, max_output_tokens=args.max_output_tokens
             )
         else:
-            proposer = ModelProposer(
-                provider, max_output_tokens=args.max_output_tokens
-            )
+            proposer = ModelProposer(provider, max_output_tokens=args.max_output_tokens)
     elif args.dry_run:
         proposer = SilentProposer()
     else:
@@ -3125,9 +3363,7 @@ def _selfdev_command(args: argparse.Namespace) -> int:
             )
             return 2
         found = rank(
-            survey(
-                root, folders=folders, max_findings=getattr(args, "limit", 200)
-            ),
+            survey(root, folders=folders, max_findings=getattr(args, "limit", 200)),
             ledger,
             max_task_failures=args.max_task_failures,
         )
@@ -3403,8 +3639,7 @@ def _db_command(args: argparse.Namespace) -> int:
         print(f"  table {table['name']} ({table['rows']} rows)")
         for column in table["columns"]:
             print(
-                f"    {column['name']:20} {column['declared']:12} "
-                f"{column['affinity']}"
+                f"    {column['name']:20} {column['declared']:12} {column['affinity']}"
             )
     if store is None:
         return 0
@@ -3462,6 +3697,7 @@ def main() -> int:
     from .checker import check
     from .development import check_project, execute_development_json
     from .durable import ApprovalPending, ExecutionSession, inspect_journal
+
     if args.command == "engines":
         print("\n".join(describe()))
         return 0
@@ -3997,9 +4233,7 @@ def main() -> int:
                 return 2
             passed = scored["accuracy"] >= args.min_accuracy
             written = (
-                model.save(args.output)
-                if passed and args.output is not None
-                else None
+                model.save(args.output) if passed and args.output is not None else None
             )
             if args.json:
                 print(
@@ -4056,9 +4290,7 @@ def main() -> int:
             elif passed:
                 print("nothing written: give --output to keep this checkpoint")
             else:
-                print(
-                    "nothing written: a checkpoint that misses the gate is not kept"
-                )
+                print("nothing written: a checkpoint that misses the gate is not kept")
             return 0 if passed else 1
         try:
             model = train_ranker_model(training, config)
@@ -4077,8 +4309,7 @@ def main() -> int:
             f"({positives} cited, {negatives} uncited)"
         )
         print(
-            f"  loss {model.metrics['initial_loss']:.4f} -> "
-            f"{model.metrics['loss']:.4f}"
+            f"  loss {model.metrics['initial_loss']:.4f} -> {model.metrics['loss']:.4f}"
         )
         print(
             f"  accuracy {model.metrics['accuracy']:.2f} "
@@ -4086,16 +4317,17 @@ def main() -> int:
             f"uncited {model.metrics['mean_negative']:.2f})"
         )
         print(f"wrote {written} (sha256 {model.identity()[:16]})")
-        print(
-            "use it by adding \"ranker\": "
-            f"{json.dumps(written.name)} to the profile"
-        )
+        print(f'use it by adding "ranker": {json.dumps(written.name)} to the profile')
         return 0
     if args.command == "virtual-model":
         if args.virtual_model_command == "serve":
             return _virtual_serve(args)
+        if args.virtual_model_command == "usage":
+            return _virtual_usage(args)
         if args.virtual_model_command == "eval":
-            from .virtual_eval import compare, qualify, record_eval, render_text
+            from .virtual_eval import compare as compare_evals
+            from .virtual_eval import qualify as qualify_evals
+            from .virtual_eval import record_eval, render_text
             from .virtual_eval import score as score_virtual_model
 
             if args.min_right is not None and not 0.0 <= args.min_right <= 1.0:
@@ -4106,7 +4338,7 @@ def main() -> int:
             except (OSError, TypeError, ValueError) as exc:
                 print(f"Evaluation not read: {exc}", file=sys.stderr)
                 return 2
-            ok, reasons = qualify(
+            ok, reasons = qualify_evals(
                 found,
                 min_right=args.min_right,
                 require_no_wrong=not args.allow_wrong,
@@ -4119,7 +4351,7 @@ def main() -> int:
                     print(f"Evaluation not recorded: {exc}", file=sys.stderr)
                     return 2
                 if previous is not None:
-                    changes = compare(previous, found)
+                    changes = compare_evals(previous, found)
             if args.json:
                 payload = found.as_dict()
                 payload["qualified"] = ok
@@ -4542,6 +4774,55 @@ def main() -> int:
 
     if args.command == "selfdev":
         return _selfdev_command(args)
+    if args.command == "init":
+        from .project import ProjectError, init_project
+
+        try:
+            started = init_project(args.folder, force=args.force)
+        except (ProjectError, OSError, ValueError) as exc:
+            print(f"Not started: {exc}", file=sys.stderr)
+            return 2
+        if args.json:
+            print(
+                json.dumps(
+                    {
+                        "folder": str(started.folder),
+                        "project": started.project.name,
+                        "entry": started.project.entry,
+                        "workflow": started.workflow,
+                        "written": [path.name for path in started.written],
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
+        print(f"Started a project in {started.folder}:")
+        for path in started.written:
+            print(f"  {path.name}")
+        print(f"Entry     {started.project.entry}")
+        print(f"Workflow  {started.workflow}")
+        print(f"Next:\n  kosika build {started.folder}")
+        return 0
+
+    if args.command == "build":
+        from .build import BuildError
+        from .build import build as build_project
+        from .build import to_text as build_to_text
+        from .pack import PackError
+        from .project import ProjectError
+
+        try:
+            built = build_project(args.folder, out=args.out, key_path=args.key)
+        except (BuildError, ProjectError, PackError, OSError, ValueError) as exc:
+            print(f"Build failed safely: {exc}", file=sys.stderr)
+            return 2
+        if args.json:
+            print(json.dumps(built.to_dict(), indent=2, sort_keys=True))
+        else:
+            print(build_to_text(built))
+        return 0
+
     if args.command == "pack":
         from .pack import PackError, check_pack, unpack, write_pack
         from .pack import to_text as pack_to_text
@@ -4552,12 +4833,21 @@ def main() -> int:
                 print(f"Wrote {args.out}")
                 print(f"Program  {made['program_hash']}")
                 return 0
+            if args.pack_command == "sign":
+                from .pack import DEFAULT_KEY, sign_pack
+
+                signed = sign_pack(args.pack, args.key or DEFAULT_KEY)
+                print(f"Signed {args.pack}")
+                print(f"Signer  {signed['signature']['public_key']}")
+                return 0
             if args.pack_command == "unpack":
                 pack_report = unpack(args.pack, args.directory)
                 print(pack_to_text(pack_report))
                 print(f"\nUnpacked into {args.directory}")
                 return 0
-            pack_report = check_pack(args.pack, run_tests=args.test)
+            pack_report = check_pack(
+                args.pack, run_tests=args.test, require_signature=args.require_signature
+            )
         except (PackError, ValueError, OSError) as exc:
             print(f"Pack rejected: {exc}", file=sys.stderr)
             return 2
@@ -5026,7 +5316,9 @@ def main() -> int:
         )
         system_bindings = {
             **system_bindings,
-            **bind_memory_tools(program, getattr(args, "memory", None), meaning=_meaning(args)),
+            **bind_memory_tools(
+                program, getattr(args, "memory", None), meaning=_meaning(args)
+            ),
         }
         # What the run records about the database it was given: the tables the
         # file has, so that a replay can put a recorded statement back to
@@ -5187,7 +5479,8 @@ def main() -> int:
             f"({census['lesson_ratio']:.1%}); "
             f"{census['live_model']} from live model. "
             + (
-                "by how: " + ", ".join(f"{k}={v}" for k, v in sorted(census["how"].items()))
+                "by how: "
+                + ", ".join(f"{k}={v}" for k, v in sorted(census["how"].items()))
                 if census["how"]
                 else ""
             )
