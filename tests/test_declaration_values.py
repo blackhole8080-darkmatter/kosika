@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from kosika.ast import (
     DeclList,
     DeclMap,
@@ -10,6 +12,7 @@ from kosika.ast import (
     Program,
     program_payload,
 )
+from kosika.parser import ParseError, parse
 
 
 def test_a_model_without_config_hashes_as_it_did_before() -> None:
@@ -42,25 +45,20 @@ def test_config_keeps_the_order_it_was_written_in() -> None:
     ]
 
 
-import pytest
-
-from kosika.parser import ParseError, parse
-
-
 def _config(source: str) -> tuple[tuple[str, object], ...]:
     return parse(source).models[0].config
 
 
 def test_every_literal_form() -> None:
     assert _config(
-        'model m {\n'
+        "model m {\n"
         '  base: "qwen2.5:7b"\n'
-        '  limits: { context: 8000, results: 6.5 }\n'
+        "  limits: { context: 8000, results: 6.5 }\n"
         '  sources: ["a", "b"]\n'
-        '  cache: on\n'
-        '  fallback: none\n'
-        '  embed: nomic\n'
-        '}\n'
+        "  cache: on\n"
+        "  fallback: none\n"
+        "  embed: nomic\n"
+        "}\n"
     ) == (
         ("base", "qwen2.5:7b"),
         ("limits", DeclMap((("context", 8000), ("results", 6.5)))),
@@ -84,7 +82,8 @@ def test_a_whole_number_and_a_decimal_are_distinct_values() -> None:
     # the Python types here, rather than comparing them at run time, because
     # `40 == 40.0` is true in Python and the distinctness that matters is in
     # the payload slice 2 emits.
-    (_, limits), = _config("model m {\n  limits: { context: 40, results: 40.0 }\n}\n")
+    ((_, limits),) = _config("model m {\n  limits: { context: 40, results: 40.0 }\n}\n")
+    assert isinstance(limits, DeclMap)
     (context_key, context), (results_key, results) = limits.entries
     assert (context_key, results_key) == ("context", "results")
     assert type(context) is int and context == 40
@@ -92,18 +91,12 @@ def test_a_whole_number_and_a_decimal_are_distinct_values() -> None:
 
 
 def test_lists_and_maps_nest_in_each_other() -> None:
-    assert _config(
-        "model m {\n"
-        "  sources: [{ a: [1, { b: on }] }, \"x\"]\n"
-        "}\n"
-    ) == (
+    assert _config('model m {\n  sources: [{ a: [1, { b: on }] }, "x"]\n}\n') == (
         (
             "sources",
             DeclList(
                 (
-                    DeclMap(
-                        (("a", DeclList((1, DeclMap((("b", True),))))),)
-                    ),
+                    DeclMap((("a", DeclList((1, DeclMap((("b", True),))))),)),
                     "x",
                 )
             ),
@@ -165,13 +158,7 @@ def test_nesting_has_a_limit() -> None:
 
 
 def test_empty_containers_parse() -> None:
-    program = parse(
-        "model m {\n"
-        "  sources: []\n"
-        "  limits: {}\n"
-        '  base: "x"\n'
-        "}\n"
-    )
+    program = parse('model m {\n  sources: []\n  limits: {}\n  base: "x"\n}\n')
     assert program.models[0].config == (
         ("sources", DeclList(())),
         ("limits", DeclMap(())),

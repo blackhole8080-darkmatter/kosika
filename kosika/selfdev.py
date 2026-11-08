@@ -194,7 +194,9 @@ def _make(
     )
 
 
-def _walk(root: Path, folders: Sequence[str] | None = None) -> Iterable[tuple[str, Path]]:
+def _walk(
+    root: Path, folders: Sequence[str] | None = None
+) -> Iterable[tuple[str, Path]]:
     """Every source file under ``folders``, by its path relative to ``root``."""
 
     bases = [root / folder for folder in folders] if folders else [root]
@@ -205,9 +207,7 @@ def _walk(root: Path, folders: Sequence[str] | None = None) -> Iterable[tuple[st
             yield base.relative_to(root).as_posix(), base
             continue
         for current, directories, files in os.walk(base):
-            directories[:] = sorted(
-                name for name in directories if name not in SKIPPED
-            )
+            directories[:] = sorted(name for name in directories if name not in SKIPPED)
             for name in sorted(files):
                 path = Path(current) / name
                 yield path.relative_to(root).as_posix(), path
@@ -285,7 +285,9 @@ def survey(
             task = _make("roadmap", name, number, title, item, 0.7)
             found.setdefault(task.id, task)
 
-    ordered = sorted(found.values(), key=lambda task: (-task.weight, task.path, task.line or 0))
+    ordered = sorted(
+        found.values(), key=lambda task: (-task.weight, task.path, task.line or 0)
+    )
     return ordered[: max(1, max_findings)]
 
 
@@ -414,7 +416,9 @@ class Ledger:
             task_id = str(entry.get("task", ""))
             if not task_id:
                 continue
-            bucket = grouped.setdefault(task_id, {"kept": 0, "reverted": 0, "refused": 0})
+            bucket = grouped.setdefault(
+                task_id, {"kept": 0, "reverted": 0, "refused": 0}
+            )
             status = entry.get("status")
             if status in bucket:
                 bucket[status] += 1
@@ -571,9 +575,7 @@ def parse_proposal(text: str) -> Proposal:
         if not isinstance(replace, str):
             raise ProposalError(f"edit {index + 1} replace must be text")
         edits.append(Edit(path=path.strip(), find=find, replace=replace))
-    return Proposal(
-        edits=tuple(edits), note=note, need=_read_need(payload.get("need"))
-    )
+    return Proposal(edits=tuple(edits), note=note, need=_read_need(payload.get("need")))
 
 
 def allowed(path: str, allow: Sequence[str]) -> bool:
@@ -642,7 +644,9 @@ def _uncolumn(text: str) -> str:
     return "\n".join(kept)
 
 
-def apply_edits(root: Path, edits: Sequence[Edit], *, allow: Sequence[str]) -> list[str]:
+def apply_edits(
+    root: Path, edits: Sequence[Edit], *, allow: Sequence[str]
+) -> list[str]:
     """Write a proposal's edits, after checking every one of them.
 
     Nothing is written until every edit has been read and validated, so an
@@ -696,7 +700,9 @@ def apply_edits(root: Path, edits: Sequence[Edit], *, allow: Sequence[str]) -> l
                 )
             updated = text.replace(span, edit.replace.replace("\r\n", "\n"), 1)
         if len(updated.encode("utf-8")) > MAX_FILE_BYTES:
-            raise ProposalError(f"the change to {relative} is larger than a file may be")
+            raise ProposalError(
+                f"the change to {relative} is larger than a file may be"
+            )
         texts[relative] = updated
 
     written: list[str] = []
@@ -1053,7 +1059,8 @@ STOPWORDS = frozenset(
 
 def _words(text: str) -> set[str]:
     return {
-        word for word in re.findall(r"[a-z0-9]+", text.lower())
+        word
+        for word in re.findall(r"[a-z0-9]+", text.lower())
         if len(word) > 2 and word not in STOPWORDS
     }
 
@@ -1106,8 +1113,7 @@ def _rank_by_meaning(root, task, allow) -> list[tuple[float, str, Path]]:
     if not files:
         return []
     bodies = [
-        f"{relative}\n{_purpose(text)}\n{text[:1500]}"
-        for relative, _, text in files
+        f"{relative}\n{_purpose(text)}\n{text[:1500]}" for relative, _, text in files
     ]
     asked = f"{task.title}\n{task.detail}"
     try:
@@ -1197,7 +1203,11 @@ def _nearby_code(
     if named:
         where_order = {where: index for index, where in enumerate(named.values())}
         scored.sort(
-            key=lambda item: (where_order.get(item[1], len(where_order)), -item[0], item[1])
+            key=lambda item: (
+                where_order.get(item[1], len(where_order)),
+                -item[0],
+                item[1],
+            )
         )
         files = max(files, min(len(set(named.values())), 2))
     wanted = _wanted(task.title + " " + task.detail)
@@ -1289,9 +1299,8 @@ def _wanted_lines(
         body.append(entry)
         used += len(entry)
     shown = start + max(0, len(body) - 1)
-    return (
-        f"--- {where} (lines {start} to {shown} of {len(lines)}) ---\n"
-        + "\n".join(body)
+    return f"--- {where} (lines {start} to {shown} of {len(lines)}) ---\n" + "\n".join(
+        body
     )
 
 
@@ -1413,7 +1422,9 @@ class ModelProposer:
         content = (response.content or "").strip()
         if not content:
             reasoning = (response.reasoning or "").strip()
-            hint = " (the model spent its whole answer on reasoning)" if reasoning else ""
+            hint = (
+                " (the model spent its whole answer on reasoning)" if reasoning else ""
+            )
             raise ProposalError(f"the model answered nothing{hint}")
         return parse_proposal(content)
 
@@ -1430,6 +1441,79 @@ class VirtualModelProposer(ModelProposer):
     """
 
     backend = "specialist"
+    #: An answer that names what the profile never gave it is not applied.
+    grounding = True
+
+    def propose(self, task: Task, prompt: str) -> Proposal:
+        """The inherited ask, with the answer checked against what was sent.
+
+        The gate still decides whether a change lives; this decides only that a
+        proposal naming a file, flag or folder the profile's documents do not
+        contain never reaches it. A refusal is a failed attempt with the reason
+        recorded, which is what teaches the next try.
+        """
+
+        from .virtual_serve import GROUNDING_RULE, citation_faults, unsupported_claims
+
+        messages: tuple[ChatMessage, ...] = (
+            ChatMessage("system", SYSTEM_EDITS),
+            ChatMessage("user", prompt),
+        )
+        reader = getattr(self.provider, "context_for", None)
+        reader_fn = reader if callable(reader) else None
+        checking = self.grounding and reader_fn is not None
+        if checking:
+            messages = (ChatMessage("system", GROUNDING_RULE), *messages)
+        request = ModelRequest(
+            messages=messages,
+            temperature=self.temperature,
+            max_output_tokens=self.max_output_tokens,
+            json_object=True,
+            # The task names the file; retrieval cannot know it, so it is asked
+            # to read that file rather than rank it out.
+            focus=getattr(task, "path", None) if task is not None else None,
+        )
+        response = self.provider.complete(request)
+        content = (response.content or "").strip()
+        if not content:
+            reasoning = (response.reasoning or "").strip()
+            hint = (
+                " (the model spent its whole answer on reasoning)" if reasoning else ""
+            )
+            raise ProposalError(f"the model answered nothing{hint}")
+        if checking and reader_fn is not None:
+            # What the model was given is the retrieved documents *and* the task
+            # prompt, so a file the prompt itself showed is grounded even when
+            # the profile's retrieval never read it.
+            given = reader_fn(request) + "\n" + prompt
+            # A name that exists in a source is not an invention, even when this
+            # retrieval did not reach it; refusing that teaches the model
+            # nothing and spends the caller's tokens to say so.
+            wider = getattr(self.provider, "sources_text", None)
+            try:
+                elsewhere = wider() if callable(wider) else None
+            except Exception:  # noqa: BLE001 - a wider check is a bonus, not a gate
+                elsewhere = None
+            missing = unsupported_claims(content, given, elsewhere=elsewhere)
+            cited = citation_faults(content, getattr(self.provider, "line_at", None))
+            if missing or cited:
+                problems = []
+                if missing:
+                    problems.append(
+                        "named "
+                        + ", ".join(missing)
+                        + " which the documents do not have"
+                    )
+                if cited:
+                    problems.append(
+                        "cited "
+                        + ", ".join(cited)
+                        + " which do not resolve to a line in them"
+                    )
+                raise ProposalError(
+                    "the answer " + " and ".join(problems) + ", so nothing was applied"
+                )
+        return parse_proposal(content)
 
 
 class SilentProposer:
@@ -1485,7 +1569,9 @@ class DelegateProposer:
                 f"{self.argv[0]!r} did not finish within {self.timeout:.0f}s"
             ) from None
         except OSError as exc:
-            raise ProposalError(f"{self.argv[0]!r} could not be started: {exc}") from None
+            raise ProposalError(
+                f"{self.argv[0]!r} could not be started: {exc}"
+            ) from None
         if done.returncode != 0:
             output = ((done.stdout or "") + (done.stderr or "")).strip()
             raise ProposalError(
@@ -1572,11 +1658,44 @@ class Decomposition:
 #: these makes a confident wrong choice look like a considered one.
 GENERIC_NAMES = frozenset(
     {
-        "engine", "state", "run", "main", "value", "data", "result", "item",
-        "entry", "object", "node", "list", "dict", "text", "path", "file",
-        "name", "start", "stop", "check", "call", "load", "save", "read",
-        "write", "open", "close", "next", "step", "task", "kind", "type",
-        "size", "count", "index", "settings", "options", "config",
+        "engine",
+        "state",
+        "run",
+        "main",
+        "value",
+        "data",
+        "result",
+        "item",
+        "entry",
+        "object",
+        "node",
+        "list",
+        "dict",
+        "text",
+        "path",
+        "file",
+        "name",
+        "start",
+        "stop",
+        "check",
+        "call",
+        "load",
+        "save",
+        "read",
+        "write",
+        "open",
+        "close",
+        "next",
+        "step",
+        "task",
+        "kind",
+        "type",
+        "size",
+        "count",
+        "index",
+        "settings",
+        "options",
+        "config",
     }
 )
 
@@ -1882,9 +2001,7 @@ class SelfDevEngine:
             excerpt_chars=self.excerpt_chars,
         )
         if self.dry_run:
-            return Attempt(
-                task=task, status="proposed", note=prompt, backend=backend
-            )
+            return Attempt(task=task, status="proposed", note=prompt, backend=backend)
 
         before: dict[str, bytes | None] = {}
         try:
@@ -1964,7 +2081,11 @@ class SelfDevEngine:
         failure = gate.first_failure()
         restore(self.root, before)
         detail = (failure.detail if failure else "").strip().split("\n")
-        reason = (failure.name + ": " + (detail[0] if detail else "failed")) if failure else ""
+        reason = (
+            (failure.name + ": " + (detail[0] if detail else "failed"))
+            if failure
+            else ""
+        )
         return Attempt(
             task=task,
             status="reverted",

@@ -127,7 +127,7 @@ class OllamaRequestTests(unittest.TestCase):
                 max_output_tokens=400,
                 temperature=0.2,
                 top_p=0.9,
-                stop=["END"],
+                stop=("END",),
             )
         )
 
@@ -212,9 +212,15 @@ class OllamaRequestTests(unittest.TestCase):
         # server is asked for exactly that, not the smallest tier above it.
         capture = Capture(ollama_reply())
         provider = OpenAICompatibleProvider(
-            OLLAMA_HOST, "qwen2.5:7b", protocol="ollama", transport=capture, context=2048
+            OLLAMA_HOST,
+            "qwen2.5:7b",
+            protocol="ollama",
+            transport=capture,
+            context=2048,
         )
-        provider.complete(ModelRequest(messages=(ChatMessage(role="user", content="Reply OK"),)))
+        provider.complete(
+            ModelRequest(messages=(ChatMessage(role="user", content="Reply OK"),))
+        )
         self.assertEqual(capture.body["options"]["num_ctx"], 2048)
 
     def test_a_request_too_large_for_the_granted_window_is_refused(self) -> None:
@@ -222,14 +228,17 @@ class OllamaRequestTests(unittest.TestCase):
         # instructions are; saying so lets the step answer with its `otherwise`.
         capture = Capture(ollama_reply())
         provider = OpenAICompatibleProvider(
-            OLLAMA_HOST, "qwen2.5:7b", protocol="ollama", transport=capture, context=2048
+            OLLAMA_HOST,
+            "qwen2.5:7b",
+            protocol="ollama",
+            transport=capture,
+            context=2048,
         )
         with self.assertRaisesRegex(ModelProviderError, "2048"):
             provider.complete(
                 ModelRequest(messages=(ChatMessage(role="user", content="x" * 12_000),))
             )
         self.assertEqual(capture.url, "")
-
 
     def test_tools_are_offered_to_the_model(self) -> None:
         capture = Capture(ollama_reply())
@@ -277,7 +286,7 @@ class OllamaRequestTests(unittest.TestCase):
             OLLAMA_HOST, "qwen3:1.7b", protocol="ollama", transport=capture
         )
         with self.assertRaisesRegex(ModelProviderError, "stop must contain"):
-            provider.complete(ModelRequest(messages=(), stop=["a", "b", "c", "d", "e"]))
+            provider.complete(ModelRequest(messages=(), stop=("a", "b", "c", "d", "e")))
 
 
 class ContextCapTests(unittest.TestCase):
@@ -292,7 +301,10 @@ class ContextCapTests(unittest.TestCase):
             with self.subTest(bad=bad):
                 with self.assertRaises(ValueError):
                     OpenAICompatibleProvider(
-                        OLLAMA_HOST, "m", protocol="ollama", context=bad
+                        OLLAMA_HOST,
+                        "m",
+                        protocol="ollama",
+                        context=bad,  # type: ignore[arg-type]  # a bad value on purpose
                     )
 
 
@@ -345,7 +357,7 @@ class OllamaResponseTests(unittest.TestCase):
         self.assertEqual(response.finish_reason, "length")
 
     def test_malformed_replies_fail_closed(self) -> None:
-        cases = (
+        cases: tuple[tuple[object, str | None], ...] = (
             ([], "must be a JSON object"),
             ({}, "did not contain a message"),
             ({"message": []}, "did not contain a message"),
@@ -367,12 +379,12 @@ class RestartingServerTests(unittest.TestCase):
 
     def setUp(self) -> None:
         answered = set(model_module._ANSWERED)
-        self.addCleanup(
-            lambda: (
-                model_module._ANSWERED.clear()
-                or model_module._ANSWERED.update(answered)
-            )
-        )
+
+        def restore() -> None:
+            model_module._ANSWERED.clear()
+            model_module._ANSWERED.update(answered)
+
+        self.addCleanup(restore)
 
     def tries(
         self, url: str, failures: list[BaseException], *, answered_before: bool = True
@@ -427,8 +439,8 @@ class RestartingServerTests(unittest.TestCase):
                 "https://models.example.com/v1/chat",
                 code,
                 "busy",
-                None,
-                io.BytesIO(b""),  # type: ignore[arg-type]
+                None,  # type: ignore[arg-type]
+                io.BytesIO(b""),
             )
 
         slept, got = self.tries(

@@ -128,6 +128,7 @@ def verify(
 ) -> None:
     """Raise `EvidenceError` unless the evidence backs the answer as required."""
 
+    given: Any
     if kind == "input":
         # A plain `use_model` step names its own arguments, so the text it was
         # given is every text it passed; there is no agreed field name.

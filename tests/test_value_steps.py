@@ -10,10 +10,10 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-from kosika.ast import program_payload
+from kosika.ast import FunctionCall, program_payload
 from kosika.checker import CheckError, check
-from kosika.parser import parse
 from kosika.modules import load_program
+from kosika.parser import parse
 from kosika.runtime import run
 from kosika.testing import run_tests
 from kosika.trace_replay import replay_trace
@@ -67,7 +67,9 @@ class ValueStepTests(unittest.TestCase):
     def test_a_call_with_more_after_it_is_a_value(self) -> None:
         program = parse(SOURCE)
         step = next(s for s in program.workflows[0].steps if s.name == "shout")
-        self.assertTrue(step.call.function_name.endswith("$value"))
+        call = step.call
+        assert isinstance(call, FunctionCall)
+        self.assertTrue(call.function_name.endswith("$value"))
 
     def test_a_fault_in_the_value_is_the_one_reported(self) -> None:
         bad = SOURCE.replace("count  = before + 1", 'count  = before + "1"')

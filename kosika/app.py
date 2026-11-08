@@ -50,7 +50,6 @@ from .ast import (
     Step,
     ToolCall,
     WorkflowCall,
-    program_payload,
 )
 from .board import AGENT as BOARD_AGENT
 from .builtin_methods import METHODS
@@ -59,6 +58,7 @@ from .diagnostics import anchors_for, diagnostic_from_exception
 from .direct import AGENT as DIRECT_AGENT
 from .durable import PLAN_TOOL, ApprovalPending, ExecutionSession
 from .grants import native_folder_window, too_wide
+from .identity import program_identity
 from .lessons import Lessons
 from .lexer import lex
 from .mcp_tools import MCPHub, bind_mcp_tools, declaration
@@ -431,9 +431,7 @@ def describe(agent: Agent, *, detail: bool) -> dict[str, Any]:
     example = agent.path.parent / "input.json"
     view.update(
         source=source,
-        program_hash=hashlib.sha256(
-            json.dumps(program_payload(program), sort_keys=True).encode("utf-8")
-        ).hexdigest(),
+        program_hash=program_identity(program),
         workflows=[
             {
                 "name": workflow.name,
@@ -570,7 +568,14 @@ _DECLARED = re.compile(
 )
 _FIELD = re.compile(r"\b([A-Za-z_]\w{2,})\s*:")
 _CARRYING = frozenset(
-    {"model_call", "model_return", "agent_call", "agent_return", "tool_call", "tool_return"}
+    {
+        "model_call",
+        "model_return",
+        "agent_call",
+        "agent_return",
+        "tool_call",
+        "tool_return",
+    }
 )
 
 _EVENT_KEYS = (
@@ -768,7 +773,11 @@ class App:
         # The services file of agents that keep running (see
         # kosika.services), shown on the Services page. Named by the person
         # with --services or KOSIKA_SERVICES; without one the page says how.
-        named = services or (Path(os.environ["KOSIKA_SERVICES"]) if os.environ.get("KOSIKA_SERVICES") else None)
+        named = services or (
+            Path(os.environ["KOSIKA_SERVICES"])
+            if os.environ.get("KOSIKA_SERVICES")
+            else None
+        )
         self.services_file = named.resolve() if named is not None else None
         # Outside command-line agents the owner allowed, and the one root
         # they may be shown. With either missing, none is ever asked.
@@ -978,7 +987,10 @@ class App:
             return [[str(f), f.stat().st_mtime_ns, f.stat().st_size] for f in files]
 
         try:
-            engine = max(p.stat().st_mtime_ns for p in [*here.glob("*.py"), *here.glob("std/*.kos")])
+            engine = max(
+                p.stat().st_mtime_ns
+                for p in [*here.glob("*.py"), *here.glob("std/*.kos")]
+            )
         except ValueError:
             engine = 0
         store = Path.home() / ".kosika" / "studio-cards.json"
@@ -1748,12 +1760,16 @@ class App:
         agents = list(self.agents().values())
         here = Path(__file__).resolve().parent
         try:
-            engine = max(p.stat().st_mtime_ns for p in [*here.glob("*.py"), *here.glob("std/*.kos")])
+            engine = max(
+                p.stat().st_mtime_ns
+                for p in [*here.glob("*.py"), *here.glob("std/*.kos")]
+            )
         except ValueError:
             engine = 0
         mark = [engine] + sorted(
             [str(f), f.stat().st_mtime_ns, f.stat().st_size]
-            for agent in agents for f in agent.path.parent.glob("*.kos")
+            for agent in agents
+            for f in agent.path.parent.glob("*.kos")
         )
         store = Path.home() / ".kosika" / "studio-project.json"
         kept = getattr(self, "_project_cache", None)
@@ -2213,7 +2229,10 @@ class App:
         if self.services_file is None:
             return {"file": "", "services": []}
         try:
-            return {"file": str(self.services_file), "services": running.status(self.services_file)}
+            return {
+                "file": str(self.services_file),
+                "services": running.status(self.services_file),
+            }
         except (OSError, ValueError) as exc:
             raise AppError(f"The services file could not be read: {exc}", 422) from exc
 
@@ -2350,7 +2369,9 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
                 # The same mark, sharp, for the window's taskbar icon.
                 from .desktop_app import icon_png
 
-                self._send(200, icon_png(192 if "192" in url.path else 512), "image/png")
+                self._send(
+                    200, icon_png(192 if "192" in url.path else 512), "image/png"
+                )
                 return
             if method == "GET" and url.path.startswith("/fonts/"):
                 # The two typefaces Kosika carries. Like the icon they are
@@ -2454,7 +2475,15 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
 
                     body = self._body()
                     try:
-                        self._json(200, design(str(body.get("text", "")), palette=str(body.get("palette", "")), place="studio", kind=str(body.get("kind", ""))))
+                        self._json(
+                            200,
+                            design(
+                                str(body.get("text", "")),
+                                palette=str(body.get("palette", "")),
+                                place="studio",
+                                kind=str(body.get("kind", "")),
+                            ),
+                        )
                     except DesignsError as exc:
                         raise AppError(str(exc)) from exc
                 elif method == "POST" and url.path == "/api/swarm/board":
@@ -2463,7 +2492,12 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
 
                     body = self._body()
                     try:
-                        self._json(200, swarm_board(body.get("states") or [], body.get("pins") or []))
+                        self._json(
+                            200,
+                            swarm_board(
+                                body.get("states") or [], body.get("pins") or []
+                            ),
+                        )
                     except DesignsError as exc:
                         raise AppError(str(exc)) from exc
                 elif method == "POST" and url.path == "/api/models":
@@ -2473,7 +2507,12 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
 
                     body = self._body()
                     try:
-                        self._json(200, choose_model(str(body.get("task", "")), str(body.get("model", ""))))
+                        self._json(
+                            200,
+                            choose_model(
+                                str(body.get("task", "")), str(body.get("model", ""))
+                            ),
+                        )
                     except DesignsError as exc:
                         raise AppError(str(exc)) from exc
                 elif method == "POST" and url.path == "/api/kosi":
@@ -2482,7 +2521,13 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
 
                     try:
                         body = self._body()
-                        self._json(200, kosi(str(body.get("text", "")), local=body.get("local") is True))
+                        self._json(
+                            200,
+                            kosi(
+                                str(body.get("text", "")),
+                                local=body.get("local") is True,
+                            ),
+                        )
                     except DesignsError as exc:
                         raise AppError(str(exc)) from exc
                 elif method == "POST" and url.path == "/api/kosi/hear":
@@ -2493,7 +2538,15 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
 
                     body = self._body(MAX_AUDIO)
                     try:
-                        self._json(200, {"text": hear(base64.b64decode(str(body.get("audio", ""))), str(body.get("type", "audio/webm")))})
+                        self._json(
+                            200,
+                            {
+                                "text": hear(
+                                    base64.b64decode(str(body.get("audio", ""))),
+                                    str(body.get("type", "audio/webm")),
+                                )
+                            },
+                        )
                     except (DesignsError, ValueError) as exc:
                         raise AppError(str(exc)) from exc
                 elif method == "POST" and url.path == "/api/kosi/speak":
@@ -2504,7 +2557,9 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
 
                     body = self._body()
                     said = speak(str(body.get("text", "")), str(body.get("voice", "")))
-                    self._json(200, {"audio": base64.b64encode(said).decode() if said else ""})
+                    self._json(
+                        200, {"audio": base64.b64encode(said).decode() if said else ""}
+                    )
                 elif method == "POST" and url.path == "/api/crew":
                     # A Kosika crew, run by Kosika Brain, makes a study pack.
                     from .designs import DesignsError, crew
@@ -2527,7 +2582,10 @@ def _handler(app: App, port_holder: list[int]) -> type[BaseHTTPRequestHandler]:
 
                     body = self._body()
                     try:
-                        self._json(200, rate(str(body.get("text", "")), bool(body.get("liked"))))
+                        self._json(
+                            200,
+                            rate(str(body.get("text", "")), bool(body.get("liked"))),
+                        )
                     except DesignsError as exc:
                         raise AppError(str(exc)) from exc
                 elif method == "POST" and url.path == "/api/study":

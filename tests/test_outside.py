@@ -85,7 +85,12 @@ class ProposeTests(Base):
 
     def test_the_request_tells_it_to_edit_and_not_to_run(self) -> None:
         asked: list[str] = []
-        self.ask(lambda command, copy: (asked.append(command[-1]), (0, "ok"))[1])
+
+        def looking(command: list[str], copy: Path) -> tuple[int, str]:
+            asked.append(command[-1])
+            return 0, "ok"
+
+        self.ask(looking)
         self.assertTrue(
             asked[0].startswith("add subtract\n\nWork only by editing files")
         )

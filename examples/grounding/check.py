@@ -130,7 +130,9 @@ def appears(quote: str, cited: str) -> bool:
     if not quoted or not line:
         return False
     span = len(quoted)
-    return any(line[start : start + span] == quoted for start in range(len(line) - span + 1))
+    return any(
+        line[start : start + span] == quoted for start in range(len(line) - span + 1)
+    )
 
 
 def check(said: str, notes: Path) -> Verdict:
@@ -182,7 +184,7 @@ def main() -> int:
 
     judge = load_judge()
     payload = json.loads(args.results.read_text(encoding="utf-8"))
-    notes = BENCH / ("notes" if args.set == "first" else "unseen" / "notes")
+    notes = BENCH / "notes" if args.set == "first" else BENCH / "unseen" / "notes"
     before: Counter[str] = Counter()
     after: Counter[str] = Counter()
     changed = 0

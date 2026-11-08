@@ -1,0 +1,11 @@
+record Question { text: Text  amount: Number }
+record Support { text: Text }
+
+model helper {
+  input: Question
+  output: Support
+}
+
+workflow reply(q: Question) -> Support {
+  answer = use_model helper(text: q.text, amount: q.amount) learn near otherwise {text: "nothing kept"}
+}

@@ -9,7 +9,7 @@ from dataclasses import replace as dataclass_replace
 from datetime import datetime, timezone
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable, Mapping, Sequence, TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, Callable, Mapping, Sequence, cast
 
 if TYPE_CHECKING:  # pragma: no cover - typing only; mind imports runtime's shapes
     from .mind import MindHooks
@@ -74,6 +74,7 @@ from .durable import PLAN_TOOL, ApprovalPending, Claimed, ExecutionSession
 from .evidence import EvidenceError, answer_schema, split, verify
 from .execution import ExecutionControl, ExecutionLimits, within_budget
 from .function_types import function_type, public_type
+from .identity import program_identity
 from .intelligence_runtime import FunctionResultCache, IntelligenceRecorder
 from .lessons import Lessons
 from .manifest import ManifestError, MCPManifest, verify_server
@@ -201,7 +202,7 @@ class MockMCP:
         )
 
 
-def _next_inline_name(functions: dict[str, Any]) -> str:
+def _next_inline_name(functions: Mapping[str, Any]) -> str:
     """A name for an anonymous function literal, counted within this run.
 
     The name reaches the trace, so it must depend only on the program and the
@@ -1871,9 +1872,7 @@ def _run_workflow(
         "run_start",
         workflow=workflow.name,
         trace_version=5,
-        program_hash=hashlib.sha256(
-            json.dumps(program_payload(program), sort_keys=True).encode()
-        ).hexdigest(),
+        program_hash=program_identity(program),
         inputs=environment.copy(),
         output_schema=schema_for_record(program, workflow.output_type),
     )
@@ -2483,9 +2482,7 @@ def _run_workflow(
                             raise
                         agent_changed.append(declaration.name)
                         outcome = _agent_tool_outcome(declaration, values)
-                        validate(
-                            outcome, schema_for_type(program, declaration.output)
-                        )
+                        validate(outcome, schema_for_type(program, declaration.output))
                         session.complete(
                             inner,
                             [
@@ -2599,7 +2596,12 @@ def _run_workflow(
                     question = (
                         str(
                             _evaluate_expression(
-                                step.learn_by, environment, program, functions, [], depth=-1
+                                step.learn_by,
+                                environment,
+                                program,
+                                functions,
+                                [],
+                                depth=-1,
                             )
                         )
                         if step.learn_by is not None
@@ -2607,13 +2609,16 @@ def _run_workflow(
                     )
                     request = json.dumps(
                         {"question": question, "arguments": arguments},
-                        sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        ensure_ascii=False,
                     )
                     context = _context_of(arguments, question)
                     lesson = _lesson_name(workflow.name, step.name, model)
                     if book is not None:
                         book.adopt(
-                            _earlier_lesson_name(workflow.name, step.name, model), lesson
+                            _earlier_lesson_name(workflow.name, step.name, model),
+                            lesson,
                         )
                         known = book.recall_exact(lesson, request)
                         if known is None and step.learn_near:
@@ -2650,7 +2655,7 @@ def _run_workflow(
                         "finish_reason": "stop",
                         "learned": {
                             key: known[key] for key in ("how", "likeness", "lessons")
-                        }
+                        },
                     }
                 else:
                     if step.learns and (model.provider or model.name) not in providers:

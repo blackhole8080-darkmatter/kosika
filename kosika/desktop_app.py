@@ -14,8 +14,8 @@ file, and a failure to start is shown in a small message box.
 
 from __future__ import annotations
 
-import json
 import functools
+import json
 import math
 import os
 import socket
@@ -74,9 +74,18 @@ def _cover(x: float, y: float, size: int) -> tuple[float, float, float]:
 #: indigo ring, an amber ring, a dark core, the K in Figtree's outline and a
 #: dot resting on the rings.
 _MARK_K = (
-    (39.79, 83.50), (39.79, 37.50), (50.31, 37.50), (50.31, 54.23), (65.75, 37.50),
-    (79.55, 37.50), (60.27, 58.25), (80.21, 83.50), (67.10, 83.50), (53.32, 65.74),
-    (50.31, 69.00), (50.31, 83.50),
+    (39.79, 83.50),
+    (39.79, 37.50),
+    (50.31, 37.50),
+    (50.31, 54.23),
+    (65.75, 37.50),
+    (79.55, 37.50),
+    (60.27, 58.25),
+    (80.21, 83.50),
+    (67.10, 83.50),
+    (53.32, 65.74),
+    (50.31, 69.00),
+    (50.31, 83.50),
 )
 _MARK_TILE = (0x0B, 0x0B, 0x16)
 _MARK_OUTER = (0x2B, 0x23, 0x50)
@@ -145,7 +154,14 @@ def _mark_rows(size: int) -> tuple[bytes, ...]:
             count = samples * samples
             if cover:
                 red, green, blue = red / cover, green / cover, blue / cover
-            line += bytes((int(round(red)), int(round(green)), int(round(blue)), int(round(255 * cover / count))))
+            line += bytes(
+                (
+                    int(round(red)),
+                    int(round(green)),
+                    int(round(blue)),
+                    int(round(255 * cover / count)),
+                )
+            )
         rows.append(bytes(line))
     return tuple(rows)
 
@@ -171,8 +187,22 @@ def _kept(name: str, make) -> bytes:
 
     import hashlib
 
-    recipe = repr((_MARK_K, _MARK_TILE, _MARK_OUTER, _MARK_AMBER, _MARK_CORE, _MARK_LETTER, _MARK_DOT, ICON_SIZES, 2))
-    path = home() / "icons" / f"{name}-{hashlib.sha256(recipe.encode()).hexdigest()[:12]}"
+    recipe = repr(
+        (
+            _MARK_K,
+            _MARK_TILE,
+            _MARK_OUTER,
+            _MARK_AMBER,
+            _MARK_CORE,
+            _MARK_LETTER,
+            _MARK_DOT,
+            ICON_SIZES,
+            2,
+        )
+    )
+    path = (
+        home() / "icons" / f"{name}-{hashlib.sha256(recipe.encode()).hexdigest()[:12]}"
+    )
     try:
         return path.read_bytes()
     except OSError:
@@ -197,10 +227,22 @@ def _png(size: int) -> bytes:
     raw = b"".join(b"\x00" + line for line in _mark_rows(size))
 
     def chunk(kind: bytes, data: bytes) -> bytes:
-        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+        return (
+            struct.pack(">I", len(data))
+            + kind
+            + data
+            + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+        )
 
-    header = struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0)  # 8 bits, red green blue alpha
-    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b"")
+    header = struct.pack(
+        ">IIBBBBB", size, size, 8, 6, 0, 0, 0
+    )  # 8 bits, red green blue alpha
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(raw, 9))
+        + chunk(b"IEND", b"")
+    )
 
 
 def _picture(size: int, colours: tuple = KOSIKA_COLOURS) -> bytes:
@@ -402,7 +444,8 @@ def announce(name: str, url: str, folder: Path | None = None) -> None:
     folder = (folder or home()) / "running"
     folder.mkdir(parents=True, exist_ok=True)
     (folder / f"{name}.json").write_text(
-        json.dumps({"url": url, "pid": os.getpid(), "at": time.time()}), encoding="utf-8"
+        json.dumps({"url": url, "pid": os.getpid(), "at": time.time()}),
+        encoding="utf-8",
     )
 
 
@@ -410,7 +453,11 @@ def reachable(name: str, folder: Path | None = None) -> str:
     """The address of a running app, or "" when it is not running."""
 
     try:
-        note = json.loads(((folder or home()) / "running" / f"{name}.json").read_text(encoding="utf-8"))
+        note = json.loads(
+            ((folder or home()) / "running" / f"{name}.json").read_text(
+                encoding="utf-8"
+            )
+        )
         url = str(note["url"])
         port = urlsplit(url).port
     except (OSError, ValueError, KeyError, TypeError):

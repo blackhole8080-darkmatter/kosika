@@ -143,6 +143,7 @@ SYSTEM_KINDS = (
     "db",
     "web",
     "kosika",
+    "knowledge",
     "meaning",
     "agents",
     "outside",
@@ -288,6 +289,21 @@ SHAPES: dict[str, tuple[dict[str, str], dict[str, str]]] = {
     "check_files": (
         {"text": "Text", "files": PLANNED_FILES},
         {"problems": "Text[]"},
+    ),
+    # A KL query over the process's own active knowledge graph; see
+    # kosika.knowledge_tools. It reaches nothing outside the process, like
+    # `check`, so it may be `observe` with no grant. `columns` are the bound
+    # variables and `rows` the binding sets aligned to them; `ok` is false
+    # with a `problem` when the query does not parse or there is no graph.
+    "knowledge:query": (
+        {"query": "Text"},
+        {
+            "columns": "Text[]",
+            "rows": "Text[][]",
+            "count": "Number",
+            "ok": "Bool",
+            "problem": "Text",
+        },
     ),
     # How near two texts are in meaning, from -1 to 1. It reaches nothing
     # but the embedding model the runner granted.
@@ -444,6 +460,7 @@ def declaration_problem(program: Program, tool: ToolDecl) -> str | None:
         or (kind == "db" and tool.operation in ("query", "rows"))
         or kind == "web"
         or kind == "kosika"
+        or kind == "knowledge"
         or kind == "meaning"
         or kind == "agents"
         or kind == "outside"
@@ -477,6 +494,11 @@ def declaration_problem(program: Program, tool: ToolDecl) -> str | None:
         return (
             f"Tool {tool.name!r} has unknown kosika operation {tool.operation!r}; "
             "use one of: check, check_files"
+        )
+    if kind == "knowledge" and tool.operation != "query":
+        return (
+            f"Tool {tool.name!r} has unknown knowledge operation {tool.operation!r}; "
+            "use one of: query"
         )
     if kind == "notify" and tool.operation != "send":
         return (
@@ -533,7 +555,8 @@ def declaration_problem(program: Program, tool: ToolDecl) -> str | None:
     ):
         if not _fits(records, records.get(record_name or ""), wanted):
             shape = ", ".join(
-                f"{name}: {_described(kind_, planned)}" for name, kind_ in wanted.items()
+                f"{name}: {_described(kind_, planned)}"
+                for name, kind_ in wanted.items()
             )
             return (
                 f"Tool {tool.name!r} {label} record must have exactly the "
@@ -657,7 +680,9 @@ def bind_services_tool(path: str | Path) -> Callable[[ToolDecl, dict[str, Any]],
         else:
             kept.discard(name)
         spare = paused_list.with_name(paused_list.name + ".tmp")
-        spare.write_text("".join(f"{each}\n" for each in sorted(kept)), encoding="utf-8")
+        spare.write_text(
+            "".join(f"{each}\n" for each in sorted(kept)), encoding="utf-8"
+        )
         spare.replace(paused_list)
         return {"name": name, "paused": tool.operation == "pause"}
 
@@ -1141,6 +1166,9 @@ def bind_system_tools(
     web: dict[str, Callable[[ToolDecl, dict[str, Any]], Any]] = dict(
         bind_kosika_tools(program)
     )
+    from .knowledge_tools import bind_knowledge_tools
+
+    web.update(bind_knowledge_tools(program))
     if sites:
         try:
             reader = (
@@ -1156,7 +1184,9 @@ def bind_system_tools(
             note = bind_notify_tool(notify)
         except NotifyError as exc:
             raise SystemToolError(str(exc)) from exc
-        web.update({tool.name: note for tool in system if system_kind(tool) == "notify"})
+        web.update(
+            {tool.name: note for tool in system if system_kind(tool) == "notify"}
+        )
     if services:
         keeper = bind_services_tool(services)
         web.update(
@@ -1164,10 +1194,16 @@ def bind_system_tools(
         )
     if linux:
         reader = bind_linux_tool(linux)
-        web.update({tool.name: reader for tool in system if system_kind(tool) == "linux"})
+        web.update(
+            {tool.name: reader for tool in system if system_kind(tool) == "linux"}
+        )
     if computer:
         web.update(
-            {tool.name: computer_status for tool in system if system_kind(tool) == "computer"}
+            {
+                tool.name: computer_status
+                for tool in system
+                if system_kind(tool) == "computer"
+            }
         )
     if meaning is not None:
         web.update(

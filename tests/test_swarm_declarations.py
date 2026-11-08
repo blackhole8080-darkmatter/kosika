@@ -74,7 +74,7 @@ class EntryPointErrorTests(unittest.TestCase):
         # Unreachable through the checker, which requires a swarm to name an
         # existing workflow, so the branch is exercised on the value directly.
         empty = replace(SwarmDecl("Lonely", ("a",), "gone", 1, True), agents=())
-        program = replace(load_program(HELLO), swarms=(empty,), workflows=())
+        program = replace(load_program(HELLO), swarms=[empty], workflows=[])
         message = _entry_point_error(program, "main")
         self.assertIn("declares no workflow to run", message)
 

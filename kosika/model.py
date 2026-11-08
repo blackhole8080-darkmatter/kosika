@@ -121,6 +121,9 @@ class ModelRequest:
     # answer's format, so even a small model on a laptop's CPU cannot leave a
     # field out; other providers are told it in words, as before.
     schema: Any = None
+    # A file the answer is about, so a grounded profile reads it first rather
+    # than ranking it out. Providers that are not grounded ignore it.
+    focus: str | None = None
 
 
 @dataclass(frozen=True)
@@ -170,9 +173,7 @@ MODEL_PROTOCOLS = ("openai", "ollama")
 #: answer: measured here, 233 s on a cold cache against 49 s warm. A gateway
 #: serving other agents therefore wants hours, so KOSIKA_OLLAMA_KEEP_ALIVE sets
 #: it without editing the code.
-OLLAMA_KEEP_ALIVE = (
-    os.environ.get("KOSIKA_OLLAMA_KEEP_ALIVE", "30m").strip() or "30m"
-)
+OLLAMA_KEEP_ALIVE = os.environ.get("KOSIKA_OLLAMA_KEEP_ALIVE", "30m").strip() or "30m"
 #: The context windows Ollama is asked for, smallest first. Ollama gives a
 #: model 4096 tokens unless told otherwise, and quietly drops the start of a
 #: conversation that does not fit, which is where an agent's instructions

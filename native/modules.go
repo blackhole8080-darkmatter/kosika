@@ -5,7 +5,9 @@ package main
 // its own declarations and what each file it imports exports; nothing else.
 
 import (
+	"crypto/sha256"
 	"embed"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path"
@@ -101,6 +103,7 @@ const stdMarker = "std/"
 func loadModules(entry string) (merged *Program, failure *moduleError) {
 	boundary := realPath(filepath.Dir(entry))
 	merged = &Program{}
+	hashes := map[string]string{}
 	loaded := map[string]*Program{}
 	active := map[string]bool{}
 	owners := map[string]string{}
@@ -150,6 +153,16 @@ func loadModules(entry string) (merged *Program, failure *moduleError) {
 		if len(raw) > 262144 {
 			refuse("Module exceeds 256 KiB: %s", resolved)
 		}
+		// The module's digest, under the name the reference records it by:
+		// its path relative to the program's folder, or `std/NAME.kos`.
+		key := resolved
+		if !standard {
+			if relative, err := filepath.Rel(boundary, resolved); err == nil {
+				key = filepath.ToSlash(relative)
+			}
+		}
+		digest := sha256.Sum256(raw)
+		hashes[key] = hex.EncodeToString(digest[:])
 		module, parseErr := Parse(string(raw))
 		if parseErr != nil {
 			panic(&moduleError{message: fmt.Sprintf("%s: %v", resolved, parseErr), parse: true})
@@ -237,6 +250,7 @@ func loadModules(entry string) (merged *Program, failure *moduleError) {
 		return module
 	}
 	load(entry)
+	merged.Identity = identityOf(hashes)
 	return merged, nil
 }
 

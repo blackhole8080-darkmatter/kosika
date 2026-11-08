@@ -555,7 +555,7 @@ func (r *run) call(call *StepCall, environment *Scope, at frame, depth, retries 
 		result := r.agent(agent, arguments)
 		returned := event("agent_return", "agent", agent.Name, "result", result, "content", r.note.content,
 			"finish_reason", "stop", "model_steps", bigInt(r.note.modelSteps), "messages", eventList(r.note.messages),
-			"plan_hash", programHash(agent.Name+"\x00"+pyJSON(recorded, true)))
+			"plan_hash", nativeDigest(agent.Name+"\x00"+pyJSON(recorded, true)))
 		if r.note.reformatted != nil {
 			returned.set("reformatted_from", *r.note.reformatted)
 		}

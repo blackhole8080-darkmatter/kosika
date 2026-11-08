@@ -7,6 +7,7 @@
 //	    [--model NAME] [--model-url URL] [--model-protocol openai|ollama]
 //	    [--model-timeout SECONDS]    run a workflow, asking a real model
 //	kosika-native replay TRACE.jsonl  check a run's trace, running nothing
+//	kosika-native hash FILE.kos     the program's identity, as `kosika pack` records it
 //	kosika-native capabilities      the conformance capabilities it reads
 //
 // It is built up stage by stage against the conformance suite; what it
@@ -89,6 +90,12 @@ func main() {
 		}
 		return
 	}
+	if len(args) == 2 && args[0] == "hash" {
+		// The program's identity: of its sources, so the command line and
+		// this engine print the same one, and a pack names it too.
+		fmt.Println(load(args[1]).Identity)
+		return
+	}
 	if len(args) >= 2 && args[0] == "run" {
 		os.Exit(runCommand(args[1:]))
 	}
@@ -130,7 +137,7 @@ func main() {
 		asJSON, args = true, []string{args[0], args[2]}
 	}
 	if len(args) != 2 {
-		fail("usage: kosika-native check FILE.kos | kosika-native tokens FILE.kos | kosika-native test [--json] FILE.kos | kosika-native run FILE.kos [options] | kosika-native serve FILE.kos [--port N] [run options] | kosika-native capabilities")
+		fail("usage: kosika-native check FILE.kos | kosika-native tokens FILE.kos | kosika-native test [--json] FILE.kos | kosika-native run FILE.kos [options] | kosika-native serve FILE.kos [--port N] [run options] | kosika-native hash FILE.kos | kosika-native capabilities")
 	}
 	switch args[0] {
 	case "tokens":

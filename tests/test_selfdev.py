@@ -86,13 +86,9 @@ class SurveyTests(unittest.TestCase):
             root = tree(Path(directory))
             before = survey(root)
             module = root / "kosika" / "sample" / "module.py"
-            module.write_text(
-                '"Added above."\n\n' + MODULE, encoding="utf-8"
-            )
+            module.write_text('"Added above."\n\n' + MODULE, encoding="utf-8")
             after = survey(root)
-            self.assertEqual(
-                [task.id for task in before], [task.id for task in after]
-            )
+            self.assertEqual([task.id for task in before], [task.id for task in after])
             self.assertNotEqual(before[0].line, after[0].line)
 
     def test_survey_ignores_a_marker_inside_a_string_literal(self) -> None:
@@ -232,7 +228,9 @@ class GateTests(unittest.TestCase):
             )
             result = run_gate(root, ["kosika/sample/broken.py"])
             self.assertFalse(result.ok)
-            self.assertEqual(result.first_failure().name, "compile")
+            failure = result.first_failure()
+            assert failure is not None
+            self.assertEqual(failure.name, "compile")
 
     def test_gate_passes_a_clean_change_and_runs_the_owners_command(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -240,9 +238,7 @@ class GateTests(unittest.TestCase):
             result = run_gate(
                 root,
                 ["kosika/sample/module.py"],
-                extra=(
-                    f'{sys.executable} -c "import sys; sys.exit(0)"',
-                ),
+                extra=(f'{sys.executable} -c "import sys; sys.exit(0)"',),
             )
             self.assertTrue(result.ok, [step.to_dict() for step in result.steps])
 
@@ -285,17 +281,32 @@ class EngineTests(unittest.TestCase):
             proposer = FixedProposer(
                 [
                     Proposal(
-                        edits=(Edit("kosika/sample/module.py", "return left + right", "return left +"),)
+                        edits=(
+                            Edit(
+                                "kosika/sample/module.py",
+                                "return left + right",
+                                "return left +",
+                            ),
+                        )
                     ),
                     Proposal(
-                        edits=(Edit("kosika/sample/module.py", "return left + right", "return left -"),)
+                        edits=(
+                            Edit(
+                                "kosika/sample/module.py",
+                                "return left + right",
+                                "return left -",
+                            ),
+                        )
                     ),
                 ]
             )
             attempt = self.engine(root, proposer, max_attempts=2).attempt(task)
             self.assertEqual(attempt.status, "reverted")
             self.assertEqual(module.read_bytes(), original)
-            self.assertEqual(attempt.gate.first_failure().name, "compile")
+            assert attempt.gate is not None
+            gate_failure = attempt.gate.first_failure()
+            assert gate_failure is not None
+            self.assertEqual(gate_failure.name, "compile")
 
     def test_the_failure_is_given_to_the_next_attempt(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -303,8 +314,24 @@ class EngineTests(unittest.TestCase):
             task = survey(root)[0]
             proposer = FixedProposer(
                 [
-                    Proposal(edits=(Edit("kosika/sample/module.py", "return left + right", "return +"),)),
-                    Proposal(edits=(Edit("kosika/sample/module.py", "return +", "return left + right"),)),
+                    Proposal(
+                        edits=(
+                            Edit(
+                                "kosika/sample/module.py",
+                                "return left + right",
+                                "return +",
+                            ),
+                        )
+                    ),
+                    Proposal(
+                        edits=(
+                            Edit(
+                                "kosika/sample/module.py",
+                                "return +",
+                                "return left + right",
+                            ),
+                        )
+                    ),
                 ]
             )
             self.engine(root, proposer, max_attempts=2).attempt(task)
@@ -352,12 +379,18 @@ class EngineTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = tree(Path(directory))
             answers = [
-                Proposal(edits=(Edit("kosika/sample/module.py", "return left + right", "return +"),))
+                Proposal(
+                    edits=(
+                        Edit(
+                            "kosika/sample/module.py", "return left + right", "return +"
+                        ),
+                    )
+                )
                 for _ in range(6)
             ]
-            summary = self.engine(
-                root, FixedProposer(answers), max_attempts=1
-            ).run(cycles=6, max_consecutive_failures=2)
+            summary = self.engine(root, FixedProposer(answers), max_attempts=1).run(
+                cycles=6, max_consecutive_failures=2
+            )
             self.assertEqual(summary["stopped"][:5], "2 att")
             self.assertEqual(summary["kept"], 0)
 
@@ -377,9 +410,7 @@ class EngineTests(unittest.TestCase):
             (root / "kosika" / "sample" / "long.py").write_text(
                 "# TODO: shorten this\n" + body + "\n", encoding="utf-8"
             )
-            task = next(
-                item for item in survey(root) if item.path.endswith("long.py")
-            )
+            task = next(item for item in survey(root) if item.path.endswith("long.py"))
             whole = build_prompt(root, task, allow=("kosika",))
             window = build_prompt(root, task, allow=("kosika",), excerpt_chars=2000)
             self.assertLess(len(window), len(whole))
@@ -429,7 +460,9 @@ class CliTests(unittest.TestCase):
     def test_survey_prints_the_work_as_json(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = tree(Path(directory))
-            code, out, _ = self.call("selfdev", "survey", "--root", str(root), "--format", "json")
+            code, out, _ = self.call(
+                "selfdev", "survey", "--root", str(root), "--format", "json"
+            )
             self.assertEqual(code, 0)
             payload = json.loads(out)
             self.assertTrue(payload["tasks"])

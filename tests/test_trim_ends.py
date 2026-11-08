@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 from typing import Any
 
-from kosika.checker import CheckError, check
+from kosika.checker import check
 from kosika.parser import parse
 from kosika.runtime import run
 

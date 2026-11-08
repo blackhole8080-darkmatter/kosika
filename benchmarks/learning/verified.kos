@@ -1,0 +1,28 @@
+// A support reply that keeps what it learns and still checks it.
+//
+// `verify` runs on a model's answer and on a kept one alike: a lesson that
+// no longer passes the program's own check is not served, and the question
+// goes to the model instead. Before this, a step with a check kept no
+// lessons at all, so the careful programs were the ones that never learned.
+
+record Ticket { text: Text }
+record Said { text: Text }
+
+model writer {
+  input: Ticket
+  output: Said
+}
+
+fn no_reply(ticket: Ticket) -> Said {
+  return {text: "No accepted lesson is available."}
+}
+
+fn unusable(said: Said) -> Text {
+  if said.text.contains("I do not know") { return "The answer gives up." }
+  if 8 > said.text.length() { return "The answer is too short to be useful." }
+  return ""
+}
+
+workflow reply(ticket: Ticket) -> Said {
+  said = use_model writer(text: "Answer briefly: " + ticket.text) verify unusable(said) learn by ticket.text otherwise no_reply(ticket)
+}

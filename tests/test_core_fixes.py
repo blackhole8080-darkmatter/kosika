@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 from typing import Any
 
+from kosika.ast import ForExpr
 from kosika.builtin_methods import METHODS, MethodError, resolve
 from kosika.checker import CheckError, check
 from kosika.development import check_project
@@ -259,7 +260,9 @@ class ListBuildingTests(unittest.TestCase):
             + "\n}\n"
             + MAIN
         )
-        self.assertIsNone(program.functions[0].bindings[1].value.condition)
+        loop = program.functions[0].bindings[1].value
+        assert isinstance(loop, ForExpr)
+        self.assertIsNone(loop.condition)
 
     def test_append_concat_reverse_and_slice_return_new_arrays(self) -> None:
         body = (

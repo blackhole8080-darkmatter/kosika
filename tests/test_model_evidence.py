@@ -17,6 +17,7 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
+from kosika.ast import ModelCall
 from kosika.cli import main
 from kosika.evidence import EvidenceError, verify
 from kosika.model_evidence import KIND, lower_model_evidence
@@ -62,6 +63,7 @@ class LoweringTests(unittest.TestCase):
 
     def test_the_call_is_replaced_by_a_generated_model(self) -> None:
         call = self.program.workflows[0].steps[0].call
+        assert isinstance(call, ModelCall)
         self.assertEqual(call.model_name, "assistant/evidence")
 
     def test_the_generated_model_asks_the_declared_one(self) -> None:
@@ -82,7 +84,9 @@ class LoweringTests(unittest.TestCase):
     def test_a_program_without_evidence_is_untouched(self) -> None:
         plain = parse(PROGRAM.replace(" with evidence", ""))
         self.assertEqual([model.name for model in plain.models], ["assistant"])
-        self.assertIsNone(plain.workflows[0].steps[0].call.evidence)
+        plain_call = plain.workflows[0].steps[0].call
+        assert isinstance(plain_call, ModelCall)
+        self.assertIsNone(plain_call.evidence)
         self.assertIs(lower_model_evidence(plain), plain)
 
     def test_an_undeclared_model_is_left_for_the_checker(self) -> None:
@@ -90,7 +94,9 @@ class LoweringTests(unittest.TestCase):
         # invent one, or the checker's own unknown-model failure would vanish.
         program = parse(PROGRAM.replace("use_model assistant", "use_model ghost"))
         self.assertEqual([model.name for model in program.models], ["assistant"])
-        self.assertEqual(program.workflows[0].steps[0].call.model_name, "ghost")
+        ghost_call = program.workflows[0].steps[0].call
+        assert isinstance(ghost_call, ModelCall)
+        self.assertEqual(ghost_call.model_name, "ghost")
 
 
 class InputRuleTests(unittest.TestCase):
@@ -145,8 +151,10 @@ class CliTests(unittest.TestCase):
             *extra,
         ]
         out, err = StringIO(), StringIO()
-        with patch.object(sys, "argv", argv), redirect_stdout(out), redirect_stderr(
-            err
+        with (
+            patch.object(sys, "argv", argv),
+            redirect_stdout(out),
+            redirect_stderr(err),
         ):
             code = main()
         return code, out.getvalue() + err.getvalue()
@@ -179,9 +187,11 @@ class CliTests(unittest.TestCase):
         source = self.root / "choice.kos"
         source.write_text(CHOICE, encoding="utf-8")
         out, err = StringIO(), StringIO()
-        with patch.object(sys, "argv", ["kosika", "check", str(source)]), redirect_stdout(
-            out
-        ), redirect_stderr(err):
+        with (
+            patch.object(sys, "argv", ["kosika", "check", str(source)]),
+            redirect_stdout(out),
+            redirect_stderr(err),
+        ):
             code = main()
         self.assertEqual(code, 2)
         self.assertIn("cannot give evidence", out.getvalue() + err.getvalue())
@@ -197,9 +207,11 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, 0, output)
         self.assertTrue(trace.exists())
         out, err = StringIO(), StringIO()
-        with patch.object(sys, "argv", ["kosika", "replay", str(trace)]), redirect_stdout(
-            out
-        ), redirect_stderr(err):
+        with (
+            patch.object(sys, "argv", ["kosika", "replay", str(trace)]),
+            redirect_stdout(out),
+            redirect_stderr(err),
+        ):
             replay_code = main()
         self.assertEqual(replay_code, 0, out.getvalue() + err.getvalue())
 

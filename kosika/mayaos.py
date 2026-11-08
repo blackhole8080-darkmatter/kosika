@@ -28,10 +28,10 @@ import hmac
 import json
 import os
 import platform
+import re
 import secrets
 import shutil
 import subprocess
-import re
 import sys
 import tempfile
 import threading
@@ -94,10 +94,16 @@ def open_app(name: str, starter: Callable[[list[str]], Any] | None = None) -> st
     if starter is not None:
         starter(command)
     else:
-        flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(
+            subprocess, "CREATE_NEW_PROCESS_GROUP", 0
+        )
         subprocess.Popen(  # noqa: S603 - a fixed module of Kosika's own
-            command, cwd=code_folder(), creationflags=flags,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
+            command,
+            cwd=code_folder(),
+            creationflags=flags,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
         )
     return "started"
 
@@ -108,10 +114,14 @@ def open_app(name: str, starter: Callable[[list[str]], Any] | None = None) -> st
 def _windows_memory() -> tuple[int, int]:
     class Status(ctypes.Structure):
         _fields_ = [
-            ("length", ctypes.c_ulong), ("load", ctypes.c_ulong),
-            ("total", ctypes.c_ulonglong), ("free", ctypes.c_ulonglong),
-            ("page_total", ctypes.c_ulonglong), ("page_free", ctypes.c_ulonglong),
-            ("virtual_total", ctypes.c_ulonglong), ("virtual_free", ctypes.c_ulonglong),
+            ("length", ctypes.c_ulong),
+            ("load", ctypes.c_ulong),
+            ("total", ctypes.c_ulonglong),
+            ("free", ctypes.c_ulonglong),
+            ("page_total", ctypes.c_ulonglong),
+            ("page_free", ctypes.c_ulonglong),
+            ("virtual_total", ctypes.c_ulonglong),
+            ("virtual_free", ctypes.c_ulonglong),
             ("extended", ctypes.c_ulonglong),
         ]
 
@@ -131,15 +141,23 @@ def windows() -> dict[str, Any]:
         "version": platform.version(),
         "cores": os.cpu_count() or 0,
     }
-    drive = Path(os.environ.get("SYSTEMDRIVE", "C:") + "\\") if sys.platform == "win32" else Path("/")
+    drive = (
+        Path(os.environ.get("SYSTEMDRIVE", "C:") + "\\")
+        if sys.platform == "win32"
+        else Path("/")
+    )
     try:
         disk = shutil.disk_usage(drive)
-        found["disk"] = f"{disk.used / 2**30:.0f} of {disk.total / 2**30:.0f} GB used on {str(drive).rstrip(chr(92))}"
+        found["disk"] = (
+            f"{disk.used / 2**30:.0f} of {disk.total / 2**30:.0f} GB used on {str(drive).rstrip(chr(92))}"
+        )
     except OSError:
         found["disk"] = "unknown"
     if sys.platform == "win32":
         used, total = _windows_memory()
-        found["memory"] = f"{used / 2**20:.0f} of {total / 2**20:.0f} MB used" if total else "unknown"
+        found["memory"] = (
+            f"{used / 2**20:.0f} of {total / 2**20:.0f} MB used" if total else "unknown"
+        )
         seconds = ctypes.windll.kernel32.GetTickCount64() // 1000  # type: ignore[attr-defined]
         hours, minutes = divmod(seconds // 60, 60)
         days, hours = divmod(hours, 24)
@@ -158,11 +176,17 @@ def _share(text: Any) -> float:
     return round(min(1.0, float(found.group(1)) / float(found.group(2))), 4)
 
 
-def reading(system: str, kind: str, memory: Any, disk: Any, updates: Any, awake: bool) -> dict[str, Any]:
+def reading(
+    system: str, kind: str, memory: Any, disk: Any, updates: Any, awake: bool
+) -> dict[str, Any]:
     count = str(updates or "")
     return {
-        "system": system, "kind": kind, "memory": _share(memory), "disk": _share(disk),
-        "updates": int(count) if count.isdigit() else -1, "awake": awake,
+        "system": system,
+        "kind": kind,
+        "memory": _share(memory),
+        "disk": _share(disk),
+        "updates": int(count) if count.isdigit() else -1,
+        "awake": awake,
     }
 
 
@@ -181,8 +205,12 @@ def _said_of(stdout: str) -> dict[str, Any]:
     raise MayaError("Maya gave no answer", 502)
 
 
-def think(msg: dict[str, Any], services: Path | None, runner: Callable[..., Any] | None = None,
-          linux: str = "") -> dict[str, Any]:
+def think(
+    msg: dict[str, Any],
+    services: Path | None,
+    runner: Callable[..., Any] | None = None,
+    linux: str = "",
+) -> dict[str, Any]:
     """Run maya.kos once on what was said, with only the grants it declares,
     each to look: this computer, the one Linux she was let read, and the
     services file. It is run as `kosika run`, as any Kosika program is."""
@@ -192,41 +220,76 @@ def think(msg: dict[str, Any], services: Path | None, runner: Callable[..., Any]
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as work:
         inputs = Path(work) / "input.json"
         inputs.write_text(json.dumps({"msg": msg}), encoding="utf-8")
-        command = [sys.executable, "-m", "kosika.cli", "run", str(MIND), "--input", str(inputs),
-                   "--trace", str(Path(work) / "trace.jsonl")]
+        command = [
+            sys.executable,
+            "-m",
+            "kosika.cli",
+            "run",
+            str(MIND),
+            "--input",
+            str(inputs),
+            "--trace",
+            str(Path(work) / "trace.jsonl"),
+        ]
         command += ["--computer"]
         if linux:
             command += ["--linux", linux]
         if services is not None:
             command += ["--services", str(services)]
         env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
-        env["PYTHONPATH"] = str(MIND.parent.parent) + os.pathsep + env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = (
+            str(MIND.parent.parent) + os.pathsep + env.get("PYTHONPATH", "")
+        )
         if runner is not None:
             done = runner(command)
         else:
             try:
                 done = subprocess.run(  # noqa: S603 - Kosika running its own program
-                    command, cwd=MIND.parent, env=env, capture_output=True, text=True, encoding="utf-8",
-                    errors="replace", timeout=MIND_SECONDS, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                    command,
+                    cwd=MIND.parent,
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=MIND_SECONDS,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
                 )
             except subprocess.TimeoutExpired as exc:
                 raise MayaError("Maya took too long to answer", 504) from exc
         if done.returncode != 0:
-            raise MayaError("Maya could not answer: " + (done.stderr or done.stdout).strip()[-300:], 502)
+            raise MayaError(
+                "Maya could not answer: " + (done.stderr or done.stdout).strip()[-300:],
+                502,
+            )
         return _said_of(done.stdout)
 
 
 class Maya:
     """What the MayaOS page can ask for."""
 
-    def __init__(self, services: Path | None = None, linux: list[str] | None = None,
-                 settings: Path | None = None) -> None:
-        named = services or (Path(os.environ["KOSIKA_SERVICES"]) if os.environ.get("KOSIKA_SERVICES") else None)
+    def __init__(
+        self,
+        services: Path | None = None,
+        linux: list[str] | None = None,
+        settings: Path | None = None,
+    ) -> None:
+        named = services or (
+            Path(os.environ["KOSIKA_SERVICES"])
+            if os.environ.get("KOSIKA_SERVICES")
+            else None
+        )
         self.services_file = named.resolve() if named is not None else None
         self.settings = settings or app_folder() / "mayaos.json"
-        self._from_env = linux if linux is not None else [
-            name.strip() for name in os.environ.get("KOSIKA_LINUX", "").split(",") if name.strip()
-        ]
+        self._from_env = (
+            linux
+            if linux is not None
+            else [
+                name.strip()
+                for name in os.environ.get("KOSIKA_LINUX", "").split(",")
+                if name.strip()
+            ]
+        )
         self.token = secrets.token_urlsafe(24)
         self._lock = threading.Lock()
         self._kosi: Any = None
@@ -243,7 +306,9 @@ class Maya:
             return {}
 
     def named_linux(self) -> list[str]:
-        chosen = [name for name in self._saved().get("linux", []) if isinstance(name, str)]
+        chosen = [
+            name for name in self._saved().get("linux", []) if isinstance(name, str)
+        ]
         return list(dict.fromkeys([*self._from_env, *chosen]))
 
     def name_linux(self, body: dict[str, Any]) -> dict[str, Any]:
@@ -256,7 +321,11 @@ class Maya:
             raise MayaError(f"{name} is not installed under WSL", 404)
         with self._lock:
             saved = self._saved()
-            chosen = [item for item in saved.get("linux", []) if isinstance(item, str) and item != name]
+            chosen = [
+                item
+                for item in saved.get("linux", [])
+                if isinstance(item, str) and item != name
+            ]
             saved["linux"] = chosen + ([name] if on else [])
             self.settings.parent.mkdir(parents=True, exist_ok=True)
             self.settings.write_text(json.dumps(saved, indent=2), encoding="utf-8")
@@ -303,7 +372,16 @@ class Maya:
             if name == granted:
                 continue
             found = self._linux_seen.get(name) or {}
-            told.append(reading(name, "linux", found.get("memory"), found.get("disk"), found.get("upgrades"), name in named))
+            told.append(
+                reading(
+                    name,
+                    "linux",
+                    found.get("memory"),
+                    found.get("disk"),
+                    found.get("upgrades"),
+                    name in named,
+                )
+            )
         return told
 
     def kosi(self, text: str) -> Any:
@@ -318,8 +396,12 @@ class Maya:
             self._kosi = Engine(KOSI_AGENTS, local_binder()[0])
         return self._kosi.ask(text, timeout=KOSI_SECONDS)
 
-    def ask(self, body: dict[str, Any], runner: Callable[..., Any] | None = None,
-            kosi: Callable[[str], Any] | None = None) -> dict[str, Any]:
+    def ask(
+        self,
+        body: dict[str, Any],
+        runner: Callable[..., Any] | None = None,
+        kosi: Callable[[str], Any] | None = None,
+    ) -> dict[str, Any]:
         """Put what the person said to Maya, and do what she decides: only
         ever opening one of Kosika's own apps."""
 
@@ -329,14 +411,22 @@ class Maya:
         installed = wsl.distributions()
         granted = next((name for name in self.named_linux() if name in installed), "")
         said = think(
-            {"text": text, "person": getpass.getuser(), "readings": self.readings(granted),
-             "studio": bool(reachable("studio"))},
-            self.services_file, runner, granted,
+            {
+                "text": text,
+                "person": getpass.getuser(),
+                "readings": self.readings(granted),
+                "studio": bool(reachable("studio")),
+            },
+            self.services_file,
+            runner,
+            granted,
         )
         hand = said.get("hand")
         if isinstance(hand, str) and hand:
             answer = (kosi or self.kosi)(hand)
-            said.update(title="Kosi", text=answer.text, suggest=list(answer.suggest), by="kosi")
+            said.update(
+                title="Kosi", text=answer.text, suggest=list(answer.suggest), by="kosi"
+            )
         opened = said.get("open")
         if opened in ("studio", "kosi"):
             try:
@@ -391,7 +481,11 @@ def _handler(maya: Maya, port: list[int]) -> type[BaseHTTPRequestHandler]:
             self.wfile.write(body)
 
         def _json(self, status: int, payload: Any) -> None:
-            self._send(status, json.dumps(payload, ensure_ascii=False).encode("utf-8"), "application/json; charset=utf-8")
+            self._send(
+                status,
+                json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                "application/json; charset=utf-8",
+            )
 
         def _body(self) -> dict[str, Any]:
             length = int(self.headers.get("Content-Length") or 0)
@@ -409,7 +503,9 @@ def _handler(maya: Maya, port: list[int]) -> type[BaseHTTPRequestHandler]:
             origin = self.headers.get("Origin")
             if origin and origin not in tuple("http://" + item for item in here):
                 return False
-            given = self.headers.get("X-Kosika-Token") or (query.get("token") or [""])[0]
+            given = (
+                self.headers.get("X-Kosika-Token") or (query.get("token") or [""])[0]
+            )
             return hmac.compare_digest(given, maya.token)
 
         def _serve(self, method: str) -> None:
@@ -418,7 +514,7 @@ def _handler(maya: Maya, port: list[int]) -> type[BaseHTTPRequestHandler]:
             if method == "GET" and url.path.startswith("/fonts/"):
                 from .fonts import served
 
-                font = served(url.path[len("/fonts/"):])
+                font = served(url.path[len("/fonts/") :])
                 if font is None:
                     self._json(404, {"error": "There is no such font."})
                 else:
@@ -512,8 +608,11 @@ def main(argv: list[str] | None = None) -> int:
         if "--no-window" not in arguments:
             from .app import open_app_window
 
-            window = open_app_window(url, app_folder() / "mayaos-window", announce_as="")
+            window = open_app_window(
+                url, app_folder() / "mayaos-window", announce_as=""
+            )
             if window is not None:
+
                 def stop_with_window() -> None:
                     window.wait()
                     server.shutdown()
@@ -529,7 +628,12 @@ def main(argv: list[str] | None = None) -> int:
     except Exception:  # noqa: BLE001 - a person with no console must be told
         traceback.print_exc()
         if quiet and sys.platform == "win32":
-            ctypes.windll.user32.MessageBoxW(None, f"MayaOS stopped. The reason is in {app_folder() / 'mayaos.log'}", NAME, 0x10)  # type: ignore[attr-defined]
+            ctypes.windll.user32.MessageBoxW(
+                None,
+                f"MayaOS stopped. The reason is in {app_folder() / 'mayaos.log'}",
+                NAME,
+                0x10,
+            )  # type: ignore[attr-defined]
         return 1
     finally:
         if log is not None:

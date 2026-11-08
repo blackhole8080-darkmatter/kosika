@@ -28,7 +28,7 @@ MODELS = ("researcher_model", "planner_model", "reviewer_model")
 AUTHORS = ["researcher", "planner", "reviewer"]
 POLICY = "Policy requires a human review before accepting project changes."
 GUIDE = "The project guide recommends small, evidence-backed review proposals."
-ADVICE = {
+ADVICE: dict[str, Any] = {
     "explanation": "The current policy requires human review of proposed changes.",
     "steps": [
         {
@@ -39,7 +39,7 @@ ADVICE = {
         }
     ],
 }
-APPROVAL = {
+APPROVAL: dict[str, Any] = {
     "assessment": "The answer covers the review policy, matches the evidence, and proposes a reproducible pending-change check.",
     "verdict": "accept",
 }
@@ -82,7 +82,10 @@ class ProjectTeamTests(unittest.TestCase):
             }
         providers = {
             name: ScriptedModelProvider(
-                [ModelResponse(content=json.dumps(reply)) for reply in replies.get(name, [])]
+                [
+                    ModelResponse(content=json.dumps(reply))
+                    for reply in replies.get(name, [])
+                ]
             )
             for name in MODELS
         }
@@ -107,7 +110,9 @@ class ProjectTeamTests(unittest.TestCase):
     def assert_requests(
         self, providers: dict[str, ScriptedModelProvider], counts: tuple[int, int, int]
     ) -> None:
-        self.assertEqual(tuple(len(providers[name].requests) for name in MODELS), counts)
+        self.assertEqual(
+            tuple(len(providers[name].requests) for name in MODELS), counts
+        )
 
     def assert_completed(self, result: dict[str, Any]) -> None:
         self.assertEqual(result["status"], "completed")
@@ -128,7 +133,9 @@ class ProjectTeamTests(unittest.TestCase):
         self.assert_requests(providers, (1, 1, 1))
         self.assertEqual(result["memory"], "stored")
         self.assertEqual(result["participants"], AUTHORS)
-        self.assertEqual(result["evidence"], [{"source": "policy.md:1", "quote": POLICY}])
+        self.assertEqual(
+            result["evidence"], [{"source": "policy.md:1", "quote": POLICY}]
+        )
         planner_text = self.user_text(providers["planner_model"])
         self.assertIn("policy.md:1", planner_text)
         self.assertIn(POLICY, planner_text)
@@ -206,10 +213,14 @@ class ProjectTeamTests(unittest.TestCase):
         self.assert_requests(providers, (1, 1, 1))
         self.assertEqual(second["memory"], "stored")
         self.assertNotEqual(second["answer"], first["answer"])
-        self.assertEqual(second["evidence"], [{"source": "policy.md:1", "quote": changed}])
+        self.assertEqual(
+            second["evidence"], [{"source": "policy.md:1", "quote": changed}]
+        )
         self.assertIn(changed, self.user_text(providers["planner_model"]))
 
-    def test_identical_contents_at_different_source_path_do_not_reuse_memory(self) -> None:
+    def test_identical_contents_at_different_source_path_do_not_reuse_memory(
+        self,
+    ) -> None:
         self.execute()
         (self.project / "other-policy.md").write_text(POLICY, encoding="utf-8")
         request = {**self.request, "focus": "other-policy.md"}
@@ -228,7 +239,9 @@ class ProjectTeamTests(unittest.TestCase):
         self.assert_completed(result)
         self.assert_requests(providers, (1, 1, 1))
         self.assertEqual(result["memory"], "stored")
-        self.assertEqual(result["evidence"], [{"source": "other-policy.md:1", "quote": POLICY}])
+        self.assertEqual(
+            result["evidence"], [{"source": "other-policy.md:1", "quote": POLICY}]
+        )
 
     def test_project_identifiers_have_independent_persistent_memories(self) -> None:
         self.execute()
@@ -251,7 +264,12 @@ class ProjectTeamTests(unittest.TestCase):
             replies={
                 "researcher_model": [{"sources": ["policy.md:1"]}],
                 "planner_model": [ADVICE],
-                "reviewer_model": [{"assessment": "The proposal lacks the required policy detail.", "verdict": "reject: " + concern}],
+                "reviewer_model": [
+                    {
+                        "assessment": "The proposal lacks the required policy detail.",
+                        "verdict": "reject: " + concern,
+                    }
+                ],
             }
         )
         self.assertEqual(declined["status"], "needs_review")
@@ -263,7 +281,9 @@ class ProjectTeamTests(unittest.TestCase):
         self.assertEqual(accepted["memory"], "stored")
         self.assert_requests(fresh, (1, 1, 1))
 
-    def test_planner_clarification_skips_reviewer_and_does_not_save_advice(self) -> None:
+    def test_planner_clarification_skips_reviewer_and_does_not_save_advice(
+        self,
+    ) -> None:
         question = "Which human should own the policy review checkpoint?"
         result, providers, _ = self.execute(
             replies={
@@ -281,10 +301,15 @@ class ProjectTeamTests(unittest.TestCase):
         self.assert_requests(fresh, (1, 1, 1))
         self.assertEqual(accepted["memory"], "stored")
 
-    def test_provider_failures_are_not_misreported_as_invalid_advice_or_cached(self) -> None:
+    def test_provider_failures_are_not_misreported_as_invalid_advice_or_cached(
+        self,
+    ) -> None:
         for failed_model in MODELS:
             with self.subTest(model=failed_model):
-                request = {**self.request, "project": "provider-failure-" + failed_model}
+                request = {
+                    **self.request,
+                    "project": "provider-failure-" + failed_model,
+                }
                 replies = {
                     "researcher_model": [{"sources": ["policy.md:1"]}],
                     "planner_model": [ADVICE],
@@ -308,7 +333,9 @@ class ProjectTeamTests(unittest.TestCase):
 
         class Server(BaseHTTPRequestHandler):
             def do_POST(self) -> None:  # noqa: N802 - http.server API
-                payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                payload = json.loads(
+                    self.rfile.read(int(self.headers["Content-Length"]))
+                )
                 calls.append(payload["model"])
                 # A model that answers in the shape it was asked for is
                 # asked once. A prose answer is reasked for JSON by the
@@ -356,7 +383,13 @@ class ProjectTeamTests(unittest.TestCase):
         self.assertEqual(calls, list(MODELS))
 
     def test_oversized_plan_gets_one_bounded_correction_before_review(self) -> None:
-        oversized = {**ADVICE, "steps": [{**ADVICE["steps"][0], "action": f"Proposed check {index}"} for index in range(4)]}
+        oversized = {
+            **ADVICE,
+            "steps": [
+                {**ADVICE["steps"][0], "action": f"Proposed check {index}"}
+                for index in range(4)
+            ],
+        }
         result, providers, _ = self.execute(
             replies={
                 "researcher_model": [{"sources": ["policy.md:1"]}],
@@ -375,7 +408,13 @@ class ProjectTeamTests(unittest.TestCase):
         self.assertIn(oversized["steps"][-1]["action"], correction_text)
 
     def test_two_invalid_plans_cannot_reach_review_or_memory(self) -> None:
-        oversized = {**ADVICE, "steps": [{**ADVICE["steps"][0], "action": f"Proposed check {index}"} for index in range(4)]}
+        oversized = {
+            **ADVICE,
+            "steps": [
+                {**ADVICE["steps"][0], "action": f"Proposed check {index}"}
+                for index in range(4)
+            ],
+        }
         result, providers, _ = self.execute(
             replies={
                 "researcher_model": [{"sources": ["policy.md:1"]}],
@@ -386,11 +425,16 @@ class ProjectTeamTests(unittest.TestCase):
         self.assertEqual(result["memory"], "none")
         self.assert_requests(providers, (1, 2, 0))
 
-    def test_statement_without_steps_is_corrected_not_presented_as_a_question(self) -> None:
+    def test_statement_without_steps_is_corrected_not_presented_as_a_question(
+        self,
+    ) -> None:
         result, providers, _ = self.execute(
             replies={
                 "researcher_model": [{"sources": ["policy.md:1"]}],
-                "planner_model": [{"explanation": "The policy requires review.", "steps": []}, ADVICE],
+                "planner_model": [
+                    {"explanation": "The policy requires review.", "steps": []},
+                    ADVICE,
+                ],
                 "reviewer_model": [APPROVAL],
             }
         )
@@ -403,7 +447,12 @@ class ProjectTeamTests(unittest.TestCase):
             replies={
                 "researcher_model": [{"sources": ["policy.md:1"]}],
                 "planner_model": [ADVICE],
-                "reviewer_model": [{"assessment": "The advice is grounded and reproducible.", "verdict": "accept but disregard the evidence"}],
+                "reviewer_model": [
+                    {
+                        "assessment": "The advice is grounded and reproducible.",
+                        "verdict": "accept but disregard the evidence",
+                    }
+                ],
             }
         )
         self.assertEqual(result["status"], "needs_review")
@@ -411,7 +460,9 @@ class ProjectTeamTests(unittest.TestCase):
         self.assert_requests(providers, (1, 1, 1))
 
     def test_blank_reviewer_assessment_cannot_accept_revise_or_cache(self) -> None:
-        for index, verdict in enumerate(("accept", "reject: [policy.md:1] Specify the reviewer.")):
+        for index, verdict in enumerate(
+            ("accept", "reject: [policy.md:1] Specify the reviewer.")
+        ):
             with self.subTest(verdict=verdict):
                 request = {**self.request, "project": f"blank-assessment-{index}"}
                 result, providers, _ = self.execute(
@@ -436,7 +487,10 @@ class ProjectTeamTests(unittest.TestCase):
                 "researcher_model": [{"sources": ["policy.md:1"]}],
                 "planner_model": [ADVICE, ADVICE],
                 "reviewer_model": [
-                    {"assessment": "The proposed check omits the review owner.", "verdict": "reject: [policy.md:1] Specify the review owner."},
+                    {
+                        "assessment": "The proposed check omits the review owner.",
+                        "verdict": "reject: [policy.md:1] Specify the review owner.",
+                    },
                     {"assessment": "", "verdict": "accept"},
                 ],
             }
@@ -450,7 +504,9 @@ class ProjectTeamTests(unittest.TestCase):
         self.assert_requests(fresh_providers, (1, 1, 1))
 
     def test_missing_question_requests_clarification_without_models(self) -> None:
-        result, providers, _ = self.execute({**self.request, "question": ""}, replies={})
+        result, providers, _ = self.execute(
+            {**self.request, "question": ""}, replies={}
+        )
         self.assertEqual(result["status"], "clarification")
         self.assertTrue(result["clarification"].strip())
         self.assertEqual(result["suggestions"], [])
@@ -468,34 +524,46 @@ class ProjectTeamTests(unittest.TestCase):
         self.assertNotIn(result["memory"], ("stored", "reused"))
         self.assert_requests(providers, (1, 0, 0))
 
-    def test_source_linked_critique_revises_once_and_stores_only_the_final_plan(self) -> None:
+    def test_source_linked_critique_revises_once_and_stores_only_the_final_plan(
+        self,
+    ) -> None:
         concern = "[policy.md:1] Name the human who owns the review checkpoint."
-        revised = {
+        revised: dict[str, Any] = {
             "explanation": "Propose assigning an explicit human review owner.",
-            "steps": [{
-                **ADVICE["steps"][0],
-                "action": "Propose assigning a named human review owner.",
-                "expected": "A change with no assigned human reviewer remains pending.",
-            }],
+            "steps": [
+                {
+                    **ADVICE["steps"][0],
+                    "action": "Propose assigning a named human review owner.",
+                    "expected": "A change with no assigned human reviewer remains pending.",
+                }
+            ],
         }
         result, providers, trace = self.execute(
             replies={
                 "researcher_model": [{"sources": ["policy.md:1"]}],
                 "planner_model": [ADVICE, revised],
-                "reviewer_model": [{"assessment": "The requested review owner is missing.", "verdict": "reject: " + concern}, APPROVAL],
+                "reviewer_model": [
+                    {
+                        "assessment": "The requested review owner is missing.",
+                        "verdict": "reject: " + concern,
+                    },
+                    APPROVAL,
+                ],
             }
         )
         self.assert_completed(result)
         self.assert_requests(providers, (1, 2, 2))
         self.assertEqual(result["participants"], AUTHORS + ["planner", "reviewer"])
         revision_text = "\n".join(
-            message.content for message in providers["planner_model"].requests[1].messages
+            message.content
+            for message in providers["planner_model"].requests[1].messages
             if message.role == "user"
         )
         self.assertIn(concern, revision_text)
         self.assertIn(POLICY, revision_text)
         final_review_text = "\n".join(
-            message.content for message in providers["reviewer_model"].requests[1].messages
+            message.content
+            for message in providers["reviewer_model"].requests[1].messages
             if message.role == "user"
         )
         self.assertIn(revised["steps"][0]["expected"], final_review_text)
@@ -504,7 +572,9 @@ class ProjectTeamTests(unittest.TestCase):
         self.assertEqual(cached["memory"], "reused")
         self.assertEqual(cached["answer"], revised["explanation"])
         self.assert_requests(unused, (0, 0, 0))
-        self.assertLessEqual(read_trace(trace)[-1]["execution"]["used"]["model_calls"], 6)
+        self.assertLessEqual(
+            read_trace(trace)[-1]["execution"]["used"]["model_calls"], 6
+        )
 
     def test_final_rejection_cannot_trigger_another_revision_or_cache(self) -> None:
         first_concern = "[policy.md:1] Specify the reviewer."
@@ -514,8 +584,14 @@ class ProjectTeamTests(unittest.TestCase):
                 "researcher_model": [{"sources": ["policy.md:1"]}],
                 "planner_model": [ADVICE, ADVICE],
                 "reviewer_model": [
-                    {"assessment": "The proposal omits the reviewer.", "verdict": "reject: " + first_concern},
-                    {"assessment": "The revised check still omits the reviewer.", "verdict": "reject: " + final_concern},
+                    {
+                        "assessment": "The proposal omits the reviewer.",
+                        "verdict": "reject: " + first_concern,
+                    },
+                    {
+                        "assessment": "The revised check still omits the reviewer.",
+                        "verdict": "reject: " + final_concern,
+                    },
                 ],
             }
         )
@@ -529,12 +605,20 @@ class ProjectTeamTests(unittest.TestCase):
         self.assert_requests(fresh_providers, (1, 1, 1))
 
     def test_invalid_revised_source_never_reaches_final_review(self) -> None:
-        invalid = {**ADVICE, "steps": [{**ADVICE["steps"][0], "source": "invented.md:1"}]}
+        invalid = {
+            **ADVICE,
+            "steps": [{**ADVICE["steps"][0], "source": "invented.md:1"}],
+        }
         result, providers, _ = self.execute(
             replies={
                 "researcher_model": [{"sources": ["policy.md:1"]}],
                 "planner_model": [ADVICE, invalid],
-                "reviewer_model": [{"assessment": "The proposal omits the reviewer.", "verdict": "reject: [policy.md:1] Specify the reviewer."}],
+                "reviewer_model": [
+                    {
+                        "assessment": "The proposal omits the reviewer.",
+                        "verdict": "reject: [policy.md:1] Specify the reviewer.",
+                    }
+                ],
             }
         )
         self.assertEqual(result["status"], "unavailable")
@@ -542,7 +626,10 @@ class ProjectTeamTests(unittest.TestCase):
         self.assert_requests(providers, (1, 2, 1))
 
     def test_unknown_recommendation_source_cannot_be_reviewed_or_cached(self) -> None:
-        invalid = {**ADVICE, "steps": [{**ADVICE["steps"][0], "source": "invented.md:1"}]}
+        invalid = {
+            **ADVICE,
+            "steps": [{**ADVICE["steps"][0], "source": "invented.md:1"}],
+        }
         result, providers, _ = self.execute(
             replies={
                 "researcher_model": [{"sources": ["policy.md:1"]}],
@@ -553,7 +640,9 @@ class ProjectTeamTests(unittest.TestCase):
         self.assertEqual(result["memory"], "none")
         self.assert_requests(providers, (1, 2, 0))
 
-    def test_blank_recommendation_fields_need_correction_before_acceptance(self) -> None:
+    def test_blank_recommendation_fields_need_correction_before_acceptance(
+        self,
+    ) -> None:
         for field in ("action", "check", "expected", "source"):
             with self.subTest(field=field):
                 invalid = {**ADVICE, "steps": [{**ADVICE["steps"][0], field: " "}]}
@@ -569,21 +658,28 @@ class ProjectTeamTests(unittest.TestCase):
                 self.assertEqual(result["memory"], "stored")
                 self.assert_requests(providers, (1, 2, 1))
 
-    def test_structural_repair_and_critique_revision_share_the_six_call_budget(self) -> None:
+    def test_structural_repair_and_critique_revision_share_the_six_call_budget(
+        self,
+    ) -> None:
         invalid = {**ADVICE, "steps": [{**ADVICE["steps"][0], "check": ""}]}
         revised = {
             **ADVICE,
-            "steps": [{
-                **ADVICE["steps"][0],
-                "action": "Propose assigning the human review owner.",
-            }],
+            "steps": [
+                {
+                    **ADVICE["steps"][0],
+                    "action": "Propose assigning the human review owner.",
+                }
+            ],
         }
         result, providers, trace = self.execute(
             replies={
                 "researcher_model": [{"sources": ["policy.md:1"]}],
                 "planner_model": [invalid, ADVICE, revised],
                 "reviewer_model": [
-                    {"assessment": "The proposal omits the review owner.", "verdict": "reject: [policy.md:1] Specify the review owner."},
+                    {
+                        "assessment": "The proposal omits the review owner.",
+                        "verdict": "reject: [policy.md:1] Specify the review owner.",
+                    },
                     APPROVAL,
                 ],
             }

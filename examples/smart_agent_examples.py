@@ -9,35 +9,38 @@ These examples show how to make agents more powerful through:
 - Multi-agent coordination
 """
 
-from kosika.skills_framework import (
-    Skill, SkillKind, SkillParameter, SkillOutput, SkillExample,
-    get_skill_registry, create_skill
-)
-from kosika.mcp_generator import (
-    MCPServer, MCPTool, MCPToolAccess, MCPToolKind,
-    get_mcp_generator, create_mcp_tool
-)
+from typing import Dict, List, Tuple
+
 from kosika.algorithms import (
-    SearchProblem, State, SearchStrategy, PlanningProblem,
-    ConstraintSolver, ReasoningEngine, hierarchical_planning
+    ConstraintSolver,
+    ReasoningEngine,
+    SearchProblem,
+    SearchStrategy,
+    State,
 )
 from kosika.knowledge_graph import (
-    Entity, EntityType, Relationship, RelationType,
-    KnowledgeGraph, KnowledgeBase, get_knowledge_base
+    Entity,
+    EntityType,
+    Relationship,
+    RelationType,
+    get_knowledge_base,
 )
-from kosika.learning import (
-    LearningAgent, Experience, PatternKind,
-    Strategy, StrategySelector
-)
+from kosika.learning import LearningAgent, Strategy, StrategySelector
+from kosika.mcp_generator import MCPToolAccess, create_mcp_tool, get_mcp_generator
 from kosika.orchestration import (
-    Agent, AgentRole, Task, TaskStatus, Workflow,
-    AgentTeam, WorkflowOrchestrator
+    Agent,
+    AgentRole,
+    AgentTeam,
+    Task,
+    Workflow,
+    WorkflowOrchestrator,
 )
-
+from kosika.skills_framework import SkillKind, create_skill, get_skill_registry
 
 # ============================================================================
 # Example 1: Creating and Using Skills
 # ============================================================================
+
 
 def example_skills():
     """Example: Creating reusable skills for agents."""
@@ -51,11 +54,24 @@ def example_skills():
         kind=SkillKind.TOOL,
         description="Search the web for information",
         parameters=[
-            {"name": "query", "type": "Text", "required": True, "description": "Search query"},
-            {"name": "max_results", "type": "Number", "required": False, "default": 10, "description": "Max results"},
+            {
+                "name": "query",
+                "type": "Text",
+                "required": True,
+                "description": "Search query",
+            },
+            {
+                "name": "max_results",
+                "type": "Number",
+                "required": False,
+                "default": 10,
+                "description": "Max results",
+            },
         ],
         output_type="Text[]",
-        implementation=lambda query, max_results=10: [f"Result {i+1} for {query}" for i in range(max_results)]
+        implementation=lambda query, max_results=10: [
+            f"Result {i + 1} for {query}" for i in range(max_results)
+        ],
     )
 
     registry.register(search_skill)
@@ -67,17 +83,29 @@ def example_skills():
         kind=SkillKind.REASONING,
         description="Apply logical reasoning to a problem",
         parameters=[
-            {"name": "premises", "type": "Text[]", "required": True, "description": "Premises"},
-            {"name": "conclusion", "type": "Text", "required": True, "description": "Conclusion to test"},
+            {
+                "name": "premises",
+                "type": "Text[]",
+                "required": True,
+                "description": "Premises",
+            },
+            {
+                "name": "conclusion",
+                "type": "Text",
+                "required": True,
+                "description": "Conclusion to test",
+            },
         ],
         output_type="Bool",
-        implementation=lambda premises, conclusion: len(premises) > 0  # Simplified
+        implementation=lambda premises, conclusion: len(premises) > 0,  # Simplified
     )
 
     registry.register(reasoning_skill)
 
     # Use the skill
-    results = search_skill.execute({"query": "AI programming languages", "max_results": 5})
+    results = search_skill.execute(
+        {"query": "AI programming languages", "max_results": 5}
+    )
     print(f"Search results: {results}")
 
     print("\n✓ Skills framework example complete")
@@ -86,6 +114,7 @@ def example_skills():
 # ============================================================================
 # Example 2: MCP Server Generation
 # ============================================================================
+
 
 def example_mcp_server():
     """Example: Declaring and generating an MCP server."""
@@ -97,7 +126,7 @@ def example_mcp_server():
         id="document_analyzer",
         name="Document Analyzer",
         description="MCP server for analyzing documents",
-        version="1.0.0"
+        version="1.0.0",
     )
 
     # Add tools
@@ -106,9 +135,14 @@ def example_mcp_server():
         description="Search through documents",
         access=MCPToolAccess.OBSERVE,
         parameters=[
-            {"name": "query", "type": "string", "required": True, "description": "Search query"},
+            {
+                "name": "query",
+                "type": "string",
+                "required": True,
+                "description": "Search query",
+            },
             {"name": "limit", "type": "number", "required": False, "default": 10},
-        ]
+        ],
     )
 
     extract_tool = create_mcp_tool(
@@ -118,7 +152,7 @@ def example_mcp_server():
         parameters=[
             {"name": "document_id", "type": "string", "required": True},
             {"name": "entity_types", "type": "array", "required": False},
-        ]
+        ],
     )
 
     server.add_tool(search_tool)
@@ -141,10 +175,13 @@ def example_mcp_server():
 # Example 3: Algorithmic Planning
 # ============================================================================
 
+
 class NavigationProblem(SearchProblem):
     """Example: Pathfinding problem using search algorithms."""
 
-    def __init__(self, start: str, goal: str, graph: Dict[str, List[Tuple[str, float]]]):
+    def __init__(
+        self, start: str, goal: str, graph: Dict[str, List[Tuple[str, float]]]
+    ):
         self.start = start
         self.goal = goal
         self.graph = graph
@@ -162,7 +199,9 @@ class NavigationProblem(SearchProblem):
         # Find cost to neighbor
         for neighbor, cost in self.graph.get(state.data, []):
             if neighbor == action:
-                return State(data=action, cost=state.cost + cost, parent=state, action=action)
+                return State(
+                    data=action, cost=state.cost + cost, parent=state, action=action
+                )
         return State(data=action, cost=state.cost + 1.0, parent=state, action=action)
 
     def get_cost(self, state: State, action: str, next_state: State) -> float:
@@ -181,13 +220,14 @@ def example_search():
         "A": [("B", 1), ("C", 4)],
         "B": [("C", 2), ("D", 5)],
         "C": [("D", 1)],
-        "D": []
+        "D": [],
     }
 
     problem = NavigationProblem("A", "D", graph)
 
     # Use A* search
     from kosika.algorithms import search
+
     result = search(problem, strategy=SearchStrategy.A_STAR)
 
     if result:
@@ -203,6 +243,7 @@ def example_search():
 # Example 4: Knowledge Graph Reasoning
 # ============================================================================
 
+
 def example_knowledge_graph():
     """Example: Using knowledge graphs for reasoning."""
 
@@ -210,30 +251,57 @@ def example_knowledge_graph():
     graph = kb.create_graph("demo")
 
     # Add entities
-    python = Entity(id="python", name="Python", entity_type=EntityType.CONCEPT,
-                   description="Programming language")
-    kosika = Entity(id="kosika", name="Kosika", entity_type=EntityType.CONCEPT,
-                    description="AI programming language")
-    ai = Entity(id="ai", name="Artificial Intelligence", entity_type=EntityType.CONCEPT,
-                description="AI field")
+    python = Entity(
+        id="python",
+        name="Python",
+        entity_type=EntityType.CONCEPT,
+        description="Programming language",
+    )
+    kosika = Entity(
+        id="kosika",
+        name="Kosika",
+        entity_type=EntityType.CONCEPT,
+        description="AI programming language",
+    )
+    ai = Entity(
+        id="ai",
+        name="Artificial Intelligence",
+        entity_type=EntityType.CONCEPT,
+        description="AI field",
+    )
 
     graph.add_entity(python)
     graph.add_entity(kosika)
     graph.add_entity(ai)
 
     # Add relationships
-    graph.add_relationship(Relationship(
-        id="r1", source="kosika", target="ai",
-        relation_type=RelationType.RELATED_TO, weight=0.9
-    ))
-    graph.add_relationship(Relationship(
-        id="r2", source="python", target="ai",
-        relation_type=RelationType.RELATED_TO, weight=0.8
-    ))
-    graph.add_relationship(Relationship(
-        id="r3", source="kosika", target="python",
-        relation_type=RelationType.SIMILAR_TO, weight=0.7
-    ))
+    graph.add_relationship(
+        Relationship(
+            id="r1",
+            source="kosika",
+            target="ai",
+            relation_type=RelationType.RELATED_TO,
+            weight=0.9,
+        )
+    )
+    graph.add_relationship(
+        Relationship(
+            id="r2",
+            source="python",
+            target="ai",
+            relation_type=RelationType.RELATED_TO,
+            weight=0.8,
+        )
+    )
+    graph.add_relationship(
+        Relationship(
+            id="r3",
+            source="kosika",
+            target="python",
+            relation_type=RelationType.SIMILAR_TO,
+            weight=0.7,
+        )
+    )
 
     # Query related entities
     related = graph.get_relationships("kosika", direction="outgoing")
@@ -254,6 +322,7 @@ def example_knowledge_graph():
 # Example 5: Self-Learning Agent
 # ============================================================================
 
+
 def example_learning_agent():
     """Example: Agent that learns from experience."""
 
@@ -264,21 +333,21 @@ def example_learning_agent():
         context={"task": "code_review", "language": "python"},
         action="use_linter",
         result={"bugs_found": 3, "time_taken": 5},
-        reward=0.8
+        reward=0.8,
     )
 
     agent.add_experience(
         context={"task": "code_review", "language": "python"},
         action="manual_review",
         result={"bugs_found": 5, "time_taken": 15},
-        reward=0.6
+        reward=0.6,
     )
 
     agent.add_experience(
         context={"task": "code_review", "language": "python"},
         action="use_linter",
         result={"bugs_found": 2, "time_taken": 4},
-        reward=0.7
+        reward=0.7,
     )
 
     # Learn patterns
@@ -301,6 +370,7 @@ def example_learning_agent():
 # Example 6: Multi-Agent Orchestration
 # ============================================================================
 
+
 def example_orchestration():
     """Example: Coordinating multiple agents."""
 
@@ -308,18 +378,30 @@ def example_orchestration():
 
     # Create a team
     team = AgentTeam("dev_team")
-    team.add_agent(Agent(
-        id="agent1", name="Coder", role=AgentRole.SPECIALIST,
-        capabilities=["write_code", "refactor"]
-    ))
-    team.add_agent(Agent(
-        id="agent2", name="Reviewer", role=AgentRole.REVIEWER,
-        capabilities=["review", "test"]
-    ))
-    team.add_agent(Agent(
-        id="agent3", name="Orchestrator", role=AgentRole.COORDINATOR,
-        capabilities=["plan", "coordinate"]
-    ))
+    team.add_agent(
+        Agent(
+            id="agent1",
+            name="Coder",
+            role=AgentRole.SPECIALIST,
+            capabilities=["write_code", "refactor"],
+        )
+    )
+    team.add_agent(
+        Agent(
+            id="agent2",
+            name="Reviewer",
+            role=AgentRole.REVIEWER,
+            capabilities=["review", "test"],
+        )
+    )
+    team.add_agent(
+        Agent(
+            id="agent3",
+            name="Orchestrator",
+            role=AgentRole.COORDINATOR,
+            capabilities=["plan", "coordinate"],
+        )
+    )
 
     orchestrator.create_team(team)
 
@@ -330,33 +412,41 @@ def example_orchestration():
         description="Build a new feature with code and tests",
         tasks=[
             Task(
-                id="task1", name="Plan", task_type="planning",
+                id="task1",
+                name="Plan",
+                task_type="planning",
                 description="Plan the feature",
                 required_capabilities=["plan"],
-                input_data={"feature": "authentication"}
+                input_data={"feature": "authentication"},
             ),
             Task(
-                id="task2", name="Code", task_type="coding",
+                id="task2",
+                name="Code",
+                task_type="coding",
                 description="Write the code",
                 required_capabilities=["write_code"],
                 input_data={},
-                dependencies=["task1"]
+                dependencies=["task1"],
             ),
             Task(
-                id="task3", name="Review", task_type="review",
+                id="task3",
+                name="Review",
+                task_type="review",
                 description="Review the code",
                 required_capabilities=["review"],
                 input_data={},
-                dependencies=["task2"]
+                dependencies=["task2"],
             ),
             Task(
-                id="task4", name="Test", task_type="testing",
+                id="task4",
+                name="Test",
+                task_type="testing",
                 description="Test the code",
                 required_capabilities=["test"],
                 input_data={},
-                dependencies=["task2"]
+                dependencies=["task2"],
             ),
-        ]
+        ],
     )
 
     orchestrator.create_workflow(workflow)
@@ -372,24 +462,27 @@ def example_orchestration():
 # Example 7: Constraint Solving
 # ============================================================================
 
+
 def example_constraint_solving():
     """Example: Solving constraint satisfaction problems."""
 
     solver = ConstraintSolver(
         variables=["A", "B", "C"],
-        domains={
-            "A": [1, 2, 3],
-            "B": [1, 2, 3],
-            "C": [1, 2, 3]
-        }
+        domains={"A": [1, 2, 3], "B": [1, 2, 3], "C": [1, 2, 3]},
     )
 
     # Add constraints: all variables must be different
-    solver.add_constraint(lambda assignment: len(set(assignment.values())) == len(assignment))
+    solver.add_constraint(
+        lambda assignment: len(set(assignment.values())) == len(assignment)
+    )
 
     # Add constraint: A < B < C
-    solver.add_constraint(lambda assignment: assignment.get("A", 0) < assignment.get("B", 0))
-    solver.add_constraint(lambda assignment: assignment.get("B", 0) < assignment.get("C", 0))
+    solver.add_constraint(
+        lambda assignment: assignment.get("A", 0) < assignment.get("B", 0)
+    )
+    solver.add_constraint(
+        lambda assignment: assignment.get("B", 0) < assignment.get("C", 0)
+    )
 
     solution = solver.solve(strategy="backtracking")
     print(f"Constraint solution: {solution}")
@@ -400,6 +493,7 @@ def example_constraint_solving():
 # ============================================================================
 # Example 8: Logical Reasoning
 # ============================================================================
+
 
 def example_reasoning():
     """Example: Logical reasoning engine."""
@@ -414,7 +508,7 @@ def example_reasoning():
     # Add rules
     engine.add_rule(
         premises=["X is a programming language", "X is designed for AI"],
-        conclusion="X is an AI programming language"
+        conclusion="X is an AI programming language",
     )
 
     # Forward chaining
@@ -432,6 +526,7 @@ def example_reasoning():
 # Example 9: Strategy Selection
 # ============================================================================
 
+
 def example_strategy_selection():
     """Example: Selecting strategies based on context."""
 
@@ -444,19 +539,17 @@ def example_strategy_selection():
         description="Fast but less accurate search",
         conditions=[
             lambda ctx: ctx.get("time_constraint") == "tight",
-            lambda ctx: ctx.get("accuracy_requirement") == "low"
+            lambda ctx: ctx.get("accuracy_requirement") == "low",
         ],
-        implementation=lambda ctx: "used quick search"
+        implementation=lambda ctx: "used quick search",
     )
 
     strategy2 = Strategy(
         id="thorough_search",
         name="Thorough Search",
         description="Slower but more accurate search",
-        conditions=[
-            lambda ctx: ctx.get("accuracy_requirement") == "high"
-        ],
-        implementation=lambda ctx: "used thorough search"
+        conditions=[lambda ctx: ctx.get("accuracy_requirement") == "high"],
+        implementation=lambda ctx: "used thorough search",
     )
 
     selector.add_strategy(strategy1)

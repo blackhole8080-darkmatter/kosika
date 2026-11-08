@@ -43,9 +43,17 @@ def _ask(provider, arguments, schema, *, retries, mind=None, verify_answer=None)
 
 
 def test_retrieve_folds_memory_into_the_prompt(tmp_path):
-    provider = ScriptedModelProvider([ModelResponse(content=json.dumps({"label": "bug", "confidence": 0.5}))])
-    schema = {"type": "object", "properties": {"label": {"type": "string"}, "confidence": {"type": "number"}}, "required": ["label", "confidence"]}
-    hooks = mind_hooks(_graph(tmp_path), embed=lambda text: [1.0, 0.0], choices=["bug", "feature"])
+    provider = ScriptedModelProvider(
+        [ModelResponse(content=json.dumps({"label": "bug", "confidence": 0.5}))]
+    )
+    schema = {
+        "type": "object",
+        "properties": {"label": {"type": "string"}, "confidence": {"type": "number"}},
+        "required": ["label", "confidence"],
+    }
+    hooks = mind_hooks(
+        _graph(tmp_path), embed=lambda text: [1.0, 0.0], choices=["bug", "feature"]
+    )
 
     _ask(provider, {"text": "what does light do"}, schema, retries=0, mind=hooks)
 
@@ -60,8 +68,14 @@ def test_reflect_refuses_a_bad_answer_then_takes_the_asking(tmp_path):
             ModelResponse(content=json.dumps({"label": "bug", "confidence": 0.4})),
         ]
     )
-    schema = {"type": "object", "properties": {"label": {"type": "string"}, "confidence": {"type": "number"}}, "required": ["label", "confidence"]}
-    hooks = mind_hooks(_graph(tmp_path), embed=lambda text: [1.0, 0.0], choices=["bug", "feature"])
+    schema = {
+        "type": "object",
+        "properties": {"label": {"type": "string"}, "confidence": {"type": "number"}},
+        "required": ["label", "confidence"],
+    }
+    hooks = mind_hooks(
+        _graph(tmp_path), embed=lambda text: [1.0, 0.0], choices=["bug", "feature"]
+    )
 
     answer, reply = _ask(provider, {"text": "triage"}, schema, retries=1, mind=hooks)
 
@@ -74,8 +88,14 @@ def test_reflect_refuses_a_bad_answer_then_takes_the_asking(tmp_path):
 
 
 def test_no_mind_leaves_the_prompt_as_the_program_wrote_it():
-    provider = ScriptedModelProvider([ModelResponse(content=json.dumps({"label": "bug"}))])
-    schema = {"type": "object", "properties": {"label": {"type": "string"}}, "required": ["label"]}
+    provider = ScriptedModelProvider(
+        [ModelResponse(content=json.dumps({"label": "bug"}))]
+    )
+    schema = {
+        "type": "object",
+        "properties": {"label": {"type": "string"}},
+        "required": ["label"],
+    }
 
     _ask(provider, {"text": "triage"}, schema, retries=0)
 
@@ -83,26 +103,56 @@ def test_no_mind_leaves_the_prompt_as_the_program_wrote_it():
 
 
 def test_the_program_check_speaks_before_reflect(tmp_path):
-    provider = ScriptedModelProvider([ModelResponse(content=json.dumps({"label": "bug", "confidence": 2}))])
-    schema = {"type": "object", "properties": {"label": {"type": "string"}, "confidence": {"type": "number"}}, "required": ["label", "confidence"]}
+    provider = ScriptedModelProvider(
+        [ModelResponse(content=json.dumps({"label": "bug", "confidence": 2}))]
+    )
+    schema = {
+        "type": "object",
+        "properties": {"label": {"type": "string"}, "confidence": {"type": "number"}},
+        "required": ["label", "confidence"],
+    }
     hooks = mind_hooks(_graph(tmp_path), embed=lambda text: [1.0, 0.0])
-    program_check = lambda answer: ("the program wants a shorter label", [])
+
+    def program_check(answer):
+        return ("the program wants a shorter label", [])
 
     with pytest.raises(RejectedAnswer) as refused:
-        _ask(provider, {"text": "triage"}, schema, retries=0, mind=hooks, verify_answer=program_check)
+        _ask(
+            provider,
+            {"text": "triage"},
+            schema,
+            retries=0,
+            mind=hooks,
+            verify_answer=program_check,
+        )
 
     assert "shorter label" in str(refused.value)
     assert "confidence must be a number" not in str(refused.value)
 
 
 def test_reflect_still_gets_a_say_when_the_program_check_is_silent(tmp_path):
-    provider = ScriptedModelProvider([ModelResponse(content=json.dumps({"label": "bug", "confidence": 2}))])
-    schema = {"type": "object", "properties": {"label": {"type": "string"}, "confidence": {"type": "number"}}, "required": ["label", "confidence"]}
+    provider = ScriptedModelProvider(
+        [ModelResponse(content=json.dumps({"label": "bug", "confidence": 2}))]
+    )
+    schema = {
+        "type": "object",
+        "properties": {"label": {"type": "string"}, "confidence": {"type": "number"}},
+        "required": ["label", "confidence"],
+    }
     hooks = mind_hooks(_graph(tmp_path), embed=lambda text: [1.0, 0.0])
-    program_check = lambda answer: ("", ["the program signed off"])
+
+    def program_check(answer):
+        return ("", ["the program signed off"])
 
     with pytest.raises(RejectedAnswer) as refused:
-        _ask(provider, {"text": "triage"}, schema, retries=0, mind=hooks, verify_answer=program_check)
+        _ask(
+            provider,
+            {"text": "triage"},
+            schema,
+            retries=0,
+            mind=hooks,
+            verify_answer=program_check,
+        )
 
     assert "reflected and refused" in str(refused.value)
     assert "confidence must be a number" in str(refused.value)

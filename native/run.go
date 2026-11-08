@@ -317,7 +317,7 @@ func runCommand(args []string) int {
 			}
 		}
 		running.traced = true
-		running.hash = programHash(read(path))
+		running.hash = running.checker.program.Identity
 		running.machine.tracing = newTracer(running.checker)
 		running.machine.tracing.events = &[]Value{}
 		running.session = session

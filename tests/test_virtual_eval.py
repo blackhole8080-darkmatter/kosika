@@ -20,6 +20,8 @@ from unittest.mock import patch
 from kosika.cli import main
 from kosika.virtual_eval import (
     CLASSES,
+    RecordedRun,
+    Score,
     VirtualEvalError,
     compare,
     load_recorded,
@@ -63,7 +65,9 @@ class RecordedRunTests(unittest.TestCase):
     def test_it_counts_every_recorded_outcome(self) -> None:
         run = load_recorded(self.write(recorded()))
         self.assertEqual(run.asked, 4)
-        self.assertEqual(run.counts, {"right": 2, "wrong shown": 1, "missed": 1, "failed": 0})
+        self.assertEqual(
+            run.counts, {"right": 2, "wrong shown": 1, "missed": 1, "failed": 0}
+        )
         self.assertEqual(run.model, "qwen2.5:7b")
         self.assertEqual(run.question_set, "first")
 
@@ -91,15 +95,13 @@ class QualificationTests(unittest.TestCase):
         self.addCleanup(self.workspace.cleanup)
         self.root = Path(self.workspace.name)
 
-    def score_of(self, payload: object) -> object:
+    def score_of(self, payload: object) -> Score:
         path = self.root / "run.json"
         path.write_text(json.dumps(payload), encoding="utf-8")
         return score(path)
 
     def clean(self) -> dict[str, object]:
-        return recorded(
-            questions=[{"outcomes": ["right"]}, {"outcomes": ["right"]}]
-        )
+        return recorded(questions=[{"outcomes": ["right"]}, {"outcomes": ["right"]}])
 
     def test_a_clean_run_qualifies(self) -> None:
         ok, reasons = qualify(self.score_of(self.clean()))
@@ -141,7 +143,7 @@ class IdentityTests(unittest.TestCase):
         self.profile.write_text('{"name": "notes"}', encoding="utf-8")
         (self.root / "run.json").write_text(json.dumps(recorded()), encoding="utf-8")
 
-    def run_payload(self, **overrides: object) -> dict[str, object]:
+    def run_payload(self, **overrides: object) -> RecordedRun:
         path = self.root / "run.json"
         path.write_text(json.dumps(recorded(**overrides)), encoding="utf-8")
         return load_recorded(path)
@@ -176,7 +178,7 @@ class LedgerTests(unittest.TestCase):
         self.root = Path(self.workspace.name)
         self.state = self.root / ".kosika" / "virtual-models.json"
 
-    def score_of(self, payload: object, name: str = "run.json") -> object:
+    def score_of(self, payload: object, name: str = "run.json") -> Score:
         path = self.root / name
         path.write_text(json.dumps(payload), encoding="utf-8")
         return score(path)

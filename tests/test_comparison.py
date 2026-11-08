@@ -10,6 +10,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 from kosika import cli
@@ -27,6 +28,8 @@ TASKS = ROOT / "benchmarks" / "compare"
 
 
 class ComparisonTests(unittest.TestCase):
+    report: dict[str, Any]
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.report = compare(TASKS)

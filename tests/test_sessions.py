@@ -9,7 +9,7 @@ import unittest
 import unittest.mock
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from kosika import app as studio
 from kosika import sessions
@@ -149,11 +149,15 @@ class SessionTests(unittest.TestCase):
         (self.session.work / "sub" / "old.txt").unlink()
         shown = self.session.show("calc.py")
         self.assertEqual(shown["kind"], "changed")
-        self.assertIn("+print(1)", shown["lines"])
-        self.assertIn(" print(6 * 7)", shown["lines"])
-        self.assertEqual(self.session.show("made.txt")["lines"][-1], "+made")
-        self.assertEqual(self.session.show("sub/old.txt")["lines"][-1], "-old")
-        self.assertIn("not text", self.session.show("picture.bin")["note"])
+        self.assertIn("+print(1)", cast(list[str], shown["lines"]))
+        self.assertIn(" print(6 * 7)", cast(list[str], shown["lines"]))
+        self.assertEqual(
+            cast(list[str], self.session.show("made.txt")["lines"])[-1], "+made"
+        )
+        self.assertEqual(
+            cast(list[str], self.session.show("sub/old.txt")["lines"])[-1], "-old"
+        )
+        self.assertIn("not text", cast(str, self.session.show("picture.bin")["note"]))
         with self.assertRaises(SessionError):
             self.session.show("../outside.txt")
 
@@ -242,6 +246,7 @@ class StudioSessionTests(unittest.TestCase):
         # Nothing has reached the real folder.
         self.assertFalse((self.real / "notes").exists())
         waiting = app.session("maker/main.kos")
+        assert waiting is not None
         self.assertEqual(
             waiting["changes"],
             [{"path": "notes/made.txt", "kind": "new", "bytes": 17}],
@@ -254,7 +259,9 @@ class StudioSessionTests(unittest.TestCase):
             (self.real / "notes" / "made.txt").read_text(encoding="utf-8"),
             "made by the agent",
         )
-        self.assertFalse(app.session("maker/main.kos")["open"])
+        closed = app.session("maker/main.kos")
+        assert closed is not None
+        self.assertFalse(closed["open"])
 
     def test_a_session_thrown_away_changes_nothing(self) -> None:
         app = self.app(True)
@@ -284,7 +291,9 @@ class StudioSessionTests(unittest.TestCase):
         self.assertTrue((self.real / "notes" / "made.txt").exists())
         self.assertFalse((self.real / "extra.txt").exists())
         # What was left behind went with the session.
-        self.assertFalse(app.session("maker/main.kos")["open"])
+        closed = app.session("maker/main.kos")
+        assert closed is not None
+        self.assertFalse(closed["open"])
 
     def test_naming_a_file_that_did_not_change_brings_nothing_back(self) -> None:
         app = self.two_changes()
@@ -292,7 +301,9 @@ class StudioSessionTests(unittest.TestCase):
             app.end_session("maker/main.kos", True, ["notes/made.txt", "../x.txt"])
         self.assertFalse((self.real / "notes").exists())
         # The session is still open, so the person can answer again.
-        self.assertTrue(app.session("maker/main.kos")["open"])
+        still_open = app.session("maker/main.kos")
+        assert still_open is not None
+        self.assertTrue(still_open["open"])
 
     def test_naming_no_files_brings_nothing_and_ends_the_session(self) -> None:
         app = self.two_changes()
@@ -312,12 +323,16 @@ class StudioSessionTests(unittest.TestCase):
         app = self.app(False)
         job = self.go(app)
         self.assertEqual(job.state, "waiting")
-        self.assertEqual(job.request["tool"], "run_python")
+        asked_for = job.request
+        assert asked_for is not None
+        self.assertEqual(asked_for["tool"], "run_python")
         app.decide(job.id, False)
         while job.state == "waiting":
             time.sleep(0.01)
         self.assertEqual(job.state, "refused")
-        self.assertFalse(app.session("maker/main.kos")["open"])
+        opened = app.session("maker/main.kos")
+        assert opened is not None
+        self.assertFalse(opened["open"])
         self.assertFalse(app.overview()["sessions"])
 
 
