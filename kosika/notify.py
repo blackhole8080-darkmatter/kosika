@@ -127,12 +127,14 @@ def clean_file_name(name: str) -> str:
     return cleaned
 
 
-def bind_notify_tool(address: str, sender: Sender = _send) -> Callable[[ToolDecl, dict[str, Any]], Any]:
+def bind_notify_tool(
+    address: str, sender: Sender = _send
+) -> Callable[[ToolDecl | None, dict[str, Any]], Any]:
     """The executor of a notify tool, sending only to `address`."""
 
     url = clean_address(address)
 
-    def send(_tool: ToolDecl, arguments: dict[str, Any]) -> dict[str, Any]:
+    def send(_tool: ToolDecl | None, arguments: dict[str, Any]) -> dict[str, Any]:
         title = " ".join(str(arguments["title"]).split())[:200]
         text = str(arguments["text"])
         link = clean_link(str(arguments.get("link", "")))
@@ -170,7 +172,9 @@ def bind_notify_tool(address: str, sender: Sender = _send) -> Callable[[ToolDecl
             body = data
         status = sender(where, headers, body)
         if not 200 <= status < 300:
-            raise NotifyError(f"The note was not taken: {urlsplit(url).hostname} answered {status}")
+            raise NotifyError(
+                f"The note was not taken: {urlsplit(url).hostname} answered {status}"
+            )
         return {"sent": True}
 
     return send
