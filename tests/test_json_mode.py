@@ -58,7 +58,9 @@ class JsonModeTests(unittest.TestCase):
     def test_a_request_with_no_schema_asks_ollama_for_json(self) -> None:
         provider, sent = capture("ollama")
         provider.complete(
-            ModelRequest(messages=(ChatMessage(role="user", content="hi"),), json_object=True)
+            ModelRequest(
+                messages=(ChatMessage(role="user", content="hi"),), json_object=True
+            )
         )
         self.assertEqual(sent[0]["format"], "json")
 

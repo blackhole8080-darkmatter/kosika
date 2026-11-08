@@ -187,9 +187,9 @@ class TheFailureNamesTheRepairTests(unittest.TestCase):
 
     def test_a_missing_declaration_says_to_declare_it(self) -> None:
         said = self.error_of(
-            'tool find {\n'
+            "tool find {\n"
             '  source system "files"\n'
-            "  operation: \"search\"\n"
+            '  operation: "search"\n'
             "  access: observe\n"
             "  input: Look\n"
             "  output: Hits\n"

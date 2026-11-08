@@ -99,7 +99,7 @@ class DeclarationTests(unittest.TestCase):
 
     def test_a_store_needs_a_quoted_file(self) -> None:
         with self.assertRaisesRegex(ParseError, "needs a quoted file"):
-            parse('store A at notes.db { table t { id: Number } }')
+            parse("store A at notes.db { table t { id: Number } }")
 
     def test_a_store_may_not_name_an_absolute_file(self) -> None:
         source = SOURCE.replace('"./notes.db"', '"/etc/notes.db"')
@@ -108,7 +108,7 @@ class DeclarationTests(unittest.TestCase):
 
     def test_a_store_declares_at_least_one_table_with_one_column(self) -> None:
         with self.assertRaisesRegex(CheckError, "'A' declares no table"):
-            checked("store A at \"./a.db\" { }")
+            checked('store A at "./a.db" { }')
         with self.assertRaisesRegex(CheckError, "declares no column"):
             checked('store A at "./a.db" { table t { } }')
 
@@ -157,9 +157,7 @@ class SchemaTests(unittest.TestCase):
         self.store = self.program.stores[0]
         self.file = self.root / "notes.db"
         connection = sqlite3.connect(self.file)
-        connection.execute(
-            "create table notes (id integer, title text, done integer)"
-        )
+        connection.execute("create table notes (id integer, title text, done integer)")
         connection.execute("create table log (at text)")
         connection.execute("create table spare (note text)")
         connection.commit()
@@ -329,7 +327,9 @@ class InitTests(unittest.TestCase):
         columns = connection.execute("pragma table_info(notes)").fetchall()
         connection.close()
         # SQLite keeps the column as it was written, so it is still TEXT.
-        self.assertEqual([row[2].lower() for row in columns], ["integer", "text", "text"])
+        self.assertEqual(
+            [row[2].lower() for row in columns], ["integer", "text", "text"]
+        )
 
     def test_init_writes_a_table_the_store_does_not_declare_only_if_asked(self) -> None:
         connection = sqlite3.connect(self.file)
@@ -396,9 +396,7 @@ class CommandTests(unittest.TestCase):
         self.file = self.root / "notes.db"
         self.input = self.root / "input.json"
         self.input.write_text(
-            json.dumps(
-                {"ask": {"sql": "select title from notes", "values": []}}
-            ),
+            json.dumps({"ask": {"sql": "select title from notes", "values": []}}),
             encoding="utf-8",
         )
         self.trace = self.root / "run.jsonl"
@@ -513,9 +511,7 @@ class CommandTests(unittest.TestCase):
 
     def test_inspect_json_is_a_payload(self) -> None:
         self.seed()
-        code, said, errors = self.tell(
-            ["db", "inspect", str(self.file), "--json"]
-        )
+        code, said, errors = self.tell(["db", "inspect", str(self.file), "--json"])
         self.assertEqual(code, 0, errors)
         payload = json.loads(said)
         self.assertEqual(payload["store"], None)

@@ -402,11 +402,15 @@ _RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ),
     (
         "check/shape",
-        re.compile(r"^Shape '|shape '[^']+' has no function |of shape '[^']+'; a shape"),
+        re.compile(
+            r"^Shape '|shape '[^']+' has no function |of shape '[^']+'; a shape"
+        ),
     ),
     (
         "check/default",
-        re.compile(r"so its default cannot be |default value at \d+:\d+ must be written|cannot give a parameter a default value"),
+        re.compile(
+            r"so its default cannot be |default value at \d+:\d+ must be written|cannot give a parameter a default value"
+        ),
     ),
     ("check/plain-model", re.compile(r"answers as text, so its output")),
     (

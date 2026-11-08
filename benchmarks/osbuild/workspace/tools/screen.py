@@ -27,9 +27,10 @@ ROWS, COLUMNS = 25, 80
 def text_of(raw: bytes) -> str:
     rows = []
     for row in range(ROWS):
-        cells = raw[row * COLUMNS * 2:(row + 1) * COLUMNS * 2]
+        cells = raw[row * COLUMNS * 2 : (row + 1) * COLUMNS * 2]
         chars = "".join(
-            chr(cells[i]) if 32 <= cells[i] < 127 else " " for i in range(0, len(cells), 2)
+            chr(cells[i]) if 32 <= cells[i] < 127 else " "
+            for i in range(0, len(cells), 2)
         )
         rows.append(chars.rstrip())
     while rows and not rows[-1]:
@@ -43,14 +44,19 @@ def main() -> int:
     parser.add_argument("--keys", default="")
     parser.add_argument("--wait", type=float, default=4.0)
     parser.add_argument("--snapshots", type=int, default=1)
-    parser.add_argument("--bios-calls", action="store_true",
-                        help="After the screen, list the BIOS calls the boot code made, from a trace.")
+    parser.add_argument(
+        "--bios-calls",
+        action="store_true",
+        help="After the screen, list the BIOS calls the boot code made, from a trace.",
+    )
     args = parser.parse_args()
     if not os.path.isfile(args.image):
         print(f"No image at {args.image}: the build did not make it.")
         return 2
     if os.path.getsize(args.image) < 512:
-        print(f"{args.image} is {os.path.getsize(args.image)} bytes; a boot sector is 512.")
+        print(
+            f"{args.image} is {os.path.getsize(args.image)} bytes; a boot sector is 512."
+        )
         return 2
     folder = os.path.dirname(os.path.abspath(args.image))
     # QEMU unpacked into the workspace (toolchain/root), when the system has
@@ -95,11 +101,36 @@ def bios_calls(program, extra, env, folder, image, seconds=3.0, most=16):
     if os.path.exists(log):
         os.remove(log)
     qemu = subprocess.Popen(
-        [program, *extra, "-drive", f"format=raw,if=floppy,file={image}", "-boot", "a",
-         "-display", "none", "-monitor", "stdio", "-no-reboot", "-net", "none", "-m", "32",
-         "-accel", "tcg,one-insn-per-tb=on", "-d", "cpu,in_asm", "-dfilter", "0x7c00..0x9fff",
-         "-D", log],
-        stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True, env=env,
+        [
+            program,
+            *extra,
+            "-drive",
+            f"format=raw,if=floppy,file={image}",
+            "-boot",
+            "a",
+            "-display",
+            "none",
+            "-monitor",
+            "stdio",
+            "-no-reboot",
+            "-net",
+            "none",
+            "-m",
+            "32",
+            "-accel",
+            "tcg,one-insn-per-tb=on",
+            "-d",
+            "cpu,in_asm",
+            "-dfilter",
+            "0x7c00..0x9fff",
+            "-D",
+            log,
+        ],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        env=env,
     )
     try:
         time.sleep(seconds)
@@ -130,7 +161,11 @@ def bios_calls(program, extra, env, folder, image, seconds=3.0, most=16):
                         name, _, value = part.partition("=")
                         regs[name] = value
             elif line[:3] in ("ES ", "CS ", "SS ", "DS "):
-                regs[line[:2]] = line.split()[1] if "=" not in line[:4] else line.split("=")[1].split()[0]
+                regs[line[:2]] = (
+                    line.split()[1]
+                    if "=" not in line[:4]
+                    else line.split("=")[1].split()[0]
+                )
         if at is not None and code and regs:
             steps.append((at, code, regs))
     found = []
@@ -140,29 +175,52 @@ def bios_calls(program, extra, env, folder, image, seconds=3.0, most=16):
         vector = int(code[2:4], 16)
         eax = int(regs.get("EAX", "0"), 16)
         ebx, ecx, edx = (int(regs.get(r, "0"), 16) for r in ("EBX", "ECX", "EDX"))
-        line = (f"0x{at:04x} int 0x{vector:02x} ({VECTORS.get(vector, '?')}): "
-                f"AH=0x{(eax >> 8) & 0xff:02x} AL=0x{eax & 0xff:02x} BX=0x{ebx & 0xffff:04x} "
-                f"CX=0x{ecx & 0xffff:04x} DX=0x{edx & 0xffff:04x} ES=0x{regs.get('ES', '0000')[-4:]}")
-        back = next((r for a, _, r in steps[i + 1:i + 400] if a == at + 2), None)
+        line = (
+            f"0x{at:04x} int 0x{vector:02x} ({VECTORS.get(vector, '?')}): "
+            f"AH=0x{(eax >> 8) & 0xFF:02x} AL=0x{eax & 0xFF:02x} BX=0x{ebx & 0xFFFF:04x} "
+            f"CX=0x{ecx & 0xFFFF:04x} DX=0x{edx & 0xFFFF:04x} ES=0x{regs.get('ES', '0000')[-4:]}"
+        )
+        back = next((r for a, _, r in steps[i + 1 : i + 400] if a == at + 2), None)
         if back is not None:
             flags = int(back.get("EFL", "0"), 16)
-            line += f" -> carry={'1 (failed)' if flags & 1 else '0'} AH=0x{(int(back.get('EAX', '0'), 16) >> 8) & 0xff:02x}"
+            line += f" -> carry={'1 (failed)' if flags & 1 else '0'} AH=0x{(int(back.get('EAX', '0'), 16) >> 8) & 0xFF:02x}"
         else:
             line += " -> did not come back to the next instruction"
         if not found or found[-1] != line:
             found.append(line)
         if len(found) >= most:
             break
-    return "\n".join(found) if found else "(the boot code made no BIOS call that was seen)"
+    return (
+        "\n".join(found) if found else "(the boot code made no BIOS call that was seen)"
+    )
 
 
 def boot(program, extra, env, folder, args):
     """One boot: the screens read, and what went wrong if none was."""
 
     qemu = subprocess.Popen(
-        [program, *extra, "-drive", f"format=raw,if=floppy,file={args.image}", "-boot", "a", "-display", "none", "-monitor", "stdio",
-         "-no-reboot", "-net", "none", "-m", "32"],
-        stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, env=env,
+        [
+            program,
+            *extra,
+            "-drive",
+            f"format=raw,if=floppy,file={args.image}",
+            "-boot",
+            "a",
+            "-display",
+            "none",
+            "-monitor",
+            "stdio",
+            "-no-reboot",
+            "-net",
+            "none",
+            "-m",
+            "32",
+        ],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
     )
     started = time.monotonic()
 
@@ -183,7 +241,11 @@ def boot(program, extra, env, folder, args):
                 if os.path.exists(dump) and os.path.getsize(dump) == ROWS * COLUMNS * 2:
                     break
                 time.sleep(0.1)
-            if qemu.poll() is not None or not os.path.exists(dump) or os.path.getsize(dump) != ROWS * COLUMNS * 2:
+            if (
+                qemu.poll() is not None
+                or not os.path.exists(dump)
+                or os.path.getsize(dump) != ROWS * COLUMNS * 2
+            ):
                 break
             with open(dump, "rb") as handle:
                 reads.append(text_of(handle.read()))

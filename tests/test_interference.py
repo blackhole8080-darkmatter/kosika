@@ -21,7 +21,9 @@ def two_sources(first: str = "kg:a", second: str = "web:b") -> tuple[Evidence, .
 
 
 def test_one_source_speaking_twice_is_one_voice() -> None:
-    twice = Candidate("twice", "an answer", (Evidence("kg:a", "kg", 1.0), Evidence("kg:a", "kg", 1.0)))
+    twice = Candidate(
+        "twice", "an answer", (Evidence("kg:a", "kg", 1.0), Evidence("kg:a", "kg", 1.0))
+    )
     once = Candidate("once", "an answer", (Evidence("kg:a", "kg", 1.0),))
 
     assert score(twice).support == 1.0
@@ -30,7 +32,9 @@ def test_one_source_speaking_twice_is_one_voice() -> None:
 
 
 def test_corroboration_against_two_sources_outranks_two_voices_of_one() -> None:
-    twice = Candidate("twice", "an answer", (Evidence("kg:a", "kg", 1.0), Evidence("kg:a", "kg", 1.0)))
+    twice = Candidate(
+        "twice", "an answer", (Evidence("kg:a", "kg", 1.0), Evidence("kg:a", "kg", 1.0))
+    )
     two = Candidate("two", "an answer", two_sources())
 
     assert score(two).support > score(twice).support
@@ -89,8 +93,12 @@ def test_nothing_is_measured_when_every_candidate_is_weak() -> None:
 
 def test_two_equals_are_not_measured() -> None:
     equal = (
-        Candidate("a", "one", (Evidence("kg:a", "kg", 1.0), Evidence("web:b", "web", 1.0))),
-        Candidate("b", "two", (Evidence("kg:c", "kg", 1.0), Evidence("web:d", "web", 1.0))),
+        Candidate(
+            "a", "one", (Evidence("kg:a", "kg", 1.0), Evidence("web:b", "web", 1.0))
+        ),
+        Candidate(
+            "b", "two", (Evidence("kg:c", "kg", 1.0), Evidence("web:d", "web", 1.0))
+        ),
     )
     decision = measure(equal)
 
@@ -102,7 +110,11 @@ def test_two_equals_are_not_measured() -> None:
 def test_the_corroborated_candidate_is_measured_out() -> None:
     candidates = (
         Candidate("thin", "a guess", (Evidence("model:x", "model", 1.0),)),
-        Candidate("solid", "the answer", two_sources() + (Evidence("memory:y", "memory", 1.0),)),
+        Candidate(
+            "solid",
+            "the answer",
+            two_sources() + (Evidence("memory:y", "memory", 1.0),),
+        ),
     )
     decision = measure(candidates)
 

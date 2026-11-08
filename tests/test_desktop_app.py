@@ -38,7 +38,9 @@ class IconTests(unittest.TestCase):
     def test_the_picture_is_the_round_mark_with_see_through_corners(self) -> None:
         picture = desktop_app._picture(48)[40:]
 
-        def at(x: int, y: int) -> bytes:  # from the top left; rows are stored bottom first
+        def at(
+            x: int, y: int
+        ) -> bytes:  # from the top left; rows are stored bottom first
             start = ((47 - y) * 48 + x) * 4
             return picture[start : start + 4]  # blue, green, red, alpha
 

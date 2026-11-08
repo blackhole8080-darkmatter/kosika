@@ -50,11 +50,15 @@ def load(path: Path) -> dict:
     for model in config["models"].values():
         # A model on this computer, such as one Ollama serves, needs no key.
         if model.get("key") and not os.environ.get(model["key"]):
-            raise SystemExit(f"{model['key']} is not set; the router reads keys from the environment only.")
+            raise SystemExit(
+                f"{model['key']} is not set; the router reads keys from the environment only."
+            )
     return config
 
 
-AGAIN_IN = re.compile(r"try again in (?:(\d+)h)?(?:(\d+)m)?(?:([\d.]+)s)?", re.IGNORECASE)
+AGAIN_IN = re.compile(
+    r"try again in (?:(\d+)h)?(?:(\d+)m)?(?:([\d.]+)s)?", re.IGNORECASE
+)
 
 
 def used_up_for(error: urllib.error.HTTPError) -> float:
@@ -116,7 +120,11 @@ class Router:
         text = message.get("content") or ""
         calls = message.get("tool_calls") or []
         if not text.strip() and not calls:
-            return "empty reply" + (" (ran out of tokens)" if choice.get("finish_reason") == "length" else "")
+            return "empty reply" + (
+                " (ran out of tokens)"
+                if choice.get("finish_reason") == "length"
+                else ""
+            )
         offered = {t.get("function", {}).get("name") for t in body.get("tools") or []}
         for call in calls:
             name = call.get("function", {}).get("name")
@@ -126,9 +134,16 @@ class Router:
                 json.loads(call["function"].get("arguments") or "{}")
             except (ValueError, TypeError):
                 return f"tool {name} got arguments that are not JSON"
-        if (body.get("response_format") or {}).get("type") in ("json_object", "json_schema") and not calls:
+        if (body.get("response_format") or {}).get("type") in (
+            "json_object",
+            "json_schema",
+        ) and not calls:
             try:
-                json.loads(text[text.index("{"): text.rindex("}") + 1] if "{" in text else text)
+                json.loads(
+                    text[text.index("{") : text.rindex("}") + 1]
+                    if "{" in text
+                    else text
+                )
             except ValueError:
                 return "asked for JSON, and the reply is not JSON"
         return None
@@ -137,16 +152,33 @@ class Router:
 
     def ask(self, name: str, body: dict) -> dict:
         model = self.config["models"][name]
-        sent = {k: v for k, v in body.items() if k not in ("model", "stream", "stream_options")}
+        sent = {
+            k: v
+            for k, v in body.items()
+            if k not in ("model", "stream", "stream_options")
+        }
         sent["model"] = model["id"]
         # Settings a model needs from this router, such as a lower reasoning
         # effort, as the config gives them for that model.
         sent.update(model.get("extra", {}))
         request = urllib.request.Request(
-            model["url"], data=json.dumps(sent).encode(), method="POST",
-            headers={**({"Authorization": "Bearer " + os.environ[model["key"]]} if model.get("key") else {}),
-                     "Content-Type": "application/json", "User-Agent": AGENT})
-        with urllib.request.urlopen(request, timeout=model.get("timeout_seconds", self.config["timeout_seconds"])) as answer:
+            model["url"],
+            data=json.dumps(sent).encode(),
+            method="POST",
+            headers={
+                **(
+                    {"Authorization": "Bearer " + os.environ[model["key"]]}
+                    if model.get("key")
+                    else {}
+                ),
+                "Content-Type": "application/json",
+                "User-Agent": AGENT,
+            },
+        )
+        with urllib.request.urlopen(
+            request,
+            timeout=model.get("timeout_seconds", self.config["timeout_seconds"]),
+        ) as answer:
             return json.load(answer)
 
     def answer(self, body: dict) -> tuple[int, dict]:
@@ -163,7 +195,12 @@ class Router:
             reply = self.attempt(body, start, tried)
         self.write(start, why, tried, began, reply is not None)
         if reply is None:
-            return 502, {"error": {"message": "No free model gave a reply that passed the checks.", "tried": tried}}
+            return 502, {
+                "error": {
+                    "message": "No free model gave a reply that passed the checks.",
+                    "tried": tried,
+                }
+            }
         return 200, reply
 
     def attempt(self, body: dict, start: str, tried: list) -> dict | None:
@@ -171,35 +208,66 @@ class Router:
         for name in self.route(start):
             with self.lock:
                 if self.cool.get(name, 0) > time.time():
-                    tried.append({"model": name, "skipped": "cooling down after a rate limit"})
+                    tried.append(
+                        {"model": name, "skipped": "cooling down after a rate limit"}
+                    )
                     continue
             t0 = time.time()
             try:
                 reply = self.ask(name, body)
             except urllib.error.HTTPError as error:
-                wait = float(error.headers.get("retry-after") or self.config["cool_seconds"])
+                wait = float(
+                    error.headers.get("retry-after") or self.config["cool_seconds"]
+                )
                 if error.code == 429:
                     # A day's allowance used up is not a burst: the service
                     # says when it comes back, and asking sooner only wastes
                     # every later request a round trip.
                     daily = used_up_for(error)
                     with self.lock:
-                        self.cool[name] = time.time() + (daily if daily else min(wait, 120))
-                tried.append({"model": name, "status": error.code, "ms": int((time.time() - t0) * 1000)})
+                        self.cool[name] = time.time() + (
+                            daily if daily else min(wait, 120)
+                        )
+                tried.append(
+                    {
+                        "model": name,
+                        "status": error.code,
+                        "ms": int((time.time() - t0) * 1000),
+                    }
+                )
                 continue
             except (urllib.error.URLError, TimeoutError, ValueError) as error:
-                tried.append({"model": name, "error": str(error)[:200], "ms": int((time.time() - t0) * 1000)})
+                tried.append(
+                    {
+                        "model": name,
+                        "error": str(error)[:200],
+                        "ms": int((time.time() - t0) * 1000),
+                    }
+                )
                 continue
             wrong = self.problem(body, reply)
-            tried.append({"model": name, "status": 200, "ms": int((time.time() - t0) * 1000), "problem": wrong})
+            tried.append(
+                {
+                    "model": name,
+                    "status": 200,
+                    "ms": int((time.time() - t0) * 1000),
+                    "problem": wrong,
+                }
+            )
             if wrong is None:
                 reply["model"] = NAME
                 return reply
         return None
 
     def write(self, start: str, why: str, tried: list, began: float, ok: bool) -> None:
-        line = {"at": time.strftime("%Y-%m-%dT%H:%M:%S"), "start": start, "why": why, "ok": ok,
-                "ms": int((time.time() - began) * 1000), "tried": tried}
+        line = {
+            "at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "start": start,
+            "why": why,
+            "ok": ok,
+            "ms": int((time.time() - began) * 1000),
+            "tried": tried,
+        }
         with self.lock, self.log.open("a", encoding="utf-8") as out:
             out.write(json.dumps(line) + "\n")
 
@@ -219,23 +287,39 @@ def handler(router: Router):
 
         def do_GET(self):
             if self.path.rstrip("/").endswith("/models"):
-                return self.send(200, {"object": "list", "data": [{"id": NAME, "object": "model"}]})
+                return self.send(
+                    200, {"object": "list", "data": [{"id": NAME, "object": "model"}]}
+                )
             self.send(404, {"error": {"message": "not found"}})
 
         def do_POST(self):
             if not self.path.rstrip("/").endswith("/chat/completions"):
                 return self.send(404, {"error": {"message": "not found"}})
-            body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
+            body = json.loads(
+                self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}"
+            )
             code, reply = router.answer(body)
             if not body.get("stream") or code != 200:
                 return self.send(code, reply)
             # A streamed request gets the checked reply as one piece: nothing
             # is shown before it has passed the checks.
             message = reply["choices"][0]["message"]
-            chunk = {"id": reply.get("id", "kv"), "object": "chat.completion.chunk", "model": NAME,
-                     "choices": [{"index": 0, "delta": {"role": "assistant", "content": message.get("content") or ""},
-                                  "finish_reason": reply["choices"][0].get("finish_reason")}],
-                     "usage": reply.get("usage")}
+            chunk = {
+                "id": reply.get("id", "kv"),
+                "object": "chat.completion.chunk",
+                "model": NAME,
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {
+                            "role": "assistant",
+                            "content": message.get("content") or "",
+                        },
+                        "finish_reason": reply["choices"][0].get("finish_reason"),
+                    }
+                ],
+                "usage": reply.get("usage"),
+            }
             data = ("data: " + json.dumps(chunk) + "\n\ndata: [DONE]\n\n").encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
@@ -250,7 +334,9 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default=str(HERE / "router.json"))
     parser.add_argument("--port", type=int, default=8791)
-    parser.add_argument("--log", default=str(Path.home() / ".kosika" / "virtual-router.jsonl"))
+    parser.add_argument(
+        "--log", default=str(Path.home() / ".kosika" / "virtual-router.jsonl")
+    )
     args = parser.parse_args()
     log = Path(args.log)
     log.parent.mkdir(parents=True, exist_ok=True)

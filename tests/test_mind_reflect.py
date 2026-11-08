@@ -18,8 +18,11 @@ def test_accepts_a_well_formed_answer():
 
 
 def test_cross_model_verifier_complaint_rejects():
-    v = reflect({"label": "bug", "confidence": 0.5}, choices=["bug"],
-                verifier=lambda a: "the second model disagrees")
+    v = reflect(
+        {"label": "bug", "confidence": 0.5},
+        choices=["bug"],
+        verifier=lambda a: "the second model disagrees",
+    )
     assert not v.ok
 
 

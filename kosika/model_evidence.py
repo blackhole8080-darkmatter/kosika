@@ -108,9 +108,7 @@ def lower_model_evidence(program: Program) -> Program:
             if (
                 call is step.call
                 and fallback is step.fallback
-                and all(
-                    new[1] is old[1] for new, old in zip(branches, step.branches)
-                )
+                and all(new[1] is old[1] for new, old in zip(branches, step.branches))
             ):
                 steps.append(step)
             else:

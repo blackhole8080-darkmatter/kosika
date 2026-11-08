@@ -13,8 +13,11 @@ from typing import Callable, Sequence
 from .knowledge_graph import KnowledgeGraph, RelationType
 
 _RESONATE = (
-    RelationType.RELATED_TO, RelationType.IS_A, RelationType.PART_OF,
-    RelationType.CAUSES, RelationType.SIMILAR_TO,
+    RelationType.RELATED_TO,
+    RelationType.IS_A,
+    RelationType.PART_OF,
+    RelationType.CAUSES,
+    RelationType.SIMILAR_TO,
 )
 
 #: The least cosine similarity an entity needs to be worth handing to a model.
@@ -65,7 +68,9 @@ def retrieve(
         if entity is None:
             return False
         # Measure before formatting so an oversized fact is never copied.
-        size = len(prefix) + len(entity.name) + 2 + len(entity.description) + bool(lines)
+        size = (
+            len(prefix) + len(entity.name) + 2 + len(entity.description) + bool(lines)
+        )
         if size > remaining:
             return False
         lines.append(f"{prefix}{entity.name}: {entity.description}")
@@ -86,7 +91,9 @@ def retrieve(
     adjacency: dict[tuple[str, RelationType], list[str]] = {}
     for edge in islice(graph.relationships.values(), 4096):
         if edge.relation_type in _RESONATE:
-            adjacency.setdefault((edge.source, edge.relation_type), []).append(edge.target)
+            adjacency.setdefault((edge.source, edge.relation_type), []).append(
+                edge.target
+            )
 
     neighbours = 0
     for entity_id in sources:
@@ -128,7 +135,9 @@ def reflect(
             reasons.append(f"confidence must be a number in [0,1], got {confidence!r}")
     label = answer.get("label")
     if choices is not None and label is not None and label not in choices:
-        reasons.append(f"label {label!r} was not offered; offered: {', '.join(choices)}")
+        reasons.append(
+            f"label {label!r} was not offered; offered: {', '.join(choices)}"
+        )
     if verifier is not None:
         complaint = verifier(answer)
         if complaint.strip():
@@ -152,7 +161,10 @@ def make_reflect(
     def reflect_on(answer: dict) -> tuple[str, dict]:
         verdict = reflect(answer, choices=choices, verifier=verifier)
         if verdict.ok:
-            return "", {"label": answer.get("label"), "confidence": answer.get("confidence")}
+            return "", {
+                "label": answer.get("label"),
+                "confidence": answer.get("confidence"),
+            }
         return "; ".join(verdict.reasons), {}
 
     return reflect_on
@@ -199,8 +211,15 @@ def mind_hooks(
     def context(arguments: dict) -> str:
         text = " ".join(str(value) for value in arguments.values())
         return retrieve(
-            graph, text, embed, limit=limit, floor=floor,
-            max_context_chars=max_context_chars, max_neighbours=max_neighbours,
+            graph,
+            text,
+            embed,
+            limit=limit,
+            floor=floor,
+            max_context_chars=max_context_chars,
+            max_neighbours=max_neighbours,
         ).context
 
-    return MindHooks(context=context, verify=make_reflect(choices=choices, verifier=verifier))
+    return MindHooks(
+        context=context, verify=make_reflect(choices=choices, verifier=verifier)
+    )

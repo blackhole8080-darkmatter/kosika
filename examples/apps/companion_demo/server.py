@@ -42,9 +42,23 @@ GROQ = "https://api.groq.com/openai/v1"
 # A drawing needs Designs' structure prompt, which the small local models
 # cannot finish inside any timeout worth waiting for.
 PICTURE_WORDS = {
-    "draw", "draws", "diagram", "picture", "sketch", "chart", "timeline",
-    "illustrate", "illustration", "visualise", "visualize", "poster",
-    "flowchart", "mindmap", "animation", "animate", "art",
+    "draw",
+    "draws",
+    "diagram",
+    "picture",
+    "sketch",
+    "chart",
+    "timeline",
+    "illustrate",
+    "illustration",
+    "visualise",
+    "visualize",
+    "poster",
+    "flowchart",
+    "mindmap",
+    "animation",
+    "animate",
+    "art",
 }
 
 
@@ -57,7 +71,9 @@ def record(output: str) -> dict:
     body = output.split("\nTrace:")[0].strip()
     start = body.find("{")
     if start < 0:
-        last = body.strip().splitlines()[-1] if body.strip() else "Kosika gave no answer."
+        last = (
+            body.strip().splitlines()[-1] if body.strip() else "Kosika gave no answer."
+        )
         raise RuntimeError(last[:300])
     return ast.literal_eval(body[start:])
 
@@ -69,16 +85,22 @@ def ask(text: str) -> dict:
     if picture:
         os.environ["KOSIKA_MODEL_API_KEY"] = os.environ["GROQ_API_KEY"]
         args += [
-            "--model", STRONG,
-            "--model-url", GROQ,
-            "--model-protocol", "openai",
-            "--max-output-tokens", "8000",
+            "--model",
+            STRONG,
+            "--model-url",
+            GROQ,
+            "--model-protocol",
+            "openai",
+            "--max-output-tokens",
+            "8000",
         ]
     else:
         args += ["--model", LOCAL]
     args += ["--memory", str(MEMORY), "--model-timeout", "240"]
 
-    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as held:
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=".json", delete=False, encoding="utf-8"
+    ) as held:
         json.dump({"msg": {"text": text}}, held)
         path = held.name
     args += ["--input", path]
@@ -120,7 +142,9 @@ def handler(page: bytes):
             if self.path != "/ask":
                 self.send_error(404)
                 return
-            body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
+            body = json.loads(
+                self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}"
+            )
             asked = str(body.get("text", ""))[:2000].strip()
             if not asked:
                 self.send_error(400)
@@ -128,8 +152,16 @@ def handler(page: bytes):
             try:
                 answer = ask(asked)
             except Exception as error:  # shown in the page, not hidden
-                answer = {"text": f"I could not answer that: {str(error)[:300]}", "kind": "", "title": "",
-                          "why": "", "embed": "", "problems": [], "model": "", "seconds": 0}
+                answer = {
+                    "text": f"I could not answer that: {str(error)[:300]}",
+                    "kind": "",
+                    "title": "",
+                    "why": "",
+                    "embed": "",
+                    "problems": [],
+                    "model": "",
+                    "seconds": 0,
+                }
             data = json.dumps(answer).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -147,7 +179,10 @@ def main() -> None:
     MEMORY.mkdir(parents=True, exist_ok=True)
     page = (HERE / "index.html").read_bytes()
     server = ThreadingHTTPServer(("127.0.0.1", args.port), handler(page))
-    print(f"Kosi on http://127.0.0.1:{args.port}  (local {LOCAL}, drawing {STRONG})", flush=True)
+    print(
+        f"Kosi on http://127.0.0.1:{args.port}  (local {LOCAL}, drawing {STRONG})",
+        flush=True,
+    )
     server.serve_forever()
 
 

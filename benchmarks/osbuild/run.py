@@ -46,7 +46,11 @@ from kosika.app import App  # noqa: E402
 from kosika.model import OpenAICompatibleProvider  # noqa: E402
 
 AGENT = REPO / "examples" / "agents" / "osbuilder"
-WORKSPACE = Path(os.environ.get("OSBUILD_WORKSPACE", r"C:\Users\Aryan\Aryan_Private\kosika-bench\osbuild"))
+WORKSPACE = Path(
+    os.environ.get(
+        "OSBUILD_WORKSPACE", r"C:\Users\Aryan\Aryan_Private\kosika-bench\osbuild"
+    )
+)
 
 
 def binder_for(args: argparse.Namespace) -> Any:
@@ -55,9 +59,13 @@ def binder_for(args: argparse.Namespace) -> Any:
             # The teacher may be another model: one that finds causes well
             # need not be the one that writes assembly well.
             model.name: OpenAICompatibleProvider(
-                args.url, args.teacher_model if model.name == "teacher" and args.teacher_model else args.model,
+                args.url,
+                args.teacher_model
+                if model.name == "teacher" and args.teacher_model
+                else args.model,
                 api_key=os.environ.get("KOSIKA_MODEL_API_KEY"),
-                protocol="openai", timeout=args.timeout,
+                protocol="openai",
+                timeout=args.timeout,
             )
             for model in program.models
             if model.provider is None
@@ -67,7 +75,14 @@ def binder_for(args: argparse.Namespace) -> Any:
 
 
 def spec_of(text: str) -> dict[str, Any]:
-    spec: dict[str, Any] = {"expect": [], "absent": [], "rising": [], "keys": "", "snapshots": "1", "title": ""}
+    spec: dict[str, Any] = {
+        "expect": [],
+        "absent": [],
+        "rising": [],
+        "keys": "",
+        "snapshots": "1",
+        "title": "",
+    }
     for line in text.splitlines():
         if line.strip() == "---":
             break
@@ -121,7 +136,11 @@ def verify(session: Any, stage: int, spec: dict[str, Any]) -> tuple[list[str], s
     ran = session.run("python3", args, timeout=60)
     shown = screens_of(str(ran.get("stdout", "")))
     if not shown:
-        return ["The screen could not be read: " + str(ran.get("stdout", ""))[-300:] + str(ran.get("stderr", ""))[-300:]], ""
+        return [
+            "The screen could not be read: "
+            + str(ran.get("stdout", ""))[-300:]
+            + str(ran.get("stderr", ""))[-300:]
+        ], ""
     last = shown[-1]
     failed = [f"Missing: {e}" for e in spec["expect"] if e not in last]
     failed += [f"Must not show: {a}" for a in spec["absent"] if a in last]
@@ -139,11 +158,20 @@ def main() -> int:
     parser.add_argument("--timeout", type=float, default=300)
     parser.add_argument("--stages", default="1-8")
     parser.add_argument("--limit-seconds", type=float, default=1600)
-    parser.add_argument("--teacher-model", help="The model that names the cause of each failure (default: --model).")
-    parser.add_argument("--without-rules", action="store_true",
-                        help="Run each stage as if nothing had been learned, and learn nothing.")
-    parser.add_argument("--rules-file", type=Path,
-                        help="Rules learned in earlier runs: read before, and written back after.")
+    parser.add_argument(
+        "--teacher-model",
+        help="The model that names the cause of each failure (default: --model).",
+    )
+    parser.add_argument(
+        "--without-rules",
+        action="store_true",
+        help="Run each stage as if nothing had been learned, and learn nothing.",
+    )
+    parser.add_argument(
+        "--rules-file",
+        type=Path,
+        help="Rules learned in earlier runs: read before, and written back after.",
+    )
     args = parser.parse_args()
     first, _, last = args.stages.partition("-")
     stages = list(range(int(first), int(last or first) + 1))
@@ -154,14 +182,23 @@ def main() -> int:
     for part in ("lessons", "tutorial", "examples", "tools", "toolchain"):
         shutil.copytree(WORKSPACE / part, folder / part)
     agents = run_dir / "agents"
-    shutil.copytree(AGENT, agents / "osbuilder", ignore=shutil.ignore_patterns("memory", "runs"))
+    shutil.copytree(
+        AGENT, agents / "osbuilder", ignore=shutil.ignore_patterns("memory", "runs")
+    )
     # The rules the builder taught itself, carried from run to run when asked.
     kept_rules = agents / "osbuilder" / "memory" / "rules.json"
     if args.rules_file and args.rules_file.is_file() and not args.without_rules:
         kept_rules.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(args.rules_file, kept_rules)
-    app = App(agents, bind_models=binder_for(args), model_label=args.model, allow_folder=folder,
-              allow_shell=True, in_session=True, session_home=run_dir / "sessions")
+    app = App(
+        agents,
+        bind_models=binder_for(args),
+        model_label=args.model,
+        allow_folder=folder,
+        allow_shell=True,
+        in_session=True,
+        session_home=run_dir / "sessions",
+    )
     agent = next(key for key in app.agents() if key.startswith("osbuilder/"))
 
     results: list[dict[str, Any]] = []
@@ -169,24 +206,50 @@ def main() -> int:
         spec = spec_of((folder / "lessons" / f"{stage}.md").read_text(encoding="utf-8"))
         print(f"Stage {stage}: {spec['title']} ...", flush=True)
         started = time.monotonic()
-        job = app.start(agent, {"text": f"stage {stage}" + (" without rules" if args.without_rules else "")})
+        job = app.start(
+            agent,
+            {
+                "text": f"stage {stage}"
+                + (" without rules" if args.without_rules else "")
+            },
+        )
         allowed = 0
-        while job.state in ("running", "waiting") and time.monotonic() - started < args.limit_seconds:
+        while (
+            job.state in ("running", "waiting")
+            and time.monotonic() - started < args.limit_seconds
+        ):
             if job.state == "waiting":
                 allowed += 1
                 app.decide(job.id, True)
             time.sleep(0.5)
         seconds = round(time.monotonic() - started, 1)
         session = next(iter(app._sessions.values()), None)
-        failed, screen = verify(session, stage, spec) if session is not None else (["No session was made"], "")
-        state = job.state if job.state in ("done", "failed", "refused") else "out of time"
+        failed, screen = (
+            verify(session, stage, spec)
+            if session is not None
+            else (["No session was made"], "")
+        )
+        state = (
+            job.state if job.state in ("done", "failed", "refused") else "out of time"
+        )
         result = {
-            "stage": stage, "title": spec["title"], "passed": not failed and state == "done",
-            "state": state, "seconds": seconds, "allowed": allowed, "failed": failed,
-            "error": job.error, "agent_said": (getattr(job, "text", "") or "")[:1500], "screen": screen[:3000],
+            "stage": stage,
+            "title": spec["title"],
+            "passed": not failed and state == "done",
+            "state": state,
+            "seconds": seconds,
+            "allowed": allowed,
+            "failed": failed,
+            "error": job.error,
+            "agent_said": (getattr(job, "text", "") or "")[:1500],
+            "screen": screen[:3000],
         }
         results.append(result)
-        print(f"  {'PASSED' if result['passed'] else 'FAILED'} in {seconds}s" + ("" if result["passed"] else f": {failed or job.error}"), flush=True)
+        print(
+            f"  {'PASSED' if result['passed'] else 'FAILED'} in {seconds}s"
+            + ("" if result["passed"] else f": {failed or job.error}"),
+            flush=True,
+        )
         if session is not None:
             # Keep what the agent built, outside the session, for reading.
             target = run_dir / "built" / str(stage)
@@ -201,19 +264,33 @@ def main() -> int:
     if kept_rules.is_file():
         try:
             stored = json.loads(kept_rules.read_text(encoding="utf-8"))
-            rules = next(iter(stored.values()), {}).get("items", []) if isinstance(stored, dict) else []
+            rules = (
+                next(iter(stored.values()), {}).get("items", [])
+                if isinstance(stored, dict)
+                else []
+            )
         except (ValueError, AttributeError):
             rules = []
         if args.rules_file and not args.without_rules:
             args.rules_file.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(kept_rules, args.rules_file)
     summary = {
-        "rules": "off" if args.without_rules else "on", "teacher": args.teacher_model or args.model, "learned": rules,
-        "model": args.model, "when": stamp, "stages": args.stages,
-        "passed": sum(r["passed"] for r in results), "tried": len(results), "results": results,
+        "rules": "off" if args.without_rules else "on",
+        "teacher": args.teacher_model or args.model,
+        "learned": rules,
+        "model": args.model,
+        "when": stamp,
+        "stages": args.stages,
+        "passed": sum(r["passed"] for r in results),
+        "tried": len(results),
+        "results": results,
     }
-    (run_dir / "results.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
-    print(f"{summary['passed']} of {len(stages)} stages passed. Results: {run_dir / 'results.json'}")
+    (run_dir / "results.json").write_text(
+        json.dumps(summary, indent=2), encoding="utf-8"
+    )
+    print(
+        f"{summary['passed']} of {len(stages)} stages passed. Results: {run_dir / 'results.json'}"
+    )
     return 0 if summary["passed"] == len(stages) else 1
 
 

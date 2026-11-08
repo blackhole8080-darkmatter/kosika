@@ -57,7 +57,9 @@ def _program():
 def test_a_mind_bound_trace_replays_without_asking_anyone(tmp_path):
     trace = tmp_path / "trace.jsonl"
     provider = ScriptedModelProvider([ModelResponse(content=json.dumps(GOOD))])
-    hooks = mind_hooks(_graph(tmp_path), embed=lambda text: [1.0, 0.0], choices=["billing", "other"])
+    hooks = mind_hooks(
+        _graph(tmp_path), embed=lambda text: [1.0, 0.0], choices=["billing", "other"]
+    )
 
     ran = run(
         _program(),
@@ -68,7 +70,11 @@ def test_a_mind_bound_trace_replays_without_asking_anyone(tmp_path):
         mind=hooks,
     )
 
-    events = [json.loads(line) for line in trace.read_text(encoding="utf-8").splitlines() if line.strip()]
+    events = [
+        json.loads(line)
+        for line in trace.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
     returned = [event for event in events if event.get("event") == "model_return"]
     assert len(returned) == 1
     assert returned[0]["mind"]["label"] == "billing"
@@ -81,10 +87,19 @@ def test_a_run_without_mind_replays_too(tmp_path):
     trace = tmp_path / "plain.jsonl"
     provider = ScriptedModelProvider([ModelResponse(content=json.dumps(GOOD))])
 
-    ran = run(_program(), "main", trace, inputs=INPUTS, model_bindings={"assistant": provider})
+    ran = run(
+        _program(), "main", trace, inputs=INPUTS, model_bindings={"assistant": provider}
+    )
 
-    events = [json.loads(line) for line in trace.read_text(encoding="utf-8").splitlines() if line.strip()]
-    assert "mind" not in [event for event in events if event.get("event") == "model_return"][0]
+    events = [
+        json.loads(line)
+        for line in trace.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert (
+        "mind"
+        not in [event for event in events if event.get("event") == "model_return"][0]
+    )
 
     assert replay(trace) == ran
 
@@ -113,7 +128,9 @@ def test_the_programs_own_recorded_check_survives_a_mind_bound_replay(tmp_path):
     trace = tmp_path / "checked.jsonl"
     program = parse(CHECKED)
     check(program)
-    provider = ScriptedModelProvider([ModelResponse(content=json.dumps({"text": "Short."}))])
+    provider = ScriptedModelProvider(
+        [ModelResponse(content=json.dumps({"text": "Short."}))]
+    )
     hooks = mind_hooks(_graph(tmp_path), embed=lambda text: [1.0, 0.0])
 
     ran = run(

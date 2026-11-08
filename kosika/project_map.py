@@ -84,8 +84,22 @@ def _lines(source: str) -> dict[tuple[str, str], int]:
 
 #: Words that start a line of a workflow's body but name no step.
 _NOT_A_STEP = frozenset(
-    {"let", "var", "if", "case", "else", "return", "require", "budget",
-     "parallel", "for", "match", "call", "expect", "while"}
+    {
+        "let",
+        "var",
+        "if",
+        "case",
+        "else",
+        "return",
+        "require",
+        "budget",
+        "parallel",
+        "for",
+        "match",
+        "call",
+        "expect",
+        "while",
+    }
 )
 
 
@@ -94,9 +108,7 @@ def _exported(source: str) -> set[str]:
 
     found: set[str] = set()
     for block in re.findall(r"export\s*\[([^\]]*)\]", source):
-        found.update(
-            name.strip() for name in block.split(",") if name.strip()
-        )
+        found.update(name.strip() for name in block.split(",") if name.strip())
     return found
 
 
@@ -276,6 +288,7 @@ def beginner_map(
             continue
         group, item = _tool_item(tool, lines.get(("tool", tool.name)))
         groups[group].append(item)
+
     def answers(model: ModelDecl) -> str:
         choice = next((c for c in program.choices if c.name == model.output), None)
         if choice is None:
@@ -292,9 +305,7 @@ def beginner_map(
             "does": answers(model) + (" (the default)" if model.default else ""),
         }
         for model in program.models
-        if model.provider is None
-        and not model.verb
-        and ("model", model.name) in lines
+        if model.provider is None and not model.verb and ("model", model.name) in lines
     ]
     thinking = sorted({model.verb for model in program.models if model.verb})
     memories = [

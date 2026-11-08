@@ -7,7 +7,11 @@ import sqlite3
 from pathlib import Path
 
 from .knowledge_graph import (
-    Entity, EntityType, KnowledgeGraph, Relationship, RelationType,
+    Entity,
+    EntityType,
+    KnowledgeGraph,
+    Relationship,
+    RelationType,
 )
 
 _SCHEMA = """
@@ -36,16 +40,28 @@ def save_graph(graph: KnowledgeGraph, path: Path) -> None:
         con.executemany(
             "INSERT INTO entities VALUES (?,?,?,?,?,?)",
             (
-                (e.id, e.name, _enum(e.entity_type), e.description,
-                 json.dumps(e.properties), json.dumps(e.embedding))
+                (
+                    e.id,
+                    e.name,
+                    _enum(e.entity_type),
+                    e.description,
+                    json.dumps(e.properties),
+                    json.dumps(e.embedding),
+                )
                 for e in graph.entities.values()
             ),
         )
         con.executemany(
             "INSERT INTO relationships VALUES (?,?,?,?,?,?)",
             (
-                (r.id, r.source, r.target, _enum(r.relation_type), r.weight,
-                 json.dumps(r.properties))
+                (
+                    r.id,
+                    r.source,
+                    r.target,
+                    _enum(r.relation_type),
+                    r.weight,
+                    json.dumps(r.properties),
+                )
                 for r in graph.relationships.values()
             ),
         )
@@ -59,18 +75,32 @@ def load_graph(path: Path) -> KnowledgeGraph:
     con = sqlite3.connect(path)
     try:
         con.executescript(_SCHEMA)
-        for row in con.execute("SELECT id,name,entity_type,description,properties,embedding FROM entities"):
-            graph.add_entity(Entity(
-                id=row[0], name=row[1], entity_type=EntityType(row[2]),
-                description=row[3], properties=json.loads(row[4]),
-                embedding=json.loads(row[5]),
-            ))
-        for row in con.execute("SELECT id,source,target,relation_type,weight,properties FROM relationships"):
-            graph.add_relationship(Relationship(
-                id=row[0], source=row[1], target=row[2],
-                relation_type=RelationType(row[3]), weight=row[4],
-                properties=json.loads(row[5]),
-            ))
+        for row in con.execute(
+            "SELECT id,name,entity_type,description,properties,embedding FROM entities"
+        ):
+            graph.add_entity(
+                Entity(
+                    id=row[0],
+                    name=row[1],
+                    entity_type=EntityType(row[2]),
+                    description=row[3],
+                    properties=json.loads(row[4]),
+                    embedding=json.loads(row[5]),
+                )
+            )
+        for row in con.execute(
+            "SELECT id,source,target,relation_type,weight,properties FROM relationships"
+        ):
+            graph.add_relationship(
+                Relationship(
+                    id=row[0],
+                    source=row[1],
+                    target=row[2],
+                    relation_type=RelationType(row[3]),
+                    weight=row[4],
+                    properties=json.loads(row[5]),
+                )
+            )
     finally:
         con.close()
     return graph

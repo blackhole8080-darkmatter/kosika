@@ -17,7 +17,9 @@ import json
 import sys
 from pathlib import Path
 
-STORE = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).with_name("notes.json")
+STORE = (
+    Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).with_name("notes.json")
+)
 
 TOOLS = [
     {
@@ -105,7 +107,9 @@ def answer(message: dict) -> dict | None:
         return None  # a notification needs no answer
     if method == "initialize":
         result: dict = {
-            "protocolVersion": message.get("params", {}).get("protocolVersion", "2025-06-18"),
+            "protocolVersion": message.get("params", {}).get(
+                "protocolVersion", "2025-06-18"
+            ),
             "capabilities": {"tools": {}},
             "serverInfo": {"name": "notes", "version": "1.0"},
         }

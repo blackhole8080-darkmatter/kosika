@@ -47,7 +47,9 @@ class ServicesPageTests(unittest.TestCase):
     def test_a_pause_is_kept_in_the_services_folder_and_can_be_lifted(self) -> None:
         app = App(self.root, services=self.file)
         view = app.pause_service({"name": "lookout", "paused": True})
-        self.assertTrue(next(i for i in view["services"] if i["name"] == "lookout")["paused"])
+        self.assertTrue(
+            next(i for i in view["services"] if i["name"] == "lookout")["paused"]
+        )
         self.assertEqual(running.read_paused(self.file), ["lookout"])
         app.pause_service({"name": "lookout", "paused": False})
         self.assertEqual(running.read_paused(self.file), [])

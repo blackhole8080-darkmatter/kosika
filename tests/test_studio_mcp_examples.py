@@ -44,7 +44,9 @@ class StudioMCPExampleTests(unittest.TestCase):
         self.addCleanup(self.hub.close)
 
     def test_only_app_launch_is_an_execute_tool(self) -> None:
-        desktop = {tool["name"]: tool["read_only"] for tool in self.hub.tools("desktop")}
+        desktop = {
+            tool["name"]: tool["read_only"] for tool in self.hub.tools("desktop")
+        }
         tasks = {tool["name"]: tool["read_only"] for tool in self.hub.tools("tasks")}
         self.assertEqual(desktop, {"list_apps": True, "open_app": False})
         self.assertEqual(
@@ -75,7 +77,9 @@ class StudioMCPExampleTests(unittest.TestCase):
         self.assertTrue(saved[0]["completed"])
 
     def test_desktop_server_rejects_arbitrary_app_names(self) -> None:
-        self.assertTrue(self.hub.call("desktop", "list_apps", {}).startswith("Supported apps:"))
+        self.assertTrue(
+            self.hub.call("desktop", "list_apps", {}).startswith("Supported apps:")
+        )
         with self.assertRaises(MCPToolError):
             self.hub.call("desktop", "open_app", {"app": "powershell"})
 
@@ -94,10 +98,7 @@ class StudioMCPExampleTests(unittest.TestCase):
 
     def test_studio_example_declares_mutations_as_execute(self) -> None:
         program = parse((EXAMPLES / "studio_helper.kos").read_text(encoding="utf-8"))
-        declared = {
-            tool.name: tool.access
-            for tool in program.tools
-        }
+        declared = {tool.name: tool.access for tool in program.tools}
         self.assertEqual(declared["open_app"], "execute")
         self.assertEqual(declared["add_task"], "execute")
         self.assertEqual(declared["complete_task"], "execute")

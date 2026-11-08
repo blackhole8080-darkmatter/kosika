@@ -41,7 +41,9 @@ def attempt(
         "seconds": seconds,
         "approvals": 1,
         "failures": [] if passed else ["python -m pytest: 1 failed"],
-        "excerpts": [] if passed else (excerpts if excerpts is not None else ["assert 1 == 2"]),
+        "excerpts": []
+        if passed
+        else (excerpts if excerpts is not None else ["assert 1 == 2"]),
         "error": "",
         "said": "",
         "files": [],
@@ -108,16 +110,23 @@ class TaskTests(unittest.TestCase):
     ) -> dict[str, Any]:
         module = self.module
         args = argparse.Namespace(best_of=best_of, repair=repair, keep=False)
-        with patch.object(module, "prepare", self.prepare()), patch.object(
-            module, "drop", lambda scratch, keep: None
-        ), patch.object(module, "run_attempt", fake):
+        with (
+            patch.object(module, "prepare", self.prepare()),
+            patch.object(module, "drop", lambda scratch, keep: None),
+            patch.object(module, "run_attempt", fake),
+        ):
             return module.run_task(args, {"id": "task", "task": "write it"})
 
     def test_a_task_stops_at_its_first_pass_and_adds_up_the_clock(self) -> None:
         made: list[int] = []
 
         def fake(
-            args: Any, task: dict[str, Any], number: int, folder: Path, app: Any, asked: str
+            args: Any,
+            task: dict[str, Any],
+            number: int,
+            folder: Path,
+            app: Any,
+            asked: str,
         ) -> dict[str, Any]:
             made.append(number)
             return attempt(number, number == 2)
@@ -131,7 +140,12 @@ class TaskTests(unittest.TestCase):
 
     def test_best_of_starts_every_attempt_in_a_fresh_copy(self) -> None:
         def fake(
-            args: Any, task: dict[str, Any], number: int, folder: Path, app: Any, asked: str
+            args: Any,
+            task: dict[str, Any],
+            number: int,
+            folder: Path,
+            app: Any,
+            asked: str,
         ) -> dict[str, Any]:
             return attempt(number, False, 5.0)
 
@@ -140,7 +154,12 @@ class TaskTests(unittest.TestCase):
 
     def test_a_task_that_never_passes_says_what_the_last_attempt_said(self) -> None:
         def fake(
-            args: Any, task: dict[str, Any], number: int, folder: Path, app: Any, asked: str
+            args: Any,
+            task: dict[str, Any],
+            number: int,
+            folder: Path,
+            app: Any,
+            asked: str,
         ) -> dict[str, Any]:
             return attempt(number, False, 5.0)
 
@@ -155,7 +174,12 @@ class TaskTests(unittest.TestCase):
         made: list[int] = []
 
         def fake(
-            args: Any, task: dict[str, Any], number: int, folder: Path, app: Any, asked: str
+            args: Any,
+            task: dict[str, Any],
+            number: int,
+            folder: Path,
+            app: Any,
+            asked: str,
         ) -> dict[str, Any]:
             made.append(number)
             return attempt(number, False, 75.0, abandoned=True)
@@ -168,11 +192,18 @@ class TaskTests(unittest.TestCase):
         heard: list[str] = []
 
         def fake(
-            args: Any, task: dict[str, Any], number: int, folder: Path, app: Any, asked: str
+            args: Any,
+            task: dict[str, Any],
+            number: int,
+            folder: Path,
+            app: Any,
+            asked: str,
         ) -> dict[str, Any]:
             heard.append(asked)
             if number == 1:
-                return attempt(1, False, 20.0, excerpts=["calc.py said:\n  E AssertionError"])
+                return attempt(
+                    1, False, 20.0, excerpts=["calc.py said:\n  E AssertionError"]
+                )
             return attempt(2, True, 20.0)
 
         result = self.run_task(fake, best_of=2, repair=True)
@@ -188,7 +219,12 @@ class TaskTests(unittest.TestCase):
         heard: list[str] = []
 
         def fake(
-            args: Any, task: dict[str, Any], number: int, folder: Path, app: Any, asked: str
+            args: Any,
+            task: dict[str, Any],
+            number: int,
+            folder: Path,
+            app: Any,
+            asked: str,
         ) -> dict[str, Any]:
             heard.append(asked)
             return attempt(number, False, 10.0, excerpts=[])
@@ -203,9 +239,15 @@ class CheckedTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             failed, why = module.checked(
                 Path(directory),
-                [["python", "-c", "import sys; sys.path.insert(0, r'{repo}')\n"
-                  "from kosika.checker import CheckError\n"
-                  "raise CheckError('Step next_count cannot access count')"]],
+                [
+                    [
+                        "python",
+                        "-c",
+                        "import sys; sys.path.insert(0, r'{repo}')\n"
+                        "from kosika.checker import CheckError\n"
+                        "raise CheckError('Step next_count cannot access count')",
+                    ]
+                ],
             )
         text = "\n".join(why)
         self.assertTrue(failed)
@@ -224,9 +266,15 @@ class CheckedTests(unittest.TestCase):
             )
             failed, why = module.checked(
                 Path(directory),
-                [["python", "-c", "import sys; sys.path.insert(0, r'{repo}')\n"
-                  "from kosika.modules import load_program\n"
-                  "load_program('broken.kos')"]],
+                [
+                    [
+                        "python",
+                        "-c",
+                        "import sys; sys.path.insert(0, r'{repo}')\n"
+                        "from kosika.modules import load_program\n"
+                        "load_program('broken.kos')",
+                    ]
+                ],
             )
         text = "\n".join(why)
         self.assertTrue(failed)
@@ -244,8 +292,9 @@ class CheckedTests(unittest.TestCase):
             ran.append(command)
             raise module.subprocess.TimeoutExpired(command, 120)
 
-        with tempfile.TemporaryDirectory() as directory, patch.object(
-            module.subprocess, "run", hang
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(module.subprocess, "run", hang),
         ):
             failed, why = module.checked(
                 Path(directory),
@@ -274,17 +323,31 @@ class LanguageTests(unittest.TestCase):
         self.assertEqual(tally["kosika"], {"passed": 1, "tasks": 2})
         self.assertEqual(tally["python"], {"passed": 0, "tasks": 1})
 
-    def test_every_task_names_its_language_and_the_ordinary_set_has_kosika(self) -> None:
+    def test_every_task_names_its_language_and_the_ordinary_set_has_kosika(
+        self,
+    ) -> None:
         for name in ("tasks.json", "hard.json"):
-            tasks = json.loads((ROOT / "benchmarks" / "coder" / name).read_text(encoding="utf-8"))
+            tasks = json.loads(
+                (ROOT / "benchmarks" / "coder" / name).read_text(encoding="utf-8")
+            )
             for task in tasks:
-                self.assertTrue(task.get("language"), f"{name}: {task['id']} names no language")
-        ordinary = json.loads((ROOT / "benchmarks" / "coder" / "tasks.json").read_text(encoding="utf-8"))
+                self.assertTrue(
+                    task.get("language"), f"{name}: {task['id']} names no language"
+                )
+        ordinary = json.loads(
+            (ROOT / "benchmarks" / "coder" / "tasks.json").read_text(encoding="utf-8")
+        )
         kosika = [task for task in ordinary if task["language"] == "kosika"]
         # Without these, a run cannot say how often the agent writes Kosika.
         self.assertEqual(len(kosika), 2)
         for task in kosika:
-            self.assertTrue(any("load_program(" in part for check in task["checks"] for part in check))
+            self.assertTrue(
+                any(
+                    "load_program(" in part
+                    for check in task["checks"]
+                    for part in check
+                )
+            )
 
     def test_a_kosika_check_is_told_where_the_benchmark_lives(self) -> None:
         module = load()
@@ -294,8 +357,13 @@ class LanguageTests(unittest.TestCase):
             seen.append(command)
             return type("Done", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
-        with tempfile.TemporaryDirectory() as directory, patch.object(module.subprocess, "run", ran):
-            module.checked(Path(directory), [["python", "-c", "sys.path.insert(0, r'{repo}')"]])
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(module.subprocess, "run", ran),
+        ):
+            module.checked(
+                Path(directory), [["python", "-c", "sys.path.insert(0, r'{repo}')"]]
+            )
         self.assertIn(str(module.REPO), seen[0][-1])
         self.assertNotIn("{repo}", seen[0][-1])
 

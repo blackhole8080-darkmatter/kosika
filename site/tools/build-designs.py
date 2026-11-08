@@ -58,7 +58,7 @@ footer{max-width:1180px;margin:0 auto;padding:30px 20px 60px;color:var(--soft);f
 
 def framed(embed: str, kind: str) -> str:
     page = (
-        "<!doctype html><html><head><meta charset=\"utf-8\">"
+        '<!doctype html><html><head><meta charset="utf-8">'
         "<style>html,body{margin:0;background:#06070d;color-scheme:dark}</style></head>"
         f"<body>{embed}</body></html>"
     )
@@ -84,7 +84,7 @@ def main() -> int:
         print(f"drew {ask!r} as {made['kind']}: {made['title']}")
         sections.append(
             f'<section><div class="asked">{html.escape(made["kind"])} &#183; asked: <span>&ldquo;{html.escape(ask)}&rdquo;</span></div>'
-            f'{framed(made["embed"], made["kind"])}'
+            f"{framed(made['embed'], made['kind'])}"
             f'<p class="why">Kosika {html.escape(made["why"])}.</p></section>'
         )
     page = f"""<!doctype html>

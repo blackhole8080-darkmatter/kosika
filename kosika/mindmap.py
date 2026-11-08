@@ -231,9 +231,7 @@ def build_mindmap(
             connect(record_id, field_id, "has_field", field.type_name)
             base_type = _base_type(field.type_name)
             if base_type in record_names or base_type in choice_names:
-                connect(
-                    field_id, type_node(base_type), "field_type", "typed as"
-                )
+                connect(field_id, type_node(base_type), "field_type", "typed as")
 
     for choice in sorted(program.choices, key=lambda item: item.name):
         choice_id = add_node(

@@ -2,18 +2,43 @@ from pathlib import Path
 
 from kosika.graph_store import load_graph, save_graph
 from kosika.knowledge_graph import (
-    Entity, EntityType, KnowledgeGraph, Relationship, RelationType,
+    Entity,
+    EntityType,
+    KnowledgeGraph,
+    Relationship,
+    RelationType,
 )
 
 
 def _graph() -> KnowledgeGraph:
     g = KnowledgeGraph()
-    g.add_entity(Entity(id="photo", name="photosynthesis", entity_type=EntityType.CONCEPT,
-                        description="plants make food from light", embedding=[1.0, 0.0]))
-    g.add_entity(Entity(id="chloro", name="chlorophyll", entity_type=EntityType.CONCEPT,
-                        description="the green pigment", embedding=[0.0, 1.0]))
-    g.add_relationship(Relationship(id="r1", source="photo", target="chloro",
-                                    relation_type=RelationType.PART_OF, weight=0.9))
+    g.add_entity(
+        Entity(
+            id="photo",
+            name="photosynthesis",
+            entity_type=EntityType.CONCEPT,
+            description="plants make food from light",
+            embedding=[1.0, 0.0],
+        )
+    )
+    g.add_entity(
+        Entity(
+            id="chloro",
+            name="chlorophyll",
+            entity_type=EntityType.CONCEPT,
+            description="the green pigment",
+            embedding=[0.0, 1.0],
+        )
+    )
+    g.add_relationship(
+        Relationship(
+            id="r1",
+            source="photo",
+            target="chloro",
+            relation_type=RelationType.PART_OF,
+            weight=0.9,
+        )
+    )
     return g
 
 

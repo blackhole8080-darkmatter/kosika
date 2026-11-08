@@ -191,7 +191,9 @@ class QueryTests(unittest.TestCase):
     def tool(self, operation: str = "query"):
         from kosika.ast import ToolDecl
 
-        return ToolDecl("ask_db", "system:db", operation, "observe", "Grid", "Statement")
+        return ToolDecl(
+            "ask_db", "system:db", operation, "observe", "Grid", "Statement"
+        )
 
     def ask(self, sql: str, values: list[str] | None = None, operation="query"):
         return self.look(self.tool(operation), {"sql": sql, "values": values or []})
@@ -279,7 +281,9 @@ class RunTests(unittest.TestCase):
     def tool(self):
         from kosika.ast import ToolDecl
 
-        return ToolDecl("add_row", "system:db", "run", "execute", "Changed", "Statement")
+        return ToolDecl(
+            "add_row", "system:db", "run", "execute", "Changed", "Statement"
+        )
 
     def do(self, sql: str, values: list[str] | None = None):
         return self.change(self.tool(), {"sql": sql, "values": values or []})
@@ -334,8 +338,11 @@ class TypedRowsTests(unittest.TestCase):
         connection.execute(
             "insert into notes (title, wordy, done) values ('first', '1.5', 1)"
         )
-        connection.execute("insert into notes (title, wordy, done) values ('second', 'later', 0)")
-        connection.execute("insert into notes (title, wordy, done) values ('third', null, 1)"
+        connection.execute(
+            "insert into notes (title, wordy, done) values ('second', 'later', 0)"
+        )
+        connection.execute(
+            "insert into notes (title, wordy, done) values ('third', null, 1)"
         )
         connection.commit()
         connection.close()
@@ -430,9 +437,9 @@ class TypedRowsTests(unittest.TestCase):
             self.ask("select id, wordy as title, done from notes order by id")
         self.assertEqual(
             len(
-                self.ask(
-                    "select id, coalesce(wordy, '') as title, done from notes"
-                )["rows"]
+                self.ask("select id, coalesce(wordy, '') as title, done from notes")[
+                    "rows"
+                ]
             ),
             3,
         )
@@ -484,9 +491,7 @@ class GrantTests(unittest.TestCase):
             "main",
             None,
             inputs={"ask": {"sql": "select title from notes", "values": []}},
-            tool_bindings=bind_system_tools(
-                program, folder=None, database=self.file
-            ),
+            tool_bindings=bind_system_tools(program, folder=None, database=self.file),
         )
         self.assertEqual(found, {"columns": ["title"], "rows": [], "more": False})
 
@@ -513,7 +518,7 @@ class GrantTests(unittest.TestCase):
         # A run given an environment takes no grant from the command line, so
         # what it may reach is what the file says and nothing else.
         (self.root / "kosika.env").write_text(
-            "environment bare {\n  keep \"./.kosika\"\n}\n", encoding="utf-8"
+            'environment bare {\n  keep "./.kosika"\n}\n', encoding="utf-8"
         )
         program = self.root / "ask.kos"
         program.write_text(QUERY, encoding="utf-8")
@@ -549,7 +554,9 @@ class GrantTests(unittest.TestCase):
     def test_an_ungranted_db_tool_fails_before_the_first_step(self) -> None:
         program = checked(QUERY)
         with self.assertRaisesRegex(SystemToolError, "not an existing folder"):
-            bind_system_tools(program, folder=None, database=self.root / "gone" / "x.db")
+            bind_system_tools(
+                program, folder=None, database=self.root / "gone" / "x.db"
+            )
 
 
 class ApprovalAndReplayTests(unittest.TestCase):
@@ -644,7 +651,9 @@ class ApprovalAndReplayTests(unittest.TestCase):
 
     def test_a_rows_answer_replays_without_the_database(self) -> None:
         connection = sqlite3.connect(self.file)
-        connection.execute("create table typed (id integer primary key, title text, done integer)")
+        connection.execute(
+            "create table typed (id integer primary key, title text, done integer)"
+        )
         connection.execute("insert into typed (title, done) values ('first', 1)")
         connection.commit()
         connection.close()
@@ -758,7 +767,9 @@ class SentStatementTests(unittest.TestCase):
         # of its own is refused for changing one: what is judged is that it
         # binds the values that were sent, and that it is one statement.
         self.assertIsNone(self.ask("run", "delete from notes"))
-        self.assertIsNone(self.ask("run", "insert into notes (title) values (?)", ["x"]))
+        self.assertIsNone(
+            self.ask("run", "insert into notes (title) values (?)", ["x"])
+        )
         self.assertIn("uses 2", self.ask("run", "select ?, ?", ["x"]) or "")
 
     def test_a_statement_that_is_not_one_statement_is_refused(self) -> None:
@@ -766,7 +777,10 @@ class SentStatementTests(unittest.TestCase):
         self.assertIn("more than one statement", problem or "")
 
     def test_a_statement_binding_other_values_than_were_sent_is_refused(self) -> None:
-        self.assertIn("it sends 0 values where the statement uses 1", self.ask("query", "select ?") or "")
+        self.assertIn(
+            "it sends 0 values where the statement uses 1",
+            self.ask("query", "select ?") or "",
+        )
         self.assertIn(
             "it sends 1 value where the statement uses 0",
             self.ask("query", "select title from notes", ["x"]) or "",
@@ -818,10 +832,11 @@ class SentStatementTests(unittest.TestCase):
         )
         self.assertIn(
             "names a db operation",
-            sent_problem("read", {"sql": "select 1", "values": []}, self.tables)
-            or "",
+            sent_problem("read", {"sql": "select 1", "values": []}, self.tables) or "",
         )
-        self.assertEqual(sent_problem("query", None, self.tables), "its arguments are not a record")
+        self.assertEqual(
+            sent_problem("query", None, self.tables), "its arguments are not a record"
+        )
         self.assertEqual(
             sent_problem("query", {"sql": "select 1", "values": [1]}, self.tables),
             "its values are not the text a db call binds",
@@ -958,13 +973,19 @@ class RecordedStatementReplayTests(unittest.TestCase):
                 code, _said, errors = self.doctored(name, sql)
                 self.assertEqual(code, 2)
                 self.assertIn("could not have been sent", errors)
-                self.assertIn("it changes the database, and a query tool only looks", errors)
+                self.assertIn(
+                    "it changes the database, and a query tool only looks", errors
+                )
 
     def test_a_statement_binding_other_values_is_refused(self) -> None:
-        code, _said, errors = self.doctored("few", "select title from notes where id = ?")
+        code, _said, errors = self.doctored(
+            "few", "select title from notes where id = ?"
+        )
         self.assertEqual(code, 2)
         self.assertIn("it sends 0 values where the statement uses 1", errors)
-        code, _said, errors = self.doctored("many", "select title from notes", ["first"])
+        code, _said, errors = self.doctored(
+            "many", "select title from notes", ["first"]
+        )
         self.assertEqual(code, 2)
         self.assertIn("it sends 1 value where the statement uses 0", errors)
 
@@ -981,7 +1002,10 @@ class RecordedStatementReplayTests(unittest.TestCase):
         self.assertIn("not a statement SQLite can read", errors)
 
     def test_a_statement_on_a_table_the_run_never_found_is_left_alone(self) -> None:
-        for name, sql in (("other", "select tag from tags"), ("gone", "select title from elsewhere")):
+        for name, sql in (
+            ("other", "select tag from tags"),
+            ("gone", "select title from elsewhere"),
+        ):
             with self.subTest(sql=sql):
                 code, said, errors = self.doctored(name, sql)
                 self.assertEqual(code, 0, errors)
@@ -1120,7 +1144,9 @@ class RecordedApprovalTests(unittest.TestCase):
     def call(self) -> dict:
         """The one recorded call to the database."""
 
-        return next(event for event in self.events() if event.get("event") == "tool_call")
+        return next(
+            event for event in self.events() if event.get("event") == "tool_call"
+        )
 
     def written(self, events: list[dict], name: str) -> tuple[int, str, str]:
         path = self.root / f"{name}.jsonl"
@@ -1225,7 +1251,9 @@ class RecordedApprovalTests(unittest.TestCase):
         # What is left alone is said here rather than hidden: a trace records
         # the approval it was given, and one that does not say it was given
         # one is judged on the call alone, as an older trace is.
-        code, said, errors = self.doctored("stripped", lambda event: event.pop("approval"))
+        code, said, errors = self.doctored(
+            "stripped", lambda event: event.pop("approval")
+        )
         self.assertEqual(code, 0, errors)
         self.assertIn("changed", said)
 
@@ -1273,8 +1301,7 @@ class RecordedApprovalTests(unittest.TestCase):
             raise AssertionError("no called workflow in the trace")
 
         top = [
-            json.loads(line)
-            for line in trace.read_text(encoding="utf-8").splitlines()
+            json.loads(line) for line in trace.read_text(encoding="utf-8").splitlines()
         ]
         called = nested_named(top)["events"]
         inner_call = next(

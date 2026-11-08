@@ -20,8 +20,7 @@ class GroundingRuleTests(unittest.TestCase):
 
     def test_an_answer_that_says_more_than_the_line_says_is_refused(self) -> None:
         said = (
-            "Your manager is Dana Whitfield.\n"
-            f'Quote: "{RENT}"\nFrom: home.md, line 3'
+            f'Your manager is Dana Whitfield.\nQuote: "{RENT}"\nFrom: home.md, line 3'
         )
         verdict = check(said, NOTES)
         self.assertFalse(verdict.grounded)
@@ -37,10 +36,7 @@ class GroundingRuleTests(unittest.TestCase):
         self.assertIn("quote", verdict.reason)
 
     def test_a_number_must_match_exactly(self) -> None:
-        said = (
-            "The rent is 90 euros.\n"
-            f'Quote: "{RENT}"\nFrom: home.md, line 3'
-        )
+        said = f'The rent is 90 euros.\nQuote: "{RENT}"\nFrom: home.md, line 3'
         verdict = check(said, NOTES)
         self.assertFalse(verdict.grounded)
         self.assertIn("90", verdict.reason)

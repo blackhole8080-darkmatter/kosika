@@ -115,9 +115,7 @@ def score(candidate: Candidate) -> Scoring:
     voices = _strongest(candidate.evidence)
     support = sum(voice.weight * max(voice.stance, 0.0) for voice in voices.values())
     against = sum(voice.weight * max(-voice.stance, 0.0) for voice in voices.values())
-    agreeing = tuple(
-        sorted(name for name, voice in voices.items() if voice.supporting)
-    )
+    agreeing = tuple(sorted(name for name, voice in voices.items() if voice.supporting))
     contradicted = tuple(
         sorted(name for name, voice in voices.items() if voice.stance < 0)
     )
@@ -138,7 +136,9 @@ def score(candidate: Candidate) -> Scoring:
     )
 
 
-def measure(candidates: tuple[Candidate, ...], *, floor: float = MEASURE_FLOOR) -> Decision:
+def measure(
+    candidates: tuple[Candidate, ...], *, floor: float = MEASURE_FLOOR
+) -> Decision:
     """Read the evidence and commit to one candidate, or to none.
 
     Nothing is measured when the best candidate is weaker than `floor`, and
@@ -148,30 +148,36 @@ def measure(candidates: tuple[Candidate, ...], *, floor: float = MEASURE_FLOOR) 
     if not candidates:
         return Decision(None, False, "no candidates were offered", ())
     scored = tuple(
-        sorted((score(candidate) for candidate in candidates),
-               key=lambda item: (-item.confidence, -item.support, item.id))
+        sorted(
+            (score(candidate) for candidate in candidates),
+            key=lambda item: (-item.confidence, -item.support, item.id),
+        )
     )
     best = scored[0]
     if best.confidence < floor:
         return Decision(
-            None, False,
+            None,
+            False,
             f"the best of {len(scored)} candidates was too weak to stand "
             f"({best.confidence:.2f} < {floor:.2f})",
             scored,
         )
     tied = tuple(
-        item.id for item in scored
+        item.id
+        for item in scored
         if item.confidence == best.confidence and item.support == best.support
     )
     if len(tied) > 1:
         return Decision(
-            None, False,
+            None,
+            False,
             "the candidates were indistinguishable: " + ", ".join(tied),
             scored,
         )
     winner = next(candidate for candidate in candidates if candidate.id == best.id)
     return Decision(
-        winner, True,
+        winner,
+        True,
         f"{best.id} stood on {len(best.agreeing)} source"
         f"{'' if len(best.agreeing) == 1 else 's'}"
         + (f", against {len(best.contradicted_by)}" if best.contradicted_by else ""),

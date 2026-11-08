@@ -32,7 +32,10 @@ class FakeStream:
 class ConsoleEncodingTests(unittest.TestCase):
     def test_a_stream_that_is_not_a_console_is_written_as_utf8(self) -> None:
         out, err = FakeStream(False), FakeStream(False)
-        with mock.patch.object(sys, "stdout", out), mock.patch.object(sys, "stderr", err):
+        with (
+            mock.patch.object(sys, "stdout", out),
+            mock.patch.object(sys, "stderr", err),
+        ):
             cli.configure_console()
         self.assertEqual(out.calls, [{"encoding": "utf-8", "errors": "replace"}])
         self.assertEqual(err.calls, [{"encoding": "utf-8", "errors": "replace"}])
@@ -41,7 +44,10 @@ class ConsoleEncodingTests(unittest.TestCase):
         # Its code page is what the person at it is reading, so only the
         # error policy is set.
         out = FakeStream(True)
-        with mock.patch.object(sys, "stdout", out), mock.patch.object(sys, "stderr", FakeStream(True)):
+        with (
+            mock.patch.object(sys, "stdout", out),
+            mock.patch.object(sys, "stderr", FakeStream(True)),
+        ):
             cli.configure_console()
         self.assertEqual(out.calls, [{"errors": "replace"}])
 
@@ -50,7 +56,10 @@ class ConsoleEncodingTests(unittest.TestCase):
             def isatty(self) -> bool:
                 return False
 
-        with mock.patch.object(sys, "stdout", Bare()), mock.patch.object(sys, "stderr", Bare()):
+        with (
+            mock.patch.object(sys, "stdout", Bare()),
+            mock.patch.object(sys, "stderr", Bare()),
+        ):
             cli.configure_console()
 
 

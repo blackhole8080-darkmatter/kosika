@@ -62,11 +62,7 @@ def _items(program: Program, source: str) -> list[dict[str, Any]]:
             f"({given}) gives {workflow.output_type}, {len(workflow.steps)} step(s)",
         )
     for model in program.models:
-        if (
-            model.provider is None
-            and not model.verb
-            and ("model", model.name) in lines
-        ):
+        if model.provider is None and not model.verb and ("model", model.name) in lines:
             add("model", model.name, f"given {model.input}, answers {model.output}")
     for tool in program.tools:
         if tool.source.startswith(_OWN) or ("tool", tool.name) not in lines:

@@ -116,7 +116,9 @@ def _object(payload: Any, where: str) -> dict[str, Any]:
     return payload
 
 
-def _text(payload: Mapping[str, Any], key: str, where: str, *, default: str = "") -> str:
+def _text(
+    payload: Mapping[str, Any], key: str, where: str, *, default: str = ""
+) -> str:
     value = payload.get(key, default)
     if value is None:
         return default
@@ -152,7 +154,9 @@ def load_recorded(path: str | Path) -> RecordedRun:
     if not isinstance(questions, list) or not questions:
         raise VirtualEvalError("A recorded run must hold at least one question")
     if len(questions) > MAX_QUESTIONS:
-        raise VirtualEvalError(f"A recorded run may hold at most {MAX_QUESTIONS} questions")
+        raise VirtualEvalError(
+            f"A recorded run may hold at most {MAX_QUESTIONS} questions"
+        )
     counts = dict.fromkeys(CLASSES, 0)
     asked = 0
     for index, question in enumerate(questions):
@@ -216,9 +220,7 @@ def identity_of(run: RecordedRun, *, profile: str | None = None) -> str:
     ).hexdigest()
 
 
-def score(
-    path: str | Path, *, profile: str | Path | None = None
-) -> Score:
+def score(path: str | Path, *, profile: str | Path | None = None) -> Score:
     """Read one recorded run and bind it to the combination it evidences."""
 
     run = load_recorded(path)

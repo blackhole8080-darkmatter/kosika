@@ -2,7 +2,11 @@
 import pytest
 
 from kosika.knowledge_graph import (
-    Entity, EntityType, KnowledgeGraph, Relationship, RelationType,
+    Entity,
+    EntityType,
+    KnowledgeGraph,
+    Relationship,
+    RelationType,
 )
 from kosika.mind import mind_hooks, retrieve
 
@@ -24,16 +28,43 @@ def _embed(text: str) -> list[float]:
 
 def _graph() -> KnowledgeGraph:
     g = KnowledgeGraph()
-    g.add_entity(Entity(id="photo", name="photosynthesis", entity_type=EntityType.CONCEPT,
-                        description="plants make food from light", embedding=[1.0, 0.0, 0.0]))
-    g.add_entity(Entity(id="chloro", name="chlorophyll", entity_type=EntityType.CONCEPT,
-                        description="the green pigment", embedding=[0.0, 1.0, 0.0]))
-    g.add_entity(Entity(id="sun", name="sunlight", entity_type=EntityType.CONCEPT,
-                        description="the energy source", embedding=[0.9, 0.1, 0.0]))
-    g.add_relationship(Relationship(id="r1", source="photo", target="chloro",
-                                    relation_type=RelationType.PART_OF))
-    g.add_relationship(Relationship(id="r2", source="photo", target="sun",
-                                    relation_type=RelationType.RELATED_TO))
+    g.add_entity(
+        Entity(
+            id="photo",
+            name="photosynthesis",
+            entity_type=EntityType.CONCEPT,
+            description="plants make food from light",
+            embedding=[1.0, 0.0, 0.0],
+        )
+    )
+    g.add_entity(
+        Entity(
+            id="chloro",
+            name="chlorophyll",
+            entity_type=EntityType.CONCEPT,
+            description="the green pigment",
+            embedding=[0.0, 1.0, 0.0],
+        )
+    )
+    g.add_entity(
+        Entity(
+            id="sun",
+            name="sunlight",
+            entity_type=EntityType.CONCEPT,
+            description="the energy source",
+            embedding=[0.9, 0.1, 0.0],
+        )
+    )
+    g.add_relationship(
+        Relationship(
+            id="r1", source="photo", target="chloro", relation_type=RelationType.PART_OF
+        )
+    )
+    g.add_relationship(
+        Relationship(
+            id="r2", source="photo", target="sun", relation_type=RelationType.RELATED_TO
+        )
+    )
     return g
 
 
@@ -69,18 +100,26 @@ def test_the_floor_can_be_lowered_when_the_graph_is_known_to_be_relevant():
 
 
 def _add_entity(graph, entity_id, description="fact", *, name=None, root=False):
-    graph.add_entity(Entity(
-        id=entity_id, name=entity_id if name is None else name,
-        entity_type=EntityType.CONCEPT, description=description,
-        embedding=[1.0, 0.0, 0.0] if root else None,
-    ))
+    graph.add_entity(
+        Entity(
+            id=entity_id,
+            name=entity_id if name is None else name,
+            entity_type=EntityType.CONCEPT,
+            description=description,
+            embedding=[1.0, 0.0, 0.0] if root else None,
+        )
+    )
 
 
 def _link(graph, source, target, relation=RelationType.RELATED_TO):
-    graph.add_relationship(Relationship(
-        id=f"r{len(graph.relationships)}", source=source, target=target,
-        relation_type=relation,
-    ))
+    graph.add_relationship(
+        Relationship(
+            id=f"r{len(graph.relationships)}",
+            source=source,
+            target=target,
+            relation_type=relation,
+        )
+    )
 
 
 def test_default_budget_bounds_a_500_neighbour_graph():
@@ -159,8 +198,18 @@ def test_neighbours_cannot_crowd_out_a_later_root():
 
 def test_depth_two_is_relation_specific_deduplicated_and_in_insertion_order():
     graph = KnowledgeGraph()
-    for entity_id in ("root", "z", "a", "shared", "part", "part_leaf",
-                      "mixed", "too_deep", "incoming", "ignored"):
+    for entity_id in (
+        "root",
+        "z",
+        "a",
+        "shared",
+        "part",
+        "part_leaf",
+        "mixed",
+        "too_deep",
+        "incoming",
+        "ignored",
+    ):
         _add_entity(graph, entity_id, root=entity_id == "root")
     _link(graph, "root", "root")
     _link(graph, "root", "z")
@@ -276,12 +325,17 @@ def test_relationships_after_the_4096_entry_scan_budget_are_not_expanded():
     assert got.sources == ("root",)
 
 
-@pytest.mark.parametrize("options, expected", [
-    ({"max_context_chars": 45}, "- photosynthesis: plants make food from light"),
-    ({"max_neighbours": 0}, "- photosynthesis: plants make food from light"),
-    ({"max_neighbours": 1},
-     "- photosynthesis: plants make food from light\n  - relates to sunlight: the energy source"),
-])
+@pytest.mark.parametrize(
+    "options, expected",
+    [
+        ({"max_context_chars": 45}, "- photosynthesis: plants make food from light"),
+        ({"max_neighbours": 0}, "- photosynthesis: plants make food from light"),
+        (
+            {"max_neighbours": 1},
+            "- photosynthesis: plants make food from light\n  - relates to sunlight: the energy source",
+        ),
+    ],
+)
 def test_hooks_context_honours_retrieval_overrides(options, expected):
     hooks = mind_hooks(_graph(), _embed, limit=1, **options)
 

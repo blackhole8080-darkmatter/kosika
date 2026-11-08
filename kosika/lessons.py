@@ -160,7 +160,12 @@ class Lessons:
             book = self._book(step)
             for item in reversed(book):
                 if item.get("request_hash") == digest:
-                    return {"answer": item["answer"], "how": "same", "likeness": 1.0, "lessons": len(book)}
+                    return {
+                        "answer": item["answer"],
+                        "how": "same",
+                        "likeness": 1.0,
+                        "lessons": len(book),
+                    }
         return None
 
     def recall(
@@ -206,19 +211,32 @@ class Lessons:
             return None
         for item in reversed(book):
             if item.get("plain") == plain:
-                return {"answer": item["answer"], "how": "same", "likeness": 1.0, "lessons": len(book)}
+                return {
+                    "answer": item["answer"],
+                    "how": "same",
+                    "likeness": 1.0,
+                    "lessons": len(book),
+                }
         by_meaning = self._by_meaning(step, question, book)
         if by_meaning is not None:
             return by_meaning
         mine = set(asked)
         ranked = sorted(
-            ((_likeness(mine, set(item.get("plain", "").split())), index, item) for index, item in enumerate(book)),
+            (
+                (_likeness(mine, set(item.get("plain", "").split())), index, item)
+                for index, item in enumerate(book)
+            ),
             key=lambda found: (found[0], found[1]),
             reverse=True,
         )
         likeness, _, nearest = ranked[0]
         if likeness >= CLOSE_ENOUGH and len(mine) >= 3:
-            return {"answer": nearest["answer"], "how": "close", "likeness": round(likeness, 3), "lessons": len(book)}
+            return {
+                "answer": nearest["answer"],
+                "how": "close",
+                "likeness": round(likeness, 3),
+                "lessons": len(book),
+            }
         if not voting or len(book) < VOTE_EXAMPLES or likeness < VOTE_NEAREST:
             return None
         votes: Counter[str] = Counter()  # type: ignore[assignment]
@@ -238,10 +256,19 @@ class Lessons:
         agreement = score / weight  # type: ignore[assignment]
         if agreement < VOTE_AGREEMENT:
             return None
-        answer = dict(answers[winner]) if isinstance(answers[winner], dict) else answers[winner]
+        answer = (
+            dict(answers[winner])
+            if isinstance(answers[winner], dict)
+            else answers[winner]
+        )
         if isinstance(answer, dict) and "confidence" in answer:
             answer["confidence"] = round(agreement, 3)
-        return {"answer": answer, "how": "examples", "likeness": round(likeness, 3), "lessons": len(book)}
+        return {
+            "answer": answer,
+            "how": "examples",
+            "likeness": round(likeness, 3),
+            "lessons": len(book),
+        }
 
     def _by_meaning(
         self, step: str, question: str, book: list[dict[str, Any]]
@@ -303,11 +330,16 @@ class Lessons:
         with self._lock:
             book = self._book(step)
             book[:] = [item for item in book if item.get("request_hash") != digest]
-            book.append({
-                "question": question[:2000], "plain": plain[:2000],
-                "context": context,
-                "request_hash": digest, "answer": answer, "at": round(time.time()),
-            })
+            book.append(
+                {
+                    "question": question[:2000],
+                    "plain": plain[:2000],
+                    "context": context,
+                    "request_hash": digest,
+                    "answer": answer,
+                    "at": round(time.time()),
+                }
+            )
             del book[:-MAX_LESSONS]
             self._save(step, book)
 
@@ -315,7 +347,9 @@ class Lessons:
         path = self._path(step)
         path.parent.mkdir(parents=True, exist_ok=True)
         spare = path.with_suffix(".tmp")
-        spare.write_text(json.dumps(book, ensure_ascii=False, indent=1), encoding="utf-8")
+        spare.write_text(
+            json.dumps(book, ensure_ascii=False, indent=1), encoding="utf-8"
+        )
         spare.replace(path)
 
     def correct(
@@ -348,9 +382,7 @@ class Lessons:
         self.keep(step, question, answer, request=request)
         return False
 
-    def forget(
-        self, step: str, question: str, *, request: str | None = None
-    ) -> int:
+    def forget(self, step: str, question: str, *, request: str | None = None) -> int:
         """Drop every lesson kept for `question`; says how many went.
 
         Nothing is written when there was nothing to drop, and a forgotten

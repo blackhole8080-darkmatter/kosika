@@ -32,7 +32,11 @@ workflow main(a: Ask) -> Code {
 class PlainAnswerTests(unittest.TestCase):
     def test_a_fenced_file_is_written_as_itself(self) -> None:
         writer = ScriptedModelProvider(
-            [ModelResponse(content='Here it is:\n```python\ndef f():\n    return "x"\n```\n')]
+            [
+                ModelResponse(
+                    content='Here it is:\n```python\ndef f():\n    return "x"\n```\n'
+                )
+            ]
         )
         with tempfile.TemporaryDirectory() as folder:
             trace = Path(folder) / "trace.jsonl"
@@ -57,7 +61,9 @@ class PlainAnswerTests(unittest.TestCase):
         self.assertEqual(unfenced(two), two)
 
     def test_only_a_record_of_one_text_can_be_answered_as_text(self) -> None:
-        bad = SOURCE.replace("record Code { text: Text }", "record Code { text: Text lines: Number }")
+        bad = SOURCE.replace(
+            "record Code { text: Text }", "record Code { text: Text lines: Number }"
+        )
         with self.assertRaisesRegex(CheckError, "exactly one field, of type Text"):
             check(parse(bad))
 

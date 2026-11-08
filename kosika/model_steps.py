@@ -180,7 +180,9 @@ def unfenced(text: str) -> str:
     block it holds, or else all of it, without the blank lines around."""
 
     lines = text.strip().splitlines()
-    fences = [index for index, line in enumerate(lines) if line.lstrip().startswith("```")]
+    fences = [
+        index for index, line in enumerate(lines) if line.lstrip().startswith("```")
+    ]
     if len(fences) == 2:
         return "\n".join(lines[fences[0] + 1 : fences[1]])
     return text.strip()
@@ -210,7 +212,9 @@ def _call_plain(
         earlier.append(
             ChatMessage(
                 role="user",
-                content="That answer was rejected: " + reason + " Answer again, corrected.",
+                content="That answer was rejected: "
+                + reason
+                + " Answer again, corrected.",
             )
         )
     asked = arguments.get("text") if len(arguments) == 1 else None

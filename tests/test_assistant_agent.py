@@ -216,10 +216,13 @@ class OrbTests(unittest.TestCase):
         import re
 
         fetched = [
-            u for u in re.findall(r"url\(\s*['\"]?([^'\")]*)", self.page)
+            u
+            for u in re.findall(r"url\(\s*['\"]?([^'\")]*)", self.page)
             if not u.startswith(("data:", "#", "%23"))
         ]
-        self.assertEqual(sorted(fetched), ["/fonts/EBGaramond.ttf", "/fonts/Figtree.ttf"])
+        self.assertEqual(
+            sorted(fetched), ["/fonts/EBGaramond.ttf", "/fonts/Figtree.ttf"]
+        )
 
 
 if __name__ == "__main__":

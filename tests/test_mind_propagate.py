@@ -12,7 +12,10 @@ def test_propagate_writes_one_delta_per_peer_inbox(tmp_path):
     for inbox in (a, b):
         files = list(inbox.glob("mind-delta-*.json"))
         assert len(files) == 1
-        assert json.loads(files[0].read_text(encoding="utf-8"))["rule"] == "photosynthesis needs light"
+        assert (
+            json.loads(files[0].read_text(encoding="utf-8"))["rule"]
+            == "photosynthesis needs light"
+        )
 
 
 def test_propagate_to_no_peers_writes_nothing(tmp_path):

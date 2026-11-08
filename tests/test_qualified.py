@@ -76,9 +76,7 @@ class AskedModelsTests(unittest.TestCase):
         self.assertEqual(qualified.asked_models(program), ("qwen2.5:7b",))
 
     def test_the_override_names_what_runs(self) -> None:
-        self.assertEqual(
-            qualified.override_names("fast,strong=big"), ("fast", "big")
-        )
+        self.assertEqual(qualified.override_names("fast,strong=big"), ("fast", "big"))
         self.assertEqual(qualified.override_names(None), ())
 
     def test_a_program_that_asks_no_model_asks_nothing_of_the_ledger(self) -> None:
@@ -157,7 +155,9 @@ class CommandTests(unittest.TestCase):
         self.source = self.root / "main.kos"
         self.source.write_text(PROGRAM, encoding="utf-8")
         self.inputs = self.root / "input.json"
-        self.inputs.write_text('{"ask": {"text": "Rent is 900 euros"}}', encoding="utf-8")
+        self.inputs.write_text(
+            '{"ask": {"text": "Rent is 900 euros"}}', encoding="utf-8"
+        )
         self.fixture = self.root / "answers.json"
         self.fixture.write_text(
             json.dumps({"assistant": [{"text": "900"}]}), encoding="utf-8"
@@ -180,8 +180,10 @@ class CommandTests(unittest.TestCase):
             *extra,
         ]
         out, err = StringIO(), StringIO()
-        with patch.object(sys, "argv", argv), redirect_stdout(out), redirect_stderr(
-            err
+        with (
+            patch.object(sys, "argv", argv),
+            redirect_stdout(out),
+            redirect_stderr(err),
         ):
             code = main()
         return code, out.getvalue() + err.getvalue()

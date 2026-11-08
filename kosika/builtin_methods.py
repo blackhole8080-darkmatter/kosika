@@ -367,7 +367,15 @@ def _count_item(items: list[Any], item: Any) -> int:
 
 
 _DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
-_WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+_WEEKDAYS = (
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+)
 
 
 def _date(text: str, name: str) -> datetime.date:
@@ -378,14 +386,18 @@ def _date(text: str, name: str) -> datetime.date:
             raise ValueError
         return datetime.date(int(text[:4]), int(text[5:7]), int(text[8:]))
     except ValueError:
-        raise RuntimeError(f"{name} needs a date written YYYY-MM-DD, got {text!r}") from None
+        raise RuntimeError(
+            f"{name} needs a date written YYYY-MM-DD, got {text!r}"
+        ) from None
 
 
 def _add_days(text: str, days: Any) -> str:
     if isinstance(days, bool) or days != int(days):
         raise RuntimeError("add_days needs a whole number of days")
     try:
-        return (_date(text, "add_days") + datetime.timedelta(days=int(days))).isoformat()
+        return (
+            _date(text, "add_days") + datetime.timedelta(days=int(days))
+        ).isoformat()
     except OverflowError:
         raise RuntimeError("add_days goes past the years 1 to 9999") from None
 

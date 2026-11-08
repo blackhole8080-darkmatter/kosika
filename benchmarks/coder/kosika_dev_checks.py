@@ -35,7 +35,9 @@ def value_of(expression: str, type_name: str) -> Any:
 
 def same(expression: str, type_name: str, expected: Any) -> None:
     got = value_of(expression, type_name)
-    assert got == expected and type(got) is type(expected), f"{expression} gave {got!r}, not {expected!r}"
+    assert got == expected and type(got) is type(expected), (
+        f"{expression} gave {got!r}, not {expected!r}"
+    )
 
 
 def trim_ends() -> None:
@@ -74,20 +76,44 @@ def scene_fade_in() -> None:
         from kosika.modules import load_program
 
         got = run(load_program(str(path)), "main", None, inputs={})
-    want = {"what": "fade", "to": 1, "start": 1, "seconds": 2, "ease": "out", "shape": "dot", "ok": True}
+    want = {
+        "what": "fade",
+        "to": 1,
+        "start": 1,
+        "seconds": 2,
+        "ease": "out",
+        "shape": "dot",
+        "ok": True,
+    }
     for key, value in want.items():
-        assert got[key] == value, f"fade_in(\"dot\", 1, 2).{key} is {got[key]!r}, not {value!r}"
+        assert got[key] == value, (
+            f'fade_in("dot", 1, 2).{key} is {got[key]!r}, not {value!r}'
+        )
     ran = subprocess.run(
         [sys.executable, "-m", "kosika.cli", "test", "kosika/std/scene.kos"],
-        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
     )
     assert ran.returncode == 0, ran.stdout[-600:] + ran.stderr[-600:]
     tests = ran.stdout.count("PASS")
-    assert tests >= 4, f"scene.kos has {tests} passing tests; it needs one more for fade_in"
-    assert "fade_in" in pathlib.Path("kosika/std/scene.kos").read_text(encoding="utf-8").split("test \"", 1)[1], "no test calls fade_in"
+    assert tests >= 4, (
+        f"scene.kos has {tests} passing tests; it needs one more for fade_in"
+    )
+    assert (
+        "fade_in"
+        in pathlib.Path("kosika/std/scene.kos")
+        .read_text(encoding="utf-8")
+        .split('test "', 1)[1]
+    ), "no test calls fade_in"
 
 
-CHECKS = {"trim-ends": trim_ends, "last-index-of": last_index_of, "scene-fade-in": scene_fade_in}
+CHECKS = {
+    "trim-ends": trim_ends,
+    "last-index-of": last_index_of,
+    "scene-fade-in": scene_fade_in,
+}
 
 if __name__ == "__main__":
     CHECKS[sys.argv[1]]()

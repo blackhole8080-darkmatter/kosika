@@ -98,9 +98,7 @@ def _index(program: Program) -> dict[str, dict]:
         "functions": {item.name: item for item in program.functions},
         "records": {item.name: item for item in program.records},
         "fields": {
-            record.name: {
-                field.name: field.type_name for field in record.fields
-            }
+            record.name: {field.name: field.type_name for field in record.fields}
             for record in program.records
         },
         "models": {item.name: item for item in program.models},
@@ -152,7 +150,7 @@ def _check_stores(program: Program) -> None:
         if not store.file.strip():
             raise CheckError(
                 f"Store {store.name!r} names an empty file; say which database "
-                "it means, as `at \"./notes.db\"`"
+                'it means, as `at "./notes.db"`'
             )
         named = store.file.replace("\\", "/")
         if named.startswith("/") or (
@@ -160,7 +158,7 @@ def _check_stores(program: Program) -> None:
         ):
             raise CheckError(
                 f"Store {store.name!r} names the file {store.file!r}; a store's "
-                "file is a path beside the program, as `at \"./notes.db\"`"
+                'file is a path beside the program, as `at "./notes.db"`'
             )
         if store.file in files:
             raise CheckError(
@@ -263,9 +261,11 @@ def _enum_values(program: Program, type_name: str) -> tuple[str, ...] | None:
 
 
 def _check_shapes(program: Program) -> None:
-    taken = {record.name for record in program.records} | {
-        enum.name for enum in program.enums
-    } | {choice.name for choice in program.choices}
+    taken = (
+        {record.name for record in program.records}
+        | {enum.name for enum in program.enums}
+        | {choice.name for choice in program.choices}
+    )
     seen: set[str] = set()
     for shape in program.shapes:
         if shape.name in seen:
@@ -314,9 +314,11 @@ def _check_enums(program: Program) -> None:
 
 
 def _check_choices(program: Program) -> None:
-    taken = {record.name for record in program.records} | {
-        enum.name for enum in program.enums
-    } | {shape.name for shape in program.shapes}
+    taken = (
+        {record.name for record in program.records}
+        | {enum.name for enum in program.enums}
+        | {shape.name for shape in program.shapes}
+    )
     seen: set[str] = set()
     choice_names = {choice.name for choice in program.choices}
     constructors: dict[str, str] = {}
@@ -326,8 +328,7 @@ def _check_choices(program: Program) -> None:
             raise CheckError(f"Choice {choice.name!r} is declared more than once")
         if choice.name in taken or choice.name in _PRIMITIVE_TYPES:
             raise CheckError(
-                f"Choice {choice.name!r} has the name of a record, enum, shape "
-                "or type"
+                f"Choice {choice.name!r} has the name of a record, enum, shape or type"
             )
         seen.add(choice.name)
         if not choice.alternatives:
@@ -621,11 +622,7 @@ def _expression_type(
         )
         values = _enum_values(program, subject_type)
         choice = _choice_named(program, subject_type)
-        if (
-            subject_type not in _PRIMITIVE_TYPES
-            and values is None
-            and choice is None
-        ):
+        if subject_type not in _PRIMITIVE_TYPES and values is None and choice is None:
             raise CheckError("Match subjects must be scalar values or a choice")
         seen: list[object] = []
         seen_alternatives: set[str] = set()
@@ -638,8 +635,7 @@ def _expression_type(
             if arm.alternative is not None:
                 if choice is None:
                     raise CheckError(
-                        f"Match alternative {arm.alternative!r} needs a choice "
-                        "subject"
+                        f"Match alternative {arm.alternative!r} needs a choice subject"
                     )
                 alternative = next(
                     (
@@ -931,7 +927,8 @@ def _expression_type(
                     f"{', '.join(item.name for item in shape.methods)}"
                 )
             rest = resolve_unnamed(
-                expression.arguments, [parameter.name for parameter in shape_method.parameters]
+                expression.arguments,
+                [parameter.name for parameter in shape_method.parameters],
             )
             _check_arguments(
                 program,
@@ -1336,9 +1333,7 @@ def _expression_type(
                 expected_fields={p.name: p.type_name for p in parameters},
             )
             return output
-        choice, alternative = _choice_alternative(
-            program, expression.function_name
-        )
+        choice, alternative = _choice_alternative(program, expression.function_name)
         if alternative is not None:
             arguments = resolve_unnamed(
                 expression.arguments,
@@ -1892,7 +1887,10 @@ def check(program: Program) -> None:
             raise
         raise CheckError(plain) from exc
     key = id(program)
-    _CHECKED[key] = (weakref.ref(program, lambda _ref: _CHECKED.pop(key, None)), SHAPES.get())
+    _CHECKED[key] = (
+        weakref.ref(program, lambda _ref: _CHECKED.pop(key, None)),
+        SHAPES.get(),
+    )
 
 
 def _check(program: Program) -> None:
@@ -2368,8 +2366,7 @@ def _check(program: Program) -> None:
             )
         if tool.output not in records and tool.output not in choices:
             raise CheckError(
-                f"Tool {tool.name!r} returns unknown record or choice "
-                f"{tool.output!r}"
+                f"Tool {tool.name!r} returns unknown record or choice {tool.output!r}"
             )
         if tool.input is not None and tool.input not in records:
             raise CheckError(
@@ -2514,15 +2511,19 @@ def _check(program: Program) -> None:
                     )
                 patterns = [pattern for pattern, _ in step.branches]
                 for pattern in patterns:
-                    if values is not None and pattern is not None and (
-                        not isinstance(pattern, str) or pattern not in values
+                    if (
+                        values is not None
+                        and pattern is not None
+                        and (not isinstance(pattern, str) or pattern not in values)
                     ):
                         raise CheckError(
                             f"Enum {subject_type!r} has no value {pattern!r}; "
                             f"it has: {', '.join(values)}"
                         )
-                if patterns and patterns[-1] is not None and (
-                    values is None or set(patterns) != set(values)
+                if (
+                    patterns
+                    and patterns[-1] is not None
+                    and (values is None or set(patterns) != set(values))
                 ):
                     raise CheckError(
                         f"Step {step.name!r} match must end with exactly one `case _`"

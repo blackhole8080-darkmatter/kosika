@@ -94,6 +94,7 @@ _AFTER_A_CALL = frozenset(
     {"verify", "vote", "retry", "escalate", "learn", "otherwise", "}"}
 )
 
+
 def _is_value_call(call: object) -> bool:
     return isinstance(call, FunctionCall) and call.function_name == VALUE_CALL
 
@@ -101,7 +102,18 @@ def _is_value_call(call: object) -> bool:
 #: Words that begin a workflow step. Written where a value is expected, they
 #: are reported as such; see `parse_primary_expression`.
 _STEP_WORDS = frozenset(
-    {"classify", "extract", "summarize", "decide", "use_model", "ask", "execute", "recall", "remember", "call"}
+    {
+        "classify",
+        "extract",
+        "summarize",
+        "decide",
+        "use_model",
+        "ask",
+        "execute",
+        "recall",
+        "remember",
+        "call",
+    }
 )
 
 
@@ -163,7 +175,9 @@ class Parser:
                     depth += 1
                 elif token.value in ("]", ")"):
                     depth -= 1
-                elif token.value == "=" and depth == 0 and token.kind in {"SYMBOL", "OP"}:
+                elif (
+                    token.value == "=" and depth == 0 and token.kind in {"SYMBOL", "OP"}
+                ):
                     return True
                 elif token.line != following.line or token.value in ("{", "}"):
                     return False
@@ -377,9 +391,7 @@ class Parser:
                         self.expect("{")
                         value = self.expression()
                         self.expect("}")
-                        arms.append(
-                            MatchArm(None, value, token.value, tuple(bindings))
-                        )
+                        arms.append(MatchArm(None, value, token.value, tuple(bindings)))
                         continue
                     else:
                         raise ParseError(
@@ -524,7 +536,11 @@ class Parser:
                 value = LiteralExpr(token.value)
             elif token.kind == "NUMBER":
                 self.advance()
-                number = float(token.value) if any(ch in token.value for ch in ".eE") else int(token.value)
+                number = (
+                    float(token.value)
+                    if any(ch in token.value for ch in ".eE")
+                    else int(token.value)
+                )
                 value = LiteralExpr(number)
             elif token.kind == "IDENT":
                 self.advance()
@@ -712,10 +728,7 @@ class Parser:
             fields.append((name, self.expression()))
             if self.accept("}"):
                 return RecordExpr(tuple(fields), base)
-            if (
-                self.current.kind in ("IDENT", "STRING")
-                and self.peek().value == ":"
-            ):
+            if self.current.kind in ("IDENT", "STRING") and self.peek().value == ":":
                 # `{title: t field: f}`: fields need no comma between them,
                 # as in a record's declaration.
                 continue
@@ -1010,9 +1023,7 @@ class Parser:
                     f"got {number.value!r}"
                 )
             self.advance()
-            value = (
-                int(number.value) if number.value.isdigit() else float(number.value)
-            )
+            value = int(number.value) if number.value.isdigit() else float(number.value)
             return -value
         raise ParseError(
             f"Expected value at {token.line}:{token.column}, got {token.value!r}"
@@ -1412,15 +1423,11 @@ class Parser:
                     while True:
                         field_name = self.identifier()
                         self.expect(":")
-                        fields.append(
-                            ChoiceField(field_name, self.parse_type_name())
-                        )
+                        fields.append(ChoiceField(field_name, self.parse_type_name()))
                         if self.accept(")"):
                             break
                         self.expect(",")
-            alternatives.append(
-                ChoiceAlternative(alternative_name, tuple(fields))
-            )
+            alternatives.append(ChoiceAlternative(alternative_name, tuple(fields)))
             self.accept(",")
         return ChoiceDecl(name, tuple(alternatives))
 
@@ -1447,7 +1454,9 @@ class Parser:
                 if not self.check(")"):
                     self.expect(",")
             self.expect("->")
-            methods.append(ShapeMethod(method, tuple(parameters), self.parse_type_name()))
+            methods.append(
+                ShapeMethod(method, tuple(parameters), self.parse_type_name())
+            )
         return ShapeDecl(name, tuple(methods))
 
     def parse_default(self) -> Expression | None:
@@ -1670,9 +1679,7 @@ class Parser:
                     pattern = token.value
                 elif token.kind == "NUMBER":
                     pattern = (
-                        float(token.value)
-                        if "." in token.value
-                        else int(token.value)
+                        float(token.value) if "." in token.value else int(token.value)
                     )
                 elif token.kind == "IDENT" and token.value in ("true", "false"):
                     pattern = token.value == "true"

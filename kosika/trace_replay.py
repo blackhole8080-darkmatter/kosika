@@ -91,12 +91,13 @@ def _approval_problem(
     if (
         not isinstance(step, list)
         or not all(isinstance(part, str) for part in step)
-        or step[len(step) - len(scope):] != scope
+        or step[len(step) - len(scope) :] != scope
     ):
         return "it was given for another step"
-    if action_hash(
-        approval["plan_hash"], json.dumps([*step, tool]), arguments
-    ) != approval["action_hash"]:
+    if (
+        action_hash(approval["plan_hash"], json.dumps([*step, tool]), arguments)
+        != approval["action_hash"]
+    ):
         return "its action hash is over other arguments"
     return None
 
@@ -305,9 +306,7 @@ def replay_events(
                 # run recorded is put to SQLite itself, against the tables the
                 # run recorded, so a trace whose statement is not one the tool
                 # could have sent is refused (see kosika.database.sent_problem).
-                problem = sent_problem(
-                    call.get("operation"), call["arguments"], tables
-                )
+                problem = sent_problem(call.get("operation"), call["arguments"], tables)
                 if problem is not None:
                     raise ValueError(
                         f"Trace database call to {call['tool']!r} could not have "

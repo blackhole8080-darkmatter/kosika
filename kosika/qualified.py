@@ -80,7 +80,11 @@ def asked_models(program: Program, override: str | None = None) -> tuple[str, ..
                 while model is not None and model.provider and seen < 8:
                     model = declared.get(model.provider)
                     seen += 1
-                name = (model.deployment or model.name) if model is not None else call.model_name
+                name = (
+                    (model.deployment or model.name)
+                    if model is not None
+                    else call.model_name
+                )
                 if name not in asked:
                     asked.append(name)
     return tuple(asked)

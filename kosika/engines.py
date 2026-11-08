@@ -153,10 +153,7 @@ def take_engine(argv: list[str]) -> tuple[str | None, list[str]]:
         token = argv[index]
         if token == "--engine":
             if index + 1 >= len(argv):
-                raise EngineError(
-                    "`--engine` needs a name: "
-                    + ", ".join(ENGINES)
-                )
+                raise EngineError("`--engine` needs a name: " + ", ".join(ENGINES))
             name = argv[index + 1]
             index += 2
             continue

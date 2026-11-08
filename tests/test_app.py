@@ -280,9 +280,13 @@ class RefusalTests(unittest.TestCase):
             'tool run_tests {\n  source system "shell"\n  operation: "run"\n'
             "  access: execute\n  input: P\n  output: L\n}\n"
         )
-        folder = plain_refusal(program, "Agent tool 'list_folder' has no authorized host binding")
+        folder = plain_refusal(
+            program, "Agent tool 'list_folder' has no authorized host binding"
+        )
         self.assertIn("Choose a folder", folder)
-        shell = plain_refusal(program, "Agent tool 'run_tests' has no authorized host binding")
+        shell = plain_refusal(
+            program, "Agent tool 'run_tests' has no authorized host binding"
+        )
         self.assertIn("Let agents start programs", shell)
         other = "Agent 'coder' has no authorized model binding"
         self.assertEqual(plain_refusal(program, other), other)

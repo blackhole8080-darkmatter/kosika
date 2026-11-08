@@ -91,7 +91,11 @@ AGENTS = REPO / "examples" / "agents"
 
 
 def binder_for(args: argparse.Namespace) -> Any:
-    url = args.url or ("http://localhost:11434" if args.protocol == "ollama" else "http://localhost:11434/v1")
+    url = args.url or (
+        "http://localhost:11434"
+        if args.protocol == "ollama"
+        else "http://localhost:11434/v1"
+    )
 
     def binder(program: Any) -> dict[str, Any]:
         return {
@@ -123,7 +127,9 @@ def by_language(results: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
 
     tally: dict[str, dict[str, Any]] = {}
     for result in results:
-        row = tally.setdefault(str(result.get("language") or "unknown"), {"passed": 0, "tasks": 0})
+        row = tally.setdefault(
+            str(result.get("language") or "unknown"), {"passed": 0, "tasks": 0}
+        )
         row["passed"] += 1 if result["passed"] else 0
         row["tasks"] += 1
     return dict(sorted(tally.items()))
@@ -226,8 +232,13 @@ def checked(folder: Path, checks: list[list[str]]) -> tuple[list[str], list[str]
             continue
         try:
             ran = subprocess.run(
-                [program, *command[1:]], cwd=folder, capture_output=True, text=True,
-                encoding="utf-8", errors="replace", timeout=120,
+                [program, *command[1:]],
+                cwd=folder,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=120,
             )
         except subprocess.TimeoutExpired:
             # A check that never returns is a failing check, not the end of the
@@ -236,10 +247,22 @@ def checked(folder: Path, checks: list[list[str]]) -> tuple[list[str], list[str]
             why.append(" ".join(command[:2]) + " said:\n  it did not finish in 120 s")
             continue
         if ran.returncode != 0:
-            said = [line.rstrip() for line in (ran.stdout + ran.stderr).splitlines() if line.strip()]
-            failed.append(" ".join(command[:3]) + ": " + (said[-1] if said else f"exit {ran.returncode}"))
+            said = [
+                line.rstrip()
+                for line in (ran.stdout + ran.stderr).splitlines()
+                if line.strip()
+            ]
+            failed.append(
+                " ".join(command[:3])
+                + ": "
+                + (said[-1] if said else f"exit {ran.returncode}")
+            )
             tail = told(said, folder)[-6:] or [f"exit {ran.returncode}"]
-            why.append(" ".join(command[:2]) + " said:\n" + "\n".join("  " + line[:200] for line in tail))
+            why.append(
+                " ".join(command[:2])
+                + " said:\n"
+                + "\n".join("  " + line[:200] for line in tail)
+            )
     return failed, why
 
 
@@ -253,7 +276,9 @@ def copy_committed(paths: list[str], folder: Path) -> None:
 
     archive = subprocess.run(
         ["git", "archive", "--format=tar", "HEAD", *paths],
-        cwd=REPO, capture_output=True, check=True,
+        cwd=REPO,
+        capture_output=True,
+        check=True,
     ).stdout
     with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
         tar.extractall(folder, filter="data")
@@ -264,7 +289,11 @@ def prepare(args: argparse.Namespace, task: dict[str, Any]) -> tuple[Path, Path,
 
     # An outside agent may only be shown a folder inside the one root the
     # owner named, so with one allowed the work happens there.
-    scratch = Path(tempfile.mkdtemp(prefix="kosika-coder-bench-", dir=args.within if args.outside else None))
+    scratch = Path(
+        tempfile.mkdtemp(
+            prefix="kosika-coder-bench-", dir=args.within if args.outside else None
+        )
+    )
     folder = scratch / task["folder"]
     source = HERE / "project" / task["folder"]
     if source.is_dir():
@@ -276,10 +305,20 @@ def prepare(args: argparse.Namespace, task: dict[str, Any]) -> tuple[Path, Path,
     # A fresh copy of the agent each time: nothing it learned or remembered
     # in one task, or with another model, may help it in the next.
     agents = scratch / "_kosika"
-    shutil.copytree(AGENTS / "coder", agents / "coder", ignore=shutil.ignore_patterns("memory", "runs"))
-    app = App(agents, bind_models=binder_for(args), model_label=args.model,
-              allow_folder=folder, allow_shell=True,
-              outside=tuple(args.outside), outside_within=Path(args.within) if args.outside else None)
+    shutil.copytree(
+        AGENTS / "coder",
+        agents / "coder",
+        ignore=shutil.ignore_patterns("memory", "runs"),
+    )
+    app = App(
+        agents,
+        bind_models=binder_for(args),
+        model_label=args.model,
+        allow_folder=folder,
+        allow_shell=True,
+        outside=tuple(args.outside),
+        outside_within=Path(args.within) if args.outside else None,
+    )
     return scratch, folder, app
 
 
@@ -304,7 +343,10 @@ def run_attempt(
     started = time.monotonic()
     job = app.start(agent, {"text": asked})
     approved = 0
-    while job.state in ("running", "waiting") and time.monotonic() - started < args.limit_seconds:
+    while (
+        job.state in ("running", "waiting")
+        and time.monotonic() - started < args.limit_seconds
+    ):
         if job.state == "waiting":
             approved += 1
             app.decide(job.id, True)
@@ -319,15 +361,20 @@ def run_attempt(
     seconds = round(time.monotonic() - started, 1)
     failures, excerpts = checked(folder, task["checks"])
     written = sorted(
-        str(path.relative_to(folder)) for path in folder.rglob("*")
-        if path.is_file() and "__pycache__" not in path.parts and ".pytest_cache" not in path.parts
+        str(path.relative_to(folder))
+        for path in folder.rglob("*")
+        if path.is_file()
+        and "__pycache__" not in path.parts
+        and ".pytest_cache" not in path.parts
     )
     result = {
         "id": task["id"],
         "attempt": number,
         "asked": asked[:1000],
         "passed": not failures and job.state == "done",
-        "state": job.state if job.state in ("done", "failed", "refused") else "out of time",
+        "state": job.state
+        if job.state in ("done", "failed", "refused")
+        else "out of time",
         "abandoned": abandoned,
         "seconds": seconds,
         "approvals": approved,
@@ -347,7 +394,9 @@ def repair_text(task_text: str, excerpts: list[str], number: int) -> str:
 
     return (
         task_text
-        + "\n\nThis is attempt " + str(number) + " at the same task. The attempt before it did "
+        + "\n\nThis is attempt "
+        + str(number)
+        + " at the same task. The attempt before it did "
         "not pass its checks. This is what they said:\n\n"
         + "\n\n".join(excerpts)
         + "\n\nThe folder still holds that attempt's files. Make the checks pass, and keep "
@@ -379,9 +428,7 @@ def run_task(args: argparse.Namespace, task: dict[str, Any]) -> dict[str, Any]:
         if args.repair and attempt["excerpts"]:
             asked = repair_text(task["task"], attempt["excerpts"], number + 1)
     drop(scratch, args.keep)
-    winner = next(
-        (item for item in attempts if item["passed"]), attempts[-1]
-    )
+    winner = next((item for item in attempts if item["passed"]), attempts[-1])
     result = {
         "id": task["id"],
         "language": task.get("language") or "unknown",
@@ -416,40 +463,83 @@ def describe_report(path: Path) -> dict[str, Any]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
-    parser.add_argument("--model", help="The model the agent is given. Not needed with --compare.")
+    parser.add_argument(
+        "--model", help="The model the agent is given. Not needed with --compare."
+    )
     parser.add_argument("--url", help="A model server other than the local Ollama.")
     parser.add_argument("--protocol", choices=("ollama", "openai"), default="ollama")
-    parser.add_argument("--timeout", type=float, default=900.0, help="Seconds a model may take to answer once.")
-    parser.add_argument("--limit-seconds", type=float, default=3600.0, help="Seconds a task may take.")
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=900.0,
+        help="Seconds a model may take to answer once.",
+    )
+    parser.add_argument(
+        "--limit-seconds", type=float, default=3600.0, help="Seconds a task may take."
+    )
     parser.add_argument("--only", help="Run only the task with this id.")
-    parser.add_argument("--keep", action="store_true", help="Keep each task's folder to look at.")
-    parser.add_argument("--outside", action="append", default=[], help="An outside agent the coder may ask first, such as cline. May be repeated.")
-    parser.add_argument("--within", default=str(Path.home() / "Aryan_Private" / "kosika-bench"), help="The only folder outside agents may be shown; the tasks run inside it.")
-    parser.add_argument("--tasks", default="tasks.json", help="The task file in this folder: tasks.json, hard.json, hard2.json, or kosika_dev.json.")
-    parser.add_argument("--best-of", type=int, default=1, metavar="N",
-                        help="Give each task up to N independent attempts, stopping at the first that passes.")
-    parser.add_argument("--repair", action="store_true",
-                        help="Keep the folder and tell each attempt what the failing checks said, instead of starting fresh.")
-    parser.add_argument("--compare", nargs="+", default=[], metavar="FILE",
-                        help="Print the attempt ladders of these saved result files.")
+    parser.add_argument(
+        "--keep", action="store_true", help="Keep each task's folder to look at."
+    )
+    parser.add_argument(
+        "--outside",
+        action="append",
+        default=[],
+        help="An outside agent the coder may ask first, such as cline. May be repeated.",
+    )
+    parser.add_argument(
+        "--within",
+        default=str(Path.home() / "Aryan_Private" / "kosika-bench"),
+        help="The only folder outside agents may be shown; the tasks run inside it.",
+    )
+    parser.add_argument(
+        "--tasks",
+        default="tasks.json",
+        help="The task file in this folder: tasks.json, hard.json, hard2.json, or kosika_dev.json.",
+    )
+    parser.add_argument(
+        "--best-of",
+        type=int,
+        default=1,
+        metavar="N",
+        help="Give each task up to N independent attempts, stopping at the first that passes.",
+    )
+    parser.add_argument(
+        "--repair",
+        action="store_true",
+        help="Keep the folder and tell each attempt what the failing checks said, instead of starting fresh.",
+    )
+    parser.add_argument(
+        "--compare",
+        nargs="+",
+        default=[],
+        metavar="FILE",
+        help="Print the attempt ladders of these saved result files.",
+    )
     args = parser.parse_args()
     if args.compare:
         try:
             reports = [describe_report(Path(name)) for name in args.compare]
         except (OSError, ValueError) as exc:
             parser.error(f"--compare could not read a result file: {exc}")
-        print(f"{'file':34} {'model':20} {'mode':8} {'attempts':>8}  passed   wall clock")
+        print(
+            f"{'file':34} {'model':20} {'mode':8} {'attempts':>8}  passed   wall clock"
+        )
         for report in reports:
             for k, row in report["summary"].items():
-                print(f"{report['file'][:33]:34} {report['model'][:19]:20} {report['mode']:8} {k:>8}  "
-                      f"{row.get('passed', 0)}/{row.get('tasks', 0)}     {row.get('seconds', 0):.0f} s")
+                print(
+                    f"{report['file'][:33]:34} {report['model'][:19]:20} {report['mode']:8} {k:>8}  "
+                    f"{row.get('passed', 0)}/{row.get('tasks', 0)}     {row.get('seconds', 0):.0f} s"
+                )
         return 0
     if not args.model:
         parser.error("--model is needed unless --compare names saved runs")
     if args.best_of < 1:
         parser.error("--best-of must be 1 or more")
     if args.repair and args.best_of < 2:
-        parser.error("--repair needs --best-of 2 or more: one attempt has nothing to repair from")
+        parser.error(
+            "--repair needs --best-of 2 or more: one attempt has nothing to repair from"
+        )
     if args.url and args.protocol == "ollama":
         args.protocol = "openai"
     if args.outside:
@@ -463,12 +553,18 @@ def main() -> int:
         result = run_task(args, task)
         results.append(result)
         used = len(result["attempts"])
-        print(f"  {'PASS' if result['passed'] else 'FAIL'}  {result['state']}, {result['seconds']} s"
-              + (f", {used} attempts" if args.best_of > 1 else "")
-              + (f"  {result['failures'][0]}" if result["failures"] else ""), flush=True)
+        print(
+            f"  {'PASS' if result['passed'] else 'FAIL'}  {result['state']}, {result['seconds']} s"
+            + (f", {used} attempts" if args.best_of > 1 else "")
+            + (f"  {result['failures'][0]}" if result["failures"] else ""),
+            flush=True,
+        )
     passed = sum(1 for result in results if result["passed"])
     mode = "repair" if args.repair else "best-of"
-    print(f"{passed} of {len(results)} passed with {args.model}" + (" in repair mode" if args.repair else ""))
+    print(
+        f"{passed} of {len(results)} passed with {args.model}"
+        + (" in repair mode" if args.repair else "")
+    )
     summary = {}
     for k in ladder(args.best_of):
         rows = [result["summary"][str(k)] for result in results]
@@ -483,19 +579,31 @@ def main() -> int:
         print("attempts   passed   wall clock")
         for k, row in summary.items():
             print(f"{k:>8}   {row['passed']}/{row['tasks']}     {row['seconds']:.0f} s")
-        print("The clock counts only the attempts that were made: a task stops at its first pass.")
+        print(
+            "The clock counts only the attempts that were made: a task stops at its first pass."
+        )
     languages = by_language(results)
     print("")
     print("language     passed   tasks")
     for name, row in languages.items():
         print(f"{name:12} {row['passed']}/{row['tasks']}")
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    out = HERE / "results" / f"{stamp}-{args.model.replace(':', '_').replace('/', '_')}.json"
+    out = (
+        HERE
+        / "results"
+        / f"{stamp}-{args.model.replace(':', '_').replace('/', '_')}.json"
+    )
     out.write_text(
         json.dumps(
-            {"model": args.model, "url": args.url, "mode": mode,
-             "best_of": args.best_of, "summary": summary, "languages": languages,
-             "results": results},
+            {
+                "model": args.model,
+                "url": args.url,
+                "mode": mode,
+                "best_of": args.best_of,
+                "summary": summary,
+                "languages": languages,
+                "results": results,
+            },
             indent=2,
         ),
         encoding="utf-8",

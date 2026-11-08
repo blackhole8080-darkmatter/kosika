@@ -23,12 +23,14 @@ from typing import Any, Dict, List, Optional
 
 class MCPToolAccess(Enum):
     """Access levels for MCP tools."""
+
     OBSERVE = "observe"  # Read-only access
     EXECUTE = "execute"  # Read and write access
 
 
 class MCPToolKind(Enum):
     """Types of MCP tools."""
+
     FUNCTION = "function"  # Function call
     RESOURCE = "resource"  # Resource access
     PROMPT = "prompt"  # Prompt template
@@ -37,6 +39,7 @@ class MCPToolKind(Enum):
 @dataclass
 class MCPToolParameter:
     """A parameter for an MCP tool."""
+
     name: str
     type: str  # string, number, boolean, array, object
     description: str = ""
@@ -48,6 +51,7 @@ class MCPToolParameter:
 @dataclass
 class MCPTool:
     """A tool exposed by an MCP server."""
+
     name: str
     description: str
     kind: MCPToolKind
@@ -90,6 +94,7 @@ class MCPTool:
 @dataclass
 class MCPResource:
     """A resource exposed by an MCP server."""
+
     uri: str
     name: str
     description: str
@@ -100,6 +105,7 @@ class MCPResource:
 @dataclass
 class MCPServer:
     """An MCP server declaration."""
+
     id: str
     name: str
     description: str
@@ -179,7 +185,7 @@ from mcp import FastMCP
 
 mcp = FastMCP("{self.name}")
 
-{''.join(tools_code)}
+{"".join(tools_code)}
 
 if __name__ == "__main__":
     mcp.run()
@@ -232,7 +238,7 @@ const server = new Server({{
   }},
 }},
 
-{''.join(tools_code)}
+{"".join(tools_code)}
 
 async function main() {{
   const transport = new StdioServerTransport();
@@ -273,9 +279,9 @@ main().catch(console.error);
             if param.description:
                 prop += f', description: "{param.description}"'
             if param.default is not None:
-                prop += f', default: {json.dumps(param.default)}'
+                prop += f", default: {json.dumps(param.default)}"
             if param.enum:
-                prop += f', enum: {json.dumps(param.enum)}'
+                prop += f", enum: {json.dumps(param.enum)}"
             prop += " },"
             props.append(prop)
         return "\n".join(props)

@@ -107,7 +107,11 @@ def shown(tasks: list[dict[str, object]]) -> str:
         due = f" (due {task['due']})" if task.get("due") else ""
         rows.append(f"{task['id']}: [{status}] {task['title']}{due}")
     text = "\n".join(rows)
-    return text if len(text) <= MAX_RESPONSE_LENGTH else text[:MAX_RESPONSE_LENGTH] + "\n[cut]"
+    return (
+        text
+        if len(text) <= MAX_RESPONSE_LENGTH
+        else text[:MAX_RESPONSE_LENGTH] + "\n[cut]"
+    )
 
 
 def call(name: str, arguments: dict) -> str:
@@ -129,7 +133,9 @@ def call(name: str, arguments: dict) -> str:
             raise ValueError("a task needs a title")
         title = title.strip()
         if len(title) > MAX_TITLE_LENGTH:
-            raise ValueError(f"task titles must be at most {MAX_TITLE_LENGTH} characters")
+            raise ValueError(
+                f"task titles must be at most {MAX_TITLE_LENGTH} characters"
+            )
         if len(tasks) >= MAX_TASKS:
             raise ValueError(f"task list is limited to {MAX_TASKS} items")
         due = arguments.get("due")
