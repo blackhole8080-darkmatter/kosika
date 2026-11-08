@@ -2881,12 +2881,16 @@ async function follow(agent, body, live, onAsk, onWrite, path) {
   for (;;) {
     const view = await api("/api/poll?run=" + run + "&since=" + since);
     since = view.next;
+    // A page that attaches late can receive a whole run at once. Replaying
+    // hundreds of events at their recorded spacing would leave the panel
+    // minutes behind a finished run, so a backlog is applied at once.
+    const backlog = view.events.length > 40 || view.state !== "running";
     for (const event of view.events) {
       // Each event is shown when it really happened, counted from the start
       // of the run. Events that arrive late (the page asks every so often)
       // are caught up quickly but keep their order and their spacing, a
       // little squeezed, so a slow step still looks slow and a fast one fast.
-      if (typeof event.at === "number") {
+      if (!backlog && typeof event.at === "number") {
         if (clock === null) clock = performance.now() - event.at * 1000;
         const wait = clock + event.at * 1000 - performance.now();
         if (wait > 0) await sleep(Math.min(wait, 4000));

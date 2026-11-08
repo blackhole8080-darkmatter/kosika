@@ -11,6 +11,7 @@ them, and the mix is mastered to about -16 LUFS.
 
 Requires numpy and the standard library only.
 """
+
 import argparse
 import wave
 
@@ -19,6 +20,7 @@ import numpy as np
 SR = 48000
 DUR = 18.0
 N = int(SR * DUR)
+
 
 # ── the room ───────────────────────────────────────────────────────────
 def impulse(seconds=2.4, decay=3.0, seed=3):
@@ -46,7 +48,9 @@ def reverb(x, wet=0.35):
     n = len(x)
     a = np.convolve(x[:, 0], IR_L)[:n]
     b = np.convolve(x[:, 1], IR_R)[:n]
-    return np.stack([x[:, 0] * (1 - wet) + a * wet, x[:, 1] * (1 - wet) + b * wet], axis=1)
+    return np.stack(
+        [x[:, 0] * (1 - wet) + a * wet, x[:, 1] * (1 - wet) + b * wet], axis=1
+    )
 
 
 def env(n, attack, release, curve=4.0):
@@ -55,7 +59,7 @@ def env(n, attack, release, curve=4.0):
     e = np.ones(n)
     e[:a] = np.linspace(0, 1, a) ** 1.5
     tail = np.linspace(1, 0, min(r, n)) ** curve
-    e[-len(tail):] = tail
+    e[-len(tail) :] = tail
     return e
 
 
@@ -64,10 +68,10 @@ def place(buf, sig, t0, gain=1.0, pan=0.0):
     if i >= N:
         return
     s = sig[: N - i]
-    l = gain * (1.0 - max(0.0, pan)) ** 0.5
-    r = gain * (1.0 + min(0.0, pan)) ** 0.5
-    buf[i:i + len(s), 0] += s * l
-    buf[i:i + len(s), 1] += s * r
+    left = gain * (1.0 - max(0.0, pan)) ** 0.5
+    right = gain * (1.0 + min(0.0, pan)) ** 0.5
+    buf[i : i + len(s), 0] += s * left
+    buf[i : i + len(s), 1] += s * right
 
 
 def tone(freq, dur, shape="sine", detune=0.0):
@@ -112,8 +116,10 @@ def thud(seconds=0.9, f0=92, seed=5):
 def tick(f=2400, seconds=0.09, seed=9):
     n = int(seconds * SR)
     t = np.arange(n) / SR
-    return (bandpass(noise(seconds, seed), 0.25, 0.9) * np.exp(-70 * t) * 0.6
-            + np.sin(2 * np.pi * f * t) * np.exp(-55 * t) * 0.25)
+    return (
+        bandpass(noise(seconds, seed), 0.25, 0.9) * np.exp(-70 * t) * 0.6
+        + np.sin(2 * np.pi * f * t) * np.exp(-55 * t) * 0.25
+    )
 
 
 def swell(seconds=1.4, seed=2):
@@ -127,7 +133,12 @@ def bell(f=880, seconds=1.8):
     n = int(seconds * SR)
     t = np.arange(n) / SR
     s = np.zeros(n)
-    for ratio, amp, dec in [(1, 1.0, 3.2), (2.01, .5, 5.0), (3.02, .28, 7.0), (4.7, .12, 9.0)]:
+    for ratio, amp, dec in [
+        (1, 1.0, 3.2),
+        (2.01, 0.5, 5.0),
+        (3.02, 0.28, 7.0),
+        (4.7, 0.12, 9.0),
+    ]:
         s += amp * np.sin(2 * np.pi * f * ratio * t) * np.exp(-dec * t)
     return s * 0.5
 
@@ -138,86 +149,144 @@ hits = np.zeros((N, 2))
 bed = np.zeros((N, 2))
 
 # the bed: one low chord, opening slowly, closing at the end
-for f, g0 in [(55.0, .34), (82.5, .20), (110.0, .13), (164.8, .07)]:
+for f, g0 in [(55.0, 0.34), (82.5, 0.20), (110.0, 0.13), (164.8, 0.07)]:
     t = np.arange(N) / SR
     s = np.sin(2 * np.pi * f * t) * (0.5 + 0.5 * np.sin(2 * np.pi * 0.07 * t + f))
-    breath = np.clip(np.sin(np.pi * t / DUR) ** .6, 0, 1)
-    bed[:, 0] += s * g0 * breath * .5
-    bed[:, 1] += np.roll(s, 700) * g0 * breath * .5
+    breath = np.clip(np.sin(np.pi * t / DUR) ** 0.6, 0, 1)
+    bed[:, 0] += s * g0 * breath * 0.5
+    bed[:, 1] += np.roll(s, 700) * g0 * breath * 0.5
 
 # the dot: a soft airy pad that arrives with the first frame
-place(bed, bandpass(noise(3.2, 21), .01, .05) * env(int(3.2 * SR), .9, 1.4) * .5, 0.05, .55)
-place(bed, tone(220.0, 4.2) * env(int(4.2 * SR), 1.2, 2.0) * .10, 0.2)
+place(
+    bed,
+    bandpass(noise(3.2, 21), 0.01, 0.05) * env(int(3.2 * SR), 0.9, 1.4) * 0.5,
+    0.05,
+    0.55,
+)
+place(bed, tone(220.0, 4.2) * env(int(4.2 * SR), 1.2, 2.0) * 0.10, 0.2)
 
 # 1.0–2.2 the orbit draws itself: a rising air tone, panned with the dot
-place(hits, bandpass(noise(1.5, 31), .03, .13) * env(int(1.5 * SR), .5, .7) * .28, 1.0, .5, -.3)
-place(hits, tone(330.0, 1.4) * env(int(1.4 * SR), .7, .5) * .07, 1.05, 1.0, .3)
+place(
+    hits,
+    bandpass(noise(1.5, 31), 0.03, 0.13) * env(int(1.5 * SR), 0.5, 0.7) * 0.28,
+    1.0,
+    0.5,
+    -0.3,
+)
+place(hits, tone(330.0, 1.4) * env(int(1.4 * SR), 0.7, 0.5) * 0.07, 1.05, 1.0, 0.3)
 
 # 2.2 the wordmark lands
-place(hits, thud(1.2, 72, 41), 2.24, .55)
+place(hits, thud(1.2, 72, 41), 2.24, 0.55)
 for i, ch in enumerate("KOSIKA"):
-    place(hits, tick(1800 + i * 160, .08, 60 + i), 2.22 + i * .055, .10, -.4 + i * .13)
+    place(
+        hits,
+        tick(1800 + i * 160, 0.08, 60 + i),
+        2.22 + i * 0.055,
+        0.10,
+        -0.4 + i * 0.13,
+    )
 
 # 3.5 the line draws
-place(hits, bandpass(noise(.6, 71), .2, .6) * env(int(.6 * SR), .05, .5) * .10, 3.5, .6)
+place(
+    hits,
+    bandpass(noise(0.6, 71), 0.2, 0.6) * env(int(0.6 * SR), 0.05, 0.5) * 0.10,
+    3.5,
+    0.6,
+)
 
 # 4.3 the ring opens: a filtered rise, then the run's air
-place(hits, bandpass(noise(1.2, 81), .02, .3) * env(int(1.2 * SR), .7, .35) * .22, 4.35, .7)
+place(
+    hits,
+    bandpass(noise(1.2, 81), 0.02, 0.3) * env(int(1.2 * SR), 0.7, 0.35) * 0.22,
+    4.35,
+    0.7,
+)
 
 # 5.05 the clips arrive: sparse ticks, not one per clip
 for i, t0 in enumerate([5.08, 5.24, 5.37, 5.53, 5.69]):
-    place(hits, tick(1500 + i * 210, .07, 90 + i), t0, .07, -.5 + i * .25)
+    place(hits, tick(1500 + i * 210, 0.07, 90 + i), t0, 0.07, -0.5 + i * 0.25)
 
 # 5.25–6.55 the playhead sweeps: a slow rising shepard-ish tone
 t = np.arange(int(1.4 * SR)) / SR
-sweep = np.sin(2 * np.pi * (180 + 90 * t) * t) * np.sin(np.pi * t / 1.4) ** 2 * .08
-place(hits, sweep, 5.25, .9, .15)
+sweep = np.sin(2 * np.pi * (180 + 90 * t) * t) * np.sin(np.pi * t / 1.4) ** 2 * 0.08
+place(hits, sweep, 5.25, 0.9, 0.15)
 
 # 6.58 / 6.78 / 6.98 the three facts
 for i, t0 in enumerate([6.58, 6.78, 6.98]):
-    place(hits, tick(2600 + i * 300, .12, 120 + i), t0, .14, .2)
-    place(hits, thud(.5, 120 + i * 20, 130 + i), t0, .22, .2)
+    place(hits, tick(2600 + i * 300, 0.12, 120 + i), t0, 0.14, 0.2)
+    place(hits, thud(0.5, 120 + i * 20, 130 + i), t0, 0.22, 0.2)
 
 # 7.20 the dot wipe: paper tearing across
-place(hits, bandpass(noise(.55, 141), .25, .85) * env(int(.55 * SR), .14, .3) * .30, 7.2, .7, -.2)
-place(hits, thud(.7, 98, 151), 7.42, .35, .1)
+place(
+    hits,
+    bandpass(noise(0.55, 141), 0.25, 0.85) * env(int(0.55 * SR), 0.14, 0.3) * 0.30,
+    7.2,
+    0.7,
+    -0.2,
+)
+place(hits, thud(0.7, 98, 151), 7.42, 0.35, 0.1)
 
 # 8.35 / 8.9 / 9.45 the cards slide in
 for i, t0 in enumerate([8.4, 8.95, 9.5]):
-    place(hits, bandpass(noise(.3, 160 + i), .08, .4) * env(int(.3 * SR), .05, .24) * .16, t0, .6, -.35 + i * .35)
+    place(
+        hits,
+        bandpass(noise(0.3, 160 + i), 0.08, 0.4)
+        * env(int(0.3 * SR), 0.05, 0.24)
+        * 0.16,
+        t0,
+        0.6,
+        -0.35 + i * 0.35,
+    )
 
 # 9.15 / 10.55 / 11.95 the stamps — the loudest things in the film
 for i, t0 in enumerate([9.15, 10.55, 11.95]):
-    place(hits, thud(1.0, 88 - i * 4, 170 + i), t0, .95, -.25 + i * .25)
-    place(hits, tick(1200, .16, 180 + i), t0 + .005, .12, -.25 + i * .25)
+    place(hits, thud(1.0, 88 - i * 4, 170 + i), t0, 0.95, -0.25 + i * 0.25)
+    place(hits, tick(1200, 0.16, 180 + i), t0 + 0.005, 0.12, -0.25 + i * 0.25)
 
 # 10.2–12.0 Kosi hops: two small paper steps
-place(hits, thud(.28, 190, 191), 10.55, .16, .35)
-place(hits, thud(.24, 210, 192), 11.3, .12, .3)
+place(hits, thud(0.28, 190, 191), 10.55, 0.16, 0.35)
+place(hits, thud(0.24, 210, 192), 11.3, 0.12, 0.3)
 
 # 12.15 the bubble
-place(hits, tick(3000, .09, 195), 12.17, .09, .2)
+place(hits, tick(3000, 0.09, 195), 12.17, 0.09, 0.2)
 
 # 13.4 the pull-back: the room widens
-place(hits, bandpass(noise(1.6, 201), .01, .06) * env(int(1.6 * SR), 1.0, .5) * .26, 13.4, .8)
+place(
+    hits,
+    bandpass(noise(1.6, 201), 0.01, 0.06) * env(int(1.6 * SR), 1.0, 0.5) * 0.26,
+    13.4,
+    0.8,
+)
 
 # 13.85–14.2 the numbers
 for i, t0 in enumerate([13.85, 13.94, 14.03, 14.12]):
-    place(hits, tick(1400 + i * 180, .07, 210 + i), t0, .08, -.3 + i * .2)
+    place(hits, tick(1400 + i * 180, 0.07, 210 + i), t0, 0.08, -0.3 + i * 0.2)
 
 # 15.2–15.6 the wipe closes
-place(hits, bandpass(noise(.5, 221), .2, .8) * env(int(.5 * SR), .1, .3) * .24, 15.2, .7)
+place(
+    hits,
+    bandpass(noise(0.5, 221), 0.2, 0.8) * env(int(0.5 * SR), 0.1, 0.3) * 0.24,
+    15.2,
+    0.7,
+)
 
 # 15.62 the wordmark drops again
 for i, ch in enumerate("KOSIKA"):
-    place(hits, tick(2000 + i * 120, .08, 230 + i), 15.62 + i * .05, .09, -.4 + i * .14)
+    place(
+        hits,
+        tick(2000 + i * 120, 0.08, 230 + i),
+        15.62 + i * 0.05,
+        0.09,
+        -0.4 + i * 0.14,
+    )
 
 # 16.72 the period: the dot that started the film ends the sentence
-place(hits, bell(740, 2.2), 16.72, .30, .05)
-place(hits, thud(.6, 110, 251), 16.72, .18, .05)
+place(hits, bell(740, 2.2), 16.72, 0.30, 0.05)
+place(hits, thud(0.6, 110, 251), 16.72, 0.18, 0.05)
 
 # ── mix down ───────────────────────────────────────────────────────────
-mix = bed * .8 + reverb(hits, .34) * 1.0
+mix = bed * 0.8 + reverb(hits, 0.34) * 1.0
+
 
 # gentle high-shelf removal: one-pole lowpass over the top
 def lowpass_st(x, a=0.55):
@@ -229,16 +298,16 @@ def lowpass_st(x, a=0.55):
     return out
 
 
-mix = mix * .7 + lowpass_st(mix, .5) * .3
+mix = mix * 0.7 + lowpass_st(mix, 0.5) * 0.3
 
 # fade in/out
-fade_in = int(.25 * SR)
+fade_in = int(0.25 * SR)
 mix[:fade_in] *= np.linspace(0, 1, fade_in)[:, None]
 fade_out = int(1.2 * SR)
 mix[-fade_out:] *= np.linspace(1, 0, fade_out)[:, None] ** 2
 
 # loudness: approximate -16 LUFS by RMS, then a soft ceiling at -1.6 dBFS
-rms = np.sqrt(np.mean(mix ** 2))
+rms = np.sqrt(np.mean(mix**2))
 target = 10 ** (-16 / 20)
 mix = mix * (target / max(rms, 1e-9))
 ceiling = 10 ** (-1.6 / 20)

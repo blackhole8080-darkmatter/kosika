@@ -178,7 +178,9 @@ def _fit(points: list[Point], *, padding: float = 34.0) -> list[Point]:
     ]
 
 
-def _barycentric(rows: dict[int, list[str]], edges: list[Edge], sweeps: int = 4) -> None:
+def _barycentric(
+    rows: dict[int, list[str]], edges: list[Edge], sweeps: int = 4
+) -> None:
     """Reorder each layer so a vertex sits under the average of its neighbours.
 
     This is the crossing-reduction pass Sugiyama layouts use. It only ever
@@ -194,7 +196,9 @@ def _barycentric(rows: dict[int, list[str]], edges: list[Edge], sweeps: int = 4)
             succs[edge.source].append(edge.target)
             preds[edge.target].append(edge.source)
 
-    column = {name: index for index, row in rows.items() for index, name in enumerate(row)}
+    column = {
+        name: index for index, row in rows.items() for index, name in enumerate(row)
+    }
     layers = sorted(rows)
 
     def mean(anchors: list[str], fallback: int) -> float:
@@ -248,7 +252,9 @@ def _ring_order(nodes: list[Node], edges: list[Edge]) -> list[str]:
     order: list[str] = []
     seen: set[str] = set()
     while len(order) < len(names):
-        start = min((n for n in names if n not in seen), key=lambda n: (-len(adjacent[n]), n))
+        start = min(
+            (n for n in names if n not in seen), key=lambda n: (-len(adjacent[n]), n)
+        )
         seen.add(start)
         queue = [start]
         while queue:
@@ -507,8 +513,8 @@ def render_svg(
         f'aria-label="{html.escape(title or "graph")}">',
         f'<rect width="{WIDTH}" height="{HEIGHT}" fill="{PAPER}"/>',
         "<defs>",
-        f'<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" '
-        f'markerWidth="7" markerHeight="7" orient="auto-start-reverse">',
+        '<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" '
+        'markerWidth="7" markerHeight="7" orient="auto-start-reverse">',
         f'<path d="M 0 0 L 10 5 L 0 10 z" fill="{MUTED}"/>',
         "</marker>",
         "</defs>",
@@ -556,8 +562,8 @@ def render_gallery(items: list[tuple[str, str, str]]) -> str:
     cards = []
     for title, subtitle, svg in items:
         cards.append(
-            f'<figure><figcaption><b>{html.escape(title)}</b>'
-            f'<span>{html.escape(subtitle)}</span></figcaption>{svg}</figure>'
+            f"<figure><figcaption><b>{html.escape(title)}</b>"
+            f"<span>{html.escape(subtitle)}</span></figcaption>{svg}</figure>"
         )
     return (
         "<!doctype html><html><head><meta charset='utf-8'>"
@@ -641,7 +647,9 @@ def main() -> None:
     smart = choose(DEMO_NODES, DEMO_EDGES)
     record["graph"] = {
         "nodes": [{"id": n.id, "label": n.label, "kind": n.kind} for n in DEMO_NODES],
-        "edges": [{"source": e.source, "target": e.target, "kind": e.kind} for e in DEMO_EDGES],
+        "edges": [
+            {"source": e.source, "target": e.target, "kind": e.kind} for e in DEMO_EDGES
+        ],
     }
     record["smartChoice"] = smart
     record["whySmartChoice"] = explain_choice(DEMO_NODES, DEMO_EDGES)
@@ -650,7 +658,9 @@ def main() -> None:
     )
 
     (out / "index.html").write_text(render_gallery(items), encoding="utf-8")
-    print(f"smart choice for this graph: {smart} ({explain_choice(DEMO_NODES, DEMO_EDGES)})")
+    print(
+        f"smart choice for this graph: {smart} ({explain_choice(DEMO_NODES, DEMO_EDGES)})"
+    )
     print(f"wrote {len(items) + 2} files to {out}")
 
 

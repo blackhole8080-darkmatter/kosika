@@ -14,8 +14,7 @@ Everything is deterministic: same graph + same style = same picture.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
 
 # ------------------------------------------------------------------ palettes
 
@@ -25,16 +24,16 @@ class Palette:
     """A coherent color scheme for a graph design."""
 
     name: str
-    paper: str          # background
-    ink: str            # primary text / lines
-    surface: str        # card / panel fill
-    accent: str         # primary highlight
-    glow: str           # bloom / neon color
-    muted: str          # secondary text / borders
-    node_fill: str      # default node fill
-    node_stroke: str    # default node outline
-    link_color: str     # default edge color
-    link_glow: str      # edge glow when active
+    paper: str  # background
+    ink: str  # primary text / lines
+    surface: str  # card / panel fill
+    accent: str  # primary highlight
+    glow: str  # bloom / neon color
+    muted: str  # secondary text / borders
+    node_fill: str  # default node fill
+    node_stroke: str  # default node outline
+    link_color: str  # default edge color
+    link_glow: str  # edge glow when active
     kind_colors: dict[str, str]  # per-kind node colors
 
 
@@ -207,7 +206,7 @@ def glow_filter(palette: Palette, color: str | None = None) -> Filter:
             f'<feGaussianBlur stdDeviation="4" result="blur"/>'
             f'<feFlood flood-color="{color}" flood-opacity="0.55" result="color"/>'
             f'<feComposite in="color" in2="blur" operator="in" result="colored-blur"/>'
-            f'<feMerge>'
+            f"<feMerge>"
             f'<feMergeNode in="colored-blur"/>'
             f'<feMergeNode in="SourceGraphic"/>'
             f"</feMerge>"
@@ -225,14 +224,14 @@ def drop_shadow_filter() -> Filter:
             '<filter id="filter-shadow" x="-20%" y="-20%" width="140%" height="140%">'
             '<feGaussianBlur in="SourceAlpha" stdDeviation="2" result="blur"/>'
             '<feOffset in="blur" dx="1" dy="2" result="offset-blur"/>'
-            '<feComponentTransfer>'
+            "<feComponentTransfer>"
             '<feFuncA type="linear" slope="0.35"/>'
-            '</feComponentTransfer>'
-            '<feMerge>'
+            "</feComponentTransfer>"
+            "<feMerge>"
             '<feMergeNode in="offset-blur"/>'
             '<feMergeNode in="SourceGraphic"/>'
-            '</feMerge>'
-            '</filter>'
+            "</feMerge>"
+            "</filter>"
         ),
     )
 
@@ -245,7 +244,7 @@ def glass_filter() -> Filter:
         xml=(
             '<filter id="filter-glass">'
             '<feGaussianBlur stdDeviation="6" result="blur"/>'
-            '</filter>'
+            "</filter>"
         ),
     )
 

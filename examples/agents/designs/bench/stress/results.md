@@ -456,3 +456,368 @@ goes in "the `session` folder" and that a kept change stops appearing because it
 longer ticked in the Session tab". Both are inventions -- the gate writes to
 `.kosika/selfdev/ledger.jsonl` -- and it produced them in 35 tokens, faster and more
 confidently than the correct answer. Short answers are not safer answers.
+
+### Correction: the gate command I called invented was in the documents
+
+Two sections above say the 7B "invented" the gate command
+`python -m pytest -q tests/test_cli_coverage.py`. That was my error, not the model's.
+`tests/test_cli_coverage.py` is a real file in this repository, and that exact command is
+the example gate printed in `docs/SELF_DEVELOPMENT.md:61` and `kosika/cli.py:2757`. The
+name is in the material the model was given, so a name check passes it, correctly.
+
+What the model could not support there was the word *currently* -- the claim that this one
+test command is *the* gate in force -- which is a claim about a fact, not about a name. The
+distinction is the limit of the check built for this: it certifies that a name an answer
+acts on was in the documents, and says nothing about whether the sentence around that name
+is true. The tree is what decides truth; a served answer is still only a proposal.
+
+### Two problems solved, and what each is worth
+
+**A repeated question costs nothing.** `virtual-model serve` now keeps answers it has
+already paid for, keyed by the normalized question plus the profile's identity, the output
+budget and the grounding revision. Measured on the live 7B, same question twice:
+
+| call | time | charged | reported |
+| first | 150.7 s | 1644 tokens | `X-Kosika-Cache: miss` |
+| repeat | 0.022 s | 0 tokens | `X-Kosika-Cache: hit`, `saved_tokens: 1644` |
+
+The journal keeps the hit as a line with zero tokens, and `spent()` skips those lines, so a
+repeat spends no allowance -- it is served even to a caller whose day is used up, because it
+never reaches the model. A request with a temperature above zero is not kept: the caller
+asked for variety, and a kept answer is the opposite of that. A refused answer is never
+kept, so a wrong answer cannot become the answer.
+
+**An answer that names what it was not given is refused.** The gateway puts a grounding
+rule in front of the model and then checks every path, file, flag and folder the answer
+commits to against the documents the profile actually sent. Live, on the question the model
+had answered wrongly before:
+
+```
+kosika: {"cache": "miss", "grounded": false, "unsupported": ["fail"]}
+
+I cannot answer that: it names `fail`, which do not appear in the documents I was
+given, so they may be invented. Nothing in that answer should be acted on.
+```
+
+The model was asked and is charged (1595 tokens); the caller is not handed the invention,
+and nothing is kept. The same question answered with `tests/test_cli_coverage.py` and
+`.kosika/selfdev/ledger.jsonl` passes, because both names are in the retrieved documents --
+which is the correct verdict, and the reason for the correction above.
+
+The check has a shape worth stating plainly. It matches names, not meaning: a bare folder
+name must appear in the documents *as a path*, so a document that says "failed" does not
+license a folder called `fail`, and it cannot tell that a real file was cited for the wrong
+reason. Prose claims ("must not be edited by default") are not checked at all. What it
+buys is that the class of invention an agent copies into a shell -- a path, a flag, a
+module -- does not reach the caller unchecked.
+
+### What a repeat saves, as the operator sees it
+
+Live on the 7B, with the flags the server now prints at startup:
+
+```
+answers     : .kosika/selfdev/op-usage-answers.json (0 kept, for 24h)
+grounding   : a file, flag, folder or path named in an answer must appear in the documents, or the answer is refused
+...
+first:  status 200 after 141.958406s   X-Kosika-Cache: miss
+repeat: status 200 after   0.012811s   X-Kosika-Cache: hit
+saved       : repeat answered from the cache, 1644 tokens not spent (1 so far)
+```
+
+A kept answer is also not served for ever: an entry older than `--answer-age-hours`
+(default 24, zero for none) is a miss, because quality is not the only risk in a cache -- a
+day-old answer about a file that has since changed would speak for a tree it never saw.
+
+### Verification at hand-off
+
+What the served model is held to, run on 2026-11-06 after the cache, grounding and
+expiry work, all recorded here so the numbers in `docs/SERVED_VIRTUAL_MODEL.md`
+have one source:
+
+| check | result |
+| `pytest -q tests/test_virtual_serve.py` | 39 passed |
+| `pytest -q tests/test_virtual_model*.py tests/test_training*.py` | 29 passed |
+| `pytest -q -k "virtual or selfdev or serve or specialist"` | 197 passed, 31 subtests, 203 s |
+| `ruff check` on the four touched files | clean |
+| whole suite (`pytest -q`) | stopped at ~5% after seven minutes, no failures seen; not a verdict |
+
+The live check at the same hand-off: first call 141.96 s (`X-Kosika-Cache: miss`), repeat
+0.0128 s (`hit`, 1644 tokens not spent), and the folder question refused with
+`unsupported: ["fail"]`.
+
+### The spend report, and selfdev refusing an ungrounded proposal
+
+`kosika virtual-model usage` reads the journal back -- calls, tokens, repeats and tokens not
+spent, per caller per day. On a three-line journal containing one paid call, one repeat and
+one call from another caller:
+
+```
+journal     : .kosika/selfdev/report-demo.jsonl
+day         caller        calls    tokens  repeats  not spent
+2026-11-06  bot               1     1,553        0          0
+2026-11-06  editor            1     1,659        1      1,659
+total       -                 2     3,212        1      1,659
+```
+
+A hit now writes `saved_tokens` into its line, so "work avoided" is evidence rather than
+arithmetic over a counter that resets when the process does. A missing journal exits 2 with
+one sentence instead of printing an empty table, which would read as a free day.
+
+`VirtualModelProposer` applies the same grounding check before a proposal is parsed. A
+proposal naming something the profile never sent becomes a `refused` attempt at
+`kosika/selfdev.py:1966` with the invented names in its note, so it never reaches the gate
+and the next attempt is told why. The engine restores the tree on that path, so nothing it
+might have written is left behind. 44 tests in `tests/test_virtual_serve.py` cover the
+gateway, the report and that refusal.
+
+### A citation is checked against the line it names
+
+Grounding a name was half a check: an answer can name a real file and still be wrong about
+what is in it. The rule now also asks for `[source:line]`, and every citation an answer makes
+is resolved against the profile's own sources:
+
+* a source that is not one of the profile's files is a fault;
+* a line past the end of that file is a fault;
+* a quotation attached to the citation must appear on that line, character for character
+  after case folding.
+
+All three are refused with `kosika.bad_citations` naming the citation, and the caller gets
+the refusal instead of the answer. The check is deliberately not retroactive: an answer that
+cites nothing is still checked for names and passed, because requiring a citation would
+refuse most of what a 7B writes, and a wall is a worse failure than a stated gap.
+
+The limit, unchanged and now narrower: it verifies that a cited line exists and says what the
+answer says it says. It does not verify that the line *supports* the sentence around it, and
+it still cannot see a prose claim that was never named or cited at all.
+
+50 tests in `tests/test_virtual_serve.py` cover this: a resolving citation passes, a missing
+line is refused, a misquote is refused, a correct quote passes, and a citation-free answer is
+passed with no fault claimed.
+
+### The live selfdev run: one false refusal, then a kept change
+
+Run against a sandboxed copy (`.kosika/selfdev/scratch`), so no attempt could touch the real
+tree. First, with the name check alone:
+
+```
+refused   68a2c8e33962  TODO sum the values, and return 0 for an empty list
+          note: the answer named kosika/thing.py which the documents do not have, so nothing was applied
+          410.4s
+kept 0  reverted 0  refused 1  in 1 attempt(s)
+```
+
+The path works end to end: a `refused` ledger line, the tree restored, nothing kept. But the
+verdict was wrong -- the model named the file the task prompt itself showed, and the prompt
+is part of what the model was given. The hole is real for any file the profile's retrieval
+does not read, and a new file is the obvious case.
+
+The fix is not a special case for one task: the check now runs over the retrieved documents
+*and* the task prompt. The same task afterwards:
+
+```
+kept      68a2c8e33962  TODO sum the values, and return 0 for an empty list
+          changed: kosika/thing.py
+          ok   compile
+          ok   import
+          ok   lint
+          note: checks passed
+          196.2s
+kept 1  reverted 0  refused 0  in 1 attempt(s)
+```
+
+and the sandbox file afterwards is `return sum(values) if values else 0`. So the whole loop
+closes in one run: the model proposes, the grounding check refuses what it was not given, the
+gate decides, and the ledger says which. 209 tests pass across the reachable suites at that
+point (51 in `tests/test_virtual_serve.py`), and `ruff` is clean on the five touched files.
+
+### Refusals are countable, and a task's file is read
+
+Two things the plan above called for, done and checked live rather than argued.
+
+**A refusal now leaves a countable mark.** Asked the folder question against a
+fresh journal (146.6 s):
+
+```
+kosika: {"bad_citations": [], "cache": "miss", "grounded": false, "unsupported": ["fail"]}
+{"at": "2026-11-06T20:15:53", "cached": false, "caller": "editor", "completion_tokens": 54,
+ "day": "2026-11-06", "estimated": false, "grounded": false, "model": "kosika-selfdev",
+ "prompt_tokens": 1553, "refused": true, "saved_tokens": 0, "tokens": 1607}
+```
+
+and `virtual-model usage` over that journal:
+
+```
+day         caller        calls    tokens  repeats  not spent  refused
+2026-11-06  editor            1     1,607        0          0        1
+refused     : answers the documents did not support; they were replaced by a refusal and are still charged
+```
+
+The refusal stays in `calls` and `tokens` because it cost 1607 tokens, and the
+`refused` column says so. Before this, a profile whose answers were half
+refused looked exactly like a healthy one in the only report it has.
+
+**Retrieval is told what the task is about.** Retrieval rank is the question's
+words; a task's file need not match them, which is why the sandbox run before
+this refused a file the prompt had shown. A request now carries `focus`, the
+task's path, and the provider reads that file's first two passages ahead of the
+ranked ones. Unit-tested with a document whose words appear nowhere in the
+question: it is still read first.
+
+Neither change alters the gate. Both make the pre-gate cheaper to trust: what
+was refused is now countable, and the documents a refusal is judged against
+include the subject of the task.
+
+213 tests across the reachable suites at this point (54 in
+`tests/test_virtual_serve.py`), `ruff` clean on the seven touched files, and no
+server left behind (`--port 8827` closed after the run).
+
+### Do twenty answers cite? Measured, not assumed
+
+`examples/agents/designs/bench/stress/citation_probe.py` asked 20 real questions
+about this repository through the HTTP door of a real `virtual-model serve`
+(7B, warm, temperature 0, 256-token answers, quota lifted). Each answer was
+written down with its journal line as it arrived, then every citation was
+resolved against the profile with `line_at`. Raw material:
+`.kosika/selfdev/citations/{answers,journal}.jsonl` and `summary.json`.
+
+| what | measured |
+| --- | --- |
+| questions asked / answered | 20 / 20 |
+| answers that cite anything | **8 (40%)** |
+| citations made | 13 |
+| ... resolving to a real file and line | 10 (77%) |
+| ... using the literal word `source` | 3 (`[source:61]`, `[source:1981]`, `[source:741]`) |
+| ... that support the sentence they are attached to | **0** |
+| answers refused by the gateway | 4 (20%) |
+| tokens charged | 32,733 |
+| wall time | 6,095.6 s; median 122 s, mean 154 s without one 3,170 s stall |
+
+The ten that resolved, read one by one: five are the same line
+(`SERVED_VIRTUAL_MODEL.md:81`, about selfdev grounding) attached to four gate
+criteria; two point at `LANGUAGE_DETAIL.md:741`, which is a blank line; two at
+`SERVED_VIRTUAL_MODEL.md:101`, a measurement-table header, for answers about the
+usage report and about cache expiry; one at `:121`, a section heading. Every one
+resolves. None supports its sentence. (Line numbers as of the run; that file has
+been edited since.)
+
+The four refusals:
+
+| question about | refused for | is the name real? |
+| --- | --- | --- |
+| `max_context_chars` | `max_context_chars` | yes -- it is in `docs/specialists/selfdev.json`, which retrieval did not include |
+| routes | `or`, `user`, `system` | `user`/`system` are chat roles; `or` is a word, not a name |
+| budgets | `max_steps` | real in the spec, unretrieved |
+| diagnostic codes | `_RULES` | real in `kosika/diagnostics.py`, unretrieved |
+
+Three of the four refused a name that exists; one refused a word that is not a
+name. The check fails closed on what it can see, and what it can see is a
+retrieved slice, not the sources.
+
+Reading all twenty (my judgement, not a measurement): four stand up when checked
+against the tree -- what selfdev keeps and what it records, `kosika run` on a
+check failure, conformance comparing refusal strings, cache expiry -- three say
+plainly they cannot answer, four were refused, and nine are wrong or partly
+wrong. Two of those nine invent an entire "skills" feature and pass the name
+check because they name nothing at all. Grounded means "named only what it was
+given"; it has never meant "correct".
+
+What the numbers decide:
+
+1. **Requiring a citation would be a wall.** 12 of 20 answers make none.
+2. **A resolving citation is not a supporting one.** 10 resolved, 0 supportive.
+   The citation rule buys the absence of false citations, and nothing more.
+3. **The rule teaches the defect it catches.** It says `[source:line]`, and 3 of
+   13 citations copied `source` verbatim. The example should be a real path.
+4. **Names should be checked against the sources, not the retrieved slice.**
+   `max_context_chars` cost a caller 1,659 tokens to be told its own profile key
+   does not exist.
+
+### The same twenty questions, after two changes
+
+Same probe, same twenty questions, same settings; only the gateway changed: the
+rule now asks for `[path:line] "the exact words"` and shows a real path instead
+of `[source:line]`, a citation that quotes nothing is reported rather than
+refused, and a name is an invention only when it is in neither the retrieved
+documents nor the profile's sources (with underscored identifiers read as
+names). Raw material: `.kosika/selfdev/citations-run1` and `citations-run2`.
+
+| what | before | after |
+| --- | --- | --- |
+| answers | 20 | 20 |
+| answers that cite anything | 8 (40%) | 5 (25%) |
+| citations made (distinct) | 13 | 11 |
+| citations that do not resolve | 3 -- all the literal word `source` | 1 -- `tests/test_conformance.py:199`, a real file, a line past its end |
+| citations followed by a quotation | 0 | 0 |
+| answers refused by the gateway | 4 (20%) | 2 (10%) |
+| tokens charged | 32,733 | 33,696 |
+| median seconds a question | 132.9 | 116.4 |
+| wall time | 6,095.6 s | 2,828.6 s |
+
+What moved, and what did not:
+
+1. **The placeholder is gone.** Three citations named the literal word `source`
+   before; none do now. The rule no longer teaches a token that cannot resolve,
+   and that is the only citation defect the change was aimed at.
+2. **False refusals halved, and the remaining ones are different.** `max_context_chars`
+   is no longer refused, because the profile's own JSON names it. The two left
+   were `or`/`user`/`system` (a word, not a name) and `_RULES`; the latter still
+   refused after the change, so the sources fallback is not a blanket pass.
+3. **Quoting did not happen.** Asked in so many words for `[path:line] "the exact
+   words"`, the model quoted nothing in twenty answers, twice. So the quote
+   cannot be *required* without refusing nearly every citing answer -- which is
+   why an unquoted citation is reported in `kosika.unquoted_citations` instead.
+   The measurement is what decides that, not the intention.
+4. **The citation rate fell, 8 to 5.** With twenty questions that difference is
+   within noise, and it is not claimed as an improvement; the honest reading is
+   that the change did not increase citation.
+
+Not claimed: answer correctness. All twenty were re-asked but only the first
+nine were read closely enough to compare, and the changes were aimed at citation
+mechanics, not at retrieval. Grading accuracy again needs its own run and its own
+reading.
+
+Why the run also got faster: the first run paid a 3,170 s stall on one question;
+run two had no such stall, and the median moved by 16 s, which is what a quieter
+machine looks like rather than a faster gateway.
+
+### Requiring a citation for a named file: it works, and that is the problem
+
+Run three, same twenty questions, one rule added: a file, path or flag an answer
+names needs a citation whose line shows that name. Raw material:
+`.kosika/selfdev/citations-run3`.
+
+| what | run 2 (report only) | run 3 (required) |
+| --- | --- | --- |
+| answers that cite anything | 5 | 4 |
+| citations made | 11 | 5 |
+| answers refused | 2 (10%) | 10 (50%) |
+| ... refused for an unbacked name | 0 | 8 |
+| names it refused for | -- | `--gate`, `kosika/`, `.kosika/selfdev/ledger.jsonl` (twice), `tests/test_cli_coverage.py`, `--virtual-model`, `kosika/diagnostics.py`, `kosika/diagnostics.py:_RULES`, `tests/test_conformance.py:199`, `--answer-age-hours` |
+| tokens charged | 33,696 | 33,842 |
+| median seconds a question | 116.4 | 115.7 |
+
+It catches unbacked names, exactly as intended: eight of twenty answers named a
+file or flag and cited nothing, and all eight were refused. The problem is what
+those names are. Every one of them exists in this tree -- `--gate`,
+`.kosika/selfdev/ledger.jsonl`, `kosika/diagnostics.py`, `tests/test_cli_coverage.py`
+-- so the rule refused eight true statements to enforce a citation that would
+have made them checkable.
+
+That is not a bug in the check; it is the limit of evidence. The gateway has the
+answer and the citation, and nothing else. It cannot tell "true, and the model
+did not cite it" from "invented", because without the citation it has no way to
+tell. Enforcing the citation therefore prices a truth and an invention the same,
+and at 8 in 20 it refuses almost as many right answers as the uncited rule
+accepted wrong ones.
+
+So the default does not enforce it. `kosika.unbacked` reports the names an
+answer left uncited, and `--require-citations` turns the report into a gate for a
+caller who wants exactly that. Run three is then the measured cost of the strict
+mode: half the paid answers replaced by refusals, 33,842 tokens for ten usable
+ones.
+
+This also closes the citation line of work. Three runs, sixty answers: citations
+were rare (8, then 5, then 4), never supported their sentence (0 of 10 when read
+by hand), and once required they refused the truth. Citations from this model are
+decoration, and no rule about them produces evidence. The evidence has to come
+from somewhere else -- retrieval, and the gate the tree already runs.

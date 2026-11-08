@@ -201,17 +201,18 @@ class PlayerTests(unittest.TestCase):
         down = {"shape": "ball", "what": "y", "to": 90, "start": 0, "seconds": 2}
         self.played(across, down)
         outer = next(g for g in self.root.iter(f"{SVG}g") if g.get("id") == "ball")
+        assert outer is not None
         inner = outer.find(f"{SVG}g")
         assert inner is not None
         # Each has a group of its own: x on the outer one, y on the next.
         self.assertEqual(outer.get("transform"), "translate(20 0)")
         self.assertEqual(inner.get("transform"), "translate(0 50)")
-        self.assertEqual(
-            outer.find(f"{SVG}animateTransform").get("values"), "20 0;180 0"
-        )  # type: ignore[union-attr]
-        self.assertEqual(
-            inner.find(f"{SVG}animateTransform").get("values"), "0 50;0 90"
-        )  # type: ignore[union-attr]
+        across_anim = outer.find(f"{SVG}animateTransform")
+        assert across_anim is not None
+        self.assertEqual(across_anim.get("values"), "20 0;180 0")
+        down_anim = inner.find(f"{SVG}animateTransform")
+        assert down_anim is not None
+        self.assertEqual(down_anim.get("values"), "0 50;0 90")
 
     def test_a_bounce_overshoots_and_settles(self) -> None:
         (move,) = self.played(

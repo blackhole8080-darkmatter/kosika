@@ -158,7 +158,9 @@ def check_scene(scene: Any) -> list[str]:
             if not isinstance(target, str) or not target:
                 problems.append(f"{label} needs a target vertex id.")
             if source == target:
-                problems.append(f"{label} links {source!r} to itself; self-loops are not drawn.")
+                problems.append(
+                    f"{label} links {source!r} to itself; self-loops are not drawn."
+                )
             if not _is_link_points(points):
                 problems.append(
                     f"{label} needs points: a list of at least two [x, y] number pairs."
@@ -206,7 +208,9 @@ def check_scene(scene: Any) -> list[str]:
         for field in ("source", "target"):
             vertex = shape.get(field)
             if isinstance(vertex, str) and vertex not in seen:
-                problems.append(f"{label} {field}s {vertex!r}, but no shape has that id.")
+                problems.append(
+                    f"{label} {field}s {vertex!r}, but no shape has that id."
+                )
     length = scene.get("seconds") if _number(scene.get("seconds")) else 0
     for number, move in enumerate(moves[:MAX_MOVES], 1):
         if not isinstance(move, dict):
@@ -254,9 +258,7 @@ def check_scene(scene: Any) -> list[str]:
         keys = move.get("keys")
         if keys and len(keys) > 0:
             if not isinstance(keys, list) or len(keys) < 2:
-                problems.append(
-                    f"{label} has keys but needs at least two keyframes."
-                )
+                problems.append(f"{label} has keys but needs at least two keyframes.")
             else:
                 for index, key in enumerate(keys):
                     if not isinstance(key, dict):
@@ -271,7 +273,11 @@ def check_scene(scene: Any) -> list[str]:
                         problems.append(
                             f"{label} key {index} needs a number to move to."
                         )
-                times = [key["at"] for key in keys if isinstance(key, dict) and _number(key.get("at"))]
+                times = [
+                    key["at"]
+                    for key in keys
+                    if isinstance(key, dict) and _number(key.get("at"))
+                ]
                 if times:
                     if times[0] > 0:
                         problems.append(f"{label} first key must start at time 0.")
@@ -401,7 +407,9 @@ def _animate(shape: dict[str, Any], state: dict[str, Any], move: dict[str, Any])
     )
 
 
-def _animate_path(shape: dict[str, Any], move: dict[str, Any], paths: dict[str, str]) -> str:
+def _animate_path(
+    shape: dict[str, Any], move: dict[str, Any], paths: dict[str, str]
+) -> str:
     """Move a shape along a link's path using SVG animateMotion."""
 
     path_id = paths.get(move["path"], "")
@@ -417,21 +425,17 @@ def _animate_path(shape: dict[str, Any], move: dict[str, Any], paths: dict[str, 
         f'begin="{_n(move["start"])}s" dur="{_n(max(move["seconds"], 0.001))}s" '
         f'fill="freeze" rotate="auto"{again}'
     )
-    return (
-        f'<animateMotion {timing}>'
-        f'<mpath xlink:href="#{path_id}"/>'
-        f"</animateMotion>"
-    )
+    return f'<animateMotion {timing}><mpath xlink:href="#{path_id}"/></animateMotion>'
 
 
-def _draw(shape: dict[str, Any], inside: str, fill: str | None = None, filter_str: str = "") -> str:
+def _draw(
+    shape: dict[str, Any], inside: str, fill: str | None = None, filter_str: str = ""
+) -> str:
     size, color = float(shape["size"]), shape["color"]
     half = _n(size / 2)
     fill = fill or color
     if shape["kind"] == "circle":
-        return (
-            f'<circle r="{half}" fill="{fill}"{filter_str}>{inside}</circle>'
-        )
+        return f'<circle r="{half}" fill="{fill}"{filter_str}>{inside}</circle>'
     if shape["kind"] == "ring":
         return (
             f'<circle r="{half}" fill="none" stroke="{color}" '
@@ -485,9 +489,15 @@ def _draw_link(shape: dict[str, Any], draw_offset: float | None = None) -> str:
     # Draw-on: set dasharray to path length and dashoffset to the same value
     # so the line starts hidden and animates in.
     length = _path_length(shape["points"]) if draw_offset is not None else 0
-    dasharray = f' stroke-dasharray="{_n(length)} {_n(length)}"' if draw_offset is not None else ""
+    dasharray = (
+        f' stroke-dasharray="{_n(length)} {_n(length)}"'
+        if draw_offset is not None
+        else ""
+    )
     dash_attr = f' stroke-dasharray="{dash}"' if dash else ""
-    dashoffset = f' stroke-dashoffset="{_n(draw_offset)}"' if draw_offset is not None else ""
+    dashoffset = (
+        f' stroke-dashoffset="{_n(draw_offset)}"' if draw_offset is not None else ""
+    )
     return (
         f'<path id={quoteattr(shape["id"])} d="{_link_path(shape)}" fill="none" stroke="{color}" '
         f'stroke-width="{_n(max(width, 0.5))}"{dasharray}{dash_attr}{dashoffset} '
@@ -535,7 +545,7 @@ def _gradient_xml(gradient: dict[str, Any]) -> str:
         cy = gradient.get("cy", 0.5)
         r = gradient.get("r", 0.5)
         parts = [
-            f'<radialGradient id={quoteattr(gid)} '
+            f"<radialGradient id={quoteattr(gid)} "
             f'cx="{_n(cx)}" cy="{_n(cy)}" r="{_n(r)}">'
         ]
     for stop in stops:
@@ -546,7 +556,9 @@ def _gradient_xml(gradient: dict[str, Any]) -> str:
             f'<stop offset="{_n(offset * 100)}%" stop-color="{color}" '
             f'stop-opacity="{_n(opacity)}"/>'
         )
-    parts.append("</" + ("linearGradient" if kind == "linear" else "radialGradient") + ">")
+    parts.append(
+        "</" + ("linearGradient" if kind == "linear" else "radialGradient") + ">"
+    )
     return "".join(parts)
 
 
@@ -564,7 +576,6 @@ def _marker_xml(color: str) -> str:
 def _camera_xml(camera: dict[str, Any], width: float, height: float) -> str:
     """A slow camera drift: pan and zoom across the whole scene."""
 
-    cx, cy = camera.get("cx", width / 2), camera.get("cy", height / 2)
     duration = camera.get("duration", max(width, height) / 200)
     moves = camera.get("moves", [])
     if not moves:
@@ -644,10 +655,10 @@ def to_svg(scene: dict[str, Any], *, backdrop: bool = True) -> str:
     background = scene.get("background", "#000000")
     has_links = any(shape.get("kind") == "link" for shape in scene["shapes"])
     svg_tag = (
-        f'<svg xmlns="http://www.w3.org/2000/svg"'
-        f' xmlns:xlink="http://www.w3.org/1999/xlink"'
-        if has_links else
-        f'<svg xmlns="http://www.w3.org/2000/svg"'
+        '<svg xmlns="http://www.w3.org/2000/svg"'
+        ' xmlns:xlink="http://www.w3.org/1999/xlink"'
+        if has_links
+        else '<svg xmlns="http://www.w3.org/2000/svg"'
     )
     parts = [
         f'{svg_tag} viewBox="0 0 {width} {height}" '
@@ -682,7 +693,9 @@ def to_svg(scene: dict[str, Any], *, backdrop: bool = True) -> str:
     # Atmosphere: grid + vignette.
     if scene.get("atmosphere", False):
         pal = _palette_from_scene(scene)
-        defs_parts.extend(_atmosphere_defs(float(scene["width"]), float(scene["height"]), pal))
+        defs_parts.extend(
+            _atmosphere_defs(float(scene["width"]), float(scene["height"]), pal)
+        )
     if defs_parts:
         parts.append("<defs>" + "".join(defs_parts) + "</defs>")
     if backdrop:
@@ -708,7 +721,11 @@ def to_svg(scene: dict[str, Any], *, backdrop: bool = True) -> str:
     if cam_open:
         parts.append(cam_open)
     # Link shapes are addressable by animateMotion via xlink:href.
-    paths = {shape["id"]: shape["id"] for shape in scene["shapes"] if shape.get("kind") == "link"}
+    paths = {
+        shape["id"]: shape["id"]
+        for shape in scene["shapes"]
+        if shape.get("kind") == "link"
+    }
     # Pre-compute draw offsets for links that have draw moves.
     draw_offsets: dict[str, float] = {}
     for shape in scene["shapes"]:
@@ -741,13 +758,13 @@ def to_svg(scene: dict[str, Any], *, backdrop: bool = True) -> str:
         regular_moves = [move for move in mine if move.get("what") != "path"]
         made = {
             what: "".join(
-                _animate(shape, state, move) for move in regular_moves if move["what"] == what
+                _animate(shape, state, move)
+                for move in regular_moves
+                if move["what"] == what
             )
             for what in WHATS
         }
-        path_anims = "".join(
-            _animate_path(shape, move, paths) for move in path_moves
-        )
+        path_anims = "".join(_animate_path(shape, move, paths) for move in path_moves)
         fill = _fill_attr(shape, shape["color"])
         filter_str = _filter_attr(shape)
         # One group for each kind of move, so that going across, going up

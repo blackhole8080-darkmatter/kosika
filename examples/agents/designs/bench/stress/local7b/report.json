@@ -1,0 +1,49 @@
+[
+ {
+  "id": "d1",
+  "asked": "diagram",
+  "text": "the whole human digestive system, from mouth to colon, and how food moves through every organ",
+  "got": "",
+  "right": false,
+  "title": "",
+  "why": "",
+  "problems": [
+   "Model 'qwen2.5:7b' at http://localhost:11434 answers for: illustrator, curator, planner, designer, critic, gen_artist, ls_painter, fm_sculptor, an_director, an_storyteller, qz_examiner, quizmaster, mathematician, chemist, variety, flow_reader\nWorkflow stopped (provider): Model did not answer within 400 seconds"
+  ],
+  "fixed": 0,
+  "seconds": 503.8,
+  "canvas_whole": null,
+  "drawing": false
+ },
+ {
+  "id": "d2",
+  "asked": "diagram",
+  "text": "how a database commits a transaction, step by step, through the write-ahead log, fsync and the commit record",
+  "got": "diagram",
+  "right": true,
+  "title": "Database Transaction Commit Process",
+  "why": "asked for diagram",
+  "problems": [],
+  "fixed": 0,
+  "seconds": 322.5,
+  "canvas_whole": null,
+  "svg": 3408,
+  "nested": 0,
+  "viewBox": [
+   860.0,
+   468.0
+  ],
+  "elements": 39,
+  "groups": 7,
+  "cards": 8,
+  "links": 6,
+  "labels": 11,
+  "words": 24,
+  "longest": 18,
+  "empty": 0,
+  "repeated": 0,
+  "outside": [],
+  "overlaps": 1,
+  "drawing": true
+ }
+]

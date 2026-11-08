@@ -1,0 +1,98 @@
+[
+ {
+  "id": "d1",
+  "asked": "diagram",
+  "text": "the whole human digestive system, from mouth to colon, and how food moves through every organ",
+  "got": "",
+  "right": false,
+  "title": "",
+  "why": "",
+  "problems": [
+   "Model 'qwen2.5:7b' at http://localhost:11434 answers for: illustrator, curator, planner, designer, critic, gen_artist, ls_painter, fm_sculptor, an_director, an_storyteller, qz_examiner, quizmaster, mathematician, chemist, variety, flow_reader\nWorkflow failed: Memory 'tastes' was not granted; run with --memory FOLDER to say where it is kept"
+  ],
+  "fixed": 0,
+  "seconds": 8.3,
+  "canvas_whole": null,
+  "drawing": false
+ },
+ {
+  "id": "d2",
+  "asked": "diagram",
+  "text": "how a database commits a transaction, step by step, through the write-ahead log, fsync and the commit record",
+  "got": "",
+  "right": false,
+  "title": "",
+  "why": "",
+  "problems": [
+   "Model 'qwen2.5:7b' at http://localhost:11434 answers for: illustrator, curator, planner, designer, critic, gen_artist, ls_painter, fm_sculptor, an_director, an_storyteller, qz_examiner, quizmaster, mathematician, chemist, variety, flow_reader\nWorkflow failed: Memory 'tastes' was not granted; run with --memory FOLDER to say where it is kept"
+  ],
+  "fixed": 0,
+  "seconds": 3.7,
+  "canvas_whole": null,
+  "drawing": false
+ },
+ {
+  "id": "c1",
+  "asked": "canvas",
+  "text": "how a nuclear reactor makes electricity, from fission in the core to the grid",
+  "got": "",
+  "right": false,
+  "title": "",
+  "why": "",
+  "problems": [
+   "Model 'qwen2.5:7b' at http://localhost:11434 answers for: illustrator, curator, planner, designer, critic, gen_artist, ls_painter, fm_sculptor, an_director, an_storyteller, qz_examiner, quizmaster, mathematician, chemist, variety, flow_reader\nWorkflow failed: Memory 'tastes' was not granted; run with --memory FOLDER to say where it is kept"
+  ],
+  "fixed": 0,
+  "seconds": 8.2,
+  "canvas_whole": false,
+  "drawing": false
+ },
+ {
+  "id": "c2",
+  "asked": "canvas",
+  "text": "how the immune system answers a viral infection, from first contact to memory cells",
+  "got": "",
+  "right": false,
+  "title": "",
+  "why": "",
+  "problems": [
+   "Model 'qwen2.5:7b' at http://localhost:11434 answers for: illustrator, curator, planner, designer, critic, gen_artist, ls_painter, fm_sculptor, an_director, an_storyteller, qz_examiner, quizmaster, mathematician, chemist, variety, flow_reader\nWorkflow failed: Memory 'tastes' was not granted; run with --memory FOLDER to say where it is kept"
+  ],
+  "fixed": 0,
+  "seconds": 4.4,
+  "canvas_whole": false,
+  "drawing": false
+ },
+ {
+  "id": "a1",
+  "asked": "art",
+  "text": "a thunderstorm over a city at night, lightning reflected in wet streets, rain in sheets",
+  "got": "",
+  "right": false,
+  "title": "",
+  "why": "",
+  "problems": [
+   "Model 'qwen2.5:7b' at http://localhost:11434 answers for: illustrator, curator, planner, designer, critic, gen_artist, ls_painter, fm_sculptor, an_director, an_storyteller, qz_examiner, quizmaster, mathematician, chemist, variety, flow_reader\nWorkflow failed: Memory 'tastes' was not granted; run with --memory FOLDER to say where it is kept"
+  ],
+  "fixed": 0,
+  "seconds": 7.6,
+  "canvas_whole": null,
+  "drawing": false
+ },
+ {
+  "id": "a2",
+  "asked": "art",
+  "text": "a coral reef in deep water at dawn, currents bending the weed, schooling fish, shafts of light",
+  "got": "",
+  "right": false,
+  "title": "",
+  "why": "",
+  "problems": [
+   "Model 'qwen2.5:7b' at http://localhost:11434 answers for: illustrator, curator, planner, designer, critic, gen_artist, ls_painter, fm_sculptor, an_director, an_storyteller, qz_examiner, quizmaster, mathematician, chemist, variety, flow_reader\nWorkflow failed: Memory 'tastes' was not granted; run with --memory FOLDER to say where it is kept"
+  ],
+  "fixed": 0,
+  "seconds": 6.0,
+  "canvas_whole": null,
+  "drawing": false
+ }
+]

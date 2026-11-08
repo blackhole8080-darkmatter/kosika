@@ -25,9 +25,7 @@ Needs a free model, as kosika/designs.py says.
 from __future__ import annotations
 
 import argparse
-import ast
 import json
-import subprocess
 import sys
 import tempfile
 import time
@@ -59,11 +57,17 @@ def score(ask: dict, keep: Path | None = None) -> dict:
             made = design(ask["text"], place="agent", kind=named)
             problems = made["problems"]
         except DesignsError as exc:
-            made, problems = {"kind": "", "title": "", "fixed": [], "embed": ""}, [str(exc)]
+            made, problems = (
+                {"kind": "", "title": "", "fixed": [], "embed": ""},
+                [str(exc)],
+            )
         seconds = round(time.monotonic() - started, 1)
         if not limited(problems) or not wait:
             break
-        print(f"  {ask['id']}: the free models are rate-limited; waiting {wait} s", flush=True)
+        print(
+            f"  {ask['id']}: the free models are rate-limited; waiting {wait} s",
+            flush=True,
+        )
         time.sleep(wait)
     drawn = not problems and bool(made.get("embed"))
     if keep is not None and drawn:
@@ -72,7 +76,7 @@ def score(ask: dict, keep: Path | None = None) -> dict:
     whole = None
     if ask["want"] == "canvas":
         embed = made.get("embed", "")
-        whole = drawn and "kd-frame" in embed and "svg class=\"art\"" in embed
+        whole = drawn and "kd-frame" in embed and 'svg class="art"' in embed
     return {
         "id": ask["id"],
         "text": ask["text"],
@@ -99,7 +103,9 @@ def totals(every: list[dict]) -> dict:
         "whole_canvases": sum(bool(r["whole"]) for r in canvases),
         "canvases": len(canvases),
         "fixed": sum(r["fixed"] for r in rows),
-        "median_seconds": sorted(r["seconds"] for r in rows)[len(rows) // 2] if rows else 0,
+        "median_seconds": sorted(r["seconds"] for r in rows)[len(rows) // 2]
+        if rows
+        else 0,
         "rate_limited": len(every) - len(rows),
     }
 
@@ -115,7 +121,9 @@ def card(latest: dict, before: dict | None) -> str:
     out = [
         "# Kosika Designs scorecard",
         "",
-        f"Run {latest['at']}" + (f", {latest['label']}" if latest.get("label") else "") + ".",
+        f"Run {latest['at']}"
+        + (f", {latest['label']}" if latest.get("label") else "")
+        + ".",
         "",
         "| Measure | Score |",
         "| --- | --- |",
@@ -131,7 +139,9 @@ def card(latest: dict, before: dict | None) -> str:
     ]
     for r in latest["rows"]:
         wrong = "; ".join(r["problems"]).replace("|", "/")[:140]
-        out.append(f"| {r['text']} | {r['want']} | {r['got'] or '-'} | {'yes' if r['drawn'] else 'no'} | {r['seconds']} | {wrong} |")
+        out.append(
+            f"| {r['text']} | {r['want']} | {r['got'] or '-'} | {'yes' if r['drawn'] else 'no'} | {r['seconds']} | {wrong} |"
+        )
     return "\n".join(out) + "\n"
 
 
@@ -173,18 +183,23 @@ def choices(asks: list[dict], label: str) -> int:
                 failed += 1
                 print(f"{ask['id']} failed  {str(exc)[-90:]}", flush=True)
                 continue
-            rows.append({
-                "id": ask["id"],
-                "text": ask["text"],
-                "want": ask["want"],
-                "got": said.get("kind", ""),
-                "sure": bool(said.get("sure")),
-                "chose": said.get("kind", "") == ask["want"],
-                "why": said.get("why", ""),
-                "seconds": round(time.monotonic() - started, 2),
-            })
-            print(f"{ask['id']} {'right' if rows[-1]['chose'] else 'wrong':5} {rows[-1]['got'] or '-':12} "
-                  f"{'sure' if rows[-1]['sure'] else 'guess':5}  {ask['text']}", flush=True)
+            rows.append(
+                {
+                    "id": ask["id"],
+                    "text": ask["text"],
+                    "want": ask["want"],
+                    "got": said.get("kind", ""),
+                    "sure": bool(said.get("sure")),
+                    "chose": said.get("kind", "") == ask["want"],
+                    "why": said.get("why", ""),
+                    "seconds": round(time.monotonic() - started, 2),
+                }
+            )
+            print(
+                f"{ask['id']} {'right' if rows[-1]['chose'] else 'wrong':5} {rows[-1]['got'] or '-':12} "
+                f"{'sure' if rows[-1]['sure'] else 'guess':5}  {ask['text']}",
+                flush=True,
+            )
 
     sure = [r for r in rows if r["sure"]]
     summary = {
@@ -214,7 +229,9 @@ def choices(asks: list[dict], label: str) -> int:
         "| --- | --- | --- | --- |",
     ]
     for row in rows:
-        lines.append(f"| {row['text']} | {row['want']} | {row['got'] or '-'} | {'yes' if row['sure'] else 'no'} |")
+        lines.append(
+            f"| {row['text']} | {row['want']} | {row['got'] or '-'} | {'yes' if row['sure'] else 'no'} |"
+        )
     (HERE / "choices.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(json.dumps(summary))
     return 0
@@ -223,9 +240,19 @@ def choices(asks: list[dict], label: str) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--only", default="", help="comma-separated ask ids")
-    parser.add_argument("--label", default="", help="a note for this run, such as what changed")
-    parser.add_argument("--keep", default="", help="a folder to keep each drawing in, as a page and an embed")
-    parser.add_argument("--choices", action="store_true", help="score only the way each ask is drawn, without a model")
+    parser.add_argument(
+        "--label", default="", help="a note for this run, such as what changed"
+    )
+    parser.add_argument(
+        "--keep",
+        default="",
+        help="a folder to keep each drawing in, as a page and an embed",
+    )
+    parser.add_argument(
+        "--choices",
+        action="store_true",
+        help="score only the way each ask is drawn, without a model",
+    )
     args = parser.parse_args()
     asks = json.loads((HERE / "asks.json").read_text(encoding="utf-8"))["asks"]
     if args.choices:
@@ -241,18 +268,36 @@ def main() -> int:
         row = score(ask, keep)
         rows.append(row)
         mark = "drawn" if row["drawn"] else "limited" if row["limited"] else "refused"
-        print(f"{row['id']} {mark:7} {row['got'] or '-':12} {row['seconds']:6}s  {ask['text']}", flush=True)
+        print(
+            f"{row['id']} {mark:7} {row['got'] or '-':12} {row['seconds']:6}s  {ask['text']}",
+            flush=True,
+        )
     if all(r.get("limited") for r in rows):
-        print("Every ask was rate-limited: nothing was scored, and the history is left as it was.")
+        print(
+            "Every ask was rate-limited: nothing was scored, and the history is left as it was."
+        )
         return 1
     history = HERE / "history.jsonl"
     before = None
     if history.exists():
-        lines = [line for line in history.read_text(encoding="utf-8").splitlines() if line.strip()]
+        lines = [
+            line
+            for line in history.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
         full = [json.loads(line) for line in lines]
-        full = [run for run in full if run["totals"]["asks"] + run["totals"].get("rate_limited", 0) == len(rows)]
+        full = [
+            run
+            for run in full
+            if run["totals"]["asks"] + run["totals"].get("rate_limited", 0) == len(rows)
+        ]
         before = full[-1] if full else None
-    latest = {"at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"), "label": args.label, "totals": totals(rows), "rows": rows}
+    latest = {
+        "at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+        "label": args.label,
+        "totals": totals(rows),
+        "rows": rows,
+    }
     with history.open("a", encoding="utf-8") as f:
         f.write(json.dumps(latest) + "\n")
     (HERE / "scorecard.md").write_text(card(latest, before), encoding="utf-8")
