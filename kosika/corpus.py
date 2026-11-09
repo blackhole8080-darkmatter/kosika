@@ -591,7 +591,8 @@ def _workflow_operators(decl: Declaration, lines: Sequence[str]) -> Iterator[Mut
         )
     # A step that never returns cannot supply the workflow's result. Kosika's
     # parser requires a trailing result expression in a step, so this surfaces
-    # as a syntax failure rather than a checker diagnostic.
+    # as a syntax failure (`parse/step-return`) rather than a checker
+    # diagnostic; a step the parser lets through reaches `check/missing-return`.
     returns = [
         offset
         for offset, body in enumerate(decl.body)
@@ -605,7 +606,9 @@ def _workflow_operators(decl: Declaration, lines: Sequence[str]) -> Iterator[Mut
             target,
             target,
             [],
-            frozenset({"parse/expected-token", "check/missing-return"}),
+            frozenset(
+                {"parse/expected-token", "parse/step-return", "check/missing-return"}
+            ),
         )
 
 

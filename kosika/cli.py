@@ -782,6 +782,7 @@ def _ask_approval(
     refused or nobody is there to ask. The answer covers this one call with
     these arguments only; the next action is asked about separately.
     """
+    from .agent import ApprovalRecord
     from .durable import PLAN_TOOL
 
     if not sys.stdin.isatty():

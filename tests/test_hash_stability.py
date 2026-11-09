@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -33,17 +34,41 @@ BASELINE = Path(__file__).resolve().parent / "hash_baseline.json"
 CORPUS = ("conformance", "examples", "kosika/std")
 
 
+def tracked_paths(root: Path = ROOT) -> set[str] | None:
+    """The repo-relative programs git tracks, or None where git cannot say.
+
+    The baseline is committed, so it can only speak for programs a clone has.
+    An untracked draft in one working tree is nobody else's program, and its
+    hash may legitimately move between edits that no commit records.
+    """
+
+    try:
+        listed = subprocess.run(
+            ["git", "-C", str(root), "ls-files", "-z", *CORPUS],
+            capture_output=True,
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return {name for name in listed.stdout.decode("utf-8").split("\0") if name}
+
+
 def corpus_hashes(root: Path = ROOT) -> dict[str, list[str]]:
-    """Each loadable program's two payload digests, by repo-relative path.
+    """Each loadable tracked program's two payload digests, by repo path.
 
     A program that does not load is skipped: the suite holds refused programs
     on purpose, and their refusal text is compared elsewhere
-    (`tests/test_conformance.py:199`).
+    (`tests/test_conformance.py:199`). Files git does not track are skipped
+    too, for the reason `tracked_paths` gives.
     """
 
+    tracked = tracked_paths(root)
     hashes: dict[str, list[str]] = {}
     for folder in CORPUS:
         for path in sorted((root / folder).glob("**/*.kos")):
+            name = path.relative_to(root).as_posix()
+            if tracked is not None and name not in tracked:
+                continue
             try:
                 program = load_program(path)
             except (ValueError, TypeError):
@@ -51,7 +76,7 @@ def corpus_hashes(root: Path = ROOT) -> dict[str, list[str]]:
             payload = program_payload(program)
             identity = json.dumps(payload, sort_keys=True, ensure_ascii=False)
             canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-            hashes[path.relative_to(root).as_posix()] = [
+            hashes[name] = [
                 hashlib.sha256(identity.encode("utf-8")).hexdigest(),
                 hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
             ]
