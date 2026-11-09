@@ -25,6 +25,13 @@ from kosika.corpus import CorpusCase, build_corpus
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
+#: How long one command-line run gets. Building the 948-case corpus and scoring
+#: the reference solvers takes about two and a half minutes on this machine; a
+#: suite running beside other work has pushed the same command past five, so
+#: this guard is wide enough to mean "hung" rather than "slow". A command that
+#: finishes with the wrong answer still fails on the assertions below.
+CLI_TIMEOUT = 900.0
+
 _CACHE: list[CorpusCase] | None = None
 
 
@@ -134,7 +141,7 @@ class CommandLineTests(unittest.TestCase):
             [sys.executable, "-m", "kosika.cli", *arguments],
             capture_output=True,
             cwd=str(REPO_ROOT),
-            timeout=300,
+            timeout=CLI_TIMEOUT,
         )
         return process.returncode, process.stdout.decode("utf-8")
 

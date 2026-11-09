@@ -31,11 +31,16 @@ existing public errors.
 
 from __future__ import annotations
 
+import hashlib
+import json
+import os
 import re
+import sys
+import threading
 from dataclasses import dataclass, field
 from enum import IntEnum
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import IO, Any, Mapping, Sequence
 
 from .checker import CheckError, check
 from .lexer import Token, lex
@@ -1032,15 +1037,281 @@ def diagnostic_from_exception(
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Remembered analyses
+# ---------------------------------------------------------------------------
+
+#: Where answers are kept between runs. ``0`` or an empty value analyses every
+#: time; any other value is the folder to keep them in.
+CACHE_ENV = "KOSIKA_ANALYSIS_CACHE"
+
+#: The modules whose contents decide what an analysis reports. Editing one of
+#: them changes the digest, so a remembered answer is never handed out by code
+#: that would not give that same answer.
+_ANALYSING_MODULES: tuple[str, ...] = (
+    "ast.py",
+    "checker.py",
+    "diagnostics.py",
+    "lexer.py",
+    "modules.py",
+    "parser.py",
+    "sugar.py",
+)
+
+#: Answers held in memory at once. A long-lived process that asks a great many
+#: different questions starts forgetting rather than growing without bound.
+_REMEMBERED_LIMIT = 20000
+
+#: New answers written to the store per run, so an editor analysing on every
+#: keystroke cannot append to it without limit.
+_STORED_PER_RUN_LIMIT = 20000
+
+_LEX = lex
+_PARSE = parse
+_CHECK = check
+
+_remembered: dict[str, tuple[Diagnostic, ...]] = {}
+_remember_lock = threading.Lock()
+_digest: str | None = None
+_store_ready = False
+_loaded_path: Path | None = None
+_store_handle: IO[str] | None = None
+_store_path: Path | None = None
+_store_written = 0
+
+
+def analyser_digest() -> str:
+    """A digest of the code that decides what an analysis reports."""
+
+    global _digest
+    if _digest is None:
+        hasher = hashlib.sha256()
+        hasher.update(f"python{sys.version_info[0]}.{sys.version_info[1]}".encode())
+        folder = Path(__file__).resolve().parent
+        for name in _ANALYSING_MODULES:
+            hasher.update(name.encode())
+            try:
+                hasher.update((folder / name).read_bytes())
+            except OSError:
+                hasher.update(b"missing")
+        _digest = hasher.hexdigest()[:32]
+    return _digest
+
+
+def _store_folder() -> Path | None:
+    """The folder answers are kept in, or None when remembering is off."""
+
+    raw = os.environ.get(CACHE_ENV)
+    if raw is not None and raw.strip() in ("", "0"):
+        return None
+    if raw:
+        return Path(raw).expanduser()
+    return Path.home() / ".kosika" / "analysis"
+
+
+def _store_file() -> Path | None:
+    folder = _store_folder()
+    if folder is None:
+        return None
+    return folder / f"{analyser_digest()}.jsonl"
+
+
+def _analysis_key(source: str, path: str) -> str:
+    text = f"{analyser_digest()}\0{path}\0".encode() + source.encode(
+        "utf-8", "surrogatepass"
+    )
+    return hashlib.sha256(text).hexdigest()
+
+
+def _patched() -> bool:
+    """True when a caller has replaced one of the steps being remembered.
+
+    A replaced lexer, parser or checker may answer differently for the same
+    text, so nothing is remembered or replayed while one is in place; that is
+    what keeps a test's stand-in step seeing every call it expects.
+    """
+
+    return lex is not _LEX or parse is not _PARSE or check is not _CHECK
+
+
+def _load_store() -> None:
+    """Read the remembered answers once per process, if there are any."""
+
+    global _store_ready, _loaded_path
+    path = _store_file()
+    with _remember_lock:
+        if _store_ready and _loaded_path == path:
+            return
+        _store_ready = True
+        _loaded_path = path
+    if path is None:
+        return
+    loaded: dict[str, tuple[Diagnostic, ...]] = {}
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    payload = json.loads(line)
+                    loaded[str(payload["key"])] = tuple(
+                        _diagnostic_from_json(item) for item in payload["diagnostics"]
+                    )
+                except (ValueError, KeyError, TypeError):
+                    continue
+    except OSError:
+        loaded = {}
+    with _remember_lock:
+        for key, answer in loaded.items():
+            _remembered.setdefault(key, answer)
+    # Answers from an older digest cannot be used again; drop them.
+    try:
+        for other in path.parent.glob("*.jsonl"):
+            if other != path:
+                other.unlink()
+    except OSError:
+        pass
+
+
+def _remembered_answer(key: str) -> tuple[Diagnostic, ...] | None:
+    with _remember_lock:
+        found = _remembered.get(key)
+    if found is not None:
+        return found
+    _load_store()
+    with _remember_lock:
+        return _remembered.get(key)
+
+
+def _remember(key: str, found: Sequence[Diagnostic]) -> None:
+    global _store_written
+    with _remember_lock:
+        if len(_remembered) >= _REMEMBERED_LIMIT:
+            _remembered.clear()
+        _remembered[key] = tuple(found)
+        room = _store_written < _STORED_PER_RUN_LIMIT
+    if not room:
+        return
+    payload: dict[str, Any] = {
+        "key": key,
+        "diagnostics": [_diagnostic_json(item) for item in found],
+    }
+    try:
+        line = json.dumps(payload, sort_keys=True)
+    except (TypeError, ValueError):
+        return
+    if any(
+        _diagnostic_from_json(item) != diagnostic
+        for item, diagnostic in zip(payload["diagnostics"], found)
+    ):
+        # Something in the diagnostic does not survive JSON exactly; a cache is
+        # not worth handing back a nearly identical answer, so leave it out.
+        return
+    _append_store(line)
+
+
+def _append_store(line: str) -> None:
+    global _store_handle, _store_path, _store_written
+    path = _store_file()
+    if path is None:
+        return
+    with _remember_lock:
+        # The folder can change under a long-lived process -- a test pointing
+        # the store at its own directory, say -- so the handle follows it.
+        if _store_handle is None or _store_path != path:
+            if _store_handle is not None:
+                try:
+                    _store_handle.close()
+                except OSError:
+                    pass
+                _store_handle = None
+                _store_path = None
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                _store_handle = path.open("a", encoding="utf-8")
+                _store_path = path
+            except OSError:
+                _store_written = _STORED_PER_RUN_LIMIT
+                return
+        handle = _store_handle
+        _store_written += 1
+    try:
+        handle.write(line + "\n")
+        handle.flush()
+    except (OSError, ValueError):
+        pass
+
+
+def _diagnostic_json(diagnostic: Diagnostic) -> dict[str, Any]:
+    span = diagnostic.span
+    return {
+        "code": diagnostic.code,
+        "message": diagnostic.message,
+        "severity": int(diagnostic.severity),
+        "span": (
+            None
+            if span is None
+            else [
+                span.start_line,
+                span.start_character,
+                span.end_line,
+                span.end_character,
+            ]
+        ),
+        "path": diagnostic.path,
+        "owner": diagnostic.owner,
+        "owner_kind": diagnostic.owner_kind,
+        "data": dict(diagnostic.data),
+    }
+
+
+def _diagnostic_from_json(payload: Mapping[str, Any]) -> Diagnostic:
+    span = payload.get("span")
+    return Diagnostic(
+        code=str(payload["code"]),
+        message=str(payload["message"]),
+        severity=Severity(int(payload.get("severity", int(Severity.ERROR)))),
+        span=(
+            None
+            if not span
+            else Span(int(span[0]), int(span[1]), int(span[2]), int(span[3]))
+        ),
+        path=payload.get("path"),
+        owner=payload.get("owner"),
+        owner_kind=payload.get("owner_kind"),
+        data=dict(payload.get("data") or {}),
+    )
+
+
 def analyze(source: str, *, path: str = "<memory>") -> list[Diagnostic]:
     """Analyse one self-contained source document.
 
     Imports require :func:`analyze_path`; this entry point reports that
     limitation explicitly instead of returning a false clean result.
+
+    What an analysis says is a function of the text, the path it is read under
+    and the code that reads it, so an answer is remembered: in memory for this
+    run, and under ``~/.kosika/analysis`` (or ``KOSIKA_ANALYSIS_CACHE``)
+    between runs. The corpus asks a thousand questions and the benchmark asks
+    every one of them again, which is what makes remembering worth the trouble.
     """
 
     if not isinstance(source, str):
         raise TypeError("Kosika source must be text")
+    if _patched():
+        return _analyse(source, path=path)
+    key = _analysis_key(source, path)
+    remembered = _remembered_answer(key)
+    if remembered is not None:
+        return list(remembered)
+    found = _analyse(source, path=path)
+    _remember(key, found)
+    return found
+
+
+def _analyse(source: str, *, path: str = "<memory>") -> list[Diagnostic]:
+    """Analyse without consulting or filling what is remembered."""
 
     tokens: list[Token] = []
     try:

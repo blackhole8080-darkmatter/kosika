@@ -24,6 +24,7 @@ SLOW = {
     "test_conformance.py",
     "test_corpus.py",
     "test_desktop_app.py",
+    "test_diagnostics_cache.py",
     "test_engines.py",
     "test_example_agents.py",
     "test_hash_stability.py",
