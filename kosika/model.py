@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import socket
 import time
 import urllib.error
 import urllib.parse
@@ -9,6 +10,22 @@ import urllib.request
 import uuid
 from dataclasses import dataclass
 from typing import Any, Callable, Iterator, Protocol
+
+
+# A model is asked over the network, and on some networks the IPv6 route to
+# a provider is broken: every request then waits some 40 seconds for IPv6 to
+# fail before IPv4, which answers in a fraction of a second, is tried. The
+# addresses a name resolves to are therefore tried IPv4 first. A host with
+# only IPv6 addresses is still reached by them.
+_resolve = socket.getaddrinfo
+
+
+def _ipv4_first(host: Any, *args: Any, **kwargs: Any) -> list[Any]:
+    found = _resolve(host, *args, **kwargs)
+    return sorted(found, key=lambda entry: entry[0] != socket.AF_INET)
+
+
+socket.getaddrinfo = _ipv4_first
 
 #: Seconds to wait between tries while a model server is restarting: about
 #: five minutes in all.
