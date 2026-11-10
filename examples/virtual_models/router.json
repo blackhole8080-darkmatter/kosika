@@ -35,7 +35,8 @@
       "id": "qwen2.5-coder:7b",
       "url": "http://127.0.0.1:11434/v1/chat/completions",
       "key": "",
-      "timeout_seconds": 1200
+      "timeout_seconds": 1200,
+      "max_prompt_chars": 4000
     }
   },
   "routes": {

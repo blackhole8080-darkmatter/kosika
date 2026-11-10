@@ -907,7 +907,7 @@ fn own_words(task: Task) -> Text {
 fn pack_for(path: Text) -> Text {
   let name = path.lower().replace("\\", "/")
   if name.ends_with(".py") {
-    let tests = if name.starts_with("tests/") { " These are tests of Kosika itself: a program Kosika refuses before it runs, such as a call with an argument of the wrong type, raises CheckError from check(), and a failure while it runs raises RuntimeError; test only what the request asks for." } else { "" }
+    let tests = if name.starts_with("tests/") { " These are tests of Kosika itself: a program Kosika refuses before it runs, such as a call with an argument of the wrong type, raises CheckError from check(), and a failure while it runs raises RuntimeError; test only what the request asks for; copy any helper such as value_of from the file shown as a pattern character for character, its doubled braces {{ }} in the f-strings included." } else { "" }
     let engine_rule = if name.starts_with("kosika/") { " This is Kosika's reference engine: a built-in method is one Method(receiver, name, ((param, Type), ...), result type, function) in the METHODS table of builtin_methods.py, and a failure is a RuntimeError whose words say what was wrong in plain language." } else { "" }
     let house = tests + engine_rule
     return "Python rules: keep the file's style, imports at the top, no print in a function that returns a value, and type hints only where the file already uses them." + house + "\n"
@@ -1267,7 +1267,10 @@ fn repeated_now(old: Text, new: Text) -> Text[] {
   var repeated: Text[] = []
   for line in after.unique() {
     let plain = line.trim()
-    if plain.length() >= 25 and not repeated.contains(line) {
+    // Only a registration or a line at the left margin: two functions
+    // may well end with the same return line.
+    let kind = plain.starts_with("Method(") or plain.starts_with("m(\"") or (line.length() > 0 and not line.starts_with(" ") and not line.starts_with("	"))
+    if plain.length() >= 25 and kind and not repeated.contains(line) {
       let now = after.count(line)
       if now > 1 and now > before.count(line) { repeated = repeated.append(line) }
     }
@@ -2006,7 +2009,7 @@ fn after_registering(tried: Result, report: Result) -> Result {
 
 fn python_part(asked: MethodAsked) -> Task {
   let table = if asked.kind == "array" { "beside the other ANY_ARRAY methods" } else { "beside the other \"" + asked.kind + "\" methods" }
-  return {text: asked.text + ". Do it in kosika/builtin_methods.py, as one Method in the METHODS table " + table + ", with a helper function above the table only if it needs more than one line. Write tests for it in tests/test_" + asked.name + ".py in the style of tests/test_short_methods.py, running small Kosika programs that call it"}
+  return {text: asked.text + ". Do it in kosika/builtin_methods.py, as one Method in the METHODS table " + table + ", with a helper function above the table only if it needs more than one line. Write tests for it in tests/test_" + asked.name + ".py in the style of tests/test_short_methods.py, running small Kosika programs that call it. Test only calls that work and the values they give, three to six of them, edge cases included; write no test of an error or a wrong type, and no helper the method does not use"}
 }
 
 // The lines of the Python engine that define the method, which the Go one
@@ -2037,9 +2040,10 @@ fn docs_part(asked: MethodAsked) -> Task {
 // Calls the new method on sample values in both engines and compares what
 // they give: the one check that shows the Go engine does what the Python
 // one does, not just that it compiles. A method that takes arguments is
-// skipped, as there are no samples for what it takes.
+// called with sample arguments too, a few of each type it takes, and a
+// call that fails must fail in both engines.
 fn agree_script() -> Text {
-  return "import re, subprocess, sys, tempfile, os\nname, kind = sys.argv[1], sys.argv[2]\nsource = open('kosika/builtin_methods.py', encoding='utf-8').read()\nfound = re.search(r'Method\\(\\s*\"' + kind + r'\",\\s*\"' + name + r'\",\\s*\\((.*?)\\),\\s*\"([^\"]+)\"', source, re.S)\nif not found:\n    print('the Python engine has no Method line for ' + kind + ' ' + name)\n    sys.exit(1)\nif found.group(1).strip():\n    print('skipped: ' + name + ' takes arguments, so no sample call is made')\n    sys.exit(0)\nresult = found.group(2)\nsamples = {'Text': ['\"\"', '\"abc\"', '\" 12 \"', '\"0\"', '\"Hello World\"'], 'Number': ['0', '-2.5', '7', '1000000'], 'Bool': ['true', 'false']}.get(kind)\nif samples is None:\n    print('skipped: no samples for ' + kind)\n    sys.exit(0)\nfields = ' '.join('v%d: %s' % (i, result) for i in range(len(samples)))\nvalues = ', '.join('v%d: (%s).%s()' % (i, s, name) for i, s in enumerate(samples))\nprogram = 'record Out { ' + fields + ' }\\nfn f() -> Out {\\n  return {' + values + '}\\n}\\nworkflow main() -> Out { out = f() }\\n'\nfolder = tempfile.mkdtemp()\npath = os.path.join(folder, 'agree.kos')\nopen(path, 'w', encoding='utf-8').write(program)\npy = subprocess.run([sys.executable, '-m', 'kosika.cli', 'run', path], capture_output=True, text=True, cwd=folder, env=dict(os.environ, PYTHONPATH=os.getcwd()))\ngo = subprocess.run(['go', '-C', os.path.join(os.getcwd(), 'native'), 'run', '.', 'run', path], capture_output=True, text=True, cwd=folder)\nfirst = lambda ran: (ran.stdout.strip().splitlines() or [ran.stderr.strip()[-300:]])[0]\nprint('Python engine: ' + first(py))\nprint('Go engine:     ' + first(go))\nsys.exit(0 if py.returncode == 0 and go.returncode == 0 and first(py) == first(go) else 1)\n"
+  return "import itertools, os, re, subprocess, sys, tempfile\nname, kind = sys.argv[1], sys.argv[2]\nsource = open('kosika/builtin_methods.py', encoding='utf-8').read()\nfound = re.search(r'Method\\(\\s*\"' + kind + r'\",\\s*\"' + name + r'\",\\s*\\((.*?)\\),\\s*\"([^\"]+)\"', source, re.S)\nif not found:\n    print('the Python engine has no Method line for ' + kind + ' ' + name)\n    sys.exit(1)\nparams = re.findall(r'\\(\\s*\"(\\w+)\",\\s*\"([^\"]+)\"\\s*\\)', found.group(1))\nresult = found.group(2)\nvalues = {'Text': ['\"\"', '\"abc\"', '\" 12 \"', '\"banana\"', '\"Hello World\"'], 'Number': ['0', '-2.5', '7', '3'], 'Bool': ['true', 'false']}\nreceivers = values.get(kind)\nchoices = [values.get(t) for _, t in params]\nif receivers is None or None in choices:\n    print('skipped: no samples for ' + kind + ' or one of its parameters')\n    sys.exit(0)\nargument_samples = {'Text': ['\"a\"', '\"an\"', '\"zz\"', '\"\"'], 'Number': ['0', '1', '2'], 'Bool': ['true']}\ncombos = list(itertools.product(*[argument_samples[t] for _, t in params]))[:6] or [()]\ncalls = []\nfor receiver in receivers:\n    for combo in combos:\n        args = ', '.join(f'{p}: {v}' for (p, _), v in zip(params, combo))\n        calls.append(f'({receiver}).{name}({args})')\nfolder = tempfile.mkdtemp()\nengine = os.path.join(folder, 'kosika-native.exe' if os.name == 'nt' else 'kosika-native')\nbuilt = subprocess.run(['go', '-C', os.path.join(os.getcwd(), 'native'), 'build', '-o', engine, '.'], capture_output=True, text=True)\nif built.returncode != 0:\n    print('the Go engine does not build: ' + built.stderr[-1500:])\n    sys.exit(1)\n\n\ndef run_both(call):\n    program = 'record Out { v: ' + result + ' }\\nfn f() -> Out {\\n  return {v: ' + call + '}\\n}\\nworkflow main() -> Out { out = f() }\\n'\n    path = os.path.join(folder, 'agree.kos')\n    open(path, 'w', encoding='utf-8').write(program)\n    py = subprocess.run([sys.executable, '-m', 'kosika.cli', 'run', path], capture_output=True, text=True, cwd=folder,\n                        env=dict(os.environ, PYTHONPATH=os.getcwd()))\n    go = subprocess.run([engine, 'run', path], capture_output=True, text=True, cwd=folder)\n    said = lambda ran: (ran.stdout.strip().splitlines() or ['FAILED'])[0] if ran.returncode == 0 else 'FAILED'\n    return said(py), said(go)\n\n\napart = 0\nfor call in calls:\n    py, go = run_both(call)\n    same = py == go\n    apart += 0 if same else 1\n    print(('same  ' if same else 'APART ') + call + '  python: ' + py + '  go: ' + go)\nsys.exit(0 if apart == 0 else 1)\n"
 }
 
 fn agree_args(asked: MethodAsked) -> Text[] {
@@ -2998,7 +3002,7 @@ test "a new method counts as done only when both engines give the same answers" 
   asked: MethodAsked = {kind: "Text", name: "is_digits", text: "add a Text method is_digits()"}
   expect agree_args(asked)[0] == "-c"
   expect agree_args(asked)[2] == "is_digits"
-  expect agree_script().contains("'go', '-C', os.path.join(os.getcwd(), 'native')")
+  expect agree_script().contains("'build', '-o', engine")
   ok: Result = {text: "fine", last: {task: "t", output: "", passed: true, known: true}}
   same = all_parts(asked, ok, ok, ok, {exit_code: 0, stdout: "Python engine: {}\nGo engine:     {}", stderr: ""})
   expect same.last.passed
@@ -3080,4 +3084,20 @@ test "an edit that writes a registration or any long line twice changes nothing"
   expect twice.problems[0].contains("repeat the line")
   once = patched(old, "<<<<<<< FIND\n    Method(\"Text\", \"index_of\", ((\"part\", \"Text\"),), \"Number?\", f),\n=======\n    Method(\"Text\", \"index_of\", ((\"part\", \"Text\"),), \"Number?\", f),\n    Method(\"Text\", \"last_index_of\", ((\"part\", \"Text\"),), \"Number?\", g),\n>>>>>>> REPLACE")
   expect once.problems == []
+}
+
+test "two functions may end with the same indented line" {
+  old = "def _a(text):
+    return None if position < 0 else position
+"
+  ok = patched(old, "<<<<<<< FIND
+def _a(text):
+=======
+def _b(text):
+    return None if position < 0 else position
+
+
+def _a(text):
+>>>>>>> REPLACE")
+  expect ok.problems == []
 }

@@ -162,12 +162,22 @@ class LearningRouter(base.Router):
         self.local = threading.local()
 
     def route(self, start: str) -> list[str]:
-        written = super().route(start)
+        written = self.fitting(super().route(start))
         decided = kosika_order(getattr(self.local, "body", {}), written, self.ledger)
         if decided is not None and sorted(decided[1]) == sorted(written):
             self.local.kind = decided[0]
             return decided[1]
         return self.ledger.order(getattr(self.local, "kind", "plain"), written)
+
+    def fitting(self, route: list[str]) -> list[str]:
+        """The route without models the request is too long for. A model on
+        a laptop's processor reads a long coding prompt in tens of minutes:
+        router.json gives it a `max_prompt_chars`, and a longer request
+        waits for a model that can read it in time instead."""
+        body = getattr(self.local, "body", {})
+        size = sum(len(str(m.get("content") or "")) for m in body.get("messages") or [])
+        kept = [m for m in route if size <= self.config["models"][m].get("max_prompt_chars", size)]
+        return kept or route
 
     def answer(self, body: dict) -> tuple[int, dict]:
         self.local.body = body
