@@ -907,7 +907,7 @@ fn own_words(task: Task) -> Text {
 fn pack_for(path: Text) -> Text {
   let name = path.lower().replace("\\", "/")
   if name.ends_with(".py") {
-    let tests = if name.starts_with("tests/") { " These are tests of Kosika itself: a program Kosika refuses before it runs, such as a call with an argument of the wrong type, raises CheckError from check(), and a failure while it runs raises RuntimeError; test only what the request asks for; copy any helper such as value_of from the file shown as a pattern character for character, its doubled braces {{ }} in the f-strings included." } else { "" }
+    let tests = if name.starts_with("tests/") { " These are tests of Kosika itself: a program Kosika refuses before it runs, such as a call with an argument of the wrong type, raises CheckError from check(), and a failure while it runs raises RuntimeError; test only what the request asks for; write a negative receiver in parentheses, (-3).is_even(), since -3.is_even() is -(3.is_even()); work out each expected value by hand before writing it; copy any helper such as value_of from the file shown as a pattern character for character, its doubled braces {{ }} in the f-strings included." } else { "" }
     let engine_rule = if name.starts_with("kosika/") { " This is Kosika's reference engine: a built-in method is one Method(receiver, name, ((param, Type), ...), result type, function) in the METHODS table of builtin_methods.py, and a failure is a RuntimeError whose words say what was wrong in plain language." } else { "" }
     let house = tests + engine_rule
     return "Python rules: keep the file's style, imports at the top, no print in a function that returns a value, and type hints only where the file already uses them." + house + "\n"

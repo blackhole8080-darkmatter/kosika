@@ -228,25 +228,84 @@ def save_example(request: str, before: Path, after: Path, files: list[str]) -> N
         out.write(json.dumps(example) + "\n")
 
 
+#: A request a swarm member has taken and is working on.
+TAKEN = "- [~] "
+
+
+def mark_line(text: str, mark: str, note: str = "") -> None:
+    """Mark the line holding `text`, open or taken, in todo.md as it is now:
+    several swarm members write it, so each reads it again just before, under
+    a lock file."""
+    lock = TODO.with_suffix(".lock")
+    for _ in range(600):
+        try:
+            lock.mkdir()
+            break
+        except FileExistsError:
+            time.sleep(0.1)
+    try:
+        lines = TODO.read_text(encoding="utf-8").splitlines()
+        for i, line in enumerate(lines):
+            if line[6:].split(" (20")[0].strip() == text and line[:6] in ("- [ ] ", TAKEN):
+                lines[i] = mark + text + note
+                break
+        TODO.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    finally:
+        lock.rmdir()
+
+
+def swarm(size: int) -> None:
+    """Several coders at once, one request each, sharing the virtual model
+    pool. Each works in its own copy and is checked on its own; nothing waits
+    for the others but the end of the run."""
+    lines = TODO.read_text(encoding="utf-8").splitlines()
+    open_ones = [line[6:].strip() for line in lines if line.startswith("- [ ] ")][:size]
+    if not open_ones:
+        print("Nothing is open in todo.md.")
+        return
+    for text in open_ones:
+        mark_line(text, TAKEN)
+    router = start_router()
+    started = time.monotonic()
+    members = [subprocess.Popen([sys.executable, __file__, "--take", text]) for text in open_ones]
+    for member in members:
+        member.wait()
+    if router is not None:
+        router.terminate()
+    print(f"Swarm of {len(members)}: {round(time.monotonic() - started)} s for all of them together.")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--swarm", type=int, default=0, help="run this many coders at once, one request each")
+    parser.add_argument("--take", help="(a swarm member) work on this request, already marked as taken")
     args = parser.parse_args()
-    lines = TODO.read_text(encoding="utf-8").splitlines()
-    number = next_request(lines)
-    if number is None:
-        print("Nothing is open in todo.md.")
+    if args.swarm:
+        swarm(args.swarm)
         return
-    text = lines[number][len("- [ ] ") :].strip()
+    lines = TODO.read_text(encoding="utf-8").splitlines()
+    if args.take:
+        text = args.take
+    else:
+        number = next_request(lines)
+        if number is None:
+            print("Nothing is open in todo.md.")
+            return
+        text = lines[number][len("- [ ] ") :].strip()
     if args.dry_run:
         print("Next:", text)
         return
 
     today = datetime.date.today().isoformat()
     count = 1
-    while (WORK / f"{today}-{count}").exists():
-        count += 1
-    place = WORK / f"{today}-{count}"
+    while True:
+        place = WORK / f"{today}-{count}"
+        try:
+            place.mkdir(parents=True)
+            break
+        except FileExistsError:
+            count += 1
     before, after = place / "before", place / "kosika"
     before.mkdir(parents=True)
     copy_studio(before)
@@ -325,9 +384,7 @@ def main() -> None:
         save_example(text, before, after, files)
     shutil.rmtree(before, ignore_errors=True)
 
-    mark = "- [x] " if passed else "- [!] "
-    lines[number] = mark + text + f" ({today}, {place.name})"
-    TODO.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    mark_line(text, "- [x] " if passed else "- [!] ", f" ({today}, {place.name})")
     print(("PASSED " if passed else "DID NOT PASS ") + text)
     print(place / "report.md")
 
