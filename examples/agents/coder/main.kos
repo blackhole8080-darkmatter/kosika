@@ -161,6 +161,18 @@ tool read_file {
   output: FileText
 }
 
+// The start of a file, for a long one where only the beginning is needed.
+// A model shown a whole 2,000-line file spends its answer looking for the
+// one function it wanted; the start, and a read of the part it needs, is
+// cheaper and is read more carefully.
+tool peek_file {
+  source system "files"
+  operation: "peek"
+  access: observe
+  input: Where
+  output: FileText
+}
+
 tool find_text {
   source system "files"
   operation: "search"
@@ -257,9 +269,9 @@ agent writer {
 
 agent coder {
   model: engineer
-  can: [list_folder, read_file, find_text, write_file]
-  max_steps: 8
-  max_tool_calls: 16
+  can: [list_folder, read_file, peek_file, find_text, write_file]
+  max_steps: 24
+  max_tool_calls: 48
   check: plan_check
   instructions: "You are a careful programmer working in one project. It may be Python, Kosika, JavaScript or TypeScript: write in the language of the files that are there. You cannot see anything until you use a tool. First list the folder with path \".\". Read every file you will write before you write it; that includes the test file if one exists. Then request all your changes in one reply, one write_file for each file. write_file replaces the whole file, so its text must be the complete new file: every line that was there and should stay, plus what you add. A task that adds a function with a test needs two write_file calls: the source file with the new function added, and the test file with its old tests kept and the new test added. Import the new function in the test file. Change nothing the task does not need. Write only the files the task needs changed: to fix a bug, change the file with the bug and leave the tests as they are. When the program is Kosika and uses AI, tools and agents have one shape. A tool is declared, never written: tool find_line { source system \"files\" operation: \"search\" access: observe input: Query output: Hits } - all five parts, no body, no parentheses after its name, no -> return type, and input and output are records declared above it. An agent names the tools it may use: agent helper { model: think can: [find_line] max_steps: 4 }. A workflow reaches an agent with ask, as found = ask helper(q.text), and never calls a tool itself. A test scripts an observing tool with answers find_line: [{text: \"a line\"}]. After the changes, answer with what you did in summary, and an empty list in did."
 }
@@ -272,9 +284,9 @@ agent runner {
 // The builder of a website: one file a round.
 agent builder {
   model: engineer
-  can: [list_folder, read_file, write_file]
-  max_steps: 6
-  max_tool_calls: 10
+  can: [list_folder, read_file, peek_file, write_file]
+  max_steps: 10
+  max_tool_calls: 20
   check: plan_check
   instructions: "You are a web designer and front-end developer who builds modern, beautiful, professional websites with plain HTML, CSS and JavaScript: no frameworks, no build step and nothing loaded from the internet. Each request asks for one file. First list the folder with path \".\" and read the files the request names, so what you write fits what is there. Then call write_file once, for that one file, with its complete text: every line of it, finished, never cut short and never with a placeholder or a comment saying more goes here. Write real, specific words for the content, never lorem ipsum. After the file is written, answer with what you made in summary, and an empty list in did."
 }
@@ -566,6 +578,7 @@ fn kind_of(msg: Msg) -> Text {
   if text == "" or text == "help" { kind = "help" }
   else if text == "fix" or text == "try again" or text.starts_with("fix it") { kind = "fix" }
   else if text == "test" or text == "tests" or text == "run the tests" { kind = "test" }
+  else if text == "survey" or text == "selfdev" or text == "self-dev" { kind = "selfdev" }
   else if is_site_request(text) { kind = "site" }
   return kind
 }
@@ -839,7 +852,7 @@ fn file_plan(task: Task, folder: Listing) -> Plan {
 // What a model that has never seen Kosika needs to write it: the rules
 // and one whole program that checks and passes its tests.
 fn kosika_example() -> Text {
-  return "Kosika is its own language, not Python. Rules: no semicolons; record fields have no commas between them; every fn ends with return; a workflow is a list of steps, one per line, each `name = call`; a thinking step (classify, extract, summarize, decide, use_model) is only ever a workflow line such as `x = classify TEXT into [\"a\", \"b\"]`, never inside a fn, and gives a Choice {label, confidence}; `learn` and then `otherwise f(...)` may follow it; `memory NAME of Record` keeps records, read with `recall NAME under KEY` and written with `remember VALUE in NAME under KEY`, and a NAMERecalled is a record with found (Bool) and value (Record?, optional), so it is read as `known.value.or(default: ...)` or `known.value.value()`, never `known.value()`, because a record has no methods; a test is `test \"words\" { ... }` with `answers MODEL: [...]` for each model answer in order and `expect` lines. This complete program checks and its tests pass; follow its shape:\n\n// Sorts a piece of feedback and counts each kind.\nrecord Feedback { text: Text }\nrecord Tally { count: Number }\nrecord Sorted { kind: Text count: Number }\n\nmodel assistant\n\nmemory tallies of Tally\n\nfn unsure(f: Feedback) -> Choice {\n  return {label: \"idea\", confidence: 0}\n}\n\nfn next_count(known: TalliesRecalled) -> Tally {\n  let before = known.value.or(default: {count: 0}).count\n  return {count: before + 1}\n}\n\nfn sorted(label: Choice, tally: Tally) -> Sorted {\n  return {kind: label.label, count: tally.count}\n}\n\nworkflow main(f: Feedback) -> Sorted {\n  budget 3 model calls, 120 seconds\n  label  = classify f.text into [\"praise\", \"complaint\", \"idea\"] learn otherwise unsure(f)\n  known  = recall tallies under label.label\n  tally  = next_count(known)\n  saved  = remember tally in tallies under label.label\n  result = sorted(label, tally)\n}\n\ntest \"a complaint is sorted and counted\" {\n  answers assistant: [{label: \"complaint\", confidence: 0.9}]\n  r = main({text: \"The app keeps crashing.\"})\n  expect r.kind == \"complaint\"\n  expect r.count == 1\n}\n\ntest \"each kind is counted on its own\" {\n  answers assistant: [{label: \"idea\", confidence: 0.8}, {label: \"idea\", confidence: 0.7}, {label: \"praise\", confidence: 0.9}]\n  a = main({text: \"Add a dark mode.\"})\n  b = main({text: \"Could it export to PDF?\"})\n  c = main({text: \"I love it.\"})\n  expect b.count == 2\n  expect c.count == 1\n}\n"
+  return "Kosika is its own language, not Python. Rules: no semicolons; record fields have no commas between them; every fn ends with return; a workflow is a list of steps, one per line, each `name = call`; a thinking step (classify, extract, summarize, decide, use_model) is only ever a workflow line such as `x = classify TEXT into [\"a\", \"b\"]`, never inside a fn, and gives a Choice {label, confidence}; the four thinking steps are exactly `x = classify TEXT into [\"a\", \"b\"]` (a Choice), `x = extract RECORD from TEXT` (that record, declared above; never `into`), `x = summarize TEXT` (a Summary {text}) and `x = decide \"question?\" given TEXT` (a Decision {answer: Bool, confidence, reason}); Choice, Summary and Decision are built in, never declared; a test scripts them with `answers MODEL: [{label: \"a\", confidence: 1}]`, `[{FIELD: VALUE, ...}]` for extract, `[{text: \"...\"}]` and `[{answer: true, confidence: 1, reason: \"why\"}]`; a workflow has no return line, its last step is its result; `learn` and then `otherwise f(...)` may follow it; `memory NAME of Record` keeps records, read with `recall NAME under KEY` and written with `remember VALUE in NAME under KEY`, and a NAMERecalled is a record with found (Bool) and value (Record?, optional), so it is read as `known.value.or(default: ...)` or `known.value.value()`, never `known.value()`, because a record has no methods; a test is `test \"words\" { ... }` with `answers MODEL: [...]` for each model answer in order and `expect` lines. This complete program checks and its tests pass; follow its shape:\n\n// Sorts a piece of feedback and counts each kind.\nrecord Feedback { text: Text }\nrecord Tally { count: Number }\nrecord Sorted { kind: Text count: Number }\n\nmodel assistant\n\nmemory tallies of Tally\n\nfn unsure(f: Feedback) -> Choice {\n  return {label: \"idea\", confidence: 0}\n}\n\nfn next_count(known: TalliesRecalled) -> Tally {\n  let before = known.value.or(default: {count: 0}).count\n  return {count: before + 1}\n}\n\nfn sorted(label: Choice, tally: Tally) -> Sorted {\n  return {kind: label.label, count: tally.count}\n}\n\nworkflow main(f: Feedback) -> Sorted {\n  budget 3 model calls, 120 seconds\n  label  = classify f.text into [\"praise\", \"complaint\", \"idea\"] learn otherwise unsure(f)\n  known  = recall tallies under label.label\n  tally  = next_count(known)\n  saved  = remember tally in tallies under label.label\n  result = sorted(label, tally)\n}\n\ntest \"a complaint is sorted and counted\" {\n  answers assistant: [{label: \"complaint\", confidence: 0.9}]\n  r = main({text: \"The app keeps crashing.\"})\n  expect r.kind == \"complaint\"\n  expect r.count == 1\n}\n\ntest \"each kind is counted on its own\" {\n  answers assistant: [{label: \"idea\", confidence: 0.8}, {label: \"idea\", confidence: 0.7}, {label: \"praise\", confidence: 0.9}]\n  a = main({text: \"Add a dark mode.\"})\n  b = main({text: \"Could it export to PDF?\"})\n  c = main({text: \"I love it.\"})\n  expect b.count == 2\n  expect c.count == 1\n}\n"
 }
 
 // A whole program whose tool searches the files of the granted folder. It is
@@ -894,7 +907,9 @@ fn own_words(task: Task) -> Text {
 fn pack_for(path: Text) -> Text {
   let name = path.lower().replace("\\", "/")
   if name.ends_with(".py") {
-    let house = if name.starts_with("kosika/") { " This is Kosika's reference engine: a built-in method is one Method(receiver, name, ((param, Type), ...), result type, function) in the METHODS table of builtin_methods.py, and a failure is a RuntimeError whose words say what was wrong in plain language." } else { "" }
+    let tests = if name.starts_with("tests/") { " These are tests of Kosika itself: a program Kosika refuses before it runs, such as a call with an argument of the wrong type, raises CheckError from check(), and a failure while it runs raises RuntimeError; test only what the request asks for." } else { "" }
+    let engine_rule = if name.starts_with("kosika/") { " This is Kosika's reference engine: a built-in method is one Method(receiver, name, ((param, Type), ...), result type, function) in the METHODS table of builtin_methods.py, and a failure is a RuntimeError whose words say what was wrong in plain language." } else { "" }
+    let house = tests + engine_rule
     return "Python rules: keep the file's style, imports at the top, no print in a function that returns a value, and type hints only where the file already uses them." + house + "\n"
   }
   if name.ends_with(".go") {
@@ -1158,11 +1173,68 @@ fn patched(old: Text, answer: Text) -> Patched {
     problems = problems.concat(last.problems)
   }
   if n == 0 { problems = problems.append("there was no <<<<<<< FIND block in the answer") }
+  for line in repeated_now(old.replace("\r\n", "\n"), text) {
+    problems = problems.append("the edits repeat the line `" + line.take(100) + "`, which is already in the file; write each new line once and copy no line that is already there")
+  }
   for name in twice_now(old.replace("\r\n", "\n"), text) {
     problems = problems.append("the edits define " + name + " a second time; it is already in the file, so leave it where it is and copy nothing that is already there")
   }
   if not problems.is_empty() { return {text: "", problems: problems} }
   return {text: if crlf { text.replace("\n", "\r\n") } else { text }, problems: []}
+}
+
+// A model shown a long file sometimes writes the new lines alone, with no
+// FIND around them: it has said what to add, only not where. When nothing
+// applied and the answer is code defining nothing the file already has, it
+// is added at the end, and the engine reads the result as it reads any edit.
+fn patched_or_added(old: Text, answer: Text) -> Patched {
+  let edits = patched(old, answer)
+  // An answer that wrote blocks was trying to edit, and an edit that does
+  // not apply is not a file to add: it goes back to the model instead.
+  if answer.contains("<<<<<<<") { return edits }
+  let said = edits.problems.join(" ")
+  if not (said.contains("there was no <<<<<<< FIND block") or said.contains("'s FIND is not in the file")) { return edits }
+  let code = without_fences(answer)
+  let names = defined(code)
+  if names.is_empty() { return edits }
+  let plain = old.replace("\r\n", "\n")
+  var already = ""
+  for name in names {
+    if already.is_empty() and heads(plain, name) > 0 { already = name }
+  }
+  if not already.is_empty() { return edits }
+  return {text: plain.trim() + "\n\n\n" + code + "\n", problems: []}
+}
+
+// A model's answer with the code fences off it: the fences are how it shows
+// text, not part of what it shows.
+fn without_fences(answer: Text) -> Text {
+  let kept = for line in answer.lines() where not line.trim().starts_with("```") { line }
+  return kept.join("\n").trim()
+}
+
+// What is wrong with a file the model wrote whole, before anything is
+// written: a lesson is kept only for an answer with nothing wrong with it,
+// so a file that drops what the old one had is asked for again, not
+// remembered and replayed.
+fn write_answer_problem(answer: FileText, old: Text) -> Text {
+  let code = without_fences(answer.text)
+  if code.is_empty() { return "the answer is empty" }
+  let plain = old.replace("\r\n", "\n")
+  var gone = ""
+  for name in defined(plain) {
+    if gone.is_empty() and heads(code, name) == 0 { gone = name }
+  }
+  if not gone.is_empty() { return "the answer drops " + gone + ", which the file has now; every line that should stay must stay" }
+  return ""
+}
+
+// What is wrong with an edit answer before it is applied: it changes the
+// file as it is now, or it is asked for again and not learned.
+fn edit_answer_problem(answer: FileText, old: Text) -> Text {
+  let edits = patched_or_added(old, answer.text)
+  if edits.problems.is_empty() { return "" }
+  return "the answer does not apply to the file: " + edits.problems.take(3).join("; ")
 }
 
 fn no_problems() -> Engine {
@@ -1186,6 +1258,23 @@ fn twice_now(old: Text, new: Text) -> Text[] {
   return twice
 }
 
+// Long lines a change leaves in a file more often than before, where there
+// are now two or more: a registration such as Method("Text", "x", ...) or
+// an existing line written out a second time.
+fn repeated_now(old: Text, new: Text) -> Text[] {
+  let before = old.lines()
+  let after = new.lines()
+  var repeated: Text[] = []
+  for line in after.unique() {
+    let plain = line.trim()
+    if plain.length() >= 25 and not repeated.contains(line) {
+      let now = after.count(line)
+      if now > 1 and now > before.count(line) { repeated = repeated.append(line) }
+    }
+  }
+  return repeated.take(3)
+}
+
 // How many times a text begins a definition of a name at the left margin.
 fn heads(text: Text, name: Text) -> Number {
   let lines = "
@@ -1198,6 +1287,25 @@ fn heads(text: Text, name: Text) -> Number {
 " + word + name + ":")
   }
   return count
+}
+
+fn kept_text(code: FileText) -> FileText {
+  return code
+}
+
+// The new try, or the one before it when the new one came back empty.
+fn best_of(code: FileText, before: FileText) -> FileText {
+  return if code.text.trim().is_empty() { before } else { code }
+}
+
+// Files the engine can read before they are written: Kosika and Python.
+fn engine_reads_path(path: Text) -> Bool {
+  return is_kosika(path) or path.lower().ends_with(".py")
+}
+
+// What the model is told when the engine could not read its file.
+fn engine_failure(problems: Text[], text: Text) -> Text {
+  return "Kosika's engine read the file you wrote and found:\n- " + problems.take(6).join("\n- ") + "\nThis is the file you wrote; write it again whole, with these put right and nothing else changed:\n```\n" + text.take(6000) + "\n```"
 }
 
 fn kept_patch(patch: Patched) -> Patched {
@@ -1465,7 +1573,7 @@ workflow get_review(task: Task, got: Proposed) -> Reviewed {
 }
 
 workflow judge_review(read: Reviewed) -> Choice {
-  judged = classify review_question(read) into ["problem", "fine"] using reader otherwise {label: "unclear", confidence: 0}
+  judged = classify review_question(read) into ["problem", "fine"] using reader learn by review_question(read) otherwise {label: "unclear", confidence: 0}
 }
 
 // The author's second answer, after the reviewer's remarks, is written if
@@ -1598,16 +1706,58 @@ workflow draft_one(one: One) -> Drafted {
 
 workflow write_one(job: Editing) -> Drafted {
   asked = scribe_task(job.one.task, job.one.path, job.old, job.one.drafted, job.one.failure)
+  code  = use_model scribe(asked.text) retry 2 learn by asked.text otherwise {text: ""}
+  // A whole file is read by the engine before anything else sees it: a
+  // Kosika file must check and pass its own tests, a Python one must parse.
+  // What the engine says goes back to the model, word for word, twice at
+  // most: that is how a program the model has never seen the like of comes
+  // out right.
+  read  = call whole_read(job, code)
+  fixed = match read.problems.is_empty() {
+    case true { kept_text(code) }
+    case _ { call write_again({job: {one: job.one, old: job.old, wrong: read.problems}, before: code}) }
+  }
+  more  = with_draft(job.one.drafted, job.one.path, job.old, fixed.text)
+}
+
+workflow whole_read(job: Editing, code: FileText) -> Engine {
+  read = match engine_reads_path(job.one.path) and not code.text.trim().is_empty() {
+    case true { call whole_engine(job, code) }
+    case _ { no_problems() }
+  }
+}
+
+workflow whole_engine(job: Editing, code: FileText) -> Engine {
+  read = execute helper.code_check(job.one.task.text, [{path: job.one.path, text: code.text, before: job.old, exists: not job.old.is_empty()}]) otherwise {problems: []}
+}
+
+// Asked again, shown the file it wrote and what the engine found in it. A
+// second try that still does not read is tried once more; after that the
+// last try is kept, and the tests say the rest.
+record Again { job: Editing before: FileText }
+
+workflow write_again(again: Again) -> FileText {
+  asked = scribe_task(again.job.one.task, again.job.one.path, again.job.old, again.job.one.drafted, engine_failure(again.job.wrong, again.before.text))
   code  = use_model scribe(asked.text) retry 1 learn by asked.text otherwise {text: ""}
-  more  = with_draft(job.one.drafted, job.one.path, job.old, code.text)
+  read  = call whole_read(again.job, code)
+  fixed = match read.problems.is_empty() or code.text.trim().is_empty() {
+    case true { best_of(code, again.before) }
+    case _ { call write_last({job: {one: again.job.one, old: again.job.old, wrong: read.problems}, before: code}) }
+  }
+}
+
+workflow write_last(again: Again) -> FileText {
+  asked = scribe_task(again.job.one.task, again.job.one.path, again.job.old, again.job.one.drafted, engine_failure(again.job.wrong, again.before.text))
+  code  = use_model scribe(asked.text) retry 1 learn by asked.text otherwise {text: ""}
+  fixed = best_of(code, again.before)
 }
 
 // The edits are asked for, and applied only if every one is found once.
 // Edits that are not are sent back once, with what was wrong with them.
 workflow edit_one(job: Editing) -> Drafted {
   asked  = edit_task(job.one.task, job.one.path, job.old, job.one.drafted, job.one.failure, [])
-  answer = use_model scribe(asked.text) retry 1 otherwise {text: ""}
-  edited = patched(job.old, answer.text)
+  answer = use_model scribe(asked.text) retry 1 learn by asked.text otherwise {text: ""}
+  edited = patched_or_added(job.old, answer.text)
   first  = call engine_reads(job, edited)
   fixed  = match first.problems.is_empty() {
     case true { kept_patch(first) }
@@ -1618,8 +1768,8 @@ workflow edit_one(job: Editing) -> Drafted {
 
 workflow edit_again(job: Editing) -> Patched {
   asked  = edit_task(job.one.task, job.one.path, job.old, job.one.drafted, job.one.failure, job.wrong)
-  answer = use_model scribe(asked.text) retry 1 otherwise {text: ""}
-  edited = patched(job.old, answer.text)
+  answer = use_model scribe(asked.text) retry 1 learn by asked.text otherwise {text: ""}
+  edited = patched_or_added(job.old, answer.text)
   result = call engine_reads(job, edited)
 }
 
@@ -1636,6 +1786,37 @@ workflow engine_reads(job: Editing, edits: Patched) -> Patched {
 
 workflow engine_on(job: Editing, edits: Patched) -> Engine {
   read = execute helper.code_check(job.one.task.text, [{path: job.one.path, text: edits.text, before: job.old, exists: true}]) otherwise {problems: []}
+}
+
+// A written file is learned only when the engine reads it: a lesson is an
+// answer another run will trust, so a file that does not parse, or that
+// drops what was already there, is refused here and asked for again.
+workflow whole_check(job: Editing, code: FileText) -> Engine {
+  said = write_answer_problem(code, job.old)
+  read = match said.is_empty() {
+    case true { call whole_engine(job, code) }
+    case _ { no_problems() }
+  }
+  verdict = check_engine(said, read)
+}
+
+// What is wrong with an answer, from its own check and from the engine: a
+// check gives the reasons it would put right, and none when it is fine.
+fn check_engine(said: Text, read: Engine) -> Engine {
+  if said.is_empty() { return {problems: read.problems.take(4)} }
+  return {problems: [said]}
+}
+
+// The same for an edit: it must apply, and the file it makes must be one
+// the engine reads, before the answer is kept.
+workflow edit_check(job: Editing, answer: FileText) -> Engine {
+  edits = patched_or_added(job.old, answer.text)
+  said  = edit_answer_problem(answer, job.old)
+  read  = match edits.text.is_empty() {
+    case true { no_problems() }
+    case _ { call engine_on(job, edits) }
+  }
+  verdict = check_engine(said, read)
 }
 
 // The tests fail: the file they point at is written again, shown what they
@@ -1663,8 +1844,28 @@ workflow mend_last(task: Task, drafted: Drafted, before: Result) -> Result {
   require approval
 }
 
+// Where a task lives, worked out by Kosika from the folder itself before
+// the model is asked: the files, the symbols in them and the lines worth
+// reading. It changes nothing and needs one approval, because it starts
+// Python. A model with a map reads four files; a model without one reads
+// twenty and still misses the one that mattered.
+workflow survey_folder(task: Task) -> Note {
+  ran  = execute runner.run_python(["-m", "kosika.cli", "context", ".", "--task", task.text, "--budget", "8000"])
+  note = noted(if ran.exit_code == 0 { ran.stdout } else { "" })
+  require approval
+}
+
+// The task with that map in front of it, for the model only: what is
+// reported, remembered and later repaired is still the task's own words.
+fn with_brief(task: Task, found: Text) -> Task {
+  if found.trim().is_empty() { return task }
+  return {text: task.text + "\n\nKosika read the folder and says where this task lives. Read these places before you write anything, and use peek_file for a long file rather than reading all of it:\n" + found.take(7000)}
+}
+
 workflow do_it_myself(task: Task) -> Result {
-  first  = ask coder(task.text) otherwise {summary: "", did: []}
+  found  = call survey_folder(task)
+  briefed = with_brief(task, found.text)
+  first  = ask coder(briefed.text) otherwise {summary: "", did: []}
   wrote  = wrote_something(first)
   again  = pushed(task)
   // A model sometimes answers as if it had done the work without asking
@@ -1705,6 +1906,14 @@ workflow mend(task: Task, before: Result) -> Result {
 // A method asked for: the kind it belongs to (Text, Number, Bool, or an
 // array), its name, and the words of the request.
 record MethodAsked { kind: Text name: Text text: Text }
+
+// The kind of change to Kosika itself a request asks for, when it is made
+// in Kosika's own folder: "method", "std", or "" for any other task.
+fn kosika_change(task: Task, folder: Listing) -> Text {
+  if is_kosika_method(task, folder) { return "method" }
+  if is_kosika_std(task, folder) { return "std" }
+  return ""
+}
 
 // Asked in a folder that holds Kosika's two engines to add a method.
 fn is_kosika_method(task: Task, folder: Listing) -> Bool {
@@ -1914,6 +2123,88 @@ workflow method_rest(asked: MethodAsked, python: Result) -> Result {
   require approval
 }
 
+// ---------------------------------------------------------------- the standard library
+//
+// Kosika's standard library is written in Kosika. Each file lives twice:
+// kosika/std/NAME.kos, the one that is changed, and native/std/NAME.kos, a
+// copy the Go engine carries inside itself, held equal by a test. A file
+// exports what other programs may use. So a function added to it is three
+// exact steps around one the model does: the model writes the function and
+// a test in the file; the program puts the name in the export list if the
+// model did not, copies the file to the Go engine, and runs the file's tests
+// in both engines.
+
+record StdAsked { file: Text name: Text text: Text }
+
+fn std_asked(task: Task) -> StdAsked {
+  let words = task.text.replace("(", " (").replace("`", " ").words()
+  var file = ""
+  var name = ""
+  for i in 0 until words.length() {
+    let word = words[i].trim_marks(".,:;\"'")
+    if word.ends_with(".kos") and word.contains("std/") and file.is_empty() { file = word.split("std/").last().or("") }
+    if (word.lower() == "function" or word.lower() == "fn") and i + 1 < words.length() and name.is_empty() { name = words[i + 1].trim_marks(".,:;\"'") }
+  }
+  if file.is_empty() or not plain_name(name) { return {file: "", name: "", text: task.text} }
+  return {file: file, name: name, text: task.text}
+}
+
+fn is_kosika_std(task: Task, folder: Listing) -> Bool {
+  if not (folder.names.contains("kosika/") and folder.names.contains("native/")) { return false }
+  if not task.text.lower().words().take(3).contains("add") { return false }
+  return not std_asked(task).file.is_empty()
+}
+
+fn std_part(asked: StdAsked) -> Task {
+  return {text: asked.text + ". Do it in kosika/std/" + asked.file + ": write the function " + asked.name + " beside the functions like it, name it in the export list at the top and in the list of functions in the comment there, and add a test for it at the end of the file that calls it and expects what it gives."}
+}
+
+// The file with the function named in its export list, if it is defined
+// and the list lacks it; else as it is.
+fn exported_too(text: Text, name: Text) -> Text {
+  let plain = text.replace("\r\n", "\n")
+  if not ("\n" + plain).contains("\nfn " + name + "(") { return text }
+  let lines = plain.split("\n")
+  var out: Text[] = []
+  var done = false
+  for line in lines {
+    if not done and line.starts_with("export [") and line.trim().ends_with("]") {
+      let inside = line.trim().drop(8)
+      let names = for part in inside.take(inside.length() - 1).split(",") { part.trim() }
+      if names.contains(name) { return text }
+      out = out.append("export [" + names.append(name).join(", ") + "]")
+      done = true
+    } else {
+      out = out.append(line)
+    }
+  }
+  if not done { return text }
+  let now = out.join("\n")
+  return if text.contains("\r\n") { now.replace("\n", "\r\n") } else { now }
+}
+
+// Runs a std file's tests in both engines: the Python one reads
+// kosika/std, the Go one native/std.
+fn both_tests_script() -> Text {
+  return "import os, subprocess, sys\npath = sys.argv[1]\nnative = os.path.join(os.getcwd(), 'native')\npy = subprocess.run([sys.executable, '-m', 'kosika.cli', 'test', os.path.join('kosika', path)], capture_output=True, text=True)\ngo = subprocess.run(['go', '-C', native, 'run', '.', 'test', os.path.join(native, path)], capture_output=True, text=True)\ntail = lambda ran: '\\n'.join((ran.stdout + ran.stderr).strip().splitlines()[-12:])\nprint('Python engine:\\n' + tail(py))\nprint('Go engine:\\n' + tail(go))\nsys.exit(0 if py.returncode == 0 and go.returncode == 0 else 1)\n"
+}
+
+fn std_report(asked: StdAsked, wrote: Result, ran: Ran) -> Result {
+  let passed = wrote.last.passed and ran.exit_code == 0
+  let verdict = if ran.exit_code == 0 { "The file's tests pass in both engines, and the Go engine's copy, native/std/" + asked.file + ", is the same file." } else { "The file's tests do NOT pass in both engines, so this is not done:" }
+  return {text: "I added " + asked.name + " to std/" + asked.file + ".\n\n" + wrote.text + "\n\n" + verdict + "\n" + ran.stdout.take(1500), last: {task: asked.text, output: ran.stdout.take(2000), passed: passed, known: true}}
+}
+
+workflow kosika_std(task: Task) -> Result {
+  asked  = std_asked(task)
+  wrote  = call on_my_own(std_part(asked))
+  source = execute coder.read_file("kosika/std/" + asked.file) otherwise {text: ""}
+  copied = execute writer.save_all([{path: "kosika/std/" + asked.file, text: exported_too(source.text, asked.name), before: source.text, exists: true}, {path: "native/std/" + asked.file, text: exported_too(source.text, asked.name), before: "", exists: true}], "Exports " + asked.name + " and copies std/" + asked.file + " to the Go engine, which carries its own copy.")
+  ran    = execute runner.run_python(["-c", both_tests_script(), "std/" + asked.file])
+  result = std_report(asked, wrote, ran)
+  require approval
+}
+
 // ---------------------------------------------------------------- websites
 
 // A request for a website or a web page, said in so many words.
@@ -2072,11 +2363,27 @@ workflow new_site(msg: Msg) -> Result {
   require approval
 }
 
+// ---------------------------------------------------------------- self-development: Kosika on itself
+
+// Use the repository-aware coding loop for Kosika changes: it builds a code
+// map, proposes a complete change, runs checks, and repairs one failed pass.
+workflow selfdev(msg: Msg) -> Result {
+  task   = task_of(msg)
+  folder = execute helper.list_folder(".") otherwise {names: []}
+  result = match kosika_change(task, folder) {
+    case "method" { call kosika_method(task) }
+    case "std" { call kosika_std(task) }
+    case _ { call do_task(task) }
+  }
+  require approval
+}
+
 workflow new_task(msg: Msg) -> Result {
   task   = task_of(msg)
   folder = execute helper.list_folder(".") otherwise {names: []}
-  result = match is_kosika_method(task, folder) {
-    case true { call kosika_method(task) }
+  result = match kosika_change(task, folder) {
+    case "method" { call kosika_method(task) }
+    case "std" { call kosika_std(task) }
     case _ { call do_task(task) }
   }
   require approval
@@ -2108,17 +2415,18 @@ workflow only_test(msg: Msg) -> Result {
 workflow help(msg: Msg) -> Result {
   past   = recall journal under "me"
   last   = earlier(past)
-  result = nothing(last, "Give me one small task in this project, such as: add a function is_even to calc.py, with a test.\nI show you every file I will make or change before I do it, then I run the tests.\nOr ask for a website, such as: a one-page website for my bakery, with scroll animations. I build it in three rounds: the page, its style, its motion.\nfix: try again after failing tests\ntest: only run the tests")
+  result = nothing(last, "Give me one small task in this project, such as: add a function is_even to calc.py, with a test.\nI show you every file I will make or change before I do it, then I run the tests.\nOr ask for a website, such as: a one-page website for my bakery, with scroll animations. I build it in three rounds: the page, its style, its motion.\nfix: try again after failing tests\ntest: only run the tests\nsurvey: what Kosika's own tree says is unfinished\nselfdev: develop Kosika on itself when a hosted coding assistant is not available")
 }
 
 workflow main(msg: Msg) -> Said {
-  budget 30 model calls, 3600 seconds
+  budget 60 model calls, 3600 seconds
   kind   = kind_of(msg)
   result = match kind {
     case "help" { call help(msg) }
     case "fix" { call fix_last(msg) }
     case "test" { call only_test(msg) }
     case "site" { call new_site(msg) }
+    case "selfdev" { call selfdev(msg) }
     case _ { call new_task(msg) }
   }
   last   = last_of(result)
@@ -2537,6 +2845,29 @@ test "an edit that is not found once changes nothing, and says why" {
   expect patched(old, "def a(): pass").problems == ["there was no <<<<<<< FIND block in the answer"]
 }
 
+test "new lines written without a FIND are added to the end of the file" {
+  old = "def a():\n    return 1\n\n\ndef helper_0(value):\n    return value\n"
+  added = patched_or_added(old, "```\ndef is_even(n):\n    return n % 2 == 0\n```")
+  expect added.problems == []
+  expect added.text.starts_with("def a():\n    return 1\n")
+  expect added.text.ends_with("def is_even(n):\n    return n % 2 == 0\n")
+  // A file written again whole is not added to the file it would replace.
+  rewrite = patched_or_added(old, "```\ndef a():\n    return 2\n\n\ndef helper_0(value):\n    return 0\n```")
+  expect rewrite.text == ""
+  expect rewrite.problems == ["there was no <<<<<<< FIND block in the answer"]
+  // Words about the change are still no edit.
+  expect patched_or_added(old, "I would add is_even at the end.").text == ""
+}
+
+test "a lesson is only kept for an answer that does apply" {
+  old = "def a():\n    return 1\n\n\ndef b():\n    return 2\n"
+  expect edit_answer_problem({text: "<<<<<<< FIND\ndef b():\n=======\ndef b():\n    return 3\n>>>>>>> REPLACE"}, old) == ""
+  expect edit_answer_problem({text: "<<<<<<< FIND\ndef nope():\n=======\nx\n>>>>>>> REPLACE"}, old).contains("does not apply")
+  expect write_answer_problem({text: old}, old) == ""
+  expect write_answer_problem({text: "def a():\n    return 1\n"}, old).contains("drops b")
+  expect write_answer_problem({text: "```\n```"}, old) == "the answer is empty"
+}
+
 test "a long file is shown by the parts the task speaks of" {
   old = numbered_lines("line ", 800).replace("line 200\n", "def pad_left(text):\n")
   expect is_big(old)
@@ -2640,6 +2971,7 @@ test "each language has its own rules, and Kosika's engines their house rules" {
   expect pack_for("calc.py").starts_with("Python rules")
   expect not pack_for("calc.py").contains("reference engine")
   expect pack_for("kosika/builtin_methods.py").contains("METHODS table")
+  expect pack_for("tests/test_x.py").contains("raises CheckError")
   expect pack_for("native/methods.go").contains("runFail")
   expect pack_for("main.go").starts_with("Go rules")
   expect pack_for("src/lib.rs").starts_with("Rust rules")
@@ -2711,4 +3043,41 @@ test "an edit that pastes a function the file already has changes nothing" {
   expect pasted.problems[0].contains("define _to_number a second time")
   added = patched(old, "<<<<<<< FIND\ndef _pad(t):\n=======\ndef _is_digits(t):\n    return True\n\ndef _pad(t):\n>>>>>>> REPLACE")
   expect added.problems == []
+}
+
+test "a function asked for in the standard library goes in both copies, exported" {
+  folder: Listing = {names: ["kosika/", "native/", "KOSIKA.md"]}
+  task: Task = {text: "add a function fade_in(shape_id: Text, start: Number, seconds: Number) -> Move to kosika/std/scene.kos that fades a shape up"}
+  expect kosika_change(task, folder) == "std"
+  expect kosika_change({text: "add a Text method is_digits()"}, folder) == "method"
+  expect kosika_change(task, {names: ["calc.py"]}) == ""
+  asked = std_asked(task)
+  expect asked.file == "scene.kos"
+  expect asked.name == "fade_in"
+  expect file_plan(std_part(asked), {names: []}).files == ["kosika/std/scene.kos"]
+  file = "// std/x.kos\nexport [a, b]\n\nfn a() -> Number { return 1 }\nfn fade_in(x: Text) -> Text { return x }\n"
+  expect exported_too(file, "fade_in").contains("export [a, b, fade_in]")
+  expect exported_too(exported_too(file, "fade_in"), "fade_in") == exported_too(file, "fade_in")
+  expect exported_too(file, "nowhere") == file
+  expect both_tests_script().contains("'go', '-C', native, 'run', '.', 'test'")
+}
+
+test "a whole file the engine cannot read goes back with the engine's own words" {
+  expect engine_reads_path("notes/main.kos")
+  expect engine_reads_path("calc.py")
+  expect not engine_reads_path("index.html")
+  told = engine_failure(["notes/main.kos 30:3: Unexpected workflow item 'result'"], "workflow main() -> Line {\n}")
+  expect told.contains("Unexpected workflow item 'result'")
+  expect told.contains("workflow main() -> Line")
+  expect best_of({text: "  "}, {text: "old"}).text == "old"
+  expect best_of({text: "new"}, {text: "old"}).text == "new"
+}
+
+test "an edit that writes a registration or any long line twice changes nothing" {
+  old = "METHODS = (\n    Method(\"Text\", \"index_of\", ((\"part\", \"Text\"),), \"Number?\", f),\n)\n"
+  twice = patched(old, "<<<<<<< FIND\n    Method(\"Text\", \"index_of\", ((\"part\", \"Text\"),), \"Number?\", f),\n=======\n    Method(\"Text\", \"index_of\", ((\"part\", \"Text\"),), \"Number?\", f),\n    Method(\"Text\", \"last_index_of\", ((\"part\", \"Text\"),), \"Number?\", g),\n    Method(\"Text\", \"last_index_of\", ((\"part\", \"Text\"),), \"Number?\", g),\n>>>>>>> REPLACE")
+  expect twice.text == ""
+  expect twice.problems[0].contains("repeat the line")
+  once = patched(old, "<<<<<<< FIND\n    Method(\"Text\", \"index_of\", ((\"part\", \"Text\"),), \"Number?\", f),\n=======\n    Method(\"Text\", \"index_of\", ((\"part\", \"Text\"),), \"Number?\", f),\n    Method(\"Text\", \"last_index_of\", ((\"part\", \"Text\"),), \"Number?\", g),\n>>>>>>> REPLACE")
+  expect once.problems == []
 }
