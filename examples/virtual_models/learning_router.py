@@ -20,6 +20,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import subprocess
+import tempfile
 import threading
 import time
 from http.server import ThreadingHTTPServer
@@ -104,6 +107,54 @@ class Ledger:
         return [next(ranked) if m in tried else m for m in route]
 
 
+#: The Kosika program that makes every routing decision.
+CHOOSE = Path(__file__).resolve().parent / "choose.kos"
+NATIVE = base.HERE.parents[1] / "native"
+#: Kosika's Go engine, built once from native/ and kept here.
+ENGINE = Path.home() / ".kosika" / "bin" / ("kosika-native.exe" if os.name == "nt" else "kosika-native")
+
+
+def engine() -> Path | None:
+    """Kosika's Go engine, built from this checkout the first time."""
+    if not ENGINE.exists():
+        ENGINE.parent.mkdir(parents=True, exist_ok=True)
+        built = subprocess.run(["go", "-C", str(NATIVE), "build", "-o", str(ENGINE), "."], capture_output=True)
+        if built.returncode != 0:
+            return None
+    return ENGINE
+
+
+def kosika_order(body: dict, route: list[str], ledger: Ledger) -> tuple[str, list[str]] | None:
+    """The kind of job and the order to ask models in, as choose.kos decides:
+    the Kosika program is given the request's last words, whether it offers
+    tools, the route and the ledger, and gives back an Order. None when the
+    engine cannot be had or the program fails; the router then decides in
+    Python, the same way."""
+    found = engine()
+    if found is None:
+        return None
+    messages = body.get("messages") or []
+    last = str(messages[-1].get("content") or "") if messages else ""
+    seen = [
+        {"kind": kind, "name": name, **row}
+        for kind, models in ledger.data.items()
+        for name, row in models.items()
+    ]
+    job = {"job": {"text": last[:20000], "tools": bool(body.get("tools")), "route": route, "seen": seen}}
+    with tempfile.TemporaryDirectory() as folder:
+        given = Path(folder) / "job.json"
+        given.write_text(json.dumps(job), encoding="utf-8")
+        ran = subprocess.run([str(found), "run", str(CHOOSE), "--input", str(given), "--json"],
+                             capture_output=True, text=True, cwd=folder, timeout=20)
+    if ran.returncode != 0:
+        return None
+    try:
+        order = json.loads(ran.stdout.strip().splitlines()[0])
+        return str(order["kind"]), [str(m) for m in order["models"]]
+    except (ValueError, KeyError, IndexError):
+        return None
+
+
 class LearningRouter(base.Router):
     def __init__(self, config: dict, log: Path, ledger: Ledger) -> None:
         super().__init__(config, log)
@@ -111,9 +162,15 @@ class LearningRouter(base.Router):
         self.local = threading.local()
 
     def route(self, start: str) -> list[str]:
-        return self.ledger.order(getattr(self.local, "kind", "plain"), super().route(start))
+        written = super().route(start)
+        decided = kosika_order(getattr(self.local, "body", {}), written, self.ledger)
+        if decided is not None and sorted(decided[1]) == sorted(written):
+            self.local.kind = decided[0]
+            return decided[1]
+        return self.ledger.order(getattr(self.local, "kind", "plain"), written)
 
     def answer(self, body: dict) -> tuple[int, dict]:
+        self.local.body = body
         self.local.kind = kind_of(body)
         code, reply = super().answer(body)
         return code, reply
