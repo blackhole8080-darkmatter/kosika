@@ -44,6 +44,13 @@
       "key": "",
       "max_prompt_chars": 4000,
       "timeout_seconds": 300
+    },
+    "coder": {
+      "id": "kosika-coder",
+      "url": "http://127.0.0.1:11434/v1/chat/completions",
+      "key": "",
+      "max_prompt_chars": 12000,
+      "timeout_seconds": 300
     }
   },
   "routes": {
@@ -53,6 +60,7 @@
       "other",
       "spare",
       "spare2",
+      "coder",
       "small",
       "local"
     ],
@@ -61,6 +69,7 @@
       "other",
       "spare",
       "spare2",
+      "coder",
       "small",
       "local"
     ]

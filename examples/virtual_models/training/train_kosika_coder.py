@@ -83,7 +83,8 @@ def main() -> None:
     print(json.dumps({"eval": trainer.evaluate()}))
 
     model.save_pretrained_gguf(args.out, tokenizer, quantization_method="q4_k_m")
-    made = next(Path(args.out).glob("*.gguf"))
+    # Newer Unsloth writes the file to "<out>_gguf/" under the base model's name.
+    made = next(f for d in (Path(args.out), Path(args.out + "_gguf")) for f in d.glob("*.gguf"))
     made.rename(Path(args.out) / "kosika-coder.gguf")
     (Path(args.out) / "Modelfile").write_text(
         "FROM ./kosika-coder.gguf\n"
