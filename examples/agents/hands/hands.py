@@ -2,6 +2,9 @@
 
     python hands.py where                 # where the cursor is, and the screen's size
     python hands.py move X Y              # glide the cursor there, so you see it go
+    python hands.py move-to notepad       # glide to the middle of that program's window
+    python hands.py click notepad         # front that window and click its middle
+    python hands.py type-into notepad "w" # front that window and type there
     python hands.py click                 # a left click where the cursor is
     python hands.py type "some words"     # type them, a letter at a time
     python hands.py key enter|tab|escape  # press one key
@@ -25,10 +28,16 @@ import time
 from ctypes import wintypes
 
 user32 = ctypes.WinDLL("user32", use_last_error=True)
+# Real pixels, not the scaled ones, so a move lands where a click lands.
+try:
+    user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
+except (AttributeError, OSError):
+    pass
 
 ESCAPE = 0x1B
 KEYS = {"enter": 0x0D, "tab": 0x09, "escape": 0x1B, "backspace": 0x08, "space": 0x20}
 OPENABLE = {"notepad": ["notepad.exe"], "calculator": ["calc.exe"]}
+WINDOW_CLASS = {"notepad": "Notepad", "calculator": "ApplicationFrameWindow"}
 INPUT_MOUSE, INPUT_KEYBOARD = 0, 1
 LEFTDOWN, LEFTUP = 0x0002, 0x0004
 KEYUP, UNICODE = 0x0002, 0x0004
@@ -91,6 +100,28 @@ def move(x: int, y: int) -> None:
         time.sleep(0.012)
 
 
+def window(name: str) -> int:
+    """The program's window, waited for up to eight seconds, or 0."""
+    for _ in range(40):
+        handle = user32.FindWindowW(WINDOW_CLASS.get(name), None)
+        if handle:
+            return handle
+        time.sleep(0.2)
+    return 0
+
+
+def to_front(handle: int) -> None:
+    user32.ShowWindow(handle, 9)  # restore if minimised
+    user32.SetForegroundWindow(handle)
+    time.sleep(0.3)
+
+
+def middle(handle: int) -> tuple[int, int]:
+    box = wintypes.RECT()
+    user32.GetWindowRect(handle, ctypes.byref(box))
+    return (box.left + box.right) // 2, (box.top + box.bottom) // 2
+
+
 def click() -> None:
     guard()
     down, up = INPUT(type=INPUT_MOUSE), INPUT(type=INPUT_MOUSE)
@@ -112,11 +143,15 @@ def type_text(text: str) -> None:
         if letter == "\n":
             key(KEYS["enter"])
         else:
+            # Down and up as separate inputs with a pause between: sent
+            # together, the new Notepad drops some letters and repeats others.
             down, up = INPUT(type=INPUT_KEYBOARD), INPUT(type=INPUT_KEYBOARD)
             down.ki.wScan = up.ki.wScan = ord(letter)
             down.ki.dwFlags, up.ki.dwFlags = UNICODE, UNICODE | KEYUP
-            send(down, up)
-        time.sleep(0.02)
+            send(down)
+            time.sleep(0.015)
+            send(up)
+        time.sleep(0.05)
 
 
 def main(args: list[str]) -> None:
@@ -129,6 +164,33 @@ def main(args: list[str]) -> None:
     elif what == "move" and len(rest) == 2:
         move(int(float(rest[0])), int(float(rest[1])))
         print("moved to", *where())
+    elif what == "move-to" and rest and rest[0] in OPENABLE:
+        handle = window(rest[0])
+        if not handle:
+            print(f"no {rest[0]} window to move to")
+            sys.exit(2)
+        to_front(handle)
+        move(*middle(handle))
+        print(f"moved to the middle of {rest[0]},", *where())
+    elif what == "click" and rest and rest[0] in OPENABLE:
+        # Aimed at a program: front it and click its middle, whatever the
+        # person clicked while answering the last question.
+        handle = window(rest[0])
+        if not handle:
+            print(f"no {rest[0]} window to click")
+            sys.exit(2)
+        to_front(handle)
+        move(*middle(handle))
+        click()
+        print(f"clicked in {rest[0]} at", *where())
+    elif what == "type-into" and len(rest) > 1 and rest[0] in OPENABLE:
+        handle = window(rest[0])
+        if not handle:
+            print(f"no {rest[0]} window to type into")
+            sys.exit(2)
+        to_front(handle)
+        type_text(" ".join(rest[1:]))
+        print(f"typed {len(' '.join(rest[1:]))} letters into {rest[0]}")
     elif what == "click":
         click()
         print("clicked at", *where())
@@ -141,7 +203,9 @@ def main(args: list[str]) -> None:
     elif what == "open" and rest and rest[0] in OPENABLE:
         guard()
         subprocess.Popen(OPENABLE[rest[0]])
-        time.sleep(1.5)
+        handle = window(rest[0])
+        if handle:
+            to_front(handle)
         print("opened", rest[0])
     else:
         print(f"not something the hands do: {' '.join(args)}")

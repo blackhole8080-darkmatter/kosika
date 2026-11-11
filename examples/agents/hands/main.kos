@@ -31,7 +31,7 @@ fn act(what: Text[]) -> Text[] {
 }
 
 fn center() -> Text[] {
-  return act(["move", "760", "420"])
+  return act(["move-to", "notepad"])
 }
 
 // Each step's outcome, joined: an action stopped by Escape (exit 3) or
@@ -53,8 +53,8 @@ fn done(steps: Ran[]) -> Done {
 workflow note(n: Note) -> Done {
   opened = execute hands.hand(act(["open", "notepad"]))
   moved  = execute hands.hand(center())
-  click  = execute hands.hand(act(["click"]))
-  typed  = execute hands.hand(act(["type", n.text]))
+  click  = execute hands.hand(act(["click", "notepad"]))
+  typed  = execute hands.hand(act(["type-into", "notepad", n.text]))
   result = done([opened, moved, click, typed])
   require approval
 }
