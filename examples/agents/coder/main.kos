@@ -1972,8 +1972,8 @@ fn plain_type(t: Text) -> Text {
 // The line goes before the first one-line Method of the same kind, so it
 // sits among its own.
 fn registered(text: Text, asked: MethodAsked) -> Text {
-  let plain = text.replace("\r\n", "\n")
-  if plain.contains("\"" + asked.name + "\",") { return text }
+  let plain = without_stray(text.replace("\r\n", "\n"), asked.name)
+  if in_table(plain, asked.name) { return text }
   let head = "def _" + asked.name + "("
   let at = plain.index_of(head).or(default: -1)
   if at < 0 { return text }
@@ -1997,6 +1997,32 @@ fn registered(text: Text, asked: MethodAsked) -> Text {
   if place < 0 { return text }
   let now = plain.take(place) + "\n" + line + plain.drop(place)
   return if text.contains("\r\n") { now.replace("\n", "\r\n") } else { now }
+}
+
+// Where the METHODS table begins and ends in builtin_methods.py: from its
+// first line to the closing parenthesis at the left margin after it.
+fn table_span(plain: Text) -> Number[] {
+  let start = plain.index_of("\nMETHODS").or(default: -1)
+  if start < 0 { return [-1, -1] }
+  let close = plain.drop(start).index_of("\n)\n").or(default: -1)
+  return [start, if close < 0 { -1 } else { start + close }]
+}
+
+// The method's Method line is inside the table, where Kosika reads it.
+fn in_table(plain: Text, name: Text) -> Bool {
+  let span = table_span(plain)
+  let at = plain.index_of("\"" + name + "\",").or(default: -1)
+  return at >= 0 and span[0] >= 0 and at > span[0] and at < span[1]
+}
+
+// The file without a Method line for the name that sits outside the table,
+// where a model sometimes leaves it: Kosika never reads it there, and the
+// method looks registered when it is not.
+fn without_stray(plain: Text, name: Text) -> Text {
+  if in_table(plain, name) { return plain }
+  let lines = plain.split("\n")
+  let kept = for line in lines where not (line.trim().starts_with("Method(") and line.contains("\"" + name + "\",")) { line }
+  return kept.join("\n")
 }
 
 fn registered_work(asked: MethodAsked) -> Work {
@@ -3100,4 +3126,14 @@ def _b(text):
 def _a(text):
 >>>>>>> REPLACE")
   expect ok.problems == []
+}
+
+test "a Method line left outside the table is moved into it" {
+  asked: MethodAsked = {kind: "Text", name: "starts_with_any", text: "add a Text method starts_with_any"}
+  file = "def _starts_with_any(text: str, prefixes: list[str]) -> bool:\n    return False\n    Method(\"Text\", \"starts_with_any\", ((\"prefixes\", \"Text[]\"),), \"Bool\", _starts_with_any),\n\n\nMETHODS = (\n    Method(\"Text\", \"upper\", (), \"Text\", f),\n)\n"
+  expect not in_table(file, "starts_with_any")
+  now = registered(file, asked)
+  expect in_table(now, "starts_with_any")
+  expect now.count("\"starts_with_any\",") == 1
+  expect now.contains("Method(\"Text\", \"starts_with_any\", ((\"prefixes\", \"Text[]\"),), \"Bool\", _starts_with_any),\n    Method(\"Text\", \"upper\"")
 }
