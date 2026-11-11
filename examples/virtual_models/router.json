@@ -37,6 +37,13 @@
       "key": "",
       "timeout_seconds": 1200,
       "max_prompt_chars": 4000
+    },
+    "small": {
+      "id": "kosika-small",
+      "url": "http://127.0.0.1:8792/v1/chat/completions",
+      "key": "",
+      "max_prompt_chars": 4000,
+      "timeout_seconds": 300
     }
   },
   "routes": {
@@ -46,6 +53,7 @@
       "other",
       "spare",
       "spare2",
+      "small",
       "local"
     ],
     "strong": [
@@ -53,6 +61,7 @@
       "other",
       "spare",
       "spare2",
+      "small",
       "local"
     ]
   },
