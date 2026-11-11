@@ -1,0 +1,86 @@
+// Hands: a Kosika agent with a cursor of its own, working live on this
+// Windows laptop while its owner watches.
+//
+//   kosika run main.kos --input note.json --allow-shell --allow-folder .
+//
+// Each thing the hands do, a glide of the cursor, a click, a word typed, an
+// app opened, is one action Kosika shows the owner first and does only on
+// a yes. Holding Escape stops any action at once (hands.py). The first job
+// it knows is a small one: open Notepad and write a note there.
+
+record Note { text: Text }
+record Command { args: Text[] }
+record Ran { exit_code: Number stdout: Text stderr: Text }
+record Done { said: Text steps: Number stopped: Bool }
+
+tool hand {
+  source system "shell"
+  operation: "python"
+  access: execute
+  input: Command
+  output: Ran
+}
+
+agent hands {
+  can: [hand]
+  max_steps: 1
+}
+
+fn act(what: Text[]) -> Text[] {
+  return ["hands.py"].concat(what)
+}
+
+fn center() -> Text[] {
+  return act(["move", "760", "420"])
+}
+
+// Each step's outcome, joined: an action stopped by Escape (exit 3) or
+// refused stops the job, and the owner is told which step it was.
+fn done(steps: Ran[]) -> Done {
+  var said: Text[] = []
+  var count = 0
+  for ran in steps {
+    if ran.exit_code != 0 {
+      let why = if ran.exit_code == 3 { "you stopped it with Escape" } else { ran.stdout.trim() + ran.stderr.trim() }
+      return {said: said.append("stopped at step " + (count + 1).to_text() + ": " + why).join("\n"), steps: count, stopped: true}
+    }
+    said = said.append(ran.stdout.trim())
+    count += 1
+  }
+  return {said: said.join("\n"), steps: count, stopped: false}
+}
+
+workflow note(n: Note) -> Done {
+  opened = execute hands.hand(act(["open", "notepad"]))
+  moved  = execute hands.hand(center())
+  click  = execute hands.hand(act(["click"]))
+  typed  = execute hands.hand(act(["type", n.text]))
+  result = done([opened, moved, click, typed])
+  require approval
+}
+
+test "a note is written in four actions, each told back" {
+  steps: Ran[] = [
+    {exit_code: 0, stdout: "opened notepad", stderr: ""},
+    {exit_code: 0, stdout: "moved to 760 420", stderr: ""},
+    {exit_code: 0, stdout: "clicked at 760 420", stderr: ""},
+    {exit_code: 0, stdout: "typed 11 letters", stderr: ""}
+  ]
+  d = done(steps)
+  expect d.steps == 4
+  expect not d.stopped
+  expect d.said.contains("typed 11 letters")
+  expect act(["type", "hi"]) == ["hands.py", "type", "hi"]
+}
+
+test "Escape held during an action stops the job there" {
+  steps: Ran[] = [
+    {exit_code: 0, stdout: "opened notepad", stderr: ""},
+    {exit_code: 3, stdout: "stopped: Escape is held", stderr: ""},
+    {exit_code: 0, stdout: "clicked", stderr: ""}
+  ]
+  d = done(steps)
+  expect d.stopped
+  expect d.steps == 1
+  expect d.said.contains("stopped at step 2: you stopped it with Escape")
+}
