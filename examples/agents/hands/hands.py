@@ -3,6 +3,8 @@
     python hands.py where                 # where the cursor is, and the screen's size
     python hands.py move X Y              # glide the cursor there, so you see it go
     python hands.py move-to notepad       # glide to the middle of that program's window
+    python hands.py look notepad          # every button, menu and field there, by name
+    python hands.py click-on notepad Edit # click the thing called that
     python hands.py click notepad         # front that window and click its middle
     python hands.py type-into notepad "w" # front that window and type there
     python hands.py click                 # a left click where the cursor is
@@ -22,10 +24,12 @@ It uses Windows' own SendInput through ctypes and nothing else.
 from __future__ import annotations
 
 import ctypes
+import json
 import subprocess
 import sys
 import time
 from ctypes import wintypes
+from pathlib import Path
 
 user32 = ctypes.WinDLL("user32", use_last_error=True)
 # Real pixels, not the scaled ones, so a move lands where a click lands.
@@ -122,6 +126,36 @@ def middle(handle: int) -> tuple[int, int]:
     return (box.left + box.right) // 2, (box.top + box.bottom) // 2
 
 
+EYES = Path(__file__).with_name("eyes.ps1")
+
+
+def look(name: str, most: int = 150) -> list[dict]:
+    """What the program's window shows, by name: eyes.ps1 reads Windows' own
+    accessibility tree, so there is no picture and no model to guess."""
+    run = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(EYES),
+                          "-Class", WINDOW_CLASS[name], "-Most", str(most)],
+                         capture_output=True, text=True, encoding="utf-8", timeout=60)
+    things = []
+    for line in run.stdout.splitlines():
+        try:
+            thing = json.loads(line)
+        except ValueError:
+            continue
+        if "error" not in thing:
+            things.append(thing)
+    return things
+
+
+def find(things: list[dict], wanted: str) -> dict | None:
+    """The thing named exactly so, else the first whose name begins so,
+    ignoring case: "Bold" finds "Bold (Ctrl+B)"."""
+    low = wanted.lower()
+    exact = [t for t in things if (t.get("name") or "").lower() == low]
+    if exact:
+        return exact[0]
+    return next((t for t in things if (t.get("name") or "").lower().startswith(low)), None)
+
+
 def click() -> None:
     guard()
     down, up = INPUT(type=INPUT_MOUSE), INPUT(type=INPUT_MOUSE)
@@ -172,6 +206,27 @@ def main(args: list[str]) -> None:
         to_front(handle)
         move(*middle(handle))
         print(f"moved to the middle of {rest[0]},", *where())
+    elif what == "look" and rest and rest[0] in OPENABLE:
+        if not window(rest[0]):
+            print(f"no {rest[0]} window to look at")
+            sys.exit(2)
+        for thing in look(rest[0]):
+            print(f"{thing['kind']}: {thing['name']}")
+    elif what == "click-on" and len(rest) > 1 and rest[0] in OPENABLE:
+        # Click a thing by the name the window gives it, not by guessing pixels.
+        handle = window(rest[0])
+        if not handle:
+            print(f"no {rest[0]} window to click in")
+            sys.exit(2)
+        to_front(handle)
+        wanted = " ".join(rest[1:])
+        thing = find(look(rest[0]), wanted)
+        if thing is None:
+            print(f"nothing called {wanted!r} in {rest[0]}")
+            sys.exit(2)
+        move(thing["x"], thing["y"])
+        click()
+        print(f"clicked {thing['kind']} {thing['name']!r} in {rest[0]}")
     elif what == "click" and rest and rest[0] in OPENABLE:
         # Aimed at a program: front it and click its middle, whatever the
         # person clicked while answering the last question.

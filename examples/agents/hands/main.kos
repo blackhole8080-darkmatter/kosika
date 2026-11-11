@@ -84,3 +84,104 @@ test "Escape held during an action stops the job there" {
   expect d.steps == 1
   expect d.said.contains("stopped at step 2: you stopped it with Escape")
 }
+
+// The second job: find a thing in a program's window by the name the window
+// gives it, and click it. The hands look first (eyes.ps1 reads Windows'
+// accessibility tree, so nothing is guessed from pixels), then click the
+// thing called that, and say what they saw.
+record Target { app: Text name: Text }
+record Pressed { saw: Number clicked: Text stopped: Bool }
+
+fn seen(looked: Ran) -> Number {
+  var count = 0
+  for line in looked.stdout.trim().split("\n") {
+    if line.contains(": ") {
+      count += 1
+    }
+  }
+  return count
+}
+
+fn pressed(looked: Ran, clicked: Ran) -> Pressed {
+  if clicked.exit_code != 0 {
+    let why = if clicked.exit_code == 3 { "you stopped it with Escape" } else { clicked.stdout.trim() }
+    return {saw: seen(looked), clicked: why, stopped: true}
+  }
+  return {saw: seen(looked), clicked: clicked.stdout.trim(), stopped: false}
+}
+
+workflow press(t: Target) -> Pressed {
+  looked  = execute hands.hand(act(["look", t.app]))
+  clicked = execute hands.hand(act(["click-on", t.app, t.name]))
+  result = pressed(looked, clicked)
+  require approval
+}
+
+test "the hands say how many things they saw and what they clicked" {
+  looked: Ran = {exit_code: 0, stdout: "MenuItem: File\nMenuItem: Edit\nButton: Bold (Ctrl+B)\n", stderr: ""}
+  clicked: Ran = {exit_code: 0, stdout: "clicked MenuItem 'Edit' in notepad", stderr: ""}
+  p = pressed(looked, clicked)
+  expect p.saw == 3
+  expect p.clicked.contains("Edit")
+  expect not p.stopped
+}
+
+test "a name that is not there is told back, not clicked" {
+  looked: Ran = {exit_code: 0, stdout: "MenuItem: File\n", stderr: ""}
+  clicked: Ran = {exit_code: 2, stdout: "nothing called 'Save as' in notepad", stderr: ""}
+  p = pressed(looked, clicked)
+  expect p.stopped
+  expect p.clicked.contains("nothing called")
+}
+
+// The third job: open a website in the hands' own Chrome (its own profile,
+// none of the owner's sign-ins) and read it as text, with every link, button
+// and field numbered so a later step can click or fill one by its number.
+record Site { url: Text }
+record Visited { title: Text words: Text things: Text[] ok: Bool }
+
+fn web(what: Text[]) -> Text[] {
+  return ["browser.py"].concat(what)
+}
+
+// The page as `browser.py read` prints it: "# title", the address, the
+// words, then "## What can be used" and one numbered line per thing.
+fn visited(read: Ran) -> Visited {
+  if read.exit_code != 0 {
+    return {title: "", words: read.stdout.trim(), things: [], ok: false}
+  }
+  let parts = read.stdout.split("\n## What can be used\n")
+  let lines = parts.take(1).join("").split("\n")
+  let title = lines.take(1).join("").split("# ").drop(1).join("# ")
+  var things: Text[] = []
+  for line in parts.drop(1).join("").trim().split("\n") {
+    if line != "" {
+      things = things.append(line)
+    }
+  }
+  return {title: title, words: lines.drop(2).join("\n").trim(), things: things, ok: true}
+}
+
+workflow visit(s: Site) -> Visited {
+  started = execute hands.hand(web(["start"]))
+  opened  = execute hands.hand(web(["open", s.url]))
+  read    = execute hands.hand(web(["read"]))
+  result = visited(read)
+  require approval
+}
+
+test "a page read back gives its title, its words and its numbered things" {
+  read: Ran = {exit_code: 0, stdout: "# Example Domain\nhttps://example.com/\n\nThis domain is for examples.\n\n## What can be used\n1. link: Learn more\n", stderr: ""}
+  v = visited(read)
+  expect v.ok
+  expect v.title == "Example Domain"
+  expect v.words == "This domain is for examples."
+  expect v.things == ["1. link: Learn more"]
+}
+
+test "a browser that is not open is told back" {
+  read: Ran = {exit_code: 2, stdout: "the hands' Chrome is not open: run start first", stderr: ""}
+  v = visited(read)
+  expect not v.ok
+  expect v.words.contains("not open")
+}
