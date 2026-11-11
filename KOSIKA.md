@@ -1124,6 +1124,8 @@ tool run_tests {
 | `system "db"` | `run` | `{sql: Text, values: Text[]}` | `{changed: Number}` |
 | `system "web"` | `fetch` | `{url: Text}` | `{url: Text, title: Text, text: Text}` |
 | `system "web"` | `fetch_from` | `{url: Text, start: Number}` | `{url: Text, title: Text, text: Text, next: Number}` |
+| `system "log"` | `append` | `{path: Text, by: Text, entry: R}` | `{n: Number, hash: Text}` |
+| `system "log"` | `read` | `{path: Text}` | `{rows: R[], ok: Bool, problem: Text}` |
 
 - A system tool MUST declare `access: execute`, and its records MUST have
   exactly the fields above (`check/invalid-system-tool`). A workflow that
@@ -1270,6 +1272,21 @@ tool run_tests {
   change only the paused list, which the runner reads before each run, so
   they MUST be `access: execute` and each needs the owner's yes. Naming a
   service the file does not declare fails the step.
+- A `system "log"` tool keeps a Kosika log: typed, add-only JSON Lines in
+  the granted folder, where R is any record of the program. Line 1 is a
+  header, `{"kosika":"log","type":R,"fields":[...],"shape":S}`, S being the
+  first 16 hex digits of the SHA-256 of `R{field:Type,...}` as declared.
+  Each later line is a list: the entry's number from 1, when it was added
+  (UTC, `YYYY-MM-DDTHH:MM:SSZ`), `by`, the SHA-256 of the line before, then
+  R's fields in order. Records inside are written with sorted keys, whole
+  numbers without a decimal point, text as itself (U+2028 and U+2029
+  escaped). `append` checks the entry against R and refuses a log of another
+  record or shape, or one whose chain is broken; it only adds, so it MAY be
+  `access: observe`. `read` gives the entries checked and in order, and in
+  `problem` the first line that was changed, removed or is not an R, with
+  only the entries before it. Both engines write the same bytes.
+  `python -m kosika.klog show FILE` prints a log as a table, or with
+  `--named` as one named record per line.
 - A `system "web"` tool reads one page from a site the host allows
   (`--allow-site HOST`) and MAY be `access: observe`. `fetch` gives the
   first 20,000 characters of the page's text. `fetch_from` gives the

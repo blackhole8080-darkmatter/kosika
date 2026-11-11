@@ -42,11 +42,11 @@ const (
 	maxSearchLine    = 240
 )
 
-var systemKinds = []string{"shell", "files", "db", "web", "kosika", "meaning", "agents", "outside", "notify", "services", "linux", "computer"}
+var systemKinds = []string{"shell", "files", "db", "web", "kosika", "meaning", "agents", "outside", "notify", "services", "linux", "computer", "log"}
 
 // The kinds this engine reads; the rest are refused as the file is read.
 var systemKindsHere = map[string]bool{"files": true, "shell": true, "services": true, "web": true, "meaning": true, "kosika": true, "notify": true,
-	"linux": true, "computer": true, "agents": true, "outside": true}
+	"linux": true, "computer": true, "agents": true, "outside": true, "log": true}
 
 var fileOperations = []string{"read", "peek", "search", "find", "write", "create", "write_all", "list"}
 var readOnlyOperations = map[string]bool{"read": true, "peek": true, "search": true, "find": true, "list": true}
@@ -91,6 +91,8 @@ var systemShapes = map[string]shape{
 	"fetch_from": {[]Param{{"url", "Text"}, {"start", "Number"}}, []Param{{"url", "Text"}, {"title", "Text"}, {"text", "Text"}, {"next", "Number"}}},
 	"pause":      {[]Param{{"name", "Text"}}, []Param{{"name", "Text"}, {"paused", "Bool"}}},
 	"resume":     {[]Param{{"name", "Text"}}, []Param{{"name", "Text"}, {"paused", "Bool"}}},
+	"log:append": {[]Param{{"path", "Text"}, {"by", "Text"}, {"entry", logEntry}}, []Param{{"n", "Number"}, {"hash", "Text"}}},
+	"log:read":   {[]Param{{"path", "Text"}}, []Param{{"rows", logRows}, {"ok", "Bool"}, {"problem", "Text"}}},
 }
 
 func systemKind(tool *ToolDecl) string {
@@ -125,6 +127,18 @@ func (c *checker) fitsShape(name string, wanted []Param) bool {
 		have, ok := actual[field.Name]
 		if !ok {
 			return false
+		}
+		if field.Type == logEntry {
+			if c.records[have] == nil {
+				return false
+			}
+			continue
+		}
+		if field.Type == logRows {
+			if !strings.HasSuffix(have, "[]") || c.records[strings.TrimSuffix(have, "[]")] == nil {
+				return false
+			}
+			continue
 		}
 		if field.Type != plannedFiles {
 			if have != field.Type {
@@ -183,6 +197,9 @@ func (c *checker) systemProblem(tool *ToolDecl) string {
 	if (kind == "linux" || kind == "computer") && tool.Operation != "status" {
 		return fmt.Sprintf("Tool %s has unknown %s operation %s; the only one is status", pyRepr(tool.Name), kind, pyRepr(tool.Operation))
 	}
+	if kind == "log" && tool.Operation != "append" && tool.Operation != "read" {
+		return fmt.Sprintf("Tool %s has unknown log operation %s; use one of: append, read", pyRepr(tool.Name), pyRepr(tool.Operation))
+	}
 	if kind == "web" && tool.Operation != "fetch" && tool.Operation != "fetch_from" {
 		return fmt.Sprintf("Tool %s has unknown web operation %s; use one of: fetch, fetch_from", pyRepr(tool.Name), pyRepr(tool.Operation))
 	}
@@ -220,6 +237,12 @@ func (c *checker) systemProblem(tool *ToolDecl) string {
 			kindText := field.Type
 			if field.Type == plannedFiles {
 				kindText = "R[], where R is a record {" + strings.Join(plannedText, ", ") + "}"
+			}
+			if field.Type == logEntry {
+				kindText = "R, a record of the program"
+			}
+			if field.Type == logRows {
+				kindText = "R[], where R is the record the log keeps"
 			}
 			parts = append(parts, field.Name+": "+kindText)
 		}
@@ -584,6 +607,8 @@ func (r *run) systemBound(tool *ToolDecl) bool {
 		return r.services != ""
 	case "web":
 		return len(r.sites) > 0
+	case "log":
+		return r.folder != ""
 	}
 	return false
 }

@@ -150,6 +150,7 @@ SYSTEM_KINDS = (
     "services",
     "linux",
     "computer",
+    "log",
 )
 #: The largest program text the `kosika` tool will look at.
 MAX_CHECKED_SOURCE = 64 * 1024
@@ -175,6 +176,10 @@ TYPED_ROWS = "<typed rows>"
 #: How a shape says what a typed row must be, in a refusal.
 TYPED_ROW_FIELDS = "R[], where R is a record whose every field is Text, Number or Bool"
 READ_ONLY_OPERATIONS = ("read", "peek", "search", "find", "list")
+#: In a shape, any record of the program: what a log keeps (kosika.klog).
+LOG_ENTRY = "<log entry>"
+#: In a shape, an array of any record of the program: a log read back.
+LOG_ROWS = "<log rows>"
 #: Limits on one search of a folder, so it always comes back.
 MAX_SEARCH_MATCHES = 40
 MAX_SEARCH_FILES = 5000
@@ -212,6 +217,18 @@ SHAPES: dict[str, tuple[dict[str, str], dict[str, str]]] = {
         {"exit_code": "Number", "stdout": "Text", "stderr": "Text"},
     ),
     "read": ({"path": "Text"}, {"text": "Text"}),
+    # A Kosika log (kosika.klog): typed, add-only, each line chained to the
+    # one before. `append` adds one entry of the program's record R and
+    # can only add; `read` gives the entries back, checked, and says where
+    # the log was changed if it was.
+    "log:append": (
+        {"path": "Text", "by": "Text", "entry": LOG_ENTRY},
+        {"n": "Number", "hash": "Text"},
+    ),
+    "log:read": (
+        {"path": "Text"},
+        {"rows": LOG_ROWS, "ok": "Bool", "problem": "Text"},
+    ),
     # The beginning of a file. A model that chooses its own tools can look
     # at a long file without the whole of it being handed back.
     "peek": ({"path": "Text"}, {"text": "Text"}),
@@ -402,6 +419,14 @@ def _fits(
         return False
     for name, kind in wanted.items():
         have = actual[name]
+        if kind == LOG_ENTRY:
+            if have not in records:
+                return False
+            continue
+        if kind == LOG_ROWS:
+            if not have.endswith("[]") or have[:-2] not in records:
+                return False
+            continue
         if kind not in (PLANNED_FILES, TYPED_ROWS):
             if have != kind:
                 return False
@@ -422,6 +447,10 @@ def _described(kind: str, planned: str) -> str:
         return f"R[], where R is a record {{{planned}}}"
     if kind == TYPED_ROWS:
         return TYPED_ROW_FIELDS
+    if kind == LOG_ENTRY:
+        return "R, a record of the program"
+    if kind == LOG_ROWS:
+        return "R[], where R is the record the log keeps"
     return kind
 
 
@@ -451,6 +480,9 @@ def declaration_problem(program: Program, tool: ToolDecl) -> str | None:
         or (kind == "services" and tool.operation == "status")
         or kind == "linux"
         or kind == "computer"
+        # A log only ever adds a line at its end: it cannot change or
+        # remove anything already there.
+        or kind == "log"
     )
     if kind == "outside" and tool.operation not in ("propose", "review", "answer"):
         return (
@@ -492,6 +524,11 @@ def declaration_problem(program: Program, tool: ToolDecl) -> str | None:
         return (
             f"Tool {tool.name!r} has unknown {kind} operation {tool.operation!r}; "
             "the only one is status"
+        )
+    if kind == "log" and tool.operation not in ("append", "read"):
+        return (
+            f"Tool {tool.name!r} has unknown log operation {tool.operation!r}; "
+            "use one of: append, read"
         )
     if kind == "web" and tool.operation not in ("fetch", "fetch_from"):
         return (
@@ -1202,6 +1239,12 @@ def bind_system_tools(
             if tool.operation == "find" and meaning is None:
                 continue
             bindings[tool.name] = _files(tool, root, meaning)
+        elif system_kind(tool) == "log":
+            from .klog import bind_log_tool
+
+            bindings[tool.name] = bind_log_tool(
+                program, tool, lambda relative, root=root: _inside(root, relative)
+            )
         elif system_kind(tool) == "shell" and allow_shell:
             bindings[tool.name] = (
                 _shell(tool, root) if session is None else _session_shell(tool, session)

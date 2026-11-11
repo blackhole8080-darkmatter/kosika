@@ -2,7 +2,8 @@
 developer connection, reading pages as text instead of guessing pixels.
 
     python browser.py start               # a Chrome window of the hands' own
-    python browser.py open URL            # go there
+    python browser.py open URL            # go there (starting Chrome if need be)
+                                          # and show the page, as read does
     python browser.py read                # the page's words, then its links,
                                           # buttons and fields, numbered
     python browser.py click N             # click thing number N from read
@@ -30,6 +31,20 @@ PORT = 9333
 CHROME = Path(r"C:\Program Files\Google\Chrome\Application\chrome.exe")
 PROFILE = Path.home() / "Aryan_Private" / "kosika-daily" / "browser-profile"
 MOST_WORDS = 3000
+
+# The page's words without drop-down option lists, menus and footers (a
+# search page's list of countries would fill the whole allowance otherwise).
+PAGE_WORDS = r"""
+(() => {
+  if (!document.body) return '';
+  const hidden = [...document.querySelectorAll('select, nav, footer')];
+  const was = hidden.map(e => e.style.display);
+  hidden.forEach(e => { e.style.display = 'none'; });
+  const words = document.body.innerText;
+  hidden.forEach((e, i) => { e.style.display = was[i]; });
+  return words.replace(/\n{3,}/g, '\n\n');
+})()
+"""
 
 # Marks each link, button and field with a number the person and the model
 # can name, and lists them; only the ones a person could see and use.
@@ -105,6 +120,18 @@ class Page:
             time.sleep(0.2)
 
 
+def show(page: "Page") -> None:
+    """The page as text: its title, address and words, then its links,
+    buttons and fields, numbered for click and fill."""
+    page.settle()
+    title = page.run("document.title")
+    words = (page.run(PAGE_WORDS) or "").strip()
+    if len(words) > MOST_WORDS:
+        words = words[:MOST_WORDS] + f"\n... ({len(words) - MOST_WORDS} more letters)"
+    things = page.run(LIST_THINGS) or ""
+    print(f"# {title}\n{page.run('location.href')}\n\n{words}\n\n## What can be used\n{things}")
+
+
 def start() -> None:
     if running():
         print("the hands' Chrome is already open")
@@ -128,22 +155,19 @@ def main(args: list[str]) -> None:
     if what == "start":
         return start()
     if not running():
-        print("the hands' Chrome is not open: run start first")
-        sys.exit(2)
+        if what != "open":
+            print("the hands' Chrome is not open: open a page first")
+            sys.exit(2)
+        start()
     page = Page()
     if what == "open" and len(rest) == 1 and rest[0].startswith(("https://", "http://")):
         page.call("Page.navigate", url=rest[0])
         time.sleep(0.5)
         page.settle()
-        print("opened", page.run("location.href"), "-", page.run("document.title"))
+        # What is there is shown at once, so the next step is chosen from it.
+        show(page)
     elif what == "read":
-        page.settle()
-        title = page.run("document.title")
-        words = (page.run("document.body ? document.body.innerText : ''") or "").strip()
-        if len(words) > MOST_WORDS:
-            words = words[:MOST_WORDS] + f"\n... ({len(words) - MOST_WORDS} more letters)"
-        things = page.run(LIST_THINGS) or ""
-        print(f"# {title}\n{page.run('location.href')}\n\n{words}\n\n## What can be used\n{things}")
+        show(page)
     elif what == "click" and len(rest) == 1 and rest[0].isdigit():
         said = page.run(f"""(() => {{
             const e = document.querySelector('[data-kosika="{int(rest[0])}"]');
@@ -156,7 +180,8 @@ def main(args: list[str]) -> None:
             sys.exit(2)
         time.sleep(0.5)
         page.settle()
-        print(f"clicked {rest[0]} ({said}), now at", page.run("location.href"))
+        print(f"clicked {rest[0]} ({said})\n")
+        show(page)
     elif what == "fill" and len(rest) >= 2 and rest[0].isdigit():
         words = " ".join(rest[1:])
         done = page.run(f"""(() => {{
