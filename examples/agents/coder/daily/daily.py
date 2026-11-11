@@ -318,6 +318,13 @@ def main() -> None:
         if router is not None:
             router.terminate()
 
+    # What running the tests and the engines left behind is not the change:
+    # compiled Python, traces and built engines stay out of the patch.
+    for left in [*after.rglob("__pycache__"), *after.rglob(".pytest_cache")]:
+        shutil.rmtree(left, ignore_errors=True)
+    for left in [*after.rglob("*.jsonl"), *after.rglob("*.exe")]:
+        if not (before / left.relative_to(after)).exists():
+            left.unlink(missing_ok=True)
     files = changed_files(before, after)
     diff = subprocess.run(
         ["git", "diff", "--no-index", "--no-prefix", "before", "kosika"],

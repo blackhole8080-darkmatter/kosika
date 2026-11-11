@@ -15,3 +15,4 @@ here reaches Kosika until its owner applies the change.
 - [x] add a function initials(text: Text) -> Text to kosika/std/text.kos that gives the first letter of each word, in upper case, as words_of finds the words (2026-11-11, 2026-11-11-4)
 - [ ] add a Text method surround(left: Text, right: Text) that gives the text with left before it and right after it
 - [ ] add a Text method is_upper() that says whether a text has at least one letter and no lower case letter, giving a Bool
+- [ ] add a Number method is_odd() that says whether a whole number is odd, giving a Bool; a number that is not whole gives false
