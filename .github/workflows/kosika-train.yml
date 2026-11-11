@@ -16,10 +16,10 @@ on:
     inputs:
       examples:
         description: "How many examples to learn from"
-        default: "300"
+        default: "1000"
       epochs:
         description: "Passes over them"
-        default: "1"
+        default: "2"
 
 permissions:
   contents: read
@@ -53,7 +53,7 @@ jobs:
           PYTHONIOENCODING: utf-8
         run: |
           cd examples/virtual_models/training
-          python cpu_trial.py --train "${{ github.event.inputs.examples || '300' }}" --epochs "${{ github.event.inputs.epochs || '1' }}" --eval 15 2>&1 | grep -vE "Warning|warn|Loading weights" | tee ../../../train.log
+          python cpu_trial.py --train "${{ github.event.inputs.examples || '1000' }}" --epochs "${{ github.event.inputs.epochs || '2' }}" --eval 15 2>&1 | grep -vE "Warning|warn|Loading weights" | tee ../../../train.log
 
       - name: Keep the trained model and its scores
         if: always()
