@@ -10,6 +10,7 @@ here reaches Kosika until its owner applies the change.
 - [x] add a Number method sign() that gives -1 for a negative number, 0 for zero and 1 for a positive one (2026-11-10, 2026-11-10-2)
 - [x] add a Text method last_index_of(part: Text) that gives a Number?: where part last begins in the text, counted from 0, or null when it is not in it; part must not be empty, as for index_of (2026-11-10, 2026-11-10-7)
 - [x] add a Text method count_lines() that gives how many lines a text has, 0 for an empty text, and does not count a line break at the very end as a new line (2026-11-11, 2026-11-11-1)
-- [!] add a Text method starts_with_any(prefixes: Text[]) that says whether the text begins with any of the prefixes, giving a Bool; an empty list gives false (2026-11-11, 2026-11-11-2)
-- [!] add a Number method is_even() that says whether a whole number is even, giving a Bool; a number that is not whole gives false (2026-11-11, 2026-11-11-3)
+- [ ] add a Text method starts_with_any(prefixes: Text[]) that says whether the text begins with any of the prefixes, giving a Bool; an empty list gives false
+- [ ] add a Number method is_even() that says whether a whole number is even, giving a Bool; a number that is not whole gives false
 - [x] add a function initials(text: Text) -> Text to kosika/std/text.kos that gives the first letter of each word, in upper case, as words_of finds the words (2026-11-11, 2026-11-11-4)
+- [ ] add a Text method surround(left: Text, right: Text) that gives the text with left before it and right after it

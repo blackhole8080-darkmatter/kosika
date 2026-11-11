@@ -15,11 +15,11 @@ name: Kosika daily coder
 on:
   schedule:
     - cron: "30 4 * * *"
-  # A push that changes this file on the coder's own branch is a test run
-  # of it, before it is in studio.
+  # A new request pushed to the to-do list is taken at once, as is a change
+  # to this file (the coder's own branch included, before it is in studio).
   push:
-    branches: [claude/project-thread-01asp3]
-    paths: [.github/workflows/kosika-daily-coder.yml]
+    branches: [studio, claude/project-thread-01asp3]
+    paths: [.github/workflows/kosika-daily-coder.yml, examples/agents/coder/daily/todo.md]
   workflow_dispatch:
     inputs:
       swarm:
