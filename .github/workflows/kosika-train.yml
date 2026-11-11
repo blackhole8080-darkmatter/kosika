@@ -1,0 +1,67 @@
+# Train Kosika's own small coder model on a free GitHub machine.
+#
+# No graphics card, no outside account: the machine builds the training set
+# from Kosika's own git history (make_dataset.py), fine-tunes a small open
+# coder on it on the processor (cpu_trial.py), judges it before and after on
+# held-out Kosika changes it never saw, and keeps the trained adapter and the
+# scores as the run's artifact.
+
+name: Kosika train
+
+on:
+  push:
+    branches: [studio, claude/project-thread-01asp3]
+    paths: [.github/workflows/kosika-train.yml]
+  workflow_dispatch:
+    inputs:
+      examples:
+        description: "How many examples to learn from"
+        default: "300"
+      epochs:
+        description: "Passes over them"
+        default: "1"
+
+permissions:
+  contents: read
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Libraries for training on the processor
+        run: |
+          pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu
+          pip install --quiet "transformers>=4.46" "peft>=0.13" "tokenizers>=0.20"
+
+      - name: The training set, from Kosika's own history
+        run: |
+          git fetch --quiet origin studio
+          cd examples/virtual_models/training
+          python make_dataset.py --ref origin/studio
+
+      - name: Train, and judge before and after
+        env:
+          PYTHONIOENCODING: utf-8
+        run: |
+          cd examples/virtual_models/training
+          python cpu_trial.py --train "${{ github.event.inputs.examples || '300' }}" --epochs "${{ github.event.inputs.epochs || '1' }}" --eval 15 2>&1 | grep -vE "Warning|warn|Loading weights" | tee ../../../train.log
+
+      - name: Keep the trained model and its scores
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kosika-small
+          path: |
+            ~/Aryan_Private/kosika-daily/training/trial-adapter/
+            ~/Aryan_Private/kosika-daily/training/scores.jsonl
+            train.log
+          if-no-files-found: ignore
