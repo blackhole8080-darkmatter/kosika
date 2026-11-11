@@ -195,6 +195,20 @@ class LearningRouter(base.Router):
         super().write(start, why + f"; kind {kind}", tried, began, ok)
 
 
+def with_keys(path: Path) -> dict:
+    """router.json without the models whose key is not set here, and out
+    of every route: on a machine that has only a Groq key, such as a cloud
+    runner, the router still starts and asks what it can."""
+    config = json.loads(path.read_text(encoding="utf-8"))
+    missing = {name for name, model in config["models"].items() if model.get("key") and not os.environ.get(model["key"])}
+    if len(missing) == len(config["models"]):
+        raise SystemExit("No model's key is set; the router reads keys from the environment only.")
+    for name in missing:
+        del config["models"][name]
+    config["routes"] = {route: [m for m in names if m not in missing] for route, names in config["routes"].items()}
+    return config
+
+
 def show(ledger: Ledger) -> None:
     for kind, models in sorted(ledger.data.items()):
         print(kind)
@@ -218,7 +232,7 @@ def main() -> None:
         return
     log = Path(args.log)
     log.parent.mkdir(parents=True, exist_ok=True)
-    router = LearningRouter(base.load(Path(args.config)), log, ledger)
+    router = LearningRouter(with_keys(Path(args.config)), log, ledger)
     server = ThreadingHTTPServer(("127.0.0.1", args.port), base.handler(router))
     print(f"{base.NAME} (learning) on http://127.0.0.1:{args.port}/v1, ledger {ledger.path}", flush=True)
     server.serve_forever()
