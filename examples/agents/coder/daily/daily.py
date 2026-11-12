@@ -326,6 +326,9 @@ def main() -> None:
             count += 1
     # What it was asked, for the live board (swarm_watch.py) while it works.
     (place / "request.txt").write_text(text, encoding="utf-8")
+    # A Go build folder of its own: coders of a swarm building at once in
+    # one shared folder lock each other out ("Access is denied").
+    os.environ["GOCACHE"] = str(place / ".gocache")
     before, after = place / "before", place / "kosika"
     before.mkdir(parents=True)
     copy_studio(before)

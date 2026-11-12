@@ -1120,6 +1120,70 @@ fn near(text: Text, find: Text[]) -> Text {
   return "its line `" + best.take(120) + "` is in the file, but the lines with it are not as you wrote them. In the file they are:\n```\n" + real + "\n```"
 }
 
+// A line that names something others use: a definition, an import, a
+// constant, a registration. An edit must not drop one it was not asked to.
+fn names_something(line: Text) -> Bool {
+  let t = line.trim()
+  for start in ["import ", "from ", "def ", "class ", "func ", "const ", "var ", "type ", "fn ", "record ", "workflow ", "Method(", "m(\"", "export "] {
+    if t.starts_with(start) { return true }
+  }
+  // A Go import inside an import block: a quoted path alone on its line.
+  return t.starts_with("\"") and t.ends_with("\"") and not t.contains(" ") and t.length() > 2
+}
+
+// Why an edit takes away more than it may: a line naming something that the
+// REPLACE no longer has, or many more lines gone than come back. A small
+// model asked to add a method sometimes rewrites what is around it; this
+// stops such an edit before it reaches the file.
+fn overreach(find: Text[], put: Text[], n: Number) -> Text[] {
+  var kept: Text[] = []
+  for line in put { kept = kept.append(line.trim()) }
+  var gone: Text[] = []
+  for line in find {
+    let t = line.trim()
+    if not t.is_empty() and not kept.contains(t) { gone = gone.append(t) }
+  }
+  // A definition renamed or rewritten is a change; one that is gone, with
+  // nothing naming something in its place, was dropped.
+  var named_before = 0
+  for line in find {
+    if names_something(line) { named_before += 1 }
+  }
+  var named_after = 0
+  for line in put {
+    if names_something(line) { named_after += 1 }
+  }
+  if named_after < named_before {
+    for t in gone {
+      if names_something(t) {
+        return ["edit " + n.to_text() + " removes `" + t.take(100) + "`, which the task did not ask to remove; keep every line you are not asked to change exactly as it is, and put the new lines beside them"]
+      }
+    }
+  }
+  let added = put.length() - (find.length() - gone.length())
+  if gone.length() > 3 and gone.length() > added {
+    return ["edit " + n.to_text() + " takes away " + gone.length().to_text() + " lines and brings back fewer; change only the lines the task is about, copy the rest unchanged"]
+  }
+  return []
+}
+
+// The keys of a Go map literal, `"name": {...`, that the new text has twice
+// and the old did not: a method registered again beside itself.
+fn keys_twice_now(old: Text, now: Text) -> Text[] {
+  var found: Text[] = []
+  for line in now.split("\n") {
+    let t = line.trim()
+    if t.starts_with("\"") and t.contains("\": {") {
+      let key = t.split("\": {")[0] + "\""
+      let head = key + ": {"
+      if now.count(head) > 1 and old.count(head) <= 1 and not found.contains(key) {
+        found = found.append(key)
+      }
+    }
+  }
+  return found
+}
+
 // One edit applied to the text, or a problem saying why it was not.
 fn apply_one(text: Text, find: Text[], put: Text[], n: Number) -> Patched {
   let seek = find.join("\n")
@@ -1129,6 +1193,8 @@ fn apply_one(text: Text, find: Text[], put: Text[], n: Number) -> Patched {
   let times = text.count(seek)
   if times == 0 { return {text: text, problems: [label + "'s FIND is not in the file: " + near(text, find)]} }
   if times > 1 { return {text: text, problems: [label + "'s FIND is in " + times.to_text() + " places; give it more lines, so it is in one"]} }
+  let reach = overreach(find, put, n)
+  if not reach.is_empty() { return {text: text, problems: reach} }
   return {text: text.replace(seek, put.join("\n")), problems: []}
 }
 
@@ -1175,6 +1241,9 @@ fn patched(old: Text, answer: Text) -> Patched {
   if n == 0 { problems = problems.append("there was no <<<<<<< FIND block in the answer") }
   for line in repeated_now(old.replace("\r\n", "\n"), text) {
     problems = problems.append("the edits repeat the line `" + line.take(100) + "`, which is already in the file; write each new line once and copy no line that is already there")
+  }
+  for key in keys_twice_now(old.replace("\r\n", "\n"), text) {
+    problems = problems.append("the edits add the key " + key + " a second time to a table that already has it (Go refuses a map with one key twice); it is already there, so add nothing for it")
   }
   for name in twice_now(old.replace("\r\n", "\n"), text) {
     problems = problems.append("the edits define " + name + " a second time; it is already in the file, so leave it where it is and copy nothing that is already there")
@@ -2466,6 +2535,23 @@ workflow main(msg: Msg) -> Said {
 }
 
 // ------------------------------------------------------------------ tests
+
+test "an edit that drops an import or a definition it was not asked about is refused" {
+  bad = overreach(["import (", "\t\"sort\"", "\t\"strings\"", ")"], ["import (", "\t\"strings\"", ")"], 1)
+  expect bad.length() == 1
+  expect bad[0].contains("\"sort\"")
+  wide = overreach(["a = 1", "b = 2", "c = 3", "d = 4", "e = 5"], ["a = 1"], 2)
+  expect wide.length() == 1
+  ok = overreach(["x = 1", "y = 2"], ["x = 1", "z = 3", "y = 2"], 3)
+  expect ok.is_empty()
+  changed = overreach(["    return a"], ["    return a + b"], 4)
+  expect changed.is_empty()
+  renamed = overreach(["def a():"], ["def first():"], 5)
+  expect renamed.is_empty()
+  go = "var m = map[string]method{\n\t\"surround\": {nil, f},\n}\n"
+  expect keys_twice_now(go, go.replace("}\n", "\t\"surround\": {nil, g},\n}\n")) == ["\"surround\""]
+  expect keys_twice_now(go, go).is_empty()
+}
 
 test "requests are understood" {
   expect kind_of({text: "add a function"}) == "task"
