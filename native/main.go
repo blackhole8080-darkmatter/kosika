@@ -8,6 +8,7 @@
 //	    [--model-timeout SECONDS]    run a workflow, asking a real model
 //	kosika-native replay TRACE.jsonl  check a run's trace, running nothing
 //	kosika-native capabilities      the conformance capabilities it reads
+//	kosika-native phone ...          phones as Kosika nodes (see phone.go)
 //
 // It is built up stage by stage against the conformance suite; what it
 // cannot do yet it refuses by name. See README.md.
@@ -85,6 +86,9 @@ func main() {
 	}
 	if len(args) >= 2 && args[0] == "run" {
 		os.Exit(runCommand(args[1:]))
+	}
+	if len(args) >= 1 && args[0] == "phone" {
+		os.Exit(phoneCommand(args[1:]))
 	}
 	if len(args) >= 2 && args[0] == "serve" {
 		os.Exit(serveCommand(args[1:]))
