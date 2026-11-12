@@ -16,10 +16,13 @@ on:
     inputs:
       examples:
         description: "How many examples to learn from"
-        default: "1000"
+        default: "400"
       epochs:
         description: "Passes over them"
         default: "2"
+      recipe:
+        description: "first (the first trial's settings) or better (the diagnosis's fixes, clearer data)"
+        default: "better"
 
 permissions:
   contents: read
@@ -46,14 +49,20 @@ jobs:
         run: |
           git fetch --quiet origin studio
           cd examples/virtual_models/training
-          python make_dataset.py --ref origin/studio
+          if [ "${{ github.event.inputs.recipe || 'better' }}" = "better" ]; then
+            python make_dataset.py --ref origin/studio --hints --per-commit 25 --name kosika-coder-v2
+          else
+            python make_dataset.py --ref origin/studio
+          fi
 
       - name: Train, and judge before and after
         env:
           PYTHONIOENCODING: utf-8
         run: |
           cd examples/virtual_models/training
-          python cpu_trial.py --train "${{ github.event.inputs.examples || '1000' }}" --epochs "${{ github.event.inputs.epochs || '2' }}" --eval 15 2>&1 | grep -vE "Warning|warn|Loading weights" | tee ../../../train.log
+          RECIPE="${{ github.event.inputs.recipe || 'better' }}"
+          NAME=kosika-coder; [ "$RECIPE" = "better" ] && NAME=kosika-coder-v2
+          python cpu_trial.py --recipe "$RECIPE" --name "$NAME" --train "${{ github.event.inputs.examples || '400' }}" --epochs "${{ github.event.inputs.epochs || '2' }}" --eval 15 2>&1 | grep -vE "Warning|warn|Loading weights" | tee ../../../train.log
 
       - name: Keep the trained model and its scores
         if: always()

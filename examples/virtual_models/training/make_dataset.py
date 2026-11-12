@@ -27,7 +27,9 @@ from __future__ import annotations
 import argparse
 import difflib
 import json
+import re
 import subprocess
+from collections import defaultdict
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -42,6 +44,60 @@ SYSTEM = (
     "<<<<<<< FIND, whole lines copied exactly from the file, =======, the lines to "
     "put in their place, >>>>>>> REPLACE. Answer with the edit blocks only."
 )
+
+
+# Lines of a commit message that say nothing about the change: tool
+# signatures and trailers.
+NOISE = re.compile(r"Generated with|Co-Authored-By|^\s*(?:🤖|👾)|claude\.com|letta\.com", re.I)
+# A line that starts a definition, in any of the languages Kosika is written
+# in, and the name it defines.
+DEFINES = re.compile(
+    r"^\s*(?:async\s+)?(?:def|class|func(?:\s*\([^)]*\))?|fn|record|workflow|tool|agent|model|test|type|shape|choice)\s+\"?([A-Za-z_][\w.$]*)"
+    r"|^(#{1,4})\s+(.+)$")
+WORD = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
+
+
+def plain_words(message: str) -> str:
+    """A commit message without the lines that are not about the change."""
+    return "\n".join(line for line in message.split("\n") if not NOISE.search(line)).strip()
+
+
+def enclosing(lines: list[str], at: int) -> str | None:
+    """The name of the definition (or Markdown heading) line `at` is in."""
+    for line in reversed(lines[: at + 1]):
+        found = DEFINES.match(line)
+        if found:
+            return found.group(1) or found.group(3).strip()
+    return None
+
+
+def focus(before: str, after: str) -> str:
+    """What a person asking for this one edit would say about where and
+    what: the definitions it is in, and the new names it brings in. Real
+    requests to the coder name these; a commit's message often does not."""
+    old, new = before.split("\n"), after.split("\n")
+    places: list[str] = []
+    added: list[str] = []
+    known = set(WORD.findall(before))
+    for tag, a1, a2, b1, b2 in difflib.SequenceMatcher(None, old, new, autojunk=False).get_opcodes():
+        if tag == "equal":
+            continue
+        place = enclosing(old, a1 if a1 < len(old) else len(old) - 1) if old else None
+        if place and place not in places:
+            places.append(place)
+        for line in new[b1:b2]:
+            defined = DEFINES.match(line)
+            if defined and (defined.group(1) or "") and defined.group(1) not in places:
+                places.append(defined.group(1))
+            for word in WORD.findall(line):
+                if word not in known and word not in added:
+                    added.append(word)
+    said = []
+    if places:
+        said.append("Where: " + ", ".join(f"`{p}`" for p in places[:4]) + ".")
+    if added:
+        said.append("New names: " + ", ".join(f"`{w}`" for w in added[:8]) + ".")
+    return " ".join(said)
 
 
 def git(*args: str) -> str:
@@ -113,7 +169,7 @@ def example(request: str, files: list[tuple[str, str, str]]) -> dict | None:
     ]}
 
 
-def from_history(ref: str) -> list[dict]:
+def from_history(ref: str, hints: bool = False, per_commit: int = 0) -> list[dict]:
     found = []
     for line in git("log", ref, "--no-merges", "--reverse", "--format=%H").split():
         message = git("log", "-1", "--format=%B", line).strip()
@@ -121,21 +177,35 @@ def from_history(ref: str) -> list[dict]:
         paths = [p for p in paths if p.endswith(KEPT) and not p.startswith(SKIPPED)]
         # The commit's own words, without the trailer lines.
         words = "\n".join(l for l in message.split("\n") if not l.startswith("Co-Authored-By")).strip()
+        if hints:
+            words = plain_words(message)
+        made_here: list[dict] = []
         for path in paths:
             before = show(f"{line}^", path) or ""
             after = show(line, path)
             if after is None or before == after:
                 continue
-            for made in pieces(words, path, before, after):
+            for made in pieces(words, path, before, after, hints):
                 made["source"] = line[:12]
-                found.append(made)
+                made_here.append(made)
+        if per_commit and len(made_here) > per_commit:
+            # One large commit must not be most of what is learned: keep an
+            # even spread of its pieces.
+            stride = len(made_here) / per_commit
+            made_here = [made_here[int(i * stride)] for i in range(per_commit)]
+        found.extend(made_here)
     return found
 
 
-def pieces(words: str, path: str, before: str, after: str) -> list[dict]:
+def pieces(words: str, path: str, before: str, after: str, hints: bool = False) -> list[dict]:
     """One file's change as examples: whole when it fits, else its edits in
-    groups that each fit, every group applied on top of the ones before."""
-    whole = example(f"{words}\n\nThis part of the change: {path}.", [(path, before, after)])
+    groups that each fit, every group applied on top of the ones before.
+    With hints, each says where the edit goes and the names it brings in."""
+    def said(part: str, b: str, a: str) -> str:
+        hint = focus(b, a) if hints else ""
+        return f"{words}\n\nThis part of the change: {part}." + (f"\n{hint}" if hint else "")
+
+    whole = example(said(path, before, after), [(path, before, after)])
     if whole:
         return [whole]
     if not before.strip():
@@ -149,7 +219,7 @@ def pieces(words: str, path: str, before: str, after: str) -> list[dict]:
         first, last = group[0], group[-1]
         start, end = first[1] + shift, last[2] + shift
         step = current[:start] + new[first[3]:last[4]] + current[end:]
-        one = example(f"{words}\n\nThis part of the change: {path}, step {number} of {len(groups)}.",
+        one = example(said(f"{path}, step {number} of {len(groups)}", "\n".join(current), "\n".join(step)),
                       [(path, "\n".join(current), "\n".join(step))])
         if one:
             made.append(one)
@@ -178,13 +248,17 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--ref", default="origin/studio")
     parser.add_argument("--out", default=str(Path.home() / "Aryan_Private" / "kosika-daily" / "training"))
+    parser.add_argument("--hints", action="store_true",
+                        help="say where each edit goes and the names it brings in, without tool trailers")
+    parser.add_argument("--per-commit", type=int, default=0, help="keep at most this many pieces of one commit")
+    parser.add_argument("--name", default="kosika-coder", help="the files' name: NAME.train.jsonl, NAME.eval.jsonl")
     args = parser.parse_args()
-    history = from_history(args.ref)
+    history = from_history(args.ref, args.hints, args.per_commit)
     held = max(1, len(history) // 10)
     train, evaluation = history[:-held] + from_daily(), history[-held:]
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    for name, rows in (("kosika-coder.train.jsonl", train), ("kosika-coder.eval.jsonl", evaluation)):
+    for name, rows in ((f"{args.name}.train.jsonl", train), (f"{args.name}.eval.jsonl", evaluation)):
         (out / name).write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
         size = sum(len(json.dumps(row)) for row in rows)
         print(f"{name}: {len(rows)} examples, {size // 1000} kB")
