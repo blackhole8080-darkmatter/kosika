@@ -39,6 +39,8 @@ jobs:
           GOOS=android GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o ../dist/kosika-native-android .
           GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o ../dist/kosika-native-linux .
           GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o ../dist/kosika-native.exe .
+          cp try-ish.sh ../dist/try.sh
+          cp ../examples/discrete_maths.kos ../dist/
           cd ../dist && sha256sum * > SHA256SUMS
       - name: Publish the pre-release
         env:
