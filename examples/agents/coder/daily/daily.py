@@ -324,6 +324,8 @@ def main() -> None:
             break
         except FileExistsError:
             count += 1
+    # What it was asked, for the live board (swarm_watch.py) while it works.
+    (place / "request.txt").write_text(text, encoding="utf-8")
     before, after = place / "before", place / "kosika"
     before.mkdir(parents=True)
     copy_studio(before)

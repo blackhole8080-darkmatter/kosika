@@ -57,7 +57,8 @@
       "tries": 3,
       "extra": {
         "keep_alive": "30m"
-      }
+      },
+      "parallel": true
     }
   },
   "routes": {

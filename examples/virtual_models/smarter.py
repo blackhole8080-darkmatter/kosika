@@ -69,6 +69,31 @@ def same(answer: str) -> str:
     return "\n".join(line.rstrip() for line in "\n".join("\n=\n".join(e) for e in BLOCK.findall(answer)).split("\n"))
 
 
+def best_of_together(ask, body: dict, tries: int) -> tuple[dict, dict]:
+    """best_of with every try asked at once: on a model server that answers
+    several requests together (Ollama with OLLAMA_NUM_PARALLEL), N tries
+    take about as long as one."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    asked = asked_text(body)
+
+    def one(at: int) -> dict:
+        varied = dict(body)
+        if at:
+            varied["temperature"] = 0.7
+            varied["seed"] = at
+        return ask(varied)
+
+    with ThreadPoolExecutor(max_workers=tries) as pool:
+        replies = list(pool.map(one, range(tries)))
+    good = [(same(content(r)), r) for r in replies if applies(asked, content(r))]
+    if not good:
+        return replies[0], {"tries": tries, "applied": 0, "agreed": 0}
+    votes = Counter(key for key, _ in good)
+    key, count = votes.most_common(1)[0]
+    return next(r for k, r in good if k == key), {"tries": tries, "applied": len(good), "agreed": count}
+
+
 def best_of(ask, body: dict, tries: int) -> tuple[dict, dict]:
     """The reply most tries agree on, among those that apply, and what
     happened: {"tries": n, "applied": k, "agreed": m}. `ask(body)` asks the

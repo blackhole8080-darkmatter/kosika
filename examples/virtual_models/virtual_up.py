@@ -89,7 +89,9 @@ def ensure_ollama() -> str:
     ollama = shutil.which("ollama")
     if not ollama:
         return "not installed"
-    start([ollama, "serve"])
+    # Several requests answered together: the router asks kosika-coder's
+    # tries at once, and a swarm's coders share it.
+    start([ollama, "serve"], env={**os.environ, "OLLAMA_NUM_PARALLEL": os.environ.get("OLLAMA_NUM_PARALLEL", "4")})
     for _ in range(40):
         if listening(11434):
             return "started"

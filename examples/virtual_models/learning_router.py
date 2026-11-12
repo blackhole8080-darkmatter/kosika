@@ -169,7 +169,8 @@ class LearningRouter(base.Router):
         self.local.model = name
         tries = int(self.config["models"][name].get("tries", 1))
         if tries > 1 and smarter.is_edit_request(body):
-            reply, info = smarter.best_of(lambda varied: super(LearningRouter, self).ask(name, varied), body, tries)
+            together = smarter.best_of_together if self.config["models"][name].get("parallel") else smarter.best_of
+            reply, info = together(lambda varied: super(LearningRouter, self).ask(name, varied), body, tries)
             self.local.best = info
             return reply
         return super().ask(name, body)
