@@ -1,0 +1,977 @@
+// Kosika Designs: interfaces. Websites, phone screens, agent windows and
+// artifacts, designed from one sentence.
+//
+//   kosika run kosika/std/designs_ui.kos --workflow design_ui --input ask.json
+//       --model openai/gpt-oss-120b --model-url https://api.groq.com/openai/v1
+//       --model-protocol openai --max-output-tokens 8000
+//
+// where ask.json holds
+//   {"ask": {"text": "a landing page for a quiet coffee shop", "target": "",
+//            "theme": "", "accent": ""}}
+//
+// The model only writes what the screen says and which blocks it is made
+// of: a nav, a hero, cards, a list, a chat, a tab bar. Kosika decides how
+// every block looks. One design system, owned by code, draws them all:
+// one type scale, one spacing scale, one radius scale, hairline borders,
+// soft shadows, one accent and line icons drawn here. So whatever the
+// model writes, the result looks calm, modern and finished, the same way
+// every time, and a small or offline model can design as well as a big one.
+//
+// Kosika checks the description before drawing it, and says what it fixed:
+// unknown blocks are dropped, text too long for its place is shortened,
+// unknown icons are matched to known ones, a phone gets a title bar and a
+// tab bar in their places, and an accent is used only if its contrast
+// passes WCAG against the surface it sits on (contrast() in
+// designs_palette.kos).
+//
+// targets   web       a website or landing page, in a browser window
+//           phone     one to three phone screens, side by side
+//           agent     an agent's window: sidebar, conversation, live panel
+//           artifact  a single card: a report, a widget, a summary
+//
+// With no model answer at all (offline, or the model failed), Kosika still
+// designs: ui_starter lays out a sensible screen for the target from the
+// words of the ask.
+//
+// Other programs reuse the parts: ui_icon(name) gives an icon as SVG,
+// ui_icon_names() lists them, ui_tokens_css() gives the spacing, radius
+// and type scales as CSS variables (no colours: those stay with the
+// Designs palettes), ui_render_spec draws a description without a model.
+
+import "designs_palette.kos"
+
+export [UiAsk, UiItem, UiBlock, UiScreen, UiSpec, UiResult, UiDraw, design_ui, ui_render, ui_result, ui_target, ui_theme, ui_checked, ui_starter, ui_page, ui_icon, ui_icon_names, ui_tokens_css, ui_kinds, ui_accents, ui_accent_problems, ui_wants]
+
+record UiAsk { text: Text target: Text theme: Text accent: Text }
+record UiItem { title: Text text: Text meta: Text icon: Text }
+record UiBlock { kind: Text title: Text text: Text meta: Text action: Text items: UiItem[] }
+record UiScreen { name: Text blocks: UiBlock[] }
+record UiSpec { target: Text title: Text brand: Text accent: Text theme: Text screens: UiScreen[] }
+record UiResult { target: Text title: Text spec: UiSpec page: Text fixed: Text[] problems: Text[] }
+record UiDraw { ask: UiAsk spec: UiSpec }
+record UiBrief { task: Text ask: Text target: Text problems: Text }
+record UiAccent { name: Text light: Text dark: Text }
+
+model ui_designer {
+  input: UiBrief
+  output: UiSpec
+  parameters: {
+    max_output_tokens: 7000
+  }
+}
+
+// ---------------------------------------------------------------- what it can draw
+
+fn ui_targets() -> Text[] { return ["web", "phone", "agent", "artifact"] }
+
+fn ui_kinds() -> Text[] { return ["nav", "hero", "features", "stats", "cards", "list", "steps", "pricing", "quote", "cta", "footer", "form", "appbar", "search", "chips", "tabbar", "chat", "composer", "activity", "progress", "sidebar", "table"] }
+
+// Which blocks belong on which target.
+fn ui_allowed(target: Text) -> Text[] {
+  if target == "phone" { return ["appbar", "hero", "search", "chips", "stats", "cards", "list", "steps", "progress", "activity", "chat", "form", "quote", "cta", "composer", "tabbar", "features", "table"] }
+  if target == "agent" { return ["sidebar", "appbar", "chat", "composer", "activity", "progress", "stats", "list", "cards", "steps", "chips", "search", "form", "table"] }
+  if target == "artifact" { return ["appbar", "hero", "stats", "cards", "list", "steps", "progress", "activity", "chips", "quote", "table", "features", "cta", "form"] }
+  return ["nav", "hero", "features", "stats", "cards", "list", "steps", "pricing", "quote", "cta", "footer", "form", "table", "chips", "search"]
+}
+
+fn ui_most_blocks(target: Text) -> Number {
+  if target == "phone" { return 7 }
+  if target == "agent" { return 9 }
+  if target == "artifact" { return 6 }
+  return 10
+}
+
+fn ui_most_items(kind: Text) -> Number {
+  if kind == "chips" { return 8 }
+  if kind == "tabbar" { return 5 }
+  if kind == "chat" { return 8 }
+  if kind == "sidebar" { return 8 }
+  if kind == "nav" { return 5 }
+  if kind == "pricing" { return 3 }
+  if kind == "stats" { return 4 }
+  if kind == "table" { return 7 }
+  return 6
+}
+
+// One accent, in a light-theme and a dark-theme shade.
+fn ui_accents() -> UiAccent[] {
+  return [
+    {name: "indigo", light: "#4f46e5", dark: "#818cf8"},
+    {name: "violet", light: "#7c3aed", dark: "#a78bfa"},
+    {name: "blue", light: "#2563eb", dark: "#60a5fa"},
+    {name: "sky", light: "#0369a1", dark: "#38bdf8"},
+    {name: "teal", light: "#0f766e", dark: "#2dd4bf"},
+    {name: "emerald", light: "#047857", dark: "#34d399"},
+    {name: "amber", light: "#b45309", dark: "#fbbf24"},
+    {name: "orange", light: "#c2410c", dark: "#ff8a4c"},
+    {name: "rose", light: "#e11d48", dark: "#fb7185"},
+    {name: "graphite", light: "#18181b", dark: "#f4f4f5"}
+  ]
+}
+
+fn ui_accent_names() -> Text[] { return for a in ui_accents() { a.name } }
+
+fn ui_accent(name: Text) -> UiAccent {
+  let all = ui_accents()
+  for a in all {
+    if a.name == name.trim().lower() { return a }
+  }
+  return all[0]
+}
+
+// The surfaces every accent must read against.
+fn ui_light_surface() -> Text { return "#ffffff" }
+fn ui_dark_surface() -> Text { return "#141417" }
+
+// What text sits on the accent: white or near-black, whichever reads better.
+fn ui_on(colour: Text) -> Text {
+  return if contrast(colour, "#ffffff") >= contrast(colour, "#0b0b0f") { "#ffffff" } else { "#0b0b0f" }
+}
+
+// Every accent checked by Kosika's own WCAG arithmetic: 3 to 1 against
+// its surface, for shapes and large text, and 4.5 to 1 for the words on it.
+fn ui_accent_problems() -> Text[] {
+  var wrong: Text[] = []
+  for a in ui_accents() {
+    if contrast(a.light, ui_light_surface()) < 3 { wrong = wrong.append(a.name + " is too faint on white") }
+    if contrast(a.dark, ui_dark_surface()) < 3 { wrong = wrong.append(a.name + " is too faint on the dark surface") }
+    if contrast(a.light, ui_on(a.light)) < 4.5 { wrong = wrong.append(a.name + " has no readable text colour in light") }
+    if contrast(a.dark, ui_on(a.dark)) < 4.5 { wrong = wrong.append(a.name + " has no readable text colour in dark") }
+  }
+  return wrong
+}
+
+// ---------------------------------------------------------------- reading the ask
+
+fn ui_padded(text: Text) -> Text { return " " + text.lower().trim().trim_marks("?!.") + " " }
+
+fn ui_any(t: Text, words: Text[]) -> Bool {
+  for w in words {
+    if t.contains(w) { return true }
+  }
+  return false
+}
+
+fn ui_phone_words() -> Text[] { return [" phone", " mobile", " iphone", " android", " ios ", " app screen", " app ui", " app design", " onboarding", " mobile app", " smartphone"] }
+fn ui_agent_words() -> Text[] { return [" agent window", " agent's window", " agent ui", " agent interface", " agent app", " assistant window", " chat window", " chatbot", " copilot", " agent dashboard", " ai agent", " agents window", " agent console", " agent screen"] }
+fn ui_artifact_words() -> Text[] { return [" artifact", " widget", " card ", " report card", " summary card", " one card", " single card", " receipt", " invoice", " ticket"] }
+fn ui_web_words() -> Text[] { return [" website", " web site", " landing page", " homepage", " home page", " web page", " webpage", " portfolio site", " web app", " saas", " dashboard", " admin panel", " blog", " pricing page", " login page", " sign up page", " signup page"] }
+
+// Does the ask want an interface designed? The front door asks this.
+fn ui_wants(text: Text) -> Bool {
+  let t = ui_padded(text)
+  if ui_any(t, ui_web_words()) or ui_any(t, ui_agent_words()) { return true }
+  if ui_any(t, [" ui ", " ux ", " user interface", " mockup", " mock-up", " wireframe", " app screen", " screen design", " app design", " design an app", " design a app", " design a screen", " design the screen", " mobile app", " phone app", " iphone app", " android app", " settings screen", " login screen", " onboarding screen", " home screen for"]) { return true }
+  return false
+}
+
+// The target named by the ask's words, else the one asked, else web.
+fn ui_target(ask: UiAsk) -> Text {
+  let named = ask.target.trim().lower()
+  if ui_targets().contains(named) { return named }
+  let t = ui_padded(ask.text)
+  if ui_any(t, ui_agent_words()) { return "agent" }
+  if ui_any(t, ui_phone_words()) { return "phone" }
+  if ui_any(t, ui_web_words()) { return "web" }
+  if ui_any(t, ui_artifact_words()) { return "artifact" }
+  if ui_any(t, [" app "]) { return "phone" }
+  return "web"
+}
+
+fn ui_theme(ask: UiAsk, said: Text) -> Text {
+  let named = ask.theme.trim().lower()
+  if named == "light" or named == "dark" { return named }
+  let t = ui_padded(ask.text)
+  if ui_any(t, [" dark ", " dark mode", " dark theme", " night ", " black "]) { return "dark" }
+  if ui_any(t, [" light ", " light mode", " light theme", " white "]) { return "light" }
+  let s = said.trim().lower()
+  return if s == "dark" { "dark" } else { "light" }
+}
+
+fn ui_accent_named(ask: UiAsk, said: Text) -> Text {
+  let named = ask.accent.trim().lower()
+  if ui_accent_names().contains(named) { return named }
+  let t = ui_padded(ask.text)
+  for a in ui_accent_names() {
+    if t.contains(" " + a + " ") { return a }
+  }
+  if ui_any(t, [" purple "]) { return "violet" }
+  if ui_any(t, [" green "]) { return "emerald" }
+  if ui_any(t, [" red ", " pink "]) { return "rose" }
+  if ui_any(t, [" black and white", " monochrome", " grey ", " gray "]) { return "graphite" }
+  if ui_any(t, [" dark matter"]) { return "orange" }
+  let s = said.trim().lower()
+  return if ui_accent_names().contains(s) { s } else { "indigo" }
+}
+
+// ---------------------------------------------------------------- icons
+
+fn ui_icon_names() -> Text[] { return ["home", "search", "user", "users", "chat", "bell", "settings", "plus", "check", "spark", "bolt", "chart", "trend", "calendar", "book", "play", "heart", "star", "lock", "globe", "code", "folder", "mail", "arrow", "back", "chevron", "phone", "camera", "pin", "music", "sun", "moon", "cloud", "leaf", "shield", "grid", "layers", "clock", "send", "mic", "file", "image", "cpu", "wallet", "cart", "more", "menu", "close", "agent", "terminal", "download", "link", "eye", "bookmark", "coffee", "flame", "dot"] }
+
+fn ui_icon_body(name: Text) -> Text {
+  if name == "home" { return "<path d='M4 10.5 12 4l8 6.5V19a1.5 1.5 0 0 1-1.5 1.5H15v-6H9v6H5.5A1.5 1.5 0 0 1 4 19z'/>" }
+  if name == "search" { return "<circle cx='11' cy='11' r='6.5'/><path d='m16 16 4 4'/>" }
+  if name == "user" { return "<circle cx='12' cy='8.5' r='3.5'/><path d='M5 20c1.2-3.6 4-5.5 7-5.5s5.8 1.9 7 5.5'/>" }
+  if name == "users" { return "<circle cx='9' cy='9' r='3.2'/><path d='M3.5 19.5c.9-3.2 3-4.8 5.5-4.8s4.6 1.6 5.5 4.8'/><path d='M15.5 6.2a3.2 3.2 0 0 1 0 6M17 14.9c1.8.5 3 1.9 3.5 4.6'/>" }
+  if name == "chat" { return "<path d='M5.5 5h13A1.5 1.5 0 0 1 20 6.5v9a1.5 1.5 0 0 1-1.5 1.5H10l-4.5 3.5V17h0A1.5 1.5 0 0 1 4 15.5v-9A1.5 1.5 0 0 1 5.5 5z'/>" }
+  if name == "bell" { return "<path d='M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15z'/><path d='M10 20.5a2 2 0 0 0 4 0'/>" }
+  if name == "settings" { return "<path d='M4 7h9M17 7h3M4 17h3M11 17h9'/><circle cx='15' cy='7' r='2'/><circle cx='9' cy='17' r='2'/>" }
+  if name == "plus" { return "<path d='M12 5v14M5 12h14'/>" }
+  if name == "check" { return "<path d='m5 12.5 4.5 4.5L19 7.5'/>" }
+  if name == "spark" { return "<path d='M12 3.5 13.8 10.2 20.5 12l-6.7 1.8L12 20.5l-1.8-6.7L3.5 12l6.7-1.8z'/>" }
+  if name == "bolt" { return "<path d='M13 3 5 13.5h6L10.5 21 19 10h-6z'/>" }
+  if name == "chart" { return "<path d='M4 20h16'/><path d='M7 16v-5M12 16V7M17 16v-8'/>" }
+  if name == "trend" { return "<path d='m4 17 5.5-5.5 4 4L20 9'/><path d='M15 9h5v5'/>" }
+  if name == "calendar" { return "<rect x='4' y='5.5' width='16' height='14.5' rx='2.5'/><path d='M4 10h16M8.5 3.5v4M15.5 3.5v4'/>" }
+  if name == "book" { return "<path d='M5 5.5A1.5 1.5 0 0 1 6.5 4H18v13H7a2 2 0 0 0-2 2z'/><path d='M5 19a2 2 0 0 0 2 2h11v-4'/>" }
+  if name == "play" { return "<path d='M8 5.5v13l10.5-6.5z'/>" }
+  if name == "heart" { return "<path d='M12 20s-7.5-4.6-7.5-10A4.3 4.3 0 0 1 12 7.4 4.3 4.3 0 0 1 19.5 10c0 5.4-7.5 10-7.5 10z'/>" }
+  if name == "star" { return "<path d='m12 3.8 2.5 5.2 5.7.8-4.1 4 1 5.6-5.1-2.7-5.1 2.7 1-5.6-4.1-4 5.7-.8z'/>" }
+  if name == "lock" { return "<rect x='5' y='10.5' width='14' height='10' rx='2.5'/><path d='M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5'/>" }
+  if name == "globe" { return "<circle cx='12' cy='12' r='8.5'/><path d='M3.5 12h17M12 3.5c2.4 2.5 3.6 5.3 3.6 8.5s-1.2 6-3.6 8.5c-2.4-2.5-3.6-5.3-3.6-8.5S9.6 6 12 3.5z'/>" }
+  if name == "code" { return "<path d='m8.5 8-4 4 4 4M15.5 8l4 4-4 4M13.5 5.5l-3 13'/>" }
+  if name == "folder" { return "<path d='M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z'/>" }
+  if name == "mail" { return "<rect x='3.5' y='5.5' width='17' height='13' rx='2.5'/><path d='m4.5 7.5 7.5 5.5 7.5-5.5'/>" }
+  if name == "arrow" { return "<path d='M5 12h14M13 6l6 6-6 6'/>" }
+  if name == "back" { return "<path d='m14.5 5.5-6.5 6.5 6.5 6.5'/>" }
+  if name == "chevron" { return "<path d='m9.5 6 6 6-6 6'/>" }
+  if name == "phone" { return "<rect x='7' y='3' width='10' height='18' rx='2.5'/><path d='M11 18h2'/>" }
+  if name == "camera" { return "<path d='M4 8.5a2 2 0 0 1 2-2h2l1.5-2h5l1.5 2h2a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z'/><circle cx='12' cy='13' r='3.5'/>" }
+  if name == "pin" { return "<path d='M12 21s6.5-5.6 6.5-11a6.5 6.5 0 0 0-13 0c0 5.4 6.5 11 6.5 11z'/><circle cx='12' cy='10' r='2.3'/>" }
+  if name == "music" { return "<path d='M9 18V6l10-2v12'/><circle cx='6.5' cy='18' r='2.5'/><circle cx='16.5' cy='16' r='2.5'/>" }
+  if name == "sun" { return "<circle cx='12' cy='12' r='4'/><path d='M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4'/>" }
+  if name == "moon" { return "<path d='M19.5 14.5A8 8 0 0 1 9.5 4.5a8 8 0 1 0 10 10z'/>" }
+  if name == "cloud" { return "<path d='M7 18.5a4.5 4.5 0 0 1-.5-9 6 6 0 0 1 11.3 1.6 3.8 3.8 0 0 1-.3 7.4z'/>" }
+  if name == "leaf" { return "<path d='M5 19c0-8 5-13.5 14.5-14.5C19 14 13 19 5 19z'/><path d='M5 19 13 11'/>" }
+  if name == "shield" { return "<path d='M12 3.5 19 6v5.5c0 4.4-3 7.8-7 9-4-1.2-7-4.6-7-9V6z'/><path d='m9 12 2 2 4-4'/>" }
+  if name == "grid" { return "<rect x='4' y='4' width='6.5' height='6.5' rx='1.6'/><rect x='13.5' y='4' width='6.5' height='6.5' rx='1.6'/><rect x='4' y='13.5' width='6.5' height='6.5' rx='1.6'/><rect x='13.5' y='13.5' width='6.5' height='6.5' rx='1.6'/>" }
+  if name == "layers" { return "<path d='m12 4 8.5 4.5L12 13 3.5 8.5z'/><path d='m3.5 12.5 8.5 4.5 8.5-4.5M3.5 16.5 12 21l8.5-4.5'/>" }
+  if name == "clock" { return "<circle cx='12' cy='12' r='8.5'/><path d='M12 7.5V12l3 2'/>" }
+  if name == "send" { return "<path d='M12 19V5M6 11l6-6 6 6'/>" }
+  if name == "mic" { return "<rect x='9' y='3.5' width='6' height='11' rx='3'/><path d='M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v2.5'/>" }
+  if name == "file" { return "<path d='M7 3.5h7l4.5 4.5v11.5a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1v-15a1 1 0 0 1 1-1z'/><path d='M14 3.5V8h4.5M9 13h6M9 16.5h4'/>" }
+  if name == "image" { return "<rect x='3.5' y='4.5' width='17' height='15' rx='2.5'/><circle cx='9' cy='9.5' r='1.7'/><path d='m4 17 5-4.5 4 3.5 3-2.5 4 3.5'/>" }
+  if name == "cpu" { return "<rect x='6.5' y='6.5' width='11' height='11' rx='2'/><path d='M9.5 3.5v3M14.5 3.5v3M9.5 17.5v3M14.5 17.5v3M3.5 9.5h3M3.5 14.5h3M17.5 9.5h3M17.5 14.5h3'/>" }
+  if name == "wallet" { return "<path d='M4 8a2.5 2.5 0 0 1 2.5-2.5h11V8.5'/><rect x='4' y='8.5' width='16.5' height='11' rx='2.5'/><circle cx='16' cy='14' r='1.2'/>" }
+  if name == "cart" { return "<path d='M3.5 4.5h2.2l2 11h10.3l1.8-8H7'/><circle cx='9.5' cy='19.5' r='1.3'/><circle cx='16.5' cy='19.5' r='1.3'/>" }
+  if name == "more" { return "<circle cx='6' cy='12' r='1.3' class='f'/><circle cx='12' cy='12' r='1.3' class='f'/><circle cx='18' cy='12' r='1.3' class='f'/>" }
+  if name == "menu" { return "<path d='M4.5 7h15M4.5 12h15M4.5 17h15'/>" }
+  if name == "close" { return "<path d='M6 6l12 12M18 6 6 18'/>" }
+  if name == "agent" { return "<rect x='4.5' y='8' width='15' height='11' rx='3.5'/><path d='M12 4.5V8M9.5 12.5v1.5M14.5 12.5v1.5'/><circle cx='12' cy='3.8' r='1'/>" }
+  if name == "terminal" { return "<rect x='3.5' y='5' width='17' height='14' rx='2.5'/><path d='m7.5 10 2.5 2-2.5 2M12.5 14.5h4'/>" }
+  if name == "download" { return "<path d='M12 4v11M7 10.5l5 5 5-5M5 19.5h14'/>" }
+  if name == "link" { return "<path d='M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1'/><path d='M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1'/>" }
+  if name == "eye" { return "<path d='M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z'/><circle cx='12' cy='12' r='3'/>" }
+  if name == "bookmark" { return "<path d='M6.5 4h11v16.5L12 16.5l-5.5 4z'/>" }
+  if name == "coffee" { return "<path d='M4.5 9h12v5a5 5 0 0 1-5 5h-2a5 5 0 0 1-5-5z'/><path d='M16.5 10.5h1a2.5 2.5 0 0 1 0 5h-1.2M8 3.5v2.5M11.5 3.5v2.5'/>" }
+  if name == "flame" { return "<path d='M12 21a6 6 0 0 0 6-6c0-4-3-6-4-10-2 2-3 4-3 6-1-1-1.5-2-1.5-3C7.5 10 6 12.5 6 15a6 6 0 0 0 6 6z'/>" }
+  return "<circle cx='12' cy='12' r='3' class='f'/>"
+}
+
+// Words a model might use for an icon, matched to the one Kosika draws.
+fn ui_icon_like(name: Text) -> Text {
+  let n = name.trim().lower().replace("_", "-").replace(" ", "-")
+  if ui_icon_names().contains(n) { return n }
+  let pairs = [["profile", "user"], ["person", "user"], ["account", "user"], ["avatar", "user"], ["team", "users"], ["people", "users"], ["group", "users"], ["friends", "users"], ["message", "chat"], ["messages", "chat"], ["comment", "chat"], ["inbox", "mail"], ["email", "mail"], ["notification", "bell"], ["alert", "bell"], ["gear", "settings"], ["cog", "settings"], ["sliders", "settings"], ["preferences", "settings"], ["add", "plus"], ["new", "plus"], ["done", "check"], ["tick", "check"], ["sparkle", "spark"], ["sparkles", "spark"], ["ai", "spark"], ["magic", "spark"], ["fast", "bolt"], ["lightning", "bolt"], ["zap", "bolt"], ["energy", "bolt"], ["stats", "chart"], ["analytics", "chart"], ["bar-chart", "chart"], ["growth", "trend"], ["trending", "trend"], ["date", "calendar"], ["schedule", "calendar"], ["learn", "book"], ["study", "book"], ["docs", "book"], ["read", "book"], ["video", "play"], ["like", "heart"], ["love", "heart"], ["health", "heart"], ["favorite", "star"], ["favourite", "star"], ["rating", "star"], ["secure", "lock"], ["security", "shield"], ["privacy", "shield"], ["safe", "shield"], ["web", "globe"], ["world", "globe"], ["language", "globe"], ["developer", "code"], ["api", "code"], ["files", "folder"], ["project", "folder"], ["projects", "folder"], ["next", "arrow"], ["right", "chevron"], ["forward", "chevron"], ["mobile", "phone"], ["call", "phone"], ["photo", "camera"], ["location", "pin"], ["map", "pin"], ["place", "pin"], ["audio", "music"], ["day", "sun"], ["light", "sun"], ["weather", "cloud"], ["night", "moon"], ["dark", "moon"], ["nature", "leaf"], ["plant", "leaf"], ["eco", "leaf"], ["apps", "grid"], ["dashboard", "grid"], ["stack", "layers"], ["time", "clock"], ["history", "clock"], ["recent", "clock"], ["submit", "send"], ["voice", "mic"], ["document", "file"], ["note", "file"], ["notes", "file"], ["gallery", "image"], ["picture", "image"], ["chip", "cpu"], ["model", "cpu"], ["compute", "cpu"], ["pay", "wallet"], ["money", "wallet"], ["payment", "wallet"], ["finance", "wallet"], ["shop", "cart"], ["store", "cart"], ["buy", "cart"], ["dots", "more"], ["options", "more"], ["hamburger", "menu"], ["x", "close"], ["bot", "agent"], ["robot", "agent"], ["assistant", "agent"], ["console", "terminal"], ["shell", "terminal"], ["export", "download"], ["share", "link"], ["view", "eye"], ["save", "bookmark"], ["cafe", "coffee"], ["streak", "flame"], ["fire", "flame"], ["hot", "flame"]]
+  for p in pairs {
+    if p[0] == n { return p[1] }
+  }
+  return "dot"
+}
+
+fn ui_icon(name: Text) -> Text {
+  return "<svg class='ic' viewBox='0 0 24 24' aria-hidden='true'>" + ui_icon_body(ui_icon_like(name)) + "</svg>"
+}
+
+// ---------------------------------------------------------------- checking a description
+
+fn ui_cut(text: Text, most: Number) -> Text {
+  let t = text.trim()
+  if t.length() <= most { return t }
+  let words = t.slice(0, most - 1).words()
+  let kept = if words.length() > 1 { words.slice(0, words.length() - 1).join(" ") } else { t.slice(0, most - 1) }
+  return kept.trim_marks(",;:-") + "…"
+}
+
+fn ui_item_fixed(kind: Text, i: UiItem) -> UiItem {
+  let most = if kind == "chat" { 360 } else { 160 }
+  return {title: ui_cut(i.title, 48), text: ui_cut(i.text, most), meta: ui_cut(i.meta, 28), icon: if i.icon.trim().is_empty() { "" } else { ui_icon_like(i.icon) }}
+}
+
+fn ui_block_fixed(b: UiBlock) -> UiBlock {
+  let kind = b.kind.trim().lower()
+  let most = ui_most_items(kind)
+  let items = for i in b.items.take(most) { ui_item_fixed(kind, i) }
+  return {kind: kind, title: ui_cut(b.title, 80), text: ui_cut(b.text, 220), meta: ui_cut(b.meta, 60), action: ui_cut(b.action, 60), items: items}
+}
+
+fn ui_block(kind: Text, title: Text, text: Text, meta: Text, action: Text, items: UiItem[]) -> UiBlock {
+  return {kind: kind, title: title, text: text, meta: meta, action: action, items: items}
+}
+
+fn ui_item(title: Text, text: Text, meta: Text, icon: Text) -> UiItem {
+  return {title: title, text: text, meta: meta, icon: icon}
+}
+
+fn ui_count(blocks: UiBlock[], kind: Text) -> Number {
+  var n = 0
+  for b in blocks {
+    if b.kind == kind { n = n + 1 }
+  }
+  return n
+}
+
+// The blocks that belong at the very top, and the very bottom, of a target.
+fn ui_tops() -> Text[] { return ["nav", "sidebar", "appbar"] }
+fn ui_bottoms() -> Text[] { return ["footer", "composer", "tabbar"] }
+fn ui_once() -> Text[] { return ["nav", "footer", "appbar", "tabbar", "composer", "sidebar", "hero"] }
+
+record UiChecked { spec: UiSpec fixed: Text[] problems: Text[] }
+record UiScreenChecked { screen: UiScreen fixed: Text[] }
+
+fn ui_screen_checked(target: Text, title: Text, brand: Text, s: UiScreen) -> UiScreenChecked {
+  var fixed: Text[] = []
+  var kept: UiBlock[] = []
+  let allowed = ui_allowed(target)
+  for raw in s.blocks {
+    let b = ui_block_fixed(raw)
+    if not ui_kinds().contains(b.kind) {
+      fixed = fixed.append(f"dropped a block Kosika does not know: {b.kind}")
+    } else if not allowed.contains(b.kind) {
+      fixed = fixed.append(f"dropped a {b.kind}, which does not belong on a {target} screen")
+    } else if ui_once().contains(b.kind) and ui_count(kept, b.kind) > 0 {
+      fixed = fixed.append(f"kept only the first {b.kind}")
+    } else {
+      kept = kept.append(b)
+    }
+  }
+  // what a target always has
+  if target == "web" and ui_count(kept, "nav") == 0 {
+    kept = [ui_block("nav", "", "", "", "Get started", [ui_item("Product", "", "", ""), ui_item("Pricing", "", "", ""), ui_item("About", "", "", "")])].concat(kept)
+    fixed = fixed.append("gave the page a navigation bar")
+  }
+  if target == "web" and ui_count(kept, "footer") == 0 {
+    kept = kept.append(ui_block("footer", "", "", "", "", [ui_item("Privacy", "", "", ""), ui_item("Terms", "", "", ""), ui_item("Contact", "", "", "")]))
+    fixed = fixed.append("gave the page a footer")
+  }
+  if target == "phone" and ui_count(kept, "appbar") == 0 {
+    kept = [ui_block("appbar", if s.name.trim().is_empty() { title } else { s.name }, "", "", "", [])].concat(kept)
+    fixed = fixed.append("gave the screen a title bar")
+  }
+  if target == "agent" and ui_count(kept, "sidebar") == 0 {
+    kept = [ui_block("sidebar", brand, "", "", "New task", [ui_item("Today", "", "", "clock"), ui_item("Tasks", "", "", "check"), ui_item("Files", "", "", "folder"), ui_item("Settings", "", "", "settings")])].concat(kept)
+    fixed = fixed.append("gave the window a sidebar")
+  }
+  if target == "agent" and ui_count(kept, "composer") == 0 and ui_count(kept, "chat") > 0 {
+    kept = kept.append(ui_block("composer", "", "Ask, or give a task…", "", "", []))
+    fixed = fixed.append("gave the conversation a place to type")
+  }
+  // tops first, bottoms last, the rest in the order written
+  let tops = for b in kept where ui_tops().contains(b.kind) { b }
+  let middle = for b in kept where not ui_tops().contains(b.kind) and not ui_bottoms().contains(b.kind) { b }
+  let bottoms = for b in kept where ui_bottoms().contains(b.kind) { b }
+  let most = ui_most_blocks(target)
+  let room = most - tops.length() - bottoms.length()
+  if middle.length() > room { fixed = fixed.append(f"kept {room} of {middle.length()} sections, so the screen stays calm") }
+  let ordered = tops.concat(middle.take(room.max(1))).concat(bottoms)
+  return {screen: {name: ui_cut(s.name, 32), blocks: ordered}, fixed: fixed}
+}
+
+// Kosika's check of a description: the target, theme and accent as the
+// ask says, the blocks that belong, in their places, every text short
+// enough for where it sits.
+fn ui_checked(ask: UiAsk, said: UiSpec) -> UiChecked {
+  let target = ui_target(ask)
+  var fixed: Text[] = []
+  if ui_targets().contains(said.target.trim().lower()) and said.target.trim().lower() != target {
+    fixed = fixed.append(f"drew it as {target}, as the ask says, not {said.target}")
+  }
+  let empty = said.screens.is_empty() or (for s in said.screens where not s.blocks.is_empty() { s }).is_empty()
+  let base = if empty { ui_starter(ask) } else { said }
+  if empty { fixed = fixed.append("the model gave no screen, so Kosika laid one out itself") }
+  let title = if base.title.trim().is_empty() { ui_subject(ask.text) } else { ui_cut(base.title, 60) }
+  let brand = if base.brand.trim().is_empty() { ui_brand(ask.text) } else { ui_cut(base.brand, 24) }
+  let most = if target == "phone" { 3 } else { 1 }
+  if base.screens.length() > most { fixed = fixed.append(f"kept {most} of {base.screens.length()} screens") }
+  var screens: UiScreen[] = []
+  for s in base.screens.take(most) {
+    let c = ui_screen_checked(target, title, brand, s)
+    screens = screens.append(c.screen)
+    fixed = fixed.concat(c.fixed)
+  }
+  let accent = ui_accent_named(ask, base.accent)
+  let theme = ui_theme(ask, base.theme)
+  return {spec: {target: target, title: title, brand: brand, accent: accent, theme: theme, screens: screens}, fixed: fixed, problems: ui_accent_problems()}
+}
+
+// ---------------------------------------------------------------- with no model
+
+fn ui_subject(text: Text) -> Text {
+  var t = " " + text.trim().trim_marks("?!.") + " "
+  for w in [" design ", " Design ", " make ", " Make ", " create ", " Create ", " build ", " Build ", " me ", " please ", " a modern ", " a minimal ", " a simple ", " a clean ", " a beautiful ", " an ", " a ", " the "] {
+    if t.starts_with(w) { t = " " + t.slice(w.length(), t.length()) }
+  }
+  for w in [" for ", " of ", " about "] {
+    let at = t.index_of(w).or(-1)
+    if at >= 0 and at < 40 { t = " " + t.slice(at + w.length(), t.length()) }
+  }
+  for w in [" a ", " an ", " the ", " my ", " our "] {
+    if t.starts_with(w) { t = " " + t.slice(w.length(), t.length()) }
+  }
+  let s = t.trim()
+  if s.is_empty() { return "Your product" }
+  return ui_cut(s.slice(0, 1).upper() + s.slice(1, s.length()), 40)
+}
+
+fn ui_brand(text: Text) -> Text {
+  let words = ui_subject(text).words()
+  let generic = [" with ", " that ", " where ", " which ", " your ", " shop ", " store ", " app ", " page ", " site ", " website ", " company ", " startup ", " business ", " service ", " platform ", " tool ", " agent ", " window ", " screen ", " dashboard ", " card ", " studio "]
+  let picked = for w in words where w.length() > 3 and not generic.contains(" " + w.lower().trim_marks(",.;:!?") + " ") { w }
+  let name = if picked.is_empty() { "Studio" } else { picked[picked.length() - 1] }
+  let clean = name.trim_marks(",.;:!?'\"").lower()
+  return clean.slice(0, 1).upper() + clean.slice(1, clean.length())
+}
+
+// A sensible screen for the target, from the words of the ask alone.
+fn ui_starter(ask: UiAsk) -> UiSpec {
+  let target = ui_target(ask)
+  let subject = ui_subject(ask.text)
+  let brand = ui_brand(ask.text)
+  if target == "phone" {
+    let home: UiScreen = {name: "Home", blocks: [
+      ui_block("appbar", subject, "Good morning", "", "", [ui_item("", "", "", "bell"), ui_item("", "", "", "user")]),
+      ui_block("search", "", "", "Search " + brand.lower(), "", []),
+      ui_block("chips", "", "", "", "", [ui_item("For you", "", "", ""), ui_item("New", "", "", ""), ui_item("Popular", "", "", ""), ui_item("Saved", "", "", "")]),
+      ui_block("cards", "Featured", "", "", "See all", [ui_item("Start here", "A short tour of what you can do.", "2 min", "spark"), ui_item("Your week", "What changed since Monday.", "Today", "calendar")]),
+      ui_block("list", "Recent", "", "", "", [ui_item("Getting started", "Set up in a minute", "Now", "bolt"), ui_item("Saved items", "Everything you kept", "12", "bookmark"), ui_item("Shared with you", "From your people", "3", "users")]),
+      ui_block("tabbar", "", "", "", "", [ui_item("Home", "", "", "home"), ui_item("Search", "", "", "search"), ui_item("Saved", "", "", "bookmark"), ui_item("You", "", "", "user")])
+    ]}
+    return {target: target, title: subject, brand: brand, accent: "", theme: "", screens: [home]}
+  }
+  if target == "agent" {
+    let main: UiScreen = {name: subject, blocks: [
+      ui_block("sidebar", brand, "", "", "New task", [ui_item("Today", "", "4", "clock"), ui_item("Tasks", "", "", "check"), ui_item("Files", "", "", "folder"), ui_item("Memory", "", "", "layers"), ui_item("Settings", "", "", "settings")]),
+      ui_block("appbar", subject, "Working on your request", "Running", "", []),
+      ui_block("chat", "", "", "", "", [ui_item("You", "Can you take a look at this for me?", "user", ""), ui_item(brand, "Of course. I read it through and made a short plan. I will ask before I change anything.", "agent", "")]),
+      ui_block("activity", "Plan", "", "", "", [ui_item("Read the request", "", "done", "check"), ui_item("Gather what is needed", "", "now", "spark"), ui_item("Ask before changing anything", "", "next", "clock")]),
+      ui_block("composer", "", "Ask, or give a task…", "", "", [])
+    ]}
+    return {target: target, title: subject, brand: brand, accent: "", theme: "", screens: [main]}
+  }
+  if target == "artifact" {
+    let card: UiScreen = {name: subject, blocks: [
+      ui_block("appbar", subject, "A summary at a glance", "Updated today", "", []),
+      ui_block("stats", "", "", "", "", [ui_item("24", "Items", "+4", ""), ui_item("92%", "Done", "+6%", ""), ui_item("3", "Open", "", "")]),
+      ui_block("list", "Highlights", "", "", "", [ui_item("What went well", "The main result, in one line.", "", "check"), ui_item("What to watch", "One thing that needs attention.", "", "eye"), ui_item("Next step", "The one action that matters most.", "", "arrow")])
+    ]}
+    return {target: target, title: subject, brand: brand, accent: "", theme: "", screens: [card]}
+  }
+  let page: UiScreen = {name: subject, blocks: [
+    ui_block("nav", "", "", "", "Get started", [ui_item("Product", "", "", ""), ui_item("Pricing", "", "", ""), ui_item("About", "", "", "")]),
+    ui_block("hero", subject, "Everything you need, and nothing you don't. Simple to start, calm to use, built to last.", "New", "Get started|Learn more", []),
+    ui_block("features", "Why " + brand, "", "Features", "", [ui_item("Simple", "Starts in a minute, with nothing to set up.", "", "bolt"), ui_item("Thoughtful", "Every detail considered, nothing in your way.", "", "spark"), ui_item("Private", "Your data stays yours, always.", "", "shield")]),
+    ui_block("cta", "Ready when you are", "Start today. It takes a minute.", "", "Get started", []),
+    ui_block("footer", "", "", "", "", [ui_item("Privacy", "", "", ""), ui_item("Terms", "", "", ""), ui_item("Contact", "", "", "")])
+  ]}
+  return {target: "web", title: subject, brand: brand, accent: "", theme: "", screens: [page]}
+}
+
+// ---------------------------------------------------------------- the design system
+
+fn ui_esc(text: Text) -> Text {
+  return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
+}
+
+// Shape, space and type: the parts of the system that are not colour.
+fn ui_tokens_css() -> Text {
+  return ":root{--ui-s1:4px;--ui-s2:8px;--ui-s3:12px;--ui-s4:16px;--ui-s5:24px;--ui-s6:32px;--ui-s7:48px;--ui-s8:64px;--ui-s9:96px;--ui-r1:8px;--ui-r2:12px;--ui-r3:16px;--ui-r4:22px;--ui-r5:28px;--ui-pill:999px;--ui-t1:12px;--ui-t2:13.5px;--ui-t3:15px;--ui-t4:17px;--ui-t5:22px;--ui-t6:30px;--ui-t7:44px;--ui-t8:60px;--ui-font:Inter,ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;--ui-mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;--ui-ease:cubic-bezier(.2,.7,.2,1)}"
+}
+
+fn ui_colours_css(theme: Text, accent: UiAccent) -> Text {
+  let a = if theme == "dark" { accent.dark } else { accent.light }
+  let on = ui_on(a)
+  if theme == "dark" {
+    return ".ui{--bg:#0b0b0d;--surface:#141417;--raised:#1a1a1e;--sunken:#101013;--ink:#f4f4f6;--soft:#a1a1aa;--faint:#71717a;--line:#26262b;--line2:#1d1d21;--accent:" + a + ";--on:" + on + ";--tint:color-mix(in srgb," + a + " 14%,transparent);--tint2:color-mix(in srgb," + a + " 7%,transparent);--shadow:0 1px 0 rgba(255,255,255,.04) inset,0 1px 2px rgba(0,0,0,.5),0 12px 32px -8px rgba(0,0,0,.6);--glass:rgba(20,20,23,.72);color-scheme:dark}"
+  }
+  return ".ui{--bg:#f7f7f8;--surface:#ffffff;--raised:#ffffff;--sunken:#f2f2f4;--ink:#0b0b0f;--soft:#5b5b66;--faint:#8e8e98;--line:#e6e6ea;--line2:#efeff2;--accent:" + a + ";--on:" + on + ";--tint:color-mix(in srgb," + a + " 10%,transparent);--tint2:color-mix(in srgb," + a + " 5%,transparent);--shadow:0 1px 2px rgba(16,16,24,.04),0 10px 30px -10px rgba(16,16,24,.12);--glass:rgba(255,255,255,.72);color-scheme:light}"
+}
+
+fn ui_base_css() -> Text {
+  return ".ui{font-family:var(--ui-font);font-size:var(--ui-t3);line-height:1.55;color:var(--ink);-webkit-font-smoothing:antialiased;letter-spacing:-.008em;font-feature-settings:'cv11','ss01','ss03'}.ui *{box-sizing:border-box}.ui h1,.ui h2,.ui h3,.ui h4{margin:0;font-weight:640;letter-spacing:-.028em;line-height:1.08;text-wrap:balance}.ui p{margin:0;text-wrap:pretty}.ui .ic{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}.ui .ic .f{fill:currentColor;stroke:none}.ui .soft{color:var(--soft)}.ui .faint{color:var(--faint)}"
+  + ".ui .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:42px;padding:0 20px;border-radius:var(--ui-pill);background:var(--accent);color:var(--on);font-weight:560;font-size:14.5px;letter-spacing:-.01em;white-space:nowrap;box-shadow:0 1px 0 rgba(255,255,255,.18) inset,0 6px 16px -6px color-mix(in srgb,var(--accent) 60%,transparent)}.ui .btn .ic{width:17px;height:17px}.ui .btn.ghost{background:var(--surface);color:var(--ink);box-shadow:0 0 0 1px var(--line) inset}.ui .btn.sm{height:34px;padding:0 14px;font-size:13.5px}.ui .btn.ink{background:var(--ink);color:var(--surface);box-shadow:none}"
+  + ".ui .eyebrow{display:inline-flex;align-items:center;gap:8px;height:28px;padding:0 12px 0 10px;border-radius:var(--ui-pill);background:var(--tint);color:var(--accent);font-size:12.5px;font-weight:600;letter-spacing:.01em}.ui .eyebrow i{width:6px;height:6px;border-radius:50%;background:var(--accent)}.ui .kicker{font-size:12.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--accent)}"
+  + ".ui .chip{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:var(--tint);color:var(--accent)}.ui .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--ui-r4);box-shadow:var(--shadow)}.ui .mark{display:grid;place-items:center;width:28px;height:28px;border-radius:9px;background:linear-gradient(140deg,var(--accent),color-mix(in srgb,var(--accent) 55%,#000));color:var(--on);font-weight:700;font-size:14px;letter-spacing:-.02em}.ui .badge{display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:var(--ui-pill);background:var(--sunken);color:var(--soft);font-size:12px;font-weight:550}.ui .badge.on{background:var(--tint);color:var(--accent)}"
+}
+
+// ---------------------------------------------------------------- blocks
+
+fn ui_or(text: Text, other: Text) -> Text { return if text.trim().is_empty() { other } else { text } }
+
+fn ui_act(action: Text) -> Text { return action.split("|")[0].trim() }
+
+fn ui_or_dot(icon: Text, other: Text) -> Text { return if icon == "dot" or icon.trim().is_empty() { other } else { icon } }
+
+fn ui_buttons(action: Text, size: Text) -> Text {
+  if action.trim().is_empty() { return "" }
+  let parts = action.split("|")
+  let first = f"<span class=\"btn {size}\">{ui_esc(parts[0].trim())}</span>"
+  let second = if parts.length() > 1 and not parts[1].trim().is_empty() { f"<span class=\"btn ghost {size}\">{ui_esc(parts[1].trim())}</span>" } else { "" }
+  return first + second
+}
+
+fn ui_head(b: UiBlock, center: Bool) -> Text {
+  if b.title.trim().is_empty() and b.text.trim().is_empty() { return "" }
+  let kick = if b.meta.trim().is_empty() { "" } else { f"<div class=\"kicker\">{ui_esc(b.meta)}</div>" }
+  let words = if b.text.trim().is_empty() { "" } else { f"<p class=\"soft\">{ui_esc(b.text)}</p>" }
+  let cls = if center { "sec-head c" } else { "sec-head" }
+  return f"<div class=\"{cls}\">{kick}<h2>{ui_esc(b.title)}</h2>{words}</div>"
+}
+
+fn ui_nav(b: UiBlock, brand: Text) -> Text {
+  let links = (for i in b.items { f"<span>{ui_esc(i.title)}</span>" }).join("")
+  let action = if b.action.trim().is_empty() { "" } else { f"<span class=\"btn sm\">{ui_esc(ui_act(b.action))}</span>" }
+  return f"<header class=\"w-nav\"><div class=\"brand\"><span class=\"mark\">{ui_esc(brand.slice(0, 1).upper())}</span>{ui_esc(brand)}</div><nav>{links}</nav><div class=\"w-nav-end\">{action}</div></header>"
+}
+
+fn ui_hero_preview(b: UiBlock) -> Text {
+  if b.items.is_empty() { return "" }
+  let rows = (for k in 0 until b.items.length() { ui_row(b.items[k], k == 0) }).join("")
+  return f"<div class=\"hero-shot card\"><div class=\"shot-bar\"><i></i><i></i><i></i></div><div class=\"rows\">{rows}</div></div>"
+}
+
+fn ui_hero(b: UiBlock, target: Text) -> Text {
+  let eyebrow = if b.meta.trim().is_empty() { "" } else { f"<span class=\"eyebrow\"><i></i>{ui_esc(b.meta)}</span>" }
+  let words = if b.text.trim().is_empty() { "" } else { f"<p class=\"lead soft\">{ui_esc(b.text)}</p>" }
+  let buttons = ui_buttons(b.action, "")
+  let acts = if buttons.is_empty() { "" } else { f"<div class=\"acts\">{buttons}</div>" }
+  return f"<section class=\"hero\"><div class=\"glow\"></div>{eyebrow}<h1>{ui_esc(b.title)}</h1>{words}{acts}{ui_hero_preview(b)}</section>"
+}
+
+fn ui_cols(n: Number) -> Number {
+  if n == 4 { return 2 }
+  if n == 1 or n == 2 { return n }
+  return 3
+}
+
+fn ui_features(b: UiBlock) -> Text {
+  let defaults = ["spark", "bolt", "shield", "layers", "chart", "globe"]
+  let cards = (for k in 0 until b.items.length() { f"<div class=\"feat\"><span class=\"chip\">{ui_icon(ui_or_dot(b.items[k].icon, defaults[k % 6]))}</span><h3>{ui_esc(b.items[k].title)}</h3><p class=\"soft\">{ui_esc(b.items[k].text)}</p></div>" }).join("")
+  return f"<section class=\"sec\">{ui_head(b, true)}<div class=\"feats n{ui_cols(b.items.length())}\">{cards}</div></section>"
+}
+
+fn ui_stats(b: UiBlock) -> Text {
+  let cells = (for i in b.items { f"<div class=\"stat\"><div class=\"num\">{ui_esc(i.title)}</div><div class=\"lbl soft\">{ui_esc(i.text)}</div>" + (if i.meta.trim().is_empty() { "" } else { f"<span class=\"delta\">{ui_esc(i.meta)}</span>" }) + "</div>" }).join("")
+  let head = if b.title.trim().is_empty() { "" } else { f"<div class=\"row-head\"><h2>{ui_esc(b.title)}</h2></div>" }
+  return f"<section class=\"sec\">{head}<div class=\"stats card\">{cells}</div></section>"
+}
+
+fn ui_cards(b: UiBlock) -> Text {
+  let defaults = ["spark", "layers", "star", "image", "bolt", "heart"]
+  let cards = (for k in 0 until b.items.length() { f"<div class=\"tile\"><div class=\"cover h{k % 6}\">{ui_icon(ui_or_dot(b.items[k].icon, defaults[k % 6]))}</div><div class=\"tile-body\"><h3>{ui_esc(b.items[k].title)}</h3><p class=\"soft\">{ui_esc(b.items[k].text)}</p>" + (if b.items[k].meta.trim().is_empty() { "" } else { f"<span class=\"badge\">{ui_esc(b.items[k].meta)}</span>" }) + "</div></div>" }).join("")
+  let more = if b.action.trim().is_empty() { "" } else { f"<span class=\"more\">{ui_esc(b.action)}</span>" }
+  let head = if b.title.trim().is_empty() { "" } else { f"<div class=\"row-head\"><h2>{ui_esc(b.title)}</h2>{more}</div>" }
+  return f"<section class=\"sec\">{head}<div class=\"tiles\">{cards}</div></section>"
+}
+
+fn ui_row(i: UiItem, first: Bool) -> Text {
+  let icon = if i.icon.trim().is_empty() { "" } else { f"<span class=\"chip sm\">{ui_icon(i.icon)}</span>" }
+  let sub = if i.text.trim().is_empty() { "" } else { f"<div class=\"r-sub soft\">{ui_esc(i.text)}</div>" }
+  let meta = if i.meta.trim().is_empty() { "" } else { f"<span class=\"r-meta faint\">{ui_esc(i.meta)}</span>" }
+  return f"<div class=\"r\">{icon}<div class=\"r-main\"><div class=\"r-title\">{ui_esc(i.title)}</div>{sub}</div>{meta}<span class=\"faint r-go\">" + ui_icon("chevron") + f"</span></div>"
+}
+
+fn ui_list(b: UiBlock) -> Text {
+  let rows = (for k in 0 until b.items.length() { ui_row(b.items[k], k == 0) }).join("")
+  let more = if b.action.trim().is_empty() { "" } else { f"<span class=\"more\">{ui_esc(b.action)}</span>" }
+  let head = if b.title.trim().is_empty() { "" } else { f"<div class=\"row-head\"><h2>{ui_esc(b.title)}</h2>{more}</div>" }
+  return f"<section class=\"sec\">{head}<div class=\"rows card\">{rows}</div></section>"
+}
+
+fn ui_steps(b: UiBlock) -> Text {
+  let steps = (for k in 0 until b.items.length() { f"<div class=\"step\"><span class=\"n\">{k + 1}</span><div><h3>{ui_esc(b.items[k].title)}</h3><p class=\"soft\">{ui_esc(b.items[k].text)}</p></div></div>" }).join("")
+  return f"<section class=\"sec\">{ui_head(b, true)}<div class=\"steps\">{steps}</div></section>"
+}
+
+fn ui_pricing(b: UiBlock) -> Text {
+  let n = b.items.length()
+  let best = if n >= 3 { 1 } else { n - 1 }
+  let plans = (for k in 0 until n {
+    f"<div class=\"plan" + (if k == best { " best" } else { "" }) + "\">" + (if k == best { "<span class=\"badge on\">Most popular</span>" } else { "" })
+    + f"<h3>{ui_esc(b.items[k].title)}</h3><div class=\"price\">{ui_esc(b.items[k].meta)}</div><ul>"
+    + (for f in b.items[k].text.split(";") where not f.trim().is_empty() { f"<li>" + ui_icon("check") + f"{ui_esc(f.trim())}</li>" }).join("")
+    + "</ul><span class=\"btn" + (if k == best { "" } else { " ghost" }) + "\">" + ui_esc(if b.action.trim().is_empty() { "Choose" } else { b.action.split("|")[0].trim() }) + "</span></div>"
+  }).join("")
+  return f"<section class=\"sec\">{ui_head(b, true)}<div class=\"plans\">{plans}</div></section>"
+}
+
+fn ui_quote(b: UiBlock) -> Text {
+  let who = if b.meta.trim().is_empty() { "" } else { f"<div class=\"who\"><span class=\"avatar\">{ui_esc(b.meta.slice(0, 1).upper())}</span><div><b>{ui_esc(b.meta)}</b>" + (if b.title.trim().is_empty() { "" } else { f"<div class=\"faint\">{ui_esc(b.title)}</div>" }) + "</div></div>" }
+  return f"<section class=\"sec\"><figure class=\"quote\"><blockquote>{ui_esc(b.text)}</blockquote>{who}</figure></section>"
+}
+
+fn ui_cta(b: UiBlock) -> Text {
+  let words = if b.text.trim().is_empty() { "" } else { f"<p class=\"soft\">{ui_esc(b.text)}</p>" }
+  return f"<section class=\"sec\"><div class=\"cta\"><h2>{ui_esc(b.title)}</h2>{words}<div class=\"acts\">" + ui_buttons(b.action, "") + f"</div></div></section>"
+}
+
+fn ui_footer(b: UiBlock, brand: Text) -> Text {
+  let links = (for i in b.items { f"<span>{ui_esc(i.title)}</span>" }).join("")
+  let line = if b.text.trim().is_empty() { "© 2026 " + brand } else { b.text }
+  return f"<footer class=\"w-foot\"><div class=\"brand\"><span class=\"mark\">{ui_esc(brand.slice(0, 1).upper())}</span>{ui_esc(brand)}</div><nav>{links}</nav><div class=\"faint small\">{ui_esc(line)}</div></footer>"
+}
+
+fn ui_form(b: UiBlock) -> Text {
+  let fields = (for i in b.items { f"<label class=\"field\"><span>{ui_esc(i.title)}</span><div class=\"input\">" + (if i.icon == "dot" or i.icon.is_empty() { "" } else { ui_icon(i.icon) }) + f"<em>{ui_esc(i.text)}</em></div></label>" }).join("")
+  let head = if b.title.trim().is_empty() { "" } else { f"<h2>{ui_esc(b.title)}</h2>" }
+  let words = if b.text.trim().is_empty() { "" } else { f"<p class=\"soft\">{ui_esc(b.text)}</p>" }
+  let action = if b.action.trim().is_empty() { "" } else { f"<span class=\"btn wide\">{ui_esc(ui_act(b.action))}</span>" }
+  let alt = if b.meta.trim().is_empty() { "" } else { f"<p class=\"faint small c\">{ui_esc(b.meta)}</p>" }
+  return f"<section class=\"sec\"><div class=\"form card\">{head}{words}{fields}{action}{alt}</div></section>"
+}
+
+fn ui_appbar(b: UiBlock, target: Text) -> Text {
+  let icons = (for i in b.items where not i.icon.is_empty() { f"<span class=\"iconbtn\">{ui_icon(i.icon)}</span>" }).join("")
+  let sub = if b.text.trim().is_empty() { "" } else { f"<p class=\"soft\">{ui_esc(b.text)}</p>" }
+  let status = if b.meta.trim().is_empty() { "" } else { f"<span class=\"badge on live\"><i></i>{ui_esc(b.meta)}</span>" }
+  let action = if b.action.trim().is_empty() { "" } else { f"<span class=\"btn sm\">{ui_esc(ui_act(b.action))}</span>" }
+  if target == "phone" {
+    return f"<div class=\"appbar\"><div class=\"ab-top\"><span></span><div class=\"ab-icons\">{icons}</div></div>{sub}<h1>{ui_esc(b.title)}</h1></div>"
+  }
+  return f"<div class=\"appbar\"><div class=\"ab-text\"><div class=\"ab-line\"><h1>{ui_esc(b.title)}</h1>{status}</div>{sub}</div><div class=\"ab-icons\">{icons}{action}</div></div>"
+}
+
+fn ui_search(b: UiBlock) -> Text {
+  let hint = if b.meta.trim().is_empty() { (if b.text.trim().is_empty() { "Search" } else { b.text }) } else { b.meta }
+  return f"<div class=\"search\">" + ui_icon("search") + f"<span>{ui_esc(hint)}</span><kbd>⌘K</kbd></div>"
+}
+
+fn ui_chips(b: UiBlock) -> Text {
+  let chips = (for k in 0 until b.items.length() { f"<span class=\"pill" + (if k == 0 { " on" } else { "" }) + f"\">{ui_esc(b.items[k].title)}</span>" }).join("")
+  return f"<div class=\"pills\">{chips}</div>"
+}
+
+fn ui_tabbar(b: UiBlock) -> Text {
+  let tabs = (for k in 0 until b.items.length() { f"<span class=\"tab" + (if k == 0 { " on" } else { "" }) + f"\">{ui_icon(b.items[k].icon)}<em>{ui_esc(b.items[k].title)}</em></span>" }).join("")
+  return f"<nav class=\"tabbar\">{tabs}</nav>"
+}
+
+fn ui_is_user(i: UiItem) -> Bool {
+  let m = i.meta.trim().lower()
+  return m == "user" or m == "you" or m == "me" or m == "human" or i.title.trim().lower() == "you"
+}
+
+fn ui_chat(b: UiBlock, brand: Text) -> Text {
+  let msgs = (for i in b.items {
+    if ui_is_user(i) { f"<div class=\"msg me\"><div class=\"bubble\">{ui_esc(i.text)}</div></div>" }
+    else { f"<div class=\"msg\"><span class=\"av\">" + ui_icon("spark") + f"</span><div><div class=\"who-name\">{ui_esc(ui_or(i.title, brand))}</div><div class=\"bubble\">{ui_esc(i.text)}</div></div></div>" }
+  }).join("")
+  return f"<section class=\"chat\">{msgs}</section>"
+}
+
+fn ui_composer(b: UiBlock) -> Text {
+  let hint = if b.text.trim().is_empty() { (if b.meta.trim().is_empty() { "Message…" } else { b.meta }) } else { b.text }
+  return f"<div class=\"composer\"><span class=\"iconbtn\">" + ui_icon("plus") + f"</span><span class=\"hint\">{ui_esc(hint)}</span><span class=\"iconbtn\">" + ui_icon("mic") + f"</span><span class=\"send\">" + ui_icon("send") + f"</span></div>"
+}
+
+fn ui_state(meta: Text) -> Text {
+  let m = meta.trim().lower()
+  if ["done", "finished", "complete", "completed", "ok", "passed"].contains(m) { return "done" }
+  if ["now", "running", "working", "active", "in progress", "live"].contains(m) { return "now" }
+  if ["failed", "error", "blocked"].contains(m) { return "bad" }
+  return "next"
+}
+
+fn ui_activity(b: UiBlock) -> Text {
+  let rows = (for i in b.items { f"<li class=\"{ui_state(i.meta)}\"><span class=\"dotmark\">" + (if ui_state(i.meta) == "done" { ui_icon("check") } else { "" }) + f"</span><div><div class=\"a-title\">{ui_esc(i.title)}</div>" + (if i.text.trim().is_empty() { "" } else { f"<div class=\"soft small\">{ui_esc(i.text)}</div>" }) + "</div>" + (if i.meta.trim().is_empty() { "" } else { f"<span class=\"a-meta\">{ui_esc(i.meta)}</span>" }) + "</li>" }).join("")
+  let head = if b.title.trim().is_empty() { "" } else { f"<div class=\"row-head\"><h2>{ui_esc(b.title)}</h2></div>" }
+  return f"<section class=\"sec\">{head}<ol class=\"activity card\">{rows}</ol></section>"
+}
+
+fn ui_percent(meta: Text) -> Number {
+  let n = meta.replace("%", "").trim().to_number().or(0)
+  return n.max(0).min(100)
+}
+
+fn ui_progress(b: UiBlock) -> Text {
+  let rows = (for i in b.items { f"<div class=\"bar\"><div class=\"bar-top\"><span>{ui_esc(i.title)}</span><span class=\"faint\">{ui_esc(i.meta)}</span></div><div class=\"track\"><div class=\"fill\" style=\"width:{ui_percent(i.meta)}%\"></div></div></div>" }).join("")
+  let head = if b.title.trim().is_empty() { "" } else { f"<div class=\"row-head\"><h2>{ui_esc(b.title)}</h2></div>" }
+  return f"<section class=\"sec\">{head}<div class=\"bars card\">{rows}</div></section>"
+}
+
+fn ui_sidebar(b: UiBlock, brand: Text) -> Text {
+  let name = if b.title.trim().is_empty() { brand } else { b.title }
+  let action = if b.action.trim().is_empty() { "" } else { f"<span class=\"btn ghost sm wide\">" + ui_icon("plus") + f"{ui_esc(ui_act(b.action))}</span>" }
+  let links = (for k in 0 until b.items.length() { f"<span class=\"side-link" + (if k == 0 { " on" } else { "" }) + f"\">{ui_icon(b.items[k].icon)}<em>{ui_esc(b.items[k].title)}</em>" + (if b.items[k].meta.trim().is_empty() { "" } else { f"<b>{ui_esc(b.items[k].meta)}</b>" }) + "</span>" }).join("")
+  let foot = if b.text.trim().is_empty() { "" } else { f"<div class=\"side-foot soft small\">{ui_esc(b.text)}</div>" }
+  return f"<div class=\"side-in\"><div class=\"brand\"><span class=\"mark\">{ui_esc(name.slice(0, 1).upper())}</span>{ui_esc(name)}</div>{action}<div class=\"side-links\">{links}</div>{foot}</div>"
+}
+
+fn ui_table(b: UiBlock) -> Text {
+  let head = if b.title.trim().is_empty() { "" } else { f"<div class=\"row-head\"><h2>{ui_esc(b.title)}</h2></div>" }
+  let cols = b.meta.split("|")
+  let th = if b.meta.trim().is_empty() { "" } else { "<tr>" + (for c in cols { f"<th>{ui_esc(c.trim())}</th>" }).join("") + "</tr>" }
+  let rows = (for i in b.items { f"<tr><td><b>{ui_esc(i.title)}</b></td><td class=\"soft\">{ui_esc(i.text)}</td><td><span class=\"badge\">{ui_esc(i.meta)}</span></td></tr>" }).join("")
+  return f"<section class=\"sec\">{head}<div class=\"card tbl\"><table>{th}{rows}</table></div></section>"
+}
+
+fn ui_block_html(b: UiBlock, s: UiSpec) -> Text {
+  let k = b.kind
+  if k == "nav" { return ui_nav(b, s.brand) }
+  if k == "hero" { return ui_hero(b, s.target) }
+  if k == "features" { return ui_features(b) }
+  if k == "stats" { return ui_stats(b) }
+  if k == "cards" { return ui_cards(b) }
+  if k == "list" { return ui_list(b) }
+  if k == "steps" { return ui_steps(b) }
+  if k == "pricing" { return ui_pricing(b) }
+  if k == "quote" { return ui_quote(b) }
+  if k == "cta" { return ui_cta(b) }
+  if k == "footer" { return ui_footer(b, s.brand) }
+  if k == "form" { return ui_form(b) }
+  if k == "appbar" { return ui_appbar(b, s.target) }
+  if k == "search" { return ui_search(b) }
+  if k == "chips" { return ui_chips(b) }
+  if k == "tabbar" { return ui_tabbar(b) }
+  if k == "chat" { return ui_chat(b, s.brand) }
+  if k == "composer" { return ui_composer(b) }
+  if k == "activity" { return ui_activity(b) }
+  if k == "progress" { return ui_progress(b) }
+  if k == "sidebar" { return ui_sidebar(b, s.brand) }
+  if k == "table" { return ui_table(b) }
+  return ""
+}
+
+fn ui_blocks_html(blocks: UiBlock[], s: UiSpec) -> Text {
+  return (for b in blocks { ui_block_html(b, s) }).join("")
+}
+
+// ---------------------------------------------------------------- frames
+
+fn ui_slug(text: Text) -> Text {
+  return (for w in text.lower().words() { w.trim_marks(",.;:!?'\"()&") }).join("")
+}
+
+fn ui_web(sc: UiScreen, s: UiSpec) -> Text {
+  return f"<div class=\"browser\"><div class=\"b-bar\"><span class=\"lights\"><i></i><i></i><i></i></span><span class=\"url\">" + ui_icon("lock") + f"{ui_esc(ui_slug(s.brand))}.com</span><span></span></div><div class=\"b-body t-web\">{ui_blocks_html(sc.blocks, s)}</div></div>"
+}
+
+fn ui_status_bar() -> Text {
+  return "<div class=\"status\"><b>9:41</b><span class=\"sig\"><svg viewBox='0 0 18 12'><rect x='0' y='8' width='3' height='4' rx='1'/><rect x='5' y='5.5' width='3' height='6.5' rx='1'/><rect x='10' y='3' width='3' height='9' rx='1'/><rect x='15' y='0' width='3' height='12' rx='1'/></svg><svg viewBox='0 0 16 12'><path d='M8 11.5 5.8 9.2a3.1 3.1 0 0 1 4.4 0zM3.6 7a6.2 6.2 0 0 1 8.8 0l-1.2 1.2a4.5 4.5 0 0 0-6.4 0zM1.4 4.8a9.3 9.3 0 0 1 13.2 0l-1.2 1.2a7.6 7.6 0 0 0-10.8 0z'/></svg><svg viewBox='0 0 27 12'><rect x='.5' y='.5' width='23' height='11' rx='3.5' fill='none' stroke='currentColor' opacity='.4'/><rect x='2' y='2' width='18' height='8' rx='2'/><rect x='24.5' y='4' width='2' height='4' rx='1' opacity='.4'/></svg></span></div>"
+}
+
+fn ui_phone(sc: UiScreen, s: UiSpec) -> Text {
+  let scroll = for b in sc.blocks where b.kind != "tabbar" and b.kind != "composer" { b }
+  let pinned = for b in sc.blocks where b.kind == "composer" or b.kind == "tabbar" { b }
+  let label = if sc.name.trim().is_empty() { "" } else { f"<div class=\"phone-name faint\">{ui_esc(sc.name)}</div>" }
+  return f"<div class=\"phone-wrap\"><div class=\"phone\"><div class=\"island\"></div><div class=\"screen t-phone\">{ui_status_bar()}<div class=\"scroll\">{ui_blocks_html(scroll, s)}</div><div class=\"pinned\">{ui_blocks_html(pinned, s)}<div class=\"homebar\"></div></div></div></div>{label}</div>"
+}
+
+fn ui_side_kinds() -> Text[] { return ["activity", "progress", "stats"] }
+
+fn ui_agent(sc: UiScreen, s: UiSpec) -> Text {
+  let has_chat = ui_count(sc.blocks, "chat") > 0
+  let side = for b in sc.blocks where b.kind == "sidebar" { b }
+  let panel = for b in sc.blocks where has_chat and ui_side_kinds().contains(b.kind) { b }
+  let main = for b in sc.blocks where b.kind != "sidebar" and b.kind != "composer" and not (has_chat and ui_side_kinds().contains(b.kind)) { b }
+  let typing = for b in sc.blocks where b.kind == "composer" { b }
+  let panel_html = if panel.is_empty() { "" } else { f"<aside class=\"panel\">{ui_blocks_html(panel, s)}</aside>" }
+  let cls = if panel.is_empty() { "win-body" } else { "win-body three" }
+  return f"<div class=\"win\"><div class=\"win-bar\"><span class=\"lights\"><i></i><i></i><i></i></span><span class=\"win-title\">{ui_esc(s.brand)}</span><span></span></div><div class=\"{cls} t-agent\"><aside class=\"side\">{ui_blocks_html(side, s)}</aside><main class=\"main\"><div class=\"scroll\">{ui_blocks_html(main, s)}</div>{ui_blocks_html(typing, s)}</main>{panel_html}</div></div>"
+}
+
+fn ui_artifact(sc: UiScreen, s: UiSpec) -> Text {
+  return f"<div class=\"artifact card t-artifact\">{ui_blocks_html(sc.blocks, s)}</div>"
+}
+
+fn ui_frames(s: UiSpec) -> Text {
+  if s.target == "phone" { return "<div class=\"phones\">" + (for sc in s.screens { ui_phone(sc, s) }).join("") + "</div>" }
+  if s.target == "agent" { return (for sc in s.screens { ui_agent(sc, s) }).join("") }
+  if s.target == "artifact" { return (for sc in s.screens { ui_artifact(sc, s) }).join("") }
+  return (for sc in s.screens { ui_web(sc, s) }).join("")
+}
+
+// ---------------------------------------------------------------- layout CSS, per frame
+
+fn ui_web_css() -> Text {
+  return ".browser{width:min(1180px,100%);margin:0 auto;background:var(--bg);border-radius:16px;overflow:hidden;box-shadow:0 0 0 1px var(--line),0 30px 80px -30px rgba(10,10,20,.35)}.b-bar{display:grid;grid-template-columns:80px 1fr 80px;align-items:center;height:44px;padding:0 14px;background:var(--sunken);border-bottom:1px solid var(--line)}.lights{display:flex;gap:7px}.lights i{width:11px;height:11px;border-radius:50%;background:var(--line)}.url{justify-self:center;display:flex;align-items:center;gap:6px;height:28px;padding:0 14px;border-radius:9px;background:var(--surface);color:var(--soft);font-size:12.5px;min-width:240px;justify-content:center;box-shadow:0 0 0 1px var(--line2)}.url .ic{width:12px;height:12px}"
+  + ".t-web .w-nav{display:flex;align-items:center;gap:32px;height:68px;padding:0 max(24px,calc((100% - 1080px)/2));border-bottom:1px solid var(--line2);background:var(--glass);backdrop-filter:blur(14px)}.brand{display:flex;align-items:center;gap:10px;font-weight:650;letter-spacing:-.02em;font-size:16px}.t-web .w-nav nav{display:flex;gap:28px;color:var(--soft);font-size:14px;flex:1}.t-web .w-nav-end{display:flex;gap:10px}@media (max-width:640px){.t-web .w-nav{gap:12px;justify-content:space-between}.t-web .w-nav nav{display:none}.t-web .hero{padding:72px 20px 56px}.t-web .sec{padding:48px 20px}.url{min-width:0}}"
+  + ".t-web .hero{position:relative;text-align:center;padding:104px 24px 88px;overflow:hidden}.t-web .hero .glow{position:absolute;inset:-40% 10% auto;height:560px;background:radial-gradient(closest-side,color-mix(in srgb,var(--accent) 22%,transparent),transparent);filter:blur(10px);pointer-events:none}.t-web .hero>*{position:relative}.t-web .hero h1{font-size:clamp(40px,6.2vw,68px);max-width:15ch;margin:22px auto 0}.t-web .hero .lead{font-size:19px;max-width:54ch;margin:22px auto 0;line-height:1.6}.ui .acts{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:34px}.t-web .hero-shot{max-width:760px;margin:64px auto 0;text-align:left;overflow:hidden}.shot-bar{display:flex;gap:6px;padding:12px 14px;border-bottom:1px solid var(--line2)}.shot-bar i{width:8px;height:8px;border-radius:50%;background:var(--line)}"
+  + ".t-web .sec{padding:72px max(24px,calc((100% - 1080px)/2))}.sec-head{max-width:640px;margin-bottom:40px}.sec-head.c{text-align:center;margin:0 auto 44px}.sec-head h2{font-size:clamp(28px,3.4vw,40px);margin-top:10px}.sec-head p{margin-top:14px;font-size:17px}.t-web .feats{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}.t-web .feats.n2{grid-template-columns:repeat(2,1fr)}.t-web .feats.n3{grid-template-columns:repeat(3,1fr)}@media (max-width:820px){.t-web .feats.n2,.t-web .feats.n3{grid-template-columns:1fr}}.feat{padding:28px;border-radius:var(--ui-r4);background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow)}.feat h3{font-size:17px;margin:20px 0 8px;letter-spacing:-.02em}.feat p{font-size:14.5px}"
+  + ".stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}.stat{padding:28px;border-left:1px solid var(--line2);position:relative}.stat:first-child{border-left:0}.stat .num{font-size:40px;font-weight:650;letter-spacing:-.04em;line-height:1}.stat .lbl{margin-top:10px;font-size:14px}.stat .delta{position:absolute;top:26px;right:22px;font-size:12px;font-weight:600;color:var(--accent)}"
+  + ".tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px}.tile{border-radius:var(--ui-r4);background:var(--surface);border:1px solid var(--line);overflow:hidden;box-shadow:var(--shadow)}.cover{height:150px;display:grid;place-items:center;color:var(--accent)}.cover .ic{width:34px;height:34px;stroke-width:1.4;opacity:.9}.cover.h0{background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 22%,var(--sunken)),var(--sunken))}.cover.h1{background:linear-gradient(160deg,var(--sunken),color-mix(in srgb,var(--accent) 16%,var(--sunken)))}.cover.h2{background:radial-gradient(circle at 30% 20%,color-mix(in srgb,var(--accent) 24%,var(--sunken)),var(--sunken) 70%)}.cover.h3{background:linear-gradient(45deg,color-mix(in srgb,var(--accent) 12%,var(--sunken)),color-mix(in srgb,var(--accent) 26%,var(--sunken)))}.cover.h4{background:radial-gradient(circle at 80% 80%,color-mix(in srgb,var(--accent) 22%,var(--sunken)),var(--sunken) 65%)}.cover.h5{background:linear-gradient(200deg,color-mix(in srgb,var(--accent) 18%,var(--sunken)),var(--sunken))}.tile-body{padding:20px 22px 22px}.tile-body h3{font-size:16.5px;letter-spacing:-.02em}.tile-body p{font-size:14px;margin-top:6px}.tile-body .badge{margin-top:14px}"
+  + ".row-head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:16px}.row-head h2{font-size:22px}.more{color:var(--accent);font-size:14px;font-weight:560}.rows{overflow:hidden}.r{display:flex;align-items:center;gap:14px;padding:14px 18px;border-top:1px solid var(--line2)}.r:first-child{border-top:0}.chip.sm{width:36px;height:36px;border-radius:11px}.chip.sm .ic{width:18px;height:18px}.r-main{flex:1;min-width:0}.r-title{font-weight:560;font-size:15px;letter-spacing:-.01em}.r-sub{font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.r-meta{font-size:13px;white-space:nowrap}.r-go .ic{width:16px;height:16px}"
+  + ".steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:28px}.step{display:flex;gap:16px}.step .n{flex:none;display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:var(--tint);color:var(--accent);font-weight:650;font-size:14px}.step h3{font-size:16.5px;margin:5px 0 6px}.step p{font-size:14.5px}"
+  + ".plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px;align-items:start}.plan{position:relative;padding:30px;border-radius:var(--ui-r4);background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow);display:flex;flex-direction:column;gap:16px}.plan.best{border-color:color-mix(in srgb,var(--accent) 55%,var(--line));box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) 40%,transparent),0 24px 60px -24px color-mix(in srgb,var(--accent) 45%,transparent)}.plan .badge{position:absolute;top:28px;right:24px}.plan h3{font-size:16px}.price{font-size:40px;font-weight:650;letter-spacing:-.04em}.plan ul{list-style:none;margin:0;padding:0;display:grid;gap:10px;font-size:14.5px;color:var(--soft)}.plan li{display:flex;gap:10px;align-items:center}.plan li .ic{width:16px;height:16px;color:var(--accent)}.plan .btn{margin-top:8px}"
+  + ".quote{margin:0 auto;max-width:760px;text-align:center}.quote blockquote{margin:0;font-size:clamp(22px,2.6vw,30px);line-height:1.35;letter-spacing:-.025em;font-weight:500}.who{display:inline-flex;align-items:center;gap:12px;margin-top:28px;text-align:left;font-size:14px}.avatar{display:grid;place-items:center;width:40px;height:40px;border-radius:50%;background:var(--tint);color:var(--accent);font-weight:650}"
+  + ".cta{text-align:center;padding:72px 32px;border-radius:var(--ui-r5);background:radial-gradient(120% 140% at 50% 0%,color-mix(in srgb,var(--accent) 16%,var(--surface)),var(--surface) 70%);border:1px solid var(--line)}.cta h2{font-size:clamp(28px,3.6vw,44px)}.cta p{margin-top:14px;font-size:17px}"
+  + ".t-web .w-foot{display:flex;align-items:center;gap:32px;flex-wrap:wrap;padding:32px max(24px,calc((100% - 1080px)/2)) 40px;border-top:1px solid var(--line2);font-size:14px}.t-web .w-foot nav{display:flex;gap:24px;color:var(--soft);flex:1}.small{font-size:13px}.c{text-align:center}"
+  + ".form{max-width:440px;margin:0 auto;padding:32px;display:flex;flex-direction:column;gap:16px}.form h2{font-size:26px}.field{display:grid;gap:7px;font-size:13.5px;font-weight:560}.input{display:flex;align-items:center;gap:10px;height:46px;padding:0 14px;border-radius:12px;background:var(--sunken);box-shadow:0 0 0 1px var(--line) inset;color:var(--faint)}.input em{font-style:normal;font-weight:400;font-size:14.5px}.input .ic{width:18px;height:18px}.btn.wide{width:100%;height:48px}"
+  + ".search{display:flex;align-items:center;gap:10px;height:46px;padding:0 14px;border-radius:14px;background:var(--sunken);box-shadow:0 0 0 1px var(--line2) inset;color:var(--faint);font-size:15px}.search span{flex:1}.search kbd{font:500 11.5px var(--ui-font);padding:3px 6px;border-radius:6px;background:var(--surface);box-shadow:0 0 0 1px var(--line);color:var(--faint)}.pills{display:flex;gap:8px;flex-wrap:wrap}.pill{height:34px;padding:0 15px;display:inline-flex;align-items:center;border-radius:var(--ui-pill);background:var(--surface);box-shadow:0 0 0 1px var(--line) inset;font-size:13.5px;font-weight:540;color:var(--soft)}.pill.on{background:var(--ink);color:var(--surface);box-shadow:none}"
+  + ".tbl{overflow:hidden}.tbl table{width:100%;border-collapse:collapse;font-size:14px}.tbl th{text-align:left;font-weight:560;color:var(--faint);font-size:12.5px;padding:12px 18px;background:var(--sunken)}.tbl td{padding:14px 18px;border-top:1px solid var(--line2)}"
+  + ".activity{list-style:none;margin:0;padding:8px 0;position:relative}.activity li{display:flex;gap:14px;align-items:flex-start;padding:12px 18px;position:relative}.activity li:not(:last-child)::after{content:'';position:absolute;left:28px;top:36px;bottom:-12px;width:1.5px;background:var(--line)}.dotmark{flex:none;display:grid;place-items:center;width:21px;height:21px;border-radius:50%;margin-top:1px;box-shadow:0 0 0 1.5px var(--line) inset;background:var(--surface);position:relative;z-index:1}.activity .done .dotmark{background:var(--accent);box-shadow:none;color:var(--on)}.dotmark .ic{width:13px;height:13px;stroke-width:2.4}.activity .now .dotmark{box-shadow:0 0 0 1.5px var(--accent) inset,0 0 0 5px var(--tint)}.activity .now .dotmark::after{content:'';width:7px;height:7px;border-radius:50%;background:var(--accent)}.activity .bad .dotmark{box-shadow:0 0 0 1.5px #e11d48 inset}.activity li>div{flex:1}.a-title{font-weight:560;font-size:14.5px}.activity .next .a-title{color:var(--soft)}.a-meta{font-size:12px;color:var(--faint);font-weight:550;text-transform:capitalize}.activity .now .a-meta{color:var(--accent)}"
+  + ".bars{padding:18px;display:grid;gap:16px}.bar-top{display:flex;justify-content:space-between;font-size:13.5px;font-weight:540;margin-bottom:8px}.track{height:7px;border-radius:99px;background:var(--sunken);overflow:hidden;box-shadow:0 0 0 1px var(--line2) inset}.fill{height:100%;border-radius:99px;background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 70%,var(--surface)),var(--accent))}"
+  + ".chat{display:flex;flex-direction:column;gap:18px}.msg{display:flex;gap:12px;max-width:640px}.msg.me{align-self:flex-end;justify-content:flex-end}.msg .bubble{font-size:14.5px;line-height:1.6}.msg.me .bubble{background:var(--sunken);padding:10px 16px;border-radius:20px 20px 6px 20px;box-shadow:0 0 0 1px var(--line2) inset}.av{flex:none;display:grid;place-items:center;width:30px;height:30px;border-radius:10px;background:linear-gradient(140deg,var(--accent),color-mix(in srgb,var(--accent) 55%,#000));color:var(--on)}.av .ic{width:16px;height:16px}.who-name{font-size:13px;font-weight:620;margin:4px 0 4px}"
+  + ".composer{display:flex;align-items:center;gap:6px;margin:12px 20px 20px;padding:8px 8px 8px 10px;border-radius:22px;background:var(--surface);box-shadow:0 0 0 1px var(--line) inset,var(--shadow)}.composer .hint{flex:1;color:var(--faint);font-size:14.5px;padding-left:4px}.iconbtn{display:grid;place-items:center;width:36px;height:36px;border-radius:12px;color:var(--soft)}.send{display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:var(--accent);color:var(--on)}.send .ic{width:18px;height:18px;stroke-width:2.1}"
+  + ".badge.live{gap:6px}.badge.live i{width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px var(--tint);animation:ui-pulse 1.6s var(--ui-ease) infinite}@keyframes ui-pulse{50%{opacity:.35}}"
+}
+
+fn ui_phone_css() -> Text {
+  return ".phones{display:flex;gap:40px;justify-content:center;flex-wrap:wrap}.phone-wrap{display:flex;flex-direction:column;align-items:center;gap:14px}.phone-name{font-size:13px;font-weight:550}.phone{position:relative;width:390px;height:844px;border-radius:58px;padding:11px;background:#0c0c0e;box-shadow:0 0 0 1.5px #2a2a2e,0 0 0 4px #121214,0 40px 90px -30px rgba(10,10,20,.5)}.island{position:absolute;top:22px;left:50%;transform:translateX(-50%);width:120px;height:34px;border-radius:20px;background:#000;z-index:5}.screen{position:relative;height:100%;border-radius:47px;overflow:hidden;background:var(--bg);display:flex;flex-direction:column}"
+  + ".status{display:flex;justify-content:space-between;align-items:center;height:54px;padding:6px 30px 0 40px;font-size:16px;flex:none}.status b{font-weight:600;letter-spacing:-.01em}.sig{display:flex;gap:6px;align-items:center}.sig svg{height:12px;fill:currentColor}"
+  + ".t-phone .scroll{flex:1;overflow:hidden;padding:0 20px 20px;display:flex;flex-direction:column;gap:22px}.t-phone .sec{padding:0}.t-phone .appbar{padding-top:4px}.t-phone .ab-top{display:flex;justify-content:space-between;align-items:center;height:40px}.t-phone .ab-icons{display:flex;gap:4px}.t-phone .iconbtn{background:var(--surface);box-shadow:0 0 0 1px var(--line2) inset;border-radius:50%;color:var(--ink)}.t-phone .iconbtn .ic{width:19px;height:19px}.t-phone .appbar p{font-size:14px;margin-top:6px}.t-phone .appbar h1{font-size:32px;letter-spacing:-.035em;margin-top:2px}"
+  + ".t-phone .hero{text-align:left;padding:8px 0}.t-phone .hero .glow{display:none}.t-phone .hero h1{font-size:30px;margin-top:14px}.t-phone .hero .lead{font-size:15.5px;margin-top:10px}.t-phone .acts{justify-content:flex-start;margin-top:20px}.t-phone .hero-shot{margin-top:20px}"
+  + ".t-phone .tiles{display:flex;gap:12px;overflow:hidden;margin-right:-20px}.t-phone .tile{flex:none;width:240px}.t-phone .cover{height:120px}.t-phone .feats{display:grid;gap:10px}.t-phone .feat{padding:18px;display:grid;grid-template-columns:40px 1fr;column-gap:14px}.t-phone .feat .chip{grid-row:span 2}.t-phone .feat h3{margin:0 0 2px}.t-phone .sec-head,.t-phone .sec-head.c{margin:0 0 16px;text-align:left}.t-phone .sec-head h2{font-size:22px}.t-phone .row-head{margin-bottom:12px}.t-phone .row-head h2{font-size:19px}.t-phone .r{padding:12px 14px}.t-phone .stats{grid-template-columns:repeat(2,1fr)}.t-phone .stat{padding:18px;border-left:0;border-top:1px solid var(--line2)}.t-phone .stat:nth-child(-n+2){border-top:0}.t-phone .stat:nth-child(2n){border-left:1px solid var(--line2)}.t-phone .stat .num{font-size:28px}.t-phone .stat .delta{top:18px;right:14px}.t-phone .steps{gap:16px}.t-phone .quote blockquote{font-size:20px}.t-phone .cta{padding:32px 20px}.t-phone .cta h2{font-size:24px}.t-phone .form{padding:22px;box-shadow:none}.t-phone .search kbd{display:none}.t-phone .pills{flex-wrap:nowrap;overflow:hidden;margin-right:-20px}.t-phone .pill{flex:none}.t-phone .chat{gap:14px}.t-phone .msg{max-width:100%}"
+  + ".pinned{flex:none}.t-phone .composer{margin:0 14px 8px}.tabbar{display:flex;justify-content:space-around;padding:10px 12px 2px;border-top:1px solid var(--line2);background:var(--glass);backdrop-filter:blur(16px)}.tab{display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--faint);min-width:56px}.tab em{font-style:normal;font-size:10.5px;font-weight:560}.tab .ic{width:23px;height:23px}.tab.on{color:var(--accent)}.homebar{width:134px;height:5px;border-radius:3px;background:var(--ink);opacity:.9;margin:10px auto 9px}"
+}
+
+fn ui_agent_css() -> Text {
+  return ".win{width:min(1240px,100%);height:780px;margin:0 auto;display:flex;flex-direction:column;border-radius:14px;overflow:hidden;background:var(--bg);box-shadow:0 0 0 1px var(--line),0 30px 80px -30px rgba(10,10,20,.4)}.win-bar{display:grid;grid-template-columns:80px 1fr 80px;align-items:center;height:40px;padding:0 14px;background:var(--sunken);border-bottom:1px solid var(--line);flex:none}.win-title{justify-self:center;font-size:12.5px;font-weight:560;color:var(--soft)}"
+  + ".win-body{flex:1;display:grid;grid-template-columns:248px 1fr;min-height:0}.win-body.three{grid-template-columns:248px 1fr 300px}.side{background:var(--sunken);border-right:1px solid var(--line);padding:18px 14px;min-height:0}.side-in{display:flex;flex-direction:column;gap:16px;height:100%}.side-in .brand{padding:2px 6px}.side-links{display:grid;gap:2px}.side-link{display:flex;align-items:center;gap:10px;height:36px;padding:0 10px;border-radius:10px;color:var(--soft);font-size:14px}.side-link em{flex:1;font-style:normal}.side-link b{font-size:11.5px;font-weight:600;color:var(--faint)}.side-link .ic{width:18px;height:18px}.side-link.on{background:var(--surface);color:var(--ink);box-shadow:0 0 0 1px var(--line) inset,0 1px 2px rgba(0,0,0,.04)}.side-foot{margin-top:auto;padding:0 6px}"
+  + ".t-agent .main{display:flex;flex-direction:column;min-height:0;min-width:0;background:var(--bg)}.t-agent .main .scroll{flex:1;overflow:hidden;padding:24px 40px;display:flex;flex-direction:column;gap:26px}.t-agent .appbar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-bottom:20px;border-bottom:1px solid var(--line2)}.ab-line{display:flex;align-items:center;gap:10px}.t-agent .appbar h1{font-size:20px;letter-spacing:-.025em}.t-agent .appbar p{font-size:13.5px;margin-top:4px}.t-agent .ab-icons{display:flex;gap:6px;align-items:center}.t-agent .sec{padding:0}.t-agent .composer{margin:0 40px 22px}.t-agent .row-head h2{font-size:15px}"
+  + ".panel{border-left:1px solid var(--line);background:var(--surface);padding:22px 18px;display:flex;flex-direction:column;gap:24px;min-height:0;overflow:hidden}.panel .sec{padding:0}.panel .row-head{margin-bottom:10px}.panel .row-head h2{font-size:13px;letter-spacing:.02em;color:var(--soft);font-weight:600}.panel .card{box-shadow:none;background:var(--bg)}.panel .stats{grid-template-columns:1fr 1fr}.panel .stat{padding:14px;border-left:0}.panel .stat .num{font-size:24px}.panel .stat .delta{top:14px;right:12px}.panel .activity li{padding:10px 14px}.panel .activity li:not(:last-child)::after{left:24px}"
+  + "@media (max-width:900px){.win-body,.win-body.three{grid-template-columns:1fr}.side,.panel{display:none}.t-agent .main .scroll{padding:20px}.t-agent .composer{margin:0 16px 16px}}"
+}
+
+fn ui_artifact_css() -> Text {
+  return ".artifact{width:min(880px,100%);margin:0 auto;padding:32px;display:flex;flex-direction:column;gap:28px;border-radius:var(--ui-r5)}.t-artifact .sec{padding:0}.t-artifact .appbar{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.t-artifact .appbar h1{font-size:28px;letter-spacing:-.03em}.t-artifact .appbar p{margin-top:6px}.t-artifact .ab-line{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.t-artifact .card{box-shadow:none}.t-artifact .hero{text-align:left;padding:0}.t-artifact .hero .glow{display:none}.t-artifact .hero h1{font-size:34px;margin-top:12px}.t-artifact .hero .lead{margin-top:10px}.t-artifact .acts{justify-content:flex-start}.t-artifact .feats{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}.t-artifact .feat{box-shadow:none;padding:20px}.t-artifact .feat h3{margin-top:14px}.t-artifact .stat .num{font-size:34px}"
+}
+
+fn ui_stage_css(theme: Text) -> Text {
+  let stage = if theme == "dark" { "radial-gradient(1200px 600px at 50% -10%,#1b1b22,transparent 70%) no-repeat,#08080a" } else { "radial-gradient(1200px 600px at 50% -10%,#ffffff,transparent 70%) no-repeat,#ececf0" }
+  return "html,body{margin:0;min-height:100%}body{min-height:100vh;background:" + stage + "}.stage{padding:48px 24px 72px;max-width:1320px;margin:0 auto}.stage-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin:0 auto 32px;max-width:1240px}.stage-head .by{font-size:12.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}.stage-head h1{font-size:26px;margin-top:8px}.stage-tags{display:flex;gap:8px}.stage details{max-width:1240px;margin:28px auto 0;color:var(--soft);font-size:13.5px}.stage summary{cursor:pointer;color:var(--faint)}.stage details ul{margin:10px 0 0;padding-left:18px}@media (max-width:640px){.stage{padding:24px 12px 48px}.phone{transform:scale(.86);transform-origin:top center;margin-bottom:-118px}}"
+}
+
+fn ui_css(s: UiSpec) -> Text {
+  return ui_tokens_css() + ui_colours_css(s.theme, ui_accent(s.accent)) + ui_base_css() + ui_web_css() + ui_phone_css() + ui_agent_css() + ui_artifact_css() + ui_stage_css(s.theme)
+}
+
+fn ui_target_label(target: Text) -> Text {
+  if target == "phone" { return "Phone app" }
+  if target == "agent" { return "Agent window" }
+  if target == "artifact" { return "Artifact" }
+  return "Website"
+}
+
+// The whole page: the design in its frame, on a quiet stage, with what
+// Kosika checked folded away beneath it.
+fn ui_page(s: UiSpec, fixed: Text[]) -> Text {
+  let checked = if fixed.is_empty() { "" } else { "<details><summary>What Kosika checked and fixed</summary><ul>" + (for f in fixed { f"<li>{ui_esc(f)}</li>" }).join("") + "</ul></details>" }
+  let head = f"<div class=\"stage-head\"><div><div class=\"by\">Kosika Designs</div><h1>{ui_esc(s.title)}</h1></div><div class=\"stage-tags\"><span class=\"badge\">{ui_target_label(s.target)}</span><span class=\"badge\">{ui_esc(s.theme)}</span><span class=\"badge on\">{ui_esc(s.accent)}</span></div></div>"
+  return "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>" + ui_esc(s.title) + "</title><link rel=\"preconnect\" href=\"https://fonts.googleapis.com\"><link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap\"><style>" + ui_css(s) + "</style></head><body class=\"ui\" data-theme=\"" + s.theme + "\"><div class=\"stage\">" + head + ui_frames(s) + checked + "</div></body></html>"
+}
+
+// ---------------------------------------------------------------- the model's brief
+
+fn ui_blocks_guide() -> Text {
+  return "nav: the top bar of a website; items are its links (title only); action is the main button. hero: the opening of a page; title is the headline (at most 8 words, specific, no hype), text one or two sentences, meta a short label above it (like New or Now in beta), action the buttons as 'Primary|Secondary'; items (optional) are 3 to 4 rows shown in a product preview under it. features: 3 to 6 reasons or abilities; title and text head the section, meta a one-word label above; each item has title (2 to 4 words), text (one sentence), icon. stats: 2 to 4 numbers; each item has title (the number, like 12k or 98%), text (what it counts), meta (a change, like +12%, or empty). cards: 2 to 6 things to browse (posts, courses, places, products); title heads the row, action a link like See all; each item has title, text, meta (a short tag like 5 min or $24) and icon. list: 3 to 6 rows (settings, messages, files, recent items); each item has title, text, meta (a time or count) and icon. steps: 3 to 4 steps in order; each item has title and text. pricing: 2 to 3 plans; each item has title (plan name), meta (price, like $12/mo), text (features separated by ;); action is the button word. quote: a testimonial; text is the quote, meta the person's name, title their role. cta: a closing call to action; title, text, action. footer: items are its links; text the small print. form: a sign-in or sign-up or contact form; title, text, action (the button), meta a small line under it; each item is a field with title (label), text (placeholder) and icon. appbar: the top of a phone screen or a window; title is the screen name, text a short line under or over it, meta a live status (like Running, or empty), items are icon buttons (icon only). search: a search field; meta is its placeholder. chips: 3 to 6 filters; items have title only; the first is selected. tabbar: the bottom bar of a phone app; 3 to 5 items with title and icon; the first is the screen shown. chat: a conversation; each item is a message with title (the speaker's name), text (the message) and meta (user or agent). composer: where the person types; text is the placeholder. activity: what an agent did and will do; each item has title, text (optional detail) and meta (done, now or next). progress: 2 to 4 bars; each item has title and meta (a percentage like 72%). sidebar: the left side of an agent window or app; title is the product name, action its main button (like New chat), items are its sections with title, icon and meta (a count or empty). table: rows of data; meta is the column names as 'Name|Detail|Status', each item a row with title, text and meta."
+}
+
+fn ui_targets_guide() -> Text {
+  return "web: a website or landing page: nav, hero, then 3 to 6 sections (features, stats, cards, steps, pricing, quote, list, table, form), cta, footer. phone: 1 to 3 phone screens, each with an appbar first, then 2 to 5 blocks (search, chips, cards, list, stats, progress, activity, chat, form, hero), and a tabbar last for an app with sections (a chat screen ends with a composer instead). agent: one window: a sidebar, an appbar with the task and its status, a chat, a composer, and activity and progress or stats for the live panel. artifact: one card: an appbar as its heading, then 2 to 4 blocks (stats, list, progress, activity, table, cards)."
+}
+
+fn ui_icons_guide() -> Text { return ui_icon_names().join(", ") }
+
+fn ui_task() -> Text {
+  return "You are a senior product designer. Describe the screen someone asked for as blocks; Kosika draws them in one calm, modern, minimal design system, so describe only what the screen says and which blocks it holds. Give target (as given), title (the design's name, 2 to 5 words), brand (a short, believable product name, one or two words, not a placeholder like Brand or Company), accent (one of " + ui_accent_names().join(", ") + ", chosen to suit the subject), theme (light, or dark only when the subject or the person suggests it), and screens (each with name and blocks; each block has kind, title, text, meta, action and items, and each item has title, text, meta and icon; leave any field empty that the block does not use). The blocks: " + ui_blocks_guide() + " By target: " + ui_targets_guide() + " Icons: only these names: " + ui_icons_guide() + ". Write like the real product: specific, concrete, short; headlines in sentence case with no full stop; never lorem ipsum, never placeholders like Feature 1, never exclamation marks or hype words like revolutionary or seamless; realistic numbers, names, times and prices; every item different. Less is more: fewer blocks done well beat many. If problems are given, they are what was wrong with your last description: fix every one."
+}
+
+fn ui_no_spec() -> UiSpec { return {target: "", title: "", brand: "", accent: "", theme: "", screens: []} }
+
+fn ui_result(ask: UiAsk, said: UiSpec) -> UiResult {
+  let c = ui_checked(ask, said)
+  return {target: c.spec.target, title: c.spec.title, spec: c.spec, page: ui_page(c.spec, c.fixed), fixed: c.fixed, problems: c.problems}
+}
+
+// ---------------------------------------------------------------- workflows
+
+// A model describes the screen; Kosika checks it and draws it.
+workflow design_ui(ask: UiAsk) -> UiResult {
+  budget 3 model calls, 600 seconds
+  said = use_model ui_designer(ui_task(), ask.text, ui_target(ask), "") retry 1 otherwise ui_no_spec()
+  out  = ui_result(ask, said)
+}
+
+// A description drawn as it is, with no model: for programs that write
+// their own, and for the samples.
+workflow ui_render(d: UiDraw) -> UiResult {
+  out = ui_result(d.ask, d.spec)
+}
+
+// ---------------------------------------------------------------- tests
+
+fn ui_ask(text: Text) -> UiAsk { return {text: text, target: "", theme: "", accent: ""} }
+
+test "every accent reads against its surface, in light and in dark" {
+  expect ui_accent_problems() == []
+}
+
+test "the ask's words choose the target" {
+  expect ui_target(ui_ask("a landing page for a quiet coffee shop")) == "web"
+  expect ui_target(ui_ask("design a mobile app for learning Japanese")) == "phone"
+  expect ui_target(ui_ask("an iPhone onboarding screen for a habit tracker")) == "phone"
+  expect ui_target(ui_ask("an agent window for a research assistant")) == "agent"
+  expect ui_target(ui_ask("a summary card artifact of my week")) == "artifact"
+  expect ui_target({text: "anything", target: "phone", theme: "", accent: ""}) == "phone"
+  expect ui_target(ui_ask("a dashboard for a solar farm")) == "web"
+}
+
+test "the front door can tell an interface from a diagram" {
+  expect ui_wants("design a landing page for my bakery")
+  expect ui_wants("make me a mobile app UI for a running club")
+  expect ui_wants("an agent window for Kosi")
+  expect not ui_wants("how does the heart pump blood")
+  expect not ui_wants("compare Rust and Go")
+}
+
+test "theme and accent follow the person's words first" {
+  expect ui_theme(ui_ask("a dark mode music app"), "light") == "dark"
+  expect ui_theme(ui_ask("a music app"), "dark") == "dark"
+  expect ui_theme(ui_ask("a music app"), "") == "light"
+  expect ui_accent_named(ui_ask("a green finance app"), "indigo") == "emerald"
+  expect ui_accent_named(ui_ask("a finance app"), "teal") == "teal"
+  expect ui_accent_named(ui_ask("a finance app"), "chartreuse") == "indigo"
+}
+
+test "unknown icons are matched to ones Kosika draws" {
+  expect ui_icon_like("gear") == "settings"
+  expect ui_icon_like("Profile") == "user"
+  expect ui_icon_like("home") == "home"
+  expect ui_icon_like("a unicorn") == "dot"
+  expect ui_icon("bolt").contains("<path")
+}
+
+test "Kosika drops what does not belong and puts bars in their places" {
+  said: UiSpec = {target: "phone", title: "Runs", brand: "Stride", accent: "emerald", theme: "", screens: [{name: "Home", blocks: [
+    ui_block("tabbar", "", "", "", "", [ui_item("Home", "", "", "home"), ui_item("Runs", "", "", "trend")]),
+    ui_block("pricing", "Plans", "", "", "", []),
+    ui_block("sparkles", "x", "", "", "", []),
+    ui_block("list", "Recent runs", "", "", "", [ui_item("Morning loop", "5.2 km", "28 min", "pin")])
+  ]}]}
+  c = ui_checked(ui_ask("a running app for my phone"), said)
+  kinds = for b in c.spec.screens[0].blocks { b.kind }
+  expect kinds == ["appbar", "list", "tabbar"]
+  expect c.fixed.length() == 3
+}
+
+test "with no model answer Kosika still lays out a screen" {
+  c = ui_checked(ui_ask("a landing page for a quiet coffee shop"), ui_no_spec())
+  expect c.spec.target == "web"
+  expect c.spec.screens[0].blocks[0].kind == "nav"
+  expect c.spec.screens[0].blocks[1].title == "Quiet coffee shop"
+  p = ui_checked(ui_ask("an agent window for a research assistant"), ui_no_spec())
+  expect p.spec.screens[0].blocks[0].kind == "sidebar"
+}
+
+test "long text is cut at a word" {
+  expect ui_cut("A calm place to drink very good coffee", 20) == "A calm place to…"
+  expect ui_cut("short", 20) == "short"
+}
+
+test "the page holds the design in its frame" {
+  r = ui_result(ui_ask("a mobile app for learning Japanese"), ui_no_spec())
+  expect r.page.contains("class=\"phone\"")
+  expect r.page.contains("class=\"tabbar\"")
+  w = ui_result(ui_ask("a website for a bakery"), ui_no_spec())
+  expect w.page.contains("class=\"browser\"")
+}
