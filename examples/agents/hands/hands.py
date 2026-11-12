@@ -114,7 +114,13 @@ def point_at(x: int, y: int) -> None:
         flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0)
         subprocess.Popen([sys.executable, str(Path(__file__).with_name("pointer.py")), "--name", AGENT],
                          creationflags=flags, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        time.sleep(0.5)
+        # The first time, the pointer's look is designed (cursor.kos) and
+        # rendered, which takes a few seconds; wait for it, then a moment to glide.
+        for _ in range(60):
+            if any(POINTERS.glob(f"{AGENT}@*.png")):
+                break
+            time.sleep(0.25)
+        time.sleep(0.8)
 
 
 def guard() -> None:
