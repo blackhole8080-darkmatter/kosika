@@ -91,6 +91,7 @@ The standard library:
 | `std/db.kos` | `column(columns, name)`, `cell(row, columns, name)`, `as_number(text)`, `grid_rows(columns, rows)`: reading a database answer's grid of text by column name, since a grid cannot say which cell is a number and which is absent |
 | `std/evidence.kos` | `plain_quote(quote)`, `plain_word(word)`, `found_in(lines, quote)`, `hit_source(hit)`, `hit_text(hit)`, `search_words(text, skip_first)`, `says_in(answer, question, line)`: a quote is proved only by a line that holds it, and a question is reduced to the words worth searching for |
 | `std/nn.kos` | `Layer {weights, biases}`, `Net {layers}`, `net(sizes, seed)`, `predict(n, x)`, `train(n, xs, ys, rate, rounds)`, `loss(n, xs, ys)`: a small neural network, tanh hidden layers and a sigmoid output, learned by gradient descent on the processor |
+| `std/learn.kos` | `Classifier {w1, b1, w2, b2, classes}`, `classifier(inputs, hidden, classes, seed)`, `probabilities(m, x)`, `guess(m, x)`, `step(m, x, classes, rate)`, `train(m, x, classes, rate, rounds)`, `accuracy(m, x, classes)`, `texts_to_rows(texts, vocabulary)`: a classifier learned a whole batch at a time with the built-in batch maths, its backward pass written out in Kosika |
 
 Each module's first lines say what each export does.
 
@@ -407,6 +408,13 @@ the receiver's type, and every method is pure and deterministic.
 | `Number[][]` of pairs | `adjacency(nodes: Number)`, `directed_adjacency(nodes: Number)` | `Number[][]`: the adjacency matrix of the graph with those edges; nodes are numbered from 0 |
 | `Number[][]` | `degrees()`, `neighbours(node: Number)`, `shortest_path(start: Number, end: Number)` | `Number[]`; an empty path when there is none |
 | `Number[][]` | `components()` | `Number[][]`: the connected parts, each a sorted list of nodes |
+| `Number[][]` | `each_times(other)`, `plus_row(row: Number[])` | `Number[][]`: number by number with a matrix of the same shape; the row added to every row |
+| `Number[][]` | `tanh()`, `tanh_slope()`, `sigmoid()`, `relu()`, `relu_slope()`, `exp()`, `softmax()` | `Number[][]`: each number changed; `tanh_slope` is `1 - t²` of a tanh result, `relu_slope` 1 where above 0 else 0, `softmax` makes each row probabilities adding to 1; `exp` of a number above 700 fails the run |
+| `Number[][]` | `column_sums()`, `row_argmax()` | `Number[]`: each column added up; where each row's largest number is, from 0, the first on a tie |
+| `Number[][]` | `cross_entropy(classes: Number[])` | `Number`: the mean of `-log p[class]` over rows of probabilities, a class being a whole number from 0 |
+| `Number[]` | `one_hot(classes: Number)` | `Number[][]`: each class as a row of 0s with a 1 at the class |
+| `Number` | `noise(columns: Number, seed: Number)` | `Number[][]`: that many rows of numbers between -1 and 1 from the seed alone, the same on every engine |
+| `Text[]` | `top_words(count: Number)`, `bag_of_words(vocabulary: Text[])` | `Text[]`: the words found in the most texts, ties in alphabetical order; `Number[][]`: a row per text, 1 where it has the vocabulary's word |
 
 Matrix and vector methods MUST give exact integers when every number given is
 an integer and the operation stays within the integers (`inverse`, `solve`,
