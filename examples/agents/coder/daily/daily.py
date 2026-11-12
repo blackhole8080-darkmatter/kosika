@@ -50,7 +50,7 @@ TODO = HERE / "todo.md"
 WORK = Path.home() / "Aryan_Private" / "kosika-daily"
 COPIED = ["kosika", "native", "tests/test_short_methods.py", "KOSIKA.md"]
 ROUTER = REPO / "examples" / "virtual_models" / "learning_router.py"
-PORT = 8791
+PORT = int(os.environ.get("KOSIKA_ROUTER_PORT", "8791"))
 
 
 def next_request(lines: list[str]) -> int | None:
