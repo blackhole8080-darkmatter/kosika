@@ -75,8 +75,13 @@ Apple lets no app read the battery or location, tap the screen, or run in the
 background, so an iPhone cannot be a full node. It can still run Kosika itself.
 
 1. Install **iSH Shell** from the App Store (free). It is a small Linux.
-2. Get the iSH build of `kosika-native` (Linux, 32-bit Intel, soft float):
-   `GOOS=linux GOARCH=386 GO386=softfloat CGO_ENABLED=0 go build -o kosika-native-ish .`
+2. Get the iSH build of `kosika-native` from the phone-preview pre-release:
+
+       wget -O /usr/local/bin/kosika-native https://github.com/blackhole8080-darkmatter/kosika/releases/download/phone-preview/kosika-native-ish
+       chmod +x /usr/local/bin/kosika-native
+       kosika-native phone help
+
+   It is built as `GOOS=linux GOARCH=386 GO386=softfloat CGO_ENABLED=0`.
    Or build it inside iSH, which is slow:
    `apk add go git && git clone https://github.com/blackhole8080-darkmatter/kosika && cd kosika/native && go build -o /usr/local/bin/kosika-native .`
 3. Run and test Kosika programs on the phone:
