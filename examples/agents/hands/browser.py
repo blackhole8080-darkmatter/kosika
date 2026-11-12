@@ -8,6 +8,8 @@ developer connection, reading pages as text instead of guessing pixels.
                                           # buttons and fields, numbered
     python browser.py click N             # click thing number N from read
     python browser.py fill N "words"      # type into field number N
+    ... --expect WORDS                    # after open, click or fill: the page must
+                                          # now say WORDS, or the step fails (exit 4)
 
 It is a separate Chrome with its own profile (kosika-daily/browser-profile):
 none of your sign-ins, cookies or saved passwords are in it. Like hands.py,
@@ -74,6 +76,47 @@ LIST_THINGS = r"""
 """
 
 
+# Kosika's own cursor in the page: an orange ring, above everything, that
+# never takes a click itself. GLIDE moves it to thing number N and waits
+# until it has arrived, so the person sees where Kosika acts before it does.
+CURSOR = r"""
+(() => {
+  let c = document.getElementById('kosika-cursor');
+  if (!c) {
+    c = document.createElement('div');
+    c.id = 'kosika-cursor';
+    c.style.cssText = 'position:fixed;left:50%;top:50%;width:26px;height:26px;margin:-13px 0 0 -13px;' +
+      'border:4px solid #ff7a00;border-radius:50%;box-shadow:0 0 0 3px rgba(255,122,0,.25),0 0 14px #ff7a00;' +
+      'pointer-events:none;z-index:2147483647;transition:left .45s ease,top .45s ease,transform .15s ease;';
+    const tag = document.createElement('div');
+    tag.textContent = 'Kosika';
+    tag.style.cssText = 'position:absolute;left:24px;top:22px;font:bold 11px sans-serif;color:#fff;' +
+      'background:#ff7a00;padding:1px 5px;border-radius:6px;white-space:nowrap;';
+    c.appendChild(tag);
+    document.documentElement.appendChild(c);
+  }
+  return true;
+})()
+"""
+
+GLIDE = r"""
+(async (n) => {
+  const e = document.querySelector('[data-kosika="' + n + '"]');
+  if (!e) return false;
+  e.scrollIntoView({block: 'center'});
+  const c = document.getElementById('kosika-cursor');
+  const box = e.getBoundingClientRect();
+  c.style.left = (box.left + Math.min(box.width / 2, 40)) + 'px';
+  c.style.top = (box.top + box.height / 2) + 'px';
+  await new Promise(r => setTimeout(r, 550));
+  c.style.transform = 'scale(0.7)';
+  await new Promise(r => setTimeout(r, 160));
+  c.style.transform = 'scale(1)';
+  return true;
+})
+"""
+
+
 def tabs() -> list[dict]:
     with urllib.request.urlopen(f"http://127.0.0.1:{PORT}/json", timeout=5) as answer:
         return [t for t in json.load(answer) if t.get("type") == "page"]
@@ -132,6 +175,20 @@ def show(page: "Page") -> None:
     print(f"# {title}\n{page.run('location.href')}\n\n{words}\n\n## What can be used\n{things}")
 
 
+def expect(page: "Page", wanted: str) -> None:
+    """The check after an action: the page now holds `wanted` (any case),
+    or this step failed, with exit code 4 and what the page holds instead."""
+    if not wanted:
+        return
+    words = (page.run(PAGE_WORDS) or "") + " " + (page.run("document.title") or "")
+    if wanted.lower() in words.lower():
+        print(f"\ncheck passed: the page says {wanted!r}")
+        return
+    print(f"\nCHECK FAILED: expected the page to say {wanted!r}, and it does not; "
+          f"it is {page.run('document.title')!r} at {page.run('location.href')}")
+    sys.exit(4)
+
+
 def start() -> None:
     if running():
         print("the hands' Chrome is already open")
@@ -151,6 +208,11 @@ def main(args: list[str]) -> None:
     sys.stdout.reconfigure(encoding="utf-8")
     if not args:
         raise SystemExit(__doc__)
+    wanted = ""
+    if "--expect" in args:
+        at = args.index("--expect")
+        wanted = " ".join(args[at + 1:]).strip()
+        args = args[:at]
     what, rest = args[0], args[1:]
     if what == "start":
         return start()
@@ -165,14 +227,18 @@ def main(args: list[str]) -> None:
         time.sleep(0.5)
         page.settle()
         # What is there is shown at once, so the next step is chosen from it.
+        page.run(CURSOR)
         show(page)
+        expect(page, wanted)
     elif what == "read":
         show(page)
     elif what == "click" and len(rest) == 1 and rest[0].isdigit():
+        page.run(CURSOR)
+        page.run(f"{GLIDE}({int(rest[0])})")
         said = page.run(f"""(() => {{
             const e = document.querySelector('[data-kosika="{int(rest[0])}"]');
             if (!e) return null;
-            e.scrollIntoView({{block: 'center'}}); e.click();
+            e.click();
             return (e.innerText || e.value || e.getAttribute('aria-label') || '').trim().slice(0, 80);
         }})()""")
         if said is None:
@@ -180,10 +246,14 @@ def main(args: list[str]) -> None:
             sys.exit(2)
         time.sleep(0.5)
         page.settle()
+        page.run(CURSOR)
         print(f"clicked {rest[0]} ({said})\n")
         show(page)
+        expect(page, wanted)
     elif what == "fill" and len(rest) >= 2 and rest[0].isdigit():
         words = " ".join(rest[1:])
+        page.run(CURSOR)
+        page.run(f"{GLIDE}({int(rest[0])})")
         done = page.run(f"""(() => {{
             const e = document.querySelector('[data-kosika="{int(rest[0])}"]');
             if (!e || !('value' in e)) return false;
@@ -200,6 +270,7 @@ def main(args: list[str]) -> None:
             print(f"thing number {rest[0]} is not a field: read the page again")
             sys.exit(2)
         print(f"typed {len(words)} letters into {rest[0]}")
+        expect(page, wanted)
     else:
         print(f"not something the browser hands do: {' '.join(args)}")
         sys.exit(2)

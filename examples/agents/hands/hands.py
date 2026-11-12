@@ -74,10 +74,31 @@ def stopped() -> bool:
     return bool(user32.GetAsyncKeyState(ESCAPE) & 0x8000)
 
 
+ACTIVE = Path.home() / ".kosika" / "hands-active"
+_ring_started = False
+
+
+def ring() -> None:
+    """Show Kosika's own cursor (ring.py, an orange ring round the pointer)
+    while the hands act: say they are acting now, and start the ring if it
+    is not already there."""
+    global _ring_started
+    ACTIVE.parent.mkdir(parents=True, exist_ok=True)
+    fresh = ACTIVE.exists() and time.time() - ACTIVE.stat().st_mtime < 50
+    ACTIVE.touch()
+    if not fresh and not _ring_started:
+        flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        subprocess.Popen([sys.executable, str(Path(__file__).with_name("ring.py"))], creationflags=flags,
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _ring_started = True
+        time.sleep(0.4)
+
+
 def guard() -> None:
     if stopped():
         print("stopped: Escape is held")
         sys.exit(3)
+    ring()
 
 
 def send(*inputs: INPUT) -> None:
