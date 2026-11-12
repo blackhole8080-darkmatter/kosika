@@ -40,7 +40,7 @@
 
 import "designs_palette.kos"
 
-export [UiAsk, UiItem, UiBlock, UiScreen, UiSpec, UiResult, UiDraw, design_ui, ui_render, ui_result, ui_target, ui_theme, ui_checked, ui_starter, ui_page, ui_icon, ui_icon_names, ui_tokens_css, ui_kinds, ui_accents, ui_accent_problems, ui_wants]
+export [UiAsk, UiItem, UiBlock, UiScreen, UiSpec, UiResult, UiDraw, UiBind, UiApp, design_ui, ui_render, ui_app, ui_live_page, ui_binds_checked, ui_result, ui_target, ui_theme, ui_checked, ui_starter, ui_page, ui_icon, ui_icon_names, ui_tokens_css, ui_kinds, ui_accents, ui_accent_problems, ui_wants]
 
 record UiAsk { text: Text target: Text theme: Text accent: Text }
 record UiItem { title: Text text: Text meta: Text icon: Text }
@@ -49,6 +49,17 @@ record UiScreen { name: Text blocks: UiBlock[] }
 record UiSpec { target: Text title: Text brand: Text accent: Text theme: Text screens: UiScreen[] }
 record UiResult { target: Text title: Text spec: UiSpec page: Text fixed: Text[] problems: Text[] }
 record UiDraw { ask: UiAsk spec: UiSpec }
+// A design that runs: each bind ties one block to a Kosika workflow.
+//   block     composer, activity, progress, stats or list
+//   workflow  the workflow to run; for a composer, run on send with what was
+//             typed; for the others, run when the page opens and after each
+//             send. Empty: the block is filled from the composer's last reply.
+//   input     the name of the workflow's input (its one parameter), a record
+//             with text: Text
+//   field     where the items are in the answer (default items), a UiItem[]
+//   every     also run it every so many seconds (0: never)
+record UiBind { block: Text workflow: Text input: Text field: Text every: Number }
+record UiApp { ask: UiAsk spec: UiSpec binds: UiBind[] }
 record UiBrief { task: Text ask: Text target: Text problems: Text }
 record UiAccent { name: Text light: Text dark: Text }
 
@@ -497,7 +508,7 @@ fn ui_colours_css(theme: Text, accent: UiAccent) -> Text {
 }
 
 fn ui_base_css() -> Text {
-  return ".ui{font-family:var(--ui-font);font-size:var(--ui-t3);line-height:1.55;color:var(--ink);-webkit-font-smoothing:antialiased;letter-spacing:-.008em;font-feature-settings:'cv11','ss01','ss03'}.ui *{box-sizing:border-box}.ui h1,.ui h2,.ui h3,.ui h4{margin:0;font-weight:640;letter-spacing:-.028em;line-height:1.08;text-wrap:balance}.ui p{margin:0;text-wrap:pretty}.ui .ic{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}.ui .ic .f{fill:currentColor;stroke:none}.ui .soft{color:var(--soft)}.ui .faint{color:var(--faint)}"
+  return ".blk{display:contents}.ui{font-family:var(--ui-font);font-size:var(--ui-t3);line-height:1.55;color:var(--ink);-webkit-font-smoothing:antialiased;letter-spacing:-.008em;font-feature-settings:'cv11','ss01','ss03'}.ui *{box-sizing:border-box}.ui h1,.ui h2,.ui h3,.ui h4{margin:0;font-weight:640;letter-spacing:-.028em;line-height:1.08;text-wrap:balance}.ui p{margin:0;text-wrap:pretty}.ui .ic{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}.ui .ic .f{fill:currentColor;stroke:none}.ui .soft{color:var(--soft)}.ui .faint{color:var(--faint)}"
   + ".ui .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:42px;padding:0 20px;border-radius:var(--ui-pill);background:var(--accent);color:var(--on);font-weight:560;font-size:14.5px;letter-spacing:-.01em;white-space:nowrap;box-shadow:0 1px 0 rgba(255,255,255,.18) inset,0 6px 16px -6px color-mix(in srgb,var(--accent) 60%,transparent)}.ui .btn .ic{width:17px;height:17px}.ui .btn.ghost{background:var(--surface);color:var(--ink);box-shadow:0 0 0 1px var(--line) inset}.ui .btn.sm{height:34px;padding:0 14px;font-size:13.5px}.ui .btn.ink{background:var(--ink);color:var(--surface);box-shadow:none}"
   + ".ui .eyebrow{display:inline-flex;align-items:center;gap:8px;height:28px;padding:0 12px 0 10px;border-radius:var(--ui-pill);background:var(--tint);color:var(--accent);font-size:12.5px;font-weight:600;letter-spacing:.01em}.ui .eyebrow i{width:6px;height:6px;border-radius:50%;background:var(--accent)}.ui .kicker{font-size:12.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--accent)}"
   + ".ui .chip{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:var(--tint);color:var(--accent)}.ui .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--ui-r4);box-shadow:var(--shadow)}.ui .mark{display:grid;place-items:center;width:28px;height:28px;border-radius:9px;background:linear-gradient(140deg,var(--accent),color-mix(in srgb,var(--accent) 55%,#000));color:var(--on);font-weight:700;font-size:14px;letter-spacing:-.02em}.ui .badge{display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:var(--ui-pill);background:var(--sunken);color:var(--soft);font-size:12px;font-weight:550}.ui .badge.on{background:var(--tint);color:var(--accent)}"
@@ -742,7 +753,7 @@ fn ui_block_html(b: UiBlock, s: UiSpec) -> Text {
 }
 
 fn ui_blocks_html(blocks: UiBlock[], s: UiSpec) -> Text {
-  return (for b in blocks { ui_block_html(b, s) }).join("")
+  return (for b in blocks { f"<div class=\"blk\" data-kind=\"{b.kind}\">" + ui_block_html(b, s) + "</div>" }).join("")
 }
 
 // ---------------------------------------------------------------- frames
@@ -860,6 +871,87 @@ fn ui_page(s: UiSpec, fixed: Text[]) -> Text {
   return "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>" + ui_esc(s.title) + "</title><link rel=\"preconnect\" href=\"https://fonts.googleapis.com\"><link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap\"><style>" + ui_css(s) + "</style></head><body class=\"ui\" data-theme=\"" + s.theme + "\"><div class=\"stage\">" + head + ui_frames(s) + checked + "</div></body></html>"
 }
 
+// ---------------------------------------------------------------- designs that run
+
+fn ui_bindable() -> Text[] { return ["composer", "activity", "progress", "stats", "list"] }
+
+fn ui_all_blocks(s: UiSpec) -> Text[] {
+  var kinds: Text[] = []
+  for sc in s.screens {
+    for b in sc.blocks { kinds = kinds.append(b.kind) }
+  }
+  return kinds
+}
+
+record UiBindsChecked { binds: UiBind[] fixed: Text[] }
+
+// Only blocks the design has, of a kind that can be filled, with a
+// workflow name Kosika can serve; the input defaults to ask, the field to
+// items.
+fn ui_binds_checked(s: UiSpec, binds: UiBind[]) -> UiBindsChecked {
+  let have = ui_all_blocks(s)
+  var kept: UiBind[] = []
+  var fixed: Text[] = []
+  for raw in binds {
+    let b: UiBind = {block: raw.block.trim().lower(), workflow: raw.workflow.trim(), input: if raw.input.trim().is_empty() { "ask" } else { raw.input.trim() }, field: if raw.field.trim().is_empty() { "items" } else { raw.field.trim() }, every: raw.every.max(0)}
+    if not ui_bindable().contains(b.block) {
+      fixed = fixed.append(f"did not bind a {b.block}: only a composer, activity, progress, stats or list can run")
+    } else if not have.contains(b.block) {
+      fixed = fixed.append(f"did not bind a {b.block}: the design has none")
+    } else if b.block == "composer" and b.workflow.is_empty() {
+      fixed = fixed.append("did not bind the composer: it needs a workflow to send to")
+    } else if not b.workflow.is_empty() and not ui_name_ok(b.workflow) {
+      fixed = fixed.append(f"did not bind {b.workflow}: not a workflow name")
+    } else {
+      kept = kept.append(b)
+    }
+  }
+  return {binds: kept, fixed: fixed}
+}
+
+fn ui_name_ok(name: Text) -> Bool {
+  if name.is_empty() { return false }
+  for k in 0 until name.length() {
+    let ch = name.slice(k, k + 1)
+    if not "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_".contains(ch) { return false }
+  }
+  return not "0123456789".contains(name.slice(0, 1))
+}
+
+// Text as a JavaScript string, safe inside a script element.
+fn ui_js(text: Text) -> Text {
+  return "'" + text.replace("\\", "\\\\").replace("'", "\\'").replace("<", "\\u003c").replace("\n", "\\n") + "'"
+}
+
+fn ui_live_data(s: UiSpec, binds: UiBind[]) -> Text {
+  let icons = (for n in ui_icon_names() { n + ":" + ui_js(ui_icon(n)) }).join(",")
+  let bs = (for b in binds { "{block:" + ui_js(b.block) + ",workflow:" + ui_js(b.workflow) + ",input:" + ui_js(b.input) + ",field:" + ui_js(b.field) + f",every:{b.every}}}" }).join(",")
+  return "window.KOSIKA_LIVE={brand:" + ui_js(s.brand) + ",icons:{" + icons + "},binds:[" + bs + "]};"
+}
+
+fn ui_live_css() -> Text {
+  return ".ui[data-live] .stage{padding:0;max-width:none}.ui[data-live] .stage-head,.ui[data-live] .stage>details,.ui[data-live] .win-bar,.ui[data-live] .b-bar{display:none}.ui[data-live] .win{width:100%;height:100vh;height:100dvh;border-radius:0;box-shadow:none}.ui[data-live] .browser{width:100%;border-radius:0;box-shadow:none}.ui[data-live] .artifact{margin:24px auto}.ui[data-live] .phones{padding:24px 0}.ui[data-live] .t-agent .main .scroll,.ui[data-live] .t-phone .scroll{overflow-y:auto;scrollbar-width:thin}.hint-in{flex:1;min-width:0;border:0;background:none;outline:none;font:inherit;font-size:14.5px;color:var(--ink);padding-left:4px}.hint-in::placeholder{color:var(--faint)}.composer:focus-within{box-shadow:0 0 0 1.5px var(--accent) inset,var(--shadow)}.composer.busy .send{opacity:.45}.send{cursor:pointer;border:0}.msg .grow{flex:1;min-width:0}.reply-frame{display:block;width:100%;height:560px;margin-top:12px;border:0;border-radius:16px;background:var(--surface);box-shadow:0 0 0 1px var(--line)}.typing{display:inline-flex;gap:4px;padding:6px 0}.typing i{width:6px;height:6px;border-radius:50%;background:var(--faint);animation:ui-dot 1.2s infinite}.typing i:nth-child(2){animation-delay:.15s}.typing i:nth-child(3){animation-delay:.3s}@keyframes ui-dot{30%{opacity:.25;transform:translateY(-2px)}}.err{color:#e11d48}.live-note{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);padding:10px 16px;border-radius:12px;background:var(--ink);color:var(--surface);font-size:13.5px;box-shadow:var(--shadow);transition:opacity .4s;z-index:9}.live-note.bad{background:#e11d48;color:#fff}"
+}
+
+fn ui_runtime() -> Text {
+  return "(function(){var K=window.KOSIKA_LIVE;if(!K)return;var root=document.body,brand=K.brand,icons=K.icons;function ic(n){return icons[n]||icons.dot}function esc(t){return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/'/g,'&#39;').replace(/\"/g,'&quot;')}function blk(kind){return root.querySelector('.blk[data-kind='+kind+']')}function state(m){m=String(m||'').trim().toLowerCase();if(['done','finished','complete','completed','ok','passed'].indexOf(m)>=0)return 'done';if(['now','running','working','active','in progress','live'].indexOf(m)>=0)return 'now';if(['failed','error','blocked'].indexOf(m)>=0)return 'bad';return 'next'}function pct(m){var n=parseFloat(String(m||'').replace('%',''));return isNaN(n)?0:Math.max(0,Math.min(100,n))}var draw={ activity:function(items){return items.map(function(i){var s=state(i.meta);return '<li class='+s+'><span class=dotmark>'+(s=='done'?ic('check'):'')+'</span><div><div class=a-title>'+esc(i.title)+'</div>'+(i.text?'<div class=\\'soft small\\'>'+esc(i.text)+'</div>':'')+'</div>'+(i.meta?'<span class=a-meta>'+esc(i.meta)+'</span>':'')+'</li>'}).join('')}, progress:function(items){return items.map(function(i){return '<div class=bar><div class=bar-top><span>'+esc(i.title)+'</span><span class=faint>'+esc(i.meta)+'</span></div><div class=track><div class=fill style=width:'+pct(i.meta)+'%></div></div></div>'}).join('')}, stats:function(items){return items.map(function(i){return '<div class=stat><div class=num>'+esc(i.title)+'</div><div class=\\'lbl soft\\'>'+esc(i.text)+'</div>'+(i.meta?'<span class=delta>'+esc(i.meta)+'</span>':'')+'</div>'}).join('')}, list:function(items){return items.map(function(i){return '<div class=r>'+(i.icon?'<span class=\\'chip sm\\'>'+ic(i.icon)+'</span>':'')+'<div class=r-main><div class=r-title>'+esc(i.title)+'</div>'+(i.text?'<div class=\\'r-sub soft\\'>'+esc(i.text)+'</div>':'')+'</div>'+(i.meta?'<span class=\\'r-meta faint\\'>'+esc(i.meta)+'</span>':'')+'<span class=\\'faint r-go\\'>'+ic('chevron')+'</span></div>'}).join('')}};var holder={activity:'.activity',progress:'.bars',stats:'.stats',list:'.rows'};function fill(kind,items){var b=blk(kind);if(!b||!Array.isArray(items))return;var h=b.querySelector(holder[kind]);if(h)h.innerHTML=draw[kind](items)}var live=location.protocol!='file:';function note(text,bad){var n=root.querySelector('.live-note');if(!n){n=document.createElement('div');n.className='live-note';root.appendChild(n)}n.className='live-note'+(bad?' bad':'');n.textContent=text;n.style.opacity=1;clearTimeout(note.t);if(!bad)note.t=setTimeout(function(){n.style.opacity=0},2600)}function run(workflow,input,text){var body={};body[input||'ask']={text:text||''}; return fetch('/run/'+workflow,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(r){return r.json()})}function pick(o){if(o==null)return '';if(typeof o!='object')return String(o);var keys=['text','words','answer','reply','message','why'];for(var k=0;k<keys.length;k++)if(typeof o[keys[k]]=='string'&&o[keys[k]].trim())return o[keys[k]];return ''}var chat=blk('chat'),scroller=chat&&chat.closest('.scroll');function down(){if(scroller)scroller.scrollTop=scroller.scrollHeight}function say(html,me){var c=chat&&chat.querySelector('.chat');if(!c)return null;var d=document.createElement('div');d.className=me?'msg me':'msg';d.innerHTML=me?'<div class=bubble>'+html+'</div>':'<span class=av>'+ic('spark')+'</span><div class=grow><div class=who-name>'+esc(brand)+'</div><div class=bubble>'+html+'</div></div>';c.appendChild(d);down();return d}var last='';function refresh(){K.binds.forEach(function(b){if(b.block=='composer'||!b.workflow)return;run(b.workflow,b.input,last).then(function(r){if(r.ok&&r.output)fill(b.block,r.output[b.field||'items'])}).catch(function(){})})}function fromReply(out){K.binds.forEach(function(b){if(b.block!='composer'&&!b.workflow&&out)fill(b.block,out[b.field||'items'])})}var send=null;K.binds.forEach(function(b){if(b.block=='composer')send=b});var comp=blk('composer');if(comp&&send){var hint=comp.querySelector('.hint');var input=document.createElement('input');input.className='hint-in';input.placeholder=hint?hint.textContent:'Message';if(hint)hint.replaceWith(input); var go=comp.querySelector('.send'),busy=false; function submit(){var t=input.value.trim();if(!t||busy)return;if(!live){note('This is a preview. Serve it with kosika-native serve to make it answer.',true);return}  busy=true;input.value='';last=t;say(esc(t),true);var wait=say('<span class=typing><i></i><i></i><i></i></span>',false);comp.classList.add('busy');  run(send.workflow,send.input,t).then(function(r){var b=wait.querySelector('.bubble');   if(r.ok){var out=r.output,words=pick(out);b.innerHTML=esc(words||'Done.');    if(out&&typeof out.page=='string'&&out.page){var f=document.createElement('iframe');f.className='reply-frame';f.srcdoc=out.page;b.parentNode.appendChild(f)}    fromReply(out)}   else if(r.approval){b.innerHTML='This asks for your approval before it acts, so it waits for you in Studio or the terminal.'}   else{b.innerHTML='<span class=err>'+esc(r.error||'Something went wrong.')+'</span>'}   down()}).catch(function(e){wait.querySelector('.bubble').innerHTML='<span class=err>Kosika is not answering: '+esc(e.message)+'</span>'})  .then(function(){busy=false;comp.classList.remove('busy');refresh();input.focus()})} input.addEventListener('keydown',function(e){if(e.key=='Enter')submit()});if(go)go.addEventListener('click',submit)}if(live){refresh();K.binds.forEach(function(b){if(b.every>0&&b.workflow&&b.block!='composer')setInterval(function(){run(b.workflow,b.input,last).then(function(r){if(r.ok&&r.output)fill(b.block,r.output[b.field||'items'])}).catch(function(){})},b.every*1000)})}else note('Preview: run it with kosika-native serve to make it live.')})();"
+}
+
+// The page with its runtime: served by kosika-native serve --page, its
+// parts call the workflows they are bound to.
+fn ui_live_page(s: UiSpec, fixed: Text[], binds: UiBind[]) -> Text {
+  let page = ui_page(s, fixed)
+  let script = "<style>" + ui_live_css() + "</style><script>" + ui_live_data(s, binds) + ui_runtime() + "</script>"
+  return page.replace("<body class=\"ui\"", "<body data-live class=\"ui\"").replace("</body>", script + "</body>")
+}
+
+fn ui_app_result(a: UiApp) -> UiResult {
+  let c = ui_checked(a.ask, a.spec)
+  let b = ui_binds_checked(c.spec, a.binds)
+  let fixed = c.fixed.concat(b.fixed)
+  return {target: c.spec.target, title: c.spec.title, spec: c.spec, page: ui_live_page(c.spec, fixed, b.binds), fixed: fixed, problems: c.problems}
+}
+
 // ---------------------------------------------------------------- the model's brief
 
 fn ui_blocks_guide() -> Text {
@@ -896,6 +988,11 @@ workflow design_ui(ask: UiAsk) -> UiResult {
 // their own, and for the samples.
 workflow ui_render(d: UiDraw) -> UiResult {
   out = ui_result(d.ask, d.spec)
+}
+
+// A design that runs: drawn, checked, and given its runtime.
+workflow ui_app(a: UiApp) -> UiResult {
+  out = ui_app_result(a)
 }
 
 // ---------------------------------------------------------------- tests
@@ -974,4 +1071,31 @@ test "the page holds the design in its frame" {
   expect r.page.contains("class=\"tabbar\"")
   w = ui_result(ui_ask("a website for a bakery"), ui_no_spec())
   expect w.page.contains("class=\"browser\"")
+}
+
+test "a design's parts can be bound to workflows, and only real ones are" {
+  spec = ui_starter(ui_ask("an agent window for a research assistant"))
+  binds: UiBind[] = [
+    {block: "composer", workflow: "answer", input: "", field: "", every: 0},
+    {block: "activity", workflow: "", input: "", field: "plan", every: 0},
+    {block: "pricing", workflow: "x", input: "", field: "", every: 0},
+    {block: "stats", workflow: "s", input: "", field: "", every: 0},
+    {block: "progress", workflow: "rm -rf", input: "", field: "", every: 0}
+  ]
+  c = ui_binds_checked(spec, binds)
+  expect (for b in c.binds { b.block }) == ["composer", "activity"]
+  expect c.binds[0].input == "ask"
+  expect c.fixed.length() == 3
+}
+
+test "a running design carries its runtime and its binds" {
+  r = ui_app_result({ask: ui_ask("an agent window for a research assistant"), spec: ui_no_spec(), binds: [{block: "composer", workflow: "answer", input: "say", field: "", every: 0}]})
+  expect r.page.contains("window.KOSIKA_LIVE")
+  expect r.page.contains("workflow:'answer'")
+  expect r.page.contains("data-kind=\"composer\"")
+  expect r.page.contains("<body data-live")
+}
+
+test "text in a script cannot close it" {
+  expect ui_js("a'b</script>") == "'a\\'b\\u003c/script>'"
 }

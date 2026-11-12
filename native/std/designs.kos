@@ -51,6 +51,7 @@ import "designs_art.kos"
 import "designs_generative.kos"
 import "designs_quiz.kos"
 import "designs_paper.kos"
+import "designs_ui.kos"
 import "science_chem.kos"
 import "science_units.kos"
 import "science_elements.kos"
@@ -63,7 +64,7 @@ record DzAsk { text: Text palette: Text place: Text kind: Text }
 record DzKind { kind: Text why: Text }
 record DzResult { kind: Text why: Text title: Text page: Text svg: Text embed: Text problems: Text[] fixed: Text[] }
 
-fn dz_kinds() -> Text[] { return ["diagram", "illustration", "art", "canvas", "quiz", "worked", "chemistry", "units", "element"] }
+fn dz_kinds() -> Text[] { return ["diagram", "illustration", "art", "canvas", "quiz", "worked", "chemistry", "units", "element", "ui"] }
 fn dz_places() -> Text[] { return ["chat", "studio", "site", "agent"] }
 
 fn dz_place(ask: DzAsk) -> Text {
@@ -131,6 +132,7 @@ fn dz_kind(ask: DzAsk) -> Text {
   if dz_kinds().contains(named) { return named }
   let t = dz_padded(ask.text)
   if dz_has(t, dz_quiz_words()) { return "quiz" }
+  if ui_wants(ask.text) { return "ui" }
   if t.starts_with(" convert ") { return "units" }
   if dz_has(t, [" periodic table", " periodic "]) or (se_find(ask.text) > 0 and dz_has(t, [" element", " atom", " electron", " tell me about ", " what is ", " shells"])) { return "element" }
   if dz_has(t, [" balance ", " balancing ", "->", "→", " chemical equation", " reaction for ", " reaction of ", " burning ", " combustion ", " as a reaction", " react with ", " reacts with "]) { return "chemistry" }
@@ -146,6 +148,7 @@ fn dz_kind(ask: DzAsk) -> Text {
 fn dz_why(ask: DzAsk) -> Text {
   let kind = dz_kind(ask)
   if dz_kinds().contains(ask.kind.trim().lower()) { return f"asked for {kind}" }
+  if kind == "ui" { return "asks for a screen, so Kosika designed it: a model wrote what it says, and Kosika drew every block in one calm design system and checked it" }
   if kind == "canvas" { return "asks how something in " + dz_science_field(ask.text) + " happens, so Kosika drew it on one canvas: the structure, the moving picture and, for a reaction, the reaction itself" }
   if kind == "chemistry" { return "asks about a reaction, so Kosika balanced it itself and checked the atoms and the mass" }
   if kind == "element" { return "asks about an element, so Kosika opened the periodic table at it and worked out its electrons itself" }
@@ -736,6 +739,7 @@ workflow design(ask: DzAsk) -> DzResult {
   kind = dz_kind(ask)
   out  = match kind {
     case "canvas" { call dz_canvas(ask) }
+    case "ui" { call dz_ui(ask) }
     case "quiz" { call dz_quiz(ask) }
     case "chemistry" { call dz_chemistry(ask) }
     case "units" { call dz_units(ask) }
@@ -752,6 +756,21 @@ workflow design(ask: DzAsk) -> DzResult {
 // and photos) and asks Designs for the rest.
 workflow design_kind(ask: DzAsk) -> DzKind {
   out = {kind: dz_kind(ask), why: dz_why(ask)}
+}
+
+// An interface: a website, phone screens, an agent window or an artifact.
+fn dz_ui_ask(ask: DzAsk) -> UiAsk { return {text: ask.text, target: "", theme: "", accent: ""} }
+
+fn dz_from_ui(ask: DzAsk, r: UiResult) -> DzResult {
+  let place = dz_place(ask)
+  let frame = "<iframe class=\"kd-frame\" style=\"height:900px\" title=\"" + art_esc(r.title) + "\" srcdoc=\"" + art_esc(r.page) + "\"></iframe>"
+  let embed = if r.problems.is_empty() { dz_wrap("ui", place, dz_palette(ask.palette, "dark_matter"), "", frame, "") } else { "" }
+  return {kind: "ui", why: dz_why(ask), title: r.title, page: r.page, svg: "", embed: embed, problems: r.problems, fixed: r.fixed}
+}
+
+workflow dz_ui(ask: DzAsk) -> DzResult {
+  drawn = call design_ui(dz_ui_ask(ask))
+  out   = dz_from_ui(ask, drawn)
 }
 
 workflow dz_illustration(ask: DzAsk) -> DzResult {
@@ -798,6 +817,9 @@ test "Kosika chooses the way of drawing by the words of the ask" {
   expect dz_kind(dz_ask("convert 60 km/h to m/s")) == "units"
   expect dz_kind(dz_ask("tell me about sodium")) == "element"
   expect dz_kind(dz_ask("show me the periodic table")) == "element"
+  expect dz_kind(dz_ask("design a landing page for my bakery")) == "ui"
+  expect dz_kind(dz_ask("a mobile app screen for a habit tracker")) == "ui"
+  expect dz_kind(dz_ask("an agent window for my research assistant")) == "ui"
   expect dz_kind({..dz_ask("the Krebs cycle"), kind: "Illustration"}) == "illustration"
 }
 
