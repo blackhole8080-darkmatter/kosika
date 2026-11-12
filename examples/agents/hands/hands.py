@@ -4,7 +4,8 @@
     python hands.py move X Y              # glide the cursor there, so you see it go
     python hands.py move-to notepad       # glide to the middle of that program's window
     python hands.py look notepad          # every button, menu and field there, by name
-    python hands.py click-on notepad Edit # click the thing called that
+    python hands.py click-on notepad Edit # click the thing called that (moves the mouse)
+    python hands.py press notepad Edit    # press it with the agent's own pointer; the mouse stays put
     python hands.py click notepad         # front that window and click its middle
     python hands.py type-into notepad "w" # front that window and type there
     python hands.py click                 # a left click where the cursor is
@@ -25,6 +26,7 @@ from __future__ import annotations
 
 import ctypes
 import json
+import os
 import subprocess
 import sys
 import time
@@ -94,11 +96,33 @@ def ring() -> None:
         time.sleep(0.4)
 
 
+AGENT = os.environ.get("KOSIKA_AGENT", "Kosika")
+#: Set while the agent acts with its own pointer only, so the ring round
+#: the person's mouse is not shown: that mouse is not Kosika's then.
+OWN_POINTER_ONLY = False
+POINTERS = Path.home() / ".kosika" / "pointers"
+
+
+def point_at(x: int, y: int) -> None:
+    """Send this agent's own pointer (pointer.py) to x, y, starting it if
+    it is not on the screen; the person's mouse does not move."""
+    POINTERS.mkdir(parents=True, exist_ok=True)
+    target = POINTERS / f"{AGENT}.json"
+    fresh = target.exists() and time.time() - target.stat().st_mtime < 80
+    target.write_text(json.dumps({"x": x, "y": y}), encoding="utf-8")
+    if not fresh:
+        flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        subprocess.Popen([sys.executable, str(Path(__file__).with_name("pointer.py")), "--name", AGENT],
+                         creationflags=flags, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        time.sleep(0.5)
+
+
 def guard() -> None:
     if stopped():
         print("stopped: Escape is held")
         sys.exit(3)
-    ring()
+    if not OWN_POINTER_ONLY:
+        ring()
 
 
 def send(*inputs: INPUT) -> None:
@@ -248,6 +272,31 @@ def main(args: list[str]) -> None:
         move(thing["x"], thing["y"])
         click()
         print(f"clicked {thing['kind']} {thing['name']!r} in {rest[0]}")
+    elif what == "press" and len(rest) > 1 and rest[0] in OPENABLE:
+        global OWN_POINTER_ONLY
+        OWN_POINTER_ONLY = True
+        # Press a thing by its name WITHOUT moving the person's mouse: the
+        # agent's own pointer (pointer.py) glides there, then Windows'
+        # accessibility presses it.
+        if not window(rest[0]):
+            print(f"no {rest[0]} window to press in")
+            sys.exit(2)
+        wanted = " ".join(rest[1:])
+        thing = find(look(rest[0]), wanted)
+        if thing is None:
+            print(f"nothing called {wanted!r} in {rest[0]}")
+            sys.exit(2)
+        point_at(thing["x"], thing["y"])
+        time.sleep(0.8)
+        guard()
+        done = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(EYES),
+                               "-Class", WINDOW_CLASS[rest[0]], "-Press", thing["name"]],
+                              capture_output=True, text=True, encoding="utf-8", timeout=60)
+        said = json.loads((done.stdout or "{}").strip().splitlines()[-1] if done.stdout.strip() else "{}")
+        if "error" in said or done.returncode:
+            print(said.get("error") or done.stderr.strip()[:200])
+            sys.exit(2)
+        print(f"{said['how']} {thing['kind']} {said['pressed']!r} in {rest[0]}, your mouse not moved")
     elif what == "click" and rest and rest[0] in OPENABLE:
         # Aimed at a program: front it and click its middle, whatever the
         # person clicked while answering the last question.
