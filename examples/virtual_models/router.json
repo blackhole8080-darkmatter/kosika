@@ -36,7 +36,10 @@
       "url": "http://127.0.0.1:11434/v1/chat/completions",
       "key": "",
       "timeout_seconds": 1200,
-      "max_prompt_chars": 4000
+      "max_prompt_chars": 4000,
+      "extra": {
+        "keep_alive": "30m"
+      }
     },
     "small": {
       "id": "kosika-small",
@@ -50,7 +53,11 @@
       "url": "http://127.0.0.1:11434/v1/chat/completions",
       "key": "",
       "max_prompt_chars": 12000,
-      "timeout_seconds": 300
+      "timeout_seconds": 300,
+      "tries": 3,
+      "extra": {
+        "keep_alive": "30m"
+      }
     }
   },
   "routes": {

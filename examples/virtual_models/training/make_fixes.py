@@ -90,12 +90,28 @@ def main() -> None:
         for trace in sorted(run.glob("_agents/coder/runs/*.jsonl")):
             for asked, answer in model_pairs(trace):
                 (fixes if FAILED.search(asked) else firsts).append(chat(asked, answer))
-    rows = history + go + firsts + fixes * FIX_WEIGHT
+    # Answers the router kept because the change they were for passed
+    # (smarter.Kept): from the cloud models above all, the teacher's
+    # answers kosika-coder should learn to give itself.
+    taught = []
+    kept_file = Path.home() / ".kosika" / "kept-answers.jsonl"
+    if kept_file.exists():
+        for line in kept_file.read_text(encoding="utf-8").splitlines():
+            try:
+                row = json.loads(line)
+            except ValueError:
+                continue
+            asked = "\n".join(str(m.get("content") or "") for m in row["asked"]["messages"] if m.get("role") == "user")
+            answer = (row["reply"]["choices"][0]["message"].get("content") or "").strip()
+            if asked and answer and row.get("model") not in ("coder", "small", "kept"):
+                taught.append(chat(asked, answer))
+    rows = history + go + firsts + fixes * FIX_WEIGHT + taught * FIX_WEIGHT
     random.Random(7).shuffle(rows)
     target = out / "kosika-coder.train2.jsonl"
     target.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows), encoding="utf-8")
     print(f"{len(history)} from history, {len(go)} Go once more, {len(firsts)} first answers and "
-          f"{len(fixes)} fixes (x{FIX_WEIGHT}) from passing coder runs: {len(rows)} in {target}")
+          f"{len(fixes)} fixes (x{FIX_WEIGHT}) from passing coder runs, {len(taught)} kept cloud answers (x{FIX_WEIGHT}): "
+          f"{len(rows)} in {target}")
 
 
 if __name__ == "__main__":

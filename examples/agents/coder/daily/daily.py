@@ -73,6 +73,23 @@ def copy_studio(folder: Path) -> None:
         archive.extractall(folder, filter="data")
 
 
+def keep_answers(since: float) -> None:
+    """Tell the router the change passed, so it keeps the answers it gave
+    since `since` and gives them again at once if asked the same (see
+    examples/virtual_models/smarter.py). Not in a swarm: there the other
+    coders' answers, which may not pass, came in the same minutes."""
+    import urllib.request
+
+    try:
+        request = urllib.request.Request(f"http://127.0.0.1:{PORT}/v1/kosika/passed",
+                                         data=json.dumps({"since": since}).encode(), method="POST",
+                                         headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(request, timeout=10) as answer:
+            print("kept", json.load(answer).get("kept", 0), "answers that passed")
+    except OSError:
+        pass
+
+
 def router_up() -> bool:
     with socket.socket() as probe:
         probe.settimeout(1)
@@ -267,7 +284,8 @@ def swarm(size: int) -> None:
         mark_line(text, TAKEN)
     router = start_router()
     started = time.monotonic()
-    members = [subprocess.Popen([sys.executable, __file__, "--take", text]) for text in open_ones]
+    alone = dict(os.environ, KOSIKA_SWARM="1") if len(open_ones) > 1 else dict(os.environ)
+    members = [subprocess.Popen([sys.executable, __file__, "--take", text], env=alone) for text in open_ones]
     for member in members:
         member.wait()
     if router is not None:
@@ -389,6 +407,8 @@ def main() -> None:
     )
     if passed:
         save_example(text, before, after, files)
+        if not os.environ.get("KOSIKA_SWARM"):
+            keep_answers(time.time() - float(ran["seconds"]) - 5)
     shutil.rmtree(before, ignore_errors=True)
 
     mark_line(text, "- [x] " if passed else "- [!] ", f" ({today}, {place.name})")

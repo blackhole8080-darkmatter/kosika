@@ -170,6 +170,27 @@ def check(config: dict, note: bool) -> list[dict]:
     return rows
 
 
+def local_share(days: int = 7) -> tuple[int, int]:
+    """Of the requests the router answered in the last `days`, how many
+    Kosika's own models (or its kept answers) answered: the number that
+    says whether Kosika is getting more independent."""
+    log = Path.home() / ".kosika" / "virtual-router.jsonl"
+    since = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(time.time() - days * 86400))
+    own = total = 0
+    if log.exists():
+        for line in log.read_text(encoding="utf-8").splitlines():
+            try:
+                row = json.loads(line)
+            except ValueError:
+                continue
+            if row.get("at", "") < since or not row.get("ok"):
+                continue
+            total += 1
+            winner = next((t.get("model") for t in reversed(row.get("tried", [])) if t.get("status") == 200 and not t.get("problem")), "")
+            own += winner in ("coder", "small", "local", "kept")
+    return own, total
+
+
 def up(only_check: bool) -> None:
     sys.stdout.reconfigure(encoding="utf-8")
     print("Ollama (Kosika's own model):", ensure_ollama())
@@ -178,6 +199,9 @@ def up(only_check: bool) -> None:
     rows = check(config, note=not only_check)
     passed = [r["name"] for r in rows if r["ok"]]
     print(f"{len(passed)} of {len(rows)} passed: {', '.join(passed) or 'none'}")
+    own, total = local_share()
+    if total:
+        print(f"This week Kosika's own models answered {own} of {total} requests ({100 * own // total}%) with no cloud.")
     if only_check:
         return
     stop_router()

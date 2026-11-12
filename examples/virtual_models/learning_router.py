@@ -31,6 +31,7 @@ from pathlib import Path
 import socket
 
 import router as base
+import smarter
 
 _resolve = socket.getaddrinfo
 
@@ -160,6 +161,18 @@ class LearningRouter(base.Router):
         super().__init__(config, log)
         self.ledger = ledger
         self.local = threading.local()
+        self.kept = smarter.Kept()
+
+    def ask(self, name: str, body: dict) -> dict:
+        """One model's answer; for an edit, from a model given `tries` in
+        router.json, the answer most of its tries agree on (smarter.best_of)."""
+        self.local.model = name
+        tries = int(self.config["models"][name].get("tries", 1))
+        if tries > 1 and smarter.is_edit_request(body):
+            reply, info = smarter.best_of(lambda varied: super(LearningRouter, self).ask(name, varied), body, tries)
+            self.local.best = info
+            return reply
+        return super().ask(name, body)
 
     def route(self, start: str) -> list[str]:
         written = self.fitting(super().route(start))
@@ -182,7 +195,18 @@ class LearningRouter(base.Router):
     def answer(self, body: dict) -> tuple[int, dict]:
         self.local.body = body
         self.local.kind = kind_of(body)
+        self.local.best = None
+        began = time.time()
+        kept = self.kept.find(body)
+        if kept is not None:
+            # The very request was answered before, and the change it was
+            # for passed its checks: no model is asked.
+            kept["model"] = base.NAME
+            base.Router.write(self, "kept", "answered before, and it passed", [{"model": "kept", "status": 200, "ms": 0}], began, True)
+            return 200, kept
         code, reply = super().answer(body)
+        if code == 200:
+            self.kept.heard(body, reply, getattr(self.local, "model", ""))
         return code, reply
 
     def write(self, start: str, why: str, tried: list, began: float, ok: bool) -> None:
@@ -192,6 +216,9 @@ class LearningRouter(base.Router):
                 continue
             good = step.get("status") == 200 and not step.get("problem")
             self.ledger.note(kind, step["model"], good, int(step.get("ms", 0)))
+        best = getattr(self.local, "best", None)
+        if best:
+            why += f"; best of {best['tries']}: {best['applied']} applied, {best['agreed']} agreed"
         super().write(start, why + f"; kind {kind}", tried, began, ok)
 
 
@@ -233,7 +260,17 @@ def main() -> None:
     log = Path(args.log)
     log.parent.mkdir(parents=True, exist_ok=True)
     router = LearningRouter(with_keys(Path(args.config)), log, ledger)
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), base.handler(router))
+    plain = base.handler(router)
+
+    class Handler(plain):
+        def do_POST(self):
+            # The asker's change passed its checks: keep what it was told.
+            if self.path.rstrip("/").endswith("/kosika/passed"):
+                given = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
+                return self.send(200, {"kept": router.kept.passed(float(given.get("since", 0)))})
+            return super().do_POST()
+
+    server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     print(f"{base.NAME} (learning) on http://127.0.0.1:{args.port}/v1, ledger {ledger.path}", flush=True)
     server.serve_forever()
 
