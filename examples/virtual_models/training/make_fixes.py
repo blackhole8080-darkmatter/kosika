@@ -79,9 +79,11 @@ def chat(asked: str, answer: str) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", default=str(TRAINING))
+    parser.add_argument("--base", default="kosika-coder", help="the history set to add to: BASE.train.jsonl")
+    parser.add_argument("--name", default="kosika-coder.train2", help="what to call the result: NAME.jsonl")
     args = parser.parse_args()
     out = Path(args.out)
-    history = [json.loads(line) for line in (out / "kosika-coder.train.jsonl").read_text(encoding="utf-8").splitlines() if line]
+    history = [json.loads(line) for line in (out / f"{args.base}.train.jsonl").read_text(encoding="utf-8").splitlines() if line]
     go = [row for row in history if ".go" in row["messages"][1]["content"].split("This part of the change: ", 1)[-1][:120]]
     fixes, firsts = [], []
     for run in sorted(DAILY.glob("2026-*")):
@@ -107,7 +109,7 @@ def main() -> None:
                 taught.append(chat(asked, answer))
     rows = history + go + firsts + fixes * FIX_WEIGHT + taught * FIX_WEIGHT
     random.Random(7).shuffle(rows)
-    target = out / "kosika-coder.train2.jsonl"
+    target = out / f"{args.name}.jsonl"
     target.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows), encoding="utf-8")
     print(f"{len(history)} from history, {len(go)} Go once more, {len(firsts)} first answers and "
           f"{len(fixes)} fixes (x{FIX_WEIGHT}) from passing coder runs, {len(taught)} kept cloud answers (x{FIX_WEIGHT}): "
