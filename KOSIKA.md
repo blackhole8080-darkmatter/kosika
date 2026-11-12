@@ -92,6 +92,7 @@ The standard library:
 | `std/evidence.kos` | `plain_quote(quote)`, `plain_word(word)`, `found_in(lines, quote)`, `hit_source(hit)`, `hit_text(hit)`, `search_words(text, skip_first)`, `says_in(answer, question, line)`: a quote is proved only by a line that holds it, and a question is reduced to the words worth searching for |
 | `std/nn.kos` | `Layer {weights, biases}`, `Net {layers}`, `net(sizes, seed)`, `predict(n, x)`, `train(n, xs, ys, rate, rounds)`, `loss(n, xs, ys)`: a small neural network, tanh hidden layers and a sigmoid output, learned by gradient descent on the processor |
 | `std/learn.kos` | `Classifier {w1, b1, w2, b2, classes}`, `classifier(inputs, hidden, classes, seed)`, `probabilities(m, x)`, `guess(m, x)`, `step(m, x, classes, rate)`, `train(m, x, classes, rate, rounds)`, `accuracy(m, x, classes)`, `texts_to_rows(texts, vocabulary)`: a classifier learned a whole batch at a time with the built-in batch maths, its backward pass written out in Kosika |
+| `std/layers.kos` | `Layer {kind, w, b}`, `Network {layers}`, `dense(inputs, outputs, seed)`, `tanh_layer()`, `relu_layer()`, `sigmoid_layer()`, `network(layers)`, `scores`, `probabilities`, `guess`, `loss`, `learn(n, x, classes, rate)`, `fit(n, x, classes, rate, rounds)`, `accuracy`: a network of any depth said by its layers; each kind of layer carries its own backward rule, so no learning step is written by hand |
 
 Each module's first lines say what each export does.
 
