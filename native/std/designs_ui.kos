@@ -58,7 +58,7 @@
 
 import "designs_palette.kos"
 
-export [UiAsk, UiLook, UiEdit, UiLike, UiTasteAsk, design_ui_for, ui_like, ui_lean, ui_edit, ui_edit_local, ui_spec_json, UiItem, UiBlock, UiScreen, UiSpec, UiResult, UiDraw, UiBind, UiApp, design_ui, ui_render, ui_app, ui_live_page, ui_binds_checked, ui_result, ui_target, ui_theme, ui_checked, ui_starter, ui_page, ui_icon, ui_icon_names, ui_tokens_css, ui_kinds, ui_accents, ui_accent_problems, ui_wants]
+export [UiAsk, UiFile, UiAppMade, ui_make_app, design_app, ui_app_made, ui_app_page, UiLook, UiEdit, UiLike, UiTasteAsk, design_ui_for, ui_like, ui_lean, ui_edit, ui_edit_local, ui_spec_json, UiItem, UiBlock, UiScreen, UiSpec, UiResult, UiDraw, UiBind, UiApp, design_ui, ui_render, ui_app, ui_live_page, ui_binds_checked, ui_result, ui_target, ui_theme, ui_checked, ui_starter, ui_page, ui_icon, ui_icon_names, ui_tokens_css, ui_kinds, ui_accents, ui_accent_problems, ui_wants]
 
 record UiAsk { text: Text target: Text theme: Text accent: Text }
 record UiItem { title: Text text: Text meta: Text icon: Text }
@@ -1410,6 +1410,227 @@ fn ui_app_result(a: UiApp) -> UiResult {
   return {target: c.spec.target, title: c.spec.title, spec: c.spec, page: ui_live_page(c.spec, fixed, b.binds), fixed: fixed, problems: c.problems}
 }
 
+// ---------------------------------------------------------------- designs that become apps
+
+// How a design looks when it is the app itself: full screen, one phone
+// screen at a time, fields you can type in, a sheet that slides up.
+fn ui_app_css() -> Text {
+  return ".ui[data-app] .stage{padding:0;max-width:none}"
+    + ".ui[data-app] .stage-head,.ui[data-app] .stage>details,.ui[data-app] .b-bar,.ui[data-app] .win-bar,.ui[data-app] .phone-name,.ui[data-app] .island,.ui[data-app] .status,.ui[data-app] .homebar{display:none}"
+    + ".ui[data-app] .browser{width:100%;border-radius:0;box-shadow:none}"
+    + ".ui[data-app] .win{width:100%;height:100vh;height:100dvh;border-radius:0;box-shadow:none}"
+    + ".ui[data-app] .t-agent .main .scroll{overflow-y:auto}"
+    + ".ui[data-app] .artifact{margin:max(16px,env(safe-area-inset-top)) auto 32px;width:min(880px,calc(100% - 32px))}"
+    + ".ui[data-app] .phones{display:block;padding:0}"
+    + ".ui[data-app] .phone-wrap{display:none}"
+    + ".ui[data-app] .phone-wrap.on,.ui[data-app] .phones>.phone-wrap:only-child{display:block}"
+    + ".ui[data-app] .phone{width:100%;max-width:560px;margin:0 auto;height:100vh;height:100dvh;border-radius:0;padding:0;background:var(--bg);box-shadow:none;transform:none}"
+    + ".ui[data-app] .screen{border-radius:0;padding-top:env(safe-area-inset-top)}"
+    + ".ui[data-app] .t-phone .scroll{overflow-y:auto;padding-top:16px;-webkit-overflow-scrolling:touch}"
+    + ".ui[data-app] .t-phone .tiles,.ui[data-app] .t-phone .pills{overflow-x:auto;scrollbar-width:none}"
+    + ".ui[data-app] .pinned{padding-bottom:max(10px,env(safe-area-inset-bottom))}"
+    + ".ui[data-app] .tab,.ui[data-app] .pill,.ui[data-app] .r,.ui[data-app] .tile,.ui[data-app] .plan,.ui[data-app] .activity li,.ui[data-app] .bar,.ui[data-app] .btn,.ui[data-app] .w-nav nav span,.ui[data-app] .send{cursor:pointer;-webkit-tap-highlight-color:transparent}"
+    + ".ui[data-app] .r:active,.ui[data-app] .tile:active{transform:scale(.985)}"
+    + ".app-hide{display:none!important}"
+    + ".app-done .r-title,.app-done h3{text-decoration:line-through;opacity:.55}"
+    + ".app-done .r-go,.app-done .cover{opacity:.5}"
+    + ".plan.app-chosen{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent),0 24px 60px -24px color-mix(in srgb,var(--accent) 50%,transparent)}"
+    + ".app-add{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border:0;border-radius:99px;background:var(--tint);color:var(--accent);font:600 13px var(--ui-font);cursor:pointer;margin-left:auto}"
+    + ".row-head .more{margin-left:auto}.row-head .more+.app-add{margin-left:10px}.row-head h2+.app-add{margin-left:auto}"
+    + ".app-add .ic{width:15px;height:15px}"
+    + ".app-in-f,.app-search,.hint-in{flex:1;min-width:0;border:0;background:none;outline:none;font:inherit;font-size:16px;color:var(--ink)}"
+    + ".app-in-f::placeholder,.app-search::placeholder,.hint-in::placeholder{color:var(--faint)}"
+    + ".input:focus-within,.search:focus-within{box-shadow:0 0 0 1.5px var(--accent) inset}"
+    + ".app-entries{display:grid;gap:6px}"
+    + ".app-eh{font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--faint);margin-top:4px}"
+    + ".app-e{font-size:14px;padding:10px 12px;border-radius:10px;background:var(--sunken)}"
+    + ".app-note{position:fixed;left:50%;bottom:calc(90px + env(safe-area-inset-bottom));transform:translate(-50%,20px);opacity:0;padding:10px 16px;border-radius:12px;background:var(--ink);color:var(--surface);font-size:14px;font-weight:540;box-shadow:var(--shadow);transition:.3s var(--ui-ease);pointer-events:none;z-index:30;max-width:calc(100% - 32px)}"
+    + ".app-note.show{opacity:1;transform:translate(-50%,0)}"
+    + ".app-sheet{position:fixed;inset:0;z-index:20;pointer-events:none}"
+    + ".app-dim{position:absolute;inset:0;background:rgba(0,0,0,.4);opacity:0;transition:opacity .3s}"
+    + ".app-card{position:absolute;left:0;right:0;bottom:0;margin:0 auto;max-width:560px;padding:10px 22px calc(24px + env(safe-area-inset-bottom));border-radius:24px 24px 0 0;background:var(--surface);color:var(--ink);box-shadow:0 -20px 60px -20px rgba(0,0,0,.4);transform:translateY(105%);transition:transform .35s var(--ui-ease)}"
+    + ".app-sheet.on{pointer-events:auto}.app-sheet.on .app-dim{opacity:1}.app-sheet.on .app-card{transform:none}"
+    + ".app-grab{width:40px;height:5px;border-radius:3px;background:var(--line);margin:0 auto 16px}"
+    + ".app-in{display:grid;gap:14px}.app-in h3{font-size:20px;letter-spacing:-.02em}.app-in p{margin:0}"
+    + ".app-f{display:grid;gap:6px;font-size:13px;font-weight:560}"
+    + ".app-f input{height:46px;padding:0 14px;border:0;border-radius:12px;background:var(--sunken);box-shadow:0 0 0 1px var(--line) inset;color:var(--ink);font:400 16px var(--ui-font);outline:none}"
+    + ".app-f input:focus{box-shadow:0 0 0 1.5px var(--accent) inset}"
+    + ".app-row{display:flex;gap:10px}.app-row .btn{flex:1}"
+    + ".app-in .btn{height:48px;border:0;cursor:pointer;font:inherit;font-weight:600}"
+    + "@media (prefers-reduced-motion:reduce){.app-card,.app-note,.app-dim{transition:none}}"
+}
+
+// What makes a design work with no server: tab bars switch screens, lists
+// and cards take new items and remember what is done or removed, forms
+// check and keep what is sent, search and chips filter, chat keeps its
+// messages, steps move on, bars are set by a tap, plans are chosen. All of
+// it is kept on the device (localStorage), so the app works offline.
+fn ui_app_js() -> Text {
+  return "(function(){"
+    + "var A=window.KOSIKA_APP;if(!A)return;"
+    + "var D=document,root=D.body,KEY='kosika-app:'+A.id,st={};"
+    + "try{st=JSON.parse(localStorage.getItem(KEY)||'{}')||{}}catch(e){st={}}"
+    + "['added','removed','done','forms','chat','acts','bars'].forEach(function(k){if(!st[k]||typeof st[k]!='object')st[k]=k=='removed'||k=='done'?[]:{}});"
+    + "function save(){try{localStorage.setItem(KEY,JSON.stringify(st))}catch(e){}}"
+    + "function esc(t){return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/'/g,'&#39;')}"
+    + "function ic(n){return (A.icons&&A.icons[n])||''}"
+    + "var blks=[].slice.call(D.querySelectorAll('.blk'));"
+    + "function bi(el){var b=el.closest('.blk');return blks.indexOf(b)}"
+    + "function kind(el){var b=el.closest('.blk');return b?b.getAttribute('data-kind'):''}"
+    + "function scope(el){return el.closest('.screen,.b-body,.main,.artifact')||root}"
+    + "function note(t){var n=D.querySelector('.app-note');if(!n){n=D.createElement('div');n.className='app-note';root.appendChild(n)}n.textContent=t;n.classList.add('show');clearTimeout(note.t);note.t=setTimeout(function(){n.classList.remove('show')},2200)}"
+    + "function txt(el,q){var e=el.querySelector(q);return e?e.textContent.trim():''}"
+    + "function key(el,title){return bi(el)+':'+title}"
+    + "/* sheet */"
+    + "var sheet=D.createElement('div');sheet.className='app-sheet';sheet.innerHTML='<div class=app-dim></div><div class=app-card><div class=app-grab></div><div class=app-in></div></div>';root.appendChild(sheet);"
+    + "var sin=sheet.querySelector('.app-in');"
+    + "function open(html){sin.innerHTML=html;sheet.classList.add('on');var f=sin.querySelector('input');if(f)setTimeout(function(){f.focus()},250)}"
+    + "function shut(){sheet.classList.remove('on')}"
+    + "sheet.querySelector('.app-dim').addEventListener('click',shut);"
+    + "/* screens: a phone app shows one screen at a time; its tab bar switches them */"
+    + "var screens=[].slice.call(D.querySelectorAll('.phone-wrap'));"
+    + "var names=screens.map(function(s){return txt(s,'.phone-name').toLowerCase()});"
+    + "var bar0=D.querySelector('.phone-wrap .tabbar');"
+    + "if(bar0&&screens.length>1)screens.forEach(function(s){if(s.querySelector('.tabbar'))return;var p=s.querySelector('.pinned');if(!p)return;var c=bar0.cloneNode(true);var hb=p.querySelector('.homebar');p.insertBefore(c,hb)});"
+    + "function screenFor(tab,k){var w=tab.textContent.trim().toLowerCase();var j=names.indexOf(w);return j>=0?j:(k<screens.length?k:-1)}"
+    + "function show(k){if(!screens.length)return;k=Math.max(0,Math.min(k,screens.length-1));screens.forEach(function(s,i){s.classList.toggle('on',i==k)});var s=screens[k];s.querySelectorAll('.tabbar .tab').forEach(function(t,i){t.classList.toggle('on',screenFor(t,i)==k)});var sc=s.querySelector('.scroll');if(sc)sc.scrollTop=0;st.tab=k;save()}"
+    + "if(screens.length)show(st.tab||0);"
+    + "/* rows and tiles: what was added, removed, done */"
+    + "function rowHtml(i){return '<div class=\"r\">'+(i.icon&&ic(i.icon)?'<span class=\"chip sm\">'+ic(i.icon)+'</span>':'')+'<div class=\"r-main\"><div class=\"r-title\">'+esc(i.title)+'</div>'+(i.text?'<div class=\"r-sub soft\">'+esc(i.text)+'</div>':'')+'</div>'+(i.meta?'<span class=\"r-meta faint\">'+esc(i.meta)+'</span>':'')+'<span class=\"r-go faint\">'+ic('chevron')+'</span></div>'}"
+    + "function tileHtml(i,k){return '<div class=\"tile\"><div class=\"cover h'+(k%6)+'\">'+ic(i.icon||'spark')+'</div><div class=\"tile-body\"><h3>'+esc(i.title)+'</h3><p class=\"soft\">'+esc(i.text)+'</p>'+(i.meta?'<span class=\"badge\">'+esc(i.meta)+'</span>':'')+'</div></div>'}"
+    + "function el(h){var t=D.createElement('div');t.innerHTML=h;return t.firstChild}"
+    + "function holderOf(b){return b.querySelector('.rows,.tiles')}"
+    + "function itemTitle(it){return txt(it,'.r-title')||txt(it,'h3')}"
+    + "function mark(it,b){var k=bi(b)+':'+itemTitle(it);it.classList.toggle('app-done',st.done.indexOf(k)>=0);if(st.removed.indexOf(k)>=0)it.remove()}"
+    + "blks.forEach(function(b,n){var k=b.getAttribute('data-kind');if(k!='list'&&k!='cards')return;var h=holderOf(b);if(!h)return;"
+    + " (st.added[n]||[]).forEach(function(i,j){h.appendChild(el(k=='list'?rowHtml(i):tileHtml(i,j+h.children.length)))});"
+    + " [].slice.call(h.children).forEach(function(it){mark(it,b)});"
+    + " var head=b.querySelector('.row-head');if(!head){head=D.createElement('div');head.className='row-head';head.innerHTML='<h2></h2>';h.parentNode.insertBefore(head,h)}"
+    + " var add=D.createElement('button');add.className='app-add';add.type='button';add.innerHTML=ic('plus')+'<span>Add</span>';head.appendChild(add);"
+    + " add.addEventListener('click',function(e){e.stopPropagation();open('<h3>Add to '+esc(txt(b,'.row-head h2')||'the list')+'</h3><label class=app-f><span>Title</span><input name=t maxlength=60></label><label class=app-f><span>Detail</span><input name=x maxlength=120></label><label class=app-f><span>Tag</span><input name=m maxlength=20 placeholder=optional></label><button class=btn type=button data-go>Add</button>');"
+    + "  sin.querySelector('[data-go]').onclick=function(){var t=sin.querySelector('[name=t]').value.trim();if(!t){sin.querySelector('[name=t]').focus();return}var i={title:t,text:sin.querySelector('[name=x]').value.trim(),meta:sin.querySelector('[name=m]').value.trim(),icon:k=='list'?'dot':'spark'};(st.added[n]=st.added[n]||[]).push(i);var r=st.removed.indexOf(n+':'+t);if(r>=0)st.removed.splice(r,1);save();h.appendChild(el(k=='list'?rowHtml(i):tileHtml(i,h.children.length)));shut();note('Added '+t)}})});"
+    + "function details(it){var b=it.closest('.blk'),n=blks.indexOf(b),t=itemTitle(it),k=n+':'+t,done=st.done.indexOf(k)>=0;"
+    + " open('<h3>'+esc(t)+'</h3>'+(txt(it,'.r-sub,.tile-body p')?'<p class=soft>'+esc(txt(it,'.r-sub,.tile-body p'))+'</p>':'')+(txt(it,'.r-meta,.badge')?'<p><span class=badge>'+esc(txt(it,'.r-meta,.badge'))+'</span></p>':'')+'<div class=app-row><button class=btn type=button data-done>'+(done?'Not done':'Mark done')+'</button><button class=btn ghost type=button data-rm>Remove</button></div>');"
+    + " sin.querySelector('[data-done]').onclick=function(){var j=st.done.indexOf(k);if(j>=0)st.done.splice(j,1);else st.done.push(k);save();mark(it,b);shut();note(j>=0?'Not done':'Done')};"
+    + " sin.querySelector('[data-rm]').onclick=function(){st.removed.push(k);var a=st.added[n];if(a)st.added[n]=a.filter(function(i){return i.title!=t});save();it.remove();shut();note('Removed '+t)}}"
+    + "/* forms: real fields, saved entries */"
+    + "function typeOf(l){l=l.toLowerCase();if(l.indexOf('mail')>=0)return 'email';if(l.indexOf('password')>=0)return 'password';if(l.indexOf('date')>=0||l.indexOf('day')>=0)return 'date';if(l.indexOf('time')>=0)return 'time';if(l.indexOf('phone')>=0)return 'tel';if(/(number|amount|age|count|guests|people)/.test(l))return 'number';return 'text'}"
+    + "function entries(b,n){var w=b.querySelector('.app-entries');if(!w){w=D.createElement('div');w.className='app-entries';(b.querySelector('.form')||b).appendChild(w)}var es=st.forms[n]||[];w.innerHTML=es.length?'<div class=app-eh>Saved here</div>'+es.slice(-5).reverse().map(function(e){return '<div class=app-e>'+esc(e.slice(0,2).join(' · '))+'</div>'}).join(''):'';}"
+    + "blks.forEach(function(b,n){if(b.getAttribute('data-kind')!='form')return;"
+    + " b.querySelectorAll('.field').forEach(function(f){var lab=txt(f,'span'),box=f.querySelector('.input'),em=box&&box.querySelector('em');if(!em)return;var i=D.createElement('input');i.className='app-in-f';i.type=typeOf(lab);i.placeholder=em.textContent;i.setAttribute('aria-label',lab);if(i.type=='password')i.autocomplete='new-password';em.replaceWith(i)});"
+    + " var go=b.querySelector('.btn');if(go){go.setAttribute('role','button');go.addEventListener('click',function(e){e.stopPropagation();var ins=[].slice.call(b.querySelectorAll('.app-in-f'));var empty=ins.filter(function(i){return !i.value.trim()});if(empty.length){empty[0].focus();note('Fill in '+(empty[0].getAttribute('aria-label')||'every field'));return}var bad=ins.filter(function(i){return i.type=='email'&&!/.+@.+[.].+/.test(i.value)});if(bad.length){bad[0].focus();note('That email looks wrong');return}var e2=ins.map(function(i){return i.type=='password'?'••••':i.value.trim()});(st.forms[n]=st.forms[n]||[]).push(e2);save();ins.forEach(function(i){i.value=''});entries(b,n);note('Saved')})}"
+    + " entries(b,n)});"
+    + "/* search and chips: filter what is on the same screen */"
+    + "var FILTER='.r,.tile,.feat,.activity li,.tbl tbody tr,.plan,.step';"
+    + "function filter(sc,q){q=q.trim().toLowerCase();var items=[].slice.call(sc.querySelectorAll(FILTER));var hit=items.filter(function(it){return it.textContent.toLowerCase().indexOf(q)>=0});if(q&&!hit.length)return false;items.forEach(function(it){it.classList.toggle('app-hide',q!=''&&hit.indexOf(it)<0)});return true}"
+    + "D.querySelectorAll('.blk[data-kind=search] .search').forEach(function(s){var sp=s.querySelector('span');var i=D.createElement('input');i.className='app-search';i.type='search';i.placeholder=sp?sp.textContent:'Search';if(sp)sp.replaceWith(i);i.addEventListener('input',function(){if(!filter(scope(s),i.value))note('Nothing matches '+i.value)})});"
+    + "D.querySelectorAll('.pills').forEach(function(p){var ps=[].slice.call(p.querySelectorAll('.pill'));ps.forEach(function(c,k){c.setAttribute('role','button');c.addEventListener('click',function(){ps.forEach(function(x){x.classList.toggle('on',x==c)});if(k==0){filter(scope(p),'');return}if(!filter(scope(p),c.textContent))filter(scope(p),'')})})});"
+    + "/* chat: messages are kept */"
+    + "var chat=D.querySelector('.blk[data-kind=chat] .chat'),cn=chat?bi(chat):-1;"
+    + "function say(t,me){if(!chat)return;var d=D.createElement('div');d.className=me?'msg me':'msg';d.innerHTML=me?'<div class=bubble>'+esc(t)+'</div>':'<span class=av>'+ic('spark')+'</span><div><div class=who-name>'+esc(A.brand)+'</div><div class=bubble>'+esc(t)+'</div></div>';chat.appendChild(d);var sc=chat.closest('.scroll');if(sc)sc.scrollTop=sc.scrollHeight}"
+    + "if(chat)(st.chat[cn]||[]).forEach(function(m){say(m.t,m.me)});"
+    + "var live=window.KOSIKA_LIVE&&window.KOSIKA_LIVE.binds&&window.KOSIKA_LIVE.binds.some(function(b){return b.block=='composer'});"
+    + "if(!live)D.querySelectorAll('.blk[data-kind=composer] .composer').forEach(function(c){var h=c.querySelector('.hint');var i=D.createElement('input');i.className='hint-in';i.placeholder=h?h.textContent:'Message';if(h)h.replaceWith(i);function send(){var t=i.value.trim();if(!t)return;i.value='';say(t,true);(st.chat[cn]=st.chat[cn]||[]).push({t:t,me:1});var r='Kept in your notes. Connect a workflow to '+A.brand+' to have it answer.';setTimeout(function(){say(r,false)},350);st.chat[cn].push({t:r,me:0});save()}i.addEventListener('keydown',function(e){if(e.key=='Enter')send()});var s=c.querySelector('.send');if(s)s.addEventListener('click',send)});"
+    + "/* activity: tap to move a step on */"
+    + "var NEXT={next:'now',now:'done',done:'next',bad:'now'};"
+    + "function setAct(li,s){['next','now','done','bad'].forEach(function(c){li.classList.remove(c)});li.classList.add(s);var d=li.querySelector('.dotmark');if(d)d.innerHTML=s=='done'?ic('check'):'';var m=li.querySelector('.a-meta');if(m)m.textContent=s}"
+    + "D.querySelectorAll('.activity li').forEach(function(li){var k=key(li,txt(li,'.a-title'));if(st.acts[k])setAct(li,st.acts[k]);li.addEventListener('click',function(){var now=['next','now','done','bad'].filter(function(c){return li.classList.contains(c)})[0]||'next';var s=NEXT[now];setAct(li,s);st.acts[k]=s;save()})});"
+    + "/* progress: tap the bar to set it */"
+    + "D.querySelectorAll('.bars .bar').forEach(function(bar){var k=key(bar,txt(bar,'.bar-top span')),f=bar.querySelector('.fill'),lab=bar.querySelector('.bar-top .faint');function set(p){p=Math.round(Math.max(0,Math.min(100,p)));if(f)f.style.width=p+'%';if(lab)lab.textContent=p+'%'}if(st.bars[k]!=null)set(st.bars[k]);bar.addEventListener('click',function(e){var tr=bar.querySelector('.track').getBoundingClientRect();var p=(e.clientX-tr.left)/tr.width*100;if(e.clientX<tr.left||e.clientX>tr.right)p=(parseFloat(lab&&lab.textContent)||0)+10;set(p);st.bars[k]=Math.round(Math.max(0,Math.min(100,p)));save()})});"
+    + "/* pricing: choose a plan */"
+    + "var plans=[].slice.call(D.querySelectorAll('.plan'));"
+    + "function choose(p){plans.forEach(function(x){x.classList.toggle('app-chosen',x==p)});st.plan=txt(p,'h3');save()}"
+    + "plans.forEach(function(p){if(st.plan&&txt(p,'h3')==st.plan)choose(p);p.addEventListener('click',function(e){choose(p);note('Chose '+txt(p,'h3'))})});"
+    + "/* buttons and links go somewhere real */"
+    + "var secs=[].slice.call(D.querySelectorAll('.blk')).filter(function(b){var k=b.getAttribute('data-kind');return k!='nav'&&k!='hero'});"
+    + "function goTo(b){if(b)b.scrollIntoView({behavior:'smooth',block:'start'})}"
+    + "D.querySelectorAll('.w-nav nav span').forEach(function(a,k){a.setAttribute('role','link');a.addEventListener('click',function(){var w=a.textContent.trim().toLowerCase();var hit=secs.filter(function(b){return b.textContent.toLowerCase().indexOf(w)>=0})[0];goTo(hit||secs[k])})});"
+    + "D.querySelectorAll('.hero .btn,.cta .btn,.w-nav .btn').forEach(function(b){b.setAttribute('role','button');b.addEventListener('click',function(){var f=D.querySelector('.blk[data-kind=form]')||D.querySelector('.blk[data-kind=pricing]');if(f&&!b.closest('.blk[data-kind=form]')){goTo(f);var i=f.querySelector('input');if(i)setTimeout(function(){i.focus()},400)}else{var me=b.closest('.blk'),j=blks.indexOf(me);goTo(blks[j+1])}})});"
+    + "/* one listener for taps on rows, tiles and tabs */"
+    + "root.addEventListener('click',function(e){var t=e.target;if(t.closest('.app-sheet,.app-add'))return;"
+    + " var tab=t.closest('.tabbar .tab');if(tab){var ts=[].slice.call(tab.parentNode.children),k=ts.indexOf(tab),j=screenFor(tab,k);if(screens.length>1&&j>=0)show(j);else{ts.forEach(function(x){x.classList.toggle('on',x==tab)});note(tab.textContent.trim())}return}"
+    + " var it=t.closest('.rows .r,.tiles .tile');if(it&&(kind(it)=='list'||kind(it)=='cards')){details(it);return}});"
+    + "D.addEventListener('keydown',function(e){if(e.key=='Escape')shut()});"
+    + "if('serviceWorker' in navigator&&location.protocol!='file:'&&A.offline)navigator.serviceWorker.register('sw.js').catch(function(){});"
+    + "})();"
+}
+
+record UiFile { path: Text text: Text }
+record UiAppMade { title: Text slug: Text page: Text files: UiFile[] fixed: Text[] problems: Text[] }
+
+// A short name for the app's folder and its saved data: letters and digits.
+fn ui_app_id(s: UiSpec) -> Text {
+  let words = ui_slug(if s.brand.trim().is_empty() { s.title } else { s.brand })
+  let kept = (for k in 0 until words.length() where "abcdefghijklmnopqrstuvwxyz0123456789".contains(words.slice(k, k + 1)) { words.slice(k, k + 1) }).join("")
+  return if kept.is_empty() { "kosika-app" } else { kept.slice(0, kept.length().min(32)) }
+}
+
+fn ui_app_colours(s: UiSpec) -> Text[] {
+  let a = ui_accent(s.accent)
+  let p = ui_partner(a.name)
+  let dark = ui_mode(s.theme) == "dark"
+  let base = [if dark { a.dark } else { a.light }, if dark { p.dark } else { p.light }]
+  return if s.look.colours.is_empty() { base } else if s.look.colours.length() == 1 { [s.look.colours[0], base[1]] } else { s.look.colours.take(2) }
+}
+
+fn ui_app_ground(s: UiSpec) -> Text { return if ui_mode(s.theme) == "dark" { "#0b0b10" } else { "#ffffff" } }
+
+// The app's icon: its first letter on its own two colours.
+fn ui_app_icon(s: UiSpec) -> Text {
+  let c = ui_app_colours(s)
+  let letter = ui_esc(ui_or(s.brand, s.title).trim().slice(0, 1).upper())
+  return f"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 512 512\"><defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"{c[0]}\"/><stop offset=\"1\" stop-color=\"{c[1]}\"/></linearGradient></defs><rect width=\"512\" height=\"512\" rx=\"112\" fill=\"url(#g)\"/><circle cx=\"400\" cy=\"112\" r=\"150\" fill=\"#fff\" opacity=\".12\"/><text x=\"256\" y=\"256\" dy=\".35em\" text-anchor=\"middle\" font-family=\"system-ui,sans-serif\" font-size=\"280\" font-weight=\"700\" fill=\"#fff\">{letter}</text></svg>"
+}
+
+fn ui_app_manifest(s: UiSpec) -> Text {
+  let name = ui_or(s.brand, s.title)
+  return "{\"name\":" + ui_jstr(name + " · " + s.title) + ",\"short_name\":" + ui_jstr(name) + ",\"start_url\":\"./\",\"scope\":\"./\",\"display\":\"standalone\",\"background_color\":\"" + ui_app_ground(s) + "\",\"theme_color\":\"" + ui_app_ground(s) + "\",\"icons\":[{\"src\":\"icon.svg\",\"sizes\":\"any\",\"type\":\"image/svg+xml\",\"purpose\":\"any\"}]}"
+}
+
+// Keeps the app's files so it opens with no connection; a new version of
+// the page gets a new cache.
+fn ui_app_sw(id: Text, version: Text) -> Text {
+  let c = "kosika-app-" + id
+  return "var C='" + c + "-" + version + "',F=['./','index.html','manifest.webmanifest','icon.svg'];"
+    + "self.addEventListener('install',function(e){e.waitUntil(caches.open(C).then(function(c){return c.addAll(F)}).then(function(){return self.skipWaiting()}))});"
+    + "self.addEventListener('activate',function(e){e.waitUntil(caches.keys().then(function(ks){return Promise.all(ks.filter(function(k){return k!=C&&k.indexOf('" + c + "-')==0}).map(function(k){return caches.delete(k)}))}).then(function(){return self.clients.claim()}))});"
+    + "self.addEventListener('fetch',function(e){if(e.request.method!='GET')return;e.respondWith(caches.match(e.request).then(function(r){return r||fetch(e.request).then(function(res){if(res.ok||res.type=='opaque'){var cp=res.clone();caches.open(C).then(function(c){c.put(e.request,cp)})}return res}).catch(function(){return caches.match('index.html')})}))});"
+}
+
+fn ui_app_head(s: UiSpec) -> Text {
+  let name = ui_esc(ui_or(s.brand, s.title))
+  return "<link rel=\"manifest\" href=\"manifest.webmanifest\"><link rel=\"icon\" href=\"icon.svg\" type=\"image/svg+xml\"><link rel=\"apple-touch-icon\" href=\"icon.svg\"><meta name=\"theme-color\" content=\"" + ui_app_ground(s) + "\"><meta name=\"mobile-web-app-capable\" content=\"yes\"><meta name=\"apple-mobile-web-app-capable\" content=\"yes\"><meta name=\"apple-mobile-web-app-status-bar-style\" content=\"black-translucent\"><meta name=\"apple-mobile-web-app-title\" content=\"" + name + "\">"
+}
+
+fn ui_app_data(s: UiSpec) -> Text {
+  let icons = (for n in ["plus", "chevron", "check", "spark", "dot"] { n + ":" + ui_js(ui_icon(n)) }).join(",")
+  return "window.KOSIKA_APP={id:" + ui_js(ui_app_id(s)) + ",brand:" + ui_js(ui_or(s.brand, s.title)) + ",offline:true,icons:{" + icons + "}};"
+}
+
+// The design as an app: the same page, out of its frame, with the runtime
+// that makes it work. Parts bound to workflows still call them when the app
+// is served by kosika-native serve.
+fn ui_app_page(s: UiSpec, fixed: Text[], binds: UiBind[]) -> Text {
+  let page = if binds.is_empty() { ui_page(s, fixed) } else { ui_live_page(s, fixed, binds) }
+  let viewport = "width=device-width,initial-scale=1,viewport-fit=cover"
+  let tail = "<style>" + ui_app_css() + "</style><script>" + ui_app_data(s) + ui_app_js() + "</script></body>"
+  return page.replace("width=device-width,initial-scale=1\"", viewport + "\"").replace("</head>", ui_app_head(s) + "</head>").replace("<body ", "<body data-app ").replace("</body>", tail)
+}
+
+fn ui_app_made(a: UiApp) -> UiAppMade {
+  let c = ui_checked(a.ask, a.spec)
+  let b = ui_binds_checked(c.spec, a.binds)
+  let fixed = c.fixed.concat(b.fixed)
+  let id = ui_app_id(c.spec)
+  let page = ui_app_page(c.spec, fixed, b.binds)
+  let files: UiFile[] = [{path: "index.html", text: page}, {path: "manifest.webmanifest", text: ui_app_manifest(c.spec)}, {path: "sw.js", text: ui_app_sw(id, f"{page.length()}")}, {path: "icon.svg", text: ui_app_icon(c.spec)}]
+  return {title: c.spec.title, slug: id, page: page, files: files, fixed: fixed, problems: c.problems}
+}
+
+fn ui_app_from(ask: UiAsk, said: UiSpec) -> UiAppMade {
+  return ui_app_made({ask: ask, spec: if said.screens.is_empty() { ui_starter(ask) } else { said }, binds: []})
+}
+
 // ---------------------------------------------------------------- editing by talking
 
 // A design changed by words: "warmer", "make it green and gold", "dark",
@@ -1738,6 +1959,21 @@ workflow ui_app(a: UiApp) -> UiResult {
   out = ui_app_result(a)
 }
 
+// A design that is an app of its own: index.html, its manifest, its icon
+// and a service worker, so it works with no server, opens offline, and
+// installs on a phone's home screen. Put the files in a folder of a site
+// (kosika-site/apps/NAME/) and it is published.
+workflow ui_make_app(a: UiApp) -> UiAppMade {
+  out = ui_app_made(a)
+}
+
+// From one sentence to an app: the model designs it, Kosika makes it work.
+workflow design_app(ask: UiAsk) -> UiAppMade {
+  budget 3 model calls, 600 seconds
+  said = use_model ui_designer(ui_task(), ask.text, ui_target(ask), "") retry 1 otherwise ui_no_spec()
+  out  = ui_app_from(ask, said)
+}
+
 // ---------------------------------------------------------------- tests
 
 fn ui_ask(text: Text) -> UiAsk { return {text: text, target: "", theme: "", accent: ""} }
@@ -1942,4 +2178,9 @@ test "new designs lean toward the looks the person liked" {
   expect ui_taste_text([liked]).contains("rings art")
   r = ui_taste_result({ask: ui_ask("a website for a surf school"), likes: [liked]}, ui_no_spec())
   expect r.spec.look.art == "rings"
+}
+
+test "a design becomes an app that works on its own" {
+  expect ui_app_made({ask: ui_ask("a phone app for my reading list"), spec: ui_starter(ui_ask("a phone app for my reading list")), binds: []}).files.length() == 4
+  expect ui_app_made({ask: ui_ask("a phone app for my reading list"), spec: ui_starter(ui_ask("a phone app for my reading list")), binds: []}).page.contains("<body data-app ")
 }
