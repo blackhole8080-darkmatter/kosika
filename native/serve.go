@@ -4,7 +4,10 @@ package main
 // computer, so Chat, Studio, a website or another program can ask for
 // one without anything in between.
 //
-//	kosika-native serve FILE.kos [--port 8790] [run options]
+//	kosika-native serve FILE.kos [--port 8790] [--page PAGE.html] [run options]
+//
+// With --page, GET / answers that page: a window Kosika Designs drew
+// (designs_ui.kos, ui_app), whose parts call this program's workflows.
 //
 // POST /run/WORKFLOW with the workflow's input as JSON ({"ask": {...}})
 // runs it as `run` would, with the run options given here, and answers
@@ -40,6 +43,7 @@ func serveCommand(args []string) int {
 		return 2
 	}
 	port := "8790"
+	page := ""
 	var passed []string
 	for i := 1; i < len(args); i++ {
 		name, value, joined := strings.Cut(args[i], "=")
@@ -55,6 +59,18 @@ func serveCommand(args []string) int {
 			port = value
 			continue
 		}
+		if name == "--page" {
+			if !joined {
+				if i+1 >= len(args) {
+					fmt.Fprintln(os.Stderr, "--page needs a file")
+					return 2
+				}
+				i++
+				value = args[i]
+			}
+			page = value
+			continue
+		}
 		if name == "--workflow" || name == "--input" || name == "--json" || name == "--trace" {
 			fmt.Fprintf(os.Stderr, "serve chooses %s for each request; leave it out\n", name)
 			return 2
@@ -68,8 +84,25 @@ func serveCommand(args []string) int {
 		fmt.Fprintf(os.Stderr, "serve: %v\n", err)
 		return 2
 	}
+	var shown []byte
+	if page != "" {
+		shown, err = os.ReadFile(page)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "serve: the page: %v\n", err)
+			return 2
+		}
+	}
 	turns := make(chan struct{}, 2)
 	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" || shown == nil || r.Method != http.MethodGet {
+			answer(w, http.StatusNotFound, map[string]any{"ok": false, "error": "not here: POST /run/WORKFLOW"})
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = w.Write(shown)
+	})
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		answer(w, http.StatusOK, map[string]any{"ok": true, "program": filepath.Base(path)})
 	})
@@ -96,6 +129,9 @@ func serveCommand(args []string) int {
 	})
 	address := "127.0.0.1:" + port
 	fmt.Fprintf(os.Stderr, "Serving %s on http://%s (POST /run/WORKFLOW)\n", filepath.Base(path), address)
+	if shown != nil {
+		fmt.Fprintf(os.Stderr, "Open http://%s/ for its window\n", address)
+	}
 	server := &http.Server{Addr: address, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	if err := server.ListenAndServe(); err != nil {
 		fmt.Fprintf(os.Stderr, "serve: %v\n", err)

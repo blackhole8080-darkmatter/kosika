@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="site/media/kosika-logo.png" alt="Kosika Studio" width="540">
+  <img src="docs/images/kosika-logo.png" alt="Kosika Studio" width="540">
 </p>
 
 <p align="center">
@@ -9,8 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://blackhole8080-darkmatter.github.io/kosika/"><b>Website</b></a> ·
-  <a href="site/film/index.html">The film</a> ·
+  <a href="https://blackhole8080-darkmatter.github.io/kosika-site/"><b>Website</b></a> ·
   <a href="GETTING_STARTED.md">Getting started</a> ·
   <a href="TUTORIAL.md">Tutorial</a> ·
   <a href="KOSIKA.md">Language contract</a>
@@ -187,43 +186,28 @@ step lights up; afterwards you read what it did in plain words, what went to the
 model and came back, what it remembers, the agent's map, and the code with the
 checker's first problem under it.
 
-![Kosika Studio, showing a recorded run](site/shots/site-studio.jpg)
+![Kosika Studio, showing a recorded run](docs/images/site-studio.jpg)
 
 Studio does only what its command allowed: it listens on 127.0.0.1, requires a
 token on every request, and without `--model` it shows and tests but runs
 nothing. A recording replays at one, two or four times speed.
 
-## Kosika Chat and Kosika Designs
+## The Kosika family
 
-Two apps built on Kosika. Both use free and open models only (Groq or
-OpenRouter, keys read from the environment).
+This repo is the language: the checker, the two engines (Python and Go), the
+standard library, Studio, the example agents and the tests. Everything built
+on top of it lives in its own repo, so each one stays small and easy to read.
 
-**Kosika Chat** ([`examples/apps/chat`](examples/apps/chat/)) answers in words
-on the left and draws the answer on a live canvas on the right. Each sentence
-marks the part of the drawing it talks about, and Kosi decides whether to answer
-itself or hand the message to a helper agent.
-
-```text
-python examples/apps/chat/server.py      # http://127.0.0.1:8793
-```
-
-![Kosika Chat drawing how a language model works](docs/images/chat-llm.gif)
-
-| Fibonacci, worked and drawn | While it thinks, the canvas shows which parts are working |
+| Repo | What you'll find |
 | --- | --- |
-| ![Kosika Chat on the Fibonacci sequence](docs/images/chat-fibonacci.png) | ![Kosika Chat thinking, with words, structure and photo at work](docs/images/chat-thinking.png) |
+| [kosika-designs](https://github.com/blackhole8080-darkmatter/kosika-designs) | Ask a question, get a drawing that explains it. Hover a sentence and the part it talks about lights up. |
+| [kosika-app](https://github.com/blackhole8080-darkmatter/kosika-app) | Kosika Chat, which answers in words and draws beside them, and MayaOS. |
+| [kosika-site](https://github.com/blackhole8080-darkmatter/kosika-site) | The website and its film. |
 
-**Kosika Designs** ([`examples/agents/designs`](examples/agents/designs/)) turns
-a question into an explanatory drawing: cycles, mind maps, comparison tables,
-flows and papers. Kosika checks the drawing's mathematics and the palette's
-contrast before it is shown. Its [README](examples/agents/designs/README.md) has
-more examples.
+![A sunflower drawn from the Fibonacci angle, from Kosika Designs](docs/images/sunflower-fibonacci.jpg)
 
-| A cycle with moving icons | A comparison as a table |
-| --- | --- |
-| ![The water cycle](examples/agents/designs/shots/water-cycle-icons.gif) | ![TCP, UDP and QUIC compared](examples/agents/designs/shots/comparison-table.png) |
-
-![A sunflower drawn from the Fibonacci angle](examples/agents/designs/shots/sunflower-fibonacci.jpg)
+The drawing code itself is part of the standard library here
+(`kosika/std/designs*.kos`), so any Kosika program can draw.
 
 ## Use it from an AI assistant
 
@@ -249,26 +233,6 @@ claude mcp add kosika -- kosika-mcp
 No power of its own: programs arrive as text and are checked in a temporary
 folder, no tool takes a file path, address or command, and `kosika_run`,
 `kosika_test` and `kosika_repair` never call a real model or tool.
-
-## The website
-
-Live at <https://blackhole8080-darkmatter.github.io/kosika/>. [`site/`](site/) is
-one HTML file — no build, no dependencies, no network — with an 18-second film, a
-recorded run replayed by the reader's scroll, and a stamped case file.
-
-| | |
-| --- | --- |
-| ![The hero](site/shots/site-hero.jpg) | ![The film](site/shots/site-film.jpg) |
-| **The hero.** The headline rises, an orbit draws itself, and the film's run moves behind it. | **The film.** *One Run, On Paper* — 18 seconds, drawn frame by frame as a function of time. |
-| ![The run, scrubbed by the reader's scroll](site/shots/site-run.jpg) | ![The paper file](site/shots/site-paper.jpg) |
-| **The run.** A real recording replayed by scroll. | **The paper file.** The film's second half as a dossier, stamped. |
-| ![Kosika Studio, showing a recorded run](site/shots/site-studio.jpg) | ![The page on a phone](site/shots/site-mobile.jpg) |
-| **Studio.** Every run is a file you can open and replay. | **On a phone.** The same page, one column. |
-
-Source is in [`site/film/`](site/film/), the encoder is
-`site/film/render.mjs`, and [`site/README.md`](site/README.md) covers rendering,
-publishing and the tools that regenerate the logo and screenshots. More Studio
-shots are in [`site/shots/`](site/shots/).
 
 ## Status: a prototype, not a released language
 
@@ -313,5 +277,5 @@ language, not convention — read on.
 | `kosika/` | The language: lexer, parser, checker, runtime, and tools |
 | `kosika_lsp/`, `editors/` | Editor support (language server, VS Code extension) |
 | `examples/`, `benchmarks/`, `tests/` | Example programs, the spec benchmark, the test suite |
-| `site/` | The website: one HTML page, the film's source, renderer, screenshots |
-| `network/`, `ui/`, `hive/`, `archive/` | Manifests, UI styles, agent notes, historical documents |
+| `native/` | The Go engine, `kosika-native` |
+| `network/`, `ui/`, `hive/` | Manifests, UI styles, agent notes |

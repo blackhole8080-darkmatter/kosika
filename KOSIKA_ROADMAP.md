@@ -31,7 +31,7 @@ that is the honest and stronger claim.
 
 Tidy the body before training it.
 
-- **Retire the dead weight.** [RETIRE_LIST.md](RETIRE_LIST.md) already names
+- **Retire the dead weight.** The retire list (now in git history) named
   the groups and their import archives. Recommendations 1, 4 and 5
   (city pictures, the first desktop app, the Python authoring loop) are the
   clear ones; that is about 10.7k lines plus most of the 13-minute test
