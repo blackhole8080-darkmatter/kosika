@@ -2125,7 +2125,8 @@ fn python_lines(text: Text, name: Text) -> Text {
 fn go_part(asked: MethodAsked, python: Text) -> Task {
   let maps = if asked.kind == "Text" { "textMethods" } else { if asked.kind == "Number" { "numberMethods" } else { if asked.kind == "array" { "listMethods" } else { "the map of " + asked.kind + " methods" } } }
   let shown = if python.trim().is_empty() { "" } else { " It must give exactly what the Python engine gives, which is:\n```\n" + python + "\n```" }
-  return {text: "add the " + asked.kind + " method " + asked.name + " to native/methods.go in " + maps + ", beside the methods like it, and declare its type in native/types.go beside the other m(\"" + asked.kind + "\", ...) lines." + shown}
+  let reads = if asked.kind == "Text" { "textOf(r) is the text" } else { "toFloat(r) is the number as a float64, and r.(*big.Int) is it when it is whole" }
+  return {text: "in native/methods.go, the entry \"" + asked.name + "\" in " + maps + " is an empty shell the program wrote; it is already declared in native/types.go. Write its body: replace the two lines `runFail(\"" + asked.name + " is not written yet\")` and `return nil` with the code, and change nothing else. In the body " + reads + ", the arguments are a[0], a[1] in order (textOf(a[0]) for a Text, toFloat(a[0]) for a Number), and you return a Go string, bool, float64 or *big.Int (bigInt(n) makes one from an int)." + shown}
 }
 
 fn docs_part(asked: MethodAsked) -> Task {
@@ -2139,6 +2140,19 @@ fn docs_part(asked: MethodAsked) -> Task {
 // call that fails must fail in both engines.
 fn agree_script() -> Text {
   return "import itertools, os, re, subprocess, sys, tempfile\nname, kind = sys.argv[1], sys.argv[2]\nsource = open('kosika/builtin_methods.py', encoding='utf-8').read()\nfound = re.search(r'Method\\(\\s*\"' + kind + r'\",\\s*\"' + name + r'\",\\s*\\((.*?)\\),\\s*\"([^\"]+)\"', source, re.S)\nif not found:\n    print('the Python engine has no Method line for ' + kind + ' ' + name)\n    sys.exit(1)\nparams = re.findall(r'\\(\\s*\"(\\w+)\",\\s*\"([^\"]+)\"\\s*\\)', found.group(1))\nresult = found.group(2)\nvalues = {'Text': ['\"\"', '\"abc\"', '\" 12 \"', '\"banana\"', '\"Hello World\"'], 'Number': ['0', '-2.5', '7', '3'], 'Bool': ['true', 'false']}\nreceivers = values.get(kind)\nchoices = [values.get(t) for _, t in params]\nif receivers is None or None in choices:\n    print('skipped: no samples for ' + kind + ' or one of its parameters')\n    sys.exit(0)\nargument_samples = {'Text': ['\"a\"', '\"an\"', '\"zz\"', '\"\"'], 'Number': ['0', '1', '2'], 'Bool': ['true']}\ncombos = list(itertools.product(*[argument_samples[t] for _, t in params]))[:6] or [()]\ncalls = []\nfor receiver in receivers:\n    for combo in combos:\n        args = ', '.join(f'{p}: {v}' for (p, _), v in zip(params, combo))\n        calls.append(f'({receiver}).{name}({args})')\nfolder = tempfile.mkdtemp()\nengine = os.path.join(folder, 'kosika-native.exe' if os.name == 'nt' else 'kosika-native')\nbuilt = subprocess.run(['go', '-C', os.path.join(os.getcwd(), 'native'), 'build', '-o', engine, '.'], capture_output=True, text=True)\nif built.returncode != 0:\n    print('the Go engine does not build: ' + built.stderr[-1500:])\n    sys.exit(1)\n\n\ndef run_both(call):\n    program = 'record Out { v: ' + result + ' }\\nfn f() -> Out {\\n  return {v: ' + call + '}\\n}\\nworkflow main() -> Out { out = f() }\\n'\n    path = os.path.join(folder, 'agree.kos')\n    open(path, 'w', encoding='utf-8').write(program)\n    py = subprocess.run([sys.executable, '-m', 'kosika.cli', 'run', path], capture_output=True, text=True, cwd=folder,\n                        env=dict(os.environ, PYTHONPATH=os.getcwd()))\n    go = subprocess.run([engine, 'run', path], capture_output=True, text=True, cwd=folder)\n    said = lambda ran: (ran.stdout.strip().splitlines() or ['FAILED'])[0] if ran.returncode == 0 else 'FAILED'\n    return said(py), said(go)\n\n\napart = 0\nfor call in calls:\n    py, go = run_both(call)\n    same = py == go\n    apart += 0 if same else 1\n    print(('same  ' if same else 'APART ') + call + '  python: ' + py + '  go: ' + go)\nsys.exit(0 if apart == 0 else 1)\n"
+}
+
+// The Go part's exact work, done by the program before the model is asked:
+// from the Python engine's Method line it declares the method in
+// native/types.go and writes an empty shell for it in native/methods.go, so
+// the model only writes the few lines of its body, and cannot misplace,
+// misname or register it twice.
+fn scaffold_script() -> Text {
+  return "import re, sys\nname, kind = sys.argv[1], sys.argv[2]\nmaps = {'Text': 'textMethods', 'Number': 'numberMethods'}\nif kind not in maps:\n    print('skipped: the program writes shells only for Text and Number methods')\n    sys.exit(0)\nsource = open('kosika/builtin_methods.py', encoding='utf-8').read()\nfound = re.search(r'Method\\(\\s*\"' + kind + r'\",\\s*\"' + name + r'\",\\s*\\((.*?)\\),\\s*\"([^\"]+)\"', source, re.S)\nif not found:\n    print('the Python engine has no Method line for ' + kind + ' ' + name)\n    sys.exit(1)\nparams = re.findall(r'\\(\\s*\"(\\w+)\",\\s*\"([^\"]+)\"\\s*\\)', found.group(1))\nresult = found.group(2)\ntypes_path, methods_path = 'native/types.go', 'native/methods.go'\ntypes = open(types_path, encoding='utf-8').read()\nline = '\\tm(\"%s\", \"%s\", \"%s\"%s),' % (kind, name, result, ''.join(', \"%s\", \"%s\"' % p for p in params))\nsaid = []\nif 'm(\"%s\", \"%s\",' % (kind, name) not in types:\n    rows = types.split('\\n')\n    last = max((i for i, r in enumerate(rows) if r.startswith('\\tm(\"' + kind + '\", ')), default=-1)\n    if last < 0:\n        print('native/types.go has no m(\"' + kind + '\", ...) line to put it beside')\n        sys.exit(1)\n    rows.insert(last + 1, line)\n    open(types_path, 'w', encoding='utf-8', newline='\\n').write('\\n'.join(rows))\n    said.append('declared it in native/types.go: ' + line.strip())\nmethods = open(methods_path, encoding='utf-8').read()\nif '\\t\"%s\": {' % name not in methods:\n    head = 'var %s = map[string]method{\\n' % maps[kind]\n    if head not in methods:\n        print('native/methods.go has no ' + maps[kind])\n        sys.exit(1)\n    names = '[]string{%s}' % ', '.join('\"%s\"' % p for p, _ in params) if params else 'nil'\n    shell = '\\t\"%s\": {%s, func(r Value, a []Value) Value {\\n\\t\\trunFail(\"%s is not written yet\")\\n\\t\\treturn nil\\n\\t}},\\n' % (name, names, name)\n    methods = methods.replace(head, head + shell, 1)\n    open(methods_path, 'w', encoding='utf-8', newline='\\n').write(methods)\n    said.append('wrote an empty shell for it at the top of ' + maps[kind] + ' in native/methods.go')\nprint('; '.join(said) or 'already declared and shelled')\n"
+}
+
+fn scaffold_args(asked: MethodAsked) -> Text[] {
+  return ["-c", scaffold_script(), asked.name, asked.kind]
 }
 
 fn agree_args(asked: MethodAsked) -> Text[] {
@@ -2208,6 +2222,7 @@ workflow save_registered(job: Registering) -> Result {
 
 workflow method_rest(asked: MethodAsked, python: Result) -> Result {
   source = execute coder.read_file("kosika/builtin_methods.py") otherwise {text: ""}
+  shell  = execute runner.run_python(scaffold_args(asked))
   first  = call on_my_own(go_part(asked, python_lines(source.text, asked.name)))
   agreed = execute runner.run_python(agree_args(asked))
   // The engines disagree, or the Go one has no such method: the Go part is
