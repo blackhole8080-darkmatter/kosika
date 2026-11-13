@@ -38,6 +38,15 @@
 // same design, calm and still. The theme says which: "dark", "light",
 // "dark minimal", "light minimal".
 //
+// The look is the model's too: its own one or two colours (Kosika keeps
+// the hue and makes them readable), the shape of things (soft, round,
+// sharp, pill), the type (geometric, grotesk, editorial, mono, rounded)
+// and the moving art behind the design (orbits, blobs, waves,
+// constellation, prism, rings, grid, aurora), drawn fresh from a seed of
+// the ask's words, so no two designs are alike. An art block lets the
+// model compose its own moving shapes: polygons, stars, blobs, spirals,
+// waves. Whatever the model leaves out, Kosika picks from the seed.
+//
 // With no model answer at all (offline, or the model failed), Kosika still
 // designs: ui_starter lays out a sensible screen for the target from the
 // words of the ask.
@@ -49,13 +58,14 @@
 
 import "designs_palette.kos"
 
-export [UiAsk, UiItem, UiBlock, UiScreen, UiSpec, UiResult, UiDraw, UiBind, UiApp, design_ui, ui_render, ui_app, ui_live_page, ui_binds_checked, ui_result, ui_target, ui_theme, ui_checked, ui_starter, ui_page, ui_icon, ui_icon_names, ui_tokens_css, ui_kinds, ui_accents, ui_accent_problems, ui_wants]
+export [UiAsk, UiLook, UiItem, UiBlock, UiScreen, UiSpec, UiResult, UiDraw, UiBind, UiApp, design_ui, ui_render, ui_app, ui_live_page, ui_binds_checked, ui_result, ui_target, ui_theme, ui_checked, ui_starter, ui_page, ui_icon, ui_icon_names, ui_tokens_css, ui_kinds, ui_accents, ui_accent_problems, ui_wants]
 
 record UiAsk { text: Text target: Text theme: Text accent: Text }
 record UiItem { title: Text text: Text meta: Text icon: Text }
 record UiBlock { kind: Text title: Text text: Text meta: Text action: Text items: UiItem[] }
 record UiScreen { name: Text blocks: UiBlock[] }
-record UiSpec { target: Text title: Text brand: Text accent: Text theme: Text screens: UiScreen[] }
+record UiLook { colours: Text[] shape: Text art: Text font: Text }
+record UiSpec { target: Text title: Text brand: Text accent: Text theme: Text look: UiLook screens: UiScreen[] }
 record UiResult { target: Text title: Text spec: UiSpec page: Text fixed: Text[] problems: Text[] }
 record UiDraw { ask: UiAsk spec: UiSpec }
 // A design that runs: each bind ties one block to a Kosika workflow.
@@ -84,14 +94,14 @@ model ui_designer {
 
 fn ui_targets() -> Text[] { return ["web", "phone", "agent", "artifact"] }
 
-fn ui_kinds() -> Text[] { return ["nav", "hero", "features", "stats", "cards", "list", "steps", "pricing", "quote", "cta", "footer", "form", "appbar", "search", "chips", "tabbar", "chat", "composer", "activity", "progress", "sidebar", "table", "chart"] }
+fn ui_kinds() -> Text[] { return ["nav", "hero", "features", "stats", "cards", "list", "steps", "pricing", "quote", "cta", "footer", "form", "appbar", "search", "chips", "tabbar", "chat", "composer", "activity", "progress", "sidebar", "table", "chart", "art"] }
 
 // Which blocks belong on which target.
 fn ui_allowed(target: Text) -> Text[] {
-  if target == "phone" { return ["appbar", "hero", "search", "chips", "stats", "cards", "list", "steps", "progress", "activity", "chat", "form", "quote", "cta", "composer", "tabbar", "features", "table", "chart"] }
-  if target == "agent" { return ["sidebar", "appbar", "chat", "composer", "activity", "progress", "stats", "list", "cards", "steps", "chips", "search", "form", "table", "chart"] }
-  if target == "artifact" { return ["appbar", "hero", "stats", "cards", "list", "steps", "progress", "activity", "chips", "quote", "table", "features", "cta", "form", "chart"] }
-  return ["nav", "hero", "features", "stats", "cards", "list", "steps", "pricing", "quote", "cta", "footer", "form", "table", "chips", "search", "chart"]
+  if target == "phone" { return ["appbar", "hero", "search", "chips", "stats", "cards", "list", "steps", "progress", "activity", "chat", "form", "quote", "cta", "composer", "tabbar", "features", "table", "chart", "art"] }
+  if target == "agent" { return ["sidebar", "appbar", "chat", "composer", "activity", "progress", "stats", "list", "cards", "steps", "chips", "search", "form", "table", "chart", "art"] }
+  if target == "artifact" { return ["appbar", "hero", "stats", "cards", "list", "steps", "progress", "activity", "chips", "quote", "table", "features", "cta", "form", "chart", "art"] }
+  return ["nav", "hero", "features", "stats", "cards", "list", "steps", "pricing", "quote", "cta", "footer", "form", "table", "chips", "search", "chart", "art"]
 }
 
 fn ui_most_blocks(target: Text) -> Number {
@@ -111,6 +121,7 @@ fn ui_most_items(kind: Text) -> Number {
   if kind == "stats" { return 4 }
   if kind == "table" { return 7 }
   if kind == "chart" { return 12 }
+  if kind == "art" { return 12 }
   return 6
 }
 
@@ -204,7 +215,7 @@ fn ui_any(t: Text, words: Text[]) -> Bool {
 }
 
 fn ui_phone_words() -> Text[] { return [" phone", " mobile", " iphone", " android", " ios ", " app screen", " app ui", " app design", " onboarding", " mobile app", " smartphone"] }
-fn ui_agent_words() -> Text[] { return [" agent window", " agent's window", " agent ui", " agent interface", " agent app", " assistant window", " chat window", " chatbot", " copilot", " agent dashboard", " ai agent", " agents window", " agent console", " agent screen"] }
+fn ui_agent_words() -> Text[] { return [" agent window", " agent's window", " agent ui", " agent interface", " agent app", " assistant window", " chat window", " chatbot", " copilot", " agent dashboard", " ai agent", " agents window", " agent console", " agent screen", " ai interface", " ai ui", " ai app", " ai chat", " ai assistant", " assistant app", " assistant ui", " chat app", " chat interface", " llm interface", " llm app", " model interface"] }
 fn ui_artifact_words() -> Text[] { return [" artifact", " widget", " card ", " report card", " summary card", " one card", " single card", " receipt", " invoice", " ticket"] }
 fn ui_web_words() -> Text[] { return [" website", " web site", " landing page", " homepage", " home page", " web page", " webpage", " portfolio site", " web app", " saas", " dashboard", " admin panel", " blog", " pricing page", " login page", " sign up page", " signup page"] }
 
@@ -265,7 +276,7 @@ fn ui_accent_named(ask: UiAsk, said: Text) -> Text {
   if ui_any(t, [" black and white", " monochrome", " grey ", " gray "]) { return "graphite" }
   if ui_any(t, [" dark matter"]) { return "orange" }
   let s = said.trim().lower()
-  return if ui_accent_names().contains(s) { s } else { "indigo" }
+  return if ui_accent_names().contains(s) { s } else { ui_pick(ui_accent_names().take(9), ui_seed(ask.text), 5) }
 }
 
 // ---------------------------------------------------------------- icons
@@ -465,7 +476,8 @@ fn ui_checked(ask: UiAsk, said: UiSpec) -> UiChecked {
   }
   let accent = ui_accent_named(ask, base.accent)
   let theme = ui_theme(ask, base.theme)
-  return {spec: {target: target, title: title, brand: brand, accent: accent, theme: theme, screens: screens}, fixed: fixed, problems: ui_accent_problems()}
+  let look = ui_look_checked(base.look, ui_seed(ask.text + " " + title))
+  return {spec: {target: target, title: title, brand: brand, accent: accent, theme: theme, look: look, screens: screens}, fixed: fixed, problems: ui_accent_problems()}
 }
 
 // ---------------------------------------------------------------- with no model
@@ -510,7 +522,7 @@ fn ui_starter(ask: UiAsk) -> UiSpec {
       ui_block("list", "Recent", "", "", "", [ui_item("Getting started", "Set up in a minute", "Now", "bolt"), ui_item("Saved items", "Everything you kept", "12", "bookmark"), ui_item("Shared with you", "From your people", "3", "users")]),
       ui_block("tabbar", "", "", "", "", [ui_item("Home", "", "", "home"), ui_item("Search", "", "", "search"), ui_item("Saved", "", "", "bookmark"), ui_item("You", "", "", "user")])
     ]}
-    return {target: target, title: subject, brand: brand, accent: "", theme: "", screens: [home]}
+    return {target: target, title: subject, brand: brand, accent: "", theme: "", look: ui_no_look(), screens: [home]}
   }
   if target == "agent" {
     let main: UiScreen = {name: subject, blocks: [
@@ -520,7 +532,7 @@ fn ui_starter(ask: UiAsk) -> UiSpec {
       ui_block("activity", "Plan", "", "", "", [ui_item("Read the request", "", "done", "check"), ui_item("Gather what is needed", "", "now", "spark"), ui_item("Ask before changing anything", "", "next", "clock")]),
       ui_block("composer", "", "Ask, or give a task…", "", "", [])
     ]}
-    return {target: target, title: subject, brand: brand, accent: "", theme: "", screens: [main]}
+    return {target: target, title: subject, brand: brand, accent: "", theme: "", look: ui_no_look(), screens: [main]}
   }
   if target == "artifact" {
     let card: UiScreen = {name: subject, blocks: [
@@ -528,7 +540,7 @@ fn ui_starter(ask: UiAsk) -> UiSpec {
       ui_block("stats", "", "", "", "", [ui_item("24", "Items", "+4", ""), ui_item("92%", "Done", "+6%", ""), ui_item("3", "Open", "", "")]),
       ui_block("list", "Highlights", "", "", "", [ui_item("What went well", "The main result, in one line.", "", "check"), ui_item("What to watch", "One thing that needs attention.", "", "eye"), ui_item("Next step", "The one action that matters most.", "", "arrow")])
     ]}
-    return {target: target, title: subject, brand: brand, accent: "", theme: "", screens: [card]}
+    return {target: target, title: subject, brand: brand, accent: "", theme: "", look: ui_no_look(), screens: [card]}
   }
   let page: UiScreen = {name: subject, blocks: [
     ui_block("nav", "", "", "", "Get started", [ui_item("Product", "", "", ""), ui_item("Pricing", "", "", ""), ui_item("About", "", "", "")]),
@@ -537,7 +549,7 @@ fn ui_starter(ask: UiAsk) -> UiSpec {
     ui_block("cta", "Ready when you are", "Start today. It takes a minute.", "", "Get started", []),
     ui_block("footer", "", "", "", "", [ui_item("Privacy", "", "", ""), ui_item("Terms", "", "", ""), ui_item("Contact", "", "", "")])
   ]}
-  return {target: "web", title: subject, brand: brand, accent: "", theme: "", screens: [page]}
+  return {target: "web", title: subject, brand: brand, accent: "", theme: "", look: ui_no_look(), screens: [page]}
 }
 
 // ---------------------------------------------------------------- the design system
@@ -612,12 +624,12 @@ fn ui_orbit() -> Text {
   return "<svg class=\"orbit\" viewBox=\"0 0 800 800\" aria-hidden=\"true\"><g class=\"o1\"><circle cx=\"400\" cy=\"400\" r=\"200\"/><circle class=\"od\" cx=\"600\" cy=\"400\" r=\"6\"/></g><g class=\"o2\"><circle cx=\"400\" cy=\"400\" r=\"290\"/><circle class=\"od b\" cx=\"400\" cy=\"110\" r=\"5\"/><circle class=\"od\" cx=\"400\" cy=\"690\" r=\"3.5\"/></g><g class=\"o3\"><circle cx=\"400\" cy=\"400\" r=\"380\"/><circle class=\"od b\" cx=\"20\" cy=\"400\" r=\"4\"/></g></svg>"
 }
 
-fn ui_hero(b: UiBlock, target: Text) -> Text {
+fn ui_hero(b: UiBlock, s: UiSpec) -> Text {
   let eyebrow = if b.meta.trim().is_empty() { "" } else { f"<span class=\"eyebrow\"><i></i>{ui_esc(b.meta)}</span>" }
   let words = if b.text.trim().is_empty() { "" } else { f"<p class=\"lead soft\">{ui_esc(b.text)}</p>" }
   let buttons = ui_buttons(b.action, "")
   let acts = if buttons.is_empty() { "" } else { f"<div class=\"acts\">{buttons}</div>" }
-  return f"<section class=\"hero\">{ui_orbit()}<div class=\"glow\"></div>{eyebrow}<h1>{ui_esc(b.title)}</h1>{words}{acts}{ui_hero_preview(b)}</section>"
+  return f"<section class=\"hero\">{ui_spec_backdrop(s)}<div class=\"glow\"></div>{eyebrow}<h1>{ui_esc(b.title)}</h1>{words}{acts}{ui_hero_preview(b)}</section>"
 }
 
 fn ui_cols(n: Number) -> Number {
@@ -870,7 +882,7 @@ fn ui_chart(b: UiBlock) -> Text {
 fn ui_block_html(b: UiBlock, s: UiSpec) -> Text {
   let k = b.kind
   if k == "nav" { return ui_nav(b, s.brand) }
-  if k == "hero" { return ui_hero(b, s.target) }
+  if k == "hero" { return ui_hero(b, s) }
   if k == "features" { return ui_features(b) }
   if k == "stats" { return ui_stats(b) }
   if k == "cards" { return ui_cards(b) }
@@ -892,6 +904,7 @@ fn ui_block_html(b: UiBlock, s: UiSpec) -> Text {
   if k == "sidebar" { return ui_sidebar(b, s.brand) }
   if k == "table" { return ui_table(b) }
   if k == "chart" { return ui_chart(b) }
+  if k == "art" { return ui_art(b, s) }
   return ""
 }
 
@@ -917,7 +930,7 @@ fn ui_phone(sc: UiScreen, s: UiSpec) -> Text {
   let scroll = for b in sc.blocks where b.kind != "tabbar" and b.kind != "composer" { b }
   let pinned = for b in sc.blocks where b.kind == "composer" or b.kind == "tabbar" { b }
   let label = if sc.name.trim().is_empty() { "" } else { f"<div class=\"phone-name faint\">{ui_esc(sc.name)}</div>" }
-  return f"<div class=\"phone-wrap\"><div class=\"phone\"><div class=\"island\"></div><div class=\"screen t-phone\">{ui_status_bar()}<div class=\"scroll\">{ui_blocks_html(scroll, s)}</div><div class=\"pinned\">{ui_blocks_html(pinned, s)}<div class=\"homebar\"></div></div></div></div>{label}</div>"
+  return f"<div class=\"phone-wrap\"><div class=\"phone\"><div class=\"island\"></div><div class=\"screen t-phone\">{ui_spec_backdrop(s)}{ui_status_bar()}<div class=\"scroll\">{ui_blocks_html(scroll, s)}</div><div class=\"pinned\">{ui_blocks_html(pinned, s)}<div class=\"homebar\"></div></div></div></div>{label}</div>"
 }
 
 fn ui_side_kinds() -> Text[] { return ["activity", "progress", "stats", "chart"] }
@@ -930,11 +943,11 @@ fn ui_agent(sc: UiScreen, s: UiSpec) -> Text {
   let typing = for b in sc.blocks where b.kind == "composer" { b }
   let panel_html = if panel.is_empty() { "" } else { f"<aside class=\"panel\">{ui_blocks_html(panel, s)}</aside>" }
   let cls = if panel.is_empty() { "win-body" } else { "win-body three" }
-  return f"<div class=\"win\"><div class=\"win-bar\"><span class=\"lights\"><i></i><i></i><i></i></span><span class=\"win-title\">{ui_esc(s.brand)}</span><span></span></div><div class=\"{cls} t-agent\"><aside class=\"side\">{ui_blocks_html(side, s)}</aside><main class=\"main\"><div class=\"scroll\">{ui_blocks_html(main, s)}</div>{ui_blocks_html(typing, s)}</main>{panel_html}</div></div>"
+  return f"<div class=\"win\"><div class=\"win-bar\"><span class=\"lights\"><i></i><i></i><i></i></span><span class=\"win-title\">{ui_esc(s.brand)}</span><span></span></div><div class=\"{cls} t-agent\"><aside class=\"side\">{ui_blocks_html(side, s)}</aside><main class=\"main\">{ui_spec_backdrop(s)}<div class=\"scroll\">{ui_blocks_html(main, s)}</div>{ui_blocks_html(typing, s)}</main>{panel_html}</div></div>"
 }
 
 fn ui_artifact(sc: UiScreen, s: UiSpec) -> Text {
-  return f"<div class=\"artifact card t-artifact\">{ui_blocks_html(sc.blocks, s)}</div>"
+  return f"<div class=\"artifact card t-artifact\">{ui_spec_backdrop(s)}{ui_blocks_html(sc.blocks, s)}</div>"
 }
 
 fn ui_frames(s: UiSpec) -> Text {
@@ -995,6 +1008,252 @@ fn ui_stage_css(theme: Text) -> Text {
   return "html,body{margin:0;min-height:100%}body{min-height:100vh;background:" + stage + "}.stage{padding:48px 24px 72px;max-width:1320px;margin:0 auto}.stage-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin:0 auto 32px;max-width:1240px}.stage-head .by{font-size:12.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}.stage-head h1{font-size:26px;margin-top:8px}.stage-tags{display:flex;gap:8px}.stage details{max-width:1240px;margin:28px auto 0;color:var(--soft);font-size:13.5px}.stage summary{cursor:pointer;color:var(--faint)}.stage details ul{margin:10px 0 0;padding-left:18px}@media (max-width:640px){.stage{padding:24px 12px 48px}.phone{transform:scale(.86);transform-origin:top center;margin-bottom:-118px}}"
 }
 
+// ---------------------------------------------------------------- the look
+
+// What the model chooses beyond the words: its own colours (one or two
+// hex colours, made readable by Kosika), the shape of things, the type and
+// the art behind the design. Anything left empty or unknown is chosen by
+// Kosika from the ask's words, so two asks rarely look alike.
+fn ui_shapes() -> Text[] { return ["soft", "round", "sharp", "pill"] }
+fn ui_arts() -> Text[] { return ["orbits", "blobs", "waves", "constellation", "prism", "rings", "grid", "aurora"] }
+fn ui_fonts() -> Text[] { return ["geometric", "grotesk", "editorial", "mono", "rounded"] }
+
+fn ui_no_look() -> UiLook { return {colours: [], shape: "", art: "", font: ""} }
+
+// A number from the words, the same every time for the same words.
+fn ui_seed(text: Text) -> Number {
+  let chars = "abcdefghijklmnopqrstuvwxyz0123456789 .,"
+  var h = 7
+  for k in 0 until text.length() {
+    let c = chars.index_of(text.slice(k, k + 1).lower()).or(40)
+    h = (h * 31 + c + 1) % 1000003
+  }
+  return h
+}
+
+// A repeatable random number between 0 and 1: the k-th for this seed.
+fn ui_rnd(seed: Number, k: Number) -> Number {
+  let x = ((seed % 9973) * 0.61 + k * 37.719).sin() * 43758.5453
+  return x - x.floor()
+}
+
+fn ui_pick(list: Text[], seed: Number, k: Number) -> Text { return list[(ui_rnd(seed, k) * list.length()).floor() % list.length()] }
+
+fn ui_hexd(ch: Text) -> Number { return "0123456789abcdef".index_of(ch.lower()).or(0) }
+
+fn ui_chan(hex: Text, at: Number) -> Number { return ui_hexd(hex.slice(at, at + 1)) * 16 + ui_hexd(hex.slice(at + 1, at + 2)) }
+
+fn ui_hex2(n: Number) -> Text {
+  let v = n.max(0).min(255).round()
+  let d = "0123456789abcdef"
+  let hi = (v / 16).floor()
+  let lo = v % 16
+  return d.slice(hi, hi + 1) + d.slice(lo, lo + 1)
+}
+
+// A colour written #rgb or #rrggbb, as #rrggbb; anything else as "".
+fn ui_hex(text: Text) -> Text {
+  let t = text.trim().lower()
+  let body = if t.starts_with("#") { t.slice(1, t.length()) } else { t }
+  for k in 0 until body.length() {
+    if not "0123456789abcdef".contains(body.slice(k, k + 1)) { return "" }
+  }
+  if body.length() == 6 { return "#" + body }
+  if body.length() == 3 { return "#" + body.slice(0, 1) + body.slice(0, 1) + body.slice(1, 2) + body.slice(1, 2) + body.slice(2, 3) + body.slice(2, 3) }
+  return ""
+}
+
+fn ui_mix(a: Text, b: Text, t: Number) -> Text {
+  return "#" + ui_hex2(ui_chan(a, 1) * (1 - t) + ui_chan(b, 1) * t) + ui_hex2(ui_chan(a, 3) * (1 - t) + ui_chan(b, 3) * t) + ui_hex2(ui_chan(a, 5) * (1 - t) + ui_chan(b, 5) * t)
+}
+
+// A chosen colour made readable: in dark, light enough for dark text on
+// it and to stand out on the dark surface; in light, dark enough for white
+// text and to stand out on white. The hue stays the model's.
+fn ui_fit(colour: Text, dark: Bool) -> Text {
+  var c = colour
+  for k in 0 until 24 {
+    if dark and contrast(c, "#0b0b0f") < 5.5 { c = ui_mix(c, "#ffffff", 0.1) }
+    if not dark and contrast(c, "#ffffff") < 4.6 { c = ui_mix(c, "#000000", 0.1) }
+  }
+  return c
+}
+
+fn ui_look_checked(look: UiLook, seed: Number) -> UiLook {
+  let colours = (for c in look.colours where not ui_hex(c).is_empty() { ui_hex(c) }).take(2)
+  let shape = if ui_shapes().contains(look.shape.trim().lower()) { look.shape.trim().lower() } else { ui_pick(ui_shapes(), seed, 1) }
+  let art = if ui_arts().contains(look.art.trim().lower()) or look.art.trim().lower() == "none" { look.art.trim().lower() } else { ui_pick(ui_arts(), seed, 2) }
+  let font = if ui_fonts().contains(look.font.trim().lower()) { look.font.trim().lower() } else { ui_pick(ui_fonts(), seed, 3) }
+  return {colours: colours, shape: shape, art: art, font: font}
+}
+
+fn ui_font_family(font: Text) -> Text {
+  if font == "grotesk" { return "'Space Grotesk',var(--ui-font)" }
+  if font == "editorial" { return "Fraunces,Georgia,'Times New Roman',serif" }
+  if font == "mono" { return "'JetBrains Mono',var(--ui-mono)" }
+  if font == "rounded" { return "Nunito,var(--ui-font)" }
+  return "var(--ui-font)"
+}
+
+fn ui_font_link(font: Text) -> Text {
+  let fam = if font == "grotesk" { "&family=Space+Grotesk:wght@500;600;700" } else if font == "editorial" { "&family=Fraunces:opsz,wght@9..144,500;9..144,600" } else if font == "mono" { "&family=JetBrains+Mono:wght@500;600;700" } else if font == "rounded" { "&family=Nunito:wght@600;700;800" } else { "" }
+  return "<link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700" + fam + "&display=swap\">"
+}
+
+// The look as CSS, laid over the design system.
+fn ui_look_css(s: UiSpec) -> Text {
+  let l = s.look
+  let dark = ui_mode(s.theme) == "dark"
+  let r = if l.shape == "sharp" { "--ui-r1:3px;--ui-r2:4px;--ui-r3:6px;--ui-r4:8px;--ui-r5:10px" } else if l.shape == "round" { "--ui-r1:12px;--ui-r2:18px;--ui-r3:22px;--ui-r4:30px;--ui-r5:38px" } else if l.shape == "pill" { "--ui-r1:12px;--ui-r2:16px;--ui-r3:20px;--ui-r4:26px;--ui-r5:34px" } else { "" }
+  let btn = if l.shape == "sharp" { ".ui .btn,.ui .send,.ui .chip,.ui .pill,.ui .eyebrow,.ui .badge{border-radius:6px}.ui .card{border-radius:var(--ui-r4)}" } else { "" }
+  let head = ".ui{" + r + ";--ui-head:" + ui_font_family(l.font) + "}.ui h1,.ui h2,.ui h3,.ui .num,.ui .price,.ui .brand,.ui .ch-now b,.ui .ring-in b{font-family:var(--ui-head)}" + (if l.font == "editorial" { ".ui h1,.ui h2{font-weight:560;letter-spacing:-.02em}" } else if l.font == "mono" { ".ui h1,.ui h2{letter-spacing:-.04em}" } else { "" })
+  if l.colours.is_empty() { return head + btn }
+  let a = ui_fit(l.colours[0], dark)
+  let a2 = if l.colours.length() > 1 { ui_fit(l.colours[1], dark) } else { ui_fit(ui_mix(l.colours[0], if dark { "#fbbf24" } else { "#b45309" }, 0.55), dark) }
+  let on = if dark { "#0b0b0f" } else { "#ffffff" }
+  return head + btn + ".ui{--accent:" + a + ";--a2:" + a2 + ";--on:" + on + ";--tint:color-mix(in srgb," + a + " 14%,transparent);--tint2:color-mix(in srgb," + a + " 7%,transparent)}"
+}
+
+// ---------------------------------------------------------------- art
+
+fn ui_n(x: Number) -> Number { return (x * 10).round() / 10 }
+
+fn ui_pt(x: Number, y: Number) -> Text { return f"{ui_n(x)},{ui_n(y)}" }
+
+// A smooth closed curve through the points: a blob.
+fn ui_smooth(xs: Number[], ys: Number[]) -> Text {
+  let n = xs.length()
+  let start = ui_pt((xs[n - 1] + xs[0]) / 2, (ys[n - 1] + ys[0]) / 2)
+  let parts = (for k in 0 until n { "Q" + ui_pt(xs[k], ys[k]) + " " + ui_pt((xs[k] + xs[(k + 1) % n]) / 2, (ys[k] + ys[(k + 1) % n]) / 2) }).join(" ")
+  return "M" + start + " " + parts + "Z"
+}
+
+fn ui_blob(cx: Number, cy: Number, r: Number, seed: Number, k: Number) -> Text {
+  let n = 9
+  let xs = for i in 0 until n { cx + r * (0.72 + ui_rnd(seed, k * 31 + i) * 0.5) * (i * 360 / n).cos() }
+  let ys = for i in 0 until n { cy + r * (0.72 + ui_rnd(seed, k * 31 + i) * 0.5) * (i * 360 / n).sin() }
+  return ui_smooth(xs, ys)
+}
+
+fn ui_poly(cx: Number, cy: Number, r: Number, sides: Number, turn: Number) -> Text {
+  return "M" + (for i in 0 until sides { ui_pt(cx + r * (turn - 90 + i * 360 / sides).cos(), cy + r * (turn - 90 + i * 360 / sides).sin()) }).join(" L") + "Z"
+}
+
+fn ui_star(cx: Number, cy: Number, r: Number, points: Number, turn: Number) -> Text {
+  let n = points * 2
+  return "M" + (for i in 0 until n { ui_pt(cx + (if i % 2 == 0 { r } else { r * 0.46 }) * (turn - 90 + i * 180 / points).cos(), cy + (if i % 2 == 0 { r } else { r * 0.46 }) * (turn - 90 + i * 180 / points).sin()) }).join(" L") + "Z"
+}
+
+fn ui_spiral(cx: Number, cy: Number, r: Number) -> Text {
+  return "M" + (for i in 0 until 49 { ui_pt(cx + r * i / 48 * (i * 15).cos(), cy + r * i / 48 * (i * 15).sin()) }).join(" L")
+}
+
+fn ui_wave(x0: Number, y: Number, width: Number, amp: Number, waves: Number) -> Text {
+  let steps = 64
+  return "M" + (for i in 0 until steps + 1 { ui_pt(x0 + width * i / steps, y + amp * (i * 360 * waves / steps).sin()) }).join(" L")
+}
+
+fn ui_fills() -> Text[] { return ["var(--accent)", "var(--a2)", "url(#ui-ch-g)", "color-mix(in srgb,var(--accent) 50%,var(--a2))"] }
+
+// The art behind a design, drawn fresh from the seed: no two alike.
+fn ui_backdrop(art: Text, seed: Number) -> Text {
+  if art == "none" or art.is_empty() { return "" }
+  let open = f"<svg class=\"art-bg a-{art}\" viewBox=\"0 0 800 800\" preserveAspectRatio=\"xMidYMid slice\" aria-hidden=\"true\">" + ui_grads()
+  if art == "blobs" {
+    return open + (for k in 0 until 4 { f"<path class=\"bl\" style=\"fill:{ui_fills()[k % 4]};--i:{k}\" d=\"{ui_blob(180 + ui_rnd(seed, k) * 440, 160 + ui_rnd(seed, k + 9) * 420, 140 + ui_rnd(seed, k + 4) * 120, seed, k)}\"/>" }).join("") + "</svg>"
+  }
+  if art == "waves" {
+    let n = 2 + (ui_rnd(seed, 3) * 3).floor()
+    return open + (for k in 0 until 6 { f"<path class=\"wv\" style=\"--i:{k}\" d=\"{ui_wave(0, 260 + k * 62, 1600, 26 + ui_rnd(seed, k) * 46, n * 2)}\"/>" }).join("") + "</svg>"
+  }
+  if art == "constellation" {
+    let xs = for k in 0 until 26 { 60 + ui_rnd(seed, k) * 680 }
+    let ys = for k in 0 until 26 { 60 + ui_rnd(seed, k + 50) * 680 }
+    let lines = (for k in 0 until 25 where ((xs[k] - xs[k + 1]).power(2) + (ys[k] - ys[k + 1]).power(2)).power(0.5) < 300 { f"<line x1=\"{ui_n(xs[k])}\" y1=\"{ui_n(ys[k])}\" x2=\"{ui_n(xs[k + 1])}\" y2=\"{ui_n(ys[k + 1])}\"/>" }).join("")
+    let dots = (for k in 0 until 26 { f"<circle class=\"st" + (if k % 5 == 0 { " big" } else { "" }) + f"\" cx=\"{ui_n(xs[k])}\" cy=\"{ui_n(ys[k])}\" r=\"" + (if k % 5 == 0 { "5" } else { "2.6" }) + f"\" style=\"--i:{k % 9}\"/>" }).join("")
+    return open + "<g class=\"cl\">" + lines + "</g>" + dots + "</svg>"
+  }
+  if art == "prism" {
+    return open + (for k in 0 until 7 { f"<path class=\"pr\" style=\"fill:{ui_fills()[k % 4]};--i:{k}\" d=\"{ui_poly(90 + ui_rnd(seed, k) * 620, 90 + ui_rnd(seed, k + 20) * 620, 50 + ui_rnd(seed, k + 40) * 110, 3 + (ui_rnd(seed, k + 60) * 4).floor(), ui_rnd(seed, k + 70) * 120)}\"/>" }).join("") + "</svg>"
+  }
+  if art == "rings" {
+    return open + (for k in 0 until 6 { f"<circle class=\"rg\" cx=\"400\" cy=\"400\" r=\"{110 + k * 52}\" style=\"--i:{k};stroke-dasharray:{2 + (ui_rnd(seed, k) * 30).round()} {6 + (ui_rnd(seed, k + 8) * 22).round()}\"/>" }).join("") + "</svg>"
+  }
+  if art == "grid" {
+    let hs = (for k in 0 until 9 { f"<line x1=\"0\" x2=\"800\" y1=\"{ui_n(430 + 370 * (k / 8).power(1.8))}\" y2=\"{ui_n(430 + 370 * (k / 8).power(1.8))}\"/>" }).join("")
+    let vs = (for k in 0 until 17 { f"<line x1=\"400\" y1=\"400\" x2=\"{-800 + k * 150}\" y2=\"800\"/>" }).join("")
+    return open + "<circle class=\"sun\" cx=\"400\" cy=\"330\" r=\"" + f"{110 + (ui_rnd(seed, 1) * 50).round()}" + "\" fill=\"url(#ui-ch-g)\"/><g class=\"gd\">" + hs + vs + "</g></svg>"
+  }
+  if art == "aurora" {
+    return open + (for k in 0 until 3 { f"<ellipse class=\"au\" cx=\"{ui_n(250 + ui_rnd(seed, k) * 300)}\" cy=\"{ui_n(240 + k * 120)}\" rx=\"{ui_n(320 + ui_rnd(seed, k + 5) * 160)}\" ry=\"{ui_n(50 + ui_rnd(seed, k + 9) * 40)}\" style=\"fill:{ui_fills()[k % 4]};--i:{k}\" transform=\"rotate({ui_n(-18 + ui_rnd(seed, k + 3) * 36)} 400 400)\"/>" }).join("") + "</svg>"
+  }
+  let r1 = 170 + (ui_rnd(seed, 1) * 60).round()
+  let r2 = r1 + 80 + (ui_rnd(seed, 2) * 40).round()
+  let r3 = r2 + 80 + (ui_rnd(seed, 3) * 30).round()
+  return open + f"<g class=\"ob o1\"><circle cx=\"400\" cy=\"400\" r=\"{r1}\"/><circle class=\"od\" cx=\"{400 + r1}\" cy=\"400\" r=\"6\"/></g><g class=\"ob o2\"><circle cx=\"400\" cy=\"400\" r=\"{r2}\"/><circle class=\"od b\" cx=\"400\" cy=\"{400 - r2}\" r=\"5\"/><circle class=\"od\" cx=\"400\" cy=\"{400 + r2}\" r=\"3.5\"/></g><g class=\"ob o3\"><circle cx=\"400\" cy=\"400\" r=\"{r3}\"/><circle class=\"od b\" cx=\"{400 - r3}\" cy=\"400\" r=\"4\"/></g></svg>"
+}
+
+fn ui_spec_seed(s: UiSpec) -> Number { return ui_seed(s.title + " " + s.brand + " " + s.target) }
+
+fn ui_spec_backdrop(s: UiSpec) -> Text { return ui_backdrop(s.look.art, ui_spec_seed(s)) }
+
+// The art block: shapes the model composes, drawn and set in motion.
+fn ui_shape_names() -> Text[] { return ["circle", "ring", "square", "diamond", "triangle", "pentagon", "hexagon", "octagon", "star", "blob", "spiral", "wave", "polygon"] }
+
+fn ui_motions() -> Text[] { return ["spin", "float", "pulse", "sway", "none"] }
+
+fn ui_shape_fill(colour: Text) -> Text {
+  let c = colour.trim().lower()
+  if c == "accent" or c == "first" { return "var(--accent)" }
+  if c == "partner" or c == "second" or c == "a2" { return "var(--a2)" }
+  if c == "ink" or c == "text" { return "var(--ink)" }
+  if c == "soft" { return "var(--line)" }
+  let h = ui_hex(c)
+  return if h.is_empty() { "url(#ui-ch-g)" } else { h }
+}
+
+fn ui_meta_nums(meta: Text) -> Number[] {
+  return for w in meta.replace(",", " ").words() where not ui_hex(w).is_empty() or w.to_number().or(-1) >= 0 { w.to_number().or(0) }
+}
+
+fn ui_shape(i: UiItem, k: Number, n: Number, seed: Number) -> Text {
+  let name = i.title.trim().lower()
+  let nums = ui_meta_nums(i.meta)
+  let x = (if nums.length() > 0 { nums[0].max(0).min(1) } else { (k + 0.5) / n }) * 600
+  let y = (if nums.length() > 1 { nums[1].max(0).min(1) } else { 0.35 + ui_rnd(seed, k) * 0.3 }) * 320
+  let r = (if nums.length() > 2 { nums[2].max(0.04).min(0.5) } else { 0.12 + ui_rnd(seed, k + 7) * 0.12 }) * 320
+  let fill = ui_shape_fill(i.text)
+  let motion = if ui_motions().contains(i.icon.trim().lower()) { i.icon.trim().lower() } else { ui_pick(["spin", "float", "pulse", "sway"], seed, k + 11) }
+  let digits = ui_number(name)
+  let turn = ui_rnd(seed, k + 13) * 40
+  let line = name == "ring" or name == "spiral" or name == "wave"
+  let d = if name == "circle" or name == "ring" { "" } else if name == "square" { ui_poly(x, y, r, 4, 45) } else if name == "diamond" { ui_poly(x, y, r, 4, 0) } else if name == "triangle" { ui_poly(x, y, r, 3, turn) } else if name == "pentagon" { ui_poly(x, y, r, 5, turn) } else if name == "hexagon" { ui_poly(x, y, r, 6, turn) } else if name == "octagon" { ui_poly(x, y, r, 8, turn) } else if name.starts_with("star") { ui_star(x, y, r, if digits >= 3 { digits.min(12) } else { 5 }, turn) } else if name.contains("gon") or name.starts_with("polygon") { ui_poly(x, y, r, if digits >= 3 { digits.min(16) } else { 7 }, turn) } else if name == "spiral" { ui_spiral(x, y, r) } else if name == "wave" { ui_wave(x - r * 1.6, y, r * 3.2, r * 0.35, 2) } else { ui_blob(x, y, r, seed, k) }
+  let paint = if line { f"fill=\"none\" style=\"stroke:{fill}\"" } else { f"style=\"fill:{fill}\"" }
+  let body = if d.is_empty() { f"<circle cx=\"{ui_n(x)}\" cy=\"{ui_n(y)}\" r=\"{ui_n(r)}\" {paint}/>" } else { f"<path d=\"{d}\" {paint}/>" }
+  return f"<g class=\"sh m-{motion}" + (if line { " ln2" } else { "" }) + f"\" style=\"--i:{k}\">{body}</g>"
+}
+
+fn ui_art(b: UiBlock, s: UiSpec) -> Text {
+  let seed = ui_seed(b.title + b.text) + ui_spec_seed(s)
+  let n = b.items.length()
+  let shapes = (for k in 0 until n { ui_shape(b.items[k], k, n, seed) }).join("")
+  let head = if b.title.trim().is_empty() { "" } else { f"<div class=\"row-head\"><h2>{ui_esc(b.title)}</h2></div>" }
+  let note = if b.text.trim().is_empty() { "" } else { f"<p class=\"ch-note soft\">{ui_esc(b.text)}</p>" }
+  return f"<section class=\"sec\">{head}{note}<div class=\"artc card\"><svg class=\"art-svg\" viewBox=\"0 0 600 320\" aria-hidden=\"true\">" + ui_grads() + shapes + "</svg></div></section>"
+}
+
+fn ui_art_css() -> Text {
+  return ".art-bg{display:none}.artc{padding:0;overflow:hidden}.art-svg{display:block;width:100%;height:auto}.art-svg .sh{transform-box:fill-box;transform-origin:center}.art-svg .ln2 path,.art-svg .ln2 circle{stroke-width:6;stroke-linecap:round;stroke-linejoin:round}.art-svg .sh{opacity:.92}"
+  + ".v .art-bg{display:block;position:absolute;pointer-events:none;z-index:0}.v .t-web .hero>.art-bg{left:50%;top:46%;width:1100px;height:1100px;max-width:none;transform:translate(-50%,-50%);opacity:.75;-webkit-mask-image:radial-gradient(closest-side,#000 50%,transparent);mask-image:radial-gradient(closest-side,#000 50%,transparent)}.v .t-web .hero>.orbit{display:none}"
+  + ".v .screen>.art-bg{left:0;top:0;width:100%;height:58%;opacity:.5;-webkit-mask-image:linear-gradient(#000,transparent);mask-image:linear-gradient(#000,transparent)}.v .screen>*:not(.art-bg){position:relative;z-index:1}"
+  + ".v .t-agent .main{position:relative}.v .main>.art-bg{left:0;top:0;width:100%;height:420px;opacity:.35;-webkit-mask-image:linear-gradient(#000,transparent);mask-image:linear-gradient(#000,transparent)}.v .main>*:not(.art-bg){position:relative;z-index:1}"
+  + ".v .artifact{position:relative;overflow:hidden}.v .artifact>.art-bg{right:-140px;top:-180px;width:560px;height:560px;opacity:.55;-webkit-mask-image:radial-gradient(closest-side,#000 40%,transparent);mask-image:radial-gradient(closest-side,#000 40%,transparent)}.v .artifact>*:not(.art-bg){position:relative;z-index:1}"
+  + ".art-bg .bl{opacity:.55;filter:blur(36px)}.art-bg .wv{fill:none;stroke:url(#ui-ch-g);stroke-width:2;opacity:calc(.75 - var(--i) * .1)}.art-bg .cl line{stroke:color-mix(in srgb,var(--accent) 55%,transparent);stroke-width:1}.art-bg .st{fill:var(--ink)}.art-bg .st.big{fill:var(--a2)}.art-bg .pr{opacity:.32;stroke:color-mix(in srgb,var(--ink) 30%,transparent);stroke-width:1}.art-bg .rg{fill:none;stroke:url(#ui-ch-g);stroke-width:1.6;opacity:.6}.art-bg .gd line{stroke:color-mix(in srgb,var(--accent) 50%,transparent);stroke-width:1}.art-bg .sun{opacity:.7}.art-bg .au{opacity:.5;filter:blur(40px)}.art-bg .ob circle{fill:none;stroke:color-mix(in srgb,var(--ink) 16%,transparent);stroke-width:1}.art-bg .ob .od{fill:var(--accent);stroke:none}.art-bg .ob .od.b{fill:var(--a2)}.art-bg .bl,.art-bg .pr,.art-bg .ob,.art-bg .rg{transform-box:view-box;transform-origin:400px 400px}"
+  + "@media (prefers-reduced-motion:no-preference){@keyframes v-bob{50%{transform:translateY(-14px)}}@keyframes v-breathe{50%{transform:scale(1.12)}}@keyframes v-sway{0%,100%{transform:rotate(-8deg)}50%{transform:rotate(8deg)}}@keyframes v-slide{to{transform:translateX(-800px)}}@keyframes v-twinkle{50%{opacity:.25}}@keyframes v-roam{0%{transform:translate(0,0) rotate(0)}50%{transform:translate(30px,-24px) rotate(12deg)}100%{transform:translate(-20px,18px) rotate(-6deg)}}"
+  + ".v .art-svg .m-spin{animation:v-spin calc(14s + var(--i) * 3s) linear infinite}.v .art-svg .m-float{animation:v-bob calc(4s + var(--i) * .7s) ease-in-out infinite}.v .art-svg .m-pulse{animation:v-breathe calc(3s + var(--i) * .5s) ease-in-out infinite}.v .art-svg .m-sway{animation:v-sway calc(5s + var(--i) * .6s) ease-in-out infinite}"
+  + ".v .art-bg .bl,.v .art-bg .au{animation:v-roam calc(16s + var(--i) * 5s) ease-in-out infinite alternate}.v .art-bg .wv{animation:v-slide calc(14s + var(--i) * 4s) linear infinite}.v .art-bg .st{animation:v-twinkle calc(2.4s + var(--i) * .4s) ease-in-out infinite}.v .art-bg .pr{animation:v-spin calc(40s + var(--i) * 9s) linear infinite}.v .art-bg .rg:nth-child(odd){animation:v-spin calc(50s + var(--i) * 10s) linear infinite}.v .art-bg .rg:nth-child(even){animation:v-spin calc(60s + var(--i) * 10s) linear infinite reverse}.v .art-bg .o1{animation:v-spin 38s linear infinite}.v .art-bg .o2{animation:v-spin 64s linear infinite reverse}.v .art-bg .o3{animation:v-spin 96s linear infinite}.v .art-bg .sun{animation:v-breathe 8s ease-in-out infinite;transform-box:fill-box;transform-origin:center}}"
+}
+
 // Charts, in both styles: drawn still in minimal, drawn in motion in vivid.
 fn ui_chart_css() -> Text {
   return ".chart{padding:20px 20px 16px;display:grid;gap:12px;overflow:hidden}.ch-now{display:flex;align-items:baseline;gap:10px}.ch-now b{font-size:30px;font-weight:650;letter-spacing:-.04em;line-height:1}.ch-now span{font-size:13.5px}.ch-svg{width:100%;height:auto;display:block;overflow:visible}.ch-svg .gl{stroke:var(--line2);stroke-width:1}.ch-svg .ln{stroke:var(--accent);stroke-width:4;stroke-linecap:round;stroke-linejoin:round}.ch-svg .pt{fill:var(--surface);stroke:var(--accent);stroke-width:2.5;transform-box:fill-box;transform-origin:center}.ch-svg .pt.last{fill:var(--accent);stroke:var(--surface);stroke-width:3}.ch-x{display:flex;justify-content:space-between;gap:4px;font-size:12px}.ch-x span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}"
@@ -1047,8 +1306,10 @@ fn ui_motion_js() -> Text {
 
 fn ui_css(s: UiSpec) -> Text {
   let vivid = if ui_style(s.theme) == "vivid" { ui_vivid_css(s.theme) } else { "" }
-  return ui_tokens_css() + ui_colours_css(s.theme, ui_accent(s.accent)) + ui_base_css() + ui_web_css() + ui_phone_css() + ui_agent_css() + ui_artifact_css() + ui_chart_css() + ui_stage_css(s.theme) + vivid
+  return ui_tokens_css() + ui_colours_css(s.theme, ui_accent(s.accent)) + ui_base_css() + ui_web_css() + ui_phone_css() + ui_agent_css() + ui_artifact_css() + ui_chart_css() + ui_art_css() + ui_stage_css(s.theme) + vivid + ui_look_css(s)
 }
+
+fn ui_colour_tag(s: UiSpec) -> Text { return if s.look.colours.is_empty() { s.accent } else { s.look.colours.join(" ") } }
 
 fn ui_target_label(target: Text) -> Text {
   if target == "phone" { return "Phone app" }
@@ -1064,8 +1325,8 @@ fn ui_page(s: UiSpec, fixed: Text[]) -> Text {
   let stage = if vivid { "stage v" } else { "stage" }
   let motion = if vivid { "<script>" + ui_motion_js() + "</script>" } else { "" }
   let checked = if fixed.is_empty() { "" } else { "<details><summary>What Kosika checked and fixed</summary><ul>" + (for f in fixed { f"<li>{ui_esc(f)}</li>" }).join("") + "</ul></details>" }
-  let head = f"<div class=\"stage-head\"><div><div class=\"by\">Kosika Designs</div><h1>{ui_esc(s.title)}</h1></div><div class=\"stage-tags\"><span class=\"badge\">{ui_target_label(s.target)}</span><span class=\"badge\">{ui_esc(s.theme)}</span><span class=\"badge on\">{ui_esc(s.accent)}</span></div></div>"
-  return "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>" + ui_esc(s.title) + "</title><link rel=\"preconnect\" href=\"https://fonts.googleapis.com\"><link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap\"><style>" + ui_css(s) + "</style></head><body class=\"ui\" data-style=\"" + ui_style(s.theme) + "\" data-theme=\"" + ui_mode(s.theme) + "\"><div class=\"" + stage + "\">" + head + ui_frames(s) + checked + "</div>" + motion + "</body></html>"
+  let head = f"<div class=\"stage-head\"><div><div class=\"by\">Kosika Designs</div><h1>{ui_esc(s.title)}</h1></div><div class=\"stage-tags\"><span class=\"badge\">{ui_target_label(s.target)}</span><span class=\"badge\">{ui_esc(s.theme)}</span><span class=\"badge on\">{ui_esc(ui_colour_tag(s))}</span></div></div>"
+  return "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>" + ui_esc(s.title) + "</title><link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">" + ui_font_link(s.look.font) + "<style>" + ui_css(s) + "</style></head><body class=\"ui\" data-style=\"" + ui_style(s.theme) + "\" data-theme=\"" + ui_mode(s.theme) + "\"><div class=\"" + stage + "\">" + head + ui_frames(s) + checked + "</div>" + motion + "</body></html>"
 }
 
 // ---------------------------------------------------------------- designs that run
@@ -1152,7 +1413,7 @@ fn ui_app_result(a: UiApp) -> UiResult {
 // ---------------------------------------------------------------- the model's brief
 
 fn ui_blocks_guide() -> Text {
-  return "nav: the top bar of a website; items are its links (title only); action is the main button. hero: the opening of a page; title is the headline (at most 8 words, specific, no hype), text one or two sentences, meta a short label above it (like New or Now in beta), action the buttons as 'Primary|Secondary'; items (optional) are 3 to 4 rows shown in a product preview under it. features: 3 to 6 reasons or abilities; title and text head the section, meta a one-word label above; each item has title (2 to 4 words), text (one sentence), icon. stats: 2 to 4 numbers; each item has title (the number, like 12k or 98%), text (what it counts), meta (a change, like +12%, or empty). cards: 2 to 6 things to browse (posts, courses, places, products); title heads the row, action a link like See all; each item has title, text, meta (a short tag like 5 min or $24) and icon. list: 3 to 6 rows (settings, messages, files, recent items); each item has title, text, meta (a time or count) and icon. steps: 3 to 4 steps in order; each item has title and text. pricing: 2 to 3 plans; each item has title (plan name), meta (price, like $12/mo), text (features separated by ;); action is the button word. quote: a testimonial; text is the quote, meta the person's name, title their role. cta: a closing call to action; title, text, action. footer: items are its links; text the small print. form: a sign-in or sign-up or contact form; title, text, action (the button), meta a small line under it; each item is a field with title (label), text (placeholder) and icon. appbar: the top of a phone screen or a window; title is the screen name, text a short line under or over it, meta a live status (like Running, or empty), items are icon buttons (icon only). search: a search field; meta is its placeholder. chips: 3 to 6 filters; items have title only; the first is selected. tabbar: the bottom bar of a phone app; 3 to 5 items with title and icon; the first is the screen shown. chat: a conversation; each item is a message with title (the speaker's name), text (the message) and meta (user or agent). composer: where the person types; text is the placeholder. activity: what an agent did and will do; each item has title, text (optional detail) and meta (done, now or next). progress: 2 to 4 bars; each item has title and meta (a percentage like 72%). sidebar: the left side of an agent window or app; title is the product name, action its main button (like New chat), items are its sections with title, icon and meta (a count or empty). table: rows of data; meta is the column names as 'Name|Detail|Status', each item a row with title, text and meta. chart: a chart that draws itself in; title heads it, text is one line saying what it shows, meta is its kind (line, area, bar or ring), action an optional link like 'Details'; each item is one point: title the label (short, like Mon or Jan), meta the value (like 42, 92% or $1.2k); line and area take 4 to 12 points over time, bar 3 to 8 to compare, ring 1 to 4 percentages."
+  return "nav: the top bar of a website; items are its links (title only); action is the main button. hero: the opening of a page; title is the headline (at most 8 words, specific, no hype), text one or two sentences, meta a short label above it (like New or Now in beta), action the buttons as 'Primary|Secondary'; items (optional) are 3 to 4 rows shown in a product preview under it. features: 3 to 6 reasons or abilities; title and text head the section, meta a one-word label above; each item has title (2 to 4 words), text (one sentence), icon. stats: 2 to 4 numbers; each item has title (the number, like 12k or 98%), text (what it counts), meta (a change, like +12%, or empty). cards: 2 to 6 things to browse (posts, courses, places, products); title heads the row, action a link like See all; each item has title, text, meta (a short tag like 5 min or $24) and icon. list: 3 to 6 rows (settings, messages, files, recent items); each item has title, text, meta (a time or count) and icon. steps: 3 to 4 steps in order; each item has title and text. pricing: 2 to 3 plans; each item has title (plan name), meta (price, like $12/mo), text (features separated by ;); action is the button word. quote: a testimonial; text is the quote, meta the person's name, title their role. cta: a closing call to action; title, text, action. footer: items are its links; text the small print. form: a sign-in or sign-up or contact form; title, text, action (the button), meta a small line under it; each item is a field with title (label), text (placeholder) and icon. appbar: the top of a phone screen or a window; title is the screen name, text a short line under or over it, meta a live status (like Running, or empty), items are icon buttons (icon only). search: a search field; meta is its placeholder. chips: 3 to 6 filters; items have title only; the first is selected. tabbar: the bottom bar of a phone app; 3 to 5 items with title and icon; the first is the screen shown. chat: a conversation; each item is a message with title (the speaker's name), text (the message) and meta (user or agent). composer: where the person types; text is the placeholder. activity: what an agent did and will do; each item has title, text (optional detail) and meta (done, now or next). progress: 2 to 4 bars; each item has title and meta (a percentage like 72%). sidebar: the left side of an agent window or app; title is the product name, action its main button (like New chat), items are its sections with title, icon and meta (a count or empty). table: rows of data; meta is the column names as 'Name|Detail|Status', each item a row with title, text and meta. chart: a chart that draws itself in; title heads it, text is one line saying what it shows, meta is its kind (line, area, bar or ring), action an optional link like 'Details'; each item is one point: title the label (short, like Mon or Jan), meta the value (like 42, 92% or $1.2k); line and area take 4 to 12 points over time, bar 3 to 8 to compare, ring 1 to 4 percentages. art: a composition of moving shapes, for a hero image, a mood or an idea; title and text head it (optional); each item is one shape: title its kind (circle, ring, square, diamond, triangle, pentagon, hexagon, octagon, star or star7, polygon9, blob, spiral, wave), text its colour (accent, partner, ink, or a hex colour), meta its place and size as 'x y size' from 0 to 1 (like '0.3 0.5 0.2'), icon its motion (spin, float, pulse, sway or none); 3 to 12 shapes that make a picture together."
 }
 
 fn ui_targets_guide() -> Text {
@@ -1162,10 +1423,10 @@ fn ui_targets_guide() -> Text {
 fn ui_icons_guide() -> Text { return ui_icon_names().join(", ") }
 
 fn ui_task() -> Text {
-  return "You are a senior product designer. Describe the screen someone asked for as blocks; Kosika draws them in one modern design system, vivid by default (gradients in the accent and its partner, glass, motion, charts that draw themselves) or minimal when asked, so describe only what the screen says and which blocks it holds. Give target (as given), title (the design's name, 2 to 5 words), brand (a short, believable product name, one or two words, not a placeholder like Brand or Company), accent (one of " + ui_accent_names().join(", ") + ", chosen to suit the subject), theme (dark by default, light when the subject is bright and daytime; add the word minimal, as in 'light minimal', only when the person asks for a plain or minimal look), and screens (each with name and blocks; each block has kind, title, text, meta, action and items, and each item has title, text, meta and icon; leave any field empty that the block does not use). The blocks: " + ui_blocks_guide() + " By target: " + ui_targets_guide() + " Icons: only these names: " + ui_icons_guide() + ". Write like the real product: specific, concrete, short; headlines in sentence case with no full stop; never lorem ipsum, never placeholders like Feature 1, never exclamation marks or hype words like revolutionary or seamless; realistic numbers, names, times and prices; every item different. Less is more: fewer blocks done well beat many. Use a chart wherever real numbers change over time or compare. If problems are given, they are what was wrong with your last description: fix every one."
+  return "You are a senior product designer. Describe the screen someone asked for as blocks; Kosika draws them in one modern design system, vivid by default (gradients in the accent and its partner, glass, motion, charts that draw themselves) or minimal when asked, so describe only what the screen says and which blocks it holds. Give target (as given), look (colours: one or two hex colours you invent for this subject, like #c0703a and #2f6f5e for a coffee roaster, not the usual purple; shape: soft, round, sharp or pill; art: the moving art behind it, one of orbits, blobs, waves, constellation, prism, rings, grid, aurora or none; font: geometric, grotesk, editorial, mono or rounded), title (the design's name, 2 to 5 words), brand (a short, believable product name, one or two words, not a placeholder like Brand or Company), accent (one of " + ui_accent_names().join(", ") + ", chosen to suit the subject), theme (dark by default, light when the subject is bright and daytime; add the word minimal, as in 'light minimal', only when the person asks for a plain or minimal look), and screens (each with name and blocks; each block has kind, title, text, meta, action and items, and each item has title, text, meta and icon; leave any field empty that the block does not use). The blocks: " + ui_blocks_guide() + " By target: " + ui_targets_guide() + " Icons: only these names: " + ui_icons_guide() + ". Write like the real product: specific, concrete, short; headlines in sentence case with no full stop; never lorem ipsum, never placeholders like Feature 1, never exclamation marks or hype words like revolutionary or seamless; realistic numbers, names, times and prices; every item different. Less is more: fewer blocks done well beat many. Use a chart wherever real numbers change over time or compare. Make every design its own: choose a look that fits this subject and differs from a default template; surprise with colour, shape and art, while staying readable. If problems are given, they are what was wrong with your last description: fix every one."
 }
 
-fn ui_no_spec() -> UiSpec { return {target: "", title: "", brand: "", accent: "", theme: "", screens: []} }
+fn ui_no_spec() -> UiSpec { return {target: "", title: "", brand: "", accent: "", theme: "", look: ui_no_look(), screens: []} }
 
 fn ui_result(ask: UiAsk, said: UiSpec) -> UiResult {
   let c = ui_checked(ask, said)
@@ -1201,6 +1462,8 @@ test "every accent reads against its surface, in light and in dark" {
 }
 
 test "the ask's words choose the target" {
+  expect ui_target(ui_ask("design something like an AI interface")) == "agent"
+  expect ui_wants("make me an AI interface")
   expect ui_target(ui_ask("a landing page for a quiet coffee shop")) == "web"
   expect ui_target(ui_ask("design a mobile app for learning Japanese")) == "phone"
   expect ui_target(ui_ask("an iPhone onboarding screen for a habit tracker")) == "phone"
@@ -1229,7 +1492,8 @@ test "theme and accent follow the person's words first" {
   expect ui_mode("dark minimal") == "dark"
   expect ui_accent_named(ui_ask("a green finance app"), "indigo") == "emerald"
   expect ui_accent_named(ui_ask("a finance app"), "teal") == "teal"
-  expect ui_accent_named(ui_ask("a finance app"), "chartreuse") == "indigo"
+  expect ui_accent_names().contains(ui_accent_named(ui_ask("a finance app"), "chartreuse"))
+  expect ui_accent_named(ui_ask("a finance app"), "") == ui_accent_named(ui_ask("a finance app"), "")
 }
 
 test "unknown icons are matched to ones Kosika draws" {
@@ -1241,7 +1505,7 @@ test "unknown icons are matched to ones Kosika draws" {
 }
 
 test "Kosika drops what does not belong and puts bars in their places" {
-  said: UiSpec = {target: "phone", title: "Runs", brand: "Stride", accent: "emerald", theme: "", screens: [{name: "Home", blocks: [
+  said: UiSpec = {target: "phone", title: "Runs", brand: "Stride", accent: "emerald", theme: "", look: ui_no_look(), screens: [{name: "Home", blocks: [
     ui_block("tabbar", "", "", "", "", [ui_item("Home", "", "", "home"), ui_item("Runs", "", "", "trend")]),
     ui_block("pricing", "Plans", "", "", "", []),
     ui_block("sparkles", "x", "", "", "", []),
@@ -1321,4 +1585,30 @@ test "vivid is the default and carries its motion; minimal carries none" {
   expect calm.spec.theme == "light minimal"
   expect calm.page.contains("data-style=\"minimal\"")
   expect not calm.page.contains("IntersectionObserver")
+}
+
+test "the look is the model's where it is readable, and Kosika's where it is missing" {
+  l = ui_look_checked({colours: ["#C0703A", "nope", "#2f6"], shape: "SHARP", art: "waves", font: "editorial"}, 42)
+  expect l.colours == ["#c0703a", "#22ff66"]
+  expect l.shape == "sharp"
+  expect l.art == "waves"
+  expect l.font == "editorial"
+  filled = ui_look_checked(ui_no_look(), 42)
+  expect ui_arts().contains(filled.art)
+  expect ui_fonts().contains(filled.font)
+  expect contrast(ui_fit("#1a1a40", true), "#0b0b0f") >= 5.5
+  expect contrast(ui_fit("#ffe08a", false), "#ffffff") >= 4.6
+  expect ui_seed("a coffee shop") == ui_seed("a coffee shop")
+  expect ui_seed("a coffee shop") != ui_seed("a tea shop")
+}
+
+test "every art is drawn, and the art block draws the shapes asked for" {
+  expect (for a in ui_arts() where not ui_backdrop(a, 7).contains("art-bg a-" + a) { a }).is_empty()
+  expect ui_backdrop("none", 7) == ""
+  s = ui_result(ui_ask("a website for a kite festival"), ui_no_spec()).spec
+  b = ui_block("art", "Kites", "", "", "", [ui_item("star7", "partner", "0.2 0.4 0.2", "spin"), ui_item("hexagon", "#ff8800", "", "float"), ui_item("spiral", "accent", "", "")])
+  html = ui_art(b, s)
+  expect html.contains("m-spin")
+  expect html.contains("fill:#ff8800")
+  expect html.contains("ln2")
 }
