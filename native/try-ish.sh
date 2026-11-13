@@ -15,6 +15,6 @@ cd "$HOME/kosika"
 kos test discrete_maths.kos
 echo
 echo "It works. 'kos' is kosika-native. Try next:"
-echo "  kos phone id"
+echo "  kos phone node --relay --name iphone   (lets your other devices reach this phone)"
 echo "  kos phone help"
 echo "  kos test ~/kosika/discrete_maths.kos"

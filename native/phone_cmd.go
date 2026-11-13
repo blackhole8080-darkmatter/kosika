@@ -23,20 +23,23 @@ import (
 const phoneUsage = `kosika-native phone: phones as Kosika nodes
 
 On the phone (Android, in Termux; or any computer):
-  phone node [--port 8794] [--name NAME] [--pair] [--confirm terminal|dialog] [--simulate]
-        listen for a paired device; --pair shows a one-time code (5 minutes)
+  phone node [--relay] [--port 8794] [--name NAME] [--pair] [--confirm terminal|dialog] [--simulate]
+        answer paired devices; --pair shows a one-time code (5 minutes);
+        --relay calls out to a relay (ntfy.sh, or KOSIKA_RELAY) so it works on any network
 
 On the laptop:
   phone pair ADDRESS CODE [--name NAME]   pair with a phone showing CODE
   phone list                              paired devices
   phone ping NAME                         is it there, and what can it do
-  phone ask NAME SENSE                    battery | location | clipboard | wifi | device
-  phone do NAME ACTION [ARGS...]          notify TITLE TEXT | toast TEXT | speak TEXT |
+  phone ask NAME SENSE                    battery | location | clipboard | wifi | device | files
+  phone do NAME ACTION [ARGS...]          show TEXT | save NAME.kos TEXT | test NAME.kos |
+                                          notify TITLE TEXT | toast TEXT | speak TEXT |
                                           vibrate MS | open-url URL | torch on|off |
                                           clipboard TEXT
   phone log NAME [--check]                what was asked and answered; --check proves it whole
   phone unpair NAME                       forget a device
   phone id [--name NAME]                  this device's name and id
+  phone relay [--port 8795]               run a relay of your own (ntfy's protocol)
 
 Real control of an Android phone over USB or Wi-Fi debugging (asks yes each time):
   phone adb devices | tap X Y | swipe X1 Y1 X2 Y2 [MS] | type TEXT |
@@ -79,6 +82,8 @@ func phoneCommand(args []string) int {
 		err = phoneUnpair(rest)
 	case "adb":
 		err = phoneADB(rest, os.Stdin)
+	case "relay":
+		err = phoneRelayCommand(rest)
 	default:
 		err = fmt.Errorf("no phone command %q\n\n%s", command, phoneUsage)
 	}
@@ -128,6 +133,7 @@ func phoneNodeCommand(args []string) error {
 	confirm := set.String("confirm", "terminal", "")
 	simulate := set.Bool("simulate", false, "")
 	listen := set.String("listen", "0.0.0.0", "")
+	relay := set.Bool("relay", false, "")
 	if _, err := flags(set, args); err != nil {
 		return err
 	}
@@ -151,13 +157,28 @@ func phoneNodeCommand(args []string) error {
 			hubs++
 		}
 	}
-	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", *listen, *port))
-	if err != nil {
-		return err
-	}
-	fmt.Printf("Kosika phone node %q (id %s) listening on port %d\n", me.Name, deviceID(me.public()), *port)
-	for _, address := range localAddresses() {
-		fmt.Printf("  reachable at %s:%d\n", address, *port)
+	where := ""
+	var listener net.Listener
+	if *relay {
+		topic, err := nodeTopic(&me)
+		if err != nil {
+			return err
+		}
+		node.me = me
+		where = relayAddressOf(relayBase(), topic)
+		fmt.Printf("Kosika phone node %q (id %s), reached through the relay %s\n", me.Name, deviceID(me.public()), relayBase())
+		fmt.Printf("  address: %s\n", where)
+		fmt.Println("  It calls out, so it works on any network. Keep this screen open.")
+	} else {
+		listener, err = net.Listen("tcp", fmt.Sprintf("%s:%d", *listen, *port))
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Kosika phone node %q (id %s) listening on port %d\n", me.Name, deviceID(me.public()), *port)
+		for _, address := range localAddresses() {
+			fmt.Printf("  reachable at %s:%d\n", address, *port)
+		}
+		where = "<address above>"
 	}
 	if *simulate {
 		fmt.Println("  SIMULATING: senses give made-up values and actions do nothing; replies say so.")
@@ -165,7 +186,11 @@ func phoneNodeCommand(args []string) error {
 	if *pair || hubs == 0 {
 		node.code, node.codeUntil = newPairCode(), time.Now().Add(5*time.Minute)
 		fmt.Printf("\n  Pairing code: %s   (works once, for 5 minutes)\n", node.code)
-		fmt.Printf("  On the laptop: kosika-native phone pair <address above> %s --name %s\n\n", node.code, me.Name)
+		fmt.Printf("  On the laptop: kos phone pair %s %s --name %s\n\n", where, node.code, me.Name)
+	}
+	if *relay {
+		base, topic, _ := parseRelayAddress(where)
+		return node.serveRelay(base, topic, nil)
 	}
 	server := &http.Server{Handler: node.routes(), ReadHeaderTimeout: 10 * time.Second}
 	return server.Serve(listener)
@@ -174,6 +199,9 @@ func phoneNodeCommand(args []string) error {
 // ---- the laptop side ----
 
 func postJSON(address, path string, value any, into any) error {
+	if strings.HasPrefix(address, "relay:") {
+		return relayCall(address, path, value, into)
+	}
 	data, _ := json.Marshal(value)
 	client := &http.Client{Timeout: 90 * time.Second} // the person may take a minute to answer
 	response, err := client.Post("http://"+address+path, "application/json", bytes.NewReader(data))
@@ -195,6 +223,9 @@ func postJSON(address, path string, value any, into any) error {
 }
 
 func withPort(address string) string {
+	if strings.HasPrefix(address, "relay:") {
+		return address
+	}
 	if _, _, err := net.SplitHostPort(address); err != nil {
 		return net.JoinHostPort(address, strconv.Itoa(phoneDefaultPort))
 	}

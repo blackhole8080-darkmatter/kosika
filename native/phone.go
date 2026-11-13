@@ -56,7 +56,17 @@ func phoneHome() string {
 type phoneIdentity struct {
 	Name string `json:"name"`
 	Seed string `json:"seed"` // Ed25519 seed, base64; never leaves the device
+	// Mailboxes on a relay: where this device hears answers, and where it
+	// listens as a node. See phone_relay.go.
+	Inbox     string `json:"inbox,omitempty"`
+	NodeTopic string `json:"node_topic,omitempty"`
 }
+
+func identityPath() string {
+	return filepath.Join(phoneHome(), "identity.json")
+}
+
+var randRead = rand.Read
 
 func (id phoneIdentity) private() ed25519.PrivateKey {
 	seed, _ := b64.DecodeString(id.Seed)
@@ -75,7 +85,7 @@ func deviceID(public []byte) string {
 }
 
 func loadIdentity(name string) (phoneIdentity, error) {
-	path := filepath.Join(phoneHome(), "identity.json")
+	path := identityPath()
 	var id phoneIdentity
 	if data, err := os.ReadFile(path); err == nil {
 		if err := json.Unmarshal(data, &id); err != nil {

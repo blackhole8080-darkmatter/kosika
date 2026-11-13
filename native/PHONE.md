@@ -96,9 +96,50 @@ background, so an iPhone cannot be a full node. It can still run Kosika itself.
 5. An iPhone can be the **hub**: `phone pair`, `phone ask` and `phone do` from
    iSH to an Android phone or a laptop running `phone node`.
 
+## From anywhere: the relay
+
+A phone on mobile data, or on someone else's Wi-Fi, cannot be called. With
+`--relay` it calls out instead: it checks a mailbox on a relay every two
+seconds and posts its answers to the asking device's mailbox.
+
+On the phone (one line, in iSH or Termux):
+
+    kos phone node --relay --name iphone
+
+It prints its address and a pairing code, e.g.
+
+    kos phone pair relay:kos-9x2k... 2V3D-9S4W --name iphone
+
+and that line, typed on the laptop, pairs them. After that every command works
+the same from anywhere: `kos phone do iphone show "Time to revise"`.
+
+- **Free:** the default relay is the public [ntfy.sh](https://ntfy.sh), with
+  no account. `KOSIKA_RELAY=https://your.server` uses another ntfy server,
+  and `kos phone relay` runs a small one of your own.
+- **Trusted with nothing:** it carries the same signed, sealed envelopes, so
+  it can read or change nothing; a message it made up is refused. It sees
+  which mailbox got a message, and when. Mailbox names are random and long.
+- **Size:** one message must fit in about 3.9 KB, which is why `save` takes
+  programs up to 2,000 letters and `test` sends back the last 1,500.
+
+### What an iPhone can do
+
+With nothing but Kosika in iSH, a phone can answer:
+
+    kos phone ask iphone device                  what it is
+    kos phone ask iphone files                   its programs in ~/kosika
+    kos phone do iphone show "Hello"             a message on its screen
+    kos phone do iphone save quiz.kos "..."      keep a program in ~/kosika
+    kos phone do iphone test quiz.kos            run that program's tests
+
+Each one is asked about on the phone first. `save` writes only `NAME.kos`
+files in `~/kosika`, and `test` runs only Kosika's own tests: no shell, no
+other program.
+
 ## Commands
 
-    phone node [--port 8794] [--name NAME] [--pair] [--confirm terminal|dialog] [--simulate]
+    phone node [--relay] [--port 8794] [--name NAME] [--pair] [--confirm terminal|dialog] [--simulate]
+    phone relay [--port 8795]
     phone pair ADDRESS CODE [--name NAME]
     phone list | id | ping NAME | ask NAME SENSE | do NAME ACTION ARGS...
     phone log NAME [--check] | unpair NAME
@@ -109,7 +150,6 @@ background, so an iPhone cannot be a full node. It can still run Kosika itself.
 
 ## Next
 
-- Away from home: the same commands over Tailscale (free), by its addresses.
 - The phone asking Kosika agents (Kosi, the study agent) on the laptop.
 - A `phone` tool for Kosika programs, so agents can ask, with the same yes.
 - A native Android app on the same protocol, and iPhone Shortcuts.
