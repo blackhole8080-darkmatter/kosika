@@ -58,7 +58,7 @@
 
 import "designs_palette.kos"
 
-export [UiAsk, UiLook, UiItem, UiBlock, UiScreen, UiSpec, UiResult, UiDraw, UiBind, UiApp, design_ui, ui_render, ui_app, ui_live_page, ui_binds_checked, ui_result, ui_target, ui_theme, ui_checked, ui_starter, ui_page, ui_icon, ui_icon_names, ui_tokens_css, ui_kinds, ui_accents, ui_accent_problems, ui_wants]
+export [UiAsk, UiLook, UiEdit, UiLike, UiTasteAsk, design_ui_for, ui_like, ui_lean, ui_edit, ui_edit_local, ui_spec_json, UiItem, UiBlock, UiScreen, UiSpec, UiResult, UiDraw, UiBind, UiApp, design_ui, ui_render, ui_app, ui_live_page, ui_binds_checked, ui_result, ui_target, ui_theme, ui_checked, ui_starter, ui_page, ui_icon, ui_icon_names, ui_tokens_css, ui_kinds, ui_accents, ui_accent_problems, ui_wants]
 
 record UiAsk { text: Text target: Text theme: Text accent: Text }
 record UiItem { title: Text text: Text meta: Text icon: Text }
@@ -1410,6 +1410,291 @@ fn ui_app_result(a: UiApp) -> UiResult {
   return {target: c.spec.target, title: c.spec.title, spec: c.spec, page: ui_live_page(c.spec, fixed, b.binds), fixed: fixed, problems: c.problems}
 }
 
+// ---------------------------------------------------------------- editing by talking
+
+// A design changed by words: "warmer", "make it green and gold", "dark",
+// "add pricing", "remove the quote", "serif", "waves". Kosika understands
+// these itself, with no model; anything else goes to the model, which gets
+// the whole design and changes only what was asked.
+record UiEdit { ask: UiAsk spec: UiSpec change: Text }
+record UiEditBrief { task: Text design: Text change: Text }
+record UiEdited { spec: UiSpec done: Text[] understood: Bool }
+
+model ui_editor {
+  input: UiEditBrief
+  output: UiSpec
+  parameters: {
+    max_output_tokens: 7000
+  }
+}
+
+record UiNamedColour { name: Text hex: Text }
+
+fn ui_colour_words() -> UiNamedColour[] {
+  return [
+    {name: "red", hex: "#e5484d"}, {name: "crimson", hex: "#d4234a"}, {name: "orange", hex: "#f76b15"},
+    {name: "amber", hex: "#ffb224"}, {name: "gold", hex: "#d4a72c"}, {name: "yellow", hex: "#f5d90a"},
+    {name: "lime", hex: "#99d52a"}, {name: "green", hex: "#30a46c"}, {name: "emerald", hex: "#10b981"},
+    {name: "mint", hex: "#3dd68c"}, {name: "teal", hex: "#12a594"}, {name: "cyan", hex: "#05a2c2"},
+    {name: "sky", hex: "#0ea5e9"}, {name: "blue", hex: "#3e63dd"}, {name: "navy", hex: "#1e3a8a"},
+    {name: "indigo", hex: "#5b5bd6"}, {name: "violet", hex: "#8e4ec6"}, {name: "purple", hex: "#8e4ec6"},
+    {name: "lavender", hex: "#a78bfa"}, {name: "pink", hex: "#d6409f"}, {name: "magenta", hex: "#c026d3"},
+    {name: "rose", hex: "#f43f5e"}, {name: "coral", hex: "#ff6b5b"}, {name: "peach", hex: "#ffa07a"},
+    {name: "brown", hex: "#a0663a"}, {name: "coffee", hex: "#8b5a3c"}, {name: "sand", hex: "#d6b98c"},
+    {name: "silver", hex: "#a1a1aa"}, {name: "white", hex: "#f4f4f5"}, {name: "black", hex: "#27272a"}
+  ]
+}
+
+// Which of the words name a block kind, with the everyday words for each.
+fn ui_kind_word(w: Text) -> Text {
+  let t = w.lower().trim_marks(",.;:!?'\"")
+  if ui_kinds().contains(t) { return t }
+  if ["prices", "price", "plans", "plan"].contains(t) { return "pricing" }
+  if ["graph", "graphs", "charts", "plot", "diagram"].contains(t) { return "chart" }
+  if ["numbers", "metrics", "stat", "kpis", "kpi"].contains(t) { return "stats" }
+  if ["testimonial", "testimonials", "review", "reviews", "quotes"].contains(t) { return "quote" }
+  if ["step", "how", "process"].contains(t) { return "steps" }
+  if ["card", "gallery", "tiles"].contains(t) { return "cards" }
+  if ["signup", "sign-up", "login", "contact"].contains(t) { return "form" }
+  if ["shapes", "artwork", "illustration", "picture"].contains(t) { return "art" }
+  if ["feature", "benefits", "reasons"].contains(t) { return "features" }
+  if ["tasks", "timeline", "plan"].contains(t) { return "activity" }
+  if ["bars", "goals"].contains(t) { return "progress" }
+  if ["header", "menu", "navbar", "navigation"].contains(t) { return "nav" }
+  if ["button", "call"].contains(t) { return "cta" }
+  if ["tabs"].contains(t) { return "tabbar" }
+  return ""
+}
+
+// A block of a kind, with content shaped from the design's own title,
+// for when Kosika adds it without a model.
+fn ui_new_block(kind: Text, s: UiSpec) -> UiBlock {
+  let name = s.title
+  if kind == "pricing" { return ui_block("pricing", "Simple pricing", "Start free. Upgrade when you need more.", "Pricing", "Choose", [ui_item("Starter", "Everything to begin;One project;Community help", "Free", ""), ui_item("Pro", "Everything in Starter;Unlimited projects;Priority help", "$9 / month", ""), ui_item("Team", "Everything in Pro;Shared spaces;Admin controls", "$29 / month", "")]) }
+  if kind == "chart" { return ui_block("chart", "This week", "How " + name.lower() + " grew, day by day.", "area", "", [ui_item("Mon", "", "12", ""), ui_item("Tue", "", "18", ""), ui_item("Wed", "", "15", ""), ui_item("Thu", "", "24", ""), ui_item("Fri", "", "29", ""), ui_item("Sat", "", "34", "")]) }
+  if kind == "stats" { return ui_block("stats", "", "", "", "", [ui_item("2,400", "people", "+12%", ""), ui_item("98%", "would return", "", ""), ui_item("4.9", "average rating", "", "")]) }
+  if kind == "quote" { return ui_block("quote", "Early user", "It feels like it was made for exactly the way I work.", "Sam Rivera", "", []) }
+  if kind == "steps" { return ui_block("steps", "How it works", "", "Three steps", "", [ui_item("Start", "Tell it what you need, in your own words.", "", ""), ui_item("Shape", "See it take form and adjust anything.", "", ""), ui_item("Share", "Send it on when it is ready.", "", "")]) }
+  if kind == "art" { return ui_block("art", "", "", "", "", [ui_item("blob", "accent", "0.25 0.5 0.22", "float"), ui_item("star", "partner", "0.5 0.4 0.16", "spin"), ui_item("hexagon", "accent", "0.75 0.55 0.18", "sway"), ui_item("wave", "partner", "0.5 0.85 0.12", "float")]) }
+  if kind == "cards" { return ui_block("cards", "Explore", "", "", "See all", [ui_item("Getting started", "The first ten minutes.", "New", "spark"), ui_item("Ideas", "What others made with it.", "Popular", "star"), ui_item("Guides", "Short, practical how-tos.", "", "book")]) }
+  if kind == "form" { return ui_block("form", "Stay in touch", "One short email a month.", "", "Sign up", [ui_item("Name", "", "Your name", "user"), ui_item("Email", "", "you@example.com", "mail")]) }
+  if kind == "features" { return ui_block("features", "Why " + s.brand, "", "Features", "", [ui_item("Fast", "Ready in seconds.", "", "bolt"), ui_item("Thoughtful", "Every detail considered.", "", "spark"), ui_item("Yours", "Your data stays yours.", "", "shield")]) }
+  if kind == "cta" { return ui_block("cta", "Ready when you are", "It takes a minute to start.", "", "Get started", []) }
+  if kind == "list" { return ui_block("list", "Recent", "", "", "", [ui_item("First item", "Added today", "Now", "bolt"), ui_item("Second item", "Added yesterday", "1d", "clock")]) }
+  if kind == "activity" { return ui_block("activity", "Plan", "", "", "", [ui_item("Read the request", "", "done", ""), ui_item("Do the work", "", "now", ""), ui_item("Check and report", "", "next", "")]) }
+  if kind == "progress" { return ui_block("progress", "Goals", "", "", "", [ui_item("This week", "", "70%", ""), ui_item("This month", "", "45%", "")]) }
+  return ui_block(kind, name, "", "", "", [])
+}
+
+fn ui_with_look(s: UiSpec, look: UiLook) -> UiSpec { return {target: s.target, title: s.title, brand: s.brand, accent: s.accent, theme: s.theme, look: look, screens: s.screens} }
+
+fn ui_with_theme(s: UiSpec, theme: Text) -> UiSpec { return {target: s.target, title: s.title, brand: s.brand, accent: s.accent, theme: theme, look: s.look, screens: s.screens} }
+
+fn ui_with_screens(s: UiSpec, screens: UiScreen[]) -> UiSpec { return {target: s.target, title: s.title, brand: s.brand, accent: s.accent, theme: s.theme, look: s.look, screens: screens} }
+
+fn ui_look_of(colours: Text[], shape: Text, art: Text, font: Text) -> UiLook { return {colours: colours, shape: shape, art: art, font: font} }
+
+// The colours a design draws with now, as hex, whether chosen or named.
+fn ui_colours_now(s: UiSpec) -> Text[] {
+  if not s.look.colours.is_empty() { return s.look.colours }
+  let dark = ui_mode(s.theme) == "dark"
+  let a = ui_accent(s.accent)
+  let p = ui_partner(s.accent)
+  return if dark { [a.dark, p.dark] } else { [a.light, p.light] }
+}
+
+fn ui_colour_hex(word: Text) -> Text {
+  for c in ui_colour_words() {
+    if c.name == word { return c.hex }
+  }
+  return ""
+}
+
+fn ui_screen_without(sc: UiScreen, kind: Text) -> UiScreen { return {name: sc.name, blocks: for b in sc.blocks where b.kind != kind { b }} }
+
+// Every change Kosika can make from the words alone.
+fn ui_edit_local(s: UiSpec, change: Text) -> UiEdited {
+  let words = for w in change.lower().words() { w.trim_marks(",.;:!?'\"()") }
+  let t = " " + words.join(" ") + " "
+  var spec = s
+  var done: Text[] = []
+  // light, dark, minimal, vivid
+  let mode = ui_mode(spec.theme)
+  let style = ui_style(spec.theme)
+  let new_mode = if ui_any(t, [" dark ", " darker", " dark mode", " night mode"]) { "dark" } else if ui_any(t, [" light ", " lighter", " bright ", " brighter", " light mode", " day "]) { "light" } else { mode }
+  let new_style = if ui_any(t, ui_minimal_words()) or ui_any(t, [" calmer", " calm ", " simpler", " still "]) { "minimal" } else if ui_any(t, [" vivid", " colourful", " colorful", " animated", " bolder", " bold ", " livelier", " more motion", " more colour", " more color"]) { "vivid" } else { style }
+  if new_mode != mode or new_style != style {
+    spec = ui_with_theme(spec, if new_style == "minimal" { new_mode + " minimal" } else { new_mode })
+    done = done.append(f"made it {new_mode}" + (if new_style != style { ", " + new_style } else { "" }))
+  }
+  // colours: named ones first, then warmer or cooler
+  let named = for w in words where not ui_colour_hex(w).is_empty() { ui_colour_hex(w) }
+  let now = ui_colours_now(spec)
+  var colours = spec.look.colours
+  if not named.is_empty() {
+    colours = if named.length() > 1 { named.take(2) } else { [named[0], now[1]] }
+    done = done.append("changed the colours to " + (for w in words where not ui_colour_hex(w).is_empty() { w }).take(2).join(" and "))
+  } else if ui_any(t, [" warmer", " warm ", " cosier", " cozier", " sunnier"]) {
+    colours = [ui_mix(now[0], "#ff7a3d", 0.45), ui_mix(now[1], "#ffc145", 0.45)]
+    done = done.append("warmed the colours")
+  } else if ui_any(t, [" cooler", " cool ", " colder", " calmer colours", " icier"]) {
+    colours = [ui_mix(now[0], "#3d8bff", 0.45), ui_mix(now[1], "#2dd4bf", 0.45)]
+    done = done.append("cooled the colours")
+  } else if ui_any(t, [" new colours", " new colors", " different colours", " different colors", " other colours", " other colors", " surprise"]) {
+    let seed = ui_seed(change + spec.title)
+    colours = [ui_colour_words()[(ui_rnd(seed, 1) * 26).floor()].hex, ui_colour_words()[(ui_rnd(seed, 2) * 26).floor()].hex]
+    done = done.append("picked new colours")
+  }
+  // art, type, shape
+  let art_named = for a in ui_arts() where t.contains(" " + a) { a }
+  let art = if not art_named.is_empty() { art_named[0] } else if ui_any(t, [" no art", " remove the art", " plain background", " no background"]) { "none" } else if ui_any(t, [" new art", " different art", " other art", " different background", " new background"]) { ui_pick(for a in ui_arts() where a != spec.look.art { a }, ui_seed(change), 4) } else { spec.look.art }
+  if art != spec.look.art { done = done.append(if art == "none" { "took the art away" } else { "drew " + art + " behind it" }) }
+  let font = if ui_any(t, [" serif", " editorial", " elegant", " classic", " magazine"]) { "editorial" } else if ui_any(t, [" mono", " code ", " terminal", " hacker", " technical"]) { "mono" } else if ui_any(t, [" rounded", " friendly", " playful", " soft font"]) { "rounded" } else if ui_any(t, [" grotesk", " techy", " futuristic"]) { "grotesk" } else if ui_any(t, [" plain font", " geometric", " clean font"]) { "geometric" } else { spec.look.font }
+  if font != spec.look.font { done = done.append("set the type in " + font) }
+  let shape = if ui_any(t, [" sharp", " square ", " squarer", " edgy", " corners"]) { "sharp" } else if ui_any(t, [" pill", " capsule"]) { "pill" } else if ui_any(t, [" rounder", " round ", " rounded corners", " softer", " bubbly"]) { "round" } else { spec.look.shape }
+  if shape != spec.look.shape { done = done.append("made the shapes " + shape) }
+  if colours != spec.look.colours or art != spec.look.art or font != spec.look.font or shape != spec.look.shape {
+    spec = ui_with_look(spec, ui_look_of(colours, shape, art, font))
+  }
+  // remove or add parts
+  let removing = ui_any(t, [" remove", " delete", " drop ", " without", " get rid of", " take out", " no "])
+  let adding = ui_any(t, [" add", " include", " put in", " put a", " with a ", " with an ", " needs a", " give it"])
+  let kinds = for w in words where not ui_kind_word(w).is_empty() { ui_kind_word(w) }
+  if removing and not kinds.is_empty() {
+    let gone = kinds[0]
+    spec = ui_with_screens(spec, for sc in spec.screens { ui_screen_without(sc, gone) })
+    done = done.append("removed the " + gone)
+  } else if adding and not kinds.is_empty() {
+    let kind = kinds[0]
+    let first = spec.screens[0]
+    let fresh = ui_new_block(kind, spec)
+    let n = first.blocks.length()
+    let before_end = (for k in 0 until n where ui_bottoms().contains(first.blocks[k].kind) or first.blocks[k].kind == "cta" { k })
+    let at = if before_end.is_empty() { n } else { before_end[0] }
+    let blocks = first.blocks.take(at).concat([fresh]).concat(first.blocks.slice(at, n))
+    let changed: UiScreen = {name: first.name, blocks: blocks}
+    spec = ui_with_screens(spec, [changed].concat(spec.screens.slice(1, spec.screens.length())))
+    done = done.append("added a " + kind)
+  }
+  return {spec: spec, done: done, understood: not done.is_empty()}
+}
+
+fn ui_jstr(t: Text) -> Text { return "\"" + t.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ") + "\"" }
+
+fn ui_jitem(i: UiItem) -> Text { return "{\"title\":" + ui_jstr(i.title) + ",\"text\":" + ui_jstr(i.text) + ",\"meta\":" + ui_jstr(i.meta) + ",\"icon\":" + ui_jstr(i.icon) + "}" }
+
+fn ui_jblock(b: UiBlock) -> Text { return "{\"kind\":" + ui_jstr(b.kind) + ",\"title\":" + ui_jstr(b.title) + ",\"text\":" + ui_jstr(b.text) + ",\"meta\":" + ui_jstr(b.meta) + ",\"action\":" + ui_jstr(b.action) + ",\"items\":[" + (for i in b.items { ui_jitem(i) }).join(",") + "]}" }
+
+// A design as JSON text, to hand to the model.
+fn ui_spec_json(s: UiSpec) -> Text {
+  let look = "{\"colours\":[" + (for c in s.look.colours { ui_jstr(c) }).join(",") + "],\"shape\":" + ui_jstr(s.look.shape) + ",\"art\":" + ui_jstr(s.look.art) + ",\"font\":" + ui_jstr(s.look.font) + "}"
+  let screens = (for sc in s.screens { "{\"name\":" + ui_jstr(sc.name) + ",\"blocks\":[" + (for b in sc.blocks { ui_jblock(b) }).join(",") + "]}" }).join(",")
+  return "{\"target\":" + ui_jstr(s.target) + ",\"title\":" + ui_jstr(s.title) + ",\"brand\":" + ui_jstr(s.brand) + ",\"accent\":" + ui_jstr(s.accent) + ",\"theme\":" + ui_jstr(s.theme) + ",\"look\":" + look + ",\"screens\":[" + screens + "]}"
+}
+
+fn ui_edit_task() -> Text {
+  return "You are a senior product designer changing a design someone already has. The design is given as JSON in the same shape you must return. Change only what the person asks for; keep every other block, word, colour and setting exactly as it is. You may add, remove, reorder or rewrite blocks, and change the look (colours as hex, shape, art, font) and theme, when the change asks for it. The blocks: " + ui_blocks_guide() + " Icons: only these names: " + ui_icons_guide() + ". Return the whole design."
+}
+
+// The ask the design is checked against after an edit: the design's own
+// target, theme and accent, so the first ask's words cannot undo the edit.
+fn ui_edit_ask(e: UiEdit, s: UiSpec) -> UiAsk { return {text: e.ask.text, target: s.target, theme: s.theme, accent: s.accent} }
+
+fn ui_edit_result(e: UiEdit, local: UiEdited, said: UiSpec) -> UiResult {
+  let fresh = not said.screens.is_empty()
+  let base = if fresh { said } else { local.spec }
+  let r = ui_result(ui_edit_ask(e, base), base)
+  let notes = if fresh { ["changed it as you asked"] } else if local.understood { local.done } else { ["Kosika could not tell what to change, so the design is as it was"] }
+  return {target: r.target, title: r.title, spec: r.spec, page: r.page, fixed: notes.concat(r.fixed), problems: r.problems}
+}
+
+fn ui_short(change: Text) -> Bool { return change.trim().words().length() <= 12 }
+
+// A design changed by words. Short changes Kosika understands are made
+// with no model; the rest go to the model, and if it fails, Kosika's own
+// change stands.
+record UiEditCall { spec: UiSpec change: Text }
+
+// Words that ask for the content to change, which only a model can write.
+fn ui_rewrite_words() -> Text[] { return [" rewrite", " write ", " reword", " rename", " replace", " headline", " title", " wording", " copy ", " text ", " about ", " instead of", " translate", " shorter", " longer", " funnier", " more professional", " tone"] }
+
+fn ui_edit_route(local: UiEdited, change: Text) -> Text {
+  let t = " " + (for w in change.lower().words() { w.trim_marks(",.;:!?'\"()") }).join(" ") + " "
+  return if local.understood and ui_short(change) and not ui_any(t, ui_rewrite_words()) { "kosika" } else { "model" }
+}
+
+workflow ui_edit_by_model(c: UiEditCall) -> UiSpec {
+  budget 3 model calls, 600 seconds
+  out = use_model ui_editor(ui_edit_task(), ui_spec_json(c.spec), c.change) retry 1 otherwise ui_no_spec()
+}
+
+workflow ui_edit_by_kosika(c: UiEditCall) -> UiSpec {
+  out = ui_no_spec()
+}
+
+workflow ui_edit(e: UiEdit) -> UiResult {
+  local = ui_edit_local(e.spec, e.change)
+  said  = match ui_edit_route(local, e.change) {
+    case "kosika" { call ui_edit_by_kosika({spec: local.spec, change: e.change}) }
+    case _ { call ui_edit_by_model({spec: local.spec, change: e.change}) }
+  }
+  out   = ui_edit_result(e, local, said)
+}
+
+// ---------------------------------------------------------------- taste
+
+// The looks the person liked, kept by whatever holds their memory (the
+// phone app, Studio, a notebook), and given back with each new ask: the
+// model leans toward them, and Kosika fills what the model leaves out
+// from them before falling back to the seed. Each design stays new.
+record UiLike { look: UiLook theme: Text ask: Text }
+record UiTasteAsk { ask: UiAsk likes: UiLike[] }
+
+fn ui_like(r: UiResult, ask: UiAsk) -> UiLike { return {look: r.spec.look, theme: r.spec.theme, ask: ask.text} }
+
+fn ui_most(values: Text[]) -> Text {
+  var best = ""
+  var count = 0
+  for v in values {
+    let n = (for w in values where w == v { w }).length()
+    if not v.is_empty() and n > count {
+      best = v
+      count = n
+    }
+  }
+  return best
+}
+
+fn ui_taste_text(likes: UiLike[]) -> Text {
+  if likes.is_empty() { return "" }
+  let shown = (for l in likes.take(6) { "colours " + ui_or(l.look.colours.join(" and "), "named accent") + ", " + l.look.art + " art, " + l.look.font + " type, " + l.look.shape + " shapes, " + l.theme }).join("; ")
+  return " The person liked these looks before: " + shown + ". Lean toward what they liked (their colours, art, type and shapes), but make this design its own, not a copy."
+}
+
+// What the model left out, filled from what the person liked.
+fn ui_lean(look: UiLook, likes: UiLike[]) -> UiLook {
+  if likes.is_empty() { return look }
+  let fav_colours = for l in likes where not l.look.colours.is_empty() { l.look.colours }
+  return {
+    colours: if look.colours.is_empty() and not fav_colours.is_empty() { fav_colours[fav_colours.length() - 1] } else { look.colours },
+    shape: if look.shape.trim().is_empty() { ui_most(for l in likes { l.look.shape }) } else { look.shape },
+    art: if look.art.trim().is_empty() { ui_most(for l in likes { l.look.art }) } else { look.art },
+    font: if look.font.trim().is_empty() { ui_most(for l in likes { l.look.font }) } else { look.font }
+  }
+}
+
+fn ui_taste_result(t: UiTasteAsk, said: UiSpec) -> UiResult {
+  let base = if said.screens.is_empty() { ui_with_look(ui_starter(t.ask), ui_lean(ui_no_look(), t.likes)) } else { ui_with_look(said, ui_lean(said.look, t.likes)) }
+  return ui_result(t.ask, base)
+}
+
+// A new design that leans toward the looks the person liked.
+workflow design_ui_for(t: UiTasteAsk) -> UiResult {
+  budget 3 model calls, 600 seconds
+  said = use_model ui_designer(ui_task() + ui_taste_text(t.likes), t.ask.text, ui_target(t.ask), "") retry 1 otherwise ui_no_spec()
+  out  = ui_taste_result(t, said)
+}
+
 // ---------------------------------------------------------------- the model's brief
 
 fn ui_blocks_guide() -> Text {
@@ -1611,4 +1896,50 @@ test "every art is drawn, and the art block draws the shapes asked for" {
   expect html.contains("m-spin")
   expect html.contains("fill:#ff8800")
   expect html.contains("ln2")
+}
+
+test "Kosika makes short changes from the words alone" {
+  base = ui_result(ui_ask("a website for a kite festival"), ui_no_spec()).spec
+  warm = ui_edit_local(base, "make it warmer")
+  expect warm.understood
+  expect warm.spec.look.colours.length() == 2
+  green = ui_edit_local(base, "green and gold please")
+  expect green.spec.look.colours == ["#30a46c", "#d4a72c"]
+  light = ui_edit_local(base, "light and minimal")
+  expect light.spec.theme == "light minimal"
+  art = ui_edit_local(base, "waves behind it, serif type, sharp corners")
+  expect art.spec.look.art == "waves"
+  expect art.spec.look.font == "editorial"
+  expect art.spec.look.shape == "sharp"
+  priced = ui_edit_local(base, "add pricing")
+  expect ui_all_blocks(priced.spec).contains("pricing")
+  expect ui_all_blocks(priced.spec)[ui_all_blocks(priced.spec).length() - 1] == "footer"
+  gone = ui_edit_local(base, "remove the features")
+  expect not ui_all_blocks(gone.spec).contains("features")
+  expect not ui_edit_local(base, "hmm").understood
+  expect ui_edit_route(warm, "make it warmer") == "kosika"
+  expect ui_edit_route(ui_edit_local(base, "rewrite the headline to be about night flying"), "rewrite the headline to be about night flying") == "model"
+}
+
+test "an edit is not undone by the first ask's words" {
+  e: UiEdit = {ask: ui_ask("a dark website for a kite festival"), spec: ui_result(ui_ask("a dark website for a kite festival"), ui_no_spec()).spec, change: "light"}
+  r = ui_edit_result(e, ui_edit_local(e.spec, "light"), ui_no_spec())
+  expect r.spec.theme == "light"
+  expect r.fixed[0] == "made it light"
+  expect ui_spec_json(r.spec).contains("\"theme\":\"light\"")
+}
+
+test "new designs lean toward the looks the person liked" {
+  liked: UiLike = {look: {colours: ["#ff4d4d", "#0077b6"], shape: "round", art: "rings", font: "editorial"}, theme: "light", ask: "a kite festival"}
+  l = ui_lean(ui_no_look(), [liked, liked])
+  expect l.colours == ["#ff4d4d", "#0077b6"]
+  expect l.art == "rings"
+  expect l.font == "editorial"
+  own = ui_lean({colours: ["#30a46c"], shape: "", art: "waves", font: ""}, [liked])
+  expect own.colours == ["#30a46c"]
+  expect own.art == "waves"
+  expect own.shape == "round"
+  expect ui_taste_text([liked]).contains("rings art")
+  r = ui_taste_result({ask: ui_ask("a website for a surf school"), likes: [liked]}, ui_no_spec())
+  expect r.spec.look.art == "rings"
 }
