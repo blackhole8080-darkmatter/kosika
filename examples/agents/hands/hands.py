@@ -8,16 +8,39 @@
     python hands.py press notepad Edit    # press it with the agent's own pointer; the mouse stays put
     python hands.py click notepad         # front that window and click its middle
     python hands.py type-into notepad "w" # front that window and type there
+    python hands.py write notepad "w"     # the same, the agent's own pointer showing "typing"
+    python hands.py read notepad          # "read", then the words in that program's text field
+    python hands.py refuse "why"          # Kosika refused the action: say why, do nothing (exit 5)
     python hands.py click                 # a left click where the cursor is
     python hands.py type "some words"     # type them, a letter at a time
     python hands.py key enter|tab|escape  # press one key
-    python hands.py open notepad          # start one of the allowed programs
+    python hands.py open notepad          # start it, or a fresh page if it is open
+    python hands.py memory                # what past writes taught (typing.kos reads it)
+    python hands.py remember "LINES"      # keep the memory typing.kos wrote
+    python hands.py skip "why"            # a step Kosika decided is not needed: nothing done
+
+Before the action, Kosika may also say how to write (typing.kos):
+--way field|keys|paste, --rate LETTERS_A_SECOND, --clear-first; and how long
+to wait for the person (kit.kos): --quiet SECONDS --wait-most SECONDS.
 
 Every action is one run of this file, which a Kosika agent asks for through
 its shell tool, so Kosika asks the person before each one. Holding Escape
 stops it: before every step and between the letters it types, an Escape
 held down ends the action at once with exit code 3, and nothing more is
-done. Only the programs named in OPENABLE can be started.
+done. Only the programs apps.kos describes can be started or found.
+
+This file is only the hands: what to do, and whether the agent may, is
+decided in Kosika (main.kos, with each agent's kit in kits.kos). Kosika
+names the acting agent, its pointer's colour and its typing speed before the
+action, all optional:
+
+    python hands.py --agent coder-1 --colour pink --speed fast write notepad "hi"
+
+Speeds: "steady" (a letter at a time), "fast" (about four times quicker) and
+"instant" (the whole text pasted at once, the clipboard put back after; if
+the clipboard holds a picture or files it is left alone and "fast" is used).
+`read` gives the field's words back, so Kosika can check that what was
+typed is really there before it says so.
 
 It uses Windows' own SendInput through ctypes and nothing else.
 """
@@ -42,8 +65,34 @@ except (AttributeError, OSError):
 
 ESCAPE = 0x1B
 KEYS = {"enter": 0x0D, "tab": 0x09, "escape": 0x1B, "backspace": 0x08, "space": 0x20}
-OPENABLE = {"notepad": ["notepad.exe"], "calculator": ["calc.exe"]}
-WINDOW_CLASS = {"notepad": "Notepad", "calculator": "ApplicationFrameWindow"}
+#: The programs, as apps.kos describes them: told by Kosika with each action
+#: (--app NAME --window CLASS --program EXE --fields KINDS --fresh BUTTON),
+#: or, when hands.py is run by hand, asked of apps.kos. Nothing else can be
+#: started or found.
+APPS: dict[str, dict] = {}
+HERE = Path(__file__).resolve().parent
+RUNNER = (
+    "import json, sys\n"
+    "from kosika.modules import load_program\n"
+    "from kosika.runtime import run\n"
+    "print(json.dumps(run(load_program(sys.argv[1]), 'describe', None, inputs={'a': {'name': sys.argv[2]}})))\n"
+)
+
+
+def app(name: str) -> dict | None:
+    """The program called that, or None when apps.kos does not describe it."""
+    if name not in APPS:
+        env = {**os.environ, "PYTHONPATH": str(HERE.parents[2])}
+        ran = subprocess.run([sys.executable, "-c", RUNNER, str(HERE / "apps.kos"), name],
+                             capture_output=True, text=True, encoding="utf-8", env=env, timeout=60)
+        try:
+            told = json.loads(ran.stdout.strip().splitlines()[-1])
+        except (ValueError, IndexError):
+            return None
+        APPS[name] = {"window": told["window"], "program": told["program"],
+                      "fields": told["fields"], "fresh": told["fresh"]}
+    found = APPS[name]
+    return found if found["program"] else None
 INPUT_MOUSE, INPUT_KEYBOARD = 0, 1
 LEFTDOWN, LEFTUP = 0x0002, 0x0004
 KEYUP, UNICODE = 0x0002, 0x0004
@@ -90,37 +139,79 @@ def ring() -> None:
     ACTIVE.touch()
     if not fresh and not _ring_started:
         flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        subprocess.Popen([sys.executable, str(Path(__file__).with_name("ring.py"))], creationflags=flags,
+        subprocess.Popen([sys.executable, str(Path(__file__).with_name("ring.py")), "--colour", COLOUR], creationflags=flags,
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         _ring_started = True
         time.sleep(0.4)
 
 
 AGENT = os.environ.get("KOSIKA_AGENT", "Kosika")
+COLOUR = ""
 #: Set while the agent acts with its own pointer only, so the ring round
 #: the person's mouse is not shown: that mouse is not Kosika's then.
 OWN_POINTER_ONLY = False
 POINTERS = Path.home() / ".kosika" / "pointers"
 
 
-def point_at(x: int, y: int) -> None:
+def point_at(x: int, y: int, state: str = "idle") -> None:
     """Send this agent's own pointer (pointer.py) to x, y, starting it if
-    it is not on the screen; the person's mouse does not move."""
+    it is not on the screen; the person's mouse does not move. The state,
+    "idle", "typing" or "press", changes how the pointer is drawn."""
     POINTERS.mkdir(parents=True, exist_ok=True)
     target = POINTERS / f"{AGENT}.json"
     fresh = target.exists() and time.time() - target.stat().st_mtime < 80
-    target.write_text(json.dumps({"x": x, "y": y}), encoding="utf-8")
+    target.write_text(json.dumps({"x": x, "y": y, "state": state}), encoding="utf-8")
     if not fresh:
+        ready = POINTERS / f"{AGENT}.ready"
+        ready.unlink(missing_ok=True)
         flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        subprocess.Popen([sys.executable, str(Path(__file__).with_name("pointer.py")), "--name", AGENT],
+        subprocess.Popen([sys.executable, str(Path(__file__).with_name("pointer.py")), "--name", AGENT,
+                          "--colour", COLOUR],
                          creationflags=flags, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        # The first time, the pointer's look is designed (cursor.kos) and
-        # rendered, which takes a few seconds; wait for it, then a moment to glide.
-        for _ in range(60):
-            if any(POINTERS.glob(f"{AGENT}@*.png")):
+        # The first time, the pointer's three looks are designed (cursor.kos)
+        # and rendered one after another, which can take twenty seconds; wait
+        # until pointer.py says its windows are up, then a moment to glide in.
+        for _ in range(160):
+            if ready.exists():
                 break
             time.sleep(0.25)
         time.sleep(0.8)
+
+
+class LASTINPUTINFO(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.UINT), ("dwTime", wintypes.DWORD)]
+
+
+def idle_seconds() -> float:
+    """How long since the person last touched the keyboard or the mouse."""
+    info = LASTINPUTINFO(ctypes.sizeof(LASTINPUTINFO))
+    user32.GetLastInputInfo(ctypes.byref(info))
+    return ((ctypes.windll.kernel32.GetTickCount() - info.dwTime) & 0xFFFFFFFF) / 1000
+
+
+#: Told by Kosika (kit.kos) for an action that needs the keyboard, the mouse
+#: or the front window: the seconds the person must have left them alone
+#: first, and the longest to wait for that before doing nothing (exit 6).
+QUIET, WAIT_MOST = 0.0, 60.0
+
+
+def wait_for_quiet() -> None:
+    if QUIET <= 0:
+        return
+    started, told = time.time(), False
+    while idle_seconds() < QUIET:
+        if stopped():
+            print("stopped: Escape is held")
+            sys.exit(3)
+        if time.time() - started > WAIT_MOST:
+            print(f"you kept working for {WAIT_MOST:.0f} s, so nothing was done")
+            sys.exit(6)
+        if not told:
+            print("waiting for you to stop typing or moving the mouse", flush=True)
+            told = True
+        time.sleep(0.25)
+    if told:
+        print(f"waited {time.time() - started:.0f} s for you", flush=True)
 
 
 def guard() -> None:
@@ -155,20 +246,53 @@ def move(x: int, y: int) -> None:
         time.sleep(0.012)
 
 
-def window(name: str) -> int:
+def window(name: str, wait: bool = True) -> int:
     """The program's window, waited for up to eight seconds, or 0."""
-    for _ in range(40):
-        handle = user32.FindWindowW(WINDOW_CLASS.get(name), None)
+    for _ in range(40 if wait else 1):
+        handle = user32.FindWindowW(app(name)["window"], None)
         if handle:
             return handle
         time.sleep(0.2)
     return 0
 
 
-def to_front(handle: int) -> None:
+def in_front(handle: int) -> bool:
+    return user32.GetForegroundWindow() == handle
+
+
+def to_front(handle: int) -> bool:
+    """Restore the window and bring it to the front; True only if it really
+    is in front. Windows refuses SetForegroundWindow to a background process
+    while the person works in another window, so the request is made from
+    the front window's own input thread, and then checked."""
     user32.ShowWindow(handle, 9)  # restore if minimised
     user32.SetForegroundWindow(handle)
+    time.sleep(0.15)
+    if not in_front(handle):
+        front = user32.GetForegroundWindow()
+        theirs = user32.GetWindowThreadProcessId(front, None)
+        mine = kernel32.GetCurrentThreadId()
+        if theirs and theirs != mine and user32.AttachThreadInput(mine, theirs, True):
+            try:
+                user32.BringWindowToTop(handle)
+                user32.SetForegroundWindow(handle)
+            finally:
+                user32.AttachThreadInput(mine, theirs, False)
     time.sleep(0.3)
+    return in_front(handle)
+
+
+def must_be_in_front(handle: int, name: str) -> None:
+    """Keys go to whatever window is in front, so nothing is typed unless the
+    program asked for is: exit 4, nothing done."""
+    if not to_front(handle):
+        print(f"{name} could not be brought to the front, so nothing was typed (another window has the keyboard)")
+        sys.exit(4)
+
+
+#: The window keys are meant for, while typing: if another window comes to
+#: the front (the person clicked it), typing stops there with exit 4.
+TARGET = 0
 
 
 def middle(handle: int) -> tuple[int, int]:
@@ -184,7 +308,7 @@ def look(name: str, most: int = 150) -> list[dict]:
     """What the program's window shows, by name: eyes.ps1 reads Windows' own
     accessibility tree, so there is no picture and no model to guess."""
     run = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(EYES),
-                          "-Class", WINDOW_CLASS[name], "-Most", str(most)],
+                          "-Class", app(name)["window"], "-Most", str(most)],
                          capture_output=True, text=True, encoding="utf-8", timeout=60)
     things = []
     for line in run.stdout.splitlines():
@@ -222,26 +346,257 @@ def key(code: int) -> None:
     send(down, up)
 
 
-def type_text(text: str) -> None:
-    for letter in text:
+def letter(ch: str) -> None:
+    """One letter, down and up as separate inputs: sent together, the new
+    Notepad drops some letters and repeats others."""
+    down, up = INPUT(type=INPUT_KEYBOARD), INPUT(type=INPUT_KEYBOARD)
+    down.ki.wScan = up.ki.wScan = ord(ch)
+    down.ki.dwFlags, up.ki.dwFlags = UNICODE, UNICODE | KEYUP
+    send(down)
+    time.sleep(PAUSES[SPEED][0])
+    send(up)
+
+
+#: (between down and up, after each letter) in seconds, for each speed.
+#: The new Notepad falls behind at 2 ms and 4 ms (about 110 letters a
+#: second) and then puts later letters in place of earlier ones ("brown oox
+#: 8888"); at 4 ms and 10 ms (about 60 a second) twenty runs in a row were exact.
+PAUSES = {"steady": (0.015, 0.05), "fast": (0.004, 0.010), "instant": (0.004, 0.010)}
+SPEED = "steady"
+
+#: How the words go in, and how fast, as Kosika chose (main.kos, typing.kos):
+#: "keys" letter by letter at RATE letters a second (0: by SPEED's name),
+#: "paste" through the clipboard, "field" straight into the field through
+#: accessibility with no keyboard at all. CLEAR_FIRST empties the page
+#: first; Kosika asks for it only on a page it opened fresh itself.
+WAY, RATE, CLEAR_FIRST = "keys", 0.0, False
+MEMORY = Path.home() / ".kosika" / "hands-typing.txt"
+
+
+def set_rate(rate: float) -> None:
+    """Letters a second, as pauses: three tenths of each letter's time with
+    the key down, the rest after it."""
+    global SPEED
+    PAUSES["rate"] = (0.3 / rate, 0.7 / rate)
+    SPEED = "rate"
+
+
+def write_by_field(name: str, handle: int, words: str) -> None:
+    """Put the words at the end of the program's field through Windows'
+    accessibility: no keyboard, the window not brought forward, so the
+    person can go on working. Exit 7, nothing done, if the field will not
+    take them so."""
+    field = None if user32.IsIconic(handle) else text_field(name)
+    if field:
+        point_at(field["x"], field["y"], "typing")
+    started = time.time()
+    run = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(EYES),
+                          "-Class", app(name)["window"], "-Write", *(["-Clear"] if CLEAR_FIRST else [])],
+                         capture_output=True, text=True, encoding="utf-8", timeout=60,
+                         env={**os.environ, "KOSIKA_HANDS_TEXT": words.replace("\r\n", "\n").replace("\n", "\r\n")})
+    try:
+        said = json.loads(run.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        said = {"error": (run.stderr.strip() or "eyes.ps1 said nothing")[:200]}
+    if field:
+        point_at(field["x"], field["y"], "idle")
+    if "error" in said:
+        print(f"not written: {said['error']}")
+        sys.exit(7)
+    cleared = "emptied the page, then " if CLEAR_FIRST else ""
+    print(f"{cleared}wrote {len(words)} letters straight into {name}'s field, no keyboard (field, {time.time() - started:.1f} s)")
+
+
+def clear_page(name: str) -> str:
+    """Empty the page Kosika opened fresh: through accessibility if the field
+    allows it, else Ctrl+A and Delete in the window in front."""
+    if "error" not in eyes(name, "-Clear"):
+        return "emptied the page through accessibility, then "
+    held, a_down, a_up, let_go = (INPUT(type=INPUT_KEYBOARD) for _ in range(4))
+    held.ki.wVk = let_go.ki.wVk = VK_CONTROL
+    a_down.ki.wVk = a_up.ki.wVk = 0x41
+    a_up.ki.dwFlags = let_go.ki.dwFlags = KEYUP
+    still_in_front()
+    send(held, a_down, a_up, let_go)
+    time.sleep(0.15)
+    key(0x2E)  # Delete
+    time.sleep(0.2)
+    return "emptied the page with Ctrl+A and Delete, then "
+
+
+def still_in_front(done: int = 0) -> None:
+    if TARGET and not in_front(TARGET):
+        print(f"stopped after {done} letters: another window came to the front, so no more was typed")
+        sys.exit(4)
+
+
+def type_text(text: str, speed: str | None = None) -> str:
+    """Type the text at the kit's speed; gives back how it was typed. Escape
+    is looked at before every letter (or once, for an instant paste)."""
+    global SPEED
+    chosen = speed or SPEED
+    if chosen == "instant":
         guard()
-        if letter == "\n":
+        still_in_front()
+        if paste(text):
+            return "instant"
+        chosen = "fast"  # the clipboard held something that is not text: not touched
+    SPEED = chosen
+    for done, ch in enumerate(text):
+        guard()
+        still_in_front(done)
+        if ch == "\n":
             key(KEYS["enter"])
         else:
-            # Down and up as separate inputs with a pause between: sent
-            # together, the new Notepad drops some letters and repeats others.
-            down, up = INPUT(type=INPUT_KEYBOARD), INPUT(type=INPUT_KEYBOARD)
-            down.ki.wScan = up.ki.wScan = ord(letter)
-            down.ki.dwFlags, up.ki.dwFlags = UNICODE, UNICODE | KEYUP
-            send(down)
-            time.sleep(0.015)
-            send(up)
+            letter(ch)
+        time.sleep(PAUSES[chosen][1])
+    return chosen
+
+
+CF_UNICODETEXT, GMEM_MOVEABLE, VK_CONTROL, VK_V = 13, 0x0002, 0x11, 0x56
+kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+kernel32.GlobalAlloc.restype = ctypes.c_void_p
+kernel32.GlobalAlloc.argtypes = [wintypes.UINT, ctypes.c_size_t]
+kernel32.GlobalLock.restype = ctypes.c_void_p
+kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
+kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]
+user32.GetClipboardData.restype = ctypes.c_void_p
+user32.SetClipboardData.restype = ctypes.c_void_p
+user32.SetClipboardData.argtypes = [wintypes.UINT, ctypes.c_void_p]
+
+
+def clipboard_open() -> bool:
+    for _ in range(20):
+        if user32.OpenClipboard(None):
+            return True
         time.sleep(0.05)
+    return False
+
+
+def clipboard_text() -> str | None:
+    handle = user32.GetClipboardData(CF_UNICODETEXT)
+    if not handle:
+        return None
+    locked = kernel32.GlobalLock(handle)
+    try:
+        return ctypes.wstring_at(locked)
+    finally:
+        kernel32.GlobalUnlock(handle)
+
+
+def clipboard_put(text: str) -> None:
+    data = ctypes.create_unicode_buffer(text)
+    size = ctypes.sizeof(data)
+    handle = kernel32.GlobalAlloc(GMEM_MOVEABLE, size)
+    locked = kernel32.GlobalLock(handle)
+    ctypes.memmove(locked, data, size)
+    kernel32.GlobalUnlock(handle)
+    user32.EmptyClipboard()
+    user32.SetClipboardData(CF_UNICODETEXT, handle)
+
+
+def paste(text: str) -> bool:
+    """Put the whole text in at once: through the clipboard, with Ctrl+V,
+    then put the person's words back on the clipboard. If the clipboard holds
+    a picture or files, it is left alone and False is given back."""
+    if not clipboard_open():
+        return False
+    try:
+        if user32.CountClipboardFormats() and not user32.IsClipboardFormatAvailable(CF_UNICODETEXT):
+            return False
+        before = clipboard_text()
+        clipboard_put(text.replace("\r\n", "\n").replace("\n", "\r\n"))
+    finally:
+        user32.CloseClipboard()
+    held, v = INPUT(type=INPUT_KEYBOARD), INPUT(type=INPUT_KEYBOARD)
+    held.ki.wVk, v.ki.wVk = VK_CONTROL, VK_V
+    let_go, v_up = INPUT(type=INPUT_KEYBOARD), INPUT(type=INPUT_KEYBOARD)
+    let_go.ki.wVk, v_up.ki.wVk = VK_CONTROL, VK_V
+    let_go.ki.dwFlags = v_up.ki.dwFlags = KEYUP
+    send(held, v, v_up, let_go)
+    time.sleep(0.25)  # the program reads the clipboard before it is put back
+    if clipboard_open():
+        try:
+            if before is None:
+                user32.EmptyClipboard()
+            else:
+                clipboard_put(before)
+        finally:
+            user32.CloseClipboard()
+    return True
+
+
+def field_text(name: str) -> str | None:
+    """What the program's text field holds now, read through Windows'
+    accessibility (eyes.ps1 -Read), or None if it cannot be read."""
+    run = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(EYES),
+                          "-Class", app(name)["window"], "-Read"],
+                         capture_output=True, text=True, encoding="utf-8", timeout=60)
+    try:
+        said = json.loads(run.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        return None
+    return said.get("text")
+
+
+def text_field(name: str) -> dict | None:
+    """The program's place for words: the first thing of a kind apps.kos names."""
+    return next((t for t in look(name) if t.get("kind") in app(name)["fields"]), None)
+
+
+def eyes(name: str, *asked: str) -> dict:
+    """Ask eyes.ps1 one thing about the program's window; its JSON answer,
+    with "error" in it when it could not be done."""
+    run = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(EYES),
+                          "-Class", app(name)["window"], *asked],
+                         capture_output=True, text=True, encoding="utf-8", timeout=60)
+    try:
+        return json.loads(run.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        return {"error": (run.stderr.strip() or "eyes.ps1 said nothing")[:200]}
+
+
+def eyes_press(name: str, thing: str) -> dict:
+    return eyes(name, "-Press", thing)
 
 
 def main(args: list[str]) -> None:
+    global OWN_POINTER_ONLY, AGENT, COLOUR, SPEED, TARGET, QUIET, WAIT_MOST
+    # Who acts, in what colour, how fast, and how long to wait for the
+    # person: told by Kosika before the action.
+    global WAY, RATE, CLEAR_FIRST
+    described: dict[str, str] = {}
+    while args and (args[0] == "--clear-first" or len(args) > 1 and args[0] in (
+            "--agent", "--colour", "--speed", "--quiet", "--wait-most",
+            "--app", "--window", "--program", "--fields", "--fresh", "--way", "--rate")):
+        if args[0] == "--clear-first":
+            CLEAR_FIRST, args = True, args[1:]
+            continue
+        if args[0] == "--way" and args[1] in ("keys", "paste", "field"):
+            WAY = args[1]
+        elif args[0] == "--rate" and float(args[1]) > 0:
+            RATE = float(args[1])
+            set_rate(RATE)
+        elif args[0] in ("--app", "--window", "--program", "--fields", "--fresh"):
+            described[args[0][2:]] = args[1]
+        elif args[0] == "--agent":
+            AGENT = args[1]
+        elif args[0] == "--colour":
+            COLOUR = args[1]
+        elif args[0] == "--quiet":
+            QUIET = float(args[1])
+        elif args[0] == "--wait-most":
+            WAIT_MOST = float(args[1])
+        elif args[1] in PAUSES:
+            SPEED = args[1]
+        args = args[2:]
+    if described.get("app"):
+        APPS[described["app"]] = {"window": described.get("window", ""), "program": described.get("program", ""),
+                                  "fields": [f for f in described.get("fields", "").split(",") if f],
+                                  "fresh": described.get("fresh", "")}
     if not args:
         raise SystemExit(__doc__)
+    wait_for_quiet()
     what, rest = args[0], args[1:]
     if what == "where":
         x, y = where()
@@ -249,7 +604,7 @@ def main(args: list[str]) -> None:
     elif what == "move" and len(rest) == 2:
         move(int(float(rest[0])), int(float(rest[1])))
         print("moved to", *where())
-    elif what == "move-to" and rest and rest[0] in OPENABLE:
+    elif what == "move-to" and rest and app(rest[0]):
         handle = window(rest[0])
         if not handle:
             print(f"no {rest[0]} window to move to")
@@ -257,13 +612,13 @@ def main(args: list[str]) -> None:
         to_front(handle)
         move(*middle(handle))
         print(f"moved to the middle of {rest[0]},", *where())
-    elif what == "look" and rest and rest[0] in OPENABLE:
+    elif what == "look" and rest and app(rest[0]):
         if not window(rest[0]):
             print(f"no {rest[0]} window to look at")
             sys.exit(2)
         for thing in look(rest[0]):
             print(f"{thing['kind']}: {thing['name']}")
-    elif what == "click-on" and len(rest) > 1 and rest[0] in OPENABLE:
+    elif what == "click-on" and len(rest) > 1 and app(rest[0]):
         # Click a thing by the name the window gives it, not by guessing pixels.
         handle = window(rest[0])
         if not handle:
@@ -278,8 +633,7 @@ def main(args: list[str]) -> None:
         move(thing["x"], thing["y"])
         click()
         print(f"clicked {thing['kind']} {thing['name']!r} in {rest[0]}")
-    elif what == "press" and len(rest) > 1 and rest[0] in OPENABLE:
-        global OWN_POINTER_ONLY
+    elif what == "press" and len(rest) > 1 and app(rest[0]):
         OWN_POINTER_ONLY = True
         # Press a thing by its name WITHOUT moving the person's mouse: the
         # agent's own pointer (pointer.py) glides there, then Windows'
@@ -295,15 +649,15 @@ def main(args: list[str]) -> None:
         point_at(thing["x"], thing["y"])
         time.sleep(0.8)
         guard()
-        done = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(EYES),
-                               "-Class", WINDOW_CLASS[rest[0]], "-Press", thing["name"]],
-                              capture_output=True, text=True, encoding="utf-8", timeout=60)
-        said = json.loads((done.stdout or "{}").strip().splitlines()[-1] if done.stdout.strip() else "{}")
-        if "error" in said or done.returncode:
-            print(said.get("error") or done.stderr.strip()[:200])
+        point_at(thing["x"], thing["y"], "press")
+        said = eyes_press(rest[0], thing["name"])
+        if "error" in said:
+            print(said["error"])
             sys.exit(2)
+        time.sleep(0.35)
+        point_at(thing["x"], thing["y"], "idle")
         print(f"{said['how']} {thing['kind']} {said['pressed']!r} in {rest[0]}, your mouse not moved")
-    elif what == "click" and rest and rest[0] in OPENABLE:
+    elif what == "click" and rest and app(rest[0]):
         # Aimed at a program: front it and click its middle, whatever the
         # person clicked while answering the last question.
         handle = window(rest[0])
@@ -314,30 +668,102 @@ def main(args: list[str]) -> None:
         move(*middle(handle))
         click()
         print(f"clicked in {rest[0]} at", *where())
-    elif what == "type-into" and len(rest) > 1 and rest[0] in OPENABLE:
+    elif what == "type-into" and len(rest) > 1 and app(rest[0]):
         handle = window(rest[0])
         if not handle:
             print(f"no {rest[0]} window to type into")
             sys.exit(2)
-        to_front(handle)
-        type_text(" ".join(rest[1:]))
-        print(f"typed {len(' '.join(rest[1:]))} letters into {rest[0]}")
+        must_be_in_front(handle, rest[0])
+        TARGET = handle
+        words, started = " ".join(rest[1:]), time.time()
+        how = type_text(words)
+        print(f"typed {len(words)} letters into {rest[0]} ({how}, {time.time() - started:.1f} s)")
+    elif what == "write" and len(rest) > 1 and app(rest[0]):
+        # Type into the program with the agent's own pointer showing where,
+        # tagged "typing"; the person's mouse is not moved.
+        OWN_POINTER_ONLY = True
+        handle = window(rest[0])
+        if not handle:
+            print(f"no {rest[0]} window to write in")
+            sys.exit(2)
+        words = " ".join(rest[1:])
+        if WAY == "field":
+            write_by_field(rest[0], handle, words)
+            return
+        # Restored and in front first: a minimised window's field is far off
+        # the screen, and keys only reach the window in front.
+        must_be_in_front(handle, rest[0])
+        field = text_field(rest[0])
+        x, y = (field["x"], field["y"]) if field else middle(handle)
+        point_at(x, y, "typing")
+        must_be_in_front(handle, rest[0])  # looking and drawing the pointer took time
+        TARGET = handle
+        cleared = clear_page(rest[0]) if CLEAR_FIRST else ""
+        started = time.time()
+        how = type_text(words, "instant" if WAY == "paste" else None)
+        point_at(x, y, "idle")
+        rate = f"{RATE:g} a second" if how == "rate" else how
+        print(f"{cleared}typed {len(words)} letters into {rest[0]} ({rate}, {time.time() - started:.1f} s)")
+    elif what == "read" and rest and app(rest[0]):
+        # The first line says whether the field could be read; the words follow.
+        there = field_text(rest[0]) if window(rest[0]) else None
+        print("read" if there is not None else "unreadable")
+        print(there or "", end="")
+    elif what == "refuse":
+        print("refused:", " ".join(rest))
+        sys.exit(5)
+    elif what == "skip":
+        # A step Kosika decided is not needed this time: nothing is done.
+        print("skipped:", " ".join(rest))
+    elif what == "memory":
+        # What the hands remember of past writes (typing.kos reads and decides).
+        print(MEMORY.read_text(encoding="utf-8") if MEMORY.exists() else "", end="")
+    elif what == "remember" and rest:
+        # The memory as typing.kos wrote it, kept for next time.
+        MEMORY.parent.mkdir(parents=True, exist_ok=True)
+        MEMORY.write_text(" ".join(rest).strip() + "\n", encoding="utf-8")
+        print(f"remembered {len(' '.join(rest).strip().splitlines())} lines in {MEMORY}")
     elif what == "click":
         click()
         print("clicked at", *where())
     elif what == "type" and rest:
-        type_text(" ".join(rest))
-        print(f"typed {len(' '.join(rest))} letters")
+        words, started = " ".join(rest), time.time()
+        how = type_text(words)
+        print(f"typed {len(words)} letters ({how}, {time.time() - started:.1f} s); not checked: no program was named")
     elif what == "key" and rest and rest[0] in KEYS:
         key(KEYS[rest[0]])
         print("pressed", rest[0])
-    elif what == "open" and rest and rest[0] in OPENABLE:
+    elif what == "open" and rest and app(rest[0]):
         guard()
-        subprocess.Popen(OPENABLE[rest[0]])
-        handle = window(rest[0])
-        if handle:
-            to_front(handle)
-        print("opened", rest[0])
+        told, already = app(rest[0]), window(rest[0], wait=False)
+        if already and told["fresh"]:
+            # Open already: a fresh empty page, pressed through accessibility,
+            # so nothing of the person's is written into.
+            said = eyes_press(rest[0], told["fresh"])
+            if "error" in said:
+                print(f"{rest[0]} is open but its {told['fresh']!r} could not be pressed: {said['error']}")
+                sys.exit(2)
+            to_front(already)
+            print(f"opened a fresh page in {rest[0]} ({said['pressed']})")
+        else:
+            subprocess.Popen([told["program"]])
+            handle = window(rest[0])
+            if handle:
+                to_front(handle)
+            fresh = ""
+            if handle and told["fresh"]:
+                # Started, it may show pages kept from before (Notepad brings
+                # back unsaved tabs): a fresh one too, so none of those is written in.
+                for _ in range(10):
+                    said = eyes_press(rest[0], told["fresh"])
+                    if "error" not in said:
+                        fresh = f", with a fresh page ({said['pressed']})"
+                        break
+                    time.sleep(0.5)
+                else:
+                    print(f"opened {rest[0]}, but its {told['fresh']!r} could not be pressed, so there is no fresh page")
+                    sys.exit(2)
+            print(f"opened {rest[0]}{fresh}")
     else:
         print(f"not something the hands do: {' '.join(args)}")
         sys.exit(2)

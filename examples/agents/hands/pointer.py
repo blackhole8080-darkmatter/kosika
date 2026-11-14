@@ -1,6 +1,6 @@
 """A Kosika agent's own pointer on the screen, beside the person's mouse.
 
-    python pointer.py --name coder-1        # hands.py starts one for each agent
+    python pointer.py --name coder-1 --colour pink   # hands.py starts one for each agent
 
 Its look is designed in Kosika (cursor.kos, with Kosika Designs' palette):
 a vector arrow with the agent's name on a tag, drawn as SVG and rendered
@@ -11,7 +11,10 @@ click. It does not move the mouse: it glides to where the agent is about to
 act, which the agent writes to ~/.kosika/pointers/NAME.json ({"x", "y"}),
 and the agent then acts there through Windows' accessibility (eyes.ps1
 -Press), so the person's own mouse stays where they left it and several
-agents can be seen at once. It hides after a few quiet seconds and ends
+agents can be seen at once. It is drawn in three states, all in the colour
+the agent's kit asks for (kits.kos): "idle", "typing" (its tag says so) and
+"press" (rings spread from the tip); the agent says which in the same file
+({"x", "y", "state"}). It hides after a few quiet seconds and ends
 after a quiet minute and a half.
 """
 
@@ -56,28 +59,42 @@ def scale_here() -> float:
         return 1.0
 
 
-def picture(name: str, scale: float) -> Path:
-    """The pointer's picture: designed by cursor.kos, rendered by Chrome."""
+#: Runs one workflow of a Kosika file and prints its result as JSON.
+RUNNER = (
+    "import json, sys\n"
+    "from kosika.modules import load_program\n"
+    "from kosika.runtime import run\n"
+    "ask = json.loads(open(sys.argv[3], encoding='utf-8').read())\n"
+    "print(json.dumps(run(load_program(sys.argv[1]), sys.argv[2], None, inputs=ask)))\n"
+)
+STATES = ("idle", "typing", "press")
+
+
+def picture(name: str, colour: str, state: str, scale: float) -> tuple[Path, int]:
+    """The pointer's picture in one state, and where its tip is in it:
+    designed by cursor.kos, rendered by Chrome, kept for next time."""
     POINTERS.mkdir(parents=True, exist_ok=True)
-    png = POINTERS / f"{''.join(c if c.isalnum() or c in '-_' else '_' for c in name)}@{scale:.2f}.png"
-    if png.exists():
-        return png
+    safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in name)
+    tint = "".join(c for c in colour.lower() if c.isalnum()) or "auto"
+    png = POINTERS / f"{safe}-{state}-{tint}@{scale:.2f}.png"
+    tip_file = png.with_suffix(".tip")
+    if png.exists() and tip_file.exists():
+        return png, int(tip_file.read_text())
     with tempfile.TemporaryDirectory() as work:
         ask = Path(work) / "ask.json"
-        out = Path(work) / "out.json"
-        ask.write_text(json.dumps({"w": {"name": name, "scale": scale}}), encoding="utf-8")
-        subprocess.run([sys.executable, "-m", "kosika.cli", "run", str(HERE / "cursor.kos"), "--input", str(ask),
-                        "--result-json", str(out)], cwd=work, capture_output=True,
-                       env={**os.environ, "PYTHONPATH": str(REPO)}, timeout=120)
-        drawn = json.loads(out.read_text(encoding="utf-8"))
-        drawn = drawn.get("result", drawn)
+        ask.write_text(json.dumps({"p": {"name": name, "scale": scale, "colour": colour, "state": state}}), encoding="utf-8")
+        ran = subprocess.run([sys.executable, "-c", RUNNER, str(HERE / "cursor.kos"), "main", str(ask)], cwd=work,
+                             capture_output=True, text=True, encoding="utf-8",
+                             env={**os.environ, "PYTHONPATH": str(REPO)}, timeout=120)
+        drawn = json.loads(ran.stdout.strip().splitlines()[-1])
         page = Path(work) / "pointer.html"
         page.write_text('<!doctype html><html><body style="margin:0;background:transparent">' + drawn["svg"] + "</body></html>",
                         encoding="utf-8")
         subprocess.run([str(CHROME), "--headless=new", "--disable-gpu", "--hide-scrollbars", "--force-device-scale-factor=1",
                         "--default-background-color=00000000", f"--window-size={drawn['width']},{drawn['height']}",
                         f"--screenshot={png}", page.as_uri()], capture_output=True, timeout=120)
-    return png
+    tip_file.write_text(str(int(drawn["tip"])))
+    return png, int(drawn["tip"])
 
 
 class BLEND(ctypes.Structure):
@@ -132,11 +149,14 @@ def window_with(png: Path) -> tuple[int, int, int]:
     for i in range(0, len(raw), 4):
         pr, pg, pb, pa = raw[i], raw[i + 1], raw[i + 2], raw[i + 3]
         pixels[i], pixels[i + 1], pixels[i + 2], pixels[i + 3] = pb * pa // 255, pg * pa // 255, pr * pa // 255, pa
-    proc = WNDPROC(lambda h, m, w, l: user32.DefWindowProcW(h, m, w, l))
-    window_with.proc = proc  # kept alive while the window lives
     instance = kernel32.GetModuleHandleW(None)
-    cls = WNDCLASS(0, proc, 0, 0, instance, None, None, None, None, "KosikaPointer")
-    user32.RegisterClassW(ctypes.byref(cls))
+    if not getattr(window_with, "registered", False):
+        # One window class for all the states, its procedure kept alive while they live.
+        window_with.proc = WNDPROC(lambda h, m, w, l: user32.DefWindowProcW(h, m, w, l))
+        cls = WNDCLASS(0, window_with.proc, 0, 0, instance, None, None, None, None, "KosikaPointer")
+        user32.RegisterClassW(ctypes.byref(cls))
+        window_with.cls = cls
+        window_with.registered = True
     hwnd = user32.CreateWindowExW(WS_EX, "KosikaPointer", "Kosika pointer", WS_POPUP, 0, 0, width, height, None, None, instance, None)
     screen = user32.GetDC(None)
     memory = gdi32.CreateCompatibleDC(screen)
@@ -156,14 +176,20 @@ def window_with(png: Path) -> tuple[int, int, int]:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--name", default="Kosika")
+    parser.add_argument("--colour", default="")
     args = parser.parse_args()
     scale = scale_here()
-    hwnd, _width, _height = window_with(picture(args.name, scale))
+    windows, tips = {}, {}
+    for state in STATES:
+        png, tips[state] = picture(args.name, args.colour, state, scale)
+        windows[state] = window_with(png)[0]
     target = POINTERS / f"{args.name}.json"
-    # The arrow's tip sits 3 design units in from the picture's corner (cursor.kos).
-    tip = int(round(3 * scale))
     here = [user32.GetSystemMetrics(0) / 2, user32.GetSystemMetrics(1) / 2]
-    shown = False
+    # Say the windows are up, so the hands wait for this and not just for the
+    # pictures: else the first action happens while the pointer is still
+    # gliding in from the middle of the screen.
+    (POINTERS / f"{args.name}.ready").write_text(str(os.getpid()), encoding="utf-8")
+    shown = ""
     message = wintypes.MSG()
     while True:
         while user32.PeekMessageW(ctypes.byref(message), None, 0, 0, 1):
@@ -176,17 +202,22 @@ def main() -> None:
             told, quiet = None, 1e9
         if quiet > QUIT_AFTER:
             break
+        state = (told or {}).get("state", "idle")
+        state = state if state in windows else "idle"
         if told and quiet < SHOW_FOR:
             # Glide a fifth of the way each frame: quick, and the eye can follow it.
             here[0] += (told["x"] - here[0]) * 0.2
             here[1] += (told["y"] - here[1]) * 0.2
-            user32.SetWindowPos(hwnd, -1, int(here[0]) - tip, int(here[1]) - tip, 0, 0, SWP)
-            if not shown:
-                user32.ShowWindow(hwnd, 4)  # show, without taking the keyboard
-                shown = True
+            tip = tips[state]
+            user32.SetWindowPos(windows[state], -1, int(here[0]) - tip, int(here[1]) - tip, 0, 0, SWP)
+            if shown != state:
+                user32.ShowWindow(windows[state], 4)  # show, without taking the keyboard
+                if shown:
+                    user32.ShowWindow(windows[shown], 0)
+                shown = state
         elif shown:
-            user32.ShowWindow(hwnd, 0)
-            shown = False
+            user32.ShowWindow(windows[shown], 0)
+            shown = ""
         time.sleep(0.016)
 
 

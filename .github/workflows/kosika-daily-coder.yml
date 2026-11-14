@@ -93,6 +93,7 @@ jobs:
             branch="coder/$(basename "$place")"
             git checkout -q -B "$branch" origin/studio
             if [ "$passed" = "True" ] && git apply --index "$place/change.patch"; then
+              mkdir -p examples/agents/coder/daily
               cp "$RUNNER_TEMP/todo.md" examples/agents/coder/daily/todo.md
               git add examples/agents/coder/daily/todo.md
               git commit -q -m "The Kosika coder: $title" -m "Made by the daily coder on free models; its checks passed. See the report in the pull request."

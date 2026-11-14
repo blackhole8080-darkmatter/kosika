@@ -2,7 +2,7 @@
 while Kosika's hands are moving it, so the person sees at once whose pointer
 it is. It never takes a click: clicks go through it to what is underneath.
 
-    python ring.py        # hands.py starts it; it ends itself after a quiet minute
+    python ring.py --colour "#ff3ea5"   # hands.py starts it, in the agent's colour; it ends after a quiet minute
 
 hands.py touches ~/.kosika/hands-active before each action. The ring shows
 while that is less than ACTIVE seconds old and hides otherwise.
@@ -38,6 +38,9 @@ def since_active() -> float:
 
 
 def main() -> None:
+    import sys
+    told = sys.argv[sys.argv.index("--colour") + 1] if "--colour" in sys.argv[:-1] else ""
+    colour = told if len(told) == 7 and told.startswith("#") else "#ff7a00"
     root = tkinter.Tk()
     root.overrideredirect(True)
     root.attributes("-topmost", True)
@@ -45,8 +48,8 @@ def main() -> None:
     root.attributes("-transparentcolor", KEY)
     canvas = tkinter.Canvas(root, width=SIZE, height=SIZE, bg=KEY, highlightthickness=0)
     canvas.pack()
-    canvas.create_oval(4, 4, SIZE - 4, SIZE - 4, outline="#ff7a00", width=5)
-    canvas.create_oval(SIZE / 2 - 3, SIZE / 2 - 3, SIZE / 2 + 3, SIZE / 2 + 3, fill="#ff7a00", outline="")
+    canvas.create_oval(4, 4, SIZE - 4, SIZE - 4, outline=colour, width=5)
+    canvas.create_oval(SIZE / 2 - 3, SIZE / 2 - 3, SIZE / 2 + 3, SIZE / 2 + 3, fill=colour, outline="")
     root.update_idletasks()
     handle = user32.GetParent(root.winfo_id()) or root.winfo_id()
     style = user32.GetWindowLongW(handle, GWL_EXSTYLE)
