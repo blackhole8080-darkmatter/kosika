@@ -439,6 +439,7 @@ var methodTypes = []methodType{
 	m("Text", "add_days", "Text", "days", "Number"),
 	m("Text", "days_until", "Number", "other", "Text"),
 	m("Text", "weekday", "Text"),
+	m("Text", "pad_start", "Text", "width", "Number", "fill", "Text"),
 }
 
 func methodCandidates(receiverType string) []methodType {

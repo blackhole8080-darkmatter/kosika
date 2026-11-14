@@ -394,7 +394,18 @@ def _days_until(text: str, other: str) -> int:
     return (_date(other, "days_until") - _date(text, "days_until")).days
 
 
+def _pad_start(text, width, fill):
+    if isinstance(width, bool) or width != int(width) or width < 0:
+        raise RuntimeError("pad_start needs a whole width that is not negative")
+    if len(fill) != 1:
+        raise RuntimeError("pad_start needs exactly one character to fill with")
+    if width > MAX_TEXT_LENGTH:
+        raise RuntimeError("pad_start would exceed 10000000 characters")
+    return text.rjust(int(width), fill)
+
+
 METHODS: tuple[Method, ...] = (
+    Method("Text", "pad_start", (("width", "Number"), ("fill", "Text")), "Text", _pad_start),
     Method("Text", "length", (), "Number", lambda text: len(text)),
     Method("Text", "upper", (), "Text", lambda text: text.upper()),
     Method("Text", "lower", (), "Text", lambda text: text.lower()),
