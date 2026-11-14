@@ -2076,6 +2076,13 @@ def build_parser() -> argparse.ArgumentParser:
             "only on yes. Without this, such actions always fail."
         ),
     )
+    serve_mcp_parser = subparsers.add_parser(
+        "serve-mcp",
+        help="Serve a program's workflows as MCP tools for any AI app; flags after -- are the run's grants.",
+    )
+    serve_mcp_parser.add_argument("source")
+    serve_mcp_parser.add_argument("--only", action="append", metavar="WORKFLOW", help="Serve only this workflow (repeat for more).")
+    serve_mcp_parser.add_argument("run_flags", nargs=argparse.REMAINDER, help="-- then the flags of kosika run: --allow-folder, --allow-shell, --approve-in, --model ...")
     connect_parser = subparsers.add_parser(
         "connect",
         help=(
@@ -3610,6 +3617,22 @@ def main() -> int:
         )
         return 0
 
+    if args.command == "serve-mcp":
+        from .mcp_program import ProgramServer, ProgramServerError
+
+        flags = list(args.run_flags)
+        if flags and flags[0] == "--":
+            flags = flags[1:]
+        try:
+            server = ProgramServer(Path(args.source), flags, args.only)
+        except (ProgramServerError, OSError) as exc:
+            print(f"Not served: {exc}", file=sys.stderr)
+            return 2
+        except Exception as exc:  # a program that does not check
+            print(f"Not served: {exc}", file=sys.stderr)
+            return 2
+        server.serve()
+        return 0
     if args.command == "connect":
         from .mcp_tools import MCPGrantError, MCPHub, declaration, parse_grant
 

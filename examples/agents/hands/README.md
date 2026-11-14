@@ -144,3 +144,24 @@ diary show the mascot. An agent with no mascot yet is a spark with its own
 name; give it one by adding a line to `mascots()`.
 
     kosika run mascots.kos --workflow sheet --input sheet.json    # every mascot in every state
+
+## The hands for any AI app (MCP)
+
+`kosika serve-mcp` serves a Kosika program's workflows as MCP tools, so any
+AI app that speaks MCP (Claude Desktop, an IDE, another Kosika program) can
+ask Nova, Quark, Comet or Kosi to do a job:
+
+    kosika serve-mcp plan.kos --only go --only note -- --allow-shell --allow-folder . --approve-in asks --model kosika-virtual --model-url http://127.0.0.1:8791/v1 --model-protocol openai
+
+The app sees `go` (an agent and words) and `note`, with the input Kosika
+declares. It cannot grant itself anything: the flags after `--` are fixed
+when the server starts, and every action still waits for your yes in
+`asks/`, answered with `kosika answer asks` or from your phone with
+`kosika answer asks --serve`. `--approve` is refused, because a server's
+terminal belongs to the app. In an app's MCP settings it is:
+
+    {"mcpServers": {"kosika-hands": {"command": "kosika",
+      "args": ["serve-mcp", "C:/.../hands/plan.kos", "--only", "go", "--", "--allow-shell", "--allow-folder", "C:/.../hands", "--approve-in", "C:/.../hands/asks"]}}}
+
+Kosika programs can use each other the same way:
+`kosika run other.kos --mcp hands="kosika serve-mcp plan.kos --only go -- ..."`.
