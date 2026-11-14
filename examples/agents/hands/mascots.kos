@@ -11,10 +11,13 @@
 //   failed   droops, grey, eyes half shut
 //
 // The pictures are SVG, sharp at any size; the motion is CSS (mascot_css),
+// built on Kosika Designs' motion library (std/designs_motion.kos) and
+// checked by it,
 // which pages put in their style once. Motion stops for anyone who asked
 // their computer for less motion.
 
 import "pointer_look.kos"
+import "std/designs_motion.kos"
 
 export [Mascot, mascots, mascot_for, known_creatures, mascot_states, mascot_problems, title_for, tag_for, mascot_svg, mascot_alone, mascot_css]
 
@@ -200,7 +203,7 @@ fn mascot_css() -> Text {
     + ".mz-typing .mz-ear{animation:mz-ear-fast .45s ease-in-out infinite}.mz-typing .mz-tail{animation-duration:.7s}.mz-typing .mz-rays{animation-duration:3s}"
     + ".mz-typing .mz-all{animation:mz-tap .35s ease-in-out infinite}"
     + ".mz .mz-fly{opacity:0;animation:mz-fly 1.2s ease-out infinite}.mz .mz-d2{animation-delay:.4s}.mz .mz-d3{animation-delay:.8s}"
-    + ".mz-done .mz-all{animation:mz-hop 1.5s cubic-bezier(.3,1.5,.5,1) infinite}"
+    + ".mz-done .mz-all{animation:mz-hop 1.5s " + motion_ease("back") + " infinite}"
     + ".mz-done .mz-fx{animation:mz-pop 1.5s ease-out infinite}.mz-done .mz-fx:nth-of-type(2n){animation-delay:.35s}"
     + ".mz-failed .mz-all{animation:mz-sigh 4s ease-in-out infinite;filter:saturate(.25) brightness(.8)}.mz-failed .mz-eye{animation:none;transform:scaleY(.3)}.mz-failed .mz-ear{animation:none;transform:rotate(-14deg)}.mz-failed .mz-ear-r{transform:rotate(14deg)}"
     + "@keyframes mz-breathe{50%{transform:scale(1.03,.97)}}"
@@ -216,7 +219,7 @@ fn mascot_css() -> Text {
     + "@keyframes mz-hop{0%,100%{transform:translateY(0) scale(1)}14%{transform:translateY(2px) scale(1.07,.9)}40%{transform:translateY(-18px) scale(.95,1.06)}66%{transform:translateY(0) scale(1.05,.95)}80%{transform:scale(1)}}"
     + "@keyframes mz-pop{0%{opacity:0;transform:scale(.3) rotate(0)}30%{opacity:1}100%{opacity:0;transform:scale(1.4) rotate(90deg)}}"
     + "@keyframes mz-sigh{50%{transform:translateY(4px) scaleY(.95)}}"
-    + "@media (prefers-reduced-motion:reduce){.mz *{animation:none!important}}"
+    + motion_quiet()
 }
 
 // Every mascot in every state, on one page, to look at them all.
@@ -285,4 +288,9 @@ test "a mascot is drawn in its agent's colour, showing its state" {
   expect mascot_svg("Kosika", "#ff8a4c", "typing", 40).contains("mz-rays")
   expect mascot_alone("coder-1", "#ff3ea5", "idle", 40).contains("<style>")
   expect not mascot_svg("coder-1", "#ff3ea5", "idle", 40).contains("<style>")
+}
+
+test "the mascots' motion passes Kosika Designs' motion check" {
+  expect motion_check(mascot_css()) == []
+  expect motion_check(sheet_page("Mascots")) == []
 }

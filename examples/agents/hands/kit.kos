@@ -25,6 +25,7 @@ import "std/designs_palette.kos"
 import "apps.kos"
 import "reach.kos"
 import "mascots.kos"
+import "std/designs_motion.kos"
 
 export [Kit, KitCheck, known_hands, typing_speeds, kit_problems, kit_card, page_css, hand_for, refusal, typed_check, Typed, quiet_needed, wait_at_most]
 
@@ -250,10 +251,10 @@ fn page_css() -> Text {
     + ".chips{position:relative;display:flex;flex-wrap:wrap;gap:6px}.chip{padding:3px 10px;border-radius:999px;font-size:12.5px;font-weight:600;border:1px solid;cursor:default}"
     + ".chip.hand{color:var(--c);border-color:color-mix(in srgb,var(--c) 60%,transparent);background:color-mix(in srgb,var(--c) 14%,transparent)}"
     + ".chip.skill{color:var(--violet);border-color:#a993ff66;background:#a993ff18}.chip.tool{color:var(--sky);border-color:#55d6ff66;background:#55d6ff18}.chip.server{color:#f5b45c;border-color:#f5b45c66;background:#f5b45c18}.chip.model{color:#ff6b81;border-color:#ff6b8166;background:#ff6b8118}.chip.none{color:var(--soft);border-style:dashed;border-color:#ffffff30}"
-    + ".speed{position:relative;height:8px;border-radius:9px;background:#ffffff12;overflow:hidden}.speed b{display:block;height:100%;width:var(--to);border-radius:9px;background:linear-gradient(90deg,color-mix(in srgb,var(--c) 40%,transparent),var(--c));box-shadow:0 0 14px var(--c);animation:fill 1.6s cubic-bezier(.2,.8,.2,1) both .4s}"
+    + ".speed{position:relative;height:8px;border-radius:9px;background:#ffffff12;overflow:hidden}.speed b{display:block;height:100%;width:var(--to);border-radius:9px;background:linear-gradient(90deg,color-mix(in srgb,var(--c) 40%,transparent),var(--c));box-shadow:0 0 14px var(--c);transform-origin:left;animation:fill 1.6s cubic-bezier(.2,.8,.2,1) both .4s}"
     + ".rate{position:relative;margin:8px 0 0;color:var(--soft);font-size:13px}.rate strong{color:var(--ink)}"
     + "@keyframes fly{0%,100%{transform:translate(0,0)}30%{transform:translate(110px,30px)}60%{transform:translate(30px,52px)}80%{transform:translate(130px,10px)}}"
-    + "@keyframes swap{0%{opacity:1}50%{opacity:0}}@keyframes spin{to{transform:rotate(360deg)}}@keyframes fill{from{width:0}}@keyframes rise{from{opacity:0;transform:translateY(16px)}}"
+    + "@keyframes swap{0%{opacity:1}50%{opacity:0}}@keyframes spin{to{transform:rotate(360deg)}}@keyframes fill{from{transform:scaleX(0)}}@keyframes rise{from{opacity:0;transform:translateY(16px)}}"
     + "h2 small{margin-left:10px;font-size:13px;font-weight:600;color:var(--c);letter-spacing:.02em}.motto{position:relative;margin:2px 0 0;color:var(--soft);font-size:13px;font-style:italic}"
     + ".pet{position:absolute;right:8px;bottom:2px}"
     + mascot_css()
@@ -326,4 +327,8 @@ test "a kit names only servers and a model Kosika knows" {
   expect said.contains("'gpt-paid' is not a model")
   html = kit_card({name: "helper", colour: "lime", skills: [], tools: [], hands: [], typing: "steady", patience: 3, servers: ["fetch"], model: "kosika-coder"})
   expect html.contains("chip server") and html.contains("kosika-coder")
+}
+
+test "the cards' motion passes Kosika Designs' motion check" {
+  expect motion_check(page_css()) == []
 }

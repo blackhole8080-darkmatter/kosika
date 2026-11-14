@@ -13,6 +13,7 @@ import "kit.kos"
 import "kits.kos"
 import "pointer_look.kos"
 import "mascots.kos"
+import "std/designs_motion.kos"
 
 record Team { title: Text entries: Entry[] waiting: Text[] }
 
@@ -143,4 +144,9 @@ test "a card says what the agent did last and how it ended" {
   expect html.contains("last: done")
   expect html.contains("Quark the owl, done")
   expect html.contains("press notepad Edit</code> at 07:10:00")
+}
+
+test "the board's and the diary's motion pass Kosika Designs' motion check" {
+  expect motion_check(team_page({title: "Agents", entries: [], waiting: []})) == []
+  expect motion_check(diary_page({title: "Diary", entries: []})) == []
 }
