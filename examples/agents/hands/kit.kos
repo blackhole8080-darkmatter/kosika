@@ -24,6 +24,7 @@ import "pointer_look.kos"
 import "std/designs_palette.kos"
 import "apps.kos"
 import "reach.kos"
+import "mascots.kos"
 
 export [Kit, KitCheck, known_hands, typing_speeds, kit_problems, kit_card, page_css, hand_for, refusal, typed_check, Typed, quiet_needed, wait_at_most]
 
@@ -207,16 +208,20 @@ fn chips(items: Text[], kind: Text, empty: Text) -> Text {
 
 fn kit_card(k: Kit) -> Text {
   let colour = colour_for(k.name, k.colour)
-  let pointer = pointer_drawn({name: k.name, scale: 1}, colour, "idle").svg
-  let typing = pointer_drawn({name: k.name, scale: 1}, colour, "typing").svg
+  let pointer = pointer_drawn({name: tag_for(k.name), scale: 1}, colour, "idle").svg
+  let typing = pointer_drawn({name: tag_for(k.name), scale: 1}, colour, "typing").svg
   let row = typing_row(k.typing)
   let rate = if row[1] == "all" { "all at once" } else { row[1] + " letters a second" }
   let level = if k.typing == "instant" { 100 } else { if k.typing == "fast" { 72 } else { 18 } }
+  let pet = mascot_svg(k.name, colour, "idle", 112)
+  let m = mascot_for(k.name)
+  let kind = if m.creature == "spark" { "" } else { "the " + m.creature + " · " }
   let waits = if k.patience == 0 { "does not wait for you" } else { f"waits until you have stopped for {k.patience.to_text()} s" }
   return f"<section class=\"card\" style=\"--c:{colour}\">"
     + "<div class=\"glow\"></div>"
-    + f"<div class=\"stage\"><div class=\"fly\">{pointer}</div><div class=\"fly typing\">{typing}</div></div>"
-    + f"<h2>{escaped_text(k.name)}</h2>"
+    + f"<div class=\"stage\"><div class=\"pet\">{pet}</div><div class=\"fly\">{pointer}</div><div class=\"fly typing\">{typing}</div></div>"
+    + f"<h2>{escaped_text(tag_for(k.name))}<small>{escaped_text(kind)}{escaped_text(k.name)}</small></h2>"
+    + f"<p class=\"motto\">{escaped_text(mascot_for(k.name).line)}</p>"
     + f"<p class=\"swatch\"><i></i>{colour}</p>"
     + "<h3>Hands</h3><div class=\"chips\">" + chips(k.hands, "hand", "no hands: it only thinks") + "</div>"
     + "<h3>Skills</h3><div class=\"chips\">" + chips(k.skills, "skill", "no skills yet") + "</div>"
@@ -249,6 +254,9 @@ fn page_css() -> Text {
     + ".rate{position:relative;margin:8px 0 0;color:var(--soft);font-size:13px}.rate strong{color:var(--ink)}"
     + "@keyframes fly{0%,100%{transform:translate(0,0)}30%{transform:translate(110px,30px)}60%{transform:translate(30px,52px)}80%{transform:translate(130px,10px)}}"
     + "@keyframes swap{0%{opacity:1}50%{opacity:0}}@keyframes spin{to{transform:rotate(360deg)}}@keyframes fill{from{width:0}}@keyframes rise{from{opacity:0;transform:translateY(16px)}}"
+    + "h2 small{margin-left:10px;font-size:13px;font-weight:600;color:var(--c);letter-spacing:.02em}.motto{position:relative;margin:2px 0 0;color:var(--soft);font-size:13px;font-style:italic}"
+    + ".pet{position:absolute;right:8px;bottom:2px}"
+    + mascot_css()
     + "@media (prefers-reduced-motion:reduce){*{animation:none!important}}"
 }
 

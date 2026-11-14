@@ -12,6 +12,7 @@ import "diary.kos"
 import "kit.kos"
 import "kits.kos"
 import "pointer_look.kos"
+import "mascots.kos"
 
 record Team { title: Text entries: Entry[] waiting: Text[] }
 
@@ -49,7 +50,7 @@ fn team_card(k: Kit, entries: Entry[], waiting: Text[]) -> Text {
   let acted = mine(entries, k.name)
   let asks = is_waiting(k.name, waiting)
   let state = if asks { "press" } else { "idle" }
-  let pointer = pointer_drawn({name: k.name, scale: 1}, colour, state).svg
+  let pointer = pointer_drawn({name: tag_for(k.name), scale: 1}, colour, state).svg
   var done = 0
   for e in acted {
     if ending(e) == "done" { done += 1 }
@@ -59,9 +60,13 @@ fn team_card(k: Kit, entries: Entry[], waiting: Text[]) -> Text {
     f"<code>{escaped_text(shown_action(e))}</code> at {escaped_text(e.at)}"
   }
   let waits = if asks { " asking" } else { "" }
+  let mood = if asks { "waiting" } else { if acted.length() == 0 { "idle" } else { if ending(acted[acted.length() - 1]) == "done" { "done" } else { "failed" } } }
+  let pet = mascot_svg(k.name, colour, mood, 96)
+  let m = mascot_for(k.name)
+  let kind = if m.creature == "spark" { "" } else { "the " + m.creature + " · " }
   return f"<section class=\"card{waits}\" style=\"--c:{colour}\"><div class=\"glow\"></div>"
-    + f"<div class=\"stage\"><div class=\"walk\">{pointer}</div></div>"
-    + f"<h2>{escaped_text(k.name)}</h2>{status(acted, asks)}"
+    + f"<div class=\"stage\"><div class=\"pet\">{pet}</div><div class=\"walk\">{pointer}</div></div>"
+    + f"<h2>{escaped_text(tag_for(k.name))}<small>{escaped_text(kind)}{escaped_text(k.name)}</small></h2>{status(acted, asks)}"
     + f"<p class=\"last\">{last}</p>"
     + f"<p class=\"rate\"><strong>{done.to_text()}</strong> done · <strong>{(acted.length() - done).to_text()}</strong> not done · {k.hands.length().to_text()} hands · {k.servers.length().to_text()} servers · types {escaped_text(k.typing)}</p>"
     + "</section>"
@@ -75,7 +80,8 @@ fn latest(entries: Entry[], count: Number) -> Text {
   for e in entries {
     if at >= from {
       let name = if agents[at] == "" { "someone" } else { agents[at] }
-      rows = [f"<li style=\"--c:{colour_for(name, kit_named(name).colour)}\"><time>{escaped_text(e.at)}</time><b>{escaped_text(name)}</b><code>{escaped_text(shown_action(e))}</code><em>{ending(e)}</em></li>"].concat(rows)
+      let mini = mascot_svg(name, colour_for(name, kit_named(name).colour), if ending(e) == "done" { "idle" } else { "failed" }, 26)
+      rows = [f"<li style=\"--c:{colour_for(name, kit_named(name).colour)}\"><time>{escaped_text(e.at)}</time>{mini}<b>{escaped_text(tag_for(name))}</b><code>{escaped_text(shown_action(e))}</code><em>{ending(e)}</em></li>"].concat(rows)
     }
     at += 1
   }
@@ -103,7 +109,7 @@ fn team_css() -> Text {
     + ".last{position:relative;margin:10px 0 0;color:var(--soft);font-size:13.5px}.last code,.ticker code{font-family:ui-monospace,Consolas,monospace;color:var(--ink);background:#ffffff10;padding:1px 7px;border-radius:7px}"
     + "h3.head{max-width:1180px;margin:30px auto 10px;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--soft)}"
     + ".ticker{max-width:1180px;margin:0 auto;padding:0;list-style:none}.ticker li{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:9px 14px;margin:0 0 8px;border-radius:12px;background:var(--panel);border-left:3px solid var(--c);animation:rise .5s both}"
-    + ".ticker time{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--soft)}.ticker b{color:var(--c)}.ticker em{font-style:normal;font-size:12px;color:var(--soft)}"
+    + ".ticker time{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--soft)}.ticker b{color:var(--c)}.ticker .mz{flex:none}.ticker em{font-style:normal;font-size:12px;color:var(--soft)}"
     + ".quiet{max-width:1180px;margin:0 auto;color:var(--soft)}"
     + "@keyframes beat{50%{transform:scale(1.06)}}"
 }
@@ -115,7 +121,7 @@ workflow board(t: Team) -> Page {
 
 test "every agent with a kit gets a card, acted or not" {
   html = team_page({title: "Agents", entries: [], waiting: []})
-  expect (for k in kits() { if html.contains(">" + k.name + "</h2>") { "" } else { k.name } }).join("") == ""
+  expect (for k in kits() { if html.contains(k.name + "</small></h2>") { "" } else { k.name } }).join("") == ""
   expect html.contains("has not acted yet")
   expect html.contains("Nothing is waiting for you.")
 }
@@ -127,11 +133,14 @@ test "an agent waiting for a yes is shown as asking" {
   html = team_page({title: "Agents", entries: [], waiting: waiting})
   expect html.contains("waiting for your yes")
   expect html.contains("1 action(s) waiting")
+  expect html.contains("Nova the fox, waiting")
+  expect html.contains("Quark the owl, idle")
 }
 
 test "a card says what the agent did last and how it ended" {
   e: Entry = {run: 1, at: "07:10:00", job: "press", step: "press", args: ["hands.py", "--agent", "coder-2", "press", "notepad", "Edit"], exit_code: 0, said: "", approved_by: "aryan"}
   html = team_page({title: "Agents", entries: [e], waiting: []})
   expect html.contains("last: done")
+  expect html.contains("Quark the owl, done")
   expect html.contains("press notepad Edit</code> at 07:10:00")
 }

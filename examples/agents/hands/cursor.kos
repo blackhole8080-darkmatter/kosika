@@ -11,11 +11,12 @@
 // The state is "idle", "typing" or "press"; pointer.py draws all three.
 
 import "pointer_look.kos"
+import "mascots.kos"
 
 record Paint { name: Text scale: Number colour: Text state: Text }
 
 workflow main(p: Paint) -> Drawn {
-  drawn = pointer_drawn({name: p.name, scale: p.scale}, colour_for(p.name, p.colour), p.state)
+  drawn = pointer_drawn({name: tag_for(p.name), scale: p.scale}, colour_for(p.name, p.colour), p.state)
 }
 
 test "an agent keeps its colour, and the picture is as wide as its name" {

@@ -130,3 +130,17 @@ granted at once, and a tool the server does not mark read-only is declared
 `access: execute`, so every call waits for a yes. `reach.kos`'s `mcp_flags`
 gives the `--mcp` flags for a kit's servers. (The Go engine takes servers
 from an environment, each pinned to a manifest.)
+
+## Names and mascots
+
+Every agent has a name and a mascot, drawn and animated in Kosika
+(`mascots.kos`): Kosi the sun (Kosika), Nova the fox (coder-1), Quark the
+owl (coder-2) and Comet the hare (scout). Each is drawn in its agent's own
+colour and moves with how the agent is doing: it breathes and blinks when
+idle, bobs with a question bubble while it waits for your yes, twitches its
+ears while typing, hops when a job is done and droops when one is not. The
+pointer's tag shows the name, and the kit cards, the live board and the
+diary show the mascot. An agent with no mascot yet is a spark with its own
+name; give it one by adding a line to `mascots()`.
+
+    kosika run mascots.kos --workflow sheet --input sheet.json    # every mascot in every state

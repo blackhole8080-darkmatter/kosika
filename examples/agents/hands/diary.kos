@@ -12,6 +12,7 @@
 import "kit.kos"
 import "kits.kos"
 import "pointer_look.kos"
+import "mascots.kos"
 
 export [Entry, Diary, Page, agent_in, action_in, ending, shown_action, agents_of, diary_page]
 
@@ -137,7 +138,8 @@ fn tally(entries: Entry[], agents: Text[], name: Text) -> Text {
     at += 1
   }
   let colour = colour_of(name)
-  return f"<div class=\"tally\" style=\"--c:{colour}\"><i></i><b>{escaped_text(name)}</b>"
+  let pet = mascot_svg(name, colour, if other == 0 { "done" } else { "idle" }, 40)
+  return f"<div class=\"tally\" style=\"--c:{colour}\">{pet}<b>{escaped_text(title_for(name))}</b>"
     + f"<span>{done.to_text()} done</span><span class=\"other\">{other.to_text()} not done</span></div>"
 }
 
