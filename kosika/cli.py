@@ -821,6 +821,30 @@ def _ask_approval(
     )
 
 
+def _ask_approval_in(
+    folder: Path, request: dict[str, Any], wait_seconds: float
+) -> ApprovalRecord | None:
+    """Ask in a folder and wait for the answer there (see kosika.ask_folder)."""
+
+    from .ask_folder import wait_for_answer
+
+    yes, by = wait_for_answer(
+        folder,
+        request,
+        wait_seconds=wait_seconds,
+        tell=lambda line: print(line, file=sys.stderr, flush=True),
+    )
+    if not yes:
+        print("Refused, or no answer came. Nothing was run.", file=sys.stderr)
+        return None
+    return ApprovalRecord(
+        plan_hash=request["plan_hash"],
+        action_hash=request["action_hash"],
+        approved_by=by or "someone who could write to the folder",
+        reason=f"approved in {folder}",
+    )
+
+
 def _environment_model_bindings(
     environment: Environment, program: Program
 ) -> dict[str, ModelProvider]:
@@ -1511,6 +1535,23 @@ def build_parser() -> argparse.ArgumentParser:
         "--approved-by",
         help="Name recorded with approvals given through --approve.",
     )
+    run_parser.add_argument(
+        "--approve-in",
+        type=Path,
+        metavar="FOLDER",
+        help=(
+            "Ask for each approval in this folder instead of at the terminal, "
+            "and wait for an answer there (kosika answer FOLDER yes). Only "
+            "the person may be able to write to it."
+        ),
+    )
+    run_parser.add_argument(
+        "--approve-wait",
+        type=float,
+        default=600,
+        metavar="SECONDS",
+        help="How long --approve-in waits for an answer; no answer is a no.",
+    )
     run_parser.add_argument("--max-requests", type=int, default=64)
     run_parser.add_argument("--max-tokens", type=int)
     run_parser.add_argument("--max-output-tokens", type=int, default=1024)
@@ -2023,6 +2064,21 @@ def build_parser() -> argparse.ArgumentParser:
             "only on yes. Without this, such actions always fail."
         ),
     )
+    answer_parser = subparsers.add_parser(
+        "answer",
+        help=(
+            "See and answer what a run started with --approve-in is waiting "
+            "for: kosika answer FOLDER [ID] yes|no."
+        ),
+    )
+    answer_parser.add_argument("folder", type=Path)
+    answer_parser.add_argument(
+        "words",
+        nargs="*",
+        help="Nothing to list the asks; yes or no; or an ask's id and yes or no.",
+    )
+    answer_parser.add_argument("--by", help="Name recorded with the answer.")
+
     story_parser = subparsers.add_parser(
         "story", help="Tell what happened in a run, in plain words, from its trace."
     )
@@ -3521,6 +3577,27 @@ def main() -> int:
         )
         return 0
 
+    if args.command == "answer":
+        from .ask_folder import AskFolderError, answer, waiting
+
+        if not args.words:
+            asks = waiting(args.folder)
+            if not asks:
+                print("Nothing is waiting.")
+            for ask in asks:
+                print(f"{ask['id']}  {ask.get('says', '')}")
+            return 0
+        if len(args.words) > 2:
+            print("Give at most an ask's id and yes or no.", file=sys.stderr)
+            return 2
+        ask_id = args.words[0] if len(args.words) == 2 else None
+        try:
+            print(answer(args.folder, ask_id, args.words[-1], args.by or getpass.getuser()))
+        except AskFolderError as exc:
+            print(f"Not answered: {exc}", file=sys.stderr)
+            return 2
+        return 0
+
     if args.command == "story":
         from .story import StoryError, build_story, read_trace
         from .story import to_text as story_to_text
@@ -4007,7 +4084,9 @@ def main() -> int:
             and any(system_kind(tool) == "db" for tool in program.tools)
             else None
         )
-        if args.approve and not args.journal:
+        if args.approve_in is not None and args.approve:
+            raise ValueError("Use --approve or --approve-in, not both")
+        if (args.approve or args.approve_in is not None) and not args.journal:
             # Approval needs a journal to remember what was approved between
             # the pause and the resume; an asked-for run keeps one for itself.
             approve_scratch = tempfile.TemporaryDirectory(prefix="kosika-approve-")
@@ -4087,6 +4166,10 @@ def main() -> int:
                 granted = (
                     _ask_approval(pending.request, args.approved_by)
                     if args.approve
+                    else _ask_approval_in(
+                        args.approve_in, pending.request, args.approve_wait
+                    )
+                    if args.approve_in is not None
                     else None
                 )
                 if granted is None:
