@@ -45,6 +45,7 @@
 // as it is. A diagram's embed is its page in a frame.
 
 import "designs_palette.kos"
+import "designs_3d.kos"
 import "designs_draw.kos"
 import "designs_main.kos"
 import "designs_art.kos"
@@ -67,7 +68,7 @@ record DzAsk { text: Text palette: Text place: Text kind: Text }
 record DzKind { kind: Text why: Text }
 record DzResult { kind: Text why: Text title: Text page: Text svg: Text embed: Text problems: Text[] fixed: Text[] }
 
-fn dz_kinds() -> Text[] { return ["diagram", "illustration", "art", "canvas", "quiz", "worked", "chemistry", "units", "element", "algorithm"] }
+fn dz_kinds() -> Text[] { return ["diagram", "illustration", "art", "3d", "canvas", "quiz", "worked", "chemistry", "units", "element", "algorithm"] }
 fn dz_places() -> Text[] { return ["chat", "studio", "site", "agent"] }
 
 fn dz_place(ask: DzAsk) -> Text {
@@ -140,6 +141,7 @@ fn dz_named(ask: DzAsk) -> Text {
   if dz_kinds().contains(named) { return named }
   let t = dz_padded(ask.text)
   if dz_has(t, dz_quiz_words()) { return "quiz" }
+  if dz_has(t, [" 3d ", " 3-d ", " three dimensional", " three-dimensional"]) { return "3d" }
   // Asked for art in so many words, it is art, whatever it is of: "art of
   // planets orbiting a burning star" is not a reaction to balance.
   if dz_has(t, dz_art_asked()) { return "art" }
@@ -194,6 +196,7 @@ fn dz_why(ask: DzAsk) -> Text {
   if kind == "algorithm" { return "asks how an algorithm works, so Kosika ran it itself, step by step, checked the answer another way, and played it" }
   if kind == "quiz" { return "asks to be tested, so it is a quiz Kosika checked, with each answer's reason" }
   if kind == "worked" { return "asks for mathematics worked out, so each line is worked and checked by Kosika" }
+  if kind == "3d" { return "asks for three-dimensional art, so Kosika builds and shades a perspective mesh and places it on the Canvas" }
   if kind == "art" { return "asks for a mood or a background, so it is drawn as moving art" }
   if kind == "illustration" { return "asks how or why something happens, so it is drawn moving, beside its explanation" }
   return "asks about the parts and structure of something, so it is drawn as a diagram"
@@ -219,7 +222,7 @@ model variety {
 }
 
 fn variety_task() -> Text {
-  return "Someone asked for a picture. Choose the one way of drawing that answers them best. The ways: diagram (the parts, steps or links of something, explained in order); illustration (a moving picture of how or why a real thing happens, beside its explanation); art (a mood, a background, a wallpaper, abstract moving art); canvas (a science ask answered whole, with the structure, the moving picture, a lab and a quiz); algorithm (a data structure or algorithm, such as a binary search tree, a sort, a binary search or a shortest path, run step by step); quiz (they asked to be tested); worked (mathematics worked out line by line); chemistry (a chemical reaction, balanced and checked); units (a conversion between units); element (a chemical element or the periodic table). Give kind, one of " + dz_kinds().join(", ") + ", and why, one plain sentence on why it answers the ask best."
+  return "Someone asked for a picture. Choose the one way of drawing that answers them best. The ways: diagram (the parts, steps or links of something, explained in order); illustration (a moving picture of how or why a real thing happens, beside its explanation); art (a mood, a background, a wallpaper, abstract moving art); 3d (a sculptural perspective mesh made by Kosika); canvas (a science ask answered whole, with the structure, the moving picture, a lab and a quiz); algorithm (a data structure or algorithm, such as a binary search tree, a sort, a binary search or a shortest path, run step by step); quiz (they asked to be tested); worked (mathematics worked out line by line); chemistry (a chemical reaction, balanced and checked); units (a conversion between units); element (a chemical element or the periodic table). Give kind, one of " + dz_kinds().join(", ") + ", and why, one plain sentence on why it answers the ask best."
 }
 
 fn no_variety() -> DzKind { return {kind: "", why: ""} }
@@ -443,6 +446,30 @@ fn dz_from_canvas(ask: DzAsk, palette: Text, r: Request, d: Design, m: ArtPage, 
   let none: Text[] = []
   let wrong = if drawn { none } else { d.problems.concat(m.problems) }
   return {kind: "canvas", why: dz_canvas_why(lead, step), title: title, page: page, svg: m.svg, embed: embed, problems: wrong, fixed: m.fixed}
+}
+
+fn dz_3d_palette(ask: DzAsk) -> Text {
+  let asked = ask.palette.trim().lower()
+  let text = dz_padded(ask.text)
+  if palette_names().contains(asked) { return asked }
+  if dz_has(text, [" ocean", " coral", " reef", " sea ", " underwater", " tidal"]) { return "ocean" }
+  if dz_has(text, [" forest", " botanical", " leaf", " leaves", " moss", " garden"]) { return "forest" }
+  if dz_has(text, [" fire", " flame", " ember", " volcano", " molten", " solar"]) { return "ember" }
+  return "aurora"
+}
+
+fn dz_from_3d(ask: DzAsk, scene: D3Scene, art: D3Art) -> DzResult {
+  let place = dz_place(ask)
+  let inner = d3_viewer(scene)
+  let embed = dz_wrap("canvas", place, art.palette, "", inner, dz_canvas_style() + ".kd .d3-live{overflow:hidden;border:1px solid color-mix(in srgb,var(--line) 18%,transparent);border-radius:16px;background:var(--bg)}.kd .d3-canvas{display:block;width:100%;height:auto;aspect-ratio:1100/680;touch-action:none;cursor:grab}.kd .d3-canvas:active{cursor:grabbing}.kd .d3-view-controls{display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:10px 12px;border-top:1px solid color-mix(in srgb,var(--line) 16%,transparent);font:11px ui-monospace,Consolas,monospace}.kd .d3-hint{margin-right:auto;color:var(--soft)}.kd .d3-view-controls button{border:1px solid color-mix(in srgb,var(--line) 24%,transparent);border-radius:999px;padding:6px 11px;background:var(--panel);color:var(--ink);font:inherit;cursor:pointer}.kd .d3-view-controls button:hover{border-color:var(--amber);color:var(--amber)}@media(max-width:560px){.kd .d3-view-controls{flex-wrap:wrap}.kd .d3-hint{width:100%}}")
+  let page = dz_canvas_page(art.title, art.palette, embed)
+  return {kind: "3d", why: "Kosika built a perspective-shaded mesh in its native 3D renderer and placed it on the Canvas. " + art.faces.to_text() + " triangular faces; " + art.palette + " palette.", title: art.title, page: page, svg: art.svg, embed: embed, problems: art.problems, fixed: []}
+}
+
+workflow dz_3d(ask: DzAsk) -> DzResult {
+  scene = d3_scene_for(ask.text, dz_3d_palette(ask))
+  art = d3_render(scene)
+  out = dz_from_3d(ask, scene, art)
 }
 
 // ---------------------------------------------------------------- labs
@@ -1845,6 +1872,7 @@ workflow design(ask: DzAsk) -> DzResult {
   budget 11 model calls, 900 seconds
   chosen = call dz_kind_better(ask)
   drawn  = match chosen.kind {
+    case "3d" { call dz_3d(ask) }
     case "canvas" { call dz_canvas(ask) }
     case "quiz" { call dz_quiz(ask) }
     case "chemistry" { call dz_chemistry(ask) }
@@ -1952,6 +1980,26 @@ test "Kosika chooses the way of drawing by the words of the ask" {
 test "every way of drawing can be asked for by name" {
   expect (for k in dz_kinds() where dz_kind({..dz_ask("anything at all"), kind: k}) != k { k }).is_empty()
   expect (for k in dz_kinds() where dz_why({..dz_ask("anything at all"), kind: k}).is_empty() { k }).is_empty()
+}
+
+test "an explicit 3D ask is rendered directly into a Canvas result" {
+  ask: DzAsk = {text: "a 3d sculptural bloom", palette: "", place: "studio", kind: ""}
+  probe = design_kind_probe(ask)
+  made = design(ask)
+  expect probe.kind == "3d" and probe.sure
+  expect made.kind == "3d"
+  expect made.title == "Vesper Bloom"
+  expect made.svg.contains("<polygon")
+  expect made.embed.contains("d3-canvas")
+  expect made.embed.contains("pointerdown")
+  expect made.page.contains("Vesper Bloom")
+  expect made.problems.is_empty()
+}
+
+test "3D Canvas colours follow explicit choice and subject cues" {
+  ask: DzAsk = {text: "a 3d coral reef sculpture", palette: "", place: "studio", kind: ""}
+  expect dz_3d_palette(ask) == "ocean"
+  expect dz_3d_palette({..ask, palette: "paper"}) == "paper"
 }
 
 // The words settle most asks and say so; when they do not, they say that

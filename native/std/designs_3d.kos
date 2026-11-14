@@ -1,0 +1,336 @@
+// Kosika Designs: static, palette-aware 3D vector art.
+//
+// The first renderer projects shaded triangle meshes into SVG. It keeps the
+// camera, geometry, palette and painter's ordering in Kosika; no JS 3D engine
+// is needed. Import this beside designs.kos while the 3D surface is evolving.
+
+import "designs_palette.kos"
+
+export [D3Point, D3Screen, D3Camera, D3Face, D3Mesh, D3PaintedFace, D3Scene, D3Art, d3_rotate, d3_project, d3_torus_mesh, d3_sphere_mesh, d3_project_faces, d3_scene_problems, d3_svg, d3_viewer, d3_render, d3_orrery_scene, d3_scene_for]
+
+record D3Point { x: Number y: Number z: Number }
+record D3Screen { x: Number y: Number z: Number viewx: Number viewy: Number }
+record D3Camera { yaw: Number pitch: Number roll: Number distance: Number focal: Number }
+record D3Face { a: Number b: Number c: Number hue: Number }
+record D3Mesh { vertices: D3Point[] faces: D3Face[] }
+record D3PaintedFace { a: D3Screen b: D3Screen c: D3Screen depth: Number hue: Number shade: Number }
+record D3Scene { title: Text palette: Text width: Number height: Number camera: D3Camera mesh: D3Mesh seed: Number }
+record D3Art { title: Text palette: Text svg: Text page: Text problems: Text[] faces: Number }
+
+// Euler rotation in roll, pitch, yaw order. Kosika's trig functions use degrees.
+fn d3_rotate(p: D3Point, yaw: Number, pitch: Number, roll: Number) -> D3Point {
+  let cr = roll.cos()
+  let sr = roll.sin()
+  let x1 = p.x * cr - p.y * sr
+  let y1 = p.x * sr + p.y * cr
+  let cp = pitch.cos()
+  let sp = pitch.sin()
+  let x2 = x1 * cp + p.z * sp
+  let z2 = -x1 * sp + p.z * cp
+  let cy = yaw.cos()
+  let sy = yaw.sin()
+  return {x: x2 * cy - y1 * sy, y: x2 * sy + y1 * cy, z: z2}
+}
+
+fn d3_sub(a: D3Point, b: D3Point) -> D3Point { return {x: a.x - b.x, y: a.y - b.y, z: a.z - b.z} }
+fn d3_cross(a: D3Point, b: D3Point) -> D3Point { return {x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x} }
+fn d3_dot(a: D3Point, b: D3Point) -> Number { return a.x * b.x + a.y * b.y + a.z * b.z }
+
+fn d3_screen(p: D3Point, camera: D3Camera, width: Number, height: Number) -> D3Screen {
+  let scale = camera.focal / (camera.distance - p.z).max(0.1)
+  return {x: width / 2 + p.x * scale, y: height / 2 - p.y * scale, z: p.z, viewx: p.x, viewy: p.y}
+}
+
+fn d3_project(p: D3Point, camera: D3Camera, width: Number, height: Number) -> D3Screen {
+  return d3_screen(d3_rotate(p, camera.yaw, camera.pitch, camera.roll), camera, width, height)
+}
+
+// Transform each shared vertex once, then shade and sort indexed faces.
+fn d3_project_faces(scene: D3Scene) -> D3PaintedFace[] {
+  let points = for vertex in scene.mesh.vertices { d3_project(vertex, scene.camera, scene.width, scene.height) }
+  var painted: D3PaintedFace[] = []
+  let lamp: D3Point = {x: -0.3, y: 0.5, z: 0.8}
+  for face in scene.mesh.faces {
+    let a = points[face.a]
+    let b = points[face.b]
+    let c = points[face.c]
+    let ux = b.viewx - a.viewx
+    let uy = b.viewy - a.viewy
+    let uz = b.z - a.z
+    let vx = c.viewx - a.viewx
+    let vy = c.viewy - a.viewy
+    let vz = c.z - a.z
+    let nx = uy * vz - uz * vy
+    let ny = uz * vx - ux * vz
+    let nz = ux * vy - uy * vx
+    let size = (nx * nx + ny * ny + nz * nz).sqrt().max(0.0001)
+    let light = ((nx * lamp.x + ny * lamp.y + nz * lamp.z) / size).abs().min(1)
+    painted = painted.append({a: a, b: b, c: c, depth: (a.z + b.z + c.z) / 3, hue: face.hue.floor().max(0).min(5), shade: (38 + light * 62).floor()})
+  }
+  return painted.sort_by("depth")
+}
+
+fn d3_projected_width(scene: D3Scene) -> Number {
+  var left = scene.width
+  var right = 0
+  for face in d3_project_faces(scene) {
+    left = left.min(face.a.x).min(face.b.x).min(face.c.x)
+    right = right.max(face.a.x).max(face.b.x).max(face.c.x)
+  }
+  return right - left
+}
+
+fn d3_n(x: Number) -> Text { return ((x * 10 + 0.5).floor() / 10).to_text() }
+
+fn d3_face_svg(face: D3PaintedFace) -> Text {
+  let ax = ((face.a.x * 10 + 0.5).floor() / 10).to_text()
+  let ay = ((face.a.y * 10 + 0.5).floor() / 10).to_text()
+  let bx = ((face.b.x * 10 + 0.5).floor() / 10).to_text()
+  let by = ((face.b.y * 10 + 0.5).floor() / 10).to_text()
+  let cx = ((face.c.x * 10 + 0.5).floor() / 10).to_text()
+  let cy = ((face.c.y * 10 + 0.5).floor() / 10).to_text()
+  let points = f"{ax},{ay} {bx},{by} {cx},{cy}"
+  return f"<polygon points=\"{points}\" fill=\"color-mix(in srgb,var(--h{face.hue}) {face.shade}%,var(--bg))\" stroke=\"color-mix(in srgb,var(--line) 24%,transparent)\" stroke-width=\".7\" stroke-linejoin=\"round\"/>"
+}
+
+fn d3_noise(seed: Number, i: Number) -> Number {
+  let v = (i * 12.9898 + seed * 78.233).sin() * 43758.5453
+  return v - v.floor()
+}
+
+fn d3_stars(scene: D3Scene) -> Text {
+  var out: Text[] = []
+  for k in 0 until 92 {
+    let x = (d3_noise(scene.seed, k * 2 + 1) * scene.width).floor()
+    let y = (d3_noise(scene.seed, k * 2 + 2) * scene.height).floor()
+    let radius = 0.6 + d3_noise(scene.seed, k + 157) * 1.1
+    let opacity = 0.12 + d3_noise(scene.seed, k + 311) * 0.28
+    out = out.append(f"<circle cx=\"{x}\" cy=\"{y}\" r=\"{d3_n(radius)}\" fill=\"var(--line)\" opacity=\"{d3_n(opacity)}\"/>")
+  }
+  return out.join("")
+}
+
+fn d3_palette_style(name: Text) -> Text {
+  let palette = palette_named(name)
+  let hues = (for i in 0 until palette.hues.length() { f"--h{i}:{palette.hues[i]}" }).join(";")
+  return f"--bg:{palette.bg};--line:{palette.line};--amber:{palette.accent};" + hues
+}
+
+fn d3_svg(scene: D3Scene) -> Text {
+  let faces = d3_project_faces(scene)
+  let polygons = (for face in faces { d3_face_svg(face) }).join("")
+  return f"<svg class=\"d3-art\" style=\"{d3_palette_style(scene.palette)}\" width=\"{scene.width}\" height=\"{scene.height}\" viewBox=\"0 0 {scene.width} {scene.height}\" role=\"img\" aria-label=\"{scene.title}, a perspective shaded 3D mesh\"><defs><radialGradient id=\"d3-halo\"><stop stop-color=\"var(--amber)\" stop-opacity=\".2\"/><stop offset=\"1\" stop-color=\"var(--bg)\" stop-opacity=\"0\"/></radialGradient></defs><rect width=\"100%\" height=\"100%\" fill=\"var(--bg)\"/><ellipse cx=\"{scene.width / 2}\" cy=\"{scene.height / 2}\" rx=\"{scene.width * 0.36}\" ry=\"{scene.height * 0.4}\" fill=\"url(#d3-halo)\"/>{d3_stars(scene)}{polygons}</svg>"
+}
+
+fn d3_vertices_data(scene: D3Scene) -> Text {
+  return "[" + (for p in scene.mesh.vertices { "[" + p.x.to_text() + "," + p.y.to_text() + "," + p.z.to_text() + "]" }).join(",") + "]"
+}
+
+fn d3_faces_data(scene: D3Scene) -> Text {
+  return "[" + (for f in scene.mesh.faces { "[" + f.a.to_text() + "," + f.b.to_text() + "," + f.c.to_text() + "," + f.hue.floor().max(0).min(5).to_text() + "]" }).join(",") + "]"
+}
+
+fn d3_viewer(scene: D3Scene) -> Text {
+  let palette = palette_named(scene.palette)
+  let hues = "[" + (for c in palette.hues { "'" + c + "'" }).join(",") + "]"
+  let controls = "<div class='d3-view-controls'><span class='d3-hint'>Drag to orbit · scroll or pinch to zoom</span><button type='button' data-spin>Auto orbit</button><button type='button' data-reset>Reset view</button></div>"
+  let canvas = "<div class='d3-live' role='group' aria-label='Interactive 3D scene'><canvas class='d3-canvas' width='" + scene.width.to_text() + "' height='" + scene.height.to_text() + "' tabindex='0' aria-label='3D artwork. Drag to orbit, scroll to zoom, use arrow keys to move.'></canvas>" + controls + "</div>"
+  let begin = "<script>(()=>{const root=document.currentScript.previousElementSibling,canvas=root.querySelector('canvas'),ctx=canvas.getContext('2d');if(!ctx)return;const V=" + d3_vertices_data(scene) + ",F=" + d3_faces_data(scene) + ",H=" + hues + ",W=" + scene.width.to_text() + ",T=" + scene.height.to_text() + ",seed=" + scene.seed.to_text() + ",bg='" + palette.bg + "',line='" + palette.line + "',accent='" + palette.accent + "';const home={yaw:" + scene.camera.yaw.to_text() + ",pitch:" + scene.camera.pitch.to_text() + ",roll:" + scene.camera.roll.to_text() + ",distance:" + scene.camera.distance.to_text() + ",focal:" + scene.camera.focal.to_text() + "};let cam={...home},drag=null,auto=false,last=0;const buttonSpin=root.querySelector('[data-spin]');function channels(c){return [parseInt(c.slice(1,3),16),parseInt(c.slice(3,5),16),parseInt(c.slice(5,7),16)]}function rgba(c,a){const x=channels(c);return 'rgba('+x[0]+','+x[1]+','+x[2]+','+a+')'}function mix(a,b,p){const x=channels(a),y=channels(b),n=p/100;return 'rgb('+Math.round(x[0]*n+y[0]*(1-n))+','+Math.round(x[1]*n+y[1]*(1-n))+','+Math.round(x[2]*n+y[2]*(1-n))+')'}function rotate(v){const r=cam.roll*Math.PI/180,pr=cam.pitch*Math.PI/180,y=cam.yaw*Math.PI/180,cr=Math.cos(r),sr=Math.sin(r),cp=Math.cos(pr),sp=Math.sin(pr),cy=Math.cos(y),sy=Math.sin(y),x1=v[0]*cr-v[1]*sr,y1=v[0]*sr+v[1]*cr,x2=x1*cp+v[2]*sp,z2=-x1*sp+v[2]*cp;return [x2*cy-y1*sy,x2*sy+y1*cy,z2]}function project(v){const z=Math.max(.1,cam.distance-v[2]),s=home.focal/z;return [W/2+v[0]*s,T/2-v[1]*s,v[2],v[0],v[1]]}function noise(i){const n=Math.sin((i+1)*12.9898+seed*78.233)*43758.5453;return n-Math.floor(n)}function fit(){const box=canvas.getBoundingClientRect(),dpr=window.devicePixelRatio||1,w=Math.max(1,Math.round(box.width*dpr)),h=Math.max(1,Math.round(box.height*dpr));if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h}ctx.setTransform(w/W,0,0,h/T,0,0)}function draw(){fit();ctx.clearRect(0,0,W,T);ctx.fillStyle=bg;ctx.fillRect(0,0,W,T);const halo=ctx.createRadialGradient(W/2,T/2,2,W/2,T/2,Math.max(W,T)*.48);halo.addColorStop(0,rgba(accent,.2));halo.addColorStop(1,rgba(bg,0));ctx.fillStyle=halo;ctx.fillRect(0,0,W,T);for(let i=0;i<92;i++){const x=noise(i*2)*W,y=noise(i*2+1)*T,r=.6+noise(i+157)*1.1;ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fillStyle=rgba(line,.12+noise(i+311)*.28);ctx.fill()}const points=V.map(v=>project(rotate(v))),lamp=[-.3,.5,.8],triangles=F.map(f=>{const a=points[f[0]],b=points[f[1]],c=points[f[2]],u=[b[3]-a[3],b[4]-a[4],b[2]-a[2]],v=[c[3]-a[3],c[4]-a[4],c[2]-a[2]],n=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]],size=Math.max(.0001,Math.hypot(n[0],n[1],n[2])),light=Math.min(1,Math.abs((n[0]*lamp[0]+n[1]*lamp[1]+n[2]*lamp[2])/size));return {a,b,c,z:(a[2]+b[2]+c[2])/3,h:f[3],shade:Math.floor(38+light*62)}});triangles.sort((a,b)=>a.z-b.z);for(const q of triangles){ctx.beginPath();ctx.moveTo(q.a[0],q.a[1]);ctx.lineTo(q.b[0],q.b[1]);ctx.lineTo(q.c[0],q.c[1]);ctx.closePath();ctx.fillStyle=mix(H[q.h],bg,q.shade);ctx.fill();ctx.strokeStyle=rgba(line,.24);ctx.lineWidth=.7;ctx.stroke()}}function animate(now){if(!auto)return;if(last)cam.yaw+=(now-last)*.012;last=now;draw();requestAnimationFrame(animate)}canvas.addEventListener('pointerdown',e=>{drag=[e.clientX,e.clientY];canvas.setPointerCapture(e.pointerId);canvas.focus();auto=false;buttonSpin.textContent='Auto orbit'});canvas.addEventListener('pointermove',e=>{if(!drag)return;const dx=e.clientX-drag[0],dy=e.clientY-drag[1];drag=[e.clientX,e.clientY];cam.yaw+=dx*.55;cam.pitch=Math.max(-85,Math.min(85,cam.pitch+dy*.45));draw()});canvas.addEventListener('pointerup',()=>drag=null);canvas.addEventListener('pointercancel',()=>drag=null);canvas.addEventListener('wheel',e=>{e.preventDefault();cam.distance=Math.max(2.5,Math.min(10,cam.distance+e.deltaY*.006));draw()},{passive:false});canvas.addEventListener('keydown',e=>{const k=e.key.toLowerCase();if(k==='arrowleft'||k==='a')cam.yaw-=5;else if(k==='arrowright'||k==='d')cam.yaw+=5;else if(k==='arrowup'||k==='w')cam.pitch=Math.max(-85,cam.pitch-5);else if(k==='arrowdown'||k==='s')cam.pitch=Math.min(85,cam.pitch+5);else if(k==='+'||k==='=')cam.distance=Math.max(2.5,cam.distance-.2);else if(k==='-')cam.distance=Math.min(10,cam.distance+.2);else return;e.preventDefault();draw()});buttonSpin.addEventListener('click',()=>{auto=!auto;buttonSpin.textContent=auto?'Pause orbit':'Auto orbit';last=0;if(auto)requestAnimationFrame(animate)});root.querySelector('[data-reset]').addEventListener('click',()=>{cam={...home};draw()});window.addEventListener('resize',draw);draw()})();</script>"
+  return canvas + begin
+}
+
+fn d3_scene_problems(scene: D3Scene) -> Text[] {
+  var problems: Text[] = []
+  let names = palette_names().join(", ")
+  if not palette_names().contains(scene.palette) { problems = problems.append(f"palette {scene.palette} is not one of {names}") }
+  if scene.width < 160 or scene.height < 120 { problems = problems.append("the 3D canvas must be at least 160 by 120") }
+  if scene.camera.distance <= 0.1 { problems = problems.append("camera distance must be greater than 0.1") }
+  if scene.camera.focal <= 0 { problems = problems.append("camera focal length must be positive") }
+  if scene.mesh.vertices.is_empty() { problems = problems.append("the 3D scene has no vertices") }
+  if scene.mesh.faces.is_empty() { problems = problems.append("the 3D scene has no faces") }
+  for face in scene.mesh.faces {
+    if face.hue < 0 or face.hue > 5 { problems = problems.append("each face hue must name one of the six palette hues") }
+    if face.a < 0 or face.a >= scene.mesh.vertices.length() or face.b < 0 or face.b >= scene.mesh.vertices.length() or face.c < 0 or face.c >= scene.mesh.vertices.length() { problems = problems.append("each face vertex index must point into the scene mesh") }
+  }
+  return problems
+}
+
+fn d3_page(scene: D3Scene, svg: Text) -> Text {
+  return f"<!doctype html><html lang=\"en\" data-palette=\"{scene.palette}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>{scene.title}</title><style>{palettes_css()}.d3-page{{max-width:1100px;margin:auto;padding:28px 18px;color:var(--ink);font:15px/1.5 system-ui,sans-serif}}.d3-kicker{{color:var(--gold);font:600 11px ui-monospace,monospace;letter-spacing:.2em;text-transform:uppercase}}.d3-page h1{{margin:8px 0 4px;font-size:clamp(28px,5vw,48px);letter-spacing:-.04em}}.d3-note{{color:var(--soft);margin:0 0 16px}}.d3-frame{{overflow:hidden;border:1px solid color-mix(in srgb,var(--line) 18%,transparent);border-radius:18px;background:var(--bg)}}.d3-art{{display:block;width:100%;height:auto}}.d3-meta{{display:flex;justify-content:space-between;gap:12px;color:var(--soft);font:10px ui-monospace,monospace;letter-spacing:.08em;margin-top:10px}}</style></head><body style=\"margin:0;background:var(--bg)\"><main class=\"d3-page\"><div class=\"d3-kicker\">Kosika Designs · native 3D vector prototype</div><h1>{scene.title}</h1><p class=\"d3-note\">Perspective projection · painter-sorted faces · palette shaded in Kosika</p><div class=\"d3-frame\">{svg}</div><div class=\"d3-meta\"><span>{scene.palette} palette · seed {scene.seed}</span><span>{scene.mesh.faces.length()} triangular faces</span></div></main></body></html>"
+}
+
+// A torus surface, rotated in 3D before the camera projects it.
+fn d3_torus_mesh(major: Number, minor: Number, around: Number, sides: Number, yaw: Number, pitch: Number, roll: Number, hue: Number) -> D3Mesh {
+  var rows: Number[][] = []
+  var vertices: D3Point[] = []
+  for i in 0 until around {
+    let u = 360 * i / around
+    var row: Number[] = []
+    for j in 0 until sides {
+      let v = 360 * j / sides
+      let ring = major + minor * v.cos()
+      let point = d3_rotate({x: ring * u.cos(), y: ring * u.sin(), z: minor * v.sin()}, yaw, pitch, roll)
+      row = row.append(vertices.length())
+      vertices = vertices.append(point)
+    }
+    rows = rows.append(row)
+  }
+  var faces: D3Face[] = []
+  for i in 0 until around {
+    let ni = (i + 1) % around
+    for j in 0 until sides {
+      let nj = (j + 1) % sides
+      let a = rows[i][j]
+      let b = rows[ni][j]
+      let c = rows[ni][nj]
+      let d = rows[i][nj]
+      // Keep each orbital body in one palette role; face lighting supplies
+      // the tonal range without turning the surface into a rainbow mosaic.
+      let tone = hue.floor().max(0).min(5)
+      faces = faces.append({a: a, b: b, c: c, hue: tone}).append({a: a, b: c, c: d, hue: tone})
+    }
+  }
+  return {vertices: vertices, faces: faces}
+}
+
+// A latitude-longitude sphere, faceted so its lighting remains visible.
+fn d3_sphere_mesh(radius: Number, rings: Number, sectors: Number, hue: Number) -> D3Mesh {
+  var rows: Number[][] = []
+  var vertices: D3Point[] = []
+  for i in 0 until rings + 1 {
+    let lat = -90 + 180 * i / rings
+    var row: Number[] = []
+    for j in 0 until sectors {
+      let lon = 360 * j / sectors
+      row = row.append(vertices.length())
+      vertices = vertices.append({x: radius * lat.cos() * lon.cos(), y: radius * lat.sin(), z: radius * lat.cos() * lon.sin()})
+    }
+    rows = rows.append(row)
+  }
+  var faces: D3Face[] = []
+  for i in 0 until rings {
+    for j in 0 until sectors {
+      let nj = (j + 1) % sectors
+      let a = rows[i][j]
+      let b = rows[i + 1][j]
+      let c = rows[i + 1][nj]
+      let d = rows[i][nj]
+      let tone = hue.floor().max(0).min(5)
+      faces = faces.append({a: a, b: b, c: c, hue: tone}).append({a: a, b: c, c: d, hue: tone})
+    }
+  }
+  return {vertices: vertices, faces: faces}
+}
+
+fn d3_merge(a: D3Mesh, b: D3Mesh) -> D3Mesh {
+  let offset = a.vertices.length()
+  var faces = a.faces
+  for face in b.faces { faces = faces.append({a: face.a + offset, b: face.b + offset, c: face.c + offset, hue: face.hue}) }
+  return {vertices: a.vertices.concat(b.vertices), faces: faces}
+}
+
+fn d3_shift(mesh: D3Mesh, x: Number, y: Number, z: Number) -> D3Mesh {
+  return {vertices: for p in mesh.vertices { {x: p.x + x, y: p.y + y, z: p.z + z} }, faces: mesh.faces}
+}
+
+fn d3_orrery_scene() -> D3Scene {
+  let first = d3_torus_mesh(1.25, 0.075, 36, 8, 0, 0, 0, 0)
+  let second = d3_torus_mesh(1.22, 0.07, 36, 8, 68, 24, 18, 2)
+  let third = d3_torus_mesh(1.19, 0.06, 36, 8, -47, 63, -14, 4)
+  let rings = d3_merge(d3_merge(first, second), third)
+  let mesh = d3_merge(rings, d3_sphere_mesh(0.36, 12, 10, 1))
+  return {
+    title: "Abyssal Orrery",
+    palette: "aurora",
+    width: 1100,
+    height: 680,
+    camera: {yaw: 33, pitch: -24, roll: 6, distance: 5.4, focal: 760},
+    mesh: mesh,
+    seed: 8453
+  }
+}
+
+fn d3_bloom_scene(palette: Text, seed: Number) -> D3Scene {
+  let petal = d3_sphere_mesh(0.62, 14, 12, 0)
+  let north = d3_shift(petal, 0, 0.56, 0)
+  let east = d3_shift(d3_sphere_mesh(0.62, 14, 12, 1), 0.54, 0, 0)
+  let south = d3_shift(d3_sphere_mesh(0.62, 14, 12, 2), 0, -0.56, 0)
+  let west = d3_shift(d3_sphere_mesh(0.62, 14, 12, 3), -0.54, 0, 0)
+  let fore = d3_shift(d3_sphere_mesh(0.62, 14, 12, 4), 0, 0, 0.52)
+  let aft = d3_shift(d3_sphere_mesh(0.62, 14, 12, 5), 0, 0, -0.52)
+  let core = d3_sphere_mesh(0.37, 12, 10, 1)
+  let mesh = d3_merge(d3_merge(d3_merge(d3_merge(d3_merge(d3_merge(north, east), south), west), fore), aft), core)
+  return {title: "Vesper Bloom", palette: palette, width: 1100, height: 680, camera: {yaw: 32, pitch: -20, roll: 4, distance: 5.4, focal: 760}, mesh: mesh, seed: seed}
+}
+
+fn d3_scene_for(text: Text, palette: Text) -> D3Scene {
+  let t = " " + text.lower() + " "
+  let seed = 8453 + text.length() * 37
+  if t.contains(" planet") or t.contains(" orbit") or t.contains(" orrery") or t.contains(" solar") or t.contains(" galaxy") or t.contains(" atom") or t.contains(" moon") {
+    return {..d3_orrery_scene(), palette: palette, seed: seed}
+  }
+  return d3_bloom_scene(palette, seed)
+}
+
+fn d3_render(scene: D3Scene) -> D3Art {
+  let safe = if palette_names().contains(scene.palette) { scene } else { {..scene, palette: "dark_matter"} }
+  let svg = d3_svg(safe)
+  let page = d3_page(safe, svg)
+  let problems = d3_scene_problems(scene).concat(palette_problems(palette_named(if palette_names().contains(scene.palette) { scene.palette } else { "dark_matter" })))
+  return {title: safe.title, palette: safe.palette, svg: svg, page: page, problems: problems, faces: safe.mesh.faces.length()}
+}
+
+workflow d3_orrery() -> D3Art {
+  out = d3_render(d3_orrery_scene())
+}
+
+test "the perspective camera maps its origin to the canvas centre" {
+  camera: D3Camera = {yaw: 0, pitch: 0, roll: 0, distance: 5, focal: 500}
+  centre = d3_project({x: 0, y: 0, z: 0}, camera, 800, 600)
+  expect centre.x == 400
+  expect centre.y == 300
+}
+
+test "near points grow under perspective projection" {
+  camera: D3Camera = {yaw: 0, pitch: 0, roll: 0, distance: 5, focal: 500}
+  near = d3_project({x: 1, y: 0, z: 1}, camera, 800, 600)
+  far = d3_project({x: 1, y: 0, z: -1}, camera, 800, 600)
+  expect near.x > far.x
+}
+
+test "the Orrery builds a shaded, palette-backed mesh" {
+  scene = d3_orrery_scene()
+  art = d3_render(scene)
+  expect scene.mesh.faces.length() > 1500
+  expect art.svg.contains("<polygon")
+  expect art.svg.contains("color-mix(in srgb,var(--h")
+  expect art.svg.contains("--bg:#050b14")
+  expect art.problems.is_empty()
+}
+
+test "the rotated Orrery occupies a useful part of its canvas" {
+  scene = d3_orrery_scene()
+  expect d3_projected_width(scene) > scene.width * 0.25
+}
+
+test "the 3D scene picker chooses a celestial mesh or a volumetric sculpture" {
+  orbit = d3_scene_for("a 3d sculpture of planets in orbit", "aurora")
+  bloom = d3_scene_for("a 3d sculptural bloom", "forest")
+  expect orbit.title == "Abyssal Orrery"
+  expect orbit.palette == "aurora"
+  expect bloom.title == "Vesper Bloom"
+  expect bloom.palette == "forest"
+  expect bloom.mesh.faces.length() > 1500
+  expect bloom.seed != orbit.seed
+}
+
+test "the Canvas viewer supplies pointer, wheel and touch-friendly camera controls" {
+  scene = d3_scene_for("a 3d sculptural bloom", "aurora")
+  viewer = d3_viewer(scene)
+  expect viewer.contains("<canvas")
+  expect viewer.contains("pointerdown")
+  expect viewer.contains("addEventListener('wheel'")
+  expect viewer.contains("data-reset")
+  expect viewer.contains("requestAnimationFrame")
+  expect not viewer.contains("https://")
+}
