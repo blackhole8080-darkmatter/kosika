@@ -8,6 +8,8 @@
 //           open:calculator browse
 //   typing  steady (15 letters a second), fast (about 60), instant (pasted)
 //   skills  a note in skills/NAME.md, or another agent's, like coder/python
+//   patience  seconds you must have left keyboard and mouse alone before it
+//           types, clicks or brings a window forward (0 to 30; 0 never waits)
 
 import "kit.kos"
 
@@ -16,13 +18,13 @@ export [kits, kit_named]
 fn kits() -> Kit[] {
   return [
     {name: "Kosika", colour: "amber", skills: ["notes", "windows"], tools: ["hand"],
-     hands: ["look", "press", "write", "read", "move", "click", "type", "keys", "open:notepad", "open:calculator", "browse"], typing: "fast"},
+     hands: ["look", "press", "write", "read", "move", "click", "type", "keys", "open:notepad", "open:calculator", "browse"], typing: "fast", patience: 3},
     {name: "coder-1", colour: "pink", skills: ["windows", "coder/python"], tools: ["hand"],
-     hands: ["look", "press", "write", "read", "open:notepad"], typing: "fast"},
+     hands: ["look", "press", "write", "read", "open:notepad"], typing: "fast", patience: 3},
     {name: "coder-2", colour: "sky", skills: ["windows", "coder/tests"], tools: ["hand"],
-     hands: ["look", "press"], typing: "steady"},
+     hands: ["look", "press"], typing: "steady", patience: 3},
     {name: "scout", colour: "mint", skills: ["web-reading"], tools: ["hand"],
-     hands: ["browse"], typing: "instant"}
+     hands: ["browse"], typing: "instant", patience: 3}
   ]
 }
 
@@ -31,7 +33,7 @@ fn kit_named(name: Text) -> Kit {
   for k in kits() {
     if k.name == name { return k }
   }
-  return {name: name, colour: "", skills: [], tools: [], hands: [], typing: "steady"}
+  return {name: name, colour: "", skills: [], tools: [], hands: [], typing: "steady", patience: 3}
 }
 
 test "every kit here is a good kit" {

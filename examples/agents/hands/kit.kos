@@ -9,6 +9,8 @@
 //   hands   the actions its hands may do on this computer; main.kos refuses
 //           any action whose hand is not in the kit, before anything is done
 //   typing  how fast it types: "steady", "fast" or "instant"
+//   patience  seconds the person must have left keyboard and mouse alone
+//           before an action that needs them; 0 does not wait
 //
 // A kit only narrows: the person still says yes to every action, and holding
 // Escape still stops any action at once.
@@ -16,9 +18,9 @@
 import "pointer_look.kos"
 import "std/designs_palette.kos"
 
-export [Kit, KitCheck, known_hands, typing_speeds, kit_problems, kit_card, page_css, hand_for, refusal, typed_check, Typed]
+export [Kit, KitCheck, known_hands, typing_speeds, kit_problems, kit_card, page_css, hand_for, refusal, typed_check, Typed, quiet_needed, wait_at_most]
 
-record Kit { name: Text colour: Text skills: Text[] tools: Text[] hands: Text[] typing: Text }
+record Kit { name: Text colour: Text skills: Text[] tools: Text[] hands: Text[] typing: Text patience: Number }
 record KitCheck { ok: Bool problems: Text[] colour: Text }
 record Typed { ok: Bool checked: Bool said: Text }
 
@@ -108,6 +110,9 @@ fn kit_problems(k: Kit) -> Text[] {
   if not typing_speeds().contains(k.typing) {
     out = out.append(f"typing '{k.typing}' is not a speed; use {all_speeds}")
   }
+  if k.patience < 0 or k.patience > 30 or k.patience != k.patience.floor() {
+    out = out.append(f"patience {k.patience.to_text()} should be a whole number of seconds from 0 to 30")
+  }
   let asked = k.colour.trim().lower()
   if asked != "" and asked != "auto" and colour_for(k.name, asked) == hue_for(k.name) and asked != hue_for(k.name) {
     out = out.append(f"the colour '{k.colour}' is not #rrggbb or a Kosika colour, or is too dark to see; the agent's own hue is used")
@@ -134,6 +139,22 @@ fn hand_for(action: Text[]) -> Text {
   if what == "type-into" { return "type" }
   if what == "key" { return "keys" }
   return what
+}
+
+// ---- Waiting while the person works --------------------------------------
+
+// The longest the hands wait for the person to stop, in seconds, before they
+// give up and do nothing.
+fn wait_at_most() -> Number { return 60 }
+
+// Whether an action needs the person to have left keyboard and mouse alone
+// first: one that types, clicks, moves the mouse or brings a window to the
+// front would take them from under the person's hands. Looking, reading and
+// pressing through Windows' accessibility (the agent's own pointer, the
+// mouse not moved) do not, so they never wait.
+fn quiet_needed(action: Text[]) -> Bool {
+  if action.length() == 0 { return false }
+  return ["write", "type-into", "type", "key", "click", "click-on", "move", "move-to", "open", "clear"].contains(action[0])
 }
 
 // Why the agent may not do the action, or "" when its kit allows it.
@@ -177,6 +198,7 @@ fn kit_card(k: Kit) -> Text {
   let row = typing_row(k.typing)
   let rate = if row[1] == "all" { "all at once" } else { row[1] + " letters a second" }
   let level = if k.typing == "instant" { 100 } else { if k.typing == "fast" { 72 } else { 18 } }
+  let waits = if k.patience == 0 { "does not wait for you" } else { f"waits until you have stopped for {k.patience.to_text()} s" }
   return f"<section class=\"card\" style=\"--c:{colour}\">"
     + "<div class=\"glow\"></div>"
     + f"<div class=\"stage\"><div class=\"fly\">{pointer}</div><div class=\"fly typing\">{typing}</div></div>"
@@ -187,6 +209,7 @@ fn kit_card(k: Kit) -> Text {
     + "<h3>Tools</h3><div class=\"chips\">" + chips(k.tools, "tool", "no tools") + "</div>"
     + f"<h3>Typing</h3><div class=\"speed\"><b style=\"--to:{level}%\"></b></div>"
     + f"<p class=\"rate\"><strong>{escaped_text(k.typing)}</strong> · {rate} · {escaped_text(row[2])}</p>"
+    + f"<p class=\"rate\">{waits}</p>"
     + "</section>"
 }
 
@@ -214,38 +237,50 @@ fn page_css() -> Text {
 }
 
 test "a good kit has no problems, and its colour is the one it asked for" {
-  k: Kit = {name: "coder-1", colour: "pink", skills: ["notes"], tools: ["hand"], hands: ["look", "press"], typing: "fast"}
+  k: Kit = {name: "coder-1", colour: "pink", skills: ["notes"], tools: ["hand"], hands: ["look", "press"], typing: "fast", patience: 3}
   expect kit_problems(k) == []
   expect colour_for(k.name, k.colour) == "#ff3ea5"
 }
 
 test "an unknown hand, a bad speed, a repeat and a dark colour are all told" {
-  k: Kit = {name: "x y", colour: "#050505", skills: [], tools: [], hands: ["look", "fly", "look"], typing: "warp"}
+  k: Kit = {name: "x y", colour: "#050505", skills: [], tools: [], hands: ["look", "fly", "look"], typing: "warp", patience: 2.5}
   said = kit_problems(k).join("\n")
   expect said.contains("'fly' is not a hand")
   expect said.contains("'look' is listed twice")
   expect said.contains("typing 'warp'")
   expect said.contains("too dark")
   expect said.contains("the name 'x y'")
+  expect said.contains("patience 2.5")
 }
 
 test "a card shows the agent's colour, its hands and how fast it types" {
-  k: Kit = {name: "scout", colour: "mint", skills: [], tools: ["web"], hands: ["browse"], typing: "instant"}
+  k: Kit = {name: "scout", colour: "mint", skills: [], tools: ["web"], hands: ["browse"], typing: "instant", patience: 0}
   html = kit_card(k)
   expect html.contains("--c:#4fe0a6")
   expect html.contains("browse") and html.contains("all at once")
   expect html.contains("no skills yet")
+  expect html.contains("does not wait for you")
+}
+
+test "only an action that takes the keyboard, the mouse or the front window waits for the person" {
+  expect quiet_needed(["write", "notepad", "hi"])
+  expect quiet_needed(["open", "notepad"])
+  expect quiet_needed(["click"])
+  expect not quiet_needed(["press", "notepad", "View"])
+  expect not quiet_needed(["read", "notepad"])
+  expect not quiet_needed(["look", "notepad"])
+  expect not quiet_needed([])
 }
 
 test "each action needs its hand, and a kit without it is refused" {
-  k: Kit = {name: "coder-2", colour: "sky", skills: [], tools: [], hands: ["look", "press"], typing: "steady"}
+  k: Kit = {name: "coder-2", colour: "sky", skills: [], tools: [], hands: ["look", "press"], typing: "steady", patience: 3}
   expect hand_for(["open", "notepad"]) == "open:notepad"
   expect hand_for(["click-on", "notepad", "Edit"]) == "click"
   expect refusal(k, ["press", "notepad", "View"]) == ""
   expect refusal(k, ["where"]) == ""
   expect refusal(k, ["write", "notepad", "hi"]).contains("'write' hand")
   expect refusal(k, ["open", "calculator"]).contains("'open:calculator'")
-  nobody: Kit = {name: "x", colour: "", skills: [], tools: [], hands: [], typing: "steady"}
+  nobody: Kit = {name: "x", colour: "", skills: [], tools: [], hands: [], typing: "steady", patience: 3}
   expect refusal(nobody, ["look", "notepad"]).contains("no hands")
 }
 

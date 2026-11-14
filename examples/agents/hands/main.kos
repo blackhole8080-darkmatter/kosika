@@ -47,11 +47,15 @@ fn job_refusal(k: Kit, actions: Text[][]) -> Text {
 // is a refusal, so nothing at all is done.
 fn act(k: Kit, refused: Text, what: Text[]) -> Text[] {
   if refused != "" { return ["hands.py", "refuse", refused] }
-  return ["hands.py", "--agent", k.name, "--colour", colour_for(k.name, k.colour), "--speed", k.typing].concat(what)
+  let quiet: Text[] = if quiet_needed(what) and k.patience > 0 {
+    ["--quiet", k.patience.to_text(), "--wait-most", wait_at_most().to_text()]
+  } else { [] }
+  return ["hands.py", "--agent", k.name, "--colour", colour_for(k.name, k.colour), "--speed", k.typing].concat(quiet).concat(what)
 }
 
 fn why_stopped(ran: Ran) -> Text {
   if ran.exit_code == 3 { return "you stopped it with Escape" }
+  if ran.exit_code == 6 { return "you were still working, so it waited and then did nothing: " + ran.stdout.trim() }
   return (ran.stdout.trim() + " " + ran.stderr.trim()).trim()
 }
 
@@ -119,7 +123,18 @@ test "an agent whose kit lacks a hand does nothing at all" {
 test "the agent's colour and speed go with every command" {
   k = kit_named("coder-1")
   c = act(k, "", ["write", "notepad", "hi"])
-  expect c == ["hands.py", "--agent", "coder-1", "--colour", "#ff3ea5", "--speed", "fast", "write", "notepad", "hi"]
+  expect c == ["hands.py", "--agent", "coder-1", "--colour", "#ff3ea5", "--speed", "fast", "--quiet", "3", "--wait-most", "60", "write", "notepad", "hi"]
+  expect act(k, "", ["read", "notepad"]) == ["hands.py", "--agent", "coder-1", "--colour", "#ff3ea5", "--speed", "fast", "read", "notepad"]
+}
+
+test "a person who keeps working is waited for, and then nothing is done" {
+  steps: Ran[] = [
+    {exit_code: 0, stdout: "opened notepad", stderr: ""},
+    {exit_code: 6, stdout: "waiting for you to stop typing or moving the mouse\nyou kept working for 60 s, so nothing was done", stderr: ""}
+  ]
+  d = done(steps)
+  expect d.stopped and d.steps == 1
+  expect d.said.contains("you were still working")
 }
 
 test "Escape held during an action stops the job there" {

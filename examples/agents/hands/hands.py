@@ -145,6 +145,42 @@ def point_at(x: int, y: int, state: str = "idle") -> None:
         time.sleep(0.8)
 
 
+class LASTINPUTINFO(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.UINT), ("dwTime", wintypes.DWORD)]
+
+
+def idle_seconds() -> float:
+    """How long since the person last touched the keyboard or the mouse."""
+    info = LASTINPUTINFO(ctypes.sizeof(LASTINPUTINFO))
+    user32.GetLastInputInfo(ctypes.byref(info))
+    return ((ctypes.windll.kernel32.GetTickCount() - info.dwTime) & 0xFFFFFFFF) / 1000
+
+
+#: Told by Kosika (kit.kos) for an action that needs the keyboard, the mouse
+#: or the front window: the seconds the person must have left them alone
+#: first, and the longest to wait for that before doing nothing (exit 6).
+QUIET, WAIT_MOST = 0.0, 60.0
+
+
+def wait_for_quiet() -> None:
+    if QUIET <= 0:
+        return
+    started, told = time.time(), False
+    while idle_seconds() < QUIET:
+        if stopped():
+            print("stopped: Escape is held")
+            sys.exit(3)
+        if time.time() - started > WAIT_MOST:
+            print(f"you kept working for {WAIT_MOST:.0f} s, so nothing was done")
+            sys.exit(6)
+        if not told:
+            print("waiting for you to stop typing or moving the mouse", flush=True)
+            told = True
+        time.sleep(0.25)
+    if told:
+        print(f"waited {time.time() - started:.0f} s for you", flush=True)
+
+
 def guard() -> None:
     if stopped():
         print("stopped: Escape is held")
@@ -417,18 +453,24 @@ def text_field(name: str) -> dict | None:
 
 
 def main(args: list[str]) -> None:
-    global OWN_POINTER_ONLY, AGENT, COLOUR, SPEED, TARGET
-    # Who acts, in what colour, how fast: told by Kosika before the action.
-    while len(args) > 1 and args[0] in ("--agent", "--colour", "--speed"):
+    global OWN_POINTER_ONLY, AGENT, COLOUR, SPEED, TARGET, QUIET, WAIT_MOST
+    # Who acts, in what colour, how fast, and how long to wait for the
+    # person: told by Kosika before the action.
+    while len(args) > 1 and args[0] in ("--agent", "--colour", "--speed", "--quiet", "--wait-most"):
         if args[0] == "--agent":
             AGENT = args[1]
         elif args[0] == "--colour":
             COLOUR = args[1]
+        elif args[0] == "--quiet":
+            QUIET = float(args[1])
+        elif args[0] == "--wait-most":
+            WAIT_MOST = float(args[1])
         elif args[1] in PAUSES:
             SPEED = args[1]
         args = args[2:]
     if not args:
         raise SystemExit(__doc__)
+    wait_for_quiet()
     what, rest = args[0], args[1:]
     if what == "where":
         x, y = where()
