@@ -167,6 +167,34 @@ def run_coder(folder: Path, agents: Path, text: str) -> dict:
     }
 
 
+DEVELOP = HERE / "develop.kos"
+
+
+def judge_in_kosika(place: Path, text: str, files: list[str], ran: dict, today: str) -> dict:
+    """Run develop.kos on a finished coder run: the checks, the verdict,
+    report.md and a line in kosika-daily/coders.kl. Its steps change files
+    and start programs, so it asks before each; this driver, the person's
+    stand-in for the day, says yes, as it does for the coder."""
+    agents = place / "_judge"
+    agents.mkdir(exist_ok=True)
+    shutil.copy(DEVELOP, agents / "develop.kos")
+    # develop.kos asks no model; the app is told so by a binder that binds none.
+    app = App(agents, bind_models=lambda program: {}, model_label="none", allow_folder=WORK, allow_shell=True)
+    agent = next(key for key in app.agents() if key.startswith("develop"))
+    done = {"request": text, "run": place.name, "files": files, "state": ran["state"],
+            "said": ran["said"] or ran["error"], "seconds": ran["seconds"], "date": today}
+    job = app.start(agent, {"inputs": {"d": done}})
+    started = time.monotonic()
+    while job.state in ("running", "waiting") and time.monotonic() - started < 900:
+        if job.state == "waiting":
+            app.decide(job.id, True)
+        time.sleep(0.3)
+    result = getattr(job, "result", None) or {}
+    if job.state != "done" or "passed" not in result:
+        raise SystemExit(f"develop.kos could not judge {place.name}: {job.state} {job.error}")
+    return result
+
+
 def changed_files(before: Path, after: Path) -> list[str]:
     names = []
     for path in sorted(after.rglob("*")):
@@ -370,42 +398,12 @@ def main() -> None:
         + "\n"
     )
     (place / "change.patch").write_text(diff, encoding="utf-8", newline="\n")
-    checks = checked(after, files)
-    # The coder's own words count against it, never for it: a run that says
-    # its tests failed, or that the engines disagree, has not passed.
-    said = ran["said"]
-    owned_up = any(words in said for words in ("do NOT agree", "did not go on")) or (
-        "engines agree" not in said and "The tests failed" in said[-800:]
-    )
-    passed = (
-        bool(files)
-        and ran["state"] == "done"
-        and not owned_up
-        and all(ok for _, ok, _ in checks)
-    )
-
-    report = [
-        f"# {text}",
-        "",
-        f"{today}, {ran['seconds']} s, {'passed its checks' if passed else 'did not pass'}",
-        "",
-        "## Files changed",
-        *(f"- {name}" for name in files or ["(none)"]),
-        "",
-        "## Checked afterwards",
-    ]
-    report += [f"- {'PASS' if ok else 'FAIL'} {name}" for name, ok, _ in checks] or [
-        "- nothing to check"
-    ]
-    report += ["", "## What the coder said", "", ran["said"] or ran["error"], ""]
-    for name, ok, output in checks:
-        if not ok:
-            report += [f"## {name}", "", "```", output, "```", ""]
-    report += [
-        "To bring it into Kosika: `git apply " + str(place / "change.patch") + "`",
-        "",
-    ]
-    (place / "report.md").write_text("\n".join(report), encoding="utf-8")
+    # The verdict, the report and the record of the run are Kosika's:
+    # develop.kos runs the checks and decides; this only hands it the facts.
+    judged = judge_in_kosika(place, text, files, ran, today)
+    passed = judged["passed"]
+    with (place / "report.md").open("a", encoding="utf-8") as report:
+        report.write("\n\nTo bring it into Kosika: `git apply " + str(place / "change.patch") + "`\n")
     (place / "run.json").write_text(
         json.dumps({**ran, "files": files, "passed": passed}, indent=1),
         encoding="utf-8",

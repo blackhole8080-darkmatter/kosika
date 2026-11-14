@@ -1,0 +1,206 @@
+// develop.kos: how a Kosika coder's day is judged and kept, in Kosika.
+//
+// The daily driver (daily.py) still does the plumbing a program cannot do
+// for itself: copy Kosika into a fresh folder, start the coder agent, and
+// say yes to its steps. Everything that decides something is here:
+//
+//   kosika run develop.kos --workflow next --input todo.json
+//       which request is next in todo.md
+//   kosika run develop.kos --input done.json --allow-folder KOSIKA_DAILY --allow-shell
+//       run the checks a person can trust without reading the model's words
+//       (the new tests, the Go engine compiles), decide whether the change
+//       passed, write the run's report.md, and add the run to coders.kl,
+//       a Kosika log of every coder run, in the kosika-daily folder
+//
+// So Kosika's own coders can read and improve the rules they are judged by.
+
+record Todo { text: Text }
+record Next { found: Bool line: Number request: Text }
+
+// The first open request in todo.md ("- [ ] ..."), skipping taken ones.
+fn next_request(t: Todo) -> Next {
+  let lines = t.text.replace("\r\n", "\n").split("\n")
+  for i in 0 until lines.length() {
+    if lines[i].starts_with("- [ ] ") {
+      return {found: true, line: i, request: lines[i].drop(6).trim()}
+    }
+  }
+  return {found: false, line: -1, request: ""}
+}
+
+workflow next(t: Todo) -> Next {
+  found = next_request(t)
+}
+
+// ------------------------------------------------------------ finishing
+
+// What the driver hands over when the coder has stopped.
+record Done {
+  request: Text
+  run: Text
+  files: Text[]
+  state: Text
+  said: Text
+  seconds: Number
+  date: Text
+}
+record Command { args: Text[] }
+record Ran { exit_code: Number stdout: Text stderr: Text }
+record Check { name: Text ok: Bool output: Text }
+record Verdict { passed: Bool why: Text checks: Check[] report: Text }
+record Report { path: Text text: Text }
+record Wrote { bytes: Number }
+// One line of coders.kl: what each coder was asked and how it ended.
+record Kept { request: Text run: Text passed: Bool why: Text seconds: Number files: Text[] }
+record Keep { path: Text by: Text entry: Kept }
+record KeptAt { n: Number hash: Text }
+
+tool python {
+  source system "shell"
+  operation: "python"
+  access: execute
+  input: Command
+  output: Ran
+}
+
+tool go {
+  source system "shell"
+  operation: "go"
+  access: execute
+  input: Command
+  output: Ran
+}
+
+tool write_report {
+  source system "files"
+  operation: "write"
+  access: execute
+  input: Report
+  output: Wrote
+}
+
+tool keep {
+  source system "log"
+  operation: "append"
+  access: observe
+  input: Keep
+  output: KeptAt
+}
+
+agent checker {
+  can: [python, go, write_report, keep]
+  max_steps: 1
+}
+
+fn test_files(files: Text[]) -> Text[] {
+  var tests: Text[] = []
+  for f in files {
+    if f.starts_with("tests/") and f.ends_with(".py") { tests = tests.append(f) }
+  }
+  return tests
+}
+
+fn has_go(files: Text[]) -> Bool {
+  for f in files {
+    if f.ends_with(".go") { return true }
+  }
+  return false
+}
+
+// The test files the change wrote, or, when it wrote none, a run that does
+// nothing: pytest given no file would run the whole of Kosika's suite.
+// The run's copy of Kosika is RUN/kosika inside the granted folder; pytest
+// is started there, so the copy's own kosika package is the one tested.
+fn pytest_args(run: Text, files: Text[]) -> Text[] {
+  if test_files(files).is_empty() { return ["-c", "print('no tests to run')"] }
+  let quoted = test_files(files).join("', '")
+  return ["-c", "import os, sys; os.chdir('" + run + "/kosika'); sys.path.insert(0, '.'); import pytest; sys.exit(pytest.main(['-q', '-p', 'no:cacheprovider', '" + quoted + "']))"]
+}
+
+fn vet_args(run: Text, files: Text[]) -> Text[] {
+  if has_go(files) { return ["-C", run + "/kosika/native", "vet", "."] }
+  return ["version"]
+}
+
+fn check_of(name: Text, ran: Ran) -> Check {
+  let output = (ran.stdout + ran.stderr)
+  let tail = if output.length() > 1500 { output.drop(output.length() - 1500) } else { output }
+  return {name: name, ok: ran.exit_code == 0, output: tail}
+}
+
+// The coder's own words count against it, never for it: a run that says
+// its tests failed, or that the engines disagree, has not passed.
+fn owned_up(said: Text) -> Bool {
+  let last = if said.length() > 800 { said.drop(said.length() - 800) } else { said }
+  return said.contains("do NOT agree") or said.contains("did not go on") or (not said.contains("engines agree") and last.contains("The tests failed"))
+}
+
+fn verdict(d: Done, checks: Check[]) -> Verdict {
+  var all_ok = true
+  for c in checks {
+    if not c.ok { all_ok = false }
+  }
+  let why = if d.files.is_empty() { "it changed no file" } else { if d.state != "done" { "the coder did not finish (" + d.state + ")" } else { if owned_up(d.said) { "the coder said its own tests or engines failed" } else { if not all_ok { "a check failed" } else { "" } } } }
+  let passed = why.is_empty()
+  var lines: Text[] = ["# " + d.request, "", d.date + ", " + d.seconds.to_text() + " s, " + (if passed { "passed its checks" } else { "did not pass" }), "", "## Files changed"]
+  for f in d.files { lines = lines.append("- " + f) }
+  if d.files.is_empty() { lines = lines.append("- (none)") }
+  lines = lines.concat(["", "## Checked afterwards"])
+  for c in checks { lines = lines.append("- " + (if c.ok { "PASS " } else { "FAIL " }) + c.name) }
+  if checks.is_empty() { lines = lines.append("- nothing to check") }
+  if not passed { lines = lines.concat(["", "Why it did not pass: " + why]) }
+  lines = lines.concat(["", "## What the coder said", "", d.said, ""])
+  for c in checks {
+    if not c.ok { lines = lines.concat(["## " + c.name, "", "```", c.output, "```", ""]) }
+  }
+  lines = lines.append("Judged by develop.kos.")
+  return {passed: passed, why: if passed { "passed its checks" } else { why }, checks: checks, report: lines.join("\n")}
+}
+
+fn checks_of(d: Done, tests: Ran, vet: Ran) -> Check[] {
+  var out: Check[] = []
+  if not test_files(d.files).is_empty() { out = out.append(check_of("pytest " + test_files(d.files).join(" "), tests)) }
+  if has_go(d.files) { out = out.append(check_of("go vet (the Go engine compiles)", vet)) }
+  return out
+}
+
+workflow main(d: Done) -> Verdict {
+  tests   = execute checker.python(pytest_args(d.run, d.files))
+  vet     = execute checker.go(vet_args(d.run, d.files))
+  judged  = verdict(d, checks_of(d, tests, vet))
+  written = execute checker.write_report(d.run + "/report.md", judged.report)
+  kept    = execute checker.keep("coders.kl", d.run, {request: d.request, run: d.run, passed: judged.passed, why: judged.why, seconds: d.seconds, files: d.files})
+  result  = judged
+  require approval
+}
+
+test "the next request is the first open one" {
+  n = next_request({text: "# todo\n- [x] done one\n- [~] taken one\n- [ ] add a Number method is_even()\n- [ ] later\n"})
+  expect n.found
+  expect n.line == 3
+  expect n.request == "add a Number method is_even()"
+  expect not next_request({text: "- [x] all done\n"}).found
+}
+
+test "a change passes only when it changed files, finished, owned up to nothing, and every check passed" {
+  d: Done = {request: "add x", run: "2026-11-14-1", files: ["kosika/builtin_methods.py", "tests/test_x.py", "native/methods.go"], state: "done", said: "The tests pass. The engines agree.", seconds: 120, date: "2026-11-14"}
+  ok: Ran = {exit_code: 0, stdout: "3 passed", stderr: ""}
+  bad: Ran = {exit_code: 1, stdout: "1 failed", stderr: ""}
+  good = verdict(d, checks_of(d, ok, ok))
+  expect good.passed
+  expect good.checks.length() == 2
+  expect good.report.contains("passed its checks")
+  failing = verdict(d, checks_of(d, bad, ok))
+  expect not failing.passed
+  expect failing.why == "a check failed"
+  expect failing.report.contains("FAIL pytest tests/test_x.py")
+  owned = verdict({request: d.request, run: d.run, files: d.files, state: "done", said: "I added it, but the engines do NOT agree", seconds: 9, date: d.date}, checks_of(d, ok, ok))
+  expect not owned.passed
+  nothing = verdict({request: d.request, run: d.run, files: [], state: "done", said: "", seconds: 9, date: d.date}, [])
+  expect nothing.why == "it changed no file"
+  expect pytest_args("r1", d.files)[1].contains("os.chdir('r1/kosika')")
+  expect pytest_args("r1", d.files)[1].contains("'tests/test_x.py'")
+  expect pytest_args("r1", ["kosika/a.py"]) == ["-c", "print('no tests to run')"]
+  expect vet_args("r1", d.files) == ["-C", "r1/kosika/native", "vet", "."]
+  expect vet_args("r1", ["kosika/a.py"]) == ["version"]
+}
