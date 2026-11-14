@@ -1147,7 +1147,7 @@ tool run_tests {
   the same session and ledger as any other `execute` tool.
 - A shell tool starts only the program named in `operation`, with `args`
   passed as a list and never interpreted by a shell, inside the granted
-  folder, for at most 60 seconds, with output cut at 64 KiB per stream.
+  folder, for at most 180 seconds, with output cut at 64 KiB per stream.
 - `search` gives the lines holding the query's words (a word is matched
   where a word begins, and a word of three letters or fewer must be the
   whole word) and `find` the lines

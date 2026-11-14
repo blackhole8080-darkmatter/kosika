@@ -32,7 +32,7 @@ import (
 const (
 	systemPrefix     = "system:"
 	peekCharacters   = 4000
-	shellSeconds     = 60
+	shellSeconds     = 180
 	maxOutput        = 64 * 1024
 	maxFileBytes     = 1024 * 1024
 	maxListedNames   = 1000

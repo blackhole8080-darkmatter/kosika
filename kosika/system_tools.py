@@ -205,7 +205,9 @@ _NOT_SEARCHED = {
 }
 #: How much of a file `peek` gives back.
 PEEK_CHARACTERS = 4000
-SHELL_TIMEOUT_SECONDS = 60
+# A test suite run while a model on this computer is busy answering can take
+# minutes on a laptop processor; three are allowed before it is stopped.
+SHELL_TIMEOUT_SECONDS = 180
 MAX_OUTPUT_CHARACTERS = 64 * 1024
 MAX_FILE_BYTES = 1024 * 1024
 MAX_LISTED_NAMES = 1000
