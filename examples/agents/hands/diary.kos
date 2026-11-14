@@ -13,6 +13,8 @@ import "kit.kos"
 import "kits.kos"
 import "pointer_look.kos"
 
+export [Entry, Diary, Page, agent_in, action_in, ending, shown_action, agents_of, diary_page]
+
 record Entry { run: Number at: Text job: Text step: Text args: Text[] exit_code: Number said: Text approved_by: Text }
 record Diary { title: Text entries: Entry[] }
 record Page { html: Text }
@@ -147,7 +149,7 @@ fn row(e: Entry, agent: Text, at: Number) -> Text {
     + f"<div class=\"what\"><div class=\"pointer\">{pointer}</div><div>"
     + f"<p class=\"head\"><b>{escaped_text(shown)}</b><code>{escaped_text(shown_action(e))}</code>"
     + f"<em>{ending(e)}</em>{approved}</p>{said}"
-    + f"<p class=\"job\">{escaped_text(e.job)} · {escaped_text(e.step)}</p></div></div></li>"
+    + f"<p class=\"job\">{escaped_text(e.job)} · run {e.run.to_text()} · {escaped_text(e.step)}</p></div></div></li>"
 }
 
 fn diary_page(d: Diary) -> Text {

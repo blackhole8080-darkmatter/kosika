@@ -79,10 +79,21 @@ def main() -> int:
     parser.add_argument("paths", nargs="+", type=Path)
     parser.add_argument("--out", type=Path, default=Path("diary.html"))
     parser.add_argument("--title", default="Hands diary")
+    parser.add_argument("--lesson", type=int, metavar="RUN",
+                        help="Write lesson.json from this run of the diary, for learn.kos to learn a skill from.")
+    parser.add_argument("--name", default="", help="The learned skill's name, with --lesson.")
+    parser.add_argument("--when", default="", help="When the learned skill fits, words split by commas, with --lesson.")
     args = parser.parse_args()
     actions: list[dict] = []
     for trace in traces(args.paths):
         actions += entries(trace, actions[-1]["run"] if actions else 0)
+    if args.lesson is not None:
+        lesson = {"l": {"name": args.name, "when": [w.strip() for w in args.when.split(",") if w.strip()],
+                        "entries": [a for a in actions if a["run"] == args.lesson]}}
+        Path("lesson.json").write_text(json.dumps(lesson, indent=2), encoding="utf-8")
+        print(f"lesson.json holds run {args.lesson} ({len(lesson['l']['entries'])} actions). To learn from it:")
+        print("kosika run learn.kos --workflow learn --input lesson.json --allow-shell --allow-folder . --approve")
+        return 0
     with tempfile.TemporaryDirectory() as work:
         ask = Path(work) / "ask.json"
         ask.write_text(json.dumps({"d": {"title": args.title, "entries": actions}}), encoding="utf-8")

@@ -67,3 +67,14 @@ From your phone, on the same Wi-Fi as the laptop:
 The page shows each waiting action with a Yes and a No button. Without the
 key in the address nothing is shown or answered. Windows may ask once whether
 Python may accept connections on your private network.
+
+## Skills that grow
+
+A run that worked, every step done, can become a skill note. You approve it
+before it is kept, and a learned note never replaces another:
+
+    python diary.py traces --lesson 3 --name open-and-write-a-note --when "note, notepad"
+    kosika run learn.kos --workflow learn --input lesson.json --allow-shell --allow-folder . --approve
+
+`learn.kos` decides whether the run can be learned from and writes the note
+(`skills/learned-NAME.md`); the next job that fits its When words is given it.
