@@ -33,6 +33,13 @@ fn page(team: Kit[]) -> Text {
     + f"<main class=\"grid\">{shown}</main></body></html>"
 }
 
+record Shown { html: Text }
+
+// The page itself, without writing a file: for Studio or another program.
+workflow show(a: Ask) -> Shown {
+  result = {html: page(kits())}
+}
+
 workflow draw(a: Ask) -> Written {
   html = page(kits())
   written = execute artist.write_file(path: a.file, text: html)
