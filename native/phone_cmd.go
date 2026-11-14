@@ -40,6 +40,7 @@ On the laptop:
   phone unpair NAME                       forget a device
   phone id [--name NAME]                  this device's name and id
   phone relay [--port 8795]               run a relay of your own (ntfy's protocol)
+  phone mcp [--manifest]                  let Kosika programs and agents use paired phones
 
 Real control of an Android phone over USB or Wi-Fi debugging (asks yes each time):
   phone adb devices | tap X Y | swipe X1 Y1 X2 Y2 [MS] | type TEXT |
@@ -84,6 +85,8 @@ func phoneCommand(args []string) int {
 		err = phoneADB(rest, os.Stdin)
 	case "relay":
 		err = phoneRelayCommand(rest)
+	case "mcp":
+		err = phoneMCPCommand(rest)
 	default:
 		err = fmt.Errorf("no phone command %q\n\n%s", command, phoneUsage)
 	}

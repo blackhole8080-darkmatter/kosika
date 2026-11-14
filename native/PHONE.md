@@ -136,10 +136,35 @@ Each one is asked about on the phone first. `save` writes only `NAME.kos`
 files in `~/kosika`, and `test` runs only Kosika's own tests: no shell, no
 other program.
 
+## Agents that use a phone
+
+`kos phone mcp` lets Kosika programs, and any agent that speaks MCP, use the
+phones paired with this device. It gives two tools:
+
+- `phone_ask` reads a sense (`device`, `sense`).
+- `phone_do` does an action (`device`, `action`, `args`).
+
+Each call is one signed, sealed request, and the phone's person still says
+yes on the phone. A program reaches the phone only when the person running
+it names the server in an environment and pins its manifest, as with any
+MCP server. See [examples/phone](../examples/phone/):
+
+    kos phone mcp --manifest > phone_manifest.json
+    kos run phone_agent.kos --env phone --workflow look --input where.json
+
+`look` asks what the phone is. `remind` shows a message, so it also waits
+for an approval on this device first, then the yes on the phone. The
+answer says `done`, `refused` or `failed`, and `simulated` when it was.
+
+A person needs time to answer, so the manifest pins `waitSeconds: 150`.
+Both engines read `waitSeconds` (1 to 300; 10 when it is not there) as how
+long one call to that server may take.
+
 ## Commands
 
     phone node [--relay] [--port 8794] [--name NAME] [--pair] [--confirm terminal|dialog] [--simulate]
     phone relay [--port 8795]
+    phone mcp [--manifest [SOURCE]]
     phone pair ADDRESS CODE [--name NAME]
     phone list | id | ping NAME | ask NAME SENSE | do NAME ACTION ARGS...
     phone log NAME [--check] | unpair NAME
@@ -151,5 +176,4 @@ other program.
 ## Next
 
 - The phone asking Kosika agents (Kosi, the study agent) on the laptop.
-- A `phone` tool for Kosika programs, so agents can ask, with the same yes.
 - A native Android app on the same protocol, and iPhone Shortcuts.

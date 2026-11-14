@@ -992,6 +992,7 @@ def _call_declared_tool(
                 f"Pinned output schema for {tool.operation!r} does not match Kosika record {tool.output!r}"
             )
         with MCPStdioClient(mcp_commands[tool.source]) as client:
+            client.timeout = manifest.wait_seconds
             verify_server(client, manifest)
             advertised = client.require_tool(tool.operation)
             result = client.call_tool(
