@@ -1,0 +1,237 @@
+// Hands: Kosika agents with cursors of their own, working live on this
+// Windows laptop while their owner watches.
+//
+//   kosika run main.kos --workflow note --input note.json --allow-shell --allow-folder . --approve
+//
+// note.json is {"n": {"agent": "coder-1", "text": "hello"}}. Each agent acts
+// within its kit (kits.kos): its pointer's colour, its typing speed, and the
+// hands it may use. Kosika decides here, before anything is done, whether
+// the kit allows every action of the job; if one is not allowed, no action
+// is done and the owner is told why. Each action that is allowed is shown to
+// the owner first and done only on a yes. Holding Escape stops any action at
+// once (hands.py). hands.py only does what it is told.
+
+import "kit.kos"
+import "kits.kos"
+import "pointer_look.kos"
+
+record Note { agent: Text text: Text }
+record Command { args: Text[] }
+record Ran { exit_code: Number stdout: Text stderr: Text }
+record Done { said: Text steps: Number stopped: Bool checked: Bool }
+
+tool hand {
+  source system "shell"
+  operation: "python"
+  access: execute
+  input: Command
+  output: Ran
+}
+
+agent hands {
+  can: [hand]
+  max_steps: 1
+}
+
+// Why the kit does not allow the whole job, or "" when it allows all of it.
+fn job_refusal(k: Kit, actions: Text[][]) -> Text {
+  for action in actions {
+    let why = refusal(k, action)
+    if why != "" { return why }
+  }
+  return ""
+}
+
+// The command for one action: the agent, its colour and its speed first, so
+// hands.py draws and types as the kit says. A refused job's every command
+// is a refusal, so nothing at all is done.
+fn act(k: Kit, refused: Text, what: Text[]) -> Text[] {
+  if refused != "" { return ["hands.py", "refuse", refused] }
+  return ["hands.py", "--agent", k.name, "--colour", colour_for(k.name, k.colour), "--speed", k.typing].concat(what)
+}
+
+fn why_stopped(ran: Ran) -> Text {
+  if ran.exit_code == 3 { return "you stopped it with Escape" }
+  return (ran.stdout.trim() + " " + ran.stderr.trim()).trim()
+}
+
+// Each step's outcome, joined: an action stopped by Escape (exit 3),
+// refused (exit 5) or failed stops the job, and the owner is told which
+// step it was.
+fn done(steps: Ran[]) -> Done {
+  var said: Text[] = []
+  var count = 0
+  for ran in steps {
+    if ran.exit_code != 0 {
+      return {said: said.append("stopped at step " + (count + 1).to_text() + ": " + why_stopped(ran)).join("\n"), steps: count, stopped: true, checked: false}
+    }
+    said = said.append(ran.stdout.trim())
+    count += 1
+  }
+  return {said: said.join("\n"), steps: count, stopped: false, checked: false}
+}
+
+// `hands.py read` says "read" or "unreadable" on its first line, then the
+// field's words; Kosika checks the typed words are among them before it
+// says the note was written.
+fn checked_note(steps: Ran[], read: Ran, text: Text) -> Done {
+  let d = done(steps)
+  if d.stopped { return d }
+  let lines = read.stdout.split("\n")
+  let check = typed_check(text, lines.drop(1).join("\n"), read.exit_code == 0 and lines[0].trim() == "read")
+  return {said: d.said + "\n" + check.said, steps: d.steps, stopped: not check.ok, checked: check.checked}
+}
+
+workflow note(n: Note) -> Done {
+  k = kit_named(n.agent)
+  refused = job_refusal(k, [["open", "notepad"], ["write", "notepad"], ["read", "notepad"]])
+  opened = execute hands.hand(args: act(k, refused, ["open", "notepad"]))
+  typed  = execute hands.hand(args: act(k, refused, ["write", "notepad", n.text]))
+  read   = execute hands.hand(args: act(k, refused, ["read", "notepad"]))
+  result = checked_note([opened, typed], read, n.text)
+  require approval
+}
+
+test "a note is written, read back and checked" {
+  steps: Ran[] = [
+    {exit_code: 0, stdout: "opened notepad", stderr: ""},
+    {exit_code: 0, stdout: "typed 11 letters into notepad (fast, 0.1 s)", stderr: ""}
+  ]
+  read: Ran = {exit_code: 0, stdout: "read\nhello there", stderr: ""}
+  d = checked_note(steps, read, "hello there")
+  expect not d.stopped and d.checked
+  expect d.said.contains("checked: all 11 letters")
+  wrong: Ran = {exit_code: 0, stdout: "read\nhelo there", stderr: ""}
+  expect checked_note(steps, wrong, "hello there").stopped
+  blind: Ran = {exit_code: 0, stdout: "unreadable\n", stderr: ""}
+  b = checked_note(steps, blind, "hello there")
+  expect not b.checked and b.said.contains("not checked")
+}
+
+test "an agent whose kit lacks a hand does nothing at all" {
+  k = kit_named("coder-2")
+  refused = job_refusal(k, [["open", "notepad"], ["write", "notepad"]])
+  expect refused.contains("'open:notepad'")
+  expect act(k, refused, ["open", "notepad"]) == ["hands.py", "refuse", refused]
+  expect job_refusal(kit_named("coder-1"), [["open", "notepad"], ["write", "notepad"], ["read", "notepad"]]) == ""
+}
+
+test "the agent's colour and speed go with every command" {
+  k = kit_named("coder-1")
+  c = act(k, "", ["write", "notepad", "hi"])
+  expect c == ["hands.py", "--agent", "coder-1", "--colour", "#ff3ea5", "--speed", "fast", "write", "notepad", "hi"]
+}
+
+test "Escape held during an action stops the job there" {
+  steps: Ran[] = [
+    {exit_code: 0, stdout: "opened notepad", stderr: ""},
+    {exit_code: 3, stdout: "stopped: Escape is held", stderr: ""},
+    {exit_code: 0, stdout: "clicked", stderr: ""}
+  ]
+  d = done(steps)
+  expect d.stopped
+  expect d.steps == 1
+  expect d.said.contains("stopped at step 2: you stopped it with Escape")
+}
+
+// The second job: find a thing in a program's window by the name the window
+// gives it, and press it with the agent's own pointer. The hands look first
+// (eyes.ps1 reads Windows' accessibility tree, so nothing is guessed from
+// pixels), then press the thing called that, and say what they saw.
+record Target { agent: Text app: Text name: Text }
+record Pressed { saw: Number pressed: Text stopped: Bool }
+
+fn seen(looked: Ran) -> Number {
+  var count = 0
+  for line in looked.stdout.trim().split("\n") {
+    if line.contains(": ") {
+      count += 1
+    }
+  }
+  return count
+}
+
+fn pressed(looked: Ran, press: Ran) -> Pressed {
+  if looked.exit_code != 0 { return {saw: 0, pressed: why_stopped(looked), stopped: true} }
+  if press.exit_code != 0 { return {saw: seen(looked), pressed: why_stopped(press), stopped: true} }
+  return {saw: seen(looked), pressed: press.stdout.trim(), stopped: false}
+}
+
+workflow press(t: Target) -> Pressed {
+  k = kit_named(t.agent)
+  refused = job_refusal(k, [["look", t.app], ["press", t.app]])
+  looked = execute hands.hand(args: act(k, refused, ["look", t.app]))
+  press  = execute hands.hand(args: act(k, refused, ["press", t.app, t.name]))
+  result = pressed(looked, press)
+  require approval
+}
+
+test "the hands say how many things they saw and what they pressed" {
+  looked: Ran = {exit_code: 0, stdout: "MenuItem: File\nMenuItem: Edit\nButton: Bold (Ctrl+B)\n", stderr: ""}
+  press: Ran = {exit_code: 0, stdout: "opened MenuItem 'Edit' in notepad, your mouse not moved", stderr: ""}
+  p = pressed(looked, press)
+  expect p.saw == 3
+  expect p.pressed.contains("Edit")
+  expect not p.stopped
+}
+
+test "a name that is not there is told back, not pressed" {
+  looked: Ran = {exit_code: 0, stdout: "MenuItem: File\n", stderr: ""}
+  press: Ran = {exit_code: 2, stdout: "nothing called 'Save as' in notepad", stderr: ""}
+  p = pressed(looked, press)
+  expect p.stopped
+  expect p.pressed.contains("nothing called")
+}
+
+// The third job: open a website in the hands' own Chrome (its own profile,
+// none of the owner's sign-ins) and read it as text, with every link, button
+// and field numbered so a later step can click or fill one by its number.
+record Site { agent: Text url: Text }
+record Visited { title: Text words: Text things: Text[] ok: Bool }
+
+fn web(k: Kit, what: Text[]) -> Text[] {
+  let why = refusal(k, ["browse"])
+  if why != "" { return ["hands.py", "refuse", why] }
+  return ["browser.py"].concat(what)
+}
+
+// The page as `browser.py read` prints it: "# title", the address, the
+// words, then "## What can be used" and one numbered line per thing.
+fn visited(read: Ran) -> Visited {
+  if read.exit_code != 0 {
+    return {title: "", words: read.stdout.trim(), things: [], ok: false}
+  }
+  let parts = read.stdout.split("\n## What can be used\n")
+  let lines = parts.take(1).join("").split("\n")
+  let title = lines.take(1).join("").split("# ").drop(1).join("# ")
+  var things: Text[] = []
+  for line in parts.drop(1).join("").trim().split("\n") {
+    if line != "" {
+      things = things.append(line)
+    }
+  }
+  return {title: title, words: lines.drop(2).join("\n").trim(), things: things, ok: true}
+}
+
+workflow visit(s: Site) -> Visited {
+  k = kit_named(s.agent)
+  started = execute hands.hand(args: web(k, ["start"]))
+  opened  = execute hands.hand(args: web(k, ["open", s.url]))
+  read    = execute hands.hand(args: web(k, ["read"]))
+  result = visited(read)
+  require approval
+}
+
+test "a page read back gives its title, its words and its numbered things" {
+  read: Ran = {exit_code: 0, stdout: "# Example Domain\nhttps://example.com/\n\nThis domain is for examples.\n\n## What can be used\n1. link: Learn more\n", stderr: ""}
+  v = visited(read)
+  expect v.ok
+  expect v.title == "Example Domain"
+  expect v.words == "This domain is for examples."
+  expect v.things == ["1. link: Learn more"]
+}
+
+test "only an agent with the browse hand opens the browser" {
+  expect web(kit_named("scout"), ["start"]) == ["browser.py", "start"]
+  expect web(kit_named("coder-2"), ["start"])[1] == "refuse"
+}

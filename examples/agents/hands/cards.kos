@@ -1,0 +1,47 @@
+// Every agent's kit (kits.kos) as one page of cards, drawn by Kosika in
+// Kosika Designs' Dark Matter look: its pointer flying, its colour, hands,
+// skills, tools and how fast it types.
+//
+//   kosika run cards.kos --workflow draw --input '{"a": {"file": "kits.html"}}' --allow-folder . --approve
+//
+// The page is written to that file, which needs the person's yes.
+
+import "kit.kos"
+import "kits.kos"
+
+record Ask { file: Text }
+record NewFile { path: Text text: Text }
+record Written { bytes: Number }
+
+tool write_file {
+  source system "files"
+  operation: "write"
+  access: execute
+  input: NewFile
+  output: Written
+}
+
+agent artist {
+  can: [write_file]
+  max_steps: 1
+}
+
+fn page(team: Kit[]) -> Text {
+  let shown = (for k in team { kit_card(k) }).join("")
+  return "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Kosika agent kits</title><style>" + page_css() + "</style></head><body>"
+    + "<header><h1>Kosika agents and their kits</h1><p>Each agent carries its own colour, skills, tools and hands. Hands are what it may do on this computer; it still asks you before every action, and holding Escape stops it.</p></header>"
+    + f"<main class=\"grid\">{shown}</main></body></html>"
+}
+
+workflow draw(a: Ask) -> Written {
+  html = page(kits())
+  written = execute artist.write_file(path: a.file, text: html)
+  require approval
+}
+
+test "the page has a card for every agent, each in its own colour" {
+  html = page(kits())
+  missing = (for k in kits() { if html.contains("<h2>" + k.name + "</h2>") { "" } else { k.name } }).join("")
+  expect missing == ""
+  expect html.contains("--c:#ff3ea5") and html.contains("--c:#55d6ff")
+}

@@ -1,0 +1,71 @@
+// The coders' live board, drawn by Kosika: one card for each coder of a
+// swarm, in the colour of its own pointer (hands/pointer_look.kos), with its
+// pointer drawn on the card, what it was asked, how long it has worked, how
+// many times it has asked a model, what it is doing now, and how it ended.
+//
+//   kosika run board.kos --input state.json      # swarm_watch.py does this every few seconds
+//
+// state.json is {"s": {"title": .., "coders": [{name, request, seconds,
+// calls, doing, result}]}}; result is "", "passed" or "did not pass".
+
+import "pointer_look.kos"
+
+record Coder { name: Text request: Text seconds: Number calls: Number doing: Text result: Text }
+record Swarm { title: Text coders: Coder[] }
+record Board { html: Text }
+
+fn minutes(seconds: Number) -> Text {
+  let m = (seconds / 60).floor()
+  let s = (seconds - m * 60).floor()
+  return m.to_text() + " min " + s.to_text() + " s"
+}
+
+fn card(c: Coder) -> Text {
+  let colour = hue_for(c.name)
+  let pointer = pointer_svg({name: c.name, scale: 1.3}).svg
+  let status = if c.result == "passed" { "<b class=\"ok\">passed its checks</b>" } else { if c.result == "" { "<b class=\"work\">working</b>" } else { "<b class=\"no\">" + escaped_text(c.result) + "</b>" } }
+  return f"<section class=\"card\" style=\"--c:{colour}\">"
+    + f"<div class=\"pointer\">{pointer}</div>"
+    + f"<p class=\"ask\">{escaped_text(c.request)}</p>"
+    + f"<p class=\"facts\"><span>{minutes(c.seconds)}</span><span>{c.calls} model answers</span>{status}</p>"
+    + f"<p class=\"doing\">{escaped_text(c.doing)}</p>"
+    + "</section>"
+}
+
+fn board(s: Swarm) -> Board {
+  var cards: Text[] = []
+  var passed = 0
+  for c in s.coders {
+    cards = cards.append(card(c))
+    if c.result == "passed" { passed += 1 }
+  }
+  let style = "body{margin:0;background:#07080d;color:#eef0f7;font:15px 'Segoe UI',Arial,sans-serif}"
+    + "header{padding:18px 26px;border-bottom:1px solid #1d2140}h1{margin:0;font-size:20px}h1 small{color:#a3a8bd;font-weight:400}"
+    + "main{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px;padding:22px}"
+    + ".card{background:#111428;border:1px solid #1d2140;border-top:4px solid var(--c);border-radius:14px;padding:16px 18px}"
+    + ".pointer svg{display:block;height:58px;width:auto}.ask{margin:10px 0;line-height:1.4}"
+    + ".facts{display:flex;flex-wrap:wrap;gap:12px;color:#a3a8bd;font-size:13px}.doing{color:#a993ff;font-size:13px;min-height:1em}"
+    + ".ok{color:#4fe0a6}.no{color:#ff6b81}.work{color:#f5b45c}"
+  let summary = passed.to_text() + " of " + s.coders.length().to_text() + " passed"
+  let html = "<!doctype html><html><head><meta charset=\"utf-8\"><meta http-equiv=\"refresh\" content=\"5\">"
+    + "<title>Kosika coders</title><style>" + style + "</style></head><body>"
+    + f"<header><h1>{escaped_text(s.title)} <small>{summary}</small></h1></header>"
+    + "<main>" + cards.join("") + "</main></body></html>"
+  return {html: html}
+}
+
+workflow main(s: Swarm) -> Board {
+  drawn = board(s)
+}
+
+test "each coder has a card in its pointer's colour, and the board counts what passed" {
+  b = board({title: "Swarm", coders: [
+    {name: "coder-1", request: "add is_even", seconds: 125, calls: 4, doing: "writing tests", result: "passed"},
+    {name: "coder-2", request: "add <surround>", seconds: 30, calls: 1, doing: "", result: ""}
+  ]})
+  expect b.html.contains("1 of 2 passed")
+  expect b.html.contains(hue_for("coder-1"))
+  expect b.html.contains("2 min 5 s")
+  expect b.html.contains("add &lt;surround&gt;")
+  expect b.html.contains("passed its checks")
+}

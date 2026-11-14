@@ -1,0 +1,102 @@
+// The look of a Kosika agent's pointer, designed in Kosika (see cursor.kos):
+// shared by cursor.kos, which draws it, and the coders' live board, which
+// shows each coder in the same colour as its pointer.
+
+import "std/designs_palette.kos"
+
+export [Want, Drawn, hue_for, colour_for, escaped_text, pointer_svg, pointer_drawn]
+
+record Want { name: Text scale: Number }
+record Drawn { svg: Text width: Number height: Number colour: Text tip: Number }
+
+// A hue for an agent: its name's letters added up, picking one of the
+// palette's hues; the same name gives the same hue every time.
+fn hue_for(name: Text) -> Text {
+  let hues = palette_named("dark_matter").hues
+  let letters = "abcdefghijklmnopqrstuvwxyz0123456789-_ "
+  var total = 0
+  var at = 1
+  for ch in name.lower().chars() {
+    total += at * (letters.index_of(ch).or(40) + 1)
+    at += 1
+  }
+  return hues[total % hues.length()]
+}
+
+// The colour an agent asked for in its kit (kit.kos): a colour written as
+// #rrggbb, or the name of one of Kosika's own colours. Empty, "auto" or a
+// colour too faint to see on the dark screen gives the agent's own hue.
+fn named_colours() -> Text[] {
+  return ["amber=#ff8a4c", "violet=#a993ff", "sky=#55d6ff", "gold=#f5b45c", "mint=#4fe0a6", "rose=#ff6b81",
+          "indigo=#7c83ff", "pink=#ff3ea5", "lime=#b9f26b", "cyan=#3ee6f0", "red=#ff4d4d", "white=#f4f4ff"]
+}
+
+fn is_hex_colour(text: Text) -> Bool {
+  if text.length() != 7 or not text.starts_with("#") { return false }
+  for ch in text.lower().chars().drop(1) {
+    if "0123456789abcdef".index_of(ch).or(-1) < 0 { return false }
+  }
+  return true
+}
+
+fn colour_for(name: Text, asked: Text) -> Text {
+  let want = asked.trim().lower()
+  for pair in named_colours() {
+    let parts = pair.split("=")
+    if parts[0] == want { return parts[1] }
+  }
+  if is_hex_colour(want) and contrast(want, palette_named("dark_matter").bg) >= 3 { return want }
+  return hue_for(name)
+}
+
+fn escaped_text(text: Text) -> Text {
+  return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
+}
+
+fn pointer_svg(w: Want) -> Drawn {
+  return pointer_drawn(w, hue_for(w.name), "idle")
+}
+
+// The pointer in the agent's colour, in one of three states: "idle", "typing"
+// (its tag says so) or "press" (rings spread from the tip, as a click lands).
+// Every state is drawn in a glow of the agent's colour, so it is seen at once
+// against any window.
+fn pointer_drawn(w: Want, colour: Text, state: Text) -> Drawn {
+  let ink = palette_named("dark_matter").bg
+  let said = if state == "typing" { w.name + " · typing…" } else { w.name }
+  let label = escaped_text(said)
+  // The tag is as wide as the name, at about 7.2 units a letter.
+  let tag_width = 18 + said.length() * 7.2
+  // Room on every side for the glow and the press rings, the same in every
+  // state, so the tip is at the same pixel whichever picture is shown.
+  let pad = 24
+  let width = 26 + tag_width + 11 + pad
+  let height = 67 + pad
+  let px_w = (width * w.scale).round()
+  let px_h = (height * w.scale).round()
+  let arrow = "M4 3 L4 37 Q4 40 6.6 38.2 L13.4 31.6 L19.2 44.6 Q20.2 46.6 22.2 45.8 L26.4 44 Q28.4 43.1 27.5 41.1 L21.7 28.4 L31.4 28.2 Q34.6 28.1 32.3 25.8 L6.9 1.6 Q4 -0.9 4 3 Z"
+  // Ids of its own, so many pointers drawn on one page keep their colours.
+  var key = state + "-"
+  for ch in w.name.lower().chars() {
+    key = key + (if "abcdefghijklmnopqrstuvwxyz0123456789".index_of(ch).or(-1) >= 0 { ch } else { "_" })
+  }
+  let rings = if state == "press" {
+    f"<circle cx=\"4\" cy=\"3\" r=\"9\" fill=\"none\" stroke=\"{colour}\" stroke-width=\"2.4\" opacity=\"0.95\"/>"
+      + f"<circle cx=\"4\" cy=\"3\" r=\"16\" fill=\"none\" stroke=\"{colour}\" stroke-width=\"1.6\" opacity=\"0.55\"/>"
+      + f"<circle cx=\"4\" cy=\"3\" r=\"23\" fill=\"none\" stroke=\"{colour}\" stroke-width=\"1\" opacity=\"0.25\"/>"
+  } else { "" }
+  let svg = f"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{px_w}\" height=\"{px_h}\" viewBox=\"-{pad} -{pad} {width} {height}\">"
+    + "<defs>"
+    + f"<linearGradient id=\"g-{key}\" x1=\"0\" y1=\"0\" x2=\"0.6\" y2=\"1\"><stop offset=\"0\" stop-color=\"{colour}\"/><stop offset=\"1\" stop-color=\"{colour}\" stop-opacity=\"0.82\"/></linearGradient>"
+    + f"<filter id=\"s-{key}\" x=\"-30%\" y=\"-30%\" width=\"160%\" height=\"160%\"><feDropShadow dx=\"0.8\" dy=\"1.6\" stdDeviation=\"1.4\" flood-color=\"#000\" flood-opacity=\"0.45\"/></filter>"
+    + f"<filter id=\"glow-{key}\" x=\"-60%\" y=\"-60%\" width=\"220%\" height=\"220%\"><feGaussianBlur stdDeviation=\"3.2\"/></filter>"
+    + "</defs>"
+    + f"<path d=\"{arrow}\" fill=\"{colour}\" opacity=\"0.75\" filter=\"url(#glow-{key})\"/>"
+    + rings
+    + f"<g filter=\"url(#s-{key})\"><path d=\"{arrow}\" fill=\"url(#g-{key})\" stroke=\"#ffffff\" stroke-width=\"2.2\" stroke-linejoin=\"round\"/>"
+    + f"<rect x=\"24\" y=\"40\" rx=\"9\" ry=\"9\" width=\"{tag_width}\" height=\"19\" fill=\"{colour}\" stroke=\"#ffffff\" stroke-width=\"1.6\"/>"
+    + f"<text x=\"33\" y=\"53.6\" font-family=\"Segoe UI, Arial, sans-serif\" font-size=\"11.5\" font-weight=\"700\" fill=\"{ink}\">{label}</text></g>"
+    + "</svg>"
+  return {svg: svg, width: px_w, height: px_h, colour: colour, tip: ((pad + 3.5) * w.scale).round()}
+}
+

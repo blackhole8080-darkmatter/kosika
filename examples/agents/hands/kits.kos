@@ -1,0 +1,44 @@
+// The kits of the agents on this computer, written in Kosika: change an
+// agent's colour, skills, tools, hands or typing here. kit.kos checks them
+// and draws them; main.kos gives an agent only the hands its kit lists.
+//
+//   colour  #rrggbb, or one of Kosika's colours: amber violet sky gold mint
+//           rose indigo pink lime cyan red white
+//   hands   look press write read move click type keys open:notepad
+//           open:calculator browse
+//   typing  steady (15 letters a second), fast (about 150), instant (pasted)
+//   skills  a note in skills/NAME.md, or another agent's, like coder/python
+
+import "kit.kos"
+
+export [kits, kit_named]
+
+fn kits() -> Kit[] {
+  return [
+    {name: "Kosika", colour: "amber", skills: ["notes", "windows"], tools: ["hand"],
+     hands: ["look", "press", "write", "read", "move", "click", "type", "keys", "open:notepad", "open:calculator", "browse"], typing: "fast"},
+    {name: "coder-1", colour: "pink", skills: ["windows", "coder/python"], tools: ["hand"],
+     hands: ["look", "press", "write", "read", "open:notepad"], typing: "fast"},
+    {name: "coder-2", colour: "sky", skills: ["windows", "coder/tests"], tools: ["hand"],
+     hands: ["look", "press"], typing: "steady"},
+    {name: "scout", colour: "mint", skills: ["web-reading"], tools: ["hand"],
+     hands: ["browse"], typing: "instant"}
+  ]
+}
+
+// The agent's kit; an agent with none gets an empty kit: no hands at all.
+fn kit_named(name: Text) -> Kit {
+  for k in kits() {
+    if k.name == name { return k }
+  }
+  return {name: name, colour: "", skills: [], tools: [], hands: [], typing: "steady"}
+}
+
+test "every kit here is a good kit" {
+  expect (for k in kits() { kit_problems(k).join("; ") }).join("") == ""
+}
+
+test "an agent with no kit has no hands" {
+  expect kit_named("stranger").hands == []
+  expect kit_named("coder-1").colour == "pink"
+}

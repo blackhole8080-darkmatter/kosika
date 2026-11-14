@@ -1,0 +1,44 @@
+# Hands: Kosika agents with cursors, kits and skills
+
+Kosika agents that act on this Windows laptop while you watch. Each agent has
+its own pointer in its own colour, moving beside your mouse (your mouse stays
+where you left it). The agent asks you before every action, and holding
+Escape stops any action at once.
+
+## An agent's kit, written in Kosika
+
+Every agent's kit is in [kits.kos](kits.kos). Edit it to change an agent:
+
+| field  | what it is |
+|--------|------------|
+| colour | its pointer's colour: `#rrggbb`, or one of `amber violet sky gold mint rose indigo pink lime cyan red white` |
+| skills | notes it reads before it works: `skills/NAME.md`, or another agent's, like `coder/python`. A skill is advice only and never gives the agent a power. |
+| tools  | the Kosika tools it may call |
+| hands  | what it may do here: `look press write read move click type keys open:notepad open:calculator browse` |
+| typing | `steady` (15 letters a second), `fast` (about 150) or `instant` (pasted at once, your clipboard put back after) |
+
+Everything is decided in Kosika:
+
+- [kit.kos](kit.kos) checks a kit, works out which hand an action needs, refuses a
+  job when its kit does not allow every action in it, and checks that typed
+  words are really in the field before the agent says so. It also draws a kit
+  as a card.
+- [main.kos](main.kos) holds the jobs (`note`, `press`, `visit`). It looks up the
+  agent's kit, refuses the whole job if one action isn't allowed, and gives
+  hands.py the agent's colour and speed.
+- [cursor.kos](cursor.kos) and [pointer_look.kos](pointer_look.kos) draw the pointer in three
+  states: `idle`, `typing` (its tag says so) and `press` (rings spread from
+  the tip).
+- [cards.kos](cards.kos) draws every kit as one page of cards.
+
+The Python files only reach Windows. hands.py sends keys and clicks,
+pointer.py shows the pointer window, and ring.py shows the ring round your
+mouse. eyes.ps1 reads windows through Windows' accessibility.
+
+## Try it (PowerShell, in this folder)
+
+    .\demo.ps1 -Agent coder-1        # coder-1 (pink) writes a note fast, then checks it
+    .\demo-pointers.ps1              # coder-1 (pink) and coder-2 (sky) press menus in Notepad
+    kosika run cards.kos --workflow draw --input cards.json --allow-folder . --approve
+
+cards.json is `{"a": {"file": "kits.html"}}`.
