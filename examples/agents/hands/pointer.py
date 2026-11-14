@@ -185,6 +185,10 @@ def main() -> None:
         windows[state] = window_with(png)[0]
     target = POINTERS / f"{args.name}.json"
     here = [user32.GetSystemMetrics(0) / 2, user32.GetSystemMetrics(1) / 2]
+    # Say the windows are up, so the hands wait for this and not just for the
+    # pictures: else the first action happens while the pointer is still
+    # gliding in from the middle of the screen.
+    (POINTERS / f"{args.name}.ready").write_text(str(os.getpid()), encoding="utf-8")
     shown = ""
     message = wintypes.MSG()
     while True:

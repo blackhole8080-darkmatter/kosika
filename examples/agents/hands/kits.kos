@@ -6,7 +6,7 @@
 //           rose indigo pink lime cyan red white
 //   hands   look press write read move click type keys open:notepad
 //           open:calculator browse
-//   typing  steady (15 letters a second), fast (about 150), instant (pasted)
+//   typing  steady (15 letters a second), fast (about 60), instant (pasted)
 //   skills  a note in skills/NAME.md, or another agent's, like coder/python
 
 import "kit.kos"

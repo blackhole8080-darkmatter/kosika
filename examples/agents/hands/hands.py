@@ -29,7 +29,7 @@ action, all optional:
 
     python hands.py --agent coder-1 --colour pink --speed fast write notepad "hi"
 
-Speeds: "steady" (a letter at a time), "fast" (about ten times quicker) and
+Speeds: "steady" (a letter at a time), "fast" (about four times quicker) and
 "instant" (the whole text pasted at once, the clipboard put back after; if
 the clipboard holds a picture or files it is left alone and "fast" is used).
 `read` gives the field's words back, so Kosika can check that what was
@@ -129,14 +129,17 @@ def point_at(x: int, y: int, state: str = "idle") -> None:
     fresh = target.exists() and time.time() - target.stat().st_mtime < 80
     target.write_text(json.dumps({"x": x, "y": y, "state": state}), encoding="utf-8")
     if not fresh:
+        ready = POINTERS / f"{AGENT}.ready"
+        ready.unlink(missing_ok=True)
         flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0)
         subprocess.Popen([sys.executable, str(Path(__file__).with_name("pointer.py")), "--name", AGENT,
                           "--colour", COLOUR],
                          creationflags=flags, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        # The first time, the pointer's look is designed (cursor.kos) and
-        # rendered, which takes a few seconds; wait for it, then a moment to glide.
-        for _ in range(60):
-            if any(POINTERS.glob(f"{AGENT}-*.png")):
+        # The first time, the pointer's three looks are designed (cursor.kos)
+        # and rendered one after another, which can take twenty seconds; wait
+        # until pointer.py says its windows are up, then a moment to glide in.
+        for _ in range(160):
+            if ready.exists():
                 break
             time.sleep(0.25)
         time.sleep(0.8)
@@ -184,10 +187,43 @@ def window(name: str) -> int:
     return 0
 
 
-def to_front(handle: int) -> None:
+def in_front(handle: int) -> bool:
+    return user32.GetForegroundWindow() == handle
+
+
+def to_front(handle: int) -> bool:
+    """Restore the window and bring it to the front; True only if it really
+    is in front. Windows refuses SetForegroundWindow to a background process
+    while the person works in another window, so the request is made from
+    the front window's own input thread, and then checked."""
     user32.ShowWindow(handle, 9)  # restore if minimised
     user32.SetForegroundWindow(handle)
+    time.sleep(0.15)
+    if not in_front(handle):
+        front = user32.GetForegroundWindow()
+        theirs = user32.GetWindowThreadProcessId(front, None)
+        mine = kernel32.GetCurrentThreadId()
+        if theirs and theirs != mine and user32.AttachThreadInput(mine, theirs, True):
+            try:
+                user32.BringWindowToTop(handle)
+                user32.SetForegroundWindow(handle)
+            finally:
+                user32.AttachThreadInput(mine, theirs, False)
     time.sleep(0.3)
+    return in_front(handle)
+
+
+def must_be_in_front(handle: int, name: str) -> None:
+    """Keys go to whatever window is in front, so nothing is typed unless the
+    program asked for is: exit 4, nothing done."""
+    if not to_front(handle):
+        print(f"{name} could not be brought to the front, so nothing was typed (another window has the keyboard)")
+        sys.exit(4)
+
+
+#: The window keys are meant for, while typing: if another window comes to
+#: the front (the person clicked it), typing stops there with exit 4.
+TARGET = 0
 
 
 def middle(handle: int) -> tuple[int, int]:
@@ -253,8 +289,17 @@ def letter(ch: str) -> None:
 
 
 #: (between down and up, after each letter) in seconds, for each speed.
-PAUSES = {"steady": (0.015, 0.05), "fast": (0.002, 0.004), "instant": (0.002, 0.004)}
+#: The new Notepad falls behind at 2 ms and 4 ms (about 110 letters a
+#: second) and then puts later letters in place of earlier ones ("brown oox
+#: 8888"); at 4 ms and 10 ms (about 60 a second) twenty runs in a row were exact.
+PAUSES = {"steady": (0.015, 0.05), "fast": (0.004, 0.010), "instant": (0.004, 0.010)}
 SPEED = "steady"
+
+
+def still_in_front(done: int = 0) -> None:
+    if TARGET and not in_front(TARGET):
+        print(f"stopped after {done} letters: another window came to the front, so no more was typed")
+        sys.exit(4)
 
 
 def type_text(text: str, speed: str | None = None) -> str:
@@ -264,12 +309,14 @@ def type_text(text: str, speed: str | None = None) -> str:
     chosen = speed or SPEED
     if chosen == "instant":
         guard()
+        still_in_front()
         if paste(text):
             return "instant"
         chosen = "fast"  # the clipboard held something that is not text: not touched
     SPEED = chosen
-    for ch in text:
+    for done, ch in enumerate(text):
         guard()
+        still_in_front(done)
         if ch == "\n":
             key(KEYS["enter"])
         else:
@@ -370,7 +417,7 @@ def text_field(name: str) -> dict | None:
 
 
 def main(args: list[str]) -> None:
-    global OWN_POINTER_ONLY, AGENT, COLOUR, SPEED
+    global OWN_POINTER_ONLY, AGENT, COLOUR, SPEED, TARGET
     # Who acts, in what colour, how fast: told by Kosika before the action.
     while len(args) > 1 and args[0] in ("--agent", "--colour", "--speed"):
         if args[0] == "--agent":
@@ -461,7 +508,8 @@ def main(args: list[str]) -> None:
         if not handle:
             print(f"no {rest[0]} window to type into")
             sys.exit(2)
-        to_front(handle)
+        must_be_in_front(handle, rest[0])
+        TARGET = handle
         words, started = " ".join(rest[1:]), time.time()
         how = type_text(words)
         print(f"typed {len(words)} letters into {rest[0]} ({how}, {time.time() - started:.1f} s)")
@@ -473,10 +521,14 @@ def main(args: list[str]) -> None:
         if not handle:
             print(f"no {rest[0]} window to write in")
             sys.exit(2)
+        # Restored and in front first: a minimised window's field is far off
+        # the screen, and keys only reach the window in front.
+        must_be_in_front(handle, rest[0])
         field = text_field(rest[0])
         x, y = (field["x"], field["y"]) if field else middle(handle)
         point_at(x, y, "typing")
-        to_front(handle)
+        must_be_in_front(handle, rest[0])  # looking and drawing the pointer took time
+        TARGET = handle
         words, started = " ".join(rest[1:]), time.time()
         how = type_text(words)
         point_at(x, y, "idle")

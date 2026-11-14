@@ -55,7 +55,7 @@ fn hand_meaning(hand: Text) -> Text {
 fn typing_list() -> Text[] {
   return [
     "steady=15=a letter at a time, easy to watch",
-    "fast=150=ten times quicker, still letter by letter",
+    "fast=60=four times quicker, still letter by letter",
     "instant=all=the whole text at once, through the clipboard, which is put back after"
   ]
 }

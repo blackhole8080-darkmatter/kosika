@@ -15,7 +15,7 @@ Every agent's kit is in [kits.kos](kits.kos). Edit it to change an agent:
 | skills | notes it reads before it works: `skills/NAME.md`, or another agent's, like `coder/python`. A skill is advice only and never gives the agent a power. |
 | tools  | the Kosika tools it may call |
 | hands  | what it may do here: `look press write read move click type keys open:notepad open:calculator browse` |
-| typing | `steady` (15 letters a second), `fast` (about 150) or `instant` (pasted at once, your clipboard put back after) |
+| typing | `steady` (15 letters a second), `fast` (about 60) or `instant` (pasted at once, your clipboard put back after) |
 
 Everything is decided in Kosika:
 

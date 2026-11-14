@@ -134,6 +134,17 @@ test "Escape held during an action stops the job there" {
   expect d.said.contains("stopped at step 2: you stopped it with Escape")
 }
 
+test "keys that could not reach the program stop the job, and say why" {
+  steps: Ran[] = [
+    {exit_code: 0, stdout: "opened notepad", stderr: ""},
+    {exit_code: 4, stdout: "notepad could not be brought to the front, so nothing was typed (another window has the keyboard)", stderr: ""}
+  ]
+  read: Ran = {exit_code: 0, stdout: "read\n", stderr: ""}
+  d = checked_note(steps, read, "hello there")
+  expect d.stopped and not d.checked
+  expect d.said.contains("stopped at step 2: notepad could not be brought to the front")
+}
+
 // The second job: find a thing in a program's window by the name the window
 // gives it, and press it with the agent's own pointer. The hands look first
 // (eyes.ps1 reads Windows' accessibility tree, so nothing is guessed from
