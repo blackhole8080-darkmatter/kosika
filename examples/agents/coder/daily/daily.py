@@ -49,8 +49,8 @@ from kosika.model import OpenAICompatibleProvider  # noqa: E402
 TODO = HERE / "todo.md"
 WORK = Path.home() / "Aryan_Private" / "kosika-daily"
 COPIED = ["kosika", "native", "tests/test_short_methods.py", "KOSIKA.md"]
-ROUTER = REPO / "examples" / "virtual_models" / "router.py"
-PORT = 8791
+ROUTER = REPO / "examples" / "virtual_models" / "learning_router.py"
+PORT = int(os.environ.get("KOSIKA_ROUTER_PORT", "8791"))
 
 
 def next_request(lines: list[str]) -> int | None:
@@ -71,6 +71,43 @@ def copy_studio(folder: Path) -> None:
     ).stdout
     with tarfile.open(fileobj=io.BytesIO(tar)) as archive:
         archive.extractall(folder, filter="data")
+
+
+def keep_answers(since: float) -> None:
+    """Tell the router the change passed, so it keeps the answers it gave
+    since `since` and gives them again at once if asked the same (see
+    examples/virtual_models/smarter.py). Not in a swarm: there the other
+    coders' answers, which may not pass, came in the same minutes."""
+    import urllib.request
+
+    try:
+        request = urllib.request.Request(f"http://127.0.0.1:{PORT}/v1/kosika/passed",
+                                         data=json.dumps({"since": since}).encode(), method="POST",
+                                         headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(request, timeout=10) as answer:
+            print("kept", json.load(answer).get("kept", 0), "answers that passed")
+    except OSError:
+        pass
+
+
+def refuse_answers(since: float) -> None:
+    """Tell the router the change did not pass, so it forgets the answers it
+    gave since `since`, and any answer it had kept that this run was handed.
+
+    Without this, one run judged as passing when it was not replays the same
+    wrong answer for ever: the request is marked done on it, and the retry
+    asks no model at all (see examples/virtual_models/smarter.py).
+    """
+    import urllib.request
+
+    try:
+        request = urllib.request.Request(f"http://127.0.0.1:{PORT}/v1/kosika/failed",
+                                         data=json.dumps({"since": since}).encode(), method="POST",
+                                         headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(request, timeout=10) as answer:
+            print("forgot", json.load(answer).get("forgotten", 0), "answers that did not pass")
+    except OSError:
+        pass
 
 
 def router_up() -> bool:
@@ -150,6 +187,60 @@ def run_coder(folder: Path, agents: Path, text: str) -> dict:
     }
 
 
+DEVELOP = HERE / "develop.kos"
+
+
+KEEP = HERE / "keep.kos"
+
+
+def offer_to_keep(place: Path, text: str, today: str) -> None:
+    """Start keep.kos for a run that passed: it makes a branch daily/RUN from
+    studio in a worktree of its own, applies the change, commits it and keeps
+    it as a training example in WORK/approved, each step waiting for the
+    person's yes (WORK/asks, answerable from the phone). It never pushes:
+    push stays false until the person decides otherwise. Without keep.kos
+    beside this file, nothing happens."""
+    if not KEEP.exists():
+        return
+    asks = WORK / "asks"
+    asks.mkdir(exist_ok=True)
+    kept = place / "kept.json"
+    kept.write_text(json.dumps({"k": {"repo": str(REPO).replace("\\", "/"), "work": str(WORK).replace("\\", "/"),
+                                      "run": place.name, "request": text, "passed": True, "date": today,
+                                      "push": False}}), encoding="utf-8")
+    flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    subprocess.Popen([sys.executable, "-m", "kosika.cli", "run", str(KEEP), "--input", str(kept),
+                      "--allow-folder", str(WORK), "--allow-shell", "--approve-in", str(asks)],
+                     cwd=WORK, env={**os.environ, "PYTHONPATH": str(REPO)}, creationflags=flags,
+                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    print("keep.kos is waiting for your yes in", asks)
+
+
+def judge_in_kosika(place: Path, text: str, files: list[str], ran: dict, today: str) -> dict:
+    """Run develop.kos on a finished coder run: the checks, the verdict,
+    report.md and a line in kosika-daily/coders.kl. Its steps change files
+    and start programs, so it asks before each; this driver, the person's
+    stand-in for the day, says yes, as it does for the coder."""
+    agents = place / "_judge"
+    agents.mkdir(exist_ok=True)
+    shutil.copy(DEVELOP, agents / "develop.kos")
+    # develop.kos asks no model; the app is told so by a binder that binds none.
+    app = App(agents, bind_models=lambda program: {}, model_label="none", allow_folder=WORK, allow_shell=True)
+    agent = next(key for key in app.agents() if key.startswith("develop"))
+    done = {"request": text, "run": place.name, "files": files, "state": ran["state"],
+            "said": ran["said"] or ran["error"], "seconds": ran["seconds"], "date": today}
+    job = app.start(agent, {"inputs": {"d": done}})
+    started = time.monotonic()
+    while job.state in ("running", "waiting") and time.monotonic() - started < 900:
+        if job.state == "waiting":
+            app.decide(job.id, True)
+        time.sleep(0.3)
+    result = getattr(job, "result", None) or {}
+    if job.state != "done" or "passed" not in result:
+        raise SystemExit(f"develop.kos could not judge {place.name}: {job.state} {job.error}")
+    return result
+
+
 def changed_files(before: Path, after: Path) -> list[str]:
     names = []
     for path in sorted(after.rglob("*")):
@@ -209,25 +300,113 @@ def checked(after: Path, files: list[str]) -> list[tuple[str, bool, str]]:
     return results
 
 
+#: Every change that passed its checks, as a training example for a Kosika
+#: coder model: what was asked, each changed file before and after. Only
+#: what passed is kept, so the examples teach what works.
+EXAMPLES = WORK / "examples.jsonl"
+
+
+def save_example(request: str, before: Path, after: Path, files: list[str]) -> None:
+    def text_of(path: Path) -> str:
+        return path.read_text(encoding="utf-8", errors="replace").replace("\r\n", "\n") if path.exists() else ""
+
+    example = {
+        "request": request,
+        "files": [{"path": name, "before": text_of(before / name), "after": text_of(after / name)} for name in files],
+        "at": datetime.datetime.now().isoformat(timespec="seconds"),
+    }
+    with EXAMPLES.open("a", encoding="utf-8") as out:
+        out.write(json.dumps(example) + "\n")
+
+
+#: A request a swarm member has taken and is working on.
+TAKEN = "- [~] "
+
+
+def mark_line(text: str, mark: str, note: str = "") -> None:
+    """Mark the line holding `text`, open or taken, in todo.md as it is now:
+    several swarm members write it, so each reads it again just before, under
+    a lock file."""
+    lock = TODO.with_suffix(".lock")
+    for _ in range(600):
+        try:
+            lock.mkdir()
+            break
+        except FileExistsError:
+            time.sleep(0.1)
+    try:
+        lines = TODO.read_text(encoding="utf-8").splitlines()
+        for i, line in enumerate(lines):
+            if line[6:].split(" (20")[0].strip() == text and line[:6] in ("- [ ] ", TAKEN):
+                lines[i] = mark + text + note
+                break
+        TODO.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    finally:
+        lock.rmdir()
+
+
+def swarm(size: int) -> None:
+    """Several coders at once, one request each, sharing the virtual model
+    pool. Each works in its own copy and is checked on its own; nothing waits
+    for the others but the end of the run."""
+    lines = TODO.read_text(encoding="utf-8").splitlines()
+    open_ones = [line[6:].strip() for line in lines if line.startswith("- [ ] ")][:size]
+    if not open_ones:
+        print("Nothing is open in todo.md.")
+        return
+    for text in open_ones:
+        mark_line(text, TAKEN)
+    router = start_router()
+    started = time.monotonic()
+    alone = dict(os.environ, KOSIKA_SWARM="1") if len(open_ones) > 1 else dict(os.environ)
+    members = [subprocess.Popen([sys.executable, __file__, "--todo", str(TODO), "--take", text], env=alone) for text in open_ones]
+    for member in members:
+        member.wait()
+    if router is not None:
+        router.terminate()
+    print(f"Swarm of {len(members)}: {round(time.monotonic() - started)} s for all of them together.")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--swarm", type=int, default=0, help="run this many coders at once, one request each")
+    parser.add_argument("--take", help="(a swarm member) work on this request, already marked as taken")
+    parser.add_argument("--todo", help="take requests from this file instead of todo.md (the scorecard uses its own copy)")
     args = parser.parse_args()
-    lines = TODO.read_text(encoding="utf-8").splitlines()
-    number = next_request(lines)
-    if number is None:
-        print("Nothing is open in todo.md.")
+    if args.todo:
+        global TODO
+        TODO = Path(args.todo).resolve()
+    if args.swarm:
+        swarm(args.swarm)
         return
-    text = lines[number][len("- [ ] ") :].strip()
+    lines = TODO.read_text(encoding="utf-8").splitlines()
+    if args.take:
+        text = args.take
+    else:
+        number = next_request(lines)
+        if number is None:
+            print("Nothing is open in todo.md.")
+            return
+        text = lines[number][len("- [ ] ") :].strip()
     if args.dry_run:
         print("Next:", text)
         return
 
     today = datetime.date.today().isoformat()
     count = 1
-    while (WORK / f"{today}-{count}").exists():
-        count += 1
-    place = WORK / f"{today}-{count}"
+    while True:
+        place = WORK / f"{today}-{count}"
+        try:
+            place.mkdir(parents=True)
+            break
+        except FileExistsError:
+            count += 1
+    # What it was asked, for the live board (swarm_watch.py) while it works.
+    (place / "request.txt").write_text(text, encoding="utf-8")
+    # A Go build folder of its own: coders of a swarm building at once in
+    # one shared folder lock each other out ("Access is denied").
+    os.environ["GOCACHE"] = str(place / ".gocache")
     before, after = place / "before", place / "kosika"
     before.mkdir(parents=True)
     copy_studio(before)
@@ -240,6 +419,13 @@ def main() -> None:
         if router is not None:
             router.terminate()
 
+    # What running the tests and the engines left behind is not the change:
+    # compiled Python, traces and built engines stay out of the patch.
+    for left in [*after.rglob("__pycache__"), *after.rglob(".pytest_cache")]:
+        shutil.rmtree(left, ignore_errors=True)
+    for left in [*after.rglob("*.jsonl"), *after.rglob("*.exe")]:
+        if not (before / left.relative_to(after)).exists():
+            left.unlink(missing_ok=True)
     files = changed_files(before, after)
     diff = subprocess.run(
         ["git", "diff", "--no-index", "--no-prefix", "before", "kosika"],
@@ -262,51 +448,30 @@ def main() -> None:
         + "\n"
     )
     (place / "change.patch").write_text(diff, encoding="utf-8", newline="\n")
-    checks = checked(after, files)
-    # The coder's own words count against it, never for it: a run that says
-    # its tests failed, or that the engines disagree, has not passed.
-    said = ran["said"]
-    owned_up = any(words in said for words in ("do NOT agree", "did not go on")) or (
-        "engines agree" not in said and "The tests failed" in said[-800:]
-    )
-    passed = (
-        bool(files)
-        and ran["state"] == "done"
-        and not owned_up
-        and all(ok for _, ok, _ in checks)
-    )
-
-    report = [
-        f"# {text}",
-        "",
-        f"{today}, {ran['seconds']} s, {'passed its checks' if passed else 'did not pass'}",
-        "",
-        "## Files changed",
-        *(f"- {name}" for name in files or ["(none)"]),
-        "",
-        "## Checked afterwards",
-    ]
-    report += [f"- {'PASS' if ok else 'FAIL'} {name}" for name, ok, _ in checks] or [
-        "- nothing to check"
-    ]
-    report += ["", "## What the coder said", "", ran["said"] or ran["error"], ""]
-    for name, ok, output in checks:
-        if not ok:
-            report += [f"## {name}", "", "```", output, "```", ""]
-    report += [
-        "To bring it into Kosika: `git apply " + str(place / "change.patch") + "`",
-        "",
-    ]
-    (place / "report.md").write_text("\n".join(report), encoding="utf-8")
+    # The verdict, the report and the record of the run are Kosika's:
+    # develop.kos runs the checks and decides; this only hands it the facts.
+    judged = judge_in_kosika(place, text, files, ran, today)
+    passed = judged["passed"]
+    with (place / "report.md").open("a", encoding="utf-8") as report:
+        report.write("\n\nTo bring it into Kosika: `git apply " + str(place / "change.patch") + "`\n")
     (place / "run.json").write_text(
         json.dumps({**ran, "files": files, "passed": passed}, indent=1),
         encoding="utf-8",
     )
+    # The answers this run was given are only worth keeping if it passed; a
+    # run that failed takes them back, so that the next try asks a model
+    # rather than being handed the same answer again.
+    since = time.time() - float(ran["seconds"]) - 5
+    if passed:
+        save_example(text, before, after, files)
+        if not os.environ.get("KOSIKA_SWARM"):
+            keep_answers(since)
+        offer_to_keep(place, text, today)
+    elif not os.environ.get("KOSIKA_SWARM"):
+        refuse_answers(since)
     shutil.rmtree(before, ignore_errors=True)
 
-    mark = "- [x] " if passed else "- [!] "
-    lines[number] = mark + text + f" ({today}, {place.name})"
-    TODO.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    mark_line(text, "- [x] " if passed else "- [!] ", f" ({today}, {place.name})")
     print(("PASSED " if passed else "DID NOT PASS ") + text)
     print(place / "report.md")
 
