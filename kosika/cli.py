@@ -1536,6 +1536,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Name recorded with approvals given through --approve.",
     )
     run_parser.add_argument(
+        "--mcp",
+        action="append",
+        default=[],
+        metavar="NAME=COMMAND",
+        help=(
+            "An MCP server the program's `source mcp \"NAME\"` tools may use, "
+            'such as fetch="uvx mcp-server-fetch". May be repeated. Kosika '
+            "starts the command itself, not through a shell; a tool that "
+            "changes things must be declared access: execute."
+        ),
+    )
+    run_parser.add_argument(
         "--approve-in",
         type=Path,
         metavar="FOLDER",
@@ -2064,6 +2076,18 @@ def build_parser() -> argparse.ArgumentParser:
             "only on yes. Without this, such actions always fail."
         ),
     )
+    connect_parser = subparsers.add_parser(
+        "connect",
+        help=(
+            "Start an MCP server once and print Kosika declarations for its "
+            'tools, ready to paste: kosika connect fetch="uvx mcp-server-fetch".'
+        ),
+    )
+    connect_parser.add_argument("grant", metavar="NAME=COMMAND")
+    connect_parser.add_argument(
+        "--out", type=Path, help="Write the declarations to this .kos file instead."
+    )
+
     answer_parser = subparsers.add_parser(
         "answer",
         help=(
@@ -3586,6 +3610,43 @@ def main() -> int:
         )
         return 0
 
+    if args.command == "connect":
+        from .mcp_tools import MCPGrantError, MCPHub, declaration, parse_grant
+
+        try:
+            name, command = parse_grant(args.grant)
+            hub = MCPHub({name: command})
+            try:
+                tools = hub.tools(name)
+            finally:
+                hub.close()
+        except (MCPGrantError, MCPProtocolError, OSError) as exc:
+            print(f"Not connected: {exc}", file=sys.stderr)
+            return 2
+        quoted = " ".join(command)
+        from .mcp_tools import _camel, _snake
+
+        names = [
+            name_
+            for tool in tools
+            for name_ in (f"{_camel(tool['name'])}In", f"{_camel(tool['name'])}Out", _snake(tool["name"]))
+        ]
+        text = (
+            f"// Tools of the MCP server {name!r}, as `kosika connect` found them.\n"
+            f"// Run with: kosika run FILE.kos --mcp {name}=\"{quoted}\"\n"
+            "// A tool the server does not mark read-only is access: execute, so\n"
+            "// every call waits for a yes.\n\n"
+            + f"export [{', '.join(names)}]\n\n"
+            + "\n\n".join(declaration(name, tool) for tool in tools)
+            + "\n"
+        )
+        if args.out is not None:
+            args.out.write_text(text, encoding="utf-8")
+            print(f"{len(tools)} tool(s) of {name} declared in {args.out}")
+        else:
+            print(text, end="")
+        return 0
+
     if args.command == "answer":
         from .ask_folder import AskFolderError, answer, serve, waiting
 
@@ -4044,6 +4105,7 @@ def main() -> int:
     bindings: dict[str, ControlledProvider] = {}
     telemetry_error = False
     component_tool_bindings: dict[str, Any] = {}
+    opened_hubs: list[Any] = []
     try:
         inputs = (
             strict_json(args.input.read_text(encoding="utf-8")) if args.input else {}
@@ -4142,6 +4204,14 @@ def main() -> int:
             ).items()
         }
         host_tool_bindings = {**component_tool_bindings, **system_bindings}
+        if args.mcp:
+            from .mcp_tools import MCPHub, bind_mcp_tools, parse_grant
+
+            if environment is not None:
+                raise ValueError("--mcp cannot be used with --env; name it in the environment")
+            granted_hub = MCPHub(dict(parse_grant(grant) for grant in args.mcp))
+            opened_hubs.append(granted_hub)
+            host_tool_bindings.update(bind_mcp_tools(program, granted_hub))
         while True:
             # A fresh session per attempt: after an approval the journal
             # returns finished steps from its checkpoint and resumes at the
@@ -4214,6 +4284,8 @@ def main() -> int:
         )
         return 2
     finally:
+        for hub in opened_hubs:
+            hub.close()
         if args.telemetry:
             try:
                 args.telemetry.write_text(

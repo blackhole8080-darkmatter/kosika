@@ -119,3 +119,14 @@ each waits for your yes:
 
 Runs that worked teach the planner: `python diary.py traces --training planner.jsonl`
 adds what it was asked and answered in each run whose every step was done.
+
+## MCP servers
+
+    kosika connect fetch="uvx mcp-server-fetch" --out fetch_tools.kos   # declare a server's tools once
+    kosika run job.kos --mcp fetch="uvx mcp-server-fetch" ...            # grant it to one run
+
+Any command starts a server (npx, uvx, node, python, an .exe), several may be
+granted at once, and a tool the server does not mark read-only is declared
+`access: execute`, so every call waits for a yes. `reach.kos`'s `mcp_flags`
+gives the `--mcp` flags for a kit's servers. (The Go engine takes servers
+from an environment, each pinned to a manifest.)

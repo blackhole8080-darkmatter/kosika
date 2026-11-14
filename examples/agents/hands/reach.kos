@@ -1,14 +1,14 @@
 // What an agent can reach beyond its hands, written in Kosika: the MCP
 // servers it may be given and the models that may think for it. A kit names
 // them (kits.kos); kit.kos refuses any name not here. Naming a server here
-// grants nothing: a run is given a server only through its environment
-// (kosika.env, `mcp NAME: "command" pinned "manifest"`), and every action
+// grants nothing: a run is given a server only by `--mcp NAME=COMMAND` or
+// its environment (kosika.env, `mcp NAME: "command" pinned "manifest"`), and every action
 // that changes something still waits for the person's yes.
 //
 //   servers  NAME|what it lets the agent do|observe or execute|command that starts it
 //   models   NAME|where it answers|what it is good at
 
-export [known_servers, server_line, known_models, model_line, server_effect, mcp_environment]
+export [known_servers, server_line, known_models, model_line, server_effect, mcp_environment, mcp_flags]
 
 fn server_list() -> Text[] {
   return [
@@ -57,6 +57,18 @@ fn server_effect(name: Text) -> Text {
   return server_line(name)[2]
 }
 
+// The flags that give a run an agent's servers:
+//   kosika run FILE.kos --mcp fetch="uvx mcp-server-fetch" ...
+// `kosika connect NAME="COMMAND" --out NAME_tools.kos` writes the Kosika
+// declarations of a server's tools once, to import.
+fn mcp_flags(servers: Text[]) -> Text[] {
+  var flags: Text[] = []
+  for name in servers {
+    flags = flags.concat(["--mcp", name + "=" + server_line(name)[3]])
+  }
+  return flags
+}
+
 // The lines a kosika.env environment needs to give an agent its servers,
 // each pinned to a manifest kept beside it (servers/NAME.manifest.json, made
 // once with `kosika manifest generate`), so a server that changed what it offers
@@ -75,6 +87,11 @@ test "servers and models are known by name, with what they do" {
   expect server_line("nope")[1] == ""
   expect known_models().contains("kosika-router")
   expect model_line("kosika-coder")[2] == "Kosika code and small plans"
+}
+
+test "a kit's servers become the run's --mcp grants" {
+  expect mcp_flags(["fetch"]) == ["--mcp", "fetch=uvx mcp-server-fetch"]
+  expect mcp_flags([]) == []
 }
 
 test "an environment line pins each server to its manifest" {
