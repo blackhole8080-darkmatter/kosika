@@ -12,7 +12,7 @@ Every agent's kit is in [kits.kos](kits.kos). Edit it to change an agent:
 | field  | what it is |
 |--------|------------|
 | colour | its pointer's colour: `#rrggbb`, or one of `amber violet sky gold mint rose indigo pink lime cyan red white` |
-| skills | notes it reads before it works: `skills/NAME.md`, or another agent's, like `coder/python`. A skill is advice only and never gives the agent a power. |
+| skills | notes it reads before it works: `skills/NAME.md`, a skill in the open format (`skills/NAME/SKILL.md`, as other AI apps write them), or another agent's, like `coder/python`. A skill is advice only and never gives the agent a power. `kosika skills-export skills --out DIR` writes these notes as `DIR/NAME/SKILL.md` for other apps. |
 | tools  | the Kosika tools it may call |
 | hands  | what it may do here: `look press write read move click type keys open:notepad open:calculator browse` |
 | typing | `steady` (keys, 15 letters a second, to watch), `fast` (straight into the field when the program allows it, else keys at the fastest rate learned exact for that program) or `instant` (the field, else pasted at once, your clipboard put back after) |

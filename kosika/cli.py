@@ -110,6 +110,7 @@ from .skills import (
     SkillRouter,
     SkillRoutingError,
     load_skill_notes,
+    open_skill_text,
 )
 from .source_map import (
     SourceMapError,
@@ -1474,6 +1475,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     skills_parser.add_argument("--max-skills", type=int, default=6)
     skills_parser.add_argument("--format", choices=("text", "json"), default="text")
+
+    export_parser = subparsers.add_parser(
+        "skills-export",
+        help="Write a folder of skill notes as open SKILL.md skills, for other AI apps.",
+    )
+    export_parser.add_argument("notes", type=Path, help="Folder of skill notes (NAME.md).")
+    export_parser.add_argument("--out", type=Path, required=True, help="Folder to write NAME/SKILL.md into.")
 
     run_parser = subparsers.add_parser("run")
     run_parser.add_argument("source", type=Path)
@@ -3188,6 +3196,21 @@ def main() -> int:
             return 0
         except (OSError, SourceMapError, ValueError) as exc:
             print(f"Source map failed safely: {exc}", file=sys.stderr)
+            return 2
+    if args.command == "skills-export":
+        try:
+            catalog = load_skill_notes(args.notes)
+            if not len(catalog):
+                print(f"No skill notes in {args.notes}", file=sys.stderr)
+                return 2
+            for skill in catalog:
+                folder = args.out / skill.skill_id
+                folder.mkdir(parents=True, exist_ok=True)
+                (folder / "SKILL.md").write_text(open_skill_text(skill), encoding="utf-8", newline="\n")
+                print(f"{skill.skill_id}/SKILL.md")
+            return 0
+        except (OSError, SkillCatalogError) as exc:
+            print(f"Skill export failed safely: {exc}", file=sys.stderr)
             return 2
     if args.command == "skills":
         try:
