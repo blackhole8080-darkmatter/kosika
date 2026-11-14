@@ -1,0 +1,283 @@
+// std/json.kos: reading and writing JSON text, in Kosika itself.
+//
+//   import "std/json.kos"
+//
+// A path names a place in the JSON: "" is the whole of it, "a.b" the field b
+// of the field a, "items.0.name" the name of the first item. Every reader
+// says what it expects, and a place that is missing, or holds something
+// else, fails the run with a clear message: nothing is ever guessed.
+//
+// json_has(json, path)      whether the place exists
+// json_kind(json, path)     "object", "array", "text", "number", "bool",
+//                           "null", or "" when the place does not exist
+// json_at(json, path)       the JSON written at the place, as it is
+// json_text(json, path)     a text, with its escapes read
+// json_number(json, path)   a number
+// json_bool(json, path)     true or false
+// json_items(json, path)    the JSON of each element of an array
+// json_keys(json, path)     the names of an object's fields, in order
+// json_quote(text)          a text written as a JSON string
+//
+// \u escapes for characters past the first 128 are kept as written.
+
+export [json_has, json_kind, json_at, json_text, json_number, json_bool, json_items, json_keys, json_quote]
+
+fn json_space(ch: Text) -> Bool {
+  return ch == " " or ch == "\n" or ch == "\r" or ch == "\t"
+}
+
+fn json_skip(cs: Text[], at: Number) -> Number {
+  var i = at
+  while i < cs.length() and json_space(cs[i]) { i += 1 }
+  return i
+}
+
+// Where a string that opens at `at` ends (just past its closing quote), or -1.
+fn json_string_end(cs: Text[], at: Number) -> Number {
+  var i = at + 1
+  while i < cs.length() {
+    if cs[i] == "\\" {
+      i += 2
+    } else if cs[i] == "\"" {
+      return i + 1
+    } else {
+      i += 1
+    }
+  }
+  return -1
+}
+
+// Where the value that begins at `at` ends, or -1 when it is not whole.
+fn json_value_end(cs: Text[], at: Number) -> Number {
+  if at >= cs.length() { return -1 }
+  let first = cs[at]
+  if first == "\"" { return json_string_end(cs, at) }
+  if first == "{" or first == "[" {
+    var depth = 0
+    var i = at
+    while i < cs.length() {
+      let ch = cs[i]
+      if ch == "\"" {
+        let after = json_string_end(cs, i)
+        if after < 0 { return -1 }
+        i = after
+      } else {
+        if ch == "{" or ch == "[" { depth += 1 }
+        if ch == "}" or ch == "]" {
+          depth -= 1
+          if depth == 0 { return i + 1 }
+        }
+        i += 1
+      }
+    }
+    return -1
+  }
+  var i = at
+  while i < cs.length() and not ",}] \n\r\t".contains(cs[i]) { i += 1 }
+  return if i > at { i } else { -1 }
+}
+
+fn json_hex(cs: Text[], at: Number) -> Number {
+  var n = 0
+  for k in (0).until(4) {
+    if at + k >= cs.length() { return -1 }
+    let d = "0123456789abcdef".index_of(cs[at + k].lower()).or(-1)
+    if d < 0 { return -1 }
+    n = n * 16 + d
+  }
+  return n
+}
+
+fn json_ascii() -> Text {
+  return " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
+}
+
+// The text of a string written from `start` (its opening quote) to `end`.
+fn json_read_string(cs: Text[], start: Number, end: Number) -> Text {
+  var out: Text[] = []
+  var i = start + 1
+  while i < end - 1 {
+    let ch = cs[i]
+    if ch != "\\" {
+      out = out.append(ch)
+      i += 1
+      continue
+    }
+    let e = cs[i + 1]
+    if e == "n" { out = out.append("\n") }
+    else if e == "t" { out = out.append("\t") }
+    else if e == "r" { out = out.append("\r") }
+    else if e == "b" { out = out.append("\u{8}") }
+    else if e == "f" { out = out.append("\u{c}") }
+    else if e == "u" {
+      let code = json_hex(cs, i + 2)
+      if code == 10 { out = out.append("\n") }
+      else if code == 9 { out = out.append("\t") }
+      else if code == 13 { out = out.append("\r") }
+      else if code >= 32 and code < 127 { out = out.append(json_ascii().slice(code - 32, code - 31)) }
+      else { out = out.append(cs.slice(i, i + 6).join("")) }
+      i += 6
+      continue
+    }
+    else { out = out.append(e) }
+    i += 2
+  }
+  return out.join("")
+}
+
+// The parts of an object or array that opens at `at`: for each, its name
+// (an object's field) or "" (an array's element), and where its value
+// starts and ends: [name, start, end] as text, numbers written plainly.
+record JsonPart { name: Text start: Number end: Number }
+
+fn json_parts(cs: Text[], at: Number) -> JsonPart[] {
+  let object = cs[at] == "{"
+  var parts: JsonPart[] = []
+  var i = json_skip(cs, at + 1)
+  if i < cs.length() and (cs[i] == "}" or cs[i] == "]") { return parts }
+  while i < cs.length() {
+    var name = ""
+    if object {
+      let name_end = json_string_end(cs, i)
+      if cs[i] != "\"" or name_end < 0 { fail "json: an object's field needs a quoted name" }
+      name = json_read_string(cs, i, name_end)
+      i = json_skip(cs, name_end)
+      if i >= cs.length() or cs[i] != ":" { fail f"json: the field {name} needs a ':'" }
+      i = json_skip(cs, i + 1)
+    }
+    let end = json_value_end(cs, i)
+    if end < 0 { fail "json: a value is cut off or not JSON" }
+    parts = parts.append({name: name, start: i, end: end})
+    i = json_skip(cs, end)
+    if i >= cs.length() { fail "json: an object or array is not closed" }
+    if cs[i] == "," {
+      i = json_skip(cs, i + 1)
+    } else {
+      break
+    }
+  }
+  return parts
+}
+
+// [start, end] of the value at a path, or [-1, -1] when there is none.
+fn json_place(cs: Text[], path: Text) -> Number[] {
+  var start = json_skip(cs, 0)
+  var end = json_value_end(cs, start)
+  if end < 0 { return [-1, -1] }
+  if path == "" { return [start, end] }
+  for step in path.split(".") {
+    if start >= cs.length() or not (cs[start] == "{" or cs[start] == "[") { return [-1, -1] }
+    let parts = json_parts(cs, start)
+    var found = -1
+    if cs[start] == "[" {
+      let at = step.to_number().or(-1)
+      if at >= 0 and at == at.floor() and at < parts.length() { found = at }
+    } else {
+      var k = 0
+      for p in parts {
+        if p.name == step { found = k }
+        k += 1
+      }
+    }
+    if found < 0 { return [-1, -1] }
+    start = parts[found].start
+    end = parts[found].end
+  }
+  return [start, end]
+}
+
+fn json_where(path: Text) -> Text {
+  return if path == "" { "the JSON" } else { "'" + path + "'" }
+}
+
+fn json_has(json: Text, path: Text) -> Bool {
+  return json_place(json.chars(), path)[0] >= 0
+}
+
+fn json_kind(json: Text, path: Text) -> Text {
+  let cs = json.chars()
+  let place = json_place(cs, path)
+  if place[0] < 0 { return "" }
+  let first = cs[place[0]]
+  if first == "{" { return "object" }
+  if first == "[" { return "array" }
+  if first == "\"" { return "text" }
+  let word = cs.slice(place[0], place[1]).join("")
+  if word == "true" or word == "false" { return "bool" }
+  if word == "null" { return "null" }
+  return if word.to_number() == null { "" } else { "number" }
+}
+
+fn json_at(json: Text, path: Text) -> Text {
+  let cs = json.chars()
+  let place = json_place(cs, path)
+  if place[0] < 0 { fail "json: nothing at " + json_where(path) }
+  return cs.slice(place[0], place[1]).join("")
+}
+
+fn json_text(json: Text, path: Text) -> Text {
+  let cs = json.chars()
+  let place = json_place(cs, path)
+  if place[0] < 0 { fail "json: nothing at " + json_where(path) }
+  if cs[place[0]] != "\"" { fail "json: " + json_where(path) + " is not a text" }
+  return json_read_string(cs, place[0], place[1])
+}
+
+fn json_number(json: Text, path: Text) -> Number {
+  if json_kind(json, path) != "number" { fail "json: " + json_where(path) + " is not a number" }
+  return json_at(json, path).to_number().or(0)
+}
+
+fn json_bool(json: Text, path: Text) -> Bool {
+  if json_kind(json, path) != "bool" { fail "json: " + json_where(path) + " is not true or false" }
+  return json_at(json, path) == "true"
+}
+
+fn json_items(json: Text, path: Text) -> Text[] {
+  if json_kind(json, path) != "array" { fail "json: " + json_where(path) + " is not an array" }
+  let cs = json.chars()
+  let place = json_place(cs, path)
+  return for p in json_parts(cs, place[0]) { cs.slice(p.start, p.end).join("") }
+}
+
+fn json_keys(json: Text, path: Text) -> Text[] {
+  if json_kind(json, path) != "object" { fail "json: " + json_where(path) + " is not an object" }
+  let cs = json.chars()
+  let place = json_place(cs, path)
+  return for p in json_parts(cs, place[0]) { p.name }
+}
+
+fn json_quote(text: Text) -> Text {
+  return "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"").replace("\r", "\\r").replace("\n", "\\n").replace("\t", "\\t") + "\""
+}
+
+test "fields, items and kinds are read where the path says" {
+  doc = "{\"run\": \"2026-11-14-3\", \"passed\": true, \"score\": 14.5, \"files\": [\"a.kos\", {\"name\": \"b.go\"}], \"note\": null}"
+  expect json_text(doc, "run") == "2026-11-14-3"
+  expect json_bool(doc, "passed")
+  expect json_number(doc, "score") == 14.5
+  expect json_items(doc, "files") == ["\"a.kos\"", "{\"name\": \"b.go\"}"]
+  expect json_text(doc, "files.1.name") == "b.go"
+  expect json_keys(doc, "") == ["run", "passed", "score", "files", "note"]
+  expect json_kind(doc, "note") == "null"
+  expect json_kind(doc, "files") == "array"
+  expect json_kind(doc, "missing") == ""
+  expect not json_has(doc, "files.2")
+  expect json_has(doc, "files.0")
+}
+
+test "escapes are read, and a quoted text reads back the same" {
+  expect json_text("{\"s\": \"say \\\"hi\\\"\\n\\u0041\\\\\"}", "s") == "say \"hi\"\nA\\"
+  expect json_text("{\"s\": \"commas, and } braces ]\"}", "s") == "commas, and } braces ]"
+  expect json_text(json_quote("tab\there \"q\" \\ end\n"), "") == "tab\there \"q\" \\ end\n"
+  expect json_text("{\"s\": \"\\u00e9\"}", "s") == "\\u00e9"
+}
+
+test "nested and empty shapes, and spaces anywhere" {
+  doc = " { \"a\" : { \"b\" : [ 1 , [ ] , { } , -2e3 ] } } "
+  expect json_number(doc, "a.b.0") == 1
+  expect json_items(doc, "a.b.1") == []
+  expect json_keys(doc, "a.b.2") == []
+  expect json_number(doc, "a.b.3") == -2000
+  expect json_at(doc, "a.b.1") == "[ ]"
+}

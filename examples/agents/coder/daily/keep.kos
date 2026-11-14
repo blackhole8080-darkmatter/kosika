@@ -23,6 +23,8 @@
 // kept.json is {"k": {"repo": "C:/Users/Aryan/Aryan_Private/projects/kosika", "work": "C:/Users/Aryan/Aryan_Private/kosika-daily",
 //   "run": "2026-11-14-3", "request": "...", "passed": true, "date": "2026-11-14", "push": false}}
 
+import "std/json.kos"
+
 record Approved { repo: Text work: Text run: Text request: Text passed: Bool date: Text push: Bool }
 record Command { args: Text[] }
 record Ran { exit_code: Number stdout: Text stderr: Text }
@@ -119,15 +121,11 @@ fn push_step(k: Approved) -> Text[] {
   return ["-C", tree(k), "push", "-u", "origin", branch(k)]
 }
 
-fn json_text(text: Text) -> Text {
-  return "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"").replace("\r", "\\r").replace("\n", "\\n").replace("\t", "\\t") + "\""
-}
-
 // The training example: the request as the person's words, the change that
 // passed as the answer, in the chat form free models are trained on.
 fn example_text(k: Approved, change: Text) -> Text {
-  return "{\"messages\": [{\"role\": \"user\", \"content\": " + json_text(k.request) + "}, {\"role\": \"assistant\", \"content\": " + json_text(change) + "}], "
-    + "\"run\": " + json_text(k.run) + ", \"date\": " + json_text(k.date) + ", \"approved\": " + (if change == "" { "false" } else { "true" }) + "}\n"
+  return "{\"messages\": [{\"role\": \"user\", \"content\": " + json_quote(k.request) + "}, {\"role\": \"assistant\", \"content\": " + json_quote(change) + "}], "
+    + "\"run\": " + json_quote(k.run) + ", \"date\": " + json_quote(k.date) + ", \"approved\": " + (if change == "" { "false" } else { "true" }) + "}\n"
 }
 
 // Where it is kept: approved/ only for a change that was committed with
@@ -200,6 +198,8 @@ test "only a committed change becomes a training example, and the end is told tr
   expect kept(k, ok, ok, ok).said == "kept on daily/2026-11-14-3; not pushed"
   expect not kept(k, ok, bad, ok).kept
   expect kept(k, ok, bad, ok).said.contains("patch failed")
+  expect json_text(example_text(k, "+ say \"hi\"\n"), "messages.1.content") == "+ say \"hi\"\n"
+  expect json_bool(example_text(k, "x"), "approved")
   pushed = kept({repo: "C:/k", work: "C:/w", run: "2026-11-14-3", request: "a", passed: true, date: "", push: true}, ok, ok, bad)
   expect pushed.kept and not pushed.pushed
   expect pushed.said.contains("but the push failed")
