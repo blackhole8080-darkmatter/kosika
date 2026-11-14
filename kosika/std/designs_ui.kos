@@ -38,6 +38,15 @@
 // same design, calm and still. The theme says which: "dark", "light",
 // "dark minimal", "light minimal".
 //
+// The look is the model's too: its own one or two colours (Kosika keeps
+// the hue and makes them readable), the shape of things (soft, round,
+// sharp, pill), the type (geometric, grotesk, editorial, mono, rounded)
+// and the moving art behind the design (orbits, blobs, waves,
+// constellation, prism, rings, grid, aurora), drawn fresh from a seed of
+// the ask's words, so no two designs are alike. An art block lets the
+// model compose its own moving shapes: polygons, stars, blobs, spirals,
+// waves. Whatever the model leaves out, Kosika picks from the seed.
+//
 // With no model answer at all (offline, or the model failed), Kosika still
 // designs: ui_starter lays out a sensible screen for the target from the
 // words of the ask.
@@ -49,13 +58,14 @@
 
 import "designs_palette.kos"
 
-export [UiAsk, UiItem, UiBlock, UiScreen, UiSpec, UiResult, UiDraw, UiBind, UiApp, design_ui, ui_render, ui_app, ui_live_page, ui_binds_checked, ui_result, ui_target, ui_theme, ui_checked, ui_starter, ui_page, ui_icon, ui_icon_names, ui_tokens_css, ui_kinds, ui_accents, ui_accent_problems, ui_wants]
+export [UiAsk, UiFile, UiAppMade, ui_make_app, design_app, ui_app_made, ui_app_page, UiLook, UiEdit, UiLike, UiTasteAsk, design_ui_for, ui_like, ui_lean, ui_edit, ui_edit_local, ui_spec_json, UiItem, UiBlock, UiScreen, UiSpec, UiResult, UiDraw, UiBind, UiApp, design_ui, ui_render, ui_app, ui_live_page, ui_binds_checked, ui_result, ui_target, ui_theme, ui_checked, ui_starter, ui_page, ui_icon, ui_icon_names, ui_tokens_css, ui_kinds, ui_accents, ui_accent_problems, ui_wants]
 
 record UiAsk { text: Text target: Text theme: Text accent: Text }
 record UiItem { title: Text text: Text meta: Text icon: Text }
 record UiBlock { kind: Text title: Text text: Text meta: Text action: Text items: UiItem[] }
 record UiScreen { name: Text blocks: UiBlock[] }
-record UiSpec { target: Text title: Text brand: Text accent: Text theme: Text screens: UiScreen[] }
+record UiLook { colours: Text[] shape: Text art: Text font: Text }
+record UiSpec { target: Text title: Text brand: Text accent: Text theme: Text look: UiLook screens: UiScreen[] }
 record UiResult { target: Text title: Text spec: UiSpec page: Text fixed: Text[] problems: Text[] }
 record UiDraw { ask: UiAsk spec: UiSpec }
 // A design that runs: each bind ties one block to a Kosika workflow.
@@ -84,14 +94,14 @@ model ui_designer {
 
 fn ui_targets() -> Text[] { return ["web", "phone", "agent", "artifact"] }
 
-fn ui_kinds() -> Text[] { return ["nav", "hero", "features", "stats", "cards", "list", "steps", "pricing", "quote", "cta", "footer", "form", "appbar", "search", "chips", "tabbar", "chat", "composer", "activity", "progress", "sidebar", "table", "chart"] }
+fn ui_kinds() -> Text[] { return ["nav", "hero", "features", "stats", "cards", "list", "steps", "pricing", "quote", "cta", "footer", "form", "appbar", "search", "chips", "tabbar", "chat", "composer", "activity", "progress", "sidebar", "table", "chart", "art"] }
 
 // Which blocks belong on which target.
 fn ui_allowed(target: Text) -> Text[] {
-  if target == "phone" { return ["appbar", "hero", "search", "chips", "stats", "cards", "list", "steps", "progress", "activity", "chat", "form", "quote", "cta", "composer", "tabbar", "features", "table", "chart"] }
-  if target == "agent" { return ["sidebar", "appbar", "chat", "composer", "activity", "progress", "stats", "list", "cards", "steps", "chips", "search", "form", "table", "chart"] }
-  if target == "artifact" { return ["appbar", "hero", "stats", "cards", "list", "steps", "progress", "activity", "chips", "quote", "table", "features", "cta", "form", "chart"] }
-  return ["nav", "hero", "features", "stats", "cards", "list", "steps", "pricing", "quote", "cta", "footer", "form", "table", "chips", "search", "chart"]
+  if target == "phone" { return ["appbar", "hero", "search", "chips", "stats", "cards", "list", "steps", "progress", "activity", "chat", "form", "quote", "cta", "composer", "tabbar", "features", "table", "chart", "art"] }
+  if target == "agent" { return ["sidebar", "appbar", "chat", "composer", "activity", "progress", "stats", "list", "cards", "steps", "chips", "search", "form", "table", "chart", "art"] }
+  if target == "artifact" { return ["appbar", "hero", "stats", "cards", "list", "steps", "progress", "activity", "chips", "quote", "table", "features", "cta", "form", "chart", "art"] }
+  return ["nav", "hero", "features", "stats", "cards", "list", "steps", "pricing", "quote", "cta", "footer", "form", "table", "chips", "search", "chart", "art"]
 }
 
 fn ui_most_blocks(target: Text) -> Number {
@@ -111,6 +121,7 @@ fn ui_most_items(kind: Text) -> Number {
   if kind == "stats" { return 4 }
   if kind == "table" { return 7 }
   if kind == "chart" { return 12 }
+  if kind == "art" { return 12 }
   return 6
 }
 
@@ -204,7 +215,7 @@ fn ui_any(t: Text, words: Text[]) -> Bool {
 }
 
 fn ui_phone_words() -> Text[] { return [" phone", " mobile", " iphone", " android", " ios ", " app screen", " app ui", " app design", " onboarding", " mobile app", " smartphone"] }
-fn ui_agent_words() -> Text[] { return [" agent window", " agent's window", " agent ui", " agent interface", " agent app", " assistant window", " chat window", " chatbot", " copilot", " agent dashboard", " ai agent", " agents window", " agent console", " agent screen"] }
+fn ui_agent_words() -> Text[] { return [" agent window", " agent's window", " agent ui", " agent interface", " agent app", " assistant window", " chat window", " chatbot", " copilot", " agent dashboard", " ai agent", " agents window", " agent console", " agent screen", " ai interface", " ai ui", " ai app", " ai chat", " ai assistant", " assistant app", " assistant ui", " chat app", " chat interface", " llm interface", " llm app", " model interface"] }
 fn ui_artifact_words() -> Text[] { return [" artifact", " widget", " card ", " report card", " summary card", " one card", " single card", " receipt", " invoice", " ticket"] }
 fn ui_web_words() -> Text[] { return [" website", " web site", " landing page", " homepage", " home page", " web page", " webpage", " portfolio site", " web app", " saas", " dashboard", " admin panel", " blog", " pricing page", " login page", " sign up page", " signup page"] }
 
@@ -265,7 +276,7 @@ fn ui_accent_named(ask: UiAsk, said: Text) -> Text {
   if ui_any(t, [" black and white", " monochrome", " grey ", " gray "]) { return "graphite" }
   if ui_any(t, [" dark matter"]) { return "orange" }
   let s = said.trim().lower()
-  return if ui_accent_names().contains(s) { s } else { "indigo" }
+  return if ui_accent_names().contains(s) { s } else { ui_pick(ui_accent_names().take(9), ui_seed(ask.text), 5) }
 }
 
 // ---------------------------------------------------------------- icons
@@ -444,7 +455,8 @@ fn ui_screen_checked(target: Text, title: Text, brand: Text, s: UiScreen) -> UiS
 // Kosika's check of a description: the target, theme and accent as the
 // ask says, the blocks that belong, in their places, every text short
 // enough for where it sits.
-fn ui_checked(ask: UiAsk, said: UiSpec) -> UiChecked {
+fn ui_checked(ask: UiAsk, linked: UiSpec) -> UiChecked {
+  let said = ui_spec_unlinked(linked)
   let target = ui_target(ask)
   var fixed: Text[] = []
   if ui_targets().contains(said.target.trim().lower()) and said.target.trim().lower() != target {
@@ -455,7 +467,7 @@ fn ui_checked(ask: UiAsk, said: UiSpec) -> UiChecked {
   if empty { fixed = fixed.append("the model gave no screen, so Kosika laid one out itself") }
   let title = if base.title.trim().is_empty() { ui_subject(ask.text) } else { ui_cut(base.title, 60) }
   let brand = if base.brand.trim().is_empty() { ui_brand(ask.text) } else { ui_cut(base.brand, 24) }
-  let most = if target == "phone" { 3 } else { 1 }
+  let most = if target == "phone" { 5 } else if target == "web" { 3 } else { 2 }
   if base.screens.length() > most { fixed = fixed.append(f"kept {most} of {base.screens.length()} screens") }
   var screens: UiScreen[] = []
   for s in base.screens.take(most) {
@@ -465,7 +477,8 @@ fn ui_checked(ask: UiAsk, said: UiSpec) -> UiChecked {
   }
   let accent = ui_accent_named(ask, base.accent)
   let theme = ui_theme(ask, base.theme)
-  return {spec: {target: target, title: title, brand: brand, accent: accent, theme: theme, screens: screens}, fixed: fixed, problems: ui_accent_problems()}
+  let look = ui_look_checked(base.look, ui_seed(ask.text + " " + title))
+  return {spec: {target: target, title: title, brand: brand, accent: accent, theme: theme, look: look, screens: screens}, fixed: fixed, problems: ui_accent_problems()}
 }
 
 // ---------------------------------------------------------------- with no model
@@ -510,7 +523,7 @@ fn ui_starter(ask: UiAsk) -> UiSpec {
       ui_block("list", "Recent", "", "", "", [ui_item("Getting started", "Set up in a minute", "Now", "bolt"), ui_item("Saved items", "Everything you kept", "12", "bookmark"), ui_item("Shared with you", "From your people", "3", "users")]),
       ui_block("tabbar", "", "", "", "", [ui_item("Home", "", "", "home"), ui_item("Search", "", "", "search"), ui_item("Saved", "", "", "bookmark"), ui_item("You", "", "", "user")])
     ]}
-    return {target: target, title: subject, brand: brand, accent: "", theme: "", screens: [home]}
+    return {target: target, title: subject, brand: brand, accent: "", theme: "", look: ui_no_look(), screens: [home]}
   }
   if target == "agent" {
     let main: UiScreen = {name: subject, blocks: [
@@ -520,7 +533,7 @@ fn ui_starter(ask: UiAsk) -> UiSpec {
       ui_block("activity", "Plan", "", "", "", [ui_item("Read the request", "", "done", "check"), ui_item("Gather what is needed", "", "now", "spark"), ui_item("Ask before changing anything", "", "next", "clock")]),
       ui_block("composer", "", "Ask, or give a task…", "", "", [])
     ]}
-    return {target: target, title: subject, brand: brand, accent: "", theme: "", screens: [main]}
+    return {target: target, title: subject, brand: brand, accent: "", theme: "", look: ui_no_look(), screens: [main]}
   }
   if target == "artifact" {
     let card: UiScreen = {name: subject, blocks: [
@@ -528,7 +541,7 @@ fn ui_starter(ask: UiAsk) -> UiSpec {
       ui_block("stats", "", "", "", "", [ui_item("24", "Items", "+4", ""), ui_item("92%", "Done", "+6%", ""), ui_item("3", "Open", "", "")]),
       ui_block("list", "Highlights", "", "", "", [ui_item("What went well", "The main result, in one line.", "", "check"), ui_item("What to watch", "One thing that needs attention.", "", "eye"), ui_item("Next step", "The one action that matters most.", "", "arrow")])
     ]}
-    return {target: target, title: subject, brand: brand, accent: "", theme: "", screens: [card]}
+    return {target: target, title: subject, brand: brand, accent: "", theme: "", look: ui_no_look(), screens: [card]}
   }
   let page: UiScreen = {name: subject, blocks: [
     ui_block("nav", "", "", "", "Get started", [ui_item("Product", "", "", ""), ui_item("Pricing", "", "", ""), ui_item("About", "", "", "")]),
@@ -537,7 +550,7 @@ fn ui_starter(ask: UiAsk) -> UiSpec {
     ui_block("cta", "Ready when you are", "Start today. It takes a minute.", "", "Get started", []),
     ui_block("footer", "", "", "", "", [ui_item("Privacy", "", "", ""), ui_item("Terms", "", "", ""), ui_item("Contact", "", "", "")])
   ]}
-  return {target: "web", title: subject, brand: brand, accent: "", theme: "", screens: [page]}
+  return {target: "web", title: subject, brand: brand, accent: "", theme: "", look: ui_no_look(), screens: [page]}
 }
 
 // ---------------------------------------------------------------- the design system
@@ -612,12 +625,12 @@ fn ui_orbit() -> Text {
   return "<svg class=\"orbit\" viewBox=\"0 0 800 800\" aria-hidden=\"true\"><g class=\"o1\"><circle cx=\"400\" cy=\"400\" r=\"200\"/><circle class=\"od\" cx=\"600\" cy=\"400\" r=\"6\"/></g><g class=\"o2\"><circle cx=\"400\" cy=\"400\" r=\"290\"/><circle class=\"od b\" cx=\"400\" cy=\"110\" r=\"5\"/><circle class=\"od\" cx=\"400\" cy=\"690\" r=\"3.5\"/></g><g class=\"o3\"><circle cx=\"400\" cy=\"400\" r=\"380\"/><circle class=\"od b\" cx=\"20\" cy=\"400\" r=\"4\"/></g></svg>"
 }
 
-fn ui_hero(b: UiBlock, target: Text) -> Text {
+fn ui_hero(b: UiBlock, s: UiSpec) -> Text {
   let eyebrow = if b.meta.trim().is_empty() { "" } else { f"<span class=\"eyebrow\"><i></i>{ui_esc(b.meta)}</span>" }
   let words = if b.text.trim().is_empty() { "" } else { f"<p class=\"lead soft\">{ui_esc(b.text)}</p>" }
   let buttons = ui_buttons(b.action, "")
   let acts = if buttons.is_empty() { "" } else { f"<div class=\"acts\">{buttons}</div>" }
-  return f"<section class=\"hero\">{ui_orbit()}<div class=\"glow\"></div>{eyebrow}<h1>{ui_esc(b.title)}</h1>{words}{acts}{ui_hero_preview(b)}</section>"
+  return f"<section class=\"hero\">{ui_spec_backdrop(s)}<div class=\"glow\"></div>{eyebrow}<h1>{ui_esc(b.title)}</h1>{words}{acts}{ui_hero_preview(b)}</section>"
 }
 
 fn ui_cols(n: Number) -> Number {
@@ -870,7 +883,7 @@ fn ui_chart(b: UiBlock) -> Text {
 fn ui_block_html(b: UiBlock, s: UiSpec) -> Text {
   let k = b.kind
   if k == "nav" { return ui_nav(b, s.brand) }
-  if k == "hero" { return ui_hero(b, s.target) }
+  if k == "hero" { return ui_hero(b, s) }
   if k == "features" { return ui_features(b) }
   if k == "stats" { return ui_stats(b) }
   if k == "cards" { return ui_cards(b) }
@@ -892,6 +905,7 @@ fn ui_block_html(b: UiBlock, s: UiSpec) -> Text {
   if k == "sidebar" { return ui_sidebar(b, s.brand) }
   if k == "table" { return ui_table(b) }
   if k == "chart" { return ui_chart(b) }
+  if k == "art" { return ui_art(b, s) }
   return ""
 }
 
@@ -906,7 +920,7 @@ fn ui_slug(text: Text) -> Text {
 }
 
 fn ui_web(sc: UiScreen, s: UiSpec) -> Text {
-  return f"<div class=\"browser\"><div class=\"b-bar\"><span class=\"lights\"><i></i><i></i><i></i></span><span class=\"url\">" + ui_icon("lock") + f"{ui_esc(ui_slug(s.brand))}.com</span><span></span></div><div class=\"b-body t-web\">{ui_blocks_html(sc.blocks, s)}</div></div>"
+  return f"<div class=\"browser\" data-screen=\"{ui_esc(sc.name)}\"><div class=\"b-bar\"><span class=\"lights\"><i></i><i></i><i></i></span><span class=\"url\">" + ui_icon("lock") + f"{ui_esc(ui_slug(s.brand))}.com</span><span></span></div><div class=\"b-body t-web\">{ui_blocks_html(sc.blocks, s)}</div></div>"
 }
 
 fn ui_status_bar() -> Text {
@@ -917,7 +931,7 @@ fn ui_phone(sc: UiScreen, s: UiSpec) -> Text {
   let scroll = for b in sc.blocks where b.kind != "tabbar" and b.kind != "composer" { b }
   let pinned = for b in sc.blocks where b.kind == "composer" or b.kind == "tabbar" { b }
   let label = if sc.name.trim().is_empty() { "" } else { f"<div class=\"phone-name faint\">{ui_esc(sc.name)}</div>" }
-  return f"<div class=\"phone-wrap\"><div class=\"phone\"><div class=\"island\"></div><div class=\"screen t-phone\">{ui_status_bar()}<div class=\"scroll\">{ui_blocks_html(scroll, s)}</div><div class=\"pinned\">{ui_blocks_html(pinned, s)}<div class=\"homebar\"></div></div></div></div>{label}</div>"
+  return f"<div class=\"phone-wrap\" data-screen=\"{ui_esc(sc.name)}\"><div class=\"phone\"><div class=\"island\"></div><div class=\"screen t-phone\">{ui_spec_backdrop(s)}{ui_status_bar()}<div class=\"scroll\">{ui_blocks_html(scroll, s)}</div><div class=\"pinned\">{ui_blocks_html(pinned, s)}<div class=\"homebar\"></div></div></div></div>{label}</div>"
 }
 
 fn ui_side_kinds() -> Text[] { return ["activity", "progress", "stats", "chart"] }
@@ -930,11 +944,11 @@ fn ui_agent(sc: UiScreen, s: UiSpec) -> Text {
   let typing = for b in sc.blocks where b.kind == "composer" { b }
   let panel_html = if panel.is_empty() { "" } else { f"<aside class=\"panel\">{ui_blocks_html(panel, s)}</aside>" }
   let cls = if panel.is_empty() { "win-body" } else { "win-body three" }
-  return f"<div class=\"win\"><div class=\"win-bar\"><span class=\"lights\"><i></i><i></i><i></i></span><span class=\"win-title\">{ui_esc(s.brand)}</span><span></span></div><div class=\"{cls} t-agent\"><aside class=\"side\">{ui_blocks_html(side, s)}</aside><main class=\"main\"><div class=\"scroll\">{ui_blocks_html(main, s)}</div>{ui_blocks_html(typing, s)}</main>{panel_html}</div></div>"
+  return f"<div class=\"win\" data-screen=\"{ui_esc(sc.name)}\"><div class=\"win-bar\"><span class=\"lights\"><i></i><i></i><i></i></span><span class=\"win-title\">{ui_esc(s.brand)}</span><span></span></div><div class=\"{cls} t-agent\"><aside class=\"side\">{ui_blocks_html(side, s)}</aside><main class=\"main\">{ui_spec_backdrop(s)}<div class=\"scroll\">{ui_blocks_html(main, s)}</div>{ui_blocks_html(typing, s)}</main>{panel_html}</div></div>"
 }
 
 fn ui_artifact(sc: UiScreen, s: UiSpec) -> Text {
-  return f"<div class=\"artifact card t-artifact\">{ui_blocks_html(sc.blocks, s)}</div>"
+  return f"<div class=\"artifact card t-artifact\" data-screen=\"{ui_esc(sc.name)}\">{ui_spec_backdrop(s)}{ui_blocks_html(sc.blocks, s)}</div>"
 }
 
 fn ui_frames(s: UiSpec) -> Text {
@@ -995,6 +1009,252 @@ fn ui_stage_css(theme: Text) -> Text {
   return "html,body{margin:0;min-height:100%}body{min-height:100vh;background:" + stage + "}.stage{padding:48px 24px 72px;max-width:1320px;margin:0 auto}.stage-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin:0 auto 32px;max-width:1240px}.stage-head .by{font-size:12.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}.stage-head h1{font-size:26px;margin-top:8px}.stage-tags{display:flex;gap:8px}.stage details{max-width:1240px;margin:28px auto 0;color:var(--soft);font-size:13.5px}.stage summary{cursor:pointer;color:var(--faint)}.stage details ul{margin:10px 0 0;padding-left:18px}@media (max-width:640px){.stage{padding:24px 12px 48px}.phone{transform:scale(.86);transform-origin:top center;margin-bottom:-118px}}"
 }
 
+// ---------------------------------------------------------------- the look
+
+// What the model chooses beyond the words: its own colours (one or two
+// hex colours, made readable by Kosika), the shape of things, the type and
+// the art behind the design. Anything left empty or unknown is chosen by
+// Kosika from the ask's words, so two asks rarely look alike.
+fn ui_shapes() -> Text[] { return ["soft", "round", "sharp", "pill"] }
+fn ui_arts() -> Text[] { return ["orbits", "blobs", "waves", "constellation", "prism", "rings", "grid", "aurora"] }
+fn ui_fonts() -> Text[] { return ["geometric", "grotesk", "editorial", "mono", "rounded"] }
+
+fn ui_no_look() -> UiLook { return {colours: [], shape: "", art: "", font: ""} }
+
+// A number from the words, the same every time for the same words.
+fn ui_seed(text: Text) -> Number {
+  let chars = "abcdefghijklmnopqrstuvwxyz0123456789 .,"
+  var h = 7
+  for k in 0 until text.length() {
+    let c = chars.index_of(text.slice(k, k + 1).lower()).or(40)
+    h = (h * 31 + c + 1) % 1000003
+  }
+  return h
+}
+
+// A repeatable random number between 0 and 1: the k-th for this seed.
+fn ui_rnd(seed: Number, k: Number) -> Number {
+  let x = ((seed % 9973) * 0.61 + k * 37.719).sin() * 43758.5453
+  return x - x.floor()
+}
+
+fn ui_pick(list: Text[], seed: Number, k: Number) -> Text { return list[(ui_rnd(seed, k) * list.length()).floor() % list.length()] }
+
+fn ui_hexd(ch: Text) -> Number { return "0123456789abcdef".index_of(ch.lower()).or(0) }
+
+fn ui_chan(hex: Text, at: Number) -> Number { return ui_hexd(hex.slice(at, at + 1)) * 16 + ui_hexd(hex.slice(at + 1, at + 2)) }
+
+fn ui_hex2(n: Number) -> Text {
+  let v = n.max(0).min(255).round()
+  let d = "0123456789abcdef"
+  let hi = (v / 16).floor()
+  let lo = v % 16
+  return d.slice(hi, hi + 1) + d.slice(lo, lo + 1)
+}
+
+// A colour written #rgb or #rrggbb, as #rrggbb; anything else as "".
+fn ui_hex(text: Text) -> Text {
+  let t = text.trim().lower()
+  let body = if t.starts_with("#") { t.slice(1, t.length()) } else { t }
+  for k in 0 until body.length() {
+    if not "0123456789abcdef".contains(body.slice(k, k + 1)) { return "" }
+  }
+  if body.length() == 6 { return "#" + body }
+  if body.length() == 3 { return "#" + body.slice(0, 1) + body.slice(0, 1) + body.slice(1, 2) + body.slice(1, 2) + body.slice(2, 3) + body.slice(2, 3) }
+  return ""
+}
+
+fn ui_mix(a: Text, b: Text, t: Number) -> Text {
+  return "#" + ui_hex2(ui_chan(a, 1) * (1 - t) + ui_chan(b, 1) * t) + ui_hex2(ui_chan(a, 3) * (1 - t) + ui_chan(b, 3) * t) + ui_hex2(ui_chan(a, 5) * (1 - t) + ui_chan(b, 5) * t)
+}
+
+// A chosen colour made readable: in dark, light enough for dark text on
+// it and to stand out on the dark surface; in light, dark enough for white
+// text and to stand out on white. The hue stays the model's.
+fn ui_fit(colour: Text, dark: Bool) -> Text {
+  var c = colour
+  for k in 0 until 24 {
+    if dark and contrast(c, "#0b0b0f") < 5.5 { c = ui_mix(c, "#ffffff", 0.1) }
+    if not dark and contrast(c, "#ffffff") < 4.6 { c = ui_mix(c, "#000000", 0.1) }
+  }
+  return c
+}
+
+fn ui_look_checked(look: UiLook, seed: Number) -> UiLook {
+  let colours = (for c in look.colours where not ui_hex(c).is_empty() { ui_hex(c) }).take(2)
+  let shape = if ui_shapes().contains(look.shape.trim().lower()) { look.shape.trim().lower() } else { ui_pick(ui_shapes(), seed, 1) }
+  let art = if ui_arts().contains(look.art.trim().lower()) or look.art.trim().lower() == "none" { look.art.trim().lower() } else { ui_pick(ui_arts(), seed, 2) }
+  let font = if ui_fonts().contains(look.font.trim().lower()) { look.font.trim().lower() } else { ui_pick(ui_fonts(), seed, 3) }
+  return {colours: colours, shape: shape, art: art, font: font}
+}
+
+fn ui_font_family(font: Text) -> Text {
+  if font == "grotesk" { return "'Space Grotesk',var(--ui-font)" }
+  if font == "editorial" { return "Fraunces,Georgia,'Times New Roman',serif" }
+  if font == "mono" { return "'JetBrains Mono',var(--ui-mono)" }
+  if font == "rounded" { return "Nunito,var(--ui-font)" }
+  return "var(--ui-font)"
+}
+
+fn ui_font_link(font: Text) -> Text {
+  let fam = if font == "grotesk" { "&family=Space+Grotesk:wght@500;600;700" } else if font == "editorial" { "&family=Fraunces:opsz,wght@9..144,500;9..144,600" } else if font == "mono" { "&family=JetBrains+Mono:wght@500;600;700" } else if font == "rounded" { "&family=Nunito:wght@600;700;800" } else { "" }
+  return "<link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700" + fam + "&display=swap\">"
+}
+
+// The look as CSS, laid over the design system.
+fn ui_look_css(s: UiSpec) -> Text {
+  let l = s.look
+  let dark = ui_mode(s.theme) == "dark"
+  let r = if l.shape == "sharp" { "--ui-r1:3px;--ui-r2:4px;--ui-r3:6px;--ui-r4:8px;--ui-r5:10px" } else if l.shape == "round" { "--ui-r1:12px;--ui-r2:18px;--ui-r3:22px;--ui-r4:30px;--ui-r5:38px" } else if l.shape == "pill" { "--ui-r1:12px;--ui-r2:16px;--ui-r3:20px;--ui-r4:26px;--ui-r5:34px" } else { "" }
+  let btn = if l.shape == "sharp" { ".ui .btn,.ui .send,.ui .chip,.ui .pill,.ui .eyebrow,.ui .badge{border-radius:6px}.ui .card{border-radius:var(--ui-r4)}" } else { "" }
+  let head = ".ui{" + r + ";--ui-head:" + ui_font_family(l.font) + "}.ui h1,.ui h2,.ui h3,.ui .num,.ui .price,.ui .brand,.ui .ch-now b,.ui .ring-in b{font-family:var(--ui-head)}" + (if l.font == "editorial" { ".ui h1,.ui h2{font-weight:560;letter-spacing:-.02em}" } else if l.font == "mono" { ".ui h1,.ui h2{letter-spacing:-.04em}" } else { "" })
+  if l.colours.is_empty() { return head + btn }
+  let a = ui_fit(l.colours[0], dark)
+  let a2 = if l.colours.length() > 1 { ui_fit(l.colours[1], dark) } else { ui_fit(ui_mix(l.colours[0], if dark { "#fbbf24" } else { "#b45309" }, 0.55), dark) }
+  let on = if dark { "#0b0b0f" } else { "#ffffff" }
+  return head + btn + ".ui{--accent:" + a + ";--a2:" + a2 + ";--on:" + on + ";--tint:color-mix(in srgb," + a + " 14%,transparent);--tint2:color-mix(in srgb," + a + " 7%,transparent)}"
+}
+
+// ---------------------------------------------------------------- art
+
+fn ui_n(x: Number) -> Number { return (x * 10).round() / 10 }
+
+fn ui_pt(x: Number, y: Number) -> Text { return f"{ui_n(x)},{ui_n(y)}" }
+
+// A smooth closed curve through the points: a blob.
+fn ui_smooth(xs: Number[], ys: Number[]) -> Text {
+  let n = xs.length()
+  let start = ui_pt((xs[n - 1] + xs[0]) / 2, (ys[n - 1] + ys[0]) / 2)
+  let parts = (for k in 0 until n { "Q" + ui_pt(xs[k], ys[k]) + " " + ui_pt((xs[k] + xs[(k + 1) % n]) / 2, (ys[k] + ys[(k + 1) % n]) / 2) }).join(" ")
+  return "M" + start + " " + parts + "Z"
+}
+
+fn ui_blob(cx: Number, cy: Number, r: Number, seed: Number, k: Number) -> Text {
+  let n = 9
+  let xs = for i in 0 until n { cx + r * (0.72 + ui_rnd(seed, k * 31 + i) * 0.5) * (i * 360 / n).cos() }
+  let ys = for i in 0 until n { cy + r * (0.72 + ui_rnd(seed, k * 31 + i) * 0.5) * (i * 360 / n).sin() }
+  return ui_smooth(xs, ys)
+}
+
+fn ui_poly(cx: Number, cy: Number, r: Number, sides: Number, turn: Number) -> Text {
+  return "M" + (for i in 0 until sides { ui_pt(cx + r * (turn - 90 + i * 360 / sides).cos(), cy + r * (turn - 90 + i * 360 / sides).sin()) }).join(" L") + "Z"
+}
+
+fn ui_star(cx: Number, cy: Number, r: Number, points: Number, turn: Number) -> Text {
+  let n = points * 2
+  return "M" + (for i in 0 until n { ui_pt(cx + (if i % 2 == 0 { r } else { r * 0.46 }) * (turn - 90 + i * 180 / points).cos(), cy + (if i % 2 == 0 { r } else { r * 0.46 }) * (turn - 90 + i * 180 / points).sin()) }).join(" L") + "Z"
+}
+
+fn ui_spiral(cx: Number, cy: Number, r: Number) -> Text {
+  return "M" + (for i in 0 until 49 { ui_pt(cx + r * i / 48 * (i * 15).cos(), cy + r * i / 48 * (i * 15).sin()) }).join(" L")
+}
+
+fn ui_wave(x0: Number, y: Number, width: Number, amp: Number, waves: Number) -> Text {
+  let steps = 64
+  return "M" + (for i in 0 until steps + 1 { ui_pt(x0 + width * i / steps, y + amp * (i * 360 * waves / steps).sin()) }).join(" L")
+}
+
+fn ui_fills() -> Text[] { return ["var(--accent)", "var(--a2)", "url(#ui-ch-g)", "color-mix(in srgb,var(--accent) 50%,var(--a2))"] }
+
+// The art behind a design, drawn fresh from the seed: no two alike.
+fn ui_backdrop(art: Text, seed: Number) -> Text {
+  if art == "none" or art.is_empty() { return "" }
+  let open = f"<svg class=\"art-bg a-{art}\" viewBox=\"0 0 800 800\" preserveAspectRatio=\"xMidYMid slice\" aria-hidden=\"true\">" + ui_grads()
+  if art == "blobs" {
+    return open + (for k in 0 until 4 { f"<path class=\"bl\" style=\"fill:{ui_fills()[k % 4]};--i:{k}\" d=\"{ui_blob(180 + ui_rnd(seed, k) * 440, 160 + ui_rnd(seed, k + 9) * 420, 140 + ui_rnd(seed, k + 4) * 120, seed, k)}\"/>" }).join("") + "</svg>"
+  }
+  if art == "waves" {
+    let n = 2 + (ui_rnd(seed, 3) * 3).floor()
+    return open + (for k in 0 until 6 { f"<path class=\"wv\" style=\"--i:{k}\" d=\"{ui_wave(0, 260 + k * 62, 1600, 26 + ui_rnd(seed, k) * 46, n * 2)}\"/>" }).join("") + "</svg>"
+  }
+  if art == "constellation" {
+    let xs = for k in 0 until 26 { 60 + ui_rnd(seed, k) * 680 }
+    let ys = for k in 0 until 26 { 60 + ui_rnd(seed, k + 50) * 680 }
+    let lines = (for k in 0 until 25 where ((xs[k] - xs[k + 1]).power(2) + (ys[k] - ys[k + 1]).power(2)).power(0.5) < 300 { f"<line x1=\"{ui_n(xs[k])}\" y1=\"{ui_n(ys[k])}\" x2=\"{ui_n(xs[k + 1])}\" y2=\"{ui_n(ys[k + 1])}\"/>" }).join("")
+    let dots = (for k in 0 until 26 { f"<circle class=\"st" + (if k % 5 == 0 { " big" } else { "" }) + f"\" cx=\"{ui_n(xs[k])}\" cy=\"{ui_n(ys[k])}\" r=\"" + (if k % 5 == 0 { "5" } else { "2.6" }) + f"\" style=\"--i:{k % 9}\"/>" }).join("")
+    return open + "<g class=\"cl\">" + lines + "</g>" + dots + "</svg>"
+  }
+  if art == "prism" {
+    return open + (for k in 0 until 7 { f"<path class=\"pr\" style=\"fill:{ui_fills()[k % 4]};--i:{k}\" d=\"{ui_poly(90 + ui_rnd(seed, k) * 620, 90 + ui_rnd(seed, k + 20) * 620, 50 + ui_rnd(seed, k + 40) * 110, 3 + (ui_rnd(seed, k + 60) * 4).floor(), ui_rnd(seed, k + 70) * 120)}\"/>" }).join("") + "</svg>"
+  }
+  if art == "rings" {
+    return open + (for k in 0 until 6 { f"<circle class=\"rg\" cx=\"400\" cy=\"400\" r=\"{110 + k * 52}\" style=\"--i:{k};stroke-dasharray:{2 + (ui_rnd(seed, k) * 30).round()} {6 + (ui_rnd(seed, k + 8) * 22).round()}\"/>" }).join("") + "</svg>"
+  }
+  if art == "grid" {
+    let hs = (for k in 0 until 9 { f"<line x1=\"0\" x2=\"800\" y1=\"{ui_n(430 + 370 * (k / 8).power(1.8))}\" y2=\"{ui_n(430 + 370 * (k / 8).power(1.8))}\"/>" }).join("")
+    let vs = (for k in 0 until 17 { f"<line x1=\"400\" y1=\"400\" x2=\"{-800 + k * 150}\" y2=\"800\"/>" }).join("")
+    return open + "<circle class=\"sun\" cx=\"400\" cy=\"330\" r=\"" + f"{110 + (ui_rnd(seed, 1) * 50).round()}" + "\" fill=\"url(#ui-ch-g)\"/><g class=\"gd\">" + hs + vs + "</g></svg>"
+  }
+  if art == "aurora" {
+    return open + (for k in 0 until 3 { f"<ellipse class=\"au\" cx=\"{ui_n(250 + ui_rnd(seed, k) * 300)}\" cy=\"{ui_n(240 + k * 120)}\" rx=\"{ui_n(320 + ui_rnd(seed, k + 5) * 160)}\" ry=\"{ui_n(50 + ui_rnd(seed, k + 9) * 40)}\" style=\"fill:{ui_fills()[k % 4]};--i:{k}\" transform=\"rotate({ui_n(-18 + ui_rnd(seed, k + 3) * 36)} 400 400)\"/>" }).join("") + "</svg>"
+  }
+  let r1 = 170 + (ui_rnd(seed, 1) * 60).round()
+  let r2 = r1 + 80 + (ui_rnd(seed, 2) * 40).round()
+  let r3 = r2 + 80 + (ui_rnd(seed, 3) * 30).round()
+  return open + f"<g class=\"ob o1\"><circle cx=\"400\" cy=\"400\" r=\"{r1}\"/><circle class=\"od\" cx=\"{400 + r1}\" cy=\"400\" r=\"6\"/></g><g class=\"ob o2\"><circle cx=\"400\" cy=\"400\" r=\"{r2}\"/><circle class=\"od b\" cx=\"400\" cy=\"{400 - r2}\" r=\"5\"/><circle class=\"od\" cx=\"400\" cy=\"{400 + r2}\" r=\"3.5\"/></g><g class=\"ob o3\"><circle cx=\"400\" cy=\"400\" r=\"{r3}\"/><circle class=\"od b\" cx=\"{400 - r3}\" cy=\"400\" r=\"4\"/></g></svg>"
+}
+
+fn ui_spec_seed(s: UiSpec) -> Number { return ui_seed(s.title + " " + s.brand + " " + s.target) }
+
+fn ui_spec_backdrop(s: UiSpec) -> Text { return ui_backdrop(s.look.art, ui_spec_seed(s)) }
+
+// The art block: shapes the model composes, drawn and set in motion.
+fn ui_shape_names() -> Text[] { return ["circle", "ring", "square", "diamond", "triangle", "pentagon", "hexagon", "octagon", "star", "blob", "spiral", "wave", "polygon"] }
+
+fn ui_motions() -> Text[] { return ["spin", "float", "pulse", "sway", "none"] }
+
+fn ui_shape_fill(colour: Text) -> Text {
+  let c = colour.trim().lower()
+  if c == "accent" or c == "first" { return "var(--accent)" }
+  if c == "partner" or c == "second" or c == "a2" { return "var(--a2)" }
+  if c == "ink" or c == "text" { return "var(--ink)" }
+  if c == "soft" { return "var(--line)" }
+  let h = ui_hex(c)
+  return if h.is_empty() { "url(#ui-ch-g)" } else { h }
+}
+
+fn ui_meta_nums(meta: Text) -> Number[] {
+  return for w in meta.replace(",", " ").words() where not ui_hex(w).is_empty() or w.to_number().or(-1) >= 0 { w.to_number().or(0) }
+}
+
+fn ui_shape(i: UiItem, k: Number, n: Number, seed: Number) -> Text {
+  let name = i.title.trim().lower()
+  let nums = ui_meta_nums(i.meta)
+  let x = (if nums.length() > 0 { nums[0].max(0).min(1) } else { (k + 0.5) / n }) * 600
+  let y = (if nums.length() > 1 { nums[1].max(0).min(1) } else { 0.35 + ui_rnd(seed, k) * 0.3 }) * 320
+  let r = (if nums.length() > 2 { nums[2].max(0.04).min(0.5) } else { 0.12 + ui_rnd(seed, k + 7) * 0.12 }) * 320
+  let fill = ui_shape_fill(i.text)
+  let motion = if ui_motions().contains(i.icon.trim().lower()) { i.icon.trim().lower() } else { ui_pick(["spin", "float", "pulse", "sway"], seed, k + 11) }
+  let digits = ui_number(name)
+  let turn = ui_rnd(seed, k + 13) * 40
+  let line = name == "ring" or name == "spiral" or name == "wave"
+  let d = if name == "circle" or name == "ring" { "" } else if name == "square" { ui_poly(x, y, r, 4, 45) } else if name == "diamond" { ui_poly(x, y, r, 4, 0) } else if name == "triangle" { ui_poly(x, y, r, 3, turn) } else if name == "pentagon" { ui_poly(x, y, r, 5, turn) } else if name == "hexagon" { ui_poly(x, y, r, 6, turn) } else if name == "octagon" { ui_poly(x, y, r, 8, turn) } else if name.starts_with("star") { ui_star(x, y, r, if digits >= 3 { digits.min(12) } else { 5 }, turn) } else if name.contains("gon") or name.starts_with("polygon") { ui_poly(x, y, r, if digits >= 3 { digits.min(16) } else { 7 }, turn) } else if name == "spiral" { ui_spiral(x, y, r) } else if name == "wave" { ui_wave(x - r * 1.6, y, r * 3.2, r * 0.35, 2) } else { ui_blob(x, y, r, seed, k) }
+  let paint = if line { f"fill=\"none\" style=\"stroke:{fill}\"" } else { f"style=\"fill:{fill}\"" }
+  let body = if d.is_empty() { f"<circle cx=\"{ui_n(x)}\" cy=\"{ui_n(y)}\" r=\"{ui_n(r)}\" {paint}/>" } else { f"<path d=\"{d}\" {paint}/>" }
+  return f"<g class=\"sh m-{motion}" + (if line { " ln2" } else { "" }) + f"\" style=\"--i:{k}\">{body}</g>"
+}
+
+fn ui_art(b: UiBlock, s: UiSpec) -> Text {
+  let seed = ui_seed(b.title + b.text) + ui_spec_seed(s)
+  let n = b.items.length()
+  let shapes = (for k in 0 until n { ui_shape(b.items[k], k, n, seed) }).join("")
+  let head = if b.title.trim().is_empty() { "" } else { f"<div class=\"row-head\"><h2>{ui_esc(b.title)}</h2></div>" }
+  let note = if b.text.trim().is_empty() { "" } else { f"<p class=\"ch-note soft\">{ui_esc(b.text)}</p>" }
+  return f"<section class=\"sec\">{head}{note}<div class=\"artc card\"><svg class=\"art-svg\" viewBox=\"0 0 600 320\" aria-hidden=\"true\">" + ui_grads() + shapes + "</svg></div></section>"
+}
+
+fn ui_art_css() -> Text {
+  return ".art-bg{display:none}.artc{padding:0;overflow:hidden}.art-svg{display:block;width:100%;height:auto}.art-svg .sh{transform-box:fill-box;transform-origin:center}.art-svg .ln2 path,.art-svg .ln2 circle{stroke-width:6;stroke-linecap:round;stroke-linejoin:round}.art-svg .sh{opacity:.92}"
+  + ".v .art-bg{display:block;position:absolute;pointer-events:none;z-index:0}.v .t-web .hero>.art-bg{left:50%;top:46%;width:1100px;height:1100px;max-width:none;transform:translate(-50%,-50%);opacity:.75;-webkit-mask-image:radial-gradient(closest-side,#000 50%,transparent);mask-image:radial-gradient(closest-side,#000 50%,transparent)}.v .t-web .hero>.orbit{display:none}"
+  + ".v .screen>.art-bg{left:0;top:0;width:100%;height:58%;opacity:.5;-webkit-mask-image:linear-gradient(#000,transparent);mask-image:linear-gradient(#000,transparent)}.v .screen>*:not(.art-bg){position:relative;z-index:1}"
+  + ".v .t-agent .main{position:relative}.v .main>.art-bg{left:0;top:0;width:100%;height:420px;opacity:.35;-webkit-mask-image:linear-gradient(#000,transparent);mask-image:linear-gradient(#000,transparent)}.v .main>*:not(.art-bg){position:relative;z-index:1}"
+  + ".v .artifact{position:relative;overflow:hidden}.v .artifact>.art-bg{right:-140px;top:-180px;width:560px;height:560px;opacity:.55;-webkit-mask-image:radial-gradient(closest-side,#000 40%,transparent);mask-image:radial-gradient(closest-side,#000 40%,transparent)}.v .artifact>*:not(.art-bg){position:relative;z-index:1}"
+  + ".art-bg .bl{opacity:.55;filter:blur(36px)}.art-bg .wv{fill:none;stroke:url(#ui-ch-g);stroke-width:2;opacity:calc(.75 - var(--i) * .1)}.art-bg .cl line{stroke:color-mix(in srgb,var(--accent) 55%,transparent);stroke-width:1}.art-bg .st{fill:var(--ink)}.art-bg .st.big{fill:var(--a2)}.art-bg .pr{opacity:.32;stroke:color-mix(in srgb,var(--ink) 30%,transparent);stroke-width:1}.art-bg .rg{fill:none;stroke:url(#ui-ch-g);stroke-width:1.6;opacity:.6}.art-bg .gd line{stroke:color-mix(in srgb,var(--accent) 50%,transparent);stroke-width:1}.art-bg .sun{opacity:.7}.art-bg .au{opacity:.5;filter:blur(40px)}.art-bg .ob circle{fill:none;stroke:color-mix(in srgb,var(--ink) 16%,transparent);stroke-width:1}.art-bg .ob .od{fill:var(--accent);stroke:none}.art-bg .ob .od.b{fill:var(--a2)}.art-bg .bl,.art-bg .pr,.art-bg .ob,.art-bg .rg{transform-box:view-box;transform-origin:400px 400px}"
+  + "@media (prefers-reduced-motion:no-preference){@keyframes v-bob{50%{transform:translateY(-14px)}}@keyframes v-breathe{50%{transform:scale(1.12)}}@keyframes v-sway{0%,100%{transform:rotate(-8deg)}50%{transform:rotate(8deg)}}@keyframes v-slide{to{transform:translateX(-800px)}}@keyframes v-twinkle{50%{opacity:.25}}@keyframes v-roam{0%{transform:translate(0,0) rotate(0)}50%{transform:translate(30px,-24px) rotate(12deg)}100%{transform:translate(-20px,18px) rotate(-6deg)}}"
+  + ".v .art-svg .m-spin{animation:v-spin calc(14s + var(--i) * 3s) linear infinite}.v .art-svg .m-float{animation:v-bob calc(4s + var(--i) * .7s) ease-in-out infinite}.v .art-svg .m-pulse{animation:v-breathe calc(3s + var(--i) * .5s) ease-in-out infinite}.v .art-svg .m-sway{animation:v-sway calc(5s + var(--i) * .6s) ease-in-out infinite}"
+  + ".v .art-bg .bl,.v .art-bg .au{animation:v-roam calc(16s + var(--i) * 5s) ease-in-out infinite alternate}.v .art-bg .wv{animation:v-slide calc(14s + var(--i) * 4s) linear infinite}.v .art-bg .st{animation:v-twinkle calc(2.4s + var(--i) * .4s) ease-in-out infinite}.v .art-bg .pr{animation:v-spin calc(40s + var(--i) * 9s) linear infinite}.v .art-bg .rg:nth-child(odd){animation:v-spin calc(50s + var(--i) * 10s) linear infinite}.v .art-bg .rg:nth-child(even){animation:v-spin calc(60s + var(--i) * 10s) linear infinite reverse}.v .art-bg .o1{animation:v-spin 38s linear infinite}.v .art-bg .o2{animation:v-spin 64s linear infinite reverse}.v .art-bg .o3{animation:v-spin 96s linear infinite}.v .art-bg .sun{animation:v-breathe 8s ease-in-out infinite;transform-box:fill-box;transform-origin:center}}"
+}
+
 // Charts, in both styles: drawn still in minimal, drawn in motion in vivid.
 fn ui_chart_css() -> Text {
   return ".chart{padding:20px 20px 16px;display:grid;gap:12px;overflow:hidden}.ch-now{display:flex;align-items:baseline;gap:10px}.ch-now b{font-size:30px;font-weight:650;letter-spacing:-.04em;line-height:1}.ch-now span{font-size:13.5px}.ch-svg{width:100%;height:auto;display:block;overflow:visible}.ch-svg .gl{stroke:var(--line2);stroke-width:1}.ch-svg .ln{stroke:var(--accent);stroke-width:4;stroke-linecap:round;stroke-linejoin:round}.ch-svg .pt{fill:var(--surface);stroke:var(--accent);stroke-width:2.5;transform-box:fill-box;transform-origin:center}.ch-svg .pt.last{fill:var(--accent);stroke:var(--surface);stroke-width:3}.ch-x{display:flex;justify-content:space-between;gap:4px;font-size:12px}.ch-x span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}"
@@ -1047,8 +1307,10 @@ fn ui_motion_js() -> Text {
 
 fn ui_css(s: UiSpec) -> Text {
   let vivid = if ui_style(s.theme) == "vivid" { ui_vivid_css(s.theme) } else { "" }
-  return ui_tokens_css() + ui_colours_css(s.theme, ui_accent(s.accent)) + ui_base_css() + ui_web_css() + ui_phone_css() + ui_agent_css() + ui_artifact_css() + ui_chart_css() + ui_stage_css(s.theme) + vivid
+  return ui_tokens_css() + ui_colours_css(s.theme, ui_accent(s.accent)) + ui_base_css() + ui_web_css() + ui_phone_css() + ui_agent_css() + ui_artifact_css() + ui_chart_css() + ui_art_css() + ui_stage_css(s.theme) + vivid + ui_look_css(s)
 }
+
+fn ui_colour_tag(s: UiSpec) -> Text { return if s.look.colours.is_empty() { s.accent } else { s.look.colours.join(" ") } }
 
 fn ui_target_label(target: Text) -> Text {
   if target == "phone" { return "Phone app" }
@@ -1064,8 +1326,8 @@ fn ui_page(s: UiSpec, fixed: Text[]) -> Text {
   let stage = if vivid { "stage v" } else { "stage" }
   let motion = if vivid { "<script>" + ui_motion_js() + "</script>" } else { "" }
   let checked = if fixed.is_empty() { "" } else { "<details><summary>What Kosika checked and fixed</summary><ul>" + (for f in fixed { f"<li>{ui_esc(f)}</li>" }).join("") + "</ul></details>" }
-  let head = f"<div class=\"stage-head\"><div><div class=\"by\">Kosika Designs</div><h1>{ui_esc(s.title)}</h1></div><div class=\"stage-tags\"><span class=\"badge\">{ui_target_label(s.target)}</span><span class=\"badge\">{ui_esc(s.theme)}</span><span class=\"badge on\">{ui_esc(s.accent)}</span></div></div>"
-  return "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>" + ui_esc(s.title) + "</title><link rel=\"preconnect\" href=\"https://fonts.googleapis.com\"><link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap\"><style>" + ui_css(s) + "</style></head><body class=\"ui\" data-style=\"" + ui_style(s.theme) + "\" data-theme=\"" + ui_mode(s.theme) + "\"><div class=\"" + stage + "\">" + head + ui_frames(s) + checked + "</div>" + motion + "</body></html>"
+  let head = f"<div class=\"stage-head\"><div><div class=\"by\">Kosika Designs</div><h1>{ui_esc(s.title)}</h1></div><div class=\"stage-tags\"><span class=\"badge\">{ui_target_label(s.target)}</span><span class=\"badge\">{ui_esc(s.theme)}</span><span class=\"badge on\">{ui_esc(ui_colour_tag(s))}</span></div></div>"
+  return "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>" + ui_esc(s.title) + "</title><link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">" + ui_font_link(s.look.font) + "<style>" + ui_css(s) + "</style></head><body class=\"ui\" data-style=\"" + ui_style(s.theme) + "\" data-theme=\"" + ui_mode(s.theme) + "\"><div class=\"" + stage + "\">" + head + ui_frames(s) + checked + "</div>" + motion + "</body></html>"
 }
 
 // ---------------------------------------------------------------- designs that run
@@ -1149,23 +1411,616 @@ fn ui_app_result(a: UiApp) -> UiResult {
   return {target: c.spec.target, title: c.spec.title, spec: c.spec, page: ui_live_page(c.spec, fixed, b.binds), fixed: fixed, problems: c.problems}
 }
 
+// ---------------------------------------------------------------- screens that link
+
+// A label that ends with " > " and a screen's name opens that screen when
+// it is tapped: "Start lesson > Lesson". The design shows the label alone;
+// the app keeps the link.
+fn ui_screen_names(s: UiSpec) -> Text[] { return for sc in s.screens { sc.name.trim().lower() } }
+
+fn ui_link_of(text: Text, names: Text[]) -> Text {
+  let parts = text.split(" > ")
+  if parts.length() < 2 { return "" }
+  let to = parts[parts.length() - 1].trim()
+  return if names.contains(to.lower()) { to } else { "" }
+}
+
+fn ui_unlink(text: Text, names: Text[]) -> Text {
+  let parts = text.split(" > ")
+  if parts.length() < 2 { return text }
+  return if names.contains(parts[parts.length() - 1].trim().lower()) { parts.take(parts.length() - 1).join(" > ").trim() } else { text }
+}
+
+fn ui_unlink_action(text: Text, names: Text[]) -> Text {
+  if not text.contains(" > ") { return text }
+  return (for p in text.split("|") { ui_unlink(p, names) }).join("|")
+}
+
+fn ui_item_unlinked(i: UiItem, names: Text[]) -> UiItem { return ui_item(ui_unlink(i.title, names), i.text, i.meta, i.icon) }
+
+fn ui_block_unlinked(b: UiBlock, names: Text[]) -> UiBlock {
+  return ui_block(b.kind, ui_unlink(b.title, names), b.text, b.meta, ui_unlink_action(b.action, names), for i in b.items { ui_item_unlinked(i, names) })
+}
+
+fn ui_screen_unlinked(sc: UiScreen, names: Text[]) -> UiScreen { return {name: sc.name, blocks: for b in sc.blocks { ui_block_unlinked(b, names) }} }
+
+fn ui_spec_unlinked(s: UiSpec) -> UiSpec {
+  let names = ui_screen_names(s)
+  return ui_with_screens(s, for sc in s.screens { ui_screen_unlinked(sc, names) })
+}
+
+fn ui_link_pair(text: Text, names: Text[]) -> Text[] {
+  let to = ui_link_of(text, names)
+  return if to.is_empty() { [] } else { [ui_js(ui_unlink(text, names)) + "," + ui_js(to)] }
+}
+
+// Every link in a design, as JavaScript pairs [label, screen].
+fn ui_spec_links(s: UiSpec) -> Text {
+  let names = ui_screen_names(s)
+  var pairs: Text[] = []
+  for sc in s.screens {
+    for b in sc.blocks {
+      pairs = pairs.concat(ui_link_pair(b.title, names))
+      for part in b.action.split("|") { pairs = pairs.concat(ui_link_pair(part, names)) }
+      for i in b.items { pairs = pairs.concat(ui_link_pair(i.title, names)) }
+    }
+  }
+  return "[" + (for p in pairs { "[" + p + "]" }).join(",") + "]"
+}
+
+// ---------------------------------------------------------------- designs that become apps
+
+// How a design looks when it is the app itself: full screen, one phone
+// screen at a time, fields you can type in, a sheet that slides up.
+fn ui_app_css() -> Text {
+  return ".ui[data-app] .stage{padding:0;max-width:none}"
+    + ".ui[data-app] .stage-head,.ui[data-app] .stage>details,.ui[data-app] .b-bar,.ui[data-app] .win-bar,.ui[data-app] .phone-name,.ui[data-app] .island,.ui[data-app] .status,.ui[data-app] .homebar{display:none}"
+    + ".ui[data-app] .browser{width:100%;border-radius:0;box-shadow:none}"
+    + ".ui[data-app] .win{width:100%;height:100vh;height:100dvh;border-radius:0;box-shadow:none}"
+    + ".ui[data-app] .t-agent .main .scroll{overflow-y:auto}"
+    + ".ui[data-app] .artifact{margin:max(16px,env(safe-area-inset-top)) auto 32px;width:min(880px,calc(100% - 32px))}"
+    + ".ui[data-app] .phones{display:block;padding:0}"
+    + ".ui[data-app] .phone-wrap{display:none}"
+    + ".ui[data-app] .phone-wrap.on,.ui[data-app] .phones>.phone-wrap:only-child{display:block}"
+    + ".ui[data-app] .phone{width:100%;max-width:560px;margin:0 auto;height:100vh;height:100dvh;border-radius:0;padding:0;background:var(--bg);box-shadow:none;transform:none}"
+    + ".ui[data-app] .screen{border-radius:0;padding-top:env(safe-area-inset-top)}"
+    + ".ui[data-app] .t-phone .scroll{overflow-y:auto;padding-top:16px;-webkit-overflow-scrolling:touch}"
+    + ".ui[data-app] .t-phone .tiles,.ui[data-app] .t-phone .pills{overflow-x:auto;scrollbar-width:none}"
+    + ".ui[data-app] .pinned{padding-bottom:max(10px,env(safe-area-inset-bottom))}"
+    + ".ui[data-app] .tab,.ui[data-app] .pill,.ui[data-app] .r,.ui[data-app] .tile,.ui[data-app] .plan,.ui[data-app] .activity li,.ui[data-app] .bar,.ui[data-app] .btn,.ui[data-app] .w-nav nav span,.ui[data-app] .send{cursor:pointer;-webkit-tap-highlight-color:transparent}"
+    + ".ui[data-app] .r:active,.ui[data-app] .tile:active{transform:scale(.985)}"
+    + ".app-hide{display:none!important}"
+    + ".app-done .r-title,.app-done h3{text-decoration:line-through;opacity:.55}"
+    + ".app-done .r-go,.app-done .cover{opacity:.5}"
+    + ".plan.app-chosen{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent),0 24px 60px -24px color-mix(in srgb,var(--accent) 50%,transparent)}"
+    + ".app-add{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border:0;border-radius:99px;background:var(--tint);color:var(--accent);font:600 13px var(--ui-font);cursor:pointer;margin-left:auto}"
+    + ".row-head .more{margin-left:auto}.row-head .more+.app-add{margin-left:10px}.row-head h2+.app-add{margin-left:auto}"
+    + ".app-add .ic{width:15px;height:15px}"
+    + ".app-in-f,.app-search,.hint-in{flex:1;min-width:0;border:0;background:none;outline:none;font:inherit;font-size:16px;color:var(--ink)}"
+    + ".app-in-f::placeholder,.app-search::placeholder,.hint-in::placeholder{color:var(--faint)}"
+    + ".input:focus-within,.search:focus-within{box-shadow:0 0 0 1.5px var(--accent) inset}"
+    + ".app-entries{display:grid;gap:6px}"
+    + ".app-eh{font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--faint);margin-top:4px}"
+    + ".app-e{font-size:14px;padding:10px 12px;border-radius:10px;background:var(--sunken)}"
+    + ".app-note{position:fixed;left:50%;bottom:calc(90px + env(safe-area-inset-bottom));transform:translate(-50%,20px);opacity:0;padding:10px 16px;border-radius:12px;background:var(--ink);color:var(--surface);font-size:14px;font-weight:540;box-shadow:var(--shadow);transition:.3s var(--ui-ease);pointer-events:none;z-index:30;max-width:calc(100% - 32px)}"
+    + ".app-note.show{opacity:1;transform:translate(-50%,0)}"
+    + ".app-sheet{position:fixed;inset:0;z-index:20;pointer-events:none}"
+    + ".app-dim{position:absolute;inset:0;background:rgba(0,0,0,.4);opacity:0;transition:opacity .3s}"
+    + ".app-card{position:absolute;left:0;right:0;bottom:0;margin:0 auto;max-width:560px;padding:10px 22px calc(24px + env(safe-area-inset-bottom));border-radius:24px 24px 0 0;background:var(--surface);color:var(--ink);box-shadow:0 -20px 60px -20px rgba(0,0,0,.4);transform:translateY(105%);transition:transform .35s var(--ui-ease)}"
+    + ".app-sheet.on{pointer-events:auto}.app-sheet.on .app-dim{opacity:1}.app-sheet.on .app-card{transform:none}"
+    + ".app-grab{width:40px;height:5px;border-radius:3px;background:var(--line);margin:0 auto 16px}"
+    + ".app-in{display:grid;gap:14px}.app-in h3{font-size:20px;letter-spacing:-.02em}.app-in p{margin:0}"
+    + ".app-f{display:grid;gap:6px;font-size:13px;font-weight:560}"
+    + ".app-f input{height:46px;padding:0 14px;border:0;border-radius:12px;background:var(--sunken);box-shadow:0 0 0 1px var(--line) inset;color:var(--ink);font:400 16px var(--ui-font);outline:none}"
+    + ".app-f input:focus{box-shadow:0 0 0 1.5px var(--accent) inset}"
+    + ".app-row{display:flex;gap:10px}.app-row .btn{flex:1}"
+    + ".app-in .btn{height:48px;border:0;cursor:pointer;font:inherit;font-weight:600}"
+    + "@media (prefers-reduced-motion:reduce){.app-card,.app-note,.app-dim{transition:none}}"
+    + ".ui[data-app].app-multi [data-screen]:not(.on){display:none}"
+    + ".ui[data-app] .b-body,.ui[data-app] .t-agent .main,.ui[data-app] .artifact{position:relative}"
+    + ".app-from-r{animation:app-r .38s var(--ui-ease) both}.app-from-l{animation:app-l .38s var(--ui-ease) both}"
+    + "@keyframes app-r{from{opacity:0;transform:translateX(28px)}}@keyframes app-l{from{opacity:0;transform:translateX(-28px)}}"
+    + ".ui[data-app] [hidden]{display:none!important}"
+    + ".ui[data-app] .app-back{position:absolute;z-index:8;top:calc(10px + env(safe-area-inset-top));left:max(12px,env(safe-area-inset-left));display:inline-flex;align-items:center;gap:4px;height:32px;padding:0 12px 0 8px;border:0;border-radius:99px;background:var(--glass);backdrop-filter:blur(14px);box-shadow:0 0 0 1px var(--line) inset,var(--shadow);color:var(--ink);font:600 13px var(--ui-font);cursor:pointer}"
+    + ".ui[data-app] .b-body>.app-back{position:fixed;top:calc(84px + env(safe-area-inset-top))}"
+    + ".app-back .ic{width:16px;height:16px}"
+    + ".ui[data-app] .app-link{cursor:pointer}"
+    + ".ui[data-app] .r.app-link .r-go{color:var(--accent)}"
+    + "@media (prefers-reduced-motion:reduce){.app-from-r,.app-from-l{animation:none}}"
+}
+
+// What makes a design work with no server: tab bars switch screens, lists
+// and cards take new items and remember what is done or removed, forms
+// check and keep what is sent, search and chips filter, chat keeps its
+// messages, steps move on, bars are set by a tap, plans are chosen. All of
+// it is kept on the device (localStorage), so the app works offline.
+fn ui_app_js() -> Text {
+  return "(function(){"
+    + "var A=window.KOSIKA_APP;if(!A)return;"
+    + "var D=document,root=D.body,KEY='kosika-app:'+A.id,st={};"
+    + "try{st=JSON.parse(localStorage.getItem(KEY)||'{}')||{}}catch(e){st={}}"
+    + "['added','removed','done','forms','chat','acts','bars'].forEach(function(k){if(!st[k]||typeof st[k]!='object')st[k]=k=='removed'||k=='done'?[]:{}});"
+    + "function save(){try{localStorage.setItem(KEY,JSON.stringify(st))}catch(e){}}"
+    + "function esc(t){return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/'/g,'&#39;')}"
+    + "function ic(n){return (A.icons&&A.icons[n])||''}"
+    + "var blks=[].slice.call(D.querySelectorAll('.blk'));"
+    + "function bi(el){var b=el.closest('.blk');return blks.indexOf(b)}"
+    + "function kind(el){var b=el.closest('.blk');return b?b.getAttribute('data-kind'):''}"
+    + "function scope(el){return el.closest('.screen,.b-body,.main,.artifact')||root}"
+    + "function note(t){var n=D.querySelector('.app-note');if(!n){n=D.createElement('div');n.className='app-note';root.appendChild(n)}n.textContent=t;n.classList.add('show');clearTimeout(note.t);note.t=setTimeout(function(){n.classList.remove('show')},2200)}"
+    + "function txt(el,q){var e=el.querySelector(q);return e?e.textContent.trim():''}"
+    + "function key(el,title){return bi(el)+':'+title}"
+    + "/* sheet */"
+    + "var sheet=D.createElement('div');sheet.className='app-sheet';sheet.innerHTML='<div class=app-dim></div><div class=app-card><div class=app-grab></div><div class=app-in></div></div>';root.appendChild(sheet);"
+    + "var sin=sheet.querySelector('.app-in');"
+    + "function open(html){sin.innerHTML=html;sheet.classList.add('on');var f=sin.querySelector('input');if(f)setTimeout(function(){f.focus()},250)}"
+    + "function shut(){sheet.classList.remove('on')}"
+    + "sheet.querySelector('.app-dim').addEventListener('click',shut);"
+    + "/* screens: an app shows one screen at a time; tab bars and links switch them, like a prototype you can tap through */"
+    + "var screens=[].slice.call(D.querySelectorAll('[data-screen]'));"
+    + "var multi=screens.length>1;root.classList.toggle('app-multi',multi);"
+    + "var names=screens.map(function(s){return (s.getAttribute('data-screen')||'').trim().toLowerCase()});"
+    + "var bar0=D.querySelector('.phone-wrap .tabbar');"
+    + "if(bar0&&multi)screens.forEach(function(s){if(s.querySelector('.tabbar'))return;var p=s.querySelector('.pinned');if(!p)return;var c=bar0.cloneNode(true);var hb=p.querySelector('.homebar');p.insertBefore(c,hb)});"
+    + "function screenFor(tab,k){var w=tab.textContent.trim().toLowerCase();var j=names.indexOf(w);return j>=0?j:(k<screens.length?k:-1)}"
+    + "var cur=-1,trail=[];"
+    + "function show(k,how){if(!screens.length)return;k=Math.max(0,Math.min(k,screens.length-1));if(how=='go'&&cur>=0&&cur!=k)trail.push(cur);if(how=='back')trail.pop();var from=cur;cur=k;"
+    + " screens.forEach(function(s,i){s.classList.toggle('on',i==k);s.classList.remove('app-from-r','app-from-l')});var s=screens[k];"
+    + " if(from>=0&&from!=k&&multi){s.classList.add(how=='back'?'app-from-l':'app-from-r')}"
+    + " s.querySelectorAll('.tabbar .tab').forEach(function(t,i){t.classList.toggle('on',screenFor(t,i)==k)});"
+    + " var bk=s.querySelector('.app-back');if(bk)bk.hidden=!trail.length;"
+    + " var sc=s.querySelector('.scroll');if(sc)sc.scrollTop=0;if(!s.querySelector('.scroll'))window.scrollTo(0,0);"
+    + " st.tab=k;save();try{if(multi&&location.hash!='#'+(k+1)){if(how=='go')history.pushState(null,'','#'+(k+1));else history.replaceState(null,'','#'+(k+1))}}catch(e){}}"
+    + "var tmp=D.createElement('div');tmp.innerHTML=ic('back');var backSvg=tmp.firstChild?tmp.firstChild.innerHTML:'#';"
+    + "function goBack(){if(trail.length)history.back();else if(cur>0)show(0,'back')}"
+    + "if(multi)screens.forEach(function(s){var own=[].slice.call(s.querySelectorAll('.appbar .iconbtn,.ab-icons .iconbtn')).filter(function(x){var v=x.querySelector('svg');return v&&v.innerHTML==backSvg});if(own.length){own.forEach(function(x){x.classList.add('app-link');x.addEventListener('click',function(e){e.stopPropagation();goBack()})});return}var b=D.createElement('button');b.type='button';b.className='app-back';b.hidden=true;b.innerHTML=ic('back')+'<span>Back</span>';b.addEventListener('click',function(e){e.stopPropagation();goBack()});(s.querySelector('.screen,.b-body,.main')||s).appendChild(b)});"
+    + "var start=parseInt((location.hash||'').slice(1),10);"
+    + "if(screens.length)show(start>0?start-1:(st.tab||0));"
+    + "/* links: a label the design marked, or one that names a screen, opens it */"
+    + "var LINKABLE='.btn,.more,.r,.tile,.feat,.step,.w-nav nav span,.side-link,.pill,.cta';"
+    + "function labelOf(e){var t=e.querySelector&&e.querySelector('.r-title,h3,em');return (t?t.textContent:e.textContent).trim()}"
+    + "var links=(A.links||[]).map(function(p){return [p[0].toLowerCase(),names.indexOf(p[1].toLowerCase())]}).filter(function(p){return p[1]>=0});"
+    + "if(multi)[].slice.call(D.querySelectorAll(LINKABLE)).forEach(function(e){if(e.closest('.tabbar'))return;var l=labelOf(e).toLowerCase();if(!l)return;var hit=links.filter(function(p){return l==p[0]||l.indexOf(p[0])==0})[0];var j=hit?hit[1]:names.indexOf(l);if(j<0)return;var home=screens.filter(function(s){return s.contains(e)})[0];if(home&&screens.indexOf(home)==j)return;e.setAttribute('data-go',j);e.classList.add('app-link')});"
+    + "root.addEventListener('click',function(e){var g=e.target.closest('[data-go]');if(!g||e.target.closest('.app-sheet'))return;e.stopPropagation();e.preventDefault();show(+g.getAttribute('data-go'),'go')},true);"
+    + "window.addEventListener('popstate',function(){var k=parseInt((location.hash||'#1').slice(1),10)||1;if(k-1==cur)return;if(trail.length&&trail[trail.length-1]==k-1)show(k-1,'back');else{trail=[];show(k-1)}});"
+    + "/* rows and tiles: what was added, removed, done */"
+    + "function rowHtml(i){return '<div class=\"r\">'+(i.icon&&ic(i.icon)?'<span class=\"chip sm\">'+ic(i.icon)+'</span>':'')+'<div class=\"r-main\"><div class=\"r-title\">'+esc(i.title)+'</div>'+(i.text?'<div class=\"r-sub soft\">'+esc(i.text)+'</div>':'')+'</div>'+(i.meta?'<span class=\"r-meta faint\">'+esc(i.meta)+'</span>':'')+'<span class=\"r-go faint\">'+ic('chevron')+'</span></div>'}"
+    + "function tileHtml(i,k){return '<div class=\"tile\"><div class=\"cover h'+(k%6)+'\">'+ic(i.icon||'spark')+'</div><div class=\"tile-body\"><h3>'+esc(i.title)+'</h3><p class=\"soft\">'+esc(i.text)+'</p>'+(i.meta?'<span class=\"badge\">'+esc(i.meta)+'</span>':'')+'</div></div>'}"
+    + "function el(h){var t=D.createElement('div');t.innerHTML=h;return t.firstChild}"
+    + "function holderOf(b){return b.querySelector('.rows,.tiles')}"
+    + "function itemTitle(it){return txt(it,'.r-title')||txt(it,'h3')}"
+    + "function mark(it,b){var k=bi(b)+':'+itemTitle(it);it.classList.toggle('app-done',st.done.indexOf(k)>=0);if(st.removed.indexOf(k)>=0)it.remove()}"
+    + "blks.forEach(function(b,n){var k=b.getAttribute('data-kind');if(k!='list'&&k!='cards')return;var h=holderOf(b);if(!h)return;"
+    + " (st.added[n]||[]).forEach(function(i,j){h.appendChild(el(k=='list'?rowHtml(i):tileHtml(i,j+h.children.length)))});"
+    + " [].slice.call(h.children).forEach(function(it){mark(it,b)});"
+    + " var head=b.querySelector('.row-head');if(!head){head=D.createElement('div');head.className='row-head';head.innerHTML='<h2></h2>';h.parentNode.insertBefore(head,h)}"
+    + " var add=D.createElement('button');add.className='app-add';add.type='button';add.innerHTML=ic('plus')+'<span>Add</span>';head.appendChild(add);"
+    + " add.addEventListener('click',function(e){e.stopPropagation();open('<h3>Add to '+esc(txt(b,'.row-head h2')||'the list')+'</h3><label class=app-f><span>Title</span><input name=t maxlength=60></label><label class=app-f><span>Detail</span><input name=x maxlength=120></label><label class=app-f><span>Tag</span><input name=m maxlength=20 placeholder=optional></label><button class=btn type=button data-go>Add</button>');"
+    + "  sin.querySelector('[data-go]').onclick=function(){var t=sin.querySelector('[name=t]').value.trim();if(!t){sin.querySelector('[name=t]').focus();return}var i={title:t,text:sin.querySelector('[name=x]').value.trim(),meta:sin.querySelector('[name=m]').value.trim(),icon:k=='list'?'dot':'spark'};(st.added[n]=st.added[n]||[]).push(i);var r=st.removed.indexOf(n+':'+t);if(r>=0)st.removed.splice(r,1);save();h.appendChild(el(k=='list'?rowHtml(i):tileHtml(i,h.children.length)));shut();note('Added '+t)}})});"
+    + "function details(it){var b=it.closest('.blk'),n=blks.indexOf(b),t=itemTitle(it),k=n+':'+t,done=st.done.indexOf(k)>=0;"
+    + " open('<h3>'+esc(t)+'</h3>'+(txt(it,'.r-sub,.tile-body p')?'<p class=soft>'+esc(txt(it,'.r-sub,.tile-body p'))+'</p>':'')+(txt(it,'.r-meta,.badge')?'<p><span class=badge>'+esc(txt(it,'.r-meta,.badge'))+'</span></p>':'')+'<div class=app-row><button class=btn type=button data-done>'+(done?'Not done':'Mark done')+'</button><button class=btn ghost type=button data-rm>Remove</button></div>');"
+    + " sin.querySelector('[data-done]').onclick=function(){var j=st.done.indexOf(k);if(j>=0)st.done.splice(j,1);else st.done.push(k);save();mark(it,b);shut();note(j>=0?'Not done':'Done')};"
+    + " sin.querySelector('[data-rm]').onclick=function(){st.removed.push(k);var a=st.added[n];if(a)st.added[n]=a.filter(function(i){return i.title!=t});save();it.remove();shut();note('Removed '+t)}}"
+    + "/* forms: real fields, saved entries */"
+    + "function typeOf(l){l=l.toLowerCase();if(l.indexOf('mail')>=0)return 'email';if(l.indexOf('password')>=0)return 'password';if(l.indexOf('date')>=0||l.indexOf('day')>=0)return 'date';if(l.indexOf('time')>=0)return 'time';if(l.indexOf('phone')>=0)return 'tel';if(/(number|amount|age|count|guests|people)/.test(l))return 'number';return 'text'}"
+    + "function entries(b,n){var w=b.querySelector('.app-entries');if(!w){w=D.createElement('div');w.className='app-entries';(b.querySelector('.form')||b).appendChild(w)}var es=st.forms[n]||[];w.innerHTML=es.length?'<div class=app-eh>Saved here</div>'+es.slice(-5).reverse().map(function(e){return '<div class=app-e>'+esc(e.slice(0,2).join(' · '))+'</div>'}).join(''):'';}"
+    + "blks.forEach(function(b,n){if(b.getAttribute('data-kind')!='form')return;"
+    + " b.querySelectorAll('.field').forEach(function(f){var lab=txt(f,'span'),box=f.querySelector('.input'),em=box&&box.querySelector('em');if(!em)return;var i=D.createElement('input');i.className='app-in-f';i.type=typeOf(lab);i.placeholder=em.textContent;i.setAttribute('aria-label',lab);if(i.type=='password')i.autocomplete='new-password';em.replaceWith(i)});"
+    + " var go=b.querySelector('.btn');if(go){go.setAttribute('role','button');go.addEventListener('click',function(e){e.stopPropagation();var ins=[].slice.call(b.querySelectorAll('.app-in-f'));var empty=ins.filter(function(i){return !i.value.trim()});if(empty.length){empty[0].focus();note('Fill in '+(empty[0].getAttribute('aria-label')||'every field'));return}var bad=ins.filter(function(i){return i.type=='email'&&!/.+@.+[.].+/.test(i.value)});if(bad.length){bad[0].focus();note('That email looks wrong');return}var e2=ins.map(function(i){return i.type=='password'?'••••':i.value.trim()});(st.forms[n]=st.forms[n]||[]).push(e2);save();ins.forEach(function(i){i.value=''});entries(b,n);note('Saved')})}"
+    + " entries(b,n)});"
+    + "/* search and chips: filter what is on the same screen */"
+    + "var FILTER='.r,.tile,.feat,.activity li,.tbl tbody tr,.plan,.step';"
+    + "function filter(sc,q){q=q.trim().toLowerCase();var items=[].slice.call(sc.querySelectorAll(FILTER));var hit=items.filter(function(it){return it.textContent.toLowerCase().indexOf(q)>=0});if(q&&!hit.length)return false;items.forEach(function(it){it.classList.toggle('app-hide',q!=''&&hit.indexOf(it)<0)});return true}"
+    + "D.querySelectorAll('.blk[data-kind=search] .search').forEach(function(s){var sp=s.querySelector('span');var i=D.createElement('input');i.className='app-search';i.type='search';i.placeholder=sp?sp.textContent:'Search';if(sp)sp.replaceWith(i);i.addEventListener('input',function(){if(!filter(scope(s),i.value))note('Nothing matches '+i.value)})});"
+    + "D.querySelectorAll('.pills').forEach(function(p){var ps=[].slice.call(p.querySelectorAll('.pill'));ps.forEach(function(c,k){c.setAttribute('role','button');c.addEventListener('click',function(){ps.forEach(function(x){x.classList.toggle('on',x==c)});if(k==0){filter(scope(p),'');return}if(!filter(scope(p),c.textContent))filter(scope(p),'')})})});"
+    + "/* chat: messages are kept */"
+    + "var chat=D.querySelector('.blk[data-kind=chat] .chat'),cn=chat?bi(chat):-1;"
+    + "function say(t,me){if(!chat)return;var d=D.createElement('div');d.className=me?'msg me':'msg';d.innerHTML=me?'<div class=bubble>'+esc(t)+'</div>':'<span class=av>'+ic('spark')+'</span><div><div class=who-name>'+esc(A.brand)+'</div><div class=bubble>'+esc(t)+'</div></div>';chat.appendChild(d);var sc=chat.closest('.scroll');if(sc)sc.scrollTop=sc.scrollHeight}"
+    + "if(chat)(st.chat[cn]||[]).forEach(function(m){say(m.t,m.me)});"
+    + "var live=window.KOSIKA_LIVE&&window.KOSIKA_LIVE.binds&&window.KOSIKA_LIVE.binds.some(function(b){return b.block=='composer'});"
+    + "if(!live)D.querySelectorAll('.blk[data-kind=composer] .composer').forEach(function(c){var h=c.querySelector('.hint');var i=D.createElement('input');i.className='hint-in';i.placeholder=h?h.textContent:'Message';if(h)h.replaceWith(i);function send(){var t=i.value.trim();if(!t)return;i.value='';say(t,true);(st.chat[cn]=st.chat[cn]||[]).push({t:t,me:1});var r='Kept in your notes. Connect a workflow to '+A.brand+' to have it answer.';setTimeout(function(){say(r,false)},350);st.chat[cn].push({t:r,me:0});save()}i.addEventListener('keydown',function(e){if(e.key=='Enter')send()});var s=c.querySelector('.send');if(s)s.addEventListener('click',send)});"
+    + "/* activity: tap to move a step on */"
+    + "var NEXT={next:'now',now:'done',done:'next',bad:'now'};"
+    + "function setAct(li,s){['next','now','done','bad'].forEach(function(c){li.classList.remove(c)});li.classList.add(s);var d=li.querySelector('.dotmark');if(d)d.innerHTML=s=='done'?ic('check'):'';var m=li.querySelector('.a-meta');if(m)m.textContent=s}"
+    + "D.querySelectorAll('.activity li').forEach(function(li){var k=key(li,txt(li,'.a-title'));if(st.acts[k])setAct(li,st.acts[k]);li.addEventListener('click',function(){var now=['next','now','done','bad'].filter(function(c){return li.classList.contains(c)})[0]||'next';var s=NEXT[now];setAct(li,s);st.acts[k]=s;save()})});"
+    + "/* progress: tap the bar to set it */"
+    + "D.querySelectorAll('.bars .bar').forEach(function(bar){var k=key(bar,txt(bar,'.bar-top span')),f=bar.querySelector('.fill'),lab=bar.querySelector('.bar-top .faint');function set(p){p=Math.round(Math.max(0,Math.min(100,p)));if(f)f.style.width=p+'%';if(lab)lab.textContent=p+'%'}if(st.bars[k]!=null)set(st.bars[k]);bar.addEventListener('click',function(e){var tr=bar.querySelector('.track').getBoundingClientRect();var p=(e.clientX-tr.left)/tr.width*100;if(e.clientX<tr.left||e.clientX>tr.right)p=(parseFloat(lab&&lab.textContent)||0)+10;set(p);st.bars[k]=Math.round(Math.max(0,Math.min(100,p)));save()})});"
+    + "/* pricing: choose a plan */"
+    + "var plans=[].slice.call(D.querySelectorAll('.plan'));"
+    + "function choose(p){plans.forEach(function(x){x.classList.toggle('app-chosen',x==p)});st.plan=txt(p,'h3');save()}"
+    + "plans.forEach(function(p){if(st.plan&&txt(p,'h3')==st.plan)choose(p);p.addEventListener('click',function(e){choose(p);note('Chose '+txt(p,'h3'))})});"
+    + "/* buttons and links go somewhere real */"
+    + "var secs=[].slice.call(D.querySelectorAll('.blk')).filter(function(b){var k=b.getAttribute('data-kind');return k!='nav'&&k!='hero'});"
+    + "function goTo(b){if(b)b.scrollIntoView({behavior:'smooth',block:'start'})}"
+    + "D.querySelectorAll('.w-nav nav span').forEach(function(a,k){a.setAttribute('role','link');a.addEventListener('click',function(){var w=a.textContent.trim().toLowerCase();var hit=secs.filter(function(b){return b.textContent.toLowerCase().indexOf(w)>=0})[0];goTo(hit||secs[k])})});"
+    + "D.querySelectorAll('.hero .btn,.cta .btn,.w-nav .btn').forEach(function(b){b.setAttribute('role','button');b.addEventListener('click',function(){var f=D.querySelector('.blk[data-kind=form]')||D.querySelector('.blk[data-kind=pricing]');if(f&&!b.closest('.blk[data-kind=form]')){goTo(f);var i=f.querySelector('input');if(i)setTimeout(function(){i.focus()},400)}else{var me=b.closest('.blk'),j=blks.indexOf(me);goTo(blks[j+1])}})});"
+    + "/* one listener for taps on rows, tiles and tabs */"
+    + "root.addEventListener('click',function(e){var t=e.target;if(t.closest('.app-sheet,.app-add'))return;"
+    + " var tab=t.closest('.tabbar .tab');if(tab){var ts=[].slice.call(tab.parentNode.children),k=ts.indexOf(tab),j=screenFor(tab,k);if(multi&&j>=0){trail=[];show(j)}else{ts.forEach(function(x){x.classList.toggle('on',x==tab)});note(tab.textContent.trim())}return}"
+    + " var it=t.closest('.rows .r,.tiles .tile');if(it&&(kind(it)=='list'||kind(it)=='cards')){details(it);return}});"
+    + "D.addEventListener('keydown',function(e){if(e.key=='Escape')shut()});"
+    + "if('serviceWorker' in navigator&&location.protocol!='file:'&&A.offline)navigator.serviceWorker.register('sw.js').catch(function(){});"
+    + "})();"
+}
+
+record UiFile { path: Text text: Text }
+record UiAppMade { title: Text slug: Text page: Text files: UiFile[] fixed: Text[] problems: Text[] }
+
+// A short name for the app's folder and its saved data: letters and digits.
+fn ui_app_id(s: UiSpec) -> Text {
+  let words = ui_slug(if s.brand.trim().is_empty() { s.title } else { s.brand })
+  let kept = (for k in 0 until words.length() where "abcdefghijklmnopqrstuvwxyz0123456789".contains(words.slice(k, k + 1)) { words.slice(k, k + 1) }).join("")
+  return if kept.is_empty() { "kosika-app" } else { kept.slice(0, kept.length().min(32)) }
+}
+
+fn ui_app_colours(s: UiSpec) -> Text[] {
+  let a = ui_accent(s.accent)
+  let p = ui_partner(a.name)
+  let dark = ui_mode(s.theme) == "dark"
+  let base = [if dark { a.dark } else { a.light }, if dark { p.dark } else { p.light }]
+  return if s.look.colours.is_empty() { base } else if s.look.colours.length() == 1 { [s.look.colours[0], base[1]] } else { s.look.colours.take(2) }
+}
+
+fn ui_app_ground(s: UiSpec) -> Text { return if ui_mode(s.theme) == "dark" { "#0b0b10" } else { "#ffffff" } }
+
+// The app's icon: its first letter on its own two colours.
+fn ui_app_icon(s: UiSpec) -> Text {
+  let c = ui_app_colours(s)
+  let letter = ui_esc(ui_or(s.brand, s.title).trim().slice(0, 1).upper())
+  return f"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 512 512\"><defs><linearGradient id=\"g\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"{c[0]}\"/><stop offset=\"1\" stop-color=\"{c[1]}\"/></linearGradient></defs><rect width=\"512\" height=\"512\" rx=\"112\" fill=\"url(#g)\"/><circle cx=\"400\" cy=\"112\" r=\"150\" fill=\"#fff\" opacity=\".12\"/><text x=\"256\" y=\"256\" dy=\".35em\" text-anchor=\"middle\" font-family=\"system-ui,sans-serif\" font-size=\"280\" font-weight=\"700\" fill=\"#fff\">{letter}</text></svg>"
+}
+
+fn ui_app_manifest(s: UiSpec) -> Text {
+  let name = ui_or(s.brand, s.title)
+  return "{\"name\":" + ui_jstr(name + " · " + s.title) + ",\"short_name\":" + ui_jstr(name) + ",\"start_url\":\"./\",\"scope\":\"./\",\"display\":\"standalone\",\"background_color\":\"" + ui_app_ground(s) + "\",\"theme_color\":\"" + ui_app_ground(s) + "\",\"icons\":[{\"src\":\"icon.svg\",\"sizes\":\"any\",\"type\":\"image/svg+xml\",\"purpose\":\"any\"}]}"
+}
+
+// Keeps the app's files so it opens with no connection; a new version of
+// the page gets a new cache.
+fn ui_app_sw(id: Text, version: Text) -> Text {
+  let c = "kosika-app-" + id
+  return "var C='" + c + "-" + version + "',F=['./','index.html','manifest.webmanifest','icon.svg'];"
+    + "self.addEventListener('install',function(e){e.waitUntil(caches.open(C).then(function(c){return c.addAll(F)}).then(function(){return self.skipWaiting()}))});"
+    + "self.addEventListener('activate',function(e){e.waitUntil(caches.keys().then(function(ks){return Promise.all(ks.filter(function(k){return k!=C&&k.indexOf('" + c + "-')==0}).map(function(k){return caches.delete(k)}))}).then(function(){return self.clients.claim()}))});"
+    + "self.addEventListener('fetch',function(e){if(e.request.method!='GET')return;e.respondWith(caches.match(e.request).then(function(r){return r||fetch(e.request).then(function(res){if(res.ok||res.type=='opaque'){var cp=res.clone();caches.open(C).then(function(c){c.put(e.request,cp)})}return res}).catch(function(){return caches.match('index.html')})}))});"
+}
+
+fn ui_app_head(s: UiSpec) -> Text {
+  let name = ui_esc(ui_or(s.brand, s.title))
+  return "<link rel=\"manifest\" href=\"manifest.webmanifest\"><link rel=\"icon\" href=\"icon.svg\" type=\"image/svg+xml\"><link rel=\"apple-touch-icon\" href=\"icon.svg\"><meta name=\"theme-color\" content=\"" + ui_app_ground(s) + "\"><meta name=\"mobile-web-app-capable\" content=\"yes\"><meta name=\"apple-mobile-web-app-capable\" content=\"yes\"><meta name=\"apple-mobile-web-app-status-bar-style\" content=\"black-translucent\"><meta name=\"apple-mobile-web-app-title\" content=\"" + name + "\">"
+}
+
+fn ui_app_data(s: UiSpec, links: Text) -> Text {
+  let icons = (for n in ["plus", "chevron", "check", "spark", "dot", "back"] { n + ":" + ui_js(ui_icon(n)) }).join(",")
+  return "window.KOSIKA_APP={id:" + ui_js(ui_app_id(s)) + ",brand:" + ui_js(ui_or(s.brand, s.title)) + ",offline:true,links:" + links + ",icons:{" + icons + "}};"
+}
+
+// The design as an app: the same page, out of its frame, with the runtime
+// that makes it work. Parts bound to workflows still call them when the app
+// is served by kosika-native serve.
+fn ui_app_page(s: UiSpec, fixed: Text[], binds: UiBind[], links: Text) -> Text {
+  let page = if binds.is_empty() { ui_page(s, fixed) } else { ui_live_page(s, fixed, binds) }
+  let viewport = "width=device-width,initial-scale=1,viewport-fit=cover"
+  let tail = "<style>" + ui_app_css() + "</style><script>" + ui_app_data(s, links) + ui_app_js() + "</script></body>"
+  return page.replace("width=device-width,initial-scale=1\"", viewport + "\"").replace("</head>", ui_app_head(s) + "</head>").replace("<body ", "<body data-app ").replace("</body>", tail)
+}
+
+fn ui_app_made(a: UiApp) -> UiAppMade {
+  let c = ui_checked(a.ask, a.spec)
+  let b = ui_binds_checked(c.spec, a.binds)
+  let fixed = c.fixed.concat(b.fixed)
+  let id = ui_app_id(c.spec)
+  let page = ui_app_page(c.spec, fixed, b.binds, ui_spec_links(a.spec))
+  let files: UiFile[] = [{path: "index.html", text: page}, {path: "manifest.webmanifest", text: ui_app_manifest(c.spec)}, {path: "sw.js", text: ui_app_sw(id, f"{page.length()}")}, {path: "icon.svg", text: ui_app_icon(c.spec)}]
+  return {title: c.spec.title, slug: id, page: page, files: files, fixed: fixed, problems: c.problems}
+}
+
+fn ui_app_from(ask: UiAsk, said: UiSpec) -> UiAppMade {
+  return ui_app_made({ask: ask, spec: if said.screens.is_empty() { ui_starter(ask) } else { said }, binds: []})
+}
+
+// ---------------------------------------------------------------- editing by talking
+
+// A design changed by words: "warmer", "make it green and gold", "dark",
+// "add pricing", "remove the quote", "serif", "waves". Kosika understands
+// these itself, with no model; anything else goes to the model, which gets
+// the whole design and changes only what was asked.
+record UiEdit { ask: UiAsk spec: UiSpec change: Text }
+record UiEditBrief { task: Text design: Text change: Text }
+record UiEdited { spec: UiSpec done: Text[] understood: Bool }
+
+model ui_editor {
+  input: UiEditBrief
+  output: UiSpec
+  parameters: {
+    max_output_tokens: 7000
+  }
+}
+
+record UiNamedColour { name: Text hex: Text }
+
+fn ui_colour_words() -> UiNamedColour[] {
+  return [
+    {name: "red", hex: "#e5484d"}, {name: "crimson", hex: "#d4234a"}, {name: "orange", hex: "#f76b15"},
+    {name: "amber", hex: "#ffb224"}, {name: "gold", hex: "#d4a72c"}, {name: "yellow", hex: "#f5d90a"},
+    {name: "lime", hex: "#99d52a"}, {name: "green", hex: "#30a46c"}, {name: "emerald", hex: "#10b981"},
+    {name: "mint", hex: "#3dd68c"}, {name: "teal", hex: "#12a594"}, {name: "cyan", hex: "#05a2c2"},
+    {name: "sky", hex: "#0ea5e9"}, {name: "blue", hex: "#3e63dd"}, {name: "navy", hex: "#1e3a8a"},
+    {name: "indigo", hex: "#5b5bd6"}, {name: "violet", hex: "#8e4ec6"}, {name: "purple", hex: "#8e4ec6"},
+    {name: "lavender", hex: "#a78bfa"}, {name: "pink", hex: "#d6409f"}, {name: "magenta", hex: "#c026d3"},
+    {name: "rose", hex: "#f43f5e"}, {name: "coral", hex: "#ff6b5b"}, {name: "peach", hex: "#ffa07a"},
+    {name: "brown", hex: "#a0663a"}, {name: "coffee", hex: "#8b5a3c"}, {name: "sand", hex: "#d6b98c"},
+    {name: "silver", hex: "#a1a1aa"}, {name: "white", hex: "#f4f4f5"}, {name: "black", hex: "#27272a"}
+  ]
+}
+
+// Which of the words name a block kind, with the everyday words for each.
+fn ui_kind_word(w: Text) -> Text {
+  let t = w.lower().trim_marks(",.;:!?'\"")
+  if ui_kinds().contains(t) { return t }
+  if ["prices", "price", "plans", "plan"].contains(t) { return "pricing" }
+  if ["graph", "graphs", "charts", "plot", "diagram"].contains(t) { return "chart" }
+  if ["numbers", "metrics", "stat", "kpis", "kpi"].contains(t) { return "stats" }
+  if ["testimonial", "testimonials", "review", "reviews", "quotes"].contains(t) { return "quote" }
+  if ["step", "how", "process"].contains(t) { return "steps" }
+  if ["card", "gallery", "tiles"].contains(t) { return "cards" }
+  if ["signup", "sign-up", "login", "contact"].contains(t) { return "form" }
+  if ["shapes", "artwork", "illustration", "picture"].contains(t) { return "art" }
+  if ["feature", "benefits", "reasons"].contains(t) { return "features" }
+  if ["tasks", "timeline", "plan"].contains(t) { return "activity" }
+  if ["bars", "goals"].contains(t) { return "progress" }
+  if ["header", "menu", "navbar", "navigation"].contains(t) { return "nav" }
+  if ["button", "call"].contains(t) { return "cta" }
+  if ["tabs"].contains(t) { return "tabbar" }
+  return ""
+}
+
+// A block of a kind, with content shaped from the design's own title,
+// for when Kosika adds it without a model.
+fn ui_new_block(kind: Text, s: UiSpec) -> UiBlock {
+  let name = s.title
+  if kind == "pricing" { return ui_block("pricing", "Simple pricing", "Start free. Upgrade when you need more.", "Pricing", "Choose", [ui_item("Starter", "Everything to begin;One project;Community help", "Free", ""), ui_item("Pro", "Everything in Starter;Unlimited projects;Priority help", "$9 / month", ""), ui_item("Team", "Everything in Pro;Shared spaces;Admin controls", "$29 / month", "")]) }
+  if kind == "chart" { return ui_block("chart", "This week", "How " + name.lower() + " grew, day by day.", "area", "", [ui_item("Mon", "", "12", ""), ui_item("Tue", "", "18", ""), ui_item("Wed", "", "15", ""), ui_item("Thu", "", "24", ""), ui_item("Fri", "", "29", ""), ui_item("Sat", "", "34", "")]) }
+  if kind == "stats" { return ui_block("stats", "", "", "", "", [ui_item("2,400", "people", "+12%", ""), ui_item("98%", "would return", "", ""), ui_item("4.9", "average rating", "", "")]) }
+  if kind == "quote" { return ui_block("quote", "Early user", "It feels like it was made for exactly the way I work.", "Sam Rivera", "", []) }
+  if kind == "steps" { return ui_block("steps", "How it works", "", "Three steps", "", [ui_item("Start", "Tell it what you need, in your own words.", "", ""), ui_item("Shape", "See it take form and adjust anything.", "", ""), ui_item("Share", "Send it on when it is ready.", "", "")]) }
+  if kind == "art" { return ui_block("art", "", "", "", "", [ui_item("blob", "accent", "0.25 0.5 0.22", "float"), ui_item("star", "partner", "0.5 0.4 0.16", "spin"), ui_item("hexagon", "accent", "0.75 0.55 0.18", "sway"), ui_item("wave", "partner", "0.5 0.85 0.12", "float")]) }
+  if kind == "cards" { return ui_block("cards", "Explore", "", "", "See all", [ui_item("Getting started", "The first ten minutes.", "New", "spark"), ui_item("Ideas", "What others made with it.", "Popular", "star"), ui_item("Guides", "Short, practical how-tos.", "", "book")]) }
+  if kind == "form" { return ui_block("form", "Stay in touch", "One short email a month.", "", "Sign up", [ui_item("Name", "", "Your name", "user"), ui_item("Email", "", "you@example.com", "mail")]) }
+  if kind == "features" { return ui_block("features", "Why " + s.brand, "", "Features", "", [ui_item("Fast", "Ready in seconds.", "", "bolt"), ui_item("Thoughtful", "Every detail considered.", "", "spark"), ui_item("Yours", "Your data stays yours.", "", "shield")]) }
+  if kind == "cta" { return ui_block("cta", "Ready when you are", "It takes a minute to start.", "", "Get started", []) }
+  if kind == "list" { return ui_block("list", "Recent", "", "", "", [ui_item("First item", "Added today", "Now", "bolt"), ui_item("Second item", "Added yesterday", "1d", "clock")]) }
+  if kind == "activity" { return ui_block("activity", "Plan", "", "", "", [ui_item("Read the request", "", "done", ""), ui_item("Do the work", "", "now", ""), ui_item("Check and report", "", "next", "")]) }
+  if kind == "progress" { return ui_block("progress", "Goals", "", "", "", [ui_item("This week", "", "70%", ""), ui_item("This month", "", "45%", "")]) }
+  return ui_block(kind, name, "", "", "", [])
+}
+
+fn ui_with_look(s: UiSpec, look: UiLook) -> UiSpec { return {target: s.target, title: s.title, brand: s.brand, accent: s.accent, theme: s.theme, look: look, screens: s.screens} }
+
+fn ui_with_theme(s: UiSpec, theme: Text) -> UiSpec { return {target: s.target, title: s.title, brand: s.brand, accent: s.accent, theme: theme, look: s.look, screens: s.screens} }
+
+fn ui_with_screens(s: UiSpec, screens: UiScreen[]) -> UiSpec { return {target: s.target, title: s.title, brand: s.brand, accent: s.accent, theme: s.theme, look: s.look, screens: screens} }
+
+fn ui_look_of(colours: Text[], shape: Text, art: Text, font: Text) -> UiLook { return {colours: colours, shape: shape, art: art, font: font} }
+
+// The colours a design draws with now, as hex, whether chosen or named.
+fn ui_colours_now(s: UiSpec) -> Text[] {
+  if not s.look.colours.is_empty() { return s.look.colours }
+  let dark = ui_mode(s.theme) == "dark"
+  let a = ui_accent(s.accent)
+  let p = ui_partner(s.accent)
+  return if dark { [a.dark, p.dark] } else { [a.light, p.light] }
+}
+
+fn ui_colour_hex(word: Text) -> Text {
+  for c in ui_colour_words() {
+    if c.name == word { return c.hex }
+  }
+  return ""
+}
+
+fn ui_screen_without(sc: UiScreen, kind: Text) -> UiScreen { return {name: sc.name, blocks: for b in sc.blocks where b.kind != kind { b }} }
+
+// Every change Kosika can make from the words alone.
+fn ui_edit_local(s: UiSpec, change: Text) -> UiEdited {
+  let words = for w in change.lower().words() { w.trim_marks(",.;:!?'\"()") }
+  let t = " " + words.join(" ") + " "
+  var spec = s
+  var done: Text[] = []
+  // light, dark, minimal, vivid
+  let mode = ui_mode(spec.theme)
+  let style = ui_style(spec.theme)
+  let new_mode = if ui_any(t, [" dark ", " darker", " dark mode", " night mode"]) { "dark" } else if ui_any(t, [" light ", " lighter", " bright ", " brighter", " light mode", " day "]) { "light" } else { mode }
+  let new_style = if ui_any(t, ui_minimal_words()) or ui_any(t, [" calmer", " calm ", " simpler", " still "]) { "minimal" } else if ui_any(t, [" vivid", " colourful", " colorful", " animated", " bolder", " bold ", " livelier", " more motion", " more colour", " more color"]) { "vivid" } else { style }
+  if new_mode != mode or new_style != style {
+    spec = ui_with_theme(spec, if new_style == "minimal" { new_mode + " minimal" } else { new_mode })
+    done = done.append(f"made it {new_mode}" + (if new_style != style { ", " + new_style } else { "" }))
+  }
+  // colours: named ones first, then warmer or cooler
+  let named = for w in words where not ui_colour_hex(w).is_empty() { ui_colour_hex(w) }
+  let now = ui_colours_now(spec)
+  var colours = spec.look.colours
+  if not named.is_empty() {
+    colours = if named.length() > 1 { named.take(2) } else { [named[0], now[1]] }
+    done = done.append("changed the colours to " + (for w in words where not ui_colour_hex(w).is_empty() { w }).take(2).join(" and "))
+  } else if ui_any(t, [" warmer", " warm ", " cosier", " cozier", " sunnier"]) {
+    colours = [ui_mix(now[0], "#ff7a3d", 0.45), ui_mix(now[1], "#ffc145", 0.45)]
+    done = done.append("warmed the colours")
+  } else if ui_any(t, [" cooler", " cool ", " colder", " calmer colours", " icier"]) {
+    colours = [ui_mix(now[0], "#3d8bff", 0.45), ui_mix(now[1], "#2dd4bf", 0.45)]
+    done = done.append("cooled the colours")
+  } else if ui_any(t, [" new colours", " new colors", " different colours", " different colors", " other colours", " other colors", " surprise"]) {
+    let seed = ui_seed(change + spec.title)
+    colours = [ui_colour_words()[(ui_rnd(seed, 1) * 26).floor()].hex, ui_colour_words()[(ui_rnd(seed, 2) * 26).floor()].hex]
+    done = done.append("picked new colours")
+  }
+  // art, type, shape
+  let art_named = for a in ui_arts() where t.contains(" " + a) { a }
+  let art = if not art_named.is_empty() { art_named[0] } else if ui_any(t, [" no art", " remove the art", " plain background", " no background"]) { "none" } else if ui_any(t, [" new art", " different art", " other art", " different background", " new background"]) { ui_pick(for a in ui_arts() where a != spec.look.art { a }, ui_seed(change), 4) } else { spec.look.art }
+  if art != spec.look.art { done = done.append(if art == "none" { "took the art away" } else { "drew " + art + " behind it" }) }
+  let font = if ui_any(t, [" serif", " editorial", " elegant", " classic", " magazine"]) { "editorial" } else if ui_any(t, [" mono", " code ", " terminal", " hacker", " technical"]) { "mono" } else if ui_any(t, [" rounded", " friendly", " playful", " soft font"]) { "rounded" } else if ui_any(t, [" grotesk", " techy", " futuristic"]) { "grotesk" } else if ui_any(t, [" plain font", " geometric", " clean font"]) { "geometric" } else { spec.look.font }
+  if font != spec.look.font { done = done.append("set the type in " + font) }
+  let shape = if ui_any(t, [" sharp", " square ", " squarer", " edgy", " corners"]) { "sharp" } else if ui_any(t, [" pill", " capsule"]) { "pill" } else if ui_any(t, [" rounder", " round ", " rounded corners", " softer", " bubbly"]) { "round" } else { spec.look.shape }
+  if shape != spec.look.shape { done = done.append("made the shapes " + shape) }
+  if colours != spec.look.colours or art != spec.look.art or font != spec.look.font or shape != spec.look.shape {
+    spec = ui_with_look(spec, ui_look_of(colours, shape, art, font))
+  }
+  // remove or add parts
+  let removing = ui_any(t, [" remove", " delete", " drop ", " without", " get rid of", " take out", " no "])
+  let adding = ui_any(t, [" add", " include", " put in", " put a", " with a ", " with an ", " needs a", " give it"])
+  let kinds = for w in words where not ui_kind_word(w).is_empty() { ui_kind_word(w) }
+  if removing and not kinds.is_empty() {
+    let gone = kinds[0]
+    spec = ui_with_screens(spec, for sc in spec.screens { ui_screen_without(sc, gone) })
+    done = done.append("removed the " + gone)
+  } else if adding and not kinds.is_empty() {
+    let kind = kinds[0]
+    let first = spec.screens[0]
+    let fresh = ui_new_block(kind, spec)
+    let n = first.blocks.length()
+    let before_end = (for k in 0 until n where ui_bottoms().contains(first.blocks[k].kind) or first.blocks[k].kind == "cta" { k })
+    let at = if before_end.is_empty() { n } else { before_end[0] }
+    let blocks = first.blocks.take(at).concat([fresh]).concat(first.blocks.slice(at, n))
+    let changed: UiScreen = {name: first.name, blocks: blocks}
+    spec = ui_with_screens(spec, [changed].concat(spec.screens.slice(1, spec.screens.length())))
+    done = done.append("added a " + kind)
+  }
+  return {spec: spec, done: done, understood: not done.is_empty()}
+}
+
+fn ui_jstr(t: Text) -> Text { return "\"" + t.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ") + "\"" }
+
+fn ui_jitem(i: UiItem) -> Text { return "{\"title\":" + ui_jstr(i.title) + ",\"text\":" + ui_jstr(i.text) + ",\"meta\":" + ui_jstr(i.meta) + ",\"icon\":" + ui_jstr(i.icon) + "}" }
+
+fn ui_jblock(b: UiBlock) -> Text { return "{\"kind\":" + ui_jstr(b.kind) + ",\"title\":" + ui_jstr(b.title) + ",\"text\":" + ui_jstr(b.text) + ",\"meta\":" + ui_jstr(b.meta) + ",\"action\":" + ui_jstr(b.action) + ",\"items\":[" + (for i in b.items { ui_jitem(i) }).join(",") + "]}" }
+
+// A design as JSON text, to hand to the model.
+fn ui_spec_json(s: UiSpec) -> Text {
+  let look = "{\"colours\":[" + (for c in s.look.colours { ui_jstr(c) }).join(",") + "],\"shape\":" + ui_jstr(s.look.shape) + ",\"art\":" + ui_jstr(s.look.art) + ",\"font\":" + ui_jstr(s.look.font) + "}"
+  let screens = (for sc in s.screens { "{\"name\":" + ui_jstr(sc.name) + ",\"blocks\":[" + (for b in sc.blocks { ui_jblock(b) }).join(",") + "]}" }).join(",")
+  return "{\"target\":" + ui_jstr(s.target) + ",\"title\":" + ui_jstr(s.title) + ",\"brand\":" + ui_jstr(s.brand) + ",\"accent\":" + ui_jstr(s.accent) + ",\"theme\":" + ui_jstr(s.theme) + ",\"look\":" + look + ",\"screens\":[" + screens + "]}"
+}
+
+fn ui_edit_task() -> Text {
+  return "You are a senior product designer changing a design someone already has. The design is given as JSON in the same shape you must return. Change only what the person asks for; keep every other block, word, colour and setting exactly as it is. You may add, remove, reorder or rewrite blocks, and change the look (colours as hex, shape, art, font) and theme, when the change asks for it. The blocks: " + ui_blocks_guide() + " Icons: only these names: " + ui_icons_guide() + ". Return the whole design."
+}
+
+// The ask the design is checked against after an edit: the design's own
+// target, theme and accent, so the first ask's words cannot undo the edit.
+fn ui_edit_ask(e: UiEdit, s: UiSpec) -> UiAsk { return {text: e.ask.text, target: s.target, theme: s.theme, accent: s.accent} }
+
+fn ui_edit_result(e: UiEdit, local: UiEdited, said: UiSpec) -> UiResult {
+  let fresh = not said.screens.is_empty()
+  let base = if fresh { said } else { local.spec }
+  let r = ui_result(ui_edit_ask(e, base), base)
+  let notes = if fresh { ["changed it as you asked"] } else if local.understood { local.done } else { ["Kosika could not tell what to change, so the design is as it was"] }
+  return {target: r.target, title: r.title, spec: r.spec, page: r.page, fixed: notes.concat(r.fixed), problems: r.problems}
+}
+
+fn ui_short(change: Text) -> Bool { return change.trim().words().length() <= 12 }
+
+// A design changed by words. Short changes Kosika understands are made
+// with no model; the rest go to the model, and if it fails, Kosika's own
+// change stands.
+record UiEditCall { spec: UiSpec change: Text }
+
+// Words that ask for the content to change, which only a model can write.
+fn ui_rewrite_words() -> Text[] { return [" rewrite", " write ", " reword", " rename", " replace", " headline", " title", " wording", " copy ", " text ", " about ", " instead of", " translate", " shorter", " longer", " funnier", " more professional", " tone"] }
+
+fn ui_edit_route(local: UiEdited, change: Text) -> Text {
+  let t = " " + (for w in change.lower().words() { w.trim_marks(",.;:!?'\"()") }).join(" ") + " "
+  return if local.understood and ui_short(change) and not ui_any(t, ui_rewrite_words()) { "kosika" } else { "model" }
+}
+
+workflow ui_edit_by_model(c: UiEditCall) -> UiSpec {
+  budget 3 model calls, 600 seconds
+  out = use_model ui_editor(ui_edit_task(), ui_spec_json(c.spec), c.change) retry 1 otherwise ui_no_spec()
+}
+
+workflow ui_edit_by_kosika(c: UiEditCall) -> UiSpec {
+  out = ui_no_spec()
+}
+
+workflow ui_edit(e: UiEdit) -> UiResult {
+  local = ui_edit_local(e.spec, e.change)
+  said  = match ui_edit_route(local, e.change) {
+    case "kosika" { call ui_edit_by_kosika({spec: local.spec, change: e.change}) }
+    case _ { call ui_edit_by_model({spec: local.spec, change: e.change}) }
+  }
+  out   = ui_edit_result(e, local, said)
+}
+
+// ---------------------------------------------------------------- taste
+
+// The looks the person liked, kept by whatever holds their memory (the
+// phone app, Studio, a notebook), and given back with each new ask: the
+// model leans toward them, and Kosika fills what the model leaves out
+// from them before falling back to the seed. Each design stays new.
+record UiLike { look: UiLook theme: Text ask: Text }
+record UiTasteAsk { ask: UiAsk likes: UiLike[] }
+
+fn ui_like(r: UiResult, ask: UiAsk) -> UiLike { return {look: r.spec.look, theme: r.spec.theme, ask: ask.text} }
+
+fn ui_most(values: Text[]) -> Text {
+  var best = ""
+  var count = 0
+  for v in values {
+    let n = (for w in values where w == v { w }).length()
+    if not v.is_empty() and n > count {
+      best = v
+      count = n
+    }
+  }
+  return best
+}
+
+fn ui_taste_text(likes: UiLike[]) -> Text {
+  if likes.is_empty() { return "" }
+  let shown = (for l in likes.take(6) { "colours " + ui_or(l.look.colours.join(" and "), "named accent") + ", " + l.look.art + " art, " + l.look.font + " type, " + l.look.shape + " shapes, " + l.theme }).join("; ")
+  return " The person liked these looks before: " + shown + ". Lean toward what they liked (their colours, art, type and shapes), but make this design its own, not a copy."
+}
+
+// What the model left out, filled from what the person liked.
+fn ui_lean(look: UiLook, likes: UiLike[]) -> UiLook {
+  if likes.is_empty() { return look }
+  let fav_colours = for l in likes where not l.look.colours.is_empty() { l.look.colours }
+  return {
+    colours: if look.colours.is_empty() and not fav_colours.is_empty() { fav_colours[fav_colours.length() - 1] } else { look.colours },
+    shape: if look.shape.trim().is_empty() { ui_most(for l in likes { l.look.shape }) } else { look.shape },
+    art: if look.art.trim().is_empty() { ui_most(for l in likes { l.look.art }) } else { look.art },
+    font: if look.font.trim().is_empty() { ui_most(for l in likes { l.look.font }) } else { look.font }
+  }
+}
+
+fn ui_taste_result(t: UiTasteAsk, said: UiSpec) -> UiResult {
+  let base = if said.screens.is_empty() { ui_with_look(ui_starter(t.ask), ui_lean(ui_no_look(), t.likes)) } else { ui_with_look(said, ui_lean(said.look, t.likes)) }
+  return ui_result(t.ask, base)
+}
+
+// A new design that leans toward the looks the person liked.
+workflow design_ui_for(t: UiTasteAsk) -> UiResult {
+  budget 3 model calls, 600 seconds
+  said = use_model ui_designer(ui_task() + ui_taste_text(t.likes), t.ask.text, ui_target(t.ask), "") retry 1 otherwise ui_no_spec()
+  out  = ui_taste_result(t, said)
+}
+
 // ---------------------------------------------------------------- the model's brief
 
 fn ui_blocks_guide() -> Text {
-  return "nav: the top bar of a website; items are its links (title only); action is the main button. hero: the opening of a page; title is the headline (at most 8 words, specific, no hype), text one or two sentences, meta a short label above it (like New or Now in beta), action the buttons as 'Primary|Secondary'; items (optional) are 3 to 4 rows shown in a product preview under it. features: 3 to 6 reasons or abilities; title and text head the section, meta a one-word label above; each item has title (2 to 4 words), text (one sentence), icon. stats: 2 to 4 numbers; each item has title (the number, like 12k or 98%), text (what it counts), meta (a change, like +12%, or empty). cards: 2 to 6 things to browse (posts, courses, places, products); title heads the row, action a link like See all; each item has title, text, meta (a short tag like 5 min or $24) and icon. list: 3 to 6 rows (settings, messages, files, recent items); each item has title, text, meta (a time or count) and icon. steps: 3 to 4 steps in order; each item has title and text. pricing: 2 to 3 plans; each item has title (plan name), meta (price, like $12/mo), text (features separated by ;); action is the button word. quote: a testimonial; text is the quote, meta the person's name, title their role. cta: a closing call to action; title, text, action. footer: items are its links; text the small print. form: a sign-in or sign-up or contact form; title, text, action (the button), meta a small line under it; each item is a field with title (label), text (placeholder) and icon. appbar: the top of a phone screen or a window; title is the screen name, text a short line under or over it, meta a live status (like Running, or empty), items are icon buttons (icon only). search: a search field; meta is its placeholder. chips: 3 to 6 filters; items have title only; the first is selected. tabbar: the bottom bar of a phone app; 3 to 5 items with title and icon; the first is the screen shown. chat: a conversation; each item is a message with title (the speaker's name), text (the message) and meta (user or agent). composer: where the person types; text is the placeholder. activity: what an agent did and will do; each item has title, text (optional detail) and meta (done, now or next). progress: 2 to 4 bars; each item has title and meta (a percentage like 72%). sidebar: the left side of an agent window or app; title is the product name, action its main button (like New chat), items are its sections with title, icon and meta (a count or empty). table: rows of data; meta is the column names as 'Name|Detail|Status', each item a row with title, text and meta. chart: a chart that draws itself in; title heads it, text is one line saying what it shows, meta is its kind (line, area, bar or ring), action an optional link like 'Details'; each item is one point: title the label (short, like Mon or Jan), meta the value (like 42, 92% or $1.2k); line and area take 4 to 12 points over time, bar 3 to 8 to compare, ring 1 to 4 percentages."
+  return "nav: the top bar of a website; items are its links (title only); action is the main button. hero: the opening of a page; title is the headline (at most 8 words, specific, no hype), text one or two sentences, meta a short label above it (like New or Now in beta), action the buttons as 'Primary|Secondary'; items (optional) are 3 to 4 rows shown in a product preview under it. features: 3 to 6 reasons or abilities; title and text head the section, meta a one-word label above; each item has title (2 to 4 words), text (one sentence), icon. stats: 2 to 4 numbers; each item has title (the number, like 12k or 98%), text (what it counts), meta (a change, like +12%, or empty). cards: 2 to 6 things to browse (posts, courses, places, products); title heads the row, action a link like See all; each item has title, text, meta (a short tag like 5 min or $24) and icon. list: 3 to 6 rows (settings, messages, files, recent items); each item has title, text, meta (a time or count) and icon. steps: 3 to 4 steps in order; each item has title and text. pricing: 2 to 3 plans; each item has title (plan name), meta (price, like $12/mo), text (features separated by ;); action is the button word. quote: a testimonial; text is the quote, meta the person's name, title their role. cta: a closing call to action; title, text, action. footer: items are its links; text the small print. form: a sign-in or sign-up or contact form; title, text, action (the button), meta a small line under it; each item is a field with title (label), text (placeholder) and icon. appbar: the top of a phone screen or a window; title is the screen name, text a short line under or over it, meta a live status (like Running, or empty), items are icon buttons (icon only). search: a search field; meta is its placeholder. chips: 3 to 6 filters; items have title only; the first is selected. tabbar: the bottom bar of a phone app; 3 to 5 items with title and icon; the first is the screen shown. chat: a conversation; each item is a message with title (the speaker's name), text (the message) and meta (user or agent). composer: where the person types; text is the placeholder. activity: what an agent did and will do; each item has title, text (optional detail) and meta (done, now or next). progress: 2 to 4 bars; each item has title and meta (a percentage like 72%). sidebar: the left side of an agent window or app; title is the product name, action its main button (like New chat), items are its sections with title, icon and meta (a count or empty). table: rows of data; meta is the column names as 'Name|Detail|Status', each item a row with title, text and meta. chart: a chart that draws itself in; title heads it, text is one line saying what it shows, meta is its kind (line, area, bar or ring), action an optional link like 'Details'; each item is one point: title the label (short, like Mon or Jan), meta the value (like 42, 92% or $1.2k); line and area take 4 to 12 points over time, bar 3 to 8 to compare, ring 1 to 4 percentages. art: a composition of moving shapes, for a hero image, a mood or an idea; title and text head it (optional); each item is one shape: title its kind (circle, ring, square, diamond, triangle, pentagon, hexagon, octagon, star or star7, polygon9, blob, spiral, wave), text its colour (accent, partner, ink, or a hex colour), meta its place and size as 'x y size' from 0 to 1 (like '0.3 0.5 0.2'), icon its motion (spin, float, pulse, sway or none); 3 to 12 shapes that make a picture together."
 }
 
 fn ui_targets_guide() -> Text {
-  return "web: a website or landing page: nav, hero, then 3 to 6 sections (features, stats, cards, steps, pricing, quote, list, table, form), cta, footer. phone: 1 to 3 phone screens, each with an appbar first, then 2 to 5 blocks (search, chips, cards, list, stats, progress, activity, chat, form, hero), and a tabbar last for an app with sections (a chat screen ends with a composer instead). agent: one window: a sidebar, an appbar with the task and its status, a chat, a composer, and activity and progress or stats for the live panel. artifact: one card: an appbar as its heading, then 2 to 4 blocks (stats, list, progress, activity, table, cards)."
+  return "web: a website or landing page (1 to 3 pages, each a screen): nav, hero, then 3 to 6 sections (features, stats, cards, steps, pricing, quote, list, table, form), cta, footer. phone: 1 to 5 phone screens, each with an appbar first, then 2 to 5 blocks (search, chips, cards, list, stats, progress, activity, chat, form, hero), and a tabbar last for an app with sections (a chat screen ends with a composer instead). agent: one window: a sidebar, an appbar with the task and its status, a chat, a composer, and activity and progress or stats for the live panel. artifact: one card: an appbar as its heading, then 2 to 4 blocks (stats, list, progress, activity, table, cards)."
 }
 
 fn ui_icons_guide() -> Text { return ui_icon_names().join(", ") }
 
 fn ui_task() -> Text {
-  return "You are a senior product designer. Describe the screen someone asked for as blocks; Kosika draws them in one modern design system, vivid by default (gradients in the accent and its partner, glass, motion, charts that draw themselves) or minimal when asked, so describe only what the screen says and which blocks it holds. Give target (as given), title (the design's name, 2 to 5 words), brand (a short, believable product name, one or two words, not a placeholder like Brand or Company), accent (one of " + ui_accent_names().join(", ") + ", chosen to suit the subject), theme (dark by default, light when the subject is bright and daytime; add the word minimal, as in 'light minimal', only when the person asks for a plain or minimal look), and screens (each with name and blocks; each block has kind, title, text, meta, action and items, and each item has title, text, meta and icon; leave any field empty that the block does not use). The blocks: " + ui_blocks_guide() + " By target: " + ui_targets_guide() + " Icons: only these names: " + ui_icons_guide() + ". Write like the real product: specific, concrete, short; headlines in sentence case with no full stop; never lorem ipsum, never placeholders like Feature 1, never exclamation marks or hype words like revolutionary or seamless; realistic numbers, names, times and prices; every item different. Less is more: fewer blocks done well beat many. Use a chart wherever real numbers change over time or compare. If problems are given, they are what was wrong with your last description: fix every one."
+  return "You are a senior product designer. Describe the screen someone asked for as blocks; Kosika draws them in one modern design system, vivid by default (gradients in the accent and its partner, glass, motion, charts that draw themselves) or minimal when asked, so describe only what the screen says and which blocks it holds. Give target (as given), look (colours: one or two hex colours you invent for this subject, like #c0703a and #2f6f5e for a coffee roaster, not the usual purple; shape: soft, round, sharp or pill; art: the moving art behind it, one of orbits, blobs, waves, constellation, prism, rings, grid, aurora or none; font: geometric, grotesk, editorial, mono or rounded), title (the design's name, 2 to 5 words), brand (a short, believable product name, one or two words, not a placeholder like Brand or Company), accent (one of " + ui_accent_names().join(", ") + ", chosen to suit the subject), theme (dark by default, light when the subject is bright and daytime; add the word minimal, as in 'light minimal', only when the person asks for a plain or minimal look), and screens (each with name and blocks; each block has kind, title, text, meta, action and items, and each item has title, text, meta and icon; leave any field empty that the block does not use). The blocks: " + ui_blocks_guide() + " By target: " + ui_targets_guide() + " Icons: only these names: " + ui_icons_guide() + ". Write like the real product: specific, concrete, short; headlines in sentence case with no full stop; never lorem ipsum, never placeholders like Feature 1, never exclamation marks or hype words like revolutionary or seamless; realistic numbers, names, times and prices; every item different. Less is more: fewer blocks done well beat many. Use a chart wherever real numbers change over time or compare. Make every design its own: choose a look that fits this subject and differs from a default template; surprise with colour, shape and art, while staying readable. Screens link like a prototype: name every screen, and end a button, a card title, a row title or a nav link with ' > ' and a screen's name (like 'Start lesson > Lesson') to open that screen when it is tapped; a tab bar's tabs open the screens of the same names. If problems are given, they are what was wrong with your last description: fix every one."
 }
 
-fn ui_no_spec() -> UiSpec { return {target: "", title: "", brand: "", accent: "", theme: "", screens: []} }
+fn ui_no_spec() -> UiSpec { return {target: "", title: "", brand: "", accent: "", theme: "", look: ui_no_look(), screens: []} }
 
 fn ui_result(ask: UiAsk, said: UiSpec) -> UiResult {
   let c = ui_checked(ask, said)
@@ -1192,6 +2047,21 @@ workflow ui_app(a: UiApp) -> UiResult {
   out = ui_app_result(a)
 }
 
+// A design that is an app of its own: index.html, its manifest, its icon
+// and a service worker, so it works with no server, opens offline, and
+// installs on a phone's home screen. Put the files in a folder of a site
+// (kosika-site/apps/NAME/) and it is published.
+workflow ui_make_app(a: UiApp) -> UiAppMade {
+  out = ui_app_made(a)
+}
+
+// From one sentence to an app: the model designs it, Kosika makes it work.
+workflow design_app(ask: UiAsk) -> UiAppMade {
+  budget 3 model calls, 600 seconds
+  said = use_model ui_designer(ui_task(), ask.text, ui_target(ask), "") retry 1 otherwise ui_no_spec()
+  out  = ui_app_from(ask, said)
+}
+
 // ---------------------------------------------------------------- tests
 
 fn ui_ask(text: Text) -> UiAsk { return {text: text, target: "", theme: "", accent: ""} }
@@ -1201,6 +2071,8 @@ test "every accent reads against its surface, in light and in dark" {
 }
 
 test "the ask's words choose the target" {
+  expect ui_target(ui_ask("design something like an AI interface")) == "agent"
+  expect ui_wants("make me an AI interface")
   expect ui_target(ui_ask("a landing page for a quiet coffee shop")) == "web"
   expect ui_target(ui_ask("design a mobile app for learning Japanese")) == "phone"
   expect ui_target(ui_ask("an iPhone onboarding screen for a habit tracker")) == "phone"
@@ -1229,7 +2101,8 @@ test "theme and accent follow the person's words first" {
   expect ui_mode("dark minimal") == "dark"
   expect ui_accent_named(ui_ask("a green finance app"), "indigo") == "emerald"
   expect ui_accent_named(ui_ask("a finance app"), "teal") == "teal"
-  expect ui_accent_named(ui_ask("a finance app"), "chartreuse") == "indigo"
+  expect ui_accent_names().contains(ui_accent_named(ui_ask("a finance app"), "chartreuse"))
+  expect ui_accent_named(ui_ask("a finance app"), "") == ui_accent_named(ui_ask("a finance app"), "")
 }
 
 test "unknown icons are matched to ones Kosika draws" {
@@ -1241,7 +2114,7 @@ test "unknown icons are matched to ones Kosika draws" {
 }
 
 test "Kosika drops what does not belong and puts bars in their places" {
-  said: UiSpec = {target: "phone", title: "Runs", brand: "Stride", accent: "emerald", theme: "", screens: [{name: "Home", blocks: [
+  said: UiSpec = {target: "phone", title: "Runs", brand: "Stride", accent: "emerald", theme: "", look: ui_no_look(), screens: [{name: "Home", blocks: [
     ui_block("tabbar", "", "", "", "", [ui_item("Home", "", "", "home"), ui_item("Runs", "", "", "trend")]),
     ui_block("pricing", "Plans", "", "", "", []),
     ui_block("sparkles", "x", "", "", "", []),
@@ -1321,4 +2194,91 @@ test "vivid is the default and carries its motion; minimal carries none" {
   expect calm.spec.theme == "light minimal"
   expect calm.page.contains("data-style=\"minimal\"")
   expect not calm.page.contains("IntersectionObserver")
+}
+
+test "the look is the model's where it is readable, and Kosika's where it is missing" {
+  l = ui_look_checked({colours: ["#C0703A", "nope", "#2f6"], shape: "SHARP", art: "waves", font: "editorial"}, 42)
+  expect l.colours == ["#c0703a", "#22ff66"]
+  expect l.shape == "sharp"
+  expect l.art == "waves"
+  expect l.font == "editorial"
+  filled = ui_look_checked(ui_no_look(), 42)
+  expect ui_arts().contains(filled.art)
+  expect ui_fonts().contains(filled.font)
+  expect contrast(ui_fit("#1a1a40", true), "#0b0b0f") >= 5.5
+  expect contrast(ui_fit("#ffe08a", false), "#ffffff") >= 4.6
+  expect ui_seed("a coffee shop") == ui_seed("a coffee shop")
+  expect ui_seed("a coffee shop") != ui_seed("a tea shop")
+}
+
+test "every art is drawn, and the art block draws the shapes asked for" {
+  expect (for a in ui_arts() where not ui_backdrop(a, 7).contains("art-bg a-" + a) { a }).is_empty()
+  expect ui_backdrop("none", 7) == ""
+  s = ui_result(ui_ask("a website for a kite festival"), ui_no_spec()).spec
+  b = ui_block("art", "Kites", "", "", "", [ui_item("star7", "partner", "0.2 0.4 0.2", "spin"), ui_item("hexagon", "#ff8800", "", "float"), ui_item("spiral", "accent", "", "")])
+  html = ui_art(b, s)
+  expect html.contains("m-spin")
+  expect html.contains("fill:#ff8800")
+  expect html.contains("ln2")
+}
+
+test "Kosika makes short changes from the words alone" {
+  base = ui_result(ui_ask("a website for a kite festival"), ui_no_spec()).spec
+  warm = ui_edit_local(base, "make it warmer")
+  expect warm.understood
+  expect warm.spec.look.colours.length() == 2
+  green = ui_edit_local(base, "green and gold please")
+  expect green.spec.look.colours == ["#30a46c", "#d4a72c"]
+  light = ui_edit_local(base, "light and minimal")
+  expect light.spec.theme == "light minimal"
+  art = ui_edit_local(base, "waves behind it, serif type, sharp corners")
+  expect art.spec.look.art == "waves"
+  expect art.spec.look.font == "editorial"
+  expect art.spec.look.shape == "sharp"
+  priced = ui_edit_local(base, "add pricing")
+  expect ui_all_blocks(priced.spec).contains("pricing")
+  expect ui_all_blocks(priced.spec)[ui_all_blocks(priced.spec).length() - 1] == "footer"
+  gone = ui_edit_local(base, "remove the features")
+  expect not ui_all_blocks(gone.spec).contains("features")
+  expect not ui_edit_local(base, "hmm").understood
+  expect ui_edit_route(warm, "make it warmer") == "kosika"
+  expect ui_edit_route(ui_edit_local(base, "rewrite the headline to be about night flying"), "rewrite the headline to be about night flying") == "model"
+}
+
+test "an edit is not undone by the first ask's words" {
+  e: UiEdit = {ask: ui_ask("a dark website for a kite festival"), spec: ui_result(ui_ask("a dark website for a kite festival"), ui_no_spec()).spec, change: "light"}
+  r = ui_edit_result(e, ui_edit_local(e.spec, "light"), ui_no_spec())
+  expect r.spec.theme == "light"
+  expect r.fixed[0] == "made it light"
+  expect ui_spec_json(r.spec).contains("\"theme\":\"light\"")
+}
+
+test "new designs lean toward the looks the person liked" {
+  liked: UiLike = {look: {colours: ["#ff4d4d", "#0077b6"], shape: "round", art: "rings", font: "editorial"}, theme: "light", ask: "a kite festival"}
+  l = ui_lean(ui_no_look(), [liked, liked])
+  expect l.colours == ["#ff4d4d", "#0077b6"]
+  expect l.art == "rings"
+  expect l.font == "editorial"
+  own = ui_lean({colours: ["#30a46c"], shape: "", art: "waves", font: ""}, [liked])
+  expect own.colours == ["#30a46c"]
+  expect own.art == "waves"
+  expect own.shape == "round"
+  expect ui_taste_text([liked]).contains("rings art")
+  r = ui_taste_result({ask: ui_ask("a website for a surf school"), likes: [liked]}, ui_no_spec())
+  expect r.spec.look.art == "rings"
+}
+
+fn ui_app_ok(m: UiAppMade) -> Bool {
+  return m.files.length() == 4 and m.page.contains("<body data-app ") and m.files[1].text.contains("standalone") and m.files[2].text.contains("kosika-app-")
+}
+
+test "a design becomes an app that works on its own" {
+  expect ui_app_ok(ui_app_from(ui_ask("a phone app for my reading list"), ui_no_spec()))
+}
+
+test "a label that ends with a screen's name links to it, and shows the label alone" {
+  expect ui_unlink("Start lesson > Lesson", ["today", "lesson"]) == "Start lesson"
+  expect ui_link_of("Start lesson > Lesson", ["today", "lesson"]) == "Lesson"
+  expect ui_unlink("x > 5", ["today"]) == "x > 5"
+  expect ui_unlink_action("Get tickets > Tickets|Programme", ["tickets"]) == "Get tickets|Programme"
 }
