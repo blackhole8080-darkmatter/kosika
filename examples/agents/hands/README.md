@@ -42,3 +42,20 @@ mouse. eyes.ps1 reads windows through Windows' accessibility.
     kosika run cards.kos --workflow draw --input cards.json --allow-folder . --approve
 
 cards.json is `{"a": {"file": "kits.html"}}`.
+
+## The diary
+
+Every action the hands take is in the run's trace. `diary.kos` draws them on
+one animated timeline, in each agent's colour, with who approved each action
+and how it ended (typed words are never shown, only how many letters):
+
+    kosika run main.kos --workflow note --input note.json --trace traces/note-1.jsonl ...
+    python diary.py traces --out diary.html
+
+## Approving away from the terminal
+
+`--approve-in FOLDER` instead of `--approve` asks for each action in a folder
+and waits for the answer there, so it can come from a phone or another window:
+
+    kosika answer FOLDER          # what is waiting
+    kosika answer FOLDER yes      # approve the one action waiting

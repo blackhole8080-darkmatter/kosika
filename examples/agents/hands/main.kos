@@ -48,7 +48,7 @@ fn job_refusal(k: Kit, actions: Text[][]) -> Text {
 // in as apps.kos describes it (hands.py knows no program by itself). A
 // refused job's every command is a refusal, so nothing at all is done.
 fn act(k: Kit, refused: Text, what: Text[]) -> Text[] {
-  if refused != "" { return ["hands.py", "refuse", refused] }
+  if refused != "" { return ["hands.py", "--agent", k.name, "refuse", refused] }
   let quiet: Text[] = if quiet_needed(what) and k.patience > 0 {
     ["--quiet", k.patience.to_text(), "--wait-most", wait_at_most().to_text()]
   } else { [] }
@@ -129,7 +129,7 @@ test "an agent whose kit lacks a hand does nothing at all" {
   k = kit_named("coder-2")
   refused = job_refusal(k, [["open", "notepad"], ["write", "notepad"]])
   expect refused.contains("'open:notepad'")
-  expect act(k, refused, ["open", "notepad"]) == ["hands.py", "refuse", refused]
+  expect act(k, refused, ["open", "notepad"]) == ["hands.py", "--agent", "coder-2", "refuse", refused]
   expect job_refusal(kit_named("coder-1"), [["open", "notepad"], ["write", "notepad"], ["read", "notepad"]]) == ""
 }
 
@@ -241,7 +241,7 @@ record Visited { title: Text words: Text things: Text[] ok: Bool }
 
 fn web(k: Kit, what: Text[]) -> Text[] {
   let why = refusal(k, ["browse"])
-  if why != "" { return ["hands.py", "refuse", why] }
+  if why != "" { return ["hands.py", "--agent", k.name, "refuse", why] }
   return ["browser.py"].concat(what)
 }
 
@@ -283,5 +283,5 @@ test "a page read back gives its title, its words and its numbered things" {
 
 test "only an agent with the browse hand opens the browser" {
   expect web(kit_named("scout"), ["start"]) == ["browser.py", "start"]
-  expect web(kit_named("coder-2"), ["start"])[1] == "refuse"
+  expect web(kit_named("coder-2"), ["start"])[3] == "refuse"
 }

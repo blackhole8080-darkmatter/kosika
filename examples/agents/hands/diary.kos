@@ -1,0 +1,232 @@
+// The hands' diary, drawn by Kosika: every action the agents took, in the
+// order they took it, on one animated timeline in each agent's own colour.
+// Who did it, what it did, who approved it, and how it ended.
+//
+//   python diary.py run_trace.jsonl [more traces...]     writes diary.html
+//
+// diary.py only reads the runs' traces and hands each action over as it was
+// recorded (its command, exit code and what it said). Everything else, from
+// which agent it was to what the ending means and how it is drawn, is
+// decided here.
+
+import "kit.kos"
+import "kits.kos"
+import "pointer_look.kos"
+
+record Entry { run: Number at: Text job: Text step: Text args: Text[] exit_code: Number said: Text approved_by: Text }
+record Diary { title: Text entries: Entry[] }
+record Page { html: Text }
+
+// Read from one recorded command: the agent named after --agent, or "".
+fn agent_in(args: Text[]) -> Text {
+  var next = false
+  for word in args {
+    if next { return word }
+    next = word == "--agent"
+  }
+  return ""
+}
+
+// The action itself, without the program's name and the --flag pairs.
+fn action_in(args: Text[]) -> Text[] {
+  var words: Text[] = []
+  var skip = false
+  for word in args.drop(1) {
+    if skip {
+      skip = false
+    } else {
+      if word.starts_with("--") {
+        skip = true
+      } else {
+        words = words.append(word)
+      }
+    }
+  }
+  return words
+}
+
+// How an action ended, from the exit codes hands.py and browser.py use.
+fn ending(e: Entry) -> Text {
+  let action = action_in(e.args)
+  if e.exit_code == 0 { return "done" }
+  if action.length() > 0 and action[0] == "refuse" { return "refused" }
+  if e.exit_code == 3 { return "stopped by you" }
+  if e.exit_code == 4 { return "window not in front" }
+  if e.exit_code == 2 { return "not found" }
+  return "failed"
+}
+
+fn ending_class(e: Entry) -> Text {
+  let end = ending(e)
+  if end == "done" { return "ok" }
+  if end == "refused" { return "no" }
+  if end == "stopped by you" { return "stop" }
+  return "bad"
+}
+
+// What a refused command says about its action, since it names no agent.
+fn shown_action(e: Entry) -> Text {
+  let action = action_in(e.args)
+  if action.length() > 0 and action[0] == "refuse" { return "refused" }
+  if action.length() == 0 { return "(nothing)" }
+  // Typed text is shown as its length only: the diary may be shared.
+  if action[0] == "write" and action.length() > 2 {
+    return f"write {action[1]} ({action[2].length().to_text()} letters)"
+  }
+  return action.join(" ")
+}
+
+fn pointer_state(e: Entry) -> Text {
+  let action = action_in(e.args)
+  if action.length() == 0 { return "idle" }
+  if action[0] == "write" or action[0] == "type" { return "typing" }
+  if action[0] == "press" or action[0] == "click" { return "press" }
+  return "idle"
+}
+
+// The agents of a diary in the order they first acted.
+fn who(entries: Entry[]) -> Text[] {
+  var names: Text[] = []
+  for name in agents_of(entries) {
+    if name != "" and not names.contains(name) {
+      names = names.append(name)
+    }
+  }
+  return names
+}
+
+// Who did each action. A command that names no agent, such as the refusal
+// after a failed step, belongs to the agent of its run's last named action.
+fn agents_of(entries: Entry[]) -> Text[] {
+  var names: Text[] = []
+  var last = ""
+  var run = -1
+  for e in entries {
+    if e.run != run {
+      last = ""
+      run = e.run
+    }
+    let named = agent_in(e.args)
+    last = if named == "" { last } else { named }
+    names = names.append(last)
+  }
+  return names
+}
+
+fn colour_of(name: Text) -> Text {
+  if name == "" { return "#a3a8bd" }
+  return colour_for(name, kit_named(name).colour)
+}
+
+fn tally(entries: Entry[], agents: Text[], name: Text) -> Text {
+  var done = 0
+  var other = 0
+  var at = 0
+  for e in entries {
+    if agents[at] == name {
+      if ending(e) == "done" { done += 1 } else { other += 1 }
+    }
+    at += 1
+  }
+  let colour = colour_of(name)
+  return f"<div class=\"tally\" style=\"--c:{colour}\"><i></i><b>{escaped_text(name)}</b>"
+    + f"<span>{done.to_text()} done</span><span class=\"other\">{other.to_text()} not done</span></div>"
+}
+
+fn row(e: Entry, agent: Text, at: Number) -> Text {
+  let colour = colour_of(agent)
+  let shown = if agent == "" { "someone" } else { agent }
+  let pointer = pointer_drawn({name: shown, scale: 0.6}, colour, pointer_state(e)).svg
+  let approved = if e.approved_by == "" { "" } else { f"<span class=\"ok-by\">approved by {escaped_text(e.approved_by)}</span>" }
+  // Only the first line: `read` gives back the field's words after it.
+  let first = e.said.trim().split("\n").take(1).join("").trim()
+  let said = if first == "" { "" } else { f"<p class=\"said\">{escaped_text(first)}</p>" }
+  let delay = (at * 0.08).to_text()
+  return f"<li class=\"{ending_class(e)}\" style=\"--c:{colour};animation-delay:{delay}s\">"
+    + f"<time>{escaped_text(e.at)}</time><div class=\"dot\"></div>"
+    + f"<div class=\"what\"><div class=\"pointer\">{pointer}</div><div>"
+    + f"<p class=\"head\"><b>{escaped_text(shown)}</b><code>{escaped_text(shown_action(e))}</code>"
+    + f"<em>{ending(e)}</em>{approved}</p>{said}"
+    + f"<p class=\"job\">{escaped_text(e.job)} · {escaped_text(e.step)}</p></div></div></li>"
+}
+
+fn diary_page(d: Diary) -> Text {
+  let agents = agents_of(d.entries)
+  var rows: Text[] = []
+  var at = 0
+  for e in d.entries {
+    rows = rows.append(row(e, agents[at], at))
+    at += 1
+  }
+  let tallies = (for name in who(d.entries) { tally(d.entries, agents, name) }).join("")
+  let empty = if d.entries.length() == 0 { "<p class=\"empty\">No actions yet.</p>" } else { "" }
+  return "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+    + f"<title>{escaped_text(d.title)}</title><style>{page_css()}{diary_css()}</style></head><body>"
+    + f"<header><h1>{escaped_text(d.title)}</h1><p>Every action the agents' hands took, in order, in each agent's own colour.</p>"
+    + f"<div class=\"tallies\">{tallies}</div></header>"
+    + f"<ol class=\"line\">{rows.join(\"\")}</ol>{empty}</body></html>"
+}
+
+fn diary_css() -> Text {
+  return ".tallies{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}"
+    + ".tally{display:flex;gap:10px;align-items:center;padding:8px 14px;border-radius:14px;background:color-mix(in srgb,var(--c) 12%,var(--panel));border:1px solid color-mix(in srgb,var(--c) 45%,transparent)}"
+    + ".tally i{width:12px;height:12px;border-radius:50%;background:var(--c);box-shadow:0 0 12px var(--c)}.tally span{color:var(--soft);font-size:13px}.tally .other{color:#ff9a9a}"
+    + ".line{position:relative;max-width:980px;margin:0 auto;padding:0 0 0 0;list-style:none}"
+    + ".line:before{content:\"\";position:absolute;left:86px;top:0;bottom:0;width:2px;background:linear-gradient(var(--amber),var(--violet),var(--sky));box-shadow:0 0 14px #a993ff88}"
+    + ".line li{position:relative;display:grid;grid-template-columns:72px 30px 1fr;align-items:start;gap:0;margin:0 0 14px;animation:rise .6s both}"
+    + "time{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--soft);padding-top:14px;text-align:right;padding-right:8px}"
+    + ".dot{width:14px;height:14px;margin:14px 0 0 8px;border-radius:50%;background:var(--c);box-shadow:0 0 0 4px #07080d,0 0 16px var(--c);animation:pulse 2.4s ease-in-out infinite}"
+    + ".what{display:flex;gap:12px;align-items:flex-start;padding:10px 14px;border-radius:16px;background:linear-gradient(150deg,color-mix(in srgb,var(--c) 14%,var(--panel)),var(--panel) 60%);border:1px solid color-mix(in srgb,var(--c) 40%,transparent)}"
+    + ".pointer{flex:none;width:44px;height:44px;overflow:hidden}.pointer svg{max-width:44px;max-height:44px}"
+    + ".head{margin:0;display:flex;flex-wrap:wrap;gap:8px;align-items:center}.head b{color:var(--c)}"
+    + "code{font-family:ui-monospace,Consolas,monospace;font-size:13px;padding:2px 8px;border-radius:8px;background:#ffffff10}"
+    + "em{font-style:normal;font-size:12px;font-weight:700;padding:2px 9px;border-radius:999px}"
+    + ".ok em{color:#4fe0a6;background:#4fe0a61c}.no em{color:#f5b45c;background:#f5b45c1c}.stop em{color:#55d6ff;background:#55d6ff1c}.bad em{color:#ff6b81;background:#ff6b811c}"
+    + ".ok-by{font-size:12px;color:var(--soft)}.said{margin:4px 0 0;color:var(--soft);font-size:13px;white-space:pre-wrap;word-break:break-word}"
+    + ".job{margin:4px 0 0;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#6f7590}"
+    + ".empty{text-align:center;color:var(--soft)}"
+    + "@keyframes pulse{50%{box-shadow:0 0 0 4px #07080d,0 0 26px var(--c)}}"
+    + "@media (max-width:560px){.line:before{left:62px}.line li{grid-template-columns:50px 26px 1fr}time{font-size:10px}}"
+}
+
+workflow main(d: Diary) -> Page {
+  page = diary_page(d)
+  result: Page = {html: page}
+}
+
+test "the agent, the action and its ending are read from the command" {
+  args = ["hands.py", "--agent", "coder-1", "--colour", "#ff3ea5", "--speed", "fast", "write", "notepad", "hello"]
+  expect agent_in(args) == "coder-1"
+  expect action_in(args) == ["write", "notepad", "hello"]
+  e: Entry = {run: 1, at: "07:01:02", job: "note", step: "typed", args: args, exit_code: 0, said: "typed 5 letters", approved_by: "aryan"}
+  expect ending(e) == "done"
+  expect shown_action(e) == "write notepad (5 letters)"
+  expect pointer_state(e) == "typing"
+}
+
+test "endings say what happened, and a refused step belongs to its job's agent" {
+  opened: Entry = {run: 1, at: "1", job: "note", step: "opened", args: ["hands.py", "--agent", "coder-2", "open", "notepad"], exit_code: 3, said: "stopped: Escape is held", approved_by: ""}
+  refused: Entry = {run: 1, at: "2", job: "note", step: "typed", args: ["hands.py", "refuse", "an earlier step stopped"], exit_code: 5, said: "", approved_by: ""}
+  expect ending(opened) == "stopped by you"
+  expect ending(refused) == "refused"
+  expect agents_of([opened, refused]) == ["coder-2", "coder-2"]
+  expect who([opened, refused]) == ["coder-2"]
+  other: Entry = {run: 2, at: "3", job: "note", step: "opened", args: ["hands.py", "refuse", "no kit"], exit_code: 5, said: "", approved_by: ""}
+  expect agents_of([opened, refused, other]) == ["coder-2", "coder-2", ""]
+}
+
+test "the page draws each action in its agent's colour, with who approved it" {
+  e: Entry = {run: 1, at: "07:01:02", job: "press", step: "press", args: ["hands.py", "--agent", "coder-1", "press", "notepad", "Edit"], exit_code: 0, said: "opened Edit", approved_by: "aryan"}
+  html = diary_page({title: "Hands diary", entries: [e]})
+  expect html.contains("--c:#ff3ea5")
+  expect html.contains("approved by aryan")
+  expect html.contains("1 done")
+  expect not diary_page({title: "x", entries: []}).contains("<li")
+}
+
+test "typed words are not written into the diary" {
+  e: Entry = {run: 1, at: "1", job: "note", step: "typed", args: ["hands.py", "--agent", "coder-1", "write", "notepad", "my secret"], exit_code: 0, said: "", approved_by: ""}
+  expect not diary_page({title: "x", entries: [e]}).contains("secret")
+  r: Entry = {run: 1, at: "2", job: "note", step: "read", args: ["hands.py", "--agent", "coder-1", "read", "notepad"], exit_code: 0, said: "read\nmy secret", approved_by: ""}
+  expect not diary_page({title: "x", entries: [r]}).contains("secret")
+}
