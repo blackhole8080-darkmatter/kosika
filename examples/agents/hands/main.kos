@@ -13,6 +13,7 @@
 
 import "kit.kos"
 import "kits.kos"
+import "apps.kos"
 import "pointer_look.kos"
 
 record Note { agent: Text text: Text }
@@ -43,14 +44,16 @@ fn job_refusal(k: Kit, actions: Text[][]) -> Text {
 }
 
 // The command for one action: the agent, its colour and its speed first, so
-// hands.py draws and types as the kit says. A refused job's every command
-// is a refusal, so nothing at all is done.
+// hands.py draws and types as the kit says, then the program the action works
+// in as apps.kos describes it (hands.py knows no program by itself). A
+// refused job's every command is a refusal, so nothing at all is done.
 fn act(k: Kit, refused: Text, what: Text[]) -> Text[] {
   if refused != "" { return ["hands.py", "refuse", refused] }
   let quiet: Text[] = if quiet_needed(what) and k.patience > 0 {
     ["--quiet", k.patience.to_text(), "--wait-most", wait_at_most().to_text()]
   } else { [] }
-  return ["hands.py", "--agent", k.name, "--colour", colour_for(k.name, k.colour), "--speed", k.typing].concat(quiet).concat(what)
+  let app: Text[] = if what.length() > 1 { app_flags(app_named(what[1])) } else { [] }
+  return ["hands.py", "--agent", k.name, "--colour", colour_for(k.name, k.colour), "--speed", k.typing].concat(quiet).concat(app).concat(what)
 }
 
 fn why_stopped(ran: Ran) -> Text {
@@ -123,8 +126,10 @@ test "an agent whose kit lacks a hand does nothing at all" {
 test "the agent's colour and speed go with every command" {
   k = kit_named("coder-1")
   c = act(k, "", ["write", "notepad", "hi"])
-  expect c == ["hands.py", "--agent", "coder-1", "--colour", "#ff3ea5", "--speed", "fast", "--quiet", "3", "--wait-most", "60", "write", "notepad", "hi"]
-  expect act(k, "", ["read", "notepad"]) == ["hands.py", "--agent", "coder-1", "--colour", "#ff3ea5", "--speed", "fast", "read", "notepad"]
+  notepad = app_flags(app_named("notepad"))
+  expect c == ["hands.py", "--agent", "coder-1", "--colour", "#ff3ea5", "--speed", "fast", "--quiet", "3", "--wait-most", "60"].concat(notepad).concat(["write", "notepad", "hi"])
+  expect act(k, "", ["read", "notepad"]) == ["hands.py", "--agent", "coder-1", "--colour", "#ff3ea5", "--speed", "fast"].concat(notepad).concat(["read", "notepad"])
+  expect act(k, "", ["key", "enter"]) == ["hands.py", "--agent", "coder-1", "--colour", "#ff3ea5", "--speed", "fast", "--quiet", "3", "--wait-most", "60", "key", "enter"]
 }
 
 test "a person who keeps working is waited for, and then nothing is done" {

@@ -6,7 +6,8 @@
 //   skills  skill notes it reads before it works (advice only: a skill never
 //           gives an agent a power it does not have)
 //   tools   the Kosika tools it may call
-//   hands   the actions its hands may do on this computer; main.kos refuses
+//   hands   the actions its hands may do on this computer (open:NAME for each
+//           program in apps.kos); main.kos refuses
 //           any action whose hand is not in the kit, before anything is done
 //   typing  how fast it types: "steady", "fast" or "instant"
 //   patience  seconds the person must have left keyboard and mouse alone
@@ -17,6 +18,7 @@
 
 import "pointer_look.kos"
 import "std/designs_palette.kos"
+import "apps.kos"
 
 export [Kit, KitCheck, known_hands, typing_speeds, kit_problems, kit_card, page_css, hand_for, refusal, typed_check, Typed, quiet_needed, wait_at_most]
 
@@ -35,10 +37,8 @@ fn hand_list() -> Text[] {
     "click=move your mouse and click",
     "type=type where the keyboard is",
     "keys=press Enter, Tab, Escape or Backspace",
-    "open:notepad=start Notepad",
-    "open:calculator=start Calculator",
     "browse=use a Chrome of its own, none of your sign-ins"
-  ]
+  ].concat(app_hands())
 }
 
 fn known_hands() -> Text[] {

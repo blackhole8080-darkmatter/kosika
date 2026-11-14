@@ -20,7 +20,7 @@ Every action is one run of this file, which a Kosika agent asks for through
 its shell tool, so Kosika asks the person before each one. Holding Escape
 stops it: before every step and between the letters it types, an Escape
 held down ends the action at once with exit code 3, and nothing more is
-done. Only the programs named in OPENABLE can be started.
+done. Only the programs apps.kos describes can be started or found.
 
 This file is only the hands: what to do, and whether the agent may, is
 decided in Kosika (main.kos, with each agent's kit in kits.kos). Kosika
@@ -58,8 +58,34 @@ except (AttributeError, OSError):
 
 ESCAPE = 0x1B
 KEYS = {"enter": 0x0D, "tab": 0x09, "escape": 0x1B, "backspace": 0x08, "space": 0x20}
-OPENABLE = {"notepad": ["notepad.exe"], "calculator": ["calc.exe"]}
-WINDOW_CLASS = {"notepad": "Notepad", "calculator": "ApplicationFrameWindow"}
+#: The programs, as apps.kos describes them: told by Kosika with each action
+#: (--app NAME --window CLASS --program EXE --fields KINDS --fresh BUTTON),
+#: or, when hands.py is run by hand, asked of apps.kos. Nothing else can be
+#: started or found.
+APPS: dict[str, dict] = {}
+HERE = Path(__file__).resolve().parent
+RUNNER = (
+    "import json, sys\n"
+    "from kosika.modules import load_program\n"
+    "from kosika.runtime import run\n"
+    "print(json.dumps(run(load_program(sys.argv[1]), 'describe', None, inputs={'a': {'name': sys.argv[2]}})))\n"
+)
+
+
+def app(name: str) -> dict | None:
+    """The program called that, or None when apps.kos does not describe it."""
+    if name not in APPS:
+        env = {**os.environ, "PYTHONPATH": str(HERE.parents[2])}
+        ran = subprocess.run([sys.executable, "-c", RUNNER, str(HERE / "apps.kos"), name],
+                             capture_output=True, text=True, encoding="utf-8", env=env, timeout=60)
+        try:
+            told = json.loads(ran.stdout.strip().splitlines()[-1])
+        except (ValueError, IndexError):
+            return None
+        APPS[name] = {"window": told["window"], "program": told["program"],
+                      "fields": told["fields"], "fresh": told["fresh"]}
+    found = APPS[name]
+    return found if found["program"] else None
 INPUT_MOUSE, INPUT_KEYBOARD = 0, 1
 LEFTDOWN, LEFTUP = 0x0002, 0x0004
 KEYUP, UNICODE = 0x0002, 0x0004
@@ -213,10 +239,10 @@ def move(x: int, y: int) -> None:
         time.sleep(0.012)
 
 
-def window(name: str) -> int:
+def window(name: str, wait: bool = True) -> int:
     """The program's window, waited for up to eight seconds, or 0."""
-    for _ in range(40):
-        handle = user32.FindWindowW(WINDOW_CLASS.get(name), None)
+    for _ in range(40 if wait else 1):
+        handle = user32.FindWindowW(app(name)["window"], None)
         if handle:
             return handle
         time.sleep(0.2)
@@ -275,7 +301,7 @@ def look(name: str, most: int = 150) -> list[dict]:
     """What the program's window shows, by name: eyes.ps1 reads Windows' own
     accessibility tree, so there is no picture and no model to guess."""
     run = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(EYES),
-                          "-Class", WINDOW_CLASS[name], "-Most", str(most)],
+                          "-Class", app(name)["window"], "-Most", str(most)],
                          capture_output=True, text=True, encoding="utf-8", timeout=60)
     things = []
     for line in run.stdout.splitlines():
@@ -438,7 +464,7 @@ def field_text(name: str) -> str | None:
     """What the program's text field holds now, read through Windows'
     accessibility (eyes.ps1 -Read), or None if it cannot be read."""
     run = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(EYES),
-                          "-Class", WINDOW_CLASS[name], "-Read"],
+                          "-Class", app(name)["window"], "-Read"],
                          capture_output=True, text=True, encoding="utf-8", timeout=60)
     try:
         said = json.loads(run.stdout.strip().splitlines()[-1])
@@ -448,16 +474,36 @@ def field_text(name: str) -> str | None:
 
 
 def text_field(name: str) -> dict | None:
-    """The program's place for words: its first Document or Edit."""
-    return next((t for t in look(name) if t.get("kind") in ("Document", "Edit")), None)
+    """The program's place for words: the first thing of a kind apps.kos names."""
+    return next((t for t in look(name) if t.get("kind") in app(name)["fields"]), None)
+
+
+def eyes(name: str, *asked: str) -> dict:
+    """Ask eyes.ps1 one thing about the program's window; its JSON answer,
+    with "error" in it when it could not be done."""
+    run = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(EYES),
+                          "-Class", app(name)["window"], *asked],
+                         capture_output=True, text=True, encoding="utf-8", timeout=60)
+    try:
+        return json.loads(run.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        return {"error": (run.stderr.strip() or "eyes.ps1 said nothing")[:200]}
+
+
+def eyes_press(name: str, thing: str) -> dict:
+    return eyes(name, "-Press", thing)
 
 
 def main(args: list[str]) -> None:
     global OWN_POINTER_ONLY, AGENT, COLOUR, SPEED, TARGET, QUIET, WAIT_MOST
     # Who acts, in what colour, how fast, and how long to wait for the
     # person: told by Kosika before the action.
-    while len(args) > 1 and args[0] in ("--agent", "--colour", "--speed", "--quiet", "--wait-most"):
-        if args[0] == "--agent":
+    described: dict[str, str] = {}
+    while len(args) > 1 and args[0] in ("--agent", "--colour", "--speed", "--quiet", "--wait-most",
+                                        "--app", "--window", "--program", "--fields", "--fresh"):
+        if args[0] in ("--app", "--window", "--program", "--fields", "--fresh"):
+            described[args[0][2:]] = args[1]
+        elif args[0] == "--agent":
             AGENT = args[1]
         elif args[0] == "--colour":
             COLOUR = args[1]
@@ -468,6 +514,10 @@ def main(args: list[str]) -> None:
         elif args[1] in PAUSES:
             SPEED = args[1]
         args = args[2:]
+    if described.get("app"):
+        APPS[described["app"]] = {"window": described.get("window", ""), "program": described.get("program", ""),
+                                  "fields": [f for f in described.get("fields", "").split(",") if f],
+                                  "fresh": described.get("fresh", "")}
     if not args:
         raise SystemExit(__doc__)
     wait_for_quiet()
@@ -478,7 +528,7 @@ def main(args: list[str]) -> None:
     elif what == "move" and len(rest) == 2:
         move(int(float(rest[0])), int(float(rest[1])))
         print("moved to", *where())
-    elif what == "move-to" and rest and rest[0] in OPENABLE:
+    elif what == "move-to" and rest and app(rest[0]):
         handle = window(rest[0])
         if not handle:
             print(f"no {rest[0]} window to move to")
@@ -486,13 +536,13 @@ def main(args: list[str]) -> None:
         to_front(handle)
         move(*middle(handle))
         print(f"moved to the middle of {rest[0]},", *where())
-    elif what == "look" and rest and rest[0] in OPENABLE:
+    elif what == "look" and rest and app(rest[0]):
         if not window(rest[0]):
             print(f"no {rest[0]} window to look at")
             sys.exit(2)
         for thing in look(rest[0]):
             print(f"{thing['kind']}: {thing['name']}")
-    elif what == "click-on" and len(rest) > 1 and rest[0] in OPENABLE:
+    elif what == "click-on" and len(rest) > 1 and app(rest[0]):
         # Click a thing by the name the window gives it, not by guessing pixels.
         handle = window(rest[0])
         if not handle:
@@ -507,7 +557,7 @@ def main(args: list[str]) -> None:
         move(thing["x"], thing["y"])
         click()
         print(f"clicked {thing['kind']} {thing['name']!r} in {rest[0]}")
-    elif what == "press" and len(rest) > 1 and rest[0] in OPENABLE:
+    elif what == "press" and len(rest) > 1 and app(rest[0]):
         OWN_POINTER_ONLY = True
         # Press a thing by its name WITHOUT moving the person's mouse: the
         # agent's own pointer (pointer.py) glides there, then Windows'
@@ -524,17 +574,14 @@ def main(args: list[str]) -> None:
         time.sleep(0.8)
         guard()
         point_at(thing["x"], thing["y"], "press")
-        done = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(EYES),
-                               "-Class", WINDOW_CLASS[rest[0]], "-Press", thing["name"]],
-                              capture_output=True, text=True, encoding="utf-8", timeout=60)
-        said = json.loads((done.stdout or "{}").strip().splitlines()[-1] if done.stdout.strip() else "{}")
-        if "error" in said or done.returncode:
-            print(said.get("error") or done.stderr.strip()[:200])
+        said = eyes_press(rest[0], thing["name"])
+        if "error" in said:
+            print(said["error"])
             sys.exit(2)
         time.sleep(0.35)
         point_at(thing["x"], thing["y"], "idle")
         print(f"{said['how']} {thing['kind']} {said['pressed']!r} in {rest[0]}, your mouse not moved")
-    elif what == "click" and rest and rest[0] in OPENABLE:
+    elif what == "click" and rest and app(rest[0]):
         # Aimed at a program: front it and click its middle, whatever the
         # person clicked while answering the last question.
         handle = window(rest[0])
@@ -545,7 +592,7 @@ def main(args: list[str]) -> None:
         move(*middle(handle))
         click()
         print(f"clicked in {rest[0]} at", *where())
-    elif what == "type-into" and len(rest) > 1 and rest[0] in OPENABLE:
+    elif what == "type-into" and len(rest) > 1 and app(rest[0]):
         handle = window(rest[0])
         if not handle:
             print(f"no {rest[0]} window to type into")
@@ -555,7 +602,7 @@ def main(args: list[str]) -> None:
         words, started = " ".join(rest[1:]), time.time()
         how = type_text(words)
         print(f"typed {len(words)} letters into {rest[0]} ({how}, {time.time() - started:.1f} s)")
-    elif what == "write" and len(rest) > 1 and rest[0] in OPENABLE:
+    elif what == "write" and len(rest) > 1 and app(rest[0]):
         # Type into the program with the agent's own pointer showing where,
         # tagged "typing"; the person's mouse is not moved.
         OWN_POINTER_ONLY = True
@@ -575,7 +622,7 @@ def main(args: list[str]) -> None:
         how = type_text(words)
         point_at(x, y, "idle")
         print(f"typed {len(words)} letters into {rest[0]} ({how}, {time.time() - started:.1f} s)")
-    elif what == "read" and rest and rest[0] in OPENABLE:
+    elif what == "read" and rest and app(rest[0]):
         # The first line says whether the field could be read; the words follow.
         there = field_text(rest[0]) if window(rest[0]) else None
         print("read" if there is not None else "unreadable")
@@ -593,13 +640,24 @@ def main(args: list[str]) -> None:
     elif what == "key" and rest and rest[0] in KEYS:
         key(KEYS[rest[0]])
         print("pressed", rest[0])
-    elif what == "open" and rest and rest[0] in OPENABLE:
+    elif what == "open" and rest and app(rest[0]):
         guard()
-        subprocess.Popen(OPENABLE[rest[0]])
-        handle = window(rest[0])
-        if handle:
-            to_front(handle)
-        print("opened", rest[0])
+        told, already = app(rest[0]), window(rest[0], wait=False)
+        if already and told["fresh"]:
+            # Open already: a fresh empty page, pressed through accessibility,
+            # so nothing of the person's is written into.
+            said = eyes_press(rest[0], told["fresh"])
+            if "error" in said:
+                print(f"{rest[0]} is open but its {told['fresh']!r} could not be pressed: {said['error']}")
+                sys.exit(2)
+            to_front(already)
+            print(f"opened a fresh page in {rest[0]} ({said['pressed']})")
+        else:
+            subprocess.Popen([told["program"]])
+            handle = window(rest[0])
+            if handle:
+                to_front(handle)
+            print("opened", rest[0])
     else:
         print(f"not something the hands do: {' '.join(args)}")
         sys.exit(2)
