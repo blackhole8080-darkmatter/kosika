@@ -69,7 +69,10 @@ fn ending_class(e: Entry) -> Text {
 // What a refused command says about its action, since it names no agent.
 fn shown_action(e: Entry) -> Text {
   let action = action_in(e.args)
-  if action.length() > 0 and action[0] == "refuse" { return "refused" }
+  if action.length() > 0 and action[0] == "refuse" {
+    let why = action.drop(1).join(" ")
+    return if why.length() > 70 { "refused: " + why.slice(0, 70) + "…" } else { "refused: " + why }
+  }
   if action.length() == 0 { return "(nothing)" }
   // Typed text is shown as its length only: the diary may be shared.
   if action[0] == "write" and action.length() > 2 {

@@ -74,6 +74,28 @@ def traces(paths: list[Path]) -> list[Path]:
     return out
 
 
+def draw(program: str, workflow: str, ask: dict) -> str:
+    """The page a workflow of this folder draws for one input."""
+    with tempfile.TemporaryDirectory() as work:
+        asked = Path(work) / "ask.json"
+        asked.write_text(json.dumps(ask), encoding="utf-8")
+        ran = subprocess.run([sys.executable, "-c", RUNNER, str(HERE / program), workflow, str(asked)], cwd=work,
+                             capture_output=True, text=True, encoding="utf-8",
+                             env={**os.environ, "PYTHONPATH": str(REPO)}, timeout=300)
+    if ran.returncode != 0:
+        raise RuntimeError(ran.stderr.strip())
+    return json.loads(ran.stdout.strip().splitlines()[-1])["html"]
+
+
+def asks_waiting(folder: Path | None) -> list[str]:
+    """What each ask waiting in an --approve-in folder says."""
+    if folder is None:
+        return []
+    sys.path.insert(0, str(REPO))
+    from kosika.ask_folder import waiting
+    return [str(ask.get("says", "")) for ask in waiting(folder)]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("paths", nargs="+", type=Path)
@@ -83,7 +105,23 @@ def main() -> int:
                         help="Write lesson.json from this run of the diary, for learn.kos to learn a skill from.")
     parser.add_argument("--name", default="", help="The learned skill's name, with --lesson.")
     parser.add_argument("--when", default="", help="When the learned skill fits, words split by commas, with --lesson.")
+    parser.add_argument("--board", action="store_true", help="Draw the live board of all agents (team.kos) instead.")
+    parser.add_argument("--asks", type=Path, help="The --approve-in folder, so the board shows who waits for a yes.")
+    parser.add_argument("--watch", action="store_true", help="Draw again every few seconds, until stopped.")
     args = parser.parse_args()
+    if args.watch:
+        import time
+        last = None
+        while True:
+            seen = ([(p, p.stat().st_mtime) for p in traces(args.paths)], asks_waiting(args.asks))
+            if seen != last:
+                last = seen
+                once(args)
+            time.sleep(2)
+    return once(args)
+
+
+def once(args: argparse.Namespace) -> int:
     actions: list[dict] = []
     for trace in traces(args.paths):
         actions += entries(trace, actions[-1]["run"] if actions else 0)
@@ -94,17 +132,19 @@ def main() -> int:
         print(f"lesson.json holds run {args.lesson} ({len(lesson['l']['entries'])} actions). To learn from it:")
         print("kosika run learn.kos --workflow learn --input lesson.json --allow-shell --allow-folder . --approve")
         return 0
-    with tempfile.TemporaryDirectory() as work:
-        ask = Path(work) / "ask.json"
-        ask.write_text(json.dumps({"d": {"title": args.title, "entries": actions}}), encoding="utf-8")
-        ran = subprocess.run([sys.executable, "-c", RUNNER, str(HERE / "diary.kos"), "main", str(ask)], cwd=work,
-                             capture_output=True, text=True, encoding="utf-8",
-                             env={**os.environ, "PYTHONPATH": str(REPO)}, timeout=300)
-    if ran.returncode != 0:
-        print(ran.stderr.strip(), file=sys.stderr)
+    try:
+        if args.board:
+            out = args.out if args.out != Path("diary.html") else Path("board.html")
+            html = draw("team.kos", "board", {"t": {"title": "Kosika agents", "entries": actions,
+                                                     "waiting": asks_waiting(args.asks)}})
+        else:
+            out = args.out
+            html = draw("diary.kos", "main", {"d": {"title": args.title, "entries": actions}})
+    except RuntimeError as exc:
+        print(exc, file=sys.stderr)
         return 2
-    args.out.write_text(json.loads(ran.stdout.strip().splitlines()[-1])["html"], encoding="utf-8")
-    print(f"{len(actions)} actions written to {args.out}")
+    out.write_text(html, encoding="utf-8")
+    print(f"{len(actions)} actions drawn in {out}", flush=True)
     return 0
 
 

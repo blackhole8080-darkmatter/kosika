@@ -78,3 +78,10 @@ before it is kept, and a learned note never replaces another:
 
 `learn.kos` decides whether the run can be learned from and writes the note
 (`skills/learned-NAME.md`); the next job that fits its When words is given it.
+
+## The live board
+
+One card for every agent, in its colour, with what it did last, its counts,
+and a glowing "waiting for your yes" when one of its actions is asked about:
+
+    python diary.py traces --board --asks FOLDER --watch    # keeps board.html fresh; open it in a browser
