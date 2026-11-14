@@ -237,6 +237,9 @@ func runeIndex(text, part string) int {
 }
 
 var textMethods = map[string]method{
+	"pad_end": {[]string{"width", "fill"}, func(r Value, a []Value) Value {
+		return pad(textOf(r), a[0], a[1], false)
+	}},
 	"length":     {nil, func(r Value, a []Value) Value { return bigInt(len([]rune(textOf(r)))) }},
 	"upper":      {nil, func(r Value, a []Value) Value { return strings.ToUpper(textOf(r)) }},
 	"lower":      {nil, func(r Value, a []Value) Value { return strings.ToLower(textOf(r)) }},
