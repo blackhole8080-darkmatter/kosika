@@ -1,0 +1,339 @@
+// develop.kos: how a Kosika coder's day is judged and kept, in Kosika.
+//
+// The daily driver (daily.py) still does the plumbing a program cannot do
+// for itself: copy Kosika into a fresh folder, start the coder agent, and
+// say yes to its steps. Everything that decides something is here:
+//
+//   kosika run develop.kos --workflow next --input todo.json
+//       which request is next in todo.md
+//   kosika run develop.kos --input done.json --allow-folder KOSIKA_DAILY --allow-shell
+//       run the checks a person can trust without reading the model's words
+//       (the new tests, the Go engine compiles), decide whether the change
+//       passed, write the run's report.md, and add the run to coders.kl,
+//       a Kosika log of every coder run, in the kosika-daily folder
+//
+// So Kosika's own coders can read and improve the rules they are judged by.
+
+record Todo { text: Text }
+record Next { found: Bool line: Number request: Text }
+
+// The first open request in todo.md ("- [ ] ..."), skipping taken ones.
+fn next_request(t: Todo) -> Next {
+  let lines = t.text.replace("\r\n", "\n").split("\n")
+  for i in 0 until lines.length() {
+    if lines[i].starts_with("- [ ] ") {
+      return {found: true, line: i, request: lines[i].drop(6).trim()}
+    }
+  }
+  return {found: false, line: -1, request: ""}
+}
+
+workflow next(t: Todo) -> Next {
+  found = next_request(t)
+}
+
+// ------------------------------------------------------------ finishing
+
+// What the driver hands over when the coder has stopped.
+record Done {
+  request: Text
+  run: Text
+  files: Text[]
+  state: Text
+  said: Text
+  seconds: Number
+  date: Text
+}
+record Command { args: Text[] }
+record Ran { exit_code: Number stdout: Text stderr: Text }
+record Check { name: Text ok: Bool output: Text }
+record Verdict { passed: Bool why: Text checks: Check[] report: Text }
+record Report { path: Text text: Text }
+record Wrote { bytes: Number }
+// One line of coders.kl: what each coder was asked and how it ended.
+record Kept { request: Text run: Text passed: Bool why: Text seconds: Number files: Text[] }
+record Keep { path: Text by: Text entry: Kept }
+record KeptAt { n: Number hash: Text }
+
+tool python {
+  source system "shell"
+  operation: "python"
+  access: execute
+  input: Command
+  output: Ran
+}
+
+tool write_report {
+  source system "files"
+  operation: "write"
+  access: execute
+  input: Report
+  output: Wrote
+}
+
+tool keep {
+  source system "log"
+  operation: "append"
+  access: observe
+  input: Keep
+  output: KeptAt
+}
+
+agent checker {
+  can: [python, write_report, keep]
+  max_steps: 1
+}
+
+fn test_files(files: Text[]) -> Text[] {
+  var tests: Text[] = []
+  for f in files {
+    if f.starts_with("tests/") and f.ends_with(".py") { tests = tests.append(f) }
+  }
+  return tests
+}
+
+fn has_go(files: Text[]) -> Bool {
+  for f in files {
+    if f.ends_with(".go") { return true }
+  }
+  return false
+}
+
+// The test files the change wrote, or, when it wrote none, a run that does
+// nothing: pytest given no file would run the whole of Kosika's suite.
+// The run's copy of Kosika is RUN/kosika inside the granted folder; pytest
+// is started there, so the copy's own kosika package is the one tested.
+fn pytest_args(run: Text, files: Text[]) -> Text[] {
+  if test_files(files).is_empty() { return ["-c", "print('no tests to run')"] }
+  let quoted = test_files(files).join("', '")
+  return ["-c", "import os, sys; os.chdir('" + run + "/kosika'); sys.path.insert(0, '.'); import pytest; sys.exit(pytest.main(['-q', '-p', 'no:cacheprovider', '" + quoted + "']))"]
+}
+
+// go vet, started from Python so that Go's build and temporary folders are
+// inside the run: a program the shell tool starts may not write to the
+// system's temporary folder ("go: creating work dir: Access is denied").
+fn vet_args(run: Text, files: Text[]) -> Text[] {
+  if not has_go(files) { return ["-c", "print('no Go to check')"] }
+  return ["-c", "import os, subprocess, sys; t = os.path.abspath('" + run + "/.gotmp'); os.makedirs(t, exist_ok=True); env = dict(os.environ, GOTMPDIR=t, GOCACHE=os.path.abspath('" + run + "/.gocache')); r = subprocess.run(['go', '-C', '" + run + "/kosika/native', 'vet', '.'], env=env, capture_output=True, text=True); print(r.stdout + r.stderr); sys.exit(r.returncode)"]
+}
+
+// ---- the two checks the coder cannot write its way past ------------------
+
+// The names a request asks for: those in backticks, and words with an
+// underscore in them (is_even, readable_on). A change that does not contain
+// them has not done what was asked, whatever its tests say.
+fn name_letters() -> Text { return "abcdefghijklmnopqrstuvwxyz0123456789_" }
+
+// `is_even()`, `Number.is_even` and `Number.is_even()` all name is_even.
+fn clean_name(part: Text) -> Text {
+  let pieces = part.trim().split(".")
+  let last = pieces[pieces.length() - 1]
+  var out = ""
+  var stop = false
+  for ch in last.chars() {
+    if not stop and name_letters().contains(ch.lower()) {
+      out = out + ch.lower()
+    } else {
+      if out != "" { stop = true }
+    }
+  }
+  return out
+}
+
+fn backticked(text: Text) -> Text[] {
+  let parts = text.split("`")
+  var out: Text[] = []
+  var at = 0
+  for part in parts {
+    if at % 2 == 1 {
+      let name = clean_name(part)
+      if name.length() >= 2 and not out.contains(name) { out = out.append(name) }
+    }
+    at += 1
+  }
+  return out
+}
+
+fn snake_words(text: Text) -> Text[] {
+  var out: Text[] = []
+  var word = ""
+  for ch in text.chars() {
+    let low = ch.lower()
+    if name_letters().contains(low) {
+      word = word + low
+    } else {
+      if word.length() >= 3 and word.contains("_") and not word.starts_with("_") and not word.ends_with("_") and not out.contains(word) {
+        out = out.append(word)
+      }
+      word = ""
+    }
+  }
+  if word.length() >= 3 and word.contains("_") and not word.starts_with("_") and not word.ends_with("_") and not out.contains(word) {
+    out = out.append(word)
+  }
+  return out
+}
+
+fn names_of(request: Text) -> Text[] {
+  var out: Text[] = []
+  for name in backticked(request) {
+    if not out.contains(name) { out = out.append(name) }
+  }
+  for name in snake_words(request) {
+    if not out.contains(name) { out = out.append(name) }
+  }
+  return out
+}
+
+fn quoted_list(items: Text[]) -> Text {
+  return (for item in items { "'" + item + "'" }).join(", ")
+}
+
+// A test that imports is_even has not written it: the names are looked for
+// in what the change ships, and in the tests only when it ships nothing else.
+fn code_files(files: Text[]) -> Text[] {
+  var out: Text[] = []
+  for f in files {
+    if not f.starts_with("tests/") { out = out.append(f) }
+  }
+  if out.is_empty() { return files }
+  return out
+}
+
+// Reads the changed files of the run and says which of the request's names
+// are in none of them.
+fn names_args(run: Text, files: Text[], names: Text[]) -> Text[] {
+  if names.is_empty() { return ["-c", "print('no name in the request to look for')"] }
+  let code = "import os, sys; names = [" + quoted_list(names) + "]; files = [" + quoted_list(code_files(files)) + "]; root = '" + run + "/kosika'; text = ''.join(open(os.path.join(root, f), encoding='utf-8', errors='replace').read() for f in files if os.path.exists(os.path.join(root, f))); missing = [n for n in names if n not in text]; print(('names the request asks for and the change has not got: ' + ', '.join(missing)) if missing else ('every name in the request is in the change: ' + ', '.join(names))); sys.exit(1 if missing else 0)"
+  return ["-c", code]
+}
+
+// The new tests run against the run's own copy of Kosika before the change,
+// with the tests put in. A test that passes without the change proves
+// nothing about it: that is how a method that was never written passed.
+fn proof_args(run: Text, files: Text[]) -> Text[] {
+  if test_files(files).is_empty() { return ["-c", "print('no new test to prove')"] }
+  let code = "import os, shutil, sys; run = '" + run + "'; before, after, proof = run + '/before', run + '/kosika', run + '/_proof'; tests = [" + quoted_list(test_files(files)) + "]; shutil.rmtree(proof, ignore_errors=True); os.makedirs(proof, exist_ok=True); [shutil.copytree(os.path.join(before, d), os.path.join(proof, d), ignore=shutil.ignore_patterns('__pycache__', '.pytest_cache'), dirs_exist_ok=True) for d in ['kosika', 'tests', 'native'] if os.path.isdir(os.path.join(before, d))]; [shutil.copy2(os.path.join(before, f), os.path.join(proof, f)) for f in ['pyproject.toml', 'pytest.ini', 'setup.cfg', 'conftest.py'] if os.path.exists(os.path.join(before, f))]; [os.makedirs(os.path.dirname(os.path.join(proof, f)), exist_ok=True) for f in tests]; [shutil.copy2(os.path.join(after, f), os.path.join(proof, f)) for f in tests]; os.chdir(proof); sys.path.insert(0, '.'); import pytest; failed = pytest.main(['-q', '-p', 'no:cacheprovider', *tests]); shutil.rmtree(proof, ignore_errors=True); print('the new test fails without the change, as it should' if failed != 0 else 'the new test passes without the change, so it proves nothing'); sys.exit(0 if failed != 0 else 1)"
+  return ["-c", code]
+}
+
+fn check_of(name: Text, ran: Ran) -> Check {
+  let output = (ran.stdout + ran.stderr)
+  let tail = if output.length() > 1500 { output.drop(output.length() - 1500) } else { output }
+  return {name: name, ok: ran.exit_code == 0, output: tail}
+}
+
+// The coder's own words count against it, never for it: a run that says
+// its tests failed, or that the engines disagree, has not passed.
+fn owned_up(said: Text) -> Bool {
+  let last = if said.length() > 800 { said.drop(said.length() - 800) } else { said }
+  return said.contains("do NOT agree") or said.contains("did not go on") or (not said.contains("engines agree") and last.contains("The tests failed"))
+}
+
+fn verdict(d: Done, checks: Check[]) -> Verdict {
+  var all_ok = true
+  for c in checks {
+    if not c.ok { all_ok = false }
+  }
+  let why = if d.files.is_empty() { "it changed no file" } else { if d.state != "done" { "the coder did not finish (" + d.state + ")" } else { if owned_up(d.said) { "the coder said its own tests or engines failed" } else { if not all_ok { "a check failed" } else { "" } } } }
+  let passed = why.is_empty()
+  var lines: Text[] = ["# " + d.request, "", d.date + ", " + d.seconds.to_text() + " s, " + (if passed { "passed its checks" } else { "did not pass" }), "", "## Files changed"]
+  for f in d.files { lines = lines.append("- " + f) }
+  if d.files.is_empty() { lines = lines.append("- (none)") }
+  lines = lines.concat(["", "## Checked afterwards"])
+  for c in checks { lines = lines.append("- " + (if c.ok { "PASS " } else { "FAIL " }) + c.name) }
+  if checks.is_empty() { lines = lines.append("- nothing to check") }
+  if not passed { lines = lines.concat(["", "Why it did not pass: " + why]) }
+  lines = lines.concat(["", "## What the coder said", "", d.said, ""])
+  for c in checks {
+    if not c.ok { lines = lines.concat(["## " + c.name, "", "```", c.output, "```", ""]) }
+  }
+  lines = lines.append("Judged by develop.kos.")
+  return {passed: passed, why: if passed { "passed its checks" } else { why }, checks: checks, report: lines.join("\n")}
+}
+
+fn checks_of(d: Done, names: Ran, tests: Ran, proof: Ran, vet: Ran) -> Check[] {
+  var out: Check[] = []
+  if not names_of(d.request).is_empty() {
+    out = out.append(check_of("the change has the names the request asks for (" + names_of(d.request).join(", ") + ")", names))
+  }
+  if not test_files(d.files).is_empty() { out = out.append(check_of("pytest " + test_files(d.files).join(" "), tests)) }
+  if not test_files(d.files).is_empty() { out = out.append(check_of("the new test fails without the change", proof)) }
+  if has_go(d.files) { out = out.append(check_of("go vet (the Go engine compiles)", vet)) }
+  return out
+}
+
+workflow main(d: Done) -> Verdict {
+  names   = execute checker.python(names_args(d.run, d.files, names_of(d.request)))
+  tests   = execute checker.python(pytest_args(d.run, d.files))
+  proof   = execute checker.python(proof_args(d.run, d.files))
+  vet     = execute checker.python(vet_args(d.run, d.files))
+  judged  = verdict(d, checks_of(d, names, tests, proof, vet))
+  written = execute checker.write_report(d.run + "/report.md", judged.report)
+  kept    = execute checker.keep("coders.kl", d.run, {request: d.request, run: d.run, passed: judged.passed, why: judged.why, seconds: d.seconds, files: d.files})
+  result  = judged
+  require approval
+}
+
+test "the next request is the first open one" {
+  n = next_request({text: "# todo\n- [x] done one\n- [~] taken one\n- [ ] add a Number method is_even()\n- [ ] later\n"})
+  expect n.found
+  expect n.line == 3
+  expect n.request == "add a Number method is_even()"
+  expect not next_request({text: "- [x] all done\n"}).found
+}
+
+test "the names a request asks for are read from backticks and from underscores" {
+  expect names_of("add `readable_on` to the palette") == ["readable_on"]
+  expect names_of("add a Number method is_even()") == ["is_even"]
+  expect names_of("add `Number.is_even()` and `mix`") == ["is_even", "mix"]
+  expect names_of("`mix` and mix_colours, twice for `mix`") == ["mix", "mix_colours"]
+  expect names_of("make the contrast check pass").is_empty()
+}
+
+test "a change passes only when it changed files, finished, owned up to nothing, and every check passed" {
+  d: Done = {request: "add a Number method `is_even()`", run: "2026-11-14-1", files: ["kosika/builtin_methods.py", "tests/test_x.py", "native/methods.go"], state: "done", said: "The tests pass. The engines agree.", seconds: 120, date: "2026-11-14"}
+  ok: Ran = {exit_code: 0, stdout: "3 passed", stderr: ""}
+  bad: Ran = {exit_code: 1, stdout: "1 failed", stderr: ""}
+  good = verdict(d, checks_of(d, ok, ok, ok, ok))
+  expect good.passed
+  // The name in the request, the new test, the proof that it fails without
+  // the change, and go vet: four ways for a change that does nothing to be
+  // found out.
+  expect good.checks.length() == 4
+  expect good.report.contains("passed its checks")
+  expect good.report.contains("PASS the change has the names the request asks for (is_even)")
+  missing: Ran = {exit_code: 1, stdout: "names the request asks for and the change has not got: is_even", stderr: ""}
+  nameless = verdict(d, checks_of(d, missing, ok, ok, ok))
+  expect not nameless.passed
+  expect nameless.report.contains("is_even")
+  unproven: Ran = {exit_code: 1, stdout: "the new test passes without the change, so it proves nothing", stderr: ""}
+  hollow = verdict(d, checks_of(d, ok, ok, unproven, ok))
+  expect not hollow.passed
+  expect hollow.report.contains("FAIL the new test fails without the change")
+  failing = verdict(d, checks_of(d, ok, bad, ok, ok))
+  expect not failing.passed
+  expect failing.why == "a check failed"
+  expect failing.report.contains("FAIL pytest tests/test_x.py")
+  owned = verdict({request: d.request, run: d.run, files: d.files, state: "done", said: "I added it, but the engines do NOT agree", seconds: 9, date: d.date}, checks_of(d, ok, ok, ok, ok))
+  expect not owned.passed
+  nothing = verdict({request: d.request, run: d.run, files: [], state: "done", said: "", seconds: 9, date: d.date}, [])
+  expect nothing.why == "it changed no file"
+  expect pytest_args("r1", d.files)[1].contains("os.chdir('r1/kosika')")
+  expect pytest_args("r1", d.files)[1].contains("'tests/test_x.py'")
+  expect pytest_args("r1", ["kosika/a.py"]) == ["-c", "print('no tests to run')"]
+  expect vet_args("r1", d.files)[1].contains("'go', '-C', 'r1/kosika/native', 'vet', '.'")
+  expect vet_args("r1", d.files)[1].contains("GOTMPDIR")
+  expect vet_args("r1", ["kosika/a.py"]) == ["-c", "print('no Go to check')"]
+  // The name check reads the run's changed files; the proof runs the new
+  // tests against the run's own copy before the change.
+  expect names_args("r1", d.files, ["is_even"])[1].contains("r1/kosika")
+  expect names_args("r1", d.files, ["is_even"])[1].contains("'is_even'")
+  expect names_args("r1", d.files, [])[1].contains("no name")
+  // The test file's own import does not count as writing the method.
+  expect names_args("r1", d.files, ["is_even"])[1].contains("files = ['kosika/builtin_methods.py', 'native/methods.go']")
+  expect names_args("r1", ["tests/test_x.py"], ["is_even"])[1].contains("files = ['tests/test_x.py']")
+  expect proof_args("r1", d.files)[1].contains("run + '/_proof'")
+  expect proof_args("r1", d.files)[1].contains("shutil.copytree")
+  expect proof_args("r1", ["kosika/a.py"])[1].contains("no new test")
+}
