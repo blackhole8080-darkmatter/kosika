@@ -156,6 +156,26 @@ class ProgramServerTests(unittest.TestCase):
             process.stdin.close()
             process.wait(timeout=10)
 
+    def test_only_written_after_the_program_still_narrows_the_tools(self) -> None:
+        # As the README writes it: serve-mcp FILE --only NAME -- RUN FLAGS.
+        env = dict(os.environ, PYTHONPATH=str(ROOT))
+        process = subprocess.Popen(
+            [sys.executable, "-m", "kosika.cli", "serve-mcp", str(self.source), "--only", "loud", "--", "--allow-folder", str(self.tmp)],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, env=env,
+        )
+        try:
+            def ask(message: dict) -> dict:
+                process.stdin.write(json.dumps(message) + "\n")
+                process.stdin.flush()
+                return json.loads(process.stdout.readline())
+
+            ask({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+            listed = ask({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+            self.assertEqual([t["name"] for t in listed["result"]["tools"]], ["loud"])
+        finally:
+            process.stdin.close()
+            process.wait(timeout=10)
+
     def test_the_cli_refuses_the_terminal_yes(self) -> None:
         env = dict(os.environ, PYTHONPATH=str(ROOT))
         done = subprocess.run(

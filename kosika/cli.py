@@ -3652,10 +3652,17 @@ def main() -> int:
         from .mcp_program import ProgramServer, ProgramServerError
 
         flags = list(args.run_flags)
+        # Written after the program (`serve-mcp plan.kos --only note -- ...`),
+        # --only lands in run_flags: argparse's REMAINDER takes everything
+        # after the source. Take each one back before the "--".
+        only = list(args.only or [])
+        while len(flags) >= 2 and flags[0] == "--only":
+            only.append(flags[1])
+            flags = flags[2:]
         if flags and flags[0] == "--":
             flags = flags[1:]
         try:
-            server = ProgramServer(Path(args.source), flags, args.only)
+            server = ProgramServer(Path(args.source), flags, only or None)
         except (ProgramServerError, OSError) as exc:
             print(f"Not served: {exc}", file=sys.stderr)
             return 2
