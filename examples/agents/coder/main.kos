@@ -1354,14 +1354,12 @@ fn repeated_now(old: Text, new: Text) -> Text[] {
 
 // How many times a text begins a definition of a name at the left margin.
 fn heads(text: Text, name: Text) -> Number {
-  let lines = "
-" + text
+  // "\n" written as an escape: a line break inside the quotes would become
+  // "\r\n" in a checkout that turns line endings into Windows ones.
+  let lines = "\n" + text
   var count = 0
   for word in ["def ", "class ", "fn ", "func ", "record ", "workflow "] {
-    count += lines.count("
-" + word + name + "(") + lines.count("
-" + word + name + " ") + lines.count("
-" + word + name + ":")
+    count += lines.count("\n" + word + name + "(") + lines.count("\n" + word + name + " ") + lines.count("\n" + word + name + ":")
   }
   return count
 }
