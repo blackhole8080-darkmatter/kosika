@@ -2107,11 +2107,15 @@ fn after_registering(tried: Result, report: Result) -> Result {
 
 fn python_part(asked: MethodAsked, shell: Text) -> Task {
   let table = if asked.kind == "array" { "beside the other ANY_ARRAY methods" } else { "beside the other \"" + asked.kind + "\" methods" }
-  let tests = "Write tests for it in tests/test_" + asked.name + ".py in the style of tests/test_short_methods.py, running small Kosika programs that call it. Test only calls that work and the values they give, three to six of them, edge cases included; write no test of an error or a wrong type, and no helper the method does not use"
+  let tests = if examples_of(asked.text).is_empty() { tests_wanted(asked) } else { "The tests for it are already written, from the request's examples, in a file of their own: write no tests, only the method, so that they pass" }
   if shell.starts_with("wrote def _") {
     return {text: asked.text + ". In kosika/builtin_methods.py the program has already " + shell.trim() + ". Write the body of _" + asked.name + ": replace its one line `raise RuntimeError(\"" + asked.name + " is not written yet\")` with the code, and change nothing else in the file. " + tests}
   }
-  return {text: asked.text + ". Do it in kosika/builtin_methods.py, as one Method in the METHODS table " + table + ", with a helper function above the table only if it needs more than one line. Write tests for it in tests/test_" + asked.name + ".py in the style of tests/test_short_methods.py, running small Kosika programs that call it. Test only calls that work and the values they give, three to six of them, edge cases included; write no test of an error or a wrong type, and no helper the method does not use"}
+  return {text: asked.text + ". Do it in kosika/builtin_methods.py, as one Method in the METHODS table " + table + ", with a helper function above the table only if it needs more than one line. " + tests}
+}
+
+fn tests_wanted(asked: MethodAsked) -> Text {
+  return "Write tests for it in tests/test_" + asked.name + ".py in the style of tests/test_short_methods.py, running small Kosika programs that call it. Test only calls that work and the values they give, three to six of them, edge cases included; write no test of an error or a wrong type, and no helper the method does not use"
 }
 
 // The lines of the Python engine that define the method, which the Go one
@@ -2147,6 +2151,118 @@ fn docs_part(asked: MethodAsked) -> Task {
 // call that fails must fail in both engines.
 fn agree_script() -> Text {
   return "import itertools, os, re, subprocess, sys, tempfile\nname, kind = sys.argv[1], sys.argv[2]\nsource = open('kosika/builtin_methods.py', encoding='utf-8').read()\nfound = re.search(r'Method\\(\\s*\"' + kind + r'\",\\s*\"' + name + r'\",\\s*\\((.*?)\\),\\s*\"([^\"]+)\"', source, re.S)\nif not found:\n    print('the Python engine has no Method line for ' + kind + ' ' + name)\n    sys.exit(1)\nparams = re.findall(r'\\(\\s*\"(\\w+)\",\\s*\"([^\"]+)\"\\s*\\)', found.group(1))\nresult = found.group(2)\nvalues = {'Text': ['\"\"', '\"abc\"', '\" 12 \"', '\"banana\"', '\"Hello World\"'], 'Number': ['0', '-2.5', '7', '3'], 'Bool': ['true', 'false']}\nreceivers = values.get(kind)\nchoices = [values.get(t) for _, t in params]\nif receivers is None or None in choices:\n    print('skipped: no samples for ' + kind + ' or one of its parameters')\n    sys.exit(0)\nargument_samples = {'Text': ['\"a\"', '\"an\"', '\"zz\"', '\"\"'], 'Number': ['0', '1', '2'], 'Bool': ['true']}\ncombos = list(itertools.product(*[argument_samples[t] for _, t in params]))[:6] or [()]\ncalls = []\nfor receiver in receivers:\n    for combo in combos:\n        args = ', '.join(f'{p}: {v}' for (p, _), v in zip(params, combo))\n        calls.append(f'({receiver}).{name}({args})')\nfolder = tempfile.mkdtemp()\nengine = os.path.join(folder, 'kosika-native.exe' if os.name == 'nt' else 'kosika-native')\nbuilt = subprocess.run(['go', '-C', os.path.join(os.getcwd(), 'native'), 'build', '-o', engine, '.'], capture_output=True, text=True)\nif built.returncode != 0:\n    print('the Go engine does not build: ' + built.stderr[-1500:])\n    sys.exit(1)\n\n\ndef run_both(call):\n    program = 'record Out { v: ' + result + ' }\\nfn f() -> Out {\\n  return {v: ' + call + '}\\n}\\nworkflow main() -> Out { out = f() }\\n'\n    path = os.path.join(folder, 'agree.kos')\n    open(path, 'w', encoding='utf-8').write(program)\n    py = subprocess.run([sys.executable, '-m', 'kosika.cli', 'run', path], capture_output=True, text=True, cwd=folder,\n                        env=dict(os.environ, PYTHONPATH=os.getcwd()))\n    go = subprocess.run([engine, 'run', path], capture_output=True, text=True, cwd=folder)\n    said = lambda ran: (ran.stdout.strip().splitlines() or ['FAILED'])[0] if ran.returncode == 0 else 'FAILED'\n    return said(py), said(go)\n\n\napart = 0\nfor call in calls:\n    py, go = run_both(call)\n    same = py == go\n    apart += 0 if same else 1\n    print(('same  ' if same else 'APART ') + call + '  python: ' + py + '  go: ' + go)\nsys.exit(0 if apart == 0 else 1)\n"
+}
+
+// ---------------------------------------------------------------- examples
+//
+// A request may end with examples, each a call and the value it gives, in
+// backticks: `examples: `"x".surround("<", ">")` is `"<x>"`, `"".surround("a", "b")` is `"ab"``.
+// The program writes the tests from them, exactly, so a small model is never
+// asked to invent what the method should give: it only writes the body.
+
+record Example { call: Text value: Text }
+
+fn examples_of(text: Text) -> Example[] {
+  let at = text.lower().index_of("examples:").or(default: -1)
+  if at < 0 { return [] }
+  let spans = text.drop(at).split("`")
+  var found: Example[] = []
+  for i in 0 until spans.length() {
+    if i % 4 == 1 and i + 2 < spans.length() {
+      let call = spans[i].trim()
+      let value = spans[i + 2].trim()
+      if not call.is_empty() and not value.is_empty() { found = found.append({call: call, value: value}) }
+    }
+  }
+  return found
+}
+
+// A Kosika value as Python writes it.
+fn py_value(value: Text) -> Text {
+  if value == "true" { return "True" }
+  if value == "false" { return "False" }
+  return value
+}
+
+// A Kosika call as a Python string literal.
+fn py_quoted(call: Text) -> Text {
+  return "'" + call.replace("\\", "\\\\").replace("'", "\\'") + "'"
+}
+
+fn examples_test(asked: MethodAsked, sig: Signature, examples: Example[]) -> Text {
+  let head = "\"\"\"The " + asked.kind + " method " + asked.name + ", tested on the examples its request gave.\"\"\"\n\nfrom __future__ import annotations\n\nimport unittest\nfrom typing import Any\n\nfrom kosika.checker import check\nfrom kosika.parser import parse\nfrom kosika.runtime import run\n\n\ndef value_of(expression: str, type_name: str) -> Any:\n    source = (\n        f\"record Out {{ value: {type_name} }}\\n\"\n        f\"fn f() -> Out {{\\nreturn {{value: {expression}}}\\n}}\\n\"\n        \"workflow main() -> Out { out = f() }\\n\"\n    )\n    program = parse(source)\n    check(program)\n    return run(program, \"main\", None, inputs={})[\"value\"]\n\n\nclass ExampleTests(unittest.TestCase):\n    def test_the_examples_give_what_the_request_says(self) -> None:\n"
+  var lines: Text[] = []
+  for e in examples {
+    lines = lines.append("        self.assertEqual(value_of(" + py_quoted(e.call) + ", \"" + sig.result + "\"), " + py_value(e.value) + ")")
+  }
+  return head + lines.join("\n") + "\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+}
+
+record ExamplesJob { asked: MethodAsked text: Text }
+
+workflow write_examples_test(job: ExamplesJob) -> Saved {
+  saved = match job.text.is_empty() {
+    case true { nothing_saved() }
+    case _ { call save_examples_test(job) }
+  }
+  require approval
+}
+
+// The examples' tests, kept as the program wrote them even if a model
+// wrote over them, then run; one mend when they fail, then run again.
+record Checking { asked: MethodAsked task: Task tried: Result }
+record Keeping { asked: MethodAsked text: Text now: Text }
+
+workflow examples_checked(job: Checking) -> Result {
+  now    = execute coder.read_file(examples_path(job.asked)) otherwise {text: ""}
+  kept   = call keep_examples_test({asked: job.asked, text: examples_text(job.asked, signature(job.asked)), now: now.text})
+  tested = call run_tests(examples_work(job.asked))
+  report = worked_on(job.task, examples_work(job.asked), tested)
+  fixed  = match report.last.passed {
+    case true { as_is(report) }
+    case _ { call mend(job.task, report) }
+  }
+  later  = execute coder.read_file(examples_path(job.asked)) otherwise {text: ""}
+  again  = call keep_examples_test({asked: job.asked, text: examples_text(job.asked, signature(job.asked)), now: later.text})
+  final  = call run_tests(examples_work(job.asked))
+  result = after_examples(job.tried, worked_on(job.task, examples_work(job.asked), final))
+  require approval
+}
+
+workflow keep_examples_test(job: Keeping) -> Saved {
+  saved = match job.now == job.text {
+    case true { nothing_saved() }
+    case _ { call rewrite_examples_test(job) }
+  }
+  require approval
+}
+
+workflow rewrite_examples_test(job: Keeping) -> Saved {
+  saved = execute writer.save_all([{path: examples_path(job.asked), text: job.text, before: job.now, exists: not job.now.is_empty()}], "The tests from the request's examples, as the program wrote them.")
+  require approval
+}
+
+fn examples_path(asked: MethodAsked) -> Text {
+  return "tests/test_" + asked.name + ".py"
+}
+
+fn examples_work(asked: MethodAsked) -> Work {
+  return {summary: "The tests written from the request's examples.", did: ["save_all " + examples_path(asked)]}
+}
+
+fn after_examples(tried: Result, report: Result) -> Result {
+  return {text: tried.text + "\n\nThe tests written from the request's examples:\n" + report.text, last: report.last}
+}
+
+workflow save_examples_test(job: ExamplesJob) -> Saved {
+  saved = execute writer.save_all([{path: "tests/test_" + job.asked.name + ".py", text: job.text, before: "", exists: false}], "Tests for " + job.asked.name + ", written from the examples in the request.")
+  require approval
+}
+
+fn examples_text(asked: MethodAsked, sig: Signature) -> Text {
+  let examples = examples_of(asked.text)
+  if examples.is_empty() or not sig.ok { return "" }
+  return examples_test(asked, sig, examples)
 }
 
 // ---------------------------------------------------------------- shells
@@ -2291,7 +2407,15 @@ workflow kosika_method(task: Task) -> Result {
   sig    = signature(asked)
   before = execute coder.read_file("kosika/builtin_methods.py") otherwise {text: ""}
   shell  = call write_py_shell({asked: asked, sig: sig, old: before.text})
-  tried  = call on_my_own(python_part(asked, shell_said(before.text, py_shelled(before.text, asked, sig), asked, sig)))
+  tests  = call write_examples_test({asked: asked, text: examples_text(asked, sig)})
+  first  = python_part(asked, shell_said(before.text, py_shelled(before.text, asked, sig), asked, sig))
+  made   = call on_my_own(first)
+  // With examples, their tests are what decide: run them, and if they fail
+  // the model gets one try to mend the method.
+  tried  = match examples_text(asked, sig).is_empty() {
+    case true { as_is(made) }
+    case _ { call examples_checked({asked: asked, task: first, tried: made}) }
+  }
   // A small model often writes the method's function and never registers
   // it. Registering is exact work, so the program does it, from the
   // function's own signature, and runs the tests again.
@@ -3418,4 +3542,33 @@ test "a Method line left outside the table is moved into it" {
   expect in_table(now, "starts_with_any")
   expect now.count("\"starts_with_any\",") == 1
   expect now.contains("Method(\"Text\", \"starts_with_any\", ((\"prefixes\", \"Text[]\"),), \"Bool\", _starts_with_any),\n    Method(\"Text\", \"upper\"")
+}
+
+test "a request's examples become its tests, and the model is told to leave them" {
+  asked = method_asked({text: "add a Text method surround(left: Text, right: Text) that gives the text with left before it and right after it; examples: `\"x\".surround(\"<\", \">\")` is `\"<x>\"`, `\"\".surround(\"a\", \"b\")` is `\"ab\"`"})
+  found = examples_of(asked.text)
+  expect found.length() == 2
+  expect found[0].call == "\"x\".surround(\"<\", \">\")"
+  expect found[1].value == "\"ab\""
+  written = examples_text(asked, signature(asked))
+  expect written.contains("self.assertEqual(value_of('\"x\".surround(\"<\", \">\")', \"Text\"), \"<x>\")")
+  told = python_part(asked, "wrote def _surround(text, left, right) above the METHODS table")
+  expect told.text.contains("already written, from the request's examples")
+  expect not told.text.contains("tests/test_surround.py")
+  expect examples_work(asked).did == ["save_all tests/test_surround.py"]
+  expect not told.text.contains("three to six")
+}
+
+test "true and false examples are written as Python writes them" {
+  asked = method_asked({text: "add a Number method is_even() that says whether a whole number is even, giving a Bool; examples: `4.is_even()` is `true`, `3.is_even()` is `false`"})
+  written = examples_text(asked, signature(asked))
+  expect written.contains("value_of('4.is_even()', \"Bool\"), True)")
+  expect written.contains("value_of('3.is_even()', \"Bool\"), False)")
+}
+
+test "a request with no examples asks the model for tests as before" {
+  asked = method_asked({text: "add a Text method shout() that gives the text in capitals, giving a Text"})
+  expect examples_text(asked, signature(asked)) == ""
+  told = python_part(asked, "")
+  expect told.text.contains("three to six")
 }

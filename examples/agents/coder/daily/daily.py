@@ -339,7 +339,7 @@ def swarm(size: int) -> None:
     router = start_router()
     started = time.monotonic()
     alone = dict(os.environ, KOSIKA_SWARM="1") if len(open_ones) > 1 else dict(os.environ)
-    members = [subprocess.Popen([sys.executable, __file__, "--take", text], env=alone) for text in open_ones]
+    members = [subprocess.Popen([sys.executable, __file__, "--todo", str(TODO), "--take", text], env=alone) for text in open_ones]
     for member in members:
         member.wait()
     if router is not None:
@@ -352,7 +352,11 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--swarm", type=int, default=0, help="run this many coders at once, one request each")
     parser.add_argument("--take", help="(a swarm member) work on this request, already marked as taken")
+    parser.add_argument("--todo", help="take requests from this file instead of todo.md (the scorecard uses its own copy)")
     args = parser.parse_args()
+    if args.todo:
+        global TODO
+        TODO = Path(args.todo).resolve()
     if args.swarm:
         swarm(args.swarm)
         return
