@@ -5,7 +5,8 @@
 Its look is designed in Kosika (cursor.kos, with Kosika Designs' palette):
 a vector arrow with the agent's name on a tag, drawn as SVG and rendered
 once, at this screen's real resolution, to a picture with soft edges
-(~/.kosika/pointers/NAME@SCALE.png). It is shown in a window of its own that
+(~/.kosika/pointers/NAME-STATE-TINT-LOOK@SCALE.png, LOOK changing whenever the
+Kosika files of its look change). It is shown in a window of its own that
 is see-through wherever the picture is, above everything, and never takes a
 click. It does not move the mouse: it glides to where the agent is about to
 act, which the agent writes to ~/.kosika/pointers/NAME.json ({"x", "y"}),
@@ -69,6 +70,22 @@ RUNNER = (
 )
 STATES = ("idle", "typing", "press")
 
+#: The Kosika files the pointer's look is drawn from. A kept picture is used
+#: only while these are as they were when it was drawn: its name carries a
+#: short fingerprint of them, so a change to the look (a new mascot, a new
+#: palette) draws the pointer afresh instead of showing the old one.
+LOOK = [HERE / "cursor.kos", HERE / "pointer_look.kos", HERE / "mascots.kos",
+        REPO / "kosika" / "std" / "designs_palette.kos"]
+
+
+def look_print() -> str:
+    import hashlib
+    seen = hashlib.sha256()
+    for path in LOOK:
+        if path.exists():
+            seen.update(path.read_bytes().replace(b"\r\n", b"\n"))
+    return seen.hexdigest()[:8]
+
 
 def picture(name: str, colour: str, state: str, scale: float) -> tuple[Path, int]:
     """The pointer's picture in one state, and where its tip is in it:
@@ -76,7 +93,7 @@ def picture(name: str, colour: str, state: str, scale: float) -> tuple[Path, int
     POINTERS.mkdir(parents=True, exist_ok=True)
     safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in name)
     tint = "".join(c for c in colour.lower() if c.isalnum()) or "auto"
-    png = POINTERS / f"{safe}-{state}-{tint}@{scale:.2f}.png"
+    png = POINTERS / f"{safe}-{state}-{tint}-{look_print()}@{scale:.2f}.png"
     tip_file = png.with_suffix(".tip")
     if png.exists() and tip_file.exists():
         return png, int(tip_file.read_text())
