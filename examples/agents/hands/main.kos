@@ -17,6 +17,8 @@ import "apps.kos"
 import "typing.kos"
 import "pointer_look.kos"
 
+export [Command, Ran, Done, hand, hands, act, act_with, after, skip, web, done]
+
 record Note { agent: Text text: Text }
 record Command { args: Text[] }
 record Ran { exit_code: Number stdout: Text stderr: Text }

@@ -96,6 +96,38 @@ def asks_waiting(folder: Path | None) -> list[str]:
     return [str(ask.get("says", "")) for ask in waiting(folder)]
 
 
+def training(trace_paths: list[Path], model: str = "planner") -> list[dict]:
+    """Training examples for a model from runs that worked: what the model
+    was asked and what it answered, from each run that completed with every
+    hands step done. A run with a failed, refused or stopped step teaches
+    nothing, and neither does one that never finished."""
+    examples = []
+    for trace in trace_paths:
+        pairs, good, finished = [], True, False
+        for line in trace.read_text(encoding="utf-8").splitlines() + ['{"event": "run_start"}']:
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            kind = event.get("event")
+            if kind == "run_start":
+                if pairs and good and finished:
+                    examples += pairs
+                pairs, good, finished = [], True, False
+            elif kind == "model_call" and event.get("model") == model:
+                pairs.append({"messages": [{"role": "user", "content": json.dumps(event.get("arguments"), ensure_ascii=False)}]})
+            elif kind == "model_return" and event.get("model") == model and pairs and len(pairs[-1]["messages"]) == 1:
+                pairs[-1]["messages"].append({"role": "assistant", "content": json.dumps(event.get("result"), ensure_ascii=False)})
+            elif kind == "tool_return":
+                result = event.get("result") or {}
+                skipped = str(result.get("stdout", "")).startswith("skipped")
+                if result.get("exit_code", 0) != 0 and not skipped:
+                    good = False
+            elif kind == "run_complete":
+                finished = True
+    return [e for e in examples if len(e["messages"]) == 2]
+
+
 def kos(text: str) -> str:
     """A Kosika text literal that reads back as exactly this text."""
     return json.dumps(text, ensure_ascii=False)
@@ -145,6 +177,8 @@ def main() -> int:
                         help="Write lesson.json from this run of the diary, for learn.kos to learn a skill from.")
     parser.add_argument("--name", default="", help="The learned skill's name, with --lesson.")
     parser.add_argument("--when", default="", help="When the learned skill fits, words split by commas, with --lesson.")
+    parser.add_argument("--training", type=Path, metavar="FILE.jsonl",
+                        help="Add what plan.kos's planner was asked and answered in runs that worked, as training examples.")
     parser.add_argument("--tests", type=Path, metavar="FILE.kos",
                         help="Write each run as a Kosika test that replays it against main.kos.")
     parser.add_argument("--board", action="store_true", help="Draw the live board of all agents (team.kos) instead.")
@@ -167,6 +201,13 @@ def once(args: argparse.Namespace) -> int:
     actions: list[dict] = []
     for trace in traces(args.paths):
         actions += entries(trace, actions[-1]["run"] if actions else 0)
+    if args.training is not None:
+        examples = training(traces(args.paths))
+        with args.training.open("a", encoding="utf-8") as out:
+            for example in examples:
+                out.write(json.dumps(example, ensure_ascii=False) + "\n")
+        print(f"{len(examples)} training examples added to {args.training}")
+        return 0
     if args.tests is not None:
         args.tests.write_text(recorded_tests(actions), encoding="utf-8")
         print(f"{len({a['run'] for a in actions})} runs written as tests to {args.tests}")

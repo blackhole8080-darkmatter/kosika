@@ -107,3 +107,15 @@ and a glowing "waiting for your yes" when one of its actions is asked about:
 writes each recorded run as a Kosika test that gives its real results to
 `done` in main.kos and expects the same ending. If a change would judge a
 real run differently, `kosika test recorded.kos` fails. Typed words are not kept.
+
+## Told in words, planned by its own model
+
+`plan.kos` lets an agent take a request in words. The model in its kit
+(Kosika's virtual models through the router) only picks one job from a menu
+of the jobs the kit allows; Kosika checks the pick, makes the commands, and
+each waits for your yes:
+
+    kosika run plan.kos --workflow go --input ask.json --allow-shell --allow-folder . --model kosika-virtual --model-url http://127.0.0.1:8791/v1 --model-protocol openai --approve
+
+Runs that worked teach the planner: `python diary.py traces --training planner.jsonl`
+adds what it was asked and answered in each run whose every step was done.
